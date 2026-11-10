@@ -5,6 +5,16 @@ import Foundation
         if !value() { fatalError(message) }
     }
     static func main() throws {
+        var channelSettings = HDRSettings()
+        channelSettings.toneSettings.curve.channels.red = .identity.inserting(x: 0.5, y: 0.6)
+        let channelRequest = try makeHDRRequest(settings: channelSettings, intent: SONY2FUJI_INTENT_FINAL)
+        withHDRRequestPrefix(channelRequest) { base in
+            require(base.pointee.hdr_processing_version == 8 && base.pointee.struct_size == 2584, "HDR v8 ABI header")
+            let full = UnsafeRawPointer(base).load(as: sony2fuji_hdr_request_v8.self)
+            require(full.channels.0.count == 3 && full.channels.0.points.1.y == 0.6 && full.channels.1.mode == SONY2FUJI_CURVE_LEGACY,
+                    "HDR v8 channel tail")
+        }
+
         let cameraError = HDRNativeError(status: SONY2FUJI_STATUS_UNSUPPORTED,
             reason: UInt32(SONY2FUJI_HDR_REASON_CAMERA_DEVELOPMENT), field: UInt32(SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT))
         require(cameraError.errorDescription == L10n.text("无效或不可用的相机显影设置（白平衡或镜头校正）。"),
@@ -14,7 +24,7 @@ import Foundation
         settings.exposure=1.25; settings.temperature=7200; settings.tint = -12
         settings.contrast=30; settings.highlights=20; settings.shadows=40; settings.saturation=10
         settings.geometry.quarterTurns=1; settings.geometry.flipHorizontal=true
-        let request=try makeHDRRequest(settings:settings,intent:SONY2FUJI_INTENT_FINAL,longEdge:1600).native.base.base.base.base.base.base
+        let request=try makeHDRRequest(settings:settings,intent:SONY2FUJI_INTENT_FINAL,longEdge:1600).native.base.base.base.base.base.base.base
         require(request.version==1 && request.struct_size==88 && request.hdr_processing_version==1,"HDR ABI header differs")
         require(request.exposure_ev==1.25 && request.temperature==7200 && request.tint == -12,"HDR exposure/WB mapping differs")
         require(request.contrast==30 && request.highlights==20 && request.shadows==40 && request.saturation==10,"HDR logical tone mapping differs")
@@ -54,7 +64,7 @@ import Foundation
         settings.colorSettings.vibrance = 23
         settings.colorSettings.hsl.setExact(.saturation, channel: 7, value: -12.5)
         settings.colorSettings.grading.midtones = .init(hue: 210, saturation: 17)
-        let nativeColor = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL).native.base.base.base.base
+        let nativeColor = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL).native.base.base.base.base.base
         require(nativeColor.base.base.struct_size == 792 && nativeColor.base.base.hdr_processing_version == 3 &&
                 nativeColor.vibrance == 23 && nativeColor.hsl.saturation.7 == -12.5 &&
                 nativeColor.grading.midtones_hue == 210 && nativeColor.grading.midtones_saturation == 17,
@@ -72,7 +82,7 @@ import Foundation
         settings.renditionSettings.sdrExposureEV = -0.5
         settings.renditionSettings.sdrContrast = 25
         settings.renditionSettings.sdrSaturation = -15
-        let nativeRendition = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL).native.base.base.base
+        let nativeRendition = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL).native.base.base.base.base
         require(nativeRendition.base.base.base.struct_size == 808 &&
                 nativeRendition.base.base.base.hdr_processing_version == 4 &&
                 nativeRendition.base.vibrance == 23 && nativeRendition.peak_limit_ev == 2 &&
@@ -89,7 +99,7 @@ import Foundation
         settings.effectsSettings.vignetteAmount = -50
         settings.effectsSettings.grainAmount = 40
         settings.effectsSettings.grainSize = 30
-        let nativeEffects = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL).native.base.base
+        let nativeEffects = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL).native.base.base.base
         require(nativeEffects.base.base.base.base.struct_size == 848 &&
                 nativeEffects.base.base.base.base.hdr_processing_version == 5 &&
                 nativeEffects.base.peak_limit_ev == 2 && nativeEffects.effects.vignette_amount == -50 &&
@@ -103,7 +113,7 @@ import Foundation
                 (effectsEdits["effects"] as? [String: Double])?["grain_amount"] == 40, "Swift HDR v11 recipe lost effects")
         settings.detailSettings = .init(sharpening: 1.25, clarity: 0.5, dehaze: -0.4, denoise: 0.75)
         let detailRequest = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL)
-        let detail = detailRequest.native.base
+        let detail = detailRequest.native.base.base
         let prefix = withHDRRequestPrefix(detailRequest) { $0.pointee }
         require(prefix.struct_size == 864 && prefix.hdr_processing_version == 6 &&
                 detail.sharpening == 1.25 && detail.clarity == 0.5 && detail.dehaze == -0.4 && detail.denoise == 0.75,

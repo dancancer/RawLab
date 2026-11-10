@@ -5207,7 +5207,7 @@
     "camera_supported": {
       "file": "strings.xml",
       "formats": [],
-      "source": "当前支持 Sony α7C II（固件 2.00），需要 Android 10 或更高版本。",
+      "source": "可用功能取决于相机当前的连接方式和拍摄模式。",
       "types": []
     },
     "camera_find": {
@@ -5789,6 +5789,680 @@
       "source": "预览未更新",
       "file": "strings.xml",
       "types": []
+    },
+    "camera_legacy_connect": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "连接 ZV-E10",
+      "types": []
+    },
+    "camera_manual_wifi": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "连接相机 Wi-Fi",
+      "types": []
+    },
+    "camera_manual_guide": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "在相机打开智能手机连接，查看机身显示的 Wi-Fi 名称和密码。你也可以先在系统 Wi-Fi 设置中连接，再返回继续。",
+      "types": []
+    },
+    "camera_wifi_settings": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "打开 Wi-Fi 设置",
+      "types": []
+    },
+    "camera_use_wifi": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "已连接，继续",
+      "types": []
+    },
+    "tether_title": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "联机拍摄",
+      "types": []
+    },
+    "tether_intro": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "在手机上取景、单拍，自动保存相机卡内的 RAW 和 JPEG 原件。",
+      "types": []
+    },
+    "tether_card_confirm": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "已确认相机同时将原件保存到存储卡。",
+      "types": []
+    },
+    "tether_card_hint": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "在相机上选择单张拍摄，并将原件同时保留在存储卡。手机收到的取景图和缩略图不是原件保存成功的凭据。",
+      "types": []
+    },
+    "tether_new": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "开始新的联机",
+      "types": []
+    },
+    "tether_resume": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "恢复上次联机",
+      "types": []
+    },
+    "tether_resume_hint": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "恢复未完成的原件接收，不会自动补拍。",
+      "types": []
+    },
+    "tether_ready": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "可以拍摄",
+      "types": []
+    },
+    "tether_preparing": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在准备取景",
+      "types": []
+    },
+    "tether_capturing": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在拍摄",
+      "types": []
+    },
+    "tether_waiting": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "等待相机保存",
+      "types": []
+    },
+    "tether_receiving": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在接收原件",
+      "types": []
+    },
+    "tether_paused": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "联机已暂停",
+      "types": []
+    },
+    "tether_shutter": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "拍摄一张",
+      "types": []
+    },
+    "tether_grid": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "构图网格",
+      "types": []
+    },
+    "tether_review_auto": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "拍后审片",
+      "types": []
+    },
+    "tether_recent": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "最近照片",
+      "types": []
+    },
+    "tether_saved": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$d"
+      ],
+      "source": "已保存 {0} 张",
+      "types": [
+        "d"
+      ]
+    },
+    "tether_none": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "拍摄后，照片会显示在这里",
+      "types": []
+    },
+    "tether_reconnect": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "重新连接",
+      "types": []
+    },
+    "tether_pause": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "暂停联机",
+      "types": []
+    },
+    "tether_live": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "实时取景",
+      "types": []
+    },
+    "tether_stale": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "取景已暂停",
+      "types": []
+    },
+    "tether_preview_note": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "预览图，可双指缩放",
+      "types": []
+    },
+    "tether_preview_missing": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "暂时无法显示预览",
+      "types": []
+    },
+    "tether_unknown": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "拍摄结果尚未确认。请检查相机，重新连接只恢复原件接收。",
+      "types": []
+    },
+    "tether_settings_error": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "请将相机设为单张拍摄，并确认照片同时保存到相机存储卡。",
+      "types": []
+    },
+    "tether_source_error": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "相机卡中的照片发生变化。请重新开始联机；已保存原件仍保留。",
+      "types": []
+    },
+    "tether_backlog_error": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "待接收照片较多，已暂停拍摄。重新连接后继续接收。",
+      "types": []
+    },
+    "tether_live_error": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "实时取景已中断，请重新连接。",
+      "types": []
+    },
+    "tether_foreground": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "离开此页面会暂停联机，已保存照片不受影响。",
+      "types": []
+    },
+    "tether_review_index": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$d",
+        "%2$d"
+      ],
+      "source": "{0} / {1}",
+      "types": [
+        "d",
+        "d"
+      ]
+    },
+    "tether_pending": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$d"
+      ],
+      "source": "待接收 {0} 张。",
+      "types": [
+        "d"
+      ]
+    },
+    "tether_unsupported": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "此相机或固件尚不支持联机拍摄。",
+      "types": []
+    },
+    "camera_title": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "相机",
+      "types": []
+    },
+    "camera_choose": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "选择相机",
+      "types": []
+    },
+    "camera_import_hint": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "浏览存储卡，选择并保存照片",
+      "types": []
+    },
+    "camera_tether_hint": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "实时取景、调整参数并拍摄",
+      "types": []
+    },
+    "camera_connect_action": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "连接相机",
+      "types": []
+    },
+    "camera_change": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "更换相机",
+      "types": []
+    },
+    "camera_resume_previous": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "恢复 {0} 的联机",
+      "types": [
+        "s"
+      ]
+    },
+    "camera_devices_empty": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "未发现相机。请打开相机的智能手机连接。",
+      "types": []
+    },
+    "camera_connection_help": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "如何连接",
+      "types": []
+    },
+    "camera_connect_wait": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在结束上次连接…",
+      "types": []
+    },
+    "camera_param_shutter": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "快门",
+      "types": []
+    },
+    "camera_param_aperture": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "光圈",
+      "types": []
+    },
+    "camera_param_iso": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "ISO",
+      "types": []
+    },
+    "camera_param_ev": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "曝光补偿",
+      "types": []
+    },
+    "camera_param_wb": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "白平衡",
+      "types": []
+    },
+    "camera_param_focus": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "对焦模式",
+      "types": []
+    },
+    "camera_param_temperature": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "色温",
+      "types": []
+    },
+    "camera_shooting_parameters": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "拍摄参数",
+      "types": []
+    },
+    "camera_param_readonly": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "当前拍摄模式下不可调整",
+      "types": []
+    },
+    "camera_param_unavailable": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "相机未提供可调整选项",
+      "types": []
+    },
+    "camera_param_busy": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在更新相机设置…",
+      "types": []
+    },
+    "camera_param_failed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "相机未接受设置，请检查当前值后重试。",
+      "types": []
+    },
+    "camera_param_unknown": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "设置结果未确认，请重新连接后检查。",
+      "types": []
+    },
+    "camera_mode": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "拍摄模式",
+      "types": []
+    },
+    "camera_auto": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "自动",
+      "types": []
+    },
+    "camera_manual": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "手动",
+      "types": []
+    },
+    "camera_wb_sunny": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "日光",
+      "types": []
+    },
+    "camera_wb_cloudy": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "阴天",
+      "types": []
+    },
+    "camera_wb_shade": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "阴影",
+      "types": []
+    },
+    "camera_wb_tungsten": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "白炽灯",
+      "types": []
+    },
+    "camera_wb_flash": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "闪光灯",
+      "types": []
+    },
+    "camera_wb_fluorescent": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "荧光灯",
+      "types": []
+    },
+    "camera_wb_custom": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "自定义 {0}",
+      "types": [
+        "s"
+      ]
+    },
+    "camera_setting_on_body": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "请在相机上调整。",
+      "types": []
+    },
+    "camera_cancel_selection": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "取消选择",
+      "types": []
+    },
+    "camera_select_all": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "全选。",
+      "types": []
+    },
+    "look_search_close": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "收起搜索",
+      "types": []
+    },
+    "lens_metadata_edit": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "补充镜头信息",
+      "types": []
+    },
+    "lens_focal_input": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "焦距（mm）",
+      "types": []
+    },
+    "lens_crop_input": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "相机裁切系数",
+      "types": []
+    },
+    "lens_metadata_hint": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "留空时使用照片元数据或相机数据库。",
+      "types": []
+    },
+    "lens_jpeg_hint": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "JPEG 可能已有机内校正；请对比画面后再开启。",
+      "types": []
+    },
+    "camera_guide_prepare_title": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "连接前准备",
+      "types": []
+    },
+    "camera_guide_prepare": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "保持相机开机，在机身菜单打开智能手机连接。菜单名称以你的机型为准。关闭占用相机连接的其他应用。",
+      "types": []
+    },
+    "camera_guide_bluetooth_title": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "使用蓝牙配对",
+      "types": []
+    },
+    "camera_guide_bluetooth": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "在连接页查找并选择相机，按手机和相机提示完成配对，再允许系统加入相机 Wi-Fi。蓝牙配对成功不等于照片连接已经建立。",
+      "types": []
+    },
+    "camera_guide_manual_title": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "手动连接 Wi-Fi",
+      "types": []
+    },
+    "camera_guide_manual": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "如果相机显示 SSID 和密码，打开手动连接页并填写；也可先在系统 Wi-Fi 设置中加入该网络，再返回点击“已连接，继续”。",
+      "types": []
+    },
+    "camera_guide_tether_title": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "联机拍摄设置",
+      "types": []
+    },
+    "camera_guide_tether": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "在相机上选择单张拍摄，并将原件同时保留在存储卡。手机收到的取景图和缩略图不是原件保存成功的凭据。",
+      "types": []
+    },
+    "camera_guide_troubleshoot_title": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "连接遇到问题",
+      "types": []
+    },
+    "camera_guide_troubleshoot": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "搜索不到时，检查蓝牙权限和机身等待连接画面。Wi-Fi 无互联网是正常情况，请保持连接。",
+      "types": []
+    },
+    "camera_guide_compatibility": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "部分功能不可用时，检查相机模式。已验证型号仅作参考，其他 Sony 相机也可以尝试连接。",
+      "types": []
+    },
+    "camera_live_unavailable": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "相机未提供实时取景，其他可用功能仍可使用。",
+      "types": []
+    },
+    "camera_resume_registered": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "已恢复已登记的接收任务。断线期间拍摄的照片请从相机手动导入。",
+      "types": []
+    },
+    "curve_edit_point": {
+      "formats": [],
+      "source": "编辑控制点",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "camera_tether_header": {
+      "source": "{0} · 联机",
+      "file": "strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "types": [
+        "s"
+      ]
+    },
+    "camera_param_readonly_short": {
+      "source": "只读",
+      "file": "strings.xml",
+      "formats": [],
+      "types": []
+    },
+    "camera_connected_receiving": {
+      "source": "已连接 · 自动接收原件",
+      "file": "strings.xml",
+      "formats": [],
+      "types": []
+    },
+    "zoom_restore_hint": {
+      "source": "放大 · 点按还原",
+      "file": "editor_strings.xml",
+      "formats": [],
+      "types": []
+    },
+    "geometry_rotation_tool": {
+      "source": "旋转",
+      "file": "editor_strings.xml",
+      "formats": [],
+      "types": []
+    },
+    "lens_vignetting": {
+      "formats": [],
+      "source": "暗角校正",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "lens_vignetting_unavailable": {
+      "formats": [],
+      "source": "暗角标定或光圈信息不可用",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "camera_connect_import": {
+      "formats": [],
+      "source": "连接相机以导入",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "camera_connect_tether": {
+      "formats": [],
+      "source": "连接相机以拍摄",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "camera_previous_disconnected": {
+      "formats": [],
+      "source": "上次使用的相机 · 未连接",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "camera_choose_connection": {
+      "formats": [],
+      "source": "选择连接方式",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "camera_guide_unverified_title": {
+      "formats": [],
+      "source": "未验证的机型也可以连接",
+      "file": "editor_strings.xml",
+      "types": []
+    },
+    "camera_guide_intro": {
+      "formats": [],
+      "source": "相机菜单会随型号和固件变化，请按机身提供的手机连接方式操作。",
+      "file": "editor_strings.xml",
+      "types": []
     }
   },
   "overrides": {
@@ -5930,14 +6604,6 @@
       "fr": "Le fichier source de la tâche est indisponible. Créez à nouveau la tâche par lot.",
       "ja": "タスクのソースファイルを利用できません。バッチタスクを作り直してください。",
       "zh-Hans": "任务来源文件不可用，请重新创建批量任务。"
-    },
-    "保存位置": {
-      "de": "Speicherort",
-      "en": "Save location",
-      "es": "Ubicación de guardado",
-      "fr": "Emplacement",
-      "ja": "保存先",
-      "zh-Hans": "保存位置"
     },
     "保存到文件": {
       "de": "In Datei speichern",
@@ -6723,14 +7389,6 @@
       "ja": "写真または調整が変更されたため、読み込んだカメラプロファイルは適用されませんでした。もう一度お試しください。",
       "zh-Hans": "照片或调整已更改，未应用导入的相机配置。请重试。"
     },
-    "从相机导入": {
-      "de": "Von Kamera importieren",
-      "en": "Import from Camera",
-      "es": "Importar desde la cámara",
-      "fr": "Importer depuis l’appareil photo",
-      "ja": "カメラから読み込む",
-      "zh-Hans": "从相机导入"
-    },
     "先在相机打开「网络 → 连接/电脑遥控 → 智能手机连接」。首次连接需要核对配对数字，并允许连接相机 Wi-Fi。": {
       "de": "Öffnen Sie zuerst an der Kamera „Netzwerk → Verbindung/PC-Fernbedienung → Smartphone-Verbindung“. Bei der ersten Verbindung müssen Sie die Kopplungsnummern vergleichen und die Verbindung mit dem Kamera-WLAN erlauben.",
       "en": "On the camera, open “Network → Connection/Computer Remote → Smartphone connection” first. The first connection requires you to verify the pairing numbers and allow connection to the camera’s Wi-Fi.",
@@ -6738,78 +7396,6 @@
       "fr": "Sur l’appareil photo, ouvrez d’abord « Réseau → Connexion/Télécommande PC → Connexion smartphone ». La première connexion nécessite de vérifier les numéros d’association et d’autoriser la connexion au Wi-Fi de l’appareil.",
       "ja": "カメラでまず「ネットワーク → 接続／PCリモート → スマートフォン接続」を開いてください。初回接続ではペアリング番号を確認し、カメラの Wi-Fi への接続を許可します。",
       "zh-Hans": "先在相机打开「网络 → 连接/电脑遥控 → 智能手机连接」。首次连接需要核对配对数字，并允许连接相机 Wi-Fi。"
-    },
-    "当前支持 Sony α7C II（固件 2.00），需要 Android 10 或更高版本。": {
-      "de": "Derzeit wird die Sony α7C II (Firmware 2.00) unterstützt; Android 10 oder höher ist erforderlich.",
-      "en": "Currently supports Sony α7C II (firmware 2.00); Android 10 or later is required.",
-      "es": "Actualmente compatible con Sony α7C II (firmware 2.00); se requiere Android 10 o posterior.",
-      "fr": "Compatible actuellement avec le Sony α7C II (firmware 2.00) ; Android 10 ou version ultérieure est requis.",
-      "ja": "現在は Sony α7C II（ファームウェア 2.00）に対応しています。Android 10 以降が必要です。",
-      "zh-Hans": "当前支持 Sony α7C II（固件 2.00），需要 Android 10 或更高版本。"
-    },
-    "查找相机": {
-      "de": "Kamera suchen",
-      "en": "Find camera",
-      "es": "Buscar cámara",
-      "fr": "Rechercher un appareil photo",
-      "ja": "カメラを検索",
-      "zh-Hans": "查找相机"
-    },
-    "导入记录": {
-      "de": "Importverlauf",
-      "en": "Import history",
-      "es": "Historial de importación",
-      "fr": "Historique des importations",
-      "ja": "読み込み履歴",
-      "zh-Hans": "导入记录"
-    },
-    "断开连接": {
-      "de": "Verbindung trennen",
-      "en": "Disconnect",
-      "es": "Desconectar",
-      "fr": "Déconnecter",
-      "ja": "接続を解除",
-      "zh-Hans": "断开连接"
-    },
-    "正在查找相机…": {
-      "de": "Kamera wird gesucht …",
-      "en": "Searching for camera…",
-      "es": "Buscando cámara…",
-      "fr": "Recherche de l’appareil photo…",
-      "ja": "カメラを検索中…",
-      "zh-Hans": "正在查找相机…"
-    },
-    "请核对手机和相机的配对数字": {
-      "de": "Prüfen Sie die Kopplungsnummer auf dem Smartphone und der Kamera",
-      "en": "Check the pairing number on your phone and camera",
-      "es": "Comprueba el número de emparejamiento en el teléfono y la cámara",
-      "fr": "Vérifiez le numéro d’association sur le téléphone et l’appareil photo",
-      "ja": "スマートフォンとカメラのペアリング番号を確認してください",
-      "zh-Hans": "请核对手机和相机的配对数字"
-    },
-    "正在连接相机…": {
-      "de": "Verbindung zur Kamera wird hergestellt …",
-      "en": "Connecting to camera…",
-      "es": "Conectando con la cámara…",
-      "fr": "Connexion à l’appareil photo…",
-      "ja": "カメラに接続中…",
-      "zh-Hans": "正在连接相机…"
-    },
-    "正在开启相机 Wi-Fi…": {
-      "de": "Kamera-WLAN wird aktiviert …",
-      "en": "Starting camera Wi-Fi…",
-      "es": "Activando la red Wi-Fi de la cámara…",
-      "fr": "Activation du Wi-Fi de l’appareil photo…",
-      "ja": "カメラの Wi-Fi を起動中…",
-      "zh-Hans": "正在开启相机 Wi-Fi…"
-    },
-    "请允许系统连接相机 Wi-Fi": {
-      "de": "Erlauben Sie dem System, eine Verbindung mit dem Kamera-WLAN herzustellen",
-      "en": "Allow the system to connect to the camera’s Wi-Fi",
-      "es": "Permite que el sistema se conecte a la red Wi-Fi de la cámara",
-      "fr": "Autorisez le système à se connecter au Wi-Fi de l’appareil photo",
-      "ja": "システムによるカメラの Wi-Fi への接続を許可してください",
-      "zh-Hans": "请允许系统连接相机 Wi-Fi"
     },
     "正在读取相机照片…": {
       "de": "Fotos von der Kamera werden gelesen …",
@@ -6835,14 +7421,6 @@
       "ja": "位置情報と付近のデバイスの権限を許可してから、カメラを検索してください。",
       "zh-Hans": "请允许位置和附近设备权限，再查找相机。"
     },
-    "请打开手机蓝牙后重试。": {
-      "de": "Schalten Sie Bluetooth am Smartphone ein und versuchen Sie es erneut.",
-      "en": "Turn on Bluetooth on your phone and try again.",
-      "es": "Activa el Bluetooth del teléfono y vuelve a intentarlo.",
-      "fr": "Activez le Bluetooth du téléphone, puis réessayez.",
-      "ja": "スマートフォンの Bluetooth をオンにして、もう一度お試しください。",
-      "zh-Hans": "请打开手机蓝牙后重试。"
-    },
     "请打开系统位置服务后重试。": {
       "de": "Aktivieren Sie die Standortdienste in den Systemeinstellungen und versuchen Sie es erneut.",
       "en": "Turn on location services in system settings and try again.",
@@ -6850,30 +7428,6 @@
       "fr": "Activez les services de localisation dans les réglages système, puis réessayez.",
       "ja": "システム設定で位置情報サービスをオンにして、もう一度お試しください。",
       "zh-Hans": "请打开系统位置服务后重试。"
-    },
-    "没有找到相机。请保持相机处于等待连接画面。": {
-      "de": "Keine Kamera gefunden. Lassen Sie die Kamera im Bildschirm zum Warten auf eine Verbindung.",
-      "en": "No camera found. Keep the camera on its connection-waiting screen.",
-      "es": "No se ha encontrado ninguna cámara. Mantén la cámara en la pantalla de espera de conexión.",
-      "fr": "Aucun appareil photo trouvé. Laissez l’appareil sur l’écran d’attente de connexion.",
-      "ja": "カメラが見つかりません。カメラを接続待機画面にしたままにしてください。",
-      "zh-Hans": "没有找到相机。请保持相机处于等待连接画面。"
-    },
-    "连接未完成。请保持相机唤醒，重新查找并连接。": {
-      "de": "Die Verbindung wurde nicht abgeschlossen. Lassen Sie die Kamera aktiv und suchen Sie erneut nach ihr, um eine Verbindung herzustellen.",
-      "en": "Connection did not complete. Keep the camera awake, then search and connect again.",
-      "es": "La conexión no se completó. Mantén la cámara activa y vuelve a buscarla y conectarla.",
-      "fr": "La connexion n’est pas terminée. Gardez l’appareil photo actif, puis recherchez-le et reconnectez-le.",
-      "ja": "接続を完了できませんでした。カメラを起動したまま、もう一度検索して接続してください。",
-      "zh-Hans": "连接未完成。请保持相机唤醒，重新查找并连接。"
-    },
-    "相机连接已断开。已保存的照片仍可查看。": {
-      "de": "Die Kamera wurde getrennt. Gespeicherte Fotos können weiterhin angezeigt werden.",
-      "en": "The camera was disconnected. Saved photos are still available.",
-      "es": "La cámara se ha desconectado. Las fotos guardadas siguen disponibles.",
-      "fr": "L’appareil photo est déconnecté. Les photos enregistrées restent disponibles.",
-      "ja": "カメラとの接続が切れました。保存済みの写真は引き続き表示できます。",
-      "zh-Hans": "相机连接已断开。已保存的照片仍可查看。"
     },
     "导入未完成。已保存照片已保留，请重新连接后继续。": {
       "de": "Der Import wurde nicht abgeschlossen. Gespeicherte Fotos bleiben erhalten. Verbinden Sie die Kamera erneut und versuchen Sie es wieder.",
@@ -6891,70 +7445,6 @@
       "ja": "カメラの写真が変更されたか、別のカメラのものです。もう一度選択してください。",
       "zh-Hans": "相机上的照片已变化或不属于这台相机，请重新挑选。"
     },
-    "无法保存导入记录或原件。请检查可用空间后重试。": {
-      "de": "Der Importverlauf oder die Originaldateien konnten nicht gespeichert werden. Prüfen Sie den verfügbaren Speicher und versuchen Sie es erneut.",
-      "en": "Unable to save the import record or original files. Check available storage and try again.",
-      "es": "No se puede guardar el registro de importación o los archivos originales. Comprueba el espacio disponible e inténtalo de nuevo.",
-      "fr": "Impossible d’enregistrer l’historique d’importation ou les fichiers originaux. Vérifiez l’espace disponible et réessayez.",
-      "ja": "読み込み記録または元のファイルを保存できません。空き容量を確認して、もう一度お試しください。",
-      "zh-Hans": "无法保存导入记录或原件。请检查可用空间后重试。"
-    },
-    "已保存的原件缺失或已改变，无法打开。": {
-      "de": "Das gespeicherte Original fehlt oder wurde geändert und kann nicht geöffnet werden.",
-      "en": "The saved original is missing or has changed and cannot be opened.",
-      "es": "Falta el original guardado o ha cambiado; no se puede abrir.",
-      "fr": "L’original enregistré est introuvable ou a changé et ne peut pas être ouvert.",
-      "ja": "保存済みの元ファイルが見つからないか変更されているため、開けません。",
-      "zh-Hans": "已保存的原件缺失或已改变，无法打开。"
-    },
-    "预览不可用": {
-      "de": "Vorschau nicht verfügbar",
-      "en": "Preview unavailable",
-      "es": "Vista previa no disponible",
-      "fr": "Aperçu indisponible",
-      "ja": "プレビューを利用できません",
-      "zh-Hans": "预览不可用"
-    },
-    "相机中没有可导入的 RAW 或 JPEG 照片。": {
-      "de": "Auf der Kamera sind keine importierbaren RAW- oder JPEG-Fotos.",
-      "en": "The camera has no RAW or JPEG photos to import.",
-      "es": "La cámara no contiene fotos RAW o JPEG que se puedan importar.",
-      "fr": "L’appareil photo ne contient aucune photo RAW ou JPEG à importer.",
-      "ja": "カメラに読み込める RAW または JPEG 写真がありません。",
-      "zh-Hans": "相机中没有可导入的 RAW 或 JPEG 照片。"
-    },
-    "没有符合筛选条件的照片。": {
-      "de": "Keine Fotos entsprechen dem aktuellen Filter.",
-      "en": "No photos match the current filter.",
-      "es": "Ninguna foto coincide con el filtro actual.",
-      "fr": "Aucune photo ne correspond au filtre actuel.",
-      "ja": "現在のフィルターに一致する写真はありません。",
-      "zh-Hans": "没有符合筛选条件的照片。"
-    },
-    "照片格式": {
-      "de": "Fotoformat",
-      "en": "Photo format",
-      "es": "Formato de foto",
-      "fr": "Format photo",
-      "ja": "写真形式",
-      "zh-Hans": "照片格式"
-    },
-    "全部日期": {
-      "de": "Alle Datumsangaben",
-      "en": "All dates",
-      "es": "Todas las fechas",
-      "fr": "Toutes les dates",
-      "ja": "すべての日付",
-      "zh-Hans": "全部日期"
-    },
-    "查看已选": {
-      "de": "Ausgewählte anzeigen",
-      "en": "View selected",
-      "es": "Ver seleccionadas",
-      "fr": "Voir la sélection",
-      "ja": "選択項目を表示",
-      "zh-Hans": "查看已选"
-    },
     "已选 {0} 张 · {1}": {
       "de": "{0} ausgewählt · {1}",
       "en": "{0} selected · {1}",
@@ -6971,14 +7461,6 @@
       "ja": "{0} 枚を読み込む",
       "zh-Hans": "导入 {0} 张"
     },
-    "已导入": {
-      "de": "Importiert",
-      "en": "Imported",
-      "es": "Importada",
-      "fr": "Importée",
-      "ja": "読み込み済み",
-      "zh-Hans": "已导入"
-    },
     "已在本机": {
       "de": "Bereits auf diesem Gerät",
       "en": "Already on this device",
@@ -6986,14 +7468,6 @@
       "fr": "Déjà sur cet appareil",
       "ja": "この端末に保存済み",
       "zh-Hans": "已在本机"
-    },
-    "放大预览": {
-      "de": "Vergrößerte Vorschau",
-      "en": "Zoom preview",
-      "es": "Vista previa ampliada",
-      "fr": "Aperçu agrandi",
-      "ja": "拡大プレビュー",
-      "zh-Hans": "放大预览"
     },
     "选中": {
       "de": "Auswählen",
@@ -7035,38 +7509,6 @@
       "ja": "読み込みの進捗",
       "zh-Hans": "导入进度"
     },
-    "导入时请保持 RawLab 在前台。": {
-      "de": "Lassen Sie RawLab während des Imports im Vordergrund.",
-      "en": "Keep RawLab in the foreground during import.",
-      "es": "Mantén RawLab en primer plano durante la importación.",
-      "fr": "Gardez RawLab au premier plan pendant l’importation.",
-      "ja": "読み込み中は RawLab を前面に表示してください。",
-      "zh-Hans": "导入时请保持 RawLab 在前台。"
-    },
-    "停止导入": {
-      "de": "Import stoppen",
-      "en": "Stop import",
-      "es": "Detener la importación",
-      "fr": "Arrêter l’importation",
-      "ja": "読み込みを停止",
-      "zh-Hans": "停止导入"
-    },
-    "继续未完成": {
-      "de": "Unvollständige fortsetzen",
-      "en": "Continue unfinished",
-      "es": "Continuar pendientes",
-      "fr": "Reprendre les éléments restants",
-      "ja": "未完了分を続行",
-      "zh-Hans": "继续未完成"
-    },
-    "打开编辑": {
-      "de": "Im Editor öffnen",
-      "en": "Open in editor",
-      "es": "Abrir en el editor",
-      "fr": "Ouvrir dans l’éditeur",
-      "ja": "エディターで開く",
-      "zh-Hans": "打开编辑"
-    },
     "已保存 {0} / {1} 张": {
       "de": "{0} / {1} Fotos gespeichert",
       "en": "Saved {0} / {1} photos",
@@ -7083,14 +7525,6 @@
       "ja": "{0} を読み込み中",
       "zh-Hans": "正在导入 {0}"
     },
-    "上次导入未完成": {
-      "de": "Der letzte Import wurde nicht abgeschlossen",
-      "en": "The last import did not finish",
-      "es": "La última importación no se completó",
-      "fr": "La dernière importation n’est pas terminée",
-      "ja": "前回の読み込みは完了していません",
-      "zh-Hans": "上次导入未完成"
-    },
     "导入完成": {
       "de": "Import abgeschlossen",
       "en": "Import complete",
@@ -7098,14 +7532,6 @@
       "fr": "Importation terminée",
       "ja": "読み込み完了",
       "zh-Hans": "导入完成"
-    },
-    "还没有导入记录": {
-      "de": "Noch kein Importverlauf",
-      "en": "No import history yet",
-      "es": "Aún no hay historial de importación",
-      "fr": "Aucun historique d’importation pour le moment",
-      "ja": "読み込み履歴はまだありません",
-      "zh-Hans": "还没有导入记录"
     },
     "查看导入任务": {
       "de": "Importaufgabe anzeigen",
@@ -7139,14 +7565,6 @@
       "ja": "{0} 枚の写真を表示",
       "zh-Hans": "显示 {0} 张照片"
     },
-    "筛选照片": {
-      "de": "Fotos filtern",
-      "en": "Filter photos",
-      "es": "Filtrar fotos",
-      "fr": "Filtrer les photos",
-      "ja": "写真を絞り込む",
-      "zh-Hans": "筛选照片"
-    },
     "查看已导入": {
       "de": "Importierte anzeigen",
       "en": "View imported",
@@ -7154,22 +7572,6 @@
       "fr": "Voir les photos importées",
       "ja": "読み込み済みを表示",
       "zh-Hans": "查看已导入"
-    },
-    "包含筛选范围外的已选照片": {
-      "de": "Enthält ausgewählte Fotos außerhalb des Filters",
-      "en": "Includes selected photos outside the filter",
-      "es": "Incluye fotos seleccionadas fuera del filtro",
-      "fr": "Contient des photos sélectionnées hors du filtre",
-      "ja": "フィルター範囲外で選択した写真を含む",
-      "zh-Hans": "包含筛选范围外的已选照片"
-    },
-    "相机中的原照片会保留。": {
-      "de": "Die Originalfotos auf der Kamera bleiben erhalten.",
-      "en": "Original photos on the camera will be kept.",
-      "es": "Las fotos originales de la cámara se conservarán.",
-      "fr": "Les photos originales de l’appareil seront conservées.",
-      "ja": "カメラ内の元の写真は保持されます。",
-      "zh-Hans": "相机中的原照片会保留。"
     },
     "正在加载…": {
       "de": "Wird geladen …",
@@ -7186,22 +7588,6 @@
       "fr": "Une tâche d’importation est toujours en cours",
       "ja": "読み込みタスクがまだ実行中です",
       "zh-Hans": "导入任务仍在进行"
-    },
-    "取消连接": {
-      "de": "Verbindung abbrechen",
-      "en": "Cancel connection",
-      "es": "Cancelar conexión",
-      "fr": "Annuler la connexion",
-      "ja": "接続をキャンセル",
-      "zh-Hans": "取消连接"
-    },
-    "相机照片保存位置": {
-      "de": "Speicherort für Kamerafotos",
-      "en": "Camera photo save location",
-      "es": "Ubicación de guardado de las fotos de la cámara",
-      "fr": "Emplacement d’enregistrement des photos de l’appareil photo",
-      "ja": "カメラ写真の保存先",
-      "zh-Hans": "相机照片保存位置"
     },
     "目录": {
       "de": "Ordner",
@@ -7355,14 +7741,6 @@
       "ja": "保存先：{0}",
       "zh-Hans": "保存到：{0}"
     },
-    "原片不可用": {
-      "de": "Originale nicht verfügbar",
-      "en": "Originals unavailable",
-      "es": "Originales no disponibles",
-      "fr": "Originaux indisponibles",
-      "ja": "元の写真を利用できません",
-      "zh-Hans": "原片不可用"
-    },
     "原片无法访问": {
       "de": "Original nicht verfügbar",
       "en": "Original unavailable",
@@ -7394,6 +7772,190 @@
       "es": "Estado de edición no disponible",
       "ja": "編集状態を読み込めません",
       "zh-Hans": "无法读取编辑状态"
+    },
+    "连接 ZV-E10": {
+      "de": "ZV-E10 verbinden",
+      "en": "Connect ZV-E10",
+      "es": "Conectar ZV-E10",
+      "fr": "Connecter le ZV-E10",
+      "ja": "ZV-E10 に接続",
+      "zh-Hans": "连接 ZV-E10"
+    },
+    "打开 Wi-Fi 设置": {
+      "de": "WLAN-Einstellungen öffnen",
+      "en": "Open Wi-Fi settings",
+      "es": "Abrir ajustes Wi-Fi",
+      "fr": "Ouvrir les réglages Wi-Fi",
+      "ja": "Wi-Fi 設定を開く",
+      "zh-Hans": "打开 Wi-Fi 设置"
+    },
+    "在手机上取景、单拍，自动保存相机卡内的 RAW 和 JPEG 原件。": {
+      "zh-Hans": "在手机上取景、单拍，自动保存相机卡内的 RAW 和 JPEG 原件。",
+      "en": "Frame and capture single photos from your phone; the original RAW and JPEG files on the camera card are saved automatically.",
+      "de": "Auf dem Smartphone den Bildausschnitt wählen, einzelne Fotos aufnehmen und die originalen RAW- und JPEG-Dateien von der Speicherkarte automatisch speichern.",
+      "es": "Encuadra y toma fotos individuales desde el teléfono; los originales RAW y JPEG de la tarjeta de la cámara se guardan automáticamente.",
+      "fr": "Cadrez et prenez des photos individuelles depuis votre téléphone ; les originaux RAW et JPEG de la carte de l’appareil sont automatiquement enregistrés.",
+      "ja": "スマートフォンで構図を確認して1枚ずつ撮影し、カメラカード内のRAWとJPEGのオリジナルを自動保存します。"
+    },
+    "可以拍摄": {
+      "zh-Hans": "可以拍摄",
+      "en": "Ready to shoot",
+      "de": "Aufnahmebereit",
+      "es": "Listo para disparar",
+      "fr": "Prêt à prendre des photos",
+      "ja": "撮影できます"
+    },
+    "最近照片": {
+      "zh-Hans": "最近照片",
+      "en": "Recent photos",
+      "de": "Letzte Fotos",
+      "es": "Fotos recientes",
+      "fr": "Photos récentes",
+      "ja": "最近の写真"
+    },
+    "暂时无法显示预览": {
+      "zh-Hans": "暂时无法显示预览",
+      "en": "Preview temporarily unavailable",
+      "de": "Vorschau vorübergehend nicht verfügbar",
+      "es": "La vista previa no está disponible temporalmente",
+      "fr": "Aperçu temporairement indisponible",
+      "ja": "プレビューを一時的に表示できません"
+    },
+    "相机卡中的照片发生变化。请重新开始联机；已保存原件仍保留。": {
+      "zh-Hans": "相机卡中的照片发生变化。请重新开始联机；已保存原件仍保留。",
+      "en": "Photos on the camera card have changed. Start tethering again; saved originals are kept.",
+      "de": "Die Fotos auf der Speicherkarte der Kamera wurden geändert. Starten Sie die Tether-Aufnahme neu; bereits gespeicherte Originale bleiben erhalten.",
+      "es": "Las fotos de la tarjeta de la cámara han cambiado. Inicia de nuevo el disparo conectado; los originales guardados se conservarán.",
+      "fr": "Les photos de la carte de l’appareil ont changé. Recommencez la prise de vue connectée ; les originaux déjà enregistrés sont conservés.",
+      "ja": "カメラカード内の写真が変更されています。テザー撮影を新しく開始してください。保存済みのオリジナルは残ります。"
+    },
+    "待接收照片较多，已暂停拍摄。重新连接后继续接收。": {
+      "zh-Hans": "待接收照片较多，已暂停拍摄。重新连接后继续接收。",
+      "en": "There are too many photos waiting to be received, so shooting has been paused. Reconnect to continue receiving.",
+      "de": "Es warten zu viele Fotos auf den Empfang. Die Aufnahme wurde pausiert. Verbinden Sie sich erneut, um den Empfang fortzusetzen.",
+      "es": "Hay demasiadas fotos pendientes de recibir, así que se ha pausado el disparo. Vuelve a conectar para continuar recibiéndolas.",
+      "fr": "Trop de photos sont en attente de réception ; la prise de vue a été mise en pause. Reconnectez-vous pour reprendre la réception.",
+      "ja": "受信待ちの写真が多いため、撮影を一時停止しました。再接続すると受信を続行します。"
+    },
+    "实时取景已中断，请重新连接。": {
+      "zh-Hans": "实时取景已中断，请重新连接。",
+      "en": "Live view was interrupted. Reconnect.",
+      "de": "Das Livebild wurde unterbrochen. Verbinden Sie sich erneut.",
+      "es": "La vista en directo se ha interrumpido. Vuelve a conectar.",
+      "fr": "La visée en direct a été interrompue. Reconnectez-vous.",
+      "ja": "ライブビューが中断されました。再接続してください。"
+    },
+    "离开此页面会暂停联机，已保存照片不受影响。": {
+      "zh-Hans": "离开此页面会暂停联机，已保存照片不受影响。",
+      "en": "Leaving this page will pause tethering. Saved photos are not affected.",
+      "de": "Wenn Sie diese Seite verlassen, wird die Tether-Aufnahme pausiert. Bereits gespeicherte Fotos bleiben erhalten.",
+      "es": "Si sales de esta página, se pausará el disparo conectado. Las fotos guardadas no se verán afectadas.",
+      "fr": "Quitter cette page mettra la prise de vue connectée en pause. Les photos déjà enregistrées ne sont pas affectées.",
+      "ja": "このページを離れるとテザー撮影を一時停止します。保存済みの写真には影響しません。"
+    },
+    "{0} / {1}": {
+      "zh-Hans": "{0} / {1}",
+      "en": "{0} / {1}",
+      "de": "{0} / {1}",
+      "es": "{0} / {1}",
+      "fr": "{0} / {1}",
+      "ja": "{0} / {1}"
+    },
+    "此相机或固件尚不支持联机拍摄。": {
+      "zh-Hans": "此相机或固件尚不支持联机拍摄。",
+      "en": "Tethered shooting is not supported for this camera or firmware.",
+      "de": "Tether-Aufnahmen werden für diese Kamera oder Firmware nicht unterstützt.",
+      "es": "Esta cámara o firmware no admite el disparo conectado.",
+      "fr": "La prise de vue connectée n’est pas prise en charge pour cet appareil ou ce micrologiciel.",
+      "ja": "このカメラまたはファームウェアはテザー撮影に対応していません。"
+    },
+    "连接相机": {
+      "zh-Hans": "连接相机",
+      "en": "Connect camera",
+      "de": "Kamera verbinden",
+      "es": "Conectar cámara",
+      "fr": "Connecter l’appareil photo",
+      "ja": "カメラに接続"
+    },
+    "恢复 {0} 的联机": {
+      "zh-Hans": "恢复 {0} 的联机",
+      "en": "Resume tethering with {0}",
+      "de": "Tethering mit {0} fortsetzen",
+      "es": "Reanudar el disparo conectado de {0}",
+      "fr": "Reprendre le mode connecté de {0}",
+      "ja": "{0}のテザー撮影を再開"
+    },
+    "正在结束上次连接…": {
+      "zh-Hans": "正在结束上次连接…",
+      "en": "Finishing previous connection…",
+      "de": "Vorherige Verbindung wird beendet …",
+      "es": "Finalizando la conexión anterior…",
+      "fr": "Finalisation de la connexion précédente…",
+      "ja": "前回の接続を終了中…"
+    },
+    "相机未接受设置，请检查当前值后重试。": {
+      "zh-Hans": "相机未接受设置，请检查当前值后重试。",
+      "en": "The camera did not accept the setting. Check the current value and try again.",
+      "de": "Die Kamera hat die Einstellung nicht übernommen. Prüfen Sie den aktuellen Wert und versuchen Sie es erneut.",
+      "es": "La cámara no aceptó el ajuste. Comprueba el valor actual y vuelve a intentarlo.",
+      "fr": "L’appareil photo n’a pas accepté le réglage. Vérifiez la valeur actuelle, puis réessayez.",
+      "ja": "カメラが設定を受け付けませんでした。現在の値を確認して、もう一度お試しください。"
+    },
+    "拍摄模式": {
+      "zh-Hans": "拍摄模式",
+      "en": "Shooting mode",
+      "de": "Aufnahmemodus",
+      "es": "Modo de disparo",
+      "fr": "Mode de prise de vue",
+      "ja": "撮影モード"
+    },
+    "荧光灯": {
+      "zh-Hans": "荧光灯",
+      "en": "Fluorescent",
+      "de": "Leuchtstofflampe",
+      "es": "Fluorescente",
+      "fr": "Fluorescent",
+      "ja": "蛍光灯"
+    },
+    "自定义 {0}": {
+      "zh-Hans": "自定义 {0}",
+      "en": "Custom {0}",
+      "de": "Benutzerdefiniert {0}",
+      "es": "Personalizado {0}",
+      "fr": "Personnalisé {0}",
+      "ja": "カスタム {0}"
+    },
+    "请在相机上调整。": {
+      "zh-Hans": "请在相机上调整。",
+      "en": "Adjust on the camera.",
+      "de": "An der Kamera einstellen.",
+      "es": "Ajústalo en la cámara.",
+      "fr": "Réglez sur l’appareil photo.",
+      "ja": "カメラ本体で調整してください。"
+    },
+    "取消选择": {
+      "zh-Hans": "取消选择",
+      "en": "Cancel selection",
+      "de": "Auswahl aufheben",
+      "es": "Cancelar selección",
+      "fr": "Annuler la sélection",
+      "ja": "選択を解除"
+    },
+    "全选。": {
+      "zh-Hans": "全选。",
+      "en": "Select all",
+      "de": "Alle auswählen",
+      "es": "Seleccionar todo",
+      "fr": "Tout sélectionner",
+      "ja": "すべて選択"
+    },
+    "收起搜索": {
+      "zh-Hans": "收起搜索",
+      "en": "Close search",
+      "de": "Suche schließen",
+      "es": "Cerrar búsqueda",
+      "fr": "Fermer la recherche",
+      "ja": "検索を閉じる"
     }
   }
 }

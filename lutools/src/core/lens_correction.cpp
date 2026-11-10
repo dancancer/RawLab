@@ -29,11 +29,13 @@ struct LensCorrectionDatabase::Impl {
         return key.str();
     }
 
-    static LensProfile profile(const lfLens* lens, float focal, bool match) {
+    static LensProfile profile(const lfLens* lens, float focal, float aperture, bool match) {
         lfLensCalibDistortion distortion{};
         lfLensCalibTCA tca{};
+        lfLensCalibVignetting vignetting{};
         return {id(lens), lens->Maker ? lens->Maker : "", lens->Model ? lens->Model : "",
-            lens->InterpolateDistortion(focal, distortion), lens->InterpolateTCA(focal, tca), match};
+            lens->InterpolateDistortion(focal, distortion), lens->InterpolateTCA(focal, tca), match,
+            std::isfinite(aperture) && aperture > 0 && lens->InterpolateVignetting(focal, aperture, 1000, vignetting)};
     }
 
     std::vector<const lfLens*> matches(const LensMetadata& metadata, const lfCamera* camera) const {
@@ -68,7 +70,7 @@ struct LensCorrectionDatabase::Impl {
             }
         }
         if (!selected) { report.state = LensCorrectionState::NoLens; return nullptr; }
-        report.profile = profile(selected, metadata.focalLength, true);
+        report.profile = profile(selected, metadata.focalLength, metadata.aperture, true);
         report.state = LensCorrectionState::Matched;
         return selected;
     }
@@ -129,7 +131,7 @@ std::vector<LensProfile> LensCorrectionDatabase::profiles(const LensMetadata& me
     const lfLens** compatible = body ? impl_->database.FindLenses(body, nullptr, nullptr) : nullptr;
     const lfLens* const* lenses = body ? compatible : impl_->database.GetLenses();
     if (lenses) for (int i = 0; lenses[i]; ++i)
-        result.push_back(Impl::profile(lenses[i], metadata.focalLength,
+        result.push_back(Impl::profile(lenses[i], metadata.focalLength, metadata.aperture,
             std::find(matched.begin(), matched.end(), lenses[i]) != matched.end()));
     lf_free(compatible);
     std::sort(result.begin(), result.end(), [](const LensProfile& a, const LensProfile& b) {
@@ -153,7 +155,8 @@ LensCorrectionReport LensCorrectionDatabase::inspect(const LensMetadata& metadat
         return report;
     }
     if (impl_->resolve(metadata, options, report) &&
-        !(options.distortion && report.profile.hasDistortion) && !(options.tca && report.profile.hasTCA))
+        !(options.distortion && report.profile.hasDistortion) && !(options.tca && report.profile.hasTCA) &&
+        !(options.vignetting && report.profile.hasVignetting))
         report.state = LensCorrectionState::NoCalibration;
 #else
     report.state = LensCorrectionState::NoDatabase;
@@ -176,6 +179,7 @@ struct LensCorrectionTransform::Impl {
             scale, lens->Type, flags | LF_MODIFY_SCALE, false);
         report.appliedDistortion = (applied & LF_MODIFY_DISTORTION) != 0;
         report.appliedTCA = (applied & LF_MODIFY_TCA) != 0;
+        report.appliedVignetting = (applied & LF_MODIFY_VIGNETTING) != 0;
     }
     bool inside() const {
         // Include all channel footprints, not only the green-channel distortion model.
@@ -218,13 +222,14 @@ LensCorrectionTransform::LensCorrectionTransform(std::shared_ptr<const LensCorre
     impl_->crop = body ? body->CropFactor : metadata.cropFactor;
     impl_->focal = metadata.focalLength; impl_->aperture = metadata.aperture;
     impl_->flags = (options.distortion ? LF_MODIFY_DISTORTION : 0) |
-        (options.tca && channels == 3 ? LF_MODIFY_TCA : 0);
+        (options.tca && channels == 3 ? LF_MODIFY_TCA : 0) |
+        (options.vignetting && report.profile.hasVignetting ? LF_MODIFY_VIGNETTING : 0);
     impl_->initialize(1);
-    if (!report.appliedDistortion && !report.appliedTCA) {
+    if (!report.appliedDistortion && !report.appliedTCA && !report.appliedVignetting) {
         report.state = LensCorrectionState::NoCalibration;
         impl_->modifier.reset(); return;
     }
-    if (options.autoCrop && !impl_->inside()) {
+    if (options.autoCrop && hasGeometry() && !impl_->inside()) {
         float low = 1, high = 1.05f;
         for (; high <= 8; high *= 1.25f) {
             impl_->initialize(high);
@@ -232,7 +237,7 @@ LensCorrectionTransform::LensCorrectionTransform(std::shared_ptr<const LensCorre
         }
         if (high > 8) {
             report.state = LensCorrectionState::UnsupportedInput;
-            report.appliedDistortion = report.appliedTCA = false;
+            report.appliedDistortion = report.appliedTCA = report.appliedVignetting = false;
             impl_->modifier.reset(); return;
         }
         for (int i = 0; i < 18; ++i) {
@@ -247,7 +252,20 @@ LensCorrectionTransform::LensCorrectionTransform(std::shared_ptr<const LensCorre
 }
 
 LensCorrectionTransform::~LensCorrectionTransform() = default;
-bool LensCorrectionTransform::active() const { return impl_->report.appliedDistortion || impl_->report.appliedTCA; }
+bool LensCorrectionTransform::active() const { return hasGeometry() || impl_->report.appliedVignetting; }
+bool LensCorrectionTransform::hasGeometry() const { return impl_->report.appliedDistortion || impl_->report.appliedTCA; }
+float LensCorrectionTransform::gainAt(float x, float y) const {
+#ifdef SONY2FUJI_ENABLE_LENSFUN
+    if (impl_->report.appliedVignetting && std::isfinite(x) && std::isfinite(y)) {
+        alignas(16) float gain = 1;
+        impl_->modifier->ApplyColorModification(&gain, x, y, 1, 1, LF_CR_1(RED), sizeof(float));
+        return gain;
+    }
+#else
+    (void)x; (void)y;
+#endif
+    return 1;
+}
 const LensCorrectionReport& LensCorrectionTransform::report() const { return impl_->report; }
 
 void LensCorrectionTransform::map(int x, int y, int width, int height, float* coordinates) const {

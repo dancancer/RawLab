@@ -71,9 +71,10 @@ extension IOSAdjustmentTransfer {
         result[Field.quarterTurns.rawValue] = .number(Double(settings.geometry.quarterTurns))
         result[Field.flipHorizontal.rawValue] = .boolean(settings.geometry.flipHorizontal)
         result[Field.flipVertical.rawValue] = .boolean(settings.geometry.flipVertical)
-        let lens = context.isRaw ? settings.lensSettings : LensCorrectionSettings()
+        let lens = settings.lensSettings
         result[Field.lensDistortion.rawValue] = .boolean(lens.distortion)
         result[Field.lensTCA.rawValue] = .boolean(lens.tca)
+        result[Field.lensVignetting.rawValue] = .boolean(lens.vignetting)
         result[Field.lensAutoCrop.rawValue] = .boolean(lens.autoCrop)
         result[Field.lensProfile.rawValue] = lens.mode == .automatic ? .null : .string(lens.coreProfileID)
         return result
@@ -106,28 +107,21 @@ extension IOSAdjustmentTransfer {
             settings.geometry = geometry
         }
         if !payload.fields.isDisjoint(with: Field.lensFields) {
-            if !context.isRaw {
-                let neutral: [Field: Value] = [.lensDistortion: .boolean(false), .lensTCA: .boolean(false),
-                    .lensAutoCrop: .boolean(true), .lensProfile: .null]
-                guard neutral.allSatisfy({ payload[$0.key] == nil || payload[$0.key] == $0.value }) else {
-                    throw AdjustmentTransferError.incompatible("geometry.lens")
-                }
-            }
             var lens = settings.lensSettings
             if let value = payload[.lensDistortion]?.boolean { lens.distortion = value }
             if let value = payload[.lensTCA]?.boolean { lens.tca = value }
+            if let value = payload[.lensVignetting]?.boolean { lens.vignetting = value }
             if let value = payload[.lensAutoCrop]?.boolean { lens.autoCrop = value }
             if let value = payload[.lensProfile] { lens.mode = value == .null ? .automatic : .manual; lens.profileID = value.string == "__rawlab_manual_selection_required__" ? nil : value.string }
             if lens.isEnabled && lens.mode == .manual && lens.profileID == nil {
                 throw AdjustmentTransferError.unrepresentable(Field.lensProfile.rawValue)
             }
-            guard context.isRaw || !lens.isEnabled else { throw AdjustmentTransferError.incompatible("geometry.lens") }
             if lens.isEnabled {
                 guard let validate = context.validateLensRequest else { throw AdjustmentTransferError.incompatible("target lens calibration unavailable") }
                 try validate(lens)
             }
             let previous = settings.lensSettings
-            if lens.distortion != previous.distortion || lens.tca != previous.tca || lens.autoCrop != previous.autoCrop
+            if lens.distortion != previous.distortion || lens.tca != previous.tca || lens.vignetting != previous.vignetting || lens.autoCrop != previous.autoCrop
                 || lens.mode != previous.mode || lens.mode == .manual && lens.profileID != previous.profileID {
                 settings.lensCorrection = lens == LensCorrectionSettings() ? nil : lens
             }

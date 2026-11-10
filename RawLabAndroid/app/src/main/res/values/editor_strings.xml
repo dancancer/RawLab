@@ -31,6 +31,12 @@
     <string name="all_tools">"All tools"</string>
     <string name="batch_confirmation_count">"%1$d outputs need verification"</string>
     <string name="black_point">"Black point"</string>
+    <string name="camera_choose_connection">"Choose how to connect"</string>
+    <string name="camera_connect_import">"Connect to import"</string>
+    <string name="camera_connect_tether">"Connect to shoot"</string>
+    <string name="camera_guide_intro">"Camera menus vary by model and firmware. Follow the smartphone connection steps shown on your camera."</string>
+    <string name="camera_guide_unverified_title">"Untested cameras can also connect"</string>
+    <string name="camera_previous_disconnected">"Last used camera · Disconnected"</string>
     <string name="clarity">"Clarity"</string>
     <string name="collection_add">"Add Photos"</string>
     <string name="collection_apply_draft">"Apply and save draft"</string>
@@ -78,6 +84,7 @@
     <string name="color_grading">"Color grading"</string>
     <string name="curve_add_point">"Add point"</string>
     <string name="curve_custom">"Point curve"</string>
+    <string name="curve_edit_point">"Edit point"</string>
     <string name="curve_fixed_endpoint">"Endpoints are fixed"</string>
     <string name="curve_hint">"Tap the curve area to add a point. Drag interior points to adjust."</string>
     <string name="curve_input">"Input"</string>
@@ -182,6 +189,7 @@
     <string name="geometry_move_up">"Move crop up"</string>
     <string name="geometry_perspective_tool">"Perspective"</string>
     <string name="geometry_position_size">"Position and size"</string>
+    <string name="geometry_rotation_tool">"Rotation"</string>
     <string name="grading_midtones">"Midtones"</string>
     <string name="grading_reset_all">"Reset color grading"</string>
     <string name="grading_reset_message">"Restore default color grading for shadows, midtones, and highlights?"</string>
@@ -235,8 +243,15 @@
     <string name="invalid_tone_controls">"Invalid black point, white point, or vibrance values"</string>
     <string name="invalid_tone_curve">"Invalid curve values"</string>
     <string name="jpeg_description">"sRGB · quality 95 · capture metadata"</string>
+    <string name="lens_crop_input">"Camera crop factor"</string>
     <string name="lens_distortion_unavailable">"Distortion Calibration Unavailable"</string>
+    <string name="lens_focal_input">"Focal length (mm)"</string>
+    <string name="lens_jpeg_hint">"JPEG may already have in-camera correction. Compare the image before enabling."</string>
+    <string name="lens_metadata_edit">"Complete lens information"</string>
+    <string name="lens_metadata_hint">"Leave blank to use photo metadata or the camera database."</string>
     <string name="lens_tca_unavailable">"Lateral Chromatic Aberration Calibration Unavailable"</string>
+    <string name="lens_vignetting">"Vignetting correction"</string>
+    <string name="lens_vignetting_unavailable">"Vignetting calibration or aperture data is unavailable"</string>
     <string name="look_category">"Look category"</string>
     <string name="look_category_all">"All looks"</string>
     <string name="look_category_custom">"My looks"</string>
@@ -248,6 +263,7 @@
     <string name="look_remove_body">"The copy of the look saved by RawLab will be removed; the original file will not be deleted."</string>
     <string name="look_search">"Search looks"</string>
     <string name="look_search_clear">"Clear search"</string>
+    <string name="look_search_close">"Close search"</string>
     <string name="look_search_empty">"No matching looks"</string>
     <string name="lut_advanced_settings">"Advanced color settings"</string>
     <string name="lut_appearance_unverified">"Appearance unverified"</string>
@@ -496,4 +512,5 @@
     <string name="x3f_relative_wb">"Uses the saved rendering as the baseline, with relative white-balance adjustments."</string>
     <string name="x3f_rendering">"X3F rendering"</string>
     <string name="x3f_retry_legacy">"Retry with legacy rendering"</string>
+    <string name="zoom_restore_hint">"Zoomed · Tap to fit"</string>
 </resources>

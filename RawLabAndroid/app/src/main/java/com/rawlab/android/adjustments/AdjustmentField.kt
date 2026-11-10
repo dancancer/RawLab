@@ -73,6 +73,7 @@ enum class AdjustmentField(val id: String) {
     PERSPECTIVE_VERTICAL("geometry.perspective.vertical"),
     LENS_DISTORTION("geometry.lens.distortion"),
     LENS_TCA("geometry.lens.tca"),
+    LENS_VIGNETTING("geometry.lens.vignetting"),
     LENS_AUTO_CROP("geometry.lens.auto_crop"),
     LENS_PROFILE("geometry.lens.profile_id"),
     HDR_PEAK_LIMIT("hdr.peak_limit_ev"),
@@ -148,11 +149,11 @@ enum class AdjustmentField(val id: String) {
             4 -> HDR_V4_SUPPORTED
             5 -> HDR_V5_SUPPORTED
             6 -> HDR_V6_SUPPORTED
-            7 -> HDR_SUPPORTED
+            7, 8 -> HDR_SUPPORTED
             else -> error("Unsupported HDR processing version")
         }
         val WHITE_BALANCE = setOf(WHITE_BALANCE_MODE, TEMPERATURE, TINT)
-        val LENS = setOf(LENS_DISTORTION, LENS_TCA, LENS_AUTO_CROP, LENS_PROFILE)
+        val LENS = setOf(LENS_DISTORTION, LENS_TCA, LENS_VIGNETTING, LENS_AUTO_CROP, LENS_PROFILE)
         val DENOISE = setOf(RAW_DENOISE, POST_RGB_DENOISE, CHROMA_DENOISE, WAVELET_DENOISE)
         val RECIPE_DEPENDENCIES = setOf(LOOK, STRENGTH, EXPOSURE, CONTRAST, HIGHLIGHTS, SHADOWS, SATURATION) +
             WHITE_BALANCE + entries.filter { it.hslLocation != null }

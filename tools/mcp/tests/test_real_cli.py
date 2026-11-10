@@ -111,7 +111,7 @@ class RealCliTests(unittest.IsolatedAsyncioTestCase):
                 capabilities = direct("--capabilities")
                 capabilities["recipe_versions"] = [
                     version for version in capabilities["recipe_versions"]
-                    if version in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14)
+                    if version in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
                 ]
                 capabilities["commands"] = [
                     command for command in capabilities["commands"]
@@ -132,28 +132,31 @@ class RealCliTests(unittest.IsolatedAsyncioTestCase):
                 recipe.write_text(json.dumps(document), encoding="utf-8")
                 direct("--recipe", recipe)
                 self.assertEqual((root / "mcp-export.png").read_bytes(), (root / "cli-export.png").read_bytes())
-                if 14 in capabilities["recipe_versions"]:
+                for hdr_version in (v for v in (14, 15) if v in capabilities["recipe_versions"]):
                     camera_source = root / "camera.dng"
                     shutil.copyfile(ROOT / "lutools/tests/fixtures/bayer-demosaic.dng", camera_source)
                     document = {
-                        "schema_version": 14,
-                        "processing": {"family": "rawlab_hdr", "version": 7, "quality": "standard"},
+                        "schema_version": hdr_version,
+                        "processing": {"family": "rawlab_hdr", "version": 7 if hdr_version == 14 else 8, "quality": "standard"},
                         "input": {"path": camera_source.name, "type": "raw", "camera_development": {
                             "white_balance_mode": "temperature", "temperature": 5300, "tint": 12}},
                         "edits": {"exposure": {"ev": .25}, "white_balance": {"mode": "relative"}},
-                        "output": {"path": "mcp-hdr-sdr.png", "format": "png"},
+                        "output": {"path": f"mcp-hdr-sdr-{hdr_version}.png", "format": "png"},
                     }
+                    if hdr_version == 15:
+                        document["edits"]["tone"] = {"curve": {"mode": "legacy", "points": [],
+                            "channels": {"red": {"mode": "custom", "points": [[0, 0], [.5, .7], [1, 1]]}}}}
                     recipe.write_text(json.dumps(document), encoding="utf-8")
                     self.assertEqual(await call("validate_recipe", recipe_path=str(recipe)),
                                      direct("--recipe", recipe, "--print-recipe"))
-                    await call("render_preview", recipe_path=str(recipe), output_path=str(root / "mcp-hdr-preview.png"))
-                    direct("--recipe", recipe, "--preview", root / "cli-hdr-preview.png")
-                    self.assertEqual((root / "mcp-hdr-preview.png").read_bytes(), (root / "cli-hdr-preview.png").read_bytes())
+                    await call("render_preview", recipe_path=str(recipe), output_path=str(root / f"mcp-hdr-preview-{hdr_version}.png"))
+                    direct("--recipe", recipe, "--preview", root / f"cli-hdr-preview-{hdr_version}.png")
+                    self.assertEqual((root / f"mcp-hdr-preview-{hdr_version}.png").read_bytes(), (root / f"cli-hdr-preview-{hdr_version}.png").read_bytes())
                     await call("export_photo", recipe_path=str(recipe))
-                    document["output"]["path"] = "cli-hdr-sdr.png"
+                    document["output"]["path"] = f"cli-hdr-sdr-{hdr_version}.png"
                     recipe.write_text(json.dumps(document), encoding="utf-8")
                     direct("--recipe", recipe)
-                    self.assertEqual((root / "mcp-hdr-sdr.png").read_bytes(), (root / "cli-hdr-sdr.png").read_bytes())
+                    self.assertEqual((root / f"mcp-hdr-sdr-{hdr_version}.png").read_bytes(), (root / f"cli-hdr-sdr-{hdr_version}.png").read_bytes())
 
                 document["edits"]["unknown_future_edit"] = 1
                 document["output"]["path"] = "must-not-exist.png"

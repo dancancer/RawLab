@@ -281,6 +281,7 @@ public partial class MainWindow
         if (hdrSource?.SupportsBayerDevelopment == true) AddRow("RAW 降噪",fbdd,"fbdd");
         panel.Children.Add(LensToggle("畸变校正",draft.LensDistortion,value => draft=draft with { LensDistortion=value }));
         panel.Children.Add(LensToggle("横向色差",draft.LensTca,value => draft=draft with { LensTca=value }));
+        panel.Children.Add(LensToggle("暗角校正",draft.LensVignetting,value => draft=draft with { LensVignetting=value }));
         panel.Children.Add(crop);
         var profileName = new TextBlock { Margin=new Thickness(0,10,0,4), TextWrapping=TextWrapping.Wrap };
         AutomationProperties.SetAutomationId(profileName,"hdr.camera.profile.name");

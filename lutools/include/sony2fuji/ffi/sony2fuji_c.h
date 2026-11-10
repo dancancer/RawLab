@@ -301,6 +301,13 @@ typedef struct sony2fuji_tone_curve_config {
     sony2fuji_curve_point points[SONY2FUJI_TONE_CURVE_MAX_POINTS];
 } sony2fuji_tone_curve_config;
 
+#define SONY2FUJI_TONE_CURVE_SET_CONFIG_VERSION 1u
+typedef struct sony2fuji_tone_curve_set_config {
+    uint32_t version, struct_size;
+    // RGB master, red, green, blue. Each entry must be initialized, including legacy entries.
+    sony2fuji_tone_curve_config curves[4];
+} sony2fuji_tone_curve_set_config;
+
 #define SONY2FUJI_GEOMETRY_CONFIG_VERSION 1u
 typedef struct sony2fuji_geometry_config {
     uint32_t version;
@@ -332,6 +339,27 @@ typedef struct sony2fuji_lens_correction_config {
     int32_t auto_crop;
     const char* profile_id; // NULL/empty: automatic; otherwise a catalog ID. Copied by setter.
 } sony2fuji_lens_correction_config;
+
+#define SONY2FUJI_LENS_CORRECTION_CONFIG_V2_VERSION 2u
+typedef struct sony2fuji_lens_correction_config_v2 {
+    sony2fuji_lens_correction_config base; // version 2, struct_size sizeof(v2).
+    int32_t vignetting;
+} sony2fuji_lens_correction_config_v2;
+
+#define SONY2FUJI_LENS_METADATA_VERSION 1u
+typedef struct sony2fuji_lens_metadata {
+    uint32_t version;
+    uint32_t struct_size;
+    const char* camera_make;
+    const char* camera_model;
+    const char* lens_make;
+    const char* lens_model;
+    float focal_length; // Millimeters; 0 means missing.
+    float aperture;     // F-number; 0 means missing.
+    float crop_factor;  // 0 uses the matched camera database entry, never an inferred model family.
+    int32_t embedded_geometry;
+    int32_t source_orientation; // Original EXIF 1..8. Display pixels are already oriented.
+} sony2fuji_lens_metadata;
 
 typedef enum sony2fuji_lens_state {
     SONY2FUJI_LENS_OFF = 0,
@@ -366,6 +394,18 @@ typedef struct sony2fuji_lens_report {
     int32_t applied_tca;
     float crop_scale; // Inscribed zoom; source dimensions/aspect are unchanged.
 } sony2fuji_lens_report;
+
+typedef struct sony2fuji_lens_profile_v2 {
+    sony2fuji_lens_profile base;
+    int32_t has_vignetting;
+} sony2fuji_lens_profile_v2;
+
+// Separate output type preserves the size of the original unversioned report ABI.
+typedef struct sony2fuji_lens_report_v2 {
+    sony2fuji_lens_report base;
+    int32_t has_vignetting;
+    int32_t applied_vignetting;
+} sony2fuji_lens_report_v2;
 // ============================================================================
 // Opaque Session
 // ============================================================================
@@ -463,6 +503,19 @@ sony2fuji_status sony2fuji_session_destroy(sony2fuji_session* session);
 sony2fuji_status sony2fuji_session_set_lens_database(sony2fuji_session* session, const char* path);
 sony2fuji_status sony2fuji_session_set_lens_correction(
     sony2fuji_session* session, const sony2fuji_lens_correction_config* config);
+sony2fuji_status sony2fuji_session_set_lens_correction_v2(
+    sony2fuji_session* session, const sony2fuji_lens_correction_config_v2* config);
+sony2fuji_status sony2fuji_session_get_lens_report_v2(sony2fuji_session* session, sony2fuji_lens_report_v2* report);
+sony2fuji_status sony2fuji_session_inspect_lens_v2(sony2fuji_session* session, const char* input_path,
+    sony2fuji_lens_report_v2* report, sony2fuji_lens_profile_v2* profiles, uint32_t capacity, uint32_t* count);
+sony2fuji_status sony2fuji_session_inspect_lens_metadata_v2(sony2fuji_session* session, const sony2fuji_lens_metadata* metadata,
+    sony2fuji_lens_report_v2* report, sony2fuji_lens_profile_v2* profiles, uint32_t capacity, uint32_t* count);
+// Metadata strings are copied. NULL clears display metadata; RAW input never consumes it.
+sony2fuji_status sony2fuji_session_set_display_lens_metadata(
+    sony2fuji_session* session, const sony2fuji_lens_metadata* metadata);
+sony2fuji_status sony2fuji_session_inspect_lens_metadata(
+    sony2fuji_session* session, const sony2fuji_lens_metadata* metadata,
+    sony2fuji_lens_report* report, sony2fuji_lens_profile* profiles, uint32_t capacity, uint32_t* count);
 // Metadata-only: does not unpack/develop RAW. count returns required capacity; NULL profiles queries size.
 sony2fuji_status sony2fuji_session_inspect_lens(sony2fuji_session* session, const char* input_path,
     sony2fuji_lens_report* report, sony2fuji_lens_profile* profiles, uint32_t capacity, uint32_t* count);
@@ -656,6 +709,10 @@ sony2fuji_status sony2fuji_session_set_color_grading(
 sony2fuji_status sony2fuji_session_set_tone_curve(
     sony2fuji_session* session, const sony2fuji_tone_curve_config* config
 );
+// Atomically replaces all four curves. The single-curve setter clears R/G/B.
+// Independent channels follow the master and currently require CPU rendering.
+sony2fuji_status sony2fuji_session_set_tone_curves(
+    sony2fuji_session* session, const sony2fuji_tone_curve_set_config* config);
 // Stateless custom-curve samples for editor canvases; same evaluator as render.
 // Custom mode, nonzero count and finite x are required. Invalid input leaves y
 // untouched. x and y may be the same array; no session/render lock is needed.

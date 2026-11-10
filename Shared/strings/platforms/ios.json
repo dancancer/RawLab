@@ -3528,6 +3528,556 @@
         "%@"
       ],
       "source": "无法加入最近打开：{0}"
+    },
+    "补充镜头信息": {
+      "formats": [],
+      "source": "补充镜头信息"
+    },
+    "焦距（mm）": {
+      "formats": [],
+      "source": "焦距（mm）"
+    },
+    "相机裁切系数": {
+      "formats": [],
+      "source": "相机裁切系数"
+    },
+    "留空时使用照片元数据或相机数据库。": {
+      "formats": [],
+      "source": "留空时使用照片元数据或相机数据库。"
+    },
+    "JPEG 可能已有机内校正；请对比画面后再开启。": {
+      "formats": [],
+      "source": "JPEG 可能已有机内校正；请对比画面后再开启。"
+    },
+    "原片不可用": {
+      "formats": [],
+      "source": "原片不可用"
+    },
+    "在相机上选择单张拍摄，并将原件同时保留在存储卡。手机收到的取景图和缩略图不是原件保存成功的凭据。": {
+      "formats": [],
+      "source": "在相机上选择单张拍摄，并将原件同时保留在存储卡。手机收到的取景图和缩略图不是原件保存成功的凭据。"
+    },
+    "拍摄结果尚未确认。请检查相机，重新连接只恢复原件接收。": {
+      "formats": [],
+      "source": "拍摄结果尚未确认。请检查相机，重新连接只恢复原件接收。"
+    },
+    "正在查找相机…": {
+      "formats": [],
+      "source": "正在查找相机…"
+    },
+    "请输入相机显示的 Wi-Fi 名称和密码。": {
+      "formats": [],
+      "source": "请输入相机显示的 Wi-Fi 名称和密码。"
+    },
+    "请允许系统连接相机 Wi-Fi": {
+      "formats": [],
+      "source": "请允许系统连接相机 Wi-Fi"
+    },
+    "日光": {
+      "formats": [],
+      "source": "日光"
+    },
+    "开始新的联机": {
+      "formats": [],
+      "source": "开始新的联机"
+    },
+    "光圈": {
+      "formats": [],
+      "source": "光圈"
+    },
+    "请核对手机和相机的配对数字": {
+      "formats": [],
+      "source": "请核对手机和相机的配对数字"
+    },
+    "更换相机": {
+      "formats": [],
+      "source": "更换相机"
+    },
+    "重新连接": {
+      "formats": [],
+      "source": "重新连接"
+    },
+    "相机中的原照片会保留。": {
+      "formats": [],
+      "source": "相机中的原照片会保留。"
+    },
+    "使用蓝牙配对": {
+      "formats": [],
+      "source": "使用蓝牙配对"
+    },
+    "取景已暂停": {
+      "formats": [],
+      "source": "取景已暂停"
+    },
+    "白炽灯": {
+      "formats": [],
+      "source": "白炽灯"
+    },
+    "RawLab 按相机实际提供的选项显示可调参数，不会替你更改驱动模式或保存目的地。": {
+      "formats": [],
+      "source": "RawLab 按相机实际提供的选项显示可调参数，不会替你更改驱动模式或保存目的地。"
+    },
+    "曝光补偿": {
+      "formats": [],
+      "source": "曝光补偿"
+    },
+    "此连接方式不能接收卡内原件，软件快门已停用。": {
+      "formats": [],
+      "source": "此连接方式不能接收卡内原件，软件快门已停用。"
+    },
+    "初代 ZV-E10 可使用机身“智能手机连接”中的连接画面；无需把蓝牙配对作为必经步骤。": {
+      "formats": [],
+      "source": "初代 ZV-E10 可使用机身“智能手机连接”中的连接画面；无需把蓝牙配对作为必经步骤。"
+    },
+    "此设备不支持蓝牙连接，请手动连接相机 Wi-Fi。": {
+      "formats": [],
+      "source": "此设备不支持蓝牙连接，请手动连接相机 Wi-Fi。"
+    },
+    "相机未提供实时取景，其他可用功能仍可使用。": {
+      "formats": [],
+      "source": "相机未提供实时取景，其他可用功能仍可使用。"
+    },
+    "保持相机开机，在机身菜单打开智能手机连接。菜单名称以你的机型为准。关闭占用相机连接的其他应用。": {
+      "formats": [],
+      "source": "保持相机开机，在机身菜单打开智能手机连接。菜单名称以你的机型为准。关闭占用相机连接的其他应用。"
+    },
+    "完整原件保存在 RawLab 的持久存储中，结束联机或清理编辑缓存不会删除它们。": {
+      "formats": [],
+      "source": "完整原件保存在 RawLab 的持久存储中，结束联机或清理编辑缓存不会删除它们。"
+    },
+    "恢复未完成的原件接收，不会自动补拍。": {
+      "formats": [],
+      "source": "恢复未完成的原件接收，不会自动补拍。"
+    },
+    "设置结果未确认，请重新连接后检查。": {
+      "formats": [],
+      "source": "设置结果未确认，请重新连接后检查。"
+    },
+    "RawLab 内的相机原件": {
+      "formats": [],
+      "source": "RawLab 内的相机原件"
+    },
+    "相机 Wi-Fi 通常无法访问互联网，请保持连接。": {
+      "formats": [],
+      "source": "相机 Wi-Fi 通常无法访问互联网，请保持连接。"
+    },
+    "当前相机模式未提供此功能。": {
+      "formats": [],
+      "source": "当前相机模式未提供此功能。"
+    },
+    "没有符合筛选条件的照片。": {
+      "formats": [],
+      "source": "没有符合筛选条件的照片。"
+    },
+    "已保存的原件缺失或已改变，无法打开。": {
+      "formats": [],
+      "source": "已保存的原件缺失或已改变，无法打开。"
+    },
+    "拍摄日期": {
+      "formats": [],
+      "source": "拍摄日期"
+    },
+    "连接前准备": {
+      "formats": [],
+      "source": "连接前准备"
+    },
+    "联机拍摄": {
+      "formats": [],
+      "source": "联机拍摄"
+    },
+    "未能加入相机 Wi-Fi。请在系统 Wi-Fi 设置连接后返回。": {
+      "formats": [],
+      "source": "未能加入相机 Wi-Fi。请在系统 Wi-Fi 设置连接后返回。"
+    },
+    "导入时请保持 RawLab 在前台。": {
+      "formats": [],
+      "source": "导入时请保持 RawLab 在前台。"
+    },
+    "预览图，可双指缩放": {
+      "formats": [],
+      "source": "预览图，可双指缩放"
+    },
+    "Wi-Fi 密码": {
+      "formats": [],
+      "source": "Wi-Fi 密码"
+    },
+    "已确认相机同时将原件保存到存储卡。": {
+      "formats": [],
+      "source": "已确认相机同时将原件保存到存储卡。"
+    },
+    "从相机导入": {
+      "formats": [],
+      "source": "从相机导入"
+    },
+    "全部日期": {
+      "formats": [],
+      "source": "全部日期"
+    },
+    "停止导入": {
+      "formats": [],
+      "source": "停止导入"
+    },
+    "相机": {
+      "formats": [],
+      "source": "相机"
+    },
+    "正在开启相机 Wi-Fi…": {
+      "formats": [],
+      "source": "正在开启相机 Wi-Fi…"
+    },
+    "打开编辑": {
+      "formats": [],
+      "source": "打开编辑"
+    },
+    "上次导入未完成": {
+      "formats": [],
+      "source": "上次导入未完成"
+    },
+    "请在系统设置中允许 RawLab 使用蓝牙。": {
+      "formats": [],
+      "source": "请在系统设置中允许 RawLab 使用蓝牙。"
+    },
+    "实时取景、调整参数并拍摄": {
+      "formats": [],
+      "source": "实时取景、调整参数并拍摄"
+    },
+    "请先检查相机上的拍摄结果。新会话不会补拍，未完成照片可在导入记录中继续接收。": {
+      "formats": [],
+      "source": "请先检查相机上的拍摄结果。新会话不会补拍，未完成照片可在导入记录中继续接收。"
+    },
+    "Wi-Fi 名称": {
+      "formats": [],
+      "source": "Wi-Fi 名称"
+    },
+    "正在更新相机设置…": {
+      "formats": [],
+      "source": "正在更新相机设置…"
+    },
+    "在连接页查找并选择相机，按手机和相机提示完成配对，再允许系统加入相机 Wi-Fi。蓝牙配对成功不等于照片连接已经建立。": {
+      "formats": [],
+      "source": "在连接页查找并选择相机，按手机和相机提示完成配对，再允许系统加入相机 Wi-Fi。蓝牙配对成功不等于照片连接已经建立。"
+    },
+    "选择相机": {
+      "formats": [],
+      "source": "选择相机"
+    },
+    "未发现相机。请打开相机的智能手机连接。": {
+      "formats": [],
+      "source": "未发现相机。请打开相机的智能手机连接。"
+    },
+    "导入记录": {
+      "formats": [],
+      "source": "导入记录"
+    },
+    "对焦模式": {
+      "formats": [],
+      "source": "对焦模式"
+    },
+    "可用功能取决于相机当前的连接方式和拍摄模式。": {
+      "formats": [],
+      "source": "可用功能取决于相机当前的连接方式和拍摄模式。"
+    },
+    "已恢复已登记的接收任务。断线期间拍摄的照片请从相机手动导入。": {
+      "formats": [],
+      "source": "已恢复已登记的接收任务。断线期间拍摄的照片请从相机手动导入。"
+    },
+    "没有找到相机。请保持相机处于等待连接画面。": {
+      "formats": [],
+      "source": "没有找到相机。请保持相机处于等待连接画面。"
+    },
+    "相机照片保存位置": {
+      "formats": [],
+      "source": "相机照片保存位置"
+    },
+    "相机未提供可调整选项": {
+      "formats": [],
+      "source": "相机未提供可调整选项"
+    },
+    "放大预览": {
+      "formats": [],
+      "source": "放大预览"
+    },
+    "快门": {
+      "formats": [],
+      "source": "快门"
+    },
+    "恢复上次联机": {
+      "formats": [],
+      "source": "恢复上次联机"
+    },
+    "查找相机": {
+      "formats": [],
+      "source": "查找相机"
+    },
+    "连接未完成。请保持相机唤醒，重新查找并连接。": {
+      "formats": [],
+      "source": "连接未完成。请保持相机唤醒，重新查找并连接。"
+    },
+    "相机中没有可导入的 RAW 或 JPEG 照片。": {
+      "formats": [],
+      "source": "相机中没有可导入的 RAW 或 JPEG 照片。"
+    },
+    "连接遇到问题": {
+      "formats": [],
+      "source": "连接遇到问题"
+    },
+    "包含筛选范围外的已选照片": {
+      "formats": [],
+      "source": "包含筛选范围外的已选照片"
+    },
+    "如果相机显示 SSID 和密码，打开手动连接页并填写；也可先在系统 Wi-Fi 设置中加入该网络，再返回点击“已连接，继续”。": {
+      "formats": [],
+      "source": "如果相机显示 SSID 和密码，打开手动连接页并填写；也可先在系统 Wi-Fi 设置中加入该网络，再返回点击“已连接，继续”。"
+    },
+    "浏览存储卡，选择并保存照片": {
+      "formats": [],
+      "source": "浏览存储卡，选择并保存照片"
+    },
+    "相机未提供此蓝牙配对方式，请使用手动 Wi-Fi 连接。": {
+      "formats": [],
+      "source": "相机未提供此蓝牙配对方式，请使用手动 Wi-Fi 连接。"
+    },
+    "相机连接已断开。已保存的照片仍可查看。": {
+      "formats": [],
+      "source": "相机连接已断开。已保存的照片仍可查看。"
+    },
+    "请先在系统 Wi-Fi 设置连接相机，再返回继续。": {
+      "formats": [],
+      "source": "请先在系统 Wi-Fi 设置连接相机，再返回继续。"
+    },
+    "还没有导入记录": {
+      "formats": [],
+      "source": "还没有导入记录"
+    },
+    "断开连接": {
+      "formats": [],
+      "source": "断开连接"
+    },
+    "请打开手机蓝牙后重试。": {
+      "formats": [],
+      "source": "请打开手机蓝牙后重试。"
+    },
+    "相机数据或原件校验未通过，已暂停。": {
+      "formats": [],
+      "source": "相机数据或原件校验未通过，已暂停。"
+    },
+    "筛选照片": {
+      "formats": [],
+      "source": "筛选照片"
+    },
+    "拍摄后，照片会显示在这里": {
+      "formats": [],
+      "source": "拍摄后，照片会显示在这里"
+    },
+    "每次最多选择 64 个原件，总大小不超过 2 GiB。": {
+      "formats": [],
+      "source": "每次最多选择 64 个原件，总大小不超过 2 GiB。"
+    },
+    "连接相机 Wi-Fi": {
+      "formats": [],
+      "source": "连接相机 Wi-Fi"
+    },
+    "照片格式": {
+      "formats": [],
+      "source": "照片格式"
+    },
+    "已导入": {
+      "formats": [],
+      "source": "已导入"
+    },
+    "保存位置": {
+      "formats": [],
+      "source": "保存位置"
+    },
+    "请将相机设为单张拍摄，并确认照片同时保存到相机存储卡。": {
+      "formats": [],
+      "source": "请将相机设为单张拍摄，并确认照片同时保存到相机存储卡。"
+    },
+    "拍摄一张": {
+      "formats": [],
+      "source": "拍摄一张"
+    },
+    "已连接，继续": {
+      "formats": [],
+      "source": "已连接，继续"
+    },
+    "实时取景": {
+      "formats": [],
+      "source": "实时取景"
+    },
+    "无法保存导入记录或原件。请检查可用空间后重试。": {
+      "formats": [],
+      "source": "无法保存导入记录或原件。请检查可用空间后重试。"
+    },
+    "闪光灯": {
+      "formats": [],
+      "source": "闪光灯"
+    },
+    "在相机打开智能手机连接，查看机身显示的 Wi-Fi 名称和密码。你也可以先在系统 Wi-Fi 设置中连接，再返回继续。": {
+      "formats": [],
+      "source": "在相机打开智能手机连接，查看机身显示的 Wi-Fi 名称和密码。你也可以先在系统 Wi-Fi 设置中连接，再返回继续。"
+    },
+    "查看已选": {
+      "formats": [],
+      "source": "查看已选"
+    },
+    "拍后审片": {
+      "formats": [],
+      "source": "拍后审片"
+    },
+    "构图网格": {
+      "formats": [],
+      "source": "构图网格"
+    },
+    "取消连接": {
+      "formats": [],
+      "source": "取消连接"
+    },
+    "正在接收原件": {
+      "formats": [],
+      "source": "正在接收原件"
+    },
+    "联机拍摄设置": {
+      "formats": [],
+      "source": "联机拍摄设置"
+    },
+    "联机已暂停": {
+      "formats": [],
+      "source": "联机已暂停"
+    },
+    "手动连接 Wi-Fi": {
+      "formats": [],
+      "source": "手动连接 Wi-Fi"
+    },
+    "当前拍摄模式下不可调整": {
+      "formats": [],
+      "source": "当前拍摄模式下不可调整"
+    },
+    "部分功能不可用时，检查相机模式。已验证型号仅作参考，其他 Sony 相机也可以尝试连接。": {
+      "formats": [],
+      "source": "部分功能不可用时，检查相机模式。已验证型号仅作参考，其他 Sony 相机也可以尝试连接。"
+    },
+    "此蓝牙连接无法完成配对，请手动连接相机 Wi-Fi。": {
+      "formats": [],
+      "source": "此蓝牙连接无法完成配对，请手动连接相机 Wi-Fi。"
+    },
+    "系统权限设置": {
+      "formats": [],
+      "source": "系统权限设置"
+    },
+    "从导入记录打开原件进行编辑；原始照片不会被调整覆盖。": {
+      "formats": [],
+      "source": "从导入记录打开原件进行编辑；原始照片不会被调整覆盖。"
+    },
+    "暂停联机": {
+      "formats": [],
+      "source": "暂停联机"
+    },
+    "继续未完成": {
+      "formats": [],
+      "source": "继续未完成"
+    },
+    "搜索不到时，检查蓝牙权限和机身等待连接画面。Wi-Fi 无互联网是正常情况，请保持连接。": {
+      "formats": [],
+      "source": "搜索不到时，检查蓝牙权限和机身等待连接画面。Wi-Fi 无互联网是正常情况，请保持连接。"
+    },
+    "正在连接相机…": {
+      "formats": [],
+      "source": "正在连接相机…"
+    },
+    "无法读取相机 Wi-Fi 信息，请手动连接。": {
+      "formats": [],
+      "source": "无法读取相机 Wi-Fi 信息，请手动连接。"
+    },
+    "如何连接": {
+      "formats": [],
+      "source": "如何连接"
+    },
+    "阴天": {
+      "formats": [],
+      "source": "阴天"
+    },
+    "预览不可用": {
+      "formats": [],
+      "source": "预览不可用"
+    },
+    "编辑控制点": {
+      "formats": [],
+      "source": "编辑控制点"
+    },
+    "%@ · 联机": {
+      "source": "{0} · 联机",
+      "formats": [
+        "%@"
+      ]
+    },
+    "只读": {
+      "source": "只读",
+      "formats": []
+    },
+    "已连接 · 自动接收原件": {
+      "source": "已连接 · 自动接收原件",
+      "formats": []
+    },
+    "已保存 %d 张": {
+      "source": "已保存 {0} 张",
+      "formats": [
+        "%d"
+      ]
+    },
+    "等待相机保存": {
+      "source": "等待相机保存",
+      "formats": []
+    },
+    "正在拍摄": {
+      "source": "正在拍摄",
+      "formats": []
+    },
+    "正在准备取景": {
+      "source": "正在准备取景",
+      "formats": []
+    },
+    "待接收 %d 张。": {
+      "source": "待接收 {0} 张。",
+      "formats": [
+        "%d"
+      ]
+    },
+    "放大 · 点按还原": {
+      "source": "放大 · 点按还原",
+      "formats": []
+    },
+    "暗角校正": {
+      "formats": [],
+      "source": "暗角校正"
+    },
+    "暗角标定或光圈信息不可用": {
+      "formats": [],
+      "source": "暗角标定或光圈信息不可用"
+    },
+    "连接相机以导入": {
+      "formats": [],
+      "source": "连接相机以导入"
+    },
+    "连接相机以拍摄": {
+      "formats": [],
+      "source": "连接相机以拍摄"
+    },
+    "上次使用的相机 · 未连接": {
+      "formats": [],
+      "source": "上次使用的相机 · 未连接"
+    },
+    "选择连接方式": {
+      "formats": [],
+      "source": "选择连接方式"
+    },
+    "未验证的机型也可以连接": {
+      "formats": [],
+      "source": "未验证的机型也可以连接"
+    },
+    "相机菜单会随型号和固件变化，请按机身提供的手机连接方式操作。": {
+      "formats": [],
+      "source": "相机菜单会随型号和固件变化，请按机身提供的手机连接方式操作。"
     }
   },
   "overrides": {
@@ -4487,6 +5037,190 @@
       "es": "Abrir",
       "ja": "開く",
       "zh-Hans": "打开"
+    },
+    "请输入相机显示的 Wi-Fi 名称和密码。": {
+      "en": "Enter the Wi-Fi name and password shown on the camera.",
+      "de": "Geben Sie den Wi-Fi-Namen und das Passwort der Kamera ein.",
+      "fr": "Saisissez le nom Wi-Fi et le mot de passe affichés par l’appareil.",
+      "es": "Introduce el nombre Wi-Fi y la contraseña que muestra la cámara.",
+      "ja": "カメラに表示された Wi-Fi 名とパスワードを入力してください。",
+      "zh-Hans": "请输入相机显示的 Wi-Fi 名称和密码。"
+    },
+    "RawLab 按相机实际提供的选项显示可调参数，不会替你更改驱动模式或保存目的地。": {
+      "en": "RawLab shows the adjustable options provided by the camera. It does not change the drive mode or save destination.",
+      "de": "RawLab zeigt die einstellbaren Optionen der Kamera. Der Antriebsmodus und das Speicherziel werden nicht geändert.",
+      "fr": "RawLab affiche les options réglables proposées par l’appareil. Il ne modifie pas le mode d’entraînement ni la destination d’enregistrement.",
+      "es": "RawLab muestra los parámetros ajustables de la cámara; no cambia el modo de avance ni el destino de guardado.",
+      "ja": "RawLab はカメラが提供する調整項目を表示します。ドライブモードや保存先を変更することはありません。",
+      "zh-Hans": "RawLab 按相机实际提供的选项显示可调参数，不会替你更改驱动模式或保存目的地。"
+    },
+    "此连接方式不能接收卡内原件，软件快门已停用。": {
+      "en": "This connection cannot receive memory-card originals. The shutter in the app is disabled.",
+      "de": "Diese Verbindung kann keine Kartenoriginale empfangen. Der Auslöser in der App ist deaktiviert.",
+      "fr": "Cette connexion ne peut pas recevoir les originaux de la carte. Le déclencheur de l’app est désactivé.",
+      "es": "Esta conexión no puede recibir los originales de la tarjeta. El disparador de la app está desactivado.",
+      "ja": "この接続ではカード内の原本を受信できないため、アプリのシャッターを無効にしました。",
+      "zh-Hans": "此连接方式不能接收卡内原件，软件快门已停用。"
+    },
+    "初代 ZV-E10 可使用机身“智能手机连接”中的连接画面；无需把蓝牙配对作为必经步骤。": {
+      "en": "The original ZV-E10 can use the Connection screen under Smartphone Connection on the camera. Bluetooth pairing is not required.",
+      "de": "Die ursprüngliche ZV-E10 kann den Verbindungsbildschirm unter Smartphone-Verbindung verwenden. Bluetooth-Kopplung ist nicht erforderlich.",
+      "fr": "Le ZV-E10 d’origine peut utiliser l’écran Connexion sous Connexion smartphone. L’association Bluetooth n’est pas obligatoire.",
+      "es": "El ZV-E10 de primera generación puede usar la pantalla de conexión de Conexión con smartphone; no requiere emparejamiento Bluetooth.",
+      "ja": "初代 ZV-E10 は本体の「スマートフォン接続」にある接続画面を使用できます。Bluetoothペアリングは必須ではありません。",
+      "zh-Hans": "初代 ZV-E10 可使用机身“智能手机连接”中的连接画面；无需把蓝牙配对作为必经步骤。"
+    },
+    "此设备不支持蓝牙连接，请手动连接相机 Wi-Fi。": {
+      "en": "This device does not support Bluetooth. Connect to the camera’s Wi-Fi manually.",
+      "de": "Dieses Gerät unterstützt kein Bluetooth. Verbinden Sie manuell mit dem Kamera-Wi-Fi.",
+      "fr": "Cet appareil ne prend pas en charge le Bluetooth. Connectez-vous manuellement au Wi-Fi de la caméra.",
+      "es": "Este dispositivo no admite Bluetooth. Conecta manualmente el Wi-Fi de la cámara.",
+      "ja": "このデバイスは Bluetooth に対応していません。カメラの Wi-Fi に手動で接続してください。",
+      "zh-Hans": "此设备不支持蓝牙连接，请手动连接相机 Wi-Fi。"
+    },
+    "完整原件保存在 RawLab 的持久存储中，结束联机或清理编辑缓存不会删除它们。": {
+      "en": "Complete originals are stored in RawLab. Ending tethered shooting or clearing the editing cache does not delete them.",
+      "de": "Vollständige Originale werden in RawLab gespeichert. Das Beenden der Tether-Aufnahme oder Löschen des Bearbeitungscaches entfernt sie nicht.",
+      "fr": "Les originaux complets sont conservés dans RawLab. Mettre fin à la prise de vue connectée ou vider le cache d’édition ne les supprime pas.",
+      "es": "Los originales completos se guardan en RawLab. Finalizar la sesión o borrar la caché de edición no los elimina.",
+      "ja": "完全な原本は RawLab に保存されます。テザー接続を終了したり編集キャッシュを削除したりしても、原本は削除されません。",
+      "zh-Hans": "完整原件保存在 RawLab 的持久存储中，结束联机或清理编辑缓存不会删除它们。"
+    },
+    "RawLab 内的相机原件": {
+      "en": "Camera originals in RawLab",
+      "de": "Kameraoriginale in RawLab",
+      "fr": "Originaux de l’appareil photo dans RawLab",
+      "es": "Originales de la cámara en RawLab",
+      "ja": "RawLab 内のカメラ原本",
+      "zh-Hans": "RawLab 内的相机原件"
+    },
+    "相机 Wi-Fi 通常无法访问互联网，请保持连接。": {
+      "en": "The camera’s Wi-Fi usually has no internet access. Stay connected.",
+      "de": "Das Kamera-Wi-Fi hat normalerweise keinen Internetzugang. Bleiben Sie verbunden.",
+      "fr": "Le Wi-Fi de l’appareil n’a généralement pas accès à Internet. Restez connecté.",
+      "es": "El Wi-Fi de la cámara normalmente no tiene Internet. Mantén la conexión.",
+      "ja": "カメラの Wi-Fi は通常インターネットに接続できません。接続を維持してください。",
+      "zh-Hans": "相机 Wi-Fi 通常无法访问互联网，请保持连接。"
+    },
+    "当前相机模式未提供此功能。": {
+      "en": "This feature is unavailable in the current camera mode.",
+      "de": "Diese Funktion ist im aktuellen Kameramodus nicht verfügbar.",
+      "fr": "Cette fonction est indisponible dans le mode actuel de l’appareil.",
+      "es": "Esta función no está disponible en el modo actual de la cámara.",
+      "ja": "現在のカメラモードでは、この機能を利用できません。",
+      "zh-Hans": "当前相机模式未提供此功能。"
+    },
+    "拍摄日期": {
+      "en": "Capture date",
+      "de": "Aufnahmedatum",
+      "fr": "Date de prise de vue",
+      "es": "Fecha de toma",
+      "ja": "撮影日",
+      "zh-Hans": "拍摄日期"
+    },
+    "未能加入相机 Wi-Fi。请在系统 Wi-Fi 设置连接后返回。": {
+      "en": "Could not join the camera’s Wi-Fi. Connect in system Wi-Fi settings, then return.",
+      "de": "Verbindung mit dem Kamera-Wi-Fi fehlgeschlagen. Verbinden Sie in den System-Wi-Fi-Einstellungen und kehren Sie zurück.",
+      "fr": "Impossible de rejoindre le Wi-Fi de l’appareil. Connectez-vous dans les réglages Wi-Fi, puis revenez.",
+      "es": "No se pudo conectar al Wi-Fi de la cámara. Conéctate en los ajustes Wi-Fi del sistema y vuelve.",
+      "ja": "カメラの Wi-Fi に接続できませんでした。システムの Wi-Fi 設定で接続してから戻ってください。",
+      "zh-Hans": "未能加入相机 Wi-Fi。请在系统 Wi-Fi 设置连接后返回。"
+    },
+    "Wi-Fi 密码": {
+      "en": "Wi-Fi password",
+      "de": "Wi-Fi-Passwort",
+      "fr": "Mot de passe Wi-Fi",
+      "es": "Contraseña de Wi-Fi",
+      "ja": "Wi-Fiパスワード",
+      "zh-Hans": "Wi-Fi 密码"
+    },
+    "请在系统设置中允许 RawLab 使用蓝牙。": {
+      "en": "Allow RawLab to use Bluetooth in system settings.",
+      "de": "Erlauben Sie RawLab die Bluetooth-Nutzung in den Systemeinstellungen.",
+      "fr": "Autorisez RawLab à utiliser le Bluetooth dans les réglages système.",
+      "es": "Permite a RawLab usar Bluetooth en los ajustes del sistema.",
+      "ja": "システム設定で RawLab の Bluetooth 使用を許可してください。",
+      "zh-Hans": "请在系统设置中允许 RawLab 使用蓝牙。"
+    },
+    "请先检查相机上的拍摄结果。新会话不会补拍，未完成照片可在导入记录中继续接收。": {
+      "en": "Check the capture result on the camera first. A new session will not retake the photo. Resume unfinished transfers from import history.",
+      "de": "Prüfen Sie zuerst das Aufnahmeergebnis an der Kamera. Eine neue Sitzung löst nicht erneut aus. Setzen Sie offene Übertragungen im Importverlauf fort.",
+      "fr": "Vérifiez d’abord le résultat sur l’appareil. Une nouvelle session ne reprend pas la photo. Reprenez les transferts incomplets dans l’historique.",
+      "es": "Comprueba primero el resultado en la cámara. Una sesión nueva no volverá a disparar. Continúa las transferencias incompletas desde el historial.",
+      "ja": "まずカメラで撮影結果を確認してください。新しいセッションで再撮影は行いません。未完了の受信はインポート履歴から続行できます。",
+      "zh-Hans": "请先检查相机上的拍摄结果。新会话不会补拍，未完成照片可在导入记录中继续接收。"
+    },
+    "Wi-Fi 名称": {
+      "en": "Wi-Fi name",
+      "de": "Wi-Fi-Name",
+      "fr": "Nom du Wi-Fi",
+      "es": "Nombre de la red Wi-Fi",
+      "ja": "Wi-Fi名",
+      "zh-Hans": "Wi-Fi 名称"
+    },
+    "相机未提供此蓝牙配对方式，请使用手动 Wi-Fi 连接。": {
+      "en": "The camera does not support this Bluetooth pairing method. Use manual Wi-Fi connection.",
+      "de": "Die Kamera unterstützt diese Bluetooth-Kopplung nicht. Verwenden Sie die manuelle Wi-Fi-Verbindung.",
+      "fr": "L’appareil ne prend pas en charge cette association Bluetooth. Utilisez la connexion Wi-Fi manuelle.",
+      "es": "La cámara no admite este emparejamiento Bluetooth. Usa la conexión Wi-Fi manual.",
+      "ja": "カメラはこの Bluetooth ペアリング方式に対応していません。手動の Wi-Fi 接続を使用してください。",
+      "zh-Hans": "相机未提供此蓝牙配对方式，请使用手动 Wi-Fi 连接。"
+    },
+    "请先在系统 Wi-Fi 设置连接相机，再返回继续。": {
+      "en": "Connect to the camera in system Wi-Fi settings first, then return.",
+      "de": "Verbinden Sie zuerst in den System-Wi-Fi-Einstellungen mit der Kamera und kehren Sie zurück.",
+      "fr": "Connectez-vous d’abord à l’appareil dans les réglages Wi-Fi, puis revenez.",
+      "es": "Conéctate primero a la cámara en los ajustes Wi-Fi y vuelve.",
+      "ja": "システムの Wi-Fi 設定でカメラに接続してから戻ってください。",
+      "zh-Hans": "请先在系统 Wi-Fi 设置连接相机，再返回继续。"
+    },
+    "相机数据或原件校验未通过，已暂停。": {
+      "en": "Camera data or original verification failed. The operation is paused.",
+      "de": "Kameradaten oder Originalprüfung fehlgeschlagen. Der Vorgang ist pausiert.",
+      "fr": "La vérification des données ou des originaux a échoué. L’opération est en pause.",
+      "es": "La verificación de los datos o del original ha fallado. La operación está en pausa.",
+      "ja": "カメラデータまたは原本の検証に失敗したため、一時停止しました。",
+      "zh-Hans": "相机数据或原件校验未通过，已暂停。"
+    },
+    "每次最多选择 64 个原件，总大小不超过 2 GiB。": {
+      "en": "Select up to 64 originals, totaling no more than 2 GiB.",
+      "de": "Wählen Sie höchstens 64 Originale mit insgesamt maximal 2 GiB.",
+      "fr": "Sélectionnez au maximum 64 originaux, pour un total de 2 GiB.",
+      "es": "Selecciona hasta 64 originales con un tamaño total máximo de 2 GiB.",
+      "ja": "一度に選択できる原本は最大64枚、合計2 GiBまでです。",
+      "zh-Hans": "每次最多选择 64 个原件，总大小不超过 2 GiB。"
+    },
+    "此蓝牙连接无法完成配对，请手动连接相机 Wi-Fi。": {
+      "en": "This Bluetooth connection cannot complete pairing. Connect to the camera’s Wi-Fi manually.",
+      "de": "Diese Bluetooth-Verbindung kann die Kopplung nicht abschließen. Verbinden Sie manuell mit dem Kamera-Wi-Fi.",
+      "fr": "Cette connexion Bluetooth ne permet pas de terminer l’association. Connectez-vous manuellement au Wi-Fi de l’appareil.",
+      "es": "Esta conexión Bluetooth no puede completar el emparejamiento. Conecta manualmente el Wi-Fi de la cámara.",
+      "ja": "この Bluetooth 接続ではペアリングを完了できません。カメラの Wi-Fi に手動で接続してください。",
+      "zh-Hans": "此蓝牙连接无法完成配对，请手动连接相机 Wi-Fi。"
+    },
+    "系统权限设置": {
+      "en": "System permission settings",
+      "de": "Systemberechtigungen",
+      "fr": "Autorisations système",
+      "es": "Permisos del sistema",
+      "ja": "システム権限設定",
+      "zh-Hans": "系统权限设置"
+    },
+    "从导入记录打开原件进行编辑；原始照片不会被调整覆盖。": {
+      "en": "Open an original from import history to edit it. Adjustments do not overwrite the original photo.",
+      "de": "Öffnen Sie ein Original aus dem Importverlauf zur Bearbeitung. Anpassungen überschreiben das Originalfoto nicht.",
+      "fr": "Ouvrez un original depuis l’historique des importations pour le modifier. Les réglages ne remplacent pas la photo originale.",
+      "es": "Abre un original desde el historial de importaciones para editarlo. Los ajustes no sobrescriben la foto original.",
+      "ja": "インポート履歴から原本を開いて編集します。元の写真は編集で上書きされません。",
+      "zh-Hans": "从导入记录打开原件进行编辑；原始照片不会被调整覆盖。"
+    },
+    "无法读取相机 Wi-Fi 信息，请手动连接。": {
+      "en": "Unable to read the camera’s Wi-Fi information. Connect manually.",
+      "de": "Die Wi-Fi-Informationen der Kamera konnten nicht gelesen werden. Verbinden Sie manuell.",
+      "fr": "Impossible de lire les informations Wi-Fi de l’appareil. Connectez-vous manuellement.",
+      "es": "No se puede leer la información Wi-Fi de la cámara. Conéctate manualmente.",
+      "ja": "カメラの Wi-Fi 情報を読み取れません。手動で接続してください。",
+      "zh-Hans": "无法读取相机 Wi-Fi 信息，请手动连接。"
     }
   }
 }

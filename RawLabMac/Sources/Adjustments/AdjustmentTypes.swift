@@ -217,12 +217,32 @@ enum LensProfileMode: String, Codable, CaseIterable {
 struct LensCorrectionSettings: Equatable, Codable {
     var distortion = false
     var tca = false
+    var vignetting = false
     var autoCrop = true
     var mode = LensProfileMode.automatic
     var profileID: String?
-    var isEnabled: Bool { distortion || tca }
+    var focalLength: Double?
+    var cropFactor: Double?
+    var isEnabled: Bool { distortion || tca || vignetting }
     var coreProfileID: String {
         mode == .automatic ? "" : (profileID ?? "__rawlab_manual_selection_required__")
+    }
+    init(distortion: Bool = false, tca: Bool = false, autoCrop: Bool = true, mode: LensProfileMode = .automatic,
+         profileID: String? = nil, focalLength: Double? = nil, cropFactor: Double? = nil, vignetting: Bool = false) {
+        self.distortion = distortion; self.tca = tca; self.autoCrop = autoCrop; self.mode = mode
+        self.profileID = profileID; self.focalLength = focalLength; self.cropFactor = cropFactor; self.vignetting = vignetting
+    }
+    private enum CodingKeys: String, CodingKey { case distortion, tca, vignetting, autoCrop, mode, profileID, focalLength, cropFactor }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        distortion = try values.decode(Bool.self, forKey: .distortion)
+        tca = try values.decode(Bool.self, forKey: .tca)
+        vignetting = values.contains(.vignetting) ? try values.decode(Bool.self, forKey: .vignetting) : false
+        autoCrop = try values.decode(Bool.self, forKey: .autoCrop)
+        mode = try values.decode(LensProfileMode.self, forKey: .mode)
+        profileID = try values.decodeIfPresent(String.self, forKey: .profileID)
+        focalLength = try values.decodeIfPresent(Double.self, forKey: .focalLength)
+        cropFactor = try values.decodeIfPresent(Double.self, forKey: .cropFactor)
     }
 }
 
@@ -245,11 +265,12 @@ struct LensInfo: Equatable {
     let appliedTCA: Bool
     let cropScale: Float
     let candidates: [LensCandidate]
+    var appliedVignetting = false
     var message: String {
         switch state {
         case SONY2FUJI_LENS_OFF: return L10n.text("镜头校正已关闭")
         case SONY2FUJI_LENS_MATCHED:
-            let applied = [appliedDistortion ? L10n.text("畸变") : nil, appliedTCA ? L10n.text("横向色差") : nil].compactMap { $0 }
+            let applied = [appliedDistortion ? L10n.text("畸变") : nil, appliedTCA ? L10n.text("横向色差") : nil, appliedVignetting ? L10n.text("暗角校正") : nil].compactMap { $0 }
             return applied.isEmpty ? L10n.text("已匹配镜头") : L10n.format("已校正%@", applied.joined(separator: " / "))
         case SONY2FUJI_LENS_NO_DATABASE: return L10n.text("镜头数据库不可用")
         case SONY2FUJI_LENS_NO_CAMERA: return L10n.text("未找到机身或传感器尺寸信息")

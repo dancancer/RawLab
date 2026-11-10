@@ -14,7 +14,7 @@ extension RawSettings {
     }
 }
 
-enum EditorToolSelection: Hashable {
+enum EditorToolSelection: Hashable, Codable {
     case adjustment(AdjustmentKind)
     case film, recipe, lens, geometry
 }

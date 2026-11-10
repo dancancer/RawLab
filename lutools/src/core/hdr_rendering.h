@@ -34,6 +34,7 @@ struct HDRToneOptions {
     float blackPoint = 0, whitePoint = 0, curveStrength = 0;
     sony2fuji_tone_curve_config curve{SONY2FUJI_TONE_CURVE_CONFIG_VERSION,
         sizeof(sony2fuji_tone_curve_config), SONY2FUJI_CURVE_LEGACY, 0, {}};
+    std::array<sony2fuji_tone_curve_config, 3> channels{{curve, curve, curve}};
 };
 
 struct HDRColorOptions {

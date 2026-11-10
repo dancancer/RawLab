@@ -599,7 +599,7 @@ class EditorViewModelRaceInstrumentedTest {
             val original = model.state.value.edits
             val identity = model.state.value.photo!!.identity
             val directory = File(context.filesDir, "edits")
-            for (group in AdjustmentGroup.entries) {
+            for (group in listOf(AdjustmentGroup.GEOMETRY, AdjustmentGroup.LENS)) {
                 instrumentation.runOnMainSync { model.beginDraft(group) }
                 awaitState(model) { it.draftReady }
                 assertFalse(model.state.value.canApplyDraft)

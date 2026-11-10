@@ -167,7 +167,7 @@ void toneV2(sony2fuji_session* session) {
     settings.base.struct_size = sizeof(settings.base);
     render(SONY2FUJI_STATUS_INVALID_ARGUMENT, unchanged);
     settings.base.struct_size = sizeof(settings);
-    settings.base.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_LOOK_VERSION + 1;
+    settings.base.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION + 1;
     render(SONY2FUJI_STATUS_UNSUPPORTED, unchanged);
 }
 

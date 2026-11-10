@@ -1,0 +1,6 @@
+#rl-mobile-review .review-switch{display:flex;flex-wrap:wrap;justify-content:center;gap:4px;margin:0 0 16px;padding:0 76px 0 0;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
+#rl-mobile-review .review-switch button{min-height:44px;padding:0 12px;border:0;border-radius:6px;background:transparent;color:var(--foreground,#242426);font:inherit;font-size:13px;cursor:pointer}
+#rl-mobile-review .review-switch button[aria-pressed=true]{background:var(--primary,#28282b);color:var(--primary-foreground,#fff)}
+#rl-mobile-review [hidden]{display:none!important}
+#rl-mobile-review .review-switch button:focus-visible{outline:2px solid #b39523;outline-offset:2px}
+@media(max-width:440px){#rl-mobile-review .review-switch{justify-content:flex-start;gap:2px}#rl-mobile-review .review-switch button{padding:0 9px}}

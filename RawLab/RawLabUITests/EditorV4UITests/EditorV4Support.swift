@@ -125,6 +125,11 @@ extension EditorV4UITests {
     func importFirstVisiblePhoto(in app: XCUIApplication) throws {
         let empty = app.buttons["editor.import.empty"]
         if empty.isHittable { empty.tap() } else { app.buttons["editor.import"].tap() }
+        let onboarding = app.staticTexts["Private Access to Photos"].firstMatch
+        if onboarding.waitForExistence(timeout: 2) {
+            let close = app.buttons["Close"].firstMatch
+            if close.isHittable { close.tap() }
+        }
         let photos = app.images.matching(identifier: "PXGGridLayout-Info")
         XCTAssertTrue(photos.firstMatch.waitForExistence(timeout: 15), app.debugDescription)
         let photo = try XCTUnwrap(photos.allElementsBoundByIndex.first { element in
@@ -135,9 +140,9 @@ extension EditorV4UITests {
         waitUntil(timeout: 90) {
             let allow = springboard.buttons.matching(NSPredicate(format: "label == 'Allow Full Access' OR label == '允许完全访问'")).firstMatch
             if allow.exists { allow.tap() }
-            return app.buttons["editor.compare"].isEnabled || app.alerts.firstMatch.exists
+            return (app.descendants(matching: .any)["editor.photo"].exists && !app.descendants(matching: .any)["editor.preview.updating"].exists) || app.alerts.firstMatch.exists
         }
-        XCTAssertTrue(app.buttons["editor.compare"].isEnabled, app.debugDescription)
+        XCTAssertTrue(app.descendants(matching: .any)["editor.photo"].exists, app.debugDescription)
         XCTAssertTrue(app.descendants(matching: .any)["editor.photo"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["tool.film"].waitForExistence(timeout: 10))
         try selectTool("exposure", in: app)
@@ -216,14 +221,15 @@ extension EditorV4UITests {
     }
 
     func openWheel(_ identifier: String, in app: XCUIApplication) throws {
-        if identifier.hasPrefix("geometry.perspective") {
-            try selectTool("perspective", in: app)
-        } else if identifier.hasPrefix("geometry.") {
-            try selectTool("geometry", in: app)
-            if identifier.hasPrefix("geometry.crop") { try expandCropDimensions(in: app) }
+        if identifier.hasPrefix("geometry.") {
+            if !app.buttons["geometry.tab.0"].exists { try selectTool("geometry", in: app) }
+            if !app.buttons[identifier].exists {
+                app.buttons[identifier.hasPrefix("geometry.perspective") ? "geometry.tab.2" : "geometry.tab.0"].tap()
+                if identifier.hasPrefix("geometry.crop") { try expandCropDimensions(in: app) }
+            }
         }
         let button = app.buttons[identifier]
-        try revealInPanel(button, in: app, fully: true)
+        if !button.isHittable { try revealInPanel(button, in: app, fully: true) }
         button.tap()
         let picker = app.descendants(matching: .any)["adjustment.wheel"]
         XCTAssertTrue(picker.waitForExistence(timeout: 5), app.debugDescription)
@@ -236,11 +242,11 @@ extension EditorV4UITests {
     }
 
     func expandCropDimensions(in app: XCUIApplication) throws {
+        guard !app.buttons["geometry.cropWidth.value"].exists else { return }
+        app.buttons["geometry.aspectRatio"].tap()
         let dimensions = app.buttons["geometry.dimensions"]
-        if !dimensions.isSelected {
-            try revealInPanel(dimensions, in: app)
-            dimensions.tap()
-        }
+        XCTAssertTrue(dimensions.waitForExistence(timeout: 5))
+        dimensions.tap()
     }
 
     func selectWheelValue(_ formatted: String, title: String, unit: String = "", in app: XCUIApplication) throws {

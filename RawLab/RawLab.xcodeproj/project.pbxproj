@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AABB20261110000000000001 /* EditorToolDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABB20261110000000000002 /* EditorToolDraft.swift */; };
         E91100000000000000000001 /* RecentPhotoUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E91100000000000000000011; };
 		D0676CF1FACE332590F0E323 /* ContentView+RecentPhotos.swift in Sources */ = {isa = PBXBuildFile; fileRef = B718CF4786F3528D5CFB92E8 /* ContentView+RecentPhotos.swift */; };
 		48A79A4AFAD8F440EB66F59D /* RecentPhotosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC5C34A8A7921C28815B456C /* RecentPhotosView.swift */; };
@@ -245,9 +246,21 @@
 		8A3A7184026934D1CA19944B /* ProcessingMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD35CDDB9236C268363ED97D; };
 		FC6F4EC8E39EB3F76F188D65 /* ProcessingMigrationNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFA9E40BC0C5EEE673454CF3; };
 		DCB09DB35FA91EB64D2731A3 /* RawEditorViewModel+ProcessingMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CA9FA3A0CD1617F35B39A4E; };
+		C36B2ADB84D11D5FD0554281 /* CameraNetwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD5145FB279D152EA89CD80D /* CameraNetwork.swift */; };
+		9A367BE919FBC80E921A8A14 /* CameraOriginalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53627A6503E7BB06434FD338 /* CameraOriginalStore.swift */; };
+		FC3E1C413D8FDDFD08580028 /* CameraPTPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6014BEE4F866B5BA78F1E06E /* CameraPTPClient.swift */; };
+		B44A9E6604A3A18F80319647 /* CameraProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A50FBFBD3F02F6FD4228523 /* CameraProtocol.swift */; };
+		6208FA71281BCB63523F125B /* CameraWorkspaceBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 136F78F134845242CCB6AFB6 /* CameraWorkspaceBackend.swift */; };
+		F35ECE6734FE3B21A26B07D9 /* IOSCameraConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BD88DED20FFEE606F5B8381 /* IOSCameraConnection.swift */; };
+		240439165FD0DAF67872690B /* SonyCameraSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46E4D4CB536F1307DAD7A67 /* SonyCameraSession.swift */; };
+		FCEEE25742781A5EA12FD364 /* IOSCameraController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F5A2BFFD01F5CE86BF629DC /* IOSCameraController.swift */; };
+		5AC6FBB3EBE874026F931E0E /* IOSCameraBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5F21B6EE6116E86020A1D2A /* IOSCameraBrowser.swift */; };
+		019C9D6304C5447B6D340843 /* IOSCameraTether.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EA91506B497FFB8E5975C08 /* IOSCameraTether.swift */; };
+		C009FC8A9FF9663CB6E78F2E /* IOSCameraWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93E7376E68242B4014EB181C /* IOSCameraWorkspace.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		AABB20261110000000000002 /* EditorToolDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorToolDraft.swift; sourceTree = "<group>"; };
         E91100000000000000000011 /* RecentPhotoUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/RecentPhotoUITests.swift; sourceTree = SOURCE_ROOT; };
 		B718CF4786F3528D5CFB92E8 /* ContentView+RecentPhotos.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Editor/ContentView+RecentPhotos.swift"; sourceTree = SOURCE_ROOT; };
 		BC5C34A8A7921C28815B456C /* RecentPhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Library/RecentPhotosView.swift"; sourceTree = SOURCE_ROOT; };
@@ -629,6 +642,17 @@
 		CD35CDDB9236C268363ED97D /* ProcessingMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ProcessingMigration.swift"; path = "../Shared/ProcessingMigration.swift"; sourceTree = SOURCE_ROOT; };
 		CFA9E40BC0C5EEE673454CF3 /* ProcessingMigrationNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ProcessingMigrationNative.swift"; path = "../Shared/Native/ProcessingMigrationNative.swift"; sourceTree = SOURCE_ROOT; };
 		8CA9FA3A0CD1617F35B39A4E /* RawEditorViewModel+ProcessingMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "RawEditorViewModel+ProcessingMigration.swift"; path = "RawLab/Core/ViewModel/RawEditorViewModel+ProcessingMigration.swift"; sourceTree = SOURCE_ROOT; };
+		AD5145FB279D152EA89CD80D /* CameraNetwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraNetwork.swift"; sourceTree = "<group>"; };
+		53627A6503E7BB06434FD338 /* CameraOriginalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraOriginalStore.swift"; sourceTree = "<group>"; };
+		6014BEE4F866B5BA78F1E06E /* CameraPTPClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraPTPClient.swift"; sourceTree = "<group>"; };
+		0A50FBFBD3F02F6FD4228523 /* CameraProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraProtocol.swift"; sourceTree = "<group>"; };
+		136F78F134845242CCB6AFB6 /* CameraWorkspaceBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraWorkspaceBackend.swift"; sourceTree = "<group>"; };
+		2BD88DED20FFEE606F5B8381 /* IOSCameraConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IOSCameraConnection.swift"; sourceTree = "<group>"; };
+		C46E4D4CB536F1307DAD7A67 /* SonyCameraSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SonyCameraSession.swift"; sourceTree = "<group>"; };
+		9F5A2BFFD01F5CE86BF629DC /* IOSCameraController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IOSCameraController.swift"; sourceTree = "<group>"; };
+		D5F21B6EE6116E86020A1D2A /* IOSCameraBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IOSCameraBrowser.swift"; sourceTree = "<group>"; };
+		2EA91506B497FFB8E5975C08 /* IOSCameraTether.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IOSCameraTether.swift"; sourceTree = "<group>"; };
+		93E7376E68242B4014EB181C /* IOSCameraWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IOSCameraWorkspace.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -661,6 +685,7 @@
 		03C5C556CA624B7388F5A53F /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				346D48B8686C639559AF6E9B /* Camera */,
 				967181A1C76B4194B0C0185F /* Models */,
 				D00100000000000000000021 /* Persistence */,
 				D00100000000000000000022 /* Batch */,
@@ -774,6 +799,7 @@
 			path = UI;
 			isa = PBXGroup;
 			children = (
+				E57960B83124473A6F2B0E3A /* Camera */,
 				EA770F5886885926B9D64E9C,
 				536A50CF0FFD53F88EDE1B5B,
 				0BD8A983271153D1B8DC7FBD,
@@ -909,6 +935,7 @@
 				75200EAB73DE45D5AC8120CC /* Core/Models/AdjustmentKind.swift */,
 				E032598E21034CC384DC2993 /* Core/Models/RawSettings.swift */,
 				AB2200000000000000000002 /* EditorAdjustmentRules.swift */,
+				AABB20261110000000000002 /* EditorToolDraft.swift */,
 				99C86E9A92BE4E3A8BF782CB /* Core/Models/PhotoImportTypes.swift */,
 				D00100000000000000000015 /* Core/Models/ExportSize.swift */,
 			);
@@ -1066,6 +1093,31 @@
 				60E62AF53FA54F2397437053,
 			);
 			name = EditorV4UITests;
+			sourceTree = "<group>";
+		};
+		346D48B8686C639559AF6E9B /* Camera */ = {
+			isa = PBXGroup;
+			children = (
+				C46E4D4CB536F1307DAD7A67 /* SonyCameraSession.swift */,
+				2BD88DED20FFEE606F5B8381 /* IOSCameraConnection.swift */,
+				136F78F134845242CCB6AFB6 /* CameraWorkspaceBackend.swift */,
+				0A50FBFBD3F02F6FD4228523 /* CameraProtocol.swift */,
+				6014BEE4F866B5BA78F1E06E /* CameraPTPClient.swift */,
+				53627A6503E7BB06434FD338 /* CameraOriginalStore.swift */,
+				AD5145FB279D152EA89CD80D /* CameraNetwork.swift */,
+			);
+			path = Camera;
+			sourceTree = "<group>";
+		};
+		E57960B83124473A6F2B0E3A /* Camera */ = {
+			isa = PBXGroup;
+			children = (
+				93E7376E68242B4014EB181C /* IOSCameraWorkspace.swift */,
+				2EA91506B497FFB8E5975C08 /* IOSCameraTether.swift */,
+				D5F21B6EE6116E86020A1D2A /* IOSCameraBrowser.swift */,
+				9F5A2BFFD01F5CE86BF629DC /* IOSCameraController.swift */,
+			);
+			path = Camera;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -1246,6 +1298,17 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C009FC8A9FF9663CB6E78F2E /* IOSCameraWorkspace.swift in Sources */,
+				019C9D6304C5447B6D340843 /* IOSCameraTether.swift in Sources */,
+				5AC6FBB3EBE874026F931E0E /* IOSCameraBrowser.swift in Sources */,
+				FCEEE25742781A5EA12FD364 /* IOSCameraController.swift in Sources */,
+				240439165FD0DAF67872690B /* SonyCameraSession.swift in Sources */,
+				F35ECE6734FE3B21A26B07D9 /* IOSCameraConnection.swift in Sources */,
+				6208FA71281BCB63523F125B /* CameraWorkspaceBackend.swift in Sources */,
+				B44A9E6604A3A18F80319647 /* CameraProtocol.swift in Sources */,
+				FC3E1C413D8FDDFD08580028 /* CameraPTPClient.swift in Sources */,
+				9A367BE919FBC80E921A8A14 /* CameraOriginalStore.swift in Sources */,
+				C36B2ADB84D11D5FD0554281 /* CameraNetwork.swift in Sources */,
 				2F797D8C193C1A085B1D5258 /* ContentView+AdjustmentTransfer.swift in Sources */,
 				288ACB8ACE1B29115F97D51E /* IOSAdjustmentTransferView.swift in Sources */,
 				B84D06C6D98807B1702187D9 /* IOSAdjustmentTransferPresentation.swift in Sources */,
@@ -1349,6 +1412,7 @@
 				366A9A71BB194587A8AECB5A,
 				EDCB99B43F3C4149B2F7622B,
 				AB2200000000000000000001 /* EditorAdjustmentRules.swift in Sources */,
+				AABB20261110000000000001 /* EditorToolDraft.swift in Sources */,
 				AB2300000000000000000001 /* EditorResetTransaction.swift in Sources */,
 				2C5BFAB858B74B81AFAC16D0,
 				D883E2F5F205AC0EFBF9C319,
@@ -1498,6 +1562,7 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				HEADER_SEARCH_PATHS = "$(inherited) $(SRCROOT)/../lutools/include";
 				INFOPLIST_FILE = RawLab/Resources/Info.plist;
+				CODE_SIGN_ENTITLEMENTS = RawLab/Resources/RawLab.entitlements;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.RawLab;
@@ -1521,6 +1586,7 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				HEADER_SEARCH_PATHS = "$(inherited) $(SRCROOT)/../lutools/include";
 				INFOPLIST_FILE = RawLab/Resources/Info.plist;
+				CODE_SIGN_ENTITLEMENTS = RawLab/Resources/RawLab.entitlements;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.RawLab;

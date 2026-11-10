@@ -11,6 +11,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.platform.app.InstrumentationRegistry
 import com.rawlab.android.MainActivity
 import com.rawlab.android.editor.AdjustmentGroup
@@ -42,6 +43,7 @@ class CameraImportFlowTest {
             compose.runOnUiThread { compose.activity.model.setGpuEnabled(false); compose.activity.model.importPhoto(Uri.fromFile(source)) }
             ready()
             assertEquals(Uri.fromFile(source), compose.activity.model.state.value.photo!!.uri)
+            compose.onNodeWithTag("editor-camera").performClick()
             compose.runOnUiThread { compose.activity.model.beginDraft(AdjustmentGroup.GEOMETRY) }
             draftReady()
             compose.runOnUiThread {
@@ -52,15 +54,13 @@ class CameraImportFlowTest {
             val draft = compose.activity.model.state.value.draft
             val original = compose.activity.model.state.value.photo!!.identity
             assertTrue(draft!!.changed)
-            compose.onNode(hasContentDescription("更多") and hasAnyAncestor(hasTestTag("editor-menu"))).performClick()
-            compose.onNodeWithTag("camera-entry").performClick()
-            compose.onNodeWithTag("camera-find").assertIsDisplayed()
+            compose.onNodeWithTag("camera-home").assertIsDisplayed()
             capture("camera-connect.png")
             assertEquals(draft, compose.activity.model.state.value.draft)
+            compose.onNodeWithTag("camera-menu").performClick()
             compose.onNodeWithTag("camera-history").performClick()
             compose.onNodeWithText("导入记录").assertIsDisplayed()
-            compose.onNodeWithTag("camera-back").performClick()
-            compose.onNodeWithTag("camera-back").performClick()
+            repeat(3) { compose.onNodeWithTag("camera-back").performClick() }
             assertEquals(draft, compose.activity.model.state.value.draft)
             assertEquals(original, compose.activity.model.state.value.photo!!.identity)
             // 与相机结果页相同的交接入口：到这一步才显示既有草稿门禁。
@@ -78,14 +78,14 @@ class CameraImportFlowTest {
     }
 
     @Test fun cameraHistoryIsAvailableWithoutPermissionOrConnection() {
-        compose.onNodeWithTag("camera-entry").performClick()
+        compose.onNodeWithTag("editor-camera").performClick()
+        compose.onNodeWithTag("camera-menu").performClick()
         compose.onNodeWithTag("camera-history").performClick()
         compose.onNodeWithText("导入记录").assertIsDisplayed()
         assertFalse(compose.activity.camera.state.value.connected)
         assertNull(compose.activity.camera.state.value.stage)
-        compose.onNodeWithTag("camera-back").performClick()
-        compose.onNodeWithTag("camera-back").performClick()
-        compose.onNodeWithTag("camera-entry").assertIsDisplayed()
+        repeat(3) { compose.onNodeWithTag("camera-back").performClick() }
+        compose.onNodeWithTag("editor-camera").assertIsDisplayed()
     }
 
     @Test fun unfinishedTaskEntryOpensProgressDirectly() {
@@ -101,6 +101,54 @@ class CameraImportFlowTest {
             compose.onNodeWithText("camera-resume-fixture.ARW").assertIsDisplayed()
             compose.onNodeWithText("上次导入未完成").assertIsDisplayed()
         } finally { if (previous != null) compose.runOnUiThread { model.selectJob(previous) } }
+    }
+
+    @Test fun pausedTetherCannotHijackFreshCameraEntryOrHideImport() {
+        compose.waitUntil(10_000) { !compose.activity.camera.state.value.preparing }
+        compose.runOnUiThread { compose.activity.camera.setMode(CameraMode.TETHER) }
+        compose.waitUntil(10_000) { !compose.activity.camera.state.value.closing }
+        compose.onNodeWithTag("editor-camera").performClick()
+        compose.onNodeWithTag("camera-home").assertIsDisplayed()
+        compose.onNodeWithTag("camera-mode-TETHER").performClick()
+        compose.onNodeWithTag("camera-connect-screen").assertIsDisplayed()
+        compose.onNodeWithTag("camera-back").performClick()
+        compose.onNodeWithTag("camera-home").assertIsDisplayed()
+        compose.onNodeWithTag("camera-mode-IMPORT").performClick()
+        compose.onNodeWithTag("camera-connect-screen").assertIsDisplayed()
+        compose.onNodeWithTag("camera-back").performClick()
+        compose.onNodeWithTag("camera-back").performClick()
+        compose.onNodeWithTag("editor-camera").performClick()
+        compose.onNodeWithTag("camera-home").assertIsDisplayed()
+    }
+
+    @Test fun tetherEntryAndReturnToImportKeepConnectionGuidanceReachable() {
+        compose.waitUntil(10_000) { !compose.activity.camera.state.value.preparing }
+        compose.onNodeWithTag("editor-camera").performClick()
+        compose.onNodeWithTag("camera-mode-TETHER").performClick()
+        compose.onNodeWithTag("camera-connect-screen").assertIsDisplayed()
+        compose.runOnUiThread {
+            val camera = compose.activity.camera
+            camera.tether.restore(emptyList(), camera.state.value.jobs)
+            val field = CameraImportViewModel::class.java.getDeclaredField("mutable").apply { isAccessible = true }
+            @Suppress("UNCHECKED_CAST")
+            val state = field.get(camera) as kotlinx.coroutines.flow.MutableStateFlow<CameraImportState>
+            state.value = state.value.copy(connected = true, preparing = false, closing = false)
+        }
+        compose.onNodeWithTag("tether-menu").performClick()
+        compose.onNodeWithTag("tether-switch-import").performClick()
+        compose.onNodeWithTag("camera-connect-screen").assertIsDisplayed()
+        compose.onNodeWithTag("camera-connection-help").assertIsDisplayed()
+        assertEquals(CameraMode.IMPORT, compose.activity.camera.state.value.mode)
+        assertFalse(compose.activity.camera.state.value.connected)
+    }
+
+    @Test fun connectionHelpUsesASecondPageAndReturnsToTheSameTask() {
+        compose.onNodeWithTag("editor-camera").performClick()
+        compose.onNodeWithTag("camera-mode-IMPORT").performClick()
+        compose.onNodeWithTag("camera-connection-help").performClick()
+        compose.onNodeWithTag("camera-connect-help").assertIsDisplayed()
+        compose.onNodeWithTag("camera-back").performClick()
+        compose.onNodeWithTag("camera-connect-screen").assertIsDisplayed()
     }
 
     private fun capture(name: String) {

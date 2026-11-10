@@ -101,6 +101,20 @@ Json writeToneCurve(const sony2fuji_tone_curve_config& curve) {
     return {{"mode", curve.mode == SONY2FUJI_CURVE_CUSTOM ? "custom" : "legacy"}, {"points", points}};
 }
 
+bool hasChannelCurves(const EditRecipe& recipe) {
+    return std::any_of(recipe.channelCurves.begin(), recipe.channelCurves.end(),
+        [](const auto& value) { return value.mode == SONY2FUJI_CURVE_CUSTOM; });
+}
+
+Json writeToneCurves(const EditRecipe& recipe) {
+    auto curve = writeToneCurve(recipe.toneCurve);
+    if (hasChannelCurves(recipe)) {
+        curve["channels"] = {{"red", writeToneCurve(recipe.channelCurves[0])},
+            {"green", writeToneCurve(recipe.channelCurves[1])}, {"blue", writeToneCurve(recipe.channelCurves[2])}};
+    }
+    return curve;
+}
+
 void completeEdits(const Json& edits, EditRecipe& parsed) {
     if (edits.contains("color_grading")) {
         const auto& grading=edits.at("color_grading");
@@ -135,7 +149,17 @@ void completeEdits(const Json& edits, EditRecipe& parsed) {
         parsed.toneControls.black_point = number(tone, "black_point", 0, -1, 1, "edits.tone");
         parsed.toneControls.white_point = number(tone, "white_point", 0, -1, 1, "edits.tone");
         if (tone.contains("curve")) {
-            readToneCurve(tone.at("curve"), parsed.toneCurve);
+            const auto& root = tone.at("curve");
+            auto master = root;
+            if (root.contains("channels")) {
+                const auto& channels = root.at("channels");
+                fields(channels, "edits.tone.curve.channels", {"red", "green", "blue"});
+                const char* names[]{"red", "green", "blue"};
+                for (size_t i = 0; i < 3; ++i)
+                    if (channels.contains(names[i])) readToneCurve(channels.at(names[i]), parsed.channelCurves[i]);
+                master.erase("channels");
+            }
+            readToneCurve(master, parsed.toneCurve);
             if (parsed.toneCurve.mode == SONY2FUJI_CURVE_CUSTOM && parsed.sCurve != 0)
                 throw std::invalid_argument("edits.tone.curve conflicts with nonzero edits.tone.s_curve");
         }
@@ -192,9 +216,10 @@ void completeEdits(const Json& edits, EditRecipe& parsed) {
     }
     if (edits.contains("lens_correction")) {
         const auto& lens = edits.at("lens_correction");
-        fields(lens, "edits.lens_correction", {"distortion", "tca", "auto_crop", "profile_id"});
+        fields(lens, "edits.lens_correction", {"distortion", "tca", "vignetting", "auto_crop", "profile_id"});
         parsed.lensDistortion = boolean(lens, "distortion", "edits.lens_correction");
         parsed.lensTca = boolean(lens, "tca", "edits.lens_correction");
+        parsed.lensVignetting = boolean(lens, "vignetting", "edits.lens_correction");
         parsed.lensAutoCrop = !lens.contains("auto_crop") || boolean(lens, "auto_crop", "edits.lens_correction");
         if (lens.contains("profile_id") && !lens.at("profile_id").is_null())
             parsed.lensProfileId = text(lens.at("profile_id"), "edits.lens_correction.profile_id");
@@ -229,6 +254,7 @@ uint32_t hdrProcessingVersionForSchema(uint32_t schema) {
     case 12: return SONY2FUJI_HDR_PROCESSING_DETAIL_VERSION;
     case 13: return SONY2FUJI_HDR_PROCESSING_LOOK_VERSION;
     case 14: return SONY2FUJI_HDR_PROCESSING_LOOK_VERSION;
+    case 15: return SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION;
     default: return 0;
     }
 }
@@ -271,7 +297,7 @@ EditRecipe parseHDR(const Json& root, uint32_t schema) {
         if (parsed.hdr->inputType!="raw") throw std::invalid_argument(path+" requires input.type raw");
         const auto& camera=input.at("camera_development");
         fields(camera,path,{"version","white_balance_mode","temperature","tint","exposure_reference","fbdd_level",
-            "lens_distortion","lens_tca","lens_auto_crop","lens_profile","camera_profile"});
+            "lens_distortion","lens_tca","lens_vignetting","lens_auto_crop","lens_profile","camera_profile"});
         auto& config=parsed.hdr->cameraDevelopment;
         if (camera.contains("version")) integer(camera.at("version"),1,1,path+".version");
         if (camera.contains("white_balance_mode")) {
@@ -289,7 +315,8 @@ EditRecipe parseHDR(const Json& root, uint32_t schema) {
         }
         if (camera.contains("fbdd_level")) config.fbdd_level=integer(camera.at("fbdd_level"),0,2,path+".fbdd_level");
         config.lens_flags=(boolean(camera,"lens_distortion",path) ? SONY2FUJI_HDR_CAMERA_LENS_DISTORTION : 0) |
-            (boolean(camera,"lens_tca",path) ? SONY2FUJI_HDR_CAMERA_LENS_TCA : 0);
+            (boolean(camera,"lens_tca",path) ? SONY2FUJI_HDR_CAMERA_LENS_TCA : 0) |
+            (boolean(camera,"lens_vignetting",path) ? SONY2FUJI_HDR_CAMERA_LENS_VIGNETTING : 0);
         parsed.hdr->lensAutoCrop=!camera.contains("lens_auto_crop") || boolean(camera,"lens_auto_crop",path);
         if (config.lens_flags && parsed.hdr->lensAutoCrop) config.lens_flags|=SONY2FUJI_HDR_CAMERA_LENS_AUTO_CROP;
         if (camera.contains("lens_profile") && !camera.at("lens_profile").is_null()) {
@@ -327,6 +354,9 @@ EditRecipe parseHDR(const Json& root, uint32_t schema) {
     if (schema == 6 && edits.contains("tone"))
         fields(edits.at("tone"), "edits.tone", {"contrast","saturation","highlights","shadows"});
     completeEdits(edits, parsed);
+    if (processingVersion < SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION &&
+        std::any_of(parsed.channelCurves.begin(), parsed.channelCurves.end(), [](const auto& curve) { return curve.mode == SONY2FUJI_CURVE_CUSTOM; }))
+        throw std::invalid_argument("HDR channel curves require schema_version 15");
     if (edits.contains("look")) {
         const auto& look = edits.at("look");
         const std::string path = "edits.look";
@@ -413,10 +443,12 @@ EditRecipe parseHDR(const Json& root, uint32_t schema) {
 std::string serializeHDR(const EditRecipe& recipe) {
     if (!recipe.hdr) throw std::invalid_argument("HDR recipe requires HDR settings");
     const auto& h=*recipe.hdr; const auto& g=recipe.geometry;
-    if (!validToneCurve(recipe.toneCurve)) throw std::invalid_argument("Invalid HDR tone curve configuration");
+    if (!validToneCurve(recipe.toneCurve) || !std::all_of(recipe.channelCurves.begin(), recipe.channelCurves.end(), validToneCurve)) throw std::invalid_argument("Invalid HDR tone curve configuration");
     if (recipe.schemaVersion == 6 && (recipe.toneControls.black_point != 0 || recipe.toneControls.white_point != 0 ||
         recipe.sCurve != 0 || recipe.toneCurve.mode == SONY2FUJI_CURVE_CUSTOM))
         throw std::invalid_argument("HDR tone fields require schema_version 8");
+    if (hasChannelCurves(recipe) && recipe.schemaVersion < 15)
+        throw std::invalid_argument("HDR channel curves require schema_version 15");
     if (h.baseColor!=SONY2FUJI_HDR_COLOR_SRGB && h.baseColor!=SONY2FUJI_HDR_COLOR_DISPLAY_P3)
         throw std::invalid_argument("Unsupported output.base_color");
     Json size={{"mode","native"}};
@@ -441,7 +473,9 @@ std::string serializeHDR(const EditRecipe& recipe) {
             {"temperature",c.temperature},{"tint",c.tint},
             {"exposure_reference",c.exposure_reference==SONY2FUJI_HDR_CAMERA_EXPOSURE_SENSOR ? "sensor" : "metadata"},
             {"fbdd_level",c.fbdd_level},{"lens_distortion",(c.lens_flags & SONY2FUJI_HDR_CAMERA_LENS_DISTORTION)!=0},
-            {"lens_tca",(c.lens_flags & SONY2FUJI_HDR_CAMERA_LENS_TCA)!=0},{"lens_auto_crop",h.lensAutoCrop}};
+            {"lens_tca",(c.lens_flags & SONY2FUJI_HDR_CAMERA_LENS_TCA)!=0},
+            {"lens_auto_crop",h.lensAutoCrop}};
+        if (c.lens_flags & SONY2FUJI_HDR_CAMERA_LENS_VIGNETTING) camera["lens_vignetting"]=true;
         if (!h.lensProfile.empty()) camera["lens_profile"]=h.lensProfile;
         if (!h.cameraProfilePath.empty()) camera["camera_profile"]={{"path",h.cameraProfilePath},{"sha256",h.cameraProfileSHA256}};
         result["input"]["camera_development"]=camera;
@@ -451,7 +485,7 @@ std::string serializeHDR(const EditRecipe& recipe) {
         tone["black_point"] = recipe.toneControls.black_point;
         tone["white_point"] = recipe.toneControls.white_point;
         tone["s_curve"] = recipe.sCurve;
-        tone["curve"] = writeToneCurve(recipe.toneCurve);
+        tone["curve"] = writeToneCurves(recipe);
     }
     if (recipe.schemaVersion >= 9) {
         auto& edits = result["edits"];
@@ -563,7 +597,7 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
         }
 
         if (parsed.rasterInput && (parsed.exposureMode != SONY2FUJI_EXPOSURE_SENSOR ||
-            parsed.rawNoiseReduction != 0 || parsed.lensDistortion || parsed.lensTca || !parsed.lensProfileId.empty()))
+            parsed.rawNoiseReduction != 0 || parsed.lensDistortion || parsed.lensTca || parsed.lensVignetting || !parsed.lensProfileId.empty()))
             throw std::invalid_argument("Raster inputs require sensor exposure mode and disabled RAW denoise/lens correction");
 
         if (edits.contains("look")) {
@@ -644,9 +678,11 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
 std::string serializeEditRecipe(const EditRecipe& recipe) {
     if (hdrProcessingVersionForSchema(recipe.schemaVersion)) return serializeHDR(recipe);
     if (recipe.hdr) throw std::invalid_argument("HDR settings require an HDR recipe schema");
-    if (!validToneCurve(recipe.toneCurve)) throw std::invalid_argument("Invalid tone curve configuration");
+    if (!validToneCurve(recipe.toneCurve) || !std::all_of(recipe.channelCurves.begin(), recipe.channelCurves.end(), validToneCurve)) throw std::invalid_argument("Invalid tone curve configuration");
     if (recipe.toneCurve.mode == SONY2FUJI_CURVE_CUSTOM && (recipe.schemaVersion < 5 || recipe.sCurve != 0))
         throw std::invalid_argument("Custom tone curve requires schema_version 5 and zero s_curve");
+    if (hasChannelCurves(recipe) && recipe.schemaVersion < 5)
+        throw std::invalid_argument("Channel curves require schema_version 5");
     if (recipe.schemaVersion < 1 || recipe.schemaVersion > 7)
         throw std::invalid_argument("Unsupported schema_version");
     if (recipe.x3fMode != SONY2FUJI_X3F_LEGACY && recipe.x3fMode != SONY2FUJI_X3F_NORMAL)
@@ -734,7 +770,7 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
         edits["tone"] = {{"contrast", recipe.contrast}, {"saturation", recipe.saturation},
             {"highlights", recipe.highlights}, {"shadows", recipe.shadows}, {"s_curve", recipe.sCurve}};
         if (recipe.schemaVersion >= 5) {
-            edits["tone"]["curve"] = writeToneCurve(recipe.toneCurve);
+            edits["tone"]["curve"] = writeToneCurves(recipe);
         }
         // Identity omits additive keys so existing normalized recipes stay byte-identical.
         if (controls.black_point != 0) edits["tone"]["black_point"] = controls.black_point;
@@ -751,6 +787,7 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
                 {"chroma", recipe.wavelet.chroma}, {"coarse", recipe.wavelet.coarse}}}};
         edits["lens_correction"] = {{"distortion", recipe.lensDistortion}, {"tca", recipe.lensTca},
             {"auto_crop", recipe.lensAutoCrop}, {"profile_id", recipe.lensProfileId.empty() ? Json(nullptr) : Json(recipe.lensProfileId)}};
+        if (recipe.lensVignetting) edits["lens_correction"]["vignetting"] = true;
     }
     return document.dump(2) + "\n";
 }
@@ -787,15 +824,18 @@ sony2fuji_request EditRecipe::toRequest() const {
 
 sony2fuji_hdr_request_v1 EditRecipe::toHDRRequest() const {
     if (schemaVersion != 6) throw std::invalid_argument("HDR request v1 requires schema_version 6");
-    return toHDRRenderRequest().base.base.base.base.base.base;
+    return toHDRRenderRequest().base.base.base.base.base.base.base;
 }
 
-sony2fuji_hdr_request_v7 EditRecipe::toHDRRenderRequest() const {
+sony2fuji_hdr_request_v8 EditRecipe::toHDRRenderRequest() const {
     const auto version = hdrProcessingVersionForSchema(schemaVersion);
     if (!version || !hdr) throw std::invalid_argument("Typed HDR request requires an HDR recipe schema");
     if (hdr->processingVersion != version) throw std::invalid_argument("HDR processing.version does not match schema_version");
-    sony2fuji_hdr_request_v7 extended{};
-    auto& detail = extended.base;
+    if (hasChannelCurves(*this) && version < SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION)
+        throw std::invalid_argument("HDR channel curves require schema_version 15");
+    sony2fuji_hdr_request_v8 extended{};
+    auto& look = extended.base;
+    auto& detail = look.base;
     auto& effectsRequest = detail.base;
     auto& rendition = effectsRequest.base;
     auto& color = rendition.base;
@@ -843,13 +883,17 @@ sony2fuji_hdr_request_v7 EditRecipe::toHDRRenderRequest() const {
         detail.denoise = hdr->denoise;
     }
     if (version >= SONY2FUJI_HDR_PROCESSING_LOOK_VERSION) {
-        request.struct_size = sizeof(extended);
+        request.struct_size = sizeof(look);
         if (!lookPath.empty()) {
             if (hdr->lookSHA256.size() != 64) throw std::invalid_argument("Invalid HDR look fingerprint");
-            extended.look_path = lookPath.c_str();
-            extended.look_strength = lookStrength;
-            std::copy(hdr->lookSHA256.begin(), hdr->lookSHA256.end(), extended.look_sha256);
+            look.look_path = lookPath.c_str();
+            look.look_strength = lookStrength;
+            std::copy(hdr->lookSHA256.begin(), hdr->lookSHA256.end(), look.look_sha256);
         }
+    }
+    if (version >= SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION) {
+        request.struct_size = sizeof(extended);
+        std::copy(channelCurves.begin(), channelCurves.end(), extended.channels);
     }
     return extended;
 }

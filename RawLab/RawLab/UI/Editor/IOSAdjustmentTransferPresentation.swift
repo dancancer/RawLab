@@ -36,7 +36,7 @@ extension AdjustmentTransferField {
             .cropX: "水平位置", .cropY: "垂直位置", .cropWidth: "宽度", .cropHeight: "高度",
             .quarterTurns: "旋转", .flipHorizontal: "水平翻转", .flipVertical: "垂直翻转",
             .straighten: "拉直", .perspectiveHorizontal: "水平透视", .perspectiveVertical: "垂直透视",
-            .lensDistortion: "畸变校正", .lensTCA: "横向色差", .lensAutoCrop: "自动裁切", .lensProfile: "镜头配置"
+            .lensDistortion: "畸变校正", .lensTCA: "横向色差", .lensVignetting: "暗角校正", .lensAutoCrop: "自动裁切", .lensProfile: "镜头配置"
         ]
         return L10n.text(labels[self] ?? rawValue)
     }

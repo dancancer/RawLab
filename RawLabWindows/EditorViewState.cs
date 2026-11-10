@@ -8,7 +8,7 @@ internal static class NeutralReference
     {
         var camera = settings?.CameraSettings;
         // 对比颜色时沿用同一镜头画框，其他相机显影调整不进入参考图身份。
-        return camera == null ? null : new(LensDistortion:camera.LensDistortion,LensTca:camera.LensTca,
+        return camera == null ? null : new(LensDistortion:camera.LensDistortion,LensTca:camera.LensTca,LensVignetting:camera.LensVignetting,
             LensAutoCrop:camera.LensAutoCrop,LensProfile:camera.LensProfile);
     }
     internal static Adjustments Settings(string path,Adjustments committed)

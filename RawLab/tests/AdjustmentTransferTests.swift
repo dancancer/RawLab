@@ -219,6 +219,13 @@ import Foundation
         var source = RawSettings.default
         source.toneCurve = 0.65
         source.curveSettings = ToneCurveSettings.identity.inserting(x: 0.25, y: 0.12).inserting(x: 0.75, y: 0.88)
+        source.curveSettings.channels.red = .identity.inserting(x: 0.5, y: 0.6)
+        source.curveSettings.channels.blue = .identity.inserting(x: 0.5, y: 0.4)
+        let old = try JSONDecoder().decode(ToneCurveSettings.self, from: Data("{\"mode\":\"legacy\",\"points\":[]}".utf8))
+        check(old.isDefault && old.channels.isDefault, "Old curve records default all independent channels")
+        let scaled = source.curveSettings.scaled(by: 0.5)
+        check(scaled.channels.red.points[1].y == 0.55 && scaled.channels.blue.points[1].y == 0.45,
+              "Refinement scales every curve channel")
         let restored = try JSONDecoder().decode(RawSettings.self, from: JSONEncoder().encode(source))
         check(restored == source, "Curve mode, binary64 points and inactive legacy scalar persist")
         let modified = try IOSAdjustmentTransfer.capture(scope: .modified, snapshot: state(source), context: raw)
@@ -572,21 +579,30 @@ import Foundation
             _ = try IOSAdjustmentTransfer.prepare(payload: payload(["effects.grain.amount": .number(2.5)]), target: state(), context: raw)
         }
         var rasterContext = raw; rasterContext.isRaw = false
-        for request: [String: AdjustmentTransferValue] in [
-            ["geometry.lens.profile_id": .string("fixture-profile")],
-            ["geometry.lens.auto_crop": .boolean(false)]
-        ] {
-            rejects("Raster rejects selected inactive lens request instead of dropping it") {
-                _ = try IOSAdjustmentTransfer.prepare(payload: payload(request), target: state(), context: rasterContext)
-            }
-        }
+        let selectedProfile = try IOSAdjustmentTransfer.prepare(payload: payload([
+            "geometry.lens.profile_id": .string("fixture-profile")]), target: state(), context: rasterContext)
+        check(selectedProfile.settings.lensSettings.profileID == "fixture-profile" && !selectedProfile.settings.lensSettings.isEnabled,
+              "Raster preserves an inactive manual profile without claiming correction")
+        let selectedCrop = try IOSAdjustmentTransfer.prepare(payload: payload([
+            "geometry.lens.auto_crop": .boolean(false)]), target: state(), context: rasterContext)
+        check(!selectedCrop.settings.lensSettings.autoCrop, "Raster preserves an inactive crop preference")
         let lens = try payload(["geometry.lens.distortion": .boolean(true)])
         rejects("Enabled lens correction requires actual target calibration") {
             _ = try IOSAdjustmentTransfer.prepare(payload: lens, target: state(), context: raw)
         }
+        rejects("Raster enabled lens correction also requires actual target calibration") {
+            _ = try IOSAdjustmentTransfer.prepare(payload: lens, target: state(), context: rasterContext)
+        }
+        var rasterChecked = false
+        rasterContext.validateLensRequest = { _ in rasterChecked = true }
+        let correctedRaster = try IOSAdjustmentTransfer.prepare(payload: lens, target: state(), context: rasterContext)
+        check(rasterChecked && correctedRaster.settings.lensSettings.distortion, "Raster calibration is validated before applying lens settings")
         var context = raw; var checked = false; context.validateLensRequest = { _ in checked = true }
         let corrected = try IOSAdjustmentTransfer.prepare(payload: lens, target: state(), context: context)
         check(checked && corrected.settings.lensSettings.distortion, "Lens preflight validates the merged target request")
+        let vignette = try payload(["geometry.lens.vignetting": .boolean(true)])
+        let appliedVignette = try IOSAdjustmentTransfer.prepare(payload: vignette, target: state(), context: context)
+        check(appliedVignette.settings.lensSettings.vignetting, "Vignetting-only transfer writes the changed lens setting")
     }
     static func fixtures() throws {
         let root = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: "Shared/fixtures/adjustment-transfer-v1.json"))) as! [String: Any]

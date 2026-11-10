@@ -44,7 +44,7 @@ internal object NativeHDRBridge {
         require(!info.isProRAW || camera.isDefault) { "Camera development requires an ordinary Bayer RAW" }
         require(edge in 0..65535)
         if (edge == 0) HDRSourceCache.clear()
-        val flags = (if (camera.lensDistortion) 1 else 0) or (if (camera.lensTca) 2 else 0) or
+        val flags = (if (camera.lensDistortion) 1 else 0) or (if (camera.lensTca) 2 else 0) or (if (camera.lensVignetting) 8 else 0) or
             (if (camera.lensActive && camera.lensAutoCrop) 4 else 0)
         val handle = nativeDecodeCameraRaw(processor, file.absolutePath, edge, cancellationGeneration,
             info.isProRAW, requireNotNull(file.parentFile).absolutePath, camera.customWhiteBalance,
@@ -67,7 +67,7 @@ internal object NativeHDRBridge {
         require(settings.cameraSettings.isDefault || source.sourceInfo.isCameraRaw && !source.sourceInfo.isProRAW)
         val curve = settings.tone?.curve
         val handle = nativeRender(session, source.handle, settings.renderRequestValues(), curve?.mode?.nativeValue ?: 0,
-            curve?.packed(), edge, cancellationGeneration, settings.look?.asset(lookDirectory)?.absolutePath, settings.look?.sha256)
+            curve?.packed(), curve.channelModes(), curve.channelPoints(), edge, cancellationGeneration, settings.look?.asset(lookDirectory)?.absolutePath, settings.look?.sha256)
         if (handle == 0L) error("HDR render returned an empty owner")
         try {
             return NativeHDRImage(handle, source.sourceInfo, nativeMetadata(handle))
@@ -84,7 +84,7 @@ internal object NativeHDRBridge {
         sourceRevision: Long, requestRevision: Long, probe: FloatArray, cancellationGeneration: Long, lookDirectory: File?) {
         val curve = settings.tone?.curve
         nativeSampleHsl(session, source.handle, settings.renderRequestValues(), curve?.mode?.nativeValue ?: 0,
-            curve?.packed(), edge, sourceRevision, requestRevision, probe, cancellationGeneration,
+            curve?.packed(), curve.channelModes(), curve.channelPoints(), edge, sourceRevision, requestRevision, probe, cancellationGeneration,
             settings.look?.asset(lookDirectory)?.absolutePath, settings.look?.sha256)
     }
     fun sdrBitmap(pair: NativeHDRImage, bitmap: Bitmap) = nativeSdrBitmap(pair.handle, bitmap)
@@ -106,7 +106,7 @@ internal object NativeHDRBridge {
         }
         val curve = settings.tone?.curve
         nativeExportProRAW(processor, file.absolutePath, settings.renderRequestValues(), curve?.mode?.nativeValue ?: 0,
-            curve?.packed(), edge, keepHDR,
+            curve?.packed(), curve.channelModes(), curve.channelPoints(), edge, keepHDR,
             digest.digest(), requireNotNull(output.parentFile).absolutePath, output.absolutePath, cancellationGeneration,
             settings.look?.asset(lookDirectory)?.absolutePath, settings.look?.sha256)
     }
@@ -128,17 +128,17 @@ internal object NativeHDRBridge {
         proRAW: Boolean, temporaryRoot: String, customWhiteBalance: Boolean, temperature: Float, tint: Float,
         sensorExposure: Boolean, fbddLevel: Int, lensFlags: Int, lensProfile: String?, profilePath: String?, profileDigest: String?): Long
     @JvmStatic
-    private external fun nativeExportProRAW(session: Long, path: String, values: FloatArray, curveMode: Int, curvePoints: DoubleArray?, longEdge: Int,
+    private external fun nativeExportProRAW(session: Long, path: String, values: FloatArray, curveMode: Int, curvePoints: DoubleArray?, channelModes: IntArray?, channelPoints: Array<DoubleArray>?, longEdge: Int,
         keepHDR: Boolean, fingerprint: ByteArray, temporaryRoot: String, output: String, cancellationGeneration: Long,
         lookPath: String?, lookSha256: String?)
     @JvmStatic
     private external fun nativeRender(session: Long, source: Long, values: FloatArray, curveMode: Int, curvePoints: DoubleArray?,
-        longEdge: Int, cancellationGeneration: Long, lookPath: String?, lookSha256: String?): Long
+        channelModes: IntArray?, channelPoints: Array<DoubleArray>?, longEdge: Int, cancellationGeneration: Long, lookPath: String?, lookSha256: String?): Long
     @JvmStatic
     private external fun nativeEstimateAutoExposure(session: Long, source: Long, temperature: Float, tint: Float, cancellationGeneration: Long): Float
     @JvmStatic
     private external fun nativeSampleHsl(session: Long, source: Long, values: FloatArray, curveMode: Int, curvePoints: DoubleArray?,
-        longEdge: Int, sourceRevision: Long, requestRevision: Long, probe: FloatArray, cancellationGeneration: Long,
+        channelModes: IntArray?, channelPoints: Array<DoubleArray>?, longEdge: Int, sourceRevision: Long, requestRevision: Long, probe: FloatArray, cancellationGeneration: Long,
         lookPath: String?, lookSha256: String?)
     @JvmStatic
     private external fun nativeMetadata(pair: Long): FloatArray
@@ -225,3 +225,8 @@ internal fun HDRSettings.renderRequestValues(): FloatArray {
     val detailValues = effectValues + floatArrayOf(detail.sharpening, detail.clarity, detail.dehaze, detail.denoise)
     return look?.let { detailValues + it.strength } ?: detailValues
 }
+
+private fun com.rawlab.android.settings.ToneCurveSettings?.channelModes(): IntArray? =
+    if (this?.hasChannelCurves == true) intArrayOf(channels.red.mode.nativeValue, channels.green.mode.nativeValue, channels.blue.mode.nativeValue) else null
+private fun com.rawlab.android.settings.ToneCurveSettings?.channelPoints(): Array<DoubleArray>? =
+    if (this?.hasChannelCurves == true) arrayOf(channels.red.packed(), channels.green.packed(), channels.blue.packed()) else null

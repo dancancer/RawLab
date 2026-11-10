@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "sony2fuji/ffi/sony2fuji_hdr.h"
@@ -59,6 +60,7 @@ struct EditRecipe {
     float sCurve = 0;
     sony2fuji_tone_curve_config toneCurve{SONY2FUJI_TONE_CURVE_CONFIG_VERSION,
         sizeof(sony2fuji_tone_curve_config), SONY2FUJI_CURVE_LEGACY, 0, {}};
+    std::array<sony2fuji_tone_curve_config, 3> channelCurves{{toneCurve, toneCurve, toneCurve}};
     sony2fuji_tone_controls_config toneControls{SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION,
         sizeof(sony2fuji_tone_controls_config), 0, 0, 0};
     sony2fuji_atmosphere_config atmosphere{SONY2FUJI_ATMOSPHERE_CONFIG_VERSION,
@@ -75,6 +77,7 @@ struct EditRecipe {
         sizeof(sony2fuji_photo_effects_config), 0, 50, 0, 50, 0, 0, 25, 50};
     bool lensDistortion = false;
     bool lensTca = false;
+    bool lensVignetting = false;
     bool lensAutoCrop = true;
     std::string lensProfileId;
     sony2fuji_output_format outputFormat = SONY2FUJI_OUTPUT_JPEG;
@@ -91,7 +94,7 @@ struct EditRecipe {
     // String pointers borrow this recipe; keep it alive and unchanged while used.
     sony2fuji_request toRequest() const;
     sony2fuji_hdr_request_v1 toHDRRequest() const;
-    sony2fuji_hdr_request_v7 toHDRRenderRequest() const;
+    sony2fuji_hdr_request_v8 toHDRRenderRequest() const;
 };
 
 // Invalid documents leave the destination unchanged. Error includes the field.

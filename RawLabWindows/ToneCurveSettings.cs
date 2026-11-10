@@ -7,21 +7,21 @@ namespace RawLab.Windows;
 public enum ToneCurveMode { Legacy, Custom }
 public readonly record struct ToneCurvePoint(double X, double Y);
 
-[JsonConverter(typeof(ToneCurveJsonConverter))]
-public sealed class ToneCurveSettings : IEquatable<ToneCurveSettings>
+[JsonConverter(typeof(ToneCurveShapeJsonConverter))]
+public sealed class ToneCurveShape : IEquatable<ToneCurveShape>
 {
     public ToneCurveMode Mode { get; }
     public IReadOnlyList<ToneCurvePoint> Points { get; }
-    public ToneCurveSettings(ToneCurveMode mode = ToneCurveMode.Legacy, IEnumerable<ToneCurvePoint>? points = null)
+    public ToneCurveShape(ToneCurveMode mode = ToneCurveMode.Legacy, IEnumerable<ToneCurvePoint>? points = null)
     {
         Mode = mode; Points = Array.AsReadOnly((points ?? []).ToArray());
         if (!IsValid) throw new ArgumentOutOfRangeException(nameof(points), "Invalid curve points");
     }
-    public static ToneCurveSettings Identity { get; } = new(ToneCurveMode.Custom, [new(0, 0), new(1, 1)]);
+    public static ToneCurveShape Identity { get; } = new(ToneCurveMode.Custom, [new(0, 0), new(1, 1)]);
     public bool IsDefault => Mode == ToneCurveMode.Legacy;
     public bool IsIdentity => IsDefault || Points.All(p => p.X == p.Y);
     public double Progress => Points.Count == 0 ? 0 : Points.Max(p => Math.Abs(p.Y - p.X));
-    public ToneCurveSettings Scaled(double strength)
+    public ToneCurveShape Scaled(double strength)
     {
         if (Mode != ToneCurveMode.Custom || strength == 1) return this;
         if (strength == 0) return Identity;
@@ -37,7 +37,7 @@ public sealed class ToneCurveSettings : IEquatable<ToneCurveSettings>
         Points.All(p => double.IsFinite(p.X) && double.IsFinite(p.Y) && p.X is >= 0 and <= 1 && p.Y is >= 0 and <= 1) &&
         Points.Zip(Points.Skip(1)).All(pair => pair.First.X < pair.Second.X && pair.First.Y <= pair.Second.Y);
     public bool IsInterior(int index) => Mode == ToneCurveMode.Custom && index > 0 && index + 1 < Points.Count;
-    public ToneCurveSettings Inserting(double x, double y)
+    public ToneCurveShape Inserting(double x, double y)
     {
         if (Mode != ToneCurveMode.Custom || Points.Count >= 33 || !double.IsFinite(x) || !double.IsFinite(y) ||
             x <= 0 || x >= 1 || Points.Any(p => p.X == x)) return this;
@@ -45,7 +45,7 @@ public sealed class ToneCurveSettings : IEquatable<ToneCurveSettings>
         result.Insert(next, new(x, Math.Clamp(y, Points[next - 1].Y, Points[next].Y)));
         return new(Mode, result);
     }
-    public ToneCurveSettings Moving(int index, double x, double y)
+    public ToneCurveShape Moving(int index, double x, double y)
     {
         if (!IsInterior(index) || !double.IsFinite(x) || !double.IsFinite(y)) return this;
         var low = Math.BitIncrement(Points[index - 1].X); var high = Math.BitDecrement(Points[index + 1].X);
@@ -53,25 +53,25 @@ public sealed class ToneCurveSettings : IEquatable<ToneCurveSettings>
         var result = Points.ToArray(); result[index] = new(Math.Clamp(x, low, high), Math.Clamp(y, Points[index - 1].Y, Points[index + 1].Y));
         return new(Mode, result);
     }
-    public ToneCurveSettings Removing(int index)
+    public ToneCurveShape Removing(int index)
     {
         if (!IsInterior(index)) return this;
         var result = Points.ToList(); result.RemoveAt(index); return new(Mode, result);
     }
-    public bool Equals(ToneCurveSettings? other) => other is not null && Mode == other.Mode && Points.SequenceEqual(other.Points);
-    public override bool Equals(object? other) => other is ToneCurveSettings curve && Equals(curve);
+    public bool Equals(ToneCurveShape? other) => other is not null && Mode == other.Mode && Points.SequenceEqual(other.Points);
+    public override bool Equals(object? other) => other is ToneCurveShape curve && Equals(curve);
     public override int GetHashCode() { var hash = new HashCode(); hash.Add(Mode); foreach (var point in Points) hash.Add(point); return hash.ToHashCode(); }
-    public static bool operator ==(ToneCurveSettings? a, ToneCurveSettings? b) => Equals(a, b);
-    public static bool operator !=(ToneCurveSettings? a, ToneCurveSettings? b) => !Equals(a, b);
+    public static bool operator ==(ToneCurveShape? a, ToneCurveShape? b) => Equals(a, b);
+    public static bool operator !=(ToneCurveShape? a, ToneCurveShape? b) => !Equals(a, b);
     internal Native.ToneCurveConfig NativeConfig()
     {
         var values = new double[66];
         for (var i = 0; i < Points.Count; i++) { values[i * 2] = Points[i].X; values[i * 2 + 1] = Points[i].Y; }
         return new() { Version = 1, StructSize = (uint)Marshal.SizeOf<Native.ToneCurveConfig>(), Mode = (int)Mode, Count = (uint)Points.Count, Points = values };
     }
-    internal static ToneCurveSettings Parse(JsonElement json)
+    internal static ToneCurveShape Parse(JsonElement json, bool allowChannels = false)
     {
-        if (json.ValueKind != JsonValueKind.Object || !json.EnumerateObject().Select(p => p.Name).Order().SequenceEqual(new[] { "mode", "points" }))
+        if (json.ValueKind != JsonValueKind.Object || !json.EnumerateObject().Select(p => p.Name).Where(key => !allowChannels || key != "channels").Order().SequenceEqual(new[] { "mode", "points" }))
             throw new JsonException("Invalid curve fields");
         var mode = json.GetProperty("mode");
         if (mode.ValueKind != JsonValueKind.String || mode.GetString() is not ("legacy" or "custom")) throw new JsonException("Invalid curve mode");
@@ -89,15 +89,94 @@ public sealed class ToneCurveSettings : IEquatable<ToneCurveSettings>
     }
 }
 
-public sealed class ToneCurveJsonConverter : JsonConverter<ToneCurveSettings>
+public sealed class ToneCurveShapeJsonConverter : JsonConverter<ToneCurveShape>
 {
-    public override ToneCurveSettings Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-    { using var json = JsonDocument.ParseValue(ref reader); return ToneCurveSettings.Parse(json.RootElement); }
-    public override void Write(Utf8JsonWriter writer, ToneCurveSettings value, JsonSerializerOptions options)
+    public override ToneCurveShape Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    { using var json = JsonDocument.ParseValue(ref reader); return ToneCurveShape.Parse(json.RootElement); }
+    public override void Write(Utf8JsonWriter writer, ToneCurveShape value, JsonSerializerOptions options)
     {
         writer.WriteStartObject(); writer.WriteString("mode", value.Mode == ToneCurveMode.Custom ? "custom" : "legacy");
         writer.WriteStartArray("points");
         foreach (var point in value.Points) { writer.WriteStartArray(); writer.WriteNumberValue(point.X); writer.WriteNumberValue(point.Y); writer.WriteEndArray(); }
         writer.WriteEndArray(); writer.WriteEndObject();
+    }
+}
+
+public enum ToneCurveChannel { Rgb, Red, Green, Blue }
+public sealed record ToneCurveChannels(ToneCurveShape Red, ToneCurveShape Green, ToneCurveShape Blue)
+{
+    public ToneCurveChannels() : this(new(), new(), new()) { }
+    public bool IsDefault => Red.IsDefault && Green.IsDefault && Blue.IsDefault;
+    public bool IsIdentity => Red.IsIdentity && Green.IsIdentity && Blue.IsIdentity;
+    public ToneCurveChannels Scaled(double strength) => new(Red.Scaled(strength), Green.Scaled(strength), Blue.Scaled(strength));
+}
+
+[JsonConverter(typeof(ToneCurveJsonConverter))]
+public sealed class ToneCurveSettings : IEquatable<ToneCurveSettings>
+{
+    public ToneCurveShape Master { get; }
+    public ToneCurveChannels Channels { get; }
+    public ToneCurveMode Mode => Master.Mode;
+    public IReadOnlyList<ToneCurvePoint> Points => Master.Points;
+    public ToneCurveSettings(ToneCurveMode mode = ToneCurveMode.Legacy, IEnumerable<ToneCurvePoint>? points = null,
+        ToneCurveChannels? channels = null) { Master = new(mode, points); Channels = channels ?? new(); }
+    public static ToneCurveSettings Identity { get; } = new(ToneCurveMode.Custom, ToneCurveShape.Identity.Points);
+    public bool IsDefault => Master.IsDefault && Channels.IsDefault;
+    public bool IsIdentity => Master.IsIdentity && Channels.IsIdentity;
+    public bool HasChannelCurves => !Channels.IsDefault;
+    public double Progress => new[] { Master.Progress, Channels.Red.Progress, Channels.Green.Progress, Channels.Blue.Progress }.Max();
+    public ToneCurveShape Shape(ToneCurveChannel channel) => channel switch {
+        ToneCurveChannel.Rgb => Master, ToneCurveChannel.Red => Channels.Red, ToneCurveChannel.Green => Channels.Green, _ => Channels.Blue };
+    public ToneCurveSettings Replacing(ToneCurveChannel channel, ToneCurveShape shape) => channel switch {
+        ToneCurveChannel.Rgb => new(shape.Mode, shape.Points, Channels),
+        ToneCurveChannel.Red => new(Mode, Points, Channels with { Red = shape }),
+        ToneCurveChannel.Green => new(Mode, Points, Channels with { Green = shape }),
+        _ => new(Mode, Points, Channels with { Blue = shape }) };
+    public ToneCurveSettings Scaled(double strength) {
+        var master = Master.Scaled(strength); return new(master.Mode, master.Points, Channels.Scaled(strength));
+    }
+    public bool IsInterior(int index) => Master.IsInterior(index);
+    public ToneCurveSettings Inserting(double x, double y) => Replacing(ToneCurveChannel.Rgb, Master.Inserting(x, y));
+    public ToneCurveSettings Moving(int index, double x, double y) => Replacing(ToneCurveChannel.Rgb, Master.Moving(index, x, y));
+    public ToneCurveSettings Removing(int index) => Replacing(ToneCurveChannel.Rgb, Master.Removing(index));
+    public bool Equals(ToneCurveSettings? other) => other is not null && Master == other.Master && Channels == other.Channels;
+    public override bool Equals(object? other) => other is ToneCurveSettings curve && Equals(curve);
+    public override int GetHashCode() => HashCode.Combine(Master, Channels);
+    public static bool operator ==(ToneCurveSettings? a, ToneCurveSettings? b) => Equals(a, b);
+    public static bool operator !=(ToneCurveSettings? a, ToneCurveSettings? b) => !Equals(a, b);
+    internal Native.ToneCurveConfig NativeConfig() => Master.NativeConfig();
+    internal Native.ToneCurveSetConfig NativeSetConfig() => new() {
+        Version = 1, StructSize = (uint)Marshal.SizeOf<Native.ToneCurveSetConfig>(), Master = Master.NativeConfig(),
+        Red = Channels.Red.NativeConfig(), Green = Channels.Green.NativeConfig(), Blue = Channels.Blue.NativeConfig() };
+    internal static ToneCurveSettings Parse(JsonElement json) {
+        var master = ToneCurveShape.Parse(json, true);
+        var channels = new ToneCurveChannels();
+        if (json.TryGetProperty("channels", out var fields)) {
+            if (fields.ValueKind != JsonValueKind.Object || fields.EnumerateObject().Any(p => p.Name is not ("red" or "green" or "blue")))
+                throw new JsonException("Invalid curve channels");
+            ToneCurveShape Shape(string key) => fields.TryGetProperty(key, out var value) ? ToneCurveShape.Parse(value) : new();
+            channels = new(Shape("red"), Shape("green"), Shape("blue"));
+        }
+        return new(master.Mode, master.Points, channels);
+    }
+}
+
+public sealed class ToneCurveJsonConverter : JsonConverter<ToneCurveSettings>
+{
+    public override ToneCurveSettings Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    { using var json = JsonDocument.ParseValue(ref reader); return ToneCurveSettings.Parse(json.RootElement); }
+    public override void Write(Utf8JsonWriter writer, ToneCurveSettings value, JsonSerializerOptions options) {
+        writer.WriteStartObject(); writer.WriteString("mode", value.Mode == ToneCurveMode.Custom ? "custom" : "legacy");
+        writer.WriteStartArray("points");
+        foreach (var point in value.Points) { writer.WriteStartArray(); writer.WriteNumberValue(point.X); writer.WriteNumberValue(point.Y); writer.WriteEndArray(); }
+        writer.WriteEndArray();
+        if (value.HasChannelCurves) {
+            writer.WriteStartObject("channels");
+            writer.WritePropertyName("red"); JsonSerializer.Serialize(writer, value.Channels.Red, options);
+            writer.WritePropertyName("green"); JsonSerializer.Serialize(writer, value.Channels.Green, options);
+            writer.WritePropertyName("blue"); JsonSerializer.Serialize(writer, value.Channels.Blue, options);
+            writer.WriteEndObject();
+        }
+        writer.WriteEndObject();
     }
 }

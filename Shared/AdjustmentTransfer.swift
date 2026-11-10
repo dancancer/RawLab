@@ -49,6 +49,7 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
     case straighten = "geometry.straighten_degrees"
     case perspectiveHorizontal = "geometry.perspective.horizontal", perspectiveVertical = "geometry.perspective.vertical"
     case lensDistortion = "geometry.lens.distortion", lensTCA = "geometry.lens.tca"
+    case lensVignetting = "geometry.lens.vignetting"
     case lensAutoCrop = "geometry.lens.auto_crop", lensProfile = "geometry.lens.profile_id"
 
     var isHDRRelative: Bool { self == .hdrTemperature || self == .hdrTint }
@@ -98,7 +99,7 @@ enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
         return version == 6 ? hdrV6Supported : hdrSupported
     }
     static let whiteBalanceFields: Set<Self> = [.whiteBalanceMode, .temperature, .tint]
-    static let lensFields: Set<Self> = [.lensDistortion, .lensTCA, .lensAutoCrop, .lensProfile]
+    static let lensFields: Set<Self> = [.lensDistortion, .lensTCA, .lensVignetting, .lensAutoCrop, .lensProfile]
     static let denoiseFields: Set<Self> = [.rawDenoise, .postRGBDenoise, .chromaDenoise, .waveletDenoise]
     static var recipeDependencies: Set<Self> {
         Set([.look, .strength, .exposure, .contrast, .highlights, .shadows, .saturation]).union(whiteBalanceFields)
@@ -173,16 +174,32 @@ enum AdjustmentTransferValue: Codable, Equatable {
     var object: [String: Self]? { if case .object(let value) = self { return value }; return nil }
     var array: [Self]? { if case .array(let value) = self { return value }; return nil }
     var curve: ToneCurveSettings? {
-        guard let object, Set(object.keys) == ["mode", "points"],
-              let mode = object["mode"]?.string.flatMap(ToneCurveMode.init(rawValue:)),
-              let values = object["points"]?.array else { return nil }
-        var points = [ToneCurvePoint]()
-        for value in values {
-            guard let pair = value.array, pair.count == 2, let x = pair[0].number, let y = pair[1].number else { return nil }
-            points.append(.init(x: x, y: y))
+        guard let object, Set(object.keys).isSuperset(of: ["mode", "points"]),
+              Set(object.keys).isSubset(of: ["mode", "points", "channels"]) else { return nil }
+        func shape(_ object: [String: Self]) -> ToneCurveShape? {
+            guard Set(object.keys) == ["mode", "points"],
+                  let mode = object["mode"]?.string.flatMap(ToneCurveMode.init(rawValue:)),
+                  let values = object["points"]?.array else { return nil }
+            var points = [ToneCurvePoint]()
+            for value in values {
+                guard let pair = value.array, pair.count == 2, let x = pair[0].number, let y = pair[1].number else { return nil }
+                points.append(.init(x: x, y: y))
+            }
+            let curve = ToneCurveShape(mode: mode, points: points)
+            return curve.isValid ? curve : nil
         }
-        let curve = ToneCurveSettings(mode: mode, points: points)
-        return curve.isValid ? curve : nil
+        guard let master = shape(object.filter { $0.key != "channels" }) else { return nil }
+        var result = ToneCurveSettings(mode: master.mode, points: master.points)
+        if let value = object["channels"] {
+            guard let channels = value.object, Set(channels.keys).isSubset(of: ["red", "green", "blue"]) else { return nil }
+            for channel in ToneCurveChannel.allCases where channel != .rgb {
+                if let value = channels[channel.rawValue] {
+                    guard let fields = value.object, let curve = shape(fields) else { return nil }
+                    result = result.replacing(channel, with: curve)
+                }
+            }
+        }
+        return result
     }
 
     init(from decoder: Decoder) throws {
@@ -208,9 +225,19 @@ enum AdjustmentTransferValue: Codable, Equatable {
     }
 }
 
-extension ToneCurveSettings {
+extension ToneCurveShape {
     var transferValue: AdjustmentTransferValue {
         .object(["mode": .string(mode.rawValue), "points": .array(points.map { .array([.number($0.x), .number($0.y)]) })])
+    }
+}
+
+extension ToneCurveSettings {
+    var transferValue: AdjustmentTransferValue {
+        var value = master.transferValue.object!
+        if hasChannelCurves {
+            value["channels"] = .object(["red": channels.red.transferValue, "green": channels.green.transferValue, "blue": channels.blue.transferValue])
+        }
+        return .object(value)
     }
 }
 
@@ -262,11 +289,17 @@ enum AdjustmentTransferRefinement {
         if equivalent(try scaled(current, field: field, by: strength), effective, field: field) { return current }
         let result: Value
         if field == .curve, let curve = effective.curve {
-            if curve.mode == .legacy || strength == 0 && curve.isIdentity { return effective }
+            if curve.isDefault || strength == 0 && curve.isIdentity { return effective }
             guard strength != 0 else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
-            let inverse = ToneCurveSettings(mode: .custom, points: curve.points.map {
-                ToneCurvePoint(x: $0.x, y: $0.x + ($0.y - $0.x) / strength)
-            })
+            var inverse = curve
+            for channel in ToneCurveChannel.allCases {
+                let shape = curve.shape(channel)
+                if shape.mode == .custom {
+                    inverse = inverse.replacing(channel, with: .init(mode: .custom, points: shape.points.map {
+                        ToneCurvePoint(x: $0.x, y: $0.x + ($0.y - $0.x) / strength)
+                    }))
+                }
+            }
             guard inverse.isValid else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
             result = inverse.transferValue
         } else if field.gradingZone != nil, let wheel = effective.object,
@@ -284,10 +317,13 @@ enum AdjustmentTransferRefinement {
 
     static func equivalent(_ a: Value, _ b: Value, field: Field) -> Bool {
         if field == .curve, let first = a.curve, let second = b.curve {
-            guard first.mode == second.mode else { return false }
-            if first.isIdentity && second.isIdentity { return true }
-            return first.points.count == second.points.count && zip(first.points, second.points).allSatisfy {
-                $0.x == $1.x && abs($0.y - $1.y) <= 1e-12
+            return ToneCurveChannel.allCases.allSatisfy { channel in
+                let a = first.shape(channel), b = second.shape(channel)
+                guard a.mode == b.mode else { return false }
+                if a.isIdentity && b.isIdentity { return true }
+                return a.points.count == b.points.count && zip(a.points, b.points).allSatisfy {
+                    $0.x == $1.x && abs($0.y - $1.y) <= 1e-12
+                }
             }
         }
         guard let first = a.object, let second = b.object,
@@ -372,7 +408,7 @@ struct AdjustmentTransferPayload: Codable, Equatable {
         guard (payloadVersion == 1 && scopeVersion == 1 && !source.isHDR) ||
             (payloadVersion == 2 && scopeVersion == 2 && source.isHDR) else { throw AdjustmentTransferError.unsupportedVersion }
         if source.isHDR {
-            guard let version = source.hdrProcessingVersion, (1...7).contains(version) else {
+            guard let version = source.hdrProcessingVersion, (1...8).contains(version) else {
                 throw AdjustmentTransferError.unsupportedVersion
             }
             let supported = AdjustmentTransferField.hdrSupported(version: version).union([.hdrCameraDevelopment])
@@ -405,8 +441,7 @@ struct AdjustmentTransferPayload: Codable, Equatable {
         if !source.isRaw {
             guard self[.exposureMode] == nil || self[.exposureMode] == .string("sensor"),
                   self[.rawDenoise] == nil || self[.rawDenoise] == .number(0),
-                  source.isHDR || self[.postRGBDenoise] == nil || self[.postRGBDenoise] == .number(0),
-                  self[.lensDistortion] != .boolean(true), self[.lensTCA] != .boolean(true) else {
+                  source.isHDR || self[.postRGBDenoise] == nil || self[.postRGBDenoise] == .number(0) else {
                 throw AdjustmentTransferError.invalidPayload("raster request")
             }
         }
@@ -444,7 +479,7 @@ struct AdjustmentTransferPayload: Codable, Equatable {
         switch field {
         case .hdrLook: return value.hdrLookSettings != nil
         case .hdrCameraDevelopment: return value.hdrCameraDevelopment != nil
-        case .flipHorizontal, .flipVertical, .lensDistortion, .lensTCA, .lensAutoCrop: return value.boolean != nil
+        case .flipHorizontal, .flipVertical, .lensDistortion, .lensTCA, .lensVignetting, .lensAutoCrop: return value.boolean != nil
         case .exposureMode: return value.string.map { ["scene", "preview", "sensor"].contains($0) } ?? false
         case .whiteBalanceMode: return value.string.map { ["camera", "temperature", "none"].contains($0) } ?? false
         case .temperature: return value == .null || value.number.map { $0.isFinite && (2000...50000).contains($0) } == true

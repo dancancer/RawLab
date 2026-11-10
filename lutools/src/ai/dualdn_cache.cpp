@@ -152,7 +152,7 @@ std::string rgbCacheKey(const std::string& rawKey, const RAWProcessOptions& opti
 std::string sceneRGBCacheKey(const std::string& rawKey, const RAWProcessOptions& options) {
     Json key = {{"source_wb", rgbCacheKey(rawKey,options)}, {"adapter", sceneRGBProtocol}};
     const auto& lens = options.lensCorrection;
-    if (lens.active()) key["lens"] = {lens.distortion,lens.tca,lens.autoCrop,lens.profileID,
+    if (lens.active()) key["lens"] = {lens.distortion,lens.tca,lens.autoCrop,lens.vignetting,lens.profileID,
         options.lensDatabase ? options.lensDatabase->cacheIdentity() : "missing"};
     return digestJson(key);
 }

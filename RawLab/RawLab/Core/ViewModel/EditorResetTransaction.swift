@@ -11,11 +11,12 @@ struct EditorDraftSnapshot: Equatable {
     var lens: RawSettings?
     var tool: EditorToolSelection
     var destination: EditorToolSelection? = nil
+    var workspace: EditorToolDraft? = nil
 
-    var isActive: Bool { tool == .geometry || tool == .lens }
+    var isActive: Bool { workspace != nil || tool == .geometry || tool == .lens }
 
     func projecting(on settings: RawSettings) -> RawSettings {
-        var result = settings
+        var result = workspace?.projecting(on: settings) ?? settings
         if let lens { result.lensCorrection = lens.lensCorrection }
         if let geometry { result.setGeometrySettings(geometry) }
         return result
@@ -23,7 +24,7 @@ struct EditorDraftSnapshot: Equatable {
 
     func isChanged(from settings: RawSettings) -> Bool {
         let projected = projecting(on: settings)
-        return projected.geometrySettings != settings.geometrySettings || projected.lensSettings != settings.lensSettings
+        return projected != settings
     }
 }
 
@@ -134,8 +135,18 @@ extension RawEditorViewModel {
             geometryScope = true
         default: geometryScope = false
         }
-        guard geometryScope == draft.isActive else { return .blocked(nil) }
-        let snapshot = geometryScope
+        if draft.isActive {
+            let belongs: Bool
+            switch scope {
+            case .tool(let tool): belongs = tool == draft.tool
+            case .hslChannel, .allHSL: belongs = draft.tool == .adjustment(.hsl)
+            case .gradingZone, .allGrading: belongs = draft.tool == .adjustment(.colorGrading)
+            case .group(.geometry): belongs = draft.tool == .geometry || draft.tool == .lens
+            default: belongs = false
+            }
+            guard belongs else { return .blocked(nil) }
+        } else if geometryScope { return .blocked(nil) }
+        let snapshot = draft.isActive
             ? original.committed.replacing(settings: draft.projecting(on: settings), preservingFilmID: original.committed.filmID)
             : original.committed
         switch EditorAdjustmentRules.prepareReset(scope, snapshot: snapshot, context: original.context) {
@@ -143,7 +154,7 @@ extension RawEditorViewModel {
         case .blocked(let reason): return .blocked(reason)
         case .candidate(let candidate, let confirmation):
             return .prepared(PreparedEditorReset(original: original, candidate: candidate,
-                                                 updatesDraft: geometryScope, requiresConfirmation: confirmation))
+                                                 updatesDraft: draft.isActive, requiresConfirmation: confirmation))
         }
     }
 
@@ -157,9 +168,11 @@ extension RawEditorViewModel {
     func prepareDraft(settings: RawSettings, revision: UUID, draft: EditorDraftSnapshot) -> PreparedEditorDraft? {
         guard draft.isActive, draft.isChanged(from: settings),
               let original = editSnapshot(settings: settings, revision: revision, draft: draft) else { return nil }
+        let candidate = draft.projecting(on: settings)
+        let changedLook = candidate.lutID != settings.lutID || candidate.masterRecipeID != settings.masterRecipeID
         return PreparedEditorDraft(original: original,
-            candidate: original.committed.replacing(settings: draft.projecting(on: settings),
-                                                     preservingFilmID: original.committed.filmID))
+            candidate: original.committed.replacing(settings: candidate,
+                                                     preservingFilmID: changedLook ? candidate.lutID : original.committed.filmID))
     }
 
     func saveDraft(_ prepared: PreparedEditorDraft, settings: RawSettings, revision: UUID,

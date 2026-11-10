@@ -279,8 +279,8 @@ final class RenderEngine {
 
     private func configureCurve(_ settings: ToneCurveSettings) throws {
         guard settings.isValid else { throw RenderError.failed(L10n.text("无效的曲线参数")) }
-        var config = settings.nativeConfig
-        guard sony2fuji_session_set_tone_curve(session, &config) == SONY2FUJI_STATUS_OK else {
+        var config = settings.nativeSetConfig
+        guard sony2fuji_session_set_tone_curves(session, &config) == SONY2FUJI_STATUS_OK else {
             throw RenderError.failed(L10n.text("无效的曲线参数"))
         }
     }
@@ -838,15 +838,16 @@ final class RenderEngine {
     }
 
     private func configureLens(_ lens: LensCorrectionSettings) throws {
-        var lensConfig = sony2fuji_lens_correction_config()
-        lensConfig.version = SONY2FUJI_LENS_CORRECTION_CONFIG_VERSION
-        lensConfig.struct_size = UInt32(MemoryLayout<sony2fuji_lens_correction_config>.size)
-        lensConfig.distortion = lens.distortion ? 1 : 0
-        lensConfig.tca = lens.tca ? 1 : 0
-        lensConfig.auto_crop = lens.autoCrop ? 1 : 0
+        var lensConfig = sony2fuji_lens_correction_config_v2()
+        lensConfig.base.version = SONY2FUJI_LENS_CORRECTION_CONFIG_V2_VERSION
+        lensConfig.base.struct_size = UInt32(MemoryLayout<sony2fuji_lens_correction_config_v2>.size)
+        lensConfig.base.distortion = lens.distortion ? 1 : 0
+        lensConfig.base.tca = lens.tca ? 1 : 0
+        lensConfig.base.auto_crop = lens.autoCrop ? 1 : 0
+        lensConfig.vignetting = lens.vignetting ? 1 : 0
         let lensStatus = lens.coreProfileID.withCString { profile in
-            lensConfig.profile_id = profile
-            return sony2fuji_session_set_lens_correction(session, &lensConfig)
+            lensConfig.base.profile_id = profile
+            return sony2fuji_session_set_lens_correction_v2(session, &lensConfig)
         }
         guard lensStatus == SONY2FUJI_STATUS_OK else { throw RenderError.failed(L10n.text("无效或不可用的镜头校正设置")) }
     }
@@ -871,12 +872,14 @@ final class RenderEngine {
                 hasTCA: $0.has_tca != 0, isMatch: $0.is_match != 0) }
             lensCatalogKey = key
         }
+        var extended = sony2fuji_lens_report_v2()
         var report = sony2fuji_lens_report()
-        guard sony2fuji_session_get_lens_report(session, &report) == SONY2FUJI_STATUS_OK else { return nil }
+        guard sony2fuji_session_get_lens_report_v2(session, &extended) == SONY2FUJI_STATUS_OK else { return nil }
+        report = extended.base
         return LensInfo(state: report.state, detectedLens: nativeText(report.lens_model),
             selectedLens: nativeText(report.profile.model), focalLength: report.focal_length,
             appliedDistortion: report.applied_distortion != 0, appliedTCA: report.applied_tca != 0,
-            cropScale: report.crop_scale, candidates: lensCandidates)
+            cropScale: report.crop_scale, candidates: lensCandidates, appliedVignetting: extended.applied_vignetting != 0)
     }
 }
 

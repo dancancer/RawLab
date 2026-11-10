@@ -31,6 +31,12 @@
     <string name="all_tools">"すべてのツール"</string>
     <string name="batch_confirmation_count">"%1$d 件の出力は確認が必要です"</string>
     <string name="black_point">"黒レベル"</string>
+    <string name="camera_choose_connection">"接続方法を選択"</string>
+    <string name="camera_connect_import">"読み込み用に接続"</string>
+    <string name="camera_connect_tether">"撮影用に接続"</string>
+    <string name="camera_guide_intro">"カメラのメニューは機種やファームウェアで異なります。機体に表示されるスマートフォン接続の手順に従ってください。"</string>
+    <string name="camera_guide_unverified_title">"未検証のカメラも接続できます"</string>
+    <string name="camera_previous_disconnected">"前回のカメラ · 未接続"</string>
     <string name="clarity">"明瞭度"</string>
     <string name="collection_add">"写真を追加"</string>
     <string name="collection_apply_draft">"下書きを適用して保存"</string>
@@ -78,6 +84,7 @@
     <string name="color_grading">"カラーグレーディング"</string>
     <string name="curve_add_point">"制御点を追加"</string>
     <string name="curve_custom">"ポイントカーブ"</string>
+    <string name="curve_edit_point">"制御点を編集"</string>
     <string name="curve_fixed_endpoint">"端点は固定されています"</string>
     <string name="curve_hint">"カーブ領域をタップして点を追加します。中間の点をドラッグして調整します。"</string>
     <string name="curve_input">"入力"</string>
@@ -182,6 +189,7 @@
     <string name="geometry_move_up">"上へ移動"</string>
     <string name="geometry_perspective_tool">"パース補正"</string>
     <string name="geometry_position_size">"位置とサイズ"</string>
+    <string name="geometry_rotation_tool">"回転"</string>
     <string name="grading_midtones">"中間調"</string>
     <string name="grading_reset_all">"カラーグレーディングをリセット"</string>
     <string name="grading_reset_message">"シャドウ、中間調、ハイライトのカラーグレーディングを初期値に戻しますか？"</string>
@@ -235,8 +243,15 @@
     <string name="invalid_tone_controls">"黒レベル、白レベル、自然な彩度の値が無効です"</string>
     <string name="invalid_tone_curve">"カーブの値が無効です"</string>
     <string name="jpeg_description">"sRGB · 品質 95 · 撮影メタデータ"</string>
+    <string name="lens_crop_input">"カメラのクロップ係数"</string>
     <string name="lens_distortion_unavailable">"歪曲収差の校正データなし"</string>
+    <string name="lens_focal_input">"焦点距離（mm）"</string>
+    <string name="lens_jpeg_hint">"JPEGにはカメラ内補正が適用済みの場合があります。有効にする前に画像を比較してください。"</string>
+    <string name="lens_metadata_edit">"レンズ情報を補完"</string>
+    <string name="lens_metadata_hint">"空欄の場合は写真のメタデータまたはカメラデータベースを使用します。"</string>
     <string name="lens_tca_unavailable">"倍率色収差の校正データなし"</string>
+    <string name="lens_vignetting">"周辺光量補正"</string>
+    <string name="lens_vignetting_unavailable">"周辺光量の補正データまたは絞り情報がありません"</string>
     <string name="look_category">"ルックの分類"</string>
     <string name="look_category_all">"すべてのルック"</string>
     <string name="look_category_custom">"マイルック"</string>
@@ -248,6 +263,7 @@
     <string name="look_remove_body">"RawLab が保存したルックのコピーを削除します。元のファイルは削除されません。"</string>
     <string name="look_search">"ルックを検索"</string>
     <string name="look_search_clear">"検索をクリア"</string>
+    <string name="look_search_close">"検索を閉じる"</string>
     <string name="look_search_empty">"一致するルックがありません"</string>
     <string name="lut_advanced_settings">"詳細なカラー設定"</string>
     <string name="lut_appearance_unverified">"仕上がり未検証"</string>
@@ -496,4 +512,5 @@
     <string name="x3f_relative_wb">"保存済みの現像を基準に、ホワイトバランスを相対調整します。"</string>
     <string name="x3f_rendering">"X3F 現像"</string>
     <string name="x3f_retry_legacy">"旧版の現像で再試行"</string>
+    <string name="zoom_restore_hint">"拡大中 · タップで全体表示"</string>
 </resources>

@@ -123,12 +123,40 @@ main-image decoding.
 Display input is inverse-sRGB-decoded once, uses the existing linear exposure,
 wavelet, look, tone/HSL, chroma/detail/effects and geometry stages, and re-encodes
 sRGB instead of adding the RAW scene sigmoid. With defaults its RGB8 pixels
-round-trip exactly. It receives no RAW exposure baseline, as-shot WB, FBDD or
-lens calibration. The native clients disable camera-specific controls; mixed
-batch snapshots resolve those controls independently for each input. Agent v4
+round-trip exactly. It receives no RAW exposure baseline, as-shot WB or FBDD.
+Native clients disable those camera-specific controls; mixed batch snapshots
+resolve them independently for each input. Agent v4
 uses explicit `input.type=raster`, `exposure.mode=sensor` and WB `none` and rejects
 explicit RAW-only edits. A RAW film/DCP look applied to already rendered pixels
 is a creative effect, not recovery of sensor latitude or a calibrated camera match.
+
+Mobile JPEG/raster lens correction is opt-in. The additive
+`sony2fuji_session_set_display_lens_metadata` setter accepts versioned
+`sony2fuji_lens_metadata`, copies camera/lens strings, and clears all metadata
+when passed null. `sony2fuji_session_inspect_lens_metadata` reports matching and
+calibration availability without decoding RAW. The request-v2 layout is unchanged;
+RAW sessions retain their own metadata and ignore this display-input metadata.
+Callers that do not supply display metadata retain the previous unsupported-input
+result for active lens correction.
+
+The adapter passes structured EXIF camera/lens identity, focal length, aperture
+and the original orientation (1–8). Pixels have already been oriented once.
+Lens mapping uses the original sensor-axis dimensions and transforms sampling
+coordinates into the oriented display buffer, without rotating the image again.
+It runs after inverse sRGB and before exposure, effects and user geometry, with
+the same metadata/configuration for preview, PNG/JPEG and rendered DNG export.
+Distortion, TCA and automatic edge cropping use catalog calibration; profile
+vignetting is not exposed as an implemented operation.
+
+Correction is off by default because JPEG may already contain camera corrections.
+A manual profile still requires valid focal length and camera crop factor, either
+from a matched camera or explicit per-photo values. Missing/ambiguous calibration
+must remain visible and cannot be reported as applied. Mobile edit records store
+optional focal-length/crop-factor overrides; they are cleared when the source
+changes and are not transferred as another photo's metadata. Cross-kind batch
+adaptation clears lens settings. Desktop raster controls and the JSON agent
+interface retain their existing capability restrictions until they provide this
+metadata contract.
 
 This display-referred path reuses the reference CPU stages. GPU Auto explicitly
 falls back to CPU and Force returns unsupported until the scene-view GPU
@@ -460,11 +488,18 @@ but before `rgb_cam` mixes camera channels. Distortion and lateral chromatic
 aberration (TCA) share one inverse-coordinate sampling pass. Bilinear sampling
 preserves float values through the existing camera matrix and exposure baseline;
 WB remains before demosaic. Lensfun supplies coordinates, not the pixel sampler.
+Profile vignetting evaluates Lensfun F32 color gain at each sampled, unrotated
+source coordinate, before the camera matrix. TCA uses the corresponding channel
+coordinate; a fourth camera channel reuses green. It adds no whole-image gain
+buffer and does not clip float highlights to display white. Vignetting-only
+requests bypass geometry resampling and automatic crop. Aperture metadata and
+matching calibration are required; an unavailable calibration remains off and is
+reported explicitly. Unknown focus distance uses 1000 meters.
 The existing GPU photo pipelines receive corrected working RGB; lens sampling
 itself remains on CPU, like RAW decoding.
 
 `sony2fuji_session_set_lens_correction` uses a versioned configuration without
-changing request v2. Both corrections default off, an exact no-resampling bypass.
+changing request v2. All three corrections default off, an exact no-resampling bypass.
 NULL/empty profile ID means automatic matching for each input, never a remembered
 resolved lens from another photograph. Multiple matches are reported as ambiguous
 and skipped. Manual IDs come from the metadata-only catalog API. Missing camera
@@ -497,8 +532,10 @@ including after the session processes a display buffer.
 directory. Failed loads preserve existing session state. Builds without Lensfun
 retain the new C symbols and old request layout, accept disabled configuration,
 and reject enabling it with UNSUPPORTED. macOS bundles the unmodified DB snapshot
-and dependency notices. JPEG/display buffer inputs are not treated as camera
-channels; they remain unchanged and report unsupported lens input.
+and dependency notices. JPEG/display inputs are not treated as camera channels.
+The mobile metadata path described above calibrates their display pixels explicitly;
+callers without that metadata, including current desktop raster adapters, retain
+unsupported lens input behavior.
 
 The current JXL DNG SDK path conservatively skips additional lens correction
 when successful unpack reports `LIBRAW_WARN_DNG_STAGE3_APPLIED`. This records
@@ -509,7 +546,7 @@ WB reload and a later ordinary/no-Stage3 file must not inherit this state.
 Metadata-only inspection does
 not claim to have applied SDK operations. Manufacturer-specific embedded lens
 models outside that path are not implemented. Defringe, axial CA correction,
-profile vignetting, perspective correction and Adobe rendering equivalence are
+Adobe rendering equivalence is
 outside this feature.
 
 References: [Lensfun architecture](https://lensfun.github.io/manual/latest/basearch.html)

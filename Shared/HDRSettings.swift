@@ -9,7 +9,7 @@ struct HDRToneSettings: Equatable, Codable {
 
     var isDefault: Bool { blackPoint == 0 && whitePoint == 0 && curveStrength == 0 && curve.isDefault }
     var isIdentity: Bool {
-        blackPoint == 0 && whitePoint == 0 && (curve.mode == .custom ? curve.isIdentity : curveStrength == 0)
+        blackPoint == 0 && whitePoint == 0 && (curve.mode == .custom ? curve.master.isIdentity : curveStrength == 0) && curve.channels.isIdentity
     }
     var isValid: Bool { [blackPoint, whitePoint, curveStrength].allSatisfy { (-100...100).contains($0) } && curve.isValid }
 
@@ -302,6 +302,7 @@ struct HDRCameraDevelopmentSettings: Codable, Hashable {
     var fbddLevel = 0
     var lensDistortion = false
     var lensTCA = false
+    var lensVignetting = false
     var lensAutoCrop = true
     var lensProfile: String?
     var cameraProfile: HDRCameraProfile?
@@ -313,7 +314,7 @@ struct HDRCameraDevelopmentSettings: Codable, Hashable {
         tint = 0
     }
 
-    var lensActive: Bool { lensDistortion || lensTCA }
+    var lensActive: Bool { lensDistortion || lensTCA || lensVignetting }
     var isDefault: Bool { self == Self() }
     var isValid: Bool {
         let validWB = whiteBalance == .asShot ? temperature == 0 && tint == 0
@@ -327,13 +328,14 @@ struct HDRCameraDevelopmentSettings: Codable, Hashable {
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case version, whiteBalance = "white_balance_mode", temperature, tint, exposureReference = "exposure_reference"
         case fbddLevel = "fbdd_level", lensDistortion = "lens_distortion", lensTCA = "lens_tca"
+        case lensVignetting = "lens_vignetting"
         case lensAutoCrop = "lens_auto_crop", lensProfile = "lens_profile", cameraProfile = "camera_profile"
     }
     init() {}
     init(from decoder: Decoder) throws {
         let fields = try decoder.container(keyedBy: HDRSettingsField.self).allKeys
         let keys = Set(fields.map(\.stringValue))
-        let optional: Set<String> = [CodingKeys.lensProfile.rawValue, CodingKeys.cameraProfile.rawValue]
+        let optional: Set<String> = [CodingKeys.lensProfile.rawValue, CodingKeys.cameraProfile.rawValue, CodingKeys.lensVignetting.rawValue]
         let supported = Set(CodingKeys.allCases.map(\.rawValue))
         guard supported.subtracting(optional).isSubset(of: keys), keys.isSubset(of: supported) else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unsupported camera development fields"))
@@ -347,6 +349,7 @@ struct HDRCameraDevelopmentSettings: Codable, Hashable {
         fbddLevel = try values.decode(Int.self, forKey: .fbddLevel)
         lensDistortion = try values.decode(Bool.self, forKey: .lensDistortion)
         lensTCA = try values.decode(Bool.self, forKey: .lensTCA)
+        lensVignetting = values.contains(.lensVignetting) ? try values.decode(Bool.self, forKey: .lensVignetting) : false
         lensAutoCrop = try values.decode(Bool.self, forKey: .lensAutoCrop)
         lensProfile = try values.decodeIfPresent(String.self, forKey: .lensProfile)
         cameraProfile = try values.decodeIfPresent(HDRCameraProfile.self, forKey: .cameraProfile)
@@ -360,8 +363,9 @@ struct HDRSettings: Equatable, Codable {
     enum Mode: String, Codable { case sdr, hdr }
     enum ModeError: Error, Equatable { case unsupportedSource, invalidSettings }
 
-    var recordVersion: Int { cameraDevelopment == nil ? processingVersion : 8 }
+    var recordVersion: Int { processingVersion == 8 ? 9 : cameraDevelopment == nil ? processingVersion : 8 }
     var processingVersion: Int {
+        if tone?.curve.hasChannelCurves == true { return 8 }
         if look != nil { return 7 }
         if detail != nil { return 6 }
         if effects != nil { return 5 }
@@ -388,7 +392,14 @@ struct HDRSettings: Equatable, Codable {
 
     var toneSettings: HDRToneSettings {
         get { tone ?? HDRToneSettings() }
-        set { if tone != nil || !newValue.isDefault { tone = newValue } }
+        set {
+            guard tone != nil || !newValue.isDefault else { return }
+            tone = newValue
+            if newValue.curve.hasChannelCurves {
+                color = color ?? HDRColorSettings(); rendition = rendition ?? HDRRenditionSettings()
+                effects = effects ?? HDRPhotoEffectsSettings(); detail = detail ?? HDRDetailSettings(); look = look ?? HDRLookSettings()
+            }
+        }
     }
     var colorSettings: HDRColorSettings {
         get { color ?? HDRColorSettings() }
@@ -487,6 +498,7 @@ struct HDRSettings: Equatable, Codable {
         // 对比颜色时沿用同一镜头画框，避免畸变和自动裁切造成错位。
         neutral.cameraDevelopmentSettings.lensDistortion = cameraDevelopmentSettings.lensDistortion
         neutral.cameraDevelopmentSettings.lensTCA = cameraDevelopmentSettings.lensTCA
+        neutral.cameraDevelopmentSettings.lensVignetting = cameraDevelopmentSettings.lensVignetting
         neutral.cameraDevelopmentSettings.lensAutoCrop = cameraDevelopmentSettings.lensAutoCrop
         neutral.cameraDevelopmentSettings.lensProfile = cameraDevelopmentSettings.lensProfile
         return neutral
@@ -520,7 +532,7 @@ struct HDRSettings: Equatable, Codable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         let version = try values.decode(Int.self, forKey: .recordVersion)
         let processing = try values.decode(Int.self, forKey: .processingVersion)
-        guard (1...7).contains(processing), version == (values.contains(.cameraDevelopment) ? 8 : processing),
+        guard (1...8).contains(processing), version == (processing == 8 ? 9 : values.contains(.cameraDevelopment) ? 8 : processing),
               values.contains(.tone) == (processing >= 2), values.contains(.color) == (processing >= 3),
               values.contains(.rendition) == (processing >= 4), values.contains(.effects) == (processing >= 5),
               values.contains(.detail) == (processing >= 6), values.contains(.look) == (processing >= 7) else {
@@ -541,8 +553,8 @@ struct HDRSettings: Equatable, Codable {
         if processing >= 5 { effects = try values.decode(HDRPhotoEffectsSettings.self, forKey: .effects) }
         if processing >= 6 { detail = try values.decode(HDRDetailSettings.self, forKey: .detail) }
         if processing >= 7 { look = try values.decode(HDRLookSettings.self, forKey: .look) }
-        if version == 8 { cameraDevelopment = try values.decode(HDRCameraDevelopmentSettings.self, forKey: .cameraDevelopment) }
-        guard isValid else {
+        if values.contains(.cameraDevelopment) { cameraDevelopment = try values.decode(HDRCameraDevelopmentSettings.self, forKey: .cameraDevelopment) }
+        guard isValid, processingVersion == processing else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Invalid HDR settings parameters"))
         }
     }

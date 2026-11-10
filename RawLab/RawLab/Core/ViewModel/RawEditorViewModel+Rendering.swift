@@ -342,7 +342,7 @@ extension RawEditorViewModel {
                     self.applyComparison(comparison, geometry: referenceSettings.geometrySettings, processing: referenceSettings.processing,
                                          lens: referenceSettings.lensSettings, key: referenceKey)
                 }
-                self.lensInfo = nil
+                self.lensInfo = outputBuffer.lensInfo
                 self.cacheCompletedPreview(for: cacheKey, histogramInput: includeHistogram ? outputBuffer : nil)
             }
 

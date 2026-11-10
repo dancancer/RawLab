@@ -2,6 +2,7 @@ package app.rawlab.cameraconnect;
 
 import com.rawlab.android.camera.protocol.SonyMobileSession;
 import com.rawlab.android.camera.protocol.SonyWifiCredentials;
+import com.rawlab.android.camera.protocol.SonyTetherSession;
 
 import android.Manifest;
 import android.app.Activity;
@@ -54,26 +55,49 @@ public final class CameraConnectActivity extends Activity {
     private String pendingSSID, pendingPassword;
     private long scanStartedMicros;
     private WifiManager wifi;
+    private TetherExperiment tether;
+    private boolean tetherMode;
+    private boolean releasePending;
+    private String probeModel;
+    private volatile SonyTetherSession inspection;
+    private boolean useCurrentWifi;
+    private String probeStage="device";
+    private boolean manualWifi;
+    private ImageView probeLive;
+    private volatile HttpURLConnection probeStream;
+    private boolean probeCardSavingConfirmed;
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
+        tetherMode = getIntent().getBooleanExtra("tether", false);
+        probeModel=getIntent().getStringExtra("probe-model");
+        if(probeModel!=null && !probeModel.equals("ZV-E10") && !probeModel.equals("ILCE-7CM2")) throw new IllegalArgumentException("Unknown probe model");
+        if(probeModel!=null) tetherMode=false;
+        useCurrentWifi=probeModel!=null && getIntent().getBooleanExtra("use-current-wifi",false);
+        manualWifi=probeModel!=null && getIntent().getBooleanExtra("manual-wifi",false);
+        if(getIntent().hasExtra("probe-stage")) probeStage=getIntent().getStringExtra("probe-stage");
+        if("legacy-capture".equals(probeStage) || "legacy-watch".equals(probeStage)) probeStage="device";
         getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(32, 48, 32, 24);
         TextView title = new TextView(this); title.setText("Sony 相机连接验证"); title.setTextSize(24); root.addView(title);
         TextView intro = new TextView(this);
-        intro.setText("蓝牙配对 → 自动加入相机 Wi-Fi → 浏览照片 → 下载原文件。\n仅验证 α7C II / 固件 2.00。");
+        intro.setText(tetherMode ? "联机拍摄协议实验：实时取景、显式单拍、监视机身新照片。\n仅 α7C II / 固件 2.00；原件保留在卡上。" : "蓝牙配对 → 自动加入相机 Wi-Fi → 浏览照片 → 下载原文件。\n仅验证 α7C II / 固件 2.00。");
+        if(probeModel!=null) intro.setText(probeModel+" 协议实验：检查设备能力、读取卡内原件与实时取景。拍摄需要单独操作。");
         root.addView(intro);
         state = new TextView(this); state.setTextSize(18); state.setPadding(0, 24, 0, 24); root.addView(state);
         devices = new LinearLayout(this); devices.setOrientation(LinearLayout.VERTICAL); root.addView(devices);
         Button scan = new Button(this); scan.setText("查找相机"); scan.setOnClickListener(v -> startScan()); root.addView(scan);
         Button list = new Button(this); list.setText("读取照片列表"); list.setOnClickListener(v -> runMobileOperation("list")); root.addView(list);
         Button download = new Button(this); download.setText("下载一张 RAW 原文件"); download.setOnClickListener(v -> runMobileOperation("download")); root.addView(download);
-        Button stop = new Button(this); stop.setText("结束并释放连接"); stop.setOnClickListener(v -> { release(); state.setText("连接已释放。"); record("experiment_stopped"); }); root.addView(stop);
+        if (tetherMode) { list.setVisibility(android.view.View.GONE);download.setVisibility(android.view.View.GONE);tether=new TetherExperiment(this,root,this::record); }
+        if(probeModel!=null) { list.setVisibility(android.view.View.GONE);download.setVisibility(android.view.View.GONE);
+            probeLive=new ImageView(this);probeLive.setAdjustViewBounds(true);root.addView(probeLive,new LinearLayout.LayoutParams(-1,420)); }
+        Button stop = new Button(this); stop.setText("结束并释放连接"); stop.setOnClickListener(v -> { release(); state.setText(releasePending ? "正在释放快门，请检查相机。" : "连接已释放。"); record("experiment_stopped"); }); root.addView(stop);
         ScrollView scroll = new ScrollView(this); logView = new TextView(this); logView.setTextSize(12); logView.setTextIsSelectable(true); scroll.addView(logView);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        TextView note = new TextView(this); note.setText("原文件保存到手机 Download/RawLab Camera Imports；不会拍摄或删除相机照片。"); root.addView(note);
+        TextView note = new TextView(this); note.setText(tetherMode ? "点击单拍会实际拍摄。仅接收 ARW/JPEG；HEIF 未接入。实验副本在私有 tether-originals，不改设置、不删卡内照片。" : "原文件保存到手机 Download/RawLab Camera Imports；不会拍摄或删除相机照片。"); root.addView(note);
         setContentView(root);
         try { logFile = openFileOutput("connection-events.txt", MODE_PRIVATE); } catch (IOException e) { throw new RuntimeException(e); }
         adapter = getSystemService(BluetoothManager.class).getAdapter();
@@ -106,7 +130,10 @@ public final class CameraConnectActivity extends Activity {
         startScan();
     }
     private void startScan() {
+        if(releasePending) { state.setText("正在结束上一遥控会话，请稍后重试。");return; }
         if (busy) return;
+        if(manualWifi) { showManualWifi();return; }
+        if(useCurrentWifi) { inspectCurrentWifi();return; }
         if (gatt != null || networkCallback != null) release();
         if (adapter == null || !adapter.isEnabled()) { state.setText("请打开手机蓝牙。"); return; }
         if (!getSystemService(LocationManager.class).isLocationEnabled()) { state.setText("Android 10 要求打开系统位置服务才能扫描蓝牙和请求 Wi-Fi。"); return; }
@@ -119,12 +146,65 @@ public final class CameraConnectActivity extends Activity {
             main.postDelayed(() -> { if (generation == current && !busy) { adapter.getBluetoothLeScanner().stopScan(scanCallback); if (found.isEmpty()) state.setText("没有找到相机，请检查相机是否在等待连接，再点查找。"); } }, 25000);
         } catch (SecurityException e) { state.setText("请允许蓝牙与位置权限。"); }
     }
+
+    private void showManualWifi() {
+        LinearLayout fields=new LinearLayout(this);fields.setOrientation(LinearLayout.VERTICAL);fields.setPadding(48,24,48,0);
+        EditText name=new EditText(this);name.setSingleLine(true);name.setHint("相机 Wi-Fi 名称");
+        name.setText(getIntent().getStringExtra("wifi-ssid"));fields.addView(name);
+        EditText password=new EditText(this);password.setSingleLine(true);password.setHint("相机屏幕显示的 Wi-Fi 密码");
+        password.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        password.setImeOptions(android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING);
+        password.setImportantForAutofill(android.view.View.IMPORTANT_FOR_AUTOFILL_NO);fields.addView(password);
+        TextView explanation=new TextView(this);explanation.setText("请保持相机连接画面。密码仅用于本次连接，不保存到文件或日志。");fields.addView(explanation);
+        android.app.AlertDialog dialog=new android.app.AlertDialog.Builder(this).setTitle("连接 "+probeModel)
+            .setView(fields).setNegativeButton("取消",(d,w)->password.setText(""))
+            .setPositiveButton("连接",null).create();
+        dialog.setOnShowListener(d -> dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String networkName=name.getText().toString().trim(),secret=password.getText().toString();
+            if(!networkName.startsWith("DIRECT-") || !networkName.endsWith(":"+probeModel) || networkName.getBytes(StandardCharsets.UTF_8).length>32) {
+                name.setError("请输入当前相机屏幕显示的完整 Wi-Fi 名称");return;
+            }
+            if(secret.length()<8 || secret.length()>63 || !secret.chars().allMatch(c -> c>=32 && c<=126)) { password.setError("请输入 8–63 位相机 Wi-Fi 密码");return; }
+            release();busy=true;password.setText("");dialog.dismiss();waitForAccessPoint(networkName,secret);
+        }));
+        dialog.show();
+    }
+
+    private void inspectCurrentWifi() {
+        String currentSSID=wifi.getConnectionInfo().getSSID();
+        if(currentSSID!=null && currentSSID.startsWith("\"") && currentSSID.endsWith("\"")) currentSSID=currentSSID.substring(1,currentSSID.length()-1);
+        if(currentSSID==null || !currentSSID.startsWith("DIRECT-") || !currentSSID.endsWith(":"+probeModel)) {
+            state.setText("当前 Wi-Fi 已不是选定相机热点，请重新选择相机网络。");record("probe_camera_wifi_not_selected");return;
+        }
+        Network selectedNetwork=null;LinkProperties properties=null;
+        for(Network candidate:connectivity.getAllNetworks()) {
+            NetworkCapabilities capabilities=connectivity.getNetworkCapabilities(candidate);
+            if(capabilities!=null && capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                if(selectedNetwork!=null) { state.setText("有多个 Wi-Fi 网络，请仅保留选定的相机连接。");return; }
+                selectedNetwork=candidate;properties=connectivity.getLinkProperties(candidate);
+            }
+        }
+        InetAddress gateway=null;
+        if(properties!=null) for(RouteInfo route:properties.getRoutes())
+            if(route.isDefaultRoute() && route.getGateway() instanceof Inet4Address) { gateway=route.getGateway();break; }
+        if(selectedNetwork==null || gateway==null || !gateway.isSiteLocalAddress()) { state.setText("请先在系统 Wi-Fi 中连接相机热点，再点查找相机重试。");return; }
+        cameraNetwork=selectedNetwork;cameraAddress=gateway;
+        Network expected=selectedNetwork;int current=generation;
+        if(networkCallback!=null) connectivity.unregisterNetworkCallback(networkCallback);
+        networkCallback=new ConnectivityManager.NetworkCallback() {
+            @Override public void onLost(Network network) { main.post(() -> { if(current==generation && network.equals(expected)) { release();state.setText("相机 Wi-Fi 已离开，请重新选择相机网络。");record("probe_selected_wifi_lost"); } }); }
+        };
+        connectivity.registerNetworkCallback(new NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build(),networkCallback);
+        record("probe_user_selected_wifi_gateway "+gateway.getHostAddress());runInspection();
+    }
     private final ScanCallback scanCallback = new ScanCallback() {
         @Override public void onScanResult(int callbackType, ScanResult result) {
             ScanRecord ad = result.getScanRecord();
             if (ad == null || ad.getManufacturerSpecificData(0x012d) == null) return;
             String name = ad.getDeviceName();
-            if (name == null || !name.contains("ILCE-7CM2")) return;
+            String target=probeModel==null?"ILCE-7CM2":probeModel;
+            if (name == null || !(name.equals(target) || name.startsWith(target+".") || name.startsWith(target+" "))) return;
             main.post(() -> {
                 if (busy) return;
                 if (!found.add(result.getDevice().getAddress())) return;
@@ -141,6 +221,7 @@ public final class CameraConnectActivity extends Activity {
         @Override public void onScanFailed(int code) { main.post(() -> fail("蓝牙扫描失败：" + code)); }
     };
     private void connectCamera(BluetoothDevice device) {
+        if(releasePending) return;
         if (busy) return;
         if (gatt != null || networkCallback != null) release();
         generation++; busy = true; awaitingConnection = true; wifiStarted = false; readAttempts = 0; selected = device;
@@ -171,6 +252,9 @@ public final class CameraConnectActivity extends Activity {
     }
     private void activateWiFi() {
         BluetoothGattCharacteristic command = characteristic(WIFI_ON);
+        if(command==null && "ZV-E10".equals(probeModel)) {
+            state.setText("请保持相机二维码/SSID 画面，正在读取网络信息…");record("probe_wifi_started_on_camera_no_cc08");scheduleSSIDRead();return;
+        }
         command.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT); command.setValue(new byte[]{1});
         state.setText("正在请求相机开启 Wi-Fi…"); record("wifi_activation_requested CC08=01");
         if (!gatt.writeCharacteristic(command)) fail("无法发送 Wi-Fi 请求。");
@@ -192,8 +276,13 @@ public final class CameraConnectActivity extends Activity {
         }); }
         @Override public void onServicesDiscovered(BluetoothGatt source, int status) { main.post(() -> {
             if (source != gatt || !busy) return;
+            if(probeModel!=null) for(BluetoothGattService service:source.getServices()) {
+                if(!service.getUuid().toString().startsWith("8000")) continue;
+                List<String> characteristics=new ArrayList<>();for(BluetoothGattCharacteristic item:service.getCharacteristics()) characteristics.add(item.getUuid().toString());
+                record("probe_ble_service "+service.getUuid()+" characteristics="+characteristics);
+            }
             BluetoothGattCharacteristic command = characteristic(WIFI_ON);
-            if (status != 0 || command == null || characteristic(SSID) == null || characteristic(PASSWORD) == null) { fail("相机没有提供所需的 Wi-Fi 服务。"); return; }
+            if (status != 0 || command == null && !"ZV-E10".equals(probeModel) || characteristic(SSID) == null || characteristic(PASSWORD) == null) { fail("相机没有提供所需的 Wi-Fi 服务。"); return; }
             BluetoothGattService pairing = source.getService(PAIRING);
             BluetoothGattCharacteristic init = pairing == null ? null : pairing.getCharacteristic(id("ee01"));
             if (init == null) { fail("相机没有提供 Sony 配对初始化服务。"); return; }
@@ -225,6 +314,12 @@ public final class CameraConnectActivity extends Activity {
     }
     private void handleRead(BluetoothGatt source, UUID key, byte[] value, int status) {
         if (source != gatt || !busy) return;
+        if(probeModel!=null && status==0) {
+            int end=value==null?0:value.length;while(end>0 && value[end-1]==0) end--;
+            boolean plain=end>0;for(int i=0;i<end;i++) if(value[i]<32 || value[i]>126) plain=false;
+            record("probe_wifi_layout field="+(key.equals(SSID)?"ssid":"password")+" bytes="+(value==null?0:value.length)+
+                " length_prefix="+(value!=null && value.length>0 && (value[0]&255)==value.length-1)+" plain_ascii="+plain+" text_length="+end);
+        }
         if (status != 0) {
             if (key.equals(SSID) && status == 157 && readAttempts < 8) { record("wifi_parameters_pending ATT=157 attempt=" + readAttempts); scheduleSSIDRead(); }
             else fail("读取 Wi-Fi 参数失败：ATT " + status);
@@ -290,9 +385,12 @@ public final class CameraConnectActivity extends Activity {
         wifiStarted = true;
         cameraNetwork = network; cameraAddress = gateway; busy = false;
         record("camera_network_gateway " + gateway.getHostAddress());
-        runMobileOperation("probe");
+        if(probeModel!=null) runInspection();
+        else if (tether != null) { devices.removeAllViews();tether.connect(network,gateway);state.setText("相机 Wi-Fi 已连接，正在验证联机拍摄。"); }
+        else runMobileOperation("probe");
     }
     private void runMobileOperation(String operation) {
+        if(probeModel!=null) { runInspection();return; }
         if (cameraNetwork == null || cameraAddress == null || busy) return;
         busy = true;
         int current = generation;
@@ -341,6 +439,173 @@ public final class CameraConnectActivity extends Activity {
         }, "camera-mobile-ptpip").start();
     }
 
+    private void runInspection() {
+        if(cameraNetwork==null || cameraAddress==null || busy) return;
+        busy=true;int current=generation;Network selectedNetwork=cameraNetwork;InetAddress address=cameraAddress;String stage=probeStage;
+        boolean cardConfirmed=probeCardSavingConfirmed;probeCardSavingConfirmed=false;
+        state.setText("正在只读检查 "+probeModel+" 的型号、固件和操作列表…");
+        new Thread(() -> {
+            SonyTetherSession opened=inspection;
+            try {
+                if(opened==null || !opened.isOpen()) opened=new SonyTetherSession(selectedNetwork.getSocketFactory(),address,UUID.randomUUID(),
+                    message -> main.post(() -> { if(current==generation) record(message); }));
+                inspection=opened;if(current!=generation) throw new IOException("Device probe cancelled");
+                SonyMobileSession.Device device=opened.inspectDevice();
+                if(!device.model.equals(probeModel)) throw new IOException("Unexpected probe model "+device.model);
+                List<String> ops=new ArrayList<>();for(int op:new TreeSet<>(device.operations)) ops.add(String.format(Locale.ROOT,"0x%04x",op));
+                String detail="尚未启用拍摄或照片传输。";
+                if("storage".equals(stage)) {
+                    List<Long> storages=opened.probeLegacyStorage();detail="标准 PTP 存储列表："+storages;
+                    String log="probe_legacy_storages "+storages;main.post(() -> { if(current==generation) record(log); });
+                } else if("contents".equals(stage)) {
+                    if(!opened.isRemoteReady()) opened.connectRemote(SonyTetherSession.Profile.ZVE10_2_02);
+                    List<Long> storages=opened.probeLegacyContentsStorage();detail="内容模式存储列表："+storages+"；已退出内容模式。";
+                    String log="probe_contents_storages "+storages;main.post(() -> { if(current==generation) record(log); });
+                } else if("legacy-list".equals(stage) || "legacy-download".equals(stage)) {
+                    if(!opened.isRemoteReady()) opened.connectRemote(SonyTetherSession.Profile.ZVE10_2_02);
+                    try {
+                    opened.enterLegacyContents();
+                    List<SonyTetherSession.LegacyObject> photos=opened.listLegacyPhotos();
+                    List<String> samples=new ArrayList<>();for(int i=0;i<Math.min(10,photos.size());i++) {
+                        SonyTetherSession.LegacyObject photo=photos.get(i);samples.add(photo.name+" bytes="+photo.size+" handle="+photo.handle);
+                    }
+                    String log="probe_legacy_photos count="+photos.size()+" samples="+samples;
+                    main.post(() -> { if(current==generation) record(log); });
+                    detail="已枚举卡内 RAW/JPEG 原件："+photos.size()+" 张。";
+                    if("legacy-download".equals(stage)) {
+                        File folder=new File(getFilesDir(),"legacy-originals");if(!folder.exists() && !folder.mkdirs()) throw new IOException("Cannot create experiment originals folder");
+                        Set<String> formats=new HashSet<>();
+                        for(SonyTetherSession.LegacyObject photo:photos) {
+                            String format=photo.name.toLowerCase(Locale.ROOT).endsWith(".arw")?"arw":"jpeg";
+                            if(!formats.add(format)) continue;
+                            File partial=new File(folder,"current.part");String hash;
+                            try(FileOutputStream output=new FileOutputStream(partial)) { hash=opened.downloadLegacyWhole(photo,output);output.getFD().sync(); }
+                            if(current!=generation) { partial.delete();throw new IOException("Legacy download cancelled"); }
+                            File saved=new File(folder,hash+"-"+photo.name);if(!partial.renameTo(saved)) throw new IOException("Cannot publish experiment original");
+                            String receipt="probe_legacy_saved name="+photo.name+" bytes="+saved.length()+" sha256="+hash;
+                            main.post(() -> { if(current==generation) record(receipt); });
+                        }
+                        detail+=" 已读取各一种可用格式，保存到独立实验目录。";
+                    }
+                    } finally { if(opened.isOpen()) opened.leaveLegacyContents(); }
+                } else if("legacy-capture".equals(stage) || "legacy-watch".equals(stage)) {
+                    if(!cardConfirmed) throw new IOException("Camera-card saving must be confirmed for this experiment action");
+                    if(!opened.isRemoteReady()) opened.connectRemote(SonyTetherSession.Profile.ZVE10_2_02);
+                    probeLegacyCapture(opened,selectedNetwork,address,current,"legacy-capture".equals(stage));
+                    detail="拍后文件检查已结束，遥控会话已关闭；请查看回传与卡内原件记录。";
+                } else if("live".equals(stage)) {
+                    if(!opened.isRemoteReady()) opened.connectRemote(SonyTetherSession.Profile.ZVE10_2_02);
+                    SonyTetherSession.Property live=opened.properties().get(0xd278);
+                    if(live==null || live.text().isEmpty()) throw new IOException("Camera live-view URL unavailable");
+                    probeLive(selectedNetwork,SonyTetherSession.liveViewURL(live.text(),address),current);
+                    detail="已读取并显示实时取景帧；未拍摄。";
+                } else if("remote".equals(stage)) {
+                    if(!opened.isRemoteReady()) opened.connectRemote(SonyTetherSession.Profile.ZVE10_2_02);
+                    Map<Integer,SonyTetherSession.Property> properties=opened.properties();List<String> values=new ArrayList<>();
+                    for(int code:new int[]{0xd20c,0xd213,0xd215,0xd222,0xd268,0x5013,0x500a}) {
+                        SonyTetherSession.Property property=properties.get(code);
+                        if(property!=null) values.add(String.format(Locale.ROOT,"0x%04x=%d",code,property.number()));
+                    }
+                    detail="遥控握手成功；仅检查属性，未拍摄。";
+                    String log="probe_remote_properties "+values+" live_url_available="+properties.containsKey(0xd278);
+                    main.post(() -> { if(current==generation) record(log); });
+                }
+                String finalDetail=detail;
+                main.post(() -> { if(current==generation) {
+                    busy=false;record("probe_identity model="+device.model+" firmware="+device.firmware);record("probe_operations "+ops);
+                    state.setText("已读取："+device.model+" / 固件 "+device.firmware+"。"+finalDetail+(inspection!=null && inspection.isOpen()?"\n正在保持相机会话。":""));
+                } });
+            } catch(Exception error) {
+                if(!(error instanceof SonyTetherSession.RemoteResponseException) && opened!=null) { opened.close();if(inspection==opened) inspection=null; }
+                main.post(() -> { if(current==generation) { busy=false;record("probe_failed "+error);state.setText("只读探测失败："+error.getMessage()); } });
+            } finally { if(current!=generation && opened!=null) { opened.close();if(inspection==opened) inspection=null; } }
+        },"camera-readonly-probe").start();
+    }
+
+    private void probeLegacyCapture(SonyTetherSession session,Network network,InetAddress address,int current,boolean remoteShutter) throws Exception {
+        Set<Integer> baseline;
+        try { session.enterLegacyContents();baseline=session.legacyHandles(); }
+        finally { if(session.isOpen()) session.leaveLegacyContents(); }
+        session.close();
+        session=new SonyTetherSession(network.getSocketFactory(),address,UUID.randomUUID(),message -> main.post(() -> { if(current==generation) record(message); }));
+        inspection=session;
+        try {
+        if(current!=generation) throw new IOException("Capture probe cancelled");
+        session.connectRemote(SonyTetherSession.Profile.ZVE10_2_02);
+        Thread.sleep(3500);
+        if(current!=generation) throw new IOException("Capture probe cancelled");
+        if(session.pendingLegacyCapture()!=null) throw new IOException("Camera already has an undelivered host image; capture probe not armed");
+        if(remoteShutter) session.captureWithConfirmedCardSaving(true);
+        else main.post(() -> { if(current==generation) { state.setText("已准备监视，请在相机上单拍一张。");record("probe_body_watch_armed"); } });
+        SonyTetherSession.LegacyObject pending=null;
+        for(int wait=0;wait<(remoteShutter?120:800) && current==generation;wait++) { pending=session.pendingLegacyCapture();if(pending!=null) break;Thread.sleep(500); }
+        if(current!=generation) throw new IOException("Capture probe cancelled");
+        File folder=new File(getFilesDir(),"legacy-originals");if(!folder.exists() && !folder.mkdirs()) throw new IOException("Cannot create experiment folder");
+        Map<String,String> hostHashes=new HashMap<>();
+        for(int count=0;pending!=null && count<4;count++) {
+            String hash=saveLegacyProbe(session,pending,folder,current,true);hostHashes.put(pending.name,hash);
+            String log="probe_host_saved name="+pending.name+" bytes="+pending.size+" sha256="+hash;
+            main.post(() -> { if(current==generation) record(log); });
+            pending=session.pendingLegacyCapture();
+        }
+        try {
+            session.enterLegacyContents();List<SonyTetherSession.LegacyObject> added=session.listLegacyPhotos(baseline);
+            String found="probe_capture_card_delta="+added.size()+" shutter="+(remoteShutter?"remote":"body");
+            main.post(() -> { if(current==generation) record(found); });
+            for(SonyTetherSession.LegacyObject original:added) {
+                String hash=saveLegacyProbe(session,original,folder,current,false);
+                String log="probe_capture_card_saved name="+original.name+" bytes="+original.size+" sha256="+hash+" host_equal="+hash.equals(hostHashes.get(original.name));
+                main.post(() -> { if(current==generation) record(log); });
+            }
+            if(added.isEmpty()) throw new IOException("No new camera-card original observed");
+        } finally { if(session.isOpen()) session.leaveLegacyContents(); }
+        } finally { session.requestStop();if(inspection==session) inspection=null; }
+    }
+
+    private String saveLegacyProbe(SonyTetherSession session,SonyTetherSession.LegacyObject photo,File folder,int current,boolean host) throws IOException {
+        File partial=new File(folder,"capture.part");
+        try {
+            String hash;
+            try(FileOutputStream output=new FileOutputStream(partial)) {
+                hash=host?session.downloadLegacyPending(photo,output):session.downloadLegacyWhole(photo,output);output.getFD().sync();
+            }
+            if(current!=generation) throw new IOException("Capture probe cancelled");
+            if(!partial.renameTo(new File(folder,(host?"host-":"card-")+hash+"-"+photo.name))) throw new IOException("Cannot publish experiment original");
+            return hash;
+        } finally { partial.delete(); }
+    }
+
+    private void probeLive(Network network,URL url,int current) throws IOException {
+        HttpURLConnection stream=(HttpURLConnection)network.openConnection(url);probeStream=stream;
+        stream.setInstanceFollowRedirects(false);stream.setConnectTimeout(5000);stream.setReadTimeout(5000);
+        Set<Integer> distinct=new HashSet<>();
+        String step="HTTP status";
+        try {
+            int status=stream.getResponseCode();main.post(() -> { if(current==generation) record("probe_live_http_status="+status); });
+            if(status!=200) throw new IOException("Non-success HTTP status");
+            step="frame header";
+            try(PushbackInputStream input=new PushbackInputStream(stream.getInputStream(),32)) {
+                byte[] header=new byte[32];new DataInputStream(input).readFully(header);input.unread(header);
+                StringBuilder hex=new StringBuilder();for(byte value:header) hex.append(String.format(Locale.ROOT,"%02x",value&255));
+                String metadata="probe_live_header="+hex;main.post(() -> { if(current==generation) record(metadata); });
+                for(int frame=0;frame<60 && current==generation;frame++) {
+                    byte[] jpeg=SonyTetherSession.readFrame(input);distinct.add(Arrays.hashCode(jpeg));
+                    if(frame%6!=0 && frame!=59) continue;
+                    android.graphics.BitmapFactory.Options bounds=new android.graphics.BitmapFactory.Options();bounds.inJustDecodeBounds=true;
+                    android.graphics.BitmapFactory.decodeByteArray(jpeg,0,jpeg.length,bounds);
+                    if(bounds.outWidth<=0 || bounds.outHeight<=0 || (long)bounds.outWidth*bounds.outHeight>16000000) throw new IOException("Invalid live dimensions");
+                    android.graphics.Bitmap bitmap=android.graphics.BitmapFactory.decodeByteArray(jpeg,0,jpeg.length);
+                    if(bitmap==null) throw new IOException("Invalid live JPEG");
+                    if(frame==0 || frame==59) try(FileOutputStream output=new FileOutputStream(new File(getFilesDir(),"probe-live-"+frame+".jpg"))) { output.write(jpeg); }
+                    String message="probe_live_frame number="+frame+" width="+bitmap.getWidth()+" height="+bitmap.getHeight();
+                    main.post(() -> { if(current==generation) { probeLive.setImageBitmap(bitmap);record(message); } else bitmap.recycle(); });
+                }
+            }
+            int count=distinct.size();main.post(() -> { if(current==generation) record("probe_live_distinct_frames="+count); });
+        } catch(IOException error) { throw new IOException("Live-view stream failed at "+step+": "+error.getClass().getSimpleName()); }
+        finally { stream.disconnect();if(probeStream==stream) probeStream=null; }
+    }
+
     private String saveOriginal(SonyMobileSession client, SonyMobileSession.Device info, SonyMobileSession.Asset photo, int current) throws IOException {
         ContentValues values = new ContentValues();
         String folder = Environment.DIRECTORY_DOWNLOADS + "/RawLab Camera Imports/" + UUID.randomUUID();
@@ -369,6 +634,8 @@ public final class CameraConnectActivity extends Activity {
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         if (intent.hasExtra("file-name")) requestedFile = intent.getStringExtra("file-name");
+        if(intent.hasExtra("probe-stage")) probeStage=intent.getStringExtra("probe-stage");
+        probeCardSavingConfirmed=intent.getBooleanExtra("card-saving-confirmed",false);
         String operation = intent.getStringExtra("operation");
         if ("probe".equals(operation) || "list".equals(operation) || "download".equals(operation)) runMobileOperation(operation);
     }
@@ -380,12 +647,24 @@ public final class CameraConnectActivity extends Activity {
     }
     private void fail(String message) { release(); state.setText(message); record("failed " + message); }
     private void release() {
+        boolean shutterRelease = tether != null && tether.stop();
+        SonyTetherSession activeInspection=inspection;inspection=null;
+        if(activeInspection!=null) { activeInspection.requestStop();shutterRelease|=activeInspection.isOpen(); }
         generation++; busy = false; ssid = null; pendingSSID = null; pendingPassword = null; cameraNetwork = null; cameraAddress = null; awaitingConnection = false;
         if (adapter != null && adapter.isEnabled()) try { adapter.getBluetoothLeScanner().stopScan(scanCallback); } catch (SecurityException ignored) {}
-        if (gatt != null) { BluetoothGatt old = gatt; gatt = null; old.disconnect(); old.close(); }
-        if (networkCallback != null) { connectivity.unregisterNetworkCallback(networkCallback); networkCallback = null; }
+        BluetoothGatt oldGatt=gatt;gatt=null;
+        ConnectivityManager.NetworkCallback oldNetwork=networkCallback;networkCallback=null;
+        Runnable releaseNetwork=() -> {
+            if(oldGatt!=null) { oldGatt.disconnect();oldGatt.close(); }
+            if(oldNetwork!=null) connectivity.unregisterNetworkCallback(oldNetwork);
+        };
+        // 给正在释放的快门保留原网络；旧回调已由代次失效，禁止它们继续业务操作。
+        if(shutterRelease) { releasePending=true;main.postDelayed(() -> { releaseNetwork.run();releasePending=false; },2100); }
+        else releaseNetwork.run();
         SonyMobileSession activePTP = ptp; if (activePTP != null) activePTP.close();
+        HttpURLConnection activeStream=probeStream;if(activeStream!=null) activeStream.disconnect();
         Socket active = socket; if (active != null) try { active.close(); } catch (IOException ignored) {}
     }
-    @Override public void onDestroy() { release(); unregisterReceiver(bondReceiver); unregisterReceiver(wifiScanReceiver); try { if (logFile != null) logFile.close(); } catch (IOException ignored) {} super.onDestroy(); }
+    @Override protected void onStop() { if(tether!=null || probeModel!=null) { release();record("remote_background_stopped"); } super.onStop(); }
+    @Override public void onDestroy() { release();if(tether!=null) tether.destroy(); unregisterReceiver(bondReceiver); unregisterReceiver(wifiScanReceiver); try { if (logFile != null) logFile.close(); } catch (IOException ignored) {} super.onDestroy(); }
 }

@@ -37,14 +37,14 @@ public sealed class ToneCurveCanvas : FrameworkElement
     }
     private void SetValue(ToneCurveSettings next)
     {
-        if (value != next) { value = next; samples = next.IsDefault ? [] : ToneCurveSampling.Samples(next); }
+        if (value != next) { value = next; samples = (next.Mode == ToneCurveMode.Legacy) ? [] : ToneCurveSampling.Samples(next); }
         InvalidateVisual();
     }
     private Point Normalized(Point point) => new((point.X - 12) / Math.Max(1, ActualWidth - 24), 1 - (point.Y - 12) / Math.Max(1, ActualHeight - 24));
     private Point CanvasPoint(ToneCurvePoint p) => new(12 + p.X * (ActualWidth - 24), 12 + (1 - p.Y) * (ActualHeight - 24));
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
-        if (!IsEnabled || value.IsDefault || PrepareEditing?.Invoke() == false) return;
+        if (!IsEnabled || (value.Mode == ToneCurveMode.Legacy) || PrepareEditing?.Invoke() == false) return;
         var location = e.GetPosition(this); var origin = Normalized(location);
         double Distance(int index) { var p = CanvasPoint(value.Points[index]) - location; return p.LengthSquared; }
         var index = Enumerable.Range(0, value.Points.Count).MinBy(Distance);
@@ -109,7 +109,7 @@ public sealed class ToneCurveCanvas : FrameworkElement
     protected override void OnRender(DrawingContext dc)
     {
         dc.DrawRectangle(Brushes.Transparent, null, new Rect(RenderSize));
-        if (value.IsDefault) return;
+        if ((value.Mode == ToneCurveMode.Legacy)) return;
         dc.PushOpacity(IsEnabled ? 1 : .4);
         var grid = new Pen(new SolidColorBrush(Color.FromArgb(45, 150, 150, 150)), 1);
         for (var i = 0; i <= 4; i++) {

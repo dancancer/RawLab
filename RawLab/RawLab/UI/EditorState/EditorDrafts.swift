@@ -6,13 +6,57 @@ enum RulerFocusPhase: Equatable {
 }
 
 extension ContentView {
+    var workingSettings: RawSettings {
+        get { editorDraftSnapshot.projecting(on: settings) }
+        nonmutating set {
+            guard !editorBusy else { return }
+            if var draft = workspaceDraft {
+                draft.update(newValue, geometry: geometryDraftState, interactive: isAdjustingSlider)
+                workspaceDraft = draft
+            } else { settings = newValue }
+        }
+    }
+
+    var workingSettingsBinding: Binding<RawSettings> {
+        Binding(get: { workingSettings }, set: { workingSettings = $0 })
+    }
+
+    var geometryDraftState: EditorGeometryDraftState {
+        EditorGeometryDraftState(preset: geometryAspectPreset.rawValue, lockedRatio: geometryLockedRatio,
+                                 swapped: geometryAspectSwapped, grid: geometryGrid,
+                                 includesLens: workspaceDraft?.step.geometry.includesLens ?? false)
+    }
+
+    func syncGeometryDraft() {
+        guard var draft = workspaceDraft, draft.tool == .geometry || draft.tool == .lens else { return }
+        var value = draft.value
+        if let geometryDraft { value.setGeometrySettings(geometryDraft) }
+        if let lensDraft { value.lensCorrection = lensDraft.lensCorrection }
+        draft.update(value, geometry: geometryDraftState, interactive: isAdjustingSlider)
+        workspaceDraft = draft
+    }
+
+    func undoEditorDraft() { workspaceDraft?.undo(); restoreDraftControls() }
+    func redoEditorDraft() { workspaceDraft?.redo(); restoreDraftControls() }
+
+    func restoreDraftControls() {
+        guard let draft = workspaceDraft else { return }
+        if geometrySelected { geometryDraft = draft.value.geometrySettings }
+        if lensSelected { lensDraft = draft.value }
+        geometryAspectPreset = CropAspectPreset(rawValue: draft.step.geometry.preset) ?? .free
+        geometryLockedRatio = draft.step.geometry.lockedRatio
+        geometryAspectSwapped = draft.step.geometry.swapped
+        geometryGrid = draft.step.geometry.grid
+    }
+
     var effectivePreviewSettings: RawSettings {
         editorDraftSnapshot.projecting(on: settings)
     }
 
     var editorDraftSnapshot: EditorDraftSnapshot {
         EditorDraftSnapshot(geometry: geometryDraft, lens: lensDraft,
-                            tool: resetDraftSuspended || collapsedEditorTool != nil ? .film : currentEditorTool, destination: pendingToolSelection)
+                            tool: resetDraftSuspended || collapsedEditorTool != nil ? .film : currentEditorTool, destination: pendingToolSelection,
+                            workspace: resetDraftSuspended || !toolWorkspaceOpen ? nil : workspaceDraft)
     }
 
     var draftPreviewSettings: RawSettings {
@@ -42,10 +86,35 @@ extension ContentView {
         })
     }
 
-    var isEditorDraftActive: Bool { geometrySelected || lensSelected }
+    var isEditorDraftActive: Bool { toolWorkspaceOpen && workspaceDraft != nil }
 
     var isEditorDraftChanged: Bool {
         editorDraftSnapshot.isChanged(from: settings)
+    }
+
+    func preserveEditorDraft() {
+        guard var draft = workspaceDraft, let identity = viewModel.sourceIdentity else { return }
+        syncGeometryDraft()
+        draft = workspaceDraft ?? draft
+        draft.finishInteraction()
+        do { try EditorToolDraftStore.appStore().save(identity: identity, draft: draft) }
+        catch { viewModel.statusMessage = L10n.text("无法保存编辑草稿。") }
+    }
+
+    func restoreEditorDraft() {
+        guard workspaceDraft == nil, let identity = viewModel.sourceIdentity, !editorBusy else { return }
+        do {
+            guard let draft = try EditorToolDraftStore.appStore().load(identity: identity, committed: settings) else { return }
+            activateEditorTool(draft.tool)
+            workspaceDraft = draft
+            restoreDraftControls()
+            previewEditorDraft()
+        } catch { viewModel.statusMessage = L10n.text("无法恢复编辑草稿，已保留已应用的调整。") }
+    }
+
+    func clearRecoverableDraft() {
+        guard let identity = viewModel.sourceIdentity else { return }
+        try? EditorToolDraftStore.appStore().clear(identity: identity)
     }
 
     var rulerFocusOpacity: Double {
@@ -56,7 +125,7 @@ extension ContentView {
     func selectEditorTool(_ selection: EditorToolSelection) {
         guard !editorBusy else { return }
         closeQuickPresets()
-        if selection == currentEditorTool {
+        if selection == currentEditorTool && toolWorkspaceOpen {
             if !adjustmentsExpanded { requestAdjustmentExpansion(true) }
             return
         }
@@ -78,11 +147,12 @@ extension ContentView {
 
     func activateEditorTool(_ selection: EditorToolSelection, resettingFine: Bool = true) {
         viewModel.closeQuickPresets()
+        cancelHSLTarget()
         cancelSliderInteraction()
         if resettingFine && selection != currentEditorTool { adjustmentFine = false }
         collapsedEditorTool = nil
-        let leavingDraft = geometrySelected || lensSelected
-        if leavingDraft { viewModel.discardDraftSaveFailure(settings: settings) }
+        let leavingDraft = isEditorDraftActive
+        if leavingDraft { clearRecoverableDraft(); viewModel.discardDraftSaveFailure(settings: settings) }
         pendingToolSelection = nil
         draftExitPresented = false
         cancelRulerFocus()
@@ -99,6 +169,9 @@ extension ContentView {
             geometryDraft = settings.geometrySettings
         }
         if lensSelected { lensDraft = settings }
+        workspaceDraftID = UUID()
+        workspaceDraft = EditorToolDraft(tool: selection, original: settings)
+        toolWorkspaceOpen = true
         if leavingDraft && !geometrySelected && !lensSelected {
             viewModel.updatePreview(settings: settings, includeHistogram: true, quality: .final)
         }
@@ -106,16 +179,32 @@ extension ContentView {
 
     func applyEditorDraft() {
         guard commitEditorDraft() else { return }
-        activateEditorTool(.adjustment(.exposure))
+        finishEditorTool()
+    }
+
+    func finishEditorTool() {
+        cancelHSLTarget()
+        clearRecoverableDraft()
+        workspaceDraftID = UUID()
+        workspaceDraft = nil
+        toolWorkspaceOpen = false
+        geometrySelected = false; lensSelected = false
+        geometryDraft = nil; lensDraft = nil
+        viewModel.hasAdjustmentDraft = false
+        viewModel.updatePreview(settings: settings, includeHistogram: true, quality: .final)
     }
 
     func commitEditorDraft() -> Bool {
-        guard !editorBusy, !viewModel.previewRendering, !viewModel.previewResizePending, !viewModel.previewFailed, !isAdjustingSlider,
-              let prepared = viewModel.prepareDraft(settings: settings, revision: settingsRevision, draft: editorDraftSnapshot),
+        guard !editorBusy, !viewModel.previewRendering, !viewModel.previewResizePending, !viewModel.previewFailed, !isAdjustingSlider else { return false }
+        if !isEditorDraftChanged { discardEditorDraft(); return true }
+        guard let prepared = viewModel.prepareDraft(settings: settings, revision: settingsRevision, draft: editorDraftSnapshot),
               viewModel.saveDraft(prepared, settings: settings, revision: settingsRevision, draft: editorDraftSnapshot) else { return false }
         // 退出草稿会立即请求预览，不能等待 settings observer 才更新参考构图。
         viewModel.committedPreviewSettings = prepared.candidate.settings
         settings = prepared.candidate.settings
+        clearRecoverableDraft()
+        workspaceDraftID = UUID()
+        workspaceDraft = nil
         geometryDraft = nil
         lensDraft = nil
         cancelRulerFocus()
@@ -124,10 +213,14 @@ extension ContentView {
 
     func cancelEditorDraft() {
         discardEditorDraft()
-        activateEditorTool(.adjustment(.exposure))
+        finishEditorTool()
     }
 
     func discardEditorDraft() {
+        cancelHSLTarget()
+        clearRecoverableDraft()
+        workspaceDraftID = UUID()
+        workspaceDraft = nil
         geometryDraft = nil
         lensDraft = nil
         viewModel.discardDraftSaveFailure(settings: settings)
@@ -138,23 +231,24 @@ extension ContentView {
         if apply {
             guard commitEditorDraft() else { return }
         } else { discardEditorDraft() }
+        toolWorkspaceOpen = false
         if pendingCollectionNavigation != nil {
-            activateEditorTool(.adjustment(.exposure))
+            finishEditorTool()
             continueCollectionNavigation()
             return
         }
         if pendingAdjustmentAction != nil {
-            activateEditorTool(.adjustment(.exposure))
+            finishEditorTool()
             continueAdjustmentAction()
             return
         }
         if !pendingSystemPhotoURLs.isEmpty {
-            activateEditorTool(.adjustment(.exposure))
+            finishEditorTool()
             continueSystemPhotoImport()
             return
         }
         if pendingFileImport || pendingPhotoImport {
-            activateEditorTool(.adjustment(.exposure))
+            finishEditorTool()
             continueEditorImport()
             return
         }
@@ -201,8 +295,13 @@ extension ContentView {
               let candidate = viewModel.commitReset(prepared, settings: settings, revision: settingsRevision,
                                                    draft: editorDraftSnapshot) else { return false }
         if prepared.updatesDraft {
-            geometryDraft = candidate.settings.geometrySettings
-            lensDraft = candidate.settings
+            if currentEditorTool == .geometry || currentEditorTool == .lens {
+                var geometry = geometryDraftState
+                if preparedResetScope == .group(.geometry) { geometry.includesLens = true }
+                workspaceDraft?.update(candidate.settings, geometry: geometry)
+                if geometrySelected { geometryDraft = candidate.settings.geometrySettings }
+                if lensSelected { lensDraft = candidate.settings }
+            } else { workspaceDraft?.update(candidate.settings) }
         } else {
             let parametersChanged = settings != candidate.settings
             applySettingsChange(candidate.settings)
@@ -232,26 +331,11 @@ extension ContentView {
     }
 
     func selectEditorGroup(_ group: EditorAdjustmentGroup) {
-        guard !editorBusy, !resetDraftSuspended else { return }
-        let wasQuickPresets = viewModel.quickPresetsVisible
-        if group == .looks && settings.isHDREditing {
-            if viewModel.quickPresetsVisible { requestAdjustmentExpansion(!adjustmentsExpanded) } else { showQuickPresets() }
-            return
-        }
-        if group != .looks { closeQuickPresets() }
-        if group == selectedGroup && !wasQuickPresets {
-            requestAdjustmentExpansion(!adjustmentsExpanded)
-        } else {
-            let target = EditorAdjustmentRules.defaultTool(group)
-            if isEditorDraftChanged {
-                pendingToolSelection = target
-                pendingAdjustmentExpansion = true
-                draftExitPresented = true
-            } else {
-                activateEditorTool(target)
-                adjustmentsExpanded = true
-            }
-        }
+        guard !editorBusy else { return }
+        closeQuickPresets()
+        guard !isEditorDraftActive else { return }
+        selectedGroup = group
+        adjustmentsExpanded = true
     }
 
     func requestAdjustmentExpansion(_ expanded: Bool) {
@@ -271,7 +355,7 @@ extension ContentView {
             let tool = currentEditorTool
             let group = selectedGroup
             // 收起结束实际草稿并恢复 committed 画面；记住的工具只属于导航会话。
-            activateEditorTool(.film, resettingFine: false)
+            finishEditorTool()
             collapsedEditorTool = tool
             selectedGroup = group
         }

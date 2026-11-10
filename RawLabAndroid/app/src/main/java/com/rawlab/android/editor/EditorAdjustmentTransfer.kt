@@ -103,7 +103,7 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
                                 it.preview(photo.file, null, neutral.copy(lens = request), 128, false, photo.inputKind).lens
                             }
                             checkActive()
-                            if ((request.distortion && report?.appliedDistortion != true) || (request.tca && report?.appliedTca != true))
+                            if ((request.distortion && report?.appliedDistortion != true) || (request.tca && report?.appliedTca != true) || (request.vignetting && report?.appliedVignetting != true))
                                 throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "target lens calibration unavailable")
                         })
                     AdjustmentTransferTarget(identity, displayName,

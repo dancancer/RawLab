@@ -56,7 +56,7 @@ import Foundation
             case .gradingShadows, .gradingMidtones, .gradingHighlights:
                 values[field] = .object(["hue": .number(0), "saturation": .number(0)])
             case .waveletDenoise: values[field] = .null
-            case .flipHorizontal, .flipVertical, .lensDistortion, .lensTCA, .lensAutoCrop:
+            case .flipHorizontal, .flipVertical, .lensDistortion, .lensTCA, .lensVignetting, .lensAutoCrop:
                 values[field] = .boolean(false)
             case .rawDenoise: values[field] = .number(0)
             case .postRGBDenoise, .chromaDenoise: values[field] = .number(0)

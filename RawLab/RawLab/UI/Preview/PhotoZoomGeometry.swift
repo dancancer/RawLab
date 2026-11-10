@@ -65,7 +65,7 @@ struct PhotoViewingState: Equatable {
     private(set) var split: CGFloat = 0.5
     private(set) var holdingBefore = false
     private(set) var previewOnly = false
-    var photoMargin = true
+    var photoMargin = false
 
     mutating func toggleComparison() {
         holdingBefore = false

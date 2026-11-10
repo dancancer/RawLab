@@ -53,6 +53,18 @@ class HDRNativeInstrumentedTest {
 
                 val full = processor.decodeHDRCamera(source, info, 0)
                 try {
+                    val redCurve = com.rawlab.android.settings.ToneCurveSettings().replacing(
+                        com.rawlab.android.settings.ToneCurveChannel.RED,
+                        com.rawlab.android.settings.ToneCurveShape.identity.inserting(.5, .6))
+                    val settings = HDRSettings().withTone(com.rawlab.android.settings.HDRToneSettings(curve = redCurve))
+                    processor.renderHDR(full, settings, 0).use { channelResult ->
+                        val before = full.hdrPlane(); val after = channelResult.hdrPlane()
+                        assertTrue("HDR independent red channel changes real pixels", before.indices.any { it % 3 == 0 && abs(before[it] - after[it]) > 1e-5 })
+                        before.indices.filter { it % 3 != 0 }.forEach { assertEquals(before[it], after[it], 1e-6f) }
+                        val channelPng = File(root, "channel-export.png")
+                        NativeHDRBridge.exportSdr(channelResult, null, channelPng, ExportFormat.PNG.nativeValue)
+                        assertTrue(channelPng.length() > 0)
+                    }
                     processor.renderHDR(full, HDRSettings(), 0).use { rendered ->
                         val hdr = File(root, "camera-hdr.jpg")
                         val sdr = File(root, "camera-sdr.jpg")

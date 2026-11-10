@@ -44,11 +44,18 @@ internal class CameraImportStore(private val directory: File, private val tempor
     private val media: MediaPhotoAccess, private val readCaptureDate: (File) -> CameraCaptureDate?) {
     init { directory.mkdirs(); temporary.mkdirs() }
 
-    fun create(cameraId: String, photos: List<CameraPhoto>, destination: CameraImportDestination): CameraImportJob {
+    fun create(cameraId: String, photos: List<CameraPhoto>, destination: CameraImportDestination,
+        id: String = UUID.randomUUID().toString()): CameraImportJob {
+        require(validId(id))
         require(photos.isNotEmpty() && photos.size <= 10000)
         require(photos.map { it.key }.distinct().size == photos.size)
         require(photos.all { it.size in 1..SystemPhotoStore.MAX_BYTES })
-        return CameraImportJob(UUID.randomUUID().toString(), cameraId, System.currentTimeMillis(),
+        readJobs().firstOrNull { it.id == id }?.let { existing ->
+            if (existing.cameraId != cameraId || existing.destination != destination || existing.items.map { it.photo } != photos)
+                throw IOException("Reserved camera job identity changed")
+            return existing
+        }
+        return CameraImportJob(id, cameraId, System.currentTimeMillis(),
             photos.map { CameraImportItem(it) }, destination = destination).also(::save)
     }
     fun partial(id: String): File { require(validId(id)); return File(temporary, "$id.part") }

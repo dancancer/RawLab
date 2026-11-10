@@ -108,7 +108,7 @@ extension RawEditorViewModel {
                                     try processor.processRaw(url: $0, settings: settings, previewLongEdge: 128, lutURL: nil)
                                 }
                                 guard let report = result.lensInfo,
-                                      (!lens.distortion || report.appliedDistortion), (!lens.tca || report.appliedTCA) else {
+                                      (!lens.distortion || report.appliedDistortion), (!lens.tca || report.appliedTCA), (!lens.vignetting || report.appliedVignetting) else {
                                     throw AdjustmentTransferError.incompatible(result.lensInfo?.message ?? L10n.text("镜头配置"))
                                 }
                             }
@@ -117,7 +117,22 @@ extension RawEditorViewModel {
                         context.sourceIsHDR=try file.withReadAccess { try HDRSourceInfo.probe($0) != nil }
                         if context.sourceIsHDR {
                             _ = try file.withReadAccess { try Sony2FujiProcessor().processHDR(url:$0,settings:HDRSettings(),previewLongEdge:128) }
-                        } else { _ = try file.withReadAccess { try Sony2FujiProcessor().loadRasterBuffer(url:$0) } }
+                        } else {
+                            _ = try file.withReadAccess { try Sony2FujiProcessor().loadRasterBuffer(url:$0) }
+                            context.validateLensRequest = { lens in
+                                let processor = Sony2FujiProcessor()
+                                var settings = RawSettings.default
+                                settings.lensCorrection = lens
+                                let result = try file.withReadAccess { url in
+                                    let input = try processor.loadRasterBuffer(url: url).buffer
+                                    return try processor.processBuffer(buffer: input, settings: settings, previewLongEdge: 128, lutURL: nil)
+                                }
+                                guard let report = result.lensInfo,
+                                      (!lens.distortion || report.appliedDistortion), (!lens.tca || report.appliedTCA), (!lens.vignetting || report.appliedVignetting) else {
+                                    throw AdjustmentTransferError.incompatible(result.lensInfo?.message ?? L10n.text("镜头配置"))
+                                }
+                            }
+                        }
                     }
                 } catch { validation = { throw error } }
                 return IOSAdjustmentTransferTarget(identity: photo.identity, displayName: photo.displayName,

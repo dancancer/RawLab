@@ -570,7 +570,7 @@ follow the Mac camera HDR development settings, before the separate relative
 | `temperature`, `tint` | Both `0` for as-shot; temperature mode uses 2000–50000 K (default 6500), tint -150–150 (default 0) |
 | `exposure_reference` | `metadata` (default) or `sensor`; no ordinary RAW scene/preview boost |
 | `fbdd_level` | Integer 0–2, default 0 |
-| `lens_distortion`, `lens_tca` | Booleans, default false |
+| `lens_distortion`, `lens_tca`, `lens_vignetting` | Booleans, default false; vignetting is omitted when false |
 | `lens_auto_crop` | Boolean, default true; active only with lens correction |
 | `lens_profile` | Optional nonempty profile id, at most 1024 UTF-8 bytes, requiring active lens correction |
 | `camera_profile` | Optional `{ "path": "camera.dcp", "sha256": "<64 lowercase hex digits>" }` for a D65 camera-matrix DCP or RLOOKHDR |
@@ -601,3 +601,27 @@ return `unsupported` for that explicitly selected source type.
 For `--info`, an unrecognized extension triggers content-based HDR probing,
 then SDR image loading, then LibRaw inspection. Recognized invalid HDR
 containers are rejected instead of silently opening their SDR base.
+
+## v15: HDR channel curves
+
+[Schema 15](edit-json-v15.schema.json) selects `rawlab_hdr` processing version
+8 and retains the v14 source and export formats. `edits.tone.curve.channels`
+optionally holds `red`, `green` and `blue` curves, each with its own `mode`
+and `points` under the same fixed-endpoint, monotone PCHIP rules as the
+master curve. Missing channels are legacy identity curves. Channel objects
+cannot contain further channels. The master luminance curve runs first;
+independent RGB curves then use the normalized log-EV domain. Older HDR
+schemas reject active channel curves and keep their original processing.
+
+The CLI publishes `hdr.channel_curve_recipe_version=15` and processing
+version 8. SDR schemas 5 and 7 also accept `tone.curve.channels` without
+changing their existing processing identity; the channels use display RGB
+there. Identity channels are omitted during normalization, preserving old
+recipes. `tone_curve.channels` lists the available channel names.
+
+SDR schemas 4, 5 and 7 accept optional `edits.lens_correction.vignetting`,
+default false and omitted from normalized output when disabled. Agent CLI
+raster recipes still reject active lens corrections: the native display
+lens API requires explicit camera metadata that this recipe does not carry.
+Camera HDR schemas 14 and 15 accept `input.camera_development.lens_vignetting`;
+a vignetting-only correction can select a `lens_profile`.

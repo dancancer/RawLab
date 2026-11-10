@@ -9,7 +9,7 @@ enum class ComparisonMode { SIDE_BY_SIDE, WIPE }
 data class PhotoViewOptions(
     val comparisonEnabled: Boolean = false,
     val preferredMode: ComparisonMode = ComparisonMode.SIDE_BY_SIDE,
-    val margins: Boolean = true,
+    val margins: Boolean = false,
     val infoMode: Int = 0,
     val purePreview: Boolean = false,
     val holdingBefore: Boolean = false,

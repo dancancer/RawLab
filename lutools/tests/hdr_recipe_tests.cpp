@@ -63,7 +63,7 @@ int main() {
         normalized=sony2fuji::serializeEditRecipe(recipe);
         check(sony2fuji::parseEditRecipe(normalized,recipe,error),"HDR v8 normalized parse: "+error);
         check(sony2fuji::serializeEditRecipe(recipe)==normalized,"HDR v8 roundtrip changed fields");
-        const auto request=recipe.toHDRRenderRequest().base.base.base.base.base;
+        const auto request=recipe.toHDRRenderRequest().base.base.base.base.base.base;
         check(request.base.hdr_processing_version==2 && request.base.struct_size==sizeof(request) &&
             request.black_point==-25 && request.white_point==50 && request.curve.count==3 &&
             request.curve.points[1].y==.625,"HDR v8 typed request lost tone fields");
@@ -84,7 +84,7 @@ int main() {
         normalized=sony2fuji::serializeEditRecipe(recipe);
         check(sony2fuji::parseEditRecipe(normalized,recipe,error),"HDR v9 normalized parse: "+error);
         check(sony2fuji::serializeEditRecipe(recipe)==normalized,"HDR v9 roundtrip changed fields");
-        const auto color=recipe.toHDRRenderRequest().base.base.base.base;
+        const auto color=recipe.toHDRRenderRequest().base.base.base.base.base;
         check(color.base.base.struct_size==sizeof(color) && color.base.base.hdr_processing_version==3 &&
             color.base.white_point==50 && color.vibrance==45 && color.hsl.hue[1]==20 &&
             color.grading.highlights_hue==210 && color.grading.highlights_saturation==32,"HDR v9 request lost color");
@@ -99,7 +99,7 @@ int main() {
         normalized=sony2fuji::serializeEditRecipe(recipe);
         check(sony2fuji::parseEditRecipe(normalized,recipe,error) && sony2fuji::serializeEditRecipe(recipe)==normalized,
             "HDR v10 roundtrip changed fields");
-        const auto rendition=recipe.toHDRRenderRequest().base.base.base;
+        const auto rendition=recipe.toHDRRenderRequest().base.base.base.base;
         check(rendition.base.base.base.struct_size==sizeof(rendition) && rendition.base.base.base.hdr_processing_version==4 &&
             rendition.peak_limit_ev==2.25f && rendition.sdr_exposure_ev==-.5f &&
             rendition.sdr_contrast==50 && rendition.sdr_saturation==-25,"HDR v10 request lost rendition settings");
@@ -112,7 +112,7 @@ int main() {
         normalized=sony2fuji::serializeEditRecipe(recipe);
         check(sony2fuji::parseEditRecipe(normalized,recipe,error) && sony2fuji::serializeEditRecipe(recipe)==normalized,
             "HDR v11 roundtrip changed effects");
-        const auto effects=recipe.toHDRRenderRequest().base.base;
+        const auto effects=recipe.toHDRRenderRequest().base.base.base;
         check(effects.base.base.base.base.struct_size==sizeof(effects) && effects.base.base.base.base.hdr_processing_version==5 &&
             effects.effects.vignette_amount==-50 && effects.effects.vignette_midpoint==50 &&
             effects.effects.grain_amount==25 && effects.effects.grain_size==37,"HDR v11 request lost effects");
@@ -125,7 +125,7 @@ int main() {
         normalized=sony2fuji::serializeEditRecipe(recipe);
         check(sony2fuji::parseEditRecipe(normalized,recipe,error) && sony2fuji::serializeEditRecipe(recipe)==normalized,
             "HDR v12 roundtrip changed detail");
-        const auto detail=recipe.toHDRRenderRequest().base;
+        const auto detail=recipe.toHDRRenderRequest().base.base;
         check(detail.base.base.base.base.base.struct_size==sizeof(detail) &&
             detail.base.base.base.base.base.hdr_processing_version==6 && detail.sharpening==1.3f &&
             detail.clarity==-.45f && detail.dehaze==.5f && detail.denoise==.65f,"HDR v12 request lost detail settings");
@@ -140,12 +140,21 @@ int main() {
         normalized=sony2fuji::serializeEditRecipe(recipe);
         check(sony2fuji::parseEditRecipe(normalized,recipe,error) && sony2fuji::serializeEditRecipe(recipe)==normalized,
             "HDR v13 roundtrip changed look identity");
-        const auto look=recipe.toHDRRenderRequest();
+        const auto look=recipe.toHDRRenderRequest().base;
         check(look.base.base.base.base.base.base.struct_size==sizeof(look) &&
             look.base.base.base.base.base.base.hdr_processing_version==7 && std::string(look.look_path)=="look.cube" &&
             look.look_strength==.75f && look.look_sha256==digest,"HDR v13 request lost look identity");
         invalid=document; invalid["edits"]["look"]["sha256"]="short"; reject(invalid,"sha256");
         invalid=document; invalid["edits"]["look"]["strength"]=2.1; reject(invalid,"strength");
+        document["edits"]["tone"]["curve"]["channels"]={{"red",{{"mode","custom"},{"points",{{0,0},{.5,.6},{1,1}}}}}};
+        reject(document,"schema_version 15");
+        document["schema_version"]=15; document["processing"]["version"]=8;
+        check(sony2fuji::parseEditRecipe(document.dump(),recipe,error),"HDR channel recipe: "+error);
+        const auto channels=recipe.toHDRRenderRequest();
+        check(channels.base.base.base.base.base.base.base.struct_size==sizeof(channels) &&
+            channels.channels[0].count==3 && channels.channels[0].points[1].y==.6,"HDR channel request");
+        normalized=sony2fuji::serializeEditRecipe(recipe);
+        check(sony2fuji::parseEditRecipe(normalized,recipe,error) && sony2fuji::serializeEditRecipe(recipe)==normalized,"HDR channel roundtrip");
         std::cout<<"PASS HDR v6/v8/v9/v10/v11/v12/v13 roundtrip, strict fields and typed request isolation\n";
         return 0;
     } catch (const std::exception& e) { std::cerr<<"FAIL "<<e.what()<<'\n'; return 1; }

@@ -158,6 +158,7 @@ set(CORE_SOURCES
     src/core/raw_processor.cpp
     src/core/x3f_processor.cpp
     src/core/lens_correction.cpp
+    src/core/display_lens_correction.cpp
     src/core/chroma_denoise.cpp
     src/core/noise_aware_sharpen.cpp
     src/core/wavelet_denoise.cpp
@@ -1030,6 +1031,15 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     endif()
     add_test(NAME lens_api COMMAND lens_api_tests)
     if(SONY2FUJI_ENABLE_LENSFUN)
+        add_executable(display_lens_tests tests/display_lens_tests.cpp)
+        target_link_libraries(display_lens_tests sony2fuji_core)
+        target_compile_definitions(display_lens_tests PRIVATE TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+        if(MSVC)
+            target_compile_options(display_lens_tests PRIVATE /UNDEBUG)
+        else()
+            target_compile_options(display_lens_tests PRIVATE -UNDEBUG)
+        endif()
+        add_test(NAME display_lens COMMAND display_lens_tests)
         add_executable(lens_correction_tests tests/lens_correction_tests.cpp)
         target_link_libraries(lens_correction_tests sony2fuji_core)
         target_compile_definitions(lens_correction_tests PRIVATE TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")

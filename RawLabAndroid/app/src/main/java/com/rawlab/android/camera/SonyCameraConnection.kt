@@ -25,6 +25,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.wifi.WifiManager
+import android.net.wifi.WifiInfo
 import android.net.wifi.WifiNetworkSpecifier
 import android.os.Build
 import android.os.Handler
@@ -52,7 +53,7 @@ internal class SonyCameraConnection(
         fun onFailure(reason: Failure)
     }
 
-    enum class Stage { SCANNING, PAIRING, BLUETOOTH, WIFI_STARTING, WIFI_CONFIRMATION, NETWORK }
+    enum class Stage { SCANNING, PAIRING, BLUETOOTH, WIFI_STARTING, WIFI_CONFIRMATION, MANUAL_WIFI, NETWORK }
 
     enum class Failure {
         UNSUPPORTED,
@@ -273,6 +274,54 @@ internal class SonyCameraConnection(
         main.post { connectOnMain(id) }
     }
 
+    fun prepareLegacyWifi() {
+        main.post { beginOperation(); setStage(Stage.MANUAL_WIFI) }
+    }
+
+    /** ZV-E10 没有已验证的 BLE 热点启动命令；用户在系统连接后只绑定该相机网络。 */
+    fun useLegacyWifi() {
+        main.post {
+            beginOperation()
+            if (!isSupported()) return@post fail(Failure.UNSUPPORTED)
+            if (!hasPermissions(forWifi = true)) return@post fail(Failure.PERMISSION)
+            if (location?.isLocationEnabled != true) return@post fail(Failure.LOCATION_OFF)
+            val manager = connectivity ?: return@post fail(Failure.WIFI)
+            val current = generation
+            lateinit var callback: ConnectivityManager.NetworkCallback
+            callback = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) { main.post { inspectLegacyNetwork(network, current, callback) } }
+                override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                    main.post { inspectLegacyNetwork(network, current, callback) }
+                }
+                override fun onLinkPropertiesChanged(network: Network, properties: LinkProperties) {
+                    main.post { inspectLegacyNetwork(network, current, callback) }
+                }
+                override fun onLost(network: Network) { main.post {
+                    if (isCurrentNetwork(current, callback) && network == cameraNetwork) fail(Failure.DISCONNECTED)
+                } }
+            }
+            networkCallback = callback
+            setStage(Stage.MANUAL_WIFI)
+            try {
+                manager.registerNetworkCallback(NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                    .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build(), callback)
+                manager.allNetworks.forEach { inspectLegacyNetwork(it, current, callback) }
+            } catch (_: SecurityException) { fail(Failure.PERMISSION) }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun inspectLegacyNetwork(network: Network, current: Long, callback: ConnectivityManager.NetworkCallback) {
+        if (Build.VERSION.SDK_INT < 29 || !isCurrentNetwork(current, callback) || cameraNetwork != null) return
+        val manager = connectivity ?: return
+        val capabilities = manager.getNetworkCapabilities(network) ?: return
+        if (!capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return
+        val info = capabilities.transportInfo as? WifiInfo ?: wifi?.connectionInfo ?: return
+        val id = SonyCameraModel.networkIdentity(info.ssid, info.bssid) ?: return
+        selectedId = id
+        inspectNetwork(network, manager.getLinkProperties(network), callback)
+    }
+
     /** 释放当前 BLE/Wi-Fi 资源，但保留 Android 系统配对关系。 */
     override fun close() {
         val release = {
@@ -340,6 +389,10 @@ internal class SonyCameraConnection(
         }
         scanning = false
         stopBleScan()
+        if (deviceNames[id]?.let(SonyCameraModel::fromAdvertisement) == SonyCameraModel.ZVE10) {
+            setStage(Stage.MANUAL_WIFI)
+            return
+        }
         val bonded = try {
             selected.bondState == BluetoothDevice.BOND_BONDED
         } catch (_: SecurityException) {
@@ -392,7 +445,7 @@ internal class SonyCameraConnection(
         val record: ScanRecord = result.scanRecord ?: return
         if (record.getManufacturerSpecificData(SONY_MANUFACTURER_ID) == null) return
         val name = record.deviceName ?: return
-        if (!name.contains(SONY_MODEL)) return
+        if (SonyCameraModel.fromAdvertisement(name) == null) return
         val device = try { result.device } catch (_: SecurityException) {
             fail(Failure.PERMISSION)
             return

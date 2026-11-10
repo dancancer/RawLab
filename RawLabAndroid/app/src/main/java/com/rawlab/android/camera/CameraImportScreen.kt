@@ -1,18 +1,10 @@
 package com.rawlab.android.camera
 
-import android.Manifest
-import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
-import android.os.Build
 import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,24 +12,20 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.NavigateBefore
 import androidx.compose.material.icons.automirrored.outlined.NavigateNext
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.FolderOpen
-import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -45,6 +33,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rawlab.android.R
@@ -54,42 +45,27 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit, onOpen: (List<Uri>) -> Unit,
-    showTask: Boolean = false, onTaskShown: () -> Unit = {}, onViewInAlbum: (List<Uri>) -> Unit = {}) {
+    showTask: Boolean = false, onTaskShown: () -> Unit = {}, onViewInAlbum: (List<Uri>) -> Unit = {},
+    showHistory: Boolean = false, onHistoryShown: () -> Unit = {}, onConnect: (Boolean) -> Unit = {}) {
     val state by model.state.collectAsStateWithLifecycle()
     val browseGrid = rememberLazyGridState()
     val selectionGrid = rememberLazyGridState()
     val scope = rememberCoroutineScope()
     var page by rememberSaveable { mutableStateOf("browse") }
     var previewKey by rememberSaveable { mutableStateOf<String?>(null) }
-    var format by rememberSaveable { mutableStateOf("RAW") }
+    var format by rememberSaveable { mutableStateOf("all") }
     var date by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedOnly by rememberSaveable { mutableStateOf(false) }
     var filterOpen by rememberSaveable { mutableStateOf(false) }
     var destinationOpen by rememberSaveable { mutableStateOf(false) }
-    var draftFormat by rememberSaveable { mutableStateOf("RAW") }
+    var draftFormat by rememberSaveable { mutableStateOf("all") }
     var draftDate by rememberSaveable { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf(false) }
-    var reconnectingJob by rememberSaveable { mutableStateOf<String?>(null) }
-    val context = LocalContext.current
-    val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        if (result.values.all { it }) model.scan() else model.permissionDenied()
-    }
-    fun findCamera() {
-        if (Build.VERSION.SDK_INT < 29) { model.scan(); return }
-        val required = buildList {
-            add(Manifest.permission.ACCESS_FINE_LOCATION)
-            add(Manifest.permission.ACCESS_COARSE_LOCATION)
-            if (Build.VERSION.SDK_INT >= 31) { add(Manifest.permission.BLUETOOTH_SCAN); add(Manifest.permission.BLUETOOTH_CONNECT) }
-            if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.NEARBY_WIFI_DEVICES)
-        }.filter { context.checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
-        if (required.isEmpty()) model.scan() else permissions.launch(required.toTypedArray())
-    }
     DisposableEffect(model) { onDispose { model.cancelOpening() } }
     fun back() {
-        reconnectingJob = null
         model.cancelOpening()
         when {
             previewKey != null -> previewKey = null
@@ -98,108 +74,104 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
         }
     }
     BackHandler(onBack = ::back)
-    LaunchedEffect(state.connected, reconnectingJob) {
-        if (state.connected && reconnectingJob != null && state.job?.id == reconnectingJob) {
-            reconnectingJob = null
-            page = "task"
-        }
-    }
-    LaunchedEffect(showTask) {
-        if (showTask) { previewKey = null; page = "task"; onTaskShown() }
-    }
+    LaunchedEffect(showTask) { if (showTask) { previewKey = null; page = "task"; onTaskShown() } }
+    LaunchedEffect(showHistory) { if (showHistory) { previewKey = null; page = "history"; onHistoryShown() } }
     val preview = state.photos.find { it.key == previewKey }
     val filtered = remember(state.photos, format, date, selectedOnly, state.selected) {
-        state.photos.filter { photo -> if (selectedOnly) photo.key in state.selected
-            else matches(photo, format, date) }
+        state.photos.filter { if (selectedOnly) it.key in state.selected else matches(it, format, date) }
     }
     val selected = state.photos.filter { it.key in state.selected }
+    val savedKeys = remember(state.jobs, state.cameraId) {
+        state.jobs.filter { it.cameraId == state.cameraId }.flatMap { it.items }.filter { it.saved != null }.map { it.photo.key }.toSet()
+    }
     val title = when {
         preview != null -> R.string.camera_preview
         page == "history" -> R.string.camera_history
         page == "task" -> R.string.camera_progress
         else -> R.string.camera_import
     }
-    Scaffold(topBar = {
-        TopAppBar(title = { Text(stringResource(title), style = MaterialTheme.typography.titleMedium) }, navigationIcon = {
+    Scaffold(modifier = Modifier.testTag("camera-import-screen"), topBar = {
+        TopAppBar(expandedHeight = 56.dp, title = {
+            if (page == "browse" && preview == null && state.connected) {
+                Column(Modifier.clickable { onConnect(false) }.testTag("camera-select-connection")) {
+                    Text(state.model.displayName, style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.camera_import), style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else Text(stringResource(title), style = MaterialTheme.typography.titleMedium)
+        }, navigationIcon = {
             IconButton(onClick = ::back, modifier = Modifier.testTag("camera-back")) {
                 Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.back))
             }
         }, actions = {
-            if (preview == null) IconButton(onClick = { destinationOpen = true }, enabled = !state.transferring && !state.preparing,
-                modifier = Modifier.testTag("camera-destination-settings")) {
-                Icon(Icons.Outlined.FolderOpen, stringResource(R.string.camera_save_location))
+            if (page == "browse" && preview == null && state.connected) {
+                IconButton(onClick = { draftFormat = format; draftDate = date; filterOpen = true }, modifier = Modifier.testTag("camera-filter")) {
+                    Icon(Icons.Outlined.FilterList, stringResource(R.string.camera_filter),
+                        tint = if (format != "all" || date != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                }
             }
-            if (preview == null) IconButton(onClick = { model.cancelOpening(); page = "history" }, modifier = Modifier.testTag("camera-history")) {
-                Icon(Icons.Outlined.History, stringResource(R.string.camera_history))
-            }
-            if (state.connected || state.stage != null) Box {
-                IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.more)) }
-                DropdownMenu(menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text(stringResource(R.string.camera_disconnect)) }, onClick = {
-                        menu = false; model.disconnect()
-                    })
+            Box {
+                IconButton(onClick = { menu = true }, modifier = Modifier.testTag("camera-menu")) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.more)) }
+                DropdownMenu(menu, { menu = false }) {
+                    if (state.connected && page == "browse") DropdownMenuItem(text = { Text(stringResource(R.string.camera_selected)) },
+                        leadingIcon = { if (selectedOnly) Icon(Icons.Outlined.Check, null) }, enabled = selected.isNotEmpty(),
+                        modifier = Modifier.testTag("camera-selected-only"), onClick = { selectedOnly = !selectedOnly; menu = false })
+                    if (selected.isNotEmpty()) DropdownMenuItem(text = { Text(stringResource(R.string.camera_clear)) },
+                        enabled = !state.transferring, onClick = { model.clearSelection(); selectedOnly = false; menu = false })
+                    if (state.job != null) DropdownMenuItem(text = { Text(stringResource(R.string.camera_view_task)) },
+                        modifier = Modifier.testTag("camera-view-task"), onClick = { page = "task"; previewKey = null; menu = false })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.camera_history)) }, modifier = Modifier.testTag("camera-history"),
+                        onClick = { model.cancelOpening(); page = "history"; previewKey = null; menu = false })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.camera_save_location)) }, enabled = !state.transferring && !state.preparing,
+                        modifier = Modifier.testTag("camera-destination-settings"), onClick = { destinationOpen = true; menu = false })
+                    DropdownMenuItem(text = { Text(stringResource(if (state.connected) R.string.camera_change else R.string.camera_connect_action)) },
+                        enabled = !state.transferring && !state.preparing, onClick = { menu = false; onConnect(page == "task") })
+                    if (state.connected) DropdownMenuItem(text = { Text(stringResource(R.string.camera_disconnect)) }, onClick = { menu = false; model.disconnect() })
                 }
             }
         })
     }, bottomBar = {
-        if (preview != null || (page == "task" && state.job != null) || (page == "browse" && state.connected))
-        Surface(modifier = Modifier.fillMaxWidth(), tonalElevation = 2.dp) {
-            Column(Modifier.navigationBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val showActions = preview != null || page == "task" && state.job != null || page == "browse" && state.connected && selected.isNotEmpty()
+        if (showActions) Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface) {
+            Column(Modifier.navigationBarsPadding().padding(horizontal = 12.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 when {
-                    preview != null -> {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            val index = filtered.indexOfFirst { it.key == preview.key }
-                            IconButton(onClick = { previewKey = filtered[index - 1].key }, enabled = index > 0) {
-                                Icon(Icons.AutoMirrored.Outlined.NavigateBefore, stringResource(R.string.camera_previous))
+                    preview != null -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        val index = filtered.indexOfFirst { it.key == preview.key }
+                        IconButton(onClick = { previewKey = filtered[index - 1].key }, enabled = index > 0) { Icon(Icons.AutoMirrored.Outlined.NavigateBefore, stringResource(R.string.camera_previous)) }
+                        Button(onClick = { model.toggle(preview) }, enabled = !state.transferring, shape = CameraControlShape, modifier = Modifier.weight(1f)) {
+                            Text(stringResource(if (preview.key in state.selected) R.string.camera_deselect else R.string.camera_select))
+                        }
+                        IconButton(onClick = { previewKey = filtered[index + 1].key }, enabled = index >= 0 && index + 1 < filtered.size) { Icon(Icons.AutoMirrored.Outlined.NavigateNext, stringResource(R.string.camera_next)) }
+                    }
+                    page == "task" -> {
+                        val job = checkNotNull(state.job)
+                        if (state.transferring) OutlinedButton(onClick = model::stop, shape = CameraControlShape,
+                            modifier = Modifier.fillMaxWidth().testTag("camera-stop")) { Text(stringResource(R.string.camera_stop)) }
+                        else {
+                            if (job.status != CameraJobStatus.COMPLETE) Button(onClick = { if (state.connected) model.resume() else onConnect(true) },
+                                enabled = !state.preparing && !state.closing, shape = CameraControlShape, modifier = Modifier.fillMaxWidth().testTag("camera-resume")) {
+                                Text(stringResource(if (job.items.any { it.problem != null }) R.string.camera_retry_originals else if (state.connected) R.string.camera_resume else R.string.camera_connect_action))
                             }
-                            Button(onClick = { model.toggle(preview) }, enabled = !state.transferring, modifier = Modifier.weight(1f)) {
-                                Text(stringResource(if (preview.key in state.selected) R.string.camera_deselect else R.string.camera_select))
-                            }
-                            IconButton(onClick = { previewKey = filtered[index + 1].key }, enabled = index >= 0 && index + 1 < filtered.size) {
-                                Icon(Icons.AutoMirrored.Outlined.NavigateNext, stringResource(R.string.camera_next))
+                            if (job.savedCount > 0) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = { model.openSaved(onOpen) }, enabled = !state.preparing, shape = CameraControlShape,
+                                    modifier = Modifier.weight(1f).testTag("camera-open")) {
+                                    Text(stringResource(if (job.items.mapNotNull { it.saved }.distinct().size == 1) R.string.camera_open else R.string.camera_collection))
+                                }
+                                OutlinedButton(onClick = { model.openSaved(onViewInAlbum) }, enabled = !state.preparing, shape = CameraControlShape,
+                                    modifier = Modifier.weight(1f).testTag("camera-view-album")) { Text(stringResource(R.string.camera_view_album)) }
                             }
                         }
                     }
-                    page == "task" && state.job != null -> {
-                        val job = state.job!!
-                        if (state.transferring) OutlinedButton(onClick = model::stop, modifier = Modifier.fillMaxWidth().testTag("camera-stop")) {
-                            Text(stringResource(R.string.camera_stop))
-                        } else if (job.status != CameraJobStatus.COMPLETE) {
-                            Button(onClick = { if (state.connected) model.resume() else { reconnectingJob = job.id; page = "browse"; findCamera() } },
-                                enabled = !state.preparing, modifier = Modifier.fillMaxWidth().testTag("camera-resume")) {
-                                Text(stringResource(if (job.items.any { it.problem != null }) R.string.camera_retry_originals
-                                    else if (state.connected) R.string.camera_resume else R.string.camera_find))
-                            }
+                    else -> Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("camera-selection-bar"), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        IconButton(onClick = { model.clearSelection(); selectedOnly = false }) { Icon(Icons.Outlined.Close, stringResource(R.string.camera_cancel_selection)) }
+                        Text(stringResource(R.string.camera_selection_count, selected.size, bytes(selected.sumOf { it.size })), Modifier.weight(1f),
+                            style = MaterialTheme.typography.labelMedium)
+                        if (selected.size == 1) IconButton(onClick = { previewKey = selected.single().key }, modifier = Modifier.testTag("camera-preview-selected")) {
+                            Icon(Icons.Outlined.ZoomIn, stringResource(R.string.camera_preview))
                         }
-                        if (job.savedCount > 0 && !state.transferring) Button(onClick = { model.openSaved(onOpen) },
-                            enabled = !state.preparing, modifier = Modifier.fillMaxWidth().testTag("camera-open")) {
-                            Text(stringResource(if (job.items.mapNotNull { it.saved }.distinct().size == 1) R.string.camera_open else R.string.camera_collection))
-                        }
-                        if (job.savedCount > 0 && !state.transferring) OutlinedButton(onClick = { model.openSaved(onViewInAlbum) },
-                            enabled = !state.preparing, modifier = Modifier.fillMaxWidth().testTag("camera-view-album")) {
-                            Text(stringResource(R.string.camera_view_album))
-                        }
-                        if (!state.transferring) TextButton(onClick = { page = "browse" }, modifier = Modifier.fillMaxWidth()) {
-                            Text(stringResource(R.string.camera_back_photos))
-                        }
-                    }
-                    page == "browse" && state.connected -> {
-                        TextButton(onClick = { destinationOpen = true }, enabled = !state.transferring && !state.preparing,
-                            modifier = Modifier.fillMaxWidth()) {
-                            Text(stringResource(R.string.camera_destination_summary, destinationDescription(state.destination)),
-                                style = MaterialTheme.typography.bodySmall)
-                        }
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text(stringResource(R.string.camera_selection_count, selected.size, bytes(selected.sumOf { it.size })),
-                                Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                            TextButton(onClick = model::clearSelection, enabled = selected.isNotEmpty() && !state.transferring) {
-                                Text(stringResource(R.string.camera_clear))
-                            }
-                        }
-                        if (!selectedOnly && selected.any { !matches(it, format, date) }) Text(stringResource(R.string.camera_hidden_selected),
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Button(onClick = { model.startImport(); page = "task" }, enabled = selected.isNotEmpty() && !state.transferring && !state.preparing,
-                            modifier = Modifier.fillMaxWidth().testTag("camera-import")) { Text(stringResource(R.string.camera_import_count, selected.size)) }
+                        Button(onClick = { model.startImport(); page = "task" }, enabled = !state.transferring && !state.preparing,
+                            shape = CameraControlShape, modifier = Modifier.testTag("camera-import")) { Text(stringResource(R.string.camera_import_count, selected.size)) }
                     }
                 }
             }
@@ -207,152 +179,91 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             state.message?.takeUnless { page == "task" && state.job?.status == CameraJobStatus.PAUSED && it == R.string.camera_paused }?.let { message ->
-                Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-                    Row(Modifier.fillMaxWidth().padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(stringResource(message), Modifier.weight(1f).padding(vertical = 12.dp), style = MaterialTheme.typography.bodyMedium)
-                        IconButton(onClick = model::dismissMessage) { Icon(Icons.Outlined.Close, stringResource(R.string.message_close)) }
-                    }
+                Row(Modifier.fillMaxWidth().padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(message), Modifier.weight(1f).padding(vertical = 8.dp), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error)
+                    IconButton(onClick = model::dismissMessage) { Icon(Icons.Outlined.Close, stringResource(R.string.message_close)) }
                 }
             }
             when {
                 preview != null -> {
-                    CameraImage(model, preview, large = true, refresh = state.connected, busy = state.transferring, modifier = Modifier.weight(1f).fillMaxWidth())
-                    Column(Modifier.padding(16.dp)) {
-                        Text(preview.name, style = MaterialTheme.typography.titleMedium)
-                        Text("${if (preview.raw) "RAW" else "JPEG"} · ${bytes(preview.size)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    CameraImage(model, preview, true, state.connected, state.transferring, Modifier.weight(1f).fillMaxWidth())
+                    Column(Modifier.padding(12.dp)) {
+                        Text(preview.name, style = MaterialTheme.typography.titleSmall)
+                        Text("${if (preview.raw) "RAW" else "JPEG"} · ${bytes(preview.size)}", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                page == "history" -> {
-                    if (state.jobs.isEmpty()) CameraEmpty(R.string.camera_no_history)
-                    else LazyColumn(Modifier.fillMaxSize()) {
-                        items(state.jobs, key = { it.id }) { job ->
-                            Column(Modifier.fillMaxWidth().clickable(enabled = !state.transferring || state.job?.id == job.id) {
-                                model.selectJob(job); page = "task"
-                            }.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(job.createdAt)), style = MaterialTheme.typography.titleSmall)
-                                Text(stringResource(R.string.camera_saved_count, job.savedCount, job.items.size))
-                                Text(stringResource(if (job.items.any { it.problem != null }) R.string.camera_original_unavailable
-                                    else if (job.status == CameraJobStatus.COMPLETE) R.string.camera_complete else R.string.camera_paused),
-                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            HorizontalDivider()
-                        }
+                page == "history" -> if (state.jobs.isEmpty()) CameraEmpty(R.string.camera_no_history) else LazyColumn(Modifier.fillMaxSize()) {
+                    items(state.jobs, key = { it.id }) { job ->
+                        ListItem(headlineContent = { Text(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(job.createdAt))) },
+                            supportingContent = { Text(stringResource(R.string.camera_saved_count, job.savedCount, job.items.size)) },
+                            trailingContent = { Text(stringResource(if (job.items.any { it.problem != null }) R.string.camera_original_unavailable
+                                else if (job.status == CameraJobStatus.COMPLETE) R.string.camera_complete else R.string.camera_paused), style = MaterialTheme.typography.labelSmall) },
+                            modifier = Modifier.clickable(enabled = !state.transferring || state.job?.id == job.id) { model.selectJob(job); page = "task" })
+                        HorizontalDivider()
                     }
                 }
                 page == "task" -> CameraTask(state)
                 state.connected -> {
-                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("α7C II", style = MaterialTheme.typography.titleSmall)
-                            Text(stringResource(R.string.camera_connected), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
-                        }
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = { draftFormat = format; draftDate = date; filterOpen = true }, modifier = Modifier.testTag("camera-filter")) {
-                                Text(if (format == "all") stringResource(R.string.camera_all) else format)
-                            }
-                            FilterChip(selected = selectedOnly, onClick = { selectedOnly = !selectedOnly }, label = { Text(stringResource(R.string.camera_selected)) })
-                        }
-                        if (state.job != null) TextButton(onClick = { page = "task" }, modifier = Modifier.testTag("camera-view-task")) {
-                            Text(stringResource(R.string.camera_view_task))
-                        }
-                    }
                     if (filtered.isEmpty()) CameraEmpty(if (state.photos.isEmpty()) R.string.camera_empty else R.string.camera_no_matches)
-                    else {
-                        val fontScale = LocalDensity.current.fontScale
-                        LazyVerticalGrid(state = if (selectedOnly) selectionGrid else browseGrid, columns = GridCells.Adaptive(if (fontScale >= 1.4f) 280.dp else 156.dp),
-                            modifier = Modifier.weight(1f).testTag("camera-grid"), contentPadding = PaddingValues(12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            items(filtered, key = { it.key }) { photo ->
-                                val checked = photo.key in state.selected
-                                val saved = state.jobs.any { job -> job.cameraId == state.cameraId && job.items.any { it.photo.key == photo.key && it.saved != null } }
-                                Column(Modifier.fillMaxWidth().border(if (checked) 2.dp else 1.dp,
-                                    if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small)
-                                    .selectable(checked, enabled = !state.transferring, role = Role.Checkbox, onClick = { model.toggle(photo) })
-                                    .testTag("camera-item-${photo.key}")) {
-                                    Box {
-                                        CameraImage(model, photo, false, state.connected, state.transferring, Modifier.fillMaxWidth().aspectRatio(1.4f))
-                                        Checkbox(checked, onCheckedChange = null, modifier = Modifier.align(Alignment.TopEnd).background(MaterialTheme.colorScheme.surface.copy(alpha = .85f)))
-                                    }
-                                    Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                                        Text(photo.name, style = MaterialTheme.typography.labelLarge)
-                                        Text("${if (photo.raw) "RAW" else "JPEG"} · ${bytes(photo.size)}", style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        if (saved) Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(Icons.Outlined.CheckCircle, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp))
-                                            Text(stringResource(R.string.camera_saved), style = MaterialTheme.typography.labelSmall)
-                                        }
-                                    }
-                                    TextButton(onClick = { previewKey = photo.key }, modifier = Modifier.fillMaxWidth().testTag("camera-preview-${photo.key}")) {
-                                        Text(stringResource(R.string.camera_preview))
-                                    }
+                    else LazyVerticalGrid(state = if (selectedOnly) selectionGrid else browseGrid,
+                        columns = GridCells.Fixed(if (LocalDensity.current.fontScale >= 1.4f) 2 else 3),
+                        modifier = Modifier.fillMaxSize().testTag("camera-grid"), contentPadding = PaddingValues(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(filtered, key = { it.key }) { photo ->
+                            val checked = photo.key in state.selected
+                            val saved = photo.key in savedKeys
+                            Column(Modifier.fillMaxWidth().combinedClickable(role = Role.Checkbox,
+                                onClick = { model.toggle(photo) }, onLongClick = { previewKey = photo.key },
+                                onLongClickLabel = stringResource(R.string.camera_preview), enabled = !state.transferring)
+                                .semantics { this.selected = checked }.testTag("camera-item-${photo.key}")) {
+                                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp))
+                                    .border(if (checked) 2.dp else 0.dp, if (checked) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(4.dp))) {
+                                    CameraImage(model, photo, false, state.connected, state.transferring, Modifier.fillMaxWidth().aspectRatio(1.5f))
+                                    Checkbox(checked, onCheckedChange = null, modifier = Modifier.align(Alignment.TopEnd))
+                                    Text(if (photo.raw) "RAW" else "JPEG", Modifier.align(Alignment.BottomStart).background(Color.Black.copy(alpha = .65f)).padding(horizontal = 4.dp, vertical = 2.dp),
+                                        color = Color.White, style = MaterialTheme.typography.labelSmall)
+                                    if (saved) Icon(Icons.Outlined.CheckCircle, stringResource(R.string.camera_saved),
+                                        Modifier.align(Alignment.BottomEnd).padding(4.dp).size(18.dp), tint = MaterialTheme.colorScheme.primary)
                                 }
+                                Text(photo.name, Modifier.padding(top = 4.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
                             }
                         }
                     }
                 }
-                else -> {
-                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                        Icon(Icons.Outlined.PhotoCamera, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
-                        Text(stringResource(R.string.camera_intro), style = MaterialTheme.typography.bodyLarge)
-                        Text(stringResource(R.string.camera_supported), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                        TextButton(onClick = { destinationOpen = true }, enabled = !state.transferring && !state.preparing) {
-                            Text(stringResource(R.string.camera_destination_summary, destinationDescription(state.destination)),
-                                style = MaterialTheme.typography.bodySmall)
-                        }
-                        state.stage?.let { stage ->
-                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                LinearProgressIndicator(Modifier.fillMaxWidth())
-                                Text(stringResource(stageText(stage)), style = MaterialTheme.typography.titleSmall)
-                            }
-                        }
-                        state.candidates.forEach { candidate ->
-                            OutlinedButton(onClick = { model.connect(candidate.id) }, enabled = state.stage == SonyCameraConnection.Stage.SCANNING,
-                                modifier = Modifier.fillMaxWidth().testTag("camera-candidate-${candidate.id}")) { Text(candidate.name) }
-                        }
-                        Button(onClick = ::findCamera, enabled = state.stage == null && !state.transferring && !state.preparing,
-                            modifier = Modifier.fillMaxWidth().testTag("camera-find")) { Text(stringResource(R.string.camera_find)) }
-                        if (state.stage != null) TextButton(onClick = model::disconnect, modifier = Modifier.fillMaxWidth()) {
-                            Text(stringResource(R.string.camera_cancel_connection))
-                        }
-                        if (state.job != null) TextButton(onClick = { page = "task" }, modifier = Modifier.fillMaxWidth()) {
-                            Text(stringResource(R.string.camera_view_task))
-                        }
-                        Text(stringResource(R.string.camera_no_original_deleted), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                else -> Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(stringResource(R.string.camera_devices_empty), style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = { onConnect(false) }, enabled = !state.closing && !state.preparing, shape = CameraControlShape,
+                        modifier = Modifier.testTag("camera-connect")) { Text(stringResource(R.string.camera_connect_action)) }
                 }
             }
         }
     }
     if (destinationOpen) CameraImportSettings(state.destination,
         onSave = { model.setDestination(it); destinationOpen = false }, onDismiss = { destinationOpen = false })
-    if (filterOpen) ModalBottomSheet(onDismissRequest = { filterOpen = false },
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    if (filterOpen) ModalBottomSheet(onDismissRequest = { filterOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         val dates = state.photos.mapNotNull { dateKey(it.created) }.distinct().sortedDescending()
         val count = state.photos.count { matches(it, draftFormat, draftDate) }
-        Column(Modifier.fillMaxWidth().fillMaxHeight(.9f).navigationBarsPadding().padding(horizontal = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.fillMaxWidth().heightIn(max = 560.dp).navigationBarsPadding().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.camera_filter), style = MaterialTheme.typography.titleLarge)
-            LazyColumn(Modifier.weight(1f)) {
-                item {
-                    Text(stringResource(R.string.camera_format), style = MaterialTheme.typography.labelLarge)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("RAW", "JPEG", "all").forEach { option ->
-                            FilterChip(selected = draftFormat == option, onClick = { draftFormat = option },
-                                label = { Text(if (option == "all") stringResource(R.string.camera_all) else option) })
-                        }
+            LazyColumn(Modifier.weight(1f, fill = false)) {
+                item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("all", "RAW", "JPEG").forEach { option ->
+                        FilterChip(selected = draftFormat == option, onClick = { draftFormat = option }, shape = CameraControlShape,
+                            label = { Text(if (option == "all") stringResource(R.string.camera_all) else option) })
                     }
-                }
+                } }
                 item { DateOption(stringResource(R.string.camera_all_dates), draftDate == null) { draftDate = null } }
                 items(dates) { value -> DateOption(value, draftDate == value) { draftDate = value } }
             }
-            Button(onClick = { format = draftFormat; date = draftDate; selectedOnly = false; filterOpen = false
-                scope.launch { browseGrid.scrollToItem(0) } }, modifier = Modifier.fillMaxWidth().testTag("camera-filter-apply")) {
-                Text(stringResource(R.string.camera_filter_apply, count))
-            }
-            TextButton(onClick = { filterOpen = false }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.cancel)) }
+            Button(onClick = { format = draftFormat; date = draftDate; selectedOnly = false; filterOpen = false; scope.launch { browseGrid.scrollToItem(0) } },
+                shape = CameraControlShape, modifier = Modifier.fillMaxWidth().testTag("camera-filter-apply")) { Text(stringResource(R.string.camera_filter_apply, count)) }
+            Spacer(Modifier.height(8.dp))
         }
     }
-
 }
 
 @Composable
@@ -419,11 +330,12 @@ private fun DateOption(text: String, selected: Boolean, onClick: () -> Unit) {
 @Composable private fun bytes(size: Long): String = Formatter.formatShortFileSize(LocalContext.current, size)
 private fun dateKey(value: Long): String? = if (value in 946684800000L..4102444800000L) SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Date(value)) else null
 private fun matches(photo: CameraPhoto, format: String, date: String?) = (format == "all" || photo.raw == (format == "RAW")) && (date == null || dateKey(photo.created) == date)
-private fun stageText(stage: SonyCameraConnection.Stage): Int = when (stage) {
+internal fun stageText(stage: SonyCameraConnection.Stage): Int = when (stage) {
     SonyCameraConnection.Stage.SCANNING -> R.string.camera_scanning
     SonyCameraConnection.Stage.PAIRING -> R.string.camera_pairing
     SonyCameraConnection.Stage.BLUETOOTH -> R.string.camera_bluetooth
     SonyCameraConnection.Stage.WIFI_STARTING -> R.string.camera_wifi_starting
     SonyCameraConnection.Stage.WIFI_CONFIRMATION -> R.string.camera_wifi_confirmation
+    SonyCameraConnection.Stage.MANUAL_WIFI -> R.string.camera_manual_wifi
     SonyCameraConnection.Stage.NETWORK -> R.string.camera_network
 }

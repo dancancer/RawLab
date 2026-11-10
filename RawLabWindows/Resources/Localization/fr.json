@@ -519,6 +519,7 @@
     "暗角圆度数值": "Valeur de la rondeur du vignettage",
     "暗角强度": "Intensité du vignettage",
     "暗角强度数值": "Valeur de l’intensité du vignettage",
+    "暗角校正": "Correction du vignetage",
     "暗角羽化": "Contour progressif du vignettage",
     "暗角羽化数值": "Valeur du contour progressif du vignettage",
     "暗角高光保护": "Protection des hautes lumières du vignettage",

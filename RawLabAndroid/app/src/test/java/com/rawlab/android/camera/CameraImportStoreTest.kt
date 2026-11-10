@@ -53,6 +53,81 @@ class CameraImportStoreTest {
         assertTrue(fixture.media.rows.isEmpty())
     }
 
+    @Test fun reservedTetherBatchIdReconnectsToPublishedJobAndRejectsDifferentContent() = withStore { _, store ->
+        val id = java.util.UUID.randomUUID().toString()
+        val original = store.create("camera", listOf(photo()), CameraImportDestination(), id)
+        assertEquals(original, store.create("camera", listOf(photo()), CameraImportDestination(), id))
+        val part = store.partial(id); part.writeBytes(raw)
+        val saved = store.publish(original, 0, part, hash(raw), CameraTransferPermit())
+        assertEquals(saved, store.create("camera", listOf(photo()), CameraImportDestination(), id))
+        assertThrows(IOException::class.java) {
+            store.create("camera", listOf(photo().copy(size = 500)), CameraImportDestination(), id)
+        }
+        assertEquals(listOf(saved), store.load())
+    }
+
+    @Test fun tetherRecoveryUsesReservedBatchAndDownloadsOnlyUnfinishedOriginals() = withStore { fixture, store ->
+        val journal = CameraTetherJournal(File(fixture.root, "runs"))
+        val baseline = photo("baseline")
+        var run = journal.create("camera", "profile", listOf(baseline), CameraImportDestination())
+        val photos = listOf(baseline, photo("first"), photo("second"))
+        run = journal.reserve(run, photos).first
+        val batchId = run.batches.single().id
+        val downloads = mutableListOf<String>()
+        val queue = CameraTetherQueue(store, journal)
+        assertThrows(IOException::class.java) {
+            queue.receive(run, photos, CameraTransferPermit(), { current, output ->
+                downloads += current.key
+                if (current.key == "second") throw IOException("Disconnected")
+                output.write(raw); hash(raw)
+            })
+        }
+        val restoredJobs = store.load()
+        assertEquals(batchId, restoredJobs.single().id)
+        assertEquals(1, restoredJobs.single().savedCount)
+        val restoredRun = journal.load().single().copy(status = CameraTetherStatus.ACTIVE)
+        val completed = queue.receive(restoredRun, photos, CameraTransferPermit(), { current, output ->
+            downloads += current.key; output.write(raw); hash(raw)
+        })
+        assertEquals(listOf("first", "second", "second"), downloads)
+        assertEquals(batchId, completed.batches.single().id)
+        assertEquals(2, store.load().single().savedCount)
+        assertEquals(1, fixture.media.rows.size)
+    }
+
+    @Test fun tetherQueueChangedCardStopsBeforeDownloading() = withStore { fixture, store ->
+        val journal = CameraTetherJournal(File(fixture.root, "runs"))
+        val run = journal.create("camera", "profile", listOf(photo("baseline")), CameraImportDestination())
+        var downloads = 0
+        assertThrows(IOException::class.java) {
+            CameraTetherQueue(store, journal).receive(run, listOf(photo("new")), CameraTransferPermit(), { _, _ ->
+                downloads++; error("Must not download")
+            })
+        }
+        assertEquals(0, downloads)
+    }
+
+    @Test fun tetherBacklogMakesBoundedProgressAndResumesTheSameReservations() = withStore { fixture, store ->
+        val journal = CameraTetherJournal(File(fixture.root, "runs"))
+        val run = journal.create("camera", "profile", emptyList(), CameraImportDestination())
+        val observed = (0..64).map { photo("new-$it") }
+        val queue = CameraTetherQueue(store, journal)
+        val downloaded = mutableListOf<String>()
+        val download: (CameraPhoto, java.io.FileOutputStream) -> String = { current, output ->
+            downloaded += current.key; output.write(raw); hash(raw)
+        }
+        assertThrows(CameraTetherBacklogException::class.java) { queue.receive(run, observed, CameraTransferPermit(), download) }
+        assertEquals(64, downloaded.size)
+        val restored = journal.load().single().copy(status = CameraTetherStatus.ACTIVE)
+        val ids = restored.batches.map { it.id }
+        store.load()
+        val completed = queue.receive(restored, observed, CameraTransferPermit(), download)
+        assertEquals(65, downloaded.size)
+        assertEquals(65, downloaded.toSet().size)
+        assertTrue(completed.batches.map { it.id }.containsAll(ids))
+        assertEquals(65, store.load().sumOf { it.savedCount })
+    }
+
     @Test fun duplicateContentReusesPublishedUriDespiteNewDirectoryRule() = withStore { fixture, store ->
         val first = save(store)
         val duplicate = save(store, destination = CameraImportDestination("Other", CameraDirectoryGrouping.NONE))

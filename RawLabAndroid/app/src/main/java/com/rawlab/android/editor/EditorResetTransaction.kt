@@ -47,12 +47,10 @@ object EditorResetTransaction {
         val pair = scope == EditorResetScope.Group(EditorAdjustmentGroup.GEOMETRY)
         val tool = (scope as? EditorResetScope.Tool)?.id
         val geometry = pair || tool == 16 || tool == 17
-        val draftTool = when (draft?.group) {
-            AdjustmentGroup.GEOMETRY -> 17
-            AdjustmentGroup.LENS -> 16
-            null -> null
-        }
-        val allowedDraftScope = pair || tool == draftTool
+        val draftTool = draft?.group?.tool
+        val allowedDraftScope = (pair && draftTool in listOf(16, 17)) || tool == draftTool ||
+            (draftTool == 14 && (scope is EditorResetScope.HslChannel || scope == EditorResetScope.AllHsl)) ||
+            (draftTool == 21 && (scope is EditorResetScope.GradingZone || scope == EditorResetScope.AllGrading))
         if ((draft == null && geometry) || (draft != null && !allowedDraftScope)) {
             return EditorResetPreparation(EditorResetResult.Blocked("Resolve the current adjustment draft first"))
         }

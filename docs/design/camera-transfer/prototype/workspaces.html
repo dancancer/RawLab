@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RawLab 相机工作区 · 待审核</title>
+<link rel="stylesheet" href="workspaces.css">
+<style>body{margin:0;padding:24px 16px;background:#eeeeec;color:#242426;--foreground:#242426;--background:#fafafa;--border:#99999d}.asset-nav{font:13px -apple-system,sans-serif;max-width:700px;margin:0 auto 18px;display:flex;gap:14px;flex-wrap:wrap}.asset-nav a{color:#635323}.sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}.viz-dotted-background{background-image:radial-gradient(#9995 .7px,transparent .7px);background-size:14px 14px}</style>
+<nav class="asset-nav"><a href="../README.md">设计资产</a><a href="../../editor-workspace/mobile-review.html">编辑与相机统一预览</a><span>待审核 · camera-ui-r3 · 交互模拟</span><label><input type="checkbox" id="review-large">大字</label><label><input type="checkbox" id="review-short">短屏</label></nav>
+<div id="rl-camera-review"><div class="review-head"><span>相机 · 待审核设计</span><select id="rl-camera-select" aria-label="预览相机页面"><option value="home">相机入口</option><option value="connect">选择与连接</option><option value="guide">如何连接</option><option value="import">照片导入</option><option value="tether">联机拍摄</option><option value="readonly">联机参数只读</option><option value="disconnected">联机断线</option></select></div><div class="stage viz-dotted-background"><div class="phone" aria-label="RawLab 相机设计稿"><div class="status"><span>9:41</span><span>模拟连接 · 示例照片</span></div><div id="rl-camera-content" style="display:contents"></div><div class="home-indicator"></div><div id="rl-camera-overlay"></div></div></div><div class="sr-only" id="rl-camera-live" aria-live="polite"></div></div>
+
+<script src="../../editor-workspace/shared/mobile-review-icons.js"></script>
+<script src="workspaces.js"></script>
+<script>function layout(){document.querySelector(".phone").parentElement.parentElement.dispatchEvent(new CustomEvent("review-layout",{detail:{large:document.getElementById("review-large").checked,short:document.getElementById("review-short").checked}}))}document.getElementById("review-large").onchange=layout;document.getElementById("review-short").onchange=layout;</script>
+</html>

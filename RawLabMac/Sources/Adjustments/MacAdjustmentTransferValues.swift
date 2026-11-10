@@ -102,6 +102,7 @@ extension MacAdjustmentTransfer {
         let lens = isRaw ? settings.lensSettings : LensCorrectionSettings()
         result[Field.lensDistortion.rawValue] = .boolean(lens.distortion)
         result[Field.lensTCA.rawValue] = .boolean(lens.tca)
+        result[Field.lensVignetting.rawValue] = .boolean(lens.vignetting)
         result[Field.lensAutoCrop.rawValue] = .boolean(lens.autoCrop)
         result[Field.lensProfile.rawValue] = lens.mode == .automatic ? .null : .string(lens.coreProfileID)
         return result
@@ -137,7 +138,7 @@ extension MacAdjustmentTransfer {
         }
         if !payload.fields.isDisjoint(with: Field.lensFields) {
             if !context.isRaw {
-                let neutral: [Field: Value] = [.lensDistortion: .boolean(false), .lensTCA: .boolean(false),
+                let neutral: [Field: Value] = [.lensDistortion: .boolean(false), .lensTCA: .boolean(false), .lensVignetting: .boolean(false),
                     .lensAutoCrop: .boolean(true), .lensProfile: .null]
                 guard neutral.allSatisfy({ payload[$0.key] == nil || payload[$0.key] == $0.value }) else {
                     throw AdjustmentTransferError.incompatible("geometry.lens")
@@ -146,6 +147,7 @@ extension MacAdjustmentTransfer {
             var lens = settings.lensSettings
             if let value = payload[.lensDistortion]?.boolean { lens.distortion = value }
             if let value = payload[.lensTCA]?.boolean { lens.tca = value }
+            if let value = payload[.lensVignetting]?.boolean { lens.vignetting = value }
             if let value = payload[.lensAutoCrop]?.boolean { lens.autoCrop = value }
             if let value = payload[.lensProfile] {
                 lens.mode = value == .null ? .automatic : .manual

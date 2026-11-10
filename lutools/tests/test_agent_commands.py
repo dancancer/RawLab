@@ -102,7 +102,7 @@ class AgentCommands(unittest.TestCase):
         declared = self.envelope(self.run_cli("--capabilities", "--json"), "capabilities")["result"]
         proraw = "proraw" in declared["input_types"]
         expected = {
-            "recipe_versions": [1, 2, 3, 4, 5] + ([6] if hdr else []) + [7] + ([8, 9, 10, 11, 12, 13, 14] if hdr else []),
+            "recipe_versions": [1, 2, 3, 4, 5] + ([6] if hdr else []) + [7] + ([8, 9, 10, 11, 12, 13, 14, 15] if hdr else []),
             "commands": ["capabilities", "validate_recipe", "info", "preview", "export"],
             "input_types": (["raw", "raster"] if sys.platform in ("darwin", "win32") else ["raw"])+(["hdr_raster"] if hdr else [])+(["proraw"] if proraw else []),
             "output_formats": ["jpeg", "png", "dng"]+(["hdr_jpeg"] if hdr else []),
@@ -117,10 +117,11 @@ class AgentCommands(unittest.TestCase):
                 if hdr:
                     capabilities = result["result"]["hdr"]
                     self.assertEqual(capabilities["source_recipe_version"], 14)
+                    self.assertEqual(capabilities["channel_curve_recipe_version"], 15)
                     self.assertEqual(capabilities["input_types"], ["hdr_raster", "raw"]+(["proraw"] if proraw else []))
                     self.assertEqual(capabilities["output_formats"], ["hdr_jpeg", "jpeg", "png", "dng"])
                     self.assertEqual(capabilities["processing_version"], 1)
-                    self.assertEqual(capabilities["processing_versions"], [1, 2, 3, 4, 5, 6, 7])
+                    self.assertEqual(capabilities["processing_versions"], [1, 2, 3, 4, 5, 6, 7, 8])
                     self.assertEqual(capabilities["tone_recipe_version"], 8)
                     self.assertEqual(capabilities["tone_adjustments"], ["black_point", "white_point", "s_curve", "curve"])
                     self.assertEqual(capabilities["color_recipe_version"], 9)
@@ -147,7 +148,7 @@ class AgentCommands(unittest.TestCase):
                 })
                 self.assertEqual(result["result"]["tone_curve"], {
                     "version": 1, "recipe_min_version": 5, "modes": ["legacy", "custom"],
-                    "max_points": 33, "interpolation": "pchip", "fixed_endpoints": True, "monotone": True,
+                    "channels": ["red", "green", "blue"], "max_points": 33, "interpolation": "pchip", "fixed_endpoints": True, "monotone": True,
                 })
                 self.assertEqual(result["result"]["atmosphere"], {
                     "version": 1, "recipe_min_version": 5, "range": [-1, 1],

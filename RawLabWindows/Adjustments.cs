@@ -3,9 +3,9 @@ using System.Globalization;
 namespace RawLab.Windows;
 
 public enum Parameter { Strength, Exposure, Temperature, Tint, Contrast, Highlights, Shadows, ToneCurve, Saturation, Sharpening }
-public sealed record LensSettings(bool Distortion = false, bool Tca = false, bool AutoCrop = true, bool Manual = false, string? ProfileId = null)
+public sealed record LensSettings(bool Distortion = false, bool Tca = false, bool AutoCrop = true, bool Manual = false, string? ProfileId = null, double? FocalLength = null, double? CropFactor = null, bool Vignetting = false)
 {
-    public bool Enabled => Distortion || Tca;
+    public bool Enabled => Distortion || Tca || Vignetting;
     public string CoreProfileId => Manual ? ProfileId ?? "__rawlab_manual_selection_required__" : "";
 }
 public sealed record LensCandidate(string Id, string Maker, string Model, bool HasDistortion, bool HasTca, bool IsMatch)
@@ -17,14 +17,15 @@ public sealed record LensCandidate(string Id, string Maker, string Model, bool H
         IsMatch ? Loc.Text("元数据匹配") : null
     }.Where(x => x != null));
 }
-public sealed record LensInfo(int State, string DetectedLens, string SelectedLens, bool AppliedDistortion, bool AppliedTca, float CropScale, IReadOnlyList<LensCandidate> Candidates)
+public sealed record LensInfo(int State, string DetectedLens, string SelectedLens, bool AppliedDistortion, bool AppliedTca, float CropScale, IReadOnlyList<LensCandidate> Candidates, bool AppliedVignetting = false)
 {
     public string Message => State switch {
         0 => Loc.Text("镜头校正已关闭"),
-        1 => AppliedDistortion || AppliedTca
+        1 => AppliedDistortion || AppliedTca || AppliedVignetting
             ? Loc.Format("已校正{0}", string.Join(Loc.Text("、"), new[] {
                 AppliedDistortion ? Loc.Text("畸变") : null,
-                AppliedTca ? Loc.Text("横向色差") : null
+                AppliedTca ? Loc.Text("横向色差") : null,
+                AppliedVignetting ? Loc.Text("暗角校正") : null
             }.Where(x => x != null)))
             : Loc.Text("已匹配镜头"),
         2 => Loc.Text("镜头数据库不可用"), 3 => Loc.Text("未找到机身或传感器尺寸信息"),

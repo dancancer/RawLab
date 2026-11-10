@@ -47,6 +47,7 @@ internal static class AdjustmentTransferPresentation
         [F.PerspectiveVertical]="垂直透视",
         [F.LensDistortion]="畸变校正",
         [F.LensTCA]="横向色差",
+        [F.LensVignetting]="暗角校正",
         [F.LensAutoCrop]="自动裁切",
         [F.LensProfile]="镜头配置"
     };

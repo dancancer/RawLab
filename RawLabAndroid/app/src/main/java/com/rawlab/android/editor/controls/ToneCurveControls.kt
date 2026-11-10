@@ -31,101 +31,110 @@ import com.rawlab.android.R
 import com.rawlab.android.engine.ToneCurveSampling
 import com.rawlab.android.settings.*
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ToneCurveControls(settings: ToneCurveSettings, legacy: Float, enabled: Boolean,
     onEdit: (ToneCurveSettings, Boolean) -> Unit, onLegacyEdit: (Float, Boolean) -> Unit,
     usesExposureStops: Boolean = false) {
     val scope = LocalAdjustmentSession.current
-    var selected by remember(scope) { mutableIntStateOf(0) }
-    var switching by remember(scope, settings.mode) { mutableStateOf(false) }
-    val current by rememberUpdatedState(settings)
-    val update by rememberUpdatedState(onEdit)
-    val selectedIndex = selected.coerceIn(0, (settings.points.size - 1).coerceAtLeast(0))
-    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(stringResource(if (settings.isDefault) R.string.tone_curve else R.string.curve_custom),
-                Modifier.heightIn(min = 48.dp).wrapContentHeight().testTag("curve-mode"), style = MaterialTheme.typography.titleSmall)
-            TextButton(onClick = { switching = true }, enabled = enabled, modifier = Modifier.testTag("curve-switch")) {
-                Text(stringResource(if (settings.isDefault) R.string.curve_custom else R.string.tone_curve))
+    var channel by remember(scope) { mutableStateOf(ToneCurveChannel.RGB) }
+    var selected by remember(scope, channel) { mutableIntStateOf(0) }
+    var editing by remember(scope, channel) { mutableStateOf(false) }
+    var switching by remember(scope, channel) { mutableStateOf(false) }
+    var legacyEditing by remember(scope, channel) { mutableStateOf(false) }
+    val root by rememberUpdatedState(settings)
+    val shape = settings.shape(channel)
+    val curve = if (shape.mode == ToneCurveMode.LEGACY) ToneCurveSettings.identity else ToneCurveSettings(shape.mode, shape.points)
+    val current by rememberUpdatedState(curve)
+    val index = selected.coerceIn(0, curve.points.lastIndex)
+    val owner = channel
+    val update: (ToneCurveSettings, Boolean) -> Unit = { next, dragging ->
+        if (channel == owner) onEdit(root.replacing(owner, next.master), dragging)
+    }
+    val legacyActive = channel == ToneCurveChannel.RGB && shape.mode == ToneCurveMode.LEGACY && legacy != 0f
+    val labels = listOf("RGB", stringResource(R.string.hsl_red), stringResource(R.string.hsl_green), stringResource(R.string.hsl_blue))
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(Modifier.fillMaxWidth()) {
+            ToneCurveChannel.entries.forEachIndexed { position, item ->
+                TextButton(onClick = { channel = item }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                    .testTag("curve-channel-${item.name.lowercase()}").semantics { this.selected = item == channel }) {
+                    Text(labels[position], color = if (item == channel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
-        if (settings.isDefault) {
-            NumericControl(R.string.tone_curve, legacy * 100, -100f..100f, "%", enabled,
-                { value, dragging -> onLegacyEdit(value / 100, dragging) }, { onLegacyEdit(0f, false) })
-        } else {
-            @Composable fun rows(modifier: Modifier) {
-                Column(modifier) {
-                    LazyRow {
-                        items(settings.points.size) { index ->
-                            val label = stringResource(R.string.curve_point_number, index + 1)
-                            TextButton(onClick = { selected = index }, enabled = enabled,
-                                modifier = Modifier.testTag("curve-point-$index").semantics {
-                                    contentDescription = label; this.selected = index == selectedIndex
-                                }) { Text((index + 1).toString()) }
-                        }
+        CompositionLocalProvider(LocalAdjustmentSession provides (scope to channel)) {
+            if (legacyActive) {
+                Column(Modifier.height(194.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(stringResource(R.string.tone_curve))
+                    Text(formatAdjustmentNumber(legacy * 100.0, LocalConfiguration.current.locales[0]) + "%")
+                    TextButton(onClick = { switching = true }, enabled = enabled, modifier = Modifier.testTag("curve-switch")) {
+                        Text(stringResource(R.string.curve_custom))
                     }
-                    CompositionLocalProvider(LocalAdjustmentSession provides (scope to selectedIndex)) {
-                        val point = settings.points[selectedIndex]
-                        CurveCoordinate(R.string.curve_input, point.x, enabled && settings.isInterior(selectedIndex), "curve-x", usesExposureStops) { x ->
-                            update(current.moving(selectedIndex, x, current.points[selectedIndex].y), false)
-                        }
-                        CurveCoordinate(R.string.curve_output, point.y, enabled && settings.isInterior(selectedIndex), "curve-y", usesExposureStops) { y ->
-                            update(current.moving(selectedIndex, current.points[selectedIndex].x, y), false)
-                        }
-                    }
-                    if (!settings.isInterior(selectedIndex)) Text(stringResource(R.string.curve_fixed_endpoint), style = MaterialTheme.typography.bodySmall)
+                }
+            } else {
+                CurveCanvas(curve, index, { selected = it }, enabled, Modifier.size(194.dp), update)
+                if (usesExposureStops) Row(Modifier.width(170.dp).testTag("curve-hdr-ev-axis"), horizontalArrangement = Arrangement.SpaceBetween) {
+                    for (value in listOf("−8 EV", "0 EV", "+8 EV")) Text(value, style = MaterialTheme.typography.labelSmall)
                 }
             }
-            @Composable fun plot(modifier: Modifier) {
-                Column(modifier) {
-                    CurveCanvas(settings, selectedIndex, { selected = it }, enabled, Modifier.fillMaxWidth().height(164.dp), onEdit)
-                    if (usesExposureStops) {
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp).testTag("curve-hdr-ev-axis"),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            val style = MaterialTheme.typography.labelSmall
-                            Text("−8 EV", style = style)
-                            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("0 EV", style = style)
-                                Text(stringResource(R.string.hdr_reference_white), style = style,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                            }
-                            Text("+8 EV", style = style)
-                        }
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+            fun coordinate(value: Double) = if (usesExposureStops) formatAdjustmentNumber(value * 16 - 8, java.util.Locale.getDefault())
+                else (value * 255).toInt().toString()
+            val point = curve.points[index]
+            Text("${stringResource(R.string.curve_input)} ${coordinate(point.x)} · ${stringResource(R.string.curve_output)} ${coordinate(point.y)}",
+                Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = { editing = true }, modifier = Modifier.testTag("curve-edit-point")) { Text(stringResource(R.string.curve_edit_point)) }
+        }
+    }
+    if (editing) ModalBottomSheet(onDismissRequest = { editing = false }) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.curve_edit_point), style = MaterialTheme.typography.titleMedium)
+            LazyRow {
+                items(curve.points.size) { position ->
+                    TextButton(onClick = { selected = position }, enabled = enabled,
+                        modifier = Modifier.testTag("curve-point-$position").semantics { this.selected = position == index }) {
+                        Text((position + 1).toString())
                     }
                 }
             }
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                if (maxWidth >= 460.dp && LocalDensity.current.fontScale <= 1.3f) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        plot(Modifier.width(232.dp))
-                        rows(Modifier.weight(1f))
-                    }
-                } else Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    plot(Modifier.widthIn(max = 320.dp).fillMaxWidth())
-                    rows(Modifier.fillMaxWidth())
+            CompositionLocalProvider(LocalAdjustmentSession provides Triple(scope, channel, index)) {
+                val point = curve.points[index]
+                CurveCoordinate(R.string.curve_input, point.x, enabled && curve.isInterior(index), "curve-x", usesExposureStops) { x ->
+                    update(current.moving(index, x, current.points[index].y), false)
+                }
+                CurveCoordinate(R.string.curve_output, point.y, enabled && curve.isInterior(index), "curve-y", usesExposureStops) { y ->
+                    update(current.moving(index, current.points[index].x, y), false)
                 }
             }
-            Text(stringResource(R.string.curve_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            FlowRow(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 TextButton(onClick = {
-                    val next = (1 until current.points.size).maxBy { current.points[it].x - current.points[it - 1].x }
-                    val a = current.points[next - 1]; val b = current.points[next]
-                    val value = current.inserting(a.x + (b.x - a.x) / 2, a.y + (b.y - a.y) / 2)
-                    if (value != current) { selected = next; update(value, false) }
-                }, enabled = enabled && settings.points.size < 33, modifier = Modifier.testTag("curve-add")) { Text(stringResource(R.string.curve_add_point)) }
-                TextButton(onClick = { update(current.removing(selectedIndex), false) }, enabled = enabled && settings.isInterior(selectedIndex),
+                    val position = (1 until current.points.size).maxBy { current.points[it].x - current.points[it - 1].x }
+                    val a = current.points[position - 1]; val b = current.points[position]
+                    selected = position; update(current.inserting((a.x + b.x) / 2, (a.y + b.y) / 2), false)
+                }, enabled = enabled && curve.points.size < 33, modifier = Modifier.testTag("curve-add")) { Text(stringResource(R.string.curve_add_point)) }
+                TextButton(onClick = { update(current.removing(index), false) }, enabled = enabled && curve.isInterior(index),
                     modifier = Modifier.testTag("curve-remove")) { Text(stringResource(R.string.curve_remove_point)) }
-                TextButton(onClick = { selected = 0; update(ToneCurveSettings.identity, false) }, enabled = enabled && settings != ToneCurveSettings.identity,
-                    modifier = Modifier.testTag("curve-reset")) { Text(stringResource(R.string.curve_reset_identity)) }
+            }
+            TextButton(onClick = { selected = 0; update(ToneCurveSettings.identity, false) }, enabled = enabled,
+                modifier = Modifier.testTag("curve-reset")) { Text(stringResource(R.string.curve_reset_identity)) }
+            if (channel == ToneCurveChannel.RGB) {
+                TextButton(onClick = { switching = true }, enabled = enabled, modifier = Modifier.testTag("curve-switch")) {
+                    Text(stringResource(if (shape.mode == ToneCurveMode.LEGACY) R.string.curve_custom else R.string.tone_curve))
+                }
+                if (shape.mode == ToneCurveMode.LEGACY) TextButton(onClick = { legacyEditing = !legacyEditing },
+                    modifier = Modifier.testTag("curve-legacy-editor")) { Text(stringResource(R.string.tone_curve)) }
+                if (legacyEditing && shape.mode == ToneCurveMode.LEGACY) NumericControl(R.string.tone_curve, legacy * 100, -100f..100f, "%", enabled,
+                    { value, dragging -> onLegacyEdit(value / 100, dragging) }, { onLegacyEdit(0f, false) })
             }
         }
     }
     if (switching) AlertDialog(onDismissRequest = { switching = false }, title = { Text(stringResource(R.string.curve_switch_title)) },
-        text = { Text(stringResource(if (settings.isDefault) R.string.curve_switch_custom else R.string.curve_switch_legacy)) },
+        text = { Text(stringResource(if (shape.mode == ToneCurveMode.LEGACY) R.string.curve_switch_custom else R.string.curve_switch_legacy)) },
         confirmButton = { TextButton(onClick = {
             switching = false; selected = 0
-            update(if (current.isDefault) ToneCurveSettings.identity else ToneCurveSettings(), false)
+            legacyEditing = shape.mode != ToneCurveMode.LEGACY
+            update(if (shape.mode == ToneCurveMode.LEGACY) ToneCurveSettings.identity else ToneCurveSettings(), false)
         }, enabled = enabled, modifier = Modifier.testTag("curve-switch-confirm")) { Text(stringResource(R.string.curve_switch)) } },
         dismissButton = { TextButton(onClick = { switching = false }) { Text(stringResource(R.string.cancel)) } })
 }

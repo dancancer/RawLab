@@ -11,6 +11,7 @@ struct AdjustmentRuler: UIViewRepresentable {
     let fine: Bool
     let haptics: Bool
     let reduceMotion: Bool
+    var compact = false
     var interactionID: AnyHashable = 0
     var directionColors: [Color] = []
     var directionHint: String = ""
@@ -22,7 +23,7 @@ struct AdjustmentRuler: UIViewRepresentable {
     func updateUIView(_ view: AdjustmentRulerView, context: Context) {
         view.configure(scale: scale, value: value, defaultValue: defaultValue, fine: fine,
                        haptics: haptics, reduceMotion: reduceMotion, title: title,
-                       formatter: formatter, identifier: identifier,
+                       formatter: formatter, identifier: identifier, compact: compact,
                        interactionID: interactionID, directionColors: directionColors.map { UIColor($0) }, directionHint: directionHint,
                        onChange: { value = $0 }, onEditingCancelled: onEditingCancelled, onEditingChanged: onEditingChanged)
     }
@@ -42,6 +43,7 @@ final class AdjustmentRulerView: UIView, UIGestureRecognizerDelegate {
     private var editing = false
     private var gestureActive = false
     private var gestureValueEchoes: Set<Double> = []
+    private var compact = false
     private var fine = false
     private var haptics = true
     private var reduceMotion = false
@@ -75,10 +77,10 @@ final class AdjustmentRulerView: UIView, UIGestureRecognizerDelegate {
 
     func configure(scale: AdjustmentScale, value: Double, defaultValue: Double?, fine: Bool,
                    haptics: Bool, reduceMotion: Bool, title: String, formatter: @escaping (Double) -> String,
-                   identifier: String, interactionID: AnyHashable = 0, directionColors: [UIColor] = [], directionHint: String = "", onChange: @escaping (Double) -> Void,
+                   identifier: String, compact: Bool = false, interactionID: AnyHashable = 0, directionColors: [UIColor] = [], directionHint: String = "", onChange: @escaping (Double) -> Void,
                    onEditingCancelled: @escaping () -> Void = {}, onEditingChanged: @escaping (Bool) -> Void) {
         let gestureEcho = gestureActive && self.interactionID == interactionID && self.scale == scale && gestureValueEchoes.contains(value)
-        let replaced = self.interactionID != interactionID || self.scale != scale || self.fine != fine ||
+        let replaced = self.interactionID != interactionID || self.scale != scale || self.fine != fine || self.compact != compact ||
             (!gestureEcho && abs(self.value - value) > scale.step * 1e-8)
         let endedEditing = replaced && editing
         let cancelled = self.onEditingCancelled
@@ -89,6 +91,7 @@ final class AdjustmentRulerView: UIView, UIGestureRecognizerDelegate {
         if !gestureEcho { self.value = value }
         self.defaultValue = defaultValue
         self.fine = fine
+        self.compact = compact
         self.haptics = haptics
         self.reduceMotion = reduceMotion
         self.formatter = formatter
@@ -170,11 +173,12 @@ final class AdjustmentRulerView: UIView, UIGestureRecognizerDelegate {
         guard editing else { return }
         let delta = translation - lastTranslation
         lastTranslation = translation
-        let next = min(max(position - delta / scale.tapeLength * (fine ? 0.25 : 1), 0), 1)
+        let movement = compact ? delta / max(1, Double(bounds.width) - 16) : -delta / scale.tapeLength
+        let next = min(max(position + movement * (fine ? 0.25 : 1), 0), 1)
         guard next != position else { return }
         position = next
         let now = CACurrentMediaTime()
-        if !reduceMotion {
+        if !reduceMotion && !compact {
             for tick in ticks {
                 motion.excite(id: tick.id, distance: (tick.position - position) * scale.tapeLength, at: now)
             }
@@ -200,7 +204,7 @@ final class AdjustmentRulerView: UIView, UIGestureRecognizerDelegate {
         gestureValueEchoes.removeAll(keepingCapacity: true)
         onEditingChanged(false)
         let target = scale.position(for: value)
-        if !reduceMotion && abs(target - position) > 1e-8 {
+        if !reduceMotion && !compact && abs(target - position) > 1e-8 {
             settlement = (position, target, CACurrentMediaTime())
             startDisplayLink()
         } else { position = target }
@@ -247,6 +251,26 @@ final class AdjustmentRulerView: UIView, UIGestureRecognizerDelegate {
 
     override func draw(_ rect: CGRect) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
+        if compact {
+            let inset: CGFloat = 8, width = max(1, bounds.width - 16), y = bounds.midY
+            let x = inset + CGFloat(scale.position(for: value)) * width
+            context.setStrokeColor(UIColor.secondaryLabel.withAlphaComponent(0.5).cgColor)
+            context.setLineWidth(1.5)
+            context.move(to: CGPoint(x: inset, y: y)); context.addLine(to: CGPoint(x: inset + width, y: y)); context.strokePath()
+            if directionColors.count >= 2, let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: directionColors.map(\.cgColor) as CFArray, locations: nil) {
+                context.saveGState(); context.clip(to: CGRect(x: inset, y: y - 0.75, width: width, height: 1.5))
+                context.drawLinearGradient(gradient, start: CGPoint(x: inset, y: y), end: CGPoint(x: inset + width, y: y), options: [])
+                context.restoreGState()
+            }
+            if let defaultValue {
+                let origin = inset + CGFloat(scale.position(for: defaultValue)) * width
+                context.setStrokeColor(tintColor.cgColor); context.setLineWidth(2)
+                context.move(to: CGPoint(x: origin, y: y)); context.addLine(to: CGPoint(x: x, y: y)); context.strokePath()
+            }
+            context.setFillColor(UIColor.label.cgColor)
+            context.fillEllipse(in: CGRect(x: x - 7, y: y - 7, width: 14, height: 14))
+            return
+        }
         let baseline = 34.0, now = CACurrentMediaTime()
         let viewport = scale.window(at: position, width: bounds.width)
         let indicator = viewport.indicator * bounds.width

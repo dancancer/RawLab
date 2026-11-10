@@ -2,9 +2,9 @@ import ImageIO
 import SwiftUI
 
 extension ContentView {
-    func photoInfoOverlay(maxWidth: CGFloat) -> some View {
+    func photoInfoOverlay(maxWidth: CGFloat, showsButton: Bool = true) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            if viewModel.hasImage && !editorBusy {
+            if showsButton && viewModel.hasImage && !editorBusy {
                 Button {
                     photoInfoMode = photoInfoMode.next
                 } label: {

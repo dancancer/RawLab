@@ -72,7 +72,7 @@ class AdjustmentSummary(val payload: AdjustmentPayload, private val locale: Loca
             SHARPENING -> percent(number, false)
             CROP_X, CROP_Y, CROP_WIDTH, CROP_HEIGHT -> number(number * 100) + "%"
             QUARTER_TURNS -> number(number * 90) + "°"
-            FLIP_HORIZONTAL, FLIP_VERTICAL, LENS_DISTORTION, LENS_TCA, LENS_AUTO_CROP -> text(if (value.boolean == true) "开启" else "停用")
+            FLIP_HORIZONTAL, FLIP_VERTICAL, LENS_DISTORTION, LENS_TCA, LENS_VIGNETTING, LENS_AUTO_CROP -> text(if (value.boolean == true) "开启" else "停用")
             STRAIGHTEN -> number(number, signed = true) + "°"
             LENS_PROFILE -> if (value == AdjustmentValue.Null) text("自动（按目标照片）")
                 else if (value.text == "__rawlab_manual_selection_required__") text("待选择的镜头配置") else value.text.orEmpty()
@@ -91,13 +91,22 @@ class AdjustmentSummary(val payload: AdjustmentPayload, private val locale: Loca
     }
 
     private fun curveText(value: AdjustmentValue): String {
-        val curve = value.objectValue!!
-        if (curve.getValue("mode").text != "custom") return text("S 曲线")
-        val points = (curve.getValue("points") as AdjustmentValue.Array).value
-        return format("多点曲线（%d 个控制点）", points.size) + "：" + points.joinToString(" · ") {
-            val point = (it as AdjustmentValue.Array).value
-            number(point[0].number!!, minimum = 2) + " → " + number(point[1].number!!, minimum = 2)
+        fun shapeText(fields: Map<String, AdjustmentValue>): String {
+            if (fields.getValue("mode").text != "custom") return text("S 曲线")
+            val points = (fields.getValue("points") as AdjustmentValue.Array).value
+            return format("多点曲线（%d 个控制点）", points.size) + "：" + points.joinToString(" · ") {
+                val point = (it as AdjustmentValue.Array).value
+                number(point[0].number!!, minimum = 2) + " → " + number(point[1].number!!, minimum = 2)
+            }
         }
+        val curve = value.objectValue!!
+        val parts = mutableListOf(shapeText(curve))
+        val channels = curve["channels"]?.objectValue.orEmpty()
+        for (name in listOf("red", "green", "blue")) {
+            val fields = channels[name]?.objectValue ?: continue
+            if (fields.getValue("mode").text == "custom") parts += name.first().uppercase() + " · " + shapeText(fields)
+        }
+        return parts.joinToString("\n")
     }
 
     private fun waveletText(value: AdjustmentValue): String {

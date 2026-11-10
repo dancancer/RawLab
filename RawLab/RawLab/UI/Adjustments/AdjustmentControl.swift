@@ -11,9 +11,14 @@ struct AdjustmentInputContext {
 private struct AdjustmentInputContextKey: EnvironmentKey {
     static let defaultValue = AdjustmentInputContext()
 }
+private struct CompactAdjustmentRowsKey: EnvironmentKey { static let defaultValue = false }
 private struct AdjustmentFineKey: EnvironmentKey { static let defaultValue = false }
 
 extension EnvironmentValues {
+    var compactAdjustmentRows: Bool {
+        get { self[CompactAdjustmentRowsKey.self] }
+        set { self[CompactAdjustmentRowsKey.self] = newValue }
+    }
     var adjustmentInputContext: AdjustmentInputContext {
         get { self[AdjustmentInputContextKey.self] }
         set { self[AdjustmentInputContextKey.self] = newValue }
@@ -50,6 +55,8 @@ struct AdjustmentControl: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.adjustmentFine) private var fine
+    @Environment(\.compactAdjustmentRows) private var compactRows
+    private var inline: Bool { compactRows && !dynamicTypeSize.isAccessibilitySize }
     @Environment(\.adjustmentInputContext) private var inputContext
 
     init(title: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double = 1,
@@ -87,6 +94,12 @@ struct AdjustmentControl: View {
                 }
                 .padding(.horizontal, 8)
                 .background(Color(.tertiarySystemBackground), in: RoundedRectangle(cornerRadius: 6))
+            } else if inline {
+                HStack(spacing: 6) {
+                    titleLabel.frame(width: 72, alignment: .leading)
+                    ruler.frame(maxWidth: .infinity).frame(height: 44)
+                    valueAndUnit
+                }
             } else {
                 VStack(spacing: 4) {
                     HStack(spacing: 8) { titleLabel; Spacer(minLength: 8); valueAndUnit }
@@ -102,7 +115,8 @@ struct AdjustmentControl: View {
     }
 
     private var titleLabel: some View {
-        Text(title).font(.subheadline).fixedSize(horizontal: false, vertical: true)
+        Text(title).font(.subheadline).lineLimit(inline ? 1 : nil).minimumScaleFactor(inline ? 0.8 : 1)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(minHeight: 44)
             .modifier(AdjustmentResetGesture(enabled: !voiceOver, action: reset))
             .accessibilityAction(named: L10n.text("恢复默认"), reset)
@@ -119,7 +133,7 @@ struct AdjustmentControl: View {
     private var ruler: some View {
         AdjustmentRuler(value: Binding(get: { value }, set: { if inputContext.isCurrent() && inputContext.canChange() { value = $0 } }), scale: scale, defaultValue: validDefault, title: title,
                         formatter: complete, identifier: "\(identifier).ruler", fine: fine,
-                        haptics: haptics, reduceMotion: reduceMotion, interactionID: inputContext.id, directionColors: directionColors,
+                        haptics: haptics, reduceMotion: reduceMotion, compact: inline, interactionID: inputContext.id, directionColors: directionColors,
                         directionHint: directionHint,
                         onEditingCancelled: inputContext.onInteractionCancelled,
                         onEditingChanged: { editing in if inputContext.isCurrent() { onEditingChanged(editing) } })
@@ -129,8 +143,8 @@ struct AdjustmentControl: View {
     private var valueAndUnit: some View {
         HStack(spacing: 4) {
             valueButton
-            Text(unit.isEmpty ? " " : unit).font(.caption).foregroundStyle(.secondary)
-                .fixedSize().frame(width: unitWidth, alignment: .leading).accessibilityHidden(true).accessibilityIdentifier("\(identifier).unit")
+            if !inline || !unit.isEmpty { Text(unit.isEmpty ? " " : unit).font(.caption).foregroundStyle(.secondary)
+                .fixedSize().frame(width: unitWidth, alignment: .leading).accessibilityHidden(true).accessibilityIdentifier("\(identifier).unit") }
         }
         .fixedSize(horizontal: true, vertical: false)
     }
@@ -141,7 +155,7 @@ struct AdjustmentControl: View {
         } label: {
             Text(number(value)).font(.body.weight(.semibold)).monospacedDigit()
                 .fixedSize(horizontal: true, vertical: false).frame(minWidth: 44, minHeight: 44)
-                .frame(width: compactNumber ? nil : stableValueWidth)
+                .frame(width: compactNumber || inline ? nil : stableValueWidth)
                 .foregroundStyle(modified ? Color.yellow : Color.primary)
                 .overlay(alignment: .bottom) { if modified { Circle().fill(.yellow).frame(width: 4, height: 4) } }
         }

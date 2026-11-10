@@ -1,0 +1,1053 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RawLab HDR edit recipe v15",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "processing",
+    "input",
+    "edits",
+    "output"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 15
+    },
+    "processing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "family",
+        "version",
+        "quality"
+      ],
+      "properties": {
+        "family": {
+          "const": "rawlab_hdr"
+        },
+        "version": {
+          "type": "integer",
+          "const": 8
+        },
+        "quality": {
+          "const": "standard"
+        }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "type"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000]+$"
+        },
+        "type": {
+          "enum": [
+            "hdr_raster",
+            "raw",
+            "proraw"
+          ]
+        },
+        "camera_development": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "version": {
+              "type": "integer",
+              "const": 1
+            },
+            "white_balance_mode": {
+              "enum": [
+                "as_shot",
+                "temperature"
+              ]
+            },
+            "temperature": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 50000
+            },
+            "tint": {
+              "type": "number",
+              "minimum": -150,
+              "maximum": 150
+            },
+            "exposure_reference": {
+              "enum": [
+                "metadata",
+                "sensor"
+              ]
+            },
+            "fbdd_level": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2
+            },
+            "lens_distortion": {
+              "type": "boolean"
+            },
+            "lens_tca": {
+              "type": "boolean"
+            },
+            "lens_auto_crop": {
+              "type": "boolean"
+            },
+            "lens_profile": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "camera_profile": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "path",
+                    "sha256"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^[^\\u0000]+$"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "lens_vignetting": {
+              "type": "boolean"
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "white_balance_mode"
+                ],
+                "properties": {
+                  "white_balance_mode": {
+                    "const": "temperature"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "temperature": {
+                    "minimum": 2000
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "temperature": {
+                    "const": 0
+                  },
+                  "tint": {
+                    "const": 0
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "lens_profile"
+                ],
+                "properties": {
+                  "lens_profile": {
+                    "type": "string"
+                  }
+                }
+              },
+              "then": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "lens_distortion"
+                    ],
+                    "properties": {
+                      "lens_distortion": {
+                        "const": true
+                      }
+                    }
+                  },
+                  {
+                    "required": [
+                      "lens_tca"
+                    ],
+                    "properties": {
+                      "lens_tca": {
+                        "const": true
+                      }
+                    }
+                  },
+                  {
+                    "required": [
+                      "lens_vignetting"
+                    ],
+                    "properties": {
+                      "lens_vignetting": {
+                        "const": true
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "camera_development"
+            ]
+          },
+          "then": {
+            "properties": {
+              "type": {
+                "const": "raw"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "edits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exposure",
+        "white_balance"
+      ],
+      "properties": {
+        "exposure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {
+            "ev": {
+              "type": "number",
+              "minimum": -4,
+              "maximum": 4,
+              "default": 0
+            }
+          }
+        },
+        "white_balance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "const": "relative"
+            },
+            "relative_temperature": {
+              "type": "number",
+              "minimum": 2000,
+              "maximum": 50000,
+              "default": 6500
+            },
+            "relative_tint": {
+              "type": "number",
+              "minimum": -150,
+              "maximum": 150,
+              "default": 0
+            }
+          }
+        },
+        "tone": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {
+            "contrast": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2,
+              "default": 1
+            },
+            "saturation": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2,
+              "default": 1
+            },
+            "highlights": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1,
+              "default": 0
+            },
+            "shadows": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1,
+              "default": 0
+            },
+            "black_point": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1,
+              "default": 0
+            },
+            "white_point": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1,
+              "default": 0
+            },
+            "s_curve": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1,
+              "default": 0
+            },
+            "curve": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode",
+                "points"
+              ],
+              "properties": {
+                "mode": {
+                  "enum": [
+                    "legacy",
+                    "custom"
+                  ]
+                },
+                "points": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      }
+                    ],
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": false
+                  },
+                  "maxItems": 33
+                },
+                "channels": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "red": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "mode",
+                        "points"
+                      ],
+                      "properties": {
+                        "mode": {
+                          "enum": [
+                            "legacy",
+                            "custom"
+                          ]
+                        },
+                        "points": {
+                          "type": "array",
+                          "items": {
+                            "type": "array",
+                            "prefixItems": [
+                              {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                              },
+                              {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                              }
+                            ],
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "items": false
+                          },
+                          "maxItems": 33
+                        }
+                      },
+                      "allOf": [
+                        {
+                          "if": {
+                            "properties": {
+                              "mode": {
+                                "const": "legacy"
+                              }
+                            }
+                          },
+                          "then": {
+                            "properties": {
+                              "points": {
+                                "maxItems": 0
+                              }
+                            }
+                          },
+                          "else": {
+                            "properties": {
+                              "points": {
+                                "minItems": 2
+                              }
+                            }
+                          }
+                        }
+                      ],
+                      "default": {
+                        "mode": "legacy",
+                        "points": []
+                      },
+                      "description": "Independent channel curve in normalized log EV, applied after the master luminance curve."
+                    },
+                    "green": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "mode",
+                        "points"
+                      ],
+                      "properties": {
+                        "mode": {
+                          "enum": [
+                            "legacy",
+                            "custom"
+                          ]
+                        },
+                        "points": {
+                          "type": "array",
+                          "items": {
+                            "type": "array",
+                            "prefixItems": [
+                              {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                              },
+                              {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                              }
+                            ],
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "items": false
+                          },
+                          "maxItems": 33
+                        }
+                      },
+                      "allOf": [
+                        {
+                          "if": {
+                            "properties": {
+                              "mode": {
+                                "const": "legacy"
+                              }
+                            }
+                          },
+                          "then": {
+                            "properties": {
+                              "points": {
+                                "maxItems": 0
+                              }
+                            }
+                          },
+                          "else": {
+                            "properties": {
+                              "points": {
+                                "minItems": 2
+                              }
+                            }
+                          }
+                        }
+                      ],
+                      "default": {
+                        "mode": "legacy",
+                        "points": []
+                      },
+                      "description": "Independent channel curve in normalized log EV, applied after the master luminance curve."
+                    },
+                    "blue": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "mode",
+                        "points"
+                      ],
+                      "properties": {
+                        "mode": {
+                          "enum": [
+                            "legacy",
+                            "custom"
+                          ]
+                        },
+                        "points": {
+                          "type": "array",
+                          "items": {
+                            "type": "array",
+                            "prefixItems": [
+                              {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                              },
+                              {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                              }
+                            ],
+                            "minItems": 2,
+                            "maxItems": 2,
+                            "items": false
+                          },
+                          "maxItems": 33
+                        }
+                      },
+                      "allOf": [
+                        {
+                          "if": {
+                            "properties": {
+                              "mode": {
+                                "const": "legacy"
+                              }
+                            }
+                          },
+                          "then": {
+                            "properties": {
+                              "points": {
+                                "maxItems": 0
+                              }
+                            }
+                          },
+                          "else": {
+                            "properties": {
+                              "points": {
+                                "minItems": 2
+                              }
+                            }
+                          }
+                        }
+                      ],
+                      "default": {
+                        "mode": "legacy",
+                        "points": []
+                      },
+                      "description": "Independent channel curve in normalized log EV, applied after the master luminance curve."
+                    }
+                  }
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "mode": {
+                        "const": "legacy"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "points": {
+                        "maxItems": 0
+                      }
+                    }
+                  },
+                  "else": {
+                    "properties": {
+                      "points": {
+                        "minItems": 2
+                      }
+                    }
+                  }
+                }
+              ],
+              "default": {
+                "mode": "legacy",
+                "points": []
+              },
+              "description": "Normalized luminance curve from -8 to +8 EV relative to SDR reference white (0.5); runtime checks fixed endpoints and monotone points."
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "curve"
+                ],
+                "properties": {
+                  "curve": {
+                    "properties": {
+                      "mode": {
+                        "const": "custom"
+                      }
+                    }
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "s_curve": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "geometry": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "crop": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Normalized rectangle after turns, flips, perspective and straightening; runtime also checks x+width and y+height <=1 with float boundary tolerance.",
+              "properties": {
+                "x": {
+                  "type": "number",
+                  "minimum": 0,
+                  "exclusiveMaximum": 1,
+                  "default": 0
+                },
+                "y": {
+                  "type": "number",
+                  "minimum": 0,
+                  "exclusiveMaximum": 1,
+                  "default": 0
+                },
+                "width": {
+                  "type": "number",
+                  "minimum": 1.1754943508222875e-38,
+                  "maximum": 1,
+                  "default": 1
+                },
+                "height": {
+                  "type": "number",
+                  "minimum": 1.1754943508222875e-38,
+                  "maximum": 1,
+                  "default": 1
+                }
+              }
+            },
+            "quarter_turns": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3,
+              "default": 0
+            },
+            "flip_horizontal": {
+              "type": "boolean",
+              "default": false
+            },
+            "flip_vertical": {
+              "type": "boolean",
+              "default": false
+            },
+            "straighten_degrees": {
+              "type": "number",
+              "minimum": -45,
+              "maximum": 45,
+              "default": 0
+            },
+            "perspective": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "horizontal": {
+                  "type": "number",
+                  "minimum": -1,
+                  "maximum": 1,
+                  "default": 0
+                },
+                "vertical": {
+                  "type": "number",
+                  "minimum": -1,
+                  "maximum": 1,
+                  "default": 0
+                }
+              }
+            }
+          }
+        },
+        "color": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "vibrance": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1,
+              "default": 0
+            }
+          }
+        },
+        "hsl": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hue": {
+              "type": "array",
+              "minItems": 8,
+              "maxItems": 8,
+              "items": {
+                "type": "number",
+                "minimum": -100,
+                "maximum": 100
+              },
+              "default": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "saturation": {
+              "type": "array",
+              "minItems": 8,
+              "maxItems": 8,
+              "items": {
+                "type": "number",
+                "minimum": -100,
+                "maximum": 100
+              },
+              "default": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "lightness": {
+              "type": "array",
+              "minItems": 8,
+              "maxItems": 8,
+              "items": {
+                "type": "number",
+                "minimum": -100,
+                "maximum": 100
+              },
+              "default": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            }
+          }
+        },
+        "color_grading": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "shadows": {
+              "$ref": "#/$defs/gradingWheel"
+            },
+            "midtones": {
+              "$ref": "#/$defs/gradingWheel"
+            },
+            "highlights": {
+              "$ref": "#/$defs/gradingWheel"
+            }
+          }
+        },
+        "rendition": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "peak_limit_ev": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 6,
+              "default": 0
+            },
+            "sdr_exposure_ev": {
+              "type": "number",
+              "minimum": -4,
+              "maximum": 4,
+              "default": 0
+            },
+            "sdr_contrast": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1,
+              "default": 0
+            },
+            "sdr_saturation": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1,
+              "default": 0
+            }
+          }
+        },
+        "effects": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "vignette_amount": {
+              "type": "number",
+              "minimum": -100,
+              "maximum": 100,
+              "default": 0
+            },
+            "vignette_midpoint": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 50
+            },
+            "vignette_roundness": {
+              "type": "number",
+              "minimum": -100,
+              "maximum": 100,
+              "default": 0
+            },
+            "vignette_feather": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 50
+            },
+            "vignette_highlights": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 0
+            },
+            "grain_amount": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 0
+            },
+            "grain_size": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 25
+            },
+            "grain_roughness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        },
+        "detail": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sharpening": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2
+            },
+            "clarity": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1
+            },
+            "dehaze": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1
+            },
+            "denoise": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+        "look": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[^\\u0000]+$"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "strength": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2
+            }
+          }
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "format"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000]+$"
+        },
+        "format": {
+          "enum": [
+            "hdr_jpeg",
+            "jpeg",
+            "png",
+            "dng"
+          ]
+        },
+        "base_color": {
+          "enum": [
+            "srgb",
+            "display_p3"
+          ]
+        },
+        "jpeg_quality": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 95
+        },
+        "size": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "native"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode",
+                "long_edge"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "limit_long_edge"
+                },
+                "long_edge": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                }
+              }
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "format": {
+                "const": "hdr_jpeg"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "base_color"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "gradingWheel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hue",
+        "saturation"
+      ],
+      "properties": {
+        "hue": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 360,
+          "default": 0
+        },
+        "saturation": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 0
+        }
+      }
+    }
+  }
+}

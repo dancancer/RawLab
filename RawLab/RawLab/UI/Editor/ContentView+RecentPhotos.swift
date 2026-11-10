@@ -51,7 +51,7 @@ extension ContentView {
             viewModel.importImage(from: input, identity: source.identity, retainedInput: source.file,
                 diagnosticContext: ["entryPoint": "recentPhotos"], onImported: { UsageAnalytics.shared.record(.photoImported) }) { restored in
                     settings = restored
-                    if restored.isHDREditing { activateEditorTool(.adjustment(.exposure)) }
+                    if restored.isHDREditing { selectedGroup = .light; selectedAdjustment = .exposure }
                 }
         } catch {
             isImporting = false

@@ -259,12 +259,32 @@ enum LensProfileMode: String, Codable, CaseIterable { case automatic, manual }
 struct LensCorrectionSettings: Codable, Equatable {
     var distortion = false
     var tca = false
+    var vignetting = false
     var autoCrop = true
     var mode = LensProfileMode.automatic
     var profileID: String?
-    var isEnabled: Bool { distortion || tca }
+    var focalLength: Double?
+    var cropFactor: Double?
+    var isEnabled: Bool { distortion || tca || vignetting }
     var coreProfileID: String {
         mode == .automatic ? "" : (profileID ?? "__rawlab_manual_selection_required__")
+    }
+    init(distortion: Bool = false, tca: Bool = false, autoCrop: Bool = true, mode: LensProfileMode = .automatic,
+         profileID: String? = nil, focalLength: Double? = nil, cropFactor: Double? = nil, vignetting: Bool = false) {
+        self.distortion = distortion; self.tca = tca; self.autoCrop = autoCrop; self.mode = mode
+        self.profileID = profileID; self.focalLength = focalLength; self.cropFactor = cropFactor; self.vignetting = vignetting
+    }
+    private enum CodingKeys: String, CodingKey { case distortion, tca, vignetting, autoCrop, mode, profileID, focalLength, cropFactor }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        distortion = try values.decode(Bool.self, forKey: .distortion)
+        tca = try values.decode(Bool.self, forKey: .tca)
+        vignetting = values.contains(.vignetting) ? try values.decode(Bool.self, forKey: .vignetting) : false
+        autoCrop = try values.decode(Bool.self, forKey: .autoCrop)
+        mode = try values.decode(LensProfileMode.self, forKey: .mode)
+        profileID = try values.decodeIfPresent(String.self, forKey: .profileID)
+        focalLength = try values.decodeIfPresent(Double.self, forKey: .focalLength)
+        cropFactor = try values.decodeIfPresent(Double.self, forKey: .cropFactor)
     }
 }
 

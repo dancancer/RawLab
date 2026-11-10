@@ -27,6 +27,7 @@ class ToneCurveControlsTest {
         compose.onNodeWithTag("curve-switch").performClick()
         compose.runOnIdle { assertTrue(curve.isDefault) }
         compose.onNodeWithTag("curve-switch-confirm").performClick()
+        compose.onNodeWithTag("curve-edit-point").performClick()
         compose.onNodeWithTag("curve-x").assertIsNotEnabled()
         compose.onNodeWithTag("curve-remove").assertIsNotEnabled()
         compose.onNodeWithTag("curve-add").performClick()
@@ -48,6 +49,39 @@ class ToneCurveControlsTest {
         compose.onNodeWithTag("curve-switch").performClick()
         compose.onNodeWithTag("curve-switch-confirm").performClick()
         compose.runOnIdle { assertTrue(curve.isDefault); assertEquals(.65f, legacy, 0f) }
+    }
+
+    @Test fun creatingRedCurvePreservesMasterAndOtherChannels() {
+        var curve by mutableStateOf(ToneCurveSettings())
+        compose.setContent { RawLabTheme { ToneCurveControls(curve, 0f, true, { next, _ -> curve = next }, { _, _ -> }) } }
+        compose.onNodeWithTag("curve-channel-red").performClick()
+        compose.onNodeWithTag("curve-canvas").performTouchInput { click(Offset(width * .4f, height * .3f)) }
+        compose.runOnIdle {
+            assertTrue(curve.master.isDefault)
+            assertEquals(3, curve.channels.red.points.size)
+            assertTrue(curve.channels.green.isDefault && curve.channels.blue.isDefault)
+            assertFalse(curve.channels.red.isIdentity)
+        }
+        compose.onNodeWithTag("curve-channel-green").performClick()
+        compose.onNodeWithTag("curve-edit-point").performClick()
+        compose.onNodeWithTag("curve-add").performClick()
+        compose.runOnIdle {
+            assertEquals(3, curve.channels.green.points.size)
+            assertEquals(3, curve.channels.red.points.size)
+            assertTrue(curve.master.isDefault && curve.channels.blue.isDefault)
+        }
+    }
+
+    @Test fun legacyStrengthRemainsEditableWithAnIndependentRedCurve() {
+        val red = ToneCurveShape.identity.inserting(.4, .7)
+        var curve by mutableStateOf(ToneCurveSettings().replacing(ToneCurveChannel.RED, red))
+        var legacy by mutableFloatStateOf(.2f)
+        compose.setContent { RawLabTheme { ToneCurveControls(curve, legacy, true,
+            { next, _ -> curve = next }, { next, _ -> legacy = next }) } }
+        compose.onNodeWithTag("curve-edit-point").performClick()
+        compose.onNodeWithTag("curve-legacy-editor").performClick()
+        compose.onNodeWithTag("adjustment-slider").performSemanticsAction(SemanticsActions.SetProgress) { it(40f) }
+        compose.runOnIdle { assertEquals(.4f, legacy, 0f); assertEquals(red, curve.channels.red); assertTrue(curve.master.isDefault) }
     }
 
     @Test fun pointerCommitsOnceAndFineModeCancellationRestoresStart() {

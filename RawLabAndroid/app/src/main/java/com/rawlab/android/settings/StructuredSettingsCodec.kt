@@ -27,8 +27,9 @@ internal object StructuredSettingsCodec {
                 .put("vignetteMidpoint", vignetteMidpoint).put("vignetteRoundness", vignetteRoundness)
                 .put("vignetteFeather", vignetteFeather).put("vignetteHighlights", vignetteHighlights)
                 .put("grainAmount", grainAmount).put("grainSize", grainSize).put("grainRoughness", grainRoughness) })
-            .put("lens", with(s.lens) { JSONObject().put("distortion", distortion).put("tca", tca)
-                .put("autoCrop", autoCrop).put("manual", manual).put("profileId", profileId ?: JSONObject.NULL) })
+            .put("lens", with(s.lens) { JSONObject().put("distortion", distortion).put("tca", tca).put("vignetting", vignetting)
+                .put("autoCrop", autoCrop).put("manual", manual).put("profileId", profileId ?: JSONObject.NULL)
+                .apply { focalLength?.let { put("focalLength", it) }; cropFactor?.let { put("cropFactor", it) } } })
             .put("geometry", with(s.geometry) { JSONObject().put("cropX", cropX).put("cropY", cropY)
                 .put("cropWidth", cropWidth).put("cropHeight", cropHeight).put("quarterTurns", quarterTurns)
                 .put("flipHorizontal", flipHorizontal).put("flipVertical", flipVertical)
@@ -58,7 +59,7 @@ internal object StructuredSettingsCodec {
         val denoise = s.getJSONObject("denoise").keysExactly("enabled", "luma", "chroma", "coarse")
         val effects = s.getJSONObject("effects").keysExactly("vignetteAmount", "vignetteMidpoint", "vignetteRoundness",
             "vignetteFeather", "vignetteHighlights", "grainAmount", "grainSize", "grainRoughness")
-        val lens = s.getJSONObject("lens").keysExactly("distortion", "tca", "autoCrop", "manual", "profileId")
+        val lens = s.getJSONObject("lens").keysWithOptional(setOf("focalLength", "cropFactor", "vignetting"), "distortion", "tca", "autoCrop", "manual", "profileId")
         val geometry = s.getJSONObject("geometry").keysExactly("cropX", "cropY", "cropWidth", "cropHeight", "quarterTurns",
             "flipHorizontal", "flipVertical", "straightenDegrees", "perspectiveHorizontal", "perspectiveVertical")
         val processing = s.getJSONObject("processing").keysExactly("family", "version", "quality")
@@ -83,7 +84,10 @@ internal object StructuredSettingsCodec {
                 effects.number("vignetteRoundness", -100.0..100.0), effects.number("vignetteFeather", 0.0..100.0), effects.number("vignetteHighlights", 0.0..100.0),
                 effects.number("grainAmount", 0.0..100.0), effects.number("grainSize", 0.0..100.0), effects.number("grainRoughness", 0.0..100.0)),
             lens = LensSettings(lens.boolean("distortion"), lens.boolean("tca"), lens.boolean("autoCrop"), lens.boolean("manual"),
-                lens.nullableString("profileId")),
+                lens.nullableString("profileId"),
+                if (lens.has("focalLength")) lens.number("focalLength", 0.1..10000.0) else null,
+                if (lens.has("cropFactor")) lens.number("cropFactor", 0.1..100.0) else null,
+                if (lens.has("vignetting")) lens.boolean("vignetting") else false),
             geometry = GeometrySettings(geometry.number("cropX", 0.0..1.0), geometry.number("cropY", 0.0..1.0), geometry.number("cropWidth", 0.0..1.0),
                 geometry.number("cropHeight", 0.0..1.0), geometry.integer("quarterTurns"), geometry.boolean("flipHorizontal"),
                 geometry.boolean("flipVertical"), geometry.number("straightenDegrees", -45.0..45.0), geometry.number("perspectiveHorizontal", -1.0..1.0),
@@ -141,7 +145,7 @@ internal object StructuredSettingsCodec {
                 .put("temperature", camera.temperature).put("tint", camera.tint)
                 .put("exposure_reference", if (camera.sensorExposure) "sensor" else "metadata")
                 .put("fbdd_level", camera.fbddLevel).put("lens_distortion", camera.lensDistortion)
-                .put("lens_tca", camera.lensTca).put("lens_auto_crop", camera.lensAutoCrop)
+                .put("lens_tca", camera.lensTca).put("lens_vignetting", camera.lensVignetting).put("lens_auto_crop", camera.lensAutoCrop)
                 .put("lens_profile", camera.lensProfile)
                 .put("camera_profile", camera.cameraProfile?.let {
                     JSONObject().put("sha256", it.sha256).put("name", it.name)
@@ -185,6 +189,7 @@ internal object StructuredSettingsCodec {
                 fields.number("grain_size", 0.0..100.0), fields.number("grain_roughness", 0.0..100.0))
         } else null
         val version = when {
+            tone?.curve?.hasChannelCurves == true -> 8
             value.has("look") -> 7
             value.has("detail") -> 6
             effects != null -> 5
@@ -199,13 +204,13 @@ internal object StructuredSettingsCodec {
             HDRDetailSettings(fields.number("sharpening", 0.0..2.0), fields.number("clarity", -1.0..1.0),
                 fields.number("dehaze", -1.0..1.0), fields.number("denoise", 0.0..1.0))
         } else null
-        val look = if (version == 7) {
+        val look = if (version >= 7) {
             val fields = value.getJSONObject("look").keysExactly("sha256", "name", "strength")
             HDRLookSettings(if (fields.isNull("sha256")) null else fields.string("sha256"),
                 if (fields.isNull("name")) null else fields.string("name"), fields.number("strength", 0.0..2.0))
         } else null
         val camera = if (value.has("camera_development")) decodeHDRCamera(value.getJSONObject("camera_development")) else null
-        require(value.integer("record_version") == (if (camera == null) version else 8) && value.integer("hdr_processing_version") == version) {
+        require(value.integer("record_version") == (if (version == 8) 9 else if (camera == null) version else 8) && value.integer("hdr_processing_version") == version) {
             "Unsupported HDR settings version"
         }
         val geometry = value.getJSONObject("geometry").keysExactly("cropX", "cropY", "cropWidth", "cropHeight", "quarterTurns",
@@ -228,7 +233,7 @@ internal object StructuredSettingsCodec {
     }
 
     private fun decodeHDRCamera(value: JSONObject): HDRCameraDevelopmentSettings {
-        value.keysWithOptional(setOf("lens_profile", "camera_profile"), "version", "white_balance_mode", "temperature", "tint",
+        value.keysWithOptional(setOf("lens_profile", "camera_profile", "lens_vignetting"), "version", "white_balance_mode", "temperature", "tint",
             "exposure_reference", "fbdd_level", "lens_distortion", "lens_tca", "lens_auto_crop")
         require(value.integer("version") == 1)
         val custom = when (value.string("white_balance_mode")) {
@@ -248,7 +253,8 @@ internal object StructuredSettingsCodec {
         return HDRCameraDevelopmentSettings(custom, value.number("temperature", 0.0..50000.0),
             value.number("tint", -150.0..150.0), sensor, value.integer("fbdd_level"),
             value.boolean("lens_distortion"), value.boolean("lens_tca"), value.boolean("lens_auto_crop"),
-            if (value.isNull("lens_profile")) null else value.string("lens_profile"), profile)
+            if (value.isNull("lens_profile")) null else value.string("lens_profile"), profile,
+            if (value.has("lens_vignetting")) value.boolean("lens_vignetting") else false)
     }
 
     private fun ColorGradingSettings.json() = JSONObject().also { grading ->

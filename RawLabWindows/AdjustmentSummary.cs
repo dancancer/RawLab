@@ -62,7 +62,7 @@ internal sealed class AdjustmentSummary
             F.Sharpening => Percent(number, false),
             F.CropX or F.CropY or F.CropWidth or F.CropHeight => NumberText(number * 100) + "%",
             F.QuarterTurns => NumberText(number * 90) + "°",
-            F.FlipHorizontal or F.FlipVertical or F.LensDistortion or F.LensTCA or F.LensAutoCrop => text(Boolean(value) == true ? "开启" : "停用"),
+            F.FlipHorizontal or F.FlipVertical or F.LensDistortion or F.LensTCA or F.LensVignetting or F.LensAutoCrop => text(Boolean(value) == true ? "开启" : "停用"),
             F.Straighten => NumberText(number, signed: true) + "°",
             F.LensProfile => Null(value) ? text("自动（按目标照片）") : Text(value) == "__rawlab_manual_selection_required__" ? text("待选择的镜头配置") : Text(value) ?? "",
             _ => NumberText(number, signed: true)
@@ -90,10 +90,18 @@ internal sealed class AdjustmentSummary
 
     private string CurveText(JsonElement value)
     {
-        if (value.GetProperty("mode").GetString() != "custom") return text("S 曲线");
-        var points = value.GetProperty("points").EnumerateArray().ToArray();
-        return Format("多点曲线（{0} 个控制点）", points.Length) + "：" + string.Join(" · ",
-            points.Select(point => NumberText(point[0].GetDouble(), 2) + " → " + NumberText(point[1].GetDouble(), 2)));
+        string Shape(JsonElement shape) {
+            if (shape.GetProperty("mode").GetString() != "custom") return text("S 曲线");
+            var points = shape.GetProperty("points").EnumerateArray().ToArray();
+            return Format("多点曲线（{0} 个控制点）", points.Length) + "：" + string.Join(" · ",
+                points.Select(point => NumberText(point[0].GetDouble(), 2) + " → " + NumberText(point[1].GetDouble(), 2)));
+        }
+        var parts = new List<string> { Shape(value) };
+        if (value.TryGetProperty("channels", out var channels)) foreach (var name in new[] { "red", "green", "blue" }) {
+            if (channels.TryGetProperty(name, out var shape) && shape.GetProperty("mode").GetString() == "custom")
+                parts.Add(char.ToUpperInvariant(name[0]) + " · " + Shape(shape));
+        }
+        return string.Join("\n", parts);
     }
 
     private string WaveletText(JsonElement value)

@@ -91,7 +91,7 @@ struct AdjustmentTransferSummary {
         case .sharpening: return percent(value.number ?? 0, signed: false)
         case .cropX, .cropY, .cropWidth, .cropHeight: return number((value.number ?? 0) * 100) + "%"
         case .quarterTurns: return number((value.number ?? 0) * 90) + "°"
-        case .flipHorizontal, .flipVertical, .lensDistortion, .lensTCA, .lensAutoCrop:
+        case .flipHorizontal, .flipVertical, .lensDistortion, .lensTCA, .lensVignetting, .lensAutoCrop:
             return text((value.boolean ?? false) ? "开启" : "停用")
         case .straighten: return number(value.number ?? 0, signed: true) + "°"
         case .lensProfile:
@@ -155,12 +155,19 @@ struct AdjustmentTransferSummary {
 
     private func curveText(_ value: AdjustmentTransferValue) -> String {
         guard let curve = value.curve else { return text("无效的曲线参数") }
-        guard curve.mode == .custom else { return text("S 曲线") }
-        let title = format("多点曲线（%d 个控制点）", curve.points.count)
-        let points = curve.points.map {
-            number($0.x, minimumFractionDigits: 2) + " → " + number($0.y, minimumFractionDigits: 2)
-        }.joined(separator: " · ")
-        return title + "：" + points
+        func describe(_ shape: ToneCurveShape) -> String {
+            guard shape.mode == .custom else { return text("S 曲线") }
+            let title = format("多点曲线（%d 个控制点）", shape.points.count)
+            let points = shape.points.map {
+                number($0.x, minimumFractionDigits: 2) + " → " + number($0.y, minimumFractionDigits: 2)
+            }.joined(separator: " · ")
+            return title + "：" + points
+        }
+        var parts = [describe(curve.master)]
+        for channel in ToneCurveChannel.allCases where channel != .rgb && curve.shape(channel).mode == .custom {
+            parts.append(channel.shortLabel + " · " + describe(curve.shape(channel)))
+        }
+        return parts.joined(separator: "\n")
     }
 
     private func gradingText(_ value: AdjustmentTransferValue) -> String {

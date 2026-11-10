@@ -45,7 +45,8 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
     onAlbum: () -> Unit, onFile: () -> Unit, onLicenses: () -> Unit, onPreviewSizeChange: (Int) -> Unit,
     onDraftEdit: (EditSettings, Boolean) -> Unit, onSaveRetry: () -> Unit,
     view: PhotoViewOptions = PhotoViewOptions(), onCanvasTap: () -> Unit = {}, onHoldBefore: (Boolean) -> Unit = {},
-    onModeChange: (ComparisonMode) -> Unit = {}, onCompareClose: () -> Unit = {}, onRetry: () -> Unit = {}, hslTarget: HslTargetActions? = null, showTargetStatus: Boolean = false, onCamera: () -> Unit = {}) {
+    onModeChange: (ComparisonMode) -> Unit = {}, onCompareClose: () -> Unit = {}, onRetry: () -> Unit = {}, hslTarget: HslTargetActions? = null, showTargetStatus: Boolean = false, onCamera: () -> Unit = {},
+    workspaceControls: Boolean = false, histogramExpanded: Boolean? = null, onHistogramExpandedChange: (Boolean) -> Unit = {}) {
     val comparisonInset = if (compare) with(LocalDensity.current) {
         MaterialTheme.typography.labelSmall.lineHeight.toDp() + 36.dp
     } else 12.dp
@@ -55,11 +56,12 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
                 enabled = state.draftReady, physicalAspect = state.draft.geometryAspect, showsGrid = state.draft.geometryGrid) { value ->
                 onDraftEdit(state.visibleEdits.copy(geometry = value), false)
             }
-            else PhotoCanvas(it, compare && state.draft == null, state.photo?.name.orEmpty(), photoCanvas, photoInfo, infoMode, onInfoClick, onPreviewSizeChange,
-                mode = view.preferredMode, holdingBefore = view.holdingBefore && state.draft == null && hslTarget == null, hslTarget = hslTarget,
-                showOverlays = !view.purePreview, margins = view.margins,
-                onCanvasTap = { if (state.draft == null) onCanvasTap() }, onHoldBefore = { onHoldBefore(it && state.draft == null) },
-                onModeChange = onModeChange, onCompareClose = onCompareClose, viewingEnabled = state.draft == null && state.controlsEnabled,
+            else PhotoCanvas(it, compare && state.draft?.group != AdjustmentGroup.GEOMETRY, state.photo?.name.orEmpty(), photoCanvas, photoInfo, infoMode, onInfoClick, onPreviewSizeChange,
+                mode = view.preferredMode, holdingBefore = view.holdingBefore && state.draft?.group != AdjustmentGroup.GEOMETRY && hslTarget == null, hslTarget = hslTarget,
+                showOverlays = !view.purePreview, margins = view.margins, workspaceControls = workspaceControls,
+                histogramExpanded = histogramExpanded, onHistogramExpandedChange = onHistogramExpandedChange,
+                onCanvasTap = { if (state.draft?.group != AdjustmentGroup.GEOMETRY) onCanvasTap() }, onHoldBefore = { onHoldBefore(it && state.draft?.group != AdjustmentGroup.GEOMETRY) },
+                onModeChange = onModeChange, onCompareClose = onCompareClose, viewingEnabled = state.draft?.group != AdjustmentGroup.GEOMETRY && state.controlsEnabled,
                 bottomOverlayInset = comparisonInset, bottomOverlay = {
                     Column(Modifier.wrapContentWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         if (showTargetStatus && hslTarget != null) HslTargetCanvasControls(hslTarget, Modifier.padding(8.dp))

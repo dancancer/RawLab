@@ -100,6 +100,24 @@ void tone() {
     const auto edge = renderHDRPair(source, options);
     check(edge.hdr.pixels[1].r > edge.hdr.pixels[0].r && edge.hdr.pixels[1].r - edge.hdr.pixels[0].r < .001f,
         "HDR reference-white boundary has a plateau or jump");
+    options = {}; options.processingVersion = SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION;
+    source = fixture();
+    const auto original = renderHDRPair(source, options);
+    options.tone.channels[0] = {SONY2FUJI_TONE_CURVE_CONFIG_VERSION, sizeof(sony2fuji_tone_curve_config),
+        SONY2FUJI_CURVE_CUSTOM, 3, {{0,0},{.5,.6},{1,1}}};
+    const auto red = renderHDRPair(source, options);
+    check(red.hdr.pixels[2].r > original.hdr.pixels[2].r, "HDR red curve must affect red");
+    for (size_t i = 0; i < source.hdr.pixels.size(); ++i) {
+        near(red.hdr.pixels[i].g, original.hdr.pixels[i].g, "HDR red curve preserves green");
+        near(red.hdr.pixels[i].b, original.hdr.pixels[i].b, "HDR red curve preserves blue");
+        near(red.sdr.pixels[i].g, original.sdr.pixels[i].g, "SDR rendition preserves green");
+    }
+    options.tone.channels[0].points[1].y = .5;
+    const auto identity = renderHDRPair(source, options);
+    check(std::memcmp(identity.hdr.pixels.data(), original.hdr.pixels.data(), original.hdr.pixels.size() * sizeof(RGB)) == 0 &&
+        std::memcmp(identity.sdr.pixels.data(), original.sdr.pixels.data(), original.sdr.pixels.size() * sizeof(RGB)) == 0,
+        "HDR channel identity is exact");
+
 }
 
 void color() {
@@ -412,7 +430,7 @@ void geometry() {
 
 void validation() {
     auto source = fixture();
-    HDRRenderOptions options; options.processingVersion = SONY2FUJI_HDR_PROCESSING_LOOK_VERSION + 1;
+    HDRRenderOptions options; options.processingVersion = SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION + 1;
     rejects([&] { renderHDRPair(source, options); }, "unknown HDR processing version accepted");
     options = {}; options.exposureEV = 5;
     rejects([&] { renderHDRPair(source, options); }, "exposure range not enforced");

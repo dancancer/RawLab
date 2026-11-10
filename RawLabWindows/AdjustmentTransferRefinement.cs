@@ -36,16 +36,24 @@ internal static class AdjustmentTransferRefinement
     private static ToneCurveSettings LogicalCurve(ToneCurveSettings desired, ToneCurveSettings current, double strength)
     {
         if (Equivalent(current.Scaled(strength), desired)) return current;
-        if (desired.Mode == ToneCurveMode.Legacy || strength == 0 && desired.IsIdentity) return desired;
+        if (desired.IsDefault || strength == 0 && desired.IsIdentity) return desired;
         if (strength == 0) throw Unrepresentable(F.Curve);
-        return new(ToneCurveMode.Custom, desired.Points.Select(p => new ToneCurvePoint(p.X, p.X + (p.Y - p.X) / strength)));
+        var result = desired;
+        foreach (var channel in Enum.GetValues<ToneCurveChannel>()) {
+            var shape = desired.Shape(channel);
+            if (shape.Mode == ToneCurveMode.Custom) result = result.Replacing(channel,
+                new(ToneCurveMode.Custom, shape.Points.Select(p => new ToneCurvePoint(p.X, p.X + (p.Y - p.X) / strength))));
+        }
+        return result;
     }
 
     private static ColorGradingWheel Scaled(ColorGradingWheel value, double strength) =>
         value with { Saturation = Math.Clamp(value.Saturation * strength, 0, 100) };
     private static bool Equivalent(ColorGradingWheel a, ColorGradingWheel b) => a.Hue == b.Hue && (float)a.Saturation == (float)b.Saturation;
-    private static bool Equivalent(ToneCurveSettings a, ToneCurveSettings b) => a.Mode == b.Mode &&
-        (a.IsIdentity && b.IsIdentity || a.Points.Count == b.Points.Count && a.Points.Zip(b.Points)
-            .All(pair => pair.First.X == pair.Second.X && Math.Abs(pair.First.Y - pair.Second.Y) <= 1e-12));
+    private static bool Equivalent(ToneCurveSettings a, ToneCurveSettings b) => Enum.GetValues<ToneCurveChannel>().All(channel => {
+        var first = a.Shape(channel); var second = b.Shape(channel);
+        return first.Mode == second.Mode && (first.IsIdentity && second.IsIdentity || first.Points.Count == second.Points.Count &&
+            first.Points.Zip(second.Points).All(pair => pair.First.X == pair.Second.X && Math.Abs(pair.First.Y - pair.Second.Y) <= 1e-12));
+    });
     private static AdjustmentTransferException Unrepresentable(F field) => new(AdjustmentFailure.Unrepresentable, field.ID());
 }

@@ -17,6 +17,20 @@ internal static class ToneCurveChecks
         var identity = new ToneCurveSettings(ToneCurveMode.Custom, points); points[1] = new(.5, .5);
         Check(identity == ToneCurveSettings.Identity && identity.IsIdentity && !identity.IsDefault, "Curve copies input points and keeps custom identity mode");
         var curve = identity.Inserting(.250000000000001, .125000000000001).Inserting(.75, .875);
+        var channels = new ToneCurveSettings().Replacing(ToneCurveChannel.Red, curve.Master);
+        Check(JsonSerializer.Deserialize<ToneCurveSettings>(JsonSerializer.Serialize(channels)) == channels,
+            "Independent curve channels survive persistence");
+        Check(channels.Scaled(.5).Channels.Red.Points[1].Y > channels.Channels.Red.Points[1].Y,
+            "Independent channels follow refinement strength");
+        var channelConfig = channels.NativeSetConfig();
+        Check(Marshal.SizeOf<Native.ToneCurveSetConfig>() == 2184 && channelConfig.Master.Mode == 0 && channelConfig.Red.Count == 4,
+            "Complete curve set ABI");
+        var hdrChannels = new HDRSettings().WithTone(new HDRToneSettings { Curve = channels });
+        Check(hdrChannels.ProcessingVersion == 8 && hdrChannels.RecordVersion == 9 &&
+            JsonSerializer.Deserialize<HDRSettings>(JsonSerializer.Serialize(hdrChannels)) == hdrChannels, "HDR channels persist as record v9");
+        var hdrChannelRequest = hdrChannels.NativeRenderRequest(HDRIntent.Final);
+        Check(Marshal.SizeOf<Native.HDRRequestV8>() == 2584 && hdrChannelRequest.Red.Count == 4 &&
+            hdrChannelRequest.Base.Base.Base.Base.Base.Base.Base.HDRProcessingVersion == 8, "HDR channel ABI");
         Loc.Initialize("en");
         var coordinate = new NumericRange(0, 1, .001, .01, .001, AllowOffGrid: true);
         Check(coordinate.Parse("0.250000000000001") == curve.Points[1].X && coordinate.Parse("1.000001") == null &&
@@ -42,6 +56,12 @@ internal static class ToneCurveChecks
         var context = new AdjustmentTransferContext("curve", false);
         var original = new OriginalIdentity("curve.jpg", 1, 2, 3);
         SavedEdit Edit(Adjustments value) => new(original, value.Capture(), null);
+        var hdrSource = new Adjustments { HDR = hdrChannels };
+        var hdrPayload = AdjustmentTransfer.Capture(AdjustmentScope.Modified, Edit(hdrSource), context);
+        var hdrTarget = new Adjustments { HDR = new HDRSettings() };
+        Check(hdrPayload.Source.HdrProcessingVersion == 8 &&
+            AdjustmentTransfer.Prepare(AdjustmentPayload.Parse(hdrPayload.ToJson()), Edit(hdrTarget), context).Settings.HDR!.ToneSettings.Curve == channels,
+            "HDR v8 channel transfer preserves independent curves");
         var all = AdjustmentTransfer.Capture(AdjustmentScope.Modified, Edit(state), context);
         Check(all.Fields.SetEquals([F.SCurve, F.Curve]), "Modified scope includes inactive scalar and selected custom mode");
         var target = new Adjustments(); target.Set(Parameter.ToneCurve, -25);

@@ -166,6 +166,8 @@ struct Sony2FujiProcessor {
         let semantic: Semantic
         var nativeSize: CGSize? = nil
         var isProxy: Bool = false
+        var sourceLensMetadata: DisplayLensMetadata? = nil
+        var lensInfo: LensInfo? = nil
 
         init(data: Data, width: Int, height: Int, stride: Int,
              pixelFormat: sony2fuji_pixel_format, semantic: Semantic = .legacy,
@@ -181,8 +183,12 @@ struct Sony2FujiProcessor {
         }
 
         func withSemantic(_ semantic: Semantic) -> Buffer {
-            Buffer(data: data, width: width, height: height, stride: stride,
-                   pixelFormat: pixelFormat, semantic: semantic, nativeSize: nativeSize, isProxy: isProxy)
+            var result = self
+            result = Buffer(data: data, width: width, height: height, stride: stride,
+                            pixelFormat: pixelFormat, semantic: semantic, nativeSize: nativeSize, isProxy: isProxy)
+            result.sourceLensMetadata = semantic == .display ? sourceLensMetadata : nil
+            result.lensInfo = semantic == .display ? lensInfo : nil
+            return result
         }
 
         func withCBuffer<T>(_ body: (inout sony2fuji_buffer) -> T) -> T? {
@@ -279,6 +285,7 @@ struct Sony2FujiProcessor {
         }
         return try withRawSession(reuse: false, inputType: inputType) { session in
             let settings = try effectiveSettings(settings, session: session, url: url, inputType: inputType)
+            try configureDisplayLens(session, metadata: buffer?.sourceLensMetadata, settings: settings.lensSettings)
             try configureProcessing(session, identity: settings.processing)
             try configureX3f(session, mode: settings.x3fMode)
             try configureTone(session, settings: settings.toneSettings)
@@ -329,6 +336,7 @@ struct Sony2FujiProcessor {
         } else { throw ProcessorError.rasterDecodeFailed }
         return try withRawSession(reuse: url != nil, inputType: inputType) { session in
             let effective = try effectiveSettings(settings, session: session, url: url, inputType: inputType)
+            try configureDisplayLens(session, metadata: buffer?.sourceLensMetadata, settings: effective.lensSettings)
             try configureSession(session, settings: effective, interactive: interactive, viewportPreview: true)
             var request = makeBaseRequest(settings: effective, inputType: inputType)
             request.input_type = inputType
@@ -364,6 +372,7 @@ struct Sony2FujiProcessor {
         let inputType = raster.map { semanticInputType(for: $0) } ?? SONY2FUJI_INPUT_RAW
         return try withRawSession(reuse: false, inputType: inputType) { session in
             let effective = try effectiveSettings(settings, session: session, url: isRaw ? url : nil, inputType: inputType)
+            try configureDisplayLens(session, metadata: raster?.sourceLensMetadata, settings: effective.lensSettings)
             try configureSession(session, settings: effective, interactive: false, viewportPreview: false)
             var request = makeBaseRequest(settings: effective, inputType: inputType)
             request.input_type = inputType
@@ -476,6 +485,7 @@ struct Sony2FujiProcessor {
         let inputType = semanticInputType(for: buffer)
         return try withRawSession(reuse: false, inputType: inputType) { session in
             let settings = try effectiveSettings(settings, session: session, url: nil, inputType: inputType)
+            try configureDisplayLens(session, metadata: buffer.sourceLensMetadata, settings: settings.lensSettings)
             try configureSession(session, settings: settings,
                                  interactive: interactive && previewLongEdge != nil && exportLongEdge == nil,
                                  viewportPreview: viewportPreview && previewLongEdge != nil && exportLongEdge == nil)
@@ -510,6 +520,9 @@ struct Sony2FujiProcessor {
                 output.nativeSize=try hdrNativeGeometrySize(native,geometry:settings.geometrySettings)
             } else { output.nativeSize=geometrySize(session) }
             output.isProxy = buffer.isProxy
+            if let metadata = buffer.sourceLensMetadata {
+                output.lensInfo = try readLens(session, url: metadata.sourceURL, metadata: metadata.overriding(settings.lensSettings))
+            }
             return output
         }
     }
@@ -563,6 +576,7 @@ struct Sony2FujiProcessor {
         let inputType = semanticInputType(for: buffer)
         try withRawSession(reuse: false, inputType: inputType) { session in
             let settings = try effectiveSettings(settings, session: session, url: nil, inputType: inputType)
+            try configureDisplayLens(session, metadata: buffer.sourceLensMetadata, settings: settings.lensSettings)
             try configureSession(session, settings: settings, interactive: false)
 
             var request = makeBaseRequest(settings: settings, inputType: inputType)
@@ -609,7 +623,8 @@ struct Sony2FujiProcessor {
         // EXIF orientation. Keep the parameter for source compatibility, but do
         // not permit a second orientation pass.
         _ = applyingOrientation
-        let buffer = try takeBuffer(&native, semantic: .display)
+        var buffer = try takeBuffer(&native, semantic: .display)
+        buffer.sourceLensMetadata = DisplayLensMetadata.read(url)
         return ProcessResult(buffer: buffer, orientation: .up, rawWhiteBalance: nil)
     }
 

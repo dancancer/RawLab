@@ -19,7 +19,7 @@ struct ToneCurvePoint: Equatable, Hashable, Codable {
     }
 }
 
-struct ToneCurveSettings: Equatable, Hashable, Codable {
+struct ToneCurveShape: Equatable, Hashable, Codable {
     static let hdrExposureRange = -8.0...8.0
     var mode: ToneCurveMode = .legacy
     var points: [ToneCurvePoint] = []
@@ -85,6 +85,91 @@ struct ToneCurveSettings: Equatable, Hashable, Codable {
         guard isValid else {
             throw DecodingError.dataCorruptedError(forKey: .points, in: values, debugDescription: "Invalid curve points")
         }
+    }
+}
+
+enum ToneCurveChannel: String, CaseIterable, Identifiable {
+    case rgb, red, green, blue
+    var id: String { rawValue }
+    var shortLabel: String { self == .rgb ? "RGB" : String(rawValue.prefix(1)).uppercased() }
+}
+
+struct ToneCurveChannels: Equatable, Hashable, Codable {
+    var red = ToneCurveShape()
+    var green = ToneCurveShape()
+    var blue = ToneCurveShape()
+    var isDefault: Bool { red.isDefault && green.isDefault && blue.isDefault }
+    var isIdentity: Bool { red.isIdentity && green.isIdentity && blue.isIdentity }
+    var isValid: Bool { red.isValid && green.isValid && blue.isValid }
+    var progress: Double { max(red.progress, green.progress, blue.progress) }
+    func scaled(by strength: Double) -> Self {
+        Self(red: red.scaled(by: strength), green: green.scaled(by: strength), blue: blue.scaled(by: strength))
+    }
+    init(red: ToneCurveShape = .init(), green: ToneCurveShape = .init(), blue: ToneCurveShape = .init()) {
+        self.red = red; self.green = green; self.blue = blue
+    }
+    enum CodingKeys: String, CodingKey { case red, green, blue }
+    init(from decoder: Decoder) throws {
+        let keys = try decoder.container(keyedBy: CurveCodingKey.self)
+        guard Set(keys.allKeys.map(\.stringValue)).isSubset(of: ["red", "green", "blue"]) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Invalid curve channels"))
+        }
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        red = values.contains(.red) ? try values.decode(ToneCurveShape.self, forKey: .red) : .init()
+        green = values.contains(.green) ? try values.decode(ToneCurveShape.self, forKey: .green) : .init()
+        blue = values.contains(.blue) ? try values.decode(ToneCurveShape.self, forKey: .blue) : .init()
+    }
+}
+
+struct ToneCurveSettings: Equatable, Hashable, Codable {
+    static let hdrExposureRange = ToneCurveShape.hdrExposureRange
+    var master: ToneCurveShape
+    var channels: ToneCurveChannels
+    var mode: ToneCurveMode { get { master.mode } set { master.mode = newValue } }
+    var points: [ToneCurvePoint] { get { master.points } set { master.points = newValue } }
+    static let identity = Self(mode: .custom, points: ToneCurveShape.identity.points)
+    var isDefault: Bool { master.isDefault && channels.isDefault }
+    var isIdentity: Bool { master.isIdentity && channels.isIdentity }
+    var isValid: Bool { master.isValid && channels.isValid }
+    var progress: Double { max(master.progress, channels.progress) }
+    var hasChannelCurves: Bool { !channels.isDefault }
+    var labeledPoints: [(channel: ToneCurveChannel, point: ToneCurvePoint)] {
+        ToneCurveChannel.allCases.flatMap { channel in shape(channel).points.map { (channel, $0) } }
+    }
+    init(mode: ToneCurveMode = .legacy, points: [ToneCurvePoint] = [], channels: ToneCurveChannels = .init()) {
+        master = .init(mode: mode, points: points); self.channels = channels
+    }
+    func shape(_ channel: ToneCurveChannel) -> ToneCurveShape {
+        switch channel { case .rgb: return master; case .red: return channels.red; case .green: return channels.green; case .blue: return channels.blue }
+    }
+    func replacing(_ channel: ToneCurveChannel, with shape: ToneCurveShape) -> Self {
+        var result = self
+        switch channel { case .rgb: result.master = shape; case .red: result.channels.red = shape; case .green: result.channels.green = shape; case .blue: result.channels.blue = shape }
+        return result
+    }
+    func scaled(by strength: Double) -> Self {
+        var result = self; result.master = master.scaled(by: strength); result.channels = channels.scaled(by: strength); return result
+    }
+    func isInterior(_ index: Int) -> Bool { master.isInterior(index) }
+    func inserting(x: Double, y: Double) -> Self { replacing(.rgb, with: master.inserting(x: x, y: y)) }
+    func moving(index: Int, x: Double, y: Double) -> Self { replacing(.rgb, with: master.moving(index: index, x: x, y: y)) }
+    func removing(index: Int) -> Self { replacing(.rgb, with: master.removing(index: index)) }
+    enum CodingKeys: String, CodingKey { case mode, points, channels }
+    init(from decoder: Decoder) throws {
+        let keys = try decoder.container(keyedBy: CurveCodingKey.self)
+        let names = Set(keys.allKeys.map(\.stringValue))
+        guard names.isSuperset(of: ["mode", "points"]), names.isSubset(of: ["mode", "points", "channels"]) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Invalid curve fields"))
+        }
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        master = .init(mode: try values.decode(ToneCurveMode.self, forKey: .mode), points: try values.decode([ToneCurvePoint].self, forKey: .points))
+        channels = values.contains(.channels) ? try values.decode(ToneCurveChannels.self, forKey: .channels) : .init()
+        guard isValid else { throw DecodingError.dataCorruptedError(forKey: .points, in: values, debugDescription: "Invalid curve points") }
+    }
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(mode, forKey: .mode); try values.encode(points, forKey: .points)
+        if !channels.isDefault { try values.encode(channels, forKey: .channels) }
     }
 }
 

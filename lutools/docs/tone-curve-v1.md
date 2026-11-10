@@ -59,3 +59,32 @@ identity 无须上传区间，保持原 GPU 路径。
   pre-HSL probe 与可选真实 RAW。CLI/MCP 验证 v5 严格解析及相同输出。
 
 上述是测试合同；实际执行、设备与 UI 状态记入本轮验收证据，不能由测试存在推定通过。
+
+## 独立 RGB 通道扩展
+
+移动编辑器可在 RGB 主曲线之后分别编辑红、绿、蓝曲线。每条曲线复用上述 PCHIP
+校验和恒等旁路；SDR 的顺序是主曲线、R/G/B 通道、对比度和饱和度。主曲线保持
+legacy 时，旧 S 曲线 scalar 仍先作用于三个通道；主曲线切为 custom 才将 scalar 屏蔽。
+
+持久化继续使用根 `mode`/`points` 表示主曲线，新增可选的
+`channels: {red: {mode, points}, green: {mode, points}, blue: {mode, points}}`。
+缺少通道时默认为 legacy 恒等映射；通道内不能再次嵌套 `channels`，不接受未知键或
+显式 null。没有独立通道时继续写旧对象形状。复制调整、配方强度、撤销、重置和批量
+快照保留四条曲线。旧客户端会拒绝未知 `channels`，不会静默丢弃颜色调整。
+
+`sony2fuji_tone_curve_set_config` v1 是 2184 bytes，包含两个 32-bit 头字段和四份
+544-byte 配置，顺序为 RGB、R、G、B。`sony2fuji_session_set_tone_curves` 校验完整
+集合后原子替换；原有 `sony2fuji_session_set_tone_curve` ABI 不变，但会清空独立通道，
+防止旧调用者复用 session 时继承上一张照片的颜色调整。非恒等独立通道当前使用 CPU；
+GPU Auto 回退到 CPU，Force 返回 `UNSUPPORTED`，原有主曲线 GPU 路径保持不变。
+
+HDR 使用增量 `sony2fuji_hdr_request_v8`，完整保留 v7 前缀并在尾部追加 R/G/B 三份
+配置；64-bit 平台结构大小为 2584 bytes，processing version 为 8。它不继承 SDR
+session 曲线状态，调用者必须初始化完整 v7 前缀（包括中性颜色、效果和外观配置）。
+主曲线仍按原 HDR 亮度曝光档位作用；随后分别把正值 R/G/B 的 `log2` 映射到
+`[-8,+8] EV`，在该范围内应用通道曲线，再转回线性值。非正值、范围外值和恒等通道
+保持原样，不将 HDR 高光裁成 SDR 白色。HDR/SDR 两种呈现与流式导出复用同一路径。
+
+四端 HDR 保存记录对此使用 record version 9；已有 camera-development record v8
+继续兼容。HDR CLI recipe 使用 schema 15 / processing version 8。SDR schema 5/7
+的 curve 对象接受同一可选通道扩展。原有 HDR 请求 v1–v7 和旧 recipe 不改变效果。

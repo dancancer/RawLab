@@ -125,7 +125,7 @@ HDRCommandResult renderHDR(const EditRecipe& recipe,bool preview,const std::stri
         auto streamed=hdrInitial<sony2fuji_hdr_stream_result_v1>();
         const auto temporary=std::filesystem::temp_directory_path().u8string();
         result.status=sony2fuji_hdr_export_proraw(session.get(),recipe.inputPath.c_str(),
-            &request.base.base.base.base.base.base,&config,1,temporary.c_str(),recipe.outputPath.c_str(),&streamed,&result.diagnostic);
+            &request.base.base.base.base.base.base.base,&config,1,temporary.c_str(),recipe.outputPath.c_str(),&streamed,&result.diagnostic);
         result.sourceHeadroom=streamed.source_headroom; result.editedHeadroom=streamed.edited_headroom;
         return result;
     }
@@ -146,7 +146,7 @@ HDRCommandResult renderHDR(const EditRecipe& recipe,bool preview,const std::stri
         result.status=sony2fuji_hdr_decode_proraw(session.get(),recipe.inputPath.c_str(),&options,temporary.c_str(),&source.value,&result.diagnostic);
     } else result.status=sony2fuji_hdr_decode(recipe.inputPath.c_str(),&options,&source.value,&result.diagnostic);
     if (result.status==SONY2FUJI_STATUS_OK)
-        result.status=sony2fuji_hdr_render(session.get(),&source.value,&request.base.base.base.base.base.base,&edited.value,&result.diagnostic);
+        result.status=sony2fuji_hdr_render(session.get(),&source.value,&request.base.base.base.base.base.base.base,&edited.value,&result.diagnostic);
     if (result.status!=SONY2FUJI_STATUS_OK) return result;
     result.sourceHeadroom=edited.value.source_headroom; result.editedHeadroom=edited.value.hdr.content_headroom;
     // 与客户端一致：相机 RAW 和 ProRAW 渲染型 DNG 不读原片元数据；
@@ -232,11 +232,11 @@ int runAgentCommands(int argc, char* argv[]) {
             if (hdrAvailable()) {
                 versions.push_back(6); formats.push_back("hdr_jpeg");
                 hdr={{"processing_version",1},{"recipe_min_version",6},{"probe",true},{"decode",true},
-                    {"processing_versions",{1,2,3,4,5,6,7}},{"tone_recipe_version",8},{"color_recipe_version",9},{"rendition_recipe_version",10},
+                    {"processing_versions",{1,2,3,4,5,6,7,8}},{"tone_recipe_version",8},{"color_recipe_version",9},{"rendition_recipe_version",10},
                     {"effects_recipe_version",11},
                     {"detail_recipe_version",12},
                     {"look_recipe_version",13},{"look_profile","display-linear-srgb-v1"},
-                    {"source_recipe_version",14},{"input_types",{"hdr_raster","raw"}},
+                    {"channel_curve_recipe_version",15},{"source_recipe_version",14},{"input_types",{"hdr_raster","raw"}},
                     {"output_formats",{"hdr_jpeg","jpeg","png","dng"}},
                     {"minimum_system",{{"macos","15.0"},{"ios","18.0"},{"android","26"},{"windows","10"}}},
                     {"protocols",{"apple_gain_map","iso_21496","ultra_hdr"}},
@@ -271,7 +271,7 @@ int runAgentCommands(int argc, char* argv[]) {
 #endif
             }
             versions.push_back(7);
-            if (hdrAvailable()) for (int version : {8, 9, 10, 11, 12, 13, 14}) versions.push_back(version);
+            if (hdrAvailable()) for (int version : {8, 9, 10, 11, 12, 13, 14, 15}) versions.push_back(version);
             std::cout << machineJson(envelope(command, {{"recipe_versions", versions},
                 {"commands", {"capabilities", "validate_recipe", "info", "preview", "export"}}, {"input_types", inputs},
                 {"raster_input", raster},
@@ -286,7 +286,7 @@ int runAgentCommands(int argc, char* argv[]) {
                 {"color_grading", {{"version",1},{"recipe_min_version",5},{"zones",{"shadows","midtones","highlights"}},
                     {"hue_degrees",{{"minimum",0},{"exclusive_maximum",360}}},{"saturation_range",{0,100}}}},
                 {"tone_curve", {{"version",1},{"recipe_min_version",5},{"modes",{"legacy","custom"}},
-                    {"max_points",33},{"interpolation","pchip"},{"fixed_endpoints",true},{"monotone",true}}},
+                    {"channels",{"red","green","blue"}},{"max_points",33},{"interpolation","pchip"},{"fixed_endpoints",true},{"monotone",true}}},
                 {"atmosphere", {{"version",1},{"recipe_min_version",5},{"range",{-1,1}},
                     {"fields",{"effects.clarity","effects.dehaze"}},{"backend","cpu"},
                     {"gpu_force","unsupported"},{"preview","complete_source"}}},
@@ -439,8 +439,11 @@ int runAgentCommands(int argc, char* argv[]) {
                 status = sony2fuji_session_set_atmosphere(session.get(), &recipe.atmosphere);
             if (status == SONY2FUJI_STATUS_OK)
                 status = sony2fuji_session_set_color_grading(session.get(), &recipe.colorGrading);
-            if (status == SONY2FUJI_STATUS_OK)
-                status = sony2fuji_session_set_tone_curve(session.get(), &recipe.toneCurve);
+            if (status == SONY2FUJI_STATUS_OK) {
+                const sony2fuji_tone_curve_set_config curves{SONY2FUJI_TONE_CURVE_SET_CONFIG_VERSION, sizeof(curves),
+                    {recipe.toneCurve, recipe.channelCurves[0], recipe.channelCurves[1], recipe.channelCurves[2]}};
+                status = sony2fuji_session_set_tone_curves(session.get(), &curves);
+            }
             if (status == SONY2FUJI_STATUS_OK)
                 status = sony2fuji_session_set_photo_effects(session.get(), &recipe.effects);
             if (status == SONY2FUJI_STATUS_OK)
@@ -449,11 +452,11 @@ int runAgentCommands(int argc, char* argv[]) {
                 status = sony2fuji_session_set_chroma_denoise(session.get(), recipe.chromaDenoise);
             if (status == SONY2FUJI_STATUS_OK)
                 status = sony2fuji_session_set_raw_noise_reduction(session.get(), recipe.rawNoiseReduction);
-            sony2fuji_lens_correction_config lens{SONY2FUJI_LENS_CORRECTION_CONFIG_VERSION,
-                sizeof(sony2fuji_lens_correction_config), recipe.lensDistortion, recipe.lensTca,
-                recipe.lensAutoCrop, recipe.lensProfileId.empty() ? nullptr : recipe.lensProfileId.c_str()};
+            sony2fuji_lens_correction_config_v2 lens{{SONY2FUJI_LENS_CORRECTION_CONFIG_V2_VERSION,
+                sizeof(sony2fuji_lens_correction_config_v2), recipe.lensDistortion, recipe.lensTca,
+                recipe.lensAutoCrop, recipe.lensProfileId.empty() ? nullptr : recipe.lensProfileId.c_str()}, recipe.lensVignetting};
             if (status == SONY2FUJI_STATUS_OK)
-                status = sony2fuji_session_set_lens_correction(session.get(), &lens);
+                status = sony2fuji_session_set_lens_correction_v2(session.get(), &lens);
             if (status == SONY2FUJI_STATUS_OK)
                 status = sony2fuji_session_set_geometry(session.get(), &recipe.geometry);
             if (status == SONY2FUJI_STATUS_OK)
@@ -474,15 +477,15 @@ int runAgentCommands(int argc, char* argv[]) {
             if (status == SONY2FUJI_STATUS_OK) status = sony2fuji_process(session.get(), &request, nullptr);
             if (status != SONY2FUJI_STATUS_OK) sourceError = sony2fuji_session_x3f_error(session.get());
             if (status == SONY2FUJI_STATUS_OK && recipe.schemaVersion >= 4 &&
-                (recipe.lensDistortion || recipe.lensTca)) {
-                sony2fuji_lens_report report{};
-                if (sony2fuji_session_get_lens_report(session.get(), &report) == SONY2FUJI_STATUS_OK) {
+                (recipe.lensDistortion || recipe.lensTca || recipe.lensVignetting)) {
+                sony2fuji_lens_report_v2 report{};
+                if (sony2fuji_session_get_lens_report_v2(session.get(), &report) == SONY2FUJI_STATUS_OK) {
                     const char* states[] = {"off", "matched", "no_database", "no_camera", "no_lens", "ambiguous",
                         "no_calibration", "missing_focal_length", "embedded_geometry", "unsupported_input"};
-                    const auto state = static_cast<unsigned>(report.state);
+                    const auto state = static_cast<unsigned>(report.base.state);
                     lensResult = {{"state", state < 10 ? states[state] : "unknown"},
-                        {"applied_distortion", report.applied_distortion != 0}, {"applied_tca", report.applied_tca != 0},
-                        {"crop_scale", report.crop_scale}, {"profile_id", report.profile.id}};
+                        {"applied_distortion", report.base.applied_distortion != 0}, {"applied_tca", report.base.applied_tca != 0},
+                        {"applied_vignetting", report.applied_vignetting != 0}, {"crop_scale", report.base.crop_scale}, {"profile_id", report.base.profile.id}};
                 }
             }
         }

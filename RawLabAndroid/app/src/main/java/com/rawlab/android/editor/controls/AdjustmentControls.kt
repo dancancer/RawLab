@@ -52,6 +52,7 @@ internal val LocalAdjustmentHapticGate = staticCompositionLocalOf { AdjustmentHa
 
 internal val LocalAdjustmentSession = staticCompositionLocalOf<Any?> { null }
 internal val LocalAdjustmentFine = staticCompositionLocalOf { false }
+internal val LocalCompactAdjustmentRows = staticCompositionLocalOf { false }
 
 @Composable
 internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPointRange<Float>, unit: String,
@@ -113,6 +114,7 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
     }
     val color = if (modified) Color(0xffffc107) else MaterialTheme.colorScheme.onSurface
     val large = LocalDensity.current.fontScale > 1.3f
+    val inline = LocalCompactAdjustmentRows.current && !large
     @Composable fun name(modifier: Modifier) {
         Text(title, modifier.testTag("adjustment-name-$label").then(resetModifier).heightIn(min = 48.dp).wrapContentHeight(),
             style = MaterialTheme.typography.labelMedium)
@@ -135,7 +137,7 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
                         }
                     }
                 }) {
-            val readoutWidth = if (compactNumber) Modifier.widthIn(max = 104.dp) else Modifier.width(104.dp)
+            val readoutWidth = if (inline) Modifier.widthIn(min = 48.dp, max = 76.dp) else if (compactNumber) Modifier.widthIn(max = 104.dp) else Modifier.width(104.dp)
             Box(readoutWidth.horizontalScroll(rememberScrollState()), contentAlignment = Alignment.CenterEnd) {
                 Text(formatted, color = color, fontFamily = FontFamily.Monospace)
             }
@@ -143,16 +145,20 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
                 Text(" ·", color = color, modifier = Modifier.alpha(if (modified) 1f else 0f).clearAndSetSemantics { })
             }
         }
-        Text(unit, Modifier.widthIn(min = 24.dp).testTag("adjustment-unit-$label"), style = MaterialTheme.typography.labelSmall)
+        if (unit.isNotEmpty()) Text(unit, Modifier.widthIn(min = if (inline) 0.dp else 24.dp).testTag("adjustment-unit-$label"), style = MaterialTheme.typography.labelSmall)
     }
     @Composable fun track(modifier: Modifier) {
         Box(modifier) {
             AdjustmentRuler(axisDescription ?: title, value, scale, unit, LocalAdjustmentFine.current,
-                enabled, onValue, resetModifier, trackColors)
+                enabled, onValue, resetModifier, trackColors, compact = inline)
         }
     }
     Column(modifier.fillMaxWidth().padding(horizontal = if (compactNumber) 4.dp else 12.dp).testTag("adjustment-row-$label")) {
-            if (compactNumber) {
+            if (inline && !compactNumber) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                name(Modifier.widthIn(min = 44.dp, max = 64.dp))
+                track(Modifier.weight(1f).padding(horizontal = 4.dp))
+                number()
+            } else if (compactNumber) {
                 if (large) {
                     name(Modifier.fillMaxWidth())
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) { number() }
@@ -195,7 +201,7 @@ internal fun formatAdjustment(value: Float, step: Float, locale: Locale = Locale
 
 @Composable
 private fun AdjustmentRuler(title: String, value: Float, scale: AdjustmentScale, unit: String, fine: Boolean,
-    enabled: Boolean, onValue: (Float, Boolean) -> Unit, resetModifier: Modifier, trackColors: List<Color>?) {
+    enabled: Boolean, onValue: (Float, Boolean) -> Unit, resetModifier: Modifier, trackColors: List<Color>?, compact: Boolean = false) {
     val density = LocalDensity.current
     val current by rememberUpdatedState(value)
     val scope = LocalAdjustmentSession.current
@@ -226,12 +232,12 @@ private fun AdjustmentRuler(title: String, value: Float, scale: AdjustmentScale,
                 true
             }
         } else disabled()
-    }.focusable(enabled).pointerInput(scope, scale, fine, enabled, haptics) {
+    }.focusable(enabled).pointerInput(scope, scale, fine, enabled, haptics, compact) {
         if (!enabled) return@pointerInput
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
             // Leave the system's edge-back region alone and only capture horizontal intent.
-            if (down.position.x < 24.dp.toPx() || down.position.x > size.width - 24.dp.toPx()) return@awaitEachGesture
+            if (!compact && (down.position.x < 24.dp.toPx() || down.position.x > size.width - 24.dp.toPx())) return@awaitEachGesture
             val start = current
             var latest = start
             var changedDuringGesture = false
@@ -248,7 +254,11 @@ private fun AdjustmentRuler(title: String, value: Float, scale: AdjustmentScale,
                 do {
                     val dx = (change.position.x - down.position.x) / density.density
                     finger = change.position.x
-                    val next = scale.drag(start, dx, fine)
+                    val next = if (compact) {
+                        val width = ((size.width - 16.dp.toPx()) / density.density).coerceAtLeast(1f)
+                        val span = scale.position(scale.range.endInclusive) - scale.position(scale.range.start)
+                        scale.quantize(scale.fromPosition(scale.position(start) + dx / width * span * if (fine) .25f else 1f))
+                    } else scale.drag(start, dx, fine)
                     if (next != latest) {
                         changedDuringGesture = true
                         val now = SystemClock.uptimeMillis()
@@ -278,6 +288,15 @@ private fun AdjustmentRuler(title: String, value: Float, scale: AdjustmentScale,
             }
         }
     }) {
+        if (compact) {
+            val left = 8.dp.toPx(); val width = (size.width - 2 * left).coerceAtLeast(1f); val y = size.height / 2
+            val start = left + scale.fraction(scale.default) * width; val end = left + scale.fraction(value) * width
+            if (trackColors != null) drawLine(Brush.horizontalGradient(trackColors), Offset(left, y), Offset(left + width, y), 1.5.dp.toPx())
+            else drawLine(foreground.copy(alpha = .5f), Offset(left, y), Offset(left + width, y), 1.5.dp.toPx())
+            drawLine(primary, Offset(start, y), Offset(end, y), 2.dp.toPx())
+            drawCircle(Color.White, 7.dp.toPx(), Offset(end, y))
+            return@Canvas
+        }
         val left = 4.dp.toPx()
         val width = (size.width - left * 2f).coerceAtLeast(0f)
         val y = size.height / 2f

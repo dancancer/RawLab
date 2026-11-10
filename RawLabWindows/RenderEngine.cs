@@ -498,8 +498,8 @@ internal sealed partial class RenderEngine : IDisposable
     }
     private void SetCurve(ToneCurveSettings value)
     {
-        var config = value.NativeConfig();
-        Native.Check(Native.sony2fuji_session_set_tone_curve(session, ref config));
+        var config = value.NativeSetConfig();
+        Native.Check(Native.sony2fuji_session_set_tone_curves(session, ref config));
     }
     private void SetAtmosphere(AtmosphereSettings value)
     {
@@ -526,9 +526,9 @@ internal sealed partial class RenderEngine : IDisposable
         Native.Check(Native.sony2fuji_session_set_processing_version(session,ProcessingIdentity.Require(value).Version));
     private void SetLens(LensSettings value)
     {
-        var config = new Native.LensConfig { Version=1,StructSize=(uint)Marshal.SizeOf<Native.LensConfig>(),
-            Distortion=value.Distortion ? 1 : 0,Tca=value.Tca ? 1 : 0,AutoCrop=value.AutoCrop ? 1 : 0,ProfileId=value.CoreProfileId };
-        Native.Check(Native.sony2fuji_session_set_lens_correction(session,ref config));
+        var config = new Native.LensConfigV2 { Base = new Native.LensConfig { Version=2,StructSize=(uint)Marshal.SizeOf<Native.LensConfigV2>(),
+            Distortion=value.Distortion ? 1 : 0,Tca=value.Tca ? 1 : 0,AutoCrop=value.AutoCrop ? 1 : 0,ProfileId=value.CoreProfileId }, Vignetting=value.Vignetting ? 1 : 0 };
+        Native.Check(Native.sony2fuji_session_set_lens_correction_v2(session,ref config));
     }
     private void SetGeometry(GeometrySettings value)
     {
@@ -547,9 +547,10 @@ internal sealed partial class RenderEngine : IDisposable
             lensCandidates = profiles.Select(p => new LensCandidate(Native.Text(p.Id), Native.Text(p.Maker), Native.Text(p.Model), p.HasDistortion != 0, p.HasTca != 0, p.IsMatch != 0)).ToArray();
             lensStamp = stamp;
         }
-        Native.Check(Native.sony2fuji_session_get_lens_report(session, out var report));
+        Native.Check(Native.sony2fuji_session_get_lens_report_v2(session, out var extended));
+        var report = extended.Base;
         return new(report.State, Native.Text(report.LensModel), Native.Text(report.Profile.Model), report.AppliedDistortion != 0,
-            report.AppliedTca != 0, report.CropScale, lensCandidates);
+            report.AppliedTca != 0, report.CropScale, lensCandidates, extended.AppliedVignetting != 0);
     }
     private Adjustments PrepareRecipe(string path, Adjustments settings)
     {

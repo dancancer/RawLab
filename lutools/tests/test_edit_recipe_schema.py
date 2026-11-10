@@ -19,6 +19,68 @@ except ImportError:  # pragma: no cover - exercised by environments without the 
 
 
 class EditRecipeSchema(unittest.TestCase):
+    def test_channel_curves_and_vignetting_schema_round_trip(self):
+        channel = {"mode": "custom", "points": [[0, 0], [.5, .65], [1, 1]]}
+        for version in (5, 7, 15):
+            with self.subTest(version=version):
+                document = self.hdr_v14() if version == 15 else self.base()
+                document["schema_version"] = version
+                document["processing"] = {"family": "rawlab_hdr" if version == 15 else "rawlab",
+                                          "version": 8 if version == 15 else 1, "quality": "standard"}
+                if version == 7:
+                    document["x3f_mode"] = "normal-v1"
+                curve = {"mode": "legacy", "points": [], "channels": {"red": channel}}
+                document["edits"]["tone"] = {"curve": curve}
+                if version == 15:
+                    document["input"]["camera_development"] = {"lens_vignetting": True, "lens_profile": "camera/lens"}
+                else:
+                    document["edits"]["lens_correction"] = {"vignetting": True}
+                normalized = self.normalize(document)
+                self.assertEqual(normalized["edits"]["tone"]["curve"]["channels"]["red"], channel)
+                self.assertEqual(normalized["edits"]["tone"]["curve"]["channels"]["green"], {"mode": "legacy", "points": []})
+                self.assertEqual(self.normalize(normalized), normalized)
+                schema = json.loads((ROOT / f"docs/edit-json-v{version}.schema.json").read_text())
+                if jsonschema:
+                    jsonschema.Draft202012Validator.check_schema(schema)
+                    validator = jsonschema.Draft202012Validator(schema)
+                    validator.validate(document)
+                    validator.validate(normalized)
+                for channels in (None, {"yellow": channel}, {"red": None}, {"red": {**channel, "channels": {}}}):
+                    invalid = copy.deepcopy(document)
+                    invalid["edits"]["tone"]["curve"]["channels"] = channels
+                    self.reject(invalid, "curve")
+                    if jsonschema:
+                        self.assertFalse(validator.is_valid(invalid))
+                if version == 15:
+                    document["schema_version"] = 14
+                    document["processing"]["version"] = 7
+                    self.reject(document, "schema_version 15")
+
+    def test_vignetting_preserves_legacy_shapes_and_raster_rejection(self):
+        for version in (4, 5):
+            document = self.base()
+            document["schema_version"] = version
+            if version == 5:
+                document["processing"] = {"family": "rawlab", "version": 1, "quality": "standard"}
+            self.assertNotIn("vignetting", self.normalize(document)["edits"]["lens_correction"])
+            document["edits"]["lens_correction"] = {"vignetting": True}
+            if jsonschema:
+                schema = json.loads((ROOT / f"docs/edit-json-v{version}.schema.json").read_text())
+                jsonschema.Draft202012Validator(schema).validate(self.normalize(document))
+            document["input"]["type"] = "raster"
+            document["edits"]["exposure"]["mode"] = "sensor"
+            self.reject(document, "lens correction")
+            if jsonschema:
+                schema = json.loads((ROOT / f"docs/edit-json-v{version}.schema.json").read_text())
+                self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(document))
+        document = self.hdr_v14()
+        document["input"]["camera_development"] = {"lens_vignetting": True, "lens_profile": "camera/lens"}
+        normalized = self.normalize(document)
+        self.assertTrue(normalized["input"]["camera_development"]["lens_vignetting"])
+        if jsonschema:
+            schema = json.loads((ROOT / "docs/edit-json-v14.schema.json").read_text())
+            jsonschema.Draft202012Validator(schema).validate(normalized)
+
     def hdr_v14(self):
         return {
             "schema_version": 14,

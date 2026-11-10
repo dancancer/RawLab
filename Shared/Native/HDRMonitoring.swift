@@ -207,6 +207,7 @@ struct HDRCameraDevelopmentControls: View {
             }
             Toggle(L10n.text("畸变校正"), isOn: $draft.lensDistortion).accessibilityIdentifier("hdr.camera.distortion")
             Toggle(L10n.text("横向色差"), isOn: $draft.lensTCA).accessibilityIdentifier("hdr.camera.tca")
+            Toggle(L10n.text("暗角校正"), isOn: $draft.lensVignetting).accessibilityIdentifier("hdr.camera.vignetting")
             Toggle(L10n.text("自动裁切"), isOn: $draft.lensAutoCrop).disabled(!draft.lensActive)
             HStack {
                 Button(L10n.text("重置")) { draft = HDRCameraDevelopmentSettings() }.disabled(draft.isDefault)

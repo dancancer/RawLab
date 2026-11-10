@@ -1017,3 +1017,174 @@ extension EditorV4UITests {
     }
 
 }
+
+extension EditorV4UITests {
+    func testMobileToolDraftCancelApplyAndCompactHSL() throws {
+        let app = try launchImportedEditor()
+        let initial = try number(app.buttons["adjustment.value"])
+        try setValue("+1.25", title: "Exposure", unit: "EV", control: "adjustment", in: app)
+        XCTAssertFalse(app.scrollViews["editor.groups"].exists)
+        capture("mobile-exposure-draft", in: app)
+        app.buttons["editor.draft.cancel"].tap()
+        try selectTool("exposure", in: app)
+        XCTAssertEqual(try number(app.buttons["adjustment.value"]), initial, accuracy: 0.001)
+        try setValue("+0.50", title: "Exposure", unit: "EV", control: "adjustment", in: app)
+        waitUntil(timeout: 30) { app.buttons["editor.draft.apply"].isEnabled }
+        app.buttons["editor.draft.apply"].tap()
+        waitUntil(timeout: 30) { app.scrollViews["editor.groups"].exists }
+        try selectTool("exposure", in: app)
+        XCTAssertEqual(try number(app.buttons["adjustment.value"]), 0.5, accuracy: 0.001)
+        app.buttons["editor.draft.cancel"].tap()
+        capture("mobile-editor-home", in: app)
+        try selectTool("hsl", in: app)
+        XCTAssertTrue(app.buttons["editor.draft.cancel"].isHittable)
+        XCTAssertTrue(app.buttons["editor.draft.apply"].isHittable)
+        XCTAssertFalse(app.scrollViews["editor.groups"].exists)
+        for axis in ["hue", "saturation", "lightness"] {
+            let value = app.buttons["hsl.\(axis).value"]
+            let ruler = app.descendants(matching: .any)["hsl.\(axis).ruler"]
+            XCTAssertTrue(value.isHittable)
+            XCTAssertEqual(value.frame.midY, ruler.frame.midY, accuracy: 3)
+            XCTAssertGreaterThanOrEqual(value.frame.height, 44)
+        }
+        capture("mobile-hsl-compact", in: app)
+    }
+
+    func testMobileLargeTextKeepsApplyReachableInBothOrientations() throws {
+        let app = XCUIApplication()
+        launchEnglish(app, additionalArguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        try importFirstVisiblePhoto(in: app)
+        app.buttons["editor.draft.cancel"].tap()
+        try selectTool("hsl", in: app)
+        XCTAssertTrue(app.buttons["editor.draft.cancel"].isHittable)
+        XCTAssertTrue(app.buttons["editor.draft.apply"].isHittable)
+        try revealInPanel(app.buttons["hsl.lightness.value"], in: app, fully: true)
+        capture("mobile-hsl-large-text", in: app)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        waitUntil { app.frame.width > app.frame.height }
+        XCTAssertTrue(app.buttons["editor.draft.cancel"].isHittable)
+        XCTAssertTrue(app.buttons["editor.draft.apply"].isHittable)
+        capture("mobile-hsl-large-landscape", in: app)
+    }
+}
+
+extension EditorV4UITests {
+    func testNativeCameraHomeHelpAndManualConnectionNavigation() throws {
+        let app = XCUIApplication()
+        launchEnglish(app)
+        let camera = app.buttons["editor.camera"]
+        XCTAssertTrue(camera.waitForExistence(timeout: 10)); camera.tap()
+        XCTAssertTrue(app.buttons["camera.entry.import"].waitForExistence(timeout: 10))
+        capture("native-camera-home", in: app)
+        app.buttons["camera.entry.import"].tap()
+        XCTAssertTrue(app.buttons["camera.help"].waitForExistence(timeout: 5))
+        capture("native-camera-connect", in: app)
+        app.buttons["camera.help"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["camera.help.page"].waitForExistence(timeout: 5))
+        capture("native-camera-help", in: app)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["camera.manual"].waitForExistence(timeout: 5))
+        app.buttons["camera.manual"].tap()
+        XCTAssertTrue(app.textFields["camera.wifi.ssid"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["camera.wifi.join"].isEnabled)
+        XCTAssertTrue(app.buttons["camera.wifi.continue"].isHittable)
+        capture("native-camera-manual-wifi", in: app)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["camera.entry.tether"].waitForExistence(timeout: 5))
+        app.buttons["camera.entry.tether"].tap()
+        XCTAssertTrue(app.switches["camera.card.confirm"].waitForExistence(timeout: 5))
+        app.switches["camera.card.confirm"].tap()
+        app.buttons["camera.help"].tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertEqual(app.switches["camera.card.confirm"].value as? String, "1", "Help returns to the same tether setup")
+        capture("native-camera-tether-connect", in: app)
+    }
+
+    func testJPEGManualLensMetadataIsScopedToDraft() throws {
+        let app = try launchImportedEditor()
+        app.buttons["editor.draft.cancel"].tap()
+        try selectTool("lens", in: app)
+        let metadata = app.buttons["lens.metadata"]
+        try revealInPanel(metadata, in: app, fully: true)
+        XCTAssertTrue(metadata.isEnabled); metadata.tap()
+        let focal = app.textFields["lens.metadata.focal"], crop = app.textFields["lens.metadata.crop"]
+        XCTAssertTrue(focal.waitForExistence(timeout: 5)); focal.tap(); focal.typeText("35")
+        crop.tap(); crop.typeText("1.5")
+        app.buttons["lens.metadata.apply"].tap()
+        waitUntil(timeout: 30) { !app.descendants(matching: .any)["editor.preview.updating"].exists }
+        capture("native-jpeg-lens-metadata", in: app)
+        app.buttons["editor.draft.cancel"].tap()
+        try selectTool("lens", in: app)
+        try revealInPanel(app.buttons["lens.metadata"], in: app, fully: true)
+        app.buttons["lens.metadata"].tap()
+        XCTAssertTrue(focal.waitForExistence(timeout: 5))
+        XCTAssertFalse((focal.value as? String)?.contains("35") == true, "Cancel discards manual source metadata")
+        app.navigationBars.buttons["Cancel"].tap()
+        app.buttons["editor.draft.cancel"].tap()
+    }
+}
+
+extension EditorV4UITests {
+    func testMobileGeometryTabsShareDraftAndCancelRestoresValues() throws {
+        let app = try launchImportedEditor()
+        app.buttons["editor.draft.cancel"].tap()
+        try selectTool("geometry", in: app)
+        let straighten = app.buttons["geometry.straighten.value"]
+        let initial = try number(straighten)
+        let changed = abs(initial - 2.3) < 0.01 ? 3.4 : 2.3
+        try setValue(String(changed), title: "Straighten", unit: "°", control: "geometry.straighten", in: app)
+        app.buttons["geometry.tab.1"].tap()
+        app.buttons["geometry.rotateRight"].tap()
+        app.buttons["geometry.tab.2"].tap()
+        try setValue("51", title: "Horizontal Perspective", control: "geometry.perspectiveHorizontal", in: app)
+        app.buttons["geometry.tab.0"].tap()
+        XCTAssertEqual(try number(straighten), changed, accuracy: 0.001)
+        XCTAssertTrue(app.buttons["editor.draft.cancel"].isHittable)
+        capture("native-geometry-tabs", in: app)
+        app.buttons["editor.draft.cancel"].tap()
+        try selectTool("geometry", in: app)
+        XCTAssertEqual(try number(straighten), initial, accuracy: 0.001)
+        app.buttons["editor.draft.cancel"].tap()
+    }
+
+    func testMobileHomeOrderAndIndependentCurveChannel() throws {
+        let app = try launchImportedEditor()
+        capture("fidelity-exposure", in: app)
+        app.buttons["editor.draft.cancel"].tap()
+        let group = app.buttons["editor.group.light"]
+        XCTAssertTrue(group.waitForExistence(timeout: 5))
+        XCTAssertLessThan(app.buttons["tool.exposure"].frame.maxY, group.frame.minY)
+        XCTAssertLessThan(app.buttons["tool.exposure"].frame.midX, app.buttons["tool.contrast"].frame.midX)
+        capture("fidelity-editor-home", in: app)
+        try selectTool("toneCurve", in: app)
+        app.buttons["curve.channel.red"].tap()
+        let canvas = app.descendants(matching: .any)["curve.canvas"]
+        XCTAssertTrue(canvas.waitForExistence(timeout: 5), app.debugDescription)
+        canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.3)).tap()
+        app.buttons["curve.edit-point"].tap()
+        XCTAssertTrue(app.buttons["curve.y.value"].waitForExistence(timeout: 5), app.debugDescription)
+        try setValue("0.65", title: "Output", unit: "", control: "curve.y", in: app)
+        app.buttons["Done"].tap()
+        capture("fidelity-red-curve", in: app)
+        waitUntil(timeout: 30) { app.buttons["editor.draft.apply"].isEnabled }
+        app.buttons["editor.draft.apply"].tap()
+        try selectTool("toneCurve", in: app)
+        app.buttons["curve.channel.red"].tap()
+        app.buttons["curve.edit-point"].tap()
+        app.buttons["curve.point.1"].tap()
+        XCTAssertEqual(try number(app.buttons["curve.y.value"]), 0.65, accuracy: 0.001)
+        app.buttons["Done"].tap()
+        app.buttons["editor.draft.cancel"].tap()
+        try selectTool("hsl", in: app)
+        let hue = app.descendants(matching: .any)["hsl.hue.ruler"]
+        XCTAssertTrue(hue.waitForExistence(timeout: 5))
+        let before = try number(app.buttons["hsl.hue.value"])
+        hue.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1,
+            thenDragTo: hue.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5)))
+        XCTAssertGreaterThan(try number(app.buttons["hsl.hue.value"]), before)
+        waitUntil(timeout: 30) { app.frame.contains(app.buttons["editor.draft.apply"].frame) && app.buttons["editor.draft.apply"].isEnabled }
+        XCTAssertTrue(app.frame.contains(app.buttons["editor.draft.apply"].frame))
+        capture("fidelity-hsl", in: app)
+    }
+}

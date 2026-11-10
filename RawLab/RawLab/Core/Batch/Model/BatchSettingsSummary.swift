@@ -34,13 +34,13 @@ enum BatchSettingsSummary {
             } + geometry(settings.geometrySettings)
         }
         let scalars: [AdjustmentKind] = [.strength, .highlights, .shadows, .contrast, .toneCurve, .blackPoint, .whitePoint, .saturation, .vibrance, .sharpening, .clarity, .dehaze]
-        let tools = scalars.filter { settings.curveSettings.isDefault || $0 != .toneCurve }.map {
+        let tools = scalars.filter { settings.curveSettings.mode == .legacy || $0 != .toneCurve }.map {
             BatchSettingRow(title: $0 == .toneCurve ? L10n.text("S 曲线") : $0.title, value: $0.displayValue($0.value(from: settings)))
         }
         let curve = settings.curveSettings.isDefault ? [] :
-            [row("曲线", L10n.format("多点曲线（%d 个控制点）", settings.curveSettings.points.count))] +
-            settings.curveSettings.points.enumerated().map { index, point in
-                BatchSettingRow(title: L10n.format("控制点 %d", index + 1), value: String(format: "%.2f → %.2f", locale: L10n.locale, point.x, point.y))
+            [row("曲线", L10n.format("多点曲线（%d 个控制点）", settings.curveSettings.labeledPoints.count))] +
+            settings.curveSettings.labeledPoints.enumerated().map { index, point in
+                BatchSettingRow(title: point.channel.shortLabel + " · " + L10n.format("控制点 %d", index + 1), value: String(format: "%.2f → %.2f", locale: L10n.locale, point.point.x, point.point.y))
             }
         let grading = ColorGradingZone.allCases.map { zone in
             BatchSettingRow(title: L10n.text("颜色分级") + " · " + zone.title,
@@ -110,6 +110,7 @@ enum BatchSettingsSummary {
             row("镜头匹配", lens.mode == .automatic ? "\(L10n.text("自动")) · \(L10n.text("按每张照片"))" : L10n.text("手动")),
             row("畸变矫正", onOff(lens.distortion)),
             row("横向色差", onOff(lens.tca)),
+            row("暗角校正", onOff(lens.vignetting)),
             row("自动裁边", onOff(lens.autoCrop))
         ]
     }
