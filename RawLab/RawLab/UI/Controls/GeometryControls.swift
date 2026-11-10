@@ -11,16 +11,17 @@ struct IOSGeometryControls: View {
     let onEditingChanged: (Bool) -> Void
     let canvasSize: CGSize
     let perspective: Bool
+    let rotation: Bool
     @State private var showsDimensions = false
 
     init(settings: Binding<GeometrySettings>, onEditingChanged: @escaping (Bool) -> Void,
          canvasSize: CGSize = CGSize(width: 1, height: 1),
          aspectPreset: Binding<CropAspectPreset> = .constant(.free),
          lockedRatio: Binding<Double?> = .constant(nil), aspectSwapped: Binding<Bool> = .constant(false),
-         showsGrid: Binding<Bool> = .constant(true), perspective: Bool = false) {
+         showsGrid: Binding<Bool> = .constant(true), perspective: Bool = false, rotation: Bool = false) {
         _settings = settings; self.onEditingChanged = onEditingChanged; self.canvasSize = canvasSize
         _aspectPreset = aspectPreset; _lockedRatio = lockedRatio; _aspectSwapped = aspectSwapped
-        _showsGrid = showsGrid; self.perspective = perspective
+        _showsGrid = showsGrid; self.perspective = perspective; self.rotation = rotation
     }
 
     var body: some View {
@@ -30,52 +31,31 @@ struct IOSGeometryControls: View {
                 perspectiveControl("水平透视", key: \.perspectiveHorizontal, identifier: "geometry.perspectiveHorizontal")
                 perspectiveControl("垂直透视", key: \.perspectiveVertical, identifier: "geometry.perspectiveVertical")
             } else {
-                HStack(spacing: 4) {
-                    aspectMenu
-                    iconButton("锁定当前比例", symbol: aspectRatio == nil ? "lock.open" : "lock", identifier: "geometry.lockAspect", selected: aspectRatio != nil) {
-                        if aspectRatio != nil { clearAspect() }
-                        else if canvasSize.width > 0, canvasSize.height > 0 {
-                            lockedRatio = settings.cropWidth * Double(canvasSize.width) / (settings.cropHeight * Double(canvasSize.height))
-                            aspectSwapped = false
-                        }
-                    }
-                    iconButton("交换横纵比例", symbol: "arrow.left.arrow.right", identifier: "geometry.swapAspect") {
-                        aspectSwapped.toggle(); fitAspect()
-                    }.disabled(aspectRatio == nil || aspectRatio == 1)
-                    iconButton("三分网格", symbol: "grid", identifier: "geometry.grid", selected: showsGrid) { showsGrid.toggle() }
-                }.disabled(canvasSize.width <= 0 || canvasSize.height <= 0)
-                HStack(spacing: 4) {
-                    rotationButton(clockwise: false); rotationButton(clockwise: true)
-                    iconButton("水平翻转", symbol: "arrow.left.and.right.righttriangle.left.righttriangle.right", identifier: "geometry.flipHorizontal", selected: settings.flipHorizontal) { settings.flipHorizontal.toggle() }
-                    iconButton("垂直翻转", symbol: "arrow.up.and.down.righttriangle.up.righttriangle.down", identifier: "geometry.flipVertical", selected: settings.flipVertical) { settings.flipVertical.toggle() }
-                    Spacer(minLength: 0)
-                    iconButton("重置本工具", symbol: "arrow.counterclockwise", identifier: "geometry.reset") {
-                        clearAspect(); settings = GeometrySettings()
-                    }.disabled(settings.isIdentity)
-                }
                 AdjustmentControl(title: L10n.text("拉直"), value: clampedBinding(\.straightenDegrees, range: -45...45),
                     range: -45...45, step: 0.1, defaultValue: 0, unit: "°", formatter: decimalValue,
                     identifier: "geometry.straighten", onEditingChanged: onEditingChanged)
-                Button { showsDimensions.toggle() } label: {
-                    HStack {
-                        Text(L10n.text("位置与尺寸")).font(.subheadline)
-                        Spacer()
-                        Image(systemName: showsDimensions ? "chevron.down" : "chevron.right")
-                    }.frame(minHeight: 44).contentShape(Rectangle())
+                HStack(spacing: 4) {
+                    if rotation { rotationButton(clockwise: false) } else { aspectMenu }
+                    if rotation { rotationButton(clockwise: true) }
+                    iconButton("水平翻转", symbol: "arrow.left.and.right.righttriangle.left.righttriangle.right", identifier: "geometry.flipHorizontal", selected: settings.flipHorizontal) { settings.flipHorizontal.toggle() }
+                    if rotation {
+                        iconButton("垂直翻转", symbol: "arrow.up.and.down.righttriangle.up.righttriangle.down", identifier: "geometry.flipVertical", selected: settings.flipVertical) { settings.flipVertical.toggle() }
+                    } else { rotationButton(clockwise: true) }
                 }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(showsDimensions ? .isSelected : [])
-                .accessibilityIdentifier("geometry.dimensions")
-                if showsDimensions {
-                    LazyVGrid(columns: dynamicTypeSize.isAccessibilitySize
-                        ? [GridItem(.flexible())] : [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                        cropControl("裁切左边", key: \.cropX, identifier: "geometry.cropX")
-                        cropControl("裁切上边", key: \.cropY, identifier: "geometry.cropY")
-                        cropControl("裁切宽度", key: \.cropWidth, identifier: "geometry.cropWidth")
-                        cropControl("裁切高度", key: \.cropHeight, identifier: "geometry.cropHeight")
-                    }
-                }
+
             }
+        }
+        .environment(\.compactAdjustmentRows, true)
+        .sheet(isPresented: $showsDimensions) {
+            NavigationStack {
+                VStack(spacing: 12) {
+                    cropControl("裁切左边", key: \.cropX, identifier: "geometry.cropX")
+                    cropControl("裁切上边", key: \.cropY, identifier: "geometry.cropY")
+                    cropControl("裁切宽度", key: \.cropWidth, identifier: "geometry.cropWidth")
+                    cropControl("裁切高度", key: \.cropHeight, identifier: "geometry.cropHeight")
+                }.padding(20).navigationTitle(L10n.text("位置与尺寸")).navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.text("完成")) { showsDimensions = false } } }
+            }.presentationDetents([.medium, .large])
         }
         .onChange(of: canvasSize) { _, next in
             guard next.width > 0, next.height > 0, aspectRatio != nil else { return }
@@ -176,6 +156,17 @@ struct IOSGeometryControls: View {
                     else { Text(L10n.text(preset.titleKey)) }
                 }
             }
+            Divider()
+            Button(L10n.text("锁定当前比例")) {
+                if aspectRatio != nil { clearAspect() }
+                else if canvasSize.width > 0, canvasSize.height > 0 {
+                    lockedRatio = settings.cropWidth * Double(canvasSize.width) / (settings.cropHeight * Double(canvasSize.height)); aspectSwapped = false
+                }
+            }.accessibilityIdentifier("geometry.lockAspect")
+            Button(L10n.text("交换横纵比例")) { aspectSwapped.toggle(); fitAspect() }
+                .disabled(aspectRatio == nil || aspectRatio == 1).accessibilityIdentifier("geometry.swapAspect")
+            Toggle(L10n.text("三分网格"), isOn: $showsGrid).accessibilityIdentifier("geometry.grid")
+            Button(L10n.text("位置与尺寸")) { showsDimensions = true }.accessibilityIdentifier("geometry.dimensions")
         } label: {
             HStack(spacing: 4) {
                 Text(L10n.text(lockedRatio == nil ? aspectPreset.titleKey : "锁定当前比例")).font(.subheadline)

@@ -27,6 +27,8 @@ components:
 
 Native slider rendering and crop precision follow [compact controls](docs/design/editor-workspace/compact-controls.md). The macOS workspace layout is described below.
 
+Approved mobile implementation, 2026-11-10: [dedicated tool workspaces](docs/design/editor-workspace/mobile-workspaces.md) and [camera workspaces](docs/design/camera-transfer/android-camera-ui.md) define iOS/Android navigation, scoped drafts and compact controls. Their native implementation and validation status is tracked at proposal level in the design manifest. Desktop rules below retain their scope; clickable prototypes are design assets and do not establish native or camera-hardware validation.
+
 # RawLab Desktop Design
 
 ## Overview
@@ -204,3 +206,5 @@ Single-photo JPEG and rendered DNG export are available for both supported RAW a
 - **Don't** turn the custom ruler's lack of inertia into a change to the native picker's system behavior.
 - **Don't** describe authored timing as an Apple measurement, or claim Simulator images prove physical haptics, performance improvement or RAW output correctness.
 <!-- END RAWLAB IOS IPADOS DOS -->
+
+移动编辑器默认不加照片边距：按原比例适合可用画布，至少一边贴满宽度或高度。完整画幅与用户选择的放大状态仍由预览控件管理。

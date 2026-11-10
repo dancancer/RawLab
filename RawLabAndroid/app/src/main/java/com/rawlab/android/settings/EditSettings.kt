@@ -95,7 +95,6 @@ data class EditSettings(
         customWb = false,
         temperature = 6500f,
         tint = 0f,
-        lens = LensSettings(),
     ) else this
     fun resetWhiteBalance(asShotTemperature: Float?, asShotTint: Float?): EditSettings = copy(
         customWb = false,
@@ -125,20 +124,29 @@ data class EditSettings(
 }
 
 data class LensSettings(val distortion: Boolean = false, val tca: Boolean = false,
-    val autoCrop: Boolean = true, val manual: Boolean = false, val profileId: String? = null) {
-    val enabled: Boolean get() = distortion || tca
+    val autoCrop: Boolean = true, val manual: Boolean = false, val profileId: String? = null,
+    val focalLength: Float? = null, val cropFactor: Float? = null, val vignetting: Boolean = false) {
+    init {
+        require(focalLength == null || focalLength.isFinite() && focalLength in 0.1f..10000f)
+        require(cropFactor == null || cropFactor.isFinite() && cropFactor in 0.1f..100f)
+    }
+    val enabled: Boolean get() = distortion || tca || vignetting
     val coreProfileId: String get() = if (manual) profileId ?: "__rawlab_manual_selection_required__" else ""
     fun encode(): String = listOf(if (distortion) 1 else 0, if (tca) 1 else 0,
         if (autoCrop) 1 else 0, if (manual) 1 else 0,
-        profileId?.let { java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(it.toByteArray(Charsets.UTF_8)) } ?: "")
+        profileId?.let { java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(it.toByteArray(Charsets.UTF_8)) } ?: "",
+        focalLength?.toString() ?: "", cropFactor?.toString() ?: "", if (vignetting) "1" else "0")
         .joinToString("|")
     companion object {
         fun decode(value: String?): LensSettings {
             if (value == null) return LensSettings()
             val fields = value.split('|')
-            require(fields.size == 5 && fields.take(4).all { it == "0" || it == "1" })
+            require(fields.size in setOf(5, 7, 8) && fields.take(4).all { it == "0" || it == "1" })
+            require(fields.size < 8 || fields[7] in setOf("0", "1"))
             return LensSettings(fields[0] == "1", fields[1] == "1", fields[2] == "1", fields[3] == "1",
-                fields[4].takeIf { it.isNotEmpty() }?.let { String(java.util.Base64.getUrlDecoder().decode(it), Charsets.UTF_8) })
+                fields[4].takeIf { it.isNotEmpty() }?.let { String(java.util.Base64.getUrlDecoder().decode(it), Charsets.UTF_8) },
+                fields.getOrNull(5)?.takeIf { it.isNotEmpty() }?.toFloat(),
+                fields.getOrNull(6)?.takeIf { it.isNotEmpty() }?.toFloat(), fields.getOrNull(7) == "1")
         }
     }
 }
@@ -301,7 +309,7 @@ internal fun EditSettings.resetRenderValues(
         if (custom) kelvin else 6500f, if (custom) wbTint else 0f) + renderHsl.packed().toList() +
         listOf(renderBlackPoint, renderWhitePoint, renderVibrance, renderClarity, renderDehaze) +
         ColorGradingZone.entries.flatMap { listOf(renderColorGrading[it].hue, renderColorGrading[it].saturation) } +
-        listOf(renderCurve.mode.nativeValue.toFloat()) + renderCurve.packed().map(Double::toFloat), kelvin, wbTint)
+        ToneCurveChannel.entries.flatMap { channel -> renderCurve.shape(channel).let { listOf(it.mode.nativeValue.toFloat()) + it.packed().map(Double::toFloat) } }, kelvin, wbTint)
 }
 
 // Float 上先加 0.5 会把 0.49999997 提前进位；转成 Double 后再取整才能对应 std::round(float)。

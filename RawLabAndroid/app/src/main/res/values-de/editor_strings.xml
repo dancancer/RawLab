@@ -31,6 +31,12 @@
     <string name="all_tools">"Alle Werkzeuge"</string>
     <string name="batch_confirmation_count">"%1$d Ausgaben müssen überprüft werden"</string>
     <string name="black_point">"Schwarzpunkt"</string>
+    <string name="camera_choose_connection">"Verbindungsart wählen"</string>
+    <string name="camera_connect_import">"Zum Importieren verbinden"</string>
+    <string name="camera_connect_tether">"Zum Fotografieren verbinden"</string>
+    <string name="camera_guide_intro">"Kameramenüs unterscheiden sich je nach Modell und Firmware. Folgen Sie den Smartphone-Verbindungsschritten Ihrer Kamera."</string>
+    <string name="camera_guide_unverified_title">"Auch ungetestete Kameras können verbunden werden"</string>
+    <string name="camera_previous_disconnected">"Zuletzt verwendete Kamera · Getrennt"</string>
     <string name="clarity">"Klarheit"</string>
     <string name="collection_add">"Fotos hinzufügen"</string>
     <string name="collection_apply_draft">"Entwurf übernehmen und speichern"</string>
@@ -78,6 +84,7 @@
     <string name="color_grading">"Color-Grading"</string>
     <string name="curve_add_point">"Punkt hinzufügen"</string>
     <string name="curve_custom">"Punktkurve"</string>
+    <string name="curve_edit_point">"Punkt bearbeiten"</string>
     <string name="curve_fixed_endpoint">"Endpunkte sind fest"</string>
     <string name="curve_hint">"Zum Hinzufügen in die Kurvenfläche tippen. Innere Punkte zum Anpassen ziehen."</string>
     <string name="curve_input">"Eingabe"</string>
@@ -182,6 +189,7 @@
     <string name="geometry_move_up">"Zuschnitt nach oben"</string>
     <string name="geometry_perspective_tool">"Perspektive"</string>
     <string name="geometry_position_size">"Position und Größe"</string>
+    <string name="geometry_rotation_tool">"Drehung"</string>
     <string name="grading_midtones">"Mitteltöne"</string>
     <string name="grading_reset_all">"Color-Grading zurücksetzen"</string>
     <string name="grading_reset_message">"Color-Grading für Schatten, Mitteltöne und Lichter zurücksetzen?"</string>
@@ -235,8 +243,15 @@
     <string name="invalid_tone_controls">"Ungültige Werte für Schwarzpunkt, Weißpunkt oder Dynamik"</string>
     <string name="invalid_tone_curve">"Ungültige Kurvenwerte"</string>
     <string name="jpeg_description">"sRGB · Qualität 95 · Aufnahmemetadaten"</string>
+    <string name="lens_crop_input">"Crop-Faktor der Kamera"</string>
     <string name="lens_distortion_unavailable">"Verzeichnungskalibrierung nicht verfügbar"</string>
+    <string name="lens_focal_input">"Brennweite (mm)"</string>
+    <string name="lens_jpeg_hint">"JPEG enthält möglicherweise bereits eine Kamerakorrektur. Vor dem Aktivieren vergleichen."</string>
+    <string name="lens_metadata_edit">"Objektivdaten ergänzen"</string>
+    <string name="lens_metadata_hint">"Leer lassen, um Fotometadaten oder die Kameradatenbank zu verwenden."</string>
     <string name="lens_tca_unavailable">"Kalibrierung der lateralen chromatischen Aberration nicht verfügbar"</string>
+    <string name="lens_vignetting">"Vignettierungskorrektur"</string>
+    <string name="lens_vignetting_unavailable">"Vignettierungskalibrierung oder Blendenangabe nicht verfügbar"</string>
     <string name="look_category">"Look-Kategorie"</string>
     <string name="look_category_all">"Alle Looks"</string>
     <string name="look_category_custom">"Eigene Looks"</string>
@@ -248,6 +263,7 @@
     <string name="look_remove_body">"Die von RawLab gespeicherte Kopie des Looks wird entfernt; die Originaldatei wird nicht gelöscht."</string>
     <string name="look_search">"Looks suchen"</string>
     <string name="look_search_clear">"Suche löschen"</string>
+    <string name="look_search_close">"Suche schließen"</string>
     <string name="look_search_empty">"Keine passenden Looks"</string>
     <string name="lut_advanced_settings">"Erweiterte Farbeinstellungen"</string>
     <string name="lut_appearance_unverified">"Bildwirkung ungeprüft"</string>
@@ -496,4 +512,5 @@
     <string name="x3f_relative_wb">"Die gespeicherte Entwicklung ist die Basis; der Weißabgleich wird relativ angepasst."</string>
     <string name="x3f_rendering">"X3F-Entwicklung"</string>
     <string name="x3f_retry_legacy">"Mit bisheriger Entwicklung erneut versuchen"</string>
+    <string name="zoom_restore_hint">"Vergrößert · Tippen zum Einpassen"</string>
 </resources>

@@ -537,7 +537,10 @@ struct Adjustments: Equatable, Codable {
             (effective.renderHSLSettings.hue + effective.renderHSLSettings.saturation + effective.renderHSLSettings.lightness).map(Float.init) +
             [tone.blackPoint, tone.whitePoint, tone.vibrance, atmosphere.clarity, atmosphere.dehaze].map(Float.init) +
             ColorGradingZone.allCases.flatMap { [Float(grading[$0].hue), Float(grading[$0].saturation)] } +
-            [curve.mode == .custom ? 1 : 0] + curve.points.flatMap { [Float($0.x), Float($0.y)] }
+            ToneCurveChannel.allCases.flatMap { channel -> [Float] in
+                let shape = curve.shape(channel)
+                return [shape.mode == .custom ? 1 : 0] + shape.points.flatMap { [Float($0.x), Float($0.y)] }
+            }
     }
 
     fileprivate func detachingRecipeForReset(context: EditorAdjustmentContext) throws -> Adjustments {

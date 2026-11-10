@@ -1,6 +1,6 @@
 import Foundation
 
-enum AdjustmentKind: String, CaseIterable, Identifiable {
+enum AdjustmentKind: String, CaseIterable, Identifiable, Codable {
     case strength
     case exposure
     case highlights

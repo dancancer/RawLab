@@ -90,7 +90,7 @@ public partial class MainWindow
                             },ValidateLens:lens=>{
                             using var native=new RenderEngine(1);var probe=new Adjustments{Lens=lens};
                             var report=native.Render(path,probe,null,32,statistics:false,clipping:false)?.Lens;
-                            if(report==null || lens.Distortion && !report.AppliedDistortion || lens.Tca && !report.AppliedTca)
+                            if(report==null || lens.Distortion && !report.AppliedDistortion || lens.Tca && !report.AppliedTca || lens.Vignetting && !report.AppliedVignetting)
                                 throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"target lens calibration unavailable");
                         });
                         if(calibration!=null)defaults.ResolveWhiteBalance(calibration);

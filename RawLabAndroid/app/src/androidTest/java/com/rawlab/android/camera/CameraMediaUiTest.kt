@@ -117,6 +117,34 @@ class CameraMediaUiTest {
         compose.onNodeWithText("重新下载不可用的原片").assertIsDisplayed()
     }
 
+    @Test fun tetherReviewUsesTheSavedOriginalAndOnlyEditLeavesTheCamera() = withMedia { root, _, save ->
+        val job = save("Tether", "TETHER.JPG", jpeg(root, Color.GREEN))
+        val camera = compose.activity.camera
+        val field = CameraImportViewModel::class.java.getDeclaredField("store").apply { isAccessible = true }
+        val productStore = field.get(camera) as CameraImportStore
+        val run = CameraTetherRun(UUID.randomUUID().toString(), "fixture", "ZV-E10/2.02", 0, emptyList(), job.destination,
+            listOf(CameraTetherBatch(job.id, job.items.map { it.photo })), CameraTetherStatus.PAUSED)
+        productStore.save(job)
+        try {
+            compose.runOnUiThread { camera.tether.restore(listOf(run), listOf(job)); camera.setMode(CameraMode.TETHER) }
+            compose.waitUntil(10_000) { !camera.state.value.closing }
+            compose.onNodeWithTag("camera-entry").performClick()
+            compose.onNodeWithTag("tether-shutter").assertIsNotEnabled()
+            compose.onNodeWithTag("tether-recent").performClick()
+            compose.onNodeWithTag("tether-review").assertIsDisplayed()
+            assertNull(compose.activity.model.state.value.photo)
+            compose.onNodeWithTag("tether-review-edit").performClick()
+            compose.waitUntil(60_000) { compose.activity.model.state.value.let { it.canExport || it.error != null } }
+            assertNull(compose.activity.model.state.value.error)
+            assertEquals(job.items.single().saved!!.uri, compose.activity.model.state.value.photo!!.identity.value)
+            compose.onNodeWithTag("tether-review").assertDoesNotExist()
+            assertFalse(camera.state.value.connected)
+        } finally {
+            File(compose.activity.filesDir, "camera-media-imports/${job.id}.json").delete()
+            compose.runOnUiThread { camera.setMode(CameraMode.IMPORT) }
+        }
+    }
+
     private fun jpeg(root: File, color: Int): File {
         val file = File(root, "${UUID.randomUUID()}.jpg")
         val bitmap = Bitmap.createBitmap(320, 240, Bitmap.Config.ARGB_8888)

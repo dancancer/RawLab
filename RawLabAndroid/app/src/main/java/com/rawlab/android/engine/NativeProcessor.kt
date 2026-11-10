@@ -1,6 +1,7 @@
 package com.rawlab.android.engine
 
 import com.rawlab.android.settings.requireProRAWDecoder
+import com.rawlab.android.settings.ToneCurveSettings
 
 import android.graphics.Bitmap
 import java.io.IOException
@@ -73,6 +74,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     private var raster: DecodedRaster? = null
     private var rasterEdge = -1
     private var rasterHDRSource: com.rawlab.android.photo.HDRSourceInfo? = null
+    private var displayLensMetadata: DisplayLensMetadata? = null
     init {
         try { if (lensDatabase != null) nativeSetLensDatabase(handle, lensDatabase.path) }
         catch (error: Throwable) { close(); throw error }
@@ -99,7 +101,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
             val nativeSize = NativeHDRBridge.geometrySize(info, settings.geometry)
             frame.geometryWidth = nativeSize[0]; frame.geometryHeight = nativeSize[1]
         }
-        frame.lens = if (inputKind == PhotoInputKind.RAW) readLens(input) else null
+        frame.lens = if (inputKind == PhotoInputKind.RAW || rasterHDRSource == null) readLens(input) else null
         return frame
     }
 
@@ -130,7 +132,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         val pixels = rasterInput(input, inputKind, edge)
         configureLens(effective.lens)
         configureGeometry(settings.geometry)
-        nativeSetToneCurve(handle, effective.renderCurve.mode.nativeValue, effective.renderCurve.packed())
+        setToneCurves(effective.renderCurve)
         nativeSetToneControls(handle, effective.renderBlackPoint / 100f, effective.renderWhitePoint / 100f, effective.renderVibrance / 100f)
         nativeSetAtmosphere(handle, effective.renderClarity / 100f, effective.renderDehaze / 100f)
         with(effective.renderColorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
@@ -186,7 +188,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         val pixels = rasterInput(input, inputKind)
         configureLens(effective.lens)
         configureGeometry(settings.geometry)
-        nativeSetToneCurve(handle, effective.renderCurve.mode.nativeValue, effective.renderCurve.packed())
+        setToneCurves(effective.renderCurve)
         nativeSetToneControls(handle, effective.renderBlackPoint / 100f, effective.renderWhitePoint / 100f, effective.renderVibrance / 100f)
         nativeSetAtmosphere(handle, effective.renderClarity / 100f, effective.renderDehaze / 100f)
         with(effective.renderColorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
@@ -215,7 +217,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         val pixels = rasterInput(input, inputKind, 1280)
         configureLens(effective.lens)
         configureGeometry(settings.geometry)
-        nativeSetToneCurve(handle, effective.renderCurve.mode.nativeValue, effective.renderCurve.packed())
+        setToneCurves(effective.renderCurve)
         nativeSetToneControls(handle, effective.renderBlackPoint / 100f, effective.renderWhitePoint / 100f, effective.renderVibrance / 100f)
         nativeSetAtmosphere(handle, effective.renderClarity / 100f, effective.renderDehaze / 100f)
         with(effective.renderColorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
@@ -272,6 +274,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     @Synchronized
     internal fun releaseRasterCache() {
         raster?.close(); raster = null; rasterKey = null; rasterHDRSource = null; rasterEdge = -1
+        displayLensMetadata = null
+        if (handle != 0L) nativeSetDisplayLensMetadata(handle, null, floatArrayOf(0f, 0f, 0f), 1)
     }
 
     private fun rasterInput(input: File, kind: PhotoInputKind, edge: Int = 0): DecodedRaster? {
@@ -284,8 +288,10 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
             releaseRasterCache()
             rasterHDRSource = if (com.rawlab.android.photo.HDRSourceInfo.mayContainGainMap(input))
                 NativeHDRBridge.probe(input) else null
+            displayLensMetadata = DisplayLensMetadata.read(input)
             rasterKey = key
         }
+        displayLensMetadata?.let { nativeSetDisplayLensMetadata(handle, it.names, it.numbers, it.sourceOrientation) }
         val hdr = rasterHDRSource
         if (raster == null || (hdr != null && rasterEdge != edge)) {
             val decoded = if (hdr == null) RasterImageDecoder.decode(input) else {
@@ -296,8 +302,15 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         return checkNotNull(raster)
     }
 
-    private fun configureLens(settings: LensSettings) = nativeSetLensCorrection(handle,
-        settings.distortion, settings.tca, settings.autoCrop, settings.coreProfileId.toByteArray(Charsets.UTF_8))
+    private fun configureLens(settings: LensSettings) {
+        displayLensMetadata?.let { source ->
+            val metadata = source.copy(focalLength = settings.focalLength ?: source.focalLength,
+                cropFactor = settings.cropFactor ?: source.cropFactor)
+            nativeSetDisplayLensMetadata(handle, metadata.names, metadata.numbers, metadata.sourceOrientation)
+        }
+        nativeSetLensCorrection(handle, settings.distortion, settings.tca, settings.autoCrop, settings.vignetting,
+            settings.coreProfileId.toByteArray(Charsets.UTF_8))
+    }
 
     private fun configureGeometry(settings: GeometrySettings) = nativeSetGeometry(handle,
         settings.cropX, settings.cropY, settings.cropWidth, settings.cropHeight, settings.quarterTurns,
@@ -307,14 +320,16 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     private fun readLens(input: File): LensInfo {
         val key = Triple(input.canonicalPath, input.length(), input.lastModified())
         if (key != catalogKey) {
-            val profiles = nativeLensProfiles(handle, input.path)
-            require(profiles.size % 6 == 0) { "Invalid native lens catalog" }
-            candidates = profiles.asList().chunked(6).map { LensCandidate(it[0], it[1], it[2], it[3] == "1", it[4] == "1", it[5] == "1") }
+            val profiles = nativeLensProfiles(handle, if (displayLensMetadata == null) input.path else null)
+            require(profiles.size % 7 == 0) { "Invalid native lens catalog" }
+            candidates = profiles.asList().chunked(7).map { LensCandidate(it[0], it[1], it[2], it[3] == "1", it[4] == "1", it[5] == "1", it[6] == "1") }
             catalogKey = key
         }
         val report = nativeLensReport(handle)
-        require(report.size == 6) { "Invalid native lens report" }
-        return LensInfo(report[0].toInt(), report[1], report[2], report[3] == "1", report[4] == "1", report[5].toFloat(), candidates)
+        require(report.size == 7) { "Invalid native lens report" }
+        return LensInfo(report[0].toInt(), report[1], report[2], report[3] == "1", report[4] == "1", report[5].toFloat(), candidates,
+            displayLensMetadata?.let { listOf(it.cameraMake, it.cameraModel).filter(String::isNotBlank).distinct().joinToString(" ") },
+            displayLensMetadata?.focalLength?.takeIf { it > 0 }, displayLensMetadata?.aperture?.takeIf { it > 0 }, report[6] == "1")
     }
 
     private external fun nativeCreate(mode: Int): Long
@@ -322,17 +337,25 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         pixelFormat: Int, lut: String?, configuration: String?): NativeFrame
     private external fun nativeSetGpuMode(handle: Long, mode: Int)
     private external fun nativeSetLensDatabase(handle: Long, path: String)
-    private external fun nativeSetLensCorrection(handle: Long, distortion: Boolean, tca: Boolean, autoCrop: Boolean, profile: ByteArray)
+    private external fun nativeSetLensCorrection(handle: Long, distortion: Boolean, tca: Boolean, autoCrop: Boolean, vignetting: Boolean, profile: ByteArray)
+    private external fun nativeSetDisplayLensMetadata(handle: Long, names: Array<String>?, numbers: FloatArray, orientation: Int)
     private external fun nativeSetColorGrading(handle: Long, shadowsHue: Float, shadowsSaturation: Float,
         midtonesHue: Float, midtonesSaturation: Float, highlightsHue: Float, highlightsSaturation: Float)
     private external fun nativeSetAtmosphere(handle: Long, clarity: Float, dehaze: Float)
     private external fun nativeSetToneControls(handle: Long, blackPoint: Float, whitePoint: Float, vibrance: Float)
-    private external fun nativeSetToneCurve(handle: Long, mode: Int, points: DoubleArray)
+    private fun setToneCurves(curve: ToneCurveSettings) {
+        nativeSetToneCurves(handle, curve.mode.nativeValue, curve.packed(),
+            curve.channels.red.mode.nativeValue, curve.channels.red.packed(),
+            curve.channels.green.mode.nativeValue, curve.channels.green.packed(),
+            curve.channels.blue.mode.nativeValue, curve.channels.blue.packed())
+    }
+    private external fun nativeSetToneCurves(handle: Long, mode: Int, points: DoubleArray,
+        redMode: Int, redPoints: DoubleArray, greenMode: Int, greenPoints: DoubleArray, blueMode: Int, bluePoints: DoubleArray)
     private external fun nativeSetGeometry(handle: Long, cropX: Float, cropY: Float, cropWidth: Float,
         cropHeight: Float, quarterTurns: Int, flipHorizontal: Boolean, flipVertical: Boolean, straightenDegrees: Float,
         perspectiveHorizontal: Float, perspectiveVertical: Float)
     private external fun nativeGeometrySize(handle: Long): IntArray
-    private external fun nativeLensProfiles(handle: Long, input: String): Array<String>
+    private external fun nativeLensProfiles(handle: Long, input: String?): Array<String>
     private external fun nativeLensReport(handle: Long): Array<String>
     private external fun nativeDestroy(handle: Long)
     private external fun nativeAutoExposure(handle: Long, input: String, pixels: Any?, width: Int, height: Int,

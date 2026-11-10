@@ -134,7 +134,7 @@ class AdjustmentTransferTest {
         val source = EditSettings(exposure = .5f, geometry = GeometrySettings(cropWidth = .5f))
         val all = AdjustmentTransfer.capture(AdjustmentScope.All, source, context).fields
         assertEquals(F.entries.filterNot { it.isHDROnly }.toSet(), all)
-        assertEquals(72, all.size)
+        assertEquals(73, all.size)
         assertEquals(setOf(F.EXPOSURE), AdjustmentTransfer.capture(AdjustmentScope.Modified, source, context).fields)
         assertThrows(AdjustmentTransferException::class.java) {
             AdjustmentTransfer.capture(AdjustmentScope.Modified, EditSettings(), context)
@@ -220,7 +220,7 @@ class AdjustmentTransferTest {
         assertEquals(.1f, merged.geometry.cropX); assertEquals(.8f, merged.geometry.cropWidth)
         for (request in listOf(payload(F.LENS_PROFILE to AdjustmentValue.Text("fixture-profile")),
             payload(F.LENS_AUTO_CROP to AdjustmentValue.Boolean(false)))) {
-            assertThrows(AdjustmentTransferException::class.java) { prepare(request, context = context.copy(isRaw = false)) }
+            prepare(request, context = context.copy(isRaw = false))
         }
         val lens = payload(F.LENS_DISTORTION to AdjustmentValue.Boolean(true))
         assertThrows(AdjustmentTransferException::class.java) { prepare(lens) }
@@ -228,6 +228,9 @@ class AdjustmentTransferTest {
         val accepted = prepare(lens, context = context.copy(validateLens = { validated = it.distortion }))
         assertTrue(validated); assertTrue(accepted.lens.distortion)
         assertThrows(AdjustmentTransferException::class.java) { prepare(lens, context = context.copy(isRaw = false)) }
+        validated = false
+        val raster = prepare(lens, context = context.copy(isRaw = false, validateLens = { validated = it.distortion }))
+        assertTrue(validated); assertTrue(raster.lens.distortion)
     }
 
     @Test fun manualLensWithoutProfilePreservesSelectionAndRejectsEnabledRequests() {

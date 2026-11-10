@@ -1,2 +1,4 @@
 "NSPhotoLibraryUsageDescription" = "Allows importing photos from your photo library.";
 "NSPhotoLibraryAddUsageDescription" = "Allows saving edited photos to your photo library.";
+"NSBluetoothAlwaysUsageDescription" = "Find and pair with your Sony camera to connect its Wi-Fi.";
+"NSLocalNetworkUsageDescription" = "Connect to your camera to browse originals, receive photos and use remote shooting.";

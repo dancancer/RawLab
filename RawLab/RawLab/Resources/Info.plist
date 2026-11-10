@@ -37,6 +37,10 @@
 	<string>Allows importing photos from your photo library.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Allows saving edited photos to your photo library.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Find and pair with your Sony camera to connect its Wi-Fi.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Connect to your camera to browse originals, receive photos and use remote shooting.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UTImportedTypeDeclarations</key>

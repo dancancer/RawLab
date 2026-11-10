@@ -63,13 +63,13 @@ public sealed class ToneCurvePanel : StackPanel
         legacy.Changed += (next, dragging) => { if (!syncing) { scalar = next; LegacyChanged?.Invoke(next, dragging); } };
         switchMode.Click += (_, _) => {
             if (!CommitInputs()) return;
-            var message = Loc.Text(settings.IsDefault ? "多点曲线将从直线开始，旧 S 曲线数值会保留。" : "切换到 S 曲线将移除当前控制点，可撤销此操作。");
+            var message = Loc.Text((settings.Mode == ToneCurveMode.Legacy) ? "多点曲线将从直线开始，旧 S 曲线数值会保留。" : "切换到 S 曲线将移除当前控制点，可撤销此操作。");
             if (MessageBox.Show(Window.GetWindow(this), message, Loc.Text("切换曲线模式"), MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK) {
-                selected = 0; Change(settings.IsDefault ? ToneCurveSettings.Identity : new(), false);
+                selected = 0; Change((settings.Mode == ToneCurveMode.Legacy) ? ToneCurveSettings.Identity : new(), false);
             }
         };
         add.Click += (_, _) => {
-            if (!CommitInputs() || settings.IsDefault || settings.Points.Count >= 33) return;
+            if (!CommitInputs() || (settings.Mode == ToneCurveMode.Legacy) || settings.Points.Count >= 33) return;
             var index = Enumerable.Range(1, settings.Points.Count - 1).MaxBy(i => settings.Points[i].X - settings.Points[i - 1].X);
             var a = settings.Points[index - 1]; var b = settings.Points[index]; selected = index;
             Change(settings.Inserting(a.X + (b.X - a.X) / 2, a.Y + (b.Y - a.Y) / 2), false);
@@ -81,7 +81,7 @@ public sealed class ToneCurvePanel : StackPanel
         RefreshLanguage();
     }
     public void CancelInputs() { canvas.CancelGesture(); x.CancelInput(); y.CancelInput(); legacy.CancelInput(); }
-    private bool CommitInputs() => settings.IsDefault ? legacy.Commit() : x.Commit() && y.Commit();
+    private bool CommitInputs() => (settings.Mode == ToneCurveMode.Legacy) ? legacy.Commit() : x.Commit() && y.Commit();
     public void RefreshLanguage()
     {
         add.Content = Loc.Text("添加控制点"); remove.Content = Loc.Text("删除控制点"); reset.Content = Loc.Text("重置为直线");
@@ -96,14 +96,14 @@ public sealed class ToneCurvePanel : StackPanel
             if (!Equals(source, identity) || usesExposureStops != hdr) { CancelInputs(); selected = 0; }
             source = identity; settings = next; scalar = legacyValue; usesExposureStops = hdr;
             selected = Math.Clamp(selected, 0, Math.Max(0, settings.Points.Count - 1));
-            mode.Text = Loc.Text(settings.IsDefault ? "S 曲线" : "多点曲线"); switchMode.Content = Loc.Text(settings.IsDefault ? "多点曲线" : "S 曲线");
-            legacy.Visibility = settings.IsDefault ? Visibility.Visible : Visibility.Collapsed;
-            custom.Visibility = settings.IsDefault ? Visibility.Collapsed : Visibility.Visible;
+            mode.Text = Loc.Text((settings.Mode == ToneCurveMode.Legacy) ? "S 曲线" : "多点曲线"); switchMode.Content = Loc.Text((settings.Mode == ToneCurveMode.Legacy) ? "多点曲线" : "S 曲线");
+            legacy.Visibility = (settings.Mode == ToneCurveMode.Legacy) ? Visibility.Visible : Visibility.Collapsed;
+            custom.Visibility = (settings.Mode == ToneCurveMode.Legacy) ? Visibility.Collapsed : Visibility.Visible;
             exposureAxis.Visibility = hdr ? Visibility.Visible : Visibility.Collapsed;
             legacy.SourceIdentity = identity; legacy.Refresh(Loc.Text("S 曲线"), new(-100, 100), scalar, 0, "%");
             RefreshRows(); canvas.Refresh(settings, identity, selected); LayoutControls();
-            add.IsEnabled = !settings.IsDefault && settings.Points.Count < 33; remove.IsEnabled = settings.IsInterior(selected);
-            reset.IsEnabled = !settings.IsDefault && settings != ToneCurveSettings.Identity;
+            add.IsEnabled = !(settings.Mode == ToneCurveMode.Legacy) && settings.Points.Count < 33; remove.IsEnabled = settings.IsInterior(selected);
+            reset.IsEnabled = !(settings.Mode == ToneCurveMode.Legacy) && settings != ToneCurveSettings.Identity;
         } finally { syncing = wasSyncing; }
     }
     private double Normalize(double value) => usesExposureStops ? (value + 8) / 16 : value;
@@ -113,7 +113,7 @@ public sealed class ToneCurvePanel : StackPanel
         var wasSyncing = syncing; syncing = true;
         try {
             points.ItemsSource = Enumerable.Range(1, settings.Points.Count).Select(i => Loc.Format("控制点 {0}", i)).ToArray();
-            if (settings.IsDefault) return;
+            if ((settings.Mode == ToneCurveMode.Legacy)) return;
             points.SelectedIndex = selected;
             var point = settings.Points[selected]; var enabled = settings.IsInterior(selected);
             x.SourceIdentity = y.SourceIdentity = source;
@@ -136,6 +136,6 @@ public sealed class ToneCurvePanel : StackPanel
     private void Change(ToneCurveSettings next, bool dragging)
     {
         if (syncing || !IsEnabled) return;
-        settings = next; Changed?.Invoke(next, dragging); Refresh(settings, scalar, source, usesExposureStops);
+        settings = settings.Replacing(ToneCurveChannel.Rgb, next.Master); Changed?.Invoke(settings, dragging); Refresh(settings, scalar, source, usesExposureStops);
     }
 }

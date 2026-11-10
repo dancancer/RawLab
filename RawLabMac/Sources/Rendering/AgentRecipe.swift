@@ -59,7 +59,7 @@ extension RenderEngine {
         let toneConfig = state.renderToneSettings.nativeConfig
         var tone: [String: Any] = ["contrast": min(2, max(0, request.contrast)), "saturation": min(2, max(0, request.saturation)),
             "highlights": min(1, max(-1, request.highlights)), "shadows": min(1, max(-1, request.shadows)), "s_curve": request.tone_curve]
-        tone["curve"] = ["mode": state.renderCurveSettings.mode.rawValue, "points": state.renderCurveSettings.points.map { [$0.x, $0.y] }]
+        tone["curve"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(state.renderCurveSettings))
         if toneConfig.black_point != 0 { tone["black_point"] = toneConfig.black_point }
         if toneConfig.white_point != 0 { tone["white_point"] = toneConfig.white_point }
         var document: [String: Any] = [
@@ -82,7 +82,7 @@ extension RenderEngine {
                 "denoise": ["raw_level": Int(raw), "chroma_mode": Int(chroma),
                             "wavelet": ["enabled": wavelet?.enabled ?? false, "luma": Float(wavelet?.luma ?? 0),
                                         "chroma": Float(wavelet?.chroma ?? 46), "coarse": Float(wavelet?.coarse ?? 50)]],
-                "lens_correction": ["distortion": lens.distortion, "tca": lens.tca, "auto_crop": lens.autoCrop,
+                "lens_correction": ["distortion": lens.distortion, "tca": lens.tca, "vignetting": lens.vignetting, "auto_crop": lens.autoCrop,
                                     "profile_id": lens.coreProfileID.isEmpty ? NSNull() : lens.coreProfileID as Any],
                 "geometry": ["crop": ["x": Float(geometry.cropX), "y": Float(geometry.cropY),
                                       "width": Float(geometry.cropWidth), "height": Float(geometry.cropHeight)],

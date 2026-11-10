@@ -161,15 +161,15 @@ struct BatchExportView: View {
             DisclosureGroup(L10n.text("全部调整")) {
                 VStack(spacing: 10) {
                     // 曝光已在上方摘要中，这里不再重复
-                    ForEach(AdjustmentParameter.allCases.filter { $0 != .exposure && (model.job.settings.curveSettings.isDefault || $0 != .toneCurve) }) { parameter in
+                    ForEach(AdjustmentParameter.allCases.filter { $0 != .exposure && (model.job.settings.curveSettings.mode == .legacy || $0 != .toneCurve) }) { parameter in
                         let spec = parameter.spec(for: model.job.settings)
                         valueRow(spec.title, parameter.isWhiteBalance && model.job.settings.whiteBalanceMode == .asShot
                                  ? L10n.text("按每张照片") : spec.display(model.job.settings[keyPath: spec.keyPath]))
                     }
                     if !model.job.settings.curveSettings.isDefault {
-                        valueRow(L10n.text("曲线"), L10n.format("多点曲线（%d 个控制点）", model.job.settings.curveSettings.points.count))
-                        ForEach(Array(model.job.settings.curveSettings.points.enumerated()), id: \.offset) { index, point in
-                            valueRow(L10n.format("控制点 %d", index + 1), String(format: "%.2f → %.2f", locale: L10n.locale, point.x, point.y))
+                        valueRow(L10n.text("曲线"), L10n.format("多点曲线（%d 个控制点）", model.job.settings.curveSettings.labeledPoints.count))
+                        ForEach(Array(model.job.settings.curveSettings.labeledPoints.enumerated()), id: \.offset) { index, point in
+                            valueRow(point.channel.shortLabel + " · " + L10n.format("控制点 %d", index + 1), String(format: "%.2f → %.2f", locale: L10n.locale, point.point.x, point.point.y))
                         }
                     }
                     if let denoise = model.job.settings.waveletNoiseReduction {

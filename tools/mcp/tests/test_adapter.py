@@ -158,10 +158,10 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         return CliAdapter(self.config, environment=merged)
 
     async def test_capabilities_negotiate_hdr_recipe_versions(self):
-        adapter = self.adapter(FAKE_VERSIONS="1,2,3,4,5,6,7,8,9,10,11,12,13,14,15")
+        adapter = self.adapter(FAKE_VERSIONS="1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16")
         capabilities = await adapter.start()
-        self.assertEqual(capabilities.recipe_versions, (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14))
-        self.assertEqual(capabilities.result["recipe_versions"], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
+        self.assertEqual(capabilities.recipe_versions, (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15))
+        self.assertEqual(capabilities.result["recipe_versions"], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
         self.assertEqual(capabilities.result["commands"], [
             "capabilities", "validate_recipe", "info", "preview", "export",
         ])
@@ -259,6 +259,8 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
             (11, "1,2,3,4,5,6,8,9,10", "1,2,3,4,5,6,8,9,10,11"),
             (12, "1,2,3,4,5,6,8,9,10,11", "1,2,3,4,5,6,8,9,10,11,12"),
             (13, "1,2,3,4,5,6,8,9,10,11,12", "1,2,3,4,5,6,8,9,10,11,12,13"),
+            (14, "1,2,3,4,5,6,8,9,10,11,12,13", "1,2,3,4,5,6,8,9,10,11,12,13,14"),
+            (15, "1,2,3,4,5,6,8,9,10,11,12,13,14", "1,2,3,4,5,6,8,9,10,11,12,13,14,15"),
         ):
             with self.subTest(version=version):
                 destination = self.write_root / f"hdr-{version}.jpg"
@@ -286,6 +288,9 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
                     look = self.input_path.with_suffix(".cube")
                     look.write_text("declared HDR fixture", encoding="utf-8")
                     document["edits"]["look"] = {"path": str(look), "sha256": "a" * 64, "strength": .8}
+                if version == 15:
+                    document["processing"]["version"] = 8
+                    document["edits"]["tone"]["curve"]["channels"] = {"red": {"mode": "custom", "points": [[0, 0], [.5, .7], [1, 1]]}}
                 self.recipe_path.write_text(json.dumps(document), encoding="utf-8")
                 old = self.adapter(FAKE_VERSIONS=legacy)
                 await old.start()

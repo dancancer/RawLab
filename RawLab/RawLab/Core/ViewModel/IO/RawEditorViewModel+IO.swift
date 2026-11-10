@@ -93,12 +93,13 @@ extension RawEditorViewModel {
             previewLongEdge: previewMaxDimension,
             lutURL: nil
         )
-        let previewBuffer = try processor.processBuffer(
+        var previewBuffer = try processor.processBuffer(
             buffer: rasterBase.buffer,
             settings: neutral,
             previewLongEdge: interactivePreviewMaxDimension,
             lutURL: nil
         )
+        previewBuffer.sourceLensMetadata = rasterBase.buffer.sourceLensMetadata
         neutral.geometry = geometry
         neutral.lensCorrection = lens
         let comparison = geometry.isIdentity && !lens.isEnabled ? baseBuffer : try processor.processBuffer(
@@ -325,7 +326,7 @@ extension RawEditorViewModel {
                                 self.rawLUTID = nil
                                 self.rawLUTApplied = false
                                 self.rawWhiteBalance = nil
-                                self.lensInfo = nil
+                                self.lensInfo = adjustedBuffer.lensInfo
                                 self.previewImage = adjustedImage
                                 self.nativeImageSize = adjustedBuffer.nativeSize
                                 self.histogram = adjustedHistogram

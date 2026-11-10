@@ -9,6 +9,9 @@ import com.rawlab.android.settings.StructuredSettingsCodec
 import com.rawlab.android.settings.withHDRMode
 import com.rawlab.android.settings.synchronizeHDR
 import com.rawlab.android.settings.sdrSnapshotSettings
+import com.rawlab.android.settings.HDRToneSettings
+import com.rawlab.android.settings.ToneCurveChannel
+import com.rawlab.android.settings.ToneCurveShape
 import com.rawlab.android.settings.ToneCurveSettings
 import com.rawlab.android.settings.withEditingBlackPoint
 import com.rawlab.android.settings.withEditingWhitePoint
@@ -18,6 +21,7 @@ import com.rawlab.android.settings.withEditingSharpening
 import com.rawlab.android.settings.withEditingClarity
 import com.rawlab.android.settings.withEditingDehaze
 import com.rawlab.android.settings.withHDRDenoise
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -84,6 +88,20 @@ class HDRAdjustmentTransferTest {
         org.junit.Assert.assertThrows(AdjustmentTransferException::class.java) {
             AdjustmentTransfer.prepare(decoded, EditSettings(), context)
         }
+    }
+
+    @Test fun independentChannelPayloadKeepsVersionAndAllShapes() {
+        val original = EditSettings().withHDRMode(true, true)
+        val curve = ToneCurveSettings().replacing(ToneCurveChannel.RED, ToneCurveShape.identity.inserting(.5, .625))
+        val source = original.withEditingCurve(curve)
+        val context = AdjustmentTransferContext("channels", false)
+        val payload = AdjustmentTransfer.capture(AdjustmentScope.Modified, source, context)
+        assertEquals(8, payload.source.hdrProcessingVersion)
+        val result = AdjustmentTransfer.prepare(AdjustmentPayload.decode(payload.encode()), original, context)
+        assertEquals(curve, result.hdr!!.toneSettings.curve)
+        assertFalse(result.hdr!!.isIdentity)
+        val dormantScalar = HDRToneSettings(curveStrength = .5f, curve = ToneCurveSettings().replacing(ToneCurveChannel.RED, ToneCurveShape.identity))
+        assertFalse(dormantScalar.isIdentity)
     }
 
     @Test fun tonePayloadRoundTripsAndRejectsTheOtherProcessingFamily() {

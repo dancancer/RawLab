@@ -31,6 +31,12 @@
     <string name="all_tools">"Todas las herramientas"</string>
     <string name="batch_confirmation_count">"%1$d resultados pendientes de verificación"</string>
     <string name="black_point">"Punto negro"</string>
+    <string name="camera_choose_connection">"Elegir cómo conectar"</string>
+    <string name="camera_connect_import">"Conectar para importar"</string>
+    <string name="camera_connect_tether">"Conectar para fotografiar"</string>
+    <string name="camera_guide_intro">"Los menús varían según el modelo y el firmware. Siga los pasos de conexión al móvil que muestra su cámara."</string>
+    <string name="camera_guide_unverified_title">"También se pueden conectar cámaras no probadas"</string>
+    <string name="camera_previous_disconnected">"Última cámara utilizada · Desconectada"</string>
     <string name="clarity">"Claridad"</string>
     <string name="collection_add">"Añadir fotos"</string>
     <string name="collection_apply_draft">"Aplicar y guardar borrador"</string>
@@ -78,6 +84,7 @@
     <string name="color_grading">"Gradación de color"</string>
     <string name="curve_add_point">"Añadir punto"</string>
     <string name="curve_custom">"Curva de puntos"</string>
+    <string name="curve_edit_point">"Editar punto"</string>
     <string name="curve_fixed_endpoint">"Los extremos son fijos"</string>
     <string name="curve_hint">"Toca el área de la curva para añadir un punto. Arrastra los puntos interiores para ajustar."</string>
     <string name="curve_input">"Entrada"</string>
@@ -182,6 +189,7 @@
     <string name="geometry_move_up">"Mover hacia arriba"</string>
     <string name="geometry_perspective_tool">"Perspectiva"</string>
     <string name="geometry_position_size">"Posición y tamaño"</string>
+    <string name="geometry_rotation_tool">"Rotación"</string>
     <string name="grading_midtones">"Medios tonos"</string>
     <string name="grading_reset_all">"Restablecer la gradación de color"</string>
     <string name="grading_reset_message">"¿Restaurar la gradación de color predeterminada de sombras, medios tonos y luces?"</string>
@@ -235,8 +243,15 @@
     <string name="invalid_tone_controls">"Valores de punto negro, punto blanco o intensidad no válidos"</string>
     <string name="invalid_tone_curve">"Valores de curva no válidos"</string>
     <string name="jpeg_description">"sRGB · calidad 95 · metadatos de captura"</string>
+    <string name="lens_crop_input">"Factor de recorte de la cámara"</string>
     <string name="lens_distortion_unavailable">"Calibración de distorsión no disponible"</string>
+    <string name="lens_focal_input">"Distancia focal (mm)"</string>
+    <string name="lens_jpeg_hint">"El JPEG puede tener correcciones de cámara. Compara antes de activar."</string>
+    <string name="lens_metadata_edit">"Completar información del objetivo"</string>
+    <string name="lens_metadata_hint">"Deja en blanco para usar los metadatos o la base de datos de cámaras."</string>
     <string name="lens_tca_unavailable">"Calibración de aberración cromática lateral no disponible"</string>
+    <string name="lens_vignetting">"Corrección de viñeteo"</string>
+    <string name="lens_vignetting_unavailable">"Calibración de viñeteo o apertura no disponible"</string>
     <string name="look_category">"Categoría de aspectos"</string>
     <string name="look_category_all">"Todos los aspectos"</string>
     <string name="look_category_custom">"Mis aspectos"</string>
@@ -248,6 +263,7 @@
     <string name="look_remove_body">"Se eliminará la copia del look guardada por RawLab; el archivo original no se borrará."</string>
     <string name="look_search">"Buscar aspectos"</string>
     <string name="look_search_clear">"Borrar búsqueda"</string>
+    <string name="look_search_close">"Cerrar búsqueda"</string>
     <string name="look_search_empty">"No hay aspectos coincidentes"</string>
     <string name="lut_advanced_settings">"Ajustes de color avanzados"</string>
     <string name="lut_appearance_unverified">"Aspecto sin verificar"</string>
@@ -496,4 +512,5 @@
     <string name="x3f_relative_wb">"Usa el revelado guardado como base, con ajustes relativos del balance de blancos."</string>
     <string name="x3f_rendering">"Revelado X3F"</string>
     <string name="x3f_retry_legacy">"Reintentar con el revelado anterior"</string>
+    <string name="zoom_restore_hint">"Ampliada · Toca para ajustar"</string>
 </resources>

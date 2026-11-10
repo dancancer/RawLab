@@ -47,6 +47,17 @@ class ToneCurveNativeTest {
                 engine.export(input, null, settings, output, ExportFormat.PNG)
                 NativeProcessor(NativeProcessor.CPU).use { it.export(input, null, settings, reference, ExportFormat.PNG) }
                 assertArrayEquals("Export is independent of session history", reference.readBytes(), output.readBytes())
+                val redOnly = EditSettings(curve = ToneCurveSettings().replacing(ToneCurveChannel.RED, curve.master))
+                val redPreview = pixels(redOnly)
+                assertFalse(redPreview.contentEquals(baseline))
+                val redProbe = engine.sampleHsl(input, null, redOnly, 96, false, PhotoInputKind.RASTER, HslTargetRevision(2, 2), 0f, 0f)
+                assertEquals(samples[24].y, redProbe.rgb[0].toDouble(), .00001)
+                assertEquals(16.0 / 255, redProbe.rgb[1].toDouble(), .00001)
+                assertEquals(31.0 / 255, redProbe.rgb[2].toDouble(), .00001)
+                engine.export(input, null, redOnly, output, ExportFormat.PNG)
+                NativeProcessor(NativeProcessor.CPU).use { it.export(input, null, redOnly, reference, ExportFormat.PNG) }
+                assertArrayEquals("Channel export is independent of session history", reference.readBytes(), output.readBytes())
+                assertArrayEquals("Channel request survives a source proxy", redPreview, pixels(redOnly))
                 assertArrayEquals("Legacy clears custom state", legacy, pixels(legacySettings))
                 assertArrayEquals("Reset clears complete curve state", baseline, pixels(EditSettings()))
             }

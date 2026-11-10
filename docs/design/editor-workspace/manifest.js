@@ -5,9 +5,41 @@ window.RawLabDesignManifest = {
   title: "RawLab 四端应用设计",
   designVersion: "r9",
   status: "in_review",
-  updatedAt: "2026-10-21",
+  updatedAt: "2026-11-10",
   approval: null,
   implementation: "not_started",
+  // 顶层状态对应历史四端 r9 设计板；已批准的移动端实施单独记录在下方。
+  proposals: {
+    mobileReview: {
+      status: "approved",
+      entry: "mobile-review.html",
+      components: ["mobile-r2", "camera-ui-r3"],
+      implementation: "native_implemented",
+    },
+    cameraWorkspaces: {
+      version: "camera-ui-r3",
+      status: "approved",
+      entry: "../camera-transfer/prototype/workspaces.html",
+      specification: "../camera-transfer/android-camera-ui.md",
+      implementation: "native_implemented",
+      confirmedRequirements: [
+        "Detailed connection help opens as a separate secondary page",
+        "Verified models are evidence records, not an admission allowlist",
+      ],
+    },
+    mobileWorkspaces: {
+      version: "mobile-r2",
+      status: "approved",
+      approval: "User requested iOS and Android implementation on 2026-11-10",
+      implementation: "native_implemented",
+      entry: "mobile-workspaces.html",
+      specification: "mobile-workspaces.md",
+      platforms: ["android", "ios"],
+      reference: "User-assisted observation of Polarr editing screens, 2026-11-10",
+      scope: "Dedicated tool workspaces, scoped drafts, compact controls, RGB channel curves, JPEG lens correction and vignetting",
+      note: "Approved mobile scope; desktop r9 baseline remains separate; iOS camera hardware validation is deferred until a paid Apple developer account is available",
+    },
+  },
   scopes: [
     "四端现有完整功能界面",
     "调整分组与 HSL 基础交互",

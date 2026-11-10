@@ -76,7 +76,7 @@ internal static class AdjustmentTransferValues
         Put(F.QuarterTurns,g.QuarterTurns);Put(F.FlipHorizontal,g.FlipHorizontal);Put(F.FlipVertical,g.FlipVertical);
         Put(F.Straighten,g.StraightenDegrees);Put(F.PerspectiveHorizontal,g.PerspectiveHorizontal);Put(F.PerspectiveVertical,g.PerspectiveVertical);
         var lens=context.IsRaw ? s.Lens ?? new() : new();
-        Put(F.LensDistortion,lens.Distortion);Put(F.LensTCA,lens.Tca);Put(F.LensAutoCrop,lens.AutoCrop);
+        Put(F.LensDistortion,lens.Distortion);Put(F.LensTCA,lens.Tca);Put(F.LensVignetting,lens.Vignetting);Put(F.LensAutoCrop,lens.AutoCrop);
         Put(F.LensProfile,lens.Manual ? lens.CoreProfileId : null);
         return result;
     }
@@ -115,7 +115,7 @@ internal static class AdjustmentTransferValues
             }
             var l=s.Lens ?? new(); var profile=p[F.LensProfile];
             var profileId=Text(profile);if(profileId==new LensSettings(Manual:true).CoreProfileId)profileId=null;
-            l=l with {Distortion=B(F.LensDistortion,l.Distortion),Tca=B(F.LensTCA,l.Tca),AutoCrop=B(F.LensAutoCrop,l.AutoCrop),
+            l=l with {Distortion=B(F.LensDistortion,l.Distortion),Tca=B(F.LensTCA,l.Tca),Vignetting=B(F.LensVignetting,l.Vignetting),AutoCrop=B(F.LensAutoCrop,l.AutoCrop),
                 Manual=profile!=null ? !Null(profile) : l.Manual,ProfileId=profile!=null ? profileId : l.ProfileId};
             if(l.Enabled && l.Manual && l.ProfileId==null)
                 throw new AdjustmentTransferException(AdjustmentFailure.Unrepresentable,F.LensProfile.ID());

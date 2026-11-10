@@ -82,9 +82,9 @@ internal sealed record HDRCameraProfile(string Sha256, string Name)
 
 internal sealed record HDRCameraDevelopmentSettings(bool CustomWhiteBalance = false, double Temperature = 0, double Tint = 0,
     bool SensorExposure = false, int FbddLevel = 0, bool LensDistortion = false, bool LensTca = false,
-    bool LensAutoCrop = true, string? LensProfile = null, HDRCameraProfile? CameraProfile = null)
+    bool LensAutoCrop = true, string? LensProfile = null, HDRCameraProfile? CameraProfile = null, bool LensVignetting = false)
 {
-    internal bool LensActive => LensDistortion || LensTca;
+    internal bool LensActive => LensDistortion || LensTca || LensVignetting;
     internal bool AllowsAI => FbddLevel == 0 && CameraProfile == null;
     internal bool IsDefault => this == new HDRCameraDevelopmentSettings();
     internal bool IsValid => (CustomWhiteBalance ? Temperature is >= 2000 and <= 50000 && Tint is >= -150 and <= 150
@@ -96,8 +96,8 @@ internal sealed record HDRCameraDevelopmentSettings(bool CustomWhiteBalance = fa
 [JsonConverter(typeof(HDRSettingsJsonConverter))]
 public sealed record HDRSettings
 {
-    public int RecordVersion => CameraDevelopment == null ? ProcessingVersion : 8;
-    public int ProcessingVersion => Look != null ? 7 : Detail != null ? 6 : Effects != null ? 5 : Rendition != null ? 4 : Color != null ? 3 : Tone != null ? 2 : 1;
+    public int RecordVersion => ProcessingVersion == 8 ? 9 : CameraDevelopment == null ? ProcessingVersion : 8;
+    public int ProcessingVersion => Tone?.Curve.HasChannelCurves == true ? 8 : Look != null ? 7 : Detail != null ? 6 : Effects != null ? 5 : Rendition != null ? 4 : Color != null ? 3 : Tone != null ? 2 : 1;
     public HDRMode Mode { get; init; } = HDRMode.Hdr;
     public double Exposure { get; init; }
     public double Temperature { get; init; } = 6500;
@@ -132,7 +132,7 @@ public sealed record HDRSettings
         (Effects == null || Rendition != null && PhotoEffectSpec.All.All(spec =>
             Effects[spec.Id] >= spec.Min && Effects[spec.Id] <= spec.Max)) &&
         (Detail == null || Effects != null && Detail.IsValid) && (Look == null || Detail != null && Look.IsValid) &&
-        (CameraDevelopment?.IsValid ?? true);
+        (CameraDevelopment?.IsValid ?? true) && (Tone?.Curve.HasChannelCurves != true || Look != null);
 
     public bool IsIdentity => Exposure == 0 && Temperature == 6500 && Tint == 0 && Contrast == 0 &&
         Highlights == 0 && Shadows == 0 && Saturation == 0 && GeometryIsValid(Geometry) && Geometry.IsIdentity &&
@@ -148,7 +148,9 @@ public sealed record HDRSettings
         CameraDevelopment = CameraDevelopment == null ? null : new()
     };
 
-    internal HDRSettings WithTone(HDRToneSettings tone) => this with { Tone = Tone == null && tone.IsDefault ? null : tone };
+    internal HDRSettings WithTone(HDRToneSettings tone) => tone.Curve.HasChannelCurves
+        ? this with { Tone = tone, Color = ColorSettings, Rendition = RenditionSettings, Effects = EffectSettings, Detail = DetailSettings, Look = LookSettings }
+        : this with { Tone = Tone == null && tone.IsDefault ? null : tone };
     internal HDRSettings WithColor(HDRColorSettings color) =>
         Color == null && color.IsDefault ? this : this with { Tone = ToneSettings, Color = color };
     internal HDRSettings WithRendition(HDRRenditionSettings rendition) =>
@@ -201,7 +203,7 @@ public sealed record HDRSettings
         };
     }
 
-    internal Native.HDRRequestV7 NativeRenderRequest(HDRIntent intent, uint longEdge = 0)
+    internal Native.HDRRequestV8 NativeRenderRequest(HDRIntent intent, uint longEdge = 0)
     {
         var tone = ToneSettings;
         var color = ColorSettings;
@@ -225,11 +227,13 @@ public sealed record HDRSettings
         var look = LookSettings;
         var fingerprint = new byte[65];
         if (HDRLookSettings.IsFingerprint(look.Sha256)) Encoding.ASCII.GetBytes(look.Sha256!,fingerprint);
-        return new() {
+        var lookRequest = new Native.HDRRequestV7 {
             Base = new() { Base = effects, Sharpening = (float)detail.Sharpening, Clarity = (float)detail.Clarity,
                 Dehaze = (float)detail.Dehaze, Denoise = (float)detail.Denoise },
             LookPath = look.AssetPath(), LookStrength = (float)look.Strength, LookSha256 = fingerprint
         };
+        return new() { Base = lookRequest, Red = tone.Curve.Channels.Red.NativeConfig(),
+            Green = tone.Curve.Channels.Green.NativeConfig(), Blue = tone.Curve.Channels.Blue.NativeConfig() };
     }
 
     private Native.HDRRequest NativeRequest(HDRIntent intent, uint longEdge) => new() {
@@ -240,7 +244,8 @@ public sealed record HDRSettings
             4 => Marshal.SizeOf<Native.HDRRequestV4>(),
             5 => Marshal.SizeOf<Native.HDRRequestV5>(),
             6 => Marshal.SizeOf<Native.HDRRequestV6>(),
-            _ => Marshal.SizeOf<Native.HDRRequestV7>()
+            7 => Marshal.SizeOf<Native.HDRRequestV7>(),
+            _ => Marshal.SizeOf<Native.HDRRequestV8>()
         }),
         HDRProcessingVersion = (uint)ProcessingVersion, Intent = (uint)intent,
         ExposureEv = (float)Exposure, Temperature = (float)Temperature, Tint = (float)Tint,
@@ -323,9 +328,10 @@ internal sealed class HDRSettingsJsonConverter : JsonConverter<HDRSettings>
             throw new JsonException("Unsupported HDR settings field");
         int Integer(string name) => value.GetProperty(name).GetInt32();
         double Number(string name) => value.GetProperty(name).GetDouble();
-        var version = look ? 7 : detail ? 6 : effects ? 5 : rendition ? 4 : color ? 3 : extended ? 2 : 1;
+        var parsedTone = extended ? ReadTone(toneValue) : null;
+        var version = parsedTone?.Curve.HasChannelCurves == true ? 8 : look ? 7 : detail ? 6 : effects ? 5 : rendition ? 4 : color ? 3 : extended ? 2 : 1;
         if (look && !detail || detail && !effects || effects && !rendition || rendition && !color || color && !extended ||
-            Integer("record_version") != (camera ? 8 : version) || Integer("hdr_processing_version") != version)
+            Integer("record_version") != (version == 8 ? 9 : camera ? 8 : version) || Integer("hdr_processing_version") != version)
             throw new JsonException("Unsupported HDR settings version");
         var mode = value.GetProperty("mode").GetString() switch {
             "sdr" => HDRMode.Sdr, "hdr" => HDRMode.Hdr, _ => throw new JsonException("Invalid HDR mode")
@@ -338,7 +344,7 @@ internal sealed class HDRSettingsJsonConverter : JsonConverter<HDRSettings>
             Mode = mode,
             Exposure = Number("exposure_ev"), Temperature = Number("relative_temperature"), Tint = Number("relative_tint"),
             Contrast = Number("contrast"), Highlights = Number("highlights"), Shadows = Number("shadows"),
-            Saturation = Number("saturation"), Geometry = geometry, Tone = extended ? ReadTone(toneValue) : null,
+            Saturation = Number("saturation"), Geometry = geometry, Tone = parsedTone,
             Color = color ? ReadColor(colorValue) : null,
             Rendition = rendition ? ReadRendition(renditionValue) : null,
             Effects = effects ? ReadEffects(effectsValue) : null,
@@ -354,8 +360,8 @@ internal sealed class HDRSettingsJsonConverter : JsonConverter<HDRSettings>
     {
         if (value.ValueKind != JsonValueKind.Object) throw new JsonException("Invalid camera RAW HDR development");
         var keys = value.EnumerateObject().Select(p => p.Name).ToArray();
-        if (keys.Count(key => key == "lens_profile") > 1 || keys.Count(key => key == "camera_profile") > 1 ||
-            !keys.Where(key => key is not "lens_profile" and not "camera_profile").Order(StringComparer.Ordinal)
+        if (keys.Count(key => key == "lens_vignetting") > 1 || keys.Count(key => key == "lens_profile") > 1 || keys.Count(key => key == "camera_profile") > 1 ||
+            !keys.Where(key => key is not "lens_profile" and not "camera_profile" and not "lens_vignetting").Order(StringComparer.Ordinal)
             .SequenceEqual(new[] { "exposure_reference", "fbdd_level", "lens_auto_crop", "lens_distortion", "lens_tca",
                 "temperature", "tint", "version", "white_balance_mode" }) || value.GetProperty("version").GetInt32() != 1)
             throw new JsonException("Unsupported camera RAW HDR development fields");
@@ -374,7 +380,7 @@ internal sealed class HDRSettingsJsonConverter : JsonConverter<HDRSettings>
             },
             value.GetProperty("fbdd_level").GetInt32(), value.GetProperty("lens_distortion").GetBoolean(),
             value.GetProperty("lens_tca").GetBoolean(), value.GetProperty("lens_auto_crop").GetBoolean(),
-            value.TryGetProperty("lens_profile", out var profile) ? profile.GetString() : null, cameraProfile);
+            value.TryGetProperty("lens_profile", out var profile) ? profile.GetString() : null, cameraProfile, value.TryGetProperty("lens_vignetting", out var vignette) && vignette.GetBoolean());
     }
 
     internal static HDRLookSettings ReadLook(JsonElement value)
@@ -475,6 +481,7 @@ internal sealed class HDRSettingsJsonConverter : JsonConverter<HDRSettings>
             writer.WriteNumber("fbdd_level",camera.FbddLevel);
             writer.WriteBoolean("lens_distortion",camera.LensDistortion);
             writer.WriteBoolean("lens_tca",camera.LensTca);
+            if (camera.LensVignetting) writer.WriteBoolean("lens_vignetting",true);
             writer.WriteBoolean("lens_auto_crop",camera.LensAutoCrop);
             if (camera.LensProfile != null) writer.WriteString("lens_profile",camera.LensProfile);
             if (camera.CameraProfile is { } profile) {

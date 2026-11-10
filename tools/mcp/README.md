@@ -4,7 +4,7 @@
 
 ## 安装和启动
 
-需要 Python 3.11+、`uv` 和支持 Agent recipe v4（可额外提供 v5～v13）/ result protocol v1 的 RawLab CLI。官方 Python MCP SDK 固定为 `2.2.0`，间接依赖由 `uv.lock` 锁定。CLI 可以使用项目构建或已校验的发布包；普通桌面应用路径不能代替 CLI 可执行文件。
+需要 Python 3.11+、`uv` 和支持 Agent recipe v4（可额外提供 v5～v15）/ result protocol v1 的 RawLab CLI。官方 Python MCP SDK 固定为 `2.2.0`，间接依赖由 `uv.lock` 锁定。CLI 可以使用项目构建或已校验的发布包；普通桌面应用路径不能代替 CLI 可执行文件。
 
 从仓库根目录安装：
 
@@ -51,7 +51,7 @@ preview/export 要求源图和外观文件存在，输出父目录存在。每�
 
 工具返回 JSON text 和同内容的 `structuredContent`，保持 CLI 的 `protocol_version/command/ok/result/error` envelope，失败标记 `isError=true`。MCP 的 `image_info/render_preview/export_photo` 对应 envelope command `info/preview/export`。CLI 错误保留 code/status；MCP 路径/参数限制使用 `invalid_argument`，超时或协议错误使用 `processing_error`。recipe、source 和 image 在适配层预检缺失时映射为 `io_error`、`status=3`（C ABI `IO_ERROR`）；recipe 中的 look 只做 allowed-root canonical 校验，缺失 look 由已调用的 native export 原样返回其 backend error（例如 `unsupported,status=2`）。output parent 缺失属于 MCP 安全发布策略，返回 `invalid_argument`、`status=null`，不会创建 stage；这不模拟 native 各输出格式可能返回的错误（例如 PNG 的 `processing_error,status=4`）。source/look 的 recipe 结构仍会先由 native `validate_recipe` 读取，适配层不会把适配层预检伪称为 native render/export 已运行或返回的 backend status。允许根、leaf symlink、NUL/不可编码路径等限制仍为 `invalid_argument`、`status=null`。日志和诊断只使用 stderr。
 
-服务按 CLI 能力协商 recipe v1～v14。v5 使用 `rawlab` 处理系列，版本 2 采用 C5，v1～v4 继续采用旧处理语义。HDR v6 和 v8～v13 使用 `rawlab_hdr`、`hdr_raster` 来源及 `hdr_jpeg` 输出。v8 增加黑白场、S 曲线和自定义曲线，v9 增加鲜艳度、八色域 HSL 和颜色分级，v10 增加 HDR 亮度上限和独立 SDR 底图调整，v11 增加暗角和颗粒，v12 增加锐化、清晰度、去朦胧和图像级降噪，v13 增加显式声明扩展线性 sRGB 的 HDR CUBE，并校验资源的 SHA-256。v14 沿用 v13 的处理版本 7，新增相机 RAW（`raw`）、ProRAW（`proraw`）和 JPEG、PNG、渲染型 DNG SDR 导出。相机 RAW 的可选 `input.camera_development` 沿用 Mac 的绝对白平衡、曝光参考、FBDD、镜头和相机配置语义；相机配置的 `camera_profile.path` 与 look 路径一样，必须在只读根内并按配方目录解析。ProRAW HDR JPEG 使用核心流式路径和系统临时目录；CLI 仅在启用 DNG SDK 的构建中宣告 ProRAW 输入能力。完整字段见 [edit-json v14](../../lutools/docs/edit-json.md#v14-hdr-sources-and-sdr-exports)。各版本须由 CLI 宣告才可使用。v7 在 v5 RAW 配方上保留必需的 `x3f_mode`（`legacy` 或 `normal-v1`），不会丢弃 X3F 显影身份。未知的未来版本仍不自动支持。HDR `preview` 返回编辑后的 SDR PNG，能力字段 `hdr.display` 为 false。路径限制定义本地工具的授权范围，操作系统层面的隔离需要独立配置。
+服务按 CLI 能力协商 recipe v1～v15。v5 使用 `rawlab` 处理系列，版本 2 采用 C5，v1～v4 继续采用旧处理语义。HDR v6 和 v8～v13 使用 `rawlab_hdr`、`hdr_raster` 来源及 `hdr_jpeg` 输出。v8 增加黑白场、S 曲线和自定义曲线，v9 增加鲜艳度、八色域 HSL 和颜色分级，v10 增加 HDR 亮度上限和独立 SDR 底图调整，v11 增加暗角和颗粒，v12 增加锐化、清晰度、去朦胧和图像级降噪，v13 增加显式声明扩展线性 sRGB 的 HDR CUBE，并校验资源的 SHA-256。v14 沿用 v13 的处理版本 7，新增相机 RAW（`raw`）、ProRAW（`proraw`）和 JPEG、PNG、渲染型 DNG SDR 导出。相机 RAW 的可选 `input.camera_development` 沿用 Mac 的绝对白平衡、曝光参考、FBDD、镜头和相机配置语义；相机配置的 `camera_profile.path` 与 look 路径一样，必须在只读根内并按配方目录解析。ProRAW HDR JPEG 使用核心流式路径和系统临时目录；CLI 仅在启用 DNG SDK 的构建中宣告 ProRAW 输入能力。v15 使用 HDR 处理版本 8，保留 v14 来源和输出格式，并支持 `edits.tone.curve.channels` 中的独立 RGB 曲线。SDR v5/v7 也支持通道曲线；MCP 暂存时保留这些字段。完整字段见 [edit-json](../../lutools/docs/edit-json.md)。各版本须由 CLI 宣告才可使用。v7 在 v5 RAW 配方上保留必需的 `x3f_mode`（`legacy` 或 `normal-v1`），不会丢弃 X3F 显影身份。未知的未来版本仍不自动支持。HDR `preview` 返回编辑后的 SDR PNG，能力字段 `hdr.display` 为 false。路径限制定义本地工具的授权范围，操作系统层面的隔离需要独立配置。
 
 ## 验证
 

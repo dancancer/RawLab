@@ -119,10 +119,11 @@ internal fun PhotoCanvas(
     onPreviewSizeChange: (Int) -> Unit = {}, bottomOverlayInset: Dp = 0.dp,
     bottomOverlay: @Composable () -> Unit = {},
     mode: ComparisonMode = ComparisonMode.SIDE_BY_SIDE, holdingBefore: Boolean = false,
-    showOverlays: Boolean = true, margins: Boolean = true,
+    showOverlays: Boolean = true, margins: Boolean = false,
     onCanvasTap: () -> Unit = {}, onHoldBefore: (Boolean) -> Unit = {},
     onModeChange: (ComparisonMode) -> Unit = {}, onCompareClose: () -> Unit = {}, viewingEnabled: Boolean = true,
-    hslTarget: HslTargetActions? = null,
+    hslTarget: HslTargetActions? = null, workspaceControls: Boolean = false,
+    histogramExpanded: Boolean? = null, onHistogramExpandedChange: (Boolean) -> Unit = {},
 ) {
     val wipeDescription = stringResource(R.string.editor_compare_split)
     val fitDescription = stringResource(R.string.zoom_fit)
@@ -308,20 +309,27 @@ internal fun PhotoCanvas(
             } else pane(Modifier.fillMaxSize())
             }
             if (showOverlays) {
+                if (workspaceControls) TextButton(onClick = {
+                    state.view = if (state.view.magnification > 1.01f) PhotoViewTransform() else PhotoViewTransform(magnification = 2f)
+                }, modifier = Modifier.align(Alignment.TopStart).heightIn(min = 48.dp).background(Color.Black.copy(alpha = .4f)).testTag("editor-zoom-fit")) {
+                    Text(stringResource(if (state.view.magnification > 1.01f) R.string.zoom_restore_hint else R.string.zoom_fit), style = MaterialTheme.typography.labelSmall)
+                }
                 pair.hdr?.let { hdr ->
                     HDRMonitoring((if (before) hdr.neutral else hdr.result).statistics, hdrState, hdrMode, hdrFalseColor,
                         { hdrMode = it }, { hdrFalseColor = it }, Modifier.align(Alignment.TopEnd)
-                            .padding(top = if (compare) 48.dp else 8.dp, end = 8.dp))
+                            .padding(top = if (compare || workspaceControls) 48.dp else 8.dp, end = 8.dp))
                 }
                 if (hslTarget == null) {
-                    BoxWithConstraints(Modifier.fillMaxSize()) { PhotoInfoOverlay(info, infoMode, onInfoClick, maxHeight, if (compare) 112.dp else 64.dp) }
+                    BoxWithConstraints(Modifier.fillMaxSize().padding(top = if (workspaceControls) 48.dp else 0.dp)) {
+                        PhotoInfoOverlay(info, infoMode, onInfoClick, maxHeight, if (compare) 112.dp else 64.dp, !workspaceControls)
+                    }
                 }
                 DisposableEffect(Unit) { onDispose { labelBounds.remove("bottom-overlay") } }
                 Box(Modifier.align(Alignment.BottomCenter).wrapContentWidth().padding(bottom = bottomOverlayInset)
                     .onGloballyPositioned { labelBounds["bottom-overlay"] = it.boundsInWindow() }) { bottomOverlay() }
                 if (compare) {
                     var menu by remember { mutableStateOf(false) }
-                    Box(Modifier.align(Alignment.TopEnd).padding(end = 56.dp)) {
+                    Box(Modifier.align(Alignment.TopEnd).padding(top = if (workspaceControls) 48.dp else 0.dp, end = 56.dp)) {
                         IconButton(onClick = { menu = true }, Modifier.size(48.dp).testTag("comparison-mode")) {
                             Icon(Icons.Outlined.SwapHoriz, stringResource(R.string.editor_compare_mode))
                         }
@@ -361,19 +369,20 @@ internal fun PhotoCanvas(
                 }
             }
             RgbHistogramOverlay(if (before) pair.neutralHistogram else pair.resultHistogram, before, showOverlays && hslTarget == null && pair.hdr == null,
-                Modifier.align(Alignment.TopEnd).padding(8.dp))
+                Modifier.align(Alignment.TopEnd).padding(top = if (workspaceControls) 48.dp else 8.dp, end = 8.dp),
+                showToggle = !workspaceControls, expandedOverride = histogramExpanded, onExpandedChange = onHistogramExpandedChange)
         }
     }
 }
 
 @Composable
-private fun PhotoInfoOverlay(info: PhotoInfo?, mode: Int, onInfoClick: () -> Unit, availableHeight: Dp, endInset: Dp) {
+private fun PhotoInfoOverlay(info: PhotoInfo?, mode: Int, onInfoClick: () -> Unit, availableHeight: Dp, endInset: Dp, showsButton: Boolean = true) {
     val modeDescription = when (mode) {
         1 -> stringResource(R.string.info_file)
         2 -> stringResource(R.string.info_capture)
         else -> stringResource(R.string.info_hidden)
     }
-    IconButton(
+    if (showsButton) IconButton(
         onClick = onInfoClick,
         modifier = Modifier.padding(8.dp).size(48.dp)
             .background(Color.Black.copy(alpha = .65f), CircleShape)
@@ -384,7 +393,7 @@ private fun PhotoInfoOverlay(info: PhotoInfo?, mode: Int, onInfoClick: () -> Uni
     }
     if (mode != 0 && info != null) {
         Column(
-            Modifier.heightIn(max = availableHeight).padding(start = 60.dp, top = 12.dp, end = endInset).widthIn(max = 360.dp)
+            Modifier.heightIn(max = availableHeight).padding(start = if (showsButton) 60.dp else 8.dp, top = 12.dp, end = endInset).widthIn(max = 360.dp)
                 .background(Color.Black.copy(alpha = .72f))
                 .padding(horizontal = 10.dp, vertical = 8.dp)
                 .testTag("photo-info-panel"),

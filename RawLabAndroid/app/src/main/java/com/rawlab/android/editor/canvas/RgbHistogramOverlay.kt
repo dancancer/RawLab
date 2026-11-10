@@ -29,8 +29,11 @@ import com.rawlab.android.R
 import com.rawlab.android.engine.RgbHistogram
 
 @Composable
-internal fun RgbHistogramOverlay(histogram: RgbHistogram?, before: Boolean, visible: Boolean, modifier: Modifier = Modifier) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
+internal fun RgbHistogramOverlay(histogram: RgbHistogram?, before: Boolean, visible: Boolean, modifier: Modifier = Modifier,
+    showToggle: Boolean = true, expandedOverride: Boolean? = null, onExpandedChange: (Boolean) -> Unit = {}) {
+    var savedExpanded by rememberSaveable { mutableStateOf(false) }
+    val expanded = expandedOverride ?: savedExpanded
+    fun change(value: Boolean) { if (expandedOverride == null) savedExpanded = value else onExpandedChange(value) }
     val title = stringResource(R.string.editor_rgb_histogram)
     val source = stringResource(if (before) R.string.editor_compare_before else R.string.result)
     val unavailable = stringResource(R.string.editor_statistics_unavailable)
@@ -45,7 +48,7 @@ internal fun RgbHistogramOverlay(histogram: RgbHistogram?, before: Boolean, visi
     } }
     // 折叠状态属于查看选项；纯预览暂时移除浮层，不改变该选项。
     if (visible) Box(modifier) {
-        IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(48.dp)
+        if (showToggle) IconButton(onClick = { change(!expanded) }, modifier = Modifier.size(48.dp)
             .background(Color.Black.copy(alpha = .65f), CircleShape).testTag("rgb-histogram-toggle")
             .semantics {
                 contentDescription = title
@@ -59,7 +62,7 @@ internal fun RgbHistogramOverlay(histogram: RgbHistogram?, before: Boolean, visi
                 color = Color(0xff202020), contentColor = Color.White, shadowElevation = 6.dp) {
                 Column {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        IconButton(onClick = { expanded = false }, Modifier.size(48.dp).testTag("rgb-histogram-close")) {
+                        IconButton(onClick = { change(false) }, Modifier.size(48.dp).testTag("rgb-histogram-close")) {
                             Icon(Icons.Outlined.Close, close)
                         }
                     }

@@ -10,6 +10,7 @@ import com.rawlab.android.camera.protocol.CameraSessionFixture
 import com.rawlab.android.testing.LanguageTestRule
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.sync.Mutex
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -24,6 +25,34 @@ class CameraImportInterruptionTest {
 
     @Test fun backgroundDuringPreparationDoesNotStartDownload() = backgroundDuringPreparation(false)
     @Test fun foregroundReturnDoesNotReviveInvalidatedPreparation() = backgroundDuringPreparation(true)
+
+    @Test fun backgroundDuringConnectionInvalidatesAndWaitsForTheOldOwner() {
+        compose.waitUntil(10_000) { !compose.activity.camera.state.value.preparing }
+        val model = compose.activity.camera
+        val pending = Job()
+        CameraSessionFixture().use { fixture ->
+            connectFixture(fixture)
+            try {
+            compose.runOnUiThread {
+                setField(model, "connectionWork", pending)
+                val state = field<MutableStateFlow<CameraImportState>>(model, "mutable")
+                state.value = state.value.copy(connected = false, stage = SonyCameraConnection.Stage.NETWORK)
+                model.onBackground()
+            }
+            assertTrue(model.state.value.closing)
+            assertNull(field<Any?>(model, "session"))
+            assertNull(model.state.value.stage)
+            compose.runOnUiThread { model.onForeground() }
+            assertTrue("New owner must wait for the old connection work", model.state.value.closing)
+            pending.complete()
+            compose.waitUntil(10_000) { !model.state.value.closing }
+            assertFalse(model.state.value.connected)
+            } finally {
+                pending.complete()
+                compose.runOnUiThread { model.onForeground() }
+            }
+        }
+    }
 
     private fun backgroundDuringPreparation(returnToForeground: Boolean) {
         compose.waitUntil(10_000) { !compose.activity.camera.state.value.preparing }

@@ -7526,5 +7526,885 @@
     "fr": "Sélectionner à nouveau les photos",
     "ja": "写真を再選択",
     "zh-Hans": "重新选择照片"
+  },
+  "补充镜头信息": {
+    "en": "Complete lens information",
+    "de": "Objektivdaten ergänzen",
+    "fr": "Compléter les informations de l’objectif",
+    "es": "Completar información del objetivo",
+    "ja": "レンズ情報を補完",
+    "zh-Hans": "补充镜头信息"
+  },
+  "焦距（mm）": {
+    "en": "Focal length (mm)",
+    "de": "Brennweite (mm)",
+    "fr": "Distance focale (mm)",
+    "es": "Distancia focal (mm)",
+    "ja": "焦点距離（mm）",
+    "zh-Hans": "焦距（mm）"
+  },
+  "相机裁切系数": {
+    "en": "Camera crop factor",
+    "de": "Crop-Faktor der Kamera",
+    "fr": "Facteur de recadrage du boîtier",
+    "es": "Factor de recorte de la cámara",
+    "ja": "カメラのクロップ係数",
+    "zh-Hans": "相机裁切系数"
+  },
+  "留空时使用照片元数据或相机数据库。": {
+    "en": "Leave blank to use photo metadata or the camera database.",
+    "de": "Leer lassen, um Fotometadaten oder die Kameradatenbank zu verwenden.",
+    "fr": "Laisser vide pour utiliser les métadonnées ou la base de données des appareils.",
+    "es": "Deja en blanco para usar los metadatos o la base de datos de cámaras.",
+    "ja": "空欄の場合は写真のメタデータまたはカメラデータベースを使用します。",
+    "zh-Hans": "留空时使用照片元数据或相机数据库。"
+  },
+  "JPEG 可能已有机内校正；请对比画面后再开启。": {
+    "en": "JPEG may already have in-camera correction. Compare the image before enabling.",
+    "de": "JPEG enthält möglicherweise bereits eine Kamerakorrektur. Vor dem Aktivieren vergleichen.",
+    "fr": "Le JPEG peut déjà être corrigé par l’appareil. Comparez avant d’activer.",
+    "es": "El JPEG puede tener correcciones de cámara. Compara antes de activar.",
+    "ja": "JPEGにはカメラ内補正が適用済みの場合があります。有効にする前に画像を比較してください。",
+    "zh-Hans": "JPEG 可能已有机内校正；请对比画面后再开启。"
+  },
+  "原片不可用": {
+    "de": "Originale nicht verfügbar",
+    "en": "Originals unavailable",
+    "es": "Originales no disponibles",
+    "fr": "Originaux indisponibles",
+    "ja": "元の写真を利用できません",
+    "zh-Hans": "原片不可用"
+  },
+  "拍摄结果尚未确认。请检查相机，重新连接只恢复原件接收。": {
+    "zh-Hans": "拍摄结果尚未确认。请检查相机，重新连接只恢复原件接收。",
+    "en": "The capture result has not been confirmed. Check the camera; reconnecting only resumes receiving originals.",
+    "de": "Das Aufnahmeergebnis ist noch nicht bestätigt. Prüfen Sie die Kamera. Eine erneute Verbindung setzt nur den Empfang der Originale fort.",
+    "es": "El resultado de la toma aún no se ha confirmado. Comprueba la cámara; volver a conectar solo reanudará la recepción de los originales.",
+    "fr": "Le résultat de la prise de vue n’est pas encore confirmé. Vérifiez l’appareil ; la reconnexion ne reprend que la réception des originaux.",
+    "ja": "撮影結果をまだ確認できません。カメラを確認してください。再接続ではオリジナルの受信だけを再開します。"
+  },
+  "正在查找相机…": {
+    "de": "Kamera wird gesucht …",
+    "en": "Searching for camera…",
+    "es": "Buscando cámara…",
+    "fr": "Recherche de l’appareil photo…",
+    "ja": "カメラを検索中…",
+    "zh-Hans": "正在查找相机…"
+  },
+  "请允许系统连接相机 Wi-Fi": {
+    "de": "Erlauben Sie dem System, eine Verbindung mit dem Kamera-WLAN herzustellen",
+    "en": "Allow the system to connect to the camera’s Wi-Fi",
+    "es": "Permite que el sistema se conecte a la red Wi-Fi de la cámara",
+    "fr": "Autorisez le système à se connecter au Wi-Fi de l’appareil photo",
+    "ja": "システムによるカメラの Wi-Fi への接続を許可してください",
+    "zh-Hans": "请允许系统连接相机 Wi-Fi"
+  },
+  "日光": {
+    "zh-Hans": "日光",
+    "en": "Daylight",
+    "de": "Tageslicht",
+    "es": "Luz diurna",
+    "fr": "Lumière du jour",
+    "ja": "太陽光"
+  },
+  "开始新的联机": {
+    "zh-Hans": "开始新的联机",
+    "en": "Start new tethering",
+    "de": "Neue Tether-Aufnahme starten",
+    "es": "Iniciar un nuevo disparo conectado",
+    "fr": "Démarrer une nouvelle prise de vue connectée",
+    "ja": "新しいテザー撮影を開始"
+  },
+  "请核对手机和相机的配对数字": {
+    "de": "Prüfen Sie die Kopplungsnummer auf dem Smartphone und der Kamera",
+    "en": "Check the pairing number on your phone and camera",
+    "es": "Comprueba el número de emparejamiento en el teléfono y la cámara",
+    "fr": "Vérifiez le numéro d’association sur le téléphone et l’appareil photo",
+    "ja": "スマートフォンとカメラのペアリング番号を確認してください",
+    "zh-Hans": "请核对手机和相机的配对数字"
+  },
+  "更换相机": {
+    "zh-Hans": "更换相机",
+    "en": "Change camera",
+    "de": "Kamera wechseln",
+    "es": "Cambiar cámara",
+    "fr": "Changer d’appareil photo",
+    "ja": "カメラを変更"
+  },
+  "重新连接": {
+    "zh-Hans": "重新连接",
+    "en": "Reconnect",
+    "de": "Erneut verbinden",
+    "es": "Volver a conectar",
+    "fr": "Reconnecter",
+    "ja": "再接続"
+  },
+  "相机中的原照片会保留。": {
+    "de": "Die Originalfotos auf der Kamera bleiben erhalten.",
+    "en": "Original photos on the camera will be kept.",
+    "es": "Las fotos originales de la cámara se conservarán.",
+    "fr": "Les photos originales de l’appareil seront conservées.",
+    "ja": "カメラ内の元の写真は保持されます。",
+    "zh-Hans": "相机中的原照片会保留。"
+  },
+  "取景已暂停": {
+    "zh-Hans": "取景已暂停",
+    "en": "Live view paused",
+    "de": "Livebild pausiert",
+    "es": "Vista en directo pausada",
+    "fr": "Visée en direct en pause",
+    "ja": "ライブビューを一時停止"
+  },
+  "白炽灯": {
+    "zh-Hans": "白炽灯",
+    "en": "Incandescent",
+    "de": "Kunstlicht",
+    "es": "Incandescente",
+    "fr": "Incandescent",
+    "ja": "電球"
+  },
+  "曝光补偿": {
+    "zh-Hans": "曝光补偿",
+    "en": "Exposure compensation",
+    "de": "Belichtungskorrektur",
+    "es": "Compensación de exposición",
+    "fr": "Correction d’exposition",
+    "ja": "露出補正"
+  },
+  "恢复未完成的原件接收，不会自动补拍。": {
+    "zh-Hans": "恢复未完成的原件接收，不会自动补拍。",
+    "en": "Resume receiving unfinished originals; no photos will be captured automatically.",
+    "de": "Den unvollständigen Empfang der Originale fortsetzen; es werden keine Fotos automatisch aufgenommen.",
+    "es": "Reanuda la recepción de los originales pendientes; no se tomarán fotos automáticamente.",
+    "fr": "Reprend la réception des originaux inachevés ; aucune photo ne sera prise automatiquement.",
+    "ja": "未完了のオリジナル受信を再開します。自動で再撮影はしません。"
+  },
+  "设置结果未确认，请重新连接后检查。": {
+    "zh-Hans": "设置结果未确认，请重新连接后检查。",
+    "en": "The setting result was not confirmed. Reconnect and check again.",
+    "de": "Das Ergebnis der Einstellung wurde nicht bestätigt. Verbinden Sie sich erneut und prüfen Sie es.",
+    "es": "No se ha confirmado el resultado del ajuste. Vuelve a conectar y compruébalo.",
+    "fr": "Le résultat du réglage n’est pas confirmé. Reconnectez-vous et vérifiez-le.",
+    "ja": "設定結果を確認できません。再接続して確認してください。"
+  },
+  "没有符合筛选条件的照片。": {
+    "de": "Keine Fotos entsprechen dem aktuellen Filter.",
+    "en": "No photos match the current filter.",
+    "es": "Ninguna foto coincide con el filtro actual.",
+    "fr": "Aucune photo ne correspond au filtre actuel.",
+    "ja": "現在のフィルターに一致する写真はありません。",
+    "zh-Hans": "没有符合筛选条件的照片。"
+  },
+  "已保存的原件缺失或已改变，无法打开。": {
+    "de": "Das gespeicherte Original fehlt oder wurde geändert und kann nicht geöffnet werden.",
+    "en": "The saved original is missing or has changed and cannot be opened.",
+    "es": "Falta el original guardado o ha cambiado; no se puede abrir.",
+    "fr": "L’original enregistré est introuvable ou a changé et ne peut pas être ouvert.",
+    "ja": "保存済みの元ファイルが見つからないか変更されているため、開けません。",
+    "zh-Hans": "已保存的原件缺失或已改变，无法打开。"
+  },
+  "联机拍摄": {
+    "zh-Hans": "联机拍摄",
+    "en": "Tethered Shooting",
+    "de": "Tether-Aufnahme",
+    "es": "Disparo conectado",
+    "fr": "Prise de vue connectée",
+    "ja": "テザー撮影"
+  },
+  "导入时请保持 RawLab 在前台。": {
+    "de": "Lassen Sie RawLab während des Imports im Vordergrund.",
+    "en": "Keep RawLab in the foreground during import.",
+    "es": "Mantén RawLab en primer plano durante la importación.",
+    "fr": "Gardez RawLab au premier plan pendant l’importation.",
+    "ja": "読み込み中は RawLab を前面に表示してください。",
+    "zh-Hans": "导入时请保持 RawLab 在前台。"
+  },
+  "预览图，可双指缩放": {
+    "zh-Hans": "预览图，可双指缩放",
+    "en": "Preview image; pinch to zoom",
+    "de": "Vorschaubild; zum Zoomen zwei Finger verwenden",
+    "es": "Vista previa; pellizca para ampliar",
+    "fr": "Aperçu ; pincez pour zoomer",
+    "ja": "プレビュー。ピンチでズームできます。"
+  },
+  "从相机导入": {
+    "de": "Von Kamera importieren",
+    "en": "Import from Camera",
+    "es": "Importar desde la cámara",
+    "fr": "Importer depuis l’appareil photo",
+    "ja": "カメラから読み込む",
+    "zh-Hans": "从相机导入"
+  },
+  "全部日期": {
+    "de": "Alle Datumsangaben",
+    "en": "All dates",
+    "es": "Todas las fechas",
+    "fr": "Toutes les dates",
+    "ja": "すべての日付",
+    "zh-Hans": "全部日期"
+  },
+  "停止导入": {
+    "de": "Import stoppen",
+    "en": "Stop import",
+    "es": "Detener la importación",
+    "fr": "Arrêter l’importation",
+    "ja": "読み込みを停止",
+    "zh-Hans": "停止导入"
+  },
+  "正在开启相机 Wi-Fi…": {
+    "de": "Kamera-WLAN wird aktiviert …",
+    "en": "Starting camera Wi-Fi…",
+    "es": "Activando la red Wi-Fi de la cámara…",
+    "fr": "Activation du Wi-Fi de l’appareil photo…",
+    "ja": "カメラの Wi-Fi を起動中…",
+    "zh-Hans": "正在开启相机 Wi-Fi…"
+  },
+  "打开编辑": {
+    "de": "Im Editor öffnen",
+    "en": "Open in editor",
+    "es": "Abrir en el editor",
+    "fr": "Ouvrir dans l’éditeur",
+    "ja": "エディターで開く",
+    "zh-Hans": "打开编辑"
+  },
+  "上次导入未完成": {
+    "de": "Der letzte Import wurde nicht abgeschlossen",
+    "en": "The last import did not finish",
+    "es": "La última importación no se completó",
+    "fr": "La dernière importation n’est pas terminée",
+    "ja": "前回の読み込みは完了していません",
+    "zh-Hans": "上次导入未完成"
+  },
+  "实时取景、调整参数并拍摄": {
+    "zh-Hans": "实时取景、调整参数并拍摄",
+    "en": "Use live view, adjust settings, and shoot",
+    "de": "Livebild anzeigen, Einstellungen anpassen und fotografieren",
+    "es": "Usar la vista en directo, ajustar parámetros y disparar",
+    "fr": "Afficher la visée en direct, régler les paramètres et prendre des photos",
+    "ja": "ライブビューで設定を調整して撮影"
+  },
+  "正在更新相机设置…": {
+    "zh-Hans": "正在更新相机设置…",
+    "en": "Updating camera settings…",
+    "de": "Kameraeinstellungen werden aktualisiert …",
+    "es": "Actualizando los ajustes de la cámara…",
+    "fr": "Mise à jour des réglages de l’appareil…",
+    "ja": "カメラ設定を更新中…"
+  },
+  "选择相机": {
+    "zh-Hans": "选择相机",
+    "en": "Choose camera",
+    "de": "Kamera auswählen",
+    "es": "Elegir cámara",
+    "fr": "Choisir un appareil photo",
+    "ja": "カメラを選択"
+  },
+  "未发现相机。请打开相机的智能手机连接。": {
+    "zh-Hans": "未发现相机。请打开相机的智能手机连接。",
+    "en": "No camera found. Open the camera’s smartphone connection.",
+    "de": "Keine Kamera gefunden. Öffnen Sie die Smartphone-Verbindung der Kamera.",
+    "es": "No se ha encontrado ninguna cámara. Abre la conexión con smartphone de la cámara.",
+    "fr": "Aucun appareil photo trouvé. Ouvrez la connexion smartphone de l’appareil.",
+    "ja": "カメラが見つかりません。カメラのスマートフォン接続を開いてください。"
+  },
+  "导入记录": {
+    "de": "Importverlauf",
+    "en": "Import history",
+    "es": "Historial de importación",
+    "fr": "Historique des importations",
+    "ja": "読み込み履歴",
+    "zh-Hans": "导入记录"
+  },
+  "对焦模式": {
+    "zh-Hans": "对焦模式",
+    "en": "Focus mode",
+    "de": "Fokusmodus",
+    "es": "Modo de enfoque",
+    "fr": "Mode de mise au point",
+    "ja": "フォーカスモード"
+  },
+  "没有找到相机。请保持相机处于等待连接画面。": {
+    "de": "Keine Kamera gefunden. Lassen Sie die Kamera im Bildschirm zum Warten auf eine Verbindung.",
+    "en": "No camera found. Keep the camera on its connection-waiting screen.",
+    "es": "No se ha encontrado ninguna cámara. Mantén la cámara en la pantalla de espera de conexión.",
+    "fr": "Aucun appareil photo trouvé. Laissez l’appareil sur l’écran d’attente de connexion.",
+    "ja": "カメラが見つかりません。カメラを接続待機画面にしたままにしてください。",
+    "zh-Hans": "没有找到相机。请保持相机处于等待连接画面。"
+  },
+  "相机照片保存位置": {
+    "de": "Speicherort für Kamerafotos",
+    "en": "Camera photo save location",
+    "es": "Ubicación de guardado de las fotos de la cámara",
+    "fr": "Emplacement d’enregistrement des photos de l’appareil photo",
+    "ja": "カメラ写真の保存先",
+    "zh-Hans": "相机照片保存位置"
+  },
+  "相机未提供可调整选项": {
+    "zh-Hans": "相机未提供可调整选项",
+    "en": "The camera provides no adjustable options",
+    "de": "Die Kamera stellt keine einstellbaren Optionen bereit",
+    "es": "La cámara no ofrece opciones ajustables",
+    "fr": "L’appareil photo ne fournit aucune option réglable",
+    "ja": "カメラに調整可能な項目がありません"
+  },
+  "放大预览": {
+    "de": "Vergrößerte Vorschau",
+    "en": "Zoom preview",
+    "es": "Vista previa ampliada",
+    "fr": "Aperçu agrandi",
+    "ja": "拡大プレビュー",
+    "zh-Hans": "放大预览"
+  },
+  "恢复上次联机": {
+    "zh-Hans": "恢复上次联机",
+    "en": "Resume last tethering",
+    "de": "Letzte Tether-Aufnahme fortsetzen",
+    "es": "Reanudar el último disparo conectado",
+    "fr": "Reprendre la dernière prise de vue connectée",
+    "ja": "前回のテザー撮影を再開"
+  },
+  "查找相机": {
+    "de": "Kamera suchen",
+    "en": "Find camera",
+    "es": "Buscar cámara",
+    "fr": "Rechercher un appareil photo",
+    "ja": "カメラを検索",
+    "zh-Hans": "查找相机"
+  },
+  "连接未完成。请保持相机唤醒，重新查找并连接。": {
+    "de": "Die Verbindung wurde nicht abgeschlossen. Lassen Sie die Kamera aktiv und suchen Sie erneut nach ihr, um eine Verbindung herzustellen.",
+    "en": "Connection did not complete. Keep the camera awake, then search and connect again.",
+    "es": "La conexión no se completó. Mantén la cámara activa y vuelve a buscarla y conectarla.",
+    "fr": "La connexion n’est pas terminée. Gardez l’appareil photo actif, puis recherchez-le et reconnectez-le.",
+    "ja": "接続を完了できませんでした。カメラを起動したまま、もう一度検索して接続してください。",
+    "zh-Hans": "连接未完成。请保持相机唤醒，重新查找并连接。"
+  },
+  "相机中没有可导入的 RAW 或 JPEG 照片。": {
+    "de": "Auf der Kamera sind keine importierbaren RAW- oder JPEG-Fotos.",
+    "en": "The camera has no RAW or JPEG photos to import.",
+    "es": "La cámara no contiene fotos RAW o JPEG que se puedan importar.",
+    "fr": "L’appareil photo ne contient aucune photo RAW ou JPEG à importer.",
+    "ja": "カメラに読み込める RAW または JPEG 写真がありません。",
+    "zh-Hans": "相机中没有可导入的 RAW 或 JPEG 照片。"
+  },
+  "包含筛选范围外的已选照片": {
+    "de": "Enthält ausgewählte Fotos außerhalb des Filters",
+    "en": "Includes selected photos outside the filter",
+    "es": "Incluye fotos seleccionadas fuera del filtro",
+    "fr": "Contient des photos sélectionnées hors du filtre",
+    "ja": "フィルター範囲外で選択した写真を含む",
+    "zh-Hans": "包含筛选范围外的已选照片"
+  },
+  "浏览存储卡，选择并保存照片": {
+    "zh-Hans": "浏览存储卡，选择并保存照片",
+    "en": "Browse the memory card, select, and save photos",
+    "de": "Speicherkarte durchsuchen, Fotos auswählen und speichern",
+    "es": "Explorar la tarjeta de memoria, seleccionar y guardar fotos",
+    "fr": "Parcourir la carte mémoire, sélectionner et enregistrer des photos",
+    "ja": "メモリーカードを確認し、写真を選んで保存"
+  },
+  "相机连接已断开。已保存的照片仍可查看。": {
+    "de": "Die Kamera wurde getrennt. Gespeicherte Fotos können weiterhin angezeigt werden.",
+    "en": "The camera was disconnected. Saved photos are still available.",
+    "es": "La cámara se ha desconectado. Las fotos guardadas siguen disponibles.",
+    "fr": "L’appareil photo est déconnecté. Les photos enregistrées restent disponibles.",
+    "ja": "カメラとの接続が切れました。保存済みの写真は引き続き表示できます。",
+    "zh-Hans": "相机连接已断开。已保存的照片仍可查看。"
+  },
+  "还没有导入记录": {
+    "de": "Noch kein Importverlauf",
+    "en": "No import history yet",
+    "es": "Aún no hay historial de importación",
+    "fr": "Aucun historique d’importation pour le moment",
+    "ja": "読み込み履歴はまだありません",
+    "zh-Hans": "还没有导入记录"
+  },
+  "断开连接": {
+    "de": "Verbindung trennen",
+    "en": "Disconnect",
+    "es": "Desconectar",
+    "fr": "Déconnecter",
+    "ja": "接続を解除",
+    "zh-Hans": "断开连接"
+  },
+  "请打开手机蓝牙后重试。": {
+    "de": "Schalten Sie Bluetooth am Smartphone ein und versuchen Sie es erneut.",
+    "en": "Turn on Bluetooth on your phone and try again.",
+    "es": "Activa el Bluetooth del teléfono y vuelve a intentarlo.",
+    "fr": "Activez le Bluetooth du téléphone, puis réessayez.",
+    "ja": "スマートフォンの Bluetooth をオンにして、もう一度お試しください。",
+    "zh-Hans": "请打开手机蓝牙后重试。"
+  },
+  "筛选照片": {
+    "de": "Fotos filtern",
+    "en": "Filter photos",
+    "es": "Filtrar fotos",
+    "fr": "Filtrer les photos",
+    "ja": "写真を絞り込む",
+    "zh-Hans": "筛选照片"
+  },
+  "拍摄后，照片会显示在这里": {
+    "zh-Hans": "拍摄后，照片会显示在这里",
+    "en": "Photos will appear here after you shoot",
+    "de": "Nach der Aufnahme werden Fotos hier angezeigt",
+    "es": "Las fotos aparecerán aquí después de disparar",
+    "fr": "Les photos prises s’afficheront ici",
+    "ja": "撮影すると、ここに写真が表示されます"
+  },
+  "连接相机 Wi-Fi": {
+    "de": "Mit Kamera-WLAN verbinden",
+    "en": "Connect to camera Wi-Fi",
+    "es": "Conectar al Wi-Fi de la cámara",
+    "fr": "Se connecter au Wi-Fi de l’appareil",
+    "ja": "カメラの Wi-Fi に接続",
+    "zh-Hans": "连接相机 Wi-Fi"
+  },
+  "照片格式": {
+    "de": "Fotoformat",
+    "en": "Photo format",
+    "es": "Formato de foto",
+    "fr": "Format photo",
+    "ja": "写真形式",
+    "zh-Hans": "照片格式"
+  },
+  "已导入": {
+    "de": "Importiert",
+    "en": "Imported",
+    "es": "Importada",
+    "fr": "Importée",
+    "ja": "読み込み済み",
+    "zh-Hans": "已导入"
+  },
+  "保存位置": {
+    "de": "Speicherort",
+    "en": "Save location",
+    "es": "Ubicación de guardado",
+    "fr": "Emplacement",
+    "ja": "保存先",
+    "zh-Hans": "保存位置"
+  },
+  "请将相机设为单张拍摄，并确认照片同时保存到相机存储卡。": {
+    "zh-Hans": "请将相机设为单张拍摄，并确认照片同时保存到相机存储卡。",
+    "en": "Set the camera to single shooting and confirm that photos are also saved to the camera memory card.",
+    "de": "Stellen Sie die Kamera auf Einzelaufnahme und bestätigen Sie, dass Fotos auch auf der Speicherkarte der Kamera gespeichert werden.",
+    "es": "Configura la cámara para disparo único y confirma que las fotos también se guarden en la tarjeta de memoria de la cámara.",
+    "fr": "Réglez l’appareil sur la prise de vue unique et vérifiez que les photos sont également enregistrées sur sa carte mémoire.",
+    "ja": "カメラを1枚撮影に設定し、写真がカメラのメモリーカードにも保存されることを確認してください。"
+  },
+  "拍摄一张": {
+    "zh-Hans": "拍摄一张",
+    "en": "Take one photo",
+    "de": "Ein Foto aufnehmen",
+    "es": "Tomar una foto",
+    "fr": "Prendre une photo",
+    "ja": "1枚撮影"
+  },
+  "已连接，继续": {
+    "de": "Verbunden, weiter",
+    "en": "Connected, continue",
+    "es": "Conectado, continuar",
+    "fr": "Connecté, continuer",
+    "ja": "接続済み、続ける",
+    "zh-Hans": "已连接，继续"
+  },
+  "实时取景": {
+    "zh-Hans": "实时取景",
+    "en": "Live view",
+    "de": "Livebild",
+    "es": "Vista en directo",
+    "fr": "Visée en direct",
+    "ja": "ライブビュー"
+  },
+  "无法保存导入记录或原件。请检查可用空间后重试。": {
+    "de": "Der Importverlauf oder die Originaldateien konnten nicht gespeichert werden. Prüfen Sie den verfügbaren Speicher und versuchen Sie es erneut.",
+    "en": "Unable to save the import record or original files. Check available storage and try again.",
+    "es": "No se puede guardar el registro de importación o los archivos originales. Comprueba el espacio disponible e inténtalo de nuevo.",
+    "fr": "Impossible d’enregistrer l’historique d’importation ou les fichiers originaux. Vérifiez l’espace disponible et réessayez.",
+    "ja": "読み込み記録または元のファイルを保存できません。空き容量を確認して、もう一度お試しください。",
+    "zh-Hans": "无法保存导入记录或原件。请检查可用空间后重试。"
+  },
+  "闪光灯": {
+    "zh-Hans": "闪光灯",
+    "en": "Flash",
+    "de": "Blitz",
+    "es": "Flash",
+    "fr": "Flash",
+    "ja": "フラッシュ"
+  },
+  "查看已选": {
+    "de": "Ausgewählte anzeigen",
+    "en": "View selected",
+    "es": "Ver seleccionadas",
+    "fr": "Voir la sélection",
+    "ja": "選択項目を表示",
+    "zh-Hans": "查看已选"
+  },
+  "拍后审片": {
+    "zh-Hans": "拍后审片",
+    "en": "Review after capture",
+    "de": "Nach der Aufnahme prüfen",
+    "es": "Revisar después de disparar",
+    "fr": "Vérifier après la prise de vue",
+    "ja": "撮影後に確認"
+  },
+  "构图网格": {
+    "zh-Hans": "构图网格",
+    "en": "Composition grid",
+    "de": "Kompositionsraster",
+    "es": "Cuadrícula de composición",
+    "fr": "Grille de composition",
+    "ja": "構図グリッド"
+  },
+  "取消连接": {
+    "de": "Verbindung abbrechen",
+    "en": "Cancel connection",
+    "es": "Cancelar conexión",
+    "fr": "Annuler la connexion",
+    "ja": "接続をキャンセル",
+    "zh-Hans": "取消连接"
+  },
+  "正在接收原件": {
+    "zh-Hans": "正在接收原件",
+    "en": "Receiving originals",
+    "de": "Originale werden empfangen",
+    "es": "Recibiendo originales",
+    "fr": "Réception des originaux",
+    "ja": "オリジナルを受信中"
+  },
+  "联机已暂停": {
+    "zh-Hans": "联机已暂停",
+    "en": "Tethering paused",
+    "de": "Tether-Aufnahme pausiert",
+    "es": "Disparo conectado pausado",
+    "fr": "Prise de vue connectée en pause",
+    "ja": "テザー撮影を一時停止しました"
+  },
+  "当前拍摄模式下不可调整": {
+    "zh-Hans": "当前拍摄模式下不可调整",
+    "en": "Cannot adjust in the current shooting mode",
+    "de": "Im aktuellen Aufnahmemodus nicht einstellbar",
+    "es": "No se puede ajustar en el modo de disparo actual",
+    "fr": "Non réglable dans le mode de prise de vue actuel",
+    "ja": "現在の撮影モードでは調整できません"
+  },
+  "暂停联机": {
+    "zh-Hans": "暂停联机",
+    "en": "Pause tethering",
+    "de": "Tether-Aufnahme pausieren",
+    "es": "Pausar el disparo conectado",
+    "fr": "Mettre la prise de vue connectée en pause",
+    "ja": "テザー撮影を一時停止"
+  },
+  "继续未完成": {
+    "de": "Unvollständige fortsetzen",
+    "en": "Continue unfinished",
+    "es": "Continuar pendientes",
+    "fr": "Reprendre les éléments restants",
+    "ja": "未完了分を続行",
+    "zh-Hans": "继续未完成"
+  },
+  "正在连接相机…": {
+    "de": "Verbindung zur Kamera wird hergestellt …",
+    "en": "Connecting to camera…",
+    "es": "Conectando con la cámara…",
+    "fr": "Connexion à l’appareil photo…",
+    "ja": "カメラに接続中…",
+    "zh-Hans": "正在连接相机…"
+  },
+  "阴天": {
+    "zh-Hans": "阴天",
+    "en": "Cloudy",
+    "de": "Bewölkt",
+    "es": "Nublado",
+    "fr": "Nuageux",
+    "ja": "曇天"
+  },
+  "预览不可用": {
+    "de": "Vorschau nicht verfügbar",
+    "en": "Preview unavailable",
+    "es": "Vista previa no disponible",
+    "fr": "Aperçu indisponible",
+    "ja": "プレビューを利用できません",
+    "zh-Hans": "预览不可用"
+  },
+  "可用功能取决于相机当前的连接方式和拍摄模式。": {
+    "en": "Available features depend on the camera’s current connection method and shooting mode.",
+    "de": "Verfügbare Funktionen hängen von der Verbindungsmethode und dem Aufnahmemodus der Kamera ab.",
+    "fr": "Les fonctions disponibles dépendent du mode de connexion et du mode de prise de vue de l’appareil.",
+    "es": "Las funciones disponibles dependen de la conexión y del modo de toma actuales de la cámara.",
+    "ja": "利用できる機能は、カメラの接続方法と撮影モードによって異なります。",
+    "zh-Hans": "可用功能取决于相机当前的连接方式和拍摄模式。"
+  },
+  "如何连接": {
+    "en": "How to connect",
+    "de": "Verbindungsanleitung",
+    "fr": "Comment se connecter",
+    "es": "Cómo conectarse",
+    "ja": "接続方法",
+    "zh-Hans": "如何连接"
+  },
+  "在相机打开智能手机连接，查看机身显示的 Wi-Fi 名称和密码。你也可以先在系统 Wi-Fi 设置中连接，再返回继续。": {
+    "en": "Open Smartphone Connection on the camera and check its Wi-Fi name and password. You can also connect in system Wi-Fi settings, then return to continue.",
+    "de": "Öffnen Sie die Smartphone-Verbindung an der Kamera und prüfen Sie Wi-Fi-Name und Passwort. Sie können auch in den System-Wi-Fi-Einstellungen verbinden und dann zurückkehren.",
+    "fr": "Ouvrez Connexion smartphone sur l’appareil et consultez son nom Wi-Fi et son mot de passe. Vous pouvez aussi vous connecter dans les réglages Wi-Fi du système, puis revenir.",
+    "es": "Abre la conexión con el smartphone en la cámara y consulta su nombre Wi-Fi y contraseña. También puedes conectarte en los ajustes Wi-Fi del sistema y volver.",
+    "ja": "カメラでスマートフォン接続を開き、表示された Wi-Fi 名とパスワードを確認してください。システムの Wi-Fi 設定で接続してから戻ることもできます。",
+    "zh-Hans": "在相机打开智能手机连接，查看机身显示的 Wi-Fi 名称和密码。你也可以先在系统 Wi-Fi 设置中连接，再返回继续。"
+  },
+  "已确认相机同时将原件保存到存储卡。": {
+    "en": "I confirmed that the camera also saves originals to its memory card.",
+    "de": "Ich habe bestätigt, dass die Kamera Originale auch auf der Speicherkarte speichert.",
+    "fr": "J’ai confirmé que l’appareil enregistre aussi les originaux sur la carte mémoire.",
+    "es": "He confirmado que la cámara también guarda los originales en la tarjeta de memoria.",
+    "ja": "カメラが原本をメモリーカードにも保存することを確認しました。",
+    "zh-Hans": "已确认相机同时将原件保存到存储卡。"
+  },
+  "连接前准备": {
+    "en": "Before you connect",
+    "de": "Vor dem Verbinden",
+    "fr": "Avant la connexion",
+    "es": "Antes de conectar",
+    "ja": "接続前の準備",
+    "zh-Hans": "连接前准备"
+  },
+  "保持相机开机，在机身菜单打开智能手机连接。菜单名称以你的机型为准。关闭占用相机连接的其他应用。": {
+    "en": "Keep the camera on and open Smartphone Connection in its menu. Menu names vary by model. Close other apps using the camera connection.",
+    "de": "Lassen Sie die Kamera eingeschaltet und öffnen Sie die Smartphone-Verbindung im Kameramenü. Menünamen variieren je nach Modell. Schließen Sie andere Apps, die die Kameraverbindung verwenden.",
+    "fr": "Laissez l’appareil allumé et ouvrez Connexion smartphone dans son menu. Les noms varient selon le modèle. Fermez les autres apps utilisant la connexion à l’appareil.",
+    "es": "Mantén la cámara encendida y abre la conexión con el smartphone en su menú. El nombre depende del modelo. Cierra otras apps que estén usando la conexión de la cámara.",
+    "ja": "カメラの電源を入れたまま、本体のメニューでスマートフォン接続を開いてください。メニュー名は機種によって異なります。カメラ接続を使用している他のアプリを終了してください。",
+    "zh-Hans": "保持相机开机，在机身菜单打开智能手机连接。菜单名称以你的机型为准。关闭占用相机连接的其他应用。"
+  },
+  "使用蓝牙配对": {
+    "en": "Pair using Bluetooth",
+    "de": "Über Bluetooth koppeln",
+    "fr": "Associer via Bluetooth",
+    "es": "Emparejar mediante Bluetooth",
+    "ja": "Bluetoothでペアリング",
+    "zh-Hans": "使用蓝牙配对"
+  },
+  "在连接页查找并选择相机，按手机和相机提示完成配对，再允许系统加入相机 Wi-Fi。蓝牙配对成功不等于照片连接已经建立。": {
+    "en": "Find and select the camera, follow the pairing prompts on both devices, then allow the system to join the camera’s Wi-Fi. Bluetooth pairing alone does not establish photo transfer.",
+    "de": "Suchen und wählen Sie die Kamera. Folgen Sie den Kopplungshinweisen auf beiden Geräten und erlauben Sie die Verbindung mit dem Kamera-Wi-Fi. Bluetooth-Kopplung allein stellt keine Fotoübertragung her.",
+    "fr": "Recherchez et sélectionnez l’appareil, suivez les instructions d’association sur les deux appareils, puis autorisez la connexion à son Wi-Fi. L’association Bluetooth seule n’établit pas le transfert de photos.",
+    "es": "Busca y selecciona la cámara, sigue las indicaciones de emparejamiento en ambos dispositivos y permite la conexión a su Wi-Fi. El emparejamiento Bluetooth por sí solo no establece la transferencia de fotos.",
+    "ja": "接続画面でカメラを検索して選択し、両方の機器の案内に従ってペアリングを完了してから、カメラの Wi-Fi への接続を許可してください。Bluetooth のペアリングだけでは写真転送の接続は確立しません。",
+    "zh-Hans": "在连接页查找并选择相机，按手机和相机提示完成配对，再允许系统加入相机 Wi-Fi。蓝牙配对成功不等于照片连接已经建立。"
+  },
+  "手动连接 Wi-Fi": {
+    "en": "Connect to Wi-Fi manually",
+    "de": "Manuell mit Wi-Fi verbinden",
+    "fr": "Se connecter manuellement au Wi-Fi",
+    "es": "Conectar Wi-Fi manualmente",
+    "ja": "Wi-Fiを手動接続",
+    "zh-Hans": "手动连接 Wi-Fi"
+  },
+  "如果相机显示 SSID 和密码，打开手动连接页并填写；也可先在系统 Wi-Fi 设置中加入该网络，再返回点击“已连接，继续”。": {
+    "en": "If the camera shows an SSID and password, enter them on the manual connection page. Or join the network in system Wi-Fi settings, then return and tap Connected, continue.",
+    "de": "Wenn die Kamera SSID und Passwort anzeigt, geben Sie beides auf der manuellen Verbindungsseite ein. Alternativ verbinden Sie das Netzwerk in den System-Wi-Fi-Einstellungen und tippen nach der Rückkehr auf Verbunden, weiter.",
+    "fr": "Si l’appareil affiche un SSID et un mot de passe, saisissez-les sur la page de connexion manuelle. Vous pouvez aussi rejoindre le réseau dans les réglages Wi-Fi, puis revenir et toucher Connecté, continuer.",
+    "es": "Si la cámara muestra un SSID y contraseña, introdúcelos en la conexión manual. También puedes unirte a la red desde los ajustes Wi-Fi y volver para tocar Conectado, continuar.",
+    "ja": "SSID とパスワードが表示されたら、手動接続画面に入力してください。システムの Wi-Fi 設定で接続し、戻って「接続済み、続ける」をタップすることもできます。",
+    "zh-Hans": "如果相机显示 SSID 和密码，打开手动连接页并填写；也可先在系统 Wi-Fi 设置中加入该网络，再返回点击“已连接，继续”。"
+  },
+  "联机拍摄设置": {
+    "en": "Tethered shooting settings",
+    "de": "Einstellungen für Tether-Aufnahmen",
+    "fr": "Réglages de prise de vue connectée",
+    "es": "Ajustes de disparo conectado",
+    "ja": "テザー撮影設定",
+    "zh-Hans": "联机拍摄设置"
+  },
+  "在相机上选择单张拍摄，并将原件同时保留在存储卡。手机收到的取景图和缩略图不是原件保存成功的凭据。": {
+    "en": "Select single shooting on the camera and keep originals on its memory card. Live-view images and thumbnails do not confirm that originals were saved.",
+    "de": "Wählen Sie Einzelaufnahme und speichern Sie Originale auch auf der Speicherkarte. Livebilder und Miniaturbilder bestätigen nicht, dass Originale gespeichert wurden.",
+    "fr": "Sélectionnez la prise de vue unique et conservez les originaux sur la carte mémoire. Les images de visée et miniatures ne confirment pas l’enregistrement des originaux.",
+    "es": "Selecciona disparo único y guarda también los originales en la tarjeta. La vista en directo y las miniaturas no confirman que se hayan guardado los originales.",
+    "ja": "カメラで「1枚撮影」を選び、原本をメモリーカードにも保存してください。ライブビュー画像やサムネイルは、原本の保存成功を示すものではありません。",
+    "zh-Hans": "在相机上选择单张拍摄，并将原件同时保留在存储卡。手机收到的取景图和缩略图不是原件保存成功的凭据。"
+  },
+  "连接遇到问题": {
+    "en": "Trouble connecting",
+    "de": "Verbindungsprobleme",
+    "fr": "Problème de connexion",
+    "es": "Problemas de conexión",
+    "ja": "接続のトラブル",
+    "zh-Hans": "连接遇到问题"
+  },
+  "搜索不到时，检查蓝牙权限和机身等待连接画面。Wi-Fi 无互联网是正常情况，请保持连接。": {
+    "en": "If the camera is not found, check Bluetooth permission and its connection-waiting screen. Wi-Fi without internet is normal; stay connected.",
+    "de": "Wenn die Kamera nicht gefunden wird, prüfen Sie die Bluetooth-Berechtigung und den Verbindungsbildschirm der Kamera. Wi-Fi ohne Internet ist normal; bleiben Sie verbunden.",
+    "fr": "Si l’appareil est introuvable, vérifiez l’autorisation Bluetooth et son écran d’attente de connexion. L’absence d’Internet est normale ; restez connecté.",
+    "es": "Si no se encuentra la cámara, comprueba el permiso de Bluetooth y su pantalla de espera. Es normal que el Wi-Fi no tenga Internet; mantén la conexión.",
+    "ja": "見つからない場合は、Bluetooth の権限とカメラの接続待機画面を確認してください。Wi-Fi にインターネット接続がないのは正常です。接続を維持してください。",
+    "zh-Hans": "搜索不到时，检查蓝牙权限和机身等待连接画面。Wi-Fi 无互联网是正常情况，请保持连接。"
+  },
+  "部分功能不可用时，检查相机模式。已验证型号仅作参考，其他 Sony 相机也可以尝试连接。": {
+    "en": "If some features are unavailable, check the camera mode. Verified models are only a reference; other Sony cameras can also try connecting.",
+    "de": "Prüfen Sie bei fehlenden Funktionen den Kameramodus. Geprüfte Modelle dienen nur als Referenz; auch andere Sony-Kameras können verbunden werden.",
+    "fr": "Si certaines fonctions sont indisponibles, vérifiez le mode de l’appareil. Les modèles vérifiés sont indicatifs ; vous pouvez aussi essayer d’autres appareils Sony.",
+    "es": "Si faltan funciones, comprueba el modo de la cámara. Los modelos verificados son solo una referencia; también puedes intentar conectar otras cámaras Sony.",
+    "ja": "一部の機能を利用できない場合はカメラのモードを確認してください。検証済み機種は参考情報であり、他の Sony カメラも接続を試せます。",
+    "zh-Hans": "部分功能不可用时，检查相机模式。已验证型号仅作参考，其他 Sony 相机也可以尝试连接。"
+  },
+  "相机未提供实时取景，其他可用功能仍可使用。": {
+    "en": "The camera does not provide live view. Other available features still work.",
+    "de": "Die Kamera bietet kein Livebild. Andere verfügbare Funktionen bleiben nutzbar.",
+    "fr": "L’appareil ne fournit pas de visée en direct. Les autres fonctions restent utilisables.",
+    "es": "La cámara no ofrece vista en directo. Las demás funciones disponibles siguen funcionando.",
+    "ja": "カメラはライブビューを提供していません。他の利用可能な機能は引き続き使用できます。",
+    "zh-Hans": "相机未提供实时取景，其他可用功能仍可使用。"
+  },
+  "已恢复已登记的接收任务。断线期间拍摄的照片请从相机手动导入。": {
+    "en": "Registered transfers have been restored. Import photos taken while disconnected manually from the camera.",
+    "de": "Registrierte Übertragungen wurden wiederhergestellt. Importieren Sie während der Unterbrechung aufgenommene Fotos manuell von der Kamera.",
+    "fr": "Les transferts enregistrés ont été restaurés. Importez manuellement les photos prises pendant l’interruption.",
+    "es": "Se han restaurado las transferencias registradas. Importa manualmente las fotos tomadas durante la desconexión.",
+    "ja": "登録済みの受信タスクを復元しました。接続中断中に撮影した写真は、カメラから手動で取り込んでください。",
+    "zh-Hans": "已恢复已登记的接收任务。断线期间拍摄的照片请从相机手动导入。"
+  },
+  "编辑控制点": {
+    "en": "Edit point",
+    "de": "Punkt bearbeiten",
+    "fr": "Modifier le point",
+    "es": "Editar punto",
+    "ja": "制御点を編集",
+    "zh-Hans": "编辑控制点"
+  },
+  "{0} · 联机": {
+    "en": "{0} · Tether",
+    "de": "{0} · Tethering",
+    "fr": "{0} · Prise de vue",
+    "es": "{0} · Captura",
+    "ja": "{0} · テザー撮影",
+    "zh-Hans": "{0} · 联机"
+  },
+  "只读": {
+    "en": "Read only",
+    "de": "Nur lesen",
+    "fr": "Lecture seule",
+    "es": "Solo lectura",
+    "ja": "読み取り専用",
+    "zh-Hans": "只读"
+  },
+  "已连接 · 自动接收原件": {
+    "en": "Connected · Receiving originals",
+    "de": "Verbunden · Originale empfangen",
+    "fr": "Connecté · Réception des originaux",
+    "es": "Conectada · Recibiendo originales",
+    "ja": "接続済み · オリジナルを自動受信",
+    "zh-Hans": "已连接 · 自动接收原件"
+  },
+  "已保存 {0} 张": {
+    "zh-Hans": "已保存 {0} 张",
+    "en": "Saved {0} photos",
+    "de": "{0} Fotos gespeichert",
+    "es": "{0} fotos guardadas",
+    "fr": "{0} photos enregistrées",
+    "ja": "{0}枚を保存済み"
+  },
+  "等待相机保存": {
+    "zh-Hans": "等待相机保存",
+    "en": "Waiting for camera to save",
+    "de": "Warten, bis die Kamera speichert",
+    "es": "Esperando a que la cámara guarde",
+    "fr": "En attente de l’enregistrement par l’appareil",
+    "ja": "カメラの保存を待っています"
+  },
+  "正在拍摄": {
+    "zh-Hans": "正在拍摄",
+    "en": "Capturing",
+    "de": "Aufnahme läuft",
+    "es": "Tomando la foto",
+    "fr": "Prise de vue en cours",
+    "ja": "撮影中"
+  },
+  "正在准备取景": {
+    "zh-Hans": "正在准备取景",
+    "en": "Preparing live view",
+    "de": "Livebild wird vorbereitet",
+    "es": "Preparando la vista en directo",
+    "fr": "Préparation de la visée en direct",
+    "ja": "ライブビューを準備中"
+  },
+  "待接收 {0} 张。": {
+    "zh-Hans": "待接收 {0} 张。",
+    "en": "{0} photos waiting to be received.",
+    "de": "{0} Fotos warten auf den Empfang.",
+    "es": "{0} fotos pendientes de recibir.",
+    "fr": "{0} photos en attente de réception.",
+    "ja": "{0}枚の写真を受信待ち"
+  },
+  "放大 · 点按还原": {
+    "en": "Zoomed · Tap to fit",
+    "de": "Vergrößert · Tippen zum Einpassen",
+    "fr": "Agrandie · Toucher pour ajuster",
+    "es": "Ampliada · Toca para ajustar",
+    "ja": "拡大中 · タップで全体表示",
+    "zh-Hans": "放大 · 点按还原"
+  },
+  "暗角校正": {
+    "en": "Vignetting correction",
+    "de": "Vignettierungskorrektur",
+    "fr": "Correction du vignetage",
+    "es": "Corrección de viñeteo",
+    "ja": "周辺光量補正",
+    "zh-Hans": "暗角校正"
+  },
+  "暗角标定或光圈信息不可用": {
+    "en": "Vignetting calibration or aperture data is unavailable",
+    "de": "Vignettierungskalibrierung oder Blendenangabe nicht verfügbar",
+    "fr": "Étalonnage du vignetage ou ouverture indisponible",
+    "es": "Calibración de viñeteo o apertura no disponible",
+    "ja": "周辺光量の補正データまたは絞り情報がありません",
+    "zh-Hans": "暗角标定或光圈信息不可用"
+  },
+  "连接相机以导入": {
+    "en": "Connect to import",
+    "de": "Zum Importieren verbinden",
+    "fr": "Connecter pour importer",
+    "es": "Conectar para importar",
+    "ja": "読み込み用に接続",
+    "zh-Hans": "连接相机以导入"
+  },
+  "连接相机以拍摄": {
+    "en": "Connect to shoot",
+    "de": "Zum Fotografieren verbinden",
+    "fr": "Connecter pour photographier",
+    "es": "Conectar para fotografiar",
+    "ja": "撮影用に接続",
+    "zh-Hans": "连接相机以拍摄"
+  },
+  "上次使用的相机 · 未连接": {
+    "en": "Last used camera · Disconnected",
+    "de": "Zuletzt verwendete Kamera · Getrennt",
+    "fr": "Dernier appareil utilisé · Déconnecté",
+    "es": "Última cámara utilizada · Desconectada",
+    "ja": "前回のカメラ · 未接続",
+    "zh-Hans": "上次使用的相机 · 未连接"
+  },
+  "选择连接方式": {
+    "en": "Choose how to connect",
+    "de": "Verbindungsart wählen",
+    "fr": "Choisir le mode de connexion",
+    "es": "Elegir cómo conectar",
+    "ja": "接続方法を選択",
+    "zh-Hans": "选择连接方式"
+  },
+  "未验证的机型也可以连接": {
+    "en": "Untested cameras can also connect",
+    "de": "Auch ungetestete Kameras können verbunden werden",
+    "fr": "Les appareils non testés peuvent aussi se connecter",
+    "es": "También se pueden conectar cámaras no probadas",
+    "ja": "未検証のカメラも接続できます",
+    "zh-Hans": "未验证的机型也可以连接"
+  },
+  "相机菜单会随型号和固件变化，请按机身提供的手机连接方式操作。": {
+    "en": "Camera menus vary by model and firmware. Follow the smartphone connection steps shown on your camera.",
+    "de": "Kameramenüs unterscheiden sich je nach Modell und Firmware. Folgen Sie den Smartphone-Verbindungsschritten Ihrer Kamera.",
+    "fr": "Les menus varient selon le modèle et le firmware. Suivez les étapes de connexion au smartphone affichées sur votre appareil.",
+    "es": "Los menús varían según el modelo y el firmware. Siga los pasos de conexión al móvil que muestra su cámara.",
+    "ja": "カメラのメニューは機種やファームウェアで異なります。機体に表示されるスマートフォン接続の手順に従ってください。",
+    "zh-Hans": "相机菜单会随型号和固件变化，请按机身提供的手机连接方式操作。"
   }
 }

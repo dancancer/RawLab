@@ -14,7 +14,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
     <application android:label="Camera Connect" android:theme="@android:style/Theme.Material.NoActionBar"
-        android:debuggable="true" android:allowBackup="false" android:supportsRtl="true">
+        android:debuggable="true" android:allowBackup="false" android:supportsRtl="true" android:usesCleartextTraffic="true">
         <activity android:name=".CameraConnectActivity" android:exported="true" android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

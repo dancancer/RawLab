@@ -31,7 +31,18 @@ namespace {
 struct SessionDeleter {
     void operator()(sony2fuji_session* session) const { sony2fuji_session_destroy(session); }
 };
+struct DisplayLensMetadata {
+    bool present = false;
+    std::array<std::string, 4> names;
+    float focal = 0, aperture = 0, crop = 0;
+    int orientation = 1;
+    sony2fuji_lens_metadata value() const {
+        return {SONY2FUJI_LENS_METADATA_VERSION, sizeof(sony2fuji_lens_metadata),
+            names[0].c_str(), names[1].c_str(), names[2].c_str(), names[3].c_str(), focal, aperture, crop, 0, orientation};
+    }
+};
 struct Session {
+    DisplayLensMetadata displayLens;
     std::unique_ptr<sony2fuji_session, SessionDeleter> value;
     rawlab::RecipeProbeStages stages;
     rawlab::RecipeWhiteBalanceCache recipeWhiteBalance;
@@ -159,8 +170,8 @@ sony2fuji_tone_curve_config curveConfig(JNIEnv* env, jint mode, jdoubleArray poi
     return config;
 }
 
-sony2fuji_hdr_request_v7 hdrRenderRequest(JNIEnv* env, jfloatArray values, jint curveMode,
-    jdoubleArray curvePoints, jint longEdge, const char* lookPath, const char* lookSha256) {
+sony2fuji_hdr_request_v8 hdrRenderRequest(JNIEnv* env, jfloatArray values, jint curveMode,
+    jdoubleArray curvePoints, jintArray channelModes, jobjectArray channelPoints, jint longEdge, const char* lookPath, const char* lookSha256) {
     const auto count = values ? env->GetArrayLength(values) : 0;
     constexpr jsize baseSize = 17, toneSize = 20, colorSize = 51, renditionSize = 55, effectsSize = 63, detailSize = 67, lookSize = 68;
     const bool hasLook = count == lookSize;
@@ -176,8 +187,9 @@ sony2fuji_hdr_request_v7 hdrRenderRequest(JNIEnv* env, jfloatArray values, jint 
     std::array<jfloat, lookSize> input{};
     env->GetFloatArrayRegion(values, 0, count, input.data());
     if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read HDR settings");
-    sony2fuji_hdr_request_v7 result{};
-    auto& detail = result.base;
+    sony2fuji_hdr_request_v8 result{};
+    auto& look = result.base;
+    auto& detail = look.base;
     auto& effectsRequest = detail.base;
     auto& rendition = effectsRequest.base;
     auto& color = rendition.base;
@@ -228,11 +240,23 @@ sony2fuji_hdr_request_v7 hdrRenderRequest(JNIEnv* env, jfloatArray values, jint 
         detail.sharpening = input[63]; detail.clarity = input[64]; detail.dehaze = input[65]; detail.denoise = input[66];
     }
     if (hasLook) {
-        request.struct_size = sizeof(result);
+        request.struct_size = sizeof(look);
         request.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_LOOK_VERSION;
-        result.look_path = lookPath;
-        result.look_strength = input[67];
-        if (lookSha256) std::copy_n(lookSha256, 64, result.look_sha256);
+        look.look_path = lookPath;
+        look.look_strength = input[67];
+        if (lookSha256) std::copy_n(lookSha256, 64, look.look_sha256);
+    }
+    if (channelModes || channelPoints) {
+        if (!hasLook || !channelModes || !channelPoints || env->GetArrayLength(channelModes) != 3 || env->GetArrayLength(channelPoints) != 3)
+            throw std::invalid_argument("Invalid HDR channel curves");
+        jint modes[3]; env->GetIntArrayRegion(channelModes, 0, 3, modes);
+        for (int i = 0; i < 3; ++i) {
+            auto points = static_cast<jdoubleArray>(env->GetObjectArrayElement(channelPoints, i));
+            result.channels[i] = curveConfig(env, modes[i], points);
+            env->DeleteLocalRef(points);
+        }
+        request.struct_size = sizeof(result);
+        request.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION;
     }
     return result;
 }
@@ -459,28 +483,63 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeSetLensDatabase(JNIEnv* env
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_rawlab_android_engine_NativeProcessor_nativeSetDisplayLensMetadata(JNIEnv* env, jobject, jlong id,
+    jobjectArray names, jfloatArray numbers, jint orientation) {
+    try {
+        std::lock_guard<std::mutex> lock(sessionsMutex);
+        auto* session = sessionFor(id);
+        auto& owner = sessions.at(id);
+        if (!names) {
+            check(sony2fuji_session_set_display_lens_metadata(session, nullptr));
+            owner.displayLens = DisplayLensMetadata();
+            return;
+        }
+        if (env->GetArrayLength(names) != 4 || !numbers || env->GetArrayLength(numbers) != 3)
+            throw std::invalid_argument("Invalid display lens metadata");
+        DisplayLensMetadata next;
+        next.present = true;
+        for (int index = 0; index < 4; ++index) {
+            auto item = static_cast<jstring>(env->GetObjectArrayElement(names, index));
+            { UtfChars name(env, item); next.names[index] = name.chars ? name.chars : ""; }
+            env->DeleteLocalRef(item);
+        }
+        float values[3]; env->GetFloatArrayRegion(numbers, 0, 3, values);
+        if (env->ExceptionCheck()) return;
+        next.focal = values[0]; next.aperture = values[1]; next.crop = values[2]; next.orientation = orientation;
+        const auto metadata = next.value();
+        check(sony2fuji_session_set_display_lens_metadata(session, &metadata));
+        owner.displayLens = std::move(next);
+    } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeSetLensCorrection(JNIEnv* env, jobject, jlong id,
-    jboolean distortion, jboolean tca, jboolean crop, jbyteArray profile) {
+    jboolean distortion, jboolean tca, jboolean crop, jboolean vignetting, jbyteArray profile) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
         if (!profile) throw std::invalid_argument("Missing lens profile ID");
         std::string value(static_cast<size_t>(env->GetArrayLength(profile)), '\0');
         env->GetByteArrayRegion(profile, 0, static_cast<jsize>(value.size()), reinterpret_cast<jbyte*>(value.data()));
         if (env->ExceptionCheck()) return;
-        sony2fuji_lens_correction_config config{SONY2FUJI_LENS_CORRECTION_CONFIG_VERSION,
-            sizeof(config), distortion ? 1 : 0, tca ? 1 : 0, crop ? 1 : 0, value.c_str()};
-        check(sony2fuji_session_set_lens_correction(sessionFor(id), &config));
+        sony2fuji_lens_correction_config_v2 config{{SONY2FUJI_LENS_CORRECTION_CONFIG_V2_VERSION,
+            sizeof(config), distortion ? 1 : 0, tca ? 1 : 0, crop ? 1 : 0, value.c_str()}, vignetting ? 1 : 0};
+        check(sony2fuji_session_set_lens_correction_v2(sessionFor(id), &config));
     } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_rawlab_android_engine_NativeProcessor_nativeSetToneCurve(JNIEnv* env, jobject, jlong id,
-    jint mode, jdoubleArray points) {
+Java_com_rawlab_android_engine_NativeProcessor_nativeSetToneCurves(JNIEnv* env, jobject, jlong id,
+    jint mode, jdoubleArray points, jint redMode, jdoubleArray redPoints,
+    jint greenMode, jdoubleArray greenPoints, jint blueMode, jdoubleArray bluePoints) {
     try {
-        const auto config = curveConfig(env, mode, points);
+        const sony2fuji_tone_curve_set_config config{SONY2FUJI_TONE_CURVE_SET_CONFIG_VERSION, sizeof(config),
+            {curveConfig(env, mode, points), curveConfig(env, redMode, redPoints),
+             curveConfig(env, greenMode, greenPoints), curveConfig(env, blueMode, bluePoints)}};
         std::lock_guard<std::mutex> lock(sessionsMutex);
-        check(sony2fuji_session_set_tone_curve(sessionFor(id), &config));
-        sessions.at(id).stages.curve = config;
+        check(sony2fuji_session_set_tone_curves(sessionFor(id), &config));
+        auto& stages = sessions.at(id).stages;
+        stages.curve = config.curves[0];
+        std::copy_n(config.curves + 1, 3, stages.channels);
     } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
 }
 
@@ -575,16 +634,23 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeLensProfiles(JNIEnv* env, j
         std::lock_guard<std::mutex> lock(sessionsMutex);
         auto* session = sessionFor(id);
         UtfChars path(env, input);
-        sony2fuji_lens_report report{};
+        sony2fuji_lens_report_v2 report{};
         uint32_t count = 0;
-        check(sony2fuji_session_inspect_lens(session, path.chars, &report, nullptr, 0, &count));
-        std::vector<sony2fuji_lens_profile> profiles(count);
-        check(sony2fuji_session_inspect_lens(session, path.chars, &report, profiles.data(), count, &count));
+        const auto& display = sessions.at(id).displayLens;
+        const auto metadata = display.value();
+        auto inspect = [&](sony2fuji_lens_profile_v2* profiles, uint32_t capacity) {
+            if (input) return sony2fuji_session_inspect_lens_v2(session, path.chars, &report, profiles, capacity, &count);
+            if (!display.present) throw std::invalid_argument("Display lens metadata not configured");
+            return sony2fuji_session_inspect_lens_metadata_v2(session, &metadata, &report, profiles, capacity, &count);
+        };
+        check(inspect(nullptr, 0));
+        std::vector<sony2fuji_lens_profile_v2> profiles(count);
+        check(inspect(profiles.data(), count));
         std::vector<std::string> values;
-        values.reserve(static_cast<size_t>(count) * 6);
+        values.reserve(static_cast<size_t>(count) * 7);
         for (const auto& profile : profiles) {
-            values.insert(values.end(), {profile.id, profile.maker, profile.model,
-                profile.has_distortion ? "1" : "0", profile.has_tca ? "1" : "0", profile.is_match ? "1" : "0"});
+            values.insert(values.end(), {profile.base.id, profile.base.maker, profile.base.model,
+                profile.base.has_distortion ? "1" : "0", profile.base.has_tca ? "1" : "0", profile.base.is_match ? "1" : "0", profile.has_vignetting ? "1" : "0"});
         }
         return strings(env, values);
     } catch (const std::exception& error) { throwJava(env, "java/io/IOException", error.what()); }
@@ -595,10 +661,10 @@ extern "C" JNIEXPORT jobjectArray JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeLensReport(JNIEnv* env, jobject, jlong id) {
     try {
         std::lock_guard<std::mutex> lock(sessionsMutex);
-        sony2fuji_lens_report report{};
-        check(sony2fuji_session_get_lens_report(sessionFor(id), &report));
-        return strings(env, {std::to_string(report.state), report.lens_model, report.profile.model,
-            report.applied_distortion ? "1" : "0", report.applied_tca ? "1" : "0", std::to_string(report.crop_scale)});
+        sony2fuji_lens_report_v2 report{};
+        check(sony2fuji_session_get_lens_report_v2(sessionFor(id), &report));
+        return strings(env, {std::to_string(report.base.state), report.base.lens_model, report.base.profile.model,
+            report.base.applied_distortion ? "1" : "0", report.base.applied_tca ? "1" : "0", std::to_string(report.base.crop_scale), report.applied_vignetting ? "1" : "0"});
     } catch (const std::exception& error) { throwJava(env, "java/io/IOException", error.what()); }
     return nullptr;
 }
@@ -977,13 +1043,13 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecodeCameraRaw(JNIEnv* env
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportProRAW(JNIEnv* env, jclass, jlong sessionId,
-    jstring path, jfloatArray values, jint curveMode, jdoubleArray curvePoints, jint longEdge, jboolean keepHDR, jbyteArray fingerprint,
+    jstring path, jfloatArray values, jint curveMode, jdoubleArray curvePoints, jintArray channelModes, jobjectArray channelPoints, jint longEdge, jboolean keepHDR, jbyteArray fingerprint,
     jstring temporaryRoot, jstring outputPath, jlong cancellationGeneration, jstring lookPath, jstring lookSha256) {
     try {
         if (!fingerprint || env->GetArrayLength(fingerprint) != 32) throw std::invalid_argument("Invalid ProRAW export fingerprint");
         UtfChars look(env, lookPath), sha(env, lookSha256);
-        auto request = hdrRenderRequest(env, values, curveMode, curvePoints, longEdge, look.chars, sha.chars);
-        auto& base = request.base.base.base.base.base.base;
+        auto request = hdrRenderRequest(env, values, curveMode, curvePoints, channelModes, channelPoints, longEdge, look.chars, sha.chars);
+        auto& base = request.base.base.base.base.base.base.base;
         base.intent = SONY2FUJI_INTENT_FINAL;
         UtfChars source(env, path), temporary(env, temporaryRoot), output(env, outputPath);
         std::lock_guard<std::mutex> sessionLock(sessionsMutex);
@@ -1030,12 +1096,12 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeGeometry(JNIEnv* env,jclass
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(JNIEnv* env, jclass, jlong sessionId, jlong sourceId,
-    jfloatArray values, jint curveMode, jdoubleArray curvePoints, jint longEdge, jlong cancellationGeneration,
+    jfloatArray values, jint curveMode, jdoubleArray curvePoints, jintArray channelModes, jobjectArray channelPoints, jint longEdge, jlong cancellationGeneration,
     jstring lookPath, jstring lookSha256) {
     try {
         UtfChars look(env, lookPath), sha(env, lookSha256);
-        auto request = hdrRenderRequest(env, values, curveMode, curvePoints, longEdge, look.chars, sha.chars);
-        auto& base = request.base.base.base.base.base.base;
+        auto request = hdrRenderRequest(env, values, curveMode, curvePoints, channelModes, channelPoints, longEdge, look.chars, sha.chars);
+        auto& base = request.base.base.base.base.base.base.base;
         std::lock_guard<std::mutex> sessionLock(sessionsMutex);
         const auto session = sessions.find(sessionId);
         if (session == sessions.end()) throw std::invalid_argument("Processor is closed");
@@ -1074,13 +1140,13 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(JNIEnv* env, jclass,
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_engine_NativeHDRBridge_nativeSampleHsl(JNIEnv* env, jclass, jlong sessionId, jlong sourceId,
-    jfloatArray values, jint curveMode, jdoubleArray curvePoints, jint longEdge,
+    jfloatArray values, jint curveMode, jdoubleArray curvePoints, jintArray channelModes, jobjectArray channelPoints, jint longEdge,
     jlong sourceRevision, jlong requestRevision, jfloatArray output, jlong cancellationGeneration,
     jstring lookPath, jstring lookSha256) {
     try {
         UtfChars look(env, lookPath), sha(env, lookSha256);
-        auto request = hdrRenderRequest(env, values, curveMode, curvePoints, longEdge, look.chars, sha.chars);
-        auto& base = request.base.base.base.base.base.base;
+        auto request = hdrRenderRequest(env, values, curveMode, curvePoints, channelModes, channelPoints, longEdge, look.chars, sha.chars);
+        auto& base = request.base.base.base.base.base.base.base;
         base.intent = SONY2FUJI_INTENT_PREVIEW;
         std::lock_guard<std::mutex> sessionLock(sessionsMutex);
         const auto session = sessions.find(sessionId);

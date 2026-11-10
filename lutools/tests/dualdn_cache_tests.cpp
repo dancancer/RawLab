@@ -76,7 +76,11 @@ int main(int argc, char** argv) {
         options.lensCorrection.distortion = true;
         require(sceneRGBCacheKey(key, options) != sceneKey && rgbCacheKey(key, options) == rgbKey,
                 "lens settings did not isolate scene RGB cache");
-        options.lensCorrection.distortion = false;
+        const auto distortedScene = sceneRGBCacheKey(key, options);
+        options.lensCorrection.vignetting = true;
+        require(sceneRGBCacheKey(key, options) != distortedScene && rgbCacheKey(key, options) == rgbKey,
+                "vignetting did not invalidate only the developed scene cache");
+        options.lensCorrection = {};
         options.exposure = 2; options.brightness = 1.2f; options.applyBaselineExposure = false;
         require(rgbCacheKey(key, options) == rgbKey, "exposure invalidated AI cache");
         require(sceneRGBCacheKey(key, options) == sceneKey, "exposure invalidated scene RGB cache");

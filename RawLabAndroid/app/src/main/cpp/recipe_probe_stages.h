@@ -9,12 +9,15 @@ struct RecipeProbeStages {
     sony2fuji_atmosphere_config atmosphere{SONY2FUJI_ATMOSPHERE_CONFIG_VERSION, sizeof(atmosphere)};
     sony2fuji_color_grading_config grading{SONY2FUJI_COLOR_GRADING_CONFIG_VERSION, sizeof(grading)};
     sony2fuji_tone_curve_config curve{SONY2FUJI_TONE_CURVE_CONFIG_VERSION, sizeof(curve)};
+    sony2fuji_tone_curve_config channels[3]{curve, curve, curve};
 
     sony2fuji_status apply(sony2fuji_session* session) const {
+        sony2fuji_tone_curve_set_config curves{SONY2FUJI_TONE_CURVE_SET_CONFIG_VERSION, sizeof(curves),
+            {curve, channels[0], channels[1], channels[2]}};
         for (auto status : {sony2fuji_session_set_tone_controls(session, &tone),
                             sony2fuji_session_set_atmosphere(session, &atmosphere),
                             sony2fuji_session_set_color_grading(session, &grading),
-                            sony2fuji_session_set_tone_curve(session, &curve)}) {
+                            sony2fuji_session_set_tone_curves(session, &curves)}) {
             if (status != SONY2FUJI_STATUS_OK) return status;
         }
         return SONY2FUJI_STATUS_OK;

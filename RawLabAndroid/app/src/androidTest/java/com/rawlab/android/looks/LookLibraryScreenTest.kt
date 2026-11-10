@@ -79,6 +79,8 @@ class LookLibraryScreenTest {
             lookId = compose.activity.model.state.value.edits.film
             assertEquals(lookId, compose.activity.model.state.value.recentLookIds.first())
             val saved = compose.activity.model.state.value.edits
+            compose.onNodeWithTag("looks.search").assertDoesNotExist()
+            compose.onNodeWithTag("looks.search.open").performScrollTo().performClick()
             compose.onNodeWithTag("looks.search").performScrollTo().performTextReplacement("ETE")
             compose.onNodeWithTag("looks.search").performImeAction()
             compose.onNodeWithText(source.name).assertExists()
@@ -87,8 +89,8 @@ class LookLibraryScreenTest {
             compose.onNodeWithTag("looks.empty").performScrollTo().assertIsDisplayed()
             assertEquals(saved, compose.activity.model.state.value.edits)
             compose.onNodeWithTag("looks.import").performScrollTo().assertIsDisplayed().assertIsEnabled()
-            compose.onNodeWithTag("looks.search").performTextClearance()
-            compose.onNodeWithTag("looks.search").performImeAction()
+            compose.onNodeWithTag("looks.search.clear").performClick()
+            compose.onNodeWithTag("looks.search").assertDoesNotExist()
             compose.onNodeWithTag("looks.category").performScrollTo().performClick()
             compose.onNodeWithTag("looks.category.RECENT").performClick()
             compose.onNodeWithText(source.name).assertExists()
@@ -98,9 +100,15 @@ class LookLibraryScreenTest {
             File(screenshots, "recent-${context.resources.configuration.screenWidthDp}.png").outputStream().use {
                 instrumentation.uiAutomation.takeScreenshot().compress(Bitmap.CompressFormat.PNG, 100, it)
             }
+            compose.onNodeWithTag("looks.search.open").performScrollTo().performClick()
+            compose.onNodeWithTag("looks.search").performTextReplacement("ETE")
+            compose.onNodeWithTag("looks.search").performImeAction()
             compose.runOnUiThread { compose.activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
             compose.waitUntil(10_000) { context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE }
             compose.onNodeWithTag("looks.search").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("looks.search").assertTextContains("ETE")
+            compose.onNodeWithTag("looks.search.close").performClick()
+            compose.onNodeWithTag("looks.search").assertDoesNotExist()
             compose.onNodeWithTag("looks.import").assertIsDisplayed().assertIsEnabled()
             assertEquals(saved, compose.activity.model.state.value.edits)
             instrumentation.uiAutomation.waitForIdle(750, 5_000)

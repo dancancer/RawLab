@@ -31,6 +31,12 @@
     <string name="all_tools">"Tous les outils"</string>
     <string name="batch_confirmation_count">"%1$d sorties à vérifier"</string>
     <string name="black_point">"Point noir"</string>
+    <string name="camera_choose_connection">"Choisir le mode de connexion"</string>
+    <string name="camera_connect_import">"Connecter pour importer"</string>
+    <string name="camera_connect_tether">"Connecter pour photographier"</string>
+    <string name="camera_guide_intro">"Les menus varient selon le modèle et le firmware. Suivez les étapes de connexion au smartphone affichées sur votre appareil."</string>
+    <string name="camera_guide_unverified_title">"Les appareils non testés peuvent aussi se connecter"</string>
+    <string name="camera_previous_disconnected">"Dernier appareil utilisé · Déconnecté"</string>
     <string name="clarity">"Clarté"</string>
     <string name="collection_add">"Ajouter des photos"</string>
     <string name="collection_apply_draft">"Appliquer et enregistrer le brouillon"</string>
@@ -78,6 +84,7 @@
     <string name="color_grading">"Étalonnage des couleurs"</string>
     <string name="curve_add_point">"Ajouter un point"</string>
     <string name="curve_custom">"Courbe à points"</string>
+    <string name="curve_edit_point">"Modifier le point"</string>
     <string name="curve_fixed_endpoint">"Les extrémités sont fixes"</string>
     <string name="curve_hint">"Touchez la zone de courbe pour ajouter un point. Faites glisser les points intérieurs pour ajuster."</string>
     <string name="curve_input">"Entrée"</string>
@@ -182,6 +189,7 @@
     <string name="geometry_move_up">"Déplacer vers le haut"</string>
     <string name="geometry_perspective_tool">"Perspective"</string>
     <string name="geometry_position_size">"Position et dimensions"</string>
+    <string name="geometry_rotation_tool">"Rotation"</string>
     <string name="grading_midtones">"Tons moyens"</string>
     <string name="grading_reset_all">"Réinitialiser l’étalonnage des couleurs"</string>
     <string name="grading_reset_message">"Rétablir l’étalonnage par défaut des ombres, tons moyens et hautes lumières ?"</string>
@@ -235,8 +243,15 @@
     <string name="invalid_tone_controls">"Valeurs de point noir, de point blanc ou de vibrance non valides"</string>
     <string name="invalid_tone_curve">"Valeurs de courbe non valides"</string>
     <string name="jpeg_description">"sRGB · qualité 95 · métadonnées de prise de vue"</string>
+    <string name="lens_crop_input">"Facteur de recadrage du boîtier"</string>
     <string name="lens_distortion_unavailable">"Étalonnage de la distorsion indisponible"</string>
+    <string name="lens_focal_input">"Distance focale (mm)"</string>
+    <string name="lens_jpeg_hint">"Le JPEG peut déjà être corrigé par l’appareil. Comparez avant d’activer."</string>
+    <string name="lens_metadata_edit">"Compléter les informations de l’objectif"</string>
+    <string name="lens_metadata_hint">"Laisser vide pour utiliser les métadonnées ou la base de données des appareils."</string>
     <string name="lens_tca_unavailable">"Étalonnage de l’aberration chromatique latérale indisponible"</string>
+    <string name="lens_vignetting">"Correction du vignetage"</string>
+    <string name="lens_vignetting_unavailable">"Étalonnage du vignetage ou ouverture indisponible"</string>
     <string name="look_category">"Catégorie de rendus"</string>
     <string name="look_category_all">"Tous les rendus"</string>
     <string name="look_category_custom">"Mes rendus"</string>
@@ -248,6 +263,7 @@
     <string name="look_remove_body">"La copie du look enregistrée par RawLab sera supprimée ; le fichier d’origine ne sera pas effacé."</string>
     <string name="look_search">"Rechercher un rendu"</string>
     <string name="look_search_clear">"Effacer la recherche"</string>
+    <string name="look_search_close">"Fermer la recherche"</string>
     <string name="look_search_empty">"Aucun rendu correspondant"</string>
     <string name="lut_advanced_settings">"Réglages colorimétriques avancés"</string>
     <string name="lut_appearance_unverified">"Rendu non vérifié"</string>
@@ -496,4 +512,5 @@
     <string name="x3f_relative_wb">"Utilise le développement enregistré comme référence, avec des ajustements relatifs de la balance des blancs."</string>
     <string name="x3f_rendering">"Développement X3F"</string>
     <string name="x3f_retry_legacy">"Réessayer avec l’ancien développement"</string>
+    <string name="zoom_restore_hint">"Agrandie · Toucher pour ajuster"</string>
 </resources>

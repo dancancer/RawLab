@@ -229,6 +229,7 @@ size_t requestSize(uint32_t processingVersion) {
         case SONY2FUJI_HDR_PROCESSING_EFFECTS_VERSION: return sizeof(sony2fuji_hdr_request_v5);
         case SONY2FUJI_HDR_PROCESSING_DETAIL_VERSION: return sizeof(sony2fuji_hdr_request_v6);
         case SONY2FUJI_HDR_PROCESSING_LOOK_VERSION: return sizeof(sony2fuji_hdr_request_v7);
+        case SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION: return sizeof(sony2fuji_hdr_request_v8);
         default: return 0;
     }
 }
@@ -324,6 +325,11 @@ HDRRenderOptions renderOptions(const sony2fuji_hdr_request_v1* request, sony2fuj
         } else if (extended.look_strength != 0 || !std::all_of(sha, sha + 65, [](char c) { return c == '\0'; })) {
             fail(SONY2FUJI_HDR_REASON_LOOK_RESOURCE, SONY2FUJI_HDR_FIELD_LOOK, "Missing HDR look resource");
         }
+    }
+    if (options.processingVersion >= SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION) {
+        sony2fuji_hdr_request_v8 extended;
+        std::memcpy(&extended, request, sizeof(extended));
+        std::copy_n(extended.channels, 3, options.tone.channels.begin());
     }
     validateHDRRenderOptions(options);
     return options;
@@ -756,10 +762,11 @@ static sony2fuji_status decodeCameraRaw(sony2fuji_session* session, const char* 
                 : development->white_balance == SONY2FUJI_HDR_CAMERA_WB_AS_SHOT &&
                     development->temperature == 0 && development->tint == 0;
             raw.lensCorrection.distortion = (flags & SONY2FUJI_HDR_CAMERA_LENS_DISTORTION) != 0;
+            raw.lensCorrection.vignetting = (flags & SONY2FUJI_HDR_CAMERA_LENS_VIGNETTING) != 0;
             raw.lensCorrection.tca = (flags & SONY2FUJI_HDR_CAMERA_LENS_TCA) != 0;
             raw.lensCorrection.autoCrop = (flags & SONY2FUJI_HDR_CAMERA_LENS_AUTO_CROP) != 0;
             if (!validWB || development->exposure_reference > SONY2FUJI_HDR_CAMERA_EXPOSURE_SENSOR ||
-                development->fbdd_level > 2 || (flags & ~7u) ||
+                development->fbdd_level > 2 || (flags & ~15u) ||
                 (!raw.lensCorrection.active() && (flags || development->lens_profile_id)))
                 fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT,
                     "Invalid camera RAW HDR development parameters");
@@ -840,7 +847,8 @@ static sony2fuji_status decodeCameraRaw(sony2fuji_session* session, const char* 
             if (raw.lensCorrection.active()) {
                 const auto report = processor.getLensCorrectionReport();
                 if ((raw.lensCorrection.distortion && !report.appliedDistortion) ||
-                    (raw.lensCorrection.tca && !report.appliedTCA))
+                    (raw.lensCorrection.tca && !report.appliedTCA) ||
+                    (raw.lensCorrection.vignetting && !report.appliedVignetting))
                     fail(SONY2FUJI_HDR_REASON_CAMERA_DEVELOPMENT, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT,
                         "Requested camera RAW HDR lens calibration is unavailable", SONY2FUJI_STATUS_UNSUPPORTED);
             }

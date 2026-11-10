@@ -14,6 +14,8 @@ import androidx.lifecycle.viewModelScope
 import com.rawlab.android.R
 import com.rawlab.android.photo.MediaPhotoLibrary
 import com.rawlab.android.camera.protocol.SonyMobileSession
+import com.rawlab.android.camera.protocol.CameraMediaSession
+import com.rawlab.android.camera.protocol.SonyLegacyImportSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -45,7 +47,13 @@ internal data class CameraImportState(
     val currentKey: String? = null,
     val currentBytes: Long = 0,
     val destination: CameraImportDestination = CameraImportDestination(),
+    val model: SonyCameraModel = SonyCameraModel.UNKNOWN,
+    val mode: CameraMode = CameraMode.IMPORT,
+    val closing: Boolean = false,
+    val cardSavingConfirmed: Boolean = false,
 )
+
+internal enum class CameraMode { IMPORT, TETHER }
 
 internal class CameraImportViewModel(application: Application) : AndroidViewModel(application), SonyCameraConnection.Listener {
     private val mutable = MutableStateFlow(CameraImportState(preparing = true))
@@ -55,7 +63,9 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     private val connection = SonyCameraConnection(application, this)
     private val sessionLock = Mutex()
     private val storeLock = Mutex()
-    @Volatile private var session: SonyMobileSession? = null
+    private val tetherJournal = CameraTetherJournal(File(application.filesDir, "camera-tether-runs"))
+    val tether = CameraTetherController(viewModelScope, store, tetherJournal, storeLock, ::updateJob)
+    @Volatile private var session: CameraMediaSession? = null
     private var device: SonyMobileSession.Device? = null
     private var assets: Map<String, SonyMobileSession.Asset> = emptyMap()
     private var cameraId = ""
@@ -63,6 +73,9 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     private var permit: CameraTransferPermit? = null
     private var transfer: Job? = null
     private var importPreparation: Job? = null
+    private var connectionWork: Job? = null
+    private var closingWork: Job? = null
+    private var resumeTether = false
     private var foreground = false
     private var opening: String? = null
     private val previews = object : android.util.LruCache<String, Bitmap>(12 * 1024 * 1024) {
@@ -79,27 +92,64 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
         }.getOrDefault(CameraImportDestination())
         mutable.update { it.copy(destination = destination) }
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { storeLock.withLock { runCatching { store.load() } } }
-            result.onSuccess { jobs ->
+            val result = withContext(Dispatchers.IO) { storeLock.withLock { runCatching { store.load() to tetherJournal.load() } } }
+            result.onSuccess { (jobs, runs) ->
+                tether.restore(runs, jobs)
                 val pending = jobs.firstOrNull { it.status != CameraJobStatus.COMPLETE }
                 mutable.update { it.copy(preparing = false, jobs = jobs, job = pending ?: jobs.firstOrNull(), cameraId = pending?.cameraId,
                     selected = pending?.items?.map { item -> item.photo.key }?.toSet().orEmpty()) }
             }
                 .onFailure { mutable.update { it.copy(preparing = false, message = R.string.camera_storage_failed) } }
         }
+        viewModelScope.launch {
+            tether.state.collect { value ->
+                if (value.phase == CameraTetherPhase.PAUSED && mutable.value.mode == CameraMode.TETHER && mutable.value.connected) disconnect()
+            }
+        }
     }
 
     fun scan() {
-        if (mutable.value.transferring || mutable.value.preparing) return
-        disconnect()
+        if (mutable.value.transferring || mutable.value.preparing || mutable.value.closing) return
         mutable.update { it.copy(message = null, candidates = emptyList()) }
-        connection.scan()
+        connectAfterStop { connection.scan() }
     }
-    fun connect(id: String) { if (!mutable.value.transferring) connection.connect(id) }
+    fun connect(id: String) {
+        if (mutable.value.transferring || mutable.value.preparing || mutable.value.closing) return
+        val model = mutable.value.candidates.find { it.id == id }?.name?.let(SonyCameraModel::fromAdvertisement) ?: return
+        mutable.update { it.copy(model = model) }
+        connectAfterStop { connection.connect(id) }
+    }
+    fun prepareLegacyWifi() {
+        if (mutable.value.transferring || mutable.value.preparing || mutable.value.closing) return
+        mutable.update { it.copy(model = SonyCameraModel.UNKNOWN, message = null) }
+        connectAfterStop { connection.prepareLegacyWifi() }
+    }
+    fun useLegacyWifi() {
+        if (mutable.value.transferring || mutable.value.preparing || mutable.value.closing) return
+        mutable.update { it.copy(model = SonyCameraModel.UNKNOWN, message = null) }
+        connectAfterStop { connection.useLegacyWifi() }
+    }
+    private fun connectAfterStop(connect: () -> Unit) {
+        disconnect()
+        val current = generation
+        val closing = closingWork
+        viewModelScope.launch {
+            closing?.join()
+            if (current == generation && foreground) connect()
+        }
+    }
+    fun setMode(mode: CameraMode) {
+        if (mutable.value.preparing || mutable.value.closing || mutable.value.mode == mode) return
+        disconnect()
+        resumeTether = false
+        mutable.update { it.copy(mode = mode, message = null) }
+    }
+    fun setTetherResume(resume: Boolean) { if (!tether.state.value.active) resumeTether = resume }
+    fun confirmCardSaving(confirmed: Boolean) { if (!tether.state.value.active) mutable.update { it.copy(cardSavingConfirmed = confirmed) } }
     fun permissionDenied() { mutable.update { it.copy(message = R.string.camera_permissions) } }
     fun dismissMessage() { mutable.update { it.copy(message = null) } }
     fun setDestination(destination: CameraImportDestination) {
-        if (mutable.value.transferring || mutable.value.preparing) return
+        if (mutable.value.transferring || mutable.value.preparing || tether.state.value.active) return
         preferences.edit().putString("destination-directory", destination.directory)
             .putString("destination-grouping", destination.grouping.name).apply()
         mutable.update { it.copy(destination = destination) }
@@ -114,23 +164,42 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     override fun onCandidates(items: List<CameraCandidate>) { mutable.update { it.copy(candidates = items) } }
     override fun onStage(stage: SonyCameraConnection.Stage) { mutable.update { it.copy(stage = stage, message = null) } }
     override fun onConnected(network: Network, address: InetAddress, cameraId: String) {
+        if (mutable.value.closing || !foreground) return
         val current = generation
+        val model = mutable.value.model
+        if (mutable.value.mode == CameraMode.TETHER) {
+            this.cameraId = cameraId
+            mutable.update { it.copy(stage = null, connected = true, cameraId = cameraId) }
+            tether.start(network, address, clientId, model, cameraId, mutable.value.destination, resumeTether, mutable.value.cardSavingConfirmed)
+            return
+        }
         mutable.update { it.copy(stage = SonyCameraConnection.Stage.NETWORK) }
-        viewModelScope.launch {
+        connectionWork = viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching {
-                val opened = SonyMobileSession(network.socketFactory, address, clientId) { }
+                var opened: CameraMediaSession = SonyMobileSession(network.socketFactory, address, clientId) { }
                 try {
                     withContext(Dispatchers.Main.immediate) {
-                        if (current != generation) throw IOException("Stale camera connection")
+                        if (current != generation || !foreground) throw IOException("Stale camera connection")
                         session = opened
                     }
-                    val info = opened.deviceInfo()
+                    var info = opened.deviceInfo()
+                    if (!info.operations.containsAll(listOf(0x923c, 0x923d))) {
+                        if (!info.operations.containsAll(listOf(0x1002, 0x9201, 0x9202, 0x9209, 0x9212, 0x1004, 0x1007, 0x1008, 0x1009)))
+                            throw CameraMediaSession.UnsupportedCameraException("Photo import is unavailable in this camera mode")
+                        opened.close()
+                        opened = SonyLegacyImportSession(network.socketFactory, address, clientId) { }
+                        withContext(Dispatchers.Main.immediate) {
+                            if (current != generation || !foreground) { opened.close(); throw IOException("Stale camera connection") }
+                            session = opened
+                        }
+                        info = opened.deviceInfo()
+                    }
                     opened.openSession()
                     val found = opened.listPhotos(info)
                     Triple(opened, info, found)
                 } catch (error: Exception) { opened.close(); throw error }
             } }
-            if (current != generation) { result.getOrNull()?.first?.close(); return@launch }
+            if (current != generation || !foreground) { result.getOrNull()?.first?.close(); return@launch }
             result.onSuccess { (_, info, found) ->
                 device = info
                 this@CameraImportViewModel.cameraId = cameraId
@@ -138,8 +207,10 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
                 val photos = found.map { CameraPhoto(it.key(), it.name, it.size, it.created) }
                     .sortedWith(compareByDescending<CameraPhoto> { it.created }.thenByDescending { it.name })
                 mutable.update { it.copy(stage = null, connected = true, cameraId = cameraId, photos = photos,
+                    model = SonyCameraModel.fromIdentity(info.model, info.firmware),
                     selected = if (it.cameraId == cameraId) it.selected.intersect(assets.keys) else emptySet(), message = null) }
-            }.onFailure { onFailure(SonyCameraConnection.Failure.DISCONNECTED) }
+            }.onFailure { onFailure(if (it is CameraMediaSession.UnsupportedCameraException)
+                SonyCameraConnection.Failure.UNSUPPORTED else SonyCameraConnection.Failure.DISCONNECTED) }
         }
     }
     override fun onFailure(reason: SonyCameraConnection.Failure) {
@@ -158,22 +229,36 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     fun disconnect() {
         generation++
         permit?.cancel()
+        tether.stop()
         session?.close(); session = null
         device = null; assets = emptyMap()
-        connection.close()
         previews.evictAll()
-        mutable.update { it.copy(stage = null, connected = false) }
+        val prior = closingWork
+        val oldTransfer = transfer
+        val oldPreparation = importPreparation
+        val oldConnection = connectionWork
+        mutable.update { it.copy(stage = null, connected = false, closing = true) }
+        closingWork = viewModelScope.launch {
+            prior?.join()
+            oldTransfer?.join()
+            oldPreparation?.join()
+            oldConnection?.join()
+            tether.join()
+            connection.close()
+            mutable.update { it.copy(closing = false) }
+        }
     }
     fun onForeground() { foreground = true }
     fun onBackground() {
         foreground = false
-        if (mutable.value.transferring || importPreparation?.isActive == true) stop()
+        if (mutable.value.transferring || importPreparation?.isActive == true || connectionWork?.isActive == true || tether.state.value.active ||
+            mutable.value.stage != null && mutable.value.stage != SonyCameraConnection.Stage.MANUAL_WIFI) stop()
     }
     fun stop() { disconnect(); mutable.update { it.copy(message = R.string.camera_paused) } }
 
     fun startImport() {
         val snapshot = mutable.value
-        if (!foreground || !snapshot.connected || snapshot.transferring || snapshot.preparing || snapshot.selected.isEmpty()) return
+        if (snapshot.mode != CameraMode.IMPORT || snapshot.closing || !foreground || !snapshot.connected || snapshot.transferring || snapshot.preparing || snapshot.selected.isEmpty()) return
         val selectedCamera = cameraId
         val current = generation
         mutable.update { it.copy(preparing = true, message = null) }
@@ -200,7 +285,7 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     fun resume() { mutable.value.job?.let(::runQueue) }
 
     private fun runQueue(job: CameraImportJob) {
-        if (!foreground || mutable.value.transferring || job.status == CameraJobStatus.COMPLETE) return
+        if (mutable.value.mode != CameraMode.IMPORT || mutable.value.closing || !foreground || mutable.value.transferring || job.status == CameraJobStatus.COMPLETE) return
         val opened = session
         val info = device
         if (opened == null || info == null) {
@@ -218,25 +303,13 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
             var latest = job.copy(status = CameraJobStatus.ACTIVE)
             val result = withContext(Dispatchers.IO) { storeLock.withLock {
                 runCatching { sessionLock.withLock {
-                    store.save(latest)
-                    for ((index, item) in latest.items.withIndex()) {
-                        if (item.saved != null) continue
-                        allowed.check()
-                        val asset = fresh.getValue(item.photo.key)
-                        mutable.update { it.copy(currentKey = item.photo.key, currentBytes = 0) }
-                        val part = store.partial(job.id)
-                        try {
-                            val digest = FileOutputStream(part).use { output ->
-                                val hash = opened.download(info, asset, output) { bytes, _ ->
-                                    allowed.check(); mutable.update { it.copy(currentBytes = bytes) }
-                                }
-                                output.fd.sync(); hash
-                            }
-                            allowed.check()
-                            latest = store.publish(latest, index, part, digest, allowed)
-                            updateJob(latest)
-                        } finally { part.delete() }
-                    }
+                    latest = receiveCameraJob(store, latest, allowed, { photo, output ->
+                        val asset = fresh.getValue(photo.key)
+                        mutable.update { it.copy(currentKey = photo.key, currentBytes = 0) }
+                        opened.download(info, asset, output) { bytes, _ ->
+                            allowed.check(); mutable.update { it.copy(currentBytes = bytes) }
+                        }
+                    }, ::updateJob)
                 } }.also { outcome ->
                     if (outcome.isFailure) {
                         latest = latest.copy(status = CameraJobStatus.PAUSED)
@@ -304,17 +377,41 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     }
     private fun updateJob(job: CameraImportJob) { mutable.update { it.copy(job = job,
         jobs = (it.jobs.filterNot { previous -> previous.id == job.id } + job).sortedByDescending { item -> item.createdAt }) } }
-    override fun onCleared() { disconnect(); super.onCleared() }
+    fun openTetherSaved(photo: CameraTetherSaved, onReady: (List<Uri>) -> Unit) {
+        if (mutable.value.preparing) return
+        disconnect()
+        val current = generation
+        val closing = closingWork
+        mutable.update { it.copy(preparing = true) }
+        viewModelScope.launch {
+            closing?.join()
+            val result = withContext(Dispatchers.IO) { storeLock.withLock { runCatching {
+                val jobs = store.load(); tether.refreshJobs(jobs)
+                val job = jobs.find { it.id == photo.jobId } ?: throw IOException("Saved camera job missing")
+                if (photo.uri !in store.savedUris(job)) throw IOException("Saved camera photo missing")
+                listOf(Uri.parse(photo.uri))
+            } } }
+            mutable.update { it.copy(preparing = false) }
+            if (current == generation && foreground) result.onSuccess(onReady)
+                .onFailure { mutable.update { it.copy(message = R.string.camera_source_missing) } }
+        }
+    }
+    override fun onCleared() {
+        generation++; permit?.cancel(); tether.stop(); session?.close()
+        // 给已按下的快门释放留出与协议层一致的有界窗口。
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ connection.close() }, 2_100)
+        super.onCleared()
+    }
 }
 
 /** 相机预览按容器方向解码；不下载或显影原件来生成浏览图。 */
-internal fun decodeCameraPreview(bytes: ByteArray, large: Boolean): Bitmap? {
+internal fun decodeCameraPreview(bytes: ByteArray, large: Boolean, pixelBudget: Long = 100_000_000): Bitmap? {
     if (Build.VERSION.SDK_INT < 28) return null
     return runCatching {
         ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) { decoder, info, _ ->
             val width = info.size.width
             val height = info.size.height
-            if (width <= 0 || height <= 0 || width.toLong() * height > 100_000_000) throw java.io.IOException("Camera preview exceeds pixel budget")
+            if (width <= 0 || height <= 0 || width.toLong() * height > pixelBudget) throw java.io.IOException("Camera preview exceeds pixel budget")
             val scale = minOf(1f, (if (large) 1600f else 400f) / maxOf(width, height))
             decoder.setTargetSize((width * scale).roundToInt().coerceAtLeast(1), (height * scale).roundToInt().coerceAtLeast(1))
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE

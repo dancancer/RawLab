@@ -5,6 +5,7 @@ struct IOSLensControls: View {
     @Binding var settings: RawSettings
     let info: LensInfo?
     @State private var choosingProfile = false
+    @State private var editingMetadata = false
     private var lens: LensCorrectionSettings { settings.lensSettings }
     private var candidate: LensCandidate? {
         if lens.mode == .manual { return info?.candidates.first { $0.id == lens.profileID } }
@@ -59,6 +60,8 @@ struct IOSLensControls: View {
             Toggle(L10n.text("横向色差"), isOn: value(\.tca)).frame(minHeight: 44).accessibilityIdentifier("lens.tca")
                 .disabled(!correctionEnabled(tca: true))
                 .accessibilityHint(correctionReason(tca: true))
+            Toggle(L10n.text("暗角校正"), isOn: value(\.vignetting)).frame(minHeight: 44).accessibilityIdentifier("lens.vignetting")
+                .disabled(!lens.vignetting && (candidate?.hasVignetting != true || info.map { [SONY2FUJI_LENS_NO_DATABASE, SONY2FUJI_LENS_NO_CAMERA, SONY2FUJI_LENS_MISSING_FOCAL_LENGTH, SONY2FUJI_LENS_EMBEDDED_GEOMETRY, SONY2FUJI_LENS_UNSUPPORTED_INPUT].contains($0.state) } == true))
             Toggle(L10n.text("自动裁边"), isOn: value(\.autoCrop)).frame(minHeight: 44).accessibilityIdentifier("lens.crop")
             Button { choosingProfile = true } label: {
                 HStack {
@@ -73,6 +76,7 @@ struct IOSLensControls: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("lens.status")
             if let candidate {
+                if !candidate.hasVignetting { Text(L10n.text("暗角标定或光圈信息不可用")).font(.caption).foregroundStyle(.secondary) }
                 if !candidate.hasDistortion { Text(L10n.text("畸变标定不可用")).font(.caption).foregroundStyle(.secondary) }
                 if !candidate.hasTCA { Text(L10n.text("横向色差标定不可用")).font(.caption).foregroundStyle(.secondary) }
             }
@@ -80,9 +84,24 @@ struct IOSLensControls: View {
                 Text(info.detectedLens).font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if let metadata = info?.sourceMetadata {
+                Text([metadata.cameraMake, metadata.cameraModel, metadata.focalLength > 0 ? "\(metadata.focalLength) mm" : "",
+                      metadata.aperture > 0 ? "f/\(metadata.aperture)" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.caption).foregroundStyle(.secondary)
+                Button(L10n.text("补充镜头信息")) { editingMetadata = true }
+                    .frame(minHeight: 44).accessibilityIdentifier("lens.metadata")
+                Text(L10n.text("JPEG 可能已有机内校正；请对比画面后再开启。"))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
             if let scale = info?.cropScale, scale > 1.0001 {
                 Text(L10n.format("裁边 %@%%", String(format: "%.1f", locale: L10n.locale, Double((1 - 1 / scale) * 100))))
                     .font(.caption).monospacedDigit()
+            }
+        }
+        .sheet(isPresented: $editingMetadata) {
+            IOSLensMetadataEditor(value: lens) { value in
+                settings.lensCorrection = value
+                editingMetadata = false
             }
         }
         .sheet(isPresented: $choosingProfile) {
@@ -137,5 +156,42 @@ private struct IOSLensChooser: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.text("取消")) { dismiss() } } }
         }
+    }
+}
+
+private struct IOSLensMetadataEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    let value: LensCorrectionSettings
+    let apply: (LensCorrectionSettings) -> Void
+    @State private var focal = ""
+    @State private var crop = ""
+    private func number(_ text: String) -> Double? {
+        Double(text.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: "."))
+    }
+    private var valid: Bool {
+        (focal.isEmpty || number(focal).map { $0.isFinite && (0.1...10000).contains($0) } == true) &&
+        (crop.isEmpty || number(crop).map { $0.isFinite && (0.1...100).contains($0) } == true)
+    }
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField(L10n.text("焦距（mm）"), text: $focal).keyboardType(.decimalPad)
+                        .accessibilityIdentifier("lens.metadata.focal")
+                    TextField(L10n.text("相机裁切系数"), text: $crop).keyboardType(.decimalPad)
+                        .accessibilityIdentifier("lens.metadata.crop")
+                } footer: { Text(L10n.text("留空时使用照片元数据或相机数据库。")) }
+            }.navigationTitle(L10n.text("补充镜头信息")).navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button(L10n.text("取消")) { dismiss() } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(L10n.text("应用")) {
+                            var next = value
+                            next.focalLength = number(focal); next.cropFactor = number(crop)
+                            apply(next)
+                        }.disabled(!valid).accessibilityIdentifier("lens.metadata.apply")
+                    }
+                }
+        }.onAppear { focal = value.focalLength.map { String($0) } ?? ""; crop = value.cropFactor.map { String($0) } ?? "" }
     }
 }

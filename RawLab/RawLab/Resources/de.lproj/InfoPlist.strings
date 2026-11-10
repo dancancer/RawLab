@@ -1,2 +1,4 @@
 "NSPhotoLibraryUsageDescription" = "Erlaubt das Importieren von Fotos aus deiner Fotomediathek.";
 "NSPhotoLibraryAddUsageDescription" = "Ermöglicht das Sichern bearbeiteter Fotos in deiner Fotomediathek.";
+"NSBluetoothAlwaysUsageDescription" = "Sony-Kamera finden und koppeln, um ihr WLAN zu verbinden.";
+"NSLocalNetworkUsageDescription" = "Mit der Kamera verbinden, um Originale anzusehen, Fotos zu empfangen und fernauszulösen.";

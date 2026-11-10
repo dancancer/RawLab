@@ -8,14 +8,16 @@ ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}"
 CAMERA_JAVA_HOME="${CAMERA_JAVA_HOME:-$(/usr/libexec/java_home -v 17)}"
 CAMERA_KEYSTORE="${CAMERA_KEYSTORE:-$HOME/.android/debug.keystore}"
 PROTOCOL_DIR="$SOURCE_DIR/../../../RawLabAndroid/app/src/main/java/com/rawlab/android/camera/protocol"
+TETHER_SOURCE="$PROTOCOL_DIR/SonyTetherSession.java"
 BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/35.0.0"
 ANDROID_JAR="$ANDROID_SDK_ROOT/platforms/android-35/android.jar"
 mkdir -p "$CAMERA_BUILD_DIR/classes" "$CAMERA_BUILD_DIR/dex" "$CAMERA_BUILD_DIR/tests"
 "$CAMERA_JAVA_HOME/bin/javac" -d "$CAMERA_BUILD_DIR/tests" \
     "$PROTOCOL_DIR/SonyWifiCredentials.java" "$SOURCE_DIR/WifiPayloadTest.java" \
-    "$PROTOCOL_DIR/SonyMobileSession.java" "$SOURCE_DIR/MobilePTPTest.java"
+    "$PROTOCOL_DIR/CameraMediaSession.java" "$PROTOCOL_DIR/SonyMobileSession.java" "$SOURCE_DIR/MobilePTPTest.java" "$TETHER_SOURCE" "$SOURCE_DIR/TetherPTPTest.java"
 "$CAMERA_JAVA_HOME/bin/java" -cp "$CAMERA_BUILD_DIR/tests" com.rawlab.android.camera.protocol.WifiPayloadTest
 "$CAMERA_JAVA_HOME/bin/java" -cp "$CAMERA_BUILD_DIR/tests" com.rawlab.android.camera.protocol.MobilePTPTest
+"$CAMERA_JAVA_HOME/bin/java" -cp "$CAMERA_BUILD_DIR/tests" com.rawlab.android.camera.protocol.TetherPTPTest
 "$CAMERA_JAVA_HOME/bin/javac" --release 8 -classpath "$ANDROID_JAR" -d "$CAMERA_BUILD_DIR/classes" \
     "$SOURCE_DIR"/src/app/rawlab/cameraconnect/*.java "$PROTOCOL_DIR"/*.java
 "$CAMERA_JAVA_HOME/bin/jar" cf "$CAMERA_BUILD_DIR/classes.jar" -C "$CAMERA_BUILD_DIR/classes" .

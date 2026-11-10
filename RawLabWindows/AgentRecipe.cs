@@ -45,7 +45,7 @@ internal sealed partial class RenderEngine
                     grain_amount=effects.GrainAmount,grain_size=effects.GrainSize,grain_roughness=effects.GrainRoughness,clarity=atmosphere.Clarity,dehaze=atmosphere.Dehaze},
                 denoise=new{raw_level=0,chroma_mode=state.DisplayChromaDenoise,wavelet=new{enabled=denoise.Enabled!=0,
                     luma=denoise.Enabled!=0 ? denoise.Luma : 0,chroma=denoise.Enabled!=0 ? denoise.Chroma : 46,coarse=denoise.Enabled!=0 ? denoise.Coarse : 50}},
-                lens_correction=new{distortion=state.Lens.Distortion,tca=state.Lens.Tca,auto_crop=state.Lens.AutoCrop,
+                lens_correction=new{distortion=state.Lens.Distortion,tca=state.Lens.Tca,vignetting=state.Lens.Vignetting,auto_crop=state.Lens.AutoCrop,
                     profile_id=string.IsNullOrEmpty(state.Lens.CoreProfileId) ? null : state.Lens.CoreProfileId},
                 geometry=new{crop=new{x=geometry.CropX,y=geometry.CropY,width=geometry.CropWidth,height=geometry.CropHeight},
                     quarter_turns=geometry.QuarterTurns,flip_horizontal=geometry.FlipHorizontal!=0,flip_vertical=geometry.FlipVertical!=0,

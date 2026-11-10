@@ -14,6 +14,7 @@ extern "C" {
 #define SONY2FUJI_HDR_PROCESSING_EFFECTS_VERSION 5u
 #define SONY2FUJI_HDR_PROCESSING_DETAIL_VERSION 6u
 #define SONY2FUJI_HDR_PROCESSING_LOOK_VERSION 7u
+#define SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION 8u
 
 // 独立枚举；不重解释旧 request v2 的 pixel_format/input_type。
 enum {
@@ -84,7 +85,7 @@ enum {
     SONY2FUJI_HDR_CAMERA_WB_AS_SHOT = 0, SONY2FUJI_HDR_CAMERA_WB_TEMPERATURE = 1,
     SONY2FUJI_HDR_CAMERA_EXPOSURE_METADATA = 0, SONY2FUJI_HDR_CAMERA_EXPOSURE_SENSOR = 1,
     SONY2FUJI_HDR_CAMERA_LENS_DISTORTION = 1, SONY2FUJI_HDR_CAMERA_LENS_TCA = 2,
-    SONY2FUJI_HDR_CAMERA_LENS_AUTO_CROP = 4
+    SONY2FUJI_HDR_CAMERA_LENS_AUTO_CROP = 4, SONY2FUJI_HDR_CAMERA_LENS_VIGNETTING = 8
 };
 
 // Applies only to the ordinary camera RAW decoder. A zero tail keeps the
@@ -199,6 +200,13 @@ typedef struct sony2fuji_hdr_request_v7 {
     uint32_t reserved;
     char look_sha256[65];
 } sony2fuji_hdr_request_v7;
+
+// Processing version 8; master remains in the v2 base. No session curve state is inherited.
+// Channels map normalized -8..+8 exposure stops after the master luminance curve.
+typedef struct sony2fuji_hdr_request_v8 {
+    sony2fuji_hdr_request_v7 base;
+    sony2fuji_tone_curve_config channels[3]; // red, green, blue
+} sony2fuji_hdr_request_v8;
 
 typedef struct sony2fuji_hdr_look_info_v1 {
     uint32_t version, struct_size, grid_size, reserved;

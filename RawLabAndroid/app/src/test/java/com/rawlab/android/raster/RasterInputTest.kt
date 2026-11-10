@@ -63,7 +63,7 @@ class RasterInputTest {
         assertFalse(effective.customWb)
         assertEquals(6500f, effective.temperature)
         assertEquals(0f, effective.tint)
-        assertEquals(LensSettings(), effective.lens)
+        assertEquals(stored.lens, effective.lens)
         assertTrue(effective.denoise.enabled)
         assertEquals("recipe", effective.recipeID)
         assertTrue(stored.customWb)
@@ -85,7 +85,7 @@ class RasterInputTest {
         val restored = checkNotNull(journal.load("mixed"))
         assertEquals(PhotoInputKind.RASTER, restored.rows.single().target.inputKind)
         assertEquals(stored, restored.source.settings)
-        assertEquals(LensSettings(), restored.rows.single().target.inputKind.let { stored.effectiveFor(it).lens })
+        assertEquals(stored.lens, restored.rows.single().target.inputKind.let { stored.effectiveFor(it).lens })
         root.deleteRecursively()
     }
 

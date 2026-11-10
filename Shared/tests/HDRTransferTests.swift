@@ -3,6 +3,13 @@ import Foundation
 @main enum HDRTransferTests {
     static func check(_ condition: @autoclosure () -> Bool, _ message: String) { if !condition() { fatalError(message) } }
     static func main() throws {
+        var channels = HDRSettings()
+        channels.toneSettings.curve.channels.red = .identity.inserting(x: 0.5, y: 0.625)
+        let channelPayload = try HDRAdjustmentTransfer.capture(settings: channels, identifier: "channels", processingVersion: 2, scope: .modified)
+        let channelResult = try HDRAdjustmentTransfer.prepare(payload: channelPayload, target: HDRSettings())
+        check(channelPayload.source.hdrProcessingVersion == 8 && channelResult.toneSettings.curve == channels.toneSettings.curve,
+              "HDR channel transfer must preserve v8 curves")
+
         var source = HDRSettings(); source.exposure = 1; source.temperature = 10000; source.tint = 42
         source.contrast = -25; source.highlights = 50; source.shadows = 20; source.saturation = -30
         source.geometry.quarterTurns = 1

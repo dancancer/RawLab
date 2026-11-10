@@ -27,7 +27,7 @@ data class HDRToneSettings(
     init { require(listOf(blackPoint, whitePoint, curveStrength).all { it in -100f..100f }) }
     val isDefault get() = blackPoint == 0f && whitePoint == 0f && curveStrength == 0f && curve.isDefault
     val isIdentity get() = blackPoint == 0f && whitePoint == 0f &&
-        (if (curve.isDefault) curveStrength == 0f else curve.isIdentity)
+        (if (curve.mode == ToneCurveMode.LEGACY) curveStrength == 0f else curve.master.isIdentity) && curve.channels.isIdentity
 }
 
 data class HDRColorSettings(
@@ -110,7 +110,7 @@ data class HDRCameraDevelopmentSettings(
     val customWhiteBalance: Boolean = false, val temperature: Float = 0f, val tint: Float = 0f,
     val sensorExposure: Boolean = false, val fbddLevel: Int = 0, val lensDistortion: Boolean = false,
     val lensTca: Boolean = false, val lensAutoCrop: Boolean = true, val lensProfile: String? = null,
-    val cameraProfile: HDRCameraProfile? = null,
+    val cameraProfile: HDRCameraProfile? = null, val lensVignetting: Boolean = false,
 ) {
     init {
         require(if (customWhiteBalance) temperature in 2000f..50000f && tint in -150f..150f else temperature == 0f && tint == 0f)
@@ -118,7 +118,7 @@ data class HDRCameraDevelopmentSettings(
         require(lensProfile == null || lensActive && lensProfile.toByteArray(Charsets.UTF_8).size in 1..1024 &&
             lensProfile.none(Char::isISOControl))
     }
-    val lensActive get() = lensDistortion || lensTca
+    val lensActive get() = lensDistortion || lensTca || lensVignetting
     val isDefault get() = this == HDRCameraDevelopmentSettings()
 }
 
@@ -151,10 +151,12 @@ data class HDRSettings(
         require(effects == null || rendition != null)
         require(detail == null || effects != null)
         require(look == null || detail != null)
+        require(tone?.curve?.hasChannelCurves != true || look != null)
     }
 
-    val recordVersion get() = if (cameraDevelopment == null) processingVersion else 8
+    val recordVersion get() = if (processingVersion == 8) 9 else if (cameraDevelopment == null) processingVersion else 8
     val processingVersion get() = when {
+        tone?.curve?.hasChannelCurves == true -> 8
         look != null -> 7
         detail != null -> 6
         effects != null -> 5
@@ -182,10 +184,12 @@ data class HDRSettings(
     val neutralGeometrySettings: HDRSettings
         get() = reset().copy(geometry = geometry, cameraDevelopment = cameraDevelopment?.let {
             // 对比颜色时沿用同一镜头画框，白平衡及其他显影参数仍保持中性。
-            HDRCameraDevelopmentSettings(lensDistortion = it.lensDistortion, lensTca = it.lensTca,
+            HDRCameraDevelopmentSettings(lensDistortion = it.lensDistortion, lensTca = it.lensTca, lensVignetting = it.lensVignetting,
                 lensAutoCrop = it.lensAutoCrop, lensProfile = it.lensProfile)
         })
-    fun withTone(value: HDRToneSettings) = copy(tone = value.takeUnless { tone == null && it.isDefault })
+    fun withTone(value: HDRToneSettings) = if (value.curve.hasChannelCurves)
+        copy(tone = value, color = colorSettings, rendition = renditionSettings, effects = effectSettings, detail = detailSettings, look = lookSettings)
+        else copy(tone = value.takeUnless { tone == null && it.isDefault })
     fun withColor(value: HDRColorSettings): HDRSettings {
         if (color == null && value.isDefault) return this
         return copy(tone = toneSettings, color = value)

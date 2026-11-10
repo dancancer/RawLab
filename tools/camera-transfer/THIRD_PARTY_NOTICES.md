@@ -12,6 +12,13 @@ commit `02883425c9445c653b2950210187cdd1547320c2`, particularly `ptpip/{client,o
 RawLab implements its own bounded transaction receiver, parsers, command restrictions and persistent storage;
 alpha2go is not a runtime dependency. The read-only implementation omits capture, settings and deletion APIs.
 
+The separately enabled Android tether profile additionally studies the same pinned revision's
+`ptpip/{sonycontrols,sonyprops,sonyliveview,sonycaptured}.go` and `docs/protocol.md` for Sony remote
+initialization, property descriptors, shutter press/release, and live-view framing. Its own bounded
+Java implementation permits only the explicit shutter controls, and does not set camera properties,
+delete files or format storage. The verified Java protocol implementation is shared by the RawLab
+Android product and the separate experiment app; the experiment UI is not compiled into the product.
+
 Attribution: alpha2go, Copyright 2026 The alpha2go Authors.
 License: Apache License, Version 2.0; see [license text](licenses/alpha2go-LICENSE).
 
@@ -51,6 +58,6 @@ The Android connection experiment studies CameraSync commit
 particularly `docs/sony/DOWNLOAD_PICS.md`, `SonyProtocol.createPairingInit`,
 and `SonyConnectionDelegate`'s MTU configuration. CameraSync is licensed under Apache-2.0.
 The experiment independently implements these protocol steps with Android platform APIs;
-CameraSync is not a runtime dependency. No GPS, date/time, shutter or power-off commands are included.
+CameraSync is not a runtime dependency. No CameraSync GPS, date/time, BLE shutter or power-off commands are included.
 
 SonyCameraKit was inspected as a research lead. Its unlicensed source was not copied into this tool.

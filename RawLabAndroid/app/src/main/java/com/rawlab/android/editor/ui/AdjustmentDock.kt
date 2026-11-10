@@ -111,7 +111,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     onPresets: () -> Unit = {}, quickPresetsVisible: Boolean = false, quickPresetContent: @Composable () -> Unit = {}, gradingZone: ColorGradingZone = ColorGradingZone.SHADOWS,
     onGradingZoneChange: (ColorGradingZone) -> Unit = {}, hslTarget: HslTargetActions = HslTargetActions(),
     onSelectFilm: (String) -> Boolean = { false }, onImportHDRLook: () -> Unit = {}, onApplyHDRSilver: (Boolean) -> Unit = {},
-    onRollbackProcessing: () -> Unit = {}) {
+    onRollbackProcessing: () -> Unit = {}, toolOpen: Boolean = true, fine: Boolean = false) {
     val edits = state.visibleEdits
     val context = LocalContext.current
     val rawInput = state.photo?.inputKind == PhotoInputKind.RAW
@@ -121,6 +121,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     val bundledFilms = remember(context) { Film.all + BundledLooks.load(context) }
     var lookCategory by rememberSaveable { mutableStateOf(LookBrowserCategory.ALL) }
     var lookQuery by rememberSaveable { mutableStateOf("") }
+    var lookSearchExpanded by rememberSaveable { mutableStateOf(false) }
     val filmItems = remember(state.looks, bundledFilms, lookCategory, lookQuery, state.recentLookIds) {
         browseLooks(state.looks, bundledFilms, lookCategory, lookQuery, state.recentLookIds)
     }
@@ -137,14 +138,14 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     var processingContext by remember { mutableStateOf(false) }
     var confirmProcessingRollback by remember { mutableStateOf(false) }
     var perspective by rememberSaveable(state.photo?.identity) { mutableStateOf(false) }
+    var rotation by rememberSaveable(state.photo?.identity) { mutableStateOf(false) }
     val groupList = rememberLazyListState()
     val toolList = rememberLazyListState()
     val parameterScroll = rememberScrollState()
-    val parameterSession = listOf(state.photo?.identity, state.photo?.file?.absolutePath, tool, tool == 17 && perspective,
+    val parameterSession = listOf(state.photo?.identity, state.photo?.file?.absolutePath, tool, tool == 17 && perspective, tool == 17 && rotation,
         quickPresetsVisible, edits.isHDREditing)
     LaunchedEffect(quickPresetsVisible) { parameterScroll.scrollTo(0) }
     // 仅实际导航后的工具身份变化会复位；离开草稿的 Stay 不改变这个 key。
-    var fine by rememberSaveable(state.photo?.identity, state.photo?.file?.absolutePath, tool) { mutableStateOf(false) }
     val displayLook = if (edits.isHDREditing) edits.hdr!!.lookSettings.name ?: stringResource(R.string.neutral_look)
     else recipes.firstOrNull { it.id == edits.recipeID }?.localizedName
         ?: if (edits.film == "neutral") stringResource(R.string.neutral_look)
@@ -180,37 +181,31 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
         EditorGroupStrip(state, expanded, if (quickPresetsVisible) 0 else tool, sideDock, groupList, navigationEnabled, true, select = selectGroup)
     }
     val showFine = tool !in listOf(0, 9, 15, 16)
-    @Composable fun fineControl() {
-        if (showFine) {
-            val fineHint = stringResource(R.string.editor_fine_hint)
-            FilterChip(selected = fine, onClick = { fine = !fine }, enabled = state.controlsEnabled,
-                label = { Text(stringResource(R.string.adjustment_fine), style = MaterialTheme.typography.labelMedium) },
-                leadingIcon = { Icon(Icons.Outlined.Check, null, Modifier.size(16.dp).alpha(if (fine) 1f else 0f)) },
-                modifier = Modifier.minimumInteractiveComponentSize().testTag("adjustment-fine").semantics { contentDescription = fineHint })
-        }
-    }
-    @Composable fun toolRow() {
-        Column(Modifier.fillMaxWidth()) {
-            toolStrip()
-            if (!quickPresetsVisible) Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                Spacer(Modifier.weight(1f))
-                fineControl()
-                if (showFine) Spacer(Modifier.width(8.dp))
-                dockActions()
-            }
-        }
-    }
     val scrollTools = compactNavigation && !sideDock
     Column(modifier.background(MaterialTheme.colorScheme.surface).testTag("adjustment-dock")) {
-        if (sideDock) groupStrip()
-        if (!expanded) { if (!sideDock) groupStrip(); return@Column }
-        if (!scrollTools) toolRow()
+        if (!toolOpen && !quickPresetsVisible) {
+            val large = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
+            val columns = if (large) 3 else 4
+            Column(Modifier.fillMaxWidth().height(if (large) 148.dp else 116.dp).verticalScroll(parameterScroll).padding(vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                val group = EditorAdjustmentRules.groupFor(tool) ?: EditorAdjustmentGroup.LOOKS
+                mobileEditorTools(group).chunked(columns).forEach { row ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        row.forEach { index ->
+                            Box(Modifier.weight(1f)) { EditorTool(state, index, false, navigationEnabled, false) { selectTool(index) } }
+                        }
+                        repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+            }
+            groupStrip()
+            return@Column
+        }
         // 底栏按内容收紧；复杂工具仍受外层高度上限约束，侧栏保持填满。
         Box(Modifier.weight(1f, fill = sideDock).fillMaxWidth().testTag("editor-parameters").verticalScroll(parameterScroll)) {
-        CompositionLocalProvider(LocalAdjustmentSession provides parameterSession, LocalAdjustmentFine provides fine) {
+        CompositionLocalProvider(LocalAdjustmentSession provides parameterSession, LocalAdjustmentFine provides fine,
+            com.rawlab.android.editor.controls.LocalCompactAdjustmentRows provides (tool in listOf(8, 9, 11, 12, 13, 14, 21))) {
         Column(Modifier.fillMaxWidth()) {
-            if (scrollTools) toolRow()
         if (quickPresetsVisible) quickPresetContent() else when (tool) {
             0 -> if (edits.isHDREditing) {
                 val hdr = requireNotNull(edits.hdr)
@@ -240,11 +235,12 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                         { onEdit(edits.copy(hdr = hdr.withLook(look.copy(strength = 1f))), false) }, defaultValue = 100f, stepOverride = 1f)
                 }
             } else Column {
-                LookBrowserControls(lookCategory, { lookCategory = it }, lookQuery, { lookQuery = it }, state.operation == Operation.NONE, onImportLook)
+                LookBrowserControls(lookCategory, { lookCategory = it }, lookQuery, { lookQuery = it },
+                    lookSearchExpanded, { lookSearchExpanded = it }, state.operation == Operation.NONE, onImportLook)
                 if (filmItems.isEmpty()) {
                     Column(Modifier.fillMaxWidth().testTag("looks.empty"), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(stringResource(R.string.look_search_empty))
-                        TextButton({ if (lookQuery.isEmpty()) lookCategory = LookBrowserCategory.ALL else lookQuery = "" }) {
+                        TextButton({ if (lookQuery.isEmpty()) lookCategory = LookBrowserCategory.ALL else { lookQuery = ""; lookSearchExpanded = false } }) {
                             Text(stringResource(if (lookQuery.isEmpty()) R.string.look_category_all else R.string.look_search_clear))
                         }
                     }
@@ -378,21 +374,32 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 onEdit(edits.withEditingGrading(value), dragging)
             }
             14 -> Column {
-                HslTargetControls(hslTarget, state.controlsEnabled)
+                if (hslTarget.state.enabled) HslTargetControls(hslTarget, state.controlsEnabled)
                 HslControls(edits.editingHsl, state.controlsEnabled, channel, onChannelChange,
                     { all -> onResetScope(if (all) EditorResetScope.AllHsl else EditorResetScope.HslChannel(channel)) }) { value, dragging -> onEdit(edits.withEditingHsl(value), dragging) }
             }
-            16 -> LensControls(edits.lens, state.preview?.lens, rawInput && !normalX3f && state.controlsEnabled && state.draft != null, state.rendering, onReset = { onResetScope(EditorResetScope.Tool(16)) }) { value ->
+            16 -> LensControls(edits.lens, state.preview?.lens, !normalX3f && state.controlsEnabled && state.draft != null, state.rendering, onReset = { onResetScope(EditorResetScope.Tool(16)) }) { value ->
                 onDraftEdit(edits.copy(lens = value), false)
             }
-            17 -> GeometryControls(edits.geometry, state.controlsEnabled && state.draft != null,
+            17 -> Column {
+                Row(Modifier.fillMaxWidth()) {
+                    listOf(R.string.geometry_crop_tool, R.string.geometry_rotation_tool, R.string.geometry_perspective_tool).forEachIndexed { index, title ->
+                        val selected = (if (perspective) 2 else if (rotation) 1 else 0) == index
+                        TextButton(onClick = { perspective = index == 2; rotation = index == 1 },
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag(when (index) { 0 -> "geometry-crop-tab"; 1 -> "geometry-rotation-tab"; else -> "editor-tool-perspective" })) {
+                            Text(stringResource(title), color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                GeometryControls(edits.geometry, state.controlsEnabled && state.draft != null,
                 ratio = state.draft?.geometryRatio ?: GeometryRatio.FREE,
                 portrait = state.draft?.geometryPortrait ?: false,
                 ratioEnabled = state.draftReady, onRatioChange = onGeometryRatio, onReset = { onResetScope(EditorResetScope.Tool(17)) },
                 lockedRatio = state.draft?.geometryLockedRatio, physicalAspect = state.draft?.geometryAspect,
                 canvasAspect = state.draft?.geometryCanvasAspect ?: 1f, onLock = onGeometryLock, onSwap = onGeometrySwap,
-                showsGrid = state.draft?.geometryGrid ?: true, onGrid = onGeometryGrid, perspective = perspective) { value, dragging ->
+                showsGrid = state.draft?.geometryGrid ?: true, onGrid = onGeometryGrid, perspective = perspective, rotation = rotation) { value, dragging ->
                 onDraftEdit(edits.copy(geometry = value), dragging)
+            }
             }
             15 -> MasterRecipePicker(recipes, edits.recipeID, state.controlsEnabled) { recipe ->
                 if (recipe == null) onSelectFilm("neutral") else onEdit(edits.applyRecipe(recipe), false)
@@ -410,19 +417,28 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
             10 -> NumericControl(R.string.sharpening, edits.editingSharpening * 100, 0f..200f, "%", state.controlsEnabled,
                 { value, dragging -> onEdit(edits.withEditingSharpening(value / 100), dragging) }, { onEdit(edits.withEditingSharpening(0f), false) })
         }
+        if (tool in listOf(0, 15) && !edits.isHDREditing) CompositionLocalProvider(
+            com.rawlab.android.editor.controls.LocalCompactAdjustmentRows provides true) { NumericControl(R.string.strength, edits.strength * 100, 0f..200f, "%",
+            state.controlsEnabled && (edits.film != "neutral" || edits.recipeID != null),
+            { value, dragging -> onEdit(edits.copy(strength = value / 100), dragging) },
+            { onEdit(edits.copy(strength = 1f), false) }, defaultValue = 100f) }
         }
         }
         }
         if (state.draft != null && !quickPresetsVisible) {
             Column {
                 HorizontalDivider()
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onDiscardDraft, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("draft.cancel")) { Text(stringResource(R.string.cancel)) }
-                    Button(onClick = onApplyDraft, enabled = state.canApplyDraft, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("draft.apply")) { Text(stringResource(R.string.adjustment_apply)) }
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onDiscardDraft, enabled = !state.committingAdjustments,
+                        modifier = Modifier.size(48.dp).testTag("draft.cancel")) { Icon(Icons.Outlined.Close, stringResource(R.string.cancel)) }
+                    Text(stringResource(editorToolTitles[tool]), Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        style = MaterialTheme.typography.titleSmall)
+                    IconButton(onClick = onApplyDraft, enabled = state.draftReady,
+                        modifier = Modifier.size(48.dp).testTag("draft.apply")) { Icon(Icons.Outlined.Check, stringResource(R.string.adjustment_apply)) }
                 }
             }
         }
-        if (!sideDock) groupStrip()
+
 
     }
     if (processingContext) AlertDialog(onDismissRequest = { processingContext = false },

@@ -3,7 +3,7 @@ import Foundation
 enum HDRRequestError: Error { case invalidSettings }
 
 struct HDRRenderRequest {
-    let native: sony2fuji_hdr_request_v7
+    let native: sony2fuji_hdr_request_v8
     let lookURL: URL?
 }
 
@@ -88,14 +88,21 @@ func makeHDRRequest(settings: HDRSettings, intent: sony2fuji_intent,
             }
         }
     }
-    return HDRRenderRequest(native: lookRequest, lookURL: settings.lookSettings.asset(in: lookDirectory))
+    var channelsRequest = sony2fuji_hdr_request_v8()
+    channelsRequest.base = lookRequest
+    if request.hdr_processing_version >= SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION {
+        channelsRequest.base.base.base.base.base.base.base.struct_size = UInt32(MemoryLayout<sony2fuji_hdr_request_v8>.size)
+        let channels = settings.toneSettings.curve.channels
+        channelsRequest.channels = (channels.red.nativeConfig, channels.green.nativeConfig, channels.blue.nativeConfig)
+    }
+    return HDRRenderRequest(native: channelsRequest, lookURL: settings.lookSettings.asset(in: lookDirectory))
 }
 
 func withHDRRequestPrefix<T>(_ request: HDRRenderRequest,
                              _ body: (UnsafePointer<sony2fuji_hdr_request_v1>) throws -> T) rethrows -> T {
     var native = request.native
     func call(_ path: UnsafePointer<CChar>?, _ invoke: (UnsafePointer<sony2fuji_hdr_request_v1>) throws -> T) rethrows -> T {
-        native.look_path = path
+        native.base.look_path = path
         return try withUnsafePointer(to: &native) { full in
             try full.withMemoryRebound(to: sony2fuji_hdr_request_v1.self, capacity: 1, invoke)
         }

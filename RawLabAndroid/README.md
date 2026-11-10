@@ -21,7 +21,8 @@ Auto 可接续 GLES 显示渲染，Force 不支持需要执行 C5 的滤波。�
 ## 功能 / Features
 
 - 「从相机导入」提供蓝牙发现、系统配对、自动加入相机 Wi-Fi、RAW/JPEG 选片和原文件导入。
-  当前连接范围为 Sony α7C II / 固件 2.00 的「智能手机连接」，自动 Wi-Fi 需要 Android 10+。
+  需要 Android 10+，按 Sony 蓝牙服务、协议握手和实际能力连接，不按型号或固件过滤。已实测 Sony α7C II / 固件 2.00 与初代 ZV-E10 / 固件 2.02 的「智能手机连接」。
+  支持所需蓝牙特性的相机可启动 Wi-Fi；缺少这些特性时使用手动连接。在相机打开连接画面，通过系统 Wi-Fi 加入相机热点后返回 RawLab，保持无互联网连接。热点名称不作为型号准入依据。
   点击查找时才请求位置/附近设备权限；相机 Wi-Fi 只用于本应用传输。首次按系统提示配对，重连复用已有配对，不自动解除配对。
   原件保存到系统媒体库，默认按每张照片的拍摄日期放入 `Pictures/RawLab/Camera/YYYY-MM-DD/`。
   保存位置可配置子目录及统一目录／拍摄日／拍摄月份分组；未知日期进入 `Unknown date`，不以导入时间代替。
@@ -29,8 +30,13 @@ Auto 可接续 GLES 显示渲染，Force 不支持需要执行 C5 的滤波。�
   本应用保存的照片无需全库读取权限即可浏览；其他获得授权且支持 RAW 的应用也能读取这些媒体。
   保持应用在前台完成传输；停止、断线或进入后台会保留已保存项，重连后从未完成文件开头重传。
   打开相机页保留当前编辑草稿，进入新照片时才执行既有草稿确认。不会删除相机中的照片。
-  当前真机验证范围为 Pixel XL / Android 10 与上述相机的 RAW 路径；JPEG 原件传输及其他设备尚未实测。
+  设备验证使用 Pixel XL / Android 10。α7C II 的 ARW、ZV-E10 的 ARW/JPEG 协议路径已实测；α7C II 的 JPEG 和其他设备尚未实测。
   原件、任务恢复及编辑身份边界见[Android 媒体库设计](../docs/design/camera-transfer/android-media-library.md)。
+- 「联机拍摄」与选片导入共用一个相机会话，提供实时取景、单张快门、机身拍摄后的原件接收、构图网格和最近照片。
+  竖屏使用底部中央快门，横屏使用侧栏；拍后审片可选，审片支持缩放，只有点“打开编辑”才离开相机页。
+  驱动、曝光与对焦在机身设置；ZV-E10 连接前确认同时保存到手机和相机。读卡时暂时停止取景并重建遥控会话。
+  退出、锁屏和后台会暂停联机；恢复只继续接收，绝不自动补拍。保存目的地在每次联机开始时冻结。
+  当前接收 ARW/JPEG，HEIF、视频、连拍及其他固件不在范围内。完整合同见[无线联机拍摄](../docs/design/camera-transfer/wireless-tethering.md)。
 
 - 手机 HDR JPEG/HEIF 默认打开 HDR 编辑，提供曝光、相对色温/色偏、对比度、高光、阴影、饱和度及几何；预设、选择性同步、历史和批量导出保留独立 HDR 状态。HDR JPEG 重新生成增益图，显式 SDR JPEG/PNG16/DNG 使用 SDR rendition。切到 SDR 编辑后可使用 LUT 兼容向导。HDR 处理使用 CPU，FP16 硬件显示需 API 34+、HDR/SDR 比率和硬件加速窗口，条件不足显示 SDR；不支持 GPU Force。普通 SDR HEIF 的平台解码需 API 28+。范围见[平台对齐设计](../docs/design/hdr-photos/android-windows.md)。
   Phone HDR JPEG/HEIF defaults to HDR editing with seven basic adjustments and geometry. Presets, selective synchronization, history and batch snapshots preserve independent HDR state. HDR JPEG regenerates a gain map; explicit SDR exports use the SDR rendition. Switch to SDR editing for LUT compatibility previews. Processing uses the CPU; FP16 presentation requires API 34+, an available HDR/SDR ratio and a hardware-accelerated window, with SDR fallback. GPU Force is unsupported. Ordinary SDR HEIF decoding requires API 28+.

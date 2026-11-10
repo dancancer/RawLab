@@ -17,7 +17,6 @@ extension ContentView {
     func toolUnavailableReason(_ tool: EditorToolSelection) -> String? {
         if settings.isHDREditing && !supportsHDR(tool) { return L10n.text("HDR 模式暂不支持此工具。") }
         if tool == .lens && usesNormalX3f { return L10n.text("此输入不支持镜头校正") }
-        if tool == .lens && viewModel.sourceKind != .raw { return L10n.text("仅 RAW 照片支持镜头校正。") }
         if tool == .adjustment(.temperature) && !settings.isHDREditing && viewModel.rawWhiteBalance == nil {
             return L10n.text("此照片没有可用的相机白平衡校准。")
         }
@@ -80,7 +79,7 @@ extension ContentView {
     var editingLocked: Bool { isImporting || isSaving || viewModel.isBusy || batchModel?.isRunning == true }
     var editorBusy: Bool { viewModel.isBusy || viewModel.isLoadingLUTs || viewModel.isImportingLooks || editingLocked }
     var selectedFilmName: String {
-        settings.masterRecipe?.title ?? viewModel.availableLUTs.first { $0.id == settings.lutID }?.name ?? (settings.lutID == nil ? L10n.text("中性") : L10n.text("外观不可用"))
+        workingSettings.masterRecipe?.title ?? viewModel.availableLUTs.first { $0.id == workingSettings.lutID }?.name ?? (workingSettings.lutID == nil ? L10n.text("中性") : L10n.text("外观不可用"))
     }
 
     var currentPreviewImage: UIImage? { viewModel.previewImage ?? viewModel.basePreviewImage }
@@ -173,7 +172,7 @@ extension ContentView {
     }
 
     func applySettingsChange(_ newSettings: RawSettings) {
-        settings = newSettings
+        workingSettings = newSettings
     }
 
     func queueEditorSettingsChange(_ newSettings: RawSettings) {
@@ -190,12 +189,12 @@ extension ContentView {
 
     func adjustmentBinding(_ adjustment: AdjustmentKind) -> Binding<Double> {
         Binding(
-            get: { adjustment.value(from: settings) },
+            get: { adjustment.value(from: workingSettings) },
             set: { value in
-                var updated = !settings.isHDREditing && viewModel.sourceKind == .raw && (adjustment == .temperature || (adjustment == .tint && settings.masterRecipeID == nil))
-                    ? manualWhiteBalanceSettings : settings
+                var updated = !workingSettings.isHDREditing && viewModel.sourceKind == .raw && (adjustment == .temperature || (adjustment == .tint && workingSettings.masterRecipeID == nil))
+                    ? manualWhiteBalanceSettings : workingSettings
                 adjustment.setValue(value, in: &updated)
-                if !settings.isHDREditing, viewModel.sourceKind == .raw,
+                if !workingSettings.isHDREditing, viewModel.sourceKind == .raw,
                    (adjustment == .temperature || adjustment == .tint) && !(updated.masterRecipeID != nil && adjustment == .tint) {
                     updated.whiteBalanceMode = .custom
                 }
@@ -205,9 +204,9 @@ extension ContentView {
     }
 
     func reset(_ adjustment: AdjustmentKind) {
-        var updated = settings
+        var updated = workingSettings
         adjustment.reset(in: &updated)
-        if !settings.isHDREditing, viewModel.sourceKind == .raw,
+        if !workingSettings.isHDREditing, viewModel.sourceKind == .raw,
            adjustment == .temperature || adjustment == .tint {
             if let whiteBalance = viewModel.rawWhiteBalance {
                 if adjustment == .temperature { updated.temperature = whiteBalance.temperature }
@@ -235,10 +234,10 @@ extension ContentView {
     }
 
     func setWhiteBalanceMode(_ mode: RawWhiteBalanceMode) {
-        guard !settings.isHDREditing else { return }
-        var updated = settings
+        guard !workingSettings.isHDREditing else { return }
+        var updated = workingSettings
         if mode == .custom,
-           settings.whiteBalanceMode == .camera,
+           workingSettings.whiteBalanceMode == .camera,
            let whiteBalance = viewModel.rawWhiteBalance {
             updated.temperature = whiteBalance.temperature
             if updated.masterRecipeID == nil { updated.tint = whiteBalance.tint }
@@ -252,26 +251,26 @@ extension ContentView {
     }
 
     var displayedTemperature: Double {
-        if settings.isHDREditing { return settings.hdr!.temperature }
+        if workingSettings.isHDREditing { return workingSettings.hdr!.temperature }
         guard viewModel.sourceKind != .raster else { return RawSettings.default.temperature }
         if viewModel.sourceKind == .raw,
-           settings.whiteBalanceMode == .camera,
+           workingSettings.whiteBalanceMode == .camera,
            let whiteBalance = viewModel.rawWhiteBalance {
             return whiteBalance.temperature
         }
-        return settings.temperature
+        return workingSettings.temperature
     }
 
     var displayedTint: Double {
-        if settings.isHDREditing { return settings.hdr!.tint }
+        if workingSettings.isHDREditing { return workingSettings.hdr!.tint }
         guard viewModel.sourceKind != .raster else { return 0 }
-        if settings.masterRecipeID != nil { return settings.tint }
+        if workingSettings.masterRecipeID != nil { return workingSettings.tint }
         if viewModel.sourceKind == .raw,
-           settings.whiteBalanceMode == .camera,
+           workingSettings.whiteBalanceMode == .camera,
            let whiteBalance = viewModel.rawWhiteBalance {
             return whiteBalance.tint
         }
-        return settings.tint
+        return workingSettings.tint
     }
 
     func reciprocalTemperatureBinding() -> Binding<Double> {
@@ -280,7 +279,7 @@ extension ContentView {
             set: { value in
                 var updated = manualWhiteBalanceSettings
                 AdjustmentKind.temperature.setValue(RawSettings.temperature(forReciprocalSliderValue:value),in:&updated)
-                if !settings.isHDREditing, viewModel.sourceKind == .raw { updated.whiteBalanceMode = .custom }
+                if !workingSettings.isHDREditing, viewModel.sourceKind == .raw { updated.whiteBalanceMode = .custom }
                 applySettingsChange(updated)
             }
         )
@@ -294,7 +293,7 @@ extension ContentView {
                 var updated = manualWhiteBalanceSettings
                 AdjustmentKind.temperature.setValue(min(max(value.rounded(),RawSettings.temperatureRange.lowerBound),
                     RawSettings.temperatureRange.upperBound),in:&updated)
-                if !settings.isHDREditing, viewModel.sourceKind == .raw { updated.whiteBalanceMode = .custom }
+                if !workingSettings.isHDREditing, viewModel.sourceKind == .raw { updated.whiteBalanceMode = .custom }
                 applySettingsChange(updated)
             }
         )
@@ -317,6 +316,7 @@ extension ContentView {
         isAdjustingSlider = editing
         updateRulerFocus(editing: editing, wasEditing: wasEditing)
         if !editing {
+            workspaceDraft?.finishInteraction()
             viewModel.updatePreview(settings: draftPreviewSettings, includeHistogram: true, quality: .final)
         }
     }
@@ -333,7 +333,7 @@ extension ContentView {
     }
 
     func photoImportButton(isEnabled: Bool) -> some View {
-        Button { requestEditorImport(file: false) } label: { Image(systemName: "photo.badge.plus") }
+        Button { requestEditorImport(file: false) } label: { Image(systemName: viewModel.hasImage ? "chevron.left" : "photo.badge.plus") }
             .accessibilityLabel(L10n.text("导入照片"))
             .help(L10n.text("从照片图库导入"))
             .accessibilityIdentifier("editor.import")
@@ -411,14 +411,15 @@ extension ContentView {
     }
 
     func requestLookImport() {
-        guard !editorBusy, !isEditorDraftChanged else { return }
+        guard !editorBusy, !isEditorDraftActive || currentEditorTool == .film else { return }
         documentImportKind = .looks
         showingDocumentImporter = true
     }
 
     @MainActor
     func importLooks(_ result: Result<[URL], Error>) {
-        guard !editorBusy, !isEditorDraftChanged else { return }
+        guard !editorBusy, !isEditorDraftActive || currentEditorTool == .film else { return }
+        let draftID = workspaceDraftID, source = viewModel.sourceRevision
         switch result {
         case .failure(let error):
             viewModel.reportError(error, operation: .lookImport, stage: "filePicker", context: ["entryPoint": "files"])
@@ -432,9 +433,10 @@ extension ContentView {
                 confirmedDCPImportOptions = nil
                 pendingDCPImportOptions = .init(source: source, reason: reason)
             }) { report in
-                if case .select(let selectedID) = LookImportSelection.decision(previousID: settings.lutID,
+                guard workspaceDraftID == draftID, viewModel.sourceRevision == source else { return }
+                if case .select(let selectedID) = LookImportSelection.decision(previousID: workingSettings.lutID,
                                                                                 imported: report.imported) {
-                    var updated = settings
+                    var updated = workingSettings
                     if let reason = updated.clearMasterRecipe(context: resetContext) {
                         viewModel.statusMessage = resetBlockedMessage(reason); return
                     }
@@ -494,7 +496,7 @@ extension ContentView {
                 onImported: { UsageAnalytics.shared.record(.photoImported) }) { restored in
                 guard photoImportRequestID == requestID else { return }
                 settings = restored
-                if restored.isHDREditing { activateEditorTool(.adjustment(.exposure)) }
+                if restored.isHDREditing { selectedGroup = .light; selectedAdjustment = .exposure }
             }
             selectedPhotoItem = nil
             photoImportTask = nil
@@ -603,7 +605,7 @@ extension ContentView {
                                       diagnosticContext: context,
                                       onImported: { UsageAnalytics.shared.record(.photoImported) }) { restored in
                     settings = restored
-                if restored.isHDREditing { activateEditorTool(.adjustment(.exposure)) }
+                if restored.isHDREditing { selectedGroup = .light; selectedAdjustment = .exposure }
                 }
             case .failure(let error):
                 photoImportTask = nil

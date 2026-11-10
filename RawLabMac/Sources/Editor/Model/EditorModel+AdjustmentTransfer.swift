@@ -118,7 +118,7 @@ extension EditorModel {
                 let frame = try RenderEngine().render(url, settings: request, lut: nil, edge: 256)
                 guard let info = frame?.lensInfo,
                       !lens.distortion || info.appliedDistortion,
-                      !lens.tca || info.appliedTCA else { throw AdjustmentTransferError.incompatible("lens calibration") }
+                      !lens.tca || info.appliedTCA, !lens.vignetting || info.appliedVignetting else { throw AdjustmentTransferError.incompatible("lens calibration") }
             }
             return AdjustmentTransferTarget(url: url, defaultState: PhotoEditState(settings: Adjustments(), filmID: ""), context: context, expectedIdentity: collectionPhoto?.original ?? (path == activePath ? activeIdentity : nil),
                 isCurrent: { [weak self] in

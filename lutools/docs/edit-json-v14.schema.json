@@ -138,6 +138,9 @@
                   "type": "null"
                 }
               ]
+            },
+            "lens_vignetting": {
+              "type": "boolean"
             }
           },
           "allOf": [
@@ -199,6 +202,16 @@
                     ],
                     "properties": {
                       "lens_tca": {
+                        "const": true
+                      }
+                    }
+                  },
+                  {
+                    "required": [
+                      "lens_vignetting"
+                    ],
+                    "properties": {
+                      "lens_vignetting": {
                         "const": true
                       }
                     }

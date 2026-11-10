@@ -67,6 +67,7 @@ public enum AdjustmentField
     PerspectiveVertical,
     LensDistortion,
     LensTCA,
+    LensVignetting,
     LensAutoCrop,
     LensProfile,
     BlackPoint,
@@ -145,6 +146,7 @@ public static class AdjustmentFields
         "geometry.perspective.vertical",
         "geometry.lens.distortion",
         "geometry.lens.tca",
+        "geometry.lens.vignetting",
         "geometry.lens.auto_crop",
         "geometry.lens.profile_id",
         "tone.black_point",
@@ -206,11 +208,11 @@ public static class AdjustmentFields
         cameraRaw ? HDRSupported.Append(AdjustmentField.HdrCameraDevelopment).ToHashSet() : HDRSupported;
     public static IReadOnlySet<AdjustmentField> HDRSupportedFor(int version) => version switch {
         1 => HDRV1Supported, 2 => HDRV2Supported, 3 => HDRV3Supported, 4 => HDRV4Supported,
-        5 => HDRV5Supported, 6 => HDRV6Supported, 7 => HDRSupported,
+        5 => HDRV5Supported, 6 => HDRV6Supported, 7 or 8 => HDRSupported,
         _ => throw new ArgumentOutOfRangeException(nameof(version))
     };
     public static readonly IReadOnlySet<AdjustmentField> WhiteBalance = new HashSet<AdjustmentField> { AdjustmentField.WhiteBalanceMode, AdjustmentField.Temperature, AdjustmentField.Tint };
-    public static readonly IReadOnlySet<AdjustmentField> Lens = new HashSet<AdjustmentField> { AdjustmentField.LensDistortion, AdjustmentField.LensTCA, AdjustmentField.LensAutoCrop, AdjustmentField.LensProfile };
+    public static readonly IReadOnlySet<AdjustmentField> Lens = new HashSet<AdjustmentField> { AdjustmentField.LensDistortion, AdjustmentField.LensTCA, AdjustmentField.LensVignetting, AdjustmentField.LensAutoCrop, AdjustmentField.LensProfile };
     public static readonly IReadOnlySet<AdjustmentField> Denoise = new HashSet<AdjustmentField> { AdjustmentField.RawDenoise, AdjustmentField.PostRGBDenoise, AdjustmentField.ChromaDenoise, AdjustmentField.WaveletDenoise };
     public static readonly IReadOnlySet<AdjustmentField> RecipeDependencies = new[] { AdjustmentField.Look, AdjustmentField.Strength, AdjustmentField.Exposure,
         AdjustmentField.Contrast, AdjustmentField.Highlights, AdjustmentField.Shadows, AdjustmentField.Saturation }
@@ -345,7 +347,7 @@ public sealed class AdjustmentPayload
     }
     public void Validate()
     {
-        if (Source.IsHDR ? PayloadVersion != 2 || ScopeVersion != 2 || Source.HdrProcessingVersion is not (>= 1 and <= 7)
+        if (Source.IsHDR ? PayloadVersion != 2 || ScopeVersion != 2 || Source.HdrProcessingVersion is not (>= 1 and <= 8)
             : PayloadVersion != 1 || ScopeVersion != 1)
             throw new AdjustmentTransferException(AdjustmentFailure.UnsupportedVersion);
         if (Values.Count==0) throw new AdjustmentTransferException(AdjustmentFailure.EmptyScope);
@@ -370,8 +372,7 @@ public sealed class AdjustmentPayload
         if (mode=="camera" && (Number(temperature)!=null || Source.Recipe==null && Number(tint)!=null) ||
             mode=="temperature" && (Null(temperature) || Null(tint))) throw Invalid("white_balance values conflict with mode");
         if (!Source.IsRaw && (modeValueInvalid(AdjustmentField.ExposureMode,"sensor") || numberInvalid(AdjustmentField.RawDenoise) ||
-            !Source.IsHDR && numberInvalid(AdjustmentField.PostRGBDenoise) ||
-            Boolean(this[AdjustmentField.LensDistortion])==true || Boolean(this[AdjustmentField.LensTCA])==true)) throw Invalid("raster request");
+            !Source.IsHDR && numberInvalid(AdjustmentField.PostRGBDenoise))) throw Invalid("raster request");
         bool modeValueInvalid(AdjustmentField f,string expected) => this[f]!=null && Text(this[f])!=expected;
         bool numberInvalid(AdjustmentField f) => this[f]!=null && Number(this[f])!=0;
     }
@@ -391,7 +392,7 @@ public sealed class AdjustmentPayload
         if (field.Range() is {} range) return number is {} n && double.IsFinite(n) && n>=range.Min && n<=range.Max &&
             (field!=AdjustmentField.QuarterTurns || n==Math.Round(n)) && (field is not (AdjustmentField.CropWidth or AdjustmentField.CropHeight) || n>0);
         switch(field) {
-            case AdjustmentField.FlipHorizontal: case AdjustmentField.FlipVertical: case AdjustmentField.LensDistortion: case AdjustmentField.LensTCA: case AdjustmentField.LensAutoCrop: return Boolean(value)!=null;
+            case AdjustmentField.FlipHorizontal: case AdjustmentField.FlipVertical: case AdjustmentField.LensDistortion: case AdjustmentField.LensTCA: case AdjustmentField.LensVignetting: case AdjustmentField.LensAutoCrop: return Boolean(value)!=null;
             case AdjustmentField.ExposureMode: return Text(value) is "scene" or "preview" or "sensor";
             case AdjustmentField.WhiteBalanceMode: return Text(value) is "camera" or "temperature" or "none";
             case AdjustmentField.Temperature: return Null(value) || number is >=2000 and <=50000;

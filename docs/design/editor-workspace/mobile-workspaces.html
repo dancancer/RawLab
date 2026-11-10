@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RawLab 移动编辑独立工具工作区 · 待审核</title>
+<link rel="stylesheet" href="mobile-workspaces.css">
+<style>body{margin:0;padding:24px 16px;background:#eeeeec;color:#242426;--foreground:#242426;--background:#fafafa;--border:#99999d}.asset-nav{font:13px -apple-system,sans-serif;max-width:700px;margin:0 auto 18px;display:flex;gap:14px;flex-wrap:wrap}.asset-nav a{color:#635323}.sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}.viz-dotted-background{background-image:radial-gradient(#9995 .7px,transparent .7px);background-size:14px 14px}</style>
+<nav class="asset-nav"><a href="index.html">设计资产</a><a href="mobile-review.html">编辑与相机统一预览</a><span>待审核 · mobile-r2 · 交互模拟</span><label><input type="checkbox" id="review-large">大字</label><label><input type="checkbox" id="review-short">短屏</label></nav>
+<div id="rl-editor-review">
+  <div class="review-head"><span>编辑 · 待审核设计</span><select aria-label="预览编辑页面" id="rl-screen-select"><option value="home">编辑主页</option><option value="looks">外观</option><option value="exposure">曝光</option><option value="whitebalance">白平衡</option><option value="hsl">HSL</option><option value="curve">曲线</option><option value="grading">色彩分级</option><option value="geometry">几何</option><option value="lens">镜头校正 · JPEG</option><option value="denoise">降噪</option></select><select aria-label="JPEG 镜头状态" id="rl-lens-condition" hidden><option value="matched">已匹配配置</option><option value="missing">信息缺失</option><option value="partial">缺少焦距</option><option value="unmatched">未匹配配置</option><option value="limited">仅支持畸变</option><option value="error">配置加载失败</option></select></div>
+  <div class="stage viz-dotted-background"><div class="phone" aria-label="RawLab 移动编辑设计稿"><div class="status"><span>9:41</span><span>示例照片 · 设计预览</span></div><div id="rl-editor-content" style="display:contents"></div><div class="home-indicator"></div><div id="rl-editor-overlay"></div></div></div>
+  <div class="sr-only" id="rl-editor-live" aria-live="polite"></div>
+</div>
+
+<script src="shared/mobile-review-icons.js"></script>
+<script src="mobile-workspaces.js"></script>
+<script>function layout(){document.querySelector(".phone").parentElement.parentElement.dispatchEvent(new CustomEvent("review-layout",{detail:{large:document.getElementById("review-large").checked,short:document.getElementById("review-short").checked}}))}document.getElementById("review-large").onchange=layout;document.getElementById("review-short").onchange=layout;</script>
+</html>

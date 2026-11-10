@@ -110,6 +110,7 @@ class EditorViewModel @JvmOverloads constructor(
     }.getOrDefault(emptyList()))
     private val usage = UsageAnalyticsRegistry.get(application)
     private val editStore = EditorEditStore(File(application.filesDir, "edits"), editStoreFactory)
+    private val draftStore = EditorDraftStore(File(application.filesDir, "editor-draft"))
     private val adjustmentHistory = EditorAdjustmentHistory(editStore)
     val adjustmentTransactions get() = adjustmentHistory.session?.transactions.orEmpty()
     val canUndoAdjustment get() = mutable.value.photo?.identity?.let { adjustmentHistory.session?.canUndoPhoto(it) } == true
@@ -225,7 +226,7 @@ class EditorViewModel @JvmOverloads constructor(
             if (field != value) { cancelProcessingMigration(); deferredMigrationPreview = false }
             field = value
         }
-    private var pendingHDRLookImport: Pair<Long, Long>? = null
+    private var pendingHDRLookImport: Triple<Long, Long, Long>? = null
     private var pendingHDRCameraProfileImport: Pair<Long, Long>? = null
     @Volatile private var editRevision = 0L
         set(value) { if (field != value) cancelProcessingMigration(); field = value }
@@ -241,6 +242,8 @@ class EditorViewModel @JvmOverloads constructor(
     private val pendingPhotoImport = PendingPhotoImport()
     private var failedX3fImport: Work.Import? = null
     private var lookRevision = 0L
+    private var lookImportSelectionContext: Pair<Long, Long>? = null
+    private var editorActivationRevision = 0L
     private var releases = 0
     private val mutable = MutableStateFlow(EditorState(recentLookIds = recentLooks.ids))
     val state = mutable.asStateFlow()
@@ -321,21 +324,21 @@ class EditorViewModel @JvmOverloads constructor(
         cancelHslTarget()
         val current = mutable.value; val target = mutableHslTarget.value
         val preview = acceptedHslPreview; val revision = acceptedHslRevision
-        if (!target.enabled || !current.controlsEnabled || current.rendering || current.previewResizePending || current.error != null || current.draft != null ||
-            preview == null || revision == null || revision.source != sourceRevision || current.edits != acceptedHslSettings ||
+        if (!target.enabled || !current.controlsEnabled || current.rendering || current.previewResizePending || current.error != null || (current.draft != null && current.draft.group != AdjustmentGroup.HSL) ||
+            preview == null || revision == null || revision.source != sourceRevision || current.visibleEdits != acceptedHslSettings ||
             current.photo?.identity != preview.photo.identity || current.photo?.file != preview.photo.file) {
             mutableHslTarget.value = target.copy(notice = HslTargetAvailability.STALE); return
         }
-        val token = hslInteraction.begin(current.edits.editingHsl, target.axis, revision)
+        val token = hslInteraction.begin(current.visibleEdits.editingHsl, target.axis, revision)
         mutableHslTarget.value = target.copy(x = x, y = y, sample = null, waiting = true, notice = null)
         if (keyDelta != null) { hslInteraction.move(keyDelta); hslInteraction.end() }
-        currentRevision = submitRender(Work.HslProbe(preview, current.edits, revision, token, target.axis, x, y))
+        currentRevision = submitRender(Work.HslProbe(preview, current.visibleEdits, revision, token, target.axis, x, y))
     }
     private fun acceptHslTarget(value: WorkResult.HslProbe) {
         val work = value.request
         if (!hslInteraction.matches(work.token)) return
         val current = mutable.value; val target = mutableHslTarget.value
-        if (!target.enabled || target.axis != work.axis || current.edits != work.before || current.draft != null ||
+        if (!target.enabled || target.axis != work.axis || current.visibleEdits != work.before || (current.draft != null && current.draft.group != AdjustmentGroup.HSL) ||
             sourceRevision != work.revision.source || current.photo?.identity != work.preview.photo.identity) {
             cancelHslTarget(); mutableHslTarget.value = mutableHslTarget.value.copy(notice = HslTargetAvailability.STALE); return
         }
@@ -344,8 +347,8 @@ class EditorViewModel @JvmOverloads constructor(
             notice = if (next == null) hslInteraction.selection?.availability ?: HslTargetAvailability.STALE else null)
         if (next == null) return
         applyingHslTarget = true
-        try { edit(current.edits.withEditingHsl(next), true) } finally { applyingHslTarget = false }
-        hslHistoryActive = adjustmentHistory.interacting
+        try { edit(current.visibleEdits.withEditingHsl(next), true) } finally { applyingHslTarget = false }
+        hslHistoryActive = mutable.value.draft?.interacting == true || adjustmentHistory.interacting
         if (!hslHistoryActive) { clearHslTarget(); mutableHslTarget.value = target.copy(notice = HslTargetAvailability.FAILED); return }
         if (!hslInteraction.dragging) endHslTarget()
     }
@@ -353,13 +356,13 @@ class EditorViewModel @JvmOverloads constructor(
         val next = hslInteraction.move(delta) ?: return
         if (!hslHistoryActive) return
         applyingHslTarget = true
-        try { edit(mutable.value.edits.withEditingHsl(next), true) } finally { applyingHslTarget = false }
+        try { edit(mutable.value.visibleEdits.withEditingHsl(next), true) } finally { applyingHslTarget = false }
     }
     fun endHslTarget() {
         hslInteraction.end()
         if (hslHistoryActive) {
             hslHistoryActive = false; applyingHslTarget = true
-            try { edit(mutable.value.edits, false) } finally { applyingHslTarget = false }
+            try { edit(mutable.value.visibleEdits, false) } finally { applyingHslTarget = false }
         }
     }
     private fun clearHslTarget() {
@@ -369,7 +372,16 @@ class EditorViewModel @JvmOverloads constructor(
     fun cancelHslTarget() {
         val active = hslHistoryActive
         clearHslTarget()
-        if (active) cancelAdjustmentInteraction()
+        if (active) {
+            if (mutable.value.draft != null) {
+                val draft = mutable.value.draft!!
+                if (draft.interacting && draft.canUndo) {
+                    draftRevision += 1
+                    mutable.value = mutable.value.copy(draft = draft.undo().copy(redoSteps = emptyList()))
+                    renderDraft(false)
+                }
+            } else cancelAdjustmentInteraction()
+        }
     }
     fun rejectHslTarget() { cancelHslTarget(); mutableHslTarget.value = mutableHslTarget.value.copy(notice = HslTargetAvailability.OUTSIDE) }
     fun keyHslTarget(delta: Float) {
@@ -420,6 +432,9 @@ class EditorViewModel @JvmOverloads constructor(
                         if (refitted != draft) draftRevision += 1
                         mutable.value = EditorStateReducer.renderFinished(current)
                             .copy(draft = refitted, preview = value.pair, exact = !request.interactive, error = null)
+                        acceptedHslPreview = request
+                        acceptedHslSettings = refitted.project(current.edits)
+                        acceptedHslRevision = HslTargetRevision(sourceRevision, currentRevision)
                         return@fold
                     }
                     val imported = pendingPhotoImport.complete(request.photo.identity)
@@ -466,6 +481,7 @@ class EditorViewModel @JvmOverloads constructor(
                     }
                     if (request.importing) mutable.value = mutable.value.copy(
                         processingMigration = runCatching { editStore.processingMigration(request.photo.identity) }.getOrNull())
+                    if (request.importing && mutable.value.draft == null) restoreEditorDraft()
                     startProcessingMigrationIfNeeded()
                 }
                 WorkResult.Export -> {
@@ -474,10 +490,14 @@ class EditorViewModel @JvmOverloads constructor(
                 }
                 is WorkResult.AutoExposure -> {
                     val current = mutable.value
-                    if (current.photo?.identity == value.request.photo.identity && current.edits == value.request.edits) {
-                        if (current.edits.isHDREditing && current.edits.exposure == value.exposure)
+                    mutable.value = EditorStateReducer.renderFinished(current)
+                    if (editorActive && value.request.sourceRevision == sourceRevision && value.request.draftRevision == draftRevision &&
+                        value.request.activationRevision == editorActivationRevision &&
+                        current.photo?.identity == value.request.photo.identity && current.visibleEdits == value.request.edits) {
+                        mutable.value = EditorStateReducer.renderFinished(current)
+                        if (current.visibleEdits.exposure == value.exposure)
                             mutable.value = EditorStateReducer.renderFinished(current)
-                        else edit(current.edits.copy(exposure = value.exposure))
+                        else edit(current.visibleEdits.copy(exposure = value.exposure))
                     }
                 }
             }
@@ -516,7 +536,8 @@ class EditorViewModel @JvmOverloads constructor(
                 updateRecentLooks()
             }
             is LookResult.Imported -> {
-                val mutation = result.imported.lastOrNull()?.let { EditorStateReducer.lookImported(mutable.value, it) }
+                val mutation = result.imported.lastOrNull()?.takeIf { lookImportSelectionContext == (sourceRevision to draftRevision) }
+                    ?.let { EditorStateReducer.lookImported(mutable.value, it) }
                     ?: EditorMutation(mutable.value.copy(operation = Operation.NONE), null)
                 val report = if (result.failures.isEmpty()) null else
                     AppStrings.format(R.string.look_import_summary, result.imported.size, result.failures.size) +
@@ -565,6 +586,7 @@ class EditorViewModel @JvmOverloads constructor(
     private fun scheduleLookPreview(edits: EditSettings?) {
         val photo = mutable.value.photo ?: return
         if (edits == null) return
+        if (mutable.value.draft != null) { renderDraft(false); return }
         persist(photo, edits) { saved ->
             mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
             editRevision += 1
@@ -635,22 +657,24 @@ class EditorViewModel @JvmOverloads constructor(
     }
 
     fun importLooks(uris: List<Uri>) {
-        if (uris.isEmpty() || mutable.value.operation != Operation.NONE || mutable.value.draft != null) return
+        if (uris.isEmpty() || mutable.value.operation != Operation.NONE ||
+            (mutable.value.draft != null && mutable.value.draft?.group != AdjustmentGroup.LOOK)) return
         mutable.value = mutable.value.copy(operation = Operation.IMPORT_LOOK, error = null, lookImportReport = null)
+        lookImportSelectionContext = sourceRevision to draftRevision
         lookRevision = lookQueue.submit(LookWork.Import(uris.toList()))
     }
 
     fun beginHDRLookImport(): Boolean {
         val current = mutable.value
-        if (!current.controlsEnabled || !current.edits.isHDREditing || current.draft != null) return false
-        pendingHDRLookImport = sourceRevision to editRevision
+        if (!current.controlsEnabled || !current.edits.isHDREditing || (current.draft != null && current.draft.group != AdjustmentGroup.LOOK)) return false
+        pendingHDRLookImport = Triple(sourceRevision, editRevision, draftRevision)
         return true
     }
 
     fun finishHDRLookImport(uri: Uri?) {
         val expected = pendingHDRLookImport
         pendingHDRLookImport = null
-        if (uri == null || expected != (sourceRevision to editRevision)) return
+        if (uri == null || expected != Triple(sourceRevision, editRevision, draftRevision)) return
         applyHDRLook { _, target -> target.copy(hdr = target.hdr!!.withLook(storage.importHDRLook(uri))) }
     }
 
@@ -668,16 +692,16 @@ class EditorViewModel @JvmOverloads constructor(
     private fun applyHDRLook(prepare: (ImportedPhoto, EditSettings) -> EditSettings) {
         val current = mutable.value
         val photo = current.photo ?: return
-        if (!current.controlsEnabled || !current.edits.isHDREditing || current.draft != null) return
-        val expected = sourceRevision to editRevision
+        if (!current.controlsEnabled || !current.edits.isHDREditing || (current.draft != null && current.draft.group != AdjustmentGroup.LOOK)) return
+        val expected = Triple(sourceRevision, editRevision, draftRevision)
         mutable.value = current.copy(operation = Operation.IMPORT_LOOK, error = null)
         viewModelScope.launch {
             val imported = try {
-                Result.success(kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { prepare(photo,current.edits) })
+                Result.success(kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { prepare(photo,current.visibleEdits) })
             }
                 catch (error: kotlinx.coroutines.CancellationException) { throw error }
                 catch (error: Exception) { Result.failure(error) }
-            if (disposed || expected != (sourceRevision to editRevision) || mutable.value.operation != Operation.IMPORT_LOOK) return@launch
+            if (disposed || expected != Triple(sourceRevision, editRevision, draftRevision) || mutable.value.operation != Operation.IMPORT_LOOK) return@launch
             val ready = mutable.value.copy(operation = Operation.NONE)
             mutable.value = ready
             imported.onSuccess { settings ->
@@ -725,23 +749,24 @@ class EditorViewModel @JvmOverloads constructor(
 
     fun selectFilm(id: String): Boolean {
         val current = mutable.value
-        if (!current.controlsEnabled || current.draft != null) return false
+        if (!current.controlsEnabled || (current.draft != null && current.draft.group !in listOf(AdjustmentGroup.LOOK, AdjustmentGroup.RECIPE))) return false
         val candidate = try {
-            current.edits.selectFilm(id, current.preview?.tint, current.preview?.temperature, current.photo!!.inputKind)
+            current.visibleEdits.selectFilm(id, current.preview?.tint, current.preview?.temperature, current.photo!!.inputKind)
         } catch (_: IllegalArgumentException) {
             mutable.value = current.copy(error = AppStrings.text(if (current.preview == null)
                 R.string.editor_reset_missing_wb else R.string.editor_reset_unrepresentable))
             return false
         }
         edit(candidate, false)
-        return mutable.value.edits == candidate
+        return mutable.value.visibleEdits == candidate
     }
 
     fun edit(requested: EditSettings, interactive: Boolean = false) {
         val edits = requested.canonicalZeros().synchronizeHDR()
         if (!applyingHslTarget) cancelHslTarget()
         val current = mutable.value
-        if (!current.controlsEnabled || current.draft != null) return
+        if (!current.controlsEnabled) return
+        if (current.draft != null) { changeDraft(edits, interactive); return }
         if (mutableQuickPreset.value.phase == QuickPresetPhase.PREPARING) cancelQuickPreset()
         if (interactive && !adjustmentHistory.interacting) {
             val saved = adjustmentHistory.begin(current.photo!!, current.edits, sourceRevision)
@@ -825,8 +850,8 @@ class EditorViewModel @JvmOverloads constructor(
         val current = mutable.value
         val previous = current.draft ?: return
         if (!current.controlsEnabled) return
-        val next = previous.update(edits)
-        if (next == previous) return
+        val next = previous.update(edits, interactive)
+        if (next == previous && (interactive || current.exact)) return
         draftRevision += 1
         mutable.value = current.copy(draft = next)
         // Crop-only edits are an overlay on the full transformed preview, not a RAW render.
@@ -845,6 +870,20 @@ class EditorViewModel @JvmOverloads constructor(
         mutable.value = current.copy(rendering = true, exact = false, error = null)
         currentRevision = submitRender(Work.Preview(photo, edits, interactive, gpuMode(),
             edge = interactivePreviewSize.edge(1600, interactive, android.os.SystemClock.uptimeMillis()), draft = true))
+    }
+
+    fun undoDraft() = changeDraftHistory { it.undo() }
+    fun redoDraft() = changeDraftHistory { it.redo() }
+
+    private fun changeDraftHistory(change: (AdjustmentDraft) -> AdjustmentDraft) {
+        val current = mutable.value
+        val draft = current.draft ?: return
+        if (!current.controlsEnabled) return
+        val next = change(draft)
+        if (next == draft) return
+        draftRevision += 1
+        mutable.value = current.copy(draft = next)
+        renderDraft(false)
     }
 
     fun chooseGeometryRatio(ratio: GeometryRatio, portrait: Boolean) {
@@ -873,7 +912,8 @@ class EditorViewModel @JvmOverloads constructor(
 
     fun applyDraft(completed: (Boolean) -> Unit = {}) {
         val current = mutable.value
-        if (disposed || !current.canApplyDraft) return completed(false)
+        if (disposed || !current.draftReady) return completed(false)
+        if (current.draft?.changed != true) { discardDraft(); completed(true); return }
         val photo = current.photo ?: return completed(false)
         val edits = current.draft!!.project(current.edits)
         previewResizeJob?.cancel()
@@ -885,6 +925,7 @@ class EditorViewModel @JvmOverloads constructor(
                 completed(false)
             } else {
                 failedDraftSave = false; draftSaveBaseline = null
+                runCatching { draftStore.clear(photo.identity) }
                 editRevision += 1; draftRevision += 1
                 mutable.value = mutable.value.copy(edits = edits, draft = null, rendering = true, exact = false,
                     previewResizePending = false, error = null, saveState = saved.state, saveError = saved.message)
@@ -899,6 +940,7 @@ class EditorViewModel @JvmOverloads constructor(
         if (mutable.value.committingAdjustments) return
         val current = mutable.value
         val draft = current.draft ?: return
+        current.photo?.let { runCatching { draftStore.clear(it.identity) } }
         val saved = draftSaveBaseline.takeIf { failedDraftSave }
         failedDraftSave = false
         draftSaveBaseline = null
@@ -932,9 +974,10 @@ class EditorViewModel @JvmOverloads constructor(
     }
     fun autoExposure() {
         val current = mutable.value
-        if (!current.controlsEnabled || current.preview == null || current.rendering || current.draft != null) return
-        mutable.value = current.copy(rendering = true, exact = current.edits.isHDREditing && current.exact, error = null)
-        currentRevision = submitRender(Work.AutoExposure(current.photo!!, current.edits, gpuMode()))
+        if (!current.controlsEnabled || current.preview == null || current.rendering ||
+            (current.draft != null && current.draft.group != AdjustmentGroup.EXPOSURE)) return
+        mutable.value = current.copy(rendering = true, error = null)
+        currentRevision = submitRender(Work.AutoExposure(current.photo!!, current.visibleEdits, gpuMode(), sourceRevision, draftRevision, editorActivationRevision))
     }
     fun retrySave(completed: (Boolean) -> Unit = {}) {
         if (mutable.value.committingAdjustments) return completed(false)
@@ -1021,6 +1064,7 @@ class EditorViewModel @JvmOverloads constructor(
     }
 
     fun setEditorActive(active: Boolean) {
+        if (editorActive != active) editorActivationRevision += 1
         editorActive = active
         if (!active) cancelProcessingMigration(skipCurrentSource = true)
         else {
@@ -1773,7 +1817,29 @@ class EditorViewModel @JvmOverloads constructor(
     internal var releaseEditorRasterOperation: () -> Unit = { renderer.releaseDecodedRaster() }
     fun closeBatch() = batches.close()
 
+    private fun preserveEditorDraft() {
+        val current = mutable.value
+        val photo = current.photo ?: return
+        val fingerprint = photo.sourceFingerprint ?: return
+        val draft = current.draft ?: return
+        runCatching { draftStore.save(photo.identity, fingerprint, draft.copy(interacting = false)) }
+            .onFailure { mutable.value = mutable.value.copy(message = EditSaveResult(EditSaveState.FAILED, it).message) }
+    }
+
+    private fun restoreEditorDraft() {
+        val current = mutable.value
+        val photo = current.photo ?: return
+        val fingerprint = photo.sourceFingerprint ?: return
+        val draft = runCatching { draftStore.load(photo.identity, fingerprint, current.edits) }
+            .getOrElse { mutable.value = current.copy(message = EditSaveResult(EditSaveState.FAILED, it).message); null } ?: return
+        draftRevision += 1
+        draftSaveBaseline = current.saveState to current.saveError
+        mutable.value = current.copy(draft = draft.copy(interacting = false))
+        renderDraft(false)
+    }
+
     fun onBackground() {
+        preserveEditorDraft()
         setEditorActive(false)
         cancelCollectionExport()
         if (mutable.value.committingAdjustments) { batches.cancelForBackground(); return }
@@ -1790,6 +1856,7 @@ class EditorViewModel @JvmOverloads constructor(
         else text(R.string.process_error) + "\n" + (error.message ?: error.javaClass.simpleName)
 
     override fun onCleared() {
+        preserveEditorDraft()
         EditedPhotoPreviews.setForegroundBusy(photoPreviewOwner, false)
         photoPreviews.close()
         cancelProcessingMigration()

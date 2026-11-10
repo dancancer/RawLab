@@ -229,6 +229,7 @@ final class HDRImage {
                 development.fbdd_level = UInt32(camera.fbddLevel)
                 development.lens_flags = UInt32((camera.lensDistortion ? SONY2FUJI_HDR_CAMERA_LENS_DISTORTION : 0) |
                     (camera.lensTCA ? SONY2FUJI_HDR_CAMERA_LENS_TCA : 0) |
+                    (camera.lensVignetting ? SONY2FUJI_HDR_CAMERA_LENS_VIGNETTING : 0) |
                     (camera.lensActive && camera.lensAutoCrop ? SONY2FUJI_HDR_CAMERA_LENS_AUTO_CROP : 0))
                 func decode(_ lensProfile: UnsafePointer<CChar>?) -> sony2fuji_status {
                     development.lens_profile_id = lensProfile

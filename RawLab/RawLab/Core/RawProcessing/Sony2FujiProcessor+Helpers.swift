@@ -80,8 +80,8 @@ extension Sony2FujiProcessor {
 
     func configureCurve(_ session: OpaquePointer, settings: ToneCurveSettings) throws {
         guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的曲线参数")) }
-        var config = settings.nativeConfig
-        guard sony2fuji_session_set_tone_curve(session, &config) == SONY2FUJI_STATUS_OK else {
+        var config = settings.nativeSetConfig
+        guard sony2fuji_session_set_tone_curves(session, &config) == SONY2FUJI_STATUS_OK else {
             throw ProcessorError.processFailed(L10n.text("无效的曲线参数"))
         }
     }
@@ -232,7 +232,6 @@ extension Sony2FujiProcessor {
         result.temperature = 6500
         result.tint = 0
         result.noiseReduction = 0
-        result.lensCorrection = nil
         return result
     }
 

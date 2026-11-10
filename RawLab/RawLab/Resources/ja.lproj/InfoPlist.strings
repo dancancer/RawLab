@@ -1,2 +1,4 @@
 "NSPhotoLibraryUsageDescription" = "写真ライブラリから写真を読み込めます。";
 "NSPhotoLibraryAddUsageDescription" = "編集した写真を写真ライブラリに保存できます。";
+"NSBluetoothAlwaysUsageDescription" = "Sonyカメラを検索してペアリングし、カメラのWi-Fiに接続します。";
+"NSLocalNetworkUsageDescription" = "カメラに接続して原本を閲覧し、写真を受信してリモート撮影を行います。";

@@ -22,19 +22,21 @@ fun HslControls(settings: HslSettings, enabled: Boolean, channel: Int, onChannel
     onReset: (Boolean) -> Unit, onEdit: (HslSettings, Boolean) -> Unit) {
     val names = listOf(R.string.hsl_red, R.string.hsl_orange, R.string.hsl_yellow, R.string.hsl_green,
         R.string.hsl_aqua, R.string.hsl_blue, R.string.hsl_purple, R.string.hsl_magenta)
-    val colors = listOf(Color.Red, Color(0xffff9800), Color.Yellow, Color.Green, Color.Cyan,
-        Color.Blue, Color(0xff9c27b0), Color.Magenta)
+    val colors = listOf(Color(0xffe65c5a), Color(0xffe8a04f), Color(0xffdfce51), Color(0xff7bba64), Color(0xff68c8c7),
+        Color(0xff5c89df), Color(0xffa075d2), Color(0xffcb6eaf))
     Column(Modifier.fillMaxWidth()) {
+        BoxWithConstraints(Modifier.fillMaxWidth().height(48.dp)) {
+        val cellWidth = (maxWidth / 8).coerceAtLeast(44.dp)
         LazyRow(Modifier.testTag("hsl-channels")) {
             items(8) { index ->
                 val name = stringResource(names[index])
                 val changed = (0..2).any { settings.value(it, index) != 0f }
                 val status = stringResource(if (changed) R.string.hsl_adjusted else R.string.hsl_unadjusted)
-                Column(Modifier.width(48.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(Modifier.width(cellWidth), horizontalAlignment = Alignment.CenterHorizontally) {
                     IconButton(onClick = { onChannelChange(index) }, enabled = enabled,
-                        modifier = Modifier.size(48.dp).testTag("hsl-channel-$index").semantics { contentDescription = name; selected = channel == index; stateDescription = status }) {
+                        modifier = Modifier.width(cellWidth).height(48.dp).testTag("hsl-channel-$index").semantics { contentDescription = name; selected = channel == index; stateDescription = status }) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Box(Modifier.size(24.dp).testTag("hsl-color-$index").background(colors[index], CircleShape)
+                            Box(Modifier.size(19.dp).testTag("hsl-color-$index").background(colors[index], CircleShape)
                                 .border(if (channel == index) 3.dp else 0.dp, MaterialTheme.colorScheme.onSurface, CircleShape))
                             Spacer(Modifier.height(3.dp))
                             Box(Modifier.size(3.dp).testTag("hsl-marker-$index")
@@ -43,6 +45,7 @@ fun HslControls(settings: HslSettings, enabled: Boolean, channel: Int, onChannel
                     }
                 }
             }
+        }
         }
         val axes = listOf(R.string.hsl_hue, R.string.saturation, R.string.hsl_lightness)
         val directions = listOf(R.string.editor_hsl_hue_direction, R.string.editor_hsl_saturation_direction, R.string.editor_hsl_lightness_direction)

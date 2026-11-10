@@ -99,6 +99,19 @@ int main() {
     disabled.map(0, 0, 129, 1, coordinates.data());
     assert(coordinates[0] == 0 && coordinates[6] == 1 && coordinates[128 * 6] == 128);
 
+    LensCorrectionOptions vignette; vignette.vignetting = true;
+    LensCorrectionTransform color(db, metadata, vignette, 129, 97, 3);
+    assert(color.active() && !color.hasGeometry() && color.report().appliedVignetting);
+    assert(color.report().profile.hasVignetting && color.report().cropScale == 1);
+    assert(std::abs(color.gainAt(64, 48) - 1) < 0.001f);
+    assert(color.gainAt(0, 0) > 1.1f);
+    assert(2.f * color.gainAt(0, 0) > 2.f); // F32 gain preserves highlights above display white.
+    auto noAperture = metadata; noAperture.aperture = 0;
+    LensCorrectionTransform missingAperture(db, noAperture, vignette, 129, 97, 3);
+    assert(!missingAperture.active() && missingAperture.report().state == LensCorrectionState::NoCalibration);
+    LensCorrectionTransform half(db, metadata, vignette, 65, 49, 3);
+    assert(std::abs(half.gainAt(0, 0) - color.gainAt(0, 0)) < 0.001f);
+
     sony2fuji_session* session = nullptr;
     assert(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK);
     sony2fuji_lens_correction_config config{SONY2FUJI_LENS_CORRECTION_CONFIG_VERSION, sizeof(config), 1, 1, 1, nullptr};

@@ -214,8 +214,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
         if (it == null) exportDialog = true else model.export(it, ExportFormat.DNG, pendingExportLongEdgeText.toIntOrNull())
     }
     if (cameraOpen) {
-        screenState.SaveableStateProvider("camera") {
-        CameraImportScreen(camera, onBack = { cameraOpen = false; albumFromCamera = false },
+        com.rawlab.android.camera.CameraScreen(camera, model.storage, onBack = { cameraOpen = false; albumFromCamera = false },
             showTask = cameraTaskRequested, onTaskShown = { cameraTaskRequested = false }, onOpen = { uris ->
             // 原件交接仍走系统导入队列，由编辑器现有草稿门禁决定何时替换画布。
             model.receiveSystemPhotos(uris)
@@ -226,9 +225,9 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             albumFromCamera = true
             collectionOpen = false
             cameraOpen = false
+            cameraTaskRequested = true
             album = true
         })
-        }
     } else if (batch != null) {
         BatchExportScreen(model = batch!!, storage = model.storage, onBack = model::closeBatch)
     } else if (collectionOpen) {
@@ -327,6 +326,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             onDeleteLook = model::deleteLook, onLookImportReportDismiss = model::dismissLookImportReport,
             onAbout = { about = true }, updateVersion = updateState.available?.version,
             onPreviewSizeChange = model::updatePreviewSize,
+            onUndoDraft = model::undoDraft, onRedoDraft = model::redoDraft,
             onBeginDraft = model::beginDraft, onDraftEdit = model::changeDraft,
             onApplyDraft = model::applyDraft, onDiscardDraft = model::discardDraft,
             onGeometryRatio = model::chooseGeometryRatio, onGeometryLock = model::toggleGeometryLock,

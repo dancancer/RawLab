@@ -9,7 +9,7 @@ import java.util.*;
 import javax.net.SocketFactory;
 
 /** 手机直连模式的有界 PTP/IP 实验客户端；与 PC Remote SSH profile 分开验证。 */
-public final class SonyMobileSession implements Closeable {
+public final class SonyMobileSession implements CameraMediaSession {
     public interface Reporter { void report(String message); }
     public interface Progress { void transferred(long bytes, long total); }
     /** 相机完整结束了本次事务，预览不可用等响应不会破坏后续报文边界。 */
@@ -32,7 +32,7 @@ public final class SonyMobileSession implements Closeable {
         command = factory.createSocket();
         event = factory.createSocket();
         try {
-            command.connect(new InetSocketAddress(address, 15740), 10000); command.setSoTimeout(15000);
+            command.connect(new InetSocketAddress(address, 15740), 10000); command.setSoTimeout(15000); command.setTcpNoDelay(true);
             ByteArrayOutputStream init = new ByteArrayOutputStream();
             ByteBuffer id = ByteBuffer.allocate(16); id.putLong(guid.getMostSignificantBits()).putLong(guid.getLeastSignificantBits());
             init.write(id.array()); init.write("RawLab Android\0".getBytes(StandardCharsets.UTF_16LE)); init.write(u32(0x10000));
@@ -45,7 +45,7 @@ public final class SonyMobileSession implements Closeable {
             writePacket(event, 3, u32(number));
             Packet ea = readPacket(event, 4096);
             if (ea.type != 4 || ea.bytes.length != 0) throw new IOException("Invalid PTP/IP event acknowledgement");
-            event.setSoTimeout(0);
+            event.setSoTimeout(0); event.setTcpNoDelay(true);
             report.report("ptpip_event_acknowledged");
             new Thread(() -> {
                 try {
@@ -67,8 +67,8 @@ public final class SonyMobileSession implements Closeable {
         Device result = new Device(r.ptpString(), r.ptpString(), r.ptpString(), operations);
         r.ptpString();
         if (vendor != 17 || !result.manufacturer.toLowerCase(Locale.ROOT).contains("sony")
-            || !result.model.equals("ILCE-7CM2") || !result.firmware.equals("2.00"))
-            throw new IOException("Camera identity mismatch: " + result.model + " / " + result.firmware);
+            || result.model.isEmpty() || result.firmware.isEmpty())
+            throw new CameraMediaSession.UnsupportedCameraException(result.model + " / " + result.firmware);
         return result;
     }
 
@@ -136,7 +136,7 @@ public final class SonyMobileSession implements Closeable {
         throw new IOException("Downloaded bytes do not have the expected RAW/JPEG header");
     }
 
-    static Page parseContents(byte[] data, SonyMobileSession owner) throws IOException {
+    static Page parseContents(byte[] data, Object owner) throws IOException {
         Reader r = new Reader(data); r.skip(144); long count = r.u32();
         if (count > 100) throw new IOException("Contents page too large");
         ArrayList<Asset> assets = new ArrayList<>(); long cursor = 0;
@@ -167,8 +167,8 @@ public final class SonyMobileSession implements Closeable {
     }
 
     public static final class Asset {
-        final SonyMobileSession owner; final int content, file; public final String name; public final long size, created;
-        Asset(SonyMobileSession owner, int content, int file, String name, long size, long created) {
+        final Object owner; final int content, file; public final String name; public final long size, created;
+        Asset(Object owner, int content, int file, String name, long size, long created) {
             this.owner = owner; this.content = content; this.file = file; this.name = name; this.size = size; this.created = created;
         }
         public String key() { return content + ":" + file + ":" + name + ":" + size + ":" + created; }
@@ -243,7 +243,10 @@ public final class SonyMobileSession implements Closeable {
     static byte[] u16(int value) { return ByteBuffer.allocate(2).order(ByteOrder.LITTLE_ENDIAN).putShort((short)value).array(); }
     static byte[] u32(int value) { return ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(value).array(); }
     static void writePacket(Socket socket, int type, byte[] payload) throws IOException {
-        OutputStream out = socket.getOutputStream(); out.write(u32(payload.length + 8)); out.write(u32(type)); out.write(payload); out.flush();
+        // 小报文拆成头/体多次 write 会与相机延迟 ACK 叠加，逐对象查询出现累积等待。
+        byte[] packet = ByteBuffer.allocate(payload.length + 8).order(ByteOrder.LITTLE_ENDIAN)
+            .putInt(payload.length + 8).putInt(type).put(payload).array();
+        OutputStream out = socket.getOutputStream(); out.write(packet); out.flush();
     }
     static Packet readPacket(Socket socket, int max) throws IOException {
         DataInputStream in = new DataInputStream(socket.getInputStream());

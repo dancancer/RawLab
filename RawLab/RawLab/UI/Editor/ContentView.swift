@@ -50,10 +50,16 @@ struct ContentView: View {
     @State var recentFailedPhoto: RecentPhoto?
     @State var recentReselection: RecentPhoto?
     @State var settings = RawSettings.default
+    @State var workspaceDraft: EditorToolDraft?
+    @State var toolWorkspaceOpen = false
+    @State var workspaceDraftID = UUID()
+    @State var lookSearchExpanded = false
     @State private var didAutoLoadSample = false
     @State var photoViewing = PhotoViewingState()
     @State var photoViewport = PhotoViewport()
     @State var photoComparisonControlBounds = CGRect.zero
+    @State var showingCameraWorkspace = false
+    @State var cameraOriginalToOpen: URL?
     @State var pendingPhotoImport = false
     @State var pendingFileImport = false
     @State var pendingSystemPhotoURLs: [[URL]] = []
@@ -81,6 +87,7 @@ struct ContentView: View {
     @State var geometryAspectSwapped = false
     @State var geometryGrid = true
     @State var geometryPerspective = false
+    @State var geometryRotation = false
     @State var showingProcessingContext = false
     @State var confirmingProcessingRollback = false
     @State var adjustmentSheet: IOSAdjustmentSheet?
@@ -160,6 +167,15 @@ struct ContentView: View {
         let draftObserved = applyEditorDraftObservers(to: dataObserved)
         let interactionObserved = applyEditorInteractionObservers(to: draftObserved)
         return applyEditorSheets(to: interactionObserved)
+            .fullScreenCover(isPresented: $showingCameraWorkspace, onDismiss: {
+                guard let url = cameraOriginalToOpen else { return }
+                cameraOriginalToOpen = nil
+                requestSystemPhotoImport([url])
+            }) {
+                IOSCameraWorkspace(onOpenOriginal: { url in
+                    cameraOriginalToOpen = url; showingCameraWorkspace = false
+                }, onClose: { showingCameraWorkspace = false })
+            }
             .sheet(isPresented: $showingProcessingContext) { processingContextSheet }
             .sheet(isPresented: $showingRecentPhotos, onDismiss: finishRecentPhotos) {
                 RecentPhotosView(library: photoPreviews, model: viewModel, filter: $recentPhotoFilter, scrollID: $recentPhotoScrollID,
@@ -175,7 +191,7 @@ struct ContentView: View {
                 }
                 Button(L10n.text("取消"), role: .cancel) { recentOpenError = nil; recentFailedPhoto = nil }
             } message: { Text(recentOpenError ?? "") }
-            .onChange(of: viewModel.importedPhotoRevision) { _, _ in recordRecentPhoto() }
+            .onChange(of: viewModel.importedPhotoRevision) { _, _ in recordRecentPhoto(); restoreEditorDraft() }
             .onChange(of: viewModel.hslFrameRevision) { _, _ in cacheCurrentPhotoPreview() }
             .onChange(of: viewModel.adjustmentHistoryRevision) { _, _ in
                 cacheCurrentPhotoPreview()
@@ -211,11 +227,10 @@ struct ContentView: View {
                     }.background(Color(.secondarySystemBackground)).accessibilityIdentifier("batch.resume")
                 }
             }
-            // 紧凑宽度下两侧按钮已占满导航栏，标题只会被挤成"…"，干脆不显示
-            .navigationTitle(horizontalSizeClass == .compact ? "" : "RawLab")
+            .navigationTitle(viewModel.sourceDisplayName ?? "RawLab")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { editorToolbar }
-            .toolbar(photoViewing.previewOnly ? .hidden : .visible, for: .navigationBar)
+            .toolbar(photoViewing.previewOnly || toolWorkspaceOpen ? .hidden : .visible, for: .navigationBar)
             .toolbarBackground(Color(.secondarySystemBackground), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
         }
@@ -313,7 +328,7 @@ struct ContentView: View {
         .onChange(of: viewModel.adjustmentRestoredSettings) { _, restored in
             guard let restored else { return }
             settings = restored
-            if restored.isHDREditing && !viewModel.quickPresetsVisible { activateEditorTool(.adjustment(.exposure)) }
+            if restored.isHDREditing && !viewModel.quickPresetsVisible { selectedGroup = .light; selectedAdjustment = .exposure }
             viewModel.adjustmentRestoredSettings = nil
             viewModel.updatePreview(settings: restored, includeHistogram: true, quality: .final)
         }
@@ -329,6 +344,7 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background || phase == .inactive {
+                preserveEditorDraft()
                 cancelSliderInteraction()
                 viewModel.saveCurrentSettings(settings)
             }
@@ -348,13 +364,17 @@ struct ContentView: View {
         content
         .onChange(of: editorDraftSnapshot) { old, draft in
             viewModel.hasAdjustmentDraft = draft.isActive
-            if (old.geometry != draft.geometry || old.lens != draft.lens),
-               draft.geometry != nil || draft.lens != nil {
+            if old.projecting(on: settings) != draft.projecting(on: settings), draft.isActive {
                 if suppressNextDraftPreview { suppressNextDraftPreview = false }
                 else { previewEditorDraft() }
             }
         }
+        .onChange(of: geometryDraftState) { _, _ in syncGeometryDraft() }
+        .onChange(of: geometryDraft) { _, _ in syncGeometryDraft() }
+        .onChange(of: lensDraft) { _, _ in syncGeometryDraft() }
         .onChange(of: viewModel.sourceRevision) { _, _ in
+            workspaceDraft = nil; toolWorkspaceOpen = false; workspaceDraftID = UUID()
+            geometrySelected = false; lensSelected = false
             cancelHSLTarget()
             gradingZone = .shadows
             photoViewing.sourceChanged()

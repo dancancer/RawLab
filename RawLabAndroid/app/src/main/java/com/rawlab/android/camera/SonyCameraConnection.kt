@@ -25,6 +25,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.wifi.WifiManager
+import android.net.wifi.WifiInfo
 import android.net.wifi.WifiNetworkSpecifier
 import android.os.Build
 import android.os.Handler
@@ -52,7 +53,7 @@ internal class SonyCameraConnection(
         fun onFailure(reason: Failure)
     }
 
-    enum class Stage { SCANNING, PAIRING, BLUETOOTH, WIFI_STARTING, WIFI_CONFIRMATION, NETWORK }
+    enum class Stage { SCANNING, PAIRING, BLUETOOTH, WIFI_STARTING, WIFI_CONFIRMATION, MANUAL_WIFI, NETWORK }
 
     enum class Failure {
         UNSUPPORTED,
@@ -68,7 +69,7 @@ internal class SonyCameraConnection(
 
     private companion object {
         const val SONY_MANUFACTURER_ID = 0x012d
-        const val SONY_MODEL = "ILCE-7CM2"
+        const val SONY_CAMERA_LABEL = "Sony camera"
         const val BLE_MTU = 158
         const val BLE_TIMEOUT_MS = 3 * 60 * 1000L
         const val BLE_SCAN_TIMEOUT_MS = 25 * 1000L
@@ -217,8 +218,17 @@ internal class SonyCameraConnection(
                 val ssid = characteristic(source, CONTROL_SERVICE, SSID_CHARACTERISTIC)
                 val password = characteristic(source, CONTROL_SERVICE, PASSWORD_CHARACTERISTIC)
                 val pairing = characteristic(source, PAIRING_SERVICE, PAIRING_INIT_CHARACTERISTIC)
-                if (status != BluetoothGatt.GATT_SUCCESS || command == null || ssid == null || password == null || pairing == null) {
+                if (status != BluetoothGatt.GATT_SUCCESS) {
                     fail(Failure.BLUETOOTH)
+                    return@post
+                }
+                if (command == null || ssid == null || password == null || pairing == null ||
+                    command.properties and BluetoothGattCharacteristic.PROPERTY_WRITE == 0 ||
+                    pairing.properties and BluetoothGattCharacteristic.PROPERTY_WRITE == 0 ||
+                    ssid.properties and BluetoothGattCharacteristic.PROPERTY_READ == 0 ||
+                    password.properties and BluetoothGattCharacteristic.PROPERTY_READ == 0) {
+                    beginOperation()
+                    setStage(Stage.MANUAL_WIFI)
                     return@post
                 }
                 pairing.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
@@ -271,6 +281,82 @@ internal class SonyCameraConnection(
 
     fun connect(id: String) {
         main.post { connectOnMain(id) }
+    }
+
+    fun prepareLegacyWifi() {
+        main.post { beginOperation(); setStage(Stage.MANUAL_WIFI) }
+    }
+
+    /** 手动连接当前 Wi-Fi，以协议握手确认相机能力，不根据 SSID 推断机型。 */
+    fun useLegacyWifi() {
+        main.post {
+            beginOperation()
+            if (!isSupported()) return@post fail(Failure.UNSUPPORTED)
+            if (!hasPermissions(forWifi = true)) return@post fail(Failure.PERMISSION)
+            if (location?.isLocationEnabled != true) return@post fail(Failure.LOCATION_OFF)
+            val manager = connectivity ?: return@post fail(Failure.WIFI)
+            val current = generation
+            class ManualWifiCallback : ConnectivityManager.NetworkCallback {
+                constructor() : super()
+                @androidx.annotation.RequiresApi(Build.VERSION_CODES.S)
+                constructor(flags: Int) : super(flags)
+
+                private val capabilitiesByNetwork = mutableMapOf<Network, NetworkCapabilities>()
+                private val propertiesByNetwork = mutableMapOf<Network, LinkProperties>()
+
+                private fun inspect(network: Network) {
+                    val capabilities = capabilitiesByNetwork[network] ?: return
+                    val properties = propertiesByNetwork[network] ?: return
+                    inspectLegacyNetwork(network, capabilities, properties, current, this)
+                }
+
+                override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                    main.post {
+                        if (!isCurrentNetwork(current, this)) return@post
+                        capabilitiesByNetwork[network] = capabilities
+                        inspect(network)
+                    }
+                }
+                override fun onLinkPropertiesChanged(network: Network, properties: LinkProperties) {
+                    main.post {
+                        if (!isCurrentNetwork(current, this)) return@post
+                        propertiesByNetwork[network] = properties
+                        inspect(network)
+                    }
+                }
+                override fun onLost(network: Network) { main.post {
+                    if (!isCurrentNetwork(current, this)) return@post
+                    capabilitiesByNetwork.remove(network)
+                    propertiesByNetwork.remove(network)
+                    if (network == cameraNetwork) fail(Failure.DISCONNECTED)
+                } }
+            }
+            val callback = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                ManualWifiCallback(ConnectivityManager.NetworkCallback.FLAG_INCLUDE_LOCATION_INFO)
+            else ManualWifiCallback()
+            networkCallback = callback
+            setStage(Stage.MANUAL_WIFI)
+            try {
+                manager.registerNetworkCallback(NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                    .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build(), callback)
+            } catch (_: SecurityException) { fail(Failure.PERMISSION) }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun inspectLegacyNetwork(network: Network, capabilities: NetworkCapabilities, properties: LinkProperties,
+        current: Long, callback: ConnectivityManager.NetworkCallback) {
+        if (Build.VERSION.SDK_INT < 29 || !isCurrentNetwork(current, callback) || cameraNetwork != null) return
+        if (!capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return
+        val info = capabilities.transportInfo as? WifiInfo
+        var identity = SonyCameraModel.networkIdentity(info?.ssid, info?.bssid)
+        // 旧系统没有位置回调标志；新系统只信任对应 Network 的回调，避免套用另一条 Wi-Fi 的身份。
+        if (identity == null && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            val legacy = wifi?.connectionInfo
+            identity = SonyCameraModel.networkIdentity(legacy?.ssid, legacy?.bssid)
+        }
+        selectedId = identity ?: return
+        inspectNetwork(network, properties, callback)
     }
 
     /** 释放当前 BLE/Wi-Fi 资源，但保留 Android 系统配对关系。 */
@@ -390,9 +476,10 @@ internal class SonyCameraConnection(
     private fun handleScanResult(current: Long, result: ScanResult) {
         if (current != generation || !active || !scanning) return
         val record: ScanRecord = result.scanRecord ?: return
-        if (record.getManufacturerSpecificData(SONY_MANUFACTURER_ID) == null) return
-        val name = record.deviceName ?: return
-        if (!name.contains(SONY_MODEL)) return
+        val services = record.serviceUuids.orEmpty().map { it.uuid }
+        if (record.getManufacturerSpecificData(SONY_MANUFACTURER_ID) == null &&
+            CONTROL_SERVICE !in services && PAIRING_SERVICE !in services) return
+        val name = record.deviceName?.takeIf { it.isNotBlank() } ?: SONY_CAMERA_LABEL
         val device = try { result.device } catch (_: SecurityException) {
             fail(Failure.PERMISSION)
             return
@@ -412,9 +499,9 @@ internal class SonyCameraConnection(
     }
 
     private fun BluetoothDevice.nameOrFallback(): String = try {
-        name?.takeIf { it.isNotBlank() } ?: SONY_MODEL
+        name?.takeIf { it.isNotBlank() } ?: SONY_CAMERA_LABEL
     } catch (_: SecurityException) {
-        SONY_MODEL
+        SONY_CAMERA_LABEL
     }
 
     private fun openGatt() {

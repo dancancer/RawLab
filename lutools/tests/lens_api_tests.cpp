@@ -74,6 +74,25 @@ int main() {
     assert(report.state == rawReport.state && std::strcmp(report.camera_model, rawReport.camera_model) == 0);
     assert(report.applied_distortion == rawReport.applied_distortion && report.applied_tca == rawReport.applied_tca);
     assert(report.crop_scale == rawReport.crop_scale);
+#ifdef SONY2FUJI_ENABLE_LENSFUN
+    request = rawRequest; request.input_path = TEST_FIXTURE_DIR "/linear-lens.dng";
+    config.distortion = config.tca = 0;
+    assert(sony2fuji_session_set_lens_correction(session, &config) == SONY2FUJI_STATUS_OK);
+    const auto neutralLensRaw = render();
+    sony2fuji_lens_correction_config_v2 vignette{config, 1};
+    vignette.base.version = SONY2FUJI_LENS_CORRECTION_CONFIG_V2_VERSION; vignette.base.struct_size = sizeof(vignette);
+    assert(sony2fuji_session_set_lens_correction_v2(session, &vignette) == SONY2FUJI_STATUS_OK);
+    const auto vignetteRaw = render();
+    assert(vignetteRaw != neutralLensRaw);
+    sony2fuji_lens_report_v2 vignetteReport{};
+    assert(sony2fuji_session_get_lens_report_v2(session, &vignetteReport) == SONY2FUJI_STATUS_OK);
+    assert(vignetteReport.applied_vignetting && !vignetteReport.base.applied_distortion && !vignetteReport.base.applied_tca);
+    request.intent = SONY2FUJI_INTENT_PREVIEW;
+    assert(render() == vignetteRaw);
+    request.intent = SONY2FUJI_INTENT_FINAL;
+    assert(sony2fuji_session_set_lens_correction(session, &config) == SONY2FUJI_STATUS_OK);
+    assert(render() == neutralLensRaw); // The decode cache must not retain the previous color correction.
+#endif
     sony2fuji_session_destroy(session);
     std::cout << "Lens ABI validation, buffer isolation and optional build passed\n";
 }

@@ -369,10 +369,17 @@ public:
             const auto& raw=data.image[static_cast<size_t>(row)*width+col];
             float rgb[3]={};
             float camera[4];
+            float lensGains[3] = {1, 1, 1};
+            if (correction.report().appliedVignetting) {
+                lensGains[0] = correction.gainAt(coordinates ? coordinates[0] : float(col), coordinates ? coordinates[1] : float(row));
+                lensGains[1] = correction.report().appliedTCA ? correction.gainAt(coordinates[2], coordinates[3]) : lensGains[0];
+                lensGains[2] = correction.report().appliedTCA ? correction.gainAt(coordinates[4], coordinates[5]) : lensGains[0];
+            }
             for (int c=0;c<channels;++c) {
                 const int mapped = c == 3 ? 1 : c;
                 camera[c] = coordinates ? sampleCameraChannel(&data.image[0][0], width, height, c,
                     coordinates[mapped*2], coordinates[mapped*2+1]) : raw[c];
+                camera[c] *= lensGains[mapped];
             }
             for (int dst=0;dst<3;++dst) for (int c=0;c<channels;++c)
                 rgb[dst]+=cameraMatrix[dst][c]*camera[c]*scale;
@@ -381,15 +388,15 @@ public:
                 for (int c = 0; c < 3; ++c) {
                     const float delta = coordinates ? sampleCameraCorrection(replacement->cameraCorrection, width, height, c,
                         coordinates[c*2], coordinates[c*2+1]) : c == 0 ? value.r : c == 1 ? value.g : value.b;
-                    if (delta != 0) for (int dst = 0; dst < 3; ++dst) rgb[dst] += cameraMatrix[dst][c] * delta;
+                    if (delta != 0) for (int dst = 0; dst < 3; ++dst) rgb[dst] += cameraMatrix[dst][c] * delta * lensGains[c];
                 }
             }
             return RGB(rgb[0],rgb[1],rgb[2]);
         };
         auto linearRGB=[&](int row,int col) {
             alignas(16) float coordinates[6];
-            if (correction.active()) correction.map(col, row, 1, 1, coordinates);
-            return sampledRGB(row, col, correction.active() ? coordinates : nullptr);
+            if (correction.hasGeometry()) correction.map(col, row, 1, 1, coordinates);
+            return sampledRGB(row, col, correction.hasGeometry() ? coordinates : nullptr);
         };
         baselineExposureEV_=options.applyBaselineExposure ? sceneExposureEV(metadataExposureEV_) : 0;
         previewExposureEV_=0;
@@ -429,7 +436,7 @@ public:
         for (int y=0;y<output.height;++y) {
             if (cancellation.cancelled()) continue;
             std::vector<float> coordinates;
-            if (correction.active()) {
+            if (correction.hasGeometry()) {
                 coordinates.resize(static_cast<size_t>(output.width)*6);
                 if (flip & 4) correction.map((flip & 1) ? width-1-y : y, 0, 1, height, coordinates.data());
                 else correction.map(0, (flip & 2) ? height-1-y : y, width, 1, coordinates.data());

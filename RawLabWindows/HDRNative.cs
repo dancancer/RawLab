@@ -163,7 +163,7 @@ internal static class HDRNative
                 Version=1, StructSize=(uint)Marshal.SizeOf<Native.HDRCameraDevelopment>(),
                 WhiteBalance=camera.CustomWhiteBalance ? 1u : 0, ExposureReference=camera.SensorExposure ? 1u : 0,
                 Temperature=(float)camera.Temperature, Tint=(float)camera.Tint, FbddLevel=(uint)camera.FbddLevel,
-                LensFlags=(camera.LensDistortion ? 1u : 0) | (camera.LensTca ? 2u : 0) |
+                LensFlags=(camera.LensDistortion ? 1u : 0) | (camera.LensTca ? 2u : 0) | (camera.LensVignetting ? 8u : 0) |
                     (camera.LensActive && camera.LensAutoCrop ? 4u : 0), LensProfile=camera.LensProfile
             };
             if (camera.CameraProfile is { } profile) {
@@ -224,7 +224,7 @@ internal static class HDRNative
 
     internal static (uint Width,uint Height) GeometrySize(uint width,uint height,GeometrySettings geometry)
     {
-        var request=new HDRSettings { Geometry=geometry }.NativeRenderRequest(HDRIntent.Preview).Base.Base.Base.Base.Base.Base;
+        var request=new HDRSettings { Geometry=geometry }.NativeRenderRequest(HDRIntent.Preview).Base.Base.Base.Base.Base.Base.Base;
         var diagnostic=Diagnostic();
         var status=Native.sony2fuji_hdr_geometry_size(width,height,ref request,out var w,out var h,ref diagnostic);
         if(status==StatusCancelled)throw new OperationCanceledException();

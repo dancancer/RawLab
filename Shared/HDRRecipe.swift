@@ -19,7 +19,7 @@ enum HDRRecipe {
             tone["black_point"] = current.blackPoint / 100
             tone["white_point"] = current.whitePoint / 100
             tone["s_curve"] = current.curve.mode == .custom ? 0 : current.curveStrength / 100
-            tone["curve"] = ["mode": current.curve.mode.rawValue, "points": current.curve.points.map { [$0.x, $0.y] }]
+            tone["curve"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(current.curve))
         }
         var edits: [String: Any] = [
                 "exposure":["ev":settings.exposure],
@@ -60,7 +60,7 @@ enum HDRRecipe {
             edits["look"] = ["path": asset.path, "sha256": fingerprint, "strength": settings.lookSettings.strength]
         }
         let document: [String:Any]=[
-            "schema_version": version == 1 ? 6 : version + 6,
+            "schema_version": version == 8 ? 15 : version == 1 ? 6 : version + 6,
             "processing":["family":"rawlab_hdr","version":version,"quality":"standard"],
             "input":["path":input.standardizedFileURL.path,"type":"hdr_raster"],
             "edits":edits,

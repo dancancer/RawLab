@@ -60,7 +60,8 @@ data class ImportedPhoto(val uri: Uri, val name: String, val file: File,
     val identity: PhotoIdentity = PhotoIdentity(uri.toString()),
     val inputKind: PhotoInputKind = PhotoInputKind.RAW,
     val validateOriginal: (() -> Unit)? = null,
-    val hdrSource: HDRSourceInfo? = null) {
+    val hdrSource: HDRSourceInfo? = null,
+    val sourceFingerprint: String? = null) {
     val isHDRSource get() = hdrSource != null
     val isCameraRawHDR get() = hdrSource?.isCameraRaw == true
     val isX3f get() = inputKind == PhotoInputKind.RAW &&
@@ -214,7 +215,8 @@ class PhotoStorage(
         } ?: source.lastPathSegment?.substringAfterLast('/') ?: "RAW"
         val inputKind = PhotoFiles.kind(retained?.name ?: name, resolver.getType(source))
             ?: throw IOException("Selected item is not a supported photo")
-        val validate = OriginalPhotoSource.capture(resolver, source)
+        val original = OriginalPhotoSource.snapshot(resolver, source)
+        val validate = original.validate
         val stream = resolver.openInputStream(source) ?: throw IOException("Cannot open input")
         val file = WorkingCopy.import(directory, stream, retained?.name ?: name)
         try {
@@ -224,7 +226,7 @@ class PhotoStorage(
                     NativeHDRBridge.probe(file) else null
                 PhotoInputKind.RAW -> NativeHDRBridge.probeCameraRaw(file)
             }
-            return ImportedPhoto(source, name, file, PhotoIdentity(source.toString()), inputKind, validate, hdrSource)
+            return ImportedPhoto(source, name, file, PhotoIdentity(source.toString()), inputKind, validate, hdrSource, original.fingerprint)
         } catch (error: Throwable) { file.delete(); throw error }
     }
 

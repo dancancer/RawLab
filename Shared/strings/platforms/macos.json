@@ -4419,6 +4419,10 @@
     "原始预览": {
       "formats": [],
       "source": "原始预览"
+    },
+    "暗角校正": {
+      "formats": [],
+      "source": "暗角校正"
     }
   },
   "overrides": {},

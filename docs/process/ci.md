@@ -38,6 +38,11 @@ A release/hotfix PR means base `main` or `release/**`, or source `release/*` or
 manual `full` request. UI changes must pass affected local UI checks before commit;
 release acceptance also requires the applicable local UI/device matrix.
 
+Apple model runs include shared HDR adjustment-transfer regressions. The iOS model
+route also runs the camera protocol, durable original-store and scoped editor-draft
+suites; these use local responders and temporary files, without Bluetooth/Wi-Fi
+hardware or an iOS signing identity. They do not replace device acceptance.
+
 The manual **Run workflow** form has two selectors:
 
 - `platform`: `all`, `macos`, `windows`, `android`, `ios`.

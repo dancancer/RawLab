@@ -73,6 +73,30 @@ int main(int argc, char** argv) {
         require(sony2fuji_session_set_tone_curve(s,&reset)==SONY2FUJI_STATUS_OK,"reset reused session");
         require(render(s,r)==pixels,"next photo clears curve");
         r.tone_curve=.65f;require(render(s,r)==legacy,"return to original legacy pixels");r.tone_curve=0;
+        sony2fuji_tone_curve_set_config curves{SONY2FUJI_TONE_CURVE_SET_CONFIG_VERSION, sizeof(curves),
+            {reset, custom, reset, reset}};
+        require(sony2fuji_session_set_tone_curves(s,&curves)==SONY2FUJI_STATUS_OK,"red channel setter");
+        const auto redOnly=render(s,r);
+        for(size_t i=0;i<pixels.size();++i) {
+            const auto expected=i%3==0 ? std::lround(reference.evaluate(pixels[i]/255.0)*255) : pixels[i];
+            require(std::abs(int(redOnly[i])-int(expected))<=1,"red curve preserves green and blue");
+        }
+        auto badSet=curves;badSet.curves[2].count=1;
+        require(sony2fuji_session_set_tone_curves(s,&badSet)==SONY2FUJI_STATUS_INVALID_ARGUMENT,"invalid channel rejected");
+        require(render(s,r)==redOnly,"invalid set is atomic");
+        curves.curves[0]=custom;curves.curves[2]=custom;curves.curves[3]=custom;
+        require(sony2fuji_session_set_tone_curves(s,&curves)==SONY2FUJI_STATUS_OK,"all channels setter");
+        const auto combined=render(s,r);
+        for(size_t i=0;i<pixels.size();++i)
+            require(std::abs(int(combined[i])-int(std::lround(reference.evaluate(reference.evaluate(pixels[i]/255.0))*255)))<=1,
+                "master precedes independent channels");
+        gpu.mode=SONY2FUJI_GPU_AUTO;sony2fuji_session_set_gpu_config(s,&gpu);
+        require(render(s,r)==combined && sony2fuji_session_get_last_backend(s)==SONY2FUJI_BACKEND_CPU,"channel GPU Auto fallback");
+        gpu.mode=SONY2FUJI_GPU_FORCE;sony2fuji_session_set_gpu_config(s,&gpu);
+        require(sony2fuji_process(s,&r,&buffer)==SONY2FUJI_STATUS_UNSUPPORTED,"channel Force reports unsupported");
+        gpu.mode=SONY2FUJI_GPU_OFF;sony2fuji_session_set_gpu_config(s,&gpu);
+        require(sony2fuji_session_set_tone_curve(s,&reset)==SONY2FUJI_STATUS_OK,"old setter clears all channels");
+        require(render(s,r)==pixels,"old caller cannot inherit channel state");
         require(sony2fuji_session_set_tone_curve(s,&custom)==SONY2FUJI_STATUS_OK,"probe curve");
         sony2fuji_hsl_probe* probe=nullptr;
         require(sony2fuji_session_create_hsl_probe(s,&r,9,10,&probe)==SONY2FUJI_STATUS_OK,"probe captures curve");

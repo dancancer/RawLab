@@ -5,6 +5,14 @@ import Foundation
         if !value() { fatalError(message) }
     }
     static func main() throws {
+        var channelSettings = HDRSettings()
+        channelSettings.toneSettings.curve.channels.red = .identity.inserting(x: 0.5, y: 0.6)
+        require(channelSettings.processingVersion == 8 && channelSettings.recordVersion == 9, "HDR channel version")
+        let channelCopy = try JSONDecoder().decode(HDRSettings.self, from: JSONEncoder().encode(channelSettings))
+        require(channelCopy == channelSettings && !channelCopy.isIdentity, "HDR independent channel persistence")
+        channelSettings.reset()
+        require(channelSettings.isIdentity && channelSettings.toneSettings.curve.channels.isDefault, "HDR channel reset")
+
         var settings = HDRSettings()
         require(settings.mode == .hdr && settings.isIdentity && settings.isValid, "HDR defaults differ")
         settings.exposure = 1.5; settings.temperature = 10000; settings.tint = 42

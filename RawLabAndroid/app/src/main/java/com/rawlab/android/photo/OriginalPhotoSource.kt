@@ -17,9 +17,11 @@ internal object OriginalPhotoSource {
         data class Content(val digest: String) : Stamp
     }
     fun fingerprint(resolver: ContentResolver, uri: Uri): String = stamp(resolver, uri).toString()
-    fun capture(resolver: ContentResolver, uri: Uri): () -> Unit {
+    data class Snapshot(val fingerprint: String, val validate: () -> Unit)
+    fun capture(resolver: ContentResolver, uri: Uri): () -> Unit = snapshot(resolver, uri).validate
+    fun snapshot(resolver: ContentResolver, uri: Uri): Snapshot {
         val original = stamp(resolver, uri)
-        return { if (stamp(resolver, uri) != original) throw PhotoChangedException() }
+        return Snapshot(original.toString()) { if (stamp(resolver, uri) != original) throw PhotoChangedException() }
     }
     private fun stamp(resolver: ContentResolver, uri: Uri): Stamp {
         val descriptor = try { resolver.openAssetFileDescriptor(uri, "r") }

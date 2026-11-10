@@ -48,7 +48,7 @@ internal static class AdjustmentTransferChecks
             }
             count++;
         }
-        Check(AdjustmentFields.All.Count==72,"stable field catalog");
+        Check(AdjustmentFields.All.Count==73,"stable field catalog");
         Console.WriteLine($"PASS: {count} shared payload vectors and native request equality");
     }
     private static void FullNeutralRecipeOnRaster()

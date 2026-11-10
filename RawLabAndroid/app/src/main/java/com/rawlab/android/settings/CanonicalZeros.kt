@@ -21,7 +21,7 @@ internal fun EditSettings.canonicalZeros(): EditSettings = copy(
         perspectiveHorizontal = perspectiveHorizontal.canonicalZero(), perspectiveVertical = perspectiveVertical.canonicalZero()) },
     colorGrading = ColorGradingZone.entries.fold(colorGrading) { value, zone ->
         value.with(zone, value[zone].let { it.copy(hue = it.hue.canonicalZero(), saturation = it.saturation.canonicalZero()) }) },
-    curve = ToneCurveSettings(curve.mode, curve.points.map { ToneCurvePoint(it.x.canonicalZero(), it.y.canonicalZero()) }),
+    curve = ToneCurveSettings(curve.mode, curve.points, curve.channels),
     hdr = hdr?.copy(exposure = hdr.exposure.canonicalZero(), temperature = hdr.temperature.canonicalZero(),
         tint = hdr.tint.canonicalZero(), contrast = hdr.contrast.canonicalZero(),
         highlights = hdr.highlights.canonicalZero(), shadows = hdr.shadows.canonicalZero(),

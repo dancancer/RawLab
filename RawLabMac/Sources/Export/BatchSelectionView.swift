@@ -304,15 +304,15 @@ struct BatchSettingsSummary: View {
             Text(L10n.text("曝光基准") + " · " + settings.exposureMode.title)
             Text(L10n.text("白平衡") + " · " + settings.whiteBalanceMode.title)
             }
-            ForEach(AdjustmentParameter.allCases.filter { settings.isHDREditing ? $0.hdrKeyPath != nil : (settings.curveSettings.isDefault || $0 != .toneCurve) }) { parameter in
+            ForEach(AdjustmentParameter.allCases.filter { settings.isHDREditing ? $0.hdrKeyPath != nil : (settings.curveSettings.mode == .legacy || $0 != .toneCurve) }) { parameter in
                 let spec = parameter.spec(for: settings)
                 HStack { Text(spec.title); Spacer(); Text(spec.display(parameter.value(from:settings))).monospacedDigit() }
             }
             if !settings.isHDREditing {
             if !settings.curveSettings.isDefault {
-                DisclosureGroup(L10n.format("多点曲线（%d 个控制点）", settings.curveSettings.points.count)) {
-                    ForEach(Array(settings.curveSettings.points.enumerated()), id: \.offset) { index, point in
-                        summary(L10n.format("控制点 %d", index + 1), String(format: "%.2f → %.2f", locale: L10n.locale, point.x, point.y))
+                DisclosureGroup(L10n.format("多点曲线（%d 个控制点）", settings.curveSettings.labeledPoints.count)) {
+                    ForEach(Array(settings.curveSettings.labeledPoints.enumerated()), id: \.offset) { index, point in
+                        summary(point.channel.shortLabel + " · " + L10n.format("控制点 %d", index + 1), String(format: "%.2f → %.2f", locale: L10n.locale, point.point.x, point.point.y))
                     }
                 }
             }

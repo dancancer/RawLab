@@ -50,7 +50,7 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
                 (payloadVersion == 2 && scopeVersion == 2 && source.isHDR)))
             throw AdjustmentTransferException(AdjustmentFailure.UNSUPPORTED_VERSION)
         if (source.isHDR) {
-            val version = source.hdrProcessingVersion?.takeIf { it in 1..7 }
+            val version = source.hdrProcessingVersion?.takeIf { it in 1..8 }
                 ?: throw AdjustmentTransferException(AdjustmentFailure.UNSUPPORTED_VERSION)
             val supported = AdjustmentField.hdrSupported(version) + AdjustmentField.HDR_CAMERA_DEVELOPMENT
             valid(!source.isRaw && source.recipe == null && supported.containsAll(fields), "hdr context")
@@ -74,8 +74,7 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
             valid(temperature?.number == null && (source.recipe != null || tint?.number == null), "raster.white_balance")
             valid(this[AdjustmentField.EXPOSURE_MODE].let { it == null || it == AdjustmentValue.Text("sensor") } &&
                 this[AdjustmentField.RAW_DENOISE].let { it == null || it == AdjustmentValue.Number(0.0) } &&
-                (source.isHDR || this[AdjustmentField.POST_RGB_DENOISE].let { it == null || it == AdjustmentValue.Number(0.0) }) &&
-                this[AdjustmentField.LENS_DISTORTION]?.boolean != true && this[AdjustmentField.LENS_TCA]?.boolean != true, "raster request")
+                (source.isHDR || this[AdjustmentField.POST_RGB_DENOISE].let { it == null || it == AdjustmentValue.Number(0.0) }), "raster request")
         }
         if (source.recipe != null) valid(tint != AdjustmentValue.Null, "recipe.white_balance.tint")
         if (mode == "camera") valid(temperature?.number == null && (source.recipe != null || tint?.number == null), "white_balance values conflict with mode")
@@ -167,7 +166,7 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
             }
             return when (field) {
                 AdjustmentField.FLIP_HORIZONTAL, AdjustmentField.FLIP_VERTICAL, AdjustmentField.LENS_DISTORTION,
-                AdjustmentField.LENS_TCA, AdjustmentField.LENS_AUTO_CROP -> value.boolean != null
+                AdjustmentField.LENS_TCA, AdjustmentField.LENS_VIGNETTING, AdjustmentField.LENS_AUTO_CROP -> value.boolean != null
                 AdjustmentField.EXPOSURE_MODE -> value.text in setOf("scene", "preview", "sensor")
                 AdjustmentField.WHITE_BALANCE_MODE -> value.text in setOf("camera", "temperature", "none")
                 AdjustmentField.TEMPERATURE, AdjustmentField.HDR_TEMPERATURE -> value == AdjustmentValue.Null || value.number?.let { it.isFinite() && it in 2000.0..50000.0 } == true

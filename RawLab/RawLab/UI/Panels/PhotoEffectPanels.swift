@@ -6,7 +6,7 @@ struct IOSDenoiseControls: View {
     let onEditingChanged: (Bool) -> Void
     let onReset: () -> Void
     var resetEnabled: Bool = true
-    @State private var advancedExpanded = false
+    @State private var advancedExpanded = true
 
     private var parameters: [(String, WritableKeyPath<RawDenoiseSettings, Double>, Double)] { [
         (L10n.text("亮度降噪"), \.luma, 0),
@@ -132,16 +132,18 @@ struct IOSHSLMixer: View {
     @Binding var settings: HSLSettings
     let onEditingChanged: (Bool) -> Void
     @Binding var channel: Int
-    private let colors: [Color] = [.red, .orange, .yellow, .green, .cyan, .blue, .purple, .pink]
+    private let colors = [0xe65c5a, 0xe8a04f, 0xdfce51, 0x7bba64, 0x68c8c7, 0x5c89df, 0xa075d2, 0xcb6eaf].map {
+        Color(red: Double(($0 >> 16) & 255) / 255, green: Double(($0 >> 8) & 255) / 255, blue: Double($0 & 255) / 255)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 4) {
+                HStack(spacing: 0) {
                     ForEach(colors.indices, id: \.self) { index in
                         Button { channel = index } label: {
                             VStack(spacing: 0) {
-                                Circle().fill(colors[index]).frame(width: 22, height: 22)
+                                Circle().fill(colors[index]).frame(width: 19, height: 19)
                                     .padding(4)
                                     .overlay { Circle().strokeBorder(channel == index ? Color.primary : .clear, lineWidth: 2) }
                                     .frame(width: 44, height: 40)
@@ -160,7 +162,7 @@ struct IOSHSLMixer: View {
             }
             ForEach(HSLAxis.allCases) { axis in
                 let targetChannel = channel
-                AdjustmentControl(title: L10n.format("%@ · %@", L10n.text(HSLSettings.channelNames[targetChannel]), axis.title), value: Binding(
+                AdjustmentControl(title: axis.title, value: Binding(
                     get: { settings.value(axis, channel: targetChannel) },
                     set: { settings.set(axis, channel: targetChannel, value: $0) }
                 ), range: -100...100, step: 1, defaultValue: 0,

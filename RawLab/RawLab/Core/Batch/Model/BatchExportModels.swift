@@ -158,6 +158,11 @@ struct BatchSourceSnapshot: Codable, Equatable {
     }
 
     func settings(for targetKind: BatchSourceKind) -> RawSettings {
+        if sourceKind == .raw, targetKind == .raster {
+            var result = settings
+            result.lensCorrection = nil
+            return result
+        }
         guard sourceKind == .raster, targetKind == .raw else { return settings }
         var result = settings
         result.exposureMode = RawSettings.default.exposureMode
