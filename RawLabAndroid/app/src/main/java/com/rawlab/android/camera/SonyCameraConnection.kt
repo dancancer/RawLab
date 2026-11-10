@@ -296,39 +296,67 @@ internal class SonyCameraConnection(
             if (location?.isLocationEnabled != true) return@post fail(Failure.LOCATION_OFF)
             val manager = connectivity ?: return@post fail(Failure.WIFI)
             val current = generation
-            lateinit var callback: ConnectivityManager.NetworkCallback
-            callback = object : ConnectivityManager.NetworkCallback() {
-                override fun onAvailable(network: Network) { main.post { inspectLegacyNetwork(network, current, callback) } }
+            class ManualWifiCallback : ConnectivityManager.NetworkCallback {
+                constructor() : super()
+                @androidx.annotation.RequiresApi(Build.VERSION_CODES.S)
+                constructor(flags: Int) : super(flags)
+
+                private val capabilitiesByNetwork = mutableMapOf<Network, NetworkCapabilities>()
+                private val propertiesByNetwork = mutableMapOf<Network, LinkProperties>()
+
+                private fun inspect(network: Network) {
+                    val capabilities = capabilitiesByNetwork[network] ?: return
+                    val properties = propertiesByNetwork[network] ?: return
+                    inspectLegacyNetwork(network, capabilities, properties, current, this)
+                }
+
                 override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
-                    main.post { inspectLegacyNetwork(network, current, callback) }
+                    main.post {
+                        if (!isCurrentNetwork(current, this)) return@post
+                        capabilitiesByNetwork[network] = capabilities
+                        inspect(network)
+                    }
                 }
                 override fun onLinkPropertiesChanged(network: Network, properties: LinkProperties) {
-                    main.post { inspectLegacyNetwork(network, current, callback) }
+                    main.post {
+                        if (!isCurrentNetwork(current, this)) return@post
+                        propertiesByNetwork[network] = properties
+                        inspect(network)
+                    }
                 }
                 override fun onLost(network: Network) { main.post {
-                    if (isCurrentNetwork(current, callback) && network == cameraNetwork) fail(Failure.DISCONNECTED)
+                    if (!isCurrentNetwork(current, this)) return@post
+                    capabilitiesByNetwork.remove(network)
+                    propertiesByNetwork.remove(network)
+                    if (network == cameraNetwork) fail(Failure.DISCONNECTED)
                 } }
             }
+            val callback = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                ManualWifiCallback(ConnectivityManager.NetworkCallback.FLAG_INCLUDE_LOCATION_INFO)
+            else ManualWifiCallback()
             networkCallback = callback
             setStage(Stage.MANUAL_WIFI)
             try {
                 manager.registerNetworkCallback(NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
                     .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build(), callback)
-                manager.allNetworks.forEach { inspectLegacyNetwork(it, current, callback) }
             } catch (_: SecurityException) { fail(Failure.PERMISSION) }
         }
     }
 
     @Suppress("DEPRECATION")
-    private fun inspectLegacyNetwork(network: Network, current: Long, callback: ConnectivityManager.NetworkCallback) {
+    private fun inspectLegacyNetwork(network: Network, capabilities: NetworkCapabilities, properties: LinkProperties,
+        current: Long, callback: ConnectivityManager.NetworkCallback) {
         if (Build.VERSION.SDK_INT < 29 || !isCurrentNetwork(current, callback) || cameraNetwork != null) return
-        val manager = connectivity ?: return
-        val capabilities = manager.getNetworkCapabilities(network) ?: return
         if (!capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return
-        val info = capabilities.transportInfo as? WifiInfo ?: wifi?.connectionInfo ?: return
-        val id = SonyCameraModel.networkIdentity(info.ssid, info.bssid) ?: return
-        selectedId = id
-        inspectNetwork(network, manager.getLinkProperties(network), callback)
+        val info = capabilities.transportInfo as? WifiInfo
+        var identity = SonyCameraModel.networkIdentity(info?.ssid, info?.bssid)
+        // 旧系统没有位置回调标志；新系统只信任对应 Network 的回调，避免套用另一条 Wi-Fi 的身份。
+        if (identity == null && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            val legacy = wifi?.connectionInfo
+            identity = SonyCameraModel.networkIdentity(legacy?.ssid, legacy?.bssid)
+        }
+        selectedId = identity ?: return
+        inspectNetwork(network, properties, callback)
     }
 
     /** 释放当前 BLE/Wi-Fi 资源，但保留 Android 系统配对关系。 */
