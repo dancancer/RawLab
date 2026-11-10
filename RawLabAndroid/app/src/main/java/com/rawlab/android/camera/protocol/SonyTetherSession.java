@@ -28,7 +28,6 @@ public final class SonyTetherSession implements Closeable {
     private boolean remoteReady;
     private boolean captureReady;
     private boolean sessionOpened;
-    private Profile remoteProfile;
     private long remoteReadyNanos;
     private int propertyEnumTables=2;
 
@@ -86,18 +85,13 @@ public final class SonyTetherSession implements Closeable {
         return new Device(maker,model,firmware,operations);
     }
 
-    public void connectRemote() throws IOException { connectRemote(Profile.A7CII_2_00); }
+    public void connectRemote() throws IOException { connectRemote(Profile.GENERIC); }
 
     public synchronized void connectRemote(Profile profile) throws IOException {
         if (remoteReady) throw new IOException("Remote session already initialized");
         Device device=inspectDevice();
-        String model=profile==Profile.A7CII_2_00?"ILCE-7CM2":profile==Profile.ZVE10_2_02?"ZV-E10":null;
-        String firmware=profile==Profile.A7CII_2_00?"2.00":profile==Profile.ZVE10_2_02?"2.02":null;
-        if (model != null && (!device.model.equals(model) || !device.firmware.equals(firmware))) profile=Profile.GENERIC;
         reporter.report("remote_identity " + device.model + " firmware=" + device.firmware);
-        int[] required=profile==Profile.A7CII_2_00 ? new int[]{0x1002,0x9201,0x9202,0x9207,0x9209,0x923c,0x923d}
-            : profile==Profile.ZVE10_2_02 ? new int[]{0x1002,0x9201,0x9202,0x9207,0x9209}
-            : new int[]{0x1002,0x9201,0x9202,0x9209};
+        int[] required={0x1002,0x9201,0x9202,0x9209};
         for (int op : required)
             if (!operations.contains(op)) throw new CameraMediaSession.UnsupportedCameraException(String.format("Remote operation not advertised: 0x%04x",op));
         ensureSession();
@@ -108,7 +102,7 @@ public final class SonyTetherSession implements Closeable {
             if (bytes.length > 0) {
                 Reader info = new Reader(bytes); int version = info.u16();
                 Set<Integer> properties = info.u16Array(); controls.addAll(info.u16Array());
-                if ((version != 0x12c && !((profile==Profile.ZVE10_2_02 || profile==Profile.GENERIC) && version==0xc8)) || info.remaining() != 0)
+                if ((version != 0x12c && version != 0xc8) || info.remaining() != 0)
                     throw new IOException("Unsupported Sony remote protocol descriptor version="+version);
                 propertyEnumTables=version==0x12c?2:1;
                 reporter.report("remote_extended protocol=" + version + " properties=" + properties.size() + " controls=" + controls);
@@ -116,11 +110,7 @@ public final class SonyTetherSession implements Closeable {
             }
             pause(100);
         }
-        if(profile != Profile.GENERIC && (!controls.contains(0xd2c1) || !controls.contains(0xd2c2))) {
-            close();throw new CaptureNotSentException("Remote shutter controls not advertised");
-        }
         call(0x9201,new int[]{3,0,0},null,65536,false);
-        remoteProfile=profile;
         remoteReady = true;
         remoteReadyNanos = System.nanoTime();
         captureReady = true;
@@ -129,20 +119,20 @@ public final class SonyTetherSession implements Closeable {
 
     public synchronized List<Long> probeLegacyStorage() throws IOException {
         Device device=inspectDevice();
-        if(!device.model.equals("ZV-E10") || !device.firmware.equals("2.02") || !device.operations.contains(0x1004))
-            throw new IOException("Legacy storage probe requires ZV-E10 / 2.02");
+        if(!device.operations.contains(0x1002) || !device.operations.contains(0x1004))
+            throw new IOException("Camera storage operations are unavailable");
         ensureSession();
         return readStorageIds();
     }
 
     public boolean supportsOperation(int operation) { return operations.contains(operation); }
 
-    private boolean legacyProfile() {
-        return remoteReady && (remoteProfile == Profile.ZVE10_2_02 || remoteProfile == Profile.GENERIC);
+    private boolean hasLegacyContents() {
+        return remoteReady && operations.contains(0x9212);
     }
 
     public synchronized List<Long> probeLegacyContentsStorage() throws IOException {
-        if(!legacyProfile() || !operations.contains(0x9212)) throw new IOException("Contents probe requires a Sony legacy contents capability");
+        if(!hasLegacyContents() || !operations.contains(0x9212)) throw new IOException("Contents probe requires a Sony legacy contents capability");
         IOException failure=null;List<Long> result=null;
         try {
             result=enterLegacyContents();
@@ -156,7 +146,7 @@ public final class SonyTetherSession implements Closeable {
     }
 
     public synchronized List<Long> enterLegacyContents() throws IOException {
-        if(!legacyProfile() || !operations.contains(0x9212)) throw new IOException("Contents mode requires a Sony legacy contents capability");
+        if(!hasLegacyContents() || !operations.contains(0x9212)) throw new IOException("Contents mode requires a Sony legacy contents capability");
         // 过早发送 9212 会被确认但不挂载存储；ZV-E10 需先完成遥控初始化。
         pause(Math.max(0,3500-(System.nanoTime()-remoteReadyNanos)/1_000_000));
         // ZV-E10 实测：退出内容模式后旧会话仍确认快门命令却不曝光，必须重建纯遥控会话。
@@ -167,7 +157,7 @@ public final class SonyTetherSession implements Closeable {
     }
 
     public synchronized void leaveLegacyContents() throws IOException {
-        if(!legacyProfile()) throw new IOException("Contents mode requires a Sony legacy contents capability");
+        if(!hasLegacyContents()) throw new IOException("Contents mode requires a Sony legacy contents capability");
         call(0x9212,new int[]{2,0,1},null,0,false);
     }
 
@@ -214,7 +204,7 @@ public final class SonyTetherSession implements Closeable {
     }
 
     public synchronized Set<Integer> legacyHandles() throws IOException {
-        if(!legacyProfile()) throw new IOException("Legacy contents require a Sony legacy contents capability");
+        if(!hasLegacyContents()) throw new IOException("Legacy contents require a Sony legacy contents capability");
         for(int op:new int[]{0x1004,0x1007,0x1008}) if(!operations.contains(op)) throw new IOException("Legacy contents operation not advertised");
         Set<Integer> handles=new LinkedHashSet<>();
         for(long storage:readStorageIds()) {
@@ -272,7 +262,7 @@ public final class SonyTetherSession implements Closeable {
     }
 
     public synchronized LegacyObject pendingLegacyCapture() throws IOException {
-        if(!legacyProfile()) throw new IOException("Legacy capture requires a Sony legacy capture capability");
+        if(!hasLegacyContents()) throw new IOException("Legacy capture requires a Sony legacy capture capability");
         Property ready=properties().get(0xd215);
         if(ready==null || (ready.number()&0x8000)==0) return null;
         return legacyObject(0xffffc001);
@@ -398,7 +388,7 @@ public final class SonyTetherSession implements Closeable {
 
     /** ZV-E10 手机模式 D222 不反映机身菜单，由操作者明确确认双端保存。 */
     public synchronized void captureWithConfirmedCardSaving(boolean cardSavingConfirmed) throws IOException {
-        if(!legacyProfile() || !cardSavingConfirmed) throw new CaptureNotSentException("Confirm camera-card saving before capture");
+        if(!hasLegacyContents() || !cardSavingConfirmed) throw new CaptureNotSentException("Confirm camera-card saving before capture");
         capture(true);
     }
 

@@ -7,12 +7,11 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import javax.net.SocketFactory;
 
-/** ZV-E10 的卡内选片 profile；仅媒体操作，遥控初始化用于进入已验证的内容模式。 */
+/** Sony 旧内容协议的卡内选片会话；按操作码初始化，只执行媒体操作。 */
 public final class SonyLegacyImportSession implements CameraMediaSession {
     private final SonyTetherSession transport;
     private final Map<SonyMobileSession.Asset,SonyTetherSession.LegacyObject> objects=new IdentityHashMap<>();
     private boolean identified,opened;
-    private SonyTetherSession.Profile profile;
 
     public SonyLegacyImportSession(SocketFactory factory,InetAddress address,UUID guid,SonyMobileSession.Reporter reporter) throws IOException {
         transport=new SonyTetherSession(factory,address,guid,reporter,SonyTetherSession.Purpose.IMPORT);
@@ -20,15 +19,13 @@ public final class SonyLegacyImportSession implements CameraMediaSession {
 
     @Override public SonyMobileSession.Device deviceInfo() throws IOException {
         SonyMobileSession.Device device=transport.inspectDevice();
-        profile = device.model.equals("ZV-E10") && device.firmware.equals("2.02")
-            ? SonyTetherSession.Profile.ZVE10_2_02 : SonyTetherSession.Profile.GENERIC;
         identified=true;return device;
     }
 
     @Override public void openSession() throws IOException {
         if(!identified || opened) throw new IOException("Legacy import session identity not ready");
         try {
-            transport.connectRemote(profile == null ? SonyTetherSession.Profile.GENERIC : profile);
+            transport.connectRemote();
             transport.enterLegacyContents();opened=true;
         } catch(IOException failure) { close();throw failure; }
     }
@@ -78,5 +75,5 @@ public final class SonyLegacyImportSession implements CameraMediaSession {
         finally { close(); }
     }
 
-    @Override public void close() { transport.close();identified=false;opened=false;profile=null;objects.clear(); }
+    @Override public void close() { transport.close();identified=false;opened=false;objects.clear(); }
 }

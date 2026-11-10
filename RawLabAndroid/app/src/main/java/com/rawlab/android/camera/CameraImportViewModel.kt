@@ -47,7 +47,7 @@ internal data class CameraImportState(
     val currentKey: String? = null,
     val currentBytes: Long = 0,
     val destination: CameraImportDestination = CameraImportDestination(),
-    val model: SonyCameraModel = SonyCameraModel.A7CII,
+    val model: SonyCameraModel = SonyCameraModel.UNKNOWN,
     val mode: CameraMode = CameraMode.IMPORT,
     val closing: Boolean = false,
     val cardSavingConfirmed: Boolean = false,
@@ -121,12 +121,12 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     }
     fun prepareLegacyWifi() {
         if (mutable.value.transferring || mutable.value.preparing || mutable.value.closing) return
-        mutable.update { it.copy(model = SonyCameraModel.ZVE10, message = null) }
+        mutable.update { it.copy(model = SonyCameraModel.UNKNOWN, message = null) }
         connectAfterStop { connection.prepareLegacyWifi() }
     }
     fun useLegacyWifi() {
         if (mutable.value.transferring || mutable.value.preparing || mutable.value.closing) return
-        mutable.update { it.copy(model = SonyCameraModel.ZVE10, message = null) }
+        mutable.update { it.copy(model = SonyCameraModel.UNKNOWN, message = null) }
         connectAfterStop { connection.useLegacyWifi() }
     }
     private fun connectAfterStop(connect: () -> Unit) {
@@ -207,6 +207,7 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
                 val photos = found.map { CameraPhoto(it.key(), it.name, it.size, it.created) }
                     .sortedWith(compareByDescending<CameraPhoto> { it.created }.thenByDescending { it.name })
                 mutable.update { it.copy(stage = null, connected = true, cameraId = cameraId, photos = photos,
+                    model = SonyCameraModel.fromIdentity(info.model, info.firmware),
                     selected = if (it.cameraId == cameraId) it.selected.intersect(assets.keys) else emptySet(), message = null) }
             }.onFailure { onFailure(if (it is CameraMediaSession.UnsupportedCameraException)
                 SonyCameraConnection.Failure.UNSUPPORTED else SonyCameraConnection.Failure.DISCONNECTED) }

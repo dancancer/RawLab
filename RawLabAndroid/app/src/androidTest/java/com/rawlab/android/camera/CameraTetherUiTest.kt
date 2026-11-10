@@ -30,6 +30,32 @@ class CameraTetherUiTest {
     private val compose = createComposeRule()
     @get:Rule val languageAndCompose: RuleChain = RuleChain.outerRule(LanguageTestRule()).around(ForegroundTestRule()).around(compose)
 
+    @Test fun manualWifiDoesNotPretendTheCameraIsAKnownModel() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val owner = androidx.lifecycle.ViewModelStore()
+        lateinit var model: CameraImportViewModel
+        try {
+            instrumentation.runOnMainSync {
+                model = CameraImportViewModel(instrumentation.targetContext.applicationContext as android.app.Application)
+                owner.put("camera", model)
+            }
+            compose.waitUntil(10_000) { !model.state.value.preparing }
+            assertEquals(SonyCameraModel.UNKNOWN, model.state.value.model)
+            instrumentation.runOnMainSync {
+                model.onCandidates(listOf(CameraCandidate("fixture", "ILCE-7CM2")))
+                model.connect("fixture")
+            }
+            compose.waitUntil(10_000) { !model.state.value.closing }
+            assertEquals(SonyCameraModel.A7CII, model.state.value.model)
+            instrumentation.runOnMainSync { model.prepareLegacyWifi() }
+            compose.waitUntil(10_000) { !model.state.value.closing }
+            assertEquals(SonyCameraModel.UNKNOWN, model.state.value.model)
+            instrumentation.runOnMainSync { model.useLegacyWifi() }
+            compose.waitUntil(10_000) { !model.state.value.closing }
+            assertEquals(SonyCameraModel.UNKNOWN, model.state.value.model)
+        } finally { instrumentation.runOnMainSync { owner.clear() } }
+    }
+
     @Test fun shutterOnlyWorksWhileReadyAndGridDoesNotChangeCameraState() {
         val state = mutableStateOf(CameraTetherState(phase = CameraTetherPhase.READY, live = true, frame = frame(), parameters = CameraTetherParameterState(captureReady = true)))
         var shots = 0

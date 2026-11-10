@@ -111,7 +111,8 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
             var failure: CameraTetherFailure? = null
             try {
                 coroutineScope {
-                    if (previous != null && (previous.cameraId != cameraId || previous.profileId != model.profileId ||
+                    // 型号记录只用于显示；恢复依赖连接身份和已登记照片范围。
+                    if (previous != null && (previous.cameraId != cameraId ||
                         previous.baseline.isEmpty() && previous.batches.isEmpty()))
                         throw CameraTetherSourceException()
                     current.run = previous?.copy(status = CameraTetherStatus.ACTIVE)

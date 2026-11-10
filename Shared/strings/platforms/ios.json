@@ -4078,6 +4078,10 @@
     "相机菜单会随型号和固件变化，请按机身提供的手机连接方式操作。": {
       "formats": [],
       "source": "相机菜单会随型号和固件变化，请按机身提供的手机连接方式操作。"
+    },
+    "无法确认上次联机的照片范围，已暂停自动恢复。请从相机导入，手动选择需要补传的照片。不会自动补拍。": {
+      "formats": [],
+      "source": "无法确认上次联机的照片范围，已暂停自动恢复。请从相机导入，手动选择需要补传的照片。不会自动补拍。"
     }
   },
   "overrides": {
@@ -5221,6 +5225,14 @@
       "es": "No se puede leer la información Wi-Fi de la cámara. Conéctate manualmente.",
       "ja": "カメラの Wi-Fi 情報を読み取れません。手動で接続してください。",
       "zh-Hans": "无法读取相机 Wi-Fi 信息，请手动连接。"
+    },
+    "无法确认上次联机的照片范围，已暂停自动恢复。请从相机导入，手动选择需要补传的照片。不会自动补拍。": {
+      "en": "The previous tethered session’s photos could not be identified. Automatic recovery is paused. Use Import from camera to select missing photos manually. No shots will be taken automatically.",
+      "de": "Die Fotos der vorherigen Aufnahmesitzung konnten nicht zugeordnet werden. Die automatische Wiederherstellung ist pausiert. Wählen Sie fehlende Fotos über „Von Kamera importieren“ manuell aus. Es werden keine Fotos automatisch aufgenommen.",
+      "fr": "Les photos de la session précédente n’ont pas pu être identifiées. La reprise automatique est suspendue. Utilisez « Importer depuis l’appareil » pour sélectionner les photos manquantes. Aucune photo ne sera prise automatiquement.",
+      "es": "No se pudieron identificar las fotos de la sesión anterior. La recuperación automática está en pausa. Usa «Importar de la cámara» para seleccionar manualmente las fotos que faltan. No se harán fotos automáticamente.",
+      "ja": "前回の撮影セッションの写真を確認できないため、自動復旧を停止しました。「カメラから読み込む」で未転送の写真を手動で選択してください。自動で再撮影することはありません。",
+      "zh-Hans": "无法确认上次联机的照片范围，已暂停自动恢复。请从相机导入，手动选择需要补传的照片。不会自动补拍。"
     }
   }
 }

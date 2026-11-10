@@ -85,6 +85,7 @@ enum IOSCameraParameter: CaseIterable, Identifiable {
     private(set) var endpoint: IOSCameraEndpoint?
     private(set) var mode = IOSCameraMode.importing
     @Published private(set) var originalBrowsingAvailable = true
+    @Published private(set) var manualImportRequired = false
 
     init() { reloadHistory() }
     var connected: Bool { run != nil && phase != .connecting && phase != .paused && phase != .idle }
@@ -105,6 +106,7 @@ enum IOSCameraParameter: CaseIterable, Identifiable {
     }
 
     func connect(endpoint: IOSCameraEndpoint, mode: IOSCameraMode, cardConfirmed: Bool, resume: Bool) {
+        manualImportRequired = false
         self.endpoint = endpoint; self.mode = mode; sessionStartedAt = Date()
         assets = []; selection = []; thumbnails = [:]; pendingThumbnails = []; unavailableThumbnails = []; thumbnailOrder = []
         latestOriginal = nil; previewLoading = false
@@ -150,6 +152,8 @@ enum IOSCameraParameter: CaseIterable, Identifiable {
             latestOriginal = original; savedCount += 1; progress = nil
         case .failure(let error):
             parameterBusy = false; previewLoading = false; shutterReady = false
+            if case CameraProtocolError.tetherRecoveryRequired = error { manualImportRequired = true }
+            else { manualImportRequired = false }
             notice = message(error)
         case .notice(let detail):
             parameterBusy = false
@@ -160,6 +164,9 @@ enum IOSCameraParameter: CaseIterable, Identifiable {
             default: notice = L10n.text("请将相机设为单张拍摄，并确认照片同时保存到相机存储卡。")
             }
         }
+    }
+    func clearNotice() {
+        notice = nil; manualImportRequired = false
     }
     func stop(completion: @escaping () -> Void = {}) {
         let previous = run
@@ -278,6 +285,7 @@ enum IOSCameraParameter: CaseIterable, Identifiable {
         switch error {
         case CameraProtocolError.captureUnknown: return L10n.text("拍摄结果尚未确认。请检查相机，重新连接只恢复原件接收。")
         case CameraProtocolError.captureNotSent: return L10n.text("请将相机设为单张拍摄，并确认照片同时保存到相机存储卡。")
+        case CameraProtocolError.tetherRecoveryRequired: return L10n.text("无法确认上次联机的照片范围，已暂停自动恢复。请从相机导入，手动选择需要补传的照片。不会自动补拍。")
         case CameraProtocolError.unsupported: return L10n.text("当前相机模式未提供此功能。")
         case CameraProtocolError.invalid: return L10n.text("相机数据或原件校验未通过，已暂停。")
         default: return L10n.text("相机连接已断开。已保存的照片仍可查看。")

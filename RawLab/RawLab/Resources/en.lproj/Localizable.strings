@@ -476,6 +476,7 @@
 "无法显示处理结果" = "Unable to display processing results";
 "无法生成预览" = "Unable to generate preview";
 "无法生成预览，请检查照片、LUT 和颜色配置。" = "Unable to generate preview. Check the photo, LUT, and color settings.";
+"无法确认上次联机的照片范围，已暂停自动恢复。请从相机导入，手动选择需要补传的照片。不会自动补拍。" = "The previous tethered session’s photos could not be identified. Automatic recovery is paused. Use Import from camera to select missing photos manually. No shots will be taken automatically.";
 "无法自动调整曝光：%@" = "Unable to auto-adjust exposure: %@";
 "无法解码普通图片：%@" = "Unable to decode the image: %@";
 "无法识别原始照片，调整尚未保存。" = "Unable to Identify the Original Photo; Adjustments Were Not Saved.";

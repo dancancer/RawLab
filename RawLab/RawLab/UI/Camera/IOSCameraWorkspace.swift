@@ -54,6 +54,9 @@ struct IOSCameraWorkspace: View {
             }
         }
         .onChange(of: model.phase) { _, _ in advanceConnectedRoute() }
+        .onChange(of: model.manualImportRequired) { _, required in
+            if required && mode == .tethering { connection.stop(); path = [.connect] }
+        }
         .onChange(of: path) { old, new in
             let active: Set<Route> = [.importer, .tether]
             if old.contains(where: active.contains), !new.contains(where: active.contains) { model.stop() }
@@ -164,12 +167,17 @@ struct IOSCameraWorkspace: View {
                 if !connection.status.isEmpty && !connection.connecting {
                     Text(connection.status).font(.footnote).foregroundStyle(.secondary)
                 }
-                if let error = connection.failure ?? model.notice {
+                if let error = model.manualImportRequired ? model.notice : connection.failure ?? model.notice {
                     Text(error).font(.callout).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("camera.connection.error")
-                    Button(L10n.text("系统权限设置")) {
-                        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
-                    }.frame(minHeight: 44)
+                    if model.manualImportRequired && mode == .tethering {
+                        Button(L10n.text("从相机导入")) { choose(.importing, resume: false) }
+                            .frame(minHeight: 44).accessibilityIdentifier("camera.connection.manual-import")
+                    } else if connection.failure != nil {
+                        Button(L10n.text("系统权限设置")) {
+                            if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                        }.frame(minHeight: 44)
+                    }
                 }
                 Text(L10n.text("部分功能不可用时，检查相机模式。已验证型号仅作参考，其他 Sony 相机也可以尝试连接。")).font(.footnote).foregroundStyle(.secondary)
             }.padding(16).frame(maxWidth: 680).frame(maxWidth: .infinity)
@@ -193,12 +201,12 @@ struct IOSCameraWorkspace: View {
     private func choose(_ value: IOSCameraMode, resume: Bool) {
         connection.stop(); model.stop()
         mode = value; resumeTether = resume; cardConfirmed = false; pendingImport = nil
-        model.notice = nil; path = [.connect]; connection.search()
+        model.clearNotice(); path = [.connect]; connection.search()
     }
     private func reconnect() {
         connection.stop(); model.stop()
         mode = model.mode; resumeTether = mode == .tethering && model.manifest.tether != nil
-        model.notice = nil; path = [.connect]; connection.search()
+        model.clearNotice(); path = [.connect]; connection.search()
     }
     private func resume(_ job: CameraTransferJob) {
         if model.connected && model.mode == .importing && model.phase == .browsing {

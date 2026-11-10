@@ -96,6 +96,50 @@ class EditorAsyncOperationTest {
         } finally { release.countDown(); main { owner.clear() }; source.delete(); look.delete() }
     }
 
+    @Test fun repeatedUnchangedAutoExposureKeepsAnExactDraftApplicable() {
+        val source = fixture(); val owner = ViewModelStore()
+        try {
+            lateinit var model: EditorViewModel
+            main { model = EditorViewModel(context.applicationContext as Application); owner.put("editor", model)
+                model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(source)) }
+            ready(model)
+            main { model.edit(model.state.value.edits.copy(exposure = 1.25f)) }
+            ready(model)
+            main { model.beginDraft(AdjustmentGroup.EXPOSURE) }
+            await { model.state.value.draftReady }
+            main { model.autoExposure() }
+            await { model.state.value.draftReady }
+            val exposure = model.state.value.visibleEdits.exposure
+            val preview = model.state.value.preview
+            assertNotEquals(1.25f, exposure)
+            assertTrue(model.state.value.canApplyDraft)
+            main { model.autoExposure(); assertFalse(model.state.value.canApplyDraft) }
+            await { !model.state.value.rendering }
+            assertEquals(exposure, model.state.value.visibleEdits.exposure)
+            assertSame(preview, model.state.value.preview)
+            assertTrue("An unchanged auto result retains the accepted exact preview", model.state.value.exact)
+            assertTrue(model.state.value.canApplyDraft)
+            assertTrue(callbackResult<Boolean> { model.applyDraft(it) })
+            assertNull(model.state.value.draft)
+            assertEquals(exposure, model.state.value.edits.exposure)
+            ready(model)
+            main { model.beginDraft(AdjustmentGroup.EXPOSURE)
+                model.changeDraft(model.state.value.visibleEdits.copy(exposure = exposure + .25f), interactive = true) }
+            await { !model.state.value.rendering }
+            main { model.changeDraft(model.state.value.visibleEdits.copy(exposure = exposure), interactive = true) }
+            await { !model.state.value.rendering }
+            assertFalse(model.state.value.exact)
+            val interactivePreview = model.state.value.preview
+            main { model.autoExposure() }
+            await { !model.state.value.rendering }
+            assertEquals(exposure, model.state.value.visibleEdits.exposure)
+            assertSame(interactivePreview, model.state.value.preview)
+            assertFalse("Auto exposure must not promote an interactive preview to exact", model.state.value.exact)
+            assertFalse(model.state.value.canApplyDraft)
+            main { model.discardDraft() }
+        } finally { main { owner.clear() }; source.delete() }
+    }
+
     @Test fun backgroundDiscardsPendingAutoExposureWithoutChangingSavedDraft() {
         val source = fixture(); val owner = ViewModelStore()
         val entered = CountDownLatch(1); val release = CountDownLatch(1)

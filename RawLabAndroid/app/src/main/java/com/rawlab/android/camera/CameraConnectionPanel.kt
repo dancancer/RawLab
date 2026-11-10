@@ -67,7 +67,7 @@ internal fun CameraConnectionPanel(state: CameraImportState, model: CameraImport
             modifier = Modifier.fillMaxWidth().testTag("camera-use-wifi")) { Text(stringResource(R.string.camera_use_wifi)) }
     } else {
         state.candidates.forEach { candidate ->
-            val name = SonyCameraModel.fromAdvertisement(candidate.name)?.displayName ?: candidate.name
+            val name = SonyCameraModel.fromAdvertisement(candidate.name).takeUnless { it == SonyCameraModel.UNKNOWN }?.displayName ?: candidate.name
             ListItem(headlineContent = { Text(name) }, supportingContent = if (name != candidate.name) ({ Text(candidate.name) }) else null,
                 modifier = Modifier.fillMaxWidth().clickable(enabled = available && state.stage == SonyCameraConnection.Stage.SCANNING) {
                     model.connect(candidate.id)

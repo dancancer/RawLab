@@ -88,6 +88,19 @@ import Foundation
         let preflight = ScriptedCameraChannel(remoteInitialization(drive: 2))
         let importCompatible = try SonyCameraSession(client: CameraPTPClient(command: preflight, event: nil), purpose: .tethering)
         try check(importCompatible.device.model == "Other Sony Model", "Unknown compatible Sony model and firmware are admitted by protocol")
+        let drive = CameraProperty(code: 0x5013, type: 4, writable: false, enabled: 1, current: .number(1),
+            form: 0, minimum: nil, maximum: nil, step: nil, choices: [])
+        let cardOff = CameraProperty(code: 0xd222, type: 6, writable: false, enabled: 1, current: .number(0),
+            form: 0, minimum: nil, maximum: nil, step: nil, choices: [])
+        let cardOn = CameraProperty(code: 0xd222, type: 6, writable: false, enabled: 1, current: .number(0x10),
+            form: 0, minimum: nil, maximum: nil, step: nil, choices: [])
+        try check(!importCompatible.captureReady([0x5013: drive, 0xd222: cardOff], cardConfirmed: true),
+                  "Advertised card-saving state blocks shutter regardless of model name")
+        try check(importCompatible.captureReady([0x5013: drive, 0xd222: cardOn], cardConfirmed: false),
+                  "Advertised card-saving capability enables shutter on an unverified Sony model")
+        try check(!importCompatible.captureReady([0x5013: drive], cardConfirmed: false) &&
+                  importCompatible.captureReady([0x5013: drive], cardConfirmed: true),
+                  "Missing card-saving status requires explicit confirmation")
         var recorded = false
         do { try importCompatible.capture(cardConfirmed: true) { recorded = true }; throw CameraProtocolError.invalid("Expected preflight rejection") }
         catch CameraProtocolError.captureNotSent { }

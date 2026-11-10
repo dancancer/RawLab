@@ -2561,6 +2561,9 @@ sony2fuji_status sony2fuji_session_migrate_processing(const sony2fuji_session* s
         worker.channel_curves = source->channel_curves;
         worker.geometry = source->geometry;
         worker.lens_correction = source->lens_correction;
+        worker.display_lens_metadata = source->display_lens_metadata;
+        worker.has_display_lens_metadata = source->has_display_lens_metadata;
+        worker.display_lens_orientation = source->display_lens_orientation;
         worker.lens_database = source->lens_database;
         worker.lens_database_tried = source->lens_database_tried;
         worker.lens_database_revision = source->lens_database_revision;

@@ -164,7 +164,7 @@ extension MacAdjustmentTransfer {
                 try validate(lens)
             }
             let existing = settings.lensSettings
-            if lens.distortion != existing.distortion || lens.tca != existing.tca || lens.autoCrop != existing.autoCrop
+            if lens.distortion != existing.distortion || lens.tca != existing.tca || lens.vignetting != existing.vignetting || lens.autoCrop != existing.autoCrop
                 || lens.mode != existing.mode || (lens.mode == .manual && lens.profileID != existing.profileID) {
                 settings.lensCorrection = lens == LensCorrectionSettings() ? nil : lens
             }

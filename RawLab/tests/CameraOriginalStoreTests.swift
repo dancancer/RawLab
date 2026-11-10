@@ -47,7 +47,18 @@ import CryptoKit
         try check(store!.snapshot.tether!.baseline.contains(extra.snapshot.key), "Offline unregistered files become a new baseline, never automatic new-shot imports")
         do { try store!.validateTetherResume(device: identity, connectionKey: "fixture", assets: [asset]); throw CameraProtocolError.invalid("Expected changed baseline rejection") }
         catch CameraProtocolError.invalid(let message) where message == "Expected changed baseline rejection" { throw CameraProtocolError.invalid(message) }
-        catch { print("PASS: A partial anchor overlap cannot resume a changed card") }
+        catch CameraProtocolError.tetherRecoveryRequired { print("PASS: A changed card requires manual import instead of automatic recovery") }
+        try store!.beginTether(device: identity, connectionKey: "fixture", baseline: [])
+        let jobsBeforeResume = store!.snapshot.jobs.count
+        for currentCard in [[], [extra]] {
+            do {
+                try store!.validateTetherResume(device: identity, connectionKey: "fixture", assets: currentCard)
+                throw CameraProtocolError.invalid("An empty baseline must not resume automatically")
+            } catch CameraProtocolError.tetherRecoveryRequired {
+                try check(store!.snapshot.jobs.count == jobsBeforeResume && store!.snapshot.tether!.baseline.isEmpty,
+                          "An unverifiable empty baseline requests manual import without enqueuing offline photos")
+            }
+        }
         let pending = try store!.enqueue(device: identity, connectionKey: "fixture", assets: [snapshot])
         let interrupted = try store!.begin(job: pending.id, item: pending.items[0].id)
         try interrupted.handle.write(contentsOf: bytes.prefix(3)); try interrupted.handle.close()

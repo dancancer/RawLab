@@ -976,7 +976,7 @@ class EditorViewModel @JvmOverloads constructor(
         val current = mutable.value
         if (!current.controlsEnabled || current.preview == null || current.rendering ||
             (current.draft != null && current.draft.group != AdjustmentGroup.EXPOSURE)) return
-        mutable.value = current.copy(rendering = true, exact = current.visibleEdits.isHDREditing && current.exact, error = null)
+        mutable.value = current.copy(rendering = true, error = null)
         currentRevision = submitRender(Work.AutoExposure(current.photo!!, current.visibleEdits, gpuMode(), sourceRevision, draftRevision, editorActivationRevision))
     }
     fun retrySave(completed: (Boolean) -> Unit = {}) {

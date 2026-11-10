@@ -476,6 +476,7 @@
 "无法显示处理结果" = "No se pueden mostrar los resultados del procesamiento";
 "无法生成预览" = "No se puede generar una vista previa";
 "无法生成预览，请检查照片、LUT 和颜色配置。" = "No se pudo generar la vista previa. Comprueba la foto, la LUT y los ajustes de color.";
+"无法确认上次联机的照片范围，已暂停自动恢复。请从相机导入，手动选择需要补传的照片。不会自动补拍。" = "No se pudieron identificar las fotos de la sesión anterior. La recuperación automática está en pausa. Usa «Importar de la cámara» para seleccionar manualmente las fotos que faltan. No se harán fotos automáticamente.";
 "无法自动调整曝光：%@" = "No se puede ajustar la exposición automáticamente: %@";
 "无法解码普通图片：%@" = "No se puede decodificar la imagen: %@";
 "无法识别原始照片，调整尚未保存。" = "No se puede identificar la foto original; los ajustes no se guardaron.";

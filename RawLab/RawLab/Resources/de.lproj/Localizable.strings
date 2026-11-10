@@ -476,6 +476,7 @@
 "无法显示处理结果" = "Verarbeitungsergebnisse können nicht angezeigt werden";
 "无法生成预览" = "Vorschau kann nicht generiert werden";
 "无法生成预览，请检查照片、LUT 和颜色配置。" = "Vorschau konnte nicht erstellt werden. Prüfen Sie Foto, LUT und Farbeinstellungen.";
+"无法确认上次联机的照片范围，已暂停自动恢复。请从相机导入，手动选择需要补传的照片。不会自动补拍。" = "Die Fotos der vorherigen Aufnahmesitzung konnten nicht zugeordnet werden. Die automatische Wiederherstellung ist pausiert. Wählen Sie fehlende Fotos über „Von Kamera importieren“ manuell aus. Es werden keine Fotos automatisch aufgenommen.";
 "无法自动调整曝光：%@" = "Belichtung konnte nicht automatisch angepasst werden: %@";
 "无法解码普通图片：%@" = "Das Bild kann nicht dekodiert werden: %@";
 "无法识别原始照片，调整尚未保存。" = "Das Originalfoto konnte nicht identifiziert werden; Anpassungen wurden nicht gespeichert.";

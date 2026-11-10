@@ -73,6 +73,18 @@ public class SonyCameraParameterTest {
         }
     }
 
+    @Test public void knownModelWithoutShutterStillConnectsWithItsAdvertisedParameterCapabilities() throws Exception {
+        try(Responder responder=new Responder(true,true,"ILCE-7CM2","2.00",false);
+            SonyTetherSession session=responder.session(SonyTetherSession.Purpose.TETHER)) {
+            session.connectRemote(SonyTetherSession.Profile.A7CII_2_00);
+            assertTrue(session.isRemoteReady());
+            assertFalse(session.supportsShutter());
+            assertTrue(session.supportsParameterWrites());
+            assertTrue(session.setNumericProperty(0xd21e,200).confirmed);
+            session.close(); responder.check();
+        }
+    }
+
     @Test public void newFirmwareOnAKnownModelFallsBackToCapabilities() throws Exception {
         try(Responder responder=new Responder(true,true,"ILCE-7CM2","3.00");
             SonyTetherSession session=responder.session(SonyTetherSession.Purpose.TETHER)) {
@@ -99,6 +111,9 @@ public class SonyCameraParameterTest {
         volatile int writes;long current=100;
         Responder(boolean enabled,boolean apply) throws IOException { this(enabled,apply,"ILCE-7CM2","2.00"); }
         Responder(boolean enabled,boolean apply,String model,String firmware) throws IOException {
+            this(enabled,apply,model,firmware,true);
+        }
+        Responder(boolean enabled,boolean apply,String model,String firmware,boolean shutter) throws IOException {
             this.model=model; this.firmware=firmware;
             worker=new Thread(() -> {
                 try(Socket command=server.accept()) {
@@ -111,7 +126,8 @@ public class SonyCameraParameterTest {
                             assertEquals(6,packet.type);SonyMobileSession.Reader r=new SonyMobileSession.Reader(packet.bytes);
                             int phase=r.i32(),op=r.u16(),tid=r.i32();byte[] data=null;
                             if(op==0x1001) {
-                                int[] codes={0x1001,0x1002,0x9201,0x9202,0x9205,0x9207,0x9209,0x923c,0x923d};
+                                int[] codes=shutter ? new int[]{0x1001,0x1002,0x9201,0x9202,0x9205,0x9207,0x9209,0x923c,0x923d}
+                                    : new int[]{0x1001,0x1002,0x9201,0x9202,0x9205,0x9209,0x923c,0x923d};
                                 ByteArrayOutputStream ops=new ByteArrayOutputStream();ops.write(u32(codes.length));for(int code:codes) ops.write(u16(code));
                                 data=cat(u16(100),u32(17),u16(100),text("Sony"),u16(0),ops.toByteArray(),new byte[16],text("Sony Corporation"),text(model),text(firmware),text("fixture"));
                             } else if(op==0x9202) data=cat(u16(0x12c),u32(0),u32(2),u16(0xd2c1),u16(0xd2c2));

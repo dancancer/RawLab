@@ -727,6 +727,15 @@ struct AdjustmentTransferTests {
         let corrected = try MacAdjustmentTransfer.prepare(payload: distortion, target: state(target), context: lensContext)
         expected = target; expected.lensCorrection?.distortion = true
         check(corrected == state(expected), "Lens distortion selection preserves TCA, auto crop and target profile request")
+        for enabled in [true, false] {
+            source = Adjustments(); source.lensCorrection = LensCorrectionSettings(vignetting: enabled)
+            target.lensCorrection = LensCorrectionSettings(tca: true, autoCrop: false, mode: .manual,
+                profileID: "target-profile", vignetting: !enabled)
+            let vignetting = try MacAdjustmentTransfer.capture(scope: .custom([.lensVignetting]), snapshot: state(source), context: raw)
+            let transferred = try MacAdjustmentTransfer.prepare(payload: vignetting, target: state(target), context: lensContext)
+            expected = target; expected.lensCorrection?.vignetting = enabled
+            check(transferred == state(expected), "Vignetting-only transfer writes \(enabled) and preserves the other lens fields")
+        }
         source.rawNoiseReduction = 1
         target.resolveRawNoiseReductionSupport(true); target.rawNoiseReduction = 2; target.chromaNoiseReduction = 2
         let rawDenoise = try MacAdjustmentTransfer.capture(scope: .custom([.rawDenoise]), snapshot: state(source), context: raw)

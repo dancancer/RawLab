@@ -65,6 +65,7 @@ std::vector<unsigned char> render(sony2fuji_session* session, const sony2fuji_re
 
 int main() {
     Session session;
+    assert(sony2fuji_session_set_processing_version(session.value, SONY2FUJI_PROCESSING_C5_V2) == SONY2FUJI_STATUS_OK);
     assert(sony2fuji_session_set_lens_database(session.value, TEST_FIXTURE_DIR "/lenses.xml") == SONY2FUJI_STATUS_OK);
     sony2fuji_lens_metadata metadata{SONY2FUJI_LENS_METADATA_VERSION, sizeof(metadata),
         "RawLab", "Test Camera", "RawLab", "Test 24mm f/2.8", 24, 2.8f, 0, 0, 1};
@@ -128,6 +129,15 @@ int main() {
         const auto actual = render(session.value, requestFor(input, orientation >= 5 ? height : width, orientation >= 5 ? width : height));
         assert(actual.size() == expected.size());
         for (size_t i = 0; i < actual.size(); ++i) assert(std::abs(int(actual[i]) - int(expected[i])) <= 1);
+        const auto migrationRequest = requestFor(input, orientation >= 5 ? height : width, orientation >= 5 ? width : height);
+        sony2fuji_processing_migration_result migration{};
+        assert(sony2fuji_session_migrate_processing(session.value, &migrationRequest, &migration) == SONY2FUJI_STATUS_OK);
+        assert(migration.disposition == SONY2FUJI_MIGRATION_ACCEPTED && migration.source_version == 2 && migration.target_version == 3);
+        assert(migration.rgb_rmse == 0 && migration.evaluation_count > 0);
+        assert(render(session.value, migrationRequest) == actual);
+        assert(sony2fuji_session_set_processing_version(session.value, SONY2FUJI_PROCESSING_BASIC_V3) == SONY2FUJI_STATUS_OK);
+        assert(render(session.value, migrationRequest) == actual);
+        assert(sony2fuji_session_set_processing_version(session.value, SONY2FUJI_PROCESSING_C5_V2) == SONY2FUJI_STATUS_OK);
     }
     metadata.source_orientation = 1;
 

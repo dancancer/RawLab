@@ -69,7 +69,7 @@ internal class SonyCameraConnection(
 
     private companion object {
         const val SONY_MANUFACTURER_ID = 0x012d
-        const val SONY_MODEL = "ILCE-7CM2"
+        const val SONY_CAMERA_LABEL = "Sony camera"
         const val BLE_MTU = 158
         const val BLE_TIMEOUT_MS = 3 * 60 * 1000L
         const val BLE_SCAN_TIMEOUT_MS = 25 * 1000L
@@ -218,8 +218,17 @@ internal class SonyCameraConnection(
                 val ssid = characteristic(source, CONTROL_SERVICE, SSID_CHARACTERISTIC)
                 val password = characteristic(source, CONTROL_SERVICE, PASSWORD_CHARACTERISTIC)
                 val pairing = characteristic(source, PAIRING_SERVICE, PAIRING_INIT_CHARACTERISTIC)
-                if (status != BluetoothGatt.GATT_SUCCESS || command == null || ssid == null || password == null || pairing == null) {
+                if (status != BluetoothGatt.GATT_SUCCESS) {
                     fail(Failure.BLUETOOTH)
+                    return@post
+                }
+                if (command == null || ssid == null || password == null || pairing == null ||
+                    command.properties and BluetoothGattCharacteristic.PROPERTY_WRITE == 0 ||
+                    pairing.properties and BluetoothGattCharacteristic.PROPERTY_WRITE == 0 ||
+                    ssid.properties and BluetoothGattCharacteristic.PROPERTY_READ == 0 ||
+                    password.properties and BluetoothGattCharacteristic.PROPERTY_READ == 0) {
+                    beginOperation()
+                    setStage(Stage.MANUAL_WIFI)
                     return@post
                 }
                 pairing.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
@@ -278,7 +287,7 @@ internal class SonyCameraConnection(
         main.post { beginOperation(); setStage(Stage.MANUAL_WIFI) }
     }
 
-    /** ZV-E10 没有已验证的 BLE 热点启动命令；用户在系统连接后只绑定该相机网络。 */
+    /** 手动连接当前 Wi-Fi，以协议握手确认相机能力，不根据 SSID 推断机型。 */
     fun useLegacyWifi() {
         main.post {
             beginOperation()
@@ -389,10 +398,6 @@ internal class SonyCameraConnection(
         }
         scanning = false
         stopBleScan()
-        if (deviceNames[id]?.let(SonyCameraModel::fromAdvertisement) == SonyCameraModel.ZVE10) {
-            setStage(Stage.MANUAL_WIFI)
-            return
-        }
         val bonded = try {
             selected.bondState == BluetoothDevice.BOND_BONDED
         } catch (_: SecurityException) {
@@ -443,9 +448,10 @@ internal class SonyCameraConnection(
     private fun handleScanResult(current: Long, result: ScanResult) {
         if (current != generation || !active || !scanning) return
         val record: ScanRecord = result.scanRecord ?: return
-        if (record.getManufacturerSpecificData(SONY_MANUFACTURER_ID) == null) return
-        val name = record.deviceName ?: return
-        if (SonyCameraModel.fromAdvertisement(name) == null) return
+        val services = record.serviceUuids.orEmpty().map { it.uuid }
+        if (record.getManufacturerSpecificData(SONY_MANUFACTURER_ID) == null &&
+            CONTROL_SERVICE !in services && PAIRING_SERVICE !in services) return
+        val name = record.deviceName?.takeIf { it.isNotBlank() } ?: SONY_CAMERA_LABEL
         val device = try { result.device } catch (_: SecurityException) {
             fail(Failure.PERMISSION)
             return
@@ -465,9 +471,9 @@ internal class SonyCameraConnection(
     }
 
     private fun BluetoothDevice.nameOrFallback(): String = try {
-        name?.takeIf { it.isNotBlank() } ?: SONY_MODEL
+        name?.takeIf { it.isNotBlank() } ?: SONY_CAMERA_LABEL
     } catch (_: SecurityException) {
-        SONY_MODEL
+        SONY_CAMERA_LABEL
     }
 
     private fun openGatt() {

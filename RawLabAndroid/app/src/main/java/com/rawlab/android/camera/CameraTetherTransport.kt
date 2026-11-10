@@ -22,7 +22,7 @@ internal data class CameraTetherParameterWrite(val confirmed: Boolean, val readb
 /** 一个调度器独占此对象；只有停止操作可从其他线程调用。 */
 internal class CameraTetherTransport(private val factory: SocketFactory, private val address: InetAddress,
     private val clientId: UUID, val model: SonyCameraModel, private val cardSavingConfirmed: Boolean) {
-    var usesLegacyContents = model == SonyCameraModel.ZVE10
+    var usesLegacyContents = false
         private set
     @Volatile private var stopped = false
     @Volatile private var remote: SonyTetherSession? = null
@@ -129,11 +129,7 @@ internal class CameraTetherTransport(private val factory: SocketFactory, private
             val opened = SonyTetherSession(factory, address, clientId, ::trace)
             remote = opened
             checkRunning()
-            opened.connectRemote(when (model) {
-                SonyCameraModel.A7CII -> SonyTetherSession.Profile.A7CII_2_00
-                SonyCameraModel.ZVE10 -> SonyTetherSession.Profile.ZVE10_2_02
-                SonyCameraModel.UNKNOWN -> SonyTetherSession.Profile.GENERIC
-            })
+            opened.connectRemote()
             usesLegacyContents = !opened.supportsOperation(0x923c) || !opened.supportsOperation(0x923d)
             if (usesLegacyContents && !listOf(0x9212, 0x1004, 0x1007, 0x1008, 0x1009).all(opened::supportsOperation))
                 throw com.rawlab.android.camera.protocol.CameraMediaSession.UnsupportedCameraException("Photo import is unavailable in this camera mode")

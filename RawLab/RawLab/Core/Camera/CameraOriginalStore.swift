@@ -267,7 +267,7 @@ final class CameraOriginalStore {
             guard let tether = state.tether, tether.camera.stableKey == device.stableKey, tether.connectionKey == connectionKey,
                   !device.serial.isEmpty || connectionKey.hasPrefix("BLE:") || connectionKey.hasPrefix("SSID:"),
                   !tether.baseline.isEmpty, tether.baseline.isSubset(of: Set(assets.map { $0.snapshot.key })) else {
-                throw CameraProtocolError.invalid("Cannot verify the previous camera-card baseline; select originals manually or start a new session")
+                throw CameraProtocolError.tetherRecoveryRequired
             }
         }
     }

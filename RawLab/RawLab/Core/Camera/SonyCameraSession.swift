@@ -213,7 +213,7 @@ final class SonyCameraSession {
     }
     func captureReady(_ properties: [UInt16: CameraProperty], cardConfirmed: Bool) -> Bool {
         guard hasShutter, family != nil, properties[0x5013]?.number == 1 else { return false }
-        if device.model == "ILCE-7CM2", family == .mobile { return (properties[0xd222]?.number ?? 0) & 0x10 != 0 }
+        if family == .mobile, let destination = properties[0xd222]?.number { return destination & 0x10 != 0 }
         return cardConfirmed
     }
     static func parameterType(_ code: UInt16) -> UInt16? {
