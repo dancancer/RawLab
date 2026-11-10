@@ -309,11 +309,6 @@ internal fun PhotoCanvas(
             } else pane(Modifier.fillMaxSize())
             }
             if (showOverlays) {
-                if (workspaceControls) TextButton(onClick = {
-                    state.view = if (state.view.magnification > 1.01f) PhotoViewTransform() else PhotoViewTransform(magnification = 2f)
-                }, modifier = Modifier.align(Alignment.TopStart).heightIn(min = 48.dp).background(Color.Black.copy(alpha = .4f)).testTag("editor-zoom-fit")) {
-                    Text(stringResource(if (state.view.magnification > 1.01f) R.string.zoom_restore_hint else R.string.zoom_fit), style = MaterialTheme.typography.labelSmall)
-                }
                 pair.hdr?.let { hdr ->
                     HDRMonitoring((if (before) hdr.neutral else hdr.result).statistics, hdrState, hdrMode, hdrFalseColor,
                         { hdrMode = it }, { hdrFalseColor = it }, Modifier.align(Alignment.TopEnd)
