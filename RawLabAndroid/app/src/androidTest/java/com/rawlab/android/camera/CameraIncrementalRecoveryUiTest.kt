@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -74,7 +75,10 @@ class CameraIncrementalRecoveryUiTest {
                     compose.onNodeWithTag("camera-menu").performClick()
                     compose.onNodeWithTag("camera-history").performClick()
                     compose.onNodeWithText("已保存 1 / 2 张").performClick()
-                    compose.onNodeWithTag("camera-jpeg-keep-original").performClick()
+                    compose.onNodeWithTag("camera-jpeg-keep-original")
+                        .assertTextEquals("剩余 JPEG 原样保存")
+                        .assertIsDisplayed()
+                        .performClick()
                     compose.waitUntil(15_000) {
                         val state = model.state.value
                         !state.transferring && state.job?.status == CameraJobStatus.COMPLETE

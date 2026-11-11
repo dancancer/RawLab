@@ -108,6 +108,7 @@
     <string name="camera_intro">"Sur l’appareil photo, ouvrez d’abord « Réseau → Connexion/Télécommande PC → Connexion smartphone ». La première connexion nécessite de vérifier les numéros d’association et d’autoriser la connexion au Wi-Fi de l’appareil."</string>
     <string name="camera_jpeg_adjusted">"Enregistrer avec ajustements"</string>
     <string name="camera_jpeg_gain_map_keep_original">"Ce JPEG contient une carte de gain HDR. Conservez l’original pour préserver le HDR."</string>
+    <string name="camera_jpeg_keep_remaining_originals">"Enregistrer les JPEG restants à l’identique"</string>
     <string name="camera_jpeg_local_processing">"Les JPEG sont traités sur cet appareil après le transfert."</string>
     <string name="camera_jpeg_original">"Conserver l’original"</string>
     <string name="camera_jpeg_output_adjusted">"JPEG ajusté"</string>

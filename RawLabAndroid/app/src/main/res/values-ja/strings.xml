@@ -108,6 +108,7 @@
     <string name="camera_intro">"カメラでまず「ネットワーク → 接続／PCリモート → スマートフォン接続」を開いてください。初回接続ではペアリング番号を確認し、カメラの Wi-Fi への接続を許可します。"</string>
     <string name="camera_jpeg_adjusted">"サイズ・画質を調整"</string>
     <string name="camera_jpeg_gain_map_keep_original">"この JPEG には HDR ゲインマップが含まれています。HDR を保持するには元のまま保存してください。"</string>
+    <string name="camera_jpeg_keep_remaining_originals">"残りの JPEG を元のまま保存"</string>
     <string name="camera_jpeg_local_processing">"転送後にこの端末で JPEG を処理します。"</string>
     <string name="camera_jpeg_original">"オリジナルを保存"</string>
     <string name="camera_jpeg_output_adjusted">"調整済み JPEG"</string>

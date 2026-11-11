@@ -108,6 +108,7 @@
     <string name="camera_intro">"Öffnen Sie zuerst an der Kamera „Netzwerk → Verbindung/PC-Fernbedienung → Smartphone-Verbindung“. Bei der ersten Verbindung müssen Sie die Kopplungsnummern vergleichen und die Verbindung mit dem Kamera-WLAN erlauben."</string>
     <string name="camera_jpeg_adjusted">"Angepasst speichern"</string>
     <string name="camera_jpeg_gain_map_keep_original">"Dieses JPEG enthält eine HDR-Gainmap. Speichern Sie das Original, um HDR zu erhalten."</string>
+    <string name="camera_jpeg_keep_remaining_originals">"Restliche JPEGs unverändert speichern"</string>
     <string name="camera_jpeg_local_processing">"JPEG-Dateien werden nach der Übertragung auf diesem Gerät verarbeitet."</string>
     <string name="camera_jpeg_original">"Original beibehalten"</string>
     <string name="camera_jpeg_output_adjusted">"Angepasstes JPEG"</string>

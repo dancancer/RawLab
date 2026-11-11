@@ -170,7 +170,9 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
                                 Button(onClick = { if (state.connected) model.resume(keepJpegOriginals = true) else onConnect(true) },
                                     enabled = canImport, shape = CameraControlShape,
                                     modifier = Modifier.fillMaxWidth().testTag("camera-jpeg-keep-original")) {
-                                    Text(stringResource(if (state.connected) R.string.camera_jpeg_original else R.string.camera_connect_action))
+                                    val label = if (state.connected) R.string.camera_jpeg_keep_remaining_originals
+                                        else R.string.camera_connect_action
+                                    Text(stringResource(label))
                                 }
                             } else if (job.status != CameraJobStatus.COMPLETE) Button(onClick = { if (state.connected) model.resume() else onConnect(true) },
                                 enabled = !state.preparing && !state.closing, shape = CameraControlShape, modifier = Modifier.fillMaxWidth().testTag("camera-resume")) {

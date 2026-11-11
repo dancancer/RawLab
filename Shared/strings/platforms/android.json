@@ -6660,6 +6660,12 @@
       "source": "此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。",
       "types": []
     },
+    "camera_jpeg_keep_remaining_originals": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "剩余 JPEG 原样保存",
+      "types": []
+    },
     "camera_jpeg_output_adjusted": {
       "file": "strings.xml",
       "formats": [],
@@ -6733,6 +6739,14 @@
     }
   },
   "unique": {
+    "剩余 JPEG 原样保存": {
+      "de": "Restliche JPEGs unverändert speichern",
+      "en": "Save remaining JPEGs unchanged",
+      "es": "Guardar los JPEG restantes sin cambios",
+      "fr": "Enregistrer les JPEG restants à l’identique",
+      "ja": "残りの JPEG を元のまま保存",
+      "zh-Hans": "剩余 JPEG 原样保存"
+    },
     "此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。": {
       "de": "Dieses JPEG enthält eine HDR-Gainmap. Speichern Sie das Original, um HDR zu erhalten.",
       "en": "This JPEG contains an HDR gain map. Keep the original to preserve HDR.",

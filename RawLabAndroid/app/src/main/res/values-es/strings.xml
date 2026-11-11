@@ -108,6 +108,7 @@
     <string name="camera_intro">"En la cámara, abre primero «Red → Conexión/Mando a distancia del ordenador → Conexión con smartphone». La primera conexión requiere comprobar los números de emparejamiento y permitir la conexión a la red Wi-Fi de la cámara."</string>
     <string name="camera_jpeg_adjusted">"Guardar con ajustes"</string>
     <string name="camera_jpeg_gain_map_keep_original">"Este JPEG contiene un mapa de ganancia HDR. Conserva el original para mantener el HDR."</string>
+    <string name="camera_jpeg_keep_remaining_originals">"Guardar los JPEG restantes sin cambios"</string>
     <string name="camera_jpeg_local_processing">"Los JPEG se procesan en este dispositivo después de la transferencia."</string>
     <string name="camera_jpeg_original">"Conservar el original"</string>
     <string name="camera_jpeg_output_adjusted">"JPEG ajustado"</string>
