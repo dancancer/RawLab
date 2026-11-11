@@ -74,6 +74,7 @@ import CoreGraphics
         catch { print("PASS: Modified saved original is not handed to the editor") }
         try check(store!.snapshot.originals[0].availability == .changed, "Source changes retain the record and editing identity")
         try incrementalRecovery()
+        try switchingFormatsFindsBothUnimportedJPEGs()
         try adjustedJPEG()
     }
 
@@ -91,11 +92,11 @@ import CoreGraphics
         let first = asset(1, "ARW"), second = asset(2, "JPG")
         let older = asset(3, "JPG", time: "1699999998000"), undated = asset(4, "ARW", time: "0")
         let all = [first, second, older, undated]
-        let scan = CameraIncrementalScan(assets: all, boundary: nil, cutoff: cutoff, customCutoff: nil,
+        let scan = CameraIncrementalScan(assets: all, boundaries: [:], cutoff: cutoff, customCutoff: nil,
                                          format: .rawAndJPEG, includeUndated: false)
         try check(Set(scan.assets.map(\.id)) == [first.id, second.id] && scan.undatedCount == 1,
                   "Incremental planning selects RAW and JPEG by camera time and counts undated files separately")
-        let rawOnly = CameraIncrementalScan(assets: all, boundary: nil, cutoff: cutoff, customCutoff: nil,
+        let rawOnly = CameraIncrementalScan(assets: all, boundaries: [:], cutoff: cutoff, customCutoff: nil,
                                             format: .raw, includeUndated: true)
         try check(Set(rawOnly.assets.map(\.id)) == [first.id, undated.id], "RAW format and explicit undated inclusion build the queue")
         let legacy = CameraAssetSnapshot(content: 42, file: 0, storage: 0x10001, format: 0x3801, name: "DSC00042.JPG",
@@ -106,7 +107,8 @@ import CoreGraphics
                   "Legacy camera wall time is parsed consistently and invalid dates stay unknown")
 
         var store: CameraOriginalStore? = try CameraOriginalStore(directory: root)
-        let plan = CameraIncrementalPlan(format: .rawAndJPEG, jpeg: CameraJPEGOptions(), boundary: scan.nextBoundary)
+        let plan = CameraIncrementalPlan(format: .rawAndJPEG, jpeg: CameraJPEGOptions(), boundary: nil,
+                                         owner: owner, boundaries: scan.nextBoundaries)
         let job = try store!.enqueue(device: device, connectionKey: "fixture", assets: scan.assets.map(\.snapshot), incremental: plan)
         let rawItem = job.items.first { $0.asset == first.snapshot }!
         let jpgItem = job.items.first { $0.asset == second.snapshot }!
@@ -115,39 +117,89 @@ import CoreGraphics
         try partial.handle.write(contentsOf: jpeg.prefix(3)); try partial.handle.close()
         store = nil
         store = try CameraOriginalStore(directory: root)
-        try check(store!.snapshot.incrementalBoundary(device: device, connectionKey: "fixture") == nil,
+        try check(store!.snapshot.incrementalBoundaries(device: device, connectionKey: "fixture").isEmpty,
                   "Interrupted incremental jobs cannot advance the checkpoint")
         let resumed = store!.snapshot.jobs[0]
         try check(resumed.pendingItems.map(\.id) == [jpgItem.id] && resumed.items.first { $0.id == rawItem.id }?.sourceID == saved.id,
                   "Reconnect only queues the unfinished JPEG and retains the saved RAW")
+        let newOwner = UUID()
+        func rebound(_ locator: UInt32, slot: UInt32 = 0) -> CameraRemoteAsset {
+            CameraRemoteAsset(owner: newOwner, snapshot: CameraAssetSnapshot(content: locator, file: 5, storage: slot,
+                format: second.snapshot.format, name: second.snapshot.name, size: second.snapshot.size,
+                created: second.snapshot.created, modified: second.snapshot.modified))
+        }
+        let newJPEG = rebound(92)
+        try check(resumed.bindToListing([newJPEG])[jpgItem.id] == newJPEG,
+                  "The original task item binds to the new locator on the same card slot")
+        try check(resumed.bindToListing([rebound(92, slot: 1)])[jpgItem.id] == nil &&
+                  resumed.bindToListing([newJPEG, rebound(93)])[jpgItem.id] == nil,
+                  "A different card slot or ambiguous metadata leaves the JPEG unresolved")
         let savedJPEG = try write(jpeg, item: resumed.pendingItems[0], job: resumed, store: store!)
-        let boundary = store!.snapshot.incrementalBoundary(device: device, connectionKey: "fixture")
-        try check(boundary?.date == Date(timeIntervalSince1970: 1_700_000_000) && store!.snapshot.originals.count == 2,
-                  "Saving the last item commits the original batch checkpoint")
-        let repeated = CameraIncrementalScan(assets: all, boundary: boundary, cutoff: cutoff, customCutoff: nil,
+        let boundaries = store!.snapshot.incrementalBoundaries(device: device, connectionKey: "fixture")
+        try check(boundaries.count == 2 && boundaries.values.allSatisfy { $0.date == Date(timeIntervalSince1970: 1_700_000_000) }
+                  && store!.snapshot.originals.count == 2, "Saving the last item commits the two format checkpoints")
+        let repeated = CameraIncrementalScan(assets: all, boundaries: boundaries, cutoff: cutoff, customCutoff: nil,
                                              format: .rawAndJPEG, includeUndated: false)
         try check(repeated.assets.isEmpty, "Scanning the same session again has no new files")
         let sameSecond = asset(5, "ARW")
-        let continued = CameraIncrementalScan(assets: all + [sameSecond], boundary: boundary, cutoff: cutoff, customCutoff: nil,
+        let continued = CameraIncrementalScan(assets: all + [sameSecond], boundaries: boundaries, cutoff: cutoff, customCutoff: nil,
                                               format: .rawAndJPEG, includeUndated: false)
         try check(continued.assets.map(\.id) == [sameSecond.id], "An unseen file at the last capture time remains eligible")
-        let backfill = CameraIncrementalScan(assets: all, boundary: boundary, cutoff: cutoff,
+        let backfill = CameraIncrementalScan(assets: all, boundaries: boundaries, cutoff: cutoff,
                                              customCutoff: Date(timeIntervalSince1970: 1_699_999_990),
                                              format: .jpeg, includeUndated: false)
-        try check(backfill.nextBoundary == nil && Set(backfill.assets.map(\.id)) == [older.id, second.id],
+        try check(backfill.nextBoundaries.isEmpty && Set(backfill.assets.map(\.id)) == [older.id, second.id],
                   "Explicit backfill includes the earlier JPEG without replacing the normal checkpoint")
-        let changed = CameraIncrementalScan(assets: [sameSecond], boundary: boundary, cutoff: cutoff, customCutoff: nil,
+        let changed = CameraIncrementalScan(assets: [sameSecond], boundaries: boundaries, cutoff: cutoff, customCutoff: nil,
                                             format: .raw, includeUndated: false)
         try check(changed.needsCutoffConfirmation && changed.assets.isEmpty, "An unverified card requires a new cutoff")
         let nextOwner = UUID()
         let reconnected = [asset(1, "ARW", session: nextOwner), asset(2, "JPG", session: nextOwner)]
-        let checkAgain = CameraIncrementalScan(assets: reconnected, boundary: boundary, cutoff: cutoff, customCutoff: nil,
+        let checkAgain = CameraIncrementalScan(assets: reconnected, boundaries: boundaries, cutoff: cutoff, customCutoff: nil,
                                               format: .jpeg, includeUndated: false)
         let recheck = try store!.enqueue(device: device, connectionKey: "fixture", assets: checkAgain.assets.map(\.snapshot),
-            incremental: CameraIncrementalPlan(format: .jpeg, jpeg: CameraJPEGOptions(), boundary: checkAgain.nextBoundary))
+            incremental: CameraIncrementalPlan(format: .jpeg, jpeg: CameraJPEGOptions(), boundary: nil,
+                                               owner: nextOwner, boundaries: checkAgain.nextBoundaries))
         let reuse = try write(jpeg, item: recheck.items[0], job: recheck, store: store!)
         try check(store!.snapshot.originals.count == 2 && reuse.id == savedJPEG.id && store!.snapshot.jobs.last?.items[0].reused == true,
                   "Rechecking an uncertain boundary reuses the published file")
+    }
+
+    private static func switchingFormatsFindsBothUnimportedJPEGs() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-camera-format-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let device = CameraDeviceIdentity(manufacturer: "Sony", model: "Fixture", firmware: "1.00", serial: "camera", operations: [])
+        let store = try CameraOriginalStore(directory: root)
+        let owner = UUID()
+        let cutoff = Date(timeIntervalSince1970: 1_699_999_999)
+        let rawBytes = Data([0x49, 0x49, 0x2a, 0, 1, 2, 3])
+        let raw = CameraAssetSnapshot(content: 1, file: 1, storage: 0, format: 0, name: "DSC001.ARW",
+                                      size: 7, created: "1700000000000", modified: "")
+        let pairedJPEG = CameraAssetSnapshot(content: 1, file: 2, storage: 0, format: 0, name: "DSC001.JPG",
+                                             size: 7, created: "1700000000000", modified: "")
+        let laterJPEG = CameraAssetSnapshot(content: 2, file: 1, storage: 0, format: 0, name: "DSC002.JPG",
+                                            size: 7, created: "1700003600000", modified: "")
+        let assets = [raw, pairedJPEG, laterJPEG].map { CameraRemoteAsset(owner: owner, snapshot: $0) }
+        let rawScan = CameraIncrementalScan(assets: assets, boundaries: [:], cutoff: cutoff, customCutoff: nil,
+                                            format: .raw, includeUndated: false)
+        try check(rawScan.nextBoundaries.count == 1 && rawScan.nextBoundaries["RAW"]?.date == raw.captureDate,
+                  "The scan advances only the kind and date of selected files")
+        let legacy = CameraImportBoundary(date: laterJPEG.captureDate!, storage: [0], keys: [laterJPEG.key],
+                                          anchors: [laterJPEG.anchorKey], owner: owner)
+        let job = try store.enqueue(device: device, connectionKey: "fixture", assets: rawScan.assets.map(\.snapshot),
+            incremental: CameraIncrementalPlan(format: .raw, jpeg: CameraJPEGOptions(), boundary: legacy, owner: owner))
+        _ = try write(rawBytes, item: job.items[0], job: job, store: store)
+        let migrated = store.snapshot.incrementalBoundaries(device: device, connectionKey: "fixture")
+        try check(migrated["RAW"]?.date == raw.captureDate && migrated["JPEG"] == nil,
+                  "Legacy manifests rebuild the checkpoint from published items")
+        let jpegScan = CameraIncrementalScan(assets: assets, boundaries: migrated, cutoff: cutoff,
+                                            customCutoff: nil, format: .jpeg, includeUndated: false)
+        try check(jpegScan.assets.map(\.snapshot) == [pairedJPEG, laterJPEG],
+                  "A completed RAW import leaves both unimported JPEGs eligible")
+        let combined = CameraIncrementalScan(assets: assets, boundaries: migrated, cutoff: cutoff,
+                                            customCutoff: nil, format: .rawAndJPEG, includeUndated: false)
+        try check(combined.assets.map(\.snapshot) == [pairedJPEG, laterJPEG],
+                  "A combined scan applies the checkpoint of each format")
     }
 
     private static func adjustedJPEG() throws {

@@ -35,6 +35,8 @@ type asset struct {
 type responder struct {
 	mu         sync.Mutex
 	log        io.Writer
+	assets     []asset
+	interrupt  bool
 	jpegFailed bool
 	nextConn   int
 }
@@ -63,6 +65,8 @@ func fixtureJPEG() []byte {
 func main() {
 	logPath := flag.String("log", "", "append request records to this file")
 	readyPath := flag.String("ready", "", "write this file after binding the listener")
+	jpegPath := flag.String("jpeg-file", "", "serve a generated test JPEG instead of the default fixture")
+	interrupt := flag.Bool("interrupt-jpeg", true, "interrupt the first JPEG request")
 	flag.Parse()
 
 	var log io.Writer = io.Discard
@@ -88,7 +92,14 @@ func main() {
 		}
 	}
 
-	server := &responder{log: log}
+	server := &responder{log: log, assets: append([]asset(nil), assets...), interrupt: *interrupt}
+	if *jpegPath != "" {
+		data, err := os.ReadFile(*jpegPath)
+		if err != nil {
+			fail(err)
+		}
+		server.assets[1].bytes = data
+	}
 	for {
 		connection, err := listener.Accept()
 		if err != nil {
@@ -115,6 +126,15 @@ func (s *responder) serve(connection net.Conn, connectionID int) {
 	}
 	switch typ {
 	case 1:
+		s.mu.Lock()
+		sessionAssets := append([]asset(nil), s.assets...)
+		if s.jpegFailed {
+			for index := range sessionAssets {
+				sessionAssets[index].content += 0x1000
+				sessionAssets[index].file += 10
+			}
+		}
+		s.mu.Unlock()
 		// PTP/IP InitCommandRequest -> InitCommandAck. The app only consumes the
 		// connection number, but the remaining fields keep the wire shape real.
 		ack := append(u32(7), make([]byte, 16)...)
@@ -129,8 +149,8 @@ func (s *responder) serve(connection net.Conn, connectionID int) {
 				return
 			}
 			request := requestFrom(payload)
-			s.record(connectionID, request)
-			if !s.handle(connection, request) {
+			s.record(connectionID, request, sessionAssets)
+			if !s.handle(connection, request, sessionAssets) {
 				return
 			}
 		}
@@ -159,7 +179,7 @@ func requestFrom(payload []byte) request {
 	return result
 }
 
-func (s *responder) record(connectionID int, request request) {
+func (s *responder) record(connectionID int, request request, sessionAssets []asset) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	params := make([]string, len(request.params))
@@ -170,8 +190,8 @@ func (s *responder) record(connectionID int, request request) {
 	if request.op == 0x923d && len(request.params) > 1 {
 		file := request.params[1] & 0xffff
 		name := "unknown"
-		for _, candidate := range assets {
-			if candidate.file == file {
+		for _, candidate := range sessionAssets {
+			if candidate.content == request.params[0] && candidate.file == file {
 				name = candidate.name
 				break
 			}
@@ -181,21 +201,32 @@ func (s *responder) record(connectionID int, request request) {
 	_, _ = fmt.Fprintln(s.log, line)
 }
 
-func (s *responder) handle(connection net.Conn, request request) bool {
+func (s *responder) handle(connection net.Conn, request request, sessionAssets []asset) bool {
 	switch request.op {
 	case 0x1001:
 		data(connection, request, deviceInfo())
 	case 0x1002:
 		response(connection, request, 0x2001)
 	case 0x923c:
-		data(connection, request, contentsPage())
+		data(connection, request, contentsPage(sessionAssets))
 	case 0x923d:
 		if len(request.params) < 2 {
 			response(connection, request, 0x2005)
 			return true
 		}
 		file := request.params[1] & 0xffff
-		if file == 2 {
+		var selected *asset
+		for index := range sessionAssets {
+			if sessionAssets[index].content == request.params[0] && sessionAssets[index].file == file {
+				selected = &sessionAssets[index]
+				break
+			}
+		}
+		if selected == nil {
+			response(connection, request, 0x2009)
+			return true
+		}
+		if s.interrupt && selected.name == "DSC10001.JPG" {
 			s.mu.Lock()
 			failJPEG := !s.jpegFailed
 			if failJPEG {
@@ -207,17 +238,6 @@ func (s *responder) handle(connection net.Conn, request request) bool {
 				// next PTP/IP session receives it normally.
 				return false
 			}
-		}
-		var selected *asset
-		for index := range assets {
-			if assets[index].file == file {
-				selected = &assets[index]
-				break
-			}
-		}
-		if selected == nil {
-			response(connection, request, 0x2009)
-			return true
 		}
 		data(connection, request, selected.bytes)
 	default:
@@ -247,7 +267,7 @@ func deviceInfo() []byte {
 	return result
 }
 
-func contentsPage() []byte {
+func contentsPage(assets []asset) []byte {
 	result := make([]byte, 144)
 	appendU32(&result, uint32(len(assets)))
 	for index, candidate := range assets {

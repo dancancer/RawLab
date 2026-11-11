@@ -91,6 +91,7 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
     val resumeIncremental = state.resumableIncrementalJob
     val incrementalCount = state.incrementalScan?.assets?.size ?: 0
     val canImport = !state.transferring && !state.preparing && !state.closing && state.stage == null
+    val needsOriginalJpeg = state.job?.items?.any { it.problem == CameraMediaProblem.HDR_GAIN_MAP } == true
     val savedKeys = remember(state.jobs, state.cameraId) {
         state.jobs.filter { it.cameraId == state.cameraId }.flatMap { it.items }.filter { it.saved != null }.map { it.photo.key }.toSet()
     }
@@ -159,7 +160,19 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
                         if (state.transferring) OutlinedButton(onClick = model::stop, shape = CameraControlShape,
                             modifier = Modifier.fillMaxWidth().testTag("camera-stop")) { Text(stringResource(R.string.camera_stop)) }
                         else {
-                            if (job.status != CameraJobStatus.COMPLETE) Button(onClick = { if (state.connected) model.resume() else onConnect(true) },
+                            if (needsOriginalJpeg) {
+                                Button(onClick = {
+                                    if (state.connected) {
+                                        model.setImportMode(CameraImportMode.INCREMENTAL)
+                                        model.setIncrementalJpeg(state.incrementalJpeg.copy(adjust = false))
+                                        model.dismissMessage()
+                                        page = "browse"
+                                    } else onConnect(true)
+                                }, enabled = canImport, shape = CameraControlShape,
+                                    modifier = Modifier.fillMaxWidth().testTag("camera-jpeg-keep-original")) {
+                                    Text(stringResource(if (state.connected) R.string.camera_jpeg_original else R.string.camera_connect_action))
+                                }
+                            } else if (job.status != CameraJobStatus.COMPLETE) Button(onClick = { if (state.connected) model.resume() else onConnect(true) },
                                 enabled = !state.preparing && !state.closing, shape = CameraControlShape, modifier = Modifier.fillMaxWidth().testTag("camera-resume")) {
                                 Text(stringResource(if (job.items.any { it.problem != null }) R.string.camera_retry_originals else if (state.connected) R.string.camera_resume else R.string.camera_connect_action))
                             }
@@ -197,7 +210,10 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
         }
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            state.message?.takeUnless { page == "task" && state.job?.status == CameraJobStatus.PAUSED && it == R.string.camera_paused }?.let { message ->
+            state.message?.takeUnless {
+                page == "task" && ((state.job?.status == CameraJobStatus.PAUSED && it == R.string.camera_paused) ||
+                    (needsOriginalJpeg && it == R.string.camera_jpeg_gain_map_keep_original))
+            }?.let { message ->
                 Row(Modifier.fillMaxWidth().padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(message), Modifier.weight(1f).padding(vertical = 8.dp), style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error)
@@ -223,7 +239,7 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
                         HorizontalDivider()
                     }
                 }
-                page == "task" -> CameraTask(state)
+                page == "task" -> CameraTask(state, needsOriginalJpeg)
                 state.connected -> {
                     CameraImportModeControls(state, model)
                     if (incremental) {
@@ -289,14 +305,20 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
 }
 
 @Composable
-private fun CameraTask(state: CameraImportState) {
+private fun CameraTask(state: CameraImportState, needsOriginalJpeg: Boolean) {
     val job = state.job
     if (job == null) { CameraEmpty(R.string.camera_loading); return }
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(stringResource(if (state.transferring) R.string.camera_progress else if (job.items.any { it.problem != null })
-                R.string.camera_original_unavailable else if (job.status == CameraJobStatus.COMPLETE)
-                R.string.camera_complete else R.string.camera_paused), style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(when {
+                state.transferring -> R.string.camera_progress
+                needsOriginalJpeg -> R.string.camera_paused
+                job.items.any { it.problem != null } -> R.string.camera_original_unavailable
+                job.status == CameraJobStatus.COMPLETE -> R.string.camera_complete
+                else -> R.string.camera_paused
+            }), style = MaterialTheme.typography.headlineSmall)
+            if (needsOriginalJpeg) Text(stringResource(R.string.camera_jpeg_gain_map_keep_original),
+                color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             Text(stringResource(R.string.camera_saved_count, job.savedCount, job.items.size))
             job.incremental?.let { plan ->
                 Text("${stringResource(R.string.camera_transfer_format)} · ${if (plan.format == CameraImportFormat.RAW_AND_JPEG) "RAW + JPEG" else plan.format.name}",
@@ -330,6 +352,7 @@ private fun CameraTask(state: CameraImportState) {
                         state.currentKey == item.photo.key -> R.string.camera_progress
                         item.problem == CameraMediaProblem.MISSING || item.problem == CameraMediaProblem.REMOTE_MISSING -> R.string.camera_original_missing
                         item.problem == CameraMediaProblem.CHANGED -> R.string.camera_original_changed
+                        item.problem == CameraMediaProblem.HDR_GAIN_MAP -> R.string.camera_jpeg_processing_failed
                         item.duplicate -> R.string.camera_duplicate
                         item.saved != null -> R.string.camera_saved
                         else -> R.string.camera_waiting

@@ -26,9 +26,13 @@ import kotlin.concurrent.thread
  *
  * The responder serves one RAW and one JPEG from the same card/capture.  The
  * first JPEG download closes the command channel; a later session can then
- * continue the same card and records the wire request again.
+ * continue the same card using newly assigned content and file handles.
  */
-internal class CameraIncrementalSessionFixture(cacheDirectory: File) : Closeable {
+internal class CameraIncrementalSessionFixture(
+    cacheDirectory: File,
+    jpegSource: ByteArray? = null,
+    interruptJpeg: Boolean = true,
+) : Closeable {
     data class DownloadRequest(
         val connection: Int,
         val content: Int,
@@ -38,7 +42,7 @@ internal class CameraIncrementalSessionFixture(cacheDirectory: File) : Closeable
     )
 
     private companion object {
-        const val CONTENT = 0x4a01
+        const val CONTENT_BASE = 0x4a01
         const val RAW_FILE = 1
         const val JPEG_FILE = 2
     }
@@ -48,7 +52,7 @@ internal class CameraIncrementalSessionFixture(cacheDirectory: File) : Closeable
     private val clients = CopyOnWriteArrayList<Socket>()
     private val failure = AtomicReference<Throwable?>()
     private val connectionCount = AtomicInteger()
-    private val firstJpegFailed = AtomicBoolean(false)
+    private val firstJpegFailed = AtomicBoolean(!interruptJpeg)
     private val requests = CopyOnWriteArrayList<DownloadRequest>()
     private val worker = thread(name = "camera-incremental-fixture") { serve() }
 
@@ -74,7 +78,7 @@ internal class CameraIncrementalSessionFixture(cacheDirectory: File) : Closeable
     /** Both files are in the current capture window, and share one timestamp. */
     val created: Long = System.currentTimeMillis()
     val rawBytes: ByteArray = byteArrayOf(0x49, 0x49, 0x2a, 0x00, 0x52, 0x41, 0x57, 0x00)
-    private val jpegBytes: ByteArray = createJpeg(cacheDirectory)
+    private val jpegBytes: ByteArray = jpegSource ?: createJpeg(cacheDirectory)
 
     val downloadRequests: List<DownloadRequest>
         get() = requests.toList()
@@ -154,7 +158,7 @@ internal class CameraIncrementalSessionFixture(cacheDirectory: File) : Closeable
             when (operation) {
                 0x1001 -> sendData(command, transaction, deviceInfo())
                 0x923d -> download(command, event, connection, transaction, parameters)
-                0x923c -> sendData(command, transaction, contentsPage())
+                0x923c -> sendData(command, transaction, contentsPage(connection))
                 0x923e -> sendData(command, transaction, jpegBytes)
                 else -> SonyMobileSession.writePacket(
                     command, 7, SonyMobileSession.u16(0x2001) + SonyMobileSession.u32(transaction),
@@ -186,17 +190,17 @@ internal class CameraIncrementalSessionFixture(cacheDirectory: File) : Closeable
         val offset = parameters[2]
         val size = parameters[4]
         requests += DownloadRequest(connection, content, file, offset, size)
-        if (file == JPEG_FILE && firstJpegFailed.compareAndSet(false, true)) {
+        if (file == fileFor(connection, JPEG_FILE) && firstJpegFailed.compareAndSet(false, true)) {
             closeQuietly(command)
             closeQuietly(event)
             return
         }
         val source = when (file) {
-            RAW_FILE -> rawBytes
-            JPEG_FILE -> jpegBytes
+            fileFor(connection, RAW_FILE) -> rawBytes
+            fileFor(connection, JPEG_FILE) -> jpegBytes
             else -> error("Unexpected camera file $file")
         }
-        check(content == CONTENT && offset >= 0 && size >= 0 && offset + size <= source.size)
+        check(content == contentFor(connection) && offset >= 0 && size >= 0 && offset + size <= source.size)
         sendData(command, transaction, source.copyOfRange(offset, offset + size))
     }
 
@@ -209,20 +213,24 @@ internal class CameraIncrementalSessionFixture(cacheDirectory: File) : Closeable
         SonyMobileSession.writePacket(command, 7, SonyMobileSession.u16(0x2001) + SonyMobileSession.u32(transaction))
     }
 
-    private fun contentsPage(): ByteArray {
+    private fun contentFor(connection: Int): Int = CONTENT_BASE + connection - 1
+    private fun fileFor(connection: Int, file: Int): Int = file + (connection - 1) * 10
+
+    private fun contentsPage(connection: Int): ByteArray {
+        val content = contentFor(connection)
         val output = ByteArrayOutputStream()
         output.write(ByteArray(144))
         output.write(SonyMobileSession.u32(1)) // one content record
         output.write(SonyMobileSession.u32(1)) // record type, ignored by the client
-        output.write(SonyMobileSession.u32(CONTENT))
+        output.write(SonyMobileSession.u32(content))
         output.write(ByteArray(20))
         output.write(SonyMobileSession.u32(created.toInt()))
         output.write(SonyMobileSession.u32((created ushr 32).toInt()))
         output.write(ByteArray(36))
         output.write(SonyMobileSession.u32(0)) // shot marks
         output.write(SonyMobileSession.u32(2)) // RAW and JPEG share this capture
-        appendFile(output, RAW_FILE, rawName, rawBytes.size.toLong())
-        appendFile(output, JPEG_FILE, jpegName, jpegBytes.size.toLong())
+        appendFile(output, fileFor(connection, RAW_FILE), rawName, rawBytes.size.toLong())
+        appendFile(output, fileFor(connection, JPEG_FILE), jpegName, jpegBytes.size.toLong())
         return output.toByteArray()
     }
 

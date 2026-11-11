@@ -107,6 +107,7 @@
     <string name="camera_incremental_undated_count">"一并导入 %1$d 个日期未知的文件"</string>
     <string name="camera_intro">"先在相机打开「网络 → 连接/电脑遥控 → 智能手机连接」。首次连接需要核对配对数字，并允许连接相机 Wi-Fi。"</string>
     <string name="camera_jpeg_adjusted">"调整后保存"</string>
+    <string name="camera_jpeg_gain_map_keep_original">"此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。"</string>
     <string name="camera_jpeg_local_processing">"JPEG 传入手机后再处理。"</string>
     <string name="camera_jpeg_original">"原样保存"</string>
     <string name="camera_jpeg_output_adjusted">"JPEG 已调整"</string>

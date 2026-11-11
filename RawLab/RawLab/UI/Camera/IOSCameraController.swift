@@ -111,9 +111,7 @@ struct IOSCameraImportPreferences: Codable {
     var originals: [CameraStoredOriginal] { manifest.originals.reversed() }
     var pendingIncrementalJob: CameraTransferJob? {
         guard let device, let endpoint else { return nil }
-        return manifest.jobs.last {
-            $0.incremental != nil && !$0.complete && $0.matches(camera: device, connectionKey: endpoint.connectionKey)
-        }
+        return manifest.pendingIncrementalJob(device: device, connectionKey: endpoint.connectionKey)
     }
     var displayedIncrementalJob: CameraTransferJob? {
         manifest.jobs.first { $0.id == incrementalJobID } ?? pendingIncrementalJob
@@ -226,6 +224,26 @@ struct IOSCameraImportPreferences: Codable {
         guard let run, mode == .importing, phase == .browsing, !scanning else { return }
         phase = .receiving; notice = nil; backend.resumeImport(jobID: job.id, run: run)
     }
+    func dismissIncrementalJob(_ job: CameraTransferJob) {
+        guard !busy else { return }
+        let owner = callbackOwner
+        scanning = true
+        backend.dismissIncrementalJob(job.id) { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+                guard self.callbackOwner == owner else { self.reloadHistory(); return }
+                self.scanning = false
+                switch result {
+                case .success(let snapshot):
+                    self.manifest = snapshot
+                    if self.incrementalJobID == job.id { self.incrementalJobID = nil }
+                    self.notice = nil
+                case .failure:
+                    self.notice = L10n.text("无法保存导入记录或原件。请检查可用空间后重试。")
+                }
+            }
+        }
+    }
     private var importPreferencesKey: String? {
         guard let device, let endpoint else { return nil }
         let cameraKey = device.serial.isEmpty ? device.stableKey + "|" + endpoint.connectionKey : device.stableKey
@@ -257,22 +275,24 @@ struct IOSCameraImportPreferences: Codable {
         return cameraCalendar.date(from: wallDay) ?? cameraCalendar.startOfDay(for: now)
     }
     func incrementalScan(customCutoff: Date?, includeUndated: Bool) -> CameraIncrementalScan {
-        let boundary = device.flatMap { device in
-            endpoint.flatMap { manifest.incrementalBoundary(device: device, connectionKey: $0.connectionKey) }
-        }
+        let boundaries = device.flatMap { device in
+            endpoint.map { manifest.incrementalBoundaries(device: device, connectionKey: $0.connectionKey) }
+        } ?? [:]
         let savedKeys: Set<String>
         if let owner = assets.first?.owner, customCutoff == nil {
             savedKeys = Set(manifest.jobs.lazy.filter { job in
                 job.incremental != nil && (job.incremental?.owner == owner || (job.id == self.incrementalJobID && job.complete))
             }.flatMap { job in
-                job.items.compactMap { item in
+                let currentSession = job.incremental?.owner == owner
+                let bound = currentSession ? [:] : job.bindToListing(self.assets)
+                return job.items.compactMap { item -> String? in
                     guard item.phase == .saved, item.asset.kind == "RAW" || job.incremental?.jpeg == self.importPreferences.jpeg
                     else { return nil }
-                    return item.asset.key
+                    return currentSession ? item.asset.key : bound[item.id]?.snapshot.key
                 }
             })
         } else { savedKeys = [] }
-        return CameraIncrementalScan(assets: assets, boundary: boundary, cutoff: defaultIncrementalStart,
+        return CameraIncrementalScan(assets: assets, boundaries: boundaries, cutoff: defaultIncrementalStart,
                                      customCutoff: customCutoff, format: importPreferences.format,
                                      includeUndated: includeUndated, savedKeys: savedKeys)
     }
@@ -280,7 +300,7 @@ struct IOSCameraImportPreferences: Codable {
         guard let run, mode == .importing, phase == .browsing, !scanning, !scan.assets.isEmpty,
               scan.assets.allSatisfy({ $0.snapshot.transferable }) else { return }
         let plan = CameraIncrementalPlan(format: importPreferences.format, jpeg: importPreferences.jpeg,
-                                         boundary: scan.nextBoundary, owner: scan.assets.first?.owner)
+                                         boundary: nil, owner: scan.assets.first?.owner, boundaries: scan.nextBoundaries)
         phase = .receiving; notice = nil
         backend.importAssets(scan.assets, incremental: plan, run: run)
     }

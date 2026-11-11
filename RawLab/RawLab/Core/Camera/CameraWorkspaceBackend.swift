@@ -108,6 +108,15 @@ final class CameraWorkspaceBackend {
     func loadHistory(_ result: @escaping (Result<CameraOriginalManifest, Error>) -> Void) {
         queue.async { result(Result { try self.store().snapshot }) }
     }
+    func dismissIncrementalJob(_ id: UUID, result: @escaping (Result<CameraOriginalManifest, Error>) -> Void) {
+        queue.async {
+            result(Result {
+                let store = try self.store()
+                try store.dismissIncrementalJob(id)
+                return store.snapshot
+            })
+        }
+    }
     private func owns(_ run: IOSCameraRun) -> Bool { ownerLock.lock(); defer { ownerLock.unlock() }; return active === run && !run.stopped }
     private func publishManifest(_ run: IOSCameraRun) { if let storage { run.emit(.manifest(storage.snapshot)) } }
     private func failure(_ error: Error, run: IOSCameraRun) {
@@ -299,17 +308,17 @@ final class CameraWorkspaceBackend {
             throw CameraProtocolError.invalid("Transfer belongs to a different camera")
         }
         run.emit(.phase(.receiving))
-        let bySnapshot = Dictionary(grouping: assets, by: \.snapshot)
+        let bound = job.bindToListing(assets)
         for item in job.pendingItems {
             guard owns(run) else { throw CameraProtocolError.cancelled }
-            guard let matches = bySnapshot[item.asset], matches.count == 1 else {
+            guard let asset = bound[item.id] else {
                 let error = CameraProtocolError.invalid("Camera original changed; select it again")
                 try store.interrupt(job: job.id, item: item.id, error: error.localizedDescription, cancelled: false)
                 throw error
             }
             let target = try store.begin(job: job.id, item: item.id)
             do {
-                let digest = try session.download(matches[0], to: target.handle) { bytes in
+                let digest = try session.download(asset, to: target.handle) { bytes in
                     run.emit(.progress(item.id, bytes, item.asset.size))
                 }
                 try target.handle.close()

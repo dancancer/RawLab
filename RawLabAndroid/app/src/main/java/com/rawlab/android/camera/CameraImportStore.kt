@@ -25,7 +25,7 @@ internal data class CameraPhoto(val key: String, val name: String, val size: Lon
 internal fun sameCameraPhoto(left: CameraPhoto, right: CameraPhoto): Boolean =
     left.key == right.key && left.name == right.name && left.size == right.size && left.created == right.created
 internal enum class CameraJobStatus { ACTIVE, PAUSED, COMPLETE }
-internal enum class CameraMediaProblem { MISSING, CHANGED, REMOTE_MISSING }
+internal enum class CameraMediaProblem { MISSING, CHANGED, REMOTE_MISSING, HDR_GAIN_MAP }
 internal data class CameraImportItem(val photo: CameraPhoto, val saved: MediaPhoto? = null,
     val prepared: MediaPhoto? = null, val digest: String? = null, val captureDay: String? = null,
     val duplicate: Boolean = false, val unavailable: MediaPhoto? = null, val problem: CameraMediaProblem? = null,
@@ -51,11 +51,14 @@ internal class CameraTransferPermit {
 internal class CameraImportStore(private val directory: File, private val temporary: File,
     private val media: MediaPhotoAccess, private val readCaptureDate: (File) -> CameraCaptureDate?) {
     private var processJpeg: (File, File, CameraJPEGOptions) -> CameraProcessedFile = CameraJPEGProcessing::process
+    private var verifyJpeg: (File) -> Unit = CameraJPEGProcessing::ensureAdjustmentSupported
 
     constructor(directory: File, temporary: File, media: MediaPhotoAccess,
         readCaptureDate: (File) -> CameraCaptureDate?,
-        processJpeg: (File, File, CameraJPEGOptions) -> CameraProcessedFile) : this(directory, temporary, media, readCaptureDate) {
+        processJpeg: (File, File, CameraJPEGOptions) -> CameraProcessedFile,
+        verifyJpeg: (File) -> Unit = {}) : this(directory, temporary, media, readCaptureDate) {
         this.processJpeg = processJpeg
+        this.verifyJpeg = verifyJpeg
     }
 
     init { directory.mkdirs(); temporary.mkdirs() }
@@ -82,52 +85,70 @@ internal class CameraImportStore(private val directory: File, private val tempor
     }
     fun partial(id: String): File { require(validId(id)); return File(temporary, "$id.part") }
 
-    /** Only completed incremental tasks contribute a future boundary. */
-    fun incrementalBoundary(cameraId: String): CameraImportBoundary? = readJobs()
-        .asSequence().filter { it.cameraId == cameraId && it.committed }
-        .mapNotNull { it.incremental?.boundary }.firstOrNull()
-
     /** 仅在初始化或已停下的队列中调用，调用方持有队列锁。 */
     fun load(): List<CameraImportJob> {
-        temporary.listFiles().orEmpty().filter { it.isFile && it.extension == "part" && validId(it.nameWithoutExtension) }.forEach { it.delete() }
-        temporary.listFiles().orEmpty().filter { it.isFile && it.name.endsWith(".jpeg-part") }.forEach { it.delete() }
-        directory.listFiles().orEmpty().filter { it.isFile && it.extension == "tmp" && validId(it.nameWithoutExtension) }.forEach { it.delete() }
-        val jobs = readJobs()
+        cleanupLoadArtifacts()
+        val jobs = readJobs().map(::migrateLegacyBoundary)
         val referenced = jobs.flatMap { it.items.flatMap { item -> listOfNotNull(item.prepared?.uri, item.saved?.uri) } }.toSet()
         media.cleanupOrphans(referenced)
-        return jobs.map { job ->
-            val items = job.items.map { item ->
-                if (item.saved != null) {
-                    val current = runCatching { media.inspect(item.saved.uri) }.getOrNull()
-                    val expectedSize = item.outputSize ?: item.photo.size
-                    val expectedDigest = item.outputDigest ?: item.digest
-                    when {
-                        current == null || current.pending -> item.copy(saved = null, unavailable = item.saved, problem = CameraMediaProblem.MISSING)
-                        !validContent(current.uri, expectedSize, expectedDigest) -> item.copy(saved = null, unavailable = current, problem = CameraMediaProblem.CHANGED)
-                        else -> {
-                            media.remember(current.uri, expectedSize, checkNotNull(expectedDigest))
-                            item.copy(saved = current, problem = null)
-                        }
+        return jobs.map(::recoverJob)
+    }
+
+    /** Revalidates one resumable job without recovering unrelated jobs or cleaning their media. */
+    fun recover(id: String): CameraImportJob? {
+        require(validId(id))
+        temporary.listFiles().orEmpty().filter { it.isFile &&
+            ((it.name == "$id.part") || (it.name.startsWith("$id-") && it.name.endsWith(".jpeg-part"))) }
+            .forEach { it.delete() }
+        File(directory, "$id.tmp").delete()
+        val journal = File(directory, "$id.json")
+        return if (journal.isFile) recoverJob(migrateLegacyBoundary(readJob(journal))) else null
+    }
+
+    /** Resume-specific spelling used by the import queue. */
+    fun recoverForResume(id: String): CameraImportJob? = recover(id)
+
+    private fun cleanupLoadArtifacts() {
+        temporary.listFiles().orEmpty().filter { it.isFile && it.extension == "part" && validId(it.nameWithoutExtension) }
+            .forEach { it.delete() }
+        temporary.listFiles().orEmpty().filter { it.isFile && it.name.endsWith(".jpeg-part") }.forEach { it.delete() }
+        directory.listFiles().orEmpty().filter { it.isFile && it.extension == "tmp" && validId(it.nameWithoutExtension) }
+            .forEach { it.delete() }
+    }
+
+    private fun recoverJob(job: CameraImportJob): CameraImportJob {
+        val items = job.items.map { item ->
+            if (item.saved != null) {
+                val current = runCatching { media.inspect(item.saved.uri) }.getOrNull()
+                val expectedSize = item.outputSize ?: item.photo.size
+                val expectedDigest = item.outputDigest ?: item.digest
+                when {
+                    current == null || current.pending -> item.copy(saved = null, unavailable = item.saved, problem = CameraMediaProblem.MISSING)
+                    !validContent(current.uri, expectedSize, expectedDigest) -> item.copy(saved = null, unavailable = current, problem = CameraMediaProblem.CHANGED)
+                    else -> {
+                        media.remember(current.uri, expectedSize, checkNotNull(expectedDigest))
+                        item.copy(saved = current, problem = null)
                     }
-                } else if (item.prepared != null) {
-                    val expectedSize = item.outputSize ?: item.photo.size
-                    val expectedDigest = item.outputDigest ?: item.digest
-                    val candidate = media.inspect(item.prepared.uri)
-                    if (candidate != null && validContent(candidate.uri, expectedSize, expectedDigest)) {
-                        media.remember(candidate.uri, expectedSize, checkNotNull(expectedDigest))
-                        val saved = if (candidate.pending) media.publish(candidate.uri) else candidate
-                        item.copy(saved = saved, prepared = null, problem = null)
-                    } else {
-                        // 外部已经发布/修改的文件不属于待清理数据。
-                        if (candidate?.pending == true) media.deletePending(candidate.uri)
-                        item.copy(prepared = null, digest = null)
-                    }
-                } else item
-            }
-            val complete = items.all { it.saved != null }
-            job.copy(items = items, status = if (complete) CameraJobStatus.COMPLETE else CameraJobStatus.PAUSED,
-                committed = job.committed || complete).also(::save)
+                }
+            } else if (item.prepared != null) {
+                val expectedSize = item.outputSize ?: item.photo.size
+                val expectedDigest = item.outputDigest ?: item.digest
+                val candidate = media.inspect(item.prepared.uri)
+                if (candidate != null && validContent(candidate.uri, expectedSize, expectedDigest)) {
+                    media.remember(candidate.uri, expectedSize, checkNotNull(expectedDigest))
+                    val saved = if (candidate.pending) media.publish(candidate.uri) else candidate
+                    item.copy(saved = saved, prepared = null, problem = null)
+                } else {
+                    // 外部已经发布/修改的文件不属于待清理数据。
+                    if (candidate?.pending == true) media.deletePending(candidate.uri)
+                    item.copy(prepared = null, digest = null)
+                }
+            } else item
         }
+        val complete = items.all { it.saved != null }
+        val recovered = job.copy(items = items, status = if (complete) CameraJobStatus.COMPLETE else CameraJobStatus.PAUSED,
+            committed = job.committed || complete)
+        return migrateLegacyBoundary(recovered).also(::save)
     }
 
     fun publish(job: CameraImportJob, index: Int, part: File, digest: String, permit: CameraTransferPermit): CameraImportJob {
@@ -158,6 +179,8 @@ internal class CameraImportStore(private val directory: File, private val tempor
             var outputSize = item.photo.size
             var outputPart = part
             if (duplicate != null) {
+                // An older app may have cached an adjusted JPEG without its gain map.
+                if (jpegOptions != null) verifyJpeg(part)
                 val (photo, source) = duplicate
                 saved = photo
                 outputDigest = source.outputDigest ?: digest
@@ -186,8 +209,8 @@ internal class CameraImportStore(private val directory: File, private val tempor
                 outputDigest = outputDigest, outputSize = outputSize, captureDay = capture?.day,
                 duplicate = duplicate != null, problem = null))
             val complete = updated.savedCount == updated.items.size
-            val result = updated.copy(status = if (complete) CameraJobStatus.COMPLETE else CameraJobStatus.ACTIVE,
-                committed = job.committed || complete)
+            val result = migrateLegacyBoundary(updated.copy(status = if (complete) CameraJobStatus.COMPLETE else CameraJobStatus.ACTIVE,
+                committed = job.committed || complete))
             save(result)
             part.delete()
             if (outputPart != part) outputPart.delete()
@@ -229,35 +252,38 @@ internal class CameraImportStore(private val directory: File, private val tempor
     }
 
     private fun readJobs(): List<CameraImportJob> = directory.listFiles().orEmpty()
-        .filter { it.isFile && it.extension == "json" && validId(it.nameWithoutExtension) }.map { file ->
-            if (file.length() > 8L * 1024 * 1024) throw IOException("Camera journal exceeds budget")
-            val json = JSONObject(file.readText())
-            if (json.getInt("version") != 2) throw IOException("Unsupported camera journal")
-            val array = json.getJSONArray("items")
-            if (array.length() !in 1..10000) throw IOException("Invalid camera journal items")
-            val items = (0 until array.length()).map { index ->
-                val item = array.getJSONObject(index)
-                val created = item.getLong("created")
-                val photo = CameraPhoto(item.getString("key"), item.getString("name"), item.getLong("size"), created,
-                    item.optString("storage").takeIf { it.isNotEmpty() }, item.optLong("captureTimestamp", created))
-                if (photo.size !in 1..SystemPhotoStore.MAX_BYTES) throw IOException("Invalid camera photo size")
-                val saved = item.optJSONObject("saved")?.mediaPhoto()
-                val prepared = item.optJSONObject("prepared")?.mediaPhoto()
-                val digest = item.optString("digest").takeIf { it.isNotEmpty() }
-                if ((saved != null || prepared != null) && !validDigest(digest)) throw IOException("Invalid camera digest")
-                val outputDigest = item.optString("outputDigest").takeIf { it.isNotEmpty() }
-                val outputSize = item.optLongOrNull("outputSize")
-                if (outputDigest != null && !validDigest(outputDigest)) throw IOException("Invalid camera output digest")
-                if (outputDigest != null && outputSize !in 1..SystemPhotoStore.MAX_BYTES) throw IOException("Invalid camera output size")
-                CameraImportItem(photo, saved, prepared, digest, item.optString("captureDay").takeIf { it.isNotEmpty() }, item.optBoolean("duplicate"),
-                    item.optJSONObject("unavailable")?.mediaPhoto(), item.optString("problem").takeIf { it.isNotEmpty() }?.let(CameraMediaProblem::valueOf),
-                    outputDigest, outputSize)
-            }
-            CameraImportJob(file.nameWithoutExtension, json.getString("camera"), json.getLong("time"), items,
-                CameraJobStatus.valueOf(json.getString("status")), CameraImportDestination(json.getString("directory"),
-                    CameraDirectoryGrouping.valueOf(json.getString("grouping"))), json.optJSONObject("incremental")?.incrementalPlan(),
-                json.optBoolean("committed", json.getString("status") == CameraJobStatus.COMPLETE.name))
-        }.sortedByDescending { it.createdAt }
+        .filter { it.isFile && it.extension == "json" && validId(it.nameWithoutExtension) }
+        .map(::readJob).sortedByDescending { it.createdAt }
+
+    private fun readJob(file: File): CameraImportJob {
+        if (file.length() > 8L * 1024 * 1024) throw IOException("Camera journal exceeds budget")
+        val json = JSONObject(file.readText())
+        if (json.getInt("version") != 2) throw IOException("Unsupported camera journal")
+        val array = json.getJSONArray("items")
+        if (array.length() !in 1..10000) throw IOException("Invalid camera journal items")
+        val items = (0 until array.length()).map { index ->
+            val item = array.getJSONObject(index)
+            val created = item.getLong("created")
+            val photo = CameraPhoto(item.getString("key"), item.getString("name"), item.getLong("size"), created,
+                item.optString("storage").takeIf { it.isNotEmpty() }, item.optLong("captureTimestamp", created))
+            if (photo.size !in 1..SystemPhotoStore.MAX_BYTES) throw IOException("Invalid camera photo size")
+            val saved = item.optJSONObject("saved")?.mediaPhoto()
+            val prepared = item.optJSONObject("prepared")?.mediaPhoto()
+            val digest = item.optString("digest").takeIf { it.isNotEmpty() }
+            if ((saved != null || prepared != null) && !validDigest(digest)) throw IOException("Invalid camera digest")
+            val outputDigest = item.optString("outputDigest").takeIf { it.isNotEmpty() }
+            val outputSize = item.optLongOrNull("outputSize")
+            if (outputDigest != null && !validDigest(outputDigest)) throw IOException("Invalid camera output digest")
+            if (outputDigest != null && outputSize !in 1..SystemPhotoStore.MAX_BYTES) throw IOException("Invalid camera output size")
+            CameraImportItem(photo, saved, prepared, digest, item.optString("captureDay").takeIf { it.isNotEmpty() }, item.optBoolean("duplicate"),
+                item.optJSONObject("unavailable")?.mediaPhoto(), item.optString("problem").takeIf { it.isNotEmpty() }?.let(CameraMediaProblem::valueOf),
+                outputDigest, outputSize)
+        }
+        return CameraImportJob(file.nameWithoutExtension, json.getString("camera"), json.getLong("time"), items,
+            CameraJobStatus.valueOf(json.getString("status")), CameraImportDestination(json.getString("directory"),
+                CameraDirectoryGrouping.valueOf(json.getString("grouping"))), json.optJSONObject("incremental")?.incrementalPlan(),
+            json.optBoolean("committed", json.getString("status") == CameraJobStatus.COMPLETE.name))
+    }
 
     private fun validContent(uri: String, size: Long, digest: String?): Boolean = runCatching {
         validDigest(digest) && media.open(uri).use { contentDigest(it, size) } == digest
@@ -289,6 +315,20 @@ internal class CameraImportStore(private val directory: File, private val tempor
     }
     private fun validDigest(value: String?) = value?.matches(Regex("[0-9a-f]{64}")) == true
     private fun validId(id: String) = runCatching { UUID.fromString(id).toString() == id }.getOrDefault(false)
+    private fun migrateLegacyBoundary(job: CameraImportJob): CameraImportJob {
+        val plan = job.incremental ?: return job
+        val legacy = plan.boundary ?: return job
+        if (!job.committed) return job
+        // Legacy global dates and keys may have come from a format that was never saved.
+        val saved = job.items.filter { it.saved != null || it.unavailable != null }.map { it.photo }
+        val checkpoints = buildMap {
+            saved.groupBy { CameraImportFormat.kindOf(it) }.forEach { (kind, photos) ->
+                CameraImportBoundary.latest(photos, legacy.storage, legacy.owner)?.let { put(kind, it) }
+            }
+        }
+        return job.copy(incremental = plan.copy(boundary = null, checkpoints = checkpoints))
+    }
+
     private fun MediaPhoto.json() = JSONObject().put("uri", uri).put("name", displayName).put("path", relativePath).put("pending", pending)
     private fun JSONObject.mediaPhoto() = MediaPhoto(getString("uri"), getString("name"), getString("path"), getBoolean("pending"))
     private fun JSONObject.optLongOrNull(name: String): Long? = if (has(name) && !isNull(name)) optLong(name) else null
@@ -296,6 +336,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
         incremental?.jpeg?.takeIf { it.adjust && !item.photo.raw }
     private fun CameraIncrementalPlan.json(): JSONObject = JSONObject().put("format", format.name)
         .put("jpeg", jpeg.json()).put("boundary", boundary?.json())
+        .put("checkpoints", JSONObject().also { objectValue -> checkpoints.forEach { (kind, value) -> objectValue.put(kind.name, value.json()) } })
         .put("customCutoff", customCutoffMillis).put("includeUndated", includeUndated).put("sessionOwner", sessionOwner)
     private fun CameraJPEGOptions.json() = JSONObject().put("adjust", adjust).put("longEdge", longEdge).put("quality", quality)
     private fun CameraImportBoundary.json() = JSONObject().put("date", dateMillis).put("storage", JSONArray(storage.toList()))
@@ -306,12 +347,19 @@ internal class CameraImportStore(private val directory: File, private val tempor
         val jpeg = if (jpegObject == null) CameraJPEGOptions() else CameraJPEGOptions(
             jpegObject.optBoolean("adjust"), jpegObject.optInt("longEdge").takeIf { jpegObject.has("longEdge") && !jpegObject.isNull("longEdge") },
             jpegObject.optInt("quality", 90))
-        val boundary = optJSONObject("boundary")?.let { value -> CameraImportBoundary(value.getLong("date"),
-            value.getJSONArray("storage").stringSet(), value.getJSONArray("keys").stringSet(),
-            value.getJSONArray("anchors").stringSet(), value.getString("owner")) }
+        val boundary = optJSONObject("boundary")?.boundaryCheckpoint()
+        val checkpoints = buildMap {
+            val value = optJSONObject("checkpoints")
+            CameraImportFormat.RAW_AND_JPEG.kinds.forEach { kind -> value?.optJSONObject(kind.name)?.let {
+                put(kind, it.boundaryCheckpoint())
+            } }
+        }
         return CameraIncrementalPlan(format, jpeg, boundary, optLongOrNull("customCutoff"), optBoolean("includeUndated"),
-            optString("sessionOwner").takeIf { it.isNotEmpty() })
+            optString("sessionOwner").takeIf { it.isNotEmpty() }, checkpoints)
     }
+    private fun JSONObject.boundaryCheckpoint(): CameraImportBoundary = CameraImportBoundary(getLong("date"),
+        getJSONArray("storage").stringSet(), getJSONArray("keys").stringSet(),
+        getJSONArray("anchors").stringSet(), getString("owner"))
     private fun JSONArray.stringSet(): Set<String> = (0 until length()).map { getString(it) }.toSet()
     private fun CameraImportJob.replacing(index: Int, item: CameraImportItem) = copy(items = items.toMutableList().also { it[index] = item })
 }

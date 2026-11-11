@@ -9,6 +9,16 @@ mkdir -p "$OUT"
 FIXTURE="$OUT/sony-incremental-fixture"
 LOG="$OUT/responder.log"
 READY="$OUT/responder.ready"
+SCENARIO="${RAWLAB_CAMERA_INCREMENTAL_SCENARIO:-resume}"
+FIXTURE_ARGS=(--log "$LOG" --ready "$READY")
+case "$SCENARIO" in
+    resume) TEST_CASE=testSonyIncrementalImportResumesOnlyPendingJPEG ;;
+    dismiss)
+        TEST_CASE=testSonyIncrementalDismissalSurvivesReconnect
+        FIXTURE_ARGS+=(--interrupt-jpeg=false --jpeg-file "$ROOT/lutools/tests/fixtures/hdr/apple-legacy-macos26.jpg")
+        ;;
+    *) printf 'Unknown Sony incremental test scenario: %s\n' "$SCENARIO" >&2; exit 2 ;;
+esac
 go build -o "$FIXTURE" "$ROOT/RawLab/tests/sony-incremental-fixture.go"
 
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
@@ -23,7 +33,7 @@ if [[ -z "$PRODUCTS" ]]; then
 fi
 
 XCTESTRUN="$OUT/sony-incremental.xctestrun"
-python3 - "$PRODUCTS" "$XCTESTRUN" <<'PY'
+python3 - "$PRODUCTS" "$XCTESTRUN" "$SCENARIO" <<'PY'
 from pathlib import Path
 import plistlib, sys
 
@@ -52,13 +62,14 @@ if not targets:
     raise SystemExit("No test targets in xctestrun")
 for target in targets:
     target.setdefault("EnvironmentVariables", {})["RAWLAB_SONY_INCREMENTAL_UI"] = "1"
+    target["EnvironmentVariables"]["RAWLAB_SONY_INCREMENTAL_SCENARIO"] = sys.argv[3]
     # Keep the app flag explicit as well; the test sets it before launch, and
     # this makes the xctestrun self-describing for manual diagnostics.
     target.setdefault("UITargetAppEnvironmentVariables", {})["RAWLAB_CAMERA_LOOPBACK_FIXTURE"] = "1"
 output.write_bytes(plistlib.dumps(config))
 PY
 
-"$FIXTURE" --log "$LOG" --ready "$READY" >"$OUT/responder.stdout.log" 2>"$OUT/responder.stderr.log" &
+"$FIXTURE" "${FIXTURE_ARGS[@]}" >"$OUT/responder.stdout.log" 2>"$OUT/responder.stderr.log" &
 FIXTURE_PID=$!
 trap 'kill "$FIXTURE_PID" 2>/dev/null || true; wait "$FIXTURE_PID" 2>/dev/null || true' EXIT
 
@@ -73,7 +84,7 @@ xcodebuild test-without-building -xctestrun "$XCTESTRUN" \
     -resultBundlePath "$OUT/SonyIncremental.xcresult" \
     -parallel-testing-enabled NO \
     -collect-test-diagnostics never \
-    -only-testing:RawLabUITests/EditorV4UITests/testSonyIncrementalImportResumesOnlyPendingJPEG \
+    -only-testing:"RawLabUITests/EditorV4UITests/$TEST_CASE" \
     >"$OUT/xcodebuild.log" 2>&1
 
 xcrun xcresulttool get test-results summary --path "$OUT/SonyIncremental.xcresult" --format json >"$OUT/summary.json"
@@ -85,6 +96,11 @@ if summary.get("passedTests") != 1 or summary.get("skippedTests") != 0 or summar
     raise SystemExit(summary)
 PY
 
-test "$(grep -c 'file=1 name=DSC10001.ARW' "$LOG")" -eq 1
-test "$(grep -c 'file=2 name=DSC10001.JPG' "$LOG")" -eq 2
-printf 'PASS: iOS Sony incremental import resumed the pending JPEG; ARW request count=1, JPEG request count=2; artifacts: %s\n' "$OUT"
+if [[ "$SCENARIO" == resume ]]; then
+    test "$(grep -c 'name=DSC10001.ARW' "$LOG")" -eq 1
+    test "$(grep -c 'file=2 name=DSC10001.JPG' "$LOG")" -eq 1
+    test "$(grep -c 'file=12 name=DSC10001.JPG' "$LOG")" -eq 1
+else
+    test "$(grep -c 'name=DSC10001.JPG' "$LOG")" -eq 2
+fi
+printf 'PASS: iOS Sony incremental %s scenario; artifacts: %s\n' "$SCENARIO" "$OUT"

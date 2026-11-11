@@ -1,17 +1,18 @@
 package com.rawlab.android.camera
 
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
 
-/** Formats accepted by an incremental card import. */
 internal enum class CameraImportFormat {
     RAW, JPEG, RAW_AND_JPEG;
 
-    fun includes(photo: CameraPhoto): Boolean = when (this) {
-        RAW -> photo.raw
-        JPEG -> !photo.raw
-        RAW_AND_JPEG -> true
+    val kinds: List<CameraImportFormat>
+        get() = if (this == RAW_AND_JPEG) listOf(RAW, JPEG) else listOf(this)
+
+    fun includes(photo: CameraPhoto): Boolean = this == RAW_AND_JPEG || this == kindOf(photo)
+
+    companion object {
+        fun kindOf(photo: CameraPhoto): CameraImportFormat = if (photo.raw) RAW else JPEG
     }
 }
 
@@ -24,7 +25,6 @@ internal data class CameraJPEGOptions(
         get() = quality in 1..100 && (longEdge == null || longEdge in 1..65_535)
 }
 
-/** The boundary is a candidate in an active task and becomes authoritative only when that task completes. */
 internal data class CameraImportBoundary(
     val dateMillis: Long,
     val storage: Set<String>,
@@ -32,62 +32,80 @@ internal data class CameraImportBoundary(
     val anchors: Set<String>,
     val owner: String,
 ) {
-    val date: Long get() = dateMillis
+    companion object {
+        fun latest(photos: List<CameraPhoto>, storage: Set<String>, owner: String): CameraImportBoundary? {
+            val date = photos.mapNotNull { it.captureDateMillis }.maxOrNull() ?: return null
+            val tail = photos.filter { it.captureDateMillis == date }
+            return CameraImportBoundary(date, storage, tail.map { it.key }.toSet(), tail.map { it.anchorKey }.toSet(), owner)
+        }
+    }
 }
 
 internal data class CameraIncrementalPlan(
     val format: CameraImportFormat,
     val jpeg: CameraJPEGOptions = CameraJPEGOptions(),
+    /** Older journals recorded one boundary for both formats. */
     val boundary: CameraImportBoundary? = null,
     val customCutoffMillis: Long? = null,
     val includeUndated: Boolean = false,
     val sessionOwner: String? = null,
+    val checkpoints: Map<CameraImportFormat, CameraImportBoundary> = emptyMap(),
 ) {
     init { require(jpeg.isValid) { "Invalid incremental JPEG options" } }
 }
 
-/**
- * Computes the candidate list from one camera listing.  A boundary is deliberately
- * not mutated here: callers persist it with the task and only read it after the
- * task is complete.
- */
-internal data class CameraIncrementalScan(
-    val assets: List<CameraPhoto>,
-    val undatedCount: Int,
-    val startMillis: Long,
-    val needsCutoffConfirmation: Boolean,
-    val nextBoundary: CameraImportBoundary?,
+internal class CameraIncrementalScan(
+    listing: List<CameraPhoto>,
+    checkpoints: Map<CameraImportFormat, CameraImportBoundary>,
+    cutoff: Long,
+    customCutoff: Long?,
+    format: CameraImportFormat,
+    includeUndated: Boolean,
+    savedKeys: Set<String> = emptySet(),
+    sessionOwner: String,
 ) {
-    val start: Long get() = startMillis
+    val assets: List<CameraPhoto>
+    val undatedCount: Int
+    val startMillis: Long
+    val needsCutoffConfirmation: Boolean
+    val nextCheckpoints: Map<CameraImportFormat, CameraImportBoundary>
 
-    constructor(
-        assets: List<CameraPhoto>,
-        boundary: CameraImportBoundary?,
-        cutoff: Long,
-        customCutoff: Long?,
-        format: CameraImportFormat,
-        includeUndated: Boolean,
-        savedKeys: Set<String> = emptySet(),
-        sessionOwner: String,
-        storage: Set<String> = assets.mapNotNull { it.storageToken }.toSet().ifEmpty {
-            if (assets.isEmpty()) emptySet() else setOf("unknown")
-        },
-    ) : this(
-        compute(assets, boundary, cutoff, customCutoff, format, includeUndated, savedKeys, sessionOwner, storage),
-    )
-
-    private constructor(result: Result) : this(
-        result.assets, result.undatedCount, result.startMillis,
-        result.needsCutoffConfirmation, result.nextBoundary,
-    )
-
-    private data class Result(
-        val assets: List<CameraPhoto>,
-        val undatedCount: Int,
-        val startMillis: Long,
-        val needsCutoffConfirmation: Boolean,
-        val nextBoundary: CameraImportBoundary?,
-    )
+    init {
+        require(listing.size <= MAXIMUM_ASSETS) { "Photo list exceeds limit" }
+        val storage = listing.map { it.storageToken ?: "unknown" }.toSet()
+        val dated = listing.mapNotNull { photo -> photo.captureDateMillis?.let { photo to it } }
+        val confirmed = checkpoints.filter { (kind, checkpoint) ->
+            checkpoint.storage == storage && dated.any { (photo, date) ->
+                CameraImportFormat.kindOf(photo) == kind && date == checkpoint.dateMillis && photo.anchorKey in checkpoint.anchors
+            }
+        }
+        val starts = format.kinds.associateWith { customCutoff ?: confirmed[it]?.dateMillis ?: cutoff }
+        startMillis = starts.values.min()
+        needsCutoffConfirmation = customCutoff == null && format.kinds.any { it in checkpoints && it !in confirmed }
+        val undated = listing.filter { format.includes(it) && it.captureDateMillis == null && it.key !in savedKeys }
+        undatedCount = undated.size
+        if (needsCutoffConfirmation) {
+            assets = emptyList()
+            nextCheckpoints = emptyMap()
+        } else {
+            val eligible = dated.filter { (photo, date) ->
+                val kind = CameraImportFormat.kindOf(photo)
+                val start = starts[kind] ?: return@filter false
+                if (date < start || photo.key in savedKeys) return@filter false
+                val checkpoint = confirmed[kind]
+                customCutoff != null || checkpoint == null || checkpoint.owner != sessionOwner || date != checkpoint.dateMillis ||
+                    photo.key !in checkpoint.keys
+            }.sortedWith(compareBy<Pair<CameraPhoto, Long>> { it.second }.thenBy { it.first.key }).map { it.first }
+            assets = eligible + if (includeUndated) undated else emptyList()
+            nextCheckpoints = buildMap {
+                eligible.groupBy { CameraImportFormat.kindOf(it) }.forEach { (kind, photos) ->
+                    if (customCutoff == null || kind !in confirmed) {
+                        CameraImportBoundary.latest(photos, storage, sessionOwner)?.let { put(kind, it) }
+                    }
+                }
+            }
+        }
+    }
 
     companion object {
         const val MAXIMUM_ASSETS = 10_000
@@ -101,48 +119,26 @@ internal data class CameraIncrementalScan(
 
         fun day(epochMillis: Long): String = Instant.ofEpochMilli(epochMillis)
             .atZone(ZoneId.of("UTC")).toLocalDate().toString()
+    }
+}
 
-        private fun compute(
-            assets: List<CameraPhoto>, boundary: CameraImportBoundary?, cutoff: Long,
-            customCutoff: Long?, format: CameraImportFormat, includeUndated: Boolean,
-            savedKeys: Set<String>, sessionOwner: String, storage: Set<String>,
-        ): Result {
-            require(assets.size <= MAXIMUM_ASSETS) { "Photo list exceeds limit" }
-            require(storage.isNotEmpty() || assets.isEmpty()) { "Camera storage identity is unavailable" }
-            val dated = assets.mapNotNull { photo -> photo.captureDateMillis?.let { photo to it } }
-            val confirmed = boundary?.takeIf { candidate ->
-                candidate.storage == storage &&
-                    dated.any { (photo, date) -> date == candidate.dateMillis && candidate.anchors.contains(photo.anchorKey) }
-            }
-            val start = customCutoff ?: confirmed?.dateMillis ?: cutoff
-            val needsConfirmation = boundary != null && confirmed == null && customCutoff == null
-            val undated = assets.filter {
-                format.includes(it) && it.captureDateMillis == null && it.key !in savedKeys
-            }
-            if (needsConfirmation) return Result(emptyList(), undated.size, start, true, null)
-
-            val inRange = dated.filter { (_, date) -> date >= start }
-            val eligible = inRange.filter { (photo, date) ->
-                if (!format.includes(photo) || photo.key in savedKeys) return@filter false
-                // 跨会话边界同秒的对象按源文件摘要去重，会话内可直接复用文件编号。
-                if (customCutoff == null && confirmed?.owner == sessionOwner && date == confirmed.dateMillis) {
-                    photo.key !in confirmed.keys
-                } else true
-            }.sortedWith(compareBy<Pair<CameraPhoto, Long>> { it.second }.thenBy { it.first.key })
-                .map { it.first }
-            val selected = eligible + if (includeUndated) undated else emptyList()
-            val next = if (selected.isNotEmpty() && (customCutoff == null || confirmed == null)) {
-                val latest = inRange.maxOfOrNull { it.second }
-                val tail = if (latest == null) emptyList() else inRange.filter { it.second == latest }.map { it.first }
-                if (latest != null && tail.isNotEmpty()) CameraImportBoundary(
-                    dateMillis = latest,
-                    storage = storage,
-                    keys = tail.map { it.key }.toSet(),
-                    anchors = tail.map { it.anchorKey }.toSet(),
-                    owner = sessionOwner,
-                ) else null
-            } else null
-            return Result(selected, undated.size, start, false, next)
+/** The current locator is used only when its identity is unique in both listings. */
+internal fun incrementalLocatorMap(job: CameraImportJob, current: List<CameraPhoto>, sessionOwner: String): Map<String, CameraPhoto> {
+    val plan = job.incremental ?: return emptyMap()
+    val identity: (CameraPhoto) -> String = if (plan.sessionOwner == sessionOwner) CameraPhoto::key else CameraPhoto::anchorKey
+    val stored = job.items.groupBy { identity(it.photo) }
+    val listed = current.groupBy(identity)
+    return buildMap {
+        for ((key, items) in stored) {
+            val photo = listed[key]?.singleOrNull() ?: continue
+            items.singleOrNull()?.let { put(it.photo.key, photo) }
         }
+    }
+}
+
+/** The newest committed plan that advanced each format supplies its checkpoint. */
+internal fun committedIncrementalCheckpoints(jobs: List<CameraImportJob>): Map<CameraImportFormat, CameraImportBoundary> = buildMap {
+    jobs.filter { it.committed }.sortedByDescending { it.createdAt }.forEach { job ->
+        job.incremental?.checkpoints?.forEach { (kind, checkpoint) -> putIfAbsent(kind, checkpoint) }
     }
 }

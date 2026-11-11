@@ -20,6 +20,7 @@ struct CameraTransferJob: Codable, Identifiable {
     let createdAt: Date
     var items: [CameraTransferItem]
     var incremental: CameraIncrementalPlan?
+    var dismissed: Bool?
     var complete: Bool { items.allSatisfy { $0.phase == .saved } }
     var pendingItems: [CameraTransferItem] { items.filter { $0.phase != .saved } }
     var itemLimit: Int { incremental == nil ? 64 : CameraIncrementalScan.maximumAssets }
@@ -54,10 +55,31 @@ struct CameraOriginalManifest: Codable {
     var originals: [CameraStoredOriginal] = []
     var tether: CameraTetherRecord?
 
-    func incrementalBoundary(device: CameraDeviceIdentity, connectionKey: String) -> CameraImportBoundary? {
+    func pendingIncrementalJob(device: CameraDeviceIdentity, connectionKey: String) -> CameraTransferJob? {
         jobs.last {
-            $0.complete && $0.incremental?.boundary != nil && $0.matches(camera: device, connectionKey: connectionKey)
-        }?.incremental?.boundary
+            $0.incremental != nil && !$0.complete && $0.dismissed != true &&
+                $0.matches(camera: device, connectionKey: connectionKey)
+        }
+    }
+
+    func incrementalBoundaries(device: CameraDeviceIdentity, connectionKey: String) -> [String: CameraImportBoundary] {
+        var result: [String: CameraImportBoundary] = [:]
+        for job in jobs.reversed() where job.complete && job.matches(camera: device, connectionKey: connectionKey) {
+            guard let plan = job.incremental else { continue }
+            if let boundaries = plan.boundaries {
+                for (kind, boundary) in boundaries where result[kind] == nil {
+                    result[kind] = boundary
+                }
+            } else if let legacy = plan.boundary {
+                // 旧起点可能来自未导入的格式，只用实际保存的条目重建。
+                let saved = job.items.filter { $0.phase == .saved && $0.sourceID != nil }.map(\.asset)
+                for (kind, assets) in Dictionary(grouping: saved, by: \.kind) where result[kind] == nil {
+                    result[kind] = CameraImportBoundary.latest(from: assets, storage: legacy.storage, owner: legacy.owner)
+                }
+            }
+            if result.count == CameraImportFormat.rawAndJPEG.kinds.count { break }
+        }
+        return result
     }
 }
 
@@ -178,6 +200,13 @@ final class CameraOriginalStore {
     func enqueue(device: CameraDeviceIdentity, connectionKey: String, assets: [CameraAssetSnapshot],
                  incremental: CameraIncrementalPlan? = nil) throws -> CameraTransferJob {
         try change { try appendJob(device: device, connectionKey: connectionKey, assets: assets, incremental: incremental) }
+    }
+    func dismissIncrementalJob(_ id: UUID) throws {
+        try change {
+            guard let index = state.jobs.firstIndex(where: { $0.id == id && $0.incremental != nil && !$0.complete })
+            else { throw CameraProtocolError.invalid("Pending incremental import is missing") }
+            state.jobs[index].dismissed = true
+        }
     }
     private func appendJob(device: CameraDeviceIdentity, connectionKey: String, assets: [CameraAssetSnapshot],
                            incremental: CameraIncrementalPlan? = nil) throws -> CameraTransferJob {

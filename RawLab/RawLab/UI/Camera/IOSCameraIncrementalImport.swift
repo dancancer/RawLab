@@ -11,11 +11,10 @@ struct IOSCameraIncrementalImport: View {
     @State private var showCutoff = false
     @State private var showJPEG = false
     @State private var includeUndated = false
-    @State private var dismissedJob: UUID?
 
     var body: some View {
         let job = model.displayedIncrementalJob
-        let pending = job.flatMap { !$0.complete && $0.id != dismissedJob ? $0 : nil }
+        let pending = job.flatMap { !$0.complete ? $0 : nil }
         let scan = model.phase == .browsing && !model.scanning && pending == nil
             ? model.incrementalScan(customCutoff: customCutoff, includeUndated: includeUndated) : nil
         VStack(spacing: 0) {
@@ -28,7 +27,7 @@ struct IOSCameraIncrementalImport: View {
                         HStack { ProgressView(); Text(L10n.text("正在扫描相机…")) }
                             .accessibilityIdentifier("camera.incremental.scanning")
                     } else if let scan {
-                        if let job, job.complete, job.id != dismissedJob {
+                        if let job, job.complete {
                             completion(job)
                         }
                         overview(scan)
@@ -164,15 +163,16 @@ struct IOSCameraIncrementalImport: View {
             if let job, model.phase != .receiving {
                 Button(L10n.text("导入记录"), action: history).frame(minHeight: 44)
                 if model.connected && requiresNewImport(job) {
-                    Button(L10n.text("开始新的增量导入")) { dismissedJob = job.id }.frame(minHeight: 44)
+                    Button(L10n.text("开始新的增量导入")) { model.dismissIncrementalJob(job) }
+                        .frame(minHeight: 44).disabled(model.busy)
                 }
             }
         }
     }
     private func requiresNewImport(_ job: CameraTransferJob) -> Bool {
-        let listed = Set(model.assets.map(\.snapshot))
+        let bound = job.bindToListing(model.assets)
         return job.pendingItems.contains {
-            !listed.contains($0.asset) || $0.failure == CameraProtocolError.jpegProcessing.errorDescription
+            bound[$0.id] == nil || $0.failure == CameraProtocolError.jpegProcessing.errorDescription
         }
     }
     private func completion(_ job: CameraTransferJob) -> some View {

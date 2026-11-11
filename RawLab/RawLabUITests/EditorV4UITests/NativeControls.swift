@@ -1196,32 +1196,7 @@ extension EditorV4UITests {
             throw XCTSkip("Run with the synthetic Sony PTP/IP responder and RAWLAB_SONY_INCREMENTAL_UI=1")
         }
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", "en",
-                               "-RawLab.camera.integration", "sony-incremental"]
-        app.launchEnvironment["RAWLAB_CAMERA_LOOPBACK_FIXTURE"] = "1"
-        app.launch()
-        XCTAssertTrue(app.buttons["editor.import"].waitForExistence(timeout: 10), app.debugDescription)
-        app.buttons["editor.camera"].tap()
-        XCTAssertTrue(app.buttons["camera.entry.import"].waitForExistence(timeout: 10), app.debugDescription)
-        app.buttons["camera.entry.import"].tap()
-        XCTAssertTrue(app.buttons["camera.manual"].waitForExistence(timeout: 10), app.debugDescription)
-        app.buttons["camera.manual"].tap()
-        let continueButton = app.buttons["camera.wifi.continue"]
-        XCTAssertTrue(continueButton.waitForExistence(timeout: 10), app.debugDescription)
-        continueButton.tap()
-
-        let mode = app.descendants(matching: .any)["camera.import.mode"]
-        XCTAssertTrue(mode.waitForExistence(timeout: 30), app.debugDescription)
-        let incremental = app.descendants(matching: .any).matching(
-            NSPredicate(format: "label == 'Incremental import'"))
-            .firstMatch
-        if incremental.waitForExistence(timeout: 5) { incremental.tap() }
-        else {
-            mode.tap()
-            XCTAssertTrue(incremental.waitForExistence(timeout: 5), app.debugDescription)
-            incremental.tap()
-        }
-        XCTAssertTrue(app.descendants(matching: .any)["camera.incremental"].waitForExistence(timeout: 10), app.debugDescription)
+        launchSonyIncremental(in: app)
         configureCameraJPEG(in: app)
         capture("camera-incremental-before-start", in: app)
 
@@ -1240,7 +1215,7 @@ extension EditorV4UITests {
         resume.tap()
 
         // Re-enter through the existing Manual Wi-Fi -> “Connected, continue”
-        // path. The DEBUG simulator connection injects the loopback endpoint.
+        // path. The responder assigns new content and file locators.
         let manual = app.buttons["camera.manual"]
         XCTAssertTrue(manual.waitForExistence(timeout: 30), app.debugDescription)
         manual.tap()
@@ -1264,6 +1239,75 @@ extension EditorV4UITests {
         XCTAssertTrue(count.waitForExistence(timeout: 30), app.debugDescription)
         XCTAssertEqual(count.label, "No new photos", app.debugDescription)
         capture("camera-incremental-no-new", in: app)
+    }
+
+    func testSonyIncrementalDismissalSurvivesReconnect() throws {
+        guard ProcessInfo.processInfo.environment["RAWLAB_SONY_INCREMENTAL_SCENARIO"] == "dismiss" else {
+            throw XCTSkip("Run with RAWLAB_CAMERA_INCREMENTAL_SCENARIO=dismiss")
+        }
+        let app = XCUIApplication()
+        launchSonyIncremental(in: app)
+        selectCameraJPEGMode("Save with adjustments", in: app)
+        let start = app.buttons["camera.incremental.start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 10), app.debugDescription)
+        start.tap()
+        XCTAssertTrue(app.staticTexts["Could not process the JPEG with these settings."].waitForExistence(timeout: 20),
+                      app.debugDescription)
+
+        app.terminate()
+        launchSonyIncremental(in: app)
+        let newImport = app.buttons["Start a new incremental import"]
+        XCTAssertTrue(newImport.waitForExistence(timeout: 10), app.debugDescription)
+        newImport.tap()
+        selectCameraJPEGMode("Keep original", in: app)
+        XCTAssertTrue(start.waitForExistence(timeout: 10), app.debugDescription)
+        start.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["camera.incremental.complete"].waitForExistence(timeout: 30),
+                      app.debugDescription)
+
+        app.terminate()
+        launchSonyIncremental(in: app)
+        XCTAssertTrue(app.descendants(matching: .any)["camera.incremental.count"].waitForExistence(timeout: 10),
+                      "A dismissed task must allow a new scan after relaunch.")
+        XCTAssertFalse(app.buttons["camera.incremental.resume"].exists)
+    }
+
+    private func launchSonyIncremental(in app: XCUIApplication) {
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", "en",
+                               "-RawLab.camera.integration", "sony-incremental"]
+        app.launchEnvironment["RAWLAB_CAMERA_LOOPBACK_FIXTURE"] = "1"
+        app.launch()
+        XCTAssertTrue(app.buttons["editor.import"].waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["editor.camera"].tap()
+        XCTAssertTrue(app.buttons["camera.entry.import"].waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["camera.entry.import"].tap()
+        XCTAssertTrue(app.buttons["camera.manual"].waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["camera.manual"].tap()
+        let continueButton = app.buttons["camera.wifi.continue"]
+        XCTAssertTrue(continueButton.waitForExistence(timeout: 10), app.debugDescription)
+        continueButton.tap()
+
+        let mode = app.descendants(matching: .any)["camera.import.mode"]
+        XCTAssertTrue(mode.waitForExistence(timeout: 30), app.debugDescription)
+        let incremental = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label == 'Incremental import'")).firstMatch
+        if !incremental.waitForExistence(timeout: 5) { mode.tap() }
+        XCTAssertTrue(incremental.waitForExistence(timeout: 5), app.debugDescription)
+        incremental.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["camera.incremental"].waitForExistence(timeout: 10), app.debugDescription)
+    }
+
+    private func selectCameraJPEGMode(_ label: String, in app: XCUIApplication) {
+        let settings = app.buttons["camera.jpeg.settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5), app.debugDescription)
+        settings.tap()
+        let mode = app.descendants(matching: .any)["camera.jpeg.mode"]
+        XCTAssertTrue(mode.waitForExistence(timeout: 5), app.debugDescription)
+        mode.tap()
+        let option = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", label)).firstMatch
+        XCTAssertTrue(option.waitForExistence(timeout: 5), app.debugDescription)
+        option.tap()
+        app.buttons["camera.jpeg.apply"].tap()
     }
 
     private func tapCameraBack(in app: XCUIApplication) {

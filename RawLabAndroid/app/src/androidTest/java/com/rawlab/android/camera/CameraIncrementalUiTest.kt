@@ -20,6 +20,7 @@ import com.rawlab.android.testing.LanguageTestRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -97,6 +98,7 @@ class CameraIncrementalUiTest {
                 connect(model, fixture)
                 assertEquals(CameraImportMode.INCREMENTAL, model.state.value.importMode)
                 assertEquals(2, model.state.value.incrementalScan?.assets?.size)
+                assertEquals(paused.id, model.state.value.resumableIncrementalJob?.id)
                 assertEquals(CameraJPEGOptions(adjust = true, longEdge = 16, quality = 82), model.state.value.incrementalJpeg)
                 compose.onNodeWithTag("camera-resume").performClick()
                 compose.waitUntil(30_000) {
@@ -105,6 +107,8 @@ class CameraIncrementalUiTest {
                 compose.onNodeWithText("导入完成").assertIsDisplayed()
 
                 val complete = checkNotNull(model.state.value.job)
+                assertEquals(paused.id, complete.id)
+                assertEquals(paused.items.map { it.photo.key }, complete.items.map { it.photo.key })
                 assertEquals(2, complete.savedCount)
                 val completeUris = complete.items.mapNotNull { it.saved?.uri }
                 assertEquals(2, completeUris.size)
@@ -115,7 +119,8 @@ class CameraIncrementalUiTest {
                 savedUris.forEach { assertPublished(context, it) }
                 assertEquals(CameraJPEGOptions(adjust = true, longEdge = 16, quality = 82), complete.incremental?.jpeg)
                 assertJpegOutput(context, jpegUri)
-                assertEquals(listOf(1, 2, 2), fixture.downloadRequests.map { it.file })
+                assertEquals(listOf(1, 2, 12), fixture.downloadRequests.map { it.file })
+                assertNotEquals(fixture.downloadRequests[1].content, fixture.downloadRequests[2].content)
 
                 // The same card is scanned again through the real incremental controls.
                 compose.onNodeWithTag("camera-back").performClick()
@@ -141,7 +146,7 @@ class CameraIncrementalUiTest {
                 val duplicate = checkNotNull(model.state.value.job)
                 assertTrue(duplicate.items.all { it.duplicate })
                 assertEquals(completeUris, duplicate.items.mapNotNull { it.saved?.uri })
-                assertEquals(listOf(1, 2, 2, 1, 2), fixture.downloadRequests.map { it.file })
+                assertEquals(listOf(1, 2, 12, 21, 22), fixture.downloadRequests.map { it.file })
             } finally {
                 compose.runOnUiThread { model.disconnect() }
                 compose.waitUntil(10_000) { !model.state.value.closing }

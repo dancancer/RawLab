@@ -6654,6 +6654,12 @@
       "source": "无法按所选设置处理 JPEG。",
       "types": []
     },
+    "camera_jpeg_gain_map_keep_original": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。",
+      "types": []
+    },
     "camera_jpeg_output_adjusted": {
       "file": "strings.xml",
       "formats": [],
@@ -6727,6 +6733,14 @@
     }
   },
   "unique": {
+    "此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。": {
+      "de": "Dieses JPEG enthält eine HDR-Gainmap. Speichern Sie das Original, um HDR zu erhalten.",
+      "en": "This JPEG contains an HDR gain map. Keep the original to preserve HDR.",
+      "es": "Este JPEG contiene un mapa de ganancia HDR. Conserva el original para mantener el HDR.",
+      "fr": "Ce JPEG contient une carte de gain HDR. Conservez l’original pour préserver le HDR.",
+      "ja": "この JPEG には HDR ゲインマップが含まれています。HDR を保持するには元のまま保存してください。",
+      "zh-Hans": "此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。"
+    },
     "16 位 PNG 超过 3200 万像素解码上限。": {
       "de": "16-Bit-PNG überschreitet die Dekodierungsgrenze von 32 Megapixeln.",
       "en": "16-bit PNG exceeds the 32 MP decode limit.",

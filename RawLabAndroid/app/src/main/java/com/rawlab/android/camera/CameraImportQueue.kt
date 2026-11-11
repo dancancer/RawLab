@@ -20,7 +20,12 @@ internal fun receiveCameraJob(store: CameraImportStore, job: CameraImportJob, pe
                 result
             }
             permit.check()
-            latest = store.publish(latest, index, part, digest, permit)
+            latest = try { store.publish(latest, index, part, digest, permit) }
+            catch (_: CameraJPEGGainMapAdjustmentException) {
+                val items = latest.items.toMutableList()
+                items[index] = item.copy(problem = CameraMediaProblem.HDR_GAIN_MAP)
+                return latest.copy(items = items, status = CameraJobStatus.PAUSED).also(store::save)
+            }
             onJob(latest)
         } finally { part.delete() }
     }

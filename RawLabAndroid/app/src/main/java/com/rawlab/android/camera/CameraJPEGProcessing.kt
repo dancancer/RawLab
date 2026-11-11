@@ -3,6 +3,9 @@ package com.rawlab.android.camera
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.exifinterface.media.ExifInterface
+import com.rawlab.android.engine.HDRProcessingException
+import com.rawlab.android.engine.NativeHDRBridge
+import com.rawlab.android.photo.HDRSourceInfo
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -12,10 +15,21 @@ import kotlin.math.roundToInt
 
 internal data class CameraProcessedFile(val size: Long, val digest: String)
 
+/** Android Bitmap.compress cannot retain a JPEG gain map; callers should publish the source bytes instead. */
+internal class CameraJPEGGainMapAdjustmentException(
+    val protocol: Int? = null,
+    cause: Throwable? = null,
+) : IOException("JPEG adjustment would discard HDR gain-map metadata", cause)
+
 /** JPEG processing happens only after the source has been downloaded and hashed. */
 internal object CameraJPEGProcessing {
-    fun process(source: File, destination: File, options: CameraJPEGOptions): CameraProcessedFile {
+    fun process(source: File, destination: File, options: CameraJPEGOptions): CameraProcessedFile =
+        processWithProbe(source, destination, options, ::nativeGainMapProbe)
+
+    internal fun processWithProbe(source: File, destination: File, options: CameraJPEGOptions,
+        gainMapProbe: (File) -> HDRSourceInfo?): CameraProcessedFile {
         if (!options.isValid) throw IOException("Invalid incremental JPEG options")
+        ensureAdjustmentSupported(source, gainMapProbe)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(source.path, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IOException("Cannot decode camera JPEG")
@@ -43,6 +57,25 @@ internal object CameraJPEGProcessing {
             return hash(destination)
         } finally { bitmap.recycle() }
     }
+
+    internal fun ensureAdjustmentSupported(source: File) =
+        ensureAdjustmentSupported(source, ::nativeGainMapProbe)
+
+    internal fun ensureAdjustmentSupported(source: File, gainMapProbe: (File) -> HDRSourceInfo?) {
+        val gainMap = try { probeGainMap(source, gainMapProbe) }
+        catch (error: HDRProcessingException) {
+            throw CameraJPEGGainMapAdjustmentException(cause = error)
+        }
+        if (gainMap != null) throw CameraJPEGGainMapAdjustmentException(gainMap.protocol)
+    }
+
+    /** Check the file signature before invoking the native gain-map probe. */
+    internal fun probeGainMap(source: File, gainMapProbe: (File) -> HDRSourceInfo?): HDRSourceInfo? {
+        if (!HDRSourceInfo.mayContainGainMap(source)) return null
+        return gainMapProbe(source)
+    }
+
+    private fun nativeGainMapProbe(source: File): HDRSourceInfo? = NativeHDRBridge.probe(source)
 
     private fun sampleSize(width: Int, height: Int, longEdge: Int): Int {
         var sample = 1
