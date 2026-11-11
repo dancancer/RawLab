@@ -161,7 +161,8 @@ metadata contract.
 This display-referred path reuses the reference CPU stages. GPU Auto explicitly
 falls back to CPU and Force returns unsupported until the scene-view GPU
 shaders have a matching display-input mode. Rendered DNG output preserves the
-result as output-referred float RGB; it does not turn an 8-bit source into RAW/HDR.
+result as output-referred 16-bit integer linear sRGB; it does not turn an 8-bit
+source into RAW/HDR.
 The Apple adapter uses ImageIO. Windows uses WIC for 8-bit JPEG and 8/16-bit
 integer RGB PNG and classic TIFF, and its bundled libheif for opaque 8-bit SDR
 HEIF. It converts tagged RGB to sRGB and treats untagged RGB as sRGB. BigTIFF

@@ -296,6 +296,8 @@ bool setPreviewFields(TIFF* tif, PreviewSize size, bool orientation) {
     ok = ok && TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, size.height);
     ok = ok && TIFFSetField(tif, TIFFTAG_YCBCRSUBSAMPLING, uint16_t{2}, uint16_t{2});
     ok = ok && TIFFSetField(tif, TIFFTAG_YCBCRPOSITIONING, uint16_t{YCBCRPOSITION_CENTERED});
+    float referenceBlackWhite[6] = {0, 255, 128, 255, 128, 255};
+    ok = ok && TIFFSetField(tif, TIFFTAG_REFERENCEBLACKWHITE, referenceBlackWhite);
     if (orientation) ok = ok && TIFFSetField(tif, TIFFTAG_ORIENTATION, uint16_t{ORIENTATION_TOPLEFT});
     ok = ok && TIFFSetField(tif, TIFFTAG_XRESOLUTION, 1.0f);
     ok = ok && TIFFSetField(tif, TIFFTAG_YRESOLUTION, 1.0f);

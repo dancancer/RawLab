@@ -181,6 +181,13 @@ bool jpegPreviewMatches(TIFF* tif, uint32_t expectedWidth, uint32_t expectedHeig
     return true;
 }
 
+bool jpegPreviewHasReferenceBlackWhite(TIFF* tif) {
+    const float* values = nullptr;
+    constexpr std::array<float, 6> expected = {0, 255, 128, 255, 128, 255};
+    return TIFFGetField(tif, TIFFTAG_REFERENCEBLACKWHITE, &values) && values &&
+        std::equal(expected.begin(), expected.end(), values);
+}
+
 void testJpegPreviews(const std::filesystem::path& directory) {
     constexpr int width = 320, height = 160;
     constexpr uint8_t colors[2][4][3] = {
@@ -205,6 +212,7 @@ void testJpegPreviews(const std::filesystem::path& directory) {
         return;
     }
     check(jpegPreviewMatches(tif, 160, 80), "DNG thumbnail is a correctly oriented sRGB JPEG");
+    check(jpegPreviewHasReferenceBlackWhite(tif), "DNG thumbnail explicitly stores full-range YCbCr reference values");
     uint16_t count = 0;
     uint64_t* offsets = nullptr;
     const bool hasChildren = TIFFGetField(tif, TIFFTAG_SUBIFD, &count, &offsets) && count == 2 && offsets;
@@ -220,8 +228,11 @@ void testJpegPreviews(const std::filesystem::path& directory) {
             TIFFGetField(tif, TIFFTAG_SAMPLEFORMAT, &sampleFormat) && sampleFormat == SAMPLEFORMAT_UINT &&
             TIFFGetField(tif, TIFFTAG_PHOTOMETRIC, &photometric) && photometric == kLinearRaw;
         check(raw, "DNG keeps the full-resolution 16-bit LinearRaw image");
-        check(TIFFSetSubDirectory(tif, previewOffset) && jpegPreviewMatches(tif, width, height),
+        const bool selectedPreview = TIFFSetSubDirectory(tif, previewOffset);
+        check(selectedPreview && jpegPreviewMatches(tif, width, height),
               "DNG full-size preview is a correctly oriented sRGB JPEG");
+        check(selectedPreview && jpegPreviewHasReferenceBlackWhite(tif),
+              "DNG full-size preview explicitly stores full-range YCbCr reference values");
     }
     TIFFClose(tif);
 }
