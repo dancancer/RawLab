@@ -8,6 +8,7 @@ enum IOSCameraEvent {
     case assets([CameraRemoteAsset])
     case properties([UInt16: CameraProperty], writable: Bool, shutter: Bool)
     case manifest(CameraOriginalManifest)
+    case incrementalJob(UUID)
     case progress(UUID, UInt64, UInt64)
     case thumbnail(String, Data)
     case preview(Data)
@@ -291,14 +292,21 @@ final class CameraWorkspaceBackend {
     }
     private func receive(_ job: CameraTransferJob, assets: [CameraRemoteAsset], run: IOSCameraRun) throws {
         let store = try store(), session = try run.currentSession()
-        guard job.camera.stableKey == session.device.stableKey, job.connectionKey == run.endpoint.connectionKey else {
+        let sameCamera = job.incremental == nil
+            ? job.camera.stableKey == session.device.stableKey && job.connectionKey == run.endpoint.connectionKey
+            : job.matches(camera: session.device, connectionKey: run.endpoint.connectionKey)
+        guard sameCamera else {
             throw CameraProtocolError.invalid("Transfer belongs to a different camera")
         }
         run.emit(.phase(.receiving))
-        for item in job.items where item.phase != .saved {
+        let bySnapshot = Dictionary(grouping: assets, by: \.snapshot)
+        for item in job.pendingItems {
             guard owns(run) else { throw CameraProtocolError.cancelled }
-            let matches = assets.filter { $0.snapshot == item.asset }
-            guard matches.count == 1 else { throw CameraProtocolError.invalid("Camera original changed; select it again") }
+            guard let matches = bySnapshot[item.asset], matches.count == 1 else {
+                let error = CameraProtocolError.invalid("Camera original changed; select it again")
+                try store.interrupt(job: job.id, item: item.id, error: error.localizedDescription, cancelled: false)
+                throw error
+            }
             let target = try store.begin(job: job.id, item: item.id)
             do {
                 let digest = try session.download(matches[0], to: target.handle) { bytes in
@@ -314,26 +322,43 @@ final class CameraWorkspaceBackend {
             }
         }
     }
-    func importAssets(_ assets: [CameraRemoteAsset], run: IOSCameraRun) {
+    func importAssets(_ assets: [CameraRemoteAsset], incremental: CameraIncrementalPlan? = nil, run: IOSCameraRun) {
         perform(run) {
             guard run.mode == .importing, !run.receiving else { throw CameraProtocolError.invalid("Camera import is busy") }
             run.receiving = true; defer { run.receiving = false }
             let session = try run.currentSession()
             guard assets.allSatisfy({ $0.owner == session.id }) else { throw CameraProtocolError.invalid("Camera selection belongs to an old session") }
-            let job = try self.store().enqueue(device: session.device, connectionKey: run.endpoint.connectionKey, assets: assets.map(\.snapshot))
+            let job = try self.store().enqueue(device: session.device, connectionKey: run.endpoint.connectionKey,
+                                              assets: assets.map(\.snapshot), incremental: incremental)
             self.publishManifest(run)
+            if incremental != nil { run.emit(.incrementalJob(job.id)) }
             try self.receive(job, assets: run.knownAssets, run: run)
             run.emit(.phase(.browsing))
         }
     }
     func resumeImport(jobID: UUID, run: IOSCameraRun) {
         perform(run) {
-            guard run.mode == .importing, !run.receiving, let job = try self.store().snapshot.jobs.first(where: { $0.id == jobID }) else { return }
+            guard run.mode == .importing, !run.receiving else { return }
             run.receiving = true; defer { run.receiving = false }
+            let store = try self.store()
+            try store.recover()
+            self.publishManifest(run)
+            guard let job = store.snapshot.jobs.first(where: { $0.id == jobID }) else {
+                throw CameraProtocolError.invalid("Camera transfer job is missing")
+            }
+            if job.incremental != nil { run.emit(.incrementalJob(job.id)) }
             let assets = try run.currentSession().listAssets()
             run.knownAssets = assets; run.emit(.assets(assets))
             try self.receive(job, assets: assets, run: run)
             run.emit(.phase(.browsing))
+        }
+    }
+    func refreshImport(_ run: IOSCameraRun) {
+        perform(run) {
+            guard run.mode == .importing, !run.receiving else { return }
+            let assets = try run.currentSession().listAssets()
+            run.knownAssets = assets
+            run.emit(.assets(assets))
         }
     }
     func thumbnail(_ asset: CameraRemoteAsset, run: IOSCameraRun, large: Bool) {

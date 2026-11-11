@@ -94,11 +94,13 @@ class CameraImportInterruptionTest {
     @Test fun malformedPreviewDisconnectsAndShowsReconnectEntry() {
         compose.waitUntil(10_000) { !compose.activity.camera.state.value.preparing }
         CameraSessionFixture(malformedPreview = true).use { fixture ->
-            val photo = connectFixture(fixture)
-            assertNull(runBlocking { compose.activity.camera.preview(photo, false) })
-            assertFalse("Fatal preview left the UI connected", compose.activity.camera.state.value.connected)
-            compose.onNodeWithTag("camera-entry").performClick()
-            compose.onNodeWithTag("camera-find").assertIsDisplayed()
+            connectFixture(fixture)
+            compose.onNodeWithTag("editor-camera").performClick()
+            compose.onNodeWithTag("camera-mode-IMPORT").performClick()
+            compose.waitUntil(10_000) {
+                compose.activity.camera.state.value.let { !it.connected && !it.closing }
+            }
+            compose.onNodeWithTag("camera-connect").assertIsDisplayed()
             compose.onNodeWithText(compose.activity.getString(R.string.camera_disconnected)).assertIsDisplayed()
             capture("camera-review-preview-disconnected.png")
         }

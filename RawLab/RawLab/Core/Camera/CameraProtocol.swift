@@ -2,7 +2,7 @@ import Foundation
 
 enum CameraProtocolError: Error, LocalizedError {
     case invalid(String), unsupported(String), response(UInt16, UInt16)
-    case disconnected, cancelled, timeout
+    case disconnected, cancelled, timeout, jpegProcessing
     case captureNotSent(String), captureUnknown, tetherRecoveryRequired
 
     var errorDescription: String? {
@@ -12,6 +12,7 @@ enum CameraProtocolError: Error, LocalizedError {
         case .disconnected: return "Camera connection closed"
         case .cancelled: return "Camera operation cancelled"
         case .timeout: return "Camera operation timed out"
+        case .jpegProcessing: return "Could not process the camera JPEG with the selected settings"
         case .captureUnknown: return "Shutter result is unknown; check the camera"
         case .tetherRecoveryRequired: return "Cannot verify the previous camera-card baseline; select originals manually or start a new session"
         }

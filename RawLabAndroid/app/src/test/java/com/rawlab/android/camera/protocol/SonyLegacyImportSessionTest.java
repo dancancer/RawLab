@@ -33,6 +33,15 @@ public class SonyLegacyImportSessionTest {
         }
     }
 
+    @Test public void legacyCameraClockIsInterpretedAsGmt() {
+        String capture="20261109T230000";
+        long wallClock=SonyLegacyImportSession.createdTime(capture,TimeZone.getTimeZone("GMT"));
+        long localLocator=SonyLegacyImportSession.createdTime(capture,TimeZone.getTimeZone("Asia/Shanghai"));
+        assertEquals(java.time.LocalDateTime.of(2026,11,9,23,0)
+            .toInstant(java.time.ZoneOffset.UTC).toEpochMilli(),wallClock);
+        assertEquals(8*60*60*1000,wallClock-localLocator);
+    }
+
     @Test public void unverifiedFirmwareUsesTheKnownProtocolAndAdvertisedOperations() throws Exception {
         try(Responder responder=new Responder("9.99");SonyLegacyImportSession session=new SonyLegacyImportSession(responder.factory(),InetAddress.getLoopbackAddress(),UUID.randomUUID(),m -> {})) {
             SonyMobileSession.Device device=session.deviceInfo();

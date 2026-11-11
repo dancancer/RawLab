@@ -193,6 +193,18 @@ struct IOSCameraEndpoint: Equatable {
     func useCurrentWiFi() {
         stop(); failure = nil; connecting = true; stage = .routing
         let token = generation
+        #if DEBUG && targetEnvironment(simulator)
+        if ProcessInfo.processInfo.environment["RAWLAB_CAMERA_LOOPBACK_FIXTURE"] == "1" {
+            // The simulator-only fixture is reachable through the host loopback.
+            // Keep this behind an explicit test environment flag; release builds
+            // and physical devices continue to require a real Wi-Fi gateway.
+            connectionKey = "SSID:RAWLAB-SIMULATOR-FIXTURE"
+            label = "Sony simulator fixture"
+            stage = .idle; connecting = false; status = ""
+            onEndpoint?(IOSCameraEndpoint(host: "127.0.0.1", connectionKey: connectionKey, label: label))
+            return
+        }
+        #endif
         NEHotspotNetwork.fetchCurrent { [weak self] network in
             Task { @MainActor in
                 guard let self, self.generation == token else { return }

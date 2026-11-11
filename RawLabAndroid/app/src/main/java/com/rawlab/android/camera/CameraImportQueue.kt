@@ -10,7 +10,7 @@ internal fun receiveCameraJob(store: CameraImportStore, job: CameraImportJob, pe
     var latest = job.copy(status = CameraJobStatus.ACTIVE)
     store.save(latest)
     for ((index, item) in latest.items.withIndex()) {
-        if (item.saved != null) continue
+        if (item.saved != null || item.problem == CameraMediaProblem.REMOTE_MISSING) continue
         permit.check()
         val part = store.partial(job.id)
         try {
@@ -24,5 +24,9 @@ internal fun receiveCameraJob(store: CameraImportStore, job: CameraImportJob, pe
             onJob(latest)
         } finally { part.delete() }
     }
-    return latest
+    val finished = latest.items.all { it.saved != null }
+    val result = latest.copy(status = if (finished) CameraJobStatus.COMPLETE else CameraJobStatus.PAUSED,
+        committed = latest.committed || finished)
+    if (result != latest) store.save(result)
+    return result
 }

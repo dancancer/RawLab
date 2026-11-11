@@ -11,6 +11,7 @@ struct CameraTransferItem: Codable, Identifiable {
     var sourceID: UUID?
     var digest: String?
     var failure: String?
+    var reused: Bool?
 }
 struct CameraTransferJob: Codable, Identifiable {
     let id: UUID
@@ -18,7 +19,14 @@ struct CameraTransferJob: Codable, Identifiable {
     let connectionKey: String
     let createdAt: Date
     var items: [CameraTransferItem]
+    var incremental: CameraIncrementalPlan?
     var complete: Bool { items.allSatisfy { $0.phase == .saved } }
+    var pendingItems: [CameraTransferItem] { items.filter { $0.phase != .saved } }
+    var itemLimit: Int { incremental == nil ? 64 : CameraIncrementalScan.maximumAssets }
+
+    func matches(camera: CameraDeviceIdentity, connectionKey: String) -> Bool {
+        self.camera.stableKey == camera.stableKey && (!camera.serial.isEmpty || self.connectionKey == connectionKey)
+    }
 }
 struct CameraStoredOriginal: Codable, Identifiable {
     let id: UUID
@@ -27,6 +35,7 @@ struct CameraStoredOriginal: Codable, Identifiable {
     let digest: String
     let savedAt: Date
     var availability: CameraOriginalAvailability = .prepared
+    var jpegSource: CameraJPEGSource?
 }
 struct CameraTetherRecord: Codable, Identifiable {
     let id: UUID
@@ -44,6 +53,12 @@ struct CameraOriginalManifest: Codable {
     var jobs: [CameraTransferJob] = []
     var originals: [CameraStoredOriginal] = []
     var tether: CameraTetherRecord?
+
+    func incrementalBoundary(device: CameraDeviceIdentity, connectionKey: String) -> CameraImportBoundary? {
+        jobs.last {
+            $0.complete && $0.incremental?.boundary != nil && $0.matches(camera: device, connectionKey: connectionKey)
+        }?.incremental?.boundary
+    }
 }
 
 /// 唯一持久原件 owner。下载临时文件与最终原件在同一文件系统，编辑器只取得再次校验后的 URL。
@@ -79,7 +94,8 @@ final class CameraOriginalStore {
                   Set(state.jobs.map(\.id)).count == state.jobs.count,
                   Set(state.originals.map(\.id)).count == state.originals.count,
                   state.originals.allSatisfy({ CameraWire.validName($0.name) && CameraWire.photoName($0.name) && $0.size > 0 && $0.size <= 1 << 30 && Self.validDigest($0.digest) }),
-                  state.jobs.allSatisfy({ $0.items.count <= 64 && Set($0.items.map(\.id)).count == $0.items.count &&
+                  state.jobs.allSatisfy({ $0.items.count <= $0.itemLimit && $0.incremental?.jpeg.isValid != false &&
+                    Set($0.items.map(\.id)).count == $0.items.count &&
                     $0.items.allSatisfy { CameraWire.validName($0.asset.name) && CameraWire.photoName($0.asset.name) && $0.asset.transferable } }) else {
                 throw CameraProtocolError.invalid("Invalid camera storage manifest")
             }
@@ -126,6 +142,7 @@ final class CameraOriginalStore {
         originalsDirectory.appendingPathComponent(source.id.uuidString.lowercased(), isDirectory: true).appendingPathComponent(source.name)
     }
     private func partialURL(_ item: UUID) -> URL { partialDirectory.appendingPathComponent(item.uuidString.lowercased() + ".partial") }
+    private func adjustedURL(_ item: UUID) -> URL { partialURL(item).deletingPathExtension().appendingPathExtension("jpeg-partial") }
     static func hash(_ url: URL) throws -> (size: UInt64, digest: String) {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
@@ -158,15 +175,25 @@ final class CameraOriginalStore {
             return originalURL(state.originals[index])
         }
     }
-    func enqueue(device: CameraDeviceIdentity, connectionKey: String, assets: [CameraAssetSnapshot]) throws -> CameraTransferJob {
-        try change { try appendJob(device: device, connectionKey: connectionKey, assets: assets) }
+    func enqueue(device: CameraDeviceIdentity, connectionKey: String, assets: [CameraAssetSnapshot],
+                 incremental: CameraIncrementalPlan? = nil) throws -> CameraTransferJob {
+        try change { try appendJob(device: device, connectionKey: connectionKey, assets: assets, incremental: incremental) }
     }
-    private func appendJob(device: CameraDeviceIdentity, connectionKey: String, assets: [CameraAssetSnapshot]) throws -> CameraTransferJob {
-        guard !assets.isEmpty, assets.count <= 64, assets.allSatisfy({ $0.transferable && CameraWire.validName($0.name) && CameraWire.photoName($0.name) }),
-              assets.reduce(UInt64(0), { $0 + $1.size }) <= 2 << 30,
-              Set(assets.map(\.key)).count == assets.count else { throw CameraProtocolError.invalid("Transfer exceeds 64 originals or 2 GiB") }
+    private func appendJob(device: CameraDeviceIdentity, connectionKey: String, assets: [CameraAssetSnapshot],
+                           incremental: CameraIncrementalPlan? = nil) throws -> CameraTransferJob {
+        let limit = incremental == nil ? 64 : CameraIncrementalScan.maximumAssets
+        guard !assets.isEmpty, assets.count <= limit, Set(assets.map(\.key)).count == assets.count,
+              assets.allSatisfy({ $0.transferable && CameraWire.validName($0.name) && CameraWire.photoName($0.name) })
+        else { throw CameraProtocolError.invalid("Camera import queue contains invalid or excessive files") }
+        if let incremental {
+            guard incremental.jpeg.isValid, assets.allSatisfy(incremental.format.includes) else {
+                throw CameraProtocolError.invalid("Incremental import options do not match the queue")
+            }
+        } else if assets.reduce(UInt64(0), { $0 + $1.size }) > 2 << 30 {
+            throw CameraProtocolError.invalid("Transfer exceeds 64 originals or 2 GiB")
+        }
         let job = CameraTransferJob(id: UUID(), camera: device, connectionKey: connectionKey, createdAt: Date(),
-            items: assets.map { CameraTransferItem(id: UUID(), asset: $0) })
+            items: assets.map { CameraTransferItem(id: UUID(), asset: $0) }, incremental: incremental)
         state.jobs.append(job); return job
     }
     func begin(job: UUID, item: UUID) throws -> (url: URL, handle: FileHandle) {
@@ -194,26 +221,48 @@ final class CameraOriginalStore {
             let reader = try FileHandle(forReadingFrom: partial)
             let prefix = try reader.read(upToCount: 4) ?? Data(); try reader.close()
             try CameraWire.validateHeader(name: transfer.asset.name, data: prefix)
-            for existing in state.originals where existing.digest == digest && existing.size == actual.size && existing.availability != .prepared {
-                if availability(existing) == .available {
-                    try change { state.jobs[j].items[i].sourceID = existing.id; state.jobs[j].items[i].digest = digest; state.jobs[j].items[i].phase = .saved }
-                    try? FileManager.default.removeItem(at: partial)
-                    return existing
-                }
+            let jpegSource = state.jobs[j].incremental.flatMap { plan in
+                plan.jpeg.adjust && transfer.asset.kind == "JPEG" ? CameraJPEGSource(digest: digest, options: plan.jpeg) : nil
             }
-            let source = CameraStoredOriginal(id: UUID(), name: transfer.asset.name, size: actual.size, digest: digest, savedAt: Date())
+            if let existing = state.originals.first(where: { source in
+                guard source.availability != .prepared, source.jpegSource == jpegSource else { return false }
+                return (jpegSource != nil || (source.digest == digest && source.size == actual.size)) && availability(source) == .available
+            }) {
+                try change {
+                    state.jobs[j].items[i].sourceID = existing.id
+                    state.jobs[j].items[i].digest = existing.digest
+                    state.jobs[j].items[i].phase = .saved
+                    state.jobs[j].items[i].reused = true
+                }
+                try? FileManager.default.removeItem(at: partial)
+                return existing
+            }
+            let staged = jpegSource == nil ? partial : adjustedURL(item)
+            defer { if staged != partial { try? FileManager.default.removeItem(at: staged) } }
+            let output: (size: UInt64, digest: String)
+            if let jpegSource {
+                try CameraJPEGProcessing.encode(sourceURL: partial, destinationURL: staged, options: jpegSource.options)
+                output = try Self.hash(staged)
+                guard output.size > 0 else { throw CameraProtocolError.jpegProcessing }
+                let handle = try FileHandle(forUpdating: staged)
+                defer { try? handle.close() }
+                try handle.synchronize()
+            } else { output = actual }
+            let source = CameraStoredOriginal(id: UUID(), name: transfer.asset.name, size: output.size, digest: output.digest,
+                                              savedAt: Date(), jpegSource: jpegSource)
             try change {
                 state.originals.append(source); state.jobs[j].items[i].sourceID = source.id
-                state.jobs[j].items[i].digest = digest; state.jobs[j].items[i].phase = .prepared
+                state.jobs[j].items[i].digest = output.digest; state.jobs[j].items[i].phase = .prepared
             }
             try FileManager.default.createDirectory(at: originalURL(source).deletingLastPathComponent(), withIntermediateDirectories: true)
-            try FileManager.default.moveItem(at: partial, to: originalURL(source))
+            try FileManager.default.moveItem(at: staged, to: originalURL(source))
             syncDirectory(originalURL(source).deletingLastPathComponent())
             syncDirectory(originalsDirectory)
             try change {
                 state.originals[state.originals.count - 1].availability = .available
                 state.jobs[j].items[i].phase = .saved
             }
+            if staged != partial { try? FileManager.default.removeItem(at: partial) }
             return state.originals.last!
         }
     }
@@ -252,7 +301,8 @@ final class CameraOriginalStore {
             state.originals.removeAll { discardSources.contains($0.id) }
             // 仅清理该 Store 命名的未发布文件；最终原件及未知文件不属于垃圾。
             for file in try FileManager.default.contentsOfDirectory(at: partialDirectory, includingPropertiesForKeys: nil) {
-                if file.pathExtension == "partial", UUID(uuidString: file.deletingPathExtension().lastPathComponent) != nil {
+                if ["partial", "jpeg-partial"].contains(file.pathExtension),
+                   UUID(uuidString: file.deletingPathExtension().lastPathComponent) != nil {
                     try FileManager.default.removeItem(at: file)
                 }
             }
