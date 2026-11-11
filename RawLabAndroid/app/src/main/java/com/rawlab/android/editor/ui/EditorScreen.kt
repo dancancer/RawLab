@@ -310,11 +310,14 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     val hdrMode = state.edits.isHDREditing
     val liveHDRMode by rememberUpdatedState(hdrMode)
     val targetAxis = hslTarget.state.axis
-    val targetMode = hslTarget.state.enabled && tool == 14 && (state.draft == null || state.draft.group == AdjustmentGroup.HSL)
+    val hslWorkspace = toolOpen && tool == 14 && state.draft?.group == AdjustmentGroup.HSL
+    val liveHslWorkspace by rememberUpdatedState(hslWorkspace)
+    val targetMode = hslTarget.state.enabled && hslWorkspace
     val canvasTarget = if (targetMode) hslTarget.guarded {
-        liveSourceKey == sourceKey && liveTarget.state.axis == targetAxis && liveHDRMode == hdrMode
+        liveHslWorkspace && liveTarget.state.enabled &&
+            liveSourceKey == sourceKey && liveTarget.state.axis == targetAxis && liveHDRMode == hdrMode
     } else null
-    LaunchedEffect(tool) { if (tool != 14) liveTarget.enabled(false) }
+    LaunchedEffect(hslWorkspace) { if (!hslWorkspace && liveTarget.state.enabled) liveTarget.enabled(false) }
     LaunchedEffect(targetMode) { if (targetMode) view = view.cancelHold() }
     BackHandler(targetMode) { hslTarget.enabled(false) }
     val cancelAdjustment = onCancelAdjustment
@@ -405,7 +408,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         modifier = Modifier.testTag("workspace-histogram"),
                         leadingIcon = { if (workspaceHistogram) Icon(Icons.Outlined.Check, null) },
                         onClick = { workspaceHistogram = !workspaceHistogram; toolMenu = false })
-                    if (tool == 14) DropdownMenuItem(text = { Text(stringResource(R.string.hsl_target)) },
+                    if (hslWorkspace) DropdownMenuItem(text = { Text(stringResource(R.string.hsl_target)) },
                         onClick = { hslTarget.enabled(!hslTarget.state.enabled); toolMenu = false })
                     DropdownMenuItem(text = { Text(stringResource(R.string.adjustment_fine)) },
                         leadingIcon = { if (fine) Icon(Icons.Outlined.Check, null) },

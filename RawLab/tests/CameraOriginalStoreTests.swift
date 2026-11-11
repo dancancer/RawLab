@@ -65,7 +65,33 @@ import CryptoKit
         store = nil
         store = try CameraOriginalStore(directory: root)
         try check(!FileManager.default.fileExists(atPath: interrupted.url.path), "Recovery removes only incomplete partial files")
-        try check(store!.snapshot.jobs.first { $0.id == pending.id }!.items[0].phase == .interrupted, "Unfinished work remains explicitly resumable")
+        let restored = store!.snapshot.jobs.first { $0.id == pending.id }!
+        try check(restored.items[0].phase == .interrupted, "Unfinished work remains explicitly resumable")
+        let matching = try restored.pendingAssets(device: identity, connectionKey: "SSID:camera",
+            assets: [asset], allowAlternateConnection: true)
+        try check(matching.count == 1 && matching[0].1 == asset, "Import resumes across connections with matching serial and file")
+        let otherCamera = CameraDeviceIdentity(manufacturer: identity.manufacturer, model: identity.model,
+            firmware: identity.firmware, serial: "different", operations: identity.operations)
+        let missingSerial = CameraDeviceIdentity(manufacturer: identity.manufacturer, model: identity.model,
+            firmware: identity.firmware, serial: "", operations: identity.operations)
+        let historical = try store!.enqueue(device: missingSerial, connectionKey: "fixture", assets: [snapshot])
+        let reusedHandle = CameraRemoteAsset(owner: asset.owner, snapshot: CameraAssetSnapshot(content: snapshot.content,
+            file: snapshot.file, storage: snapshot.storage, format: snapshot.format, name: snapshot.name,
+            size: snapshot.size, created: snapshot.created, modified: "changed"))
+        for (job, camera, card, allowAlternate) in [
+            (restored, otherCamera, [asset], true), (restored, identity, [], true),
+            (restored, identity, [reusedHandle], true), (restored, identity, [asset, asset], true),
+            (historical, missingSerial, [asset], true), (restored, identity, [asset], false)
+        ] {
+            var rejected = false
+            do {
+                _ = try job.pendingAssets(device: camera, connectionKey: "SSID:camera",
+                    assets: card, allowAlternateConnection: allowAlternate)
+            } catch CameraProtocolError.invalid { rejected = true }
+            try check(rejected, "Resume rejects unverifiable camera, changed or ambiguous file, and alternate tether connection")
+        }
+        try check(try historical.pendingAssets(device: missingSerial, connectionKey: "fixture",
+            assets: [asset], allowAlternateConnection: true).count == 1, "Serial-less historical import can use its original connection")
         try Data([0xff, 0xd8, 0xff, 9, 9, 9, 9]).write(to: store!.originalURL(saved))
         do { _ = try store!.verifiedURL(saved.id); throw CameraProtocolError.invalid("Changed source must be rejected") }
         catch CameraProtocolError.invalid(let message) where message == "Changed source must be rejected" { throw CameraProtocolError.invalid(message) }

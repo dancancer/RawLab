@@ -157,6 +157,16 @@ import ImageIO
             do { try preview.exportJPEG(to:directory.appendingPathComponent("proxy.jpg")); fatalError("preview exported as FINAL") }
             catch let error as HDRNativeError { require(error.reason==UInt32(SONY2FUJI_HDR_REASON_PREVIEW_SOURCE),"wrong proxy diagnostic") }
         }
+        if let path = ProcessInfo.processInfo.environment["RAWLAB_TEST_SONY_ASPECT_RAW"] {
+            let url = URL(fileURLWithPath: path)
+            guard let info = try HDRSourceInfo.probeCameraRAW(url) else { fatalError("Sony RAW fixture was not recognized") }
+            require(info.native.width == 7008 && info.native.height == 4672,
+                    "Swift Sony RAW probe did not select the v3 canvas")
+            let preview = try HDRImage.decode(url, info: info, intent: SONY2FUJI_INTENT_PREVIEW, longEdge: 128)
+            require(preview.nativeWidth == 7008 && preview.nativeHeight == 4672,
+                    "Swift Sony RAW decode without a caller session did not select the v3 canvas")
+            print("PASS Swift Sony RAW preview uses the 7008x4672 v3 canvas")
+        }
         require(HDRImage.liveAllocations.count==0 && HDRImage.liveAllocations.bytes==0,"HDR owners survived their scope")
         for path in CommandLine.arguments.dropFirst(3) {
             try autoreleasepool {

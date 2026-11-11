@@ -331,7 +331,8 @@ class BatchExportModel(
                 val settings = prepared?.settings ?: snapshot.settingsFor(target)
                 if (settings.isHDREditing) {
                     if (gpuMode == NativeProcessor.FORCE) throw com.rawlab.android.engine.HDRProcessingException(2,13,6)
-                    val info = requireNotNull(com.rawlab.android.engine.NativeHDRBridge.probeSource(target.sourceFile, target.inputKind == PhotoInputKind.RAW))
+                    val info = requireNotNull(com.rawlab.android.engine.NativeHDRBridge.probeSource(
+                        target.sourceFile, target.inputKind == PhotoInputKind.RAW, settings.processing.version))
                     if (info.isProRAW) settings.requireProRAWDecoder()
                     val decoded = if (info.isCameraRaw) it.decodeHDRCamera(target.sourceFile, info, 1280,
                         camera = requireNotNull(settings.hdr).cameraSettings, profileDirectory = storage.hdrCameraProfileDirectory)

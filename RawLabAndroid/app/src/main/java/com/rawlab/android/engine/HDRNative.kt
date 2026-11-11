@@ -14,11 +14,19 @@ internal object NativeHDRBridge {
     fun probe(file: File): HDRSourceInfo? = nativeProbe(file.absolutePath)?.let(HDRSourceInfo::decode)
     fun probeLook(file: File): String = nativeProbeLook(file.absolutePath)
     fun probeCameraProfile(file: File): String = nativeProbeCameraProfile(file.absolutePath)
-    fun probeCameraRaw(file: File): HDRSourceInfo? = nativeProbeCameraRaw(file.absolutePath)?.let {
-        HDRSourceInfo.decode(it).copy(cameraStamp = HDRSourceInfo.CameraStamp(file.length(), file.lastModified()))
+    fun probeCameraRaw(file: File, processingVersion: Int = 3): HDRSourceInfo? = nativeProbeCameraRaw(file.absolutePath, processingVersion)?.let {
+        val info = HDRSourceInfo.decode(it)
+        info.copy(cameraStamp = HDRSourceInfo.CameraStamp(file.length(), file.lastModified()),
+            cameraProcessingVersion = if (info.isProRAW) 3 else processingVersion)
     }
-    fun probeSource(file: File, raw: Boolean): HDRSourceInfo? = if (raw) probeCameraRaw(file)
+    fun probeSource(file: File, raw: Boolean, processingVersion: Int = 3): HDRSourceInfo? = if (raw) probeCameraRaw(file, processingVersion)
         else if (HDRSourceInfo.mayContainGainMap(file)) probe(file) else null
+    fun cameraFraming(file: File, info: HDRSourceInfo, processingVersion: Int): HDRSourceInfo {
+        if (!info.isCameraRaw || info.isProRAW || info.cameraProcessingVersion == processingVersion) return info
+        val result = requireNotNull(probeCameraRaw(file, processingVersion)) { "Camera RAW is unavailable" }
+        require(!result.isProRAW && (info.cameraStamp == null || result.cameraStamp == info.cameraStamp)) { "HDR source changed" }
+        return result
+    }
     fun geometrySize(info: HDRSourceInfo, geometry: GeometrySettings): IntArray = nativeGeometry(
         if (info.orientation >= 5) info.height else info.width,
         if (info.orientation >= 5) info.width else info.height,
@@ -49,7 +57,8 @@ internal object NativeHDRBridge {
         val handle = nativeDecodeCameraRaw(processor, file.absolutePath, edge, cancellationGeneration,
             info.isProRAW, requireNotNull(file.parentFile).absolutePath, camera.customWhiteBalance,
             camera.temperature, camera.tint, camera.sensorExposure, camera.fbddLevel, flags, camera.lensProfile,
-            camera.cameraProfile?.requireAsset(profileDirectory)?.absolutePath, camera.cameraProfile?.sha256)
+            camera.cameraProfile?.requireAsset(profileDirectory)?.absolutePath, camera.cameraProfile?.sha256,
+            info.cameraProcessingVersion)
         if (handle == 0L) error("Camera RAW HDR decode returned an empty owner")
         try {
             info.cameraStamp?.let { expected ->
@@ -118,7 +127,7 @@ internal object NativeHDRBridge {
     @JvmStatic
     private external fun nativeProbeCameraProfile(path: String): String
     @JvmStatic
-    private external fun nativeProbeCameraRaw(path: String): ByteArray?
+    private external fun nativeProbeCameraRaw(path: String, processingVersion: Int): ByteArray?
     @JvmStatic
     private external fun nativeGeometry(width: Int, height: Int, values: FloatArray): IntArray
     @JvmStatic
@@ -126,7 +135,8 @@ internal object NativeHDRBridge {
     @JvmStatic
     private external fun nativeDecodeCameraRaw(session: Long, path: String, longEdge: Int, cancellationGeneration: Long,
         proRAW: Boolean, temporaryRoot: String, customWhiteBalance: Boolean, temperature: Float, tint: Float,
-        sensorExposure: Boolean, fbddLevel: Int, lensFlags: Int, lensProfile: String?, profilePath: String?, profileDigest: String?): Long
+        sensorExposure: Boolean, fbddLevel: Int, lensFlags: Int, lensProfile: String?, profilePath: String?, profileDigest: String?,
+        processingVersion: Int): Long
     @JvmStatic
     private external fun nativeExportProRAW(session: Long, path: String, values: FloatArray, curveMode: Int, curvePoints: DoubleArray?, channelModes: IntArray?, channelPoints: Array<DoubleArray>?, longEdge: Int,
         keepHDR: Boolean, fingerprint: ByteArray, temporaryRoot: String, output: String, cancellationGeneration: Long,

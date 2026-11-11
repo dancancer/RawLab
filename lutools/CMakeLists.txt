@@ -915,6 +915,12 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         add_test(NAME raw_active_area_metadata COMMAND raw_active_area_tests)
         if(EXISTS "${SONY2FUJI_TEST_SONY_ASPECT_RAW}")
             add_test(NAME raw_active_area_sony COMMAND raw_active_area_tests "${SONY2FUJI_TEST_SONY_ASPECT_RAW}")
+            if(APPLE AND BUILD_CLI AND Python3_Interpreter_FOUND)
+                add_test(NAME raw_active_area_sony_cli COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hdr_agent.py"
+                    --cli $<TARGET_FILE:sony2fuji_cli> --fixture $<TARGET_FILE:hdr_image_tests>
+                    --sony-raw "${SONY2FUJI_TEST_SONY_ASPECT_RAW}" HDRAgent.test_v14_sony_raw_retains_crop)
+            endif()
         endif()
     endif()
     add_executable(tone_curve_tests tests/tone_curve_tests.cpp src/core/photo_tone_curve.cpp)

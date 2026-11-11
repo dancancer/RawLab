@@ -129,7 +129,8 @@ std::string AISession::renderKey(const std::string& path, const RAWProcessOption
         throw Unsupported(lastError);
     }
     ensurePackage();
-    const auto rawKey = rawCacheKeyFromIdentity(sourceIdentity.empty() ? sourceIdentityKey(path) : sourceIdentity, runtimeDigest_, static_cast<int>(backend_));
+    const auto rawKey = rawCacheKeyFromIdentity(sourceIdentity.empty() ? sourceIdentityKey(path) : sourceIdentity,
+        runtimeDigest_, static_cast<int>(backend_), options.legacySonyCrop);
     return rgbCacheKey(rawKey,options) + ":" + sceneRGBCacheKey(rawKey,options);
 }
 
@@ -139,7 +140,7 @@ const PreparedDenoise& AISession::result(const std::string& path, const RAWProce
     for (int attempt = 0; attempt < 2; ++attempt) {
         const auto key = renderKey(path, options, identity);
         if (loadedKey_ == key) return loaded_;
-        const auto rawKey = rawCacheKeyFromIdentity(identity, runtimeDigest_, static_cast<int>(backend_));
+        const auto rawKey = rawCacheKeyFromIdentity(identity, runtimeDigest_, static_cast<int>(backend_), options.legacySonyCrop);
         DenoiseCache cache(cacheDirectory_);
         std::string rawProducer, rgbProducer;
         // 只有 prepare 发布完整结果，渲染与导出不触发模型推理。
@@ -185,15 +186,15 @@ PrepareReport AISession::prepare(const std::string& path, const RAWProcessOption
     notify(progress, Phase::Loading, 0, 1);
     ensurePackage();
     const AIExecution execution{selectedDevice_ ? &*selectedDevice_ : nullptr,&diagnostics_};
-    const auto rawKey = rawCacheKey(path, runtimeDigest_, static_cast<int>(backend_));
+    const auto rawKey = rawCacheKey(path, runtimeDigest_, static_cast<int>(backend_), options.legacySonyCrop);
     const auto rgbKey = rgbCacheKey(rawKey, options);
     const auto sceneKey = sceneRGBCacheKey(rawKey,options);
     const auto modelStamp = stamp_;
     auto validateSource = [&] {
-        if (rawCacheKey(path, runtimeDigest_, static_cast<int>(backend_)) != rawKey || packageStamp() != modelStamp)
+        if (rawCacheKey(path, runtimeDigest_, static_cast<int>(backend_), options.legacySonyCrop) != rawKey || packageStamp() != modelStamp)
             throw std::runtime_error("RAW or model changed during AI processing; please retry");
     };
-    RAWProcessor processor;
+    RAWProcessor processor(options.legacySonyCrop);
     const auto loadStatus = processor.loadFile(path);
     if (loadStatus != ErrorCode::Success) throw DecodeError(loadStatus,"Cannot decode RAW for AI denoising");
     RAWBayerSource source;
@@ -277,7 +278,7 @@ PrepareReport AISession::prepare(const std::string& path, const RAWProcessOption
     return report;
 }
 
-std::string AISession::hdrBayerKey(const std::string& path, const std::string& sourceIdentity) {
+std::string AISession::hdrBayerKey(const std::string& path, bool legacySonyCrop, const std::string& sourceIdentity) {
 #ifdef _WIN32
     const bool supported = backend_ == Backend::Auto || backend_ == Backend::DirectML;
 #else
@@ -286,13 +287,13 @@ std::string AISession::hdrBayerKey(const std::string& path, const std::string& s
     if (!supported) throw Unsupported("HDR Bayer AI requires the platform hardware GPU");
     ensurePackage();
     const auto rawKey = rawCacheKeyFromIdentity(sourceIdentity.empty() ? sourceIdentityKey(path, checkProcessingCancellation) : sourceIdentity,
-                                                runtimeDigest_, static_cast<int>(backend_));
+                                                runtimeDigest_, static_cast<int>(backend_), legacySonyCrop);
     const auto hdrKey = "rawlab-hdr-bayer-v1:" + rawKey;
     return sha256Bytes(hdrKey.data(), hdrKey.size());
 }
 
 void AISession::prepareHDRBayer(const std::string& path, const std::string& identity,
-                                const RAWBayerSource& source, const JobProgress& callback) {
+                                const RAWBayerSource& source, bool legacySonyCrop, const JobProgress& callback) {
     lastBackend.clear();
     selectedDevice_.reset();
     runtimeDigest_.clear();
@@ -301,7 +302,7 @@ void AISession::prepareHDRBayer(const std::string& path, const std::string& iden
         diagnostics_.progress(static_cast<int>(phase), done, total);
         return !callback || callback(phase, done, total);
     };
-    const auto key = hdrBayerKey(path, identity);
+    const auto key = hdrBayerKey(path, legacySonyCrop, identity);
     const auto modelStamp = stamp_;
     auto validateIdentity = [&] {
         if (sourceIdentityKey(path, checkProcessingCancellation) != identity || packageStamp() != modelStamp)

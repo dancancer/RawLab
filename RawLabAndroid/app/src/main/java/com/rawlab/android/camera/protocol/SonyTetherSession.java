@@ -80,9 +80,9 @@ public final class SonyTetherSession implements Closeable {
         Reader d = new Reader(call(0x1001,new int[0],null,1 << 20,true));
         d.u16(); long vendor = d.u32(); d.u16(); d.ptpString(); d.u16(); operations = d.u16Array();
         for (int i=0;i<4;i++) d.u16Array();
-        String maker = d.ptpString(), model = d.ptpString(), firmware = d.ptpString(); d.ptpString();
+        String maker = d.ptpString(), model = d.ptpString(), firmware = d.ptpString(), serial = d.ptpString();
         if(vendor!=17 || !(maker.equals("Sony") || maker.equals("Sony Corporation"))) throw new IOException("Not a Sony PTP device");
-        return new Device(maker,model,firmware,operations);
+        return new Device(maker,model,firmware,serial,operations);
     }
 
     public void connectRemote() throws IOException { connectRemote(Profile.GENERIC); }

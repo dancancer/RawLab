@@ -1,7 +1,11 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include <chrono>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 static void require(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
@@ -42,6 +46,19 @@ int main() {
             "zero-edit v2 safely migrates to v3");
         require(result.rgb_rmse == 0 && render(session, request) == original,
             "probe does not change the source session or its pixels");
+        const auto suffix = std::chrono::steady_clock::now().time_since_epoch().count();
+        const auto lookPath = std::filesystem::temp_directory_path() /
+            std::filesystem::u8path(u8"\u8fc1\u79fb-" + std::to_string(suffix) + ".cube");
+        struct Cleanup {
+            std::filesystem::path path;
+            ~Cleanup() { std::error_code ignored; std::filesystem::remove(path, ignored); }
+        } cleanup{lookPath};
+        require(bool(std::ofstream(lookPath) << "zero-strength look"), "write UTF-8 look fixture");
+        const auto lookUtf8 = lookPath.u8string();
+        request.lut_path = lookUtf8.c_str();
+        require(sony2fuji_session_migrate_processing(session, &request, &result) == SONY2FUJI_STATUS_OK &&
+            result.disposition == SONY2FUJI_MIGRATION_ACCEPTED, "migration stamps the UTF-8 look path");
+        request.lut_path = nullptr;
         request.contrast = 0;
         const auto flattened = render(session, request);
         const auto flattenedStatus = sony2fuji_session_migrate_processing(session, &request, &result);

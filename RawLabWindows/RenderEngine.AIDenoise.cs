@@ -109,6 +109,7 @@ internal sealed partial class RenderEngine
             aiNativeOperationStarted=true;
             if (settings.IsHDREditing)
             {
+                SetProcessing(settings.Processing);
                 var diagnostic=HDRNative.Diagnostic();
                 status=Native.sony2fuji_hdr_prepare_camera_raw_ai(session,path,callback,IntPtr.Zero,ref diagnostic);
             }
@@ -125,6 +126,7 @@ internal sealed partial class RenderEngine
 
     private HDRSourceLease AcquireHDRSource(string path,HDRSourceInfo info,bool final,uint edge,Adjustments settings)
     {
+        if (info.IsCameraRaw && !info.IsProRAW) SetProcessing(settings.Processing);
         var camera = settings.IsHDREditing ? settings.HDR!.CameraDevelopment : null;
         if (!settings.IsHDREditing || !settings.HDRCameraAIEnabled)
             return HDRSourceCache.Acquire(path,info,final,edge,session,camera,lensDatabase);

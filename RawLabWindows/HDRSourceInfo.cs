@@ -33,12 +33,13 @@ public sealed record HDRSourceInfo(
     public bool IsProRAW => Container == HDRNative.ContainerProRAW;
     public bool IsCameraRaw => Container is HDRNative.ContainerCameraRaw or HDRNative.ContainerProRAW;
     internal bool SupportsBayerDevelopment { get; init; }
+    internal int CameraProcessingVersion { get; init; } = 3;
 
     // Camera RAW and ProRAW probes do not hash or unpack the source. Keep the
     // file stamp in the preview cache key until decode returns the SHA-256.
     internal HDRFileStamp? CameraStamp { get; init; }
     internal string CacheIdentity => IsCameraRaw
-        ? $"camera:{CameraStamp?.Length}:{CameraStamp?.Modified}:{CameraStamp?.Created}"
+        ? $"camera:{CameraStamp?.Length}:{CameraStamp?.Modified}:{CameraStamp?.Created}:{CameraProcessingVersion}"
         : Convert.ToHexString(SourceSha256 ?? []);
 }
 

@@ -38,7 +38,8 @@ internal class BatchOutputPublisher(
         val format = job.formatFor(target)
         val temporary = File.createTempFile("render-", format.suffix, context.filesDir)
         try {
-            val hdrInfo = NativeHDRBridge.probeSource(target.sourceFile, target.inputKind == com.rawlab.android.format.PhotoInputKind.RAW)
+            val hdrInfo = NativeHDRBridge.probeSource(target.sourceFile,
+                target.inputKind == com.rawlab.android.format.PhotoInputKind.RAW, settings.processing.version)
             if (settings.isHDREditing) {
                 requireNotNull(hdrInfo) { "HDR editing requires an HDR source" }
                 val edge = job.longEdgeFor(target) ?: 0

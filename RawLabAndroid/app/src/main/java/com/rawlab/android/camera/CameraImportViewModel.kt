@@ -39,6 +39,7 @@ internal data class CameraImportState(
     val selected: Set<String> = emptySet(),
     val connected: Boolean = false,
     val cameraId: String? = null,
+    val hardwareIdentity: CameraHardwareIdentity? = null,
     val message: Int? = null,
     val jobs: List<CameraImportJob> = emptyList(),
     val job: CameraImportJob? = null,
@@ -54,6 +55,9 @@ internal data class CameraImportState(
 )
 
 internal enum class CameraMode { IMPORT, TETHER }
+
+private class CameraImportSourceChanged : IOException("Camera originals have changed")
+private fun SonyMobileSession.Asset.photo() = CameraPhoto(key(), name, size, created, resumeIdentity())
 
 internal class CameraImportViewModel(application: Application) : AndroidViewModel(application), SonyCameraConnection.Listener {
     private val mutable = MutableStateFlow(CameraImportState(preparing = true))
@@ -204,15 +208,18 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
                 device = info
                 this@CameraImportViewModel.cameraId = cameraId
                 assets = found.associateBy { it.key() }
-                val photos = found.map { CameraPhoto(it.key(), it.name, it.size, it.created) }
-                    .sortedWith(compareByDescending<CameraPhoto> { it.created }.thenByDescending { it.name })
+                val photos = sortedPhotos(found)
                 mutable.update { it.copy(stage = null, connected = true, cameraId = cameraId, photos = photos,
+                    hardwareIdentity = CameraHardwareIdentity.read(info),
                     model = SonyCameraModel.fromIdentity(info.model, info.firmware),
                     selected = if (it.cameraId == cameraId) it.selected.intersect(assets.keys) else emptySet(), message = null) }
             }.onFailure { onFailure(if (it is CameraMediaSession.UnsupportedCameraException)
                 SonyCameraConnection.Failure.UNSUPPORTED else SonyCameraConnection.Failure.DISCONNECTED) }
         }
     }
+    private fun sortedPhotos(found: Collection<SonyMobileSession.Asset>) = found.map { it.photo() }
+        .sortedWith(compareByDescending<CameraPhoto> { it.created }.thenByDescending { it.name })
+
     override fun onFailure(reason: SonyCameraConnection.Failure) {
         val message = when (reason) {
             SonyCameraConnection.Failure.UNSUPPORTED -> R.string.camera_supported
@@ -237,7 +244,7 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
         val oldTransfer = transfer
         val oldPreparation = importPreparation
         val oldConnection = connectionWork
-        mutable.update { it.copy(stage = null, connected = false, closing = true) }
+        mutable.update { it.copy(stage = null, connected = false, closing = true, hardwareIdentity = null) }
         closingWork = viewModelScope.launch {
             prior?.join()
             oldTransfer?.join()
@@ -260,12 +267,14 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
         val snapshot = mutable.value
         if (snapshot.mode != CameraMode.IMPORT || snapshot.closing || !foreground || !snapshot.connected || snapshot.transferring || snapshot.preparing || snapshot.selected.isEmpty()) return
         val selectedCamera = cameraId
+        val hardwareIdentity = device?.let(CameraHardwareIdentity::read)
         val current = generation
         mutable.update { it.copy(preparing = true, message = null) }
         importPreparation = viewModelScope.launch {
             try {
                 val result = withContext(Dispatchers.IO) { storeLock.withLock { runCatching {
-                    store.create(selectedCamera, snapshot.photos.filter { it.key in snapshot.selected }, snapshot.destination)
+                    store.create(selectedCamera, snapshot.photos.filter { it.key in snapshot.selected }, snapshot.destination,
+                        hardwareIdentity = hardwareIdentity)
                 } } }
                 result.onSuccess { job ->
                     if (!foreground || current != generation) {
@@ -282,9 +291,9 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
             }
         }
     }
-    fun resume() { mutable.value.job?.let(::runQueue) }
+    fun resume() { mutable.value.job?.let { runQueue(it, refreshCard = true) } }
 
-    private fun runQueue(job: CameraImportJob) {
+    private fun runQueue(job: CameraImportJob, refreshCard: Boolean = false) {
         if (mutable.value.mode != CameraMode.IMPORT || mutable.value.closing || !foreground || mutable.value.transferring || job.status == CameraJobStatus.COMPLETE) return
         val opened = session
         val info = device
@@ -293,16 +302,28 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
             mutable.update { it.copy(message = R.string.camera_disconnected) }
             return
         }
-        val fresh = assets
-        if (job.cameraId != cameraId || job.items.any { it.saved == null && it.photo.key !in fresh }) {
+        if (!job.matchesCamera(cameraId, CameraHardwareIdentity.read(info))) {
             mutable.update { it.copy(message = R.string.camera_source_changed) }; return
         }
+        val listed = assets
         val allowed = CameraTransferPermit(); permit = allowed
         mutable.update { it.copy(transferring = true, job = job, message = null, currentBytes = 0) }
         transfer = viewModelScope.launch {
             var latest = job.copy(status = CameraJobStatus.ACTIVE)
             val result = withContext(Dispatchers.IO) { storeLock.withLock {
                 runCatching { sessionLock.withLock {
+                    allowed.check()
+                    val fresh = if (refreshCard) {
+                        val current = opened.listPhotos(info).associateBy { it.key() }
+                        withContext(Dispatchers.Main.immediate) {
+                            allowed.check()
+                            assets = current
+                            previews.evictAll()
+                            mutable.update { it.copy(photos = sortedPhotos(current.values), selected = it.selected.intersect(current.keys)) }
+                        }
+                        current
+                    } else listed
+                    if (!job.matchesPendingPhotos(fresh.mapValues { it.value.photo() })) throw CameraImportSourceChanged()
                     latest = receiveCameraJob(store, latest, allowed, { photo, output ->
                         val asset = fresh.getValue(photo.key)
                         mutable.update { it.copy(currentKey = photo.key, currentBytes = 0) }
@@ -320,9 +341,11 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
             } }
             updateJob(latest)
             permit = null
+            val sourceChanged = result.exceptionOrNull() is CameraImportSourceChanged
             mutable.update { it.copy(transferring = false, currentKey = null, currentBytes = 0,
-                message = if (result.isFailure) it.message ?: R.string.camera_transfer_failed else null) }
-            if (result.isFailure) disconnect()
+                message = if (sourceChanged) R.string.camera_source_changed
+                    else if (result.isFailure) it.message ?: R.string.camera_transfer_failed else null) }
+            if (result.isFailure && !sourceChanged) disconnect()
         }
     }
 

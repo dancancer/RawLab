@@ -181,7 +181,7 @@ extension RawEditorViewModel {
                         stage = "probeHDR"
                         let hdrInfo = sourceKind == .raster
                             ? try HDRSourceInfo.probe(localURL)
-                            : try HDRSourceInfo.probeRAW(localURL)
+                            : try HDRSourceInfo.probeRAW(localURL, processing: restoredSettings.processing.core)
                         let proRAW = hdrInfo?.proRAW
                         if proRAW != nil, restoredSettings.isHDREditing {
                             try ProRAWSource.validatedDecodeVersion(restoredSettings.proRAWDecodeVersion)
@@ -195,9 +195,11 @@ extension RawEditorViewModel {
                         let restoredSettings=restoredSettings
                         let missingLook = !self.isLookAvailable(for: restoredSettings)
                         if let hdr=restoredSettings.hdr,restoredSettings.isHDREditing {
-                            let edited=try self.processor.processHDR(url:localURL,settings:hdr.previewSettings(),previewLongEdge:Int(self.previewMaxDimension))
+                            let edited=try self.processor.processHDR(url:localURL,settings:hdr.previewSettings(),
+                                previewLongEdge:Int(self.previewMaxDimension), processing:restoredSettings.processing)
                             let neutral = hdr.neutralGeometrySettings
-                            let original=try self.processor.processHDR(url:localURL,settings:neutral,previewLongEdge:Int(self.previewMaxDimension))
+                            let original=try self.processor.processHDR(url:localURL,settings:neutral,
+                                previewLongEdge:Int(self.previewMaxDimension), processing:restoredSettings.processing)
                             let presentation=try HDRPresentation(edited), reference=try HDRPresentation(original)
                             self.resultDelivery {
                                 guard self.activeImportRevision==importRevision else { return }

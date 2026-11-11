@@ -26,6 +26,8 @@ int main(int argc, char** argv) {
         const auto raw = root / "source.raw";
         { std::ofstream(raw) << "immutable RAW fixture"; }
         const auto key = rawCacheKey(raw.string(), std::string(64, 'a'), 0);
+        require(rawCacheKey(raw.string(), std::string(64, 'a'), 0, true) != key,
+                "different Sony crop references shared the same AI cache key");
         // 固定旧版身份，证明升级估计器后不能再读取之前误估噪声生成的三个缓存。
         const auto legacyIdentity = std::string("{\"backend\":0,\"decoder\":\"rawlab-bayer-v2\",\"model\":\"")+
             std::string(64,'a')+"\",\"noise\":\"rawlab-bayer-noise-v2:haar-mad-v1:sony-ilce-7cm2-20261022-bce08d93bc36\","+

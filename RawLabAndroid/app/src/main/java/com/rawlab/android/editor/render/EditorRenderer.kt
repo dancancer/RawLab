@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.system.Os
 import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.engine.NativeHDRBridge
+import com.rawlab.android.photo.HDRSourceInfo
 import com.rawlab.android.engine.NativeHDRImage
 import com.rawlab.android.engine.HDRDisplayMath
 import com.rawlab.android.engine.requireAsset
@@ -56,7 +57,7 @@ internal class EditorRenderer(
     private val heapLimit = Runtime.getRuntime().maxMemory()
 
     private data class HDRReferenceKey(val source: FileStamp, val photo: ImportedPhoto, val settings: HDRSettings,
-        val edge: Int, val decodeVersion: Int?)
+        val edge: Int, val decodeVersion: Int?, val cameraProcessingVersion: Int)
     private data class HDRReference(val frame: HDRPreviewFrame, val bitmap: Bitmap)
     private var hdrReference: Pair<HDRReferenceKey, HDRReference>? = null
     private var hdrSource: com.rawlab.android.engine.NativeHDRImage? = null
@@ -130,8 +131,9 @@ internal class EditorRenderer(
                     val native = engine()
                     native.setGpuMode(NativeProcessor.CPU)
                     val settings = requireNotNull(preview.edits.hdr).copy(geometry = preview.edits.geometry)
-                    val source = cachedHDRSource(preview.photo, generation, settings.cameraSettings)
-                    native.sampleHDRHsl(source, settings, hdrPreviewEdge(preview), work.revision, work.x, work.y, generation, storage.hdrLookDirectory)
+                    val info = hdrSourceInfo(preview.photo, preview.edits)
+                    val source = cachedHDRSource(preview.photo, info, generation, settings.cameraSettings)
+                    native.sampleHDRHsl(source, settings, hdrPreviewEdge(preview, info), work.revision, work.x, work.y, generation, storage.hdrLookDirectory)
                 } else engine().sampleHsl(preview.photo.file, storage.lookPath(preview.edits), preview.edits,
                     preview.edge, preview.interactive, preview.photo.inputKind, work.revision, work.x, work.y, generation)
             }.getOrElse { HslTargetSample.unavailable(work.revision, HslTargetAvailability.FAILED) }
@@ -154,11 +156,11 @@ internal class EditorRenderer(
             val exposure = if (work.edits.isHDREditing) {
                 if (work.gpuMode == NativeProcessor.FORCE)
                     throw com.rawlab.android.engine.HDRProcessingException(2,13,6)
-                val info = checkNotNull(work.photo.hdrSource)
+                val info = hdrSourceInfo(work.photo, work.edits)
                 if (info.isProRAW) work.edits.requireProRAWDecoder()
                 native.setGpuMode(NativeProcessor.CPU)
                 val hdr = checkNotNull(work.edits.hdr)
-                native.estimateHDRExposure(cachedHDRSource(work.photo, generation, hdr.cameraSettings), hdr, generation)
+                native.estimateHDRExposure(cachedHDRSource(work.photo, info, generation, hdr.cameraSettings), hdr, generation)
             } else native.autoExposure(work.photo.file, work.edits, work.photo.inputKind)
             WorkResult.AutoExposure(work, exposure)
         }
@@ -243,16 +245,26 @@ internal class EditorRenderer(
             dimensions.first, dimensions.second, originalAspect, neutral.histogram, film.histogram)
     }
 
-    private fun cachedHDRSource(photo: ImportedPhoto, generation: Long,
-        camera: HDRCameraDevelopmentSettings = HDRCameraDevelopmentSettings()): NativeHDRImage {
+    private fun hdrSourceInfo(photo: ImportedPhoto, edits: EditSettings): HDRSourceInfo {
         val info = checkNotNull(photo.hdrSource)
+        val version = edits.processing.version
+        val cached = hdrSource?.sourceInfo?.takeIf {
+            info.isCameraRaw && hdrSourceKey?.first == photo.file.canonicalPath &&
+                it.cameraStamp == info.cameraStamp && it.cameraProcessingVersion == version
+        }
+        return cached ?: NativeHDRBridge.cameraFraming(photo.file, info, version)
+    }
+
+    private fun cachedHDRSource(photo: ImportedPhoto, info: HDRSourceInfo, generation: Long,
+        camera: HDRCameraDevelopmentSettings = HDRCameraDevelopmentSettings()): NativeHDRImage {
         require(camera.isDefault || info.isCameraRaw && !info.isProRAW)
         camera.cameraProfile?.requireAsset(storage.hdrCameraProfileDirectory)
         val file = photo.file
         val key = Triple(file.canonicalPath, file.length(), file.lastModified())
         if (info.isCameraRaw) {
             val development = camera.takeUnless { it.isDefault }
-            val sameSource = hdrSourceKey == key && hdrSource?.sourceInfo?.cameraStamp == info.cameraStamp
+            val sameSource = hdrSourceKey == key && hdrSource?.sourceInfo?.cameraStamp == info.cameraStamp &&
+                hdrSource?.sourceInfo?.cameraProcessingVersion == info.cameraProcessingVersion
             if (!sameSource || hdrSourceCamera != development) {
                 releaseHDRSource(clearReference = !sameSource)
                 val database = if (camera.lensActive) storage.lensDatabase() else null
@@ -273,31 +285,33 @@ internal class EditorRenderer(
         return checkNotNull(hdrSource)
     }
 
-    private fun hdrPreviewEdge(work: Work.Preview): Int {
-        val canvas = NativeHDRBridge.geometrySize(checkNotNull(work.photo.hdrSource), work.edits.geometry)
+    private fun hdrPreviewEdge(work: Work.Preview, info: HDRSourceInfo): Int {
+        val canvas = NativeHDRBridge.geometrySize(info, work.edits.geometry)
         return com.rawlab.android.engine.HDRPreviewBudget.edge(canvas[0], canvas[1], work.edge.coerceIn(1, 1600))
     }
 
     private fun performHDR(work: Work.Preview, stamp: FileStamp?, generation: Long): PreviewPair {
         if (work.gpuMode == NativeProcessor.FORCE)
             throw com.rawlab.android.engine.HDRProcessingException(2,13,6)
-        val info = checkNotNull(work.photo.hdrSource)
+        val info = hdrSourceInfo(work.photo, work.edits)
         if (info.isProRAW) work.edits.requireProRAWDecoder()
         val native = engine()
         native.setGpuMode(NativeProcessor.CPU)
         val geometry = work.edits.geometry
-        val edge = hdrPreviewEdge(work)
+        val edge = hdrPreviewEdge(work, info)
         val resultSettings = (work.edits.hdr ?: HDRSettings(mode = com.rawlab.android.settings.HDRMode.SDR)).copy(geometry = geometry)
         val neutralSettings = resultSettings.neutralGeometrySettings
-        val referenceKey = stamp?.let { HDRReferenceKey(it, work.photo, neutralSettings, edge, work.edits.proRAWDecodeVersion) }
+        val referenceKey = stamp?.let {
+            HDRReferenceKey(it, work.photo, neutralSettings, edge, work.edits.proRAWDecodeVersion, info.cameraProcessingVersion)
+        }
         val reference = hdrReference?.takeIf { it.first == referenceKey }?.second ?: run {
-            val source = cachedHDRSource(work.photo, generation, neutralSettings.cameraSettings)
+            val source = cachedHDRSource(work.photo, info, generation, neutralSettings.cameraSettings)
             native.renderHDR(source, neutralSettings, edge, generation).use { neutral ->
                 val frame = neutral.snapshot()
                 HDRReference(frame, sdrBitmap(frame)).also { hdrReference = referenceKey?.let { key -> key to it } }
             }
         }
-        val source = cachedHDRSource(work.photo, generation, resultSettings.cameraSettings)
+        val source = cachedHDRSource(work.photo, info, generation, resultSettings.cameraSettings)
         native.renderHDR(source, resultSettings, edge, generation, storage.hdrLookDirectory).use { result ->
             val resultFrame = result.snapshot()
             val dimensions = comparisonDimensions(resultFrame.nativeWidth, resultFrame.nativeHeight)
@@ -312,7 +326,8 @@ internal class EditorRenderer(
     private fun performCameraHDRPreflight(work: Work.CameraHDRPreflight, generation: Long): WorkResult {
         if (work.gpuMode == NativeProcessor.FORCE)
             throw com.rawlab.android.engine.HDRProcessingException(2,13,6)
-        val info = checkNotNull(work.photo.hdrSource?.takeIf { it.isCameraRaw })
+        val info = hdrSourceInfo(work.photo, work.edits)
+        require(info.isCameraRaw)
         if (info.isProRAW) work.edits.requireProRAWDecoder()
         val native = engine()
         native.setGpuMode(NativeProcessor.CPU)
@@ -330,7 +345,7 @@ internal class EditorRenderer(
         releaseDecodedRaster()
         if (work.gpuMode == NativeProcessor.FORCE)
             throw com.rawlab.android.engine.HDRProcessingException(2,13,6)
-        val info = checkNotNull(work.photo.hdrSource)
+        val info = hdrSourceInfo(work.photo, work.edits)
         if (info.isProRAW) work.edits.requireProRAWDecoder()
         val native = engine()
         native.setGpuMode(NativeProcessor.CPU)

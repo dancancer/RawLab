@@ -102,6 +102,36 @@ class EditorWorkspaceGroupsTest {
         compose.runOnIdle { assertFalse(target.enabled) }
     }
 
+    @Test fun cancelHslDraftDisablesTargetingOnTheMainCanvas() = closeHslWorkspace(apply = false)
+    @Test fun applyHslDraftDisablesTargetingOnTheMainCanvas() = closeHslWorkspace(apply = true)
+
+    private fun closeHslWorkspace(apply: Boolean) {
+        show(); group("color")
+        compose.onNodeWithTag("editor-tool-14").performScrollTo().performClick()
+        compose.onNodeWithTag("workspace-more").performTouchInput { click() }
+        compose.onNodeWithText(InstrumentationRegistry.getInstrumentation().targetContext
+            .getString(com.rawlab.android.R.string.hsl_target)).performClick()
+        compose.onNodeWithTag("hsl-target-axis-0").assertExists()
+        compose.onNodeWithTag("photo-canvas").performTouchInput {
+            down(center); moveBy(Offset(0f, -30f)); up()
+        }
+        compose.runOnIdle { assertEquals(1, targetBegins) }
+        val changed = state.edits.hsl.withValue(0, 0, 12f)
+        compose.runOnIdle { state = state.copy(draft = state.draft!!.update(state.edits.copy(hsl = changed))) }
+        compose.onNodeWithTag(if (apply) "draft.apply" else "draft.cancel").performClick()
+        compose.onNodeWithTag("editor-groups").assertIsDisplayed()
+        compose.onNodeWithTag("photo-canvas").performTouchInput {
+            down(center); moveBy(Offset(0f, -30f)); up()
+        }
+        compose.onNodeWithTag("hsl-target-canvas").assertDoesNotExist()
+        compose.runOnIdle {
+            assertFalse(target.enabled)
+            assertEquals(1, targetBegins)
+            assertEquals(0, edits)
+            assertEquals(if (apply) changed else HslSettings(), state.edits.hsl)
+        }
+    }
+
     @Test fun onePanelFineResetsOnlyAfterActualToolOrGroupNavigation() {
         show(); group("color"); tool(14)
         compose.onAllNodesWithTag("adjustment-fine").assertCountEquals(1)

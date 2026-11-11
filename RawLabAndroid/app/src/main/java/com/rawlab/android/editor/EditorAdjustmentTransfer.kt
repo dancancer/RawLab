@@ -68,7 +68,8 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
                     val database = storage.lensDatabase()
                     val frame = NativeProcessor(NativeProcessor.CPU, database).use { native ->
                         if (saved.settings?.isHDREditing == true) {
-                            val info = photo.hdrSource ?: throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.source")
+                            val source = photo.hdrSource ?: throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.source")
+                            val info = com.rawlab.android.engine.NativeHDRBridge.cameraFraming(photo.file, source, saved.settings.processing.version)
                             saved.settings.requireHDRDecodeVersion(info.isProRAW)
                             val decoded = if (info.isCameraRaw) native.decodeHDRCamera(photo.file, info, 128,
                                 camera = requireNotNull(saved.settings.hdr).cameraSettings, profileDirectory = storage.hdrCameraProfileDirectory)
@@ -85,8 +86,9 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
                         validateHDRCamera = { candidate ->
                             checkActive()
                             sourceValidator()
-                            val info = photo.hdrSource?.takeIf { it.isCameraRaw && !it.isProRAW }
+                            val source = photo.hdrSource?.takeIf { it.isCameraRaw && !it.isProRAW }
                                 ?: throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.camera_development")
+                            val info = com.rawlab.android.engine.NativeHDRBridge.cameraFraming(photo.file, source, candidate.processing.version)
                             val hdr = requireNotNull(candidate.hdr)
                             NativeProcessor(NativeProcessor.CPU, database).use { native ->
                                 native.decodeHDRCamera(photo.file, info, 128, camera = hdr.cameraSettings,

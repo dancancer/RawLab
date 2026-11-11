@@ -35,7 +35,8 @@ public final class SonyLegacyImportSession implements CameraMediaSession {
         objects.clear();
         List<SonyMobileSession.Asset> result=new ArrayList<>();
         for(SonyTetherSession.LegacyObject object:transport.listLegacyPhotos()) {
-            SonyMobileSession.Asset asset=new SonyMobileSession.Asset(this,object.storage,object.handle,object.name,object.size,createdTime(object.created));
+            SonyMobileSession.Asset asset = new SonyMobileSession.Asset(this, object.storage, object.handle,
+                object.name, object.size, createdTime(object.created), object.key());
             objects.put(asset,object);result.add(asset);
         }
         return result;
