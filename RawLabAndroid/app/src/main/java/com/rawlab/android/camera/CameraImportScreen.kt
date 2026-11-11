@@ -167,14 +167,8 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
                             modifier = Modifier.fillMaxWidth().testTag("camera-stop")) { Text(stringResource(R.string.camera_stop)) }
                         else {
                             if (needsOriginalJpeg) {
-                                Button(onClick = {
-                                    if (state.connected) {
-                                        model.setImportMode(CameraImportMode.INCREMENTAL)
-                                        model.setIncrementalJpeg(state.incrementalJpeg.copy(adjust = false))
-                                        model.dismissMessage()
-                                        page = "browse"
-                                    } else onConnect(true)
-                                }, enabled = canImport, shape = CameraControlShape,
+                                Button(onClick = { if (state.connected) model.resume(keepJpegOriginals = true) else onConnect(true) },
+                                    enabled = canImport, shape = CameraControlShape,
                                     modifier = Modifier.fillMaxWidth().testTag("camera-jpeg-keep-original")) {
                                     Text(stringResource(if (state.connected) R.string.camera_jpeg_original else R.string.camera_connect_action))
                                 }
@@ -329,7 +323,7 @@ private fun CameraTask(state: CameraImportState, needsOriginalJpeg: Boolean) {
             job.incremental?.let { plan ->
                 Text("${stringResource(R.string.camera_transfer_format)} · ${if (plan.format == CameraImportFormat.RAW_AND_JPEG) "RAW + JPEG" else plan.format.name}",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (plan.jpeg.adjust && plan.format != CameraImportFormat.RAW)
+                if (job.items.any { job.jpegOptions(it) != null })
                     Text(stringResource(R.string.camera_jpeg_summary,
                         plan.jpeg.longEdge?.let { "$it px" } ?: stringResource(R.string.output_original_size),
                         java.text.NumberFormat.getPercentInstance().format(plan.jpeg.quality / 100.0)), style = MaterialTheme.typography.bodySmall,
@@ -347,6 +341,8 @@ private fun CameraTask(state: CameraImportState, needsOriginalJpeg: Boolean) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(item.photo.name, style = MaterialTheme.typography.bodyMedium)
                         Text(bytes(item.photo.size), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (item.saveOriginalJpeg) Text(stringResource(R.string.camera_jpeg_original),
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         (item.saved ?: item.unavailable)?.let { saved ->
                             Text(saved.relativePath + saved.displayName, style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)

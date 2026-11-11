@@ -120,6 +120,25 @@ class CameraIncrementalImportTest {
         assertTrue(incrementalLocatorMap(job, listOf(old.copy(storageToken = "legacy:2")), "reconnected").isEmpty())
     }
 
+    @Test fun legacyReconnectOnlyIgnoresTheObjectHandle() {
+        val old = CameraPhoto("old-locator", "DSC.JPG", 10, 1_700_000_000_000L,
+            resumeIdentity = "legacy:65537:7:14337:10:DSC.JPG:20231114T221320:20231114T221400",
+            storageToken = "legacy:65537")
+        val item = CameraImportItem(old)
+        val job = CameraImportJob("00000000-0000-0000-0000-000000000010", "camera", 1, listOf(item),
+            CameraJobStatus.PAUSED, incremental = CameraIncrementalPlan(CameraImportFormat.JPEG, sessionOwner = "old"))
+        val current = old.copy(key = "new-locator", resumeIdentity = old.resumeIdentity!!.replace(":7:", ":29:"))
+        assertEquals(current, incrementalLocatorMap(job, listOf(current), "reconnected")[old.key])
+
+        val replaced = current.copy(resumeIdentity = current.resumeIdentity!!.replace("20231114T221400", "20231114T221500"))
+        assertTrue(incrementalLocatorMap(job, listOf(replaced), "reconnected").isEmpty())
+        val differentFormat = current.copy(resumeIdentity = current.resumeIdentity.replace(":14337:", ":14338:"))
+        assertTrue(incrementalLocatorMap(job, listOf(differentFormat), "reconnected").isEmpty())
+
+        val oldJournal = job.copy(items = listOf(item.copy(photo = old.copy(resumeIdentity = null))))
+        assertEquals(current, incrementalLocatorMap(oldJournal, listOf(current), "reconnected")[old.key])
+    }
+
     @Test fun autoResumeExcludesCommittedHistoryAndGainMapFailures() {
         val old = CameraPhoto("old-locator", "DSC.JPG", 10, 1_700_000_000_000L, storageToken = "mobile")
         val job = CameraImportJob("00000000-0000-0000-0000-000000000009", "camera", 1,

@@ -427,12 +427,12 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
             }
         }
     }
-    fun resume() {
+    fun resume(keepJpegOriginals: Boolean = false) {
         val snapshot = mutable.value
-        if (!snapshot.preparing) snapshot.job?.let { runQueue(it, resuming = true) }
+        if (!snapshot.preparing) snapshot.job?.let { runQueue(it, resuming = true, keepJpegOriginals = keepJpegOriginals) }
     }
 
-    private fun runQueue(job: CameraImportJob, resuming: Boolean = false) {
+    private fun runQueue(job: CameraImportJob, resuming: Boolean = false, keepJpegOriginals: Boolean = false) {
         val snapshot = mutable.value
         if (snapshot.mode != CameraMode.IMPORT || snapshot.closing || !foreground || snapshot.transferring ||
             snapshot.stage != null || job.status == CameraJobStatus.COMPLETE) return
@@ -458,8 +458,13 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
                         latest = store.recover(job.id) ?: throw IOException("Camera import task is missing")
                         updateJob(latest)
                     }
-                    if (latest.status == CameraJobStatus.COMPLETE || latest.items.any { it.problem == CameraMediaProblem.HDR_GAIN_MAP })
-                        return@session
+                    if (latest.status == CameraJobStatus.COMPLETE) return@session
+                    if (latest.items.any { it.problem == CameraMediaProblem.HDR_GAIN_MAP }) {
+                        if (!keepJpegOriginals) return@session
+                        latest = latest.keepingPendingJpegOriginals()
+                        store.save(latest)
+                        updateJob(latest)
+                    }
                     val fresh = if (resuming) {
                         val current = opened.listPhotos(info).associateBy { it.key() }
                         withContext(Dispatchers.Main.immediate) {
@@ -579,8 +584,10 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
         val savedKeys = if (snapshot.incrementalCutoffMillis != null) emptySet() else jobs.asSequence()
             .filter { it.incremental?.sessionOwner == snapshot.incrementalOwner || it.id in completedIncrementalJobIds }
             .flatMap { job ->
-                val jobJpeg = job.incremental?.jpeg?.takeIf { it.adjust }
-                val saved = job.items.asSequence().filter { it.saved != null && (it.photo.raw || jpeg == jobJpeg) }
+                val plannedJpeg = job.incremental?.jpeg?.takeIf { it.adjust }
+                val saved = job.items.asSequence().filter {
+                    it.saved != null && (it.photo.raw || jpeg == plannedJpeg || jpeg == job.jpegOptions(it))
+                }
                 if (job.incremental?.sessionOwner == snapshot.incrementalOwner) saved.map { it.photo.key }
                 else {
                     val matches = incrementalLocatorMap(job, snapshot.photos, snapshot.incrementalOwner)

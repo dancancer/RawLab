@@ -372,6 +372,38 @@ class CameraImportStoreTest {
         assertEquals(1, fixture.media.rows.size)
     }
 
+    @Test fun keepOriginalSurvivesRecoveryAndDoesNotReuseAnAdjustedJpeg() = withStore { fixture, _ ->
+        val adjusted = "adjusted JPEG".toByteArray()
+        val store = CameraImportStore(File(fixture.root, "jobs"), File(fixture.root, "partial"), fixture.media,
+            { fixture.capture }, processJpeg = { _, destination, _ ->
+                destination.writeBytes(adjusted)
+                CameraProcessedFile(adjusted.size.toLong(), hash(adjusted))
+            })
+        val options = CameraJPEGOptions(adjust = true, longEdge = 2048)
+        val plan = CameraIncrementalPlan(CameraImportFormat.JPEG, options)
+        val job = store.create("camera", listOf(jpegPhoto(), jpegPhoto("jpeg-2")), CameraImportDestination(), incremental = plan)
+        val part = store.partial(job.id).apply { writeBytes(jpeg) }
+        val partial = store.publish(job, 0, part, hash(jpeg), CameraTransferPermit())
+        val adjustedUri = checkNotNull(partial.items.first().saved).uri
+        store.save(partial.keepingPendingJpegOriginals())
+
+        val recovered = checkNotNull(store.recover(job.id))
+        val complete = receiveCameraJob(store, recovered, CameraTransferPermit(), { photo, output ->
+            assertEquals("jpeg-2", photo.key)
+            output.write(jpeg)
+            hash(jpeg)
+        })
+        assertTrue(complete.committed)
+        assertEquals(adjustedUri, complete.items.first().saved?.uri)
+        val originalUri = checkNotNull(complete.items.last().saved).uri
+        assertNotEquals(adjustedUri, originalUri)
+        assertArrayEquals(jpeg, fixture.media.file(originalUri).readBytes())
+
+        val repeated = saveAdjusted(store, options, "jpeg-3")
+        assertEquals(adjustedUri, repeated.items.single().saved?.uri)
+        assertArrayEquals(adjusted, fixture.media.file(adjustedUri).readBytes())
+    }
+
     @Test fun committedBoundarySurvivesACompletedMediaRowBecomingUnavailable() = withStore { fixture, store ->
         val boundary = CameraImportBoundary(2_000, setOf("card"), setOf("key"), setOf("key"), "session")
         val plan = CameraIncrementalPlan(CameraImportFormat.RAW, checkpoints = mapOf(CameraImportFormat.RAW to boundary))

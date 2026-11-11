@@ -32,6 +32,7 @@ internal class CameraIncrementalSessionFixture(
     cacheDirectory: File,
     jpegSource: ByteArray? = null,
     interruptJpeg: Boolean = true,
+    val created: Long = System.currentTimeMillis(),
 ) : Closeable {
     data class DownloadRequest(
         val connection: Int,
@@ -75,8 +76,6 @@ internal class CameraIncrementalSessionFixture(
     val cameraId: String = "sony-incremental-$token"
     val rawName: String = "DSC${token}.ARW"
     val jpegName: String = "DSC${token}.JPG"
-    /** Both files are in the current capture window, and share one timestamp. */
-    val created: Long = System.currentTimeMillis()
     val rawBytes: ByteArray = byteArrayOf(0x49, 0x49, 0x2a, 0x00, 0x52, 0x41, 0x57, 0x00)
     private val jpegBytes: ByteArray = jpegSource ?: createJpeg(cacheDirectory)
 

@@ -32,7 +32,7 @@ internal enum class CameraMediaProblem { MISSING, CHANGED, REMOTE_MISSING, HDR_G
 internal data class CameraImportItem(val photo: CameraPhoto, val saved: MediaPhoto? = null,
     val prepared: MediaPhoto? = null, val digest: String? = null, val captureDay: String? = null,
     val duplicate: Boolean = false, val unavailable: MediaPhoto? = null, val problem: CameraMediaProblem? = null,
-    val outputDigest: String? = null, val outputSize: Long? = null)
+    val outputDigest: String? = null, val outputSize: Long? = null, val saveOriginalJpeg: Boolean = false)
 
 // Both import protocols validate Sony's vendor identity before exposing Device.
 internal data class CameraHardwareIdentity(val model: String, val serial: String) {
@@ -63,6 +63,14 @@ internal data class CameraImportJob(val id: String, val cameraId: String, val cr
     fun matchesPendingPhotos(observed: Map<String, CameraPhoto>): Boolean = items.all { item ->
         item.saved != null || observed[item.photo.key]?.let(item.photo::matchesSnapshot) == true
     }
+
+    fun jpegOptions(item: CameraImportItem): CameraJPEGOptions? =
+        incremental?.jpeg?.takeIf { it.adjust && !item.photo.raw && !item.saveOriginalJpeg }
+
+    fun keepingPendingJpegOriginals(): CameraImportJob = copy(items = items.map { item ->
+        if (item.photo.raw || item.saved != null) item
+        else item.copy(saveOriginalJpeg = true, problem = item.problem.takeUnless { it == CameraMediaProblem.HDR_GAIN_MAP })
+    })
 }
 internal class CameraLocalSourceChanged : IOException("Camera original has changed")
 
@@ -186,7 +194,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
             !validDigest(digest) || !validHeader(part, item.photo.raw)) throw IOException("Incomplete camera photo")
         part.inputStream().use { if (contentDigest(it, item.photo.size) { permit.check() } != digest) throw IOException("Camera photo digest mismatch") }
         val capture = readCaptureDate(part)
-        val jpegOptions = job.incremental?.jpeg?.takeIf { it.adjust && !item.photo.raw }
+        val jpegOptions = job.jpegOptions(item)
         return permit.publish {
             val duplicate = readJobs().asSequence().flatMap { existingJob ->
                 existingJob.items.asSequence().map { existingJob to it }
@@ -266,6 +274,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
             .put("saved", item.saved?.json())
             .put("prepared", item.prepared?.json()).put("digest", item.digest).put("captureDay", item.captureDay)
             .put("duplicate", item.duplicate).put("unavailable", item.unavailable?.json()).put("problem", item.problem?.name)
+            .put("saveOriginalJpeg", item.saveOriginalJpeg.takeIf { it })
             .put("outputDigest", item.outputDigest).put("outputSize", item.outputSize)) }
         val json = JSONObject().put("version", 2).put("camera", job.cameraId).put("time", job.createdAt)
             .put("status", job.status.name).put("items", items).put("directory", job.destination.directory)
@@ -309,7 +318,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
             if (outputDigest != null && outputSize !in 1..SystemPhotoStore.MAX_BYTES) throw IOException("Invalid camera output size")
             CameraImportItem(photo, saved, prepared, digest, item.optString("captureDay").takeIf { it.isNotEmpty() }, item.optBoolean("duplicate"),
                 item.optJSONObject("unavailable")?.mediaPhoto(), item.optString("problem").takeIf { it.isNotEmpty() }?.let(CameraMediaProblem::valueOf),
-                outputDigest, outputSize)
+                outputDigest, outputSize, saveOriginalJpeg = item.optBoolean("saveOriginalJpeg"))
         }
         val hardware = json.optJSONObject("hardwareIdentity")?.let {
             CameraHardwareIdentity(it.getString("model"), it.getString("serial"))
@@ -367,8 +376,6 @@ internal class CameraImportStore(private val directory: File, private val tempor
     private fun MediaPhoto.json() = JSONObject().put("uri", uri).put("name", displayName).put("path", relativePath).put("pending", pending)
     private fun JSONObject.mediaPhoto() = MediaPhoto(getString("uri"), getString("name"), getString("path"), getBoolean("pending"))
     private fun JSONObject.optLongOrNull(name: String): Long? = if (has(name) && !isNull(name)) optLong(name) else null
-    private fun CameraImportJob.jpegOptions(item: CameraImportItem): CameraJPEGOptions? =
-        incremental?.jpeg?.takeIf { it.adjust && !item.photo.raw }
     private fun CameraIncrementalPlan.json(): JSONObject = JSONObject().put("format", format.name)
         .put("jpeg", jpeg.json()).put("boundary", boundary?.json())
         .put("checkpoints", JSONObject().also { objectValue -> checkpoints.forEach { (kind, value) -> objectValue.put(kind.name, value.json()) } })

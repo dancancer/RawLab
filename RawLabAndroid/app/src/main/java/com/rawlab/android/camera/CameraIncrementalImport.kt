@@ -133,10 +133,23 @@ internal fun incrementalLocatorMap(job: CameraImportJob, current: List<CameraPho
         for ((key, items) in stored) {
             val photo = listed[key]?.singleOrNull() ?: continue
             val item = items.singleOrNull() ?: continue
-            if (!sameSession || item.photo.matchesSnapshot(photo)) put(item.photo.key, photo)
+            if (sameSession) {
+                if (!item.photo.matchesSnapshot(photo)) continue
+            } else if (item.photo.resumeIdentity?.startsWith("legacy:") == true) {
+                val metadata = item.photo.legacyMetadataWithoutHandle ?: continue
+                if (metadata != photo.legacyMetadataWithoutHandle) continue
+            }
+            put(item.photo.key, photo)
         }
     }
 }
+
+private val CameraPhoto.legacyMetadataWithoutHandle: String?
+    get() {
+        // Legacy resume identity is legacy:storage:handle:format:size:name:created:modified.
+        val parts = resumeIdentity?.split(':', limit = 4) ?: return null
+        return if (parts.size == 4 && parts[0] == "legacy") "${parts[1]}:${parts[3]}" else null
+    }
 
 /** The newest committed plan that advanced each format supplies its checkpoint. */
 internal fun committedIncrementalCheckpoints(jobs: List<CameraImportJob>): Map<CameraImportFormat, CameraImportBoundary> = buildMap {
