@@ -257,6 +257,9 @@
 		5AC6FBB3EBE874026F931E0E /* IOSCameraBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5F21B6EE6116E86020A1D2A /* IOSCameraBrowser.swift */; };
 		019C9D6304C5447B6D340843 /* IOSCameraTether.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EA91506B497FFB8E5975C08 /* IOSCameraTether.swift */; };
 		C009FC8A9FF9663CB6E78F2E /* IOSCameraWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93E7376E68242B4014EB181C /* IOSCameraWorkspace.swift */; };
+		D941E65A54F645C882ABF673 /* CameraIncrementalImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D941E65A54F645C882ABF674 /* CameraIncrementalImport.swift */; };
+		D941E65A54F645C882ABF675 /* CameraJPEGProcessing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D941E65A54F645C882ABF676 /* CameraJPEGProcessing.swift */; };
+		D941E65A54F645C882ABF677 /* IOSCameraIncrementalImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D941E65A54F645C882ABF678 /* IOSCameraIncrementalImport.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -653,6 +656,9 @@
 		D5F21B6EE6116E86020A1D2A /* IOSCameraBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IOSCameraBrowser.swift"; sourceTree = "<group>"; };
 		2EA91506B497FFB8E5975C08 /* IOSCameraTether.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IOSCameraTether.swift"; sourceTree = "<group>"; };
 		93E7376E68242B4014EB181C /* IOSCameraWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IOSCameraWorkspace.swift"; sourceTree = "<group>"; };
+		D941E65A54F645C882ABF674 /* CameraIncrementalImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraIncrementalImport.swift"; sourceTree = "<group>"; };
+		D941E65A54F645C882ABF676 /* CameraJPEGProcessing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraJPEGProcessing.swift"; sourceTree = "<group>"; };
+		D941E65A54F645C882ABF678 /* IOSCameraIncrementalImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IOSCameraIncrementalImport.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1104,6 +1110,8 @@
 				0A50FBFBD3F02F6FD4228523 /* CameraProtocol.swift */,
 				6014BEE4F866B5BA78F1E06E /* CameraPTPClient.swift */,
 				53627A6503E7BB06434FD338 /* CameraOriginalStore.swift */,
+				D941E65A54F645C882ABF674 /* CameraIncrementalImport.swift */,
+				D941E65A54F645C882ABF676 /* CameraJPEGProcessing.swift */,
 				AD5145FB279D152EA89CD80D /* CameraNetwork.swift */,
 			);
 			path = Camera;
@@ -1115,6 +1123,7 @@
 				93E7376E68242B4014EB181C /* IOSCameraWorkspace.swift */,
 				2EA91506B497FFB8E5975C08 /* IOSCameraTether.swift */,
 				D5F21B6EE6116E86020A1D2A /* IOSCameraBrowser.swift */,
+				D941E65A54F645C882ABF678 /* IOSCameraIncrementalImport.swift */,
 				9F5A2BFFD01F5CE86BF629DC /* IOSCameraController.swift */,
 			);
 			path = Camera;
@@ -1300,6 +1309,7 @@
 				C009FC8A9FF9663CB6E78F2E /* IOSCameraWorkspace.swift in Sources */,
 				019C9D6304C5447B6D340843 /* IOSCameraTether.swift in Sources */,
 				5AC6FBB3EBE874026F931E0E /* IOSCameraBrowser.swift in Sources */,
+				D941E65A54F645C882ABF677 /* IOSCameraIncrementalImport.swift in Sources */,
 				FCEEE25742781A5EA12FD364 /* IOSCameraController.swift in Sources */,
 				240439165FD0DAF67872690B /* SonyCameraSession.swift in Sources */,
 				F35ECE6734FE3B21A26B07D9 /* IOSCameraConnection.swift in Sources */,
@@ -1307,6 +1317,8 @@
 				B44A9E6604A3A18F80319647 /* CameraProtocol.swift in Sources */,
 				FC3E1C413D8FDDFD08580028 /* CameraPTPClient.swift in Sources */,
 				9A367BE919FBC80E921A8A14 /* CameraOriginalStore.swift in Sources */,
+				D941E65A54F645C882ABF673 /* CameraIncrementalImport.swift in Sources */,
+				D941E65A54F645C882ABF675 /* CameraJPEGProcessing.swift in Sources */,
 				C36B2ADB84D11D5FD0554281 /* CameraNetwork.swift in Sources */,
 				2F797D8C193C1A085B1D5258 /* ContentView+AdjustmentTransfer.swift in Sources */,
 				288ACB8ACE1B29115F97D51E /* IOSAdjustmentTransferView.swift in Sources */,

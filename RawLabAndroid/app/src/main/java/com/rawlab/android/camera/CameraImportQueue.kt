@@ -10,7 +10,7 @@ internal fun receiveCameraJob(store: CameraImportStore, job: CameraImportJob, pe
     var latest = job.copy(status = CameraJobStatus.ACTIVE)
     store.save(latest)
     for ((index, item) in latest.items.withIndex()) {
-        if (item.saved != null) continue
+        if (item.saved != null || item.problem == CameraMediaProblem.REMOTE_MISSING) continue
         permit.check()
         val part = store.partial(job.id)
         try {
@@ -20,9 +20,18 @@ internal fun receiveCameraJob(store: CameraImportStore, job: CameraImportJob, pe
                 result
             }
             permit.check()
-            latest = store.publish(latest, index, part, digest, permit)
+            latest = try { store.publish(latest, index, part, digest, permit) }
+            catch (_: CameraJPEGGainMapAdjustmentException) {
+                val items = latest.items.toMutableList()
+                items[index] = item.copy(problem = CameraMediaProblem.HDR_GAIN_MAP)
+                return latest.copy(items = items, status = CameraJobStatus.PAUSED).also(store::save)
+            }
             onJob(latest)
         } finally { part.delete() }
     }
-    return latest
+    val finished = latest.items.all { it.saved != null }
+    val result = latest.copy(status = if (finished) CameraJobStatus.COMPLETE else CameraJobStatus.PAUSED,
+        committed = latest.committed || finished)
+    if (result != latest) store.save(result)
+    return result
 }

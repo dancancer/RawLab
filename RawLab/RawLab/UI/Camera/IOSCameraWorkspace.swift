@@ -35,10 +35,10 @@ struct IOSCameraWorkspace: View {
                     switch route {
                     case .connect: connectionPage
                     case .help: IOSCameraConnectionGuide()
-                    case .manual: IOSCameraManualWiFi(connection: connection)
+                    case .manual: IOSCameraManualWiFi(connection: connection, model: model)
                     case .importer:
                         IOSCameraBrowser(model: model, openOriginal: open, history: { path.append(.history) },
-                            storage: { path.append(.storage) }, reconnect: reconnect)
+                            storage: { path.append(.storage) }, reconnect: reconnect, resume: resume)
                     case .tether:
                         IOSCameraTether(model: model, openOriginal: open, history: { path.append(.history) },
                             storage: { path.append(.storage) }, reconnect: reconnect)
@@ -231,8 +231,10 @@ struct IOSCameraWorkspace: View {
 
 private struct IOSCameraManualWiFi: View {
     @ObservedObject var connection: IOSCameraConnection
+    @ObservedObject var model: IOSCameraController
     @State private var ssid = ""
     @State private var password = ""
+    private var connecting: Bool { connection.connecting || model.phase == .connecting }
     var body: some View {
         Form {
             Section {
@@ -242,18 +244,25 @@ private struct IOSCameraManualWiFi: View {
                 SecureField(L10n.text("Wi-Fi 密码"), text: $password).accessibilityIdentifier("camera.wifi.password")
                 Button(L10n.text("连接相机 Wi-Fi")) {
                     connection.join(ssid: ssid, password: password); password = ""
-                }.disabled(ssid.isEmpty || password.count < 8 || connection.connecting)
+                }.disabled(ssid.isEmpty || password.count < 8 || connecting)
                     .accessibilityIdentifier("camera.wifi.join")
             }
             Section {
                 Button(L10n.text("已连接，继续")) { connection.useCurrentWiFi() }
-                    .disabled(connection.connecting).accessibilityIdentifier("camera.wifi.continue")
+                    .disabled(connecting).accessibilityIdentifier("camera.wifi.continue")
                 Text(L10n.text("相机 Wi-Fi 通常无法访问互联网，请保持连接。")).font(.footnote)
             }
-            if connection.connecting {
-                Section { HStack { ProgressView(); Text(connection.status) }; Button(L10n.text("取消连接")) { connection.stop() } }
+            if connecting {
+                Section {
+                    HStack {
+                        ProgressView()
+                        Text(model.device != nil && model.phase == .connecting ? L10n.text("正在扫描相机…")
+                             : connection.status.isEmpty ? L10n.text("正在连接相机…") : connection.status)
+                    }
+                    Button(L10n.text("取消连接")) { connection.stop(); model.stop() }
+                }
             }
-            if let error = connection.failure { Section { Text(error).foregroundStyle(.orange) } }
+            if let error = model.notice ?? connection.failure { Section { Text(error).foregroundStyle(.orange) } }
         }.navigationTitle(L10n.text("连接相机 Wi-Fi")).navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("camera.manual.page")
     }

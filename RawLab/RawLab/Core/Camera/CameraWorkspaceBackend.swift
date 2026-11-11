@@ -8,6 +8,7 @@ enum IOSCameraEvent {
     case assets([CameraRemoteAsset])
     case properties([UInt16: CameraProperty], writable: Bool, shutter: Bool)
     case manifest(CameraOriginalManifest)
+    case incrementalJob(UUID)
     case progress(UUID, UInt64, UInt64)
     case thumbnail(String, Data)
     case preview(Data)
@@ -106,6 +107,15 @@ final class CameraWorkspaceBackend {
     }
     func loadHistory(_ result: @escaping (Result<CameraOriginalManifest, Error>) -> Void) {
         queue.async { result(Result { try self.store().snapshot }) }
+    }
+    func dismissIncrementalJob(_ id: UUID, result: @escaping (Result<CameraOriginalManifest, Error>) -> Void) {
+        queue.async {
+            result(Result {
+                let store = try self.store()
+                try store.dismissIncrementalJob(id)
+                return store.snapshot
+            })
+        }
     }
     private func owns(_ run: IOSCameraRun) -> Bool { ownerLock.lock(); defer { ownerLock.unlock() }; return active === run && !run.stopped }
     private func publishManifest(_ run: IOSCameraRun) { if let storage { run.emit(.manifest(storage.snapshot)) } }
@@ -311,26 +321,43 @@ final class CameraWorkspaceBackend {
             }
         }
     }
-    func importAssets(_ assets: [CameraRemoteAsset], run: IOSCameraRun) {
+    func importAssets(_ assets: [CameraRemoteAsset], incremental: CameraIncrementalPlan? = nil, run: IOSCameraRun) {
         perform(run) {
             guard run.mode == .importing, !run.receiving else { throw CameraProtocolError.invalid("Camera import is busy") }
             run.receiving = true; defer { run.receiving = false }
             let session = try run.currentSession()
             guard assets.allSatisfy({ $0.owner == session.id }) else { throw CameraProtocolError.invalid("Camera selection belongs to an old session") }
-            let job = try self.store().enqueue(device: session.device, connectionKey: run.endpoint.connectionKey, assets: assets.map(\.snapshot))
+            let job = try self.store().enqueue(device: session.device, connectionKey: run.endpoint.connectionKey,
+                                              assets: assets.map(\.snapshot), incremental: incremental)
             self.publishManifest(run)
+            if incremental != nil { run.emit(.incrementalJob(job.id)) }
             try self.receive(job, assets: run.knownAssets, run: run)
             run.emit(.phase(.browsing))
         }
     }
     func resumeImport(jobID: UUID, run: IOSCameraRun) {
         perform(run) {
-            guard run.mode == .importing, !run.receiving, let job = try self.store().snapshot.jobs.first(where: { $0.id == jobID }) else { return }
+            guard run.mode == .importing, !run.receiving else { return }
             run.receiving = true; defer { run.receiving = false }
+            let store = try self.store()
+            try store.recover()
+            self.publishManifest(run)
+            guard let job = store.snapshot.jobs.first(where: { $0.id == jobID }) else {
+                throw CameraProtocolError.invalid("Camera transfer job is missing")
+            }
+            if job.incremental != nil { run.emit(.incrementalJob(job.id)) }
             let assets = try run.currentSession().listAssets()
             run.knownAssets = assets; run.emit(.assets(assets))
             try self.receive(job, assets: assets, run: run)
             run.emit(.phase(.browsing))
+        }
+    }
+    func refreshImport(_ run: IOSCameraRun) {
+        perform(run) {
+            guard run.mode == .importing, !run.receiving else { return }
+            let assets = try run.currentSession().listAssets()
+            run.knownAssets = assets
+            run.emit(.assets(assets))
         }
     }
     func thumbnail(_ asset: CameraRemoteAsset, run: IOSCameraRun, large: Bool) {

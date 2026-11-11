@@ -167,12 +167,16 @@ public final class SonyMobileSession implements CameraMediaSession {
 
     public static final class Asset {
         final Object owner; final int content, file; public final String name; public final long size, created;
+        public final String storageToken;
+        public final long captureTimestamp;
         private final String legacyObjectKey;
         Asset(Object owner, int content, int file, String name, long size, long created) {
-            this(owner, content, file, name, size, created, null);
+            this(owner, content, file, name, size, created, "mobile", created, null);
         }
-        Asset(Object owner, int content, int file, String name, long size, long created, String legacyObjectKey) {
+        Asset(Object owner, int content, int file, String name, long size, long created,
+              String storageToken, long captureTimestamp, String legacyObjectKey) {
             this.owner = owner; this.content = content; this.file = file; this.name = name; this.size = size; this.created = created;
+            this.storageToken = storageToken; this.captureTimestamp = captureTimestamp;
             this.legacyObjectKey = legacyObjectKey;
         }
         public String key() { return content + ":" + file + ":" + name + ":" + size + ":" + created; }

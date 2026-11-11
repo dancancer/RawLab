@@ -6,11 +6,14 @@ import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
 import java.io.IOException
+import org.json.JSONObject
 import java.nio.file.Files
 import java.security.MessageDigest
+import java.util.UUID
 
 class CameraImportStoreTest {
     private val raw = byteArrayOf(73, 73, 42, 0, 8, 0, 0, 0) + ByteArray(100) { it.toByte() }
+    private val jpeg = byteArrayOf(-1, -40, -1, -32, 0, 16, 74, 70, 73, 70) + ByteArray(100) { it.toByte() }
     private fun photo(key: String = "1") = CameraPhoto(key, "DSC00001.ARW", raw.size.toLong(), 42)
     private fun hash(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
     private class Fixture(val root: File) {
@@ -27,6 +30,15 @@ class CameraImportStoreTest {
         val job = store.create("camera", listOf(photo()), destination)
         val part = store.partial(job.id); part.writeBytes(bytes)
         return store.publish(job, 0, part, hash(bytes), CameraTransferPermit())
+    }
+
+    private fun jpegPhoto(key: String = "jpeg-1") = CameraPhoto(key, "DSC00001.JPG", jpeg.size.toLong(), 42)
+
+    private fun saveAdjusted(store: CameraImportStore, options: CameraJPEGOptions, key: String = "jpeg-1"): CameraImportJob {
+        val plan = CameraIncrementalPlan(CameraImportFormat.JPEG, options)
+        val job = store.create("camera", listOf(jpegPhoto(key)), CameraImportDestination(), incremental = plan)
+        val part = store.partial(job.id); part.writeBytes(jpeg)
+        return store.publish(job, 0, part, hash(jpeg), CameraTransferPermit())
     }
 
     @Test fun interruptedQueueKeepsSavedMediaAndRestartsOnlyUnfinished() = withStore { fixture, store ->
@@ -309,6 +321,148 @@ class CameraImportStoreTest {
         assertNull(retried.items.single().problem)
         assertNotEquals(uri, retried.items.single().saved!!.uri)
         assertEquals("external change", fixture.media.file(uri).readText())
+    }
+
+    @Test fun adjustedJpegReuseRequiresTheSameSourceAndFrozenOptions() = withStore { fixture, _ ->
+        val processor: (File, File, CameraJPEGOptions) -> CameraProcessedFile = { _, destination, options ->
+            val bytes = ("adjusted-${options.longEdge}-${options.quality}").toByteArray()
+            destination.writeBytes(bytes)
+            CameraProcessedFile(bytes.size.toLong(), hash(bytes))
+        }
+        val store = CameraImportStore(File(fixture.root, "jobs"), File(fixture.root, "partial"), fixture.media,
+            { fixture.capture }, processor)
+        val first = saveAdjusted(store, CameraJPEGOptions(true, 2048, 90))
+        val same = saveAdjusted(store, CameraJPEGOptions(true, 2048, 90), "jpeg-2")
+        val changed = saveAdjusted(store, CameraJPEGOptions(true, 3000, 90), "jpeg-3")
+        assertEquals(first.items.single().saved, same.items.single().saved)
+        assertTrue(same.items.single().duplicate)
+        assertNotEquals(first.items.single().saved!!.uri, changed.items.single().saved!!.uri)
+        assertEquals(2, fixture.media.rows.size)
+        assertEquals(16L, first.items.single().outputSize)
+        assertEquals(hash("adjusted-2048-90".toByteArray()), first.items.single().outputDigest)
+    }
+
+    @Test fun onlyACompletedIncrementalTaskPublishesItsBoundary() = withStore { _, store ->
+        val boundary = CameraImportBoundary(2_000, setOf("card"), setOf("key"), setOf("key"), "camera")
+        val plan = CameraIncrementalPlan(CameraImportFormat.RAW, checkpoints = mapOf(CameraImportFormat.RAW to boundary))
+        val job = store.create("camera", listOf(photo()), CameraImportDestination(), incremental = plan)
+        assertTrue(committedIncrementalCheckpoints(store.load()).isEmpty())
+        val part = store.partial(job.id); part.writeBytes(raw)
+        val complete = store.publish(job, 0, part, hash(raw), CameraTransferPermit())
+        assertEquals(boundary, committedIncrementalCheckpoints(listOf(complete))[CameraImportFormat.RAW])
+    }
+
+    @Test fun adjustmentChecksForGainMapBeforeReusingAnOlderDerivative() = withStore { fixture, _ ->
+        val store = CameraImportStore(File(fixture.root, "jobs"), File(fixture.root, "partial"), fixture.media,
+            { fixture.capture }, processJpeg = { _, destination, _ ->
+                destination.writeBytes(jpeg)
+                CameraProcessedFile(jpeg.size.toLong(), hash(jpeg))
+            }, verifyJpeg = { throw CameraJPEGGainMapAdjustmentException() })
+        val options = CameraJPEGOptions(adjust = true, longEdge = 2048)
+        saveAdjusted(store, options)
+        val job = store.create("camera", listOf(jpegPhoto("again")), CameraImportDestination(),
+            incremental = CameraIncrementalPlan(CameraImportFormat.JPEG, options))
+        val blocked = receiveCameraJob(store, job, CameraTransferPermit(), { _, output ->
+            output.write(jpeg)
+            hash(jpeg)
+        })
+        assertEquals(CameraJobStatus.PAUSED, blocked.status)
+        assertEquals(CameraMediaProblem.HDR_GAIN_MAP, blocked.items.single().problem)
+        assertFalse(blocked.committed)
+        assertEquals(1, fixture.media.rows.size)
+    }
+
+    @Test fun keepOriginalSurvivesRecoveryAndDoesNotReuseAnAdjustedJpeg() = withStore { fixture, _ ->
+        val adjusted = "adjusted JPEG".toByteArray()
+        val store = CameraImportStore(File(fixture.root, "jobs"), File(fixture.root, "partial"), fixture.media,
+            { fixture.capture }, processJpeg = { _, destination, _ ->
+                destination.writeBytes(adjusted)
+                CameraProcessedFile(adjusted.size.toLong(), hash(adjusted))
+            })
+        val options = CameraJPEGOptions(adjust = true, longEdge = 2048)
+        val plan = CameraIncrementalPlan(CameraImportFormat.JPEG, options)
+        val job = store.create("camera", listOf(jpegPhoto(), jpegPhoto("jpeg-2")), CameraImportDestination(), incremental = plan)
+        val part = store.partial(job.id).apply { writeBytes(jpeg) }
+        val partial = store.publish(job, 0, part, hash(jpeg), CameraTransferPermit())
+        val adjustedUri = checkNotNull(partial.items.first().saved).uri
+        store.save(partial.keepingPendingJpegOriginals())
+
+        val recovered = checkNotNull(store.recover(job.id))
+        val complete = receiveCameraJob(store, recovered, CameraTransferPermit(), { photo, output ->
+            assertEquals("jpeg-2", photo.key)
+            output.write(jpeg)
+            hash(jpeg)
+        })
+        assertTrue(complete.committed)
+        assertEquals(adjustedUri, complete.items.first().saved?.uri)
+        val originalUri = checkNotNull(complete.items.last().saved).uri
+        assertNotEquals(adjustedUri, originalUri)
+        assertArrayEquals(jpeg, fixture.media.file(originalUri).readBytes())
+
+        val repeated = saveAdjusted(store, options, "jpeg-3")
+        assertEquals(adjustedUri, repeated.items.single().saved?.uri)
+        assertArrayEquals(adjusted, fixture.media.file(adjustedUri).readBytes())
+    }
+
+    @Test fun committedBoundarySurvivesACompletedMediaRowBecomingUnavailable() = withStore { fixture, store ->
+        val boundary = CameraImportBoundary(2_000, setOf("card"), setOf("key"), setOf("key"), "session")
+        val plan = CameraIncrementalPlan(CameraImportFormat.RAW, checkpoints = mapOf(CameraImportFormat.RAW to boundary))
+        val job = store.create("camera", listOf(photo()), CameraImportDestination(), incremental = plan)
+        val part = store.partial(job.id); part.writeBytes(raw)
+        val complete = store.publish(job, 0, part, hash(raw), CameraTransferPermit())
+        assertTrue(complete.committed)
+        fixture.media.file(complete.items.single().saved!!.uri).writeText("external change")
+        val reopened = fixture.store()
+        val recovered = reopened.load().single()
+        assertEquals(CameraJobStatus.PAUSED, recovered.status)
+        assertEquals(boundary, committedIncrementalCheckpoints(listOf(recovered))[CameraImportFormat.RAW])
+    }
+
+    @Test fun reconnectKeepsAMissingRemoteObjectAsFailedWithoutDownloadingIt() = withStore { fixture, store ->
+        val job = store.create("camera", listOf(photo()), CameraImportDestination())
+        val marked = job.copy(items = listOf(job.items.single().copy(problem = CameraMediaProblem.REMOTE_MISSING)),
+            status = CameraJobStatus.PAUSED)
+        var downloads = 0
+        val result = receiveCameraJob(store, marked, CameraTransferPermit(), { _, _ -> downloads++; error("must not download") })
+        assertEquals(CameraJobStatus.PAUSED, result.status)
+        assertEquals("PAUSED", JSONObject(File(fixture.root, "jobs/${job.id}.json").readText()).getString("status"))
+        assertEquals(0, downloads)
+    }
+
+    @Test fun legacyUnifiedBoundaryMigratesFromSavedKindsInsteadOfItsGlobalDateOrKeys() = withStore { fixture, store ->
+        val time = 1_700_000_000_000L
+        val rawPhoto = CameraPhoto("raw-locator", "RAW.ARW", raw.size.toLong(), time, storageToken = "card")
+        val jpegPhoto = CameraPhoto("jpeg-locator", "JPEG.JPG", jpeg.size.toLong(), time + 1_000, storageToken = "card")
+        val rawMedia = fixture.media.createPending(rawPhoto.name, "Pictures/", "image/x-sony-arw", "raw")
+        fixture.media.write(rawMedia.uri, File(fixture.root, "raw").apply { writeBytes(raw) })
+        val rawSaved = fixture.media.publish(rawMedia.uri)
+        val legacy = CameraImportBoundary(time + 1_000, setOf("card"), setOf(jpegPhoto.key), setOf(jpegPhoto.anchorKey), "old")
+        val plan = CameraIncrementalPlan(CameraImportFormat.RAW, boundary = legacy)
+        val job = CameraImportJob(UUID.randomUUID().toString(), "camera", 1_000,
+            listOf(CameraImportItem(rawPhoto, saved = rawSaved, digest = hash(raw))),
+            CameraJobStatus.COMPLETE, CameraImportDestination(), plan, committed = true)
+        store.save(job)
+        val reopened = fixture.store()
+        val migrated = reopened.load().single().incremental!!
+        assertEquals(time, migrated.checkpoints[CameraImportFormat.RAW]?.dateMillis)
+        assertEquals(setOf(rawPhoto.key), migrated.checkpoints[CameraImportFormat.RAW]?.keys)
+        assertFalse(CameraImportFormat.JPEG in migrated.checkpoints)
+    }
+
+    @Test fun resumeCannotCommitWhenASavedFileChangedAndTheCameraOriginalIsMissing() = withStore { fixture, store ->
+        val plan = CameraIncrementalPlan(CameraImportFormat.RAW)
+        val job = store.create("camera", listOf(photo(), photo("2")), CameraImportDestination(), incremental = plan)
+        val part = store.partial(job.id); part.writeBytes(raw)
+        val paused = store.publish(job, 0, part, hash(raw), CameraTransferPermit()).copy(status = CameraJobStatus.PAUSED)
+        store.save(paused)
+        fixture.media.file(checkNotNull(paused.items.first().saved).uri).writeText("external change")
+        val recovered = checkNotNull(store.recover(job.id))
+        assertEquals(CameraMediaProblem.CHANGED, recovered.items.first().problem)
+        assertNull(recovered.items.first().saved)
+        val missing = recovered.copy(items = recovered.items.map { it.copy(problem = CameraMediaProblem.REMOTE_MISSING) })
+        val resumed = receiveCameraJob(store, missing, CameraTransferPermit(), { _, _ -> error("No remote original") })
+        assertEquals(CameraJobStatus.PAUSED, resumed.status)
+        assertFalse(resumed.committed)
     }
 
     private class FileMedia(private val root: File) : MediaPhotoAccess {

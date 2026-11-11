@@ -36,7 +36,8 @@ public final class SonyLegacyImportSession implements CameraMediaSession {
         List<SonyMobileSession.Asset> result=new ArrayList<>();
         for(SonyTetherSession.LegacyObject object:transport.listLegacyPhotos()) {
             SonyMobileSession.Asset asset = new SonyMobileSession.Asset(this, object.storage, object.handle,
-                object.name, object.size, createdTime(object.created), object.key());
+                object.name, object.size, createdTime(object.created, TimeZone.getDefault()), "legacy:" + object.storage,
+                createdTime(object.created, TimeZone.getTimeZone("GMT")), object.key());
             objects.put(asset,object);result.add(asset);
         }
         return result;
@@ -63,9 +64,11 @@ public final class SonyLegacyImportSession implements CameraMediaSession {
         return transport.downloadLegacyWhole(object,counted);
     }
 
-    static long createdTime(String value) {
+    static long createdTime(String value,TimeZone zone) {
         if(value.length()<15) return 0;
         SimpleDateFormat format=new SimpleDateFormat("yyyyMMdd'T'HHmmss",Locale.ROOT);format.setLenient(false);
+        // Preserve the existing locator while comparing legacy capture dates on the camera clock.
+        format.setTimeZone(zone);
         ParsePosition position=new ParsePosition(0);Date date=format.parse(value.substring(0,15),position);
         return date!=null && position.getIndex()==15?date.getTime():0;
     }
