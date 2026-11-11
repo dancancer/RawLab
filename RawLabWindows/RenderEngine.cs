@@ -125,7 +125,7 @@ internal sealed partial class RenderEngine : IDisposable
             if (gpuMode == 2)
                 throw new HDRSourceException(HDRNative.StatusUnsupported, HDRNative.ReasonUnsupportedGpu, 6);
             HDRSourceInfo? sourceInfo;
-            var probe = PhotoInput.IsRaw(path) ? PhotoInput.ProbeCameraRaw(path, out sourceInfo)
+            var probe = PhotoInput.IsRaw(path) ? PhotoInput.ProbeCameraRaw(path, out sourceInfo, settings.Processing.Version)
                 : PhotoInput.ProbeHDR(path, out sourceInfo);
             if (probe != HDRProbeState.Supported || sourceInfo == null ||
                 sourceInfo.IsProRAW != (settings.ProRAWDecodeVersion == HDRNative.ProRAWDecodeVersion))
@@ -178,7 +178,7 @@ internal sealed partial class RenderEngine : IDisposable
         if (PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path, out var gainMapInfo) == HDRProbeState.Supported)
             sourceFingerprint = gainMapInfo!.CacheIdentity;
         else if (settings.IsHDREditing && PhotoInput.IsRaw(path) &&
-            PhotoInput.ProbeCameraRaw(path, out var cameraInfo) == HDRProbeState.Supported)
+            PhotoInput.ProbeCameraRaw(path, out var cameraInfo, settings.Processing.Version) == HDRProbeState.Supported)
             sourceFingerprint = cameraInfo!.CacheIdentity;
         var key=new PreviewKey(settings.Request(path,lut,2000,null),settings.Denoise,settings.Effects,settings.ToneControls,settings.Atmosphere,settings.ColorGrading,settings.Curve,settings.DisplayChromaDenoise,
             settings.ExposureMode,settings.Hsl,settings.Lens,settings.Geometry,settings.Processing,settings.X3fMode,settings.MasterRecipeSettingsVersion,settings[Parameter.Strength],settings.ActiveAIDenoise,gpuMode,rawStamp,lutStamp,settings.HDR,settings.ProRAWDecodeVersion,sourceFingerprint);
@@ -285,7 +285,7 @@ internal sealed partial class RenderEngine : IDisposable
         }
         else if (settings.IsHDREditing && PhotoInput.IsRaw(path))
         {
-            var probe = PhotoInput.ProbeCameraRaw(path, out var info);
+            var probe = PhotoInput.ProbeCameraRaw(path, out var info, settings.Processing.Version);
             if (probe == HDRProbeState.Supported) return RenderHDR(path, settings, lut, edge, output, longEdge, formatOverride, info!, statistics, clipping);
             throw new HDRModeException(HDRModeFailure.UnsupportedSource);
         }
@@ -449,7 +449,7 @@ internal sealed partial class RenderEngine : IDisposable
             if (gpuMode == 2)
                 throw new HDRSourceException(HDRNative.StatusUnsupported, HDRNative.ReasonUnsupportedGpu, 6);
             HDRSourceInfo? sourceInfo;
-            var status = PhotoInput.IsRaw(path) ? PhotoInput.ProbeCameraRaw(path, out sourceInfo)
+            var status = PhotoInput.IsRaw(path) ? PhotoInput.ProbeCameraRaw(path, out sourceInfo, settings.Processing.Version)
                 : PhotoInput.ProbeHDR(path, out sourceInfo);
             if (status != HDRProbeState.Supported || sourceInfo == null ||
                 sourceInfo.IsProRAW != (settings.ProRAWDecodeVersion == HDRNative.ProRAWDecodeVersion))

@@ -19,6 +19,24 @@ struct CameraTransferJob: Codable, Identifiable {
     let createdAt: Date
     var items: [CameraTransferItem]
     var complete: Bool { items.allSatisfy { $0.phase == .saved } }
+
+    func pendingAssets(device: CameraDeviceIdentity, connectionKey: String, assets: [CameraRemoteAsset],
+                       allowAlternateConnection: Bool) throws -> [(CameraTransferItem, CameraRemoteAsset)] {
+        let serial = camera.serial.trimmingCharacters(in: .whitespacesAndNewlines)
+        let verifiedSerial = !serial.isEmpty && serial.contains { $0 != "0" }
+        guard camera.manufacturer == device.manufacturer, camera.model == device.model,
+              serial == device.serial.trimmingCharacters(in: .whitespacesAndNewlines),
+              self.connectionKey == connectionKey || (allowAlternateConnection && verifiedSerial) else {
+            throw CameraProtocolError.invalid("Transfer belongs to a different camera")
+        }
+        let assetsBySnapshot = Dictionary(grouping: assets, by: \.snapshot)
+        return try items.filter { $0.phase != .saved }.map { item in
+            guard let matches = assetsBySnapshot[item.asset], matches.count == 1 else {
+                throw CameraProtocolError.invalid("Camera original changed; select it again")
+            }
+            return (item, matches[0])
+        }
+    }
 }
 struct CameraStoredOriginal: Codable, Identifiable {
     let id: UUID

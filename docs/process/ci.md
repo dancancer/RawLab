@@ -198,6 +198,16 @@ CI never repeats runtime UI checks. UI-test target compilation is not a UI-test 
   or native suites. Examples include `ui-details`, `transform-ui`, `editor-shell`,
   `editor-review`, `tool-groups`, `localization-ui`, `profile-isolation` and
   `comparison-default`. Its required test-host builds remain explicit.
+- Windows `native` and `full` include the `rendered_dng` and
+  `processing_migration_api` CTest results. For release acceptance, run the
+  client DNG suite on Windows with the package built from the same source.
+
+  ```powershell
+  ./RawLabWindows/tests/run-v08.ps1 -Only rendered-dng -RawPath ./lutools/examples/DJI_20250602164503_0444_D.DNG -NativeArtifacts ./build/RawLab-Windows
+  ```
+
+  Record the `rendered-dng` entry in `build/windows-v08-results/summary.json`
+  and the corresponding `rendered-dng.log` for the actual WPF batch export.
 - iOS UI and Android connected-device tests run locally for affected work; the
   full applicable UI/device matrix belongs to release acceptance.
 

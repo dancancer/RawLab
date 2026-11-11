@@ -37,9 +37,9 @@ class HDRNeutralReferenceTest {
     @Test fun rendererUsesTheSameNeutralSettingsForCameraDecodeAndReferenceKey() {
         val source = File("src/main/java/com/rawlab/android/editor/render/EditorRenderer.kt").readText()
         assertTrue("Reference decode must use the neutral lens settings", source.contains(
-            "cachedHDRSource(work.photo, generation, neutralSettings.cameraSettings)"))
+            "cachedHDRSource(work.photo, info, generation, neutralSettings.cameraSettings)"))
         assertTrue("Reference key must contain the neutral settings", source.contains(
-            "HDRReferenceKey(it, work.photo, neutralSettings, edge, work.edits.proRAWDecodeVersion)"))
+            "HDRReferenceKey(it, work.photo, neutralSettings, edge, work.edits.proRAWDecodeVersion, info.cameraProcessingVersion)"))
         assertTrue("Reference rendering must use the neutral model", source.contains(".neutralGeometrySettings"))
     }
 }

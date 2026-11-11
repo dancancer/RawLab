@@ -74,7 +74,7 @@ extension BatchExportModel {
                 let output=FileManager.default.temporaryDirectory.appendingPathComponent("RawLab-batch-\(UUID().uuidString).\(format.suffix)")
                 defer { try? FileManager.default.removeItem(at:output) }
                 try processor.exportHDR(url: target.sourceURL, settings: hdr, output: output, longEdge: longEdge,
-                    proRAWDecodeVersion: settings.proRAWDecodeVersion, format: hdrFormat,
+                    processing: settings.processing, proRAWDecodeVersion: settings.proRAWDecodeVersion, format: hdrFormat,
                     cancelled: { self.isCancellationRequested })
                 return try Data(contentsOf:output)
             }
@@ -107,7 +107,7 @@ extension BatchExportModel {
             do {
                 if let hdr=settings.hdr,settings.isHDREditing {
                     let pair=try processor.processHDR(url:target.sourceURL,settings:hdr,previewLongEdge:nil,
-                        exportLongEdge:longEdge,proRAWDecodeVersion:settings.proRAWDecodeVersion)
+                        exportLongEdge:longEdge,processing:settings.processing,proRAWDecodeVersion:settings.proRAWDecodeVersion)
                     try pair.exportSDR(to:output,format:SONY2FUJI_OUTPUT_DNG)
                 } else if target.sourceKind == .raw {
                     try processor.exportDNG(url: target.sourceURL, settings: settings, lutURL: look,

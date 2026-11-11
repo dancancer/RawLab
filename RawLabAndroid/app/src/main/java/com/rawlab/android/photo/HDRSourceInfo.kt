@@ -16,6 +16,7 @@ data class HDRSourceInfo(
     val fingerprint: ByteArray,
     val cameraStamp: CameraStamp? = null,
     val supportsBayerDevelopment: Boolean = false,
+    val cameraProcessingVersion: Int = 3,
 ) {
     init {
         require(width > 0 && height > 0)

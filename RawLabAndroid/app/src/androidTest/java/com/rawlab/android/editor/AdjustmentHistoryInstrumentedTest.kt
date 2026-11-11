@@ -255,40 +255,56 @@ class AdjustmentHistoryInstrumentedTest {
     }
 
     @Test fun targetSampleReleaseMakesOneHistoryAndResizeCancelsPendingSample() = withModel { model, edits, identity ->
+        val before = edits.readState(identity)
         main {
+            model.beginDraft(AdjustmentGroup.HSL)
             model.setHslTargetEnabled(true)
             model.beginHslTarget(.5f, .5f)
             assertTrue(model.hslTarget.value.waiting)
             model.moveHslTarget(20f)
             model.endHslTarget()
         }
-        await(model) { !model.hslTarget.value.waiting && it.canExport && !it.edits.hsl.isIdentity }
-        assertEquals(1, model.adjustmentTransactions.size)
-        val saved = edits.readState(identity)
+        await(model) { !model.hslTarget.value.waiting && it.draftReady && !it.visibleEdits.hsl.isIdentity }
+        val sampled = model.state.value.visibleEdits.hsl
+        assertEquals(1, model.state.value.draft!!.undoSteps.size)
+        assertTrue(model.adjustmentTransactions.isEmpty())
+        assertEquals(before, edits.readState(identity))
         main {
             model.beginHslTarget(.5f, .5f)
             model.moveHslTarget(40f)
             model.cancelHslTarget()
             model.endHslTarget()
         }
-        await(model) { !it.rendering }
-        assertEquals(saved, edits.readState(identity))
+        await(model) { it.draftReady }
+        assertEquals(sampled, model.state.value.visibleEdits.hsl)
+        assertEquals(before, edits.readState(identity))
         main {
             model.beginHslTarget(.5f, .5f)
             assertTrue(model.hslTarget.value.waiting)
             model.updatePreviewSize(64)
             assertFalse(model.hslTarget.value.waiting)
         }
-        await(model) { it.canExport && maxOf(it.preview!!.result.width, it.preview.result.height) <= 64 }
-        assertFalse(model.hslTarget.value.waiting)
-        assertEquals(saved, edits.readState(identity))
-        assertEquals(1, model.adjustmentTransactions.size)
+        await(model) { it.draftReady }
+        assertEquals(sampled, model.state.value.visibleEdits.hsl)
         main {
             model.beginHslTarget(.5f, .5f)
             model.retry()
             assertFalse(model.hslTarget.value.waiting)
         }
+        await(model) { it.draftReady }
+        assertEquals(sampled, model.state.value.visibleEdits.hsl)
+        assertEquals(1, model.state.value.draft!!.undoSteps.size)
+        assertTrue(model.adjustmentTransactions.isEmpty())
+        assertEquals(before, edits.readState(identity))
+
+        assertTrue(result<Boolean> { model.applyDraft(it) })
         await(model) { it.canExport }
+        val saved = edits.readState(identity)
+        assertEquals(sampled, saved.settings!!.hsl)
+        assertEquals(1, model.adjustmentTransactions.size)
+        assertFalse(model.hslTarget.value.enabled)
+        main { model.updatePreviewSize(64) }
+        await(model) { it.canExport && maxOf(it.preview!!.result.width, it.preview.result.height) <= 64 }
         assertEquals(saved, edits.readState(identity))
     }
 

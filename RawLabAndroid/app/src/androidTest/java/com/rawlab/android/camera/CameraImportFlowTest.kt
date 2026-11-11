@@ -3,6 +3,7 @@ package com.rawlab.android.camera
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
@@ -149,6 +150,16 @@ class CameraImportFlowTest {
         compose.onNodeWithTag("camera-connect-help").assertIsDisplayed()
         compose.onNodeWithTag("camera-back").performClick()
         compose.onNodeWithTag("camera-connect-screen").assertIsDisplayed()
+    }
+
+    @Test fun openingConnectionDoesNotStartCameraDiscovery() {
+        compose.waitUntil(10_000) { !compose.activity.camera.state.value.preparing }
+        compose.onNodeWithTag("editor-camera").performClick()
+        compose.onNodeWithTag("camera-mode-IMPORT").performClick()
+        compose.waitUntil(10_000) { !compose.activity.camera.state.value.closing }
+        compose.onNodeWithTag("camera-find").assertIsDisplayed().assertIsEnabled()
+        assertNull(compose.activity.camera.state.value.stage)
+        assertNull(compose.activity.camera.state.value.message)
     }
 
     private fun capture(name: String) {

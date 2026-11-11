@@ -12,6 +12,7 @@
 #include "core/hdr_look.h"
 #include "core/proraw_source.h"
 #include "sony2fuji/dcp_compiler.h"
+#include "sony2fuji/processing_version.h"
 #include "sony2fuji/raw_processor.h"
 
 #include <algorithm>
@@ -671,10 +672,18 @@ sony2fuji_status sony2fuji_hdr_decode(const char* file, const sony2fuji_hdr_deco
 }
 sony2fuji_status sony2fuji_hdr_probe_camera_raw(const char* file, sony2fuji_hdr_source_info_v1* info,
     sony2fuji_hdr_diagnostic_v1* diagnostic) {
+    return sony2fuji_hdr_probe_camera_raw_with_processing(file, SONY2FUJI_PROCESSING_LEGACY, info, diagnostic);
+}
+
+sony2fuji_status sony2fuji_hdr_probe_camera_raw_with_processing(const char* file, sony2fuji_processing_version processing,
+    sony2fuji_hdr_source_info_v1* info, sony2fuji_hdr_diagnostic_v1* diagnostic) {
     return boundary(diagnostic, [&] {
         header(info, SONY2FUJI_HDR_FIELD_RESULT); clearOutput(info); path(file);
+        const auto version = static_cast<ProcessingVersion>(processing);
+        if (!validProcessingVersion(version))
+            fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_REQUEST, "Invalid camera RAW processing version");
         cameraRawStamp(std::filesystem::u8path(file));
-        RAWProcessor processor;
+        RAWProcessor processor(usesLegacySonyCrop(version));
         int width = 0, height = 0;
         uint64_t sensorPixels = 0;
         cameraRawStatus(processor.inspectCameraHDR(file, width, height, sensorPixels));
@@ -806,7 +815,7 @@ static sony2fuji_status decodeCameraRaw(sony2fuji_session* session, const char* 
         auto owner = std::make_shared<Owner>();
         auto& pair = owner->pixels;
         {
-            RAWProcessor processor;
+            RAWProcessor processor(hdrSessionUsesLegacySonyCrop(session));
             int width = 0, height = 0;
             uint64_t sensorPixels = 0;
             cameraRawStatus(processor.inspectCameraHDR(file, width, height, sensorPixels));

@@ -9,6 +9,7 @@ namespace sony2fuji { struct RAWBayerSource; struct RAWBayerOverride; }
 
 // HDR 不继承旧会话的 RAW/外观状态；以下私有入口限定会话访问。
 bool hdrSessionForcesGPU(const sony2fuji_session* session);
+bool hdrSessionUsesLegacySonyCrop(const sony2fuji_session* session);
 void hdrSessionDidRenderCPU(sony2fuji_session* session);
 sony2fuji::ProcessingCancellation hdrSessionCancellation(const sony2fuji_session* session);
 std::shared_ptr<const sony2fuji::LensCorrectionDatabase> hdrSessionLensDatabase(sony2fuji_session* session);

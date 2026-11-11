@@ -27,8 +27,10 @@ include("${CMAKE_CURRENT_LIST_DIR}/libraw-vng.cmake")
 
 # Sony 私有比例裁切标签会覆盖同一 IFD 的完整 DefaultCrop。
 # 识别 RAW IFD 后恢复文件声明的有效区，不从机型、比例或存储填充推算。
-replace_libraw(src/metadata/identify.cpp
-    "  /* Early reject for damaged images again (after dng fields processing) */" [=[
+file(READ "${LIBRAW_SOURCE_DIR}/src/metadata/identify.cpp" sony_crop_source)
+if(NOT sony_crop_source MATCHES "RAWLAB_LEGACY_SONY_CROP")
+    replace_libraw(src/metadata/identify.cpp
+        "  /* Early reject for damaged images again (after dng fields processing) */" [=[
   if (!dng_version && makeIs(LIBRAW_CAMERAMAKER_Sony))
   {
     const int raw_ifd = find_ifd_by_offset(data_offset);
@@ -52,6 +54,19 @@ replace_libraw(src/metadata/identify.cpp
 
   /* Early reject for damaged images again (after dng fields processing) */
 ]=])
+    # 在 LibRaw 生成或校正 inset crop 之前保留原路径。可更新已打过 #201 补丁的源码。
+    replace_libraw(src/metadata/identify.cpp [=[
+  if (!dng_version && makeIs(LIBRAW_CAMERAMAKER_Sony))
+  {
+    const int raw_ifd = find_ifd_by_offset(data_offset);
+]=] [=[
+  // RAWLAB_LEGACY_SONY_CROP: keep the inset crop used by released edit records.
+  if (!dng_version && makeIs(LIBRAW_CAMERAMAKER_Sony) &&
+      !(imgdata.rawparams.options & (1u << 31)))
+  {
+    const int raw_ifd = find_ifd_by_offset(data_offset);
+]=])
+endif()
 
 # 只替换 Nikon HE 像素解码，保留 LibRaw 的元数据、白平衡与显影流程。
 set(nikon_he_source "${CMAKE_CURRENT_LIST_DIR}/../third_party/nikon_he")

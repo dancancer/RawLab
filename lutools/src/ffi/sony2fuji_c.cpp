@@ -65,6 +65,7 @@ struct sony2fuji_session {
     void* cancellation_context = nullptr;
     sony2fuji::GpuConfig gpu_config;
     sony2fuji::ImageData raw_cache;
+    std::pair<int, int> raw_native_size{};
     std::string raw_key;
     sony2fuji_raw_exposure_mode raw_exposure_mode = SONY2FUJI_EXPOSURE_SCENE;
     int32_t raw_noise_reduction = 0;
@@ -122,6 +123,11 @@ struct sony2fuji_session {
 
 bool hdrSessionForcesGPU(const sony2fuji_session* session) {
     return session && session->gpu_config.mode == sony2fuji::GpuMode::Force;
+}
+
+bool hdrSessionUsesLegacySonyCrop(const sony2fuji_session* session) {
+    const auto version = session ? session->processing_version : sony2fuji::ProcessingVersion::Legacy;
+    return sony2fuji::usesLegacySonyCrop(version);
 }
 
 void hdrSessionDidRenderCPU(sony2fuji_session* session) {
@@ -991,6 +997,7 @@ sony2fuji_status loadLUT(
 
 sony2fuji::RAWProcessOptions rawWhiteBalanceOptions(const sony2fuji_session* session, const sony2fuji_request& request) {
     sony2fuji::RAWProcessOptions options;
+    options.legacySonyCrop = sony2fuji::usesLegacySonyCrop(session->processing_version);
     options.bayerDemosaic = session->processing_version == sony2fuji::ProcessingVersion::Legacy ?
         sony2fuji::BayerDemosaicMethod::Legacy : sony2fuji::BayerDemosaicMethod::VNG;
     options.useCameraWhiteBalance = request.wb_mode == SONY2FUJI_WB_CAMERA;
@@ -1046,6 +1053,8 @@ sony2fuji_status loadRawImage(
     const auto aiSourceIdentity = aiEnabled(session) ? sony2fuji::ai::sourceIdentityKey(request.input_path) : std::string();
     if (aiEnabled(session)) fileKey += ":ai-source:" + aiSourceIdentity;
 #endif
+    const bool legacySonyCrop = sony2fuji::usesLegacySonyCrop(session->processing_version);
+    if (legacySonyCrop) fileKey += ":legacy-sony-crop";
     const bool useAI = applyAI && aiEnabled(session);
     const int rawNoiseReduction = aiEnabled(session) ? 0 : session->raw_noise_reduction;
     if (session->lens_correction.active()) ensureLensDatabase(session);
@@ -1085,7 +1094,8 @@ sony2fuji_status loadRawImage(
     // A full-quality cache can serve a proxy, but never the reverse. Non-WB
     // sliders should not trigger another demosaic just because dragging began.
     const std::string exactKey = key + ":exact";
-    key += interactive && session->raw_key != exactKey ? ":interactive" : ":exact";
+    const bool halfSize = interactive && (session->raw_cache.pixels.empty() || session->raw_key != exactKey);
+    key += halfSize ? ":interactive" : ":exact";
     if (session->raw_key != key || session->raw_cache.pixels.empty()) {
         const bool anchoredPreview = session->raw_exposure_mode == SONY2FUJI_EXPOSURE_PREVIEW &&
             (request.wb_mode == SONY2FUJI_WB_TEMPERATURE || useAI);
@@ -1102,7 +1112,7 @@ sony2fuji_status loadRawImage(
         if (!session->raw_processor || session->processor_key != fileKey) {
             session->raw_processor.reset();
             session->processor_key.clear();
-            auto processor = std::make_unique<sony2fuji::RAWProcessor>();
+            auto processor = std::make_unique<sony2fuji::RAWProcessor>(legacySonyCrop);
             const auto loaded = processor->loadFile(request.input_path, static_cast<sony2fuji::X3fMode>(session->x3f_mode));
             if (loaded != sony2fuji::ErrorCode::Success) return mapError(loaded);
             session->raw_processor = std::move(processor);
@@ -1110,7 +1120,7 @@ sony2fuji_status loadRawImage(
         }
         auto& processor = *session->raw_processor;
         auto options = wbOptions;
-        options.halfSize = interactive;
+        options.halfSize = halfSize;
         options.rawNoiseReduction = rawNoiseReduction;
         options.outputLinear = true;
         options.outputAdobe = true;
@@ -1145,6 +1155,7 @@ sony2fuji_status loadRawImage(
             sony2fuji::ai::applySceneRGBCorrection(decoded,prepared->scene,sony2fuji::ColorSpace::AdobeRGB,
                 std::exp2(processor.getBaselineExposureEV()+options.exposure)*options.brightness);
 #endif
+        session->raw_native_size = halfSize ? processor.getNativeOutputSize() : std::pair{decoded.width, decoded.height};
         session->raw_cache = std::move(decoded);
         session->raw_display_referred = processor.isDisplayReferred();
         session->raw_lens_report = processor.getLensCorrectionReport();
@@ -1400,9 +1411,10 @@ void hdrSessionPrepareCameraAI(sony2fuji_session* session, const char* path, uin
         };
         if (!report(ai::Phase::Loading, 0, 1)) throw ProcessingCancelled();
         const auto identity = ai::sourceIdentityKey(path, checkProcessingCancellation);
+        const bool legacySonyCrop = hdrSessionUsesLegacySonyCrop(session);
         RAWBayerSource source;
         {
-            RAWProcessor processor;
+            RAWProcessor processor(legacySonyCrop);
             int width = 0, height = 0;
             uint64_t sensorPixels = 0;
             auto status = processor.inspectCameraHDR(path, width, height, sensorPixels);
@@ -1415,7 +1427,7 @@ void hdrSessionPrepareCameraAI(sony2fuji_session* session, const char* path, uin
             if (status != ErrorCode::Success) throw ai::DecodeError(status, "Cannot unpack Bayer RAW for HDR AI");
         }
         if (!report(ai::Phase::Loading, 1, 1)) throw ProcessingCancelled();
-        state.prepareHDRBayer(path, identity, source, report);
+        state.prepareHDRBayer(path, identity, source, legacySonyCrop, report);
     });
 #else
     (void)session; (void)path; (void)fileBytes; (void)progress; (void)context;
@@ -1425,7 +1437,9 @@ void hdrSessionPrepareCameraAI(sony2fuji_session* session, const char* path, uin
 
 std::string hdrSessionCameraAIKey(sony2fuji_session* session, const char* path) {
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
-    return withHDRCameraAI(session, [&](sony2fuji::ai::AISession& ai) { return ai.hdrBayerKey(path); });
+    return withHDRCameraAI(session, [&](sony2fuji::ai::AISession& ai) {
+        return ai.hdrBayerKey(path, hdrSessionUsesLegacySonyCrop(session));
+    });
 #else
     (void)session; (void)path;
     unavailableHDRCameraAI();
@@ -2278,6 +2292,17 @@ static sony2fuji_status processImpl(
         // 视口共用该缓存，只缩小后续工作图，避免 half-size 解码改变空间尺度。
         if (geometryActive || neighborhoodActive) raw_request.intent = SONY2FUJI_INTENT_FINAL;
         status = loadRawImage(session, raw_request, image, &color_space, &is_linear, false);
+        // Use a full decode when the viewport needs more pixels than the RAW proxy provides.
+        if (status == SONY2FUJI_STATUS_OK && viewportPreview &&
+            std::pair{image.width, image.height} != session->raw_native_size) {
+            const auto [sourceWidth, sourceHeight] = session->raw_native_size;
+            uint32_t width, height;
+            status = computeTargetSize(local, sourceWidth, sourceHeight, &width, &height);
+            if (status == SONY2FUJI_STATUS_OK && (width > uint32_t(image.width) || height > uint32_t(image.height))) {
+                raw_request.intent = SONY2FUJI_INTENT_FINAL;
+                status = loadRawImage(session, raw_request, image, &color_space, &is_linear, false);
+            }
+        }
         if (status == SONY2FUJI_STATUS_OK && !viewportPreview && (!gpuPipeline || waveletActive)) {
             const bool large = session->raw_cache.pixels.size() * sizeof(sony2fuji::RGB) >
                 sony2fuji::WaveletRenderCache::defaultPreviewBudget;
@@ -2301,7 +2326,9 @@ static sony2fuji_status processImpl(
     sony2fuji::checkProcessingCancellation();
     if (color_space == SONY2FUJI_COLOR_SONY_NATIVE) return SONY2FUJI_STATUS_UNSUPPORTED;
     const int atmosphereSourceWidth = image.width, atmosphereSourceHeight = image.height;
-    const auto native = sony2fuji::geometryOutputSize(image.width, image.height, session->geometry);
+    const auto [canvasWidth, canvasHeight] = viewportPreview && local.input_type == SONY2FUJI_INPUT_RAW
+        ? session->raw_native_size : std::pair{image.width, image.height};
+    const auto native = sony2fuji::geometryOutputSize(canvasWidth, canvasHeight, session->geometry);
     const uint32_t native_width = native.first, native_height = native.second;
 
     if (viewportPreview) {
@@ -2574,14 +2601,22 @@ sony2fuji_status sony2fuji_session_migrate_processing(const sony2fuji_session* s
         local.target_width = local.target_height = 0;
         auto stamp = [](const char* path) {
             if (!path || !*path) return std::string();
-            const std::filesystem::path file(path);
-            return std::filesystem::canonical(file).string() + ':' +
+            const auto file = std::filesystem::u8path(path);
+            return std::filesystem::canonical(file).u8string() + ':' +
                 std::to_string(std::filesystem::file_size(file)) + ':' +
                 std::to_string(std::chrono::duration_cast<std::chrono::microseconds>(
                     std::filesystem::last_write_time(file).time_since_epoch()).count());
         };
         const auto inputStamp = local.input_type == SONY2FUJI_INPUT_RAW ? stamp(local.input_path) : std::string();
         const auto lookStamp = stamp(local.lut_path);
+        if (sony2fuji::usesLegacySonyCrop(source->processing_version) &&
+            local.input_type == SONY2FUJI_INPUT_RAW && !isEmptyString(local.input_path)) {
+            bool framingChanged = false;
+            const auto status = sony2fuji::RAWProcessor::sonyFramingChanged(local.input_path, framingChanged);
+            if (status != sony2fuji::ErrorCode::Success) return mapError(status);
+            // A color fit cannot change the reference frame of a saved crop.
+            if (framingChanged) return SONY2FUJI_STATUS_UNSUPPORTED;
+        }
         uint32_t evaluations = 0;
         auto render = [&](const sony2fuji::MigrationParameters& values, sony2fuji::ProcessingVersion version, bool exact, const sony2fuji::MigrationFrame* reference = nullptr) {
             sony2fuji::checkProcessingCancellation();

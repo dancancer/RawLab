@@ -291,17 +291,14 @@ final class CameraWorkspaceBackend {
     }
     private func receive(_ job: CameraTransferJob, assets: [CameraRemoteAsset], run: IOSCameraRun) throws {
         let store = try store(), session = try run.currentSession()
-        guard job.camera.stableKey == session.device.stableKey, job.connectionKey == run.endpoint.connectionKey else {
-            throw CameraProtocolError.invalid("Transfer belongs to a different camera")
-        }
+        let pending = try job.pendingAssets(device: session.device, connectionKey: run.endpoint.connectionKey,
+            assets: assets, allowAlternateConnection: run.mode == .importing)
         run.emit(.phase(.receiving))
-        for item in job.items where item.phase != .saved {
+        for (item, asset) in pending {
             guard owns(run) else { throw CameraProtocolError.cancelled }
-            let matches = assets.filter { $0.snapshot == item.asset }
-            guard matches.count == 1 else { throw CameraProtocolError.invalid("Camera original changed; select it again") }
             let target = try store.begin(job: job.id, item: item.id)
             do {
-                let digest = try session.download(matches[0], to: target.handle) { bytes in
+                let digest = try session.download(asset, to: target.handle) { bytes in
                     run.emit(.progress(item.id, bytes, item.asset.size))
                 }
                 try target.handle.close()

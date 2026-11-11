@@ -899,7 +899,7 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeProbe(JNIEnv* env, jclass, 
 }
 
 extern "C" JNIEXPORT jbyteArray JNICALL
-Java_com_rawlab_android_engine_NativeHDRBridge_nativeProbeCameraRaw(JNIEnv* env, jclass, jstring path) {
+Java_com_rawlab_android_engine_NativeHDRBridge_nativeProbeCameraRaw(JNIEnv* env, jclass, jstring path, jint processingVersion) {
     try {
         UtfChars source(env, path);
         if (!source.chars || !*source.chars) throw std::invalid_argument("Missing camera RAW source path");
@@ -910,7 +910,8 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeProbeCameraRaw(JNIEnv* env,
         sony2fuji_hdr_diagnostic_v1 diagnostic{};
         diagnostic.version = SONY2FUJI_HDR_VERSION;
         diagnostic.struct_size = sizeof(diagnostic);
-        auto status = sony2fuji_hdr_probe_camera_raw(source.chars, &info, &diagnostic);
+        auto status = sony2fuji_hdr_probe_camera_raw_with_processing(source.chars,
+            static_cast<sony2fuji_processing_version>(processingVersion), &info, &diagnostic);
         if (status == SONY2FUJI_STATUS_UNSUPPORTED && diagnostic.reason == SONY2FUJI_HDR_REASON_UNSUPPORTED_RAW)
             status = sony2fuji_hdr_probe_proraw(source.chars, &info, &diagnostic);
         if (status == SONY2FUJI_STATUS_UNSUPPORTED &&
@@ -980,7 +981,7 @@ extern "C" JNIEXPORT jlong JNICALL
 Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecodeCameraRaw(JNIEnv* env, jclass, jlong sessionId,
     jstring path, jint longEdge, jlong cancellationGeneration, jboolean proRAW, jstring temporaryRoot,
     jboolean customWhiteBalance, jfloat temperature, jfloat tint, jboolean sensorExposure,
-    jint fbddLevel, jint lensFlags, jstring lensProfile, jstring profilePath, jstring profileDigest) {
+    jint fbddLevel, jint lensFlags, jstring lensProfile, jstring profilePath, jstring profileDigest, jint processingVersion) {
     try {
         UtfChars source(env, path), temporary(env, temporaryRoot), profile(env, lensProfile);
         UtfChars resource(env, profilePath), digest(env, profileDigest);
@@ -991,6 +992,8 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecodeCameraRaw(JNIEnv* env
         if (session == sessions.end()) throw std::invalid_argument("Processor is closed");
         CancellationScope cancellation(session->second, cancellationGeneration);
         if (cancellation.isCancelled()) throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
+        if (!proRAW) check(sony2fuji_session_set_processing_version(session->second.get(),
+            static_cast<sony2fuji_processing_version>(processingVersion)));
         sony2fuji_hdr_decode_options_v1 options{};
         options.version = SONY2FUJI_HDR_VERSION;
         options.struct_size = sizeof(options);

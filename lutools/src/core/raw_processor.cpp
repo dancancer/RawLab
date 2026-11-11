@@ -36,6 +36,16 @@ constexpr int kParallelThreshold = 1 << 16;
 namespace sony2fuji {
 
 namespace {
+// Private LibRaw option used by the Sony DefaultCrop backport in patch-libraw.cmake.
+constexpr unsigned kLegacySonyCrop = 1u << 31;
+
+ErrorCode decodeError(int ret) {
+    if (ret == LIBRAW_FILE_UNSUPPORTED) return ErrorCode::InvalidFormat;
+    if (ret == LIBRAW_IO_ERROR) return ErrorCode::FileNotFound;
+    if (ret == LIBRAW_UNSUFFICIENT_MEMORY || ret == LIBRAW_MEMPOOL_OVERFLOW) return ErrorCode::OutOfMemory;
+    return ErrorCode::ProcessingError;
+}
+
 class RawCancellationScope {
     LibRaw& raw_;
     ProcessingCancellation cancellation_ = processingCancellation;
@@ -128,7 +138,9 @@ LensMetadata lensMetadata(const LibRaw& processor, bool sdkStage3 = false) {
 
 class RAWProcessor::Impl {
 public:
-    Impl() : rawProcessor_(std::make_unique<LibRaw>()) {}
+    explicit Impl(bool legacySonyCrop) : rawProcessor_(std::make_unique<LibRaw>()) {
+        if (legacySonyCrop) rawProcessor_->imgdata.rawparams.options |= kLegacySonyCrop;
+    }
 
     ErrorCode loadFile(const std::string& filepath, X3fMode mode = X3fMode::Legacy, bool inspectOnly = false) {
         RawCancellationScope cancellation(*rawProcessor_);
@@ -506,6 +518,8 @@ public:
         return sourceReady_ ? height_ : 0;
     }
 
+    std::pair<int, int> getNativeOutputSize() const { return nativeOutputSize_; }
+
     std::string getCameraMake() const {
         return sourceReady_ ? cameraMake_ : std::string();
     }
@@ -554,6 +568,7 @@ private:
         identificationCameraWB_ = false;
         identificationAutoWB_ = false;
         width_ = height_ = 0;
+        nativeOutputSize_ = {};
         cameraMake_.clear();
         cameraModel_.clear();
         whiteBalance_.reset();
@@ -625,6 +640,9 @@ private:
         bayerSource_ = data.idata.colors == 3 && data.idata.filters > 1000 && !data.idata.is_foveon;
         width_ = data.sizes.width;
         height_ = data.sizes.height;
+        // Save the oriented canvas while LibRaw still has the full-resolution source geometry.
+        int channels = 0, bits = 0;
+        rawProcessor_->get_mem_image_format(&nativeOutputSize_.first, &nativeOutputSize_.second, &channels, &bits);
         cameraMake_ = data.idata.make;
         cameraModel_ = data.idata.model;
         const float dngExposure = data.color.dng_levels.baseline_exposure;
@@ -701,13 +719,6 @@ private:
         return ErrorCode::Success;
     }
 
-    static ErrorCode decodeError(int ret) {
-        if (ret == LIBRAW_FILE_UNSUPPORTED) return ErrorCode::InvalidFormat;
-        if (ret == LIBRAW_IO_ERROR) return ErrorCode::FileNotFound;
-        if (ret == LIBRAW_UNSUFFICIENT_MEMORY || ret == LIBRAW_MEMPOOL_OVERFLOW) return ErrorCode::OutOfMemory;
-        return ErrorCode::ProcessingError;
-    }
-
 #ifdef SONY2FUJI_ENABLE_DNGSDK
     // LibRaw 的 SDK 图像释放依赖 host，host 必须比 LibRaw 活得更久。
     std::unique_ptr<dng_host> dngHost_;
@@ -733,6 +744,7 @@ private:
     LensCorrectionReport lensReport_;
     int width_ = 0;
     int height_ = 0;
+    std::pair<int, int> nativeOutputSize_{};
     ColorSpace outputSpace_ = ColorSpace::sRGB;
     float previewExposureEV_ = 0;
     float baselineExposureEV_ = 0;
@@ -746,9 +758,8 @@ private:
 // RAWProcessor Implementation
 // ============================================================================
 
-RAWProcessor::RAWProcessor()
-    : pImpl_(std::make_unique<Impl>()) {
-}
+RAWProcessor::RAWProcessor() : RAWProcessor(false) {}
+RAWProcessor::RAWProcessor(bool legacySonyCrop) : pImpl_(std::make_unique<Impl>(legacySonyCrop)) {}
 
 RAWProcessor::~RAWProcessor() = default;
 
@@ -761,6 +772,33 @@ ErrorCode RAWProcessor::loadFile(const std::string& filepath, X3fMode mode) {
 
 ErrorCode RAWProcessor::inspectFile(const std::string& filepath) {
     return pImpl_->loadFile(filepath, X3fMode::Legacy, true);
+}
+
+ErrorCode RAWProcessor::sonyFramingChanged(const std::string& filepath, bool& changed) {
+    changed = false;
+    auto raw = std::make_unique<LibRaw>();
+    RawCancellationScope cancellation(*raw);
+    auto open = [&] {
+        const int status = openRawFile(*raw, filepath);
+        if (status == LIBRAW_CANCELLED_BY_CALLBACK) throw ProcessingCancelled();
+        return status;
+    };
+    auto status = open();
+    if (status != LIBRAW_SUCCESS) return decodeError(status);
+    if (raw->imgdata.idata.dng_version || raw->imgdata.idata.maker_index != LIBRAW_CAMERAMAKER_Sony)
+        return ErrorCode::Success;
+    auto inset = [&] {
+        raw->adjust_to_raw_inset_crop(3);
+        const auto& sizes = raw->imgdata.sizes;
+        return std::array{sizes.left_margin, sizes.top_margin, sizes.width, sizes.height};
+    };
+    const auto full = inset();
+    raw->recycle();
+    raw->imgdata.rawparams.options |= kLegacySonyCrop;
+    status = open();
+    if (status != LIBRAW_SUCCESS) return decodeError(status);
+    changed = full != inset();
+    return ErrorCode::Success;
 }
 
 ErrorCode RAWProcessor::inspectCameraHDR(const std::string& filepath, int& width, int& height, uint64_t& sensorPixels) {
@@ -794,6 +832,8 @@ int RAWProcessor::getWidth() const {
 int RAWProcessor::getHeight() const {
     return pImpl_->getHeight();
 }
+
+std::pair<int, int> RAWProcessor::getNativeOutputSize() const { return pImpl_->getNativeOutputSize(); }
 
 std::string RAWProcessor::getCameraMake() const {
     return pImpl_->getCameraMake();

@@ -207,7 +207,8 @@ private actor IOSPhotoPreviewWorker {
         let image: UIImage = try source.file.withReadAccess { url in
             if settings.isHDREditing {
                 let frame = try processor.processHDR(url: url, settings: settings.hdr!.previewSettings(),
-                    previewLongEdge: IOSPhotoPreviewPlan.edge, proRAWDecodeVersion: settings.proRAWDecodeVersion,
+                    previewLongEdge: IOSPhotoPreviewPlan.edge, processing: settings.processing,
+                    proRAWDecodeVersion: settings.proRAWDecodeVersion,
                     cancelled: { Task.isCancelled })
                 return try UIImage(cgImage: HDRPresentation.makeSDRImage(frame))
             }
