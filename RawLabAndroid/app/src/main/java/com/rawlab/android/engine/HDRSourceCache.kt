@@ -42,7 +42,8 @@ internal object HDRSourceCache {
             val sameSource = if (info.isCameraRaw && info.cameraStamp != null)
                 entry.cameraStamp == info.cameraStamp else entry.fingerprint.contentEquals(info.fingerprint)
             if(!sameSource) {iterator.remove();detach(entry);continue}
-            if(entry.edge<edge || entry.camera!=camera || entry.lensDatabase!=lensDatabase)continue
+            if(entry.edge<edge || entry.camera!=camera || entry.lensDatabase!=lensDatabase ||
+                entry.image.sourceInfo.cameraProcessingVersion!=info.cameraProcessingVersion)continue
             iterator.remove();entries.addFirst(entry);return lease(entry)
         }
         val entry=Entry(path, info.fingerprint.copyOf(), info.cameraStamp, edge, camera, lensDatabase,

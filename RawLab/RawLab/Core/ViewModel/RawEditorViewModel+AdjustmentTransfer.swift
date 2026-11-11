@@ -87,7 +87,8 @@ extension RawEditorViewModel {
                                 context.validateHDRCameraRequest = { candidate in
                                     guard let hdr = candidate.hdr else { throw HDRRequestError.invalidSettings }
                                     _ = try file.withReadAccess {
-                                        try Sony2FujiProcessor().processHDR(url: $0, settings: hdr, previewLongEdge: 128)
+                                        try Sony2FujiProcessor().processHDR(url: $0, settings: hdr, previewLongEdge: 128,
+                                            processing: candidate.processing)
                                     }
                                 }
                             }

@@ -301,21 +301,11 @@ final class CameraWorkspaceBackend {
     }
     private func receive(_ job: CameraTransferJob, assets: [CameraRemoteAsset], run: IOSCameraRun) throws {
         let store = try store(), session = try run.currentSession()
-        let sameCamera = job.incremental == nil
-            ? job.camera.stableKey == session.device.stableKey && job.connectionKey == run.endpoint.connectionKey
-            : job.matches(camera: session.device, connectionKey: run.endpoint.connectionKey)
-        guard sameCamera else {
-            throw CameraProtocolError.invalid("Transfer belongs to a different camera")
-        }
+        let pending = try job.pendingAssets(device: session.device, connectionKey: run.endpoint.connectionKey,
+            assets: assets, allowAlternateConnection: run.mode == .importing)
         run.emit(.phase(.receiving))
-        let bound = job.bindToListing(assets)
-        for item in job.pendingItems {
+        for (item, asset) in pending {
             guard owns(run) else { throw CameraProtocolError.cancelled }
-            guard let asset = bound[item.id] else {
-                let error = CameraProtocolError.invalid("Camera original changed; select it again")
-                try store.interrupt(job: job.id, item: item.id, error: error.localizedDescription, cancelled: false)
-                throw error
-            }
             let target = try store.begin(job: job.id, item: item.id)
             do {
                 let digest = try session.download(asset, to: target.handle) { bytes in

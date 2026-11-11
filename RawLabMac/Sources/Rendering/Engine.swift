@@ -375,6 +375,7 @@ final class RenderEngine {
         guard Self.hdrCameraAIAvailable, Self.isHDRCameraAICandidate(info: info, settings: settings) else {
             throw RenderError.aiFailed(L10n.text("此照片或构建尚不能使用 AI 降噪。"))
         }
+        try configureProcessing(settings.processing)
         try configureAI(enabled: true)
         do { return try operation(HDRImage.cameraAIKey(url, session: session)) }
         catch let error as HDRNativeError where error.reason == UInt32(SONY2FUJI_HDR_REASON_CAMERA_AI) {
@@ -389,6 +390,7 @@ final class RenderEngine {
                   Self.isHDRCameraAICandidate(info: try HDRSourceInfo.probeRAW(url), settings: settings) else {
                 throw RenderError.aiFailed(L10n.text("此照片或构建尚不能使用 AI 降噪。"))
             }
+            try configureProcessing(settings.processing)
             try configureAI(enabled: true)
             let context = Unmanaged.passUnretained(progress).toOpaque()
             _ = sony2fuji_session_set_cancellation_callback(session, { context in
@@ -448,7 +450,7 @@ final class RenderEngine {
             let info = settings.hdrCameraAIEnabled ? try HDRSourceInfo.probeRAW(url) : nil
             return try withHDRCameraAI(url, settings: settings, info: info) { key in
                 try hdrSources.autoExposure(url, settings: hdr, proRAWDecodeVersion: settings.proRAWDecodeVersion,
-                    session: session, lensDatabase: lensDatabaseURL, cameraAIKey: key)
+                    session: session, lensDatabase: lensDatabaseURL, cameraAIKey: key, processing: settings.processing.core)
             }
         }
         let settings = try resolvedSettings(url, settings: settings)
@@ -613,7 +615,7 @@ final class RenderEngine {
                     reason: UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU), field: UInt32(SONY2FUJI_HDR_FIELD_SESSION))
             }
             guard let session, let record = settings.hdr,
-                  let info = try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url) else {
+                  let info = try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url, processing: settings.processing.core) else {
                 throw HDRSettings.ModeError.unsupportedSource
             }
             if info.proRAW != nil { try ProRAWSource.validatedDecodeVersion(settings.proRAWDecodeVersion) }
@@ -758,7 +760,7 @@ final class RenderEngine {
             throw HDRNativeError(status:SONY2FUJI_STATUS_UNSUPPORTED,reason:UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU),field:UInt32(SONY2FUJI_HDR_FIELD_SESSION))
         }
         guard let session,let record=settings.hdr,record.isValid,
-              let info=try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url) else {
+              let info=try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url, processing: settings.processing.core) else {
             throw RenderError.failed(L10n.text("此照片没有可编辑的 HDR 增益图。"))
         }
         if info.proRAW != nil { try ProRAWSource.validatedDecodeVersion(settings.proRAWDecodeVersion) }

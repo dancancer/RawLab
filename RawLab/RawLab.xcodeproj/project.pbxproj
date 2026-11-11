@@ -1173,7 +1173,6 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					4CAC4510D72097AAADB14698 = {
-						DevelopmentTeam = 26C49A5JKY;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -1570,11 +1569,10 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 26C49A5JKY;
 				GENERATE_INFOPLIST_FILE = NO;
 				HEADER_SEARCH_PATHS = "$(inherited) $(SRCROOT)/../lutools/include";
 				INFOPLIST_FILE = RawLab/Resources/Info.plist;
-				CODE_SIGN_ENTITLEMENTS = RawLab/Resources/RawLab.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.RawLab;
@@ -1594,11 +1592,10 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 26C49A5JKY;
 				GENERATE_INFOPLIST_FILE = NO;
 				HEADER_SEARCH_PATHS = "$(inherited) $(SRCROOT)/../lutools/include";
 				INFOPLIST_FILE = RawLab/Resources/Info.plist;
-				CODE_SIGN_ENTITLEMENTS = RawLab/Resources/RawLab.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.RawLab;

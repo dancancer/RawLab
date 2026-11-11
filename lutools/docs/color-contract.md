@@ -57,8 +57,10 @@ For non-DNG Sony RAW, a complete, in-bounds `DefaultCropOrigin/DefaultCropSize`
 on the selected RAW IFD defines the active image area. Sony's private aspect-ratio
 crop tags must not replace it: in-camera 4:3, 16:9 or 1:1 framing must not discard
 pixels from that active area. Missing or invalid standard crop metadata retains
-the existing LibRaw fallback; dimensions are never inferred from the camera model
-or forced to 3:2. This applies equally to normal rendering and HDR inspection.
+the existing LibRaw fallback. New edits use the complete active area for both
+SDR and camera RAW HDR. Processing versions 1 and 2 keep the pre-change
+LibRaw inset rectangle so saved normalized geometry continues to address the
+same pixels. Preview, export and camera RAW HDR inspection use that same rectangle.
 X-Trans demosaic tiles read an immutable source copy before parallel processing;
 their output must never feed adjacent tiles' overlapping source halos. This
 keeps OpenMP enabled but adds eight bytes per active sensor pixel during X-Trans

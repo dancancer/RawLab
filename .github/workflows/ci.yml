@@ -393,7 +393,7 @@ jobs:
             $package = Join-Path $PWD 'build/RawLab-Windows'
             $env:PATH = "$package;$env:PATH"
             if ($env:RAWLAB_CI_NATIVE -eq 'true') {
-              $tests = '^(dcp_compiler|windows_display_image|raw_formats|raw_active_area_metadata|raw_active_area_sony|sony_arw6|sony_arw6_bounds|display_render|edit_recipe|edit_recipe_raster|edit_recipe_geometry|geometry_cli|agent_preview|raw_info_cli|agent_commands|edit_recipe_cli|edit_recipe_schema|d3d11_shader|wavelet_restore|dualdn_.*|scene_rgb_adapter|raw_noise_estimate)$'
+              $tests = '^(dcp_compiler|windows_display_image|raw_formats|raw_active_area_metadata|raw_active_area_sony|sony_arw6|sony_arw6_bounds|display_render|rendered_dng|processing_migration_api|edit_recipe|edit_recipe_raster|edit_recipe_geometry|geometry_cli|agent_preview|raw_info_cli|agent_commands|edit_recipe_cli|edit_recipe_schema|d3d11_shader|wavelet_restore|dualdn_.*|scene_rgb_adapter|raw_noise_estimate)$'
               Invoke-Checked ctest @('--test-dir', 'build/windows-native', '-C', 'Release', '--output-on-failure', '--no-tests=error', '-R', $tests, '-E', '^dualdn_onnx$', '--output-junit', "$PWD/build/ci/windows-ctest.xml")
               Invoke-Checked python @('lutools/tests/test_dcp_compiler.py', 'build/windows-native/bin/Release/dcp_compiler_tests.exe')
               $raw = Join-Path $PWD 'lutools/examples/DJI_20250602164503_0444_D.DNG'

@@ -64,8 +64,7 @@ public final class SonyMobileSession implements CameraMediaSession {
         r.u16(); long vendor = r.u32(); r.u16(); r.ptpString(); r.u16();
         Set<Integer> operations = r.u16Array();
         for (int n = 0; n < 4; n++) r.u16Array();
-        Device result = new Device(r.ptpString(), r.ptpString(), r.ptpString(), operations);
-        r.ptpString();
+        Device result = new Device(r.ptpString(), r.ptpString(), r.ptpString(), r.ptpString(), operations);
         if (vendor != 17 || !result.manufacturer.toLowerCase(Locale.ROOT).contains("sony")
             || result.model.isEmpty() || result.firmware.isEmpty())
             throw new CameraMediaSession.UnsupportedCameraException(result.model + " / " + result.firmware);
@@ -170,14 +169,18 @@ public final class SonyMobileSession implements CameraMediaSession {
         final Object owner; final int content, file; public final String name; public final long size, created;
         public final String storageToken;
         public final long captureTimestamp;
+        private final String legacyObjectKey;
         Asset(Object owner, int content, int file, String name, long size, long created) {
-            this(owner, content, file, name, size, created, "mobile", created);
+            this(owner, content, file, name, size, created, "mobile", created, null);
         }
-        Asset(Object owner, int content, int file, String name, long size, long created, String storageToken, long captureTimestamp) {
+        Asset(Object owner, int content, int file, String name, long size, long created,
+              String storageToken, long captureTimestamp, String legacyObjectKey) {
             this.owner = owner; this.content = content; this.file = file; this.name = name; this.size = size; this.created = created;
             this.storageToken = storageToken; this.captureTimestamp = captureTimestamp;
+            this.legacyObjectKey = legacyObjectKey;
         }
         public String key() { return content + ":" + file + ":" + name + ":" + size + ":" + created; }
+        public String resumeIdentity() { return legacyObjectKey == null ? "mobile:" + key() : "legacy:" + legacyObjectKey; }
         boolean same(Asset other) { return content == other.content && file == other.file && name.equals(other.name) && size == other.size && created == other.created; }
     }
     static final class Page {
@@ -262,10 +265,14 @@ public final class SonyMobileSession implements CameraMediaSession {
     }
     static final class Packet { final int type; final byte[] bytes; Packet(int type, byte[] bytes) { this.type = type; this.bytes = bytes; } }
     public static final class Device {
-        public final String manufacturer, model, firmware;
+        public final String manufacturer, model, firmware, serial;
         public final Set<Integer> operations;
         Device(String manufacturer, String model, String firmware, Set<Integer> operations) {
-            this.manufacturer = manufacturer; this.model = model; this.firmware = firmware; this.operations = Collections.unmodifiableSet(new HashSet<>(operations));
+            this(manufacturer, model, firmware, "", operations);
+        }
+        Device(String manufacturer, String model, String firmware, String serial, Set<Integer> operations) {
+            this.manufacturer = manufacturer; this.model = model; this.firmware = firmware; this.serial = serial;
+            this.operations = Collections.unmodifiableSet(new HashSet<>(operations));
         }
     }
     static final class Reader {

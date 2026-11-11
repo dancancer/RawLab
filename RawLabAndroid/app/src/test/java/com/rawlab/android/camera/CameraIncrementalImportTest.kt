@@ -49,7 +49,7 @@ class CameraIncrementalImportTest {
 
     @Test fun reconnectChecksBoundaryObjectsWithoutAssumingTheOldSessionLocatorIsPermanent() {
         val time = 1_761_128_883_000L
-        val old = CameraPhoto("17:1:DSC001.JPG:10:$time", "DSC001.JPG", 10, time, "mobile")
+        val old = CameraPhoto("17:1:DSC001.JPG:10:$time", "DSC001.JPG", 10, time, storageToken = "mobile")
         val current = old.copy(key = "42:1:DSC001.JPG:10:$time")
         val boundary = CameraImportBoundary(time, setOf("mobile"), setOf(old.key), setOf(old.anchorKey), "old-session")
         val result = CameraIncrementalScan(listOf(current), mapOf(CameraImportFormat.JPEG to boundary), time - 1, null,
@@ -80,10 +80,10 @@ class CameraIncrementalImportTest {
         val rawTime = 1_700_000_000_000L
         val jpegTime = rawTime + 10_000
         val assets = listOf(
-            CameraPhoto("raw-old", "old.ARW", 10, rawTime, "card"),
-            CameraPhoto("raw-new", "new.ARW", 10, rawTime + 1_000, "card"),
-            CameraPhoto("jpeg-old", "old.JPG", 10, jpegTime, "card"),
-            CameraPhoto("jpeg-new", "new.JPG", 10, jpegTime + 1_000, "card"),
+            CameraPhoto("raw-old", "old.ARW", 10, rawTime, storageToken = "card"),
+            CameraPhoto("raw-new", "new.ARW", 10, rawTime + 1_000, storageToken = "card"),
+            CameraPhoto("jpeg-old", "old.JPG", 10, jpegTime, storageToken = "card"),
+            CameraPhoto("jpeg-new", "new.JPG", 10, jpegTime + 1_000, storageToken = "card"),
         )
         val rawCheckpoint = CameraImportBoundary(rawTime, setOf("card"), setOf("raw-old"), setOf(assets[0].anchorKey), "session")
         val jpegCheckpoint = CameraImportBoundary(jpegTime, setOf("card"), setOf("jpeg-old"), setOf(assets[2].anchorKey), "session")
@@ -96,7 +96,7 @@ class CameraIncrementalImportTest {
     }
 
     @Test fun stableRemapPreservesItemIdentityAndSavedUrisAcrossLocatorChanges() {
-        val old = CameraPhoto("old-locator", "DSC.JPG", 10, 1_700_000_000_000L, "mobile")
+        val old = CameraPhoto("old-locator", "DSC.JPG", 10, 1_700_000_000_000L, storageToken = "mobile")
         val savedOld = old.copy(key = "saved-old", name = "SAVED.JPG")
         val current = old.copy(key = "new-locator")
         val savedCurrent = savedOld.copy(key = "saved-new")
@@ -111,7 +111,7 @@ class CameraIncrementalImportTest {
     }
 
     @Test fun stableRemapRejectsAmbiguousCurrentLocators() {
-        val old = CameraPhoto("old-locator", "DSC.JPG", 10, 1_700_000_000_000L, "mobile")
+        val old = CameraPhoto("old-locator", "DSC.JPG", 10, 1_700_000_000_000L, storageToken = "mobile")
         val current = listOf(old.copy(key = "new-1"), old.copy(key = "new-2"))
         val job = CameraImportJob("00000000-0000-0000-0000-000000000008", "camera", 1,
             listOf(CameraImportItem(old)), CameraJobStatus.PAUSED,
@@ -121,7 +121,7 @@ class CameraIncrementalImportTest {
     }
 
     @Test fun autoResumeExcludesCommittedHistoryAndGainMapFailures() {
-        val old = CameraPhoto("old-locator", "DSC.JPG", 10, 1_700_000_000_000L, "mobile")
+        val old = CameraPhoto("old-locator", "DSC.JPG", 10, 1_700_000_000_000L, storageToken = "mobile")
         val job = CameraImportJob("00000000-0000-0000-0000-000000000009", "camera", 1,
             listOf(CameraImportItem(old)), CameraJobStatus.PAUSED,
             incremental = CameraIncrementalPlan(CameraImportFormat.JPEG))
@@ -136,8 +136,8 @@ class CameraIncrementalImportTest {
     @Test fun explicitCutoffSeedsOnlyTheKindWithoutAnExistingCheckpoint() {
         val rawTime = 1_700_000_000_000L
         val jpegTime = rawTime + 10_000
-        val raw = CameraPhoto("raw", "RAW.ARW", 10, rawTime, "card")
-        val jpeg = CameraPhoto("jpeg", "JPEG.JPG", 10, jpegTime, "card")
+        val raw = CameraPhoto("raw", "RAW.ARW", 10, rawTime, storageToken = "card")
+        val jpeg = CameraPhoto("jpeg", "JPEG.JPG", 10, jpegTime, storageToken = "card")
         val rawCheckpoint = CameraImportBoundary(rawTime, setOf("card"), setOf(raw.key), setOf(raw.anchorKey), "session")
         val scan = CameraIncrementalScan(listOf(raw, jpeg), mapOf(CameraImportFormat.RAW to rawCheckpoint), 0, 0,
             CameraImportFormat.RAW_AND_JPEG, false, sessionOwner = "session")
@@ -148,8 +148,8 @@ class CameraIncrementalImportTest {
     @Test fun rawOnlyCheckpointLeavesBothUnimportedJpegsEligible() {
         val time = 1_700_000_000_000L
         val raw = photo("raw", time)
-        val paired = CameraPhoto("paired", "RAW.JPG", 10, time, "card-a")
-        val later = CameraPhoto("later-jpeg", "LATER.JPG", 10, time + 3_600_000, "card-a")
+        val paired = CameraPhoto("paired", "RAW.JPG", 10, time, storageToken = "card-a")
+        val later = CameraPhoto("later-jpeg", "LATER.JPG", 10, time + 3_600_000, storageToken = "card-a")
         val card = listOf(raw, paired, later)
         val rawScan = CameraIncrementalScan(card, emptyMap(), time - 1, null,
             CameraImportFormat.RAW, false, sessionOwner = "session")
@@ -160,7 +160,7 @@ class CameraIncrementalImportTest {
         assertEquals(listOf(paired, later), jpegScan.assets)
     }
 
-    private fun photo(key: String, created: Long) = CameraPhoto(key, "$key.ARW", 10, created, "card-a")
+    private fun photo(key: String, created: Long) = CameraPhoto(key, "$key.ARW", 10, created, storageToken = "card-a")
 
     private fun legacyClock(value: String): Long =
         java.time.LocalDateTime.parse(value, java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss"))

@@ -24,6 +24,7 @@ extension RawEditorViewModel {
                     if let file, let hdr = request.settings.hdr {
                         try file.withReadAccess { url in
                             sample = try self.processor.sampleHDRHSL(url: url, settings: hdr,
+                                processing: request.settings.processing,
                                 proRAWDecodeVersion: request.settings.proRAWDecodeVersion,
                                 previewLongEdge: request.longEdge, revision: revision, point: point)
                         }

@@ -80,16 +80,17 @@ internal static class HDRNative
         throw new HDRSourceException(status, diagnostic.Reason, diagnostic.Field);
     }
 
-    internal static HDRProbeState ProbeCameraRaw(string path, out HDRSourceInfo? info)
+    internal static HDRProbeState ProbeCameraRaw(string path, out HDRSourceInfo? info, int processingVersion = 3)
     {
         var native = SourceInfo(); var diagnostic = Diagnostic();
-        var status = Native.sony2fuji_hdr_probe_camera_raw(path, ref native, ref diagnostic);
+        var status = Native.sony2fuji_hdr_probe_camera_raw_with_processing(path, processingVersion, ref native, ref diagnostic);
         if (status == StatusOk)
         {
             info = new(HDRProbeState.Supported, native.Width, native.Height, native.Orientation, native.Container,
                 native.Protocol, native.ColorDescription, native.ContentHeadroom, native.HeadroomKind,
                 native.SourceSha256?.ToArray() ?? []) {
-                CameraStamp = HDRFileStamp.Read(path), SupportsBayerDevelopment = (native.CameraCapabilities & CameraSourceBayer) != 0
+                CameraStamp = HDRFileStamp.Read(path), SupportsBayerDevelopment = (native.CameraCapabilities & CameraSourceBayer) != 0,
+                CameraProcessingVersion = processingVersion
             };
             return HDRProbeState.Supported;
         }

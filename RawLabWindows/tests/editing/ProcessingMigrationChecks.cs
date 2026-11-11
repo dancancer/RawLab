@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace RawLab.Windows;
 
@@ -14,6 +15,7 @@ internal static class ProcessingMigrationChecks
         CandidateMappingPreservesUnrelatedState();
         RejectedAndInvalidResultsDoNotProduceCandidates();
         AtomicMigrationAndCas();
+        ReceiptPersistsIndependentPolicyAndTargetVersions();
         RestartRollbackSuppressesAutomaticRetry();
         KeptReceiptRetriesOnlyAfterSettingsChange();
         ForceDoesNotStartAutomaticMigration();
@@ -145,6 +147,48 @@ internal static class ProcessingMigrationChecks
             using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "edits", "edits.json")));
             Check(Math.Abs(document.RootElement.GetProperty("Records").GetProperty(identity.Path).GetProperty("Settings").GetProperty("Values")[1].GetDouble() - 2.2) < 1e-9,
                 "CAS test retains the complete atomically written registry");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    private static void ReceiptPersistsIndependentPolicyAndTargetVersions()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-migration-receipt-" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        try
+        {
+            var file = Path.Combine(root, "photo.ARW");
+            File.WriteAllText(file, "raw");
+            var store = new EditStore(root);
+            var identity = OriginalIdentity.Read(file);
+            var before = Source(identity);
+            store.SaveState(identity, before);
+            Check(ProcessingMigration.TryBuildCandidate(before, Result(), out var candidate), "candidate");
+            store.CommitProcessingMigration(identity, before, candidate!, ProcessingMigrationReceipt.Migrated);
+
+            var path = Path.Combine(root, "edits.json");
+            var registry = JsonNode.Parse(File.ReadAllText(path))!;
+            var receipt = registry["MigrationReceipts"]![identity.Path]!.AsObject();
+            Check(receipt["policyVersion"]?.GetValue<int>() == 1 && receipt["targetVersion"]?.GetValue<int>() == 3,
+                "migration receipt stores independent policy v1 and target v3");
+
+            receipt.Remove("policyVersion");
+            receipt.Remove("targetVersion");
+            File.WriteAllText(path, registry.ToJsonString());
+            var restarted = new EditStore(root);
+            Check(restarted.ReadProcessingMigration(file)?.Status == ProcessingMigrationReceipt.Migrated &&
+                  restarted.Find(file)?.Settings.Processing.Version == 3,
+                "existing versionless receipts still restore the v3 edit");
+            restarted.RollbackProcessingMigration(identity, restarted.ReadState(file));
+            var rolledBack = JsonNode.Parse(File.ReadAllText(path))!["MigrationReceipts"]![identity.Path]!;
+            Check(rolledBack["policyVersion"]?.GetValue<int>() == 1 && rolledBack["targetVersion"]?.GetValue<int>() == 3,
+                "rewriting a historical receipt records its original policy and target");
+
+            receipt["policyVersion"] = 1;
+            receipt["targetVersion"] = 2;
+            File.WriteAllText(path, registry.ToJsonString());
+            try { _ = new EditStore(root); throw new Exception("Invalid migration target was accepted"); }
+            catch (InvalidDataException) { }
         }
         finally { Directory.Delete(root, true); }
     }

@@ -217,17 +217,17 @@ class WorkflowContractTests(unittest.TestCase):
                     report = ET.parse(root / 'build/ci/macos-ctest.xml')
                     self.assertEqual({case.attrib['name'] for case in report.iter('testcase')}, expected)
 
-    def test_windows_native_runs_sony_active_area_regressions(self):
+    def test_windows_native_runs_release_regressions(self):
         run = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["windows"]["steps"])
         whitelist = next(line.strip() for line in run.splitlines() if line.strip().startswith("$tests = "))
         pattern = whitelist.split("'", 2)[1]
         for external_photo in (False, True):
             with self.subTest(external_photo=external_photo), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
-                expected = {"raw_formats", "raw_active_area_metadata"}
+                expected = {"raw_formats", "raw_active_area_metadata", "rendered_dng", "processing_migration_api"}
                 if external_photo:
                     expected.add("raw_active_area_sony")
-                names = expected | {"unrelated_test", "raw_active_area_sony_extra"}
+                names = expected | {"unrelated_test", "raw_active_area_sony_extra", "rendered_dng_extra", "processing_migration_api_extra"}
                 (root / "CTestTestfile.cmake").write_text("".join(
                     f'add_test({name} "{sys.executable}" "-c" "pass")\n' for name in sorted(names)))
                 report = root / "results.xml"

@@ -1,5 +1,6 @@
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text.Json.Serialization;
 
 namespace RawLab.Windows;
 
@@ -9,9 +10,17 @@ public sealed record ProcessingMigrationReceipt(
     SavedEdit After,
     string Status)
 {
+    public const int PolicyV1 = 1;
+    public const int PolicyV1Target = 3;
     public const string Migrated = "migrated";
     public const string Kept = "kept";
     public const string RolledBack = "rolledBack";
+
+    // The first Windows receipts omitted both fields. Their policy and target are frozen.
+    [JsonPropertyName("policyVersion")]
+    public int PolicyVersion { get; init; } = PolicyV1;
+    [JsonPropertyName("targetVersion")]
+    public int TargetVersion { get; init; } = PolicyV1Target;
 
     public bool IsKnownStatus => Status is Migrated or Kept or RolledBack;
     public bool IsValid
@@ -21,9 +30,10 @@ public sealed record ProcessingMigrationReceipt(
             try
             {
                 var before=Before.Settings.Restore();var after=After.Settings.Restore();
-                if (before.Processing.Version is not (1 or 2)) return false;
+                if (PolicyVersion != PolicyV1 || TargetVersion != PolicyV1Target ||
+                    before.Processing.Version is not (1 or 2)) return false;
                 return Status switch {
-                    Migrated or RolledBack => after.Processing == ProcessingIdentity.Current,
+                    Migrated or RolledBack => after.Processing.Version == TargetVersion,
                     Kept => After.SameAs(Before), _ => false
                 };
             }
@@ -42,7 +52,7 @@ internal static class ProcessingMigration
         var settings = source.Settings.Restore();
         if (!Eligible(settings) || settings.Processing.Version is not (1 or 2) ||
             result.Version != 1 || result.StructSize < (uint)Marshal.SizeOf<Native.ProcessingMigrationResult>() ||
-            result.SourceVersion != settings.Processing.Version || result.TargetVersion != 3 ||
+            result.SourceVersion != settings.Processing.Version || result.TargetVersion != ProcessingMigrationReceipt.PolicyV1Target ||
             result.Disposition != 1 || result.EvaluationCount == 0 || !Finite(result))
             return false;
 
@@ -57,7 +67,7 @@ internal static class ProcessingMigration
         settings.SetTone(ToneControlParameter.Vibrance, result.Vibrance * 100);
         settings.SetAtmosphere(AtmosphereParameter.Clarity, result.Clarity * 100);
         settings.SetAtmosphere(AtmosphereParameter.Dehaze, result.Dehaze * 100);
-        settings.Processing = ProcessingIdentity.Current;
+        settings.Processing = settings.Processing with { Version = result.TargetVersion };
         candidate = new SavedEdit(source.Identity, settings.Capture(), source.Look);
         return true;
     }
@@ -76,7 +86,8 @@ internal static class ProcessingMigration
         var settings = source.Settings.Restore();
         return Eligible(settings) && settings.Processing.Version is (1 or 2) &&
             result.Version == 1 && result.StructSize >= (uint)Marshal.SizeOf<Native.ProcessingMigrationResult>() &&
-            result.SourceVersion == settings.Processing.Version && result.TargetVersion == 3 && result.Disposition == 2;
+            result.SourceVersion == settings.Processing.Version && result.TargetVersion == ProcessingMigrationReceipt.PolicyV1Target &&
+            result.Disposition == 2;
     }
 
     private static bool Eligible(Adjustments settings) =>

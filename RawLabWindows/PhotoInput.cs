@@ -23,7 +23,7 @@ internal static class PhotoInput
         return HDRNative.Probe(path, out info);
     }
 
-    internal static HDRProbeState ProbeCameraRaw(string path, out HDRSourceInfo? info)
+    internal static HDRProbeState ProbeCameraRaw(string path, out HDRSourceInfo? info, int processingVersion = 3)
     {
         if (!IsRaw(path)) { info = null; return HDRProbeState.NotHDR; }
         // DNG may be Apple ProRAW or an ordinary Bayer/linear RAW. Probe the
@@ -40,7 +40,7 @@ internal static class PhotoInput
             catch (DllNotFoundException) { }
             catch (BadImageFormatException) { }
         }
-        try { return HDRNative.ProbeCameraRaw(path, out info); }
+        try { return HDRNative.ProbeCameraRaw(path, out info, processingVersion); }
         catch (EntryPointNotFoundException) { info = null; return HDRProbeState.NotHDR; }
     }
 

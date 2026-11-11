@@ -125,13 +125,15 @@ internal class CameraIncrementalScan(
 /** The current locator is used only when its identity is unique in both listings. */
 internal fun incrementalLocatorMap(job: CameraImportJob, current: List<CameraPhoto>, sessionOwner: String): Map<String, CameraPhoto> {
     val plan = job.incremental ?: return emptyMap()
-    val identity: (CameraPhoto) -> String = if (plan.sessionOwner == sessionOwner) CameraPhoto::key else CameraPhoto::anchorKey
+    val sameSession = plan.sessionOwner == sessionOwner
+    val identity: (CameraPhoto) -> String = if (sameSession) CameraPhoto::key else CameraPhoto::anchorKey
     val stored = job.items.groupBy { identity(it.photo) }
     val listed = current.groupBy(identity)
     return buildMap {
         for ((key, items) in stored) {
             val photo = listed[key]?.singleOrNull() ?: continue
-            items.singleOrNull()?.let { put(it.photo.key, photo) }
+            val item = items.singleOrNull() ?: continue
+            if (!sameSession || item.photo.matchesSnapshot(photo)) put(item.photo.key, photo)
         }
     }
 }

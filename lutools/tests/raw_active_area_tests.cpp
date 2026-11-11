@@ -1,8 +1,12 @@
 #include "sony2fuji/raw_processor.h"
+#include "sony2fuji/ffi/sony2fuji_hdr.h"
 #include <libraw/libraw.h>
 
 #include <array>
+#include <chrono>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -101,6 +105,106 @@ void metadataCases() {
     metadataCrop(active, camera, active, false, true, true);
 }
 
+void savedCrop(const char* path, uint32_t legacyWidth, uint32_t fullWidth, uint32_t height) {
+    sony2fuji_session* handle = nullptr;
+    require(sony2fuji_session_create(&handle) == SONY2FUJI_STATUS_OK, "Create crop test session");
+    const std::unique_ptr<sony2fuji_session, decltype(&sony2fuji_session_destroy)>
+        session(handle, sony2fuji_session_destroy);
+    const sony2fuji_gpu_config gpu{SONY2FUJI_GPU_CONFIG_VERSION, sizeof(gpu), SONY2FUJI_GPU_OFF};
+    require(sony2fuji_session_set_gpu_config(handle, &gpu) == SONY2FUJI_STATUS_OK, "Use CPU");
+    const sony2fuji_geometry_config geometry{SONY2FUJI_GEOMETRY_CONFIG_VERSION, sizeof(geometry),
+        .25f, 0, .5f, 1, 0, 0, 0, 0};
+    require(sony2fuji_session_set_geometry(handle, &geometry) == SONY2FUJI_STATUS_OK, "Apply saved 50% crop");
+    sony2fuji_request request{};
+    request.version = SONY2FUJI_REQUEST_VERSION; request.struct_size = sizeof(request);
+    request.input_type = SONY2FUJI_INPUT_RAW; request.input_path = path;
+    request.wb_mode = SONY2FUJI_WB_CAMERA;
+    request.brightness = request.contrast = request.saturation = 1;
+    request.output_target = SONY2FUJI_TARGET_BUFFER; request.output_format = SONY2FUJI_OUTPUT_RGB8;
+    request.intent = SONY2FUJI_INTENT_PREVIEW; request.size_mode = SONY2FUJI_SIZE_LIMIT_LONG_EDGE;
+    request.long_edge = 128;
+    auto render = [&](sony2fuji_processing_version version, uint32_t expectedWidth) {
+        require(sony2fuji_session_set_processing_version(handle, version) == SONY2FUJI_STATUS_OK,
+                "Set saved processing version");
+        sony2fuji_buffer buffer{};
+        const auto status = sony2fuji_process(handle, &request, &buffer);
+        sony2fuji_release_buffer(&buffer);
+        require(status == SONY2FUJI_STATUS_OK, "Render saved Sony crop");
+        uint32_t width = 0, actualHeight = 0;
+        require(sony2fuji_session_get_geometry_size(handle, &width, &actualHeight) == SONY2FUJI_STATUS_OK,
+                "Read native cropped size");
+        std::cout << "Processing v" << version << ": " << width << 'x' << actualHeight << '\n';
+        require(width == expectedWidth && actualHeight == height, "Saved crop must use its processing version's canvas");
+    };
+    render(SONY2FUJI_PROCESSING_C5_V2, legacyWidth);
+    sony2fuji_processing_migration_result result{};
+    require(sony2fuji_session_migrate_processing(handle, &request, &result) == SONY2FUJI_STATUS_UNSUPPORTED,
+            "Automatic adjustment migration must leave a different Sony canvas alone");
+    render(SONY2FUJI_PROCESSING_BASIC_V3, fullWidth);
+    render(SONY2FUJI_PROCESSING_C5_V2, legacyWidth);
+}
+
+void savedHdrCrop(const char* path, uint32_t legacyWidth, uint32_t fullWidth, uint32_t height) {
+    sony2fuji_session* handle = nullptr;
+    require(sony2fuji_session_create(&handle) == SONY2FUJI_STATUS_OK, "Create HDR crop test session");
+    const std::unique_ptr<sony2fuji_session, decltype(&sony2fuji_session_destroy)>
+        session(handle, sony2fuji_session_destroy);
+    const sony2fuji_hdr_decode_options_v1 decode{SONY2FUJI_HDR_VERSION, sizeof(decode), SONY2FUJI_INTENT_PREVIEW, 128};
+    sony2fuji_hdr_request_v1 settings{};
+    settings.version = SONY2FUJI_HDR_VERSION; settings.struct_size = sizeof(settings);
+    settings.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_VERSION; settings.intent = SONY2FUJI_INTENT_PREVIEW;
+    settings.temperature = 6500;
+    settings.crop_x = .25f; settings.crop_width = .5f; settings.crop_height = 1; settings.long_edge = 128;
+    struct Pair {
+        sony2fuji_hdr_image_pair_v1 value{SONY2FUJI_HDR_VERSION, sizeof(value)};
+        ~Pair() { sony2fuji_hdr_release_pair(&value); }
+    };
+    auto render = [&](uint32_t expectedWidth) {
+        Pair source, cropped;
+        require(sony2fuji_hdr_decode_camera_raw(handle, path, &decode, &source.value, nullptr) == SONY2FUJI_STATUS_OK &&
+                source.value.native_width == expectedWidth && source.value.native_height == height, "HDR decode uses the saved canvas");
+        require(sony2fuji_hdr_render(handle, &source.value, &settings, &cropped.value, nullptr) == SONY2FUJI_STATUS_OK &&
+                cropped.value.output_native_width == expectedWidth / 2 && cropped.value.output_native_height == height,
+                "HDR crop uses the saved canvas");
+    };
+    sony2fuji_hdr_source_info_v1 defaults{SONY2FUJI_HDR_VERSION, sizeof(defaults)};
+    require(sony2fuji_hdr_probe_camera_raw(path, &defaults, nullptr) == SONY2FUJI_STATUS_OK &&
+            defaults.width == legacyWidth && defaults.height == height, "Unversioned HDR probe uses the Legacy canvas");
+    Pair sessionless;
+    require(sony2fuji_hdr_decode_camera_raw(nullptr, path, &decode, &sessionless.value, nullptr) == SONY2FUJI_STATUS_OK,
+            "HDR decode with a null session failed");
+    std::cout << "Unversioned HDR probe " << defaults.width << 'x' << defaults.height
+              << ", null-session decode " << sessionless.value.native_width << 'x' << sessionless.value.native_height << '\n';
+    require(sessionless.value.native_width == defaults.width && sessionless.value.native_height == defaults.height,
+            "Sessionless HDR decode must match the unversioned probe");
+    render(legacyWidth);
+    for (const auto version : {SONY2FUJI_PROCESSING_C5_V2, SONY2FUJI_PROCESSING_BASIC_V3}) {
+        const uint32_t expectedWidth = version == SONY2FUJI_PROCESSING_C5_V2 ? legacyWidth : fullWidth;
+        sony2fuji_hdr_source_info_v1 info{SONY2FUJI_HDR_VERSION, sizeof(info)};
+        require(sony2fuji_hdr_probe_camera_raw_with_processing(path, version, &info, nullptr) == SONY2FUJI_STATUS_OK &&
+                info.width == expectedWidth && info.height == height, "HDR probe reports the saved canvas");
+        require(sony2fuji_session_set_processing_version(handle, version) == SONY2FUJI_STATUS_OK, "Set HDR canvas");
+        render(expectedWidth);
+    }
+}
+
+void syntheticSavedCrop() {
+    const auto bytes = sonyMetadata({12, 8, 900, 600}, {62, 8, 800, 600});
+    const auto suffix = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto path = std::filesystem::temp_directory_path() / ("rawlab-sony-crop-" + std::to_string(suffix) + ".arw");
+    struct Cleanup {
+        std::filesystem::path path;
+        ~Cleanup() { std::error_code ignored; std::filesystem::remove(path, ignored); }
+    } cleanup{path};
+    std::ofstream file(path, std::ios::binary);
+    file.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+    file.close();
+    require(bool(file), "Write synthetic Sony crop fixture");
+    const auto input = path.u8string();
+    savedCrop(input.c_str(), 400, 450, 600);
+    savedHdrCrop(input.c_str(), 800, 900, 600);
+}
+
 void sonyPhoto(const char* path) {
     using namespace sony2fuji;
     RAWProcessor raw;
@@ -136,13 +240,15 @@ void sonyPhoto(const char* path) {
     require(hdr.unpackInspectedCameraHDR() == ErrorCode::Success, "Inspected HDR source must unpack");
     require(hdr.getWidth() == width && hdr.getHeight() == height,
             "Deferred HDR unpack must preserve the inspected active area");
+    savedCrop(path, 3112, 3504, 4672);
+    savedHdrCrop(path, 6224, 7008, 4672);
 }
 }
 
 int main(int argc, char** argv) {
     try {
         if (argc == 2) sonyPhoto(argv[1]);
-        else metadataCases();
+        else { metadataCases(); syntheticSavedCrop(); }
         std::cout << "PASS RAW active area\n";
         return 0;
     } catch (const std::exception& error) {

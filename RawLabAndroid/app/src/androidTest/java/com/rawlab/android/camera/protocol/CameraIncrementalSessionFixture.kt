@@ -177,7 +177,7 @@ internal class CameraIncrementalSessionFixture(
         write(SonyMobileSession.u32(operations.size))
         operations.forEach { write(SonyMobileSession.u16(it)) }
         repeat(4) { write(SonyMobileSession.u32(0)) }
-        listOf("Sony Corporation", "ILCE-7CM2", "2.00", "TEST1234").forEach { value ->
+        listOf("Sony Corporation", "ILCE-7CM2", "2.00", token).forEach { value ->
             write(value.length + 1)
             write((value + '\u0000').toByteArray(StandardCharsets.UTF_16LE))
         }

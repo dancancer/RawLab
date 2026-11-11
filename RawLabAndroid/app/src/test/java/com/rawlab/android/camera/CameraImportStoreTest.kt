@@ -56,6 +56,51 @@ class CameraImportStoreTest {
         assertFalse(File(fixture.root, "originals").exists())
     }
 
+    @Test fun resumeAcrossTransportsRequiresCameraSerialAndUnchangedPendingFiles() = withStore { fixture, store ->
+        val camera = CameraHardwareIdentity("ILCE-7CM2", "1234567")
+        val destination = CameraImportDestination("RawLab/Resume", CameraDirectoryGrouping.NONE)
+        val first = photo("1").copy(resumeIdentity = "legacy:first")
+        val pending = photo("2").copy(resumeIdentity = "legacy:second")
+        val job = store.create("BLE:camera", listOf(first, pending), destination, hardwareIdentity = camera)
+        val part = store.partial(job.id).apply { writeBytes(raw) }
+        val saved = store.publish(job, 0, part, hash(raw), CameraTransferPermit()).items[0].saved
+        part.writeText("interrupted")
+        val reopened = fixture.store()
+        val restored = reopened.load().single()
+
+        assertTrue(restored.matchesCamera("SSID:camera", camera))
+        assertFalse(restored.matchesCamera("SSID:camera", null))
+        assertFalse(restored.matchesCamera("BLE:camera", camera.copy(serial = "7654321")))
+        assertFalse(restored.matchesPendingPhotos(emptyMap()))
+        assertFalse(restored.matchesPendingPhotos(mapOf(pending.key to pending.copy(resumeIdentity = "legacy:modified"))))
+        assertTrue(restored.matchesPendingPhotos(mapOf(pending.key to pending)))
+
+        var downloads = 0
+        val resumed = receiveCameraJob(reopened, restored, CameraTransferPermit(), { current, output ->
+            assertEquals(pending, current)
+            assertEquals(0L, output.channel.position())
+            downloads++
+            val changedBytes = raw.copyOf().apply { this[lastIndex] = 100 }
+            output.write(changedBytes)
+            hash(changedBytes)
+        })
+        assertEquals(1, downloads)
+        assertEquals(CameraJobStatus.COMPLETE, resumed.status)
+        assertEquals(saved, resumed.items[0].saved)
+        assertEquals(destination.relativePath(fixture.capture), resumed.items[1].saved!!.relativePath)
+        assertEquals(camera, fixture.store().load().single().hardwareIdentity)
+    }
+
+    @Test fun historicalJobWithOnlyConnectionIdentityCanResumeOnThatConnection() = withStore { fixture, store ->
+        val pending = photo()
+        store.create("BLE:camera", listOf(pending), CameraImportDestination())
+        val restored = fixture.store().load().single()
+        val camera = CameraHardwareIdentity("ILCE-7CM2", "1234567")
+        assertTrue(restored.matchesCamera("BLE:camera", camera))
+        assertFalse(restored.matchesCamera("SSID:camera", camera))
+        assertTrue(restored.matchesPendingPhotos(mapOf(pending.key to pending.copy(resumeIdentity = "mobile:current"))))
+    }
+
     @Test fun stoppedPermitCannotPublishOrHandOffPartial() = withStore { fixture, store ->
         val job = store.create("camera", listOf(photo()), CameraImportDestination())
         val part = store.partial(job.id); part.writeBytes(raw)
@@ -354,8 +399,8 @@ class CameraImportStoreTest {
 
     @Test fun legacyUnifiedBoundaryMigratesFromSavedKindsInsteadOfItsGlobalDateOrKeys() = withStore { fixture, store ->
         val time = 1_700_000_000_000L
-        val rawPhoto = CameraPhoto("raw-locator", "RAW.ARW", raw.size.toLong(), time, "card")
-        val jpegPhoto = CameraPhoto("jpeg-locator", "JPEG.JPG", jpeg.size.toLong(), time + 1_000, "card")
+        val rawPhoto = CameraPhoto("raw-locator", "RAW.ARW", raw.size.toLong(), time, storageToken = "card")
+        val jpegPhoto = CameraPhoto("jpeg-locator", "JPEG.JPG", jpeg.size.toLong(), time + 1_000, storageToken = "card")
         val rawMedia = fixture.media.createPending(rawPhoto.name, "Pictures/", "image/x-sony-arw", "raw")
         fixture.media.write(rawMedia.uri, File(fixture.root, "raw").apply { writeBytes(raw) })
         val rawSaved = fixture.media.publish(rawMedia.uri)

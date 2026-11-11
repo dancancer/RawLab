@@ -747,9 +747,8 @@ sony2fuji_status sony2fuji_session_set_perspective(
 );
 
 // Native canvas from the last successful process, after geometry and before
-// output resizing. Identity records the decoded input dimensions even when
-// its preview is reduced later. Active geometry reports the full-source canvas
-// even when a viewport preview reduced its source.
+// output resizing. Viewport previews and active geometry report the full-source
+// canvas. With viewport preview disabled, identity reports the decoded input size.
 // Successful geometry/perspective setters and every new process clear the size.
 // Failed processes, including output I/O failures, leave the size unavailable.
 // Returns UNSUPPORTED when unset; all errors zero any supplied output pointers.

@@ -45,14 +45,12 @@ internal fun CameraScreen(model: CameraImportViewModel, storage: PhotoStorage, o
     var history by rememberSaveable { mutableStateOf(false) }
     var settings by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
-    var discoverOnEntry by rememberSaveable { mutableStateOf(false) }
     fun home() { model.disconnect(); route = CameraRoute.HOME }
     fun connect(mode: CameraMode, resume: Boolean = false, task: Boolean = false) {
         connectReturn = route
         returnToTask = task
         if (connection.mode != mode) model.setMode(mode) else model.disconnect()
         model.setTetherResume(resume)
-        discoverOnEntry = true
         route = CameraRoute.CONNECT
     }
     LaunchedEffect(showTask) { if (showTask) { model.setMode(CameraMode.IMPORT); route = CameraRoute.IMPORT } }
@@ -107,8 +105,7 @@ internal fun CameraScreen(model: CameraImportViewModel, storage: PhotoStorage, o
         }
         CameraRoute.CONNECT -> CameraConnectionScreen(model, onBack = {
             model.disconnect(); route = connectReturn
-        }, onHelp = { route = CameraRoute.HELP }, discoverOnEntry = discoverOnEntry,
-            onDiscoveryStarted = { discoverOnEntry = false })
+        }, onHelp = { route = CameraRoute.HELP })
         CameraRoute.HELP -> CameraConnectionHelpScreen(onBack = { route = CameraRoute.CONNECT })
         CameraRoute.IMPORT -> CameraImportScreen(model, onBack = ::home, onOpen = onOpen, onViewInAlbum = onViewInAlbum,
             showTask = showTask || returnToTask, onTaskShown = { returnToTask = false; onTaskShown() },
@@ -132,14 +129,9 @@ private fun CameraTaskEntry(title: Int, detail: Int, icon: ImageVector, tag: Str
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CameraConnectionScreen(model: CameraImportViewModel, onBack: () -> Unit, onHelp: () -> Unit,
-    discoverOnEntry: Boolean, onDiscoveryStarted: () -> Unit) {
+private fun CameraConnectionScreen(model: CameraImportViewModel, onBack: () -> Unit, onHelp: () -> Unit) {
     val state by model.state.collectAsStateWithLifecycle()
-    val findCamera = rememberCameraFinder(model)
     BackHandler(onBack = onBack)
-    LaunchedEffect(state.closing, state.preparing, discoverOnEntry) {
-        if (discoverOnEntry && !state.closing && !state.preparing) { onDiscoveryStarted(); findCamera(false) }
-    }
     Scaffold(topBar = {
         TopAppBar(title = { Text(stringResource(if (state.mode == CameraMode.IMPORT) R.string.camera_connect_import else R.string.camera_connect_tether)) }, expandedHeight = 56.dp,
             navigationIcon = { IconButton(onClick = onBack, modifier = Modifier.testTag("camera-back")) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.back)) } })
@@ -155,7 +147,7 @@ private fun CameraConnectionScreen(model: CameraImportViewModel, onBack: () -> U
             }
             state.message?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
             if (state.closing) Text(stringResource(R.string.camera_connect_wait))
-            CameraConnectionPanel(state, model, findCamera)
+            CameraConnectionPanel(state, model)
             Text(stringResource(R.string.camera_supported), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

@@ -25,8 +25,26 @@ struct CameraTransferJob: Codable, Identifiable {
     var pendingItems: [CameraTransferItem] { items.filter { $0.phase != .saved } }
     var itemLimit: Int { incremental == nil ? 64 : CameraIncrementalScan.maximumAssets }
 
-    func matches(camera: CameraDeviceIdentity, connectionKey: String) -> Bool {
-        self.camera.stableKey == camera.stableKey && (!camera.serial.isEmpty || self.connectionKey == connectionKey)
+    func matches(camera device: CameraDeviceIdentity, connectionKey: String, allowAlternateConnection: Bool = true) -> Bool {
+        let serial = camera.serial.trimmingCharacters(in: .whitespacesAndNewlines)
+        let verifiedSerial = !serial.isEmpty && serial.contains { $0 != "0" }
+        return camera.manufacturer == device.manufacturer && camera.model == device.model &&
+            serial == device.serial.trimmingCharacters(in: .whitespacesAndNewlines) &&
+            (self.connectionKey == connectionKey || (allowAlternateConnection && verifiedSerial))
+    }
+
+    func pendingAssets(device: CameraDeviceIdentity, connectionKey: String, assets: [CameraRemoteAsset],
+                       allowAlternateConnection: Bool) throws -> [(CameraTransferItem, CameraRemoteAsset)] {
+        guard matches(camera: device, connectionKey: connectionKey, allowAlternateConnection: allowAlternateConnection) else {
+            throw CameraProtocolError.invalid("Transfer belongs to a different camera")
+        }
+        let bound = bindToListing(assets)
+        return try pendingItems.map { item in
+            guard let asset = bound[item.id] else {
+                throw CameraProtocolError.invalid("Camera original changed; select it again")
+            }
+            return (item, asset)
+        }
     }
 }
 struct CameraStoredOriginal: Codable, Identifiable {

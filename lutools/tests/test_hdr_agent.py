@@ -47,6 +47,36 @@ class HDRAgent(unittest.TestCase):
                 with self.subTest(output=output_format):
                     self.v14_export(root, "raw", source, output_format)
 
+    def test_v14_sony_raw_retains_crop(self):
+        if SONY_RAW is None:
+            self.skipTest("Requires the external Sony ILCE-7CM2 4:3 regression photo")
+        with tempfile.TemporaryDirectory(prefix="rawlab-hdr-sony-crop-") as temporary:
+            root = Path(temporary)
+            recipe, preview, output = (root / name for name in ("edit.json", "preview.png", "export.png"))
+            document = {
+                "schema_version": 14,
+                "processing": {"family": "rawlab_hdr", "version": 7, "quality": "standard"},
+                "input": {"path": str(SONY_RAW), "type": "raw"},
+                "edits": {
+                    "exposure": {"ev": 0},
+                    "white_balance": {"mode": "relative"},
+                    "geometry": {"crop": {"x": .25, "y": 0, "width": .5, "height": 1}},
+                },
+                "output": {"path": str(output), "format": "png", "base_color": "srgb"},
+            }
+            recipe.write_text(json.dumps(document), encoding="utf-8")
+            for image, options, size in (
+                (preview, ["--preview", preview, "--long-edge", 512], (341, 512)),
+                (output, [], (3112, 4672)),
+            ):
+                with self.subTest(output=image.name):
+                    process, result = self.run_cli("--recipe", recipe, "--json", *options)
+                    self.assertEqual(process.returncode, 0, result)
+                    with image.open("rb") as file:
+                        header = file.read(24)
+                    self.assertEqual(header[:8], b"\x89PNG\r\n\x1a\n")
+                    self.assertEqual(struct.unpack(">II", header[16:24]), size)
+
     def test_v14_camera_white_balance_reaches_decode(self):
         with tempfile.TemporaryDirectory(prefix="rawlab-hdr-camera-wb-") as temporary:
             root = Path(temporary)
@@ -259,6 +289,8 @@ if __name__=="__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument("--cli",type=Path,required=True)
     parser.add_argument("--fixture",type=Path,required=True)
+    parser.add_argument("--sony-raw",type=Path)
     args,remaining=parser.parse_known_args()
     CLI,FIXTURE=args.cli.resolve(),args.fixture.resolve()
+    SONY_RAW=args.sony_raw.resolve() if args.sony_raw else None
     unittest.main(argv=[__file__,*remaining])

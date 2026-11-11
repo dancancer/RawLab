@@ -7,6 +7,12 @@
 
 using namespace sony2fuji;
 
+static bool nativeOutputFitsCache(const sony2fuji_session* session) {
+    uint32_t width = 0, height = 0;
+    assert(sony2fuji_session_get_geometry_size(session, &width, &height) == SONY2FUJI_STATUS_OK);
+    return uint64_t(width) * height * sizeof(RGB) <= WaveletRenderCache::defaultPreviewBudget;
+}
+
 static void checkPreviewExposureRoundTrip(const char* path, bool viewport, bool strengthChange, int initialFbdd) {
     sony2fuji_session* session = nullptr;
     assert(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK);
@@ -74,7 +80,9 @@ static void checkPreviewExposureRoundTrip(const char* path, bool viewport, bool 
         assert(after.outputHits == before.outputHits && after.analysisHits == before.analysisHits);
         assert(after.filterRuns == before.filterRuns + 1);
     } else if (!strengthChange) {
-        assert(after.outputHits == before.outputHits + 1);
+        const bool retained = viewport || nativeOutputFitsCache(session);
+        assert(after.outputHits == before.outputHits + (retained ? 1 : 0));
+        assert(after.filterRuns == before.filterRuns + (retained ? 0 : 1));
     }
     sony2fuji_session_destroy(fresh);
     sony2fuji_session_destroy(session);
@@ -133,6 +141,7 @@ int main(int argc, char** argv) {
         return result;
     };
     const auto native=render();
+    const uint64_t finalRecomputes = nativeOutputFitsCache(session) ? 0 : 1;
     assert(waveletCacheDiagnostics(session).filterRuns==1);
     assert(sony2fuji_session_set_viewport_preview(session,1)==SONY2FUJI_STATUS_OK);
     request.intent=SONY2FUJI_INTENT_PREVIEW; request.preview_long_edge=16;
@@ -145,20 +154,26 @@ int main(int argc, char** argv) {
     assert(waveletCacheDiagnostics(session).filterRuns==3);
     request.exposure_ev=0; request.contrast=1;
     request.intent=SONY2FUJI_INTENT_FINAL;
-    assert(render()==native && waveletCacheDiagnostics(session).filterRuns==3);
+    assert(render()==native);
+    auto stats=waveletCacheDiagnostics(session);
+    assert(stats.filterRuns==3 + finalRecomputes && stats.analysisHits==finalRecomputes &&
+           stats.outputHits==3 - finalRecomputes);
+    std::cout << (finalRecomputes ? "Oversized FINAL recomputed with cached analysis" : "FINAL reused cached output")
+              << " and matched the original pixels\n";
     config.chroma=72;
     assert(sony2fuji_session_set_wavelet_denoise(session,&config)==SONY2FUJI_STATUS_OK);
     render();
-    auto stats=waveletCacheDiagnostics(session);
-    assert(stats.filterRuns==4 && stats.analysisHits==1 && stats.outputHits==3);
+    stats=waveletCacheDiagnostics(session);
+    assert(stats.filterRuns==4 + finalRecomputes && stats.analysisHits==1 + finalRecomputes &&
+           stats.outputHits==3 - finalRecomputes);
     request.wb_mode=SONY2FUJI_WB_TEMPERATURE; request.temperature=8000; render();
     stats=waveletCacheDiagnostics(session);
-    assert(stats.filterRuns==5 && stats.analysisHits==1);
+    assert(stats.filterRuns==5 + finalRecomputes && stats.analysisHits==1 + finalRecomputes);
     gpu.mode=SONY2FUJI_GPU_AUTO;
     assert(sony2fuji_session_set_gpu_config(session,&gpu)==SONY2FUJI_STATUS_OK);
     render();
     stats=waveletCacheDiagnostics(session);
-    assert(stats.filterRuns==6 && stats.analysisHits==2);
+    assert(stats.filterRuns==6 + finalRecomputes && stats.analysisHits==2 + finalRecomputes);
     assert(stats.previewBytes<=WaveletRenderCache::defaultPreviewBudget);
     sony2fuji_session_destroy(session);
     std::cout<<"PASS: real wavelet call counts, exact/preview slots, size A-B-A, post-filter edits, analysis and backend isolation, memory budget\n";

@@ -565,6 +565,7 @@ void rawTests(const char* path) {
     request.input_type = SONY2FUJI_INPUT_RAW;
     request.input_pixels = nullptr;
     request.input_path = path;
+    request.intent = SONY2FUJI_INTENT_FINAL;
     const auto baseline = render(session.value, request, "RAW native identity");
     geometrySize(session.value, baseline.width, baseline.height, "RAW identity native canvas");
     checkStatus(sony2fuji_session_set_interactive_preview(session.value, 1), SONY2FUJI_STATUS_OK,
@@ -574,10 +575,19 @@ void rawTests(const char* path) {
     request.intent = SONY2FUJI_INTENT_PREVIEW;
     request.preview_long_edge = 23;
     render(session.value, request, "RAW identity reduced preview");
-    geometrySize(session.value, baseline.width, baseline.height,
-        "RAW identity preview reports full cached source dimensions");
+    uint32_t previewNativeWidth = 0, previewNativeHeight = 0;
+    checkStatus(sony2fuji_session_get_geometry_size(session.value, &previewNativeWidth, &previewNativeHeight),
+        SONY2FUJI_STATUS_OK, "RAW identity preview native canvas");
     request.intent = SONY2FUJI_INTENT_FINAL;
     request.preview_long_edge = 0;
+    equal(render(session.value, request, "RAW FINAL immediately after interactive preview"), baseline,
+        "RAW FINAL after an identity preview uses exact pixels");
+    check(previewNativeWidth == baseline.width && previewNativeHeight == baseline.height,
+        "RAW identity viewport reports the full source canvas");
+    request.intent = SONY2FUJI_INTENT_PREVIEW;
+    equal(render(session.value, request, "RAW native-size viewport request"), baseline,
+        "RAW native-size viewport uses exact pixels");
+    request.intent = SONY2FUJI_INTENT_FINAL;
     auto config = identity();
     config.quarter_turns = 1; config.flip_horizontal = 1;
     config.crop_x = .25f; config.crop_y = .125f;

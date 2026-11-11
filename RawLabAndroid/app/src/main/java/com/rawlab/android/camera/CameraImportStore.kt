@@ -1,5 +1,6 @@
 package com.rawlab.android.camera
 
+import com.rawlab.android.camera.protocol.SonyMobileSession
 import com.rawlab.android.photo.MediaPhoto
 import com.rawlab.android.photo.MediaPhotoAccess
 import com.rawlab.android.photo.SystemPhotoStore
@@ -16,27 +17,52 @@ import java.security.MessageDigest
 import java.util.UUID
 
 internal data class CameraPhoto(val key: String, val name: String, val size: Long, val created: Long,
-    val storageToken: String? = null, val captureTimestamp: Long = created) {
+    val resumeIdentity: String? = null, val storageToken: String? = null, val captureTimestamp: Long = created) {
     val raw: Boolean get() = name.endsWith(".arw", ignoreCase = true)
     /** Sony mobile contents uses epoch milliseconds; legacy contents is normalized to the same value in GMT. */
     val captureDateMillis: Long? get() = captureTimestamp.takeIf { it in 946_684_800_000L until 4_102_444_800_000L }
     val anchorKey: String get() = "$storageToken:$name:$size:$captureTimestamp"
+    fun matchesSnapshot(observed: CameraPhoto): Boolean =
+        key == observed.key && name == observed.name && size == observed.size && created == observed.created &&
+            (resumeIdentity == null || resumeIdentity == observed.resumeIdentity) &&
+            (storageToken == null || storageToken == observed.storageToken && captureTimestamp == observed.captureTimestamp)
 }
-internal fun sameCameraPhoto(left: CameraPhoto, right: CameraPhoto): Boolean =
-    left.key == right.key && left.name == right.name && left.size == right.size && left.created == right.created
 internal enum class CameraJobStatus { ACTIVE, PAUSED, COMPLETE }
 internal enum class CameraMediaProblem { MISSING, CHANGED, REMOTE_MISSING, HDR_GAIN_MAP }
 internal data class CameraImportItem(val photo: CameraPhoto, val saved: MediaPhoto? = null,
     val prepared: MediaPhoto? = null, val digest: String? = null, val captureDay: String? = null,
     val duplicate: Boolean = false, val unavailable: MediaPhoto? = null, val problem: CameraMediaProblem? = null,
     val outputDigest: String? = null, val outputSize: Long? = null)
+
+// Both import protocols validate Sony's vendor identity before exposing Device.
+internal data class CameraHardwareIdentity(val model: String, val serial: String) {
+    init { require(model.isNotBlank() && serial.isNotBlank() && serial.any { it != '0' }) }
+
+    companion object {
+        fun read(device: SonyMobileSession.Device): CameraHardwareIdentity? {
+            val model = device.model.trim()
+            val serial = device.serial.trim()
+            return if (model.isEmpty() || serial.all { it == '0' }) null
+                else CameraHardwareIdentity(model, serial)
+        }
+    }
+}
+
 internal data class CameraImportJob(val id: String, val cameraId: String, val createdAt: Long,
     val items: List<CameraImportItem>, val status: CameraJobStatus = CameraJobStatus.ACTIVE,
     val destination: CameraImportDestination = CameraImportDestination(),
-    val incremental: CameraIncrementalPlan? = null, val committed: Boolean = false) {
+    val incremental: CameraIncrementalPlan? = null, val committed: Boolean = false,
+    val hardwareIdentity: CameraHardwareIdentity? = null) {
     val savedCount: Int get() = items.count { it.saved != null }
     val totalBytes: Long get() = items.sumOf { it.photo.size }
     val savedBytes: Long get() = items.filter { it.saved != null }.sumOf { it.photo.size }
+
+    fun matchesCamera(connectionId: String?, device: CameraHardwareIdentity?): Boolean =
+        if (hardwareIdentity == null) cameraId == connectionId else hardwareIdentity == device
+
+    fun matchesPendingPhotos(observed: Map<String, CameraPhoto>): Boolean = items.all { item ->
+        item.saved != null || observed[item.photo.key]?.let(item.photo::matchesSnapshot) == true
+    }
 }
 internal class CameraLocalSourceChanged : IOException("Camera original has changed")
 
@@ -64,7 +90,8 @@ internal class CameraImportStore(private val directory: File, private val tempor
     init { directory.mkdirs(); temporary.mkdirs() }
 
     fun create(cameraId: String, photos: List<CameraPhoto>, destination: CameraImportDestination,
-        id: String = UUID.randomUUID().toString(), incremental: CameraIncrementalPlan? = null): CameraImportJob {
+        id: String = UUID.randomUUID().toString(), incremental: CameraIncrementalPlan? = null,
+        hardwareIdentity: CameraHardwareIdentity? = null): CameraImportJob {
         require(validId(id))
         require(photos.isNotEmpty() && photos.size <= 10000)
         require(photos.map { it.key }.distinct().size == photos.size)
@@ -74,14 +101,15 @@ internal class CameraImportStore(private val directory: File, private val tempor
             require(photos.all(plan.format::includes))
         }
         readJobs().firstOrNull { it.id == id }?.let { existing ->
-            if (existing.cameraId != cameraId || existing.destination != destination ||
-                existing.items.size != photos.size || existing.items.zip(photos).any { (stored, current) -> !sameCameraPhoto(stored.photo, current) } ||
-                existing.incremental != incremental)
+            if (existing.cameraId != cameraId || existing.hardwareIdentity != hardwareIdentity ||
+                existing.destination != destination || existing.incremental != incremental || existing.items.size != photos.size ||
+                existing.items.zip(photos).any { (stored, current) -> !stored.photo.matchesSnapshot(current) })
                 throw IOException("Reserved camera job identity changed")
             return existing
         }
         return CameraImportJob(id, cameraId, System.currentTimeMillis(),
-            photos.map { CameraImportItem(it) }, destination = destination, incremental = incremental).also(::save)
+            photos.map { CameraImportItem(it) }, destination = destination, incremental = incremental,
+            hardwareIdentity = hardwareIdentity).also(::save)
     }
     fun partial(id: String): File { require(validId(id)); return File(temporary, "$id.part") }
 
@@ -234,6 +262,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
         job.items.forEach { item -> items.put(JSONObject().put("key", item.photo.key).put("name", item.photo.name)
             .put("size", item.photo.size).put("created", item.photo.created).put("storage", item.photo.storageToken)
             .put("captureTimestamp", item.photo.captureTimestamp.takeIf { it != item.photo.created })
+            .put("resumeIdentity", item.photo.resumeIdentity)
             .put("saved", item.saved?.json())
             .put("prepared", item.prepared?.json()).put("digest", item.digest).put("captureDay", item.captureDay)
             .put("duplicate", item.duplicate).put("unavailable", item.unavailable?.json()).put("problem", item.problem?.name)
@@ -242,6 +271,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
             .put("status", job.status.name).put("items", items).put("directory", job.destination.directory)
             .put("grouping", job.destination.grouping.name).put("incremental", job.incremental?.json())
             .put("committed", job.committed)
+        job.hardwareIdentity?.let { json.put("hardwareIdentity", JSONObject().put("model", it.model).put("serial", it.serial)) }
         val part = File(directory, "${job.id}.tmp")
         val target = File(directory, "${job.id}.json")
         try {
@@ -265,7 +295,9 @@ internal class CameraImportStore(private val directory: File, private val tempor
             val item = array.getJSONObject(index)
             val created = item.getLong("created")
             val photo = CameraPhoto(item.getString("key"), item.getString("name"), item.getLong("size"), created,
-                item.optString("storage").takeIf { it.isNotEmpty() }, item.optLong("captureTimestamp", created))
+                resumeIdentity = item.optString("resumeIdentity").takeIf { it.isNotEmpty() },
+                storageToken = item.optString("storage").takeIf { it.isNotEmpty() },
+                captureTimestamp = item.optLong("captureTimestamp", created))
             if (photo.size !in 1..SystemPhotoStore.MAX_BYTES) throw IOException("Invalid camera photo size")
             val saved = item.optJSONObject("saved")?.mediaPhoto()
             val prepared = item.optJSONObject("prepared")?.mediaPhoto()
@@ -279,10 +311,13 @@ internal class CameraImportStore(private val directory: File, private val tempor
                 item.optJSONObject("unavailable")?.mediaPhoto(), item.optString("problem").takeIf { it.isNotEmpty() }?.let(CameraMediaProblem::valueOf),
                 outputDigest, outputSize)
         }
+        val hardware = json.optJSONObject("hardwareIdentity")?.let {
+            CameraHardwareIdentity(it.getString("model"), it.getString("serial"))
+        }
         return CameraImportJob(file.nameWithoutExtension, json.getString("camera"), json.getLong("time"), items,
             CameraJobStatus.valueOf(json.getString("status")), CameraImportDestination(json.getString("directory"),
                 CameraDirectoryGrouping.valueOf(json.getString("grouping"))), json.optJSONObject("incremental")?.incrementalPlan(),
-            json.optBoolean("committed", json.getString("status") == CameraJobStatus.COMPLETE.name))
+            json.optBoolean("committed", json.getString("status") == CameraJobStatus.COMPLETE.name), hardware)
     }
 
     private fun validContent(uri: String, size: Long, digest: String?): Boolean = runCatching {

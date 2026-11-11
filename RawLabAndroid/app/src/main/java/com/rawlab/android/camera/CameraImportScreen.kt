@@ -92,8 +92,14 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
     val incrementalCount = state.incrementalScan?.assets?.size ?: 0
     val canImport = !state.transferring && !state.preparing && !state.closing && state.stage == null
     val needsOriginalJpeg = state.job?.items?.any { it.problem == CameraMediaProblem.HDR_GAIN_MAP } == true
-    val savedKeys = remember(state.jobs, state.cameraId) {
-        state.jobs.filter { it.cameraId == state.cameraId }.flatMap { it.items }.filter { it.saved != null }.map { it.photo.key }.toSet()
+    val savedKeys = remember(state.jobs, state.cameraId, state.hardwareIdentity, state.photos) {
+        val observed = state.photos.associateBy { it.key }
+        state.jobs.asSequence()
+            .filter { it.matchesCamera(state.cameraId, state.hardwareIdentity) }
+            .flatMap { it.items.asSequence() }
+            .filter { it.saved != null && observed[it.photo.key]?.let(it.photo::matchesSnapshot) == true }
+            .map { it.photo.key }
+            .toSet()
     }
     val title = when {
         preview != null -> R.string.camera_preview

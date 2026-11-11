@@ -393,7 +393,7 @@ extension EditorModel {
         do { candidate = try restoredRecord.state?.settings ?? RenderEngine.defaultSettings(for: url, sourceIsHDR: info != nil) }
         catch { self.error=error.localizedDescription; return }
         if sdrFallback { candidate.hdr?.mode = .sdr }
-        let cameraHDR = info == nil ? try? HDRSourceInfo.probeRAW(url) : nil
+        let cameraHDR = info == nil ? try? HDRSourceInfo.probeRAW(url, processing: candidate.processing.core) : nil
         guard !candidate.isHDREditing || info != nil || cameraHDR != nil else {
             self.error=L10n.text("此照片没有可编辑的 HDR 增益图。")
             return
