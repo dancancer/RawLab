@@ -840,6 +840,13 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
             TEST_LENS_SDK_DNG TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     endif()
     add_test(NAME rendered_dng COMMAND rendered_dng_tests)
+    if(APPLE AND NOT IOS)
+        add_executable(rendered_dng_imageio_tests tests/rendered_dng_imageio_tests.mm)
+        target_compile_options(rendered_dng_imageio_tests PRIVATE -fobjc-arc)
+        target_link_libraries(rendered_dng_imageio_tests sony2fuji_core
+            "-framework Foundation" "-framework ImageIO" "-framework CoreGraphics")
+        add_test(NAME rendered_dng_imageio COMMAND rendered_dng_imageio_tests)
+    endif()
     if(SONY2FUJI_ENABLE_LENSFUN AND SONY2FUJI_ENABLE_WAVELET_DENOISE AND EXISTS "${SONY2FUJI_TEST_LENS_WAVELET_RAW}")
         target_compile_definitions(rendered_dng_tests PRIVATE
             TEST_LENS_WAVELET_DNG TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

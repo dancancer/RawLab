@@ -244,16 +244,21 @@ int main(int argc, const char* argv[]) {
                         "SDR rendered DNG export failed");
                     TIFF* dng=TIFFOpen(dngOutput.fileSystemRepresentation,"r");
                     check(dng,"cannot inspect rendered DNG");
+                    uint16_t subIfdCount=0; uint64_t* subIfds=nullptr;
+                    check(TIFFGetField(dng,TIFFTAG_SUBIFD,&subIfdCount,&subIfds) && subIfdCount>=1 && subIfds &&
+                          TIFFSetSubDirectory(dng,subIfds[0]), "cannot find SDR DNG image directory");
                     uint16_t bits=0,format=0; uint32_t w=0,height=0;
                     TIFFGetField(dng,TIFFTAG_BITSPERSAMPLE,&bits); TIFFGetField(dng,TIFFTAG_SAMPLEFORMAT,&format);
                     TIFFGetField(dng,TIFFTAG_IMAGEWIDTH,&w); TIFFGetField(dng,TIFFTAG_IMAGELENGTH,&height);
-                    std::vector<float> row(w*3);
-                    const bool read=TIFFReadScanline(dng,row.data(),0,0)>=0; TIFFClose(dng);
-                    check(read && bits==32 && format==SAMPLEFORMAT_IEEEFP && w==pair.sdr.width && height==pair.sdr.height,
+                    check(bits==16 && format==SAMPLEFORMAT_UINT && w==pair.sdr.width && height==pair.sdr.height,
                         "SDR DNG format/canvas changed");
+                    std::vector<uint16_t> row(w*3);
+                    const bool read=TIFFReadScanline(dng,row.data(),0,0)>=0; TIFFClose(dng);
+                    check(read,"cannot read SDR DNG pixels");
                     const auto* expected=static_cast<const float*>(pair.sdr.data);
                     for (size_t i=0;i<row.size();++i)
-                        check(std::abs(row[i]-std::clamp(expected[i],0.0f,1.0f))<1e-6f,"SDR DNG used HDR or the wrong transfer");
+                        check(std::abs(row[i]/65535.0f-std::clamp(expected[i],0.0f,1.0f))<=1.0f/65535.0f,
+                            "SDR DNG used HDR or the wrong transfer");
                     NSURL* damaged=[directory URLByAppendingPathComponent:@"damaged.jpg"];
                     NSData* source=[NSData dataWithContentsOfFile:[NSString stringWithUTF8String:path]];
                     check([[source subdataWithRange:NSMakeRange(0,source.length/2)] writeToURL:damaged atomically:YES],

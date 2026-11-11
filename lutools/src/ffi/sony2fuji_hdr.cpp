@@ -492,7 +492,7 @@ void exportSDRDNG(const Owner& source,const sony2fuji_hdr_sdr_export_config_v1& 
         if (std::memcmp(info.source_sha256,config.source_sha256,32)!=0)
             fail(SONY2FUJI_HDR_REASON_SOURCE_CHANGED,SONY2FUJI_HDR_FIELD_EXPORT,"HDR metadata source changed");
     }
-    // 既有 DNG writer 消费显示编码 sRGB，并自行转成中性的 float32 LinearRaw。
+    // 既有 DNG writer 消费显示编码 sRGB，并自行转成中性的 16 位整数 LinearRaw。
     // 只烘焙 SDR 呈现，不给成片复制来源相机的 RAW 白平衡/校准标签。
     ImageData display=source.pixels.sdr;
     for (auto& pixel:display.pixels) for (float* component:{&pixel.r,&pixel.g,&pixel.b}) {

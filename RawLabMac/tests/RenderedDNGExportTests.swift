@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 
 @main struct RenderedDNGExportTests {
     static func main() throws {
@@ -30,20 +31,41 @@ import Foundation
         settings.waveletNoiseReduction = WaveletDenoiseSettings(enabled: true, luma: 25, chroma: 46, coarse: 50)
         try JSONEncoder().encode(settings).write(to: output.appendingPathComponent("settings.json"))
 
-        for (name, mode) in [("cpu", SONY2FUJI_GPU_OFF), ("metal", SONY2FUJI_GPU_AUTO)] {
+        let modes: [(String, sony2fuji_gpu_mode, ProcessingIdentity)] = [
+            ("cpu", SONY2FUJI_GPU_OFF, .current),
+            ("auto", SONY2FUJI_GPU_AUTO, .current),
+            ("metal", SONY2FUJI_GPU_FORCE, .legacy),
+        ]
+        for (name, mode, processing) in modes {
             let engine = try RenderEngine(gpuMode: mode)
+            var modeSettings = settings
+            modeSettings.processing = processing
             for longEdge in longEdges {
                 let label = name + (longEdge.map { "-\($0)" } ?? "-native")
                 let png = output.appendingPathComponent(label + ".png")
                 let dng = output.appendingPathComponent(label + ".dng")
-                _ = try engine.render(input, settings: settings, lut: lut, edge: nil,
+                _ = try engine.render(input, settings: modeSettings, lut: lut, edge: nil,
                                       output: png, exportLongEdge: longEdge)
-                _ = try engine.render(input, settings: settings, lut: lut, edge: nil,
+                _ = try engine.render(input, settings: modeSettings, lut: lut, edge: nil,
                                       output: dng, exportLongEdge: longEdge)
-                if mode == SONY2FUJI_GPU_AUTO, engine.lastBackend != SONY2FUJI_BACKEND_METAL {
+                guard let dngSource = CGImageSourceCreateWithURL(dng as CFURL, nil),
+                      let dngImage = CGImageSourceCreateImageAtIndex(dngSource, 0, nil),
+                      let pngSource = CGImageSourceCreateWithURL(png as CFURL, nil),
+                      let pngImage = CGImageSourceCreateImageAtIndex(pngSource, 0, nil),
+                      dngImage.width == pngImage.width, dngImage.height == pngImage.height else {
+                    throw RenderError.failed("System ImageIO cannot decode the rendered DNG at the PNG dimensions")
+                }
+                if mode == SONY2FUJI_GPU_FORCE, engine.lastBackend != SONY2FUJI_BACKEND_METAL {
                     throw RenderError.failed("DNG export did not execute Metal")
                 }
-                var job = BatchExportJob(source: input, settings: settings, look: lut, lookName: label)
+                if mode == SONY2FUJI_GPU_AUTO {
+                    let cpu = output.appendingPathComponent("cpu" + (longEdge.map { "-\($0)" } ?? "-native") + ".dng")
+                    guard engine.lastBackend == SONY2FUJI_BACKEND_CPU,
+                          try Data(contentsOf: dng) == Data(contentsOf: cpu) else {
+                        throw RenderError.failed("DNG Auto fallback did not match CPU")
+                    }
+                }
+                var job = BatchExportJob(source: input, settings: modeSettings, look: lut, lookName: label)
                 job.format = .renderedDNG; job.outputDirectory = output; job.longEdge = longEdge
                 var item = try BatchExportItem(url: input); item.selected = true; job.items = [item]
                 let journal = BatchJournal(directory: output.appendingPathComponent(label + "-journal"))
@@ -59,7 +81,7 @@ import Foundation
                 guard try OriginalFileIdentity(input) == original else {
                     throw RenderError.failed("Original RAW changed")
                 }
-                print("PASS: \(label), nonzero adjustments, single/batch exact DNG match, original unchanged")
+                print("PASS: \(label), ImageIO decode, single/batch exact DNG match, original unchanged")
             }
         }
     }

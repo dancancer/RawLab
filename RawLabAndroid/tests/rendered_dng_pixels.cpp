@@ -19,40 +19,45 @@ double srgb(double linear) {
         ? linear * 12.92
         : 1.055 * std::pow(linear, 1.0 / 2.4) - 0.055;
 }
-uint16_t encode16(float linear) { return static_cast<uint16_t>(srgb(linear) * 65535.0 + 0.5); }
-uint8_t encode8(float linear) { return static_cast<uint8_t>(srgb(linear) * 255.0 + 0.5); }
+uint16_t encode16(uint16_t linear) { return static_cast<uint16_t>(srgb(linear / 65535.0) * 65535.0 + 0.5); }
+uint8_t encode8(uint16_t linear) { return static_cast<uint8_t>(srgb(linear / 65535.0) * 255.0 + 0.5); }
 uint8_t pngTo8(uint16_t value) { return static_cast<uint8_t>(value * 255.0 / 65535.0 + 0.5); }
 
 struct DngReader {
     TIFF* file = nullptr;
     uint32_t width = 0;
     uint32_t height = 0;
-    std::vector<float> row;
+    std::vector<uint16_t> row;
 
     explicit DngReader(const std::string& path) : file(TIFFOpen(path.c_str(), "r")) {
         if (!file) throw std::runtime_error("cannot open DNG: " + path);
         try {
             uint16_t bits = 0, samples = 0, photometric = 0, orientation = 0;
             uint16_t planar = 0, sampleFormat = 0;
-            if (!TIFFGetField(file, TIFFTAG_IMAGEWIDTH, &width) ||
-                !TIFFGetField(file, TIFFTAG_IMAGELENGTH, &height) ||
-                !TIFFGetField(file, TIFFTAG_BITSPERSAMPLE, &bits) ||
-                !TIFFGetField(file, TIFFTAG_SAMPLESPERPIXEL, &samples) ||
-                !TIFFGetField(file, TIFFTAG_PHOTOMETRIC, &photometric) ||
-                !TIFFGetField(file, TIFFTAG_ORIENTATION, &orientation) ||
-                !TIFFGetField(file, TIFFTAG_PLANARCONFIG, &planar) ||
-                !TIFFGetField(file, TIFFTAG_SAMPLEFORMAT, &sampleFormat))
-                throw std::runtime_error("missing DNG image fields");
-            if (photometric != kLinearRaw || bits != 32 || samples != 3 ||
-                orientation != ORIENTATION_TOPLEFT || planar != PLANARCONFIG_CONTIG ||
-                sampleFormat != SAMPLEFORMAT_IEEEFP)
-                throw std::runtime_error("DNG is not top-left contiguous float32 LinearRaw RGB");
+            if (!TIFFGetField(file, TIFFTAG_ORIENTATION, &orientation) || orientation != ORIENTATION_TOPLEFT)
+                throw std::runtime_error("DNG orientation is not top-left");
             if (TIFFFindField(file, TIFFTAG_DNGVERSION, TIFF_ANY)) {
                 uint8_t* version = nullptr;
                 if (!TIFFGetField(file, TIFFTAG_DNGVERSION, &version) || !version ||
                     version[0] != 1 || version[1] != 4 || version[2] != 0 || version[3] != 0)
                     throw std::runtime_error("DNG version is not 1.4.0.0");
             }
+            uint16_t subIfdCount = 0;
+            uint64_t* offsets = nullptr;
+            if (!TIFFGetField(file, TIFFTAG_SUBIFD, &subIfdCount, &offsets) ||
+                subIfdCount < 1 || !offsets || !TIFFSetSubDirectory(file, offsets[0]))
+                throw std::runtime_error("missing DNG LinearRaw image directory");
+            if (!TIFFGetField(file, TIFFTAG_IMAGEWIDTH, &width) ||
+                !TIFFGetField(file, TIFFTAG_IMAGELENGTH, &height) ||
+                !TIFFGetField(file, TIFFTAG_BITSPERSAMPLE, &bits) ||
+                !TIFFGetField(file, TIFFTAG_SAMPLESPERPIXEL, &samples) ||
+                !TIFFGetField(file, TIFFTAG_PHOTOMETRIC, &photometric) ||
+                !TIFFGetField(file, TIFFTAG_PLANARCONFIG, &planar) ||
+                !TIFFGetField(file, TIFFTAG_SAMPLEFORMAT, &sampleFormat))
+                throw std::runtime_error("missing DNG image fields");
+            if (photometric != kLinearRaw || bits != 16 || samples != 3 ||
+                planar != PLANARCONFIG_CONTIG || sampleFormat != SAMPLEFORMAT_UINT)
+                throw std::runtime_error("DNG is not top-left contiguous 16-bit LinearRaw RGB");
             if (width == 0 || height == 0 ||
                 static_cast<uint64_t>(width) * 3 > std::numeric_limits<size_t>::max())
                 throw std::runtime_error("invalid DNG dimensions");
@@ -69,8 +74,6 @@ struct DngReader {
     void readRow(uint32_t y) {
         if (TIFFReadScanline(file, row.data(), y, 0) < 0)
             throw std::runtime_error("cannot read DNG scanline");
-        for (float value : row) if (!std::isfinite(value) || value < 0.0f || value > 1.0f)
-            throw std::runtime_error("DNG contains non-finite or out-of-range pixel");
     }
 };
 struct Png16 {
@@ -110,7 +113,7 @@ int main(int argc, char** argv) {
                 throw std::runtime_error("DNG dimensions differ");
         }
 
-        std::vector<float> secondRow;
+        std::vector<uint16_t> secondRow;
         if (second) secondRow.resize(dng.row.size());
         uint32_t maxError = 0, maxRgb8 = 0, secondMaxRgb8 = 0;
         long double errorSum = 0;

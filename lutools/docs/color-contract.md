@@ -161,7 +161,8 @@ metadata contract.
 This display-referred path reuses the reference CPU stages. GPU Auto explicitly
 falls back to CPU and Force returns unsupported until the scene-view GPU
 shaders have a matching display-input mode. Rendered DNG output preserves the
-result as output-referred float RGB; it does not turn an 8-bit source into RAW/HDR.
+result as output-referred 16-bit integer linear sRGB; it does not turn an 8-bit
+source into RAW/HDR.
 The Apple adapter uses ImageIO. Windows uses WIC for 8-bit JPEG and 8/16-bit
 integer RGB PNG and classic TIFF, and its bundled libheif for opaque 8-bit SDR
 HEIF. It converts tagged RGB to sRGB and treats untagged RGB as sRGB. BigTIFF
@@ -275,7 +276,7 @@ float RGB after LUT/recipe strength, WB/exposure, tone, HSL, denoising, detail,
 effects and final resize. It never serializes interactive proxies or scene RAW.
 
 The encoder rejects nonfinite values, clips SDR channels to [0,1] like PNG, and
-inverse-sRGB-decodes them to float32 RGB. DNG 1.4 LinearRaw stores this
+inverse-sRGB-decodes them before quantizing to 16-bit unsigned RGB. DNG 1.4 LinearRaw stores this
 output-referred image (`ColorimetricReference=1`) under a virtual linear-sRGB
 camera, Bradford D65-to-D50 ColorMatrix/ForwardMatrix, D50 white, zero baseline,
 identity tone curve and DefaultBlackRender None. Neutral Adobe XMP disables
@@ -283,10 +284,21 @@ initial tone, sharpening, noise reduction and effects. The already oriented
 pixels have orientation 1. No original sensor pixels, capture EXIF, old preview,
 MakerNotes or source camera calibration is copied into this virtual profile.
 
+The first TIFF directory contains a 160-pixel-long-edge sRGB JPEG thumbnail and
+references both the 16-bit LinearRaw image and a full-size sRGB JPEG preview as
+subdirectories. Previews use the final display-sRGB pixels, are lossy 8-bit JPEGs,
+and increase the file size; they do not alter the 16-bit image. If a dimension
+exceeds JPEG's supported limit, the full preview is reduced proportionally.
+Viewers can choose either a preview or their own rendering of the LinearRaw image.
+
 The preserved result is appearance, not original RAW latitude or separately
 reversible RawLab controls. Lightroom import presets or later edits can change
 the appearance. Serialization uses libtiff, with an uncompressed three-channel
-float image and no ExtraSamples. There is no JPEG/PNG intermediate quantization.
+16-bit integer image and no ExtraSamples. Quantization occurs in linear sRGB,
+without a JPEG/PNG intermediate, and differs from the float result by at most
+half a 16-bit linear step per channel. Other RAW readers can apply their own
+tone, highlight or gamut mapping and ignore Adobe-specific XMP, so their display
+may differ from the baked appearance, particularly for saturated colors.
 
 DNG writes stage in the destination directory and atomically replace the target
 only after a successful flush. Failed writes preserve existing output files.
