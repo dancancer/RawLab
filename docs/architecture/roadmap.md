@@ -205,7 +205,7 @@
 - 首批完整能力以 macOS15+（Apple Silicon/Intel）、iOS/iPadOS18+ 验收；macOS14 保持现有 SDR 能力，Windows/Android 客户端后续接入。
 - 输入覆盖旧式 Apple/ISO 增益图 HEIC/JPEG 与 Android Ultra HDR JPEG；首个输出为带新生成增益图、兼容普通屏幕的 JPEG，再扩展 HEIF。
 - 明确 HDR 路径的工作数据、色彩解释、高光处理与显示映射，以及普通 SDR 屏幕上的回退效果。
-- 当前 float32 DNG 承载的仍是 SDR 渲染结果，不能直接当作 HDR 实现；浮点存储本身不代表保留了可供 HDR 显示的高光信息。
+- 当前渲染型 DNG 承载的是 SDR 显影结果，不能直接当作 HDR 实现；存储位深本身不代表保留了可供 HDR 显示的高光信息。
 - 现有 LUT、调整与导出路径的语义以[色彩约定](../../lutools/docs/color-contract.md)为基线，不能未经验证就将 SDR 输出重新标记为 HDR。
 
 ### 验收标准

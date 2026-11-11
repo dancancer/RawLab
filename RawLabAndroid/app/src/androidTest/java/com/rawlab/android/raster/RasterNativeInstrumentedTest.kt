@@ -299,13 +299,13 @@ class RasterNativeInstrumentedTest {
     }
 
     @Test
-    fun rasterFinalDngHasTiffFloatPixelsAndGeometryAndMatchesPngAppearance() {
+    fun rasterFinalDngHasTiff16BitPixelsAndGeometryAndMatchesPngAppearance() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val root = testRoot(context, "raster-dng")
         val input = File(root, "source.png")
         val png = File(root, "final.png")
         val dng = File(root, "final.dng")
-        writeGradient(input, 16, 12)
+        writeGradient(input, 160, 120)
         val settings = EditSettings(
             exposure = 0.35f,
             saturation = 0.12f,
@@ -324,11 +324,12 @@ class RasterNativeInstrumentedTest {
                     assertEquals(preview.geometryHeight, renderedDng.height)
                     assertEquals(renderedPng.width, renderedDng.width)
                     assertEquals(renderedPng.height, renderedDng.height)
-                    assertEquals(32, renderedDng.bitsPerSample)
+                    assertEquals(16, renderedDng.bitsPerSample)
                     assertEquals(1, renderedDng.compression)
                     assertEquals(3, renderedDng.samplesPerPixel)
                     assertEquals(34892, renderedDng.photometric)
-                    assertTrue(renderedDng.sampleFormat.all { it == 3L })
+                    assertTrue(renderedDng.sampleFormat.all { it == 1L })
+                    assertTrue("DNG must span multiple strips", renderedDng.stripCount > 1)
                     assertDngAppearanceMatchesPng(renderedDng, renderedPng)
                 } finally {
                     renderedPng.recycle()

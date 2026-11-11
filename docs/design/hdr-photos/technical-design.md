@@ -64,7 +64,7 @@ macOS 14 打开未来 HDR 编辑记录时，不应用或覆盖该记录；保留
 - [C ABI](../../../lutools/include/sony2fuji/ffi/sony2fuji_c.h)的图像 buffer 只有 RGB8/RGBA8。
 - [调色曲线](../../../lutools/src/core/photo_tone_curve.cpp)、部分 tone/effects 和现有外观以 SDR 域为前提；不能只解除导入检查。
 - [Mac Engine](../../../RawLabMac/Sources/Rendering/Engine.swift)与[iOS processor](../../../RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Helpers.swift)的旧路径创建 8 位 sRGB 预览；HDR 改走独立浮点 pair 与画布。
-- 渲染型 DNG 保存的是 SDR 显影结果，float32 存储不构成 HDR 支持。
+- 渲染型 DNG 保存的是 SDR 显影结果，存储位深本身不构成 HDR 支持。
 
 ## 3. 图像、颜色与亮度契约
 
