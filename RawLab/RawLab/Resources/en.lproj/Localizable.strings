@@ -83,12 +83,14 @@
 "一并导入 %@ 个日期未知的文件" = "Include %@ undated files";
 "三分网格" = "Rule of Thirds Grid";
 "三线性" = "Trilinear";
+"上一张" = "Previous photo";
 "上下拖动调整，方向键微调，Esc 取消" = "Drag up or down to adjust, use arrow keys for fine changes, Esc to cancel";
 "上次使用的外观不可用，请重新选择或导入外观。" = "The last used look is unavailable. Choose or import a look again.";
 "上次使用的相机 · 未连接" = "Last used camera · Disconnected";
 "上次同步结果与历史" = "Last sync results and history";
 "上次导入未完成" = "The last import did not finish";
 "上次预览" = "Last preview";
+"下一张" = "Next photo";
 "不支持此 HDR 格式或颜色描述。" = "This HDR format or color description is not supported.";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "This photo, look, or processing mode is not supported. Check file compatibility and processing settings.";
 "不能覆盖原始文件。" = "The original file cannot be overwritten.";
@@ -491,12 +493,14 @@
 "无法保存导入记录或原件。请检查可用空间后重试。" = "Unable to save the import record or original files. Check available storage and try again.";
 "无法保存照片，请在系统设置中允许 RawLab 添加照片。" = "Unable to Save Photos. Allow RawLab to Add Photos in System Settings.";
 "无法保存照片，请在系统设置中允许添加照片。" = "Unable to save the photo. Allow adding photos in system settings.";
+"无法保存编辑草稿。" = "Unable to save the edit draft.";
 "无法写入 HDR 导出文件，请检查可用空间和目标权限。" = "Cannot write the HDR export. Check free space and destination permissions.";
 "无法写入成片，请检查输出位置和剩余空间。" = "Unable to write the exported photo. Check the output location and free space.";
 "无法创建新的预设标识，请重试。" = "Could not create a new preset identifier. Try again.";
 "无法加入最近打开：%@" = "Could not add to recently opened: %@";
 "无法取得 RAW 原片，请在系统设置中授权访问这张照片后重试。" = "Unable to Retrieve the Original RAW. Authorize Access to This Photo in System Settings, Then Try Again.";
 "无法导出错误日志。" = "Could not export the error log.";
+"无法恢复编辑草稿，已保留已应用的调整。" = "Unable to restore the edit draft; applied adjustments were kept.";
 "无法按所选设置处理 JPEG。" = "Could not process the JPEG with these settings.";
 "无法显示处理结果" = "Unable to display processing results";
 "无法生成预览" = "Unable to generate preview";
@@ -556,6 +560,7 @@
 "更换预览照片" = "Change preview photo";
 "最近使用" = "Recent";
 "最近打开" = "Recently opened";
+"最近照片" = "Recent photos";
 "有多个匹配镜头，请手动选择" = "Multiple Lens Matches; Choose Manually";
 "有文件超出相机导入上限，请调整起点或格式。" = "Some files exceed the import limit. Change the start time or format.";
 "有未提交调整。" = "There are uncommitted adjustments.";
@@ -715,6 +720,7 @@
 "目标调整" = "Targeted adjustment";
 "目标调整：%@" = "Target adjustment: %@";
 "目标：%@ 张照片" = "Target photos: %@";
+"直方图" = "Histogram";
 "相对白平衡" = "Relative White Balance";
 "相机" = "Camera";
 "相机 Wi-Fi 通常无法访问互联网，请保持连接。" = "The camera’s Wi-Fi usually has no internet access. Stay connected.";
@@ -754,6 +760,7 @@
 "系统权限设置" = "System permission settings";
 "紫" = "Purple";
 "红" = "Red";
+"纯预览" = "Preview";
 "纽约电影 · 戏剧光影" = "New York cinema · dramatic light";
 "线性 sRGB" = "Linear sRGB";
 "细节" = "Detail";
