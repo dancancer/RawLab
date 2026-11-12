@@ -345,6 +345,74 @@ enum BatchFlowModelTests {
         try wait { !inspectBatch.previewing }
         try require(inspectBatch.error == BatchExportFailure.changedInput.localizedDescription,
                     "batch inspect checks input identity before probing X3F target mode")
+
+        var aiSettings = Adjustments()
+        aiSettings.x3fMode = .legacy
+        aiSettings.aiDenoiseEnabled = true
+        let normalNoticeItem = try BatchExportItem(url: normal)
+        let legacyNoticeItem = try BatchExportItem(url: legacy)
+        var failedNoticeItem = try BatchExportItem(url: normal)
+        failedNoticeItem.validationError = "broken"
+        var noticeJob = BatchExportJob(source: legacy, settings: aiSettings, look: nil, lookName: "neutral")
+        noticeJob.items = [normalNoticeItem, legacyNoticeItem, failedNoticeItem]
+        var noticeProbeCount = 0
+        let noticeBatch = BatchExportModel(
+            job: noticeJob,
+            journal: BatchJournal(directory: directory.appendingPathComponent("notice-journal")),
+            resolveX3fMode: { url in
+                noticeProbeCount += 1
+                return url.standardizedFileURL == normal.standardizedFileURL ? .normal : .legacy
+            }
+        )
+        try require(noticeBatch.notice(for: normalNoticeItem) == L10n.text("此 X3F 显影模式不支持 AI 降噪。") &&
+                    noticeBatch.notice(for: normalNoticeItem) == L10n.text("此 X3F 显影模式不支持 AI 降噪。") &&
+                    noticeProbeCount == 1,
+                    "normal X3F batch items explain why AI denoise is omitted and cache fallback mode lookups")
+        try require(noticeBatch.notice(for: legacyNoticeItem) == nil &&
+                    noticeBatch.notice(for: failedNoticeItem) == nil,
+                    "legacy X3F and validation-failed X3F items do not show the normal AI omission notice")
+
+        let dp2SavedLegacy = directory.appendingPathComponent("dp2-saved-legacy.X3F")
+        try Data("FOVb-corrupt-if-probed".utf8).write(to: dp2SavedLegacy)
+        var savedLegacyState = Adjustments()
+        savedLegacyState.x3fMode = .legacy
+        try model.editStore!.save(dp2SavedLegacy, state: PhotoEditState(settings: savedLegacyState, filmID: ""))
+        let dp2Item = try BatchExportItem(url: dp2SavedLegacy)
+        var attachedAIJob = BatchExportJob(source: legacy, settings: aiSettings, look: nil, lookName: "neutral")
+        attachedAIJob.items = [dp2Item]
+        model.attachBatch(attachedAIJob)
+        try require(model.batch?.notice(for: dp2Item) == nil,
+                    "EditorModel.attachBatch wires editStore so a DP2 Merrill saved as legacy keeps AI without probing header")
+        _ = model.batch?.discardDraft()
+
+        let singleProbeTarget = directory.appendingPathComponent("single-probe.X3F")
+        try FileManager.default.copyItem(at: fixture, to: singleProbeTarget)
+        let singleProbeOutput = directory.appendingPathComponent("single-probe-output")
+        try FileManager.default.createDirectory(at: singleProbeOutput, withIntermediateDirectories: true)
+        var singleProbeItem = try BatchExportItem(url: singleProbeTarget)
+        singleProbeItem.selected = true
+        var singleProbeJob = BatchExportJob(source: legacy, settings: Adjustments(), look: nil, lookName: "neutral")
+        singleProbeJob.outputDirectory = singleProbeOutput
+        singleProbeJob.format = .png
+        singleProbeJob.longEdge = 64
+        singleProbeJob.items = [singleProbeItem]
+        var exportProbes = 0
+        let singleProbeBatch = BatchExportModel(
+            job: singleProbeJob,
+            journal: BatchJournal(directory: directory.appendingPathComponent("single-probe-journal")),
+            resolveX3fMode: { _ in
+                exportProbes += 1
+                if exportProbes > 1 { throw RenderError.failed("duplicate X3F mode probe during export") }
+                return .legacy
+            }
+        )
+        try require(singleProbeBatch.start(), "single-probe X3F uniform batch starts")
+        try wait { !singleProbeBatch.running }
+        try require(exportProbes == 1 && singleProbeBatch.job.succeededCount == 1 &&
+                    singleProbeBatch.job.items[0].output?.pathExtension == "png",
+                    "BatchExportModel.start reuses the frozen snapshot instead of re-probing X3F in render callback")
+        try require(singleProbeBatch.discardTask() && exportProbes == 1,
+                    "discarding a finished uniform X3F batch does not re-probe X3F headers")
     }
 
     static func automaticLaunch(root: URL, fixture: URL) throws {

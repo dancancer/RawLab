@@ -94,15 +94,19 @@ final class BatchExportModel: ObservableObject {
     private let onUsage: (UsageEvent) -> Void
     private let hdrPreparation: MacHDRBatchPreparation?
     private let probeHDRSource: HDRSourceInfo.Probe
+    private let resolveX3fMode: BatchExportJob.X3fModeResolver
+    private var cachedNoticeX3fModes: [UUID: X3fMode?] = [:]
 
     init(job: BatchExportJob, journal: BatchJournal,hdrPreparation: MacHDRBatchPreparation? = nil,
          probeHDRSource: @escaping HDRSourceInfo.Probe = { try HDRSourceInfo.probe($0, onSDRFallback: $1) },
+         resolveX3fMode: @escaping BatchExportJob.X3fModeResolver = BatchExportJob.resolveX3fMode(for:),
          onUsage: @escaping (UsageEvent) -> Void = { _ in }) {
         self.job = job
         self.journal = journal
         self.onUsage = onUsage
         self.hdrPreparation=hdrPreparation
         self.probeHDRSource = probeHDRSource
+        self.resolveX3fMode = resolveX3fMode
         error = job.failure
     }
 
@@ -121,11 +125,24 @@ final class BatchExportModel: ObservableObject {
 
     func notice(for item: BatchExportItem) -> String? {
         var messages = item.noticeKey.map { [L10n.text($0)] } ?? []
-        if job.mode == .uniformFrozen, !job.settings.isHDREditing, job.settings.aiDenoiseEnabled,
-           RenderEngine.isRasterInput(item.input) {
-            messages.append(L10n.text("普通图片未使用 AI 降噪"))
+        if job.mode == .uniformFrozen, !job.settings.isHDREditing, job.settings.aiDenoiseEnabled {
+            if RenderEngine.isRasterInput(item.input) {
+                messages.append(L10n.text("普通图片未使用 AI 降噪"))
+            } else if RenderEngine.isX3fInput(item.input), item.validationError == nil,
+                      noticeX3fMode(for: item) == .normal {
+                messages.append(L10n.text("此 X3F 显影模式不支持 AI 降噪。"))
+            }
         }
         return messages.isEmpty ? nil : messages.joined(separator: "\n")
+    }
+
+    private func noticeX3fMode(for item: BatchExportItem) -> X3fMode? {
+        if let resolved = item.resolvedX3fMode { return resolved }
+        guard !validating else { return nil }
+        if let cached = cachedNoticeX3fModes[item.id] { return cached }
+        let resolved = try? resolveX3fMode(item.input)
+        cachedNoticeX3fModes[item.id] = resolved
+        return resolved
     }
 
     func addFiles() {
@@ -151,6 +168,7 @@ final class BatchExportModel: ObservableObject {
                 item.selected = true
                 if let index = job.items.firstIndex(where: { $0.input == item.input }) {
                     job.items[index].selected = true
+                    cachedNoticeX3fModes.removeValue(forKey: job.items[index].id)
                 } else { job.items.append(item) }
                 added.append(item)
             } catch { failures.append(L10n.format("%@：%@", url.lastPathComponent, error.localizedDescription)) }
@@ -165,9 +183,13 @@ final class BatchExportModel: ObservableObject {
             for item in candidates {
                 var failure: String?
                 var sdrFallback = false
+                var resolvedX3fMode: X3fMode?
                 do {
                     let info = try probeHDRSource(item.input, { sdrFallback = true })
-                    let snapshot = try hdrPreparation?.prepare(item,ordinal:0,format:validationJob.format,longEdge:validationJob.longEdge,sourceIsHDR:info != nil,sdrFallback:sdrFallback) ?? validationJob.snapshot(for:item)
+                    let snapshot = try hdrPreparation?.prepare(item,ordinal:0,format:validationJob.format,longEdge:validationJob.longEdge,sourceIsHDR:info != nil,sdrFallback:sdrFallback) ?? validationJob.snapshot(for:item, resolveX3fMode: resolveX3fMode)
+                    if validationJob.mode == .uniformFrozen, RenderEngine.isX3fInput(item.input) {
+                        resolvedX3fMode = snapshot.settings.x3fMode
+                    }
                     if snapshot.settings.activeAIDenoise {
                         try RenderEngine.validateAIInput(item.input, settings: snapshot.settings)
                     } else {
@@ -176,10 +198,12 @@ final class BatchExportModel: ObservableObject {
                     }
                 } catch { failure = error.localizedDescription }
                 let message = failure
+                let x3fMode = failure == nil ? resolvedX3fMode : nil
                 let noticeKey = failure == nil && sdrFallback ? "此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。" : nil
                 DispatchQueue.main.async {
                     if let index = self.job.items.firstIndex(where: { $0.input == item.input }) {
                         self.job.items[index].noticeKey = noticeKey
+                        self.job.items[index].resolvedX3fMode = x3fMode
                         if let message {
                             self.job.items[index].validationError = message
                             self.job.items[index].selected = false
@@ -207,6 +231,7 @@ final class BatchExportModel: ObservableObject {
     func remove(_ id: UUID) {
         guard job.mode == .uniformFrozen, !running, !job.started else { return }
         job.items.removeAll { $0.id == id }
+        cachedNoticeX3fModes.removeValue(forKey: id)
         saveDraft()
     }
 
@@ -262,11 +287,14 @@ final class BatchExportModel: ObservableObject {
             do {
                 let runSnapshot=try freezeHDRJob(snapshot,shouldCancel:{ cancellation.cancelled })
                 work=runSnapshot
-                try BatchExportRunner.run(job: &work, journal: journal, scope: scope,
-                                         shouldCancel: { cancellation.cancelled }, didUpdate: { updated in
+                try BatchExportRunner.runSnapshots(job: &work, journal: journal, scope: scope,
+                                                   resolveX3fMode: resolveX3fMode,
+                                                   shouldCancel: { cancellation.cancelled }, didUpdate: { updated in
                     attempted.formUnion(updated.items.filter { $0.status == .running }.map(\.id))
                     DispatchQueue.main.async { self.job = updated }
-                }) { input, settings, look, output in
+                }) { input, frozen, output in
+                    let settings = frozen.settings
+                    let look = frozen.look
                     if self.engine == nil { self.engine = try RenderEngine() }
                     if settings.activeAIDenoise {
                         let progress = AIPreparation { phase, done, total in
@@ -281,8 +309,6 @@ final class BatchExportModel: ObservableObject {
                     }
                     if cancellation.cancelled { throw RenderError.aiCancelled }
                     _ = try self.engine!.render(input, settings: settings, lut: look, edge: 32)
-                    let item = runSnapshot.items.first { $0.input == input }!
-                    let frozen = try runSnapshot.snapshot(for:item)
                     _ = try self.engine!.render(input, settings: settings, lut: look, edge: nil, output: output,
                         exportLongEdge:frozen.longEdge,exportFormat:frozen.outputFormat)
                 }
@@ -361,7 +387,7 @@ final class BatchExportModel: ObservableObject {
                 let snapshot: BatchFrozenSettings
                 if frozenJob.mode == .uniformFrozen,let hdrPreparation {
                     snapshot=try hdrPreparation.prepare(item,ordinal:0,format:frozenJob.format,longEdge:frozenJob.longEdge)
-                } else { snapshot=try frozenJob.snapshot(for:item) }
+                } else { snapshot=try frozenJob.snapshot(for:item, resolveX3fMode: resolveX3fMode) }
                 if frozenJob.mode == .perTargetFrozen {
                     try snapshot.verifyLook()
                 }

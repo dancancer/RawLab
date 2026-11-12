@@ -61,6 +61,7 @@ struct BatchExportItem: Codable, Identifiable {
     var error: String?
     var validationError: String?
     var noticeKey: String?
+    var resolvedX3fMode: X3fMode?
     var frozen: BatchFrozenSettings?
     var resourceIdentifier: String?
 
@@ -123,15 +124,35 @@ struct BatchExportJob: Codable {
         }
     }
 
+    typealias X3fModeResolver = (URL) throws -> X3fMode
+
+    static func x3fModeResolver(
+        store: EditPersistence? = nil,
+        directory: URL = EditPersistence.defaultDirectory,
+        defaultMode: @escaping X3fModeResolver = RenderEngine.x3fDefaultMode(for:)
+    ) -> X3fModeResolver {
+        { input in
+            let persistence = try store ?? EditPersistence(directory: directory)
+            if let saved = try persistence.state(for: input)?.settings.x3fMode {
+                return saved
+            }
+            return try defaultMode(input)
+        }
+    }
+
+    static func resolveX3fMode(for input: URL) throws -> X3fMode {
+        try x3fModeResolver()(input)
+    }
+
     func snapshot(for item: BatchExportItem,
-                  x3fDefaultMode: (URL) throws -> X3fMode = RenderEngine.x3fDefaultMode(for:)) throws -> BatchFrozenSettings {
+                  resolveX3fMode: X3fModeResolver = Self.resolveX3fMode(for:)) throws -> BatchFrozenSettings {
         if mode == .perTargetFrozen {
             guard let frozen = item.frozen else { throw CocoaError(.fileReadCorruptFile) }
             try frozen.validate()
             return frozen
         }
         return BatchFrozenSettings(ordinal: 0,
-            settings: try settings(for: item.input, x3fDefaultMode: x3fDefaultMode), look: look,
+            settings: try settings(for: item.input, resolveX3fMode: resolveX3fMode), look: look,
             lookSHA256: nil, lookName: lookName, outputFormat: format, longEdge: longEdge)
     }
 
@@ -154,7 +175,7 @@ struct BatchExportJob: Codable {
     var suffix: String { format.suffix }
 
     func settings(for input: URL,
-                  x3fDefaultMode: (URL) throws -> X3fMode = RenderEngine.x3fDefaultMode(for:)) throws -> Adjustments {
+                  resolveX3fMode: X3fModeResolver = Self.resolveX3fMode(for:)) throws -> Adjustments {
         if RenderEngine.isRasterInput(input) { return settings.resolvedForRaster }
         var resolved = settings
         if RenderEngine.isRasterInput(source), !RenderEngine.isRasterInput(input) {
@@ -168,14 +189,9 @@ struct BatchExportJob: Codable {
             resolved.lensCorrection = nil
         }
         if RenderEngine.isX3fInput(input) {
-            let mode = try x3fDefaultMode(input)
-            resolved.x3fMode = mode
-            if mode == .normal {
-                resolved.lensCorrection?.distortion = false
-                resolved.lensCorrection?.tca = false
-                resolved.lensCorrection?.vignetting = false
-                resolved.aiDenoiseEnabled = false
-            }
+            // 优先读取目标已保存编辑记录的 x3fMode，缺失时才回退 RenderEngine.x3fDefaultMode(for:)。
+            let mode = try resolveX3fMode(input)
+            resolved.selectX3fMode(mode)
         }
         return resolved
     }
@@ -252,7 +268,7 @@ final class BatchJournal {
 
     private func cleanup(_ job: BatchExportJob, item: BatchExportItem) {
         guard let directory = job.outputDirectory else { return }
-        let suffix = (try? job.snapshot(for: item).outputFormat.suffix) ?? job.suffix
+        let suffix = job.mode == .perTargetFrozen ? (item.frozen?.outputFormat.suffix ?? job.format.suffix) : job.format.suffix
         let temp = directory.appendingPathComponent(".rawlab-\(job.id)-\(item.id).\(suffix)")
         try? FileManager.default.removeItem(at: temp)
     }
@@ -280,10 +296,22 @@ enum BatchExportFailure: LocalizedError {
 
 enum BatchExportRunner {
     typealias Render = (URL, Adjustments, URL?, URL) throws -> Void
+    typealias RenderSnapshot = (URL, BatchFrozenSettings, URL) throws -> Void
 
     static func run(job: inout BatchExportJob, journal: BatchJournal, scope: BatchRunScope,
+                    resolveX3fMode: BatchExportJob.X3fModeResolver = BatchExportJob.resolveX3fMode(for:),
                     shouldCancel: () -> Bool, didUpdate: (BatchExportJob) -> Void = { _ in },
                     render: Render) throws {
+        try runSnapshots(job: &job, journal: journal, scope: scope, resolveX3fMode: resolveX3fMode,
+                         shouldCancel: shouldCancel, didUpdate: didUpdate) { input, snapshot, output in
+            try render(input, snapshot.settings, snapshot.look, output)
+        }
+    }
+
+    static func runSnapshots(job: inout BatchExportJob, journal: BatchJournal, scope: BatchRunScope,
+                             resolveX3fMode: BatchExportJob.X3fModeResolver = BatchExportJob.resolveX3fMode(for:),
+                             shouldCancel: () -> Bool, didUpdate: (BatchExportJob) -> Void = { _ in },
+                             render: RenderSnapshot) throws {
         try job.validate()
         guard let directory = job.outputDirectory else { throw BatchExportFailure.destination }
         guard job.selectedCount > 0 else { throw BatchExportFailure.noSelection }
@@ -304,7 +332,8 @@ enum BatchExportRunner {
                 job.items[index].error = nil
                 try journal.save(job)
                 didUpdate(job)
-                try export(index, job: &job, journal: journal, directory: directory, shouldCancel: shouldCancel, render: render)
+                try export(index, job: &job, journal: journal, directory: directory,
+                           resolveX3fMode: resolveX3fMode, shouldCancel: shouldCancel, render: render)
                 didUpdate(job)
                 if shouldCancel() { job.cancelled = true; break }
             }
@@ -319,7 +348,8 @@ enum BatchExportRunner {
     }
 
     private static func export(_ index: Int, job: inout BatchExportJob, journal: BatchJournal,
-                               directory: URL, shouldCancel: () -> Bool, render: Render) throws {
+                               directory: URL, resolveX3fMode: BatchExportJob.X3fModeResolver,
+                               shouldCancel: () -> Bool, render: RenderSnapshot) throws {
         let item = job.items[index]
         let snapshot: BatchFrozenSettings
         let temp: URL
@@ -330,13 +360,16 @@ enum BatchExportRunner {
             if job.mode == .perTargetFrozen {
                 guard try BatchExportItem.resourceKey(item.input) == item.resourceIdentifier else { throw BatchExportFailure.changedInput }
             }
-            snapshot = try job.snapshot(for: item)
+            snapshot = try job.snapshot(for: item, resolveX3fMode: resolveX3fMode)
+            if job.mode == .uniformFrozen {
+                job.items[index].resolvedX3fMode = RenderEngine.isX3fInput(item.input) ? snapshot.settings.x3fMode : nil
+            }
             if job.mode == .perTargetFrozen {
                 try snapshot.verifyLook()
             }
             temp = directory.appendingPathComponent(".rawlab-\(job.id)-\(item.id).\(snapshot.outputFormat.suffix)")
             cleanupTemp = temp
-            try render(item.input, snapshot.settings, snapshot.look, temp)
+            try render(item.input, snapshot, temp)
         } catch RenderError.aiCancelled where shouldCancel() {
             job.items[index].status = .waiting
             job.items[index].error = nil

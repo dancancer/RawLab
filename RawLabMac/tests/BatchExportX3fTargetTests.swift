@@ -49,7 +49,7 @@ enum BatchExportX3fTargetTests {
         )
         let legacyJob = BatchExportJob(source: legacySourceURL, settings: legacySource, look: nil, lookName: "Neutral")
         var probed: [URL] = []
-        let resolvedNormal = try legacyJob.snapshot(for: normalItem, x3fDefaultMode: { url in
+        let resolvedNormal = try legacyJob.snapshot(for: normalItem, resolveX3fMode: { url in
             probed.append(url)
             return .normal
         })
@@ -74,7 +74,7 @@ enum BatchExportX3fTargetTests {
         var rawSource = legacySource
         rawSource.x3fMode = .normal
         let rawToNormalJob = BatchExportJob(source: rawSourceURL, settings: rawSource, look: nil, lookName: "Neutral")
-        let rawToNormal = try rawToNormalJob.snapshot(for: lowerNormalItem, x3fDefaultMode: { _ in .normal })
+        let rawToNormal = try rawToNormalJob.snapshot(for: lowerNormalItem, resolveX3fMode: { _ in .normal })
         try check(rawToNormal.settings.x3fMode == .normal &&
                   !rawToNormal.settings.lensSettings.distortion &&
                   !rawToNormal.settings.lensSettings.tca &&
@@ -91,7 +91,7 @@ enum BatchExportX3fTargetTests {
             distortion: true, tca: true, autoCrop: true, mode: .automatic, vignetting: true
         )
         let normalJob = BatchExportJob(source: normalSourceURL, settings: normalWithLens, look: nil, lookName: "Neutral")
-        let resolvedLegacy = try normalJob.snapshot(for: legacyItem, x3fDefaultMode: { _ in .legacy })
+        let resolvedLegacy = try normalJob.snapshot(for: legacyItem, resolveX3fMode: { _ in .legacy })
         try check(resolvedLegacy.settings.x3fMode == .legacy,
                   "normal source exporting to a legacy X3F target resolves x3fMode to .legacy")
         try check(resolvedLegacy.settings.lensSettings.distortion &&
@@ -102,7 +102,7 @@ enum BatchExportX3fTargetTests {
                   "legacy X3F target preserves source lens flags and adjustments")
 
         // 非 X3F RAW 目标不调用 X3F resolver，按现状返回。
-        let nonX3fTarget = try legacyJob.snapshot(for: rawItem, x3fDefaultMode: { _ in throw ProbeFailure.unexpectedProbe })
+        let nonX3fTarget = try legacyJob.snapshot(for: rawItem, resolveX3fMode: { _ in throw ProbeFailure.unexpectedProbe })
         try check(nonX3fTarget.settings == legacySource,
                   "non-X3F RAW target does not invoke X3F resolver and keeps existing behavior")
 
@@ -117,7 +117,7 @@ enum BatchExportX3fTargetTests {
         dormantRasterSource.aiDenoiseEnabled = true
         dormantRasterSource.lensCorrection = LensCorrectionSettings(distortion: true, tca: true, vignetting: true)
         let rasterToX3fJob = BatchExportJob(source: rasterSourceURL, settings: dormantRasterSource, look: nil, lookName: "Mixed")
-        let rasterToLegacyX3f = try rasterToX3fJob.snapshot(for: legacyItem, x3fDefaultMode: { _ in .legacy })
+        let rasterToLegacyX3f = try rasterToX3fJob.snapshot(for: legacyItem, resolveX3fMode: { _ in .legacy })
         try check(rasterToLegacyX3f.settings.x3fMode == .legacy &&
                   rasterToLegacyX3f.settings.exposureMode == .preview &&
                   rasterToLegacyX3f.settings.whiteBalanceMode == .asShot &&
@@ -126,7 +126,7 @@ enum BatchExportX3fTargetTests {
                   rasterToLegacyX3f.settings.rawNoiseReduction == 0 &&
                   rasterToLegacyX3f.settings.lensCorrection == nil,
                   "raster source to legacy X3F clears dormant camera state first, then applies target X3F mode")
-        let rasterToNormalX3f = try rasterToX3fJob.snapshot(for: normalItem, x3fDefaultMode: { _ in .normal })
+        let rasterToNormalX3f = try rasterToX3fJob.snapshot(for: normalItem, resolveX3fMode: { _ in .normal })
         try check(rasterToNormalX3f.settings.x3fMode == .normal &&
                   rasterToNormalX3f.settings.lensCorrection == nil &&
                   !rasterToNormalX3f.settings.aiDenoiseEnabled,
@@ -140,7 +140,7 @@ enum BatchExportX3fTargetTests {
         rawWithCameraControls.tint = 19
         rawWithCameraControls.rawNoiseReduction = 2
         let toRasterJob = BatchExportJob(source: legacySourceURL, settings: rawWithCameraControls, look: nil, lookName: "Raster")
-        let resolvedRaster = try toRasterJob.snapshot(for: rasterItem, x3fDefaultMode: { _ in throw ProbeFailure.unexpectedProbe })
+        let resolvedRaster = try toRasterJob.snapshot(for: rasterItem, resolveX3fMode: { _ in throw ProbeFailure.unexpectedProbe })
         try check(resolvedRaster.settings == rawWithCameraControls.resolvedForRaster &&
                   resolvedRaster.settings.exposureMode == .sensor &&
                   resolvedRaster.settings.whiteBalanceMode == .asShot &&
@@ -154,7 +154,7 @@ enum BatchExportX3fTargetTests {
         // (d) resolver 抛错 → snapshot(for:) 抛错，不得吞掉错误返回源模式。
         var threwExpected = false
         do {
-            _ = try legacyJob.snapshot(for: brokenItem, x3fDefaultMode: { _ in throw ProbeFailure.corruptHeader })
+            _ = try legacyJob.snapshot(for: brokenItem, resolveX3fMode: { _ in throw ProbeFailure.corruptHeader })
         } catch ProbeFailure.corruptHeader {
             threwExpected = true
         }
@@ -205,6 +205,179 @@ enum BatchExportX3fTargetTests {
                   replacedJob.items[0].error == BatchExportFailure.changedInput.localizedDescription &&
                   replacedJob.items[1].status == .succeeded,
                   "replaced X3F target reports changedInput before X3F probing and keeps remaining batch running")
+
+        // (f) 生产默认 resolver 优先级：先读目标已保存记录的 x3fMode，缺失或文件身份变化时才回退默认探测。
+        let editStore = try EditPersistence(directory: directory.appendingPathComponent("saved-edits"))
+        let dp2MerrillURL = directory.appendingPathComponent("dp2-merrill-edited-legacy.X3F")
+        try Data("FOVb-dp2-merrill".utf8).write(to: dp2MerrillURL)
+        let dp2MerrillItem = try BatchExportItem(url: dp2MerrillURL)
+        var savedLegacyEdit = Adjustments()
+        savedLegacyEdit.x3fMode = .legacy
+        try editStore.save(dp2MerrillURL, state: PhotoEditState(settings: savedLegacyEdit, filmID: ""))
+        let savedLegacyResolver = BatchExportJob.x3fModeResolver(store: editStore) { _ in
+            throw ProbeFailure.unexpectedProbe
+        }
+        let dp2FromLegacyBatch = try legacyJob.snapshot(for: dp2MerrillItem, resolveX3fMode: savedLegacyResolver)
+        try check(dp2FromLegacyBatch.settings.x3fMode == .legacy &&
+                  dp2FromLegacyBatch.settings.lensSettings.distortion &&
+                  dp2FromLegacyBatch.settings.lensSettings.tca &&
+                  dp2FromLegacyBatch.settings.lensSettings.vignetting &&
+                  dp2FromLegacyBatch.settings.aiDenoiseEnabled,
+                  "saved legacy X3F edit overrides normal file default and keeps lens correction + AI denoise")
+
+        let savedNormalURL = directory.appendingPathComponent("sd15-edited-normal.X3F")
+        try Data("sd15-legacy-header".utf8).write(to: savedNormalURL)
+        let savedNormalItem = try BatchExportItem(url: savedNormalURL)
+        var savedNormalEdit = Adjustments()
+        savedNormalEdit.x3fMode = .normal
+        try editStore.save(savedNormalURL, state: PhotoEditState(settings: savedNormalEdit, filmID: ""))
+        let savedNormalSnapshot = try legacyJob.snapshot(
+            for: savedNormalItem,
+            resolveX3fMode: BatchExportJob.x3fModeResolver(store: editStore) { _ in .legacy }
+        )
+        try check(savedNormalSnapshot.settings.x3fMode == .normal &&
+                  !savedNormalSnapshot.settings.lensSettings.isEnabled &&
+                  !savedNormalSnapshot.settings.aiDenoiseEnabled,
+                  "saved normal X3F edit overrides legacy file default and enforces normal contract")
+
+        var fallbackProbes: [URL] = []
+        let fallbackResolver = BatchExportJob.x3fModeResolver(store: editStore) { url in
+            fallbackProbes.append(url)
+            return .normal
+        }
+        let uneditedSnapshot = try legacyJob.snapshot(for: normalItem, resolveX3fMode: fallbackResolver)
+        try check(fallbackProbes == [normalItem.input] && uneditedSnapshot.settings.x3fMode == .normal,
+                  "unedited X3F target falls back to default mode probe when no saved record exists")
+
+        try Data("FOVb-dp2-merrill-rewritten".utf8).write(to: dp2MerrillURL)
+        let rewrittenDp2Item = try BatchExportItem(url: dp2MerrillURL)
+        fallbackProbes.removeAll()
+        let rewrittenSnapshot = try legacyJob.snapshot(for: rewrittenDp2Item, resolveX3fMode: fallbackResolver)
+        try check(fallbackProbes == [rewrittenDp2Item.input] && rewrittenSnapshot.settings.x3fMode == .normal,
+                  "stale edit record with mismatched file identity falls back to default mode probe")
+
+        // (g) 消除重复探测：journal 清理直接复用 job.format.suffix，导出回调直接复用已冻结的 snapshot。
+        let cleanupJournal = BatchJournal(directory: directory.appendingPathComponent("cleanup-journal"))
+        var cleanupJob = BatchExportJob(source: rawSourceURL, settings: legacySource, look: nil, lookName: "Neutral")
+        cleanupJob.outputDirectory = runnerOutput
+        cleanupJob.format = .png
+        cleanupJob.started = true
+        var interruptedCorruptItem = try BatchExportItem(url: corruptFovbURL)
+        interruptedCorruptItem.selected = true
+        interruptedCorruptItem.status = .running
+        cleanupJob.items = [interruptedCorruptItem]
+        let leftoverTemp = runnerOutput.appendingPathComponent(".rawlab-\(cleanupJob.id)-\(interruptedCorruptItem.id).png")
+        try Data("partial".utf8).write(to: leftoverTemp)
+        try cleanupJournal.save(cleanupJob)
+        let recoveredCleanup = try cleanupJournal.load()
+        try check(recoveredCleanup?.items.first?.status == .waiting &&
+                  !FileManager.default.fileExists(atPath: leftoverTemp.path),
+                  "BatchJournal.load cleans uniform temp files via job.format.suffix without probing X3F headers")
+        try Data("partial-2".utf8).write(to: leftoverTemp)
+        try cleanupJournal.discard(cleanupJob)
+        try check(!FileManager.default.fileExists(atPath: leftoverTemp.path),
+                  "BatchJournal.discard cleans uniform temp files via job.format.suffix without probing X3F headers")
+
+        var singleProbeCount = 0
+        var singleProbeJob = BatchExportJob(source: rawSourceURL, settings: legacySource, look: nil, lookName: "Neutral")
+        singleProbeJob.outputDirectory = runnerOutput
+        singleProbeJob.format = .png
+        singleProbeJob.longEdge = 1024
+        var singleProbeItem = try BatchExportItem(url: normalTargetURL)
+        singleProbeItem.selected = true
+        singleProbeJob.items = [singleProbeItem]
+        var capturedSnapshot: BatchFrozenSettings?
+        try BatchExportRunner.runSnapshots(
+            job: &singleProbeJob,
+            journal: runnerJournal,
+            scope: .unfinished,
+            resolveX3fMode: { _ in
+                singleProbeCount += 1
+                if singleProbeCount > 1 { throw ProbeFailure.corruptHeader }
+                return .normal
+            },
+            shouldCancel: { false }
+        ) { _, snapshot, destination in
+            capturedSnapshot = snapshot
+            try Data("single-probe-rendered".utf8).write(to: destination)
+        }
+        try check(singleProbeCount == 1 &&
+                  singleProbeJob.items[0].status == .succeeded &&
+                  singleProbeJob.items[0].resolvedX3fMode == .normal &&
+                  capturedSnapshot?.longEdge == 1024 &&
+                  capturedSnapshot?.outputFormat == .png,
+                  "BatchExportRunner.runSnapshots resolves X3F mode once and forwards longEdge + outputFormat in snapshot")
+
+        // (h) 跨模式白平衡预期钉死：legacy 为绝对色温/色调，normal 为相对 6500/0 的偏移；asShot 保持各自相机/保存基准。
+        var legacyAsShot = Adjustments()
+        legacyAsShot.x3fMode = .legacy
+        legacyAsShot.resolveWhiteBalance(WhiteBalance(temperature: 5100, tint: 16))
+        try check(legacyAsShot.whiteBalanceMode == .asShot &&
+                  legacyAsShot.temperature == 5100 &&
+                  legacyAsShot.tint == 16,
+                  "legacy source asShot stores camera Kelvin/tint metadata")
+        let legacyAsShotToNormal = try BatchExportJob(
+            source: legacySourceURL, settings: legacyAsShot, look: nil, lookName: "WB"
+        ).snapshot(for: normalItem, resolveX3fMode: { _ in .normal }).settings
+        var normalAsShotRequest = sony2fuji_request()
+        legacyAsShotToNormal.apply(to: &normalAsShotRequest)
+        try check(legacyAsShotToNormal.x3fMode == .normal &&
+                  legacyAsShotToNormal.whiteBalanceMode == .asShot &&
+                  normalAsShotRequest.wb_mode == SONY2FUJI_WB_CAMERA &&
+                  normalAsShotRequest.temperature == 6500 &&
+                  normalAsShotRequest.tint == 0,
+                  "asShot WB from legacy source keeps normal X3F on its 6500/0 saved baseline without leaking camera Kelvin")
+
+        var legacyCustomWB = legacyAsShot
+        legacyCustomWB.set(.temperature, to: 5400)
+        legacyCustomWB.set(.tint, to: 18)
+        let legacyCustomToNormal = try BatchExportJob(
+            source: legacySourceURL, settings: legacyCustomWB, look: nil, lookName: "WB"
+        ).snapshot(for: normalItem, resolveX3fMode: { _ in .normal }).settings
+        var normalCustomRequest = sony2fuji_request()
+        legacyCustomToNormal.apply(to: &normalCustomRequest)
+        try check(legacyCustomToNormal.x3fMode == .normal &&
+                  legacyCustomToNormal.whiteBalanceMode == .custom &&
+                  legacyCustomToNormal.temperature == 5400 &&
+                  legacyCustomToNormal.tint == 18 &&
+                  normalCustomRequest.wb_mode == SONY2FUJI_WB_TEMPERATURE &&
+                  normalCustomRequest.temperature == 5400 &&
+                  normalCustomRequest.tint == 18,
+                  "custom absolute WB (5400/18) from legacy source carries verbatim to normal X3F as relative shift around 6500/0")
+
+        var normalCustomWB = Adjustments()
+        normalCustomWB.x3fMode = .normal
+        normalCustomWB.resolveWhiteBalance(WhiteBalance(temperature: 6500, tint: 0))
+        normalCustomWB.set(.temperature, to: 7200)
+        normalCustomWB.set(.tint, to: -12)
+        let normalCustomToLegacy = try BatchExportJob(
+            source: normalSourceURL, settings: normalCustomWB, look: nil, lookName: "WB"
+        ).snapshot(for: legacyItem, resolveX3fMode: { _ in .legacy }).settings
+        var legacyCustomRequest = sony2fuji_request()
+        normalCustomToLegacy.apply(to: &legacyCustomRequest)
+        try check(normalCustomToLegacy.x3fMode == .legacy &&
+                  normalCustomToLegacy.whiteBalanceMode == .custom &&
+                  normalCustomToLegacy.temperature == 7200 &&
+                  normalCustomToLegacy.tint == -12 &&
+                  legacyCustomRequest.wb_mode == SONY2FUJI_WB_TEMPERATURE &&
+                  legacyCustomRequest.temperature == 7200 &&
+                  legacyCustomRequest.tint == -12,
+                  "custom relative WB (7200/-12) from normal source carries verbatim to legacy X3F as absolute Kelvin/tint")
+
+        var normalAsShotWB = Adjustments()
+        normalAsShotWB.x3fMode = .normal
+        normalAsShotWB.resolveWhiteBalance(WhiteBalance(temperature: 6500, tint: 0))
+        let normalAsShotToLegacy = try BatchExportJob(
+            source: normalSourceURL, settings: normalAsShotWB, look: nil, lookName: "WB"
+        ).snapshot(for: legacyItem, resolveX3fMode: { _ in .legacy }).settings
+        var legacyAsShotRequest = sony2fuji_request()
+        normalAsShotToLegacy.apply(to: &legacyAsShotRequest)
+        try check(normalAsShotToLegacy.x3fMode == .legacy &&
+                  normalAsShotToLegacy.whiteBalanceMode == .asShot &&
+                  legacyAsShotRequest.wb_mode == SONY2FUJI_WB_CAMERA &&
+                  legacyAsShotRequest.temperature == 6500 &&
+                  legacyAsShotRequest.tint == 0,
+                  "asShot WB from normal source keeps legacy X3F on SONY2FUJI_WB_CAMERA")
         print("PASS: batch export X3F target mode resolution and normal contract")
     }
 }
