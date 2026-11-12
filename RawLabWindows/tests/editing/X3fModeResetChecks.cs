@@ -121,7 +121,9 @@ internal static class X3fModeResetChecks
 
         RunPureRepairChecks();
         RunOpenRepairAndMigrationChecks();
+        RunOpenRepairCasReloadSyncChecks();
         RunReadOnlyPathChecks();
+        RunUnopenedTransferSessionPrepareChecks();
 
         Console.WriteLine("PASS: X3F mode lens reset and Windows paste preflight");
     }
@@ -517,6 +519,33 @@ internal static class X3fModeResetChecks
             var review = exporter.Prepare(selection, [], ExportFormat.Png, 1024, outputDir, _ => null);
             Check(review.Ready && review.Rows.Count == 2,
                 "Collection export preflight succeeds on unopened legacy normal X3F records");
+            Check(review.Rows[0].Record is
+                  {
+                      Edit:
+                      {
+                          Settings:
+                          {
+                              X3fMode: X3fMode.Normal,
+                              AIDenoiseEnabled: false,
+                              Lens: { Enabled: false, ProfileId: "sigma-45", AutoCrop: false },
+                          }
+                      }
+                  } &&
+                  review.Rows[0].Record!.Edit!.Settings.SameAs(review.Rows[0].Settings!) &&
+                  review.Rows[1].Record is
+                  {
+                      Edit:
+                      {
+                          Settings:
+                          {
+                              X3fMode: X3fMode.Normal,
+                              AIDenoiseEnabled: false,
+                              Lens: { Enabled: false },
+                          }
+                      }
+                  } &&
+                  review.Rows[1].Record!.Edit!.Settings.SameAs(review.Rows[1].Settings!),
+                "CollectionExportRow.Record retains the repaired copy matching row settings");
             var frozenCollectionJob = exporter.Freeze(selection, review, _ => null);
             Check(frozenCollectionJob.Items[0].Frozen!.Settings is
                   {
@@ -572,6 +601,356 @@ internal static class X3fModeResetChecks
                   File.ReadAllBytes(editsJsonPath).SequenceEqual(rawEditsBefore) &&
                   store.ReadState(unopenedEditedX3f).Edit!.Settings is { AIDenoiseEnabled: true, Lens: { Distortion: true } },
                 "All read-only paths leave stored edits.json untouched on disk");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static void RunOpenRepairCasReloadSyncChecks()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-x3f-cas-reload-" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        try
+        {
+            var raceNeedsRepairX3f = Path.Combine(root, "race-needs-repair.X3F");
+            var raceAlreadyCleanX3f = Path.Combine(root, "race-already-clean.X3F");
+            File.WriteAllText(raceNeedsRepairX3f, "FOVb-race-repair");
+            File.WriteAllText(raceAlreadyCleanX3f, "FOVb-race-clean");
+
+            var editDir = Path.Combine(root, "edits");
+            var seedStore = new EditStore(editDir);
+
+            var initialBroken = new Adjustments
+            {
+                Processing = ProcessingIdentity.C5,
+                X3fMode = X3fMode.Normal,
+                AIDenoiseEnabled = true,
+                Lens = new LensSettings(
+                    Distortion: true,
+                    Tca: true,
+                    AutoCrop: false,
+                    Manual: true,
+                    ProfileId: "sigma-30",
+                    FocalLength: 30,
+                    CropFactor: 1.5,
+                    Vignetting: true),
+            };
+            initialBroken.Set(Parameter.Exposure, 0.25);
+            seedStore.Save(raceNeedsRepairX3f, initialBroken.Capture(), "builtin:classic.cube");
+            seedStore.Save(raceAlreadyCleanX3f, initialBroken.Capture(), null);
+
+            var writes = 0;
+            var store = new EditStore(editDir, (path, value) =>
+            {
+                writes++;
+                AtomicJson.Write(path, value);
+            });
+            var session = new AdjustmentTransferSession(store);
+
+            // 1) Concurrent write during open still has broken normal X3F flags + v2 processing:
+            //    reload repairs the concurrent record on disk and keeps Record, Settings and session in sync.
+            var repairLoadCalls = 0;
+            var (reloadedRepairedRecord, reloadedRepairedSettings) = session.RepairLegacyNormalX3fOnOpen(
+                raceNeedsRepairX3f,
+                path =>
+                {
+                    var state = store.ReadState(path);
+                    var restored = state.Edit!.Settings.Restore();
+                    if (repairLoadCalls++ == 0)
+                    {
+                        var concurrent = state.Edit.Settings.Restore();
+                        concurrent.Set(Parameter.Exposure, 1.75);
+                        store.SaveState(state.Identity, state.Edit with { Settings = concurrent.Capture() });
+                    }
+                    return (state, restored);
+                });
+
+            Check(repairLoadCalls == 2 &&
+                  !reloadedRepairedSettings.AIDenoiseEnabled &&
+                  !reloadedRepairedSettings.Lens.Enabled &&
+                  reloadedRepairedSettings[Parameter.Exposure] == 1.75 &&
+                  reloadedRepairedRecord.Edit is
+                  {
+                      Look: "builtin:classic.cube",
+                      Settings:
+                      {
+                          X3fMode: X3fMode.Normal,
+                          AIDenoiseEnabled: false,
+                          Lens: { Enabled: false, ProfileId: "sigma-30", AutoCrop: false },
+                      }
+                  } &&
+                  reloadedRepairedRecord.Edit.Settings.Processing == ProcessingIdentity.C5 &&
+                  reloadedRepairedRecord.Edit.Settings.SameAs(reloadedRepairedSettings.Capture()) &&
+                  store.ReadState(raceNeedsRepairX3f).SameAs(reloadedRepairedRecord) &&
+                  session.IsCurrentSave(reloadedRepairedRecord) &&
+                  session.Transactions.Count == 0,
+                "Open CAS expiration reloads concurrent X3F record, repairs disk and synchronizes Record and Settings");
+
+            Check(ProcessingMigration.ShouldAttempt(reloadedRepairedRecord.Edit!, store.ReadProcessingMigration(raceNeedsRepairX3f)),
+                "Reloaded and repaired v2 X3F record is immediately eligible for processing migration");
+            var migrationResult = new Native.ProcessingMigrationResult
+            {
+                Version = 1,
+                StructSize = 80,
+                SourceVersion = 2,
+                TargetVersion = 3,
+                Disposition = 1,
+                EvaluationCount = 6,
+                ExposureEv = 1.9f,
+                Contrast = 1.0f,
+                Highlights = 0f,
+                Shadows = 0f,
+                Saturation = 1f,
+                BlackPoint = 0f,
+                WhitePoint = 0f,
+                Vibrance = 0f,
+                Clarity = 0f,
+                Dehaze = 0f,
+                RgbRmse = .002f,
+                P99Error = .01f,
+                WorstTileRmse = .004f,
+                DetailRmse = .003f,
+            };
+            Check(ProcessingMigration.TryBuildCandidate(reloadedRepairedRecord.Edit!, migrationResult, out var migratedCandidate) &&
+                  migratedCandidate != null,
+                "Processing migration candidate builds cleanly from CAS-reloaded X3F baseline");
+            var migratedState = store.CommitProcessingMigration(
+                reloadedRepairedRecord.Identity, reloadedRepairedRecord.Edit!, migratedCandidate!, ProcessingMigrationReceipt.Migrated);
+            session.AdoptExternalProcessingMigration(migratedState);
+
+            var postMigrateSettings = migratedState.Edit!.Settings.Restore();
+            postMigrateSettings.Set(Parameter.Exposure, 2.25);
+            var postMigrateCommit = session.CommitEdit(
+                migratedState, new SavedEdit(migratedState.Identity, postMigrateSettings.Capture(), migratedState.Edit.Look));
+            Check(postMigrateCommit.Status == AdjustmentStatus.Applied &&
+                  session.UndoPhoto(raceNeedsRepairX3f).Single().Saved!.SameAs(migratedState),
+                "Subsequent migration and user saves use the synchronized CAS-reloaded baseline");
+
+            // 2) Concurrent write during open already cleared incompatible X3F flags:
+            //    reload adopts the clean concurrent record without an extra disk write.
+            var cleanLoadCalls = 0;
+            var writesAfterCleanConcurrent = 0;
+            var (reloadedCleanRecord, reloadedCleanSettings) = session.RepairLegacyNormalX3fOnOpen(
+                raceAlreadyCleanX3f,
+                path =>
+                {
+                    var state = store.ReadState(path);
+                    var restored = state.Edit!.Settings.Restore();
+                    if (cleanLoadCalls++ == 0)
+                    {
+                        var cleanConcurrent = new Adjustments
+                        {
+                            X3fMode = X3fMode.Normal,
+                            AIDenoiseEnabled = false,
+                            Lens = new LensSettings(
+                                Distortion: false,
+                                Tca: false,
+                                AutoCrop: false,
+                                Manual: true,
+                                ProfileId: "sigma-56",
+                                FocalLength: 56,
+                                CropFactor: 1.5,
+                                Vignetting: false),
+                        };
+                        cleanConcurrent.Set(Parameter.Exposure, 2.0);
+                        store.SaveState(state.Identity, new SavedEdit(state.Identity, cleanConcurrent.Capture(), null));
+                        writesAfterCleanConcurrent = writes;
+                    }
+                    return (state, restored);
+                });
+
+            Check(cleanLoadCalls == 2 &&
+                  writes == writesAfterCleanConcurrent &&
+                  reloadedCleanSettings[Parameter.Exposure] == 2.0 &&
+                  !reloadedCleanSettings.AIDenoiseEnabled &&
+                  !reloadedCleanSettings.Lens.Enabled &&
+                  reloadedCleanRecord.Edit is { Settings: { AIDenoiseEnabled: false, Lens: { Enabled: false, ProfileId: "sigma-56" } } } &&
+                  reloadedCleanRecord.Edit.Settings.SameAs(reloadedCleanSettings.Capture()) &&
+                  store.ReadState(raceAlreadyCleanX3f).SameAs(reloadedCleanRecord) &&
+                  session.IsCurrentSave(reloadedCleanRecord),
+                "Open CAS expiration adopts already-clean concurrent X3F record without extra disk writes");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static void RunUnopenedTransferSessionPrepareChecks()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-x3f-transfer-prepare-" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        try
+        {
+            var sourceArw = Path.Combine(root, "source.ARW");
+            var unopenedX3f = Path.Combine(root, "unopened-target.X3F");
+            File.WriteAllText(sourceArw, "raw-source");
+            File.WriteAllText(unopenedX3f, "FOVb-unopened-target");
+
+            var editDir = Path.Combine(root, "edits");
+            var presetDir = Path.Combine(root, "presets");
+            var seedStore = new EditStore(editDir);
+
+            var brokenTarget = new Adjustments
+            {
+                X3fMode = X3fMode.Normal,
+                AIDenoiseEnabled = true,
+                Lens = new LensSettings(
+                    Distortion: true,
+                    Tca: true,
+                    AutoCrop: true,
+                    Manual: true,
+                    ProfileId: "sigma-45",
+                    FocalLength: 45,
+                    CropFactor: 1.0,
+                    Vignetting: true),
+            };
+            brokenTarget.Set(Parameter.Exposure, 0.35);
+            seedStore.Save(unopenedX3f, brokenTarget.Capture(), null);
+
+            var sourceAll = new Adjustments
+            {
+                Denoise = DenoiseSettings.Clean,
+                Lens = new LensSettings(AutoCrop: false),
+            };
+            sourceAll.Set(Parameter.Exposure, 0.9);
+            seedStore.Save(sourceArw, sourceAll.Capture(), null);
+
+            var editsJsonPath = Path.Combine(editDir, "edits.json");
+            var rawEditsBefore = File.ReadAllBytes(editsJsonPath);
+            var writes = 0;
+            var store = new EditStore(editDir, (path, value) =>
+            {
+                writes++;
+                AtomicJson.Write(path, value);
+            });
+            var session = new AdjustmentTransferSession(store);
+
+            AdjustmentTransferTarget BuildTarget(string path)
+            {
+                var identity = OriginalIdentity.Read(path);
+                var defaults = store.ReadState(path).Edit?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(path);
+                defaults.RepairLegacyNormalX3f(path);
+                var context = new AdjustmentTransferContext(
+                    path,
+                    IsRaw: true,
+                    ValidateLens: lens => _ = X3fModeReset.CreateLensProbe(path, defaults, lens));
+                return new AdjustmentTransferTarget(path, new SavedEdit(identity, defaults.Capture(), null), context);
+            }
+
+            var x3fTarget = BuildTarget(unopenedX3f);
+            var sourceEdit = store.ReadState(sourceArw).Edit!;
+
+            // 1) Paste (Scope.All, including WaveletDenoise and lens fields) onto unopened old normal X3F record.
+            var pastePayload = session.Copy(AdjustmentScope.All, sourceEdit, new AdjustmentTransferContext(sourceArw, true));
+            var preparedPaste = session.Prepare(pastePayload, [x3fTarget], AdjustmentHistoryAction.Paste);
+            var pasteTargetResult = preparedPaste.Targets.Single();
+            Check(pasteTargetResult.Error == null &&
+                  pasteTargetResult.Original is
+                  {
+                      Edit:
+                      {
+                          Settings:
+                          {
+                              X3fMode: X3fMode.Normal,
+                              AIDenoiseEnabled: false,
+                              Lens: { Enabled: false, ProfileId: "sigma-45" },
+                          }
+                      }
+                  } &&
+                  pasteTargetResult.Candidate is
+                  {
+                      Settings:
+                      {
+                          X3fMode: X3fMode.Normal,
+                          AIDenoiseEnabled: false,
+                          Denoise: { Enabled: true },
+                          Lens: { Enabled: false, AutoCrop: false },
+                      }
+                  } &&
+                  Math.Abs(pasteTargetResult.Candidate.Settings.Values[(int)Parameter.Exposure] - 0.9) < 1e-6,
+                "AdjustmentTransferSession.Prepare repairs unopened normal X3F target in memory for Paste");
+
+            // 2) Apply Preset (WaveletDenoise + LensAutoCrop + Exposure, preserving target's saved lens profile) onto unopened old normal X3F record.
+            var presetSourceSettings = new Adjustments
+            {
+                Denoise = DenoiseSettings.Detail,
+                Lens = new LensSettings(AutoCrop: false),
+            };
+            presetSourceSettings.Set(Parameter.Exposure, -0.4);
+            var presetPayload = AdjustmentTransfer.Capture(
+                AdjustmentScope.Custom([F.Exposure, F.WaveletDenoise, F.LensAutoCrop]),
+                new SavedEdit(OriginalIdentity.Read(sourceArw), presetSourceSettings.Capture(), null),
+                new AdjustmentTransferContext(sourceArw, true));
+            var preset = new AdjustmentPresetStore(presetDir).Create("X3F Safe Preset", presetPayload);
+            var preparedPreset = session.Prepare(preset.Payload, [x3fTarget], AdjustmentHistoryAction.Preset);
+            var presetTargetResult = preparedPreset.Targets.Single();
+            Check(presetTargetResult.Error == null &&
+                  presetTargetResult.Candidate is
+                  {
+                      Settings:
+                      {
+                          X3fMode: X3fMode.Normal,
+                          AIDenoiseEnabled: false,
+                          Denoise: { Enabled: true },
+                          Lens: { Enabled: false, AutoCrop: false, ProfileId: "sigma-45" },
+                      }
+                  } &&
+                  Math.Abs(presetTargetResult.Candidate.Settings.Values[(int)Parameter.Exposure] + 0.4) < 1e-6,
+                "AdjustmentTransferSession.Prepare repairs unopened normal X3F target in memory for Preset");
+
+            // 3) Collection Synchronize onto unopened old normal X3F record.
+            var preparedSync = session.Prepare(
+                presetPayload,
+                [BuildTarget(sourceArw), x3fTarget],
+                AdjustmentHistoryAction.Synchronize,
+                OriginalIdentity.Read(sourceArw));
+            var syncTargetResult = preparedSync.Targets.Single();
+            Check(syncTargetResult.ID == Path.GetFullPath(unopenedX3f) &&
+                  syncTargetResult.Error == null &&
+                  syncTargetResult.Candidate is
+                  {
+                      Settings:
+                      {
+                          X3fMode: X3fMode.Normal,
+                          AIDenoiseEnabled: false,
+                          Denoise: { Enabled: true },
+                          Lens: { Enabled: false, AutoCrop: false, ProfileId: "sigma-45" },
+                      }
+                  },
+                "AdjustmentTransferSession.Prepare repairs unopened normal X3F target in memory for Synchronize");
+
+            // 4) Active lens switch in payload is still rejected on unopened normal X3F target.
+            var activeLensPayload = new AdjustmentPayload(
+                new("source", true, 3),
+                new Dictionary<F, System.Text.Json.JsonElement> { [F.LensDistortion] = Value(true) });
+            var rejectedLens = session.Prepare(activeLensPayload, [x3fTarget], AdjustmentHistoryAction.Paste).Targets.Single();
+            Check(rejectedLens.Error is AdjustmentTransferException { Failure: AdjustmentFailure.Incompatible },
+                "AdjustmentTransferSession.Prepare still rejects active lens switches on unopened normal X3F targets");
+
+            Check(writes == 0 &&
+                  File.ReadAllBytes(editsJsonPath).SequenceEqual(rawEditsBefore) &&
+                  store.ReadState(unopenedX3f).Edit!.Settings is { AIDenoiseEnabled: true, Lens: { Distortion: true } },
+                "AdjustmentTransferSession.Prepare leaves unopened X3F record untouched on disk across Paste, Preset and Synchronize");
+
+            // 5) Applying and undoing a prepared transfer on the unopened X3F target uses the repaired baseline.
+            Check(session.Apply(preparedPreset).Single().Status == AdjustmentStatus.Applied,
+                "Applying prepared preset to unopened normal X3F target succeeds");
+            var undonePreset = session.UndoTransaction(preparedPreset.ID).Single();
+            Check(undonePreset.Status == AdjustmentStatus.Applied &&
+                  undonePreset.Saved!.Edit is
+                  {
+                      Settings:
+                      {
+                          X3fMode: X3fMode.Normal,
+                          AIDenoiseEnabled: false,
+                          Lens: { Enabled: false, ProfileId: "sigma-45" },
+                      }
+                  } &&
+                  Math.Abs(undonePreset.Saved.Edit.Settings.Values[(int)Parameter.Exposure] - 0.35) < 1e-6,
+                "Undoing applied preset on previously unopened X3F target restores repaired baseline without broken flags");
         }
         finally
         {

@@ -43,6 +43,27 @@ public sealed class AdjustmentTransferSession(EditStore store)
         RememberExternalSave(saved);
         return saved;
     }
+    internal (PhotoEditState Record,Adjustments Settings) RepairLegacyNormalX3fOnOpen(
+        string input,Func<string,(PhotoEditState Record,Adjustments Settings)>? load = null)
+    {
+        load ??= path => {
+            var state=store.ReadState(path);
+            return (state,state.Edit?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(path));
+        };
+        for(var attempt=0;;attempt++)
+        {
+            var (loaded,settings)=load(input);
+            try
+            {
+                var repaired=RepairLegacyNormalX3f(loaded,settings);
+                if(attempt>0 && ReferenceEquals(repaired,loaded))RememberExternalSave(repaired);
+                return (repaired,settings);
+            }
+            catch(AdjustmentOperationExpiredException) when(attempt<2)
+            {
+            }
+        }
+    }
     internal void AdoptExternalProcessingMigration(PhotoEditState saved)
     {
         var key=saved.Identity.Path;
@@ -75,8 +96,11 @@ public sealed class AdjustmentTransferSession(EditStore store)
             try {
                 if(target.IsCurrent?.Invoke()==false)throw Draft();
                 var generation=EditGeneration(id);
-                var original=store.ReadState(id);var before=original.Edit ?? target.DefaultEdit;
-                if(!target.DefaultEdit.Identity.SameFile(original.Identity) || !before.Identity.SameFile(original.Identity))throw new PhotoChangedException();
+                var rawOriginal=store.ReadState(id);
+                if(!target.DefaultEdit.Identity.SameFile(rawOriginal.Identity))throw new PhotoChangedException();
+                var original=X3fModeReset.RepairLegacyNormalX3f(rawOriginal).State;
+                var before=original.Edit ?? X3fModeReset.RepairLegacyNormalX3f(new PhotoEditState(original.Identity,target.DefaultEdit)).State.Edit!;
+                if(!before.Identity.SameFile(original.Identity))throw new PhotoChangedException();
                 var candidate=AdjustmentTransfer.Prepare(payload,before,target.Context);
                 prepared.Add(new(id,Path.GetFileName(id),original,candidate.Copy(),candidate.SameAs(before),target.IsCurrent,null,generation));
             }catch(Exception error) {prepared.Add(new(id,Path.GetFileName(id),null,null,false,target.IsCurrent,error));}
