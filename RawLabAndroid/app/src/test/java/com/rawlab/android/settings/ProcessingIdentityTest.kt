@@ -52,7 +52,7 @@ class ProcessingIdentityTest {
             file.outputStream().use { values.store(it, null) }
             val protectedBytes = file.readBytes()
             val reopened = EditStore(directory)
-            assertNull(reopened.load(photo))
+            assertThrows(UnusableEditRecordException::class.java) { reopened.load(photo) }
             assertThrows(UnusableEditRecordException::class.java) { reopened.readState(photo) }
             assertThrows(UnusableEditRecordException::class.java) { reopened.save(photo, EditSettings()) }
             assertArrayEquals(protectedBytes, file.readBytes())

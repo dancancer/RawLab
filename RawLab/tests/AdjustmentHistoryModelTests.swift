@@ -541,5 +541,92 @@ struct AdjustmentHistoryModelTests {
             _ = try store.rollbackProcessingMigration(expected: store.readState(for: identity))
             throw NSError(domain: "rollback after undoing full reset must stay expired", code: 1)
         } catch AdjustmentCommitError.expired { }
+        try unusableRecordImportRecovery(directory: directory.appendingPathComponent("unusable-record-import"))
+    }
+
+    private static func unusableRecordImportRecovery(directory: URL) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let png = directory.appendingPathComponent("collection-photo.png")
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 24), format: format).image { context in
+            UIColor.green.setFill(); context.fill(CGRect(x: 0, y: 0, width: 32, height: 24))
+        }
+        try image.pngData()!.write(to: png)
+
+        let storeDir = directory.appendingPathComponent("edits")
+        let store = try EditPersistence(directory: storeDir)
+        let legacyAsset = PhotoIdentity(resourceIdentifier: "collection-legacy-broken")
+        let collectionIdentity = try PhotoIdentity.fallback(for: png, resourceIdentifier: legacyAsset.resourceIdentifier)
+        let healthyIdentity = PhotoIdentity(resourceIdentifier: "healthy-recent")
+        var healthySettings = RawSettings.default; healthySettings.exposure = 0.8
+        try store.save(healthyIdentity, state: PhotoEditState(settings: healthySettings))
+
+        let editsFile = storeDir.appendingPathComponent("edits.json")
+        var object = try JSONSerialization.jsonObject(with: Data(contentsOf: editsFile)) as! [String: Any]
+        var records = object["records"] as! [String: Any]
+        records[legacyAsset.key] = ["settings": ["exposure": 999], "updatedAt": 0]
+        object["records"] = records
+        try JSONSerialization.data(withJSONObject: object).write(to: editsFile)
+
+        let queue = DispatchQueue(label: "unusable-record-import")
+        var deliveries: [() -> Void] = []
+        let model = RawEditorViewModel(editPersistence: store, importQueue: queue, resultDelivery: { deliveries.append($0) })
+        model.batchSelection.append(.init(identity: collectionIdentity, displayName: "CollectionBroken.png",
+                                          file: .externallyManaged(png), isRaw: false))
+        var callerRestored: RawSettings?
+        var alertRestored: RawSettings?
+        model.importImage(from: .raster(png), identity: collectionIdentity, onSettingsRestored: { restored in
+            callerRestored = restored
+            model.sourceDisplayName = "CollectionBroken.png"
+            _ = model.batchSelection.selection.beginEditing(collectionIdentity.key)
+        })
+        queue.sync {}
+        deliveries.forEach { $0() }; deliveries.removeAll()
+        try check(!model.hasImage && model.statusMessage != nil && model.resetUnusableImportRecord != nil,
+                  "broken legacy asset record enters importImage recovery with resetUnusableImportRecord")
+
+        let recover = model.resetUnusableImportRecord
+        model.statusMessage = nil
+        recover? { restored in alertRestored = restored }
+        queue.sync {}
+        deliveries.forEach { $0() }; deliveries.removeAll()
+        try check(model.hasImage && model.sourceIdentity == collectionIdentity &&
+                  model.sourceDisplayName == "CollectionBroken.png" &&
+                  model.batchSelection.selection.current == collectionIdentity.key &&
+                  callerRestored != nil && alertRestored == callerRestored,
+                  "confirming resetUnusableImportRecord preserves caller onSettingsRestored and collection context")
+
+        let recentStore = try RecentPhotoStore(directory: directory.appendingPathComponent("recents"))
+        let healthyRecent = try recentStore.recordOpened(url: png, identity: healthyIdentity, displayName: "Healthy.png", isRaw: false)
+        let brokenIdentity = PhotoIdentity(resourceIdentifier: "recent-broken")
+        let brokenRecent = try recentStore.recordOpened(url: png, identity: brokenIdentity, displayName: "Broken.png", isRaw: false)
+        var afterRecovery = try JSONSerialization.jsonObject(with: Data(contentsOf: editsFile)) as! [String: Any]
+        var afterRecords = afterRecovery["records"] as! [String: Any]
+        afterRecords[brokenIdentity.key] = ["settings": ["exposure": 999], "updatedAt": 0]
+        afterRecovery["records"] = afterRecords
+        try JSONSerialization.data(withJSONObject: afterRecovery).write(to: editsFile)
+        var reloadedLibrary: IOSPhotoPreviewLibrary?
+        Task { @MainActor in
+            let library = IOSPhotoPreviewLibrary(recentStore: recentStore,
+                                                 cacheDirectory: directory.appendingPathComponent("preview-cache"))
+            await library.reload(editDirectory: storeDir)
+            reloadedLibrary = library
+        }
+        let reloadDeadline = Date().addingTimeInterval(10)
+        while reloadedLibrary == nil && Date() < reloadDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        var editedFlags: [String: Bool]?
+        var libraryError: String?
+        Task { @MainActor in
+            editedFlags = reloadedLibrary?.edited
+            libraryError = reloadedLibrary?.error
+        }
+        while editedFlags == nil && Date() < reloadDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        try check(reloadedLibrary != nil && libraryError == nil &&
+                  editedFlags?[healthyRecent.id] == true && editedFlags?[brokenRecent.id] == nil,
+                  "recentStates omits unusable record instead of misclassifying it as unedited")
     }
 }

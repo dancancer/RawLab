@@ -275,7 +275,7 @@ extension ContentView {
             try! store.save(targetID, state: PhotoEditState(settings: targetSettings))
         }
         probe.externalEdit = {
-            var external = store.state(for: identity)!.settings
+            var external = try! store.state(for: identity)!.settings
             external.exposure = 1.3
             try! store.save(identity, state: PhotoEditState(settings: external))
         }
@@ -307,11 +307,11 @@ extension ContentView {
              "adjustmentSheet": adjustmentSheet?.rawValue ?? "",
              "pendingAdjustmentAction": String(describing: pendingAdjustmentAction),
              "queuedPresetAction": String(describing: queuedPresetAction),
-             "sourceStoredExposure": store.state(for: identity)?.settings.exposure as Any? ?? NSNull(),
-             "sourceStoredSnapshot": probe.storedStateText(store.state(for: identity)),
-             "targetStoredExposure": probe.transferTarget.flatMap { store.state(for: $0)?.settings.exposure } as Any? ?? NSNull(),
-             "targetStoredCrop": probe.transferTarget.flatMap { store.state(for: $0)?.settings.geometry.cropWidth } as Any? ?? NSNull(),
-             "targetStoredSnapshot": probe.storedStateText(probe.transferTarget.flatMap { store.state(for: $0) }),
+             "sourceStoredExposure": (try? store.state(for: identity))?.settings.exposure as Any? ?? NSNull(),
+             "sourceStoredSnapshot": probe.storedStateText(try? store.state(for: identity)),
+             "targetStoredExposure": probe.transferTarget.flatMap { (try? store.state(for: $0))?.settings.exposure } as Any? ?? NSNull(),
+             "targetStoredCrop": probe.transferTarget.flatMap { (try? store.state(for: $0))?.settings.geometry.cropWidth } as Any? ?? NSNull(),
+             "targetStoredSnapshot": probe.storedStateText(probe.transferTarget.flatMap { try? store.state(for: $0) }),
              "failingTarget": probe.failIdentity ?? "",
              "gestureActive": viewModel.adjustmentInteraction != nil,
              "pendingSettings": viewModel.pendingSettings != nil, "modelDraftActive": viewModel.hasAdjustmentDraft,

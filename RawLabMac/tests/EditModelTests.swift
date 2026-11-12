@@ -90,7 +90,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
             return false
         }
         editor.open(brokenPNG)
-        try check(promptedURL == brokenPNG && editor.file == healthyPNG && editor.error != nil,
+        try check(promptedURL == brokenPNG && editor.file == healthyPNG && editor.saveError != nil && editor.error == nil,
                   "Declining unusable-record reset keeps previous photo open and surfaces readable error")
         try check(try Data(contentsOf: file) == beforeDeclineBytes,
                   "Declining unusable-record reset leaves disk registry byte-identical")
@@ -102,7 +102,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         }
         editor.open(brokenPNG)
         try waitForRender(editor, "recovered broken PNG")
-        try check(promptedURL == brokenPNG && editor.file == brokenPNG && editor.error == nil && editor.settings.exposure == 0,
+        try check(promptedURL == brokenPNG && editor.file == brokenPNG && editor.saveError == nil && editor.error == nil && editor.settings.exposure == 0,
                   "Confirming unusable-record reset opens photo with default unmodified settings")
         let reopenedStore = try EditPersistence(directory: editDir)
         try check(try reopenedStore.state(for: brokenPNG) == nil &&

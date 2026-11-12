@@ -526,7 +526,15 @@ extension ContentView {
     @MainActor
     @discardableResult
     func resolveLegacyAssetEdit(for identity: PhotoIdentity) async throws -> Bool {
-        guard let store = viewModel.editPersistence, let legacy = try store.unverifiedAssetEdit(for: identity) else { return false }
+        guard let store = viewModel.editPersistence else { return false }
+        let legacy: PhotoEditState?
+        do {
+            legacy = try store.unverifiedAssetEdit(for: identity)
+        } catch is UnusableEditRecordError {
+            // 坏旧版资产记录交给 importImage 走单条恢复弹窗，不在入口处提前中断。
+            return false
+        }
+        guard let legacy else { return false }
         let restore = await withCheckedContinuation { continuation in
             legacyAssetEditDecision = continuation
             showingLegacyAssetEdit = true

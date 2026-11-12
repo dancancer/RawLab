@@ -434,7 +434,7 @@ import Foundation
         try store.save(content, state: .init(settings: settings))
         _ = try store.saveState(identity: restored.identity, state: legacy)
         let refreshed = try store.readState(for: photo)
-        let legacyState = store.state(for: content)
+        let legacyState = try store.state(for: content)
         settings.exposure = -0.5
         let saved = try store.saveState(identity: refreshed.identity, state: .init(settings: settings))
         try check(saved.state?.settings.exposure == -0.5 && store.state(for: photo)?.settings.exposure == -0.5,
@@ -621,7 +621,7 @@ import Foundation
         }
         try check(group.wait(timeout: .now() + 10) == .success && errors.isEmpty, "Concurrent native store writers finish")
         let reader = try EditPersistence(directory: directory)
-        try check((0..<2).allSatisfy { index in (0..<8).allSatisfy { reader.state(for: .init(resourceIdentifier: "\(index)-\($0)")) != nil } },
+        try check(try (0..<2).allSatisfy { index in try (0..<8).allSatisfy { try reader.state(for: .init(resourceIdentifier: "\(index)-\($0)")) != nil } },
             "Concurrent writers retain every photo record")
     }
 
@@ -680,10 +680,12 @@ import Foundation
                   reopened.state(for: sameAssetBytes2)?.settings.exposure == 0.6 &&
                   reopened.state(for: independentContent)?.settings.exposure == 0.6,
                   "Healthy records remain readable alongside unusable entries")
-        try check(reopened.state(for: brokenAssetBytes1) == nil && reopened.state(for: brokenSubSetting) == nil,
-                  "Non-throwing state(for:) returns nil for unusable entries")
 
         for broken in [brokenAssetBytes1, brokenSubSetting] {
+            do {
+                _ = try reopened.state(for: broken)
+                try check(false, "Broken record must throw UnusableEditRecordError on state(for:)")
+            } catch is UnusableEditRecordError { }
             do {
                 _ = try reopened.readState(for: broken)
                 try check(false, "Broken record must throw UnusableEditRecordError on readState")
@@ -697,6 +699,19 @@ import Foundation
                 try check(false, "Ordinary reset must refuse to overwrite unusable record without explicit recovery")
             } catch is UnusableEditRecordError { }
         }
+
+        // High 2: Even during transient storage failure (fallback to lastReadableStore), state(for:) must still throw UnusableEditRecordError.
+        let ioBackup = directory.appendingPathExtension("io-backup")
+        try FileManager.default.moveItem(at: directory, to: ioBackup)
+        try Data("offline".utf8).write(to: directory)
+        try check(reopened.state(for: healthySibling)?.settings.exposure == 0.6,
+                  "Healthy cached record still falls back during transient storage failure")
+        do {
+            _ = try reopened.state(for: brokenAssetBytes1)
+            try check(false, "Cached fallback must still throw UnusableEditRecordError for unusable record")
+        } catch is UnusableEditRecordError { }
+        try FileManager.default.removeItem(at: directory)
+        try FileManager.default.moveItem(at: ioBackup, to: directory)
 
         // D1/b: Saving another photo preserves broken entries byte-for-byte verbatim on disk.
         var updatedHealthy = RawSettings.default; updatedHealthy.exposure = 1.35
@@ -730,6 +745,29 @@ import Foundation
         try reopened.save(brokenAssetBytes1, state: PhotoEditState(settings: recoveredSettings))
         try check(try EditPersistence(directory: directory).readState(for: brokenAssetBytes1).state?.settings.exposure == -0.45,
                   "Recovered photo can save new adjustments normally")
+
+        // Medium 1: Broken legacy asset-only record (photo:<asset-id>) surfaces UnusableEditRecordError and recovers via resetToUnmodified.
+        let legacyBrokenDir = directory.appendingPathComponent("legacy-broken-asset")
+        try FileManager.default.createDirectory(at: legacyBrokenDir, withIntermediateDirectories: true)
+        let legacyBrokenAsset = PhotoIdentity(resourceIdentifier: "legacy-only-asset")
+        let legacyBrokenCurrent = PhotoIdentity(resourceIdentifier: "legacy-only-asset", contentIdentifier: "current-bytes")
+        try Data("""
+        {"version":1,"records":{\(try jsonString(legacyBrokenAsset.key)):\(verbatimBadSubSlice)}}
+        """.utf8).write(to: legacyBrokenDir.appendingPathComponent("edits.json"))
+        let legacyBrokenStore = try EditPersistence(directory: legacyBrokenDir)
+        do {
+            _ = try legacyBrokenStore.unverifiedAssetEdit(for: legacyBrokenCurrent)
+            try check(false, "Broken legacy photo:<asset-id> record must throw UnusableEditRecordError on unverifiedAssetEdit")
+        } catch is UnusableEditRecordError { }
+        do {
+            _ = try legacyBrokenStore.readState(for: legacyBrokenCurrent, requiringLegacyDecision: true)
+            try check(false, "Broken legacy photo:<asset-id> record must throw UnusableEditRecordError when legacy decision is required")
+        } catch is UnusableEditRecordError { }
+        _ = try legacyBrokenStore.resetToUnmodified(legacyBrokenCurrent)
+        try check(try legacyBrokenStore.unverifiedAssetEdit(for: legacyBrokenCurrent) == nil &&
+                  legacyBrokenStore.readState(for: legacyBrokenCurrent, requiringLegacyDecision: true).state == nil &&
+                  legacyBrokenStore.state(for: legacyBrokenCurrent) == nil,
+                  "resetToUnmodified tombstones broken legacy photo:<asset-id> record for the recovered photo")
 
         // D2/d: Whole-table structural corruption still rejects the entire store.
         let corruptDir = directory.appendingPathComponent("whole-store-corrupt")

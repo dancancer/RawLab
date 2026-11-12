@@ -56,8 +56,8 @@ private struct Content: Equatable {
 struct RawImportHistoryTests {
     private static var assertions = 0
 
-    private static func check(_ condition: @autoclosure () -> Bool, _ message: String) throws {
-        guard condition() else { throw Failure.message(message) }
+    private static func check(_ condition: @autoclosure () throws -> Bool, _ message: String) throws {
+        guard try condition() else { throw Failure.message(message) }
         assertions += 1
         print("PASS: \(message)")
     }
@@ -210,7 +210,7 @@ struct RawImportHistoryTests {
                                                             revision: editRevision, draft: noDraft) else {
             throw Failure.message("light reset should prepare from the complete current record")
         }
-        let savedMetadata = store.state(for: metadataID)!
+        let savedMetadata = try store.state(for: metadataID)!
         try check(reset.candidate.settings.exposure == 0 && reset.candidate.filmID == nil &&
                   reset.candidate.settings.lutID == metadataSettings.lutID &&
                   reset.candidate.updatedAt == savedMetadata.updatedAt,

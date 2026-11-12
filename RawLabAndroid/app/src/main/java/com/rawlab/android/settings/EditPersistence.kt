@@ -31,6 +31,16 @@ data class PhotoEditState(val identity: PhotoIdentity, val settings: EditSetting
 
 class PhotoChangedException : IOException("The original photo changed. Select it again.")
 class UnusableEditRecordException(message: String, cause: Throwable? = null) : IOException(message, cause)
+
+sealed interface PhotoEditReadResult {
+    data class Usable(val state: PhotoEditState) : PhotoEditReadResult
+    data class Unusable(val identity: PhotoIdentity, val error: UnusableEditRecordException) : PhotoEditReadResult
+
+    fun getOrThrow(): PhotoEditState = when (this) {
+        is Usable -> state
+        is Unusable -> throw error
+    }
+}
 class AdjustmentOperationExpiredException : IllegalStateException("This adjustment operation is no longer current.")
 class AdjustmentHistoryOrderException : IllegalStateException("Undo or redo the photo's edits in history order.")
 class AdjustmentNotReadyException : IllegalStateException("The current adjustments are not committed")
@@ -44,6 +54,7 @@ class EditStore(private val directory: File,
     private val directoryPath = directory.canonicalPath
     private val processLock = locks.getOrPut(directoryPath) { ReentrantLock() }
     @Volatile private var lastReadableRecords: Map<PhotoIdentity, EditSettings> = emptyMap()
+    @Volatile private var lastUnusableRecords: Map<PhotoIdentity, UnusableEditRecordException> = emptyMap()
     private data class Snapshot(val records: Map<PhotoIdentity, EditSettings>,
         val unusable: Map<PhotoIdentity, UnusableEditRecordException> = emptyMap(),
         val properties: Properties = Properties(),
@@ -63,16 +74,21 @@ class EditStore(private val directory: File,
         withStoreLock { read() }
     }
 
-    // 旧 UI 查询在存储暂不可读时保留最后可读值；单条坏记录返回 null，提交和导入必须使用严格的 readState。
+    // 旧 UI 查询在存储暂不可读时保留最后可读值；单条坏记录始终抛出 UnusableEditRecordException。
     fun load(identity: PhotoIdentity): EditSettings? = try { readState(identity).settings }
-        catch (_: UnusableEditRecordException) { null }
-        catch (_: Exception) { lastReadableRecords[identity] }
+        catch (error: UnusableEditRecordException) { throw error }
+        catch (_: Exception) {
+            lastUnusableRecords[identity]?.let { throw it }
+            lastReadableRecords[identity]
+        }
 
     fun readState(identity: PhotoIdentity): PhotoEditState = withStoreLock { read().record(identity) }
-    fun readStates(identities: Collection<PhotoIdentity>): Map<PhotoIdentity, PhotoEditState> = withStoreLock {
+    fun readStates(identities: Collection<PhotoIdentity>): Map<PhotoIdentity, PhotoEditReadResult> = withStoreLock {
         val snapshot = read()
         identities.associateWith { identity ->
-            if (identity in snapshot.unusable) PhotoEditState(identity, null) else snapshot.record(identity)
+            val unusable = snapshot.unusable[identity]
+            if (unusable != null) PhotoEditReadResult.Unusable(identity, unusable)
+            else PhotoEditReadResult.Usable(snapshot.record(identity))
         }
     }
 
@@ -221,6 +237,7 @@ class EditStore(private val directory: File,
             }
         }
         lastReadableRecords = records.toMap()
+        lastUnusableRecords = unusable.toMap()
         return Snapshot(records, unusable = unusable, properties = properties, rawLines = rawLines).also {
             cachedSnapshot = it
             cachedBytes = bytes
@@ -341,6 +358,8 @@ class EditStore(private val directory: File,
             replaceFile(temporary, file)
             cachedSnapshot = updated.copy(properties = properties, rawLines = rawLines.toMap())
             cachedBytes = bytes
+            lastReadableRecords = updated.records.toMap()
+            lastUnusableRecords = updated.unusable.toMap()
             changed.tryEmit(EditStoreChange(directoryPath, updated.record(identity)))
         } catch (error: Throwable) {
             cachedBytes = null; cachedSnapshot = null

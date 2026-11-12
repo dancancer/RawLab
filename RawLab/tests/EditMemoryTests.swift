@@ -2,9 +2,13 @@ import Foundation
 
 @main
 struct EditMemoryTests {
-    static func check(_ condition: @autoclosure () -> Bool, _ message: String) {
-        guard condition() else { fatalError(message) }
-        print("PASS: \(message)")
+    static func check(_ condition: @autoclosure () throws -> Bool, _ message: String) {
+        do {
+            guard try condition() else { fatalError(message) }
+            print("PASS: \(message)")
+        } catch {
+            fatalError("\(message): \(error)")
+        }
     }
 
     static func main() throws {
@@ -111,10 +115,10 @@ struct EditMemoryTests {
         try store.save(first, state: PhotoEditState(settings: changed, filmID: "provia"))
 
         let reopened = try EditPersistence(directory: root)
-        check(reopened.state(for: first)?.settings.exposure == 0.75, "edit survives restart")
-        check(reopened.state(for: first)?.settings.hsl == changed.hsl && reopened.state(for: first)?.settings.exposureMode == .sensor,
+        check(try reopened.state(for: first)?.settings.exposure == 0.75, "edit survives restart")
+        check(try reopened.state(for: first)?.settings.hsl == changed.hsl && reopened.state(for: first)?.settings.exposureMode == .sensor,
               "HSL and the selected exposure mode survive restart")
-        check(reopened.state(for: first)?.settings.geometry == changed.geometry, "geometry survives restart")
+        check(try reopened.state(for: first)?.settings.geometry == changed.geometry, "geometry survives restart")
         check(RawSettings.default.geometry.isIdentity, "new photos default to identity geometry")
         var invalidGeometry = try JSONSerialization.jsonObject(with: JSONEncoder().encode(changed)) as! [String: Any]
         invalidGeometry["geometry"] = ["cropX": 0.5, "cropWidth": 0.75]
@@ -123,13 +127,13 @@ struct EditMemoryTests {
             fatalError("invalid crop was accepted")
         } catch is DecodingError { }
         check(true, "saved geometry rejects crop outside the canvas")
-        check(reopened.state(for: first)?.settings.denoise == changed.denoise, "denoise survives restart")
-        check(reopened.state(for: first)?.settings.lensCorrection == changed.lensCorrection, "lens configuration survives restart")
+        check(try reopened.state(for: first)?.settings.denoise == changed.denoise, "denoise survives restart")
+        check(try reopened.state(for: first)?.settings.lensCorrection == changed.lensCorrection, "lens configuration survives restart")
         check(LensCorrectionSettings(mode: .manual).coreProfileID == "__rawlab_manual_selection_required__", "manual mode never falls back to automatic")
-        check(reopened.state(for: first)?.settings.photoEffects == changed.photoEffects,
+        check(try reopened.state(for: first)?.settings.photoEffects == changed.photoEffects,
               "photo effects auxiliary values survive restart even when amount is zero")
-        check(reopened.state(for: first)?.settings.whiteBalanceMode == .custom, "white balance mode survives restart")
-        check(reopened.state(for: second) == nil, "unseen photo uses no previous record")
+        check(try reopened.state(for: first)?.settings.whiteBalanceMode == .custom, "white balance mode survives restart")
+        check(try reopened.state(for: second) == nil, "unseen photo uses no previous record")
         var legacy = try JSONSerialization.jsonObject(with: JSONEncoder().encode(changed)) as! [String: Any]
         legacy.removeValue(forKey: "processing")
         legacy.removeValue(forKey: "geometry")
@@ -147,7 +151,7 @@ struct EditMemoryTests {
         let resetIdentity = PhotoIdentity(resourceIdentifier: "reset-v1")
         try store.save(resetIdentity, state: PhotoEditState(settings: resetLegacy))
         let resetStore = try EditPersistence(directory: root)
-        check(resetStore.state(for: resetIdentity)?.settings.processing == .legacy,
+        check(try resetStore.state(for: resetIdentity)?.settings.processing == .legacy,
               "legacy reset remains legacy after saving and reopening")
         var scopedSource = RawSettings.default
         scopedSource.processing = .legacy
@@ -163,9 +167,9 @@ struct EditMemoryTests {
         check(scopedReset.settings.x3fMode == .legacy, "scoped reset preserves legacy X3F identity")
         try store.save(resetIdentity, state: scopedReset)
         let scopedStore = try EditPersistence(directory: root)
-        check(scopedStore.state(for: resetIdentity)?.settings.processing == .legacy,
+        check(try scopedStore.state(for: resetIdentity)?.settings.processing == .legacy,
               "scoped legacy reset survives save and reopen")
-        check(reopened.state(for: first)?.settings.processing == .current, "processing identity survives restart")
+        check(try reopened.state(for: first)?.settings.processing == .current, "processing identity survives restart")
         check(ProcessingIdentity.current.version == 3, "new edits use basic controls v3")
         for version in [1, 2, 3] {
             var versioned = defaultObject
@@ -198,11 +202,11 @@ struct EditMemoryTests {
         var other = RawSettings.default
         other.exposure = -1
         try store.save(sameNameB, state: PhotoEditState(settings: other))
-        check(store.state(for: sameNameA)?.settings.exposure == 0.75, "same names in different locations stay separate")
-        check(store.state(for: sameNameB)?.settings.exposure == -1, "second same-named input keeps its own record")
+        check(try store.state(for: sameNameA)?.settings.exposure == 0.75, "same names in different locations stay separate")
+        check(try store.state(for: sameNameB)?.settings.exposure == -1, "second same-named input keeps its own record")
 
         try store.reset(first)
-        check(store.state(for: first) == nil, "reset removes the persisted record")
+        check(try store.state(for: first) == nil, "reset removes the persisted record")
         let failureDirectory = root.appendingPathComponent("failure-store")
         let failureStore = try EditPersistence(directory: failureDirectory)
         try failureStore.save(first, state: PhotoEditState(settings: changed))
@@ -213,9 +217,9 @@ struct EditMemoryTests {
             try failureStore.save(first, state: PhotoEditState(settings: other))
             fatalError("failed write was accepted")
         } catch { }
-        check(failureStore.state(for: first)?.settings == changed, "failed save does not commit in-memory records")
+        check(try failureStore.state(for: first)?.settings == changed, "failed save does not commit in-memory records")
         let lastGood = try EditPersistence(directory: backup)
-        check(lastGood.state(for: first)?.settings == changed, "failed replacement preserves previous durable records")
+        check(try lastGood.state(for: first)?.settings == changed, "failed replacement preserves previous durable records")
         var manualTint = RawSettings.default.customWhiteBalance(cameraTemperature: 5200, cameraTint: 8)
         manualTint.tint = 12
         check(manualTint.temperature == 5200 && manualTint.whiteBalanceMode == .custom,

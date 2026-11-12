@@ -166,6 +166,9 @@ extension RawEditorViewModel {
                     let resolvedIdentity = identity ?? (try? PhotoIdentity.fallback(for: inputURL))
                     importIdentity = resolvedIdentity
                     let record = try resolvedIdentity.flatMap { try self.editPersistence?.readState(for: $0) }
+                    if record?.state == nil, let resolvedIdentity {
+                        _ = try self.editPersistence?.unverifiedAssetEdit(for: resolvedIdentity)
+                    }
                     let state = record?.state
                     var restoredSettings = try state?.settings ?? self.processor.defaultSettings(
                         for: inputURL, isRaw: source.isRaw, x3fModeOverride: x3fModeOverride)
@@ -397,10 +400,14 @@ extension RawEditorViewModel {
                                         _ = try store.resetToUnmodified(targetIdentity)
                                     }
                                     self.adjustmentHistoryRevision = UUID()
+                                    let mergedRestore: ((RawSettings) -> Void)? = (onSettingsRestored == nil && restored == nil) ? nil : { restoredSettings in
+                                        onSettingsRestored?(restoredSettings)
+                                        restored?(restoredSettings)
+                                    }
                                     self.importImage(from: source, identity: targetIdentity, settings: settings,
                                         x3fModeOverride: x3fModeOverride, retainedInput: retainedSource,
                                         diagnosticContext: diagnosticContext, onImported: onImported,
-                                        onSettingsRestored: restored)
+                                        onSettingsRestored: mergedRestore)
                                 } catch {
                                     _ = self.reportError(error, operation: .editPersistence, stage: "resetUnusableRecord")
                                 }

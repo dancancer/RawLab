@@ -37,9 +37,10 @@ final class GeometrySourceProbe {
     var groupRects: [String: [Double]] = [:]
     var groupTextRects: [String: [Double]] = [:]
 
-    func check(_ name: String, _ passed: Bool) {
-        checks[name] = passed
-        print("GEOMETRY_SOURCE \(passed ? "PASS" : "FAIL") \(name)")
+    func check(_ name: String, _ passed: @autoclosure () throws -> Bool) {
+        let ok = (try? passed()) == true
+        checks[name] = ok
+        print("GEOMETRY_SOURCE \(ok ? "PASS" : "FAIL") \(name)")
     }
 
     private var nativeSwitches: [[Double]] {
@@ -190,7 +191,7 @@ extension ContentView {
                 } else { applyEditorDraft() }
                 try await geometryReviewSettled()
                 probe.check("\(action).CommittedCropCorrect", settings == committed && !isEditorDraftActive)
-                probe.check("\(action).PersistedCropCorrect", persistence.state(for: bID)?.settings == committed)
+                probe.check("\(action).PersistedCropCorrect", try persistence.state(for: bID)?.settings == committed)
                 let data: Data = try await withCheckedThrowingContinuation { continuation in
                     viewModel.exportJPEG(settings: settings) { continuation.resume(with: $0) }
                 }
@@ -269,7 +270,7 @@ extension ContentView {
             }
             probe.check("metadataOnlyReset.Accepted", commitEditorReset(metadataReset))
             try await geometryReviewSettled()
-            probe.check("metadataOnlyReset.PersistedOnce", persistence.state(for: bID)?.filmID == nil &&
+            probe.check("metadataOnlyReset.PersistedOnce", try persistence.state(for: bID)?.filmID == nil &&
                         probe.saveAttempts.count == metadataSaves + 1 && settings == metadataOnlySettings)
 
             // A failed write must leave the real ContentView draft and navigation untouched.
@@ -284,7 +285,7 @@ extension ContentView {
                 try await geometryReviewSettled()
                 let prefix = navigation ? "failedNavigation" : "failedApply"
                 let beforeApply = settings
-                let beforeRecord = persistence.state(for: bID)
+                let beforeRecord = try persistence.state(for: bID)
                 let beforePreviews = probe.previewRequests.count
                 let beforeSaves = probe.saveAttempts.count
                 viewModel.queueSettingsSave(beforeApply)
@@ -302,7 +303,7 @@ extension ContentView {
                 }
                 probe.check("\(prefix).KeepsCommitted", settings == beforeApply)
                 probe.check("\(prefix).KeepsDraft", geometryDraft == failedDraft && geometrySelected)
-                probe.check("\(prefix).KeepsRecord", persistence.state(for: bID) == beforeRecord)
+                probe.check("\(prefix).KeepsRecord", try persistence.state(for: bID) == beforeRecord)
                 probe.check("\(prefix).KeepsDiskBytes", try Data(contentsOf: retainedDirectory.appendingPathComponent("edits.json")) == beforeBytes)
                 probe.check("\(prefix).NoPreview", probe.previewRequests.count == beforePreviews)
                 probe.check("\(prefix).TriedCandidate", probe.saveAttempts.count == beforeSaves + 1)
@@ -314,7 +315,7 @@ extension ContentView {
                 if isEditorDraftChanged {
                     retryEditorSave()
                     try await geometryReviewSettled()
-                    probe.check("\(prefix).RetryPersistsCandidate", persistence.state(for: bID)?.settings.geometry == failedDraft)
+                    probe.check("\(prefix).RetryPersistsCandidate", try persistence.state(for: bID)?.settings.geometry == failedDraft)
                     let retryRequests = Array(probe.previewRequests.dropFirst(beforePreviews))
                     if UIDevice.current.userInterfaceIdiom == .pad {
                         probe.check("\(prefix).RetryPreviewOnce", retryRequests.count == 1)
@@ -339,7 +340,7 @@ extension ContentView {
                         following.exposure += 0.1
                         applySettingsChange(following)
                         try await geometryReviewSettled()
-                        probe.check("savedObserver.FollowingOrdinaryEditPersists", persistence.state(for: bID)?.settings == following &&
+                        probe.check("savedObserver.FollowingOrdinaryEditPersists", try persistence.state(for: bID)?.settings == following &&
                                     probe.saveAttempts.count == followSaves + 1 && probe.previewRequests.count == followPreviews + 1)
                     }
                 }
@@ -484,7 +485,7 @@ extension ContentView {
                 resetConfirmationPresented = false
                 try await geometryReviewSettled()
                 probe.check(prefix + ".ConfirmFreshDraft", geometrySelected && !isEditorDraftChanged && geometryDraft == settings.geometry)
-                probe.check(prefix + ".ConfirmPreservesVersion", settings.processing == version && settings.exposure == 0 && settings.geometry.isIdentity && persistence.state(for: identity)?.filmID == nil)
+                probe.check(prefix + ".ConfirmPreservesVersion", try settings.processing == version && settings.exposure == 0 && settings.geometry.isIdentity && persistence.state(for: identity)?.filmID == nil)
                 let noOpSaves = probe.saveAttempts.count
                 let noOpPreviews = probe.previewRequests.count
                 requestEditorReset(.all)

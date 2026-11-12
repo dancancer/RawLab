@@ -193,7 +193,7 @@ class StructuredSettingsCodecTest {
                     .also { props -> file.outputStream().use { props.store(it, null) } }
                 val bytes = file.readBytes()
                 val reopened = EditStore(directory)
-                assertNull(reopened.load(PhotoIdentity("a")))
+                assertThrows(UnusableEditRecordException::class.java) { reopened.load(PhotoIdentity("a")) }
                 assertThrows(UnusableEditRecordException::class.java) { reopened.readState(PhotoIdentity("a")) }
                 assertThrows(UnusableEditRecordException::class.java) { reopened.save(PhotoIdentity("a"), EditSettings()) }
                 assertArrayEquals(bytes, file.readBytes())

@@ -55,7 +55,7 @@ func checkBatchSelection(_ root: URL) throws {
     drafts = []
     let review = collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: 2048, x3fDefaultMode: { _ in .legacy }, probeHDR: { _ in false }, validateActive: active, resolveLook: look)
     try check(review.ready && review.rows.map { $0.settings?.exposure } == [0.5, 1, 1.5], "confirmation displays each photo's final committed settings")
-    var changed = store.state(for: identities[1])!.settings
+    var changed = try store.state(for: identities[1])!.settings
     changed.exposure = 1.2
     try store.save(identities[1], state: PhotoEditState(settings: changed))
     let confirmed = try collection.freeze(review, store: store, journal: journal, validateActive: active)
@@ -146,7 +146,8 @@ private func checkUnconfirmedAssetEdits(_ root: URL) throws {
     try BatchExportTests.require(!prepare(replacement).ready, "A different source with the same asset ID needs its own decision")
     try store.resolveUnverifiedAssetEdit(for: replacementIdentity, expected: oldEdit, restore: false)
     let original = try replacement.freeze(prepare(replacement), store: store, journal: journal, validateActive: { _ in })
-    try BatchExportTests.require(original.targets.first?.frozen?.settings.exposure == 0 && store.state(for: identity) == oldEdit,
+    let preservedState = try store.state(for: identity)
+    try BatchExportTests.require(original.targets.first?.frozen?.settings.exposure == 0 && preservedState == oldEdit,
         "Starting from the replacement original freezes defaults and preserves the first original's edit")
 }
 

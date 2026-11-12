@@ -94,7 +94,7 @@ enum IOSQuickPresetModelChecks {
         model.applyPresetToCurrentPhoto(preset, settings: defaults)
         try wait { !model.quickPresetState.isPreparing }
         guard case .saved(_, let latest) = model.quickPresetState else { throw NSError(domain: "retry did not save", code: 1) }
-        var later = store.state(for: identity)!.settings; later.contrast = 0.4
+        var later = try store.state(for: identity)!.settings; later.contrast = 0.4
         model.queueSettingsSave(later); try check(model.saveCurrentSettings(later), "ordinary edit after preset saves")
         let ordinary = try store.readState(for: identity)
         model.quickPresetState = .saved(preset, latest)

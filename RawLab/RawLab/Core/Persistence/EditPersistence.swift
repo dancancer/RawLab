@@ -172,19 +172,19 @@ final class EditPersistence {
         return try EditPersistence(directory: root.appendingPathComponent("RawLab/Edits", isDirectory: true))
     }
 
-    func state(for identity: PhotoIdentity) -> PhotoEditState? {
+    func state(for identity: PhotoIdentity) throws -> PhotoEditState? {
         do { return try readState(for: identity).state }
-        catch is UnusableEditRecordError { return nil }
+        catch let error as UnusableEditRecordError { throw error }
         catch {
-            // 旧读取接口在 I/O 失败时保留已载入值；事务读取始终抛错，不能用缓存提交。
+            // 旧读取接口在 I/O 失败时保留已载入值；单条坏记录始终抛错，事务读取始终抛错。
             snapshotLock.lock(); defer { snapshotLock.unlock() }
-            return (try? record(identity, from: lastReadableStore))?.state
+            return try record(identity, from: lastReadableStore).state
         }
     }
 
-    func state(for url: URL) -> PhotoEditState? {
+    func state(for url: URL) throws -> PhotoEditState? {
         guard let identity = try? PhotoIdentity.fallback(for: url) else { return nil }
-        return state(for: identity)
+        return try state(for: identity)
     }
 
     func save(_ identity: PhotoIdentity, state: PhotoEditState) throws {

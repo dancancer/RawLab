@@ -74,12 +74,15 @@ class VersionedEditPersistenceTest {
 
     @Test fun strictReadsNeverUseLastReadableCacheDuringStorageFailure() = inStore { root ->
         val directory = File(root, "store")
+        File(directory.apply { mkdirs() }, "edits.properties").writeText("format.version=1\nrecord.YnJva2Vu.values=broken\n")
         val store = EditStore(directory)
         val identity = PhotoIdentity("a")
+        val broken = PhotoIdentity("broken")
         val saved = store.save(identity, EditSettings(exposure = .5f))
         assertTrue(directory.renameTo(File(root, "backup")))
         directory.writeText("unavailable")
         assertEquals(saved.settings, store.load(identity))
+        assertThrows(UnusableEditRecordException::class.java) { store.load(broken) }
         assertThrows(IOException::class.java) { store.readState(identity) }
         assertThrows(IOException::class.java) { store.save(identity, EditSettings()) }
     }
@@ -125,12 +128,17 @@ class VersionedEditPersistenceTest {
         val reopened = EditStore(directory)
         assertEquals(.6f, reopened.readState(healthyA).settings?.exposure)
         assertEquals(-.25f, reopened.readState(healthyB).settings?.exposure)
-        assertNull(reopened.load(brokenProcessing))
-        assertNull(reopened.load(brokenSubSetting))
-        val batchStates = reopened.readStates(listOf(healthyA, brokenProcessing, brokenSubSetting))
-        assertEquals(.6f, batchStates[healthyA]?.settings?.exposure)
-        assertNull(batchStates[brokenProcessing]?.settings)
-        assertNull(batchStates[brokenSubSetting]?.settings)
+        assertThrows(UnusableEditRecordException::class.java) { reopened.load(brokenProcessing) }
+        assertThrows(UnusableEditRecordException::class.java) { reopened.load(brokenSubSetting) }
+        val unseen = PhotoIdentity("photo-unseen")
+        assertNull(reopened.load(unseen))
+        val batchStates = reopened.readStates(listOf(healthyA, unseen, brokenProcessing, brokenSubSetting))
+        assertEquals(.6f, (batchStates[healthyA] as PhotoEditReadResult.Usable).state.settings?.exposure)
+        assertNull((batchStates[unseen] as PhotoEditReadResult.Usable).state.settings)
+        assertTrue(batchStates[brokenProcessing] is PhotoEditReadResult.Unusable)
+        assertTrue(batchStates[brokenSubSetting] is PhotoEditReadResult.Unusable)
+        assertThrows(UnusableEditRecordException::class.java) { batchStates.getValue(brokenProcessing).getOrThrow() }
+        assertThrows(UnusableEditRecordException::class.java) { batchStates.getValue(brokenSubSetting).getOrThrow() }
 
         assertThrows(UnusableEditRecordException::class.java) { reopened.readState(brokenProcessing) }
         assertThrows(UnusableEditRecordException::class.java) { reopened.readState(brokenSubSetting) }

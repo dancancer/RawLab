@@ -156,9 +156,7 @@ private actor IOSPhotoPreviewWorker {
                 try Task.checkCancellation()
                 do {
                     flags[photo.id] = IOSPhotoPreviewPlan.isEdited(try edits.readState(for: photo.identity), isRaw: photo.isRaw)
-                } catch is UnusableEditRecordError {
-                    flags[photo.id] = false
-                }
+                } catch is UnusableEditRecordError { }
             }
             return (photos, flags, nil)
         } catch is CancellationError { throw CancellationError() }

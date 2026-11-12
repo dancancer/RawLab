@@ -30,7 +30,7 @@ final class RawEditorViewModel: ObservableObject {
     }
     @Published var statusHasDiagnostics = false
     @Published var retryLegacyX3fImport: ((@escaping (RawSettings) -> Void) -> Void)?
-    @Published var resetUnusableImportRecord: ((@escaping (RawSettings) -> Void) -> Void)?
+    @Published var resetUnusableImportRecord: ((((RawSettings) -> Void)?) -> Void)?
     @Published var isBusy = false
     @Published var isExportingHDR = false
     final class ExportCancellation {

@@ -37,6 +37,7 @@ class EditorEditStoreTest {
             assertEquals(EditSaveState.NONE, store.initialResult.state)
             assertTrue(store.available)
             assertEquals(EditSaveState.SAVED, store.save(sibling, EditSettings(exposure = .5f)).state)
+            assertThrows(UnusableEditRecordException::class.java) { store.load(broken) }
             assertThrows(UnusableEditRecordException::class.java) { store.readState(broken) }
             val failedSave = store.save(broken, EditSettings())
             assertEquals(EditSaveState.FAILED, failedSave.state)
