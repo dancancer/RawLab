@@ -164,6 +164,115 @@ private func journalIsolation(root: URL, inputs: [URL], output: URL) throws {
               (try Data(contentsOf: thirdArchive)) == badParamBytes &&
               !FileManager.default.fileExists(atPath: corruptURL.path),
               "discard preserves damaged job.json bytes on disk while clearing active journal state")
+    try check(corruptJournal.consumeQuarantinedError() != nil, "discard records quarantined error for caller consumption")
+
+    // Unconsumed quarantinedError must be cleared on entry to the next read/save/discard rather than leaking.
+    let unconsumedBytes = Data("{unconsumed-quarantine".utf8)
+    try unconsumedBytes.write(to: corruptURL)
+    try corruptJournal.discard(replacementJob)
+    try check(try corruptJournal.load() == nil && corruptJournal.consumeQuarantinedError() == nil,
+              "next healthy load clears any unconsumed quarantinedError")
+    try unconsumedBytes.write(to: corruptURL)
+    _ = try corruptJournal.load()
+    try corruptJournal.save(recoveredJob)
+    try check(corruptJournal.consumeQuarantinedError() == nil,
+              "next healthy save clears any unconsumed quarantinedError")
+
+    // Runner checkpoint saves forward mid-session quarantine error once without leaving stale state.
+    let runnerCorruptBytes = Data("{corrupt-before-runner".utf8)
+    try runnerCorruptBytes.write(to: corruptURL)
+    var runnerJob = recoveredJob
+    var runnerQuarantineCount = 0
+    try BatchExportRunner.run(job: &runnerJob, journal: corruptJournal, scope: .unfinished,
+                              shouldCancel: { false }, onQuarantine: { _ in runnerQuarantineCount += 1 }) { _, _, _, destination in
+        try Data("runner-ok".utf8).write(to: destination)
+    }
+    try check(runnerQuarantineCount == 1 && corruptJournal.consumeQuarantinedError() == nil &&
+              (try Data(contentsOf: corruptJournal.lastQuarantinedURL!)) == runnerCorruptBytes,
+              "runner forwards quarantine notice once across checkpoint saves and leaves no residual error")
+
+    // Semantic validation coverage: uniform longEdge, scalars, photoEffects, denoise, and unknown masterRecipeID.
+    let baseUniformObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(recoveredJob)) as! [String: Any]
+    let baseSettingsObject = baseUniformObject["settings"] as! [String: Any]
+    let semanticCases: [(String, (inout [String: Any], inout [String: Any]) -> Void)] = [
+        ("uniform longEdge zero", { jobObj, _ in jobObj["longEdge"] = 0 }),
+        ("uniform longEdge above ceiling", { jobObj, _ in jobObj["longEdge"] = 70000 }),
+        ("out-of-range scalar exposure", { _, settingsObj in settingsObj["exposure"] = 99.0 }),
+        ("out-of-range photoEffects", { _, settingsObj in
+            settingsObj["photoEffects"] = [
+                "vignetteAmount": 999.0, "vignetteMidpoint": 50.0, "vignetteRoundness": 0.0,
+                "vignetteFeather": 50.0, "vignetteHighlights": 0.0,
+                "grainAmount": 0.0, "grainSize": 25.0, "grainRoughness": 50.0
+            ]
+        }),
+        ("out-of-range rawNoiseReduction", { _, settingsObj in settingsObj["rawNoiseReduction"] = 99.0 }),
+        ("out-of-range chromaNoiseReduction", { _, settingsObj in settingsObj["chromaNoiseReduction"] = 5.0 }),
+        ("out-of-range waveletNoiseReduction", { _, settingsObj in
+            settingsObj["waveletNoiseReduction"] = [
+                "enabled": true, "preset": "custom", "luma": 999.0, "chroma": 50.0, "coarse": 50.0
+            ]
+        }),
+        ("unknown masterRecipeID", { _, settingsObj in
+            settingsObj["masterRecipeID"] = "nonexistent-master-recipe"
+            settingsObj["masterRecipeSettingsVersion"] = 4
+        })
+    ]
+    let semanticJournal = BatchJournal(directory: isolationRoot.appendingPathComponent("semantic-fields"))
+    try FileManager.default.createDirectory(at: semanticJournal.directory, withIntermediateDirectories: true)
+    let semanticURL = semanticJournal.directory.appendingPathComponent("job.json")
+    for (label, mutate) in semanticCases {
+        var jobObj = baseUniformObject
+        var settingsObj = baseSettingsObject
+        mutate(&jobObj, &settingsObj)
+        jobObj["settings"] = settingsObj
+        let badData = try JSONSerialization.data(withJSONObject: jobObj)
+        let decodedUniform = try JSONDecoder().decode(BatchExportJob.self, from: badData)
+        var saveRejected = false
+        do { try semanticJournal.save(decodedUniform) } catch { saveRejected = true }
+        try check(saveRejected, "\(label): uniform job save rejects semantically unusable value")
+        try badData.write(to: semanticURL)
+        try check(try semanticJournal.load() == nil, "\(label): uniform job load isolates semantically unusable value")
+        guard let archived = semanticJournal.lastQuarantinedURL, semanticJournal.consumeQuarantinedError() != nil else {
+            throw Failure(message: "\(label): uniform job load must archive and record quarantine error")
+        }
+        try check((try Data(contentsOf: archived)) == badData && !FileManager.default.fileExists(atPath: semanticURL.path),
+                  "\(label): uniform job load preserves archived bytes")
+    }
+
+    // Per-target frozen settings also enforce Adjustmens.validateResetValues() (scalars, effects, denoise, unknown recipe).
+    let dummyLook = isolationRoot.appendingPathComponent("dummy.cube")
+    try Data("LUT_3D_SIZE 2\n".utf8).write(to: dummyLook)
+    let dummyChecksum = try BatchFrozenSettings.checksum(dummyLook)
+    for (label, mutate) in semanticCases where !label.hasPrefix("uniform longEdge") {
+        var perTargetObj = baseUniformObject
+        perTargetObj["version"] = 3
+        perTargetObj["settings_mode"] = "per_target_frozen"
+        var itemRows = perTargetObj["items"] as! [[String: Any]]
+        var frozenSettingsObj = baseSettingsObject
+        var ignoredJobObj = perTargetObj
+        mutate(&ignoredJobObj, &frozenSettingsObj)
+        var frozenObj: [String: Any] = [
+            "version": 1, "settingsVersion": 1, "ordinal": 0,
+            "settings": frozenSettingsObj,
+            "lookName": "Frozen", "outputFormat": "png", "longEdge": 1024
+        ]
+        if frozenSettingsObj["masterRecipeID"] != nil {
+            frozenObj["look"] = dummyLook.absoluteString
+            frozenObj["lookSHA256"] = dummyChecksum
+        }
+        itemRows[0]["frozen"] = frozenObj
+        perTargetObj["items"] = itemRows
+        let badFrozenData = try JSONSerialization.data(withJSONObject: perTargetObj)
+        let decodedFrozen = try JSONDecoder().decode(BatchExportJob.self, from: badFrozenData)
+        var frozenRejected = false
+        do { try semanticJournal.save(decodedFrozen) } catch { frozenRejected = true }
+        try check(frozenRejected, "\(label): per-target frozen job save rejects semantically unusable value")
+        try badFrozenData.write(to: semanticURL)
+        try check(try semanticJournal.load() == nil && semanticJournal.consumeQuarantinedError() != nil,
+                  "\(label): per-target frozen job load isolates semantically unusable value")
+        try check((try Data(contentsOf: semanticJournal.lastQuarantinedURL!)) == badFrozenData,
+                  "\(label): per-target frozen job load preserves archived bytes")
+    }
 
     let dirAtJobJournal = BatchJournal(directory: isolationRoot.appendingPathComponent("dir-at-job"))
     let dirJobURL = dirAtJobJournal.directory.appendingPathComponent("job.json")
@@ -211,6 +320,7 @@ private func journalIsolation(root: URL, inputs: [URL], output: URL) throws {
     catch is CocoaError { }
     try check(try Data(contentsOf: futureSchemaURL) == futureSchemaBytes,
               "future schema batch journal remains intact in place")
+    print("PASS: batch journal isolation, quarantine notice lifecycle and semantic validation")
 }
 
 @main struct BatchExportTests {

@@ -334,8 +334,12 @@ extension EditorModel {
             alert.addButton(withTitle: L10n.text("查看任务")); alert.addButton(withTitle: L10n.text("新建任务"))
             if alert.runModal() == .alertFirstButtonReturn { return true }
         }
+        var quarantined: Error?
         do {
-            if let batch { try batchJournal.discard(batch.job) }
+            if let batch {
+                try batchJournal.discard(batch.job)
+                quarantined = batchJournal.consumeQuarantinedError()
+            }
             let lookURL = settings.isHDREditing ? nil : (settings.masterRecipe?.lutURL() ?? selectedFilm?.url)
             let lookName = settings.masterRecipe?.title ?? selectedFilm?.name ?? "中性"
             var job = BatchExportJob(source: file, settings: settings, look: nil, lookName: lookName)
@@ -345,16 +349,25 @@ extension EditorModel {
             job.look = copiedLook
             do {
                 try batchJournal.save(job)
+                quarantined = batchJournal.consumeQuarantinedError() ?? quarantined
             } catch {
+                quarantined = batchJournal.consumeQuarantinedError() ?? quarantined
                 if let copiedLook { try? FileManager.default.removeItem(at: copiedLook) }
                 throw error
             }
-            if let quarantined = batchJournal.consumeQuarantinedError() {
+            if let quarantined {
                 self.error = L10n.format("无法读取上次批量任务：%@", String(describing: quarantined.localizedDescription))
             }
             attachBatch(job)
             return true
-        } catch { self.error = error.localizedDescription; return false }
+        } catch {
+            if let quarantined {
+                self.error = L10n.format("无法读取上次批量任务：%@", String(describing: quarantined.localizedDescription)) + "\n" + error.localizedDescription
+            } else {
+                self.error = error.localizedDescription
+            }
+            return false
+        }
     }
 
     func attachBatch(_ job: BatchExportJob) {
@@ -364,6 +377,7 @@ extension EditorModel {
         model.sourceEditingGeometry = geometryDraft != nil
         model.onActivity = { [weak self] active in self?.exporting = active }
         model.onDiscard = { [weak self] in self?.batch = nil }
+        model.onQuarantineOnDiscard = { [weak self] message in self?.error = message }
         batch = model
     }
 

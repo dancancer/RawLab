@@ -240,6 +240,7 @@ extension EditorModel {
             try validateReview()
             try batchJournal.save(job)
         } catch {
+            _ = batchJournal.consumeQuarantinedError()
             for look in ownedLooks { try? FileManager.default.removeItem(at: look) }
             throw error
         }
