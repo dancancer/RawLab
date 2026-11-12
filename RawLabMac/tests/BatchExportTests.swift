@@ -366,6 +366,7 @@ private func perTargetSnapshots(root: URL, inputs: [URL], output: URL) throws {
         try journal.save(abandoned)
         _ = try journal.load()
         try check(!FileManager.default.fileExists(atPath: temporary.path), "recovery removes abandoned partial output")
+        try BatchExportX3fTargetTests.run(root: root)
         print("PASS: snapshot, collisions, failure continuation, retry, cancel and durable recovery")
     }
 }
