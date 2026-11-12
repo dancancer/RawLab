@@ -12,6 +12,7 @@ import com.rawlab.android.settings.HDRSettings
 import com.rawlab.android.settings.HDRCameraDevelopmentSettings
 import com.rawlab.android.settings.withHDRMode
 import com.rawlab.android.settings.requireProRAWDecoder
+import com.rawlab.android.settings.requireHDRDecodeVersion
 import com.rawlab.android.format.ExportFormat
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -97,11 +98,16 @@ internal class EditorRenderer(
             val photo = work.retained ?: storage.import(work.uri)
             val owned = work.retained == null || work.ownsRetained
             var canRetryLegacy = false
+            var hadSavedRecord = false
             try {
                 photo.validateOriginal?.invoke()
                 val record = restore(photo.identity)
+                hadSavedRecord = record?.settings != null
                 var restored = record?.settings ?: photo.defaultEditSettings(work.x3fModeOverride)
                 if (work.x3fModeOverride != null) restored = restored.copy(x3fMode = work.x3fModeOverride)
+                if (hadSavedRecord && restored.isHDREditing && photo.hdrSource != null) {
+                    restored.requireHDRDecodeVersion(photo.hdrSource.isProRAW)
+                }
                 canRetryLegacy = photo.isX3f && restored.x3fMode == com.rawlab.android.settings.X3fMode.NORMAL
                 if (!restored.isHDREditing && runCatching { storage.lookPath(restored) }.isFailure) {
                     val native = engine()
@@ -115,7 +121,10 @@ internal class EditorRenderer(
                     persistOnImport = work.x3fModeOverride != null, ownsImportedInput = owned), generation)
             }
             catch (error: Throwable) {
-                if (canRetryLegacy && error !is java.util.concurrent.CancellationException && error !is OutOfMemoryError)
+                if (error is com.rawlab.android.settings.UnusableEditRecordException ||
+                    (hadSavedRecord && error is com.rawlab.android.settings.HDRModeError.InvalidSettings)) {
+                    WorkResult.UnusableEditImportFailure(work.copy(retained = photo, ownsRetained = owned), photo.identity, error)
+                } else if (canRetryLegacy && error !is java.util.concurrent.CancellationException && error !is OutOfMemoryError)
                     WorkResult.X3fImportFailure(work.copy(retained = photo, ownsRetained = owned,
                         x3fModeOverride = com.rawlab.android.settings.X3fMode.LEGACY), error)
                 else { if (owned) photo.file.delete(); throw error }

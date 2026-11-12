@@ -49,6 +49,9 @@ class AdjustmentTransferSession(private val store: EditStore) {
         remember(saved)
     }
 
+    fun resetToUnmodified(identity: PhotoIdentity): PhotoEditState =
+        store.resetToUnmodified(identity).also(::adoptProcessingMigration)
+
     fun refreshSource(identity: PhotoIdentity, validate: () -> Unit) {
         if (knownRecords.containsKey(identity.value)) sourceValidators[identity.value] = validate
     }

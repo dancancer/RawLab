@@ -62,6 +62,7 @@ data class EditorState(
     val exact: Boolean = false,
     val error: String? = null,
     val retryLegacyX3f: Boolean = false,
+    val recoverUnusableRecord: Boolean = false,
     val saveState: EditSaveState = EditSaveState.NONE,
     val saveError: String? = null,
     val message: String? = null,

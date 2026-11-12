@@ -127,11 +127,17 @@ class StructuredSettingsCodecTest {
                 else assertTrue(updated.getProperty(key).startsWith("v2:"))
             }
             val key = updated.stringPropertyNames().single { it.endsWith(".values") && updated.getProperty(it).startsWith("v2:") }
-            updated.setProperty(key, updated.getProperty(key).replaceFirst("v2:", "v3:"))
+            val futureValue = updated.getProperty(key).replaceFirst("v2:", "v3:")
+            updated.setProperty(key, futureValue)
             file.outputStream().use { updated.store(it, null) }
             val protected = file.readBytes()
-            assertThrows(Exception::class.java) { store.save(PhotoIdentity("other"), EditSettings()) }
+            assertThrows(UnusableEditRecordException::class.java) { store.save(identity, EditSettings()) }
             assertArrayEquals(protected, file.readBytes())
+            val other = PhotoIdentity("other")
+            store.save(other, EditSettings(exposure = .25f))
+            assertEquals(.25f, EditStore(directory).readState(other).settings?.exposure)
+            val afterOtherSave = Properties().also { file.inputStream().use(it::load) }
+            assertEquals(futureValue, afterOtherSave.getProperty(key))
         } finally { directory.deleteRecursively() }
     }
 
@@ -186,7 +192,10 @@ class StructuredSettingsCodecTest {
                 Properties().apply { setProperty("record.YQ.values", fields.joinToString(",")) }
                     .also { props -> file.outputStream().use { props.store(it, null) } }
                 val bytes = file.readBytes()
-                assertThrows(Exception::class.java) { EditStore(directory) }
+                val reopened = EditStore(directory)
+                assertNull(reopened.load(PhotoIdentity("a")))
+                assertThrows(UnusableEditRecordException::class.java) { reopened.readState(PhotoIdentity("a")) }
+                assertThrows(UnusableEditRecordException::class.java) { reopened.save(PhotoIdentity("a"), EditSettings()) }
                 assertArrayEquals(bytes, file.readBytes())
             }
         } finally { directory.deleteRecursively() }

@@ -183,7 +183,9 @@ extension RawEditorViewModel {
                             ? try HDRSourceInfo.probe(localURL)
                             : try HDRSourceInfo.probeRAW(localURL, processing: restoredSettings.processing.core)
                         let proRAW = hdrInfo?.proRAW
-                        if proRAW != nil, restoredSettings.isHDREditing {
+                        if state != nil, restoredSettings.isHDREditing, let hdrInfo {
+                            try hdrInfo.validateEditDecodeVersion(restoredSettings.proRAWDecodeVersion)
+                        } else if proRAW != nil, restoredSettings.isHDREditing {
                             try ProRAWSource.validatedDecodeVersion(restoredSettings.proRAWDecodeVersion)
                         }
                         let cameraHDR = hdrInfo?.isDevelopedRAW == true
@@ -356,6 +358,17 @@ extension RawEditorViewModel {
                         }
                     }
                 } catch {
+                    let isUnusableRecord: Bool
+                    if error is UnusableEditRecordError {
+                        isUnusableRecord = true
+                    } else if case HDRSettings.ModeError.invalidSettings = error, context["restoredEdits"] == "true" {
+                        isUnusableRecord = true
+                    } else {
+                        isUnusableRecord = false
+                    }
+                    if isUnusableRecord, failedSource == nil {
+                        failedSource = try? PhotoSourceFile.copy(inputURL)
+                    }
                     let failureStage = stage
                     let content = failedSource?.withReadAccess { ErrorDiagnostics.fileContext($0, inspectContent: true) }
                         ?? ErrorDiagnostics.fileContext(inputURL)
@@ -364,12 +377,35 @@ extension RawEditorViewModel {
                         guard self.activeImportRevision == importRevision else { return }
                         self.invalidatePreviewRequests()
                         self.activeImportRevision = nil
+                        let canRecover = isUnusableRecord && importIdentity != nil && failedSource != nil && self.editPersistence != nil
+                        let customMessage = canRecover
+                            ? "\(error.localizedDescription)\n\n\(L10n.text("恢复当前照片的全部调整，不改写原始照片。"))"
+                            : nil
                         let presented = self.reportError(error, operation: .photoImport, stage: failureStage,
-                                                         attemptID: importRevision, context: failureContext)
+                                                         attemptID: importRevision, context: failureContext,
+                                                         message: customMessage)
                         self.isBusy = false
                         if let previous=self.importPreviousRevision { self.sourceRevision=previous }
                         self.importPreviousRevision=nil
-                        if presented, source.isRaw, source.url.pathExtension.lowercased() == "x3f",
+                        if presented, canRecover, let targetIdentity = importIdentity, let retainedSource = failedSource {
+                            self.resetUnusableImportRecord = { [weak self] restored in
+                                guard let self else { return }
+                                do {
+                                    if let session = self.adjustmentSession {
+                                        _ = try session.resetToUnmodified(targetIdentity)
+                                    } else if let store = self.editPersistence {
+                                        _ = try store.resetToUnmodified(targetIdentity)
+                                    }
+                                    self.adjustmentHistoryRevision = UUID()
+                                    self.importImage(from: source, identity: targetIdentity, settings: settings,
+                                        x3fModeOverride: x3fModeOverride, retainedInput: retainedSource,
+                                        diagnosticContext: diagnosticContext, onImported: onImported,
+                                        onSettingsRestored: restored)
+                                } catch {
+                                    _ = self.reportError(error, operation: .editPersistence, stage: "resetUnusableRecord")
+                                }
+                            }
+                        } else if presented, source.isRaw, source.url.pathExtension.lowercased() == "x3f",
                            attemptedX3fMode == .normal, let failedSource {
                             self.retryLegacyX3fImport = { [weak self] restored in
                                 self?.importImage(from: source, identity: importIdentity, settings: settings,
@@ -385,7 +421,10 @@ extension RawEditorViewModel {
     }
 
     func cancelImageImport(_ requestID: UUID? = nil) {
-        if requestID == nil { retryLegacyX3fImport = nil }
+        if requestID == nil {
+            retryLegacyX3fImport = nil
+            resetUnusableImportRecord = nil
+        }
         guard let activeImportRevision,
               requestID == nil || requestID == activeImportRevision else { return }
         self.activeImportRevision = nil

@@ -80,6 +80,7 @@ internal sealed interface Work {
 }
 internal sealed interface WorkResult {
     data class X3fImportFailure(val retry: Work.Import, val error: Throwable) : WorkResult
+    data class UnusableEditImportFailure(val retry: Work.Import, val identity: PhotoIdentity, val error: Throwable) : WorkResult
     data class Preview(val request: Work.Preview, val pair: PreviewPair) : WorkResult
     data class MissingLook(val photo: ImportedPhoto, val edits: EditSettings, val importedRecord: PhotoEditState?,
         val persistOnImport: Boolean = false, val ownsImportedInput: Boolean = false) : WorkResult
@@ -94,6 +95,7 @@ internal fun Work.discardOwnedInput() {
 internal fun WorkResult.discardOwnedInput() {
     when (this) {
         is WorkResult.X3fImportFailure -> retry.discardOwnedInput()
+        is WorkResult.UnusableEditImportFailure -> retry.discardOwnedInput()
         is WorkResult.Preview -> if (request.importing && request.ownsImportedInput) request.photo.file.delete()
         is WorkResult.MissingLook -> if (ownsImportedInput) photo.file.delete()
         else -> Unit

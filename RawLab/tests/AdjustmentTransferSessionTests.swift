@@ -359,5 +359,12 @@ import Foundation
             _ = try store.rollbackProcessingMigration(expected: store.readState(for: id))
             try check(false, "Rollback after undoing session reset must stay expired")
         } catch AdjustmentCommitError.expired { }
+
+        let clearedBroken = try session.resetToUnmodified(id)
+        try check(clearedBroken.state == nil && !session.canUndoPhoto(id) &&
+                  (try store.readState(for: id)).state == nil &&
+                  (try store.readState(for: sibling)).state?.settings.exposure == 0.75 &&
+                  (try store.readState(for: content)).state?.settings.exposure == 0.75,
+                  "Session resetToUnmodified clears target history and record while preserving same-PHAsset-other-bytes and content:<id>")
     }
 }

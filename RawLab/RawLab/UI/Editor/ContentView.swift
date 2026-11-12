@@ -297,6 +297,16 @@ struct ContentView: View {
             get: { viewModel.statusMessage != nil },
             set: { if !$0, viewModel.statusMessage != nil { viewModel.statusMessage = nil } }
         )) {
+            if let recover = viewModel.resetUnusableImportRecord {
+                Button(L10n.text("重置全部调整"), role: .destructive) {
+                    viewModel.statusMessage = nil
+                    recover { restored in
+                        settings = restored
+                        if restored.isHDREditing { selectedGroup = .light; selectedAdjustment = .exposure }
+                    }
+                }
+                .accessibilityIdentifier("edits.resetUnusable")
+            }
             if let retry = viewModel.retryLegacyX3fImport {
                 Button(L10n.text("使用旧版显影重试")) { retry { settings = $0 } }
                     .accessibilityIdentifier("x3f.retryLegacy")
@@ -306,7 +316,7 @@ struct ContentView: View {
                     .disabled(!canStartFileExport)
                     .accessibilityIdentifier("diagnostics.export.alert")
             }
-            Button(L10n.text("关闭"), role: .cancel) {
+            Button(L10n.text(viewModel.resetUnusableImportRecord == nil ? "关闭" : "取消"), role: .cancel) {
                 viewModel.statusMessage = nil
             }
         } message: {

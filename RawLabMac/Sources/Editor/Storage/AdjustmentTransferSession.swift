@@ -84,6 +84,12 @@ final class AdjustmentTransferSession {
         remember(record)
     }
 
+    @discardableResult func resetToUnmodified(_ url: URL) throws -> PhotoEditRecord {
+        let cleared = try store.resetToUnmodified(url)
+        adoptProcessingMigration(cleared)
+        return cleared
+    }
+
     private func remember(_ record: PhotoEditRecord) {
         knownRecords[record.identity.path] = record
         generationLock.lock(); defer { generationLock.unlock() }

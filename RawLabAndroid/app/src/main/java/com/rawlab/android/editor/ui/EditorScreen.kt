@@ -110,6 +110,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         EditorResetPreparation(EditorResetResult.Blocked("The current preview is not ready"))
     },
     onCommitReset: (PreparedEditorReset) -> Boolean = { false },
+    onResetUnusableRecord: () -> Unit = {},
+    onDismissUnusableRecord: () -> Unit = {},
     systemPhotoRequest: SystemPhotoOpenRequest? = null,
     onSystemPhotoConsumed: (SystemPhotoOpenRequest) -> Unit = {},
     onSystemPhotoReady: (SystemPhotoOpenRequest, (Boolean) -> Unit) -> Unit = { _, finish -> finish(false) }) {
@@ -248,6 +250,21 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                 TextButton(onClick = { cancelLeave() }) { Text(stringResource(R.string.adjustment_continue)) }
             }
         })
+    if (state.recoverUnusableRecord) AlertDialog(
+        onDismissRequest = onDismissUnusableRecord,
+        title = { Text(stringResource(R.string.editor_reset_all_title)) },
+        text = { Text(listOfNotNull(state.error, stringResource(R.string.editor_reset_all_message)).joinToString("\n\n")) },
+        confirmButton = {
+            TextButton(onClick = onResetUnusableRecord, enabled = !state.committingAdjustments) {
+                Text(stringResource(R.string.editor_reset_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissUnusableRecord) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
     preparedReset?.let { prepared ->
         EditorResetConfirmation(prepared, onDismiss = { preparedReset = null; finishAll() }) {
             preparedReset = null
@@ -350,8 +367,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         onDispose { lifecycle.removeObserver(observer); view = view.cancelHold(); liveTarget.cancel() }
     }
     val windowFocused = LocalWindowInfo.current.isWindowFocused
-    LaunchedEffect(windowFocused, menu, settings, zoomMenu, pendingLeave, preparedReset, state.operation) {
-        if (!windowFocused || menu || settings || zoomMenu || pendingLeave != null || preparedReset != null || state.operation != Operation.NONE) { view = view.cancelHold(); liveTarget.cancel() }
+    LaunchedEffect(windowFocused, menu, settings, zoomMenu, pendingLeave, preparedReset, state.recoverUnusableRecord, state.operation) {
+        if (!windowFocused || menu || settings || zoomMenu || pendingLeave != null || preparedReset != null || state.recoverUnusableRecord || state.operation != Operation.NONE) { view = view.cancelHold(); liveTarget.cancel() }
     }
     BackHandler(quickPresetsVisible) { onClosePresets() }
     BackHandler(view.purePreview) { togglePure() }

@@ -133,6 +133,7 @@ class EditorViewModel @JvmOverloads constructor(
     private val collections = EditorCollections(storage, viewModelScope, File(application.filesDir, "RawLab/BatchJobs"),
         editStore::readState, { adjustmentHistory.session?.editGeneration(it) ?: 0L }, ::captureCollectionActiveValidation, canRelease = { photo ->
             mutable.value.photo?.file != photo.file && failedX3fImport?.retained?.file != photo.file &&
+                failedUnusableImport?.first?.retained?.file != photo.file &&
                 mutable.value.operation != Operation.IMPORT && adjustmentPreparations == 0 && !mutable.value.committingAdjustments
         })
     val collection = collections.state
@@ -241,6 +242,7 @@ class EditorViewModel @JvmOverloads constructor(
     private val interactivePreviewSize = com.rawlab.android.editor.render.InteractivePreviewSize()
     private val pendingPhotoImport = PendingPhotoImport()
     private var failedX3fImport: Work.Import? = null
+    private var failedUnusableImport: Pair<Work.Import, PhotoIdentity>? = null
     private var lookRevision = 0L
     private var lookImportSelectionContext: Pair<Long, Long>? = null
     private var editorActivationRevision = 0L
@@ -397,10 +399,22 @@ class EditorViewModel @JvmOverloads constructor(
             when (value) {
                 is WorkResult.X3fImportFailure -> {
                     clearX3fRecovery()
+                    clearUnusableImportRecovery()
                     failedX3fImport = value.retry
                     pendingPhotoImport.clear()
                     mutable.value = EditorStateReducer.renderFinished(mutable.value).copy(
-                        error = failure(value.error), retryLegacyX3f = true)
+                        error = failure(value.error), retryLegacyX3f = true, recoverUnusableRecord = false)
+                }
+                is WorkResult.UnusableEditImportFailure -> {
+                    clearX3fRecovery()
+                    clearUnusableImportRecovery()
+                    failedUnusableImport = value.retry to value.identity
+                    pendingPhotoImport.clear()
+                    val message = if (value.error is com.rawlab.android.settings.HDRModeError.InvalidSettings)
+                        text(R.string.hdr_unsupported)
+                    else EditSaveResult(EditSaveState.FAILED, value.error, reading = true).message ?: failure(value.error)
+                    mutable.value = EditorStateReducer.renderFinished(mutable.value).copy(
+                        error = message, retryLegacyX3f = false, recoverUnusableRecord = true)
                 }
                 is WorkResult.MissingLook -> {
                     releasePreviousPhoto(value.photo)
@@ -633,17 +647,58 @@ class EditorViewModel @JvmOverloads constructor(
         collections.releaseDeferred()
     }
 
+    private fun clearUnusableImportRecovery() {
+        failedUnusableImport?.first?.discardOwnedInput()
+        failedUnusableImport = null
+        collections.releaseDeferred()
+    }
+
+    fun dismissUnusableImportRecovery() {
+        clearUnusableImportRecovery()
+        if (mutable.value.recoverUnusableRecord) {
+            mutable.value = mutable.value.copy(recoverUnusableRecord = false)
+        }
+    }
+
+    fun resetUnusableImportRecord() {
+        val pending = failedUnusableImport ?: return
+        if (disposed || mutable.value.committingAdjustments || mutable.value.operation != Operation.NONE) return
+        val (retry, identity) = pending
+        commitAdjustments({
+            runCatching { draftStore.clear(identity) }
+            editStore.resetToUnmodified(identity)
+        }) { result ->
+            result.fold({
+                if (failedUnusableImport?.first === retry) {
+                    startPhotoImport(retry.uri, retry)
+                }
+            }, { error ->
+                clearUnusableImportRecovery()
+                val saveResult = EditSaveResult(EditSaveState.FAILED, error)
+                mutable.value = mutable.value.copy(
+                    recoverUnusableRecord = false,
+                    saveState = saveResult.state,
+                    saveError = saveResult.message,
+                    error = saveResult.message ?: failure(error),
+                )
+            })
+        }
+    }
+
     private fun startPhotoImport(uri: Uri, retry: Work.Import? = null) {
         closeQuickPresets()
         if (retry !== failedX3fImport) clearX3fRecovery()
+        if (retry !== failedUnusableImport?.first) clearUnusableImportRecovery()
         sourceRevision += 1
         closeAdjustmentOperation()
         durablePreview = null
         pendingPhotoImport.begin(PhotoIdentity(uri.toString()))
-        mutable.value = mutable.value.copy(operation = Operation.IMPORT, rendering = true, error = null, retryLegacyX3f = false,
+        mutable.value = mutable.value.copy(operation = Operation.IMPORT, rendering = true, error = null,
+            retryLegacyX3f = false, recoverUnusableRecord = false,
             hdrCameraDraft = null, processingMigration = null)
         // closeAdjustmentOperation 会释放延迟文件，先建立导入保护再移交恢复引用。
         failedX3fImport = null
+        failedUnusableImport = null
         previewResizeJob?.cancel()
         previewResizeJob = null
         previewLongEdge = 1600
@@ -1890,6 +1945,7 @@ class EditorViewModel @JvmOverloads constructor(
         photoPreviews.close()
         cancelProcessingMigration()
         clearX3fRecovery()
+        clearUnusableImportRecovery()
         disposed = true
         adjustmentPreparationGeneration = UUID.randomUUID()
         previewResizeJob?.cancel()

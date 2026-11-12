@@ -98,6 +98,13 @@ final class IOSAdjustmentTransferSession {
     }
 
     @discardableResult
+    func resetToUnmodified(_ identity: PhotoIdentity) throws -> PhotoEditRecord {
+        let cleared = try store.resetToUnmodified(identity)
+        adoptProcessingMigration(cleared)
+        return cleared
+    }
+
+    @discardableResult
     func copy(scope: AdjustmentTransferScope, snapshot: PhotoEditState,
               context: IOSAdjustmentTransferContext) throws -> AdjustmentTransferPayload {
         let captured = try IOSAdjustmentTransfer.capture(scope: scope, snapshot: snapshot, context: context)

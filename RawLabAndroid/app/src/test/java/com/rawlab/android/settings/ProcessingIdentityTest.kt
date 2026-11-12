@@ -50,7 +50,12 @@ class ProcessingIdentityTest {
             assertEquals(ProcessingIdentity.LEGACY, EditStore(directory).load(photo)?.processing)
             values.setProperty(key, "rawlab,99,standard")
             file.outputStream().use { values.store(it, null) }
-            assertThrows(IllegalArgumentException::class.java) { EditStore(directory) }
+            val protectedBytes = file.readBytes()
+            val reopened = EditStore(directory)
+            assertNull(reopened.load(photo))
+            assertThrows(UnusableEditRecordException::class.java) { reopened.readState(photo) }
+            assertThrows(UnusableEditRecordException::class.java) { reopened.save(photo, EditSettings()) }
+            assertArrayEquals(protectedBytes, file.readBytes())
         } finally { directory.deleteRecursively() }
     }
 }
