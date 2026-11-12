@@ -415,11 +415,15 @@ struct AdjustmentHistoryModelTests {
         while pendingLens == nil && Date() < lensDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
         guard let lensResult = pendingLens else { throw NSError(domain: "lens preflight timed out", code: 1) }
         let lensOperation = try lensResult.get()
-        try check(lensOperation.targets.first?.error != nil, "actual raster target blocks an inactive explicit lens profile")
+        // #203 起栅格图允许保留未启用校正的手动镜头资料，只在请求校正时才要求真实标定。
+        try check(lensOperation.targets.first?.error == nil,
+                  "an inactive manual lens profile does not block a raster target")
         let lensOutcome = model.applyAdjustmentPaste(lensOperation, skipping: [])
         let afterLens = try store.readState(for: goodID)
-        try check(lensOutcome.first?.status == .blocked && afterLens.hasSameAdjustments(as: saved),
-                  "blocked inactive lens request preserves the raster receipt")
+        try check(lensOutcome.first?.status == .applied &&
+                  afterLens.state?.settings.lensSettings.profileID == "fixture-profile" &&
+                  afterLens.state?.settings.lensSettings.isEnabled == false,
+                  "raster keeps an inactive manual profile without claiming correction")
 
     }
 
@@ -557,14 +561,29 @@ struct AdjustmentHistoryModelTests {
         let store = try EditPersistence(directory: storeDir)
         let legacyAsset = PhotoIdentity(resourceIdentifier: "collection-legacy-broken")
         let collectionIdentity = try PhotoIdentity.fallback(for: png, resourceIdentifier: legacyAsset.resourceIdentifier)
-        let healthyIdentity = PhotoIdentity(resourceIdentifier: "healthy-recent")
+        let recentStore = try RecentPhotoStore(directory: directory.appendingPathComponent("recents"))
+        let healthyRecent = try recentStore.recordOpened(url: png,
+                                                         identity: PhotoIdentity(resourceIdentifier: "healthy-recent"),
+                                                         displayName: "Healthy.png", isRaw: false)
+        let uneditedRecent = try recentStore.recordOpened(url: png,
+                                                          identity: PhotoIdentity(resourceIdentifier: "unedited-recent"),
+                                                          displayName: "Unedited.png", isRaw: false)
+        let brokenRecent = try recentStore.recordOpened(url: png,
+                                                        identity: PhotoIdentity(resourceIdentifier: "recent-broken"),
+                                                        displayName: "Broken.png", isRaw: false)
         var healthySettings = RawSettings.default; healthySettings.exposure = 0.8
-        try store.save(healthyIdentity, state: PhotoEditState(settings: healthySettings))
+        try store.save(healthyRecent.identity, state: PhotoEditState(settings: healthySettings))
 
         let editsFile = storeDir.appendingPathComponent("edits.json")
+        let healthyKeys = Set(((try JSONSerialization.jsonObject(with: Data(contentsOf: editsFile)) as! [String: Any])["records"] as! [String: Any]).keys)
+        try store.save(brokenRecent.identity, state: PhotoEditState(settings: .default))
         var object = try JSONSerialization.jsonObject(with: Data(contentsOf: editsFile)) as! [String: Any]
         var records = object["records"] as! [String: Any]
+        guard let brokenRecentRecordKey = Set(records.keys).subtracting(healthyKeys).first else {
+            throw NSError(domain: "missing saved key for brokenRecent.identity", code: 1)
+        }
         records[legacyAsset.key] = ["settings": ["exposure": 999], "updatedAt": 0]
+        records[brokenRecentRecordKey] = ["settings": ["exposure": 999], "updatedAt": 0]
         object["records"] = records
         try JSONSerialization.data(withJSONObject: object).write(to: editsFile)
 
@@ -596,15 +615,14 @@ struct AdjustmentHistoryModelTests {
                   callerRestored != nil && alertRestored == callerRestored,
                   "confirming resetUnusableImportRecord preserves caller onSettingsRestored and collection context")
 
-        let recentStore = try RecentPhotoStore(directory: directory.appendingPathComponent("recents"))
-        let healthyRecent = try recentStore.recordOpened(url: png, identity: healthyIdentity, displayName: "Healthy.png", isRaw: false)
-        let brokenIdentity = PhotoIdentity(resourceIdentifier: "recent-broken")
-        let brokenRecent = try recentStore.recordOpened(url: png, identity: brokenIdentity, displayName: "Broken.png", isRaw: false)
-        var afterRecovery = try JSONSerialization.jsonObject(with: Data(contentsOf: editsFile)) as! [String: Any]
-        var afterRecords = afterRecovery["records"] as! [String: Any]
-        afterRecords[brokenIdentity.key] = ["settings": ["exposure": 999], "updatedAt": 0]
-        afterRecovery["records"] = afterRecords
-        try JSONSerialization.data(withJSONObject: afterRecovery).write(to: editsFile)
+        var recentBrokenThrew = false
+        do {
+            _ = try EditPersistence(directory: storeDir).readState(for: brokenRecent.identity)
+        } catch is UnusableEditRecordError {
+            recentBrokenThrew = true
+        }
+        try check(recentBrokenThrew, "brokenRecent.identity hits UnusableEditRecordError on readState")
+
         var reloadedLibrary: IOSPhotoPreviewLibrary?
         Task { @MainActor in
             let library = IOSPhotoPreviewLibrary(recentStore: recentStore,
@@ -626,7 +644,9 @@ struct AdjustmentHistoryModelTests {
             RunLoop.main.run(until: Date().addingTimeInterval(0.02))
         }
         try check(reloadedLibrary != nil && libraryError == nil &&
-                  editedFlags?[healthyRecent.id] == true && editedFlags?[brokenRecent.id] == nil,
+                  editedFlags?[healthyRecent.id] == true &&
+                  editedFlags?[uneditedRecent.id] == false &&
+                  editedFlags?[brokenRecent.id] == nil,
                   "recentStates omits unusable record instead of misclassifying it as unedited")
     }
 }
