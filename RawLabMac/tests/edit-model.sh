@@ -29,8 +29,8 @@ swiftc "${TRANSFER_SOURCES[@]}" "$ROOT/Shared/Localization.swift" -swift-version
   -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
   "$ROOT/Shared/UsageAnalytics.swift" \
   "${SOURCES[@]}" "$ROOT/RawLabMac/tests/EditModelTests.swift" \
-  "${CORE_LINK[@]}" -L "$(pkg-config --variable=libdir libraw)" \
-  -lraw $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/test"
+  "${CORE_LINK[@]}" -L "$(pkg-config --variable=libdir libraw_r)" \
+  -lraw_r $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/test"
 "$OUT/test" "$@"
 
 VIEWING_RAW="${1:-$ROOT/lutools/examples/DJI_20250602164503_0444_D.DNG}"

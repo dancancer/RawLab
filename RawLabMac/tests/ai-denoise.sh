@@ -19,6 +19,6 @@ swiftc -swift-version 5 -sdk "$SDK" -target "$ARCH-apple-macosx$MACOSX_DEPLOYMEN
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "${SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT/RawLabMac/tests/AIDenoiseTests.swift" "$ROOT/RawLabMac/tests/AIDenoiseRecoveryChecks.swift" \
     "$BUILD/libsony2fuji_core.a" "${AI_LINK[@]}" \
-    $(pkg-config --libs libraw rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz \
+    $(pkg-config --libs libraw_r rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz \
     -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/test"
 "$OUT/test" "$@"

@@ -4,7 +4,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$ROOT/RawLabMac/build-env.sh"
 source "$ROOT/RawLabMac/tests/core-link.sh"
 DEPENDENCY_PREFIX="$RAWLAB_DEPENDENCY_PREFIX"
-LINK_PACKAGES=(libraw rawlab-dng-sdk libtiff-4)
+LINK_PACKAGES=(libraw_r rawlab-dng-sdk libtiff-4)
 # A focused geometry build may disable these optional processing stages.
 for package in opencv4 wavelib lensfun; do
     if pkg-config --exists "$package"; then LINK_PACKAGES+=("$package"); fi
