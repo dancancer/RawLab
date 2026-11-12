@@ -14,6 +14,7 @@ internal static class UpdateStoreChecks
         AtomicWriteRetries(check);
         StateRepair(check);
         FailedStateValidation(check);
+        CheckFailureCompatibility(check);
         var root = Path.Combine(Path.GetTempPath(), "rawlab-update-store-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
         try
         {
@@ -164,6 +165,68 @@ internal static class UpdateStoreChecks
                 check(File.ReadAllText(store.StatePath) == damaged, "Rejected failure input is preserved: " + name);
             }
             check(accepted.Count == 0, "Malformed failed states must be rejected; accepted: " + string.Join(", ", accepted));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    private static void CheckFailureCompatibility(Action<bool, string> check)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-check-failure-store-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new UpdateStore(root); Directory.CreateDirectory(store.DirectoryPath);
+            var t0 = DateTimeOffset.FromUnixTimeSeconds(1800000000);
+            var legacyNode = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(new UpdatePreferences { LastCheck = t0 }))!.AsObject();
+            legacyNode.Remove("CheckFailure");
+            File.WriteAllText(store.StatePath, legacyNode.ToJsonString());
+            var legacy = store.Load(true);
+            check(legacy.CheckFailure == null && legacy.LastCheck == t0 &&
+                UpdatePresentation.Status(legacy) == "尚未发现可安装的更新" &&
+                UpdatePresentation.CheckFailureDetail(legacy) == null,
+                "Legacy state omitting CheckFailure deserializes as no failure and up-to-date when LastCheck exists");
+
+            legacyNode["LastCheck"] = null;
+            File.WriteAllText(store.StatePath, legacyNode.ToJsonString());
+            var uncheckedLegacy = store.Load(true);
+            check(uncheckedLegacy.CheckFailure == null && uncheckedLegacy.LastCheck == null &&
+                UpdatePresentation.Status(uncheckedLegacy) == "尚未检查更新",
+                "Legacy state with null LastCheck presents never-checked status");
+
+            var failed = new UpdatePreferences
+            {
+                CheckFailure = new(t0.AddMinutes(5), "network", 3, "DNS lookup failed")
+            };
+            store.Save(failed);
+            var roundTrip = store.Load(true);
+            check(roundTrip.CheckFailure == failed.CheckFailure &&
+                UpdatePresentation.Status(roundTrip) == "检查失败，请稍后重试或访问 GitHub 仓库" &&
+                !UpdatePresentation.ShowsCheckFailureNotice(roundTrip) &&
+                UpdatePresentation.CheckFailureDetail(roundTrip) is { } detail &&
+                detail.Contains("network", StringComparison.Ordinal) &&
+                detail.Contains("UTC", StringComparison.Ordinal) &&
+                detail.Contains("DNS lookup failed", StringComparison.Ordinal),
+                "CheckFailure persists across Save/Load and formats failure category, UTC timestamp, and detail");
+
+            var availableWithCheckFailure = roundTrip.Copy();
+            var checkToken = availableWithCheckFailure.PendingUpdate.BeginCheck();
+            availableWithCheckFailure.PendingUpdate.Found(
+                new("0.9.1", "19", "windows", "x64", "stable", "https://example.invalid/update.nupkg", 12, null, "Notes"), checkToken);
+            check(UpdatePresentation.Status(availableWithCheckFailure) == "有可用更新" &&
+                UpdatePresentation.ShowsCheckFailureNotice(availableWithCheckFailure) &&
+                UpdatePresentation.CheckFailureDetail(availableWithCheckFailure) != null,
+                "Available release with a subsequent check failure keeps release heading and surfaces check failure notice");
+
+            var nonPositiveCount = roundTrip.Copy();
+            nonPositiveCount.CheckFailure = new(t0, "timeout", 0, "");
+            store.Save(nonPositiveCount);
+            check(store.Load(true).CheckFailure?.ConsecutiveFailures == 1,
+                "Non-positive ConsecutiveFailures normalizes to at least one");
+
+            var emptyCategory = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(store.StatePath))!.AsObject();
+            emptyCategory["CheckFailure"]!["Category"] = " ";
+            File.WriteAllText(store.StatePath, emptyCategory.ToJsonString());
+            check(store.Load(true).CheckFailure == null,
+                "Blank CheckFailure category degrades safely to no failure instead of rejecting state");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }

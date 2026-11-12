@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Serialization;
 
 namespace RawLab.Windows;
@@ -10,6 +11,7 @@ public sealed record UpdateDescriptor(string Version, string Build, string Platf
     public string Identity => string.Join("|", Platform, Architecture, Channel, Version, Build, AssetUrl, Sha256 ?? "");
 }
 public sealed record UpdateFailure(UpdatePhase Stage, string Code, string Detail);
+public sealed record UpdateCheckFailure(DateTimeOffset FailedAt, string Category, int ConsecutiveFailures = 1, string Detail = "");
 
 public sealed class UpdateTaskState
 {
@@ -118,12 +120,74 @@ public sealed class UpdatePreferences
     public string? SkippedVersion { get; set; }
     public DateTimeOffset? RemindAfter { get; set; }
     public DateTimeOffset? LastCheck { get; set; }
+    public UpdateCheckFailure? CheckFailure { get; set; }
     public string Channel { get; set; } = "stable";
     public UpdateTaskState PendingUpdate { get; set; } = new();
     public string? RecoveryReceipt { get; set; }
     public UpdateStateRepairReceipt? StateRepairReceipt { get; set; }
     public UpdatePreferences Copy() => new() { AutomaticCheck = AutomaticCheck, AutomaticInstall = AutomaticInstall,
-        SkippedVersion = SkippedVersion, RemindAfter = RemindAfter, LastCheck = LastCheck, Channel = Channel, PendingUpdate = PendingUpdate.Copy(), RecoveryReceipt = RecoveryReceipt, StateRepairReceipt = StateRepairReceipt };
+        SkippedVersion = SkippedVersion, RemindAfter = RemindAfter, LastCheck = LastCheck, CheckFailure = CheckFailure,
+        Channel = Channel, PendingUpdate = PendingUpdate.Copy(), RecoveryReceipt = RecoveryReceipt, StateRepairReceipt = StateRepairReceipt };
 }
 
 public sealed record UpdateStateRepairReceipt(Guid Id, string Sha256);
+
+internal static class UpdatePresentation
+{
+    public static string Status(UpdatePreferences preferences)
+    {
+        var state = preferences.PendingUpdate;
+        if (state.Phase == UpdatePhase.Failed && state.Failure?.Stage == UpdatePhase.Checking)
+            return "检查失败，请稍后重试或访问 GitHub 仓库";
+        if (state.Phase == UpdatePhase.Idle)
+        {
+            if (preferences.CheckFailure != null) return "检查失败，请稍后重试或访问 GitHub 仓库";
+            if (preferences.LastCheck == null) return "尚未检查更新";
+            return "尚未发现可安装的更新";
+        }
+        return Phase(state.Phase);
+    }
+    public static bool ShowsCheckFailureNotice(UpdatePreferences preferences) =>
+        preferences.CheckFailure != null &&
+        preferences.PendingUpdate.Phase is not (UpdatePhase.Idle or UpdatePhase.Checking or UpdatePhase.Downloading or
+            UpdatePhase.Verifying or UpdatePhase.Installing or UpdatePhase.PendingRestart) &&
+        !(preferences.PendingUpdate.Phase == UpdatePhase.Failed && preferences.PendingUpdate.Failure?.Stage == UpdatePhase.Checking);
+    public static string? CheckFailureDetail(UpdatePreferences preferences)
+    {
+        var state = preferences.PendingUpdate;
+        if (state.Phase is UpdatePhase.Checking or UpdatePhase.Downloading or UpdatePhase.Verifying or
+            UpdatePhase.Installing or UpdatePhase.PendingRestart) return null;
+        if (state.Phase == UpdatePhase.Failed && state.Failure is { } failure && failure.Stage != UpdatePhase.Checking) return null;
+        if (preferences.CheckFailure is { } checkFailure)
+        {
+            var header = $"{checkFailure.Category}\n{checkFailure.FailedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture)}";
+            return string.IsNullOrEmpty(checkFailure.Detail) ? header : header + "\n" + checkFailure.Detail;
+        }
+        if (state.Phase == UpdatePhase.Failed && state.Failure is { Stage: UpdatePhase.Checking } legacy)
+            return string.IsNullOrEmpty(legacy.Detail) ? legacy.Code : legacy.Code + "\n" + legacy.Detail;
+        return null;
+    }
+    public static string Phase(UpdatePhase phase) => phase switch
+    {
+        UpdatePhase.Idle => "尚未发现可安装的更新",
+        UpdatePhase.Checking => "正在检查更新…",
+        UpdatePhase.Available => "有可用更新",
+        UpdatePhase.Downloading => "正在下载更新…",
+        UpdatePhase.Verifying => "正在校验并准备更新…",
+        UpdatePhase.PackageReady => "更新已校验，请选择安装时间",
+        UpdatePhase.WaitingForTasks => "正在等待编辑和任务处理完成",
+        UpdatePhase.ReadyToInstall => "已具备安装条件",
+        UpdatePhase.Installing => "正在安装更新…",
+        UpdatePhase.PendingRestart => "等待重新启动",
+        UpdatePhase.Complete => "更新已完成",
+        _ => "更新失败"
+    };
+    public static string Blocker(string value) => value switch
+    {
+        "draft" => "请返回编辑器应用或放弃草稿和未提交输入",
+        "unsaved" => "照片编辑尚未保存",
+        "save" => "照片编辑保存失败，请先重试保存",
+        "journal" => "批量任务记录尚未安全保存",
+        _ => "正在等待预览、导出或批量任务结束"
+    };
+}

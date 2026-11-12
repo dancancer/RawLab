@@ -65,6 +65,12 @@ public sealed class UpdateStore(string directory)
                 string.IsNullOrEmpty(failed.Code) || failed.Detail == null)
                 throw new InvalidDataException("Incomplete update failure");
         }
+        if (value.CheckFailure is { } checkFailure)
+        {
+            value.CheckFailure = string.IsNullOrWhiteSpace(checkFailure.Category) || checkFailure.FailedAt == default
+                ? null
+                : checkFailure with { ConsecutiveFailures = Math.Max(1, checkFailure.ConsecutiveFailures), Detail = checkFailure.Detail ?? "" };
+        }
         if (value.StateRepairReceipt is {} receipt)
         {
             var archive = RepairedStateArchive(receipt);

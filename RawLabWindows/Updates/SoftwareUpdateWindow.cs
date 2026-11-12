@@ -43,7 +43,7 @@ public sealed class SoftwareUpdateWindow : Window
                 panel.Children.Add(new Separator{Margin=new Thickness(0,10,0,10)});
             }
             if(updates.UnavailableReason!=null){AddText("此安装暂不支持自动安装更新",true);AddText(legacy.Status,localized:true);}
-            else AddText(UpdatePresentation.Phase(updates.State.Phase),true);
+            else AddText(UpdatePresentation.Status(updates.Preferences),true);
             var version=updates.State.Release?.Version ?? (updates.UnavailableReason!=null ? legacy.Available?.Version : null);
             if(version!=null)AddText(Loc.Format("发现新版本 {0}",version),true,true);
             var notes=updates.State.Release?.Notes ?? (updates.UnavailableReason!=null ? legacy.Available?.Notes : null);
@@ -60,9 +60,13 @@ public sealed class SoftwareUpdateWindow : Window
                     ActionButton(retryActions,"重试",()=>updates.RetryStartup?.Invoke() ?? Task.CompletedTask,"updates.retryStartup",!updates.CheckingStartupTrust);
                 }
             }
-            if(updates.State.Failure is {} failure) {
+            if(updates.State.Failure is {} failure && failure.Stage!=UpdatePhase.Checking) {
                 AddText("更新未完成，请查看恢复说明",true);AddText(UpdatePresentation.Phase(failure.Stage));
                 panel.Children.Add(Disclosure("错误详情",Text(failure.Code+"\n"+failure.Detail)));
+            } else if(UpdatePresentation.CheckFailureDetail(updates.Preferences) is {} checkDetail) {
+                if(UpdatePresentation.ShowsCheckFailureNotice(updates.Preferences))
+                    AddText("检查失败，请稍后重试或访问 GitHub 仓库",true);
+                panel.Children.Add(Disclosure("错误详情",Text(checkDetail)));
             }
             if(updates.StorageError!=null) {
                 AddText(updates.StorageError,localized:true);
@@ -101,7 +105,7 @@ public sealed class SoftwareUpdateWindow : Window
                 ActionButton(actions,"下次退出时安装",()=>updates.ChooseAsync(UpdateInstallChoice.OnQuit),"updates.onQuit");
             }
             if(updates.CanCancel)ActionButton(actions,"取消更新",()=>{updates.Cancel();return Task.CompletedTask;},"updates.cancel");
-            if(updates.State.Phase==UpdatePhase.Failed && updates.CanCheck)ActionButton(actions,"重试",updates.RetryAsync,"updates.retry");
+            if((updates.State.Phase==UpdatePhase.Failed || updates.CheckFailure!=null) && updates.CanCheck)ActionButton(actions,"重试",updates.RetryAsync,"updates.retry");
             var support=new StackPanel();
             support.Children.Add(Text(Loc.Text("Mac 需要同架构、签名身份匹配的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。")));
             support.Children.Add(Text(Loc.Text("查看此说明不会启用自动安装。失败后请保留现有应用和数据，使用官方可信安装包恢复；不要用旧版覆盖新版编辑记录。")));
@@ -147,16 +151,4 @@ public sealed class SoftwareUpdateWindow : Window
     {
         try{Process.Start(start);}catch(Win32Exception){MessageBox.Show(this,Loc.Text("无法打开链接，请检查默认浏览器设置。"),Title);}
     }
-}
-
-internal static class UpdatePresentation
-{
-    public static string Phase(UpdatePhase phase)=>phase switch {
-        UpdatePhase.Idle=>"尚未发现可安装的更新",UpdatePhase.Checking=>"正在检查更新…",UpdatePhase.Available=>"有可用更新",
-        UpdatePhase.Downloading=>"正在下载更新…",UpdatePhase.Verifying=>"正在校验并准备更新…",UpdatePhase.PackageReady=>"更新已校验，请选择安装时间",
-        UpdatePhase.WaitingForTasks=>"正在等待编辑和任务处理完成",UpdatePhase.ReadyToInstall=>"已具备安装条件",UpdatePhase.Installing=>"正在安装更新…",
-        UpdatePhase.PendingRestart=>"等待重新启动",UpdatePhase.Complete=>"更新已完成",_=>"更新失败"};
-    public static string Blocker(string value)=>value switch {
-        "draft"=>"请返回编辑器应用或放弃草稿和未提交输入","unsaved"=>"照片编辑尚未保存","save"=>"照片编辑保存失败，请先重试保存",
-        "journal"=>"批量任务记录尚未安全保存",_=>"正在等待预览、导出或批量任务结束"};
 }

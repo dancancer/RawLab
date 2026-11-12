@@ -1,10 +1,16 @@
 using System.ComponentModel;
 using System.IO;
+using System.Net.Http;
+using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace RawLab.Windows;
 
 public sealed class DesktopUpdateController : INotifyPropertyChanged
 {
+    public static readonly TimeSpan DailyCheckInterval = TimeSpan.FromDays(1);
+    public static readonly TimeSpan InitialCheckRetryDelay = TimeSpan.FromMinutes(15);
+    public static readonly TimeSpan MaxCheckRetryDelay = TimeSpan.FromHours(4);
     private UpdatePreferences preferences;
     private readonly IDesktopUpdateAdapter adapter;
     private readonly UpdateInstallGate gate;
@@ -22,6 +28,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     public event Action? RestartRequested;
     public UpdatePreferences Preferences => preferences;
     public UpdateTaskState State => preferences.PendingUpdate;
+    public UpdateCheckFailure? CheckFailure => preferences.CheckFailure;
     public UpdateInstallGate Gate => gate;
     public string CurrentVersion => currentVersion;
     public string? StorageError { get; private set; }
@@ -137,22 +144,51 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         if (revoke) next.PendingUpdate.Cancel();
         if (Save(next) && revoke) { automaticDownload = false; operation?.Cancel(); }
     }
+    public static TimeSpan CheckRetryDelay(int consecutiveFailures)
+    {
+        var shift = Math.Clamp(consecutiveFailures, 1, 5) - 1;
+        var delay = TimeSpan.FromMinutes(InitialCheckRetryDelay.TotalMinutes * (1 << shift));
+        return delay <= MaxCheckRetryDelay ? delay : MaxCheckRetryDelay;
+    }
+    public static string CategorizeCheckError(Exception error)
+    {
+        if (error is AggregateException { InnerException: { } inner }) error = inner;
+        return error switch
+        {
+            TimeoutException or OperationCanceledException => "timeout",
+            TemporaryUpdateTrustException => "trust",
+            HttpRequestException or IOException => "network",
+            CryptographicException => "signature",
+            InvalidDataException or JsonException or FormatException => "metadata",
+            _ => "operation"
+        };
+    }
+    private bool ShouldSkipAutomaticCheck(DateTimeOffset current)
+    {
+        if (!preferences.AutomaticCheck || State.Phase == UpdatePhase.Failed && State.Failure?.Stage != UpdatePhase.Checking ||
+            preferences.RemindAfter > current) return true;
+        if (preferences.CheckFailure is { } failed)
+            return failed.FailedAt <= current && current - failed.FailedAt < CheckRetryDelay(failed.ConsecutiveFailures);
+        return preferences.LastCheck is { } last && last <= current && current - last < DailyCheckInterval;
+    }
     public async Task CheckAsync(bool manual, bool retryDownload = false)
     {
         if (!CanCheck) return;
-        if (!manual && (!preferences.AutomaticCheck || State.Phase == UpdatePhase.Failed && State.Failure?.Stage != UpdatePhase.Checking || preferences.RemindAfter > now() ||
-            preferences.LastCheck is { } last && last <= now() && now() - last < TimeSpan.FromDays(1))) return;
-        var next = preferences.Copy(); var attempt = next.PendingUpdate.BeginCheck(); next.LastCheck = now();
+        if (!manual && ShouldSkipAutomaticCheck(now())) return;
+        var next = preferences.Copy(); var attempt = next.PendingUpdate.BeginCheck();
         if (!Save(next)) return;
         var cancellation = BeginOperation(); automaticDownload = !manual && preferences.AutomaticInstall;
         try
         {
             var release = await adapter.CheckAsync(cancellation.Token);
             if (!manual && release?.Identity == preferences.SkippedVersion) release = null;
-            next = preferences.Copy(); if (!next.PendingUpdate.Found(release, attempt) || !Save(next)) return;
+            next = preferences.Copy();
+            if (!next.PendingUpdate.Found(release, attempt)) return;
+            next.LastCheck = now(); next.CheckFailure = null;
+            if (!Save(next)) return;
             if (release != null && (automaticDownload || retryDownload || DeferredQuitChoice)) await DownloadAsync(automaticDownload);
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception error) { Fail(error, attempt); }
         finally { EndOperation(cancellation); }
     }
@@ -180,7 +216,9 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         catch (Exception error) { Fail(error, attempt.Value); }
         finally { EndOperation(cancellation); }
     }
-    public Task RetryAsync() => State.Phase == UpdatePhase.Failed ? CheckAsync(true, State.Failure?.Stage != UpdatePhase.Checking) : Task.CompletedTask;
+    public Task RetryAsync() => State.Phase == UpdatePhase.Failed
+        ? CheckAsync(true, State.Failure?.Stage != UpdatePhase.Checking)
+        : CheckFailure != null ? CheckAsync(true) : Task.CompletedTask;
     public void Cancel()
     {
         if (!CanCancel) return;
@@ -209,7 +247,8 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     public async Task RefreshGateAsync()
     {
         if (State.Phase == UpdatePhase.Available && DeferredQuitChoice && CanCheck) { await CheckAsync(true); return; }
-        if (State.Phase == UpdatePhase.Failed && State.Failure?.Stage == UpdatePhase.Checking) { await CheckAsync(false); return; }
+        if (State.Phase == UpdatePhase.Failed && State.Failure?.Stage == UpdatePhase.Checking ||
+            State.Phase == UpdatePhase.Idle && CheckFailure != null) { await CheckAsync(false); return; }
         if (!CanChooseInstall || State.Choice == UpdateInstallChoice.None) return;
         var reasons = gate.Blockers();
         if (!reasons.SequenceEqual(State.Blockers))
@@ -279,9 +318,17 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     }
     private void Fail(Exception error, Guid attempt)
     {
+        var stage = State.Phase;
         var next = preferences.Copy();
-        var postInstall = State.Phase is UpdatePhase.Installing or UpdatePhase.PendingRestart;
-        if (next.PendingUpdate.Fail("operation", error.Message, attempt)) Save(next, keepNextOnFailure: postInstall);
+        var postInstall = stage is UpdatePhase.Installing or UpdatePhase.PendingRestart;
+        var code = stage == UpdatePhase.Checking ? CategorizeCheckError(error) : "operation";
+        if (!next.PendingUpdate.Fail(code, error.Message, attempt)) return;
+        if (stage == UpdatePhase.Checking)
+        {
+            var count = (preferences.CheckFailure?.ConsecutiveFailures ?? 0) + 1;
+            next.CheckFailure = new(now(), code, Math.Max(1, count), error.Message);
+        }
+        Save(next, keepNextOnFailure: postInstall);
     }
     private bool Save(UpdatePreferences next, bool discardObsoleteBackup = true, bool keepNextOnFailure = false)
     {
