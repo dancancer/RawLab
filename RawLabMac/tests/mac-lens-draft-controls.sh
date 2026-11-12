@@ -8,7 +8,7 @@ SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
 OUT="$(mktemp -d /tmp/rawlab-lens-draft-controls.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
 RPATHS=()
-for dependency in libraw opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4; do
+for dependency in libraw_r opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4; do
     RPATHS+=(-Xlinker -rpath -Xlinker "$(pkg-config --variable=libdir "$dependency")")
 done
 swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
@@ -19,6 +19,6 @@ swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" -target "$
     "$ROOT/RawLabMac/Sources/Adjustments/Adjustments.swift" "$ROOT/RawLabMac/Sources/Adjustments/AdjustmentTypes.swift" "$ROOT/RawLabMac/Sources/Looks/MasterRecipe.swift" \
     "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/HSLTargetAdjustment.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HDRSettings.swift" "$ROOT/Shared/ProcessingMigration.swift" "$ROOT/Shared/Native/ProcessingMigrationNative.swift" "${HDR_SWIFT_SOURCES[@]}" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/Shared/AtmosphereSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/HSLTargetNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/AtmosphereNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" \
     "$ROOT/RawLabMac/Sources/Lens/MacLensPresentation.swift" "$ROOT/RawLabMac/tests/MacLensDraftControlsTests.swift" \
-    "${CORE_LINK[@]}" $(pkg-config --libs libraw opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
+    "${CORE_LINK[@]}" $(pkg-config --libs libraw_r opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
     -framework AppKit -framework ImageIO -framework Metal "${RPATHS[@]}" -o "$OUT/test"
 "$OUT/test"

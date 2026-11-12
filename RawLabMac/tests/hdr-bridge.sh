@@ -13,5 +13,5 @@ swiftc -swift-version 5 -sdk "$(xcrun --sdk macosx --show-sdk-path)" \
     "$ROOT/Shared/Native/HDRPresentation.swift" \
     "$ROOT/Shared/Native/ProRAWSource.swift" "$ROOT/Shared/Native/ProRAWExport.swift" "$ROOT/Shared/Native/HDRRequest.swift" "$ROOT/Shared/Native/HDRSource.swift" "$ROOT/Shared/Native/HDRImage.swift" \
     "$ROOT/RawLabMac/tests/HDRBridgeTests.swift" "${CORE_LINK[@]}" \
-    $(pkg-config --libs libraw rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz -framework Metal -o "$TEMP/test"
+    $(pkg-config --libs libraw_r rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz -framework Metal -o "$TEMP/test"
 "$TEMP/test" "$TEMP/source.jpg" "$ROOT/lutools/tests/fixtures/bayer-demosaic.dng" "$@"

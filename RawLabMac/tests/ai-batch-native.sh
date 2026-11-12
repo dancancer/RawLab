@@ -20,6 +20,6 @@ swiftc -swift-version 5 -sdk "$SDK" -target "$ARCH-apple-macosx$MACOSX_DEPLOYMEN
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
     "${SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT"/Shared/Native/*.swift "$ROOT/RawLabMac/tests/AIBatchNativeTests.swift" \
     "${CORE_LINK[@]}" \
-    $(pkg-config --libs libraw rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz \
+    $(pkg-config --libs libraw_r rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz \
     -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$APP/Contents/MacOS/test"
 CFFIXED_USER_HOME="$OUT/home" "$APP/Contents/MacOS/test" "$RAW" "$OUT" "${3:-$OUT}"

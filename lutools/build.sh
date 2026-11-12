@@ -39,8 +39,8 @@ check_dependencies() {
         exit 1
     fi
 
-    if ! pkg-config --exists libraw; then
-        print_error "libraw 未安装"
+    if ! pkg-config --exists libraw_r; then
+        print_error "libraw_r 未安装"
         if [[ "$OSTYPE" == "darwin"* ]]; then
             print_info "请运行: brew install libraw"
         elif [[ "$OSTYPE" == "linux-gnu"* ]]; then

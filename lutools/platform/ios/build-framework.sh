@@ -52,7 +52,7 @@ for config in iphoneos-arm64 iphonesimulator-arm64 iphonesimulator-x86_64; do
         -DBUILD_SHARED_LIBS=OFF -DENABLE_EXAMPLES=OFF -DENABLE_OPENMP=OFF
         -DENABLE_LCMS=OFF -DENABLE_JASPER=OFF
         -DSONY2FUJI_ENABLE_DNGSDK=ON
-        -DSONY2FUJI_LIBRAW_TARGET=raw
+        -DSONY2FUJI_LIBRAW_TARGET=raw_r
         -DSONY2FUJI_DNGSDK_TARGET=rawlab_dng_sdk)
     # LibRaw and the Adobe DNG SDK are built by the shared core wrapper so the
     # static decoder and its SDK support use the same target architecture.

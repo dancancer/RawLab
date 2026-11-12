@@ -56,7 +56,7 @@ fi
 CHROMA_PREFIX="$RAWLAB_DEPENDENCY_PREFIX"
 LENS_PREFIX="$RAWLAB_LENS_PREFIX"
 if [ "${RAWLAB_CI_CACHE_HIT:-}" != true ]; then
-    if ! pkg-config --exists 'libraw >= 0.22.2' 'rawlab-dng-sdk >= 1.7.1' || ! rawlab_libraw_patch_current; then
+    if ! pkg-config --exists 'libraw_r >= 0.22.2' 'rawlab-dng-sdk >= 1.7.1' || ! rawlab_libraw_patch_current; then
         RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-dependencies.sh"
     fi
     if [ ! -f "$CHROMA_PREFIX/lib/pkgconfig/opencv4.pc" ] || ! pkg-config --exact-version=4.12.0 opencv4; then
@@ -66,7 +66,7 @@ if [ "${RAWLAB_CI_CACHE_HIT:-}" != true ]; then
     RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-tiff-dependency.sh"
 fi
 RAWLAB_ARCH="$ARCH" MACOSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" bash "$ROOT/RawLabMac/build-lens-dependency.sh"
-pkg-config --exists 'libraw >= 0.22.2' 'rawlab-dng-sdk >= 1.7.1' 'opencv4 = 4.12.0' \
+pkg-config --exists 'libraw_r >= 0.22.2' 'rawlab-dng-sdk >= 1.7.1' 'opencv4 = 4.12.0' \
     'wavelib >= 1.0.0' 'lensfun >= 0.3.4' 'libtiff-4 >= 4.7.1'
 cmake -S "$ROOT/lutools" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$ARCH" -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" -DSONY2FUJI_ENABLE_GPU=ON -DSONY2FUJI_ENABLE_CHROMA_DENOISE=ON -DSONY2FUJI_ENABLE_OPENMP=OFF -DSONY2FUJI_ENABLE_LENSFUN=ON -DSONY2FUJI_ENABLE_DNGSDK=ON -DBUILD_SHARED_LIB=OFF -DBUILD_TESTING=ON "${AI_CMAKE_FLAGS[@]}"
 cmake --build "$BUILD" -j "${JOBS:-$(sysctl -n hw.ncpu)}"
@@ -136,7 +136,7 @@ SDK="${SDKROOT:-$(xcrun --show-sdk-path)}"
 if [ -z "${SDKROOT:-}" ] && [ -d /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk ]; then
     SDK=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk
 fi
-RAW_LIB="$(pkg-config --variable=libdir libraw)"
+RAW_LIB="$(pkg-config --variable=libdir libraw_r)"
 APP_SOURCES=()
 while IFS= read -r -d '' source; do APP_SOURCES+=("$source"); done < <(find "$ROOT/RawLabMac/Sources" -name '*.swift' -print0)
 swiftc -O -whole-module-optimization -num-threads "${JOBS:-$(sysctl -n hw.ncpu)}" \
@@ -146,7 +146,7 @@ swiftc -O -whole-module-optimization -num-threads "${JOBS:-$(sysctl -n hw.ncpu)}
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
     "${APP_SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT"/Shared/Native/*.swift "$BUILD/libsony2fuji_core.a" ${AI_LINK_FLAGS[@]+"${AI_LINK_FLAGS[@]}"} ${X3F_LINK_FLAGS[@]+"${X3F_LINK_FLAGS[@]}"} \
     "$BUILD/hdr-codec/lib/libuhdr.a" "$BUILD/raw-jpeg/install/lib/libjpeg.a" \
-    $(pkg-config --libs libraw rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework CoreImage -framework Metal -framework MetalKit \
+    $(pkg-config --libs libraw_r rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework CoreImage -framework Metal -framework MetalKit \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
     -o "$APP/Contents/MacOS/RawLabMac"
 cp "$ROOT/RawLabMac/Info.plist" "$APP/Contents/Info.plist"

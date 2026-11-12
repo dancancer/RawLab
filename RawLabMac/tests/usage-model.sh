@@ -34,6 +34,6 @@ swiftc "${TRANSFER_SOURCES[@]}" -swift-version 5 -O -sdk "$SDK" -target "$(uname
   "$ROOT/Shared/BatchSelectionSession.swift" "$ROOT/RawLabMac/Sources/Export/BatchSelection.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+BatchSelection.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+ProcessingMigration.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+HDR.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+Geometry.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+Workflow.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+Rendering.swift" "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+HSLTarget.swift" "$ROOT/RawLabMac/Sources/Export/ExportSizePicker.swift" \
     "$ROOT/RawLabMac/Sources/Library/FileBrowser.swift" "$ROOT/RawLabMac/Sources/Looks/LUTCompatibilityDialog.swift" "$ROOT/Shared/LUTCompatibilityView.swift" "$ROOT/Shared/LUTCompatibilityPreview.swift" \
   "$ROOT/RawLabMac/tests/UsageModelTests.swift" "${CORE_LINK[@]}" \
-  $(pkg-config --libs libraw rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz \
+  $(pkg-config --libs libraw_r rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz \
   -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/test"
 "$OUT/test" "$@"

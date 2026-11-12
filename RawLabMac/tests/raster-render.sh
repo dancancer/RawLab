@@ -23,8 +23,8 @@ swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" \
   "$ROOT/RawLabMac/Sources/Editor/Storage/EditPersistence.swift" "$ROOT/RawLabMac/Sources/Export/BatchExport.swift" \
   "$ROOT/RawLabMac/tests/Raster/"*.swift \
   "${CORE_LINK[@]}" \
-  -L "$(pkg-config --variable=libdir libraw)" \
-  -lraw $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
+  -L "$(pkg-config --variable=libdir libraw_r)" \
+  -lraw_r $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
   -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -framework MetalKit \
   -o "$OUT/raster-render"
 

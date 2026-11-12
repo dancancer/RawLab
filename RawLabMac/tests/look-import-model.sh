@@ -35,7 +35,7 @@ swiftc "${TRANSFER_SOURCES[@]}" "$ROOT/Shared/Localization.swift" -swift-version
     "$ROOT/RawLabMac/Sources/Export/ExportSizePicker.swift" \
     "$ROOT/Shared/DCPCompiler.swift" "$ROOT/RawLabMac/tests/DCPTestFixtures.swift" \
     "$ROOT/RawLabMac/tests/LookImportModelTests.swift" "${CORE_LINK[@]}" \
-    -L "$(pkg-config --variable=libdir libraw)" -lraw $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
+    -L "$(pkg-config --variable=libdir libraw_r)" -lraw_r $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
     -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -framework MetalKit \
     -o "$OUT/look-import-model"
 "$OUT/look-import-model"

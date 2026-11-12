@@ -16,7 +16,7 @@ swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" -target
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
     "${SOURCES[@]}" "$ROOT/RawLabMac/tests/ExportMetadataTests.swift" \
     "${CORE_LINK[@]}" \
-    -L "$(pkg-config --variable=libdir libraw)" -lraw $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
+    -L "$(pkg-config --variable=libdir libraw_r)" -lraw_r $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
     -framework AppKit -framework ImageIO -framework Metal -o "$OUT/export-metadata"
 "$OUT/export-metadata" "$ROOT" "$OUT"
 echo "PASS: export metadata checks"

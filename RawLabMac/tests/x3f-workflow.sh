@@ -21,6 +21,6 @@ swiftc -parse-as-library -swift-version 5 -sdk "$SDK" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
     "${SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT"/Shared/Native/*.swift \
     "$ROOT/RawLabMac/tests/X3FWorkflowTests.swift" "${CORE_LINK[@]}" \
-    $(pkg-config --libs libraw rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) \
+    $(pkg-config --libs libraw_r rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) \
     -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/test"
 "$OUT/test" "$RAWLAB_TEST_RAW" "$BUILD/sony2fuji"

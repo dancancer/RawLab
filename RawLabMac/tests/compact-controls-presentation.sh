@@ -19,7 +19,7 @@ while IFS= read -r -d '' source; do
     SOURCES+=("$source")
 done < <(find "$ROOT/RawLabMac/Sources" -name '*.swift' -print0)
 RPATHS=()
-for dependency in libraw opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4; do
+for dependency in libraw_r opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4; do
     RPATHS+=(-Xlinker -rpath -Xlinker "$(pkg-config --variable=libdir "$dependency")")
 done
 swiftc -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
@@ -27,7 +27,7 @@ swiftc -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "${SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT/RawLabMac/tests/CompactControlsPresentationTests.swift" \
     "${CORE_LINK[@]}" \
-    $(pkg-config --libs libraw opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
+    $(pkg-config --libs libraw_r opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
     -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \
     "${RPATHS[@]}" \
     -o "$APP/Contents/MacOS/CompactControlsSnapshots"
