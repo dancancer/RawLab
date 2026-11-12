@@ -13,11 +13,13 @@ import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.photo.BatchGlobalFailure
 import com.rawlab.android.settings.DenoiseSettings
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.EditStore
 import com.rawlab.android.settings.HslSettings
 import com.rawlab.android.settings.LensSettings
 import com.rawlab.android.settings.PhotoEffectsSettings
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.settings.SettingsCodec
+import com.rawlab.android.settings.X3fMode
 
 class BatchExportTest {
     @Test fun cancellationAfterRenderingDisposesOutputWithoutPublishing() {
@@ -402,6 +404,101 @@ class BatchExportTest {
             val journal = BatchJournal(root)
             journal.save(job)
             assertEquals(3000, journal.load(job.id)?.outputLongEdge)
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun uniformBatchResolvesX3fTargetSavedModeBeforeFileDefaultAndClearsNormalLensFlags() {
+        val root = Files.createTempDirectory("rawlab-x3f-batch").toFile()
+        try {
+            val store = EditStore(File(root, "edits"))
+            val sourceLens = LensSettings(
+                distortion = true,
+                tca = true,
+                autoCrop = false,
+                manual = true,
+                profileId = "saved-lens-profile",
+                focalLength = 35f,
+                cropFactor = 1.5f,
+                vignetting = true,
+            )
+            val sourceSettings = EditSettings(
+                exposure = 0.75f,
+                x3fMode = X3fMode.LEGACY,
+                lens = sourceLens,
+            )
+            val source = BatchSourceSnapshot(
+                PhotoIdentity("source-x3f"),
+                File(root, "source.x3f"),
+                sourceSettings,
+                displayName = "source.x3f",
+                inputKind = PhotoInputKind.RAW,
+            )
+
+            val savedLegacyTarget = BatchTarget(PhotoIdentity("content://photo/saved-legacy"), File(root, "saved-legacy.X3F"), "saved-legacy.X3F")
+            val savedNormalTarget = BatchTarget(PhotoIdentity("content://photo/saved-normal"), File(root, "saved-normal.x3f"), "saved-normal.x3f")
+            val unsavedNormalTarget = BatchTarget(PhotoIdentity("content://photo/unsaved-normal"), File(root, "unsaved-normal.x3f"), "unsaved-normal.x3f")
+            val unsavedLegacyTarget = BatchTarget(PhotoIdentity("content://photo/unsaved-legacy"), File(root, "unsaved-legacy.x3f"), "unsaved-legacy.x3f")
+            val nonX3fTarget = BatchTarget(PhotoIdentity("content://photo/non-x3f"), File(root, "target.arw"), "target.arw")
+
+            store.save(savedLegacyTarget.identity, EditSettings(x3fMode = X3fMode.LEGACY))
+            store.save(savedNormalTarget.identity, EditSettings(x3fMode = X3fMode.NORMAL))
+
+            val defaultCalls = mutableListOf<String>()
+            val resolver = BatchJob.x3fModeResolver(store::readState) { file ->
+                defaultCalls += file.name
+                when (file.name) {
+                    savedLegacyTarget.sourceFile.name -> X3fMode.NORMAL
+                    savedNormalTarget.sourceFile.name -> X3fMode.LEGACY
+                    unsavedNormalTarget.sourceFile.name -> X3fMode.NORMAL
+                    unsavedLegacyTarget.sourceFile.name -> X3fMode.LEGACY
+                    else -> error("Unexpected default X3F probe: ${file.name}")
+                }
+            }
+
+            val targets = listOf(savedLegacyTarget, savedNormalTarget, unsavedNormalTarget, unsavedLegacyTarget, nonX3fTarget)
+            val job = BatchJob(source, targets)
+            val rendered = mutableMapOf<String, EditSettings>()
+            val finished = BatchRunner.run(
+                job,
+                render = { target, effective -> rendered[target.id] = effective; ByteArray(1) },
+                write = { _, _, _ -> },
+                resolveX3fMode = resolver,
+            )
+            assertTrue(finished.rows.all { it.status == BatchRowStatus.SUCCESS })
+
+            val resolvedSavedLegacy = rendered.getValue(savedLegacyTarget.id)
+            assertEquals(X3fMode.LEGACY, resolvedSavedLegacy.x3fMode)
+            assertEquals(sourceLens, resolvedSavedLegacy.lens)
+            assertEquals(0.75f, resolvedSavedLegacy.exposure)
+
+            val resolvedSavedNormal = rendered.getValue(savedNormalTarget.id)
+            assertEquals(X3fMode.NORMAL, resolvedSavedNormal.x3fMode)
+            assertFalse(resolvedSavedNormal.lens.distortion)
+            assertFalse(resolvedSavedNormal.lens.tca)
+            assertFalse(resolvedSavedNormal.lens.vignetting)
+            assertFalse(resolvedSavedNormal.lens.enabled)
+            assertFalse(resolvedSavedNormal.lens.autoCrop)
+            assertTrue(resolvedSavedNormal.lens.manual)
+            assertEquals("saved-lens-profile", resolvedSavedNormal.lens.profileId)
+            assertEquals(35f, resolvedSavedNormal.lens.focalLength)
+            assertEquals(1.5f, resolvedSavedNormal.lens.cropFactor)
+            assertEquals(0.75f, resolvedSavedNormal.exposure)
+
+            val resolvedUnsavedNormal = rendered.getValue(unsavedNormalTarget.id)
+            assertEquals(X3fMode.NORMAL, resolvedUnsavedNormal.x3fMode)
+            assertFalse(resolvedUnsavedNormal.lens.distortion)
+            assertFalse(resolvedUnsavedNormal.lens.tca)
+            assertFalse(resolvedUnsavedNormal.lens.vignetting)
+            assertFalse(resolvedUnsavedNormal.lens.enabled)
+
+            val normalSource = source.copy(settings = sourceSettings.copy(x3fMode = X3fMode.NORMAL))
+            val resolvedUnsavedLegacy = normalSource.settingsFor(unsavedLegacyTarget, resolver)
+            assertEquals(X3fMode.LEGACY, resolvedUnsavedLegacy.x3fMode)
+            assertEquals(sourceLens, resolvedUnsavedLegacy.lens)
+
+            assertEquals(sourceSettings, rendered.getValue(nonX3fTarget.id))
+            assertEquals(listOf("unsaved-normal.x3f", "unsaved-legacy.x3f", "unsaved-legacy.x3f"), defaultCalls)
+            assertEquals(sourceSettings, source.settings)
         } finally { root.deleteRecursively() }
     }
 }

@@ -36,6 +36,7 @@ import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.requireProRAWDecoder
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.settings.EditStore
+import com.rawlab.android.settings.X3fMode
 import com.rawlab.android.adjustments.AdjustmentTransferException
 
 // ============================================================================
@@ -228,7 +229,8 @@ class BatchExportModel(
                             attempted.addAll(it.rows.filter { row -> row.status == BatchRowStatus.PROCESSING }.map { row -> row.id })
                             mutable.update { current -> current.copy(job = it) }
                         }, dispose = { it.delete() }, publish = { rendered, name, _, checkpoint -> output.publish(rendered, name, checkpoint) },
-                        onlyIDs = if (retry) materialized.rows.filter { it.status == BatchRowStatus.FAILED }.map { it.id }.toSet() else null)
+                        onlyIDs = if (retry) materialized.rows.filter { it.status == BatchRowStatus.FAILED }.map { it.id }.toSet() else null,
+                        resolveX3fMode = x3fModeResolver())
                 } finally { activeProcessor.compareAndSet(processor, null); processor.close() }
                 mutable.value = BatchExportState(result,
                     phase = when {
@@ -276,16 +278,18 @@ class BatchExportModel(
             ?: throw IOException(AppStrings.text(R.string.message_not_a_supported_raw_file))
         val snapshot = mutable.value.job
         val destination = inputFile(snapshot.id, identity, name)
+        val candidate = BatchTarget(identity, destination, name, uri.toString(), inputKind)
         if (!destination.exists()) {
             val input = resolver.openInputStream(uri) ?: throw IOException(AppStrings.text(R.string.message_unable_to_read_file))
             try { input.use { source -> destination.outputStream().use { source.copyTo(it) } }
+                val x3fMode = if (candidate.isX3f) x3fModeResolver()(candidate) else snapshot.source.settings.x3fMode
                 processorFactory(gpuMode, storage.lensDatabase()).use {
-                    it.preview(destination, null, EditSettings(processing = snapshot.source.settings.processing, x3fMode = snapshot.source.settings.x3fMode), 256, false, inputKind)
+                    it.preview(destination, null, EditSettings(processing = snapshot.source.settings.processing, x3fMode = x3fMode), 256, false, inputKind)
                 }
             } catch (error: Exception) { destination.delete(); throw error }
         }
         val hdrInfo = com.rawlab.android.engine.NativeHDRBridge.probeSource(destination, inputKind == PhotoInputKind.RAW)
-        return BatchTarget(identity, destination, name, uri.toString(), inputKind, sourceIsHDR = hdrInfo != null)
+        return candidate.copy(sourceIsHDR = hdrInfo != null)
     }
 
     private fun displayName(uri: Uri): String = runCatching {
@@ -310,6 +314,9 @@ class BatchExportModel(
         EditStore(File(context.filesDir,"edits"))::readState,storage::lookPath,
         com.rawlab.android.engine.NativeHDRBridge::probeSource, storage.hdrLookDirectory, storage.hdrCameraProfileDirectory)
 
+    private fun x3fModeResolver(): (BatchTarget) -> X3fMode =
+        BatchJob.x3fModeResolver(EditStore(File(context.filesDir, "edits"))::readState)
+
     private fun inputFile(jobID: String, identity: PhotoIdentity, name: String): File {
         val root = File(context.filesDir, "RawLab/BatchJobs/${jobID}/inputs")
         if (!root.exists()) root.mkdirs()
@@ -328,7 +335,7 @@ class BatchExportModel(
             processorFactory(gpuMode, storage.lensDatabase()).use {
                 val prepared=if(snapshot.settingsMode==BatchSettingsMode.UNIFORM_FROZEN && snapshot.source.settings.isHDREditing)
                     hdrPreparation(snapshot.source).prepare(target,0,snapshot.outputFormat,snapshot.outputLongEdge) else target.frozen
-                val settings = prepared?.settings ?: snapshot.settingsFor(target)
+                val settings = prepared?.settings ?: snapshot.settingsFor(target, x3fModeResolver())
                 if (settings.isHDREditing) {
                     if (gpuMode == NativeProcessor.FORCE) throw com.rawlab.android.engine.HDRProcessingException(2,13,6)
                     val info = requireNotNull(com.rawlab.android.engine.NativeHDRBridge.probeSource(

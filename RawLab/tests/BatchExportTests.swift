@@ -77,6 +77,7 @@ struct BatchExportTests {
         try checkBatchSelection(root)
         defer { try? FileManager.default.removeItem(at: root) }
         try checkPerTargetSnapshots(root)
+        try checkUniformBatchX3fTargetMode(root)
         try BatchSourceJournalTests.run(root: root.appendingPathComponent("source-journal"))
 
         let sourceURL = root.appendingPathComponent("source.ARW")
@@ -528,4 +529,204 @@ private func checkPerTargetSnapshots(_ root: URL) throws {
     let changed = try BatchExportRunner.run(job: frozen, journalStore: nil, render: { _, _ in }, write: { _, _, _, _ in })
     try BatchExportTests.require(changed.targets[0].status == .failed && changed.targets[1].status == .succeeded,
                                 "changed input fails only its frozen target")
+}
+
+private func checkUniformBatchX3fTargetMode(_ root: URL) throws {
+    let store = try EditPersistence(directory: root.appendingPathComponent("x3f-target-edits", isDirectory: true))
+    let sourceURL = root.appendingPathComponent("source.x3f")
+    try Data("source-x3f".utf8).write(to: sourceURL)
+
+    var sourceSettings = RawSettings.default
+    sourceSettings.x3fMode = .legacy
+    sourceSettings.exposure = 0.75
+    sourceSettings.lensCorrection = LensCorrectionSettings(
+        distortion: true,
+        tca: true,
+        autoCrop: false,
+        mode: .manual,
+        profileID: "saved-lens-profile",
+        focalLength: 35,
+        cropFactor: 1.5,
+        vignetting: true
+    )
+    let source = BatchSourceSnapshot(
+        identity: try PhotoIdentity.fallback(for: sourceURL),
+        sourceFile: .externallyManaged(sourceURL),
+        displayName: "source.x3f",
+        sourceKind: .raw,
+        settings: sourceSettings
+    )
+
+    let savedLegacyURL = root.appendingPathComponent("saved-legacy.X3F")
+    let savedNormalURL = root.appendingPathComponent("saved-normal.x3f")
+    let unsavedNormalURL = root.appendingPathComponent("unsaved-normal.x3f")
+    let unsavedLegacyURL = root.appendingPathComponent("unsaved-legacy.x3f")
+    let nonX3fURL = root.appendingPathComponent("target.arw")
+    for url in [savedLegacyURL, savedNormalURL, unsavedNormalURL, unsavedLegacyURL, nonX3fURL] {
+        try Data(url.lastPathComponent.utf8).write(to: url)
+    }
+
+    let savedLegacyID = PhotoIdentity(
+        resourceIdentifier: "ph-asset-saved-legacy",
+        contentIdentifier: try PhotoIdentity.fallback(for: savedLegacyURL).contentIdentifier
+    )
+    let savedNormalID = try PhotoIdentity.fallback(for: savedNormalURL)
+    let unsavedNormalID = try PhotoIdentity.fallback(for: unsavedNormalURL)
+    let unsavedLegacyID = try PhotoIdentity.fallback(for: unsavedLegacyURL)
+    let nonX3fID = try PhotoIdentity.fallback(for: nonX3fURL)
+
+    var legacyEdit = RawSettings.default
+    legacyEdit.x3fMode = .legacy
+    try store.save(savedLegacyID, state: PhotoEditState(settings: legacyEdit))
+
+    var normalEdit = RawSettings.default
+    normalEdit.x3fMode = .normal
+    try store.save(savedNormalID, state: PhotoEditState(settings: normalEdit))
+
+    var defaultCalls: [String] = []
+    let resolver = BatchExportJob.x3fModeResolver(store: store) { url in
+        defaultCalls.append(url.lastPathComponent)
+        switch url.lastPathComponent {
+        case savedLegacyURL.lastPathComponent: return .normal
+        case savedNormalURL.lastPathComponent: return .legacy
+        case unsavedNormalURL.lastPathComponent: return .normal
+        case unsavedLegacyURL.lastPathComponent: return .legacy
+        default: throw NSError(domain: "UnexpectedDefaultProbe", code: 1)
+        }
+    }
+
+    let targets = [
+        BatchTarget(identity: savedLegacyID, sourceURL: savedLegacyURL, displayName: "saved-legacy.X3F"),
+        BatchTarget(identity: savedNormalID, sourceURL: savedNormalURL, displayName: "saved-normal.x3f"),
+        BatchTarget(identity: unsavedNormalID, sourceURL: unsavedNormalURL, displayName: "unsaved-normal.x3f"),
+        BatchTarget(identity: unsavedLegacyID, sourceURL: unsavedLegacyURL, displayName: "unsaved-legacy.x3f"),
+        BatchTarget(identity: nonX3fID, sourceURL: nonX3fURL, displayName: "target.arw")
+    ]
+    let job = BatchExportJob(source: source, targets: targets)
+
+    let resolvedSavedLegacy = try job.settings(for: job.targets[0], resolveX3fMode: resolver)
+    try BatchExportTests.require(
+        resolvedSavedLegacy.x3fMode == .legacy &&
+            resolvedSavedLegacy.lensCorrection == sourceSettings.lensCorrection &&
+            resolvedSavedLegacy.exposure == 0.75,
+        "saved legacy X3F mode wins over file default normal and preserves source lens settings"
+    )
+
+    let resolvedSavedNormal = try job.settings(for: job.targets[1], resolveX3fMode: resolver)
+    try BatchExportTests.require(
+        resolvedSavedNormal.x3fMode == .normal &&
+            resolvedSavedNormal.lensCorrection?.distortion == false &&
+            resolvedSavedNormal.lensCorrection?.tca == false &&
+            resolvedSavedNormal.lensCorrection?.vignetting == false &&
+            resolvedSavedNormal.lensCorrection?.isEnabled == false &&
+            resolvedSavedNormal.lensCorrection?.autoCrop == false &&
+            resolvedSavedNormal.lensCorrection?.mode == .manual &&
+            resolvedSavedNormal.lensCorrection?.profileID == "saved-lens-profile" &&
+            resolvedSavedNormal.lensCorrection?.focalLength == 35 &&
+            resolvedSavedNormal.lensCorrection?.cropFactor == 1.5 &&
+            resolvedSavedNormal.exposure == 0.75,
+        "saved normal X3F mode wins over file default legacy and clears distortion, TCA, and vignetting"
+    )
+
+    let resolvedUnsavedNormal = try job.settings(for: job.targets[2], resolveX3fMode: resolver)
+    try BatchExportTests.require(
+        resolvedUnsavedNormal.x3fMode == .normal &&
+            resolvedUnsavedNormal.lensCorrection?.distortion == false &&
+            resolvedUnsavedNormal.lensCorrection?.tca == false &&
+            resolvedUnsavedNormal.lensCorrection?.vignetting == false &&
+            resolvedUnsavedNormal.lensCorrection?.isEnabled == false,
+        "unsaved X3F target falls back to file default normal and clears all three lens flags"
+    )
+
+    var normalSourceSettings = sourceSettings
+    normalSourceSettings.x3fMode = .normal
+    let normalSource = BatchSourceSnapshot(
+        identity: source.identity,
+        sourceFile: source.sourceFile,
+        displayName: source.displayName,
+        sourceKind: .raw,
+        settings: normalSourceSettings
+    )
+    let resolvedUnsavedLegacy = try normalSource.settings(for: job.targets[3], resolveX3fMode: resolver)
+    try BatchExportTests.require(
+        resolvedUnsavedLegacy.x3fMode == .legacy &&
+            resolvedUnsavedLegacy.lensCorrection == sourceSettings.lensCorrection,
+        "unsaved X3F target falls back to file default legacy instead of inheriting normal source mode"
+    )
+
+    let resolvedNonX3f = try job.settings(for: job.targets[4], resolveX3fMode: resolver)
+    try BatchExportTests.require(
+        resolvedNonX3f == sourceSettings &&
+            defaultCalls == [unsavedNormalURL.lastPathComponent, unsavedLegacyURL.lastPathComponent] &&
+            job.source.settings == sourceSettings,
+        "default probe runs only for unsaved X3F targets and non-X3F targets keep existing behavior"
+    )
+
+    let extensionlessURL = root.appendingPathComponent("extensionless-x3f")
+    try Data("extensionless-x3f".utf8).write(to: extensionlessURL)
+    let extensionlessID = try PhotoIdentity.fallback(for: extensionlessURL)
+    let copiedExtensionlessURL = try BatchInputStore.copy(
+        extensionlessURL,
+        identity: extensionlessID,
+        jobID: job.id,
+        root: root.appendingPathComponent("extensionless-store", isDirectory: true),
+        displayName: "extensionless.X3F"
+    )
+    let legacyRawCopiedTarget = BatchTarget(
+        identity: savedNormalID,
+        sourceURL: root.appendingPathComponent("legacy-owned.raw"),
+        displayName: "legacy-copied.X3F"
+    )
+    let resolvedLegacyRawCopied = try job.settings(for: legacyRawCopiedTarget, resolveX3fMode: resolver)
+    try BatchExportTests.require(
+        copiedExtensionlessURL.pathExtension.lowercased() == "x3f" &&
+            legacyRawCopiedTarget.isX3f &&
+            resolvedLegacyRawCopied.x3fMode == .normal,
+        "BatchInputStore preserves displayName X3F suffix for extensionless sources and BatchTarget.isX3f still matches .raw owned copies"
+    )
+
+    let corruptURL = root.appendingPathComponent("corrupt.x3f")
+    try Data("corrupt".utf8).write(to: corruptURL)
+    let corruptTarget = BatchTarget(
+        identity: try PhotoIdentity.fallback(for: corruptURL),
+        sourceURL: corruptURL,
+        displayName: "corrupt.x3f"
+    )
+    var injectedRendered: [String: RawSettings] = [:]
+    let injectedRunnerJob = BatchExportJob(source: source, targets: [corruptTarget, job.targets[1]])
+    let injectedOutcome = try BatchExportRunner.run(
+        job: injectedRunnerJob,
+        journalStore: nil,
+        render: { target, effective in
+            injectedRendered[target.id] = effective
+        },
+        write: { _, _, _, _ in },
+        resolveX3fMode: resolver
+    )
+    try BatchExportTests.require(
+        injectedOutcome.status == .partialFailure &&
+            injectedOutcome.targets[0].status == .failed &&
+            injectedOutcome.targets[1].status == .succeeded &&
+            injectedRendered[savedNormalID.key]?.x3fMode == .normal &&
+            injectedRendered[savedNormalID.key]?.lensCorrection?.distortion == false &&
+            injectedRendered[savedNormalID.key]?.lensCorrection?.tca == false &&
+            injectedRendered[savedNormalID.key]?.lensCorrection?.vignetting == false,
+        "BatchExportRunner uses injected EditPersistence resolver and isolates corrupt X3F probe failures per target"
+    )
+
+    let appStore = try EditPersistence.appStore()
+    try appStore.save(savedNormalID, state: PhotoEditState(settings: normalEdit))
+    defer { try? appStore.reset(savedNormalID) }
+    var runnerRendered: RawSettings?
+    let runnerJob = BatchExportJob(source: source, targets: [job.targets[1]])
+    _ = try BatchExportRunner.run(job: runnerJob, journalStore: nil, render: { _, effective in
+        runnerRendered = effective
+    }, write: { _, _, _, _ in })
+    try BatchExportTests.require(
+        runnerRendered?.x3fMode == .normal &&
+            runnerRendered?.lensCorrection?.distortion == false &&
+            runnerRendered?.lensCorrection?.tca == false &&
+            runnerRendered?.lensCorrection?.vignetting == false,
+        "BatchExportRunner uniform export resolves saved X3F target mode from appStore and clears lens flags"
+    )
 }

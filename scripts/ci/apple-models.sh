@@ -23,7 +23,8 @@ case "${1:-}" in
             RawLab/tests/camera-protocol.sh RawLab/tests/camera-originals.sh RawLab/tests/editor-tool-drafts.sh
             RawLab/tests/recent-photos.sh RawLab/tests/presentation.sh RawLab/tests/adjustment-scale.sh RawLab/tests/edit-memory.sh
             RawLab/tests/adjustment-transfer.sh RawLab/tests/adjustment-persistence.sh
-            RawLab/tests/adjustment-transfer-session.sh Shared/tests/adjustment-presets.sh Shared/tests/adjustment-summary.sh)
+            RawLab/tests/adjustment-transfer-session.sh RawLab/tests/batch-export.sh
+            Shared/tests/adjustment-presets.sh Shared/tests/adjustment-summary.sh)
         ;;
     *) echo "Usage: $0 macos|ios" >&2; exit 2 ;;
 esac

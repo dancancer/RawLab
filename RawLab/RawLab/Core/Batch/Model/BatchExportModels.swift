@@ -173,6 +173,15 @@ struct BatchSourceSnapshot: Codable, Equatable {
         result.lensCorrection = nil
         return result
     }
+
+    func settings(for target: BatchTarget,
+                  resolveX3fMode: BatchExportJob.X3fModeResolver = BatchExportJob.resolveX3fMode) throws -> RawSettings {
+        var result = settings(for: target.sourceKind)
+        if target.isX3f {
+            result.selectX3fMode(try resolveX3fMode(target.identity, target.sourceURL))
+        }
+        return result
+    }
 }
 
 struct BatchTarget: Codable, Equatable, Identifiable {
@@ -188,6 +197,10 @@ struct BatchTarget: Codable, Equatable, Identifiable {
     var frozen: BatchFrozenSettings?
 
     var id: String { identity.key }
+    var isX3f: Bool {
+        sourceKind == .raw && (sourceURL.pathExtension.lowercased() == "x3f" ||
+            (displayName as NSString).pathExtension.lowercased() == "x3f")
+    }
 
     init(identity: PhotoIdentity,
          sourceURL: URL,
@@ -296,8 +309,38 @@ struct BatchExportJob: Codable, Equatable, Identifiable {
         }
     }
 
-    func settings(for target: BatchTarget) throws -> RawSettings {
-        guard settingsMode == .perTargetFrozen else { return source.settings(for: target.sourceKind) }
+    typealias X3fModeResolver = (PhotoIdentity, URL) throws -> X3fMode
+
+    static func x3fModeResolver(
+        store: EditPersistence? = nil,
+        x3fDefaultMode: @escaping (URL) throws -> X3fMode = Self.defaultX3fMode(for:)
+    ) -> X3fModeResolver {
+        { identity, url in
+            let persistence = try store ?? EditPersistence.appStore()
+            if let saved = try persistence.readState(for: identity).state?.settings.x3fMode {
+                return saved
+            }
+            return try x3fDefaultMode(url)
+        }
+    }
+
+    static func resolveX3fMode(identity: PhotoIdentity, url: URL) throws -> X3fMode {
+        try x3fModeResolver()(identity, url)
+    }
+
+    private static func defaultX3fMode(for url: URL) throws -> X3fMode {
+        #if os(iOS)
+        return try Sony2FujiProcessor().x3fDefaultMode(for: url)
+        #else
+        throw CocoaError(.featureUnsupported)
+        #endif
+    }
+
+    func settings(for target: BatchTarget,
+                  resolveX3fMode: X3fModeResolver = Self.resolveX3fMode) throws -> RawSettings {
+        guard settingsMode == .perTargetFrozen else {
+            return try source.settings(for: target, resolveX3fMode: resolveX3fMode)
+        }
         guard let frozen = target.frozen else { throw CocoaError(.fileReadCorruptFile) }
         return frozen.settings
     }

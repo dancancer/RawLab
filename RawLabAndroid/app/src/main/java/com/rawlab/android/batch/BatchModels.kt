@@ -5,13 +5,16 @@ import java.util.UUID
 import java.security.MessageDigest
 import com.rawlab.android.R
 import com.rawlab.android.engine.NativeProcessingException
+import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.photo.BatchGlobalFailure
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.LensSettings
+import com.rawlab.android.settings.PhotoEditState
 import com.rawlab.android.settings.PhotoIdentity
+import com.rawlab.android.settings.X3fMode
 
 // ============================================================================
 //  批量导出的数据模型：源快照、目标、行状态与任务
@@ -94,6 +97,14 @@ data class BatchSourceSnapshot(
             lens = LensSettings(),
         )
     }
+
+    fun settingsFor(
+        target: BatchTarget,
+        resolveX3fMode: (BatchTarget) -> X3fMode = BatchJob.x3fModeResolver(),
+    ): EditSettings {
+        val resolved = settingsFor(target.inputKind)
+        return if (target.isX3f) resolved.selectX3fMode(resolveX3fMode(target)) else resolved
+    }
 }
 
 data class BatchTarget(
@@ -106,6 +117,9 @@ data class BatchTarget(
     val sourceIsHDR: Boolean = false,
 ) {
     val id: String get() = identity.value
+    val isX3f: Boolean get() = inputKind == PhotoInputKind.RAW &&
+        (displayName.substringAfterLast('.', "").equals("x3f", ignoreCase = true) ||
+            sourceFile.extension.equals("x3f", ignoreCase = true))
 }
 
 data class BatchRow(
@@ -145,8 +159,11 @@ data class BatchJob(
         }
     }
 
-    fun settingsFor(target: BatchTarget): EditSettings = if (settingsMode == BatchSettingsMode.PER_TARGET_FROZEN)
-        requireNotNull(target.frozen).settings else source.settingsFor(target.inputKind)
+    fun settingsFor(
+        target: BatchTarget,
+        resolveX3fMode: (BatchTarget) -> X3fMode = x3fModeResolver(),
+    ): EditSettings = if (settingsMode == BatchSettingsMode.PER_TARGET_FROZEN)
+        requireNotNull(target.frozen).settings else source.settingsFor(target, resolveX3fMode)
 
     fun lookFor(target: BatchTarget): File? = if (settingsMode == BatchSettingsMode.PER_TARGET_FROZEN)
         requireNotNull(target.frozen).lookFile else source.lookFile
@@ -158,6 +175,12 @@ data class BatchJob(
         requireNotNull(target.frozen).longEdge else outputLongEdge
 
     companion object {
+        fun x3fModeResolver(
+            readRecord: ((PhotoIdentity) -> PhotoEditState)? = null,
+            x3fDefaultMode: (File) -> X3fMode = { NativeProcessor.x3fDefaultMode(it) },
+        ): (BatchTarget) -> X3fMode = { target ->
+            readRecord?.invoke(target.identity)?.settings?.x3fMode ?: x3fDefaultMode(target.sourceFile)
+        }
         private fun uniqueRows(targets: List<BatchTarget>, format: ExportFormat): List<BatchRow> {
             val used = mutableSetOf<String>()
             return targets.filter { used.add(it.identity.value) }.map { target ->

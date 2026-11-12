@@ -111,9 +111,9 @@ public sealed class BatchJob
         OutputDirectory=OutputDirectory, Png=Png, OutputFormat=OutputFormat, LongEdge=LongEdge, Started=Started, Interrupted=Interrupted, Cancelled=Cancelled,
         Error=Error, Items=Items.Select(x => x with { Frozen = x.Frozen?.Copy() }).ToList()
     };
-    public BatchFrozenSettings SnapshotFor(BatchItem item) => Mode == PerTargetFrozen
+    public BatchFrozenSettings SnapshotFor(BatchItem item, Func<string, X3fMode>? resolveX3fMode = null) => Mode == PerTargetFrozen
         ? item.Frozen ?? throw new InvalidDataException("Missing frozen batch item.")
-        : new() { Ordinal = 0, Settings = PhotoInput.PrepareBatchSettings(Source, item.Input, Settings.Restore()).Capture(),
+        : new() { Ordinal = 0, Settings = PhotoInput.PrepareBatchSettings(Source, item.Input, Settings.Restore(), resolveX3fMode).Capture(),
             Look = Look, LookName = LookName, OutputFormat = Format, LongEdge = LongEdge };
     public string TemporaryPath(BatchItem item) => Path.Combine(OutputDirectory!, $".rawlab-{Id}-{item.Id}.{(item.Frozen?.OutputFormat ?? Format).Suffix()}");
 
@@ -241,18 +241,21 @@ public static class BatchRunner
     public delegate void SizedRender(string input, Adjustments settings, string? look, string destination, int? longEdge);
 
     public static void Run(BatchJob job, BatchJournal journal, bool failuresOnly, CancellationToken cancellation,
-                           Action<BatchJob, string?> changed, Render render) =>
+                           Action<BatchJob, string?> changed, Render render,
+                           Func<string, X3fMode>? resolveX3fMode = null) =>
         Run(job, journal, failuresOnly, cancellation, changed,
-            (input, settings, look, destination, _) => render(input, settings, look, destination));
+            (input, settings, look, destination, _) => render(input, settings, look, destination), resolveX3fMode);
 
     public static void Run(BatchJob job, BatchJournal journal, bool failuresOnly, CancellationToken cancellation,
-                           Action<BatchJob, string?> changed, SizedRender render)
+                           Action<BatchJob, string?> changed, SizedRender render,
+                           Func<string, X3fMode>? resolveX3fMode = null)
     {
-        RunCore(job, journal, failuresOnly, cancellation, changed, render);
+        RunCore(job, journal, failuresOnly, cancellation, changed, render, resolveX3fMode);
     }
 
     private static void RunCore(BatchJob job, BatchJournal journal, bool failuresOnly, CancellationToken cancellation,
-                                Action<BatchJob, string?> changed, SizedRender render)
+                                Action<BatchJob, string?> changed, SizedRender render,
+                                Func<string, X3fMode>? resolveX3fMode)
     {
         job.Validate();
         if (job.SelectedCount == 0) throw new InvalidOperationException(Loc.Text("请至少选择一张照片。"));
@@ -271,7 +274,7 @@ public static class BatchRunner
                 VerifyDestination(job.OutputDirectory);
                 job.Items[i] = item with { Status = BatchStatus.Running, Error = null };
                 journal.Save(job); changed(job.Copy(), null);
-                Export(i, job, journal, cancellation, render);
+                Export(i, job, journal, cancellation, render, resolveX3fMode);
                 changed(job.Copy(), null);
                 if(cancellation.IsCancellationRequested) { job.Cancelled=true; break; }
             }
@@ -286,16 +289,18 @@ public static class BatchRunner
         journal.Save(job); changed(job.Copy(), null);
     }
 
-    private static void Export(int index, BatchJob job, BatchJournal journal, CancellationToken cancellation, SizedRender render)
+    private static void Export(int index, BatchJob job, BatchJournal journal, CancellationToken cancellation,
+                               SizedRender render, Func<string, X3fMode>? resolveX3fMode)
     {
         var item = job.Items[index];
-        var snapshot = job.SnapshotFor(item);
         var temporary = job.TemporaryPath(item);
         try
         {
+            BatchFrozenSettings snapshot;
             try
             {
                 if (!item.Identity.SameFile(OriginalIdentity.Read(item.Input))) throw new InvalidOperationException(Loc.Text("原始文件已被替换，请重新选择照片。"));
+                snapshot = job.SnapshotFor(item, resolveX3fMode);
                 if (job.Mode == BatchJob.PerTargetFrozen) snapshot.VerifyLook();
                 render(item.Input, snapshot.Settings.Restore(), snapshot.Look, temporary, snapshot.LongEdge);
             }
