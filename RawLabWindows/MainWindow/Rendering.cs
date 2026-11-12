@@ -91,9 +91,13 @@ public partial class MainWindow
     {
         var ticket=embeddedScheduler.Start();if(ticket==null)return;
         EmbeddedPreview? preview=null;
-        try{preview=await Task.Run(()=>RenderEngine.ReadEmbeddedPreview(ticket.Value.Path));}
-        catch(Exception ex) when(ex is IOException or InvalidOperationException or DllNotFoundException or BadImageFormatException or EntryPointNotFoundException) { }
-        var current=embeddedScheduler.Finish(ticket);
+        var current=false;
+        try
+        {
+            try{preview=await Task.Run(()=>RenderEngine.ReadEmbeddedPreview(ticket.Value.Path));}
+            catch(Exception ex) when(ex is IOException or InvalidOperationException or DllNotFoundException or BadImageFormatException or EntryPointNotFoundException) { }
+        }
+        finally { current=embeddedScheduler.Finish(ticket); }
         if(closing)return;
         if(current && ticket.Value.Revision==openRevision && ticket.Value.Path==file && preview!=null && settings.Geometry.IsIdentity)
         {

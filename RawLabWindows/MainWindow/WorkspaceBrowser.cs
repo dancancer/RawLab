@@ -170,11 +170,16 @@ public partial class MainWindow
         {
             if (revision == browseRevision) folderError = error;
         }
-        if (closing || revision != browseRevision) return;
-        readingFolder = false;
-        RefreshFolderHeading();
-        WorkspacePhotoOpened();
-        foreach (var gallery in galleries) RefreshGallery(gallery);
+        finally
+        {
+            if (!closing && revision == browseRevision)
+            {
+                readingFolder = false;
+                RefreshFolderHeading();
+                WorkspacePhotoOpened();
+                foreach (var gallery in galleries) RefreshGallery(gallery);
+            }
+        }
     }
 
     private void RefreshFolderHeading()

@@ -101,6 +101,7 @@ static class Program
             if(args.Length==3 && args[0]=="--batch-selection") { BatchSelectionUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} batch selection UI checks");return 0; }
             if(args.Length==3 && args[0]=="--adjustment-history") { AdjustmentHistoryUiChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} adjustment history checks");return 0; }
             if(args.Length==1 && args[0]=="--about") { AboutChecks.Run(Check);Console.WriteLine($"PASS {checks} about checks");return 0; }
+            if(args.Length==1 && args[0]=="--unhandled-ui") { UnhandledExceptionWindowChecks.Run(Check);Console.WriteLine($"PASS {checks} unhandled exception UI checks");return 0; }
             if(args.Length==3 && args[0]=="--geometry") { GeometryChecks.Run(args[1],args[2],Check);return 0; }
             if(args.Length==3 && args[0]=="--lens") { LensChecks.Run(args[1],args[2],Check);return 0; }
             if(args.Length==3 && args[0]=="--rendered-dng") { RenderedDngChecks.Run(args[1],args[2]);return 0; }

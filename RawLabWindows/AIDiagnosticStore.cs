@@ -11,7 +11,7 @@ namespace RawLab.Windows;
 
 internal sealed record AIDiagnosticContext(string Operation,string DeviceID,int Backend,string? InputPath=null,
     int? NativeStatus=null,string? NativeDetails=null,string? NativeDiagnostics=null,string? Devices=null,
-    string? ModelDirectory=null,string? CacheDirectory=null);
+    string? ModelDirectory=null,string? CacheDirectory=null,bool CaptureCancellation=false);
 
 internal sealed class AIDiagnosticStore
 {
@@ -30,7 +30,7 @@ internal sealed class AIDiagnosticStore
     internal static bool SaveFailed(Exception error)=>error.Data[SaveFailureKey] is true;
     internal string? Capture(Exception error,AIDiagnosticContext context)
     {
-        if(error is OperationCanceledException)return null;
+        if(error is OperationCanceledException && !context.CaptureCancellation)return null;
         lock(gate) {
             if(ReportPath(error) is {} existing)return existing;
             try {
