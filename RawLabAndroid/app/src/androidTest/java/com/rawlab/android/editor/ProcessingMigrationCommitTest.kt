@@ -132,7 +132,7 @@ class ProcessingMigrationCommitTest {
                 assertEquals(ProcessingIdentity.CURRENT, saved.settings!!.processing)
                 assertEquals("durable success must reach the current editor", saved.settings, model.state.value.edits)
                 val history = field(model, "adjustmentHistory") as EditorAdjustmentHistory
-                assertEquals(saved, history.loaded)
+                assertEquals(saved, history.snapshot().loaded)
                 assertTrue(history.session!!.isCurrentSave(saved))
                 assertEquals(ProcessingMigrationStatus.MIGRATED, model.state.value.processingMigration?.status)
                 assertNull(model.state.value.saveError)
