@@ -163,12 +163,13 @@ public sealed record PhotoEditState(OriginalIdentity Identity,SavedEdit? Edit)
 public sealed class PhotoChangedException() : IOException("The original photo changed. Select it again.");
 public sealed class AdjustmentOperationExpiredException() : InvalidOperationException("This adjustment operation is no longer current.");
 public sealed class AdjustmentHistoryOrderException() : InvalidOperationException("Undo or redo the photo's edits in history order.");
+public sealed class UnusableEditRecordException(string message, Exception? inner = null) : InvalidDataException(message, inner);
 
 public sealed class EditStore
 {
-    private sealed record Registry(int Version, Dictionary<string, SavedEdit> Records,
+    private sealed record Registry(int Version, Dictionary<string, JsonElement> Records,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        Dictionary<string, ProcessingMigrationReceipt>? MigrationReceipts = null);
+        Dictionary<string, JsonElement>? MigrationReceipts = null);
     public static string DefaultDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "Edits");
     private readonly string path;
     private readonly Action<string,object> write;
@@ -192,20 +193,80 @@ public sealed class EditStore
     private Registry ReadRegistry()
     {
         if (!File.Exists(path)) return new(1,new(StringComparer.OrdinalIgnoreCase));
-        var registry = AtomicJson.Read<Registry>(path);
-        if (registry.Version != 1) throw new InvalidDataException(Loc.Text("无法读取此版本的调整记录。"));
-        foreach (var entry in registry.Records.Values) _ = entry.Settings.Restore();
-        var receipts = registry.MigrationReceipts == null ? null :
-            new Dictionary<string,ProcessingMigrationReceipt>(registry.MigrationReceipts,StringComparer.OrdinalIgnoreCase);
-        if (receipts != null)
-            foreach (var receipt in receipts.Values)
-            {
-                if (!receipt.IsKnownStatus || !receipt.IsValid || !receipt.Identity.SameFile(receipt.Before.Identity) ||
-                    !receipt.Identity.SameFile(receipt.After.Identity))
-                    throw new InvalidDataException(Loc.Text("本地记录损坏。"));
-                _ = receipt.Before.Settings.Restore(); _ = receipt.After.Settings.Restore();
-            }
-        return new(1,new(registry.Records,StringComparer.OrdinalIgnoreCase),receipts);
+        var root = AtomicJson.Read<JsonElement>(path);
+        if (root.ValueKind != JsonValueKind.Object ||
+            !root.TryGetProperty("Version", out var versionElement) ||
+            versionElement.ValueKind != JsonValueKind.Number ||
+            !versionElement.TryGetInt32(out var version))
+            throw new InvalidDataException(Loc.Text("本地记录损坏。"));
+        if (version != 1) throw new InvalidDataException(Loc.Text("无法读取此版本的调整记录。"));
+        if (!root.TryGetProperty("Records", out var recordsElement) || recordsElement.ValueKind != JsonValueKind.Object)
+            throw new InvalidDataException(Loc.Text("本地记录损坏。"));
+        var records = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in recordsElement.EnumerateObject())
+            records[entry.Name] = entry.Value.Clone();
+        Dictionary<string, JsonElement>? receipts = null;
+        if (root.TryGetProperty("MigrationReceipts", out var receiptsElement) && receiptsElement.ValueKind != JsonValueKind.Null)
+        {
+            if (receiptsElement.ValueKind != JsonValueKind.Object)
+                throw new InvalidDataException(Loc.Text("本地记录损坏。"));
+            receipts = new(StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in receiptsElement.EnumerateObject())
+                receipts[entry.Name] = entry.Value.Clone();
+        }
+        return new(1,records,receipts);
+    }
+
+    private static bool IsCorruptEntryException(Exception error) => error is
+        JsonException or
+        InvalidDataException or
+        ArgumentException or
+        InvalidOperationException or
+        IndexOutOfRangeException or
+        KeyNotFoundException or
+        NullReferenceException or
+        FormatException or
+        OverflowException or
+        NotSupportedException;
+
+    private static SavedEdit ParseSavedEdit(JsonElement element)
+    {
+        try
+        {
+            var edit = element.Deserialize<SavedEdit>();
+            if (edit?.Identity?.Path == null || edit.Settings == null)
+                throw new UnusableEditRecordException(Loc.Text("调整记录无效，原有文件未被覆盖。"));
+            _ = edit.Settings.Restore();
+            return edit;
+        }
+        catch (UnusableEditRecordException) { throw; }
+        catch (Exception error) when (IsCorruptEntryException(error))
+        {
+            var message = error is InvalidDataException ? error.Message : Loc.Text("调整记录无效，原有文件未被覆盖。");
+            throw new UnusableEditRecordException(message, error);
+        }
+    }
+
+    private static ProcessingMigrationReceipt? TryParseReceipt(JsonElement element, OriginalIdentity identity)
+    {
+        try
+        {
+            var receipt = element.Deserialize<ProcessingMigrationReceipt>();
+            if (receipt?.Identity?.Path == null ||
+                receipt.Before?.Identity?.Path == null || receipt.Before.Settings == null ||
+                receipt.After?.Identity?.Path == null || receipt.After.Settings == null)
+                return null;
+            if (!receipt.IsKnownStatus || !receipt.IsValid || !receipt.Identity.SameFile(receipt.Before.Identity) ||
+                !receipt.Identity.SameFile(receipt.After.Identity) || !receipt.Identity.SameFile(identity))
+                return null;
+            _ = receipt.Before.Settings.Restore();
+            _ = receipt.After.Settings.Restore();
+            return receipt.Copy();
+        }
+        catch (Exception error) when (IsCorruptEntryException(error))
+        {
+            return null;
+        }
     }
 
     public SavedEdit? Find(string input)
@@ -215,30 +276,63 @@ public sealed class EditStore
 
     public PhotoEditState ReadState(string input) => ReadRecord(ReadRegistry(),OriginalIdentity.Read(input));
     private static PhotoEditState ReadRecord(Registry registry,OriginalIdentity identity) => new(identity,
-        registry.Records.TryGetValue(identity.Path,out var edit) && edit.Identity.SameFile(identity) ? edit.Copy() : null);
+        registry.Records.TryGetValue(identity.Path,out var raw) && ParseSavedEdit(raw) is var edit && edit.Identity.SameFile(identity) ? edit.Copy() : null);
 
-    public PhotoEditState SaveState(OriginalIdentity identity,SavedEdit? edit)
+    public PhotoEditState SaveState(OriginalIdentity identity,SavedEdit? edit,bool clearMigrationReceipt = false)
     {
         if(edit!=null) {_=edit.Settings.Restore();if(!edit.Identity.SameFile(identity))throw new PhotoChangedException();}
         PhotoEditState saved;
         using (AcquireLock()) {
             var registry=ReadRegistry();identity.RequireCurrent();
             var current=ReadRecord(registry,identity);
-            if(SavedEdit.Same(current.Edit,edit))return current;
-            if(edit==null)registry.Records.Remove(identity.Path);else registry.Records[identity.Path]=edit.Copy();
-            write(path,registry);
+            var recordUnchanged=SavedEdit.Same(current.Edit,edit);
+            var records=new Dictionary<string,JsonElement>(registry.Records,StringComparer.OrdinalIgnoreCase);
+            var receipts=registry.MigrationReceipts == null
+                ? null : new Dictionary<string,JsonElement>(registry.MigrationReceipts,StringComparer.OrdinalIgnoreCase);
+            var receiptRemoved=(clearMigrationReceipt || edit==null) && receipts?.Remove(identity.Path)==true;
+            if(receipts is {Count:0})receipts=null;
+            if(recordUnchanged && !receiptRemoved)return current;
+            if(!recordUnchanged)
+            {
+                if(edit==null)records.Remove(identity.Path);
+                else records[identity.Path]=JsonSerializer.SerializeToElement(edit.Copy());
+            }
+            write(path,new Registry(1,records,receipts));
             saved=new(identity,edit?.Copy());
         }
         NotifyChanged(saved);
         return saved;
     }
 
+    public PhotoEditState ResetToUnmodified(string input)
+    {
+        var identity = OriginalIdentity.Read(input);
+        PhotoEditState cleared;
+        var changed = false;
+        using (AcquireLock()) {
+            var registry=ReadRegistry();identity.RequireCurrent();
+            var records=new Dictionary<string,JsonElement>(registry.Records,StringComparer.OrdinalIgnoreCase);
+            var receipts=registry.MigrationReceipts == null
+                ? null : new Dictionary<string,JsonElement>(registry.MigrationReceipts,StringComparer.OrdinalIgnoreCase);
+            changed |= records.Remove(identity.Path);
+            if(receipts != null)
+            {
+                changed |= receipts.Remove(identity.Path);
+                if(receipts.Count == 0)receipts = null;
+            }
+            if(changed)write(path,new Registry(1,records,receipts));
+            cleared=new(identity,null);
+        }
+        if(changed)NotifyChanged(cleared);
+        return cleared;
+    }
+
     public ProcessingMigrationReceipt? ReadProcessingMigration(string input)
     {
         var identity = OriginalIdentity.Read(input);
         var registry = ReadRegistry();
-        return registry.MigrationReceipts?.TryGetValue(identity.Path,out var receipt) == true &&
-            receipt.Identity.SameFile(identity) ? receipt.Copy() : null;
+        return registry.MigrationReceipts != null && registry.MigrationReceipts.TryGetValue(identity.Path,out var raw)
+            ? TryParseReceipt(raw,identity) : null;
     }
 
     public PhotoEditState CommitProcessingMigration(OriginalIdentity expectedIdentity, SavedEdit expectedBefore,
@@ -260,15 +354,16 @@ public sealed class EditStore
         var current=ReadRecord(registry,expectedIdentity);
         if (!current.SameAs(new PhotoEditState(expectedIdentity,expectedBefore)))
             throw new AdjustmentOperationExpiredException();
-        if (registry.MigrationReceipts?.TryGetValue(expectedIdentity.Path, out var previous) == true &&
-            previous.Identity.SameFile(expectedIdentity) && !ProcessingMigration.ShouldAttempt(expectedBefore, previous))
+        if (registry.MigrationReceipts != null && registry.MigrationReceipts.TryGetValue(expectedIdentity.Path, out var rawPrevious) &&
+            TryParseReceipt(rawPrevious, expectedIdentity) is { } previous && !ProcessingMigration.ShouldAttempt(expectedBefore, previous))
             throw new AdjustmentOperationExpiredException();
-        var records=new Dictionary<string,SavedEdit>(registry.Records,StringComparer.OrdinalIgnoreCase);
+        var records=new Dictionary<string,JsonElement>(registry.Records,StringComparer.OrdinalIgnoreCase);
         var receipts=registry.MigrationReceipts == null
-            ? new Dictionary<string,ProcessingMigrationReceipt>(StringComparer.OrdinalIgnoreCase)
-            : new Dictionary<string,ProcessingMigrationReceipt>(registry.MigrationReceipts,StringComparer.OrdinalIgnoreCase);
+            ? new Dictionary<string,JsonElement>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string,JsonElement>(registry.MigrationReceipts,StringComparer.OrdinalIgnoreCase);
         var receipt=new ProcessingMigrationReceipt(expectedIdentity,expectedBefore.Copy(),candidate.Copy(),status);
-        records[expectedIdentity.Path]=candidate.Copy();receipts[expectedIdentity.Path]=receipt;
+        records[expectedIdentity.Path]=JsonSerializer.SerializeToElement(candidate.Copy());
+        receipts[expectedIdentity.Path]=JsonSerializer.SerializeToElement(receipt);
         write(path,new Registry(1,records,receipts));
         saved=new(expectedIdentity,candidate.Copy());
         }
@@ -283,15 +378,15 @@ public sealed class EditStore
         using (AcquireLock()) {
         var registry=ReadRegistry();identity.RequireCurrent();
         var storedReceipts=registry.MigrationReceipts;
-        if (storedReceipts == null || !storedReceipts.TryGetValue(identity.Path,out var receipt) ||
-            receipt.Status != ProcessingMigrationReceipt.Migrated)
+        if (storedReceipts == null || !storedReceipts.TryGetValue(identity.Path,out var rawReceipt) ||
+            TryParseReceipt(rawReceipt,identity) is not { Status: ProcessingMigrationReceipt.Migrated } receipt)
             throw new AdjustmentOperationExpiredException();
         var current=ReadRecord(registry,identity);
         if (!current.SameAs(expectedCurrent)) throw new AdjustmentOperationExpiredException();
-        var records=new Dictionary<string,SavedEdit>(registry.Records,StringComparer.OrdinalIgnoreCase);
-        var receipts=new Dictionary<string,ProcessingMigrationReceipt>(registry.MigrationReceipts!,StringComparer.OrdinalIgnoreCase);
-        records[identity.Path]=receipt.Before.Copy();
-        receipts[identity.Path]=receipt with { Status=ProcessingMigrationReceipt.RolledBack };
+        var records=new Dictionary<string,JsonElement>(registry.Records,StringComparer.OrdinalIgnoreCase);
+        var receipts=new Dictionary<string,JsonElement>(storedReceipts,StringComparer.OrdinalIgnoreCase);
+        records[identity.Path]=JsonSerializer.SerializeToElement(receipt.Before.Copy());
+        receipts[identity.Path]=JsonSerializer.SerializeToElement(receipt with { Status=ProcessingMigrationReceipt.RolledBack });
         write(path,new Registry(1,records,receipts));
         saved=new(identity,receipt.Before.Copy());
         }
@@ -321,13 +416,14 @@ public sealed class EditStore
         var changed = new List<PhotoEditState>();
         using (AcquireLock()) {
             var updated = ReadRegistry();
+            var records = new Dictionary<string,JsonElement>(updated.Records,StringComparer.OrdinalIgnoreCase);
             foreach (var input in inputs) {
                 var identity = OriginalIdentity.Read(input);
                 var edit=new SavedEdit(identity, settings.Copy(), look);
-                if(updated.Records.TryGetValue(identity.Path,out var previous) && previous.SameAs(edit))continue;
-                updated.Records[identity.Path]=edit;changed.Add(new(identity,edit));
+                if(records.TryGetValue(identity.Path,out var rawPrevious) && ParseSavedEdit(rawPrevious).SameAs(edit))continue;
+                records[identity.Path]=JsonSerializer.SerializeToElement(edit);changed.Add(new(identity,edit));
             }
-            if(changed.Count>0)write(path,updated);
+            if(changed.Count>0)write(path,new Registry(1,records,updated.MigrationReceipts));
         }
         foreach(var state in changed)NotifyChanged(state);
     }

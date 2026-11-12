@@ -263,6 +263,8 @@ public static class EditorAdjustmentRules
         scope.Kind == EditorResetKind.Group && scope.Group == EditorAdjustmentGroup.Detail ||
         scope.Kind == EditorResetKind.Tool && scope.Tool == EditorAdjustmentTool.Denoise;
 
+    internal static bool ClearsMigrationReceipt(EditorResetScope scope) => scope.Kind == EditorResetKind.All;
+
     private static AdjustmentSnapshot ResetHDR(EditorResetScope scope, AdjustmentSnapshot settings) =>
         settings with { HDR = ResetHDR(scope, settings.HDR!), HDRCameraAIEnabled = settings.HDRCameraAIEnabled && !ResetsAI(scope) };
 

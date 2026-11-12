@@ -188,8 +188,19 @@ internal static class ProcessingMigrationChecks
             receipt["policyVersion"] = 1;
             receipt["targetVersion"] = 2;
             File.WriteAllText(path, registry.ToJsonString());
-            try { _ = new EditStore(root); throw new Exception("Invalid migration target was accepted"); }
-            catch (InvalidDataException) { }
+            // 改为逐条隔离语义（WP-2 D2/2c）：单条损坏回执不再使 new EditStore 整库失败；
+            // 该照片按“无回执”处理，正式编辑记录仍可读，且损坏回执不可用于回退。
+            var isolated = new EditStore(root);
+            Check(isolated.ReadProcessingMigration(file) == null,
+                "Invalid migration target receipt is isolated and treated as absent");
+            Check(isolated.Find(file)?.Settings.Processing.Version == 3,
+                "Corrupt migration receipt does not block reading the valid photo record");
+            try
+            {
+                isolated.RollbackProcessingMigration(identity, isolated.ReadState(file));
+                throw new Exception("Invalid migration target receipt allowed rollback");
+            }
+            catch (AdjustmentOperationExpiredException) { }
         }
         finally { Directory.Delete(root, true); }
     }

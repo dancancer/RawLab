@@ -223,8 +223,6 @@ public sealed class Adjustments
             throw new System.IO.InvalidDataException(Loc.Text("HDR 调整记录无效，原有文件未被覆盖。"));
         if (snapshot.HDRCameraAIEnabled && (snapshot.HDR?.CameraSettings.AllowsAI != true || snapshot.ProRAWDecodeVersion != null))
             throw new System.IO.InvalidDataException(Loc.Text("HDR 调整记录无效，原有文件未被覆盖。"));
-        if (snapshot.ProRAWDecodeVersion is { } proRAWVersion && proRAWVersion != CurrentProRAWDecodeVersion)
-            throw new System.IO.InvalidDataException(Loc.Text("不支持此处理版本，原有记录未被覆盖。"));
         var atmosphere = snapshot.Atmosphere ?? new AtmosphereSettings();
         _ = atmosphere.NativeConfig();
         var tone = snapshot.ToneControls ?? new ToneControlsSettings();
@@ -374,14 +372,34 @@ public sealed class Adjustments
     }
     public void ResetAll() { Atmosphere = new(); Curve = new(); ColorGrading = new(); ToneControls = new(); AIDenoiseEnabled = HDRCameraAIEnabled = false; MasterRecipeID = null; MasterRecipeSettingsVersion = 3; foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 1; ResetWhiteBalance(); Denoise = new(); Effects = new(); Hsl = new(); DisplayChromaDenoise = 0; Lens = new(); Geometry = new(); if (HDR is { } hdr) HDR = hdr.Reset() with { Mode = hdr.Mode }; }
 
+    public void RequireHDRDecodeVersion(bool proRAW)
+    {
+        if (proRAW)
+        {
+            if (ProRAWDecodeVersion is { } storedVersion && storedVersion != CurrentProRAWDecodeVersion)
+                throw new HDRModeException(HDRModeFailure.InvalidSettings);
+        }
+        else if (ProRAWDecodeVersion != null)
+            throw new HDRModeException(HDRModeFailure.InvalidSettings);
+    }
+
+    public void RequireActiveHDRDecodeVersion(bool? sourceIsProRAW = null)
+    {
+        if (!IsHDREditing) return;
+        if (ProRAWDecodeVersion is { } storedVersion && storedVersion != CurrentProRAWDecodeVersion)
+            throw new HDRModeException(HDRModeFailure.InvalidSettings);
+        if (sourceIsProRAW is { } proRAW &&
+            ProRAWDecodeVersion != (proRAW ? CurrentProRAWDecodeVersion : (int?)null))
+            throw new HDRModeException(proRAW ? HDRModeFailure.InvalidSettings : HDRModeFailure.UnsupportedSource);
+    }
+
     public void SetHDRMode(bool enabled, bool sourceIsHDR, bool cameraRaw = false,
         bool proRAW = false)
     {
-        if (ProRAWDecodeVersion is { } storedVersion && storedVersion != CurrentProRAWDecodeVersion)
-            throw new HDRModeException(HDRModeFailure.InvalidSettings);
         if (enabled)
         {
             if (proRAW && !cameraRaw) throw new HDRModeException(HDRModeFailure.UnsupportedSource);
+            RequireHDRDecodeVersion(proRAW);
             if (proRAW) ProRAWDecodeVersion = CurrentProRAWDecodeVersion;
             var initial = cameraRaw ? new HDRSettings { Geometry = Geometry } : HDRSettings.FromSdr(this);
             HDR = HDRSettings.Enabling(HDR, initial, sourceIsHDR);
