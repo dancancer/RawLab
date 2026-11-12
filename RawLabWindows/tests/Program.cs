@@ -92,6 +92,7 @@ static class Program
             if(args.Length is 3 or 4 && args[0]=="--editor-review") { EditorReviewChecks.Run(args[1],args[2],Check,args.Length==4 ? args[3] : "all");return 0; }
             if(args.Length==2 && args[0]=="--editor-shell") { EditorShellChecks.Run(args[1],Check);return 0; }
             if(args.Length==2 && args[0]=="--ui-details") { UiDetailChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} UI detail checks");return 0; }
+            if(args.Length==2 && args[0]=="--edit-durability") { EditDurabilityWindowChecks.Run(args[1],Check);Console.WriteLine($"PASS {checks} edit durability window checks");return 0; }
             if(args.Length==3 && args[0]=="--transform-ui") { TransformUiChecks.Run(args[1],args[2],Check);return 0; }
             if(args.Length==3 && args[0]=="--quick-presets-hdr") { QuickPresetHDRChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} quick HDR checks");return 0; }
             if(args.Length==3 && args[0]=="--workspace-looks") { WorkspaceLookChecks.Run(args[1],args[2],Check);Console.WriteLine($"PASS {checks} workspace/look checks");return 0; }

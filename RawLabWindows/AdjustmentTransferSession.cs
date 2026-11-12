@@ -39,6 +39,12 @@ public sealed class AdjustmentTransferSession(EditStore store)
         }
         heads.Remove(key);Remember(saved);
     }
+    public PhotoEditState ResetToUnmodified(string path)
+    {
+        var cleared=store.ResetToUnmodified(path);
+        AdoptExternalProcessingMigration(cleared);
+        return cleared;
+    }
     public AdjustmentPayload Copy(AdjustmentScope scope,SavedEdit source,AdjustmentTransferContext context)
     {var payload=AdjustmentTransfer.Capture(scope,source,context);Clipboard=payload;return payload;}
     public PreparedAdjustmentTransfer Prepare(AdjustmentPayload payload,IEnumerable<AdjustmentTransferTarget> targets,
@@ -95,7 +101,8 @@ public sealed class AdjustmentTransferSession(EditStore store)
         }
         return results;
     }
-    public AdjustmentOutcome CommitEdit(PhotoEditState before,SavedEdit edit,SavedEdit? defaultEdit=null,Func<bool>? isCurrent=null)
+    public AdjustmentOutcome CommitEdit(PhotoEditState before,SavedEdit edit,SavedEdit? defaultEdit=null,Func<bool>? isCurrent=null,
+        bool clearMigrationReceipt=false)
     {
         var id=before.Identity.Path;
         if(isCurrent?.Invoke()==false)return new(id,AdjustmentStatus.Blocked,Error:Draft());
@@ -103,8 +110,8 @@ public sealed class AdjustmentTransferSession(EditStore store)
             if(!edit.Identity.SameFile(before.Identity))throw new PhotoChangedException();
             if(knownRecords.TryGetValue(id,out var committed) && committed.Identity.SameFile(before.Identity))before=committed;
             var desired=before.Edit==null && edit.SameAs(defaultEdit) ? null : edit;
-            var saved=store.SaveState(before.Identity,desired);
-            if(SavedEdit.Same(before.Edit,saved.Edit))return new(id,AdjustmentStatus.Unchanged,saved);
+            var saved=store.SaveState(before.Identity,desired,clearMigrationReceipt);
+            if(SavedEdit.Same(before.Edit,saved.Edit)){Remember(saved);return new(id,AdjustmentStatus.Unchanged,saved);}
             Record(Guid.NewGuid(),AdjustmentHistoryAction.Edit,new HashSet<AdjustmentField>(),Path.GetFileName(id),before,saved);
             return new(id,AdjustmentStatus.Applied,saved);
         }catch(Exception error){return new(id,AdjustmentStatus.Failed,Error:error);}

@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 
 if (args.Contains("--edited-previews")) { EditedPhotoPreviewChecks.Run(); return; }
+if (args.Contains("--durability-only")) { EditDurabilityChecks.Run(); ProcessingMigrationChecks.Run(); return; }
 
 if (args.Contains("--hdr-look-import")) {
     HDRAssetImportChecks.Run();
@@ -207,6 +208,7 @@ static void ProcessingChecks()
 }
 ViewChecks.Run(Check);
 ProcessingChecks();
+EditDurabilityChecks.Run();
 ProcessingMigrationChecks.Run();
 static void ProtectedProcessingChecks(string root)
 {
@@ -222,10 +224,13 @@ static void ProtectedProcessingChecks(string root)
     registry["Records"]!.AsObject().First().Value!["Settings"]!["Processing"]!["version"] = 99;
     var protectedBytes = registry.ToJsonString();
     File.WriteAllText(path, protectedBytes);
-    try { _ = new EditStore(directory); throw new Exception("Unknown processing must reject the registry"); }
-    catch (InvalidDataException) { }
+    // 改为逐条隔离语义（WP-2 D2）：单条未知 Processing.version 不再使 new EditStore 整库失败，
+    // 而是在读取或普通覆盖该照片时按单条拒绝，且磁盘上的未来版本记录逐字保留。
+    var reopened = new EditStore(directory);
+    try { _ = reopened.ReadState(input); throw new Exception("Unknown processing must reject reading that photo"); }
+    catch (UnusableEditRecordException) { }
     try { store.Save(input, snapshot, null); throw new Exception("An already-open store cannot replace future records"); }
-    catch (InvalidDataException) { }
+    catch (UnusableEditRecordException) { }
     Check(File.ReadAllText(path) == protectedBytes, "Unsupported registry remains byte-identical");
     var journal = new BatchJournal(Path.Combine(root, "protected-batch"));
     Directory.CreateDirectory(journal.DirectoryPath);
