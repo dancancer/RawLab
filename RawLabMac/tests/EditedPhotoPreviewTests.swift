@@ -64,6 +64,26 @@ import AppKit
         let data = try MacPhotoPreviewPlan.thumbnailData(image, edge: 64)
         let decoded = NSImage(data: data)!
         check(decoded.size == NSSize(width: 64, height: 32))
+        let renderedPhoto = root.appendingPathComponent("rendered.png")
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        try bitmap.representation(using: .png, properties: [:])!.write(to: renderedPhoto)
+        var renderSettings = Adjustments(); renderSettings.exposureMode = .sensor; renderSettings.exposure = 1.0
+        try store.save(renderedPhoto, state: .init(settings: renderSettings, filmID: ""))
+        let isolatedThumbnails = PhotoThumbnails()
+        let cachedPreviews = MacEditedPhotoPreviews(editDirectory: root.appendingPathComponent("edits"),
+            cacheDirectory: root.appendingPathComponent("render-cache"), thumbnails: isolatedThumbnails)
+        let record1 = try await cachedPreviews.record(for: renderedPhoto)
+        let firstImage = try await cachedPreviews.image(for: record1)
+        let firstStats = await cachedPreviews.renderStats()
+        check(firstStats.renders == 1 && firstStats.decodes == 1)
+        let secondImage = try await cachedPreviews.image(for: record1)
+        let secondStats = await cachedPreviews.renderStats()
+        check(secondImage === firstImage && secondStats.renders == 1 && secondStats.diskReads == 0 && secondStats.decodes == 1)
+        check(cachedPreviews.cachedThumbnail(for: renderedPhoto)?.image === firstImage)
+        try store.save(renderedPhoto, state: defaults)
+        cachedPreviews.invalidateEdited(for: renderedPhoto)
+        check(cachedPreviews.cachedThumbnail(for: renderedPhoto) == nil)
+        check(await cachedPreviews.cachedImage(for: record1) == nil)
         print("PASS: semantic edit status, reset, source/resource changes, stale plans, proportional preview")
     }
 }

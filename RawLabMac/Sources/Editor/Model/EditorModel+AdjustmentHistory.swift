@@ -44,6 +44,7 @@ extension EditorModel {
                 processingMigrationReceipt = nil
             }
             if let state = saved.state { recordSavedLookChange(from: previous, to: state) }
+            PhotoThumbnails.shared.invalidateEdited(atPath: saved.identity.path)
             adjustmentHistoryRevision &+= 1
             saveError = nil; saveStatusKey = "调整已保存"
             clearSaveStatusLater()
@@ -101,6 +102,9 @@ extension EditorModel {
 
     func acceptAdjustmentOutcomes(_ outcomes: [AdjustmentTransferOutcome]) {
         adjustmentOutcomes = outcomes
+        for outcome in outcomes where outcome.status == .applied {
+            PhotoThumbnails.shared.invalidateEdited(atPath: outcome.targetID)
+        }
         adjustmentHistoryRevision &+= 1
         let path = file?.resolvingSymlinksInPath().standardizedFileURL.path
         if !dirty, geometryDraft == nil,

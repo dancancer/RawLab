@@ -521,6 +521,7 @@ extension EditorModel {
         }
         do {
             let cleared = try session.resetToUnmodified(url)
+            PhotoThumbnails.shared.invalidateEdited(atPath: cleared.identity.path)
             saveError = nil
             adjustmentHistoryRevision &+= 1
             return cleared

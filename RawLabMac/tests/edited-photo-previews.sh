@@ -12,7 +12,7 @@ if [ -f "$ROOT/RawLabMac/Sources/Editor/Storage/EditPersistence.swift" ]; then S
 swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
     "$ROOT/Shared/BundledLook.swift" \
   -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
-  "${SOURCES[@]}" "$ROOT/Shared/EditedPhotoPreviewCache.swift" "$ROOT/RawLabMac/Sources/Library/MacEditedPhotoPreviews.swift" "$ROOT/RawLabMac/tests/EditedPhotoPreviewTests.swift" \
+  "${SOURCES[@]}" "$ROOT/Shared/EditedPhotoPreviewCache.swift" "$ROOT/RawLabMac/Sources/Library/FileLibrary.swift" "$ROOT/RawLabMac/Sources/Library/MacEditedPhotoPreviews.swift" "$ROOT/RawLabMac/tests/EditedPhotoPreviewTests.swift" \
   "${CORE_LINK[@]}" -L "$(pkg-config --variable=libdir libraw_r)" \
   -lraw_r $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/test"
 "$OUT/test"

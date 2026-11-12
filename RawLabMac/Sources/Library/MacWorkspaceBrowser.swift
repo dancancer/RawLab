@@ -402,22 +402,39 @@ private struct WorkspacePhotoTile: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(url.lastPathComponent)
             .accessibilityValue(accessibilityStatus)
-            .onAppear { previews.watch(url) }
+            .onAppear {
+                if thumbnail == nil, let cached = previews.cachedThumbnail(for: url) {
+                    thumbnail = cached.image
+                    edited = cached.isEdited
+                    adjustedThumbnail = cached.isEdited
+                    sourceIdentity = cached.identity
+                    notice = nil
+                }
+                previews.watch(url)
+            }
             .onDisappear { previews.unwatch(url) }
             .task(id: "\(url.path):\(previews.revision):\(previews.isEditorBusy)", priority: .utility) {
                 do {
                     let record = try await previews.record(for: url)
                     try Task.checkCancellation()
                     edited = MacPhotoPreviewPlan.isEdited(record)
-                    if sourceIdentity != record.identity || !edited {
+                    if sourceIdentity != record.identity {
                         sourceIdentity = record.identity
                         previews.refreshWatch(url)
                         adjustedThumbnail = false
                         thumbnail = nil
+                    } else if !edited && adjustedThumbnail {
+                        adjustedThumbnail = false
+                        thumbnail = nil
+                    }
+                    if edited, let cached = await previews.cachedImage(for: record) {
+                        try Task.checkCancellation()
+                        thumbnail = cached; adjustedThumbnail = true; notice = nil
+                        return
                     }
                     notice = edited ? "预览待更新" : nil
                     if thumbnail == nil {
-                        let original = await PhotoThumbnails.shared.image(for: url)
+                        let original = await previews.originalImage(for: url, identity: record.identity, recordAsActive: !edited)
                         try Task.checkCancellation()
                         thumbnail = original
                     }
