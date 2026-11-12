@@ -261,6 +261,11 @@ int main() {
     sony2fuji_session* session=nullptr;
     sony2fuji_session_create(&session);
     const unsigned char dngPixels[3] = {128, 70, 220};
+    auto huge = request(dngPixels);
+    huge.size_mode = SONY2FUJI_SIZE_EXACT;
+    huge.target_width = huge.target_height = 70000;
+    check(sony2fuji_process(session, &huge, nullptr) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+          "Absurd exact output size is rejected before any pixel allocation");
     auto dngRequest = request(dngPixels);
     const std::string dngPath = (dir / "rendered.dng").string();
     dngRequest.output_target = SONY2FUJI_TARGET_FILE;

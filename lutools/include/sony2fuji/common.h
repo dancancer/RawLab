@@ -21,7 +21,8 @@ struct ImageData {
     std::vector<RGB> pixels;
 
     ImageData() : width(0), height(0) {}
-    ImageData(int w, int h) : width(w), height(h), pixels(w * h) {}
+    ImageData(int w, int h) : width(w), height(h),
+        pixels(static_cast<size_t>(w > 0 ? w : 0) * static_cast<size_t>(h > 0 ? h : 0)) {}
 
     RGB& at(int x, int y) { return pixels[y * width + x]; }
     const RGB& at(int x, int y) const { return pixels[y * width + x]; }

@@ -617,6 +617,9 @@ sony2fuji_status validateOutputFormat(const sony2fuji_request& request) {
     return SONY2FUJI_STATUS_UNSUPPORTED;
 }
 
+// 与核心其它入口一致的最大输出像素数，避免尺寸乘法溢出后按小值分配。
+constexpr uint64_t kMaxOutputPixels = 128000000;
+
 sony2fuji_status computeTargetSize(
     const sony2fuji_request& request,
     uint32_t src_width,
@@ -644,6 +647,10 @@ sony2fuji_status computeTargetSize(
             return SONY2FUJI_STATUS_OK;
         case SONY2FUJI_SIZE_EXACT:
             if (request.target_width == 0 || request.target_height == 0) {
+                return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+            }
+            // 目标尺寸来自客户端；没有上限时先按 int 乘出溢出、再按溢出后的数量分配。
+            if (uint64_t(request.target_width) * request.target_height > kMaxOutputPixels) {
                 return SONY2FUJI_STATUS_INVALID_ARGUMENT;
             }
             *out_width = request.target_width;
