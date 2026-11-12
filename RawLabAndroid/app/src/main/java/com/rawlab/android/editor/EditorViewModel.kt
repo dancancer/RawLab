@@ -222,9 +222,10 @@ class EditorViewModel @JvmOverloads constructor(
     private var cameraHDRPreflightPending = false
     @Volatile private var sourceRevision = 0L
         set(value) {
-            if (field != value) { cancelProcessingMigration(); deferredMigrationPreview = false }
+            if (field != value) { cancelProcessingMigration(); deferredMigrationPreview = false; pendingResetMigrationClear = null }
             field = value
         }
+    private var pendingResetMigrationClear: Pair<Long, EditSettings>? = null
     private var pendingHDRLookImport: Triple<Long, Long, Long>? = null
     private var pendingHDRCameraProfileImport: Pair<Long, Long>? = null
     @Volatile private var editRevision = 0L
@@ -586,6 +587,7 @@ class EditorViewModel @JvmOverloads constructor(
         val photo = mutable.value.photo ?: return
         if (edits == null) return
         if (mutable.value.draft != null) { renderDraft(false); return }
+        pendingResetMigrationClear = null
         persist(photo, edits) { saved ->
             mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
             editRevision += 1
@@ -760,7 +762,7 @@ class EditorViewModel @JvmOverloads constructor(
         return mutable.value.visibleEdits == candidate
     }
 
-    fun edit(requested: EditSettings, interactive: Boolean = false) {
+    fun edit(requested: EditSettings, interactive: Boolean = false, clearProcessingMigration: Boolean = false) {
         val edits = requested.canonicalZeros().synchronizeHDR()
         cancelHslTarget()
         val current = mutable.value
@@ -786,12 +788,13 @@ class EditorViewModel @JvmOverloads constructor(
         }
         durablePreview = null
         if (edits != current.edits) editRevision += 1
+        pendingResetMigrationClear = if (!interactive && clearProcessingMigration) sourceRevision to edits else null
         mutable.value = current.copy(edits = edits, rendering = true, exact = false, error = null, matchingProcessing = false,
             previewResizePending = previewResizeJob != null,
             hdrCameraDraft = current.hdrCameraDraft?.retainedFor(edits.hdr?.cameraSettings))
         currentRevision = submitRender(Work.Preview(current.photo!!, edits, interactive, gpuMode(),
             edge = interactivePreviewSize.edge(previewLongEdge, interactive, android.os.SystemClock.uptimeMillis())))
-        if (!interactive) persist(current.photo, edits) { saved ->
+        if (!interactive) persist(current.photo, edits, clearProcessingMigration = clearProcessingMigration) { saved ->
             mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
             fadeSaveNotice()
         }
@@ -921,6 +924,7 @@ class EditorViewModel @JvmOverloads constructor(
         val edits = current.draft!!.project(current.edits)
         previewResizeJob?.cancel()
         previewResizeJob = null
+        pendingResetMigrationClear = null
         persist(photo, edits) { saved ->
             if (saved.state == EditSaveState.FAILED) {
                 failedDraftSave = true
@@ -997,6 +1001,7 @@ class EditorViewModel @JvmOverloads constructor(
                 result.fold({ record ->
                     if (failedDraftSave && mutable.value.draft != null) { applyDraft(completed); return@fold }
                     if (AdjustmentTransfer.sameAdjustments(edits, photo.defaultEditSettings(), photo.inputKind == PhotoInputKind.RAW)) {
+                        pendingResetMigrationClear = null
                         val restored = record.settings ?: photo.defaultEditSettings()
                         if (restored != edits) editRevision += 1
                         mutable.value = mutable.value.copy(edits = restored)
@@ -1033,7 +1038,7 @@ class EditorViewModel @JvmOverloads constructor(
             return true
         }
         val previousRequest = currentRevision
-        edit(prepared.result.candidate)
+        edit(prepared.result.candidate, clearProcessingMigration = prepared.scope == EditorResetScope.All)
         if (currentRevision == previousRequest) return false
         return true
     }
@@ -1192,13 +1197,26 @@ class EditorViewModel @JvmOverloads constructor(
 
     private fun gpuMode() = if (mutable.value.gpuEnabled) NativeProcessor.AUTO else NativeProcessor.CPU
 
-    private fun persist(photo: ImportedPhoto, edits: EditSettings, completed: (EditSaveResult) -> Unit) {
+    private fun persist(photo: ImportedPhoto, edits: EditSettings, completed: (EditSaveResult) -> Unit) =
+        persist(photo, edits, clearProcessingMigration = false, completed = completed)
+
+    private fun persist(photo: ImportedPhoto, edits: EditSettings, clearProcessingMigration: Boolean,
+        completed: (EditSaveResult) -> Unit) {
         val previousFilm = adjustmentHistory.loaded?.settings?.film
         val source = sourceRevision
-        commitAdjustments({ adjustmentHistory.commit(photo, edits.synchronizeHDR()) }) { result ->
+        val synced = edits.synchronizeHDR()
+        val clearsMigration = clearProcessingMigration || pendingResetMigrationClear == (source to synced)
+        if (!clearsMigration) pendingResetMigrationClear = null
+        commitAdjustments({ adjustmentHistory.commit(photo, synced, clearProcessingMigration = clearsMigration) }) { result ->
             val saved = result.getOrElse { EditSaveResult(EditSaveState.FAILED, it) }
-            if (saved.state == EditSaveState.SAVED && source == sourceRevision && mutable.value.photo?.identity == photo.identity &&
-                mutable.value.edits.film == edits.film && edits.recipeID == null && previousFilm != edits.film) updateRecentLooks(edits.film)
+            if (saved.state == EditSaveState.SAVED) {
+                if (clearsMigration && pendingResetMigrationClear == (source to synced)) pendingResetMigrationClear = null
+                if (clearsMigration && source == sourceRevision && mutable.value.photo?.identity == photo.identity) {
+                    mutable.value = mutable.value.copy(processingMigration = null)
+                }
+                if (source == sourceRevision && mutable.value.photo?.identity == photo.identity &&
+                    mutable.value.edits.film == edits.film && edits.recipeID == null && previousFilm != edits.film) updateRecentLooks(edits.film)
+            }
             completed(saved)
             if (saved.state == EditSaveState.SAVED && source == sourceRevision) cacheAcceptedPhotoPreview()
         }
@@ -1230,6 +1248,7 @@ class EditorViewModel @JvmOverloads constructor(
         if (mutable.value.committingAdjustments) return
         clearHslTarget()
         val restored = adjustmentHistory.cancel(mutable.value.photo, sourceRevision) ?: return
+        pendingResetMigrationClear = null
         editRevision += 1
         mutable.value = mutable.value.copy(edits = restored)
         renderCommittedForNavigation()
@@ -1282,6 +1301,7 @@ class EditorViewModel @JvmOverloads constructor(
         }
         mutable.value = current.copy(adjustmentRevision = current.adjustmentRevision + 1)
         if (restored != null) {
+            pendingResetMigrationClear = null
             if (!mutableQuickPreset.value.busy) {
                 quickPresetGeneration = UUID.randomUUID()
                 mutableQuickPreset.value = EditorQuickPresetState(visible = mutableQuickPreset.value.visible)
@@ -1676,6 +1696,7 @@ class EditorViewModel @JvmOverloads constructor(
                 completed(false)
                 return
             }
+            pendingResetMigrationClear = null
             cancelAdjustmentInteraction()
             mutable.value.draft?.let { discardDraft() }
             val current = mutable.value
@@ -1687,6 +1708,9 @@ class EditorViewModel @JvmOverloads constructor(
                     saveError = null, error = null, adjustmentRevision = current.adjustmentRevision + 1)
                 includeIndependentRecipeLook(restored)
                 renderCommittedForNavigation()
+            } else if (photo != null && current.saveState == EditSaveState.FAILED) {
+                mutable.value = current.copy(saveState = if (adjustmentHistory.loaded?.settings == null) EditSaveState.NONE else EditSaveState.SAVED,
+                    saveError = null, adjustmentRevision = current.adjustmentRevision + 1)
             }
             completed(photo != null)
         }

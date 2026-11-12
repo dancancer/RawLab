@@ -178,8 +178,10 @@ final class IOSAdjustmentTransferSession {
         }
     }
 
+    // 显式全部重置在落盘时单向清除处理迁移回执；调整历史只保存编辑值快照，undo 恢复重置前参数但不恢复迁移回执。
     func commitEdit(expected: PhotoEditRecord, state: PhotoEditState, displayName: String? = nil,
-                    defaultState: PhotoEditState? = nil, isCurrent: () -> Bool = { true },
+                    defaultState: PhotoEditState? = nil, clearsProcessingMigration: Bool = false,
+                    isCurrent: () -> Bool = { true },
                     validateSource: (() throws -> Void)? = nil) -> IOSAdjustmentTransferOutcome {
         let id = expected.identity.key
         guard isCurrent() else { return outcome(id, .blocked, error: AdjustmentTransferError.draftRequiresPreflight) }
@@ -189,7 +191,8 @@ final class IOSAdjustmentTransferSession {
             let before = currentRecord(for: id).flatMap { $0.identity == expected.identity ? $0 : nil } ?? expected
             let desired: PhotoEditState? = before.state == nil &&
                 defaultState.map({ state.hasSameAdjustments(as: $0) }) == true ? nil : state.withUpdatedAt(Date())
-            let saved = try store.saveState(identity: before.identity, state: desired)
+            let saved = try store.saveState(identity: before.identity, state: desired,
+                                            clearsProcessingMigration: clearsProcessingMigration)
             guard !saved.hasSameAdjustments(as: before) else {
                 remember(saved, advanceGeneration: false, validator: validateSource)
                 return outcome(id, .unchanged, saved: saved)

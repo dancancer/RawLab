@@ -21,7 +21,8 @@ extension EditorModel {
     }
 
     // 一个正式提交入口；失败保留当前 UI / 草稿，成功回执成为下一次保存的前态。
-    @discardableResult func commitAdjustment(_ candidate: PhotoEditState) -> Bool {
+    @discardableResult func commitAdjustment(_ candidate: PhotoEditState,
+                                             clearsProcessingMigration: Bool = false) -> Bool {
         guard let file else { return false }
         do {
             let session = try requireAdjustmentSession()
@@ -31,12 +32,17 @@ extension EditorModel {
             var persisted = candidate
             // 降级会话只编辑 SDR 层，不能覆盖新系统保存的 HDR 模式和参数。
             if sourceUsesSDRFallback { persisted.settings.hdr = committedEdit?.state?.settings.hdr }
-            let outcome = session.commitEdit(expected: committedEdit!, state: persisted)
+            let outcome = session.commitEdit(expected: committedEdit!, state: persisted,
+                                             clearsProcessingMigration: clearsProcessingMigration)
             guard let saved = outcome.saved else {
                 throw outcome.error ?? AdjustmentTransferError.incompatible("save")
             }
             let previous = committedEdit?.state
             committedEdit = saved
+            if clearsProcessingMigration {
+                pendingAllResetRevision = nil
+                processingMigrationReceipt = nil
+            }
             if let state = saved.state { recordSavedLookChange(from: previous, to: state) }
             adjustmentHistoryRevision &+= 1
             saveError = nil; saveStatusKey = "调整已保存"

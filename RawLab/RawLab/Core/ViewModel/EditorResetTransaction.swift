@@ -47,6 +47,7 @@ struct EditorEditSnapshot: Equatable {
 }
 
 struct PreparedEditorReset {
+    let scope: EditorAdjustmentScope
     let original: EditorEditSnapshot
     let candidate: PhotoEditState
     let updatesDraft: Bool
@@ -153,7 +154,7 @@ extension RawEditorViewModel {
         case .unchanged: return .unchanged
         case .blocked(let reason): return .blocked(reason)
         case .candidate(let candidate, let confirmation):
-            return .prepared(PreparedEditorReset(original: original, candidate: candidate,
+            return .prepared(PreparedEditorReset(scope: scope, original: original, candidate: candidate,
                                                  updatesDraft: draft.isActive, requiresConfirmation: confirmation))
         }
     }
@@ -161,7 +162,10 @@ extension RawEditorViewModel {
     func commitReset(_ prepared: PreparedEditorReset, settings: RawSettings, revision: UUID,
                      draft: EditorDraftSnapshot) -> PhotoEditState? {
         guard prepared.original == editSnapshot(settings: settings, revision: revision, draft: draft) else { return nil }
-        if !prepared.updatesDraft { retainEditMetadata(prepared.candidate) }
+        if !prepared.updatesDraft {
+            retainEditMetadata(prepared.candidate)
+            pendingResetMigrationClear = prepared.scope == .all ? (prepared.original.source, prepared.candidate, false) : nil
+        }
         return prepared.candidate
     }
 
@@ -185,6 +189,7 @@ extension RawEditorViewModel {
             return false
         }
         failedDraftSource = nil
+        pendingResetMigrationClear = nil
         persistedEditorSettings = PersistedEditorSettings(source: source, settings: prepared.candidate.settings)
         return true
     }

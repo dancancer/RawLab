@@ -193,7 +193,7 @@ final class EditPersistence {
         try validate(identity)
         try withWriteLock {
             var store = try readStore()
-            _ = try write(nil, identity: identity, store: &store)
+            _ = try write(nil, identity: identity, clearsProcessingMigration: true, store: &store)
         }
     }
 
@@ -299,11 +299,12 @@ final class EditPersistence {
     }
 
     @discardableResult
-    func saveState(identity: PhotoIdentity, state: PhotoEditState?) throws -> PhotoEditRecord {
+    func saveState(identity: PhotoIdentity, state: PhotoEditState?,
+                   clearsProcessingMigration: Bool = false) throws -> PhotoEditRecord {
         try validate(identity)
         return try withWriteLock {
             var store = try readStore()
-            return try write(state, identity: identity, store: &store)
+            return try write(state, identity: identity, clearsProcessingMigration: clearsProcessingMigration, store: &store)
         }
     }
 
@@ -384,13 +385,43 @@ final class EditPersistence {
         } catch { throw EditPersistenceError.corruptStore }
     }
 
-    private func write(_ state: PhotoEditState?, identity: PhotoIdentity, store: inout StoreFile) throws -> PhotoEditRecord {
+    private func matchesMigrationIdentity(_ stored: PhotoIdentity, _ identity: PhotoIdentity) -> Bool {
+        stored.resourceIdentifier == identity.resourceIdentifier &&
+            stored.contentIdentifier == identity.contentIdentifier
+    }
+
+    private func hasClearableProcessingMigration(_ identity: PhotoIdentity, in store: StoreFile) -> Bool {
+        let receipts = store.processingMigrations ?? [:]
+        if identity.editKey != identity.key, receipts[identity.editKey] != nil { return true }
+        if let stored = receipts[identity.key], matchesMigrationIdentity(stored.identity, identity) { return true }
+        return storedMigration(identity, from: store) != nil
+    }
+
+    private func clearProcessingMigration(for identity: PhotoIdentity, in store: inout StoreFile) {
+        guard var receipts = store.processingMigrations else { return }
+        if identity.editKey != identity.key {
+            receipts.removeValue(forKey: identity.editKey)
+        }
+        if let stored = receipts[identity.key], matchesMigrationIdentity(stored.identity, identity) {
+            receipts.removeValue(forKey: identity.key)
+        }
+        store.processingMigrations = receipts.isEmpty ? nil : receipts
+    }
+
+    private func write(_ state: PhotoEditState?, identity: PhotoIdentity,
+                       clearsProcessingMigration: Bool = false, store: inout StoreFile) throws -> PhotoEditRecord {
         let current = record(identity, from: store)
-        if let previous = current.state, let state, previous.hasSameAdjustments(as: state) { return current }
-        if current.state == nil && state == nil { return current }
+        let clearsMigration = clearsProcessingMigration && hasClearableProcessingMigration(identity, in: store)
+        if !clearsMigration {
+            if let previous = current.state, let state, previous.hasSameAdjustments(as: state) { return current }
+            if current.state == nil && state == nil { return current }
+        }
         store.version = 1
-        // 从内容别名转成 PhotoKit 主记录时，迁移回退也跟随该照片，不能丢在旧入口下。
-        if store.processingMigrations?[identity.editKey] == nil, let previous = storedMigration(identity, from: store) {
+        if clearsProcessingMigration {
+            clearProcessingMigration(for: identity, in: &store)
+        } else if state != nil, store.processingMigrations?[identity.editKey] == nil,
+                  let previous = storedMigration(identity, from: store) {
+            // 从内容别名转成 PhotoKit 主记录时，迁移回退也跟随该照片，不能丢在旧入口下。
             var receipts = store.processingMigrations ?? [:]
             receipts[identity.editKey] = StoredProcessingMigration(identity: identity, receipt: previous.receipt)
             store.processingMigrations = receipts

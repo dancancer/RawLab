@@ -67,11 +67,11 @@ class EditStore(private val directory: File,
         identities.associateWith(snapshot::record)
     }
 
-    fun save(identity: PhotoIdentity, settings: EditSettings?): PhotoEditState = withStoreLock {
-        commit(read(), identity, settings)
+    fun save(identity: PhotoIdentity, settings: EditSettings?, clearProcessingMigration: Boolean = false): PhotoEditState = withStoreLock {
+        commit(read(), identity, settings, clearProcessingMigration)
     }
 
-    fun reset(identity: PhotoIdentity): PhotoEditState = save(identity, null)
+    fun reset(identity: PhotoIdentity): PhotoEditState = save(identity, null, clearProcessingMigration = true)
 
     fun processingMigration(identity: PhotoIdentity): ProcessingMigrationReceipt? = withStoreLock {
         read().properties.getProperty(migrationKey(identity))?.let(ProcessingMigrationReceipt::decode)
@@ -116,13 +116,15 @@ class EditStore(private val directory: File,
         }
     }
 
-    private fun commit(current: Snapshot, identity: PhotoIdentity, requested: EditSettings?): PhotoEditState {
+    private fun commit(current: Snapshot, identity: PhotoIdentity, requested: EditSettings?,
+        clearProcessingMigration: Boolean = false): PhotoEditState {
         val settings = requested?.canonicalZeros()
-        if (current.records[identity] == settings) return current.record(identity)
+        val clearsMigration = clearProcessingMigration && current.properties.containsKey(migrationKey(identity))
+        if (current.records[identity] == settings && !clearsMigration) return current.record(identity)
         val records = current.records.toMutableMap()
         if (settings == null) records.remove(identity) else records[identity] = settings
         val updated = Snapshot(records, current.properties)
-        write(updated, identity)
+        write(updated, identity, clearProcessingMigration = clearsMigration)
         lastReadableRecords = records.toMap()
         return updated.record(identity)
     }
@@ -178,9 +180,11 @@ class EditStore(private val directory: File,
 
     private fun migrationKey(identity: PhotoIdentity) = "migration.${encodeIdentity(identity)}"
 
-    private fun write(updated: Snapshot, identity: PhotoIdentity, migration: ProcessingMigrationReceipt? = null) {
+    private fun write(updated: Snapshot, identity: PhotoIdentity, migration: ProcessingMigrationReceipt? = null,
+        clearProcessingMigration: Boolean = false) {
         val properties = Properties().apply { putAll(updated.properties) }
         properties.setProperty("format.version", "1")
+        if (clearProcessingMigration) properties.remove(migrationKey(identity))
         migration?.let { properties.setProperty(migrationKey(identity), it.encode()) }
         val encoded = encodeIdentity(identity)
         // 旧文件中的 revision 只允许被读取，任何新写入都清理 revision 元数据。
