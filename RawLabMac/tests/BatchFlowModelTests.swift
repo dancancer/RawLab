@@ -333,6 +333,18 @@ enum BatchFlowModelTests {
         let snapshot = uneditedReview.snapshots.first { $0.photo.url == unedited }
         try require(snapshot?.record.state == nil && snapshot?.settings.x3fMode == .legacy,
                     "no-record collection export uses the source's Legacy default without creating an edit")
+        let replacedInspect = directory.appendingPathComponent("inspect-replaced.X3F")
+        try Data("initial".utf8).write(to: replacedInspect)
+        let replacedItem = try BatchExportItem(url: replacedInspect)
+        try Data("FOVb-replaced-corrupt-header".utf8).write(to: replacedInspect)
+        let inspectBatch = BatchExportModel(
+            job: BatchExportJob(source: normal, settings: Adjustments(), look: nil, lookName: "neutral"),
+            journal: BatchJournal(directory: directory.appendingPathComponent("inspect-journal"))
+        )
+        inspectBatch.inspect(replacedItem)
+        try wait { !inspectBatch.previewing }
+        try require(inspectBatch.error == BatchExportFailure.changedInput.localizedDescription,
+                    "batch inspect checks input identity before probing X3F target mode")
     }
 
     static func automaticLaunch(root: URL, fixture: URL) throws {

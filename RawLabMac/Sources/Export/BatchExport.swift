@@ -123,13 +123,15 @@ struct BatchExportJob: Codable {
         }
     }
 
-    func snapshot(for item: BatchExportItem) throws -> BatchFrozenSettings {
+    func snapshot(for item: BatchExportItem,
+                  x3fDefaultMode: (URL) throws -> X3fMode = RenderEngine.x3fDefaultMode(for:)) throws -> BatchFrozenSettings {
         if mode == .perTargetFrozen {
             guard let frozen = item.frozen else { throw CocoaError(.fileReadCorruptFile) }
             try frozen.validate()
             return frozen
         }
-        return BatchFrozenSettings(ordinal: 0, settings: settings(for: item.input), look: look,
+        return BatchFrozenSettings(ordinal: 0,
+            settings: try settings(for: item.input, x3fDefaultMode: x3fDefaultMode), look: look,
             lookSHA256: nil, lookName: lookName, outputFormat: format, longEdge: longEdge)
     }
 
@@ -151,18 +153,30 @@ struct BatchExportJob: Codable {
     }
     var suffix: String { format.suffix }
 
-    func settings(for input: URL) -> Adjustments {
+    func settings(for input: URL,
+                  x3fDefaultMode: (URL) throws -> X3fMode = RenderEngine.x3fDefaultMode(for:)) throws -> Adjustments {
         if RenderEngine.isRasterInput(input) { return settings.resolvedForRaster }
-        guard RenderEngine.isRasterInput(source), !RenderEngine.isRasterInput(input) else { return settings }
-        // 普通图像上不可用的相机参数不能在 RAW 目标上重新生效。
         var resolved = settings
-        let recipeTint = resolved.masterRecipe != nil ? resolved.tint : nil
-        resolved.exposureMode = Adjustments().exposureMode
-        resolved.resolveWhiteBalance(nil)
-        resolved.resetWhiteBalance()
-        if let recipeTint { resolved.tint = recipeTint }
-        resolved.rawNoiseReduction = 0
-        resolved.lensCorrection = nil
+        if RenderEngine.isRasterInput(source), !RenderEngine.isRasterInput(input) {
+            // 普通图像上不可用的相机参数不能在 RAW 目标上重新生效。
+            let recipeTint = resolved.masterRecipe != nil ? resolved.tint : nil
+            resolved.exposureMode = Adjustments().exposureMode
+            resolved.resolveWhiteBalance(nil)
+            resolved.resetWhiteBalance()
+            if let recipeTint { resolved.tint = recipeTint }
+            resolved.rawNoiseReduction = 0
+            resolved.lensCorrection = nil
+        }
+        if RenderEngine.isX3fInput(input) {
+            let mode = try x3fDefaultMode(input)
+            resolved.x3fMode = mode
+            if mode == .normal {
+                resolved.lensCorrection?.distortion = false
+                resolved.lensCorrection?.tca = false
+                resolved.lensCorrection?.vignetting = false
+                resolved.aiDenoiseEnabled = false
+            }
+        }
         return resolved
     }
 }
@@ -307,15 +321,21 @@ enum BatchExportRunner {
     private static func export(_ index: Int, job: inout BatchExportJob, journal: BatchJournal,
                                directory: URL, shouldCancel: () -> Bool, render: Render) throws {
         let item = job.items[index]
-        let snapshot = try job.snapshot(for: item)
-        let temp = directory.appendingPathComponent(".rawlab-\(job.id)-\(item.id).\(snapshot.outputFormat.suffix)")
-        defer { try? FileManager.default.removeItem(at: temp) }
+        let snapshot: BatchFrozenSettings
+        let temp: URL
+        var cleanupTemp: URL?
+        defer { if let cleanupTemp { try? FileManager.default.removeItem(at: cleanupTemp) } }
         do {
             guard try OriginalFileIdentity(item.input) == item.identity else { throw BatchExportFailure.changedInput }
             if job.mode == .perTargetFrozen {
                 guard try BatchExportItem.resourceKey(item.input) == item.resourceIdentifier else { throw BatchExportFailure.changedInput }
+            }
+            snapshot = try job.snapshot(for: item)
+            if job.mode == .perTargetFrozen {
                 try snapshot.verifyLook()
             }
+            temp = directory.appendingPathComponent(".rawlab-\(job.id)-\(item.id).\(snapshot.outputFormat.suffix)")
+            cleanupTemp = temp
             try render(item.input, snapshot.settings, snapshot.look, temp)
         } catch RenderError.aiCancelled where shouldCancel() {
             job.items[index].status = .waiting

@@ -354,13 +354,15 @@ final class BatchExportModel: ObservableObject {
         queue.async { [self] in
             let result = Result { () -> RenderedImage? in
                 try frozenJob.validate()
+                guard try OriginalFileIdentity(item.input) == item.identity else { throw BatchExportFailure.changedInput }
+                if frozenJob.mode == .perTargetFrozen {
+                    guard try BatchExportItem.resourceKey(item.input) == item.resourceIdentifier else { throw BatchExportFailure.changedInput }
+                }
                 let snapshot: BatchFrozenSettings
                 if frozenJob.mode == .uniformFrozen,let hdrPreparation {
                     snapshot=try hdrPreparation.prepare(item,ordinal:0,format:frozenJob.format,longEdge:frozenJob.longEdge)
                 } else { snapshot=try frozenJob.snapshot(for:item) }
-                guard try OriginalFileIdentity(item.input) == item.identity else { throw BatchExportFailure.changedInput }
                 if frozenJob.mode == .perTargetFrozen {
-                    guard try BatchExportItem.resourceKey(item.input) == item.resourceIdentifier else { throw BatchExportFailure.changedInput }
                     try snapshot.verifyLook()
                 }
                 if engine == nil { engine = try RenderEngine() }
