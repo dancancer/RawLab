@@ -263,6 +263,9 @@ public static class EditorAdjustmentRules
         scope.Kind == EditorResetKind.Group && scope.Group == EditorAdjustmentGroup.Detail ||
         scope.Kind == EditorResetKind.Tool && scope.Tool == EditorAdjustmentTool.Denoise;
 
+    // 重置全部调整是带确认的破坏性操作：显式清除处理迁移回执后，撤销只恢复调整数值，不恢复已清除的迁移回执。
+    internal static bool ClearsMigrationReceipt(EditorResetScope scope) => scope.Kind == EditorResetKind.All;
+
     private static AdjustmentSnapshot ResetHDR(EditorResetScope scope, AdjustmentSnapshot settings) =>
         settings with { HDR = ResetHDR(scope, settings.HDR!), HDRCameraAIEnabled = settings.HDRCameraAIEnabled && !ResetsAI(scope) };
 

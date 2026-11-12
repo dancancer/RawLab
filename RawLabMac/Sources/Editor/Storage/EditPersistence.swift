@@ -155,14 +155,20 @@ final class EditPersistence {
         }
     }
 
-    @discardableResult func saveState(identity: OriginalFileIdentity, state: PhotoEditState?) throws -> PhotoEditRecord {
+    @discardableResult func saveState(identity: OriginalFileIdentity, state: PhotoEditState?,
+                                      clearsProcessingMigration: Bool = false) throws -> PhotoEditRecord {
         try withWriteLock {
             var updated = try readRegistry()
             try identity.requireCurrent()
             let current = snapshot(identity: identity, registry: updated)
-            guard current.state != state else { return current }
+            let clearsMigration = clearsProcessingMigration && updated.processingMigrations?[identity.path] != nil
+            guard current.state != state || clearsMigration else { return current }
             if let state { updated.records[identity.path] = Record(identity: identity, state: state) }
             else { updated.records.removeValue(forKey: identity.path) }
+            if clearsMigration {
+                updated.processingMigrations?.removeValue(forKey: identity.path)
+                if updated.processingMigrations?.isEmpty == true { updated.processingMigrations = nil }
+            }
             try writeData(JSONEncoder().encode(updated), file)
             return PhotoEditRecord(identity: identity, state: state)
         }

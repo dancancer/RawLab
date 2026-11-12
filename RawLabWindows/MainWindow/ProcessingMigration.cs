@@ -133,6 +133,12 @@ public partial class MainWindow
             pending.Opened,pending.Revision,pending.Result,pending.Cancellation);
     }
 
+    private void ClearProcessingMigrationReceiptState()
+    {
+        processingMigrationReceipt=null;
+        RefreshProcessingMigrationControls();
+    }
+
     private void RefreshProcessingMigrationControls()
     {
         if (ProcessingMigrationState == null || RollbackProcessingMigrationButton == null) return;

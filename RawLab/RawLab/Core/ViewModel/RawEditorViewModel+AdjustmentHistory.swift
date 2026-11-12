@@ -85,6 +85,7 @@ extension RawEditorViewModel {
         guard let interaction, interaction.source == editorEditSource else { return nil }
         cancelQueuedSettingsSave()
         pendingSettings = nil
+        pendingResetMigrationClear = nil
         if let record = loadedEditRecord?.state { retainEditMetadata(record) }
         persistedEditorSettings = PersistedEditorSettings(source: interaction.source, settings: interaction.before)
         committedPreviewSettings = interaction.before
@@ -142,6 +143,7 @@ extension RawEditorViewModel {
                 recordSavedLookChange(from: loadedEditRecord?.state, to: state)
             }
             loadedEditRecord = saved
+            pendingResetMigrationClear = nil
             let state: PhotoEditState
             do { state = try saved.state ?? PhotoEditState(settings:sourceDefaultSettings,updatedAt:Date(timeIntervalSince1970:0)) }
             catch { editSaveState = .failed(adjustmentErrorMessage(error)); continue }

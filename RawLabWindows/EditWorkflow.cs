@@ -1,5 +1,8 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 
@@ -9,6 +12,8 @@ public partial class MainWindow
 {
     private EditStore? editStore;
     private bool editDirty;
+    private bool pendingMigrationReceiptClear;
+    internal Func<string, Exception, bool>? confirmUnusableRecordReset;
     private bool updateJournalLoadFailed;
     private string? saveNoticeKey;
     private readonly DispatcherTimer editSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
@@ -38,32 +43,61 @@ public partial class MainWindow
         InitializeAdjustmentHistory();
     }
 
-    private void MarkEdited()
+    private void MarkEdited() => MarkEditedCore(false);
+
+    private void MarkEditedCore(bool clearMigrationReceipt)
     {
         CancelProcessingMigration();
         if (quickPreset.Phase == QuickPresetPhase.Preparing) CancelQuickPreset();
         ++editRevision;
         if (!ready || syncing || file == null) return;
         editDirty = true;
+        if (clearMigrationReceipt) pendingMigrationReceiptClear = true;
         if (RetrySave.Visibility != Visibility.Visible) {SaveState.Text = "";saveNoticeKey=null;}
         editSaveTimer.Stop();
-        if(!interacting)SaveEdits();
+        if(!interacting)SaveEditsCore(clearMigrationReceipt);
     }
 
-    private bool SaveEdits()
+    private bool SaveEdits() => SaveEditsCore(false);
+
+    private bool SaveEditsCore(bool clearMigrationReceipt)
     {
         editSaveTimer.Stop();
         if(editGesture!=null && interacting)return true;
         if (!editDirty || file == null) return true;
+        var clearReceipt = clearMigrationReceipt || pendingMigrationReceiptClear;
         try
         {
-            CommitCurrentEdit(settings.Capture());
-            editGesture=null;editDirty = false; SetSaveNotice("调整已保存", "", false);
+            if (clearReceipt) CommitResetEdit(settings.Capture());
+            else CommitCurrentEdit(settings.Capture());
+            editGesture=null;editDirty = false;pendingMigrationReceiptClear = false;
+            if (clearReceipt) ClearProcessingMigrationReceiptState();
+            SetSaveNotice("调整已保存", "", false);
             return true;
         }
         catch (Exception error) {
             SetSaveNotice("调整未保存 · 重试", AdjustmentTransferPresentation.Detail(error), true);return false;
         }
+    }
+
+    // 重置全部调整经确认后显式清除该照片的处理迁移回执；随后撤销只恢复调整参数，不恢复已清除的迁移回执（回退仍保持已过期）。
+    private AdjustmentOutcome CommitResetEdit(AdjustmentSnapshot snapshot)
+    {
+        if(file==null)throw new InvalidOperationException("No photo is open.");
+        var candidate=new SavedEdit(OriginalIdentity.Read(file),snapshot,CurrentLookIdentity());
+        var before=currentEditRecord ?? new PhotoEditState(candidate.Identity,null);
+        SavedEdit? defaultEdit=null;
+        if(before.Edit==null) {
+            var defaults=PhotoInput.PrepareDefaultSettings(file);defaults.ResolveWhiteBalance(settings.AsShot);
+            defaultEdit=new(candidate.Identity,defaults.Capture(),null);
+        }
+        var result=TransferSession.CommitEdit(before,candidate,defaultEdit,clearMigrationReceipt:true);
+        if(result.Status is not (AdjustmentStatus.Applied or AdjustmentStatus.Unchanged))throw result.Error ?? new InvalidOperationException("Adjustment was not saved.");
+        var previousLook=before.Edit?.Look;
+        currentEditRecord=result.Saved;
+        RecordRecentLook(previousLook,result.Saved?.Edit?.Look);
+        if(acceptedPhotoPreviewResources is {} resources)CacheCurrentPhotoPreview(resources);
+        return result;
     }
 
     private SavedEdit CaptureCurrentEdit() => new(OriginalIdentity.Read(file ?? throw new InvalidOperationException()),
@@ -105,7 +139,8 @@ public partial class MainWindow
                 if(lut?.StartsWith("builtin:",StringComparison.Ordinal)==true)
                     lut=Path.Combine(AppContext.BaseDirectory,"LUTs",Path.GetFileName(lut[8..]));
             }
-            MarkEdited();RefreshControls();Schedule();
+            interacting=false;
+            MarkEditedCore(EditorAdjustmentRules.ClearsMigrationReceipt(prepared.Scope));RefreshControls();Schedule();
         });
     }
 
@@ -133,12 +168,33 @@ public partial class MainWindow
     private void RestoreEdits(string input)
     {
         editStore ??= new EditStore(EditStore.DefaultDirectory);
-        var nextRecord = editStore.ReadState(input);
+        PhotoEditState nextRecord;
+        Adjustments nextSettings;
+        try
+        {
+            nextRecord = editStore.ReadState(input);
+            // New HDR sources start in HDR mode; an existing snapshot without HDR
+            // remains the legacy SDR record by construction.
+            nextSettings = nextRecord.Edit?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(input);
+            if (nextRecord.Edit != null && nextSettings.IsHDREditing)
+            {
+                nextSettings.RequireActiveHDRDecodeVersion();
+                var proRAW = PhotoInput.IsRaw(input) &&
+                    PhotoInput.ProbeCameraRaw(input, out var info, nextSettings.Processing.Version) == HDRProbeState.Supported
+                    ? info?.IsProRAW
+                    : false;
+                if (nextSettings.ProRAWDecodeVersion != null) nextSettings.RequireHDRDecodeVersion(proRAW == true);
+                else if (proRAW == true) nextSettings.RequireActiveHDRDecodeVersion(true);
+            }
+        }
+        catch (Exception error) when (error is UnusableEditRecordException or HDRModeException { Failure: HDRModeFailure.InvalidSettings })
+        {
+            if (!ConfirmResetUnusableRecord(input, error)) throw;
+            nextRecord = TransferSession.ResetToUnmodified(input);
+            nextSettings = PhotoInput.PrepareDefaultSettings(input);
+        }
         var saved = nextRecord.Edit;
-        // New HDR sources start in HDR mode; an existing snapshot without HDR
-        // remains the legacy SDR record by construction.
-        var nextSettings = saved?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(input);
-        currentEditRecord=nextRecord;processingMigrationReceipt=editStore.ReadProcessingMigration(input);editGesture=null;settings=nextSettings;
+        currentEditRecord=nextRecord;processingMigrationReceipt=editStore.ReadProcessingMigration(input);editGesture=null;pendingMigrationReceiptClear=false;settings=nextSettings;
         lut = saved == null ? null : ResolveLook(saved);
         if (settings.MasterRecipeID == null && lut != null && !films.Any(f => StringComparer.OrdinalIgnoreCase.Equals(f.Path, lut)))
         {
@@ -149,6 +205,43 @@ public partial class MainWindow
         editDirty = false;
         if (saved != null) SetSaveNotice("已恢复上次调整", "", false);
         else if (RetrySave.Visibility != Visibility.Visible) {SaveState.Text = "";saveNoticeKey=null;}
+    }
+
+    private bool ConfirmResetUnusableRecord(string input, Exception error)
+    {
+        if (confirmUnusableRecordReset != null) return confirmUnusableRecordReset(input, error);
+        if (!IsLoaded || !IsVisible) return false;
+        var message = Path.GetFileName(input) + "\n\n" + AdjustmentTransferPresentation.Detail(error) + "\n\n" +
+            Loc.Text("恢复当前照片的全部调整，不改写原始照片。");
+        var dialog = new Window {
+            Title = Loc.Text("无法读取调整记录"), Owner = this, Width = 520,
+            MaxHeight = Math.Max(240, ActualHeight - 80), SizeToContent = SizeToContent.Height,
+            ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+        AutomationProperties.SetAutomationId(dialog, "editor.reset.unusable");
+        KeyboardNavigation.SetTabNavigation(dialog, KeyboardNavigationMode.Cycle);
+        var grid = new Grid { Margin = new Thickness(24) };
+        grid.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        grid.Children.Add(new ScrollViewer {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap }
+        });
+        var actions = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
+        var cancel = new Button { Content = Loc.Text("取消"), IsCancel = true, IsDefault = true };
+        cancel.Click += (_, _) => dialog.DialogResult = false;
+        var reset = new Button { Content = Loc.Text("重置全部调整"), Margin = new Thickness(8, 0, 0, 0) };
+        reset.Click += (_, _) => dialog.DialogResult = true;
+        actions.Children.Add(cancel);
+        actions.Children.Add(reset);
+        Grid.SetRow(actions, 1);
+        grid.Children.Add(actions);
+        dialog.Content = grid;
+        var focus = Keyboard.FocusedElement;
+        var confirmed = dialog.ShowDialog() == true;
+        if (focus is UIElement control && control.IsVisible) control.Focus();
+        return confirmed;
     }
 
     private void RefreshSaveNotice(){if(saveNoticeKey!=null)SaveState.Text=Loc.Text(saveNoticeKey);}

@@ -67,6 +67,7 @@ extension EditorModel {
             if prepared.candidate.filmID != prepared.original.filmID { selectedFilmID = "" }
             updatingMetadata = false
             edited()
+            pendingAllResetRevision = prepared.scope == .all ? editRevision : nil
         }
         return true
     }
@@ -272,7 +273,9 @@ extension EditorModel {
     @discardableResult func saveEdits() -> Bool {
         saveWork?.cancel()
         guard file != nil, dirty else { return true }
-        guard !scheduler.interacting, commitAdjustment(editState(settings: settings)) else { return false }
+        let clearsMigration = pendingAllResetRevision == editRevision
+        guard !scheduler.interacting,
+              commitAdjustment(editState(settings: settings), clearsProcessingMigration: clearsMigration) else { return false }
         dirty = false
         return true
     }
@@ -347,7 +350,8 @@ extension EditorModel {
 
     func attachBatch(_ job: BatchExportJob) {
         let preparer=job.settings.isHDREditing ? editStore.map { MacHDRBatchPreparation(source:job.source,settings:job.settings,store:$0,films:filmChoices,probeHDRSource:probeHDRSource) } : nil
-        let model = BatchExportModel(job: job, journal: batchJournal,hdrPreparation:preparer,probeHDRSource:probeHDRSource,onUsage: onUsage)
+        let x3fResolver = editStore.map { BatchExportJob.x3fModeResolver(store: $0) } ?? BatchExportJob.x3fModeResolver(directory: editDirectory)
+        let model = BatchExportModel(job: job, journal: batchJournal,hdrPreparation:preparer,probeHDRSource:probeHDRSource,resolveX3fMode:x3fResolver,onUsage: onUsage)
         model.sourceEditingGeometry = geometryDraft != nil
         model.onActivity = { [weak self] active in self?.exporting = active }
         model.onDiscard = { [weak self] in self?.batch = nil }

@@ -118,18 +118,22 @@ internal sealed partial class RenderEngine : IDisposable
         finally { ClearCancellation(); }
     }
 
+    internal static void ValidateHDRRender(Adjustments settings, bool? sourceIsProRAW = null) =>
+        settings.RequireActiveHDRDecodeVersion(sourceIsProRAW);
+
     private double AutoExposureCore(string path, Adjustments settings)
     {
         if (settings.HDR is { Mode: HDRMode.Hdr } hdr)
         {
+            ValidateHDRRender(settings);
             if (gpuMode == 2)
                 throw new HDRSourceException(HDRNative.StatusUnsupported, HDRNative.ReasonUnsupportedGpu, 6);
             HDRSourceInfo? sourceInfo;
             var probe = PhotoInput.IsRaw(path) ? PhotoInput.ProbeCameraRaw(path, out sourceInfo, settings.Processing.Version)
                 : PhotoInput.ProbeHDR(path, out sourceInfo);
-            if (probe != HDRProbeState.Supported || sourceInfo == null ||
-                sourceInfo.IsProRAW != (settings.ProRAWDecodeVersion == HDRNative.ProRAWDecodeVersion))
+            if (probe != HDRProbeState.Supported || sourceInfo == null)
                 throw new HDRModeException(HDRModeFailure.UnsupportedSource);
+            ValidateHDRRender(settings, sourceInfo.IsProRAW);
             using var source = AcquireHDRSource(path,sourceInfo,false,1280,settings);
             return HDRNative.EstimateAutoExposure(source.Owner, hdr);
         }
@@ -163,6 +167,7 @@ internal sealed partial class RenderEngine : IDisposable
     }
     public PreviewFrame RenderPreview(string path,Adjustments settings,string? lut,int edge,bool interactive,bool compare,bool clipping,Action? renderStarted=null)
     {
+        ValidateHDRRender(settings);
         settings=PrepareInputSettings(path,settings);
         var rawStamp=OriginalIdentity.Read(path);var lutStamp=lut==null ? null : OriginalIdentity.Read(lut);
         // Replaced files must invalidate the native decoded data as well as WPF frames.
@@ -270,6 +275,7 @@ internal sealed partial class RenderEngine : IDisposable
             (settings.HDR is not { Mode: HDRMode.Hdr } ||
              !(PhotoInput.IsHDRContainer(path) || PhotoInput.IsRaw(path))))
             throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
+        ValidateHDRRender(settings);
         if (settings.IsHDREditing && settings.ProRAWDecodeVersion == HDRNative.ProRAWDecodeVersion)
         {
             var proRAW = false;
@@ -335,6 +341,7 @@ internal sealed partial class RenderEngine : IDisposable
     private RenderedImage? RenderHDR(string path, Adjustments settings, string? lut, int edge, string? output,
         int? longEdge, ExportFormat? formatOverride,HDRSourceInfo info,bool statistics,bool clipping)
     {
+        ValidateHDRRender(settings, info.IsProRAW);
         var final = output != null;
         var format = output == null ? (ExportFormat?)null : formatOverride ?? (Path.GetExtension(output).Equals(".dng", StringComparison.OrdinalIgnoreCase)
             ? ExportFormat.RenderedDng : ExportFormat.HdrJpeg);
@@ -446,14 +453,15 @@ internal sealed partial class RenderEngine : IDisposable
         var hdrEdge = (uint)HDRPreviewEdge(edge);
         if (settings.HDR is { Mode: HDRMode.Hdr } hdr)
         {
+            ValidateHDRRender(settings);
             if (gpuMode == 2)
                 throw new HDRSourceException(HDRNative.StatusUnsupported, HDRNative.ReasonUnsupportedGpu, 6);
             HDRSourceInfo? sourceInfo;
             var status = PhotoInput.IsRaw(path) ? PhotoInput.ProbeCameraRaw(path, out sourceInfo, settings.Processing.Version)
                 : PhotoInput.ProbeHDR(path, out sourceInfo);
-            if (status != HDRProbeState.Supported || sourceInfo == null ||
-                sourceInfo.IsProRAW != (settings.ProRAWDecodeVersion == HDRNative.ProRAWDecodeVersion))
+            if (status != HDRProbeState.Supported || sourceInfo == null)
                 throw new HDRModeException(HDRModeFailure.UnsupportedSource);
+            ValidateHDRRender(settings, sourceInfo.IsProRAW);
             using var hdrSource = AcquireHDRSource(path,sourceInfo,false,hdrEdge,settings);
             var hdrProbe = HDRNative.CreateHslProbe(session, hdrSource.Owner, hdr, hdrEdge, revision);
             try { return ReadHslProbe(hdrProbe, revision, x, y); }

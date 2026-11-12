@@ -13,7 +13,15 @@ extension RawEditorViewModel {
         cancelProcessingMigration()
         if quickPresetState.isPreparing { cancelQuickPreset() }
         guard let source = editorEditSource else { return }
-        retainEditMetadata(currentEditState(settings: settings))
+        let candidate = currentEditState(settings: settings)
+        if let pending = pendingResetMigrationClear {
+            if !pending.queued, pending.source == source, pending.state.hasSameAdjustments(as: candidate) {
+                pendingResetMigrationClear = (pending.source, pending.state, true)
+            } else {
+                pendingResetMigrationClear = nil
+            }
+        }
+        retainEditMetadata(candidate)
         pendingSettings = settings
         cancelQueuedSettingsSave()
         guard adjustmentInteraction == nil else { return }
@@ -31,7 +39,12 @@ extension RawEditorViewModel {
         guard adjustmentInteraction == nil else { return false }
         guard !hasFailedDraftSave else { return false }
         guard let source = editorEditSource, pendingSettings != nil else { return true }
-        return persistEditCandidate(currentEditState(settings: settings), source: source)
+        let candidate = currentEditState(settings: settings)
+        let clearsMigration = pendingResetMigrationClear.map {
+            $0.source == source && $0.state.hasSameAdjustments(as: candidate)
+        } == true
+        if !clearsMigration { pendingResetMigrationClear = nil }
+        return persistEditCandidate(candidate, source: source, clearsProcessingMigration: clearsMigration)
     }
 
     func cancelQueuedSettingsSave() {
@@ -40,7 +53,8 @@ extension RawEditorViewModel {
         settingsSaveRevision = UUID()
     }
 
-    func persistEditCandidate(_ candidate: PhotoEditState, source: EditorEditSource) -> Bool {
+    func persistEditCandidate(_ candidate: PhotoEditState, source: EditorEditSource,
+                              clearsProcessingMigration: Bool = false) -> Bool {
         guard editorEditSource == source else { return false }
         let expected: PhotoEditRecord
         let defaults: PhotoEditState?
@@ -53,9 +67,14 @@ extension RawEditorViewModel {
         } catch { editSaveState = .failed(adjustmentErrorMessage(error)); return false }
         guard let session = adjustmentSession else { return false }
         let outcome = session.commitEdit(expected: expected, state: candidate, displayName: sourceDisplayName,
-            defaultState:defaults,isCurrent:{ self.editorEditSource==source },
+            defaultState:defaults, clearsProcessingMigration: clearsProcessingMigration,
+            isCurrent:{ self.editorEditSource==source },
             validateSource: adjustmentSourceValidator)
         if let saved = outcome.saved {
+            if clearsProcessingMigration {
+                pendingResetMigrationClear = nil
+                processingMigrationReceipt = nil
+            }
             if let state = saved.state { recordSavedLookChange(from: expected.state, to: state) }
             loadedEditRecord = saved
             retainEditMetadata(saved.state ?? candidate)
@@ -94,6 +113,7 @@ extension RawEditorViewModel {
         let restored = try record.state?.settings ?? sourceDefaultSettings
         cancelQueuedSettingsSave()
         pendingSettings = nil
+        pendingResetMigrationClear = nil
         failedDraftSource = nil
         adjustmentInteraction = nil
         adjustmentInteractionRejected = false
@@ -129,6 +149,8 @@ extension RawEditorViewModel {
         guard let sourceIdentity else { return }
         guard let editPersistence else { throw EditPersistenceError.corruptStore }
         try editPersistence.reset(sourceIdentity)
+        pendingResetMigrationClear = nil
+        processingMigrationReceipt = nil
         setEditNotice(.saved)
     }
 
