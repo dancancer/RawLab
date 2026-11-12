@@ -84,8 +84,12 @@ bool CoreMLGraph::available() {
 #if defined(__aarch64__)
     if (@available(macOS 14.0, *)) {
         @autoreleasepool {
-            for (id<MLComputeDeviceProtocol> device in MLModel.availableComputeDevices)
-                if ([device isKindOfClass:MLGPUComputeDevice.class]) return true;
+            @try {
+                for (id<MLComputeDeviceProtocol> device in MLModel.availableComputeDevices)
+                    if ([device isKindOfClass:MLGPUComputeDevice.class]) return true;
+            } @catch (NSException*) {
+                return false;
+            }
         }
     }
 #endif

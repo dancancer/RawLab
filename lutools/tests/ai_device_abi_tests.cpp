@@ -22,6 +22,26 @@ int main() {
         old.version = 1; old.struct_size = sizeof(old); old.backend = SONY2FUJI_AI_AUTO;
         require(sony2fuji_session_set_ai_denoise(session,&old) == SONY2FUJI_STATUS_OK, "Existing v1 client rejected");
         require(nlohmann::json::parse(sony2fuji_session_get_ai_diagnostics(session)).is_object(), "Session diagnostic JSON invalid");
+        if (sony2fuji_ai_available()) {
+            sony2fuji_ai_denoise_config enabled = old;
+            enabled.enabled = 1;
+            enabled.model_directory = "nonexistent-model";
+            enabled.cache_directory = "nonexistent-cache";
+            require(sony2fuji_session_set_ai_denoise(session,&enabled) == SONY2FUJI_STATUS_OK, "Enabled AI config rejected");
+            sony2fuji_request req{};
+            req.version = SONY2FUJI_REQUEST_VERSION; req.struct_size = sizeof(req);
+            req.input_type = SONY2FUJI_INPUT_RAW; req.input_path = "dummy.dng";
+            req.wb_mode = SONY2FUJI_WB_CAMERA; req.temperature = 6500;
+            req.brightness = req.contrast = req.saturation = 1.0f;
+            struct ForeignProgressException {};
+            const auto prepareStatus = sony2fuji_session_prepare_ai(session, &req,
+                [](void*, int32_t, uint64_t, uint64_t) -> int32_t { throw ForeignProgressException{}; }, nullptr);
+            const auto diag = nlohmann::json::parse(sony2fuji_session_get_ai_diagnostics(session));
+            require(prepareStatus == SONY2FUJI_STATUS_PROCESSING_ERROR &&
+                    sony2fuji_session_get_ai_error(session)[0] != '\0' &&
+                    diag.at("native_status") == SONY2FUJI_STATUS_PROCESSING_ERROR,
+                    "Foreign exception in sony2fuji_session_prepare_ai progress callback escaped or lost diagnostics");
+        }
         sony2fuji_session_destroy(session);
         std::cout << "PASS additive AI device/diagnostic APIs preserve config v1\n";
         return 0;

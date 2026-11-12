@@ -1357,7 +1357,8 @@ std::shared_ptr<const sony2fuji::LensCorrectionDatabase> hdrSessionLensDatabase(
 
 int32_t sony2fuji_hdr_camera_ai_available(void) {
 #if defined(SONY2FUJI_ENABLE_AI_DENOISE) && defined(__APPLE__)
-    return sony2fuji::ai::CoreMLGraph::gpuPlanAvailable() ? 1 : 0;
+    try { return sony2fuji::ai::CoreMLGraph::gpuPlanAvailable() ? 1 : 0; }
+    catch (...) { return 0; }
 #elif defined(SONY2FUJI_ENABLE_AI_DENOISE) && defined(_WIN32)
     return sony2fuji_ai_hardware_available();
 #else
@@ -1377,7 +1378,7 @@ template<class Job> decltype(auto) withHDRCameraAI(sony2fuji_session* session, J
     if (!session || !session->ai || !session->ai->enabled || !sony2fuji_hdr_camera_ai_available())
         unavailableHDRCameraAI();
     auto& state = *session->ai;
-    auto fail = [&](sony2fuji_status status, const char* message) {
+    auto fail = [&](sony2fuji_status status, const char* message) -> void {
         state.lastBackend.clear();
         state.lastError = ai::nativeErrorText(message);
         state.recordFailure(static_cast<int>(status), state.lastError);
@@ -1395,6 +1396,7 @@ template<class Job> decltype(auto) withHDRCameraAI(sony2fuji_session* session, J
     catch (const ai::DecodeError& error) { fail(mapError(error.code), error.what()); }
     catch (const std::filesystem::filesystem_error& error) { fail(SONY2FUJI_STATUS_IO_ERROR, error.what()); }
     catch (const std::exception& error) { fail(SONY2FUJI_STATUS_PROCESSING_ERROR, error.what()); }
+    catch (...) { fail(SONY2FUJI_STATUS_PROCESSING_ERROR, "Unknown native AI failure"); }
     std::terminate();
 }
 #endif
@@ -1493,6 +1495,8 @@ sony2fuji_status sony2fuji_validate_look(
         return SONY2FUJI_STATUS_IO_ERROR;
     } catch (const std::exception&) {
         return SONY2FUJI_STATUS_UNSUPPORTED;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
     }
 }
 
@@ -1514,13 +1518,18 @@ sony2fuji_status sony2fuji_session_create(sony2fuji_session** out_session) {
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     }
 
-    *out_session = new (std::nothrow) sony2fuji_session();
-    if (!*out_session) {
+    try {
+        auto session = std::make_unique<sony2fuji_session>();
+        session->gpu_config = sony2fuji::defaultGpuConfig();
+        *out_session = session.release();
+        return SONY2FUJI_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        *out_session = nullptr;
         return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (...) {
+        *out_session = nullptr;
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
     }
-    (*out_session)->gpu_config = sony2fuji::defaultGpuConfig();
-
-    return SONY2FUJI_STATUS_OK;
 }
 
 sony2fuji_status sony2fuji_session_destroy(sony2fuji_session* session) {
@@ -1554,6 +1563,7 @@ sony2fuji_status sony2fuji_session_set_lens_correction(sony2fuji_session* sessio
         session->lens_correction = {config->distortion != 0, config->tca != 0, config->auto_crop != 0, std::move(profile)};
         return SONY2FUJI_STATUS_OK;
     } catch (const std::bad_alloc&) { return SONY2FUJI_STATUS_OUT_OF_MEMORY; }
+    catch (...) { return SONY2FUJI_STATUS_PROCESSING_ERROR; }
 }
 
 sony2fuji_status sony2fuji_session_set_lens_correction_v2(sony2fuji_session* session, const sony2fuji_lens_correction_config_v2* config) {
@@ -1619,6 +1629,7 @@ sony2fuji_status sony2fuji_session_set_display_lens_metadata(sony2fuji_session* 
         session->has_display_lens_metadata = true;
         return SONY2FUJI_STATUS_OK;
     } catch (const std::bad_alloc&) { return SONY2FUJI_STATUS_OUT_OF_MEMORY; }
+    catch (...) { return SONY2FUJI_STATUS_PROCESSING_ERROR; }
 }
 
 sony2fuji_status sony2fuji_session_inspect_lens_metadata(sony2fuji_session* session,
@@ -1680,14 +1691,20 @@ sony2fuji_status sony2fuji_session_set_gpu_config(
     if (status != SONY2FUJI_STATUS_OK) {
         return status;
     }
-    session->gpu_config.mode = toCoreGpuMode(config->mode);
+    try {
+        session->gpu_config.mode = toCoreGpuMode(config->mode);
 #if defined(SONY2FUJI_ENABLE_D3D11)
-    if (session->gpu_config.mode == sony2fuji::GpuMode::Off) session->d3d_renderer.reset();
+        if (session->gpu_config.mode == sony2fuji::GpuMode::Off) session->d3d_renderer.reset();
 #endif
 #if defined(SONY2FUJI_ENABLE_GLES)
-    if (session->gpu_config.mode == sony2fuji::GpuMode::Off) session->gles_renderer.reset();
+        if (session->gpu_config.mode == sony2fuji::GpuMode::Off) session->gles_renderer.reset();
 #endif
-    return SONY2FUJI_STATUS_OK;
+        return SONY2FUJI_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
 }
 
 sony2fuji_status sony2fuji_session_set_processing_version(
@@ -1701,7 +1718,10 @@ sony2fuji_status sony2fuji_session_set_processing_version(
     return SONY2FUJI_STATUS_OK;
 }
 
-int32_t sony2fuji_x3f_available(void) { return sony2fuji::x3fRenderingAvailable() ? 1 : 0; }
+int32_t sony2fuji_x3f_available(void) {
+    try { return sony2fuji::x3fRenderingAvailable() ? 1 : 0; }
+    catch (...) { return 0; }
+}
 
 sony2fuji_status sony2fuji_x3f_default_mode(const char* input_path, sony2fuji_x3f_mode* mode) {
     if (!input_path || !*input_path || !mode) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
@@ -1728,6 +1748,8 @@ sony2fuji_status sony2fuji_x3f_default_mode(const char* input_path, sony2fuji_x3
     } catch (const std::bad_alloc&) {
         return SONY2FUJI_STATUS_OUT_OF_MEMORY;
     } catch (const std::exception&) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    } catch (...) {
         return SONY2FUJI_STATUS_PROCESSING_ERROR;
     }
 }
@@ -1772,7 +1794,8 @@ int32_t sony2fuji_ai_hardware_available(void) {
     try { sony2fuji::ai::findDirectMLAdapter(); return 1; }
     catch (...) { return 0; }
 #elif defined(SONY2FUJI_ENABLE_AI_DENOISE) && defined(__APPLE__)
-    return sony2fuji::ai::CoreMLGraph::available() ? 1 : 0;
+    try { return sony2fuji::ai::CoreMLGraph::available() ? 1 : 0; }
+    catch (...) { return 0; }
 #else
     return 0;
 #endif
@@ -1823,6 +1846,8 @@ sony2fuji_status sony2fuji_session_set_ai_denoise(sony2fuji_session* session, co
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
     if (config->enabled && config->backend == SONY2FUJI_AI_CPU) return SONY2FUJI_STATUS_UNSUPPORTED;
+    const bool hadAI = session->ai != nullptr;
+    const bool previousEnabled = hadAI ? session->ai->enabled : false;
     try {
         if (!session->ai) session->ai = std::make_unique<sony2fuji::ai::AISession>();
         const auto backend = config->backend == SONY2FUJI_AI_CPU ? sony2fuji::ai::Backend::Cpu :
@@ -1831,8 +1856,16 @@ sony2fuji_status sony2fuji_session_set_ai_denoise(sony2fuji_session* session, co
         session->ai->enabled = config->enabled != 0;
         session->ai->configure(config->model_directory ? config->model_directory : "", config->cache_directory ? config->cache_directory : "", backend);
         return SONY2FUJI_STATUS_OK;
-    } catch (const std::bad_alloc&) { return SONY2FUJI_STATUS_OUT_OF_MEMORY; }
-    catch (const std::exception&) { return SONY2FUJI_STATUS_INVALID_ARGUMENT; }
+    } catch (const std::bad_alloc&) {
+        if (hadAI) session->ai->enabled = previousEnabled;
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (const std::exception&) {
+        if (hadAI) session->ai->enabled = previousEnabled;
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    } catch (...) {
+        if (hadAI) session->ai->enabled = previousEnabled;
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
 #else
     return config->enabled ? SONY2FUJI_STATUS_UNSUPPORTED : SONY2FUJI_STATUS_OK;
 #endif
@@ -1893,6 +1926,8 @@ sony2fuji_status sony2fuji_session_prepare_ai(sony2fuji_session* session, const 
         return failure(SONY2FUJI_STATUS_IO_ERROR,error.what());
     } catch (const std::exception& error) {
         return failure(SONY2FUJI_STATUS_PROCESSING_ERROR,error.what());
+    } catch (...) {
+        return failure(SONY2FUJI_STATUS_PROCESSING_ERROR,"Unknown native AI failure");
     }
 #else
     (void)progress; (void)context; return SONY2FUJI_STATUS_UNSUPPORTED;
@@ -2019,9 +2054,16 @@ sony2fuji_status sony2fuji_session_set_tone_curve(
 ) {
     static_assert(sizeof(sony2fuji_tone_curve_config) == 544, "Tone curve C ABI layout");
     if (!session || !config || !sony2fuji::validToneCurve(*config)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-    session->tone_curve = sony2fuji::ToneCurve(*config);
-    session->channel_curves = {};
-    return SONY2FUJI_STATUS_OK;
+    try {
+        sony2fuji::ToneCurve curve(*config);
+        session->tone_curve = std::move(curve);
+        session->channel_curves = {};
+        return SONY2FUJI_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
 }
 
 sony2fuji_status sony2fuji_session_set_tone_curves(
@@ -2030,12 +2072,18 @@ sony2fuji_status sony2fuji_session_set_tone_curves(
         config->struct_size != sizeof(*config) ||
         !std::all_of(std::begin(config->curves), std::end(config->curves), sony2fuji::validToneCurve))
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-    const sony2fuji::ToneCurve master(config->curves[0]);
-    const std::array<sony2fuji::ToneCurve, 3> channels = {
-        sony2fuji::ToneCurve(config->curves[1]), sony2fuji::ToneCurve(config->curves[2]), sony2fuji::ToneCurve(config->curves[3])};
-    session->tone_curve = master;
-    session->channel_curves = channels;
-    return SONY2FUJI_STATUS_OK;
+    try {
+        sony2fuji::ToneCurve master(config->curves[0]);
+        std::array<sony2fuji::ToneCurve, 3> channels = {
+            sony2fuji::ToneCurve(config->curves[1]), sony2fuji::ToneCurve(config->curves[2]), sony2fuji::ToneCurve(config->curves[3])};
+        session->tone_curve = std::move(master);
+        session->channel_curves = std::move(channels);
+        return SONY2FUJI_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
 }
 
 sony2fuji_status sony2fuji_sample_tone_curve(const sony2fuji_tone_curve_config* config,
@@ -2043,9 +2091,15 @@ sony2fuji_status sony2fuji_sample_tone_curve(const sony2fuji_tone_curve_config* 
     if (!config || !x || !y || count == 0 || !sony2fuji::validToneCurve(*config) || config->mode != SONY2FUJI_CURVE_CUSTOM)
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     for (uint32_t i = 0; i < count; ++i) if (!std::isfinite(x[i])) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-    const sony2fuji::ToneCurve curve(*config);
-    for (uint32_t i = 0; i < count; ++i) y[i] = curve.evaluate(x[i]);
-    return SONY2FUJI_STATUS_OK;
+    try {
+        const sony2fuji::ToneCurve curve(*config);
+        for (uint32_t i = 0; i < count; ++i) y[i] = curve.evaluate(x[i]);
+        return SONY2FUJI_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
 }
 
 sony2fuji_status sony2fuji_session_set_geometry(
@@ -2839,42 +2893,48 @@ sony2fuji_status sony2fuji_compute_histogram(
         return SONY2FUJI_STATUS_UNSUPPORTED;
     }
 
-    uint32_t channels = buffer->pixel_format == SONY2FUJI_PIXEL_RGBA8 ? 4 : 3;
-    const uint8_t* data = static_cast<const uint8_t*>(buffer->data);
-    std::vector<uint32_t> counts(bins, 0);
+    try {
+        uint32_t channels = buffer->pixel_format == SONY2FUJI_PIXEL_RGBA8 ? 4 : 3;
+        const uint8_t* data = static_cast<const uint8_t*>(buffer->data);
+        std::vector<uint32_t> counts(bins, 0);
 
-    for (uint32_t y = 0; y < buffer->height; ++y) {
-        const uint8_t* row = data + static_cast<size_t>(y) * buffer->stride_bytes;
-        for (uint32_t x = 0; x < buffer->width; ++x) {
-            size_t offset = static_cast<size_t>(x) * channels;
-            float r = row[offset] / 255.0f;
-            float g = row[offset + 1] / 255.0f;
-            float b = row[offset + 2] / 255.0f;
-            float l = 0.2126f * r + 0.7152f * g + 0.0722f * b;
-            uint32_t bin = static_cast<uint32_t>(l * static_cast<float>(bins - 1));
-            if (bin >= bins) {
-                bin = bins - 1;
+        for (uint32_t y = 0; y < buffer->height; ++y) {
+            const uint8_t* row = data + static_cast<size_t>(y) * buffer->stride_bytes;
+            for (uint32_t x = 0; x < buffer->width; ++x) {
+                size_t offset = static_cast<size_t>(x) * channels;
+                float r = row[offset] / 255.0f;
+                float g = row[offset + 1] / 255.0f;
+                float b = row[offset + 2] / 255.0f;
+                float l = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+                uint32_t bin = static_cast<uint32_t>(l * static_cast<float>(bins - 1));
+                if (bin >= bins) {
+                    bin = bins - 1;
+                }
+                counts[bin] += 1;
             }
-            counts[bin] += 1;
         }
-    }
 
-    float max_value = 0.0f;
-    for (uint32_t i = 0; i < bins; ++i) {
-        float value = static_cast<float>(counts[i]);
-        out_bins[i] = value;
-        if (value > max_value) {
-            max_value = value;
-        }
-    }
-
-    if (max_value > 0.0f) {
+        float max_value = 0.0f;
         for (uint32_t i = 0; i < bins; ++i) {
-            out_bins[i] = out_bins[i] / max_value;
+            float value = static_cast<float>(counts[i]);
+            out_bins[i] = value;
+            if (value > max_value) {
+                max_value = value;
+            }
         }
-    }
 
-    return SONY2FUJI_STATUS_OK;
+        if (max_value > 0.0f) {
+            for (uint32_t i = 0; i < bins; ++i) {
+                out_bins[i] = out_bins[i] / max_value;
+            }
+        }
+
+        return SONY2FUJI_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
 }
 
 sony2fuji_status sony2fuji_analyze_image(

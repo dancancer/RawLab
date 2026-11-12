@@ -237,7 +237,7 @@ bool runKernel(MetalContext& context, const ImageLayout& layout,
         std::memcpy(candidate.clipping.data(), clipping.contents, layout.maskBytes);
         result = std::move(candidate);
         return true;
-    } catch (...) {
+    } catch (const std::exception&) {
         return false;
     }
 }
@@ -251,16 +251,16 @@ bool computeImageStatsMetal(const sony2fuji_buffer& buffer, ImageStats& output) 
     if (!validateBuffer(buffer, layout)) {
         return false;
     }
-    @try {
-        @autoreleasepool {
+    @autoreleasepool {
+        @try {
             MetalContext* context = getMetalContext();
             if (!context) {
                 return false;
             }
             return runKernel(*context, layout, buffer, output);
+        } @catch (NSException*) {
+            return false;
         }
-    } @catch (NSException*) {
-        return false;
     }
 }
 

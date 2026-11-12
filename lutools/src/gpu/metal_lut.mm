@@ -158,8 +158,8 @@ bool runCompute(
 namespace sony2fuji {
 
 bool applyLutMetal(const LUT3D& lut, ImageData& image) {
-    @try {
-        @autoreleasepool {
+    @autoreleasepool {
+        @try {
             try {
                 MetalContext* context = getMetalContext();
                 if (!context) {
@@ -181,12 +181,12 @@ bool applyLutMetal(const LUT3D& lut, ImageData& image) {
                                 static_cast<uint32_t>(lut.getSize()))) return false;
                 std::memcpy(image.pixels.data(), pixel_buffer.contents, image.pixels.size() * sizeof(RGB));
                 return true;
-            } catch (...) {
+            } catch (const std::exception&) {
                 return false;
             }
+        } @catch (NSException*) {
+            return false;
         }
-    } @catch (NSException*) {
-        return false;
     }
 }
 
