@@ -52,6 +52,15 @@ std::vector<uint8_t> readFile(const std::filesystem::path& path) {
 
 int main(int argc, char** argv) {
     if (argc != 3) return 2;
+    const char* rawPath = argv[1];
+    if (!rawPath || !*rawPath || !std::filesystem::exists(std::filesystem::u8path(rawPath))) {
+        const char* envRaw = std::getenv("RAWLAB_TEST_RAW");
+        if (envRaw && *envRaw) rawPath = envRaw;
+    }
+    if (!rawPath || !*rawPath || !std::filesystem::exists(std::filesystem::u8path(rawPath))) {
+        std::cout << "SKIP acceleration_tests: missing RAW sample " << (rawPath ? rawPath : "") << '\n';
+        return 77;
+    }
 #ifdef SONY2FUJI_ENABLE_METAL
     const bool nativeCpuOnly = false;
 #else
@@ -60,7 +69,7 @@ int main(int argc, char** argv) {
     Session cpu(SONY2FUJI_GPU_OFF), gpu(nativeCpuOnly ? SONY2FUJI_GPU_AUTO : SONY2FUJI_GPU_FORCE);
     sony2fuji_request request{};
     request.version = SONY2FUJI_REQUEST_VERSION; request.struct_size = sizeof(request);
-    request.input_type = SONY2FUJI_INPUT_RAW; request.input_path = argv[1];
+    request.input_type = SONY2FUJI_INPUT_RAW; request.input_path = rawPath;
     request.lut_path = argv[2]; request.lut_strength = 0.65f;
     request.temperature = 6500; request.brightness = request.contrast = request.saturation = 1;
     request.intent = SONY2FUJI_INTENT_PREVIEW; request.preview_long_edge = 600;

@@ -3,6 +3,8 @@
 #include "native_gpu_test_support.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -125,7 +127,13 @@ int main(int argc, char** argv) {
         require(sony2fuji_process(s,&scene,&buffer)==SONY2FUJI_STATUS_UNSUPPORTED,"precision-limited Force is honest");
         gpu.mode=SONY2FUJI_GPU_OFF;sony2fuji_session_set_gpu_config(s,&gpu);
         if (argc>1) {
-            r.input_type=SONY2FUJI_INPUT_RAW;r.input_path=argv[1];r.input_pixels=nullptr;r.input_width=r.input_height=0;
+            const char* rawPath=*argv[1] ? argv[1] : std::getenv("RAWLAB_TEST_RAW");
+            if (!rawPath || !*rawPath || !std::filesystem::exists(std::filesystem::u8path(rawPath))) {
+                sony2fuji_session_destroy(s);
+                std::cout << "SKIP tone_curve_raw: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
+                return 77;
+            }
+            r.input_type=SONY2FUJI_INPUT_RAW;r.input_path=rawPath;r.input_pixels=nullptr;r.input_width=r.input_height=0;
             r.size_mode=SONY2FUJI_SIZE_LIMIT_LONG_EDGE;r.long_edge=192;
             sony2fuji_session_set_tone_curve(s,&reset);const auto before=render(s,r);
             custom.points[1]={.25,.12};custom.points[2]={.75,.88};

@@ -117,7 +117,14 @@ int main(int argc, char** argv) {
             std::strcmp(raw->unpack_function_name(), "lossy_dng_load_raw()") == 0,
             "Synthetic DNG must exercise the real JPEG decoder");
         develop(*raw, "synthetic JPEG DNG");
-        if (argc == 2) externalPhotos(argv[1]);
+        if (argc == 2) {
+            const char* directory = *argv[1] ? argv[1] : std::getenv("RAWLAB_TEST_FORMAT_DIRECTORY");
+            if (!directory || !*directory || !std::filesystem::is_directory(std::filesystem::u8path(directory))) {
+                std::cout << "SKIP raw_format_photos: supply SONY2FUJI_TEST_FORMAT_DIRECTORY or RAWLAB_TEST_FORMAT_DIRECTORY\n";
+                return 77;
+            }
+            externalPhotos(directory);
+        }
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL " << error.what() << '\n';

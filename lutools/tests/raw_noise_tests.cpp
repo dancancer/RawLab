@@ -1,5 +1,7 @@
 #include "sony2fuji/raw_processor.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #include <vector>
@@ -38,7 +40,7 @@ std::vector<unsigned char> render(Session& session, const sony2fuji_request& req
 }
 
 int main(int argc, char** argv) {
-    if (argc < 2 || argc > 3) return 2;
+    if (argc < 1 || argc > 3) return 2;
     try {
         Session session;
         int32_t supported = -1;
@@ -48,11 +50,20 @@ int main(int argc, char** argv) {
               sony2fuji_session_set_raw_noise_reduction(session.value, -1) == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
               sony2fuji_session_set_raw_noise_reduction(session.value, 3) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
               "reject invalid RAW denoise levels and null session");
+        RAWProcessor processor;
+        check(!processor.supportsNoiseReduction(), "unloaded processor has no denoise capability");
+        const char* bayerPath = (argc >= 2 && *argv[1]) ? argv[1] : std::getenv("RAWLAB_TEST_RAW");
+        if (!bayerPath || !*bayerPath || !std::filesystem::exists(std::filesystem::u8path(bayerPath))) {
+            check(processor.loadFile("/nonexistent/raw-noise.raw") != ErrorCode::Success &&
+                  !processor.supportsNoiseReduction(), "failed load clears denoise capability");
+            std::cout << "SKIP raw_noise: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW" << std::endl;
+            return 77;
+        }
         sony2fuji_request request{};
         request.version = SONY2FUJI_REQUEST_VERSION;
         request.struct_size = sizeof(request);
         request.input_type = SONY2FUJI_INPUT_RAW;
-        request.input_path = argv[1];
+        request.input_path = bayerPath;
         request.wb_mode = SONY2FUJI_WB_CAMERA;
         request.temperature = 6500;
         request.brightness = request.contrast = request.saturation = 1;
@@ -79,9 +90,7 @@ int main(int argc, char** argv) {
             previous = changed;
         }
 
-        RAWProcessor processor;
-        check(!processor.supportsNoiseReduction(), "unloaded processor has no denoise capability");
-        check(processor.loadFile(argv[1]) == ErrorCode::Success, "load Bayer fixture");
+        check(processor.loadFile(bayerPath) == ErrorCode::Success, "load Bayer fixture");
         RAWProcessOptions options;
         options.rawNoiseReduction = 2;
         options.halfSize = true;
@@ -95,8 +104,9 @@ int main(int argc, char** argv) {
         check(processor.loadFile("/nonexistent/raw-noise.raw") != ErrorCode::Success &&
               !processor.supportsNoiseReduction(), "failed load clears denoise capability");
 
-        if (argc == 3) {
-            request.input_path = argv[2];
+        const char* nonBayerPath = (argc == 3 && *argv[2]) ? argv[2] : std::getenv("RAWLAB_TEST_NON_BAYER_RAW");
+        if (nonBayerPath && *nonBayerPath && std::filesystem::exists(std::filesystem::u8path(nonBayerPath))) {
+            request.input_path = nonBayerPath;
             render(session, request);
             check(sony2fuji_session_get_raw_noise_reduction_support(session.value, &supported) ==
                   SONY2FUJI_STATUS_OK && supported == 0, "non-Bayer RAW reports unsupported");

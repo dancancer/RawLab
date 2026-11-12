@@ -3,6 +3,7 @@ import argparse
 import errno
 import itertools
 import json
+import os
 import pathlib
 import platform
 import struct
@@ -451,5 +452,11 @@ if __name__ == "__main__":
     parser.add_argument("--raw", type=pathlib.Path)
     arguments, remaining = parser.parse_known_args()
     CLI = arguments.cli.resolve()
-    RAW = arguments.raw.resolve() if arguments.raw else None
-    unittest.main(argv=[__file__, *remaining])
+    raw_override = os.environ.get("RAWLAB_TEST_RAW")
+    RAW = pathlib.Path(raw_override).resolve() if raw_override else (arguments.raw.resolve() if arguments.raw else None)
+    program = unittest.main(argv=[__file__, *remaining], exit=False)
+    if not program.result.wasSuccessful():
+        sys.exit(1)
+    if RAW is None or not RAW.is_file():
+        print(f"SKIP agent_commands: real RAW sample missing ({RAW})")
+        sys.exit(77)

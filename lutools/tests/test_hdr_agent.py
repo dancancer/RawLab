@@ -3,9 +3,11 @@ import argparse
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 import struct
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -48,7 +50,7 @@ class HDRAgent(unittest.TestCase):
                     self.v14_export(root, "raw", source, output_format)
 
     def test_v14_sony_raw_retains_crop(self):
-        if SONY_RAW is None:
+        if SONY_RAW is None or not SONY_RAW.is_file():
             self.skipTest("Requires the external Sony ILCE-7CM2 4:3 regression photo")
         with tempfile.TemporaryDirectory(prefix="rawlab-hdr-sony-crop-") as temporary:
             root = Path(temporary)
@@ -292,5 +294,11 @@ if __name__=="__main__":
     parser.add_argument("--sony-raw",type=Path)
     args,remaining=parser.parse_known_args()
     CLI,FIXTURE=args.cli.resolve(),args.fixture.resolve()
-    SONY_RAW=args.sony_raw.resolve() if args.sony_raw else None
-    unittest.main(argv=[__file__,*remaining])
+    sony_raw_arg=str(args.sony_raw) if args.sony_raw and str(args.sony_raw) else os.environ.get("RAWLAB_TEST_SONY_ASPECT_RAW")
+    SONY_RAW=Path(sony_raw_arg).resolve() if sony_raw_arg else None
+    program=unittest.main(argv=[__file__,*remaining],exit=False)
+    if not program.result.wasSuccessful():
+        sys.exit(1)
+    if program.result.testsRun > 0 and len(program.result.skipped) == program.result.testsRun:
+        print(f"SKIP raw_active_area_sony_cli: Sony 4:3 RAW sample missing ({SONY_RAW})")
+        sys.exit(77)

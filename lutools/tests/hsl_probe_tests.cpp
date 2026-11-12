@@ -3,6 +3,7 @@
 #include "native_gpu_test_support.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <chrono>
 #include <filesystem>
@@ -122,7 +123,13 @@ int main(int argc,char** argv) {
         sony2fuji_hsl_probe_query q{99,sizeof(q),13,27,0,0};sony2fuji_hsl_probe_result result{};result.weights[0]=1;
         require(sony2fuji_hsl_probe_sample(p.get(),&q,&result)==SONY2FUJI_STATUS_INVALID_ARGUMENT&&result.weights[0]==0,"invalid metadata clears result");
         if(argc>1) {
-            request.input_type=SONY2FUJI_INPUT_RAW;request.input_path=argv[1];request.input_pixels=nullptr;request.input_width=request.input_height=0;
+            const char* rawPath=*argv[1] ? argv[1] : std::getenv("RAWLAB_TEST_RAW");
+            if(!rawPath || !*rawPath || !std::filesystem::exists(std::filesystem::u8path(rawPath))) {
+                sony2fuji_session_destroy(session);
+                std::cout<<"SKIP hsl_probe_raw: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
+                return 77;
+            }
+            request.input_type=SONY2FUJI_INPUT_RAW;request.input_path=rawPath;request.input_pixels=nullptr;request.input_width=request.input_height=0;
             request.preview_long_edge=96;auto raw=capture(session,request);const auto rawSample=sample(raw,.5f,.5f);
             require(rawSample.width>0&&rawSample.height>0&&rawSample.availability!=SONY2FUJI_HSL_PROBE_STALE,"real RAW enters probe chain");
             // 只破坏临时副本的文件头，保持 cache key；第二次成功证明没有丢弃已解码 RAW。
@@ -131,7 +138,7 @@ int main(int argc,char** argv) {
                 ~TemporaryRaw(){std::error_code ignored;std::filesystem::remove(path,ignored);}
             } temporary{std::filesystem::temp_directory_path()/std::filesystem::path("rawlab-hsl-cache-"+
                 std::to_string(std::chrono::steady_clock::now().time_since_epoch().count())+".ARW")};
-            std::filesystem::copy_file(argv[1],temporary.path);
+            std::filesystem::copy_file(std::filesystem::u8path(rawPath),temporary.path);
             const auto path=temporary.path.string();request.input_path=path.c_str();
             sony2fuji_session_set_viewport_preview(session,0);
             auto preserved=capture(session,request);

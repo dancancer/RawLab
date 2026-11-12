@@ -179,8 +179,14 @@ int main(int argc,char** argv) {
         config.clarity=config.dehaze=0;
         require(sony2fuji_session_set_atmosphere(session,&config)==SONY2FUJI_STATUS_OK,"clear session");
         require(render(session,request)==original,"next photo does not inherit atmosphere");
-        const char* raw=argc>1 ? argv[1] : std::getenv("RAWLAB_TEST_RAW");
-        if(raw && *raw) {
+        const char* raw=(argc>1 && *argv[1]) ? argv[1] : std::getenv("RAWLAB_TEST_RAW");
+        const bool hasRaw=raw && *raw && std::filesystem::exists(std::filesystem::u8path(raw));
+        if(argc>1 && !hasRaw) {
+            sony2fuji_session_destroy(session);
+            std::cout<<"SKIP atmosphere_raw: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
+            return 77;
+        }
+        if(hasRaw) {
             request.input_type=SONY2FUJI_INPUT_RAW;request.input_path=raw;request.input_pixels=nullptr;
             request.input_width=request.input_height=0;request.size_mode=SONY2FUJI_SIZE_LIMIT_LONG_EDGE;request.long_edge=320;
             threadParity(request);

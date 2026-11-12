@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <limits>
 #include <vector>
@@ -215,7 +217,13 @@ static void rawExposure(const char* path) {
 
 int main(int argc, char** argv) {
     hslAlgorithm(); hslNearGrayContinuity(); hslSession(); autoExposure();
-    if (argc > 1) rawExposure(argv[1]);
-    else std::cout << "Real RAW fixture not supplied; RAW coverage skipped\n";
+    if (argc > 1) {
+        const char* rawPath = *argv[1] ? argv[1] : std::getenv("RAWLAB_TEST_RAW");
+        if (!rawPath || !*rawPath || !std::filesystem::exists(std::filesystem::u8path(rawPath))) {
+            std::cout << "SKIP photo_color_raw: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
+            return 77;
+        }
+        rawExposure(rawPath);
+    } else std::cout << "Real RAW fixture not supplied; RAW coverage skipped\n";
     std::cout << "HSL and automatic exposure tests passed\n";
 }

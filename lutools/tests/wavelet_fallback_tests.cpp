@@ -3,6 +3,8 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include <atomic>
 #include <cassert>
+#include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <vector>
 
@@ -21,9 +23,14 @@ bool gpuDetailFilter(ImageData&, float, float) { return false; }
 
 int main(int argc, char** argv) {
     assert(argc==2);
+    const char* rawPath=*argv[1] ? argv[1] : std::getenv("RAWLAB_TEST_LENS_WAVELET_RAW");
+    if (!rawPath || !*rawPath || !std::filesystem::exists(std::filesystem::u8path(rawPath))) {
+        std::cout << "SKIP wavelet_fallback: supply SONY2FUJI_TEST_LENS_WAVELET_RAW or RAWLAB_TEST_LENS_WAVELET_RAW\n";
+        return 77;
+    }
     sony2fuji_request request{};
     request.version=SONY2FUJI_REQUEST_VERSION; request.struct_size=sizeof(request);
-    request.input_type=SONY2FUJI_INPUT_RAW; request.input_path=argv[1];
+    request.input_type=SONY2FUJI_INPUT_RAW; request.input_path=rawPath;
     request.temperature=6500; request.brightness=request.contrast=request.saturation=1;
     request.wb_mode=SONY2FUJI_WB_TEMPERATURE; request.intent=SONY2FUJI_INTENT_FINAL;
     request.size_mode=SONY2FUJI_SIZE_FIT_LONG_EDGE; request.long_edge=128;

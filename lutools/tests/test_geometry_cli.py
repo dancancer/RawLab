@@ -3,9 +3,11 @@ import argparse
 import copy
 import json
 import math
+import os
 import pathlib
 import struct
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -163,6 +165,12 @@ if __name__ == "__main__":
     parser.add_argument("--fixtures", type=pathlib.Path, required=True)
     options, remaining = parser.parse_known_args()
     CLI = options.cli.resolve()
-    RAW = options.raw.resolve() if options.raw else None
+    raw_override = os.environ.get("RAWLAB_TEST_RAW")
+    RAW = pathlib.Path(raw_override).resolve() if raw_override else (options.raw.resolve() if options.raw else None)
     FIXTURES = options.fixtures.resolve()
-    unittest.main(argv=[__file__, *remaining])
+    program = unittest.main(argv=[__file__, *remaining], exit=False)
+    if not program.result.wasSuccessful():
+        sys.exit(1)
+    if RAW is None or not RAW.is_file():
+        print(f"SKIP geometry_cli: real RAW sample missing ({RAW})")
+        sys.exit(77)

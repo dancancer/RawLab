@@ -104,7 +104,10 @@ int main() {
         catch (const hdr::Error&) { rejected = true; }
         check(rejected, "Ordinary DNG was accepted as ProRAW");
         const auto* input = std::getenv("RAWLAB_TEST_PRORAW");
-        if (!input || !*input) { std::cout << "ProRAW rejection passed; real input not configured\n"; return 77; }
+        if (!input || !*input || !std::filesystem::exists(std::filesystem::u8path(input))) {
+            std::cout << "ProRAW rejection passed; real input not configured\n";
+            return 77;
+        }
         const auto info = hdr::probeProRAW(input);
         check(info.width >= 3000 && info.height >= 3000 && info.orientation == 1,
             "ProRAW probe did not return the full oriented canvas");

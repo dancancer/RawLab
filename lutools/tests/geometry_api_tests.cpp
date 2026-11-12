@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -555,7 +556,7 @@ void gpuTests(bool nativeGpu) {
 }
 
 bool rawTests(const char* path) {
-    if (!path || !*path) {
+    if (!path || !*path || !std::filesystem::exists(std::filesystem::u8path(path))) {
         std::cout << "SKIP real RAW geometry/cache/orientation: supply a path or RAWLAB_TEST_RAW\n";
         return false;
     }
@@ -649,7 +650,7 @@ int main(int argc, char** argv) {
         geometrySizeTests();
         previewTests();
         gpuTests(rawlabtest::nativeGpuAvailable());
-        const bool ranRaw = rawTests(argc == 2 ? argv[1] : std::getenv("RAWLAB_TEST_RAW"));
+        const bool ranRaw = rawTests((argc == 2 && *argv[1]) ? argv[1] : std::getenv("RAWLAB_TEST_RAW"));
         std::cout << "PASS " << checks << " geometry ABI, setter, source-canvas, preview/final and GPU checks\n";
         return ranRaw ? 0 : 77;
     } catch (const std::exception& error) {

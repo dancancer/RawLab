@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -296,7 +297,7 @@ void gpuTests(bool nativeGpu) {
 }
 
 bool rawTests(const char* path, bool nativeGpu) {
-    if (!path || !*path) {
+    if (!path || !*path || !std::filesystem::exists(std::filesystem::u8path(path))) {
         std::cout << "SKIP real RAW perspective/cache/orientation: supply RAW_PATH or RAWLAB_TEST_RAW\n";
         return false;
     }
@@ -345,7 +346,7 @@ int main(int argc, char** argv) {
         abiTests(); validationTests(); setterTests(); previewTests();
         const bool nativeGpu = rawlabtest::nativeGpuAvailable();
         gpuTests(nativeGpu);
-        const bool ranRaw = rawTests(argc == 2 ? argv[1] : std::getenv("RAWLAB_TEST_RAW"), nativeGpu);
+        const bool ranRaw = rawTests((argc == 2 && *argv[1]) ? argv[1] : std::getenv("RAWLAB_TEST_RAW"), nativeGpu);
         std::cout << "PASS " << checks << " perspective ABI, validation, setter, canvas, preview/final and GPU checks\n";
         return ranRaw ? 0 : 77;
     } catch (const std::exception& error) {

@@ -1,6 +1,7 @@
 #include "core/wavelet_cache.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include <cassert>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <vector>
@@ -89,12 +90,6 @@ static void checkPreviewExposureRoundTrip(const char* path, bool viewport, bool 
 }
 
 int main(int argc, char** argv) {
-    if (argc > 1) {
-        checkPreviewExposureRoundTrip(argv[1], true, false, 2);
-        checkPreviewExposureRoundTrip(argv[1], true, true, 2);
-        checkPreviewExposureRoundTrip(argv[1], false, false, 2);
-        checkPreviewExposureRoundTrip(argv[1], true, false, 1);
-    }
     WaveletRenderCache small(256);
     ImageData pixels(4,4);
     WaveletDenoiseOptions options{true,40,46,50};
@@ -118,13 +113,24 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    const char* rawPath = *argv[1] ? argv[1] : std::getenv("RAWLAB_TEST_RAW");
+    if (!rawPath || !*rawPath || !std::filesystem::exists(std::filesystem::u8path(rawPath))) {
+        std::cout << "SKIP wavelet_exposure_cache: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
+        return 77;
+    }
+
+    checkPreviewExposureRoundTrip(rawPath, true, false, 2);
+    checkPreviewExposureRoundTrip(rawPath, true, true, 2);
+    checkPreviewExposureRoundTrip(rawPath, false, false, 2);
+    checkPreviewExposureRoundTrip(rawPath, true, false, 1);
+
     sony2fuji_session* session=nullptr;
     assert(sony2fuji_session_create(&session)==SONY2FUJI_STATUS_OK);
     sony2fuji_gpu_config gpu{SONY2FUJI_GPU_CONFIG_VERSION,sizeof(gpu),SONY2FUJI_GPU_OFF};
     assert(sony2fuji_session_set_gpu_config(session,&gpu)==SONY2FUJI_STATUS_OK);
     sony2fuji_wavelet_denoise_config config{SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION,sizeof(config),1,40,46,50};
     assert(sony2fuji_session_set_wavelet_denoise(session,&config)==SONY2FUJI_STATUS_OK);
-    const std::string path=argv[1];
+    const std::string path=rawPath;
     sony2fuji_request request{};
     request.version=SONY2FUJI_REQUEST_VERSION; request.struct_size=sizeof(request);
     request.input_type=SONY2FUJI_INPUT_RAW; request.input_path=path.c_str();

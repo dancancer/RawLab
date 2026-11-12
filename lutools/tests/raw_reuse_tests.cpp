@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -172,11 +173,16 @@ void checkInvalidLoadClearsState(const std::string& filepath) {
 
 int main(int argc, char** argv) {
     std::cout << std::unitbuf;
-    if (argc < 2 || argc > 3) {
+    if (argc < 1 || argc > 3) {
         std::cerr << "usage: raw_reuse_tests SONY_RAW [DNG_RAW]\n";
         return 2;
     }
-    const std::string sonyRaw = argv[1];
+    const char* rawArg = (argc >= 2 && *argv[1]) ? argv[1] : std::getenv("RAWLAB_TEST_RAW");
+    if (!rawArg || !*rawArg || !std::filesystem::exists(std::filesystem::u8path(rawArg))) {
+        std::cout << "SKIP raw_reuse: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
+        return 77;
+    }
+    const std::string sonyRaw = rawArg;
     try {
         checkWhiteBalanceReuse(sonyRaw);
         checkTemperatureDoesNotReopen(sonyRaw);

@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <cstdint>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -97,7 +99,14 @@ int main(int argc, char** argv) {
     try {
         checkDispatch();
         checkSyntheticStreams();
-        if (argc == 2) checkPhoto(argv[1]);
+        if (argc == 2) {
+            const char* path = *argv[1] ? argv[1] : std::getenv("RAWLAB_TEST_SONY_ARW6");
+            if (!path || !*path || !std::filesystem::exists(std::filesystem::u8path(path))) {
+                std::cout << "SKIP sony_arw6_photo: supply SONY2FUJI_TEST_SONY_ARW6 or RAWLAB_TEST_SONY_ARW6\n";
+                return 77;
+            }
+            checkPhoto(path);
+        }
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL " << error.what() << '\n';
