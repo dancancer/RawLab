@@ -626,7 +626,7 @@ sony2fuji_status validateRequest(
         return SONY2FUJI_STATUS_UNSUPPORTED;
     }
 
-    return validateRequestSize(*request);
+    return SONY2FUJI_STATUS_OK;
 }
 
 sony2fuji_status validateGpuConfig(const sony2fuji_gpu_config* config) {
@@ -2259,6 +2259,11 @@ static sony2fuji_status processImpl(
     session->geometry_width = session->geometry_height = 0;
 
     sony2fuji_status status = validateRequest(request, out_buffer);
+    if (status != SONY2FUJI_STATUS_OK) {
+        return status;
+    }
+
+    status = validateRequestSize(*request);
     if (status != SONY2FUJI_STATUS_OK) {
         return status;
     }
