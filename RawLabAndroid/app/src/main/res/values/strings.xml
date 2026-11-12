@@ -501,7 +501,7 @@
     <string name="tether_saved">"Saved %1$d photos"</string>
     <string name="tether_settings_error">"Set the camera to single shooting and confirm that photos are also saved to the camera memory card."</string>
     <string name="tether_shutter">"Take one photo"</string>
-    <string name="tether_source_error">"Photos on the camera card have changed. Start tethering again; saved originals are kept."</string>
+    <string name="tether_source_error">"Couldn’t verify the camera originals from the last tethering session. Select photos manually to import them. Saved originals are kept."</string>
     <string name="tether_stale">"Live view paused"</string>
     <string name="tether_title">"Tethered Shooting"</string>
     <string name="tether_unknown">"The capture result has not been confirmed. Check the camera; reconnecting only resumes receiving originals."</string>

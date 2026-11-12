@@ -501,7 +501,7 @@
     <string name="tether_saved">"%1$d枚を保存済み"</string>
     <string name="tether_settings_error">"カメラを1枚撮影に設定し、写真がカメラのメモリーカードにも保存されることを確認してください。"</string>
     <string name="tether_shutter">"1枚撮影"</string>
-    <string name="tether_source_error">"カメラカード内の写真が変更されています。テザー撮影を新しく開始してください。保存済みのオリジナルは残ります。"</string>
+    <string name="tether_source_error">"前回のテザー撮影のオリジナルを確認できませんでした。写真を手動で選んで取り込んでください。保存済みのオリジナルは残ります。"</string>
     <string name="tether_stale">"ライブビューを一時停止"</string>
     <string name="tether_title">"テザー撮影"</string>
     <string name="tether_unknown">"撮影結果をまだ確認できません。カメラを確認してください。再接続ではオリジナルの受信だけを再開します。"</string>

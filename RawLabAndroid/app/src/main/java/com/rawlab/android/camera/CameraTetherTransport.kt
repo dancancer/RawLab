@@ -1,9 +1,7 @@
 package com.rawlab.android.camera
 
 import com.rawlab.android.camera.protocol.SonyLegacyImportSession
-import com.rawlab.android.camera.protocol.SonyMobileSession
 import com.rawlab.android.camera.protocol.SonyTetherSession
-import java.io.FileOutputStream
 import java.io.IOException
 import java.io.OutputStream
 import java.net.InetAddress
@@ -12,8 +10,8 @@ import java.util.UUID
 import javax.net.SocketFactory
 
 internal data class CameraHostOriginal(val name: String, val size: Long, val digest: String)
-internal data class CameraCardSnapshot(val photos: List<CameraPhoto>,
-    val download: (CameraPhoto, FileOutputStream, (Long) -> Unit) -> String)
+internal data class CameraCardSnapshot(val photos: List<CameraPhoto>, val hardwareIdentity: CameraHardwareIdentity?,
+    val download: (CameraPhoto, OutputStream, (Long) -> Unit) -> String)
 internal data class CameraTetherParameter(val code: Int, val current: Long, val options: List<Long>,
     val writable: Boolean, val enabled: Boolean)
 internal data class CameraTetherParameterReadback(val values: List<CameraTetherParameter>, val writable: Boolean, val captureReady: Boolean)
@@ -24,6 +22,7 @@ internal class CameraTetherTransport(private val factory: SocketFactory, private
     private val clientId: UUID, val model: SonyCameraModel, private val cardSavingConfirmed: Boolean) {
     var usesLegacyContents = false
         private set
+    private var hardwareIdentity: CameraHardwareIdentity? = null
     @Volatile private var stopped = false
     @Volatile private var remote: SonyTetherSession? = null
     @Volatile private var media: SonyLegacyImportSession? = null
@@ -34,7 +33,7 @@ internal class CameraTetherTransport(private val factory: SocketFactory, private
         val openedRemote = activateRemoteSession()
         if (!usesLegacyContents) {
             val assets = openedRemote.listPhotos().associateBy { it.key() }
-            return CameraCardSnapshot(assets.values.map(::photo)) { photo, output, progress ->
+            return CameraCardSnapshot(assets.values.map { it.photo() }, hardwareIdentity) { photo, output, progress ->
                 openedRemote.download(assets.getValue(photo.key), object : OutputStream() {
                     var count = 0L
                     override fun write(value: Int) { output.write(value); progress(++count) }
@@ -53,7 +52,9 @@ internal class CameraTetherTransport(private val factory: SocketFactory, private
         val info = opened.deviceInfo()
         opened.openSession()
         val assets = opened.listPhotos(info).associateBy { it.key() }
-        return CameraCardSnapshot(assets.values.map(::photo)) { photo, output, progress ->
+        val mediaIdentity = CameraHardwareIdentity.read(info)
+        if (hardwareIdentity != null && mediaIdentity != hardwareIdentity) throw CameraTetherSourceException()
+        return CameraCardSnapshot(assets.values.map { it.photo() }, mediaIdentity) { photo, output, progress ->
             opened.download(info, assets.getValue(photo.key), output) { bytes, _ -> progress(bytes) }
         }
     }
@@ -121,15 +122,13 @@ internal class CameraTetherTransport(private val factory: SocketFactory, private
     }
     fun close() { stopped = true; remote?.close(); remote = null; media?.close(); media = null }
     private fun checkRunning() { if (stopped) throw IOException("Camera tether stopped") }
-    private fun photo(asset: SonyMobileSession.Asset) = CameraPhoto(asset.key(), asset.name, asset.size, asset.created)
-
     private fun activateRemoteSession(): SonyTetherSession {
         if (remote == null) {
             media?.finish(); media = null
             val opened = SonyTetherSession(factory, address, clientId, ::trace)
             remote = opened
             checkRunning()
-            opened.connectRemote()
+            hardwareIdentity = CameraHardwareIdentity.read(opened.connectRemote())
             usesLegacyContents = !opened.supportsOperation(0x923c) || !opened.supportsOperation(0x923d)
             if (usesLegacyContents && !listOf(0x9212, 0x1004, 0x1007, 0x1008, 0x1009).all(opened::supportsOperation))
                 throw com.rawlab.android.camera.protocol.CameraMediaSession.UnsupportedCameraException("Photo import is unavailable in this camera mode")

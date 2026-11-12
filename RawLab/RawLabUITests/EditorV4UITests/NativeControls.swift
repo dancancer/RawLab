@@ -1191,7 +1191,7 @@ extension EditorV4UITests {
 }
 
 extension EditorV4UITests {
-    func testSonyIncrementalImportResumesOnlyPendingJPEG() throws {
+    func testSonyIncrementalImportRequiresReselectionAfterInterruptedJPEG() throws {
         guard ProcessInfo.processInfo.environment["RAWLAB_SONY_INCREMENTAL_UI"] == "1" else {
             throw XCTSkip("Run with the synthetic Sony PTP/IP responder and RAWLAB_SONY_INCREMENTAL_UI=1")
         }
@@ -1207,12 +1207,14 @@ extension EditorV4UITests {
 
         // The fixture closes the command channel exactly once while serving the
         // JPEG. The saved counter proves the ARW completed before that failure.
+        let reconnectAction = app.buttons["camera.incremental.reconnect"]
+        XCTAssertTrue(reconnectAction.waitForExistence(timeout: 45), app.debugDescription)
         let resume = app.buttons["camera.incremental.resume"]
-        XCTAssertTrue(resume.waitForExistence(timeout: 45), app.debugDescription)
+        XCTAssertFalse(resume.exists, app.debugDescription)
         let saved = app.descendants(matching: .any)["camera.incremental.saved"]
         XCTAssertTrue(saved.label.contains("1 / 2"), app.debugDescription)
         capture("camera-incremental-after-jpeg-failure", in: app)
-        resume.tap()
+        reconnectAction.tap()
 
         // Re-enter through the existing Manual Wi-Fi -> “Connected, continue”
         // path. The responder assigns new content and file locators.
@@ -1223,15 +1225,20 @@ extension EditorV4UITests {
         XCTAssertTrue(reconnect.waitForExistence(timeout: 10), app.debugDescription)
         reconnect.tap()
 
+        let newImport = app.buttons["camera.incremental.new-import"]
+        XCTAssertTrue(newImport.waitForExistence(timeout: 30), app.debugDescription)
+        XCTAssertFalse(resume.exists, app.debugDescription)
+        newImport.tap()
+        XCTAssertTrue(start.waitForExistence(timeout: 10), app.debugDescription)
+        start.tap()
+
         let complete = app.descendants(matching: .any)["camera.incremental.complete"]
         XCTAssertTrue(complete.waitForExistence(timeout: 60), app.debugDescription)
         let completeSaved = app.descendants(matching: .any)["camera.incremental.saved"]
-        XCTAssertTrue(completeSaved.label.contains("2 / 2"), app.debugDescription)
+        XCTAssertEqual(completeSaved.label, "1 new files saved, 1 already on device", app.debugDescription)
         capture("camera-incremental-complete", in: app)
 
-        // The successful boundary is durable. A repeat scan on the same card
-        // must report no new files, while the responder log proves ARW was not
-        // downloaded again during recovery.
+        // A repeat scan on the same connection must find no new files.
         let refresh = app.buttons["camera.incremental.refresh"]
         XCTAssertTrue(refresh.waitForExistence(timeout: 10), app.debugDescription)
         refresh.tap()
@@ -1251,13 +1258,14 @@ extension EditorV4UITests {
         let start = app.buttons["camera.incremental.start"]
         XCTAssertTrue(start.waitForExistence(timeout: 10), app.debugDescription)
         start.tap()
-        XCTAssertTrue(app.staticTexts["Could not process the JPEG with these settings."].waitForExistence(timeout: 20),
+        XCTAssertTrue(app.staticTexts["This JPEG contains an HDR gain map. Keep the original to preserve HDR."].waitForExistence(timeout: 20),
                       app.debugDescription)
 
         app.terminate()
         launchSonyIncremental(in: app)
-        let newImport = app.buttons["Start a new incremental import"]
+        let newImport = app.buttons["camera.incremental.new-import"]
         XCTAssertTrue(newImport.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["camera.incremental.resume"].exists)
         newImport.tap()
         selectCameraJPEGMode("Keep original", in: app)
         XCTAssertTrue(start.waitForExistence(timeout: 10), app.debugDescription)
@@ -1267,9 +1275,91 @@ extension EditorV4UITests {
 
         app.terminate()
         launchSonyIncremental(in: app)
-        XCTAssertTrue(app.descendants(matching: .any)["camera.incremental.count"].waitForExistence(timeout: 10),
-                      "A dismissed task must allow a new scan after relaunch.")
+        let cutoffRequired = app.staticTexts["camera.incremental.cutoff-required"]
+        XCTAssertTrue(cutoffRequired.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.buttons["camera.incremental.resume"].exists)
+        XCTAssertFalse(start.exists)
+        app.buttons["camera.incremental.cutoff"].tap()
+        let apply = app.buttons["Apply"]
+        XCTAssertTrue(apply.waitForExistence(timeout: 5), app.debugDescription)
+        apply.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["camera.incremental.count"].waitForExistence(timeout: 10),
+                      "An explicitly chosen cutoff must allow a new scan after reconnect.")
+    }
+
+    func testSonyTetherReconnectRejectsReplacedOriginal() throws {
+        try verifySonyTetherFallback(scenario: "tether-swap")
+    }
+
+    func testSonyTetherUnavailableOriginalOffersManualImport() throws {
+        try verifySonyTetherFallback(scenario: "tether-missing")
+    }
+
+    func testSonyTetherWithoutRegisteredOriginalsHasNoResumeAction() throws {
+        let app = try sonyTetherApp(scenario: "tether-empty")
+        launchSonyCameraWorkspace(in: app)
+        connectSonyTether("camera.entry.tether", in: app)
+        XCTAssertTrue(app.staticTexts["Saved 0 photos"].waitForExistence(timeout: 30), app.debugDescription)
+        app.terminate()
+
+        launchSonyCameraWorkspace(in: app)
+        XCTAssertTrue(app.staticTexts["ILCE-6700"].waitForExistence(timeout: 10), "Wait for the empty tether record to load")
+        XCTAssertFalse(app.buttons["camera.resume.tether"].exists, app.debugDescription)
+        XCTAssertTrue(app.buttons["camera.entry.import"].isEnabled)
+        app.buttons["camera.entry.tether"].tap()
+        XCTAssertTrue(app.switches["camera.card.confirm"].waitForExistence(timeout: 5), app.debugDescription)
+    }
+
+    private func sonyTetherApp(scenario: String) throws -> XCUIApplication {
+        guard ProcessInfo.processInfo.environment["RAWLAB_SONY_INCREMENTAL_SCENARIO"] == scenario else {
+            throw XCTSkip("Run camera-incremental-ui.sh with RAWLAB_CAMERA_INCREMENTAL_SCENARIO=\(scenario)")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", "en"]
+        app.launchEnvironment["RAWLAB_CAMERA_LOOPBACK_FIXTURE"] = "1"
+        return app
+    }
+
+    private func launchSonyCameraWorkspace(in app: XCUIApplication) {
+        app.launch()
+        let camera = app.buttons["editor.camera"]
+        XCTAssertTrue(camera.waitForExistence(timeout: 10), app.debugDescription)
+        camera.tap()
+    }
+
+    private func connectSonyTether(_ action: String, in app: XCUIApplication) {
+        let entry = app.buttons[action]
+        XCTAssertTrue(entry.waitForExistence(timeout: 10), app.debugDescription)
+        entry.tap()
+        let confirm = app.switches["camera.card.confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), app.debugDescription)
+        confirm.tap()
+        app.buttons["camera.manual"].tap()
+        app.buttons["camera.wifi.continue"].tap()
+    }
+
+    private func verifySonyTetherFallback(scenario: String) throws {
+        let app = try sonyTetherApp(scenario: scenario)
+        launchSonyCameraWorkspace(in: app)
+        connectSonyTether("camera.entry.tether", in: app)
+        let saved = app.staticTexts["Saved 1 photos"]
+        XCTAssertTrue(saved.waitForExistence(timeout: 30), app.debugDescription)
+
+        app.terminate()
+        launchSonyCameraWorkspace(in: app)
+        connectSonyTether("camera.resume.tether", in: app)
+        let manualImport = app.buttons["camera.connection.manual-import"]
+        XCTAssertTrue(manualImport.waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["camera.connection.error"].exists)
+        XCTAssertFalse(saved.exists, app.debugDescription)
+        capture("camera-tether-recovery-requires-manual-import", in: app)
+        manualImport.tap()
+        let wifi = app.buttons["camera.manual"]
+        XCTAssertTrue(wifi.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.switches["camera.card.confirm"].exists)
+        wifi.tap()
+        app.buttons["camera.wifi.continue"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["camera.import.mode"].waitForExistence(timeout: 15), app.debugDescription)
     }
 
     private func launchSonyIncremental(in app: XCUIApplication) {

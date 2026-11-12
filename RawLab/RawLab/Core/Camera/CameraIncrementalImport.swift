@@ -69,11 +69,13 @@ struct CameraIncrementalScan {
 
     init(assets: [CameraRemoteAsset], boundaries: [String: CameraImportBoundary], cutoff: Date, customCutoff: Date?,
          format: CameraImportFormat, includeUndated: Bool, savedKeys: Set<String> = []) {
+        let owner = assets.first?.owner
         let storage = Set(assets.map { $0.snapshot.storage })
         let listed = assets.map { ($0, $0.snapshot.captureDate) }
         let dated = listed.compactMap { asset, date in date.map { (asset, $0) } }
         let confirmed = boundaries.filter { kind, boundary in
-            boundary.storage == storage && dated.contains {
+            // 卡槽和照片元数据不足以确认重连后的存储卡。
+            boundary.owner == owner && boundary.storage == storage && dated.contains {
                 $0.0.snapshot.kind == kind && $0.1 == boundary.date && boundary.anchors.contains($0.0.snapshot.anchorKey)
             }
         }
@@ -93,7 +95,6 @@ struct CameraIncrementalScan {
 
         let eligible = dated.filter { asset, date in
             guard let start = starts[asset.snapshot.kind], date >= start, !savedKeys.contains(asset.snapshot.key) else { return false }
-            // 跨会话的对象句柄可能变化。边界同刻的文件重新校验字节后再去重。
             guard customCutoff == nil, let boundary = confirmed[asset.snapshot.kind],
                   date == boundary.date, asset.owner == boundary.owner else { return true }
             return !boundary.keys.contains(asset.snapshot.key)
@@ -105,7 +106,7 @@ struct CameraIncrementalScan {
 
         let selectedByKind = Dictionary(grouping: eligible.map(\.0.snapshot), by: \.kind)
         var next: [String: CameraImportBoundary] = [:]
-        if let owner = assets.first?.owner {
+        if let owner {
             for (kind, selected) in selectedByKind where customCutoff == nil || confirmed[kind] == nil {
                 next[kind] = CameraImportBoundary.latest(from: selected, storage: storage, owner: owner)
             }
@@ -116,7 +117,8 @@ struct CameraIncrementalScan {
 
 extension CameraTransferJob {
     func bindToListing(_ assets: [CameraRemoteAsset]) -> [UUID: CameraRemoteAsset] {
-        if incremental == nil || incremental?.owner == assets.first?.owner {
+        guard let owner = assets.first?.owner else { return [:] }
+        if originalListingOwner == owner {
             let exact = Dictionary(grouping: assets, by: \.snapshot)
             return Dictionary(uniqueKeysWithValues: items.compactMap { item in
                 guard let matches = exact[item.asset], matches.count == 1 else { return nil }
@@ -124,11 +126,12 @@ extension CameraTransferJob {
             })
         }
 
-        // 重连后句柄可能重分配。新旧清单各自唯一时才能使用当前句柄。
+        // 槽位和照片元数据只能定位候选。跨会话下载必须再核对已保存的源摘要。
         let stored = Dictionary(grouping: items, by: \.asset.withoutLocator)
         let listed = Dictionary(grouping: assets, by: \.snapshot.withoutLocator)
         return Dictionary(uniqueKeysWithValues: stored.compactMap { metadata, original in
-            guard original.count == 1, let matches = listed[metadata], matches.count == 1 else { return nil }
+            guard original.count == 1, original[0].sourceDigest != nil,
+                  let matches = listed[metadata], matches.count == 1 else { return nil }
             return (original[0].id, matches[0])
         })
     }
@@ -161,7 +164,7 @@ extension CameraAssetSnapshot {
         "\(storage):\(format):\(name):\(size):\(created):\(modified)"
     }
 
-    fileprivate var withoutLocator: CameraAssetSnapshot {
+    var withoutLocator: CameraAssetSnapshot {
         CameraAssetSnapshot(content: 0, file: 0, storage: storage, format: format, name: name,
                             size: size, created: created, modified: modified)
     }

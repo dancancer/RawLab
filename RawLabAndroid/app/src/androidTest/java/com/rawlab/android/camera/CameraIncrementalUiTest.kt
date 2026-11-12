@@ -39,7 +39,7 @@ class CameraIncrementalUiTest {
     @get:Rule val languageAndCompose: RuleChain = RuleChain.outerRule(LanguageTestRule()).around(compose)
 
     @Test
-    fun incrementalImportReconnectsOnlyTheInterruptedJpegAndKeepsMediaUris() {
+    fun incrementalImportRequiresNewSelectionWhenInterruptedBytesAreUnverified() {
         compose.waitUntil(10_000) { !compose.activity.camera.state.value.preparing }
         val model = compose.activity.camera
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -94,21 +94,28 @@ class CameraIncrementalUiTest {
                 assertPublished(context, rawUri)
                 capture("paused")
 
-                // Reconnect the actual session, then exercise the task page's Continue button.
+                // Reconnect with reassigned handles. The missing JPEG has no recorded source checksum.
                 connect(model, fixture)
                 assertEquals(CameraImportMode.INCREMENTAL, model.state.value.importMode)
                 assertEquals(2, model.state.value.incrementalScan?.assets?.size)
-                assertEquals(paused.id, model.state.value.resumableIncrementalJob?.id)
+                assertNull(model.state.value.resumableIncrementalJob)
                 assertEquals(CameraJPEGOptions(adjust = true, longEdge = 16, quality = 82), model.state.value.incrementalJpeg)
                 compose.onNodeWithTag("camera-resume").performClick()
+                compose.waitUntil(15_000) {
+                    val state = model.state.value
+                    !state.transferring && state.message == com.rawlab.android.R.string.camera_source_changed
+                }
+                assertEquals(paused.id, model.state.value.job?.id)
+                assertEquals(listOf(1, 2), fixture.downloadRequests.map { it.file })
+                compose.onNodeWithTag("camera-back").performClick()
+                compose.onNodeWithTag("camera-import").performClick()
                 compose.waitUntil(30_000) {
                     !model.state.value.transferring && model.state.value.job?.status == CameraJobStatus.COMPLETE
                 }
                 compose.onNodeWithText("导入完成").assertIsDisplayed()
 
                 val complete = checkNotNull(model.state.value.job)
-                assertEquals(paused.id, complete.id)
-                assertEquals(paused.items.map { it.photo.key }, complete.items.map { it.photo.key })
+                assertNotEquals(paused.id, complete.id)
                 assertEquals(2, complete.savedCount)
                 val completeUris = complete.items.mapNotNull { it.saved?.uri }
                 assertEquals(2, completeUris.size)
@@ -119,8 +126,8 @@ class CameraIncrementalUiTest {
                 savedUris.forEach { assertPublished(context, it) }
                 assertEquals(CameraJPEGOptions(adjust = true, longEdge = 16, quality = 82), complete.incremental?.jpeg)
                 assertJpegOutput(context, jpegUri)
-                assertEquals(listOf(1, 2, 12), fixture.downloadRequests.map { it.file })
-                assertNotEquals(fixture.downloadRequests[1].content, fixture.downloadRequests[2].content)
+                assertEquals(listOf(1, 2, 11, 12), fixture.downloadRequests.map { it.file })
+                assertNotEquals(fixture.downloadRequests[1].content, fixture.downloadRequests[3].content)
 
                 // The same card is scanned again through the real incremental controls.
                 compose.onNodeWithTag("camera-back").performClick()
@@ -130,13 +137,20 @@ class CameraIncrementalUiTest {
                 }
                 compose.onNodeWithTag("camera-incremental-no-new").assertIsDisplayed()
                 assertEquals(savedUris, model.state.value.job!!.items.mapNotNull { it.saved?.uri })
-                assertEquals("Rescanning an unchanged card must not download a duplicate", 3, fixture.downloadRequests.size)
+                assertEquals("Rescanning an unchanged card must not download a duplicate", 4, fixture.downloadRequests.size)
                 capture("no-new-files")
 
-                // A fresh session rechecks same-time boundary files by digest and reuses their existing MediaStore rows.
+                // A new connection needs a new cutoff even though the boundary metadata still matches.
                 compose.runOnUiThread { model.disconnect() }
                 compose.waitUntil(10_000) { !model.state.value.closing }
                 connect(model, fixture)
+                val scan = checkNotNull(model.state.value.incrementalScan)
+                assertTrue(scan.needsCutoffConfirmation)
+                assertTrue(scan.assets.isEmpty())
+                compose.onNodeWithTag("camera-incremental-boundary-unverified").performScrollTo().assertIsDisplayed()
+                assertEquals(4, fixture.downloadRequests.size)
+                // An explicit cutoff can include those files; byte verification reuses their saved rows.
+                compose.runOnUiThread { model.setIncrementalCutoff(scan.startMillis) }
                 assertEquals(2, model.state.value.incrementalScan?.assets?.size)
                 compose.onNodeWithTag("camera-import").performClick()
                 compose.waitUntil(30_000) {
@@ -146,7 +160,7 @@ class CameraIncrementalUiTest {
                 val duplicate = checkNotNull(model.state.value.job)
                 assertTrue(duplicate.items.all { it.duplicate })
                 assertEquals(completeUris, duplicate.items.mapNotNull { it.saved?.uri })
-                assertEquals(listOf(1, 2, 12, 21, 22), fixture.downloadRequests.map { it.file })
+                assertEquals(listOf(1, 2, 11, 12, 21, 22), fixture.downloadRequests.map { it.file })
             } finally {
                 compose.runOnUiThread { model.disconnect() }
                 compose.waitUntil(10_000) { !model.state.value.closing }

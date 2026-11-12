@@ -28,7 +28,11 @@ internal data class CameraPhoto(val key: String, val name: String, val size: Lon
             (storageToken == null || storageToken == observed.storageToken && captureTimestamp == observed.captureTimestamp)
 }
 internal enum class CameraJobStatus { ACTIVE, PAUSED, COMPLETE }
-internal enum class CameraMediaProblem { MISSING, CHANGED, REMOTE_MISSING, HDR_GAIN_MAP }
+internal enum class CameraMediaProblem {
+    MISSING, CHANGED, REMOTE_MISSING, HDR_GAIN_MAP, JPEG_MEMORY;
+
+    val needsOriginalJpeg: Boolean get() = this == HDR_GAIN_MAP || this == JPEG_MEMORY
+}
 internal data class CameraImportItem(val photo: CameraPhoto, val saved: MediaPhoto? = null,
     val prepared: MediaPhoto? = null, val digest: String? = null, val captureDay: String? = null,
     val duplicate: Boolean = false, val unavailable: MediaPhoto? = null, val problem: CameraMediaProblem? = null,
@@ -52,7 +56,8 @@ internal data class CameraImportJob(val id: String, val cameraId: String, val cr
     val items: List<CameraImportItem>, val status: CameraJobStatus = CameraJobStatus.ACTIVE,
     val destination: CameraImportDestination = CameraImportDestination(),
     val incremental: CameraIncrementalPlan? = null, val committed: Boolean = false,
-    val hardwareIdentity: CameraHardwareIdentity? = null) {
+    val hardwareIdentity: CameraHardwareIdentity? = null, val listingOwner: String? = null) {
+    val originalListingOwner: String? get() = listingOwner ?: incremental?.sessionOwner
     val savedCount: Int get() = items.count { it.saved != null }
     val totalBytes: Long get() = items.sumOf { it.photo.size }
     val savedBytes: Long get() = items.filter { it.saved != null }.sumOf { it.photo.size }
@@ -60,19 +65,16 @@ internal data class CameraImportJob(val id: String, val cameraId: String, val cr
     fun matchesCamera(connectionId: String?, device: CameraHardwareIdentity?): Boolean =
         if (hardwareIdentity == null) cameraId == connectionId else hardwareIdentity == device
 
-    fun matchesPendingPhotos(observed: Map<String, CameraPhoto>): Boolean = items.all { item ->
-        item.saved != null || observed[item.photo.key]?.let(item.photo::matchesSnapshot) == true
-    }
-
     fun jpegOptions(item: CameraImportItem): CameraJPEGOptions? =
         incremental?.jpeg?.takeIf { it.adjust && !item.photo.raw && !item.saveOriginalJpeg }
 
     fun keepingPendingJpegOriginals(): CameraImportJob = copy(items = items.map { item ->
         if (item.photo.raw || item.saved != null) item
-        else item.copy(saveOriginalJpeg = true, problem = item.problem.takeUnless { it == CameraMediaProblem.HDR_GAIN_MAP })
+        else item.copy(saveOriginalJpeg = true, problem = item.problem.takeUnless { it?.needsOriginalJpeg == true })
     })
 }
 internal class CameraLocalSourceChanged : IOException("Camera original has changed")
+internal class CameraImportSourceChanged : IOException("Camera originals cannot be verified")
 
 /** 停止与发布准入串行；已经完整接收并准入的文件允许完成发布，不在主线程等磁盘。 */
 internal class CameraTransferPermit {
@@ -99,7 +101,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
 
     fun create(cameraId: String, photos: List<CameraPhoto>, destination: CameraImportDestination,
         id: String = UUID.randomUUID().toString(), incremental: CameraIncrementalPlan? = null,
-        hardwareIdentity: CameraHardwareIdentity? = null): CameraImportJob {
+        hardwareIdentity: CameraHardwareIdentity? = null, listingOwner: String? = null): CameraImportJob {
         require(validId(id))
         require(photos.isNotEmpty() && photos.size <= 10000)
         require(photos.map { it.key }.distinct().size == photos.size)
@@ -110,14 +112,15 @@ internal class CameraImportStore(private val directory: File, private val tempor
         }
         readJobs().firstOrNull { it.id == id }?.let { existing ->
             if (existing.cameraId != cameraId || existing.hardwareIdentity != hardwareIdentity ||
-                existing.destination != destination || existing.incremental != incremental || existing.items.size != photos.size ||
+                existing.destination != destination || existing.incremental != incremental ||
+                existing.listingOwner != listingOwner || existing.items.size != photos.size ||
                 existing.items.zip(photos).any { (stored, current) -> !stored.photo.matchesSnapshot(current) })
                 throw IOException("Reserved camera job identity changed")
             return existing
         }
         return CameraImportJob(id, cameraId, System.currentTimeMillis(),
             photos.map { CameraImportItem(it) }, destination = destination, incremental = incremental,
-            hardwareIdentity = hardwareIdentity).also(::save)
+            hardwareIdentity = hardwareIdentity, listingOwner = listingOwner).also(::save)
     }
     fun partial(id: String): File { require(validId(id)); return File(temporary, "$id.part") }
 
@@ -177,7 +180,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
                 } else {
                     // 外部已经发布/修改的文件不属于待清理数据。
                     if (candidate?.pending == true) media.deletePending(candidate.uri)
-                    item.copy(prepared = null, digest = null)
+                    item.copy(prepared = null)
                 }
             } else item
         }
@@ -193,6 +196,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
         if (part.canonicalFile != partial(job.id).canonicalFile || part.length() != item.photo.size ||
             !validDigest(digest) || !validHeader(part, item.photo.raw)) throw IOException("Incomplete camera photo")
         part.inputStream().use { if (contentDigest(it, item.photo.size) { permit.check() } != digest) throw IOException("Camera photo digest mismatch") }
+        if (item.digest != null && item.digest != digest) throw CameraImportSourceChanged()
         val capture = readCaptureDate(part)
         val jpegOptions = job.jpegOptions(item)
         return permit.publish {
@@ -279,7 +283,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
         val json = JSONObject().put("version", 2).put("camera", job.cameraId).put("time", job.createdAt)
             .put("status", job.status.name).put("items", items).put("directory", job.destination.directory)
             .put("grouping", job.destination.grouping.name).put("incremental", job.incremental?.json())
-            .put("committed", job.committed)
+            .put("committed", job.committed).put("listingOwner", job.listingOwner)
         job.hardwareIdentity?.let { json.put("hardwareIdentity", JSONObject().put("model", it.model).put("serial", it.serial)) }
         val part = File(directory, "${job.id}.tmp")
         val target = File(directory, "${job.id}.json")
@@ -311,7 +315,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
             val saved = item.optJSONObject("saved")?.mediaPhoto()
             val prepared = item.optJSONObject("prepared")?.mediaPhoto()
             val digest = item.optString("digest").takeIf { it.isNotEmpty() }
-            if ((saved != null || prepared != null) && !validDigest(digest)) throw IOException("Invalid camera digest")
+            if ((digest != null || saved != null || prepared != null) && !validDigest(digest)) throw IOException("Invalid camera digest")
             val outputDigest = item.optString("outputDigest").takeIf { it.isNotEmpty() }
             val outputSize = item.optLongOrNull("outputSize")
             if (outputDigest != null && !validDigest(outputDigest)) throw IOException("Invalid camera output digest")
@@ -326,7 +330,8 @@ internal class CameraImportStore(private val directory: File, private val tempor
         return CameraImportJob(file.nameWithoutExtension, json.getString("camera"), json.getLong("time"), items,
             CameraJobStatus.valueOf(json.getString("status")), CameraImportDestination(json.getString("directory"),
                 CameraDirectoryGrouping.valueOf(json.getString("grouping"))), json.optJSONObject("incremental")?.incrementalPlan(),
-            json.optBoolean("committed", json.getString("status") == CameraJobStatus.COMPLETE.name), hardware)
+            json.optBoolean("committed", json.getString("status") == CameraJobStatus.COMPLETE.name), hardware,
+            json.optString("listingOwner").takeIf { it.isNotEmpty() })
     }
 
     private fun validContent(uri: String, size: Long, digest: String?): Boolean = runCatching {

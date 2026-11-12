@@ -78,6 +78,7 @@ import Foundation
         try historyOrder(root.appendingPathComponent("lineage"))
         try saveFailure(root.appendingPathComponent("failures"))
         try synchronization(root.appendingPathComponent("collection-sync"))
+        try legacyAssetSynchronization(root.appendingPathComponent("legacy-asset-sync"))
         try presetApplication(root.appendingPathComponent("presets"))
         try fallbackHistory(root.appendingPathComponent("fallback-history"))
         var invalid = context; invalid.hasUncommittedDraft = true
@@ -86,6 +87,54 @@ import Foundation
         let empty = try session.prepare(payload: copy, targets: [])
         try check(session.apply(empty).isEmpty, "Empty target operation reports no successes")
     }
+    static func legacyAssetSynchronization(_ root: URL) throws {
+        let store = try EditPersistence(directory: root), session = IOSAdjustmentTransferSession(store: store)
+        let asset = PhotoIdentity(resourceIdentifier: "legacy-library-photo")
+        let photo = PhotoIdentity(resourceIdentifier: "legacy-library-photo", contentIdentifier: "verified-current-bytes")
+        let regular = PhotoIdentity(contentIdentifier: "ordinary-target")
+        let late = PhotoIdentity(resourceIdentifier: "late-library-photo", contentIdentifier: "verified-late-bytes")
+        let lateAsset = PhotoIdentity(resourceIdentifier: "late-library-photo")
+        let legacy = state(2)
+        var source = RawSettings.default; source.contrast = 1.35
+        let payload = try IOSAdjustmentTransfer.capture(scope: .custom([.contrast]), snapshot: .init(settings: source), context: context)
+        func prepare(_ identities: [PhotoIdentity]) throws -> IOSPreparedAdjustmentTransfer {
+            try session.prepare(payload: payload, targets: identities.map {
+                .init(identity: $0, displayName: "Photo", defaultState: state(0), context: context)
+            }, action: .synchronize)
+        }
+
+        try store.save(asset, state: legacy)
+        let pending = try prepare([photo, regular])
+        guard case .legacyAssetEditNeedsDecision? = pending.targets[0].error as? EditPersistenceError else {
+            try check(false, "Synchronization preflight must flag an unconfirmed Photos edit")
+            return
+        }
+        let rejected = session.apply(pending)
+        let preserved = try store.unverifiedAssetEdit(for: photo)
+        try check(rejected.allSatisfy { $0.status == .blocked } && store.state(for: regular) == nil && preserved == legacy,
+                  "An unresolved Photos edit blocks writes and preserves the restoration prompt")
+        try check(session.apply(pending, skipping: [photo.key]).map(\.status) == [.skipped, .applied] && store.state(for: photo) == nil,
+                  "Skipping the legacy target saves only the other photo")
+
+        try store.resolveUnverifiedAssetEdit(for: photo, expected: legacy, restore: true)
+        let confirmed = try prepare([photo])
+        try check(session.apply(confirmed).first?.status == .applied && store.state(for: photo)?.settings.exposure == 2 &&
+                  store.state(for: photo)?.settings.contrast == 1.35, "Synchronizing only contrast preserves the confirmed +2 EV")
+        try check(session.undoTransaction(confirmed.id).first?.status == .applied &&
+                  store.state(for: photo)?.settings.exposure == 2 && store.state(for: photo)?.settings.contrast == 1,
+                  "Undo restores the confirmed legacy edit without changing its exposure")
+
+        let stale = try prepare([late])
+        try store.save(lateAsset, state: legacy)
+        let lateResult = session.apply(stale).first
+        let unconfirmed = try store.unverifiedAssetEdit(for: late)
+        try check(lateResult?.status != .applied && store.state(for: late) == nil && unconfirmed == legacy,
+                  "A legacy record discovered after preflight cannot be shadowed on commit")
+        try store.resolveUnverifiedAssetEdit(for: late, expected: legacy, restore: true)
+        try check(session.apply(stale).first?.status == .conflict && store.state(for: late)?.settings.exposure == 2,
+                  "A preflight from before restoration cannot overwrite the restored exposure")
+    }
+
     static func fallbackHistory(_ root: URL) throws {
         let store = try EditPersistence(directory: root), session = IOSAdjustmentTransferSession(store: store)
         let content = PhotoIdentity(contentIdentifier: "original-content")

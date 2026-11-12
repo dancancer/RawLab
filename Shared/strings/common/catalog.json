@@ -8615,6 +8615,14 @@
     "ja": "転送後にこの端末で JPEG を処理します。",
     "zh-Hans": "JPEG 传入手机后再处理。"
   },
+  "此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。": {
+    "de": "Dieses JPEG enthält eine HDR-Gainmap. Speichern Sie das Original, um HDR zu erhalten.",
+    "en": "This JPEG contains an HDR gain map. Keep the original to preserve HDR.",
+    "es": "Este JPEG contiene un mapa de ganancia HDR. Conserva el original para mantener el HDR.",
+    "fr": "Ce JPEG contient une carte de gain HDR. Conservez l’original pour préserver le HDR.",
+    "ja": "この JPEG には HDR ゲインマップが含まれています。HDR を保持するには元のまま保存してください。",
+    "zh-Hans": "此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。"
+  },
   "无法按所选设置处理 JPEG。": {
     "en": "Could not process the JPEG with these settings.",
     "de": "Das JPEG konnte mit diesen Einstellungen nicht verarbeitet werden.",

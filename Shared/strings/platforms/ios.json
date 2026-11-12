@@ -4083,6 +4083,30 @@
       "formats": [],
       "source": "无法确认上次联机的照片范围，已暂停自动恢复。请从相机导入，手动选择需要补传的照片。不会自动补拍。"
     },
+    "无法确认上次导入的原始文件，请重新选择照片。": {
+      "formats": [],
+      "source": "无法确认上次导入的原始文件，请重新选择照片。"
+    },
+    "恢复这张照片的旧调整？": {
+      "formats": [],
+      "source": "恢复这张照片的旧调整？"
+    },
+    "旧版记录只有相册标识。确认当前照片与原来的照片一致后，可恢复旧调整。": {
+      "formats": [],
+      "source": "旧版记录只有相册标识。确认当前照片与原来的照片一致后，可恢复旧调整。"
+    },
+    "恢复旧调整": {
+      "formats": [],
+      "source": "恢复旧调整"
+    },
+    "请先打开这张照片，确认是否恢复旧调整。": {
+      "formats": [],
+      "source": "请先打开这张照片，确认是否恢复旧调整。"
+    },
+    "从原片开始": {
+      "formats": [],
+      "source": "从原片开始"
+    },
     "导入方式": {
       "formats": [],
       "source": "导入方式"
@@ -4204,6 +4228,10 @@
     "无法按所选设置处理 JPEG。": {
       "formats": [],
       "source": "无法按所选设置处理 JPEG。"
+    },
+    "此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。": {
+      "formats": [],
+      "source": "此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。"
     },
     "JPEG 已调整": {
       "formats": [],
@@ -5370,6 +5398,54 @@
       "es": "No se puede leer la información Wi-Fi de la cámara. Conéctate manualmente.",
       "ja": "カメラの Wi-Fi 情報を読み取れません。手動で接続してください。",
       "zh-Hans": "无法读取相机 Wi-Fi 信息，请手动连接。"
+    },
+    "恢复这张照片的旧调整？": {
+      "en": "Restore previous adjustments for this photo?",
+      "de": "Frühere Anpassungen für dieses Foto wiederherstellen?",
+      "fr": "Restaurer les réglages précédents de cette photo ?",
+      "es": "¿Restaurar los ajustes anteriores de esta foto?",
+      "ja": "この写真の以前の調整を復元しますか？",
+      "zh-Hans": "恢复这张照片的旧调整？"
+    },
+    "旧版记录只有相册标识。确认当前照片与原来的照片一致后，可恢复旧调整。": {
+      "en": "The older edit was saved using only the Photos identifier. Restore it if this is the same original photo.",
+      "de": "Die früheren Anpassungen wurden nur mit der Fotos-ID gespeichert. Stellen Sie sie wieder her, wenn dies dasselbe Originalfoto ist.",
+      "fr": "Les anciens réglages ont été enregistrés avec le seul identifiant Photos. Restaurez-les si la photo d’origine est la même.",
+      "es": "Los ajustes anteriores solo se guardaron con el identificador de Fotos. Restáuralos si es la misma foto original.",
+      "ja": "以前の調整は写真ライブラリの識別子だけで保存されています。同じ元の写真であれば復元できます。",
+      "zh-Hans": "旧版记录只有相册标识。确认当前照片与原来的照片一致后，可恢复旧调整。"
+    },
+    "恢复旧调整": {
+      "en": "Restore Previous Adjustments",
+      "de": "Frühere Anpassungen wiederherstellen",
+      "fr": "Restaurer les réglages précédents",
+      "es": "Restaurar ajustes anteriores",
+      "ja": "以前の調整を復元",
+      "zh-Hans": "恢复旧调整"
+    },
+    "请先打开这张照片，确认是否恢复旧调整。": {
+      "en": "Open this photo first to decide whether to restore its previous adjustments.",
+      "de": "Öffnen Sie dieses Foto zuerst und entscheiden Sie, ob Sie die früheren Anpassungen wiederherstellen möchten.",
+      "fr": "Ouvrez d’abord cette photo pour choisir de restaurer ou non ses réglages précédents.",
+      "es": "Abre primero esta foto para decidir si quieres restaurar sus ajustes anteriores.",
+      "ja": "先にこの写真を開き、以前の調整を復元するか選択してください。",
+      "zh-Hans": "请先打开这张照片，确认是否恢复旧调整。"
+    },
+    "从原片开始": {
+      "en": "Start from Original",
+      "de": "Mit dem Original beginnen",
+      "fr": "Partir de l’original",
+      "es": "Empezar desde el original",
+      "ja": "元の写真から始める",
+      "zh-Hans": "从原片开始"
+    },
+    "无法确认上次导入的原始文件，请重新选择照片。": {
+      "en": "The originals from the previous import could not be verified. Select the photos again.",
+      "de": "Die Originaldateien des letzten Imports konnten nicht überprüft werden. Wählen Sie die Fotos erneut aus.",
+      "fr": "Les originaux de l’importation précédente n’ont pas pu être vérifiés. Sélectionnez à nouveau les photos.",
+      "es": "No se pudieron verificar los originales de la importación anterior. Vuelve a seleccionar las fotos.",
+      "ja": "前回の読み込みの元ファイルを確認できません。写真を選択し直してください。",
+      "zh-Hans": "无法确认上次导入的原始文件，请重新选择照片。"
     },
     "无法确认上次联机的照片范围，已暂停自动恢复。请从相机导入，手动选择需要补传的照片。不会自动补拍。": {
       "en": "The previous tethered session’s photos could not be identified. Automatic recovery is paused. Use Import from camera to select missing photos manually. No shots will be taken automatically.",

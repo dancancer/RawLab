@@ -68,7 +68,7 @@ internal fun CameraTetherScreen(model: CameraImportViewModel, storage: PhotoStor
     fun back() { model.disconnect(); onBack() }
     BackHandler(onBack = ::back)
     CameraTetherWorkspace(tether, { uri, size -> storage.thumbnail(uri, size) }, model.tether::capture,
-        { onConnect(true) }, { model.openTetherSaved(it, onOpen) }, onSetParameter = model.tether::setParameter,
+        { onConnect(tether.canResume) }, { model.openTetherSaved(it, onOpen) }, onSetParameter = model.tether::setParameter,
         cameraName = (SonyCameraModel.entries.find { it.profileId == tether.run?.profileId } ?: connection.model).displayName,
         onBack = ::back, onChangeCamera = { onConnect(false) }, onDisconnect = model::disconnect,
         onDestination = { settings = true }, destinationEnabled = !tether.active && !connection.closing,
@@ -142,7 +142,11 @@ internal fun CameraTetherWorkspace(state: CameraTetherState,
                         .padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(stringResource(R.string.tether_paused), color = Color.White)
                         Text(stringResource(R.string.tether_saved, saved.size), color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
-                        TextButton(onClick = onReconnect, modifier = Modifier.testTag("tether-reconnect")) { Text(stringResource(R.string.tether_reconnect)) }
+                        if (state.canResume || state.run == null && state.failure != CameraTetherFailure.SOURCE) {
+                            TextButton(onClick = onReconnect, modifier = Modifier.testTag("tether-reconnect")) { Text(stringResource(R.string.tether_reconnect)) }
+                        } else {
+                            TextButton(onClick = onImport, modifier = Modifier.testTag("tether-import-instead")) { Text(stringResource(R.string.camera_import)) }
+                        }
                     }
                 }
             }
@@ -279,10 +283,15 @@ private fun TetherParameterSheet(state: CameraTetherState, onSetParameter: (Int,
 
 @Composable
 private fun TetherViewfinder(state: CameraTetherState, grid: Boolean, modifier: Modifier) {
-    val label = stringResource(if (!state.liveAvailable) R.string.camera_live_unavailable else if (state.live) R.string.tether_live else R.string.tether_stale)
+    val live = state.active && state.live && state.liveAvailable && state.frame != null
+    val label = stringResource(when {
+        live -> R.string.tether_live
+        state.frame != null || state.liveAvailable -> R.string.tether_stale
+        else -> R.string.camera_live_unavailable
+    })
     Box(modifier.background(Color.Black).testTag("tether-viewfinder"), contentAlignment = Alignment.Center) {
         state.frame?.let { bitmap ->
-            Image(bitmap.asImageBitmap(), label, Modifier.fillMaxSize().graphicsLayer { alpha = if (state.live) 1f else .45f }, contentScale = ContentScale.Fit)
+            Image(bitmap.asImageBitmap(), label, Modifier.fillMaxSize().graphicsLayer { alpha = if (live) 1f else .45f }, contentScale = ContentScale.Fit)
             if (grid) Canvas(Modifier.fillMaxSize().testTag("tether-grid")) {
                 val ratio = bitmap.width.toFloat() / bitmap.height
                 val width = minOf(size.width, size.height * ratio); val height = width / ratio
@@ -294,9 +303,11 @@ private fun TetherViewfinder(state: CameraTetherState, grid: Boolean, modifier: 
             }
         }
         if (state.frame == null && state.active && state.liveAvailable) CircularProgressIndicator(Modifier.size(32.dp))
-        if (!state.live && state.active) Text(label, Modifier.background(Color.Black.copy(alpha = .7f), MaterialTheme.shapes.small).padding(12.dp), color = Color.White)
-        else Text("LIVE", Modifier.align(Alignment.TopStart).padding(12.dp).background(Color.Black.copy(alpha = .6f), MaterialTheme.shapes.small).padding(6.dp),
+        if (state.frame != null) Text(if (live) "LIVE" else label,
+            Modifier.align(Alignment.TopStart).padding(12.dp).background(Color.Black.copy(alpha = .6f), MaterialTheme.shapes.small).padding(6.dp),
             color = Color.White, style = MaterialTheme.typography.labelSmall)
+        else if (state.active) Text(label,
+            Modifier.background(Color.Black.copy(alpha = .7f), MaterialTheme.shapes.small).padding(12.dp), color = Color.White)
     }
 }
 
@@ -331,7 +342,7 @@ private fun TetherStatus(state: CameraTetherState) {
                 CameraTetherFailure.SETTINGS -> R.string.tether_settings_error
                 CameraTetherFailure.SOURCE -> R.string.tether_source_error
                 CameraTetherFailure.STORAGE -> R.string.camera_storage_failed
-                CameraTetherFailure.BACKLOG -> R.string.tether_backlog_error
+                CameraTetherFailure.BACKLOG -> if (state.canResume) R.string.tether_backlog_error else R.string.tether_source_error
                 CameraTetherFailure.LIVE -> R.string.tether_live_error
                 CameraTetherFailure.UNSUPPORTED -> R.string.tether_unsupported
                 CameraTetherFailure.CONNECTION -> R.string.camera_connection_failed

@@ -77,8 +77,8 @@ internal static class ProcessingMigration
         if (gpuMode == 2) return false;
         var settings = current.Settings.Restore();
         if (!Eligible(settings) || settings.Processing.Version is not (1 or 2)) return false;
-        if (receipt?.Status == ProcessingMigrationReceipt.RolledBack) return false;
-        return receipt == null || !receipt.Before.SameAs(current);
+        return receipt == null ||
+            (receipt.Status == ProcessingMigrationReceipt.Kept && !receipt.Before.SameAs(current));
     }
 
     internal static bool IsRejectedResult(SavedEdit source, Native.ProcessingMigrationResult result)

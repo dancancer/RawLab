@@ -501,7 +501,7 @@
     <string name="tether_saved">"%1$d fotos guardadas"</string>
     <string name="tether_settings_error">"Configura la cámara para disparo único y confirma que las fotos también se guarden en la tarjeta de memoria de la cámara."</string>
     <string name="tether_shutter">"Tomar una foto"</string>
-    <string name="tether_source_error">"Las fotos de la tarjeta de la cámara han cambiado. Inicia de nuevo el disparo conectado; los originales guardados se conservarán."</string>
+    <string name="tether_source_error">"No se pudieron verificar los originales de la última sesión de disparo conectado. Selecciona las fotos manualmente para importarlas. Los originales guardados se conservan."</string>
     <string name="tether_stale">"Vista en directo pausada"</string>
     <string name="tether_title">"Disparo conectado"</string>
     <string name="tether_unknown">"El resultado de la toma aún no se ha confirmado. Comprueba la cámara; volver a conectar solo reanudará la recepción de los originales."</string>

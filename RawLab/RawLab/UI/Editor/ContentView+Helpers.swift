@@ -479,16 +479,15 @@ extension ContentView {
             let source = try await loadPhotoSource(from: item)
             var transferred = false
             defer { if !transferred { PhotoImportFile.release(source.url) } }
-            let resourceIdentifier = item.itemIdentifier
-            var identity = (try? await viewModel.photoIdentity(for: source, from: item))
-                ?? resourceIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
+            var identity = try await viewModel.photoIdentity(for: source, from: item)
             if let reselecting {
-                let content = try await Task.detached(priority: .userInitiated) { try PhotoIdentity.fallback(for: source.url).contentIdentifier }.value
-                guard content == reselecting.identity.contentIdentifier else {
+                guard identity.contentIdentifier == reselecting.identity.contentIdentifier else {
                     throw RecentPhotoError.originalChanged
                 }
                 identity = reselecting.identity
             }
+            guard photoImportRequestID == requestID, !Task.isCancelled else { return }
+            try await resolveLegacyAssetEdit(for: identity)
             guard photoImportRequestID == requestID, !Task.isCancelled else { return }
             transferred = true
             viewModel.importImage(from: source, identity: identity, settings: .default,
@@ -514,6 +513,7 @@ extension ContentView {
     }
 
     func cancelPhotoImport() {
+        finishLegacyAssetEditDecision(nil)
         recentReselection = nil
         photoImportRequestID = nil
         photoImportTask?.cancel()
@@ -521,6 +521,27 @@ extension ContentView {
         selectedPhotoItem = nil
         viewModel.cancelImageImport()
         isImporting = false
+    }
+
+    @MainActor
+    @discardableResult
+    func resolveLegacyAssetEdit(for identity: PhotoIdentity) async throws -> Bool {
+        guard let store = viewModel.editPersistence, let legacy = try store.unverifiedAssetEdit(for: identity) else { return false }
+        let restore = await withCheckedContinuation { continuation in
+            legacyAssetEditDecision = continuation
+            showingLegacyAssetEdit = true
+        }
+        try Task.checkCancellation()
+        guard let restore else { throw CancellationError() }
+        try store.resolveUnverifiedAssetEdit(for: identity, expected: legacy, restore: restore)
+        return true
+    }
+
+    func finishLegacyAssetEditDecision(_ restore: Bool?) {
+        let decision = legacyAssetEditDecision
+        legacyAssetEditDecision = nil
+        showingLegacyAssetEdit = false
+        decision?.resume(returning: restore)
     }
 
     @MainActor

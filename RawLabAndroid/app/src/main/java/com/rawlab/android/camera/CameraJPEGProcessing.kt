@@ -21,6 +21,9 @@ internal class CameraJPEGGainMapAdjustmentException(
     cause: Throwable? = null,
 ) : IOException("JPEG adjustment would discard HDR gain-map metadata", cause)
 
+internal class CameraJPEGMemoryException(cause: Throwable? = null) :
+    IOException("Insufficient memory to adjust camera JPEG", cause)
+
 /** JPEG processing happens only after the source has been downloaded and hashed. */
 internal object CameraJPEGProcessing {
     fun process(source: File, destination: File, options: CameraJPEGOptions): CameraProcessedFile =
@@ -32,30 +35,50 @@ internal object CameraJPEGProcessing {
         ensureAdjustmentSupported(source, gainMapProbe)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(source.path, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IOException("Cannot decode camera JPEG")
+        if (bounds.outWidth !in 1..65_535 || bounds.outHeight !in 1..65_535)
+            throw IOException("Cannot decode camera JPEG")
         val requested = options.longEdge ?: max(bounds.outWidth, bounds.outHeight)
         val scale = minOf(1f, requested.toFloat() / max(bounds.outWidth, bounds.outHeight))
         val targetWidth = (bounds.outWidth * scale).roundToInt().coerceAtLeast(1)
         val targetHeight = (bounds.outHeight * scale).roundToInt().coerceAtLeast(1)
+        val sample = sampleSize(bounds.outWidth, bounds.outHeight, requested)
+        val runtime = Runtime.getRuntime()
+        val available = runtime.maxMemory() - (runtime.totalMemory() - runtime.freeMemory())
+        if (requiredBitmapBytes(bounds.outWidth, bounds.outHeight, sample, targetWidth, targetHeight) > available / 2)
+            throw CameraJPEGMemoryException()
         val decode = BitmapFactory.Options().apply {
             // Avoid decoding needlessly large source bitmaps while keeping a final
             // exact scale pass for the requested long edge.
-            inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, requested)
+            inSampleSize = sample
             inPreferredConfig = Bitmap.Config.ARGB_8888
         }
-        val decoded = BitmapFactory.decodeFile(source.path, decode) ?: throw IOException("Cannot decode camera JPEG")
-        val bitmap = if (decoded.width == targetWidth && decoded.height == targetHeight) decoded
-            else Bitmap.createScaledBitmap(decoded, targetWidth, targetHeight, true).also { decoded.recycle() }
         try {
-            destination.parentFile?.mkdirs()
-            FileOutputStream(destination).use { output ->
-                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, options.quality, output))
-                    throw IOException("Cannot encode camera JPEG")
-                output.fd.sync()
-            }
-            copyExif(source, destination)
-            return hash(destination)
-        } finally { bitmap.recycle() }
+            val decoded = BitmapFactory.decodeFile(source.path, decode) ?: throw IOException("Cannot decode camera JPEG")
+            try {
+                val bitmap = if (decoded.width == targetWidth && decoded.height == targetHeight) decoded
+                    else Bitmap.createScaledBitmap(decoded, targetWidth, targetHeight, true)
+                try {
+                    if (bitmap !== decoded) decoded.recycle()
+                    destination.parentFile?.mkdirs()
+                    FileOutputStream(destination).use { output ->
+                        if (!bitmap.compress(Bitmap.CompressFormat.JPEG, options.quality, output))
+                            throw IOException("Cannot encode camera JPEG")
+                        output.fd.sync()
+                    }
+                    copyExif(source, destination)
+                    return hash(destination)
+                } finally { if (bitmap !== decoded) bitmap.recycle() }
+            } finally { if (!decoded.isRecycled) decoded.recycle() }
+        } catch (error: OutOfMemoryError) { throw CameraJPEGMemoryException(error) }
+    }
+
+    internal fun requiredBitmapBytes(width: Int, height: Int, sample: Int, targetWidth: Int, targetHeight: Int): Long {
+        val decodedWidth = (width + sample - 1) / sample
+        val decodedHeight = (height + sample - 1) / sample
+        val decodedPixels = decodedWidth.toLong() * decodedHeight
+        val scaledPixels = if (sample == 1 && width == targetWidth && height == targetHeight) 0L
+            else targetWidth.toLong() * targetHeight
+        return (decodedPixels + scaledPixels) * 4
     }
 
     internal fun ensureAdjustmentSupported(source: File) =

@@ -91,15 +91,16 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
     val resumeIncremental = state.resumableIncrementalJob
     val incrementalCount = state.incrementalScan?.assets?.size ?: 0
     val canImport = !state.transferring && !state.preparing && !state.closing && state.stage == null
-    val needsOriginalJpeg = state.job?.items?.any { it.problem == CameraMediaProblem.HDR_GAIN_MAP } == true
-    val savedKeys = remember(state.jobs, state.cameraId, state.hardwareIdentity, state.photos) {
+    val needsOriginalJpeg = state.job?.items?.any { it.problem?.needsOriginalJpeg == true } == true
+    val savedKeys = remember(state.jobs, state.cameraId, state.hardwareIdentity, state.photos, state.incrementalOwner, state.verifiedImports) {
         val observed = state.photos.associateBy { it.key }
         state.jobs.asSequence()
-            .filter { it.matchesCamera(state.cameraId, state.hardwareIdentity) }
+            .filter { it.originalListingOwner == state.incrementalOwner && it.matchesCamera(state.cameraId, state.hardwareIdentity) }
             .flatMap { it.items.asSequence() }
             .filter { it.saved != null && observed[it.photo.key]?.let(it.photo::matchesSnapshot) == true }
             .map { it.photo.key }
-            .toSet()
+            .toSet() + state.verifiedImports.values.map { it.photo }
+                .filter { observed[it.key]?.let(it::matchesSnapshot) == true }.map { it.key }
     }
     val title = when {
         preview != null -> R.string.camera_preview
@@ -319,7 +320,9 @@ private fun CameraTask(state: CameraImportState, needsOriginalJpeg: Boolean) {
                 job.status == CameraJobStatus.COMPLETE -> R.string.camera_complete
                 else -> R.string.camera_paused
             }), style = MaterialTheme.typography.headlineSmall)
-            if (needsOriginalJpeg) Text(stringResource(R.string.camera_jpeg_gain_map_keep_original),
+            if (job.items.any { it.problem == CameraMediaProblem.HDR_GAIN_MAP }) Text(stringResource(R.string.camera_jpeg_gain_map_keep_original),
+                color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            if (job.items.any { it.problem == CameraMediaProblem.JPEG_MEMORY }) Text(stringResource(R.string.memory_error),
                 color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             Text(stringResource(R.string.camera_saved_count, job.savedCount, job.items.size))
             job.incremental?.let { plan ->
@@ -356,7 +359,7 @@ private fun CameraTask(state: CameraImportState, needsOriginalJpeg: Boolean) {
                         state.currentKey == item.photo.key -> R.string.camera_progress
                         item.problem == CameraMediaProblem.MISSING || item.problem == CameraMediaProblem.REMOTE_MISSING -> R.string.camera_original_missing
                         item.problem == CameraMediaProblem.CHANGED -> R.string.camera_original_changed
-                        item.problem == CameraMediaProblem.HDR_GAIN_MAP -> R.string.camera_jpeg_processing_failed
+                        item.problem?.needsOriginalJpeg == true -> R.string.camera_jpeg_processing_failed
                         item.duplicate -> R.string.camera_duplicate
                         item.saved != null -> R.string.camera_saved
                         else -> R.string.camera_waiting

@@ -7,15 +7,26 @@ struct CameraJPEGSource: Codable, Equatable {
 }
 
 enum CameraJPEGProcessing {
-    static func encode(sourceURL: URL, destinationURL: URL, options: CameraJPEGOptions) throws {
+    static func adjustableSource(_ url: URL) throws -> CGImageSource {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary)
+        else { throw CameraProtocolError.jpegProcessing }
+        if CGImageSourceCopyAuxiliaryDataInfoAtIndex(source, 0, kCGImageAuxiliaryDataTypeHDRGainMap) != nil {
+            throw CameraProtocolError.jpegGainMapAdjustment
+        }
+        if #available(macOS 15.0, iOS 18.0, *),
+           CGImageSourceCopyAuxiliaryDataInfoAtIndex(source, 0, kCGImageAuxiliaryDataTypeISOGainMap) != nil {
+            throw CameraProtocolError.jpegGainMapAdjustment
+        }
+        return source
+    }
+
+    static func encode(source: CGImageSource, destinationURL: URL, options: CameraJPEGOptions) throws {
         try autoreleasepool {
             guard options.adjust, options.isValid,
-                  let source = CGImageSourceCreateWithURL(sourceURL as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
                   let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
                   let width = properties[kCGImagePropertyPixelWidth] as? Int,
                   let height = properties[kCGImagePropertyPixelHeight] as? Int,
-                  width > 0, height > 0, width <= 65535, height <= 65535,
-                  CGImageSourceCopyAuxiliaryDataInfoAtIndex(source, 0, kCGImageAuxiliaryDataTypeHDRGainMap) == nil
+                  width > 0, height > 0, width <= 65535, height <= 65535
             else { throw CameraProtocolError.jpegProcessing }
 
             let edge = min(options.longEdge ?? max(width, height), max(width, height))

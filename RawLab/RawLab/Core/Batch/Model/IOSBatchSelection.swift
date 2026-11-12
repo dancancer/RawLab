@@ -131,7 +131,7 @@ struct IOSCollectionExportInput {
                 try validateActive(id)
                 let generation = editGeneration(id)
                 guard ExportSize.isValid(longEdge) else { throw BatchExportError.global(L10n.text("导出尺寸无效。")) }
-                let record = try store.readState(for: photo.photo.identity)
+                let record = try store.readState(for: photo.photo.identity, requiringLegacyDecision: true)
                 let settings: RawSettings
                 if let saved = record.state { settings = saved.settings }
                 else {
@@ -178,6 +178,9 @@ struct IOSCollectionExportInput {
                       editGeneration(row.id) == row.editGeneration else { throw AdjustmentCommitError.expired }
                 try row.photo.validate()
                 try validateActive(row.id)
+                if row.record?.state == nil {
+                    _ = try store.readState(for: row.photo.photo.identity, requiringLegacyDecision: true)
+                }
                 if let look = row.look, try PhotoIdentity.fallback(for: look).contentIdentifier != row.lookSHA256 {
                     throw AdjustmentCommitError.expired
                 }

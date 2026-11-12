@@ -7,9 +7,17 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CameraJPEGProcessingTest {
+    @Test fun fullSizeJpegAccountsForBitmapMemoryBeforeDecoding() {
+        val available = 128L * 1024 * 1024
+        assertTrue(CameraJPEGProcessing.requiredBitmapBytes(9504, 6336, 1, 9504, 6336) > available)
+        assertTrue(CameraJPEGProcessing.requiredBitmapBytes(9504, 6336, 4, 2048, 1365) < available)
+        assertEquals(4L * (30L * 20 + 21L * 14), CameraJPEGProcessing.requiredBitmapBytes(59, 39, 2, 21, 14))
+    }
+
     @Test fun gainMapAdjustmentIsRejectedBeforeBitmapDecodeForEverySupportedProtocol() {
         val root = Files.createTempDirectory("camera-jpeg-hdr-test").toFile()
         try {

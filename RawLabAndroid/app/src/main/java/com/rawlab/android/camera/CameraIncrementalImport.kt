@@ -75,7 +75,8 @@ internal class CameraIncrementalScan(
         val storage = listing.map { it.storageToken ?: "unknown" }.toSet()
         val dated = listing.mapNotNull { photo -> photo.captureDateMillis?.let { photo to it } }
         val confirmed = checkpoints.filter { (kind, checkpoint) ->
-            checkpoint.storage == storage && dated.any { (photo, date) ->
+            // Slot and file metadata cannot prove the card stayed the same across connections.
+            checkpoint.owner == sessionOwner && checkpoint.storage == storage && dated.any { (photo, date) ->
                 CameraImportFormat.kindOf(photo) == kind && date == checkpoint.dateMillis && photo.anchorKey in checkpoint.anchors
             }
         }
@@ -93,7 +94,7 @@ internal class CameraIncrementalScan(
                 val start = starts[kind] ?: return@filter false
                 if (date < start || photo.key in savedKeys) return@filter false
                 val checkpoint = confirmed[kind]
-                customCutoff != null || checkpoint == null || checkpoint.owner != sessionOwner || date != checkpoint.dateMillis ||
+                customCutoff != null || checkpoint == null || date != checkpoint.dateMillis ||
                     photo.key !in checkpoint.keys
             }.sortedWith(compareBy<Pair<CameraPhoto, Long>> { it.second }.thenBy { it.first.key }).map { it.first }
             assets = eligible + if (includeUndated) undated else emptyList()
@@ -122,11 +123,10 @@ internal class CameraIncrementalScan(
     }
 }
 
-/** The current locator is used only when its identity is unique in both listings. */
-internal fun incrementalLocatorMap(job: CameraImportJob, current: List<CameraPhoto>, sessionOwner: String): Map<String, CameraPhoto> {
-    val plan = job.incremental ?: return emptyMap()
-    val sameSession = plan.sessionOwner == sessionOwner
-    val identity: (CameraPhoto) -> String = if (sameSession) CameraPhoto::key else CameraPhoto::anchorKey
+/** A remapped locator is only a download candidate. The store checks its bytes before publishing. */
+internal fun resumeLocatorMap(job: CameraImportJob, current: List<CameraPhoto>, sessionOwner: String?): Map<String, CameraPhoto> {
+    val sameSession = sessionOwner != null && job.originalListingOwner == sessionOwner
+    val identity: (CameraPhoto) -> String = if (sameSession) CameraPhoto::key else CameraPhoto::resumeMetadataKey
     val stored = job.items.groupBy { identity(it.photo) }
     val listed = current.groupBy(identity)
     return buildMap {
@@ -135,14 +135,18 @@ internal fun incrementalLocatorMap(job: CameraImportJob, current: List<CameraPho
             val item = items.singleOrNull() ?: continue
             if (sameSession) {
                 if (!item.photo.matchesSnapshot(photo)) continue
-            } else if (item.photo.resumeIdentity?.startsWith("legacy:") == true) {
-                val metadata = item.photo.legacyMetadataWithoutHandle ?: continue
-                if (metadata != photo.legacyMetadataWithoutHandle) continue
-            }
+            } else if (item.digest == null || !item.photo.matchesResumeMetadata(photo)) continue
             put(item.photo.key, photo)
         }
     }
 }
+
+internal val CameraPhoto.resumeMetadataKey: String get() = "$name:$size:$created"
+
+internal fun CameraPhoto.matchesResumeMetadata(observed: CameraPhoto): Boolean =
+    resumeMetadataKey == observed.resumeMetadataKey &&
+        (storageToken == null || storageToken == observed.storageToken && captureTimestamp == observed.captureTimestamp) &&
+        (legacyMetadataWithoutHandle == null || legacyMetadataWithoutHandle == observed.legacyMetadataWithoutHandle)
 
 private val CameraPhoto.legacyMetadataWithoutHandle: String?
     get() {

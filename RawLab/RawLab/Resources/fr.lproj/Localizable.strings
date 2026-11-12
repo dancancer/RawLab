@@ -115,6 +115,7 @@
 "仅用于本次导出，保留各照片原有调整" = "Pour cette exportation uniquement ; les réglages existants de chaque photo sont conservés";
 "仍需假设：%@" = "Hypothèses restantes : %@";
 "从 %@ 开始（相机时间）" = "À partir du %@ (heure de l’appareil)";
+"从原片开始" = "Partir de l’original";
 "从导入记录打开原件进行编辑；原始照片不会被调整覆盖。" = "Ouvrez un original depuis l’historique des importations pour le modifier. Les réglages ne remplacent pas la photo originale.";
 "从文件导入" = "Importer depuis Fichiers";
 "从最近打开中移除" = "Retirer des photos récentes";
@@ -402,7 +403,9 @@
 "快门" = "Obturateur";
 "恢复上次联机" = "Reprendre la dernière prise de vue connectée";
 "恢复当前照片的全部调整，不改写原始照片。" = "Réinitialiser tous les réglages de la photo actuelle. La photo d’origine ne sera pas modifiée.";
+"恢复旧调整" = "Restaurer les réglages précédents";
 "恢复未完成的原件接收，不会自动补拍。" = "Reprend la réception des originaux inachevés ; aucune photo ne sera prise automatiquement.";
+"恢复这张照片的旧调整？" = "Restaurer les réglages précédents de cette photo ?";
 "恢复阴影、中间调和高光的颜色分级默认值？" = "Rétablir l’étalonnage par défaut des ombres, tons moyens et hautes lumières ?";
 "恢复默认" = "Rétablir la valeur par défaut";
 "成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张" = "Réussite %@ · Échec %@ · Non traitées %@";
@@ -498,6 +501,7 @@
 "无法显示处理结果" = "Impossible d'afficher les résultats du traitement";
 "无法生成预览" = "Impossible de générer un aperçu";
 "无法生成预览，请检查照片、LUT 和颜色配置。" = "Impossible de générer l’aperçu. Vérifiez la photo, la LUT et les réglages colorimétriques.";
+"无法确认上次导入的原始文件，请重新选择照片。" = "Les originaux de l’importation précédente n’ont pas pu être vérifiés. Sélectionnez à nouveau les photos.";
 "无法确认上次的存储卡或拍摄时间，请选择新的起点。" = "Impossible de vérifier la carte ou l’heure de la dernière prise de vue. Choisissez une nouvelle date de début.";
 "无法确认上次联机的照片范围，已暂停自动恢复。请从相机导入，手动选择需要补传的照片。不会自动补拍。" = "Les photos de la session précédente n’ont pas pu être identifiées. La reprise automatique est suspendue. Utilisez « Importer depuis l’appareil » pour sélectionner les photos manquantes. Aucune photo ne sera prise automatiquement.";
 "无法自动调整曝光：%@" = "Impossible d’ajuster automatiquement l’exposition : %@";
@@ -522,6 +526,7 @@
 "日光" = "Lumière du jour";
 "日系通透水光肌，空气感透明青蓝，暗部大面积展开与柔润高光" = "Peau lumineuse japonaise, bleu cyan transparent et aérien, ombres ouvertes et hautes lumières douces";
 "日系青空 · 高调日光" = "Ciel bleu japonais · lumière du jour high-key";
+"旧版记录只有相册标识。确认当前照片与原来的照片一致后，可恢复旧调整。" = "Les anciens réglages ont été enregistrés avec le seul identifiant Photos. Restaurez-les si la photo d’origine est la même.";
 "旧版降噪" = "Ancienne réduction du bruit";
 "明度" = "Luminosité";
 "明度：从暗到亮。" = "Luminosité : du sombre au clair.";
@@ -628,6 +633,7 @@
 "正在读取镜头信息…" = "Lecture des informations de l’objectif…";
 "正在连接相机…" = "Connexion à l’appareil photo…";
 "正常显影" = "Développement normal";
+"此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。" = "Ce JPEG contient une carte de gain HDR. Conservez l’original pour préserver le HDR.";
 "此 LUT 缺少完整颜色说明。请确认处理方式；导入后会标记为兼容模式，效果尚未验证。" = "Les informations colorimétriques de cette LUT sont incomplètes. Confirmez son traitement. Elle sera marquée comme compatible, avec un rendu non vérifié.";
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "La balance des blancs prise de vue de ce RAW n’a pas pu être analysée ; la teinte de la recette ne peut pas être appliquée.";
 "此像素不可取样。" = "Ce pixel ne peut pas être échantillonné.";
@@ -822,6 +828,7 @@
 "请先完成或结束已有批量任务，再创建新任务。" = "Terminez la tâche par lot existante avant d’en créer une nouvelle.";
 "请先导入一张照片。" = "Importez d’abord une photo.";
 "请先应用或放弃未完成的输入和几何草稿。" = "Appliquez ou abandonnez d’abord les saisies et les brouillons de géométrie en cours.";
+"请先打开这张照片，确认是否恢复旧调整。" = "Ouvrez d’abord cette photo pour choisir de restaurer ou non ses réglages précédents.";
 "请先检查相机上的拍摄结果。新会话不会补拍，未完成照片可在导入记录中继续接收。" = "Vérifiez d’abord le résultat sur l’appareil. Une nouvelle session ne reprend pas la photo. Reprenez les transferts incomplets dans l’historique.";
 "请先确认同源图片、处理条件和参考来源。" = "Confirmez d’abord la même image source, les conditions de traitement et la source de référence.";
 "请先选择外观或配方。" = "Sélectionnez d’abord un look ou une recette.";

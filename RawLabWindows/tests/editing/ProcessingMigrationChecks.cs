@@ -17,6 +17,7 @@ internal static class ProcessingMigrationChecks
         AtomicMigrationAndCas();
         ReceiptPersistsIndependentPolicyAndTargetVersions();
         RestartRollbackSuppressesAutomaticRetry();
+        MigratedReceiptSurvivesManualVersionChange();
         KeptReceiptRetriesOnlyAfterSettingsChange();
         ForceDoesNotStartAutomaticMigration();
         MigrationHistoryIsolation();
@@ -213,6 +214,51 @@ internal static class ProcessingMigrationChecks
             Check(receipt?.Status == ProcessingMigrationReceipt.RolledBack &&
                   !ProcessingMigration.ShouldAttempt(before, receipt),
                 "rolledBack receipt permanently suppresses automatic retry");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    private static void MigratedReceiptSurvivesManualVersionChange()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-migrated-" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        try
+        {
+            var file = Path.Combine(root, "photo.ARW"); File.WriteAllText(file, "raw");
+            var directory = Path.Combine(root, "edits"); var store = new EditStore(directory);
+            var identity = OriginalIdentity.Read(file); var before = Source(identity);
+            store.SaveState(identity, before);
+            Check(ProcessingMigration.TryBuildCandidate(before, Result(), out var migrated), "first candidate");
+            store.CommitProcessingMigration(identity, before, migrated!, ProcessingMigrationReceipt.Migrated);
+
+            var changed = before.Settings.Restore();
+            changed.Processing = ProcessingIdentity.Legacy;
+            changed.Set(Parameter.Exposure, 2);
+            var manual = new SavedEdit(identity, changed.Capture(), before.Look);
+            store.SaveState(identity, manual);
+            var restarted = new EditStore(directory);
+            var receipt = restarted.ReadProcessingMigration(file);
+            Check(restarted.ReadState(file).Edit?.SameAs(manual) == true && !ProcessingMigration.ShouldAttempt(manual, receipt),
+                "Reopening preserves a manually selected legacy version after migration");
+
+            Check(ProcessingMigration.TryBuildCandidate(manual, Result(source: 1), out var refitted), "second candidate");
+            foreach (var (candidate, status) in new[] {
+                (refitted!, ProcessingMigrationReceipt.Migrated), (manual, ProcessingMigrationReceipt.Kept)
+            })
+            {
+                try
+                {
+                    restarted.CommitProcessingMigration(identity, manual, candidate, status);
+                    throw new Exception("A late migration overwrote a migrated receipt");
+                }
+                catch (AdjustmentOperationExpiredException) { }
+            }
+            var current = restarted.ReadState(file);
+            var preserved = restarted.ReadProcessingMigration(file);
+            Check(current.Edit?.SameAs(manual) == true && preserved?.Status == ProcessingMigrationReceipt.Migrated &&
+                  preserved.Before.SameAs(before), "Late migration results leave the manual edit and the first receipt intact");
+            Check(restarted.RollbackProcessingMigration(identity, current).Edit?.SameAs(before) == true,
+                "Rollback restores the first migration's source snapshot");
         }
         finally { Directory.Delete(root, true); }
     }

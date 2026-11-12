@@ -10,10 +10,12 @@ struct CameraTransferItem: Codable, Identifiable {
     var phase: CameraTransferPhase = .queued
     var sourceID: UUID?
     var digest: String?
+    var sourceDigest: String?
     var failure: String?
     var reused: Bool?
 }
 struct CameraTransferJob: Codable, Identifiable {
+    typealias BoundItem = (item: CameraTransferItem, asset: CameraRemoteAsset)
     let id: UUID
     let camera: CameraDeviceIdentity
     let connectionKey: String
@@ -21,6 +23,8 @@ struct CameraTransferJob: Codable, Identifiable {
     var items: [CameraTransferItem]
     var incremental: CameraIncrementalPlan?
     var dismissed: Bool?
+    var listingOwner: UUID?
+    var originalListingOwner: UUID? { listingOwner ?? incremental?.owner }
     var complete: Bool { items.allSatisfy { $0.phase == .saved } }
     var pendingItems: [CameraTransferItem] { items.filter { $0.phase != .saved } }
     var itemLimit: Int { incremental == nil ? 64 : CameraIncrementalScan.maximumAssets }
@@ -34,15 +38,13 @@ struct CameraTransferJob: Codable, Identifiable {
     }
 
     func pendingAssets(device: CameraDeviceIdentity, connectionKey: String, assets: [CameraRemoteAsset],
-                       allowAlternateConnection: Bool) throws -> [(CameraTransferItem, CameraRemoteAsset)] {
-        guard matches(camera: device, connectionKey: connectionKey, allowAlternateConnection: allowAlternateConnection) else {
-            throw CameraProtocolError.invalid("Transfer belongs to a different camera")
-        }
+                       allowAlternateConnection: Bool) throws -> [BoundItem] {
+        let recoveryError: CameraProtocolError = allowAlternateConnection ? .importRecoveryRequired : .tetherRecoveryRequired
+        guard matches(camera: device, connectionKey: connectionKey, allowAlternateConnection: allowAlternateConnection)
+        else { throw recoveryError }
         let bound = bindToListing(assets)
         return try pendingItems.map { item in
-            guard let asset = bound[item.id] else {
-                throw CameraProtocolError.invalid("Camera original changed; select it again")
-            }
+            guard let asset = bound[item.id] else { throw recoveryError }
             return (item, asset)
         }
     }
@@ -57,10 +59,15 @@ struct CameraStoredOriginal: Codable, Identifiable {
     var jpegSource: CameraJPEGSource?
 }
 struct CameraTetherRecord: Codable, Identifiable {
+    static let maximumFilesPerTransfer = 64
+    static let maximumBytesPerTransfer: UInt64 = 2 << 30
+
     let id: UUID
     let camera: CameraDeviceIdentity
     let connectionKey: String
     var baseline: Set<String>
+    // 重连后的句柄可能变化，保留其与旧任务条目的对应关系。没有摘要的离线文件不记录对应项。
+    var reboundItems: [String: UUID]?
     var jobIDs: [UUID] = []
     var shutterRequestedAt: Date?
     var shutterOwner: UUID?
@@ -72,12 +79,65 @@ struct CameraOriginalManifest: Codable {
     var jobs: [CameraTransferJob] = []
     var originals: [CameraStoredOriginal] = []
     var tether: CameraTetherRecord?
+    var canResumeTether: Bool { tetherRecoveryInputs != nil }
+
+    // 首页和恢复使用同一份本地证据。卡内清单及原件字节仍须重连后核对。
+    fileprivate var tetherRecoveryInputs: (record: CameraTetherRecord, jobs: [CameraTransferJob], digests: [UUID: String])? {
+        guard let tether, tether.camera.supportsMobileContents || tether.camera.supportsLegacyContents,
+              !tether.camera.serial.isEmpty || tether.connectionKey.hasPrefix("BLE:") || tether.connectionKey.hasPrefix("SSID:"),
+              !tether.baseline.isEmpty, !tether.jobIDs.isEmpty,
+              tether.jobIDs.count <= CameraTetherRecord.maximumFilesPerTransfer else { return nil }
+
+        let ids = Set(tether.jobIDs)
+        guard ids.count == tether.jobIDs.count else { return nil }
+        let byID = Dictionary(grouping: jobs.lazy.filter { ids.contains($0.id) }, by: \.id)
+        var registeredJobs: [CameraTransferJob] = []
+        for id in tether.jobIDs {
+            guard let matches = byID[id], matches.count == 1, let job = matches.first,
+                  job.incremental == nil, !job.items.isEmpty,
+                  job.matches(camera: tether.camera, connectionKey: tether.connectionKey, allowAlternateConnection: false)
+            else { return nil }
+            registeredJobs.append(job)
+        }
+        let items = registeredJobs.flatMap(\.items)
+        guard items.count <= CameraTetherRecord.maximumFilesPerTransfer,
+              items.allSatisfy({ $0.asset.transferable }),
+              items.reduce(0, { $0 + $1.asset.size }) <= CameraTetherRecord.maximumBytesPerTransfer,
+              Set(items.map(\.asset.withoutLocator)).count == items.count
+        else { return nil }
+
+        var digests: [UUID: String] = [:]
+        for item in items {
+            // 旧联机任务保存的是原件，其已保存摘要也可用于校验源字节。
+            guard let digest = item.sourceDigest ?? (item.phase == .saved ? item.digest : nil),
+                  CameraOriginalStore.validDigest(digest), digests.updateValue(digest, forKey: item.id) == nil
+            else { return nil }
+        }
+        let registered = Dictionary(grouping: items, by: \.asset.key)
+        var covered = Set<UUID>()
+        for key in tether.baseline {
+            let original = registered[key]
+            guard let id = tether.reboundItems?[key] ?? (original?.count == 1 ? original?.first?.id : nil),
+                  digests[id] != nil, covered.insert(id).inserted else { return nil }
+        }
+        return (tether, registeredJobs, digests)
+    }
 
     func pendingIncrementalJob(device: CameraDeviceIdentity, connectionKey: String) -> CameraTransferJob? {
         jobs.last {
             $0.incremental != nil && !$0.complete && $0.dismissed != true &&
                 $0.matches(camera: device, connectionKey: connectionKey)
         }
+    }
+
+    func savedIncrementalKeys(owner: UUID, jpeg: CameraJPEGOptions) -> Set<String> {
+        Set(jobs.lazy.filter { $0.incremental != nil && $0.originalListingOwner == owner }.flatMap { job in
+            job.items.compactMap { item in
+                guard item.phase == .saved, item.asset.kind == "RAW" || job.incremental?.jpeg == jpeg
+                else { return nil }
+                return item.asset.key
+            }
+        })
     }
 
     func incrementalBoundaries(device: CameraDeviceIdentity, connectionKey: String) -> [String: CameraImportBoundary] {
@@ -147,7 +207,7 @@ final class CameraOriginalStore {
     private func locked<T>(_ body: () throws -> T) rethrows -> T {
         lock.lock(); defer { lock.unlock() }; return try body()
     }
-    private static func validDigest(_ digest: String) -> Bool {
+    fileprivate static func validDigest(_ digest: String) -> Bool {
         digest.count == 64 && digest.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
     }
     private func change<T>(_ body: () throws -> T) throws -> T {
@@ -216,8 +276,11 @@ final class CameraOriginalStore {
         }
     }
     func enqueue(device: CameraDeviceIdentity, connectionKey: String, assets: [CameraAssetSnapshot],
-                 incremental: CameraIncrementalPlan? = nil) throws -> CameraTransferJob {
-        try change { try appendJob(device: device, connectionKey: connectionKey, assets: assets, incremental: incremental) }
+                 listingOwner: UUID? = nil, incremental: CameraIncrementalPlan? = nil) throws -> CameraTransferJob {
+        try change {
+            try appendJob(device: device, connectionKey: connectionKey, assets: assets,
+                          listingOwner: listingOwner, incremental: incremental)
+        }
     }
     func dismissIncrementalJob(_ id: UUID) throws {
         try change {
@@ -227,7 +290,7 @@ final class CameraOriginalStore {
         }
     }
     private func appendJob(device: CameraDeviceIdentity, connectionKey: String, assets: [CameraAssetSnapshot],
-                           incremental: CameraIncrementalPlan? = nil) throws -> CameraTransferJob {
+                           listingOwner: UUID?, incremental: CameraIncrementalPlan? = nil) throws -> CameraTransferJob {
         let limit = incremental == nil ? 64 : CameraIncrementalScan.maximumAssets
         guard !assets.isEmpty, assets.count <= limit, Set(assets.map(\.key)).count == assets.count,
               assets.allSatisfy({ $0.transferable && CameraWire.validName($0.name) && CameraWire.photoName($0.name) })
@@ -240,7 +303,7 @@ final class CameraOriginalStore {
             throw CameraProtocolError.invalid("Transfer exceeds 64 originals or 2 GiB")
         }
         let job = CameraTransferJob(id: UUID(), camera: device, connectionKey: connectionKey, createdAt: Date(),
-            items: assets.map { CameraTransferItem(id: UUID(), asset: $0) }, incremental: incremental)
+            items: assets.map { CameraTransferItem(id: UUID(), asset: $0) }, incremental: incremental, listingOwner: listingOwner)
         state.jobs.append(job); return job
     }
     func begin(job: UUID, item: UUID) throws -> (url: URL, handle: FileHandle) {
@@ -268,9 +331,16 @@ final class CameraOriginalStore {
             let reader = try FileHandle(forReadingFrom: partial)
             let prefix = try reader.read(upToCount: 4) ?? Data(); try reader.close()
             try CameraWire.validateHeader(name: transfer.asset.name, data: prefix)
+            if let expected = transfer.sourceDigest {
+                guard expected == digest else { throw CameraProtocolError.importRecoveryRequired }
+            } else {
+                // 保存相机源字节的摘要，JPEG 调整或落盘失败后仍可核对重传来源。
+                try change { state.jobs[j].items[i].sourceDigest = digest }
+            }
             let jpegSource = state.jobs[j].incremental.flatMap { plan in
                 plan.jpeg.adjust && transfer.asset.kind == "JPEG" ? CameraJPEGSource(digest: digest, options: plan.jpeg) : nil
             }
+            let adjustableSource = try jpegSource.map { _ in try CameraJPEGProcessing.adjustableSource(partial) }
             if let existing = state.originals.first(where: { source in
                 guard source.availability != .prepared, source.jpegSource == jpegSource else { return false }
                 return (jpegSource != nil || (source.digest == digest && source.size == actual.size)) && availability(source) == .available
@@ -287,8 +357,8 @@ final class CameraOriginalStore {
             let staged = jpegSource == nil ? partial : adjustedURL(item)
             defer { if staged != partial { try? FileManager.default.removeItem(at: staged) } }
             let output: (size: UInt64, digest: String)
-            if let jpegSource {
-                try CameraJPEGProcessing.encode(sourceURL: partial, destinationURL: staged, options: jpegSource.options)
+            if let jpegSource, let adjustableSource {
+                try CameraJPEGProcessing.encode(source: adjustableSource, destinationURL: staged, options: jpegSource.options)
                 output = try Self.hash(staged)
                 guard output.size > 0 else { throw CameraProtocolError.jpegProcessing }
                 let handle = try FileHandle(forUpdating: staged)
@@ -332,6 +402,10 @@ final class CameraOriginalStore {
                     let item = state.jobs[j].items[i]
                     if item.phase == .prepared, let id = item.sourceID,
                        let source = state.originals.firstIndex(where: { $0.id == id }) {
+                        if item.sourceDigest == nil {
+                            let original = state.originals[source]
+                            state.jobs[j].items[i].sourceDigest = original.jpegSource?.digest ?? original.digest
+                        }
                         let status = availability(state.originals[source])
                         if status == .available {
                             state.originals[source].availability = .available; state.jobs[j].items[i].phase = .saved
@@ -359,26 +433,75 @@ final class CameraOriginalStore {
     func beginTether(device: CameraDeviceIdentity, connectionKey: String, baseline: [CameraRemoteAsset]) throws {
         try change { state.tether = CameraTetherRecord(id: UUID(), camera: device, connectionKey: connectionKey, baseline: Set(baseline.map { $0.snapshot.key })) }
     }
-    func validateTetherResume(device: CameraDeviceIdentity, connectionKey: String, assets: [CameraRemoteAsset]) throws {
-        try locked {
-            guard let tether = state.tether, tether.camera.stableKey == device.stableKey, tether.connectionKey == connectionKey,
-                  !device.serial.isEmpty || connectionKey.hasPrefix("BLE:") || connectionKey.hasPrefix("SSID:"),
-                  !tether.baseline.isEmpty, tether.baseline.isSubset(of: Set(assets.map { $0.snapshot.key })) else {
-                throw CameraProtocolError.tetherRecoveryRequired
-            }
+    func resumeTether(device: CameraDeviceIdentity, connectionKey: String, assets: [CameraRemoteAsset],
+                      verifySaved: (CameraTransferJob.BoundItem) throws -> String,
+                      receivePending: (UUID, [CameraTransferJob.BoundItem]) throws -> Void,
+                      checkCurrent: () throws -> Void = {}) throws {
+        let (previous, jobs, matches) = try locked {
+            try tetherRecoveryPlan(device: device, connectionKey: connectionKey, assets: assets)
         }
-    }
-    func rebaseResumedTether(_ assets: [CameraRemoteAsset]) throws {
+        do {
+            // 核对已保存的原件后才开始发布待传项，避免混入换卡后的内容。
+            for job in jobs {
+                for item in job.items where item.phase == .saved {
+                    try checkCurrent()
+                    guard let match = matches[item.id], try verifySaved((item, match.asset)) == match.digest
+                    else { throw CameraProtocolError.tetherRecoveryRequired }
+                }
+            }
+            for job in jobs where !job.complete {
+                try checkCurrent()
+                let pending: [CameraTransferJob.BoundItem] = try job.pendingItems.map {
+                    guard let match = matches[$0.id] else { throw CameraProtocolError.tetherRecoveryRequired }
+                    return ($0, match.asset)
+                }
+                // 正常落盘流程比对待传项记录的源摘要。
+                try receivePending(job.id, pending)
+            }
+        } catch CameraProtocolError.response(_, 0x2009) {
+            // PTP InvalidObjectHandle：清单里的原件已不可读取，须由用户重新选片。
+            throw CameraProtocolError.tetherRecoveryRequired
+        }
+        try checkCurrent()
         try change {
-            guard state.tether != nil else { throw CameraProtocolError.invalid("Tether session is missing") }
+            guard state.tether?.id == previous.id, state.tether?.baseline == previous.baseline,
+                  state.tether?.jobIDs == previous.jobIDs,
+                  state.jobs.filter({ previous.jobIDs.contains($0.id) && $0.complete }).count == jobs.count
+            else { throw CameraProtocolError.tetherRecoveryRequired }
             // 无可靠卡片 UUID 时，离线新增对象不能自动归因；只恢复已登记任务。
             state.tether?.baseline = Set(assets.map { $0.snapshot.key })
+            state.tether?.reboundItems = Dictionary(uniqueKeysWithValues: matches.map { ($0.value.asset.snapshot.key, $0.key) })
         }
     }
-    func registerTetherAssets(_ assets: [CameraAssetSnapshot]) throws -> CameraTransferJob {
+    private typealias TetherMatch = (asset: CameraRemoteAsset, digest: String)
+
+    private func tetherRecoveryPlan(device: CameraDeviceIdentity, connectionKey: String, assets: [CameraRemoteAsset]) throws
+        -> (CameraTetherRecord, [CameraTransferJob], [UUID: TetherMatch]) {
+        let unavailable = CameraProtocolError.tetherRecoveryRequired
+        guard device.supportsMobileContents || device.supportsLegacyContents,
+              let (tether, jobs, digests) = state.tetherRecoveryInputs,
+              tether.camera.stableKey == device.stableKey, tether.connectionKey == connectionKey,
+              let owner = assets.first?.owner, assets.allSatisfy({ $0.owner == owner }),
+              Set(assets.map { $0.snapshot.key }).count == assets.count
+        else { throw unavailable }
+
+        let listed = Dictionary(grouping: assets, by: \.snapshot.withoutLocator)
+        var matches: [UUID: TetherMatch] = [:]
+        var keys = Set<String>()
+        for item in jobs.flatMap(\.items) {
+            guard let digest = digests[item.id],
+                  let candidates = listed[item.asset.withoutLocator], candidates.count == 1,
+                  keys.insert(candidates[0].snapshot.key).inserted
+            else { throw unavailable }
+            matches[item.id] = (candidates[0], digest)
+        }
+        return (tether, jobs, matches)
+    }
+    func registerTetherAssets(_ assets: [CameraAssetSnapshot], listingOwner: UUID) throws -> CameraTransferJob {
         try change {
             guard let tether = state.tether else { throw CameraProtocolError.invalid("Tether session is missing") }
-            let job = try appendJob(device: tether.camera, connectionKey: tether.connectionKey, assets: assets)
+            let job = try appendJob(device: tether.camera, connectionKey: tether.connectionKey, assets: assets,
+                                    listingOwner: listingOwner)
             state.tether?.baseline.formUnion(assets.map(\.key)); state.tether?.jobIDs.append(job.id)
             if state.tether?.shutterRequestedAt != nil { state.tether?.shutterJobs.append(job.id) }
             return job

@@ -90,7 +90,11 @@ class CameraIncrementalRecoveryUiTest {
                     assertEquals(blocked.items.first().saved, completed.items.first().saved)
                     assertTrue(completed.committed)
                     assertTrue(model.state.value.incrementalJpeg.adjust)
-                    assertTrue(checkNotNull(model.state.value.incrementalScan).assets.isEmpty())
+                    assertTrue(checkNotNull(model.state.value.incrementalScan).needsCutoffConfirmation)
+                    compose.runOnUiThread { model.setIncrementalCutoff(cutoff) }
+                    // Choosing the old time includes both candidates. The original JPEG saved above
+                    // does not satisfy the current preference to save a JPEG with adjustments.
+                    assertEquals(listOf(false, true), checkNotNull(model.state.value.incrementalScan).assets.map { it.raw }.sorted())
                     val saved = checkNotNull(completed.items.single { !it.photo.raw }.saved)
                     val output = checkNotNull(context.contentResolver.openInputStream(Uri.parse(saved.uri))).use { it.readBytes() }
                     assertArrayEquals(source, output)
@@ -106,23 +110,26 @@ class CameraIncrementalRecoveryUiTest {
             val context = InstrumentationRegistry.getInstrumentation().targetContext
             val model = camera(activity)
 
-            CameraIncrementalSessionFixture(context.cacheDir).use { fixture ->
+            val source = InstrumentationRegistry.getInstrumentation().context.assets.open("apple-legacy-macos26.jpg").use { it.readBytes() }
+            CameraIncrementalSessionFixture(context.cacheDir, jpegSource = source, interruptJpeg = false).use { fixture ->
                 try {
                     connect(model, fixture)
                     openIncrementalImport()
+                    compose.onNodeWithTag("camera-jpeg-adjust").performClick()
                     compose.onNodeWithTag("camera-import").performClick()
                     compose.waitUntil(15_000) {
                         val state = model.state.value
-                        !state.transferring && !state.closing && !state.connected && state.job?.savedCount == 1
+                        !state.transferring && state.job?.items?.any { it.problem == CameraMediaProblem.HDR_GAIN_MAP } == true
                     }
                     val paused = checkNotNull(model.state.value.job)
                     assertFalse(paused.committed)
                     val oldUri = checkNotNull(paused.items.single { it.photo.raw }.saved).uri
 
+                    disconnect(model)
                     connect(model, fixture)
                     assertEquals(1, context.contentResolver.delete(Uri.parse(oldUri), null, null))
                     context.getSharedPreferences("camera-media-sources", 0).edit().remove(oldUri).commit()
-                    compose.onNodeWithTag("camera-resume").performClick()
+                    compose.onNodeWithTag("camera-jpeg-keep-original").performClick()
                     compose.waitUntil(15_000) {
                         val state = model.state.value
                         !state.transferring && state.job?.status == CameraJobStatus.COMPLETE

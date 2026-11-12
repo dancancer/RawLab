@@ -47,12 +47,16 @@ extension ContentView {
         do {
             let source = try await photoPreviews.source(for: photo)
             try Task.checkCancellation()
+            try await resolveLegacyAssetEdit(for: source.identity)
+            try Task.checkCancellation()
             let input = source.file.withReadAccess { PhotoImportSource(url: $0, isRaw: source.isRaw, originalName: source.displayName) }
             viewModel.importImage(from: input, identity: source.identity, retainedInput: source.file,
                 diagnosticContext: ["entryPoint": "recentPhotos"], onImported: { UsageAnalytics.shared.record(.photoImported) }) { restored in
                     settings = restored
                     if restored.isHDREditing { selectedGroup = .light; selectedAdjustment = .exposure }
                 }
+        } catch is CancellationError {
+            isImporting = false
         } catch {
             isImporting = false
             recentFailedPhoto = photo

@@ -227,6 +227,8 @@ private actor IOSPhotoPreviewWorker {
         try Task.checkCancellation()
         guard try plan.isCurrent(in: edits) else { throw AdjustmentCommitError.expired }
         let data = try IOSPhotoPreviewPlan.thumbnailData(image)
+        try Task.checkCancellation()
+        guard try plan.isCurrent(in: edits) else { throw AdjustmentCommitError.expired }
         try? cache.write(data, for: plan.key)
         try? recentStore?.savePreview(data, key: plan.key, for: source.identity)
         return data
@@ -234,8 +236,11 @@ private actor IOSPhotoPreviewWorker {
     func accept(_ source: IOSPhotoPreviewSource, record: PhotoEditRecord, image: UIImage, look: URL?, editDirectory: URL,
                 recentStore: RecentPhotoStore?) throws {
         let plan = try IOSPhotoPreviewPlan(source: source, record: record, look: look)
-        guard try plan.isCurrent(in: EditPersistence(directory: editDirectory)) else { throw AdjustmentCommitError.expired }
+        let edits = try EditPersistence(directory: editDirectory)
+        guard try plan.isCurrent(in: edits) else { throw AdjustmentCommitError.expired }
         let data = try IOSPhotoPreviewPlan.thumbnailData(image)
+        try Task.checkCancellation()
+        guard try plan.isCurrent(in: edits) else { throw AdjustmentCommitError.expired }
         try cache.write(data, for: plan.key)
         try? recentStore?.savePreview(data, key: plan.key, for: source.identity)
     }

@@ -41,6 +41,13 @@ struct IOSCameraIncrementalImport: View {
             VStack(spacing: 0) {
                 if model.phase == .receiving {
                     action(L10n.text("停止导入"), id: "camera.incremental.stop", perform: { model.stop() })
+                } else if let pending, requiresNewImport(pending) {
+                    if model.connected {
+                        action(L10n.text("开始新的增量导入"), id: "camera.incremental.new-import", disabled: model.busy,
+                               perform: { model.dismissIncrementalJob(pending) })
+                    } else {
+                        action(L10n.text("重新连接"), id: "camera.incremental.reconnect", perform: reconnect)
+                    }
                 } else if let pending {
                     action(L10n.text(model.connected ? "继续未完成" : "重新连接并继续"),
                            id: "camera.incremental.resume", perform: { resume(pending) })
@@ -51,6 +58,11 @@ struct IOSCameraIncrementalImport: View {
                            disabled: !scan.assets.allSatisfy { $0.snapshot.transferable }, perform: { model.startIncremental(scan) })
                 }
             }.padding(.horizontal, 14).background(Color(white: 0.16))
+        }
+        .onChange(of: model.assets.first?.owner) { _, _ in
+            customCutoff = nil
+            includeUndated = false
+            showCutoff = false
         }
         .onChange(of: job?.complete == true ? job?.id : nil) { _, completed in
             if completed != nil {
@@ -81,6 +93,7 @@ struct IOSCameraIncrementalImport: View {
             }.buttonStyle(.plain).accessibilityIdentifier("camera.incremental.cutoff")
             if scan.needsCutoffConfirmation {
                 Text(L10n.text("无法确认上次的存储卡或拍摄时间，请选择新的起点。")).font(.callout).foregroundStyle(.orange)
+                    .accessibilityIdentifier("camera.incremental.cutoff-required")
             } else {
                 let count = scan.assets.count
                 Text(count == 0 ? L10n.text("没有新的照片") : L10n.format("待导入 %@ 个文件", String(count)))
@@ -160,19 +173,18 @@ struct IOSCameraIncrementalImport: View {
                 ProgressView(value: Double(progress.bytes), total: Double(progress.total))
                 if progress.bytes == progress.total { Text(L10n.text("正在保存照片…")).font(.subheadline).foregroundStyle(.secondary) }
             } else if model.phase == .receiving { ProgressView() }
-            if let job, model.phase != .receiving {
+            if model.phase != .receiving, job != nil {
                 Button(L10n.text("导入记录"), action: history).frame(minHeight: 44)
-                if model.connected && requiresNewImport(job) {
-                    Button(L10n.text("开始新的增量导入")) { model.dismissIncrementalJob(job) }
-                        .frame(minHeight: 44).disabled(model.busy)
-                }
             }
         }
     }
     private func requiresNewImport(_ job: CameraTransferJob) -> Bool {
-        let bound = job.bindToListing(model.assets)
+        let bound = model.connected ? job.bindToListing(model.assets) : [:]
         return job.pendingItems.contains {
-            bound[$0.id] == nil || $0.failure == CameraProtocolError.jpegProcessing.errorDescription
+            (model.connected ? bound[$0.id] == nil : $0.sourceDigest == nil) ||
+                $0.failure == CameraProtocolError.jpegProcessing.errorDescription ||
+                $0.failure == CameraProtocolError.jpegGainMapAdjustment.errorDescription ||
+                $0.failure == CameraProtocolError.importRecoveryRequired.errorDescription
         }
     }
     private func completion(_ job: CameraTransferJob) -> some View {
