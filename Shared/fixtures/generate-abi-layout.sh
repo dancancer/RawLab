@@ -5,6 +5,11 @@ set -euo pipefail
 # gated by a Clang JSON AST completeness check so fields added inside alignment padding
 # (or new structs added to the headers) fail immediately unless registered in generate_abi_layout.cpp.
 #
+# Dependencies:
+#   - clang++: required for `-Xclang -ast-dump=json` (on Linux/Ubuntu `c++` defaults to GCC/g++,
+#     so this script defaults to `clang++`; override with `CXX=/path/to/clang++` if needed).
+#   - python3: standard library only.
+#
 # Ordering rules (enforced in generate_abi_layout.cpp and verified against AST):
 #   1. Complete structs from lutools/include/sony2fuji/ffi/sony2fuji_c.h in declaration order.
 #   2. Complete structs from lutools/include/sony2fuji/ffi/sony2fuji_hdr.h in declaration order.
@@ -22,7 +27,18 @@ HDR_HEADER="$INCLUDE_DIR/sony2fuji/ffi/sony2fuji_hdr.h"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/abi-layout.XXXXXX")"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-CXX_BIN="${CXX:-c++}"
+CXX_BIN="${CXX:-clang++}"
+if ! command -v "$CXX_BIN" >/dev/null 2>&1; then
+    echo "Error: Clang C++ compiler '$CXX_BIN' not found in PATH." >&2
+    echo "generate-abi-layout.sh requires Clang (for -Xclang -ast-dump=json); install clang++ or set CXX=/path/to/clang++." >&2
+    exit 1
+fi
+if ! "$CXX_BIN" --version 2>&1 | grep -qi 'clang'; then
+    CXX_FIRST_LINE="$("$CXX_BIN" --version 2>&1 | head -n 1 || true)"
+    echo "Error: CXX='$CXX_BIN' is not Clang ($CXX_FIRST_LINE)." >&2
+    echo "generate-abi-layout.sh requires Clang for '-Xclang -ast-dump=json' (GCC/g++ is unsupported); set CXX=clang++." >&2
+    exit 1
+fi
 "$CXX_BIN" -std=c++17 -Wall -Wextra -Werror \
     -I"$INCLUDE_DIR" \
     "$SRC" \

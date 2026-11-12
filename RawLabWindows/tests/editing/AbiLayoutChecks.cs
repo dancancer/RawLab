@@ -647,6 +647,148 @@ internal static class AbiLayoutChecks
         if (!condition) throw new Exception(message);
     }
 
+    private static bool TryGetUnmanagedScalarWidth(UnmanagedType unmanagedType, out int sizeBytes)
+    {
+        switch (unmanagedType)
+        {
+            case UnmanagedType.I1:
+            case UnmanagedType.U1:
+                sizeBytes = 1;
+                return true;
+            case UnmanagedType.I2:
+            case UnmanagedType.U2:
+                sizeBytes = 2;
+                return true;
+            case UnmanagedType.I4:
+            case UnmanagedType.U4:
+            case UnmanagedType.R4:
+            case UnmanagedType.Bool:
+                sizeBytes = 4;
+                return true;
+            case UnmanagedType.I8:
+            case UnmanagedType.U8:
+            case UnmanagedType.R8:
+            case UnmanagedType.SysInt:
+            case UnmanagedType.SysUInt:
+                sizeBytes = 8;
+                return true;
+            default:
+                sizeBytes = 0;
+                return false;
+        }
+    }
+
+    private static bool TryGetValueTypeUnmanagedSize(Type valueType, out int sizeBytes)
+    {
+        if (!valueType.IsValueType)
+        {
+            sizeBytes = 0;
+            return false;
+        }
+        if (valueType == typeof(IntPtr) || valueType == typeof(UIntPtr))
+        {
+            sizeBytes = IntPtr.Size;
+            return true;
+        }
+        if (valueType.IsEnum)
+        {
+            sizeBytes = Marshal.SizeOf(Enum.GetUnderlyingType(valueType));
+            return true;
+        }
+        sizeBytes = Marshal.SizeOf(valueType);
+        return true;
+    }
+
+    private static bool TryGetManagedFieldSize(FieldInfo fieldInfo, out int sizeBytes, out string error)
+    {
+        var marshalAs = fieldInfo.GetCustomAttribute<MarshalAsAttribute>();
+        if (marshalAs is not null)
+        {
+            switch (marshalAs.Value)
+            {
+                case UnmanagedType.ByValArray:
+                {
+                    if (!fieldInfo.FieldType.IsArray || fieldInfo.FieldType.GetElementType() is not { } elementType)
+                    {
+                        sizeBytes = 0;
+                        error = "[MarshalAs(ByValArray)] requires an array field type";
+                        return false;
+                    }
+                    if (marshalAs.SizeConst <= 0)
+                    {
+                        sizeBytes = 0;
+                        error = $"[MarshalAs(ByValArray)] must declare positive SizeConst (got {marshalAs.SizeConst})";
+                        return false;
+                    }
+                    if (!TryGetValueTypeUnmanagedSize(elementType, out var elementSize))
+                    {
+                        sizeBytes = 0;
+                        error = $"unsupported ByValArray element type {elementType.Name}";
+                        return false;
+                    }
+                    if (TryGetUnmanagedScalarWidth(marshalAs.ArraySubType, out var subTypeSize) && subTypeSize != elementSize)
+                    {
+                        sizeBytes = 0;
+                        error = $"ByValArray ArraySubType ({marshalAs.ArraySubType}={subTypeSize}B) mismatches {elementType.Name} ({elementSize}B)";
+                        return false;
+                    }
+                    sizeBytes = marshalAs.SizeConst * elementSize;
+                    error = string.Empty;
+                    return true;
+                }
+                case UnmanagedType.LPUTF8Str:
+                case UnmanagedType.LPStr:
+                case UnmanagedType.LPWStr:
+                case UnmanagedType.LPTStr:
+                {
+                    if (fieldInfo.FieldType != typeof(string))
+                    {
+                        sizeBytes = 0;
+                        error = $"[MarshalAs({marshalAs.Value})] expects string field, got {fieldInfo.FieldType.Name}";
+                        return false;
+                    }
+                    sizeBytes = IntPtr.Size;
+                    error = string.Empty;
+                    return true;
+                }
+                default:
+                {
+                    if (TryGetUnmanagedScalarWidth(marshalAs.Value, out sizeBytes))
+                    {
+                        error = string.Empty;
+                        return true;
+                    }
+                    sizeBytes = 0;
+                    error = $"unsupported [MarshalAs({marshalAs.Value})]";
+                    return false;
+                }
+            }
+        }
+
+        if (typeof(Delegate).IsAssignableFrom(fieldInfo.FieldType))
+        {
+            if (fieldInfo.FieldType.GetCustomAttribute<UnmanagedFunctionPointerAttribute>() is null)
+            {
+                sizeBytes = 0;
+                error = $"delegate field type {fieldInfo.FieldType.Name} is missing [UnmanagedFunctionPointer]";
+                return false;
+            }
+            sizeBytes = IntPtr.Size;
+            error = string.Empty;
+            return true;
+        }
+
+        if (TryGetValueTypeUnmanagedSize(fieldInfo.FieldType, out sizeBytes))
+        {
+            error = string.Empty;
+            return true;
+        }
+
+        sizeBytes = 0;
+        error = $"reference field of type {fieldInfo.FieldType.Name} is missing [MarshalAs]";
+        return false;
+    }
+
     private static string ResolveFixturePath()
     {
         const string relativePath = "Shared/fixtures/abi-layout-v1.json";
@@ -706,6 +848,18 @@ internal static class AbiLayoutChecks
                 field => field.Name,
                 field => Marshal.OffsetOf(mapping.ClrType, field.Name).ToInt32(),
                 StringComparer.Ordinal);
+            var clrFieldSizes = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var fieldInfo in clrFields)
+            {
+                if (!TryGetManagedFieldSize(fieldInfo, out var managedSize, out var sizeError))
+                {
+                    errors.Add($"{cName} -> Native.{mapping.ClrType.Name}.{fieldInfo.Name}: {sizeError}");
+                }
+                else
+                {
+                    clrFieldSizes[fieldInfo.Name] = managedSize;
+                }
+            }
             var actualStructSize = Marshal.SizeOf(mapping.ClrType);
 
             var expectedSize = cSizes[cName];
@@ -746,25 +900,38 @@ internal static class AbiLayoutChecks
                 }
             }
 
-            var cFieldList = new List<(string Name, int Offset)>();
+            var unrolledCFields = mapping.UnrolledArrays?.Select(item => item.CField).ToHashSet(StringComparer.Ordinal)
+                ?? new HashSet<string>(StringComparer.Ordinal);
+
+            var cFieldList = new List<(string Name, int Offset, int Size)>();
             var cFieldOffsets = new Dictionary<string, int>(StringComparer.Ordinal);
             foreach (var field in entry.GetProperty("fields").EnumerateArray())
             {
                 var cField = field.GetProperty("name").GetString()
                     ?? throw new InvalidDataException($"Missing field name in {cName}");
                 var expectedOffset = field.GetProperty("offset").GetInt32();
-                cFieldList.Add((cField, expectedOffset));
+                var expectedFieldSize = field.GetProperty("size").GetInt32();
+                Check(expectedFieldSize > 0, $"Invalid non-positive field size for {cName}.{cField}");
+                cFieldList.Add((cField, expectedOffset, expectedFieldSize));
                 cFieldOffsets.Add(cField, expectedOffset);
 
                 if (!mapping.Fields.TryGetValue(cField, out var clrField))
                 {
-                    errors.Add($"{cName}.{cField} (C offset={expectedOffset}): missing field mapping on Native.{mapping.ClrType.Name}");
+                    errors.Add($"{cName}.{cField} (C offset={expectedOffset}, size={expectedFieldSize}): missing field mapping on Native.{mapping.ClrType.Name}");
                     continue;
                 }
 
                 if (clrFieldOffsets.TryGetValue(clrField, out var actualOffset) && actualOffset != expectedOffset)
                 {
                     errors.Add($"{cName}.{cField} -> Native.{mapping.ClrType.Name}.{clrField}: C offset={expectedOffset}, C# offset={actualOffset}");
+                }
+
+                var isFlattenedBaseField = cField == "base" && mapping.FlattenedBaseCStruct is not null;
+                if (!unrolledCFields.Contains(cField) && !isFlattenedBaseField
+                    && clrFieldSizes.TryGetValue(clrField, out var actualFieldSize)
+                    && actualFieldSize != expectedFieldSize)
+                {
+                    errors.Add($"{cName}.{cField} -> Native.{mapping.ClrType.Name}.{clrField}: C size={expectedFieldSize}, C# marshaled size={actualFieldSize}");
                 }
             }
 
@@ -792,6 +959,20 @@ internal static class AbiLayoutChecks
                     if (cSizes.TryGetValue(flattenedBaseCStruct, out var baseSize) && baseSize > baseBound)
                     {
                         errors.Add($"{cName}: flattened base {flattenedBaseCStruct} size ({baseSize}) exceeds limit {baseBound}");
+                    }
+                    if (cFieldList.Count > 0 && cFieldList[0].Name == "base")
+                    {
+                        var expectedBaseFieldSize = cFieldList[0].Size;
+                        if (cSizes.TryGetValue(flattenedBaseCStruct, out var baseStructSize) && baseStructSize != expectedBaseFieldSize)
+                        {
+                            errors.Add($"{cName}.base: C field size={expectedBaseFieldSize} mismatches {flattenedBaseCStruct} size={baseStructSize}");
+                        }
+                        if (baseMapping.PrefixEndField is { } basePrefixField
+                            && clrFieldOffsets.TryGetValue(basePrefixField, out var flattenedPrefixEnd)
+                            && flattenedPrefixEnd != expectedBaseFieldSize)
+                        {
+                            errors.Add($"{cName}.base -> Native.{mapping.ClrType.Name} (flattened prefix before {basePrefixField}): C size={expectedBaseFieldSize}, C# span={flattenedPrefixEnd}");
+                        }
                     }
                     foreach (var baseClrField in baseMapping.Fields.Values)
                     {
@@ -839,6 +1020,7 @@ internal static class AbiLayoutChecks
                     }
 
                     var baseOffset = cFieldList[cFieldIndex].Offset;
+                    var expectedArraySize = cFieldList[cFieldIndex].Size;
                     var stride = array.ElementCStruct is { } elementStruct ? cSizes[elementStruct] : array.ElementBytes;
                     if (stride <= 0)
                     {
@@ -856,7 +1038,7 @@ internal static class AbiLayoutChecks
                             continue;
                         }
 
-                        if (!clrFieldByName.TryGetValue(clrField, out var fieldInfo))
+                        if (!clrFieldByName.ContainsKey(clrField))
                         {
                             errors.Add($"{cName}.{array.CField}[{index}] -> Native.{mapping.ClrType.Name}.{clrField}: C# field not found on struct");
                             continue;
@@ -871,24 +1053,27 @@ internal static class AbiLayoutChecks
                             errors.Add($"{cName}.{array.CField}[{index}] -> Native.{mapping.ClrType.Name}.{clrField}: C offset={expectedOffset}, C# offset={actualOffset}");
                         }
 
-                        if (fieldInfo.FieldType.IsValueType)
+                        if (clrFieldSizes.TryGetValue(clrField, out var elementSize) && elementSize != stride)
                         {
-                            var elementSize = Marshal.SizeOf(fieldInfo.FieldType);
-                            if (elementSize != stride)
-                            {
-                                errors.Add($"{cName}.{array.CField}[{index}] -> Native.{mapping.ClrType.Name}.{clrField}: expected element size={stride}, C# Marshal.SizeOf={elementSize}");
-                            }
+                            errors.Add($"{cName}.{array.CField}[{index}] -> Native.{mapping.ClrType.Name}.{clrField}: expected element size={stride}, C# marshaled size={elementSize}");
                         }
                     }
 
-                    var expectedSpanEnd = cFieldIndex + 1 < cFieldList.Count
-                        ? cFieldList[cFieldIndex + 1].Offset
-                        : expectedSize;
-                    var actualSpanEnd = baseOffset + array.ClrFields.Count * stride;
-                    if (actualSpanEnd != expectedSpanEnd)
+                    var actualArraySize = array.ClrFields.Count * stride;
+                    if (actualArraySize != expectedArraySize)
                     {
                         var tailField = array.ClrFields[array.ClrFields.Count - 1];
-                        errors.Add($"{cName}.{array.CField} (tail Native.{mapping.ClrType.Name}.{tailField}): unrolled span [{baseOffset}..{actualSpanEnd}) does not cover expected C span [{baseOffset}..{expectedSpanEnd})");
+                        errors.Add($"{cName}.{array.CField} (tail Native.{mapping.ClrType.Name}.{tailField}): C size={expectedArraySize}, C# unrolled size={actualArraySize}");
+                    }
+
+                    var expectedSpanLimit = cFieldIndex + 1 < cFieldList.Count
+                        ? cFieldList[cFieldIndex + 1].Offset
+                        : expectedSize;
+                    var actualSpanEnd = baseOffset + actualArraySize;
+                    if (actualSpanEnd > expectedSpanLimit)
+                    {
+                        var tailField = array.ClrFields[array.ClrFields.Count - 1];
+                        errors.Add($"{cName}.{array.CField} (tail Native.{mapping.ClrType.Name}.{tailField}): unrolled span [{baseOffset}..{actualSpanEnd}) exceeds C span limit {expectedSpanLimit}");
                     }
                 }
             }
@@ -929,6 +1114,12 @@ internal static class AbiLayoutChecks
                     if (actualOffset != spec.StartOffset)
                     {
                         errors.Add($"{cName} -> Native.{mapping.ClrType.Name}.{spec.ClrField}: reserved StartOffset={spec.StartOffset}, C# offset={actualOffset}");
+                    }
+
+                    if (clrFieldSizes.TryGetValue(spec.ClrField, out var reservedFieldSize)
+                        && reservedFieldSize != spec.EndOffset - spec.StartOffset)
+                    {
+                        errors.Add($"{cName} -> Native.{mapping.ClrType.Name}.{spec.ClrField}: reserved width {spec.EndOffset - spec.StartOffset}B mismatches C# marshaled size={reservedFieldSize}B");
                     }
 
                     var nextFieldOffset = clrFieldOffsets.Values

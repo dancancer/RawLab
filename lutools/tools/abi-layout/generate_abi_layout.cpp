@@ -13,6 +13,7 @@ namespace {
 struct FieldLayout {
     const char* name;
     size_t offset;
+    size_t size;
 };
 
 struct StructLayout {
@@ -21,7 +22,8 @@ struct StructLayout {
     std::vector<FieldLayout> fields;
 };
 
-#define ABI_FIELD(Type, Member) FieldLayout{#Member, offsetof(Type, Member)}
+#define ABI_FIELD(Type, Member) \
+    FieldLayout{#Member, offsetof(Type, Member), sizeof(Type::Member)}
 
 bool validateLayouts(const std::vector<StructLayout>& structs) {
     for (const auto& entry : structs) {
@@ -33,15 +35,20 @@ bool validateLayouts(const std::vector<StructLayout>& structs) {
             std::cerr << "First field of " << entry.name << " does not start at offset 0\n";
             return false;
         }
-        for (size_t i = 1; i < entry.fields.size(); ++i) {
-            if (entry.fields[i].offset <= entry.fields[i - 1].offset) {
-                std::cerr << "Non-increasing field offset in " << entry.name << ": "
+        for (size_t i = 0; i < entry.fields.size(); ++i) {
+            if (entry.fields[i].size == 0) {
+                std::cerr << "Zero-sized field in " << entry.name << ": "
+                          << entry.fields[i].name << "\n";
+                return false;
+            }
+            if (i > 0 && entry.fields[i - 1].offset + entry.fields[i - 1].size > entry.fields[i].offset) {
+                std::cerr << "Overlapping or non-increasing field offset in " << entry.name << ": "
                           << entry.fields[i].name << "\n";
                 return false;
             }
         }
-        if (entry.fields.back().offset >= entry.size) {
-            std::cerr << "Field offset out of bounds in " << entry.name << "\n";
+        if (entry.fields.back().offset + entry.fields.back().size > entry.size) {
+            std::cerr << "Field span out of bounds in " << entry.name << "\n";
             return false;
         }
     }
@@ -721,7 +728,9 @@ int main() {
                   << "      \"fields\": [\n";
         for (size_t j = 0; j < s.fields.size(); ++j) {
             const auto& f = s.fields[j];
-            std::cout << "        {\"name\": \"" << f.name << "\", \"offset\": " << f.offset << "}"
+            std::cout << "        {\"name\": \"" << f.name
+                      << "\", \"offset\": " << f.offset
+                      << ", \"size\": " << f.size << "}"
                       << (j + 1 < s.fields.size() ? "," : "") << "\n";
         }
         std::cout << "      ]\n"
