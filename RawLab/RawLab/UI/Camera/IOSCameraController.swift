@@ -280,17 +280,7 @@ struct IOSCameraImportPreferences: Codable {
         } ?? [:]
         let savedKeys: Set<String>
         if let owner = assets.first?.owner, customCutoff == nil {
-            savedKeys = Set(manifest.jobs.lazy.filter { job in
-                job.incremental != nil && (job.incremental?.owner == owner || (job.id == self.incrementalJobID && job.complete))
-            }.flatMap { job in
-                let currentSession = job.incremental?.owner == owner
-                let bound = currentSession ? [:] : job.bindToListing(self.assets)
-                return job.items.compactMap { item -> String? in
-                    guard item.phase == .saved, item.asset.kind == "RAW" || job.incremental?.jpeg == self.importPreferences.jpeg
-                    else { return nil }
-                    return currentSession ? item.asset.key : bound[item.id]?.snapshot.key
-                }
-            })
+            savedKeys = manifest.savedIncrementalKeys(owner: owner, jpeg: importPreferences.jpeg)
         } else { savedKeys = [] }
         return CameraIncrementalScan(assets: assets, boundaries: boundaries, cutoff: defaultIncrementalStart,
                                      customCutoff: customCutoff, format: importPreferences.format,
@@ -402,6 +392,8 @@ struct IOSCameraImportPreferences: Codable {
         case CameraProtocolError.tetherRecoveryRequired: return L10n.text("无法确认上次联机的照片范围，已暂停自动恢复。请从相机导入，手动选择需要补传的照片。不会自动补拍。")
         case CameraProtocolError.unsupported: return L10n.text("当前相机模式未提供此功能。")
         case CameraProtocolError.jpegProcessing: return L10n.text("无法按所选设置处理 JPEG。")
+        case CameraProtocolError.jpegGainMapAdjustment: return L10n.text("此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。")
+        case CameraProtocolError.importRecoveryRequired: return L10n.text("无法确认上次导入的原始文件，请重新选择照片。")
         case CameraProtocolError.invalid: return L10n.text("相机数据或原件校验未通过，已暂停。")
         default: return L10n.text("相机连接已断开。已保存的照片仍可查看。")
         }

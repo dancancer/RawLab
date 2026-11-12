@@ -501,7 +501,7 @@
     <string name="tether_saved">"已保存 %1$d 张"</string>
     <string name="tether_settings_error">"请将相机设为单张拍摄，并确认照片同时保存到相机存储卡。"</string>
     <string name="tether_shutter">"拍摄一张"</string>
-    <string name="tether_source_error">"相机卡中的照片发生变化。请重新开始联机；已保存原件仍保留。"</string>
+    <string name="tether_source_error">"无法确认上次联机的相机原件。请手动选片补传。已保存的原件会保留。"</string>
     <string name="tether_stale">"取景已暂停"</string>
     <string name="tether_title">"联机拍摄"</string>
     <string name="tether_unknown">"拍摄结果尚未确认。请检查相机，重新连接只恢复原件接收。"</string>

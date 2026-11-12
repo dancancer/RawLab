@@ -35,6 +35,12 @@ struct PhotoIdentity: Codable, Equatable, Hashable, Sendable {
         return "content:missing"
     }
 
+    // Photos keeps the asset identifier when its underlying bytes change.
+    fileprivate var editKey: String {
+        guard let resourceIdentifier, let contentIdentifier else { return key }
+        return "photo-content:\(resourceIdentifier.utf8.count):\(resourceIdentifier):\(contentIdentifier)"
+    }
+
     static func fallback(for url: URL, resourceIdentifier: String? = nil) throws -> PhotoIdentity {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
@@ -103,6 +109,7 @@ enum AdjustmentCommitError: Error {
 enum EditPersistenceError: LocalizedError {
     case invalidIdentity
     case corruptStore
+    case legacyAssetEditNeedsDecision
 
     var errorDescription: String? {
         switch self {
@@ -110,6 +117,8 @@ enum EditPersistenceError: LocalizedError {
             return L10n.text("无法识别原始照片，调整尚未保存。")
         case .corruptStore:
             return L10n.text("无法读取已保存的调整，原有记录未被覆盖。")
+        case .legacyAssetEditNeedsDecision:
+            return L10n.text("请先打开这张照片，确认是否恢复旧调整。")
         }
     }
 }
@@ -192,10 +201,38 @@ final class EditPersistence {
         try reset(try PhotoIdentity.fallback(for: url))
     }
 
-    func readState(for identity: PhotoIdentity) throws -> PhotoEditRecord {
+    func readState(for identity: PhotoIdentity, requiringLegacyDecision: Bool = false) throws -> PhotoEditRecord {
         try validate(identity)
         let store = try readStore()
+        if requiringLegacyDecision, unverifiedAssetEdit(for: identity, from: store) != nil {
+            throw EditPersistenceError.legacyAssetEditNeedsDecision
+        }
         return record(identity, from: store)
+    }
+
+    func unverifiedAssetEdit(for identity: PhotoIdentity) throws -> PhotoEditState? {
+        // Records written before content binding have only the Photos asset identifier.
+        try unverifiedAssetEdit(for: identity, from: readStore())
+    }
+
+    func resolveUnverifiedAssetEdit(for identity: PhotoIdentity, expected: PhotoEditState, restore: Bool) throws {
+        try withWriteLock {
+            var store = try readStore()
+            guard unverifiedAssetEdit(for: identity, from: store) == expected else { throw AdjustmentCommitError.expired }
+            if restore {
+                _ = try write(expected, identity: identity, store: &store)
+            } else {
+                store.deleted = (store.deleted ?? []).union([identity.editKey])
+                try persistStore(&store)
+            }
+        }
+    }
+
+    private func unverifiedAssetEdit(for identity: PhotoIdentity, from store: StoreFile) -> PhotoEditState? {
+        guard identity.editKey != identity.key else { return nil }
+        let existing = recordKey(identity, from: store)
+        guard store.records[existing] == nil, store.deleted?.contains(existing) != true else { return nil }
+        return store.records[identity.key]
     }
 
     func processingMigration(for identity: PhotoIdentity) throws -> ProcessingMigrationReceipt<PhotoEditState>? {
@@ -218,11 +255,11 @@ final class EditPersistence {
             }
             if let candidate {
                 guard candidate.settings.processing == .current, quality.passes else { throw AdjustmentCommitError.expired }
-                store.records[expected.identity.key] = candidate
-                store.deleted?.remove(expected.identity.key)
+                store.records[expected.identity.editKey] = candidate
+                store.deleted?.remove(expected.identity.editKey)
             }
             var receipts = store.processingMigrations ?? [:]
-            receipts[expected.identity.key] = StoredProcessingMigration(identity: expected.identity,
+            receipts[expected.identity.editKey] = StoredProcessingMigration(identity: expected.identity,
                 receipt: .init(status: candidate == nil ? .kept : .migrated, original: original, quality: quality))
             store.processingMigrations = receipts
             try persistStore(&store)
@@ -237,11 +274,11 @@ final class EditPersistence {
             guard record(expected.identity, from: store) == expected,
                   var receipt = storedMigration(expected.identity, from: store)?.receipt,
                   receipt.status == .migrated else { throw AdjustmentCommitError.expired }
-            store.records[expected.identity.key] = receipt.original
-            store.deleted?.remove(expected.identity.key)
+            store.records[expected.identity.editKey] = receipt.original
+            store.deleted?.remove(expected.identity.editKey)
             receipt.status = .rolledBack
             var receipts = store.processingMigrations ?? [:]
-            receipts[expected.identity.key] = StoredProcessingMigration(identity: expected.identity, receipt: receipt)
+            receipts[expected.identity.editKey] = StoredProcessingMigration(identity: expected.identity, receipt: receipt)
             store.processingMigrations = receipts
             try persistStore(&store)
             return record(expected.identity, from: store)
@@ -254,11 +291,7 @@ final class EditPersistence {
               let store = try? readStore() else { return identity }
         let current = record(identity, from: store)
         // 只有可能命中旧入口记录时才额外读取 transferable，删除标记也必须阻止兜底。
-        let tombstoned = [identity.contentIdentifier, identity.legacyContentIdentifier]
-            .compactMap { $0 }.map { PhotoIdentity(contentIdentifier: $0).key }
-            .contains { store.deleted?.contains($0) == true }
-        guard current.state == nil, store.deleted?.contains(identity.key) != true,
-              !tombstoned,
+        guard current.state == nil, store.deleted?.contains(recordKey(identity, from: store)) != true,
               store.records.keys.contains(where: { $0.hasPrefix("content:") }),
               let legacy = await load() else { return identity }
         return PhotoIdentity(resourceIdentifier: identity.resourceIdentifier,
@@ -274,6 +307,21 @@ final class EditPersistence {
         }
     }
 
+    func saveTransferredState(_ state: PhotoEditState, expected: PhotoEditRecord) throws -> PhotoEditRecord {
+        let identity = expected.identity
+        try validate(identity)
+        return try withWriteLock {
+            var store = try readStore()
+            guard unverifiedAssetEdit(for: identity, from: store) == nil else {
+                throw EditPersistenceError.legacyAssetEditNeedsDecision
+            }
+            guard record(identity, from: store).hasSameAdjustments(as: expected) else {
+                throw AdjustmentCommitError.expired
+            }
+            return try write(state, identity: identity, store: &store)
+        }
+    }
+
     private func validate(_ identity: PhotoIdentity) throws {
         guard identity.resourceIdentifier != nil || identity.contentIdentifier != nil else { throw EditPersistenceError.invalidIdentity }
     }
@@ -283,9 +331,11 @@ final class EditPersistence {
     }
 
     private func recordKey(_ identity: PhotoIdentity, from store: StoreFile) -> String {
-        var key = identity.key
+        var key = identity.editKey
         // 删除标记也是主记录，不能在重置后重新载入旧的内容记录。
         if identity.resourceIdentifier != nil {
+            if store.records[key] == nil, store.deleted?.contains(key) != true,
+               store.deleted?.contains(identity.key) == true { return identity.key }
             for content in [identity.contentIdentifier, identity.legacyContentIdentifier].compactMap({ $0 }) {
                 guard store.records[key] == nil, store.deleted?.contains(key) != true else { break }
                 key = PhotoIdentity(contentIdentifier: content).key
@@ -296,14 +346,15 @@ final class EditPersistence {
 
     private func storedMigration(_ identity: PhotoIdentity, from store: StoreFile) -> StoredProcessingMigration? {
         // 拒绝迁移只写回执，不创建资源编辑记录；先读取该照片自身的回执。
-        if let stored = store.processingMigrations?[identity.key] {
-            // legacyContentIdentifier 只帮助查找旧记录，建立资源记录后重开不会再补取。
-            guard stored.identity.resourceIdentifier == identity.resourceIdentifier,
-                  stored.identity.contentIdentifier == identity.contentIdentifier else { return nil }
+        let receipts = store.processingMigrations ?? [:]
+        // legacyContentIdentifier 只帮助查找旧记录，建立资源记录后重开不会再补取。
+        if let stored = receipts[identity.editKey] ?? receipts[identity.key],
+           stored.identity.resourceIdentifier == identity.resourceIdentifier,
+           stored.identity.contentIdentifier == identity.contentIdentifier {
             return stored
         }
         let key = recordKey(identity, from: store)
-        guard let stored = store.processingMigrations?[key], stored.identity.key == key else { return nil }
+        guard let stored = receipts[key], stored.identity.resourceIdentifier == nil, stored.identity.key == key else { return nil }
         return stored
     }
 
@@ -339,17 +390,17 @@ final class EditPersistence {
         if current.state == nil && state == nil { return current }
         store.version = 1
         // 从内容别名转成 PhotoKit 主记录时，迁移回退也跟随该照片，不能丢在旧入口下。
-        if store.processingMigrations?[identity.key] == nil, let previous = storedMigration(identity, from: store) {
+        if store.processingMigrations?[identity.editKey] == nil, let previous = storedMigration(identity, from: store) {
             var receipts = store.processingMigrations ?? [:]
-            receipts[identity.key] = StoredProcessingMigration(identity: identity, receipt: previous.receipt)
+            receipts[identity.editKey] = StoredProcessingMigration(identity: identity, receipt: previous.receipt)
             store.processingMigrations = receipts
         }
         if let state {
-            store.records[identity.key] = state
-            store.deleted?.remove(identity.key)
+            store.records[identity.editKey] = state
+            store.deleted?.remove(identity.editKey)
         } else {
-            store.records.removeValue(forKey: identity.key)
-            store.deleted = (store.deleted ?? []).union([identity.key])
+            store.records.removeValue(forKey: identity.editKey)
+            store.deleted = (store.deleted ?? []).union([identity.editKey])
         }
         try persistStore(&store)
         return record(identity, from: store)

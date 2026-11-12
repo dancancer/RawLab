@@ -5989,7 +5989,7 @@
     "tether_source_error": {
       "file": "strings.xml",
       "formats": [],
-      "source": "相机卡中的照片发生变化。请重新开始联机；已保存原件仍保留。",
+      "source": "无法确认上次联机的相机原件。请手动选片补传。已保存的原件会保留。",
       "types": []
     },
     "tether_backlog_error": {
@@ -6746,14 +6746,6 @@
       "fr": "Enregistrer les JPEG restants à l’identique",
       "ja": "残りの JPEG を元のまま保存",
       "zh-Hans": "剩余 JPEG 原样保存"
-    },
-    "此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。": {
-      "de": "Dieses JPEG enthält eine HDR-Gainmap. Speichern Sie das Original, um HDR zu erhalten.",
-      "en": "This JPEG contains an HDR gain map. Keep the original to preserve HDR.",
-      "es": "Este JPEG contiene un mapa de ganancia HDR. Conserva el original para mantener el HDR.",
-      "fr": "Ce JPEG contient une carte de gain HDR. Conservez l’original pour préserver le HDR.",
-      "ja": "この JPEG には HDR ゲインマップが含まれています。HDR を保持するには元のまま保存してください。",
-      "zh-Hans": "此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。"
     },
     "16 位 PNG 超过 3200 万像素解码上限。": {
       "de": "16-Bit-PNG überschreitet die Dekodierungsgrenze von 32 Megapixeln.",
@@ -8075,13 +8067,13 @@
       "fr": "Aperçu temporairement indisponible",
       "ja": "プレビューを一時的に表示できません"
     },
-    "相机卡中的照片发生变化。请重新开始联机；已保存原件仍保留。": {
-      "zh-Hans": "相机卡中的照片发生变化。请重新开始联机；已保存原件仍保留。",
-      "en": "Photos on the camera card have changed. Start tethering again; saved originals are kept.",
-      "de": "Die Fotos auf der Speicherkarte der Kamera wurden geändert. Starten Sie die Tether-Aufnahme neu; bereits gespeicherte Originale bleiben erhalten.",
-      "es": "Las fotos de la tarjeta de la cámara han cambiado. Inicia de nuevo el disparo conectado; los originales guardados se conservarán.",
-      "fr": "Les photos de la carte de l’appareil ont changé. Recommencez la prise de vue connectée ; les originaux déjà enregistrés sont conservés.",
-      "ja": "カメラカード内の写真が変更されています。テザー撮影を新しく開始してください。保存済みのオリジナルは残ります。"
+    "无法确认上次联机的相机原件。请手动选片补传。已保存的原件会保留。": {
+      "zh-Hans": "无法确认上次联机的相机原件。请手动选片补传。已保存的原件会保留。",
+      "en": "Couldn’t verify the camera originals from the last tethering session. Select photos manually to import them. Saved originals are kept.",
+      "de": "Die Kameraoriginale der letzten Tether-Aufnahme konnten nicht geprüft werden. Wählen Sie die Fotos zum Importieren manuell aus. Gespeicherte Originale bleiben erhalten.",
+      "es": "No se pudieron verificar los originales de la última sesión de disparo conectado. Selecciona las fotos manualmente para importarlas. Los originales guardados se conservan.",
+      "fr": "Impossible de vérifier les originaux de la dernière prise de vue connectée. Sélectionnez les photos à importer manuellement. Les originaux enregistrés sont conservés.",
+      "ja": "前回のテザー撮影のオリジナルを確認できませんでした。写真を手動で選んで取り込んでください。保存済みのオリジナルは残ります。"
     },
     "待接收照片较多，已暂停拍摄。重新连接后继续接收。": {
       "zh-Hans": "待接收照片较多，已暂停拍摄。重新连接后继续接收。",

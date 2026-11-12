@@ -501,7 +501,7 @@
     <string name="tether_saved">"%1$d photos enregistrées"</string>
     <string name="tether_settings_error">"Réglez l’appareil sur la prise de vue unique et vérifiez que les photos sont également enregistrées sur sa carte mémoire."</string>
     <string name="tether_shutter">"Prendre une photo"</string>
-    <string name="tether_source_error">"Les photos de la carte de l’appareil ont changé. Recommencez la prise de vue connectée ; les originaux déjà enregistrés sont conservés."</string>
+    <string name="tether_source_error">"Impossible de vérifier les originaux de la dernière prise de vue connectée. Sélectionnez les photos à importer manuellement. Les originaux enregistrés sont conservés."</string>
     <string name="tether_stale">"Visée en direct en pause"</string>
     <string name="tether_title">"Prise de vue connectée"</string>
     <string name="tether_unknown">"Le résultat de la prise de vue n’est pas encore confirmé. Vérifiez l’appareil ; la reconnexion ne reprend que la réception des originaux."</string>

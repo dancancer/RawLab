@@ -92,12 +92,15 @@ internal fun CameraScreen(model: CameraImportViewModel, storage: PhotoStorage, o
                     CameraTaskEntry(R.string.tether_title, R.string.camera_tether_hint, Icons.Outlined.PhotoCamera,
                         "camera-mode-TETHER", !connection.closing && !connection.preparing) { connect(CameraMode.TETHER) }
                     val previous = tether.run
-                    if (previous != null && previous.status != CameraTetherStatus.ENDED) {
+                    if (previous != null && tether.canResume) {
                         val name = SonyCameraModel.entries.find { it.profileId == previous.profileId }?.displayName.orEmpty()
                         TextButton(onClick = { connect(CameraMode.TETHER, resume = true) }, enabled = !connection.closing && !connection.preparing,
                             modifier = Modifier.padding(horizontal = 56.dp).testTag("camera-resume-tether")) {
                             Text(stringResource(R.string.camera_resume_previous, name))
                         }
+                    } else if (previous?.status == CameraTetherStatus.PAUSED) {
+                        Text(stringResource(R.string.tether_source_error), modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     if (connection.closing) LinearProgressIndicator(Modifier.fillMaxWidth().padding(16.dp))
                 }

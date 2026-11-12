@@ -21,7 +21,9 @@ config=resolve(plistlib.loads(runs[0].read_bytes()))
 targets=[t for c in config.get('TestConfigurations',[]) for t in c['TestTargets']]
 if not targets:targets=[v for k,v in config.items() if not k.startswith('__') and isinstance(v,dict)]
 for t in targets:
- t.setdefault('EnvironmentVariables',{})['RAWLAB_RECENT_UI']='1'
+ env=t.setdefault('EnvironmentVariables',{})
+ env['RAWLAB_RECENT_UI']='1'
+ if os.environ.get('RAWLAB_RECENT_EXPECT_LEGACY')=='1':env['RAWLAB_RECENT_EXPECT_LEGACY']='1'
  if app:=t.get('UITargetAppPath'):
   bundle=plistlib.loads((Path(app)/'Info.plist').read_bytes())['CFBundleIdentifier']
   subprocess.run(['xcrun','simctl','install',os.environ['IOS_SIMULATOR_UDID'],app],check=True)

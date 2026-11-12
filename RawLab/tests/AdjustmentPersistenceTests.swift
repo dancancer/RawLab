@@ -55,6 +55,7 @@ import Foundation
         try concurrent(root.appendingPathComponent("concurrent"))
         try unavailable(root.appendingPathComponent("unavailable"))
         try photoLibraryFallback(root.appendingPathComponent("photo-library-fallback"))
+        try photoLibraryContentChange(root.appendingPathComponent("photo-content-change"))
         try transferableFallback(root.appendingPathComponent("transferable-fallback"))
         try legacyDeletionFallback(root.appendingPathComponent("legacy-deletion-fallback"))
         try await lazyTransferableFallback(root.appendingPathComponent("lazy-transferable-fallback"))
@@ -357,6 +358,41 @@ import Foundation
         try check(oldStore.state(for: photo) == legacy,
                   "Storage failure retains the last readable fallback edit")
         try rejects("Strict fallback reads still report corrupt storage") { _ = try oldStore.readState(for: photo) }
+    }
+
+    static func photoLibraryContentChange(_ directory: URL) throws {
+        let store = try EditPersistence(directory: directory)
+        let original = PhotoIdentity(resourceIdentifier: "reused-asset", contentIdentifier: "original-sha")
+        let replacement = PhotoIdentity(resourceIdentifier: "reused-asset", contentIdentifier: "replacement-sha")
+        var settings = RawSettings.default; settings.exposure = 1.25
+        let edit = PhotoEditState(settings: settings)
+        try store.save(original, state: edit)
+        let reopened = try EditPersistence(directory: directory)
+        try check(reopened.state(for: original) == edit && reopened.state(for: replacement) == nil,
+                  "A new source with the same Photos asset ID starts without the old edits")
+        settings.exposure = -0.5
+        try reopened.save(replacement, state: .init(settings: settings))
+        try reopened.reset(replacement)
+        try check(reopened.state(for: original) == edit && reopened.state(for: replacement) == nil,
+                  "Saving or resetting the replacement leaves the original revision's edits intact")
+        let legacy = PhotoIdentity(resourceIdentifier: "unbound-asset")
+        try reopened.save(legacy, state: edit)
+        let unknown = PhotoIdentity(resourceIdentifier: legacy.resourceIdentifier, contentIdentifier: "unverified-sha")
+        try check(reopened.state(for: unknown) == nil && reopened.state(for: legacy) == edit,
+                  "Unbound historical edits remain stored without being applied to unverified bytes")
+        try check(try reopened.unverifiedAssetEdit(for: unknown) == edit,
+                  "An older asset-only adjustment is available for explicit recovery")
+        try reopened.resolveUnverifiedAssetEdit(for: unknown, expected: edit, restore: true)
+        try check(reopened.state(for: unknown) == edit && reopened.unverifiedAssetEdit(for: unknown) == nil,
+                  "Confirming recovery binds the historical adjustments to the selected original")
+        let differentBytes = PhotoIdentity(resourceIdentifier: legacy.resourceIdentifier, contentIdentifier: "different-sha")
+        try check(try reopened.unverifiedAssetEdit(for: differentBytes) == edit && reopened.state(for: differentBytes) == nil,
+                  "The previous confirmation does not apply edits to a different original")
+        try reopened.resolveUnverifiedAssetEdit(for: differentBytes, expected: edit, restore: false)
+        let decided = try EditPersistence(directory: directory)
+        try check(try decided.unverifiedAssetEdit(for: differentBytes) == nil && decided.state(for: differentBytes) == nil &&
+                  decided.state(for: unknown) == edit && decided.state(for: legacy) == edit,
+                  "Opening the original records that choice without overwriting the historical adjustment")
     }
 
     static func refinedRecipe() throws {

@@ -33,12 +33,14 @@ type asset struct {
 }
 
 type responder struct {
-	mu         sync.Mutex
-	log        io.Writer
-	assets     []asset
-	interrupt  bool
-	jpegFailed bool
-	nextConn   int
+	mu             sync.Mutex
+	log            io.Writer
+	assets         []asset
+	interrupt      bool
+	jpegFailed     bool
+	nextConn       int
+	tetherScenario string
+	tetherOpened   bool
 }
 
 var assets = []asset{
@@ -67,7 +69,13 @@ func main() {
 	readyPath := flag.String("ready", "", "write this file after binding the listener")
 	jpegPath := flag.String("jpeg-file", "", "serve a generated test JPEG instead of the default fixture")
 	interrupt := flag.Bool("interrupt-jpeg", true, "interrupt the first JPEG request")
+	tetherScenario := flag.String("tether-scenario", "", "tether fixture: empty card, swap card, or missing original")
 	flag.Parse()
+	switch *tetherScenario {
+	case "", "empty", "swap", "missing":
+	default:
+		fail(fmt.Errorf("unknown tether scenario %q", *tetherScenario))
+	}
 
 	var log io.Writer = io.Discard
 	var logFile *os.File
@@ -92,7 +100,7 @@ func main() {
 		}
 	}
 
-	server := &responder{log: log, assets: append([]asset(nil), assets...), interrupt: *interrupt}
+	server := &responder{log: log, assets: append([]asset(nil), assets...), interrupt: *interrupt, tetherScenario: *tetherScenario}
 	if *jpegPath != "" {
 		data, err := os.ReadFile(*jpegPath)
 		if err != nil {
@@ -128,6 +136,21 @@ func (s *responder) serve(connection net.Conn, connectionID int) {
 	case 1:
 		s.mu.Lock()
 		sessionAssets := append([]asset(nil), s.assets...)
+		firstTether := s.tetherScenario != "" && !s.tetherOpened
+		if s.tetherScenario != "" {
+			s.tetherOpened = true
+			switch {
+			case s.tetherScenario == "empty":
+				sessionAssets = nil
+			case firstTether:
+				sessionAssets = sessionAssets[:1]
+			case s.tetherScenario == "swap":
+				// Same camera, handles, name, size and time. Only the original bytes changed.
+				raw := append([]byte(nil), sessionAssets[0].bytes...)
+				raw[len(raw)-1] ^= 1
+				sessionAssets[0].bytes = raw
+			}
+		}
 		if s.jpegFailed {
 			for index := range sessionAssets {
 				sessionAssets[index].content += 0x1000
@@ -140,6 +163,7 @@ func (s *responder) serve(connection net.Conn, connectionID int) {
 		ack := append(u32(7), make([]byte, 16)...)
 		ack = append(ack, []byte{'S', 0, 'o', 0, 'n', 0, 'y', 0, 0, 0, 0, 0, 1, 0}...)
 		writePacket(connection, 2, ack)
+		firstListing := firstTether
 		for {
 			typ, payload, err = readPacket(connection)
 			if err != nil {
@@ -150,7 +174,12 @@ func (s *responder) serve(connection net.Conn, connectionID int) {
 			}
 			request := requestFrom(payload)
 			s.record(connectionID, request, sessionAssets)
-			if !s.handle(connection, request, sessionAssets) {
+			listed := sessionAssets
+			if firstListing && request.op == 0x923c {
+				firstListing = false
+				listed = nil
+			}
+			if !s.handle(connection, request, listed, s.tetherScenario == "missing" && !firstTether) {
 				return
 			}
 		}
@@ -159,8 +188,7 @@ func (s *responder) serve(connection net.Conn, connectionID int) {
 			return
 		}
 		writePacket(connection, 4, nil)
-		// The camera event channel is intentionally idle in this import-only
-		// fixture. Keep it open until the app closes the session.
+		// The camera event channel is idle. Tethering discovers new files by polling.
 		_, _ = io.Copy(io.Discard, connection)
 	}
 }
@@ -201,12 +229,22 @@ func (s *responder) record(connectionID int, request request, sessionAssets []as
 	_, _ = fmt.Fprintln(s.log, line)
 }
 
-func (s *responder) handle(connection net.Conn, request request, sessionAssets []asset) bool {
+func (s *responder) handle(connection net.Conn, request request, sessionAssets []asset, missingOriginal bool) bool {
 	switch request.op {
 	case 0x1001:
-		data(connection, request, deviceInfo())
+		data(connection, request, deviceInfo(s.tetherScenario != ""))
 	case 0x1002:
 		response(connection, request, 0x2001)
+	case 0x9201:
+		response(connection, request, 0x2001)
+	case 0x9202:
+		descriptor := u16(0x12c)
+		appendU32(&descriptor, 1)
+		appendU16(&descriptor, 0x5013)
+		appendU32(&descriptor, 0)
+		data(connection, request, descriptor)
+	case 0x9209:
+		data(connection, request, u64(0))
 	case 0x923c:
 		data(connection, request, contentsPage(sessionAssets))
 	case 0x923d:
@@ -223,6 +261,13 @@ func (s *responder) handle(connection net.Conn, request request, sessionAssets [
 			}
 		}
 		if selected == nil {
+			response(connection, request, 0x2009)
+			return true
+		}
+		if missingOriginal && selected.name == "DSC10001.ARW" {
+			s.mu.Lock()
+			_, _ = fmt.Fprintln(s.log, "recovery original unavailable: response=0x2009")
+			s.mu.Unlock()
 			response(connection, request, 0x2009)
 			return true
 		}
@@ -246,8 +291,11 @@ func (s *responder) handle(connection net.Conn, request request, sessionAssets [
 	return true
 }
 
-func deviceInfo() []byte {
+func deviceInfo(tether bool) []byte {
 	operations := []uint16{0x1001, 0x1002, 0x1003, 0x1004, 0x1007, 0x1008, 0x1009, 0x923b, 0x923c, 0x923d}
+	if tether {
+		operations = append(operations, 0x9201, 0x9202, 0x9209)
+	}
 	result := make([]byte, 0, 512)
 	appendU16(&result, 100)
 	appendU32(&result, 17)

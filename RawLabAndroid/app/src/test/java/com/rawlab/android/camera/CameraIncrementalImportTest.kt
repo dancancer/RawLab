@@ -6,6 +6,7 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 
 class CameraIncrementalImportTest {
+    private val digest = "a".repeat(64)
     @Test fun modernMillisecondsAndLegacyClockUseTheSupportedCaptureWindow() {
         val modern = CameraPhoto("12:1:DSC00001.ARW:10:1761128883000", "DSC00001.ARW", 10, 1761128883000)
         val legacy = CameraPhoto("3:42:1:10:DSC00001.ARW:20261022T182803:20261022T182804", "DSC00001.ARW", 10,
@@ -47,15 +48,30 @@ class CameraIncrementalImportTest {
         assertTrue(result.nextCheckpoints.isEmpty())
     }
 
-    @Test fun reconnectChecksBoundaryObjectsWithoutAssumingTheOldSessionLocatorIsPermanent() {
+    @Test fun reconnectRequiresCutoffEvenWhenMetadataMatchesAndRetainsEarlierPhotos() {
         val time = 1_761_128_883_000L
         val old = CameraPhoto("17:1:DSC001.JPG:10:$time", "DSC001.JPG", 10, time, storageToken = "mobile")
         val current = old.copy(key = "42:1:DSC001.JPG:10:$time")
+        val earlier = current.copy(key = "earlier", name = "EARLIER.JPG", created = time - 1_000,
+            captureTimestamp = time - 1_000)
         val boundary = CameraImportBoundary(time, setOf("mobile"), setOf(old.key), setOf(old.anchorKey), "old-session")
-        val result = CameraIncrementalScan(listOf(current), mapOf(CameraImportFormat.JPEG to boundary), time - 1, null,
+        val listing = listOf(current, earlier)
+        val previous = mapOf(CameraImportFormat.JPEG to boundary)
+        val result = CameraIncrementalScan(listing, previous, time - 1, null,
             CameraImportFormat.JPEG, false, sessionOwner = "new-session")
-        assertFalse(result.needsCutoffConfirmation)
-        assertEquals(listOf(current), result.assets)
+        assertTrue(result.needsCutoffConfirmation)
+        assertTrue(result.assets.isEmpty())
+        assertTrue(result.nextCheckpoints.isEmpty())
+
+        val confirmed = CameraIncrementalScan(listing, previous, time - 1, time - 1_000,
+            CameraImportFormat.JPEG, false, sessionOwner = "new-session")
+        assertEquals(listOf(earlier, current), confirmed.assets)
+        val next = confirmed.nextCheckpoints
+        assertEquals("new-session", next[CameraImportFormat.JPEG]?.owner)
+        val repeat = CameraIncrementalScan(listing, next, time - 1, null,
+            CameraImportFormat.JPEG, false, sessionOwner = "new-session")
+        assertFalse(repeat.needsCutoffConfirmation)
+        assertTrue(repeat.assets.isEmpty())
     }
 
     @Test fun legacyDefaultCutoffUsesTodayOnTheLocalCalendar() {
@@ -102,9 +118,9 @@ class CameraIncrementalImportTest {
         val savedCurrent = savedOld.copy(key = "saved-new")
         val saved = com.rawlab.android.photo.MediaPhoto("content://media/external_primary/images/media/7", "DSC.JPG", "Pictures/", false)
         val job = CameraImportJob("00000000-0000-0000-0000-000000000007", "camera", 1,
-            listOf(CameraImportItem(savedOld, saved = saved), CameraImportItem(old)), CameraJobStatus.PAUSED,
+            listOf(CameraImportItem(savedOld, saved = saved, digest = digest), CameraImportItem(old, digest = digest)), CameraJobStatus.PAUSED,
             incremental = CameraIncrementalPlan(CameraImportFormat.JPEG))
-        val remapped = incrementalLocatorMap(job, listOf(savedCurrent, current), "reconnected")
+        val remapped = resumeLocatorMap(job, listOf(savedCurrent, current), "reconnected")
         assertEquals(current.key, remapped[old.key]?.key)
         assertEquals(savedCurrent.key, remapped[savedOld.key]?.key)
         assertEquals(saved, job.items.first().saved)
@@ -114,29 +130,29 @@ class CameraIncrementalImportTest {
         val old = CameraPhoto("old-locator", "DSC.JPG", 10, 1_700_000_000_000L, storageToken = "mobile")
         val current = listOf(old.copy(key = "new-1"), old.copy(key = "new-2"))
         val job = CameraImportJob("00000000-0000-0000-0000-000000000008", "camera", 1,
-            listOf(CameraImportItem(old)), CameraJobStatus.PAUSED,
+            listOf(CameraImportItem(old, digest = digest)), CameraJobStatus.PAUSED,
             incremental = CameraIncrementalPlan(CameraImportFormat.JPEG))
-        assertTrue(incrementalLocatorMap(job, current, "reconnected").isEmpty())
-        assertTrue(incrementalLocatorMap(job, listOf(old.copy(storageToken = "legacy:2")), "reconnected").isEmpty())
+        assertTrue(resumeLocatorMap(job, current, "reconnected").isEmpty())
+        assertTrue(resumeLocatorMap(job, listOf(old.copy(storageToken = "legacy:2")), "reconnected").isEmpty())
     }
 
     @Test fun legacyReconnectOnlyIgnoresTheObjectHandle() {
         val old = CameraPhoto("old-locator", "DSC.JPG", 10, 1_700_000_000_000L,
             resumeIdentity = "legacy:65537:7:14337:10:DSC.JPG:20231114T221320:20231114T221400",
             storageToken = "legacy:65537")
-        val item = CameraImportItem(old)
+        val item = CameraImportItem(old, digest = digest)
         val job = CameraImportJob("00000000-0000-0000-0000-000000000010", "camera", 1, listOf(item),
             CameraJobStatus.PAUSED, incremental = CameraIncrementalPlan(CameraImportFormat.JPEG, sessionOwner = "old"))
         val current = old.copy(key = "new-locator", resumeIdentity = old.resumeIdentity!!.replace(":7:", ":29:"))
-        assertEquals(current, incrementalLocatorMap(job, listOf(current), "reconnected")[old.key])
+        assertEquals(current, resumeLocatorMap(job, listOf(current), "reconnected")[old.key])
 
         val replaced = current.copy(resumeIdentity = current.resumeIdentity!!.replace("20231114T221400", "20231114T221500"))
-        assertTrue(incrementalLocatorMap(job, listOf(replaced), "reconnected").isEmpty())
+        assertTrue(resumeLocatorMap(job, listOf(replaced), "reconnected").isEmpty())
         val differentFormat = current.copy(resumeIdentity = current.resumeIdentity.replace(":14337:", ":14338:"))
-        assertTrue(incrementalLocatorMap(job, listOf(differentFormat), "reconnected").isEmpty())
+        assertTrue(resumeLocatorMap(job, listOf(differentFormat), "reconnected").isEmpty())
 
         val oldJournal = job.copy(items = listOf(item.copy(photo = old.copy(resumeIdentity = null))))
-        assertEquals(current, incrementalLocatorMap(oldJournal, listOf(current), "reconnected")[old.key])
+        assertEquals(current, resumeLocatorMap(oldJournal, listOf(current), "reconnected")[old.key])
     }
 
     @Test fun autoResumeExcludesCommittedHistoryAndGainMapFailures() {
@@ -149,7 +165,9 @@ class CameraIncrementalImportTest {
         val connected = CameraImportState(photos = listOf(old.copy(key = "new-locator")), connected = true,
             cameraId = "camera", importMode = CameraImportMode.INCREMENTAL, incrementalOwner = "reconnected")
         assertNull(connected.copy(jobs = listOf(history, blocked)).resumableIncrementalJob)
-        assertEquals(job, connected.copy(jobs = listOf(job)).resumableIncrementalJob)
+        assertNull(connected.copy(jobs = listOf(job)).resumableIncrementalJob)
+        val verified = job.copy(items = listOf(job.items.single().copy(digest = digest)))
+        assertEquals(verified, connected.copy(jobs = listOf(verified)).resumableIncrementalJob)
     }
 
     @Test fun explicitCutoffSeedsOnlyTheKindWithoutAnExistingCheckpoint() {

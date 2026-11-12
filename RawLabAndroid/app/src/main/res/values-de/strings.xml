@@ -501,7 +501,7 @@
     <string name="tether_saved">"%1$d Fotos gespeichert"</string>
     <string name="tether_settings_error">"Stellen Sie die Kamera auf Einzelaufnahme und bestätigen Sie, dass Fotos auch auf der Speicherkarte der Kamera gespeichert werden."</string>
     <string name="tether_shutter">"Ein Foto aufnehmen"</string>
-    <string name="tether_source_error">"Die Fotos auf der Speicherkarte der Kamera wurden geändert. Starten Sie die Tether-Aufnahme neu; bereits gespeicherte Originale bleiben erhalten."</string>
+    <string name="tether_source_error">"Die Kameraoriginale der letzten Tether-Aufnahme konnten nicht geprüft werden. Wählen Sie die Fotos zum Importieren manuell aus. Gespeicherte Originale bleiben erhalten."</string>
     <string name="tether_stale">"Livebild pausiert"</string>
     <string name="tether_title">"Tether-Aufnahme"</string>
     <string name="tether_unknown">"Das Aufnahmeergebnis ist noch nicht bestätigt. Prüfen Sie die Kamera. Eine erneute Verbindung setzt nur den Empfang der Originale fort."</string>

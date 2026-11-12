@@ -132,11 +132,13 @@ class CameraImportInterruptionTest {
         }.toByteArray()
         val fixture = CameraResumeFixture("RESUME-${UUID.randomUUID()}.JPG", bytes)
         val asset = fixture.asset
-        val photo = CameraPhoto(asset.key(), asset.name, asset.size, asset.created, asset.resumeIdentity())
+        val photo = asset.photo()
         val identity = checkNotNull(CameraHardwareIdentity.read(fixture.device))
         val store = field<CameraImportStore>(model, "store")
-        val job = store.create("ble:old", listOf(photo), CameraImportDestination("RawLabTests",
-            CameraDirectoryGrouping.NONE), hardwareIdentity = identity).copy(status = CameraJobStatus.PAUSED).also(store::save)
+        val reserved = store.create("ble:old", listOf(photo.copy(key = "previous-handle")), CameraImportDestination("RawLabTests",
+            CameraDirectoryGrouping.NONE), hardwareIdentity = identity, listingOwner = "old-listing")
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        val job = reserved.copy(status = CameraJobStatus.PAUSED, items = listOf(reserved.items.single().copy(digest = digest))).also(store::save)
         val state = field<MutableStateFlow<CameraImportState>>(model, "mutable")
         try {
             compose.runOnUiThread { model.selectJob(job) }
@@ -150,7 +152,7 @@ class CameraImportInterruptionTest {
                 setField(model, "assets", mapOf(photo.key to asset))
                 setField(model, "cameraId", "wifi:current")
                 state.value = state.value.copy(stage = null, connected = true, cameraId = "wifi:current",
-                    hardwareIdentity = identity, photos = listOf(photo))
+                    hardwareIdentity = identity, photos = listOf(photo), incrementalOwner = "manual-listing")
             }
             compose.onNodeWithTag("camera-resume").performClick()
             compose.waitUntil(15_000) {

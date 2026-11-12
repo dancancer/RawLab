@@ -167,13 +167,24 @@ final class SonyCameraSession {
     }
 
     func download(_ asset: CameraRemoteAsset, to handle: FileHandle, progress: (UInt64) -> Void) throws -> String {
+        let digest = try readOriginal(asset, progress: progress) { try handle.write(contentsOf: $0) }
+        try handle.synchronize()
+        return digest
+    }
+
+    func originalDigest(_ asset: CameraRemoteAsset, progress: (UInt64) -> Void) throws -> String {
+        try readOriginal(asset, progress: progress) { _ in }
+    }
+
+    private func readOriginal(_ asset: CameraRemoteAsset, progress: (UInt64) -> Void,
+                              consume: (Data) throws -> Void) throws -> String {
         try checkRunning()
         guard asset.owner == id, asset.snapshot.transferable else { throw CameraProtocolError.invalid("Camera original is outside this session or budget") }
         var digest = SHA256(), received: UInt64 = 0, prefix = Data()
         func receive(_ data: Data) throws {
             try checkRunning()
             if prefix.count < 4 { prefix.append(data.prefix(4 - prefix.count)) }
-            try handle.write(contentsOf: data)
+            try consume(data)
             digest.update(data: data); received += UInt64(data.count); progress(received)
         }
         if family == .mobile {
@@ -192,7 +203,6 @@ final class SonyCameraSession {
         }
         guard received == asset.snapshot.size else { throw CameraProtocolError.invalid("Original size mismatch") }
         try CameraWire.validateHeader(name: asset.snapshot.name, data: prefix)
-        try handle.synchronize()
         return digest.finalize().map { String(format: "%02x", $0) }.joined()
     }
 

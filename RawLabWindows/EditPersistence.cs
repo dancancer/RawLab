@@ -260,6 +260,9 @@ public sealed class EditStore
         var current=ReadRecord(registry,expectedIdentity);
         if (!current.SameAs(new PhotoEditState(expectedIdentity,expectedBefore)))
             throw new AdjustmentOperationExpiredException();
+        if (registry.MigrationReceipts?.TryGetValue(expectedIdentity.Path, out var previous) == true &&
+            previous.Identity.SameFile(expectedIdentity) && !ProcessingMigration.ShouldAttempt(expectedBefore, previous))
+            throw new AdjustmentOperationExpiredException();
         var records=new Dictionary<string,SavedEdit>(registry.Records,StringComparer.OrdinalIgnoreCase);
         var receipts=registry.MigrationReceipts == null
             ? new Dictionary<string,ProcessingMigrationReceipt>(StringComparer.OrdinalIgnoreCase)

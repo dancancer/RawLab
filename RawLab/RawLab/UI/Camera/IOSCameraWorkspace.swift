@@ -90,7 +90,7 @@ struct IOSCameraWorkspace: View {
                     if model.manifest.tether?.shutterRequestedAt != nil { newTetherConfirmation = true }
                     else { choose(.tethering, resume: false) }
                 }
-                if model.manifest.tether != nil {
+                if model.manifest.canResumeTether {
                     Button { choose(.tethering, resume: true) } label: {
                         Label(L10n.text("恢复上次联机"), systemImage: "arrow.clockwise")
                             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
@@ -205,8 +205,14 @@ struct IOSCameraWorkspace: View {
     }
     private func reconnect() {
         connection.stop(); model.stop()
-        mode = model.mode; resumeTether = mode == .tethering && model.manifest.tether != nil
-        model.clearNotice(); path = [.connect]; connection.search()
+        mode = model.mode
+        resumeTether = mode == .tethering && model.manifest.canResumeTether
+        model.clearNotice()
+        if mode == .tethering && model.manifest.tether != nil && !resumeTether {
+            path = []
+        } else {
+            path = [.connect]; connection.search()
+        }
     }
     private func resume(_ job: CameraTransferJob) {
         if model.connected && model.mode == .importing && model.phase == .browsing {

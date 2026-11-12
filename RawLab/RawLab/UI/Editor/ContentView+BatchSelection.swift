@@ -43,26 +43,38 @@ extension ContentView {
             showingBatchSelection = true
         case .edit(let id):
             guard let stored = viewModel.batchSelection.photos[id] else { return }
-            do {
-                try stored.validate()
-                guard let file = stored.photo.file else { throw CocoaError(.fileReadNoSuchFile) }
-                if viewModel.sourceIdentity?.key == id {
-                    _ = viewModel.batchSelection.selection.beginEditing(id)
-                    return
-                }
-                isImporting = true
-                file.withReadAccess { url in
-                    viewModel.importImage(from: stored.photo.isRaw ? .raw(url) : .raster(url), identity: stored.photo.identity,
-                                          diagnosticContext: ["entryPoint": "batchSelection"], onSettingsRestored: { restored in
+            isImporting = true
+            Task { await openCollectionPhoto(stored) }
+        }
+    }
+
+    @MainActor
+    private func openCollectionPhoto(_ stored: IOSCollectionPhoto) async {
+        do {
+            try stored.validate()
+            guard let file = stored.photo.file else { throw CocoaError(.fileReadNoSuchFile) }
+            let resolved = try await resolveLegacyAssetEdit(for: stored.photo.identity)
+            try Task.checkCancellation()
+            if resolved { try stored.validate() }
+            if !resolved, viewModel.sourceIdentity == stored.photo.identity {
+                _ = viewModel.batchSelection.selection.beginEditing(stored.id)
+                isImporting = false
+                return
+            }
+            file.withReadAccess { url in
+                viewModel.importImage(from: stored.photo.isRaw ? .raw(url) : .raster(url), identity: stored.photo.identity,
+                    retainedInput: file, diagnosticContext: ["entryPoint": "batchSelection"], onSettingsRestored: { restored in
                         settings = restored
                         viewModel.sourceDisplayName = stored.photo.displayName
-                        _ = viewModel.batchSelection.selection.beginEditing(id)
+                        _ = viewModel.batchSelection.selection.beginEditing(stored.id)
                     })
-                }
-            } catch {
-                viewModel.reportError(error, operation: .photoImport, stage: "readBatchSelection",
-                                      context: ["entryPoint": "batchSelection"])
             }
+        } catch is CancellationError {
+            isImporting = false
+        } catch {
+            isImporting = false
+            viewModel.reportError(error, operation: .photoImport, stage: "readBatchSelection",
+                                  context: ["entryPoint": "batchSelection"])
         }
     }
 

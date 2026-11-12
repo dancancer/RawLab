@@ -85,9 +85,9 @@ public final class SonyTetherSession implements Closeable {
         return new Device(maker,model,firmware,serial,operations);
     }
 
-    public void connectRemote() throws IOException { connectRemote(Profile.GENERIC); }
+    public Device connectRemote() throws IOException { return connectRemote(Profile.GENERIC); }
 
-    public synchronized void connectRemote(Profile profile) throws IOException {
+    public synchronized Device connectRemote(Profile profile) throws IOException {
         if (remoteReady) throw new IOException("Remote session already initialized");
         Device device=inspectDevice();
         reporter.report("remote_identity " + device.model + " firmware=" + device.firmware);
@@ -115,6 +115,7 @@ public final class SonyTetherSession implements Closeable {
         remoteReadyNanos = System.nanoTime();
         captureReady = true;
         reporter.report("remote_handshake_complete");
+        return device;
     }
 
     public synchronized List<Long> probeLegacyStorage() throws IOException {

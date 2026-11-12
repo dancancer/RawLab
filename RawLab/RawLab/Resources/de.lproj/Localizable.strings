@@ -115,6 +115,7 @@
 "仅用于本次导出，保留各照片原有调整" = "Nur für diesen Export; vorhandene Anpassungen der Fotos bleiben erhalten";
 "仍需假设：%@" = "Weiterhin Annahmen: %@";
 "从 %@ 开始（相机时间）" = "Ab %@ (Kamerazeit)";
+"从原片开始" = "Mit dem Original beginnen";
 "从导入记录打开原件进行编辑；原始照片不会被调整覆盖。" = "Öffnen Sie ein Original aus dem Importverlauf zur Bearbeitung. Anpassungen überschreiben das Originalfoto nicht.";
 "从文件导入" = "Aus Dateien importieren";
 "从最近打开中移除" = "Aus zuletzt geöffnet entfernen";
@@ -402,7 +403,9 @@
 "快门" = "Verschluss";
 "恢复上次联机" = "Letzte Tether-Aufnahme fortsetzen";
 "恢复当前照片的全部调整，不改写原始照片。" = "Alle Anpassungen des aktuellen Fotos zurücksetzen. Das Originalfoto wird nicht verändert.";
+"恢复旧调整" = "Frühere Anpassungen wiederherstellen";
 "恢复未完成的原件接收，不会自动补拍。" = "Den unvollständigen Empfang der Originale fortsetzen; es werden keine Fotos automatisch aufgenommen.";
+"恢复这张照片的旧调整？" = "Frühere Anpassungen für dieses Foto wiederherstellen?";
 "恢复阴影、中间调和高光的颜色分级默认值？" = "Color-Grading für Schatten, Mitteltöne und Lichter zurücksetzen?";
 "恢复默认" = "Standard wiederherstellen";
 "成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张" = "Erfolgreich %@ · Fehlgeschlagen %@ · Nicht verarbeitet %@";
@@ -498,6 +501,7 @@
 "无法显示处理结果" = "Verarbeitungsergebnisse können nicht angezeigt werden";
 "无法生成预览" = "Vorschau kann nicht generiert werden";
 "无法生成预览，请检查照片、LUT 和颜色配置。" = "Vorschau konnte nicht erstellt werden. Prüfen Sie Foto, LUT und Farbeinstellungen.";
+"无法确认上次导入的原始文件，请重新选择照片。" = "Die Originaldateien des letzten Imports konnten nicht überprüft werden. Wählen Sie die Fotos erneut aus.";
 "无法确认上次的存储卡或拍摄时间，请选择新的起点。" = "Die vorherige Karte oder Aufnahmezeit konnte nicht bestätigt werden. Wählen Sie eine neue Startzeit.";
 "无法确认上次联机的照片范围，已暂停自动恢复。请从相机导入，手动选择需要补传的照片。不会自动补拍。" = "Die Fotos der vorherigen Aufnahmesitzung konnten nicht zugeordnet werden. Die automatische Wiederherstellung ist pausiert. Wählen Sie fehlende Fotos über „Von Kamera importieren“ manuell aus. Es werden keine Fotos automatisch aufgenommen.";
 "无法自动调整曝光：%@" = "Belichtung konnte nicht automatisch angepasst werden: %@";
@@ -522,6 +526,7 @@
 "日光" = "Tageslicht";
 "日系通透水光肌，空气感透明青蓝，暗部大面积展开与柔润高光" = "Japanisch leuchtende Haut, luftiges transparentes Blaucyan, offene Schatten und weiche Lichter";
 "日系青空 · 高调日光" = "Japanischer blauer Himmel · High-Key-Tageslicht";
+"旧版记录只有相册标识。确认当前照片与原来的照片一致后，可恢复旧调整。" = "Die früheren Anpassungen wurden nur mit der Fotos-ID gespeichert. Stellen Sie sie wieder her, wenn dies dasselbe Originalfoto ist.";
 "旧版降噪" = "Frühere Rauschreduzierung";
 "明度" = "Helligkeit";
 "明度：从暗到亮。" = "Helligkeit: von dunkel zu hell.";
@@ -628,6 +633,7 @@
 "正在读取镜头信息…" = "Objektivinformationen werden gelesen…";
 "正在连接相机…" = "Verbindung zur Kamera wird hergestellt …";
 "正常显影" = "Normale Entwicklung";
+"此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。" = "Dieses JPEG enthält eine HDR-Gainmap. Speichern Sie das Original, um HDR zu erhalten.";
 "此 LUT 缺少完整颜色说明。请确认处理方式；导入后会标记为兼容模式，效果尚未验证。" = "Dieser LUT fehlen vollständige Farbangaben. Bestätigen Sie die Verarbeitung. Er wird als kompatibel mit ungeprüftem Ergebnis markiert.";
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "Der Weißabgleich bei Aufnahme dieses RAW konnte nicht gelesen werden; die Tönung des Rezepts kann nicht angewendet werden.";
 "此像素不可取样。" = "Dieses Pixel kann nicht erfasst werden.";
@@ -822,6 +828,7 @@
 "请先完成或结束已有批量任务，再创建新任务。" = "Schließen Sie die vorhandene Stapelaufgabe ab oder beenden Sie sie, bevor Sie eine neue erstellen.";
 "请先导入一张照片。" = "Importieren Sie zuerst ein Foto.";
 "请先应用或放弃未完成的输入和几何草稿。" = "Wenden Sie offene Eingaben und Geometrieentwürfe zuerst an oder verwerfen Sie sie.";
+"请先打开这张照片，确认是否恢复旧调整。" = "Öffnen Sie dieses Foto zuerst und entscheiden Sie, ob Sie die früheren Anpassungen wiederherstellen möchten.";
 "请先检查相机上的拍摄结果。新会话不会补拍，未完成照片可在导入记录中继续接收。" = "Prüfen Sie zuerst das Aufnahmeergebnis an der Kamera. Eine neue Sitzung löst nicht erneut aus. Setzen Sie offene Übertragungen im Importverlauf fort.";
 "请先确认同源图片、处理条件和参考来源。" = "Bestätigen Sie zunächst dieselbe Originalquelle, die Verarbeitungsbedingungen und die Referenzquelle.";
 "请先选择外观或配方。" = "Wähle zuerst einen Look oder ein Rezept.";

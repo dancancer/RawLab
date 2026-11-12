@@ -1,6 +1,7 @@
 package com.rawlab.android.camera
 
 import java.io.FileOutputStream
+import java.io.IOException
 
 /** 调用方持有存储锁；两种相机入口共用同一下载、校验和发布顺序。 */
 internal fun receiveCameraJob(store: CameraImportStore, job: CameraImportJob, permit: CameraTransferPermit,
@@ -21,9 +22,14 @@ internal fun receiveCameraJob(store: CameraImportStore, job: CameraImportJob, pe
             }
             permit.check()
             latest = try { store.publish(latest, index, part, digest, permit) }
-            catch (_: CameraJPEGGainMapAdjustmentException) {
+            catch (error: IOException) {
+                val problem = when (error) {
+                    is CameraJPEGGainMapAdjustmentException -> CameraMediaProblem.HDR_GAIN_MAP
+                    is CameraJPEGMemoryException -> CameraMediaProblem.JPEG_MEMORY
+                    else -> throw error
+                }
                 val items = latest.items.toMutableList()
-                items[index] = item.copy(problem = CameraMediaProblem.HDR_GAIN_MAP)
+                items[index] = item.copy(digest = digest, problem = problem)
                 return latest.copy(items = items, status = CameraJobStatus.PAUSED).also(store::save)
             }
             onJob(latest)

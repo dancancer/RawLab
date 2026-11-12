@@ -12,10 +12,22 @@ READY="$OUT/responder.ready"
 SCENARIO="${RAWLAB_CAMERA_INCREMENTAL_SCENARIO:-resume}"
 FIXTURE_ARGS=(--log "$LOG" --ready "$READY")
 case "$SCENARIO" in
-    resume) TEST_CASE=testSonyIncrementalImportResumesOnlyPendingJPEG ;;
+    resume) TEST_CASE=testSonyIncrementalImportRequiresReselectionAfterInterruptedJPEG ;;
     dismiss)
         TEST_CASE=testSonyIncrementalDismissalSurvivesReconnect
         FIXTURE_ARGS+=(--interrupt-jpeg=false --jpeg-file "$ROOT/lutools/tests/fixtures/hdr/apple-legacy-macos26.jpg")
+        ;;
+    tether-swap)
+        TEST_CASE=testSonyTetherReconnectRejectsReplacedOriginal
+        FIXTURE_ARGS+=(--tether-scenario swap --interrupt-jpeg=false)
+        ;;
+    tether-missing)
+        TEST_CASE=testSonyTetherUnavailableOriginalOffersManualImport
+        FIXTURE_ARGS+=(--tether-scenario missing --interrupt-jpeg=false)
+        ;;
+    tether-empty)
+        TEST_CASE=testSonyTetherWithoutRegisteredOriginalsHasNoResumeAction
+        FIXTURE_ARGS+=(--tether-scenario empty --interrupt-jpeg=false)
         ;;
     *) printf 'Unknown Sony incremental test scenario: %s\n' "$SCENARIO" >&2; exit 2 ;;
 esac
@@ -97,10 +109,26 @@ if summary.get("passedTests") != 1 or summary.get("skippedTests") != 0 or summar
 PY
 
 if [[ "$SCENARIO" == resume ]]; then
-    test "$(grep -c 'name=DSC10001.ARW' "$LOG")" -eq 1
+    test "$(grep -c 'file=1 name=DSC10001.ARW' "$LOG")" -eq 1
+    test "$(grep -c 'file=11 name=DSC10001.ARW' "$LOG")" -eq 1
     test "$(grep -c 'file=2 name=DSC10001.JPG' "$LOG")" -eq 1
     test "$(grep -c 'file=12 name=DSC10001.JPG' "$LOG")" -eq 1
-else
+elif [[ "$SCENARIO" == dismiss ]]; then
     test "$(grep -c 'name=DSC10001.JPG' "$LOG")" -eq 2
+elif [[ "$SCENARIO" == tether-empty ]]; then
+    grep -q 'op=0x923c' "$LOG"
+    if grep -q 'op=0x923d' "$LOG"; then
+        printf 'An empty tether session requested an original\n' >&2
+        exit 1
+    fi
+else
+    test "$(grep -c 'file=1 name=DSC10001.ARW' "$LOG")" -eq 2
+    if grep -q 'name=DSC10001.JPG' "$LOG"; then
+        printf 'Tether resume requested an unregistered file\n' >&2
+        exit 1
+    fi
+    if [[ "$SCENARIO" == tether-missing ]]; then
+        test "$(grep -c 'recovery original unavailable: response=0x2009' "$LOG")" -eq 1
+    fi
 fi
 printf 'PASS: iOS Sony incremental %s scenario; artifacts: %s\n' "$SCENARIO" "$OUT"

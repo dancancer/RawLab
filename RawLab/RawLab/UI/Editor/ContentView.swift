@@ -49,6 +49,8 @@ struct ContentView: View {
     @State var recentOpenError: String?
     @State var recentFailedPhoto: RecentPhoto?
     @State var recentReselection: RecentPhoto?
+    @State var showingLegacyAssetEdit = false
+    @State var legacyAssetEditDecision: CheckedContinuation<Bool?, Never>?
     @State var settings = RawSettings.default
     @State var workspaceDraft: EditorToolDraft?
     @State var toolWorkspaceOpen = false
@@ -526,6 +528,10 @@ struct ContentView: View {
             Button(L10n.text("重置"), role: .destructive) { confirmEditorReset() }
             Button(L10n.text("取消"), role: .cancel) { cancelEditorReset() }
         } message: { Text(resetConfirmationMessage) }
+        .alert(L10n.text("恢复这张照片的旧调整？"), isPresented: $showingLegacyAssetEdit) {
+            Button(L10n.text("恢复旧调整")) { finishLegacyAssetEditDecision(true) }
+            Button(L10n.text("从原片开始"), role: .cancel) { finishLegacyAssetEditDecision(false) }
+        } message: { Text(L10n.text("旧版记录只有相册标识。确认当前照片与原来的照片一致后，可恢复旧调整。")) }
         .onDisappear {
             cancelSliderInteraction()
             viewModel.saveCurrentSettings(settings)
