@@ -21,6 +21,9 @@
 #include <process.h>
 #define getpid _getpid
 #else
+#include <csignal>
+#include <sys/resource.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <pthread.h>
 #endif
@@ -146,6 +149,150 @@ void testFujiLUTs(const std::filesystem::path& dir, sony2fuji_session* session) 
             sony2fuji_release_buffer(&blended);
         }
     }
+}
+
+bool hasJpegStagingFile(const std::filesystem::path& directory) {
+    for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        const std::string name = entry.path().filename().string();
+        if (name.find(".rawlab-jpeg-") == 0) return true;
+        if (name.size() >= 7 && name.rfind("rlj", 0) == 0 && entry.path().extension() == ".tmp") {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string readTextFile(const std::filesystem::path& path) {
+    std::ifstream file(path, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(file)), {});
+}
+
+void writeTextFile(const std::filesystem::path& path, const std::string& content) {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    file.write(content.data(), static_cast<std::streamsize>(content.size()));
+}
+
+void testJpegExportWriteSafety(const std::filesystem::path& parentDir, sony2fuji_session* session) {
+    const auto jpegDir = parentDir / "jpeg-write-safety";
+    std::filesystem::create_directories(jpegDir);
+
+    // Keep pixel count below parallelPixelRanges's 65536 threshold so fork() children stay off libdispatch.
+    ImageData noisy(128, 128);
+    std::vector<unsigned char> noisyBytes(128 * 128 * 3);
+    uint32_t seed = 0x12345678u;
+    for (size_t i = 0; i < noisy.pixels.size(); ++i) {
+        seed = seed * 1664525u + 1013904223u;
+        const unsigned char r = static_cast<unsigned char>((seed >> 16) & 0xFFu);
+        seed = seed * 1664525u + 1013904223u;
+        const unsigned char g = static_cast<unsigned char>((seed >> 16) & 0xFFu);
+        seed = seed * 1664525u + 1013904223u;
+        const unsigned char b = static_cast<unsigned char>((seed >> 16) & 0xFFu);
+        noisy.pixels[i] = RGB(r / 255.0f, g / 255.0f, b / 255.0f);
+        noisyBytes[i * 3 + 0] = r;
+        noisyBytes[i * 3 + 1] = g;
+        noisyBytes[i * 3 + 2] = b;
+    }
+
+    const auto validTarget = jpegDir / "replace-existing.jpg";
+    writeTextFile(validTarget, "old target");
+    check(ImageEncoder::saveJPEG(noisy, validTarget.string(), 95) == ErrorCode::Success,
+          "JPEG writes and atomically replaces an existing target");
+    const std::string encodedJpeg = readTextFile(validTarget);
+    check(encodedJpeg.size() > 8192 &&
+          static_cast<unsigned char>(encodedJpeg[0]) == 0xFF &&
+          static_cast<unsigned char>(encodedJpeg[1]) == 0xD8 &&
+          static_cast<unsigned char>(encodedJpeg[encodedJpeg.size() - 2]) == 0xFF &&
+          static_cast<unsigned char>(encodedJpeg[encodedJpeg.size() - 1]) == 0xD9,
+          "JPEG output has valid SOI/EOI markers and exceeds stdio buffer size");
+    check(!hasJpegStagingFile(jpegDir), "successful JPEG export leaves no staging file");
+
+    const auto invalidTarget = jpegDir / "invalid-preserves.jpg";
+    writeTextFile(invalidTarget, "preserve this target");
+    ImageData mismatched(2, 2);
+    mismatched.pixels.resize(1);
+    check(ImageEncoder::saveJPEG(ImageData(), invalidTarget.string(), 95) == ErrorCode::ProcessingError &&
+          ImageEncoder::saveJPEG(mismatched, invalidTarget.string(), 95) == ErrorCode::ProcessingError,
+          "JPEG rejects invalid ImageData as a processing error");
+    check(readTextFile(invalidTarget) == "preserve this target" && !hasJpegStagingFile(jpegDir),
+          "invalid JPEG input preserves existing target and creates no staging file");
+
+    const auto missingParentTarget = jpegDir / "absent" / "out.jpg";
+    check(ImageEncoder::saveJPEG(noisy, missingParentTarget.string(), 95) == ErrorCode::IOError &&
+          !std::filesystem::exists(missingParentTarget),
+          "JPEG missing output directory returns IOError without creating target");
+
+    auto jpegRequest = request(noisyBytes.data());
+    jpegRequest.input_width = 128;
+    jpegRequest.input_height = 128;
+    jpegRequest.size_mode = SONY2FUJI_SIZE_EXACT;
+    jpegRequest.target_width = 128;
+    jpegRequest.target_height = 128;
+    jpegRequest.intent = SONY2FUJI_INTENT_FINAL;
+    jpegRequest.output_target = SONY2FUJI_TARGET_FILE;
+    jpegRequest.output_format = SONY2FUJI_OUTPUT_JPEG;
+    jpegRequest.jpeg_quality = 95;
+    const std::string missingJpegPath = missingParentTarget.string();
+    jpegRequest.output_path = missingJpegPath.c_str();
+    check(sony2fuji_process(session, &jpegRequest, nullptr) == SONY2FUJI_STATUS_OUTPUT_IO_ERROR &&
+          !std::filesystem::exists(missingParentTarget),
+          "C ABI JPEG storage failure maps to SONY2FUJI_STATUS_OUTPUT_IO_ERROR");
+
+    const auto blockedDir = jpegDir / "blocked-dir";
+    std::filesystem::create_directory(blockedDir);
+    const auto marker = blockedDir / "keep.txt";
+    writeTextFile(marker, "keep directory contents");
+    check(ImageEncoder::saveJPEG(noisy, blockedDir.string(), 95) == ErrorCode::IOError &&
+          std::filesystem::is_directory(blockedDir) &&
+          readTextFile(marker) == "keep directory contents" &&
+          !hasJpegStagingFile(jpegDir),
+          "JPEG directory target fails cleanly without leaving staging files");
+
+#ifndef _WIN32
+    auto runLimitedWriteChild = [](rlim_t byteLimit, auto&& fn) -> int {
+        const pid_t child = fork();
+        if (child < 0) return -1;
+        if (child == 0) {
+            std::signal(SIGXFSZ, SIG_IGN);
+            const struct rlimit limit = {byteLimit, byteLimit};
+            if (setrlimit(RLIMIT_FSIZE, &limit) != 0) _exit(2);
+            _exit(fn() ? 0 : 1);
+        }
+        int status = 0;
+        if (waitpid(child, &status, 0) != child || !WIFEXITED(status)) return -2;
+        return WEXITSTATUS(status);
+    };
+
+    const auto midwriteMissingTarget = jpegDir / "midwrite-missing.jpg";
+    const int missingExit = runLimitedWriteChild(4096, [&]() {
+        return ImageEncoder::saveJPEG(noisy, midwriteMissingTarget.string(), 95) == ErrorCode::IOError;
+    });
+    check(missingExit == 0, "mid-write JPEG fwrite failure returns ErrorCode::IOError");
+    check(missingExit >= 0 && !std::filesystem::exists(midwriteMissingTarget) && !hasJpegStagingFile(jpegDir),
+          "mid-write JPEG failure leaves neither truncated target nor staging file");
+
+    const auto midwriteExistingTarget = jpegDir / "midwrite-existing.jpg";
+    writeTextFile(midwriteExistingTarget, "preserve existing jpeg");
+    const std::string existingPathString = midwriteExistingTarget.string();
+    jpegRequest.output_path = existingPathString.c_str();
+    const int existingExit = runLimitedWriteChild(4096, [&]() {
+        return sony2fuji_process(session, &jpegRequest, nullptr) == SONY2FUJI_STATUS_OUTPUT_IO_ERROR;
+    });
+    check(existingExit == 0,
+          "C ABI mid-write JPEG failure returns SONY2FUJI_STATUS_OUTPUT_IO_ERROR");
+    check(existingExit >= 0 && readTextFile(midwriteExistingTarget) == "preserve existing jpeg" &&
+          !hasJpegStagingFile(jpegDir),
+          "mid-write JPEG failure preserves pre-existing target intact");
+
+    ImageData tiny(8, 8);
+    for (auto& pixel : tiny.pixels) pixel = RGB(0.4f, 0.6f, 0.2f);
+    const auto flushFailTarget = jpegDir / "flush-fail.jpg";
+    const int flushExit = runLimitedWriteChild(128, [&]() {
+        return ImageEncoder::saveJPEG(tiny, flushFailTarget.string(), 95) == ErrorCode::IOError;
+    });
+    check(flushExit == 0 && !std::filesystem::exists(flushFailTarget) &&
+          !hasJpegStagingFile(jpegDir),
+          "stdio-buffered small JPEG flush failure returns IOError and leaves no partial file");
+#endif
 }
 
 int main() {
@@ -535,6 +682,7 @@ int main() {
         check(sony2fuji_process(session, &rawRequest, &rawOutput) == SONY2FUJI_STATUS_IO_ERROR &&
               !rawOutput.data, "RAW C ABI preserves missing-path IO failure");
     }
+    testJpegExportWriteSafety(dir, session);
     testFujiLUTs(dir, session);
     const unsigned char black[3]={0,0,0};
     auto r=request(black);
