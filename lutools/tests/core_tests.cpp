@@ -168,8 +168,9 @@ void testJpegExportWriteSafety(const std::filesystem::path& parentDir, sony2fuji
     const auto jpegDir = parentDir / "jpeg-write-safety";
     std::filesystem::create_directories(jpegDir);
 
-    ImageData noisy(256, 256);
-    std::vector<unsigned char> noisyBytes(256 * 256 * 3);
+    // Keep pixel count below parallelPixelRanges's 65536 threshold so fork() children stay off libdispatch.
+    ImageData noisy(128, 128);
+    std::vector<unsigned char> noisyBytes(128 * 128 * 3);
     uint32_t seed = 0x12345678u;
     for (size_t i = 0; i < noisy.pixels.size(); ++i) {
         seed = seed * 1664525u + 1013904223u;
@@ -213,11 +214,11 @@ void testJpegExportWriteSafety(const std::filesystem::path& parentDir, sony2fuji
           "JPEG missing output directory returns IOError without creating target");
 
     auto jpegRequest = request(noisyBytes.data());
-    jpegRequest.input_width = 256;
-    jpegRequest.input_height = 256;
+    jpegRequest.input_width = 128;
+    jpegRequest.input_height = 128;
     jpegRequest.size_mode = SONY2FUJI_SIZE_EXACT;
-    jpegRequest.target_width = 256;
-    jpegRequest.target_height = 256;
+    jpegRequest.target_width = 128;
+    jpegRequest.target_height = 128;
     jpegRequest.intent = SONY2FUJI_INTENT_FINAL;
     jpegRequest.output_target = SONY2FUJI_TARGET_FILE;
     jpegRequest.output_format = SONY2FUJI_OUTPUT_JPEG;
@@ -258,7 +259,7 @@ void testJpegExportWriteSafety(const std::filesystem::path& parentDir, sony2fuji
         return ImageEncoder::saveJPEG(noisy, midwriteMissingTarget.string(), 95) == ErrorCode::IOError;
     });
     check(missingExit == 0, "mid-write JPEG fwrite failure returns ErrorCode::IOError");
-    check(!std::filesystem::exists(midwriteMissingTarget) && !hasJpegStagingFile(jpegDir),
+    check(missingExit >= 0 && !std::filesystem::exists(midwriteMissingTarget) && !hasJpegStagingFile(jpegDir),
           "mid-write JPEG failure leaves neither truncated target nor staging file");
 
     const auto midwriteExistingTarget = jpegDir / "midwrite-existing.jpg";
@@ -270,7 +271,7 @@ void testJpegExportWriteSafety(const std::filesystem::path& parentDir, sony2fuji
     });
     check(existingExit == 0,
           "C ABI mid-write JPEG failure returns SONY2FUJI_STATUS_OUTPUT_IO_ERROR");
-    check(readTextFile(midwriteExistingTarget) == "preserve existing jpeg" &&
+    check(existingExit >= 0 && readTextFile(midwriteExistingTarget) == "preserve existing jpeg" &&
           !hasJpegStagingFile(jpegDir),
           "mid-write JPEG failure preserves pre-existing target intact");
 
