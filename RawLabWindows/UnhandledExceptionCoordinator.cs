@@ -2,13 +2,26 @@ namespace RawLab.Windows;
 
 internal enum UnhandledUiDecision { Exit, Continue }
 
+internal readonly record struct UnhandledUiState(
+    bool StartupCompleted,
+    bool HasShutdownStarted,
+    bool HasShutdownFinished,
+    bool HasInteractiveEditor)
+{
+    internal bool CanContinue =>
+        StartupCompleted && !HasShutdownStarted && !HasShutdownFinished && HasInteractiveEditor;
+
+    internal string Operation =>
+        StartupCompleted ? "unhandled.dispatcher" : "unhandled.startup";
+}
+
 internal delegate UnhandledUiDecision UnhandledUiPrompt(
     Exception error, string? reportPath, bool saveFailed, bool canContinue);
 
 internal sealed class UnhandledExceptionCoordinator
 {
     private readonly AIDiagnosticStore store;
-    private readonly Func<bool> canContinue;
+    private readonly Func<UnhandledUiState> readUiState;
     private readonly UnhandledUiPrompt prompt;
     private readonly Action<int> shutdown;
     private bool handlingUiException;
@@ -17,12 +30,12 @@ internal sealed class UnhandledExceptionCoordinator
 
     internal UnhandledExceptionCoordinator(
         AIDiagnosticStore store,
-        Func<bool> canContinue,
+        Func<UnhandledUiState> readUiState,
         UnhandledUiPrompt prompt,
         Action<int> shutdown)
     {
         this.store = store;
-        this.canContinue = canContinue;
+        this.readUiState = readUiState;
         this.prompt = prompt;
         this.shutdown = shutdown;
     }
@@ -33,9 +46,11 @@ internal sealed class UnhandledExceptionCoordinator
         catch { return null; }
     }
 
-    internal void HandleUiException(Exception error, string operation = "unhandled.dispatcher")
+    internal void HandleUiException(Exception error)
     {
-        var reportPath = Record(error, operation);
+        UnhandledUiState uiState = default;
+        try { uiState = readUiState(); } catch { }
+        var reportPath = Record(error, uiState.Operation);
         if (shuttingDown) return;
         if (handlingUiException)
         {
@@ -47,8 +62,7 @@ internal sealed class UnhandledExceptionCoordinator
 
         var saveFailed = false;
         try { saveFailed = AIDiagnosticStore.SaveFailed(error); } catch { }
-        var allowedToContinue = false;
-        try { allowedToContinue = canContinue(); } catch { }
+        var allowedToContinue = uiState.CanContinue;
 
         var decision = UnhandledUiDecision.Exit;
         handlingUiException = true;

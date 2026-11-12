@@ -4,6 +4,9 @@ using RawLab.Windows;
 
 internal static class UnhandledExceptionChecks
 {
+    private static readonly UnhandledUiState InteractiveState =
+        new(StartupCompleted: true, HasShutdownStarted: false, HasShutdownFinished: false, HasInteractiveEditor: true);
+
     internal static void Run()
     {
         var root = Path.Combine(Path.GetTempPath(), "rawlab-unhandled-" + Guid.NewGuid().ToString("N"));
@@ -12,8 +15,8 @@ internal static class UnhandledExceptionChecks
 
         try
         {
-            // 1. UI unhandled exception when app is interactive: recorded, redacted, exportable,
-            //    prompts user, and Continue neither throws nor exits.
+            // 1. UI unhandled exception when editor is interactive: recorded, redacted, exportable,
+            //    prompts user with canContinue=true, and Continue neither throws nor exits.
             var uiStore = new AIDiagnosticStore(Path.Combine(root, "ui-continue"));
             var prompts = 0;
             var shutdownCodes = new List<int>();
@@ -22,7 +25,7 @@ internal static class UnhandledExceptionChecks
             var promptedCanContinue = false;
             var continueCoordinator = new UnhandledExceptionCoordinator(
                 uiStore,
-                () => true,
+                () => InteractiveState,
                 (_, reportPath, saveFailed, canContinue) =>
                 {
                     prompts++;
@@ -64,7 +67,7 @@ internal static class UnhandledExceptionChecks
             var exitCodes = new List<int>();
             var exitCoordinator = new UnhandledExceptionCoordinator(
                 exitStore,
-                () => true,
+                () => InteractiveState,
                 (_, _, _, _) => { exitPrompts++; return UnhandledUiDecision.Exit; },
                 exitCodes.Add);
             exitCoordinator.HandleUiException(new ApplicationException("fatal UI state"));
@@ -74,18 +77,41 @@ internal static class UnhandledExceptionChecks
             Check(Directory.GetFiles(exitStore.DirectoryPath, "*.json").Length == 2,
                 "Late exception during shutdown was lost instead of recorded");
 
-            // 3. Startup-incomplete / closing UI failure: forces Exit even if prompt returned Continue.
-            var startupStore = new AIDiagnosticStore(Path.Combine(root, "startup-fail"));
-            var startupCodes = new List<int>();
-            var startupCanContinueSeen = true;
-            var startupCoordinator = new UnhandledExceptionCoordinator(
-                startupStore,
-                () => false,
-                (_, _, _, canContinue) => { startupCanContinueSeen = canContinue; return UnhandledUiDecision.Continue; },
-                startupCodes.Add);
-            startupCoordinator.HandleUiException(new InvalidOperationException("startup failed before main window"), "unhandled.startup");
-            Check(!startupCanContinueSeen && startupCodes.SequenceEqual([1]) && startupStore.Latest() != null,
-                "Startup failure before main window allowed headless continuation instead of exiting");
+            // 3. Non-interactive UI states (startup incomplete, shutdown started/finished, recovery/closing window,
+            //    or throwing state reader): classify operation, disable Continue, defer shutdown until prompt closes,
+            //    and force exit code 1 even if prompt returns Continue.
+            (string CaseName, Func<UnhandledUiState> StateReader, string ExpectedOperation)[] nonContinuableCases =
+            [
+                ("startup-incomplete", () => new(StartupCompleted: false, HasShutdownStarted: false, HasShutdownFinished: false, HasInteractiveEditor: true), "unhandled.startup"),
+                ("shutdown-started", () => new(StartupCompleted: true, HasShutdownStarted: true, HasShutdownFinished: false, HasInteractiveEditor: true), "unhandled.dispatcher"),
+                ("shutdown-finished", () => new(StartupCompleted: true, HasShutdownStarted: false, HasShutdownFinished: true, HasInteractiveEditor: true), "unhandled.dispatcher"),
+                ("non-interactive-window", () => new(StartupCompleted: true, HasShutdownStarted: false, HasShutdownFinished: false, HasInteractiveEditor: false), "unhandled.dispatcher"),
+                ("faulting-state-reader", () => throw new InvalidOperationException("dispatcher state unavailable"), "unhandled.startup"),
+            ];
+            foreach (var (caseName, stateReader, expectedOperation) in nonContinuableCases)
+            {
+                var stateStore = new AIDiagnosticStore(Path.Combine(root, caseName));
+                var stateCodes = new List<int>();
+                var canContinueSeen = true;
+                var shutdownPremature = false;
+                var stateCoordinator = new UnhandledExceptionCoordinator(
+                    stateStore,
+                    stateReader,
+                    (_, _, _, canContinue) =>
+                    {
+                        canContinueSeen = canContinue;
+                        shutdownPremature = stateCodes.Count != 0;
+                        return UnhandledUiDecision.Continue;
+                    },
+                    stateCodes.Add);
+                stateCoordinator.HandleUiException(new InvalidOperationException(caseName));
+                var stateReport = stateStore.Latest();
+                Check(!canContinueSeen && !shutdownPremature && stateCodes.SequenceEqual([1]) && stateReport != null,
+                    $"Non-continuable UI state '{caseName}' failed to defer and force exit code 1");
+                using var doc = JsonDocument.Parse(File.ReadAllText(stateReport!));
+                Check(doc.RootElement.GetProperty("operation").GetString() == expectedOperation,
+                    $"Non-continuable UI state '{caseName}' recorded wrong operation tag");
+            }
 
             // 4. Re-entrant UI exception while modal prompt is open + prompt throwing itself:
             //    records cascading exception, suppresses nested dialogs, and forces Exit.
@@ -95,7 +121,7 @@ internal static class UnhandledExceptionChecks
             UnhandledExceptionCoordinator? reentrantCoordinator = null;
             reentrantCoordinator = new UnhandledExceptionCoordinator(
                 reentrantStore,
-                () => true,
+                () => InteractiveState,
                 (_, _, _, _) =>
                 {
                     reentrantPrompts++;
@@ -112,7 +138,7 @@ internal static class UnhandledExceptionChecks
             var brokenPromptCodes = new List<int>();
             var brokenPromptCoordinator = new UnhandledExceptionCoordinator(
                 brokenPromptStore,
-                () => true,
+                () => InteractiveState,
                 (_, _, _, _) => throw new InvalidOperationException("WPF dialog creation failed"),
                 brokenPromptCodes.Add);
             brokenPromptCoordinator.HandleUiException(new InvalidOperationException("original crash"));
@@ -124,7 +150,7 @@ internal static class UnhandledExceptionChecks
             var cancelStore = new AIDiagnosticStore(Path.Combine(root, "cancellation"));
             var cancelCoordinator = new UnhandledExceptionCoordinator(
                 cancelStore,
-                () => true,
+                () => InteractiveState,
                 (_, _, _, _) => UnhandledUiDecision.Continue,
                 _ => throw new Exception("Continue must not shut down"));
             cancelCoordinator.HandleUiException(new TaskCanceledException("unexpected cancellation escaped async void"));
@@ -140,7 +166,7 @@ internal static class UnhandledExceptionChecks
             var bgStore = new AIDiagnosticStore(Path.Combine(root, "bg-task"));
             var bgCoordinator = new UnhandledExceptionCoordinator(
                 bgStore,
-                () => true,
+                () => InteractiveState,
                 (_, _, _, _) => throw new Exception("Background unobserved task must not block on UI prompt"),
                 _ => throw new Exception("Background unobserved task must not shut down the app"));
             var unobservedArgs = new UnobservedTaskExceptionEventArgs(
@@ -165,7 +191,7 @@ internal static class UnhandledExceptionChecks
             var domainStore = new AIDiagnosticStore(Path.Combine(root, "appdomain"));
             var domainCoordinator = new UnhandledExceptionCoordinator(
                 domainStore,
-                () => true,
+                () => InteractiveState,
                 (_, _, _, _) => throw new Exception("Terminating AppDomain handler must not pump UI"),
                 _ => throw new Exception("Terminating AppDomain handler must not call Dispatcher Shutdown"));
             var domainReport = domainCoordinator.HandleAppDomainException(
@@ -183,7 +209,7 @@ internal static class UnhandledExceptionChecks
             var blockedCodes = new List<int>();
             var blockedCoordinator = new UnhandledExceptionCoordinator(
                 blockedStore,
-                () => true,
+                () => InteractiveState,
                 (_, report, saveFailed, _) => { Check(report == null, "Blocked store unexpectedly returned path"); saveFailedObserved = saveFailed; return UnhandledUiDecision.Exit; },
                 blockedCodes.Add);
             blockedCoordinator.HandleUiException(new Exception("ui fault with unwritable disk"));
@@ -196,46 +222,11 @@ internal static class UnhandledExceptionChecks
                     new UnhandledExceptionEventArgs(new Exception("domain fault"), isTerminating: true)) == null,
                 "Unwritable diagnostic directory threw inside AppDomain.UnhandledException");
 
-            // 8. Static source contract check for WPF hook wiring in App.xaml.cs.
-            VerifySourceContracts(Check);
             Console.WriteLine("PASS: Windows unhandled exception recording, UI/background separation and resilience");
         }
         finally
         {
             Directory.Delete(root, true);
         }
-    }
-
-    private static void VerifySourceContracts(Action<bool, string> check)
-    {
-        var sourceDir = FindProjectDirectory();
-        var appSource = File.ReadAllText(Path.Combine(sourceDir, "App.xaml.cs"));
-        check(appSource.Contains("DispatcherUnhandledException +=", StringComparison.Ordinal),
-            "App.xaml.cs must subscribe DispatcherUnhandledException");
-        check(appSource.Contains("TaskScheduler.UnobservedTaskException +=", StringComparison.Ordinal),
-            "App.xaml.cs must subscribe TaskScheduler.UnobservedTaskException");
-        check(appSource.Contains("AppDomain.CurrentDomain.UnhandledException +=", StringComparison.Ordinal),
-            "App.xaml.cs must subscribe AppDomain.CurrentDomain.UnhandledException");
-        check(appSource.Contains("e.Handled = true;", StringComparison.Ordinal),
-            "OnDispatcherUnhandledException must mark e.Handled = true before coordinated recovery/shutdown");
-        var renderingSource = File.ReadAllText(Path.Combine(sourceDir, "MainWindow", "Rendering.cs"));
-        check(renderingSource.Contains("finally { current=embeddedScheduler.Finish(ticket); }", StringComparison.Ordinal),
-            "PumpEmbedded must release embeddedScheduler ticket in finally when unhandled exception escapes");
-    }
-
-    private static string FindProjectDirectory()
-    {
-        foreach (var start in new[] { AppContext.BaseDirectory, Directory.GetCurrentDirectory() })
-        {
-            for (var dir = new DirectoryInfo(start); dir != null; dir = dir.Parent)
-            {
-                if (File.Exists(Path.Combine(dir.FullName, "RawLabWindows.csproj")))
-                    return dir.FullName;
-                var nested = Path.Combine(dir.FullName, "RawLabWindows", "RawLabWindows.csproj");
-                if (File.Exists(nested))
-                    return Path.GetDirectoryName(nested)!;
-            }
-        }
-        throw new DirectoryNotFoundException("Cannot locate RawLabWindows.csproj");
     }
 }

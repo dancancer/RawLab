@@ -16,13 +16,16 @@ public partial class App : Application
     private bool drainingSystemPhotos;
     private bool startupCompleted;
 
-    public App()
+    public App() : this(null) { }
+
+    internal App(AIDiagnosticStore? diagnosticStore)
     {
         currentApp = this;
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
         coordinator = new UnhandledExceptionCoordinator(
-            AIDiagnosticStore.Default,
-            () => startupCompleted && !Dispatcher.HasShutdownStarted && !Dispatcher.HasShutdownFinished &&
-                  this.MainWindow is MainWindow { IsVisible: true, IsEnabled: true },
+            diagnosticStore ?? AIDiagnosticStore.Default,
+            () => new(startupCompleted, Dispatcher.HasShutdownStarted, Dispatcher.HasShutdownFinished,
+                this.MainWindow is MainWindow { IsVisible: true, IsEnabled: true }),
             ShowUnhandledExceptionDialog,
             code => { systemPhotoTimer?.Stop(); SetSystemPhotoAdmission(false); Shutdown(code); });
         DispatcherUnhandledException += OnDispatcherUnhandledException;
@@ -39,17 +42,19 @@ public partial class App : Application
     }
 
     private static UnhandledExceptionCoordinator CreateFallbackCoordinator() =>
-        new(AIDiagnosticStore.Default, static () => false, static (_, _, _, _) => UnhandledUiDecision.Exit, static _ => { });
+        new(AIDiagnosticStore.Default, static () => default, static (_, _, _, _) => UnhandledUiDecision.Exit, static _ => { });
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
         e.Handled = true;
-        coordinator.HandleUiException(e.Exception, startupCompleted ? "unhandled.dispatcher" : "unhandled.startup");
+        coordinator.HandleUiException(e.Exception);
     }
 
     private UnhandledUiDecision ShowUnhandledExceptionDialog(
         Exception error, string? reportPath, bool saveFailed, bool canContinue)
     {
+        if (!canContinue && !Dispatcher.HasShutdownStarted && !Dispatcher.HasShutdownFinished)
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
         if (Loc.Strings.Count == 0) try { Loc.Initialize(); } catch { }
         var notice = !saveFailed && reportPath != null
             ? Loc.Text("失败时自动保存本地诊断；导出后可手动发送，不包含照片内容。") + "\n" + reportPath
@@ -161,7 +166,6 @@ public partial class App : Application
             (_, _) => DrainSystemPhotos(), Dispatcher);
         systemPhotoTimer.Start();
         Exit += (_, _) => SetSystemPhotoAdmission(false);
-        ShutdownMode = ShutdownMode.OnExplicitShutdown;
         var version = typeof(App).Assembly.GetName().Version;
         var current = version?.ToString(3) ?? "unknown";
         var legacy = new UpdateChecker(current);
