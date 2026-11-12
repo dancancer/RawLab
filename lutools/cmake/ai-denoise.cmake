@@ -96,6 +96,10 @@ if(SONY2FUJI_ENABLE_AI_DENOISE)
         endif()
     endforeach()
     if(BUILD_TESTING)
+        if(TARGET core_tests)
+            target_include_directories(core_tests PRIVATE third_party)
+            target_compile_definitions(core_tests PRIVATE SONY2FUJI_ENABLE_AI_DENOISE)
+        endif()
         add_executable(dualdn_session_tests tests/dualdn_session_tests.cpp)
         target_include_directories(dualdn_session_tests PRIVATE third_party)
         target_link_libraries(dualdn_session_tests PRIVATE rawlab_dualdn_runtime sony2fuji_core)
@@ -131,7 +135,7 @@ if(SONY2FUJI_ENABLE_AI_DENOISE)
                 "${ONNXRUNTIME_ROOT}/lib/DirectML.dll")
         endif()
         # Windows 的系统目录先于 PATH，必须在程序旁放置匹配头文件的运行库。
-        foreach(ai_binary sony2fuji sony2fuji_cli ai_device_abi_tests dualdn_probe dualdn_api_tests dualdn_onnx_tests
+        foreach(ai_binary sony2fuji sony2fuji_cli core_tests ai_device_abi_tests dualdn_probe dualdn_api_tests dualdn_onnx_tests
                 dualdn_native_tests dualdn_directml_tests dualdn_session_tests)
             if(TARGET ${ai_binary})
                 add_custom_command(TARGET ${ai_binary} POST_BUILD

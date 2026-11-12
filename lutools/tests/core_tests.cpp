@@ -24,6 +24,14 @@
 #include <unistd.h>
 #include <pthread.h>
 #endif
+#ifdef SONY2FUJI_ENABLE_AI_DENOISE
+#include "ai/dualdn_cache.h"
+#include "ai/model_package.h"
+#include "ai/network_graph.h"
+#include "ai/directml_device.h"
+#include <nlohmann/json.hpp>
+#include <optional>
+#endif
 
 using namespace sony2fuji;
 int failures = 0;
@@ -258,9 +266,86 @@ int main() {
     catch (const std::invalid_argument&) { nativeRejected=true; }
     check(nativeRejected,"Uncalibrated native matrix is rejected");
 
+    {
+        ImageData negW(-4, 5), negH(5, -4), zeroW(0, 5);
+        check(negW.width == 0 && negW.height == 0 && negW.pixels.empty() &&
+              negH.width == 0 && negH.height == 0 && negH.pixels.empty() &&
+              zeroW.width == 0 && zeroW.height == 0 && zeroW.pixels.empty(),
+              "ImageData clamps non-positive dimensions consistently across members and buffer");
+        bool overflowRejected = false;
+        try { ImageData hugeImage(2000000000, 2000000000); (void)hugeImage; }
+        catch (const std::bad_alloc&) { overflowRejected = true; }
+        check(overflowRejected, "ImageData rejects unrepresentable pixel byte counts");
+    }
+
     sony2fuji_session* session=nullptr;
     sony2fuji_session_create(&session);
     const unsigned char dngPixels[3] = {128, 70, 220};
+    {
+        const unsigned char widePixels[6] = {128, 70, 220, 64, 120, 180};
+        auto expectRejected = [&](const sony2fuji_request& req, const char* label, sony2fuji_session* target = nullptr) {
+            sony2fuji_buffer hugeOut{};
+            const auto st = sony2fuji_process(target ? target : session, &req, &hugeOut);
+            const bool rejected = st == SONY2FUJI_STATUS_INVALID_ARGUMENT && !hugeOut.data;
+            sony2fuji_release_buffer(&hugeOut);
+            check(rejected, label);
+        };
+
+        auto exactCap = request(dngPixels);
+        exactCap.size_mode = SONY2FUJI_SIZE_EXACT;
+        exactCap.target_width = exactCap.target_height = 11314;
+        expectRejected(exactCap, "EXACT output above 128M pixels is rejected with valid out_buffer");
+        exactCap.target_width = exactCap.target_height = 2000000000u;
+        expectRejected(exactCap, "EXACT int-overflow output size is rejected with valid out_buffer");
+
+        auto fitLong = request(widePixels);
+        fitLong.input_width = 2; fitLong.input_height = 1;
+        fitLong.size_mode = SONY2FUJI_SIZE_FIT_LONG_EDGE;
+        fitLong.long_edge = 16002;
+        expectRejected(fitLong, "FIT_LONG_EDGE output above 128M pixels is rejected");
+        fitLong.long_edge = 2000000000u;
+        expectRejected(fitLong, "FIT_LONG_EDGE extreme long_edge is rejected without UB");
+
+        auto previewLong = request(dngPixels);
+        previewLong.size_mode = SONY2FUJI_SIZE_NATIVE;
+        previewLong.intent = SONY2FUJI_INTENT_PREVIEW;
+        previewLong.preview_long_edge = 11314;
+        expectRejected(previewLong, "PREVIEW preview_long_edge override above 128M pixels is rejected");
+
+        auto fitShort = request(widePixels);
+        fitShort.input_width = 2; fitShort.input_height = 1;
+        fitShort.size_mode = SONY2FUJI_SIZE_FIT_SHORT_EDGE;
+        fitShort.short_edge = 8001;
+        expectRejected(fitShort, "FIT_SHORT_EDGE output above 128M pixels is rejected");
+        fitShort.short_edge = 2000000000u;
+        expectRejected(fitShort, "FIT_SHORT_EDGE extreme short_edge is rejected without UB");
+
+        const std::string absentRaw = (dir / "missing-size-cap.ARW").string();
+        auto rawEarly = request(nullptr);
+        rawEarly.input_type = SONY2FUJI_INPUT_RAW;
+        rawEarly.input_path = absentRaw.c_str();
+        rawEarly.intent = SONY2FUJI_INTENT_FINAL;
+        rawEarly.size_mode = SONY2FUJI_SIZE_EXACT;
+        rawEarly.target_width = rawEarly.target_height = 11314;
+        expectRejected(rawEarly, "Oversized RAW request is rejected during request validation before RAW decode");
+
+        sony2fuji_session* geomSession = nullptr;
+        sony2fuji_session_create(&geomSession);
+        sony2fuji_geometry_config geom{};
+        geom.version = SONY2FUJI_GEOMETRY_CONFIG_VERSION;
+        geom.struct_size = sizeof(geom);
+        geom.crop_width = geom.crop_height = 1.0f;
+        geom.quarter_turns = 1;
+        sony2fuji_session_set_geometry(geomSession, &geom);
+        const std::string absentLut = (dir / "missing-size-cap.cube").string();
+        auto finalGeom = fitLong;
+        finalGeom.long_edge = 16002;
+        finalGeom.intent = SONY2FUJI_INTENT_FINAL;
+        finalGeom.lut_path = absentLut.c_str();
+        finalGeom.lut_strength = 1.0f;
+        expectRejected(finalGeom, "FINAL+geometry oversized FIT_LONG_EDGE is rejected before LUT/pixel work", geomSession);
+        sony2fuji_session_destroy(geomSession);
+    }
     auto dngRequest = request(dngPixels);
     const std::string dngPath = (dir / "rendered.dng").string();
     dngRequest.output_target = SONY2FUJI_TARGET_FILE;
@@ -269,6 +354,147 @@ int main() {
     dngRequest.intent = SONY2FUJI_INTENT_FINAL;
     check(sony2fuji_process(session, &dngRequest, nullptr) == SONY2FUJI_STATUS_OK &&
           std::filesystem::file_size(dngPath) > 8, "C ABI writes rendered DNG as a file");
+    const std::string linearDngFixture = std::string(TEST_SOURCE_DIR) + "/tests/fixtures/linear-uncompressed.dng";
+    {
+        sony2fuji_session* aeSession = nullptr;
+        sony2fuji_session_create(&aeSession);
+
+        sony2fuji_request aeRaw{};
+        aeRaw.version = SONY2FUJI_REQUEST_VERSION;
+        aeRaw.struct_size = sizeof(aeRaw);
+        aeRaw.input_type = SONY2FUJI_INPUT_RAW;
+        aeRaw.input_path = linearDngFixture.c_str();
+        aeRaw.wb_mode = SONY2FUJI_WB_CAMERA;
+        aeRaw.wb_mul[0] = aeRaw.wb_mul[1] = aeRaw.wb_mul[2] = aeRaw.wb_mul[3] = 1.0f;
+        aeRaw.brightness = aeRaw.contrast = aeRaw.saturation = 1.0f;
+        aeRaw.temperature = 6500.0f;
+        float rawEv = 999.0f;
+        const auto rawAeStatus = sony2fuji_session_estimate_auto_exposure(aeSession, &aeRaw, &rawEv);
+
+        sony2fuji_request aePreviewBuf{};
+        aePreviewBuf.version = SONY2FUJI_REQUEST_VERSION;
+        aePreviewBuf.struct_size = sizeof(aePreviewBuf);
+        aePreviewBuf.input_type = SONY2FUJI_INPUT_BUFFER;
+        aePreviewBuf.input_pixels = dngPixels;
+        aePreviewBuf.input_width = aePreviewBuf.input_height = 1;
+        aePreviewBuf.input_pixel_format = SONY2FUJI_PIXEL_RGB8;
+        aePreviewBuf.input_color_space = SONY2FUJI_COLOR_SRGB;
+        aePreviewBuf.input_is_linear = 1;
+        aePreviewBuf.wb_mode = SONY2FUJI_WB_CAMERA;
+        aePreviewBuf.brightness = aePreviewBuf.contrast = aePreviewBuf.saturation = 1.0f;
+        aePreviewBuf.temperature = 6500.0f;
+        aePreviewBuf.intent = SONY2FUJI_INTENT_PREVIEW;
+        aePreviewBuf.preview_long_edge = 1280;
+        float bufEv = 999.0f;
+        const auto bufAeStatus = sony2fuji_session_estimate_auto_exposure(aeSession, &aePreviewBuf, &bufEv);
+
+        sony2fuji_session_destroy(aeSession);
+        check(aeRaw.size_mode == SONY2FUJI_SIZE_EXACT && aeRaw.target_width == 0 && aeRaw.target_height == 0 &&
+              rawAeStatus == SONY2FUJI_STATUS_OK && std::isfinite(rawEv) && rawEv >= -4.0f && rawEv <= 4.0f &&
+              aePreviewBuf.size_mode == SONY2FUJI_SIZE_EXACT && aePreviewBuf.target_width == 0 && aePreviewBuf.target_height == 0 &&
+              bufAeStatus == SONY2FUJI_STATUS_OK && std::isfinite(bufEv) && bufEv >= -4.0f && bufEv <= 4.0f,
+              "Auto exposure succeeds with zero-initialized size fields");
+    }
+#ifdef SONY2FUJI_ENABLE_AI_DENOISE
+    {
+        bool aiRuntimeAvailable = true;
+#ifdef _WIN32
+        std::optional<ai::DirectMLAdapter> aiAdapter;
+        try { aiAdapter = ai::findDirectMLAdapter(); } catch (const std::runtime_error&) { aiRuntimeAvailable = false; }
+#endif
+        if (aiRuntimeAvailable) {
+            const auto aiModelDir = dir / "ai-model";
+            const auto aiCacheDir = dir / "ai-cache";
+            std::filesystem::create_directories(aiModelDir);
+            nlohmann::json manifest = {
+                {"format_version", 1}, {"protocol", "rawlab-dualdn-v1"},
+                {"model_id", "dualdn-big-restormer-v1"}, {"source_revision", ai::dualdnSourceRevision},
+                {"weights_sha256", ai::dualdnWeightsSHA256}, {"tile_size", 640}, {"production_geometry", true},
+                {"raw_core", 384}, {"raw_halo", 128}, {"rgb_core", 512}, {"rgb_halo", 64},
+                {"packed_order", {"R", "G_top", "G_bottom", "B"}},
+                {"input_floor", 1e-8}, {"variance_floor", 1e-7}, {"sigma_semantics", "variance"},
+                {"isp", {{"demosaic", "AHD"}, {"gamma", "Rec709"}, {"reference", "D65"}, {"alpha", 0}, {"bgu", false}}}
+            };
+            for (const char* name : {"raw", "isp", "rgb"}) {
+                const auto file = aiModelDir / (std::string(name) + ".onnx");
+                { std::ofstream(file, std::ios::binary) << "test package integrity"; }
+                manifest["graphs"][name] = {
+                    {"file", file.filename().u8string()},
+                    {"sha256", ai::sha256File(file.u8string())},
+                    {"bytes", std::filesystem::file_size(file)}
+                };
+            }
+            const auto blindFile = aiModelDir / "blind_rgb.onnx";
+            const auto licenseFile = aiModelDir / "Restormer-LICENSE.txt";
+            { std::ofstream(blindFile, std::ios::binary) << "RGB model package integrity fixture"; }
+            std::filesystem::copy_file(
+                std::filesystem::u8path(std::string(TEST_SOURCE_DIR) + "/tests/fixtures/restormer-v1-LICENSE.txt"),
+                licenseFile);
+            manifest["blind_rgb"] = {
+                {"model_id", "restormer-real-srgb-v1"}, {"protocol", "rawlab-scene-rgb-v1"},
+                {"source_revision", ai::restormerSourceRevision}, {"weights_sha256", ai::restormerWeightsSHA256},
+                {"tile_size", 640}, {"core", 512}, {"halo", 64}, {"input", "encoded_rgb"}, {"output", "denoised_rgb"},
+                {"file", "blind_rgb.onnx"}, {"bytes", std::filesystem::file_size(blindFile)},
+                {"sha256", ai::sha256File(blindFile.u8string())},
+                {"license_file", "Restormer-LICENSE.txt"}, {"license_sha256", ai::restormerLicenseSHA256}
+            };
+            { std::ofstream(aiModelDir / "manifest.json", std::ios::binary) << manifest.dump(); }
+
+#ifdef _WIN32
+            constexpr auto aiBackend = SONY2FUJI_AI_DIRECTML;
+            constexpr auto coreBackend = ai::Backend::DirectML;
+            const std::string runtimeIdentity = ai::NetworkGraph::runtimeVersion(coreBackend, aiAdapter ? &*aiAdapter : nullptr);
+#else
+            constexpr auto aiBackend = SONY2FUJI_AI_COREML;
+            constexpr auto coreBackend = ai::Backend::CoreML;
+            const std::string runtimeIdentity = ai::NetworkGraph::runtimeVersion(coreBackend);
+#endif
+            const auto package = ai::loadModelPackage(aiModelDir.u8string());
+            const auto fullIdentity = package.digest + ":" + runtimeIdentity;
+            const auto digest = ai::sha256Bytes(fullIdentity.data(), fullIdentity.size());
+            RAWProcessOptions aiOptions;
+            aiOptions.legacySonyCrop = true;
+            const auto rawKey = ai::rawCacheKey(linearDngFixture, digest, static_cast<int>(coreBackend), aiOptions.legacySonyCrop);
+            const float zeroScene[3] = {0.0f, 0.0f, 0.0f};
+            ai::DenoiseCache(aiCacheDir.u8string()).store(
+                ai::sceneRGBCacheKey(rawKey, aiOptions), ai::CacheKind::SceneRGB, 1, 1, zeroScene, 3, {}, "test-identity");
+
+            sony2fuji_session* aiSession = nullptr;
+            sony2fuji_session_create(&aiSession);
+            const std::string modelDirUtf8 = aiModelDir.u8string();
+            const std::string cacheDirUtf8 = aiCacheDir.u8string();
+            sony2fuji_ai_denoise_config aiConfig{};
+            aiConfig.version = SONY2FUJI_AI_DENOISE_CONFIG_VERSION;
+            aiConfig.struct_size = sizeof(aiConfig);
+            aiConfig.enabled = 1;
+            aiConfig.backend = aiBackend;
+            aiConfig.model_directory = modelDirUtf8.c_str();
+            aiConfig.cache_directory = cacheDirUtf8.c_str();
+            const auto setAiStatus = sony2fuji_session_set_ai_denoise(aiSession, &aiConfig);
+
+            sony2fuji_request aiReq{};
+            aiReq.version = SONY2FUJI_REQUEST_VERSION;
+            aiReq.struct_size = sizeof(aiReq);
+            aiReq.input_type = SONY2FUJI_INPUT_RAW;
+            aiReq.input_path = linearDngFixture.c_str();
+            aiReq.wb_mode = SONY2FUJI_WB_CAMERA;
+            aiReq.wb_mul[0] = aiReq.wb_mul[1] = aiReq.wb_mul[2] = aiReq.wb_mul[3] = 1.0f;
+            aiReq.brightness = aiReq.contrast = aiReq.saturation = 1.0f;
+            aiReq.temperature = 6500.0f;
+            const auto prepStatus = sony2fuji_session_prepare_ai(aiSession, &aiReq, nullptr, nullptr);
+            sony2fuji_session_destroy(aiSession);
+
+            check(setAiStatus == SONY2FUJI_STATUS_OK &&
+                  aiReq.size_mode == SONY2FUJI_SIZE_EXACT && aiReq.target_width == 0 && aiReq.target_height == 0 &&
+                  prepStatus == SONY2FUJI_STATUS_OK,
+                  "AI preparation succeeds with zero-initialized size fields");
+        } else {
+            std::cout << "SKIP AI preparation zero-init check (no hardware AI adapter)\n";
+        }
+    }
+#else
+    std::cout << "SKIP AI preparation zero-init check (enable SONY2FUJI_ENABLE_AI_DENOISE)\n";
+#endif
     const std::string missingDngPath = (dir / "absent" / "out.dng").string();
     dngRequest.output_path = missingDngPath.c_str();
     check(sony2fuji_process(session, &dngRequest, nullptr) == SONY2FUJI_STATUS_OUTPUT_IO_ERROR,
