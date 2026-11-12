@@ -76,12 +76,12 @@ public partial class App : Application
         var updates = new DesktopUpdateController(adapter, new(), new(UpdateStore.DefaultDirectory), current,
             fileVersion.FilePrivatePart.ToString(), legacy.Automatic);
         MainWindow? editor = null;
-        if (updates.StorageError == null && !updates.RequiresRecovery)
+        if (updates.UnavailableReason != "storage" && !updates.RequiresRecovery)
         {
             editor = new MainWindow(new UsageAnalytics(), null, desktopUpdates: updates);
             await updates.FinishStartupHealthCheckAsync(editor.UpdateDataHealthy);
         }
-        if (updates.StorageError != null || updates.RequiresRecovery || updates.RequiresStartupHealthCheck)
+        if (updates.BlocksEditing)
         {
             var recovery = new SoftwareUpdateWindow(updates, legacy) { Title = Loc.Text("更新恢复需要处理，编辑暂未开放") };
             MainWindow = recovery;

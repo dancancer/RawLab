@@ -21,6 +21,7 @@ internal static class ControllerChecks
         await StartupAndQuit(check);
         await StateRepair(check);
         await InstallationFailureBlocksEditing(check);
+        await RuntimeSaveFailureRecovery(check);
         var root = Path.Combine(Path.GetTempPath(), "rawlab-update-controller-" + Guid.NewGuid().ToString("N"));
         try
         {
@@ -203,11 +204,66 @@ internal static class ControllerChecks
                 var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(damaged); File.WriteAllBytes(store.StatePath, bytes);
                 var reopened = new DesktopUpdateController(new Adapter(), new(), store, "0.9.1", "19");
                 await reopened.FinishStartupHealthCheckAsync(true);
-                check(reopened.StorageError != null && !reopened.CanCheck && !reopened.CanChooseInstall && !reopened.CanRepairState,
+                check(reopened.StorageError != null && reopened.BlocksEditing && !reopened.CanCheck && !reopened.CanChooseInstall && !reopened.CanRepairState,
                     "Malformed installation failure blocks startup and state reset: " + name);
                 check(File.ReadAllBytes(store.StatePath).SequenceEqual(bytes), "Blocked startup preserves the damaged failure record: " + name);
             }
         }
         finally { store.Save(original); }
+    }
+
+    private static async Task RuntimeSaveFailureRecovery(Action<bool, string> check)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-save-recovery-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new UpdateStore(Path.Combine(root, "Updates"));
+            var adapter = new Adapter();
+            var controller = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14");
+            Directory.CreateDirectory(store.StatePath);
+            var saveThrew = false;
+            try { store.Save(new()); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { saveThrew = true; }
+            check(saveThrew, "UpdateStore.Save still throws upward when atomic replacement fails");
+
+            controller.SetAutomaticCheck(false);
+            await controller.CheckAsync(true);
+            check(controller.StorageError != null && !controller.BlocksEditing && !controller.CanRepairState &&
+                controller.UnavailableReason == null && controller.CanCheck &&
+                controller.Preferences.AutomaticCheck && controller.State.Phase == UpdatePhase.Idle && adapter.Checks == 0,
+                "Runtime state save failure does not lock editing or permanently disable update retry");
+
+            Directory.Delete(store.StatePath);
+            controller.SetAutomaticCheck(false);
+            await controller.CheckAsync(true);
+            check(controller.StorageError == null && !controller.BlocksEditing &&
+                !controller.Preferences.AutomaticCheck && controller.State.Phase == UpdatePhase.Available &&
+                !store.Load(true).AutomaticCheck,
+                "Restoring writable storage clears StorageError and persists retried preferences and checks");
+
+            await controller.DownloadAsync();
+            check(controller.State.Phase == UpdatePhase.PackageReady, "Package reaches ready state before simulated lock");
+            using (new FileStream(store.StatePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                var sharingThrew = false;
+                try { store.Save(controller.Preferences); }
+                catch (IOException error) when (error.HResult == unchecked((int)0x80070020)) { sharingThrew = true; }
+                check(sharingThrew, "Exhausted sharing-violation retries throw IOException from UpdateStore.Save");
+
+                await controller.ChooseAsync(UpdateInstallChoice.RestartNow);
+                check(controller.StorageError != null && !controller.BlocksEditing && adapter.Installs == 0 &&
+                    controller.State.Phase == UpdatePhase.Available && controller.CanDownload &&
+                    await controller.PrepareForQuitAsync(),
+                    "Locked state.json during install admission aborts installation without locking editing or blocking quit");
+            }
+
+            var restarted = false; controller.RestartRequested += () => restarted = true;
+            await controller.DownloadAsync();
+            await controller.ChooseAsync(UpdateInstallChoice.RestartNow);
+            check(controller.StorageError == null && adapter.Installs == 1 && restarted &&
+                controller.State.Phase == UpdatePhase.PendingRestart && controller.BlocksEditing,
+                "Releasing state.json lock recovers update persistence and completes installation");
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }
 }

@@ -123,6 +123,14 @@ internal static class SoftwareUpdateUiChecks
             repairedStartup.FinishStartupHealthCheckAsync(window.UpdateDataHealthy).GetAwaiter().GetResult();
             check(!repairedStartup.RequiresRecovery && !repairedStartup.RequiresStartupHealthCheck,"Real editor data health completes repair on fresh startup");
             repairWindow.Close();
+            using(new FileStream(Path.Combine(output,"Updates","state.json"),FileMode.Open,FileAccess.ReadWrite,FileShare.None)) {
+                controller.SetAutomaticCheck(true);
+                check(controller.StorageError!=null && window.EditorShell.IsEnabled && !window.UpdateLockBanner.IsVisible,
+                    "A failed runtime update-state write does not disable the real editor");
+            }
+            controller.SetAutomaticCheck(true);controller.SetAutomaticCheck(false);
+            check(controller.StorageError==null && window.EditorShell.IsEnabled && !window.UpdateLockBanner.IsVisible,
+                "Releasing the state file lock clears StorageError while keeping the real editor enabled");
             var beforeFailure=store.ReadState(photo);
             Invoke(window,"ShowCollection");var collection=Get<BatchSelectionWindow>(window,"collectionWindow");
             adapter.RejectInstall=true;controller.CheckAsync(true).GetAwaiter().GetResult();

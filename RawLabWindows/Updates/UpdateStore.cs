@@ -134,18 +134,103 @@ public sealed class UpdateStore(string directory)
     {
         if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) throw new IOException("Linked update state cannot be rebuilt");
     }
+    private const int SharingViolationHResult = unchecked((int)0x80070020);
+    private const int LockViolationHResult = unchecked((int)0x80070021);
+    private static readonly int[] TransientRetryDelaysMs = [10, 50, 200];
+    private static readonly TimeSpan TransientRetryBudget = TimeSpan.FromMilliseconds(500);
+
     public void Save(UpdatePreferences preferences) => WriteAtomic(StatePath, JsonSerializer.SerializeToUtf8Bytes(preferences));
-    public static void WriteAtomic(string path, byte[] data)
+    public static void WriteAtomic(string path, byte[] data) =>
+        WriteAtomic(path, data, WriteTemporaryFile, static (source, destination) => File.Move(source, destination, true));
+
+    internal static void WriteAtomic(string path, byte[] data, Action<string, byte[]> writeTemporary, Action<string, string> moveFile,
+        Action<TimeSpan>? sleep = null, Func<TimeSpan>? elapsed = null)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        string? writtenTemporary = null;
+        List<string>? staleTemporaries = null;
         try
         {
-            using (var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
-            { file.Write(data); file.Flush(true); }
-            File.Move(temporary, path, true);
+            RetryTransientIo(() =>
+            {
+                var temporary = writtenTemporary;
+                if (temporary == null)
+                {
+                    var candidate = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                    try
+                    {
+                        writeTemporary(candidate, data);
+                        writtenTemporary = temporary = candidate;
+                    }
+                    catch
+                    {
+                        if (!TryDeleteTemporary(candidate)) (staleTemporaries ??= []).Add(candidate);
+                        throw;
+                    }
+                }
+                moveFile(temporary, path);
+                writtenTemporary = null;
+            }, sleep, elapsed);
         }
-        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        finally
+        {
+            if (writtenTemporary != null) TryDeleteTemporary(writtenTemporary);
+            if (staleTemporaries != null)
+            {
+                foreach (var stale in staleTemporaries) TryDeleteTemporary(stale);
+            }
+        }
+    }
+
+    private static void WriteTemporaryFile(string temporary, byte[] data)
+    {
+        using var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough);
+        file.Write(data);
+        file.Flush(true);
+    }
+
+    private static bool TryDeleteTemporary(string path)
+    {
+        try
+        {
+            if (File.Exists(path)) File.Delete(path);
+            return true;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    internal static bool IsTransientSharingIo(Exception error) =>
+        error is IOException and not FileNotFoundException and not DirectoryNotFoundException and not PathTooLongException &&
+        error.HResult is SharingViolationHResult or LockViolationHResult;
+
+    internal static void RetryTransientIo(Action action, Action<TimeSpan>? sleep = null, Func<TimeSpan>? elapsed = null)
+    {
+        sleep ??= Thread.Sleep;
+        Func<TimeSpan> clock;
+        if (elapsed != null) clock = elapsed;
+        else
+        {
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            clock = () => stopwatch.Elapsed;
+        }
+        var retries = 0;
+        while (true)
+        {
+            try
+            {
+                action();
+                return;
+            }
+            catch (Exception error) when (IsTransientSharingIo(error) && retries < TransientRetryDelaysMs.Length &&
+                clock() + TimeSpan.FromMilliseconds(TransientRetryDelaysMs[retries]) <= TransientRetryBudget)
+            {
+                var delay = TimeSpan.FromMilliseconds(TransientRetryDelaysMs[retries++]);
+                sleep(delay);
+            }
+        }
     }
 }
 

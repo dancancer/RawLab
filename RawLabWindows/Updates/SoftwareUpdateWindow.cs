@@ -35,7 +35,7 @@ public sealed class SoftwareUpdateWindow : Window
             Title=Loc.Text(settings ? "软件更新" : "RawLab 更新");panel.Children.Clear();
             AddText(Title,true);AddText(Loc.Format("版本 {0}",updates.CurrentVersion),localized:true);
             if(settings) {
-                Toggle("自动检查更新",updates.Preferences.AutomaticCheck,updates.StorageError==null && !updates.RequiresRecovery && !updates.RequiresStartupHealthCheck,value=>{
+                Toggle("自动检查更新",updates.Preferences.AutomaticCheck,updates.UnavailableReason!="storage" && !updates.RequiresRecovery && !updates.RequiresStartupHealthCheck,value=>{
                     updates.SetAutomaticCheck(value);legacy.Automatic=updates.Preferences.AutomaticCheck;
                 },"updates.automaticCheck");
                 Toggle("自动下载并在退出时安装",updates.Preferences.AutomaticInstall,updates.UnavailableReason==null && !updates.RequiresRecovery && !updates.RequiresStartupHealthCheck,updates.SetAutomaticInstall,"updates.automaticInstall");
@@ -53,8 +53,8 @@ public sealed class SoftwareUpdateWindow : Window
                 AutomationProperties.SetName(progress,Loc.Text(UpdatePresentation.Phase(updates.State.Phase)));panel.Children.Add(progress);
                 if(updates.State.Phase==UpdatePhase.Downloading)AddText($"{updates.State.Progress:P0}",localized:true);
             }
-            if(updates.StartupTrustError is {} trustError && updates.RequiresStartupHealthCheck && !updates.RequiresRecovery) {
-                AddText(trustError,localized:true);
+            if((updates.StartupTrustError!=null || updates.StorageError!=null) && updates.RequiresStartupHealthCheck && !updates.RequiresRecovery) {
+                if(updates.StartupTrustError is {} trustError)AddText(trustError,localized:true);
                 var retryActions=new WrapPanel();panel.Children.Add(retryActions);
                 ActionButton(retryActions,"重试",()=>updates.RetryStartup?.Invoke() ?? Task.CompletedTask,"updates.retryStartup",!updates.CheckingStartupTrust);
             }
@@ -64,10 +64,12 @@ public sealed class SoftwareUpdateWindow : Window
             }
             if(updates.StorageError!=null) {
                 AddText(updates.StorageError,localized:true);
-                AddText(updates.CanRepairState ? "保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。" : "无法确认更新或恢复状态，请保留全部文件并联系支持。");
-                if(updates.CanRepairState) {
-                    var repairActions=new WrapPanel();panel.Children.Add(repairActions);
-                    ActionButton(repairActions,"重建更新设置",()=>{updates.RepairState();return Task.CompletedTask;},"updates.repairState");
+                if(updates.UnavailableReason=="storage") {
+                    AddText(updates.CanRepairState ? "保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。" : "无法确认更新或恢复状态，请保留全部文件并联系支持。");
+                    if(updates.CanRepairState) {
+                        var repairActions=new WrapPanel();panel.Children.Add(repairActions);
+                        ActionButton(repairActions,"重建更新设置",()=>{updates.RepairState();return Task.CompletedTask;},"updates.repairState");
+                    }
                 }
             }
             if(updates.Preferences.StateRepairReceipt!=null) {

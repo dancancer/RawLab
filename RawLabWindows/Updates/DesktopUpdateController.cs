@@ -15,6 +15,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     private CancellationTokenSource? operation;
     private bool automaticDownload;
     private readonly bool recoveryStartup;
+    private bool startupStorageBlocked;
     private byte[]? repairSnapshot;
     private bool repairHealthFailed;
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -28,11 +29,11 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     public bool CheckingStartupTrust { get; private set; }
     public string? StartupTrustError { get; private set; }
     public Func<Task>? RetryStartup { get; set; }
-    public bool BlocksEditing => StorageError != null || PreparingInstallation || RequiresStartupHealthCheck || RequiresRecovery;
+    public bool BlocksEditing => startupStorageBlocked || PreparingInstallation || RequiresStartupHealthCheck || RequiresRecovery;
     public bool Recovering { get; private set; }
     public bool RecoveryNeedsRestart { get; private set; }
     public string? RecoveryError { get; private set; }
-    public string? UnavailableReason => StorageError != null ? "storage" : adapter.UnavailableReason;
+    public string? UnavailableReason => startupStorageBlocked ? "storage" : adapter.UnavailableReason;
     public bool CanCheck => UnavailableReason == null && operation == null && !PreparingInstallation && !RequiresStartupHealthCheck && !RequiresRecovery;
     public bool CanDownload => UnavailableReason == null && State.Phase == UpdatePhase.Available;
     public bool CanCancel => State.Phase is UpdatePhase.Checking or UpdatePhase.Downloading or UpdatePhase.Verifying or
@@ -40,9 +41,9 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     public bool CanChooseInstall => UnavailableReason == null && State.Prepared && !PreparingInstallation;
     public bool RequiresStartupHealthCheck => preferences.StateRepairReceipt != null || State.Phase is UpdatePhase.Installing or UpdatePhase.PendingRestart;
     public bool RequiresRecovery => backup.HasPendingRecovery || Recovering || RecoveryNeedsRestart || repairHealthFailed || State.Failure?.Stage is UpdatePhase.Installing or UpdatePhase.PendingRestart;
-    public bool CanRepairState => StorageError != null && repairSnapshot != null && !RecoveryNeedsRestart;
+    public bool CanRepairState => startupStorageBlocked && StorageError != null && repairSnapshot != null && !RecoveryNeedsRestart;
     public string? StateArchive => preferences.StateRepairReceipt is {} receipt ? store.RepairedStateArchive(receipt) : null;
-    public bool CanRestorePreviousData => recoveryStartup && RequiresRecovery && !Recovering && !RecoveryNeedsRestart && StorageError == null &&
+    public bool CanRestorePreviousData => recoveryStartup && RequiresRecovery && !Recovering && !RecoveryNeedsRestart && !startupStorageBlocked &&
         adapter.UnavailableReason == null && State.PreviousVersion == currentVersion && State.PreviousBuild == currentBuild && State.BackupPath != null;
 
     public DesktopUpdateController(IDesktopUpdateAdapter adapter, UpdateInstallGate gate, UpdateStore store, string currentVersion, string currentBuild,
@@ -51,7 +52,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         this.adapter = adapter; this.gate = gate; this.store = store; this.currentVersion = currentVersion; this.currentBuild = currentBuild;
         this.now = now ?? (() => DateTimeOffset.UtcNow); backup = new(Path.GetDirectoryName(store.DirectoryPath)!, store.DirectoryPath);
         try { preferences = store.Load(automaticCheck); }
-        catch (Exception error) { preferences = new(); StorageError = error.Message; try { repairSnapshot = store.RepairableState(); } catch { } }
+        catch (Exception error) { preferences = new(); StorageError = error.Message; startupStorageBlocked = true; try { repairSnapshot = store.RepairableState(); } catch { } }
         if (StorageError == null && backup.HasPendingRecovery && preferences.RecoveryReceipt is {} receipt)
         {
             try { backup.FinishRecovery(receipt); } catch (Exception error) { RecoveryError = error.Message; }
@@ -71,7 +72,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         if (!CanRepairState || repairSnapshot == null) return;
         try
         {
-            preferences = store.RepairState(repairSnapshot); StorageError = null; repairSnapshot = null; RecoveryNeedsRestart = true;
+            preferences = store.RepairState(repairSnapshot); startupStorageBlocked = false; StorageError = null; repairSnapshot = null; RecoveryNeedsRestart = true;
         }
         catch (Exception error) { StorageError = error.Message; repairSnapshot = null; try { repairSnapshot = store.RepairableState(); } catch { } }
         Notify();
@@ -124,12 +125,12 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         var next = preferences.Copy(); next.PendingUpdate.RestoreAfterLaunch(currentVersion, currentBuild, healthy && backupValid && trusted); Save(next);
     }
     public void SetAutomaticCheck(bool value) {
-        if (StorageError != null || RequiresStartupHealthCheck || RequiresRecovery) return;
+        if (startupStorageBlocked || RequiresStartupHealthCheck || RequiresRecovery) return;
         var next = preferences.Copy(); next.AutomaticCheck = value; Save(next);
     }
     public void SetAutomaticInstall(bool value)
     {
-        if (StorageError != null || RequiresStartupHealthCheck || RequiresRecovery) return;
+        if (startupStorageBlocked || RequiresStartupHealthCheck || RequiresRecovery) return;
         if (value && UnavailableReason != null) return;
         var next = preferences.Copy(); next.AutomaticInstall = value;
         var revoke = !value && (automaticDownload || State.Choice == UpdateInstallChoice.AutomaticOnQuit);
@@ -225,10 +226,12 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         var selected = State.Choice == UpdateInstallChoice.OnQuit || State.Choice == UpdateInstallChoice.AutomaticOnQuit && preferences.AutomaticInstall;
         if (selected) {
             if (await InstallPreparedAsync(false)) return true;
-            if (StorageError != null || RequiresRecovery) return false;
+            if (BlocksEditing) return false;
             operation?.Cancel(); automaticDownload = false;
-            var next = preferences.Copy(); next.PendingUpdate.Cancel(preservingChoice: true);
-            if (!Save(next)) return false;
+            if (StorageError == null) {
+                var next = preferences.Copy(); next.PendingUpdate.Cancel(preservingChoice: true);
+                Save(next);
+            }
         } else Cancel();
         var deadline = DateTime.UtcNow.AddSeconds(30);
         while (operation != null && DateTime.UtcNow < deadline) await Task.Delay(50);
@@ -277,10 +280,10 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     }
     private bool Save(UpdatePreferences next, bool discardObsoleteBackup = true)
     {
-        if (StorageError != null) return false;
+        if (startupStorageBlocked) return false;
         try {
             var obsolete = preferences.PendingUpdate.BackupPath;
-            store.Save(next); preferences = next;
+            store.Save(next); preferences = next; StorageError = null;
             if (discardObsoleteBackup && obsolete != null && obsolete != next.PendingUpdate.BackupPath) { try { backup.Discard(obsolete); } catch { } }
             Notify(); return true;
         }
