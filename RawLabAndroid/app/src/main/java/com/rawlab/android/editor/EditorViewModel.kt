@@ -215,7 +215,6 @@ class EditorViewModel @JvmOverloads constructor(
     val hslTarget = mutableHslTarget.asStateFlow()
     private val hslInteraction = HslTargetInteraction()
     private var hslHistoryActive = false
-    private var applyingHslTarget = false
     private var acceptedHslPreview: Work.Preview? = null
     private var acceptedHslSettings: EditSettings? = null
     private var acceptedHslRevision: HslTargetRevision? = null
@@ -314,7 +313,8 @@ class EditorViewModel @JvmOverloads constructor(
     }
 
     fun setHslTargetEnabled(enabled: Boolean) {
-        cancelHslTarget(); mutableHslTarget.value = mutableHslTarget.value.copy(enabled = enabled)
+        cancelHslTarget()
+        mutableHslTarget.value = mutableHslTarget.value.copy(enabled = enabled && mutable.value.draft?.group == AdjustmentGroup.HSL)
     }
     fun setHslTargetAxis(axis: Int) {
         require(axis in 0..2)
@@ -324,7 +324,7 @@ class EditorViewModel @JvmOverloads constructor(
         cancelHslTarget()
         val current = mutable.value; val target = mutableHslTarget.value
         val preview = acceptedHslPreview; val revision = acceptedHslRevision
-        if (!target.enabled || !current.controlsEnabled || current.rendering || current.previewResizePending || current.error != null || (current.draft != null && current.draft.group != AdjustmentGroup.HSL) ||
+        if (!target.enabled || !current.controlsEnabled || current.rendering || current.previewResizePending || current.error != null || current.draft?.group != AdjustmentGroup.HSL ||
             preview == null || revision == null || revision.source != sourceRevision || current.visibleEdits != acceptedHslSettings ||
             current.photo?.identity != preview.photo.identity || current.photo?.file != preview.photo.file) {
             mutableHslTarget.value = target.copy(notice = HslTargetAvailability.STALE); return
@@ -338,7 +338,7 @@ class EditorViewModel @JvmOverloads constructor(
         val work = value.request
         if (!hslInteraction.matches(work.token)) return
         val current = mutable.value; val target = mutableHslTarget.value
-        if (!target.enabled || target.axis != work.axis || current.visibleEdits != work.before || (current.draft != null && current.draft.group != AdjustmentGroup.HSL) ||
+        if (!target.enabled || target.axis != work.axis || current.visibleEdits != work.before || current.draft?.group != AdjustmentGroup.HSL ||
             sourceRevision != work.revision.source || current.photo?.identity != work.preview.photo.identity) {
             cancelHslTarget(); mutableHslTarget.value = mutableHslTarget.value.copy(notice = HslTargetAvailability.STALE); return
         }
@@ -346,41 +346,40 @@ class EditorViewModel @JvmOverloads constructor(
         mutableHslTarget.value = target.copy(sample = hslInteraction.selection, waiting = false,
             notice = if (next == null) hslInteraction.selection?.availability ?: HslTargetAvailability.STALE else null)
         if (next == null) return
-        applyingHslTarget = true
-        try { edit(current.visibleEdits.withEditingHsl(next), true) } finally { applyingHslTarget = false }
-        hslHistoryActive = mutable.value.draft?.interacting == true || adjustmentHistory.interacting
+        changeHslDraft(current.visibleEdits.withEditingHsl(next), true)
+        hslHistoryActive = mutable.value.draft?.interacting == true
         if (!hslHistoryActive) { clearHslTarget(); mutableHslTarget.value = target.copy(notice = HslTargetAvailability.FAILED); return }
         if (!hslInteraction.dragging) endHslTarget()
     }
     fun moveHslTarget(delta: Float) {
         val next = hslInteraction.move(delta) ?: return
         if (!hslHistoryActive) return
-        applyingHslTarget = true
-        try { edit(mutable.value.visibleEdits.withEditingHsl(next), true) } finally { applyingHslTarget = false }
+        changeHslDraft(mutable.value.visibleEdits.withEditingHsl(next), true)
     }
     fun endHslTarget() {
         hslInteraction.end()
         if (hslHistoryActive) {
-            hslHistoryActive = false; applyingHslTarget = true
-            try { edit(mutable.value.visibleEdits, false) } finally { applyingHslTarget = false }
+            hslHistoryActive = false
+            changeHslDraft(mutable.value.visibleEdits, false)
         }
     }
-    private fun clearHslTarget() {
+    private fun changeHslDraft(edits: EditSettings, interactive: Boolean) {
+        if (mutable.value.draft?.group == AdjustmentGroup.HSL)
+            changeDraft(edits.canonicalZeros().synchronizeHDR(), interactive)
+    }
+    private fun clearHslTarget(disable: Boolean = false) {
         hslInteraction.cancel(); hslHistoryActive = false
-        mutableHslTarget.value = mutableHslTarget.value.copy(x = null, y = null, sample = null, waiting = false, notice = null)
+        mutableHslTarget.value = mutableHslTarget.value.copy(enabled = !disable && mutableHslTarget.value.enabled,
+            x = null, y = null, sample = null, waiting = false, notice = null)
     }
     fun cancelHslTarget() {
         val active = hslHistoryActive
         clearHslTarget()
-        if (active) {
-            if (mutable.value.draft != null) {
-                val draft = mutable.value.draft!!
-                if (draft.interacting && draft.canUndo) {
-                    draftRevision += 1
-                    mutable.value = mutable.value.copy(draft = draft.undo().copy(redoSteps = emptyList()))
-                    renderDraft(false)
-                }
-            } else cancelAdjustmentInteraction()
+        val draft = mutable.value.draft
+        if (active && draft?.group == AdjustmentGroup.HSL && draft.interacting && draft.canUndo) {
+            draftRevision += 1
+            mutable.value = mutable.value.copy(draft = draft.undo().copy(redoSteps = emptyList()))
+            renderDraft(false)
         }
     }
     fun rejectHslTarget() { cancelHslTarget(); mutableHslTarget.value = mutableHslTarget.value.copy(notice = HslTargetAvailability.OUTSIDE) }
@@ -763,7 +762,7 @@ class EditorViewModel @JvmOverloads constructor(
 
     fun edit(requested: EditSettings, interactive: Boolean = false) {
         val edits = requested.canonicalZeros().synchronizeHDR()
-        if (!applyingHslTarget) cancelHslTarget()
+        cancelHslTarget()
         val current = mutable.value
         if (!current.controlsEnabled) return
         if (current.draft != null) { changeDraft(edits, interactive); return }
@@ -800,8 +799,12 @@ class EditorViewModel @JvmOverloads constructor(
 
     fun updatePreviewSize(edge: Int) {
         var current = mutable.value
-        if (disposed || current.photo == null || current.draft != null || edge !in 1..1600 ||
-            (edge == requestedPreviewLongEdge && (edge == previewLongEdge || previewResizeJob != null))) return
+        if (disposed || current.photo == null || edge !in 1..1600) return
+        if (current.draft != null) {
+            if (current.draft?.group == AdjustmentGroup.HSL) cancelHslTarget()
+            return
+        }
+        if (edge == requestedPreviewLongEdge && (edge == previewLongEdge || previewResizeJob != null)) return
         if (cameraHDRPreflightPending) {
             // 视口变化保留最新尺寸，不能用旧 SDR 预览替换尚未完成的 HDR 能力预检。
             requestedPreviewLongEdge = edge
@@ -925,6 +928,7 @@ class EditorViewModel @JvmOverloads constructor(
                 completed(false)
             } else {
                 failedDraftSave = false; draftSaveBaseline = null
+                if (current.draft.group == AdjustmentGroup.HSL) clearHslTarget(disable = true)
                 runCatching { draftStore.clear(photo.identity) }
                 editRevision += 1; draftRevision += 1
                 mutable.value = mutable.value.copy(edits = edits, draft = null, rendering = true, exact = false,
@@ -940,6 +944,7 @@ class EditorViewModel @JvmOverloads constructor(
         if (mutable.value.committingAdjustments) return
         val current = mutable.value
         val draft = current.draft ?: return
+        if (draft.group == AdjustmentGroup.HSL) clearHslTarget(disable = true)
         current.photo?.let { runCatching { draftStore.clear(it.identity) } }
         val saved = draftSaveBaseline.takeIf { failedDraftSave }
         failedDraftSave = false

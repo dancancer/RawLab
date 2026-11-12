@@ -193,7 +193,7 @@ extension RawEditorViewModel {
                         let output=FileManager.default.temporaryDirectory.appendingPathComponent("RawLab-\(UUID().uuidString).\(format.suffix)")
                         defer { try? FileManager.default.removeItem(at:output) }
                         try self.processor.exportHDR(url: sourceURL, settings: hdr, output: output, longEdge: longEdge,
-                            proRAWDecodeVersion: settings.proRAWDecodeVersion, format: hdrFormat,
+                            processing: settings.processing, proRAWDecodeVersion: settings.proRAWDecodeVersion, format: hdrFormat,
                             cancelled: { cancellation.isCancelled })
                         data=try Data(contentsOf:output)
                     } else if sourceKind == .raw {
@@ -273,7 +273,8 @@ extension RawEditorViewModel {
                 do {
                     let lutURL = self.lutURL(for: settings)
                     if let hdr=settings.hdr,settings.isHDREditing {
-                        let pair=try self.processor.processHDR(url:sourceURL,settings:hdr,previewLongEdge:nil,exportLongEdge:longEdge)
+                        let pair=try self.processor.processHDR(url:sourceURL,settings:hdr,previewLongEdge:nil,exportLongEdge:longEdge,
+                            processing:settings.processing)
                         try pair.exportSDR(to:outputURL,format:SONY2FUJI_OUTPUT_DNG)
                     } else if sourceKind == .raw {
                         try self.processor.exportDNG(url: sourceURL, settings: settings, lutURL: lutURL,

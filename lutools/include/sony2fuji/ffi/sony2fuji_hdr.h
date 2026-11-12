@@ -270,16 +270,22 @@ sony2fuji_status sony2fuji_hdr_decode(const char* path, const sony2fuji_hdr_deco
 // Explicit camera RAW development. Probe inspects the header only and does not hash
 // or unpack the file. Decode returns the oriented canvas and the source digest.
 // Pass the base of sony2fuji_hdr_camera_source_info_v1 to also get sensor capabilities.
+// The unversioned probe uses the same Legacy canvas as a default session.
 sony2fuji_status sony2fuji_hdr_probe_camera_raw(const char* path, sony2fuji_hdr_source_info_v1* info,
     sony2fuji_hdr_diagnostic_v1* diagnostic);
+// Probe a saved edit's canvas. Processing versions 1 and 2 retain legacy Sony
+// framing; set the same version on the session before decoding.
+sony2fuji_status sony2fuji_hdr_probe_camera_raw_with_processing(const char* path, sony2fuji_processing_version processing,
+    sony2fuji_hdr_source_info_v1* info, sony2fuji_hdr_diagnostic_v1* diagnostic);
 // Compile only the D65 camera matrices and model identity. The caller owns the
 // blob and releases it with sony2fuji_release_blob.
 sony2fuji_status sony2fuji_compile_hdr_camera_dcp(const void* data, size_t size_bytes,
     sony2fuji_blob* out_blob, sony2fuji_dcp_error* out_reason);
 sony2fuji_status sony2fuji_hdr_probe_camera_profile(const char* path, sony2fuji_hdr_camera_profile_info_v1* info,
     sony2fuji_hdr_diagnostic_v1* diagnostic);
-// PREVIEW requires a positive long edge. An optional session supplies cancellation
-// and the GPU policy. Release the result with sony2fuji_hdr_release_pair.
+// PREVIEW requires a positive long edge. A session supplies the processing version,
+// cancellation and GPU policy. A null session uses Legacy framing for both decode
+// functions below. Release the result with sony2fuji_hdr_release_pair.
 sony2fuji_status sony2fuji_hdr_decode_camera_raw(sony2fuji_session* session, const char* path,
     const sony2fuji_hdr_decode_options_v1* options, sony2fuji_hdr_image_pair_v1* result,
     sony2fuji_hdr_diagnostic_v1* diagnostic);

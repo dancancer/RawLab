@@ -1,6 +1,5 @@
 package com.rawlab.android.camera
 
-import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
@@ -292,7 +291,7 @@ internal class SonyCameraConnection(
         main.post {
             beginOperation()
             if (!isSupported()) return@post fail(Failure.UNSUPPORTED)
-            if (!hasPermissions(forWifi = true)) return@post fail(Failure.PERMISSION)
+            if (!hasPermissions(cameraWifiPermissions(Build.VERSION.SDK_INT))) return@post fail(Failure.PERMISSION)
             if (location?.isLocationEnabled != true) return@post fail(Failure.LOCATION_OFF)
             val manager = connectivity ?: return@post fail(Failure.WIFI)
             val current = generation
@@ -372,14 +371,15 @@ internal class SonyCameraConnection(
     private fun scanOnMain() {
         beginOperation()
         if (!isSupported()) return fail(Failure.UNSUPPORTED)
-        if (!hasPermissions(forWifi = false)) return fail(Failure.PERMISSION)
+        if (!hasPermissions(cameraBluetoothPermissions(Build.VERSION.SDK_INT))) return fail(Failure.PERMISSION)
         val bluetooth = adapter ?: return fail(Failure.UNSUPPORTED)
         val bluetoothEnabled = try { bluetooth.isEnabled } catch (_: SecurityException) {
             fail(Failure.PERMISSION)
             return
         }
         if (!bluetoothEnabled) return fail(Failure.BLUETOOTH_OFF)
-        if (location?.isLocationEnabled != true) return fail(Failure.LOCATION_OFF)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && location?.isLocationEnabled != true)
+            return fail(Failure.LOCATION_OFF)
 
         devices.clear()
         deviceNames.clear()
@@ -408,7 +408,8 @@ internal class SonyCameraConnection(
     private fun connectOnMain(id: String) {
         beginOperation()
         if (!isSupported()) return fail(Failure.UNSUPPORTED)
-        if (!hasPermissions(forWifi = true)) return fail(Failure.PERMISSION)
+        val sdk = Build.VERSION.SDK_INT
+        if (!hasPermissions(cameraBluetoothPermissions(sdk) + cameraWifiPermissions(sdk))) return fail(Failure.PERMISSION)
         val bluetooth = adapter ?: return fail(Failure.UNSUPPORTED)
         val bluetoothEnabled = try { bluetooth.isEnabled } catch (_: SecurityException) {
             fail(Failure.PERMISSION)
@@ -455,23 +456,8 @@ internal class SonyCameraConnection(
 
     private fun isSupported(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
 
-    private fun hasPermissions(forWifi: Boolean): Boolean {
-        fun granted(permission: String): Boolean =
-            appContext.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (!granted(Manifest.permission.BLUETOOTH_SCAN) || !granted(Manifest.permission.BLUETOOTH_CONNECT)) return false
-        } else if (!granted(Manifest.permission.ACCESS_FINE_LOCATION)) {
-            return false
-        }
-        if (forWifi) {
-            if (!granted(Manifest.permission.ACCESS_FINE_LOCATION)) return false
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                if (!granted(Manifest.permission.NEARBY_WIFI_DEVICES)) return false
-            }
-        }
-        return true
-    }
+    private fun hasPermissions(permissions: List<String>): Boolean =
+        permissions.all { appContext.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
 
     private fun handleScanResult(current: Long, result: ScanResult) {
         if (current != generation || !active || !scanning) return

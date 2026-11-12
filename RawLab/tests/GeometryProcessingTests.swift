@@ -19,7 +19,18 @@ struct GeometryProcessingTests {
             (0..<bytes).reduce(0) { $0 | (Int(data[offset + $1]) << ($1 * 8)) }
         }
         check(data.prefix(4) == Data([0x49, 0x49, 0x2a, 0]), "rendered DNG uses classic little-endian TIFF")
-        let directory = number(4, bytes: 4)
+        let rootDirectory = number(4, bytes: 4)
+        let subIFDEntry = (0..<number(rootDirectory, bytes: 2))
+            .map { rootDirectory + 2 + $0 * 12 }
+            .first { number($0, bytes: 2) == 330 }
+        check(subIFDEntry != nil, "DNG contains the main image SubIFD")
+        let entry = subIFDEntry!
+        let subIFDType = number(entry + 2, bytes: 2)
+        let subIFDCount = number(entry + 4, bytes: 4)
+        check((subIFDType == 4 || subIFDType == 13) && subIFDCount > 0,
+              "DNG SubIFD offsets use TIFF LONG or IFD")
+        let offsets = number(entry + 8, bytes: 4)
+        let directory = subIFDCount == 1 ? offsets : number(offsets, bytes: 4)
         var dimensions: [Int: Int] = [:]
         for index in 0..<number(directory, bytes: 2) {
             let entry = directory + 2 + index * 12
@@ -31,7 +42,7 @@ struct GeometryProcessingTests {
                 dimensions[tag] = number(entry + 8, bytes: type == 3 ? 2 : 4)
             }
         }
-        return CGSize(width: dimensions[256] ?? 0, height: dimensions[257] ?? 0)
+        return CGSize(width: CGFloat(dimensions[256] ?? 0), height: CGFloat(dimensions[257] ?? 0))
     }
 
     static func writeOrientedRaster(to url: URL) throws {
@@ -268,6 +279,11 @@ struct GeometryProcessingTests {
         check(geometryPreview.width == geometryFinal.width && geometryPreview.height == geometryFinal.height &&
               geometryPreview.data == geometryFinal.data,
               "iOS geometry preview and FINAL export share exact geometry")
+        let geometryFullDNG = output.appendingPathComponent("geometry-full-size.dng")
+        try processor.exportDNG(buffer: source, settings: geometry, lutURL: nil, outputURL: geometryFullDNG)
+        let geometryDNGSize = try tiffDimensions(Data(contentsOf: geometryFullDNG))
+        check(geometryDNGSize == CGSize(width: CGFloat(geometryFinal.width), height: CGFloat(geometryFinal.height)),
+              "iOS DNG geometry dimensions come from the full-sized main image")
         let geometryLimited = try cpuProcessor.processBuffer(buffer: source, settings: geometry,
                                                               previewLongEdge: nil, lutURL: nil, exportLongEdge: 48)
         check(geometryLimited.nativeSize == CGSize(width: 192, height: 128),
@@ -286,7 +302,7 @@ struct GeometryProcessingTests {
         let dng = output.appendingPathComponent("geometry.dng")
         try processor.exportDNG(buffer: source, settings: geometry, lutURL: nil,
                                 outputURL: dng, exportLongEdge: 48)
-        // ImageIO on this simulator does not expose dimensions for float32 linear DNG.
+        // ImageIO may not expose dimensions for very small linear DNG images.
         let dngSize = try tiffDimensions(Data(contentsOf: dng))
         check(dngSize == CGSize(width: 48, height: 32),
               "iOS DNG stores the cropped geometry and final size cap")

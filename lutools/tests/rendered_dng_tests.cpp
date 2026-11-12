@@ -2,12 +2,14 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #ifdef TEST_LENS_WAVELET_DNG
 #include "core/wavelet_cache.h"
+#endif
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_STATIC
 #define STBI_ONLY_JPEG
+#ifdef TEST_LENS_WAVELET_DNG
 #define STBI_ONLY_PNG
-#include "core/stb_image.h"
 #endif
+#include "core/stb_image.h"
 
 #include <tiffio.h>
 
@@ -73,6 +75,15 @@ void registerCustomFieldsBeforeRead(TIFF* tif) {
                        static_cast<uint32_t>(std::size(kCustomFields)));
 }
 
+bool selectRawIfd(TIFF* tif) {
+    uint16_t count = 0;
+    uint64_t* offsets = nullptr;
+    if (!tif || !TIFFGetField(tif, TIFFTAG_SUBIFD, &count, &offsets) || count < 1 || !offsets)
+        return false;
+    const uint64_t rawOffset = offsets[0];
+    return TIFFSetSubDirectory(tif, rawOffset) != 0;
+}
+
 float inverseSrgb(float encoded) {
     const double value = std::clamp(static_cast<double>(encoded), 0.0, 1.0);
     return static_cast<float>(value <= 0.04045
@@ -133,6 +144,207 @@ sony2fuji::ImageData smallImage() {
     return image;
 }
 
+bool jpegPreviewMatches(TIFF* tif, uint32_t expectedWidth, uint32_t expectedHeight) {
+    uint32_t width = 0, height = 0;
+    uint16_t compression = 0, photometric = 0;
+    if (!TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &width) || width != expectedWidth ||
+        !TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &height) || height != expectedHeight ||
+        !TIFFGetField(tif, TIFFTAG_COMPRESSION, &compression) || compression != COMPRESSION_JPEG ||
+        !TIFFGetField(tif, TIFFTAG_PHOTOMETRIC, &photometric) || photometric != PHOTOMETRIC_YCBCR ||
+        TIFFNumberOfStrips(tif) != 1) return false;
+
+    const uint64_t size = TIFFRawStripSize64(tif, 0);
+    if (!size || size > static_cast<uint64_t>(std::numeric_limits<int>::max())) return false;
+    std::vector<uint8_t> bytes(static_cast<size_t>(size));
+    if (TIFFReadRawStrip(tif, 0, bytes.data(), static_cast<tmsize_t>(size)) != static_cast<tmsize_t>(size))
+        return false;
+    int decodedWidth = 0, decodedHeight = 0, channels = 0;
+    std::unique_ptr<stbi_uc, decltype(&stbi_image_free)> pixels(
+        stbi_load_from_memory(bytes.data(), static_cast<int>(size), &decodedWidth, &decodedHeight, &channels, 3),
+        stbi_image_free);
+    if (!pixels || decodedWidth != static_cast<int>(width) || decodedHeight != static_cast<int>(height)) return false;
+
+    constexpr uint8_t expected[2][4][3] = {
+        {{255, 0, 0}, {0, 255, 0}, {0, 0, 255}, {192, 192, 192}},
+        {{0, 255, 255}, {255, 0, 255}, {255, 255, 0}, {64, 64, 64}},
+    };
+    for (uint32_t y = 0; y < 2; ++y) {
+        for (uint32_t x = 0; x < 4; ++x) {
+            const size_t offset = (static_cast<size_t>((2 * y + 1) * height / 4) * width +
+                                   (2 * x + 1) * width / 8) * 3;
+            for (size_t channel = 0; channel < 3; ++channel) {
+                if (std::abs(static_cast<int>(pixels.get()[offset + channel]) - expected[y][x][channel]) > 8)
+                    return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool jpegPreviewHasReferenceBlackWhite(TIFF* tif) {
+    const float* values = nullptr;
+    constexpr std::array<float, 6> expected = {0, 255, 128, 255, 128, 255};
+    return TIFFGetField(tif, TIFFTAG_REFERENCEBLACKWHITE, &values) && values &&
+        std::equal(expected.begin(), expected.end(), values);
+}
+
+void testJpegPreviews(const std::filesystem::path& directory) {
+    constexpr int width = 320, height = 160;
+    constexpr uint8_t colors[2][4][3] = {
+        {{255, 0, 0}, {0, 255, 0}, {0, 0, 255}, {192, 192, 192}},
+        {{0, 255, 255}, {255, 0, 255}, {255, 255, 0}, {64, 64, 64}},
+    };
+    sony2fuji::ImageData image(width, height);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            const auto& color = colors[y * 2 / height][x * 4 / width];
+            image.at(x, y) = sony2fuji::RGB(color[0] / 255.0f, color[1] / 255.0f, color[2] / 255.0f);
+        }
+    }
+    const auto output = directory / "jpeg-previews.dng";
+    if (sony2fuji::saveRenderedDNG(image, output.string()) != sony2fuji::ErrorCode::Success) {
+        check(false, "DNG with JPEG previews writes successfully");
+        return;
+    }
+    TIFF* tif = TIFFOpen(output.string().c_str(), "r");
+    if (!tif) {
+        check(false, "DNG with JPEG previews opens independently");
+        return;
+    }
+    check(jpegPreviewMatches(tif, 160, 80), "DNG thumbnail is a correctly oriented sRGB JPEG");
+    check(jpegPreviewHasReferenceBlackWhite(tif), "DNG thumbnail explicitly stores full-range YCbCr reference values");
+    uint16_t count = 0;
+    uint64_t* offsets = nullptr;
+    const bool hasChildren = TIFFGetField(tif, TIFFTAG_SUBIFD, &count, &offsets) && count == 2 && offsets;
+    check(hasChildren, "DNG contains the 16-bit image and a full-size preview");
+    if (hasChildren) {
+        const uint64_t rawOffset = offsets[0], previewOffset = offsets[1];
+        uint16_t bits = 0, sampleFormat = 0, photometric = 0;
+        uint32_t rawWidth = 0, rawHeight = 0;
+        const bool raw = TIFFSetSubDirectory(tif, rawOffset) &&
+            TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &rawWidth) && rawWidth == width &&
+            TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &rawHeight) && rawHeight == height &&
+            TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE, &bits) && bits == 16 &&
+            TIFFGetField(tif, TIFFTAG_SAMPLEFORMAT, &sampleFormat) && sampleFormat == SAMPLEFORMAT_UINT &&
+            TIFFGetField(tif, TIFFTAG_PHOTOMETRIC, &photometric) && photometric == kLinearRaw;
+        check(raw, "DNG keeps the full-resolution 16-bit LinearRaw image");
+        const bool selectedPreview = TIFFSetSubDirectory(tif, previewOffset);
+        check(selectedPreview && jpegPreviewMatches(tif, width, height),
+              "DNG full-size preview is a correctly oriented sRGB JPEG");
+        check(selectedPreview && jpegPreviewHasReferenceBlackWhite(tif),
+              "DNG full-size preview explicitly stores full-range YCbCr reference values");
+    }
+    TIFFClose(tif);
+}
+
+void testFilteredThumbnail(const std::filesystem::path& directory) {
+    for (const int width : {320, 321}) {
+        const int height = width == 320 ? 160 : 161;
+        sony2fuji::ImageData image(width, height);
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                const float value = (x + y) % 2 ? 1.0f : 0.0f;
+                image.at(x, y) = sony2fuji::RGB(value, value, value);
+            }
+        }
+        const auto output = directory / ("filtered-thumbnail-" + std::to_string(width) + ".dng");
+        TIFF* tif = nullptr;
+        if (sony2fuji::saveRenderedDNG(image, output.string()) == sony2fuji::ErrorCode::Success)
+            tif = TIFFOpen(output.string().c_str(), "r");
+        bool previewValid = tif != nullptr;
+        if (previewValid) {
+            const uint64_t size = TIFFRawStripSize64(tif, 0);
+            previewValid = size > 0 && size <= static_cast<uint64_t>(std::numeric_limits<int>::max());
+            std::vector<uint8_t> bytes(previewValid ? static_cast<size_t>(size) : 0);
+            if (previewValid)
+                previewValid = TIFFReadRawStrip(tif, 0, bytes.data(), static_cast<tmsize_t>(size)) ==
+                    static_cast<tmsize_t>(size);
+            int decodedWidth = 0, decodedHeight = 0, channels = 0;
+            std::unique_ptr<stbi_uc, decltype(&stbi_image_free)> pixels(
+                previewValid ? stbi_load_from_memory(bytes.data(), static_cast<int>(size),
+                    &decodedWidth, &decodedHeight, &channels, 3) : nullptr, stbi_image_free);
+            previewValid = pixels && decodedWidth == 160 && decodedHeight == 80;
+            for (int y = 0; previewValid && y < decodedHeight; ++y)
+                for (int x = 0; previewValid && x < decodedWidth; ++x)
+                    for (int c = 0; c < 3; ++c) {
+                        const int value = pixels.get()[(static_cast<size_t>(y) * decodedWidth + x) * 3 + c];
+                        if (value < 120 || value > 135) previewValid = false;
+                    }
+        }
+        check(previewValid, "DNG thumbnail averages fine checkerboard texture " + std::to_string(width));
+        bool rawValid = tif && selectRawIfd(tif);
+        if (rawValid) {
+            std::vector<uint16_t> row(static_cast<size_t>(width) * 3);
+            rawValid = TIFFReadScanline(tif, row.data(), 0, 0) >= 0 &&
+                row[0] == 0 && row[1] == 0 && row[2] == 0 &&
+                row[3] == 65535 && row[4] == 65535 && row[5] == 65535;
+        }
+        check(rawValid, "DNG thumbnail filtering preserves 16-bit main pixels " + std::to_string(width));
+        if (tif) TIFFClose(tif);
+    }
+}
+
+void testLargeJpegPreview(const std::filesystem::path& directory) {
+    constexpr int width = 512, height = 256;
+    sony2fuji::ImageData image(width, height);
+    uint32_t random = 12345;
+    auto next = [&random]() {
+        random = random * 1664525u + 1013904223u;
+        return static_cast<float>(random >> 24) / 255.0f;
+    };
+    for (auto& pixel : image.pixels) pixel = sony2fuji::RGB(next(), next(), next());
+    const auto output = directory / "large-jpeg-preview.dng";
+    TIFF* tif = nullptr;
+    if (sony2fuji::saveRenderedDNG(image, output.string()) == sony2fuji::ErrorCode::Success)
+        tif = TIFFOpen(output.string().c_str(), "r");
+    uint16_t count = 0;
+    uint64_t* offsets = nullptr;
+    bool valid = tif && TIFFGetField(tif, TIFFTAG_SUBIFD, &count, &offsets) && count == 2 && offsets;
+    if (valid) {
+        const uint64_t previewOffset = offsets[1];
+        valid = TIFFSetSubDirectory(tif, previewOffset);
+    }
+    const uint64_t size = valid ? TIFFRawStripSize64(tif, 0) : 0;
+    valid = valid && size > 65536 && size <= static_cast<uint64_t>(std::numeric_limits<int>::max());
+    if (valid) {
+        std::vector<uint8_t> bytes(static_cast<size_t>(size));
+        valid = TIFFReadRawStrip(tif, 0, bytes.data(), static_cast<tmsize_t>(size)) == static_cast<tmsize_t>(size);
+        int decodedWidth = 0, decodedHeight = 0, channels = 0;
+        std::unique_ptr<stbi_uc, decltype(&stbi_image_free)> pixels(
+            valid ? stbi_load_from_memory(bytes.data(), static_cast<int>(size), &decodedWidth, &decodedHeight,
+                                          &channels, 3) : nullptr, stbi_image_free);
+        valid = pixels && decodedWidth == width && decodedHeight == height;
+    }
+    check(valid, "DNG full-size JPEG remains decodable when it spans multiple output chunks");
+    if (tif) TIFFClose(tif);
+}
+
+void testOversizedJpegPreview(const std::filesystem::path& directory) {
+    // JPEG's longest dimension is limited to 65500, while LinearRaw can be wider.
+    constexpr uint32_t width = 65501, height = 2;
+    sony2fuji::ImageData image(width, height);
+    for (auto& pixel : image.pixels) pixel = sony2fuji::RGB(0.1f, 0.2f, 0.3f);
+    const auto output = directory / "wide-jpeg-preview.dng";
+    TIFF* tif = nullptr;
+    if (sony2fuji::saveRenderedDNG(image, output.string()) == sony2fuji::ErrorCode::Success)
+        tif = TIFFOpen(output.string().c_str(), "r");
+    uint16_t count = 0;
+    uint64_t* offsets = nullptr;
+    bool valid = tif && TIFFGetField(tif, TIFFTAG_SUBIFD, &count, &offsets) && count == 2 && offsets;
+    if (valid) {
+        const uint64_t rawOffset = offsets[0], previewOffset = offsets[1];
+        uint32_t rawWidth = 0, rawHeight = 0, previewWidth = 0, previewHeight = 0;
+        valid = TIFFSetSubDirectory(tif, rawOffset) &&
+            TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &rawWidth) && rawWidth == width &&
+            TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &rawHeight) && rawHeight == height &&
+            TIFFSetSubDirectory(tif, previewOffset) &&
+            TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &previewWidth) && previewWidth == 65500 &&
+            TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &previewHeight) && previewHeight == 1;
+    }
+    check(valid, "DNG limits an oversized JPEG preview without reducing the LinearRaw image");
+    if (tif) TIFFClose(tif);
+}
+
 void testRenderedDng(const std::filesystem::path& directory) {
     using sony2fuji::ErrorCode;
     using sony2fuji::ImageData;
@@ -160,29 +372,9 @@ void testRenderedDng(const std::filesystem::path& directory) {
     check(TIFFFindField(tif, TIFFTAG_COLORIMETRICREFERENCE, TIFF_ANY) != nullptr,
           "libtiff registers DNG 1.2/1.4 fields independently");
 
-    uint32_t width = 0, height = 0;
-    uint16_t bits = 0, samples = 0, photometric = 0, orientation = 0;
-    uint16_t planar = 0, sampleFormat = 0;
-    check(TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &width) && width == 4,
-          "DNG width is exact");
-    check(TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &height) && height == 2,
-          "DNG height is exact");
-    check(TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE, &bits) && bits == 32,
-          "DNG stores float32 samples");
-    check(TIFFGetField(tif, TIFFTAG_SAMPLESPERPIXEL, &samples) && samples == 3,
-          "DNG stores three channels");
-    check(TIFFGetField(tif, TIFFTAG_PHOTOMETRIC, &photometric) && photometric == kLinearRaw,
-          "DNG uses LinearRaw photometric interpretation");
+    uint16_t orientation = 0;
     check(TIFFGetField(tif, TIFFTAG_ORIENTATION, &orientation) && orientation == ORIENTATION_TOPLEFT,
           "DNG orientation is top-left");
-    check(TIFFGetField(tif, TIFFTAG_PLANARCONFIG, &planar) && planar == PLANARCONFIG_CONTIG,
-          "DNG stores contiguous RGB samples");
-    check(TIFFGetField(tif, TIFFTAG_SAMPLEFORMAT, &sampleFormat) && sampleFormat == SAMPLEFORMAT_IEEEFP,
-          "DNG sample format is IEEE floating point");
-    uint16_t extraCount = 0;
-    uint16_t* extraTypes = nullptr;
-    check(!TIFFGetField(tif, TIFFTAG_EXTRASAMPLES, &extraCount, &extraTypes),
-          "DNG has no ExtraSamples tag");
 
     uint16_t colorimetricReference = 0;
     check(TIFFGetField(tif, TIFFTAG_COLORIMETRICREFERENCE, &colorimetricReference) &&
@@ -216,8 +408,40 @@ void testRenderedDng(const std::filesystem::path& directory) {
               "crs:Sharpness=\"0\"") != std::string::npos,
           "DNG contains neutral Adobe XMP");
 
-    bool pixelsMatch = true;
-    std::vector<float> row(static_cast<size_t>(width) * 3);
+    if (!selectRawIfd(tif)) {
+        check(false, "DNG contains a LinearRaw image directory");
+        TIFFClose(tif);
+        return;
+    }
+    uint32_t width = 0, height = 0;
+    uint16_t bits = 0, samples = 0, photometric = 0, planar = 0, sampleFormat = 0;
+    check(TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &width) && width == 4,
+          "DNG width is exact");
+    check(TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &height) && height == 2,
+          "DNG height is exact");
+    check(TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE, &bits) && bits == 16,
+          "DNG stores 16-bit samples");
+    check(TIFFGetField(tif, TIFFTAG_SAMPLESPERPIXEL, &samples) && samples == 3,
+          "DNG stores three channels");
+    check(TIFFGetField(tif, TIFFTAG_PHOTOMETRIC, &photometric) && photometric == kLinearRaw,
+          "DNG uses LinearRaw photometric interpretation");
+    check(TIFFGetField(tif, TIFFTAG_PLANARCONFIG, &planar) && planar == PLANARCONFIG_CONTIG,
+          "DNG stores contiguous RGB samples");
+    check(TIFFGetField(tif, TIFFTAG_SAMPLEFORMAT, &sampleFormat) && sampleFormat == SAMPLEFORMAT_UINT,
+          "DNG sample format is unsigned integer");
+    uint16_t whiteLevelCount = 0;
+    const uint32_t* whiteLevel = nullptr;
+    check(TIFFGetField(tif, TIFFTAG_WHITELEVEL, &whiteLevelCount, &whiteLevel) &&
+          whiteLevelCount == 3 && whiteLevel && whiteLevel[0] == 65535 &&
+          whiteLevel[1] == 65535 && whiteLevel[2] == 65535,
+          "DNG white level spans the 16-bit sample range");
+    uint16_t extraCount = 0;
+    uint16_t* extraTypes = nullptr;
+    check(!TIFFGetField(tif, TIFFTAG_EXTRASAMPLES, &extraCount, &extraTypes),
+          "DNG has no ExtraSamples tag");
+
+    bool pixelsMatch = bits == 16 && sampleFormat == SAMPLEFORMAT_UINT;
+    std::vector<uint16_t> row(static_cast<size_t>(width) * 3);
     for (uint32_t y = 0; y < height && pixelsMatch; ++y) {
         if (TIFFReadScanline(tif, row.data(), y, 0) < 0) {
             pixelsMatch = false;
@@ -226,14 +450,43 @@ void testRenderedDng(const std::filesystem::path& directory) {
         for (uint32_t x = 0; x < width; ++x) {
             const auto& source = original.at(static_cast<int>(x), static_cast<int>(y));
             const size_t offset = static_cast<size_t>(x) * 3;
-            pixelsMatch = std::abs(row[offset] - inverseSrgb(source.r)) < 1e-6f &&
-                std::abs(row[offset + 1] - inverseSrgb(source.g)) < 1e-6f &&
-                std::abs(row[offset + 2] - inverseSrgb(source.b)) < 1e-6f;
+            constexpr double maxQuantizationError = 0.5 / 65535.0 + 1e-7;
+            pixelsMatch = std::abs(row[offset] / 65535.0 - inverseSrgb(source.r)) <= maxQuantizationError &&
+                std::abs(row[offset + 1] / 65535.0 - inverseSrgb(source.g)) <= maxQuantizationError &&
+                std::abs(row[offset + 2] / 65535.0 - inverseSrgb(source.b)) <= maxQuantizationError;
             if (!pixelsMatch) break;
         }
     }
-    check(pixelsMatch, "DNG float pixels inverse-decode clamped sRGB exactly");
+    check(pixelsMatch, "DNG pixels preserve clamped linear-sRGB within half a 16-bit step");
     TIFFClose(tif);
+}
+
+void testQuantizationRamp(const std::filesystem::path& directory) {
+    constexpr int width = 1024;
+    sony2fuji::ImageData image(width, 1);
+    for (int x = 0; x < width; ++x) {
+        const float value = static_cast<float>(x) / (width - 1);
+        image.at(x, 0) = sony2fuji::RGB(value, value, value);
+    }
+    const auto output = directory / "ramp.dng";
+    if (sony2fuji::saveRenderedDNG(image, output.string()) != sony2fuji::ErrorCode::Success) {
+        check(false, "DNG writes a tonal ramp");
+        return;
+    }
+    TIFF* tif = TIFFOpen(output.string().c_str(), "r");
+    uint16_t bits = 0, format = 0;
+    bool valid = selectRawIfd(tif) && TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE, &bits) && bits == 16 &&
+        TIFFGetField(tif, TIFFTAG_SAMPLEFORMAT, &format) && format == SAMPLEFORMAT_UINT;
+    std::vector<uint16_t> row(width * 3);
+    if (valid) valid = TIFFReadScanline(tif, row.data(), 0, 0) >= 0;
+    constexpr double maxQuantizationError = 0.5 / 65535.0 + 1e-7;
+    for (int x = 0; x < width && valid; ++x) {
+        const auto value = row[static_cast<size_t>(x) * 3];
+        valid = std::abs(value / 65535.0 - inverseSrgb(image.at(x, 0).r)) <= maxQuantizationError &&
+            (x == 0 || value >= row[static_cast<size_t>(x - 1) * 3]);
+    }
+    check(valid, "DNG tonal ramp stays monotonic and within half a 16-bit linear step");
+    if (tif) TIFFClose(tif);
 }
 
 void testRejectsInvalidInput(const std::filesystem::path& directory) {
@@ -301,22 +554,21 @@ void testLensSdkDng(const std::filesystem::path& directory) {
         TIFF* tif = TIFFOpen(output.c_str(), "r");
         uint32_t width = 0, height = 0;
         uint16_t bits = 0, samples = 0, format = 0;
-        valid = tif && valid;
+        valid = selectRawIfd(tif) && valid;
         if (tif) {
             valid = TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &width) && width == buffer.width &&
                 TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &height) && height == buffer.height &&
-                TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE, &bits) && bits == 32 &&
+                TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE, &bits) && bits == 16 &&
                 TIFFGetField(tif, TIFFTAG_SAMPLESPERPIXEL, &samples) && samples == 3 &&
-                TIFFGetField(tif, TIFFTAG_SAMPLEFORMAT, &format) && format == SAMPLEFORMAT_IEEEFP && valid;
-            std::vector<float> row(static_cast<size_t>(width) * 3);
+                TIFFGetField(tif, TIFFTAG_SAMPLEFORMAT, &format) && format == SAMPLEFORMAT_UINT && valid;
+            std::vector<uint16_t> row(static_cast<size_t>(width) * 3);
             double maximumError = 0;
             for (uint32_t y = 0; y < height && valid; ++y) {
                 valid = TIFFReadScanline(tif, row.data(), y, 0) >= 0;
                 if (!valid) break;
                 const auto* expected = static_cast<const uint8_t*>(buffer.data) + y * buffer.stride_bytes;
                 for (size_t x = 0; x < row.size(); ++x) {
-                    const double linear = row[x];
-                    if (!std::isfinite(linear) || linear < 0 || linear > 1) { valid = false; break; }
+                    const double linear = row[x] / 65535.0;
                     const double encoded = linear <= .0031308 ? 12.92 * linear : 1.055 * std::pow(linear, 1.0 / 2.4) - .055;
                     maximumError = std::max(maximumError, std::abs(encoded * 255 - expected[x]));
                 }
@@ -526,25 +778,24 @@ void testLensWaveletViewportDng(const std::filesystem::path& directory, const st
     stbi_image_free(jpeg);
     TIFF* tif = TIFFOpen((directory / "history.dng").string().c_str(), "r");
     uint32_t dngWidth = 0, dngHeight = 0; uint16_t bits = 0, samples = 0, sampleFormat = 0;
-    bool validDng = tif && TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &dngWidth) && TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &dngHeight) &&
-        TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE, &bits) && bits == 32 && dngWidth == nativeWidth && dngHeight == nativeHeight &&
+    bool validDng = selectRawIfd(tif) && TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &dngWidth) && TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &dngHeight) &&
+        TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE, &bits) && bits == 16 && dngWidth == nativeWidth && dngHeight == nativeHeight &&
         TIFFGetField(tif, TIFFTAG_SAMPLESPERPIXEL, &samples) && samples == 3 &&
-        TIFFGetField(tif, TIFFTAG_SAMPLEFORMAT, &sampleFormat) && sampleFormat == SAMPLEFORMAT_IEEEFP;
+        TIFFGetField(tif, TIFFTAG_SAMPLEFORMAT, &sampleFormat) && sampleFormat == SAMPLEFORMAT_UINT;
     double dngError = 0;
     if (validDng) {
-        std::vector<float> row(static_cast<size_t>(dngWidth) * 3);
+        std::vector<uint16_t> row(static_cast<size_t>(dngWidth) * 3);
         for (uint32_t y = 0; y < dngHeight && validDng; ++y) {
             validDng = TIFFReadScanline(tif, row.data(), y, 0) >= 0;
             if (!validDng) break;
             for (size_t x = 0; x < row.size(); ++x) {
-                const double linear = row[x];
-                if (!std::isfinite(linear) || linear < 0 || linear > 1) { validDng = false; break; }
+                const double linear = row[x] / 65535.0;
                 const double encoded = linear <= .0031308 ? 12.92 * linear : 1.055 * std::pow(linear, 1.0 / 2.4) - .055;
                 dngError = std::max(dngError, std::abs(encoded * 255 - exact[static_cast<size_t>(y) * row.size() + x]));
             }
         }
     }
-    check(validDng && dngError <= 1, "Combined native float32 DNG pixels match independent exact");
+    check(validDng && dngError <= 1, "Combined native 16-bit DNG pixels match independent exact");
     if (tif) TIFFClose(tif);
     std::cout << "Combined PNG/DNG maximum RGB8 error=" << pngError << "/" << dngError << '\n';
     if (std::getenv("SONY2FUJI_TEST_GPU")) {
@@ -652,7 +903,12 @@ int main(int argc, char** argv) {
         return failures == 0 ? 0 : 1;
     }
 #endif
+    testJpegPreviews(directory);
+    testFilteredThumbnail(directory);
+    testLargeJpegPreview(directory);
+    testOversizedJpegPreview(directory);
     testRenderedDng(directory);
+    testQuantizationRamp(directory);
     testRejectsInvalidInput(directory);
 #ifdef TEST_LENS_SDK_DNG
     testLensSdkDng(directory);

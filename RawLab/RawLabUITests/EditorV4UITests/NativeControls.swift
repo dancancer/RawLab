@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 
 extension EditorV4UITests {
@@ -1082,21 +1083,21 @@ extension EditorV4UITests {
         app.buttons["camera.help"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["camera.help.page"].waitForExistence(timeout: 5))
         capture("native-camera-help", in: app)
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        tapCameraBack(in: app)
         XCTAssertTrue(app.buttons["camera.manual"].waitForExistence(timeout: 5))
         app.buttons["camera.manual"].tap()
         XCTAssertTrue(app.textFields["camera.wifi.ssid"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["camera.wifi.join"].isEnabled)
         XCTAssertTrue(app.buttons["camera.wifi.continue"].isHittable)
         capture("native-camera-manual-wifi", in: app)
-        app.navigationBars.buttons.element(boundBy: 0).tap()
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        tapCameraBack(in: app)
+        tapCameraBack(in: app)
         XCTAssertTrue(app.buttons["camera.entry.tether"].waitForExistence(timeout: 5))
         app.buttons["camera.entry.tether"].tap()
         XCTAssertTrue(app.switches["camera.card.confirm"].waitForExistence(timeout: 5))
         app.switches["camera.card.confirm"].tap()
         app.buttons["camera.help"].tap()
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        tapCameraBack(in: app)
         XCTAssertEqual(app.switches["camera.card.confirm"].value as? String, "1", "Help returns to the same tether setup")
         capture("native-camera-tether-connect", in: app)
     }
@@ -1186,5 +1187,280 @@ extension EditorV4UITests {
         waitUntil(timeout: 30) { app.frame.contains(app.buttons["editor.draft.apply"].frame) && app.buttons["editor.draft.apply"].isEnabled }
         XCTAssertTrue(app.frame.contains(app.buttons["editor.draft.apply"].frame))
         capture("fidelity-hsl", in: app)
+    }
+}
+
+extension EditorV4UITests {
+    func testSonyIncrementalImportRequiresReselectionAfterInterruptedJPEG() throws {
+        guard ProcessInfo.processInfo.environment["RAWLAB_SONY_INCREMENTAL_UI"] == "1" else {
+            throw XCTSkip("Run with the synthetic Sony PTP/IP responder and RAWLAB_SONY_INCREMENTAL_UI=1")
+        }
+        let app = XCUIApplication()
+        launchSonyIncremental(in: app)
+        configureCameraJPEG(in: app)
+        capture("camera-incremental-before-start", in: app)
+
+        let start = app.buttons["camera.incremental.start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(start.isEnabled, app.debugDescription)
+        start.tap()
+
+        // The fixture closes the command channel exactly once while serving the
+        // JPEG. The saved counter proves the ARW completed before that failure.
+        let reconnectAction = app.buttons["camera.incremental.reconnect"]
+        XCTAssertTrue(reconnectAction.waitForExistence(timeout: 45), app.debugDescription)
+        let resume = app.buttons["camera.incremental.resume"]
+        XCTAssertFalse(resume.exists, app.debugDescription)
+        let saved = app.descendants(matching: .any)["camera.incremental.saved"]
+        XCTAssertTrue(saved.label.contains("1 / 2"), app.debugDescription)
+        capture("camera-incremental-after-jpeg-failure", in: app)
+        reconnectAction.tap()
+
+        // Re-enter through the existing Manual Wi-Fi -> “Connected, continue”
+        // path. The responder assigns new content and file locators.
+        let manual = app.buttons["camera.manual"]
+        XCTAssertTrue(manual.waitForExistence(timeout: 30), app.debugDescription)
+        manual.tap()
+        let reconnect = app.buttons["camera.wifi.continue"]
+        XCTAssertTrue(reconnect.waitForExistence(timeout: 10), app.debugDescription)
+        reconnect.tap()
+
+        let newImport = app.buttons["camera.incremental.new-import"]
+        XCTAssertTrue(newImport.waitForExistence(timeout: 30), app.debugDescription)
+        XCTAssertFalse(resume.exists, app.debugDescription)
+        newImport.tap()
+        XCTAssertTrue(start.waitForExistence(timeout: 10), app.debugDescription)
+        start.tap()
+
+        let complete = app.descendants(matching: .any)["camera.incremental.complete"]
+        XCTAssertTrue(complete.waitForExistence(timeout: 60), app.debugDescription)
+        let completeSaved = app.descendants(matching: .any)["camera.incremental.saved"]
+        XCTAssertEqual(completeSaved.label, "1 new files saved, 1 already on device", app.debugDescription)
+        capture("camera-incremental-complete", in: app)
+
+        // A repeat scan on the same connection must find no new files.
+        let refresh = app.buttons["camera.incremental.refresh"]
+        XCTAssertTrue(refresh.waitForExistence(timeout: 10), app.debugDescription)
+        refresh.tap()
+        let count = app.descendants(matching: .any)["camera.incremental.count"]
+        XCTAssertTrue(count.waitForExistence(timeout: 30), app.debugDescription)
+        XCTAssertEqual(count.label, "No new photos", app.debugDescription)
+        capture("camera-incremental-no-new", in: app)
+    }
+
+    func testSonyIncrementalDismissalSurvivesReconnect() throws {
+        guard ProcessInfo.processInfo.environment["RAWLAB_SONY_INCREMENTAL_SCENARIO"] == "dismiss" else {
+            throw XCTSkip("Run with RAWLAB_CAMERA_INCREMENTAL_SCENARIO=dismiss")
+        }
+        let app = XCUIApplication()
+        launchSonyIncremental(in: app)
+        selectCameraJPEGMode("Save with adjustments", in: app)
+        let start = app.buttons["camera.incremental.start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 10), app.debugDescription)
+        start.tap()
+        XCTAssertTrue(app.staticTexts["This JPEG contains an HDR gain map. Keep the original to preserve HDR."].waitForExistence(timeout: 20),
+                      app.debugDescription)
+
+        app.terminate()
+        launchSonyIncremental(in: app)
+        let newImport = app.buttons["camera.incremental.new-import"]
+        XCTAssertTrue(newImport.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["camera.incremental.resume"].exists)
+        newImport.tap()
+        selectCameraJPEGMode("Keep original", in: app)
+        XCTAssertTrue(start.waitForExistence(timeout: 10), app.debugDescription)
+        start.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["camera.incremental.complete"].waitForExistence(timeout: 30),
+                      app.debugDescription)
+
+        app.terminate()
+        launchSonyIncremental(in: app)
+        let cutoffRequired = app.staticTexts["camera.incremental.cutoff-required"]
+        XCTAssertTrue(cutoffRequired.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["camera.incremental.resume"].exists)
+        XCTAssertFalse(start.exists)
+        app.buttons["camera.incremental.cutoff"].tap()
+        let apply = app.buttons["Apply"]
+        XCTAssertTrue(apply.waitForExistence(timeout: 5), app.debugDescription)
+        apply.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["camera.incremental.count"].waitForExistence(timeout: 10),
+                      "An explicitly chosen cutoff must allow a new scan after reconnect.")
+    }
+
+    func testSonyTetherReconnectRejectsReplacedOriginal() throws {
+        try verifySonyTetherFallback(scenario: "tether-swap")
+    }
+
+    func testSonyTetherUnavailableOriginalOffersManualImport() throws {
+        try verifySonyTetherFallback(scenario: "tether-missing")
+    }
+
+    func testSonyTetherWithoutRegisteredOriginalsHasNoResumeAction() throws {
+        let app = try sonyTetherApp(scenario: "tether-empty")
+        launchSonyCameraWorkspace(in: app)
+        connectSonyTether("camera.entry.tether", in: app)
+        XCTAssertTrue(app.staticTexts["Saved 0 photos"].waitForExistence(timeout: 30), app.debugDescription)
+        app.terminate()
+
+        launchSonyCameraWorkspace(in: app)
+        XCTAssertTrue(app.staticTexts["ILCE-6700"].waitForExistence(timeout: 10), "Wait for the empty tether record to load")
+        XCTAssertFalse(app.buttons["camera.resume.tether"].exists, app.debugDescription)
+        XCTAssertTrue(app.buttons["camera.entry.import"].isEnabled)
+        app.buttons["camera.entry.tether"].tap()
+        XCTAssertTrue(app.switches["camera.card.confirm"].waitForExistence(timeout: 5), app.debugDescription)
+    }
+
+    private func sonyTetherApp(scenario: String) throws -> XCUIApplication {
+        guard ProcessInfo.processInfo.environment["RAWLAB_SONY_INCREMENTAL_SCENARIO"] == scenario else {
+            throw XCTSkip("Run camera-incremental-ui.sh with RAWLAB_CAMERA_INCREMENTAL_SCENARIO=\(scenario)")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", "en"]
+        app.launchEnvironment["RAWLAB_CAMERA_LOOPBACK_FIXTURE"] = "1"
+        return app
+    }
+
+    private func launchSonyCameraWorkspace(in app: XCUIApplication) {
+        app.launch()
+        let camera = app.buttons["editor.camera"]
+        XCTAssertTrue(camera.waitForExistence(timeout: 10), app.debugDescription)
+        camera.tap()
+    }
+
+    private func connectSonyTether(_ action: String, in app: XCUIApplication) {
+        let entry = app.buttons[action]
+        XCTAssertTrue(entry.waitForExistence(timeout: 10), app.debugDescription)
+        entry.tap()
+        let confirm = app.switches["camera.card.confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), app.debugDescription)
+        confirm.tap()
+        app.buttons["camera.manual"].tap()
+        app.buttons["camera.wifi.continue"].tap()
+    }
+
+    private func verifySonyTetherFallback(scenario: String) throws {
+        let app = try sonyTetherApp(scenario: scenario)
+        launchSonyCameraWorkspace(in: app)
+        connectSonyTether("camera.entry.tether", in: app)
+        let saved = app.staticTexts["Saved 1 photos"]
+        XCTAssertTrue(saved.waitForExistence(timeout: 30), app.debugDescription)
+
+        app.terminate()
+        launchSonyCameraWorkspace(in: app)
+        connectSonyTether("camera.resume.tether", in: app)
+        let manualImport = app.buttons["camera.connection.manual-import"]
+        XCTAssertTrue(manualImport.waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["camera.connection.error"].exists)
+        XCTAssertFalse(saved.exists, app.debugDescription)
+        capture("camera-tether-recovery-requires-manual-import", in: app)
+        manualImport.tap()
+        let wifi = app.buttons["camera.manual"]
+        XCTAssertTrue(wifi.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.switches["camera.card.confirm"].exists)
+        wifi.tap()
+        app.buttons["camera.wifi.continue"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["camera.import.mode"].waitForExistence(timeout: 15), app.debugDescription)
+    }
+
+    private func launchSonyIncremental(in app: XCUIApplication) {
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", "en",
+                               "-RawLab.camera.integration", "sony-incremental"]
+        app.launchEnvironment["RAWLAB_CAMERA_LOOPBACK_FIXTURE"] = "1"
+        app.launch()
+        XCTAssertTrue(app.buttons["editor.import"].waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["editor.camera"].tap()
+        XCTAssertTrue(app.buttons["camera.entry.import"].waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["camera.entry.import"].tap()
+        XCTAssertTrue(app.buttons["camera.manual"].waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["camera.manual"].tap()
+        let continueButton = app.buttons["camera.wifi.continue"]
+        XCTAssertTrue(continueButton.waitForExistence(timeout: 10), app.debugDescription)
+        continueButton.tap()
+
+        let mode = app.descendants(matching: .any)["camera.import.mode"]
+        XCTAssertTrue(mode.waitForExistence(timeout: 30), app.debugDescription)
+        let incremental = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label == 'Incremental import'")).firstMatch
+        if !incremental.waitForExistence(timeout: 5) { mode.tap() }
+        XCTAssertTrue(incremental.waitForExistence(timeout: 5), app.debugDescription)
+        incremental.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["camera.incremental"].waitForExistence(timeout: 10), app.debugDescription)
+    }
+
+    private func selectCameraJPEGMode(_ label: String, in app: XCUIApplication) {
+        let settings = app.buttons["camera.jpeg.settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5), app.debugDescription)
+        settings.tap()
+        let mode = app.descendants(matching: .any)["camera.jpeg.mode"]
+        XCTAssertTrue(mode.waitForExistence(timeout: 5), app.debugDescription)
+        mode.tap()
+        let option = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", label)).firstMatch
+        XCTAssertTrue(option.waitForExistence(timeout: 5), app.debugDescription)
+        option.tap()
+        app.buttons["camera.jpeg.apply"].tap()
+    }
+
+    private func tapCameraBack(in app: XCUIApplication) {
+        // iOS 27 may expose UINavigationBar's back _UIButtonBarButton as
+        // Other rather than Button. Query all AX elements by label first, then
+        // use the real edge-pop gesture as a fallback.
+        let explicitBack = app.buttons["BackButton"].firstMatch
+        if explicitBack.waitForExistence(timeout: 2) && explicitBack.isHittable {
+            explicitBack.tap()
+            return
+        }
+        let back = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label == 'Back' OR label == '返回'"))
+            .firstMatch
+        if back.waitForExistence(timeout: 5) && back.isHittable {
+            back.tap()
+            return
+        }
+        let navigationBar = app.navigationBars.firstMatch
+        if navigationBar.exists {
+            navigationBar.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5)).tap()
+            return
+        }
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
+            .press(forDuration: 0.05,
+                   thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.5)))
+    }
+
+    private func configureCameraJPEG(in app: XCUIApplication) {
+        let settings = app.buttons["camera.jpeg.settings"]
+        guard settings.waitForExistence(timeout: 5) else { XCTFail(app.debugDescription); return }
+        settings.tap()
+
+        let mode = app.descendants(matching: .any)["camera.jpeg.mode"]
+        guard mode.waitForExistence(timeout: 5), mode.isHittable else { XCTFail(app.debugDescription); return }
+        mode.tap()
+        let adjusted = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label == 'Save with adjustments'"))
+            .firstMatch
+        guard adjusted.waitForExistence(timeout: 5) else { XCTFail(app.debugDescription); return }
+        adjusted.tap()
+
+        let quality = app.sliders["camera.jpeg.quality"]
+        guard quality.waitForExistence(timeout: 5), quality.isHittable else { XCTFail(app.debugDescription); return }
+        let initialQuality = quality.value as? String
+        quality.adjust(toNormalizedSliderPosition: 0.72)
+        XCTAssertNotEqual(quality.value as? String, initialQuality)
+        capture("camera-incremental-jpeg-settings", in: app)
+
+        let size = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Size,'")).firstMatch
+        guard size.waitForExistence(timeout: 5), size.isHittable else { XCTFail(app.debugDescription); return }
+        size.tap()
+        let custom = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Specify long edge'")).firstMatch
+        guard custom.waitForExistence(timeout: 5) else { XCTFail(app.debugDescription); return }
+        custom.tap()
+        let field = app.textFields["Export Long Edge (Pixels)"].firstMatch
+        guard field.waitForExistence(timeout: 5) else { XCTFail(app.debugDescription); return }
+        field.tap(); field.typeText("100")
+
+        let apply = app.buttons["camera.jpeg.apply"]
+        guard apply.waitForExistence(timeout: 5), apply.isEnabled else { XCTFail(app.debugDescription); return }
+        apply.tap()
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        XCTAssertTrue(settings.label.contains("100 px"), app.debugDescription)
     }
 }

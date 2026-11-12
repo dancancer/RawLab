@@ -21,6 +21,7 @@ struct Sony2FujiProcessor {
     enum HDRPhotoFormat { case sdrJPEG, hdrJPEG, hdrHEIF }
 
     func exportHDR(url: URL, settings: HDRSettings, output: URL, longEdge: Int? = nil,
+                   processing: ProcessingIdentity = .current,
                    proRAWDecodeVersion: Int? = nil, format: HDRPhotoFormat, cancelled: () -> Bool = { false }) throws {
         guard settings.mode == .hdr, settings.isValid else { throw HDRRequestError.invalidSettings }
         guard gpuMode != SONY2FUJI_GPU_FORCE else {
@@ -38,7 +39,7 @@ struct Sony2FujiProcessor {
             return
         }
         let pair = try processHDR(url: url, settings: settings, previewLongEdge: nil, exportLongEdge: longEdge,
-                                  proRAWDecodeVersion: proRAWDecodeVersion, cancelled: cancelled)
+                                  processing: processing, proRAWDecodeVersion: proRAWDecodeVersion, cancelled: cancelled)
         if cancelled() { throw CancellationError() }
         switch format {
         case .sdrJPEG: try pair.exportSDR(to: output, format: SONY2FUJI_OUTPUT_JPEG)
@@ -49,12 +50,13 @@ struct Sony2FujiProcessor {
     }
 
     func processHDR(url: URL,settings: HDRSettings,previewLongEdge: Int?, exportLongEdge: Int? = nil,
+                    processing: ProcessingIdentity = .current,
                     proRAWDecodeVersion: Int? = nil, cancelled: () -> Bool = { false }) throws -> HDRImage {
         guard settings.mode == .hdr,settings.isValid else { throw HDRRequestError.invalidSettings }
         guard gpuMode != SONY2FUJI_GPU_FORCE else {
             throw HDRNativeError(status:SONY2FUJI_STATUS_UNSUPPORTED,reason:UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU),field:UInt32(SONY2FUJI_HDR_FIELD_SESSION))
         }
-        guard let info = try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url) else {
+        guard let info = try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url, processing: processing.core) else {
             throw HDRSettings.ModeError.unsupportedSource
         }
         if info.proRAW != nil { try ProRAWSource.validatedDecodeVersion(proRAWDecodeVersion) }
@@ -85,13 +87,14 @@ struct Sony2FujiProcessor {
             lensDatabase: lensDatabaseURL, cancelled: cancelled)
     }
 
-    func sampleHDRHSL(url: URL, settings: HDRSettings, proRAWDecodeVersion: Int?, previewLongEdge: Int,
+    func sampleHDRHSL(url: URL, settings: HDRSettings, processing: ProcessingIdentity,
+                      proRAWDecodeVersion: Int?, previewLongEdge: Int,
                       revision: HSLTargetRevision, point: CGPoint) throws -> HSLTargetSample {
         guard gpuMode != SONY2FUJI_GPU_FORCE else {
             throw HDRNativeError(status: SONY2FUJI_STATUS_UNSUPPORTED,
                 reason: UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU), field: UInt32(SONY2FUJI_HDR_FIELD_SESSION))
         }
-        guard let info = try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url) else {
+        guard let info = try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url, processing: processing.core) else {
             throw HDRSettings.ModeError.unsupportedSource
         }
         if info.proRAW != nil { try ProRAWSource.validatedDecodeVersion(proRAWDecodeVersion) }
@@ -272,7 +275,7 @@ struct Sony2FujiProcessor {
             }
             return try withRawSession(reuse: false) { session in
                 try hdrSources.autoExposure(url, settings: hdr, proRAWDecodeVersion: settings.proRAWDecodeVersion,
-                    session: session, lensDatabase: lensDatabaseURL)
+                    session: session, lensDatabase: lensDatabaseURL, processing: settings.processing.core)
             }
         }
         let inputType: sony2fuji_input_type

@@ -2,6 +2,7 @@ package com.rawlab.android.camera
 
 import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.Network
@@ -33,10 +34,6 @@ class SonyManualWifiConnectionTest {
         val permissions = buildList {
             add(Manifest.permission.ACCESS_COARSE_LOCATION)
             add(Manifest.permission.ACCESS_FINE_LOCATION)
-            if (Build.VERSION.SDK_INT >= 31) {
-                add(Manifest.permission.BLUETOOTH_SCAN)
-                add(Manifest.permission.BLUETOOTH_CONNECT)
-            }
             if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.NEARBY_WIFI_DEVICES)
         }
         permissions.forEach { instrumentation.uiAutomation.grantRuntimePermission(instrumentation.targetContext.packageName, it) }
@@ -46,8 +43,13 @@ class SonyManualWifiConnectionTest {
     @After fun closeActivity() { activity?.close() }
 
     @Suppress("DEPRECATION")
-    @Test fun manualWifiUsesTheCallbackIdentityForTheConnectedNetwork() {
+    @Test fun manualWifiUsesTheCallbackIdentityWithoutBluetoothPermission() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
+        if (Build.VERSION.SDK_INT >= 31) {
+            assumeTrue("Requires a fresh install with Bluetooth permissions denied",
+                context.checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_DENIED &&
+                    context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_DENIED)
+        }
         val location = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
         assumeTrue("Requires location enabled for Wi-Fi identity", location.isLocationEnabled)
         val wifi = context.getSystemService(Context.WIFI_SERVICE) as WifiManager

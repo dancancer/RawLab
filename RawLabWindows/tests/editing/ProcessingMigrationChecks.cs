@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace RawLab.Windows;
 
@@ -14,7 +15,9 @@ internal static class ProcessingMigrationChecks
         CandidateMappingPreservesUnrelatedState();
         RejectedAndInvalidResultsDoNotProduceCandidates();
         AtomicMigrationAndCas();
+        ReceiptPersistsIndependentPolicyAndTargetVersions();
         RestartRollbackSuppressesAutomaticRetry();
+        MigratedReceiptSurvivesManualVersionChange();
         KeptReceiptRetriesOnlyAfterSettingsChange();
         ForceDoesNotStartAutomaticMigration();
         MigrationHistoryIsolation();
@@ -149,6 +152,48 @@ internal static class ProcessingMigrationChecks
         finally { Directory.Delete(root, true); }
     }
 
+    private static void ReceiptPersistsIndependentPolicyAndTargetVersions()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-migration-receipt-" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        try
+        {
+            var file = Path.Combine(root, "photo.ARW");
+            File.WriteAllText(file, "raw");
+            var store = new EditStore(root);
+            var identity = OriginalIdentity.Read(file);
+            var before = Source(identity);
+            store.SaveState(identity, before);
+            Check(ProcessingMigration.TryBuildCandidate(before, Result(), out var candidate), "candidate");
+            store.CommitProcessingMigration(identity, before, candidate!, ProcessingMigrationReceipt.Migrated);
+
+            var path = Path.Combine(root, "edits.json");
+            var registry = JsonNode.Parse(File.ReadAllText(path))!;
+            var receipt = registry["MigrationReceipts"]![identity.Path]!.AsObject();
+            Check(receipt["policyVersion"]?.GetValue<int>() == 1 && receipt["targetVersion"]?.GetValue<int>() == 3,
+                "migration receipt stores independent policy v1 and target v3");
+
+            receipt.Remove("policyVersion");
+            receipt.Remove("targetVersion");
+            File.WriteAllText(path, registry.ToJsonString());
+            var restarted = new EditStore(root);
+            Check(restarted.ReadProcessingMigration(file)?.Status == ProcessingMigrationReceipt.Migrated &&
+                  restarted.Find(file)?.Settings.Processing.Version == 3,
+                "existing versionless receipts still restore the v3 edit");
+            restarted.RollbackProcessingMigration(identity, restarted.ReadState(file));
+            var rolledBack = JsonNode.Parse(File.ReadAllText(path))!["MigrationReceipts"]![identity.Path]!;
+            Check(rolledBack["policyVersion"]?.GetValue<int>() == 1 && rolledBack["targetVersion"]?.GetValue<int>() == 3,
+                "rewriting a historical receipt records its original policy and target");
+
+            receipt["policyVersion"] = 1;
+            receipt["targetVersion"] = 2;
+            File.WriteAllText(path, registry.ToJsonString());
+            try { _ = new EditStore(root); throw new Exception("Invalid migration target was accepted"); }
+            catch (InvalidDataException) { }
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     private static void RestartRollbackSuppressesAutomaticRetry()
     {
         var root = Path.Combine(Path.GetTempPath(), "rawlab-rollback-" + Guid.NewGuid());
@@ -169,6 +214,51 @@ internal static class ProcessingMigrationChecks
             Check(receipt?.Status == ProcessingMigrationReceipt.RolledBack &&
                   !ProcessingMigration.ShouldAttempt(before, receipt),
                 "rolledBack receipt permanently suppresses automatic retry");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    private static void MigratedReceiptSurvivesManualVersionChange()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-migrated-" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        try
+        {
+            var file = Path.Combine(root, "photo.ARW"); File.WriteAllText(file, "raw");
+            var directory = Path.Combine(root, "edits"); var store = new EditStore(directory);
+            var identity = OriginalIdentity.Read(file); var before = Source(identity);
+            store.SaveState(identity, before);
+            Check(ProcessingMigration.TryBuildCandidate(before, Result(), out var migrated), "first candidate");
+            store.CommitProcessingMigration(identity, before, migrated!, ProcessingMigrationReceipt.Migrated);
+
+            var changed = before.Settings.Restore();
+            changed.Processing = ProcessingIdentity.Legacy;
+            changed.Set(Parameter.Exposure, 2);
+            var manual = new SavedEdit(identity, changed.Capture(), before.Look);
+            store.SaveState(identity, manual);
+            var restarted = new EditStore(directory);
+            var receipt = restarted.ReadProcessingMigration(file);
+            Check(restarted.ReadState(file).Edit?.SameAs(manual) == true && !ProcessingMigration.ShouldAttempt(manual, receipt),
+                "Reopening preserves a manually selected legacy version after migration");
+
+            Check(ProcessingMigration.TryBuildCandidate(manual, Result(source: 1), out var refitted), "second candidate");
+            foreach (var (candidate, status) in new[] {
+                (refitted!, ProcessingMigrationReceipt.Migrated), (manual, ProcessingMigrationReceipt.Kept)
+            })
+            {
+                try
+                {
+                    restarted.CommitProcessingMigration(identity, manual, candidate, status);
+                    throw new Exception("A late migration overwrote a migrated receipt");
+                }
+                catch (AdjustmentOperationExpiredException) { }
+            }
+            var current = restarted.ReadState(file);
+            var preserved = restarted.ReadProcessingMigration(file);
+            Check(current.Edit?.SameAs(manual) == true && preserved?.Status == ProcessingMigrationReceipt.Migrated &&
+                  preserved.Before.SameAs(before), "Late migration results leave the manual edit and the first receipt intact");
+            Check(restarted.RollbackProcessingMigration(identity, current).Edit?.SameAs(before) == true,
+                "Rollback restores the first migration's source snapshot");
         }
         finally { Directory.Delete(root, true); }
     }

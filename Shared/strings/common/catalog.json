@@ -8406,5 +8406,269 @@
     "es": "Los menús varían según el modelo y el firmware. Siga los pasos de conexión al móvil que muestra su cámara.",
     "ja": "カメラのメニューは機種やファームウェアで異なります。機体に表示されるスマートフォン接続の手順に従ってください。",
     "zh-Hans": "相机菜单会随型号和固件变化，请按机身提供的手机连接方式操作。"
+  },
+  "导入方式": {
+    "en": "Import mode",
+    "de": "Importmodus",
+    "fr": "Mode d’importation",
+    "es": "Modo de importación",
+    "ja": "読み込み方法",
+    "zh-Hans": "导入方式"
+  },
+  "手动选片": {
+    "en": "Manual selection",
+    "de": "Manuelle Auswahl",
+    "fr": "Sélection manuelle",
+    "es": "Selección manual",
+    "ja": "手動選択",
+    "zh-Hans": "手动选片"
+  },
+  "增量导入": {
+    "en": "Incremental import",
+    "de": "Inkrementeller Import",
+    "fr": "Importation incrémentielle",
+    "es": "Importación incremental",
+    "ja": "差分読み込み",
+    "zh-Hans": "增量导入"
+  },
+  "增量起点": {
+    "en": "Start time",
+    "de": "Startzeit",
+    "fr": "Date de début",
+    "es": "Fecha de inicio",
+    "ja": "開始日時",
+    "zh-Hans": "增量起点"
+  },
+  "从 {0} 开始（相机时间）": {
+    "en": "From {0} (camera time)",
+    "de": "Ab {0} (Kamerazeit)",
+    "fr": "À partir du {0} (heure de l’appareil)",
+    "es": "Desde {0} (hora de la cámara)",
+    "ja": "{0} 以降（カメラの時刻）",
+    "zh-Hans": "从 {0} 开始（相机时间）"
+  },
+  "相机时间": {
+    "en": "Camera time",
+    "de": "Kamerazeit",
+    "fr": "Heure de l’appareil",
+    "es": "Hora de la cámara",
+    "ja": "カメラの時刻",
+    "zh-Hans": "相机时间"
+  },
+  "正在扫描相机…": {
+    "en": "Scanning camera…",
+    "de": "Kamera wird durchsucht…",
+    "fr": "Analyse de l’appareil…",
+    "es": "Buscando en la cámara…",
+    "ja": "カメラ内を確認中…",
+    "zh-Hans": "正在扫描相机…"
+  },
+  "没有新的照片": {
+    "en": "No new photos",
+    "de": "Keine neuen Fotos",
+    "fr": "Aucune nouvelle photo",
+    "es": "No hay fotos nuevas",
+    "ja": "新しい写真はありません",
+    "zh-Hans": "没有新的照片"
+  },
+  "一并导入 {0} 个日期未知的文件": {
+    "en": "Include {0} undated files",
+    "de": "{0} Dateien ohne Datum einbeziehen",
+    "fr": "Inclure {0} fichiers sans date",
+    "es": "Incluir {0} archivos sin fecha",
+    "ja": "日付不明のファイル {0} 個も読み込む",
+    "zh-Hans": "一并导入 {0} 个日期未知的文件"
+  },
+  "无法确认上次的存储卡或拍摄时间，请选择新的起点。": {
+    "en": "The previous card or capture time could not be verified. Choose a new start time.",
+    "de": "Die vorherige Karte oder Aufnahmezeit konnte nicht bestätigt werden. Wählen Sie eine neue Startzeit.",
+    "fr": "Impossible de vérifier la carte ou l’heure de la dernière prise de vue. Choisissez une nouvelle date de début.",
+    "es": "No se pudo verificar la tarjeta anterior o la hora de captura. Elige una nueva fecha de inicio.",
+    "ja": "前回のカードまたは撮影日時を確認できません。開始日時を選び直してください。",
+    "zh-Hans": "无法确认上次的存储卡或拍摄时间，请选择新的起点。"
+  },
+  "重新扫描": {
+    "en": "Scan again",
+    "de": "Erneut suchen",
+    "fr": "Analyser à nouveau",
+    "es": "Buscar de nuevo",
+    "ja": "再スキャン",
+    "zh-Hans": "重新扫描"
+  },
+  "使用默认起点": {
+    "en": "Use default start time",
+    "de": "Standardstartzeit verwenden",
+    "fr": "Utiliser la date de début par défaut",
+    "es": "Usar la fecha de inicio predeterminada",
+    "ja": "既定の開始日時を使う",
+    "zh-Hans": "使用默认起点"
+  },
+  "开始新的增量导入": {
+    "en": "Start a new incremental import",
+    "de": "Neuen inkrementellen Import starten",
+    "fr": "Lancer une nouvelle importation incrémentielle",
+    "es": "Iniciar otra importación incremental",
+    "ja": "新しい差分読み込みを開始",
+    "zh-Hans": "开始新的增量导入"
+  },
+  "待导入 {0} 个文件": {
+    "en": "{0} files to import",
+    "de": "{0} Dateien zum Importieren",
+    "fr": "{0} fichiers à importer",
+    "es": "{0} archivos por importar",
+    "ja": "読み込むファイル {0} 個",
+    "zh-Hans": "待导入 {0} 个文件"
+  },
+  "导入 {0} 个文件": {
+    "en": "Import {0} files",
+    "de": "{0} Dateien importieren",
+    "fr": "Importer {0} fichiers",
+    "es": "Importar {0} archivos",
+    "ja": "{0} 個のファイルを読み込む",
+    "zh-Hans": "导入 {0} 个文件"
+  },
+  "已保存 {0} / {1} 个文件": {
+    "en": "{0} / {1} files saved",
+    "de": "{0} von {1} Dateien gespeichert",
+    "fr": "{0} / {1} fichiers enregistrés",
+    "es": "{0} de {1} archivos guardados",
+    "ja": "{1} 個中 {0} 個を保存済み",
+    "zh-Hans": "已保存 {0} / {1} 个文件"
+  },
+  "增量导入完成": {
+    "en": "Incremental import complete",
+    "de": "Inkrementeller Import abgeschlossen",
+    "fr": "Importation incrémentielle terminée",
+    "es": "Importación incremental completada",
+    "ja": "差分読み込みが完了しました",
+    "zh-Hans": "增量导入完成"
+  },
+  "重新连接并继续": {
+    "en": "Reconnect and continue",
+    "de": "Erneut verbinden und fortfahren",
+    "fr": "Reconnecter et reprendre",
+    "es": "Volver a conectar y continuar",
+    "ja": "再接続して続ける",
+    "zh-Hans": "重新连接并继续"
+  },
+  "有文件超出相机导入上限，请调整起点或格式。": {
+    "en": "Some files exceed the import limit. Change the start time or format.",
+    "de": "Einige Dateien überschreiten das Importlimit. Ändern Sie die Startzeit oder das Format.",
+    "fr": "Certains fichiers dépassent la limite d’importation. Modifiez la date de début ou le format.",
+    "es": "Algunos archivos superan el límite de importación. Cambia la fecha de inicio o el formato.",
+    "ja": "読み込み上限を超えるファイルがあります。開始日時か形式を変更してください。",
+    "zh-Hans": "有文件超出相机导入上限，请调整起点或格式。"
+  },
+  "传输格式": {
+    "en": "Transfer format",
+    "de": "Übertragungsformat",
+    "fr": "Format de transfert",
+    "es": "Formato de transferencia",
+    "ja": "転送形式",
+    "zh-Hans": "传输格式"
+  },
+  "JPEG 保存": {
+    "en": "Save JPEG",
+    "de": "JPEG speichern",
+    "fr": "Enregistrer les JPEG",
+    "es": "Guardar JPEG",
+    "ja": "JPEG の保存",
+    "zh-Hans": "JPEG 保存"
+  },
+  "原样保存": {
+    "en": "Keep original",
+    "de": "Original beibehalten",
+    "fr": "Conserver l’original",
+    "es": "Conservar el original",
+    "ja": "オリジナルを保存",
+    "zh-Hans": "原样保存"
+  },
+  "调整后保存": {
+    "en": "Save with adjustments",
+    "de": "Angepasst speichern",
+    "fr": "Enregistrer avec ajustements",
+    "es": "Guardar con ajustes",
+    "ja": "サイズ・画質を調整",
+    "zh-Hans": "调整后保存"
+  },
+  "JPEG 质量": {
+    "en": "JPEG quality",
+    "de": "JPEG-Qualität",
+    "fr": "Qualité JPEG",
+    "es": "Calidad JPEG",
+    "ja": "JPEG 画質",
+    "zh-Hans": "JPEG 质量"
+  },
+  "{0} · 质量 {1}": {
+    "en": "{0} · quality {1}",
+    "de": "{0} · Qualität {1}",
+    "fr": "{0} · qualité {1}",
+    "es": "{0} · calidad {1}",
+    "ja": "{0} · 画質 {1}",
+    "zh-Hans": "{0} · 质量 {1}"
+  },
+  "JPEG 传入手机后再处理。": {
+    "en": "JPEGs are processed after transfer to this device.",
+    "de": "JPEG-Dateien werden nach der Übertragung auf diesem Gerät verarbeitet.",
+    "fr": "Les JPEG sont traités sur cet appareil après le transfert.",
+    "es": "Los JPEG se procesan en este dispositivo después de la transferencia.",
+    "ja": "転送後にこの端末で JPEG を処理します。",
+    "zh-Hans": "JPEG 传入手机后再处理。"
+  },
+  "此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。": {
+    "de": "Dieses JPEG enthält eine HDR-Gainmap. Speichern Sie das Original, um HDR zu erhalten.",
+    "en": "This JPEG contains an HDR gain map. Keep the original to preserve HDR.",
+    "es": "Este JPEG contiene un mapa de ganancia HDR. Conserva el original para mantener el HDR.",
+    "fr": "Ce JPEG contient une carte de gain HDR. Conservez l’original pour préserver le HDR.",
+    "ja": "この JPEG には HDR ゲインマップが含まれています。HDR を保持するには元のまま保存してください。",
+    "zh-Hans": "此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。"
+  },
+  "无法按所选设置处理 JPEG。": {
+    "en": "Could not process the JPEG with these settings.",
+    "de": "Das JPEG konnte mit diesen Einstellungen nicht verarbeitet werden.",
+    "fr": "Impossible de traiter le JPEG avec ces réglages.",
+    "es": "No se pudo procesar el JPEG con estos ajustes.",
+    "ja": "この設定で JPEG を処理できませんでした。",
+    "zh-Hans": "无法按所选设置处理 JPEG。"
+  },
+  "JPEG 已调整": {
+    "en": "Adjusted JPEG",
+    "de": "Angepasstes JPEG",
+    "fr": "JPEG ajusté",
+    "es": "JPEG ajustado",
+    "ja": "調整済み JPEG",
+    "zh-Hans": "JPEG 已调整"
+  },
+  "正在导入照片…": {
+    "en": "Importing photos…",
+    "de": "Fotos werden importiert…",
+    "fr": "Importation des photos…",
+    "es": "Importando fotos…",
+    "ja": "写真を読み込み中…",
+    "zh-Hans": "正在导入照片…"
+  },
+  "正在保存照片…": {
+    "en": "Saving photos…",
+    "de": "Fotos werden gespeichert…",
+    "fr": "Enregistrement des photos…",
+    "es": "Guardando fotos…",
+    "ja": "写真を保存中…",
+    "zh-Hans": "正在保存照片…"
+  },
+  "尺寸": {
+    "en": "Size",
+    "de": "Größe",
+    "fr": "Dimensions",
+    "es": "Tamaño",
+    "ja": "サイズ",
+    "zh-Hans": "尺寸"
+  },
+  "新保存 {0} 个文件，{1} 个已在本机": {
+    "en": "{0} new files saved, {1} already on device",
+    "de": "{0} neue Dateien gespeichert, {1} bereits auf dem Gerät",
+    "fr": "{0} nouveaux fichiers enregistrés, {1} déjà sur l’appareil",
+    "es": "{0} archivos nuevos guardados, {1} ya estaban en el dispositivo",
+    "ja": "新規保存 {0} 個、保存済み {1} 個",
+    "zh-Hans": "新保存 {0} 个文件，{1} 个已在本机"
   }
 }

@@ -6,11 +6,14 @@ import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
 import java.io.IOException
+import org.json.JSONObject
 import java.nio.file.Files
 import java.security.MessageDigest
+import java.util.UUID
 
 class CameraImportStoreTest {
     private val raw = byteArrayOf(73, 73, 42, 0, 8, 0, 0, 0) + ByteArray(100) { it.toByte() }
+    private val jpeg = byteArrayOf(-1, -40, -1, -32, 0, 16, 74, 70, 73, 70) + ByteArray(100) { it.toByte() }
     private fun photo(key: String = "1") = CameraPhoto(key, "DSC00001.ARW", raw.size.toLong(), 42)
     private fun hash(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
     private class Fixture(val root: File) {
@@ -29,6 +32,15 @@ class CameraImportStoreTest {
         return store.publish(job, 0, part, hash(bytes), CameraTransferPermit())
     }
 
+    private fun jpegPhoto(key: String = "jpeg-1") = CameraPhoto(key, "DSC00001.JPG", jpeg.size.toLong(), 42)
+
+    private fun saveAdjusted(store: CameraImportStore, options: CameraJPEGOptions, key: String = "jpeg-1"): CameraImportJob {
+        val plan = CameraIncrementalPlan(CameraImportFormat.JPEG, options)
+        val job = store.create("camera", listOf(jpegPhoto(key)), CameraImportDestination(), incremental = plan)
+        val part = store.partial(job.id); part.writeBytes(jpeg)
+        return store.publish(job, 0, part, hash(jpeg), CameraTransferPermit())
+    }
+
     @Test fun interruptedQueueKeepsSavedMediaAndRestartsOnlyUnfinished() = withStore { fixture, store ->
         var job = store.create("camera", listOf(photo(), photo("2")), CameraImportDestination())
         val part = store.partial(job.id); part.writeBytes(raw)
@@ -42,6 +54,62 @@ class CameraImportStoreTest {
         assertArrayEquals(raw, fixture.media.open(reopened.savedUris(restored).single()).use { it.readBytes() })
         assertFalse(reopened.partial(job.id).exists())
         assertFalse(File(fixture.root, "originals").exists())
+    }
+
+    @Test fun resumeAcrossTransportsRequiresCameraSerialAndVerifiedSourceBytes() = withStore { fixture, store ->
+        val camera = CameraHardwareIdentity("ILCE-7CM2", "1234567")
+        val destination = CameraImportDestination("RawLab/Resume", CameraDirectoryGrouping.NONE)
+        val first = photo("1").copy(resumeIdentity = "legacy:first")
+        val pending = photo("2").copy(name = "DSC00002.ARW", storageToken = "mobile")
+        val job = store.create("BLE:camera", listOf(first, pending), destination,
+            hardwareIdentity = camera, listingOwner = "old-listing")
+        val part = store.partial(job.id).apply { writeBytes(raw) }
+        val partialJob = store.publish(job, 0, part, hash(raw), CameraTransferPermit())
+        val saved = partialJob.items[0].saved
+        part.writeText("interrupted")
+        val reopened = fixture.store()
+        val restored = reopened.load().single()
+
+        assertTrue(restored.matchesCamera("SSID:camera", camera))
+        assertFalse(restored.matchesCamera("SSID:camera", null))
+        assertFalse(restored.matchesCamera("BLE:camera", camera.copy(serial = "7654321")))
+        assertTrue(resumeLocatorMap(restored, listOf(pending), "new-listing").isEmpty())
+        assertEquals(pending, resumeLocatorMap(restored, listOf(pending), "old-listing")[pending.key])
+        val knownBytes = raw.copyOf().apply { this[lastIndex] = 100 }
+        reopened.save(restored.copy(items = listOf(restored.items[0], restored.items[1].copy(digest = hash(knownBytes)))))
+        val verified = reopened.load().single()
+        val rebound = pending.copy(key = "reassigned-handle")
+        assertEquals(rebound, resumeLocatorMap(verified, listOf(rebound), "new-listing")[pending.key])
+        assertThrows(CameraImportSourceChanged::class.java) {
+            receiveCameraJob(reopened, verified, CameraTransferPermit(), { _, output ->
+                output.write(raw); hash(raw)
+            })
+        }
+        assertNull(reopened.load().single().items[1].saved)
+
+        var downloads = 0
+        val resumed = receiveCameraJob(reopened, verified, CameraTransferPermit(), { current, output ->
+            assertEquals(pending, current)
+            assertEquals(0L, output.channel.position())
+            downloads++
+            output.write(knownBytes)
+            hash(knownBytes)
+        })
+        assertEquals(1, downloads)
+        assertEquals(CameraJobStatus.COMPLETE, resumed.status)
+        assertEquals(saved, resumed.items[0].saved)
+        assertEquals(destination.relativePath(fixture.capture), resumed.items[1].saved!!.relativePath)
+        assertEquals(camera, fixture.store().load().single().hardwareIdentity)
+    }
+
+    @Test fun historicalJobKeepsConnectionButNeedsSourceProofAfterReconnect() = withStore { fixture, store ->
+        val pending = photo()
+        store.create("BLE:camera", listOf(pending), CameraImportDestination())
+        val restored = fixture.store().load().single()
+        val camera = CameraHardwareIdentity("ILCE-7CM2", "1234567")
+        assertTrue(restored.matchesCamera("BLE:camera", camera))
+        assertFalse(restored.matchesCamera("SSID:camera", camera))
+        assertTrue(resumeLocatorMap(restored, listOf(pending.copy(resumeIdentity = "mobile:current")), "new-listing").isEmpty())
     }
 
     @Test fun stoppedPermitCannotPublishOrHandOffPartial() = withStore { fixture, store ->
@@ -66,11 +134,11 @@ class CameraImportStoreTest {
         assertEquals(listOf(saved), store.load())
     }
 
-    @Test fun tetherRecoveryUsesReservedBatchAndDownloadsOnlyUnfinishedOriginals() = withStore { fixture, store ->
+    @Test fun tetherRecoveryVerifiesSavedOriginalsAndOnlyPublishesUnfinishedOnes() = withStore { fixture, store ->
         val journal = CameraTetherJournal(File(fixture.root, "runs"))
-        val baseline = photo("baseline")
-        var run = journal.create("camera", "profile", listOf(baseline), CameraImportDestination())
-        val photos = listOf(baseline, photo("first"), photo("second"))
+        val hardware = CameraHardwareIdentity("ILCE-7CM2", "1234567")
+        var run = journal.create("camera", "profile", emptyList(), CameraImportDestination(), hardware)
+        val photos = listOf(photo("first"), photo("second").copy(name = "DSC00002.ARW"))
         run = journal.reserve(run, photos).first
         val batchId = run.batches.single().id
         val downloads = mutableListOf<String>()
@@ -85,14 +153,123 @@ class CameraImportStoreTest {
         val restoredJobs = store.load()
         assertEquals(batchId, restoredJobs.single().id)
         assertEquals(1, restoredJobs.single().savedCount)
-        val restoredRun = journal.load().single().copy(status = CameraTetherStatus.ACTIVE)
-        val completed = queue.receive(restoredRun, photos, CameraTransferPermit(), { current, output ->
+        val restoredRun = journal.load().single()
+        val remapped = photos.map { it.copy(key = "reconnected-${it.key}") }
+        assertThrows(CameraTetherSourceException::class.java) {
+            queue.resume(restoredRun, remapped, hardware, restoredJobs, CameraTransferPermit(),
+                { _, _ -> error("Unverified source must not be downloaded") }, {})
+        }
+        val restoredJob = restoredJobs.single()
+        val verified = restoredJob.copy(items = listOf(restoredJob.items[0], restoredJob.items[1].copy(digest = hash(raw))))
+        store.save(verified)
+        val changed = raw.copyOf().apply { this[lastIndex]++ }
+        assertThrows(CameraTetherSourceException::class.java) {
+            queue.resume(restoredRun, remapped, hardware, listOf(verified), CameraTransferPermit(),
+                { _, output -> output.write(changed); hash(changed) }, {})
+        }
+        assertEquals(restoredRun, journal.load().single())
+        val completed = queue.resume(restoredRun, remapped, hardware, listOf(verified), CameraTransferPermit(), { current, output ->
             downloads += current.key; output.write(raw); hash(raw)
-        })
-        assertEquals(listOf("first", "second", "second"), downloads)
+        }, {})
+        assertEquals(listOf("first", "second", "reconnected-first", "reconnected-second"), downloads)
         assertEquals(batchId, completed.batches.single().id)
         assertEquals(2, store.load().single().savedCount)
         assertEquals(1, fixture.media.rows.size)
+        assertEquals(remapped, completed.baseline)
+        assertNull(journal.reserve(completed, remapped).second)
+    }
+
+    @Test fun tetherRecoveryRechecksCompletedOriginalsAfterHandlesHaveAlreadyBeenRebased() = withStore { fixture, store ->
+        val journal = CameraTetherJournal(File(fixture.root, "runs"))
+        val hardware = CameraHardwareIdentity("ILCE-7CM2", "1234567")
+        val queue = CameraTetherQueue(store, journal)
+        val original = photo("old")
+        val run = journal.create("camera", "profile", emptyList(), CameraImportDestination(), hardware)
+        queue.receive(run, listOf(original), CameraTransferPermit(), { _, output -> output.write(raw); hash(raw) })
+        val completed = store.load().single()
+        assertEquals(CameraJobStatus.COMPLETE, completed.status)
+        val rebound = queue.resume(journal.load().single(), listOf(original.copy(key = "first-reconnect")), hardware,
+            listOf(completed), CameraTransferPermit(), { _, output -> output.write(raw); hash(raw) }, {})
+        assertEquals(rebound.batches.size, rebound.rebasedBatches)
+        val paused = journal.load().single()
+        val changed = raw.copyOf().apply { this[lastIndex]++ }
+        val sameMetadata = original.copy(key = "different-card")
+        assertThrows(CameraTetherSourceException::class.java) {
+            queue.resume(paused, listOf(sameMetadata), hardware, listOf(completed), CameraTransferPermit(),
+                { _, output -> output.write(changed); hash(changed) }, {})
+        }
+        assertEquals(paused, journal.load().single())
+        assertEquals(listOf(completed), store.load())
+        assertEquals(1, fixture.media.rows.size)
+    }
+
+    @Test fun tetherRecoveryCannotRebaseAnUnverifiedBaseline() = withStore { fixture, store ->
+        val journal = CameraTetherJournal(File(fixture.root, "runs"))
+        val hardware = CameraHardwareIdentity("ILCE-7CM2", "1234567")
+        val original = photo("old")
+        journal.create("camera", "profile", listOf(original), CameraImportDestination(), hardware)
+        val paused = journal.load().single()
+        assertThrows(CameraTetherSourceException::class.java) {
+            CameraTetherQueue(store, journal).resume(paused, listOf(original.copy(key = "different-card")), hardware,
+                emptyList(), CameraTransferPermit(), { _, _ -> error("There is no original digest to verify") }, {})
+        }
+        assertEquals(paused, journal.load().single())
+    }
+
+    @Test fun tetherRecoveryRejectsOverBudgetProofBeforeDownloading() = withStore { fixture, store ->
+        val mib = 1L shl 20
+        for ((index, scenario) in listOf(
+            List(65) { raw.size.toLong() } to false,
+            List(53) { 40 * mib } to false,
+            (List(63) { 32 * mib } + (32 * mib + 1)) to true,
+        ).withIndex()) {
+            val (sizes, lastPending) = scenario
+            val journal = CameraTetherJournal(File(fixture.root, "budget-$index"))
+            val (run, jobs) = tetherRecoveryFixture(journal, sizes, lastPending)
+            var downloads = 0
+            assertThrows(CameraTetherSourceException::class.java) {
+                CameraTetherQueue(store, journal).resume(run, run.observedPhotos, run.hardwareIdentity, jobs,
+                    CameraTransferPermit(), { _, _ -> downloads++; hash(raw) }, {})
+            }
+            assertEquals("The total proof budget is checked before fetching any file", 0, downloads)
+            assertEquals(run, journal.load().single())
+        }
+    }
+
+    @Test fun tetherRecoveryCanVerifyExactly64FilesAndTwoGiB() = withStore { fixture, store ->
+        val journal = CameraTetherJournal(File(fixture.root, "budget-limit"))
+        val (run, jobs) = tetherRecoveryFixture(journal, List(64) { 32L shl 20 }, lastPending = false)
+        val requested = mutableListOf<CameraPhoto>()
+        val resumed = CameraTetherQueue(store, journal).resume(run, run.observedPhotos, run.hardwareIdentity, jobs,
+            CameraTransferPermit(), { photo, _ -> requested += photo; hash(raw) }, {})
+        assertEquals(run.observedPhotos, requested)
+        assertEquals(2L shl 30, requested.sumOf { it.size })
+        assertEquals(resumed.batches.size, resumed.rebasedBatches)
+    }
+
+    private fun tetherRecoveryFixture(journal: CameraTetherJournal, sizes: List<Long>, lastPending: Boolean):
+        Pair<CameraTetherRun, List<CameraImportJob>> {
+        val hardware = CameraHardwareIdentity("ILCE-7CM2", "1234567")
+        var run = journal.create("camera", "profile", emptyList(), CameraImportDestination(), hardware)
+        val photos = sizes.mapIndexed { index, size ->
+            photo("id-$index").copy(name = "DSC$index.ARW", size = size)
+        }
+        while (true) {
+            val (next, batch) = journal.reserve(run, photos)
+            run = next
+            if (batch == null) break
+        }
+        val digest = hash(raw)
+        val jobs = run.batches.map { batch ->
+            val items = batch.photos.map { photo ->
+                val saved = if (lastPending && photo == photos.last()) null
+                    else MediaPhoto("content://test/${photo.key}", photo.name, "Pictures/", false)
+                CameraImportItem(photo, saved = saved, digest = digest)
+            }
+            CameraImportJob(batch.id, run.cameraId, 1, items,
+                if (items.all { it.saved != null }) CameraJobStatus.COMPLETE else CameraJobStatus.PAUSED)
+        }
+        return journal.load().single() to jobs
     }
 
     @Test fun tetherQueueChangedCardStopsBeforeDownloading() = withStore { fixture, store ->
@@ -264,6 +441,169 @@ class CameraImportStoreTest {
         assertNull(retried.items.single().problem)
         assertNotEquals(uri, retried.items.single().saved!!.uri)
         assertEquals("external change", fixture.media.file(uri).readText())
+    }
+
+    @Test fun adjustedJpegReuseRequiresTheSameSourceAndFrozenOptions() = withStore { fixture, _ ->
+        val processor: (File, File, CameraJPEGOptions) -> CameraProcessedFile = { _, destination, options ->
+            val bytes = ("adjusted-${options.longEdge}-${options.quality}").toByteArray()
+            destination.writeBytes(bytes)
+            CameraProcessedFile(bytes.size.toLong(), hash(bytes))
+        }
+        val store = CameraImportStore(File(fixture.root, "jobs"), File(fixture.root, "partial"), fixture.media,
+            { fixture.capture }, processor)
+        val first = saveAdjusted(store, CameraJPEGOptions(true, 2048, 90))
+        val same = saveAdjusted(store, CameraJPEGOptions(true, 2048, 90), "jpeg-2")
+        val changed = saveAdjusted(store, CameraJPEGOptions(true, 3000, 90), "jpeg-3")
+        assertEquals(first.items.single().saved, same.items.single().saved)
+        assertTrue(same.items.single().duplicate)
+        assertNotEquals(first.items.single().saved!!.uri, changed.items.single().saved!!.uri)
+        assertEquals(2, fixture.media.rows.size)
+        assertEquals(16L, first.items.single().outputSize)
+        assertEquals(hash("adjusted-2048-90".toByteArray()), first.items.single().outputDigest)
+    }
+
+    @Test fun onlyACompletedIncrementalTaskPublishesItsBoundary() = withStore { _, store ->
+        val boundary = CameraImportBoundary(2_000, setOf("card"), setOf("key"), setOf("key"), "camera")
+        val plan = CameraIncrementalPlan(CameraImportFormat.RAW, checkpoints = mapOf(CameraImportFormat.RAW to boundary))
+        val job = store.create("camera", listOf(photo()), CameraImportDestination(), incremental = plan)
+        assertTrue(committedIncrementalCheckpoints(store.load()).isEmpty())
+        val part = store.partial(job.id); part.writeBytes(raw)
+        val complete = store.publish(job, 0, part, hash(raw), CameraTransferPermit())
+        assertEquals(boundary, committedIncrementalCheckpoints(listOf(complete))[CameraImportFormat.RAW])
+    }
+
+    @Test fun adjustmentChecksForGainMapBeforeReusingAnOlderDerivative() = withStore { fixture, _ ->
+        val store = CameraImportStore(File(fixture.root, "jobs"), File(fixture.root, "partial"), fixture.media,
+            { fixture.capture }, processJpeg = { _, destination, _ ->
+                destination.writeBytes(jpeg)
+                CameraProcessedFile(jpeg.size.toLong(), hash(jpeg))
+            }, verifyJpeg = { throw CameraJPEGGainMapAdjustmentException() })
+        val options = CameraJPEGOptions(adjust = true, longEdge = 2048)
+        saveAdjusted(store, options)
+        val job = store.create("camera", listOf(jpegPhoto("again")), CameraImportDestination(),
+            incremental = CameraIncrementalPlan(CameraImportFormat.JPEG, options))
+        val blocked = receiveCameraJob(store, job, CameraTransferPermit(), { _, output ->
+            output.write(jpeg)
+            hash(jpeg)
+        })
+        assertEquals(CameraJobStatus.PAUSED, blocked.status)
+        assertEquals(CameraMediaProblem.HDR_GAIN_MAP, blocked.items.single().problem)
+        assertFalse(blocked.committed)
+        assertEquals(1, fixture.media.rows.size)
+    }
+
+    @Test fun jpegMemoryLimitPausesAndCanKeepTheVerifiedOriginal() = withStore { fixture, _ ->
+        val store = CameraImportStore(File(fixture.root, "jobs"), File(fixture.root, "partial"), fixture.media,
+            { fixture.capture }, processJpeg = { _, _, _ -> throw CameraJPEGMemoryException() })
+        val job = store.create("camera", listOf(jpegPhoto()), CameraImportDestination(),
+            incremental = CameraIncrementalPlan(CameraImportFormat.JPEG, CameraJPEGOptions(adjust = true)))
+        val download: (CameraPhoto, java.io.FileOutputStream) -> String = { _, output ->
+            output.write(jpeg)
+            hash(jpeg)
+        }
+        val paused = receiveCameraJob(store, job, CameraTransferPermit(), download)
+        assertEquals(CameraJobStatus.PAUSED, paused.status)
+        assertEquals(CameraMediaProblem.JPEG_MEMORY, paused.items.single().problem)
+        assertTrue(fixture.media.rows.isEmpty())
+        val recovered = checkNotNull(store.recover(job.id))
+        assertEquals(hash(jpeg), recovered.items.single().digest)
+        val complete = receiveCameraJob(store, recovered.keepingPendingJpegOriginals(), CameraTransferPermit(), download)
+        assertEquals(CameraJobStatus.COMPLETE, complete.status)
+        val uri = checkNotNull(complete.items.single().saved).uri
+        assertArrayEquals(jpeg, fixture.media.file(uri).readBytes())
+    }
+
+    @Test fun keepOriginalSurvivesRecoveryAndDoesNotReuseAnAdjustedJpeg() = withStore { fixture, _ ->
+        val adjusted = "adjusted JPEG".toByteArray()
+        val store = CameraImportStore(File(fixture.root, "jobs"), File(fixture.root, "partial"), fixture.media,
+            { fixture.capture }, processJpeg = { _, destination, _ ->
+                destination.writeBytes(adjusted)
+                CameraProcessedFile(adjusted.size.toLong(), hash(adjusted))
+            })
+        val options = CameraJPEGOptions(adjust = true, longEdge = 2048)
+        val plan = CameraIncrementalPlan(CameraImportFormat.JPEG, options)
+        val job = store.create("camera", listOf(jpegPhoto(), jpegPhoto("jpeg-2")), CameraImportDestination(), incremental = plan)
+        val part = store.partial(job.id).apply { writeBytes(jpeg) }
+        val partial = store.publish(job, 0, part, hash(jpeg), CameraTransferPermit())
+        val adjustedUri = checkNotNull(partial.items.first().saved).uri
+        store.save(partial.keepingPendingJpegOriginals())
+
+        val recovered = checkNotNull(store.recover(job.id))
+        val complete = receiveCameraJob(store, recovered, CameraTransferPermit(), { photo, output ->
+            assertEquals("jpeg-2", photo.key)
+            output.write(jpeg)
+            hash(jpeg)
+        })
+        assertTrue(complete.committed)
+        assertEquals(adjustedUri, complete.items.first().saved?.uri)
+        val originalUri = checkNotNull(complete.items.last().saved).uri
+        assertNotEquals(adjustedUri, originalUri)
+        assertArrayEquals(jpeg, fixture.media.file(originalUri).readBytes())
+
+        val repeated = saveAdjusted(store, options, "jpeg-3")
+        assertEquals(adjustedUri, repeated.items.single().saved?.uri)
+        assertArrayEquals(adjusted, fixture.media.file(adjustedUri).readBytes())
+    }
+
+    @Test fun committedBoundarySurvivesACompletedMediaRowBecomingUnavailable() = withStore { fixture, store ->
+        val boundary = CameraImportBoundary(2_000, setOf("card"), setOf("key"), setOf("key"), "session")
+        val plan = CameraIncrementalPlan(CameraImportFormat.RAW, checkpoints = mapOf(CameraImportFormat.RAW to boundary))
+        val job = store.create("camera", listOf(photo()), CameraImportDestination(), incremental = plan)
+        val part = store.partial(job.id); part.writeBytes(raw)
+        val complete = store.publish(job, 0, part, hash(raw), CameraTransferPermit())
+        assertTrue(complete.committed)
+        fixture.media.file(complete.items.single().saved!!.uri).writeText("external change")
+        val reopened = fixture.store()
+        val recovered = reopened.load().single()
+        assertEquals(CameraJobStatus.PAUSED, recovered.status)
+        assertEquals(boundary, committedIncrementalCheckpoints(listOf(recovered))[CameraImportFormat.RAW])
+    }
+
+    @Test fun reconnectKeepsAMissingRemoteObjectAsFailedWithoutDownloadingIt() = withStore { fixture, store ->
+        val job = store.create("camera", listOf(photo()), CameraImportDestination())
+        val marked = job.copy(items = listOf(job.items.single().copy(problem = CameraMediaProblem.REMOTE_MISSING)),
+            status = CameraJobStatus.PAUSED)
+        var downloads = 0
+        val result = receiveCameraJob(store, marked, CameraTransferPermit(), { _, _ -> downloads++; error("must not download") })
+        assertEquals(CameraJobStatus.PAUSED, result.status)
+        assertEquals("PAUSED", JSONObject(File(fixture.root, "jobs/${job.id}.json").readText()).getString("status"))
+        assertEquals(0, downloads)
+    }
+
+    @Test fun legacyUnifiedBoundaryMigratesFromSavedKindsInsteadOfItsGlobalDateOrKeys() = withStore { fixture, store ->
+        val time = 1_700_000_000_000L
+        val rawPhoto = CameraPhoto("raw-locator", "RAW.ARW", raw.size.toLong(), time, storageToken = "card")
+        val jpegPhoto = CameraPhoto("jpeg-locator", "JPEG.JPG", jpeg.size.toLong(), time + 1_000, storageToken = "card")
+        val rawMedia = fixture.media.createPending(rawPhoto.name, "Pictures/", "image/x-sony-arw", "raw")
+        fixture.media.write(rawMedia.uri, File(fixture.root, "raw").apply { writeBytes(raw) })
+        val rawSaved = fixture.media.publish(rawMedia.uri)
+        val legacy = CameraImportBoundary(time + 1_000, setOf("card"), setOf(jpegPhoto.key), setOf(jpegPhoto.anchorKey), "old")
+        val plan = CameraIncrementalPlan(CameraImportFormat.RAW, boundary = legacy)
+        val job = CameraImportJob(UUID.randomUUID().toString(), "camera", 1_000,
+            listOf(CameraImportItem(rawPhoto, saved = rawSaved, digest = hash(raw))),
+            CameraJobStatus.COMPLETE, CameraImportDestination(), plan, committed = true)
+        store.save(job)
+        val reopened = fixture.store()
+        val migrated = reopened.load().single().incremental!!
+        assertEquals(time, migrated.checkpoints[CameraImportFormat.RAW]?.dateMillis)
+        assertEquals(setOf(rawPhoto.key), migrated.checkpoints[CameraImportFormat.RAW]?.keys)
+        assertFalse(CameraImportFormat.JPEG in migrated.checkpoints)
+    }
+
+    @Test fun resumeCannotCommitWhenASavedFileChangedAndTheCameraOriginalIsMissing() = withStore { fixture, store ->
+        val plan = CameraIncrementalPlan(CameraImportFormat.RAW)
+        val job = store.create("camera", listOf(photo(), photo("2")), CameraImportDestination(), incremental = plan)
+        val part = store.partial(job.id); part.writeBytes(raw)
+        val paused = store.publish(job, 0, part, hash(raw), CameraTransferPermit()).copy(status = CameraJobStatus.PAUSED)
+        store.save(paused)
+        fixture.media.file(checkNotNull(paused.items.first().saved).uri).writeText("external change")
+        val recovered = checkNotNull(store.recover(job.id))
+        assertEquals(CameraMediaProblem.CHANGED, recovered.items.first().problem)
+        assertNull(recovered.items.first().saved)
+        val missing = recovered.copy(items = recovered.items.map { it.copy(problem = CameraMediaProblem.REMOTE_MISSING) })
+        val resumed = receiveCameraJob(store, missing, CameraTransferPermit(), { _, _ -> error("No remote original") })
+        assertEquals(CameraJobStatus.PAUSED, resumed.status)
+        assertFalse(resumed.committed)
     }
 
     private class FileMedia(private val root: File) : MediaPhotoAccess {

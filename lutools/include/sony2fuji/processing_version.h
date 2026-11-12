@@ -17,4 +17,8 @@ inline bool usesC5Denoise(ProcessingVersion version) {
     return version == ProcessingVersion::C5V2 || version == ProcessingVersion::BasicV3;
 }
 
+inline bool usesLegacySonyCrop(ProcessingVersion version) {
+    return version == ProcessingVersion::Legacy || version == ProcessingVersion::C5V2;
+}
+
 } // namespace sony2fuji

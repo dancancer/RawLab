@@ -78,8 +78,8 @@ v0.5.0 新增逐照片本机调整记忆和批量 RAW 导出。任务固定当�
   Single and batch rendered DNG exports retain current adjustments and final sizing. DNG uses documents/selected folders only, with streamed batch publication rather than full-file Java heap copies.
 - JPEG/PNG 导出保留可读取的相机、镜头、拍摄时间、快门、光圈、ISO 和 GPS 等拍摄 EXIF，更新成片方向、尺寸及 sRGB 标记，不复制旧缩略图或 RAW 专有 MakerNotes。
   JPEG/PNG exports retain readable capture EXIF, including camera, lens, date, exposure, ISO and GPS, and update output orientation, dimensions and sRGB tags without copying old thumbnails or opaque RAW MakerNotes.
-- 渲染型 DNG 固化外观，不是传感器 RAW，也不提供可恢复的调整滑块。不复制来源拍摄 EXIF；未压缩 float32 RGB 约占每像素 12 字节。格式和存储边界见[渲染型 DNG 契约](../lutools/docs/color-contract.md#rendered-dng)。
-  Rendered DNG bakes appearance, not sensor RAW or reversible controls. It omits source capture EXIF and uses about 12 bytes per pixel for uncompressed float32 RGB. See the linked verification for runtime limits.
+- 渲染型 DNG 固化外观，不是传感器 RAW，也不提供可恢复的调整滑块。不复制来源拍摄 EXIF；未压缩的 16 位整数 RGB 约占每像素 6 字节。格式和存储边界见[渲染型 DNG 契约](../lutools/docs/color-contract.md#rendered-dng)。
+  Rendered DNG bakes appearance, not sensor RAW or reversible controls. It omits source capture EXIF and uses about 6 bytes per pixel for uncompressed 16-bit integer RGB. See the linked verification for runtime limits.
 
 支持 RAW、普通 JPEG/PNG 和受支持的手机 gain-map HDR JPEG/HEIF。原始文件不写回；编辑参数按原始资源身份在本机自动保存，重选同一资源可恢复。
 

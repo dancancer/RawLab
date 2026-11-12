@@ -1,6 +1,7 @@
 import Foundation
 
 func checkBatchSelection(_ root: URL) throws {
+    try checkUnconfirmedAssetEdits(root)
     try checkCollectionHDRJPEG(root)
     func check(_ value: Bool, _ message: String) throws { try BatchExportTests.require(value, message) }
     func rejected(_ body: () throws -> Void) -> Bool { do { try body(); return false } catch { return true } }
@@ -105,6 +106,48 @@ func checkBatchSelection(_ root: URL) throws {
 
     for target in job.targets { try target.frozen!.verifyFiles(input: target.sourceURL) }
     try check(true, "original file deletion does not invalidate task-owned frozen inputs")
+}
+
+private func checkUnconfirmedAssetEdits(_ root: URL) throws {
+    let store = try EditPersistence(directory: root.appendingPathComponent("collection-legacy-edits"))
+    let journal = try BatchJournalStore(directory: root.appendingPathComponent("collection-legacy-jobs"))
+    let legacyIdentity = PhotoIdentity(resourceIdentifier: "legacy-asset")
+    var oldSettings = RawSettings.default
+    oldSettings.exposure = 2
+    let oldEdit = PhotoEditState(settings: oldSettings)
+
+    func source(_ bytes: Data, name: String) throws -> (IOSBatchSelection, PhotoIdentity) {
+        let file = root.appendingPathComponent(name)
+        try bytes.write(to: file)
+        let identity = try PhotoIdentity.fallback(for: file, resourceIdentifier: legacyIdentity.resourceIdentifier)
+        let collection = IOSBatchSelection()
+        collection.append(.init(identity: identity, displayName: name, file: .externallyManaged(file), isRaw: false))
+        return (collection, identity)
+    }
+    func prepare(_ collection: IOSBatchSelection) -> IOSCollectionExportReview {
+        collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: nil, x3fDefaultMode: { _ in .legacy },
+            probeHDR: { _ in false }, validateActive: { _ in }, resolveLook: { _ in (nil, nil) })
+    }
+    let (collection, identity) = try source(Data("original".utf8), name: "legacy-original.jpg")
+    let reviewedBeforeLegacyEdit = prepare(collection)
+    try store.save(legacyIdentity, state: oldEdit)
+    let blocked = prepare(collection)
+    try BatchExportTests.require(!blocked.ready && blocked.rows.first?.settings == nil && blocked.rows.first?.error != nil,
+        "A pending legacy asset edit blocks batch export before default exposure is used")
+    let late = try? collection.freeze(reviewedBeforeLegacyEdit, store: store, journal: journal, validateActive: { _ in })
+    try BatchExportTests.require(late == nil, "A new pending legacy edit invalidates a previously reviewed default")
+    let pending = try journal.pendingJobs()
+    try BatchExportTests.require(pending.isEmpty, "No task is saved before the legacy decision")
+
+    try store.resolveUnverifiedAssetEdit(for: identity, expected: oldEdit, restore: true)
+    let restored = try collection.freeze(prepare(collection), store: store, journal: journal, validateActive: { _ in })
+    try BatchExportTests.require(restored.targets.first?.frozen?.settings.exposure == 2, "Restoring the old edit freezes the original +2 EV")
+    let (replacement, replacementIdentity) = try source(Data("replacement".utf8), name: "legacy-replacement.jpg")
+    try BatchExportTests.require(!prepare(replacement).ready, "A different source with the same asset ID needs its own decision")
+    try store.resolveUnverifiedAssetEdit(for: replacementIdentity, expected: oldEdit, restore: false)
+    let original = try replacement.freeze(prepare(replacement), store: store, journal: journal, validateActive: { _ in })
+    try BatchExportTests.require(original.targets.first?.frozen?.settings.exposure == 0 && store.state(for: identity) == oldEdit,
+        "Starting from the replacement original freezes defaults and preserves the first original's edit")
 }
 
 private func checkCollectionHDRJPEG(_ root: URL) throws {

@@ -26,11 +26,19 @@ final class CameraTCPChannel: CameraByteChannel {
     private var buffered = Data()
 
     init(host: String, port: UInt16 = 15740, timeout: TimeInterval = 15) throws {
-        guard Self.localIPv4(host), port > 0 else { throw CameraProtocolError.invalid("Camera endpoint must be a local IPv4 address") }
+        #if DEBUG && targetEnvironment(simulator)
+        let loopbackFixture = host == "127.0.0.1"
+            && ProcessInfo.processInfo.environment["RAWLAB_CAMERA_LOOPBACK_FIXTURE"] == "1"
+        #else
+        let loopbackFixture = false
+        #endif
+        guard (Self.localIPv4(host) || loopbackFixture), port > 0 else {
+            throw CameraProtocolError.invalid("Camera endpoint must be a local IPv4 address")
+        }
         let tcp = NWProtocolTCP.Options()
         tcp.noDelay = true
         let parameters = NWParameters(tls: nil, tcp: tcp)
-        parameters.requiredInterfaceType = .wifi
+        if !loopbackFixture { parameters.requiredInterfaceType = .wifi }
         self.timeout = timeout
         connection = NWConnection(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port)!, using: parameters)
         let ready = CameraNetworkResult<Void>()

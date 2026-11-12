@@ -248,7 +248,8 @@ public sealed class EditStore
             status is not (ProcessingMigrationReceipt.Migrated or ProcessingMigrationReceipt.Kept) ||
             expectedBefore.Settings.Processing.Version is not (1 or 2))
             throw new InvalidDataException(Loc.Text("调整记录无效，原有文件未被覆盖。"));
-        if (status == ProcessingMigrationReceipt.Migrated && candidate.Settings.Processing != ProcessingIdentity.Current)
+        if (status == ProcessingMigrationReceipt.Migrated &&
+            candidate.Settings.Processing.Version != ProcessingMigrationReceipt.PolicyV1Target)
             throw new InvalidDataException(Loc.Text("调整记录无效，原有文件未被覆盖。"));
         if (status == ProcessingMigrationReceipt.Kept && !candidate.SameAs(expectedBefore))
             throw new InvalidDataException(Loc.Text("调整记录无效，原有文件未被覆盖。"));
@@ -258,6 +259,9 @@ public sealed class EditStore
         var registry=ReadRegistry();expectedIdentity.RequireCurrent();
         var current=ReadRecord(registry,expectedIdentity);
         if (!current.SameAs(new PhotoEditState(expectedIdentity,expectedBefore)))
+            throw new AdjustmentOperationExpiredException();
+        if (registry.MigrationReceipts?.TryGetValue(expectedIdentity.Path, out var previous) == true &&
+            previous.Identity.SameFile(expectedIdentity) && !ProcessingMigration.ShouldAttempt(expectedBefore, previous))
             throw new AdjustmentOperationExpiredException();
         var records=new Dictionary<string,SavedEdit>(registry.Records,StringComparer.OrdinalIgnoreCase);
         var receipts=registry.MigrationReceipts == null

@@ -2,11 +2,13 @@ package com.rawlab.android.camera.protocol
 
 import java.io.Closeable
 import java.io.IOException
+import java.io.OutputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketAddress
+import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
@@ -69,4 +71,27 @@ internal class CameraSessionFixture(private val malformedPreview: Boolean = fals
         check(!worker.isAlive) { "Camera fixture thread leaked" }
         failure.get()?.let { throw AssertionError("Camera responder failed", it) }
     }
+}
+
+internal class CameraResumeFixture(name: String, private val bytes: ByteArray) : CameraMediaSession {
+    val device = SonyMobileSession.Device("Sony Corporation", "ILCE-7CM2", "2.00", "test-123", setOf(0x923c, 0x923d))
+    val asset = SonyMobileSession.Asset(this, 1, 1, name, bytes.size.toLong(), 123)
+    val listings = AtomicInteger()
+    val downloads = AtomicInteger()
+    override fun deviceInfo() = device
+    override fun openSession() = Unit
+    override fun listPhotos(device: SonyMobileSession.Device): List<SonyMobileSession.Asset> {
+        listings.incrementAndGet()
+        return listOf(asset)
+    }
+    override fun preview(asset: SonyMobileSession.Asset, large: Boolean) = bytes
+    override fun download(device: SonyMobileSession.Device, asset: SonyMobileSession.Asset,
+        destination: OutputStream, progress: SonyMobileSession.Progress): String {
+        check(asset === this.asset)
+        downloads.incrementAndGet()
+        destination.write(bytes)
+        progress.transferred(asset.size, asset.size)
+        return MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+    }
+    override fun close() = Unit
 }

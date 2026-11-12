@@ -34,6 +34,7 @@ struct HDRSourceInfo {
     var cameraStamp: CameraStamp? = nil
     var proRAW: ProRAWSource? = nil
     var supportsBayerDevelopment = false
+    var cameraProcessingVersion = SONY2FUJI_PROCESSING_BASIC_V3
     var isDevelopedRAW: Bool { isCameraRAW || proRAW != nil }
     var isCameraRAW: Bool { native.container == UInt32(SONY2FUJI_HDR_CONTAINER_CAMERA_RAW) }
 
@@ -63,6 +64,10 @@ struct HDRSourceInfo {
     }
 
     static func probeRAW(_ url: URL) throws -> HDRSourceInfo? {
+        try probeRAW(url, processing: SONY2FUJI_PROCESSING_BASIC_V3)
+    }
+
+    static func probeRAW(_ url: URL, processing: sony2fuji_processing_version) throws -> HDRSourceInfo? {
         guard #available(macOS 15, iOS 18, *) else { return nil }
         if url.pathExtension.lowercased() == "dng" {
             let stamp = try CameraStamp(url)
@@ -76,10 +81,10 @@ struct HDRSourceInfo {
                 return HDRSourceInfo(native: info, cameraStamp: stamp, proRAW: proRAW)
             }
         }
-        return try probeCameraRAW(url)
+        return try probeCameraRAW(url, processing: processing)
     }
 
-    static func probeCameraRAW(_ url: URL) throws -> HDRSourceInfo? {
+    static func probeCameraRAW(_ url: URL, processing: sony2fuji_processing_version = SONY2FUJI_PROCESSING_BASIC_V3) throws -> HDRSourceInfo? {
         guard #available(macOS 15, iOS 18, *) else { return nil }
         let stamp = try CameraStamp(url)
         var camera = sony2fuji_hdr_camera_source_info_v1()
@@ -91,13 +96,14 @@ struct HDRSourceInfo {
         let status = url.path.withCString { path in
             withUnsafeMutablePointer(to: &camera) { pointer in
                 pointer.withMemoryRebound(to: sony2fuji_hdr_source_info_v1.self, capacity: 1) {
-                    sony2fuji_hdr_probe_camera_raw(path, $0, &diagnostic)
+                    sony2fuji_hdr_probe_camera_raw_with_processing(path, processing, $0, &diagnostic)
                 }
             }
         }
         if status == SONY2FUJI_STATUS_OK {
             return HDRSourceInfo(native: camera.base, cameraStamp: stamp,
-                supportsBayerDevelopment: camera.capabilities & UInt32(SONY2FUJI_HDR_CAMERA_SOURCE_BAYER) != 0)
+                supportsBayerDevelopment: camera.capabilities & UInt32(SONY2FUJI_HDR_CAMERA_SOURCE_BAYER) != 0,
+                cameraProcessingVersion: processing)
         }
         if status == SONY2FUJI_STATUS_UNSUPPORTED &&
             diagnostic.reason == UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_RAW) { return nil }

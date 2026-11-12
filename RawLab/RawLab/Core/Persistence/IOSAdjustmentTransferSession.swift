@@ -55,7 +55,7 @@ struct IOSAdjustmentHistoryTransaction {
     var parts: [Part]
 }
 
-// 预检读取磁盘一次；提交与历史只依赖本会话的记录、head 和编辑代次。
+// 候选来自预检快照，提交时核对该记录；会话历史仍由记录、head 和编辑代次决定。
 final class IOSAdjustmentTransferSession {
     private let store: EditPersistence
     private var outcomes: [UUID: [String: IOSAdjustmentTransferOutcome]] = [:]
@@ -116,7 +116,7 @@ final class IOSAdjustmentTransferSession {
                 guard target.isCurrent?() != false else { throw AdjustmentTransferError.draftRequiresPreflight }
                 try target.validateSource?()
                 let generation = editGeneration(for: target.identity)
-                let original = try store.readState(for: target.identity)
+                let original = try store.readState(for: target.identity, requiringLegacyDecision: true)
                 let before = original.state ?? target.defaultState
                 let candidate = try IOSAdjustmentTransfer.prepare(payload: payload, target: before, context: target.context)
                 prepared.append(.init(id: id, displayName: target.displayName, original: original, candidate: candidate,
@@ -159,7 +159,7 @@ final class IOSAdjustmentTransferSession {
                         remember(original, advanceGeneration: false, validator: target.validateSource)
                         result = outcome(target.id, .unchanged, saved: original)
                     } else {
-                        let saved = try store.saveState(identity: original.identity, state: candidate.withUpdatedAt(Date()))
+                        let saved = try store.saveTransferredState(candidate.withUpdatedAt(Date()), expected: original)
                         record(id: operation.id, action: operation.action, fields: operation.payload.fields,
                                displayName: target.displayName, before: original, after: saved,
                                validateSource: target.validateSource)

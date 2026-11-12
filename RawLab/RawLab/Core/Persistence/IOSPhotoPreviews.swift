@@ -207,7 +207,8 @@ private actor IOSPhotoPreviewWorker {
         let image: UIImage = try source.file.withReadAccess { url in
             if settings.isHDREditing {
                 let frame = try processor.processHDR(url: url, settings: settings.hdr!.previewSettings(),
-                    previewLongEdge: IOSPhotoPreviewPlan.edge, proRAWDecodeVersion: settings.proRAWDecodeVersion,
+                    previewLongEdge: IOSPhotoPreviewPlan.edge, processing: settings.processing,
+                    proRAWDecodeVersion: settings.proRAWDecodeVersion,
                     cancelled: { Task.isCancelled })
                 return try UIImage(cgImage: HDRPresentation.makeSDRImage(frame))
             }
@@ -226,6 +227,8 @@ private actor IOSPhotoPreviewWorker {
         try Task.checkCancellation()
         guard try plan.isCurrent(in: edits) else { throw AdjustmentCommitError.expired }
         let data = try IOSPhotoPreviewPlan.thumbnailData(image)
+        try Task.checkCancellation()
+        guard try plan.isCurrent(in: edits) else { throw AdjustmentCommitError.expired }
         try? cache.write(data, for: plan.key)
         try? recentStore?.savePreview(data, key: plan.key, for: source.identity)
         return data
@@ -233,8 +236,11 @@ private actor IOSPhotoPreviewWorker {
     func accept(_ source: IOSPhotoPreviewSource, record: PhotoEditRecord, image: UIImage, look: URL?, editDirectory: URL,
                 recentStore: RecentPhotoStore?) throws {
         let plan = try IOSPhotoPreviewPlan(source: source, record: record, look: look)
-        guard try plan.isCurrent(in: EditPersistence(directory: editDirectory)) else { throw AdjustmentCommitError.expired }
+        let edits = try EditPersistence(directory: editDirectory)
+        guard try plan.isCurrent(in: edits) else { throw AdjustmentCommitError.expired }
         let data = try IOSPhotoPreviewPlan.thumbnailData(image)
+        try Task.checkCancellation()
+        guard try plan.isCurrent(in: edits) else { throw AdjustmentCommitError.expired }
         try cache.write(data, for: plan.key)
         try? recentStore?.savePreview(data, key: plan.key, for: source.identity)
     }

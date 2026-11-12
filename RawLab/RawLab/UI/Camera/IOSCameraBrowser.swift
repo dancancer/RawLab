@@ -6,6 +6,7 @@ struct IOSCameraBrowser: View {
     let history: () -> Void
     let storage: () -> Void
     let reconnect: () -> Void
+    let resume: (CameraTransferJob) -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var format = "all"
     @State private var day: String?
@@ -21,6 +22,51 @@ struct IOSCameraBrowser: View {
     }
     private var hiddenSelection: Bool { model.selection.subtracting(Set(visible.map(\.id))).count > 0 }
     var body: some View {
+        VStack(spacing: 0) {
+            Group {
+                if dynamicTypeSize.isAccessibilitySize { modePicker.pickerStyle(.menu) }
+                else { modePicker.pickerStyle(.segmented) }
+            }.frame(minHeight: 44).padding(.horizontal, 14).disabled(model.busy)
+                .accessibilityIdentifier("camera.import.mode")
+            if model.importPreferences.incremental {
+                IOSCameraIncrementalImport(model: model, history: history, reconnect: reconnect, resume: resume)
+            } else { manualBrowser }
+        }
+        .background(Color(white: 0.10)).navigationTitle(model.device?.model ?? L10n.text("从相机导入"))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button(L10n.text("导入记录"), action: history)
+                    Button(L10n.text("保存位置"), action: storage)
+                    Button(L10n.text("更换相机"), action: reconnect)
+                    Button(L10n.text("断开连接")) { model.stop() }
+                } label: { Image(systemName: "ellipsis") }.accessibilityLabel(L10n.text("更多"))
+            }
+        }
+        .sheet(isPresented: $filters) {
+            IOSCameraFilters(format: $format, day: $day, onlySelected: $onlySelected,
+                days: Array(Set(model.assets.compactMap { Self.dayKey($0.snapshot) })).sorted(by: >))
+        }
+        .sheet(item: $previewAsset) { asset in
+            IOSCameraPreview(model: model, name: asset.snapshot.name) {
+                if let original = model.original(for: asset) {
+                    Button(L10n.text("打开编辑")) { previewAsset = nil; openOriginal(original) }
+                } else {
+                    Button(L10n.text("从相机导入")) {
+                        model.selection = [asset.id]; previewAsset = nil; model.importSelected()
+                    }.disabled(!model.connected || model.busy || !asset.snapshot.transferable)
+                }
+            }
+        }
+    }
+    private var modePicker: some View {
+        Picker(L10n.text("导入方式"), selection: Binding(get: { model.importPreferences.incremental }, set: model.setIncrementalMode)) {
+            Text(L10n.text("手动选片")).tag(false)
+            Text(L10n.text("增量导入")).tag(true)
+        }
+    }
+    private var manualBrowser: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Text("\(visible.count)").font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
@@ -53,33 +99,6 @@ struct IOSCameraBrowser: View {
             }.accessibilityIdentifier("camera.photo.grid")
             if model.phase == .receiving { transferProgress }
             else if !model.selection.isEmpty { selectionBar }
-        }
-        .background(Color(white: 0.10)).navigationTitle(model.device?.model ?? L10n.text("从相机导入"))
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Button(L10n.text("导入记录"), action: history)
-                    Button(L10n.text("保存位置"), action: storage)
-                    Button(L10n.text("更换相机"), action: reconnect)
-                    Button(L10n.text("断开连接")) { model.stop() }
-                } label: { Image(systemName: "ellipsis") }.accessibilityLabel(L10n.text("更多"))
-            }
-        }
-        .sheet(isPresented: $filters) {
-            IOSCameraFilters(format: $format, day: $day, onlySelected: $onlySelected,
-                days: Array(Set(model.assets.compactMap { Self.dayKey($0.snapshot) })).sorted(by: >))
-        }
-        .sheet(item: $previewAsset) { asset in
-            IOSCameraPreview(model: model, name: asset.snapshot.name) {
-                if let original = model.original(for: asset) {
-                    Button(L10n.text("打开编辑")) { previewAsset = nil; openOriginal(original) }
-                } else {
-                    Button(L10n.text("从相机导入")) {
-                        model.selection = [asset.id]; previewAsset = nil; model.importSelected()
-                    }.disabled(!model.connected || model.busy || !asset.snapshot.transferable)
-                }
-            }
         }
     }
     private func tile(_ asset: CameraRemoteAsset) -> some View {
@@ -262,6 +281,9 @@ struct IOSCameraHistory: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(original.name).font(.callout).lineLimit(2)
                             Text(ByteCountFormatter.string(fromByteCount: Int64(original.size), countStyle: .file)).font(.caption).foregroundStyle(.secondary)
+                            if original.jpegSource != nil {
+                                Text(L10n.text("JPEG 已调整")).font(.caption).foregroundStyle(.secondary)
+                            }
                             if original.availability != .available {
                                 Text(L10n.text("原片不可用")).font(.caption).foregroundStyle(.orange)
                             }

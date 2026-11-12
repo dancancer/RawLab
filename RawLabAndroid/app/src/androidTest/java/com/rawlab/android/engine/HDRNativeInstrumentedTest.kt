@@ -3,6 +3,9 @@ package com.rawlab.android.engine
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.test.platform.app.InstrumentationRegistry
+import com.rawlab.android.camera.CameraJPEGGainMapAdjustmentException
+import com.rawlab.android.camera.CameraJPEGOptions
+import com.rawlab.android.camera.CameraJPEGProcessing
 import com.rawlab.android.editor.render.HDRBitmapAdapter
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.PhotoInputKind
@@ -133,6 +136,20 @@ class HDRNativeInstrumentedTest {
         for(edge in listOf(32,0)) NativeHDRBridge.decode(file,info,edge).use { pair ->
             assertTrue(pair.hdrPlane().max() > 2f)
             assertEquals(if(edge==0)64 else edge,pair.width)
+        }
+    }
+
+    @Test fun cameraJpegAdjustmentRejectsAppleGainMapBeforeWriting() {
+        val fixture = "apple-legacy-macos26.jpg"
+        assertTrue(InstrumentationRegistry.getInstrumentation().context.assets.list("")!!.contains(fixture))
+        withFixture(fixture) { file, root ->
+            val original = file.readBytes()
+            val output = File(root, "adjusted.jpg")
+            assertThrows(CameraJPEGGainMapAdjustmentException::class.java) {
+                CameraJPEGProcessing.process(file, output, CameraJPEGOptions(adjust = true, longEdge = 32))
+            }
+            assertFalse(output.exists())
+            assertArrayEquals(original, file.readBytes())
         }
     }
 

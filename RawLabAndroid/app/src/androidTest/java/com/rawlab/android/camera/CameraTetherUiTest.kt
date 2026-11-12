@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.rawlab.android.photo.MediaPhoto
+import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.testing.ForegroundTestRule
 import java.io.File
 import androidx.compose.ui.test.*
@@ -69,10 +70,70 @@ class CameraTetherUiTest {
         compose.onNodeWithTag("tether-grid").assertExists()
         compose.runOnIdle { state.value = state.value.copy(phase = CameraTetherPhase.WAITING) }
         compose.onNodeWithTag("tether-shutter").assertIsNotEnabled()
-        compose.runOnIdle { state.value = state.value.copy(phase = CameraTetherPhase.PAUSED, live = false) }
+        compose.runOnIdle { state.value = state.value.copy(phase = CameraTetherPhase.PAUSED) }
         compose.onNodeWithTag("tether-shutter").assertIsNotEnabled()
         compose.onNodeWithTag("tether-reconnect").assertIsDisplayed()
+        compose.onNodeWithText("LIVE").assertDoesNotExist()
+        compose.onNodeWithText("取景已暂停").assertIsDisplayed()
         assertEquals(1, shots)
+    }
+
+    @Test fun legacySessionWithoutHardwareIdentityDoesNotOfferResume() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val owner = androidx.lifecycle.ViewModelStore()
+        val photo = CameraPhoto("photo", "DSC00252.ARW", 32, 0)
+        val run = CameraTetherRun("old-run", "old-camera", SonyCameraModel.A7CII.profileId, 1, emptyList(),
+            CameraImportDestination(), listOf(CameraTetherBatch("batch", listOf(photo))), CameraTetherStatus.PAUSED)
+        val jobs = listOf(CameraImportJob("batch", run.cameraId, 1, listOf(CameraImportItem(photo, digest = "a".repeat(64))),
+            CameraJobStatus.PAUSED))
+        lateinit var model: CameraImportViewModel
+        PhotoStorage(context).use { storage ->
+            try {
+                instrumentation.runOnMainSync {
+                    model = CameraImportViewModel(context.applicationContext as android.app.Application)
+                    owner.put("camera", model)
+                }
+                compose.waitUntil(10_000) { !model.state.value.preparing }
+                compose.runOnUiThread { model.tether.restore(listOf(run), jobs) }
+                compose.setChineseContent { RawLabTheme { CameraScreen(model, storage, {}, {}, {}) } }
+                compose.onNodeWithTag("camera-resume-tether").assertDoesNotExist()
+                compose.onNodeWithTag("camera-mode-IMPORT").assertIsDisplayed().assertIsEnabled()
+                compose.onNodeWithTag("camera-mode-TETHER").assertIsDisplayed().assertIsEnabled()
+                compose.runOnUiThread { model.tether.restore(listOf(run.copy(hardwareIdentity =
+                    CameraHardwareIdentity("ILCE-7CM2", "1234567"))), jobs) }
+                compose.onNodeWithTag("camera-resume-tether").performScrollTo().assertIsDisplayed().assertIsEnabled()
+            } finally { instrumentation.runOnMainSync { owner.clear() } }
+        }
+    }
+
+    @Test fun unverifiablePausedSessionOffersManualImport() {
+        val run = CameraTetherRun("old-run", "old-camera", SonyCameraModel.A7CII.profileId, 1, emptyList(),
+            CameraImportDestination(), status = CameraTetherStatus.PAUSED)
+        var imports = 0
+        compose.setChineseContent { RawLabTheme {
+            CameraTetherWorkspace(CameraTetherState(phase = CameraTetherPhase.PAUSED, run = run,
+                failure = CameraTetherFailure.SOURCE), { _, _ -> null }, {}, {}, {}, onImport = { imports++ })
+        } }
+        compose.onNodeWithTag("tether-reconnect").assertDoesNotExist()
+        compose.onNodeWithTag("tether-import-instead").assertIsDisplayed().performClick()
+        assertEquals(1, imports)
+    }
+
+    @Test fun overBudgetRecoveryOffersManualImportInsteadOfReconnect() {
+        val active = savedState((1..65).map { "DSC$it.ARW" })
+        val run = checkNotNull(active.run).copy(status = CameraTetherStatus.PAUSED,
+            hardwareIdentity = CameraHardwareIdentity("ILCE-7CM2", "1234567"))
+        val jobs = active.jobs.map { job -> job.copy(items = job.items.map { it.copy(digest = "a".repeat(64)) }) }
+        var imports = 0
+        compose.setChineseContent { RawLabTheme {
+            CameraTetherWorkspace(active.copy(phase = CameraTetherPhase.PAUSED, run = run, jobs = jobs,
+                failure = CameraTetherFailure.BACKLOG), { _, _ -> null }, {}, {}, {}, onImport = { imports++ })
+        } }
+        compose.onNodeWithTag("tether-reconnect").assertDoesNotExist()
+        compose.onNodeWithText("无法确认上次联机的相机原件。请手动选片补传。已保存的原件会保留。").assertExists()
+        compose.onNodeWithTag("tether-import-instead").assertIsDisplayed().performClick()
+        assertEquals(1, imports)
     }
 
     @Test fun receivingShowsOriginalProgressAndNeverEnablesTheShutter() {

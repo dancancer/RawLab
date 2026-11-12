@@ -1,6 +1,7 @@
 package com.rawlab.android.camera
 
 import java.io.FileOutputStream
+import java.io.IOException
 
 /** 调用方持有存储锁；两种相机入口共用同一下载、校验和发布顺序。 */
 internal fun receiveCameraJob(store: CameraImportStore, job: CameraImportJob, permit: CameraTransferPermit,
@@ -10,7 +11,7 @@ internal fun receiveCameraJob(store: CameraImportStore, job: CameraImportJob, pe
     var latest = job.copy(status = CameraJobStatus.ACTIVE)
     store.save(latest)
     for ((index, item) in latest.items.withIndex()) {
-        if (item.saved != null) continue
+        if (item.saved != null || item.problem == CameraMediaProblem.REMOTE_MISSING) continue
         permit.check()
         val part = store.partial(job.id)
         try {
@@ -20,9 +21,23 @@ internal fun receiveCameraJob(store: CameraImportStore, job: CameraImportJob, pe
                 result
             }
             permit.check()
-            latest = store.publish(latest, index, part, digest, permit)
+            latest = try { store.publish(latest, index, part, digest, permit) }
+            catch (error: IOException) {
+                val problem = when (error) {
+                    is CameraJPEGGainMapAdjustmentException -> CameraMediaProblem.HDR_GAIN_MAP
+                    is CameraJPEGMemoryException -> CameraMediaProblem.JPEG_MEMORY
+                    else -> throw error
+                }
+                val items = latest.items.toMutableList()
+                items[index] = item.copy(digest = digest, problem = problem)
+                return latest.copy(items = items, status = CameraJobStatus.PAUSED).also(store::save)
+            }
             onJob(latest)
         } finally { part.delete() }
     }
-    return latest
+    val finished = latest.items.all { it.saved != null }
+    val result = latest.copy(status = if (finished) CameraJobStatus.COMPLETE else CameraJobStatus.PAUSED,
+        committed = latest.committed || finished)
+    if (result != latest) store.save(result)
+    return result
 }

@@ -840,6 +840,13 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
             TEST_LENS_SDK_DNG TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     endif()
     add_test(NAME rendered_dng COMMAND rendered_dng_tests)
+    if(APPLE AND NOT IOS)
+        add_executable(rendered_dng_imageio_tests tests/rendered_dng_imageio_tests.mm)
+        target_compile_options(rendered_dng_imageio_tests PRIVATE -fobjc-arc)
+        target_link_libraries(rendered_dng_imageio_tests sony2fuji_core
+            "-framework Foundation" "-framework ImageIO" "-framework CoreGraphics")
+        add_test(NAME rendered_dng_imageio COMMAND rendered_dng_imageio_tests)
+    endif()
     if(SONY2FUJI_ENABLE_LENSFUN AND SONY2FUJI_ENABLE_WAVELET_DENOISE AND EXISTS "${SONY2FUJI_TEST_LENS_WAVELET_RAW}")
         target_compile_definitions(rendered_dng_tests PRIVATE
             TEST_LENS_WAVELET_DNG TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
@@ -908,6 +915,12 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         add_test(NAME raw_active_area_metadata COMMAND raw_active_area_tests)
         if(EXISTS "${SONY2FUJI_TEST_SONY_ASPECT_RAW}")
             add_test(NAME raw_active_area_sony COMMAND raw_active_area_tests "${SONY2FUJI_TEST_SONY_ASPECT_RAW}")
+            if(APPLE AND BUILD_CLI AND Python3_Interpreter_FOUND)
+                add_test(NAME raw_active_area_sony_cli COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hdr_agent.py"
+                    --cli $<TARGET_FILE:sony2fuji_cli> --fixture $<TARGET_FILE:hdr_image_tests>
+                    --sony-raw "${SONY2FUJI_TEST_SONY_ASPECT_RAW}" HDRAgent.test_v14_sony_raw_retains_crop)
+            endif()
         endif()
     endif()
     add_executable(tone_curve_tests tests/tone_curve_tests.cpp src/core/photo_tone_curve.cpp)

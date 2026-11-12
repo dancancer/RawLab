@@ -57,6 +57,12 @@ enum IOSCameraParameter: CaseIterable, Identifiable {
     }
 }
 
+struct IOSCameraImportPreferences: Codable {
+    var incremental = false
+    var format = CameraImportFormat.rawAndJPEG
+    var jpeg = CameraJPEGOptions()
+}
+
 @MainActor final class IOSCameraController: ObservableObject {
     @Published private(set) var phase = IOSCameraPhase.idle
     @Published private(set) var device: CameraDeviceIdentity?
@@ -74,6 +80,9 @@ enum IOSCameraParameter: CaseIterable, Identifiable {
     @Published private(set) var shutterReady = false
     @Published private(set) var savedCount = 0
     @Published private(set) var latestOriginal: CameraStoredOriginal?
+    @Published private(set) var importPreferences = IOSCameraImportPreferences()
+    @Published private(set) var scanning = false
+    @Published private(set) var incrementalJobID: UUID?
     @Published var notice: String?
     @Published var selection: Set<String> = []
     private var unavailableThumbnails: Set<String> = []
@@ -81,6 +90,7 @@ enum IOSCameraParameter: CaseIterable, Identifiable {
     private var thumbnailOrder: [String] = []
     private var run: IOSCameraRun?
     private var sessionStartedAt = Date.distantFuture
+    private var contentsFamily: CameraContentsFamily?
     private let backend = CameraWorkspaceBackend.shared
     private(set) var endpoint: IOSCameraEndpoint?
     private(set) var mode = IOSCameraMode.importing
@@ -89,7 +99,7 @@ enum IOSCameraParameter: CaseIterable, Identifiable {
 
     init() { reloadHistory() }
     var connected: Bool { run != nil && phase != .connecting && phase != .paused && phase != .idle }
-    var busy: Bool { [.connecting, .receiving, .capturing].contains(phase) || parameterBusy }
+    var busy: Bool { [.connecting, .receiving, .capturing].contains(phase) || parameterBusy || scanning }
     var selectedAssets: [CameraRemoteAsset] { assets.filter { selection.contains($0.id) } }
     var selectionBytes: UInt64 { selectedAssets.reduce(0) { $0 + $1.snapshot.size } }
     var selectionAllowed: Bool {
@@ -99,6 +109,14 @@ enum IOSCameraParameter: CaseIterable, Identifiable {
     var hasUnknownShot: Bool { manifest.tether?.shutterRequestedAt != nil }
     var unfinishedJobs: [CameraTransferJob] { manifest.jobs.filter { !$0.complete }.reversed() }
     var originals: [CameraStoredOriginal] { manifest.originals.reversed() }
+    var pendingIncrementalJob: CameraTransferJob? {
+        guard let device, let endpoint else { return nil }
+        return manifest.pendingIncrementalJob(device: device, connectionKey: endpoint.connectionKey)
+    }
+    var displayedIncrementalJob: CameraTransferJob? {
+        manifest.jobs.first { $0.id == incrementalJobID } ?? pendingIncrementalJob
+    }
+    var cameraTimeZone: TimeZone { contentsFamily == .legacy ? .gmt : .current }
     var recentTetherOriginals: [CameraStoredOriginal] {
         let jobs = Set(manifest.tether?.jobIDs ?? [])
         let ids = Set(manifest.jobs.filter { jobs.contains($0.id) }.flatMap(\.items).compactMap(\.sourceID))
@@ -108,6 +126,7 @@ enum IOSCameraParameter: CaseIterable, Identifiable {
     func connect(endpoint: IOSCameraEndpoint, mode: IOSCameraMode, cardConfirmed: Bool, resume: Bool) {
         manualImportRequired = false
         self.endpoint = endpoint; self.mode = mode; sessionStartedAt = Date()
+        scanning = false; incrementalJobID = nil; contentsFamily = nil
         assets = []; selection = []; thumbnails = [:]; pendingThumbnails = []; unavailableThumbnails = []; thumbnailOrder = []
         latestOriginal = nil; previewLoading = false
         properties = [:]; device = nil; writable = false; shutterReady = false; parameterBusy = false
@@ -129,10 +148,20 @@ enum IOSCameraParameter: CaseIterable, Identifiable {
         case .phase(let value):
             phase = value
             if value == .browsing || value == .ready { pendingThumbnails = [] }
-        case .device(let value, let family): device = value; originalBrowsingAvailable = family != nil
-        case .assets(let values): assets = values; selection.formIntersection(Set(values.map(\.id)))
+        case .device(let value, let family):
+            device = value; contentsFamily = family; originalBrowsingAvailable = family != nil
+            if mode == .importing {
+                let saved = importPreferencesKey.flatMap { UserDefaults.standard.data(forKey: $0) }
+                importPreferences = saved.flatMap { try? JSONDecoder().decode(IOSCameraImportPreferences.self, from: $0) }
+                    ?? IOSCameraImportPreferences()
+            }
+        case .assets(let values):
+            assets = values; selection.formIntersection(Set(values.map(\.id))); scanning = false
         case .properties(let values, let writable, let shutter): properties = values; self.writable = writable; shutterReady = shutter
         case .manifest(let value): manifest = value
+        case .incrementalJob(let id):
+            incrementalJobID = id
+            if !importPreferences.incremental { setIncrementalMode(true) }
         case .progress(let id, let bytes, let total): progress = (id, bytes, total)
         case .thumbnail(let id, let bytes):
             pendingThumbnails.remove(id)
@@ -151,7 +180,7 @@ enum IOSCameraParameter: CaseIterable, Identifiable {
         case .saved(let original):
             latestOriginal = original; savedCount += 1; progress = nil
         case .failure(let error):
-            parameterBusy = false; previewLoading = false; shutterReady = false
+            parameterBusy = false; previewLoading = false; shutterReady = false; scanning = false; progress = nil
             if case CameraProtocolError.tetherRecoveryRequired = error { manualImportRequired = true }
             else { manualImportRequired = false }
             notice = message(error)
@@ -171,7 +200,7 @@ enum IOSCameraParameter: CaseIterable, Identifiable {
     func stop(completion: @escaping () -> Void = {}) {
         let previous = run
         callbackOwner = UUID(); run = nil; phase = .paused; parameterBusy = false; shutterReady = false
-        previewLoading = false; pendingThumbnails = []
+        previewLoading = false; pendingThumbnails = []; scanning = false; progress = nil
         backend.stop(previous) { [weak self] in
             Task { @MainActor in self?.reloadHistory(); completion() }
         }
@@ -187,13 +216,88 @@ enum IOSCameraParameter: CaseIterable, Identifiable {
         }
     }
     func importSelected() {
-        guard let run, mode == .importing, phase == .browsing, selectionAllowed else { return }
+        guard let run, mode == .importing, phase == .browsing, !scanning, selectionAllowed else { return }
         phase = .receiving; notice = nil
         backend.importAssets(selectedAssets, run: run)
     }
     func resumeImport(_ job: CameraTransferJob) {
-        guard let run, mode == .importing, phase == .browsing else { return }
+        guard let run, mode == .importing, phase == .browsing, !scanning else { return }
         phase = .receiving; notice = nil; backend.resumeImport(jobID: job.id, run: run)
+    }
+    func dismissIncrementalJob(_ job: CameraTransferJob) {
+        guard !busy else { return }
+        let owner = callbackOwner
+        scanning = true
+        backend.dismissIncrementalJob(job.id) { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+                guard self.callbackOwner == owner else { self.reloadHistory(); return }
+                self.scanning = false
+                switch result {
+                case .success(let snapshot):
+                    self.manifest = snapshot
+                    if self.incrementalJobID == job.id { self.incrementalJobID = nil }
+                    self.notice = nil
+                case .failure:
+                    self.notice = L10n.text("无法保存导入记录或原件。请检查可用空间后重试。")
+                }
+            }
+        }
+    }
+    private var importPreferencesKey: String? {
+        guard let device, let endpoint else { return nil }
+        let cameraKey = device.serial.isEmpty ? device.stableKey + "|" + endpoint.connectionKey : device.stableKey
+        return "camera.incremental.preferences." + cameraKey
+    }
+    private func persistImportPreferences() {
+        guard let key = importPreferencesKey, let data = try? JSONEncoder().encode(importPreferences) else { return }
+        UserDefaults.standard.set(data, forKey: key)
+    }
+    func setIncrementalMode(_ value: Bool) {
+        importPreferences.incremental = value
+        persistImportPreferences()
+    }
+    func setImportFormat(_ value: CameraImportFormat) {
+        importPreferences.format = value
+        persistImportPreferences()
+    }
+    func setJPEGOptions(_ value: CameraJPEGOptions) {
+        guard value.isValid else { return }
+        importPreferences.jpeg = value
+        persistImportPreferences()
+    }
+    private var defaultIncrementalStart: Date {
+        let now = Date()
+        guard contentsFamily == .legacy else { return Calendar.current.startOfDay(for: now) }
+        let wallDay = Calendar.current.dateComponents([.year, .month, .day], from: now)
+        var cameraCalendar = Calendar(identifier: .gregorian)
+        cameraCalendar.timeZone = .gmt
+        return cameraCalendar.date(from: wallDay) ?? cameraCalendar.startOfDay(for: now)
+    }
+    func incrementalScan(customCutoff: Date?, includeUndated: Bool) -> CameraIncrementalScan {
+        let boundaries = device.flatMap { device in
+            endpoint.map { manifest.incrementalBoundaries(device: device, connectionKey: $0.connectionKey) }
+        } ?? [:]
+        let savedKeys: Set<String>
+        if let owner = assets.first?.owner, customCutoff == nil {
+            savedKeys = manifest.savedIncrementalKeys(owner: owner, jpeg: importPreferences.jpeg)
+        } else { savedKeys = [] }
+        return CameraIncrementalScan(assets: assets, boundaries: boundaries, cutoff: defaultIncrementalStart,
+                                     customCutoff: customCutoff, format: importPreferences.format,
+                                     includeUndated: includeUndated, savedKeys: savedKeys)
+    }
+    func startIncremental(_ scan: CameraIncrementalScan) {
+        guard let run, mode == .importing, phase == .browsing, !scanning, !scan.assets.isEmpty,
+              scan.assets.allSatisfy({ $0.snapshot.transferable }) else { return }
+        let plan = CameraIncrementalPlan(format: importPreferences.format, jpeg: importPreferences.jpeg,
+                                         boundary: nil, owner: scan.assets.first?.owner, boundaries: scan.nextBoundaries)
+        phase = .receiving; notice = nil
+        backend.importAssets(scan.assets, incremental: plan, run: run)
+    }
+    func refreshImport() {
+        guard let run, mode == .importing, phase == .browsing, !scanning else { return }
+        scanning = true; notice = nil
+        backend.refreshImport(run)
     }
     func thumbnail(_ asset: CameraRemoteAsset) {
         guard let run, phase == .browsing, thumbnails[asset.id] == nil, !unavailableThumbnails.contains(asset.id),
@@ -287,6 +391,9 @@ enum IOSCameraParameter: CaseIterable, Identifiable {
         case CameraProtocolError.captureNotSent: return L10n.text("请将相机设为单张拍摄，并确认照片同时保存到相机存储卡。")
         case CameraProtocolError.tetherRecoveryRequired: return L10n.text("无法确认上次联机的照片范围，已暂停自动恢复。请从相机导入，手动选择需要补传的照片。不会自动补拍。")
         case CameraProtocolError.unsupported: return L10n.text("当前相机模式未提供此功能。")
+        case CameraProtocolError.jpegProcessing: return L10n.text("无法按所选设置处理 JPEG。")
+        case CameraProtocolError.jpegGainMapAdjustment: return L10n.text("此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。")
+        case CameraProtocolError.importRecoveryRequired: return L10n.text("无法确认上次导入的原始文件，请重新选择照片。")
         case CameraProtocolError.invalid: return L10n.text("相机数据或原件校验未通过，已暂停。")
         default: return L10n.text("相机连接已断开。已保存的照片仍可查看。")
         }

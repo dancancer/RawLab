@@ -1,5 +1,7 @@
 package com.rawlab.android.camera
 
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import android.graphics.Bitmap
 import android.net.Uri
 import android.text.format.Formatter
@@ -14,6 +16,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.NavigateBefore
@@ -35,14 +38,17 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rawlab.android.R
 import java.text.DateFormat
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -81,8 +87,20 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
         state.photos.filter { if (selectedOnly) it.key in state.selected else matches(it, format, date) }
     }
     val selected = state.photos.filter { it.key in state.selected }
-    val savedKeys = remember(state.jobs, state.cameraId) {
-        state.jobs.filter { it.cameraId == state.cameraId }.flatMap { it.items }.filter { it.saved != null }.map { it.photo.key }.toSet()
+    val incremental = state.importMode == CameraImportMode.INCREMENTAL
+    val resumeIncremental = state.resumableIncrementalJob
+    val incrementalCount = state.incrementalScan?.assets?.size ?: 0
+    val canImport = !state.transferring && !state.preparing && !state.closing && state.stage == null
+    val needsOriginalJpeg = state.job?.items?.any { it.problem?.needsOriginalJpeg == true } == true
+    val savedKeys = remember(state.jobs, state.cameraId, state.hardwareIdentity, state.photos, state.incrementalOwner, state.verifiedImports) {
+        val observed = state.photos.associateBy { it.key }
+        state.jobs.asSequence()
+            .filter { it.originalListingOwner == state.incrementalOwner && it.matchesCamera(state.cameraId, state.hardwareIdentity) }
+            .flatMap { it.items.asSequence() }
+            .filter { it.saved != null && observed[it.photo.key]?.let(it.photo::matchesSnapshot) == true }
+            .map { it.photo.key }
+            .toSet() + state.verifiedImports.values.map { it.photo }
+                .filter { observed[it.key]?.let(it::matchesSnapshot) == true }.map { it.key }
     }
     val title = when {
         preview != null -> R.string.camera_preview
@@ -104,7 +122,7 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
                 Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.back))
             }
         }, actions = {
-            if (page == "browse" && preview == null && state.connected) {
+            if (page == "browse" && preview == null && state.connected && !incremental) {
                 IconButton(onClick = { draftFormat = format; draftDate = date; filterOpen = true }, modifier = Modifier.testTag("camera-filter")) {
                     Icon(Icons.Outlined.FilterList, stringResource(R.string.camera_filter),
                         tint = if (format != "all" || date != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
@@ -113,10 +131,10 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
             Box {
                 IconButton(onClick = { menu = true }, modifier = Modifier.testTag("camera-menu")) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.more)) }
                 DropdownMenu(menu, { menu = false }) {
-                    if (state.connected && page == "browse") DropdownMenuItem(text = { Text(stringResource(R.string.camera_selected)) },
+                    if (state.connected && page == "browse" && !incremental) DropdownMenuItem(text = { Text(stringResource(R.string.camera_selected)) },
                         leadingIcon = { if (selectedOnly) Icon(Icons.Outlined.Check, null) }, enabled = selected.isNotEmpty(),
                         modifier = Modifier.testTag("camera-selected-only"), onClick = { selectedOnly = !selectedOnly; menu = false })
-                    if (selected.isNotEmpty()) DropdownMenuItem(text = { Text(stringResource(R.string.camera_clear)) },
+                    if (!incremental && selected.isNotEmpty()) DropdownMenuItem(text = { Text(stringResource(R.string.camera_clear)) },
                         enabled = !state.transferring, onClick = { model.clearSelection(); selectedOnly = false; menu = false })
                     if (state.job != null) DropdownMenuItem(text = { Text(stringResource(R.string.camera_view_task)) },
                         modifier = Modifier.testTag("camera-view-task"), onClick = { page = "task"; previewKey = null; menu = false })
@@ -131,7 +149,8 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
             }
         })
     }, bottomBar = {
-        val showActions = preview != null || page == "task" && state.job != null || page == "browse" && state.connected && selected.isNotEmpty()
+        val hasCandidates = if (incremental) incrementalCount > 0 || resumeIncremental != null else selected.isNotEmpty()
+        val showActions = preview != null || page == "task" && state.job != null || page == "browse" && state.connected && hasCandidates
         if (showActions) Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.navigationBarsPadding().padding(horizontal = 12.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 when {
@@ -148,7 +167,15 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
                         if (state.transferring) OutlinedButton(onClick = model::stop, shape = CameraControlShape,
                             modifier = Modifier.fillMaxWidth().testTag("camera-stop")) { Text(stringResource(R.string.camera_stop)) }
                         else {
-                            if (job.status != CameraJobStatus.COMPLETE) Button(onClick = { if (state.connected) model.resume() else onConnect(true) },
+                            if (needsOriginalJpeg) {
+                                Button(onClick = { if (state.connected) model.resume(keepJpegOriginals = true) else onConnect(true) },
+                                    enabled = canImport, shape = CameraControlShape,
+                                    modifier = Modifier.fillMaxWidth().testTag("camera-jpeg-keep-original")) {
+                                    val label = if (state.connected) R.string.camera_jpeg_keep_remaining_originals
+                                        else R.string.camera_connect_action
+                                    Text(stringResource(label))
+                                }
+                            } else if (job.status != CameraJobStatus.COMPLETE) Button(onClick = { if (state.connected) model.resume() else onConnect(true) },
                                 enabled = !state.preparing && !state.closing, shape = CameraControlShape, modifier = Modifier.fillMaxWidth().testTag("camera-resume")) {
                                 Text(stringResource(if (job.items.any { it.problem != null }) R.string.camera_retry_originals else if (state.connected) R.string.camera_resume else R.string.camera_connect_action))
                             }
@@ -162,6 +189,14 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
                             }
                         }
                     }
+                    incremental -> Button(
+                        onClick = { model.startImport(); page = "task" },
+                        enabled = canImport && (resumeIncremental != null || state.incrementalOptionsValid),
+                        shape = CameraControlShape, modifier = Modifier.fillMaxWidth().testTag("camera-import"),
+                    ) {
+                        if (resumeIncremental != null) Text(stringResource(R.string.camera_resume))
+                        else Text(stringResource(R.string.camera_incremental_import_count, incrementalCount))
+                    }
                     else -> Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("camera-selection-bar"), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         IconButton(onClick = { model.clearSelection(); selectedOnly = false }) { Icon(Icons.Outlined.Close, stringResource(R.string.camera_cancel_selection)) }
@@ -170,7 +205,7 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
                         if (selected.size == 1) IconButton(onClick = { previewKey = selected.single().key }, modifier = Modifier.testTag("camera-preview-selected")) {
                             Icon(Icons.Outlined.ZoomIn, stringResource(R.string.camera_preview))
                         }
-                        Button(onClick = { model.startImport(); page = "task" }, enabled = !state.transferring && !state.preparing,
+                        Button(onClick = { model.startImport(); page = "task" }, enabled = canImport,
                             shape = CameraControlShape, modifier = Modifier.testTag("camera-import")) { Text(stringResource(R.string.camera_import_count, selected.size)) }
                     }
                 }
@@ -178,7 +213,10 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
         }
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            state.message?.takeUnless { page == "task" && state.job?.status == CameraJobStatus.PAUSED && it == R.string.camera_paused }?.let { message ->
+            state.message?.takeUnless {
+                page == "task" && ((state.job?.status == CameraJobStatus.PAUSED && it == R.string.camera_paused) ||
+                    (needsOriginalJpeg && it == R.string.camera_jpeg_gain_map_keep_original))
+            }?.let { message ->
                 Row(Modifier.fillMaxWidth().padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(message), Modifier.weight(1f).padding(vertical = 8.dp), style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error)
@@ -204,9 +242,12 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
                         HorizontalDivider()
                     }
                 }
-                page == "task" -> CameraTask(state)
+                page == "task" -> CameraTask(state, needsOriginalJpeg)
                 state.connected -> {
-                    if (filtered.isEmpty()) CameraEmpty(if (state.photos.isEmpty()) R.string.camera_empty else R.string.camera_no_matches)
+                    CameraImportModeControls(state, model)
+                    if (incremental) {
+                        CameraIncrementalOptions(state, model)
+                    } else if (filtered.isEmpty()) CameraEmpty(if (state.photos.isEmpty()) R.string.camera_empty else R.string.camera_no_matches)
                     else LazyVerticalGrid(state = if (selectedOnly) selectionGrid else browseGrid,
                         columns = GridCells.Fixed(if (LocalDensity.current.fontScale >= 1.4f) 2 else 3),
                         modifier = Modifier.fillMaxSize().testTag("camera-grid"), contentPadding = PaddingValues(8.dp),
@@ -267,15 +308,32 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
 }
 
 @Composable
-private fun CameraTask(state: CameraImportState) {
+private fun CameraTask(state: CameraImportState, needsOriginalJpeg: Boolean) {
     val job = state.job
     if (job == null) { CameraEmpty(R.string.camera_loading); return }
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(stringResource(if (state.transferring) R.string.camera_progress else if (job.items.any { it.problem != null })
-                R.string.camera_original_unavailable else if (job.status == CameraJobStatus.COMPLETE)
-                R.string.camera_complete else R.string.camera_paused), style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(when {
+                state.transferring -> R.string.camera_progress
+                needsOriginalJpeg -> R.string.camera_paused
+                job.items.any { it.problem != null } -> R.string.camera_original_unavailable
+                job.status == CameraJobStatus.COMPLETE -> R.string.camera_complete
+                else -> R.string.camera_paused
+            }), style = MaterialTheme.typography.headlineSmall)
+            if (job.items.any { it.problem == CameraMediaProblem.HDR_GAIN_MAP }) Text(stringResource(R.string.camera_jpeg_gain_map_keep_original),
+                color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            if (job.items.any { it.problem == CameraMediaProblem.JPEG_MEMORY }) Text(stringResource(R.string.memory_error),
+                color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             Text(stringResource(R.string.camera_saved_count, job.savedCount, job.items.size))
+            job.incremental?.let { plan ->
+                Text("${stringResource(R.string.camera_transfer_format)} · ${if (plan.format == CameraImportFormat.RAW_AND_JPEG) "RAW + JPEG" else plan.format.name}",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (job.items.any { job.jpegOptions(it) != null })
+                    Text(stringResource(R.string.camera_jpeg_summary,
+                        plan.jpeg.longEdge?.let { "$it px" } ?: stringResource(R.string.output_original_size),
+                        java.text.NumberFormat.getPercentInstance().format(plan.jpeg.quality / 100.0)), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             if (job.savedCount > 0) Text(stringResource(R.string.camera_saved_to_album),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             LinearProgressIndicator(progress = { ((job.savedBytes + state.currentBytes).toFloat() / job.totalBytes.coerceAtLeast(1)).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
@@ -288,6 +346,8 @@ private fun CameraTask(state: CameraImportState) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(item.photo.name, style = MaterialTheme.typography.bodyMedium)
                         Text(bytes(item.photo.size), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (item.saveOriginalJpeg) Text(stringResource(R.string.camera_jpeg_original),
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         (item.saved ?: item.unavailable)?.let { saved ->
                             Text(saved.relativePath + saved.displayName, style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -297,14 +357,142 @@ private fun CameraTask(state: CameraImportState) {
                     }
                     Text(stringResource(when {
                         state.currentKey == item.photo.key -> R.string.camera_progress
-                        item.problem == CameraMediaProblem.MISSING -> R.string.camera_original_missing
+                        item.problem == CameraMediaProblem.MISSING || item.problem == CameraMediaProblem.REMOTE_MISSING -> R.string.camera_original_missing
                         item.problem == CameraMediaProblem.CHANGED -> R.string.camera_original_changed
+                        item.problem?.needsOriginalJpeg == true -> R.string.camera_jpeg_processing_failed
                         item.duplicate -> R.string.camera_duplicate
                         item.saved != null -> R.string.camera_saved
                         else -> R.string.camera_waiting
                     }), modifier = Modifier.padding(start = 8.dp).widthIn(max = 110.dp), style = MaterialTheme.typography.labelMedium)
                 }
                 HorizontalDivider()
+            }
+        }
+    }
+}
+
+@Composable
+private fun CameraImportModeControls(state: CameraImportState, model: CameraImportViewModel) {
+    Column(Modifier.fillMaxWidth()
+        .padding(horizontal = 12.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(stringResource(R.string.camera_import_mode), style = MaterialTheme.typography.titleSmall)
+        if (state.stage == SonyCameraConnection.Stage.NETWORK)
+            Text(stringResource(R.string.camera_incremental_scanning), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("camera-incremental-scanning"))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = state.importMode == CameraImportMode.MANUAL,
+                onClick = { model.setImportMode(CameraImportMode.MANUAL) },
+                label = { Text(stringResource(R.string.camera_import_mode_manual)) },
+                modifier = Modifier.testTag("camera-import-mode-MANUAL"), shape = CameraControlShape)
+            FilterChip(selected = state.importMode == CameraImportMode.INCREMENTAL,
+                onClick = { model.setImportMode(CameraImportMode.INCREMENTAL) },
+                label = { Text(stringResource(R.string.camera_import_mode_incremental)) },
+                modifier = Modifier.testTag("camera-import-mode-INCREMENTAL"), shape = CameraControlShape)
+        }
+    }
+}
+
+@Composable
+private fun CameraIncrementalOptions(state: CameraImportState, model: CameraImportViewModel) {
+    val context = LocalContext.current
+    val scan = state.incrementalScan
+    var edgeText by remember(state.incrementalJpeg.longEdge) { mutableStateOf(state.incrementalJpeg.longEdge?.toString().orEmpty()) }
+    var qualityText by remember(state.incrementalJpeg.quality) { mutableStateOf(state.incrementalJpeg.quality.toString()) }
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp)
+        .testTag("camera-incremental-options"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(stringResource(R.string.camera_transfer_format), style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(CameraImportFormat.RAW, CameraImportFormat.JPEG, CameraImportFormat.RAW_AND_JPEG).forEach { format ->
+                FilterChip(selected = state.incrementalFormat == format, onClick = { model.setIncrementalFormat(format) },
+                    label = { Text(if (format == CameraImportFormat.RAW_AND_JPEG) "RAW + JPEG" else format.name) },
+                    modifier = Modifier.testTag("camera-incremental-format-${format.name}"), shape = CameraControlShape)
+            }
+        }
+        Text(stringResource(R.string.camera_incremental_cutoff), style = MaterialTheme.typography.labelLarge)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.camera_incremental_range,
+                scan?.let { formatCameraTime(it.startMillis, state.legacyCameraTime) }
+                    ?: stringResource(R.string.camera_incremental_camera_time)),
+                Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = {
+                val zone = cameraTimeZone(state.legacyCameraTime)
+                val current = Calendar.getInstance(zone).apply { timeInMillis = scan?.startMillis ?: System.currentTimeMillis() }
+                DatePickerDialog(context, { _, year, month, day ->
+                    TimePickerDialog(context, { _, hour, minute ->
+                        model.setIncrementalCutoff(Calendar.getInstance(zone).apply {
+                            set(year, month, day, hour, minute, 0); set(Calendar.MILLISECOND, 0)
+                        }.timeInMillis)
+                    }, current.get(Calendar.HOUR_OF_DAY), current.get(Calendar.MINUTE), true).show()
+                }, current.get(Calendar.YEAR), current.get(Calendar.MONTH), current.get(Calendar.DAY_OF_MONTH)).show()
+            }, modifier = Modifier.testTag("camera-incremental-cutoff")) { Text(stringResource(R.string.camera_incremental_cutoff)) }
+            if (state.incrementalCutoffMillis != null) TextButton(onClick = { model.setIncrementalCutoff(null) },
+                modifier = Modifier.testTag("camera-incremental-default-cutoff")) { Text(stringResource(R.string.camera_incremental_default_cutoff)) }
+        }
+        if ((scan?.undatedCount ?: 0) > 0 || state.incrementalIncludeUndated) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(state.incrementalIncludeUndated, onCheckedChange = model::setIncrementalIncludeUndated,
+                    modifier = Modifier.testTag("camera-incremental-include-undated"))
+                Text(stringResource(R.string.camera_incremental_undated_count, scan?.undatedCount ?: 0), style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        if (state.stage == SonyCameraConnection.Stage.NETWORK) {
+            Spacer(Modifier.height(4.dp))
+        } else if (scan?.needsCutoffConfirmation == true) {
+            Text(stringResource(R.string.camera_incremental_boundary_unverified), color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("camera-incremental-boundary-unverified"))
+        } else if (scan?.assets.isNullOrEmpty()) {
+            Text(stringResource(R.string.camera_incremental_no_new), style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("camera-incremental-no-new"))
+        } else {
+            Text(stringResource(R.string.camera_incremental_pending_count, scan?.assets?.size ?: 0),
+                style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("camera-incremental-pending-count"))
+        }
+        TextButton(onClick = model::refreshIncrementalScan, enabled = !state.preparing && !state.transferring && state.stage == null,
+            modifier = Modifier.testTag("camera-incremental-refresh")) { Text(stringResource(R.string.camera_incremental_refresh)) }
+        if (state.incrementalFormat != CameraImportFormat.RAW) {
+            Text(stringResource(R.string.camera_jpeg_settings), style = MaterialTheme.typography.labelLarge)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(state.incrementalJpeg.adjust, onCheckedChange = {
+                    model.setIncrementalJpeg(state.incrementalJpeg.copy(adjust = it))
+                }, modifier = Modifier.testTag("camera-jpeg-adjust"))
+                Text(stringResource(if (state.incrementalJpeg.adjust) R.string.camera_jpeg_adjusted else R.string.camera_jpeg_original),
+                    Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodySmall)
+            }
+            if (state.incrementalJpeg.adjust) {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(null to "original", 2048 to "2048", 3000 to "3000", 4096 to "4096").forEach { (edge, label) ->
+                        FilterChip(selected = edgeText == edge?.toString().orEmpty(), onClick = {
+                            edgeText = edge?.toString().orEmpty()
+                            model.setIncrementalJpeg(state.incrementalJpeg.copy(longEdge = edge))
+                            }, label = { Text(if (edge == null) stringResource(R.string.output_original_size) else label) },
+                            modifier = Modifier.testTag("camera-jpeg-size-$label"), shape = CameraControlShape)
+                    }
+                }
+                val edge = edgeText.toIntOrNull()
+                val edgeInvalid = (edgeText.isBlank() && state.incrementalJpeg.longEdge != null) ||
+                    (edgeText.isNotBlank() && edge !in 1..65_535)
+                val quality = qualityText.toIntOrNull()
+                val qualityInvalid = quality !in 1..100
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(edgeText, { value ->
+                        edgeText = value
+                        val parsed = value.toIntOrNull()
+                        if (parsed in 1..65_535) model.setIncrementalJpeg(state.incrementalJpeg.copy(longEdge = parsed))
+                        model.setIncrementalOptionsValid(parsed in 1..65_535 && !qualityInvalid)
+                    }, label = { Text(stringResource(R.string.output_long_edge)) }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        isError = edgeInvalid, modifier = Modifier.weight(1f).testTag("camera-jpeg-size"))
+                    OutlinedTextField(qualityText, { value ->
+                        qualityText = value
+                        val parsed = value.toIntOrNull()
+                        parsed?.takeIf { it in 1..100 }?.let { model.setIncrementalJpeg(state.incrementalJpeg.copy(quality = it)) }
+                        model.setIncrementalOptionsValid(parsed in 1..100 && !edgeInvalid)
+                    }, label = { Text(stringResource(R.string.camera_jpeg_quality)) }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        isError = qualityInvalid, modifier = Modifier.weight(1f).testTag("camera-jpeg-quality"))
+                }
+                Text(stringResource(R.string.camera_jpeg_local_processing), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -328,6 +516,11 @@ private fun DateOption(text: String, selected: Boolean, onClick: () -> Unit) {
 }
 @Composable private fun CameraEmpty(text: Int) { Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) { Text(stringResource(text)) } }
 @Composable private fun bytes(size: Long): String = Formatter.formatShortFileSize(LocalContext.current, size)
+private fun cameraTimeZone(legacy: Boolean): TimeZone =
+    if (legacy) TimeZone.getTimeZone("GMT") else TimeZone.getDefault()
+private fun formatCameraTime(value: Long, legacy: Boolean): String = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ROOT).apply {
+    timeZone = cameraTimeZone(legacy)
+}.format(Date(value))
 private fun dateKey(value: Long): String? = if (value in 946684800000L..4102444800000L) SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Date(value)) else null
 private fun matches(photo: CameraPhoto, format: String, date: String?) = (format == "all" || photo.raw == (format == "RAW")) && (date == null || dateKey(photo.created) == date)
 internal fun stageText(stage: SonyCameraConnection.Stage): Int = when (stage) {

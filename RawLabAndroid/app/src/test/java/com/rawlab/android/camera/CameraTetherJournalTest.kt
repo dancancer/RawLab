@@ -65,13 +65,13 @@ class CameraTetherJournalTest {
     @Test fun resumeOnlyKeepsRegisteredBatchesAndRebasesOfflinePhotos() = withJournal { _, journal ->
         val initial = journal.create("camera", "sony-test", listOf(photo(1)), CameraImportDestination())
         val registered = journal.reserve(initial, listOf(photo(1), photo(2))).first.copy(shutterRequestedAt = 42)
-        val resumed = journal.resumeRegistered(registered, listOf(photo(1), photo(2), photo(3)))
+        val resumed = journal.rebase(registered, listOf(photo(1), photo(2), photo(3)))
         assertEquals(registered.batches, resumed.batches)
         assertEquals(42L, resumed.shutterRequestedAt)
-        assertEquals(listOf(photo(1), photo(3)), resumed.baseline)
+        assertEquals(listOf(photo(1), photo(2), photo(3)), resumed.baseline)
         assertNull(journal.reserve(resumed, listOf(photo(1), photo(2), photo(3))).second)
         assertEquals(listOf(photo(4)), journal.reserve(resumed, listOf(photo(1), photo(2), photo(3), photo(4))).second!!.photos)
-        assertThrows(IOException::class.java) { journal.resumeRegistered(registered, listOf(photo(2), photo(3))) }
+        assertThrows(IOException::class.java) { journal.rebase(registered, listOf(photo(2), photo(3))) }
     }
 
     @Test fun malformedOrUnknownVersionIsNotSilentlyDiscarded() = withJournal { root, journal ->

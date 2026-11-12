@@ -11,6 +11,7 @@ struct IOSAdjustmentTransferView: View {
     var preset: AdjustmentPreset?
     var synchronization: IOSCollectionSynchronization?
     var focusedHistory: UUID?
+    var editLegacyPhoto: ((String) -> Void)?
     @Environment(\.dismiss) private var dismiss
     @State private var scope = "custom"
     @State private var fields = AdjustmentTransferField.common
@@ -170,6 +171,11 @@ struct IOSAdjustmentTransferView: View {
             }
             if let error = result?.error ?? target?.error ?? photo.error {
                 Text(model.adjustmentErrorMessage(error)).font(.callout).foregroundStyle(.secondary)
+                if let editLegacyPhoto, case .legacyAssetEditNeedsDecision? = error as? EditPersistenceError {
+                    Button(L10n.text("单张微调")) { editLegacyPhoto(photo.id) }
+                        .buttonStyle(.borderless).disabled(busy)
+                        .accessibilityIdentifier("adjustment.target.edit-legacy.\(photo.id)")
+                }
             }
             Toggle(L10n.text("跳过"), isOn: Binding(get: { skipped.contains(photo.id) }, set: {
                 if $0 { skipped.insert(photo.id) } else { skipped.remove(photo.id) }

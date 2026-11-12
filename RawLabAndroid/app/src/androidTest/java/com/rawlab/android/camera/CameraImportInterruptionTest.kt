@@ -1,11 +1,13 @@
 package com.rawlab.android.camera
 
 import android.graphics.Bitmap
+import android.net.Uri
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.Lifecycle
 import com.rawlab.android.MainActivity
 import com.rawlab.android.R
+import com.rawlab.android.camera.protocol.CameraResumeFixture
 import com.rawlab.android.camera.protocol.CameraSessionFixture
 import com.rawlab.android.testing.LanguageTestRule
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +20,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
 import java.io.File
+import java.io.ByteArrayOutputStream
+import java.util.UUID
 
 class CameraImportInterruptionTest {
     private val compose = createAndroidComposeRule<MainActivity>()
@@ -94,11 +98,13 @@ class CameraImportInterruptionTest {
     @Test fun malformedPreviewDisconnectsAndShowsReconnectEntry() {
         compose.waitUntil(10_000) { !compose.activity.camera.state.value.preparing }
         CameraSessionFixture(malformedPreview = true).use { fixture ->
-            val photo = connectFixture(fixture)
-            assertNull(runBlocking { compose.activity.camera.preview(photo, false) })
-            assertFalse("Fatal preview left the UI connected", compose.activity.camera.state.value.connected)
-            compose.onNodeWithTag("camera-entry").performClick()
-            compose.onNodeWithTag("camera-find").assertIsDisplayed()
+            connectFixture(fixture)
+            compose.onNodeWithTag("editor-camera").performClick()
+            compose.onNodeWithTag("camera-mode-IMPORT").performClick()
+            compose.waitUntil(10_000) {
+                compose.activity.camera.state.value.let { !it.connected && !it.closing }
+            }
+            compose.onNodeWithTag("camera-connect").assertIsDisplayed()
             compose.onNodeWithText(compose.activity.getString(R.string.camera_disconnected)).assertIsDisplayed()
             capture("camera-review-preview-disconnected.png")
         }
@@ -112,6 +118,64 @@ class CameraImportInterruptionTest {
             assertTrue(compose.activity.camera.state.value.connected)
             assertNull(compose.activity.camera.state.value.message)
             compose.runOnUiThread { compose.activity.camera.disconnect() }
+        }
+    }
+
+    @Test fun resumeOnManualWifiMarksTheMatchingPhotoInTheGrid() {
+        compose.waitUntil(10_000) { !compose.activity.camera.state.value.preparing }
+        val model = compose.activity.camera
+        val bytes = ByteArrayOutputStream().also { stream ->
+            val bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
+            bitmap.eraseColor(0xff5f829a.toInt())
+            check(bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream))
+            bitmap.recycle()
+        }.toByteArray()
+        val fixture = CameraResumeFixture("RESUME-${UUID.randomUUID()}.JPG", bytes)
+        val asset = fixture.asset
+        val photo = asset.photo()
+        val identity = checkNotNull(CameraHardwareIdentity.read(fixture.device))
+        val store = field<CameraImportStore>(model, "store")
+        val reserved = store.create("ble:old", listOf(photo.copy(key = "previous-handle")), CameraImportDestination("RawLabTests",
+            CameraDirectoryGrouping.NONE), hardwareIdentity = identity, listingOwner = "old-listing")
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        val job = reserved.copy(status = CameraJobStatus.PAUSED, items = listOf(reserved.items.single().copy(digest = digest))).also(store::save)
+        val state = field<MutableStateFlow<CameraImportState>>(model, "mutable")
+        try {
+            compose.runOnUiThread { model.selectJob(job) }
+            compose.onNodeWithTag("camera-open-task").performClick()
+            compose.onNodeWithTag("camera-resume").performClick()
+            compose.onNodeWithTag("camera-legacy-connect").performClick()
+            compose.onNodeWithTag("camera-use-wifi").assertIsDisplayed()
+            compose.runOnUiThread {
+                setField(model, "session", fixture)
+                setField(model, "device", fixture.device)
+                setField(model, "assets", mapOf(photo.key to asset))
+                setField(model, "cameraId", "wifi:current")
+                state.value = state.value.copy(stage = null, connected = true, cameraId = "wifi:current",
+                    hardwareIdentity = identity, photos = listOf(photo), incrementalOwner = "manual-listing")
+            }
+            compose.onNodeWithTag("camera-resume").performClick()
+            compose.waitUntil(15_000) {
+                model.state.value.let { !it.transferring && it.job?.status == CameraJobStatus.COMPLETE }
+            }
+            assertEquals("ble:old", model.state.value.job!!.cameraId)
+            assertEquals(1, fixture.listings.get())
+            assertEquals(1, fixture.downloads.get())
+            compose.onNodeWithTag("camera-back").performClick()
+            compose.onNodeWithTag("camera-grid").assertIsDisplayed()
+            val saved = hasContentDescription(compose.activity.getString(R.string.camera_saved)) and
+                hasAnyAncestor(hasTestTag("camera-item-${photo.key}"))
+            compose.onNode(saved, useUnmergedTree = true).assertIsDisplayed()
+            capture("camera-resume-manual-wifi-grid.png")
+            compose.runOnUiThread { state.value = state.value.copy(photos = listOf(photo.copy(resumeIdentity = "reused-handle"))) }
+            compose.onNode(saved, useUnmergedTree = true).assertDoesNotExist()
+        } finally {
+            compose.runOnUiThread { model.disconnect() }
+            compose.waitUntil(10_000) { !model.state.value.closing }
+            model.state.value.job?.takeIf { it.id == job.id }?.items?.mapNotNull { it.saved }?.forEach {
+                compose.activity.contentResolver.delete(Uri.parse(it.uri), null, null)
+            }
+            File(compose.activity.filesDir, "camera-media-imports/${job.id}.json").delete()
         }
     }
 

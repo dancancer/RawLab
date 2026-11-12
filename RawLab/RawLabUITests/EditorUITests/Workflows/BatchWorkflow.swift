@@ -96,6 +96,172 @@ extension EditorUITests {
         capture("collection-hdr-jpeg-sdr-preflight")
     }
 
+    func testCollectionExportRequiresLegacyAssetDecision() throws {
+        guard ProcessInfo.processInfo.environment["RAWLAB_BATCH_LEGACY_UI"] == "1" else {
+            throw XCTSkip("Seed a dedicated simulator with one Photos asset and a resource-ID-only +2 EV edit")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", "en"]
+        app.launch()
+        app.buttons["editor.privacy"].tap()
+        app.buttons["collection.open"].tap()
+        let picker = app.buttons["collection.photos"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 10), app.debugDescription)
+        picker.tap()
+        let photo = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 15), app.debugDescription)
+        photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        app.buttons["Add"].tap()
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allow = springboard.buttons.matching(NSPredicate(format: "label IN %@",
+            ["Allow Full Access", "Allow Access to All Photos", "允许完全访问", "允许访问所有照片"])).firstMatch
+        if allow.waitForExistence(timeout: 5) { allow.tap() }
+        XCTAssertTrue(app.staticTexts["1 selected"].waitForExistence(timeout: 20), app.debugDescription)
+
+        let export = app.buttons["collection.export"]
+        for _ in 0..<3 where !export.isHittable { app.swipeUp() }
+        export.tap()
+        let start = app.buttons["collection.export.start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 10), app.debugDescription)
+        for _ in 0..<3 where !start.isHittable { app.swipeUp() }
+        start.tap()
+        let fineTune = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "collection.export.edit-legacy.")).firstMatch
+        XCTAssertTrue(fineTune.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertFalse(start.isEnabled)
+        for _ in 0..<3 where !fineTune.isHittable { app.swipeDown() }
+        capture("collection-legacy-edit-blocks-export")
+        fineTune.tap()
+        let restore = app.alerts.buttons["Restore Previous Adjustments"]
+        XCTAssertTrue(restore.waitForExistence(timeout: 10), app.debugDescription)
+        restore.tap()
+        let exposure = app.buttons["tool.exposure"]
+        let light = app.buttons["editor.group.light"]
+        XCTAssertTrue(light.waitForExistence(timeout: 30), app.debugDescription)
+        if !exposure.exists { light.tap() }
+        XCTAssertTrue(exposure.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertEqual(exposure.value as? String, "+2.00 EV")
+
+        app.buttons["collection.return"].tap()
+        XCTAssertTrue(export.waitForExistence(timeout: 10), app.debugDescription)
+        for _ in 0..<3 where !export.isHittable { app.swipeUp() }
+        export.tap()
+        XCTAssertTrue(start.waitForExistence(timeout: 10), app.debugDescription)
+        for _ in 0..<3 where !start.isHittable { app.swipeUp() }
+        start.tap()
+        let allowSaving = springboard.buttons.matching(NSPredicate(format: "label IN %@", ["Allow", "允许"])).firstMatch
+        if allowSaving.waitForExistence(timeout: 8) { allowSaving.tap() }
+        XCTAssertTrue(app.staticTexts["Saved to Photos: 1"].waitForExistence(timeout: 90), app.debugDescription)
+        XCTAssertFalse(fineTune.exists)
+        capture("collection-legacy-edit-export-completed")
+    }
+
+    func testCollectionSyncPreservesConfirmedLegacyExposure() throws {
+        guard ProcessInfo.processInfo.environment["RAWLAB_SYNC_LEGACY_UI"] == "1" else {
+            throw XCTSkip("Seed a dedicated simulator with a contrast-adjusted source and an asset-ID-only +2 EV target")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", "en"]
+        app.launch()
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allow = springboard.buttons.matching(NSPredicate(format: "label IN %@",
+            ["Allow Full Access", "Allow Access to All Photos", "允许完全访问", "允许访问所有照片"])).firstMatch
+        func allowPhotos() {
+            if allow.waitForExistence(timeout: 4) { allow.tap() }
+        }
+        func restoreLegacyEdit() {
+            let restore = app.alerts.buttons["Restore Previous Adjustments"]
+            // Photos authorization may appear after the picker and its remote view finish dismissing.
+            for _ in 0..<2 where !restore.exists { allowPhotos() }
+            XCTAssertTrue(restore.waitForExistence(timeout: 15), app.debugDescription)
+            restore.tap()
+        }
+        func showLightControls() {
+            let light = app.buttons["editor.group.light"]
+            XCTAssertTrue(light.waitForExistence(timeout: 30), app.debugDescription)
+            if !app.buttons["tool.exposure"].exists { light.tap() }
+            XCTAssertTrue(app.buttons["tool.exposure"].waitForExistence(timeout: 10), app.debugDescription)
+        }
+        func prepareContrastOnly() {
+            let sync = app.buttons["collection.synchronize"]
+            XCTAssertTrue(sync.waitForExistence(timeout: 10), app.debugDescription)
+            for _ in 0..<3 where !sync.isHittable { app.swipeUp() }
+            sync.tap()
+            let clear = app.buttons["adjustment.copy.clear"]
+            XCTAssertTrue(clear.waitForExistence(timeout: 10), app.debugDescription)
+            clear.tap()
+            app.buttons["adjustment.group.light"].tap()
+            let contrast = app.switches["adjustment.field.light.contrast"]
+            XCTAssertTrue(contrast.waitForExistence(timeout: 5), app.debugDescription)
+            for _ in 0..<3 where !contrast.isHittable { app.swipeUp() }
+            let control = contrast.switches.firstMatch
+            if control.exists { control.tap() }
+            else { contrast.coordinate(withNormalizedOffset: CGVector(dx: 0.88, dy: 0.5)).tap() }
+            XCTAssertEqual(contrast.value as? String, "1", app.debugDescription)
+            let check = app.buttons["collection.sync.prepare"]
+            for _ in 0..<4 where !check.isHittable { app.swipeUp() }
+            XCTAssertTrue(check.isEnabled, app.debugDescription)
+            check.tap()
+        }
+
+        app.buttons["editor.import.empty"].tap()
+        let grid = app.images.matching(identifier: "PXGGridLayout-Info")
+        XCTAssertTrue(grid.firstMatch.waitForExistence(timeout: 15), app.debugDescription)
+        grid.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        allowPhotos()
+        restoreLegacyEdit()
+        showLightControls()
+        let exposure = app.buttons["tool.exposure"], contrast = app.buttons["tool.contrast"]
+        let sourceContrast = try XCTUnwrap(contrast.value as? String)
+
+        app.buttons["editor.privacy"].tap()
+        app.buttons["collection.open"].tap()
+        let edits = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "collection.edit."))
+        XCTAssertTrue(edits.firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        let sourceID = edits.firstMatch.identifier
+        app.buttons["collection.photos"].tap()
+        let other = grid.element(boundBy: 1)
+        XCTAssertTrue(other.waitForExistence(timeout: 10), app.debugDescription)
+        other.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        app.buttons["Add"].tap()
+        allowPhotos()
+        XCTAssertTrue(app.staticTexts["2 selected"].waitForExistence(timeout: 20), app.debugDescription)
+        let target = edits.matching(NSPredicate(format: "identifier != %@", sourceID)).firstMatch
+        let targetID = target.identifier
+
+        prepareContrastOnly()
+        let apply = app.buttons["adjustment.paste.apply"]
+        let fineTune = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "adjustment.target.edit-legacy.")).firstMatch
+        XCTAssertTrue(fineTune.waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertFalse(apply.isEnabled)
+        capture("collection-sync-legacy-target-blocked")
+        fineTune.tap()
+        restoreLegacyEdit()
+        showLightControls()
+        XCTAssertEqual(exposure.value as? String, "+2.00 EV")
+        XCTAssertNotEqual(contrast.value as? String, sourceContrast)
+
+        app.buttons["collection.return"].tap()
+        let source = app.buttons[sourceID]
+        XCTAssertTrue(source.waitForExistence(timeout: 10), app.debugDescription)
+        source.tap()
+        showLightControls()
+        XCTAssertEqual(contrast.value as? String, sourceContrast)
+        app.buttons["collection.return"].tap()
+        prepareContrastOnly()
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true AND hittable == true"), object: apply)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed, app.debugDescription)
+        apply.tap()
+        XCTAssertTrue(app.staticTexts["Saved 1 · Unchanged 0 · Skipped 0 · Undone 0 · Incomplete 0"].waitForExistence(timeout: 15), app.debugDescription)
+        app.buttons["adjustment.paste.done"].tap()
+        let restoredTarget = app.buttons[targetID]
+        XCTAssertTrue(restoredTarget.waitForExistence(timeout: 10), app.debugDescription)
+        restoredTarget.tap()
+        showLightControls()
+        XCTAssertEqual(exposure.value as? String, "+2.00 EV")
+        XCTAssertEqual(contrast.value as? String, sourceContrast)
+        capture("collection-sync-legacy-exposure-preserved")
+    }
+
     func testCollectionMicroEditAndFrozenConfirmation() {
         let app = XCUIApplication()
         app.launchArguments += ["-RawLab.language", "zh-Hans"]

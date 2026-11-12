@@ -2,6 +2,7 @@
 "%@ · %@" = "%@ · %@";
 "%@ · %@%%" = "%@ · %@%%";
 "%@ · 联机" = "%@ · Tethering";
+"%@ · 质量 %@" = "%@ · Qualität %@";
 "%@数值" = "%@ Wert";
 "16:9" = "16:9";
 "1:1" = "1:1";
@@ -47,7 +48,11 @@
 "Invalid GPU configuration: %@" = "Ungültige GPU-Konfiguration: %@";
 "Invalid display chroma denoise mode: %@" = "Ungültiger Anzeigemodus für Chroma-Rauschreduzierung: %@";
 "Invalid photo effects: %@" = "Ungültige Fotoeffekte: %@";
+"JPEG 传入手机后再处理。" = "JPEG-Dateien werden nach der Übertragung auf diesem Gerät verarbeitet.";
+"JPEG 保存" = "JPEG speichern";
 "JPEG 可能已有机内校正；请对比画面后再开启。" = "JPEG enthält möglicherweise bereits eine Kamerakorrektur. Vor dem Aktivieren vergleichen.";
+"JPEG 已调整" = "Angepasstes JPEG";
+"JPEG 质量" = "JPEG-Qualität";
 "Kodak" = "Kodak";
 "LUT 文件已变化或兼容配置无效，请重新导入并确认。" = "Die LUT-Datei wurde geändert oder die Kompatibilitätseinstellungen sind ungültig. Importieren Sie sie erneut und bestätigen Sie die Einstellungen.";
 "LUT 的颜色空间或基础风格暂不支持，未导入。不会自动替换为中性显影。" = "Der Farbraum oder Basisstil der LUT wird nicht unterstützt. Sie wurde nicht importiert und nicht durch eine neutrale Entwicklung ersetzt.";
@@ -75,6 +80,7 @@
 "Wi-Fi 名称" = "Wi-Fi-Name";
 "Wi-Fi 密码" = "Wi-Fi-Passwort";
 "X3F 显影" = "X3F-Entwicklung";
+"一并导入 %@ 个日期未知的文件" = "%@ Dateien ohne Datum einbeziehen";
 "三分网格" = "Drittelraster";
 "三线性" = "Trilinear";
 "上下拖动调整，方向键微调，Esc 取消" = "Zum Anpassen nach oben oder unten ziehen, mit Pfeiltasten feinjustieren, mit Esc abbrechen";
@@ -108,6 +114,8 @@
 "仅用于已显影且基础风格匹配的照片，不能直接用于 RAW。" = "Nur für entwickelte Fotos mit passendem Basisstil. Nicht direkt auf RAW anwendbar.";
 "仅用于本次导出，保留各照片原有调整" = "Nur für diesen Export; vorhandene Anpassungen der Fotos bleiben erhalten";
 "仍需假设：%@" = "Weiterhin Annahmen: %@";
+"从 %@ 开始（相机时间）" = "Ab %@ (Kamerazeit)";
+"从原片开始" = "Mit dem Original beginnen";
 "从导入记录打开原件进行编辑；原始照片不会被调整覆盖。" = "Öffnen Sie ein Original aus dem Importverlauf zur Bearbeitung. Anpassungen überschreiben das Originalfoto nicht.";
 "从文件导入" = "Aus Dateien importieren";
 "从最近打开中移除" = "Aus zuletzt geöffnet entfernen";
@@ -122,6 +130,7 @@
 "任务操作" = "Aufgabenaktionen";
 "任务未保存：%@" = "Aufgabe nicht gespeichert: %@";
 "传感器基准" = "Sensorreferenz";
+"传输格式" = "Übertragungsformat";
 "伪红外（旧版）" = "Falsch-Infrarot (alt)";
 "位置与尺寸" = "Position und Größe";
 "使用 RawLab 中性显影作为基础，不代表还原了相机的标准风格。" = "Verwendet RawLabs neutrale Entwicklung als Basis. Dies bildet den Standardstil der Kamera nicht nach.";
@@ -129,6 +138,7 @@
 "使用旧版显影重试" = "Mit bisheriger Entwicklung erneut versuchen";
 "使用统计已关闭。" = "Die Nutzungsanalyse ist deaktiviert.";
 "使用蓝牙配对" = "Über Bluetooth koppeln";
+"使用默认起点" = "Standardstartzeit verwenden";
 "依据部分文件线索 · 仍有假设" = "Teilweise Dateihinweise · Annahmen bleiben bestehen";
 "保井崇志" = "Takashi Yasui";
 "保存" = "Speichern";
@@ -197,6 +207,7 @@
 "原始比例" = "Originalverhältnis";
 "原始照片已变化，请重新导入。" = "Das Originalfoto wurde geändert. Importieren Sie es erneut.";
 "原始预览" = "Originalvorschau";
+"原样保存" = "Original beibehalten";
 "原片不可用" = "Originale nicht verfügbar";
 "原片已变化，请重新选择照片。原有调整已保留。" = "Das Original wurde geändert. Wähle das Foto erneut aus. Vorhandene Anpassungen bleiben erhalten.";
 "去噪优先" = "Rauschreduzierung priorisieren";
@@ -242,6 +253,9 @@
 "垂直透视" = "Vertikale Perspektive";
 "基础图像" = "Basisbild";
 "基础显影、白平衡、曝光和 LUT 强度与上述预览条件一致" = "Basisentwicklung, Weißabgleich, Belichtung und LUT-Stärke entsprechen den obigen Vorschau-Bedingungen";
+"增量导入" = "Inkrementeller Import";
+"增量导入完成" = "Inkrementeller Import abgeschlossen";
+"增量起点" = "Startzeit";
 "处理失败：%@" = "Verarbeitung fehlgeschlagen: %@";
 "复制范围" = "Kopierumfang";
 "复制调整" = "Anpassungen kopieren";
@@ -271,9 +285,11 @@
 "对比方式" = "Vergleichsmodus";
 "对焦模式" = "Fokusmodus";
 "对照参考图（可选）" = "Mit einem Referenzbild vergleichen (optional)";
+"导入 %@ 个文件" = "%@ Dateien importieren";
 "导入外观" = "Look importieren";
 "导入外观…" = "Look importieren…";
 "导入并打开一张照片后，可在这里继续编辑。" = "Importiere und öffne ein Foto, um es hier weiterzubearbeiten.";
+"导入方式" = "Importmodus";
 "导入时请保持 RawLab 在前台。" = "Lassen Sie RawLab während des Imports im Vordergrund.";
 "导入照片" = "Foto importieren";
 "导入相机配置…" = "Kameraprofil importieren…";
@@ -309,11 +325,13 @@
 "尚未复制调整。请先从一张照片复制所需范围。" = "Noch keine Anpassungen kopiert. Kopieren Sie zuerst die gewünschten Einstellungen eines Fotos.";
 "尚未选择 RAW" = "Keine RAW-Fotos ausgewählt";
 "尚未选择照片" = "Keine Fotos ausgewählt";
+"尺寸" = "Größe";
 "屏幕容量 %@ EV" = "Display-Spielraum %@ EV";
 "展开%@组" = "Gruppe „%@“ aufklappen";
 "展开直方图" = "Histogramm erweitern";
 "展开调整栏" = "Anpassungsbereich ausklappen";
 "已保存" = "Gespeichert";
+"已保存 %@ / %@ 个文件" = "%@ von %@ Dateien gespeichert";
 "已保存 %@ 张 · 未变化 %@ 张 · 已跳过 %@ 张 · 已撤销 %@ 张 · 未完成 %@ 张" = "Gespeichert %@ · Unverändert %@ · Übersprungen %@ · Rückgängig %@ · Offen %@";
 "已保存 %@ 张到照片图库" = "In Fotos gespeichert: %@";
 "已保存 %d 张" = "%d Fotos gespeichert";
@@ -366,6 +384,7 @@
 "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。" = "Wenn aktiviert, verarbeitet Aliyun die Anzahl der Funktionsaufrufe und speichert die Daten in Festlandchina. Das SDK kann Gerätekennungen, Geräte- und Systeminformationen, Netzwerk/IP, Region und Sitzungsdaten erfassen.";
 "开启对比" = "Vergleich einschalten";
 "开始导出 %@ 张" = "Export starten (%@)";
+"开始新的增量导入" = "Neuen inkrementellen Import starten";
 "开始新的联机" = "Neue Tether-Aufnahme starten";
 "强度" = "Intensität";
 "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光" = "Starker Hell-Dunkel-Kontrast, tiefe kühl-cyane Schatten, kontrollierte Schwarztöne und warme Akzentlichter";
@@ -378,12 +397,15 @@
 "当前相机模式未提供此功能。" = "Diese Funktion ist im aktuellen Kameramodus nicht verfügbar.";
 "当前配方不可用，无法安全重置外观。" = "Das aktuelle Rezept ist nicht verfügbar. Der Look kann daher nicht sicher zurückgesetzt werden.";
 "待处理" = "Aktion erforderlich";
+"待导入 %@ 个文件" = "%@ Dateien zum Importieren";
 "待接收 %d 张。" = "%d Fotos warten auf den Empfang.";
 "待选择的镜头配置" = "Objektivprofil muss ausgewählt werden";
 "快门" = "Verschluss";
 "恢复上次联机" = "Letzte Tether-Aufnahme fortsetzen";
 "恢复当前照片的全部调整，不改写原始照片。" = "Alle Anpassungen des aktuellen Fotos zurücksetzen. Das Originalfoto wird nicht verändert.";
+"恢复旧调整" = "Frühere Anpassungen wiederherstellen";
 "恢复未完成的原件接收，不会自动补拍。" = "Den unvollständigen Empfang der Originale fortsetzen; es werden keine Fotos automatisch aufgenommen.";
+"恢复这张照片的旧调整？" = "Frühere Anpassungen für dieses Foto wiederherstellen?";
 "恢复阴影、中间调和高光的颜色分级默认值？" = "Color-Grading für Schatten, Mitteltöne und Lichter zurücksetzen?";
 "恢复默认" = "Standard wiederherstellen";
 "成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张" = "Erfolgreich %@ · Fehlgeschlagen %@ · Nicht verarbeitet %@";
@@ -394,6 +416,7 @@
 "所选调整与目标不兼容，请调整范围或跳过目标。" = "Diese Anpassungen sind mit dem Foto nicht kompatibel. Ändern Sie den Umfang oder überspringen Sie es.";
 "手动" = "Manuell";
 "手动连接 Wi-Fi" = "Manuell mit Wi-Fi verbinden";
+"手动选片" = "Manuelle Auswahl";
 "打开" = "Öffnen";
 "打开系统设置" = "Systemeinstellungen öffnen";
 "打开编辑" = "Im Editor öffnen";
@@ -447,6 +470,7 @@
 "文件已有参数 · 效果未验证" = "Dateiparameter · Wirkung ungeprüft";
 "文件已有完整颜色参数，仅缺少参考依据；这些参数将原样保留。" = "Die Farbparameter sind vollständig, aber es fehlen Referenznachweise. Die Parameter bleiben unverändert.";
 "断开连接" = "Verbindung trennen";
+"新保存 %@ 个文件，%@ 个已在本机" = "%@ neue Dateien gespeichert, %@ bereits auf dem Gerät";
 "新预设" = "Neue Vorgabe";
 "方向、裁切和构图一致" = "Ausrichtung, Zuschnitt und Bildaufbau stimmen überein";
 "方案 %@" = "Option %@";
@@ -473,9 +497,12 @@
 "无法加入最近打开：%@" = "Konnte nicht zu den zuletzt geöffneten Fotos hinzugefügt werden: %@";
 "无法取得 RAW 原片，请在系统设置中授权访问这张照片后重试。" = "Das originale RAW konnte nicht abgerufen werden. Erlauben Sie in den Systemeinstellungen den Zugriff auf dieses Foto und versuchen Sie es erneut.";
 "无法导出错误日志。" = "Das Fehlerprotokoll konnte nicht exportiert werden.";
+"无法按所选设置处理 JPEG。" = "Das JPEG konnte mit diesen Einstellungen nicht verarbeitet werden.";
 "无法显示处理结果" = "Verarbeitungsergebnisse können nicht angezeigt werden";
 "无法生成预览" = "Vorschau kann nicht generiert werden";
 "无法生成预览，请检查照片、LUT 和颜色配置。" = "Vorschau konnte nicht erstellt werden. Prüfen Sie Foto, LUT und Farbeinstellungen.";
+"无法确认上次导入的原始文件，请重新选择照片。" = "Die Originaldateien des letzten Imports konnten nicht überprüft werden. Wählen Sie die Fotos erneut aus.";
+"无法确认上次的存储卡或拍摄时间，请选择新的起点。" = "Die vorherige Karte oder Aufnahmezeit konnte nicht bestätigt werden. Wählen Sie eine neue Startzeit.";
 "无法确认上次联机的照片范围，已暂停自动恢复。请从相机导入，手动选择需要补传的照片。不会自动补拍。" = "Die Fotos der vorherigen Aufnahmesitzung konnten nicht zugeordnet werden. Die automatische Wiederherstellung ist pausiert. Wählen Sie fehlende Fotos über „Von Kamera importieren“ manuell aus. Es werden keine Fotos automatisch aufgenommen.";
 "无法自动调整曝光：%@" = "Belichtung konnte nicht automatisch angepasst werden: %@";
 "无法解码普通图片：%@" = "Das Bild kann nicht dekodiert werden: %@";
@@ -499,6 +526,7 @@
 "日光" = "Tageslicht";
 "日系通透水光肌，空气感透明青蓝，暗部大面积展开与柔润高光" = "Japanisch leuchtende Haut, luftiges transparentes Blaucyan, offene Schatten und weiche Lichter";
 "日系青空 · 高调日光" = "Japanischer blauer Himmel · High-Key-Tageslicht";
+"旧版记录只有相册标识。确认当前照片与原来的照片一致后，可恢复旧调整。" = "Die früheren Anpassungen wurden nur mit der Fotos-ID gespeichert. Stellen Sie sie wieder her, wenn dies dasselbe Originalfoto ist.";
 "旧版降噪" = "Frühere Rauschreduzierung";
 "明度" = "Helligkeit";
 "明度：从暗到亮。" = "Helligkeit: von dunkel zu hell.";
@@ -529,6 +557,7 @@
 "最近使用" = "Zuletzt verwendet";
 "最近打开" = "Zuletzt geöffnet";
 "有多个匹配镜头，请手动选择" = "Mehrere passende Objektive; bitte manuell auswählen";
+"有文件超出相机导入上限，请调整起点或格式。" = "Einige Dateien überschreiten das Importlimit. Ändern Sie die Startzeit oder das Format.";
 "有未提交调整。" = "Es gibt unbestätigte Anpassungen.";
 "未包含几何与镜头。" = "Geometrie und Objektiv sind nicht enthalten.";
 "未匹配镜头" = "Kein passendes Objektiv";
@@ -577,6 +606,7 @@
 "横向色差标定不可用" = "Kalibrierung der lateralen chromatischen Aberration nicht verfügbar";
 "橙" = "Orange";
 "正在保存" = "Wird gespeichert";
+"正在保存照片…" = "Fotos werden gespeichert…";
 "正在停止…" = "Wird angehalten…";
 "正在准备取景" = "Livebild wird vorbereitet";
 "正在准备导出…" = "Export wird vorbereitet…";
@@ -586,8 +616,10 @@
 "正在取色…" = "Farbe wird erfasst…";
 "正在处理" = "Wird verarbeitet";
 "正在导入" = "Wird importiert";
+"正在导入照片…" = "Fotos werden importiert…";
 "正在导出" = "Wird exportiert";
 "正在开启相机 Wi-Fi…" = "Kamera-WLAN wird aktiviert …";
+"正在扫描相机…" = "Kamera wird durchsucht…";
 "正在拍摄" = "Aufnahme läuft";
 "正在接收原件" = "Originale werden empfangen";
 "正在显影" = "Wird entwickelt";
@@ -601,6 +633,7 @@
 "正在读取镜头信息…" = "Objektivinformationen werden gelesen…";
 "正在连接相机…" = "Verbindung zur Kamera wird hergestellt …";
 "正常显影" = "Normale Entwicklung";
+"此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。" = "Dieses JPEG enthält eine HDR-Gainmap. Speichern Sie das Original, um HDR zu erhalten.";
 "此 LUT 缺少完整颜色说明。请确认处理方式；导入后会标记为兼容模式，效果尚未验证。" = "Dieser LUT fehlen vollständige Farbangaben. Bestätigen Sie die Verarbeitung. Er wird als kompatibel mit ungeprüftem Ergebnis markiert.";
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "Der Weißabgleich bei Aufnahme dieses RAW konnte nicht gelesen werden; die Tönung des Rezepts kann nicht angewendet werden.";
 "此像素不可取样。" = "Dieses Pixel kann nicht erfasst werden.";
@@ -633,6 +666,7 @@
 "没有可处理目标，请重新选择照片。" = "Keine Fotos zum Verarbeiten übrig. Wählen Sie erneut Fotos aus.";
 "没有可复制的调整，请选择其他范围。" = "Keine Anpassungen zum Kopieren. Wählen Sie einen anderen Umfang.";
 "没有找到相机。请保持相机处于等待连接画面。" = "Keine Kamera gefunden. Lassen Sie die Kamera im Bildschirm zum Warten auf eine Verbindung.";
+"没有新的照片" = "Keine neuen Fotos";
 "没有符合筛选条件的照片。" = "Keine Fotos entsprechen dem aktuellen Filter.";
 "没有符合筛选的照片" = "Keine Fotos für diesen Filter";
 "油润复古 · 城市胶片" = "Sattes Vintage · urbaner Filmlook";
@@ -687,6 +721,7 @@
 "相机中没有可导入的 RAW 或 JPEG 照片。" = "Auf der Kamera sind keine importierbaren RAW- oder JPEG-Fotos.";
 "相机中的原照片会保留。" = "Die Originalfotos auf der Kamera bleiben erhalten.";
 "相机数据或原件校验未通过，已暂停。" = "Kameradaten oder Originalprüfung fehlgeschlagen. Der Vorgang ist pausiert.";
+"相机时间" = "Kamerazeit";
 "相机未提供可调整选项" = "Die Kamera stellt keine einstellbaren Optionen bereit";
 "相机未提供实时取景，其他可用功能仍可使用。" = "Die Kamera bietet kein Livebild. Andere verfügbare Funktionen bleiben nutzbar.";
 "相机未提供此蓝牙配对方式，请使用手动 Wi-Fi 连接。" = "Die Kamera unterstützt diese Bluetooth-Kopplung nicht. Verwenden Sie die manuelle Wi-Fi-Verbindung.";
@@ -793,6 +828,7 @@
 "请先完成或结束已有批量任务，再创建新任务。" = "Schließen Sie die vorhandene Stapelaufgabe ab oder beenden Sie sie, bevor Sie eine neue erstellen.";
 "请先导入一张照片。" = "Importieren Sie zuerst ein Foto.";
 "请先应用或放弃未完成的输入和几何草稿。" = "Wenden Sie offene Eingaben und Geometrieentwürfe zuerst an oder verwerfen Sie sie.";
+"请先打开这张照片，确认是否恢复旧调整。" = "Öffnen Sie dieses Foto zuerst und entscheiden Sie, ob Sie die früheren Anpassungen wiederherstellen möchten.";
 "请先检查相机上的拍摄结果。新会话不会补拍，未完成照片可在导入记录中继续接收。" = "Prüfen Sie zuerst das Aufnahmeergebnis an der Kamera. Eine neue Sitzung löst nicht erneut aus. Setzen Sie offene Übertragungen im Importverlauf fort.";
 "请先确认同源图片、处理条件和参考来源。" = "Bestätigen Sie zunächst dieselbe Originalquelle, die Verarbeitungsbedingungen und die Referenzquelle.";
 "请先选择外观或配方。" = "Wähle zuerst einen Look oder ein Rezept.";
@@ -815,6 +851,7 @@
 "调整内容无法读取，请重新复制。" = "Die Anpassungen können nicht gelesen werden. Kopieren Sie sie erneut.";
 "调整前" = "Vorher";
 "调整后" = "Nachher";
+"调整后保存" = "Angepasst speichern";
 "调整已保存" = "Anpassungen gespeichert";
 "调整未保存 · 重试" = "Anpassungen nicht gespeichert · Erneut versuchen";
 "调整未保存，请重试。" = "Die Anpassungen wurden nicht gespeichert. Versuchen Sie es erneut.";
@@ -882,9 +919,11 @@
 "重命名" = "Umbenennen";
 "重命名外观" = "Look umbenennen";
 "重命名预设" = "Vorgabe umbenennen";
+"重新扫描" = "Erneut suchen";
 "重新检查" = "Erneut prüfen";
 "重新载入" = "Neu laden";
 "重新连接" = "Erneut verbinden";
+"重新连接并继续" = "Erneut verbinden und fortfahren";
 "重新选择照片" = "Fotos erneut auswählen";
 "重置" = "Zurücksetzen";
 "重置 HSL" = "HSL zurücksetzen";

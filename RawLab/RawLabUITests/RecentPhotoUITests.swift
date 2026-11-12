@@ -17,15 +17,27 @@ final class RecentPhotoUITests: XCTestCase {
         let imported = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
         XCTAssertTrue(imported.waitForExistence(timeout: 15), "Seed the dedicated simulator with a photo")
         imported.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        wait { app.buttons["editor.compare"].isEnabled }
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allow = springboard.buttons.matching(NSPredicate(format: "label IN %@",
+            ["Allow Full Access", "Allow Access to All Photos", "允许完全访问", "允许访问所有照片"])).firstMatch
+        if allow.waitForExistence(timeout: 5) { allow.tap() }
+        let expectsLegacy = ProcessInfo.processInfo.environment["RAWLAB_RECENT_EXPECT_LEGACY"] == "1"
+        if expectsLegacy {
+            let restore = app.alerts.buttons["Restore Previous Adjustments"]
+            XCTAssertTrue(restore.waitForExistence(timeout: 15))
+            restore.tap()
+        }
+        let light = app.buttons["editor.group.light"]
+        wait { light.exists && light.isEnabled }
+        if expectsLegacy { XCTAssertEqual(light.value as? String, "Adjusted") }
         app.buttons["editor.group.light"].tap()
         app.buttons["tool.exposure"].tap()
         let ruler = app.descendants(matching: .any)["adjustment.ruler"]
         XCTAssertTrue(ruler.waitForExistence(timeout: 10))
         ruler.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)).press(forDuration: 0.1,
             thenDragTo: ruler.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)))
-        wait { app.buttons["recents.open"].isEnabled }
-        app.buttons["recents.open"].tap()
+        applyDraft(app)
+        openRecents(app)
         let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "recents.photo."))
         wait { rows.count == 1 }
         app.segmentedControls["recents.filter"].buttons["Edited"].tap()
@@ -40,12 +52,14 @@ final class RecentPhotoUITests: XCTestCase {
         wait { rows.count == 1 }
         capture("recent-edited-after-restart", app)
         rows.firstMatch.tap()
-        wait { app.buttons["editor.compare"].isEnabled }
-        app.buttons["editor.reset"].tap()
-        app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] %@", "Reset All Adjustments")).firstMatch.tap()
-        app.alerts.buttons["Reset"].tap()
-        wait { app.buttons["recents.open"].isEnabled }
-        app.buttons["recents.open"].tap()
+        wait { light.exists && light.isEnabled }
+        if !light.isSelected { light.tap() }
+        app.buttons["tool.exposure"].tap()
+        let reset = app.buttons["editor.draft.reset"]
+        wait { reset.exists && reset.isEnabled }
+        reset.tap()
+        applyDraft(app)
+        openRecents(app)
         XCTAssertTrue(app.segmentedControls["recents.filter"].buttons["Edited"].isSelected,
                       "Returning from editing preserves the active edit filter")
         wait { rows.count == 0 }
@@ -55,6 +69,22 @@ final class RecentPhotoUITests: XCTestCase {
         rows.firstMatch.press(forDuration: 1)
         app.buttons["Remove from recently opened"].tap()
         wait { rows.count == 0 }
+    }
+
+    private func applyDraft(_ app: XCUIApplication) {
+        let apply = app.buttons["editor.draft.apply"]
+        wait { apply.exists && apply.isEnabled }
+        apply.tap()
+        wait { !apply.exists }
+    }
+
+    private func openRecents(_ app: XCUIApplication) {
+        let more = app.buttons["editor.privacy"]
+        wait { more.exists && more.isEnabled }
+        more.tap()
+        let recent = app.buttons["recents.open"]
+        wait { recent.exists && recent.isEnabled }
+        recent.tap()
     }
 
     private func wait(_ condition: @escaping () -> Bool) {

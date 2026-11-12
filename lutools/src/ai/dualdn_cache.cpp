@@ -121,15 +121,18 @@ std::string sourceIdentityKey(const std::string& path, void (*checkpoint)()) {
     return key;
 }
 
-std::string rawCacheKeyFromIdentity(const std::string& sourceIdentity, const std::string& modelDigest, int backend) {
+std::string rawCacheKeyFromIdentity(const std::string& sourceIdentity, const std::string& modelDigest, int backend,
+                                    bool legacySonyCrop) {
     if (!validKey(modelDigest) || !validKey(sourceIdentity)) throw std::invalid_argument("invalid AI cache digest");
-    return digestJson({{"source", sourceIdentity},
+    Json key = {{"source", sourceIdentity},
         {"model", modelDigest}, {"backend", backend}, {"protocol", "rawlab-dualdn-v1"},
-        {"decoder", "rawlab-bayer-v2"}, {"noise", noiseProtocol}});
+        {"decoder", "rawlab-bayer-v3"}, {"noise", noiseProtocol}};
+    if (legacySonyCrop) key["legacySonyCrop"] = true;
+    return digestJson(key);
 }
 
-std::string rawCacheKey(const std::string& path, const std::string& modelDigest, int backend) {
-    return rawCacheKeyFromIdentity(sourceIdentityKey(path), modelDigest, backend);
+std::string rawCacheKey(const std::string& path, const std::string& modelDigest, int backend, bool legacySonyCrop) {
+    return rawCacheKeyFromIdentity(sourceIdentityKey(path), modelDigest, backend, legacySonyCrop);
 }
 
 std::string rgbCacheKey(const std::string& rawKey, const RAWProcessOptions& options) {

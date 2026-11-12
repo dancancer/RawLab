@@ -5989,7 +5989,7 @@
     "tether_source_error": {
       "file": "strings.xml",
       "formats": [],
-      "source": "相机卡中的照片发生变化。请重新开始联机；已保存原件仍保留。",
+      "source": "无法确认上次联机的相机原件。请手动选片补传。已保存的原件会保留。",
       "types": []
     },
     "tether_backlog_error": {
@@ -6463,6 +6463,244 @@
       "source": "相机菜单会随型号和固件变化，请按机身提供的手机连接方式操作。",
       "file": "editor_strings.xml",
       "types": []
+    },
+    "camera_import_mode": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "导入方式",
+      "types": []
+    },
+    "camera_import_mode_manual": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "手动选片",
+      "types": []
+    },
+    "camera_import_mode_incremental": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "增量导入",
+      "types": []
+    },
+    "camera_incremental_cutoff": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "增量起点",
+      "types": []
+    },
+    "camera_incremental_range": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "从 {0} 开始（相机时间）",
+      "types": [
+        "s"
+      ]
+    },
+    "camera_incremental_camera_time": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "相机时间",
+      "types": []
+    },
+    "camera_incremental_scanning": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在扫描相机…",
+      "types": []
+    },
+    "camera_incremental_no_new": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "没有新的照片",
+      "types": []
+    },
+    "camera_incremental_undated_count": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$d"
+      ],
+      "source": "一并导入 {0} 个日期未知的文件",
+      "types": [
+        "d"
+      ]
+    },
+    "camera_incremental_boundary_unverified": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "无法确认上次的存储卡或拍摄时间，请选择新的起点。",
+      "types": []
+    },
+    "camera_incremental_refresh": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "重新扫描",
+      "types": []
+    },
+    "camera_incremental_default_cutoff": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "使用默认起点",
+      "types": []
+    },
+    "camera_incremental_new_job": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "开始新的增量导入",
+      "types": []
+    },
+    "camera_incremental_pending_count": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$d"
+      ],
+      "source": "待导入 {0} 个文件",
+      "types": [
+        "d"
+      ]
+    },
+    "camera_incremental_import_count": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$d"
+      ],
+      "source": "导入 {0} 个文件",
+      "types": [
+        "d"
+      ]
+    },
+    "camera_incremental_saved_count": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$d",
+        "%2$d"
+      ],
+      "source": "已保存 {0} / {1} 个文件",
+      "types": [
+        "d",
+        "d"
+      ]
+    },
+    "camera_incremental_complete": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "增量导入完成",
+      "types": []
+    },
+    "camera_incremental_resume_connection": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "重新连接并继续",
+      "types": []
+    },
+    "camera_incremental_oversized": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "有文件超出相机导入上限，请调整起点或格式。",
+      "types": []
+    },
+    "camera_transfer_format": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "传输格式",
+      "types": []
+    },
+    "camera_jpeg_settings": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "JPEG 保存",
+      "types": []
+    },
+    "camera_jpeg_original": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "原样保存",
+      "types": []
+    },
+    "camera_jpeg_adjusted": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "调整后保存",
+      "types": []
+    },
+    "camera_jpeg_quality": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "JPEG 质量",
+      "types": []
+    },
+    "camera_jpeg_summary": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$s",
+        "%2$s"
+      ],
+      "source": "{0} · 质量 {1}",
+      "types": [
+        "s",
+        "s"
+      ]
+    },
+    "camera_jpeg_local_processing": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "JPEG 传入手机后再处理。",
+      "types": []
+    },
+    "camera_jpeg_processing_failed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "无法按所选设置处理 JPEG。",
+      "types": []
+    },
+    "camera_jpeg_gain_map_keep_original": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。",
+      "types": []
+    },
+    "camera_jpeg_keep_remaining_originals": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "剩余 JPEG 原样保存",
+      "types": []
+    },
+    "camera_jpeg_output_adjusted": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "JPEG 已调整",
+      "types": []
+    },
+    "camera_incremental_importing": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在导入照片…",
+      "types": []
+    },
+    "camera_incremental_saving": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在保存照片…",
+      "types": []
+    },
+    "camera_jpeg_size": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "尺寸",
+      "types": []
+    },
+    "camera_incremental_saved_and_reused": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$d",
+        "%2$d"
+      ],
+      "source": "新保存 {0} 个文件，{1} 个已在本机",
+      "types": [
+        "d",
+        "d"
+      ]
     }
   },
   "overrides": {
@@ -6501,6 +6739,14 @@
     }
   },
   "unique": {
+    "剩余 JPEG 原样保存": {
+      "de": "Restliche JPEGs unverändert speichern",
+      "en": "Save remaining JPEGs unchanged",
+      "es": "Guardar los JPEG restantes sin cambios",
+      "fr": "Enregistrer les JPEG restants à l’identique",
+      "ja": "残りの JPEG を元のまま保存",
+      "zh-Hans": "剩余 JPEG 原样保存"
+    },
     "16 位 PNG 超过 3200 万像素解码上限。": {
       "de": "16-Bit-PNG überschreitet die Dekodierungsgrenze von 32 Megapixeln.",
       "en": "16-bit PNG exceeds the 32 MP decode limit.",
@@ -7821,13 +8067,13 @@
       "fr": "Aperçu temporairement indisponible",
       "ja": "プレビューを一時的に表示できません"
     },
-    "相机卡中的照片发生变化。请重新开始联机；已保存原件仍保留。": {
-      "zh-Hans": "相机卡中的照片发生变化。请重新开始联机；已保存原件仍保留。",
-      "en": "Photos on the camera card have changed. Start tethering again; saved originals are kept.",
-      "de": "Die Fotos auf der Speicherkarte der Kamera wurden geändert. Starten Sie die Tether-Aufnahme neu; bereits gespeicherte Originale bleiben erhalten.",
-      "es": "Las fotos de la tarjeta de la cámara han cambiado. Inicia de nuevo el disparo conectado; los originales guardados se conservarán.",
-      "fr": "Les photos de la carte de l’appareil ont changé. Recommencez la prise de vue connectée ; les originaux déjà enregistrés sont conservés.",
-      "ja": "カメラカード内の写真が変更されています。テザー撮影を新しく開始してください。保存済みのオリジナルは残ります。"
+    "无法确认上次联机的相机原件。请手动选片补传。已保存的原件会保留。": {
+      "zh-Hans": "无法确认上次联机的相机原件。请手动选片补传。已保存的原件会保留。",
+      "en": "Couldn’t verify the camera originals from the last tethering session. Select photos manually to import them. Saved originals are kept.",
+      "de": "Die Kameraoriginale der letzten Tether-Aufnahme konnten nicht geprüft werden. Wählen Sie die Fotos zum Importieren manuell aus. Gespeicherte Originale bleiben erhalten.",
+      "es": "No se pudieron verificar los originales de la última sesión de disparo conectado. Selecciona las fotos manualmente para importarlas. Los originales guardados se conservan.",
+      "fr": "Impossible de vérifier les originaux de la dernière prise de vue connectée. Sélectionnez les photos à importer manuellement. Les originaux enregistrés sont conservés.",
+      "ja": "前回のテザー撮影のオリジナルを確認できませんでした。写真を手動で選んで取り込んでください。保存済みのオリジナルは残ります。"
     },
     "待接收照片较多，已暂停拍摄。重新连接后继续接收。": {
       "zh-Hans": "待接收照片较多，已暂停拍摄。重新连接后继续接收。",

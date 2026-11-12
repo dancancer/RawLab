@@ -56,7 +56,7 @@ Integer fields require integer JSON tokens (for example `95`, rather than `95.0`
 | `edits.white_balance.tint` | [-150,150]; positive adds magenta; only in `temperature` mode | 0 |
 | `edits.look.path` | Compatible `.cube` / `.rlook`, or `null` for neutral output; required if group present | `null` when the whole group is omitted |
 | `edits.look.strength` | Factor [0,1]; 0 bypasses look loading | 1 |
-| `output.format` | `jpeg`, `png` (16-bit), `dng` (rendered float32 SDR) | Required; never inferred from extension |
+| `output.format` | `jpeg`, `png` (16-bit), `dng` (rendered 16-bit LinearRaw SDR) | Required; never inferred from extension |
 | `output.jpeg_quality` | Integer 1–100; used only for JPEG | 95 |
 | `output.size.mode` | `native`, `limit_long_edge` | `native` when group omitted |
 | `output.size.long_edge` | Positive uint32 pixels, required only for `limit_long_edge`; preserves aspect, never enlarges | Required in limit mode |

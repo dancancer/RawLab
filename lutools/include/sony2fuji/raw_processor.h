@@ -5,6 +5,7 @@
 #include <string>
 #include <memory>
 #include <array>
+#include <utility>
 
 namespace sony2fuji {
 
@@ -44,6 +45,7 @@ struct RAWBayerOverride {
  */
 struct RAWProcessOptions {
     X3fMode x3fMode = X3fMode::Legacy;
+    bool legacySonyCrop = false; // for callers that open a second RAW processor
     bool useAutoWhiteBalance;   // 使用自动白平衡
     bool useCameraWhiteBalance; // 使用相机白平衡
     bool useCustomWhiteBalance;
@@ -95,6 +97,7 @@ struct RAWProcessOptions {
 class RAWProcessor {
 public:
     RAWProcessor();
+    explicit RAWProcessor(bool legacySonyCrop);
     ~RAWProcessor();
 
     // 禁止拷贝
@@ -111,6 +114,8 @@ public:
     ErrorCode loadFile(const std::string& filepath, X3fMode mode);
     // 能力探测只识别元数据，不解包 RAW 像素。
     ErrorCode inspectFile(const std::string& filepath);
+    // Compare the two inset rectangles before fitting an automatic color migration.
+    static ErrorCode sonyFramingChanged(const std::string& filepath, bool& changed);
     // Inspects a supported camera HDR source without unpacking the mosaic.
     ErrorCode inspectCameraHDR(const std::string& filepath, int& width, int& height, uint64_t& sensorPixels);
     bool supportsHDRCameraProfile(const HDRCameraProfile& profile) const;
@@ -131,6 +136,8 @@ public:
      */
     int getWidth() const;
     int getHeight() const;
+    // Full-resolution canvas from LibRaw, including source orientation.
+    std::pair<int, int> getNativeOutputSize() const;
     std::string getCameraMake() const;
     std::string getCameraModel() const;
     // Legacy name: returns the last processed image's working space, not sensor RGB.
