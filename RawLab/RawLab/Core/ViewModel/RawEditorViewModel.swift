@@ -147,6 +147,7 @@ final class RawEditorViewModel: ObservableObject {
         didSet {
             cancelProcessingMigration()
             processingMigrationReceipt = nil
+            pendingResetMigrationClear = nil
             hslSourceRevision &+= 1
             acceptedPreviewRequest = nil
             completedPreviewCache.removeAll()
@@ -173,6 +174,7 @@ final class RawEditorViewModel: ObservableObject {
     @Published var matchingProcessing = false
     var processingMigrationCancellation: ProcessingMigrationCancellation?
     var processingMigrationAttemptSource: UUID?
+    var pendingResetMigrationClear: (source: EditorEditSource, state: PhotoEditState, queued: Bool)?
     static let processingMigrationQueue = DispatchQueue(label: "com.rawlab.processing-migration", qos: .utility)
     let batchSelection = IOSBatchSelection()
     @Published var collectionExportPreparing = false

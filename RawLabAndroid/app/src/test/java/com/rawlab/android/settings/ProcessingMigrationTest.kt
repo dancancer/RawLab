@@ -1,5 +1,7 @@
 package com.rawlab.android.settings
 
+import com.rawlab.android.adjustments.AdjustmentStatus
+import com.rawlab.android.adjustments.AdjustmentTransferSession
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
@@ -88,6 +90,67 @@ class ProcessingMigrationTest {
                 store.commitProcessingMigration(expected, null, fit.quality)
             }
             assertEquals(changed, store.readState(identity).settings)
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun resetCommitClearsMigrationReceiptAndPreventsRollbackAcrossReopen() {
+        val directory = Files.createTempDirectory("rawlab-migration-reset").toFile()
+        try {
+            val identity = PhotoIdentity("content://test/migrated-photo")
+            val before = original()
+            val store = EditStore(directory)
+            val session = AdjustmentTransferSession(store)
+            store.save(identity, before)
+            val fit = ProcessingMigrationOutcome.decode(before, result())
+            val candidate = requireNotNull(fit.candidate(before))
+            val accepted = store.commitProcessingMigration(store.readState(identity), candidate, fit.quality)
+            session.adoptProcessingMigration(accepted)
+            assertEquals(ProcessingMigrationStatus.MIGRATED, store.processingMigration(identity)?.status)
+
+            val ordinaryEdit = session.commitEdit(accepted, candidate.copy(exposure = 1.25f))
+            assertEquals(AdjustmentStatus.APPLIED, ordinaryEdit.status)
+            assertEquals(ProcessingMigrationStatus.MIGRATED, store.processingMigration(identity)?.status)
+
+            val neutralV3 = EditSettings(processing = ProcessingIdentity.CURRENT)
+            val resetOutcome = session.commitEdit(
+                store.readState(identity),
+                neutralV3,
+                clearProcessingMigration = true,
+            )
+            assertEquals(AdjustmentStatus.APPLIED, resetOutcome.status)
+            assertNull(store.processingMigration(identity))
+            assertThrows(AdjustmentOperationExpiredException::class.java) {
+                store.rollbackProcessingMigration(store.readState(identity))
+            }
+
+            val reopened = EditStore(directory)
+            assertNull(reopened.processingMigration(identity))
+            assertThrows(AdjustmentOperationExpiredException::class.java) {
+                reopened.rollbackProcessingMigration(reopened.readState(identity))
+            }
+
+            // Also verify KEPT and ROLLED_BACK receipts are cleared by explicit reset intent.
+            val keptIdentity = PhotoIdentity("content://test/kept-photo")
+            store.save(keptIdentity, before)
+            val keptFit = ProcessingMigrationOutcome.decode(before, result(2f))
+            val keptState = store.commitProcessingMigration(store.readState(keptIdentity), null, keptFit.quality)
+            session.adoptProcessingMigration(keptState)
+            assertEquals(ProcessingMigrationStatus.KEPT, store.processingMigration(keptIdentity)?.status)
+            session.commitEdit(
+                keptState,
+                EditSettings(processing = ProcessingIdentity.C5),
+                clearProcessingMigration = true,
+            )
+            assertNull(EditStore(directory).processingMigration(keptIdentity))
+
+            val rolledIdentity = PhotoIdentity("content://test/rolled-photo")
+            store.save(rolledIdentity, before)
+            val rolledMigrated = store.commitProcessingMigration(store.readState(rolledIdentity), candidate, fit.quality)
+            val rolledBack = store.rollbackProcessingMigration(rolledMigrated)
+            session.adoptProcessingMigration(rolledBack)
+            assertEquals(ProcessingMigrationStatus.ROLLED_BACK, store.processingMigration(rolledIdentity)?.status)
+            store.reset(rolledIdentity)
+            assertNull(EditStore(directory).processingMigration(rolledIdentity))
         } finally { directory.deleteRecursively() }
     }
 }

@@ -109,6 +109,7 @@ struct AdjustmentHistoryModelTests {
         try IOSBatchFlowModelChecks.preparedSourceChange(directory: directory)
         try IOSBatchFlowModelChecks.launchRequests(directory: directory)
         try recentLookHistory(directory: directory)
+        try processingMigrationReset(directory: directory)
         print("PASS: native adjustment history model (\(checks) assertions)")
     }
 
@@ -420,5 +421,113 @@ struct AdjustmentHistoryModelTests {
         try check(lensOutcome.first?.status == .blocked && afterLens.hasSameAdjustments(as: saved),
                   "blocked inactive lens request preserves the raster receipt")
 
+    }
+
+    private static func processingMigrationReset(directory: URL) throws {
+        let storeRoot = directory.appendingPathComponent("migration-reset-model")
+        var rejectResetWrite = false
+        let store = try EditPersistence(directory: storeRoot, writeData: { data, url in
+            if rejectResetWrite { throw CocoaError(.fileWriteNoPermission) }
+            try data.write(to: url, options: .atomic)
+        })
+        let model = RawEditorViewModel(editPersistence: store)
+        let source = directory.appendingPathComponent("migration-reset.png")
+        try Data([1, 2, 3, 4]).write(to: source)
+        let identity = PhotoIdentity(resourceIdentifier: "model-reset-asset", contentIdentifier: "model-reset-bytes")
+        var old = RawSettings.default; old.processing = .c5; old.exposure = 0.6; old.contrast = 1.15
+        let original = PhotoEditState(settings: old, filmID: "legacy-film", updatedAt: Date(timeIntervalSince1970: 20))
+        try store.save(identity, state: original)
+        var newer = old; newer.processing = .current
+        let migrated = original.replacing(settings: newer, preservingFilmID: original.filmID)
+        let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.002,
+                                                 detailRMSE: 0.001, evaluations: 20)
+        let accepted = try store.commitProcessingMigration(expected: store.readState(for: identity),
+                                                           candidate: migrated, quality: quality)
+        model.sourceFile = .externallyManaged(source)
+        model.sourceIdentity = identity
+        model.sourceKind = .raw
+        model.sourceDisplayName = "MigrationReset"
+        model.hasImage = true
+        model.acceptImportedEditRecord(accepted, settings: newer)
+        model.adjustmentSession?.adoptProcessingMigration(accepted)
+        model.processingMigrationReceipt = try store.processingMigration(for: identity)
+        try check(model.processingMigrationReceipt?.status == .migrated && model.processingMigrationStatus != nil,
+                  "imported migrated photo exposes processingMigrationReceipt in RawEditorViewModel")
+
+        let draft = EditorDraftSnapshot(geometry: nil, lens: nil, tool: .film)
+        let partialRev = UUID()
+        guard case .prepared(let partial) = model.prepareReset(.group(.light), settings: newer, revision: partialRev, draft: draft),
+              let partialCandidate = model.commitReset(partial, settings: newer, revision: partialRev, draft: draft) else {
+            throw NSError(domain: "partial reset preparation failed", code: 1)
+        }
+        model.queueSettingsSave(partialCandidate.settings)
+        try check(model.saveCurrentSettings(partialCandidate.settings) &&
+                  model.processingMigrationReceipt?.status == .migrated &&
+                  (try store.processingMigration(for: identity)?.status) == .migrated,
+                  "partial group reset keeps processingMigrationReceipt in memory and on disk")
+
+        // Active interaction cancelled after a pending full-reset intent must clear pendingResetMigrationClear and not leak to manual zeroing.
+        try check(model.beginAdjustmentInteraction(settings: partialCandidate.settings), "interaction begins before cancel-leak check")
+        let cancelRev = UUID()
+        guard case .prepared(let cancelledReset) = model.prepareReset(.all, settings: partialCandidate.settings, revision: cancelRev, draft: draft),
+              let cancelledCandidate = model.commitReset(cancelledReset, settings: partialCandidate.settings, revision: cancelRev, draft: draft) else {
+            throw NSError(domain: "cancel-leak reset preparation failed", code: 1)
+        }
+        model.queueSettingsSave(cancelledCandidate.settings)
+        try check(model.pendingResetMigrationClear != nil, "reset-all queues pendingResetMigrationClear before interaction cancel")
+        let restoredFromCancel = model.cancelAdjustmentInteraction()
+        try check(restoredFromCancel == partialCandidate.settings && model.pendingResetMigrationClear == nil,
+                  "cancelAdjustmentInteraction clears pendingResetMigrationClear")
+        var manualNeutral = cancelledCandidate.settings
+        manualNeutral.lutID = nil
+        model.queueSettingsSave(manualNeutral)
+        try check(model.saveCurrentSettings(manualNeutral) &&
+                  model.processingMigrationReceipt?.status == .migrated &&
+                  (try store.processingMigration(for: identity)?.status) == .migrated,
+                  "manual zeroing after cancelAdjustmentInteraction does not clear processingMigrationReceipt")
+
+        // Failed full reset -> restoreCommittedSettings (discard) -> partial reset must also preserve the receipt.
+        var lightOnly = manualNeutral; lightOnly.exposure = 0.45
+        model.queueSettingsSave(lightOnly)
+        try check(model.saveCurrentSettings(lightOnly), "re-apply single-group edit before failed-reset discard check")
+        rejectResetWrite = true
+        let failedRev = UUID()
+        guard case .prepared(let failedFull) = model.prepareReset(.all, settings: lightOnly, revision: failedRev, draft: draft),
+              let failedCandidate = model.commitReset(failedFull, settings: lightOnly, revision: failedRev, draft: draft) else {
+            throw NSError(domain: "failed full reset preparation failed", code: 1)
+        }
+        model.queueSettingsSave(failedCandidate.settings)
+        try check(!model.saveCurrentSettings(failedCandidate.settings) && model.pendingResetMigrationClear != nil,
+                  "failed full reset retains pendingResetMigrationClear for retry until discarded")
+        let discarded = try model.restoreCommittedSettings()
+        try check(discarded == lightOnly && model.pendingResetMigrationClear == nil,
+                  "restoreCommittedSettings clears pendingResetMigrationClear on discard")
+        rejectResetWrite = false
+        let postDiscardRev = UUID()
+        guard case .prepared(let postDiscardPartial) = model.prepareReset(.group(.light), settings: discarded, revision: postDiscardRev, draft: draft),
+              let postDiscardCandidate = model.commitReset(postDiscardPartial, settings: discarded, revision: postDiscardRev, draft: draft) else {
+            throw NSError(domain: "post-discard partial reset preparation failed", code: 1)
+        }
+        model.queueSettingsSave(postDiscardCandidate.settings)
+        try check(model.saveCurrentSettings(postDiscardCandidate.settings) &&
+                  model.processingMigrationReceipt?.status == .migrated &&
+                  (try store.processingMigration(for: identity)?.status) == .migrated,
+                  "partial reset after failed-reset discard preserves processingMigrationReceipt")
+
+        var beforeFinalReset = postDiscardCandidate.settings; beforeFinalReset.exposure = 0.5
+        model.queueSettingsSave(beforeFinalReset)
+        try check(model.saveCurrentSettings(beforeFinalReset), "re-apply edit before final full reset")
+        let allRev = UUID()
+        guard case .prepared(let full) = model.prepareReset(.all, settings: beforeFinalReset, revision: allRev, draft: draft),
+              let fullCandidate = model.commitReset(full, settings: beforeFinalReset, revision: allRev, draft: draft) else {
+            throw NSError(domain: "full reset preparation failed", code: 1)
+        }
+        model.queueSettingsSave(fullCandidate.settings)
+        try check(model.saveCurrentSettings(fullCandidate.settings) &&
+                  model.processingMigrationReceipt == nil && model.processingMigrationStatus == nil &&
+                  (try store.processingMigration(for: identity)) == nil,
+                  "full reset clears processingMigrationReceipt in RawEditorViewModel memory and on disk")
+        try check(try EditPersistence(directory: storeRoot).processingMigration(for: identity) == nil,
+                  "reopened EditPersistence still reports nil receipt after ViewModel reset-all")
     }
 }

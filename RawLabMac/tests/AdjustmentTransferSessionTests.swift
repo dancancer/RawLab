@@ -40,6 +40,7 @@ struct AdjustmentTransferSessionTests {
         try storageFailures(root: root, a: a, b: b)
         try clipboardAndEmptyTargets(root: root, a: a)
         try sourceDefaults(root: root, a: a, b: b)
+        try processingMigrationReset(root: root, a: a, b: b)
     }
 
     static func sourceDefaults(root: URL, a: URL, b: URL) throws {
@@ -259,5 +260,68 @@ struct AdjustmentTransferSessionTests {
         var invalid = state(1); invalid.settings.exposure = .nan
         check(session.commitEdit(expected: try store.readState(for: a), state: invalid).status == .failed,
               "Invalid ordinary candidate cannot enter saved history")
+    }
+
+    static func processingMigrationReset(root: URL, a: URL, b: URL) throws {
+        let directory = root.appendingPathComponent("migration-reset")
+        let store = try EditPersistence(directory: directory)
+        let session = AdjustmentTransferSession(store: store)
+        var oldSettings = Adjustments(); oldSettings.processing = .c5; oldSettings.exposure = 0.6; oldSettings.highlights = -18
+        let original = PhotoEditState(settings: oldSettings, filmID: "saved-look")
+        try store.save(a, state: original)
+        let initial = try store.readState(for: a)
+        let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.002, detailRMSE: 0.001, evaluations: 24)
+        var migratedSettings = oldSettings; migratedSettings.processing = .current; migratedSettings.highlights = -12
+        let migrated = PhotoEditState(settings: migratedSettings, filmID: "saved-look")
+        let accepted = try store.commitProcessingMigration(expected: initial, candidate: migrated, quality: quality)
+        session.adoptProcessingMigration(accepted)
+        check(try store.processingMigration(for: a)?.status == .migrated, "Migration receipt recorded before reset")
+
+        var edited = migrated; edited.settings.exposure = 0.9
+        check(session.commitEdit(expected: accepted, state: edited).status == .applied, "Ordinary edit after migration succeeds")
+        check(try store.processingMigration(for: a)?.status == .migrated, "Ordinary edit without reset intent preserves migration receipt")
+
+        var neutralSettings = Adjustments(); neutralSettings.processing = .current
+        let neutralCandidate = PhotoEditState(settings: neutralSettings, filmID: "")
+        let resetOutcome = session.commitEdit(expected: try store.readState(for: a), state: neutralCandidate,
+                                              clearsProcessingMigration: true)
+        check(resetOutcome.status == .applied && resetOutcome.saved?.state == neutralCandidate,
+              "Reset-all commits neutral v3 candidate on real commitEdit path")
+        check(try store.processingMigration(for: a) == nil, "Reset-all clears migrated receipt on disk")
+        do {
+            _ = try store.rollbackProcessingMigration(expected: try store.readState(for: a))
+            fatalError("Rollback after reset must throw expired")
+        } catch AdjustmentCommitError.expired { }
+        let reopened = try EditPersistence(directory: directory)
+        check(try reopened.processingMigration(for: a) == nil, "Cleared receipt stays nil after reopening store")
+        do {
+            _ = try reopened.rollbackProcessingMigration(expected: try reopened.readState(for: a))
+            fatalError("Rollback after reopen must stay expired")
+        } catch AdjustmentCommitError.expired { }
+
+        // Also verify .kept and .rolledBack receipts are cleared by explicit reset intent.
+        try store.save(b, state: original)
+        let expectedB = try store.readState(for: b)
+        let highError = ProcessingMigrationQuality(rgbRMSE: 0.1, p99Error: 0.2, worstTileRMSE: 0.2, detailRMSE: 0.02, evaluations: 80)
+        _ = try store.commitProcessingMigration(expected: expectedB, candidate: nil, quality: highError)
+        check(try store.processingMigration(for: b)?.status == .kept, "Kept receipt recorded")
+        var neutralLegacy = Adjustments(); neutralLegacy.processing = .c5
+        _ = session.commitEdit(expected: try store.readState(for: b),
+                               state: PhotoEditState(settings: neutralLegacy, filmID: ""),
+                               clearsProcessingMigration: true)
+        check(try EditPersistence(directory: directory).processingMigration(for: b) == nil,
+              "Reset-all clears kept receipt across reopen")
+
+        try store.save(b, state: original)
+        let remigrated = try store.commitProcessingMigration(expected: try store.readState(for: b),
+                                                             candidate: migrated, quality: quality)
+        let rolledBack = try store.rollbackProcessingMigration(expected: remigrated)
+        session.adoptProcessingMigration(rolledBack)
+        check(try store.processingMigration(for: b)?.status == .rolledBack, "Rolled-back receipt recorded")
+        _ = session.commitEdit(expected: rolledBack,
+                               state: PhotoEditState(settings: neutralLegacy, filmID: ""),
+                               clearsProcessingMigration: true)
+        check(try EditPersistence(directory: directory).processingMigration(for: b) == nil,
+              "Reset-all clears rolled-back receipt across reopen")
     }
 }

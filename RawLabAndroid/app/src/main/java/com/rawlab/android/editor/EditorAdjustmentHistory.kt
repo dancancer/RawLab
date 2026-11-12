@@ -83,7 +83,7 @@ internal class EditorAdjustmentHistory(private val store: EditorEditStore) {
         acceptSource(photo, record)
         return record
     }
-    fun commit(photo: ImportedPhoto, settings: EditSettings): EditSaveResult {
+    fun commit(photo: ImportedPhoto, settings: EditSettings, clearProcessingMigration: Boolean = false): EditSaveResult {
         if (interacting) return EditSaveResult(EditSaveState.FAILED, IOException("Finish or cancel the active adjustment"))
         val expected = loaded
         val currentSession = session
@@ -96,7 +96,8 @@ internal class EditorAdjustmentHistory(private val store: EditorEditStore) {
         val sourceDefault = sourceDefaults(photo, expected)
         val defaults = if (AdjustmentTransfer.sameAdjustments(settings, sourceDefault, raw)) settings else sourceDefault
         val result = currentSession.commitEdit(expected, candidate, photo.name, defaults,
-            validateSource = validator, validateHistorySource = historySourceValidation(photo))
+            validateSource = validator, validateHistorySource = historySourceValidation(photo),
+            clearProcessingMigration = clearProcessingMigration)
         if (result.saved != null) {
             loaded = result.saved
             return EditSaveResult(EditSaveState.SAVED)

@@ -368,6 +368,43 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         try check(model.saveEdits() && !model.dirty && model.saveError == nil &&
                   EditPersistence(directory: directory).state(for: source)?.settings.exposure == 0,
                   "failed reset save can retry the candidate")
+
+        // Full reset (.all) clears processing migration receipt both on disk and in EditorModel memory; partial reset keeps it.
+        let migrationStore = try EditPersistence(directory: directory)
+        var legacySettings = Adjustments(); legacySettings.processing = .c5; legacySettings.exposure = 0.7; legacySettings.saturation = 12
+        let legacyState = PhotoEditState(settings: legacySettings, filmID: "")
+        try migrationStore.save(source, state: legacyState)
+        var migratedSettings = legacySettings; migratedSettings.processing = .current
+        let migratedState = PhotoEditState(settings: migratedSettings, filmID: "")
+        let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.002, detailRMSE: 0.001, evaluations: 20)
+        let migratedRecord = try migrationStore.commitProcessingMigration(expected: try migrationStore.readState(for: source),
+                                                                          candidate: migratedState, quality: quality)
+        model.editStore = migrationStore
+        model.committedEdit = migratedRecord
+        model.adjustmentSession?.adoptProcessingMigration(migratedRecord)
+        model.processingMigrationReceipt = try migrationStore.processingMigration(for: source)
+        model.updatingMetadata = true; model.settings = migratedSettings; model.selectedFilmID = ""; model.updatingMetadata = false
+        model.dirty = false; model.saveWork?.cancel(); model.saveWork = nil
+        try check(model.processingMigrationReceipt?.status == .migrated && model.canRollbackProcessingMigration &&
+                  model.processingMigrationStatus != nil,
+                  "migrated receipt enables rollback and status in EditorModel")
+        let partialReset = try prepared(.group(.light))
+        try check(model.commitReset(partialReset) && model.saveEdits() &&
+                  model.processingMigrationReceipt?.status == .migrated &&
+                  (try migrationStore.processingMigration(for: source)?.status) == .migrated,
+                  "partial group reset preserves migration receipt in memory and on disk")
+        let fullReset = try prepared(.all)
+        try check(model.commitReset(fullReset) && model.saveEdits() &&
+                  model.processingMigrationReceipt == nil && !model.canRollbackProcessingMigration &&
+                  model.processingMigrationStatus == nil &&
+                  (try migrationStore.processingMigration(for: source)) == nil,
+                  "reset all clears migration receipt in EditorModel memory and on disk")
+        do {
+            _ = try migrationStore.rollbackProcessingMigration(expected: try migrationStore.readState(for: source))
+            throw Failure(message: "rollback after reset all must throw expired")
+        } catch AdjustmentCommitError.expired { }
+        try check(try EditPersistence(directory: directory).processingMigration(for: source) == nil,
+                  "cleared migration receipt stays nil after reopening EditPersistence")
         print("PASS: EditorModel reset preparation, stale guards, single commit, draft boundary and retry")
     }
 

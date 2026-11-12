@@ -119,7 +119,8 @@ class AdjustmentTransferSession(private val store: EditStore) {
     }
     fun commitEdit(before: PhotoEditState, settings: EditSettings, displayName: String = before.identity.value,
         defaultSettings: EditSettings? = null, isCurrent: () -> Boolean = { true }, validateSource: (() -> Unit)? = null,
-        validateHistorySource: (() -> Unit)? = validateSource): AdjustmentOutcome {
+        validateHistorySource: (() -> Unit)? = validateSource,
+        clearProcessingMigration: Boolean = false): AdjustmentOutcome {
         val id = before.identity.value
         if (!isCurrent()) return AdjustmentOutcome(id, AdjustmentStatus.BLOCKED, error = draftError())
         return try {
@@ -128,11 +129,12 @@ class AdjustmentTransferSession(private val store: EditStore) {
             val current = knownRecords[id]?.takeIf { it.identity == before.identity } ?: before
             val desired = if (current.settings == null && settings == defaultSettings) null else settings
             if (desired == current.settings) {
+                val saved = if (clearProcessingMigration) store.save(current.identity, desired, clearProcessingMigration = true) else current
                 if (validateHistorySource != null) sourceValidators[id] = validateHistorySource
-                knownRecords.putIfAbsent(id, current)
-                AdjustmentOutcome(id, AdjustmentStatus.UNCHANGED, saved = current)
+                if (clearProcessingMigration) knownRecords[id] = saved else knownRecords.putIfAbsent(id, current)
+                AdjustmentOutcome(id, AdjustmentStatus.UNCHANGED, saved = saved)
             } else {
-                val saved = store.save(current.identity, desired)
+                val saved = store.save(current.identity, desired, clearProcessingMigration = clearProcessingMigration)
                 record(UUID.randomUUID(), AdjustmentHistoryTransaction.Action.EDIT, emptySet(), displayName, current, saved,
                     validateHistorySource)
                 AdjustmentOutcome(id, AdjustmentStatus.APPLIED, saved = saved)

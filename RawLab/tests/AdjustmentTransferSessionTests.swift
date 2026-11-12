@@ -81,6 +81,7 @@ import Foundation
         try legacyAssetSynchronization(root.appendingPathComponent("legacy-asset-sync"))
         try presetApplication(root.appendingPathComponent("presets"))
         try fallbackHistory(root.appendingPathComponent("fallback-history"))
+        try processingMigrationReset(root.appendingPathComponent("migration-reset"))
         var invalid = context; invalid.hasUncommittedDraft = true
         do { _ = try session.copy(scope: .all, snapshot: state(2), context: invalid) } catch {}
         try check(session.clipboard == copy, "Failed copy preserves the frozen clipboard")
@@ -311,5 +312,44 @@ import Foundation
         try check(session.undoPhoto(id).first?.status == .failed && !session.canRedoPhoto(id), "Failed inverse save does not move history state")
         fail = false
         try check(session.undoPhoto(id).first?.status == .applied && session.canRedoPhoto(id), "Inverse save can retry successfully")
+    }
+
+    static func processingMigrationReset(_ root: URL) throws {
+        let store = try EditPersistence(directory: root), session = IOSAdjustmentTransferSession(store: store)
+        var old = RawSettings.default; old.processing = .c5; old.exposure = 0.75
+        let original = PhotoEditState(settings: old, filmID: "legacy-look", updatedAt: Date(timeIntervalSince1970: 10))
+        var newer = old; newer.processing = .current
+        let migrated = original.replacing(settings: newer, preservingFilmID: original.filmID)
+        let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.002,
+                                                 detailRMSE: 0.001, evaluations: 20)
+        let id = PhotoIdentity(resourceIdentifier: "session-reset", contentIdentifier: "bytes-1")
+        let sibling = PhotoIdentity(resourceIdentifier: "session-reset", contentIdentifier: "bytes-2")
+        let content = PhotoIdentity(contentIdentifier: "bytes-1")
+        for target in [id, sibling, content] {
+            try store.save(target, state: original)
+            let accepted = try store.commitProcessingMigration(expected: store.readState(for: target), candidate: migrated, quality: quality)
+            session.adoptProcessingMigration(accepted)
+        }
+        var edited = newer; edited.exposure = 1.1
+        try check(session.commitEdit(expected: store.readState(for: id),
+                                     state: original.replacing(settings: edited, preservingFilmID: original.filmID)).status == .applied,
+                  "Ordinary session edit succeeds after migration")
+        try check(try store.processingMigration(for: id)?.status == .migrated,
+                  "Ordinary session edit preserves migration receipt")
+        var neutral = RawSettings.default; neutral.processing = .current
+        let resetOutcome = session.commitEdit(expected: try store.readState(for: id),
+                                              state: PhotoEditState(settings: neutral),
+                                              clearsProcessingMigration: true)
+        try check(resetOutcome.status == .applied && (try store.processingMigration(for: id)) == nil,
+                  "Session reset-all commit clears target migration receipt")
+        do {
+            _ = try store.rollbackProcessingMigration(expected: store.readState(for: id))
+            try check(false, "Rollback after session reset must throw expired")
+        } catch AdjustmentCommitError.expired { print("PASS: Session reset expires rollback") }
+        let reopened = try EditPersistence(directory: root)
+        try check(try reopened.processingMigration(for: id) == nil &&
+                  reopened.processingMigration(for: sibling)?.status == .migrated &&
+                  reopened.processingMigration(for: content)?.status == .migrated,
+                  "Reopened store keeps reset target nil while preserving same-PHAsset-other-bytes and content:<id> receipts")
     }
 }

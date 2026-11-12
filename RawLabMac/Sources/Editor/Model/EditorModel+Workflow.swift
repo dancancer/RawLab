@@ -67,6 +67,7 @@ extension EditorModel {
             if prepared.candidate.filmID != prepared.original.filmID { selectedFilmID = "" }
             updatingMetadata = false
             edited()
+            pendingAllResetRevision = prepared.scope == .all ? editRevision : nil
         }
         return true
     }
@@ -272,7 +273,9 @@ extension EditorModel {
     @discardableResult func saveEdits() -> Bool {
         saveWork?.cancel()
         guard file != nil, dirty else { return true }
-        guard !scheduler.interacting, commitAdjustment(editState(settings: settings)) else { return false }
+        let clearsMigration = pendingAllResetRevision == editRevision
+        guard !scheduler.interacting,
+              commitAdjustment(editState(settings: settings), clearsProcessingMigration: clearsMigration) else { return false }
         dirty = false
         return true
     }

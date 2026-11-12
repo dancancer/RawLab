@@ -155,6 +155,7 @@ final class AdjustmentTransferSession {
     }
 
     func commitEdit(expected: PhotoEditRecord, state: PhotoEditState,
+                    clearsProcessingMigration: Bool = false,
                     isCurrent: () -> Bool = { true }) -> AdjustmentTransferOutcome {
         let id = expected.identity.path
         guard isCurrent() else { return outcome(id, .blocked, error: AdjustmentTransferError.draftRequiresPreflight) }
@@ -164,7 +165,8 @@ final class AdjustmentTransferSession {
             guard state.masterRecipeID == state.settings.masterRecipeID else {
                 throw AdjustmentTransferError.invalidPayload("recipe identity")
             }
-            let saved = try store.saveState(identity: before.identity, state: state)
+            let saved = try store.saveState(identity: before.identity, state: state,
+                                            clearsProcessingMigration: clearsProcessingMigration)
             guard saved != before else { return outcome(id, .unchanged, saved: saved) }
             record(id: UUID(), action: .edit, fields: [], before: before, after: saved)
             return outcome(id, .applied, saved: saved)

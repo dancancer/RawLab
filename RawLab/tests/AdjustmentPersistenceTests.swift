@@ -10,6 +10,7 @@ import Foundation
     }
     static func main() async throws {
         try processingMigration()
+        try await processingMigrationResetAndIsolation()
         try await reopenedLegacyMigration()
         try refinedRecipe()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -141,6 +142,108 @@ import Foundation
             try check(try restarted.processingMigration(for: asset)?.original == before,
                 "Creating the resource record keeps its rejection receipt")
         }
+    }
+
+    static func processingMigrationResetAndIsolation() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try EditPersistence(directory: root)
+        var old = RawSettings.default; old.processing = .c5; old.exposure = 0.6; old.highlights = 0.25
+        let original = PhotoEditState(settings: old, filmID: "legacy-film", updatedAt: Date(timeIntervalSince1970: 50))
+        var newer = old; newer.processing = .current; newer.highlights = 0.15
+        let migrated = original.replacing(settings: newer, preservingFilmID: original.filmID)
+        let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.003,
+                                                 detailRMSE: 0.001, evaluations: 20)
+        var neutralV3 = RawSettings.default; neutralV3.processing = .current
+        let neutralCandidate = PhotoEditState(settings: neutralV3, updatedAt: Date(timeIntervalSince1970: 60))
+
+        // 1. Migrated -> explicit reset commit -> receipt nil -> rollback expired -> reopen still nil.
+        let primary = PhotoIdentity(resourceIdentifier: "reset-asset", contentIdentifier: "reset-bytes")
+        try store.save(primary, state: original)
+        _ = try store.commitProcessingMigration(expected: store.readState(for: primary), candidate: migrated, quality: quality)
+        try check(try store.processingMigration(for: primary)?.status == .migrated, "Migration receipt exists before reset")
+        _ = try store.saveState(identity: primary, state: neutralCandidate, clearsProcessingMigration: true)
+        try check(try store.processingMigration(for: primary) == nil, "Explicit reset commit clears migrated receipt")
+        do {
+            _ = try store.rollbackProcessingMigration(expected: store.readState(for: primary))
+            throw NSError(domain: "Rollback after reset must throw expired", code: 1)
+        } catch AdjustmentCommitError.expired { print("PASS: Rollback throws expired after reset") }
+        let reopenedPrimary = try EditPersistence(directory: root)
+        try check(try reopenedPrimary.processingMigration(for: primary) == nil,
+                  "Cleared receipt remains nil after reopening store")
+        do {
+            _ = try reopenedPrimary.rollbackProcessingMigration(expected: reopenedPrimary.readState(for: primary))
+            throw NSError(domain: "Reopened rollback after reset must throw expired", code: 1)
+        } catch AdjustmentCommitError.expired { print("PASS: Reopened store keeps rollback unavailable") }
+
+        // Also verify .rolledBack and .kept-only (no primary record) receipts are cleared.
+        let rolled = PhotoIdentity(resourceIdentifier: "rolled-asset", contentIdentifier: "rolled-bytes")
+        try store.save(rolled, state: original)
+        let rolledMigrated = try store.commitProcessingMigration(expected: store.readState(for: rolled), candidate: migrated, quality: quality)
+        _ = try store.rollbackProcessingMigration(expected: rolledMigrated)
+        try check(try store.processingMigration(for: rolled)?.status == .rolledBack, "Rolled-back receipt exists before reset")
+        try store.reset(rolled)
+        try check(try EditPersistence(directory: root).processingMigration(for: rolled) == nil,
+                  "Reset clears rolled-back receipt")
+
+        let keptAlias = PhotoIdentity(contentIdentifier: "kept-only-alias")
+        let keptAsset = PhotoIdentity(resourceIdentifier: "kept-only-asset", contentIdentifier: keptAlias.contentIdentifier)
+        try store.save(keptAlias, state: original)
+        _ = try store.commitProcessingMigration(expected: store.readState(for: keptAsset), candidate: nil, quality: quality)
+        try store.reset(keptAlias)
+        try check(store.state(for: keptAsset) == nil && (try store.processingMigration(for: keptAsset)?.status) == .kept,
+                  "Kept-only asset has a receipt without a primary record")
+        try store.reset(keptAsset)
+        try check(try EditPersistence(directory: root).processingMigration(for: keptAsset) == nil,
+                  "write(nil) clears a kept-only receipt even when current.state is already nil")
+
+        // 2(a). Same PHAsset (resourceIdentifier) with different bytes (contentIdentifier) keeps its receipt intact.
+        let assetV1 = PhotoIdentity(resourceIdentifier: "shared-phasset", contentIdentifier: "bytes-v1")
+        let assetV2 = PhotoIdentity(resourceIdentifier: "shared-phasset", contentIdentifier: "bytes-v2")
+        let unboundAsset = PhotoIdentity(resourceIdentifier: "shared-phasset")
+        for id in [assetV1, assetV2, unboundAsset] {
+            try store.save(id, state: original)
+            _ = try store.commitProcessingMigration(expected: store.readState(for: id), candidate: migrated, quality: quality)
+        }
+        _ = try store.saveState(identity: assetV1, state: neutralCandidate, clearsProcessingMigration: true)
+        try store.reset(assetV1)
+        let reopenedShared = try EditPersistence(directory: root)
+        try check(try reopenedShared.processingMigration(for: assetV1) == nil, "Reset clears target PHAsset+bytes receipt")
+        try check(try reopenedShared.processingMigration(for: assetV2)?.status == .migrated &&
+                  reopenedShared.processingMigration(for: assetV2)?.original == original,
+                  "Another identity on the same PHAsset with different bytes keeps its receipt intact")
+        try check(try reopenedShared.processingMigration(for: unboundAsset)?.status == .migrated,
+                  "Legacy photo:<res> receipt with non-matching contentIdentifier is not deleted")
+        let restoredV2 = try reopenedShared.rollbackProcessingMigration(expected: reopenedShared.readState(for: assetV2))
+        try check(restoredV2.state == original, "Sibling PHAsset identity with different bytes can still roll back")
+
+        // 2(b). Independent content:<id> import record keeps its receipt intact under both commitEdit-style and write(nil) resets.
+        let contentImport = PhotoIdentity(contentIdentifier: "independent-file-sha")
+        let photoSharingContent = PhotoIdentity(resourceIdentifier: "photo-sharing-sha", contentIdentifier: contentImport.contentIdentifier)
+        let photoResetNil = PhotoIdentity(resourceIdentifier: "photo-reset-nil", contentIdentifier: contentImport.contentIdentifier)
+        try store.save(contentImport, state: original)
+        _ = try store.commitProcessingMigration(expected: store.readState(for: contentImport), candidate: migrated, quality: quality)
+        try check(try store.processingMigration(for: photoSharingContent)?.status == .migrated &&
+                  store.processingMigration(for: photoResetNil)?.status == .migrated,
+                  "PhotoKit identities initially observe fallback receipt before reset")
+        _ = try store.saveState(identity: photoSharingContent, state: neutralCandidate, clearsProcessingMigration: true)
+        try store.reset(photoResetNil)
+        let rawStore = try JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("edits.json"))) as! [String: Any]
+        let rawMigrations = rawStore["processingMigrations"] as? [String: Any] ?? [:]
+        try check(!rawMigrations.keys.contains { $0.contains("photo-reset-nil") || $0.contains("photo-sharing-sha") },
+                  "write(nil) and reset saveState never copy an alias receipt into receipts[editKey]")
+        let reopenedAlias = try EditPersistence(directory: root)
+        let resolvedAfterReset = await reopenedAlias.resolvingLegacyContent(for: photoResetNil) { contentImport.contentIdentifier }
+        try check(try reopenedAlias.processingMigration(for: photoSharingContent) == nil &&
+                  reopenedAlias.processingMigration(for: resolvedAfterReset) == nil &&
+                  reopenedAlias.state(for: photoResetNil) == nil,
+                  "Both neutral-commit reset and tombstone reset block alias receipt fallback across reopen")
+        try check(try reopenedAlias.processingMigration(for: contentImport)?.status == .migrated &&
+                  reopenedAlias.processingMigration(for: contentImport)?.original == original &&
+                  reopenedAlias.state(for: contentImport) == migrated,
+                  "Independent content:<id> import record and its migration receipt remain completely unaffected")
+        let restoredContent = try reopenedAlias.rollbackProcessingMigration(expected: reopenedAlias.readState(for: contentImport))
+        try check(restoredContent.state == original, "Independent content:<id> import record can still roll back after PhotoKit reset")
     }
 
     static func reopenedLegacyMigration() async throws {

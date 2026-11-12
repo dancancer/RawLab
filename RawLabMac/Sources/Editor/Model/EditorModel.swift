@@ -179,6 +179,7 @@ final class EditorModel: ObservableObject {
     @Published var sourceRevision = UUID() { didSet {
         cancelProcessingMigration()
         processingMigrationReceipt = nil
+        pendingAllResetRevision = nil
         hslSourceRevision &+= 1; hslAcceptedRequest = nil; hslAcceptedSettings = nil
         closeQuickPresets()
         cancelCollectionExportPreparation()
@@ -294,6 +295,7 @@ final class EditorModel: ObservableObject {
     @Published var matchingProcessing = false
     var processingMigrationCancellation: ProcessingMigrationCancellation?
     var processingMigrationAttemptSource: UUID?
+    var pendingAllResetRevision: UUID?
     static let processingMigrationQueue = DispatchQueue(label: "rawlab.processing-migration", qos: .utility)
     var interactionEntry: PhotoEditState?
     var interactionWasDirty = false
