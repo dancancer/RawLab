@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import Darwin
 
 enum BatchSettingsMode: String, Codable {
     case uniformFrozen = "uniform_frozen", perTargetFrozen = "per_target_frozen"
@@ -20,6 +21,21 @@ struct BatchFrozenSettings: Codable {
         SHA256.hash(data: try Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
     }
 
+    fileprivate static func validateSettings(_ settings: Adjustments) throws {
+        do {
+            try settings.validateResetValues()
+            if settings.isHDREditing {
+                var sdr = settings
+                sdr.hdr?.mode = .sdr
+                try sdr.validateResetValues()
+            } else if settings.hdr?.isValid == false {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+        } catch {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+    }
+
     func validate() throws {
         guard version == 1, settingsVersion == 1, ordinal >= 0,
               longEdge == nil || (1...65535).contains(longEdge!),
@@ -28,6 +44,7 @@ struct BatchFrozenSettings: Codable {
                 lookSHA256!.allSatisfy { "0123456789abcdef".contains($0) }) else {
             throw CocoaError(.fileReadCorruptFile)
         }
+        try Self.validateSettings(settings)
     }
 
     func verifyLook() throws {
@@ -108,7 +125,11 @@ struct BatchExportJob: Codable {
     var mode: BatchSettingsMode { settingsMode ?? .uniformFrozen }
 
     func validate() throws {
-        guard (1...3).contains(version) else { throw CocoaError(.fileReadCorruptFile) }
+        guard (1...3).contains(version),
+              longEdge == nil || (1...65535).contains(longEdge!) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        try BatchFrozenSettings.validateSettings(settings)
         guard mode == .perTargetFrozen else {
             guard version < 3, items.allSatisfy({ $0.frozen == nil }) else { throw CocoaError(.fileReadCorruptFile) }
             return
@@ -203,13 +224,21 @@ final class BatchJournal {
             .appendingPathComponent("RawLab/Batch", isDirectory: true)
     }
     let directory: URL
+    private(set) var lastQuarantinedURL: URL?
+    private var quarantinedError: Error?
     private var url: URL { directory.appendingPathComponent("job.json") }
 
     init(directory: URL = BatchJournal.defaultDirectory) { self.directory = directory }
 
+    func consumeQuarantinedError() -> Error? {
+        defer { quarantinedError = nil }
+        return quarantinedError
+    }
+
     func save(_ job: BatchExportJob) throws {
-        _ = try readJob()
+        quarantinedError = nil
         try job.validate()
+        _ = try readJob()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try JSONEncoder().encode(job).write(to: url, options: .atomic)
     }
@@ -223,13 +252,125 @@ final class BatchJournal {
     }
 
     private func readJob() throws -> BatchExportJob? {
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        let job = try JSONDecoder().decode(BatchExportJob.self, from: Data(contentsOf: url))
-        try job.validate()
-        return job
+        quarantinedError = nil
+        switch try Self.itemType(atPath: directory.path) {
+        case nil: return nil
+        case .typeDirectory?: break
+        default: throw CocoaError(.fileReadCorruptFile)
+        }
+        switch try Self.itemType(atPath: url.path) {
+        case nil: return nil
+        case .typeRegular?: break
+        default: throw CocoaError(.fileReadCorruptFile)
+        }
+        let data = try Data(contentsOf: url)
+        do {
+            let job = try JSONDecoder().decode(BatchExportJob.self, from: data)
+            try job.validate()
+            return job
+        } catch {
+            if Self.isUnsupportedFutureJournal(data) { throw error }
+            lastQuarantinedURL = try quarantineCorruptJob()
+            quarantinedError = error
+            return nil
+        }
+    }
+
+    private func quarantineCorruptJob(now: Date = Date()) throws -> URL {
+        let baseName = "job.json.corrupt-\(Self.corruptTimestamp(now))"
+        var suffix = 0
+        while true {
+            let name = suffix == 0 ? baseName : "\(baseName)-\(suffix)"
+            let candidate = directory.appendingPathComponent(name)
+            if try Self.itemType(atPath: candidate.path) == nil {
+                try FileManager.default.moveItem(at: url, to: candidate)
+                return candidate
+            }
+            suffix += 1
+        }
+    }
+
+    private static func corruptTimestamp(_ date: Date) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let parts = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        return String(format: "%04d%02d%02d-%02d%02d%02d",
+                      parts.year ?? 0, parts.month ?? 0, parts.day ?? 0,
+                      parts.hour ?? 0, parts.minute ?? 0, parts.second ?? 0)
+    }
+
+    private static func itemType(atPath path: String) throws -> FileAttributeType? {
+        do {
+            return try FileManager.default.attributesOfItem(atPath: path)[.type] as? FileAttributeType
+        } catch {
+            let nsError = error as NSError
+            if nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileReadNoSuchFileError {
+                if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError,
+                   underlying.domain == NSPOSIXErrorDomain {
+                    if underlying.code == ENOENT { return nil }
+                    throw error
+                }
+                return nil
+            }
+            if nsError.domain == NSPOSIXErrorDomain && nsError.code == ENOENT { return nil }
+            throw error
+        }
+    }
+
+    private static func isIntegerAbove(_ value: Any?, limit: Int) -> Bool {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID() else { return false }
+        let decimal = number.decimalValue
+        var rounded = Decimal()
+        var copy = decimal
+        NSDecimalRound(&rounded, &copy, 0, .plain)
+        guard !decimal.isNaN, decimal == rounded else { return false }
+        return decimal > Decimal(limit)
+    }
+
+    private static func hasFutureSettings(_ value: Any?) -> Bool {
+        guard let settings = value as? [String: Any] else { return false }
+        if let processing = settings["processing"] as? [String: Any],
+           processing["family"] as? String == "rawlab",
+           isIntegerAbove(processing["version"], limit: ProcessingIdentity.current.version) {
+            return true
+        }
+        if isIntegerAbove(settings["masterRecipeSettingsVersion"], limit: 4) { return true }
+        if let hdr = settings["hdr"] as? [String: Any] {
+            if isIntegerAbove(hdr["hdr_processing_version"], limit: 8) ||
+               isIntegerAbove(hdr["record_version"], limit: 9) {
+                return true
+            }
+            if let cameraDev = hdr["camera_development"] as? [String: Any],
+               isIntegerAbove(cameraDev["version"], limit: 1) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func isUnsupportedFutureJournal(_ data: Data) -> Bool {
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return false
+        }
+        if isIntegerAbove(object["version"], limit: 3) || hasFutureSettings(object["settings"]) {
+            return true
+        }
+        if let items = object["items"] as? [Any] {
+            for case let item as [String: Any] in items {
+                guard let frozen = item["frozen"] as? [String: Any] else { continue }
+                if isIntegerAbove(frozen["version"], limit: 1) ||
+                   isIntegerAbove(frozen["settingsVersion"], limit: 1) ||
+                   hasFutureSettings(frozen["settings"]) {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     func load() throws -> BatchExportJob? {
+        quarantinedError = nil
         guard var job = try readJob() else { return nil }
         for index in job.items.indices where [.running, .publishing].contains(job.items[index].status) {
             let item = job.items[index]
@@ -248,7 +389,8 @@ final class BatchJournal {
     }
 
     func discard(_ job: BatchExportJob) throws {
-        if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+        quarantinedError = nil
+        if try readJob() != nil { try FileManager.default.removeItem(at: url) }
         releaseResources(job)
     }
 
@@ -298,12 +440,19 @@ enum BatchExportRunner {
     typealias Render = (URL, Adjustments, URL?, URL) throws -> Void
     typealias RenderSnapshot = (URL, BatchFrozenSettings, URL) throws -> Void
 
+    private static func save(_ job: BatchExportJob, to journal: BatchJournal,
+                             onQuarantine: (Error) -> Void) throws {
+        defer { if let quarantined = journal.consumeQuarantinedError() { onQuarantine(quarantined) } }
+        try journal.save(job)
+    }
+
     static func run(job: inout BatchExportJob, journal: BatchJournal, scope: BatchRunScope,
                     resolveX3fMode: BatchExportJob.X3fModeResolver = BatchExportJob.resolveX3fMode(for:),
                     shouldCancel: () -> Bool, didUpdate: (BatchExportJob) -> Void = { _ in },
+                    onQuarantine: (Error) -> Void = { _ in },
                     render: Render) throws {
         try runSnapshots(job: &job, journal: journal, scope: scope, resolveX3fMode: resolveX3fMode,
-                         shouldCancel: shouldCancel, didUpdate: didUpdate) { input, snapshot, output in
+                         shouldCancel: shouldCancel, didUpdate: didUpdate, onQuarantine: onQuarantine) { input, snapshot, output in
             try render(input, snapshot.settings, snapshot.look, output)
         }
     }
@@ -311,6 +460,7 @@ enum BatchExportRunner {
     static func runSnapshots(job: inout BatchExportJob, journal: BatchJournal, scope: BatchRunScope,
                              resolveX3fMode: BatchExportJob.X3fModeResolver = BatchExportJob.resolveX3fMode(for:),
                              shouldCancel: () -> Bool, didUpdate: (BatchExportJob) -> Void = { _ in },
+                             onQuarantine: (Error) -> Void = { _ in },
                              render: RenderSnapshot) throws {
         try job.validate()
         guard let directory = job.outputDirectory else { throw BatchExportFailure.destination }
@@ -320,7 +470,7 @@ enum BatchExportRunner {
         }
         try verifyDestination(directory)
         job.started = true; job.interrupted = false; job.cancelled = false; job.failure = nil
-        try journal.save(job)
+        try save(job, to: journal, onQuarantine: onQuarantine)
         do {
             for index in job.items.indices {
                 let item = job.items[index]
@@ -330,26 +480,28 @@ enum BatchExportRunner {
                 try verifyDestination(directory)
                 job.items[index].status = .running
                 job.items[index].error = nil
-                try journal.save(job)
+                try save(job, to: journal, onQuarantine: onQuarantine)
                 didUpdate(job)
                 try export(index, job: &job, journal: journal, directory: directory,
-                           resolveX3fMode: resolveX3fMode, shouldCancel: shouldCancel, render: render)
+                           resolveX3fMode: resolveX3fMode, shouldCancel: shouldCancel,
+                           onQuarantine: onQuarantine, render: render)
                 didUpdate(job)
                 if shouldCancel() { job.cancelled = true; break }
             }
         } catch {
             job.interrupted = true; job.failure = error.localizedDescription
-            try? journal.save(job)
+            try? save(job, to: journal, onQuarantine: onQuarantine)
             didUpdate(job)
             throw error
         }
-        try journal.save(job)
+        try save(job, to: journal, onQuarantine: onQuarantine)
         didUpdate(job)
     }
 
     private static func export(_ index: Int, job: inout BatchExportJob, journal: BatchJournal,
                                directory: URL, resolveX3fMode: BatchExportJob.X3fModeResolver,
-                               shouldCancel: () -> Bool, render: RenderSnapshot) throws {
+                               shouldCancel: () -> Bool, onQuarantine: (Error) -> Void,
+                               render: RenderSnapshot) throws {
         let item = job.items[index]
         let snapshot: BatchFrozenSettings
         let temp: URL
@@ -373,12 +525,12 @@ enum BatchExportRunner {
         } catch RenderError.aiCancelled where shouldCancel() {
             job.items[index].status = .waiting
             job.items[index].error = nil
-            try journal.save(job)
+            try save(job, to: journal, onQuarantine: onQuarantine)
             return
         } catch {
             job.items[index].status = .failed
             job.items[index].error = error.localizedDescription
-            try journal.save(job)
+            try save(job, to: journal, onQuarantine: onQuarantine)
             if isStorageFailure(error) { throw error }
             try verifyDestination(directory)
             return
@@ -389,19 +541,19 @@ enum BatchExportRunner {
         job.items[index].output = output
         job.items[index].completedIdentity = try OriginalFileIdentity(temp)
         job.items[index].status = .publishing
-        try journal.save(job)
+        try save(job, to: journal, onQuarantine: onQuarantine)
         do {
             try FileManager.default.moveItem(at: temp, to: output)
         } catch {
             job.items[index].status = .failed
             job.items[index].error = error.localizedDescription
-            try journal.save(job)
+            try save(job, to: journal, onQuarantine: onQuarantine)
             if isStorageFailure(error) { throw error }
             return
         }
         job.items[index].status = .succeeded
         job.items[index].error = nil
-        try journal.save(job)
+        try save(job, to: journal, onQuarantine: onQuarantine)
     }
 
     static func uniqueOutput(directory: URL, name: String, suffix: String) -> URL {
