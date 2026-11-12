@@ -4,6 +4,7 @@
 #include "recipe_probe_stages.h"
 #include "recipe_white_balance_cache.h"
 #include "sony2fuji/ffi/sony2fuji_hdr.h"
+#include <cstdio>
 #include <cstring>
 #include <limits>
 #include <memory>
@@ -1466,7 +1467,7 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
         std::lock_guard<std::mutex> lock(sessionsMutex);
         const auto found = sessions.find(id);
         if (found == sessions.end()) throw std::invalid_argument("Processor is closed");
-        CancellationScope cancellation(found->second, output ? -1 : cancellationGeneration);
+        CancellationScope cancellation(found->second, cancellationGeneration);
         check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
         auto* session = found->second.get();
         check(sony2fuji_session_set_processing_version(session, static_cast<sony2fuji_processing_version>(processingVersion)));
@@ -1546,8 +1547,12 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
             sampleHslProbe(env, snapshot, sourceRevision, requestRevision, hslProbe);
             return nullptr;
         }
+        check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
         Buffer buffer;
-        check(sony2fuji_process(session, &request, &buffer.value), session);
+        const auto status = sony2fuji_process(session, &request, &buffer.value);
+        if (out.chars && (status == SONY2FUJI_STATUS_CANCELLED || cancellation.isCancelled()))
+            std::remove(out.chars);
+        check(status, session);
         check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
         if (backendOut) {
             const auto backend = static_cast<jint>(sony2fuji_session_get_last_backend(session));

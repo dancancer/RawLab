@@ -310,6 +310,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
                 format = if (state.edits.isHDREditing) ExportFormat.HDR_JPEG else ExportFormat.JPEG
                 model.beginExport { if (it) exportDialog = true }
             },
+            onCancelExport = model::cancelExport,
             onBatchExport = model::beginBatch,
             collectionEditing = collection.currentID != null && collection.currentID == state.photo?.identity?.value,
             onCollection = {

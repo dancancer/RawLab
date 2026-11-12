@@ -75,6 +75,7 @@ internal fun filmSelectionChanged(edits: EditSettings, selectedId: String): Bool
 fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onEdit: (EditSettings, Boolean) -> Unit, onRetry: () -> Unit,
     onExport: () -> Unit, onMessageDismiss: () -> Unit, onLicenses: () -> Unit, onGpuChange: (Boolean) -> Unit,
+    onCancelExport: () -> Unit = {},
     onCamera: () -> Unit = {},
     onHDRChange: (Boolean) -> Unit = {},
     onRollbackProcessing: () -> Unit = {},
@@ -240,6 +241,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     }
     LaunchedEffect(state.draft?.group) { state.draft?.let { tool = it.group.tool; toolOpen = true } }
     BackHandler(enabled = toolOpen) { leave { toolOpen = false } }
+    BackHandler(enabled = state.operation == Operation.EXPORT, onBack = onCancelExport)
     if (pendingLeave != null) AlertDialog(onDismissRequest = { cancelLeave() },
         title = { Text(stringResource(R.string.adjustment_leave)) },
         confirmButton = { TextButton(onClick = { applyAndLeave() },
@@ -532,7 +534,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                                 Modifier.fillMaxSize(), onAlbum, onFile, onLicenses, onPreviewSizeChange, onDraftEdit, retrySave, view, ::togglePure, holdBefore,
                                 { view = view.selectComparison(it) }, { view = view.copy(comparisonEnabled = false, holdingBefore = false) }, onRetry, hslTarget = canvasTarget, showTargetStatus = !expanded, onCamera = onCamera,
                                 workspaceControls = true, histogramExpanded = workspaceHistogram,
-                                onHistogramExpandedChange = { workspaceHistogram = it })
+                                onHistogramExpandedChange = { workspaceHistogram = it },
+                                onCancelExport = onCancelExport)
                             workspaceActions(Modifier.align(Alignment.BottomCenter))
                             }
                         }
@@ -545,7 +548,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         Modifier.fillMaxSize(), onAlbum, onFile, onLicenses, onPreviewSizeChange, onDraftEdit, retrySave, view, ::togglePure, holdBefore,
                                 { view = view.selectComparison(it) }, { view = view.copy(comparisonEnabled = false, holdingBefore = false) }, onRetry, hslTarget = canvasTarget, showTargetStatus = !expanded, onCamera = onCamera,
                                 workspaceControls = true, histogramExpanded = workspaceHistogram,
-                                onHistogramExpandedChange = { workspaceHistogram = it })
+                                onHistogramExpandedChange = { workspaceHistogram = it },
+                                onCancelExport = onCancelExport)
                     workspaceActions(Modifier.align(Alignment.BottomCenter))
                     }
                     if (state.photo != null) {

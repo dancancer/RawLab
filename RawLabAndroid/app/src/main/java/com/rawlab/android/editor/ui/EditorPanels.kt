@@ -46,7 +46,8 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
     onDraftEdit: (EditSettings, Boolean) -> Unit, onSaveRetry: () -> Unit,
     view: PhotoViewOptions = PhotoViewOptions(), onCanvasTap: () -> Unit = {}, onHoldBefore: (Boolean) -> Unit = {},
     onModeChange: (ComparisonMode) -> Unit = {}, onCompareClose: () -> Unit = {}, onRetry: () -> Unit = {}, hslTarget: HslTargetActions? = null, showTargetStatus: Boolean = false, onCamera: () -> Unit = {},
-    workspaceControls: Boolean = false, histogramExpanded: Boolean? = null, onHistogramExpandedChange: (Boolean) -> Unit = {}) {
+    workspaceControls: Boolean = false, histogramExpanded: Boolean? = null, onHistogramExpandedChange: (Boolean) -> Unit = {},
+    onCancelExport: () -> Unit = {}) {
     val comparisonInset = if (compare) with(LocalDensity.current) {
         MaterialTheme.typography.labelSmall.lineHeight.toDp() + 36.dp
     } else 12.dp
@@ -86,14 +87,30 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
             }
         }
         if (!view.purePreview) {
-            val operation = when (state.operation) {
-                Operation.EXPORT -> R.string.exporting
-                Operation.IMPORT -> R.string.importing
-                Operation.IMPORT_LOOK -> R.string.look_importing
-                else -> null
+            if (state.operation == Operation.EXPORT) {
+                Row(
+                    Modifier.align(Alignment.TopStart).padding(12.dp)
+                        .background(Color.Black.copy(alpha = .6f)).padding(start = 6.dp, end = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(stringResource(R.string.exporting), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                    TextButton(
+                        onClick = onCancelExport,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.testTag("export-cancel"),
+                    ) {
+                        Text(stringResource(R.string.cancel), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            } else {
+                val operation = when (state.operation) {
+                    Operation.IMPORT -> R.string.importing
+                    Operation.IMPORT_LOOK -> R.string.look_importing
+                    else -> null
+                }
+                operation?.let { Text(stringResource(it), Modifier.align(Alignment.TopStart).padding(12.dp)
+                    .background(Color.Black.copy(alpha = .6f)).padding(6.dp), color = Color.White, style = MaterialTheme.typography.labelSmall) }
             }
-            operation?.let { Text(stringResource(it), Modifier.align(Alignment.TopStart).padding(12.dp)
-                .background(Color.Black.copy(alpha = .6f)).padding(6.dp), color = Color.White, style = MaterialTheme.typography.labelSmall) }
             if (state.error != null) RenderError(state, onRetry, Modifier.align(Alignment.TopCenter).padding(top = 4.dp))
         }
         if (state.preview == null || (state.draft?.group == AdjustmentGroup.GEOMETRY && state.saveState == EditSaveState.FAILED)) EditorSaveNotice(state, onSaveRetry, Modifier.align(Alignment.BottomCenter)

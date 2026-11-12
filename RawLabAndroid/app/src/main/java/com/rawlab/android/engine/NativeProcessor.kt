@@ -4,10 +4,15 @@ import com.rawlab.android.settings.requireProRAWDecoder
 import com.rawlab.android.settings.ToneCurveSettings
 
 import android.graphics.Bitmap
+import android.os.CancellationSignal
 import java.io.IOException
 import java.io.File
 import java.nio.ByteBuffer
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.Locale
+import java.util.UUID
+import java.util.concurrent.CancellationException
 import com.rawlab.android.looks.DcpCompilationException
 import com.rawlab.android.looks.DcpFailureReason
 import com.rawlab.android.format.ExportFormat
@@ -179,34 +184,68 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
 
     @Synchronized
     fun export(input: File, lut: File?, settings: EditSettings, output: File, format: ExportFormat, longEdge: Int? = null,
-        inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW): Int {
+        inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW,
+        cancellationGeneration: Long = -1L, cancellationSignal: CancellationSignal? = null): Int {
         check(handle != 0L) { "Processor is closed" }
         require(format != ExportFormat.HDR_JPEG) { "HDR JPEG requires HDR editing" }
         require(input.canonicalPath != output.canonicalPath)
         require(ExportSize.isValid(longEdge)) { "Invalid output long edge" }
-        val effective = settings.effectiveFor(inputKind)
-        val pixels = rasterInput(input, inputKind)
-        configureLens(effective.lens)
-        configureGeometry(settings.geometry)
-        setToneCurves(effective.renderCurve)
-        nativeSetToneControls(handle, effective.renderBlackPoint / 100f, effective.renderWhitePoint / 100f, effective.renderVibrance / 100f)
-        nativeSetAtmosphere(handle, effective.renderClarity / 100f, effective.renderDehaze / 100f)
-        with(effective.renderColorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
-            midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
-        val backend = intArrayOf(-1)
-        nativeProcess(handle, input.path, pixels?.pixels, pixels?.width ?: 0, pixels?.height ?: 0,
-            pixels?.pixelFormat ?: 0, lut?.path, output.path, effective.strength,
-            effective.exposure, effective.customWb, effective.temperature, effective.tint,
-            effective.highlights, effective.shadows, effective.contrast, effective.renderToneCurve,
-            effective.saturation, effective.sharpening, 0, false, format.nativeValue, longEdge ?: 0,
-            effective.denoise.enabled, effective.denoise.luma, effective.denoise.chroma, effective.denoise.coarse,
-            effective.displayChromaDenoise, effective.effects.vignetteAmount, effective.effects.vignetteMidpoint,
-            effective.effects.vignetteRoundness, effective.effects.vignetteFeather, effective.effects.vignetteHighlights,
-            effective.effects.grainAmount, effective.effects.grainSize, effective.effects.grainRoughness,
-            effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null, effective.processing.version, effective.x3fMode.nativeValue, backend)
-        check(backend[0] >= 0) { "Native export did not report a backend" }
-        if (format != ExportFormat.DNG) ExportMetadata.preserve(input, output, allowUnreadableSource = PhotoFiles.isX3f(input))
-        return backend[0]
+        val generation = when {
+            cancellationGeneration >= 0L -> cancellationGeneration
+            cancellationSignal != null -> cancellationGeneration()
+            else -> -1L
+        }
+        if (cancellationSignal != null) {
+            cancellationSignal.setOnCancelListener { cancelPreview() }
+            if (cancellationSignal.isCanceled) cancelPreview()
+        }
+        val cancelled = {
+            (cancellationSignal?.isCanceled == true) ||
+                (generation >= 0L && cancellationGeneration() != generation)
+        }
+        try {
+            return executeExport(
+                output = output,
+                suffix = format.suffix,
+                isCancelled = cancelled,
+                renderToStaging = { staging ->
+                    val effective = settings.effectiveFor(inputKind)
+                    val pixels = rasterInput(input, inputKind)
+                    if (cancelled()) {
+                        throw NativeProcessingException(NativeProcessingException.CANCELLED, "Processing cancelled")
+                    }
+                    configureLens(effective.lens)
+                    configureGeometry(settings.geometry)
+                    setToneCurves(effective.renderCurve)
+                    nativeSetToneControls(handle, effective.renderBlackPoint / 100f, effective.renderWhitePoint / 100f, effective.renderVibrance / 100f)
+                    nativeSetAtmosphere(handle, effective.renderClarity / 100f, effective.renderDehaze / 100f)
+                    with(effective.renderColorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
+                        midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
+                    val backend = intArrayOf(-1)
+                    nativeProcess(handle, input.path, pixels?.pixels, pixels?.width ?: 0, pixels?.height ?: 0,
+                        pixels?.pixelFormat ?: 0, lut?.path, staging.path, effective.strength,
+                        effective.exposure, effective.customWb, effective.temperature, effective.tint,
+                        effective.highlights, effective.shadows, effective.contrast, effective.renderToneCurve,
+                        effective.saturation, effective.sharpening, 0, false, format.nativeValue, longEdge ?: 0,
+                        effective.denoise.enabled, effective.denoise.luma, effective.denoise.chroma, effective.denoise.coarse,
+                        effective.displayChromaDenoise, effective.effects.vignetteAmount, effective.effects.vignetteMidpoint,
+                        effective.effects.vignetteRoundness, effective.effects.vignetteFeather, effective.effects.vignetteHighlights,
+                        effective.effects.grainAmount, effective.effects.grainSize, effective.effects.grainRoughness,
+                        effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null,
+                        effective.processing.version, effective.x3fMode.nativeValue, backend,
+                        0, 0, null, generation, null)
+                    check(backend[0] >= 0) { "Native export did not report a backend" }
+                    backend[0]
+                },
+                preserveMetadata = { staging ->
+                    if (format != ExportFormat.DNG) {
+                        ExportMetadata.preserve(input, staging, allowUnreadableSource = PhotoFiles.isX3f(input))
+                    }
+                },
+            )
+        } finally {
+            cancellationSignal?.setOnCancelListener(null)
+        }
     }
 
     @Synchronized
@@ -437,4 +476,56 @@ private object NativeLookBridge {
 
 private object NativeDcpBridge {
     @JvmStatic external fun compile(source: ByteArray, sourceNameUtf8: ByteArray, toneCurve: ByteArray?, omitAutomaticBlack: Boolean): ByteArray
+}
+
+internal fun exportStagingFile(
+    parent: File,
+    outputName: String,
+    suffix: String,
+    id: UUID = UUID.randomUUID(),
+): File = File(parent, ".$outputName.$id.part$suffix")
+
+internal fun executeExport(
+    output: File,
+    suffix: String = output.extension.takeIf { it.isNotEmpty() }?.let { ".$it" }.orEmpty(),
+    isCancelled: () -> Boolean,
+    renderToStaging: (File) -> Int,
+    preserveMetadata: (File) -> Unit = {},
+): Int {
+    val emptyPlaceholder = output.exists() && output.length() == 0L
+    val parent = output.absoluteFile.parentFile ?: File(".")
+    val staging = exportStagingFile(parent, output.name, suffix)
+    fun throwIfCancelled() {
+        if (isCancelled()) throw NativeProcessingException(NativeProcessingException.CANCELLED, "Processing cancelled")
+    }
+    var completed = false
+    try {
+        throwIfCancelled()
+        val backend = renderToStaging(staging)
+        throwIfCancelled()
+        preserveMetadata(staging)
+        throwIfCancelled()
+        try {
+            Files.move(staging.toPath(), output.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        } catch (error: IOException) {
+            throw NativeProcessingException(
+                NativeProcessingException.OUTPUT_IO_ERROR,
+                error.message ?: "Cannot write exported image",
+            )
+        }
+        completed = true
+        return backend
+    } catch (error: Throwable) {
+        val cancelled = (error is NativeProcessingException && error.status == NativeProcessingException.CANCELLED) ||
+            error is CancellationException || isCancelled()
+        if (cancelled && emptyPlaceholder && output.exists() && output.length() == 0L) {
+            output.delete()
+        }
+        if (cancelled && (error !is NativeProcessingException || error.status != NativeProcessingException.CANCELLED)) {
+            throw NativeProcessingException(NativeProcessingException.CANCELLED, error.message ?: "Processing cancelled")
+        }
+        throw error
+    } finally {
+        if (!completed) staging.delete()
+    }
 }

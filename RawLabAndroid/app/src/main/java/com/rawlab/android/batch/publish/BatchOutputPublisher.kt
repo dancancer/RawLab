@@ -72,7 +72,7 @@ internal class BatchOutputPublisher(
                 return temporary
             }
             val backend = processor.export(target.sourceFile, job.lookFor(target), settings,
-                temporary, format, job.longEdgeFor(target), target.inputKind)
+                temporary, format, job.longEdgeFor(target), target.inputKind, cancellationGeneration)
             android.util.Log.i("RawLabBatch", "job=${job.id} exportBackend=$backend")
             return temporary
         } catch (error: Throwable) {

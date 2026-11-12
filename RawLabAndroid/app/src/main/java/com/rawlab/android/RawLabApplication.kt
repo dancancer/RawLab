@@ -13,7 +13,11 @@ class RawLabApplication : Application() {
     }
     override fun onCreate() {
         super.onCreate()
-        com.rawlab.android.photo.WorkingCopyCleanup.atProcessStart(cacheDir, java.io.File(filesDir, "RawLab/BatchJobs"))
+        com.rawlab.android.photo.WorkingCopyCleanup.atProcessStart(
+            cacheDir,
+            java.io.File(filesDir, "RawLab/BatchJobs"),
+            listOf(cacheDir, filesDir),
+        )
         com.rawlab.android.photo.SystemPhotoStore.cleanupTemporary(java.io.File(cacheDir, "system-photo-imports"), java.io.File(filesDir, "system-photos"))
         AppStrings.initialize(this)
     }

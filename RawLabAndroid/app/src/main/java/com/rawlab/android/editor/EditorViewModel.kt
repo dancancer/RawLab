@@ -36,6 +36,9 @@ import com.rawlab.android.editor.render.Work
 import com.rawlab.android.editor.render.WorkResult
 import com.rawlab.android.editor.render.runLookWork
 import com.rawlab.android.editor.render.discardOwnedInput
+import com.rawlab.android.editor.render.discardPendingWork
+import com.rawlab.android.editor.render.ExportDestinationCleanup
+import com.rawlab.android.editor.render.isExportCancellation
 import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
@@ -252,6 +255,9 @@ class EditorViewModel @JvmOverloads constructor(
     @Volatile private var disposed = false
     private val renderer = EditorRenderer(storage, { if (editStore.available) editStore.readState(it) else null },
         (application.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0)
+    private val exportDestinationCleanup = ExportDestinationCleanup { destination, original ->
+        storage.deleteIncompleteDocument(destination, original)
+    }
     private val renderDelivery = android.os.Handler(android.os.Looper.getMainLooper())
     private val queue = RenderQueue<Work, WorkResult>(renderer::perform, { revision, result ->
         // 结果持有临时输入；即使 ViewModel scope 已取消，也要在主线程完成移交或释放。
@@ -259,7 +265,9 @@ class EditorViewModel @JvmOverloads constructor(
             if (!disposed && revision == currentRevision) accept(result)
             else result.getOrNull()?.discardOwnedInput()
         }
-    }, { renderer.close(); releaseStorage() }, { it.discardOwnedInput() }, { it.discardOwnedInput() })
+    }, { renderer.close(); releaseStorage() }, { it.discardOwnedInput() }, { work ->
+        work.discardPendingWork(exportDestinationCleanup)
+    })
     private val lookQueue = RenderQueue<LookWork, LookResult>({ runLookWork(storage, it) }, { revision, result ->
         viewModelScope.launch {
             if (!disposed && revision == lookRevision) acceptLook(result)
@@ -518,7 +526,8 @@ class EditorViewModel @JvmOverloads constructor(
             fadeSaveNotice()
         }, { error ->
             if (mutable.value.operation == Operation.IMPORT) pendingPhotoImport.clear()
-            mutable.value = EditorStateReducer.renderFinished(mutable.value).copy(error = failure(error))
+            val finished = EditorStateReducer.renderFinished(mutable.value)
+            mutable.value = if (isExportCancellation(error)) finished else finished.copy(error = failure(error))
         })
         collections.releaseDeferred()
         updatePreviewSize(requestedPreviewLongEdge)
@@ -1691,23 +1700,32 @@ class EditorViewModel @JvmOverloads constructor(
         }
     }
     fun cancelExport() {
-        if (mutable.value.operation == Operation.PICK_EXPORT) mutable.value = mutable.value.copy(operation = Operation.NONE)
+        val operation = mutable.value.operation
+        if (operation == Operation.PICK_EXPORT) {
+            mutable.value = mutable.value.copy(operation = Operation.NONE)
+        } else if (operation == Operation.EXPORT) {
+            currentRevision = queue.invalidate()
+            mutable.value = EditorStateReducer.renderFinished(mutable.value)
+            collections.releaseDeferred()
+        }
         updatePreviewSize(requestedPreviewLongEdge)
     }
     fun export(destination: Uri?, format: ExportFormat, longEdge: Int? = null) {
-        val current = mutable.value
-        if (current.operation != Operation.PICK_EXPORT || current.photo == null) return
-        if (destination == null && !format.allowsGallery) {
-            mutable.value = current.copy(operation = Operation.NONE, error = text(R.string.dng_file_only))
-            return
+        when (val submission = prepareExportSubmission(
+            mutable.value, destination, format, longEdge, gpuMode(), exportDestinationCleanup, disposed,
+        )) {
+            is ExportSubmission.Rejected -> {
+                val next = if (submission.errorKey != null) {
+                    submission.state.copy(error = text(submission.errorKey))
+                } else submission.state
+                if (next != mutable.value) mutable.value = next
+                if (submission.refreshPreviewSize) updatePreviewSize(requestedPreviewLongEdge)
+            }
+            is ExportSubmission.Ready -> {
+                mutable.value = submission.state
+                currentRevision = submitRender(submission.work)
+            }
         }
-        if (!ExportSize.isValid(longEdge)) {
-            mutable.value = current.copy(operation = Operation.NONE, error = text(R.string.output_size_error))
-            updatePreviewSize(requestedPreviewLongEdge)
-            return
-        }
-        mutable.value = current.copy(operation = Operation.EXPORT)
-        currentRevision = submitRender(Work.Export(current.photo, current.edits, destination, format, longEdge, gpuMode()))
     }
     fun dismissMessage() { mutable.value = mutable.value.copy(message = null) }
 

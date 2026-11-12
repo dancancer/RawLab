@@ -36,6 +36,9 @@ internal class EditorRenderer(
     private val storage: PhotoStorage,
     private val restore: (PhotoIdentity) -> PhotoEditState?,
     private val debuggable: Boolean,
+    private val destinationDeleter: ExportDestinationDeleter = ExportDestinationDeleter { destination, original ->
+        storage.deleteIncompleteDocument(destination, original)
+    },
 ) {
     private var processor: NativeProcessor? = null
     private data class ReferenceFrame(val bitmap: Bitmap, val histogram: RgbHistogram?)
@@ -79,17 +82,19 @@ internal class EditorRenderer(
     private fun engine() = processor ?: NativeProcessor(lensDatabase = storage.lensDatabase()).also { processor = it }
 
     fun perform(work: Work, cancellation: RenderCancellation): WorkResult = synchronized(storage) {
-        if (work !is Work.Preview && work !is Work.HslProbe && work !is Work.Import &&
-            work !is Work.CameraHDRPreflight && work !is Work.Export && work !is Work.AutoExposure)
-            return@synchronized perform(work)
-        cancellation.check()
-        val native = engine()
-        val generation = native.cancellationGeneration()
-        cancellation.onCancel(native::cancelPreview)
-        try {
+        runGuardedExportWork(work, destinationDeleter) {
+            if (work !is Work.Preview && work !is Work.HslProbe && work !is Work.Import &&
+                work !is Work.CameraHDRPreflight && work !is Work.Export && work !is Work.AutoExposure)
+                return@runGuardedExportWork perform(work)
             cancellation.check()
-            perform(work, generation)
-        } finally { cancellation.onCancel(null) }
+            val native = engine()
+            val generation = native.cancellationGeneration()
+            cancellation.onCancel(native::cancelPreview)
+            try {
+                cancellation.check()
+                perform(work, generation)
+            } finally { cancellation.onCancel(null) }
+        }
     }
 
     // 托管文件从解析路径到 native 读取完成期间不能被另一队列删除。
@@ -152,9 +157,13 @@ internal class EditorRenderer(
         is Work.Export -> {
             if (work.photo.hdrSource != null && work.edits.isHDREditing) return performHDRExport(work, generation)
             val output = storage.temporaryOutput(work.format)
+            val native = engine()
             try {
-                engine().setGpuMode(work.gpuMode)
-                engine().export(work.photo.file, storage.lookPath(work.edits), work.edits, output, work.format, work.longEdge, work.photo.inputKind)
+                native.setGpuMode(work.gpuMode)
+                native.export(work.photo.file, storage.lookPath(work.edits), work.edits, output,
+                    work.format, work.longEdge, work.photo.inputKind, generation)
+                if (generation >= 0 && native.cancellationGeneration() != generation)
+                    throw java.util.concurrent.CancellationException()
                 if (work.destination == null) storage.saveAlbum(output, work.format)
                 else storage.saveDocument(output, work.destination, work.photo.uri)
             } finally { output.delete() }
@@ -409,3 +418,23 @@ internal class EditorRenderer(
         return if (v <= .0031308f) 12.92f * v else 1.055f * v.toDouble().pow(1.0 / 2.4).toFloat() - .055f
     }
 }
+
+internal inline fun runGuardedExportWork(
+    work: Work,
+    destinationDeleter: ExportDestinationDeleter,
+    block: () -> WorkResult,
+): WorkResult {
+    try {
+        return block()
+    } catch (error: Throwable) {
+        if (work is Work.Export && work.destination != null && work.destination != work.photo.uri) {
+            destinationDeleter.deleteIncomplete(work.destination, work.photo.uri)
+        }
+        throw error
+    }
+}
+
+internal fun isExportCancellation(error: Throwable): Boolean =
+    error is java.util.concurrent.CancellationException ||
+        (error is com.rawlab.android.engine.NativeProcessingException &&
+            error.status == com.rawlab.android.engine.NativeProcessingException.CANCELLED)
