@@ -27,10 +27,12 @@
         android:roundIcon="@mipmap/ic_launcher" android:enableOnBackInvokedCallback="true"
         android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:supportsRtl="true" android:localeConfig="@xml/locales_config"
         android:usesCleartextTraffic="true">
-        <!-- 使用系统字体，避免 EmojiCompat 自动发现字体提供者时触发应用列表查询。 -->
+        <!-- 使用系统字体，避免 EmojiCompat 自动发现字体提供者时触发应用列表查询。
+             这条 remove 只在 emoji2（androidx.startup）随某个依赖进入 classpath 时才有对象可删；
+             本项目没有显式依赖它，因此 lint 无法解析该类，按工具链惯例显式忽略。 -->
         <provider android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"
-            android:exported="false" tools:node="merge">
+            android:exported="false" tools:node="merge" tools:ignore="MissingClass">
             <meta-data android:name="androidx.emoji2.text.EmojiCompatInitializer" tools:node="remove" />
         </provider>
         <activity android:name=".MainActivity" android:exported="true">
