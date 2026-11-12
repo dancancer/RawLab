@@ -390,14 +390,18 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         x3f.settings.exposure = 0.25
         x3f.settings.aiDenoiseEnabled = true
         x3f.settings.lensCorrection = LensCorrectionSettings(distortion: true, tca: true,
-            autoCrop: false, mode: .manual, profileID: "saved-lens-profile")
+            autoCrop: false, mode: .manual, profileID: "saved-lens-profile",
+            focalLength: 35, cropFactor: 1.5, vignetting: true)
         x3f.selectedFilmID = "PROVIA"
         x3f.selectX3fMode(.normal)
         try check(x3f.settings.x3fMode == .normal && !x3f.settings.aiDenoiseEnabled &&
                   x3f.settings.exposure == 0.25 && x3f.selectedFilmID == "PROVIA",
                   "X3F mode switch keeps edits and look while disabling incompatible AI")
-        try check(!x3f.settings.lensSettings.isEnabled &&
+        try check(!x3f.settings.lensSettings.distortion && !x3f.settings.lensSettings.tca &&
+                  !x3f.settings.lensSettings.vignetting && !x3f.settings.lensSettings.isEnabled &&
                   x3f.settings.lensSettings.profileID == "saved-lens-profile" &&
+                  x3f.settings.lensSettings.focalLength == 35 &&
+                  x3f.settings.lensSettings.cropFactor == 1.5 &&
                   x3f.settings.lensSettings.mode == .manual && !x3f.settings.lensSettings.autoCrop,
                   "X3F normal switch disables lens corrections while preserving profile preferences")
         try check(!x3f.canUseLensCorrection && !x3f.beginGeometryDraft(tab: .lens),

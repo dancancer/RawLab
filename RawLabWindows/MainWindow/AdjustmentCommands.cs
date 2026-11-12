@@ -88,7 +88,8 @@ public partial class MainWindow
                                 preflight.HDRCameraAIEnabled=false;
                                 _ = native.Render(path,preflight,null,128,statistics:false,clipping:false);
                             },ValidateLens:lens=>{
-                            using var native=new RenderEngine(1);var probe=new Adjustments{Lens=lens};
+                            var probe=X3fModeReset.CreateLensProbe(path,defaults,lens);
+                            using var native=new RenderEngine(1);
                             var report=native.Render(path,probe,null,32,statistics:false,clipping:false)?.Lens;
                             if(report==null || lens.Distortion && !report.AppliedDistortion || lens.Tca && !report.AppliedTca || lens.Vignetting && !report.AppliedVignetting)
                                 throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"target lens calibration unavailable");
