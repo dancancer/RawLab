@@ -8,6 +8,10 @@ namespace RawLab.Windows;
 internal static class EditedPhotoPreviewKey
 {
     internal const int Edge = 256;
+    internal static PhotoEditState PrepareState(PhotoEditState state) =>
+        X3fModeReset.RepairLegacyNormalX3f(state).State;
+    internal static PhotoEditState ReadState(EditStore store, string path) =>
+        PrepareState(store.ReadState(path));
     internal static bool IsEdited(PhotoEditState state) => state.Edit is {} edit &&
         EditorAdjustmentRules.IsModified(new(EditorResetKind.All), edit);
 
