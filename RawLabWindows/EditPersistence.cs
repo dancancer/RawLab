@@ -284,13 +284,16 @@ public sealed class EditStore
     private static PhotoEditState ReadRecord(Registry registry,OriginalIdentity identity) => new(identity,
         registry.Records.TryGetValue(identity.Path,out var raw) && ParseSavedEdit(raw) is var edit && edit.Identity.SameFile(identity) ? edit.Copy() : null);
 
-    public PhotoEditState SaveState(OriginalIdentity identity,SavedEdit? edit,bool clearMigrationReceipt = false)
+    public PhotoEditState SaveState(OriginalIdentity identity,SavedEdit? edit,bool clearMigrationReceipt = false,
+        PhotoEditState? expectedCurrent = null)
     {
         if(edit!=null) {_=edit.Settings.Restore();if(!edit.Identity.SameFile(identity))throw new PhotoChangedException();}
+        if(expectedCurrent!=null && !expectedCurrent.Identity.SameFile(identity))throw new PhotoChangedException();
         PhotoEditState saved;
         using (AcquireLock()) {
             var registry=ReadRegistry();identity.RequireCurrent();
             var current=ReadRecord(registry,identity);
+            if(expectedCurrent!=null && !current.SameAs(expectedCurrent))throw new AdjustmentOperationExpiredException();
             var recordUnchanged=SavedEdit.Same(current.Edit,edit);
             var records=new Dictionary<string,JsonElement>(registry.Records,StringComparer.OrdinalIgnoreCase);
             var receipts=registry.MigrationReceipts == null

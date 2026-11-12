@@ -115,7 +115,7 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
                 var generation=editGeneration?.Invoke(photo.Path) ?? 0;
                 photo.Validate();var record=store.ReadState(photo.Path);
                 if(!record.Identity.SameFile(photo.Identity))throw new PhotoChangedException();
-                var settings=(record.Edit?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(photo.Path)).Capture();
+                var settings=X3fModeReset.RepairLegacyNormalX3f(record).State.Edit?.Settings ?? PhotoInput.PrepareDefaultSettings(photo.Path).Capture();
                 ValidateHDRFormat(photo.Path,settings,format);
                 var hdr = settings.HDR is { Mode: HDRMode.Hdr };
                 if(settings.ActiveAIDenoise) {
@@ -191,7 +191,7 @@ internal sealed class BatchHDRPreparation(EditStore store, Func<SavedEdit,string
     {
         var record = store.ReadState(item.Input);
         if (!record.Identity.SameFile(item.Identity)) throw new PhotoChangedException();
-        var target = record.Edit ?? new SavedEdit(record.Identity,
+        var target = X3fModeReset.RepairLegacyNormalX3f(record).State.Edit ?? new SavedEdit(record.Identity,
             PhotoInput.PrepareDefaultSettings(item.Input).Capture(),null);
         var source = new SavedEdit(new OriginalIdentity(job.Source,0,0,0),job.Settings,null);
         var hdr = job.Settings.HDR!;

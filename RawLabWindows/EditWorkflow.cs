@@ -193,6 +193,14 @@ public partial class MainWindow
             nextRecord = TransferSession.ResetToUnmodified(input);
             nextSettings = PhotoInput.PrepareDefaultSettings(input);
         }
+        try { nextRecord = TransferSession.RepairLegacyNormalX3f(nextRecord, nextSettings); }
+        catch (AdjustmentOperationExpiredException)
+        {
+            nextRecord = editStore.ReadState(input);
+            nextSettings = nextRecord.Edit?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(input);
+            nextSettings.RepairLegacyNormalX3f(input);
+            TransferSession.RememberExternalSave(nextRecord);
+        }
         var saved = nextRecord.Edit;
         currentEditRecord=nextRecord;processingMigrationReceipt=editStore.ReadProcessingMigration(input);editGesture=null;pendingMigrationReceiptClear=false;settings=nextSettings;
         lut = saved == null ? null : ResolveLook(saved);

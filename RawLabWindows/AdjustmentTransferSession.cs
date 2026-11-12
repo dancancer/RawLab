@@ -29,6 +29,20 @@ public sealed class AdjustmentTransferSession(EditStore store)
     public AdjustmentPayload? Clipboard {get;private set;}
     public bool IsCurrentSave(PhotoEditState saved)=>saved.SameAs(knownRecords.GetValueOrDefault(saved.Identity.Path));
     internal void RememberExternalSave(PhotoEditState saved)=>Remember(saved);
+    internal PhotoEditState RepairLegacyNormalX3f(PhotoEditState loaded,Adjustments settings)
+    {
+        ArgumentNullException.ThrowIfNull(loaded);
+        ArgumentNullException.ThrowIfNull(settings);
+        if(loaded.Edit is not {} edit)return loaded;
+        var candidate=settings.Clone();
+        if(!candidate.RepairLegacyNormalX3f(loaded.Identity.Path))return loaded;
+        var repaired=candidate.Capture();
+        if(edit.Settings.Lens==null)repaired=repaired with {Lens=null};
+        var saved=store.SaveState(loaded.Identity,edit with {Settings=repaired},expectedCurrent:loaded);
+        settings.SelectX3fMode(X3fMode.Normal);
+        RememberExternalSave(saved);
+        return saved;
+    }
     internal void AdoptExternalProcessingMigration(PhotoEditState saved)
     {
         var key=saved.Identity.Path;

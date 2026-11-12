@@ -99,6 +99,76 @@ static void X3fPersistenceChecks()
         catch (System.IO.InvalidDataException) { rejected = true; }
         Check(rejected, "Unknown or null X3F modes must not overwrite saved edits");
     }
+    var persistenceRoot = Path.Combine(Path.GetTempPath(), "rawlab-x3f-persistence-" + Guid.NewGuid());
+    Directory.CreateDirectory(persistenceRoot);
+    try
+    {
+        var x3fPath = Path.Combine(persistenceRoot, "sigma.X3F");
+        var arwPath = Path.Combine(persistenceRoot, "photo.ARW");
+        File.WriteAllText(x3fPath, "FOVbfixture");
+        File.WriteAllText(arwPath, "raw-fixture");
+        var editDir = Path.Combine(persistenceRoot, "edits");
+        var store = new EditStore(editDir);
+        var legacyNormalBroken = new Adjustments
+        {
+            Processing = ProcessingIdentity.Legacy,
+            X3fMode = X3fMode.Normal,
+            AIDenoiseEnabled = true,
+            Lens = new LensSettings(
+                Distortion: true,
+                Tca: true,
+                AutoCrop: false,
+                Manual: true,
+                ProfileId: "sigma-30",
+                FocalLength: 30,
+                CropFactor: 1.5,
+                Vignetting: true),
+        };
+        legacyNormalBroken.Set(Parameter.Exposure, 0.4);
+        store.Save(x3fPath, legacyNormalBroken.Capture(), null);
+        store.Save(arwPath, legacyNormalBroken.Capture(), null);
+
+        // Storage layer keeps raw record intact as the CAS baseline; repair happens in the input-aware open workflow.
+        var rawRead = store.ReadState(x3fPath);
+        Check(rawRead.Edit is { Settings: { X3fMode: X3fMode.Normal, AIDenoiseEnabled: true, Lens: { Enabled: true } } },
+            "EditStore.ReadState preserves stored record as CAS baseline before input-aware repair");
+
+        var session = new AdjustmentTransferSession(store);
+        var x3fRestored = rawRead.Edit!.Settings.Restore();
+        var repairedX3f = session.RepairLegacyNormalX3f(rawRead, x3fRestored);
+        var arwRead = store.ReadState(arwPath);
+        var arwRestored = arwRead.Edit!.Settings.Restore();
+        var untouchedArw = session.RepairLegacyNormalX3f(arwRead, arwRestored);
+
+        var editsPath = Path.Combine(editDir, "edits.json");
+        var storedJson = JsonNode.Parse(File.ReadAllText(editsPath))!["Records"]!.AsObject();
+        var x3fSettingsJson = storedJson[Path.GetFullPath(x3fPath)]!["Settings"]!.AsObject();
+        var x3fLensJson = x3fSettingsJson["Lens"]!.AsObject();
+        Check(x3fSettingsJson["X3fMode"]?.GetValue<string>() == "normal-v1" &&
+              x3fSettingsJson["AIDenoiseEnabled"]?.GetValue<bool>() == false &&
+              x3fLensJson["Distortion"]?.GetValue<bool>() == false &&
+              x3fLensJson["Tca"]?.GetValue<bool>() == false &&
+              x3fLensJson["Vignetting"]?.GetValue<bool>() == false &&
+              x3fLensJson["AutoCrop"]?.GetValue<bool>() == false &&
+              x3fLensJson["Manual"]?.GetValue<bool>() == true &&
+              x3fLensJson["ProfileId"]?.GetValue<string>() == "sigma-30" &&
+              repairedX3f.Edit!.Settings.Processing == ProcessingIdentity.Legacy,
+            "Opening normal-v1 X3F record repairs incompatible lens and AI flags on disk while preserving other fields");
+
+        var arwSettingsJson = storedJson[Path.GetFullPath(arwPath)]!["Settings"]!.AsObject();
+        var arwLensJson = arwSettingsJson["Lens"]!.AsObject();
+        Check(untouchedArw.SameAs(arwRead) &&
+              arwSettingsJson["X3fMode"]?.GetValue<string>() == "normal-v1" &&
+              arwSettingsJson["AIDenoiseEnabled"]?.GetValue<bool>() == true &&
+              arwLensJson["Distortion"]?.GetValue<bool>() == true &&
+              arwLensJson["Tca"]?.GetValue<bool>() == true &&
+              arwLensJson["Vignetting"]?.GetValue<bool>() == true,
+            "Non-X3F records with X3fMode normal-v1 remain untouched on disk");
+    }
+    finally
+    {
+        Directory.Delete(persistenceRoot, recursive: true);
+    }
     Console.WriteLine("PASS: X3F snapshot migration and reset");
 }
 
