@@ -1,6 +1,7 @@
 #import <Metal/Metal.h>
 #import <objc/runtime.h>
 #include "gpu/photo_gpu.h"
+#include "sony2fuji/gpu/lut_gpu.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -8,9 +9,11 @@
 
 namespace {
 using BufferMethod = id<MTLBuffer> (*)(id, SEL, NSUInteger, MTLResourceOptions);
+using BytesBufferMethod = id<MTLBuffer> (*)(id, SEL, const void*, NSUInteger, MTLResourceOptions);
 using LimitMethod = NSUInteger (*)(id, SEL);
 using StatusMethod = MTLCommandBufferStatus (*)(id, SEL);
 BufferMethod originalBuffer;
+BytesBufferMethod originalBytesBuffer;
 LimitMethod originalLimit;
 StatusMethod originalStatus;
 size_t budget = std::numeric_limits<size_t>::max(), largest = 0, imageAllocations = 0;
@@ -20,6 +23,10 @@ id<MTLBuffer> boundedBuffer(id device, SEL selector, NSUInteger length, MTLResou
     largest = std::max(largest, size_t(length));
     if (length > 4096) ++imageAllocations;
     return length > budget ? nil : originalBuffer(device, selector, length, options);
+}
+id<MTLBuffer> throwingBytesBuffer(id, SEL, const void*, NSUInteger, MTLResourceOptions) {
+    [NSException raise:NSInternalInconsistencyException format:@"injected Metal exception"];
+    return nil;
 }
 NSUInteger boundedLimit(id device, SEL selector) { return std::min<size_t>(originalLimit(device, selector), budget); }
 MTLCommandBufferStatus completionStatus(id command, SEL selector) {
@@ -101,6 +108,36 @@ int main() {
         method_setImplementation(bufferMethod, reinterpret_cast<IMP>(originalBuffer));
         method_setImplementation(limitMethod, reinterpret_cast<IMP>(originalLimit));
         method_setImplementation(statusMethod, reinterpret_cast<IMP>(originalStatus));
+        Method bytesBufferMethod = class_getInstanceMethod(object_getClass(device), @selector(newBufferWithBytes:length:options:));
+        originalBytesBuffer = reinterpret_cast<BytesBufferMethod>(
+            method_setImplementation(bytesBufferMethod, reinterpret_cast<IMP>(throwingBytesBuffer)));
+        {
+            uint8_t statsPixels[16] = {};
+            const sony2fuji_buffer statsInput{statsPixels, sizeof(statsPixels), 2, 2, 8, SONY2FUJI_PIXEL_RGBA8};
+            uint32_t bins[768] = {};
+            uint32_t shadows = 0, highlights = 0;
+            sony2fuji_buffer mask{};
+            const auto statsStatus = sony2fuji_analyze_image(&statsInput, SONY2FUJI_GPU_FORCE, bins, &shadows, &highlights, &mask);
+            const bool statsGuarded = statsStatus == SONY2FUJI_STATUS_PROCESSING_ERROR && mask.data == nullptr;
+            std::cout << (statsGuarded ? "PASS" : "FAIL") << " computeImageStatsMetal catches NSException across C ABI\n";
+            passed &= statsGuarded;
+
+            auto lut = std::make_shared<LUT3D>();
+            const bool lutLoaded = lut->loadFromData(
+                "# Gamma: FLog2 to ETERNA\n# Gamut: FGamut to ITUR BT709\n"
+                "LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n") == ErrorCode::Success;
+            ImageData lutImage = image(2, 2);
+            const ImageData lutBefore = lutImage;
+            const bool lutForceRejected = lutLoaded &&
+                applyLUTWithConfig(lut, lutImage, {GpuMode::Force}) == ErrorCode::ProcessingError &&
+                lutImage.pixels[0].r == lutBefore.pixels[0].r;
+            const bool lutAutoFallback = lutLoaded &&
+                applyLUTWithConfig(lut, lutImage, {GpuMode::Auto}) == ErrorCode::Success;
+            const bool lutGuarded = lutForceRejected && lutAutoFallback;
+            std::cout << (lutGuarded ? "PASS" : "FAIL") << " applyLutMetal catches NSException and preserves Force/Auto contract\n";
+            passed &= lutGuarded;
+        }
+        method_setImplementation(bytesBufferMethod, reinterpret_cast<IMP>(originalBytesBuffer));
         [queue release]; [device release];
         return passed ? 0 : 1;
     }

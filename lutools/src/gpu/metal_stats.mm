@@ -251,11 +251,17 @@ bool computeImageStatsMetal(const sony2fuji_buffer& buffer, ImageStats& output) 
     if (!validateBuffer(buffer, layout)) {
         return false;
     }
-    MetalContext* context = getMetalContext();
-    if (!context) {
+    @try {
+        @autoreleasepool {
+            MetalContext* context = getMetalContext();
+            if (!context) {
+                return false;
+            }
+            return runKernel(*context, layout, buffer, output);
+        }
+    } @catch (NSException*) {
         return false;
     }
-    return runKernel(*context, layout, buffer, output);
 }
 
 } // namespace sony2fuji

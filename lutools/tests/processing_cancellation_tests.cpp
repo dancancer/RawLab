@@ -52,6 +52,31 @@ int main() {
     check(sony2fuji_session_create_hsl_probe(session, &request, 1, 1, &probe) == SONY2FUJI_STATUS_CANCELLED && !probe,
         "Superseded HSL analysis is cancellable and never publishes a partial probe");
     sony2fuji_hsl_probe_destroy(probe);
+    {
+        struct UnknownForeignException {};
+        sony2fuji_request smallRequest = request;
+        smallRequest.input_width = smallRequest.input_height = 64;
+        smallRequest.target_width = smallRequest.target_height = 32;
+        for (int checkpoint : {1, 4}) {
+            std::atomic<int> remaining{checkpoint};
+            auto foreignThrow = +[](void* context) -> int32_t {
+                if (static_cast<std::atomic<int>*>(context)->fetch_sub(1) <= 1)
+                    throw UnknownForeignException{};
+                return 0;
+            };
+            sony2fuji_session_set_cancellation_callback(session, foreignThrow, &remaining);
+            sony2fuji_buffer output{};
+            check(sony2fuji_process(session, &smallRequest, &output) == SONY2FUJI_STATUS_PROCESSING_ERROR,
+                "Non-std::exception inside sony2fuji_process maps to PROCESSING_ERROR instead of escaping");
+            check(output.data == nullptr && output.size_bytes == 0,
+                "Foreign exception does not publish partial output buffer");
+            sony2fuji_release_buffer(&output);
+            sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr);
+            check(sony2fuji_process(session, &smallRequest, &output) == SONY2FUJI_STATUS_OK && output.width == 32,
+                "Session remains valid after catching a non-std::exception");
+            sony2fuji_release_buffer(&output);
+        }
+    }
     auto cancelsStage = [&](const char* label, auto apply) {
         sony2fuji::ImageData image(512, 512);
         std::fill(image.pixels.begin(), image.pixels.end(), sony2fuji::RGB(.2f, .3f, .4f));

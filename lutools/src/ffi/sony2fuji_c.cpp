@@ -1141,7 +1141,7 @@ sony2fuji_status loadRawImage(
         sony2fuji::ImageData decoded;
         sony2fuji::ErrorCode result;
         try { result = processor.process(options, decoded); }
-        catch (const sony2fuji::ProcessingCancelled&) {
+        catch (...) {
             session->raw_processor.reset(); session->processor_key.clear();
             throw;
         }
@@ -2703,6 +2703,8 @@ sony2fuji_status sony2fuji_process(sony2fuji_session* session,
 #endif
     } catch (const std::exception& error) {
         return recordAIError(session,SONY2FUJI_STATUS_PROCESSING_ERROR,error.what());
+    } catch (...) {
+        return recordAIError(session,SONY2FUJI_STATUS_PROCESSING_ERROR,"Unknown native AI failure");
     }
 }
 
@@ -2719,7 +2721,8 @@ sony2fuji_status sony2fuji_preview_lut_compatibility(sony2fuji_session* session,
         return processImpl(session,request,buffer,nullptr,std::move(lut));
     } catch(const std::bad_alloc&) {return SONY2FUJI_STATUS_OUT_OF_MEMORY;
     } catch(const std::filesystem::filesystem_error&) {return SONY2FUJI_STATUS_IO_ERROR;
-    } catch(const std::exception&) {return SONY2FUJI_STATUS_UNSUPPORTED;}
+    } catch(const std::exception&) {return SONY2FUJI_STATUS_UNSUPPORTED;
+    } catch(...) {return SONY2FUJI_STATUS_PROCESSING_ERROR;}
 }
 
 sony2fuji_status sony2fuji_session_create_hsl_probe(sony2fuji_session* session,
@@ -2912,6 +2915,7 @@ sony2fuji_status sony2fuji_analyze_image(
         return SONY2FUJI_STATUS_OK;
     } catch (const std::bad_alloc&) { return SONY2FUJI_STATUS_OUT_OF_MEMORY; }
       catch (const std::exception&) { return SONY2FUJI_STATUS_PROCESSING_ERROR; }
+      catch (...) { return SONY2FUJI_STATUS_PROCESSING_ERROR; }
 }
 
 void sony2fuji_release_buffer(sony2fuji_buffer* buffer) {
