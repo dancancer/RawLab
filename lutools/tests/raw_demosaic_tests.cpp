@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -135,14 +137,26 @@ int main(int argc, char** argv) {
         samePixels(process(processor, options), linearExpected, "VNG selection leaves LinearRaw unchanged");
 
         if (argc == 2) {
+            const char* argXtrans = *argv[1] ? argv[1] : nullptr;
+            const char* envXtrans = std::getenv("RAWLAB_TEST_NON_BAYER_RAW");
+            if (envXtrans && !*envXtrans) envXtrans = nullptr;
+            const char* xtransPath = argXtrans ? argXtrans : envXtrans;
+            if (!xtransPath) {
+                std::cout << "SKIP raw_demosaic_xtrans: supply SONY2FUJI_TEST_NON_BAYER_RAW or RAWLAB_TEST_NON_BAYER_RAW\n";
+                return 77;
+            }
+            if (!std::filesystem::is_regular_file(std::filesystem::u8path(xtransPath))) {
+                std::cerr << "FAIL raw_demosaic_xtrans: X-Trans RAW sample does not exist: " << xtransPath << '\n';
+                return 1;
+            }
             auto metadata = std::make_unique<LibRaw>();
-            check(metadata->open_file(argv[1]) == LIBRAW_SUCCESS && metadata->imgdata.idata.filters == 9,
+            check(metadata->open_file(xtransPath) == LIBRAW_SUCCESS && metadata->imgdata.idata.filters == 9,
                   "optional fixture is actually X-Trans");
             check(processor.loadFile(path) == ErrorCode::Success, "reload Bayer before X-Trans reuse");
             process(processor, options);
-            check(processor.loadFile(argv[1]) == ErrorCode::Success && !processor.supportsNoiseReduction(),
+            check(processor.loadFile(xtransPath) == ErrorCode::Success && !processor.supportsNoiseReduction(),
                   "reused processor switches from Bayer to X-Trans");
-            const auto xtrans = reference(argv[1], -1);
+            const auto xtrans = reference(xtransPath, -1);
             samePixels(process(processor, options), xtrans, "VNG selection cannot bypass X-Trans interpolation");
             options.bayerDemosaic = BayerDemosaicMethod::DHT;
             samePixels(process(processor, options), xtrans, "DHT selection preserves the X-Trans path");

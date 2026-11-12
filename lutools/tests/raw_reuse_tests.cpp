@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -172,17 +173,33 @@ void checkInvalidLoadClearsState(const std::string& filepath) {
 
 int main(int argc, char** argv) {
     std::cout << std::unitbuf;
-    if (argc < 2 || argc > 3) {
+    if (argc < 1 || argc > 3) {
         std::cerr << "usage: raw_reuse_tests SONY_RAW [DNG_RAW]\n";
         return 2;
     }
-    const std::string sonyRaw = argv[1];
+    const char* argRaw = (argc >= 2 && *argv[1]) ? argv[1] : nullptr;
+    const char* envRaw = std::getenv("RAWLAB_TEST_RAW");
+    if (envRaw && !*envRaw) envRaw = nullptr;
+    const char* rawArg = argRaw ? argRaw : envRaw;
+    if (!rawArg) {
+        std::cout << "SKIP raw_reuse: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
+        return 77;
+    }
+    if (!std::filesystem::is_regular_file(std::filesystem::u8path(rawArg))) {
+        std::cerr << "FAIL raw_reuse: RAW sample does not exist: " << rawArg << '\n';
+        return 1;
+    }
+    if (argc == 3 && *argv[2] && !std::filesystem::is_regular_file(std::filesystem::u8path(argv[2]))) {
+        std::cerr << "FAIL raw_reuse: second RAW sample does not exist: " << argv[2] << '\n';
+        return 1;
+    }
+    const std::string sonyRaw = rawArg;
     try {
         checkWhiteBalanceReuse(sonyRaw);
         checkTemperatureDoesNotReopen(sonyRaw);
         checkHalfSizeReuse(sonyRaw, true);
         checkInvalidLoadClearsState(sonyRaw);
-        if (argc == 3 && std::filesystem::exists(argv[2]))
+        if (argc == 3 && *argv[2])
             checkHalfSizeReuse(argv[2], true);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

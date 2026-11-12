@@ -4,6 +4,7 @@
 
 #include <array>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -247,8 +248,21 @@ void sonyPhoto(const char* path) {
 
 int main(int argc, char** argv) {
     try {
-        if (argc == 2) sonyPhoto(argv[1]);
-        else { metadataCases(); syntheticSavedCrop(); }
+        if (argc == 2) {
+            const char* argPath = *argv[1] ? argv[1] : nullptr;
+            const char* envPath = std::getenv("RAWLAB_TEST_SONY_ASPECT_RAW");
+            if (envPath && !*envPath) envPath = nullptr;
+            const char* path = argPath ? argPath : envPath;
+            if (!path) {
+                std::cout << "SKIP raw_active_area_sony: supply SONY2FUJI_TEST_SONY_ASPECT_RAW or RAWLAB_TEST_SONY_ASPECT_RAW\n";
+                return 77;
+            }
+            if (!std::filesystem::is_regular_file(std::filesystem::u8path(path))) {
+                std::cerr << "FAIL raw_active_area_sony: RAW sample does not exist: " << path << '\n';
+                return 1;
+            }
+            sonyPhoto(path);
+        } else { metadataCases(); syntheticSavedCrop(); }
         std::cout << "PASS RAW active area\n";
         return 0;
     } catch (const std::exception& error) {
