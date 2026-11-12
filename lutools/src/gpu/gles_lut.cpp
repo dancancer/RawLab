@@ -107,9 +107,36 @@ GLuint createProgram() {
     return program;
 }
 
-bool ensureContextCurrent(const GlesContext& context) {
-    return eglMakeCurrent(context.display, context.surface, context.surface, context.context) == EGL_TRUE;
-}
+struct Binding {
+    EGLDisplay previousDisplay = eglGetCurrentDisplay();
+    EGLContext previousContext = eglGetCurrentContext();
+    EGLSurface previousRead = eglGetCurrentSurface(EGL_READ);
+    EGLSurface previousDraw = eglGetCurrentSurface(EGL_DRAW);
+    EGLenum previousApi = eglQueryAPI();
+    EGLDisplay display = EGL_NO_DISPLAY;
+    bool bound = false;
+
+    explicit Binding(const GlesContext& context) : display(context.display) {
+        bound = eglBindAPI(EGL_OPENGL_ES_API) == EGL_TRUE &&
+            eglMakeCurrent(context.display, context.surface, context.surface, context.context) == EGL_TRUE;
+    }
+
+    Binding(const Binding&) = delete;
+    Binding& operator=(const Binding&) = delete;
+
+    ~Binding() {
+        if (bound) {
+            if (previousContext != EGL_NO_CONTEXT) {
+                eglMakeCurrent(previousDisplay, previousDraw, previousRead, previousContext);
+            } else {
+                eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+            }
+        }
+        if (previousApi != EGL_NONE) {
+            eglBindAPI(previousApi);
+        }
+    }
+};
 
 bool initContext(GlesContext& context) {
     context.display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
@@ -151,7 +178,8 @@ bool initContext(GlesContext& context) {
     if (context.context == EGL_NO_CONTEXT) {
         return false;
     }
-    if (!ensureContextCurrent(context)) {
+    Binding binding(context);
+    if (!binding.bound) {
         return false;
     }
     GLint major = 0;
@@ -280,7 +308,8 @@ bool applyLutGles(const LUT3D& lut, ImageData& image) {
     if (!context) {
         return false;
     }
-    if (!ensureContextCurrent(*context)) {
+    Binding binding(*context);
+    if (!binding.bound) {
         return false;
     }
     const size_t pixel_count = image.pixels.size();
