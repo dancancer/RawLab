@@ -257,7 +257,10 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             installationRecorded = true;
             if (!Save(next)) return false;
             await Task.Run(()=>adapter.Install(release, restart));
-            next = preferences.Copy(); next.PendingUpdate.AwaitingRestart(attempt); return Save(next);
+            next = preferences.Copy();
+            if (!next.PendingUpdate.AwaitingRestart(attempt)) return false;
+            Save(next, keepNextOnFailure: true);
+            return true;
         }
         catch (Exception error) { Fail(error, attempt); return false; }
         finally {
@@ -276,9 +279,11 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     }
     private void Fail(Exception error, Guid attempt)
     {
-        var next = preferences.Copy(); if (next.PendingUpdate.Fail("operation", error.Message, attempt)) Save(next);
+        var next = preferences.Copy();
+        var postInstall = State.Phase is UpdatePhase.Installing or UpdatePhase.PendingRestart;
+        if (next.PendingUpdate.Fail("operation", error.Message, attempt)) Save(next, keepNextOnFailure: postInstall);
     }
-    private bool Save(UpdatePreferences next, bool discardObsoleteBackup = true)
+    private bool Save(UpdatePreferences next, bool discardObsoleteBackup = true, bool keepNextOnFailure = false)
     {
         if (startupStorageBlocked) return false;
         try {
@@ -287,7 +292,13 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             if (discardObsoleteBackup && obsolete != null && obsolete != next.PendingUpdate.BackupPath) { try { backup.Discard(obsolete); } catch { } }
             Notify(); return true;
         }
-        catch (Exception error) { StorageError = error.Message; preferences.PendingUpdate.Cancel(); operation?.Cancel(); Notify(); return false; }
+        catch (Exception error)
+        {
+            StorageError = error.Message;
+            if (keepNextOnFailure) preferences = next;
+            else preferences.PendingUpdate.Cancel();
+            operation?.Cancel(); Notify(); return false;
+        }
     }
     public void RefreshLanguage() => Notify();
     private void Notify() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(null));

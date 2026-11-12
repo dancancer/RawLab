@@ -83,15 +83,19 @@ public partial class App : Application
         }
         if (updates.BlocksEditing)
         {
-            var recovery = new SoftwareUpdateWindow(updates, legacy) { Title = Loc.Text("更新恢复需要处理，编辑暂未开放") };
+            SoftwareUpdateWindow? recovery = null;
+            if (editor != null)
+            {
+                updates.RetryStartup = async () => {
+                    if (updates.CheckingStartupTrust) return;
+                    await updates.FinishStartupHealthCheckAsync(editor.UpdateDataHealthy);
+                    if (updates.BlocksEditing) return;
+                    updates.RetryStartup = null;
+                    MainWindow = editor; ShowSystemEditor(editor); recovery?.Close();
+                };
+            }
+            recovery = new SoftwareUpdateWindow(updates, legacy) { Title = Loc.Text("更新恢复需要处理，编辑暂未开放") };
             MainWindow = recovery;
-            updates.RetryStartup = async () => {
-                if (editor == null || updates.CheckingStartupTrust) return;
-                await updates.FinishStartupHealthCheckAsync(editor.UpdateDataHealthy);
-                if (updates.BlocksEditing) return;
-                updates.RetryStartup = null;
-                MainWindow = editor; ShowSystemEditor(editor); recovery.Close();
-            };
             recovery.Show();
         }
         else { MainWindow = editor; ShowSystemEditor(editor!); }

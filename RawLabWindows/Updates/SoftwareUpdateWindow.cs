@@ -53,10 +53,12 @@ public sealed class SoftwareUpdateWindow : Window
                 AutomationProperties.SetName(progress,Loc.Text(UpdatePresentation.Phase(updates.State.Phase)));panel.Children.Add(progress);
                 if(updates.State.Phase==UpdatePhase.Downloading)AddText($"{updates.State.Progress:P0}",localized:true);
             }
-            if((updates.StartupTrustError!=null || updates.StorageError!=null) && updates.RequiresStartupHealthCheck && !updates.RequiresRecovery) {
+            if((updates.StartupTrustError!=null || updates.StorageError!=null && updates.RetryStartup!=null) && updates.RequiresStartupHealthCheck && !updates.RequiresRecovery) {
                 if(updates.StartupTrustError is {} trustError)AddText(trustError,localized:true);
-                var retryActions=new WrapPanel();panel.Children.Add(retryActions);
-                ActionButton(retryActions,"重试",()=>updates.RetryStartup?.Invoke() ?? Task.CompletedTask,"updates.retryStartup",!updates.CheckingStartupTrust);
+                if(updates.RetryStartup!=null) {
+                    var retryActions=new WrapPanel();panel.Children.Add(retryActions);
+                    ActionButton(retryActions,"重试",()=>updates.RetryStartup?.Invoke() ?? Task.CompletedTask,"updates.retryStartup",!updates.CheckingStartupTrust);
+                }
             }
             if(updates.State.Failure is {} failure) {
                 AddText("更新未完成，请查看恢复说明",true);AddText(UpdatePresentation.Phase(failure.Stage));

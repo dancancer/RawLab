@@ -37,7 +37,13 @@ internal static class SoftwareUpdateUiChecks
         using(var released=new UpdateRunLease(Path.Combine(output,"lock"))) { }
         var photo=Path.Combine(output,"source"+Path.GetExtension(input));File.Copy(input,photo);
         Loc.Initialize("en");var app=TestWindowState.CreateApplication();SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
-        var adapter=new Adapter();var controller=new DesktopUpdateController(adapter,new(),new(Path.Combine(output,"Updates")),"0.8.2","14",false);
+        Func<bool>? failStateSave=null;var uiElapsed=TimeSpan.Zero;var uiDelays=new List<int>();
+        var controllerStore=new UpdateStore(Path.Combine(output,"Updates"),
+            (temporary,bytes)=>File.WriteAllBytes(temporary,bytes),
+            (source,destination)=>{if(failStateSave?.Invoke()==true)throw new IOException("Simulated sharing conflict",unchecked((int)0x80070020));File.Move(source,destination,true);},
+            delay=>{uiDelays.Add((int)delay.TotalMilliseconds);uiElapsed+=delay;},
+            ()=>uiElapsed);
+        var adapter=new Adapter();var controller=new DesktopUpdateController(adapter,new(),controllerStore,"0.8.2","14",false);
         var window=new MainWindow(new UsageAnalytics(),null,desktopUpdates:controller){Width=1200,Height=900};TestWindowState.Isolate(window,output);
         var store=new EditStore(Path.Combine(output,"edits"));typeof(MainWindow).GetField("editStore",Private)!.SetValue(window,store);
         try {
@@ -123,24 +129,27 @@ internal static class SoftwareUpdateUiChecks
             repairedStartup.FinishStartupHealthCheckAsync(window.UpdateDataHealthy).GetAwaiter().GetResult();
             check(!repairedStartup.RequiresRecovery && !repairedStartup.RequiresStartupHealthCheck,"Real editor data health completes repair on fresh startup");
             repairWindow.Close();
-            using(new FileStream(Path.Combine(output,"Updates","state.json"),FileMode.Open,FileAccess.ReadWrite,FileShare.None)) {
-                controller.SetAutomaticCheck(true);
-                check(controller.StorageError!=null && window.EditorShell.IsEnabled && !window.UpdateLockBanner.IsVisible,
-                    "A failed runtime update-state write does not disable the real editor");
-            }
+            uiDelays.Clear();failStateSave=()=>true;
+            controller.SetAutomaticCheck(true);
+            check(uiDelays.SequenceEqual(new[]{10,50,200}) && controller.StorageError!=null && window.EditorShell.IsEnabled && !window.UpdateLockBanner.IsVisible,
+                "A failed runtime update-state write retries with injected clock and does not disable the real editor");
+            failStateSave=null;
             controller.SetAutomaticCheck(true);controller.SetAutomaticCheck(false);
             check(controller.StorageError==null && window.EditorShell.IsEnabled && !window.UpdateLockBanner.IsVisible,
-                "Releasing the state file lock clears StorageError while keeping the real editor enabled");
+                "Recovering update-state writes clears StorageError while keeping the real editor enabled");
             var beforeFailure=store.ReadState(photo);
             Invoke(window,"ShowCollection");var collection=Get<BatchSelectionWindow>(window,"collectionWindow");
             adapter.RejectInstall=true;controller.CheckAsync(true).GetAwaiter().GetResult();
             var downloading=controller.DownloadAsync();adapter.Download.TrySetResult();
             InteractionChecks.PumpUntil(()=>downloading.IsCompleted && controller.State.Phase==UpdatePhase.PackageReady);
+            failStateSave=()=>controller.State.Phase==UpdatePhase.Installing;uiDelays.Clear();
             var installing=controller.ChooseAsync(UpdateInstallChoice.RestartNow);
             InteractionChecks.PumpUntil(()=>installing.IsCompleted && !controller.PreparingInstallation);
-            check(controller.State.Failure?.Stage==UpdatePhase.Installing && !window.EditorShell.IsEnabled && window.UpdateLockBanner.IsVisible &&
-                store.ReadState(photo).SameAs(beforeFailure),
-                "A failed installer dispatch disables the real editor and preserves saved edits");
+            failStateSave=null;
+            check(uiDelays.SequenceEqual(new[]{10,50,200}) && controller.StorageError!=null &&
+                controller.State.Phase==UpdatePhase.Failed && controller.State.Failure?.Stage==UpdatePhase.Installing &&
+                !window.EditorShell.IsEnabled && window.UpdateLockBanner.IsVisible && store.ReadState(photo).SameAs(beforeFailure),
+                "A failed installer dispatch disables the real editor and preserves saved edits even when Fail() persistence fails");
             check(!collection.IsEnabled,"Installation lock also disables an existing collection window");
             collection.Close();Invoke(window,"ShowCollection");collection=Get<BatchSelectionWindow>(window,"collectionWindow");
             check(!collection.IsEnabled,"A collection window created during the installation lock starts disabled");
@@ -155,9 +164,13 @@ internal static class SoftwareUpdateUiChecks
             press.RoutedEvent=Keyboard.KeyDownEvent;openUpdates.RaiseEvent(press);
             openUpdates.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(openUpdates),Environment.TickCount,Key.Space){RoutedEvent=Keyboard.KeyUpEvent});
             InteractionChecks.PumpUntil(()=>Get<SoftwareUpdateWindow>(window,"softwareUpdateWindow").IsVisible);
-            check(Get<SoftwareUpdateWindow>(window,"softwareUpdateWindow").IsEnabled,
-                "Keyboard activation of the lock banner reopens the usable software update window");
-            Get<SoftwareUpdateWindow>(window,"softwareUpdateWindow").Close();
+            var reopenedUpdateWindow=Get<SoftwareUpdateWindow>(window,"softwareUpdateWindow");
+            check(reopenedUpdateWindow.IsEnabled &&
+                !Children(reopenedUpdateWindow).OfType<ProgressBar>().Any() &&
+                !Children(reopenedUpdateWindow).OfType<Button>().Any(b=>AutomationProperties.GetAutomationId(b)=="updates.retryStartup") &&
+                !Button(reopenedUpdateWindow,"updates.check").IsEnabled,
+                "Keyboard activation of the lock banner reopens the usable software update window without dead startup retry");
+            reopenedUpdateWindow.Close();
             Console.WriteLine("UPDATE_UI_OUTPUT="+output);
         } finally {controller.Cancel();Invoke(window,"CancelTransformDraft");Invoke(window,"CancelParameterInputs");window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);}
     }
