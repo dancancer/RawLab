@@ -7731,22 +7731,6 @@
       "ja": "選択を解除",
       "zh-Hans": "取消选中"
     },
-    "上一张": {
-      "de": "Vorheriges Foto",
-      "en": "Previous photo",
-      "es": "Foto anterior",
-      "fr": "Photo précédente",
-      "ja": "前の写真",
-      "zh-Hans": "上一张"
-    },
-    "下一张": {
-      "de": "Nächstes Foto",
-      "en": "Next photo",
-      "es": "Foto siguiente",
-      "fr": "Photo suivante",
-      "ja": "次の写真",
-      "zh-Hans": "下一张"
-    },
     "导入进度": {
       "de": "Importfortschritt",
       "en": "Import progress",
@@ -8050,14 +8034,6 @@
       "es": "Listo para disparar",
       "fr": "Prêt à prendre des photos",
       "ja": "撮影できます"
-    },
-    "最近照片": {
-      "zh-Hans": "最近照片",
-      "en": "Recent photos",
-      "de": "Letzte Fotos",
-      "es": "Fotos recientes",
-      "fr": "Photos récentes",
-      "ja": "最近の写真"
     },
     "暂时无法显示预览": {
       "zh-Hans": "暂时无法显示预览",

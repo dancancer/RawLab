@@ -223,9 +223,10 @@ void compareForcedCase(sony2fuji_session* cpuSession, sony2fuji_session* gpuSess
 } // namespace
 
 int main() {
-    if (!std::getenv("SONY2FUJI_TEST_GPU")) {
+    const auto* enableGpu = std::getenv("SONY2FUJI_TEST_GPU");
+    if (!enableGpu || !*enableGpu) {
         std::cout << "SKIP gpu_photo_tests (set SONY2FUJI_TEST_GPU=1)\n";
-        return 0;
+        return 77;
     }
 
     check(rawlabtest::hslGpuBoundary([](const sony2fuji::ImageData& input, const sony2fuji_request& request,

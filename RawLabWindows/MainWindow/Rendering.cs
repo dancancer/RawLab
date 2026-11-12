@@ -244,8 +244,9 @@ public partial class MainWindow
     private void X3fRenderingChanged(object sender,SelectionChangedEventArgs e)
     {
         if(!ready || syncing || exporting || transform.Active || !PhotoInput.IsX3f(file) || X3fRendering.SelectedIndex is < 0 or > 1)return;
-        settings.X3fMode=(X3fMode)X3fRendering.SelectedIndex;
-        if(settings.X3fMode==X3fMode.Normal) { ResetAITask();settings.AIDenoiseEnabled=false; }
+        var mode=(X3fMode)X3fRendering.SelectedIndex;
+        if(mode==X3fMode.Normal)ResetAITask();
+        settings.SelectX3fMode(mode);
         MarkEdited();RefreshControls();Schedule();
     }
     private void ProcessingVersionChanged(object sender,SelectionChangedEventArgs e)

@@ -273,6 +273,7 @@ struct AdjustmentTransferTests {
         try independentRequestFields()
         try serialization()
         try manualLensSelectionTransport()
+        try x3fModeReset()
         try sharedFixtures()
     }
 
@@ -839,6 +840,49 @@ struct AdjustmentTransferTests {
             _ = try MacAdjustmentTransfer.prepare(payload: enabled, target: state(), context: permissive)
         }
         check(!validated, "Missing manual profile rejects before target validation")
+    }
+
+    static func x3fModeReset() throws {
+        var withoutLens = Adjustments()
+        withoutLens.x3fMode = .legacy
+        withoutLens.aiDenoiseEnabled = true
+        withoutLens.selectX3fMode(.normal)
+        check(withoutLens.x3fMode == .normal && !withoutLens.aiDenoiseEnabled && withoutLens.lensCorrection == nil,
+            "Normal X3F switch disables AI denoise without materializing empty lens settings")
+
+        for (distortion, tca, vignetting) in [
+            (true, false, false),
+            (false, true, false),
+            (false, false, true),
+            (true, true, true),
+        ] {
+            var switched = Adjustments()
+            switched.x3fMode = .legacy
+            switched.exposure = 0.25
+            switched.aiDenoiseEnabled = true
+            switched.lensCorrection = LensCorrectionSettings(distortion: distortion, tca: tca,
+                autoCrop: false, mode: .manual, profileID: "saved-lens-profile",
+                focalLength: 35, cropFactor: 1.5, vignetting: vignetting)
+            switched.selectX3fMode(.normal)
+            check(switched.x3fMode == .normal && !switched.aiDenoiseEnabled &&
+                !switched.lensSettings.distortion && !switched.lensSettings.tca &&
+                !switched.lensSettings.vignetting && !switched.lensSettings.isEnabled,
+                "Normal X3F switch clears distortion, TCA, vignetting and AI denoise in one transaction")
+            check(switched.lensSettings.profileID == "saved-lens-profile" &&
+                switched.lensSettings.focalLength == 35 &&
+                switched.lensSettings.cropFactor == 1.5 &&
+                !switched.lensSettings.autoCrop &&
+                switched.lensSettings.mode == .manual &&
+                switched.exposure == 0.25,
+                "Normal X3F switch preserves non-flag lens preferences and unrelated edits")
+            let reopened = try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(switched))
+            check(reopened == switched, "Normal X3F reset state survives persistence")
+            switched.selectX3fMode(.legacy)
+            check(switched.x3fMode == .legacy && !switched.aiDenoiseEnabled &&
+                !switched.lensSettings.distortion && !switched.lensSettings.tca &&
+                !switched.lensSettings.vignetting && !switched.lensSettings.isEnabled,
+                "Returning to legacy X3F does not re-enable lens correction or AI denoise")
+        }
     }
 
 }

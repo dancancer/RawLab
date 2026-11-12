@@ -554,10 +554,10 @@ void gpuTests(bool nativeGpu) {
     }
 }
 
-void rawTests(const char* path) {
+bool rawTests(const char* path) {
     if (!path || !*path) {
         std::cout << "SKIP real RAW geometry/cache/orientation: supply a path or RAWLAB_TEST_RAW\n";
-        return;
+        return false;
     }
     Session session;
     setGpu(session.value, SONY2FUJI_GPU_OFF);
@@ -631,6 +631,7 @@ void rawTests(const char* path) {
         "RAW geometry reset preserves original orientation and cache");
     geometrySize(session.value, baseline.width, baseline.height, "RAW identity size restored");
     std::cout << "PASS optional RAW geometry/cache/orientation: " << path << '\n';
+    return true;
 }
 
 } // namespace
@@ -648,9 +649,9 @@ int main(int argc, char** argv) {
         geometrySizeTests();
         previewTests();
         gpuTests(rawlabtest::nativeGpuAvailable());
-        rawTests(argc == 2 ? argv[1] : std::getenv("RAWLAB_TEST_RAW"));
+        const bool ranRaw = rawTests(argc == 2 ? argv[1] : std::getenv("RAWLAB_TEST_RAW"));
         std::cout << "PASS " << checks << " geometry ABI, setter, source-canvas, preview/final and GPU checks\n";
-        return 0;
+        return ranRaw ? 0 : 77;
     } catch (const std::exception& error) {
         std::cerr << "FAIL after " << checks << " checks: " << error.what() << '\n';
         return 1;

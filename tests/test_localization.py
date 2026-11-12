@@ -1,18 +1,23 @@
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts/localization"))
+import formats
 SHARED_SWIFT_SOURCES = [path for path in (ROOT / "Shared").rglob("*.swift")
                         if "tests" not in path.relative_to(ROOT / "Shared").parts]
 LANGUAGES = ("en", "zh-Hans", "de", "fr", "ja", "es")
 PRINTF = re.compile(r"%(?:\d+\$)?[-+0 #]*(?:\d+)?(?:\.\d+)?(?:[hlLzjt]+)?[@diufegsc]", re.I)
+APPLE_PRINTF = re.compile(r"%(?:(\d+)\$)?([-+0 #]*(?:\d+)?(?:\.\d+)?(?:[hlLzjt]+)?[@diufegsc])", re.I)
 APPLE_CLIENTS = {"RawLabMac": "RawLabMac/Sources", "RawLab/RawLab": "RawLab/RawLab"}
 CJK = re.compile(r"[一-鿿]")
 # 字符串字面量或行注释，谁先出现取谁：注释里的引号不算字面量
@@ -25,8 +30,32 @@ def windows_sources():
                   if not {"tests", "bin", "obj"}.intersection(path.relative_to(directory).parts))
 
 
-def apple_catalog(path):
-    return json.loads(subprocess.check_output(["plutil", "-convert", "json", "-o", "-", str(path)]))
+def use_plutil(parser=None):
+    chosen = parser or os.environ.get("RAWLAB_APPLE_STRINGS_PARSER")
+    if chosen in (None, ""):
+        return sys.platform == "darwin" and shutil.which("plutil") is not None
+    if chosen == "plutil":
+        return True
+    if chosen == "python":
+        return False
+    raise ValueError(f"Unknown Apple .strings parser: {chosen}")
+
+
+def apple_catalog(path, parser=None):
+    if use_plutil(parser):
+        return json.loads(subprocess.check_output(
+            ["plutil", "-convert", "json", "-o", "-", str(path)], stderr=subprocess.PIPE))
+    return formats.read_apple(Path(path).read_text(encoding="utf-8"))
+
+
+def apple_placeholders(text):
+    tokens = list(APPLE_PRINTF.finditer(text.replace("%%", "")))
+    if len({bool(match[1]) for match in tokens}) > 1:
+        return [("mixed", match[0]) for match in tokens]
+    return sorted(
+        (int(match[1]) if match[1] else index, "%" + match[2])
+        for index, match in enumerate(tokens, 1)
+    )
 
 
 def windows_catalog(language):
@@ -163,12 +192,6 @@ class GeneratorSourceTests(unittest.TestCase):
 
 
 class GeneratorFormatTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        sys.path.insert(0, str(ROOT / "scripts/localization"))
-        global formats
-        import formats
-
     def test_native_placeholders_keep_types_precision_and_literal_percent(self):
         for style, native, neutral, slots in (
             ("apple", "%@ · %@%%", "{0} · {1}%", ["%@", "%@"]),
@@ -201,6 +224,34 @@ class GeneratorFormatTests(unittest.TestCase):
             formats.read_apple(text + text)
         with self.assertRaises(ValueError):
             formats.read_apple(text + "invalid")
+
+    def test_apple_catalog_fallback_matches_plutil_and_rejects_invalid_strings(self):
+        has_plutil = sys.platform == "darwin" and shutil.which("plutil") is not None
+        env = {k: v for k, v in os.environ.items() if k != "RAWLAB_APPLE_STRINGS_PARSER"}
+        for client in APPLE_CLIENTS:
+            for language in LANGUAGES:
+                relative = f"{client}/Resources/{language}.lproj/Localizable.strings"
+                path = ROOT / relative
+                parsed = apple_catalog(path, parser="python")
+                self.assertGreater(len(parsed), 100, relative)
+                with mock.patch.dict(os.environ, env, clear=True), \
+                     mock.patch.object(subprocess, "check_output", side_effect=AssertionError("unexpected plutil call")):
+                    with mock.patch.object(sys, "platform", "linux"):
+                        self.assertEqual(apple_catalog(path), parsed, relative)
+                    with mock.patch.object(shutil, "which", return_value=None):
+                        self.assertEqual(apple_catalog(path), parsed, relative)
+                if has_plutil:
+                    self.assertEqual(apple_catalog(path, parser="plutil"), parsed, relative)
+        with tempfile.TemporaryDirectory(prefix="rawlab-localization-") as name:
+            invalid = Path(name) / "Localizable.strings"
+            invalid.write_text('"broken" = "missing semicolon"\n', encoding="utf-8")
+            with self.assertRaises(ValueError):
+                apple_catalog(invalid, parser="python")
+            with self.assertRaises(ValueError):
+                apple_catalog(invalid, parser="unknown")
+            if has_plutil:
+                with self.assertRaises(subprocess.CalledProcessError):
+                    apple_catalog(invalid, parser="plutil")
 
     def test_android_escaping_handles_resource_prefix_and_whitespace(self):
         for value, expected in (
@@ -287,16 +338,17 @@ class LocalizationTests(unittest.TestCase):
 
     def test_apple_catalogs_and_source_coverage(self):
         for client, sources in APPLE_CLIENTS.items():
-            catalogs = {lang: apple_catalog(ROOT / client / "Resources" / (lang + ".lproj") / "Localizable.strings")
-                        for lang in LANGUAGES}
-            self.assert_parity(catalogs, lambda s: sorted(PRINTF.findall(s.replace("%%", ""))))
-            missing = sorted({(source.name, json.loads('"' + raw + '"'))
-                              for source in list((ROOT / sources).rglob("*.swift")) + SHARED_SWIFT_SOURCES
-                              for raw in re.findall(r'L10n\.(?:text|format)\("((?:[^"\\]|\\.)*)"', source.read_text())
-                              if json.loads('"' + raw + '"') not in catalogs["en"]})
-            self.assertEqual(missing, [], client)
-            for key in ("细节优先", "去噪优先", "自定义", "跟随系统"):
-                self.assertIn(key, catalogs["en"])
+            with self.subTest(client=client):
+                catalogs = {lang: apple_catalog(ROOT / client / "Resources" / (lang + ".lproj") / "Localizable.strings")
+                            for lang in LANGUAGES}
+                self.assert_parity(catalogs, apple_placeholders)
+                missing = sorted({(source.name, json.loads('"' + raw + '"'))
+                                  for source in list((ROOT / sources).rglob("*.swift")) + SHARED_SWIFT_SOURCES
+                                  for raw in re.findall(r'L10n\.(?:text|format)\("((?:[^"\\]|\\.)*)"', source.read_text())
+                                  if json.loads('"' + raw + '"') not in catalogs["en"]})
+                self.assertEqual(missing, [], client)
+                for key in ("细节优先", "去噪优先", "自定义", "跟随系统"):
+                    self.assertIn(key, catalogs["en"])
 
     def test_source_literals_are_translated(self):
         for client, sources in APPLE_CLIENTS.items():

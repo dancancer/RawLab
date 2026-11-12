@@ -1357,6 +1357,10 @@
       "formats": [],
       "source": "红"
     },
+    "纯预览": {
+      "formats": [],
+      "source": "纯预览"
+    },
     "纽约电影 · 戏剧光影": {
       "formats": [],
       "source": "纽约电影 · 戏剧光影"
@@ -2949,6 +2953,10 @@
       "formats": [],
       "source": "此照片没有可编辑的 HDR 增益图。"
     },
+    "直方图": {
+      "formats": [],
+      "source": "直方图"
+    },
     "相对白平衡": {
       "formats": [],
       "source": "相对白平衡"
@@ -4255,6 +4263,26 @@
         "%@"
       ],
       "source": "新保存 {0} 个文件，{1} 个已在本机"
+    },
+    "上一张": {
+      "formats": [],
+      "source": "上一张"
+    },
+    "下一张": {
+      "formats": [],
+      "source": "下一张"
+    },
+    "最近照片": {
+      "formats": [],
+      "source": "最近照片"
+    },
+    "无法保存编辑草稿。": {
+      "formats": [],
+      "source": "无法保存编辑草稿。"
+    },
+    "无法恢复编辑草稿，已保留已应用的调整。": {
+      "formats": [],
+      "source": "无法恢复编辑草稿，已保留已应用的调整。"
     }
   },
   "overrides": {
@@ -5454,6 +5482,22 @@
       "es": "No se pudieron identificar las fotos de la sesión anterior. La recuperación automática está en pausa. Usa «Importar de la cámara» para seleccionar manualmente las fotos que faltan. No se harán fotos automáticamente.",
       "ja": "前回の撮影セッションの写真を確認できないため、自動復旧を停止しました。「カメラから読み込む」で未転送の写真を手動で選択してください。自動で再撮影することはありません。",
       "zh-Hans": "无法确认上次联机的照片范围，已暂停自动恢复。请从相机导入，手动选择需要补传的照片。不会自动补拍。"
+    },
+    "无法保存编辑草稿。": {
+      "de": "Der Bearbeitungsentwurf konnte nicht gespeichert werden.",
+      "en": "Unable to save the edit draft.",
+      "es": "No se pudo guardar el borrador de edición.",
+      "fr": "Impossible d’enregistrer le brouillon de modification.",
+      "ja": "編集の下書きを保存できません。",
+      "zh-Hans": "无法保存编辑草稿。"
+    },
+    "无法恢复编辑草稿，已保留已应用的调整。": {
+      "de": "Der Bearbeitungsentwurf konnte nicht wiederhergestellt werden; die angewendeten Anpassungen wurden beibehalten.",
+      "en": "Unable to restore the edit draft; applied adjustments were kept.",
+      "es": "No se pudo restaurar el borrador de edición; se conservaron los ajustes aplicados.",
+      "fr": "Impossible de restaurer le brouillon de modification ; les réglages appliqués ont été conservés.",
+      "ja": "編集の下書きを復元できません。適用済みの調整は保持されています。",
+      "zh-Hans": "无法恢复编辑草稿，已保留已应用的调整。"
     }
   }
 }
