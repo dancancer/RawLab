@@ -341,8 +341,17 @@ extension EditorModel {
             var job = BatchExportJob(source: file, settings: settings, look: nil, lookName: lookName)
             if settings.isHDREditing { job.format = .hdrJPEG }
             job.longEdge = exportLongEdge
-            job.look = try batchJournal.snapshotLook(lookURL, for: job.id)
-            try batchJournal.save(job)
+            let copiedLook = try batchJournal.snapshotLook(lookURL, for: job.id)
+            job.look = copiedLook
+            do {
+                try batchJournal.save(job)
+            } catch {
+                if let copiedLook { try? FileManager.default.removeItem(at: copiedLook) }
+                throw error
+            }
+            if let quarantined = batchJournal.consumeQuarantinedError() {
+                self.error = L10n.format("无法读取上次批量任务：%@", String(describing: quarantined.localizedDescription))
+            }
             attachBatch(job)
             return true
         } catch { self.error = error.localizedDescription; return false }

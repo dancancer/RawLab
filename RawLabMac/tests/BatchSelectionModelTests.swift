@@ -260,6 +260,29 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
             "each photo freezes its own look and retains task-owned copy after library removal")
         try check(model.batch!.discardDraft() && model.batch == nil, "discarding a frozen draft frees its task and owned resources")
         try check(!FileManager.default.fileExists(atPath: job.items[0].frozen!.look!.path), "discard cleans task-owned look")
+        do {
+            let corruptBatchDir = root.appendingPathComponent("editor-corrupt-batch")
+            try FileManager.default.createDirectory(at: corruptBatchDir, withIntermediateDirectories: true)
+            let corruptPayload = Data("{broken-editor-batch".utf8)
+            try corruptPayload.write(to: corruptBatchDir.appendingPathComponent("job.json"))
+            let recovered = EditorModel(lookDirectory: root.appendingPathComponent("editor-corrupt-looks"),
+                editDirectory: root.appendingPathComponent("editor-corrupt-edits"),
+                batchDirectory: corruptBatchDir,
+                presetDirectory: root.appendingPathComponent("editor-corrupt-presets"))
+            try check(recovered.batch == nil && !recovered.updateJournalLoadFailed && recovered.error != nil,
+                "EditorModel isolates corrupt startup batch journal into empty state with user notice")
+            guard let archive = recovered.batchJournal.lastQuarantinedURL else {
+                throw NSError(domain: "missing archived corrupt journal", code: 1)
+            }
+            try check(try Data(contentsOf: archive) == corruptPayload,
+                "EditorModel startup preserves corrupt job.json bytes on disk")
+            recovered.open(fixture)
+            try rendered(recovered)
+            try check(recovered.prepareBatch() && recovered.batch != nil,
+                "EditorModel prepareBatch succeeds after corrupt journal isolation")
+            try check(try Data(contentsOf: archive) == corruptPayload,
+                "prepareBatch retains archived corrupt job.json alongside the new job")
+        }
     }
 
     static func rendered(_ model: EditorModel) throws {

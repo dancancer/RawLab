@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import Darwin
 
 enum BatchSettingsMode: String, Codable {
     case uniformFrozen = "uniform_frozen", perTargetFrozen = "per_target_frozen"
@@ -203,13 +204,20 @@ final class BatchJournal {
             .appendingPathComponent("RawLab/Batch", isDirectory: true)
     }
     let directory: URL
+    private(set) var lastQuarantinedURL: URL?
+    private var quarantinedError: Error?
     private var url: URL { directory.appendingPathComponent("job.json") }
 
     init(directory: URL = BatchJournal.defaultDirectory) { self.directory = directory }
 
+    func consumeQuarantinedError() -> Error? {
+        defer { quarantinedError = nil }
+        return quarantinedError
+    }
+
     func save(_ job: BatchExportJob) throws {
-        _ = try readJob()
         try job.validate()
+        _ = try readJob()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try JSONEncoder().encode(job).write(to: url, options: .atomic)
     }
@@ -223,10 +231,120 @@ final class BatchJournal {
     }
 
     private func readJob() throws -> BatchExportJob? {
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        let job = try JSONDecoder().decode(BatchExportJob.self, from: Data(contentsOf: url))
-        try job.validate()
-        return job
+        switch try Self.itemType(atPath: directory.path) {
+        case nil: return nil
+        case .typeDirectory?: break
+        default: throw CocoaError(.fileReadCorruptFile)
+        }
+        switch try Self.itemType(atPath: url.path) {
+        case nil: return nil
+        case .typeRegular?: break
+        default: throw CocoaError(.fileReadCorruptFile)
+        }
+        let data = try Data(contentsOf: url)
+        do {
+            let job = try JSONDecoder().decode(BatchExportJob.self, from: data)
+            try job.validate()
+            return job
+        } catch {
+            if Self.isUnsupportedFutureJournal(data) { throw error }
+            lastQuarantinedURL = try quarantineCorruptJob()
+            quarantinedError = error
+            return nil
+        }
+    }
+
+    private func quarantineCorruptJob(now: Date = Date()) throws -> URL {
+        let baseName = "job.json.corrupt-\(Self.corruptTimestamp(now))"
+        var suffix = 0
+        while true {
+            let name = suffix == 0 ? baseName : "\(baseName)-\(suffix)"
+            let candidate = directory.appendingPathComponent(name)
+            if try Self.itemType(atPath: candidate.path) == nil {
+                try FileManager.default.moveItem(at: url, to: candidate)
+                return candidate
+            }
+            suffix += 1
+        }
+    }
+
+    private static func corruptTimestamp(_ date: Date) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let parts = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        return String(format: "%04d%02d%02d-%02d%02d%02d",
+                      parts.year ?? 0, parts.month ?? 0, parts.day ?? 0,
+                      parts.hour ?? 0, parts.minute ?? 0, parts.second ?? 0)
+    }
+
+    private static func itemType(atPath path: String) throws -> FileAttributeType? {
+        do {
+            return try FileManager.default.attributesOfItem(atPath: path)[.type] as? FileAttributeType
+        } catch {
+            let nsError = error as NSError
+            if nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileReadNoSuchFileError {
+                if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError,
+                   underlying.domain == NSPOSIXErrorDomain {
+                    if underlying.code == ENOENT { return nil }
+                    throw error
+                }
+                return nil
+            }
+            if nsError.domain == NSPOSIXErrorDomain && nsError.code == ENOENT { return nil }
+            throw error
+        }
+    }
+
+    private static func isIntegerAbove(_ value: Any?, limit: Int) -> Bool {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID() else { return false }
+        let decimal = number.decimalValue
+        var rounded = Decimal()
+        var copy = decimal
+        NSDecimalRound(&rounded, &copy, 0, .plain)
+        guard !decimal.isNaN, decimal == rounded else { return false }
+        return decimal > Decimal(limit)
+    }
+
+    private static func hasFutureSettings(_ value: Any?) -> Bool {
+        guard let settings = value as? [String: Any] else { return false }
+        if let processing = settings["processing"] as? [String: Any],
+           processing["family"] as? String == "rawlab",
+           isIntegerAbove(processing["version"], limit: ProcessingIdentity.current.version) {
+            return true
+        }
+        if isIntegerAbove(settings["masterRecipeSettingsVersion"], limit: 4) { return true }
+        if let hdr = settings["hdr"] as? [String: Any] {
+            if isIntegerAbove(hdr["hdr_processing_version"], limit: 8) ||
+               isIntegerAbove(hdr["record_version"], limit: 9) {
+                return true
+            }
+            if let cameraDev = hdr["camera_development"] as? [String: Any],
+               isIntegerAbove(cameraDev["version"], limit: 1) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func isUnsupportedFutureJournal(_ data: Data) -> Bool {
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return false
+        }
+        if isIntegerAbove(object["version"], limit: 3) || hasFutureSettings(object["settings"]) {
+            return true
+        }
+        if let items = object["items"] as? [Any] {
+            for case let item as [String: Any] in items {
+                guard let frozen = item["frozen"] as? [String: Any] else { continue }
+                if isIntegerAbove(frozen["version"], limit: 1) ||
+                   isIntegerAbove(frozen["settingsVersion"], limit: 1) ||
+                   hasFutureSettings(frozen["settings"]) {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     func load() throws -> BatchExportJob? {
@@ -248,7 +366,7 @@ final class BatchJournal {
     }
 
     func discard(_ job: BatchExportJob) throws {
-        if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+        if try readJob() != nil { try FileManager.default.removeItem(at: url) }
         releaseResources(job)
     }
 

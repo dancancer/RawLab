@@ -243,6 +243,9 @@ extension EditorModel {
             for look in ownedLooks { try? FileManager.default.removeItem(at: look) }
             throw error
         }
+        if let quarantined = batchJournal.consumeQuarantinedError() {
+            self.error = L10n.format("无法读取上次批量任务：%@", String(describing: quarantined.localizedDescription))
+        }
         if let prior = batch?.job { batchJournal.releaseResources(prior) }
         attachBatch(job)
         return job

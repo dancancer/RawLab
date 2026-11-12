@@ -103,6 +103,116 @@ private func perTargetSnapshots(root: URL, inputs: [URL], output: URL) throws {
     }
 }
 
+private func journalIsolation(root: URL, inputs: [URL], output: URL) throws {
+    let isolationRoot = root.appendingPathComponent("journal-isolation")
+    let corruptJournal = BatchJournal(directory: isolationRoot.appendingPathComponent("corrupt"))
+    try FileManager.default.createDirectory(at: corruptJournal.directory, withIntermediateDirectories: true)
+    let corruptURL = corruptJournal.directory.appendingPathComponent("job.json")
+    let corruptBytes = Data("{corrupt-batch-journal".utf8)
+    try corruptBytes.write(to: corruptURL)
+
+    try check(try corruptJournal.load() == nil, "corrupt job.json isolates to empty state without throwing")
+    try check(!FileManager.default.fileExists(atPath: corruptURL.path), "corrupt job.json is moved out of active path")
+    guard let firstArchive = corruptJournal.lastQuarantinedURL else {
+        throw Failure(message: "corrupt job.json must record its archive URL")
+    }
+    try check(firstArchive.deletingLastPathComponent().standardizedFileURL == corruptJournal.directory.standardizedFileURL &&
+              firstArchive.lastPathComponent.hasPrefix("job.json.corrupt-"),
+              "corrupt job.json is renamed under job.json.corrupt-<timestamp>")
+    try check(try Data(contentsOf: firstArchive) == corruptBytes, "archived corrupt job.json preserves original bytes")
+    guard let loadNotice = corruptJournal.consumeQuarantinedError() else {
+        throw Failure(message: "corrupt job.json must surface an isolation error for user notice")
+    }
+    try check(corruptJournal.consumeQuarantinedError() == nil, "quarantined error is consumed once")
+    try check(L10n.format("无法读取上次批量任务：%@", String(describing: loadNotice.localizedDescription))
+        .contains(loadNotice.localizedDescription), "existing localized batch recovery notice formats quarantined error")
+
+    var recoveredJob = BatchExportJob(source: inputs[0], settings: Adjustments(), look: nil, lookName: "Recovered")
+    recoveredJob.outputDirectory = output
+    recoveredJob.items = [try BatchExportItem(url: inputs[0])]
+    recoveredJob.items[0].selected = true
+    try corruptJournal.save(recoveredJob)
+    try check(try corruptJournal.load()?.id == recoveredJob.id, "save creates a new batch job after corrupt journal isolation")
+    try check(try Data(contentsOf: firstArchive) == corruptBytes, "saving a new job retains the archived corrupt file on disk")
+
+    var semanticBadObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(recoveredJob)) as! [String: Any]
+    semanticBadObject["settings_mode"] = "per_target_frozen"
+    let semanticJobBytes = try JSONSerialization.data(withJSONObject: semanticBadObject)
+    try semanticJobBytes.write(to: corruptURL)
+    let replacementJob = BatchExportJob(source: inputs[1], settings: Adjustments(), look: nil, lookName: "Replacement")
+    try corruptJournal.save(replacementJob)
+    guard let secondArchive = corruptJournal.lastQuarantinedURL else {
+        throw Failure(message: "semantically unusable job.json must be archived on save")
+    }
+    try check(secondArchive != firstArchive && (try Data(contentsOf: secondArchive)) == semanticJobBytes &&
+              (try Data(contentsOf: firstArchive)) == corruptBytes,
+              "direct save archives semantically unusable job.json without colliding with prior corrupt archives")
+    try check(corruptJournal.consumeQuarantinedError() != nil && (try corruptJournal.load()?.id) == replacementJob.id,
+              "direct save records quarantine error and persists replacement job")
+
+    var badParamObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(replacementJob)) as! [String: Any]
+    var badSettings = badParamObject["settings"] as! [String: Any]
+    badSettings["toneControls"] = ["blackPoint": 999, "whitePoint": 0, "vibrance": 0]
+    badParamObject["settings"] = badSettings
+    let badParamBytes = try JSONSerialization.data(withJSONObject: badParamObject)
+    try badParamBytes.write(to: corruptURL)
+    try corruptJournal.discard(replacementJob)
+    guard let thirdArchive = corruptJournal.lastQuarantinedURL else {
+        throw Failure(message: "discard must quarantine rather than delete a damaged job.json")
+    }
+    try check(thirdArchive != firstArchive && thirdArchive != secondArchive &&
+              (try Data(contentsOf: thirdArchive)) == badParamBytes &&
+              !FileManager.default.fileExists(atPath: corruptURL.path),
+              "discard preserves damaged job.json bytes on disk while clearing active journal state")
+
+    let dirAtJobJournal = BatchJournal(directory: isolationRoot.appendingPathComponent("dir-at-job"))
+    let dirJobURL = dirAtJobJournal.directory.appendingPathComponent("job.json")
+    try FileManager.default.createDirectory(at: dirJobURL, withIntermediateDirectories: true)
+    do { _ = try dirAtJobJournal.load(); throw Failure(message: "directory at job.json must fail-closed on load") }
+    catch is CocoaError { }
+    do { try dirAtJobJournal.save(recoveredJob); throw Failure(message: "directory at job.json must fail-closed on save") }
+    catch is CocoaError { }
+    do { try dirAtJobJournal.discard(recoveredJob); throw Failure(message: "directory at job.json must fail-closed on discard") }
+    catch is CocoaError { }
+    try check((try FileManager.default.attributesOfItem(atPath: dirJobURL.path)[.type] as? FileAttributeType) == .typeDirectory,
+              "directory at job.json remains untouched")
+
+    let symlinkJournal = BatchJournal(directory: isolationRoot.appendingPathComponent("symlink-at-job"))
+    try FileManager.default.createDirectory(at: symlinkJournal.directory, withIntermediateDirectories: true)
+    let symlinkURL = symlinkJournal.directory.appendingPathComponent("job.json")
+    try FileManager.default.createSymbolicLink(atPath: symlinkURL.path, withDestinationPath: "missing-target.json")
+    do { _ = try symlinkJournal.load(); throw Failure(message: "symlink at job.json must fail-closed on load") }
+    catch is CocoaError { }
+    do { try symlinkJournal.save(recoveredJob); throw Failure(message: "symlink at job.json must fail-closed on save") }
+    catch is CocoaError { }
+    try check((try FileManager.default.attributesOfItem(atPath: symlinkURL.path)[.type] as? FileAttributeType) == .typeSymbolicLink,
+              "symlink at job.json remains untouched")
+
+    let fileBatchPath = isolationRoot.appendingPathComponent("file-as-batch-dir")
+    let fileBatchBytes = Data("not-a-directory".utf8)
+    try fileBatchBytes.write(to: fileBatchPath)
+    let fileDirJournal = BatchJournal(directory: fileBatchPath)
+    do { _ = try fileDirJournal.load(); throw Failure(message: "non-directory batch container must fail-closed on load") }
+    catch is CocoaError { }
+    do { try fileDirJournal.save(recoveredJob); throw Failure(message: "non-directory batch container must fail-closed on save") }
+    catch is CocoaError { }
+    try check(try Data(contentsOf: fileBatchPath) == fileBatchBytes, "non-directory batch container remains untouched")
+
+    let futureSchemaJournal = BatchJournal(directory: isolationRoot.appendingPathComponent("future-schema"))
+    try FileManager.default.createDirectory(at: futureSchemaJournal.directory, withIntermediateDirectories: true)
+    var futureSchemaObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(recoveredJob)) as! [String: Any]
+    futureSchemaObject["version"] = 99
+    let futureSchemaBytes = try JSONSerialization.data(withJSONObject: futureSchemaObject)
+    let futureSchemaURL = futureSchemaJournal.directory.appendingPathComponent("job.json")
+    try futureSchemaBytes.write(to: futureSchemaURL)
+    do { _ = try futureSchemaJournal.load(); throw Failure(message: "future journal schema must fail-closed on load") }
+    catch is CocoaError { }
+    do { try futureSchemaJournal.save(recoveredJob); throw Failure(message: "future journal schema must fail-closed on save") }
+    catch is CocoaError { }
+    try check(try Data(contentsOf: futureSchemaURL) == futureSchemaBytes,
+              "future schema batch journal remains intact in place")
+}
+
 @main struct BatchExportTests {
     static func main() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -113,6 +223,7 @@ private func perTargetSnapshots(root: URL, inputs: [URL], output: URL) throws {
         let output = root.appendingPathComponent("output")
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         try perTargetSnapshots(root: root, inputs: inputs, output: output)
+        try journalIsolation(root: root, inputs: inputs, output: output)
         let existing = output.appendingPathComponent("one-Velvia.jpg")
         try Data("existing".utf8).write(to: existing)
         var settings = Adjustments(); settings.exposure = 0.75
