@@ -17,6 +17,7 @@
     <Compile Include="../../AIDenoiseJob.cs" Link="AIDenoiseJob.cs" />
     <Compile Include="../../AIGpuPreferences.cs" />
     <Compile Include="../../AIDiagnosticStore.cs" />
+    <Compile Include="../../UnhandledExceptionCoordinator.cs" />
     <Compile Include="../../ParameterInteraction.cs" Link="ParameterInteraction.cs" />
     <Compile Include="../../TransformDraft.cs" Link="TransformDraft.cs" />
     <Compile Include="../../CropInteraction.cs" Link="CropInteraction.cs" />

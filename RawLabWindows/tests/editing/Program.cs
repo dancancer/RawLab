@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 
 if (args.Contains("--edited-previews")) { EditedPhotoPreviewChecks.Run(); return; }
+if (args.Contains("--unhandled-only")) { UnhandledExceptionChecks.Run(); return; }
 if (args.Contains("--durability-only")) { EditDurabilityChecks.Run(); ProcessingMigrationChecks.Run(); return; }
 
 if (args.Contains("--abi-layout")) {
@@ -55,6 +56,7 @@ X3fModeResetChecks.Run();
 Check(PhotoInput.PrepareDefaultSettings("fixture.png").ExposureMode == 2,
     "No-record raster defaults retain sensor exposure");
 AIGpuDiagnosticsChecks.Run();
+UnhandledExceptionChecks.Run();
 if(args.Contains("--ai-support"))return;
 
 MasterRecipeRefinementChecks.Run();
