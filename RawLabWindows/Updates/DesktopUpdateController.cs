@@ -172,7 +172,8 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     }
     private bool ShouldSkipAutomaticCheck(DateTimeOffset current)
     {
-        if (!preferences.AutomaticCheck || State.Phase == UpdatePhase.Failed && State.Failure?.Stage != UpdatePhase.Checking ||
+        if (!preferences.AutomaticCheck ||
+            State.Phase == UpdatePhase.Failed && State.Failure?.Stage != UpdatePhase.Checking && State.Failure?.Code != "trust_temporary" ||
             preferences.RemindAfter > current) return true;
         if (preferences.CheckFailure != null) return IsCheckBackoffActive(current);
         return preferences.LastCheck is { } last && last <= current && current - last < DailyCheckInterval;
@@ -224,7 +225,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             Save(next);
         }
         catch (OperationCanceledException) { }
-        catch (Exception error) { Fail(error, attempt.Value); }
+        catch (Exception error) { if (State.Phase == UpdatePhase.Verifying) FailVerification(error, attempt.Value); else Fail(error, attempt.Value); }
         finally { EndOperation(cancellation); }
     }
     public Task RetryAsync() => State.Phase == UpdatePhase.Failed
@@ -262,7 +263,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             if (!IsCheckBackoffActive(now())) await CheckAsync(true);
             return;
         }
-        if (State.Phase == UpdatePhase.Failed && State.Failure?.Stage == UpdatePhase.Checking ||
+        if (State.Phase == UpdatePhase.Failed && (State.Failure?.Stage == UpdatePhase.Checking || State.Failure?.Code == "trust_temporary") ||
             State.Phase == UpdatePhase.Idle && CheckFailure != null) { await CheckAsync(false); return; }
         if (!CanChooseInstall || State.Choice == UpdateInstallChoice.None) return;
         var reasons = gate.Blockers();
@@ -282,7 +283,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             if (await InstallPreparedAsync(false)) return true;
             if (BlocksEditing) return false;
             operation?.Cancel(); automaticDownload = false;
-            if (StorageError == null) {
+            if (StorageError == null && State.Phase != UpdatePhase.Failed) {
                 var next = preferences.Copy(); DeferCheckRetry(next); next.PendingUpdate.Cancel(preservingChoice: true);
                 Save(next);
             }
@@ -301,6 +302,9 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         string? path = null; var installationRecorded = false;
         try
         {
+            try { await Task.Run(() => adapter.VerifyBeforeInstall(release)); }
+            catch (Exception error) { FailVerification(error, attempt); return false; }
+            if (State.Attempt != attempt) return false;
             path = await Task.Run(() => backup.Create(currentVersion, release.Version, currentBuild)); backup.Verify(path);
             if (State.Attempt != attempt) return false;
             next = preferences.Copy(); if (!next.PendingUpdate.Admit(gate.Prepare())) { Save(next); return false; }
@@ -310,11 +314,16 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             // 原子替换后的保存异常无法证明磁盘未引用此备份。
             installationRecorded = true;
             if (!Save(next)) return false;
-            await Task.Run(()=>adapter.Install(release, restart));
+            await Task.Run(() => adapter.Install(release, restart));
             next = preferences.Copy();
             if (!next.PendingUpdate.AwaitingRestart(attempt)) return false;
             Save(next, keepNextOnFailure: true);
             return true;
+        }
+        catch (Exception error) when (error is UpdatePackageRejectedException or TemporaryUpdateTrustException)
+        {
+            FailVerification(error, attempt);
+            return false;
         }
         catch (Exception error) { Fail(error, attempt); return false; }
         finally {
@@ -331,17 +340,31 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         if (ReferenceEquals(operation, value)) operation = null;
         value.Dispose(); Notify();
     }
+    private void FailVerification(Exception error, Guid attempt)
+    {
+        var next = preferences.Copy();
+        if (next.PendingUpdate.Fail(UpdatePhase.Verifying, VerificationFailureCode(error), error.Message ?? "", attempt))
+            Save(next);
+    }
+    private static string VerificationFailureCode(Exception error) => error switch
+    {
+        TemporaryUpdateTrustException or TimeoutException => "trust_temporary",
+        UpdatePackageRejectedException rejected => rejected.Code,
+        CryptographicException => "signature",
+        _ => "verification"
+    };
     private void Fail(Exception error, Guid attempt)
     {
         var stage = State.Phase;
         var next = preferences.Copy();
         var postInstall = stage is UpdatePhase.Installing or UpdatePhase.PendingRestart;
         var code = stage == UpdatePhase.Checking ? CategorizeCheckError(error) : "operation";
-        if (!next.PendingUpdate.Fail(code, error.Message, attempt)) return;
+        var detail = error.Message ?? "";
+        if (!next.PendingUpdate.Fail(code, detail, attempt)) return;
         if (stage == UpdatePhase.Checking)
         {
             var count = (preferences.CheckFailure?.ConsecutiveFailures ?? 0) + 1;
-            next.CheckFailure = new(now(), code, Math.Max(1, count), error.Message);
+            next.CheckFailure = new(now(), code, Math.Max(1, count), detail);
         }
         Save(next, keepNextOnFailure: postInstall);
     }

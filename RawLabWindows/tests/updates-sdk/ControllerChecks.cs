@@ -11,7 +11,7 @@ internal static class ControllerChecks
         public UpdateDescriptor Release = new("0.9.1", "19", "windows", "x64", "stable", "https://example.invalid/update.nupkg", 12, null, "Notes");
         public int Checks, Downloads, Installs;
         public bool RejectSignature, RejectInstall, RejectCheck, NoUpdate;
-        public Exception? TrustError, CheckError;
+        public Exception? TrustError, CheckError, InstallVerifyError, PreDispatchInstallError;
         public TaskCompletionSource<UpdateDescriptor?>? PendingCheck;
         public Task ValidateHostTrustAsync() => TrustError == null ? Task.CompletedTask : Task.FromException(TrustError);
         public Task<UpdateDescriptor?> CheckAsync(CancellationToken token)
@@ -23,14 +23,21 @@ internal static class ControllerChecks
             return Task.FromResult(NoUpdate ? null : (UpdateDescriptor?)Release);
         }
         public Task DownloadAsync(UpdateDescriptor release, Action<int> progress, CancellationToken token) { Downloads++; progress(75); return Task.CompletedTask; }
-        public Task VerifyAsync(UpdateDescriptor release, CancellationToken token) => RejectSignature ? Task.FromException(new Exception("Rejected signature")) : Task.CompletedTask;
-        public void Install(UpdateDescriptor release, bool restart) { Installs++; if (RejectInstall) throw new IOException("Injected dispatch failure"); }
+        public Task VerifyAsync(UpdateDescriptor release, CancellationToken token) => RejectSignature ? Task.FromException(new CryptographicException("Rejected signature")) : Task.CompletedTask;
+        public void VerifyBeforeInstall(UpdateDescriptor release) { if (InstallVerifyError != null) throw InstallVerifyError; }
+        public void Install(UpdateDescriptor release, bool restart)
+        {
+            if (PreDispatchInstallError != null) throw PreDispatchInstallError;
+            Installs++;
+            if (RejectInstall) throw new IOException("Injected dispatch failure");
+        }
     }
     internal static async Task Run(Action<bool, string> check)
     {
         await AutomaticCheckRetries(check);
         await StartupAndQuit(check);
         await StateRepair(check);
+        await PreInstallSignatureRejectionDoesNotLockEditing(check);
         await InstallationFailureBlocksEditing(check);
         await RuntimeSaveFailureRecovery(check);
         var root = Path.Combine(Path.GetTempPath(), "rawlab-update-controller-" + Guid.NewGuid().ToString("N"));
@@ -239,22 +246,45 @@ internal static class ControllerChecks
                 "Failed revalidation of OnQuit choice records CheckFailure");
             now = quitFailAt.AddMinutes(2);
             check(await quitController.PrepareForQuitAsync(), "Quit after failed OnQuit revalidation succeeds");
-            quitAdapter.RejectCheck = false;
             var reopenedQuit = new DesktopUpdateController(quitAdapter, quitGate, quitStore, "0.8.2", "14", now: () => now);
-            check(reopenedQuit.State.Phase == UpdatePhase.Available && reopenedQuit.State.Choice == UpdateInstallChoice.OnQuit &&
+            check(reopenedQuit.State.Phase == UpdatePhase.Failed && reopenedQuit.State.Failure?.Stage == UpdatePhase.Checking &&
+                reopenedQuit.State.Choice == UpdateInstallChoice.OnQuit &&
                 reopenedQuit.CheckFailure is { RetryAfter: null } persistedQf && persistedQf.FailedAt == quitFailAt &&
-                UpdatePresentation.ShowsCheckFailureNotice(reopenedQuit.Preferences),
-                "Reopened OnQuit state keeps Available phase, OnQuit choice, and original CheckFailure timestamp");
+                UpdatePresentation.Status(reopenedQuit.Preferences) == "检查失败，请稍后重试或访问 GitHub 仓库",
+                "Reopened OnQuit check failure preserves Failed phase, OnQuit choice, and original CheckFailure timestamp");
             await reopenedQuit.CheckAsync(false);
             await reopenedQuit.RefreshGateAsync();
             now = quitFailAt.AddMinutes(14).AddSeconds(59);
             await reopenedQuit.RefreshGateAsync();
             check(quitAdapter.Checks == 2,
                 "Reopening with DeferredQuitChoice respects remaining CheckFailure backoff instead of checking immediately");
+
             now = quitFailAt.AddMinutes(15);
-            await reopenedQuit.RefreshGateAsync();
-            check(quitAdapter.Checks == 3 && quitAdapter.Downloads == 2 && reopenedQuit.CheckFailure == null &&
-                reopenedQuit.State.Phase == UpdatePhase.PackageReady && reopenedQuit.State.Choice == UpdateInstallChoice.OnQuit,
+            quitAdapter.PendingCheck = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            var inFlightQuitRetry = reopenedQuit.RefreshGateAsync();
+            now = now.AddSeconds(5);
+            var quitCancelAt = now;
+            check(quitAdapter.Checks == 3 && !inFlightQuitRetry.IsCompleted &&
+                await reopenedQuit.PrepareForQuitAsync(),
+                "Quitting during an in-flight OnQuit retry cancels the check cleanly");
+            await inFlightQuitRetry;
+            quitAdapter.PendingCheck = null;
+            quitAdapter.RejectCheck = false;
+            var reopenedDeferredQuit = new DesktopUpdateController(quitAdapter, quitGate, quitStore, "0.8.2", "14", now: () => now);
+            check(reopenedDeferredQuit.State.Phase == UpdatePhase.Available &&
+                reopenedDeferredQuit.State.Choice == UpdateInstallChoice.OnQuit &&
+                reopenedDeferredQuit.CheckFailure is { ConsecutiveFailures: 1 } deferredQf &&
+                deferredQf.RetryAfter == quitCancelAt.AddMinutes(15) &&
+                UpdatePresentation.ShowsCheckFailureNotice(reopenedDeferredQuit.Preferences),
+                "Quitting an in-flight OnQuit retry keeps Available phase, OnQuit choice, deferred RetryAfter, and check-failure notice");
+            now = quitCancelAt.AddMinutes(14).AddSeconds(59);
+            await reopenedDeferredQuit.RefreshGateAsync();
+            check(quitAdapter.Checks == 3,
+                "Available+DeferredQuitChoice also honors deferred RetryAfter backoff on reopen");
+            now = quitCancelAt.AddMinutes(15);
+            await reopenedDeferredQuit.RefreshGateAsync();
+            check(quitAdapter.Checks == 4 && quitAdapter.Downloads == 2 && reopenedDeferredQuit.CheckFailure == null &&
+                reopenedDeferredQuit.State.Phase == UpdatePhase.PackageReady && reopenedDeferredQuit.State.Choice == UpdateInstallChoice.OnQuit,
                 "DeferredQuitChoice revalidates and redownloads once CheckFailure backoff elapses");
 
             static void WriteLegacyState(UpdateStore target, DateTimeOffset? lastCheck)
@@ -333,6 +363,85 @@ internal static class ControllerChecks
             check(reopened.State.Phase==UpdatePhase.Complete && reopened.State.BackupPath==null && !Directory.Exists(path),
                 "Successful health retry clears persisted backup reference before removing the backup");
         } finally { if(Directory.Exists(root))Directory.Delete(root,true); }
+    }
+
+    private static async Task PreInstallSignatureRejectionDoesNotLockEditing(Action<bool, string> check)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-signature-reject-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var virtualNow = DateTimeOffset.FromUnixTimeSeconds(1800000000);
+            var photo = Path.Combine(root, "Edits", "photo.json"); Directory.CreateDirectory(Path.GetDirectoryName(photo)!);
+            File.WriteAllText(photo, "committed edit");
+            var store = new UpdateStore(Path.Combine(root, "Updates"));
+            var backupsDir = Path.Combine(store.DirectoryPath, "Backups");
+            bool NoBackups() => !Directory.Exists(backupsDir) || Directory.GetDirectories(backupsDir).Length == 0;
+            var gate = new UpdateInstallGate(); var session = new object(); var dirty = false; var pendingEdit = "";
+            gate.Register(session, () => new(Unsaved: dirty), () => { if (dirty) { File.WriteAllText(photo, pendingEdit); dirty = false; } return true; });
+
+            var adapter = new Adapter { InstallVerifyError = new UpdatePackageRejectedException("signature", "Authenticode validation failed", new CryptographicException()) };
+            var controller = new DesktopUpdateController(adapter, gate, store, "0.8.2", "14", now: () => virtualNow);
+            var restartRequested = false; controller.RestartRequested += () => restartRequested = true;
+            await controller.CheckAsync(true); await controller.DownloadAsync();
+            await controller.ChooseAsync(UpdateInstallChoice.RestartNow);
+            check(!restartRequested && adapter.Installs == 0 && controller.State.Phase == UpdatePhase.Failed &&
+                controller.State.Failure?.Stage == UpdatePhase.Verifying && controller.State.Failure?.Code == "signature",
+                "Pre-install signature failure rejects the package at Verifying stage without invoking installer");
+            check(!controller.BlocksEditing && !controller.RequiresRecovery && !controller.RequiresStartupHealthCheck &&
+                !controller.CanRestorePreviousData && controller.State.BackupPath == null &&
+                controller.State.PreviousVersion == null && controller.State.PreviousBuild == null &&
+                controller.Preferences.SkippedVersion == null && NoBackups(),
+                "Pre-install signature rejection creates no backup and never locks the editor into recovery");
+            check(UpdatePresentation.FailureHeading(controller.State.Failure!, controller.RequiresRecovery) == "验证失败" && controller.CanCheck,
+                "Rejected package reports validation failure and keeps update check enabled");
+
+            dirty = true; pendingEdit = "edited on previous version after rejection";
+            check(!controller.BlocksEditing && gate.Prepare().Length == 0 && File.ReadAllText(photo) == pendingEdit,
+                "Previous version remains editable after an update package is rejected");
+
+            var reopened = new DesktopUpdateController(adapter, gate, store, "0.8.2", "14", now: () => virtualNow);
+            check(!reopened.BlocksEditing && !reopened.RequiresRecovery && reopened.State.Failure == controller.State.Failure && NoBackups(),
+                "Reopening after pre-install rejection keeps editing unlocked with no leftover backup");
+
+            adapter.InstallVerifyError = null;
+            await reopened.CheckAsync(true);
+            check(reopened.State.Phase == UpdatePhase.Available && reopened.CanDownload, "User can check for updates again after rejection");
+            await reopened.DownloadAsync();
+            check(reopened.State.Phase == UpdatePhase.PackageReady && reopened.CanChooseInstall && !reopened.BlocksEditing,
+                "User can download and prepare an update again after rejection");
+
+            adapter.InstallVerifyError = new CryptographicException("Unexpected update publisher");
+            await reopened.ChooseAsync(UpdateInstallChoice.OnQuit);
+            check(await reopened.PrepareForQuitAsync() && adapter.Installs == 0 && !reopened.BlocksEditing && !reopened.RequiresRecovery &&
+                reopened.State.Phase == UpdatePhase.Failed && reopened.State.Failure?.Stage == UpdatePhase.Verifying &&
+                reopened.State.Failure?.Code == "signature" && reopened.State.Choice == UpdateInstallChoice.None && NoBackups(),
+                "Install-on-quit signature rejection allows normal exit and persists rejection instead of re-arming quit install");
+
+            adapter.InstallVerifyError = null;
+            adapter.PreDispatchInstallError = new UpdatePackageRejectedException("signature", "Cached package no longer matches signed descriptor");
+            await reopened.RetryAsync();
+            await reopened.ChooseAsync(UpdateInstallChoice.RestartNow);
+            check(adapter.Installs == 0 && !reopened.BlocksEditing && !reopened.RequiresRecovery &&
+                reopened.State.Phase == UpdatePhase.Failed && reopened.State.Failure?.Stage == UpdatePhase.Verifying &&
+                reopened.State.BackupPath == null && reopened.State.PreviousVersion == null && NoBackups(),
+                "TOCTOU verification failure inside Install immediately discards the staged backup and avoids recovery lock");
+
+            adapter.PreDispatchInstallError = null;
+            adapter.InstallVerifyError = new TemporaryUpdateTrustException("Certificate revocation status is temporarily unavailable");
+            await reopened.RetryAsync();
+            await reopened.ChooseAsync(UpdateInstallChoice.RestartNow);
+            check(adapter.Installs == 0 && !reopened.BlocksEditing && !reopened.RequiresRecovery && NoBackups() &&
+                reopened.State.Phase == UpdatePhase.Failed && reopened.State.Failure?.Stage == UpdatePhase.Verifying &&
+                reopened.State.Failure?.Code == "trust_temporary" &&
+                UpdatePresentation.FailureHeading(reopened.State.Failure!, reopened.RequiresRecovery) == null,
+                "Temporary revocation unavailability neither installs nor marks permanent validation or recovery failure");
+            adapter.InstallVerifyError = null;
+            virtualNow = virtualNow.AddDays(1).AddSeconds(1);
+            await reopened.RefreshGateAsync();
+            check(reopened.State.Phase == UpdatePhase.Available && !reopened.BlocksEditing,
+                "Temporary revocation failure remains eligible for automatic background recheck");
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
 
     private static async Task InstallationFailureBlocksEditing(Action<bool, string> check)

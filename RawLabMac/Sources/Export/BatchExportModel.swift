@@ -86,6 +86,7 @@ final class BatchExportModel: ObservableObject {
     @Published var sourceEditingGeometry = false
     var onActivity: (Bool) -> Void = { _ in }
     var onDiscard: () -> Void = { }
+    var onQuarantineOnDiscard: (String) -> Void = { _ in }
     private let journal: BatchJournal
     private let queue = DispatchQueue(label: "rawlab.batch", qos: .userInitiated)
     private var engine: RenderEngine?
@@ -211,7 +212,7 @@ final class BatchExportModel: ObservableObject {
                     }
                 }
             }
-            DispatchQueue.main.async { self.validating = false; self.saveDraft() }
+            DispatchQueue.main.async { self.validating = false; self.saveDraft(preserveNotice: true) }
         }
     }
 
@@ -255,9 +256,28 @@ final class BatchExportModel: ObservableObject {
         job.longEdge = value; saveDraft()
     }
 
-    private func saveDraft() {
-        do { try journal.save(job); error = nil; updateJournalFailed = false }
-        catch { updateJournalFailed = true; self.error = L10n.format("任务未保存：%@", String(describing: error.localizedDescription)) }
+    private static func quarantineNotice(for error: Error) -> String {
+        L10n.format("无法读取上次批量任务：%@", String(describing: error.localizedDescription))
+    }
+
+    private func consumeQuarantinedNotice() -> String? {
+        journal.consumeQuarantinedError().map(Self.quarantineNotice(for:))
+    }
+
+    private func saveDraft(preserveNotice: Bool = false) {
+        do {
+            try journal.save(job)
+            if let notice = consumeQuarantinedNotice() {
+                error = notice
+            } else if !preserveNotice {
+                error = nil
+            }
+            updateJournalFailed = false
+        } catch {
+            _ = journal.consumeQuarantinedError()
+            updateJournalFailed = true
+            self.error = L10n.format("任务未保存：%@", String(describing: error.localizedDescription))
+        }
     }
 
     func prepareForUpdate() -> Bool {
@@ -283,16 +303,20 @@ final class BatchExportModel: ObservableObject {
         queue.async { [self] in
             var work = snapshot
             var failure: String?
+            var quarantineNotice: String?
+            let recordQuarantine: (Error) -> Void = { quarantined in
+                if quarantineNotice == nil { quarantineNotice = Self.quarantineNotice(for: quarantined) }
+            }
             var attempted = Set<UUID>()
             do {
-                let runSnapshot=try freezeHDRJob(snapshot,shouldCancel:{ cancellation.cancelled })
+                let runSnapshot=try freezeHDRJob(snapshot,shouldCancel:{ cancellation.cancelled },onQuarantine:recordQuarantine)
                 work=runSnapshot
                 try BatchExportRunner.runSnapshots(job: &work, journal: journal, scope: scope,
                                                    resolveX3fMode: resolveX3fMode,
                                                    shouldCancel: { cancellation.cancelled }, didUpdate: { updated in
                     attempted.formUnion(updated.items.filter { $0.status == .running }.map(\.id))
                     DispatchQueue.main.async { self.job = updated }
-                }) { input, frozen, output in
+                }, onQuarantine: recordQuarantine) { input, frozen, output in
                     let settings = frozen.settings
                     let look = frozen.look
                     if self.engine == nil { self.engine = try RenderEngine() }
@@ -315,10 +339,18 @@ final class BatchExportModel: ObservableObject {
             } catch {
                 failure = error.localizedDescription
                 work.interrupted = true; work.failure = failure
-                do { try journal.save(work) }
-                catch { failure = L10n.format("任务未保存：%@", error.localizedDescription) + "\n" + (work.failure ?? "") }
+                do {
+                    try journal.save(work)
+                    if let quarantined = journal.consumeQuarantinedError() { recordQuarantine(quarantined) }
+                } catch {
+                    if let quarantined = journal.consumeQuarantinedError() { recordQuarantine(quarantined) }
+                    failure = L10n.format("任务未保存：%@", error.localizedDescription) + "\n" + (work.failure ?? "")
+                }
             }
-            let final = work, message = failure
+            let final = work
+            let message: String?
+            if let quarantineNotice, let failure { message = quarantineNotice + "\n" + failure }
+            else { message = failure ?? quarantineNotice }
             let succeeded = max(0, final.succeededCount - snapshot.succeededCount)
             let failed = final.items.filter { attempted.contains($0.id) && $0.status == .failed }.count
             let outcome: UsageBatchOutcome = final.interrupted ? .interrupted : final.cancelled ? .cancelled : failed > 0 ? .partial : .completed
@@ -332,7 +364,8 @@ final class BatchExportModel: ObservableObject {
         return true
     }
 
-    private func freezeHDRJob(_ draft: BatchExportJob,shouldCancel: () -> Bool) throws -> BatchExportJob {
+    private func freezeHDRJob(_ draft: BatchExportJob,shouldCancel: () -> Bool,
+                              onQuarantine: (Error) -> Void = { _ in }) throws -> BatchExportJob {
         guard draft.mode == .uniformFrozen,draft.settings.isHDREditing else { return draft }
         guard let hdrPreparation else { throw RenderError.failed(L10n.text("当前照片的设置尚不可用。")) }
         var result=draft; result.items=draft.items.filter(\.selected)
@@ -347,7 +380,15 @@ final class BatchExportModel: ObservableObject {
                 lookSHA256:prepared.lookSHA256,lookName:prepared.lookName,outputFormat:prepared.outputFormat,longEdge:prepared.longEdge)
         }
         result.settingsMode = .perTargetFrozen; result.version=3
-        try result.validate(); try journal.save(result); published=true
+        try result.validate()
+        do {
+            try journal.save(result)
+            if let quarantined = journal.consumeQuarantinedError() { onQuarantine(quarantined) }
+        } catch {
+            if let quarantined = journal.consumeQuarantinedError() { onQuarantine(quarantined) }
+            throw error
+        }
+        published=true
         return result
     }
 
@@ -368,8 +409,18 @@ final class BatchExportModel: ObservableObject {
 
     func discardTask() -> Bool {
         guard !running, !validating, !previewing else { return false }
-        do { try journal.discard(job); onDiscard(); return true }
-        catch { self.error = error.localizedDescription; return false }
+        do {
+            try journal.discard(job)
+            let notice = consumeQuarantinedNotice()
+            self.error = notice
+            onDiscard()
+            if let notice { onQuarantineOnDiscard(notice) }
+            return true
+        } catch {
+            _ = journal.consumeQuarantinedError()
+            self.error = error.localizedDescription
+            return false
+        }
     }
 
     func inspect(_ item: BatchExportItem) {

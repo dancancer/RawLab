@@ -80,11 +80,18 @@ public sealed class UpdateTaskState
         if (!Accepts(token, UpdatePhase.Installing)) return false;
         Phase = UpdatePhase.PendingRestart; return true;
     }
-    public bool Fail(string code, string detail, Guid token)
+    public bool Fail(string code, string detail, Guid token) => Fail(Phase, code, detail, token);
+    public bool Fail(UpdatePhase stage, string code, string detail, Guid token)
     {
-        if (token != Attempt || Phase is UpdatePhase.Idle or UpdatePhase.Available or UpdatePhase.Complete or UpdatePhase.Failed) return false;
-        if (Phase != UpdatePhase.Checking) Choice = UpdateInstallChoice.None;
-        Failure = new(Phase, code, detail); Phase = UpdatePhase.Failed;
+        if (token != Attempt || Phase is UpdatePhase.Idle or UpdatePhase.Available or UpdatePhase.Complete or UpdatePhase.Failed ||
+            stage is UpdatePhase.Idle or UpdatePhase.Available or UpdatePhase.Complete or UpdatePhase.Failed ||
+            string.IsNullOrEmpty(code) || detail == null) return false;
+        if (Phase != UpdatePhase.Checking || stage != UpdatePhase.Checking) Choice = UpdateInstallChoice.None;
+        if (stage is not (UpdatePhase.Installing or UpdatePhase.PendingRestart))
+        {
+            BackupPath = null; PreviousVersion = null; PreviousBuild = null;
+        }
+        Failure = new(stage, code, detail); Phase = UpdatePhase.Failed;
         Attempt = Guid.NewGuid(); Blockers = []; return true;
     }
     public void Cancel(bool preservingChoice = false)
@@ -162,6 +169,11 @@ internal static class UpdatePresentation
         var header = $"{checkFailure.Category}\n{checkFailure.FailedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture)}";
         return string.IsNullOrEmpty(checkFailure.Detail) ? header : header + "\n" + checkFailure.Detail;
     }
+    public static bool IsRejected(UpdateFailure failure) =>
+        failure.Stage == UpdatePhase.Verifying && failure.Code != "trust_temporary";
+    public static string? FailureHeading(UpdateFailure failure, bool requiresRecovery) =>
+        requiresRecovery ? "更新未完成，请查看恢复说明" :
+        IsRejected(failure) ? "验证失败" : null;
     public static string Phase(UpdatePhase phase) => phase switch
     {
         UpdatePhase.Idle => "尚未发现可安装的更新",

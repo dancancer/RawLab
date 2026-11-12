@@ -61,7 +61,8 @@ public sealed class SoftwareUpdateWindow : Window
                 }
             }
             if(updates.State.Failure is {} failure && failure.Stage!=UpdatePhase.Checking) {
-                AddText("更新未完成，请查看恢复说明",true);AddText(UpdatePresentation.Phase(failure.Stage));
+                if(UpdatePresentation.FailureHeading(failure,updates.RequiresRecovery) is {} heading)AddText(heading,true);
+                AddText(UpdatePresentation.Phase(failure.Stage));
                 panel.Children.Add(Disclosure("错误详情",Text(failure.Code+"\n"+failure.Detail)));
             } else if(UpdatePresentation.CheckFailureDetail(updates.Preferences) is {} checkDetail) {
                 if(UpdatePresentation.ShowsCheckFailureNotice(updates.Preferences))

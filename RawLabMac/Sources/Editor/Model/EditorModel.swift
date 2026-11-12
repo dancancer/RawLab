@@ -376,7 +376,11 @@ final class EditorModel: ObservableObject {
         do { editStore = try EditPersistence(directory: editDirectory) }
         catch { saveError = L10n.format("无法读取调整记录：%@", String(describing: error.localizedDescription)) }
         do {
-            if let job = try batchJournal.load() { attachBatch(job) }
+            if let job = try batchJournal.load() {
+                attachBatch(job)
+            } else if let quarantined = batchJournal.consumeQuarantinedError() {
+                self.error = L10n.format("无法读取上次批量任务：%@", String(describing: quarantined.localizedDescription))
+            }
         } catch { updateJournalLoadFailed = true; self.error = L10n.format("无法读取上次批量任务：%@", String(describing: error.localizedDescription)) }
         let timer = DispatchSource.makeTimerSource(queue: debounceQueue)
         timer.setEventHandler { [weak self] in

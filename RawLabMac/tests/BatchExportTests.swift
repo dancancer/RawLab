@@ -103,6 +103,226 @@ private func perTargetSnapshots(root: URL, inputs: [URL], output: URL) throws {
     }
 }
 
+private func journalIsolation(root: URL, inputs: [URL], output: URL) throws {
+    let isolationRoot = root.appendingPathComponent("journal-isolation")
+    let corruptJournal = BatchJournal(directory: isolationRoot.appendingPathComponent("corrupt"))
+    try FileManager.default.createDirectory(at: corruptJournal.directory, withIntermediateDirectories: true)
+    let corruptURL = corruptJournal.directory.appendingPathComponent("job.json")
+    let corruptBytes = Data("{corrupt-batch-journal".utf8)
+    try corruptBytes.write(to: corruptURL)
+
+    try check(try corruptJournal.load() == nil, "corrupt job.json isolates to empty state without throwing")
+    try check(!FileManager.default.fileExists(atPath: corruptURL.path), "corrupt job.json is moved out of active path")
+    guard let firstArchive = corruptJournal.lastQuarantinedURL else {
+        throw Failure(message: "corrupt job.json must record its archive URL")
+    }
+    try check(firstArchive.deletingLastPathComponent().standardizedFileURL == corruptJournal.directory.standardizedFileURL &&
+              firstArchive.lastPathComponent.hasPrefix("job.json.corrupt-"),
+              "corrupt job.json is renamed under job.json.corrupt-<timestamp>")
+    try check(try Data(contentsOf: firstArchive) == corruptBytes, "archived corrupt job.json preserves original bytes")
+    guard let loadNotice = corruptJournal.consumeQuarantinedError() else {
+        throw Failure(message: "corrupt job.json must surface an isolation error for user notice")
+    }
+    try check(corruptJournal.consumeQuarantinedError() == nil, "quarantined error is consumed once")
+    try check(L10n.format("无法读取上次批量任务：%@", String(describing: loadNotice.localizedDescription))
+        .contains(loadNotice.localizedDescription), "existing localized batch recovery notice formats quarantined error")
+
+    var recoveredJob = BatchExportJob(source: inputs[0], settings: Adjustments(), look: nil, lookName: "Recovered")
+    recoveredJob.outputDirectory = output
+    recoveredJob.items = [try BatchExportItem(url: inputs[0])]
+    recoveredJob.items[0].selected = true
+    try corruptJournal.save(recoveredJob)
+    try check(try corruptJournal.load()?.id == recoveredJob.id, "save creates a new batch job after corrupt journal isolation")
+    try check(try Data(contentsOf: firstArchive) == corruptBytes, "saving a new job retains the archived corrupt file on disk")
+
+    var semanticBadObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(recoveredJob)) as! [String: Any]
+    semanticBadObject["settings_mode"] = "per_target_frozen"
+    let semanticJobBytes = try JSONSerialization.data(withJSONObject: semanticBadObject)
+    try semanticJobBytes.write(to: corruptURL)
+    let replacementJob = BatchExportJob(source: inputs[1], settings: Adjustments(), look: nil, lookName: "Replacement")
+    try corruptJournal.save(replacementJob)
+    guard let secondArchive = corruptJournal.lastQuarantinedURL else {
+        throw Failure(message: "semantically unusable job.json must be archived on save")
+    }
+    try check(secondArchive != firstArchive && (try Data(contentsOf: secondArchive)) == semanticJobBytes &&
+              (try Data(contentsOf: firstArchive)) == corruptBytes,
+              "direct save archives semantically unusable job.json without colliding with prior corrupt archives")
+    try check(corruptJournal.consumeQuarantinedError() != nil && (try corruptJournal.load()?.id) == replacementJob.id,
+              "direct save records quarantine error and persists replacement job")
+
+    var badParamObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(replacementJob)) as! [String: Any]
+    var badSettings = badParamObject["settings"] as! [String: Any]
+    badSettings["toneControls"] = ["blackPoint": 999, "whitePoint": 0, "vibrance": 0]
+    badParamObject["settings"] = badSettings
+    let badParamBytes = try JSONSerialization.data(withJSONObject: badParamObject)
+    try badParamBytes.write(to: corruptURL)
+    try corruptJournal.discard(replacementJob)
+    guard let thirdArchive = corruptJournal.lastQuarantinedURL else {
+        throw Failure(message: "discard must quarantine rather than delete a damaged job.json")
+    }
+    try check(thirdArchive != firstArchive && thirdArchive != secondArchive &&
+              (try Data(contentsOf: thirdArchive)) == badParamBytes &&
+              !FileManager.default.fileExists(atPath: corruptURL.path),
+              "discard preserves damaged job.json bytes on disk while clearing active journal state")
+    try check(corruptJournal.consumeQuarantinedError() != nil, "discard records quarantined error for caller consumption")
+
+    // Unconsumed quarantinedError must be cleared on entry to the next read/save/discard rather than leaking.
+    let unconsumedBytes = Data("{unconsumed-quarantine".utf8)
+    try unconsumedBytes.write(to: corruptURL)
+    try corruptJournal.discard(replacementJob)
+    try check(try corruptJournal.load() == nil && corruptJournal.consumeQuarantinedError() == nil,
+              "next healthy load clears any unconsumed quarantinedError")
+    try unconsumedBytes.write(to: corruptURL)
+    _ = try corruptJournal.load()
+    try corruptJournal.save(recoveredJob)
+    try check(corruptJournal.consumeQuarantinedError() == nil,
+              "next healthy save clears any unconsumed quarantinedError")
+
+    // Runner checkpoint saves forward mid-session quarantine error once without leaving stale state.
+    let runnerCorruptBytes = Data("{corrupt-before-runner".utf8)
+    try runnerCorruptBytes.write(to: corruptURL)
+    var runnerJob = recoveredJob
+    var runnerQuarantineCount = 0
+    try BatchExportRunner.run(job: &runnerJob, journal: corruptJournal, scope: .unfinished,
+                              shouldCancel: { false }, onQuarantine: { _ in runnerQuarantineCount += 1 }) { _, _, _, destination in
+        try Data("runner-ok".utf8).write(to: destination)
+    }
+    try check(runnerQuarantineCount == 1 && corruptJournal.consumeQuarantinedError() == nil &&
+              (try Data(contentsOf: corruptJournal.lastQuarantinedURL!)) == runnerCorruptBytes,
+              "runner forwards quarantine notice once across checkpoint saves and leaves no residual error")
+
+    // Semantic validation coverage: uniform longEdge, scalars, photoEffects, denoise, and unknown masterRecipeID.
+    let baseUniformObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(recoveredJob)) as! [String: Any]
+    let baseSettingsObject = baseUniformObject["settings"] as! [String: Any]
+    let semanticCases: [(String, (inout [String: Any], inout [String: Any]) -> Void)] = [
+        ("uniform longEdge zero", { jobObj, _ in jobObj["longEdge"] = 0 }),
+        ("uniform longEdge above ceiling", { jobObj, _ in jobObj["longEdge"] = 70000 }),
+        ("out-of-range scalar exposure", { _, settingsObj in settingsObj["exposure"] = 99.0 }),
+        ("out-of-range photoEffects", { _, settingsObj in
+            settingsObj["photoEffects"] = [
+                "vignetteAmount": 999.0, "vignetteMidpoint": 50.0, "vignetteRoundness": 0.0,
+                "vignetteFeather": 50.0, "vignetteHighlights": 0.0,
+                "grainAmount": 0.0, "grainSize": 25.0, "grainRoughness": 50.0
+            ]
+        }),
+        ("out-of-range rawNoiseReduction", { _, settingsObj in settingsObj["rawNoiseReduction"] = 99.0 }),
+        ("out-of-range chromaNoiseReduction", { _, settingsObj in settingsObj["chromaNoiseReduction"] = 5.0 }),
+        ("out-of-range waveletNoiseReduction", { _, settingsObj in
+            settingsObj["waveletNoiseReduction"] = [
+                "enabled": true, "preset": "custom", "luma": 999.0, "chroma": 50.0, "coarse": 50.0
+            ]
+        }),
+        ("unknown masterRecipeID", { _, settingsObj in
+            settingsObj["masterRecipeID"] = "nonexistent-master-recipe"
+            settingsObj["masterRecipeSettingsVersion"] = 4
+        })
+    ]
+    let semanticJournal = BatchJournal(directory: isolationRoot.appendingPathComponent("semantic-fields"))
+    try FileManager.default.createDirectory(at: semanticJournal.directory, withIntermediateDirectories: true)
+    let semanticURL = semanticJournal.directory.appendingPathComponent("job.json")
+    for (label, mutate) in semanticCases {
+        var jobObj = baseUniformObject
+        var settingsObj = baseSettingsObject
+        mutate(&jobObj, &settingsObj)
+        jobObj["settings"] = settingsObj
+        let badData = try JSONSerialization.data(withJSONObject: jobObj)
+        let decodedUniform = try JSONDecoder().decode(BatchExportJob.self, from: badData)
+        var saveRejected = false
+        do { try semanticJournal.save(decodedUniform) } catch { saveRejected = true }
+        try check(saveRejected, "\(label): uniform job save rejects semantically unusable value")
+        try badData.write(to: semanticURL)
+        try check(try semanticJournal.load() == nil, "\(label): uniform job load isolates semantically unusable value")
+        guard let archived = semanticJournal.lastQuarantinedURL, semanticJournal.consumeQuarantinedError() != nil else {
+            throw Failure(message: "\(label): uniform job load must archive and record quarantine error")
+        }
+        try check((try Data(contentsOf: archived)) == badData && !FileManager.default.fileExists(atPath: semanticURL.path),
+                  "\(label): uniform job load preserves archived bytes")
+    }
+
+    // Per-target frozen settings also enforce Adjustmens.validateResetValues() (scalars, effects, denoise, unknown recipe).
+    let dummyLook = isolationRoot.appendingPathComponent("dummy.cube")
+    try Data("LUT_3D_SIZE 2\n".utf8).write(to: dummyLook)
+    let dummyChecksum = try BatchFrozenSettings.checksum(dummyLook)
+    for (label, mutate) in semanticCases where !label.hasPrefix("uniform longEdge") {
+        var perTargetObj = baseUniformObject
+        perTargetObj["version"] = 3
+        perTargetObj["settings_mode"] = "per_target_frozen"
+        var itemRows = perTargetObj["items"] as! [[String: Any]]
+        var frozenSettingsObj = baseSettingsObject
+        var ignoredJobObj = perTargetObj
+        mutate(&ignoredJobObj, &frozenSettingsObj)
+        var frozenObj: [String: Any] = [
+            "version": 1, "settingsVersion": 1, "ordinal": 0,
+            "settings": frozenSettingsObj,
+            "lookName": "Frozen", "outputFormat": "png", "longEdge": 1024
+        ]
+        if frozenSettingsObj["masterRecipeID"] != nil {
+            frozenObj["look"] = dummyLook.absoluteString
+            frozenObj["lookSHA256"] = dummyChecksum
+        }
+        itemRows[0]["frozen"] = frozenObj
+        perTargetObj["items"] = itemRows
+        let badFrozenData = try JSONSerialization.data(withJSONObject: perTargetObj)
+        let decodedFrozen = try JSONDecoder().decode(BatchExportJob.self, from: badFrozenData)
+        var frozenRejected = false
+        do { try semanticJournal.save(decodedFrozen) } catch { frozenRejected = true }
+        try check(frozenRejected, "\(label): per-target frozen job save rejects semantically unusable value")
+        try badFrozenData.write(to: semanticURL)
+        try check(try semanticJournal.load() == nil && semanticJournal.consumeQuarantinedError() != nil,
+                  "\(label): per-target frozen job load isolates semantically unusable value")
+        try check((try Data(contentsOf: semanticJournal.lastQuarantinedURL!)) == badFrozenData,
+                  "\(label): per-target frozen job load preserves archived bytes")
+    }
+
+    let dirAtJobJournal = BatchJournal(directory: isolationRoot.appendingPathComponent("dir-at-job"))
+    let dirJobURL = dirAtJobJournal.directory.appendingPathComponent("job.json")
+    try FileManager.default.createDirectory(at: dirJobURL, withIntermediateDirectories: true)
+    do { _ = try dirAtJobJournal.load(); throw Failure(message: "directory at job.json must fail-closed on load") }
+    catch is CocoaError { }
+    do { try dirAtJobJournal.save(recoveredJob); throw Failure(message: "directory at job.json must fail-closed on save") }
+    catch is CocoaError { }
+    do { try dirAtJobJournal.discard(recoveredJob); throw Failure(message: "directory at job.json must fail-closed on discard") }
+    catch is CocoaError { }
+    try check((try FileManager.default.attributesOfItem(atPath: dirJobURL.path)[.type] as? FileAttributeType) == .typeDirectory,
+              "directory at job.json remains untouched")
+
+    let symlinkJournal = BatchJournal(directory: isolationRoot.appendingPathComponent("symlink-at-job"))
+    try FileManager.default.createDirectory(at: symlinkJournal.directory, withIntermediateDirectories: true)
+    let symlinkURL = symlinkJournal.directory.appendingPathComponent("job.json")
+    try FileManager.default.createSymbolicLink(atPath: symlinkURL.path, withDestinationPath: "missing-target.json")
+    do { _ = try symlinkJournal.load(); throw Failure(message: "symlink at job.json must fail-closed on load") }
+    catch is CocoaError { }
+    do { try symlinkJournal.save(recoveredJob); throw Failure(message: "symlink at job.json must fail-closed on save") }
+    catch is CocoaError { }
+    try check((try FileManager.default.attributesOfItem(atPath: symlinkURL.path)[.type] as? FileAttributeType) == .typeSymbolicLink,
+              "symlink at job.json remains untouched")
+
+    let fileBatchPath = isolationRoot.appendingPathComponent("file-as-batch-dir")
+    let fileBatchBytes = Data("not-a-directory".utf8)
+    try fileBatchBytes.write(to: fileBatchPath)
+    let fileDirJournal = BatchJournal(directory: fileBatchPath)
+    do { _ = try fileDirJournal.load(); throw Failure(message: "non-directory batch container must fail-closed on load") }
+    catch is CocoaError { }
+    do { try fileDirJournal.save(recoveredJob); throw Failure(message: "non-directory batch container must fail-closed on save") }
+    catch is CocoaError { }
+    try check(try Data(contentsOf: fileBatchPath) == fileBatchBytes, "non-directory batch container remains untouched")
+
+    let futureSchemaJournal = BatchJournal(directory: isolationRoot.appendingPathComponent("future-schema"))
+    try FileManager.default.createDirectory(at: futureSchemaJournal.directory, withIntermediateDirectories: true)
+    var futureSchemaObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(recoveredJob)) as! [String: Any]
+    futureSchemaObject["version"] = 99
+    let futureSchemaBytes = try JSONSerialization.data(withJSONObject: futureSchemaObject)
+    let futureSchemaURL = futureSchemaJournal.directory.appendingPathComponent("job.json")
+    try futureSchemaBytes.write(to: futureSchemaURL)
+    do { _ = try futureSchemaJournal.load(); throw Failure(message: "future journal schema must fail-closed on load") }
+    catch is CocoaError { }
+    do { try futureSchemaJournal.save(recoveredJob); throw Failure(message: "future journal schema must fail-closed on save") }
+    catch is CocoaError { }
+    try check(try Data(contentsOf: futureSchemaURL) == futureSchemaBytes,
+              "future schema batch journal remains intact in place")
+    print("PASS: batch journal isolation, quarantine notice lifecycle and semantic validation")
+}
+
 @main struct BatchExportTests {
     static func main() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -113,6 +333,7 @@ private func perTargetSnapshots(root: URL, inputs: [URL], output: URL) throws {
         let output = root.appendingPathComponent("output")
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         try perTargetSnapshots(root: root, inputs: inputs, output: output)
+        try journalIsolation(root: root, inputs: inputs, output: output)
         let existing = output.appendingPathComponent("one-Velvia.jpg")
         try Data("existing".utf8).write(to: existing)
         var settings = Adjustments(); settings.exposure = 0.75

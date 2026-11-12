@@ -260,6 +260,86 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
             "each photo freezes its own look and retains task-owned copy after library removal")
         try check(model.batch!.discardDraft() && model.batch == nil, "discarding a frozen draft frees its task and owned resources")
         try check(!FileManager.default.fileExists(atPath: job.items[0].frozen!.look!.path), "discard cleans task-owned look")
+        do {
+            let corruptBatchDir = root.appendingPathComponent("editor-corrupt-batch")
+            try FileManager.default.createDirectory(at: corruptBatchDir, withIntermediateDirectories: true)
+            let corruptPayload = Data("{broken-editor-batch".utf8)
+            try corruptPayload.write(to: corruptBatchDir.appendingPathComponent("job.json"))
+            let recovered = EditorModel(lookDirectory: root.appendingPathComponent("editor-corrupt-looks"),
+                editDirectory: root.appendingPathComponent("editor-corrupt-edits"),
+                batchDirectory: corruptBatchDir,
+                presetDirectory: root.appendingPathComponent("editor-corrupt-presets"))
+            try check(recovered.batch == nil && !recovered.updateJournalLoadFailed && recovered.error != nil,
+                "EditorModel isolates corrupt startup batch journal into empty state with user notice")
+            guard let archive = recovered.batchJournal.lastQuarantinedURL else {
+                throw NSError(domain: "missing archived corrupt journal", code: 1)
+            }
+            try check(try Data(contentsOf: archive) == corruptPayload,
+                "EditorModel startup preserves corrupt job.json bytes on disk")
+            recovered.open(fixture)
+            try rendered(recovered)
+            try check(recovered.prepareBatch() && recovered.batch != nil &&
+                      recovered.error == nil && recovered.batch?.error == nil,
+                "EditorModel prepareBatch succeeds after corrupt journal isolation without residual notice")
+            try check(try Data(contentsOf: archive) == corruptPayload,
+                "prepareBatch retains archived corrupt job.json alongside the new job")
+
+            let corruptURL = corruptBatchDir.appendingPathComponent("job.json")
+            let runtimeDraftPayload = Data("{corrupt-during-runtime-draft".utf8)
+            try runtimeDraftPayload.write(to: corruptURL)
+            recovered.batch!.setLongEdge(2048)
+            guard let draftArchive = recovered.batchJournal.lastQuarantinedURL else {
+                throw NSError(domain: "missing runtime draft archive", code: 1)
+            }
+            try check(recovered.batch?.error != nil && recovered.error == nil &&
+                      (try Data(contentsOf: draftArchive)) == runtimeDraftPayload,
+                "runtime saveDraft quarantine prompts once on BatchExportModel and preserves corrupt bytes")
+            recovered.batch!.setLongEdge(1024)
+            try check(recovered.batch?.error == nil && recovered.error == nil,
+                "subsequent healthy draft save clears BatchExportModel error without residual notice")
+
+            let runtimeDiscardPayload = Data("{corrupt-during-discard".utf8)
+            try runtimeDiscardPayload.write(to: corruptURL)
+            try check(recovered.batch!.discardTask() && recovered.batch == nil && recovered.error != nil,
+                "runtime discardTask quarantine prompts once on EditorModel when detaching batch")
+            guard let discardArchive = recovered.batchJournal.lastQuarantinedURL else {
+                throw NSError(domain: "missing runtime discard archive", code: 1)
+            }
+            try check(discardArchive != draftArchive && (try Data(contentsOf: discardArchive)) == runtimeDiscardPayload,
+                "runtime discardTask preserves corrupt job.json bytes without colliding with prior archives")
+            recovered.error = nil
+            try check(recovered.prepareBatch() && recovered.batch != nil &&
+                      recovered.error == nil && recovered.batch?.error == nil,
+                "subsequent healthy prepareBatch after runtime discard quarantine has no residual notice")
+            try check(recovered.batch!.discardTask() && recovered.error == nil,
+                "healthy discardTask leaves no notice")
+
+            recovered.addCollectionPhotos([photo])
+            let cleanOutput = root.appendingPathComponent("editor-corrupt-clean-output")
+            try FileManager.default.createDirectory(at: cleanOutput, withIntermediateDirectories: true)
+            let cleanReview = try recovered.prepareCollectionExport(skipping: [], format: .png, longEdge: nil, directory: cleanOutput)
+            _ = try recovered.freezeCollectionExport(cleanReview)
+            try check(recovered.batch != nil && recovered.error == nil && recovered.batch?.error == nil,
+                "subsequent healthy freezeCollectionExport has no residual quarantine notice")
+
+            let runtimeStartPayload = Data("{corrupt-before-start".utf8)
+            try runtimeStartPayload.write(to: corruptURL)
+            try check(recovered.batch!.start(), "frozen batch starts after mid-session journal corruption")
+            try BatchFlowModelTests.wait { recovered.batch?.running == false }
+            guard let startArchive = recovered.batchJournal.lastQuarantinedURL else {
+                throw NSError(domain: "missing runtime start archive", code: 1)
+            }
+            try check(recovered.batch?.job.succeededCount == 1 &&
+                      recovered.batch?.error != nil && recovered.error == nil &&
+                      startArchive != discardArchive &&
+                      (try Data(contentsOf: startArchive)) == runtimeStartPayload,
+                "runtime start quarantine prompts once on BatchExportModel across checkpoint saves and preserves bytes")
+            try check(recovered.batch!.discardTask() && recovered.error == nil,
+                "discarding completed batch after runtime start quarantine leaves no residual notice")
+            try check(recovered.prepareBatch() && recovered.error == nil && recovered.batch?.error == nil,
+                "subsequent prepareBatch after runtime start quarantine has no residual notice")
+            _ = recovered.batch?.discardTask()
+        }
     }
 
     static func rendered(_ model: EditorModel) throws {
