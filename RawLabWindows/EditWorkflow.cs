@@ -165,7 +165,7 @@ public partial class MainWindow
         editStore.Save(inputs, snapshot, look);
     }
 
-    private void RestoreEdits(string input)
+    private (PhotoEditState Record, Adjustments Settings) LoadEditsForOpen(string input)
     {
         editStore ??= new EditStore(EditStore.DefaultDirectory);
         PhotoEditState nextRecord;
@@ -193,6 +193,12 @@ public partial class MainWindow
             nextRecord = TransferSession.ResetToUnmodified(input);
             nextSettings = PhotoInput.PrepareDefaultSettings(input);
         }
+        return (nextRecord, nextSettings);
+    }
+
+    private void RestoreEdits(string input)
+    {
+        var (nextRecord, nextSettings) = TransferSession.RepairLegacyNormalX3fOnOpen(input, LoadEditsForOpen);
         var saved = nextRecord.Edit;
         currentEditRecord=nextRecord;processingMigrationReceipt=editStore.ReadProcessingMigration(input);editGesture=null;pendingMigrationReceiptClear=false;settings=nextSettings;
         lut = saved == null ? null : ResolveLook(saved);

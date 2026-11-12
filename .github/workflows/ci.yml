@@ -117,7 +117,6 @@ jobs:
           out="$out_dir/abi-layout-v1.json"
           CXX=clang++ ABI_LAYOUT_OUT="$out" bash Shared/fixtures/generate-abi-layout.sh
           diff -u Shared/fixtures/abi-layout-v1.json "$out"
-          cmp -s "$out" Shared/fixtures/abi-layout-v1.json
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
@@ -276,7 +275,11 @@ jobs:
   windows:
     name: Windows ${{ needs.changes.outputs.checks }}
     needs: changes
-    if: needs.changes.outputs.windows == 'true'
+    # 自托管 runner 只在同仓库分支上执行：fork 的 PR 会带来任意代码。
+    if: >-
+      needs.changes.outputs.windows == 'true' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ${{ fromJSON(needs.changes.outputs.windows_runner) }}
     timeout-minutes: 120
     env:
@@ -538,7 +541,11 @@ jobs:
   ios:
     name: iOS ${{ needs.changes.outputs.checks }}
     needs: changes
-    if: needs.changes.outputs.ios == 'true'
+    # 自托管 runner 只在同仓库分支上执行：fork 的 PR 会带来任意代码。
+    if: >-
+      needs.changes.outputs.ios == 'true' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, macOS, ARM64, rawlab-apple]
     timeout-minutes: 180
     env:

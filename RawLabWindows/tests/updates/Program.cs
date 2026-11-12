@@ -7,7 +7,7 @@ static void Check(bool condition, string label)
 {
     if (!condition) throw new Exception(label);
 }
-static string Payload(string tag, bool draft = false, bool preview = false, string asset = "RawLab-Windows-0.5.0-win-x64.zip") =>
+static string Payload(string tag, bool draft = false, bool preview = false, string asset = "RawLab-Windows-0.5.0-x64.zip") =>
     JsonSerializer.Serialize(new { tag_name = tag, draft, prerelease = preview, body = "Notes", assets = new[] { new { name = asset } } });
 static UpdateRelease? Release(string tag) => UpdateRelease.Parse(Payload(tag), "0.4.0");
 InstallStateChecks.Run(Check);
@@ -25,6 +25,7 @@ foreach (var tag in new[] { "v0.5.0-beta", "v0.5.0/evil", "bad", "0.-1.0" })
 }
 Check(UpdateRelease.Parse(Payload("v0.5.0", draft: true), "0.4.0") == null, "draft");
 Check(UpdateRelease.Parse(Payload("v0.5.0", preview: true), "0.4.0") == null, "preview");
+Check(UpdateRelease.Parse(Payload("v0.5.0", asset: "RawLab-Windows-0.5.0-win-x64.zip"), "0.4.0")?.Version == "0.5.0", "legacy win-x64 zip asset");
 Check(UpdateRelease.Parse(Payload("v0.5.0", asset: "RawLab-Android.apk"), "0.4.0") == null, "platform asset");
 Check(UpdateRelease.ShouldCheck(true, false, 100, 101), "manual check bypasses opt-out");
 Check(!UpdateRelease.ShouldCheck(false, false, 0, 100000), "automatic opt-out");

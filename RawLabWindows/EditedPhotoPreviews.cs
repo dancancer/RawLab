@@ -36,15 +36,16 @@ internal sealed class EditedPhotoPreviews(EditStore store, string? cacheDirector
     }
 
     internal Task<PhotoEditState> ReadStateAsync(string path,CancellationToken cancellation) =>
-        Task.Run(()=>Store.ReadState(path),cancellation);
+        Task.Run(()=>EditedPhotoPreviewKey.ReadState(Store,path),cancellation);
 
     internal Task<BitmapSource> ImageAsync(PhotoEditState record,string? look,int aiBackend,string aiDevice,CancellationToken cancellation)
     {
+        record=EditedPhotoPreviewKey.PrepareState(record);
         if(record.Edit is {} edit) {
             resourceWatch ??=new PhotoPreviewResourceWatch(()=>Ready?.Invoke(""));
             resourceWatch.Watch(EditedPhotoPreviewKey.ResourcePaths(edit.Settings,look));
         }
-        var task=RenderAsync(record.Copy(),look,aiBackend,aiDevice,cancellation);
+        var task=RenderAsync(record,look,aiBackend,aiDevice,cancellation);
         Track(task);return task;
     }
     private async Task<BitmapSource> RenderAsync(PhotoEditState record,string? look,int aiBackend,string aiDevice,CancellationToken cancellation)
@@ -71,6 +72,7 @@ internal sealed class EditedPhotoPreviews(EditStore store, string? cacheDirector
                 using var engine=new RenderEngine(gpuMode:1,aiBackend:aiBackend,aiDeviceID:aiDevice);
                 engine.SetCancellation(token);
                 var settings=edit.Settings.Restore();
+                settings.RepairLegacyNormalX3f(record.Identity.Path);
                 if(settings.ActiveAIDenoise) {
                     RenderEngine.ValidateAIInput(record.Identity.Path,aiDevice,settings.X3fMode);
                     var job=new AIDenoiseJob((identity,snapshot,progress)=>engine.PrepareAI(identity.Source.Path,snapshot,progress));
@@ -124,7 +126,7 @@ internal sealed class EditedPhotoPreviews(EditStore store, string? cacheDirector
     }
     private void RequireCurrent(PhotoEditState record,string? look,string key,int backend,string device)
     {
-        if(!record.SameAs(Store.ReadState(record.Identity.Path)) ||
+        if(!record.SameAs(EditedPhotoPreviewKey.ReadState(Store,record.Identity.Path)) ||
             key!=EditedPhotoPreviewKey.Create(record,look,aiBackend:backend,aiDevice:device))throw new AdjustmentOperationExpiredException();
     }
     internal static byte[] Encode(BitmapSource image)

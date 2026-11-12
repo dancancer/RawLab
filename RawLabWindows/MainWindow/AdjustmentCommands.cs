@@ -71,6 +71,7 @@ public partial class MainWindow
                         var record=editStore!.ReadState(path);
                         if(!record.Identity.SameFile(identity))throw new PhotoChangedException();
                         var defaults=record.Edit?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(path);
+                        defaults.RepairLegacyNormalX3f(path);
                         (double Temperature,double Tint)? calibration=null;
                         if(raw) {
                             using var native=new RenderEngine(1);
