@@ -26,6 +26,7 @@ data class AdjustmentHistoryTransaction(val id: UUID, val action: Action, val fi
 
 /** prepare 只读；提交和历史在同一后台队列执行，界面只读取已发布的历史快照。 */
 class AdjustmentTransferSession(private val store: EditStore) {
+    private val stateLock = Any()
     private val outcomes = mutableMapOf<UUID, MutableMap<String, AdjustmentOutcome>>()
     /** 本会话最后一次成功提交的记录，不写入磁盘。 */
     private val knownRecords = ConcurrentHashMap<String, PhotoEditState>()
@@ -34,28 +35,45 @@ class AdjustmentTransferSession(private val store: EditStore) {
     private val historyHeads = mutableMapOf<String, UUID?>()
     private val sourceValidators = ConcurrentHashMap<String, () -> Unit>()
     @Volatile private var history = emptyList<AdjustmentHistoryTransaction>()
-    val transactions: List<AdjustmentHistoryTransaction> get() = history.toList()
+    val transactions: List<AdjustmentHistoryTransaction> get() = synchronized(stateLock) { history.toList() }
     var clipboard: AdjustmentPayload? = null
         private set
 
-    fun editGeneration(identity: PhotoIdentity): Long = editGenerations[identity.value] ?: 0L
-    fun isCurrentSave(saved: PhotoEditState): Boolean = saved.sameAs(knownRecords[saved.identity.value])
+    fun editGeneration(identity: PhotoIdentity): Long = synchronized(stateLock) { editGenerations[identity.value] ?: 0L }
+    fun isCurrentSave(saved: PhotoEditState): Boolean = synchronized(stateLock) { saved.sameAs(knownRecords[saved.identity.value]) }
 
     fun adoptProcessingMigration(saved: PhotoEditState) {
-        history = history.map { transaction ->
-            transaction.copy(parts = transaction.parts.filter { it.identity != saved.identity })
-        }.filter { it.parts.isNotEmpty() }
-        historyHeads.remove(saved.identity.value)
-        remember(saved)
+        synchronized(stateLock) {
+            history = history.map { transaction ->
+                transaction.copy(parts = transaction.parts.filter { it.identity != saved.identity })
+            }.filter { it.parts.isNotEmpty() }
+            historyHeads.remove(saved.identity.value)
+            remember(saved)
+        }
     }
 
     fun resetToUnmodified(identity: PhotoIdentity): PhotoEditState =
         store.resetToUnmodified(identity).also(::adoptProcessingMigration)
 
-    fun refreshSource(identity: PhotoIdentity, validate: () -> Unit) {
-        if (knownRecords.containsKey(identity.value)) sourceValidators[identity.value] = validate
+    fun refreshSource(
+        identity: PhotoIdentity,
+        validate: () -> Unit,
+        record: PhotoEditState? = null,
+        isCurrent: () -> Boolean = { true },
+    ) {
+        synchronized(stateLock) {
+            if (!isCurrent()) return
+            val key = identity.value
+            val known = knownRecords[key] ?: return
+            if (record != null && !record.sameAs(known)) {
+                knownRecords[key] = record.copySettings()
+                editGenerations.merge(key, 1L, Long::plus)
+                historyHeads.remove(key)
+            }
+            sourceValidators[key] = validate
+        }
     }
-    fun retainsSource(identity: PhotoIdentity) = knownRecords.containsKey(identity.value)
+    fun retainsSource(identity: PhotoIdentity) = synchronized(stateLock) { knownRecords.containsKey(identity.value) }
     fun copy(scope: AdjustmentScope, settings: EditSettings, context: AdjustmentTransferContext): AdjustmentPayload {
         val captured = AdjustmentTransfer.capture(scope, settings, context)
         clipboard = captured
@@ -105,8 +123,10 @@ class AdjustmentTransferSession(private val store: EditStore) {
                     if (target.unchanged) AdjustmentOutcome(target.id, AdjustmentStatus.UNCHANGED, saved = target.original)
                     else {
                         val saved = store.save(target.original.identity, target.candidate)
-                        record(operation.id, operation.action, operation.payload.fields, target.displayName,
-                            target.original, saved, target.validateHistorySource)
+                        synchronized(stateLock) {
+                            record(operation.id, operation.action, operation.payload.fields, target.displayName,
+                                target.original, saved, target.validateHistorySource)
+                        }
                         AdjustmentOutcome(target.id, AdjustmentStatus.APPLIED, saved = saved)
                     }
                 } catch (error: PhotoChangedException) {
@@ -124,23 +144,33 @@ class AdjustmentTransferSession(private val store: EditStore) {
     fun commitEdit(before: PhotoEditState, settings: EditSettings, displayName: String = before.identity.value,
         defaultSettings: EditSettings? = null, isCurrent: () -> Boolean = { true }, validateSource: (() -> Unit)? = null,
         validateHistorySource: (() -> Unit)? = validateSource,
-        clearProcessingMigration: Boolean = false): AdjustmentOutcome {
+        clearProcessingMigration: Boolean = false,
+        acceptCommit: (PhotoEditState) -> Boolean = { true }): AdjustmentOutcome {
         val id = before.identity.value
         if (!isCurrent()) return AdjustmentOutcome(id, AdjustmentStatus.BLOCKED, error = draftError())
         return try {
             validateSource?.invoke()
+            if (!isCurrent()) return AdjustmentOutcome(id, AdjustmentStatus.BLOCKED, error = draftError())
             // 普通保存优先使用本会话最新已提交记录，不被旧快照阻挡。
-            val current = knownRecords[id]?.takeIf { it.identity == before.identity } ?: before
+            val current = synchronized(stateLock) { knownRecords[id]?.takeIf { it.identity == before.identity } ?: before }
             val desired = if (current.settings == null && settings == defaultSettings) null else settings
             if (desired == current.settings) {
                 val saved = if (clearProcessingMigration) store.save(current.identity, desired, clearProcessingMigration = true) else current
-                if (validateHistorySource != null) sourceValidators[id] = validateHistorySource
-                if (clearProcessingMigration) knownRecords[id] = saved else knownRecords.putIfAbsent(id, current)
+                synchronized(stateLock) {
+                    if (acceptCommit(saved)) {
+                        if (validateHistorySource != null) sourceValidators[id] = validateHistorySource
+                        if (clearProcessingMigration) knownRecords[id] = saved else knownRecords.putIfAbsent(id, current)
+                    }
+                }
                 AdjustmentOutcome(id, AdjustmentStatus.UNCHANGED, saved = saved)
             } else {
                 val saved = store.save(current.identity, desired, clearProcessingMigration = clearProcessingMigration)
-                record(UUID.randomUUID(), AdjustmentHistoryTransaction.Action.EDIT, emptySet(), displayName, current, saved,
-                    validateHistorySource)
+                synchronized(stateLock) {
+                    if (acceptCommit(saved)) {
+                        record(UUID.randomUUID(), AdjustmentHistoryTransaction.Action.EDIT, emptySet(), displayName, current, saved,
+                            validateHistorySource)
+                    }
+                }
                 AdjustmentOutcome(id, AdjustmentStatus.APPLIED, saved = saved)
             }
         } catch (error: PhotoChangedException) { AdjustmentOutcome(id, AdjustmentStatus.CONFLICT, error = error) }
@@ -182,10 +212,13 @@ class AdjustmentTransferSession(private val store: EditStore) {
             if (key in skipping) continue
             try {
                 if (!isCurrent(key)) throw draftError()
-                sourceValidators[key]?.invoke()
-                val current = knownRecords[key] ?: throw PhotoChangedException()
+                val (validate, current, head) = synchronized(stateLock) {
+                    Triple(sourceValidators[key], knownRecords[key], historyHeads[key])
+                }
+                validate?.invoke()
+                if (current == null) throw PhotoChangedException()
                 if (current.identity != part.identity ||
-                    historyHeads[key] != (if (undo) part.id else part.priorHead) ||
+                    head != (if (undo) part.id else part.priorHead) ||
                     current.settings != (if (undo) part.after else part.before)) throw AdjustmentHistoryOrderException()
                 prepared[index] = current
             } catch (error: Exception) {
@@ -205,12 +238,15 @@ class AdjustmentTransferSession(private val store: EditStore) {
             if (!isCurrent(key)) return@map AdjustmentOutcome(key, AdjustmentStatus.BLOCKED,
                 error = draftError(), requiresHistoryDecision = true)
             try {
-                sourceValidators[key]?.invoke()
+                val validate = synchronized(stateLock) { sourceValidators[key] }
+                validate?.invoke()
                 val saved = store.save(current.identity, if (undo) part.before else part.after)
-                remember(saved); historyHeads[key] = if (undo) part.priorHead else part.id
-                val parts = history[transaction].parts.toMutableList()
-                parts[index] = part.copy(state = if (undo) AdjustmentHistoryTransaction.State.UNDONE else AdjustmentHistoryTransaction.State.APPLIED)
-                history = history.mapIndexed { i, item -> if (i == transaction) item.copy(parts = parts) else item }
+                synchronized(stateLock) {
+                    remember(saved); historyHeads[key] = if (undo) part.priorHead else part.id
+                    val parts = history[transaction].parts.toMutableList()
+                    parts[index] = part.copy(state = if (undo) AdjustmentHistoryTransaction.State.UNDONE else AdjustmentHistoryTransaction.State.APPLIED)
+                    history = history.mapIndexed { i, item -> if (i == transaction) item.copy(parts = parts) else item }
+                }
                 AdjustmentOutcome(key, AdjustmentStatus.APPLIED, saved = saved)
             } catch (error: PhotoChangedException) {
                 AdjustmentOutcome(key, AdjustmentStatus.CONFLICT, error = error, requiresHistoryDecision = true)

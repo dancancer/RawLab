@@ -824,13 +824,13 @@ class EditorViewModel @JvmOverloads constructor(
         if (!current.controlsEnabled) return
         if (current.draft != null) { changeDraft(edits, interactive); return }
         if (mutableQuickPreset.value.phase == QuickPresetPhase.PREPARING) cancelQuickPreset()
-        if (interactive && !adjustmentHistory.interacting) {
+        if (interactive) {
             val saved = adjustmentHistory.begin(current.photo!!, current.edits, sourceRevision)
             if (saved.state == EditSaveState.FAILED) {
                 mutable.value = current.copy(saveState = saved.state, saveError = saved.message)
                 return
             }
-        } else if (!interactive && !adjustmentHistory.finish(current.photo!!, sourceRevision)) return
+        } else if (!adjustmentHistory.finish(current.photo!!, sourceRevision)) return
         val look = current.looks.firstOrNull { it.id == edits.film }
         if (!edits.isHDREditing && look?.managed == true && !look.available) {
             mutable.value = current.copy(error = text(R.string.look_unavailable))
@@ -1050,7 +1050,7 @@ class EditorViewModel @JvmOverloads constructor(
             mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
             fadeSaveNotice(); completed(saved.state != EditSaveState.FAILED)
         }
-        if (photo != null && adjustmentHistory.loaded == null) {
+        if (photo != null && adjustmentHistory.snapshot().loaded == null) {
             val edits = mutable.value.edits
             commitAdjustments({ adjustmentHistory.recoverSource(photo) }) { result ->
                 result.fold({ record ->
@@ -1149,14 +1149,15 @@ class EditorViewModel @JvmOverloads constructor(
     private fun startProcessingMigrationIfNeeded() {
         val current = mutable.value
         val photo = current.photo ?: return
-        val expected = adjustmentHistory.loaded ?: return
+        val history = adjustmentHistory.snapshot()
+        val expected = history.loaded ?: return
         val original = expected.settings ?: return
         if (disposed || !editorActive || current.rendering || !current.exact || !current.controlsEnabled || current.draft != null ||
             current.saveState == EditSaveState.FAILED || current.edits.isHDREditing || current.edits.recipeID != null ||
-            current.edits.processing.version >= 3 || adjustmentHistory.interacting ||
+            current.edits.processing.version >= 3 || history.interacting ||
             processingMigrationAttemptSource == sourceRevision) return
         if (current.processingMigration?.shouldAttempt(original, original.processing.version) == false) return
-        val validation = runCatching { adjustmentHistory.committedValidation(photo, current.edits) }.getOrNull() ?: return
+        val validation = runCatching { history.committedValidation(photo, current.edits) }.getOrNull() ?: return
         val source = sourceRevision; val edit = editRevision; val snapshot = current.edits
         val mode = gpuMode(); val ticket = UUID.randomUUID()
         processingMigrationAttemptSource = source
@@ -1182,8 +1183,9 @@ class EditorViewModel @JvmOverloads constructor(
                 mutable.value.photo?.identity != photo.identity || mutable.value.edits != snapshot) return@post
             mutable.value = mutable.value.copy(matchingProcessing = false)
             val outcome = result.getOrNull() ?: return@post
-            if (mutable.value.committingAdjustments || adjustmentHistory.interacting || mutable.value.draft != null ||
-                mutable.value.operation != Operation.NONE) return@post
+            val postHistory = adjustmentHistory.snapshot()
+            if (mutable.value.committingAdjustments || postHistory.sourceToken != history.sourceToken || postHistory.interacting ||
+                mutable.value.draft != null || mutable.value.operation != Operation.NONE) return@post
             commitAdjustments({
                 if (processingMigrationRun != ticket || sourceRevision != source || editRevision != edit)
                     throw AdjustmentOperationExpiredException()
@@ -1200,7 +1202,7 @@ class EditorViewModel @JvmOverloads constructor(
                     mutable.value.photo?.identity != photo.identity || mutable.value.photo?.file != photo.file) return@commitAdjustments
                 committed.onSuccess { (saved, receipt) ->
                     // 成功返回即已落盘；取消可以阻止排队保存，不能丢弃已提交状态。
-                    if (!adjustmentHistory.acceptSaved(photo, saved)) return@onSuccess
+                    if (!adjustmentHistory.acceptSaved(photo, saved, history.sourceToken)) return@onSuccess
                     val migrated = receipt.status == ProcessingMigrationStatus.MIGRATED
                     editRevision += 1
                     if (migrated) {
@@ -1226,10 +1228,11 @@ class EditorViewModel @JvmOverloads constructor(
     fun rollbackProcessingMigration() {
         val current = mutable.value
         val photo = current.photo ?: return
-        val expected = adjustmentHistory.loaded ?: return
+        val history = adjustmentHistory.snapshot()
+        val expected = history.loaded ?: return
         if (current.processingMigration?.status != com.rawlab.android.settings.ProcessingMigrationStatus.MIGRATED ||
-            !current.controlsEnabled || current.draft != null || adjustmentHistory.interacting) return
-        val validation = runCatching { adjustmentHistory.committedValidation(photo, current.edits) }.getOrNull() ?: return
+            !current.controlsEnabled || current.draft != null || history.interacting) return
+        val validation = runCatching { history.committedValidation(photo, current.edits) }.getOrNull() ?: return
         cancelProcessingMigration()
         val source = sourceRevision; val edit = editRevision
         commitAdjustments({
@@ -1241,7 +1244,7 @@ class EditorViewModel @JvmOverloads constructor(
         }) { result ->
             if (sourceRevision != source || mutable.value.photo?.identity != photo.identity) return@commitAdjustments
             result.onSuccess { (saved, receipt) ->
-                adjustmentHistory.acceptSaved(photo, saved)
+                if (!adjustmentHistory.acceptSaved(photo, saved, history.sourceToken)) return@onSuccess
                 editRevision += 1
                 mutable.value = mutable.value.copy(edits = requireNotNull(saved.settings), processingMigration = receipt,
                     saveState = EditSaveState.SAVED, saveError = null)
@@ -1257,7 +1260,7 @@ class EditorViewModel @JvmOverloads constructor(
 
     private fun persist(photo: ImportedPhoto, edits: EditSettings, clearProcessingMigration: Boolean,
         completed: (EditSaveResult) -> Unit) {
-        val previousFilm = adjustmentHistory.loaded?.settings?.film
+        val previousFilm = adjustmentHistory.snapshot().loaded?.settings?.film
         val source = sourceRevision
         val synced = edits.synchronizeHDR()
         val clearsMigration = clearProcessingMigration || pendingResetMigrationClear == (source to synced)
@@ -1321,6 +1324,7 @@ class EditorViewModel @JvmOverloads constructor(
     fun executeAdjustmentHistory(request: EditorAdjustmentHistoryRequest, skipping: Set<String> = emptySet(),
         completed: (List<AdjustmentOutcome>) -> Unit = {}) {
         val session = adjustmentHistory.session ?: return completed(emptyList())
+        val expectedSourceToken = adjustmentHistory.snapshot().sourceToken
         commitAdjustments({
             val outcomes = if (request.photo == null) {
                 if (request.undo) session.undoTransaction(request.transactionID, skipping, ::adjustmentTargetIsCurrent)
@@ -1330,28 +1334,36 @@ class EditorViewModel @JvmOverloads constructor(
             outcomes
         }) { outcome ->
             val results = outcome.getOrElse { listOf(AdjustmentOutcome(request.photo?.value.orEmpty(), AdjustmentStatus.FAILED, error = it)) }
-            val accepted = acceptAdjustmentOutcomes(results)
+            val accepted = acceptAdjustmentOutcomes(results, expectedSourceToken = expectedSourceToken)
             mutableAdjustmentTransfer.value = mutableAdjustmentTransfer.value.copy(historyRequest = request, historyResults = accepted)
             completed(accepted)
         }
     }
-    private fun adjustmentTargetIsCurrent(identity: String): Boolean {
+    private fun adjustmentTargetIsCurrent(identity: String): Boolean =
+        adjustmentTargetIsCurrent(identity, adjustmentHistory.snapshot())
+    private fun adjustmentTargetIsCurrent(identity: String, history: EditorAdjustmentHistory.Snapshot): Boolean {
         val current = mutable.value
         if (current.photo?.identity?.value != identity) return true
-        return current.operation == Operation.NONE && current.draft == null && !adjustmentHistory.interacting &&
+        return current.operation == Operation.NONE && current.draft == null && !history.interacting &&
             current.saveState != EditSaveState.FAILED
     }
-    internal fun acceptAdjustmentOutcomes(results: List<AdjustmentOutcome>, cachedTargets: Set<String> = emptySet()): List<AdjustmentOutcome> {
+    internal fun acceptAdjustmentOutcomes(
+        results: List<AdjustmentOutcome>,
+        cachedTargets: Set<String> = emptySet(),
+        expectedSourceToken: Long? = null,
+    ): List<AdjustmentOutcome> {
         val current = mutable.value
         val photo = current.photo
+        val history = adjustmentHistory.snapshot()
         var restored: EditSettings? = null
-        if (photo != null && adjustmentTargetIsCurrent(photo.identity.value)) {
+        if (photo != null && adjustmentTargetIsCurrent(photo.identity.value, history)) {
+            val token = expectedSourceToken ?: history.sourceToken
             for (result in results) {
                 val saved = result.saved ?: continue
                 // 旧的成功回执不再接管当前照片；它可能已被用户撤销或继续编辑。
                 if (result.targetID != photo.identity.value || result.targetID in cachedTargets ||
                     result.status !in setOf(AdjustmentStatus.APPLIED, AdjustmentStatus.UNCHANGED)) continue
-                if (adjustmentHistory.acceptSaved(photo, saved)) restored = saved.settings ?: photo.defaultEditSettings()
+                if (adjustmentHistory.acceptSaved(photo, saved, token)) restored = saved.settings ?: photo.defaultEditSettings()
             }
         }
         mutable.value = current.copy(adjustmentRevision = current.adjustmentRevision + 1)
@@ -1381,7 +1393,7 @@ class EditorViewModel @JvmOverloads constructor(
     fun copyAdjustments(scope: AdjustmentScope): AdjustmentPayload? {
         val current = mutable.value
         val photo = current.photo ?: return null
-        if (!current.controlsEnabled || current.draft != null || adjustmentHistory.interacting) return null
+        if (!current.controlsEnabled || current.draft != null || adjustmentHistory.snapshot().interacting) return null
         if (current.saveState == EditSaveState.FAILED) return null
         return try {
             val captured = adjustmentHistory.session!!.copy(scope, current.edits,
@@ -1409,7 +1421,7 @@ class EditorViewModel @JvmOverloads constructor(
             cameraTint = current.preview?.tint, sourceSupportsCameraHDR = photo.isCameraRawHDR,
             sourceIsProRAW = photo.hdrSource?.isProRAW == true)
         commitAdjustments({
-            adjustmentHistory.validateCommitted(photo, current.edits)
+            adjustmentHistory.snapshot().validateCommitted(photo, current.edits)
             AdjustmentTransfer.capture(scope, current.edits, context)
         }, completed = completed)
     }
@@ -1417,8 +1429,9 @@ class EditorViewModel @JvmOverloads constructor(
     fun previewAdjustmentPayload(scope: AdjustmentScope): Result<AdjustmentPayload> = runCatching {
         val current = mutable.value
         val photo = current.photo ?: throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
-        val record = adjustmentHistory.loaded ?: throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
-        if (disposed || current.committingAdjustments || record.identity != photo.identity || !adjustmentTargetIsCurrent(photo.identity.value))
+        val history = adjustmentHistory.snapshot()
+        val record = history.loaded ?: throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
+        if (disposed || current.committingAdjustments || record.identity != photo.identity || !adjustmentTargetIsCurrent(photo.identity.value, history))
             throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
         AdjustmentTransfer.previewCapture(scope, current.edits,
             record.settings ?: photo.defaultEditSettings(),
@@ -1487,9 +1500,10 @@ class EditorViewModel @JvmOverloads constructor(
         val previous = mutableAdjustmentTransfer.value.results.filter { it.status in setOf(AdjustmentStatus.APPLIED,
             AdjustmentStatus.UNCHANGED, AdjustmentStatus.SKIPPED) }.map { it.targetID }.toSet()
         val session = adjustmentHistory.session ?: return completed(emptyList())
+        val expectedSourceToken = adjustmentHistory.snapshot().sourceToken
         commitAdjustments({ session.apply(operation, skipping) }) { outcome ->
             val results = outcome.getOrElse { operation.targets.map { target -> AdjustmentOutcome(target.id, AdjustmentStatus.FAILED, error = it) } }
-            val accepted = acceptAdjustmentOutcomes(results, previous)
+            val accepted = acceptAdjustmentOutcomes(results, previous, expectedSourceToken = expectedSourceToken)
             if (!adjustmentCloseRequested) mutableAdjustmentTransfer.value = mutableAdjustmentTransfer.value.copy(results = accepted)
             if (operation.action == AdjustmentHistoryTransaction.Action.SYNCHRONIZE)
                 collections.synchronized(operation.id, accepted.any { it.status == AdjustmentStatus.APPLIED })
@@ -1544,7 +1558,8 @@ class EditorViewModel @JvmOverloads constructor(
                 failed(saved.error); return@persist
             }
             mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
-            if (adjustmentHistory.loaded?.identity != photo.identity || !adjustmentTargetIsCurrent(photo.identity.value)) {
+            val history = adjustmentHistory.snapshot()
+            if (history.loaded?.identity != photo.identity || !adjustmentTargetIsCurrent(photo.identity.value, history)) {
                 failed(AdjustmentTransferException(AdjustmentFailure.DRAFT)); return@persist
             }
             startAdjustmentPreparation(preset.payload, listOf(photo.uri), AdjustmentHistoryTransaction.Action.PRESET) { result ->
@@ -1707,8 +1722,9 @@ class EditorViewModel @JvmOverloads constructor(
     fun collectionDraftFailure(id: String): String? {
         val current = mutable.value
         val photo = current.photo?.takeIf { it.identity.value == id } ?: return null
-        if (!adjustmentTargetIsCurrent(id)) return current.saveError ?: "Apply, discard or skip this photo's draft"
-        val record = adjustmentHistory.loaded
+        val history = adjustmentHistory.snapshot()
+        if (!adjustmentTargetIsCurrent(id, history)) return current.saveError ?: "Apply, discard or skip this photo's draft"
+        val record = history.loaded
         return if (record == null || !AdjustmentTransfer.sameAdjustments(record.settings ?:
             photo.defaultEditSettings(), current.edits,
                 photo.inputKind == PhotoInputKind.RAW)) "Apply, discard or skip this photo's draft" else null
@@ -1716,11 +1732,12 @@ class EditorViewModel @JvmOverloads constructor(
     private fun captureCollectionActiveValidation(): (String) -> Unit {
         val current = mutable.value
         val photo = current.photo ?: return {}
+        val history = adjustmentHistory.snapshot()
         val captured = runCatching {
-            check(adjustmentTargetIsCurrent(photo.identity.value)) {
+            check(adjustmentTargetIsCurrent(photo.identity.value, history)) {
                 current.saveError ?: "Apply, discard or skip this photo's draft"
             }
-            adjustmentHistory.committedValidation(photo, current.edits)
+            history.committedValidation(photo, current.edits)
         }
         return { id ->
             if (id == photo.identity.value) {
@@ -1733,8 +1750,9 @@ class EditorViewModel @JvmOverloads constructor(
     }
     fun resolveCollectionDraft(apply: Boolean, completed: (Boolean) -> Unit = {}) {
         if (mutable.value.committingAdjustments) return completed(false)
+        val history = adjustmentHistory.snapshot()
         if (apply) {
-            if (adjustmentHistory.interacting) {
+            if (history.interacting) {
                 edit(mutable.value.edits, false)
                 // 交互提交完成后，界面会解除忙状态；本次保留确认入口。
                 return completed(false)
@@ -1745,7 +1763,8 @@ class EditorViewModel @JvmOverloads constructor(
             }
             retrySave(completed)
         } else {
-            if (mutable.value.photo != null && adjustmentHistory.loaded == null) {
+            val loaded = history.loaded
+            if (mutable.value.photo != null && loaded == null) {
                 val unavailable = EditSaveResult(EditSaveState.FAILED, AdjustmentNotReadyException(), reading = true)
                 mutable.value = mutable.value.copy(saveState = unavailable.state, saveError = unavailable.message)
                 completed(false)
@@ -1756,7 +1775,7 @@ class EditorViewModel @JvmOverloads constructor(
             mutable.value.draft?.let { discardDraft() }
             val current = mutable.value
             val photo = current.photo
-            val restored = if (photo == null) null else adjustmentHistory.loaded?.settings ?: photo.defaultEditSettings()
+            val restored = if (photo == null) null else loaded?.settings ?: photo.defaultEditSettings()
             if (photo != null && restored != null && current.edits != restored) {
                 editRevision += 1
                 mutable.value = current.copy(edits = restored, draft = null, saveState = EditSaveState.SAVED,
@@ -1764,7 +1783,7 @@ class EditorViewModel @JvmOverloads constructor(
                 includeIndependentRecipeLook(restored)
                 renderCommittedForNavigation()
             } else if (photo != null && current.saveState == EditSaveState.FAILED) {
-                mutable.value = current.copy(saveState = if (adjustmentHistory.loaded?.settings == null) EditSaveState.NONE else EditSaveState.SAVED,
+                mutable.value = current.copy(saveState = if (loaded?.settings == null) EditSaveState.NONE else EditSaveState.SAVED,
                     saveError = null, adjustmentRevision = current.adjustmentRevision + 1)
             }
             completed(photo != null)
