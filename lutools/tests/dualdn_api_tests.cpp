@@ -75,6 +75,13 @@ int main(int argc, char** argv) {
             require(sony2fuji_session_prepare_ai(session, &request, cancel, nullptr) == SONY2FUJI_STATUS_CANCELLED,
                     "cancelled AI preparation did not stop");
             require(!std::filesystem::exists(argv[3]), "cancelled AI preparation wrote cache");
+            struct ForeignProgressException {};
+            auto foreignProgress = [](void*, int32_t, uint64_t, uint64_t) -> int32_t {
+                throw ForeignProgressException{};
+            };
+            require(sony2fuji_session_prepare_ai(session, &request, foreignProgress, nullptr) == SONY2FUJI_STATUS_PROCESSING_ERROR &&
+                    sony2fuji_session_get_ai_error(session)[0] && !std::filesystem::exists(argv[3]),
+                    "non-std::exception in AI progress callback escaped or skipped AI failure diagnostics");
             auto cancelInference = [](void*,int32_t phase,uint64_t,uint64_t) -> int32_t { return phase < 2; };
             const auto preparation = sony2fuji_session_prepare_ai(session,&request,cancelInference,nullptr);
             require(gpuAvailable ? preparation == SONY2FUJI_STATUS_CANCELLED :

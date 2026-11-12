@@ -290,6 +290,13 @@ static void calibratedAI(const char* input, const char* model, const std::string
               nullptr, &diagnostic) == SONY2FUJI_STATUS_CANCELLED && std::filesystem::is_empty(cache.path) &&
               decodeAI(input, absent) == SONY2FUJI_STATUS_AI_NOT_READY,
           "HDR AI cancelled at the save boundary published a cache");
+    struct ForeignHDRProgressException {};
+    check(sony2fuji_hdr_prepare_camera_raw_ai(preparation.value, input,
+              [](void*, int32_t, uint64_t, uint64_t) -> int32_t { throw ForeignHDRProgressException{}; },
+              nullptr, &diagnostic) == SONY2FUJI_STATUS_PROCESSING_ERROR &&
+              diagnostic.reason == SONY2FUJI_HDR_REASON_CAMERA_AI &&
+              sony2fuji_session_get_ai_error(preparation.value)[0] != '\0',
+          "non-std::exception in HDR AI progress callback bypassed CAMERA_AI diagnostics");
 
     Pair ordinaryPreview;
     check(sony2fuji_hdr_decode_camera_raw(renderer.value, input, &options, &ordinaryPreview.value, &diagnostic)
@@ -448,6 +455,29 @@ int main(int argc, char** argv) {
         check(sony2fuji_hdr_decode_camera_raw_with_ai(session.value, input, &options, nullptr, &preview.value, &diagnostic)
                   == SONY2FUJI_STATUS_UNSUPPORTED && diagnostic.reason == SONY2FUJI_HDR_REASON_CAMERA_AI &&
                   !preview.value.owner_token, "explicit HDR AI decoded without a configured GPU session");
+        if (sony2fuji_hdr_camera_ai_available()) {
+            Session aiSession;
+            sony2fuji_ai_denoise_config aiConfig{};
+            aiConfig.version = SONY2FUJI_AI_DENOISE_CONFIG_VERSION;
+            aiConfig.struct_size = sizeof(aiConfig);
+            aiConfig.enabled = 1;
+#ifdef _WIN32
+            aiConfig.backend = SONY2FUJI_AI_DIRECTML;
+#else
+            aiConfig.backend = SONY2FUJI_AI_COREML;
+#endif
+            aiConfig.model_directory = TEST_FIXTURE_DIR;
+            aiConfig.cache_directory = TEST_FIXTURE_DIR;
+            check(sony2fuji_session_set_ai_denoise(aiSession.value, &aiConfig) == SONY2FUJI_STATUS_OK,
+                  "could not configure AI session for HDR callback exception check");
+            struct ForeignHDRCallbackException {};
+            check(sony2fuji_hdr_prepare_camera_raw_ai(aiSession.value, input,
+                      [](void*, int32_t, uint64_t, uint64_t) -> int32_t { throw ForeignHDRCallbackException{}; },
+                      nullptr, &diagnostic) == SONY2FUJI_STATUS_PROCESSING_ERROR &&
+                      diagnostic.reason == SONY2FUJI_HDR_REASON_CAMERA_AI &&
+                      sony2fuji_session_get_ai_error(aiSession.value)[0] != '\0',
+                  "non-std::exception in HDR AI progress callback bypassed CAMERA_AI diagnostics");
+        }
         sony2fuji_session_set_cancellation_callback(session.value, [](void*) -> int32_t { return 1; }, nullptr);
         check(sony2fuji_hdr_decode_camera_raw(session.value, input, &options, &preview.value, &diagnostic)
                   == SONY2FUJI_STATUS_CANCELLED && !preview.value.owner_token, "cancelled RAW decode published pixels");

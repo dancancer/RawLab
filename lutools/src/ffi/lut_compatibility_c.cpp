@@ -19,7 +19,8 @@ sony2fuji_status compatibility(const char* path, const char* request, sony2fuji_
         return SONY2FUJI_STATUS_OK;
     } catch(const std::bad_alloc&) { return SONY2FUJI_STATUS_OUT_OF_MEMORY;
     } catch(const std::filesystem::filesystem_error&) { return SONY2FUJI_STATUS_IO_ERROR;
-    } catch(const std::exception&) { return SONY2FUJI_STATUS_UNSUPPORTED; }
+    } catch(const std::exception&) { return SONY2FUJI_STATUS_UNSUPPORTED;
+    } catch(...) { return SONY2FUJI_STATUS_PROCESSING_ERROR; }
 }
 }
 extern "C" sony2fuji_status sony2fuji_inspect_lut_compatibility(const char* path, sony2fuji_blob* output) {
@@ -41,5 +42,6 @@ extern "C" sony2fuji_status sony2fuji_compare_lut_previews(const sony2fuji_buffe
         std::memcpy(output->data,text.data(),text.size());output->size_bytes=text.size();
         return SONY2FUJI_STATUS_OK;
     } catch(const std::bad_alloc&) {return SONY2FUJI_STATUS_OUT_OF_MEMORY;
-    } catch(const std::exception&) {return SONY2FUJI_STATUS_INVALID_ARGUMENT;}
+    } catch(const std::exception&) {return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    } catch(...) {return SONY2FUJI_STATUS_PROCESSING_ERROR;}
 }

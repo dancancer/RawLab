@@ -158,26 +158,36 @@ bool runCompute(
 namespace sony2fuji {
 
 bool applyLutMetal(const LUT3D& lut, ImageData& image) {
-    MetalContext* context = getMetalContext();
-    if (!context) {
-        return false;
+    @autoreleasepool {
+        @try {
+            try {
+                MetalContext* context = getMetalContext();
+                if (!context) {
+                    return false;
+                }
+                const uint32_t pixel_count = static_cast<uint32_t>(image.pixels.size());
+                if (pixel_count == 0) {
+                    return false;
+                }
+                id<MTLTexture> lut_texture = createLutTexture(*context, lut);
+                if (!lut_texture) {
+                    return false;
+                }
+                id<MTLBuffer> pixel_buffer = wrapPixelBuffer(*context, image);
+                if (!pixel_buffer || !pixel_buffer.contents) {
+                    return false;
+                }
+                if (!runCompute(*context, pixel_buffer, lut_texture, pixel_count,
+                                static_cast<uint32_t>(lut.getSize()))) return false;
+                std::memcpy(image.pixels.data(), pixel_buffer.contents, image.pixels.size() * sizeof(RGB));
+                return true;
+            } catch (const std::exception&) {
+                return false;
+            }
+        } @catch (NSException*) {
+            return false;
+        }
     }
-    const uint32_t pixel_count = static_cast<uint32_t>(image.pixels.size());
-    if (pixel_count == 0) {
-        return false;
-    }
-    id<MTLTexture> lut_texture = createLutTexture(*context, lut);
-    if (!lut_texture) {
-        return false;
-    }
-    id<MTLBuffer> pixel_buffer = wrapPixelBuffer(*context, image);
-    if (!pixel_buffer) {
-        return false;
-    }
-    if (!runCompute(*context, pixel_buffer, lut_texture, pixel_count,
-                    static_cast<uint32_t>(lut.getSize()))) return false;
-    std::memcpy(image.pixels.data(), pixel_buffer.contents, image.pixels.size() * sizeof(RGB));
-    return true;
 }
 
 }

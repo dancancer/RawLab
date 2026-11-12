@@ -7,7 +7,10 @@
 #include "core/photo_geometry.h"
 #include "core/photo_lut.h"
 #include <atomic>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <unistd.h>
 #include <vector>
 
 int main() {
@@ -52,6 +55,69 @@ int main() {
     check(sony2fuji_session_create_hsl_probe(session, &request, 1, 1, &probe) == SONY2FUJI_STATUS_CANCELLED && !probe,
         "Superseded HSL analysis is cancellable and never publishes a partial probe");
     sony2fuji_hsl_probe_destroy(probe);
+    {
+        struct UnknownForeignException {};
+        sony2fuji_request smallRequest = request;
+        smallRequest.input_width = smallRequest.input_height = 64;
+        smallRequest.target_width = smallRequest.target_height = 32;
+        for (int checkpoint : {1, 4}) {
+            std::atomic<int> remaining{checkpoint};
+            auto foreignThrow = +[](void* context) -> int32_t {
+                if (static_cast<std::atomic<int>*>(context)->fetch_sub(1) <= 1)
+                    throw UnknownForeignException{};
+                return 0;
+            };
+            sony2fuji_session_set_cancellation_callback(session, foreignThrow, &remaining);
+            sony2fuji_buffer output{};
+            check(sony2fuji_process(session, &smallRequest, &output) == SONY2FUJI_STATUS_PROCESSING_ERROR,
+                "Non-std::exception inside sony2fuji_process maps to PROCESSING_ERROR instead of escaping");
+            check(output.data == nullptr && output.size_bytes == 0,
+                "Foreign exception does not publish partial output buffer");
+            sony2fuji_release_buffer(&output);
+            sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr);
+            check(sony2fuji_process(session, &smallRequest, &output) == SONY2FUJI_STATUS_OK && output.width == 32,
+                "Session remains valid after catching a non-std::exception");
+            sony2fuji_release_buffer(&output);
+        }
+        const auto lutPath = std::filesystem::temp_directory_path() /
+            ("rawlab-cancel-foreign-" + std::to_string(::getpid()) + ".cube");
+        {
+            std::ofstream cubeFile(lutPath, std::ios::binary);
+            cubeFile << "LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n";
+        }
+        const std::string lutPathUtf8 = lutPath.u8string();
+        sony2fuji_blob compatInfo{};
+        check(sony2fuji_inspect_lut_compatibility(lutPathUtf8.c_str(), &compatInfo) == SONY2FUJI_STATUS_OK && compatInfo.data,
+            "Inspect temporary LUT compatibility draft");
+        if (compatInfo.data) {
+            const std::string draft(static_cast<const char*>(compatInfo.data), compatInfo.size_bytes);
+            const auto shaPos = draft.find("\"source_sha256\":\"");
+            const std::string sha = shaPos != std::string::npos ? draft.substr(shaPos + 17, 64) : "";
+            const std::string previewConfig =
+                "{\"source_sha256\":\"" + sha + "\",\"contract\":{\"version\":1,"
+                "\"input\":{\"space\":\"rec709-gamma24\",\"reference\":\"display\",\"range\":\"full\"},"
+                "\"output\":{\"space\":\"rec709-gamma24\",\"reference\":\"display\",\"range\":\"full\"},"
+                "\"interpolation\":\"linear\",\"base_rendering\":\"rawlab-neutral-v1\"}}";
+            sony2fuji_request compatRequest = smallRequest;
+            compatRequest.lut_path = lutPathUtf8.c_str();
+            compatRequest.lut_strength = 1.0f;
+            compatRequest.preview_long_edge = 16;
+            sony2fuji::ProcessingCancellationScope foreignScope({+[](void*) -> int32_t {
+                throw UnknownForeignException{};
+            }, nullptr});
+            sony2fuji_buffer previewOut{};
+            check(sony2fuji_preview_lut_compatibility(session, &compatRequest, previewConfig.c_str(), &previewOut) ==
+                    SONY2FUJI_STATUS_PROCESSING_ERROR && !previewOut.data,
+                "Non-std::exception inside sony2fuji_preview_lut_compatibility maps to PROCESSING_ERROR instead of escaping");
+            sony2fuji_x3f_mode x3fMode = SONY2FUJI_X3F_NORMAL;
+            check(sony2fuji_x3f_default_mode(lutPathUtf8.c_str(), &x3fMode) == SONY2FUJI_STATUS_PROCESSING_ERROR &&
+                    x3fMode == SONY2FUJI_X3F_NORMAL,
+                "Non-std::exception inside sony2fuji_x3f_default_mode maps to PROCESSING_ERROR instead of escaping");
+        }
+        sony2fuji_release_blob(&compatInfo);
+        std::error_code removeError;
+        std::filesystem::remove(lutPath, removeError);
+    }
     auto cancelsStage = [&](const char* label, auto apply) {
         sony2fuji::ImageData image(512, 512);
         std::fill(image.pixels.begin(), image.pixels.end(), sony2fuji::RGB(.2f, .3f, .4f));
