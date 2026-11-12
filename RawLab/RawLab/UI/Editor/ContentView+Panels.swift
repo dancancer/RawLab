@@ -205,16 +205,6 @@ extension ContentView {
                 }
             }
             .overlay(alignment: .topLeading) {
-                if viewModel.hasImage && !photoViewing.previewOnly && !geometrySelected {
-                    Button {
-                        photoViewport = PhotoViewport(relativeScale: photoViewport.relativeScale > 1.01 ? 1 : 2)
-                    } label: {
-                        Text(L10n.text(photoViewport.relativeScale > 1.01 ? "放大 · 点按还原" : "适合窗口"))
-                            .font(.caption).frame(minWidth: 48, minHeight: 48).padding(.horizontal, 8)
-                    }.buttonStyle(.plain).background(.black.opacity(0.4)).accessibilityIdentifier("editor.zoom.fit")
-                }
-            }
-            .overlay(alignment: .topLeading) {
                 photoInfoOverlay(maxWidth: min(
                     360,
                     min(
