@@ -49,5 +49,6 @@
     <Compile Include="../../HDRAdjustmentTransfer.cs" Link="HDRAdjustmentTransfer.cs" />
     <Compile Include="../CameraRawHDRChecks.cs" Link="CameraRawHDRChecks.cs" />
     <Compile Include="../ProRAWHDRChecks.cs" Link="ProRAWHDRChecks.cs" />
+    <Compile Include="../../UpdateRelease.cs" Link="UpdateRelease.cs" />
   </ItemGroup>
 </Project>

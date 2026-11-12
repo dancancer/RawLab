@@ -25,6 +25,11 @@ if (args.Contains("--summary-only")) {
     return;
 }
 
+if (args.Contains("--update-release-only")) {
+    UpdateReleaseAssetChecks.Run();
+    return;
+}
+
 if (args.Contains("--hdr-only")) {
     HDRChecks.Run();
     AbiLayoutChecks.Run();
@@ -77,6 +82,7 @@ AbiLayoutChecks.Run();
 CameraRawHDRChecks.Run();
 ProRAWHDRChecks.Run(Check);
 AdjustmentSummaryChecks.Run();
+UpdateReleaseAssetChecks.Run();
 
 static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
 static JsonNode? Processing(Adjustments value) => JsonSerializer.SerializeToNode(value.Capture())!["Processing"];

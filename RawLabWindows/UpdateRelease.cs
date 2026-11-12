@@ -8,6 +8,24 @@ public sealed record UpdateRelease(string Version, string Notes, string Url)
     public const string Repository = "https://github.com/dancancer/RawLab";
     public const string Author = "https://www.xiaohongshu.com/user/profile/6474b1560000000010037c8e";
     public const string Endpoint = "https://api.github.com/repos/dancancer/RawLab/releases/latest";
+    public const string ManualPackagePrefix = "RawLab-Windows-";
+    public const string ManualPackageSuffix = "-x64.zip";
+    public const string LegacyManualPackageSuffix = "-win-x64.zip";
+
+    public static string ManualPackageFileName(string version) => ManualPackagePrefix + version + ManualPackageSuffix;
+
+    public static bool IsManualPackageAsset(string? name)
+    {
+        if (string.IsNullOrEmpty(name) || !name.StartsWith(ManualPackagePrefix, StringComparison.Ordinal)) return false;
+        var suffix = name.EndsWith(LegacyManualPackageSuffix, StringComparison.Ordinal)
+            ? LegacyManualPackageSuffix
+            : name.EndsWith(ManualPackageSuffix, StringComparison.Ordinal)
+                ? ManualPackageSuffix
+                : null;
+        if (suffix == null || name.Length <= ManualPackagePrefix.Length + suffix.Length) return false;
+        var version = name.Substring(ManualPackagePrefix.Length, name.Length - ManualPackagePrefix.Length - suffix.Length);
+        return Regex.IsMatch(version, @"\A[0-9]+\.[0-9]+(?:\.[0-9]+)?\z") && System.Version.TryParse(version, out _);
+    }
 
     public static UpdateRelease? Parse(string json, string current)
     {
@@ -18,8 +36,7 @@ public sealed record UpdateRelease(string Version, string Notes, string Url)
         var latest = ParseVersion(tag);
         if (latest <= ParseVersion(current)) return null;
         if (!root.GetProperty("assets").EnumerateArray().Any(asset =>
-            asset.GetProperty("name").GetString() is { } name &&
-            name.StartsWith("RawLab-Windows-", StringComparison.Ordinal) && name.EndsWith("win-x64.zip", StringComparison.Ordinal))) return null;
+            IsManualPackageAsset(asset.GetProperty("name").GetString()))) return null;
         var notes = root.TryGetProperty("body", out var body) ? body.GetString() ?? "" : "";
         return new(latest.ToString(3), notes, Repository + "/releases/tag/" + tag);
     }
