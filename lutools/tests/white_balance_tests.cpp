@@ -4,8 +4,11 @@
 #include <libraw/libraw.h>
 #include <array>
 #include <cmath>
+#include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <memory>
+#include <string>
 
 int failures=0;
 void check(bool value,const char* name) {
@@ -64,16 +67,40 @@ int main(int argc,char** argv) {
           "Missing as-shot multipliers do not disable a supplied profile's custom WB");
     check(!missingNeutral.multipliers(1000,0,gains,&profile),
           "A supplied profile does not bypass custom WB parameter validation");
-    if (argc<2) return failures;
+    if (argc<2) return failures ? 1 : 0;
+    if (failures) return 1;
+    const char* rawPath=nullptr;
+    if (argc==3 && std::string(argv[1])=="--default-raw") {
+        if (!argv[2] || !*argv[2] || !std::filesystem::is_regular_file(std::filesystem::u8path(argv[2]))) {
+            std::cout<<"SKIP dng_white_balance: default RAW sample not present ("<<(argv[2] ? argv[2] : "")<<")\n";
+            return 77;
+        }
+        rawPath=argv[2];
+    } else if (argc==2) {
+        const char* argRaw=*argv[1] ? argv[1] : nullptr;
+        const char* envRaw=std::getenv("RAWLAB_TEST_RAW");
+        if (envRaw && !*envRaw) envRaw=nullptr;
+        rawPath=argRaw ? argRaw : envRaw;
+        if (!rawPath) {
+            std::cout<<"SKIP raw_white_balance: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
+            return 77;
+        }
+        if (!std::filesystem::is_regular_file(std::filesystem::u8path(rawPath))) {
+            std::cerr<<"FAIL raw_white_balance: RAW sample does not exist: "<<rawPath<<'\n';
+            return 1;
+        }
+    } else {
+        return 2;
+    }
     LibRaw calibration;
-    check(calibration.open_file(argv[1])==LIBRAW_SUCCESS,"Read camera matrix fixture");
+    check(calibration.open_file(rawPath)==LIBRAW_SUCCESS,"Read camera matrix fixture");
     sony2fuji::CameraWhiteBalance camera(calibration.imgdata);
     for (double temperature:{2000.,50000.}) for (double tint:{-150.,150.}) {
         float gains[4]{};
         check(camera.multipliers(temperature,tint,gains),"Slider endpoints produce usable camera gains");
     }
     sony2fuji::RAWProcessor raw;
-    check(raw.loadFile(argv[1])==sony2fuji::ErrorCode::Success,"Read RAW calibration");
+    check(raw.loadFile(rawPath)==sony2fuji::ErrorCode::Success,"Read RAW calibration");
     float temperature=0,tint=0;
     check(raw.getAsShotWhiteBalance(temperature,tint),"As-shot is derived from camera calibration");
     std::cout<<"As-shot "<<temperature<<" K / "<<tint<<'\n';
@@ -83,7 +110,7 @@ int main(int argc,char** argv) {
           "No stale white balance before decoding");
     sony2fuji_request request{};
     request.version=SONY2FUJI_REQUEST_VERSION; request.struct_size=sizeof(request);
-    request.input_type=SONY2FUJI_INPUT_RAW; request.input_path=argv[1];
+    request.input_type=SONY2FUJI_INPUT_RAW; request.input_path=rawPath;
     request.wb_mode=SONY2FUJI_WB_CAMERA; request.temperature=6500;
     request.brightness=request.contrast=request.saturation=1;
     request.intent=SONY2FUJI_INTENT_PREVIEW; request.size_mode=SONY2FUJI_SIZE_NATIVE;

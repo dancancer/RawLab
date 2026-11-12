@@ -2,12 +2,14 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "core/photo_rendering.h"
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <libraw/libraw.h>
 #include <algorithm>
 #include <filesystem>
 #include <limits>
 #include <memory>
+#include <string>
 #ifdef SONY2FUJI_ENABLE_DNGSDK
 #include <dng_host.h>
 #include <cstring>
@@ -81,7 +83,34 @@ void saveProof(const ImageData& image, const std::filesystem::path& path, bool s
 }
 
 int main(int argc, char** argv) {
+    bool defaultRaw = false;
+    if (argc >= 2 && std::string(argv[1]) == "--default-raw") {
+        defaultRaw = true;
+        --argc;
+        ++argv;
+    }
     if (argc != 2 && argc != 4) return 2;
+    const char* rawPath = nullptr;
+    if (defaultRaw) {
+        if (!argv[1] || !*argv[1] || !std::filesystem::is_regular_file(std::filesystem::u8path(argv[1]))) {
+            std::cout << "SKIP dji_raw: default RAW sample not present (" << (argv[1] ? argv[1] : "") << ")\n";
+            return 77;
+        }
+        rawPath = argv[1];
+    } else {
+        const char* argRaw = *argv[1] ? argv[1] : nullptr;
+        const char* envRaw = std::getenv("RAWLAB_TEST_RAW");
+        if (envRaw && !*envRaw) envRaw = nullptr;
+        rawPath = argRaw ? argRaw : envRaw;
+        if (!rawPath) {
+            std::cout << "SKIP raw_input: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
+            return 77;
+        }
+        if (!std::filesystem::is_regular_file(std::filesystem::u8path(rawPath))) {
+            std::cerr << "FAIL raw_smoke: RAW sample does not exist: " << rawPath << '\n';
+            return 1;
+        }
+    }
 #ifdef SONY2FUJI_ENABLE_DNGSDK
     dng_host metadataHost;
 #endif
@@ -89,14 +118,14 @@ int main(int argc, char** argv) {
     auto& metadata = *metadataOwner;
     metadata.imgdata.params.use_camera_wb=1;
     metadata.imgdata.params.use_camera_matrix=1;
-    metadata.open_file(argv[1]);
+    metadata.open_file(rawPath);
 #ifdef SONY2FUJI_ENABLE_DNGSDK
-    if (enableJXL(metadata, metadataHost, argv[1])) return 1;
+    if (enableJXL(metadata, metadataHost, rawPath)) return 1;
 #endif
     for (const auto& crop : metadata.imgdata.sizes.raw_inset_crops)
         std::cout << "inset " << crop.cleft << ',' << crop.ctop << ' ' << crop.cwidth << 'x' << crop.cheight << '\n';
     RAWProcessor raw;
-    if (raw.loadFile(argv[1]) != ErrorCode::Success) return 1;
+    if (raw.loadFile(rawPath) != ErrorCode::Success) return 1;
     RAWProcessOptions options;
     ImageData base, eight, exposed;
     if (raw.process(options, base) != ErrorCode::Success) return 1;
@@ -116,9 +145,9 @@ int main(int argc, char** argv) {
         p.use_camera_wb=1; p.use_camera_matrix=1; p.output_color=0;
         p.no_auto_bright=1; p.no_auto_scale=0; p.adjust_maximum_thr=0; p.highlight=2;
         p.gamm[0]=p.gamm[1]=1;
-        if (reference.open_file(argv[1])) return 1;
+        if (reference.open_file(rawPath)) return 1;
 #ifdef SONY2FUJI_ENABLE_DNGSDK
-        if (enableJXL(reference, referenceHost, argv[1])) return 1;
+        if (enableJXL(reference, referenceHost, rawPath)) return 1;
 #endif
         if (reference.unpack()) return 1;
         if (reference.error_count() != 0) {
@@ -208,7 +237,7 @@ int main(int argc, char** argv) {
         }
     }
     if (const auto* root=std::getenv("RAWTOOLS_TEST_ARTIFACTS")) {
-        auto dir=std::filesystem::path(root)/std::filesystem::path(argv[1]).stem();
+        auto dir=std::filesystem::path(root)/std::filesystem::path(rawPath).stem();
         std::filesystem::create_directories(dir);
         saveProof(eight,dir/"before.jpg");
         saveProof(base,dir/"after.jpg");
@@ -231,11 +260,12 @@ int main(int argc, char** argv) {
     sony2fuji_request r{};
     r.version=SONY2FUJI_REQUEST_VERSION; r.struct_size=sizeof(r);
     r.brightness=r.contrast=r.saturation=1; r.temperature=6500;
-    r.input_type=SONY2FUJI_INPUT_RAW; r.input_path=argv[1];
-    r.output_target=SONY2FUJI_TARGET_FILE; r.output_format=SONY2FUJI_OUTPUT_JPEG; r.output_path=argv[1];
+    r.input_type=SONY2FUJI_INPUT_RAW; r.input_path=rawPath;
+    r.output_target=SONY2FUJI_TARGET_FILE; r.output_format=SONY2FUJI_OUTPUT_JPEG; r.output_path=rawPath;
     auto status=sony2fuji_process(session,&r,nullptr);
     sony2fuji_session_destroy(session);
     if (status!=SONY2FUJI_STATUS_INVALID_ARGUMENT) return 1;
     std::cout << raw.getCameraMake() << ' ' << raw.getCameraModel() << ' ' << base.width << 'x' << base.height
               << " float max(+1EV)=" << maximum << "; 8/16 safe; exposure linear; source protected\n";
+    return 0;
 }

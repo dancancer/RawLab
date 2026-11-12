@@ -51,7 +51,38 @@ std::vector<uint8_t> readFile(const std::filesystem::path& path) {
 }
 
 int main(int argc, char** argv) {
+    bool defaultRaw = false;
+    if (argc >= 2 && std::string(argv[1]) == "--default-raw") {
+        defaultRaw = true;
+        --argc;
+        ++argv;
+    }
     if (argc != 3) return 2;
+    const char* rawPath = nullptr;
+    if (defaultRaw) {
+        if (!argv[1] || !*argv[1] || !std::filesystem::is_regular_file(std::filesystem::u8path(argv[1]))) {
+            std::cout << "SKIP acceleration_tests: default RAW sample not present (" << (argv[1] ? argv[1] : "") << ")\n";
+            return 77;
+        }
+        rawPath = argv[1];
+    } else {
+        const char* argRaw = (argv[1] && *argv[1]) ? argv[1] : nullptr;
+        const char* envRaw = std::getenv("RAWLAB_TEST_RAW");
+        if (envRaw && !*envRaw) envRaw = nullptr;
+        rawPath = argRaw ? argRaw : envRaw;
+        if (!rawPath) {
+            std::cout << "SKIP acceleration_tests: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
+            return 77;
+        }
+        if (!std::filesystem::is_regular_file(std::filesystem::u8path(rawPath))) {
+            std::cerr << "FAIL acceleration_tests: RAW sample does not exist: " << rawPath << '\n';
+            return 1;
+        }
+    }
+    if (!argv[2] || !*argv[2] || !std::filesystem::is_regular_file(std::filesystem::u8path(argv[2]))) {
+        std::cerr << "FAIL acceleration_tests: LUT does not exist: " << (argv[2] ? argv[2] : "") << '\n';
+        return 1;
+    }
 #ifdef SONY2FUJI_ENABLE_METAL
     const bool nativeCpuOnly = false;
 #else
@@ -60,7 +91,7 @@ int main(int argc, char** argv) {
     Session cpu(SONY2FUJI_GPU_OFF), gpu(nativeCpuOnly ? SONY2FUJI_GPU_AUTO : SONY2FUJI_GPU_FORCE);
     sony2fuji_request request{};
     request.version = SONY2FUJI_REQUEST_VERSION; request.struct_size = sizeof(request);
-    request.input_type = SONY2FUJI_INPUT_RAW; request.input_path = argv[1];
+    request.input_type = SONY2FUJI_INPUT_RAW; request.input_path = rawPath;
     request.lut_path = argv[2]; request.lut_strength = 0.65f;
     request.temperature = 6500; request.brightness = request.contrast = request.saturation = 1;
     request.intent = SONY2FUJI_INTENT_PREVIEW; request.preview_long_edge = 600;

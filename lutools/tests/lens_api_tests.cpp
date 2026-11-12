@@ -1,11 +1,38 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include <cassert>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 #include <string>
 #include <vector>
 
-int main() {
+int main(int argc, char** argv) {
+    if (argc > 2) return 2;
+    const char* argRaw = (argc == 2 && *argv[1]) ? argv[1] : nullptr;
+    const char* configuredRaw = *TEST_CONFIGURED_RAW_PATH ? TEST_CONFIGURED_RAW_PATH : nullptr;
+    const char* envRaw = std::getenv("RAWLAB_TEST_RAW");
+    if (envRaw && !*envRaw) envRaw = nullptr;
+    const char* explicitRaw = argRaw ? argRaw : configuredRaw;
+    const char* rawPath = nullptr;
+    if (explicitRaw) {
+        if (!std::filesystem::is_regular_file(std::filesystem::u8path(explicitRaw))) {
+            std::cerr << "FAIL lens_api: RAW sample does not exist: " << explicitRaw << '\n';
+            return 1;
+        }
+        rawPath = explicitRaw;
+    } else {
+        if (envRaw && !std::filesystem::is_regular_file(std::filesystem::u8path(envRaw))) {
+            std::cerr << "FAIL lens_api: RAWLAB_TEST_RAW does not exist: " << envRaw << '\n';
+            return 1;
+        }
+        if (*TEST_DEFAULT_RAW_PATH && std::filesystem::is_regular_file(std::filesystem::u8path(TEST_DEFAULT_RAW_PATH))) {
+            rawPath = TEST_DEFAULT_RAW_PATH;
+        } else {
+            rawPath = envRaw;
+        }
+    }
+    const bool hasRaw = rawPath != nullptr;
     sony2fuji_session* session = nullptr;
     assert(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK);
     sony2fuji_lens_correction_config config{SONY2FUJI_LENS_CORRECTION_CONFIG_VERSION, sizeof(config), 0, 0, 1, nullptr};
@@ -25,8 +52,10 @@ int main() {
     assert(sony2fuji_session_inspect_lens(session, nullptr, &report, nullptr, 0, &count) == SONY2FUJI_STATUS_INVALID_ARGUMENT);
     assert(sony2fuji_session_inspect_lens(session, "/no/such/photo.ARW", &report, nullptr, 0, &count) == SONY2FUJI_STATUS_IO_ERROR);
     assert(count == 0);
-    assert(sony2fuji_session_inspect_lens(session, TEST_RAW_PATH, &report, nullptr, 0, &count) == SONY2FUJI_STATUS_OK);
-    assert(report.state == SONY2FUJI_LENS_OFF && !report.applied_distortion && !report.applied_tca);
+    if (hasRaw) {
+        assert(sony2fuji_session_inspect_lens(session, rawPath, &report, nullptr, 0, &count) == SONY2FUJI_STATUS_OK);
+        assert(report.state == SONY2FUJI_LENS_OFF && !report.applied_distortion && !report.applied_tca);
+    }
     assert(sony2fuji_session_get_lens_report(nullptr, &report) == SONY2FUJI_STATUS_INVALID_ARGUMENT);
     std::vector<unsigned char> pixels(12 * 8 * 3, 80);
     sony2fuji_request request{};
@@ -59,21 +88,24 @@ int main() {
     assert(render() == baseline);
 #endif
     const auto rasterRequest = request;
-    request.input_type = SONY2FUJI_INPUT_RAW;
-    request.input_path = TEST_RAW_PATH;
-    const auto rawRequest = request;
-    const auto rawPixels = render();
-    assert(sony2fuji_session_get_lens_report(session, &report) == SONY2FUJI_STATUS_OK);
-    const auto rawReport = report;
-    assert(rawReport.camera_model[0]);
-    request = rasterRequest;
-    render();
-    request = rawRequest;
-    assert(render() == rawPixels);
-    assert(sony2fuji_session_get_lens_report(session, &report) == SONY2FUJI_STATUS_OK);
-    assert(report.state == rawReport.state && std::strcmp(report.camera_model, rawReport.camera_model) == 0);
-    assert(report.applied_distortion == rawReport.applied_distortion && report.applied_tca == rawReport.applied_tca);
-    assert(report.crop_scale == rawReport.crop_scale);
+    sony2fuji_request rawRequest = rasterRequest;
+    rawRequest.input_type = SONY2FUJI_INPUT_RAW;
+    rawRequest.input_path = rawPath;
+    if (hasRaw) {
+        request = rawRequest;
+        const auto rawPixels = render();
+        assert(sony2fuji_session_get_lens_report(session, &report) == SONY2FUJI_STATUS_OK);
+        const auto rawReport = report;
+        assert(rawReport.camera_model[0]);
+        request = rasterRequest;
+        render();
+        request = rawRequest;
+        assert(render() == rawPixels);
+        assert(sony2fuji_session_get_lens_report(session, &report) == SONY2FUJI_STATUS_OK);
+        assert(report.state == rawReport.state && std::strcmp(report.camera_model, rawReport.camera_model) == 0);
+        assert(report.applied_distortion == rawReport.applied_distortion && report.applied_tca == rawReport.applied_tca);
+        assert(report.crop_scale == rawReport.crop_scale);
+    }
 #ifdef SONY2FUJI_ENABLE_LENSFUN
     request = rawRequest; request.input_path = TEST_FIXTURE_DIR "/linear-lens.dng";
     config.distortion = config.tca = 0;
@@ -94,5 +126,9 @@ int main() {
     assert(render() == neutralLensRaw); // The decode cache must not retain the previous color correction.
 #endif
     sony2fuji_session_destroy(session);
+    if (!hasRaw) {
+        std::cout << "SKIP lens_api: default RAW sample not present and RAWLAB_TEST_RAW not set\n";
+        return 77;
+    }
     std::cout << "Lens ABI validation, buffer isolation and optional build passed\n";
 }

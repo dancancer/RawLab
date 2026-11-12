@@ -3,8 +3,11 @@
 #include <libraw/libraw.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <memory>
+#include <string>
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_JPEG
 #define STBI_NO_STDIO
@@ -13,9 +16,31 @@
 using namespace sony2fuji;
 
 int main(int argc, char** argv) {
+    bool defaultRaw = false;
+    if (argc >= 2 && std::string(argv[1]) == "--default-raw") {
+        defaultRaw = true;
+        --argc;
+        ++argv;
+    }
     if (argc != 3) return 2;
+    const char* rawPath = argv[1];
+    if (defaultRaw) {
+        if (!rawPath || !*rawPath || !std::filesystem::is_regular_file(std::filesystem::u8path(rawPath))) {
+            std::cout << "SKIP sony_highlights: default RAW sample not present (" << (rawPath ? rawPath : "") << ")\n";
+            return 77;
+        }
+    } else {
+        if (!rawPath || !*rawPath) {
+            std::cout << "SKIP sony_highlights: RAW sample not configured\n";
+            return 77;
+        }
+        if (!std::filesystem::is_regular_file(std::filesystem::u8path(rawPath))) {
+            std::cerr << "FAIL sony_highlights: RAW sample does not exist: " << rawPath << '\n';
+            return 1;
+        }
+    }
     auto metadata = std::make_unique<LibRaw>();
-    if (metadata->open_file(argv[1]) || metadata->unpack_thumb()) return 1;
+    if (metadata->open_file(rawPath) || metadata->unpack_thumb()) return 1;
     std::unique_ptr<libraw_processed_image_t, decltype(&LibRaw::dcraw_clear_mem)> thumb(
         metadata->dcraw_make_mem_thumb(), LibRaw::dcraw_clear_mem);
     if (!thumb || thumb->type != LIBRAW_IMAGE_JPEG) return 1;
@@ -29,7 +54,7 @@ int main(int argc, char** argv) {
     RAWProcessor processor;
     RAWProcessOptions options;
     ImageData linear;
-    if (processor.loadFile(argv[1]) != ErrorCode::Success ||
+    if (processor.loadFile(rawPath) != ErrorCode::Success ||
         processor.process(options, linear) != ErrorCode::Success) return 1;
     if (linear.width != 4672 || linear.height != 7008) return 1;
     auto lut = LUTParser::loadLUTCached(argv[2]);

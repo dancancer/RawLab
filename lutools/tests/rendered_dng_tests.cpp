@@ -898,7 +898,21 @@ int main(int argc, char** argv) {
     const auto directory = testDirectory();
 #ifdef TEST_LENS_WAVELET_DNG
     if (argc == 2) {
-        testLensWaveletViewportDng(directory, argv[1]);
+        const char* argRaw = *argv[1] ? argv[1] : nullptr;
+        const char* envRaw = std::getenv("RAWLAB_TEST_LENS_WAVELET_RAW");
+        if (envRaw && !*envRaw) envRaw = nullptr;
+        const char* rawPath = argRaw ? argRaw : envRaw;
+        if (!rawPath) {
+            std::filesystem::remove_all(directory);
+            std::cout << "SKIP rendered_dng_lens_wavelet: supply SONY2FUJI_TEST_LENS_WAVELET_RAW or RAWLAB_TEST_LENS_WAVELET_RAW\n";
+            return 77;
+        }
+        if (!std::filesystem::is_regular_file(std::filesystem::u8path(rawPath))) {
+            std::filesystem::remove_all(directory);
+            std::cerr << "FAIL rendered_dng_lens_wavelet: RAW sample does not exist: " << rawPath << '\n';
+            return 1;
+        }
+        testLensWaveletViewportDng(directory, rawPath);
         std::filesystem::remove_all(directory);
         return failures == 0 ? 0 : 1;
     }

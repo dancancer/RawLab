@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -295,11 +296,7 @@ void gpuTests(bool nativeGpu) {
     } else std::cout << "SKIP native GPU hardware parity: actual backend probe unavailable\n";
 }
 
-bool rawTests(const char* path, bool nativeGpu) {
-    if (!path || !*path) {
-        std::cout << "SKIP real RAW perspective/cache/orientation: supply RAW_PATH or RAWLAB_TEST_RAW\n";
-        return false;
-    }
+void rawTests(const char* path, bool nativeGpu) {
     const Pixels empty{0, 0, {}}; auto request = requestFor(empty);
     request.input_type = SONY2FUJI_INPUT_RAW; request.input_pixels = nullptr; request.input_path = path;
     Session session; setGpu(session.value, SONY2FUJI_GPU_OFF);
@@ -334,7 +331,6 @@ bool rawTests(const char* path, bool nativeGpu) {
     equal(render(session.value, request, "RAW complete reset"), baseline, "RAW complete reset retains original orientation/cache");
     size(session.value, baseline.width, baseline.height, "RAW reset source query");
     std::cout << "PASS optional real RAW perspective/cache/orientation\n";
-    return true;
 }
 
 } // namespace
@@ -342,12 +338,24 @@ bool rawTests(const char* path, bool nativeGpu) {
 int main(int argc, char** argv) {
     if (argc > 2) { std::cerr << "usage: perspective_api_tests [RAW_PATH]\n"; return 2; }
     try {
+        const char* argRaw = (argc == 2 && *argv[1]) ? argv[1] : nullptr;
+        const char* envRaw = std::getenv("RAWLAB_TEST_RAW");
+        if (envRaw && !*envRaw) envRaw = nullptr;
+        const char* rawPath = argRaw ? argRaw : envRaw;
+        if (rawPath && !std::filesystem::is_regular_file(std::filesystem::u8path(rawPath))) {
+            std::cerr << "FAIL perspective_api: RAW sample does not exist: " << rawPath << '\n';
+            return 1;
+        }
         abiTests(); validationTests(); setterTests(); previewTests();
         const bool nativeGpu = rawlabtest::nativeGpuAvailable();
         gpuTests(nativeGpu);
-        const bool ranRaw = rawTests(argc == 2 ? argv[1] : std::getenv("RAWLAB_TEST_RAW"), nativeGpu);
+        if (argc == 2 && !rawPath) {
+            std::cout << "SKIP perspective_raw: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
+            return 77;
+        }
+        if (rawPath) rawTests(rawPath, nativeGpu);
         std::cout << "PASS " << checks << " perspective ABI, validation, setter, canvas, preview/final and GPU checks\n";
-        return ranRaw ? 0 : 77;
+        return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL after " << checks << " checks: " << error.what() << '\n';
         return 1;
