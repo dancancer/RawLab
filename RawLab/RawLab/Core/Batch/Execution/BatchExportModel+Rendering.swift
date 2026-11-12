@@ -23,7 +23,7 @@ extension BatchOutputFormat {
 
 final class IOSHDRBatchPreparation {
     private let source: BatchSourceSnapshot
-    private let store: EditPersistence?
+    let store: EditPersistence?
     private let looks: [String:URL]
     init(source: BatchSourceSnapshot,editor: RawEditorViewModel) {
         self.source=source; store=editor.editPersistence
@@ -140,18 +140,27 @@ extension BatchExportModel {
     func prepareTarget(_ source: PhotoImportSource, identity: PhotoIdentity, jobID: UUID,
                                journalStore: BatchJournalStore) async throws -> BatchTarget {
         let processing = job.source.settings.processing
-        let x3fMode = job.source.settings.x3fMode
+        let sourceX3fMode = job.source.settings.x3fMode
+        let store = editPersistence
         return try await perform {
             let inputDirectory=try BatchInputStore.directory(for:jobID,root:journalStore.directory)
             let existing=Set(try FileManager.default.contentsOfDirectory(at:inputDirectory,includingPropertiesForKeys:nil))
             let owned = try BatchInputStore.copy(source.url, identity: identity, jobID: jobID,
-                                                 root: journalStore.directory)
+                                                 root: journalStore.directory, displayName: source.displayName)
             var accepted=false
             defer { if !accepted && !existing.contains(owned) { try? FileManager.default.removeItem(at:owned) } }
             let processor = Sony2FujiProcessor()
             var neutral = RawSettings.default
             neutral.processing = processing
-            neutral.x3fMode = x3fMode
+            if source.isRaw, owned.pathExtension.lowercased() == "x3f" ||
+                (source.displayName as NSString).pathExtension.lowercased() == "x3f" {
+                neutral.selectX3fMode(try BatchExportJob.x3fModeResolver(
+                    store: store,
+                    x3fDefaultMode: { try processor.x3fDefaultMode(for: $0) }
+                )(identity, owned))
+            } else {
+                neutral.x3fMode = sourceX3fMode
+            }
             if source.isRaw {
                 _ = try processor.processRaw(url: owned, settings: neutral,
                                              previewLongEdge: 160, lutURL: nil)

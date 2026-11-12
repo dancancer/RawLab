@@ -40,6 +40,7 @@ final class BatchExportModel: ObservableObject {
 
     private let journalStore: BatchJournalStore?
     private let jpegWriter: JPEGWriter?
+    let editPersistence: EditPersistence?
     let queue = DispatchQueue(label: "com.rawlab.batch", qos: .userInitiated)
     private let cancellation = NSLock()
     private var didCancel = false
@@ -58,6 +59,7 @@ final class BatchExportModel: ObservableObject {
         source.lookName = source.settings.masterRecipe?.name ?? editor.availableLUTs.first { $0.id == source.settings.lutID }?.name ?? "中性"
         job = BatchExportJob(source: source, targets: [])
         jpegWriter = nil
+        editPersistence = editor.editPersistence
         do { journalStore = try BatchJournalStore.appStore() }
         catch { journalStore = nil; validationMessage = L10n.format("任务未保存：%@", String(describing: error.localizedDescription)) }
         if source.settings.isHDREditing {
@@ -88,6 +90,7 @@ final class BatchExportModel: ObservableObject {
         self.job = recovered
         self.journalStore = journalStore
         self.jpegWriter = jpegWriter
+        self.editPersistence = editor?.editPersistence
         if job.source.settings.isHDREditing,let editor { hdrPreparation=IOSHDRBatchPreparation(source:job.source,editor:editor) }
         isReady = true
         validationMessage = recovered.globalError
@@ -269,6 +272,7 @@ final class BatchExportModel: ObservableObject {
         let logFailure: (Error, String) -> Void = { error, stage in
             ErrorDiagnostics.log(error, operation: .batchExport, stage: stage, attemptID: attemptID, context: diagnosticContext)
         }
+        let resolveX3fMode = BatchExportJob.x3fModeResolver(store: editPersistence)
         queue.async { [self] in
             var attempted = Set<String>()
             do {
@@ -292,7 +296,7 @@ final class BatchExportModel: ObservableObject {
                             snapshot = updated
                             DispatchQueue.main.async { self.job = updated }
                         },
-                        onlyIDs: failedIDs, didFail: logFailure)
+                        onlyIDs: failedIDs, didFail: logFailure, resolveX3fMode: resolveX3fMode)
                 } else if let jpegWriter {
                     result = try BatchExportRunner.run(job: snapshot, journalStore: journalStore,
                         render: { target, resolvedSettings in
@@ -307,7 +311,7 @@ final class BatchExportModel: ObservableObject {
                             snapshot = updated
                             DispatchQueue.main.async { self.job = updated }
                         },
-                        onlyIDs: failedIDs, didFail: logFailure)
+                        onlyIDs: failedIDs, didFail: logFailure, resolveX3fMode: resolveX3fMode)
                 } else {
                     try PhotoLibraryBatchWriter.authorize()
                     result = try BatchExportRunner.run(job: snapshot, journalStore: journalStore,
@@ -326,7 +330,7 @@ final class BatchExportModel: ObservableObject {
                             snapshot = updated
                             DispatchQueue.main.async { self.job = updated }
                         },
-                        onlyIDs: failedIDs, didFail: logFailure)
+                        onlyIDs: failedIDs, didFail: logFailure, resolveX3fMode: resolveX3fMode)
                 }
                 let failed = result.targets.filter { attempted.contains($0.id) && $0.status == .failed }.count
                 DispatchQueue.main.async {
@@ -455,12 +459,13 @@ final class BatchExportModel: ObservableObject {
     func preview(target: BatchTarget) async throws -> Preview {
         guard !isRunning, !isPreparing else { throw BatchExportError.target(L10n.text("请等待当前任务完成。")) }
         let snapshot = job
+        let resolveX3fMode = BatchExportJob.x3fModeResolver(store: editPersistence)
         return try await perform {
             try snapshot.validate()
             let prepared=snapshot.settingsMode == .uniformFrozen ? try self.hdrPreparation?.prepare(target,ordinal:0,format:snapshot.outputFormat,longEdge:snapshot.longEdge) : nil
             let targetSettings: RawSettings,look: URL?
             if let prepared { targetSettings=prepared.settings; look=prepared.lookURL }
-            else { targetSettings=try snapshot.settings(for:target); look=try snapshot.look(for:target) }
+            else { targetSettings=try snapshot.settings(for:target, resolveX3fMode: resolveX3fMode); look=try snapshot.look(for:target) }
             if snapshot.settingsMode == .perTargetFrozen { try target.frozen!.verifyFiles(input: target.sourceURL) }
             if targetSettings.hasLook && look.map({ FileManager.default.isReadableFile(atPath: $0.path) }) != true {
                 throw BatchExportError.global(L10n.text("任务使用的外观文件不可用，请重新创建任务。"))

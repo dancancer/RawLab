@@ -294,7 +294,9 @@ class WorkflowContractTests(unittest.TestCase):
         for ui in ("horizontal-picker-native.sh", "mac-straighten-preview.sh", "parameter-value.sh", "mac-canvas-input.sh"):
             self.assertNotIn(ui, commands["macos"])
         self.assertIn("RawLabMac/tests/presentation.sh --models-only", commands["macos"])
-        self.assertIn("RawLab/tests/adjustment-scale.sh", (ROOT / "scripts/ci/apple-models.sh").read_text())
+        apple_models = (ROOT / "scripts/ci/apple-models.sh").read_text()
+        self.assertIn("RawLab/tests/adjustment-scale.sh", apple_models)
+        self.assertIn("RawLab/tests/batch-export.sh", apple_models)
         self.assertNotIn("test-without-building", commands["ios"])
         self.assertNotIn("connectedDebugAndroidTest", commands["android"])
 

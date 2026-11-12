@@ -3,9 +3,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT="$(mktemp -d /tmp/rawlab-ios-batch.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
-SDK="$(xcrun --sdk macosx --show-sdk-path)"
+SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
 swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" \
-    -module-cache-path "$OUT/module-cache" \
+    -module-cache-path "${RAWLAB_TRANSFER_MODULE_CACHE:-$OUT/module-cache}" \
     "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HDRSettings.swift" "$ROOT/Shared/ProcessingMigration.swift" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/Shared/AtmosphereSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
     "$ROOT/RawLab/RawLab/Core/Persistence/EditPersistence.swift" \

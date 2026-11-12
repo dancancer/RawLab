@@ -90,7 +90,14 @@ internal static class PhotoInput
         return PrepareHDRInputSettings(path, prepared);
     }
 
-    internal static Adjustments PrepareBatchSettings(string source,string target,Adjustments value)
+    internal static Func<string, X3fMode> CreateBatchX3fModeResolver(
+        EditStore? store = null,
+        string? storeDirectory = null,
+        Func<string, X3fMode>? defaultMode = null) =>
+        path => (store ?? new EditStore(storeDirectory ?? EditStore.DefaultDirectory)).ReadState(path).Edit?.Settings.X3fMode
+            ?? (defaultMode ?? X3fDefaultMode)(path);
+
+    internal static Adjustments PrepareBatchSettings(string source,string target,Adjustments value,Func<string,X3fMode>? resolveX3fMode = null)
     {
         if (IsRaster(target) && value.AIDenoiseEnabled && !value.IsHDREditing) {
             // 普通图片目标只关闭 AI 降噪；曝光、白平衡和镜头仍由渲染时的输入归一化处理，快照保持原样。
@@ -98,11 +105,18 @@ internal static class PhotoInput
             raster.AIDenoiseEnabled = false;
             return raster;
         }
-        if(!IsRaster(source) || !IsRaw(target))return value;
-        var recipeTint=value.MasterRecipeID == null ? (double?)null : value[Parameter.Tint];
-        var prepared=PrepareInputSettings(source,value);
-        prepared.ExposureMode=1;
-        if(recipeTint is {} tint)prepared.Set(Parameter.Tint,tint);
+        var prepared = value;
+        if (IsRaster(source) && IsRaw(target)) {
+            var recipeTint=value.MasterRecipeID == null ? (double?)null : value[Parameter.Tint];
+            prepared=PrepareInputSettings(source,value);
+            prepared.ExposureMode=1;
+            if(recipeTint is {} tint)prepared.Set(Parameter.Tint,tint);
+        }
+        if (IsX3f(target)) {
+            if (ReferenceEquals(prepared, value)) prepared = value.Clone();
+            var mode = (resolveX3fMode ?? CreateBatchX3fModeResolver())(target);
+            prepared.SelectX3fMode(mode);
+        }
         return prepared;
     }
 }

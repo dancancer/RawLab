@@ -13,7 +13,8 @@ struct BatchExportRunner {
                     shouldCancel: @escaping Cancellation = { false },
                     didUpdate: @escaping (BatchExportJob) -> Void = { _ in },
                     onlyIDs: Set<String>? = nil,
-                    didFail: (_ error: Error, _ stage: String) -> Void = { _, _ in }) throws -> BatchExportJob {
+                    didFail: (_ error: Error, _ stage: String) -> Void = { _, _ in },
+                    resolveX3fMode: @escaping BatchExportJob.X3fModeResolver = BatchExportJob.resolveX3fMode) throws -> BatchExportJob {
         var job = job
         try job.validate()
         job.status = .running
@@ -42,7 +43,7 @@ struct BatchExportRunner {
             do {
                 let target = job.targets[index]
                 if job.settingsMode == .perTargetFrozen { try target.frozen!.verifyFiles(input: target.sourceURL) }
-                let payload = try render(target, job.settings(for: target))
+                let payload = try render(target, job.settings(for: target, resolveX3fMode: resolveX3fMode))
                 defer { cleanup(payload) }
                 if shouldCancel() { throw CancellationError() }
                 job.targets[index].status = .publishing
@@ -122,7 +123,8 @@ struct BatchExportRunner {
                                               _ checkpoint: @escaping (String) throws -> Void) throws -> Void,
                             cleanup: @escaping (_ payload: Payload) -> Void = { _ in },
                             shouldCancel: @escaping Cancellation = { false },
-                            didUpdate: @escaping (BatchExportJob) -> Void = { _ in }) throws -> BatchExportJob {
+                            didUpdate: @escaping (BatchExportJob) -> Void = { _ in },
+                            resolveX3fMode: @escaping BatchExportJob.X3fModeResolver = BatchExportJob.resolveX3fMode) throws -> BatchExportJob {
         var retry = job
         let failedIDs = Set(job.targets.filter { $0.status == .failed }.map(\.id))
         for index in retry.targets.indices where retry.targets[index].status == .failed {
@@ -132,7 +134,8 @@ struct BatchExportRunner {
         retry.status = .draft
         return try run(job: retry, journalStore: journalStore, render: render, write: write,
                        cleanup: cleanup,
-                       shouldCancel: shouldCancel, didUpdate: didUpdate, onlyIDs: failedIDs)
+                       shouldCancel: shouldCancel, didUpdate: didUpdate, onlyIDs: failedIDs,
+                       resolveX3fMode: resolveX3fMode)
     }
 
     private static func markRemainingCancelled(_ job: inout BatchExportJob, from index: Int) {

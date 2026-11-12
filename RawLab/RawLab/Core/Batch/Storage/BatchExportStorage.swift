@@ -97,9 +97,11 @@ enum BatchInputStore {
         return directory
     }
 
-    static func copy(_ sourceURL: URL, identity: PhotoIdentity, jobID: UUID, root: URL? = nil) throws -> URL {
+    static func copy(_ sourceURL: URL, identity: PhotoIdentity, jobID: UUID, root: URL? = nil,
+                     displayName: String? = nil) throws -> URL {
         let directory = try directory(for: jobID, root: root)
-        let ext = sourceURL.pathExtension.isEmpty ? "raw" : sourceURL.pathExtension
+        let displayExt = displayName.map { ($0 as NSString).pathExtension } ?? ""
+        let ext = !sourceURL.pathExtension.isEmpty ? sourceURL.pathExtension : (!displayExt.isEmpty ? displayExt : "raw")
         let destination = directory.appendingPathComponent(safeFileName(identity.key) + "." + ext)
         if FileManager.default.fileExists(atPath: destination.path) {
             return destination
@@ -119,7 +121,8 @@ enum BatchInputStore {
 
     static func prepare(_ job: inout BatchExportJob, look: URL?, root: URL? = nil) throws {
         job.source.sourceFile = try job.source.sourceFile.withReadAccess {
-            .externallyManaged(try copy($0, identity: job.source.identity, jobID: job.id, root: root))
+            .externallyManaged(try copy($0, identity: job.source.identity, jobID: job.id, root: root,
+                                        displayName: job.source.displayName))
         }
         if job.source.settings.hasLook {
             guard let look, FileManager.default.isReadableFile(atPath: look.path) else {

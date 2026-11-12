@@ -3,6 +3,7 @@ package com.rawlab.android.batch
 import com.rawlab.android.batch.journal.BatchJournal
 import com.rawlab.android.photo.BatchGlobalFailure
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.X3fMode
 
 // ============================================================================
 //  批量导出的逐行执行：渲染、写出、取消与重试
@@ -19,6 +20,7 @@ object BatchRunner {
         publish: ((T, String, BatchTarget, (String) -> Unit) -> Unit)? = null,
         dispose: (T) -> Unit = {},
         onlyIDs: Set<String>? = null,
+        resolveX3fMode: (BatchTarget) -> X3fMode = BatchJob.x3fModeResolver(),
     ): BatchJob {
         job.validate()
         var current = job.withRows(job.rows.map { if (it.status == BatchRowStatus.PROCESSING) it.copy(status = BatchRowStatus.PENDING) else it }, null)
@@ -44,7 +46,7 @@ object BatchRunner {
             try {
                 val row = current.rows[index]
                 if (current.settingsMode == BatchSettingsMode.PER_TARGET_FROZEN) row.target.frozen!!.verifyFiles(row.target.sourceFile)
-                val payload = render(row.target, current.settingsFor(row.target))
+                val payload = render(row.target, current.settingsFor(row.target, resolveX3fMode))
                 try {
                     if (shouldCancel()) throw java.util.concurrent.CancellationException()
                     current = current.withRows(current.rows.mapIndexed { i, item -> if (i == index) item.copy(status = BatchRowStatus.PUBLISHING) else item })
@@ -87,7 +89,9 @@ object BatchRunner {
         shouldCancel: () -> Boolean = { false },
         journal: BatchJournal? = null,
         dispose: (T) -> Unit = {},
+        resolveX3fMode: (BatchTarget) -> X3fMode = BatchJob.x3fModeResolver(),
     ): BatchJob = run(job.withRows(job.rows.map { if (it.status == BatchRowStatus.FAILED) it.copy(status = BatchRowStatus.PENDING, error = null) else it }),
         render, write, shouldCancel, journal, dispose = dispose,
-        onlyIDs = job.rows.filter { it.status == BatchRowStatus.FAILED }.map { it.id }.toSet())
+        onlyIDs = job.rows.filter { it.status == BatchRowStatus.FAILED }.map { it.id }.toSet(),
+        resolveX3fMode = resolveX3fMode)
 }
