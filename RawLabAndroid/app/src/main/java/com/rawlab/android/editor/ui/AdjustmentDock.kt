@@ -469,7 +469,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
                             .testTag("x3f.mode.${mode.id}")
                             .selectable(selected = edits.x3fMode == mode, enabled = enabled, role = Role.RadioButton,
-                                onClick = { onEdit(edits.copy(x3fMode = mode), false) }),
+                                onClick = { onEdit(edits.selectX3fMode(mode), false) }),
                             verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(selected = edits.x3fMode == mode, onClick = null, enabled = enabled)
                             Text(stringResource(if (mode == X3fMode.NORMAL) R.string.x3f_normal else R.string.x3f_legacy), Modifier.padding(start = 8.dp))

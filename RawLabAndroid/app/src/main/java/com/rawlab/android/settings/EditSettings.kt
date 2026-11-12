@@ -89,6 +89,11 @@ data class EditSettings(
     else EditSettings(film = film, processing = processing, x3fMode = x3fMode, hdr = hdr,
         proRAWDecodeVersion = proRAWDecodeVersion)
 
+    fun selectX3fMode(mode: X3fMode): EditSettings = if (mode == X3fMode.NORMAL) copy(
+        x3fMode = mode,
+        lens = lens.copy(distortion = false, tca = false, vignetting = false),
+    ) else copy(x3fMode = mode)
+
     /** Camera-only controls are resolved per target; the persisted edit remains unchanged. */
     fun effectiveFor(input: PhotoInputKind): EditSettings = if (isHDREditing) this else if (input == PhotoInputKind.RASTER) copy(
         exposureMode = 2,

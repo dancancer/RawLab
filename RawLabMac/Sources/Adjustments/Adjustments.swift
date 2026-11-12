@@ -145,6 +145,7 @@ struct Adjustments: Equatable, Codable {
         aiDenoiseEnabled = false
         lensCorrection?.distortion = false
         lensCorrection?.tca = false
+        lensCorrection?.vignetting = false
     }
     var geometrySettings: GeometrySettings { isHDREditing ? hdr!.geometry : (geometry ?? GeometrySettings()) }
 

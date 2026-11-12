@@ -381,6 +381,7 @@ struct RawSettings: Codable, Equatable {
         guard mode == .normal else { return }
         lensCorrection?.distortion = false
         lensCorrection?.tca = false
+        lensCorrection?.vignetting = false
     }
     var photoEffects = PhotoEffectsSettings()
     var hsl = HSLSettings()

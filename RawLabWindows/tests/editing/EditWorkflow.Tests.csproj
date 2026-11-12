@@ -36,6 +36,7 @@
     <Compile Include="../../WindowsFileIdentity.cs" Link="WindowsFileIdentity.cs" />
     <Compile Include="../../PhotoInfo.cs" Link="PhotoInfo.cs" />
     <Compile Include="../../PhotoInput.cs" Link="PhotoInput.cs" />
+    <Compile Include="../../MainWindow/X3fModeReset.cs" Link="X3fModeReset.cs" />
     <Compile Include="../FeatureRegressionChecks.cs" Link="FeatureRegressionChecks.cs" />
     <Compile Include="../../EditedPhotoPreviewCache.cs" />
     <Compile Include="../../EditPersistence.cs" Link="EditPersistence.cs" Condition="Exists('../../EditPersistence.cs')" />

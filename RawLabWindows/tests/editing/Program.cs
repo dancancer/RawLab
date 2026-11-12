@@ -31,6 +31,7 @@ if (args.Contains("--camera-raw-hdr")) {
 }
 if (args.Contains("--history-only")) {
     AdjustmentTransferChecks.Run();
+    X3fModeResetChecks.Run();
     AdjustmentHistoryChecks.Run();
     AdjustmentPresetChecks.Run();
     BatchSelectionChecks.Run();
@@ -38,6 +39,7 @@ if (args.Contains("--history-only")) {
 }
 EditedPhotoPreviewChecks.Run();
 X3fPersistenceChecks();
+X3fModeResetChecks.Run();
 Check(PhotoInput.PrepareDefaultSettings("fixture.png").ExposureMode == 2,
     "No-record raster defaults retain sensor exposure");
 AIGpuDiagnosticsChecks.Run();
