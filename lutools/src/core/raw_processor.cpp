@@ -13,9 +13,30 @@
 #include <iostream>
 #include <memory>
 #include <cstring>
+#include <cstdio>
 #include <fstream>
 #include <array>
+#include <limits>
+#include <new>
+#include <system_error>
 #include <zlib.h>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOGDI
+#define NOGDI
+#endif
+#include <windows.h>
+#undef RGB
+#undef near
+#undef far
+#else
+#include <unistd.h>
+#endif
 #ifdef SONY2FUJI_ENABLE_DNGSDK
 #include <dng_host.h>
 #endif
@@ -908,40 +929,236 @@ ErrorCode ImageEncoder::saveImage(
     }
 }
 
+namespace {
+
+void removeStagingPathNoThrow(const std::filesystem::path& path) noexcept {
+    if (path.empty()) return;
+    std::error_code error;
+    std::filesystem::remove(path, error);
+}
+
+class JpegStagingFile final {
+public:
+    JpegStagingFile() = default;
+    JpegStagingFile(const JpegStagingFile&) = delete;
+    JpegStagingFile& operator=(const JpegStagingFile&) = delete;
+
+    ~JpegStagingFile() { cleanup(); }
+
+    bool create(const std::filesystem::path& destination) {
+#ifdef _WIN32
+        wchar_t temporaryName[MAX_PATH] = {};
+        try {
+            std::filesystem::path parent = destination.parent_path();
+            if (parent.empty()) parent = L".";
+            const std::wstring parentString = parent.wstring();
+            if (GetTempFileNameW(parentString.c_str(), L"rlj", 0, temporaryName) == 0) {
+                return false;
+            }
+            path_ = std::filesystem::path(temporaryName);
+            file_ = ::_wfopen(temporaryName, L"wb");
+            if (!file_) {
+                cleanup();
+                return false;
+            }
+            return true;
+        } catch (...) {
+            cleanup();
+            if (temporaryName[0] != L'\0') DeleteFileW(temporaryName);
+            throw;
+        }
+#else
+        std::vector<char> temporaryName;
+        int createdFd = -1;
+        try {
+            std::filesystem::path parent = destination.parent_path();
+            if (parent.empty()) parent = ".";
+            const std::string pattern = (parent / ".rawlab-jpeg-XXXXXX").string();
+            temporaryName.assign(pattern.begin(), pattern.end());
+            temporaryName.push_back('\0');
+            createdFd = ::mkstemp(temporaryName.data());
+            if (createdFd < 0) return false;
+
+            path_ = std::filesystem::path(temporaryName.data());
+            file_ = ::fdopen(createdFd, "wb");
+            if (!file_) {
+                (void)::close(createdFd);
+                createdFd = -1;
+                cleanup();
+                return false;
+            }
+            createdFd = -1; // file_ owns the descriptor after fdopen succeeds.
+            return true;
+        } catch (...) {
+            if (createdFd >= 0) (void)::close(createdFd);
+            cleanup();
+            if (!temporaryName.empty()) (void)::unlink(temporaryName.data());
+            throw;
+        }
+#endif
+    }
+
+    std::FILE* file() const noexcept { return file_; }
+
+    bool finishAndPublish(const std::filesystem::path& destination) {
+        if (!file_) return false;
+        const bool flushed = (std::fflush(file_) == 0) && (std::ferror(file_) == 0);
+        const bool closed = (std::fclose(file_) == 0);
+        file_ = nullptr;
+        if (!flushed || !closed) {
+            cleanup();
+            return false;
+        }
+#ifdef _WIN32
+        const std::wstring source = path_.wstring();
+        const std::wstring target = destination.wstring();
+        const bool published = MoveFileExW(
+            source.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+#else
+        const bool published = (::rename(path_.c_str(), destination.c_str()) == 0);
+#endif
+        if (!published) {
+            cleanup();
+            return false;
+        }
+        published_ = true;
+        path_.clear();
+        return true;
+    }
+
+private:
+    void cleanup() noexcept {
+        if (file_) {
+            (void)std::fclose(file_);
+            file_ = nullptr;
+        }
+        if (!published_) {
+            removeStagingPathNoThrow(path_);
+        }
+        path_.clear();
+    }
+
+    std::filesystem::path path_;
+    std::FILE* file_ = nullptr;
+    bool published_ = false;
+};
+
+struct JpegWriteContext {
+    std::FILE* file = nullptr;
+    bool failed = false;
+
+    static void write(void* context, void* data, int size) {
+        auto* state = static_cast<JpegWriteContext*>(context);
+        if (!state || state->failed) return;
+        if (!state->file || size < 0) {
+            state->failed = true;
+            return;
+        }
+        if (size == 0) return;
+        const size_t expected = static_cast<size_t>(size);
+        if (std::fwrite(data, 1, expected, state->file) != expected) {
+            state->failed = true;
+        }
+    }
+};
+
+} // namespace
+
 ErrorCode ImageEncoder::saveJPEG(
     const ImageData& image,
     const std::string& filepath,
     int quality
 ) {
-    if (image.pixels.empty()) {
+    if (filepath.empty() || filepath.find('\0') != std::string::npos ||
+        image.width <= 0 || image.height <= 0 ||
+        image.width > 65535 || image.height > 65535 ||
+        image.pixels.empty() ||
+        image.pixels.size() != static_cast<size_t>(image.width) * static_cast<size_t>(image.height)) {
         return ErrorCode::ProcessingError;
     }
 
-    // 转换为 uint8_t
-    std::vector<uint8_t> data(image.width * image.height * 3);
+    const uint64_t rgbBytes =
+        static_cast<uint64_t>(image.width) * static_cast<uint64_t>(image.height) * 3u;
+    if (rgbBytes > static_cast<uint64_t>(std::numeric_limits<int>::max()) ||
+        rgbBytes > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
+        return ErrorCode::ProcessingError;
+    }
 
-    const int pixel_count = image.width * image.height;
-#ifdef _OPENMP
-#pragma omp parallel for if (pixel_count >= kParallelThreshold)
+    std::filesystem::path destination;
+    try {
+#ifdef _WIN32
+        destination = std::filesystem::u8path(filepath);
+#else
+        destination = std::filesystem::path(filepath);
 #endif
-    for (int i = 0; i < pixel_count; ++i) {
-        data[i * 3 + 0] = floatToUint8(image.pixels[i].r);
-        data[i * 3 + 1] = floatToUint8(image.pixels[i].g);
-        data[i * 3 + 2] = floatToUint8(image.pixels[i].b);
+    } catch (const std::bad_alloc&) {
+        return ErrorCode::OutOfMemory;
+    } catch (...) {
+        return ErrorCode::IOError;
     }
 
-    int result = stbi_write_jpg(
-        filepath.c_str(),
-        image.width,
-        image.height,
-        3,
-        data.data(),
-        quality
-    );
-
-    if (result == 0) {
+    std::error_code directoryError;
+    if (!destination.has_filename() || std::filesystem::is_directory(destination, directoryError)) {
         std::cerr << "保存 JPEG 失败: " << filepath << std::endl;
-        return ErrorCode::ProcessingError;
+        return ErrorCode::IOError;
+    }
+
+    try {
+        const size_t pixelCount =
+            static_cast<size_t>(image.width) * static_cast<size_t>(image.height);
+        std::vector<uint8_t> data(pixelCount * 3);
+
+#ifdef _OPENMP
+        const ptrdiff_t parallelCount = static_cast<ptrdiff_t>(pixelCount);
+#pragma omp parallel for if (parallelCount >= kParallelThreshold)
+        for (ptrdiff_t i = 0; i < parallelCount; ++i) {
+            const size_t index = static_cast<size_t>(i);
+            data[index * 3 + 0] = floatToUint8(image.pixels[index].r);
+            data[index * 3 + 1] = floatToUint8(image.pixels[index].g);
+            data[index * 3 + 2] = floatToUint8(image.pixels[index].b);
+        }
+#else
+        for (size_t i = 0; i < pixelCount; ++i) {
+            data[i * 3 + 0] = floatToUint8(image.pixels[i].r);
+            data[i * 3 + 1] = floatToUint8(image.pixels[i].g);
+            data[i * 3 + 2] = floatToUint8(image.pixels[i].b);
+        }
+#endif
+
+        JpegStagingFile staging;
+        if (!staging.create(destination)) {
+            std::cerr << "保存 JPEG 失败: " << filepath << std::endl;
+            return ErrorCode::IOError;
+        }
+
+        JpegWriteContext writeContext{staging.file(), false};
+        const int result = stbi_write_jpg_to_func(
+            &JpegWriteContext::write,
+            &writeContext,
+            image.width,
+            image.height,
+            3,
+            data.data(),
+            quality
+        );
+
+        if (writeContext.failed) {
+            std::cerr << "保存 JPEG 失败: " << filepath << std::endl;
+            return ErrorCode::IOError;
+        }
+        if (result == 0) {
+            std::cerr << "保存 JPEG 失败: " << filepath << std::endl;
+            return ErrorCode::ProcessingError;
+        }
+        if (!staging.finishAndPublish(destination)) {
+            std::cerr << "保存 JPEG 失败: " << filepath << std::endl;
+            return ErrorCode::IOError;
+        }
+    } catch (const std::bad_alloc&) {
+        return ErrorCode::OutOfMemory;
+    } catch (...) {
+        std::cerr << "保存 JPEG 失败: " << filepath << std::endl;
+        return ErrorCode::IOError;
     }
 
     std::cout << "成功保存: " << filepath << std::endl;
