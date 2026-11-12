@@ -555,11 +555,7 @@ void gpuTests(bool nativeGpu) {
     }
 }
 
-bool rawTests(const char* path) {
-    if (!path || !*path || !std::filesystem::exists(std::filesystem::u8path(path))) {
-        std::cout << "SKIP real RAW geometry/cache/orientation: supply a path or RAWLAB_TEST_RAW\n";
-        return false;
-    }
+void rawTests(const char* path) {
     Session session;
     setGpu(session.value, SONY2FUJI_GPU_OFF);
     auto request = bufferRequest(Pixels{});
@@ -632,7 +628,6 @@ bool rawTests(const char* path) {
         "RAW geometry reset preserves original orientation and cache");
     geometrySize(session.value, baseline.width, baseline.height, "RAW identity size restored");
     std::cout << "PASS optional RAW geometry/cache/orientation: " << path << '\n';
-    return true;
 }
 
 } // namespace
@@ -643,6 +638,14 @@ int main(int argc, char** argv) {
         return 2;
     }
     try {
+        const char* argRaw = (argc == 2 && *argv[1]) ? argv[1] : nullptr;
+        const char* envRaw = std::getenv("RAWLAB_TEST_RAW");
+        if (envRaw && !*envRaw) envRaw = nullptr;
+        const char* rawPath = argRaw ? argRaw : envRaw;
+        if (rawPath && !std::filesystem::is_regular_file(std::filesystem::u8path(rawPath))) {
+            std::cerr << "FAIL geometry_api: RAW sample does not exist: " << rawPath << '\n';
+            return 1;
+        }
         abiTests();
         integerTests();
         validationTests();
@@ -650,9 +653,13 @@ int main(int argc, char** argv) {
         geometrySizeTests();
         previewTests();
         gpuTests(rawlabtest::nativeGpuAvailable());
-        const bool ranRaw = rawTests((argc == 2 && *argv[1]) ? argv[1] : std::getenv("RAWLAB_TEST_RAW"));
+        if (argc == 2 && !rawPath) {
+            std::cout << "SKIP geometry_raw: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
+            return 77;
+        }
+        if (rawPath) rawTests(rawPath);
         std::cout << "PASS " << checks << " geometry ABI, setter, source-canvas, preview/final and GPU checks\n";
-        return ranRaw ? 0 : 77;
+        return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL after " << checks << " checks: " << error.what() << '\n';
         return 1;

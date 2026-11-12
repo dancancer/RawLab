@@ -52,8 +52,23 @@ int main(int argc, char** argv) {
               "reject invalid RAW denoise levels and null session");
         RAWProcessor processor;
         check(!processor.supportsNoiseReduction(), "unloaded processor has no denoise capability");
-        const char* bayerPath = (argc >= 2 && *argv[1]) ? argv[1] : std::getenv("RAWLAB_TEST_RAW");
-        if (!bayerPath || !*bayerPath || !std::filesystem::exists(std::filesystem::u8path(bayerPath))) {
+        const char* bayerArg = (argc >= 2 && *argv[1]) ? argv[1] : nullptr;
+        const char* bayerEnv = std::getenv("RAWLAB_TEST_RAW");
+        if (bayerEnv && !*bayerEnv) bayerEnv = nullptr;
+        const char* bayerPath = bayerArg ? bayerArg : bayerEnv;
+        const char* nonBayerArg = (argc == 3 && *argv[2]) ? argv[2] : nullptr;
+        const char* nonBayerEnv = std::getenv("RAWLAB_TEST_NON_BAYER_RAW");
+        if (nonBayerEnv && !*nonBayerEnv) nonBayerEnv = nullptr;
+        const char* nonBayerPath = nonBayerArg ? nonBayerArg : nonBayerEnv;
+        if (bayerPath && !std::filesystem::is_regular_file(std::filesystem::u8path(bayerPath))) {
+            std::cerr << "FAIL raw_noise: Bayer RAW sample does not exist: " << bayerPath << std::endl;
+            return 1;
+        }
+        if (nonBayerPath && !std::filesystem::is_regular_file(std::filesystem::u8path(nonBayerPath))) {
+            std::cerr << "FAIL raw_noise: non-Bayer RAW sample does not exist: " << nonBayerPath << std::endl;
+            return 1;
+        }
+        if (!bayerPath) {
             check(processor.loadFile("/nonexistent/raw-noise.raw") != ErrorCode::Success &&
                   !processor.supportsNoiseReduction(), "failed load clears denoise capability");
             std::cout << "SKIP raw_noise: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW" << std::endl;
@@ -104,18 +119,19 @@ int main(int argc, char** argv) {
         check(processor.loadFile("/nonexistent/raw-noise.raw") != ErrorCode::Success &&
               !processor.supportsNoiseReduction(), "failed load clears denoise capability");
 
-        const char* nonBayerPath = (argc == 3 && *argv[2]) ? argv[2] : std::getenv("RAWLAB_TEST_NON_BAYER_RAW");
-        if (nonBayerPath && *nonBayerPath && std::filesystem::exists(std::filesystem::u8path(nonBayerPath))) {
-            request.input_path = nonBayerPath;
-            render(session, request);
-            check(sony2fuji_session_get_raw_noise_reduction_support(session.value, &supported) ==
-                  SONY2FUJI_STATUS_OK && supported == 0, "non-Bayer RAW reports unsupported");
-            sony2fuji_session_set_raw_noise_reduction(session.value, 1);
-            sony2fuji_buffer buffer{};
-            const auto status = sony2fuji_process(session.value, &request, &buffer);
-            sony2fuji_release_buffer(&buffer);
-            check(status == SONY2FUJI_STATUS_UNSUPPORTED, "non-Bayer RAW never silently ignores enabled FBDD");
+        if (!nonBayerPath) {
+            std::cout << "SKIP raw_noise: supply SONY2FUJI_TEST_NON_BAYER_RAW or RAWLAB_TEST_NON_BAYER_RAW" << std::endl;
+            return 77;
         }
+        request.input_path = nonBayerPath;
+        render(session, request);
+        check(sony2fuji_session_get_raw_noise_reduction_support(session.value, &supported) ==
+              SONY2FUJI_STATUS_OK && supported == 0, "non-Bayer RAW reports unsupported");
+        sony2fuji_session_set_raw_noise_reduction(session.value, 1);
+        sony2fuji_buffer buffer{};
+        const auto status = sony2fuji_process(session.value, &request, &buffer);
+        sony2fuji_release_buffer(&buffer);
+        check(status == SONY2FUJI_STATUS_UNSUPPORTED, "non-Bayer RAW never silently ignores enabled FBDD");
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL " << error.what() << std::endl;

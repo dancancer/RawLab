@@ -70,7 +70,7 @@ class RecipeCLI(unittest.TestCase):
         self.assertIn("1 MiB", result.stderr)
 
     def test_real_raw_legacy_parity_and_relative_paths(self):
-        if not RAW or not RAW.is_file():
+        if RAW is None:
             self.skipTest("real RAW fixture not provided")
         # A temporary copy exercises recipe-relative input without touching the original.
         shutil.copyfile(RAW, self.root / "photo.DNG")
@@ -103,14 +103,29 @@ class RecipeCLI(unittest.TestCase):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--cli", type=pathlib.Path, required=True)
-    parser.add_argument("--raw", type=pathlib.Path)
+    parser.add_argument("--raw", type=str)
+    parser.add_argument("--default-raw", type=str)
     arguments, remaining = parser.parse_known_args()
     CLI = arguments.cli.resolve()
-    raw_override = os.environ.get("RAWLAB_TEST_RAW")
-    RAW = pathlib.Path(raw_override).resolve() if raw_override else (arguments.raw.resolve() if arguments.raw else None)
+    if arguments.raw:
+        if not pathlib.Path(arguments.raw).is_file():
+            print(f"FAIL edit_recipe_cli: --raw does not exist: {arguments.raw}", file=sys.stderr)
+            sys.exit(1)
+        RAW = pathlib.Path(arguments.raw).resolve()
+    else:
+        env_raw = os.environ.get("RAWLAB_TEST_RAW", "")
+        if env_raw and not pathlib.Path(env_raw).is_file():
+            print(f"FAIL edit_recipe_cli: RAWLAB_TEST_RAW does not exist: {env_raw}", file=sys.stderr)
+            sys.exit(1)
+        if arguments.default_raw and pathlib.Path(arguments.default_raw).is_file():
+            RAW = pathlib.Path(arguments.default_raw).resolve()
+        elif env_raw:
+            RAW = pathlib.Path(env_raw).resolve()
+        else:
+            RAW = None
     program = unittest.main(argv=[__file__, *remaining], exit=False)
     if not program.result.wasSuccessful():
         sys.exit(1)
-    if not RAW or not RAW.is_file():
-        print(f"SKIP edit_recipe_cli: real RAW sample missing ({RAW})")
+    if RAW is None:
+        print("SKIP edit_recipe_cli: default RAW sample not present and RAWLAB_TEST_RAW not set")
         sys.exit(77)

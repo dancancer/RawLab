@@ -113,10 +113,17 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    const char* rawPath = *argv[1] ? argv[1] : std::getenv("RAWLAB_TEST_RAW");
-    if (!rawPath || !*rawPath || !std::filesystem::exists(std::filesystem::u8path(rawPath))) {
+    const char* argRaw = *argv[1] ? argv[1] : nullptr;
+    const char* envRaw = std::getenv("RAWLAB_TEST_RAW");
+    if (envRaw && !*envRaw) envRaw = nullptr;
+    const char* rawPath = argRaw ? argRaw : envRaw;
+    if (!rawPath) {
         std::cout << "SKIP wavelet_exposure_cache: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
         return 77;
+    }
+    if (!std::filesystem::is_regular_file(std::filesystem::u8path(rawPath))) {
+        std::cerr << "FAIL wavelet_exposure_cache: RAW sample does not exist: " << rawPath << '\n';
+        return 1;
     }
 
     checkPreviewExposureRoundTrip(rawPath, true, false, 2);

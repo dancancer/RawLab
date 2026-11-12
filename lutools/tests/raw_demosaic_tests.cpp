@@ -137,10 +137,17 @@ int main(int argc, char** argv) {
         samePixels(process(processor, options), linearExpected, "VNG selection leaves LinearRaw unchanged");
 
         if (argc == 2) {
-            const char* xtransPath = *argv[1] ? argv[1] : std::getenv("RAWLAB_TEST_NON_BAYER_RAW");
-            if (!xtransPath || !*xtransPath || !std::filesystem::exists(std::filesystem::u8path(xtransPath))) {
+            const char* argXtrans = *argv[1] ? argv[1] : nullptr;
+            const char* envXtrans = std::getenv("RAWLAB_TEST_NON_BAYER_RAW");
+            if (envXtrans && !*envXtrans) envXtrans = nullptr;
+            const char* xtransPath = argXtrans ? argXtrans : envXtrans;
+            if (!xtransPath) {
                 std::cout << "SKIP raw_demosaic_xtrans: supply SONY2FUJI_TEST_NON_BAYER_RAW or RAWLAB_TEST_NON_BAYER_RAW\n";
                 return 77;
+            }
+            if (!std::filesystem::is_regular_file(std::filesystem::u8path(xtransPath))) {
+                std::cerr << "FAIL raw_demosaic_xtrans: X-Trans RAW sample does not exist: " << xtransPath << '\n';
+                return 1;
             }
             auto metadata = std::make_unique<LibRaw>();
             check(metadata->open_file(xtransPath) == LIBRAW_SUCCESS && metadata->imgdata.idata.filters == 9,

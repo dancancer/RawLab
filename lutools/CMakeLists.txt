@@ -756,13 +756,11 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     add_executable(perspective_api_tests tests/perspective_api_tests.cpp)
     target_link_libraries(perspective_api_tests sony2fuji_core)
     add_test(NAME perspective_api COMMAND perspective_api_tests)
-    set_tests_properties(perspective_api PROPERTIES SKIP_RETURN_CODE 77)
     add_test(NAME perspective_raw COMMAND perspective_api_tests "${SONY2FUJI_TEST_RAW}")
     set_tests_properties(perspective_raw PROPERTIES SKIP_RETURN_CODE 77)
     add_executable(geometry_api_tests tests/geometry_api_tests.cpp)
     target_link_libraries(geometry_api_tests sony2fuji_core)
     add_test(NAME geometry_api COMMAND geometry_api_tests)
-    set_tests_properties(geometry_api PROPERTIES SKIP_RETURN_CODE 77)
     add_executable(geometry_viewport_tests tests/geometry_viewport_tests.cpp)
     target_link_libraries(geometry_viewport_tests sony2fuji_core)
     add_test(NAME geometry_viewport COMMAND geometry_viewport_tests)
@@ -805,35 +803,36 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hdr_agent.py"
                     --cli $<TARGET_FILE:sony2fuji_cli> --fixture $<TARGET_FILE:hdr_image_tests>)
             endif()
-            set(CLI_TEST_RAW "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG")
-            if(WIN32 AND EXISTS "${SONY2FUJI_TEST_RAW}")
-                set(CLI_TEST_RAW "${SONY2FUJI_TEST_RAW}")
+            set(CLI_DEFAULT_RAW "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG")
+            set(CLI_RAW_ARGS --default-raw "${CLI_DEFAULT_RAW}")
+            if(NOT "${SONY2FUJI_TEST_RAW}" STREQUAL "")
+                list(APPEND CLI_RAW_ARGS --raw "${SONY2FUJI_TEST_RAW}")
             endif()
             add_test(NAME geometry_cli COMMAND ${Python3_EXECUTABLE}
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_geometry_cli.py"
                 --cli $<TARGET_FILE:sony2fuji_cli>
-                --raw "${CLI_TEST_RAW}"
+                ${CLI_RAW_ARGS}
                 --fixtures "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
             add_test(NAME agent_preview COMMAND ${Python3_EXECUTABLE}
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_agent_preview.py"
                 --cli $<TARGET_FILE:sony2fuji_cli>
-                --raw "${CLI_TEST_RAW}"
+                ${CLI_RAW_ARGS}
                 --fixtures "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
             add_test(NAME raw_info_cli COMMAND ${Python3_EXECUTABLE}
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_raw_info_cli.py"
                 --cli $<TARGET_FILE:sony2fuji_cli>
-                --raw "${CLI_TEST_RAW}"
+                ${CLI_RAW_ARGS}
                 --fixtures "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
             add_test(NAME hdr_source_cache COMMAND ${Python3_EXECUTABLE}
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hdr_sources.py")
             add_test(NAME agent_commands COMMAND ${Python3_EXECUTABLE}
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_agent_commands.py"
                 --cli $<TARGET_FILE:sony2fuji_cli>
-                --raw "${CLI_TEST_RAW}")
+                ${CLI_RAW_ARGS})
             add_test(NAME edit_recipe_cli COMMAND ${Python3_EXECUTABLE}
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_edit_recipe_cli.py"
                 --cli $<TARGET_FILE:sony2fuji_cli>
-                --raw "${CLI_TEST_RAW}")
+                ${CLI_RAW_ARGS})
             set_tests_properties(geometry_cli agent_preview raw_info_cli agent_commands edit_recipe_cli
                 PROPERTIES SKIP_RETURN_CODE 77)
             add_test(NAME edit_recipe_schema COMMAND ${Python3_EXECUTABLE}
@@ -863,8 +862,10 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     endif()
     add_executable(core_tests tests/core_tests.cpp)
     target_link_libraries(core_tests sony2fuji_core Threads::Threads)
-    target_compile_definitions(core_tests PRIVATE TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}" TEST_RAW_PATH="${SONY2FUJI_TEST_RAW}")
+    target_compile_definitions(core_tests PRIVATE TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(NAME color_contracts COMMAND core_tests)
+    add_test(NAME color_contracts_raw COMMAND core_tests "${SONY2FUJI_TEST_RAW}")
+    set_tests_properties(color_contracts_raw PROPERTIES SKIP_RETURN_CODE 77)
     add_executable(processing_cancellation_tests tests/processing_cancellation_tests.cpp)
     target_link_libraries(processing_cancellation_tests sony2fuji_core)
     add_test(NAME processing_cancellation COMMAND processing_cancellation_tests)
@@ -925,7 +926,7 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         endif()
         foreach(fixture "${CMAKE_CURRENT_SOURCE_DIR}/examples/DSC06251.ARW" "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG")
             get_filename_component(fixture_name "${fixture}" NAME_WE)
-            add_test(NAME acceleration_${fixture_name} COMMAND acceleration_tests "${fixture}"
+            add_test(NAME acceleration_${fixture_name} COMMAND acceleration_tests --default-raw "${fixture}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/flog-2-new/FLog2_to_PROVIA_65grid_V.1.00.cube")
             set_tests_properties(acceleration_${fixture_name} PROPERTIES SKIP_RETURN_CODE 77)
         endforeach()
@@ -1048,12 +1049,9 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     add_test(NAME srgb_look COMMAND srgb_look_tests)
     add_executable(lens_api_tests tests/lens_api_tests.cpp)
     target_link_libraries(lens_api_tests sony2fuji_core)
-    set(lens_test_raw "${SONY2FUJI_TEST_RAW}")
-    if(NOT EXISTS "${lens_test_raw}")
-        set(lens_test_raw "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG")
-    endif()
     target_compile_definitions(lens_api_tests PRIVATE TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
-        TEST_RAW_PATH="${lens_test_raw}")
+        TEST_CONFIGURED_RAW_PATH="${SONY2FUJI_TEST_RAW}"
+        TEST_DEFAULT_RAW_PATH="${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG")
     if(MSVC)
         target_compile_options(lens_api_tests PRIVATE /UNDEBUG)
     else()
@@ -1208,14 +1206,14 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     set_tests_properties(raw_white_balance PROPERTIES SKIP_RETURN_CODE 77)
     target_link_libraries(highlight_regression sony2fuji_core)
     add_test(NAME sony_highlights COMMAND highlight_regression
-        "${CMAKE_CURRENT_SOURCE_DIR}/examples/DSC06251.ARW"
+        --default-raw "${CMAKE_CURRENT_SOURCE_DIR}/examples/DSC06251.ARW"
         "${CMAKE_CURRENT_SOURCE_DIR}/flog-2-new/FLog2_to_PROVIA_65grid_V.1.00.cube")
     set_tests_properties(sony_highlights PROPERTIES SKIP_RETURN_CODE 77)
     add_test(NAME raw_input COMMAND raw_smoke "${SONY2FUJI_TEST_RAW}")
     set_tests_properties(raw_input PROPERTIES SKIP_RETURN_CODE 77)
-    add_test(NAME dng_white_balance COMMAND white_balance_tests "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG")
+    add_test(NAME dng_white_balance COMMAND white_balance_tests --default-raw "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG")
     set_tests_properties(dng_white_balance PROPERTIES SKIP_RETURN_CODE 77)
-    add_test(NAME dji_raw COMMAND raw_smoke "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG")
+    add_test(NAME dji_raw COMMAND raw_smoke --default-raw "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG")
     set_tests_properties(dji_raw PROPERTIES SKIP_RETURN_CODE 77)
 endif()
 

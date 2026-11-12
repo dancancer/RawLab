@@ -375,7 +375,7 @@ class AgentCommands(unittest.TestCase):
             raise
 
     def use_raw_fixture(self):
-        if RAW is None or not RAW.is_file():
+        if RAW is None:
             self.skipTest("real RAW fixture not provided")
         # A symlink exercises recipe-relative input without copying or modifying RAWs.
         self.create_link(self.root / "photo.DNG", RAW, "symlink")
@@ -449,14 +449,29 @@ class AgentCommands(unittest.TestCase):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--cli", type=pathlib.Path, required=True)
-    parser.add_argument("--raw", type=pathlib.Path)
+    parser.add_argument("--raw", type=str)
+    parser.add_argument("--default-raw", type=str)
     arguments, remaining = parser.parse_known_args()
     CLI = arguments.cli.resolve()
-    raw_override = os.environ.get("RAWLAB_TEST_RAW")
-    RAW = pathlib.Path(raw_override).resolve() if raw_override else (arguments.raw.resolve() if arguments.raw else None)
+    if arguments.raw:
+        if not pathlib.Path(arguments.raw).is_file():
+            print(f"FAIL agent_commands: --raw does not exist: {arguments.raw}", file=sys.stderr)
+            sys.exit(1)
+        RAW = pathlib.Path(arguments.raw).resolve()
+    else:
+        env_raw = os.environ.get("RAWLAB_TEST_RAW", "")
+        if env_raw and not pathlib.Path(env_raw).is_file():
+            print(f"FAIL agent_commands: RAWLAB_TEST_RAW does not exist: {env_raw}", file=sys.stderr)
+            sys.exit(1)
+        if arguments.default_raw and pathlib.Path(arguments.default_raw).is_file():
+            RAW = pathlib.Path(arguments.default_raw).resolve()
+        elif env_raw:
+            RAW = pathlib.Path(env_raw).resolve()
+        else:
+            RAW = None
     program = unittest.main(argv=[__file__, *remaining], exit=False)
     if not program.result.wasSuccessful():
         sys.exit(1)
-    if RAW is None or not RAW.is_file():
-        print(f"SKIP agent_commands: real RAW sample missing ({RAW})")
+    if RAW is None:
+        print("SKIP agent_commands: default RAW sample not present and RAWLAB_TEST_RAW not set")
         sys.exit(77)

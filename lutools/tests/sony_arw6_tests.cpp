@@ -100,10 +100,17 @@ int main(int argc, char** argv) {
         checkDispatch();
         checkSyntheticStreams();
         if (argc == 2) {
-            const char* path = *argv[1] ? argv[1] : std::getenv("RAWLAB_TEST_SONY_ARW6");
-            if (!path || !*path || !std::filesystem::exists(std::filesystem::u8path(path))) {
+            const char* argPath = *argv[1] ? argv[1] : nullptr;
+            const char* envPath = std::getenv("RAWLAB_TEST_SONY_ARW6");
+            if (envPath && !*envPath) envPath = nullptr;
+            const char* path = argPath ? argPath : envPath;
+            if (!path) {
                 std::cout << "SKIP sony_arw6_photo: supply SONY2FUJI_TEST_SONY_ARW6 or RAWLAB_TEST_SONY_ARW6\n";
                 return 77;
+            }
+            if (!std::filesystem::is_regular_file(std::filesystem::u8path(path))) {
+                std::cerr << "FAIL sony_arw6_photo: Sony ARW6 sample does not exist: " << path << '\n';
+                return 1;
             }
             checkPhoto(path);
         }

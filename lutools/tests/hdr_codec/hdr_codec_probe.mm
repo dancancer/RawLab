@@ -258,6 +258,14 @@ int main(int argc, const char* argv[]) {
         if (@available(macOS 15.0, iOS 18.0, *)) {
 #if RAWLAB_HDR_PRODUCTION
             if (argc==3 && (std::string(argv[1])=="production_external" || std::string(argv[1])=="production_external_final")) {
+                if (!*argv[2]) {
+                    std::cout << "SKIP hdr_codec_production_final: supply HDR_FINAL_FIXTURE\n";
+                    return 77;
+                }
+                if (!std::filesystem::is_regular_file(std::filesystem::u8path(argv[2]))) {
+                    std::cerr << "FAIL production: fixture does not exist: " << argv[2] << '\n';
+                    return 1;
+                }
                 try { checkProductionFile(argv[2],std::string(argv[1])=="production_external_final"); return 0; }
                 catch (const std::exception& error) { std::cerr<<"FAIL production: "<<error.what()<<'\n'; return 1; }
             }

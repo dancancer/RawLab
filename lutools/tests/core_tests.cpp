@@ -5,6 +5,7 @@
 #include "core/photo_rendering.h"
 #include "core/photo_lut.h"
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -295,31 +296,44 @@ void testJpegExportWriteSafety(const std::filesystem::path& parentDir, sony2fuji
 #endif
 }
 
-int main() {
+int main(int argc, char** argv) {
     std::cout << std::unitbuf;
-    const std::string thumbnailRaw=TEST_RAW_PATH;
-    if (!thumbnailRaw.empty()) {
+    if (argc > 2) return 2;
+    if (argc == 2) {
+        const char* argRaw = *argv[1] ? argv[1] : nullptr;
+        const char* envRaw = std::getenv("RAWLAB_TEST_RAW");
+        if (envRaw && !*envRaw) envRaw = nullptr;
+        const char* thumbnailRaw = argRaw ? argRaw : envRaw;
+        if (!thumbnailRaw) {
+            std::cout << "SKIP color_contracts_raw: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
+            return 77;
+        }
+        if (!std::filesystem::is_regular_file(std::filesystem::u8path(thumbnailRaw))) {
+            std::cerr << "FAIL color_contracts_raw: RAW sample does not exist: " << thumbnailRaw << '\n';
+            return 1;
+        }
 #ifdef _WIN32
-    HANDLE worker = CreateThread(nullptr, 512*1024, [](LPVOID path)->DWORD {
-        return loadPreviewLuminance(static_cast<const char*>(path)).empty() ? 1 : 0;
-    }, const_cast<char*>(thumbnailRaw.c_str()), STACK_SIZE_PARAM_IS_A_RESERVATION, nullptr);
-    DWORD result = 1;
-    if (worker) { WaitForSingleObject(worker, INFINITE); GetExitCodeThread(worker, &result); CloseHandle(worker); }
-    check(worker && result == 0,"Preview decode fits a desktop worker thread stack");
+        HANDLE worker = CreateThread(nullptr, 512*1024, [](LPVOID path)->DWORD {
+            return loadPreviewLuminance(static_cast<const char*>(path)).empty() ? 1 : 0;
+        }, const_cast<char*>(thumbnailRaw), STACK_SIZE_PARAM_IS_A_RESERVATION, nullptr);
+        DWORD result = 1;
+        if (worker) { WaitForSingleObject(worker, INFINITE); GetExitCodeThread(worker, &result); CloseHandle(worker); }
+        check(worker && result == 0,"Preview decode fits a desktop worker thread stack");
 #else
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setstacksize(&attr,512*1024);
-    pthread_t worker;
-    const int started=pthread_create(&worker,&attr,[](void* path)->void* {
-        return loadPreviewLuminance(static_cast<const char*>(path)).empty() ? reinterpret_cast<void*>(1) : nullptr;
-    },const_cast<char*>(thumbnailRaw.c_str()));
-    pthread_attr_destroy(&attr);
-    void* result=nullptr;
-    if (!started) pthread_join(worker,&result);
-    check(!started && !result,"Preview decode fits a desktop worker thread stack");
+        pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        pthread_attr_setstacksize(&attr,512*1024);
+        pthread_t worker;
+        const int started=pthread_create(&worker,&attr,[](void* path)->void* {
+            return loadPreviewLuminance(static_cast<const char*>(path)).empty() ? reinterpret_cast<void*>(1) : nullptr;
+        },const_cast<char*>(thumbnailRaw));
+        pthread_attr_destroy(&attr);
+        void* result=nullptr;
+        if (!started) pthread_join(worker,&result);
+        check(!started && !result,"Preview decode fits a desktop worker thread stack");
 #endif
-    } else std::cout << "SKIP worker thumbnail (set SONY2FUJI_TEST_RAW)\n";
+        return failures ? 1 : 0;
+    }
     check(!RAWProcessOptions().matchEmbeddedPreviewExposure, "Default exposure does not meter the embedded JPEG");
     check(near(sceneExposureEV(.35f),1.05f) && near(sceneExposureEV(-.5f),.2f) &&
         near(sceneExposureEV(-999),.7f), "DNG baseline offsets are independent of scene content");

@@ -123,11 +123,19 @@ int main(int argc,char** argv) {
         sony2fuji_hsl_probe_query q{99,sizeof(q),13,27,0,0};sony2fuji_hsl_probe_result result{};result.weights[0]=1;
         require(sony2fuji_hsl_probe_sample(p.get(),&q,&result)==SONY2FUJI_STATUS_INVALID_ARGUMENT&&result.weights[0]==0,"invalid metadata clears result");
         if(argc>1) {
-            const char* rawPath=*argv[1] ? argv[1] : std::getenv("RAWLAB_TEST_RAW");
-            if(!rawPath || !*rawPath || !std::filesystem::exists(std::filesystem::u8path(rawPath))) {
+            const char* argRaw=*argv[1] ? argv[1] : nullptr;
+            const char* envRaw=std::getenv("RAWLAB_TEST_RAW");
+            if(envRaw && !*envRaw) envRaw=nullptr;
+            const char* rawPath=argRaw ? argRaw : envRaw;
+            if(!rawPath) {
                 sony2fuji_session_destroy(session);
                 std::cout<<"SKIP hsl_probe_raw: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
                 return 77;
+            }
+            if(!std::filesystem::is_regular_file(std::filesystem::u8path(rawPath))) {
+                sony2fuji_session_destroy(session);
+                std::cerr<<"FAIL hsl_probe_raw: RAW sample does not exist: "<<rawPath<<'\n';
+                return 1;
             }
             request.input_type=SONY2FUJI_INPUT_RAW;request.input_path=rawPath;request.input_pixels=nullptr;request.input_width=request.input_height=0;
             request.preview_long_edge=96;auto raw=capture(session,request);const auto rawSample=sample(raw,.5f,.5f);

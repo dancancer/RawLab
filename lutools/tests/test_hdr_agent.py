@@ -50,7 +50,7 @@ class HDRAgent(unittest.TestCase):
                     self.v14_export(root, "raw", source, output_format)
 
     def test_v14_sony_raw_retains_crop(self):
-        if SONY_RAW is None or not SONY_RAW.is_file():
+        if SONY_RAW is None:
             self.skipTest("Requires the external Sony ILCE-7CM2 4:3 regression photo")
         with tempfile.TemporaryDirectory(prefix="rawlab-hdr-sony-crop-") as temporary:
             root = Path(temporary)
@@ -291,14 +291,20 @@ if __name__=="__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument("--cli",type=Path,required=True)
     parser.add_argument("--fixture",type=Path,required=True)
-    parser.add_argument("--sony-raw",type=Path)
+    parser.add_argument("--sony-raw",type=str)
     args,remaining=parser.parse_known_args()
     CLI,FIXTURE=args.cli.resolve(),args.fixture.resolve()
-    sony_raw_arg=str(args.sony_raw) if args.sony_raw and str(args.sony_raw) else os.environ.get("RAWLAB_TEST_SONY_ASPECT_RAW")
-    SONY_RAW=Path(sony_raw_arg).resolve() if sony_raw_arg else None
+    sony_raw_arg=args.sony_raw if args.sony_raw else os.environ.get("RAWLAB_TEST_SONY_ASPECT_RAW","")
+    if sony_raw_arg:
+        if not Path(sony_raw_arg).is_file():
+            print(f"FAIL test_hdr_agent: Sony RAW sample does not exist: {sony_raw_arg}",file=sys.stderr)
+            sys.exit(1)
+        SONY_RAW=Path(sony_raw_arg).resolve()
+    else:
+        SONY_RAW=None
     program=unittest.main(argv=[__file__,*remaining],exit=False)
     if not program.result.wasSuccessful():
         sys.exit(1)
     if program.result.testsRun > 0 and len(program.result.skipped) == program.result.testsRun:
-        print(f"SKIP raw_active_area_sony_cli: Sony 4:3 RAW sample missing ({SONY_RAW})")
+        print("SKIP raw_active_area_sony_cli: supply SONY2FUJI_TEST_SONY_ASPECT_RAW or RAWLAB_TEST_SONY_ASPECT_RAW")
         sys.exit(77)

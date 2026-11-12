@@ -103,11 +103,19 @@ int main(int argc, char** argv) {
         gpu.mode=SONY2FUJI_GPU_OFF;require(sony2fuji_session_set_gpu_config(session,&gpu)==SONY2FUJI_STATUS_OK,"restore CPU mode");
         require(sony2fuji_session_set_color_grading(session,&identity)==SONY2FUJI_STATUS_OK,"restore grading identity");
         if (argc>1) {
-            const char* rawPath=*argv[1] ? argv[1] : std::getenv("RAWLAB_TEST_RAW");
-            if (!rawPath || !*rawPath || !std::filesystem::exists(std::filesystem::u8path(rawPath))) {
+            const char* argRaw=*argv[1] ? argv[1] : nullptr;
+            const char* envRaw=std::getenv("RAWLAB_TEST_RAW");
+            if (envRaw && !*envRaw) envRaw=nullptr;
+            const char* rawPath=argRaw ? argRaw : envRaw;
+            if (!rawPath) {
                 sony2fuji_session_destroy(session);
                 std::cout<<"SKIP color_grading_raw: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
                 return 77;
+            }
+            if (!std::filesystem::is_regular_file(std::filesystem::u8path(rawPath))) {
+                sony2fuji_session_destroy(session);
+                std::cerr<<"FAIL color_grading_raw: RAW sample does not exist: "<<rawPath<<'\n';
+                return 1;
             }
             request.input_type=SONY2FUJI_INPUT_RAW;request.input_path=rawPath;request.input_pixels=nullptr;
             request.input_width=request.input_height=0;request.size_mode=SONY2FUJI_SIZE_LIMIT_LONG_EDGE;request.long_edge=192;

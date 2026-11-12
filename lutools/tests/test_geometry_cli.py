@@ -135,7 +135,7 @@ class GeometryCLI(unittest.TestCase):
         self.assertEqual(final.read_bytes(), original)
 
     def test_real_raw_reusable_geometry_recipe(self):
-        if RAW is None or not RAW.is_file():
+        if RAW is None:
             self.skipTest("real RAW fixture not provided")
         self.document["input"]["path"] = str(RAW)
         self.document["edits"]["geometry"] = {
@@ -161,16 +161,31 @@ class GeometryCLI(unittest.TestCase):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--cli", type=pathlib.Path, required=True)
-    parser.add_argument("--raw", type=pathlib.Path)
+    parser.add_argument("--raw", type=str)
+    parser.add_argument("--default-raw", type=str)
     parser.add_argument("--fixtures", type=pathlib.Path, required=True)
     options, remaining = parser.parse_known_args()
     CLI = options.cli.resolve()
-    raw_override = os.environ.get("RAWLAB_TEST_RAW")
-    RAW = pathlib.Path(raw_override).resolve() if raw_override else (options.raw.resolve() if options.raw else None)
+    if options.raw:
+        if not pathlib.Path(options.raw).is_file():
+            print(f"FAIL geometry_cli: --raw does not exist: {options.raw}", file=sys.stderr)
+            sys.exit(1)
+        RAW = pathlib.Path(options.raw).resolve()
+    else:
+        env_raw = os.environ.get("RAWLAB_TEST_RAW", "")
+        if env_raw and not pathlib.Path(env_raw).is_file():
+            print(f"FAIL geometry_cli: RAWLAB_TEST_RAW does not exist: {env_raw}", file=sys.stderr)
+            sys.exit(1)
+        if options.default_raw and pathlib.Path(options.default_raw).is_file():
+            RAW = pathlib.Path(options.default_raw).resolve()
+        elif env_raw:
+            RAW = pathlib.Path(env_raw).resolve()
+        else:
+            RAW = None
     FIXTURES = options.fixtures.resolve()
     program = unittest.main(argv=[__file__, *remaining], exit=False)
     if not program.result.wasSuccessful():
         sys.exit(1)
-    if RAW is None or not RAW.is_file():
-        print(f"SKIP geometry_cli: real RAW sample missing ({RAW})")
+    if RAW is None:
+        print("SKIP geometry_cli: default RAW sample not present and RAWLAB_TEST_RAW not set")
         sys.exit(77)

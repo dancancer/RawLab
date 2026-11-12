@@ -8,9 +8,31 @@
 #include <vector>
 
 int main(int argc, char** argv) {
+    if (argc > 2) return 2;
+    const char* argRaw = (argc == 2 && *argv[1]) ? argv[1] : nullptr;
+    const char* configuredRaw = *TEST_CONFIGURED_RAW_PATH ? TEST_CONFIGURED_RAW_PATH : nullptr;
     const char* envRaw = std::getenv("RAWLAB_TEST_RAW");
-    const char* rawPath = (argc == 2 && *argv[1]) ? argv[1] : ((envRaw && *envRaw) ? envRaw : TEST_RAW_PATH);
-    const bool hasRaw = rawPath && *rawPath && std::filesystem::exists(std::filesystem::u8path(rawPath));
+    if (envRaw && !*envRaw) envRaw = nullptr;
+    const char* explicitRaw = argRaw ? argRaw : configuredRaw;
+    const char* rawPath = nullptr;
+    if (explicitRaw) {
+        if (!std::filesystem::is_regular_file(std::filesystem::u8path(explicitRaw))) {
+            std::cerr << "FAIL lens_api: RAW sample does not exist: " << explicitRaw << '\n';
+            return 1;
+        }
+        rawPath = explicitRaw;
+    } else {
+        if (envRaw && !std::filesystem::is_regular_file(std::filesystem::u8path(envRaw))) {
+            std::cerr << "FAIL lens_api: RAWLAB_TEST_RAW does not exist: " << envRaw << '\n';
+            return 1;
+        }
+        if (*TEST_DEFAULT_RAW_PATH && std::filesystem::is_regular_file(std::filesystem::u8path(TEST_DEFAULT_RAW_PATH))) {
+            rawPath = TEST_DEFAULT_RAW_PATH;
+        } else {
+            rawPath = envRaw;
+        }
+    }
+    const bool hasRaw = rawPath != nullptr;
     sony2fuji_session* session = nullptr;
     assert(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK);
     sony2fuji_lens_correction_config config{SONY2FUJI_LENS_CORRECTION_CONFIG_VERSION, sizeof(config), 0, 0, 1, nullptr};
@@ -105,7 +127,7 @@ int main(int argc, char** argv) {
 #endif
     sony2fuji_session_destroy(session);
     if (!hasRaw) {
-        std::cout << "SKIP lens_api: real RAW sample missing (" << (rawPath ? rawPath : "") << ")\n";
+        std::cout << "SKIP lens_api: default RAW sample not present and RAWLAB_TEST_RAW not set\n";
         return 77;
     }
     std::cout << "Lens ABI validation, buffer isolation and optional build passed\n";

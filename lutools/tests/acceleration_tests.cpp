@@ -51,15 +51,37 @@ std::vector<uint8_t> readFile(const std::filesystem::path& path) {
 }
 
 int main(int argc, char** argv) {
-    if (argc != 3) return 2;
-    const char* rawPath = argv[1];
-    if (!rawPath || !*rawPath || !std::filesystem::exists(std::filesystem::u8path(rawPath))) {
-        const char* envRaw = std::getenv("RAWLAB_TEST_RAW");
-        if (envRaw && *envRaw) rawPath = envRaw;
+    bool defaultRaw = false;
+    if (argc >= 2 && std::string(argv[1]) == "--default-raw") {
+        defaultRaw = true;
+        --argc;
+        ++argv;
     }
-    if (!rawPath || !*rawPath || !std::filesystem::exists(std::filesystem::u8path(rawPath))) {
-        std::cout << "SKIP acceleration_tests: missing RAW sample " << (rawPath ? rawPath : "") << '\n';
-        return 77;
+    if (argc != 3) return 2;
+    const char* rawPath = nullptr;
+    if (defaultRaw) {
+        if (!argv[1] || !*argv[1] || !std::filesystem::is_regular_file(std::filesystem::u8path(argv[1]))) {
+            std::cout << "SKIP acceleration_tests: default RAW sample not present (" << (argv[1] ? argv[1] : "") << ")\n";
+            return 77;
+        }
+        rawPath = argv[1];
+    } else {
+        const char* argRaw = (argv[1] && *argv[1]) ? argv[1] : nullptr;
+        const char* envRaw = std::getenv("RAWLAB_TEST_RAW");
+        if (envRaw && !*envRaw) envRaw = nullptr;
+        rawPath = argRaw ? argRaw : envRaw;
+        if (!rawPath) {
+            std::cout << "SKIP acceleration_tests: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
+            return 77;
+        }
+        if (!std::filesystem::is_regular_file(std::filesystem::u8path(rawPath))) {
+            std::cerr << "FAIL acceleration_tests: RAW sample does not exist: " << rawPath << '\n';
+            return 1;
+        }
+    }
+    if (!argv[2] || !*argv[2] || !std::filesystem::is_regular_file(std::filesystem::u8path(argv[2]))) {
+        std::cerr << "FAIL acceleration_tests: LUT does not exist: " << (argv[2] ? argv[2] : "") << '\n';
+        return 1;
     }
 #ifdef SONY2FUJI_ENABLE_METAL
     const bool nativeCpuOnly = false;

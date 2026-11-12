@@ -97,16 +97,24 @@ void writeJXLCopy(const char* path, const std::filesystem::path& output) {
     }
 }
 #endif
-int main() {
+int main(int argc, char** argv) {
+    if (argc > 2) return 2;
     try {
         bool rejected = false;
         try { hdr::probeProRAW(TEST_FIXTURE_DIR "/bayer-demosaic.dng"); }
         catch (const hdr::Error&) { rejected = true; }
         check(rejected, "Ordinary DNG was accepted as ProRAW");
-        const auto* input = std::getenv("RAWLAB_TEST_PRORAW");
-        if (!input || !*input || !std::filesystem::exists(std::filesystem::u8path(input))) {
-            std::cout << "ProRAW rejection passed; real input not configured\n";
+        const char* argInput = (argc == 2 && *argv[1]) ? argv[1] : nullptr;
+        const char* envInput = std::getenv("RAWLAB_TEST_PRORAW");
+        if (envInput && !*envInput) envInput = nullptr;
+        const char* input = argInput ? argInput : envInput;
+        if (!input) {
+            std::cout << "SKIP proraw_hdr: ProRAW rejection passed; set RAWLAB_TEST_PRORAW for real input\n";
             return 77;
+        }
+        if (!std::filesystem::is_regular_file(std::filesystem::u8path(input))) {
+            std::cerr << "FAIL proraw_hdr: ProRAW sample does not exist: " << input << '\n';
+            return 1;
         }
         const auto info = hdr::probeProRAW(input);
         check(info.width >= 3000 && info.height >= 3000 && info.orientation == 1,

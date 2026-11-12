@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <iostream>
 #include <memory>
+#include <string>
 
 int failures=0;
 void check(bool value,const char* name) {
@@ -68,10 +69,28 @@ int main(int argc,char** argv) {
           "A supplied profile does not bypass custom WB parameter validation");
     if (argc<2) return failures ? 1 : 0;
     if (failures) return 1;
-    const char* rawPath=*argv[1] ? argv[1] : std::getenv("RAWLAB_TEST_RAW");
-    if (!rawPath || !*rawPath || !std::filesystem::exists(std::filesystem::u8path(rawPath))) {
-        std::cout<<"SKIP white_balance_tests: missing RAW sample "<<(rawPath ? rawPath : "")<<'\n';
-        return 77;
+    const char* rawPath=nullptr;
+    if (argc==3 && std::string(argv[1])=="--default-raw") {
+        if (!argv[2] || !*argv[2] || !std::filesystem::is_regular_file(std::filesystem::u8path(argv[2]))) {
+            std::cout<<"SKIP dng_white_balance: default RAW sample not present ("<<(argv[2] ? argv[2] : "")<<")\n";
+            return 77;
+        }
+        rawPath=argv[2];
+    } else if (argc==2) {
+        const char* argRaw=*argv[1] ? argv[1] : nullptr;
+        const char* envRaw=std::getenv("RAWLAB_TEST_RAW");
+        if (envRaw && !*envRaw) envRaw=nullptr;
+        rawPath=argRaw ? argRaw : envRaw;
+        if (!rawPath) {
+            std::cout<<"SKIP raw_white_balance: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
+            return 77;
+        }
+        if (!std::filesystem::is_regular_file(std::filesystem::u8path(rawPath))) {
+            std::cerr<<"FAIL raw_white_balance: RAW sample does not exist: "<<rawPath<<'\n';
+            return 1;
+        }
+    } else {
+        return 2;
     }
     LibRaw calibration;
     check(calibration.open_file(rawPath)==LIBRAW_SUCCESS,"Read camera matrix fixture");

@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <iostream>
 #include <memory>
+#include <string>
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_JPEG
 #define STBI_NO_STDIO
@@ -15,15 +16,28 @@
 using namespace sony2fuji;
 
 int main(int argc, char** argv) {
+    bool defaultRaw = false;
+    if (argc >= 2 && std::string(argv[1]) == "--default-raw") {
+        defaultRaw = true;
+        --argc;
+        ++argv;
+    }
     if (argc != 3) return 2;
     const char* rawPath = argv[1];
-    if (!rawPath || !*rawPath || !std::filesystem::exists(std::filesystem::u8path(rawPath))) {
-        const char* envRaw = std::getenv("RAWLAB_TEST_SONY_HIGHLIGHTS");
-        if (envRaw && *envRaw) rawPath = envRaw;
-    }
-    if (!rawPath || !*rawPath || !std::filesystem::exists(std::filesystem::u8path(rawPath))) {
-        std::cout << "SKIP sony_highlights: missing RAW sample " << (rawPath ? rawPath : "") << '\n';
-        return 77;
+    if (defaultRaw) {
+        if (!rawPath || !*rawPath || !std::filesystem::is_regular_file(std::filesystem::u8path(rawPath))) {
+            std::cout << "SKIP sony_highlights: default RAW sample not present (" << (rawPath ? rawPath : "") << ")\n";
+            return 77;
+        }
+    } else {
+        if (!rawPath || !*rawPath) {
+            std::cout << "SKIP sony_highlights: RAW sample not configured\n";
+            return 77;
+        }
+        if (!std::filesystem::is_regular_file(std::filesystem::u8path(rawPath))) {
+            std::cerr << "FAIL sony_highlights: RAW sample does not exist: " << rawPath << '\n';
+            return 1;
+        }
     }
     auto metadata = std::make_unique<LibRaw>();
     if (metadata->open_file(rawPath) || metadata->unpack_thumb()) return 1;
