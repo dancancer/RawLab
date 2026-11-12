@@ -396,11 +396,11 @@ class PhotoStorage(
         }
     }
 
-    internal fun deleteIncompleteDocument(destination: Uri, original: Uri, written: Boolean = false) {
+    internal fun deleteIncompleteDocument(destination: Uri, original: Uri? = null, written: Boolean = false) {
         if (destination == original) return
         if (destination.scheme == "file") {
             val target = destination.path?.let(::File) ?: return
-            val source = original.takeIf { it.scheme == "file" }?.path?.let(::File)
+            val source = original?.takeIf { it.scheme == "file" }?.path?.let(::File)
             if (source != null && runCatching { target.canonicalPath == source.canonicalPath }.getOrDefault(false)) return
             if (written || (target.exists() && target.length() == 0L)) target.delete()
             return

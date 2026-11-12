@@ -2,6 +2,10 @@ package com.rawlab.android.editor.render
 
 import android.graphics.Bitmap
 import android.net.Uri
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import com.rawlab.android.engine.LensInfo
 import com.rawlab.android.engine.RgbHistogram
 import com.rawlab.android.format.ExportFormat
@@ -89,8 +93,35 @@ internal sealed interface WorkResult {
     data object Export : WorkResult
     data class AutoExposure(val request: Work.AutoExposure, val exposure: Float) : WorkResult
 }
+internal fun interface ExportDestinationDeleter {
+    fun deleteIncomplete(destination: Uri, original: Uri?)
+}
+
+internal class ExportDestinationCleanup(
+    private val scope: CoroutineScope = APPLICATION_SCOPE,
+    private val deleter: ExportDestinationDeleter,
+) {
+    fun scheduleDelete(destination: Uri?, original: Uri?) {
+        if (destination == null || destination == original) return
+        scope.launch {
+            deleter.deleteIncomplete(destination, original)
+        }
+    }
+
+    companion object {
+        private val APPLICATION_SCOPE = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    }
+}
+
 internal fun Work.discardOwnedInput() {
     if (this is Work.Import && ownsRetained) retained?.file?.delete()
+}
+
+internal fun Work.discardPendingWork(cleanup: ExportDestinationCleanup) {
+    discardOwnedInput()
+    if (this is Work.Export && destination != null) {
+        cleanup.scheduleDelete(destination, photo.uri)
+    }
 }
 internal fun WorkResult.discardOwnedInput() {
     when (this) {

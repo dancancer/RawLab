@@ -36,6 +36,9 @@ internal class EditorRenderer(
     private val storage: PhotoStorage,
     private val restore: (PhotoIdentity) -> PhotoEditState?,
     private val debuggable: Boolean,
+    private val destinationDeleter: ExportDestinationDeleter = ExportDestinationDeleter { destination, original ->
+        storage.deleteIncompleteDocument(destination, original)
+    },
 ) {
     private var processor: NativeProcessor? = null
     private data class ReferenceFrame(val bitmap: Bitmap, val histogram: RgbHistogram?)
@@ -79,10 +82,10 @@ internal class EditorRenderer(
     private fun engine() = processor ?: NativeProcessor(lensDatabase = storage.lensDatabase()).also { processor = it }
 
     fun perform(work: Work, cancellation: RenderCancellation): WorkResult = synchronized(storage) {
-        if (work !is Work.Preview && work !is Work.HslProbe && work !is Work.Import &&
-            work !is Work.CameraHDRPreflight && work !is Work.Export && work !is Work.AutoExposure)
-            return@synchronized perform(work)
-        try {
+        runGuardedExportWork(work, destinationDeleter) {
+            if (work !is Work.Preview && work !is Work.HslProbe && work !is Work.Import &&
+                work !is Work.CameraHDRPreflight && work !is Work.Export && work !is Work.AutoExposure)
+                return@runGuardedExportWork perform(work)
             cancellation.check()
             val native = engine()
             val generation = native.cancellationGeneration()
@@ -91,11 +94,6 @@ internal class EditorRenderer(
                 cancellation.check()
                 perform(work, generation)
             } finally { cancellation.onCancel(null) }
-        } catch (error: Throwable) {
-            if (work is Work.Export && work.destination != null && isExportCancellation(error)) {
-                storage.deleteIncompleteDocument(work.destination, work.photo.uri)
-            }
-            throw error
         }
     }
 
@@ -418,6 +416,21 @@ internal class EditorRenderer(
     private fun encodeSrgb(value: Float): Float {
         val v = value.coerceIn(0f, 1f)
         return if (v <= .0031308f) 12.92f * v else 1.055f * v.toDouble().pow(1.0 / 2.4).toFloat() - .055f
+    }
+}
+
+internal inline fun runGuardedExportWork(
+    work: Work,
+    destinationDeleter: ExportDestinationDeleter,
+    block: () -> WorkResult,
+): WorkResult {
+    try {
+        return block()
+    } catch (error: Throwable) {
+        if (work is Work.Export && work.destination != null && work.destination != work.photo.uri) {
+            destinationDeleter.deleteIncomplete(work.destination, work.photo.uri)
+        }
+        throw error
     }
 }
 

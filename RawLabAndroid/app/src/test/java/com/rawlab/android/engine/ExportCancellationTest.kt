@@ -1,5 +1,8 @@
 package com.rawlab.android.engine
 
+import android.net.TestUri
+import android.net.Uri
+import com.rawlab.android.R
 import com.rawlab.android.batch.BatchJob
 import com.rawlab.android.batch.BatchRowStatus
 import com.rawlab.android.batch.BatchRunner
@@ -8,14 +11,30 @@ import com.rawlab.android.batch.BatchTarget
 import com.rawlab.android.batch.asBatchOutputFailure
 import com.rawlab.android.editor.EditorState
 import com.rawlab.android.editor.EditorStateReducer
+import com.rawlab.android.editor.ExportSubmission
 import com.rawlab.android.editor.Operation
+import com.rawlab.android.editor.prepareExportSubmission
+import com.rawlab.android.editor.render.ExportDestinationCleanup
+import com.rawlab.android.editor.render.ExportDestinationDeleter
 import com.rawlab.android.editor.render.RenderQueue
+import com.rawlab.android.editor.render.Work
+import com.rawlab.android.editor.render.WorkResult
+import com.rawlab.android.editor.render.discardPendingWork
 import com.rawlab.android.editor.render.isExportCancellation
+import com.rawlab.android.editor.render.runGuardedExportWork
+import com.rawlab.android.format.ExportFormat
+import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.PhotoIdentity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -263,6 +282,181 @@ class ExportCancellationTest {
             assertNull(finished.rows[2].error)
             assertEquals(listOf("1.jpg"), outputDir.listFiles()!!.map { it.name })
             assertTrue("All temporary and partial batch files must be deleted", tempDir.listFiles().orEmpty().isEmpty())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun discardPendingDeletesSafDestinationEvenAfterViewModelScopeCancelled() {
+        val root = Files.createTempDirectory("rawlab-saf-discard-on-clear").toFile()
+        val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val viewModelScope = CoroutineScope(Job())
+        val firstRunning = CountDownLatch(1)
+        val unblockFirst = CountDownLatch(1)
+        val deletedLatch = CountDownLatch(1)
+        val deletedPairs = java.util.Collections.synchronizedList(mutableListOf<Pair<Uri, Uri?>>())
+        try {
+            val sourceUri = TestUri.of("/source-photo.arw")
+            val safDestination = TestUri.of("/Downloads/export-empty.jpg")
+            val photo = ImportedPhoto(sourceUri, "source-photo.arw", File(root, "source.arw").apply { writeText("raw") })
+            val cleanup = ExportDestinationCleanup(appScope) { destination, original ->
+                deletedPairs += destination to original
+                deletedLatch.countDown()
+            }
+            val queue = RenderQueue<Work, WorkResult>(
+                render = { work, _ ->
+                    if (work is Work.AutoExposure) {
+                        firstRunning.countDown()
+                        unblockFirst.await(5, TimeUnit.SECONDS)
+                        WorkResult.AutoExposure(work, 0f)
+                    } else {
+                        WorkResult.Export
+                    }
+                },
+                publish = { _, _ -> },
+                release = {},
+                discardPending = { work -> work.discardPendingWork(cleanup) },
+            )
+            try {
+                queue.submit(Work.AutoExposure(photo, EditSettings(), 0))
+                assertTrue(firstRunning.await(5, TimeUnit.SECONDS))
+                queue.submit(Work.Export(photo, EditSettings(), safDestination, ExportFormat.JPEG, null, 0))
+
+                // AndroidX ViewModel.clear() cancels viewModelScope BEFORE calling onCleared() -> queue.close().
+                viewModelScope.cancel()
+                queue.close()
+                unblockFirst.countDown()
+
+                assertTrue("Pending SAF export destination must still be deleted after viewModelScope cancellation",
+                    deletedLatch.await(5, TimeUnit.SECONDS))
+                assertEquals(listOf(safDestination to sourceUri), deletedPairs.toList())
+            } finally {
+                unblockFirst.countDown()
+                queue.close()
+            }
+        } finally {
+            appScope.cancel()
+            root.deleteRecursively()
+        }
+    }
+
+    @Test fun earlyValidationFailuresDeleteSafDestinationWithoutTouchingSourcePhoto() {
+        val root = Files.createTempDirectory("rawlab-saf-early-return").toFile()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val deleted = mutableListOf<Pair<Uri, Uri?>>()
+        try {
+            val sourceUri = TestUri.of("/photos/original.arw")
+            val photo = ImportedPhoto(sourceUri, "original.arw", File(root, "original.arw").apply { writeText("raw") })
+            val cleanup = ExportDestinationCleanup(scope) { destination, original ->
+                deleted += destination to original
+            }
+
+            // 1. State left PICK_EXPORT while SAF picker was open.
+            val staleDest = TestUri.of("/Downloads/stale.jpg")
+            val staleResult = prepareExportSubmission(
+                EditorState(photo = photo, operation = Operation.NONE),
+                staleDest, ExportFormat.JPEG, null, 0, cleanup,
+            )
+            assertTrue(staleResult is ExportSubmission.Rejected)
+            assertEquals(listOf(staleDest to sourceUri), deleted)
+            deleted.clear()
+
+            // 2. Photo became null while SAF picker was open.
+            val noPhotoDest = TestUri.of("/Downloads/no-photo.jpg")
+            val noPhotoResult = prepareExportSubmission(
+                EditorState(photo = null, operation = Operation.PICK_EXPORT),
+                noPhotoDest, ExportFormat.JPEG, null, 0, cleanup,
+            )
+            assertTrue(noPhotoResult is ExportSubmission.Rejected)
+            assertEquals(listOf(noPhotoDest to (null as Uri?)), deleted)
+            deleted.clear()
+
+            // 3. ViewModel already disposed before CreateDocument callback arrived.
+            val disposedDest = TestUri.of("/Downloads/disposed.jpg")
+            val disposedResult = prepareExportSubmission(
+                EditorState(photo = photo, operation = Operation.PICK_EXPORT),
+                disposedDest, ExportFormat.JPEG, null, 0, cleanup, disposed = true,
+            )
+            assertTrue(disposedResult is ExportSubmission.Rejected)
+            assertEquals(listOf(disposedDest to sourceUri), deleted)
+            deleted.clear()
+
+            // 4. Invalid output long edge rejects and cleans up SAF destination.
+            val invalidSizeDest = TestUri.of("/Downloads/bad-size.png")
+            val invalidSizeResult = prepareExportSubmission(
+                EditorState(photo = photo, operation = Operation.PICK_EXPORT),
+                invalidSizeDest, ExportFormat.PNG, 0, 0, cleanup,
+            ) as ExportSubmission.Rejected
+            assertEquals(Operation.NONE, invalidSizeResult.state.operation)
+            assertEquals(R.string.output_size_error, invalidSizeResult.errorKey)
+            assertTrue(invalidSizeResult.refreshPreviewSize)
+            assertEquals(listOf(invalidSizeDest to sourceUri), deleted)
+            deleted.clear()
+
+            // 5. Source URI passed as destination must never be deleted even on validation failure.
+            val rejectedSameSource = prepareExportSubmission(
+                EditorState(photo = photo, operation = Operation.PICK_EXPORT),
+                sourceUri, ExportFormat.PNG, 70000, 0, cleanup,
+            )
+            assertTrue(rejectedSameSource is ExportSubmission.Rejected)
+            assertTrue("Source URI must never be deleted", deleted.isEmpty())
+
+            // 6. Valid submission transitions to EXPORT without deleting destination.
+            val validDest = TestUri.of("/Downloads/valid.dng")
+            val ready = prepareExportSubmission(
+                EditorState(photo = photo, operation = Operation.PICK_EXPORT),
+                validDest, ExportFormat.DNG, 1024, 0, cleanup,
+            ) as ExportSubmission.Ready
+            assertEquals(Operation.EXPORT, ready.state.operation)
+            assertEquals(validDest, ready.work.destination)
+            assertTrue(deleted.isEmpty())
+        } finally {
+            scope.cancel()
+            root.deleteRecursively()
+        }
+    }
+
+    @Test fun rendererGuardDeletesSafDestinationOnBothCancellationAndNonCancellationFailures() {
+        val root = Files.createTempDirectory("rawlab-saf-renderer-guard").toFile()
+        val deleted = mutableListOf<Pair<Uri, Uri?>>()
+        val deleter = ExportDestinationDeleter { destination, original ->
+            deleted += destination to original
+        }
+        try {
+            val sourceUri = TestUri.of("/photos/source.arw")
+            val destination = TestUri.of("/Downloads/render-target.jpg")
+            val photo = ImportedPhoto(sourceUri, "source.arw", File(root, "source.arw").apply { writeText("raw") })
+            val exportWork = Work.Export(photo, EditSettings(), destination, ExportFormat.JPEG, null, 0)
+
+            // 1. Cancellation cleans up SAF destination.
+            assertThrows(NativeProcessingException::class.java) {
+                runGuardedExportWork(exportWork, deleter) {
+                    throw NativeProcessingException(NativeProcessingException.CANCELLED, "cancelled")
+                }
+            }
+            assertEquals(listOf(destination to sourceUri), deleted)
+            deleted.clear()
+
+            // 2. Non-cancellation IOException / runtime failure BEFORE saveDocument also cleans up 0-byte SAF destination.
+            assertThrows(IOException::class.java) {
+                runGuardedExportWork(exportWork, deleter) {
+                    throw IOException("FORCE GPU rejected perspective")
+                }
+            }
+            assertEquals(listOf(destination to sourceUri), deleted)
+            deleted.clear()
+
+            // 3. Source URI is protected even if caller mistakenly passed destination == photo.uri.
+            val sameUriWork = exportWork.copy(destination = sourceUri)
+            assertThrows(IllegalArgumentException::class.java) {
+                runGuardedExportWork(sameUriWork, deleter) {
+                    throw IllegalArgumentException("Cannot overwrite source photo")
+                }
+            }
+            assertTrue(deleted.isEmpty())
+
+            // 4. Successful export keeps published SAF destination untouched.
+            val ok = runGuardedExportWork(exportWork, deleter) { WorkResult.Export }
+            assertSame(WorkResult.Export, ok)
+            assertTrue(deleted.isEmpty())
         } finally { root.deleteRecursively() }
     }
 }

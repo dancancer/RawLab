@@ -478,6 +478,13 @@ private object NativeDcpBridge {
     @JvmStatic external fun compile(source: ByteArray, sourceNameUtf8: ByteArray, toneCurve: ByteArray?, omitAutomaticBlack: Boolean): ByteArray
 }
 
+internal fun exportStagingFile(
+    parent: File,
+    outputName: String,
+    suffix: String,
+    id: UUID = UUID.randomUUID(),
+): File = File(parent, ".$outputName.$id.part$suffix")
+
 internal fun executeExport(
     output: File,
     suffix: String = output.extension.takeIf { it.isNotEmpty() }?.let { ".$it" }.orEmpty(),
@@ -487,7 +494,7 @@ internal fun executeExport(
 ): Int {
     val emptyPlaceholder = output.exists() && output.length() == 0L
     val parent = output.absoluteFile.parentFile ?: File(".")
-    val staging = File(parent, ".${output.name}.${UUID.randomUUID()}.part$suffix")
+    val staging = exportStagingFile(parent, output.name, suffix)
     fun throwIfCancelled() {
         if (isCancelled()) throw NativeProcessingException(NativeProcessingException.CANCELLED, "Processing cancelled")
     }

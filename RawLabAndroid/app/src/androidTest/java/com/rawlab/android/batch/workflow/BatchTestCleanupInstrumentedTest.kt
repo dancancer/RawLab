@@ -206,7 +206,10 @@ class BatchTestCleanupInstrumentedTest {
         val jobId = UUID.randomUUID().toString()
         val root = File(context.filesDir, "RawLab/BatchJobs")
         val preserved = File(context.filesDir, "render-preserved-$id.png").apply { writeBytes(byteArrayOf(1)) }
+        val preservedPart = File(context.filesDir, ".render-preserved-$id.png.$id.part.png").apply { writeBytes(byteArrayOf(1)) }
         val unrelated = File(root, "unrelated-$id/input").apply { parentFile!!.mkdirs(); writeBytes(byteArrayOf(2)) }
+        var abandonedPart: File? = null
+        var abandonedCachePart: File? = null
         try {
             cleanup.begin(id)
             cleanup.trackJob(jobId)
@@ -216,6 +219,8 @@ class BatchTestCleanupInstrumentedTest {
             BatchJournal(root).save(BatchJob(BatchSourceSnapshot(PhotoIdentity("cleanup-probe"), frozen, EditSettings()), emptyList(), id = jobId))
             val checkpoint = File(root, "$jobId.1234.tmp").apply { writeBytes(byteArrayOf(5)) }
             val abandoned = File(context.filesDir, "render-abandoned-$id.png").apply { writeBytes(byteArrayOf(4)) }
+            abandonedPart = File(context.filesDir, ".render-abandoned-$id.png.${UUID.randomUUID()}.part.png").apply { writeBytes(byteArrayOf(6)) }
+            abandonedCachePart = File(context.cacheDir, ".export-$id.jpg.${UUID.randomUUID()}.part.jpg").apply { writeBytes(byteArrayOf(7)) }
             val manifest = File(context.filesDir, "batch-gpu-test-cleanup.properties")
             val properties = Properties().also { manifest.inputStream().use(it::load) }
             check(!File("/proc/2147483647").exists())
@@ -227,7 +232,10 @@ class BatchTestCleanupInstrumentedTest {
             assertNull(BatchJournal(root).load(jobId))
             assertFalse(checkpoint.exists())
             assertFalse(abandoned.exists())
+            assertFalse(abandonedPart.exists())
+            assertFalse(abandonedCachePart.exists())
             assertTrue(preserved.isFile)
+            assertTrue(preservedPart.isFile)
             assertTrue(unrelated.isFile)
             assertFalse(manifest.exists())
         } finally {
@@ -235,6 +243,9 @@ class BatchTestCleanupInstrumentedTest {
                 cleanup.finish(active = false, cancel = {}, close = {})
             }
             preserved.delete()
+            preservedPart.delete()
+            abandonedPart?.delete()
+            abandonedCachePart?.delete()
             unrelated.parentFile!!.deleteRecursively()
         }
     }

@@ -1,7 +1,12 @@
 package com.rawlab.android.editor
 
+import com.rawlab.android.editor.render.ExportDestinationCleanup
 import com.rawlab.android.editor.render.PreviewPair
+import com.rawlab.android.editor.render.Work
+import com.rawlab.android.format.ExportFormat
+import com.rawlab.android.format.ExportSize
 import com.rawlab.android.photo.ImportedPhoto
+import com.rawlab.android.R
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.LookChoice
 import com.rawlab.android.settings.PhotoIdentity
@@ -156,3 +161,43 @@ internal fun EditorState.resetContext(): EditorResetContext = EditorResetContext
         ?.let { AsShotWhiteBalance(it.temperature, it.tint) },
     edits.recipeID?.let(::setOf) ?: emptySet(),
 )
+
+internal sealed interface ExportSubmission {
+    data class Ready(val work: Work.Export, val state: EditorState) : ExportSubmission
+    data class Rejected(
+        val state: EditorState,
+        val errorKey: Int? = null,
+        val refreshPreviewSize: Boolean = false,
+    ) : ExportSubmission
+}
+
+internal fun prepareExportSubmission(
+    current: EditorState,
+    destination: Uri?,
+    format: ExportFormat,
+    longEdge: Int?,
+    gpuMode: Int,
+    cleanup: ExportDestinationCleanup,
+    disposed: Boolean = false,
+): ExportSubmission {
+    val photo = current.photo
+    if (disposed || current.operation != Operation.PICK_EXPORT || photo == null) {
+        cleanup.scheduleDelete(destination, photo?.uri)
+        return ExportSubmission.Rejected(current)
+    }
+    if (destination == null && !format.allowsGallery) {
+        return ExportSubmission.Rejected(current.copy(operation = Operation.NONE), errorKey = R.string.dng_file_only)
+    }
+    if (!ExportSize.isValid(longEdge)) {
+        cleanup.scheduleDelete(destination, photo.uri)
+        return ExportSubmission.Rejected(
+            current.copy(operation = Operation.NONE),
+            errorKey = R.string.output_size_error,
+            refreshPreviewSize = true,
+        )
+    }
+    return ExportSubmission.Ready(
+        Work.Export(photo, current.edits, destination, format, longEdge, gpuMode),
+        current.copy(operation = Operation.EXPORT),
+    )
+}

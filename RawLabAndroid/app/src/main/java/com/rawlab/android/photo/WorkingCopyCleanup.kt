@@ -6,7 +6,40 @@ import java.nio.file.Files
 
 /** 仅在进程入口、创建任何 PhotoStorage 之前调用。无法确认恢复引用时保留全部副本。 */
 internal object WorkingCopyCleanup {
-    fun atProcessStart(cache: File, journalRoot: File) {
+    private const val UUID_HEX = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    private val BATCH_RENDER_TEMP_PATTERN = Regex("^render-.+\\.(jpg|png|dng)$", RegexOption.IGNORE_CASE)
+    private val EXPORT_STAGING_PART_PATTERN = Regex("^\\..+\\.$UUID_HEX\\.part(\\.[A-Za-z0-9]+)?$")
+
+    internal fun isTransientExportFileName(name: String): Boolean =
+        BATCH_RENDER_TEMP_PATTERN.matches(name) || EXPORT_STAGING_PART_PATTERN.matches(name)
+
+    internal fun transientExportFiles(directories: Iterable<File>): List<File> {
+        val matched = mutableListOf<File>()
+        val seenRoots = mutableSetOf<java.nio.file.Path>()
+        for (directory in directories) {
+            val root = try {
+                if (!directory.isDirectory || Files.isSymbolicLink(directory.toPath())) continue
+                directory.canonicalFile.toPath()
+            } catch (_: Exception) { continue }
+            if (!seenRoots.add(root)) continue
+            for (entry in directory.listFiles().orEmpty()) {
+                if (!isTransientExportFileName(entry.name)) continue
+                val regularOwnedFile = try {
+                    !Files.isSymbolicLink(entry.toPath()) &&
+                        entry.isFile &&
+                        entry.canonicalFile.toPath().parent == root
+                } catch (_: Exception) { false }
+                if (regularOwnedFile) matched += entry
+            }
+        }
+        return matched
+    }
+
+    internal fun cleanTransientExportFiles(directories: Iterable<File>): List<File> =
+        transientExportFiles(directories).filter { it.delete() }
+
+    fun atProcessStart(cache: File, journalRoot: File, exportTempRoots: Iterable<File> = listOf(cache)) {
+        cleanTransientExportFiles(exportTempRoots)
         val protected = try {
             if (!journalRoot.exists()) emptyList() else {
                 val journal = BatchJournal(journalRoot)
