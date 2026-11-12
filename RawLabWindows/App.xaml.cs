@@ -174,22 +174,26 @@ public partial class App : Application
         var updates = new DesktopUpdateController(adapter, new(), new(UpdateStore.DefaultDirectory), current,
             fileVersion.FilePrivatePart.ToString(), legacy.Automatic);
         MainWindow? editor = null;
-        if (updates.StorageError == null && !updates.RequiresRecovery)
+        if (updates.UnavailableReason != "storage" && !updates.RequiresRecovery)
         {
             editor = new MainWindow(new UsageAnalytics(), null, desktopUpdates: updates);
             await updates.FinishStartupHealthCheckAsync(editor.UpdateDataHealthy);
         }
-        if (updates.StorageError != null || updates.RequiresRecovery || updates.RequiresStartupHealthCheck)
+        if (updates.BlocksEditing)
         {
-            var recovery = new SoftwareUpdateWindow(updates, legacy) { Title = Loc.Text("更新恢复需要处理，编辑暂未开放") };
+            SoftwareUpdateWindow? recovery = null;
+            if (editor != null)
+            {
+                updates.RetryStartup = async () => {
+                    if (updates.CheckingStartupTrust) return;
+                    await updates.FinishStartupHealthCheckAsync(editor.UpdateDataHealthy);
+                    if (updates.BlocksEditing) return;
+                    updates.RetryStartup = null;
+                    MainWindow = editor; ShowSystemEditor(editor); recovery?.Close();
+                };
+            }
+            recovery = new SoftwareUpdateWindow(updates, legacy) { Title = Loc.Text("更新恢复需要处理，编辑暂未开放") };
             MainWindow = recovery;
-            updates.RetryStartup = async () => {
-                if (editor == null || updates.CheckingStartupTrust) return;
-                await updates.FinishStartupHealthCheckAsync(editor.UpdateDataHealthy);
-                if (updates.BlocksEditing) return;
-                updates.RetryStartup = null;
-                MainWindow = editor; ShowSystemEditor(editor); recovery.Close();
-            };
             recovery.Show();
         }
         else { MainWindow = editor; ShowSystemEditor(editor!); }

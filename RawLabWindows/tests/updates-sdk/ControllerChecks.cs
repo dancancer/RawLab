@@ -21,6 +21,7 @@ internal static class ControllerChecks
         await StartupAndQuit(check);
         await StateRepair(check);
         await InstallationFailureBlocksEditing(check);
+        await RuntimeSaveFailureRecovery(check);
         var root = Path.Combine(Path.GetTempPath(), "rawlab-update-controller-" + Guid.NewGuid().ToString("N"));
         try
         {
@@ -203,11 +204,134 @@ internal static class ControllerChecks
                 var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(damaged); File.WriteAllBytes(store.StatePath, bytes);
                 var reopened = new DesktopUpdateController(new Adapter(), new(), store, "0.9.1", "19");
                 await reopened.FinishStartupHealthCheckAsync(true);
-                check(reopened.StorageError != null && !reopened.CanCheck && !reopened.CanChooseInstall && !reopened.CanRepairState,
+                check(reopened.StorageError != null && reopened.BlocksEditing && !reopened.CanCheck && !reopened.CanChooseInstall && !reopened.CanRepairState,
                     "Malformed installation failure blocks startup and state reset: " + name);
                 check(File.ReadAllBytes(store.StatePath).SequenceEqual(bytes), "Blocked startup preserves the damaged failure record: " + name);
             }
         }
         finally { store.Save(original); }
+    }
+
+    private static async Task RuntimeSaveFailureRecovery(Action<bool, string> check)
+    {
+        static IOException SharingViolation() => new("Simulated sharing violation", unchecked((int)0x80070020));
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-save-recovery-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var files = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+            Func<Exception?>? writeFault = null, moveFault = null;
+            int writeCalls = 0, moveCalls = 0;
+            var elapsed = TimeSpan.Zero;
+            var delays = new List<int>();
+            var virtualNow = DateTimeOffset.FromUnixTimeSeconds(1800000000);
+            UpdateStore CreateStore(string name) => new(
+                Path.Combine(root, name, "Updates"),
+                (temporary, bytes) =>
+                {
+                    writeCalls++;
+                    if (writeFault?.Invoke() is { } fault) throw fault;
+                    files[temporary] = bytes.ToArray();
+                },
+                (source, destination) =>
+                {
+                    moveCalls++;
+                    if (moveFault?.Invoke() is { } fault) throw fault;
+                    files[destination] = files[source];
+                    files.Remove(source);
+                },
+                delay => { delays.Add((int)delay.TotalMilliseconds); elapsed += delay; },
+                () => elapsed,
+                path => files.TryGetValue(path, out var bytes) ? bytes.ToArray() : null,
+                path => { files.Remove(path); return true; });
+            void ResetCounters() { writeCalls = 0; moveCalls = 0; delays.Clear(); }
+
+            var store = CreateStore("a");
+            var adapter = new Adapter();
+            var controller = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14", now: () => virtualNow);
+            moveFault = () => new UnauthorizedAccessException("Injected access denied");
+            ResetCounters();
+            var saveThrew = false;
+            try { store.Save(new()); }
+            catch (UnauthorizedAccessException) { saveThrew = true; }
+            check(saveThrew && writeCalls == 1 && moveCalls == 1 && delays.Count == 0 && files.Count == 0,
+                "UpdateStore.Save throws non-transient UnauthorizedAccessException upward without retrying or leaking temporaries");
+
+            controller.SetAutomaticCheck(false);
+            await controller.CheckAsync(true);
+            check(controller.StorageError != null && !controller.BlocksEditing && !controller.CanRepairState &&
+                controller.UnavailableReason == null && controller.CanCheck &&
+                controller.Preferences.AutomaticCheck && controller.State.Phase == UpdatePhase.Idle && adapter.Checks == 0,
+                "Runtime state save failure does not lock editing or permanently disable update retry");
+
+            moveFault = null;
+            controller.SetAutomaticCheck(false);
+            await controller.CheckAsync(true);
+            check(controller.StorageError == null && !controller.BlocksEditing &&
+                !controller.Preferences.AutomaticCheck && controller.State.Phase == UpdatePhase.Available &&
+                !store.Load(true).AutomaticCheck,
+                "Restoring writable storage clears StorageError and persists retried preferences and checks");
+
+            await controller.DownloadAsync();
+            check(controller.State.Phase == UpdatePhase.PackageReady, "Package reaches ready state before simulated sharing conflict");
+
+            moveFault = SharingViolation;
+            ResetCounters();
+            var sharingThrew = false;
+            try { store.Save(controller.Preferences); }
+            catch (IOException error) when (error.HResult == unchecked((int)0x80070020)) { sharingThrew = true; }
+            check(sharingThrew && writeCalls == 1 && moveCalls == 4 && delays.SequenceEqual(new[] { 10, 50, 200 }) && files.Count == 1,
+                "Exhausted sharing-violation retries use injected clock/sleep and throw IOException from UpdateStore.Save");
+
+            ResetCounters();
+            await controller.ChooseAsync(UpdateInstallChoice.RestartNow);
+            check(delays.SequenceEqual(new[] { 10, 50, 200 }) && controller.StorageError != null && !controller.BlocksEditing &&
+                adapter.Installs == 0 && controller.State.Phase == UpdatePhase.Available && controller.CanDownload &&
+                await controller.PrepareForQuitAsync(),
+                "Sharing-violation exhaustion during install admission aborts installation without locking editing or blocking quit");
+
+            moveFault = null;
+            await controller.DownloadAsync();
+            await controller.ChooseAsync(UpdateInstallChoice.OnQuit);
+            adapter.RejectInstall = true;
+            moveFault = () => controller.State.Phase == UpdatePhase.Installing ? SharingViolation() : null;
+            ResetCounters();
+            var quitApproved = await controller.PrepareForQuitAsync();
+            check(!quitApproved && adapter.Installs == 1 && delays.SequenceEqual(new[] { 10, 50, 200 }) &&
+                controller.StorageError != null && controller.State.Phase == UpdatePhase.Failed &&
+                controller.State.Failure?.Stage == UpdatePhase.Installing && controller.State.Choice == UpdateInstallChoice.None &&
+                controller.BlocksEditing && controller.RequiresRecovery && !controller.RequiresStartupHealthCheck &&
+                !controller.CanCheck && !controller.CanDownload && !controller.CanChooseInstall && !controller.CanCancel,
+                "Failed installer dispatch keeps Failed recovery boundary in memory even when persisting Fail() also fails");
+
+            moveFault = null;
+            var reopenedFailed = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14", now: () => virtualNow);
+            await reopenedFailed.FinishStartupHealthCheckAsync(true);
+            check(reopenedFailed.BlocksEditing && reopenedFailed.RequiresRecovery && reopenedFailed.CanRestorePreviousData,
+                "Persisted Installing record transitions to recoverable failure on next launch of previous version");
+
+            var store2 = CreateStore("b");
+            var adapter2 = new Adapter();
+            DesktopUpdateController? controller2 = null;
+            controller2 = new DesktopUpdateController(adapter2, new(), store2, "0.8.2", "14", now: () => virtualNow);
+            var restarted = false; controller2.RestartRequested += () => restarted = true;
+            await controller2.CheckAsync(true);
+            await controller2.DownloadAsync();
+            moveFault = () => controller2!.State.Phase == UpdatePhase.Installing ? SharingViolation() : null;
+            ResetCounters();
+            await controller2.ChooseAsync(UpdateInstallChoice.RestartNow);
+            check(adapter2.Installs == 1 && restarted && delays.SequenceEqual(new[] { 10, 50, 200 }) &&
+                controller2.StorageError != null && controller2.State.Phase == UpdatePhase.PendingRestart &&
+                controller2.BlocksEditing && controller2.RequiresStartupHealthCheck && !controller2.RequiresRecovery &&
+                !controller2.CanCheck && !controller2.CanDownload && !controller2.CanChooseInstall && !controller2.CanCancel &&
+                await controller2.PrepareForQuitAsync(),
+                "Successful installer dispatch transitions to PendingRestart and triggers restart even when AwaitingRestart save fails");
+
+            moveFault = null;
+            var reopenedUpdated = new DesktopUpdateController(adapter2, new(), store2, "0.9.1", "19", now: () => virtualNow);
+            await reopenedUpdated.FinishStartupHealthCheckAsync(true);
+            check(reopenedUpdated.StorageError == null && reopenedUpdated.State.Phase == UpdatePhase.Complete && !reopenedUpdated.BlocksEditing,
+                "Next launch on target version completes health check from the persisted Installing record");
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }
 }

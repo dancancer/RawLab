@@ -6,14 +6,42 @@ namespace RawLab.Windows;
 
 public sealed class UpdateStore(string directory)
 {
+    private readonly Func<string, byte[]?>? readState;
+    private readonly Action<string, byte[]> writeTemporary = WriteTemporaryFile;
+    private readonly Action<string, string> moveFile = ReplaceFile;
+    private readonly Func<string, bool> deleteTemporary = TryDeleteTemporary;
+    private readonly Action<TimeSpan>? sleep;
+    private readonly Func<TimeSpan>? elapsed;
+
+    internal UpdateStore(string directory, Action<string, byte[]> writeTemporary, Action<string, string> moveFile,
+        Action<TimeSpan>? sleep = null, Func<TimeSpan>? elapsed = null,
+        Func<string, byte[]?>? readState = null, Func<string, bool>? deleteTemporary = null) : this(directory)
+    {
+        this.writeTemporary = writeTemporary;
+        this.moveFile = moveFile;
+        this.sleep = sleep;
+        this.elapsed = elapsed;
+        this.readState = readState;
+        if (deleteTemporary != null) this.deleteTemporary = deleteTemporary;
+    }
+
     public string DirectoryPath { get; } = directory;
     public string StatePath => Path.Combine(DirectoryPath, "state.json");
     public static string DefaultDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "Updates");
     public UpdatePreferences Load(bool automaticCheck)
     {
-        if (!File.Exists(StatePath)) return new() { AutomaticCheck = automaticCheck };
-        RequireOrdinary(DirectoryPath); RequireOrdinary(StatePath);
-        var data = File.ReadAllBytes(StatePath);
+        byte[] data;
+        if (readState != null)
+        {
+            if (readState(StatePath) is not { } injected) return new() { AutomaticCheck = automaticCheck };
+            data = injected;
+        }
+        else
+        {
+            if (!File.Exists(StatePath)) return new() { AutomaticCheck = automaticCheck };
+            RequireOrdinary(DirectoryPath); RequireOrdinary(StatePath);
+            data = File.ReadAllBytes(StatePath);
+        }
         using var document = JsonDocument.Parse(data);
         var root = document.RootElement;
         static void RequireFields(JsonElement element, params string[] names)
@@ -118,7 +146,7 @@ public sealed class UpdateStore(string directory)
         var archive = RepairedStateArchive(receipt); Directory.CreateDirectory(Path.GetDirectoryName(archive)!);
         RequireOrdinary(Path.GetDirectoryName(Path.GetDirectoryName(archive)!)!); RequireOrdinary(Path.GetDirectoryName(archive)!);
         // 原始字节先落盘，再原子替换；中断期间不会出现缺失状态而开放编辑。
-        WriteAtomic(archive, expected);
+        WriteAtomic(archive, expected, writeTemporary, moveFile, sleep, elapsed, deleteTemporary, createDirectory: readState == null);
         if (!RepairableState().SequenceEqual(expected)) throw new InvalidDataException("Update state changed");
         var next = new UpdatePreferences { AutomaticCheck = false, StateRepairReceipt = receipt };
         try {
@@ -134,18 +162,108 @@ public sealed class UpdateStore(string directory)
     {
         if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) throw new IOException("Linked update state cannot be rebuilt");
     }
-    public void Save(UpdatePreferences preferences) => WriteAtomic(StatePath, JsonSerializer.SerializeToUtf8Bytes(preferences));
-    public static void WriteAtomic(string path, byte[] data)
+    private const int SharingViolationHResult = unchecked((int)0x80070020);
+    private const int LockViolationHResult = unchecked((int)0x80070021);
+    private static readonly int[] TransientRetryDelaysMs = [10, 50, 200];
+    private static readonly TimeSpan TransientRetryBudget = TimeSpan.FromMilliseconds(500);
+
+    public void Save(UpdatePreferences preferences) =>
+        WriteAtomic(StatePath, JsonSerializer.SerializeToUtf8Bytes(preferences), writeTemporary, moveFile, sleep, elapsed, deleteTemporary, createDirectory: readState == null);
+    public static void WriteAtomic(string path, byte[] data) =>
+        WriteAtomic(path, data, WriteTemporaryFile, ReplaceFile);
+
+    internal static void WriteAtomic(string path, byte[] data, Action<string, byte[]> writeTemporary, Action<string, string> moveFile,
+        Action<TimeSpan>? sleep = null, Func<TimeSpan>? elapsed = null, Func<string, bool>? deleteTemporary = null, bool createDirectory = true)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        if (createDirectory) Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var cleanup = deleteTemporary ?? TryDeleteTemporary;
+        string? writtenTemporary = null;
+        List<string>? staleTemporaries = null;
         try
         {
-            using (var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
-            { file.Write(data); file.Flush(true); }
-            File.Move(temporary, path, true);
+            RetryTransientIo(() =>
+            {
+                var temporary = writtenTemporary;
+                if (temporary == null)
+                {
+                    var candidate = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                    try
+                    {
+                        writeTemporary(candidate, data);
+                        writtenTemporary = temporary = candidate;
+                    }
+                    catch
+                    {
+                        if (!cleanup(candidate)) (staleTemporaries ??= []).Add(candidate);
+                        throw;
+                    }
+                }
+                moveFile(temporary, path);
+                writtenTemporary = null;
+            }, sleep, elapsed);
         }
-        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        finally
+        {
+            if (writtenTemporary != null) cleanup(writtenTemporary);
+            if (staleTemporaries != null)
+            {
+                foreach (var stale in staleTemporaries) cleanup(stale);
+            }
+        }
+    }
+
+    private static void ReplaceFile(string source, string destination) => File.Move(source, destination, true);
+
+    private static void WriteTemporaryFile(string temporary, byte[] data)
+    {
+        using var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough);
+        file.Write(data);
+        file.Flush(true);
+    }
+
+    private static bool TryDeleteTemporary(string path)
+    {
+        try
+        {
+            if (File.Exists(path)) File.Delete(path);
+            return true;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    internal static bool IsTransientSharingIo(Exception error) =>
+        error is IOException and not FileNotFoundException and not DirectoryNotFoundException and not PathTooLongException &&
+        error.HResult is SharingViolationHResult or LockViolationHResult;
+
+    internal static void RetryTransientIo(Action action, Action<TimeSpan>? sleep = null, Func<TimeSpan>? elapsed = null)
+    {
+        sleep ??= Thread.Sleep;
+        Func<TimeSpan> clock;
+        if (elapsed != null) clock = elapsed;
+        else
+        {
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            clock = () => stopwatch.Elapsed;
+        }
+        var start = clock();
+        var retries = 0;
+        while (true)
+        {
+            try
+            {
+                action();
+                return;
+            }
+            catch (Exception error) when (IsTransientSharingIo(error) && retries < TransientRetryDelaysMs.Length &&
+                clock() - start + TimeSpan.FromMilliseconds(TransientRetryDelaysMs[retries]) <= TransientRetryBudget)
+            {
+                var delay = TimeSpan.FromMilliseconds(TransientRetryDelaysMs[retries++]);
+                sleep(delay);
+            }
+        }
     }
 }
 

@@ -11,6 +11,7 @@ internal static class UpdateStoreChecks
     }
     internal static void Run(Action<bool, string> check)
     {
+        AtomicWriteRetries(check);
         StateRepair(check);
         FailedStateValidation(check);
         var root = Path.Combine(Path.GetTempPath(), "rawlab-update-store-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
@@ -165,5 +166,136 @@ internal static class UpdateStoreChecks
             check(accepted.Count == 0, "Malformed failed states must be rejected; accepted: " + string.Join(", ", accepted));
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    private static void AtomicWriteRetries(Action<bool, string> check)
+    {
+        static IOException SharingViolation() => new("Sharing violation", unchecked((int)0x80070020));
+        static IOException LockViolation() => new("Lock violation", unchecked((int)0x80070021));
+
+        var elapsed = TimeSpan.Zero;
+        var delays = new List<int>();
+        void RecordSleep(TimeSpan delay) { delays.Add((int)delay.TotalMilliseconds); elapsed += delay; }
+
+        var policyAttempts = 0;
+        UpdateStore.RetryTransientIo(() => { if (++policyAttempts < 3) throw SharingViolation(); }, RecordSleep, () => elapsed);
+        check(policyAttempts == 3 && delays.SequenceEqual(new[] { 10, 50 }),
+            "Retry policy succeeds on the third attempt after two sharing violations");
+
+        elapsed = TimeSpan.Zero; delays.Clear();
+        var lockAttempts = 0;
+        UpdateStore.RetryTransientIo(() => { if (++lockAttempts < 2) throw LockViolation(); }, RecordSleep, () => elapsed);
+        check(lockAttempts == 2 && delays.SequenceEqual(new[] { 10 }),
+            "Retry policy also retries transient Win32 lock violations");
+
+        elapsed = TimeSpan.Zero; delays.Clear();
+        var budgetAttempts = 0; var budgetExceeded = false;
+        try
+        {
+            UpdateStore.RetryTransientIo(() =>
+            {
+                budgetAttempts++;
+                elapsed += TimeSpan.FromMilliseconds(495);
+                throw SharingViolation();
+            }, RecordSleep, () => elapsed);
+        }
+        catch (IOException error) when (error.HResult == unchecked((int)0x80070020)) { budgetExceeded = true; }
+        check(budgetExceeded && budgetAttempts == 1 && delays.Count == 0,
+            "Retry policy stops before sleeping past the total UI wait budget");
+
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-atomic-write-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var target = Path.Combine(root, "state.json");
+            byte[] initial = "committed"u8.ToArray(), writtenByTempRetry = "after-temp-retry"u8.ToArray(), writtenByMoveRetry = "after-move-retry"u8.ToArray();
+            File.WriteAllBytes(target, initial);
+
+            elapsed = TimeSpan.Zero; delays.Clear();
+            int writeCalls = 0, moveCalls = 0;
+            UpdateStore.WriteAtomic(target, writtenByTempRetry,
+                (temporary, bytes) =>
+                {
+                    if (++writeCalls <= 2) { File.WriteAllText(temporary, "partial"); throw SharingViolation(); }
+                    File.WriteAllBytes(temporary, bytes);
+                },
+                (source, destination) => { moveCalls++; File.Move(source, destination, true); },
+                RecordSleep, () => elapsed);
+            check(writeCalls == 3 && moveCalls == 1 && delays.SequenceEqual(new[] { 10, 50 }) &&
+                File.ReadAllBytes(target).SequenceEqual(writtenByTempRetry) && Directory.GetFiles(root).Length == 1,
+                "Atomic write retries transient sharing conflicts during temporary file creation and removes failed temporaries");
+
+            elapsed = TimeSpan.Zero; delays.Clear();
+            writeCalls = 0; moveCalls = 0;
+            UpdateStore.WriteAtomic(target, writtenByMoveRetry,
+                (temporary, bytes) => { writeCalls++; File.WriteAllBytes(temporary, bytes); },
+                (source, destination) =>
+                {
+                    var call = ++moveCalls;
+                    if (call == 1) throw SharingViolation();
+                    if (call == 2) throw LockViolation();
+                    File.Move(source, destination, true);
+                },
+                RecordSleep, () => elapsed);
+            check(writeCalls == 1 && moveCalls == 3 && delays.SequenceEqual(new[] { 10, 50 }) &&
+                File.ReadAllBytes(target).SequenceEqual(writtenByMoveRetry) && Directory.GetFiles(root).Length == 1,
+                "Atomic write retries transient replace conflicts without rewriting the flushed temporary file");
+
+            File.WriteAllBytes(target, initial);
+            elapsed = TimeSpan.Zero; delays.Clear();
+            writeCalls = 0; moveCalls = 0; var exhausted = false;
+            try
+            {
+                UpdateStore.WriteAtomic(target, writtenByMoveRetry,
+                    (temporary, bytes) => { writeCalls++; File.WriteAllBytes(temporary, bytes); },
+                    (_, _) => { moveCalls++; throw SharingViolation(); },
+                    RecordSleep, () => elapsed);
+            }
+            catch (IOException error) when (error.HResult == unchecked((int)0x80070020)) { exhausted = true; }
+            check(exhausted && writeCalls == 1 && moveCalls == 4 && delays.SequenceEqual(new[] { 10, 50, 200 }) &&
+                File.ReadAllBytes(target).SequenceEqual(initial) && Directory.GetFiles(root).Length == 1,
+                "Exhausted sharing retries propagate IOException, preserve prior state and clean up temporary files");
+
+            foreach (var permanent in new Exception[]
+            {
+                new UnauthorizedAccessException("Access denied"),
+                new IOException("Win32 access denied", unchecked((int)0x80070005)),
+                new IOException("Disk full", unchecked((int)0x80070070)),
+                new IOException("Handle disk full", unchecked((int)0x80070027)),
+                new IOException("Generic I/O failure"),
+                new DirectoryNotFoundException("Missing parent"),
+                new FileNotFoundException("Missing source")
+            })
+            {
+                elapsed = TimeSpan.Zero; delays.Clear();
+                var writeFaultCalls = 0; Exception? caughtWrite = null;
+                try
+                {
+                    UpdateStore.WriteAtomic(target, writtenByMoveRetry,
+                        (_, _) => { writeFaultCalls++; throw permanent; },
+                        (source, destination) => File.Move(source, destination, true),
+                        RecordSleep, () => elapsed);
+                }
+                catch (Exception error) { caughtWrite = error; }
+                check(ReferenceEquals(caughtWrite, permanent) && writeFaultCalls == 1 && delays.Count == 0 &&
+                    File.ReadAllBytes(target).SequenceEqual(initial) && Directory.GetFiles(root).Length == 1,
+                    "Non-transient write failure is not retried: " + permanent.GetType().Name + ":" + permanent.HResult);
+
+                elapsed = TimeSpan.Zero; delays.Clear();
+                var moveFaultCalls = 0; Exception? caughtMove = null;
+                try
+                {
+                    UpdateStore.WriteAtomic(target, writtenByMoveRetry,
+                        (temporary, bytes) => File.WriteAllBytes(temporary, bytes),
+                        (_, _) => { moveFaultCalls++; throw permanent; },
+                        RecordSleep, () => elapsed);
+                }
+                catch (Exception error) { caughtMove = error; }
+                check(ReferenceEquals(caughtMove, permanent) && moveFaultCalls == 1 && delays.Count == 0 &&
+                    File.ReadAllBytes(target).SequenceEqual(initial) && Directory.GetFiles(root).Length == 1,
+                    "Non-transient replace failure is not retried: " + permanent.GetType().Name + ":" + permanent.HResult);
+            }
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }
 }
