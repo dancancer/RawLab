@@ -41,6 +41,25 @@ internal static class InstallStateChecks
         check(state.BackupPath == null && state.PreviousVersion == null && state.PreviousBuild == null,
             "Cancelled attempts release obsolete backup references");
 
+        var rejectedInstall = state.BeginDownload()!.Value;
+        state.Preparing(rejectedInstall); state.Verified(rejectedInstall); state.Choose(UpdateInstallChoice.RestartNow); state.Admit([]);
+        state.BackupPath = "obsolete"; state.PreviousVersion = "0.8.2"; state.PreviousBuild = "14";
+        state.Installing(rejectedInstall);
+        check(state.Fail(UpdatePhase.Verifying, "signature", "Authenticode validation failed", rejectedInstall),
+            "Pre-dispatch signature rejection records verification stage instead of installation stage");
+        check(state.Phase == UpdatePhase.Failed && state.Failure?.Stage == UpdatePhase.Verifying && state.Failure?.Code == "signature" &&
+            state.Choice == UpdateInstallChoice.None && state.BackupPath == null && state.PreviousVersion == null && state.PreviousBuild == null,
+            "Rejected pre-install verification clears choice and backup references");
+        var reopenedRejected = JsonSerializer.Deserialize<UpdateTaskState>(JsonSerializer.Serialize(state))!;
+        reopenedRejected.RestoreAfterLaunch("0.8.2", "14", false);
+        check(reopenedRejected.Phase == UpdatePhase.Failed && reopenedRejected.Failure?.Stage == UpdatePhase.Verifying && reopenedRejected.BackupPath == null,
+            "Rejected pre-install verification survives restart without entering recovery");
+        check(UpdatePresentation.FailureHeading(state.Failure!, requiresRecovery: false) == "验证失败" &&
+            UpdatePresentation.FailureHeading(new(UpdatePhase.Verifying, "trust_temporary", "Offline"), requiresRecovery: false) == null &&
+            UpdatePresentation.FailureHeading(new(UpdatePhase.Checking, "operation", "Offline"), requiresRecovery: false) == null &&
+            UpdatePresentation.FailureHeading(new(UpdatePhase.Installing, "operation", "Dispatch failed"), requiresRecovery: true) == "更新未完成，请查看恢复说明",
+            "Failure presentation distinguishes package rejection, temporary trust error and post-dispatch recovery");
+
         var gate = new UpdateInstallGate(); var front = new object(); var other = new object();
         var status = new UpdateSessionStatus(Draft: true); var calls = 0; var succeeds = false;
         gate.Register(front, () => new(), () => true);

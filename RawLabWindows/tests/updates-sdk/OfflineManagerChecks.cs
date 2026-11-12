@@ -62,6 +62,23 @@ internal static class OfflineManagerChecks
             rejected=false;
             try{UpdatePackageVerifier.Verify(downloaded,payload,trust.PublisherKeySha256);}catch(CryptographicException){rejected=true;}
             check(rejected,"Tampering with the SDK cache invalidates package trust before dispatch");
+            var manifestOnly=trust with{PublisherKeySha256=""};
+            var adapterPackages=Path.Combine(root,"adapter-packages");
+            var adapterStore=new UpdateStore(Path.Combine(root,"adapter-store","Updates"));
+            var velopackAdapter=new VelopackUpdateAdapter(manifestOnly,
+                new TestVelopackLocator(appId:"RawLab.Desktop",version:"0.8.2",packagesDir:adapterPackages),
+                "0.8.2",new SignedUpdateSource(manifestOnly,"0.8.2",client,()=>now));
+            var controller=new DesktopUpdateController(velopackAdapter,new(),adapterStore,"0.8.2","14",now:()=>now);
+            await controller.CheckAsync(true);await controller.DownloadAsync();
+            check(controller.State.Phase==UpdatePhase.PackageReady,"Production VelopackUpdateAdapter prepares verified fixture package");
+            var cachedPackage=Path.Combine(adapterPackages,name);
+            using(var file=new FileStream(cachedPackage,FileMode.Open,FileAccess.Write)){file.Position=10;file.WriteByte((byte)(bytes[10]^1));}
+            await controller.ChooseAsync(UpdateInstallChoice.RestartNow);
+            var adapterBackups=Path.Combine(adapterStore.DirectoryPath,"Backups");
+            check(controller.State.Phase==UpdatePhase.Failed && controller.State.Failure?.Stage==UpdatePhase.Verifying &&
+                controller.State.Failure?.Code=="signature" && !controller.BlocksEditing && !controller.RequiresRecovery &&
+                controller.State.BackupPath==null && (!Directory.Exists(adapterBackups) || Directory.GetDirectories(adapterBackups).Length==0),
+                "Tampered cached package in production VelopackUpdateAdapter is rejected before backup or installer dispatch");
             manager=Manager(new SignedUpdateSource(trust,"0.8.2",client,()=>now),"cancelled");update=await manager.CheckForUpdatesAsync();
             using var cancellation=new CancellationTokenSource();cancellation.Cancel();
             rejected=false;

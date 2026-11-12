@@ -1,9 +1,15 @@
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using Velopack;
 using Velopack.Locators;
 
 namespace RawLab.Windows;
+
+public sealed class UpdatePackageRejectedException(string code, string message, Exception? innerException = null) : Exception(message, innerException)
+{
+    public string Code { get; } = string.IsNullOrEmpty(code) ? "verification" : code;
+}
 
 public interface IDesktopUpdateAdapter
 {
@@ -12,6 +18,7 @@ public interface IDesktopUpdateAdapter
     Task<UpdateDescriptor?> CheckAsync(CancellationToken token);
     Task DownloadAsync(UpdateDescriptor release, Action<int> progress, CancellationToken token);
     Task VerifyAsync(UpdateDescriptor release, CancellationToken token);
+    void VerifyBeforeInstall(UpdateDescriptor release) { }
     void Install(UpdateDescriptor release, bool restart);
 }
 
@@ -21,6 +28,7 @@ public sealed class UnavailableUpdateAdapter(string reason) : IDesktopUpdateAdap
     public Task<UpdateDescriptor?> CheckAsync(CancellationToken token) => throw new InvalidOperationException(reason);
     public Task DownloadAsync(UpdateDescriptor release, Action<int> progress, CancellationToken token) => throw new InvalidOperationException(reason);
     public Task VerifyAsync(UpdateDescriptor release, CancellationToken token) => throw new InvalidOperationException(reason);
+    public void VerifyBeforeInstall(UpdateDescriptor release) => throw new InvalidOperationException(reason);
     public void Install(UpdateDescriptor release, bool restart) => throw new InvalidOperationException(reason);
 }
 
@@ -34,11 +42,11 @@ public sealed class VelopackUpdateAdapter : IDesktopUpdateAdapter
     private UpdateInfo? update;
     private string? verifiedIdentity;
 
-    private VelopackUpdateAdapter(UpdateTrustConfiguration trust, IVelopackLocator locator, string currentVersion)
+    internal VelopackUpdateAdapter(UpdateTrustConfiguration trust, IVelopackLocator locator, string currentVersion, SignedUpdateSource? source = null)
     {
         this.trust = trust; this.locator = locator;
-        source = new SignedUpdateSource(trust, currentVersion);
-        manager = new UpdateManager(source, new UpdateOptions { AllowVersionDowngrade = false, ExplicitChannel = "stable", MaximumDeltasBeforeFallback = -1 }, locator);
+        this.source = source ?? new SignedUpdateSource(trust, currentVersion);
+        manager = new UpdateManager(this.source, new UpdateOptions { AllowVersionDowngrade = false, ExplicitChannel = "stable", MaximumDeltasBeforeFallback = -1 }, locator);
     }
     public static IDesktopUpdateAdapter Create(string currentVersion)
     {
@@ -80,12 +88,27 @@ public sealed class VelopackUpdateAdapter : IDesktopUpdateAdapter
         await Task.Run(() => { token.ThrowIfCancellationRequested(); UpdatePackageVerifier.Verify(path, source.Manifest!, trust.PublisherKeySha256); token.ThrowIfCancellationRequested(); }, token);
         verifiedIdentity = release.Identity;
     }
+    public void VerifyBeforeInstall(UpdateDescriptor release)
+    {
+        try
+        {
+            Require(release);
+            if (verifiedIdentity != release.Identity || source.Manifest!.ExpiresAt <= DateTimeOffset.UtcNow)
+                throw new InvalidDataException("Reverify the package before installation");
+            UpdatePackageVerifier.Verify(PackagePath(), source.Manifest, trust.PublisherKeySha256);
+            if (!string.IsNullOrEmpty(trust.PublisherKeySha256)) AuthenticodeTrust.Verify(locator.UpdateExePath!, trust.PublisherKeySha256);
+        }
+        catch (TemporaryUpdateTrustException) { throw; }
+        catch (UpdatePackageRejectedException) { verifiedIdentity = null; throw; }
+        catch (Exception error)
+        {
+            verifiedIdentity = null;
+            throw new UpdatePackageRejectedException(error is CryptographicException ? "signature" : "verification", error.Message, error);
+        }
+    }
     public void Install(UpdateDescriptor release, bool restart)
     {
-        Require(release);
-        if (verifiedIdentity != release.Identity || source.Manifest!.ExpiresAt <= DateTimeOffset.UtcNow) throw new InvalidDataException("Reverify the package before installation");
-        UpdatePackageVerifier.Verify(PackagePath(), source.Manifest, trust.PublisherKeySha256);
-        if (!string.IsNullOrEmpty(trust.PublisherKeySha256)) AuthenticodeTrust.Verify(locator.UpdateExePath!, trust.PublisherKeySha256);
+        VerifyBeforeInstall(release);
         // 框架等待本进程正常退出；不调用会立即结束进程的 ApplyUpdatesAndRestart。
         manager.WaitExitThenApplyUpdates(update!.TargetFullRelease, silent: true, restart: restart);
     }

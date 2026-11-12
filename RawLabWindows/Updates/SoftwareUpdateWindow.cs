@@ -61,7 +61,8 @@ public sealed class SoftwareUpdateWindow : Window
                 }
             }
             if(updates.State.Failure is {} failure) {
-                AddText("更新未完成，请查看恢复说明",true);AddText(UpdatePresentation.Phase(failure.Stage));
+                if(UpdatePresentation.FailureHeading(failure,updates.RequiresRecovery) is {} heading)AddText(heading,true);
+                AddText(UpdatePresentation.Phase(failure.Stage));
                 panel.Children.Add(Disclosure("错误详情",Text(failure.Code+"\n"+failure.Detail)));
             }
             if(updates.StorageError!=null) {
@@ -147,16 +148,4 @@ public sealed class SoftwareUpdateWindow : Window
     {
         try{Process.Start(start);}catch(Win32Exception){MessageBox.Show(this,Loc.Text("无法打开链接，请检查默认浏览器设置。"),Title);}
     }
-}
-
-internal static class UpdatePresentation
-{
-    public static string Phase(UpdatePhase phase)=>phase switch {
-        UpdatePhase.Idle=>"尚未发现可安装的更新",UpdatePhase.Checking=>"正在检查更新…",UpdatePhase.Available=>"有可用更新",
-        UpdatePhase.Downloading=>"正在下载更新…",UpdatePhase.Verifying=>"正在校验并准备更新…",UpdatePhase.PackageReady=>"更新已校验，请选择安装时间",
-        UpdatePhase.WaitingForTasks=>"正在等待编辑和任务处理完成",UpdatePhase.ReadyToInstall=>"已具备安装条件",UpdatePhase.Installing=>"正在安装更新…",
-        UpdatePhase.PendingRestart=>"等待重新启动",UpdatePhase.Complete=>"更新已完成",_=>"更新失败"};
-    public static string Blocker(string value)=>value switch {
-        "draft"=>"请返回编辑器应用或放弃草稿和未提交输入","unsaved"=>"照片编辑尚未保存","save"=>"照片编辑保存失败，请先重试保存",
-        "journal"=>"批量任务记录尚未安全保存",_=>"正在等待预览、导出或批量任务结束"};
 }
