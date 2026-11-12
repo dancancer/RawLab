@@ -103,9 +103,11 @@ struct PresentationTests {
             check(NSImage(systemSymbolName: tool.symbol, accessibilityDescription: nil) != nil,
                   "Native symbol exists for \(tool.rawValue)")
         }
-        check(AdjustmentParameter.exposure.spec.progress(for: -2) == -0.5,
+        // 取范围的一半，避免曝光范围调整后断言失效（00aa7e20 把 ±4 EV 扩到 ±5 EV）。
+        let exposure = AdjustmentParameter.exposure.spec
+        check(exposure.progress(for: exposure.range.lowerBound / 2) == -0.5,
               "Negative adjustments use counterclockwise signed progress")
-        check(AdjustmentParameter.exposure.spec.progress(for: 2) == 0.5,
+        check(exposure.progress(for: exposure.range.upperBound / 2) == 0.5,
               "Positive adjustments use clockwise signed progress")
         check(AdjustmentParameter.temperature.spec.progress(for: 2000) == -1 &&
               AdjustmentParameter.temperature.spec.progress(for: 50000) == 1,
