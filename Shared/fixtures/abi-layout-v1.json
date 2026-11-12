@@ -1,0 +1,649 @@
+{
+  "version": 1,
+  "source": [
+    "lutools/include/sony2fuji/ffi/sony2fuji_c.h",
+    "lutools/include/sony2fuji/ffi/sony2fuji_hdr.h"
+  ],
+  "structs": [
+    {
+      "name": "sony2fuji_blob",
+      "size": 16,
+      "fields": [
+        {"name": "data", "offset": 0},
+        {"name": "size_bytes", "offset": 8}
+      ]
+    },
+    {
+      "name": "sony2fuji_request",
+      "size": 184,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "input_path", "offset": 8},
+        {"name": "input_type", "offset": 16},
+        {"name": "input_pixels", "offset": 24},
+        {"name": "input_width", "offset": 32},
+        {"name": "input_height", "offset": 36},
+        {"name": "input_pixel_format", "offset": 40},
+        {"name": "input_color_space", "offset": 44},
+        {"name": "input_is_linear", "offset": 48},
+        {"name": "lut_path", "offset": 56},
+        {"name": "lut_strength", "offset": 64},
+        {"name": "wb_mode", "offset": 68},
+        {"name": "wb_mul", "offset": 72},
+        {"name": "exposure_ev", "offset": 88},
+        {"name": "brightness", "offset": 92},
+        {"name": "contrast", "offset": 96},
+        {"name": "saturation", "offset": 100},
+        {"name": "temperature", "offset": 104},
+        {"name": "tint", "offset": 108},
+        {"name": "highlights", "offset": 112},
+        {"name": "shadows", "offset": 116},
+        {"name": "tone_curve", "offset": 120},
+        {"name": "noise_reduction", "offset": 124},
+        {"name": "sharpening", "offset": 128},
+        {"name": "size_mode", "offset": 132},
+        {"name": "target_width", "offset": 136},
+        {"name": "target_height", "offset": 140},
+        {"name": "long_edge", "offset": 144},
+        {"name": "short_edge", "offset": 148},
+        {"name": "output_target", "offset": 152},
+        {"name": "output_path", "offset": 160},
+        {"name": "output_format", "offset": 168},
+        {"name": "jpeg_quality", "offset": 172},
+        {"name": "intent", "offset": 176},
+        {"name": "preview_long_edge", "offset": 180}
+      ]
+    },
+    {
+      "name": "sony2fuji_buffer",
+      "size": 32,
+      "fields": [
+        {"name": "data", "offset": 0},
+        {"name": "size_bytes", "offset": 8},
+        {"name": "width", "offset": 16},
+        {"name": "height", "offset": 20},
+        {"name": "stride_bytes", "offset": 24},
+        {"name": "pixel_format", "offset": 28}
+      ]
+    },
+    {
+      "name": "sony2fuji_gpu_config",
+      "size": 12,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "mode", "offset": 8}
+      ]
+    },
+    {
+      "name": "sony2fuji_wavelet_denoise_config",
+      "size": 24,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "enabled", "offset": 8},
+        {"name": "luma", "offset": 12},
+        {"name": "chroma", "offset": 16},
+        {"name": "coarse", "offset": 20}
+      ]
+    },
+    {
+      "name": "sony2fuji_photo_effects_config",
+      "size": 40,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "vignette_amount", "offset": 8},
+        {"name": "vignette_midpoint", "offset": 12},
+        {"name": "vignette_roundness", "offset": 16},
+        {"name": "vignette_feather", "offset": 20},
+        {"name": "vignette_highlights", "offset": 24},
+        {"name": "grain_amount", "offset": 28},
+        {"name": "grain_size", "offset": 32},
+        {"name": "grain_roughness", "offset": 36}
+      ]
+    },
+    {
+      "name": "sony2fuji_hsl_config",
+      "size": 104,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "hue", "offset": 8},
+        {"name": "saturation", "offset": 40},
+        {"name": "lightness", "offset": 72}
+      ]
+    },
+    {
+      "name": "sony2fuji_tone_controls_config",
+      "size": 20,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "black_point", "offset": 8},
+        {"name": "white_point", "offset": 12},
+        {"name": "vibrance", "offset": 16}
+      ]
+    },
+    {
+      "name": "sony2fuji_atmosphere_config",
+      "size": 16,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "clarity", "offset": 8},
+        {"name": "dehaze", "offset": 12}
+      ]
+    },
+    {
+      "name": "sony2fuji_color_grading_config",
+      "size": 32,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "shadows_hue", "offset": 8},
+        {"name": "shadows_saturation", "offset": 12},
+        {"name": "midtones_hue", "offset": 16},
+        {"name": "midtones_saturation", "offset": 20},
+        {"name": "highlights_hue", "offset": 24},
+        {"name": "highlights_saturation", "offset": 28}
+      ]
+    },
+    {
+      "name": "sony2fuji_curve_point",
+      "size": 16,
+      "fields": [
+        {"name": "x", "offset": 0},
+        {"name": "y", "offset": 8}
+      ]
+    },
+    {
+      "name": "sony2fuji_tone_curve_config",
+      "size": 544,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "mode", "offset": 8},
+        {"name": "count", "offset": 12},
+        {"name": "points", "offset": 16}
+      ]
+    },
+    {
+      "name": "sony2fuji_tone_curve_set_config",
+      "size": 2184,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "curves", "offset": 8}
+      ]
+    },
+    {
+      "name": "sony2fuji_geometry_config",
+      "size": 40,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "crop_x", "offset": 8},
+        {"name": "crop_y", "offset": 12},
+        {"name": "crop_width", "offset": 16},
+        {"name": "crop_height", "offset": 20},
+        {"name": "quarter_turns", "offset": 24},
+        {"name": "flip_horizontal", "offset": 28},
+        {"name": "flip_vertical", "offset": 32},
+        {"name": "straighten_degrees", "offset": 36}
+      ]
+    },
+    {
+      "name": "sony2fuji_perspective_config",
+      "size": 16,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "horizontal", "offset": 8},
+        {"name": "vertical", "offset": 12}
+      ]
+    },
+    {
+      "name": "sony2fuji_lens_correction_config",
+      "size": 32,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "distortion", "offset": 8},
+        {"name": "tca", "offset": 12},
+        {"name": "auto_crop", "offset": 16},
+        {"name": "profile_id", "offset": 24}
+      ]
+    },
+    {
+      "name": "sony2fuji_lens_correction_config_v2",
+      "size": 40,
+      "fields": [
+        {"name": "base", "offset": 0},
+        {"name": "vignetting", "offset": 32}
+      ]
+    },
+    {
+      "name": "sony2fuji_lens_metadata",
+      "size": 64,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "camera_make", "offset": 8},
+        {"name": "camera_model", "offset": 16},
+        {"name": "lens_make", "offset": 24},
+        {"name": "lens_model", "offset": 32},
+        {"name": "focal_length", "offset": 40},
+        {"name": "aperture", "offset": 44},
+        {"name": "crop_factor", "offset": 48},
+        {"name": "embedded_geometry", "offset": 52},
+        {"name": "source_orientation", "offset": 56}
+      ]
+    },
+    {
+      "name": "sony2fuji_lens_profile",
+      "size": 908,
+      "fields": [
+        {"name": "id", "offset": 0},
+        {"name": "maker", "offset": 512},
+        {"name": "model", "offset": 640},
+        {"name": "has_distortion", "offset": 896},
+        {"name": "has_tca", "offset": 900},
+        {"name": "is_match", "offset": 904}
+      ]
+    },
+    {
+      "name": "sony2fuji_lens_report",
+      "size": 1440,
+      "fields": [
+        {"name": "state", "offset": 0},
+        {"name": "camera_make", "offset": 4},
+        {"name": "camera_model", "offset": 132},
+        {"name": "lens_model", "offset": 260},
+        {"name": "focal_length", "offset": 516},
+        {"name": "profile", "offset": 520},
+        {"name": "applied_distortion", "offset": 1428},
+        {"name": "applied_tca", "offset": 1432},
+        {"name": "crop_scale", "offset": 1436}
+      ]
+    },
+    {
+      "name": "sony2fuji_lens_profile_v2",
+      "size": 912,
+      "fields": [
+        {"name": "base", "offset": 0},
+        {"name": "has_vignetting", "offset": 908}
+      ]
+    },
+    {
+      "name": "sony2fuji_lens_report_v2",
+      "size": 1448,
+      "fields": [
+        {"name": "base", "offset": 0},
+        {"name": "has_vignetting", "offset": 1440},
+        {"name": "applied_vignetting", "offset": 1444}
+      ]
+    },
+    {
+      "name": "sony2fuji_hsl_probe_query",
+      "size": 32,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "source_revision", "offset": 8},
+        {"name": "request_revision", "offset": 16},
+        {"name": "x", "offset": 24},
+        {"name": "y", "offset": 28}
+      ]
+    },
+    {
+      "name": "sony2fuji_hsl_probe_result",
+      "size": 96,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "source_revision", "offset": 8},
+        {"name": "request_revision", "offset": 16},
+        {"name": "width", "offset": 24},
+        {"name": "height", "offset": 28},
+        {"name": "availability", "offset": 32},
+        {"name": "quality", "offset": 36},
+        {"name": "rgb", "offset": 40},
+        {"name": "hsl", "offset": 52},
+        {"name": "weights", "offset": 64}
+      ]
+    },
+    {
+      "name": "sony2fuji_ai_denoise_config",
+      "size": 32,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "enabled", "offset": 8},
+        {"name": "backend", "offset": 12},
+        {"name": "model_directory", "offset": 16},
+        {"name": "cache_directory", "offset": 24}
+      ]
+    },
+    {
+      "name": "sony2fuji_processing_migration_result",
+      "size": 80,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "source_version", "offset": 8},
+        {"name": "target_version", "offset": 12},
+        {"name": "disposition", "offset": 16},
+        {"name": "evaluation_count", "offset": 20},
+        {"name": "exposure_ev", "offset": 24},
+        {"name": "contrast", "offset": 28},
+        {"name": "highlights", "offset": 32},
+        {"name": "shadows", "offset": 36},
+        {"name": "saturation", "offset": 40},
+        {"name": "black_point", "offset": 44},
+        {"name": "white_point", "offset": 48},
+        {"name": "vibrance", "offset": 52},
+        {"name": "clarity", "offset": 56},
+        {"name": "dehaze", "offset": 60},
+        {"name": "rgb_rmse", "offset": 64},
+        {"name": "p99_error", "offset": 68},
+        {"name": "worst_tile_rmse", "offset": 72},
+        {"name": "detail_rmse", "offset": 76}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_diagnostic_v1",
+      "size": 16,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "reason", "offset": 8},
+        {"name": "field", "offset": 12}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_source_info_v1",
+      "size": 72,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "width", "offset": 8},
+        {"name": "height", "offset": 12},
+        {"name": "orientation", "offset": 16},
+        {"name": "container", "offset": 20},
+        {"name": "protocol", "offset": 24},
+        {"name": "color_description", "offset": 28},
+        {"name": "content_headroom", "offset": 32},
+        {"name": "headroom_kind", "offset": 36},
+        {"name": "source_sha256", "offset": 40}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_camera_source_info_v1",
+      "size": 76,
+      "fields": [
+        {"name": "base", "offset": 0},
+        {"name": "capabilities", "offset": 72}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_decode_options_v1",
+      "size": 16,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "intent", "offset": 8},
+        {"name": "long_edge", "offset": 12}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_camera_development_v1",
+      "size": 40,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "white_balance", "offset": 8},
+        {"name": "exposure_reference", "offset": 12},
+        {"name": "temperature", "offset": 16},
+        {"name": "tint", "offset": 20},
+        {"name": "fbdd_level", "offset": 24},
+        {"name": "lens_flags", "offset": 28},
+        {"name": "lens_profile_id", "offset": 32}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_camera_development_v2",
+      "size": 120,
+      "fields": [
+        {"name": "base", "offset": 0},
+        {"name": "profile_path", "offset": 40},
+        {"name": "profile_sha256", "offset": 48}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_camera_profile_info_v1",
+      "size": 140,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "camera_model", "offset": 8},
+        {"name": "sha256", "offset": 72}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_buffer_v1",
+      "size": 56,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "data", "offset": 8},
+        {"name": "size_bytes", "offset": 16},
+        {"name": "width", "offset": 24},
+        {"name": "height", "offset": 28},
+        {"name": "stride_bytes", "offset": 32},
+        {"name": "pixel_format", "offset": 40},
+        {"name": "color_encoding", "offset": 44},
+        {"name": "content_headroom", "offset": 48},
+        {"name": "headroom_kind", "offset": 52}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_image_pair_v1",
+      "size": 208,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "hdr", "offset": 8},
+        {"name": "sdr", "offset": 64},
+        {"name": "native_width", "offset": 120},
+        {"name": "native_height", "offset": 124},
+        {"name": "orientation_applied", "offset": 128},
+        {"name": "source_intent", "offset": 132},
+        {"name": "render_intent", "offset": 136},
+        {"name": "is_proxy", "offset": 140},
+        {"name": "decode_revision", "offset": 144},
+        {"name": "source_headroom", "offset": 152},
+        {"name": "source_headroom_kind", "offset": 156},
+        {"name": "source_sha256", "offset": 160},
+        {"name": "owner_token", "offset": 192},
+        {"name": "output_native_width", "offset": 200},
+        {"name": "output_native_height", "offset": 204}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_request_v1",
+      "size": 88,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "hdr_processing_version", "offset": 8},
+        {"name": "intent", "offset": 12},
+        {"name": "exposure_ev", "offset": 16},
+        {"name": "temperature", "offset": 20},
+        {"name": "tint", "offset": 24},
+        {"name": "contrast", "offset": 28},
+        {"name": "highlights", "offset": 32},
+        {"name": "shadows", "offset": 36},
+        {"name": "saturation", "offset": 40},
+        {"name": "crop_x", "offset": 44},
+        {"name": "crop_y", "offset": 48},
+        {"name": "crop_width", "offset": 52},
+        {"name": "crop_height", "offset": 56},
+        {"name": "quarter_turns", "offset": 60},
+        {"name": "flip_horizontal", "offset": 64},
+        {"name": "flip_vertical", "offset": 68},
+        {"name": "straighten_degrees", "offset": 72},
+        {"name": "perspective_horizontal", "offset": 76},
+        {"name": "perspective_vertical", "offset": 80},
+        {"name": "long_edge", "offset": 84}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_request_v2",
+      "size": 648,
+      "fields": [
+        {"name": "base", "offset": 0},
+        {"name": "black_point", "offset": 88},
+        {"name": "white_point", "offset": 92},
+        {"name": "curve_strength", "offset": 96},
+        {"name": "reserved", "offset": 100},
+        {"name": "curve", "offset": 104}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_request_v3",
+      "size": 792,
+      "fields": [
+        {"name": "base", "offset": 0},
+        {"name": "vibrance", "offset": 648},
+        {"name": "reserved", "offset": 652},
+        {"name": "hsl", "offset": 656},
+        {"name": "grading", "offset": 760}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_request_v4",
+      "size": 808,
+      "fields": [
+        {"name": "base", "offset": 0},
+        {"name": "peak_limit_ev", "offset": 792},
+        {"name": "sdr_exposure_ev", "offset": 796},
+        {"name": "sdr_contrast", "offset": 800},
+        {"name": "sdr_saturation", "offset": 804}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_request_v5",
+      "size": 848,
+      "fields": [
+        {"name": "base", "offset": 0},
+        {"name": "effects", "offset": 808}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_request_v6",
+      "size": 864,
+      "fields": [
+        {"name": "base", "offset": 0},
+        {"name": "sharpening", "offset": 848},
+        {"name": "clarity", "offset": 852},
+        {"name": "dehaze", "offset": 856},
+        {"name": "denoise", "offset": 860}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_request_v7",
+      "size": 952,
+      "fields": [
+        {"name": "base", "offset": 0},
+        {"name": "look_path", "offset": 864},
+        {"name": "look_strength", "offset": 872},
+        {"name": "reserved", "offset": 876},
+        {"name": "look_sha256", "offset": 880}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_request_v8",
+      "size": 2584,
+      "fields": [
+        {"name": "base", "offset": 0},
+        {"name": "channels", "offset": 952}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_look_info_v1",
+      "size": 108,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "grid_size", "offset": 8},
+        {"name": "reserved", "offset": 12},
+        {"name": "domain_min", "offset": 16},
+        {"name": "domain_max", "offset": 28},
+        {"name": "sha256", "offset": 40}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_export_config_v1",
+      "size": 64,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "jpeg_quality", "offset": 8},
+        {"name": "base_color", "offset": 12},
+        {"name": "metadata_policy", "offset": 16},
+        {"name": "metadata_source_path", "offset": 24},
+        {"name": "source_sha256", "offset": 32}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_sdr_export_config_v1",
+      "size": 56,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "output_format", "offset": 8},
+        {"name": "quality", "offset": 12},
+        {"name": "metadata_source_path", "offset": 16},
+        {"name": "source_sha256", "offset": 24}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_stream_source_v1",
+      "size": 104,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "native_width", "offset": 8},
+        {"name": "native_height", "offset": 12},
+        {"name": "orientation_applied", "offset": 16},
+        {"name": "source_intent", "offset": 20},
+        {"name": "decode_revision", "offset": 24},
+        {"name": "decoder_identifier", "offset": 32},
+        {"name": "source_sha256", "offset": 40},
+        {"name": "context", "offset": 72},
+        {"name": "read_rows", "offset": 80},
+        {"name": "finish_decode", "offset": 88},
+        {"name": "is_cancelled", "offset": 96}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_stream_result_v1",
+      "size": 48,
+      "fields": [
+        {"name": "version", "offset": 0},
+        {"name": "struct_size", "offset": 4},
+        {"name": "width", "offset": 8},
+        {"name": "height", "offset": 12},
+        {"name": "native_width", "offset": 16},
+        {"name": "native_height", "offset": 20},
+        {"name": "output_native_width", "offset": 24},
+        {"name": "output_native_height", "offset": 28},
+        {"name": "decode_revision", "offset": 32},
+        {"name": "source_headroom", "offset": 40},
+        {"name": "edited_headroom", "offset": 44}
+      ]
+    }
+  ]
+}

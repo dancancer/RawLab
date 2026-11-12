@@ -4,6 +4,11 @@ using System.Text.Json.Nodes;
 
 if (args.Contains("--edited-previews")) { EditedPhotoPreviewChecks.Run(); return; }
 
+if (args.Contains("--abi-layout")) {
+    AbiLayoutChecks.Run();
+    return;
+}
+
 if (args.Contains("--hdr-look-import")) {
     HDRAssetImportChecks.Run();
     return;
@@ -21,6 +26,7 @@ if (args.Contains("--summary-only")) {
 
 if (args.Contains("--hdr-only")) {
     HDRChecks.Run();
+    AbiLayoutChecks.Run();
     CameraRawHDRChecks.Run();
     ProRAWHDRChecks.Run(Check);
     return;
@@ -64,6 +70,7 @@ AdjustmentTransferChecks.Run();
 AdjustmentHistoryChecks.Run();
 AdjustmentPresetChecks.Run();
 HDRChecks.Run();
+AbiLayoutChecks.Run();
 CameraRawHDRChecks.Run();
 ProRAWHDRChecks.Run(Check);
 AdjustmentSummaryChecks.Run();
