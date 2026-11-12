@@ -17,7 +17,7 @@ internal static class EditDurabilityChecks
         UnknownProcessingVersionIsolatesEntryAndRecoversOnResetToUnmodified();
         MalformedSubSettingsAndEmptyArraysIsolateEntriesAndPreserveTableValidation();
         CorruptReceiptDoesNotBreakStoreAndActsAsAbsent();
-        RealResetPathClearsReceiptBlocksRollbackAndRefreshesUiState();
+        ResetTransactionClearsReceiptAndUndoRestoresValuesWithoutRestoringReceipt();
         Console.WriteLine("PASS: ProRAW dormant version, per-entry store isolation, manual reset recovery and reset receipt clearing");
     }
 
@@ -379,22 +379,24 @@ internal static class EditDurabilityChecks
                     "Healthy sibling receipt remains readable alongside malformed receipt");
             }
 
-            // 整表结构损坏仍由 ReadRegistry 整库拒绝，绝不被单条 catch 吸收。
+            // 整表结构损坏（含大小写不同的重复键）仍由 ReadRegistry 整库拒绝，绝不被单条 catch 吸收。
             var brokenTableDir = Path.Combine(root, "broken-table");
             Directory.CreateDirectory(brokenTableDir);
             foreach (var badEnvelope in new[] {
                 "{\"Version\":2,\"Records\":{}}",
                 "{\"Version\":1,\"Records\":[]}",
-                "{\"Version\":1,\"Records\":{},\"MigrationReceipts\":[]}"
+                "{\"Version\":1,\"Records\":{},\"MigrationReceipts\":[]}",
+                "{\"Version\":1,\"Records\":{\"C:\\\\dup\\\\photo.ARW\":{},\"c:\\\\dup\\\\photo.arw\":{}}}",
+                "{\"Version\":1,\"Records\":{},\"MigrationReceipts\":{\"C:\\\\dup\\\\photo.ARW\":{},\"c:\\\\dup\\\\photo.arw\":{}}}"
             })
             {
                 File.WriteAllText(Path.Combine(brokenTableDir, "edits.json"), badEnvelope);
                 try { _ = new EditStore(brokenTableDir); throw new Exception("Broken table structure was accepted: " + badEnvelope); }
-                catch (InvalidDataException error)
+                catch (UnusableEditRecordException)
                 {
-                    Check(error is not UnusableEditRecordException,
-                        "Whole-table structural failure is rejected by ReadRegistry, not swallowed as per-entry UnusableEditRecordException");
+                    throw new Exception("Whole-table structural failure was misclassified as per-entry UnusableEditRecordException: " + badEnvelope);
                 }
+                catch (InvalidDataException) { }
             }
             File.WriteAllText(Path.Combine(brokenTableDir, "edits.json"), "{corrupt-root-json");
             try { _ = new EditStore(brokenTableDir); throw new Exception("Malformed root JSON was accepted"); }
@@ -456,7 +458,7 @@ internal static class EditDurabilityChecks
         finally { Directory.Delete(root, true); }
     }
 
-    private static void RealResetPathClearsReceiptBlocksRollbackAndRefreshesUiState()
+    private static void ResetTransactionClearsReceiptAndUndoRestoresValuesWithoutRestoringReceipt()
     {
         foreach (var initialStatus in new[] {
             ProcessingMigrationReceipt.Migrated,
@@ -504,7 +506,7 @@ internal static class EditDurabilityChecks
                 var toolScope = new EditorResetScope(EditorResetKind.Tool, Tool: EditorAdjustmentTool.Exposure);
                 Check(!EditorAdjustmentRules.ClearsMigrationReceipt(toolScope), "Partial tool reset does not flag receipt clearing");
 
-                // 真实「重置全部调整」提交路径：EditorResetTransaction.Prepare -> TryCommit -> CommitEdit(clearMigrationReceipt: true)。
+                // 会话层重置事务提交路径（真实 MainWindow 入口链路由 EditDurabilityWindowChecks 覆盖）。
                 var allScope = new EditorResetScope(EditorResetKind.All);
                 Check(EditorAdjustmentRules.ClearsMigrationReceipt(allScope), "All-reset explicitly flags receipt clearing");
                 var context = new EditorResetContext(committed.Edit!.Look, TransformGeneration: 0);
@@ -521,12 +523,12 @@ internal static class EditDurabilityChecks
                         clearMigrationReceipt: EditorAdjustmentRules.ClearsMigrationReceipt(prepared.Scope));
                 });
                 Check(ran && resetOutcome is { Status: AdjustmentStatus.Applied, Saved: { Edit: not null } },
-                    "Real reset commit writes the neutral SavedEdit");
+                    "Reset commit writes the neutral SavedEdit");
 
                 // 迁移回执已清除（内存与重启后均不存在），回滚抛 AdjustmentOperationExpiredException。
                 Check(store.ReadProcessingMigration(photo) == null &&
                       new EditStore(storeDirectory).ReadProcessingMigration(photo) == null,
-                    "Real reset clears migration receipt for status " + initialStatus);
+                    "Reset clears migration receipt for status " + initialStatus);
                 Check(store.ReadProcessingMigration(sibling)?.Status == ProcessingMigrationReceipt.Migrated,
                     "Resetting one photo preserves sibling migration receipts");
 
@@ -537,37 +539,25 @@ internal static class EditDurabilityChecks
                 }
                 catch (AdjustmentOperationExpiredException) { }
 
-                // UI 内存态刷新：processingMigrationReceipt 置空后，状态文案与回滚按钮门控均不可见。
-                ProcessingMigrationReceipt? clearedInMemoryReceipt = null;
-                var currentOld = resetOutcome!.Saved!.Edit!.Settings.Processing.Version is 1 or 2;
-                var receiptVisible = clearedInMemoryReceipt?.Status == ProcessingMigrationReceipt.Migrated ||
-                    currentOld && clearedInMemoryReceipt?.Status is ProcessingMigrationReceipt.Kept or ProcessingMigrationReceipt.RolledBack;
-                var rollbackVisible = clearedInMemoryReceipt?.Status == ProcessingMigrationReceipt.Migrated;
-                Check(!receiptVisible && !rollbackVisible,
-                    "Cleared in-memory receipt hides both status text and rollback button");
+                // 既定语义（方案 b）：reset 是带确认的破坏性操作，undo 只恢复调整数值，不恢复迁移回执。
+                var undone = session.UndoPhoto(photo).Single();
+                Check(undone.Status == AdjustmentStatus.Applied &&
+                      undone.Saved?.Edit != null &&
+                      undone.Saved.Edit.SameAs(committed.Edit) &&
+                      store.ReadState(photo).SameAs(committed),
+                    "Undo after all-reset restores pre-reset adjustment values for status " + initialStatus);
+                Check(store.ReadProcessingMigration(photo) == null &&
+                      new EditStore(storeDirectory).ReadProcessingMigration(photo) == null,
+                    "Undo after all-reset leaves migration receipt absent (nil) for status " + initialStatus);
+                try
+                {
+                    store.RollbackProcessingMigration(identity, undone.Saved!);
+                    throw new Exception("Rollback succeeded after undoing all-reset");
+                }
+                catch (AdjustmentOperationExpiredException) { }
             }
             finally { Directory.Delete(root, true); }
         }
-
-        // 静态核实 MainWindow 重置保存成功路径同步刷新内存回执与控件可见性。
-        var projectRoot = TryFindProjectRoot();
-        if (projectRoot != null)
-        {
-            var workflowSource = File.ReadAllText(Path.Combine(projectRoot, "EditWorkflow.cs"));
-            var migrationUiSource = File.ReadAllText(Path.Combine(projectRoot, "MainWindow", "ProcessingMigration.cs"));
-            Check(workflowSource.Contains("EditorAdjustmentRules.ClearsMigrationReceipt(prepared.Scope)", StringComparison.Ordinal) &&
-                  workflowSource.Contains("ClearProcessingMigrationReceiptState()", StringComparison.Ordinal) &&
-                  migrationUiSource.Contains("processingMigrationReceipt=null;", StringComparison.Ordinal) &&
-                  migrationUiSource.Contains("RefreshProcessingMigrationControls();", StringComparison.Ordinal),
-                "MainWindow reset commit path clears processingMigrationReceipt and refreshes migration controls");
-        }
-    }
-
-    private static string? TryFindProjectRoot()
-    {
-        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory != null; directory = directory.Parent)
-            if (File.Exists(Path.Combine(directory.FullName, "RawLabWindows.csproj"))) return directory.FullName;
-        return null;
     }
 
     private static SavedEdit LegacyEdit(OriginalIdentity identity)

@@ -163,7 +163,7 @@ public sealed record PhotoEditState(OriginalIdentity Identity,SavedEdit? Edit)
 public sealed class PhotoChangedException() : IOException("The original photo changed. Select it again.");
 public sealed class AdjustmentOperationExpiredException() : InvalidOperationException("This adjustment operation is no longer current.");
 public sealed class AdjustmentHistoryOrderException() : InvalidOperationException("Undo or redo the photo's edits in history order.");
-public sealed class UnusableEditRecordException(string message, Exception? inner = null) : InvalidDataException(message, inner);
+public sealed class UnusableEditRecordException(string message, Exception? inner = null) : IOException(message, inner);
 
 public sealed class EditStore
 {
@@ -204,7 +204,10 @@ public sealed class EditStore
             throw new InvalidDataException(Loc.Text("本地记录损坏。"));
         var records = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in recordsElement.EnumerateObject())
-            records[entry.Name] = entry.Value.Clone();
+        {
+            if (!records.TryAdd(entry.Name, entry.Value.Clone()))
+                throw new InvalidDataException(Loc.Text("本地记录损坏。"));
+        }
         Dictionary<string, JsonElement>? receipts = null;
         if (root.TryGetProperty("MigrationReceipts", out var receiptsElement) && receiptsElement.ValueKind != JsonValueKind.Null)
         {
@@ -212,7 +215,10 @@ public sealed class EditStore
                 throw new InvalidDataException(Loc.Text("本地记录损坏。"));
             receipts = new(StringComparer.OrdinalIgnoreCase);
             foreach (var entry in receiptsElement.EnumerateObject())
-                receipts[entry.Name] = entry.Value.Clone();
+            {
+                if (!receipts.TryAdd(entry.Name, entry.Value.Clone()))
+                    throw new InvalidDataException(Loc.Text("本地记录损坏。"));
+            }
         }
         return new(1,records,receipts);
     }

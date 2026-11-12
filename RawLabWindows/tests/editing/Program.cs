@@ -226,9 +226,9 @@ static void ProtectedProcessingChecks(string root)
     // 而是在读取或普通覆盖该照片时按单条拒绝，且磁盘上的未来版本记录逐字保留。
     var reopened = new EditStore(directory);
     try { _ = reopened.ReadState(input); throw new Exception("Unknown processing must reject reading that photo"); }
-    catch (InvalidDataException) { }
+    catch (UnusableEditRecordException) { }
     try { store.Save(input, snapshot, null); throw new Exception("An already-open store cannot replace future records"); }
-    catch (InvalidDataException) { }
+    catch (UnusableEditRecordException) { }
     Check(File.ReadAllText(path) == protectedBytes, "Unsupported registry remains byte-identical");
     var journal = new BatchJournal(Path.Combine(root, "protected-batch"));
     Directory.CreateDirectory(journal.DirectoryPath);

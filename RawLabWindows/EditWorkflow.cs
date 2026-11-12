@@ -80,6 +80,7 @@ public partial class MainWindow
         }
     }
 
+    // 重置全部调整经确认后显式清除该照片的处理迁移回执；随后撤销只恢复调整参数，不恢复已清除的迁移回执（回退仍保持已过期）。
     private AdjustmentOutcome CommitResetEdit(AdjustmentSnapshot snapshot)
     {
         if(file==null)throw new InvalidOperationException("No photo is open.");

@@ -41,6 +41,7 @@ internal static class UiDetailChecks
         try
         {
             NoRawImport(output,check);
+            EditDurabilityWindowChecks.RunCore(Path.Combine(output,"edit-durability"),check);
             foreach(var language in new[]{"zh-Hans","en","de","fr","ja","es"})
             {
                 Loc.Initialize(language);foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
