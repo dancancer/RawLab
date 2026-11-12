@@ -46,10 +46,16 @@ internal class EditedPhotoPreviews(context: Context) : AutoCloseable {
 
     suspend fun states(photos: List<AlbumPhoto>): Map<String, Boolean> = work { cancellation ->
         val records = store.readStates(photos.map { PhotoIdentity(it.uri.toString()) })
-        photos.associate { photo ->
-            cancellation.check()
-            val input = PhotoFiles.kind(photo.name, photo.mimeType) ?: PhotoInputKind.RAW
-            photo.uri.toString() to EditedPhotoPreviewKey.isEdited(records[PhotoIdentity(photo.uri.toString())]?.settings, input)
+        buildMap(photos.size) {
+            for (photo in photos) {
+                cancellation.check()
+                val input = PhotoFiles.kind(photo.name, photo.mimeType) ?: PhotoInputKind.RAW
+                when (val result = records[PhotoIdentity(photo.uri.toString())]) {
+                    is PhotoEditReadResult.Usable ->
+                        put(photo.uri.toString(), EditedPhotoPreviewKey.isEdited(result.state.settings, input))
+                    is PhotoEditReadResult.Unusable, null -> Unit
+                }
+            }
         }
     }
 

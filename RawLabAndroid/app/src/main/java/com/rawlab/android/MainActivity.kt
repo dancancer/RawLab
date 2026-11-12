@@ -278,6 +278,8 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
                 model::cancelHslTarget, model::keyHslTarget, model::rejectHslTarget),
             onEdit = model::edit, onRetry = model::retry, onSelectFilm = model::selectFilm,
             onPrepareReset = model::prepareReset, onCommitReset = model::commitReset,
+            onResetUnusableRecord = model::resetUnusableImportRecord,
+            onDismissUnusableRecord = model::dismissUnusableImportRecovery,
             onSaveRetry = { model.retrySave() },
             onCancelAdjustment = model::cancelAdjustmentInteraction,
             canUndoAdjustment = model.canUndoAdjustment, canRedoAdjustment = model.canRedoAdjustment,

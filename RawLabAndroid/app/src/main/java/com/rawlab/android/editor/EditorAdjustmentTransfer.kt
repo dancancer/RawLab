@@ -127,18 +127,24 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
     }
 }
 
-internal fun adjustmentErrorMessage(error: Throwable?): String = AppStrings.text(when {
-    error is PhotoChangedException -> R.string.collection_source_changed
-    error is AdjustmentHistoryOrderException -> R.string.transfer_history_order_message
-    error is AdjustmentOperationExpiredException -> R.string.transfer_conflict_message
-    error is AdjustmentNotReadyException -> R.string.transfer_draft_message
-    error is AdjustmentTransferException -> when (error.reason) {
-        AdjustmentFailure.EMPTY_SCOPE -> R.string.transfer_empty_scope
-        AdjustmentFailure.DRAFT -> R.string.transfer_draft_message
-        AdjustmentFailure.MISSING_LOOK -> R.string.transfer_missing_look
-        AdjustmentFailure.UNREPRESENTABLE -> R.string.transfer_unrepresentable
-        AdjustmentFailure.INCOMPATIBLE -> R.string.transfer_incompatible
-        AdjustmentFailure.INVALID_PAYLOAD, AdjustmentFailure.UNSUPPORTED_VERSION -> R.string.transfer_invalid_payload
+internal fun adjustmentErrorMessage(error: Throwable?): String {
+    if (error is com.rawlab.android.settings.UnusableEditRecordException) {
+        return com.rawlab.android.editor.storage.EditSaveResult(EditSaveState.FAILED, error, reading = true).message
+            ?: AppStrings.text(R.string.transfer_error)
     }
-    else -> R.string.transfer_error
-})
+    return AppStrings.text(when {
+        error is PhotoChangedException -> R.string.collection_source_changed
+        error is AdjustmentHistoryOrderException -> R.string.transfer_history_order_message
+        error is AdjustmentOperationExpiredException -> R.string.transfer_conflict_message
+        error is AdjustmentNotReadyException -> R.string.transfer_draft_message
+        error is AdjustmentTransferException -> when (error.reason) {
+            AdjustmentFailure.EMPTY_SCOPE -> R.string.transfer_empty_scope
+            AdjustmentFailure.DRAFT -> R.string.transfer_draft_message
+            AdjustmentFailure.MISSING_LOOK -> R.string.transfer_missing_look
+            AdjustmentFailure.UNREPRESENTABLE -> R.string.transfer_unrepresentable
+            AdjustmentFailure.INCOMPATIBLE -> R.string.transfer_incompatible
+            AdjustmentFailure.INVALID_PAYLOAD, AdjustmentFailure.UNSUPPORTED_VERSION -> R.string.transfer_invalid_payload
+        }
+        else -> R.string.transfer_error
+    })
+}

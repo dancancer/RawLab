@@ -322,6 +322,7 @@ final class EditorModel: ObservableObject {
     var prepareQuickPresetOperation: (AdjustmentTransferSession, AdjustmentTransferPayload, [AdjustmentTransferTarget]) throws -> PreparedAdjustmentTransfer = {
         try $0.prepare(payload: $1, targets: $2, action: .preset)
     }
+    var confirmUnusableRecordReset: ((URL, String) -> Bool)?
     let editDirectory: URL
     let batchJournal: BatchJournal
     var updateJournalLoadFailed = false

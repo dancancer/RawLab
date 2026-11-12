@@ -415,11 +415,15 @@ struct AdjustmentHistoryModelTests {
         while pendingLens == nil && Date() < lensDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
         guard let lensResult = pendingLens else { throw NSError(domain: "lens preflight timed out", code: 1) }
         let lensOperation = try lensResult.get()
-        try check(lensOperation.targets.first?.error != nil, "actual raster target blocks an inactive explicit lens profile")
+        // #203 起栅格图允许保留未启用校正的手动镜头资料，只在请求校正时才要求真实标定。
+        try check(lensOperation.targets.first?.error == nil,
+                  "an inactive manual lens profile does not block a raster target")
         let lensOutcome = model.applyAdjustmentPaste(lensOperation, skipping: [])
         let afterLens = try store.readState(for: goodID)
-        try check(lensOutcome.first?.status == .blocked && afterLens.hasSameAdjustments(as: saved),
-                  "blocked inactive lens request preserves the raster receipt")
+        try check(lensOutcome.first?.status == .applied &&
+                  afterLens.state?.settings.lensSettings.profileID == "fixture-profile" &&
+                  afterLens.state?.settings.lensSettings.isEnabled == false,
+                  "raster keeps an inactive manual profile without claiming correction")
 
     }
 
@@ -541,5 +545,108 @@ struct AdjustmentHistoryModelTests {
             _ = try store.rollbackProcessingMigration(expected: store.readState(for: identity))
             throw NSError(domain: "rollback after undoing full reset must stay expired", code: 1)
         } catch AdjustmentCommitError.expired { }
+        try unusableRecordImportRecovery(directory: directory.appendingPathComponent("unusable-record-import"))
+    }
+
+    private static func unusableRecordImportRecovery(directory: URL) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let png = directory.appendingPathComponent("collection-photo.png")
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 24), format: format).image { context in
+            UIColor.green.setFill(); context.fill(CGRect(x: 0, y: 0, width: 32, height: 24))
+        }
+        try image.pngData()!.write(to: png)
+
+        let storeDir = directory.appendingPathComponent("edits")
+        let store = try EditPersistence(directory: storeDir)
+        let legacyAsset = PhotoIdentity(resourceIdentifier: "collection-legacy-broken")
+        let collectionIdentity = try PhotoIdentity.fallback(for: png, resourceIdentifier: legacyAsset.resourceIdentifier)
+        let recentStore = try RecentPhotoStore(directory: directory.appendingPathComponent("recents"))
+        let healthyRecent = try recentStore.recordOpened(url: png,
+                                                         identity: PhotoIdentity(resourceIdentifier: "healthy-recent"),
+                                                         displayName: "Healthy.png", isRaw: false)
+        let uneditedRecent = try recentStore.recordOpened(url: png,
+                                                          identity: PhotoIdentity(resourceIdentifier: "unedited-recent"),
+                                                          displayName: "Unedited.png", isRaw: false)
+        let brokenRecent = try recentStore.recordOpened(url: png,
+                                                        identity: PhotoIdentity(resourceIdentifier: "recent-broken"),
+                                                        displayName: "Broken.png", isRaw: false)
+        var healthySettings = RawSettings.default; healthySettings.exposure = 0.8
+        try store.save(healthyRecent.identity, state: PhotoEditState(settings: healthySettings))
+
+        let editsFile = storeDir.appendingPathComponent("edits.json")
+        let healthyKeys = Set(((try JSONSerialization.jsonObject(with: Data(contentsOf: editsFile)) as! [String: Any])["records"] as! [String: Any]).keys)
+        try store.save(brokenRecent.identity, state: PhotoEditState(settings: .default))
+        var object = try JSONSerialization.jsonObject(with: Data(contentsOf: editsFile)) as! [String: Any]
+        var records = object["records"] as! [String: Any]
+        guard let brokenRecentRecordKey = Set(records.keys).subtracting(healthyKeys).first else {
+            throw NSError(domain: "missing saved key for brokenRecent.identity", code: 1)
+        }
+        records[legacyAsset.key] = ["settings": ["exposure": 999], "updatedAt": 0]
+        records[brokenRecentRecordKey] = ["settings": ["exposure": 999], "updatedAt": 0]
+        object["records"] = records
+        try JSONSerialization.data(withJSONObject: object).write(to: editsFile)
+
+        let queue = DispatchQueue(label: "unusable-record-import")
+        var deliveries: [() -> Void] = []
+        let model = RawEditorViewModel(editPersistence: store, importQueue: queue, resultDelivery: { deliveries.append($0) })
+        model.batchSelection.append(.init(identity: collectionIdentity, displayName: "CollectionBroken.png",
+                                          file: .externallyManaged(png), isRaw: false))
+        var callerRestored: RawSettings?
+        var alertRestored: RawSettings?
+        model.importImage(from: .raster(png), identity: collectionIdentity, onSettingsRestored: { restored in
+            callerRestored = restored
+            model.sourceDisplayName = "CollectionBroken.png"
+            _ = model.batchSelection.selection.beginEditing(collectionIdentity.key)
+        })
+        queue.sync {}
+        deliveries.forEach { $0() }; deliveries.removeAll()
+        try check(!model.hasImage && model.statusMessage != nil && model.resetUnusableImportRecord != nil,
+                  "broken legacy asset record enters importImage recovery with resetUnusableImportRecord")
+
+        let recover = model.resetUnusableImportRecord
+        model.statusMessage = nil
+        recover? { restored in alertRestored = restored }
+        queue.sync {}
+        deliveries.forEach { $0() }; deliveries.removeAll()
+        try check(model.hasImage && model.sourceIdentity == collectionIdentity &&
+                  model.sourceDisplayName == "CollectionBroken.png" &&
+                  model.batchSelection.selection.current == collectionIdentity.key &&
+                  callerRestored != nil && alertRestored == callerRestored,
+                  "confirming resetUnusableImportRecord preserves caller onSettingsRestored and collection context")
+
+        var recentBrokenThrew = false
+        do {
+            _ = try EditPersistence(directory: storeDir).readState(for: brokenRecent.identity)
+        } catch is UnusableEditRecordError {
+            recentBrokenThrew = true
+        }
+        try check(recentBrokenThrew, "brokenRecent.identity hits UnusableEditRecordError on readState")
+
+        var reloadedLibrary: IOSPhotoPreviewLibrary?
+        Task { @MainActor in
+            let library = IOSPhotoPreviewLibrary(recentStore: recentStore,
+                                                 cacheDirectory: directory.appendingPathComponent("preview-cache"))
+            await library.reload(editDirectory: storeDir)
+            reloadedLibrary = library
+        }
+        let reloadDeadline = Date().addingTimeInterval(10)
+        while reloadedLibrary == nil && Date() < reloadDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        var editedFlags: [String: Bool]?
+        var libraryError: String?
+        Task { @MainActor in
+            editedFlags = reloadedLibrary?.edited
+            libraryError = reloadedLibrary?.error
+        }
+        while editedFlags == nil && Date() < reloadDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        try check(reloadedLibrary != nil && libraryError == nil &&
+                  editedFlags?[healthyRecent.id] == true &&
+                  editedFlags?[uneditedRecent.id] == false &&
+                  editedFlags?[brokenRecent.id] == nil,
+                  "recentStates omits unusable record instead of misclassifying it as unedited")
     }
 }

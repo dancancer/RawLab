@@ -381,10 +381,21 @@ extension EditorModel {
         if [.colorGrading, .toneCurve].contains(adjustmentNavigation.tool) { cancelAdjustmentInteraction() }
         if scheduler.interacting { setInteracting(false) }
         guard saveEdits() else { return }
-        let restoredRecord: PhotoEditRecord
+        let session: AdjustmentTransferSession
         do {
-            _ = try requireAdjustmentSession()
+            session = try requireAdjustmentSession()
+        } catch {
+            saveError = L10n.format("无法恢复调整：%@", String(describing: error.localizedDescription))
+            return
+        }
+        var restoredRecord: PhotoEditRecord
+        do {
             restoredRecord = try editStore!.readState(for: url)
+        } catch let unusable as UnusableEditRecordError {
+            guard let cleared = recoverUnusableRecordOnOpen(url, message: unusable.localizedDescription, session: session) else {
+                return
+            }
+            restoredRecord = cleared
         } catch {
             saveError = L10n.format("无法恢复调整：%@", String(describing: error.localizedDescription))
             return
@@ -397,10 +408,28 @@ extension EditorModel {
         do { candidate = try restoredRecord.state?.settings ?? RenderEngine.defaultSettings(for: url, sourceIsHDR: info != nil) }
         catch { self.error=error.localizedDescription; return }
         if sdrFallback { candidate.hdr?.mode = .sdr }
-        let cameraHDR = info == nil ? try? HDRSourceInfo.probeRAW(url, processing: candidate.processing.core) : nil
+        var cameraHDR = info == nil ? try? HDRSourceInfo.probeRAW(url, processing: candidate.processing.core) : nil
         guard !candidate.isHDREditing || info != nil || cameraHDR != nil else {
             self.error=L10n.text("此照片没有可编辑的 HDR 增益图。")
             return
+        }
+        if restoredRecord.state != nil, candidate.isHDREditing, let hdrSource = info ?? cameraHDR {
+            do {
+                try hdrSource.validateEditDecodeVersion(candidate.proRAWDecodeVersion)
+            } catch HDRSettings.ModeError.invalidSettings {
+                let message = HDRSettings.ModeError.invalidSettings.localizedDescription
+                guard let cleared = recoverUnusableRecordOnOpen(url, message: message, session: session) else {
+                    return
+                }
+                restoredRecord = cleared
+                do { candidate = try RenderEngine.defaultSettings(for: url, sourceIsHDR: info != nil) }
+                catch { self.error = error.localizedDescription; return }
+                if sdrFallback { candidate.hdr?.mode = .sdr }
+                cameraHDR = info == nil ? try? HDRSourceInfo.probeRAW(url, processing: candidate.processing.core) : nil
+            } catch {
+                self.error = error.localizedDescription
+                return
+            }
         }
         let opening=UUID(); pendingOpenID=opening
         if candidate.isHDREditing && candidate.hdrCameraAIEnabled {
@@ -444,6 +473,38 @@ extension EditorModel {
         }
         importing=false
         activateOpen(url,record:restoredRecord,settings:candidate,isHDR:false,cameraHDR:cameraHDR,sdrFallback:sdrFallback)
+    }
+
+    private func recoverUnusableRecordOnOpen(_ url: URL, message: String, session: AdjustmentTransferSession) -> PhotoEditRecord? {
+        let formatted = L10n.format("无法恢复调整：%@", message)
+        let confirmed: Bool
+        if let prompt = confirmUnusableRecordReset {
+            confirmed = prompt(url, formatted)
+        } else if let app = NSApp, app.windows.contains(where: \.isVisible) {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = L10n.text("重置全部调整？")
+            alert.informativeText = "\(formatted)\n\n\(L10n.text("恢复当前照片的全部调整，不改写原始照片。"))"
+            let resetButton = alert.addButton(withTitle: L10n.text("重置全部调整"))
+            if #available(macOS 11.0, *) { resetButton.hasDestructiveAction = true }
+            alert.addButton(withTitle: L10n.text("取消"))
+            confirmed = alert.runModal() == .alertFirstButtonReturn
+        } else {
+            confirmed = false
+        }
+        guard confirmed else {
+            saveError = formatted
+            return nil
+        }
+        do {
+            let cleared = try session.resetToUnmodified(url)
+            saveError = nil
+            adjustmentHistoryRevision &+= 1
+            return cleared
+        } catch {
+            saveError = L10n.format("无法恢复调整：%@", String(describing: error.localizedDescription))
+            return nil
+        }
     }
 
     private func activateOpen(_ url: URL,record restoredRecord: PhotoEditRecord,settings candidate: Adjustments,

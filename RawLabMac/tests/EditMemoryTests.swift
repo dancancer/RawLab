@@ -86,14 +86,15 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         savedState["settings"] = settings; record["state"] = savedState; records[key] = record; object["records"] = records
         let protectedBytes = try JSONSerialization.data(withJSONObject: object)
         try protectedBytes.write(to: file)
+        let reopened = try EditPersistence(directory: root)
         do {
-            _ = try EditPersistence(directory: root)
-            throw Failure(message: "unknown processing must reject the registry")
-        } catch is DecodingError { }
+            _ = try reopened.readState(for: input)
+            throw Failure(message: "unknown processing must fail strict per-photo read")
+        } catch is UnusableEditRecordError { }
         do {
             try store.save(input, state: state)
             throw Failure(message: "an already-open store must not replace unknown processing records")
-        } catch is DecodingError { }
+        } catch is UnusableEditRecordError { }
         try check(try Data(contentsOf: file) == protectedBytes, "unsupported records stay byte-identical")
     }
 
@@ -239,7 +240,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         do {
             _ = try EditPersistence(directory: directory)
             throw Failure(message: "corrupt store must not be silently replaced")
-        } catch is DecodingError { }
+        } catch is CocoaError { }
         print("PASS: edit restart, identity, reset, all fields, failed writes and corrupt store")
     }
 }

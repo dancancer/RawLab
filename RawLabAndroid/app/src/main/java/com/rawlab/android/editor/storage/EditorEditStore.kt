@@ -57,6 +57,14 @@ internal class EditorEditStore(private val directory: File, private val createSt
     fun rollbackProcessingMigration(expected: PhotoEditState): PhotoEditState =
         (store ?: throw IOException("Edit store is unavailable")).rollbackProcessingMigration(expected)
 
+    fun resetToUnmodified(identity: PhotoIdentity): PhotoEditState {
+        if (store == null) {
+            store = createStore(directory)
+            adjustmentSession = AdjustmentTransferSession(store!!)
+        }
+        return adjustmentSession?.resetToUnmodified(identity) ?: store!!.resetToUnmodified(identity)
+    }
+
     fun save(identity: PhotoIdentity, settings: EditSettings): EditSaveResult = try {
         if (store == null) {
             store = createStore(directory)

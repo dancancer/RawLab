@@ -60,6 +60,7 @@ import Foundation
         try transferableFallback(root.appendingPathComponent("transferable-fallback"))
         try legacyDeletionFallback(root.appendingPathComponent("legacy-deletion-fallback"))
         try await lazyTransferableFallback(root.appendingPathComponent("lazy-transferable-fallback"))
+        try perRecordIsolationAndRecovery(root.appendingPathComponent("per-record-isolation"))
     }
 
     static func processingMigration() throws {
@@ -433,7 +434,7 @@ import Foundation
         try store.save(content, state: .init(settings: settings))
         _ = try store.saveState(identity: restored.identity, state: legacy)
         let refreshed = try store.readState(for: photo)
-        let legacyState = store.state(for: content)
+        let legacyState = try store.state(for: content)
         settings.exposure = -0.5
         let saved = try store.saveState(identity: refreshed.identity, state: .init(settings: settings))
         try check(saved.state?.settings.exposure == -0.5 && store.state(for: photo)?.settings.exposure == -0.5,
@@ -620,7 +621,172 @@ import Foundation
         }
         try check(group.wait(timeout: .now() + 10) == .success && errors.isEmpty, "Concurrent native store writers finish")
         let reader = try EditPersistence(directory: directory)
-        try check((0..<2).allSatisfy { index in (0..<8).allSatisfy { reader.state(for: .init(resourceIdentifier: "\(index)-\($0)")) != nil } },
+        try check(try (0..<2).allSatisfy { index in try (0..<8).allSatisfy { try reader.state(for: .init(resourceIdentifier: "\(index)-\($0)")) != nil } },
             "Concurrent writers retain every photo record")
+    }
+
+    static func perRecordIsolationAndRecovery(_ directory: URL) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let store = try EditPersistence(directory: directory)
+
+        let brokenAssetBytes1 = PhotoIdentity(resourceIdentifier: "ph-asset", contentIdentifier: "bytes-1")
+        let sameAssetBytes2 = PhotoIdentity(resourceIdentifier: "ph-asset", contentIdentifier: "bytes-2")
+        let independentContent = PhotoIdentity(contentIdentifier: "bytes-1")
+        let brokenSubSetting = PhotoIdentity(resourceIdentifier: "bad-sub", contentIdentifier: "bytes-sub")
+        let healthySibling = PhotoIdentity(resourceIdentifier: "healthy-sibling", contentIdentifier: "bytes-healthy")
+
+        func diskKey(_ id: PhotoIdentity) -> String {
+            guard let resource = id.resourceIdentifier, let content = id.contentIdentifier else { return id.key }
+            return "photo-content:\(resource.utf8.count):\(resource):\(content)"
+        }
+
+        var c5 = RawSettings.default; c5.processing = .c5; c5.exposure = 0.6
+        let c5State = PhotoEditState(settings: c5, filmID: "look-c5", updatedAt: Date(timeIntervalSince1970: 50))
+        var newer = c5; newer.processing = .current
+        let migratedState = c5State.replacing(settings: newer, preservingFilmID: c5State.filmID)
+        let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.002,
+                                                 detailRMSE: 0.001, evaluations: 20)
+
+        for id in [brokenAssetBytes1, sameAssetBytes2, independentContent, brokenSubSetting, healthySibling] {
+            try store.save(id, state: c5State)
+            _ = try store.commitProcessingMigration(expected: store.readState(for: id),
+                                                    candidate: migratedState,
+                                                    quality: quality)
+        }
+
+        let file = directory.appendingPathComponent("edits.json")
+        let baseObject = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+        let baseRecords = baseObject["records"] as! [String: Any]
+        let verbatimFutureProcessingSlice = """
+        { "filmID" : "look-c5", "settings" : { "exposure" : 0.6, "processing" : { "family" : "rawlab", "quality" : "standard", "version" : 99 } }, "updatedAt" : 50 }
+        """
+        let verbatimBadSubSlice = """
+        {"updatedAt":50,"filmID":"","settings":{"exposure":0,"toneControls":{"blackPoint":999,"whitePoint":0,"vibrance":0}}}
+        """
+        func jsonString(_ s: String) throws -> String {
+            String(data: try JSONEncoder().encode(s), encoding: .utf8)!
+        }
+        func rawSlice(_ key: String) throws -> String {
+            String(data: try JSONSerialization.data(withJSONObject: baseRecords[key]!), encoding: .utf8)!
+        }
+        let migrationsJSON = String(data: try JSONSerialization.data(withJSONObject: baseObject["processingMigrations"]!), encoding: .utf8)!
+        let injected = """
+        {"version":1,"records":{\(try jsonString(diskKey(brokenAssetBytes1))):\(verbatimFutureProcessingSlice),\(try jsonString(diskKey(brokenSubSetting))):\(verbatimBadSubSlice),\(try jsonString(diskKey(sameAssetBytes2))):\(try rawSlice(diskKey(sameAssetBytes2))),\(try jsonString(diskKey(independentContent))):\(try rawSlice(diskKey(independentContent))),\(try jsonString(diskKey(healthySibling))):\(try rawSlice(diskKey(healthySibling)))},"processingMigrations":\(migrationsJSON)}
+        """
+        try Data(injected.utf8).write(to: file)
+
+        let reopened = try EditPersistence(directory: directory)
+        try check(reopened.state(for: healthySibling)?.settings.exposure == 0.6 &&
+                  reopened.state(for: sameAssetBytes2)?.settings.exposure == 0.6 &&
+                  reopened.state(for: independentContent)?.settings.exposure == 0.6,
+                  "Healthy records remain readable alongside unusable entries")
+
+        for broken in [brokenAssetBytes1, brokenSubSetting] {
+            do {
+                _ = try reopened.state(for: broken)
+                try check(false, "Broken record must throw UnusableEditRecordError on state(for:)")
+            } catch is UnusableEditRecordError { }
+            do {
+                _ = try reopened.readState(for: broken)
+                try check(false, "Broken record must throw UnusableEditRecordError on readState")
+            } catch is UnusableEditRecordError { }
+            do {
+                try reopened.save(broken, state: PhotoEditState(settings: .default))
+                try check(false, "Ordinary save must refuse to overwrite unusable record")
+            } catch is UnusableEditRecordError { }
+            do {
+                try reopened.reset(broken)
+                try check(false, "Ordinary reset must refuse to overwrite unusable record without explicit recovery")
+            } catch is UnusableEditRecordError { }
+        }
+
+        // High 2: Even during transient storage failure (fallback to lastReadableStore), state(for:) must still throw UnusableEditRecordError.
+        let ioBackup = directory.appendingPathExtension("io-backup")
+        try FileManager.default.moveItem(at: directory, to: ioBackup)
+        try Data("offline".utf8).write(to: directory)
+        try check(reopened.state(for: healthySibling)?.settings.exposure == 0.6,
+                  "Healthy cached record still falls back during transient storage failure")
+        do {
+            _ = try reopened.state(for: brokenAssetBytes1)
+            try check(false, "Cached fallback must still throw UnusableEditRecordError for unusable record")
+        } catch is UnusableEditRecordError { }
+        try FileManager.default.removeItem(at: directory)
+        try FileManager.default.moveItem(at: ioBackup, to: directory)
+
+        // D1/b: Saving another photo preserves broken entries byte-for-byte verbatim on disk.
+        var updatedHealthy = RawSettings.default; updatedHealthy.exposure = 1.35
+        try reopened.save(healthySibling, state: PhotoEditState(settings: updatedHealthy))
+        let diskAfterSave = String(data: try Data(contentsOf: file), encoding: .utf8)!
+        try check(diskAfterSave.contains("\(try jsonString(diskKey(brokenAssetBytes1))):\(verbatimFutureProcessingSlice)") &&
+                  diskAfterSave.contains("\(try jsonString(diskKey(brokenSubSetting))):\(verbatimBadSubSlice)"),
+                  "Saving another photo preserves broken entries verbatim on disk")
+
+        // D3/c + D5/e: resetToUnmodified clears ONLY target editKey record & receipt, adds tombstone,
+        // and preserves both same-PHAsset-other-bytes AND independent content:<id> record + receipt.
+        let cleared = try reopened.resetToUnmodified(brokenAssetBytes1)
+        try check(cleared.state == nil &&
+                  (try reopened.readState(for: brokenAssetBytes1)).state == nil &&
+                  reopened.state(for: brokenAssetBytes1) == nil,
+                  "resetToUnmodified removes broken PhotoKit record and tombstones content fallback")
+        try check(try reopened.processingMigration(for: brokenAssetBytes1) == nil,
+                  "resetToUnmodified clears target PhotoKit migration receipt")
+        try check(try reopened.readState(for: sameAssetBytes2).state?.settings.exposure == 0.6 &&
+                  reopened.processingMigration(for: sameAssetBytes2)?.status == .migrated,
+                  "Same PHAsset with different bytes keeps its record and migration receipt")
+        try check(try reopened.readState(for: independentContent).state?.settings.exposure == 0.6 &&
+                  reopened.processingMigration(for: independentContent)?.status == .migrated,
+                  "Independent content:<id> record and migration receipt remain untouched")
+        let diskAfterReset = String(data: try Data(contentsOf: file), encoding: .utf8)!
+        try check(diskAfterReset.contains("\(try jsonString(diskKey(brokenSubSetting))):\(verbatimBadSubSlice)"),
+                  "Unrelated broken entry remains verbatim after resetting one broken photo")
+
+        // Recovered PhotoKit asset can be edited and saved again normally.
+        var recoveredSettings = RawSettings.default; recoveredSettings.exposure = -0.45
+        try reopened.save(brokenAssetBytes1, state: PhotoEditState(settings: recoveredSettings))
+        try check(try EditPersistence(directory: directory).readState(for: brokenAssetBytes1).state?.settings.exposure == -0.45,
+                  "Recovered photo can save new adjustments normally")
+
+        // Medium 1: Broken legacy asset-only record (photo:<asset-id>) surfaces UnusableEditRecordError and recovers via resetToUnmodified.
+        let legacyBrokenDir = directory.appendingPathComponent("legacy-broken-asset")
+        try FileManager.default.createDirectory(at: legacyBrokenDir, withIntermediateDirectories: true)
+        let legacyBrokenAsset = PhotoIdentity(resourceIdentifier: "legacy-only-asset")
+        let legacyBrokenCurrent = PhotoIdentity(resourceIdentifier: "legacy-only-asset", contentIdentifier: "current-bytes")
+        try Data("""
+        {"version":1,"records":{\(try jsonString(legacyBrokenAsset.key)):\(verbatimBadSubSlice)}}
+        """.utf8).write(to: legacyBrokenDir.appendingPathComponent("edits.json"))
+        let legacyBrokenStore = try EditPersistence(directory: legacyBrokenDir)
+        do {
+            _ = try legacyBrokenStore.unverifiedAssetEdit(for: legacyBrokenCurrent)
+            try check(false, "Broken legacy photo:<asset-id> record must throw UnusableEditRecordError on unverifiedAssetEdit")
+        } catch is UnusableEditRecordError { }
+        do {
+            _ = try legacyBrokenStore.readState(for: legacyBrokenCurrent, requiringLegacyDecision: true)
+            try check(false, "Broken legacy photo:<asset-id> record must throw UnusableEditRecordError when legacy decision is required")
+        } catch is UnusableEditRecordError { }
+        _ = try legacyBrokenStore.resetToUnmodified(legacyBrokenCurrent)
+        try check(try legacyBrokenStore.unverifiedAssetEdit(for: legacyBrokenCurrent) == nil &&
+                  legacyBrokenStore.readState(for: legacyBrokenCurrent, requiringLegacyDecision: true).state == nil &&
+                  legacyBrokenStore.state(for: legacyBrokenCurrent) == nil,
+                  "resetToUnmodified tombstones broken legacy photo:<asset-id> record for the recovered photo")
+
+        // D2/d: Whole-table structural corruption still rejects the entire store.
+        let corruptDir = directory.appendingPathComponent("whole-store-corrupt")
+        try FileManager.default.createDirectory(at: corruptDir, withIntermediateDirectories: true)
+        let corruptFile = corruptDir.appendingPathComponent("edits.json")
+        for badJSON in [
+            "{\"version\":1,\"records\":{",
+            "{\"version\":99,\"records\":{}}",
+            "{\"version\":1,\"records\":[]}",
+            "{\"version\":1,\"records\":{},\"processingMigrations\":[]}",
+            "{\"version\":1,\"records\":{},\"deleted\":\"bad\"}",
+            "{\"version\":1,\"version\":1,\"records\":{}}"
+        ] {
+            try Data(badJSON.utf8).write(to: corruptFile)
+            do {
+                _ = try EditPersistence(directory: corruptDir)
+                try check(false, "Whole-store corruption must fail closed: \(badJSON)")
+            } catch EditPersistenceError.corruptStore { }
+        }
+        print("PASS: iOS per-record isolation, verbatim preservation, D5 identity safety, and D2 fail-closed")
     }
 }

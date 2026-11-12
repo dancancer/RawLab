@@ -39,6 +39,79 @@ private func writeRasterFixture(_ image: CGImage, to url: URL, type: CFString) t
 private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Data }
 
 @main struct EditModelTests {
+    static func unusableRecordOpenRecoveryChecks(root: URL) throws {
+        let dir = root.appendingPathComponent("unusable-open-recovery")
+        let editDir = dir.appendingPathComponent("edits")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let brokenPNG = dir.appendingPathComponent("broken.png")
+        let healthyPNG = dir.appendingPathComponent("healthy.png")
+        try writeRasterFixture(rasterFixtureImage(), to: brokenPNG, type: "public.png" as CFString)
+        try writeRasterFixture(rasterFixtureImage(), to: healthyPNG, type: "public.png" as CFString)
+
+        let store = try EditPersistence(directory: editDir)
+        var c5 = Adjustments(); c5.processing = .c5; c5.exposure = 0.65
+        try store.save(healthyPNG, state: PhotoEditState(settings: c5, filmID: ""))
+        try store.save(brokenPNG, state: PhotoEditState(settings: c5, filmID: ""))
+        let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.002, detailRMSE: 0.001, evaluations: 24)
+        var migrated = c5; migrated.processing = .current
+        _ = try store.commitProcessingMigration(expected: store.readState(for: healthyPNG),
+                                                candidate: PhotoEditState(settings: migrated, filmID: ""),
+                                                quality: quality)
+        _ = try store.commitProcessingMigration(expected: store.readState(for: brokenPNG),
+                                                candidate: PhotoEditState(settings: migrated, filmID: ""),
+                                                quality: quality)
+
+        let file = editDir.appendingPathComponent("edits.json")
+        var registry = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+        var records = registry["records"] as! [String: Any]
+        let brokenKey = try OriginalFileIdentity(brokenPNG).path
+        var brokenEntry = records[brokenKey] as! [String: Any]
+        var brokenState = brokenEntry["state"] as! [String: Any]
+        var brokenSettings = brokenState["settings"] as! [String: Any]
+        brokenSettings["processing"] = ["family": "rawlab", "version": 99, "quality": "standard"]
+        brokenState["settings"] = brokenSettings
+        brokenEntry["state"] = brokenState
+        records[brokenKey] = brokenEntry
+        registry["records"] = records
+        try JSONSerialization.data(withJSONObject: registry).write(to: file)
+        let beforeDeclineBytes = try Data(contentsOf: file)
+
+        let editor = EditorModel(lookDirectory: dir.appendingPathComponent("looks"),
+                                 editDirectory: editDir,
+                                 batchDirectory: dir.appendingPathComponent("batch"))
+        editor.open(healthyPNG)
+        try waitForRender(editor, "healthy sibling PNG")
+        try check(editor.file == healthyPNG && editor.settings.exposure == 0.65,
+                  "EditorModel opens healthy sibling when another photo record is unusable")
+
+        var promptedURL: URL?
+        editor.confirmUnusableRecordReset = { url, _ in
+            promptedURL = url
+            return false
+        }
+        editor.open(brokenPNG)
+        try check(promptedURL == brokenPNG && editor.file == healthyPNG && editor.saveError != nil && editor.error == nil,
+                  "Declining unusable-record reset keeps previous photo open and surfaces readable error")
+        try check(try Data(contentsOf: file) == beforeDeclineBytes,
+                  "Declining unusable-record reset leaves disk registry byte-identical")
+
+        promptedURL = nil
+        editor.confirmUnusableRecordReset = { url, _ in
+            promptedURL = url
+            return true
+        }
+        editor.open(brokenPNG)
+        try waitForRender(editor, "recovered broken PNG")
+        try check(promptedURL == brokenPNG && editor.file == brokenPNG && editor.saveError == nil && editor.error == nil && editor.settings.exposure == 0,
+                  "Confirming unusable-record reset opens photo with default unmodified settings")
+        let reopenedStore = try EditPersistence(directory: editDir)
+        try check(try reopenedStore.state(for: brokenPNG) == nil &&
+                  reopenedStore.processingMigration(for: brokenPNG) == nil &&
+                  reopenedStore.state(for: healthyPNG)?.settings.exposure == 0.65 &&
+                  reopenedStore.processingMigration(for: healthyPNG)?.status == .migrated,
+                  "Manual recovery clears only the broken photo's record and receipt")
+    }
+
     static func processingEditorChecks(root: URL, input: URL) throws {
         let directory = root.appendingPathComponent("processing-edits")
         var settings = Adjustments()
@@ -599,6 +672,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         try check(FileManager.default.isReadableFile(atPath: rasterLUT.path),
                   "raster EditorModel integration has a real PROVIA LUT")
         try rasterEditorChecks(root: root, lut: rasterLUT)
+        try unusableRecordOpenRecoveryChecks(root: root)
         print("PASS: EditorModel persistent restore, unseen defaults, reset and failed-save protection")
         if CommandLine.arguments.count > 1 {
             fputs("[RAW SUCCESS REQUIRED] EditModelTests.realRAW: \(CommandLine.arguments[1]) must render successfully; decoder failures for this input are not expected.\n", stderr)

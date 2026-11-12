@@ -41,6 +41,7 @@ struct AdjustmentTransferSessionTests {
         try clipboardAndEmptyTargets(root: root, a: a)
         try sourceDefaults(root: root, a: a, b: b)
         try processingMigrationReset(root: root, a: a, b: b)
+        try perRecordIsolationAndRecovery(root: root)
     }
 
     static func sourceDefaults(root: URL, a: URL, b: URL) throws {
@@ -333,5 +334,121 @@ struct AdjustmentTransferSessionTests {
                                clearsProcessingMigration: true)
         check(try EditPersistence(directory: directory).processingMigration(for: b) == nil,
               "Reset-all clears rolled-back receipt across reopen")
+    }
+
+    static func perRecordIsolationAndRecovery(root: URL) throws {
+        let directory = root.appendingPathComponent("per-record-isolation")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let healthyA = directory.appendingPathComponent("healthy-a.raw")
+        let healthyB = directory.appendingPathComponent("healthy-b.raw")
+        let brokenVer = directory.appendingPathComponent("broken-ver.raw")
+        let brokenSub = directory.appendingPathComponent("broken-sub.raw")
+        for (index, url) in [healthyA, healthyB, brokenVer, brokenSub].enumerated() {
+            try Data("fixture-\(index)".utf8).write(to: url)
+        }
+        let store = try EditPersistence(directory: directory)
+        let session = AdjustmentTransferSession(store: store)
+        var c5 = Adjustments(); c5.processing = .c5; c5.exposure = 0.5
+        let c5State = PhotoEditState(settings: c5, filmID: "look-a")
+        try store.save(healthyA, state: c5State)
+        try store.save(healthyB, state: state(-0.25))
+        try store.save(brokenVer, state: c5State)
+        try store.save(brokenSub, state: state(0.1))
+        let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.002, detailRMSE: 0.001, evaluations: 24)
+        var migrated = c5; migrated.processing = .current
+        _ = try store.commitProcessingMigration(expected: store.readState(for: healthyA),
+                                                candidate: PhotoEditState(settings: migrated, filmID: "look-a"),
+                                                quality: quality)
+        _ = try store.commitProcessingMigration(expected: store.readState(for: brokenVer),
+                                                candidate: PhotoEditState(settings: migrated, filmID: "look-a"),
+                                                quality: quality)
+
+        let file = directory.appendingPathComponent("edits.json")
+        let keyBrokenVer = try OriginalFileIdentity(brokenVer).path
+        let keyBrokenSub = try OriginalFileIdentity(brokenSub).path
+        let idVerJSON = String(data: try JSONEncoder().encode(try OriginalFileIdentity(brokenVer)), encoding: .utf8)!
+        let idSubJSON = String(data: try JSONEncoder().encode(try OriginalFileIdentity(brokenSub)), encoding: .utf8)!
+        let verbatimBrokenVerSlice = """
+        { "identity" : \(idVerJSON), "state" : { "filmID" : "custom", "settings" : { "exposure" : 0.75, "processing" : { "family" : "rawlab", "quality" : "standard", "version" : 99 } } } }
+        """
+        let verbatimBrokenSubSlice = """
+        {"state":{"filmID":"","settings":{"exposure":0,"toneControls":{"blackPoint":999,"whitePoint":0,"vibrance":0}}},"identity":\(idSubJSON)}
+        """
+        let baseObject = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+        let baseRecords = baseObject["records"] as! [String: Any]
+        let healthyASlice = String(data: try JSONSerialization.data(withJSONObject: baseRecords[try OriginalFileIdentity(healthyA).path]!), encoding: .utf8)!
+        let healthyBSlice = String(data: try JSONSerialization.data(withJSONObject: baseRecords[try OriginalFileIdentity(healthyB).path]!), encoding: .utf8)!
+        let migrationsSlice = String(data: try JSONSerialization.data(withJSONObject: baseObject["processingMigrations"]!), encoding: .utf8)!
+        let keyAJSON = String(data: try JSONEncoder().encode(try OriginalFileIdentity(healthyA).path), encoding: .utf8)!
+        let keyBJSON = String(data: try JSONEncoder().encode(try OriginalFileIdentity(healthyB).path), encoding: .utf8)!
+        let keyVerJSON = String(data: try JSONEncoder().encode(keyBrokenVer), encoding: .utf8)!
+        let keySubJSON = String(data: try JSONEncoder().encode(keyBrokenSub), encoding: .utf8)!
+        let injected = """
+        {"version":1,"records":{\(keyAJSON):\(healthyASlice),\(keyBJSON):\(healthyBSlice),\(keyVerJSON):\(verbatimBrokenVerSlice),\(keySubJSON):\(verbatimBrokenSubSlice)},"processingMigrations":\(migrationsSlice)}
+        """
+        try Data(injected.utf8).write(to: file)
+
+        let reopened = try EditPersistence(directory: directory)
+        check(try reopened.state(for: healthyA)?.settings.exposure == 0.5 &&
+              reopened.state(for: healthyB)?.settings.exposure == -0.25,
+              "Healthy sibling records remain readable when other records are unusable")
+        for broken in [brokenVer, brokenSub] {
+            do {
+                _ = try reopened.readState(for: broken)
+                fatalError("Broken record must throw UnusableEditRecordError on readState")
+            } catch is UnusableEditRecordError { }
+            do {
+                _ = try reopened.state(for: broken)
+                fatalError("Broken record must throw UnusableEditRecordError on state")
+            } catch is UnusableEditRecordError { }
+            do {
+                try reopened.save(broken, state: state(0))
+                fatalError("Ordinary save must refuse to overwrite unusable record")
+            } catch is UnusableEditRecordError { }
+        }
+
+        // D1/b: Saving another photo preserves broken entries verbatim on disk.
+        try reopened.save(healthyB, state: state(1.25))
+        let diskTextAfterHealthySave = String(data: try Data(contentsOf: file), encoding: .utf8)!
+        check(diskTextAfterHealthySave.contains("\(keyVerJSON):\(verbatimBrokenVerSlice)") &&
+              diskTextAfterHealthySave.contains("\(keySubJSON):\(verbatimBrokenSubSlice)"),
+              "Saving another photo preserves broken record JSON slices byte-for-byte verbatim")
+        check(try EditPersistence(directory: directory).state(for: healthyB)?.settings.exposure == 1.25,
+              "Updated sibling record persists cleanly alongside preserved broken entries")
+
+        // D3/c: resetToUnmodified clears ONLY the target photo's record and migration receipt.
+        let cleared = try session.resetToUnmodified(brokenVer)
+        let clearedAfter = try reopened.state(for: brokenVer)
+        check(cleared.state == nil && clearedAfter == nil,
+              "resetToUnmodified removes target photo's broken record")
+        check(try reopened.processingMigration(for: brokenVer) == nil &&
+              reopened.processingMigration(for: healthyA)?.status == .migrated,
+              "resetToUnmodified clears target migration receipt while preserving sibling receipt")
+        let diskAfterReset = String(data: try Data(contentsOf: file), encoding: .utf8)!
+        check(diskAfterReset.contains("\(keySubJSON):\(verbatimBrokenSubSlice)"),
+              "resetToUnmodified on one broken photo leaves other broken photo verbatim")
+        try reopened.save(brokenVer, state: state(0.4))
+        check(try EditPersistence(directory: directory).state(for: brokenVer)?.settings.exposure == 0.4,
+              "Recovered photo can save new adjustments normally")
+
+        // D2/d: Whole-table structural corruption still rejects the entire store.
+        let corruptStoreDir = root.appendingPathComponent("corrupt-whole-store")
+        try FileManager.default.createDirectory(at: corruptStoreDir, withIntermediateDirectories: true)
+        let corruptFile = corruptStoreDir.appendingPathComponent("edits.json")
+        for badJSON in [
+            "{\"version\":1,\"records\":{",
+            "{\"version\":2,\"records\":{}}",
+            "{\"records\":{}}",
+            "{\"version\":1,\"records\":[]}",
+            "{\"version\":1,\"records\":{},\"processingMigrations\":[]}",
+            "{\"version\":1,\"version\":1,\"records\":{}}"
+        ] {
+            try Data(badJSON.utf8).write(to: corruptFile)
+            do {
+                _ = try EditPersistence(directory: corruptStoreDir)
+                fatalError("Whole-store corruption must fail closed: \(badJSON)")
+            } catch is CocoaError { }
+        }
+        check(true, "Whole-store structural corruption remains fail-closed")
     }
 }

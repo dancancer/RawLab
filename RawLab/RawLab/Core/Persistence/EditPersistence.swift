@@ -123,21 +123,30 @@ enum EditPersistenceError: LocalizedError {
     }
 }
 
+struct UnusableEditRecordError: LocalizedError {
+    let message: String
+    let underlying: Error?
+
+    init(_ message: String = L10n.text("无法读取已保存的调整，原有记录未被覆盖。"), underlying: Error? = nil) {
+        self.message = message
+        self.underlying = underlying
+    }
+
+    var errorDescription: String? { message }
+}
+
 final class EditPersistence {
     private struct StoredProcessingMigration: Codable {
         let identity: PhotoIdentity
         var receipt: ProcessingMigrationReceipt<PhotoEditState>
     }
-    private struct StoreFile: Codable {
+    private struct StoreFile {
         var version: Int?
-        var records: [String: PhotoEditState]
-        // Old registries may contain this field. It is read once to migrate
-        // deletion markers in memory and is not emitted by new writes.
-        var revisions: [String: String]?
+        var records: [String: Data]
         // A deletion marker keeps the PhotoKit content fallback from restoring
         // an edit after reset without reviving the old revision mechanism.
         var deleted: Set<String>?
-        var processingMigrations: [String: StoredProcessingMigration]?
+        var processingMigrations: [String: Data]?
     }
 
     let directory: URL
@@ -163,18 +172,19 @@ final class EditPersistence {
         return try EditPersistence(directory: root.appendingPathComponent("RawLab/Edits", isDirectory: true))
     }
 
-    func state(for identity: PhotoIdentity) -> PhotoEditState? {
+    func state(for identity: PhotoIdentity) throws -> PhotoEditState? {
         do { return try readState(for: identity).state }
+        catch let error as UnusableEditRecordError { throw error }
         catch {
-            // 旧读取接口在 I/O 失败时保留已载入值；事务读取始终抛错，不能用缓存提交。
+            // 旧读取接口在 I/O 失败时保留已载入值；单条坏记录始终抛错，事务读取始终抛错。
             snapshotLock.lock(); defer { snapshotLock.unlock() }
-            return record(identity, from: lastReadableStore).state
+            return try record(identity, from: lastReadableStore).state
         }
     }
 
-    func state(for url: URL) -> PhotoEditState? {
+    func state(for url: URL) throws -> PhotoEditState? {
         guard let identity = try? PhotoIdentity.fallback(for: url) else { return nil }
-        return state(for: identity)
+        return try state(for: identity)
     }
 
     func save(_ identity: PhotoIdentity, state: PhotoEditState) throws {
@@ -201,13 +211,33 @@ final class EditPersistence {
         try reset(try PhotoIdentity.fallback(for: url))
     }
 
+    @discardableResult
+    func resetToUnmodified(_ identity: PhotoIdentity) throws -> PhotoEditRecord {
+        try validate(identity)
+        return try withWriteLock {
+            var store = try readStore()
+            let resolvedKey = recordKey(identity, from: store)
+            let hadFallbackRecord = store.records[resolvedKey] != nil
+            let hadOwnRecord = store.records.removeValue(forKey: identity.editKey) != nil
+            let hadUnverifiedLegacy = identity.editKey != identity.key &&
+                store.deleted?.contains(identity.editKey) != true &&
+                store.records[identity.key] != nil
+            let clearedMigration = clearProcessingMigration(for: identity, in: &store)
+            if hadOwnRecord || hadFallbackRecord || hadUnverifiedLegacy || clearedMigration {
+                store.deleted = (store.deleted ?? []).union([identity.editKey])
+                try persistStore(&store)
+            }
+            return PhotoEditRecord(identity: identity, state: nil)
+        }
+    }
+
     func readState(for identity: PhotoIdentity, requiringLegacyDecision: Bool = false) throws -> PhotoEditRecord {
         try validate(identity)
         let store = try readStore()
-        if requiringLegacyDecision, unverifiedAssetEdit(for: identity, from: store) != nil {
+        if requiringLegacyDecision, try unverifiedAssetEdit(for: identity, from: store) != nil {
             throw EditPersistenceError.legacyAssetEditNeedsDecision
         }
-        return record(identity, from: store)
+        return try record(identity, from: store)
     }
 
     func unverifiedAssetEdit(for identity: PhotoIdentity) throws -> PhotoEditState? {
@@ -218,7 +248,7 @@ final class EditPersistence {
     func resolveUnverifiedAssetEdit(for identity: PhotoIdentity, expected: PhotoEditState, restore: Bool) throws {
         try withWriteLock {
             var store = try readStore()
-            guard unverifiedAssetEdit(for: identity, from: store) == expected else { throw AdjustmentCommitError.expired }
+            guard try unverifiedAssetEdit(for: identity, from: store) == expected else { throw AdjustmentCommitError.expired }
             if restore {
                 _ = try write(expected, identity: identity, store: &store)
             } else {
@@ -228,11 +258,11 @@ final class EditPersistence {
         }
     }
 
-    private func unverifiedAssetEdit(for identity: PhotoIdentity, from store: StoreFile) -> PhotoEditState? {
+    private func unverifiedAssetEdit(for identity: PhotoIdentity, from store: StoreFile) throws -> PhotoEditState? {
         guard identity.editKey != identity.key else { return nil }
         let existing = recordKey(identity, from: store)
         guard store.records[existing] == nil, store.deleted?.contains(existing) != true else { return nil }
-        return store.records[identity.key]
+        return try store.records[identity.key].map(Self.parseState)
     }
 
     func processingMigration(for identity: PhotoIdentity) throws -> ProcessingMigrationReceipt<PhotoEditState>? {
@@ -245,7 +275,7 @@ final class EditPersistence {
         try validate(expected.identity)
         return try withWriteLock {
             var store = try readStore()
-            guard record(expected.identity, from: store) == expected, let original = expected.state,
+            guard try record(expected.identity, from: store) == expected, let original = expected.state,
                   (1...2).contains(original.settings.processing.version), quality.isValid else {
                 throw AdjustmentCommitError.expired
             }
@@ -255,15 +285,15 @@ final class EditPersistence {
             }
             if let candidate {
                 guard candidate.settings.processing == .current, quality.passes else { throw AdjustmentCommitError.expired }
-                store.records[expected.identity.editKey] = candidate
+                store.records[expected.identity.editKey] = try Self.encodeState(candidate)
                 store.deleted?.remove(expected.identity.editKey)
             }
             var receipts = store.processingMigrations ?? [:]
-            receipts[expected.identity.editKey] = StoredProcessingMigration(identity: expected.identity,
-                receipt: .init(status: candidate == nil ? .kept : .migrated, original: original, quality: quality))
+            receipts[expected.identity.editKey] = try Self.encodeMigration(StoredProcessingMigration(identity: expected.identity,
+                receipt: .init(status: candidate == nil ? .kept : .migrated, original: original, quality: quality)))
             store.processingMigrations = receipts
             try persistStore(&store)
-            return record(expected.identity, from: store)
+            return try record(expected.identity, from: store)
         }
     }
 
@@ -271,17 +301,17 @@ final class EditPersistence {
         try validate(expected.identity)
         return try withWriteLock {
             var store = try readStore()
-            guard record(expected.identity, from: store) == expected,
+            guard try record(expected.identity, from: store) == expected,
                   var receipt = storedMigration(expected.identity, from: store)?.receipt,
                   receipt.status == .migrated else { throw AdjustmentCommitError.expired }
-            store.records[expected.identity.editKey] = receipt.original
+            store.records[expected.identity.editKey] = try Self.encodeState(receipt.original)
             store.deleted?.remove(expected.identity.editKey)
             receipt.status = .rolledBack
             var receipts = store.processingMigrations ?? [:]
-            receipts[expected.identity.editKey] = StoredProcessingMigration(identity: expected.identity, receipt: receipt)
+            receipts[expected.identity.editKey] = try Self.encodeMigration(StoredProcessingMigration(identity: expected.identity, receipt: receipt))
             store.processingMigrations = receipts
             try persistStore(&store)
-            return record(expected.identity, from: store)
+            return try record(expected.identity, from: store)
         }
     }
 
@@ -289,9 +319,9 @@ final class EditPersistence {
                                 load: () async -> String?) async -> PhotoIdentity {
         guard identity.resourceIdentifier != nil, identity.legacyContentIdentifier == nil,
               let store = try? readStore() else { return identity }
-        let current = record(identity, from: store)
+        let key = recordKey(identity, from: store)
         // 只有可能命中旧入口记录时才额外读取 transferable，删除标记也必须阻止兜底。
-        guard current.state == nil, store.deleted?.contains(recordKey(identity, from: store)) != true,
+        guard store.records[key] == nil, store.deleted?.contains(key) != true,
               store.records.keys.contains(where: { $0.hasPrefix("content:") }),
               let legacy = await load() else { return identity }
         return PhotoIdentity(resourceIdentifier: identity.resourceIdentifier,
@@ -313,10 +343,10 @@ final class EditPersistence {
         try validate(identity)
         return try withWriteLock {
             var store = try readStore()
-            guard unverifiedAssetEdit(for: identity, from: store) == nil else {
+            guard try unverifiedAssetEdit(for: identity, from: store) == nil else {
                 throw EditPersistenceError.legacyAssetEditNeedsDecision
             }
-            guard record(identity, from: store).hasSameAdjustments(as: expected) else {
+            guard try record(identity, from: store).hasSameAdjustments(as: expected) else {
                 throw AdjustmentCommitError.expired
             }
             return try write(state, identity: identity, store: &store)
@@ -327,8 +357,9 @@ final class EditPersistence {
         guard identity.resourceIdentifier != nil || identity.contentIdentifier != nil else { throw EditPersistenceError.invalidIdentity }
     }
 
-    private func record(_ identity: PhotoIdentity, from store: StoreFile) -> PhotoEditRecord {
-        .init(identity: identity, state: store.records[recordKey(identity, from: store)])
+    private func record(_ identity: PhotoIdentity, from store: StoreFile) throws -> PhotoEditRecord {
+        let state = try store.records[recordKey(identity, from: store)].map(Self.parseState)
+        return .init(identity: identity, state: state)
     }
 
     private func recordKey(_ identity: PhotoIdentity, from store: StoreFile) -> String {
@@ -349,13 +380,15 @@ final class EditPersistence {
         // 拒绝迁移只写回执，不创建资源编辑记录；先读取该照片自身的回执。
         let receipts = store.processingMigrations ?? [:]
         // legacyContentIdentifier 只帮助查找旧记录，建立资源记录后重开不会再补取。
-        if let stored = receipts[identity.editKey] ?? receipts[identity.key],
+        let primary = Self.tryParseMigration(receipts[identity.editKey]) ?? Self.tryParseMigration(receipts[identity.key])
+        if let stored = primary,
            stored.identity.resourceIdentifier == identity.resourceIdentifier,
            stored.identity.contentIdentifier == identity.contentIdentifier {
             return stored
         }
         let key = recordKey(identity, from: store)
-        guard let stored = receipts[key], stored.identity.resourceIdentifier == nil, stored.identity.key == key else { return nil }
+        guard let stored = Self.tryParseMigration(receipts[key]),
+              stored.identity.resourceIdentifier == nil, stored.identity.key == key else { return nil }
         return stored
     }
 
@@ -371,18 +404,226 @@ final class EditPersistence {
         }
         let data = try Data(contentsOf: fileURL)
         do {
-            let store = try JSONDecoder().decode(StoreFile.self, from: data)
-            guard store.version == nil || store.version == 1,
-                  store.revisions?.values.allSatisfy({ !$0.isEmpty }) ?? true else { throw EditPersistenceError.corruptStore }
-            var normalized = store
-            if let revisions = store.revisions {
-                let tombstones = Set(revisions.keys.filter { store.records[$0] == nil })
-                normalized.deleted = (normalized.deleted ?? []).union(tombstones)
-                normalized.revisions = nil
+            guard (try JSONSerialization.jsonObject(with: data)) is [String: Any] else {
+                throw EditPersistenceError.corruptStore
             }
+            let root = try Self.scanJSONObjectSlices(data)
+            let version: Int?
+            if let versionSlice = root["version"], String(data: versionSlice, encoding: .utf8) != "null" {
+                guard Self.isVersionOne(versionSlice) else { throw EditPersistenceError.corruptStore }
+                version = 1
+            } else {
+                version = nil
+            }
+            guard let recordsSlice = root["records"] else { throw EditPersistenceError.corruptStore }
+            let records = try Self.scanJSONObjectSlices(recordsSlice)
+            var deleted: Set<String>?
+            if let deletedSlice = root["deleted"], String(data: deletedSlice, encoding: .utf8) != "null" {
+                deleted = Set(try JSONDecoder().decode([String].self, from: deletedSlice))
+            }
+            if let revisionsSlice = root["revisions"], String(data: revisionsSlice, encoding: .utf8) != "null" {
+                _ = try Self.scanJSONObjectSlices(revisionsSlice)
+                let revisions = try JSONDecoder().decode([String: String].self, from: revisionsSlice)
+                guard revisions.values.allSatisfy({ !$0.isEmpty }) else { throw EditPersistenceError.corruptStore }
+                let tombstones = Set(revisions.keys.filter { records[$0] == nil })
+                deleted = (deleted ?? []).union(tombstones)
+            }
+            let migrations: [String: Data]?
+            if let migrationsSlice = root["processingMigrations"],
+               String(data: migrationsSlice, encoding: .utf8) != "null" {
+                migrations = try Self.scanJSONObjectSlices(migrationsSlice)
+            } else {
+                migrations = nil
+            }
+            let normalized = StoreFile(version: version, records: records,
+                                       deleted: deleted?.isEmpty == true ? nil : deleted,
+                                       processingMigrations: migrations)
             remember(normalized)
             return normalized
         } catch { throw EditPersistenceError.corruptStore }
+    }
+
+    private static func isVersionOne(_ slice: Data) -> Bool {
+        guard !slice.contains(UInt8(ascii: ".")),
+              !slice.contains(UInt8(ascii: "e")),
+              !slice.contains(UInt8(ascii: "E")),
+              let value = try? JSONDecoder().decode(Int.self, from: slice) else { return false }
+        return value == 1
+    }
+
+    private static func scanJSONObjectSlices(_ data: Data) throws -> [String: Data] {
+        let bytes = [UInt8](data)
+        var index = 0
+        let end = bytes.count
+        let decoder = JSONDecoder()
+
+        func skipWhitespace() {
+            while index < end {
+                let b = bytes[index]
+                if b == 0x20 || b == 0x09 || b == 0x0A || b == 0x0D { index += 1 }
+                else { break }
+            }
+        }
+
+        func skipString() throws {
+            guard index < end, bytes[index] == 0x22 else { throw EditPersistenceError.corruptStore }
+            index += 1
+            while index < end {
+                let b = bytes[index]
+                if b == 0x5C {
+                    index += 2
+                    if index > end { throw EditPersistenceError.corruptStore }
+                } else if b == 0x22 {
+                    index += 1
+                    return
+                } else {
+                    index += 1
+                }
+            }
+            throw EditPersistenceError.corruptStore
+        }
+
+        func scanValue() throws -> Data {
+            skipWhitespace()
+            guard index < end else { throw EditPersistenceError.corruptStore }
+            let start = index
+            let first = bytes[index]
+            if first == 0x22 {
+                try skipString()
+            } else if first == 0x7B || first == 0x5B {
+                var depth = 1
+                index += 1
+                while index < end && depth > 0 {
+                    let b = bytes[index]
+                    if b == 0x22 { try skipString() }
+                    else if b == 0x7B || b == 0x5B { depth += 1; index += 1 }
+                    else if b == 0x7D || b == 0x5D { depth -= 1; index += 1 }
+                    else { index += 1 }
+                }
+                guard depth == 0 else { throw EditPersistenceError.corruptStore }
+            } else {
+                while index < end {
+                    let b = bytes[index]
+                    if b == 0x20 || b == 0x09 || b == 0x0A || b == 0x0D || b == 0x2C || b == 0x7D || b == 0x5D { break }
+                    index += 1
+                }
+                guard index > start else { throw EditPersistenceError.corruptStore }
+            }
+            return Data(bytes[start..<index])
+        }
+
+        skipWhitespace()
+        guard index < end, bytes[index] == 0x7B else { throw EditPersistenceError.corruptStore }
+        index += 1
+        skipWhitespace()
+        var result: [String: Data] = [:]
+        if index < end, bytes[index] == 0x7D {
+            index += 1
+            skipWhitespace()
+            guard index == end else { throw EditPersistenceError.corruptStore }
+            return result
+        }
+        while true {
+            skipWhitespace()
+            let keyStart = index
+            try skipString()
+            let key = try decoder.decode(String.self, from: Data(bytes[keyStart..<index]))
+            guard result[key] == nil else { throw EditPersistenceError.corruptStore }
+            skipWhitespace()
+            guard index < end, bytes[index] == 0x3A else { throw EditPersistenceError.corruptStore }
+            index += 1
+            result[key] = try scanValue()
+            skipWhitespace()
+            guard index < end else { throw EditPersistenceError.corruptStore }
+            if bytes[index] == 0x2C {
+                index += 1
+            } else if bytes[index] == 0x7D {
+                index += 1
+                skipWhitespace()
+                guard index == end else { throw EditPersistenceError.corruptStore }
+                return result
+            } else {
+                throw EditPersistenceError.corruptStore
+            }
+        }
+    }
+
+    private static func validateState(_ state: PhotoEditState, rawData: Data? = nil) throws {
+        let s = state.settings
+        guard state.updatedAt.timeIntervalSince1970.isFinite,
+              s.exposure.isFinite, (-5.0...5.0).contains(s.exposure),
+              s.contrast.isFinite, (0.0...2.0).contains(s.contrast),
+              s.saturation.isFinite, (0.0...2.0).contains(s.saturation),
+              s.temperature.isFinite, RawSettings.temperatureRange.contains(s.temperature),
+              s.tint.isFinite, RawSettings.tintRange.contains(s.tint),
+              s.highlights.isFinite, (-1.0...1.0).contains(s.highlights),
+              s.shadows.isFinite, (-1.0...1.0).contains(s.shadows),
+              s.toneCurve.isFinite, (-1.0...1.0).contains(s.toneCurve),
+              s.noiseReduction.isFinite, (0.0...1.0).contains(s.noiseReduction),
+              s.sharpening.isFinite, (0.0...2.0).contains(s.sharpening),
+              s.lutStrength.isFinite, RawSettings.lutStrengthRange.contains(s.lutStrength),
+              (s.hdr?.isValid ?? true),
+              s.geometry.isValid, s.denoise.isValid, s.hsl.isValid,
+              (s.toneControls?.isValid ?? true), (s.atmosphere?.isValid ?? true),
+              (s.colorGrading?.isValid ?? true), (s.toneCurveConfig?.isValid ?? true),
+              s.photoEffects.isValid, (0...2).contains(s.displayChromaDenoise),
+              (s.lensCorrection?.focalLength.map { $0.isFinite && $0 > 0 } ?? true),
+              (s.lensCorrection?.cropFactor.map { $0.isFinite && $0 > 0 } ?? true),
+              (s.masterRecipeID == nil || s.masterRecipe != nil),
+              [2, 3, 4].contains(s.masterRecipeSettingsVersion) else {
+            throw EditPersistenceError.corruptStore
+        }
+        if let rawData,
+           let root = (try? JSONSerialization.jsonObject(with: rawData)) as? [String: Any],
+           let settingsDict = root["settings"] as? [String: Any] {
+            if let mode = settingsDict["exposureMode"] as? Int, !(0...2).contains(mode) {
+                throw EditPersistenceError.corruptStore
+            }
+            if let chroma = settingsDict["displayChromaDenoise"] as? Int, !(0...2).contains(chroma) {
+                throw EditPersistenceError.corruptStore
+            }
+            if let effects = settingsDict["photoEffects"] as? [String: Any] {
+                for parameter in PhotoEffectParameter.allCases {
+                    if let number = effects[parameter.rawValue] as? Double,
+                       !number.isFinite || !parameter.range.contains(number) {
+                        throw EditPersistenceError.corruptStore
+                    }
+                }
+            }
+        }
+    }
+
+    private static func parseState(_ data: Data) throws -> PhotoEditState {
+        do {
+            let state = try JSONDecoder().decode(PhotoEditState.self, from: data)
+            try validateState(state, rawData: data)
+            return state
+        } catch let error as UnusableEditRecordError {
+            throw error
+        } catch {
+            throw UnusableEditRecordError(underlying: error)
+        }
+    }
+
+    private static func tryParseMigration(_ data: Data?) -> StoredProcessingMigration? {
+        guard let data,
+              let stored = try? JSONDecoder().decode(StoredProcessingMigration.self, from: data),
+              (try? validateState(stored.receipt.original)) != nil else { return nil }
+        return stored
+    }
+
+    private static func encodeState(_ state: PhotoEditState) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let encoded = try encoder.encode(state)
+        try validateState(state)
+        return encoded
+    }
+
+    private static func encodeMigration(_ migration: StoredProcessingMigration) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(migration)
     }
 
     private func matchesMigrationIdentity(_ stored: PhotoIdentity, _ identity: PhotoIdentity) -> Bool {
@@ -392,30 +633,35 @@ final class EditPersistence {
 
     private func hasClearableProcessingMigration(_ identity: PhotoIdentity, in store: StoreFile) -> Bool {
         let receipts = store.processingMigrations ?? [:]
-        if identity.editKey != identity.key, receipts[identity.editKey] != nil { return true }
-        if let stored = receipts[identity.key], matchesMigrationIdentity(stored.identity, identity) { return true }
-        return storedMigration(identity, from: store) != nil
+        if receipts[identity.editKey] != nil { return true }
+        if identity.editKey != identity.key,
+           let stored = Self.tryParseMigration(receipts[identity.key]),
+           matchesMigrationIdentity(stored.identity, identity) { return true }
+        return false
     }
 
-    private func clearProcessingMigration(for identity: PhotoIdentity, in store: inout StoreFile) {
-        guard var receipts = store.processingMigrations else { return }
-        if identity.editKey != identity.key {
-            receipts.removeValue(forKey: identity.editKey)
-        }
-        if let stored = receipts[identity.key], matchesMigrationIdentity(stored.identity, identity) {
-            receipts.removeValue(forKey: identity.key)
+    @discardableResult
+    private func clearProcessingMigration(for identity: PhotoIdentity, in store: inout StoreFile) -> Bool {
+        guard var receipts = store.processingMigrations else { return false }
+        var removed = receipts.removeValue(forKey: identity.editKey) != nil
+        if identity.editKey != identity.key,
+           let stored = Self.tryParseMigration(receipts[identity.key]),
+           matchesMigrationIdentity(stored.identity, identity) {
+            removed = receipts.removeValue(forKey: identity.key) != nil || removed
         }
         store.processingMigrations = receipts.isEmpty ? nil : receipts
+        return removed
     }
 
     private func write(_ state: PhotoEditState?, identity: PhotoIdentity,
                        clearsProcessingMigration: Bool = false, store: inout StoreFile) throws -> PhotoEditRecord {
-        let current = record(identity, from: store)
+        let current = try record(identity, from: store)
         let clearsMigration = clearsProcessingMigration && hasClearableProcessingMigration(identity, in: store)
         if !clearsMigration {
             if let previous = current.state, let state, previous.hasSameAdjustments(as: state) { return current }
             if current.state == nil && state == nil { return current }
         }
+        let encodedState = try state.map(Self.encodeState)
         store.version = 1
         if clearsProcessingMigration {
             clearProcessingMigration(for: identity, in: &store)
@@ -423,30 +669,63 @@ final class EditPersistence {
                   let previous = storedMigration(identity, from: store) {
             // 从内容别名转成 PhotoKit 主记录时，迁移回退也跟随该照片，不能丢在旧入口下。
             var receipts = store.processingMigrations ?? [:]
-            receipts[identity.editKey] = StoredProcessingMigration(identity: identity, receipt: previous.receipt)
+            receipts[identity.editKey] = try Self.encodeMigration(
+                StoredProcessingMigration(identity: identity, receipt: previous.receipt))
             store.processingMigrations = receipts
         }
-        if let state {
-            store.records[identity.editKey] = state
+        if let encodedState {
+            store.records[identity.editKey] = encodedState
             store.deleted?.remove(identity.editKey)
         } else {
             store.records.removeValue(forKey: identity.editKey)
             store.deleted = (store.deleted ?? []).union([identity.editKey])
         }
         try persistStore(&store)
-        return record(identity, from: store)
+        return try record(identity, from: store)
     }
 
     private func persistStore(_ store: inout StoreFile) throws {
         store.version = 1
-        // Revisions are a legacy read-only field. The first normal write
-        // rewrites the registry without carrying that map forward.
-        store.revisions = nil
         if store.deleted?.isEmpty == true { store.deleted = nil }
+        if store.processingMigrations?.isEmpty == true { store.processingMigrations = nil }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        try writeData(encoder.encode(store), fileURL)
+        var out = Data("{".utf8)
+        var hasField = false
+        func appendComma() {
+            if hasField { out.append(UInt8(ascii: ",")) }
+            hasField = true
+        }
+        if let deleted = store.deleted, !deleted.isEmpty {
+            appendComma()
+            out.append(contentsOf: "\"deleted\":".utf8)
+            out.append(try encoder.encode(deleted.sorted()))
+        }
+        if let migrations = store.processingMigrations, !migrations.isEmpty {
+            appendComma()
+            out.append(contentsOf: "\"processingMigrations\":".utf8)
+            try Self.appendRawMap(migrations, encoder: encoder, to: &out)
+        }
+        appendComma()
+        out.append(contentsOf: "\"records\":".utf8)
+        try Self.appendRawMap(store.records, encoder: encoder, to: &out)
+        appendComma()
+        out.append(contentsOf: "\"version\":1}".utf8)
+        try writeData(out, fileURL)
         remember(store)
+    }
+
+    private static func appendRawMap(_ map: [String: Data], encoder: JSONEncoder, to out: inout Data) throws {
+        out.append(UInt8(ascii: "{"))
+        var first = true
+        for key in map.keys.sorted() {
+            if !first { out.append(UInt8(ascii: ",")) }
+            first = false
+            out.append(try encoder.encode(key))
+            out.append(UInt8(ascii: ":"))
+            out.append(map[key]!)
+        }
+        out.append(UInt8(ascii: "}"))
     }
 
     private func remember(_ store: StoreFile) {
