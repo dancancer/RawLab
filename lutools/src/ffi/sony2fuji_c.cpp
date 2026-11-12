@@ -507,6 +507,52 @@ sony2fuji::GpuMode toCoreGpuMode(sony2fuji_gpu_mode mode) {
     }
 }
 
+// 与核心其它入口一致的最大输出像素数，避免尺寸乘法溢出后按小值分配。
+constexpr uint64_t kMaxOutputPixels = 128000000;
+
+bool exceedsOutputPixelCap(uint32_t width, uint32_t height) {
+    return uint64_t(width) * height > kMaxOutputPixels;
+}
+
+sony2fuji_status validateRequestSize(const sony2fuji_request& request) {
+    sony2fuji_size_mode mode = request.size_mode;
+    uint32_t long_edge = request.long_edge;
+    uint32_t short_edge = request.short_edge;
+
+    if (request.intent == SONY2FUJI_INTENT_PREVIEW && request.preview_long_edge > 0) {
+        mode = SONY2FUJI_SIZE_FIT_LONG_EDGE;
+        long_edge = request.preview_long_edge;
+    }
+
+    switch (mode) {
+        case SONY2FUJI_SIZE_NATIVE:
+            return SONY2FUJI_STATUS_OK;
+        case SONY2FUJI_SIZE_EXACT:
+            if (request.target_width == 0 || request.target_height == 0 ||
+                exceedsOutputPixelCap(request.target_width, request.target_height)) {
+                return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+            }
+            return SONY2FUJI_STATUS_OK;
+        case SONY2FUJI_SIZE_FIT_LONG_EDGE:
+            if (long_edge == 0 || exceedsOutputPixelCap(long_edge, 1)) {
+                return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+            }
+            return SONY2FUJI_STATUS_OK;
+        case SONY2FUJI_SIZE_LIMIT_LONG_EDGE:
+            if (long_edge == 0) {
+                return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+            }
+            return SONY2FUJI_STATUS_OK;
+        case SONY2FUJI_SIZE_FIT_SHORT_EDGE:
+            if (short_edge == 0 || exceedsOutputPixelCap(short_edge, short_edge)) {
+                return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+            }
+            return SONY2FUJI_STATUS_OK;
+        default:
+            return SONY2FUJI_STATUS_UNSUPPORTED;
+    }
+}
+
 sony2fuji_status validateRequest(
     const sony2fuji_request* request,
     const sony2fuji_buffer* out_buffer
@@ -545,7 +591,8 @@ sony2fuji_status validateRequest(
             return SONY2FUJI_STATUS_INVALID_ARGUMENT;
         }
     } else if (request->input_type == SONY2FUJI_INPUT_BUFFER || request->input_type == SONY2FUJI_INPUT_DISPLAY_BUFFER) {
-        if (!request->input_pixels || request->input_width == 0 || request->input_height == 0) {
+        if (!request->input_pixels || request->input_width == 0 || request->input_height == 0 ||
+            exceedsOutputPixelCap(request->input_width, request->input_height)) {
             return SONY2FUJI_STATUS_INVALID_ARGUMENT;
         }
         if (request->input_type == SONY2FUJI_INPUT_DISPLAY_BUFFER &&
@@ -579,7 +626,7 @@ sony2fuji_status validateRequest(
         return SONY2FUJI_STATUS_UNSUPPORTED;
     }
 
-    return SONY2FUJI_STATUS_OK;
+    return validateRequestSize(*request);
 }
 
 sony2fuji_status validateGpuConfig(const sony2fuji_gpu_config* config) {
@@ -617,9 +664,6 @@ sony2fuji_status validateOutputFormat(const sony2fuji_request& request) {
     return SONY2FUJI_STATUS_UNSUPPORTED;
 }
 
-// 与核心其它入口一致的最大输出像素数，避免尺寸乘法溢出后按小值分配。
-constexpr uint64_t kMaxOutputPixels = 128000000;
-
 sony2fuji_status computeTargetSize(
     const sony2fuji_request& request,
     uint32_t src_width,
@@ -640,47 +684,66 @@ sony2fuji_status computeTargetSize(
         long_edge = request.preview_long_edge;
     }
 
+    uint32_t width = 0;
+    uint32_t height = 0;
     switch (mode) {
         case SONY2FUJI_SIZE_NATIVE:
-            *out_width = src_width;
-            *out_height = src_height;
-            return SONY2FUJI_STATUS_OK;
+            width = src_width;
+            height = src_height;
+            break;
         case SONY2FUJI_SIZE_EXACT:
             if (request.target_width == 0 || request.target_height == 0) {
                 return SONY2FUJI_STATUS_INVALID_ARGUMENT;
             }
-            // 目标尺寸来自客户端；没有上限时先按 int 乘出溢出、再按溢出后的数量分配。
-            if (uint64_t(request.target_width) * request.target_height > kMaxOutputPixels) {
-                return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-            }
-            *out_width = request.target_width;
-            *out_height = request.target_height;
-            return SONY2FUJI_STATUS_OK;
+            width = request.target_width;
+            height = request.target_height;
+            break;
         case SONY2FUJI_SIZE_FIT_LONG_EDGE:
         case SONY2FUJI_SIZE_LIMIT_LONG_EDGE: {
-            if (long_edge == 0) {
+            if (long_edge == 0 || (mode == SONY2FUJI_SIZE_FIT_LONG_EDGE && exceedsOutputPixelCap(long_edge, 1))) {
                 return SONY2FUJI_STATUS_INVALID_ARGUMENT;
             }
             uint32_t max_edge = std::max(src_width, src_height);
             float scale = static_cast<float>(long_edge) / static_cast<float>(max_edge);
             if (mode == SONY2FUJI_SIZE_LIMIT_LONG_EDGE) scale = std::min(1.0f, scale);
-            *out_width = std::max(1u, static_cast<uint32_t>(std::round(src_width * scale)));
-            *out_height = std::max(1u, static_cast<uint32_t>(std::round(src_height * scale)));
-            return SONY2FUJI_STATUS_OK;
+            const double scaled_w = std::round(src_width * scale);
+            const double scaled_h = std::round(src_height * scale);
+            if (!(scaled_w <= static_cast<double>(UINT32_MAX) &&
+                  scaled_h <= static_cast<double>(UINT32_MAX))) {
+                return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+            }
+            width = static_cast<uint32_t>(std::max(1.0, scaled_w));
+            height = static_cast<uint32_t>(std::max(1.0, scaled_h));
+            break;
         }
         case SONY2FUJI_SIZE_FIT_SHORT_EDGE: {
-            if (short_edge == 0) {
+            if (short_edge == 0 || exceedsOutputPixelCap(short_edge, short_edge)) {
                 return SONY2FUJI_STATUS_INVALID_ARGUMENT;
             }
             uint32_t min_edge = std::min(src_width, src_height);
             float scale = static_cast<float>(short_edge) / static_cast<float>(min_edge);
-            *out_width = std::max(1u, static_cast<uint32_t>(std::round(src_width * scale)));
-            *out_height = std::max(1u, static_cast<uint32_t>(std::round(src_height * scale)));
-            return SONY2FUJI_STATUS_OK;
+            const double scaled_w = std::round(src_width * scale);
+            const double scaled_h = std::round(src_height * scale);
+            if (!(scaled_w <= static_cast<double>(UINT32_MAX) &&
+                  scaled_h <= static_cast<double>(UINT32_MAX))) {
+                return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+            }
+            width = static_cast<uint32_t>(std::max(1.0, scaled_w));
+            height = static_cast<uint32_t>(std::max(1.0, scaled_h));
+            break;
         }
         default:
             return SONY2FUJI_STATUS_UNSUPPORTED;
     }
+
+    // 所有 size mode 共用的收口上限检查。
+    if (exceedsOutputPixelCap(width, height)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+
+    *out_width = width;
+    *out_height = height;
+    return SONY2FUJI_STATUS_OK;
 }
 
 sony2fuji::RGB sampleBilinear(const sony2fuji::ImageData& image, float x, float y) {
@@ -710,7 +773,7 @@ sony2fuji::ImageData resizeBilinear(
 ) {
     sony2fuji::ImageData output(static_cast<int>(target_width), static_cast<int>(target_height));
 
-    if (source.width == 0 || source.height == 0) {
+    if (source.width <= 0 || source.height <= 0 || output.width <= 0 || output.height <= 0) {
         return output;
     }
 
@@ -1198,7 +1261,8 @@ sony2fuji_status loadBufferImage(
     sony2fuji_color_space* space,
     bool* is_linear
 ) {
-    if (!request.input_pixels || request.input_width == 0 || request.input_height == 0) {
+    if (!request.input_pixels || request.input_width == 0 || request.input_height == 0 ||
+        exceedsOutputPixelCap(request.input_width, request.input_height)) {
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     }
 
@@ -1316,11 +1380,11 @@ sony2fuji_status writeOutputBuffer(
 sony2fuji_status finishGeometry(sony2fuji_session* session, const sony2fuji_request& request,
     sony2fuji::ImageData& image, uint32_t native_width, uint32_t native_height) {
     sony2fuji::checkProcessingCancellation();
-    const auto transformed = sony2fuji::applyGeometry(image, session->geometry);
-    if (transformed != sony2fuji::ErrorCode::Success) return mapError(transformed);
     uint32_t width, height;
     const auto status = computeTargetSize(request, native_width, native_height, &width, &height);
     if (status != SONY2FUJI_STATUS_OK) return status;
+    const auto transformed = sony2fuji::applyGeometry(image, session->geometry);
+    if (transformed != sony2fuji::ErrorCode::Success) return mapError(transformed);
     if (width != static_cast<uint32_t>(image.width) || height != static_cast<uint32_t>(image.height))
         image = resizeBilinear(image, width, height);
     return SONY2FUJI_STATUS_OK;
@@ -2255,6 +2319,14 @@ static sony2fuji_status processImpl(
         local.intent == SONY2FUJI_INTENT_PREVIEW && local.output_target == SONY2FUJI_TARGET_BUFFER;
     if (cpuOnlyStages && session->gpu_config.mode == sony2fuji::GpuMode::Force)
         return SONY2FUJI_STATUS_UNSUPPORTED;
+    if (local.input_type != SONY2FUJI_INPUT_RAW) {
+        const auto native = sony2fuji::geometryOutputSize(
+            static_cast<int>(local.input_width), static_cast<int>(local.input_height), session->geometry);
+        uint32_t target_width = 0, target_height = 0;
+        status = computeTargetSize(local, static_cast<uint32_t>(native.first), static_cast<uint32_t>(native.second),
+            &target_width, &target_height);
+        if (status != SONY2FUJI_STATUS_OK) return status;
+    }
     const bool use_lut = !isEmptyString(local.lut_path) && local.lut_strength > 0;
     std::shared_ptr<sony2fuji::LUT3D> lut;
     std::shared_ptr<const sony2fuji::DcpLook> dcp;
@@ -2337,11 +2409,12 @@ static sony2fuji_status processImpl(
         ? session->raw_native_size : std::pair{image.width, image.height};
     const auto native = sony2fuji::geometryOutputSize(canvasWidth, canvasHeight, session->geometry);
     const uint32_t native_width = native.first, native_height = native.second;
+    uint32_t target_width = 0, target_height = 0;
+    status = computeTargetSize(local, native_width, native_height, &target_width, &target_height);
+    if (status != SONY2FUJI_STATUS_OK) return status;
 
     if (viewportPreview) {
-        uint32_t width, height;
-        status = computeTargetSize(local, native_width, native_height, &width, &height);
-        if (status != SONY2FUJI_STATUS_OK) return status;
+        uint32_t width = target_width, height = target_height;
         // Atmosphere 只近似缩小预览；原生及放大请求保留原请求的尺寸和精确输出。
         if (neighborhoodActive && width >= native_width && height >= native_height) {
             viewportPreview = false;

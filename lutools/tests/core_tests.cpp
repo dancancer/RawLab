@@ -258,14 +258,86 @@ int main() {
     catch (const std::invalid_argument&) { nativeRejected=true; }
     check(nativeRejected,"Uncalibrated native matrix is rejected");
 
+    {
+        ImageData negW(-4, 5), negH(5, -4), zeroW(0, 5);
+        check(negW.width == 0 && negW.height == 0 && negW.pixels.empty() &&
+              negH.width == 0 && negH.height == 0 && negH.pixels.empty() &&
+              zeroW.width == 0 && zeroW.height == 0 && zeroW.pixels.empty(),
+              "ImageData clamps non-positive dimensions consistently across members and buffer");
+        bool overflowRejected = false;
+        try { ImageData hugeImage(2000000000, 2000000000); (void)hugeImage; }
+        catch (const std::bad_alloc&) { overflowRejected = true; }
+        check(overflowRejected, "ImageData rejects unrepresentable pixel byte counts");
+    }
+
     sony2fuji_session* session=nullptr;
     sony2fuji_session_create(&session);
     const unsigned char dngPixels[3] = {128, 70, 220};
-    auto huge = request(dngPixels);
-    huge.size_mode = SONY2FUJI_SIZE_EXACT;
-    huge.target_width = huge.target_height = 70000;
-    check(sony2fuji_process(session, &huge, nullptr) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
-          "Absurd exact output size is rejected before any pixel allocation");
+    {
+        const unsigned char widePixels[6] = {128, 70, 220, 64, 120, 180};
+        auto expectRejected = [&](const sony2fuji_request& req, const char* label, sony2fuji_session* target = nullptr) {
+            sony2fuji_buffer hugeOut{};
+            const auto st = sony2fuji_process(target ? target : session, &req, &hugeOut);
+            const bool rejected = st == SONY2FUJI_STATUS_INVALID_ARGUMENT && !hugeOut.data;
+            sony2fuji_release_buffer(&hugeOut);
+            check(rejected, label);
+        };
+
+        auto exactCap = request(dngPixels);
+        exactCap.size_mode = SONY2FUJI_SIZE_EXACT;
+        exactCap.target_width = exactCap.target_height = 11314;
+        expectRejected(exactCap, "EXACT output above 128M pixels is rejected with valid out_buffer");
+        exactCap.target_width = exactCap.target_height = 2000000000u;
+        expectRejected(exactCap, "EXACT int-overflow output size is rejected with valid out_buffer");
+
+        auto fitLong = request(widePixels);
+        fitLong.input_width = 2; fitLong.input_height = 1;
+        fitLong.size_mode = SONY2FUJI_SIZE_FIT_LONG_EDGE;
+        fitLong.long_edge = 16002;
+        expectRejected(fitLong, "FIT_LONG_EDGE output above 128M pixels is rejected");
+        fitLong.long_edge = 2000000000u;
+        expectRejected(fitLong, "FIT_LONG_EDGE extreme long_edge is rejected without UB");
+
+        auto previewLong = request(dngPixels);
+        previewLong.size_mode = SONY2FUJI_SIZE_NATIVE;
+        previewLong.intent = SONY2FUJI_INTENT_PREVIEW;
+        previewLong.preview_long_edge = 11314;
+        expectRejected(previewLong, "PREVIEW preview_long_edge override above 128M pixels is rejected");
+
+        auto fitShort = request(widePixels);
+        fitShort.input_width = 2; fitShort.input_height = 1;
+        fitShort.size_mode = SONY2FUJI_SIZE_FIT_SHORT_EDGE;
+        fitShort.short_edge = 8001;
+        expectRejected(fitShort, "FIT_SHORT_EDGE output above 128M pixels is rejected");
+        fitShort.short_edge = 2000000000u;
+        expectRejected(fitShort, "FIT_SHORT_EDGE extreme short_edge is rejected without UB");
+
+        const std::string absentRaw = (dir / "missing-size-cap.ARW").string();
+        auto rawEarly = request(nullptr);
+        rawEarly.input_type = SONY2FUJI_INPUT_RAW;
+        rawEarly.input_path = absentRaw.c_str();
+        rawEarly.intent = SONY2FUJI_INTENT_FINAL;
+        rawEarly.size_mode = SONY2FUJI_SIZE_EXACT;
+        rawEarly.target_width = rawEarly.target_height = 11314;
+        expectRejected(rawEarly, "Oversized RAW request is rejected during request validation before RAW decode");
+
+        sony2fuji_session* geomSession = nullptr;
+        sony2fuji_session_create(&geomSession);
+        sony2fuji_geometry_config geom{};
+        geom.version = SONY2FUJI_GEOMETRY_CONFIG_VERSION;
+        geom.struct_size = sizeof(geom);
+        geom.crop_width = geom.crop_height = 1.0f;
+        geom.quarter_turns = 1;
+        sony2fuji_session_set_geometry(geomSession, &geom);
+        const std::string absentLut = (dir / "missing-size-cap.cube").string();
+        auto finalGeom = fitLong;
+        finalGeom.long_edge = 16002;
+        finalGeom.intent = SONY2FUJI_INTENT_FINAL;
+        finalGeom.lut_path = absentLut.c_str();
+        finalGeom.lut_strength = 1.0f;
+        expectRejected(finalGeom, "FINAL+geometry oversized FIT_LONG_EDGE is rejected before LUT/pixel work", geomSession);
+        sony2fuji_session_destroy(geomSession);
+    }
     auto dngRequest = request(dngPixels);
     const std::string dngPath = (dir / "rendered.dng").string();
     dngRequest.output_target = SONY2FUJI_TARGET_FILE;
