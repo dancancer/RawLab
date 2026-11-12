@@ -141,7 +141,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         if (value && UnavailableReason != null) return;
         var next = preferences.Copy(); next.AutomaticInstall = value;
         var revoke = !value && (automaticDownload || State.Choice == UpdateInstallChoice.AutomaticOnQuit);
-        if (revoke) next.PendingUpdate.Cancel();
+        if (revoke) { DeferCheckRetry(next); next.PendingUpdate.Cancel(); }
         if (Save(next) && revoke) { automaticDownload = false; operation?.Cancel(); }
     }
     public static TimeSpan CheckRetryDelay(int consecutiveFailures)
@@ -163,13 +163,24 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             _ => "operation"
         };
     }
+    private bool IsCheckBackoffActive(DateTimeOffset current)
+    {
+        if (preferences.CheckFailure is not { } failed) return false;
+        var delay = CheckRetryDelay(failed.ConsecutiveFailures);
+        var retryAt = failed.RetryAfter ?? failed.FailedAt + delay;
+        return retryAt - delay <= current && current < retryAt;
+    }
     private bool ShouldSkipAutomaticCheck(DateTimeOffset current)
     {
         if (!preferences.AutomaticCheck || State.Phase == UpdatePhase.Failed && State.Failure?.Stage != UpdatePhase.Checking ||
             preferences.RemindAfter > current) return true;
-        if (preferences.CheckFailure is { } failed)
-            return failed.FailedAt <= current && current - failed.FailedAt < CheckRetryDelay(failed.ConsecutiveFailures);
+        if (preferences.CheckFailure != null) return IsCheckBackoffActive(current);
         return preferences.LastCheck is { } last && last <= current && current - last < DailyCheckInterval;
+    }
+    private void DeferCheckRetry(UpdatePreferences next)
+    {
+        if (next.PendingUpdate.Phase == UpdatePhase.Checking && next.CheckFailure is { } failed)
+            next.CheckFailure = failed with { RetryAfter = now() + CheckRetryDelay(failed.ConsecutiveFailures) };
     }
     public async Task CheckAsync(bool manual, bool retryDownload = false)
     {
@@ -218,12 +229,12 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     }
     public Task RetryAsync() => State.Phase == UpdatePhase.Failed
         ? CheckAsync(true, State.Failure?.Stage != UpdatePhase.Checking)
-        : CheckFailure != null ? CheckAsync(true) : Task.CompletedTask;
+        : CheckFailure != null && State.Phase is UpdatePhase.Idle or UpdatePhase.Available ? CheckAsync(true) : Task.CompletedTask;
     public void Cancel()
     {
         if (!CanCancel) return;
         operation?.Cancel(); automaticDownload = false;
-        var next = preferences.Copy(); next.PendingUpdate.Cancel(); Save(next);
+        var next = preferences.Copy(); DeferCheckRetry(next); next.PendingUpdate.Cancel(); Save(next);
     }
     public void Skip()
     {
@@ -246,7 +257,11 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         State.Choice == UpdateInstallChoice.AutomaticOnQuit && preferences.AutomaticInstall;
     public async Task RefreshGateAsync()
     {
-        if (State.Phase == UpdatePhase.Available && DeferredQuitChoice && CanCheck) { await CheckAsync(true); return; }
+        if (State.Phase == UpdatePhase.Available && DeferredQuitChoice && CanCheck)
+        {
+            if (!IsCheckBackoffActive(now())) await CheckAsync(true);
+            return;
+        }
         if (State.Phase == UpdatePhase.Failed && State.Failure?.Stage == UpdatePhase.Checking ||
             State.Phase == UpdatePhase.Idle && CheckFailure != null) { await CheckAsync(false); return; }
         if (!CanChooseInstall || State.Choice == UpdateInstallChoice.None) return;
@@ -268,7 +283,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             if (BlocksEditing) return false;
             operation?.Cancel(); automaticDownload = false;
             if (StorageError == null) {
-                var next = preferences.Copy(); next.PendingUpdate.Cancel(preservingChoice: true);
+                var next = preferences.Copy(); DeferCheckRetry(next); next.PendingUpdate.Cancel(preservingChoice: true);
                 Save(next);
             }
         } else Cancel();

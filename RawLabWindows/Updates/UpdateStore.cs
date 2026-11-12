@@ -67,9 +67,15 @@ public sealed class UpdateStore(string directory)
         }
         if (value.CheckFailure is { } checkFailure)
         {
+            var retryAfter = checkFailure.RetryAfter is { } retry && retry != default ? retry : (DateTimeOffset?)null;
             value.CheckFailure = string.IsNullOrWhiteSpace(checkFailure.Category) || checkFailure.FailedAt == default
                 ? null
-                : checkFailure with { ConsecutiveFailures = Math.Max(1, checkFailure.ConsecutiveFailures), Detail = checkFailure.Detail ?? "" };
+                : checkFailure with
+                {
+                    ConsecutiveFailures = Math.Max(1, checkFailure.ConsecutiveFailures),
+                    Detail = checkFailure.Detail ?? "",
+                    RetryAfter = retryAfter
+                };
         }
         if (value.StateRepairReceipt is {} receipt)
         {

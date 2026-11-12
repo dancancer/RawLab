@@ -12,10 +12,12 @@ internal static class ControllerChecks
         public int Checks, Downloads, Installs;
         public bool RejectSignature, RejectInstall, RejectCheck, NoUpdate;
         public Exception? TrustError, CheckError;
+        public TaskCompletionSource<UpdateDescriptor?>? PendingCheck;
         public Task ValidateHostTrustAsync() => TrustError == null ? Task.CompletedTask : Task.FromException(TrustError);
         public Task<UpdateDescriptor?> CheckAsync(CancellationToken token)
         {
             Checks++;
+            if (PendingCheck is { } pending) return pending.Task.WaitAsync(token);
             if (CheckError != null) return Task.FromException<UpdateDescriptor?>(CheckError);
             if (RejectCheck) return Task.FromException<UpdateDescriptor?>(new IOException("offline"));
             return Task.FromResult(NoUpdate ? null : (UpdateDescriptor?)Release);
@@ -114,12 +116,14 @@ internal static class ControllerChecks
                 "Fresh state distinguishes never-checked from up-to-date");
 
             await controller.CheckAsync(false);
-            check(adapter.Checks == 1 && controller.Preferences.LastCheck == null &&
+            controller.Cancel();
+            check(adapter.Checks == 1 && !controller.CanCancel && controller.State.Phase == UpdatePhase.Failed &&
+                controller.Preferences.LastCheck == null &&
                 controller.State.Failure is { Stage: UpdatePhase.Checking, Code: "network" } &&
-                controller.CheckFailure is { Category: "network", ConsecutiveFailures: 1, Detail: "offline" } first && first.FailedAt == t0 &&
+                controller.CheckFailure is { Category: "network", ConsecutiveFailures: 1, Detail: "offline", RetryAfter: null } first && first.FailedAt == t0 &&
                 UpdatePresentation.Status(controller.Preferences) == "检查失败，请稍后重试或访问 GitHub 仓库" &&
                 UpdatePresentation.CheckFailureDetail(controller.Preferences)?.Contains("network", StringComparison.Ordinal) == true,
-                "Failed automatic check leaves LastCheck unset, records CheckFailure, and exposes failure in UI presentation");
+                "Failed automatic check leaves LastCheck unset, records CheckFailure, keeps Failed non-cancellable, and exposes failure in UI presentation");
 
             now = t0.AddMinutes(14).AddSeconds(59);
             await controller.CheckAsync(false);
@@ -130,30 +134,53 @@ internal static class ControllerChecks
             adapter.CheckError = new TaskCanceledException("Feed request timed out");
             await controller.RefreshGateAsync();
             check(adapter.Checks == 2 && controller.Preferences.LastCheck == null &&
-                controller.CheckFailure is { Category: "timeout", ConsecutiveFailures: 2 } second && second.FailedAt == now,
+                controller.CheckFailure is { Category: "timeout", ConsecutiveFailures: 2, RetryAfter: null } second && second.FailedAt == now,
                 "Failed automatic check retries after 15 minutes and records non-user feed timeout with doubled backoff");
 
             var retryBase = now;
             var reopened = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14", now: () => now);
             now = retryBase.AddMinutes(29).AddSeconds(59);
             await reopened.CheckAsync(false);
-            check(adapter.Checks == 2 && reopened.CheckFailure?.ConsecutiveFailures == 2,
+            check(adapter.Checks == 2 && reopened.State.Phase == UpdatePhase.Failed && reopened.CheckFailure?.ConsecutiveFailures == 2,
                 "Reopened controller honors the 30-minute second backoff window instead of stalling 24 hours");
 
+            now = retryBase.AddMinutes(30);
+            adapter.PendingCheck = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            var inFlightRetry = reopened.RefreshGateAsync();
+            check(adapter.Checks == 3 && !inFlightRetry.IsCompleted &&
+                reopened.State.Phase == UpdatePhase.Checking && reopened.CanCancel,
+                "Expired backoff launches an in-flight automatic retry that can be cancelled");
+
+            now = now.AddSeconds(5);
+            var cancelAt = now;
             reopened.Cancel();
-            check(reopened.State.Phase == UpdatePhase.Idle && reopened.CheckFailure != null &&
+            await inFlightRetry;
+            adapter.PendingCheck = null;
+            check(reopened.State.Phase == UpdatePhase.Idle && reopened.State.Failure == null &&
+                reopened.CanCheck && !reopened.CanCancel &&
+                reopened.CheckFailure is { Category: "timeout", ConsecutiveFailures: 2 } deferred &&
+                deferred.FailedAt == retryBase && deferred.RetryAfter == cancelAt.AddMinutes(30) &&
                 UpdatePresentation.Status(reopened.Preferences) == "检查失败，请稍后重试或访问 GitHub 仓库" &&
                 UpdatePresentation.CheckFailureDetail(reopened.Preferences) != null,
-                "Check failure remains visible in UI when pending update state returns to Idle");
+                "Cancelling an in-flight check transitions to Idle without incrementing failure count, defers retry, and keeps failure visible in UI");
 
-            now = retryBase.AddMinutes(30);
+            now = cancelAt.AddSeconds(1);
+            await reopened.RefreshGateAsync();
+            now = cancelAt.AddMinutes(29).AddSeconds(59);
+            reopened = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14", now: () => now);
+            await reopened.CheckAsync(false);
+            await reopened.RefreshGateAsync();
+            check(reopened.State.Phase == UpdatePhase.Idle && adapter.Checks == 3,
+                "RefreshGateAsync and reopen do not immediately restart a user-cancelled retry inside the deferred backoff window");
+
+            now = cancelAt.AddMinutes(30);
             adapter.CheckError = null; adapter.RejectCheck = false; adapter.NoUpdate = true;
             await reopened.RefreshGateAsync();
-            check(adapter.Checks == 3 && reopened.State.Phase == UpdatePhase.Idle &&
+            check(adapter.Checks == 4 && reopened.State.Phase == UpdatePhase.Idle &&
                 reopened.Preferences.LastCheck == now && reopened.CheckFailure == null &&
                 UpdatePresentation.Status(reopened.Preferences) == "尚未发现可安装的更新" &&
                 UpdatePresentation.CheckFailureDetail(reopened.Preferences) == null,
-                "Successful automatic retry writes LastCheck, clears CheckFailure, and shows up-to-date status");
+                "RefreshGateAsync retries from Idle+CheckFailure after deferred backoff expires, writes LastCheck, and clears CheckFailure");
 
             var successAt = now;
             foreach (var offset in new[] { TimeSpan.FromMinutes(15), TimeSpan.FromHours(4), TimeSpan.FromDays(1) - TimeSpan.FromSeconds(1) })
@@ -161,27 +188,74 @@ internal static class ControllerChecks
                 now = successAt + offset;
                 await reopened.CheckAsync(false);
             }
-            check(adapter.Checks == 3, "Successful check suppresses automatic checks across the full 24-hour window");
+            check(adapter.Checks == 4, "Successful check suppresses automatic checks across the full 24-hour window");
 
             adapter.NoUpdate = false;
             now = successAt.AddDays(1);
             await reopened.CheckAsync(false);
-            check(adapter.Checks == 4 && reopened.State.Phase == UpdatePhase.Available && reopened.Preferences.LastCheck == now,
+            check(adapter.Checks == 5 && reopened.State.Phase == UpdatePhase.Available && reopened.Preferences.LastCheck == now,
                 "Automatic check resumes once the 24-hour post-success window elapses");
 
             now = now.AddMinutes(1);
             adapter.RejectCheck = true;
             await reopened.CheckAsync(true);
-            check(adapter.Checks == 5 && reopened.CheckFailure?.ConsecutiveFailures == 1,
+            check(adapter.Checks == 6 && reopened.State.Phase == UpdatePhase.Failed && reopened.CheckFailure?.ConsecutiveFailures == 1,
                 "Manual check runs immediately inside the 24-hour post-success suppression window");
 
-            reopened.Cancel();
+            adapter.PendingCheck = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            var inFlightManual = reopened.CheckAsync(true);
+            now = now.AddSeconds(5);
+            var quitCancelled = await reopened.PrepareForQuitAsync();
+            await inFlightManual;
+            adapter.PendingCheck = null;
+            check(quitCancelled && reopened.State.Phase == UpdatePhase.Idle && reopened.CheckFailure?.ConsecutiveFailures == 1,
+                "Quitting during an in-flight check returns to Idle while preserving CheckFailure");
+
             now = now.AddMinutes(1);
             adapter.RejectCheck = false;
+            await reopened.RefreshGateAsync();
+            check(adapter.Checks == 7, "Quit-cancelled in-flight check remains suppressed for automatic RefreshGateAsync");
             await reopened.RetryAsync();
-            check(adapter.Checks == 6 && reopened.CheckFailure == null &&
+            check(adapter.Checks == 8 && reopened.CheckFailure == null &&
                 reopened.State.Phase == UpdatePhase.Available && reopened.Preferences.LastCheck == now,
-                "Manual retry runs immediately inside the failure backoff window and clears CheckFailure on success");
+                "RetryAsync from Idle+CheckFailure runs immediately inside the backoff window and clears CheckFailure on success");
+
+            var quitStore = new UpdateStore(Path.Combine(root, "deferred-quit"));
+            var quitAdapter = new Adapter(); var quitGate = new UpdateInstallGate(); var gateOwner = new object(); var draft = true;
+            quitGate.Register(gateOwner, () => new(Draft: draft), () => true);
+            var quitController = new DesktopUpdateController(quitAdapter, quitGate, quitStore, "0.8.2", "14", now: () => now);
+            await quitController.CheckAsync(true);
+            await quitController.DownloadAsync();
+            await quitController.ChooseAsync(UpdateInstallChoice.OnQuit);
+            check(await quitController.PrepareForQuitAsync() && quitController.State.Phase == UpdatePhase.Available &&
+                quitController.State.Choice == UpdateInstallChoice.OnQuit,
+                "Blocked install-on-quit preserves Available release and OnQuit choice");
+            draft = false; quitAdapter.RejectCheck = true;
+            var quitFailAt = now;
+            quitController = new DesktopUpdateController(quitAdapter, quitGate, quitStore, "0.8.2", "14", now: () => now);
+            await quitController.RefreshGateAsync();
+            check(quitAdapter.Checks == 2 && quitController.State.Phase == UpdatePhase.Failed &&
+                quitController.CheckFailure is { ConsecutiveFailures: 1, RetryAfter: null } qf && qf.FailedAt == quitFailAt,
+                "Failed revalidation of OnQuit choice records CheckFailure");
+            now = quitFailAt.AddMinutes(2);
+            check(await quitController.PrepareForQuitAsync(), "Quit after failed OnQuit revalidation succeeds");
+            quitAdapter.RejectCheck = false;
+            var reopenedQuit = new DesktopUpdateController(quitAdapter, quitGate, quitStore, "0.8.2", "14", now: () => now);
+            check(reopenedQuit.State.Phase == UpdatePhase.Available && reopenedQuit.State.Choice == UpdateInstallChoice.OnQuit &&
+                reopenedQuit.CheckFailure is { RetryAfter: null } persistedQf && persistedQf.FailedAt == quitFailAt &&
+                UpdatePresentation.ShowsCheckFailureNotice(reopenedQuit.Preferences),
+                "Reopened OnQuit state keeps Available phase, OnQuit choice, and original CheckFailure timestamp");
+            await reopenedQuit.CheckAsync(false);
+            await reopenedQuit.RefreshGateAsync();
+            now = quitFailAt.AddMinutes(14).AddSeconds(59);
+            await reopenedQuit.RefreshGateAsync();
+            check(quitAdapter.Checks == 2,
+                "Reopening with DeferredQuitChoice respects remaining CheckFailure backoff instead of checking immediately");
+            now = quitFailAt.AddMinutes(15);
+            await reopenedQuit.RefreshGateAsync();
+            check(quitAdapter.Checks == 3 && quitAdapter.Downloads == 2 && reopenedQuit.CheckFailure == null &&
+                reopenedQuit.State.Phase == UpdatePhase.PackageReady && reopenedQuit.State.Choice == UpdateInstallChoice.OnQuit,
+                "DeferredQuitChoice revalidates and redownloads once CheckFailure backoff elapses");
 
             static void WriteLegacyState(UpdateStore target, DateTimeOffset? lastCheck)
             {
@@ -217,10 +291,10 @@ internal static class ControllerChecks
             now = now.AddDays(1).AddSeconds(1);
             reopened = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14", now: () => now);
             await reopened.CheckAsync(false);
-            check(adapter.Checks == 7, "Interrupted check also retries automatically the next day");
+            check(adapter.Checks == 9, "Interrupted check also retries automatically the next day");
             adapter.RejectSignature = true; await reopened.DownloadAsync(); now = now.AddDays(1).AddSeconds(1);
             await reopened.CheckAsync(false);
-            check(adapter.Checks == 7 && reopened.State.Failure?.Stage == UpdatePhase.Verifying, "Verification failure still waits for an explicit retry after a day");
+            check(adapter.Checks == 9 && reopened.State.Failure?.Stage == UpdatePhase.Verifying, "Verification failure still waits for an explicit retry after a day");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }

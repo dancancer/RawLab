@@ -105,7 +105,7 @@ public sealed class SoftwareUpdateWindow : Window
                 ActionButton(actions,"下次退出时安装",()=>updates.ChooseAsync(UpdateInstallChoice.OnQuit),"updates.onQuit");
             }
             if(updates.CanCancel)ActionButton(actions,"取消更新",()=>{updates.Cancel();return Task.CompletedTask;},"updates.cancel");
-            if((updates.State.Phase==UpdatePhase.Failed || updates.CheckFailure!=null) && updates.CanCheck)ActionButton(actions,"重试",updates.RetryAsync,"updates.retry");
+            if((updates.State.Phase==UpdatePhase.Failed || updates.CheckFailure!=null && updates.State.Phase is UpdatePhase.Idle or UpdatePhase.Available) && updates.CanCheck)ActionButton(actions,"重试",updates.RetryAsync,"updates.retry");
             var support=new StackPanel();
             support.Children.Add(Text(Loc.Text("Mac 需要同架构、签名身份匹配的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。")));
             support.Children.Add(Text(Loc.Text("查看此说明不会启用自动安装。失败后请保留现有应用和数据，使用官方可信安装包恢复；不要用旧版覆盖新版编辑记录。")));

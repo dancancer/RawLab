@@ -216,11 +216,26 @@ internal static class UpdateStoreChecks
                 UpdatePresentation.CheckFailureDetail(availableWithCheckFailure) != null,
                 "Available release with a subsequent check failure keeps release heading and surfaces check failure notice");
 
+            var verifyFailed = availableWithCheckFailure.Copy();
+            var downloadToken = verifyFailed.PendingUpdate.BeginDownload()!.Value;
+            verifyFailed.PendingUpdate.Preparing(downloadToken);
+            verifyFailed.PendingUpdate.Fail("signature", "Rejected", downloadToken);
+            check(!UpdatePresentation.ShowsCheckFailureNotice(verifyFailed) &&
+                UpdatePresentation.CheckFailureDetail(verifyFailed) == null,
+                "Non-checking failure suppresses stale check failure notice and detail");
+
+            var deferred = roundTrip.Copy();
+            deferred.CheckFailure = roundTrip.CheckFailure! with { RetryAfter = t0.AddMinutes(35) };
+            store.Save(deferred);
+            check(store.Load(true).CheckFailure?.RetryAfter == t0.AddMinutes(35),
+                "Deferred RetryAfter timestamp survives Save/Load");
+
             var nonPositiveCount = roundTrip.Copy();
-            nonPositiveCount.CheckFailure = new(t0, "timeout", 0, "");
+            nonPositiveCount.CheckFailure = new(t0, "timeout", 0, "", default(DateTimeOffset));
             store.Save(nonPositiveCount);
-            check(store.Load(true).CheckFailure?.ConsecutiveFailures == 1,
-                "Non-positive ConsecutiveFailures normalizes to at least one");
+            var normalized = store.Load(true).CheckFailure;
+            check(normalized?.ConsecutiveFailures == 1 && normalized.RetryAfter == null,
+                "Non-positive ConsecutiveFailures and default RetryAfter normalize safely");
 
             var emptyCategory = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(store.StatePath))!.AsObject();
             emptyCategory["CheckFailure"]!["Category"] = " ";

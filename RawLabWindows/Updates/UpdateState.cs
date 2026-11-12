@@ -11,7 +11,7 @@ public sealed record UpdateDescriptor(string Version, string Build, string Platf
     public string Identity => string.Join("|", Platform, Architecture, Channel, Version, Build, AssetUrl, Sha256 ?? "");
 }
 public sealed record UpdateFailure(UpdatePhase Stage, string Code, string Detail);
-public sealed record UpdateCheckFailure(DateTimeOffset FailedAt, string Category, int ConsecutiveFailures = 1, string Detail = "");
+public sealed record UpdateCheckFailure(DateTimeOffset FailedAt, string Category, int ConsecutiveFailures = 1, string Detail = "", DateTimeOffset? RetryAfter = null);
 
 public sealed class UpdateTaskState
 {
@@ -148,24 +148,19 @@ internal static class UpdatePresentation
         return Phase(state.Phase);
     }
     public static bool ShowsCheckFailureNotice(UpdatePreferences preferences) =>
-        preferences.CheckFailure != null &&
-        preferences.PendingUpdate.Phase is not (UpdatePhase.Idle or UpdatePhase.Checking or UpdatePhase.Downloading or
-            UpdatePhase.Verifying or UpdatePhase.Installing or UpdatePhase.PendingRestart) &&
-        !(preferences.PendingUpdate.Phase == UpdatePhase.Failed && preferences.PendingUpdate.Failure?.Stage == UpdatePhase.Checking);
+        preferences.CheckFailure != null && preferences.PendingUpdate.Phase == UpdatePhase.Available;
     public static string? CheckFailureDetail(UpdatePreferences preferences)
     {
         var state = preferences.PendingUpdate;
-        if (state.Phase is UpdatePhase.Checking or UpdatePhase.Downloading or UpdatePhase.Verifying or
-            UpdatePhase.Installing or UpdatePhase.PendingRestart) return null;
-        if (state.Phase == UpdatePhase.Failed && state.Failure is { } failure && failure.Stage != UpdatePhase.Checking) return null;
-        if (preferences.CheckFailure is { } checkFailure)
-        {
-            var header = $"{checkFailure.Category}\n{checkFailure.FailedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture)}";
-            return string.IsNullOrEmpty(checkFailure.Detail) ? header : header + "\n" + checkFailure.Detail;
-        }
         if (state.Phase == UpdatePhase.Failed && state.Failure is { Stage: UpdatePhase.Checking } legacy)
-            return string.IsNullOrEmpty(legacy.Detail) ? legacy.Code : legacy.Code + "\n" + legacy.Detail;
-        return null;
+        {
+            if (preferences.CheckFailure == null)
+                return string.IsNullOrEmpty(legacy.Detail) ? legacy.Code : legacy.Code + "\n" + legacy.Detail;
+        }
+        else if (state.Phase is not (UpdatePhase.Idle or UpdatePhase.Available)) return null;
+        if (preferences.CheckFailure is not { } checkFailure) return null;
+        var header = $"{checkFailure.Category}\n{checkFailure.FailedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture)}";
+        return string.IsNullOrEmpty(checkFailure.Detail) ? header : header + "\n" + checkFailure.Detail;
     }
     public static string Phase(UpdatePhase phase) => phase switch
     {
