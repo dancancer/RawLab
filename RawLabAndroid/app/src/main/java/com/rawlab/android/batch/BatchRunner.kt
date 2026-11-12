@@ -71,7 +71,10 @@ object BatchRunner {
                 return current
             } catch (error: Throwable) {
                 val failed = current.rows.toMutableList()
-                val cancelled = shouldCancel() && failed[index].status != BatchRowStatus.PUBLISHING
+                val cancelled = (shouldCancel() || error is java.util.concurrent.CancellationException ||
+                    (error is com.rawlab.android.engine.NativeProcessingException &&
+                        error.status == com.rawlab.android.engine.NativeProcessingException.CANCELLED)) &&
+                    failed[index].status != BatchRowStatus.PUBLISHING
                 failed[index] = failed[index].copy(status = if (cancelled) BatchRowStatus.CANCELLED
                     else if (failed[index].status == BatchRowStatus.PUBLISHING) BatchRowStatus.NEEDS_CONFIRMATION else BatchRowStatus.FAILED,
                     error = if (cancelled) null else error.message ?: error.javaClass.simpleName)

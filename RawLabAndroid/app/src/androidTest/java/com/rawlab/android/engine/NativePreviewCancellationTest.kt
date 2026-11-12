@@ -1,7 +1,9 @@
 package com.rawlab.android.engine
 
+import android.os.CancellationSignal
 import android.os.SystemClock
 import androidx.test.platform.app.InstrumentationRegistry
+import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.settings.EditSettings
 import org.junit.Assert.*
 import org.junit.Test
@@ -64,5 +66,67 @@ class NativePreviewCancellationTest {
             }
             File(context.getExternalFilesDir(null), "native-cancellation.txt").writeText(measurements.joinToString("\n"))
         } finally { worker.shutdownNow(); source.delete() }
+    }
+
+    @Test fun cancelledExportDeletesPartialOutputAndAllowsSubsequentExport() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val root = File(context.cacheDir, "cancel-export-${System.nanoTime()}").apply { mkdirs() }
+        val source = File(root, "source.RAW")
+        InstrumentationRegistry.getInstrumentation().context.assets.open("sample.RAW").use { input ->
+            source.outputStream().use { input.copyTo(it) }
+        }
+        val worker = Executors.newSingleThreadExecutor()
+        try {
+            NativeProcessor(NativeProcessor.CPU).use { processor ->
+                // 1. Pre-cancelled generation rejects immediately and deletes empty temp placeholder.
+                val placeholder = File.createTempFile("export-", ".jpg", root)
+                val staleGeneration = processor.cancellationGeneration()
+                processor.cancelPreview()
+                val staleError = assertThrows(NativeProcessingException::class.java) {
+                    processor.export(source, null, EditSettings(), placeholder, ExportFormat.JPEG, 300,
+                        cancellationGeneration = staleGeneration)
+                }
+                assertEquals(NativeProcessingException.CANCELLED, staleError.status)
+                assertFalse(placeholder.exists())
+
+                // 2. Pre-cancelled CancellationSignal rejects immediately without creating output.
+                val cancelledSignalOutput = File(root, "signal-cancelled.jpg")
+                val preCancelledSignal = CancellationSignal().apply { cancel() }
+                val signalError = assertThrows(NativeProcessingException::class.java) {
+                    processor.export(source, null, EditSettings(), cancelledSignalOutput, ExportFormat.JPEG, 300,
+                        cancellationSignal = preCancelledSignal)
+                }
+                assertEquals(NativeProcessingException.CANCELLED, signalError.status)
+                assertFalse(cancelledSignalOutput.exists())
+
+                // 3. Concurrent cancellation via CancellationSignal stops export, cleans staging, and keeps processor reusable.
+                val inFlightOutput = File(root, "inflight.png")
+                val inFlightSignal = CancellationSignal()
+                val entered = CountDownLatch(1)
+                val future = worker.submit<Int> {
+                    entered.countDown()
+                    processor.export(source, null, EditSettings(exposure = .5f), inFlightOutput, ExportFormat.PNG,
+                        cancellationSignal = inFlightSignal)
+                }
+                assertTrue(entered.await(5, TimeUnit.SECONDS))
+                SystemClock.sleep(10)
+                val started = SystemClock.elapsedRealtime()
+                inFlightSignal.cancel()
+                val signalMs = SystemClock.elapsedRealtime() - started
+                val execError = assertThrows(java.util.concurrent.ExecutionException::class.java) {
+                    future.get(30, TimeUnit.SECONDS)
+                }
+                assertEquals(NativeProcessingException.CANCELLED, (execError.cause as NativeProcessingException).status)
+                assertTrue("Export cancellation signal must not block on render monitor", signalMs < 100)
+                assertFalse("Cancelled export must not leave partial output", inFlightOutput.exists())
+                assertEquals("No staging files may remain", listOf(source), root.listFiles()!!.toList())
+
+                // 4. Subsequent uncancelled export on the same processor succeeds.
+                val finalOutput = File(root, "completed.jpg")
+                assertEquals(0, processor.export(source, null, EditSettings(), finalOutput, ExportFormat.JPEG, 300,
+                    cancellationGeneration = processor.cancellationGeneration()))
+                assertTrue(finalOutput.isFile && finalOutput.length() > 0L)
+            }
+        } finally { worker.shutdownNow(); root.deleteRecursively() }
     }
 }

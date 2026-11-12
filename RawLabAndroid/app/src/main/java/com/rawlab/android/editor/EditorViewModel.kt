@@ -36,6 +36,7 @@ import com.rawlab.android.editor.render.Work
 import com.rawlab.android.editor.render.WorkResult
 import com.rawlab.android.editor.render.runLookWork
 import com.rawlab.android.editor.render.discardOwnedInput
+import com.rawlab.android.editor.render.isExportCancellation
 import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
@@ -259,7 +260,12 @@ class EditorViewModel @JvmOverloads constructor(
             if (!disposed && revision == currentRevision) accept(result)
             else result.getOrNull()?.discardOwnedInput()
         }
-    }, { renderer.close(); releaseStorage() }, { it.discardOwnedInput() }, { it.discardOwnedInput() })
+    }, { renderer.close(); releaseStorage() }, { it.discardOwnedInput() }, { work ->
+        work.discardOwnedInput()
+        if (work is Work.Export && work.destination != null) {
+            viewModelScope.launch(Dispatchers.IO) { storage.deleteIncompleteDocument(work.destination, work.photo.uri) }
+        }
+    })
     private val lookQueue = RenderQueue<LookWork, LookResult>({ runLookWork(storage, it) }, { revision, result ->
         viewModelScope.launch {
             if (!disposed && revision == lookRevision) acceptLook(result)
@@ -518,7 +524,8 @@ class EditorViewModel @JvmOverloads constructor(
             fadeSaveNotice()
         }, { error ->
             if (mutable.value.operation == Operation.IMPORT) pendingPhotoImport.clear()
-            mutable.value = EditorStateReducer.renderFinished(mutable.value).copy(error = failure(error))
+            val finished = EditorStateReducer.renderFinished(mutable.value)
+            mutable.value = if (isExportCancellation(error)) finished else finished.copy(error = failure(error))
         })
         collections.releaseDeferred()
         updatePreviewSize(requestedPreviewLongEdge)
@@ -1691,7 +1698,14 @@ class EditorViewModel @JvmOverloads constructor(
         }
     }
     fun cancelExport() {
-        if (mutable.value.operation == Operation.PICK_EXPORT) mutable.value = mutable.value.copy(operation = Operation.NONE)
+        val operation = mutable.value.operation
+        if (operation == Operation.PICK_EXPORT) {
+            mutable.value = mutable.value.copy(operation = Operation.NONE)
+        } else if (operation == Operation.EXPORT) {
+            currentRevision = queue.invalidate()
+            mutable.value = EditorStateReducer.renderFinished(mutable.value)
+            collections.releaseDeferred()
+        }
         updatePreviewSize(requestedPreviewLongEdge)
     }
     fun export(destination: Uri?, format: ExportFormat, longEdge: Int? = null) {

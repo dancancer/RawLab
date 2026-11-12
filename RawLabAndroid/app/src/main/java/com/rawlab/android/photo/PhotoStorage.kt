@@ -7,6 +7,7 @@ import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.net.Uri
 import android.os.Build
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.util.Size
@@ -386,8 +387,28 @@ class PhotoStorage(
 
     fun saveDocument(file: File, destination: Uri, original: Uri) {
         require(destination != original) { "Cannot overwrite source photo" }
-        val stream = resolver.openOutputStream(destination, "wt") ?: throw IOException("Cannot open destination")
-        stream.use { output -> file.inputStream().use { it.copyTo(output) } }
+        try {
+            val stream = resolver.openOutputStream(destination, "wt") ?: throw IOException("Cannot open destination")
+            stream.use { output -> file.inputStream().use { it.copyTo(output) } }
+        } catch (error: Throwable) {
+            deleteIncompleteDocument(destination, original, written = true)
+            throw error
+        }
+    }
+
+    internal fun deleteIncompleteDocument(destination: Uri, original: Uri, written: Boolean = false) {
+        if (destination == original) return
+        if (destination.scheme == "file") {
+            val target = destination.path?.let(::File) ?: return
+            val source = original.takeIf { it.scheme == "file" }?.path?.let(::File)
+            if (source != null && runCatching { target.canonicalPath == source.canonicalPath }.getOrDefault(false)) return
+            if (written || (target.exists() && target.length() == 0L)) target.delete()
+            return
+        }
+        if (DocumentsContract.isDocumentUri(context, destination)) {
+            if (runCatching { DocumentsContract.deleteDocument(resolver, destination) }.getOrDefault(false)) return
+        }
+        runCatching { resolver.delete(destination, null, null) }
     }
 
     fun saveAlbum(file: File, format: ExportFormat, outputName: String? = null, onCreated: (Uri) -> Unit = {}): Uri {
