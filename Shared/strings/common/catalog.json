@@ -8670,5 +8670,29 @@
     "es": "{0} archivos nuevos guardados, {1} ya estaban en el dispositivo",
     "ja": "新規保存 {0} 個、保存済み {1} 個",
     "zh-Hans": "新保存 {0} 个文件，{1} 个已在本机"
+  },
+  "上一张": {
+    "de": "Vorheriges Foto",
+    "en": "Previous photo",
+    "es": "Foto anterior",
+    "fr": "Photo précédente",
+    "ja": "前の写真",
+    "zh-Hans": "上一张"
+  },
+  "下一张": {
+    "de": "Nächstes Foto",
+    "en": "Next photo",
+    "es": "Foto siguiente",
+    "fr": "Photo suivante",
+    "ja": "次の写真",
+    "zh-Hans": "下一张"
+  },
+  "最近照片": {
+    "zh-Hans": "最近照片",
+    "en": "Recent photos",
+    "de": "Letzte Fotos",
+    "es": "Fotos recientes",
+    "fr": "Photos récentes",
+    "ja": "最近の写真"
   }
 }

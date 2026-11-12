@@ -98,7 +98,7 @@ jobs:
           "$lint_dir/actionlint"
           python -m unittest discover -s scripts/ci -p 'test_*.py' -v
           python scripts/localization/generate.py --check
-          python tests/test_localization.py GeneratorFormatTests GeneratorSourceTests
+          python tests/test_localization.py
           python lutools/tests/test_cli_test_encoding.py
           python lutools/tests/test_tiff_dependencies.py
           python lutools/tests/test_hdr_sources.py

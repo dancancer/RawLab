@@ -83,12 +83,14 @@
 "一并导入 %@ 个日期未知的文件" = "Inclure %@ fichiers sans date";
 "三分网格" = "Grille des tiers";
 "三线性" = "Trilinéaire";
+"上一张" = "Photo précédente";
 "上下拖动调整，方向键微调，Esc 取消" = "Faites glisser vers le haut ou le bas pour régler, utilisez les flèches pour affiner et Échap pour annuler";
 "上次使用的外观不可用，请重新选择或导入外观。" = "Le dernier look utilisé n’est pas disponible. Choisissez ou importez de nouveau un look.";
 "上次使用的相机 · 未连接" = "Dernier appareil utilisé · Déconnecté";
 "上次同步结果与历史" = "Résultats et historique de la dernière synchronisation";
 "上次导入未完成" = "La dernière importation n’est pas terminée";
 "上次预览" = "Dernier aperçu";
+"下一张" = "Photo suivante";
 "不支持此 HDR 格式或颜色描述。" = "Ce format HDR ou cette description colorimétrique n’est pas pris en charge.";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "Cette photo, ce look ou ce mode de traitement n’est pas pris en charge. Vérifiez la compatibilité des fichiers et les réglages de traitement.";
 "不能覆盖原始文件。" = "Le fichier d’origine ne peut pas être écrasé.";
@@ -491,12 +493,14 @@
 "无法保存导入记录或原件。请检查可用空间后重试。" = "Impossible d’enregistrer l’historique d’importation ou les fichiers originaux. Vérifiez l’espace disponible et réessayez.";
 "无法保存照片，请在系统设置中允许 RawLab 添加照片。" = "Impossible d’enregistrer les photos. Autorisez RawLab à ajouter des photos dans les réglages système.";
 "无法保存照片，请在系统设置中允许添加照片。" = "Impossible d'enregistrer la photo. Autorisez l'ajout de photos dans les réglages système.";
+"无法保存编辑草稿。" = "Impossible d’enregistrer le brouillon de modification.";
 "无法写入 HDR 导出文件，请检查可用空间和目标权限。" = "Impossible d’écrire l’export HDR. Vérifiez l’espace disponible et les autorisations.";
 "无法写入成片，请检查输出位置和剩余空间。" = "Impossible d’écrire la photo exportée. Vérifiez l’emplacement de sortie et l’espace disponible.";
 "无法创建新的预设标识，请重试。" = "Impossible de créer un nouvel identifiant de préréglage. Réessayez.";
 "无法加入最近打开：%@" = "Impossible d’ajouter aux photos récentes : %@";
 "无法取得 RAW 原片，请在系统设置中授权访问这张照片后重试。" = "Impossible de récupérer le RAW original. Autorisez l’accès à cette photo dans les réglages système, puis réessayez.";
 "无法导出错误日志。" = "Impossible d’exporter le journal des erreurs.";
+"无法恢复编辑草稿，已保留已应用的调整。" = "Impossible de restaurer le brouillon de modification ; les réglages appliqués ont été conservés.";
 "无法按所选设置处理 JPEG。" = "Impossible de traiter le JPEG avec ces réglages.";
 "无法显示处理结果" = "Impossible d'afficher les résultats du traitement";
 "无法生成预览" = "Impossible de générer un aperçu";
@@ -556,6 +560,7 @@
 "更换预览照片" = "Changer la photo d’aperçu";
 "最近使用" = "Récents";
 "最近打开" = "Ouvertes récemment";
+"最近照片" = "Photos récentes";
 "有多个匹配镜头，请手动选择" = "Plusieurs objectifs correspondent ; choisissez manuellement";
 "有文件超出相机导入上限，请调整起点或格式。" = "Certains fichiers dépassent la limite d’importation. Modifiez la date de début ou le format.";
 "有未提交调整。" = "Des réglages ne sont pas encore validés.";
@@ -715,6 +720,7 @@
 "目标调整" = "Réglage ciblé";
 "目标调整：%@" = "Réglage ciblé : %@";
 "目标：%@ 张照片" = "Photos cibles : %@";
+"直方图" = "Histogramme";
 "相对白平衡" = "Balance des blancs relative";
 "相机" = "Appareil photo";
 "相机 Wi-Fi 通常无法访问互联网，请保持连接。" = "Le Wi-Fi de l’appareil n’a généralement pas accès à Internet. Restez connecté.";
@@ -754,6 +760,7 @@
 "系统权限设置" = "Autorisations système";
 "紫" = "Violet";
 "红" = "Rouge";
+"纯预览" = "Aperçu";
 "纽约电影 · 戏剧光影" = "Cinéma new-yorkais · lumière dramatique";
 "线性 sRGB" = "sRGB linéaire";
 "细节" = "Détail";

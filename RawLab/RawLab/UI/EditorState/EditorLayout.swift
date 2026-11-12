@@ -165,7 +165,7 @@ extension ContentView {
             if toolWorkspaceOpen {
             Menu {
                 Toggle(L10n.text("精细"), isOn: $adjustmentFine).accessibilityIdentifier("editor.fine")
-                if currentEditorTool == .adjustment(.hsl) { Toggle(L10n.text("定向调整"), isOn: $hslTargetEnabled) }
+                if currentEditorTool == .adjustment(.hsl) { Toggle(L10n.text("目标调整"), isOn: $hslTargetEnabled) }
                 Menu(L10n.text("对比方式")) { comparisonModeMenu }.disabled(geometrySelected)
                     .accessibilityIdentifier("editor.compare.mode")
                 Toggle(L10n.text("直方图"), isOn: $histogramExpanded)
