@@ -298,6 +298,16 @@ struct AdjustmentTransferSessionTests {
             _ = try reopened.rollbackProcessingMigration(expected: try reopened.readState(for: a))
             fatalError("Rollback after reopen must stay expired")
         } catch AdjustmentCommitError.expired { }
+        let undone = session.undoPhoto(a)
+        let restoredAfterUndo = try store.state(for: a)
+        check(undone.first?.status == .applied && restoredAfterUndo == edited,
+              "Undoing reset-all restores pre-reset adjustments")
+        check(try store.processingMigration(for: a) == nil,
+              "Undoing reset-all keeps processing migration receipt nil")
+        do {
+            _ = try store.rollbackProcessingMigration(expected: try store.readState(for: a))
+            fatalError("Rollback after undoing reset-all must stay expired")
+        } catch AdjustmentCommitError.expired { }
 
         // Also verify .kept and .rolledBack receipts are cleared by explicit reset intent.
         try store.save(b, state: original)

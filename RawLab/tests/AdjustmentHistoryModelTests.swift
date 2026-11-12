@@ -525,9 +525,21 @@ struct AdjustmentHistoryModelTests {
         model.queueSettingsSave(fullCandidate.settings)
         try check(model.saveCurrentSettings(fullCandidate.settings) &&
                   model.processingMigrationReceipt == nil && model.processingMigrationStatus == nil &&
+                  store.state(for: identity)?.settings == fullCandidate.settings &&
+                  fullCandidate.settings.processing == .current &&
                   (try store.processingMigration(for: identity)) == nil,
-                  "full reset clears processingMigrationReceipt in RawEditorViewModel memory and on disk")
+                  "full reset persists neutral current record and clears processingMigrationReceipt in RawEditorViewModel memory and on disk")
         try check(try EditPersistence(directory: storeRoot).processingMigration(for: identity) == nil,
                   "reopened EditPersistence still reports nil receipt after ViewModel reset-all")
+        let undone = model.performAdjustmentHistory(undo: true)
+        try check(undone.first?.status == .applied &&
+                  model.currentPreviewSettings.exposure == 0.5 &&
+                  model.processingMigrationReceipt == nil && model.processingMigrationStatus == nil &&
+                  (try store.processingMigration(for: identity)) == nil,
+                  "undoing full reset restores pre-reset adjustments while keeping processingMigrationReceipt nil")
+        do {
+            _ = try store.rollbackProcessingMigration(expected: store.readState(for: identity))
+            throw NSError(domain: "rollback after undoing full reset must stay expired", code: 1)
+        } catch AdjustmentCommitError.expired { }
     }
 }

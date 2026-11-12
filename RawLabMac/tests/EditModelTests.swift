@@ -380,6 +380,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         let migratedRecord = try migrationStore.commitProcessingMigration(expected: try migrationStore.readState(for: source),
                                                                           candidate: migratedState, quality: quality)
         model.editStore = migrationStore
+        model.adjustmentSession = AdjustmentTransferSession(store: migrationStore)
         model.committedEdit = migratedRecord
         model.adjustmentSession?.adoptProcessingMigration(migratedRecord)
         model.processingMigrationReceipt = try migrationStore.processingMigration(for: source)
@@ -397,14 +398,24 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         try check(model.commitReset(fullReset) && model.saveEdits() &&
                   model.processingMigrationReceipt == nil && !model.canRollbackProcessingMigration &&
                   model.processingMigrationStatus == nil &&
+                  (try migrationStore.state(for: source))?.settings.processing == .current &&
                   (try migrationStore.processingMigration(for: source)) == nil,
-                  "reset all clears migration receipt in EditorModel memory and on disk")
+                  "reset all persists neutral current record and clears migration receipt in EditorModel memory and on disk")
         do {
             _ = try migrationStore.rollbackProcessingMigration(expected: try migrationStore.readState(for: source))
             throw Failure(message: "rollback after reset all must throw expired")
         } catch AdjustmentCommitError.expired { }
         try check(try EditPersistence(directory: directory).processingMigration(for: source) == nil,
                   "cleared migration receipt stays nil after reopening EditPersistence")
+        model.undoAdjustment()
+        try check(model.settings.saturation == 12 && model.processingMigrationReceipt == nil &&
+                  !model.canRollbackProcessingMigration && model.processingMigrationStatus == nil &&
+                  (try migrationStore.processingMigration(for: source)) == nil,
+                  "undoing reset all restores pre-reset adjustments while keeping migration receipt nil")
+        do {
+            _ = try migrationStore.rollbackProcessingMigration(expected: try migrationStore.readState(for: source))
+            throw Failure(message: "rollback after undoing reset all must stay expired")
+        } catch AdjustmentCommitError.expired { }
         print("PASS: EditorModel reset preparation, stale guards, single commit, draft boundary and retry")
     }
 

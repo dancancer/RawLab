@@ -118,6 +118,7 @@ class ProcessingMigrationTest {
                 clearProcessingMigration = true,
             )
             assertEquals(AdjustmentStatus.APPLIED, resetOutcome.status)
+            assertEquals(neutralV3, store.load(identity))
             assertNull(store.processingMigration(identity))
             assertThrows(AdjustmentOperationExpiredException::class.java) {
                 store.rollbackProcessingMigration(store.readState(identity))
@@ -127,6 +128,14 @@ class ProcessingMigrationTest {
             assertNull(reopened.processingMigration(identity))
             assertThrows(AdjustmentOperationExpiredException::class.java) {
                 reopened.rollbackProcessingMigration(reopened.readState(identity))
+            }
+
+            val undone = session.undoPhoto(identity)
+            assertEquals(AdjustmentStatus.APPLIED, undone.single().status)
+            assertEquals(1.25f, store.load(identity)?.exposure ?: 0f, 0f)
+            assertNull(store.processingMigration(identity))
+            assertThrows(AdjustmentOperationExpiredException::class.java) {
+                store.rollbackProcessingMigration(store.readState(identity))
             }
 
             // Also verify KEPT and ROLLED_BACK receipts are cleared by explicit reset intent.

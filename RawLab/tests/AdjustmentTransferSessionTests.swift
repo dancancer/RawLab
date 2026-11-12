@@ -351,5 +351,13 @@ import Foundation
                   reopened.processingMigration(for: sibling)?.status == .migrated &&
                   reopened.processingMigration(for: content)?.status == .migrated,
                   "Reopened store keeps reset target nil while preserving same-PHAsset-other-bytes and content:<id> receipts")
+        let undone = session.undoPhoto(id)
+        try check(undone.first?.status == .applied && store.state(for: id)?.settings.exposure == 1.1 &&
+                  (try store.processingMigration(for: id)) == nil,
+                  "Undoing session reset-all restores pre-reset adjustments while keeping migration receipt nil")
+        do {
+            _ = try store.rollbackProcessingMigration(expected: store.readState(for: id))
+            try check(false, "Rollback after undoing session reset must stay expired")
+        } catch AdjustmentCommitError.expired { }
     }
 }

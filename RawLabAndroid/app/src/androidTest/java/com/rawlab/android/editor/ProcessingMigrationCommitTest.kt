@@ -194,7 +194,9 @@ class ProcessingMigrationCommitTest {
             await { model.state.value.canExport && model.state.value.edits.exposure == 0f && model.state.value.edits.saturation == 0f }
             assertNull("Reset All must clear EditorState.processingMigration in memory", model.state.value.processingMigration)
             assertNull("Reset All must clear persisted migration receipt", store.processingMigration(identity))
-            assertNull(store.load(identity))
+            val resetStored = requireNotNull(store.load(identity))
+            assertEquals(ProcessingIdentity.CURRENT, resetStored.processing)
+            assertEquals(model.state.value.edits, resetStored)
             assertThrows(AdjustmentOperationExpiredException::class.java) {
                 store.rollbackProcessingMigration(store.readState(identity))
             }
@@ -207,6 +209,20 @@ class ProcessingMigrationCommitTest {
             }
             await { reopened.state.value.canExport }
             assertNull("Reopened ViewModel must still report null processingMigration", reopened.state.value.processingMigration)
+
+            val undoDone = CountDownLatch(1)
+            main { model.undoAdjustment { undoDone.countDown() } }
+            assertTrue(undoDone.await(10, TimeUnit.SECONDS))
+            await {
+                model.state.value.canExport &&
+                    model.state.value.edits.exposure == .6f &&
+                    model.state.value.edits.saturation == .2f
+            }
+            assertNull("Undoing Reset All keeps EditorState.processingMigration null", model.state.value.processingMigration)
+            assertNull("Undoing Reset All keeps persisted migration receipt null", store.processingMigration(identity))
+            assertThrows(AdjustmentOperationExpiredException::class.java) {
+                store.rollbackProcessingMigration(store.readState(identity))
+            }
         } finally {
             main { owner.clear() }
             store.reset(identity)
@@ -323,6 +339,85 @@ class ProcessingMigrationCommitTest {
                 ProcessingMigrationStatus.MIGRATED, store.processingMigration(identity)?.status)
         } finally {
             failWrites.set(false)
+            main { owner.clear() }
+            store.reset(identity)
+            source.delete()
+        }
+    }
+
+    @Test fun discardingFailedSaveWhenEditsMatchSavedRecordClearsFailedState() {
+        val source = File(context.cacheDir, "discard-unchanged-failed-save-${UUID.randomUUID()}.png")
+        val backup = File(context.cacheDir, "discard-unchanged-failed-save-${UUID.randomUUID()}.bak")
+        Bitmap.createBitmap(80, 60, Bitmap.Config.ARGB_8888).apply { eraseColor(0xff777777.toInt()) }.let { bitmap ->
+            source.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()
+        }
+        val identity = PhotoIdentity(Uri.fromFile(source).toString())
+        val store = EditStore(File(context.filesDir, "edits"))
+        val owner = ViewModelStore()
+        lateinit var model: EditorViewModel
+        try {
+            main {
+                model = EditorViewModel(context.applicationContext as Application)
+                owner.put("editor", model)
+                model.setGpuEnabled(false)
+                model.importPhoto(Uri.fromFile(source))
+            }
+            await { model.state.value.canExport }
+            assertEquals(EditSaveState.NONE, model.state.value.saveState)
+
+            // 1) Unsaved/default record (loaded.settings == null): failed pre-export persist keeps edits == restored;
+            //    resolveCollectionDraft(false) must reset FAILED -> NONE and clear saveError.
+            val importedFile = requireNotNull(model.state.value.photo).file
+            Files.move(importedFile.toPath(), backup.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            val exportFailedNone = CountDownLatch(1)
+            val exportResultNone = AtomicBoolean(true)
+            main { model.beginExport { exportResultNone.set(it); exportFailedNone.countDown() } }
+            assertTrue(exportFailedNone.await(10, TimeUnit.SECONDS))
+            assertFalse(exportResultNone.get())
+            assertEquals(EditSaveState.FAILED, model.state.value.saveState)
+            assertNotNull(model.state.value.saveError)
+            Files.move(backup.toPath(), importedFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+
+            val revBeforeNoneDiscard = model.state.value.adjustmentRevision
+            val discardNoneDone = CountDownLatch(1)
+            val discardNoneAccepted = AtomicBoolean(false)
+            main { model.resolveCollectionDraft(false) { discardNoneAccepted.set(it); discardNoneDone.countDown() } }
+            assertTrue(discardNoneDone.await(10, TimeUnit.SECONDS))
+            assertTrue(discardNoneAccepted.get())
+            assertEquals(EditSaveState.NONE, model.state.value.saveState)
+            assertNull(model.state.value.saveError)
+            assertEquals(revBeforeNoneDiscard + 1, model.state.value.adjustmentRevision)
+
+            // 2) Non-null saved record (loaded.settings != null): failed pre-export persist keeps edits == restored;
+            //    resolveCollectionDraft(false) must reset FAILED -> SAVED and clear saveError.
+            main { model.edit(model.state.value.edits.copy(exposure = .5f)) }
+            await { model.state.value.canExport && model.state.value.edits.exposure == .5f && model.state.value.saveState == EditSaveState.SAVED }
+
+            Files.move(importedFile.toPath(), backup.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            val exportFailedSaved = CountDownLatch(1)
+            val exportResultSaved = AtomicBoolean(true)
+            main { model.beginExport { exportResultSaved.set(it); exportFailedSaved.countDown() } }
+            assertTrue(exportFailedSaved.await(10, TimeUnit.SECONDS))
+            assertFalse(exportResultSaved.get())
+            assertEquals(EditSaveState.FAILED, model.state.value.saveState)
+            assertNotNull(model.state.value.saveError)
+            Files.move(backup.toPath(), importedFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+
+            val revBeforeSavedDiscard = model.state.value.adjustmentRevision
+            val discardSavedDone = CountDownLatch(1)
+            val discardSavedAccepted = AtomicBoolean(false)
+            main { model.resolveCollectionDraft(false) { discardSavedAccepted.set(it); discardSavedDone.countDown() } }
+            assertTrue(discardSavedDone.await(10, TimeUnit.SECONDS))
+            assertTrue(discardSavedAccepted.get())
+            assertEquals(.5f, model.state.value.edits.exposure, 0f)
+            assertEquals(EditSaveState.SAVED, model.state.value.saveState)
+            assertNull(model.state.value.saveError)
+            assertEquals(revBeforeSavedDiscard + 1, model.state.value.adjustmentRevision)
+        } finally {
+            if (backup.exists() && !source.exists()) {
+                runCatching { Files.move(backup.toPath(), source.toPath(), StandardCopyOption.REPLACE_EXISTING) }
+            }
+            backup.delete()
             main { owner.clear() }
             store.reset(identity)
             source.delete()

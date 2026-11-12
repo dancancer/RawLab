@@ -178,6 +178,7 @@ final class IOSAdjustmentTransferSession {
         }
     }
 
+    // 显式全部重置在落盘时单向清除处理迁移回执；调整历史只保存编辑值快照，undo 恢复重置前参数但不恢复迁移回执。
     func commitEdit(expected: PhotoEditRecord, state: PhotoEditState, displayName: String? = nil,
                     defaultState: PhotoEditState? = nil, clearsProcessingMigration: Bool = false,
                     isCurrent: () -> Bool = { true },

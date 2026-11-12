@@ -117,6 +117,7 @@ class AdjustmentTransferSession(private val store: EditStore) {
             result
         }
     }
+    // 显式全部重置在落盘时单向清除处理迁移回执；调整历史只保存编辑值快照，undo 恢复重置前参数但不恢复迁移回执。
     fun commitEdit(before: PhotoEditState, settings: EditSettings, displayName: String = before.identity.value,
         defaultSettings: EditSettings? = null, isCurrent: () -> Boolean = { true }, validateSource: (() -> Unit)? = null,
         validateHistorySource: (() -> Unit)? = validateSource,
