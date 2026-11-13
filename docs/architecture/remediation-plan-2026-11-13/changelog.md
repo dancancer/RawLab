@@ -94,3 +94,4 @@
 - 2026-11-14 · A 簇交卷：**PR #303**（`d99126a7`）——根因确认为顶层 glob 覆盖不到 `Shared/Native/`；共享列表 `Shared/tests/mac-native-sources.sh`+契约测试完全收敛（漂移两类拦截），10/10 编译绿、8/10 端到端绿，并顺手用同机制修掉已知红 mac-geometry-draft。两处运行时留置（compact-controls 快照重基线、photo-effects 无显示）如实挂台账。碳审在途（review-mwfkpn00）。
 - 2026-11-14 · #300 三轮交卷（`6cadb649`，7/7）：exit 77 后移——CLI 失败优先 exit 1、无失败缺包才 SKIP，25 项 CLI 三态锚点全验；描述勘正（native run 164/164 但 edit_recipe_schema 显式 Skipped）。三轮复审在途（review-mwfkr2oe）；顺带发现 mcp-cli-parity 既有漂移已挂台账。
 - 2026-11-14 · B1 交卷：**PR #304**（`e580d2ab`，纯测试断言 +36/−15）：非零强度配方行改 Auto→CPU 诚实回退+像素一致（removal() 先例），0% 行保留 forced parity，新增逐行 UNSUPPORTED 负断言钉契约两方向；双 fixture 277 PASS exit 0。碳审在途（review-mwfkstbk）。
+- 2026-11-14 · #291 五轮返工（`be72e292`）：弃 adjustmentsExpanded 守卫，改 finishDraftNavigation 清空前捕获 `leavingWorkspace` 显式传守卫与 activateEditorTool（同源 Should-Fix：apply 后切普通工具漏交付，一并修）；总览态语义复原（A1/A2/A3 消除，GroupSelectSurvives 直接锁契约）。新锚点 overviewCollapse×4+navApplySwitch×3，181/0 零倒退，变异精准翻红。五轮复审在途（review-mwfkzt9p）。
