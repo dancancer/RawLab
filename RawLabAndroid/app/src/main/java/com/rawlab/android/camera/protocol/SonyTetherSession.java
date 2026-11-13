@@ -31,9 +31,10 @@ public final class SonyTetherSession implements Closeable {
     private long remoteReadyNanos;
     private int propertyEnumTables=2;
 
-    public static final class RemoteResponseException extends IOException {
+    public static final class RemoteResponseException extends CameraMediaSession.PhotoTransferException {
         public final int operation, code;
-        RemoteResponseException(int operation,int code) { super(String.format(Locale.ROOT,"PTP op 0x%04x response 0x%04x",operation,code));this.operation=operation;this.code=code; }
+        public RemoteResponseException(int operation,int code) { super(String.format(Locale.ROOT,"PTP op 0x%04x response 0x%04x",operation,code));this.operation=operation;this.code=code; }
+        @Override public boolean isSessionFailure() { return code == 0x2003 || code == 0x2004; }
     }
 
     public SonyTetherSession(SocketFactory factory, InetAddress address, UUID guid, Reporter reporter) throws IOException {
@@ -209,13 +210,15 @@ public final class SonyTetherSession implements Closeable {
         for(int op:new int[]{0x1004,0x1007,0x1008}) if(!operations.contains(op)) throw new IOException("Legacy contents operation not advertised");
         Set<Integer> handles=new LinkedHashSet<>();
         for(long storage:readStorageIds()) {
-            byte[] bytes=call(0x1007,new int[]{(int)storage,0,0},null,40004,true);
+            byte[] bytes=call(0x1007,new int[]{(int)storage,0,0},null,LIMIT,true);
             try {
                 Reader r=new Reader(bytes);long count=r.u32();
-                if(count>10000 || r.remaining()!=count*4) throw new IOException("Invalid legacy object handles");
-                for(int i=0;i<count;i++) { int handle=r.i32();if(!handles.add(handle) || handles.size()>10000) throw new IOException("Duplicate/excessive legacy object handles"); }
+                if(r.remaining()!=count*4) throw new IOException("Invalid legacy object handles");
+                for(int i=0;i<count;i++) { int handle=r.i32();if(!handles.add(handle)) throw new IOException("Duplicate legacy object handles"); }
             } catch(IOException invalid) { close();throw invalid; }
         }
+        if(handles.size()>CameraMediaSession.MAX_LISTED_PHOTOS)
+            throw new CameraMediaSession.PhotoLimitExceededException("Legacy object handles exceed limit");
         return handles;
     }
 
@@ -236,29 +239,29 @@ public final class SonyTetherSession implements Closeable {
 
     public synchronized String downloadLegacy(LegacyObject object,OutputStream destination) throws IOException {
         if(object==null || object.owner!=this || !object.isPhoto() || !knownLegacyObjects.contains(object.key()) || !operations.contains(0x101b)) throw new IOException("Unknown or unsupported legacy original");
-        if(!object.key().equals(legacyObject(object.handle).key())) throw new IOException("Legacy original changed before transfer");
+        if(!object.key().equals(legacyObject(object.handle).key())) throw new CameraMediaSession.PhotoTransferException("Legacy original changed before transfer");
         MessageDigest digest;try { digest=MessageDigest.getInstance("SHA-256"); } catch(NoSuchAlgorithmException error) { throw new IOException(error); }
         for(long offset=0;offset<object.size;) {
             int count=(int)Math.min(3<<20,object.size-offset);
             byte[] bytes=call(0x101b,new int[]{object.handle,(int)offset,count},null,count,true);
-            if(bytes.length!=count) throw new IOException("Legacy original chunk truncated");
+            if(bytes.length!=count) throw new CameraMediaSession.PhotoTransferException("Legacy original chunk truncated");
             if(offset==0) {
                 boolean tiff=bytes.length>=4 && (bytes[0]==73 && bytes[1]==73 && bytes[2]==42 && bytes[3]==0 || bytes[0]==77 && bytes[1]==77 && bytes[2]==0 && bytes[3]==42);
                 boolean jpeg=bytes.length>=3 && bytes[0]==(byte)255 && bytes[1]==(byte)216 && bytes[2]==(byte)255;
-                if(object.name.toLowerCase(Locale.ROOT).endsWith(".arw")?!tiff:!jpeg) throw new IOException("Legacy original header mismatch");
+                if(object.name.toLowerCase(Locale.ROOT).endsWith(".arw")?!tiff:!jpeg) throw new CameraMediaSession.PhotoTransferException("Legacy original header mismatch");
             }
             destination.write(bytes);digest.update(bytes);offset+=bytes.length;
         }
         destination.flush();
-        if(!object.key().equals(legacyObject(object.handle).key())) throw new IOException("Legacy original changed during transfer");
+        if(!object.key().equals(legacyObject(object.handle).key())) throw new CameraMediaSession.PhotoTransferException("Legacy original changed during transfer");
         StringBuilder hash=new StringBuilder();for(byte b:digest.digest()) hash.append(String.format(Locale.ROOT,"%02x",b&255));return hash.toString();
     }
 
     public synchronized String downloadLegacyWhole(LegacyObject object,OutputStream destination) throws IOException {
         if(closed || object==null || object.owner!=this || !object.isPhoto() || !knownLegacyObjects.contains(object.key()) || !operations.contains(0x1009)) throw new IOException("Unknown or unsupported legacy original");
-        if(!object.key().equals(legacyObject(object.handle).key())) throw new IOException("Legacy original changed before transfer");
+        if(!object.key().equals(legacyObject(object.handle).key())) throw new CameraMediaSession.PhotoTransferException("Legacy original changed before transfer");
         String hash=downloadLegacyBytes(object,destination);
-        if(!object.key().equals(legacyObject(object.handle).key())) throw new IOException("Legacy original changed during transfer");
+        if(!object.key().equals(legacyObject(object.handle).key())) throw new CameraMediaSession.PhotoTransferException("Legacy original changed during transfer");
         return hash;
     }
 
@@ -288,7 +291,7 @@ public final class SonyTetherSession implements Closeable {
         streamObject(object.handle,object.size,verified);
         boolean tiff=prefix[0]==73 && prefix[1]==73 && prefix[2]==42 && prefix[3]==0 || prefix[0]==77 && prefix[1]==77 && prefix[2]==0 && prefix[3]==42;
         boolean jpeg=prefix[0]==(byte)255 && prefix[1]==(byte)216 && prefix[2]==(byte)255;
-        if(prefixSize[0]<4 || (object.name.toLowerCase(Locale.ROOT).endsWith(".arw")?!tiff:!jpeg)) throw new IOException("Legacy original header mismatch");
+        if(prefixSize[0]<4 || (object.name.toLowerCase(Locale.ROOT).endsWith(".arw")?!tiff:!jpeg)) throw new CameraMediaSession.PhotoTransferException("Legacy original header mismatch");
         destination.flush();StringBuilder hash=new StringBuilder();for(byte b:digest.digest()) hash.append(String.format(Locale.ROOT,"%02x",b&255));return hash.toString();
     }
 
@@ -447,39 +450,70 @@ public final class SonyTetherSession implements Closeable {
     public synchronized List<Asset> listPhotos() throws IOException {
         if (!remoteReady) throw new IOException("Remote handshake incomplete");
         List<Asset> result = new ArrayList<>(); Set<String> seen = new HashSet<>(); long cursor=0;
-        for (int page=0;page<100;page++) {
+        boolean exceeded = false;
+        for (int page=0;page<1000;page++) {
             byte[] bytes=call(0x923c,new int[]{(int)cursor,(int)(cursor>>>32),100,1,0},null,LIMIT,true);
             SonyMobileSession.Page data;
             try { data=parseContents(bytes,this); } catch(IOException invalid) { close();throw invalid; }
-            for (Asset asset : data.assets) if (seen.add(asset.key())) { result.add(asset); knownAssets.add(asset.key()); }
-            if (result.size()>10000 || knownAssets.size()>10000) throw new IOException("Remote contents budget exceeded");
-            if (data.count<100) return result;
+            for (Asset asset : data.assets) if (seen.add(asset.key())) {
+                result.add(asset);
+                if (result.size()>CameraMediaSession.MAX_LISTED_PHOTOS) {
+                    exceeded = true;
+                    if (result.size()>=CameraMediaSession.MAX_LISTED_PHOTOS*2) SonyMobileSession.trimRecentAssets(result);
+                }
+            }
+            if (data.count<100) {
+                if (exceeded) SonyMobileSession.trimRecentAssets(result);
+                rememberAssets(result);
+                if (exceeded) throw new CameraMediaSession.PhotoLimitExceededException("Remote contents budget exceeded", result);
+                return result;
+            }
             if (data.cursor<=cursor) throw new IOException("Remote contents cursor did not advance");
             cursor=data.cursor;
         }
-        throw new IOException("Remote contents page limit exceeded");
+        SonyMobileSession.trimRecentAssets(result);
+        rememberAssets(result);
+        throw new CameraMediaSession.PhotoLimitExceededException("Remote contents page limit exceeded", result);
+    }
+
+    private void rememberAssets(List<Asset> assets) {
+        if (knownAssets.size() + assets.size() > CameraMediaSession.MAX_LISTED_PHOTOS * 2) knownAssets.clear();
+        for (Asset asset : assets) knownAssets.add(asset.key());
+    }
+
+    private boolean hasRemoteAsset(Asset target) throws IOException {
+        long cursor = 0;
+        for (int page = 0; page < 1000; page++) {
+            byte[] bytes = call(0x923c, new int[]{(int)cursor, (int)(cursor>>>32), 100, 1, 0}, null, LIMIT, true);
+            SonyMobileSession.Page data;
+            try { data = parseContents(bytes, this); } catch (IOException invalid) { close(); throw invalid; }
+            for (Asset candidate : data.assets) if (target.same(candidate)) return true;
+            if (data.count < 100) return false;
+            if (data.cursor <= cursor) throw new IOException("Remote contents cursor did not advance");
+            cursor = data.cursor;
+        }
+        return false;
     }
 
     public synchronized String download(Asset asset,OutputStream destination) throws IOException {
-        if (asset == null || asset.owner != this || !knownAssets.contains(asset.key()) || asset.size<=0 || asset.size>(1L<<30)) throw new IOException("Unknown remote original");
+        if (asset == null || asset.owner != this || !knownAssets.contains(asset.key())) throw new IOException("Unknown remote original");
+        if (asset.size<=0 || asset.size>(1L<<30)) throw new CameraMediaSession.PhotoTransferException("Remote original size outside budget");
         MessageDigest digest;
         try { digest=MessageDigest.getInstance("SHA-256"); } catch (NoSuchAlgorithmException e) { throw new IOException(e); }
         for (long offset=0;offset<asset.size;) {
             int count=(int)Math.min(3<<20,asset.size-offset);
             byte[] bytes=call(0x923d,new int[]{asset.content,(1<<24)|asset.file,(int)offset,(int)(offset>>>32),count},null,count,true);
-            if (bytes.length!=count) throw new IOException("Remote original chunk truncated");
+            if (bytes.length!=count) throw new CameraMediaSession.PhotoTransferException("Remote original chunk truncated");
             if (offset==0) {
                 boolean tiff=bytes.length>=4 && ((bytes[0]==73 && bytes[1]==73 && bytes[2]==42 && bytes[3]==0) ||
                     (bytes[0]==77 && bytes[1]==77 && bytes[2]==0 && bytes[3]==42));
                 boolean jpeg=bytes.length>=3 && bytes[0]==(byte)255 && bytes[1]==(byte)216 && bytes[2]==(byte)255;
-                if (asset.name.toLowerCase(Locale.ROOT).endsWith(".arw") ? !tiff : !jpeg) throw new IOException("Remote original header mismatch");
+                if (asset.name.toLowerCase(Locale.ROOT).endsWith(".arw") ? !tiff : !jpeg) throw new CameraMediaSession.PhotoTransferException("Remote original header mismatch");
             }
             destination.write(bytes); digest.update(bytes); offset+=bytes.length;
         }
         destination.flush();
-        boolean matches=false;
-        for (Asset now:listPhotos()) if (asset.same(now)) { matches=true; break; }
-        if (!matches) throw new IOException("Remote card object changed during transfer");
+        if (!hasRemoteAsset(asset)) throw new CameraMediaSession.PhotoTransferException("Remote card object changed during transfer");
         StringBuilder hash=new StringBuilder(); for (byte b:digest.digest()) hash.append(String.format(Locale.ROOT,"%02x",b&255));
         return hash.toString();
     }

@@ -1,5 +1,6 @@
 package com.rawlab.android.camera
 
+import com.rawlab.android.camera.protocol.CameraMediaSession
 import com.rawlab.android.photo.SystemPhotoStore
 import org.json.JSONArray
 import org.json.JSONObject
@@ -69,7 +70,7 @@ internal class CameraTetherJournal(private val directory: File) {
             validatePhoto(photo)
             val previous = current.putIfAbsent(photo.key, photo)
             if (previous != null && previous != photo) throw IOException("Camera object metadata changed")
-            if (current.size > MAX_PHOTOS) throw IOException("Too many camera objects")
+            if (current.size > MAX_PHOTOS) throw CameraMediaSession.PhotoLimitExceededException("Too many camera objects")
         }
         return current
     }

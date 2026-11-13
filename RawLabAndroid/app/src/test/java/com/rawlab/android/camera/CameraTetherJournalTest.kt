@@ -100,4 +100,15 @@ class CameraTetherJournalTest {
         val reserved = journal.reserve(run, listOf(photo(1))).first
         assertThrows(IOException::class.java) { journal.save(reserved.copy(batches = reserved.batches + reserved.batches)) }
     }
+
+    @Test fun cardExceeding10000ObjectsThrowsPhotoLimitExceededException() = withJournal { _, journal ->
+        val run = journal.create("camera", "sony-test", emptyList(), CameraImportDestination())
+        val oversized = (1..10_001).map(::photo)
+        assertThrows(com.rawlab.android.camera.protocol.CameraMediaSession.PhotoLimitExceededException::class.java) {
+            journal.reserve(run, oversized)
+        }
+        assertThrows(com.rawlab.android.camera.protocol.CameraMediaSession.PhotoLimitExceededException::class.java) {
+            journal.rebase(run, oversized)
+        }
+    }
 }

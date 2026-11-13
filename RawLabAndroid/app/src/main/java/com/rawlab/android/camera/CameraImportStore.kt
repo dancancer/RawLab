@@ -36,7 +36,12 @@ internal enum class CameraMediaProblem {
 internal data class CameraImportItem(val photo: CameraPhoto, val saved: MediaPhoto? = null,
     val prepared: MediaPhoto? = null, val digest: String? = null, val captureDay: String? = null,
     val duplicate: Boolean = false, val unavailable: MediaPhoto? = null, val problem: CameraMediaProblem? = null,
-    val outputDigest: String? = null, val outputSize: Long? = null, val saveOriginalJpeg: Boolean = false)
+    val outputDigest: String? = null, val outputSize: Long? = null, val saveOriginalJpeg: Boolean = false,
+    val error: String? = null, val skipped: Boolean = false) {
+    val hasFailure: Boolean get() = saved == null && !skipped && (error != null || problem != null)
+    val canSkip: Boolean get() = saved == null && !skipped && unavailable == null &&
+        (error != null || problem == CameraMediaProblem.REMOTE_MISSING)
+}
 
 // Both import protocols validate Sony's vendor identity before exposing Device.
 internal data class CameraHardwareIdentity(val model: String, val serial: String) {
@@ -59,6 +64,9 @@ internal data class CameraImportJob(val id: String, val cameraId: String, val cr
     val hardwareIdentity: CameraHardwareIdentity? = null, val listingOwner: String? = null) {
     val originalListingOwner: String? get() = listingOwner ?: incremental?.sessionOwner
     val savedCount: Int get() = items.count { it.saved != null }
+    val failedCount: Int get() = items.count { it.hasFailure }
+    val skippedCount: Int get() = items.count { it.skipped }
+    val pendingCount: Int get() = items.count { it.saved == null && !it.skipped && !it.hasFailure }
     val totalBytes: Long get() = items.sumOf { it.photo.size }
     val savedBytes: Long get() = items.filter { it.saved != null }.sumOf { it.photo.size }
 
@@ -69,10 +77,27 @@ internal data class CameraImportJob(val id: String, val cameraId: String, val cr
         incremental?.jpeg?.takeIf { it.adjust && !item.photo.raw && !item.saveOriginalJpeg }
 
     fun keepingPendingJpegOriginals(): CameraImportJob = copy(items = items.map { item ->
-        if (item.photo.raw || item.saved != null) item
+        if (item.photo.raw || item.saved != null || item.skipped) item
         else item.copy(saveOriginalJpeg = true, problem = item.problem.takeUnless { it?.needsOriginalJpeg == true })
     })
+
+    fun withSafeIncrementalCheckpoints(): CameraImportJob {
+        val plan = incremental ?: return this
+        if (plan.checkpoints.isEmpty()) return this
+        val safeCheckpoints = buildMap {
+            plan.checkpoints.forEach { (kind, planned) ->
+                val prefix = items.asSequence()
+                    .filter { CameraImportFormat.kindOf(it.photo) == kind && it.photo.captureDateMillis != null }
+                    .takeWhile { it.saved != null }
+                    .map { it.photo }
+                    .toList()
+                CameraImportBoundary.latest(prefix, planned.storage, planned.owner)?.let { put(kind, it) }
+            }
+        }
+        return copy(incremental = plan.copy(checkpoints = safeCheckpoints))
+    }
 }
+internal class CameraPhotoImportException(message: String, cause: Throwable? = null) : IOException(message, cause)
 internal class CameraLocalSourceChanged : IOException("Camera original has changed")
 internal class CameraImportSourceChanged : IOException("Camera originals cannot be verified")
 
@@ -203,10 +228,12 @@ internal class CameraImportStore(private val directory: File, private val tempor
     fun publish(job: CameraImportJob, index: Int, part: File, digest: String, permit: CameraTransferPermit): CameraImportJob {
         permit.check()
         val item = job.items[index]
-        if (part.canonicalFile != partial(job.id).canonicalFile || part.length() != item.photo.size ||
-            !validDigest(digest) || !validHeader(part, item.photo.raw)) throw IOException("Incomplete camera photo")
-        part.inputStream().use { if (contentDigest(it, item.photo.size) { permit.check() } != digest) throw IOException("Camera photo digest mismatch") }
+        if (part.canonicalFile != partial(job.id).canonicalFile) throw IOException("Incomplete camera photo")
+        if (part.length() != item.photo.size || !validDigest(digest) || !validHeader(part, item.photo.raw))
+            throw CameraPhotoImportException("Incomplete camera photo")
+        part.inputStream().use { if (contentDigest(it, item.photo.size) { permit.check() } != digest) throw CameraPhotoImportException("Camera photo digest mismatch") }
         if (item.digest != null && item.digest != digest) throw CameraImportSourceChanged()
+        val targetName = safeName(item.photo.name)
         val capture = readCaptureDate(part)
         val jpegOptions = job.jpegOptions(item)
         return permit.publish {
@@ -245,7 +272,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
                     outputDigest = processed.digest
                     outputSize = processed.size
                 }
-                val pending = media.createPending(safeName(item.photo.name), job.destination.relativePath(capture),
+                val pending = media.createPending(targetName, job.destination.relativePath(capture),
                     if (item.photo.raw) "image/x-sony-arw" else "image/jpeg", "${job.id}:$index")
                 // 先登记系统 URI，写入或发布途中退出时按原记录恢复，不再创建第二张。
                 save(job.replacing(index, item.copy(prepared = pending, digest = digest, outputDigest = outputDigest,
@@ -257,7 +284,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
             }
             val updated = job.replacing(index, item.copy(saved = saved, prepared = null, digest = digest,
                 outputDigest = outputDigest, outputSize = outputSize, captureDay = capture?.day,
-                duplicate = duplicate != null, problem = null))
+                duplicate = duplicate != null, problem = null, error = null, skipped = false))
             val complete = updated.savedCount == updated.items.size
             val result = migrateLegacyBoundary(updated.copy(status = if (complete) CameraJobStatus.COMPLETE else CameraJobStatus.ACTIVE,
                 committed = job.committed || complete))
@@ -359,10 +386,10 @@ internal class CameraImportStore(private val directory: File, private val tempor
             check()
             val read = input.read(bytes); if (read < 0) break
             count += read
-            if (count > expected) throw IOException("Camera original size changed")
+            if (count > expected) throw CameraPhotoImportException("Camera original size changed")
             digest.update(bytes, 0, read)
         }
-        if (count != expected) throw IOException("Camera original size changed")
+        if (count != expected) throw CameraPhotoImportException("Camera original size changed")
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
     private fun validHeader(file: File, raw: Boolean): Boolean {
@@ -373,7 +400,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
     private fun safeName(name: String): String {
         val file = name.substringAfterLast('/').substringAfterLast('\\').trim()
         if (file.isBlank() || file.startsWith('.') || file.any { it.isISOControl() || it in ":*?\"<>|" } ||
-            file.toByteArray().size > 240) throw IOException("Invalid camera filename")
+            file.toByteArray().size > 240) throw CameraPhotoImportException("Invalid camera filename")
         return file
     }
     private fun validDigest(value: String?) = value?.matches(Regex("[0-9a-f]{64}")) == true

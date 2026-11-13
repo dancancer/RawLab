@@ -257,6 +257,56 @@ public final class SonyMobileSessionTest {
     }
 
     @Test
+    public void listPhotosExceeding10000FilesThrowsPhotoLimitAndKeepsSessionOpen() throws Exception {
+        byte[] thumb = new byte[]{0x09, 0x08, 0x07};
+        try (FakeServer server = new FakeServer(command -> {
+            int nextIndex = 1;
+            for (int page = 0; page < 101; page++) {
+                Request list = readRequest(command);
+                assertEquals(0x923c, list.operation);
+                int pageCount = page < 100 ? 100 : 1;
+                ByteArrayOutputStream body = new ByteArrayOutputStream();
+                body.write(new byte[144]);
+                body.write(SonyMobileSession.u32(pageCount));
+                for (int item = 0; item < pageCount; item++) {
+                    int id = nextIndex++;
+                    long created = 1_730_000_000_000L + id * 1000L;
+                    byte[] path = String.format(java.util.Locale.ROOT, "/DCIM/100MSDCF/DSC%05d.ARW\0", id).getBytes("UTF-8");
+                    body.write(concat(
+                            SonyMobileSession.u32(1), SonyMobileSession.u32(id), new byte[20],
+                            SonyMobileSession.u32((int) created), SonyMobileSession.u32((int) (created >>> 32)),
+                            new byte[36], SonyMobileSession.u32(0), SonyMobileSession.u32(1),
+                            SonyMobileSession.u32(1), SonyMobileSession.u32(path.length), path,
+                            SonyMobileSession.u32(0), SonyMobileSession.u32(104), SonyMobileSession.u32(0),
+                            new byte[32], new byte[12]));
+                }
+                byte[] bytes = body.toByteArray();
+                sendData(command, list.transaction, bytes, bytes.length);
+            }
+            Request preview = readRequest(command);
+            assertEquals(0x923e, preview.operation);
+            sendData(command, preview.transaction, thumb, thumb.length);
+        })) {
+            try (SonyMobileSession session = new SonyMobileSession(server.factory(),
+                    InetAddress.getLoopbackAddress(), UUID.randomUUID(), message -> {})) {
+                SonyMobileSession.Device device = new SonyMobileSession.Device("Sony Corporation", "ILCE-7CM2",
+                        "2.00", new java.util.HashSet<>(Arrays.asList(0x923c, 0x923d, 0x923e)));
+                try {
+                    session.listPhotos(device);
+                    fail("expected photo limit exceeded");
+                } catch (CameraMediaSession.PhotoLimitExceededException expected) {
+                    assertEquals(10000, expected.recentAssets.size());
+                    assertEquals("DSC10001.ARW", expected.recentAssets.get(0).name);
+                    assertTrue(session.isOpen());
+                    assertFalse(server.clients.stream().anyMatch(Socket::isClosed));
+                    assertArrayEquals(thumb, session.preview(expected.recentAssets.get(0), false));
+                }
+            }
+            server.finish();
+        }
+    }
+
+    @Test
     public void assetKeyIncludesNameToDistinguishRenamedLocator() throws Exception {
         SonyMobileSession.Asset first = new SonyMobileSession.Asset(null, CONTENT, FILE,
                 "DSC00001.ARW", 100, 123);

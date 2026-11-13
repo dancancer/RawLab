@@ -25,7 +25,7 @@ internal class CameraTetherQueue(private val store: CameraImportStore, private v
                     if (count >= MAX_PENDING || bytes + photo.size > MAX_PENDING_BYTES) throw CameraTetherBacklogException()
                     count++; bytes += photo.size
                     download(photo, output)
-                }, onJob))
+                }, onJob, continueOnPhotoError = false))
             }
             val (updated, batch) = journal.reserve(run, observed)
             run = updated
@@ -58,7 +58,7 @@ internal class CameraTetherQueue(private val store: CameraImportStore, private v
             val verified = try {
                 receiveCameraJob(store, job, permit, { original, output ->
                     download(matches.getValue(original.key), output)
-                }, onJob)
+                }, onJob, continueOnPhotoError = false)
             } catch (_: CameraImportSourceChanged) { throw CameraTetherSourceException() }
             if (verified.status != CameraJobStatus.COMPLETE) throw CameraTetherSourceException()
         }

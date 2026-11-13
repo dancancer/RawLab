@@ -36,7 +36,7 @@ internal object CameraJPEGProcessing {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(source.path, bounds)
         if (bounds.outWidth !in 1..65_535 || bounds.outHeight !in 1..65_535)
-            throw IOException("Cannot decode camera JPEG")
+            throw CameraPhotoImportException("Cannot decode camera JPEG")
         val requested = options.longEdge ?: max(bounds.outWidth, bounds.outHeight)
         val scale = minOf(1f, requested.toFloat() / max(bounds.outWidth, bounds.outHeight))
         val targetWidth = (bounds.outWidth * scale).roundToInt().coerceAtLeast(1)
@@ -53,7 +53,7 @@ internal object CameraJPEGProcessing {
             inPreferredConfig = Bitmap.Config.ARGB_8888
         }
         try {
-            val decoded = BitmapFactory.decodeFile(source.path, decode) ?: throw IOException("Cannot decode camera JPEG")
+            val decoded = BitmapFactory.decodeFile(source.path, decode) ?: throw CameraPhotoImportException("Cannot decode camera JPEG")
             try {
                 val bitmap = if (decoded.width == targetWidth && decoded.height == targetHeight) decoded
                     else Bitmap.createScaledBitmap(decoded, targetWidth, targetHeight, true)
@@ -62,7 +62,7 @@ internal object CameraJPEGProcessing {
                     destination.parentFile?.mkdirs()
                     FileOutputStream(destination).use { output ->
                         if (!bitmap.compress(Bitmap.CompressFormat.JPEG, options.quality, output))
-                            throw IOException("Cannot encode camera JPEG")
+                            throw CameraPhotoImportException("Cannot encode camera JPEG")
                         output.fd.sync()
                     }
                     copyExif(source, destination)
@@ -108,7 +108,7 @@ internal object CameraJPEGProcessing {
 
     private fun copyExif(source: File, destination: File) {
         val input = runCatching { ExifInterface(source) }.getOrNull() ?: return
-        val output = runCatching { ExifInterface(destination) }.getOrElse { throw IOException("Cannot open camera JPEG metadata", it) }
+        val output = runCatching { ExifInterface(destination) }.getOrElse { throw CameraPhotoImportException("Cannot open camera JPEG metadata", it) }
         val orientation = input.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
         output.setAttribute(ExifInterface.TAG_ORIENTATION,
             (orientation.takeIf { it in 1..8 } ?: ExifInterface.ORIENTATION_NORMAL).toString())
@@ -121,7 +121,7 @@ internal object CameraJPEGProcessing {
             ExifInterface.TAG_MODEL,
             ExifInterface.TAG_LENS_MODEL,
         ).forEach { tag -> input.getAttribute(tag)?.let { output.setAttribute(tag, it) } }
-        output.saveAttributes()
+        try { output.saveAttributes() } catch (error: IOException) { throw CameraPhotoImportException("Cannot save camera JPEG metadata", error) }
     }
 
     private fun hash(file: File): CameraProcessedFile {
