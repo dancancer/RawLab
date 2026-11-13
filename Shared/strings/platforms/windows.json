@@ -4291,6 +4291,10 @@
     "暗角校正": {
       "formats": [],
       "source": "暗角校正"
+    },
+    "更新包未通过验证，已拒绝": {
+      "formats": [],
+      "source": "更新包未通过验证，已拒绝"
     }
   },
   "overrides": {
@@ -5939,6 +5943,14 @@
       "fr": "Le fichier original a été remplacé. Abandonner les réglages non enregistrés et rouvrir la photo ?",
       "ja": "元のファイルが置き換えられました。未保存の調整を破棄して写真を開き直しますか？",
       "es": "El archivo original se ha reemplazado. ¿Descartar los ajustes sin guardar y volver a abrir la foto?"
+    },
+    "更新包未通过验证，已拒绝": {
+      "zh-Hans": "更新包未通过验证，已拒绝",
+      "en": "The update package failed verification and was rejected.",
+      "de": "Das Update-Paket hat die Prüfung nicht bestanden und wurde abgelehnt.",
+      "fr": "Le paquet de mise à jour n’a pas passé la vérification et a été refusé.",
+      "es": "El paquete de actualización no superó la verificación y se rechazó.",
+      "ja": "更新パッケージは検証に合格しなかったため、拒否されました。"
     }
   }
 }

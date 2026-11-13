@@ -534,6 +534,7 @@
     "曲线模式与控制点": "Curve mode and points",
     "更多": "More",
     "更换预览照片": "Change preview photo",
+    "更新包未通过验证，已拒绝": "The update package failed verification and was rejected.",
     "更新失败": "Update failed",
     "更新已完成": "Update complete",
     "更新已校验，请选择安装时间": "Update verified; choose when to install",

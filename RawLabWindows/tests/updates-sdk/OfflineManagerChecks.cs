@@ -77,6 +77,7 @@ internal static class OfflineManagerChecks
             var adapterBackups=Path.Combine(adapterStore.DirectoryPath,"Backups");
             check(controller.State.Phase==UpdatePhase.Failed && controller.State.Failure?.Stage==UpdatePhase.Verifying &&
                 controller.State.Failure?.Code=="signature" && !controller.BlocksEditing && !controller.RequiresRecovery &&
+                UpdatePresentation.FailureHeading(controller.State.Failure!, controller.RequiresRecovery)=="更新包未通过验证，已拒绝" &&
                 controller.State.BackupPath==null && (!Directory.Exists(adapterBackups) || Directory.GetDirectories(adapterBackups).Length==0),
                 "Tampered cached package in production VelopackUpdateAdapter is rejected before backup or installer dispatch");
             manager=Manager(new SignedUpdateSource(trust,"0.8.2",client,()=>now),"cancelled");update=await manager.CheckForUpdatesAsync();

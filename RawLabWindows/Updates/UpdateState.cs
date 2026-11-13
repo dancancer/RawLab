@@ -173,7 +173,7 @@ internal static class UpdatePresentation
         failure.Stage == UpdatePhase.Verifying && failure.Code != "trust_temporary";
     public static string? FailureHeading(UpdateFailure failure, bool requiresRecovery) =>
         requiresRecovery ? "更新未完成，请查看恢复说明" :
-        IsRejected(failure) ? "验证失败" : null;
+        IsRejected(failure) ? "更新包未通过验证，已拒绝" : null;
     public static string Phase(UpdatePhase phase) => phase switch
     {
         UpdatePhase.Idle => "尚未发现可安装的更新",
