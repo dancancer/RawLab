@@ -191,6 +191,15 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         model.beginHSLTarget(CGPoint(x: 0.5, y: 0.5)); model.moveHSLTarget(10); model.open(second); try rendered(model)
         try check(model.settings.hslSettings.isIdentity && !model.hslTargetInteraction.isWaiting,
             "source switch discards a pending native target sample")
+        model.selectAdjustmentTool(.hsl); model.hslTargetEnabled = true
+        model.beginHSLTarget(CGPoint(x: 0.5, y: 0.5))
+        try check(model.referenceSource(second).hdrFingerprint == nil && model.hslTargetNotice != .stale &&
+            model.hslTargetInteraction.isWaiting, "an accepted preview without a gain map stays current for target sampling")
+        try sampled(); model.endHSLTarget(); try rendered(model)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: second.path)
+        model.beginHSLTarget(CGPoint(x: 0.5, y: 0.5))
+        try check(model.hslTargetNotice == .stale && !model.hslTargetInteraction.isWaiting,
+            "a rewritten source without a gain map still reports a changed preview")
     }
 
     static func presetChecks(root: URL, first: URL, second: URL) throws {
