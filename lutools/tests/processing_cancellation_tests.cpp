@@ -566,7 +566,8 @@ int main() {
                     fmt.label + " encoder checkpoint and leaves no output file";
                 check(allDirectLatched, directLatchLabel.c_str());
 
-                // 2) C ABI sony2fuji_process: fire only on poll #1 (subsequent polls return 0) and across every encoder-stage poll.
+                // 2) C ABI sony2fuji_process: fire one non-zero pulse at every poll 1..total,
+                // including the pre-encoder parallel pixel stages.
                 struct TracePolls {
                     std::filesystem::path directory;
                     std::atomic<int> calls{0};
@@ -596,15 +597,13 @@ int main() {
 
                 const int totalFfiPolls = trace.calls.load();
                 const int stagingStart = trace.firstStagingPoll.load();
-                const int quantizeBlocks = static_cast<int>((static_cast<size_t>(kLatchW) * kLatchH + 16383u) / 16384u);
-                const int encoderWindowStart = fmt.ffiFormat == SONY2FUJI_OUTPUT_JPEG
-                    ? std::max(1, stagingStart - quantizeBlocks - 1)
-                    : std::max(1, stagingStart);
 
-                std::vector<int> targetPolls = {1};
-                for (int p = encoderWindowStart; p <= totalFfiPolls; ++p) {
-                    if (p != 1) targetPolls.push_back(p);
-                }
+                // 覆盖全部中间轮询点（含编码器窗口之前的并行像素阶段，如 applyPhotoLook 的
+                // parallelPixelRanges）：非粘性 one-shot 脉冲在这些点必须被锁存成 CANCELLED，
+                // 否则被跳过的像素块会被静默落盘成坏文件并返回 OK。
+                std::vector<int> targetPolls;
+                targetPolls.reserve(static_cast<size_t>(totalFfiPolls));
+                for (int p = 1; p <= totalFfiPolls; ++p) targetPolls.push_back(p);
 
                 bool allFfiLatched = traceSt == SONY2FUJI_STATUS_OK && stagingStart > 0 && totalFfiPolls >= stagingStart;
                 for (int targetPoll : targetPolls) {
