@@ -116,6 +116,44 @@ import Foundation
             check(candidate.settings.hdr?.isIdentity==true && candidate.settings.isHDREditing && candidate.filmID==photograph.filmID &&
                   candidate.settings.exposure==active.exposure,"all reset lost mode or dormant SDR snapshot")
         } else { fatalError("HDR all reset was not prepared") }
+        var modeSource = Adjustments(); modeSource.exposure = 1; modeSource.proRAWDecodeVersion = 2
+        var modeHDR = try modeSource.withHDRMode(true, sourceIsHDR: false, cameraRAW: true)
+        modeHDR.set(.exposure, to: 2); modeHDR.activeAIDenoise = true
+        let modeSDR = try modeHDR.withHDRMode(false, sourceIsHDR: false, cameraRAW: true)
+        var cleanSDR = modeSDR; cleanSDR.exposure = 0
+        check(!EditorAdjustmentRules.isModified(scope: .all, snapshot: PhotoEditState(settings: cleanSDR, filmID: ""), context: context),
+              "dormant HDR marked the SDR snapshot modified")
+        var sdrAll = modeSDR; sdrAll.resetAll()
+        check(sdrAll.hdr == modeSDR.hdr && sdrAll.hdrCameraAIEnabled && sdrAll.proRAWDecodeVersion == 2 && sdrAll.exposure == 0,
+              "SDR reset all changed the dormant HDR record or decode version")
+        if case .candidate(let candidate) = EditorAdjustmentRules.prepareReset(scope: .all, snapshot: PhotoEditState(settings: modeSDR, filmID: ""), context: context) {
+            check(candidate.settings.hdr == modeSDR.hdr && candidate.settings.hdrCameraAIEnabled &&
+                  candidate.settings.proRAWDecodeVersion == 2 && !candidate.settings.isHDREditing,
+                  "SDR all reset changed the dormant HDR record or decode version")
+            check(!EditorAdjustmentRules.isModified(scope: .all, snapshot: candidate, context: context),
+                  "SDR all reset left the all marker set")
+            if case .unchanged = EditorAdjustmentRules.prepareReset(scope: .all, snapshot: candidate, context: context) {} else {
+                fatalError("SDR all reset is not idempotent")
+            }
+            let backToHDR = try candidate.settings.withHDRMode(true, sourceIsHDR: false, cameraRAW: true)
+            check(backToHDR.hdr == modeHDR.hdr && backToHDR.activeAIDenoise && AdjustmentParameter.exposure.value(from: backToHDR) == 2 &&
+                  backToHDR.proRAWDecodeVersion == 2, "HDR edit did not survive an SDR all reset")
+        } else { fatalError("SDR all reset was not prepared") }
+        var hdrAll = modeHDR; hdrAll.resetAll()
+        check(hdrAll.isHDREditing && hdrAll.hdr?.isIdentity == true && hdrAll.exposure == 1 && hdrAll.proRAWDecodeVersion == 2,
+              "HDR reset all changed the dormant SDR snapshot or decode version")
+        if case .candidate(let candidate) = EditorAdjustmentRules.prepareReset(scope: .all, snapshot: PhotoEditState(settings: modeHDR, filmID: ""), context: context) {
+            check(candidate.settings.hdr?.isIdentity == true && candidate.settings.exposure == 1 && candidate.settings.proRAWDecodeVersion == 2,
+                  "HDR all reset changed the dormant SDR snapshot or decode version")
+            check(!EditorAdjustmentRules.isModified(scope: .all, snapshot: candidate, context: context),
+                  "HDR all reset left the all marker set despite dormant SDR")
+            if case .unchanged = EditorAdjustmentRules.prepareReset(scope: .all, snapshot: candidate, context: context) {} else {
+                fatalError("HDR all reset is not idempotent")
+            }
+            let backToSDR = try candidate.settings.withHDRMode(false, sourceIsHDR: false, cameraRAW: true)
+            check(!backToSDR.isHDREditing && backToSDR.exposure == 1 && backToSDR.proRAWDecodeVersion == 2,
+                  "SDR edit did not survive an HDR all reset")
+        } else { fatalError("HDR all reset with dormant SDR was not prepared") }
         var effect=Adjustments(); effect.photoEffects=PhotoEffectsSettings(); effect.photoEffects?.vignetteMidpoint=60
         let hdrFromEffect = try effect.withHDRMode(true, sourceIsHDR: true)
         let restoredEffect = try hdrFromEffect.withHDRMode(false, sourceIsHDR: true)

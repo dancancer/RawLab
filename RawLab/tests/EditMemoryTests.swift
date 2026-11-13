@@ -11,6 +11,16 @@ struct EditMemoryTests {
         }
     }
 
+    static func resetAll(_ settings: RawSettings,
+                         context: EditorAdjustmentContext = .init(isRaw: true, defaultExposureMode: .scene,
+                                                                  cameraTemperature: 6500, cameraTint: 0)) -> RawSettings {
+        switch EditorAdjustmentRules.prepareReset(.all, snapshot: PhotoEditState(settings: settings), context: context) {
+        case .candidate(let state, _): return state.settings
+        case .unchanged: return settings
+        case .blocked(let reason): fatalError("unexpected reset block: \(reason)")
+        }
+    }
+
     static func main() throws {
         let defaultObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(RawSettings.default)) as! [String: Any]
         check((defaultObject["processing"] as? [String: Any])?["version"] as? Int == 3,
@@ -18,10 +28,13 @@ struct EditMemoryTests {
         check(defaultObject["x3fMode"] as? String == "normal-v1", "fresh settings select normal X3F rendering")
         var oldObject = defaultObject
         oldObject.removeValue(forKey: "x3fMode")
-        let oldSettings = try JSONDecoder().decode(RawSettings.self, from: JSONSerialization.data(withJSONObject: oldObject))
-        let oldEncoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(oldSettings.resettingAdjustments())) as! [String: Any]
+        var oldSettings = try JSONDecoder().decode(RawSettings.self, from: JSONSerialization.data(withJSONObject: oldObject))
+        oldSettings.exposure = 0.5
+        let oldEncoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(resetAll(oldSettings))) as! [String: Any]
         check(oldEncoded["x3fMode"] as? String == "legacy", "old X3F records and reset preserve legacy pixels")
-        let freshEncoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(RawSettings.default.resettingAdjustments())) as! [String: Any]
+        var freshEdited = RawSettings.default
+        freshEdited.exposure = 0.5
+        let freshEncoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(resetAll(freshEdited))) as! [String: Any]
         check(freshEncoded["x3fMode"] as? String == "normal-v1", "fresh normal mode survives reset")
         for (distortion, tca, vignetting) in [
             (true, false, false),
@@ -145,7 +158,7 @@ struct EditMemoryTests {
         legacy.removeValue(forKey: "lensCorrection")
         let legacySettings = try JSONDecoder().decode(RawSettings.self, from: JSONSerialization.data(withJSONObject: legacy))
         check(legacySettings.processing == .legacy, "missing identity preserves released processing")
-        let resetLegacy = legacySettings.resettingAdjustments()
+        let resetLegacy = resetAll(legacySettings)
         check(resetLegacy.processing == .legacy && resetLegacy.exposure == 0 && !resetLegacy.denoise.enabled,
               "reset all preserves legacy processing while clearing adjustments")
         let resetIdentity = PhotoIdentity(resourceIdentifier: "reset-v1")
@@ -165,6 +178,47 @@ struct EditMemoryTests {
         }
         check(scopedReset.settings.processing == .legacy, "scoped reset all preserves legacy identity")
         check(scopedReset.settings.x3fMode == .legacy, "scoped reset preserves legacy X3F identity")
+        var modeSource = RawSettings.default
+        modeSource.exposure = 1
+        modeSource.proRAWDecodeVersion = 2
+        var modeHDR = try modeSource.withHDRMode(true, sourceIsHDR: true)
+        AdjustmentKind.exposure.setValue(2, in: &modeHDR)
+        let modeSDR = try modeHDR.withHDRMode(false, sourceIsHDR: true)
+        let modeContext = EditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor)
+        var cleanSDR = modeSDR
+        cleanSDR.exposure = 0
+        check(!EditorAdjustmentRules.isModified(.all, snapshot: PhotoEditState(settings: cleanSDR), context: modeContext),
+              "dormant HDR does not mark normal mode modified")
+        guard case .candidate(let sdrAll, _) = EditorAdjustmentRules.prepareReset(.all,
+            snapshot: PhotoEditState(settings: modeSDR), context: modeContext) else {
+            fatalError("expected normal-mode reset candidate")
+        }
+        check(sdrAll.settings.hdr == modeSDR.hdr && sdrAll.settings.proRAWDecodeVersion == 2 &&
+              !sdrAll.settings.isHDREditing && sdrAll.settings.exposure == 0,
+              "normal reset all preserves dormant HDR and decode version")
+        check(!EditorAdjustmentRules.isModified(.all, snapshot: sdrAll, context: modeContext),
+              "normal reset all clears the all marker despite dormant HDR")
+        if case .unchanged = EditorAdjustmentRules.prepareReset(.all, snapshot: sdrAll, context: modeContext) {
+            check(true, "normal reset all is idempotent with dormant HDR")
+        } else { fatalError("normal reset all repeated with dormant HDR") }
+        let backToHDR = try sdrAll.settings.withHDRMode(true, sourceIsHDR: true)
+        check(backToHDR.hdr == modeHDR.hdr && AdjustmentKind.exposure.value(from: backToHDR) == 2 &&
+              backToHDR.proRAWDecodeVersion == 2, "HDR edit survives a normal reset all")
+        guard case .candidate(let hdrAll, _) = EditorAdjustmentRules.prepareReset(.all,
+            snapshot: PhotoEditState(settings: modeHDR), context: modeContext) else {
+            fatalError("expected HDR reset candidate")
+        }
+        check(hdrAll.settings.isHDREditing && hdrAll.settings.hdr?.isIdentity == true &&
+              hdrAll.settings.exposure == 1 && hdrAll.settings.proRAWDecodeVersion == 2,
+              "HDR reset all preserves dormant normal snapshot and decode version")
+        check(!EditorAdjustmentRules.isModified(.all, snapshot: hdrAll, context: modeContext),
+              "HDR reset all clears the all marker despite dormant normal edits")
+        if case .unchanged = EditorAdjustmentRules.prepareReset(.all, snapshot: hdrAll, context: modeContext) {
+            check(true, "HDR reset all is idempotent with dormant normal edits")
+        } else { fatalError("HDR reset all repeated with dormant normal edits") }
+        let backToSDR = try hdrAll.settings.withHDRMode(false, sourceIsHDR: true)
+        check(!backToSDR.isHDREditing && backToSDR.exposure == 1 && backToSDR.proRAWDecodeVersion == 2,
+              "normal edit survives an HDR reset all")
         try store.save(resetIdentity, state: scopedReset)
         let scopedStore = try EditPersistence(directory: root)
         check(try scopedStore.state(for: resetIdentity)?.settings.processing == .legacy,
@@ -177,7 +231,7 @@ struct EditMemoryTests {
             var settings = try JSONDecoder().decode(RawSettings.self,
                 from: JSONSerialization.data(withJSONObject: versioned))
             settings.exposure = 0.5
-            settings = settings.resettingAdjustments()
+            settings = resetAll(settings)
             check(settings.processing.version == version, "reset preserves every supported processing version")
         }
         for identity: Any in [NSNull(), ["family": "other", "version": 2, "quality": "standard"],

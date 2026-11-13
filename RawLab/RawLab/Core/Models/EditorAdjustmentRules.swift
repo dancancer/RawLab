@@ -246,6 +246,9 @@ enum EditorAdjustmentRules {
             var neutral = self.defaults(context)
             neutral.processing = settings.processing
             neutral.x3fMode = settings.x3fMode
+            // 普通模式重置不触碰休眠的 HDR 快照及其配套解码标识。
+            neutral.hdr = settings.hdr
+            neutral.proRAWDecodeVersion = settings.proRAWDecodeVersion
             return neutral
         case .tool(let tool):
             switch tool {

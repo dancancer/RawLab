@@ -590,15 +590,6 @@ struct RawSettings: Codable, Equatable {
 
     var usesCustomWhiteBalance: Bool { whiteBalanceMode == .custom }
 
-    func resettingAdjustments() -> RawSettings {
-        if isHDREditing { var neutral = self; neutral.hdr?.reset(); return neutral }
-        var neutral = Self.default
-        neutral.hdr = hdr
-        neutral.processing = processing
-        neutral.x3fMode = x3fMode
-        return neutral
-    }
-
     func customWhiteBalance(cameraTemperature: Double, cameraTint: Double) -> RawSettings {
         var result = self
         if whiteBalanceMode == .camera {
