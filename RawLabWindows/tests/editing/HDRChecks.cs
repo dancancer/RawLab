@@ -170,9 +170,9 @@ internal static class HDRChecks
               !EditorAdjustmentRules.IsModified(all, proRawReset.Candidate),
             "SDR all-reset preserves dormant ProRAWDecodeVersion and clears IsModified(All)");
 
-        void CheckHdrIsolation(Adjustments baseSdr, int? proRawVersion, bool hdrCameraAI)
+        void CheckHdrIsolation(AdjustmentSnapshot baseSdr, int? proRawVersion, bool hdrCameraAI)
         {
-            var unedited = new SavedEdit(rawIdentity, (baseSdr.Capture() with {
+            var unedited = new SavedEdit(rawIdentity, (baseSdr with {
                 HDR = new HDRSettings { Mode = HDRMode.Hdr },
                 ProRAWDecodeVersion = proRawVersion,
                 HDRCameraAIEnabled = false
@@ -202,9 +202,10 @@ internal static class HDRChecks
         var dormantSdr = new Adjustments { Denoise = DenoiseSettings.Clean, AIDenoiseEnabled = true };
         dormantSdr.ResolveWhiteBalance((5200, 8));
         dormantSdr.Set(Parameter.Exposure, .75);
-        dormantSdr.MasterRecipeID = "unknown-dormant-recipe";
-        CheckHdrIsolation(dormantSdr, proRawVersion: 1, hdrCameraAI: false);
-        CheckHdrIsolation(dormantSdr, proRawVersion: null, hdrCameraAI: true);
+        // AdjustmentSnapshot is the persisted record, so an unknown recipe id is expressed there.
+        var dormantSdrSnapshot = dormantSdr.Capture() with { MasterRecipeID = "unknown-dormant-recipe" };
+        CheckHdrIsolation(dormantSdrSnapshot, proRawVersion: 1, hdrCameraAI: false);
+        CheckHdrIsolation(dormantSdrSnapshot, proRawVersion: null, hdrCameraAI: true);
     }
 
     private static void EnablingPreservesLegacyState()
