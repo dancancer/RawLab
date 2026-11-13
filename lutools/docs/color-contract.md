@@ -711,14 +711,21 @@ uses viewport-sized proxies during dragging and always submits a settled pass on
 No post-demosaic RGB tint approximation replaces camera-space white balance.
 
 `sony2fuji_session_set_cancellation_callback` optionally enables cooperative
-cancellation for `sony2fuji_process` PREVIEW+BUFFER calls and HSL probes. Guided
+cancellation for `sony2fuji_process` calls that render into a buffer and for every
+FINAL request, including file exports, plus HSL probes. Guided
 LUT compatibility previews retain their independent worker lifecycle. The serialized session
 worker installs and clears the callback; another thread may update its atomic
 signal. Cancellation returns `CANCELLED`, never a partial output buffer or probe,
 and cannot enter GPU Auto fallback. Checkpoints cover LibRaw progress, bounded CPU
 pixel ranges, resizing and GLES upload/dispatch/readback boundaries. A submitted GPU
 dispatch or an individual external-library kernel is not forcibly interrupted;
-the next checkpoint skips the remaining stages. File output ignores this callback.
+the next checkpoint skips the remaining stages. Every file encoder writes a staging
+file inside the target directory and re-checks cancellation before the atomic
+replace, so a cancelled FINAL export keeps an existing destination byte-identical
+and removes its staging file.
+Publishing replaces the directory entry: permission bits follow the destination
+that is being overwritten (otherwise `0666 & ~umask`), but a symbolic link is
+replaced by a regular file and extended attributes or ACLs are not carried over.
 Existing clients with no callback retain their rendering behavior. Android uses a
 generation captured for the entire preview request, so replacing work before JNI
 entry also cancels it; cancellation does not change the latest editing parameters.

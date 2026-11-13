@@ -2824,8 +2824,10 @@ sony2fuji_status sony2fuji_process(sony2fuji_session* session,
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
         if (session && aiEnabled(session)) session->ai->beginOperation("render");
 #endif
-        const bool cancellable = session && request && request->intent == SONY2FUJI_INTENT_PREVIEW &&
-            request->output_target == SONY2FUJI_TARGET_BUFFER;
+        // 取消对预览到缓冲区、以及 FINAL 导出（文件或缓冲区）都生效。编码器在替换目标文件
+        // 之前还有一次提交点检查，所以 FINAL 取消既不会留下半成品，也不会覆盖已有目标。
+        const bool cancellable = session && request &&
+            (request->output_target == SONY2FUJI_TARGET_BUFFER || request->intent == SONY2FUJI_INTENT_FINAL);
         sony2fuji::ProcessingCancellationScope cancellation(cancellable ?
             sony2fuji::ProcessingCancellation{session->cancellation_callback, session->cancellation_context} :
             sony2fuji::ProcessingCancellation{});
@@ -2887,9 +2889,9 @@ sony2fuji_status sony2fuji_session_create_hsl_probe(sony2fuji_session* session,
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
         if (aiEnabled(session)) session->ai->beginOperation("hsl_probe");
 #endif
-        sony2fuji::ProcessingCancellationScope cancellation(request->intent == SONY2FUJI_INTENT_PREVIEW ?
-            sony2fuji::ProcessingCancellation{session->cancellation_callback, session->cancellation_context} :
-            sony2fuji::ProcessingCancellation{});
+        // 探针只接受缓冲区目标，因此始终处于可取消范围内。
+        sony2fuji::ProcessingCancellationScope cancellation{
+            sony2fuji::ProcessingCancellation{session->cancellation_callback, session->cancellation_context}};
         auto probe = std::make_unique<sony2fuji_hsl_probe>();
         sony2fuji_buffer unused{};
         const auto status = processImpl(session, request, &unused, &probe->image);

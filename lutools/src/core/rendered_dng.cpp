@@ -1,5 +1,8 @@
 #include "rendered_dng.h"
 
+#include "output_file_mode.h"
+#include "processing_cancellation.h"
+
 #include <cstddef>
 #include <cstdio>
 #include <jpeglib.h>
@@ -8,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <csetjmp>
 #include <cmath>
 #include <cstdint>
@@ -162,21 +166,26 @@ public:
             throw;
         }
 #else
-        std::vector<char> temporaryName;
+        std::string temporaryName;
         int createdFd = -1;
         try {
             std::filesystem::path parent = destination.parent_path();
             if (parent.empty()) parent = ".";
             std::string basename = destination.filename().string();
             if (basename.empty()) basename = "rendered";
-            const std::string pattern =
-                (parent / (basename + ".rawlab-rendered-dng-XXXXXX")).string();
-            temporaryName.assign(pattern.begin(), pattern.end());
-            temporaryName.push_back('\0');
-            createdFd = ::mkstemp(temporaryName.data());
+            for (int attempt = 0; attempt < 64 && createdFd < 0; ++attempt) {
+                temporaryName = (parent / (basename + ".rawlab-rendered-dng-" + stagingSuffix() + ".tmp")).string();
+                // libtiff opens the descriptor for read/write even in "w" mode.
+                createdFd = ::open(temporaryName.c_str(), O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0666);
+                if (createdFd < 0) {
+                    if (errno != EEXIST) return false;
+                    temporaryName.clear(); // the name belongs to someone else; never unlink it
+                }
+            }
             if (createdFd < 0) return false;
+            preserveDestinationMode(createdFd, destination);
 
-            path_ = std::filesystem::path(temporaryName.data());
+            path_ = std::filesystem::path(temporaryName);
             fd_ = createdFd;
             createdFd = -1;
             tif_ = TIFFFdOpen(fd_, path_.c_str(), "w");
@@ -186,7 +195,7 @@ public:
         } catch (...) {
             closeFileDescriptor(createdFd);
             cleanup();
-            if (!temporaryName.empty()) ::unlink(temporaryName.data());
+            if (!temporaryName.empty()) ::unlink(temporaryName.c_str());
             throw;
         }
 #endif
@@ -613,6 +622,8 @@ ErrorCode saveRenderedDNG(const ImageData& image, const std::string& filepath) {
         return ErrorCode::ProcessingError;
     }
     if (!TIFFWriteDirectory(tif) || !TIFFFlush(tif)) return ErrorCode::IOError;
+    // 提交点：编码完成后、替换目标文件之前再看一次取消。
+    checkProcessingCancellation();
     try {
         if (!staging.publish(outputPath)) return ErrorCode::IOError;
     } catch (const std::bad_alloc&) {
