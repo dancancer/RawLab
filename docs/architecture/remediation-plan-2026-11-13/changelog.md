@@ -101,3 +101,4 @@
 - 2026-11-14 · compact 重基线交卷：**PR #306**（`839376a6`）——editor-minimum 1→6（Light 组默认展开事实+标识符集合断言）、可达性升级为「低于折行 scrollToVisible 后全可见」（引设计条文）、limitations 按实际常量更新；11 项复核维持；与 #303 同文件重叠已注先后处理。碳审在途（review-mwflrtjt）。
 - 2026-11-14 · #303 二轮交卷（`6740e06a`）：契约测试升级全量枚举（谓词命中者必须走共享列表/Native glob 且禁直引旧头，防谓词空转断言候选≥12）；ai-denoise 接入+删手工 AI_LINK 改 CORE_LINK，顺带根除 Bash 3.2 unbound-variable 型 exit-0 假绿（0 断言→32 断言真跑）。二轮复审在途（review-mwflydx7）。
 - 2026-11-14 · **PR #303 合入**（A 簇+全量枚举契约，总 63）；#306 approve 后按预案 rebase 收编共享列表形态（语义 union，复验后由 lead 合入）。
+- 2026-11-14 · **PR #306 合入**（`e4d88137`，总 64）：compact-controls 期望矩阵按 a74a6baf 重设计事实重基线，range-diff 自查零新增语义，rebase 收编 #303 共享列表形态。Mac 手动套件 16 个新红至此 **14 个闭环**（B3/ai-batch-native/system-menu-language 桌面行与 C 类 edit-model 护栏行除外，均挂账）。
