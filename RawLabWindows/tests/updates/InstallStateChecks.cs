@@ -54,7 +54,8 @@ internal static class InstallStateChecks
         reopenedRejected.RestoreAfterLaunch("0.8.2", "14", false);
         check(reopenedRejected.Phase == UpdatePhase.Failed && reopenedRejected.Failure?.Stage == UpdatePhase.Verifying && reopenedRejected.BackupPath == null,
             "Rejected pre-install verification survives restart without entering recovery");
-        check(UpdatePresentation.FailureHeading(state.Failure!, requiresRecovery: false) == "验证失败" &&
+        check(UpdatePresentation.FailureHeading(state.Failure!, requiresRecovery: false) == "更新包未通过验证，已拒绝" &&
+            UpdatePresentation.FailureHeading(new(UpdatePhase.Verifying, "verification", "Mismatch"), requiresRecovery: false) == "更新包未通过验证，已拒绝" &&
             UpdatePresentation.FailureHeading(new(UpdatePhase.Verifying, "trust_temporary", "Offline"), requiresRecovery: false) == null &&
             UpdatePresentation.FailureHeading(new(UpdatePhase.Checking, "operation", "Offline"), requiresRecovery: false) == null &&
             UpdatePresentation.FailureHeading(new(UpdatePhase.Installing, "operation", "Dispatch failed"), requiresRecovery: true) == "更新未完成，请查看恢复说明",

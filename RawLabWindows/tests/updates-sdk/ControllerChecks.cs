@@ -54,7 +54,9 @@ internal static class ControllerChecks
             await later.CheckAsync(false);
             check(later.State.Phase == UpdatePhase.Idle && adapter.Downloads == 0, "Skipped version is suppressed when automatic install is off");
             await later.CheckAsync(true); adapter.RejectSignature = true; await later.DownloadAsync();
-            check(later.State.Phase == UpdatePhase.Failed && later.State.Failure?.Stage == UpdatePhase.Verifying, "Signature rejection remains a verification failure");
+            check(later.State.Phase == UpdatePhase.Failed && later.State.Failure?.Stage == UpdatePhase.Verifying &&
+                UpdatePresentation.FailureHeading(later.State.Failure!, later.RequiresRecovery) == "更新包未通过验证，已拒绝",
+                "Signature rejection remains a verification failure");
             var reopened = new DesktopUpdateController(adapter, gate, store, "0.8.2", "14");
             check(reopened.State.Failure == later.State.Failure, "Closing and reopening preserves failure");
             adapter.RejectSignature = false; await later.RetryAsync();
@@ -392,8 +394,8 @@ internal static class ControllerChecks
                 controller.State.PreviousVersion == null && controller.State.PreviousBuild == null &&
                 controller.Preferences.SkippedVersion == null && NoBackups(),
                 "Pre-install signature rejection creates no backup and never locks the editor into recovery");
-            check(UpdatePresentation.FailureHeading(controller.State.Failure!, controller.RequiresRecovery) == "验证失败" && controller.CanCheck,
-                "Rejected package reports validation failure and keeps update check enabled");
+            check(UpdatePresentation.FailureHeading(controller.State.Failure!, controller.RequiresRecovery) == "更新包未通过验证，已拒绝" && controller.CanCheck,
+                "Rejected package reports package-rejected heading and keeps update check enabled");
 
             dirty = true; pendingEdit = "edited on previous version after rejection";
             check(!controller.BlocksEditing && gate.Prepare().Length == 0 && File.ReadAllText(photo) == pendingEdit,
@@ -423,6 +425,7 @@ internal static class ControllerChecks
             await reopened.ChooseAsync(UpdateInstallChoice.RestartNow);
             check(adapter.Installs == 0 && !reopened.BlocksEditing && !reopened.RequiresRecovery &&
                 reopened.State.Phase == UpdatePhase.Failed && reopened.State.Failure?.Stage == UpdatePhase.Verifying &&
+                UpdatePresentation.FailureHeading(reopened.State.Failure!, reopened.RequiresRecovery) == "更新包未通过验证，已拒绝" &&
                 reopened.State.BackupPath == null && reopened.State.PreviousVersion == null && NoBackups(),
                 "TOCTOU verification failure inside Install immediately discards the staged backup and avoids recovery lock");
 
@@ -432,7 +435,7 @@ internal static class ControllerChecks
             await reopened.ChooseAsync(UpdateInstallChoice.RestartNow);
             check(adapter.Installs == 0 && !reopened.BlocksEditing && !reopened.RequiresRecovery && NoBackups() &&
                 reopened.State.Phase == UpdatePhase.Failed && reopened.State.Failure?.Stage == UpdatePhase.Verifying &&
-                reopened.State.Failure?.Code == "trust_temporary" &&
+                reopened.State.Failure?.Code == "trust_temporary" && !UpdatePresentation.IsRejected(reopened.State.Failure!) &&
                 UpdatePresentation.FailureHeading(reopened.State.Failure!, reopened.RequiresRecovery) == null,
                 "Temporary revocation unavailability neither installs nor marks permanent validation or recovery failure");
             adapter.InstallVerifyError = null;
