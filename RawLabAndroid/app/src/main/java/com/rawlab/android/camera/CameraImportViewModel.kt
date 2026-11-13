@@ -67,6 +67,8 @@ internal data class CameraImportState(
     val legacyCameraTime: Boolean = false,
     val closing: Boolean = false,
     val cardSavingConfirmed: Boolean = false,
+    // 读不出的导入记录（隔离日志的 id）：界面可查看详情或确认放弃。
+    val unreadableLogs: List<String> = emptyList(),
 ) {
     val resumableIncrementalJob: CameraImportJob?
         get() {
@@ -186,7 +188,8 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
                 tether.restore(runs, jobs)
                 val pending = jobs.firstOrNull { it.status != CameraJobStatus.COMPLETE }
                 mutable.update { it.copy(preparing = false, jobs = jobs, job = pending ?: jobs.firstOrNull(), cameraId = pending?.cameraId,
-                    selected = pending?.items?.map { item -> item.photo.key }?.toSet().orEmpty()) }
+                    selected = pending?.items?.map { item -> item.photo.key }?.toSet().orEmpty(),
+                    unreadableLogs = store.unreadableJobIds.sorted()) }
             }
                 .onFailure { mutable.update { it.copy(preparing = false, message = R.string.camera_storage_failed) } }
         }
@@ -310,6 +313,23 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     fun confirmCardSaving(confirmed: Boolean) { if (!tether.state.value.active) mutable.update { it.copy(cardSavingConfirmed = confirmed) } }
     fun permissionDenied() { mutable.update { it.copy(message = R.string.camera_permissions) } }
     fun dismissMessage() { mutable.update { it.copy(failure = null, message = null) } }
+    /** 放弃全部读不出的导入记录：删除隔离日志，其待发布媒体由随后的孤儿清理回收。 */
+    fun discardUnreadableLogs() {
+        // 与 setDestination/selectJob 同门禁：store.load() 会改写活动任务并清理 .part，只能在停下的队列上跑。
+        if (mutable.value.transferring || mutable.value.preparing || mutable.value.closing || tether.state.value.active) return
+        viewModelScope.launch {
+            val refreshed = withContext(Dispatchers.IO) { storeLock.withLock {
+                store.unreadableJobIds.sorted().forEach { store.discardUnreadableJob(it) }
+                runCatching { store.load() }.getOrNull()
+            } }
+            mutable.update { state -> refreshed?.let { jobs ->
+                val pending = jobs.firstOrNull { it.status != CameraJobStatus.COMPLETE }
+                val current = state.job?.takeIf { job -> jobs.any { it.id == job.id } } ?: pending ?: jobs.firstOrNull()
+                state.copy(jobs = jobs, job = current, unreadableLogs = store.unreadableJobIds.sorted())
+            } ?: state.copy(unreadableLogs = store.unreadableJobIds.sorted(), message = R.string.camera_storage_failed) }
+            refreshed?.let { tether.refreshJobs(it) }
+        }
+    }
     fun setDestination(destination: CameraImportDestination) {
         if (mutable.value.transferring || mutable.value.preparing || tether.state.value.active) return
         preferences.edit().putString("destination-directory", destination.directory)

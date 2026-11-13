@@ -151,4 +151,45 @@ class CameraTetherJournalTest {
             journal.reserve(nearLimitRun, delta, CameraTetherObservationMode.Incremental(afterCursor = 9_994_999L))
         }
     }
+
+    @Test fun truncatedRunSlidesWindowPastLimitInsteadOfThrowing() = withJournal { root, journal ->
+        fun card(id: Int) = CameraPhoto("key-$id", "DSC%05d.ARW".format(id), 100L, id.toLong())
+        val baseline = (1..10_000).map(::card)
+        val run = journal.create("camera", "sony-test", baseline, CameraImportDestination(), truncatedListing = true)
+        assertTrue(run.truncatedListing)
+        // 满窗口列表且最旧一批滑出窗口：截断 run 按最近窗口语义继续，并为新增照片预留批次。
+        val added = (10_001..10_006).map(::card)
+        val slid = baseline.drop(6) + added
+        val (grown, batch) = journal.reserve(run, slid)
+        assertEquals(added, batch!!.photos)
+        assertEquals(baseline.size + added.size, grown.observedPhotos.size)
+        // 列表未满（窗口未成形）：即便 run 标记截断，旧对象缺席仍是来源变化。
+        assertThrows(CameraTetherSourceException::class.java) { journal.reserve(run, baseline.drop(3)) }
+        // 增量越过 10000：截断 run 继续预留批次，而不是抛上限把连接断掉。
+        val (crossed, crossing) = journal.reserve(run, baseline.drop(7) + (10_001..10_007).map(::card),
+            CameraTetherObservationMode.Incremental())
+        assertEquals(7, crossing!!.photos.size)
+        assertEquals(10_007, crossed.observedPhotos.size)
+        // rebase 按满窗口下界放行缺席旧对象，窗口标记随新快照刷新。
+        val rebased = journal.rebase(run.copy(shutterRequestedAt = 5L), baseline.drop(5) + (10_001..10_005).map(::card))
+        assertEquals(10_000, rebased.baseline.size)
+        assertNull(rebased.shutterRequestedAt)
+        assertTrue(rebased.truncatedListing)
+        // 换成一张全新小卡（窗口未成形、零重叠）：rebase 拒绝而不是整卡静默折入。
+        assertThrows(CameraTetherSourceException::class.java) { journal.rebase(run, listOf(card(10_001))) }
+        // 已登记批次的原件缺席：即便窗口满且它不是最旧，也必须判来源变化。
+        val withBatch = journal.reserve(run, baseline.drop(1) + listOf(card(10_001))).first
+        assertThrows(CameraTetherSourceException::class.java) { journal.rebase(withBatch, baseline) }
+        // 同名同尺寸同拍摄时间的歧义候选（两条元数据相同的对象）不允许被窗口吞掉，判来源变化。
+        assertThrows(CameraTetherSourceException::class.java) {
+            journal.rebase(run, baseline.drop(2) + listOf(card(1), CameraPhoto("key-1-alt", "DSC00001.ARW", 100L, 1L)))
+        }
+        // 持久化保留截断标记。
+        assertTrue(CameraTetherJournal(root).load().single().truncatedListing)
+        // 对照：非截断 run 同一轮询仍抛上限。
+        val normal = journal.create("camera", "sony-test", baseline, CameraImportDestination())
+        assertThrows(com.rawlab.android.camera.protocol.CameraMediaSession.PhotoLimitExceededException::class.java) {
+            journal.reserve(normal, slid, CameraTetherObservationMode.Incremental())
+        }
+    }
 }

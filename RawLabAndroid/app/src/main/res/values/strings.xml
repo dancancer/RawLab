@@ -189,6 +189,9 @@
     <string name="camera_transfer_format">"Transfer format"</string>
     <string name="camera_unknown_capture_date">"Unknown capture date"</string>
     <string name="camera_unknown_date_hint">"Photos without a capture date are saved in the “Unknown date” folder."</string>
+    <string name="camera_unreadable_discard">"Discard"</string>
+    <string name="camera_unreadable_logs">"%1$d import records could not be read."</string>
+    <string name="camera_unreadable_title">"Unreadable import records"</string>
     <string name="camera_use_wifi">"Connected, continue"</string>
     <string name="camera_view_album">"View in gallery"</string>
     <string name="camera_view_all_photos">"View all photos"</string>
@@ -477,6 +480,7 @@
     <string name="tether_capturing">"Capturing"</string>
     <string name="tether_card_confirm">"I confirmed that the camera also saves originals to its memory card."</string>
     <string name="tether_card_hint">"Select single shooting on the camera and keep originals on its memory card. Live-view images and thumbnails do not confirm that originals were saved."</string>
+    <string name="tether_confirm_continue">"Confirm the result and continue"</string>
     <string name="tether_foreground">"Leaving this page will pause tethering. Saved photos are not affected."</string>
     <string name="tether_grid">"Composition grid"</string>
     <string name="tether_intro">"Frame and capture single photos from your phone; the original RAW and JPEG files on the camera card are saved automatically."</string>
@@ -487,6 +491,7 @@
     <string name="tether_pause">"Pause tethering"</string>
     <string name="tether_paused">"Tethering paused"</string>
     <string name="tether_pending">"%1$d photos waiting to be received."</string>
+    <string name="tether_photo_limit">"The camera holds more files than the tethering limit; only the most recent photos are listed."</string>
     <string name="tether_preparing">"Preparing live view"</string>
     <string name="tether_preview_missing">"Preview temporarily unavailable"</string>
     <string name="tether_preview_note">"Preview image; pinch to zoom"</string>

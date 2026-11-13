@@ -189,6 +189,9 @@
     <string name="camera_transfer_format">"転送形式"</string>
     <string name="camera_unknown_capture_date">"撮影日不明"</string>
     <string name="camera_unknown_date_hint">"撮影日がない写真は「Unknown date」フォルダに保存されます。"</string>
+    <string name="camera_unreadable_discard">"破棄"</string>
+    <string name="camera_unreadable_logs">"読み込めないインポート記録が %1$d 件あります。"</string>
+    <string name="camera_unreadable_title">"読み込めないインポート記録"</string>
     <string name="camera_use_wifi">"接続済み、続ける"</string>
     <string name="camera_view_album">"ギャラリーで表示"</string>
     <string name="camera_view_all_photos">"すべての写真を表示"</string>
@@ -477,6 +480,7 @@
     <string name="tether_capturing">"撮影中"</string>
     <string name="tether_card_confirm">"カメラが原本をメモリーカードにも保存することを確認しました。"</string>
     <string name="tether_card_hint">"カメラで「1枚撮影」を選び、原本をメモリーカードにも保存してください。ライブビュー画像やサムネイルは、原本の保存成功を示すものではありません。"</string>
+    <string name="tether_confirm_continue">"結果を確認して続行"</string>
     <string name="tether_foreground">"このページを離れるとテザー撮影を一時停止します。保存済みの写真には影響しません。"</string>
     <string name="tether_grid">"構図グリッド"</string>
     <string name="tether_intro">"スマートフォンで構図を確認して1枚ずつ撮影し、カメラカード内のRAWとJPEGのオリジナルを自動保存します。"</string>
@@ -487,6 +491,7 @@
     <string name="tether_pause">"テザー撮影を一時停止"</string>
     <string name="tether_paused">"テザー撮影を一時停止しました"</string>
     <string name="tether_pending">"%1$d枚の写真を受信待ち"</string>
+    <string name="tether_photo_limit">"カメラ内のファイルがテザリング撮影の上限を超えるため、直近の写真のみを一覧表示します。"</string>
     <string name="tether_preparing">"ライブビューを準備中"</string>
     <string name="tether_preview_missing">"プレビューを一時的に表示できません"</string>
     <string name="tether_preview_note">"プレビュー。ピンチでズームできます。"</string>

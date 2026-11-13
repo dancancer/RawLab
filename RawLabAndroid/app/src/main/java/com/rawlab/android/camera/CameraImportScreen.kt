@@ -70,6 +70,7 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
     var draftFormat by rememberSaveable { mutableStateOf("all") }
     var draftDate by rememberSaveable { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf(false) }
+    var unreadableOpen by rememberSaveable { mutableStateOf(false) }
     DisposableEffect(model) { onDispose { model.cancelOpening() } }
     fun back() {
         model.cancelOpening()
@@ -241,6 +242,18 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
                     IconButton(onClick = model::dismissMessage) { Icon(Icons.Outlined.Close, stringResource(R.string.message_close)) }
                 }
             }
+            if (state.unreadableLogs.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(start = 12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.camera_unreadable_logs, state.unreadableLogs.size), Modifier.weight(1f).padding(vertical = 4.dp),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = { unreadableOpen = true }, modifier = Modifier.testTag("camera-unreadable-view")) {
+                    Text(stringResource(R.string.message_view))
+                }
+                TextButton(onClick = model::discardUnreadableLogs, enabled = !state.transferring && !state.preparing && !state.closing,
+                    modifier = Modifier.testTag("camera-unreadable-discard")) {
+                    Text(stringResource(R.string.camera_unreadable_discard))
+                }
+            }
             when {
                 preview != null -> {
                     CameraImage(model, preview, true, state.connected, state.transferring, Modifier.weight(1f).fillMaxWidth())
@@ -303,6 +316,12 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
     }
     if (destinationOpen) CameraImportSettings(state.destination,
         onSave = { model.setDestination(it); destinationOpen = false }, onDismiss = { destinationOpen = false })
+    if (unreadableOpen) AlertDialog(onDismissRequest = { unreadableOpen = false },
+        title = { Text(stringResource(R.string.camera_unreadable_title)) },
+        text = { Column(Modifier.verticalScroll(rememberScrollState())) {
+            state.unreadableLogs.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+        } },
+        confirmButton = { TextButton(onClick = { unreadableOpen = false }) { Text(stringResource(R.string.message_close)) } })
     if (filterOpen) ModalBottomSheet(onDismissRequest = { filterOpen = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         val dates = state.photos.mapNotNull { dateKey(it.created) }.distinct().sortedDescending()
         val count = state.photos.count { matches(it, draftFormat, draftDate) }

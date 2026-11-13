@@ -775,4 +775,278 @@ class CameraTetherLivenessTest {
         assertEquals("Legacy idle reconciliation must only send mount/list storage + handles = 3 ops", 3, largeReconcileOps)
         assertEquals("Expected 1 discovery + 2 transfer-check 0x1008 queries for 1 new legacy photo", 3, newPhoto1008)
     }
+
+    @Test
+    fun unregisteredFirstShotReconnectResumesInsteadOfFailingAgain() = withWorkspace { _, store, journal, lock ->
+        val offlineShot = FakeCardEntry(1, 1, "DSC00001.ARW", 1_730_000_001_000L, rawPayload(40))
+        val clientId = UUID.randomUUID()
+        val destination = CameraImportDestination()
+        FakeTetherCameraServer().use { camera ->
+            val clock = VirtualLoopClock(camera, initialMillis = 10_000L)
+            val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val controller = CameraTetherController(controllerScope, store, journal, lock, {}, clock::now, clock::pause)
+            try {
+                controller.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), clientId,
+                    SonyCameraModel.A7CII, "BLE:sony", destination, resume = false, cardSavingConfirmed = false)
+                clock.awaitParked(controller)
+                assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
+
+                // 按下快门后照片落到卡上，但这次联机还没把它登记成批次就断了连接。
+                camera.onShutterTriggered = { camera.addEntry(offlineShot) }
+                controller.capture()
+                assertTrue(clock.stepParkedTick(controller))
+                camera.onShutterTriggered = null
+                assertEquals(CameraTetherPhase.WAITING, controller.state.value.phase)
+                controller.stop()
+                controller.join()
+                assertEquals(CameraTetherPhase.PAUSED, controller.state.value.phase)
+                assertEquals(CameraTetherFailure.UNKNOWN_SHOT, controller.state.value.failure)
+                val paused = journal.load().single()
+                assertEquals(CameraTetherStatus.PAUSED, paused.status)
+                assertTrue(paused.batches.isEmpty())
+                assertNotNull(paused.shutterRequestedAt)
+                // 首拍未登记也必须可以续接，而不是再拒一次逼用户手动导入。
+                assertTrue("unregistered first shot must stay resumable", controller.state.value.canResume)
+
+                val resumeClock = VirtualLoopClock(camera, initialMillis = 100_000L)
+                val resumed = CameraTetherController(controllerScope, store, journal, lock, {}, resumeClock::now, resumeClock::pause)
+                resumed.restore(journal.load(), store.load())
+                assertTrue(resumed.state.value.canResume)
+                resumed.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), clientId,
+                    SonyCameraModel.A7CII, "BLE:sony", destination, resume = true, cardSavingConfirmed = false)
+                resumeClock.awaitParked(resumed)
+                assertEquals("resume after unregistered first shot must reach READY",
+                    CameraTetherPhase.READY, resumed.state.value.phase)
+                assertEquals(CameraTetherFailure.UNKNOWN_SHOT, resumed.state.value.failure)
+                assertNull(resumed.state.value.run?.shutterRequestedAt)
+                // 断线期间的照片折叠进新基线，不自动补传，等待机身核对。
+                assertEquals(emptyList<String>(), resumed.state.value.saved.map { it.photo.name })
+                assertEquals(1, resumed.state.value.run?.baseline?.size)
+                assertEquals(CameraTetherStatus.ACTIVE, resumed.state.value.run?.status)
+                assertNull(resumed.state.value.run?.shutterRequestedAt)
+                resumeClock.close()
+            } finally {
+                clock.close()
+                controllerScope.cancel()
+            }
+        }
+    }
+
+    @Test
+    fun confirmPausedRunEndsStuckRunAndAllowsFreshSession() = withWorkspace { _, store, journal, lock ->
+        val shot = CameraPhoto("1", "DSC00001.ARW", 100L, 42L)
+        val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val controller = CameraTetherController(controllerScope, store, journal, lock, {})
+        try {
+            // 批次没登记进 Store 的暂停 run：无法续接，只能确认结果后结束。
+            val created = journal.create("BLE:sony", "sony", emptyList(), CameraImportDestination())
+            val stuck = journal.reserve(created, listOf(shot)).first
+                .copy(status = CameraTetherStatus.PAUSED, shutterRequestedAt = 5L)
+            journal.save(stuck)
+            controller.restore(journal.load(), store.load())
+            assertFalse(controller.state.value.canResume)
+            assertTrue(controller.state.value.canConfirmAndContinue)
+
+            controller.confirmPausedRun()
+            assertNull(controller.state.value.run)
+            assertEquals(CameraTetherPhase.IDLE, controller.state.value.phase)
+            assertNull(controller.state.value.failure)
+            assertFalse(controller.state.value.canConfirmAndContinue)
+            controller.join()
+            val ended = journal.load().single()
+            assertEquals(CameraTetherStatus.ENDED, ended.status)
+            assertNull(ended.shutterRequestedAt)
+            // 已结束的 run 不再参与续接或确认入口。
+            controller.restore(journal.load(), store.load())
+            assertFalse(controller.state.value.canConfirmAndContinue)
+        } finally {
+            controllerScope.cancel()
+        }
+    }
+
+    @Test
+    fun oversizedCardKeepsTetherConnectedWithLimitNoticeAndStillCaptures() = withWorkspace { _, store, journal, lock ->
+        val basePayload = rawPayload(41)
+        fun cardEntries(count: Int): List<FakeCardEntry> = (1..count).map { index ->
+            FakeCardEntry(index, 1, "DSC%05d.ARW".format(index), 1_730_000_000_000L + index * 1_000L, basePayload)
+        }
+        val captureShot = FakeCardEntry(10_002, 1, "DSC10002.ARW", 1_730_100_000_000L, rawPayload(42))
+        FakeTetherCameraServer(initialEntries = cardEntries(10_001)).use { camera ->
+            val clock = VirtualLoopClock(camera, initialMillis = 10_000L)
+            val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val controller = CameraTetherController(controllerScope, store, journal, lock, {}, clock::now, clock::pause)
+            try {
+                controller.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID(),
+                    SonyCameraModel.A7CII, "BLE:sony-oversized", CameraImportDestination(), resume = false, cardSavingConfirmed = false)
+                clock.awaitParked(controller)
+                // 超限只提示并只列出最近窗口，连接必须保持而不是断开回选片。
+                assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
+                assertEquals(CameraTetherFailure.PHOTO_LIMIT, controller.state.value.failure)
+                assertTrue("initial listing must have paged 101 0x923c requests", camera.list923cCalls.get() >= 101)
+                assertNotNull(controller.state.value.run)
+                assertTrue(controller.state.value.run?.truncatedListing == true)
+                assertEquals(10_000, controller.state.value.run?.baseline?.size)
+
+                // 窗口语义下新拍一张仍能正常接收。
+                camera.onShutterTriggered = { camera.addEntry(captureShot) }
+                controller.capture()
+                var ticks = 0
+                while (ticks < 24 && controller.state.value.saved.isEmpty() && clock.stepParkedTick(controller)) ticks++
+                assertEquals(listOf("DSC10002.ARW"), controller.state.value.saved.map { it.photo.name })
+                assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
+                assertEquals(CameraTetherFailure.PHOTO_LIMIT, controller.state.value.failure)
+                assertNull(controller.state.value.run?.shutterRequestedAt)
+                assertEquals(CameraTetherStatus.ACTIVE, controller.state.value.run?.status)
+            } finally {
+                clock.close()
+                controllerScope.cancel()
+            }
+        }
+    }
+
+    @Test
+    fun cardCrossingTenThousandReconnectsByUpgradingWindow() = withWorkspace { _, store, journal, lock ->
+        val basePayload = rawPayload(43)
+        fun cardEntries(count: Int): List<FakeCardEntry> = (1..count).map { index ->
+            FakeCardEntry(index, 1, "DSC%05d.ARW".format(index), 1_730_000_000_000L + index * 1_000L, basePayload)
+        }
+        val crossingShot = FakeCardEntry(10_001, 1, "DSC10001.ARW", 1_730_100_000_000L, rawPayload(44))
+        val lateShot = FakeCardEntry(10_002, 1, "DSC10002.ARW", 1_730_110_000_000L, rawPayload(45))
+        val clientId = UUID.randomUUID()
+        val destination = CameraImportDestination()
+        FakeTetherCameraServer(initialEntries = cardEntries(10_000)).use { camera ->
+            val clock = VirtualLoopClock(camera, initialMillis = 10_000L)
+            val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val controller = CameraTetherController(controllerScope, store, journal, lock, {}, clock::now, clock::pause)
+            try {
+                controller.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), clientId,
+                    SonyCameraModel.A7CII, "BLE:sony-crossing", destination, resume = false, cardSavingConfirmed = false)
+                clock.awaitParked(controller)
+                // 恰好 10000 张不越线：首次会话是普通非截断 run。
+                assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
+                assertNull(controller.state.value.failure)
+                assertEquals(false, controller.state.value.run?.truncatedListing)
+
+                // 拍第 10001 张：增量观测越线，以超限提示暂停，但 run 仍可续接。
+                camera.onShutterTriggered = { camera.addEntry(crossingShot) }
+                controller.capture()
+                var guard = 0
+                while (guard < 24 && controller.state.value.phase != CameraTetherPhase.PAUSED &&
+                    clock.stepParkedTick(controller)) guard++
+                assertEquals("越线轮询必须以超限提示暂停", CameraTetherPhase.PAUSED, controller.state.value.phase)
+                assertEquals(CameraTetherFailure.PHOTO_LIMIT, controller.state.value.failure)
+                assertTrue(controller.state.value.canResume)
+                assertTrue(controller.state.value.run?.batches?.isEmpty() == true)
+
+                // 「重新连接」不得落入 SOURCE 死胡同：rebase 折叠最近窗口并把 run 升级为截断窗口。
+                val resumeClock = VirtualLoopClock(camera, initialMillis = 100_000L)
+                val resumed = CameraTetherController(controllerScope, store, journal, lock, {}, resumeClock::now, resumeClock::pause)
+                resumed.restore(journal.load(), store.load())
+                assertTrue(resumed.state.value.canResume)
+                resumed.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), clientId,
+                    SonyCameraModel.A7CII, "BLE:sony-crossing", destination, resume = true, cardSavingConfirmed = false)
+                resumeClock.awaitParked(resumed)
+                assertEquals("crossing reconnect must upgrade the window, not fail as SOURCE",
+                    CameraTetherPhase.READY, resumed.state.value.phase)
+                assertTrue(resumed.state.value.run?.truncatedListing == true)
+                assertEquals(10_000, resumed.state.value.run?.baseline?.size)
+                // 越线那张没登记成批次：折叠进新基线等待机身核对，快门提示优先于超限提示。
+                assertEquals(CameraTetherFailure.UNKNOWN_SHOT, resumed.state.value.failure)
+
+                // 窗口升级后继续拍摄按窗口预算正常接收，不再抛上限。
+                camera.onShutterTriggered = { camera.addEntry(lateShot) }
+                resumed.capture()
+                var ticks = 0
+                while (ticks < 24 && resumed.state.value.saved.isEmpty() && resumeClock.stepParkedTick(resumed)) ticks++
+                assertEquals(listOf("DSC10002.ARW"), resumed.state.value.saved.map { it.photo.name })
+                assertEquals(CameraTetherPhase.READY, resumed.state.value.phase)
+                // 新拍接收后快门告警已被快门动作清除，超限提示按持续语义回到 PHOTO_LIMIT。
+                assertEquals(CameraTetherFailure.PHOTO_LIMIT, resumed.state.value.failure)
+                resumeClock.close()
+            } finally {
+                clock.close()
+                controllerScope.cancel()
+            }
+        }
+    }
+
+    @Test
+    fun cardBeyondScanPageLimitStaysBlockedInsteadOfMidCardResume() = withWorkspace { _, store, journal, lock ->
+        val payload = rawPayload(46)
+        val entries = (1..100_001).map { index ->
+            FakeCardEntry(index, 1, "DSC%06d.ARW".format(index), 1_730_000_000_000L + index, payload)
+        }
+        FakeTetherCameraServer(initialEntries = entries).use { camera ->
+            val clock = VirtualLoopClock(camera, initialMillis = 10_000L)
+            val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val controller = CameraTetherController(controllerScope, store, journal, lock, {}, clock::now, clock::pause)
+            try {
+                controller.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID(),
+                    SonyCameraModel.A7CII, "BLE:sony-100k", CameraImportDestination(), resume = false, cardSavingConfirmed = false)
+                // 有界等待：若上限被吞、循环停在 READY，这里以红而不是挂死暴露回归。
+                var waited = 0
+                while (waited < 1200 && controller.state.value.phase != CameraTetherPhase.PAUSED) {
+                    delay(100)
+                    waited++
+                }
+                // 1000 页扫描耗尽（游标停在卡中段）：按上限拒绝回到暂停，而不是把中段游标当增量起点。
+                assertEquals(CameraTetherPhase.PAUSED, controller.state.value.phase)
+                assertEquals(CameraTetherFailure.PHOTO_LIMIT, controller.state.value.failure)
+                assertNull(controller.state.value.run)
+                assertTrue(journal.load().isEmpty())
+                assertTrue("scan must exhaust all 1000 pages", camera.list923cCalls.get() >= 1_000)
+            } finally {
+                clock.close()
+                controllerScope.cancel()
+            }
+        }
+    }
+
+    @Test
+    fun limitNoticeKeepsUnconfirmedShutterWarningAcrossResume() = withWorkspace { _, store, journal, lock ->
+        val basePayload = rawPayload(47)
+        fun cardEntries(count: Int): List<FakeCardEntry> = (1..count).map { index ->
+            FakeCardEntry(index, 1, "DSC%05d.ARW".format(index), 1_730_000_000_000L + index * 1_000L, basePayload)
+        }
+        val clientId = UUID.randomUUID()
+        val destination = CameraImportDestination()
+        FakeTetherCameraServer(initialEntries = cardEntries(10_001)).use { camera ->
+            val clock = VirtualLoopClock(camera, initialMillis = 10_000L)
+            val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val controller = CameraTetherController(controllerScope, store, journal, lock, {}, clock::now, clock::pause)
+            try {
+                controller.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), clientId,
+                    SonyCameraModel.A7CII, "BLE:sony-limit", destination, resume = false, cardSavingConfirmed = false)
+                clock.awaitParked(controller)
+                assertEquals(CameraTetherFailure.PHOTO_LIMIT, controller.state.value.failure)
+                // 按下快门但未接收就断线：暂停后带着待确认快门。
+                controller.capture()
+                var guard = 0
+                while (guard < 24 && controller.state.value.phase != CameraTetherPhase.WAITING &&
+                    clock.stepParkedTick(controller)) guard++
+                assertEquals(CameraTetherPhase.WAITING, controller.state.value.phase)
+                assertNotNull(controller.state.value.run?.shutterRequestedAt)
+                controller.stop()
+                controller.join()
+                assertEquals(CameraTetherPhase.PAUSED, controller.state.value.phase)
+                assertEquals(CameraTetherFailure.UNKNOWN_SHOT, controller.state.value.failure)
+
+                // 续接成功后的持续超限提示不得冲掉「拍摄结果未确认」告警。
+                val resumeClock = VirtualLoopClock(camera, initialMillis = 100_000L)
+                val resumed = CameraTetherController(controllerScope, store, journal, lock, {}, resumeClock::now, resumeClock::pause)
+                resumed.restore(journal.load(), store.load())
+                resumed.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), clientId,
+                    SonyCameraModel.A7CII, "BLE:sony-limit", destination, resume = true, cardSavingConfirmed = false)
+                resumeClock.awaitParked(resumed)
+                assertEquals(CameraTetherPhase.READY, resumed.state.value.phase)
+                assertEquals("the limit notice must not overwrite the unconfirmed shutter warning",
+                    CameraTetherFailure.UNKNOWN_SHOT, resumed.state.value.failure)
+                assertTrue(resumed.state.value.run?.truncatedListing == true)
+                resumeClock.close()
+            } finally {
+                clock.close()
+                controllerScope.cancel()
+            }
+        }
+    }
 }
