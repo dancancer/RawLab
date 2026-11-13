@@ -33,6 +33,51 @@ class WorkingCopyCleanupTest {
         } finally { root.deleteRecursively() }
     }
 
+    @Test fun orphanBatchJobDirectoriesAndLutPreviewsAreRemovedWhileJournaledJobsAndSymlinksStay() {
+        val root = Files.createTempDirectory("rawlab-orphans").toFile()
+        try {
+            val cache = File(root, "cache").apply { mkdirs() }; val jobs = File(root, "files/RawLab/BatchJobs").apply { mkdirs() }
+            val external = File(root, "external").apply { mkdirs(); resolve("keep.raw").writeText("user") }
+            fun jobDirectory(id: String = UUID.randomUUID().toString()) =
+                File(jobs, id).apply { resolve("inputs").mkdirs(); resolve("inputs/source.raw").writeText("raw") }
+            val orphanJob = jobDirectory()
+            val failed = jobDirectory()
+            val journal = BatchJournal(jobs)
+            val job = BatchJob(BatchSourceSnapshot(PhotoIdentity("source"), failed.resolve("inputs/source.raw"), EditSettings()),
+                listOf(BatchTarget(PhotoIdentity("target"), failed.resolve("inputs/source.raw"), "photo.raw")), id = failed.name)
+            journal.save(job.withRows(job.rows.map { it.copy(status = BatchRowStatus.FAILED) }))
+            // 有快照即保留，即使快照引用的文件不在该目录内。
+            val cancelled = jobDirectory()
+            val elsewhere = external.resolve("keep.raw")
+            val cancelledJob = BatchJob(BatchSourceSnapshot(PhotoIdentity("source"), elsewhere, EditSettings()),
+                listOf(BatchTarget(PhotoIdentity("target"), elsewhere, "photo.raw")), id = cancelled.name)
+            journal.save(cancelledJob.withRows(cancelledJob.rows.map { it.copy(status = BatchRowStatus.CANCELLED) }))
+            val unreadable = jobDirectory().also { jobs.resolve("${it.name}.properties").writeText("bad snapshot") }
+            val unrelatedJobsEntry = File(jobs, "unavailable").apply { mkdirs(); resolve("keep").writeText("keep") }
+            val linkedJob = File(jobs, UUID.randomUUID().toString()).also { Files.createSymbolicLink(it.toPath(), external.toPath()) }
+            val siblingLinkedJob = File(jobs, UUID.randomUUID().toString()).also { Files.createSymbolicLink(it.toPath(), unrelatedJobsEntry.toPath()) }
+            val lutPreview = File(cache, "lut-preview-${UUID.randomUUID()}").apply { mkdirs(); resolve("preview.jpg").writeText("jpg") }
+            val lutLookalike = File(cache, "lut-preview-test-${UUID.randomUUID()}").apply { mkdirs(); resolve("keep").writeText("keep") }
+            val linkedPreview = File(cache, "lut-preview-${UUID.randomUUID()}").also { Files.createSymbolicLink(it.toPath(), external.toPath()) }
+            val siblingLinkedPreview = File(cache, "lut-preview-${UUID.randomUUID()}").also { Files.createSymbolicLink(it.toPath(), lutLookalike.toPath()) }
+
+            // 读不出的快照会让清理整体保守退出，先单独确认它保住了全部任务目录。
+            WorkingCopyCleanup.atProcessStart(cache, jobs)
+            assertFalse(lutPreview.exists()); assertTrue(orphanJob.exists()); assertTrue(unreadable.exists())
+
+            jobs.resolve("${unreadable.name}.properties").delete()
+            WorkingCopyCleanup.atProcessStart(cache, jobs)
+            assertFalse(orphanJob.exists()); assertFalse(unreadable.exists())
+            assertTrue(failed.resolve("inputs/source.raw").isFile)
+            assertEquals(BatchRowStatus.FAILED, BatchJournal(jobs).load(failed.name)!!.rows.single().status)
+            assertTrue(cancelled.resolve("inputs/source.raw").isFile)
+            assertTrue(unrelatedJobsEntry.resolve("keep").isFile); assertTrue(lutLookalike.resolve("keep").isFile)
+            assertTrue(Files.isSymbolicLink(linkedJob.toPath())); assertTrue(Files.isSymbolicLink(linkedPreview.toPath()))
+            assertTrue(Files.isSymbolicLink(siblingLinkedJob.toPath())); assertTrue(Files.isSymbolicLink(siblingLinkedPreview.toPath()))
+            assertEquals("user", external.resolve("keep.raw").readText())
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun transientExportCleanupRemovesRenderAndPartFilesAcrossRootsWithoutTouchingUserOrAppFiles() {
         val root = Files.createTempDirectory("rawlab-export-cleanup").toFile()
         try {

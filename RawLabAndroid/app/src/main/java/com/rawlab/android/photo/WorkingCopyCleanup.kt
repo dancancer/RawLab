@@ -9,6 +9,18 @@ internal object WorkingCopyCleanup {
     private const val UUID_HEX = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
     private val BATCH_RENDER_TEMP_PATTERN = Regex("^render-.+\\.(jpg|png|dng)$", RegexOption.IGNORE_CASE)
     private val EXPORT_STAGING_PART_PATTERN = Regex("^\\..+\\.$UUID_HEX\\.part(\\.[A-Za-z0-9]+)?$")
+    private val LUT_PREVIEW_DIRECTORY_PATTERN = Regex("^lut-preview-$UUID_HEX$")
+    private val BATCH_JOB_DIRECTORY_PATTERN = Regex("^$UUID_HEX$")
+
+    /** 只删 parent 下直属、非符号链接、且满足 orphan 的目录。 */
+    private fun deleteOwnedDirectories(parent: File, orphan: (File, java.nio.file.Path) -> Boolean) {
+        val root = try { parent.canonicalFile.toPath() } catch (_: Exception) { return }
+        for (directory in parent.listFiles().orEmpty()) {
+            if (!directory.isDirectory || Files.isSymbolicLink(directory.toPath())) continue
+            val candidate = try { directory.canonicalFile.toPath() } catch (_: Exception) { continue }
+            if (candidate.parent == root && orphan(directory, candidate)) directory.deleteRecursively()
+        }
+    }
 
     internal fun isTransientExportFileName(name: String): Boolean =
         BATCH_RENDER_TEMP_PATTERN.matches(name) || EXPORT_STAGING_PART_PATTERN.matches(name)
@@ -40,6 +52,8 @@ internal object WorkingCopyCleanup {
 
     fun atProcessStart(cache: File, journalRoot: File, exportTempRoots: Iterable<File> = listOf(cache)) {
         cleanTransientExportFiles(exportTempRoots)
+        // LUT 兼容性预览目录只属于单次对话框，进程重启后不再有持有者。
+        deleteOwnedDirectories(cache) { directory, _ -> LUT_PREVIEW_DIRECTORY_PATTERN.matches(directory.name) }
         val protected = try {
             if (!journalRoot.exists()) emptyList() else {
                 val journal = BatchJournal(journalRoot)
@@ -56,6 +70,12 @@ internal object WorkingCopyCleanup {
             if (!directory.name.matches(Regex("rawlab-[0-9a-fA-F-]{36}")) || !directory.isDirectory || Files.isSymbolicLink(directory.toPath())) continue
             val candidate = directory.canonicalFile.toPath()
             if (candidate.parent == root && paths.none { it.startsWith(candidate) }) directory.deleteRecursively()
+        }
+        // 没有快照的任务目录无法恢复；有快照（含失败、取消或读不出的）一律保留供重试。
+        deleteOwnedDirectories(journalRoot) { directory, candidate ->
+            BATCH_JOB_DIRECTORY_PATTERN.matches(directory.name) &&
+                !File(journalRoot, "${directory.name}.properties").exists() &&
+                paths.none { it.startsWith(candidate) }
         }
     }
 }
