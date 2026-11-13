@@ -273,6 +273,10 @@ Smoke mode checks Sony ARW and, when present, DJI DNG; it writes native-resoluti
 
 `presentation.sh` checks native symbols, signed adjustment rings, continuous zoom and Retina actual-pixel scale, per-photo isolation, and directory filtering for ARW/ARQ/DNG.
 
+Agent 配方回归（`agent-recipe-render.sh` 等）经 `RawLabMac/tests/AgentRecipe.swift` 复用生产渲染映射。按整改决策 Q9，该配方生成器定位为测试工具：不编译进应用，界面没有独立的复制配方入口。
+
+The Agent recipe regressions (`agent-recipe-render.sh` and friends) reuse the production render mapping through `RawLabMac/tests/AgentRecipe.swift`. Per remediation decision Q9, this recipe generator is a test tool: it is not compiled into the app, and the UI has no copy-recipe entry.
+
 加速回归由 `ctest --test-dir lutools/build-macos --output-on-failure` 执行，包含真实 Sony/DJI RAW 的 CPU/Metal 一致性、交互/精确/导出隔离，以及直方图和裁切蒙版逐值一致性。`render_benchmark` 是显式运行的性能工具，不对机器速度设置 CI 阈值：
 
 `ctest --test-dir lutools/build-macos --output-on-failure` covers real Sony/DJI CPU/Metal parity, interactive/exact/export isolation, and exact histogram/mask agreement. `render_benchmark` is opt-in and does not impose machine-speed thresholds in CI:

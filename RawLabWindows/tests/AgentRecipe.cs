@@ -3,12 +3,14 @@ using System.Text.Json;
 
 namespace RawLab.Windows;
 
-internal sealed partial class RenderEngine
+// 测试工具（remediation Q9/R18）：生产 UI 没有复制配方入口，只有 tests 的 Agent
+// 配方回归调用；因此它不编译进 app target，作为 RenderEngine 的测试侧扩展留在 tests。
+internal static class AgentRecipeTestTool
 {
-    public string AgentRecipe(string path,Adjustments settings,string? look,string output,int? longEdge=null)
+    internal static string AgentRecipe(this RenderEngine engine,string path,Adjustments settings,string? look,string output,int? longEdge=null)
     {
         if(settings.AIDenoiseEnabled)throw new NotSupportedException(Loc.Text("Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。"));
-        var state=PrepareRecipe(path,settings);
+        var state=engine.PrepareRecipe(path,settings);
         var raster=LibraryEntry.IsRaster(path);
         var request=state.Request(path,look,0,output,longEdge);
         var hsl=state.RenderHsl.NativeConfig();var effects=state.Effects.NativeConfig();

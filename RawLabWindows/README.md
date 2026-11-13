@@ -13,6 +13,8 @@ Windows 也可用随包 libheif 导入普通 SDR HEIF/HEIC。普通图像输入�
 带增益图的 HDR HEIF 使用下述 HDR 入口。
 新窗口、重新打开及历史恢复默认关闭对比；同图手动选择的并排/滑动会保留到切图。
 Windows 各轮实测源码快照、限制及物理项目见 [Agent v08 验证记录](VERIFICATION-agent-v08.md)；历史源码验证不替代最终候选包验收。
+配方生成器 `AgentRecipe` 按整改决策 Q9 定位为测试工具：仅 `tests/AgentRecipe.cs` 与托管回归使用，
+不编译进应用，界面没有独立的复制配方入口。
 
 v0.5.0 新增逐照片本机调整记忆和独立批量导出窗口。任务固定当前参数、降噪设置和外观，多选 RAW 后输出 JPEG/16-bit PNG；当前版本还支持渲染型 DNG，支持效果检查、逐项结果、取消、失败重试与启动恢复；不改写 RAW 或目标编辑记录。验证范围见[验收记录](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
 
@@ -106,7 +108,7 @@ DirectML 1.23.0、DirectML 1.15.4；依赖下载和校验在 `build-ai-dependenc
 批量与集合导出保留 AI 启用状态、请求后端和冻结参数。预检只检查 RAW 类型与 AI 可用性；
 导出时自动准备缺失结果，显示进度并支持取消。取消准备后当前照片保留为待处理，已完成的输出保留。
 批量任务同时保存所选 AI 显卡，恢复任务时沿用该选择。
-Agent JSON v5 暂不表达 AI 降噪，复制配方会要求先关闭 AI。
+Agent JSON v5 暂不表达 AI 降噪，Agent 配方测试工具会要求先关闭 AI。
 
 AI 准备、预览和导出失败时自动保存本地诊断，最近 20 份存放在
 `%LOCALAPPDATA%/RawLab/Diagnostics/AI`。降噪面板的失败状态可导出对应诊断，设置页可导出

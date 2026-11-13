@@ -1,5 +1,7 @@
 import Foundation
 
+// 测试工具（remediation Q9/R18）：生产 UI 没有复制配方入口，只有 tests 的 Agent
+// 配方回归调用本扩展；因此它不编译进 app target，由 RawLabMac/tests/*.sh 显式编译。
 extension RenderEngine {
     // 复用实际渲染映射，固化配方强度和当前照片白平衡，不在 Agent 中再次叠加。
     func agentRecipe(_ url: URL, settings: Adjustments, lut: URL?, output: URL,

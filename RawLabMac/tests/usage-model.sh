@@ -25,7 +25,7 @@ swiftc "${TRANSFER_SOURCES[@]}" -swift-version 5 -O -sdk "$SDK" -target "$(uname
   "$ROOT/Shared/Localization.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/HSLTargetAdjustment.swift" \
   "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HDRSettings.swift" "$ROOT/Shared/ProcessingMigration.swift" "$ROOT/Shared/Native/ProcessingMigrationNative.swift" "${HDR_SWIFT_SOURCES[@]}" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/Shared/AtmosphereSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/HSLTargetNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/AtmosphereNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" \
   "$ROOT/RawLabMac/Sources/Rendering/Engine.swift" "$ROOT/RawLabMac/Sources/Rendering/RenderError.swift" "$ROOT/RawLabMac/Sources/Looks/Film.swift" "$ROOT/RawLabMac/Sources/Adjustments/Adjustments.swift" "$ROOT/RawLabMac/Sources/Adjustments/AdjustmentTypes.swift" \
-  "$ROOT/RawLabMac/Sources/Rendering/AgentRecipe.swift" \
+  "$ROOT/RawLabMac/tests/AgentRecipe.swift" \
   "$ROOT/RawLabMac/Sources/Looks/MasterRecipe.swift" "$ROOT/RawLabMac/Sources/Lens/MacStraightenPreview.swift" \
   "$ROOT/RawLabMac/Sources/Geometry/MacCropInteraction.swift" \
   "$ROOT/RawLabMac/Sources/Rendering/RenderScheduling.swift" "$ROOT/RawLabMac/Sources/Editor/Storage/EditPersistence.swift" \
