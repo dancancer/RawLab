@@ -19,7 +19,7 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal enum class CameraTetherPhase { IDLE, PREPARING, READY, CAPTURING, WAITING, RECEIVING, PAUSED }
-internal enum class CameraTetherFailure { CONNECTION, LIVE, SETTINGS, SOURCE, STORAGE, BACKLOG, UNKNOWN_SHOT, UNSUPPORTED }
+internal enum class CameraTetherFailure { CONNECTION, LIVE, SETTINGS, SOURCE, STORAGE, BACKLOG, UNKNOWN_SHOT, UNSUPPORTED, PHOTO_LIMIT }
 internal enum class CameraParameterFailure { UNAVAILABLE, REJECTED, UNCONFIRMED, CONNECTION }
 internal data class CameraTetherSaved(val photo: CameraPhoto, val uri: String, val jobId: String)
 internal data class CameraTetherParameterState(
@@ -191,6 +191,7 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                 }
                 if (!current.stopped) failure = when {
                     error is CameraTetherSourceException -> CameraTetherFailure.SOURCE
+                    error is CameraMediaSession.PhotoLimitExceededException -> CameraTetherFailure.PHOTO_LIMIT
                     current.run?.shutterRequestedAt != null -> CameraTetherFailure.UNKNOWN_SHOT
                     error is CameraTetherLiveException || current.liveFailure -> CameraTetherFailure.LIVE
                     error is CameraTetherSettingsException -> CameraTetherFailure.SETTINGS

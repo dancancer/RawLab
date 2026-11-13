@@ -89,12 +89,24 @@ public class SonyLegacyImportSessionTest {
         }
     }
 
+    @Test public void listPhotosExceeding10000HandlesThrowsPhotoLimitAndKeepsSessionOpen() throws Exception {
+        try(Responder responder=new Responder("2.02",10001);SonyLegacyImportSession session=new SonyLegacyImportSession(responder.factory(),InetAddress.getLoopbackAddress(),UUID.randomUUID(),m -> {})) {
+            SonyMobileSession.Device device=session.deviceInfo();session.openSession();
+            assertThrows(CameraMediaSession.PhotoLimitExceededException.class,() -> session.listPhotos(device));
+            assertTrue(session.isOpen());
+            session.finish();
+            responder.check();
+            assertEquals(Arrays.asList("2:1:0","2:0:1"),responder.contents);
+        }
+    }
+
     private static class Responder implements AutoCloseable {
         final ServerSocket server=new ServerSocket(0,2,InetAddress.getLoopbackAddress());
         final List<Integer> operations=Collections.synchronizedList(new ArrayList<>());
         final List<String> contents=Collections.synchronizedList(new ArrayList<>());
         final AtomicReference<Throwable> error=new AtomicReference<>();final Thread worker;
-        Responder(String firmware) throws IOException {
+        Responder(String firmware) throws IOException { this(firmware,1); }
+        Responder(String firmware,int handleCount) throws IOException {
             worker=new Thread(() -> {
                 try(Socket command=server.accept()) {
                     command.setSoTimeout(5000);assertEquals(1,SonyMobileSession.readPacket(command,4096).type);
@@ -111,7 +123,13 @@ public class SonyLegacyImportSessionTest {
                                 data=cat(u16(100),u32(17),u16(100),text("Sony"),u16(0),ops.toByteArray(),new byte[16],text("Sony Corporation"),text("ZV-E10"),text(firmware),text("serial"));
                             } else if(op==0x9202) data=cat(u16(0x12c),u32(0),u32(2),u16(0xd2c1),u16(0xd2c2));
                             else if(op==0x1004) data=cat(u32(1),u32(65537));
-                            else if(op==0x1007) { assertEquals(65537,r.i32());assertEquals(0,r.i32());assertEquals(0,r.i32());data=cat(u32(1),u32(7)); }
+                            else if(op==0x1007) {
+                                assertEquals(65537,r.i32());assertEquals(0,r.i32());assertEquals(0,r.i32());
+                                ByteArrayOutputStream handles=new ByteArrayOutputStream();
+                                handles.write(u32(handleCount));
+                                for(int i=0;i<handleCount;i++) handles.write(u32(7+i));
+                                data=handles.toByteArray();
+                            }
                             else if(op==0x1008) { assertEquals(7,r.i32());data=cat(u32(65537),u16(0xb101),u16(0),u32(RAW.length),new byte[40],text("DSC00007.ARW"),text("20261109T230000"),text(""),text("")); }
                             else if(op==0x1009) { assertEquals(7,r.i32());data=RAW; }
                             else if(op==0x100a) { assertEquals(7,r.i32());data=PREVIEW; }

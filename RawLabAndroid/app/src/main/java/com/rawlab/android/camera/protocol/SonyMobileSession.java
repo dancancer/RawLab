@@ -13,16 +13,21 @@ public final class SonyMobileSession implements CameraMediaSession {
     public interface Reporter { void report(String message); }
     public interface Progress { void transferred(long bytes, long total); }
     /** 相机完整结束了本次事务，预览不可用等响应不会破坏后续报文边界。 */
-    public static final class ResponseException extends IOException {
-        ResponseException(int operation, int code) {
+    public static final class ResponseException extends CameraMediaSession.PhotoTransferException {
+        public final int operation, code;
+        public ResponseException(int operation, int code) {
             super(String.format(Locale.ROOT, "PTP op 0x%04x response 0x%04x", operation, code));
+            this.operation = operation;
+            this.code = code;
         }
+        @Override public boolean isSessionFailure() { return code == 0x2003 || code == 0x2004; }
     }
     private final Socket command, event;
     private final Reporter report;
     private int transaction;
     private volatile boolean closed;
     private static final int LIMIT = 8 << 20;
+    private static final int MAX_SCAN_PAGES = 1000;
     private static final int THUMBNAIL_LIMIT = 2 << 20;
     private static final int LARGE_PREVIEW_LIMIT = 8 << 20;
     private static final Set<Integer> ALLOWED = new HashSet<>(Arrays.asList(0x1001, 0x1002, 0x1003, 0x1004, 0x1007, 0x1008, 0x1009, 0x923b, 0x923c, 0x923d, 0x923e));
@@ -84,18 +89,52 @@ public final class SonyMobileSession implements CameraMediaSession {
         ArrayList<Asset> result = new ArrayList<>();
         HashSet<String> seen = new HashSet<>();
         long after = 0;
-        for (int page = 0; page < 100; page++) {
+        boolean exceeded = false;
+        for (int page = 0; page < MAX_SCAN_PAGES; page++) {
             byte[] data = operation(0x923c, new int[]{(int)after, (int)(after >>> 32), 100, 1, 0}, true, LIMIT);
             Page parsed = parseContents(data, this);
             for (Asset asset : parsed.assets) {
                 if (seen.add(asset.content + ":" + asset.file)) result.add(asset);
-                if (result.size() > 10000) throw new IOException("Photo list exceeds limit");
+                if (result.size() > CameraMediaSession.MAX_LISTED_PHOTOS) {
+                    exceeded = true;
+                    if (result.size() >= CameraMediaSession.MAX_LISTED_PHOTOS * 2) trimRecentAssets(result);
+                }
             }
-            if (parsed.count < 100) return result;
+            if (parsed.count < 100) {
+                if (exceeded) {
+                    trimRecentAssets(result);
+                    throw new CameraMediaSession.PhotoLimitExceededException("Photo list exceeds limit", result);
+                }
+                return result;
+            }
             if (parsed.cursor <= after) throw new IOException("Photo list cursor did not advance");
             after = parsed.cursor;
         }
-        throw new IOException("Photo page limit exceeded");
+        trimRecentAssets(result);
+        throw new CameraMediaSession.PhotoLimitExceededException("Photo page limit exceeded", result);
+    }
+
+    static void trimRecentAssets(List<Asset> assets) {
+        if (assets.size() <= CameraMediaSession.MAX_LISTED_PHOTOS) return;
+        assets.sort((left, right) -> {
+            int byCreated = Long.compare(right.created, left.created);
+            return byCreated != 0 ? byCreated : right.name.compareTo(left.name);
+        });
+        assets.subList(CameraMediaSession.MAX_LISTED_PHOTOS, assets.size()).clear();
+    }
+
+    private boolean hasAsset(Device device, Asset target) throws IOException {
+        if (!device.operations.contains(0x923c)) throw new IOException("Mobile contents operation 0x923C not advertised");
+        long after = 0;
+        for (int page = 0; page < MAX_SCAN_PAGES; page++) {
+            byte[] data = operation(0x923c, new int[]{(int)after, (int)(after >>> 32), 100, 1, 0}, true, LIMIT);
+            Page parsed = parseContents(data, this);
+            for (Asset candidate : parsed.assets) if (target.same(candidate)) return true;
+            if (parsed.count < 100) return false;
+            if (parsed.cursor <= after) throw new IOException("Photo list cursor did not advance");
+            after = parsed.cursor;
+        }
+        return false;
     }
 
     public String download(Device device, Asset asset, OutputStream destination) throws IOException {
@@ -103,8 +142,10 @@ public final class SonyMobileSession implements CameraMediaSession {
     }
 
     public String download(Device device, Asset asset, OutputStream destination, Progress progress) throws IOException {
-        if (asset.owner != this || asset.size <= 0 || asset.size > (1L << 30) || !device.operations.contains(0x923d))
+        if (asset == null || asset.owner != this || !device.operations.contains(0x923d))
             throw new IOException("Photo outside this session or download budget");
+        if (asset.size <= 0 || asset.size > (1L << 30))
+            throw new CameraMediaSession.PhotoTransferException("Photo size outside download budget");
         Progress listener = progress == null ? (bytes, total) -> {} : progress;
         MessageDigest digest;
         try { digest = MessageDigest.getInstance("SHA-256"); } catch (NoSuchAlgorithmException error) { throw new IOException(error); }
@@ -112,16 +153,14 @@ public final class SonyMobileSession implements CameraMediaSession {
         while (offset < asset.size) {
             int size = (int)Math.min(3 << 20, asset.size - offset);
             byte[] bytes = operation(0x923d, new int[]{asset.content, (1 << 24) | asset.file, (int)offset, (int)(offset >>> 32), size}, true, size);
-            if (bytes.length != size) throw new IOException("Original photo chunk length mismatch");
+            if (bytes.length != size) throw new CameraMediaSession.PhotoTransferException("Original photo chunk length mismatch");
             if (offset == 0) validateHeader(asset.name, bytes);
             destination.write(bytes); digest.update(bytes); offset += bytes.length;
             listener.transferred(offset, asset.size);
             report.report("photo_bytes " + offset + "/" + asset.size);
         }
         destination.flush();
-        boolean unchanged = false;
-        for (Asset candidate : listPhotos(device)) if (asset.same(candidate)) { unchanged = true; break; }
-        if (!unchanged) throw new IOException("Camera photo metadata changed during transfer");
+        if (!hasAsset(device, asset)) throw new CameraMediaSession.PhotoTransferException("Camera photo metadata changed during transfer");
         StringBuilder hash = new StringBuilder(); for (byte b : digest.digest()) hash.append(String.format(Locale.ROOT, "%02x", b & 255));
         return hash.toString();
     }
@@ -132,7 +171,7 @@ public final class SonyMobileSession implements CameraMediaSession {
             || (data[0] == 0x4d && data[1] == 0x4d && data[2] == 0 && data[3] == 0x2a));
         boolean jpeg = data.length >= 3 && (data[0] & 255) == 255 && (data[1] & 255) == 216 && (data[2] & 255) == 255;
         if ((lower.endsWith(".arw") && tiff) || ((lower.endsWith(".jpg") || lower.endsWith(".jpeg")) && jpeg)) return;
-        throw new IOException("Downloaded bytes do not have the expected RAW/JPEG header");
+        throw new CameraMediaSession.PhotoTransferException("Downloaded bytes do not have the expected RAW/JPEG header");
     }
 
     static Page parseContents(byte[] data, Object owner) throws IOException {
@@ -170,7 +209,7 @@ public final class SonyMobileSession implements CameraMediaSession {
         public final String storageToken;
         public final long captureTimestamp;
         private final String legacyObjectKey;
-        Asset(Object owner, int content, int file, String name, long size, long created) {
+        public Asset(Object owner, int content, int file, String name, long size, long created) {
             this(owner, content, file, name, size, created, "mobile", created, null);
         }
         Asset(Object owner, int content, int file, String name, long size, long created,
@@ -243,6 +282,8 @@ public final class SonyMobileSession implements CameraMediaSession {
         throw new IOException("PTP packet budget exceeded");
     }
 
+    @Override public boolean isOpen() { return !closed; }
+
     @Override public void close() {
         closed = true;
         try { command.close(); } catch (IOException ignored) {}
@@ -267,10 +308,10 @@ public final class SonyMobileSession implements CameraMediaSession {
     public static final class Device {
         public final String manufacturer, model, firmware, serial;
         public final Set<Integer> operations;
-        Device(String manufacturer, String model, String firmware, Set<Integer> operations) {
+        public Device(String manufacturer, String model, String firmware, Set<Integer> operations) {
             this(manufacturer, model, firmware, "", operations);
         }
-        Device(String manufacturer, String model, String firmware, String serial, Set<Integer> operations) {
+        public Device(String manufacturer, String model, String firmware, String serial, Set<Integer> operations) {
             this.manufacturer = manufacturer; this.model = model; this.firmware = firmware; this.serial = serial;
             this.operations = Collections.unmodifiableSet(new HashSet<>(operations));
         }

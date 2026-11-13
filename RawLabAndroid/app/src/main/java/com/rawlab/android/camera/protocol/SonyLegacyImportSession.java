@@ -79,5 +79,7 @@ public final class SonyLegacyImportSession implements CameraMediaSession {
         finally { close(); }
     }
 
+    @Override public boolean isOpen() { return opened && transport.isOpen(); }
+
     @Override public void close() { transport.close();identified=false;opened=false;objects.clear(); }
 }

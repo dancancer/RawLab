@@ -345,6 +345,7 @@ private fun TetherStatus(state: CameraTetherState) {
                 CameraTetherFailure.BACKLOG -> if (state.canResume) R.string.tether_backlog_error else R.string.tether_source_error
                 CameraTetherFailure.LIVE -> R.string.tether_live_error
                 CameraTetherFailure.UNSUPPORTED -> R.string.tether_unsupported
+                CameraTetherFailure.PHOTO_LIMIT -> R.string.camera_incremental_oversized
                 CameraTetherFailure.CONNECTION -> R.string.camera_connection_failed
             }
             Text(stringResource(message), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)

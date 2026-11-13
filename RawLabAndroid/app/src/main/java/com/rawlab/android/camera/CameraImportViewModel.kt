@@ -32,6 +32,10 @@ import java.net.InetAddress
 import java.util.UUID
 import javax.net.SocketFactory
 
+internal enum class CameraImportFailure {
+    PHOTO_LIMIT_EXCEEDED,
+}
+
 internal data class CameraImportState(
     val stage: SonyCameraConnection.Stage? = null,
     val candidates: List<CameraCandidate> = emptyList(),
@@ -40,6 +44,7 @@ internal data class CameraImportState(
     val connected: Boolean = false,
     val cameraId: String? = null,
     val hardwareIdentity: CameraHardwareIdentity? = null,
+    val failure: CameraImportFailure? = null,
     val message: Int? = null,
     val jobs: List<CameraImportJob> = emptyList(),
     val job: CameraImportJob? = null,
@@ -67,14 +72,51 @@ internal data class CameraImportState(
         get() {
             if (!connected || importMode != CameraImportMode.INCREMENTAL) return null
             return jobs.firstOrNull { job ->
-                job.matchesCamera(cameraId, hardwareIdentity) && job.incremental != null && !job.committed && job.items.any { it.saved == null } &&
+                job.matchesCamera(cameraId, hardwareIdentity) && job.incremental != null && !job.committed &&
+                    job.items.any { it.saved == null && !it.skipped } &&
                     job.items.none { it.problem?.needsOriginalJpeg == true } &&
                     (incrementalCutoffMillis == null || incrementalCutoffMillis == job.incremental.customCutoffMillis) &&
                     resumeLocatorMap(job, photos, incrementalOwner).let { matches ->
-                        job.items.all { it.saved != null || it.photo.key in matches }
+                        job.items.all { it.saved != null || it.skipped || it.photo.key in matches }
                     }
             }
         }
+
+    fun withConnectedListing(
+        cameraId: String,
+        opened: CameraMediaSession,
+        info: SonyMobileSession.Device,
+        listing: CameraPhotoListing,
+        owner: String,
+        mode: CameraImportMode = importMode,
+        format: CameraImportFormat = incrementalFormat,
+        jpeg: CameraJPEGOptions = incrementalJpeg,
+    ): CameraImportState {
+        val photos = sortedCameraPhotos(listing.assets)
+        val hardwareIdentity = CameraHardwareIdentity.read(info)
+        val next = copy(
+            stage = null,
+            connected = true,
+            cameraId = cameraId,
+            photos = photos,
+            hardwareIdentity = hardwareIdentity,
+            model = SonyCameraModel.fromIdentity(info.model, info.firmware),
+            importMode = mode,
+            incrementalFormat = format,
+            incrementalJpeg = jpeg,
+            incrementalOptionsValid = true,
+            legacyCameraTime = opened is SonyLegacyImportSession,
+            incrementalCutoffMillis = null,
+            incrementalIncludeUndated = false,
+            incrementalScan = null,
+            incrementalOwner = owner,
+            verifiedImports = emptyMap(),
+            selected = emptySet(),
+            failure = CameraImportFailure.PHOTO_LIMIT_EXCEEDED.takeIf { listing.limitExceeded },
+            message = R.string.camera_incremental_oversized.takeIf { listing.limitExceeded },
+        )
+        return if (mode == CameraImportMode.INCREMENTAL) next.copy(incrementalScan = computeCameraIncrementalScan(next, cameraId)) else next
+    }
 }
 
 internal enum class CameraMode { IMPORT, TETHER }
@@ -157,7 +199,7 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
 
     fun scan() {
         if (mutable.value.transferring || mutable.value.preparing || mutable.value.closing) return
-        mutable.update { it.copy(message = null, candidates = emptyList()) }
+        mutable.update { it.copy(failure = null, message = null, candidates = emptyList()) }
         connectAfterStop { connection.scan() }
     }
     fun connect(id: String) {
@@ -168,12 +210,12 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     }
     fun prepareLegacyWifi() {
         if (mutable.value.transferring || mutable.value.preparing || mutable.value.closing) return
-        mutable.update { it.copy(model = SonyCameraModel.UNKNOWN, message = null) }
+        mutable.update { it.copy(model = SonyCameraModel.UNKNOWN, failure = null, message = null) }
         connectAfterStop { connection.prepareLegacyWifi() }
     }
     fun useLegacyWifi() {
         if (mutable.value.transferring || mutable.value.preparing || mutable.value.closing) return
-        mutable.update { it.copy(model = SonyCameraModel.UNKNOWN, message = null) }
+        mutable.update { it.copy(model = SonyCameraModel.UNKNOWN, failure = null, message = null) }
         connectAfterStop { connection.useLegacyWifi() }
     }
     private fun connectAfterStop(connect: () -> Unit) {
@@ -189,12 +231,17 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
         if (mutable.value.preparing || mutable.value.closing || mutable.value.mode == mode) return
         disconnect()
         resumeTether = false
-        mutable.update { it.copy(mode = mode, message = null) }
+        mutable.update { it.copy(mode = mode, failure = null, message = null) }
     }
     fun setImportMode(mode: CameraImportMode) {
         if (mutable.value.preparing || mutable.value.closing || mutable.value.transferring || mutable.value.importMode == mode) return
         preferences.edit().putString(preferenceKey("import-mode"), mode.name).apply()
-        mutable.update { it.copy(importMode = mode, message = null) }
+        mutable.update {
+            it.copy(
+                importMode = mode,
+                message = if (it.failure == CameraImportFailure.PHOTO_LIMIT_EXCEEDED) it.message else null,
+            )
+        }
         if (mode == CameraImportMode.INCREMENTAL && mutable.value.connected) recomputeIncrementalScan()
     }
     fun setIncrementalFormat(format: CameraImportFormat) {
@@ -227,7 +274,7 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     private fun recomputeIncrementalScan() {
         val snapshot = mutable.value
         if (snapshot.importMode != CameraImportMode.INCREMENTAL || !snapshot.connected || snapshot.cameraId == null) return
-        val scan = incrementalScan(snapshot, snapshot.cameraId)
+        val scan = computeCameraIncrementalScan(snapshot, snapshot.cameraId)
         mutable.update { it.copy(incrementalScan = scan) }
     }
     fun refreshIncrementalScan() {
@@ -240,14 +287,21 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
             return
         }
         val current = generation
-        mutable.update { it.copy(stage = SonyCameraConnection.Stage.NETWORK, message = null) }
+        mutable.update { it.copy(stage = SonyCameraConnection.Stage.NETWORK, failure = null, message = null) }
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { sessionLock.withLock { runCatching { opened.listPhotos(info) } } }
+            val result = withContext(Dispatchers.IO) { sessionLock.withLock { runCatching { listCameraPhotosBounded(opened, info) } } }
             if (current != generation || !foreground) return@launch
-            result.onSuccess { found ->
-                assets = found.associateBy { it.key() }
-                val photos = sortedPhotos(found)
-                mutable.update { it.copy(stage = null, photos = photos) }
+            result.onSuccess { listing ->
+                assets = listing.assets.associateBy { it.key() }
+                val photos = sortedCameraPhotos(listing.assets)
+                mutable.update {
+                    it.copy(
+                        stage = null,
+                        photos = photos,
+                        failure = CameraImportFailure.PHOTO_LIMIT_EXCEEDED.takeIf { listing.limitExceeded },
+                        message = R.string.camera_incremental_oversized.takeIf { listing.limitExceeded },
+                    )
+                }
                 recomputeIncrementalScan()
             }.onFailure { onFailure(SonyCameraConnection.Failure.DISCONNECTED) }
         }
@@ -255,7 +309,7 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     fun setTetherResume(resume: Boolean) { if (!tether.state.value.active) resumeTether = resume }
     fun confirmCardSaving(confirmed: Boolean) { if (!tether.state.value.active) mutable.update { it.copy(cardSavingConfirmed = confirmed) } }
     fun permissionDenied() { mutable.update { it.copy(message = R.string.camera_permissions) } }
-    fun dismissMessage() { mutable.update { it.copy(message = null) } }
+    fun dismissMessage() { mutable.update { it.copy(failure = null, message = null) } }
     fun setDestination(destination: CameraImportDestination) {
         if (mutable.value.transferring || mutable.value.preparing || tether.state.value.active) return
         preferences.edit().putString("destination-directory", destination.directory)
@@ -270,7 +324,7 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     fun selectJob(job: CameraImportJob) { if (!mutable.value.transferring && !mutable.value.preparing) mutable.update { it.copy(job = job) } }
 
     override fun onCandidates(items: List<CameraCandidate>) { mutable.update { it.copy(candidates = items) } }
-    override fun onStage(stage: SonyCameraConnection.Stage) { mutable.update { it.copy(stage = stage, message = null) } }
+    override fun onStage(stage: SonyCameraConnection.Stage) { mutable.update { it.copy(stage = stage, failure = null, message = null) } }
     override fun onConnected(network: Network, address: InetAddress, cameraId: String) {
         if (mutable.value.closing || !foreground) return
         if (mutable.value.mode == CameraMode.TETHER) {
@@ -287,57 +341,42 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
         val current = generation
         mutable.update { it.copy(stage = SonyCameraConnection.Stage.NETWORK) }
         connectionWork = viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching {
-                var opened: CameraMediaSession = SonyMobileSession(factory, address, clientId) { }
-                try {
-                    withContext(Dispatchers.Main.immediate) {
-                        if (current != generation || !foreground) throw IOException("Stale camera connection")
-                        session = opened
-                    }
-                    var info = opened.deviceInfo()
-                    if (!info.operations.containsAll(listOf(0x923c, 0x923d))) {
-                        if (!info.operations.containsAll(listOf(0x1002, 0x9201, 0x9202, 0x9209, 0x9212, 0x1004, 0x1007, 0x1008, 0x1009)))
-                            throw CameraMediaSession.UnsupportedCameraException("Photo import is unavailable in this camera mode")
-                        opened.close()
-                        opened = SonyLegacyImportSession(factory, address, clientId) { }
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    openCameraImportSession(
+                        createMobile = { SonyMobileSession(factory, address, clientId) { } },
+                        createLegacy = { SonyLegacyImportSession(factory, address, clientId) { } },
+                    ) { opened ->
                         withContext(Dispatchers.Main.immediate) {
-                            if (current != generation || !foreground) { opened.close(); throw IOException("Stale camera connection") }
+                            if (current != generation || !foreground) throw IOException("Stale camera connection")
                             session = opened
                         }
-                        info = opened.deviceInfo()
                     }
-                    opened.openSession()
-                    val found = opened.listPhotos(info)
-                    Triple(opened, info, found)
-                } catch (error: Exception) { opened.close(); throw error }
-            } }
-            if (current != generation || !foreground) { result.getOrNull()?.first?.close(); return@launch }
-            result.onSuccess { (opened, info, found) ->
-                device = info
+                }
+            }
+            if (current != generation || !foreground) { result.getOrNull()?.session?.close(); return@launch }
+            result.onSuccess { connected ->
+                device = connected.device
                 this@CameraImportViewModel.cameraId = cameraId
-                assets = found.associateBy { it.key() }
+                assets = connected.listing.assets.associateBy { it.key() }
                 val owner = UUID.randomUUID().toString()
-                val photos = sortedPhotos(found)
                 val settings = readIncrementalSettings(cameraId)
-                val hardwareIdentity = CameraHardwareIdentity.read(info)
                 mutable.update {
-                    val next = it.copy(stage = null, connected = true, cameraId = cameraId, photos = photos,
-                        hardwareIdentity = hardwareIdentity,
-                        model = SonyCameraModel.fromIdentity(info.model, info.firmware), importMode = settings.mode,
-                        incrementalFormat = settings.format, incrementalJpeg = settings.jpeg,
-                        incrementalOptionsValid = true, legacyCameraTime = opened is SonyLegacyImportSession,
-                        incrementalCutoffMillis = null, incrementalIncludeUndated = false, incrementalScan = null,
-                        incrementalOwner = owner, verifiedImports = emptyMap(),
-                        selected = emptySet(), message = null)
-                    if (settings.mode == CameraImportMode.INCREMENTAL) next.copy(incrementalScan = incrementalScan(next, cameraId))
-                    else next
+                    it.withConnectedListing(
+                        cameraId = cameraId,
+                        opened = connected.session,
+                        info = connected.device,
+                        listing = connected.listing,
+                        owner = owner,
+                        mode = settings.mode,
+                        format = settings.format,
+                        jpeg = settings.jpeg,
+                    )
                 }
             }.onFailure { onFailure(if (it is CameraMediaSession.UnsupportedCameraException)
                 SonyCameraConnection.Failure.UNSUPPORTED else SonyCameraConnection.Failure.DISCONNECTED) }
         }
     }
-    private fun sortedPhotos(found: Collection<SonyMobileSession.Asset>) = found.map { it.photo() }
-        .sortedWith(compareByDescending<CameraPhoto> { it.created }.thenByDescending { it.name })
 
     override fun onFailure(reason: SonyCameraConnection.Failure) {
         val message = when (reason) {
@@ -363,7 +402,7 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
         val oldTransfer = transfer
         val oldPreparation = importPreparation
         val oldConnection = connectionWork
-        mutable.update { it.copy(stage = null, connected = false, closing = true, hardwareIdentity = null) }
+        mutable.update { it.copy(stage = null, connected = false, closing = true, hardwareIdentity = null, failure = null) }
         closingWork = viewModelScope.launch {
             prior?.join()
             oldTransfer?.join()
@@ -429,6 +468,29 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
         if (!snapshot.preparing) snapshot.job?.let { runQueue(it, resuming = true, keepJpegOriginals = keepJpegOriginals) }
     }
 
+    fun skipFailed() {
+        val snapshot = mutable.value
+        val job = snapshot.job ?: return
+        if (snapshot.preparing || snapshot.transferring || snapshot.closing || job.items.none { it.canSkip }) return
+        mutable.update { it.copy(preparing = true, message = null) }
+        viewModelScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    storeLock.withLock { runCatching { skipFailedCameraItems(store, job) } }
+                }
+                result.onSuccess { updated ->
+                    updateJob(updated)
+                    if (updated.committed && updated.incremental != null &&
+                        mutable.value.connected && mutable.value.incrementalOwner == snapshot.incrementalOwner) {
+                        recomputeIncrementalScan()
+                    }
+                }.onFailure { mutable.update { it.copy(message = R.string.camera_storage_failed) } }
+            } finally {
+                mutable.update { it.copy(preparing = false) }
+            }
+        }
+    }
+
     private fun runQueue(job: CameraImportJob, resuming: Boolean = false, keepJpegOriginals: Boolean = false) {
         val snapshot = mutable.value
         if (snapshot.mode != CameraMode.IMPORT || snapshot.closing || !foreground || snapshot.transferring ||
@@ -447,85 +509,68 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
         val allowed = CameraTransferPermit(); permit = allowed
         mutable.update { it.copy(transferring = true, job = job, message = null, currentBytes = 0) }
         transfer = viewModelScope.launch {
-            var latest = job
-            val result = withContext(Dispatchers.IO) { storeLock.withLock {
-                runCatching { sessionLock.withLock session@{
-                    allowed.check()
-                    if (resuming) {
-                        latest = store.recover(job.id) ?: throw IOException("Camera import task is missing")
-                        updateJob(latest)
-                    }
-                    if (latest.status == CameraJobStatus.COMPLETE) return@session
-                    if (latest.items.any { it.problem?.needsOriginalJpeg == true }) {
-                        if (!keepJpegOriginals) return@session
-                        latest = latest.keepingPendingJpegOriginals()
-                        store.save(latest)
-                        updateJob(latest)
-                    }
-                    val fresh = if (resuming) {
-                        val current = opened.listPhotos(info).associateBy { it.key() }
-                        withContext(Dispatchers.Main.immediate) {
-                            allowed.check()
-                            assets = current
-                            previews.evictAll()
-                            mutable.update { it.copy(photos = sortedPhotos(current.values), selected = it.selected.intersect(current.keys)) }
-                        }
-                        current
-                    } else listed
-                    val observed = fresh.mapValues { it.value.photo() }
-                    val matches = resumeLocatorMap(latest, observed.values.toList(), snapshot.incrementalOwner)
-                    val sameListing = latest.originalListingOwner == snapshot.incrementalOwner
-                    if ((!sameListing || latest.incremental == null) &&
-                        latest.items.any { it.saved == null && it.photo.key !in matches }) throw CameraImportSourceChanged()
-                    val pendingKeys = latest.items.filter { it.saved == null }.map { it.photo.key }.toSet()
-                    val reconciled = latest.items.map { item ->
-                        when {
-                            item.saved != null -> item
-                            item.photo.key !in matches -> item.copy(problem = CameraMediaProblem.REMOTE_MISSING)
-                            item.problem == CameraMediaProblem.REMOTE_MISSING -> item.copy(problem = null)
-                            else -> item
-                        }
-                    }
-                    if (reconciled != latest.items) {
-                        latest = latest.copy(items = reconciled, status = CameraJobStatus.PAUSED)
-                        store.save(latest)
-                        updateJob(latest)
-                    }
-                    latest = receiveCameraJob(store, latest, allowed, { photo, output ->
-                        val asset = fresh.getValue(matches.getValue(photo.key).key)
-                        mutable.update { it.copy(currentKey = photo.key, currentBytes = 0) }
-                        opened.download(info, asset, output) { bytes, _ ->
-                            allowed.check(); mutable.update { it.copy(currentBytes = bytes) }
-                        }
-                    }, ::updateJob)
-                    val verified = latest.items.filter { it.saved != null && it.photo.key in pendingKeys }
-                        .map { CameraVerifiedImport(matches.getValue(it.photo.key), checkNotNull(it.digest), latest.id) }
-                        .associateBy { it.photo.key }
-                    mutable.update { state ->
-                        if (state.connected && state.incrementalOwner == snapshot.incrementalOwner)
-                            state.copy(verifiedImports = state.verifiedImports + verified)
-                        else state
-                    }
-                } }.also { outcome ->
-                    if (outcome.isFailure) {
-                        latest = latest.copy(status = CameraJobStatus.PAUSED)
-                        // 发布中失败可能已经写入 prepared；从持久清单恢复，不能用旧快照覆盖它。
-                        runCatching { store.load().firstOrNull { it.id == job.id } }.getOrNull()?.let { latest = it }
+            val result = withContext(Dispatchers.IO) {
+                storeLock.withLock {
+                    sessionLock.withLock {
+                        executeCameraSessionQueue(
+                            store = store,
+                            opened = opened,
+                            info = info,
+                            initialJob = job,
+                            listedAssets = listed,
+                            incrementalOwner = snapshot.incrementalOwner,
+                            allowed = allowed,
+                            resuming = resuming,
+                            keepJpegOriginals = keepJpegOriginals,
+                            onListed = { current, limitExceeded ->
+                                withContext(Dispatchers.Main.immediate) {
+                                    allowed.check()
+                                    assets = current
+                                    previews.evictAll()
+                                    mutable.update {
+                                        it.copy(
+                                            photos = sortedCameraPhotos(current.values),
+                                            selected = it.selected.intersect(current.keys),
+                                            failure = CameraImportFailure.PHOTO_LIMIT_EXCEEDED.takeIf { limitExceeded } ?: it.failure,
+                                            message = R.string.camera_incremental_oversized.takeIf { limitExceeded } ?: it.message,
+                                        )
+                                    }
+                                }
+                            },
+                            onProgress = { key, bytes -> mutable.update { it.copy(currentKey = key, currentBytes = bytes) } },
+                            onJob = ::updateJob,
+                        )
                     }
                 }
-            } }
+            }
+            if (result.verifiedImports.isNotEmpty()) {
+                mutable.update { state ->
+                    if (state.connected && state.incrementalOwner == snapshot.incrementalOwner)
+                        state.copy(verifiedImports = state.verifiedImports + result.verifiedImports)
+                    else state
+                }
+            }
+            val latest = result.job
             updateJob(latest)
-            if (result.isSuccess && latest.status == CameraJobStatus.COMPLETE && latest.incremental != null &&
+            if (result.failure == null && latest.incremental != null &&
                 mutable.value.connected && mutable.value.incrementalOwner == snapshot.incrementalOwner) {
-                mutable.update { it.copy(incrementalCutoffMillis = null, incrementalIncludeUndated = false) }
+                if (latest.status == CameraJobStatus.COMPLETE) {
+                    mutable.update { it.copy(incrementalCutoffMillis = null, incrementalIncludeUndated = false) }
+                }
                 recomputeIncrementalScan()
             }
             permit = null
-            val sourceChanged = result.exceptionOrNull() is CameraImportSourceChanged
-            mutable.update { it.copy(transferring = false, currentKey = null, currentBytes = 0,
-                message = if (sourceChanged) R.string.camera_source_changed
-                    else if (result.isFailure) it.message ?: R.string.camera_transfer_failed else null) }
-            if (result.isFailure && !sourceChanged) disconnect()
+            mutable.update {
+                it.copy(
+                    transferring = false,
+                    currentKey = null,
+                    currentBytes = 0,
+                    message = if (result.sourceChanged) R.string.camera_source_changed
+                    else if (result.failure != null) it.message ?: R.string.camera_transfer_failed
+                    else it.message,
+                )
+            }
+            if (result.shouldDisconnect) disconnect()
         }
     }
 
@@ -580,35 +625,6 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     }
     private fun updateJob(job: CameraImportJob) { mutable.update { it.copy(job = job,
         jobs = (it.jobs.filterNot { previous -> previous.id == job.id } + job).sortedByDescending { item -> item.createdAt }) } }
-    private fun incrementalScan(snapshot: CameraImportState, cameraId: String): CameraIncrementalScan {
-        val jobs = snapshot.jobs.filter { it.matchesCamera(cameraId, snapshot.hardwareIdentity) && it.incremental != null }
-        val checkpoints = committedIncrementalCheckpoints(jobs)
-        val jpeg = snapshot.incrementalJpeg.takeIf { it.adjust }
-        val verifiedJobs = snapshot.verifiedImports.values.map { it.jobId }.toSet()
-        val savedKeys = if (snapshot.incrementalCutoffMillis != null) emptySet() else jobs.asSequence()
-            .filter { it.originalListingOwner == snapshot.incrementalOwner || it.id in verifiedJobs }
-            .flatMap { job ->
-                val plannedJpeg = job.incremental?.jpeg?.takeIf { it.adjust }
-                val saved = job.items.asSequence().filter {
-                    it.saved != null && (it.photo.raw || jpeg == plannedJpeg || jpeg == job.jpegOptions(it))
-                }
-                val matches = resumeLocatorMap(job, snapshot.photos, snapshot.incrementalOwner)
-                saved.mapNotNull { item ->
-                    val photo = matches[item.photo.key] ?: return@mapNotNull null
-                    if (job.originalListingOwner == snapshot.incrementalOwner) photo.key
-                    else photo.key.takeIf {
-                        snapshot.verifiedImports[it]?.let { evidence ->
-                            evidence.digest == item.digest && evidence.photo.matchesSnapshot(photo)
-                        } == true
-                    }
-                }
-            }.toSet()
-        val zone = java.time.ZoneId.systemDefault()
-        val wallClockZone = if (snapshot.legacyCameraTime) java.time.ZoneOffset.UTC else zone
-        return CameraIncrementalScan(snapshot.photos, checkpoints,
-            CameraIncrementalScan.defaultCutoffMillis(zone = zone, wallClockZone = wallClockZone), snapshot.incrementalCutoffMillis,
-            snapshot.incrementalFormat, snapshot.incrementalIncludeUndated, savedKeys, snapshot.incrementalOwner)
-    }
     fun openTetherSaved(photo: CameraTetherSaved, onReady: (List<Uri>) -> Unit) {
         if (mutable.value.preparing) return
         disconnect()
@@ -634,6 +650,36 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ connection.close() }, 2_100)
         super.onCleared()
     }
+}
+
+internal fun computeCameraIncrementalScan(snapshot: CameraImportState, cameraId: String): CameraIncrementalScan {
+    val jobs = snapshot.jobs.filter { it.matchesCamera(cameraId, snapshot.hardwareIdentity) && it.incremental != null }
+    val checkpoints = committedIncrementalCheckpoints(jobs)
+    val jpeg = snapshot.incrementalJpeg.takeIf { it.adjust }
+    val verifiedJobs = snapshot.verifiedImports.values.map { it.jobId }.toSet()
+    val savedKeys = if (snapshot.incrementalCutoffMillis != null) emptySet() else jobs.asSequence()
+        .filter { it.originalListingOwner == snapshot.incrementalOwner || it.id in verifiedJobs }
+        .flatMap { job ->
+            val plannedJpeg = job.incremental?.jpeg?.takeIf { it.adjust }
+            val saved = job.items.asSequence().filter {
+                it.saved != null && (it.photo.raw || jpeg == plannedJpeg || jpeg == job.jpegOptions(it))
+            }
+            val matches = resumeLocatorMap(job, snapshot.photos, snapshot.incrementalOwner)
+            saved.mapNotNull { item ->
+                val photo = matches[item.photo.key] ?: return@mapNotNull null
+                if (job.originalListingOwner == snapshot.incrementalOwner) photo.key
+                else photo.key.takeIf {
+                    snapshot.verifiedImports[it]?.let { evidence ->
+                        evidence.digest == item.digest && evidence.photo.matchesSnapshot(photo)
+                    } == true
+                }
+            }
+        }.toSet()
+    val zone = java.time.ZoneId.systemDefault()
+    val wallClockZone = if (snapshot.legacyCameraTime) java.time.ZoneOffset.UTC else zone
+    return CameraIncrementalScan(snapshot.photos, checkpoints,
+        CameraIncrementalScan.defaultCutoffMillis(zone = zone, wallClockZone = wallClockZone), snapshot.incrementalCutoffMillis,
+        snapshot.incrementalFormat, snapshot.incrementalIncludeUndated, savedKeys, snapshot.incrementalOwner)
 }
 
 /** 相机预览按容器方向解码；不下载或显影原件来生成浏览图。 */

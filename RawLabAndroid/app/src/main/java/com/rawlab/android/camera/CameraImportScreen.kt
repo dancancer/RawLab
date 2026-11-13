@@ -175,9 +175,27 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
                                         else R.string.camera_connect_action
                                     Text(stringResource(label))
                                 }
-                            } else if (job.status != CameraJobStatus.COMPLETE) Button(onClick = { if (state.connected) model.resume() else onConnect(true) },
-                                enabled = !state.preparing && !state.closing, shape = CameraControlShape, modifier = Modifier.fillMaxWidth().testTag("camera-resume")) {
-                                Text(stringResource(if (job.items.any { it.problem != null }) R.string.camera_retry_originals else if (state.connected) R.string.camera_resume else R.string.camera_connect_action))
+                            } else {
+                                val hasRetryable = job.status != CameraJobStatus.COMPLETE && job.items.any { it.saved == null && !it.skipped }
+                                val hasSkippable = job.items.any { it.canSkip }
+                                if (hasRetryable || hasSkippable) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (hasRetryable) Button(onClick = { if (state.connected) model.resume() else onConnect(true) },
+                                        enabled = !state.preparing && !state.closing, shape = CameraControlShape,
+                                        modifier = Modifier.weight(1f).testTag("camera-resume")) {
+                                        val label = when {
+                                            !state.connected -> R.string.camera_connect_action
+                                            job.items.any { it.error != null && !it.skipped } -> R.string.message_retry_failed_items
+                                            job.items.any { it.problem != null && !it.skipped } -> R.string.camera_retry_originals
+                                            else -> R.string.camera_resume
+                                        }
+                                        Text(stringResource(label))
+                                    }
+                                    if (hasSkippable) OutlinedButton(onClick = model::skipFailed,
+                                        enabled = !state.preparing && !state.closing, shape = CameraControlShape,
+                                        modifier = Modifier.weight(1f).testTag("camera-skip")) {
+                                        Text(stringResource(R.string.transfer_skip))
+                                    }
+                                }
                             }
                             if (job.savedCount > 0) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(onClick = { model.openSaved(onOpen) }, enabled = !state.preparing, shape = CameraControlShape,
@@ -325,6 +343,17 @@ private fun CameraTask(state: CameraImportState, needsOriginalJpeg: Boolean) {
             if (job.items.any { it.problem == CameraMediaProblem.JPEG_MEMORY }) Text(stringResource(R.string.memory_error),
                 color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             Text(stringResource(R.string.camera_saved_count, job.savedCount, job.items.size))
+            if (job.failedCount > 0 || job.skippedCount > 0) Text(
+                stringResource(
+                    R.string.message_succeeded_failed_not_processed,
+                    job.savedCount.toString(),
+                    job.failedCount.toString(),
+                    (job.pendingCount + job.skippedCount).toString(),
+                ),
+                color = if (job.failedCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("camera-task-summary"),
+            )
             job.incremental?.let { plan ->
                 Text("${stringResource(R.string.camera_transfer_format)} · ${if (plan.format == CameraImportFormat.RAW_AND_JPEG) "RAW + JPEG" else plan.format.name}",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -348,6 +377,9 @@ private fun CameraTask(state: CameraImportState, needsOriginalJpeg: Boolean) {
                         Text(bytes(item.photo.size), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (item.saveOriginalJpeg) Text(stringResource(R.string.camera_jpeg_original),
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (item.error != null && !item.skipped) Text(item.error,
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.testTag("camera-item-error-${item.photo.key}"))
                         (item.saved ?: item.unavailable)?.let { saved ->
                             Text(saved.relativePath + saved.displayName, style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -357,9 +389,11 @@ private fun CameraTask(state: CameraImportState, needsOriginalJpeg: Boolean) {
                     }
                     Text(stringResource(when {
                         state.currentKey == item.photo.key -> R.string.camera_progress
+                        item.skipped -> R.string.transfer_skipped
                         item.problem == CameraMediaProblem.MISSING || item.problem == CameraMediaProblem.REMOTE_MISSING -> R.string.camera_original_missing
                         item.problem == CameraMediaProblem.CHANGED -> R.string.camera_original_changed
                         item.problem?.needsOriginalJpeg == true -> R.string.camera_jpeg_processing_failed
+                        item.error != null -> R.string.camera_original_unavailable
                         item.duplicate -> R.string.camera_duplicate
                         item.saved != null -> R.string.camera_saved
                         else -> R.string.camera_waiting
