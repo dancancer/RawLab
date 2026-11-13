@@ -797,6 +797,8 @@ bool probeTiffHeaderSize(std::ifstream& stream, const uint8_t* head, std::stream
     constexpr size_t kMaxMainIfds = 64;
     std::vector<IfdInfo> candidates;
     std::vector<uint64_t> visitedMainIfds;
+    // 已解析偏移跨主链与 SubIFDs 共用：多个主 IFD 重复指向同一批 SubIFDs 时不再冗余读取。
+    std::vector<uint64_t> visitedIfds;
     uint32_t rootOrientation = 0;
     uint64_t currentIfdOffset = ifd0Offset;
     for (size_t step = 0; step < kMaxMainIfds && currentIfdOffset != 0; ++step) {
@@ -804,6 +806,7 @@ bool probeTiffHeaderSize(std::ifstream& stream, const uint8_t* head, std::stream
             break;
         }
         visitedMainIfds.push_back(currentIfdOffset);
+        visitedIfds.push_back(currentIfdOffset);
         IfdInfo mainIfd{};
         if (!parseIfd(currentIfdOffset, mainIfd)) {
             if (step == 0) return false;
@@ -819,6 +822,8 @@ bool probeTiffHeaderSize(std::ifstream& stream, const uint8_t* head, std::stream
         const uint32_t parentOrientation = mainIfd.orientation;
         candidates.push_back(std::move(mainIfd));
         for (uint64_t subOffset : subOffsets) {
+            if (std::find(visitedIfds.begin(), visitedIfds.end(), subOffset) != visitedIfds.end()) continue;
+            visitedIfds.push_back(subOffset);
             IfdInfo sub{};
             if (parseIfd(subOffset, sub)) {
                 if (sub.orientation == 0) sub.orientation = parentOrientation;
