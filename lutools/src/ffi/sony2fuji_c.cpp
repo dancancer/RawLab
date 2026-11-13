@@ -67,6 +67,9 @@ struct sony2fuji_session {
     sony2fuji::ImageData raw_cache;
     std::pair<int, int> raw_native_size{};
     std::string raw_key;
+    std::string probed_header_key;
+    sony2fuji::ProbeSizeResult probed_header_result = sony2fuji::ProbeSizeResult::Unsupported;
+    uint32_t probed_header_width = 0, probed_header_height = 0;
     sony2fuji_raw_exposure_mode raw_exposure_mode = SONY2FUJI_EXPOSURE_SCENE;
     int32_t raw_noise_reduction = 0;
     int32_t chroma_denoise = 0;
@@ -507,11 +510,403 @@ sony2fuji::GpuMode toCoreGpuMode(sony2fuji_gpu_mode mode) {
     }
 }
 
-// 与核心其它入口一致的最大输出像素数，避免尺寸乘法溢出后按小值分配。
-constexpr uint64_t kMaxOutputPixels = 128000000;
+// 输出像素数上限取有符号 32 位上限（约 2.14G 像素），防止尺寸相乘或核心 int 像素计数溢出。
+constexpr uint64_t kMaxOutputPixels = static_cast<uint64_t>(std::numeric_limits<int32_t>::max());
+constexpr uint32_t kMaxJpegDimension = 65535u;
 
 bool exceedsOutputPixelCap(uint32_t width, uint32_t height) {
-    return uint64_t(width) * height > kMaxOutputPixels;
+    return uint64_t(width) * uint64_t(height) > kMaxOutputPixels;
+}
+
+bool isJpegFileOutput(const sony2fuji_request& request) {
+    return request.output_target == SONY2FUJI_TARGET_FILE &&
+        request.output_format == SONY2FUJI_OUTPUT_JPEG;
+}
+
+bool exceedsOutputTargetCap(const sony2fuji_request& request, uint32_t width, uint32_t height) {
+    if (exceedsOutputPixelCap(width, height)) {
+        return true;
+    }
+    if (isJpegFileOutput(request) && (width > kMaxJpegDimension || height > kMaxJpegDimension)) {
+        return true;
+    }
+    if (request.output_target == SONY2FUJI_TARGET_BUFFER) {
+        const uint64_t channels = request.output_format == SONY2FUJI_OUTPUT_RGBA8 ? 4u : 3u;
+        if (uint64_t(width) * channels > std::numeric_limits<uint32_t>::max()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+uint16_t readEndian16(const uint8_t* p, bool littleEndian) {
+    return littleEndian
+        ? static_cast<uint16_t>(p[0] | (uint16_t(p[1]) << 8))
+        : static_cast<uint16_t>((uint16_t(p[0]) << 8) | p[1]);
+}
+
+uint32_t readEndian32(const uint8_t* p, bool littleEndian) {
+    return littleEndian
+        ? (uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24))
+        : ((uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | uint32_t(p[3]));
+}
+
+uint64_t readEndian64(const uint8_t* p, bool littleEndian) {
+    if (littleEndian) {
+        return uint64_t(readEndian32(p, true)) | (uint64_t(readEndian32(p + 4, true)) << 32);
+    }
+    return (uint64_t(readEndian32(p, false)) << 32) | uint64_t(readEndian32(p + 4, false));
+}
+
+uint32_t parseExifOrientation(const uint8_t* tiff, size_t size) {
+    if (size < 8) return 1;
+    const bool little = tiff[0] == 'I' && tiff[1] == 'I';
+    const bool big = tiff[0] == 'M' && tiff[1] == 'M';
+    if ((!little && !big) || readEndian16(tiff + 2, little) != 42) return 1;
+    const uint32_t ifdOffset = readEndian32(tiff + 4, little);
+    if (ifdOffset > size - 2) return 1;
+    const uint16_t entries = readEndian16(tiff + ifdOffset, little);
+    size_t pos = static_cast<size_t>(ifdOffset) + 2;
+    for (uint16_t i = 0; i < entries && pos + 12 <= size; ++i, pos += 12) {
+        const uint16_t tag = readEndian16(tiff + pos, little);
+        const uint16_t type = readEndian16(tiff + pos + 2, little);
+        const uint32_t count = readEndian32(tiff + pos + 4, little);
+        if (tag == 274 && type == 3 && count == 1) {
+            return readEndian16(tiff + pos + 8, little);
+        }
+    }
+    return 1;
+}
+
+bool probeJpegHeaderSize(std::ifstream& stream, uint32_t& width, uint32_t& height) {
+    stream.clear();
+    stream.seekg(2, std::ios::beg);
+    if (!stream) return false;
+    uint32_t orientation = 1;
+    for (int step = 0; step < 4096; ++step) {
+        int byte = stream.get();
+        if (byte != 0xFF) return false;
+        while (byte == 0xFF) byte = stream.get();
+        if (byte < 0 || byte == 0x00 || byte == 0xD9 || byte == 0xDA) return false;
+        if (byte == 0x01 || (byte >= 0xD0 && byte <= 0xD7)) continue;
+        uint8_t lenBytes[2]{};
+        stream.read(reinterpret_cast<char*>(lenBytes), 2);
+        if (stream.gcount() != 2) return false;
+        const uint16_t segLen = readEndian16(lenBytes, false);
+        if (segLen < 2) return false;
+        const uint32_t payloadLen = static_cast<uint32_t>(segLen - 2);
+        if (byte == 0xE1 && payloadLen >= 14) {
+            std::vector<uint8_t> app1(payloadLen);
+            stream.read(reinterpret_cast<char*>(app1.data()), payloadLen);
+            if (stream.gcount() != static_cast<std::streamsize>(payloadLen)) return false;
+            if (std::memcmp(app1.data(), "Exif\0\0", 6) == 0) {
+                orientation = parseExifOrientation(app1.data() + 6, app1.size() - 6);
+            }
+            continue;
+        }
+        if (byte >= 0xC0 && byte <= 0xCF && byte != 0xC4 && byte != 0xC8 && byte != 0xCC) {
+            if (payloadLen < 5) return false;
+            uint8_t sof[5]{};
+            stream.read(reinterpret_cast<char*>(sof), 5);
+            if (stream.gcount() != 5) return false;
+            uint32_t h = readEndian16(sof + 1, false);
+            uint32_t w = readEndian16(sof + 3, false);
+            if (w == 0 || h == 0) return false;
+            if (orientation >= 5 && orientation <= 8) std::swap(w, h);
+            width = w;
+            height = h;
+            return true;
+        }
+        stream.seekg(payloadLen, std::ios::cur);
+        if (!stream) return false;
+    }
+    return false;
+}
+
+bool probeTiffHeaderSize(std::ifstream& stream, const uint8_t* head, std::streamsize headSize,
+                         uint64_t fileSize, uint32_t& width, uint32_t& height) {
+    if (headSize < 8) return false;
+    const bool little = head[0] == 'I' && head[1] == 'I';
+    const bool big = head[0] == 'M' && head[1] == 'M';
+    if (!little && !big) return false;
+    const uint16_t magic = readEndian16(head + 2, little);
+    const bool bigTiff = magic == 43;
+    if (magic != 42 && !bigTiff) return false;
+    uint64_t ifd0Offset = 0;
+    if (bigTiff) {
+        if (headSize < 16 || readEndian16(head + 4, little) != 8 || readEndian16(head + 6, little) != 0)
+            return false;
+        ifd0Offset = readEndian64(head + 8, little);
+    } else {
+        ifd0Offset = readEndian32(head + 4, little);
+    }
+
+    auto typeBytes = [](uint16_t type) -> size_t {
+        switch (type) {
+            case 1: return 1;
+            case 3: return 2;
+            case 4:
+            case 13: return 4;
+            case 5:
+            case 16:
+            case 18: return 8;
+            default: return 0;
+        }
+    };
+    auto readAt = [&](uint64_t offset, uint8_t* dst, size_t count) -> bool {
+        if (count > fileSize || offset > fileSize - count) return false;
+        stream.clear();
+        stream.seekg(static_cast<std::streamoff>(offset), std::ios::beg);
+        if (!stream) return false;
+        stream.read(reinterpret_cast<char*>(dst), static_cast<std::streamsize>(count));
+        return stream.gcount() == static_cast<std::streamsize>(count);
+    };
+
+    struct IfdInfo {
+        uint64_t width = 0;
+        uint64_t height = 0;
+        uint64_t cropWidth = 0;
+        uint64_t cropHeight = 0;
+        uint32_t subfileType = 0;
+        uint32_t orientation = 0;
+        std::vector<uint64_t> subIfds;
+    };
+
+    auto parseIfd = [&](uint64_t offset, IfdInfo& info) -> bool {
+        uint64_t entryCount = 0;
+        uint64_t pos = offset;
+        if (bigTiff) {
+            uint8_t cnt[8]{};
+            if (!readAt(pos, cnt, 8)) return false;
+            entryCount = readEndian64(cnt, little);
+            pos += 8;
+        } else {
+            uint8_t cnt[2]{};
+            if (!readAt(pos, cnt, 2)) return false;
+            entryCount = readEndian16(cnt, little);
+            pos += 2;
+        }
+        if (entryCount == 0 || entryCount > 4096) return false;
+        const size_t entrySize = bigTiff ? 20u : 12u;
+        const size_t tableBytes = static_cast<size_t>(entryCount) * entrySize;
+        if (tableBytes > fileSize || pos > fileSize - tableBytes) return false;
+        std::vector<uint8_t> table(tableBytes);
+        if (!readAt(pos, table.data(), tableBytes)) return false;
+
+        auto readValues = [&](const uint8_t* entry, size_t maxValues, std::vector<double>& outNums,
+                              std::vector<uint64_t>& outU64) {
+            const uint16_t type = readEndian16(entry + 2, little);
+            const uint64_t count = bigTiff ? readEndian64(entry + 4, little) : readEndian32(entry + 4, little);
+            const size_t unit = typeBytes(type);
+            if (unit == 0 || count == 0) return;
+            const size_t inlineCap = bigTiff ? 8u : 4u;
+            const uint8_t* valueField = entry + (bigTiff ? 12 : 8);
+            const size_t toRead = static_cast<size_t>(std::min<uint64_t>(count, maxValues));
+            const size_t neededBytes = toRead * unit;
+            std::vector<uint8_t> buf(neededBytes);
+            if (count <= inlineCap / unit) {
+                std::memcpy(buf.data(), valueField, neededBytes);
+            } else {
+                const uint64_t dataOffset = bigTiff ? readEndian64(valueField, little)
+                                                    : readEndian32(valueField, little);
+                if (!readAt(dataOffset, buf.data(), neededBytes)) return;
+            }
+            outNums.reserve(toRead);
+            outU64.reserve(toRead);
+            for (size_t i = 0; i < toRead; ++i) {
+                const uint8_t* p = buf.data() + i * unit;
+                uint64_t u = 0;
+                double d = 0;
+                if (type == 1) { u = p[0]; d = double(u); }
+                else if (type == 3) { u = readEndian16(p, little); d = double(u); }
+                else if (type == 4 || type == 13) { u = readEndian32(p, little); d = double(u); }
+                else if (type == 16 || type == 18) { u = readEndian64(p, little); d = double(u); }
+                else if (type == 5) {
+                    const uint32_t num = readEndian32(p, little);
+                    const uint32_t den = readEndian32(p + 4, little);
+                    if (den == 0) return;
+                    d = double(num) / double(den);
+                    u = static_cast<uint64_t>(std::llround(d));
+                }
+                outNums.push_back(d);
+                outU64.push_back(u);
+            }
+        };
+
+        for (size_t i = 0; i < entryCount; ++i) {
+            const uint8_t* entry = table.data() + i * entrySize;
+            const uint16_t tag = readEndian16(entry, little);
+            if (tag != 254 && tag != 256 && tag != 257 && tag != 274 && tag != 330 && tag != 50720) continue;
+            const uint64_t entryValueCount = bigTiff ? readEndian64(entry + 4, little) : readEndian32(entry + 4, little);
+            std::vector<double> nums;
+            std::vector<uint64_t> u64s;
+            readValues(entry, tag == 330 ? 8 : 2, nums, u64s);
+            if (u64s.empty()) continue;
+            if (tag == 254) info.subfileType = static_cast<uint32_t>(u64s[0]);
+            else if (tag == 256) info.width = u64s[0];
+            else if (tag == 257) info.height = u64s[0];
+            else if (tag == 274 && entryValueCount == 1) info.orientation = static_cast<uint32_t>(u64s[0]);
+            else if (tag == 330) info.subIfds = std::move(u64s);
+            else if (tag == 50720 && u64s.size() >= 2) {
+                info.cropWidth = u64s[0];
+                info.cropHeight = u64s[1];
+            }
+        }
+        return true;
+    };
+
+    IfdInfo root{};
+    if (!parseIfd(ifd0Offset, root)) return false;
+
+    std::vector<IfdInfo> candidates;
+    candidates.push_back(root);
+    for (uint64_t subOffset : root.subIfds) {
+        IfdInfo sub{};
+        if (parseIfd(subOffset, sub)) {
+            if (sub.orientation == 0) sub.orientation = root.orientation;
+            candidates.push_back(std::move(sub));
+        }
+    }
+
+    const IfdInfo* best = nullptr;
+    uint64_t bestPixels = 0;
+    bool bestIsPrimary = false;
+    for (const auto& item : candidates) {
+        const uint64_t w = (item.cropWidth > 0 && item.cropHeight > 0 &&
+            (item.width == 0 || (item.cropWidth <= item.width && item.cropHeight <= item.height)))
+            ? item.cropWidth : item.width;
+        const uint64_t h = (item.cropWidth > 0 && item.cropHeight > 0 &&
+            (item.height == 0 || (item.cropWidth <= item.width && item.cropHeight <= item.height)))
+            ? item.cropHeight : item.height;
+        if (w == 0 || h == 0) continue;
+        const bool isPrimary = (item.subfileType & 1u) == 0;
+        const uint64_t clampedW = std::min<uint64_t>(w, std::numeric_limits<uint32_t>::max());
+        const uint64_t clampedH = std::min<uint64_t>(h, std::numeric_limits<uint32_t>::max());
+        const uint64_t pixels = clampedW > std::numeric_limits<uint64_t>::max() / clampedH
+            ? std::numeric_limits<uint64_t>::max() : clampedW * clampedH;
+        if (!best || (isPrimary && !bestIsPrimary) || (isPrimary == bestIsPrimary && pixels > bestPixels)) {
+            best = &item;
+            bestPixels = pixels;
+            bestIsPrimary = isPrimary;
+        }
+    }
+    if (!best) return false;
+    uint64_t w = (best->cropWidth > 0 && best->cropHeight > 0 &&
+        (best->width == 0 || (best->cropWidth <= best->width && best->cropHeight <= best->height)))
+        ? best->cropWidth : best->width;
+    uint64_t h = (best->cropWidth > 0 && best->cropHeight > 0 &&
+        (best->height == 0 || (best->cropWidth <= best->width && best->cropHeight <= best->height)))
+        ? best->cropHeight : best->height;
+    if (best->orientation >= 5 && best->orientation <= 8) std::swap(w, h);
+    width = static_cast<uint32_t>(std::min<uint64_t>(w, std::numeric_limits<uint32_t>::max()));
+    height = static_cast<uint32_t>(std::min<uint64_t>(h, std::numeric_limits<uint32_t>::max()));
+    return width > 0 && height > 0;
+}
+
+bool buildRawSourceIdentityKey(
+    const char* inputPathStr, bool legacySonyCrop, std::string& outBaseKey
+) {
+    if (isEmptyString(inputPathStr)) return false;
+    std::error_code fileError;
+    const auto inputPath = std::filesystem::u8path(inputPathStr);
+    const auto modified = std::filesystem::last_write_time(inputPath, fileError);
+    if (fileError) return false;
+    const auto fileSize = std::filesystem::file_size(inputPath, fileError);
+    if (fileError) return false;
+    const auto modifiedNanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        modified.time_since_epoch()).count();
+    outBaseKey = std::string(inputPathStr) + ":" +
+        std::to_string(modifiedNanoseconds) + ":" + std::to_string(fileSize);
+#ifdef _WIN32
+    const HANDLE identityHandle = CreateFileW(inputPath.c_str(), FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (identityHandle == INVALID_HANDLE_VALUE) return false;
+    BY_HANDLE_FILE_INFORMATION identity{};
+    const bool hasIdentity = GetFileInformationByHandle(identityHandle, &identity) != 0;
+    CloseHandle(identityHandle);
+    if (!hasIdentity) return false;
+    outBaseKey += ":file:" + std::to_string(identity.dwVolumeSerialNumber) + ":" +
+        std::to_string(identity.nFileIndexHigh) + ":" + std::to_string(identity.nFileIndexLow);
+#else
+    struct stat identity{};
+    if (::stat(inputPath.c_str(), &identity) != 0) return false;
+    outBaseKey += ":file:" + std::to_string(identity.st_dev) + ":" + std::to_string(identity.st_ino);
+#endif
+    if (legacySonyCrop) outBaseKey += ":legacy-sony-crop";
+    return true;
+}
+
+bool needsSourceSizePreflight(const sony2fuji_request& request) {
+    sony2fuji_size_mode mode = request.size_mode;
+    uint32_t long_edge = request.long_edge;
+    if (request.intent == SONY2FUJI_INTENT_PREVIEW && request.preview_long_edge > 0) {
+        mode = SONY2FUJI_SIZE_FIT_LONG_EDGE;
+        long_edge = request.preview_long_edge;
+    }
+    if (mode == SONY2FUJI_SIZE_EXACT) {
+        return false;
+    }
+    if ((mode == SONY2FUJI_SIZE_FIT_LONG_EDGE || mode == SONY2FUJI_SIZE_LIMIT_LONG_EDGE) &&
+        long_edge > 0 && !exceedsOutputTargetCap(request, long_edge, long_edge)) {
+        return false;
+    }
+    return true;
+}
+
+sony2fuji::ProbeSizeResult probeInputHeaderSize(
+    const char* inputPath, bool legacySonyCrop, sony2fuji_x3f_mode x3fMode,
+    uint32_t& outWidth, uint32_t& outHeight
+) {
+    outWidth = 0;
+    outHeight = 0;
+    if (isEmptyString(inputPath)) {
+        return sony2fuji::ProbeSizeResult::Unsupported;
+    }
+    std::error_code fsError;
+    const auto path = std::filesystem::u8path(inputPath);
+    const uint64_t fileSize = std::filesystem::file_size(path, fsError);
+    if (fsError || fileSize < 4) return sony2fuji::ProbeSizeResult::Unsupported;
+
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream) return sony2fuji::ProbeSizeResult::Unsupported;
+    uint8_t head[24]{};
+    stream.read(reinterpret_cast<char*>(head), sizeof(head));
+    const std::streamsize headSize = stream.gcount();
+    if (headSize < 4) return sony2fuji::ProbeSizeResult::Unsupported;
+
+    if (x3fMode == SONY2FUJI_X3F_NORMAL && std::memcmp(head, "FOVb", 4) == 0) {
+        return sony2fuji::ProbeSizeResult::DeferredPostDecode;
+    }
+
+    static constexpr uint8_t kPngSignature[8] = {137, 80, 78, 71, 13, 10, 26, 10};
+    if (headSize >= 24 && std::memcmp(head, kPngSignature, 8) == 0 &&
+        readEndian32(head + 8, false) == 13 && std::memcmp(head + 12, "IHDR", 4) == 0) {
+        const uint32_t w = readEndian32(head + 16, false);
+        const uint32_t h = readEndian32(head + 20, false);
+        if (w == 0 || h == 0) return sony2fuji::ProbeSizeResult::Unsupported;
+        outWidth = w;
+        outHeight = h;
+        return sony2fuji::ProbeSizeResult::Probed;
+    }
+
+    if (head[0] == 0xFF && head[1] == 0xD8 && head[2] == 0xFF) {
+        return probeJpegHeaderSize(stream, outWidth, outHeight)
+            ? sony2fuji::ProbeSizeResult::Probed
+            : sony2fuji::ProbeSizeResult::Unsupported;
+    }
+
+    stream.close();
+    const auto rawProbe = sony2fuji::RAWProcessor::probeOutputSize(
+        inputPath, legacySonyCrop, outWidth, outHeight, static_cast<sony2fuji::X3fMode>(x3fMode));
+    if (rawProbe != sony2fuji::ProbeSizeResult::Unsupported) {
+        return rawProbe;
+    }
+
+    std::ifstream tiffStream(path, std::ios::binary);
+    if (!tiffStream) return sony2fuji::ProbeSizeResult::Unsupported;
+    return probeTiffHeaderSize(tiffStream, head, headSize, fileSize, outWidth, outHeight)
+        ? sony2fuji::ProbeSizeResult::Probed
+        : sony2fuji::ProbeSizeResult::Unsupported;
 }
 
 sony2fuji_status validateRequestSize(const sony2fuji_request& request) {
@@ -529,12 +924,13 @@ sony2fuji_status validateRequestSize(const sony2fuji_request& request) {
             return SONY2FUJI_STATUS_OK;
         case SONY2FUJI_SIZE_EXACT:
             if (request.target_width == 0 || request.target_height == 0 ||
-                exceedsOutputPixelCap(request.target_width, request.target_height)) {
+                exceedsOutputTargetCap(request, request.target_width, request.target_height)) {
                 return SONY2FUJI_STATUS_INVALID_ARGUMENT;
             }
             return SONY2FUJI_STATUS_OK;
         case SONY2FUJI_SIZE_FIT_LONG_EDGE:
-            if (long_edge == 0 || exceedsOutputPixelCap(long_edge, 1)) {
+            if (long_edge == 0 || exceedsOutputPixelCap(long_edge, 1) ||
+                (isJpegFileOutput(request) && long_edge > kMaxJpegDimension)) {
                 return SONY2FUJI_STATUS_INVALID_ARGUMENT;
             }
             return SONY2FUJI_STATUS_OK;
@@ -544,7 +940,7 @@ sony2fuji_status validateRequestSize(const sony2fuji_request& request) {
             }
             return SONY2FUJI_STATUS_OK;
         case SONY2FUJI_SIZE_FIT_SHORT_EDGE:
-            if (short_edge == 0 || exceedsOutputPixelCap(short_edge, short_edge)) {
+            if (short_edge == 0 || exceedsOutputTargetCap(request, short_edge, short_edge)) {
                 return SONY2FUJI_STATUS_INVALID_ARGUMENT;
             }
             return SONY2FUJI_STATUS_OK;
@@ -700,7 +1096,8 @@ sony2fuji_status computeTargetSize(
             break;
         case SONY2FUJI_SIZE_FIT_LONG_EDGE:
         case SONY2FUJI_SIZE_LIMIT_LONG_EDGE: {
-            if (long_edge == 0 || (mode == SONY2FUJI_SIZE_FIT_LONG_EDGE && exceedsOutputPixelCap(long_edge, 1))) {
+            if (long_edge == 0 || (mode == SONY2FUJI_SIZE_FIT_LONG_EDGE &&
+                (exceedsOutputPixelCap(long_edge, 1) || (isJpegFileOutput(request) && long_edge > kMaxJpegDimension)))) {
                 return SONY2FUJI_STATUS_INVALID_ARGUMENT;
             }
             uint32_t max_edge = std::max(src_width, src_height);
@@ -717,7 +1114,7 @@ sony2fuji_status computeTargetSize(
             break;
         }
         case SONY2FUJI_SIZE_FIT_SHORT_EDGE: {
-            if (short_edge == 0 || exceedsOutputPixelCap(short_edge, short_edge)) {
+            if (short_edge == 0 || exceedsOutputTargetCap(request, short_edge, short_edge)) {
                 return SONY2FUJI_STATUS_INVALID_ARGUMENT;
             }
             uint32_t min_edge = std::min(src_width, src_height);
@@ -736,8 +1133,8 @@ sony2fuji_status computeTargetSize(
             return SONY2FUJI_STATUS_UNSUPPORTED;
     }
 
-    // 所有 size mode 共用的收口上限检查。
-    if (exceedsOutputPixelCap(width, height)) {
+    // 所有 size mode 共用的收口上限与目标格式尺寸检查。
+    if (exceedsOutputTargetCap(request, width, height)) {
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     }
 
@@ -746,14 +1143,16 @@ sony2fuji_status computeTargetSize(
     return SONY2FUJI_STATUS_OK;
 }
 
-sony2fuji::RGB sampleBilinear(const sony2fuji::ImageData& image, float x, float y) {
-    int x0 = static_cast<int>(std::floor(x));
-    int y0 = static_cast<int>(std::floor(y));
-    int x1 = std::min(x0 + 1, image.width - 1);
-    int y1 = std::min(y0 + 1, image.height - 1);
+sony2fuji::RGB sampleBilinear(const sony2fuji::ImageData& image, double x, double y) {
+    const double clamped_x = std::clamp(x, 0.0, static_cast<double>(image.width - 1));
+    const double clamped_y = std::clamp(y, 0.0, static_cast<double>(image.height - 1));
+    const int x0 = std::clamp(static_cast<int>(std::floor(clamped_x)), 0, image.width - 1);
+    const int y0 = std::clamp(static_cast<int>(std::floor(clamped_y)), 0, image.height - 1);
+    const int x1 = x0 < image.width - 1 ? x0 + 1 : image.width - 1;
+    const int y1 = y0 < image.height - 1 ? y0 + 1 : image.height - 1;
 
-    float tx = x - static_cast<float>(x0);
-    float ty = y - static_cast<float>(y0);
+    const float tx = static_cast<float>(clamped_x - static_cast<double>(x0));
+    const float ty = static_cast<float>(clamped_y - static_cast<double>(y0));
 
     const sony2fuji::RGB& c00 = image.at(x0, y0);
     const sony2fuji::RGB& c10 = image.at(x1, y0);
@@ -777,18 +1176,18 @@ sony2fuji::ImageData resizeBilinear(
         return output;
     }
 
-    float scale_x = (target_width == 1)
-        ? 0.0f
-        : static_cast<float>(source.width - 1) / static_cast<float>(target_width - 1);
-    float scale_y = (target_height == 1)
-        ? 0.0f
-        : static_cast<float>(source.height - 1) / static_cast<float>(target_height - 1);
+    const double scale_x = (target_width == 1)
+        ? 0.0
+        : static_cast<double>(source.width - 1) / static_cast<double>(target_width - 1);
+    const double scale_y = (target_height == 1)
+        ? 0.0
+        : static_cast<double>(source.height - 1) / static_cast<double>(target_height - 1);
 
     for (uint32_t y = 0; y < target_height; ++y) {
         sony2fuji::checkProcessingCancellation();
-        float src_y = static_cast<float>(y) * scale_y;
+        const double src_y = static_cast<double>(y) * scale_y;
         for (uint32_t x = 0; x < target_width; ++x) {
-            float src_x = static_cast<float>(x) * scale_x;
+            const double src_x = static_cast<double>(x) * scale_x;
             output.pixels[static_cast<size_t>(y) * target_width + x] = sampleBilinear(source, src_x, src_y);
         }
     }
@@ -1094,37 +1493,16 @@ sony2fuji_status loadRawImage(
     sony2fuji::ImageData& image, sony2fuji_color_space* space, bool* is_linear,
     bool copyImage = true, bool applyAI = true
 ) {
-    std::error_code fileError;
-    const auto inputPath = std::filesystem::u8path(request.input_path);
-    const auto modified = std::filesystem::last_write_time(inputPath, fileError);
-    if (fileError) return SONY2FUJI_STATUS_IO_ERROR;
-    const auto fileSize = std::filesystem::file_size(inputPath, fileError);
-    if (fileError) return SONY2FUJI_STATUS_IO_ERROR;
-    const auto modifiedNanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(
-        modified.time_since_epoch()).count();
-    std::string fileKey = std::string(request.input_path) + ":" +
-        std::to_string(modifiedNanoseconds) + ":" + std::to_string(fileSize);
-#ifdef _WIN32
-    const HANDLE identityHandle = CreateFileW(inputPath.c_str(), FILE_READ_ATTRIBUTES,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (identityHandle == INVALID_HANDLE_VALUE) return SONY2FUJI_STATUS_IO_ERROR;
-    BY_HANDLE_FILE_INFORMATION identity{};
-    const bool hasIdentity = GetFileInformationByHandle(identityHandle, &identity) != 0;
-    CloseHandle(identityHandle);
-    if (!hasIdentity) return SONY2FUJI_STATUS_IO_ERROR;
-    fileKey += ":file:" + std::to_string(identity.dwVolumeSerialNumber) + ":" +
-        std::to_string(identity.nFileIndexHigh) + ":" + std::to_string(identity.nFileIndexLow);
-#else
-    struct stat identity{};
-    if (::stat(inputPath.c_str(), &identity) != 0) return SONY2FUJI_STATUS_IO_ERROR;
-    fileKey += ":file:" + std::to_string(identity.st_dev) + ":" + std::to_string(identity.st_ino);
-#endif
+    const bool legacySonyCrop = sony2fuji::usesLegacySonyCrop(session->processing_version);
+    std::string baseSourceKey;
+    if (!buildRawSourceIdentityKey(request.input_path, legacySonyCrop, baseSourceKey)) {
+        return SONY2FUJI_STATUS_IO_ERROR;
+    }
+    std::string fileKey = baseSourceKey;
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
     const auto aiSourceIdentity = aiEnabled(session) ? sony2fuji::ai::sourceIdentityKey(request.input_path) : std::string();
     if (aiEnabled(session)) fileKey += ":ai-source:" + aiSourceIdentity;
 #endif
-    const bool legacySonyCrop = sony2fuji::usesLegacySonyCrop(session->processing_version);
-    if (legacySonyCrop) fileKey += ":legacy-sony-crop";
     const bool useAI = applyAI && aiEnabled(session);
     const int rawNoiseReduction = aiEnabled(session) ? 0 : session->raw_noise_reduction;
     if (session->lens_correction.active()) ensureLensDatabase(session);
@@ -1226,6 +1604,12 @@ sony2fuji_status loadRawImage(
                 std::exp2(processor.getBaselineExposureEV()+options.exposure)*options.brightness);
 #endif
         session->raw_native_size = halfSize ? processor.getNativeOutputSize() : std::pair{decoded.width, decoded.height};
+        if (session->raw_native_size.first > 0 && session->raw_native_size.second > 0) {
+            session->probed_header_key = baseSourceKey + ":x3f:" + std::to_string(session->x3f_mode);
+            session->probed_header_result = sony2fuji::ProbeSizeResult::Probed;
+            session->probed_header_width = static_cast<uint32_t>(session->raw_native_size.first);
+            session->probed_header_height = static_cast<uint32_t>(session->raw_native_size.second);
+        }
         session->raw_cache = std::move(decoded);
         session->raw_display_referred = processor.isDisplayReferred();
         session->raw_lens_report = processor.getLensCorrectionReport();
@@ -2378,13 +2762,43 @@ static sony2fuji_status processImpl(
         local.intent == SONY2FUJI_INTENT_PREVIEW && local.output_target == SONY2FUJI_TARGET_BUFFER;
     if (cpuOnlyStages && session->gpu_config.mode == sony2fuji::GpuMode::Force)
         return SONY2FUJI_STATUS_UNSUPPORTED;
-    if (local.input_type != SONY2FUJI_INPUT_RAW) {
-        const auto native = sony2fuji::geometryOutputSize(
-            static_cast<int>(local.input_width), static_cast<int>(local.input_height), session->geometry);
-        uint32_t target_width = 0, target_height = 0;
-        status = computeTargetSize(local, static_cast<uint32_t>(native.first), static_cast<uint32_t>(native.second),
-            &target_width, &target_height);
-        if (status != SONY2FUJI_STATUS_OK) return status;
+    if (needsSourceSizePreflight(local)) {
+        uint32_t source_width = local.input_width;
+        uint32_t source_height = local.input_height;
+        bool has_source_size = local.input_type != SONY2FUJI_INPUT_RAW;
+        if (!has_source_size) {
+            const bool legacySonyCrop = sony2fuji::usesLegacySonyCrop(session->processing_version);
+            std::string baseSourceKey;
+            if (buildRawSourceIdentityKey(local.input_path, legacySonyCrop, baseSourceKey)) {
+                const std::string probeKey = baseSourceKey + ":x3f:" + std::to_string(session->x3f_mode);
+                if (session->probed_header_key != probeKey) {
+                    uint32_t probedW = 0, probedH = 0;
+                    const auto probeRes = probeInputHeaderSize(
+                        local.input_path, legacySonyCrop, session->x3f_mode, probedW, probedH);
+                    session->probed_header_key = probeKey;
+                    session->probed_header_result = probeRes;
+                    session->probed_header_width = probedW;
+                    session->probed_header_height = probedH;
+                }
+                if (session->probed_header_result == sony2fuji::ProbeSizeResult::Probed) {
+                    source_width = session->probed_header_width;
+                    source_height = session->probed_header_height;
+                    has_source_size = true;
+                }
+            }
+        }
+        if (has_source_size) {
+            if (source_width > static_cast<uint32_t>(std::numeric_limits<int32_t>::max()) ||
+                source_height > static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
+                return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+            }
+            const auto native = sony2fuji::geometryOutputSize(
+                static_cast<int>(source_width), static_cast<int>(source_height), session->geometry);
+            uint32_t target_width = 0, target_height = 0;
+            status = computeTargetSize(local, static_cast<uint32_t>(native.first), static_cast<uint32_t>(native.second),
+                &target_width, &target_height);
+            if (status != SONY2FUJI_STATUS_OK) return status;
+        }
     }
     const bool use_lut = !isEmptyString(local.lut_path) && local.lut_strength > 0;
     std::shared_ptr<sony2fuji::LUT3D> lut;
