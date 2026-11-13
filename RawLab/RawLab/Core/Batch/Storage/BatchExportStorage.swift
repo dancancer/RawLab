@@ -71,6 +71,18 @@ final class BatchJournalStore {
         return job
     }
 
+    // 任务目录先于 journal 写入，所以只能在本进程尚未创建任务时（应用启动）调用；
+    // 有 journal 的目录（含失败、取消和 DNG 任务）一律保留，交给 pendingJobs/discard 处理。
+    func removeOrphanedJobDirectories() {
+        let entries = (try? FileManager.default.contentsOfDirectory(at: directory,
+                                                                     includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+        for entry in entries where UUID(uuidString: entry.lastPathComponent) != nil {
+            guard (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+            let record = directory.appendingPathComponent("\(entry.lastPathComponent).json")
+            if !FileManager.default.fileExists(atPath: record.path) { try? FileManager.default.removeItem(at: entry) }
+        }
+    }
+
     func discard(id: UUID) throws {
         let record = directory.appendingPathComponent("\(id.uuidString).json")
         let inputs = directory.appendingPathComponent(id.uuidString, isDirectory: true)

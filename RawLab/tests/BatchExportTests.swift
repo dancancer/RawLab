@@ -78,6 +78,7 @@ struct BatchExportTests {
         defer { try? FileManager.default.removeItem(at: root) }
         try checkPerTargetSnapshots(root)
         try checkUniformBatchX3fTargetMode(root)
+        try checkOrphanedJobDirectories(root)
         try BatchSourceJournalTests.run(root: root.appendingPathComponent("source-journal"))
 
         let sourceURL = root.appendingPathComponent("source.ARW")
@@ -529,6 +530,48 @@ private func checkPerTargetSnapshots(_ root: URL) throws {
     let changed = try BatchExportRunner.run(job: frozen, journalStore: nil, render: { _, _ in }, write: { _, _, _, _ in })
     try BatchExportTests.require(changed.targets[0].status == .failed && changed.targets[1].status == .succeeded,
                                 "changed input fails only its frozen target")
+}
+
+private func checkOrphanedJobDirectories(_ root: URL) throws {
+    let journal = try BatchJournalStore(directory: root.appendingPathComponent("orphan-journal", isDirectory: true))
+    let sourceURL = root.appendingPathComponent("orphan-source.ARW")
+    try Data("orphan-source".utf8).write(to: sourceURL)
+    let identity = PhotoIdentity(resourceIdentifier: "orphan-source")
+    func job(_ status: BatchJobStatus, format: BatchOutputFormat) throws -> BatchExportJob {
+        let id = UUID()
+        let input = try BatchInputStore.copy(sourceURL, identity: identity, jobID: id, root: journal.directory)
+        let source = BatchSourceSnapshot(identity: identity, sourceFile: .externallyManaged(input),
+                                         displayName: "orphan-source.ARW", settings: .default)
+        var job = BatchExportJob(id: id, source: source,
+                                 targets: [BatchTarget(identity: identity, sourceURL: input, displayName: "orphan-source.ARW")],
+                                 outputFormat: format, longEdge: 3000)
+        job.status = status
+        try journal.save(job)
+        return job
+    }
+    let failed = try job(.failed, format: .jpeg)
+    let cancelled = try job(.cancelled, format: .jpeg)
+    let completedDNG = try job(.completed, format: .renderedDNG)
+    let orphanID = UUID()
+    let orphanInput = try BatchInputStore.copy(sourceURL, identity: identity, jobID: orphanID, root: journal.directory)
+    let unrelated = journal.directory.appendingPathComponent("not-a-job", isDirectory: true)
+    try FileManager.default.createDirectory(at: unrelated, withIntermediateDirectories: true)
+
+    journal.removeOrphanedJobDirectories()
+
+    func exists(_ id: UUID) -> Bool {
+        FileManager.default.fileExists(atPath: journal.directory.appendingPathComponent(id.uuidString).path)
+    }
+    BatchExportTests.check(!exists(orphanID) && !FileManager.default.fileExists(atPath: orphanInput.path),
+                           "launch cleanup removes a batch input directory without a journal")
+    BatchExportTests.check(exists(failed.id) && exists(cancelled.id) && exists(completedDNG.id),
+                           "launch cleanup keeps failed, cancelled and DNG job directories that still have journals")
+    BatchExportTests.check(FileManager.default.fileExists(atPath: unrelated.path),
+                           "launch cleanup ignores directories that are not batch job IDs")
+    let pending = try journal.pendingJobs()
+    BatchExportTests.check(Set(pending.map(\.id)) == [failed.id, cancelled.id, completedDNG.id] &&
+                           pending.allSatisfy { FileManager.default.fileExists(atPath: $0.targets[0].sourceURL.path) },
+                           "jobs kept by launch cleanup remain recoverable with their frozen inputs")
 }
 
 private func checkUniformBatchX3fTargetMode(_ root: URL) throws {
