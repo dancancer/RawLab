@@ -22,8 +22,8 @@ internal object AdjustmentTransferWB {
         if (!condition) throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, field)
     }
     private fun resolved(cameraMode: Boolean, temperature: Double?, tint: Double, relative: Boolean,
-        recipe: AdjustmentRecipeContext?, sourceIsRaw: Boolean, context: AdjustmentTransferContext): Resolved {
-        if (!context.isRaw || (!sourceIsRaw && recipe == null)) return Resolved(true)
+        recipe: AdjustmentRecipeContext?, context: AdjustmentTransferContext): Resolved {
+        if (!context.isRaw) return Resolved(true)
         val offset = tint * if (relative) recipe?.strength ?: 1.0 else 1.0
         if (cameraMode && offset == 0.0) return Resolved(true)
         val calibration = if (cameraMode || relative) camera(context) else null
@@ -53,7 +53,11 @@ internal object AdjustmentTransferWB {
 
     fun apply(payload: AdjustmentPayload, target: EditSettings, original: EditSettings,
         context: AdjustmentTransferContext, fullRecipe: Boolean, contextChanged: Boolean): EditSettings {
-        val selected = payload.fields.intersect(AdjustmentField.WHITE_BALANCE)
+        val selected = payload.fields.intersect(AdjustmentField.WHITE_BALANCE).toMutableSet()
+        // 非 RAW 来源没有独立白平衡，none/null 占位值不覆盖 RAW 目标白平衡；配方相对 tint 仍跨 RAW 复用。
+        if (!payload.source.isRaw && context.isRaw && (payload.source.recipe == null || AdjustmentField.TINT !in selected)) {
+            selected.clear()
+        }
         var result = original
         if (selected.isEmpty()) {
             if (context.isRaw && contextChanged && render(result, context) != render(target, context))
@@ -83,7 +87,7 @@ internal object AdjustmentTransferWB {
         if (selected == AdjustmentField.WHITE_BALANCE) {
             val cameraMode = mode == "camera" || mode == "none" && payload.source.recipe != null
             val desired = resolved(cameraMode, temperature!!.number, tint!!.number ?: 0.0,
-                payload.source.recipe != null || mode == "camera", payload.source.recipe, payload.source.isRaw, context)
+                payload.source.recipe != null || mode == "camera", payload.source.recipe, context)
             if (fullRecipe) {
                 result = result.copy(customWb = mode == "temperature", temperature = temperature.number?.toFloat() ?: 6500f,
                     tint = tint.number?.toFloat() ?: 0f)

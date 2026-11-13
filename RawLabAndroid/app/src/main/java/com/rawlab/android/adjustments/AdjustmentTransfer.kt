@@ -129,8 +129,10 @@ object AdjustmentTransfer {
         }
         result = AdjustmentTransferWB.apply(payload, target, result, context, fullRecipe, contextChanged)
         payload[AdjustmentField.EXPOSURE_MODE]?.text?.let { mode ->
-            // 普通图片没有 RAW 曝光基准，选中任何来源模式均保持 sensor。
-            result = result.copy(exposureMode = if (!context.isRaw) 2 else listOf("scene", "preview", "sensor").indexOf(mode))
+            // 普通图片没有 RAW 曝光基准：其 sensor 占位值不改变 RAW 目标；普通目标始终保持 sensor。
+            if (payload.source.isRaw || !context.isRaw) {
+                result = result.copy(exposureMode = if (!context.isRaw) 2 else listOf("scene", "preview", "sensor").indexOf(mode))
+            }
         }
         result = AdjustmentTransferValues.applyObjects(payload, result, context)
         result = AdjustmentTransferRefinement.apply(payload, target, result, fullRecipe)

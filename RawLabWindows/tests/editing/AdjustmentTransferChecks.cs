@@ -92,68 +92,7 @@ internal static class AdjustmentTransferChecks
     private sealed record ScenarioDivergence(string LedgerId, string Reason, IReadOnlySet<string> ExpectedKeys);
     // 显式例外清单：未登记的分歧（或同一场景出现清单外的字段差异）必红；已修复项仍留在此表也必红（棘轮只减不增）。
     private static readonly IReadOnlyDictionary<string, ScenarioDivergence> KnownScenarioDivergences =
-        new Dictionary<string, ScenarioDivergence>
-        {
-            ["raster-all-preserves-raw-scene-wb-lens"] = new(
-                "P1-12",
-                "非 RAW 来源全量粘贴时默认关闭镜头占位覆盖了 RAW 目标既有手动镜头校正",
-                new HashSet<string>
-                {
-                    "value:geometry.lens.auto_crop",
-                    "value:geometry.lens.distortion",
-                    "value:geometry.lens.profile_id",
-                    "value:geometry.lens.tca",
-                    "value:geometry.lens.vignetting"
-                }),
-            ["raster-all-preserves-raw-preview-wb-auto-lens"] = new(
-                "P1-12",
-                "非 RAW 来源全量粘贴时默认关闭镜头占位覆盖了 RAW 目标既有自动畸变校正",
-                new HashSet<string> { "value:geometry.lens.distortion" }),
-            ["raster-neutral-all-unchanged-on-seeded-raw"] = new(
-                "P1-12",
-                "非 RAW 中性全量载荷未跳过默认关闭镜头占位，导致已启用镜头校正的 RAW 目标变为 applied",
-                new HashSet<string>
-                {
-                    "changed:geometry.lens.auto_crop",
-                    "changed:geometry.lens.distortion",
-                    "changed:geometry.lens.profile_id",
-                    "changed:geometry.lens.tca",
-                    "changed:geometry.lens.vignetting",
-                    "status:applied"
-                }),
-            ["raster-placeholders-only-unchanged-on-raw"] = new(
-                "P1-12",
-                "非 RAW 占位子集中的默认关闭镜头字段未在 RAW 目标上跳过，导致预期 unchanged 实际变为 applied",
-                new HashSet<string>
-                {
-                    "changed:geometry.lens.auto_crop",
-                    "changed:geometry.lens.distortion",
-                    "changed:geometry.lens.profile_id",
-                    "changed:geometry.lens.tca",
-                    "changed:geometry.lens.vignetting",
-                    "status:applied"
-                }),
-            ["raster-partial-default-lens-unchanged-on-raw"] = new(
-                "P1-12",
-                "非 RAW 默认关闭镜头子集未在已启用镜头校正的 RAW 目标上跳过，导致预期 unchanged 实际变为 applied",
-                new HashSet<string>
-                {
-                    "changed:geometry.lens.auto_crop",
-                    "changed:geometry.lens.distortion",
-                    "status:applied"
-                }),
-            ["raster-full-recipe-preserves-identity-and-relative-tint-on-raw"] = new(
-                "P1-12",
-                "非 RAW 完整配方全量粘贴到 RAW 目标时未跳过默认关闭镜头占位，覆盖了目标镜头校正",
-                new HashSet<string>
-                {
-                    "value:geometry.lens.auto_crop",
-                    "value:geometry.lens.distortion",
-                    "value:geometry.lens.profile_id",
-                    "value:geometry.lens.tca",
-                    "value:geometry.lens.vignetting"
-                })
-        };
+        new Dictionary<string, ScenarioDivergence>();
     private static void Scenarios()
     {
         using var document = JsonDocument.Parse(File.ReadAllText(ResolveFixturePath("Shared/fixtures/adjustment-transfer-scenarios-v1.json")));
