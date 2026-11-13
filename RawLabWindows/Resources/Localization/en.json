@@ -333,6 +333,7 @@
     "已导出渲染型 DNG。": "Rendered DNG Exported.",
     "已导出（{0}）：{1}": "Exported ({0}): {1}",
     "已将当前设置应用到 {0} 张照片": "Current settings applied (photos: {0})",
+    "已将损坏的上次批量任务记录移出为：{0}": "Moved the corrupt last batch task record to: {0}",
     "已展开": "Expanded",
     "已应用": "Applied",
     "已应用 AI 降噪；曝光和外观调整复用结果。": "AI denoise applied. Exposure and look adjustments reuse the result.",

@@ -17,6 +17,8 @@ final class BatchJournalStore {
         return try BatchJournalStore(directory: root.appendingPathComponent("RawLab/BatchJobs", isDirectory: true))
     }
 
+    private(set) var lastQuarantinedURL: URL?
+
     func save(_ job: BatchExportJob) throws {
         try job.validate()
         _ = try load(id: job.id)
@@ -29,7 +31,16 @@ final class BatchJournalStore {
     func load(id: UUID) throws -> BatchExportJob? {
         let file = directory.appendingPathComponent("\(id.uuidString).json")
         guard FileManager.default.fileExists(atPath: file.path) else { return nil }
-        return relocateOwnedFiles(try JSONDecoder().decode(BatchExportJob.self, from: Data(contentsOf: file)))
+        // 「读不了」不是「读得到但坏了」：先读字节，I/O 错误原样抛出，不做损坏隔离。
+        let data = try Data(contentsOf: file)
+        do {
+            return relocateOwnedFiles(try JSONDecoder().decode(BatchExportJob.self, from: data))
+        } catch {
+            // 未知更高版本是可识别但更新的记录，拒绝隔离，交由调用方报错，save 因此不得覆盖。
+            if Self.isUnsupportedFutureJournal(data) { throw error }
+            try quarantineCorruptJob(at: file, error: error)
+            return nil
+        }
     }
 
     func pendingJobs() throws -> [BatchExportJob] {
@@ -37,7 +48,15 @@ final class BatchJournalStore {
                                                                  includingPropertiesForKeys: nil)
             .filter { $0.pathExtension == "json" }
         return try urls.compactMap { url -> BatchExportJob? in
-            let original = try JSONDecoder().decode(BatchExportJob.self, from: Data(contentsOf: url))
+            let data = try Data(contentsOf: url)
+            let original: BatchExportJob
+            do {
+                original = try JSONDecoder().decode(BatchExportJob.self, from: data)
+            } catch {
+                if Self.isUnsupportedFutureJournal(data) { throw error }
+                try quarantineCorruptJob(at: url, error: error)
+                return nil
+            }
             let recovered = relocateOwnedFiles(original).recovered()
             // Photos owns completed JPEGs. Keep the completed DNG journal until dismissal;
             // exported files in Documents/Exports persist independently of the journal.
@@ -48,6 +67,86 @@ final class BatchJournalStore {
             if recovered != original { try save(recovered) }
             return recovered
         }.sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    @discardableResult
+    func quarantineCorruptJob(at url: URL, error: Error? = nil, now: Date = Date()) throws -> URL {
+        let baseName = "\(url.lastPathComponent).corrupt-\(Self.corruptTimestamp(now))"
+        var suffix = 0
+        while true {
+            let name = suffix == 0 ? baseName : "\(baseName)-\(suffix)"
+            let candidate = url.deletingLastPathComponent().appendingPathComponent(name)
+            if !FileManager.default.fileExists(atPath: candidate.path) {
+                try FileManager.default.moveItem(at: url, to: candidate)
+                let reason = error.map { String(describing: $0) } ?? "corrupt entry"
+                NSLog("Quarantined corrupt batch job from %@ to %@ (%@)", url.lastPathComponent, candidate.lastPathComponent, reason)
+                lastQuarantinedURL = candidate
+                return candidate
+            }
+            suffix += 1
+        }
+    }
+
+    // MARK: - 未来版本保护（参照 RawLabMac BatchExport.swift：可识别但更新 ≠ 损坏）
+
+    private static func isIntegerAbove(_ value: Any?, limit: Int) -> Bool {
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return false }
+        let decimal = number.decimalValue
+        var rounded = Decimal()
+        var copy = decimal
+        NSDecimalRound(&rounded, &copy, 0, .plain)
+        guard !decimal.isNaN, decimal == rounded else { return false }
+        return decimal > Decimal(limit)
+    }
+
+    private static func hasFutureSettings(_ value: Any?) -> Bool {
+        guard let settings = value as? [String: Any] else { return false }
+        if let processing = settings["processing"] as? [String: Any],
+           processing["family"] as? String == "rawlab",
+           isIntegerAbove(processing["version"], limit: ProcessingIdentity.current.version) {
+            return true
+        }
+        if isIntegerAbove(settings["masterRecipeSettingsVersion"], limit: 4) { return true }
+        if let hdr = settings["hdr"] as? [String: Any] {
+            if isIntegerAbove(hdr["hdr_processing_version"], limit: 8) ||
+               isIntegerAbove(hdr["record_version"], limit: 9) {
+                return true
+            }
+            if let cameraDev = hdr["camera_development"] as? [String: Any],
+               isIntegerAbove(cameraDev["version"], limit: 1) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func isUnsupportedFutureJournal(_ data: Data) -> Bool {
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return false
+        }
+        // 顶层任务版本 1...2 可读（BatchExportJob.validate），更高版本是未来格式。
+        if isIntegerAbove(object["version"], limit: 2) { return true }
+        if let source = object["source"] as? [String: Any], hasFutureSettings(source["settings"]) { return true }
+        if let targets = object["targets"] as? [Any] {
+            for case let target as [String: Any] in targets {
+                guard let frozen = target["frozen"] as? [String: Any] else { continue }
+                if isIntegerAbove(frozen["version"], limit: 1) ||
+                   isIntegerAbove(frozen["settingsVersion"], limit: 1) ||
+                   hasFutureSettings(frozen["settings"]) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private static func corruptTimestamp(_ date: Date) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let parts = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        return String(format: "%04d%02d%02d-%02d%02d%02d",
+                      parts.year ?? 0, parts.month ?? 0, parts.day ?? 0,
+                      parts.hour ?? 0, parts.minute ?? 0, parts.second ?? 0)
     }
 
     private func relocateOwnedFiles(_ original: BatchExportJob) -> BatchExportJob {

@@ -85,6 +85,8 @@ static class BatchFrozenChecks
         }
         finally { Directory.Delete(root, true); }
         RunUniformX3fTargetModeChecks();
+        RunCorruptJobIsolationChecks();
+        RunFutureVersionJournalRefusalChecks();
         Console.WriteLine("PASS: per-target journal, cancellation, recovery and retry");
     }
 
@@ -242,5 +244,116 @@ static class BatchFrozenChecks
         }
         finally { Directory.Delete(root, true); }
         Console.WriteLine("PASS: uniform batch X3F target-first mode resolution");
+    }
+
+    internal static void RunCorruptJobIsolationChecks()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-corrupt-journal-" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        try
+        {
+            var journal = new BatchJournal(root);
+            var journalPath = Path.Combine(root, "job.json");
+
+            // Write 1 truncated/garbled job file
+            File.WriteAllText(journalPath, "{\"Id\": \"corrupt\", \"Version\": 3, \"Items\": [truncated...");
+
+            // Load() isolates the corrupt file and allows recovery to proceed (returns null)
+            var loaded = journal.Load();
+            Check(loaded == null, "Corrupt job.json returns null on load without throwing");
+            Check(!File.Exists(journalPath), "Corrupt job.json is moved from active path");
+            var quarantined = Directory.GetFiles(root, "job.json.corrupt-*");
+            Check(quarantined.Length == 1, "Corrupt job.json is quarantined with timestamp");
+
+            // Subsequent Save() succeeds and is not blocked
+            var input = Path.Combine(root, "test.raw");
+            File.WriteAllText(input, "raw");
+            var validJob = BatchJob.Create(input, new Adjustments().Capture(), null, "Neutral");
+            journal.Save(validJob);
+            Check(File.Exists(journalPath), "Subsequent Save() succeeds and writes new job.json");
+
+            var reloaded = journal.Load();
+            Check(reloaded != null && reloaded.Id == validJob.Id, "Reloading returns valid job");
+
+            // Direct Save() when job.json is corrupt also isolates and succeeds
+            File.WriteAllText(journalPath, "not valid json {");
+            var anotherJob = BatchJob.Create(input, new Adjustments().Capture(), null, "Another");
+            journal.Save(anotherJob);
+            Check(File.Exists(journalPath), "Direct Save() isolates corrupt job and writes new job");
+            Check(journal.LastQuarantinedPath != null && Path.GetFileName(journal.LastQuarantinedPath).StartsWith("job.json.corrupt-"),
+                "LastQuarantinedPath points at the latest quarantined file");
+            var reloadedAnother = journal.Load();
+            Check(reloadedAnother != null && reloadedAnother.Id == anotherJob.Id, "Direct Save() job reloads successfully");
+            Check(Directory.GetFiles(root, "job.json.corrupt-*").Length >= 2, "Both corrupt files are quarantined");
+
+            Check(journal.Load() != null && journal.LastQuarantinedPath == null,
+                "A clean load clears LastQuarantinedPath so stale quarantine notices do not surface");
+
+            // 「读不了」不是「坏了」: a sharing violation must surface as I/O and must not isolate a good journal.
+            var corruptCountBefore = Directory.GetFiles(root, "job.json.corrupt-*").Length;
+            var healthyBefore = File.ReadAllText(journalPath);
+            using (new FileStream(journalPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                var readFailed = false;
+                try { journal.Load(); } catch (IOException) { readFailed = true; }
+                Check(readFailed, "An unreadable job.json must surface as an I/O failure instead of returning null");
+                Check(journal.LastQuarantinedPath == null, "A read failure must not be recorded as a quarantine");
+            }
+            Check(File.Exists(journalPath) && File.ReadAllText(journalPath) == healthyBefore,
+                "An unreadable but good job.json must stay untouched on its active path");
+            Check(Directory.GetFiles(root, "job.json.corrupt-*").Length == corruptCountBefore,
+                "A read failure must not quarantine a healthy journal");
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+        Console.WriteLine("PASS: corrupt batch journal entry isolation and save unblocking");
+    }
+
+    internal static void RunFutureVersionJournalRefusalChecks()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-future-journal-" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        try
+        {
+            var input = Path.Combine(root, "future.raw");
+            File.WriteAllText(input, "raw");
+            // Fabricate a GOOD record whose only anomaly is a future version field.
+            var snapshot = new Adjustments().Capture() with { HDR = new HDRSettings { Mode = HDRMode.Hdr }, ProRAWDecodeVersion = HDRNative.ProRAWDecodeVersion };
+            void Refusal(string caseName, string pattern, string replacement)
+            {
+                var caseRoot = Path.Combine(root, caseName);
+                var journal = new BatchJournal(caseRoot);
+                var job = BatchJob.Create(input, snapshot, null, "Neutral");
+                job.SourceIsProRAW = true;
+                journal.Save(job);
+                var journalPath = Path.Combine(caseRoot, "job.json");
+                var original = File.ReadAllText(journalPath);
+                var patched = original.Replace(pattern, replacement);
+                File.WriteAllText(journalPath, patched);
+                Check(patched != original, "Future-version fixture must patch " + caseName);
+                var loadRejected = false;
+                try { journal.Load(); } catch (Exception) { loadRejected = true; }
+                Check(loadRejected, $"{caseName}: future-version journal must not load as corrupt-null");
+                Check(File.Exists(journalPath), $"{caseName}: future-version journal must stay on its active path");
+                Check(Directory.GetFiles(caseRoot, "job.json.corrupt-*").Length == 0, $"{caseName}: future version must refuse quarantine");
+                var saveRejected = false;
+                try { journal.Save(job); } catch (Exception) { saveRejected = true; }
+                Check(saveRejected, $"{caseName}: save must refuse to overwrite a future-version journal");
+                Check(File.ReadAllText(journalPath) == patched,
+                    $"{caseName}: rejected save leaves the future record untouched");
+                Directory.Delete(caseRoot, true);
+            }
+            Refusal("version", "\"Version\":1", "\"Version\":9");
+            Refusal("proraw", "\"ProRAWDecodeVersion\":2", "\"ProRAWDecodeVersion\":99");
+            Refusal("recipe", "\"MasterRecipeSettingsVersion\":3", "\"MasterRecipeSettingsVersion\":5");
+            Refusal("hdr", "\"hdr_processing_version\":1", "\"hdr_processing_version\":9");
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+        Console.WriteLine("PASS: future-version batch journal refuses quarantine and overwrite");
     }
 }

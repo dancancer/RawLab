@@ -79,6 +79,8 @@ struct BatchExportTests {
         try checkPerTargetSnapshots(root)
         try checkUniformBatchX3fTargetMode(root)
         try checkOrphanedJobDirectories(root)
+        try checkCorruptJobIsolation(root)
+        try checkFutureJournalRefusesQuarantine(root)
         try BatchSourceJournalTests.run(root: root.appendingPathComponent("source-journal"))
 
         let sourceURL = root.appendingPathComponent("source.ARW")
@@ -572,6 +574,170 @@ private func checkOrphanedJobDirectories(_ root: URL) throws {
     BatchExportTests.check(Set(pending.map(\.id)) == [failed.id, cancelled.id, completedDNG.id] &&
                            pending.allSatisfy { FileManager.default.fileExists(atPath: $0.targets[0].sourceURL.path) },
                            "jobs kept by launch cleanup remain recoverable with their frozen inputs")
+}
+
+private func checkCorruptJobIsolation(_ root: URL) throws {
+    let journal = try BatchJournalStore(directory: root.appendingPathComponent("corrupt-isolation-journal", isDirectory: true))
+    let sourceURL = root.appendingPathComponent("isolation-source.ARW")
+    try Data("isolation-source".utf8).write(to: sourceURL)
+    let identity = PhotoIdentity(resourceIdentifier: "isolation-source")
+    let id = UUID()
+    let input = try BatchInputStore.copy(sourceURL, identity: identity, jobID: id, root: journal.directory)
+    let source = BatchSourceSnapshot(identity: identity, sourceFile: .externallyManaged(input),
+                                     displayName: "isolation-source.ARW", settings: .default)
+    var validJob = BatchExportJob(id: id, source: source,
+                                  targets: [BatchTarget(identity: identity, sourceURL: input, displayName: "isolation-source.ARW")],
+                                  outputFormat: .jpeg, longEdge: 3000)
+    validJob.status = .failed
+    try journal.save(validJob)
+
+    // Write a truncated/garbled job file
+    let corruptID = UUID()
+    let corruptFile = journal.directory.appendingPathComponent("\(corruptID.uuidString).json")
+    try Data("{\"id\": \"corrupt\", \"version\": truncated...".utf8).write(to: corruptFile)
+
+    // pendingJobs() must still return valid job, isolate the corrupt file, and not fail
+    let pending = try journal.pendingJobs()
+    BatchExportTests.check(pending.count == 1 && pending.first?.id == validJob.id,
+                           "pendingJobs isolates corrupt job and returns valid job")
+    BatchExportTests.check(!FileManager.default.fileExists(atPath: corruptFile.path),
+                           "corrupt job file removed from active json location")
+    let quarantinedFiles = try FileManager.default.contentsOfDirectory(at: journal.directory, includingPropertiesForKeys: nil)
+        .filter { $0.lastPathComponent.contains("\(corruptID.uuidString).json.corrupt-") }
+    BatchExportTests.check(quarantinedFiles.count == 1,
+                           "corrupt job file quarantined with timestamp")
+
+    // Subsequent save must succeed
+    var nextJob = BatchExportJob(id: UUID(), source: source,
+                                 targets: [BatchTarget(identity: identity, sourceURL: input, displayName: "isolation-source.ARW")],
+                                 outputFormat: .jpeg, longEdge: 2048)
+    nextJob.status = .failed
+    try journal.save(nextJob)
+    let reloaded = try journal.pendingJobs()
+    BatchExportTests.check(reloaded.count == 2,
+                           "subsequent save succeeds after corrupt job isolation")
+
+    // The corrupt journal must be isolated even when no scan moved it out of the way first:
+    // save with the SAME id goes through load(id:) → quarantine → atomic overwrite.
+    let sameID = UUID()
+    try Data("{\"id\": \"half-written\", \"targets\": [truncated".utf8).write(
+        to: journal.directory.appendingPathComponent("\(sameID.uuidString).json"))
+    var sameIDJob = BatchExportJob(id: sameID, source: source,
+                                   targets: [BatchTarget(identity: identity, sourceURL: input, displayName: "isolation-source.ARW")],
+                                   outputFormat: .jpeg, longEdge: 3000)
+    sameIDJob.status = .failed
+    try journal.save(sameIDJob)
+    let sameIDQuarantined = try FileManager.default.contentsOfDirectory(at: journal.directory, includingPropertiesForKeys: nil)
+        .filter { $0.lastPathComponent.hasPrefix("\(sameID.uuidString).json.corrupt-") }
+    BatchExportTests.check(sameIDQuarantined.count == 1,
+                           "save isolates the same-ID corrupt journal instead of failing the write path")
+    let sameIDReloaded = try journal.load(id: sameID)
+    BatchExportTests.check(sameIDReloaded == sameIDJob,
+                           "save overwrites the isolated corrupt journal with the new record")
+
+    // A quarantine rename failure must not be swallowed into a silent overwrite of the corrupt record.
+    let lockedStore = try BatchJournalStore(directory: root.appendingPathComponent("corrupt-isolation-locked", isDirectory: true))
+    let stuckID = UUID()
+    let stuckFile = lockedStore.directory.appendingPathComponent("\(stuckID.uuidString).json")
+    try Data("{\"id\": \"unreadable-shape\"".utf8).write(to: stuckFile)
+    let originalAttributes = try FileManager.default.attributesOfItem(atPath: lockedStore.directory.path)[.posixPermissions] as? NSNumber
+    try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o500)],
+                                          ofItemAtPath: lockedStore.directory.path)
+    var renameFailureSurfaced = false
+    var stuckStillActive = false
+    do {
+        _ = try lockedStore.pendingJobs()
+    } catch {
+        renameFailureSurfaced = true
+        stuckStillActive = FileManager.default.fileExists(atPath: stuckFile.path)
+    }
+    try FileManager.default.setAttributes([.posixPermissions: originalAttributes ?? NSNumber(value: 0o700)],
+                                          ofItemAtPath: lockedStore.directory.path)
+    BatchExportTests.check(renameFailureSurfaced && stuckStillActive,
+                           "pendingJobs reports quarantine rename failures instead of leaving the corrupt record to be overwritten")
+
+    // A good but unreadable record (0o000) must surface the read I/O instead of being quarantined and overwritten.
+    let unreadableStore = try BatchJournalStore(directory: root.appendingPathComponent("corrupt-isolation-unreadable", isDirectory: true))
+    var healthyJob = BatchExportJob(id: UUID(), source: source,
+                                    targets: [BatchTarget(identity: identity, sourceURL: input, displayName: "isolation-source.ARW")],
+                                    outputFormat: .jpeg, longEdge: 2048)
+    healthyJob.status = .failed
+    try unreadableStore.save(healthyJob)
+    let healthyFile = unreadableStore.directory.appendingPathComponent("\(healthyJob.id.uuidString).json")
+    try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o000)], ofItemAtPath: healthyFile.path)
+    var unreadableSurfaced = false
+    var healthyStillActive = false
+    var unreadableOverwriteRejected = false
+    var unreadableNothingQuarantined = false
+    do {
+        _ = try unreadableStore.pendingJobs()
+    } catch {
+        unreadableSurfaced = true
+        healthyStillActive = FileManager.default.fileExists(atPath: healthyFile.path)
+        do {
+            try unreadableStore.save(healthyJob)
+        } catch {
+            unreadableOverwriteRejected = true
+        }
+        unreadableNothingQuarantined = try FileManager.default.contentsOfDirectory(at: unreadableStore.directory, includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.contains(".corrupt-") }.isEmpty
+    }
+    try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o600)], ofItemAtPath: healthyFile.path)
+    BatchExportTests.check(unreadableSurfaced && healthyStillActive && unreadableOverwriteRejected && unreadableNothingQuarantined,
+                           "pendingJobs/save surface an unreadable good journal instead of quarantining and overwriting it")
+}
+
+private func checkFutureJournalRefusesQuarantine(_ root: URL) throws {
+    let journal = try BatchJournalStore(directory: root.appendingPathComponent("future-journal", isDirectory: true))
+    let sourceURL = root.appendingPathComponent("future-source.ARW")
+    try Data("future-source".utf8).write(to: sourceURL)
+    let identity = PhotoIdentity(resourceIdentifier: "future-source")
+    let id = UUID()
+    let input = try BatchInputStore.copy(sourceURL, identity: identity, jobID: id, root: journal.directory)
+    let source = BatchSourceSnapshot(identity: identity, sourceFile: .externallyManaged(input),
+                                     displayName: "future-source.ARW", settings: .default)
+    var job = BatchExportJob(id: id, source: source,
+                             targets: [BatchTarget(identity: identity, sourceURL: input, displayName: "future-source.ARW")],
+                             outputFormat: .jpeg, longEdge: 3000)
+    job.status = .failed
+    try journal.save(job)
+    let record = journal.directory.appendingPathComponent("\(id.uuidString).json")
+    func rewritten(_ mutate: (inout [String: Any]) -> Void) throws -> Data {
+        guard var object = try JSONSerialization.jsonObject(with: Data(contentsOf: record)) as? [String: Any] else {
+            throw BatchExportError.global("Test fixture journal is not a JSON object.")
+        }
+        mutate(&object)
+        return try JSONSerialization.data(withJSONObject: object)
+    }
+
+    // A good record written by a newer build (unknown higher journal version) must throw,
+    // stay on its active path, and block save — never be renamed away as corrupt.
+    try rewritten { $0["version"] = 99 }.write(to: record)
+    var pendingRejected = false
+    do { _ = try journal.pendingJobs() } catch { pendingRejected = true }
+    BatchExportTests.check(pendingRejected, "pendingJobs refuses to quarantine a future-version journal as corrupt")
+    BatchExportTests.check(FileManager.default.fileExists(atPath: record.path),
+                           "future-version journal stays on its active path instead of a corrupt rename")
+    var saveRejected = false
+    var newerJob = job
+    newerJob.updatedAt = Date()
+    do { try journal.save(newerJob) } catch { saveRejected = true }
+    BatchExportTests.check(saveRejected, "save refuses to overwrite a future-version journal")
+    let untouched = try JSONSerialization.jsonObject(with: Data(contentsOf: record)) as? [String: Any]
+    BatchExportTests.check((untouched?["version"] as? Int) == 99, "rejected save leaves the future record untouched")
+
+    // Deeper path: a future processing identity inside source.settings must be recognized as future too.
+    try rewritten { object in
+        var sourceObject = object["source"] as? [String: Any] ?? [:]
+        var settings = sourceObject["settings"] as? [String: Any] ?? [:]
+        settings["processing"] = ["family": "rawlab", "version": 9, "quality": "standard"]
+        sourceObject["settings"] = settings
+        object["source"] = sourceObject
+    }.write(to: record)
+    var deepRejected = false
+    do { _ = try journal.load(id: id) } catch { deepRejected = true }
+    BatchExportTests.check(deepRejected && FileManager.default.fileExists(atPath: record.path),
+                           "load refuses to quarantine a journal with a future processing version")
 }
 
 private func checkUniformBatchX3fTargetMode(_ root: URL) throws {
