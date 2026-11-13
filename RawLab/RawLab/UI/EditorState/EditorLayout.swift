@@ -131,7 +131,7 @@ extension ContentView {
                         .accessibilityIdentifier("editor.panel")
                         if toolWorkspaceOpen {
                             Divider()
-                            editorDraftActions.disabled(resetDraftSuspended).padding(.horizontal, 8)
+                            editorDraftActions.padding(.horizontal, 8)
                         } else {
                             Button(L10n.text("关闭"), action: closeQuickPresets).frame(minHeight: 44)
                         }
@@ -177,7 +177,7 @@ extension ContentView {
 
     var workspaceResetControl: some View {
         let available = viewModel.hasImage && !editorBusy && !viewModel.previewRendering &&
-            !resetDraftSuspended && !viewModel.quickPresetState.isPreparing
+            !viewModel.quickPresetState.isPreparing
         let presentation = EditorWorkspaceResetPresentation.make(
             toolWorkspaceOpen: toolWorkspaceOpen,
             quickPresetsVisible: viewModel.quickPresetsVisible,

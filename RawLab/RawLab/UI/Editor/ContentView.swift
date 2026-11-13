@@ -116,9 +116,6 @@ struct ContentView: View {
     @State var preparedReset: PreparedEditorReset?
     @State var preparedResetScope: EditorAdjustmentScope?
     @State var resetConfirmationPresented = false
-    @State var resetIntentSource: EditorEditSource?
-    @State var resetDraftSuspended = false
-    @State var resetWaitingForReady = false
     @State var suppressNextDraftPreview = false
     @State var autoExposing = false
     @State var settingsRevision = UUID()
@@ -406,9 +403,6 @@ struct ContentView: View {
             preparedReset = nil
             preparedResetScope = nil
             resetConfirmationPresented = false
-            resetIntentSource = nil
-            resetDraftSuspended = false
-            resetWaitingForReady = false
             suppressNextDraftPreview = false
             draftExitPresented = false
             cancelRulerFocus()

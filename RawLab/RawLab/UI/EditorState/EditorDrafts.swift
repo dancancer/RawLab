@@ -55,8 +55,8 @@ extension ContentView {
 
     var editorDraftSnapshot: EditorDraftSnapshot {
         EditorDraftSnapshot(geometry: geometryDraft, lens: lensDraft,
-                            tool: resetDraftSuspended || collapsedEditorTool != nil ? .film : currentEditorTool, destination: pendingToolSelection,
-                            workspace: resetDraftSuspended || !toolWorkspaceOpen ? nil : workspaceDraft)
+                            tool: collapsedEditorTool != nil ? .film : currentEditorTool, destination: pendingToolSelection,
+                            workspace: !toolWorkspaceOpen ? nil : workspaceDraft)
     }
 
     var draftPreviewSettings: RawSettings {
@@ -330,7 +330,7 @@ extension ContentView {
     }
 
     func requestAdjustmentExpansion(_ expanded: Bool) {
-        guard !editorBusy, !resetDraftSuspended else { return }
+        guard !editorBusy else { return }
         if !expanded && isEditorDraftChanged {
             pendingToolSelection = currentEditorTool
             pendingAdjustmentExpansion = false
@@ -365,8 +365,6 @@ extension ContentView {
         pendingPhotoImport = false
         pendingToolSelection = nil
         pendingAdjustmentExpansion = nil
-        resetIntentSource = nil
-        resetWaitingForReady = false
         if skippedSystemPhoto {
             // 让确认框先完成 dismiss，再尝试下一条系统事件，避免同一轮重开确认框。
             DispatchQueue.main.async { continueSystemPhotoImport() }

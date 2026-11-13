@@ -133,6 +133,7 @@ extension RawEditorViewModel {
         adjustmentInteraction = nil
         adjustmentInteractionRejected = false
         statusMessage = nil
+        hdrResourceNotice = HDRResourceNotice()
         isBusy = true
         let importRevision = UUID()
         if activeImportRevision==nil { importPreviousRevision=sourceRevision }
@@ -253,6 +254,7 @@ extension RawEditorViewModel {
                                 self.importPreviousRevision=nil
                                 self.hdrPresentation=nil; self.hdrReference=nil; self.sourceIsHDR=rasterHDR
                                 self.rawHDRSource = cameraHDR ? hdrInfo : nil
+                                self.hdrResourceNotice = HDRResourceNotice()
                                 self.sourceFile = sourceFile
                                 self.sourceKind = sourceKind
                                 self.sourceIdentity = resolvedIdentity
@@ -317,6 +319,7 @@ extension RawEditorViewModel {
                                 self.importPreviousRevision=nil
                                 self.hdrPresentation=nil; self.hdrReference=nil; self.sourceIsHDR=rasterHDR
                                 self.rawHDRSource = cameraHDR ? hdrInfo : nil
+                                self.hdrResourceNotice = HDRResourceNotice()
                                 self.sourceFile = sourceFile
                                 self.sourceKind = sourceKind
                                 self.sourceIdentity = resolvedIdentity

@@ -85,7 +85,6 @@ extension ContentView {
         probe.editorState = {
             ["fine": adjustmentFine, "sourceRevision": viewModel.sourceRevision.uuidString, "channel": hslChannel,
              "prepared": preparedReset != nil, "presented": resetConfirmationPresented,
-             "waiting": resetWaitingForReady, "suspended": resetDraftSuspended,
              "draftExitPresented": draftExitPresented, "draftActive": isEditorDraftActive,
              "draftChanged": isEditorDraftChanged, "geometrySelected": geometrySelected,
              "freshGeometry": geometryDraft == settings.geometry,
@@ -470,7 +469,7 @@ extension ContentView {
                 requestEditorReset(.all)
                 finishDraftNavigation(apply: apply)
                 try await geometryReviewSettled()
-                probe.check(prefix + ".IndependentConfirmation", resetConfirmationPresented && preparedReset != nil && resetDraftSuspended)
+                probe.check(prefix + ".IndependentConfirmation", resetConfirmationPresented && preparedReset != nil)
                 let resolved = settings
                 probe.check(prefix + ".ResolutionPreservesVersion", resolved.processing == version && resolved.geometry.quarterTurns == (apply ? 1 : 0))
                 cancelEditorReset()
@@ -490,7 +489,7 @@ extension ContentView {
                 let noOpPreviews = probe.previewRequests.count
                 requestEditorReset(.all)
                 try await geometryReviewSettled()
-                probe.check(prefix + ".NeutralNoEffects", preparedReset == nil && !resetDraftSuspended && !isEditorDraftChanged && probe.saveAttempts.count == noOpSaves && probe.previewRequests.count == noOpPreviews)
+                probe.check(prefix + ".NeutralNoEffects", preparedReset == nil && !isEditorDraftChanged && probe.saveAttempts.count == noOpSaves && probe.previewRequests.count == noOpPreviews)
                 cancelEditorDraft()
             }
         }
@@ -540,10 +539,10 @@ extension ContentView {
         try await geometryReviewWait { !editorBusy && !viewModel.previewRendering && !viewModel.previewResizePending && !isAdjustingSlider }
         try await Task.sleep(for: .milliseconds(200))
         let probe = GeometrySourceProbe.shared
-        probe.details["settled.pending.\(probe.details.count)"] = "waiting=\(resetWaitingForReady), suspended=\(resetDraftSuspended), prepared=\(preparedReset != nil), presented=\(resetConfirmationPresented)"
+        probe.details["settled.pending.\(probe.details.count)"] = "prepared=\(preparedReset != nil), presented=\(resetConfirmationPresented)"
         // 等现有 onChange 消费 reset intent；布局也可能在等待期间发出 resize。
         // 返回后动作与这次 gate 复核在同一 MainActor 段执行，不重试动作。
-        try await geometryReviewWait { !editorBusy && !viewModel.previewRendering && !viewModel.previewResizePending && !isAdjustingSlider && !resetWaitingForReady }
+        try await geometryReviewWait { !editorBusy && !viewModel.previewRendering && !viewModel.previewResizePending && !isAdjustingSlider }
         probe.details["settled.\(probe.details.count)"] = "busy=\(editorBusy), rendering=\(viewModel.previewRendering), resizePending=\(viewModel.previewResizePending), previews=\(probe.previewRequests.count), edges=\(probe.viewportEdges.count)"
     }
 

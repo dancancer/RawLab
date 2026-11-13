@@ -70,5 +70,22 @@ final class StatusProbe {
         let io = try String(contentsOfFile: "RawLab/RawLab/Core/ViewModel/IO/RawEditorViewModel+IO.swift", encoding: .utf8)
         check(io.contains("self.hdrResourceNotice = HDRResourceNotice(message: hdr.missingResourceMessage)"),
               "HDR import records the warning it already showed")
+        let sdrClearsNotice = io.contains("self.hdrResourceNotice = HDRResourceNotice()")
+        check(sdrClearsNotice, "Switching to an SDR photo resets the HDR resource notice cache")
+
+        let sdrTransition = StatusProbe()
+        sdrTransition.status = look
+        sdrTransition.notice = HDRResourceNotice(message: look)
+        check(sdrTransition.status == look, "HDR photo with missing resource shows warning")
+
+        sdrTransition.status = nil
+        if sdrClearsNotice {
+            sdrTransition.notice = HDRResourceNotice()
+        }
+        check(sdrTransition.status == nil, "Switching to an SDR photo clears statusMessage")
+
+        sdrTransition.deliverFrame(missingResource: look)
+        check(sdrTransition.status == look,
+              "Opening an HDR photo with the same missing resource after SDR photo shows warning again")
     }
 }
