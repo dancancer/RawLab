@@ -110,7 +110,15 @@ struct TIFF {
             if (!type || type>=sizeof(widths) || !tags.insert(tag).second) invalid();
             const uint64_t length=uint64_t(n)*widths[type];
             if (length>size) invalid();
-            if (rawSource && (length>16384 || length>1024*1024-copiedBytes)) invalid();
+            // 累计复制预算：每个目录最多 4096 条、每条都可声明“值就是整块数据”，
+            // 不设总量时多个目录可把 1 MiB 的 HEIF EXIF 放大成 GB 级内存。
+            // RAW 只复制拍摄标签，沿用单条 16 KiB、合计 1 MiB。普通 EXIF 取 2×块大小：
+            // 合法 TIFF 的外置值互不重叠，<=4 字节的值内嵌在条目里，复制总量不超过块大小；
+            // 另一倍留给共享数据或计数偏大的 MakerNote。HEIF 最多 2 MiB，JPEG 最多 128 KiB。
+            // 在递归子目录前预留，子目录无法绕过父条目的额度，减法也不会下溢。
+            const uint64_t budget=rawSource ? 1024*1024 : 2*uint64_t(size);
+            if ((rawSource && length>16384) || length>budget-copiedBytes) invalid();
+            copiedBytes+=size_t(length);
             const size_t value=length<=4 ? at+8 : u32(at+8);
             range(value,size_t(length));
             if (tag==0x8769 || tag==0x8825 || tag==0xa005 || tag==0x014a) {
@@ -123,7 +131,6 @@ struct TIFF {
             }
             Entry entry{type,n,std::vector<uint8_t>(size_t(length))};
             read(value,entry.bytes.data(),size_t(length));
-            copiedBytes+=size_t(length);
             if (!little && widths[type]>1) {
                 const size_t unit=(type==5 || type==10) ? 4 : widths[type];
                 for (size_t byte=0;byte<entry.bytes.size();byte+=unit)
