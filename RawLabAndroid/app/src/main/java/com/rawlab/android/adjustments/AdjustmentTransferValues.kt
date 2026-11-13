@@ -130,18 +130,28 @@ internal object AdjustmentTransferValues {
                 number(AdjustmentField.PERSPECTIVE_VERTICAL, perspectiveVertical))
         })
         if (payload.fields.any { it in AdjustmentField.LENS }) {
-            val profile = payload[AdjustmentField.LENS_PROFILE]
-            val lens = with(original.lens) { copy(distortion = boolean(AdjustmentField.LENS_DISTORTION, distortion),
-                tca = boolean(AdjustmentField.LENS_TCA, tca), vignetting = boolean(AdjustmentField.LENS_VIGNETTING, vignetting), autoCrop = boolean(AdjustmentField.LENS_AUTO_CROP, autoCrop),
-                manual = if (profile != null) profile != AdjustmentValue.Null else manual,
-                profileId = if (profile != null) profile.text?.takeUnless { it == LensSettings(manual = true).coreProfileId } else profileId) }
-            if (lens.enabled && lens.manual && lens.profileId == null)
-                throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, AdjustmentField.LENS_PROFILE.id)
-            if (lens.enabled) {
-                if (context.validateLens == null) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "target lens calibration unavailable")
-                context.validateLens.invoke(lens)
+            val neutral = mapOf(
+                AdjustmentField.LENS_DISTORTION to AdjustmentValue.Boolean(false),
+                AdjustmentField.LENS_TCA to AdjustmentValue.Boolean(false),
+                AdjustmentField.LENS_VIGNETTING to AdjustmentValue.Boolean(false),
+                AdjustmentField.LENS_AUTO_CROP to AdjustmentValue.Boolean(true),
+                AdjustmentField.LENS_PROFILE to AdjustmentValue.Null,
+            )
+            val isNeutralLens = neutral.all { (field, defaultValue) -> payload[field] == null || payload[field] == defaultValue }
+            if (payload.source.isRaw || !context.isRaw || !isNeutralLens) {
+                val profile = payload[AdjustmentField.LENS_PROFILE]
+                val lens = with(original.lens) { copy(distortion = boolean(AdjustmentField.LENS_DISTORTION, distortion),
+                    tca = boolean(AdjustmentField.LENS_TCA, tca), vignetting = boolean(AdjustmentField.LENS_VIGNETTING, vignetting), autoCrop = boolean(AdjustmentField.LENS_AUTO_CROP, autoCrop),
+                    manual = if (profile != null) profile != AdjustmentValue.Null else manual,
+                    profileId = if (profile != null) profile.text?.takeUnless { it == LensSettings(manual = true).coreProfileId } else profileId) }
+                if (lens.enabled && lens.manual && lens.profileId == null)
+                    throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, AdjustmentField.LENS_PROFILE.id)
+                if (lens.enabled) {
+                    if (context.validateLens == null) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "target lens calibration unavailable")
+                    context.validateLens.invoke(lens)
+                }
+                result = result.copy(lens = lens)
             }
-            result = result.copy(lens = lens)
         }
         return result.canonicalZeros()
     }

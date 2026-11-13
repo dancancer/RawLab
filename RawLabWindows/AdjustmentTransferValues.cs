@@ -108,22 +108,23 @@ internal static class AdjustmentTransferValues
                 N(F.PerspectiveHorizontal,g.PerspectiveHorizontal),N(F.PerspectiveVertical,g.PerspectiveVertical))};
         }
         if(p.Fields.Overlaps(AdjustmentFields.Lens)) {
-            if(!context.IsRaw) {
-                var defaults=Values(new(new("",0,0,0),new Adjustments().Capture(),null),context);
-                if(AdjustmentFields.Lens.Any(f=>p[f]!=null && !Same(p[f],defaults[f])))
-                    throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"geometry.lens");
+            var defaults=Values(new(new("",0,0,0),new Adjustments().Capture(),null),context);
+            var isNeutralLens=AdjustmentFields.Lens.All(f=>p[f]==null || Same(p[f],defaults[f]));
+            if(!context.IsRaw && !isNeutralLens)
+                throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"geometry.lens");
+            if(p.Source.IsRaw || !context.IsRaw || !isNeutralLens) {
+                var l=s.Lens ?? new(); var profile=p[F.LensProfile];
+                var profileId=Text(profile);if(profileId==new LensSettings(Manual:true).CoreProfileId)profileId=null;
+                l=l with {Distortion=B(F.LensDistortion,l.Distortion),Tca=B(F.LensTCA,l.Tca),Vignetting=B(F.LensVignetting,l.Vignetting),AutoCrop=B(F.LensAutoCrop,l.AutoCrop),
+                    Manual=profile!=null ? !Null(profile) : l.Manual,ProfileId=profile!=null ? profileId : l.ProfileId};
+                if(l.Enabled && l.Manual && l.ProfileId==null)
+                    throw new AdjustmentTransferException(AdjustmentFailure.Unrepresentable,F.LensProfile.ID());
+                if(l.Enabled) {
+                    if(!context.IsRaw || context.ValidateLens==null) throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"target lens calibration unavailable");
+                    context.ValidateLens(l);
+                }
+                s=s with {Lens=l};
             }
-            var l=s.Lens ?? new(); var profile=p[F.LensProfile];
-            var profileId=Text(profile);if(profileId==new LensSettings(Manual:true).CoreProfileId)profileId=null;
-            l=l with {Distortion=B(F.LensDistortion,l.Distortion),Tca=B(F.LensTCA,l.Tca),Vignetting=B(F.LensVignetting,l.Vignetting),AutoCrop=B(F.LensAutoCrop,l.AutoCrop),
-                Manual=profile!=null ? !Null(profile) : l.Manual,ProfileId=profile!=null ? profileId : l.ProfileId};
-            if(l.Enabled && l.Manual && l.ProfileId==null)
-                throw new AdjustmentTransferException(AdjustmentFailure.Unrepresentable,F.LensProfile.ID());
-            if(l.Enabled) {
-                if(!context.IsRaw || context.ValidateLens==null) throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"target lens calibration unavailable");
-                context.ValidateLens(l);
-            }
-            s=s with {Lens=l};
         }
         _=s.Restore(); return s;
     }
