@@ -13,6 +13,8 @@
 #include <atomic>
 #include <cerrno>
 #include <cmath>
+#include <csetjmp>
+#include <exception>
 #include <iostream>
 #include <memory>
 #include <cstring>
@@ -1061,23 +1063,62 @@ private:
 };
 
 struct JpegWriteContext {
+    static constexpr size_t kCancelCheckBytes = 16384;
     std::FILE* file = nullptr;
+    size_t bytesSinceCheck = 0;
     bool failed = false;
+    bool cancelled = false;
+    std::exception_ptr exception;
+    std::jmp_buf abortJump{};
 
     static void write(void* context, void* data, int size) {
         auto* state = static_cast<JpegWriteContext*>(context);
-        if (!state || state->failed) return;
+        if (!state || state->failed || state->cancelled) return;
         if (!state->file || size < 0) {
             state->failed = true;
             return;
         }
         if (size == 0) return;
         const size_t expected = static_cast<size_t>(size);
+        state->bytesSinceCheck += expected;
+        if (state->bytesSinceCheck >= kCancelCheckBytes) {
+            state->bytesSinceCheck = 0;
+            try {
+                if (processingCancellation.cancelled()) {
+                    state->cancelled = true;
+                    std::longjmp(state->abortJump, 1);
+                }
+            } catch (...) {
+                state->exception = std::current_exception();
+                std::longjmp(state->abortJump, 1);
+            }
+        }
         if (std::fwrite(data, 1, expected, state->file) != expected) {
             state->failed = true;
         }
     }
 };
+
+int writeJpegStream(
+    JpegWriteContext& context,
+    int width,
+    int height,
+    const uint8_t* data,
+    int quality
+) {
+    if (setjmp(context.abortJump) != 0) {
+        return 0;
+    }
+    return stbi_write_jpg_to_func(
+        &JpegWriteContext::write,
+        &context,
+        width,
+        height,
+        3,
+        data,
+        quality
+    );
+}
 
 } // namespace
 
@@ -1121,26 +1162,30 @@ ErrorCode ImageEncoder::saveJPEG(
     }
 
     try {
+        const auto cancellation = processingCancellation;
+        cancellation.check();
+
         const size_t pixelCount =
             static_cast<size_t>(image.width) * static_cast<size_t>(image.height);
         std::vector<uint8_t> data(pixelCount * 3);
 
+        constexpr size_t kQuantizeBlock = 16384;
+        const ptrdiff_t blockCount =
+            static_cast<ptrdiff_t>((pixelCount + kQuantizeBlock - 1) / kQuantizeBlock);
 #ifdef _OPENMP
-        const ptrdiff_t parallelCount = static_cast<ptrdiff_t>(pixelCount);
-#pragma omp parallel for if (parallelCount >= kParallelThreshold)
-        for (ptrdiff_t i = 0; i < parallelCount; ++i) {
-            const size_t index = static_cast<size_t>(i);
-            data[index * 3 + 0] = floatToUint8(image.pixels[index].r);
-            data[index * 3 + 1] = floatToUint8(image.pixels[index].g);
-            data[index * 3 + 2] = floatToUint8(image.pixels[index].b);
-        }
-#else
-        for (size_t i = 0; i < pixelCount; ++i) {
-            data[i * 3 + 0] = floatToUint8(image.pixels[i].r);
-            data[i * 3 + 1] = floatToUint8(image.pixels[i].g);
-            data[i * 3 + 2] = floatToUint8(image.pixels[i].b);
-        }
+#pragma omp parallel for if (pixelCount >= static_cast<size_t>(kParallelThreshold))
 #endif
+        for (ptrdiff_t block = 0; block < blockCount; ++block) {
+            if (cancellation.cancelled()) continue;
+            const size_t first = static_cast<size_t>(block) * kQuantizeBlock;
+            const size_t last = std::min(pixelCount, first + kQuantizeBlock);
+            for (size_t index = first; index < last; ++index) {
+                data[index * 3 + 0] = floatToUint8(image.pixels[index].r);
+                data[index * 3 + 1] = floatToUint8(image.pixels[index].g);
+                data[index * 3 + 2] = floatToUint8(image.pixels[index].b);
+            }
+        }
+        cancellation.check();
 
         EncodedStagingFile staging(EncodedStagingFile::Kind::Jpeg);
         if (!staging.create(destination)) {
@@ -1148,17 +1193,22 @@ ErrorCode ImageEncoder::saveJPEG(
             return ErrorCode::IOError;
         }
 
-        JpegWriteContext writeContext{staging.file(), false};
-        const int result = stbi_write_jpg_to_func(
-            &JpegWriteContext::write,
-            &writeContext,
+        JpegWriteContext writeContext{};
+        writeContext.file = staging.file();
+        const int result = writeJpegStream(
+            writeContext,
             image.width,
             image.height,
-            3,
             data.data(),
             quality
         );
 
+        if (writeContext.exception) {
+            std::rethrow_exception(writeContext.exception);
+        }
+        if (writeContext.cancelled) {
+            throw ProcessingCancelled();
+        }
         if (writeContext.failed) {
             std::cerr << "保存 JPEG 失败: " << filepath << std::endl;
             return ErrorCode::IOError;
@@ -1252,7 +1302,14 @@ ErrorCode ImageEncoder::savePNG(const ImageData& image, const std::string& filep
         } deflateGuard{&stream};
         std::vector<unsigned char> row(static_cast<size_t>(image.width)*6+1);
         std::array<unsigned char, 65536> compressed;
+        constexpr size_t kCancelCheckPixels = 65536;
+        size_t pixelsSinceCheck = 0;
         for (int y=0; y<image.height && ok; ++y) {
+            pixelsSinceCheck += static_cast<size_t>(image.width);
+            if (pixelsSinceCheck >= kCancelCheckPixels) {
+                pixelsSinceCheck = 0;
+                checkProcessingCancellation();
+            }
             row[0]=0;
             for (int x=0; x<image.width; ++x) {
                 const auto& p = image.at(x,y);

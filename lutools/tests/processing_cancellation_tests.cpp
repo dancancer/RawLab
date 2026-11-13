@@ -8,6 +8,7 @@
 #include "core/photo_lut.h"
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -314,6 +315,37 @@ int main() {
             check(written.size() > existing.size() && written.size() >= exportCase.magic.size() &&
                   std::equal(exportCase.magic.begin(), exportCase.magic.end(), written.begin()),
                 "A completed FINAL export replaces the target with the encoded file");
+            {
+                // Flip cancellation to true right as execution passes the pre-rename commit point:
+                // once committed, late cancellation must neither delete the file nor alter OK status.
+                struct PostCommitFlip {
+                    std::filesystem::path directory;
+                    std::atomic<bool> armed{false};
+                } flip{root};
+                sony2fuji_session_set_cancellation_callback(session, +[](void* context) -> int32_t {
+                    auto& state = *static_cast<PostCommitFlip*>(context);
+                    if (state.armed.load(std::memory_order_acquire)) return 1;
+                    std::error_code error;
+                    for (std::filesystem::directory_iterator it(state.directory, error), last;
+                         !error && it != last; it.increment(error)) {
+                        if (isStagingFile(it->path())) {
+                            state.armed.store(true, std::memory_order_release);
+                            return 0;
+                        }
+                    }
+                    return 0;
+                }, &flip);
+                sony2fuji_buffer postCommitOut{};
+                const auto postCommitStatus = sony2fuji_process(session, &exportRequest, &postCommitOut);
+                sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr);
+                sony2fuji_release_buffer(&postCommitOut);
+                const auto committedBytes = readFile(target);
+                const std::string postCommitLabel = std::string("FINAL ") + exportCase.label +
+                    " cancellation after the commit point preserves OK status and published bytes";
+                check(flip.armed.load() && postCommitStatus == SONY2FUJI_STATUS_OK &&
+                      committedBytes == written && stagingResidue(root) == 0,
+                    postCommitLabel.c_str());
+            }
 #ifndef _WIN32
             check(fileMode(target) == 0640u,
                 "Replacing an existing file keeps its permissions");
@@ -330,6 +362,125 @@ int main() {
             exportRequest.output_path = targetPath.c_str();
             std::filesystem::remove(fresh);
 #endif
+        }
+        // Large (>= 30 MP) FINAL PNG and JPEG exports must check cancellation inside the encoding
+        // loop so mid-encode cancellation returns CANCELLED promptly without publishing any output.
+        {
+            constexpr uint32_t kSourceSide = 256;
+            constexpr uint32_t kLargeWidth = 6200;
+            constexpr uint32_t kLargeHeight = 5000; // 31.0 MP
+            std::vector<unsigned char> texturedPixels(kSourceSide * kSourceSide * 3);
+            for (uint32_t y = 0; y < kSourceSide; ++y) {
+                for (uint32_t x = 0; x < kSourceSide; ++x) {
+                    const size_t base = (static_cast<size_t>(y) * kSourceSide + x) * 3;
+                    texturedPixels[base + 0] = static_cast<unsigned char>((x * 73u + y * 151u + ((x ^ y) * 19u)) & 0xffu);
+                    texturedPixels[base + 1] = static_cast<unsigned char>((x * 197u + y * 53u + ((x + y) * 29u)) & 0xffu);
+                    texturedPixels[base + 2] = static_cast<unsigned char>((x * 41u + y * 211u + ((x * 3u ^ y) * 37u)) & 0xffu);
+                }
+            }
+
+            sony2fuji_request largeRequest = exportRequest;
+            largeRequest.input_pixels = texturedPixels.data();
+            largeRequest.input_width = kSourceSide;
+            largeRequest.input_height = kSourceSide;
+            largeRequest.size_mode = SONY2FUJI_SIZE_EXACT;
+            largeRequest.target_width = kLargeWidth;
+            largeRequest.target_height = kLargeHeight;
+            largeRequest.jpeg_quality = 92;
+
+            struct MidEncodeCancel {
+                std::filesystem::path directory;
+                std::atomic<int> stagingPolls{0};
+                std::chrono::steady_clock::time_point cancelIssued{};
+            };
+
+            struct LargeFormatCase {
+                sony2fuji_output_format format;
+                const char* filename;
+                const char* label;
+            };
+            for (const auto& largeCase : {
+                     LargeFormatCase{SONY2FUJI_OUTPUT_JPEG, "large-31mp.jpg", "JPEG"},
+                     LargeFormatCase{SONY2FUJI_OUTPUT_PNG, "large-31mp.png", "PNG"}}) {
+                const auto freshTarget = root / largeCase.filename;
+                std::filesystem::remove(freshTarget, cleanupError);
+                const std::string freshPath = freshTarget.u8string();
+                largeRequest.output_format = largeCase.format;
+                largeRequest.output_path = freshPath.c_str();
+
+                MidEncodeCancel state{root};
+                sony2fuji_session_set_cancellation_callback(session, +[](void* context) -> int32_t {
+                    auto& watch = *static_cast<MidEncodeCancel*>(context);
+                    const int prior = watch.stagingPolls.load(std::memory_order_acquire);
+                    if (prior >= 1) {
+                        watch.stagingPolls.fetch_add(1, std::memory_order_acq_rel);
+                        return 1;
+                    }
+                    std::error_code error;
+                    for (std::filesystem::directory_iterator it(watch.directory, error), last;
+                         !error && it != last; it.increment(error)) {
+                        if (isStagingFile(it->path())) {
+                            if (watch.stagingPolls.fetch_add(1, std::memory_order_acq_rel) == 0) {
+                                watch.cancelIssued = std::chrono::steady_clock::now();
+                                return 0;
+                            }
+                            return 1;
+                        }
+                    }
+                    return 0;
+                }, &state);
+
+                sony2fuji_buffer out{};
+                const auto status = sony2fuji_process(session, &largeRequest, &out);
+                const auto returnedAt = std::chrono::steady_clock::now();
+                sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr);
+                sony2fuji_release_buffer(&out);
+
+                const bool triggeredMidEncode = state.stagingPolls.load() >= 2;
+                const double cancelLatencyMs = triggeredMidEncode ?
+                    std::chrono::duration<double, std::milli>(returnedAt - state.cancelIssued).count() :
+                    -1.0;
+                std::cout << "INFO 31MP FINAL " << largeCase.label
+                          << " mid-encode cancelpolls=" << state.stagingPolls.load()
+                          << " cancel_to_return_ms=" << cancelLatencyMs << '\n';
+
+                const std::string statusLabel = std::string("Large 31MP FINAL ") + largeCase.label +
+                    " export cancels during encoding and returns CANCELLED";
+                const std::string cleanLabel = std::string("Large 31MP FINAL ") + largeCase.label +
+                    " export cancelled during encoding removes staging and publishes no output file";
+                const std::string latencyLabel = std::string("Large 31MP FINAL ") + largeCase.label +
+                    " export returns within 1s after mid-encode cancellation";
+                check(status == SONY2FUJI_STATUS_CANCELLED && triggeredMidEncode, statusLabel.c_str());
+                check(!std::filesystem::exists(freshTarget) && stagingResidue(root) == 0, cleanLabel.c_str());
+                check(triggeredMidEncode && cancelLatencyMs >= 0.0 && cancelLatencyMs < 1000.0, latencyLabel.c_str());
+
+                // Verify intra-encode checkpoints do not alter encoded SDR output bytes.
+                sony2fuji_request parityRequest = largeRequest;
+                parityRequest.target_width = 640;
+                parityRequest.target_height = 512; // 327,680 px: exercises multiple intra-encode checkpoints
+                sony2fuji_buffer baseOut{};
+                const auto baseStatus = sony2fuji_process(session, &parityRequest, &baseOut);
+                sony2fuji_release_buffer(&baseOut);
+                const auto baselineBytes = readFile(freshTarget);
+
+                std::atomic<int> parityPolls{0};
+                sony2fuji_session_set_cancellation_callback(session, +[](void* context) -> int32_t {
+                    static_cast<std::atomic<int>*>(context)->fetch_add(1, std::memory_order_relaxed);
+                    return 0;
+                }, &parityPolls);
+                sony2fuji_buffer polledOut{};
+                const auto polledStatus = sony2fuji_process(session, &parityRequest, &polledOut);
+                sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr);
+                sony2fuji_release_buffer(&polledOut);
+                const auto polledBytes = readFile(freshTarget);
+                std::filesystem::remove(freshTarget, cleanupError);
+
+                const std::string parityLabel = std::string("Intra-encode cancellation checkpoints preserve exact ") +
+                    largeCase.label + " output bytes";
+                check(baseStatus == SONY2FUJI_STATUS_OK && polledStatus == SONY2FUJI_STATUS_OK &&
+                      parityPolls.load() > 4 && !baselineBytes.empty() && baselineBytes == polledBytes,
+                    parityLabel.c_str());
+            }
         }
         // A PREVIEW request that writes a file keeps ignoring the callback: the gate covers
         // buffer targets and FINAL renders, not preview exports.

@@ -450,7 +450,14 @@ ErrorCode writeJpegPreview(TIFF* tif, const ImageData& image, PreviewSize size, 
     jpeg_set_defaults(&state->codec);
     jpeg_set_quality(&state->codec, kPreviewJpegQuality, TRUE);
     jpeg_start_compress(&state->codec, TRUE);
+    constexpr size_t kCancelCheckPixels = 65536;
+    size_t pixelsSinceCheck = 0;
     while (state->codec.next_scanline < size.height) {
+        pixelsSinceCheck += static_cast<size_t>(size.width);
+        if (pixelsSinceCheck >= kCancelCheckPixels) {
+            pixelsSinceCheck = 0;
+            checkProcessingCancellation();
+        }
         makePreviewRow(image, size, state->codec.next_scanline, state->row);
         JSAMPROW row = state->row.data();
         jpeg_write_scanlines(&state->codec, &row, 1);
@@ -564,6 +571,8 @@ ErrorCode saveRenderedDNG(const ImageData& image, const std::string& filepath) {
     try {
         const ErrorCode result = writeJpegPreview(tif, image, thumbnail, previewBytesRemaining);
         if (result != ErrorCode::Success) return result;
+    } catch (const ProcessingCancelled&) {
+        throw;
     } catch (const std::bad_alloc&) {
         return ErrorCode::OutOfMemory;
     } catch (...) {
@@ -596,7 +605,14 @@ ErrorCode saveRenderedDNG(const ImageData& image, const std::string& filepath) {
         return ErrorCode::OutOfMemory;
     }
     if (ok) {
+        constexpr size_t kCancelCheckPixels = 65536;
+        size_t pixelsSinceCheck = 0;
         for (uint32_t y = 0; y < height && ok; ++y) {
+            pixelsSinceCheck += static_cast<size_t>(width);
+            if (pixelsSinceCheck >= kCancelCheckPixels) {
+                pixelsSinceCheck = 0;
+                checkProcessingCancellation();
+            }
             for (uint32_t x = 0; x < width; ++x) {
                 const RGB& pixel = image.at(static_cast<int>(x), static_cast<int>(y));
                 const size_t offset = static_cast<size_t>(x) * 3;
@@ -616,6 +632,8 @@ ErrorCode saveRenderedDNG(const ImageData& image, const std::string& filepath) {
     try {
         const ErrorCode result = writeJpegPreview(tif, image, fullPreview, previewBytesRemaining);
         if (result != ErrorCode::Success) return result;
+    } catch (const ProcessingCancelled&) {
+        throw;
     } catch (const std::bad_alloc&) {
         return ErrorCode::OutOfMemory;
     } catch (...) {

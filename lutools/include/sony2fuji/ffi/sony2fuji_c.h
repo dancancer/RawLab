@@ -788,12 +788,17 @@ sony2fuji_status sony2fuji_session_set_gpu_config(
 // buffer (preview or final) and for every FINAL call, including file exports.
 // sony2fuji_session_create_hsl_probe always honours it. Compatibility previews are
 // independent. Return nonzero to cancel. Set/clear only on the session's serialized
-// worker; the callback may read an atomic signal updated by another thread. It must
+// worker; the callback may read an atomic signal updated by another thread. During
+// a single operation, the callback may be invoked concurrently on multiple internal
+// worker threads (for example OpenCV/OpenMP parallel pixel loops or decoder monitor
+// threads), so its implementation must be lock-free or synchronize itself. It must
 // not throw, reenter the session, or outlive its context. Null disables cancellation.
 // Streamed HDR export checks it before publishing. A cancelled call returns CANCELLED
 // without publishing partial output: a buffer stays empty, and a FINAL file export
-// keeps the destination byte-identical because every encoder writes a staging file
-// and re-checks before the atomic replace. The session can render another request.
+// keeps the destination byte-identical because every encoder writes a staging file,
+// checks cancellation during encoding and at the pre-publish commit point, and never
+// rolls back or alters status after the atomic replace succeeds. The session can
+// render another request.
 typedef int32_t (*sony2fuji_cancel_callback)(void* context);
 sony2fuji_status sony2fuji_session_set_cancellation_callback(
     sony2fuji_session* session, sony2fuji_cancel_callback callback, void* context);

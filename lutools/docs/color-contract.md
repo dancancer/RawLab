@@ -729,6 +729,9 @@ replaced by a regular file and extended attributes or ACLs are not carried over.
 Existing clients with no callback retain their rendering behavior. Android uses a
 generation captured for the entire preview request, so replacing work before JNI
 entry also cancels it; cancellation does not change the latest editing parameters.
+For the consolidated session serialization, concurrent callback invocation, and
+stage-by-stage cancellation contract, see
+[processing-concurrency.md](processing-concurrency.md).
 
 `sony2fuji_session_set_viewport_preview` is a separate, default-off session opt-in
 for PREVIEW+BUFFER only, without changing request v2. It reduces linear input before
