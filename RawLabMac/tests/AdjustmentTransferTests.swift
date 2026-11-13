@@ -250,6 +250,7 @@ struct AdjustmentTransferTests {
     }
 
     static func main() throws {
+        try sharedScenarioFixtures()
         try neutralRawRequestsOnRaster()
         try fullNeutralRecipeOnRaster()
         try builtinRawRecipesOnRaster()
@@ -276,6 +277,7 @@ struct AdjustmentTransferTests {
         try serialization()
         try manualLensSelectionTransport()
         try x3fModeReset()
+        try rasterPlaceholdersOnRaw()
         try sharedFixtures()
     }
 
@@ -800,6 +802,136 @@ struct AdjustmentTransferTests {
                       "Shared accepted vector: \(id)")
             } else {
                 rejects("Shared rejected vector: \(id)") { _ = try JSONDecoder().decode(AdjustmentTransferPayload.self, from: bytes) }
+            }
+        }
+    }
+
+    private static func matchesValue(_ actual: AdjustmentTransferValue?, _ expected: AdjustmentTransferValue, tolerance: Double = 1e-6) -> Bool {
+        guard let actual else { return false }
+        switch (actual, expected) {
+        case (.null, .null): return true
+        case let (.boolean(a), .boolean(b)): return a == b
+        case let (.string(a), .string(b)): return a == b
+        case let (.number(a), .number(b)): return abs(a - b) <= tolerance
+        case let (.array(a), .array(b)):
+            return a.count == b.count && zip(a, b).allSatisfy { matchesValue($0, $1, tolerance: tolerance) }
+        case let (.object(a), .object(b)):
+            return a.keys == b.keys && b.allSatisfy { matchesValue(a[$0.key], $0.value, tolerance: tolerance) }
+        default: return false
+        }
+    }
+
+    private static func errorReason(_ error: Error) -> String {
+        switch error as? AdjustmentTransferError {
+        case .incompatible: return "incompatible"
+        case .unrepresentable: return "unrepresentable"
+        case .missingLook: return "missing_look"
+        default: return "other"
+        }
+    }
+
+    static func rasterPlaceholdersOnRaw() throws {
+        var raster = raw; raster.identifier = "source.jpg"; raster.isRaw = false; raster.defaultExposureMode = .sensor
+        var rawLens = raw; rawLens.validateLensRequest = { _ in }
+        var target = Adjustments()
+        target.exposureMode = .scene
+        target.resolveWhiteBalance(WhiteBalance(temperature: 5200, tint: 8))
+        target.whiteBalanceMode = .custom; target.temperature = 5850; target.tint = -18
+        target.resolveRawNoiseReductionSupport(true); target.rawNoiseReduction = 2
+        target.lensCorrection = LensCorrectionSettings(distortion: true, tca: true, autoCrop: false, mode: .manual,
+            profileID: "fixture-profile", vignetting: true)
+        let before = state(target)
+
+        var jpeg = Adjustments().resolvedForRaster; jpeg.exposure = 0.75
+        let all = try MacAdjustmentTransfer.capture(scope: .all, snapshot: state(jpeg), context: raster)
+        let applied = try MacAdjustmentTransfer.prepare(payload: all, target: before, context: rawLens)
+        check(applied.settings.exposure == 0.75 && applied.settings.exposureMode == .scene
+            && applied.settings.whiteBalanceMode == .custom && applied.settings.temperature == 5850 && applied.settings.tint == -18
+            && applied.settings.rawNoiseReduction == 2 && applied.settings.lensCorrection == target.lensCorrection,
+            "Raster all paste skips placeholders and preserves RAW exposure baseline, custom WB, FBDD denoise and lens")
+
+        let placeholders = Set<AdjustmentTransferField>([.exposureMode, .whiteBalanceMode, .temperature, .tint, .rawDenoise, .postRGBDenoise])
+            .union(AdjustmentTransferField.lensFields)
+        let placeholderOnly = try MacAdjustmentTransfer.capture(scope: .custom(placeholders), snapshot: state(Adjustments().resolvedForRaster), context: raster)
+        check(try MacAdjustmentTransfer.prepare(payload: placeholderOnly, target: before, context: rawLens) == before,
+            "Explicitly selecting only raster placeholders is unchanged on RAW")
+
+        var recipeTarget = Adjustments()
+        recipeTarget.resolveWhiteBalance(WhiteBalance(temperature: 5200, tint: 8))
+        recipeTarget.applyMasterRecipe(.hamadaDaylightV2); recipeTarget.strength = 1
+        let lutRaster = try MacAdjustmentTransfer.capture(scope: .standard, snapshot: state(Adjustments().resolvedForRaster, film: "builtin:PROVIA.cube"), context: raster)
+        let detached = try MacAdjustmentTransfer.prepare(payload: lutRaster, target: state(recipeTarget), context: rawLens)
+        check(request(detached).temperature == 5200 && request(detached).tint == 13,
+            "Detaching RAW recipe with non-recipe raster paste preserves effective target WB instead of resetting to camera")
+    }
+
+    static func sharedScenarioFixtures() throws {
+        let url = URL(fileURLWithPath: "Shared/fixtures/adjustment-transfer-scenarios-v1.json")
+        let root = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
+        check(root["fixture_version"] as? Int == 1, "Scenario fixture version is 1")
+        let scenarios = root["scenarios"] as! [[String: Any]]
+        var ids = Set<String>()
+        for scenario in scenarios {
+            let id = scenario["id"] as! String
+            check(ids.insert(id).inserted, "Unique scenario ID: \(id)")
+            if let platforms = scenario["platforms"] as? [String], !platforms.contains("macos") { continue }
+            let targetSpec = scenario["target"] as! [String: Any]
+            let kind = targetSpec["kind"] as! String
+            let asShot = (targetSpec["as_shot_wb"] as? [NSNumber])?.map(\.doubleValue)
+            let lensValid = targetSpec["lens_valid"] as! Bool
+            let supportsRawDenoise = targetSpec["supports_raw_denoise"] as! Bool
+            let availableLooks = Set(targetSpec["available_looks"] as! [String])
+
+            var initialSettings = kind == "sdr_raster" ? Adjustments().resolvedForRaster : Adjustments()
+            if kind == "hdr" { initialSettings.hdr = HDRSettings() }
+            if kind == "sdr_raw" {
+                initialSettings.resolveRawNoiseReductionSupport(supportsRawDenoise)
+                if let asShot { initialSettings.resolveWhiteBalance(WhiteBalance(temperature: asShot[0], tint: asShot[1])) }
+            }
+            let context = MacAdjustmentTransferContext(identifier: "scenario-target", isRaw: kind == "sdr_raw",
+                sourceIsHDR: kind == "hdr", availableLookIDs: availableLooks,
+                defaultExposureMode: kind == "sdr_raw" ? .preview : .sensor,
+                validateLensRequest: lensValid ? { _ in } : nil)
+            var targetState = state(initialSettings)
+            if let seedObj = targetSpec["seed_payload"], !(seedObj is NSNull) {
+                let seedPayload = try JSONDecoder().decode(AdjustmentTransferPayload.self, from: JSONSerialization.data(withJSONObject: seedObj))
+                var seedContext = context
+                seedContext.validateLensRequest = { _ in }
+                targetState = try MacAdjustmentTransfer.prepare(payload: seedPayload, target: targetState, context: seedContext)
+            }
+
+            let payload = try JSONDecoder().decode(AdjustmentTransferPayload.self, from: JSONSerialization.data(withJSONObject: scenario["payload"]!))
+            let expectSpec = (scenario["platform_expect"] as? [String: [String: Any]])?["macos"] ?? (scenario["expect"] as! [String: Any])
+            let expectedStatus = expectSpec["status"] as! String
+            if expectedStatus == "rejected" {
+                do {
+                    _ = try MacAdjustmentTransfer.prepare(payload: payload, target: targetState, context: context)
+                    fatalError("Scenario \(id): expected rejected")
+                } catch {
+                    if let expectedReason = expectSpec["reason"] as? String {
+                        check(errorReason(error) == expectedReason, "Scenario \(id): rejected reason \(expectedReason)")
+                    } else {
+                        print("PASS: Scenario \(id): rejected")
+                    }
+                }
+                continue
+            }
+            let candidate = try MacAdjustmentTransfer.prepare(payload: payload, target: targetState, context: context)
+            let actualStatus = candidate == targetState ? "unchanged" : "applied"
+            check(actualStatus == expectedStatus, "Scenario \(id): status \(expectedStatus)")
+            if let valuesObj = expectSpec["values"] {
+                let expectedValues = try JSONDecoder().decode([String: AdjustmentTransferValue].self, from: JSONSerialization.data(withJSONObject: valuesObj))
+                let captured = try MacAdjustmentTransfer.capture(scope: .all, snapshot: candidate, context: context).values
+                for key in expectedValues.keys.sorted() {
+                    check(matchesValue(captured[key], expectedValues[key]!), "Scenario \(id): value \(key)")
+                }
+            }
+            if let effectiveObj = expectSpec["effective"] as? [String: NSNumber] {
+                let actualEffective = MacAdjustmentTransfer.effectiveNumbers(candidate.settings)
+                for key in effectiveObj.keys.sorted() {
+                    let field = AdjustmentTransferField(rawValue: key)!
+                    check(abs(actualEffective[field]! - effectiveObj[key]!.doubleValue) <= 1e-6, "Scenario \(id): effective \(key)")
+                }
             }
         }
     }

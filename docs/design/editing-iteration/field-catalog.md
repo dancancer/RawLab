@@ -214,6 +214,17 @@ recipe 拒绝新键。能力响应声明 CPU 和完整源图预览策略，不�
 [Adjustments.swift](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/RawLabMac/Sources/Adjustments/Adjustments.swift#L320)，iOS recipe
 渲染展开在 [RawSettings.swift](https://github.com/dancancer/RawLab/blob/12cda1c67ddd1c58095831ff12a112fc1356da78/RawLab/RawLab/Core/Models/RawSettings.swift#L256)。
 
+### 4.4 非 RAW 来源粘到 RAW 目标的占位跳过与双键降噪边界
+
+- 交换格式（`payload_version` 1/2 字段名与校验）不变，老预设与历史剪贴板无需迁移；粘贴端在 `!source.is_raw && target.is_raw` 时跳过非 RAW 来源的占位值，跨端验收向量位于 `Shared/fixtures/adjustment-transfer-scenarios-v1.json`。
+- 四类占位跳过规则（`!source.is_raw && target.is_raw`）：
+  1. `light.exposure_mode`：跳过非 RAW 的 `"sensor"` 占位，保留目标 RAW 的 `scene`/`preview`/`sensor` 曝光基准。
+  2. `color.white_balance.*` 三项：当 `source.recipe == nil` 或未选中 `color.white_balance.tint` 时把白平衡选中集视为空集跳过，保留目标 RAW 的自定义或配方白平衡。**配方相对 `tint` 例外**：当 `source.recipe != nil` 且选中 `color.white_balance.tint` 时，仍跨 RAW 复用相对 `tint` 并在目标 `as_shot` 校准上解析（完整配方同时保留配方身份）。
+  3. 旧版降噪（`detail.denoise.raw_level`、`detail.denoise.post_rgb`）：非 RAW 来源的 `0` 占位跳过不写，保留目标 RAW 原有旧版降噪值。
+  4. `geometry.lens.*`（`distortion`、`tca`、`vignetting`、`auto_crop`、`profile_id` 五项）：仅当 payload 中五项全为默认态（`distortion != true && tca != true && vignetting != true && auto_crop != false && profile_id == null`）时整组跳过。**移动端非默认镜头例外**：只要至少一项非默认（如 iOS/Android 用户在普通图片上显式开启畸变/色差/暗角校正、关闭自动裁切或指定镜头 profile），照常合并并执行目标 `validateLensRequest`。
+- 若普通图片仅勾选上述被跳过的占位项粘到 RAW 目标，结果保持不变（`unchanged`）。
+- **`detail.denoise.raw_level` 与 `detail.denoise.post_rgb` 双键语义**：`raw_level` 是 Mac 旧版 Bayer FBDD 请求；`post_rgb` 在 SDR `payload_version=1` 中是 iOS 旧版 `RawSettings.noiseReduction` 请求，同时又是四端 HDR v6+（`HDRDetailSettings.denoise`）的现役共用降噪键。两个键语义独立，不得删除或合并。
+
 ## 5. 四端 snapshot、映射和持久化入口
 
 这张表记录现有来源，不代表四端已经实现 I0 payload adapter。

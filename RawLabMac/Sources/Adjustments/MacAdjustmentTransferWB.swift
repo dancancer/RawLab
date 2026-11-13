@@ -4,7 +4,11 @@ extension MacAdjustmentTransfer {
     static func applyWhiteBalance(_ payload: AdjustmentTransferPayload, target: Adjustments,
                                   to result: inout Adjustments, context: MacAdjustmentTransferContext,
                                   fullRecipe: Bool, contextChanged: Bool) throws {
-        let selected = payload.fields.intersection(Field.whiteBalanceFields)
+        var selected = payload.fields.intersection(Field.whiteBalanceFields)
+        // 非 RAW 来源没有独立白平衡，none/null 占位值不覆盖 RAW 目标白平衡；配方相对 tint 仍跨 RAW 复用。
+        if !payload.source.isRaw && context.isRaw && (payload.source.recipe == nil || !selected.contains(.tint)) {
+            selected.removeAll()
+        }
         if selected.isEmpty {
             if context.isRaw && contextChanged && renderWB(result) != renderWB(target) {
                 // 不能把 renderer 缺少校准时的 fallback 当成目标真实校准。
@@ -137,7 +141,7 @@ extension MacAdjustmentTransfer {
 
     static func resolvedWB(_ value: [String: Value], recipe: AdjustmentRecipeContext?, target: Adjustments,
                            sourceIsRaw: Bool, targetIsRaw: Bool) throws -> ResolvedWB {
-        guard targetIsRaw && (sourceIsRaw || recipe != nil) else { return ResolvedWB(camera: true, temperature: 6500, tint: 0) }
+        guard targetIsRaw else { return ResolvedWB(camera: true, temperature: 6500, tint: 0) }
         let camera = value["mode"]!.string == "camera"
         let offset = value["tint_mode"]!.string == "camera_offset"
         let tint = value["tint"]!.number! * (offset ? recipe?.strength ?? 1 : 1)
