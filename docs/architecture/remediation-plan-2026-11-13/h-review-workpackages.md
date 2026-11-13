@@ -10,16 +10,16 @@
 
 | 包 | 内容（条目） | 波次 | 状态 |
 |---|---|---|---|
-| WP-01 | CI 自托管执行硬隔离（完成-01）：①审批策略改「all external contributors」（Web 端手动，API 不可达则用户操作）；②JIT 派发器方案（常驻 Runner.Listener 改服务端元数据硬校验 + ephemeral 派发，~80 行）；攻击性验证 PR 待做 | 0 | 卡片就绪 |
+| WP-01 | CI 自托管执行硬隔离（完成-01）：①审批策略改「all external contributors」（Web 端手动，API 不可达则用户操作）；②JIT 派发器方案（常驻 Runner.Listener 改服务端元数据硬校验 + ephemeral 派发，~80 行）；攻击性验证 PR 待做 | 0 | ①已拨建议值；②PR #295 二轮 request-changes（NB1/NB2 全新解压可运行性），续修中 |
 | WP-02 | CI 防空跑（A/B/C/18-②）：apple-models.sh SKIP 判失败、hdr_stream 补 LUT fixture、ai-denoise 缺模型显式 SKIP 用例 | 0 | PR #292 返工完成（`07216451`）复审在途 |
 | WP-03 | 核心取消锁存 + D-01 残留（P1-13、D-01①②③）：编码器粘性取消锁存、float→精确缩放（65535 误拒）、JPEG 4096 标记与 TIFF IFD 链边界 | 0 | PR #293 **已合入**（复审 approve） |
 | WP-04 | ABI 回调原型入夹具（P1-22①）；64 位限制=条件接受（四端纯 64 位；引入 32 位 ABI 前必须先拆夹具） | 0 | PR #287 **已合入**（复审 approve，CI 7/7） |
 | WP-05 | Mac 单张导出「编码+元数据」整链暂存（完成-36） | 1 | PR #289 **已合入**（复审 approve） |
-| WP-06 | iOS HDR 提示缓存重置 + 死状态清理（P1-05、P1-18、D 项）——须在 P1-③ 切 iOS 分支**前**合入 | 1 | PR #291 返工完成（`a18b00a6`，B1 端到端 167/0 真跑）复审在途 |
+| WP-06 | iOS HDR 提示缓存重置 + 死状态清理（P1-05、P1-18、D 项）——须在 P1-③ 切 iOS 分支**前**合入 | 1 | PR #291 三轮：B2 过；B1 反转断言×2+B3 文本搜索假绿，回炉中 |
 | WP-07 | 三端批量日志逐任务损坏隔离（完成-37 iOS/Android/Win） | 1 | PR #290 复审 request-changes（Android I/O≠corrupt 未落地）回炉中 |
 | WP-08 | Windows 启动清扫防崩、内嵌预览兜底、坏预设展示（完成-05、完成-23、E） | 1 | PR #288 **已合入**（复审 approve，CI 7/7） |
 | WP-09 | Windows 更新器启动失败回退（完成-27，并入 S6 更新器矩阵） | 2 | PR #294 **已合入**（复审 approve） |
-| WP-10 | Android 相机三合包（完成-07/15/16）；与 P1-23/P1-25 共用 `CameraImportStore.kt`，按集成规范排 owner | 2 | PR #296 评审中（`74e5146c`） |
+| WP-10 | Android 相机三合包（完成-07/15/16）；与 P1-23/P1-25 共用 `CameraImportStore.kt`，按集成规范排 owner | 2 | PR #296 评审 request-changes（3B：PHOTO_LIMIT 续接+跨界用例），回炉中 |
 | WP-11 | 核心 GLES 先绑后建与跨 API 恢复（F/P3-05，并入 P3 GPU 批次） | 3 | todo |
 
 - **完成-06 契约注记落盘**：随 P1-23(A12/Q7)/P3-47(L4) 一并写入（条件接受的前置）。
