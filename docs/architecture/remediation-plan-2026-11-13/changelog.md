@@ -102,3 +102,4 @@
 - 2026-11-14 · #303 二轮交卷（`6740e06a`）：契约测试升级全量枚举（谓词命中者必须走共享列表/Native glob 且禁直引旧头，防谓词空转断言候选≥12）；ai-denoise 接入+删手工 AI_LINK 改 CORE_LINK，顺带根除 Bash 3.2 unbound-variable 型 exit-0 假绿（0 断言→32 断言真跑）。二轮复审在途（review-mwflydx7）。
 - 2026-11-14 · **PR #303 合入**（A 簇+全量枚举契约，总 63）；#306 approve 后按预案 rebase 收编共享列表形态（语义 union，复验后由 lead 合入）。
 - 2026-11-14 · **PR #306 合入**（`e4d88137`，总 64）：compact-controls 期望矩阵按 a74a6baf 重设计事实重基线，range-diff 自查零新增语义，rebase 收编 #303 共享列表形态。Mac 手动套件 16 个新红至此 **14 个闭环**（B3/ai-batch-native/system-menu-language 桌面行与 C 类 edit-model 护栏行除外，均挂账）。
+- 2026-11-14 · **P1③ 交卷**：**PR #307**（`84a602c3`）——reset-scenarios-v1.json 9 场景（@spec_default 引用、WB null+mode=camera 约定）、四端生产入口棘轮、契约 12 项（73 字段钉满+陈旧登记必红）；分歧 3 条如实登记（denoise.raw_level 0 占位 vs null ×2 + Windows 静态 1）。碳审在途（review-mwfmsbin）。
