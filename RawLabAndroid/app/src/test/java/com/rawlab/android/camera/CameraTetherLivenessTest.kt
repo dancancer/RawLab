@@ -18,11 +18,13 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketAddress
+import java.net.SocketTimeoutException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -75,37 +77,83 @@ class CameraTetherLivenessTest {
         }
     }
 
-    private class VirtualLoopClock(initialMillis: Long = 10_000L) {
+    private class VirtualLoopClock(
+        private val camera: FakeTetherCameraServer,
+        initialMillis: Long = 10_000L,
+    ) {
         private val currentMillis = AtomicLong(initialMillis)
+        private val lastClockActivityNanos = AtomicLong(System.nanoTime())
         private val arrived = Channel<Unit>(Channel.RENDEZVOUS)
         private val release = Channel<Unit>(Channel.RENDEZVOUS)
 
-        fun now(): Long = currentMillis.get()
+        private fun markActivity() {
+            lastClockActivityNanos.set(System.nanoTime())
+        }
+
+        fun now(): Long {
+            markActivity()
+            return currentMillis.get()
+        }
 
         suspend fun pause() {
+            markActivity()
             arrived.send(Unit)
             release.receive()
+            markActivity()
         }
 
-        suspend fun awaitParked() {
-            withTimeout(30_000) { arrived.receive() }
+        suspend fun awaitParked(controller: CameraTetherController) {
+            markActivity()
+            assertTrue(
+                "Controller exited before parking in main loop (phase=${controller.state.value.phase}, failure=${controller.state.value.failure})",
+                awaitParkOrExit(controller),
+            )
         }
 
-        /** Advances one 250ms tick from a parked state; returns true if parked again, false if controller exited loop. */
+        /** Advances virtual time from a parked state; returns true if parked again, false if controller exited loop. */
         suspend fun stepParkedTick(controller: CameraTetherController, deltaMillis: Long = 250L): Boolean {
+            markActivity()
             currentMillis.addAndGet(deltaMillis)
             release.send(Unit)
-            return withTimeout(30_000) {
-                while (true) {
-                    if (arrived.tryReceive().isSuccess) return@withTimeout true
-                    if (!controller.state.value.active) {
-                        controller.join()
-                        return@withTimeout false
+            return awaitParkOrExit(controller)
+        }
+
+        private suspend fun awaitParkOrExit(
+            controller: CameraTetherController,
+            idleStallMillis: Long = 30_000L,
+        ): Boolean = coroutineScope {
+            val outcome = CompletableDeferred<Boolean>()
+            val parkWaiter = launch(start = CoroutineStart.UNDISPATCHED) {
+                outcome.complete(arrived.receiveCatching().isSuccess)
+            }
+            val exitWaiter = launch {
+                controller.join()
+                outcome.complete(false)
+            }
+            val watchdog = launch {
+                val stallBudgetNanos = idleStallMillis * 1_000_000L
+                while (!outcome.isCompleted) {
+                    val lastActive = maxOf(lastClockActivityNanos.get(), camera.lastActivityNanos.get())
+                    val idleNanos = System.nanoTime() - lastActive
+                    if (idleNanos >= stallBudgetNanos) {
+                        outcome.completeExceptionally(
+                            AssertionError(
+                                "Tether controller stalled with no protocol/loop progress for ${idleNanos / 1_000_000}ms " +
+                                    "(phase=${controller.state.value.phase}, failure=${controller.state.value.failure})"
+                            )
+                        )
+                        return@launch
                     }
-                    delay(1)
+                    val remainingMillis = ((stallBudgetNanos - idleNanos) / 1_000_000L).coerceAtLeast(50L)
+                    delay(minOf(remainingMillis, 1_000L))
                 }
-                @Suppress("UNREACHABLE_CODE")
-                false
+            }
+            try {
+                outcome.await()
+            } finally {
+                parkWaiter.cancel()
+                exitWaiter.cancel()
+                watchdog.cancel()
             }
         }
 
@@ -129,11 +177,15 @@ class CameraTetherLivenessTest {
     ) : Closeable {
         private val server = ServerSocket(0, 8, InetAddress.getLoopbackAddress())
         private val entries = CopyOnWriteArrayList(initialEntries)
+        private val entriesBySlot = ConcurrentHashMap<Long, FakeCardEntry>().apply {
+            initialEntries.forEach { put(slotKey(it.content, it.file), it) }
+        }
         private val sockets = CopyOnWriteArrayList<Socket>()
         private val workerThreads = CopyOnWriteArrayList<Thread>()
         private val serverError = AtomicReference<Throwable>()
         @Volatile private var closed = false
 
+        val lastActivityNanos = AtomicLong(System.nanoTime())
         val list923cCalls = AtomicInteger()
         val storage1004Calls = AtomicInteger()
         val handles1007Calls = AtomicInteger()
@@ -143,6 +195,10 @@ class CameraTetherLivenessTest {
 
         @Volatile var onShutterTriggered: (() -> Unit)? = null
 
+        private fun markActivity() {
+            lastActivityNanos.set(System.nanoTime())
+        }
+
         private val acceptor = Thread({
             while (!closed) {
                 val command = try {
@@ -150,24 +206,36 @@ class CameraTetherLivenessTest {
                 } catch (_: IOException) {
                     break
                 }
+                markActivity()
                 sockets += command
                 var event: Socket? = null
                 try {
-                    command.soTimeout = 10_000
+                    command.tcpNoDelay = true
+                    command.soTimeout = 30_000
                     val init = readPtpPacket(command)
+                    markActivity()
                     check(init.first == 1) { "Expected command init packet 1, got ${init.first}" }
                     writePtpPacket(command, 2, u32(1) + ByteArray(20))
+                    markActivity()
 
                     event = server.accept()
+                    markActivity()
                     sockets += event
-                    event.soTimeout = 10_000
+                    event.tcpNoDelay = true
+                    event.soTimeout = 30_000
                     val eventInit = readPtpPacket(event)
+                    markActivity()
                     check(eventInit.first == 3) { "Expected event init packet 3, got ${eventInit.first}" }
                     writePtpPacket(event, 4, byteArrayOf())
+                    command.soTimeout = 0
+                    event.soTimeout = 0
+                    markActivity()
                 } catch (error: Throwable) {
                     runCatching { command.close() }
                     runCatching { event?.close() }
-                    if (!closed && error !is IOException) serverError.compareAndSet(null, error)
+                    if (!closed && (error !is IOException || error is SocketTimeoutException)) {
+                        serverError.compareAndSet(null, error)
+                    }
                     continue
                 }
                 val acceptedEvent = checkNotNull(event)
@@ -178,6 +246,7 @@ class CameraTetherLivenessTest {
         }, "fake-tether-accept").apply { isDaemon = true; start() }
 
         fun addEntry(entry: FakeCardEntry) {
+            entriesBySlot[slotKey(entry.content, entry.file)] = entry
             entries += entry
         }
 
@@ -193,6 +262,7 @@ class CameraTetherLivenessTest {
             override fun createSocket(): Socket = object : Socket() {
                 override fun connect(endpoint: SocketAddress?, timeout: Int) {
                     super.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), server.localPort), timeout)
+                    tcpNoDelay = true
                 }
             }.also { sockets += it }
             override fun createSocket(host: String?, port: Int) = throw UnsupportedOperationException()
@@ -208,9 +278,12 @@ class CameraTetherLivenessTest {
                         readPtpPacket(command)
                     } catch (_: EOFException) {
                         break
+                    } catch (timeout: SocketTimeoutException) {
+                        throw timeout
                     } catch (_: IOException) {
                         break
                     }
+                    markActivity()
                     check(type == 6) { "Expected command packet 6, got $type" }
                     val buf = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
                     val phase = buf.int
@@ -224,11 +297,15 @@ class CameraTetherLivenessTest {
                         val (endType, endBytes) = readPtpPacket(command)
                         check(endType == 12 && endBytes.size >= 4)
                         outgoing = endBytes.copyOfRange(4, endBytes.size)
+                        markActivity()
                     }
                     respond(command, op, tid, params, outgoing)
+                    markActivity()
                 }
             } catch (error: Throwable) {
-                if (!closed && error !is IOException) serverError.compareAndSet(null, error)
+                if (!closed && (error !is IOException || error is SocketTimeoutException)) {
+                    serverError.compareAndSet(null, error)
+                }
             } finally {
                 runCatching { command.close() }
                 runCatching { event.close() }
@@ -312,7 +389,7 @@ class CameraTetherLivenessTest {
                     val file = params[1] and 0xffff
                     val offset = (params[2].toLong() and 0xffffffffL) or ((params[3].toLong() and 0xffffffffL) shl 32)
                     val count = params[4]
-                    val match = entries.firstOrNull { it.content == content && it.file == file }
+                    val match = entriesBySlot[slotKey(content, file)]
                     if (match == null) {
                         code = 0x2009
                     } else {
@@ -335,7 +412,7 @@ class CameraTetherLivenessTest {
                 0x1008 -> {
                     objectInfo1008Calls.incrementAndGet()
                     val handle = params[0]
-                    val match = entries.firstOrNull { it.content == handle }
+                    val match = entriesBySlot[slotKey(handle, 1)]
                     if (match == null) {
                         code = 0x2009
                     } else {
@@ -346,16 +423,20 @@ class CameraTetherLivenessTest {
                 0x1009 -> {
                     downloadCalls.incrementAndGet()
                     val handle = params[0]
-                    val match = entries.firstOrNull { it.content == handle }
+                    val match = entriesBySlot[slotKey(handle, 1)]
                     if (match == null) code = 0x2009 else data = match.bytes
                 }
                 else -> error("Unexpected PTP op 0x${op.toString(16)}")
             }
+            // Write all PTP frames for one transaction in a single write+flush to avoid Linux loopback Nagle + delayed-ACK stalls.
+            val reply = ByteArrayOutputStream()
             if (data != null) {
-                writePtpPacket(command, 9, u32(tid) + i64(data.size.toLong()))
-                writePtpPacket(command, 12, u32(tid) + data)
+                reply.write(encodePtpPacket(9, u32(tid) + i64(data.size.toLong())))
+                reply.write(encodePtpPacket(12, u32(tid) + data))
             }
-            writePtpPacket(command, 7, u16(code) + u32(tid))
+            reply.write(encodePtpPacket(7, u16(code) + u32(tid)))
+            command.getOutputStream().write(reply.toByteArray())
+            command.getOutputStream().flush()
         }
 
         override fun close() {
@@ -368,6 +449,8 @@ class CameraTetherLivenessTest {
         }
 
         companion object {
+            private fun slotKey(content: Int, file: Int): Long =
+                (content.toLong() shl 16) or (file.toLong() and 0xffffL)
             private fun u16(v: Int): ByteArray = ByteBuffer.allocate(2).order(ByteOrder.LITTLE_ENDIAN).putShort(v.toShort()).array()
             private fun u32(v: Int): ByteArray = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(v).array()
             private fun i64(v: Long): ByteArray = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(v).array()
@@ -376,10 +459,11 @@ class CameraTetherLivenessTest {
                 val utf16 = (s + "\u0000").toByteArray(StandardCharsets.UTF_16LE)
                 return byteArrayOf((s.length + 1).toByte()) + utf16
             }
-            private fun writePtpPacket(socket: Socket, type: Int, payload: ByteArray) {
-                val frame = ByteBuffer.allocate(payload.size + 8).order(ByteOrder.LITTLE_ENDIAN)
+            private fun encodePtpPacket(type: Int, payload: ByteArray): ByteArray =
+                ByteBuffer.allocate(payload.size + 8).order(ByteOrder.LITTLE_ENDIAN)
                     .putInt(payload.size + 8).putInt(type).put(payload).array()
-                socket.getOutputStream().write(frame)
+            private fun writePtpPacket(socket: Socket, type: Int, payload: ByteArray) {
+                socket.getOutputStream().write(encodePtpPacket(type, payload))
                 socket.getOutputStream().flush()
             }
             private fun readPtpPacket(socket: Socket): Pair<Int, ByteArray> {
@@ -418,7 +502,7 @@ class CameraTetherLivenessTest {
         val destination = CameraImportDestination()
 
         FakeTetherCameraServer().use { camera ->
-            val clock = VirtualLoopClock(initialMillis = 10_000L)
+            val clock = VirtualLoopClock(camera, initialMillis = 10_000L)
             val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
             val controller = CameraTetherController(controllerScope, store, journal, lock, {}, clock::now, clock::pause)
             try {
@@ -426,7 +510,7 @@ class CameraTetherLivenessTest {
                 camera.onShutterTriggered = { camera.addEntry(firstShot) }
                 controller.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), clientId,
                     SonyCameraModel.A7CII, "BLE:sony", destination, resume = false, cardSavingConfirmed = false)
-                clock.awaitParked()
+                clock.awaitParked(controller)
                 assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
                 assertNull(controller.state.value.failure)
 
@@ -455,7 +539,7 @@ class CameraTetherLivenessTest {
                 camera.addEntry(offlineUnknownShot)
 
                 // 3) Resume session with pending shutterRequestedAt marker.
-                val resumeClock = VirtualLoopClock(initialMillis = 100_000L)
+                val resumeClock = VirtualLoopClock(camera, initialMillis = 100_000L)
                 val resumedController = CameraTetherController(controllerScope, store, journal, lock, {}, resumeClock::now, resumeClock::pause)
                 resumedController.restore(journal.load(), store.load())
                 assertEquals(CameraTetherPhase.PAUSED, resumedController.state.value.phase)
@@ -464,7 +548,7 @@ class CameraTetherLivenessTest {
 
                 resumedController.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), clientId,
                     SonyCameraModel.A7CII, "BLE:sony", destination, resume = true, cardSavingConfirmed = false)
-                resumeClock.awaitParked()
+                resumeClock.awaitParked(resumedController)
                 val initialResumedPhase = resumedController.state.value.phase
                 val markerAfterResume = resumedController.state.value.run?.shutterRequestedAt
 
@@ -532,13 +616,13 @@ class CameraTetherLivenessTest {
         var smallIdle923c = -1
         withWorkspace { _, store, journal, lock ->
             FakeTetherCameraServer(legacy = false, initialEntries = cardEntries(500)).use { camera ->
-                val clock = VirtualLoopClock()
+                val clock = VirtualLoopClock(camera)
                 val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
                 val controller = CameraTetherController(controllerScope, store, journal, lock, {}, clock::now, clock::pause)
                 try {
                     controller.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID(),
                         SonyCameraModel.A7CII, "BLE:sony-500", CameraImportDestination(), resume = false, cardSavingConfirmed = false)
-                    clock.awaitParked()
+                    clock.awaitParked(controller)
                     assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
                     camera.resetCounters()
                     // 60 seconds idle = 240 ticks * 250ms (40 reconciliations at 1,500ms interval).
@@ -559,13 +643,13 @@ class CameraTetherLivenessTest {
         var savedNames = emptyList<String>()
         withWorkspace { _, store, journal, lock ->
             FakeTetherCameraServer(legacy = false, initialEntries = cardEntries(2_500)).use { camera ->
-                val clock = VirtualLoopClock()
+                val clock = VirtualLoopClock(camera)
                 val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
                 val controller = CameraTetherController(controllerScope, store, journal, lock, {}, clock::now, clock::pause)
                 try {
                     controller.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID(),
                         SonyCameraModel.A7CII, "BLE:sony-2500", CameraImportDestination(), resume = false, cardSavingConfirmed = false)
-                    clock.awaitParked()
+                    clock.awaitParked(controller)
                     assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
                     camera.resetCounters()
                     // 60 seconds idle = 240 ticks * 250ms.
@@ -617,19 +701,19 @@ class CameraTetherLivenessTest {
         var smallReconcile1008 = -1
         withWorkspace { _, store, journal, lock ->
             FakeTetherCameraServer(legacy = true, initialEntries = cardEntries(100)).use { camera ->
-                val clock = VirtualLoopClock()
+                val clock = VirtualLoopClock(camera)
                 val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
                 val controller = CameraTetherController(controllerScope, store, journal, lock, {}, clock::now, clock::pause)
                 try {
                     controller.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID(),
                         SonyCameraModel.ZVE10, "BLE:zve10-100", CameraImportDestination(), resume = false, cardSavingConfirmed = true)
-                    clock.awaitParked()
+                    clock.awaitParked(controller)
                     assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
                     camera.resetCounters()
-                    // First 60s idle (240 ticks): 0 reconciliations; next 60s (total 120s = 480 ticks): 1 full legacy idle reconciliation.
-                    repeat(240) { assertTrue(clock.stepParkedTick(controller)) }
+                    // Advance first 60s idle (4 * 15s) -> 0 card reconciliations; next 60s (total 120s) -> 1 full legacy idle reconciliation.
+                    repeat(4) { assertTrue(clock.stepParkedTick(controller, deltaMillis = 15_000L)) }
                     smallIdle60sOps = camera.storage1004Calls.get() + camera.handles1007Calls.get() + camera.objectInfo1008Calls.get()
-                    repeat(240) { assertTrue(clock.stepParkedTick(controller)) }
+                    repeat(4) { assertTrue(clock.stepParkedTick(controller, deltaMillis = 15_000L)) }
                     smallReconcile1008 = camera.objectInfo1008Calls.get()
                     smallReconcileOps = camera.storage1004Calls.get() + camera.handles1007Calls.get() + smallReconcile1008
                     controller.stop(ended = true)
@@ -648,25 +732,25 @@ class CameraTetherLivenessTest {
         var savedNames = emptyList<String>()
         withWorkspace { _, store, journal, lock ->
             FakeTetherCameraServer(legacy = true, initialEntries = cardEntries(1_000)).use { camera ->
-                val clock = VirtualLoopClock()
+                val clock = VirtualLoopClock(camera)
                 val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
                 val controller = CameraTetherController(controllerScope, store, journal, lock, {}, clock::now, clock::pause)
                 try {
                     controller.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID(),
                         SonyCameraModel.ZVE10, "BLE:zve10-1000", CameraImportDestination(), resume = false, cardSavingConfirmed = true)
-                    clock.awaitParked()
+                    clock.awaitParked(controller)
                     assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
                     camera.resetCounters()
-                    repeat(240) { assertTrue(clock.stepParkedTick(controller)) }
+                    repeat(4) { assertTrue(clock.stepParkedTick(controller, deltaMillis = 15_000L)) }
                     largeIdle60sOps = camera.storage1004Calls.get() + camera.handles1007Calls.get() + camera.objectInfo1008Calls.get()
-                    repeat(240) { assertTrue(clock.stepParkedTick(controller)) }
+                    repeat(4) { assertTrue(clock.stepParkedTick(controller, deltaMillis = 15_000L)) }
                     largeReconcile1008 = camera.objectInfo1008Calls.get()
                     largeReconcileOps = camera.storage1004Calls.get() + camera.handles1007Calls.get() + largeReconcile1008
 
-                    // Add a new photo (#1001) and run one reconciliation cycle (480 ticks = 120s).
+                    // Add a new photo (#1001) and advance one full 120s reconciliation period.
                     camera.resetCounters()
                     camera.addEntry(FakeCardEntry(1_001, 1, "DSC01001.ARW", 1_730_001_001_000L, rawPayload(31)))
-                    repeat(480) { assertTrue(clock.stepParkedTick(controller)) }
+                    assertTrue(clock.stepParkedTick(controller, deltaMillis = 120_000L))
                     newPhoto1008 = camera.objectInfo1008Calls.get()
                     savedNames = controller.state.value.saved.map { it.photo.name }
 
