@@ -882,6 +882,23 @@ int main(int argc, char** argv) {
         // A bare MPF marker without its required index remains invalid.
         auto gain = read(jpeg); gain.insert(gain.begin() + 2, {255,226,0,6,'M','P','F',0});
         write(root / "gain-map.jpg", gain); reject(root / "gain-map.jpg", SONY2FUJI_STATUS_UNSUPPORTED);
+        // APP1 段长 6/7 时内容只有 "Exif"/"Exif\0"，不足 6 字节标识，不能按 EXIF 解析或越界读。
+        for (const uint8_t length : {uint8_t{6}, uint8_t{7}}) {
+            std::vector<uint8_t> segment = {255, 225, 0, length, 'E', 'x', 'i', 'f'};
+            segment.resize(2u + length, 0);
+            auto shortExif = read(jpeg);
+            shortExif.insert(shortExif.begin() + 2, segment.begin(), segment.end());
+            const auto path = root / ("short-exif-" + std::to_string(length) + ".jpg");
+            write(path, shortExif);
+            sony2fuji_buffer probe{};
+            const auto status = sony2fuji_load_display_image(path.u8string().c_str(), &probe);
+            sony2fuji_release_buffer(&probe);
+            if (status == SONY2FUJI_STATUS_OK)
+                check(decode(path, 12, 8) == upright, "A truncated Exif APP1 segment is ignored");
+            else
+                rejectEither(path, SONY2FUJI_STATUS_UNSUPPORTED, SONY2FUJI_STATUS_PROCESSING_ERROR,
+                    "A truncated Exif APP1 segment is rejected cleanly");
+        }
 
         const auto oversized = root / "over-128m.png";
         writePngHeader(oversized, 16001, 8000);

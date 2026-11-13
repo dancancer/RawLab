@@ -188,8 +188,8 @@ private:
     std::ifstream file_;
 };
 
-bool equalBytes(const uint8_t* data, size_t size, const char* value) {
-    const auto length = std::strlen(value);
+// 标识符可能内含 '\0'（如 "Exif\0\0"），长度必须显式传入，不能用 strlen。
+bool equalBytes(const uint8_t* data, size_t size, const char* value, size_t length) {
     return size >= length && std::memcmp(data, value, length) == 0;
 }
 
@@ -528,13 +528,14 @@ void scanJpeg(const std::wstring& path, MetadataInfo& info) {
             metadataBytes += payloadLength;
             std::vector<uint8_t> payload(payloadLength);
             reader.readExact(payload.data(), payload.size());
-            if (marker == 0xe2 && equalBytes(payload.data(), payload.size(), "MPF\0")) {
+            if (marker == 0xe2 && equalBytes(payload.data(), payload.size(), "MPF\0", 4)) {
                 if (info.jpegImageCount != 1) fail(SONY2FUJI_STATUS_UNSUPPORTED);
                 info.jpegImageCount = validateMpfThumbnails(path, payload, reader.position() - payloadLength + 4);
             }
-            if (marker == 0xe2 && equalBytes(payload.data(), payload.size(), "ICC_PROFILE\0"))
+            if (marker == 0xe2 && equalBytes(payload.data(), payload.size(), "ICC_PROFILE\0", 12))
                 info.colorProfileMarker = true;
-            if (marker == 0xe1 && equalBytes(payload.data(), payload.size(), "Exif\0\0"))
+            // 长度 6 保证 payload.size() >= 6，下面的 size - 6 不会下溢。
+            if (marker == 0xe1 && equalBytes(payload.data(), payload.size(), "Exif\0\0", 6))
                 mergeOrientation(info, parseExifOrientation(payload.data() + 6, payload.size() - 6));
             if (marker == 0xe1 &&
                 (containsInsensitive(payload.data(), payload.size(), "gainmap") ||
@@ -730,7 +731,7 @@ void scanTiff(const std::wstring& path, MetadataInfo& info) {
                 fail(SONY2FUJI_STATUS_UNSUPPORTED);
             metadataBytes += static_cast<size_t>(entry.dataBytes);
             const auto software = readTiffData(reader, entry, kMetadataChunkLimit);
-            sigmaWriter = equalBytes(software.data(), software.size(), "SIGMA Photo Pro ");
+            sigmaWriter = equalBytes(software.data(), software.size(), "SIGMA Photo Pro ", 16);
             continue;
         }
         if (entry.tag == 34675) {
