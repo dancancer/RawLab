@@ -115,5 +115,29 @@ import ImageIO
         check(saved.state?.settings.hdr?.cameraDevelopmentSettings.fbddLevel == 2 &&
               saved.state?.settings.hdr?.processingVersion == 1, "Camera paste did not persist the FBDD edit at rendering version 1")
         print("PASS Mac camera HDR clipboard, Bayer native preflight, incompatible target blocking and persisted FBDD")
+
+        let hslInput = root.appendingPathComponent("hsl-target.jpg")
+        try FileManager.default.copyItem(at: input, to: hslInput)
+        let hslModel = EditorModel(lookDirectory: root.appendingPathComponent("hsl-looks"),
+            editDirectory: root.appendingPathComponent("hsl-edits"), batchDirectory: root.appendingPathComponent("hsl-batch"))
+        hslModel.open(hslInput)
+        wait("HDR target source did not open") { !hslModel.importing && !hslModel.busy && hslModel.result != nil }
+        check(hslModel.settings.isHDREditing && hslModel.referenceSource(hslInput).hdrFingerprint != nil,
+              "the gain-map fixture has no HDR fingerprint")
+        hslModel.schedule(forceExact: true)
+        wait("HDR target preview was not accepted") { !hslModel.busy && !hslModel.previewOutdated && hslModel.hslAcceptedRequest != nil }
+        hslModel.selectAdjustmentTool(.hsl); hslModel.hslTargetEnabled = true
+        hslModel.beginHSLTarget(CGPoint(x: 0.5, y: 0.5))
+        check(hslModel.hslTargetNotice != .stale && hslModel.hslTargetInteraction.isWaiting,
+              "an accepted gain-map preview was reported as changed before target sampling")
+        wait("HDR target sampling did not finish") { !hslModel.hslTargetInteraction.isWaiting }
+        check(hslModel.hslTargetNotice != .stale, "HDR target sampling reported a changed preview")
+        hslModel.endHSLTarget()
+        wait("HDR target edit did not render") { !hslModel.busy && !hslModel.previewOutdated && hslModel.hslAcceptedSettings == hslModel.settings }
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: hslInput.path)
+        hslModel.beginHSLTarget(CGPoint(x: 0.5, y: 0.5))
+        check(hslModel.hslTargetNotice == .stale && !hslModel.hslTargetInteraction.isWaiting,
+              "a rewritten gain-map source did not report a changed preview")
+        print("PASS Mac HDR gain-map target sampling uses the HDR source identity")
     }
 }

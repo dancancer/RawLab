@@ -12,7 +12,7 @@ extension EditorModel {
     func beginHSLTarget(_ point: CGPoint, keyDelta: Double? = nil) {
         guard hslTargetActive, ParameterValueField.commitPendingInputs(), !busy, !previewOutdated, let work = hslAcceptedRequest?.value,
               let revision = hslTargetRevision, settings == hslAcceptedSettings,
-              work.source == file.map({ MacReferenceSource($0, raster: RenderEngine.isRasterInput($0)) }) else { hslTargetNotice = .stale; return }
+              work.source == file.map(referenceSource) else { hslTargetNotice = .stale; return }
         cancelHSLTarget()
         let before = settings, source = sourceRevision, axis = hslTargetAxis
         let token = hslTargetInteraction.begin(before: before.editingHSLSettings, axis: axis, revision: revision)
