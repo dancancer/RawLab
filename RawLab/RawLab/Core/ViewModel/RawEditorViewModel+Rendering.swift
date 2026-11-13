@@ -234,6 +234,7 @@ extension RawEditorViewModel {
                             }
                             self.previewImage = previewImage
                             self.hdrPresentation = nil; self.hdrReference = nil
+                            self.updateHDRResourceNotice(nil)
                             self.acceptedPreviewFrameID = renderID
                             self.acceptedPreviewRequest = request
                             self.histogram = nil
@@ -334,6 +335,7 @@ extension RawEditorViewModel {
                 }
                 self.previewImage = previewImage
                 self.hdrPresentation=nil; self.hdrReference=nil; self.draftBuffer=inputBuffer
+                self.updateHDRResourceNotice(nil)
                 self.acceptedPreviewFrameID = renderID
                 self.acceptedPreviewRequest = request
                 self.histogram = nil
@@ -391,6 +393,7 @@ extension RawEditorViewModel {
         basePreviewImage = cached.basePreviewImage
         hdrPresentation = cached.hdrPresentation
         hdrReference = cached.hdrReference
+        if !request.settings.isHDREditing { updateHDRResourceNotice(nil) }
         histogram = request.includeHistogram ? cached.histogram : nil
         baseHistogram = cached.baseHistogram
         nativeImageSize = cached.nativeImageSize

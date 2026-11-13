@@ -55,8 +55,8 @@ extension ContentView {
 
     var editorDraftSnapshot: EditorDraftSnapshot {
         EditorDraftSnapshot(geometry: geometryDraft, lens: lensDraft,
-                            tool: resetDraftSuspended || collapsedEditorTool != nil ? .film : currentEditorTool, destination: pendingToolSelection,
-                            workspace: resetDraftSuspended || !toolWorkspaceOpen ? nil : workspaceDraft)
+                            tool: collapsedEditorTool != nil ? .film : currentEditorTool, destination: pendingToolSelection,
+                            workspace: !toolWorkspaceOpen ? nil : workspaceDraft)
     }
 
     var draftPreviewSettings: RawSettings {
@@ -145,13 +145,14 @@ extension ContentView {
         return selectedAdjustment.map(EditorToolSelection.adjustment) ?? .film
     }
 
-    func activateEditorTool(_ selection: EditorToolSelection, resettingFine: Bool = true) {
+    func activateEditorTool(_ selection: EditorToolSelection, resettingFine: Bool = true, leavingWorkspace: Bool = false) {
         viewModel.closeQuickPresets()
         cancelHSLTarget()
         cancelSliderInteraction()
         if resettingFine && selection != currentEditorTool { adjustmentFine = false }
         collapsedEditorTool = nil
-        let leavingDraft = isEditorDraftActive
+        // finishDraftNavigation 已先清 workspaceDraft/toolWorkspaceOpen；导航来源仍要按离开草稿处理。
+        let leavingDraft = isEditorDraftActive || leavingWorkspace
         if leavingDraft { clearRecoverableDraft(); viewModel.discardDraftSaveFailure(settings: settings) }
         pendingToolSelection = nil
         draftExitPresented = false
@@ -173,7 +174,14 @@ extension ContentView {
         workspaceDraft = EditorToolDraft(tool: selection, original: settings)
         toolWorkspaceOpen = true
         if leavingDraft && !geometrySelected && !lensSelected {
+            // 离开草稿切往普通工具时 settings 可能不变或刚提交，比对参考先重锚回 committed
+            // 再交付终态画面（导航 apply 后也走这里，避免画布滞留在未裁切草稿）。
+            viewModel.committedPreviewSettings = settings
             viewModel.updatePreview(settings: settings, includeHistogram: true, quality: .final)
+        } else if geometrySelected || lensSelected {
+            // 几何/镜头草稿以未裁切底图（draftPreviewSettings）为工作区底图；
+            // 新会话即使投影与 committed 相等（fresh draft）也必须换掉已裁切的交付画面。
+            previewEditorDraft()
         }
     }
 
@@ -188,9 +196,17 @@ extension ContentView {
         workspaceDraftID = UUID()
         workspaceDraft = nil
         toolWorkspaceOpen = false
+        // 取消退出草稿意味着放弃未完成的导航目的地，快照 destination 不得残留。
+        pendingToolSelection = nil
         geometrySelected = false; lensSelected = false
+        // 工作区关闭同时退出配方选择态，currentEditorTool 不得残留已收起的工具。
+        choosingMasterRecipe = false
         geometryDraft = nil; lensDraft = nil
         viewModel.hasAdjustmentDraft = false
+        // 退出草稿（取消/放弃/未改动）时 settings 可能不变、observer 不触发，显式把预览参考与
+        // 比对基准重锚回 committed 设置；否则 updatePreview 的 referenceSettings 命中刚丢弃的
+        // 草稿锚点，comparisonChanged 恒假，比对底图永远滞留在已放弃的草稿构图。
+        viewModel.committedPreviewSettings = settings
         viewModel.updatePreview(settings: settings, includeHistogram: true, quality: .final)
     }
 
@@ -228,6 +244,8 @@ extension ContentView {
     }
 
     func finishDraftNavigation(apply: Bool) {
+        // 进入导航前是否正开着工具工作区是唯一可靠事实：commit/discard 会先清 workspaceDraft。
+        let leavingWorkspace = isEditorDraftActive
         if apply {
             guard commitEditorDraft() else { return }
         } else { discardEditorDraft() }
@@ -256,8 +274,8 @@ extension ContentView {
         let expansion = pendingAdjustmentExpansion
         pendingToolSelection = nil
         pendingAdjustmentExpansion = nil
-        if expansion == false { completeAdjustmentExpansion(false); return }
-        if let selection { activateEditorTool(selection) }
+        if expansion == false { completeAdjustmentExpansion(false, closingWorkspace: leavingWorkspace); return }
+        if let selection { activateEditorTool(selection, leavingWorkspace: leavingWorkspace) }
         if let expansion { completeAdjustmentExpansion(expansion) }
     }
 
@@ -308,6 +326,9 @@ extension ContentView {
     func previewEditorDraft() {
         guard !editorBusy, viewModel.hasImage else { return }
         showingBefore = false
+        // 草稿工作区的画布与比对基准必须同态：把比对参考重锚到草稿预览设置，
+        // 交付时 applyComparison 随草稿裁切推进 basePreviewGeometry，几何裁切框在画布与比对态都对齐。
+        viewModel.committedPreviewSettings = draftPreviewSettings
         if isAdjustingSlider {
             viewModel.schedulePreviewUpdate(settings: draftPreviewSettings, delay: 0.08,
                                            includeHistogram: false, quality: .interactive)
@@ -330,7 +351,7 @@ extension ContentView {
     }
 
     func requestAdjustmentExpansion(_ expanded: Bool) {
-        guard !editorBusy, !resetDraftSuspended else { return }
+        guard !editorBusy else { return }
         if !expanded && isEditorDraftChanged {
             pendingToolSelection = currentEditorTool
             pendingAdjustmentExpansion = false
@@ -338,11 +359,14 @@ extension ContentView {
         } else { completeAdjustmentExpansion(expanded) }
     }
 
-    func completeAdjustmentExpansion(_ expanded: Bool) {
+    func completeAdjustmentExpansion(_ expanded: Bool, closingWorkspace: Bool = false) {
         if !expanded && !hslTargetEnabled { cancelSliderInteraction() }
         if expanded {
             if let tool = collapsedEditorTool { activateEditorTool(tool) }
-        } else if isEditorDraftActive {
+        } else if closingWorkspace || isEditorDraftActive || geometrySelected || lensSelected {
+            // 只有关闭中的工具工作区或仍残留的工具会话才收尾：导航收起路径已先 commit/discard
+            // 清掉 workspaceDraft，靠 closingWorkspace 传入事实；总览态（无工作区、无草稿）收起
+            // 不记 collapsedEditorTool，否则后续选组/预设/展开会被 onChange 劫持进草稿工作区。
             let tool = currentEditorTool
             let group = selectedGroup
             // 收起结束实际草稿并恢复 committed 画面；记住的工具只属于导航会话。
@@ -365,8 +389,6 @@ extension ContentView {
         pendingPhotoImport = false
         pendingToolSelection = nil
         pendingAdjustmentExpansion = nil
-        resetIntentSource = nil
-        resetWaitingForReady = false
         if skippedSystemPhoto {
             // 让确认框先完成 dismiss，再尝试下一条系统事件，避免同一轮重开确认框。
             DispatchQueue.main.async { continueSystemPhotoImport() }

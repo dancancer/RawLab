@@ -296,7 +296,7 @@ extension ContentView {
                         manage: { adjustmentSheet = .presets }, undo: undoQuickPreset, libraryRevision: presetLibraryRevision)
                 }
             } else { valuePanel }
-        }.disabled(resetDraftSuspended || (settings.isHDREditing && !viewModel.quickPresetsVisible && !supportsHDR(currentEditorTool)))
+        }.disabled(settings.isHDREditing && !viewModel.quickPresetsVisible && !supportsHDR(currentEditorTool))
             .environment(\.compactAdjustmentRows, [AdjustmentKind.temperature, .tint, .hsl, .vignette, .grain, .noiseReduction].contains(selectedAdjustment ?? .strength))
             .environment(\.adjustmentFine, adjustmentFine)
             .environment(\.adjustmentInputContext, parameterInputContext)
@@ -454,7 +454,7 @@ extension ContentView {
             .padding(.horizontal, 8)
         }
         .frame(height: buttonHeight * (side && !adjustmentsExpanded ? 2 : 1))
-        .disabled(editorBusy || resetDraftSuspended)
+        .disabled(editorBusy)
         .accessibilityIdentifier("editor.groups")
     }
 

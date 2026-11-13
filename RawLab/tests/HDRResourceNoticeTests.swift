@@ -54,21 +54,24 @@ final class StatusProbe {
         recovered.deliverFrame(missingResource: nil)
         check(recovered.status == nil, "Recovered HDR resources withdraw the still-visible warning")
 
-        let imported = StatusProbe()
-        imported.status = look
-        imported.notice = HDRResourceNotice(message: look)
-        imported.status = saved
-        imported.writes = 0
-        imported.deliverFrame(missingResource: look)
-        check(imported.status == saved && imported.writes == 0,
-              "The first preview after an HDR import does not repeat the import warning")
+        // 交付时状态转换收口在生产 HDRResourceNotice.delivered（导入三个交付站点共用）。
+        let deliveredHDR = HDRResourceNotice.delivered(isHDREditing: true, missingMessage: look)
+        check(deliveredHDR.message == look, "HDR import delivery records the warning it already showed")
+        check(HDRResourceNotice.delivered(isHDREditing: true, missingMessage: nil).message == nil,
+              "A complete HDR delivery records no warning")
+        check(HDRResourceNotice.delivered(isHDREditing: false, missingMessage: look).message == nil,
+              "SDR import delivery resets the notice cache even when the photo still misses HDR resources")
 
-        let rendering = try String(contentsOfFile: "RawLab/RawLab/Core/ViewModel/RawEditorViewModel+Rendering.swift", encoding: .utf8)
-        check(rendering.contains("self.updateHDRResourceNotice(hdr.missingResourceMessage)") &&
-              !rendering.contains("self.statusMessage = hdr.missingResourceMessage"),
-              "HDR preview delivery routes missing-resource warnings through the change-only notice")
-        let io = try String(contentsOfFile: "RawLab/RawLab/Core/ViewModel/IO/RawEditorViewModel+IO.swift", encoding: .utf8)
-        check(io.contains("self.hdrResourceNotice = HDRResourceNotice(message: hdr.missingResourceMessage)"),
-              "HDR import records the warning it already showed")
+        let reEnabled = StatusProbe()
+        reEnabled.notice = deliveredHDR
+        reEnabled.status = look
+        reEnabled.writes = 0
+        reEnabled.deliverFrame(missingResource: look)
+        check(reEnabled.status == look && reEnabled.writes == 0,
+              "The first preview after an HDR import does not repeat the import warning")
+        reEnabled.notice = .delivered(isHDREditing: false, missingMessage: look)
+        reEnabled.deliverFrame(missingResource: look)
+        check(reEnabled.status == look && reEnabled.writes == 1,
+              "Switching the same photo back to HDR editing after an SDR delivery shows the missing-resource warning again")
     }
 }

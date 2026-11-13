@@ -222,7 +222,7 @@ extension RawEditorViewModel {
                                 self.nativeImageSize=CGSize(width:edited.outputNativeWidth,height:edited.outputNativeHeight)
                                 self.hasImage=true; self.isBusy=false; self.sourceRevision=UUID()
                                 self.statusMessage = hdr.missingResourceMessage
-                                self.hdrResourceNotice = HDRResourceNotice(message: hdr.missingResourceMessage)
+                                self.hdrResourceNotice = .delivered(isHDREditing: true, missingMessage: hdr.missingResourceMessage)
                                 self.recordImportedComparison(settings:restoredSettings)
                                 self.acceptImportedEditRecord(record,settings:restoredSettings)
                                 self.persistedEditorSettings=nil; self.failedDraftSource=nil
@@ -253,6 +253,7 @@ extension RawEditorViewModel {
                                 self.importPreviousRevision=nil
                                 self.hdrPresentation=nil; self.hdrReference=nil; self.sourceIsHDR=rasterHDR
                                 self.rawHDRSource = cameraHDR ? hdrInfo : nil
+                                self.hdrResourceNotice = .delivered(isHDREditing: false, missingMessage: nil)
                                 self.sourceFile = sourceFile
                                 self.sourceKind = sourceKind
                                 self.sourceIdentity = resolvedIdentity
@@ -317,6 +318,7 @@ extension RawEditorViewModel {
                                 self.importPreviousRevision=nil
                                 self.hdrPresentation=nil; self.hdrReference=nil; self.sourceIsHDR=rasterHDR
                                 self.rawHDRSource = cameraHDR ? hdrInfo : nil
+                                self.hdrResourceNotice = .delivered(isHDREditing: false, missingMessage: nil)
                                 self.sourceFile = sourceFile
                                 self.sourceKind = sourceKind
                                 self.sourceIdentity = resolvedIdentity
