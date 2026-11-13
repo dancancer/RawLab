@@ -254,19 +254,25 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
     /// Samples the process footprint from a helper thread while body runs, and returns the observed peak.
     private static func peakFootprintMB(during body: () throws -> Void) rethrows -> Double {
         let peak = Locked(value: memoryFootprintMB())
-        let done = DispatchSemaphore(value: 0)
+        let stop = DispatchSemaphore(value: 0)
+        let samplerFinished = DispatchSemaphore(value: 0)
         DispatchQueue.global(qos: .utility).async {
-            while done.wait(timeout: .now()) == .timedOut {
+            while stop.wait(timeout: .now()) == .timedOut {
                 peak.max(memoryFootprintMB())
                 Thread.sleep(forTimeInterval: 0.01)
             }
             peak.max(memoryFootprintMB())
+            samplerFinished.signal()
         }
-        defer {
-            done.signal()
-            peak.max(memoryFootprintMB())
+        do {
+            try body()
+        } catch {
+            stop.signal()
+            samplerFinished.wait()
+            throw error
         }
-        try body()
+        stop.signal()
+        samplerFinished.wait()
         return peak.value
     }
 
@@ -307,18 +313,26 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         print(String(format: "[Q8] above-cap open footprint %.1f MB -> %.1f MB, peak %.1f MB (neutral %dx%d)",
                      footprintBeforeOpen, footprintAfterOpen, peak, neutralOver.image.width, neutralOver.image.height))
 
-        // Q8 product assertions. Q8_SKIP_MEMO keeps memo-only measurement runs compiling on an old tree.
-        if ProcessInfo.processInfo.environment["Q8_SKIP_MEMO"] == nil {
-            try check(neutralOver.image.width == 4096 && neutralOver.image.height == 1024,
-                      "over-cap neutral reference is downsampled to the long-edge cap")
-            try check(!neutralOver.isFullResolution, "a capped reference no longer claims a native frame")
-            try check(over.result!.image.width == 6144 && over.result!.image.height == 1536 && over.result!.isFullResolution,
-                      "full-resolution mode keeps the result frame native beside a capped reference")
-            // Budget accounting must observe the capped reference size.
-            let expectedCharge = MacExactPreviewCache.bytes(over.result!) + MacExactPreviewCache.bytes(neutralOver)
-            try check(over.exactPreviewCache.totalBytes == expectedCharge,
-                      "the exact-preview budget charges the reference frame at its capped size")
-        }
+        try check(neutralOver.image.width == 4096 && neutralOver.image.height == 1024,
+                  "over-cap neutral reference is downsampled to the long-edge cap")
+        try check(!neutralOver.isFullResolution, "a capped reference no longer claims a native frame")
+        try check(over.result!.image.width == 6144 && over.result!.image.height == 1536 && over.result!.isFullResolution,
+                  "full-resolution mode keeps the result frame native beside a capped reference")
+        // Budget accounting must observe the capped reference size.
+        let expectedCharge = MacExactPreviewCache.bytes(over.result!) + MacExactPreviewCache.bytes(neutralOver)
+        try check(over.exactPreviewCache.totalBytes == expectedCharge,
+                  "the exact-preview budget charges the reference frame at its capped size")
+
+        // Should#3：切换面板尺寸档位产生第二条缓存条目时，同一张共享基准帧只计费一次，
+        // 两条条目并存（去重后预算更小、不再互相挤掉）。
+        over.fullResolution = false
+        try waitForRender(over, "above-cap pane-edge pass")
+        let paneResult = over.result!
+        try check(over.neutral!.image === neutralOver.image,
+                  "a pane-size pass reuses the same shared reference frame object")
+        try check(over.exactPreviewCache.totalBytes
+                      == expectedCharge + MacExactPreviewCache.bytes(paneResult),
+                  "the shared reference frame is charged once while both pane entries stay cached")
 
         // D-04 evidence: a 63MP-class open must cap the reference and lower the measured peak.
         let giant = fixtureRoot.appendingPathComponent("giant-63mp.png")
@@ -331,10 +345,8 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         let giantNeutral = giantModel.neutral!
         print(String(format: "[Q8] 63MP-class open peak %.1f MB (neutral %dx%d)",
                      giantPeak, giantNeutral.image.width, giantNeutral.image.height))
-        if ProcessInfo.processInfo.environment["Q8_SKIP_MEMO"] == nil {
-            try check(giantNeutral.image.width == 4096 && giantNeutral.image.height == 3840,
-                      "a 63MP-class neutral reference is capped to the long edge")
-        }
+        try check(giantNeutral.image.width == 4096 && giantNeutral.image.height == 3840,
+                  "a 63MP-class neutral reference is capped to the long edge")
 
         // Boundary: at exactly the cap the baseline stays native and is never enlarged…
         let atCap = fixtureRoot.appendingPathComponent("at-cap.png")
@@ -342,24 +354,18 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         let at = model()
         at.open(atCap)
         try waitForRender(at, "at-cap reference open")
-        if ProcessInfo.processInfo.environment["Q8_SKIP_MEMO"] == nil {
-            try check(at.neutral!.image.width == 4096 && at.neutral!.image.height == 1024 && at.neutral!.isFullResolution,
-                      "a reference at exactly the long-edge cap stays native and is never enlarged")
-        }
+        try check(at.neutral!.image.width == 4096 && at.neutral!.image.height == 1024 && at.neutral!.isFullResolution,
+                  "a reference at exactly the long-edge cap stays native and is never enlarged")
         // …while one pixel above the cap downsamples to exactly the cap.
         let capPlusOne = fixtureRoot.appendingPathComponent("cap-plus-one.png")
         try writeFlatPNG(width: 4097, height: 2048, to: capPlusOne)
         let edge = model()
         edge.open(capPlusOne)
         try waitForRender(edge, "cap-plus-one reference open")
-        if ProcessInfo.processInfo.environment["Q8_SKIP_MEMO"] == nil {
-            try check(edge.neutral!.image.width == 4096 && edge.neutral!.image.height == 2048 && !edge.neutral!.isFullResolution,
-                      "one pixel above the cap downsamples the reference to exactly the cap")
-        }
-        if ProcessInfo.processInfo.environment["Q8_SKIP_MEMO"] == nil {
-            try check(MacReferenceFramePolicy.longEdgeCap == 4096,
-                      "the reference cap matches the budget derivation in MacReferenceFramePolicy")
-        }
+        try check(edge.neutral!.image.width == 4096 && edge.neutral!.image.height == 2048 && !edge.neutral!.isFullResolution,
+                  "one pixel above the cap downsamples the reference to exactly the cap")
+        try check(MacReferenceFramePolicy.longEdgeCap == 4096,
+                  "the reference cap matches the budget derivation in MacReferenceFramePolicy")
         print("PASS: Over-cap neutral reference is capped to the long edge and charged at the capped size (Q8/M3)")
     }
 
@@ -830,7 +836,12 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
             }
             try waitForRender()
             let original = live.neutral!.image
-            try check(live.neutral!.isFullResolution, "original baseline provides native source geometry")
+            let baselineNative = max(live.neutral!.nativeWidth ?? live.neutral!.image.width,
+                                     live.neutral!.nativeHeight ?? live.neutral!.image.height)
+            try check(max(live.neutral!.image.width, live.neutral!.image.height)
+                          == min(baselineNative, MacReferenceFramePolicy.longEdgeCap)
+                      && live.neutral!.isFullResolution == (baselineNative <= MacReferenceFramePolicy.longEdgeCap),
+                      "original baseline provides native source geometry up to the reference long-edge cap")
             live.settings.exposure = 1
             try waitForRender()
             try check(live.neutral!.image === original, "exposure must not replace the original image")

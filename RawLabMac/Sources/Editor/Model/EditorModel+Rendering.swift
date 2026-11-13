@@ -149,7 +149,10 @@ extension EditorModel {
                     }
                 }
                 let neutral: RenderedImage?
-                let key = MacNeutralReferenceKey(source: work.source, settings: work.settings, edge: work.edge)
+                // Q8：SDR 参考帧是与面板尺寸无关的固定封顶基准（edge: nil + 长边上限），
+                // 缓存键必须同样用 edge: nil——渲染、键与 canServe 判定三者对齐；
+                // 否则面板尺寸每变一次都会重渲染同一张封顶基准并清空核内 RAW 缓存。
+                let key = MacNeutralReferenceKey(source: work.source, settings: work.settings, edge: nil)
                 if work.editingGeometry || key.usesOriginal {
                     neutral = self.originalCache?.frame
                 } else if let cached = self.geometryReferenceCache, cached.frame.histogram.count == 3,
@@ -302,19 +305,24 @@ struct MacExactPreviewCache {
         guard work.pass == .exact, scope != nil, work.previewScope == scope,
               (result.hdr != nil || result.histogram.count == 3),
               (neutral.hdr != nil || neutral.histogram.count == 3) else { return }
-        // Q8：SDR 对照帧已按长边上限封顶，这里按封顶后的实际尺寸计入本预算
-        // （同一基准帧被多条缓存项共享时按条计费，预算偏保守）。
-        let bytes = Self.bytes(result) + Self.bytes(neutral)
-        guard bytes <= Self.budget else { return }
+        // Q8：SDR 对照帧已按长边上限封顶，按封顶后的实际尺寸计入预算；条目本身只记
+        // 结果帧字节，共享的基准帧由 totalBytes 按图像对象身份去重后计费一次，
+        // 避免同一张基准在多个档位条目里被乘算（Should#3）。
         entries.removeAll { $0.edge == work.edge }
-        while entries.count >= 3 || entries.reduce(bytes, { $0 + $1.bytes }) > Self.budget {
-            entries.removeFirst()
-        }
-        entries.append((work.edge, neutral, result, bytes))
+        entries.append((work.edge, neutral, result, Self.bytes(result)))
+        while entries.count > 3 || totalBytes > Self.budget { entries.removeFirst() }
     }
 
-    /// 预算核算视角：当前缓存实际计费的字节数（含封顶后的参考帧尺寸）。
-    var totalBytes: Int { entries.reduce(0) { $0 + $1.bytes } }
+    /// 预算核算视角：结果帧合计 + 每张不同的共享基准帧计费一次（含封顶后的参考帧尺寸）。
+    var totalBytes: Int {
+        var countedNeutrals = Set<ObjectIdentifier>()
+        return entries.reduce(0) { $0 + $1.bytes }
+            + entries.reduce(into: 0) { total, entry in
+                if countedNeutrals.insert(ObjectIdentifier(entry.neutral.image)).inserted {
+                    total += Self.bytes(entry.neutral)
+                }
+            }
+    }
 
     static func bytes(_ frame: RenderedImage) -> Int {
         let mask = frame.clipping.map { $0.bytesPerRow * $0.height } ?? 0

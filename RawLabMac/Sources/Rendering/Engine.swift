@@ -622,7 +622,11 @@ final class RenderEngine {
         }
         // Q8：中性参考帧的 FINAL 基准只按长边上限降采样、绝不放大
         // （SIZE_LIMIT_LONG_EDGE），与 PREVIEW 的按需缩放语义区分开。
+        // 参照帧封顶只适用于无输出文件的基准渲染；复用导出合同的 1-65535 校验。
         if edge == nil, let referenceLongEdge {
+            guard output == nil, (1...65535).contains(referenceLongEdge) else {
+                throw RenderError.failed(L10n.text("导出长边必须为 1-65535 像素。"))
+            }
             request.size_mode = SONY2FUJI_SIZE_LIMIT_LONG_EDGE
             request.long_edge = UInt32(referenceLongEdge)
         }
@@ -809,8 +813,8 @@ final class RenderEngine {
                 bitmapInfo: bitmap, provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
         else { throw RenderError.failed(L10n.text("无法显示处理结果")) }
         let statistics = statisticsProvider(&buffer)
-        // Q8：被长边上限降过样的参考帧不再是原生帧；如实标记，让按面板尺寸的
-        // 复用判断（canServe）照常重渲染封顶帧，而不是把封顶帧当整幅基准。
+        // Q8：被长边上限降过样的参考帧如实标记为非原生帧；参考缓存的键不含面板
+        // 尺寸（见 EditorModel+Rendering），面板变化直接命中封顶基准，不靠此标志兜底。
         let nativeLongEdge = max(Int(nativeWidth), Int(nativeHeight))
         let referenceDownsampled = edge == nil && referenceLongEdge.map { nativeLongEdge > $0 } == true
         return RenderedImage(image: image, isFullResolution: edge == nil && !referenceDownsampled, clipping: statistics?.clipping, histogram: statistics?.histogram ?? [],

@@ -115,11 +115,22 @@ import Combine
         try wait("lens-only reference accepted") { !model.busy && model.error == nil }
         try check(model.neutral!.image !== original, "lens-only committed setting uses an independently rendered reference")
         let engine = try RenderEngine()
-        let expected = try engine.render(file, settings: model.settings.neutralGeometrySettings, lut: nil, edge: nil)!
+        let expected = try engine.render(file, settings: model.settings.neutralGeometrySettings, lut: nil, edge: nil,
+                                         referenceLongEdge: MacReferenceFramePolicy.longEdgeCap)!
         try check(model.neutral!.image.width == expected.image.width && model.neutral!.image.height == expected.image.height,
                   "lens-only before and after reference use matching committed canvas and demand")
         try check(model.neutral!.image.dataProvider!.data! as Data == expected.image.dataProvider!.data! as Data,
                   "lens-only neutral pixels match default-color committed-lens rendering")
+        // Blocking#2 回归：面板尺寸需求变化不得再让封顶基准重渲染——缓存必须命中
+        // 同一帧（对象身份），且尺寸保持封顶值。
+        let lensReference = model.neutral!.image
+        model.fullResolution = true
+        try wait("full-resolution pass keeps the capped reference cached") { !model.busy && model.error == nil }
+        model.fullResolution = false
+        try wait("preview pass keeps the capped reference cached") { !model.busy && model.error == nil }
+        try check(model.neutral!.image === lensReference
+                      && max(model.neutral!.image.width, model.neutral!.image.height) <= MacReferenceFramePolicy.longEdgeCap,
+                  "pane-demand changes reuse the cached capped reference frame without re-rendering")
         let accepted = model.result!.image
         let unavailable = file.appendingPathExtension("unavailable")
         // 临时不可用后恢复同一文件；原文件被替换时条件保存应报告身份冲突。
