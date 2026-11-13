@@ -147,13 +147,14 @@ internal static class SoftwareUpdateUiChecks
             InteractionChecks.PumpUntil(()=>installing.IsCompleted && !controller.PreparingInstallation);
             failStateSave=null;
             check(uiDelays.SequenceEqual(new[]{10,50,200}) && controller.StorageError!=null &&
-                controller.State.Phase==UpdatePhase.Failed && controller.State.Failure?.Stage==UpdatePhase.Installing &&
+                controller.State.Phase==UpdatePhase.Failed && controller.State.Failure?.Stage==UpdatePhase.Installing && controller.RequiresRecovery &&
                 !window.EditorShell.IsEnabled && window.UpdateLockBanner.IsVisible && store.ReadState(photo).SameAs(beforeFailure),
-                "A failed installer dispatch disables the real editor and preserves saved edits even when Fail() persistence fails");
-            check(!collection.IsEnabled,"Installation lock also disables an existing collection window");
+                "An installer dispatch failure whose failure record also fails to persist keeps the disk-phase lock and preserves saved edits");
+            check(!collection.IsEnabled,"The retained installation lock also disables an existing collection window");
             collection.Close();Invoke(window,"ShowCollection");collection=Get<BatchSelectionWindow>(window,"collectionWindow");
-            check(!collection.IsEnabled,"A collection window created during the installation lock starts disabled");
+            check(!collection.IsEnabled,"A collection window created under the retained installation lock starts disabled");
             collection.Close();
+            // 双故障下失败记录未落盘，控制器保守地保留 Installing 阶段的锁；锁横幅与键盘交互断言依赖这一可见的锁定状态。
             var openUpdates=Button(window,"updates.lock.open");window.Activate();openUpdates.Focus();
             var tab=new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(openUpdates),Environment.TickCount,Key.Tab){RoutedEvent=Keyboard.PreviewKeyDownEvent};
             openUpdates.RaiseEvent(tab);

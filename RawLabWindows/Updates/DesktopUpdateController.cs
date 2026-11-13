@@ -299,7 +299,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         var next = preferences.Copy(); if (!next.PendingUpdate.Admit(gate.Prepare())) { Save(next); return false; }
         if (!Save(next)) return false;
         var attempt = State.Attempt; PreparingInstallation = true; Notify();
-        string? path = null; var installationRecorded = false;
+        string? path = null; var installationRecorded = false; var dispatched = false;
         try
         {
             try { await Task.Run(() => adapter.VerifyBeforeInstall(release)); }
@@ -314,7 +314,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             // 原子替换后的保存异常无法证明磁盘未引用此备份。
             installationRecorded = true;
             if (!Save(next)) return false;
-            await Task.Run(() => adapter.Install(release, restart));
+            await Task.Run(() => { adapter.Install(release, restart); dispatched = true; });
             next = preferences.Copy();
             if (!next.PendingUpdate.AwaitingRestart(attempt)) return false;
             Save(next, keepNextOnFailure: true);
@@ -325,7 +325,13 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             FailVerification(error, attempt);
             return false;
         }
-        catch (Exception error) { Fail(error, attempt); return false; }
+        catch (Exception error)
+        {
+            // 进程未拉起时 Install 抛出的 Win32Exception/InvalidOperationException 等启动异常退回就绪阶段的
+            // 普通失败：可继续编辑、可直接重试；只有进程已拉起之后的中断才保留 Installing/RequiresRecovery 语义。
+            Fail(error, attempt, !dispatched && State.Phase == UpdatePhase.Installing ? UpdatePhase.ReadyToInstall : State.Phase);
+            return false;
+        }
         finally {
             if (!installationRecorded && path != null) { try { backup.Discard(path); } catch { } }
             PreparingInstallation = false; Notify();
@@ -353,20 +359,31 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         CryptographicException => "signature",
         _ => "verification"
     };
-    private void Fail(Exception error, Guid attempt)
+    private void Fail(Exception error, Guid attempt) => Fail(error, attempt, State.Phase);
+    private void Fail(Exception error, Guid attempt, UpdatePhase stage)
     {
-        var stage = State.Phase;
-        var next = preferences.Copy();
-        var postInstall = stage is UpdatePhase.Installing or UpdatePhase.PendingRestart;
+        // 磁盘记录停留在 Installing/PendingRestart 时 Cancel 无法回退该阶段；持久化失败必须保留内存中的失败记录。
+        var diskPhase = preferences.PendingUpdate.Phase;
+        var persistedDispatch = diskPhase is UpdatePhase.Installing or UpdatePhase.PendingRestart;
+        // 拉起前启动异常会记到更轻的 ReadyToInstall：这是仅当失败记录成功落盘才成立的乐观回退。
+        var optimisticRollback = persistedDispatch && stage != diskPhase;
+        var diskRecord = optimisticRollback ? preferences.Copy() : null;
         var code = stage == UpdatePhase.Checking ? CategorizeCheckError(error) : "operation";
         var detail = error.Message ?? "";
-        if (!next.PendingUpdate.Fail(code, detail, attempt)) return;
+        var next = preferences.Copy();
+        if (!next.PendingUpdate.Fail(stage, code, detail, attempt)) return;
         if (stage == UpdatePhase.Checking)
         {
             var count = (preferences.CheckFailure?.ConsecutiveFailures ?? 0) + 1;
             next.CheckFailure = new(now(), code, Math.Max(1, count), detail);
         }
-        Save(next, keepNextOnFailure: postInstall);
+        if (!Save(next, keepNextOnFailure: persistedDispatch) && optimisticRollback)
+        {
+            // 双故障边界：失败记录也没写进去时磁盘仍停在 Installing/PendingRestart 并绑定备份，
+            // 内存回退为磁盘阶段的失败（保留 BackupPath）以维持 RequiresRecovery/BlocksEditing，
+            // 避免会话内新编辑在下次启动被磁盘旧快照的强制恢复回滚（与 macOS storageBlocksEditing 门禁一致）。
+            if (diskRecord!.PendingUpdate.Fail(diskPhase, code, detail, attempt)) { preferences = diskRecord; Notify(); }
+        }
     }
     private bool Save(UpdatePreferences next, bool discardObsoleteBackup = true, bool keepNextOnFailure = false)
     {

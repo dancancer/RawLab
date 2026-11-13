@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -11,7 +12,7 @@ internal static class ControllerChecks
         public UpdateDescriptor Release = new("0.9.1", "19", "windows", "x64", "stable", "https://example.invalid/update.nupkg", 12, null, "Notes");
         public int Checks, Downloads, Installs;
         public bool RejectSignature, RejectInstall, RejectCheck, NoUpdate;
-        public Exception? TrustError, CheckError, InstallVerifyError, PreDispatchInstallError;
+        public Exception? TrustError, CheckError, InstallVerifyError, PreDispatchInstallError, LaunchError;
         public TaskCompletionSource<UpdateDescriptor?>? PendingCheck;
         public Task ValidateHostTrustAsync() => TrustError == null ? Task.CompletedTask : Task.FromException(TrustError);
         public Task<UpdateDescriptor?> CheckAsync(CancellationToken token)
@@ -28,6 +29,7 @@ internal static class ControllerChecks
         public void Install(UpdateDescriptor release, bool restart)
         {
             if (PreDispatchInstallError != null) throw PreDispatchInstallError;
+            if (LaunchError != null) throw LaunchError; // Update.exe 进程在拉起前抛异常，不计数为已调度。
             Installs++;
             if (RejectInstall) throw new IOException("Injected dispatch failure");
         }
@@ -80,7 +82,8 @@ internal static class ControllerChecks
         await StartupAndQuit(check);
         await StateRepair(check);
         await PreInstallSignatureRejectionDoesNotLockEditing(check);
-        await InstallationFailureBlocksEditing(check);
+        await InstallationFailureStaysEditable(check);
+        await UpdateExeLaunchFailureStaysRetryable(check);
         await RuntimeSaveFailureRecovery(check);
         var root = Path.Combine(Path.GetTempPath(), "rawlab-update-controller-" + Guid.NewGuid().ToString("N"));
         try
@@ -489,28 +492,89 @@ internal static class ControllerChecks
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
 
-    private static async Task InstallationFailureBlocksEditing(Action<bool, string> check)
+    private static async Task InstallationFailureStaysEditable(Action<bool, string> check)
     {
         var root = Path.Combine(Path.GetTempPath(), "rawlab-install-failure-" + Guid.NewGuid().ToString("N"));
         try
         {
             var photo = Path.Combine(root, "Edits", "photo.json"); Directory.CreateDirectory(Path.GetDirectoryName(photo)!);
             File.WriteAllText(photo, "committed edit"); var bytes = File.ReadAllBytes(photo);
-            var store = new UpdateStore(Path.Combine(root, "Updates")); var adapter = new Adapter { RejectInstall = true };
+            var store = new UpdateStore(Path.Combine(root, "Updates"));
+            var backupsDir = Path.Combine(store.DirectoryPath, "Backups");
+            var adapter = new Adapter { RejectInstall = true };
             var controller = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14");
             check(!controller.BlocksEditing, "Ordinary editing is available before installation");
             await controller.CheckAsync(true); await controller.DownloadAsync(); await controller.ChooseAsync(UpdateInstallChoice.RestartNow);
-            check(controller.State.Failure?.Stage == UpdatePhase.Installing && controller.BlocksEditing && !controller.CanRestorePreviousData,
-                "A dispatch failure keeps the active editor blocked before any recovery");
+            check(adapter.Installs == 1 && controller.State.Phase == UpdatePhase.Failed &&
+                controller.State.Failure?.Stage == UpdatePhase.ReadyToInstall && controller.State.Failure?.Code == "operation" &&
+                !controller.RequiresRecovery && !controller.RequiresStartupHealthCheck && !controller.BlocksEditing &&
+                controller.CanCheck && !controller.CanRestorePreviousData,
+                "A dispatch failure before proven process start falls back to a plain retryable failure that keeps the editor usable");
             check(File.ReadAllBytes(photo).SequenceEqual(bytes), "Failed dispatch preserves committed editor data");
-            var reopened = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14");
-            check(reopened.BlocksEditing && reopened.CanRestorePreviousData, "Reopening offers recovery while editing remains blocked");
-            await reopened.RestorePreviousDataAsync();
-            check(reopened.BlocksEditing && reopened.RecoveryNeedsRestart, "Restored data remains blocked until the next launch");
+            check(controller.State.BackupPath == null && (!Directory.Exists(backupsDir) || Directory.GetDirectories(backupsDir).Length == 0),
+                "Failed dispatch discards the staged data backup instead of stranding it in recovery");
+            adapter.RejectInstall = false;
+            await controller.RetryAsync();
+            check(controller.State.Phase == UpdatePhase.PackageReady, "A dispatch failure can be retried directly without recovery");
+            var restartRequested = false; controller.RestartRequested += () => restartRequested = true;
+            await controller.ChooseAsync(UpdateInstallChoice.RestartNow);
+            check(adapter.Installs == 2 && restartRequested && controller.State.Phase == UpdatePhase.PendingRestart,
+                "Retried dispatch launches Update.exe and awaits restart");
+            var completed = new DesktopUpdateController(new Adapter(), new(), store, "0.9.1", "19");
+            await completed.FinishStartupHealthCheckAsync(true);
+            check(completed.State.Phase == UpdatePhase.Complete && !completed.BlocksEditing && !completed.RequiresRecovery,
+                "Next launch on the updated version completes the retried install");
             var orphan = new UpdateDataBackup(root, store.DirectoryPath).Create("0.8.2", "0.9.1", "14");
-            var finished = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14");
+            var finished = new DesktopUpdateController(new Adapter(), new(), store, "0.9.1", "19");
             check(!finished.RequiresRecovery && !Directory.Exists(orphan),
                 "Fresh startup retries cleanup of verified unreferenced backups");
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    // WP-09（完成-27）：Update.exe 进程拉起前抛异常必须回退为普通 Failed，不进入 RequiresRecovery。
+    private static async Task UpdateExeLaunchFailureStaysRetryable(Action<bool, string> check)
+    {
+        var cases = new (string Name, Func<Exception> Error)[]
+        {
+            ("Win32Exception", () => new Win32Exception(2, "Update.exe could not be started")),
+            ("InvalidOperationException", () => new InvalidOperationException("Cannot start the update process"))
+        };
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-launch-failure-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            foreach (var (name, error) in cases)
+            {
+                var store = new UpdateStore(Path.Combine(root, name, "Updates"));
+                var backupsDir = Path.Combine(store.DirectoryPath, "Backups");
+                var adapter = new Adapter { LaunchError = error() };
+                var controller = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14");
+                await controller.CheckAsync(true); await controller.DownloadAsync(); await controller.ChooseAsync(UpdateInstallChoice.RestartNow);
+                check(adapter.Installs == 0 && controller.State.Phase == UpdatePhase.Failed &&
+                    controller.State.Failure?.Stage == UpdatePhase.ReadyToInstall && controller.State.Failure?.Code == "operation" &&
+                    !controller.RequiresRecovery && !controller.RequiresStartupHealthCheck && !controller.BlocksEditing &&
+                    controller.CanCheck && !controller.CanRestorePreviousData,
+                    name + " before process start stays a plain Failed state that permits editing and retry");
+                check(controller.State.BackupPath == null && (!Directory.Exists(backupsDir) || Directory.GetDirectories(backupsDir).Length == 0),
+                    name + " launch failure discards the staged data backup");
+                var reopened = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14");
+                check(reopened.State.Phase == UpdatePhase.Failed && reopened.State.Failure?.Stage == UpdatePhase.ReadyToInstall &&
+                    !reopened.RequiresRecovery && !reopened.BlocksEditing && reopened.CanCheck && !reopened.CanRestorePreviousData,
+                    "Reopening after a " + name + " launch failure retries directly instead of locking into recovery");
+                await reopened.RetryAsync();
+                check(reopened.State.Phase == UpdatePhase.PackageReady, "Reopened " + name + " launch failure rechecks and reprepares the package");
+                var restartRequested = false; reopened.RestartRequested += () => restartRequested = true;
+                await reopened.ChooseAsync(UpdateInstallChoice.RestartNow);
+                check(reopened.State.Phase == UpdatePhase.PendingRestart && restartRequested,
+                    "Retrying after a " + name + " launch failure finally launches Update.exe");
+                var died = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14");
+                check(died.RequiresStartupHealthCheck && !died.RequiresRecovery,
+                    "Next startup validates the persisted PendingRestart record before judging recovery");
+                await died.FinishStartupHealthCheckAsync(true);
+                check(died.State.Phase == UpdatePhase.Failed && died.State.Failure?.Stage == UpdatePhase.PendingRestart &&
+                    died.RequiresRecovery && !died.CanCheck && died.BlocksEditing,
+                    "A proven-launched installer that died before completion still routes to RequiresRecovery for " + name);
+            }
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
@@ -647,7 +711,7 @@ internal static class ControllerChecks
             await controller.DownloadAsync();
             await controller.ChooseAsync(UpdateInstallChoice.OnQuit);
             adapter.RejectInstall = true;
-            moveFault = bytes => SavedState(bytes) is { Phase: UpdatePhase.Failed, Failure: { Stage: UpdatePhase.Installing } } ? SharingViolation() : null;
+            moveFault = bytes => SavedState(bytes) is { Phase: UpdatePhase.Failed, Failure: { Stage: UpdatePhase.ReadyToInstall } } ? SharingViolation() : null;
             ResetCounters();
             var quitApproved = await controller.PrepareForQuitAsync();
             check(!quitApproved && adapter.Installs == 1 && delays.SequenceEqual(new[] { 10, 50, 200 }) &&
@@ -655,9 +719,28 @@ internal static class ControllerChecks
                 controller.State.Failure?.Stage == UpdatePhase.Installing && controller.State.Choice == UpdateInstallChoice.None &&
                 controller.BlocksEditing && controller.RequiresRecovery && !controller.RequiresStartupHealthCheck &&
                 !controller.CanCheck && !controller.CanDownload && !controller.CanChooseInstall && !controller.CanCancel,
-                "Failed installer dispatch keeps Failed recovery boundary in memory even when persisting Fail() also fails");
+                "Failed installer dispatch keeps the disk-phase Failed(Installing) gate in memory when persisting Fail() also fails");
+            check(controller.State.BackupPath != null && Directory.Exists(controller.State.BackupPath) &&
+                store.Load(true).PendingUpdate.Phase == UpdatePhase.Installing && await controller.PrepareForQuitAsync(),
+                "The conservative double-failure gate preserves the backup, leaves disk on Installing, and still permits quitting afterwards");
 
+            var storeR = CreateStore("r");
+            var adapterR = new Adapter();
+            var controllerR = new DesktopUpdateController(adapterR, new(), storeR, "0.8.2", "14", now: () => virtualNow);
+            var restartR = false; controllerR.RestartRequested += () => restartR = true;
+            await controllerR.CheckAsync(true);
+            await controllerR.DownloadAsync();
+            adapterR.RejectInstall = true;
+            moveFault = bytes => SavedState(bytes) is { Phase: UpdatePhase.Failed, Failure: { Stage: UpdatePhase.ReadyToInstall } } ? SharingViolation() : null;
+            ResetCounters();
+            await controllerR.ChooseAsync(UpdateInstallChoice.RestartNow);
+            check(adapterR.Installs == 1 && !restartR && controllerR.StorageError != null &&
+                controllerR.State.Failure?.Stage == UpdatePhase.Installing && controllerR.BlocksEditing && controllerR.RequiresRecovery &&
+                controllerR.State.BackupPath != null && Directory.Exists(controllerR.State.BackupPath) &&
+                storeR.Load(true).PendingUpdate.Phase == UpdatePhase.Installing && await controllerR.PrepareForQuitAsync(),
+                "A RestartNow double failure keeps editing gated with memory and disk both on the Installing backup while quit stays reachable");
             moveFault = null;
+
             var reopenedFailed = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14", now: () => virtualNow);
             await reopenedFailed.FinishStartupHealthCheckAsync(true);
             check(reopenedFailed.BlocksEditing && reopenedFailed.RequiresRecovery && reopenedFailed.CanRestorePreviousData,
