@@ -28,6 +28,7 @@ final class RawEditorViewModel: ObservableObject {
             resetUnusableImportRecord = nil
         }
     }
+    var hdrResourceNotice = HDRResourceNotice()
     @Published var statusHasDiagnostics = false
     @Published var retryLegacyX3fImport: ((@escaping (RawSettings) -> Void) -> Void)?
     @Published var resetUnusableImportRecord: ((((RawSettings) -> Void)?) -> Void)?

@@ -185,7 +185,7 @@ extension RawEditorViewModel {
                             self.histogram=nil; self.baseHistogram=nil
                             self.basePreviewGeometry=hdr.geometry; self.comparisonReferenceKey=referenceKey
                             self.acceptedPreviewRequest=request; self.acceptedPreviewFrameID=renderID; self.previewFailed=false
-                            self.statusMessage = hdr.missingResourceMessage
+                            self.updateHDRResourceNotice(hdr.missingResourceMessage)
                             self.nativeImageSize=CGSize(width:edited.outputNativeWidth,height:edited.outputNativeHeight)
                             self.cacheCompletedPreview(for: cacheKey)
                         }
@@ -358,6 +358,14 @@ extension RawEditorViewModel {
         }
         previewWorkItem = workItem
         renderQueue.async(execute: workItem)
+    }
+
+    func updateHDRResourceNotice(_ message: String?) {
+        switch hdrResourceNotice.change(to: message, status: statusMessage) {
+        case .show(let message): statusMessage = message
+        case .clear: statusMessage = nil
+        case .keep: break
+        }
     }
 
     func previewLUTIdentity(for url: URL?) -> PreviewLUTFileIdentity? {
