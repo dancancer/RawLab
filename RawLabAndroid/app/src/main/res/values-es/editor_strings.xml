@@ -390,6 +390,13 @@
     <string name="reset_all_title">"¿Restablecer todos los ajustes?"</string>
     <string name="reset_effect">"Restablecer %1$s"</string>
     <string name="select_photo">"Elegir foto"</string>
+    <string name="storage_clear_confirm_action">"Limpiar"</string>
+    <string name="storage_clear_system_photo_copies">"Limpiar copias de la galería del sistema"</string>
+    <string name="storage_clear_system_photo_copies_confirm">"Se eliminarán las copias de fotos guardadas en la aplicación (%1$d archivos, %2$s). Esta acción no se puede deshacer.\n\nLas fotos originales que sigan en la galería del sistema no se verán afectadas; tras eliminar las copias, la foto se volverá a copiar la próxima vez que la abras."</string>
+    <string name="storage_clear_system_photo_copies_done">"Se limpiaron %1$d archivos y se liberaron %2$s."</string>
+    <string name="storage_clear_system_photo_copies_failed">"No se pudieron limpiar las copias de la galería del sistema. Inténtalo de nuevo."</string>
+    <string name="storage_section_title">"Almacenamiento"</string>
+    <string name="storage_system_photo_copies_summary">"%1$d archivos · %2$s"</string>
     <string name="system_open_photo_too_large">"El archivo de foto supera 1 GiB y no se puede importar."</string>
     <string name="system_open_storage_full">"No hay suficiente espacio de almacenamiento para importar la foto."</string>
     <string name="system_open_unsupported_photo">"Archivo de imagen no compatible"</string>
