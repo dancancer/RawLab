@@ -86,6 +86,37 @@ extension EditorModel {
         return EditorAdjustmentRules.isModified(scope: scope, snapshot: snapshot, context: adjustmentContext)
     }
 
+    func isRecordModified(_ record: PhotoEditRecord) -> Bool {
+        guard let state = record.state else { return false }
+        let raw = !RenderEngine.isRasterInput(URL(fileURLWithPath: record.identity.path))
+        let context = EditorAdjustmentContext(isRaw: raw,
+            defaultExposureMode: raw ? Adjustments().exposureMode : .sensor, neutralFilmID: "")
+        return EditorAdjustmentRules.isModified(scope: .all, snapshot: state, context: context)
+    }
+
+    func invalidateEditedThumbnail(for url: URL) {
+        let path = PhotoThumbnailCacheKey.canonicalPath(for: url)
+        if let editStore {
+            editStore.notifyEditedInvalidation(forPaths: [path])
+        } else {
+            _ = PhotoThumbnails.shared.invalidateEdited(atPath: path)
+        }
+    }
+
+    func invalidateEditedThumbnails(forLookIDs lookIDs: Set<String>) {
+        guard !lookIDs.isEmpty else { return }
+        var paths = editStore?.pathsReferencingFilms(lookIDs) ?? []
+        if let file, lookIDs.contains(selectedFilmID) {
+            paths.insert(PhotoThumbnailCacheKey.canonicalPath(for: file))
+        }
+        guard !paths.isEmpty else { return }
+        if let editStore {
+            editStore.notifyEditedInvalidation(forPaths: paths)
+        } else {
+            for path in paths { _ = PhotoThumbnails.shared.invalidateEdited(atPath: path) }
+        }
+    }
+
     func selectAdjustmentGroup(_ group: EditorAdjustmentGroup) {
         if group == .looks && !quickPresetsVisible && (settings.isHDREditing || geometryDraft != nil) {
             showQuickPresets(); return
@@ -521,7 +552,6 @@ extension EditorModel {
         }
         do {
             let cleared = try session.resetToUnmodified(url)
-            PhotoThumbnails.shared.invalidateEdited(atPath: cleared.identity.path)
             saveError = nil
             adjustmentHistoryRevision &+= 1
             return cleared
@@ -571,7 +601,8 @@ extension EditorModel {
                 exactPreviewCache.useScope(work.previewScope)
                 exactPreviewCache.store(neutral: stagedNeutral, result: stagedResult, for: work)
             }
-            if restoredRecord.state == editState(settings: settings), settings.hdr?.missingResourceMessage == nil {
+            if isRecordModified(restoredRecord), restoredRecord.state == editState(settings: settings),
+               settings.hdr?.missingResourceMessage == nil {
                 completedEditPreview = (restoredRecord, stagedResult.image)
             }
             statusState = .preview(stagedResult.image.width,stagedResult.image.height,original:false)
@@ -732,10 +763,18 @@ extension EditorModel {
         // 与渲染共用串行队列，移除外观时不会删除正在读取的文件。
         queue.async { [weak self] in
             do {
+                let previousLooks = Dictionary(uniqueKeysWithValues: library.looks.map { ($0.id, library.url(for: $0)) })
                 let change = try operation(library)
+                let currentLooks = Dictionary(uniqueKeysWithValues: library.looks.map { ($0.id, library.url(for: $0)) })
+                let invalidatedLookIDs = Set(previousLooks.compactMap { id, url in
+                    currentLooks[id] == url ? nil : id
+                })
                 let updated = library.looks.map { Film(name: $0.name, url: library.url(for: $0), managedID: $0.id, colorNotice: $0.colorNotice, isCompatibility: $0.isCompatibility) }
                 DispatchQueue.main.async {
                     guard let self else { return }
+                    if !invalidatedLookIDs.isEmpty {
+                        self.invalidateEditedThumbnails(forLookIDs: invalidatedLookIDs)
+                    }
                     self.films = self.films.filter { $0.managedID == nil } + updated
                     self.pruneRecentLooks()
                     self.lookLibraryBusy = false
@@ -744,14 +783,20 @@ extension EditorModel {
                         self.selectedFilmID = selectedID
                     }
                     else if !self.selectedFilmID.isEmpty && !self.films.contains(where: { $0.id == self.selectedFilmID }) {
+                        if let file = self.file { self.invalidateEditedThumbnail(for: file) }
                         self.schedule()
                     }
                     self.lookImportReport = change.report
                 }
             } catch {
                 DispatchQueue.main.async {
-                    self?.lookLibraryBusy = false
-                    self?.error = error.localizedDescription
+                    guard let self else { return }
+                    self.lookLibraryBusy = false
+                    self.error = error.localizedDescription
+                    if !self.selectedFilmID.isEmpty && !self.films.contains(where: { $0.id == self.selectedFilmID }),
+                       let file = self.file {
+                        self.invalidateEditedThumbnail(for: file)
+                    }
                 }
             }
         }

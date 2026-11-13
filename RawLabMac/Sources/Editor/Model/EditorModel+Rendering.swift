@@ -62,6 +62,7 @@ extension EditorModel {
         guard !missingFilm, !missingMasterRecipe else {
             previewOutdated = true
             error = missingMasterRecipe ? L10n.text("大师配方外观文件不可用。") : L10n.text("上次使用的外观不可用，请重新选择或导入外观。")
+            invalidateEditedThumbnail(for: file)
             return
         }
         let preview = geometryPreviewSettings
@@ -202,6 +203,9 @@ extension EditorModel {
                     self.previewOutdated = true
                     self.error = failure.localizedDescription
                     self.handleAIFailure(failure)
+                    if self.committedEdit?.state == self.editState(settings: request.value.settings) {
+                        self.invalidateEditedThumbnail(for: request.value.file)
+                    }
                 }
             } else if let neutral, let result {
                 let previousCanvas = geometryCanvasSize
@@ -242,7 +246,8 @@ extension EditorModel {
                     updatingMetadata = false
                 }
                 if completion == .publishExact, !request.value.editingGeometry,
-                   let committedEdit, committedEdit.state == editState(settings: request.value.settings),
+                   let committedEdit, isRecordModified(committedEdit),
+                   committedEdit.state == editState(settings: request.value.settings),
                    request.value.lut == nil || request.value.previewScope?.look == request.value.lut.flatMap({ try? OriginalFileIdentity($0) }) {
                     completedEditPreview = (committedEdit, result.image)
                 }

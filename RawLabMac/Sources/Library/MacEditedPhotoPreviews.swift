@@ -13,11 +13,15 @@ struct MacPhotoPreviewPlan {
     let resourceURLs: [URL]
     var url: URL { URL(fileURLWithPath: record.identity.path) }
 
-    static func isEdited(_ record: PhotoEditRecord) -> Bool {
-        guard let state = record.state else { return false }
-        let raw = !RenderEngine.isRasterInput(URL(fileURLWithPath: record.identity.path))
+    static func isEditedState(_ state: PhotoEditState?, atPath path: String) -> Bool {
+        guard let state else { return false }
+        let raw = !RenderEngine.isRasterInput(URL(fileURLWithPath: path))
         return EditorAdjustmentRules.isModified(scope: .all, snapshot: state,
             context: .init(isRaw: raw, defaultExposureMode: raw ? Adjustments().exposureMode : .sensor, neutralFilmID: ""))
+    }
+
+    static func isEdited(_ record: PhotoEditRecord) -> Bool {
+        isEditedState(record.state, atPath: record.identity.path)
     }
 
     init(record: PhotoEditRecord, films: [Film]) throws {
@@ -112,21 +116,31 @@ private struct MacAcceptedPhotoPreview {
     @Published var isEditorBusy = false
     private let worker: MacPhotoPreviewWorker
     private let editDirectory: URL
+    private let canonicalEditDirectoryPath: String
     private let cache: EditedPhotoPreviewCache
     let thumbnails: PhotoThumbnails
     private var accepted: (record: PhotoEditRecord, task: Task<MacAcceptedPhotoPreview?, Never>)?
     private var activeKeys: [String: (key: PhotoThumbnailCacheKey, identity: OriginalFileIdentity, isEdited: Bool, generation: UInt64)] = [:]
     private var watches: [URL: (source: DispatchSourceFileSystemObject?, readers: Int)] = [:]
     private var resourceWatches: [URL: Set<URL>] = [:]
+    private var persistenceCancellables: Set<AnyCancellable> = []
     private(set) var imageDecodeCount = 0
-    var films: [Film] = []
+    private(set) var editedInvalidationCount = 0
+    var films: [Film] = [] {
+        didSet {
+            guard films != oldValue else { return }
+            reconcileFilmsChange(from: oldValue, to: films)
+        }
+    }
 
     init(editDirectory: URL, cacheDirectory: URL? = nil, thumbnails: PhotoThumbnails = .shared) {
         self.editDirectory = editDirectory
+        self.canonicalEditDirectoryPath = editDirectory.resolvingSymlinksInPath().standardizedFileURL.path
         self.thumbnails = thumbnails
         cache = EditedPhotoPreviewCache(directory: cacheDirectory ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("RawLab/EditedPhotoPreviews"))
         worker = MacPhotoPreviewWorker(editDirectory: editDirectory, cache: cache)
+        observePersistenceNotifications()
     }
 
     func refresh() { revision &+= 1 }
@@ -174,8 +188,9 @@ private struct MacAcceptedPhotoPreview {
     }
 
     func invalidateEdited(for url: URL) {
-        invalidateEdited(atPath: PhotoThumbnailCacheKey.canonicalPath(for: url))
-        refresh()
+        if invalidateEdited(atPath: PhotoThumbnailCacheKey.canonicalPath(for: url)) {
+            refresh()
+        }
     }
 
     func invalidate(for url: URL) {
@@ -186,10 +201,114 @@ private struct MacAcceptedPhotoPreview {
         refresh()
     }
 
-    private func invalidateEdited(atPath path: String) {
-        activeKeys.removeValue(forKey: path)
-        if accepted?.record.identity.path == path { accepted = nil }
-        thumbnails.invalidateEdited(atPath: path)
+    @discardableResult
+    private func invalidateEdited(atPath path: String, preInvalidatedThumbnails: Bool = false) -> Bool {
+        var removedActive = false
+        if activeKeys[path]?.isEdited == true {
+            activeKeys.removeValue(forKey: path)
+            removedActive = true
+        }
+        var clearedAccepted = false
+        if accepted?.record.identity.path == path {
+            accepted = nil
+            clearedAccepted = true
+        }
+        let invalidatedThumbnails = preInvalidatedThumbnails || thumbnails.invalidateEdited(atPath: path)
+        let changed = removedActive || clearedAccepted || invalidatedThumbnails
+        if changed { editedInvalidationCount += 1 }
+        return changed
+    }
+
+    @discardableResult
+    private func handlePersistedRecordChange(atPath path: String, state: PhotoEditState?, preInvalidatedThumbnails: Bool) -> Bool {
+        if MacPhotoPreviewPlan.isEditedState(state, atPath: path) {
+            let removedActive = activeKeys.removeValue(forKey: path) != nil
+            var clearedAccepted = false
+            if accepted?.record.identity.path == path {
+                accepted = nil
+                clearedAccepted = true
+            }
+            let invalidatedThumbnails = preInvalidatedThumbnails || thumbnails.invalidateEdited(atPath: path)
+            let changed = removedActive || clearedAccepted || invalidatedThumbnails
+            if changed { editedInvalidationCount += 1 }
+            return changed
+        }
+        return invalidateEdited(atPath: path, preInvalidatedThumbnails: preInvalidatedThumbnails)
+    }
+
+    private func observePersistenceNotifications() {
+        let targetDirectory = canonicalEditDirectoryPath
+        let thumbnails = thumbnails
+        NotificationCenter.default.publisher(for: EditPersistence.didChangeRecordsNotification)
+            .sink { [weak self] notification in
+                guard notification.userInfo?[EditPersistence.directoryPathUserInfoKey] as? String == targetDirectory,
+                      let changes = notification.userInfo?[EditPersistence.changedRecordsUserInfoKey] as? [String: PhotoEditState?] else { return }
+                if Thread.isMainThread {
+                    MainActor.assumeIsolated {
+                        guard let self else { return }
+                        for (path, state) in changes {
+                            _ = self.handlePersistedRecordChange(atPath: path, state: state, preInvalidatedThumbnails: false)
+                        }
+                        if !changes.isEmpty { self.refresh() }
+                    }
+                } else {
+                    var preInvalidated = Set<String>()
+                    for path in changes.keys where thumbnails.invalidateEdited(atPath: path) {
+                        preInvalidated.insert(path)
+                    }
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        for (path, state) in changes {
+                            _ = self.handlePersistedRecordChange(atPath: path, state: state, preInvalidatedThumbnails: preInvalidated.contains(path))
+                        }
+                        if !changes.isEmpty { self.refresh() }
+                    }
+                }
+            }
+            .store(in: &persistenceCancellables)
+
+        NotificationCenter.default.publisher(for: EditPersistence.didInvalidateEditedNotification)
+            .sink { [weak self] notification in
+                guard notification.userInfo?[EditPersistence.directoryPathUserInfoKey] as? String == targetDirectory,
+                      let paths = notification.userInfo?[EditPersistence.invalidatedPathsUserInfoKey] as? Set<String> else { return }
+                if Thread.isMainThread {
+                    MainActor.assumeIsolated {
+                        guard let self else { return }
+                        for path in paths {
+                            _ = self.invalidateEdited(atPath: path)
+                        }
+                        if !paths.isEmpty { self.refresh() }
+                    }
+                } else {
+                    var preInvalidated = Set<String>()
+                    for path in paths where thumbnails.invalidateEdited(atPath: path) {
+                        preInvalidated.insert(path)
+                    }
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        for path in paths {
+                            _ = self.invalidateEdited(atPath: path, preInvalidatedThumbnails: preInvalidated.contains(path))
+                        }
+                        if !paths.isEmpty { self.refresh() }
+                    }
+                }
+            }
+            .store(in: &persistenceCancellables)
+    }
+
+    private func reconcileFilmsChange(from oldFilms: [Film], to newFilms: [Film]) {
+        let currentByID = Dictionary(uniqueKeysWithValues: newFilms.map { ($0.id, $0.url) })
+        let currentByBrowserID = Dictionary(uniqueKeysWithValues: newFilms.map { ($0.browserID, $0.url) })
+        var invalidatedIDs = Set<String>()
+        for film in oldFilms where currentByID[film.id] != film.url || currentByBrowserID[film.browserID] != film.url {
+            invalidatedIDs.insert(film.id)
+            invalidatedIDs.insert(film.browserID)
+        }
+        guard !invalidatedIDs.isEmpty,
+              let store = try? EditPersistence(directory: editDirectory) else { return }
+        for path in store.pathsReferencingFilms(invalidatedIDs) {
+            _ = invalidateEdited(atPath: path)
+        }
     }
 
     func renderStats() async -> (renders: Int, diskReads: Int, decodes: Int) {
@@ -204,6 +323,12 @@ private struct MacAcceptedPhotoPreview {
                 activeKeys.removeValue(forKey: path)
                 if accepted?.record.identity.path == path { accepted = nil }
                 thumbnails.invalidate(atPath: path)
+            }
+        }
+        for (photoURL, resources) in resourceWatches where photoURL != url && resources.contains(url) {
+            guard url != photoURL.deletingLastPathComponent() else { continue }
+            if (try? OriginalFileIdentity(url)) == nil {
+                _ = invalidateEdited(atPath: PhotoThumbnailCacheKey.canonicalPath(for: photoURL))
             }
         }
         refresh()
@@ -274,7 +399,7 @@ private struct MacAcceptedPhotoPreview {
     }
     func image(for record: PhotoEditRecord) async throws -> NSImage {
         if let hit = await cachedImage(for: record) { return hit }
-        let editGen = thumbnails.editGeneration(forPath: record.identity.path)
+        let editGen = thumbnails.beginEditedGeneration(forPath: record.identity.path)
         if let accepted, accepted.record == record, let ready = await accepted.task.value {
             let films = films, directory = editDirectory
             let current = await Task.detached(priority: .utility) {
@@ -292,7 +417,15 @@ private struct MacAcceptedPhotoPreview {
                 return ready.image
             }
         }
-        let rendered = try await worker.image(for: record, films: films)
+        let rendered: (key: PhotoPreviewCacheKey, image: NSImage)
+        do {
+            rendered = try await worker.image(for: record, films: films)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            _ = invalidateEdited(atPath: record.identity.path)
+            throw error
+        }
         try Task.checkCancellation()
         imageDecodeCount += 1
         let cacheKey = PhotoThumbnailCacheKey(identity: record.identity, previewKey: rendered.key)
@@ -304,11 +437,10 @@ private struct MacAcceptedPhotoPreview {
     }
     func accept(record: PhotoEditRecord, image: CGImage) {
         guard MacPhotoPreviewPlan.isEdited(record) else {
-            invalidateEdited(atPath: record.identity.path)
+            _ = invalidateEdited(atPath: record.identity.path)
             return
         }
-        invalidateEdited(atPath: record.identity.path)
-        let editGen = thumbnails.editGeneration(forPath: record.identity.path)
+        let editGen = thumbnails.beginEditedGeneration(forPath: record.identity.path)
         let films = films, directory = editDirectory, cache = cache, thumbnails = thumbnails
         let task = Task.detached(priority: .utility) { () -> MacAcceptedPhotoPreview? in
             do {
@@ -326,7 +458,13 @@ private struct MacAcceptedPhotoPreview {
         }
         accepted = (record, task)
         Task { [weak self] in
-            guard let ready = await task.value, let self else { return }
+            guard let self else { return }
+            guard let ready = await task.value else {
+                if self.accepted?.record == record {
+                    _ = self.invalidateEdited(atPath: record.identity.path)
+                }
+                return
+            }
             let cacheKey = PhotoThumbnailCacheKey(identity: record.identity, previewKey: ready.key)
             if self.thumbnails.editGeneration(forPath: record.identity.path) == editGen,
                self.thumbnails.cachedImage(for: cacheKey) != nil {

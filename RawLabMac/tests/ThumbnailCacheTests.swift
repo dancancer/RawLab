@@ -23,12 +23,17 @@ final class RenderEngine {
 
     private static let lock = NSLock()
     private static var _renderCalls = 0
+    private static var _failNextRender = false
     static var renderCalls: Int {
         lock.lock(); defer { lock.unlock() }
         return _renderCalls
     }
+    static var failNextRender: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return _failNextRender }
+        set { lock.lock(); _failNextRender = newValue; lock.unlock() }
+    }
     static func resetCounts() {
-        lock.lock(); _renderCalls = 0; lock.unlock()
+        lock.lock(); _renderCalls = 0; _failNextRender = false; lock.unlock()
     }
 
     static var bundledAIModel: URL? { nil }
@@ -44,6 +49,16 @@ final class RenderEngine {
     func prepareAI(_ url: URL, settings: Adjustments, progress: AIPreparation) throws {}
 
     func render(_ url: URL, settings: Adjustments, lut: URL?, edge: Int, viewportPreview: Bool = false) throws -> Frame? {
+        Self.lock.lock()
+        let shouldFail = Self._failNextRender
+        Self._failNextRender = false
+        Self.lock.unlock()
+        if shouldFail {
+            throw CocoaError(.coderInvalidValue)
+        }
+        if let lut, !FileManager.default.fileExists(atPath: lut.path) {
+            throw CocoaError(.fileNoSuchFile)
+        }
         Self.lock.lock()
         Self._renderCalls += 1
         Self.lock.unlock()
@@ -93,6 +108,8 @@ struct ThumbnailCacheTests {
         try await verifyUneditedCacheHitAndDeduplication(in: root)
         try await verifyKeyIsolationAndCostLimit(in: root)
         try await verifyEditedPreviewHitAndInvalidation(in: root)
+        try await verifyResetIdempotentSingleInvalidation(in: root)
+        try await verifyLookRemovalAndRenderFailureClearStaleTile(in: root)
         try await verifyFolderRefreshInvalidation(in: root)
 
         print("PASS: thumbnail cache hit without re-decode, edited/unedited key isolation, byte-cost eviction, and edit/reset/refresh invalidation")
@@ -212,14 +229,14 @@ struct ThumbnailCacheTests {
         check(uneditedImg != nil && thumbnails.decodeCount == 1, "Unedited thumbnail decoded once")
         check(previews.cachedThumbnail(for: photo)?.isEdited == false, "Active presentation tracks unedited thumbnail")
 
-        // 2. Commit edit v1 (exposure = +1.0) and signal invalidation as EditorModel.commitAdjustment does.
+        // 2. Commit edit v1 (exposure = +1.0): EditPersistence automatically invalidates without manual calls.
+        let revisionBeforeV1 = previews.revision
         var settingsV1 = Adjustments(); settingsV1.exposureMode = .sensor; settingsV1.exposure = 1.0
         let outcomeV1 = session.commitEdit(expected: initialRecord, state: PhotoEditState(settings: settingsV1, filmID: ""))
         check(outcomeV1.status == .applied, "Edit v1 committed")
-        thumbnails.invalidateEdited(atPath: outcomeV1.saved!.identity.path)
-        previews.refresh()
+        check(previews.revision > revisionBeforeV1, "Edit v1 automatically advances preview revision")
 
-        // Active unedited presentation must not masquerade as current after edit invalidation.
+        // Active unedited presentation must not masquerade as current after automatic edit invalidation.
         check(previews.cachedThumbnail(for: photo) == nil, "Edit invalidation clears stale unedited active presentation")
 
         // 3. Render edited preview v1 once; second fetch (simulating view rebuild) must hit memory NSCache.
@@ -248,15 +265,15 @@ struct ThumbnailCacheTests {
         check(RenderEngine.renderCalls == 1 && statsAfterSecond.renders == 1 && statsAfterSecond.diskReads == 0 && statsAfterSecond.decodes == 1,
               "Second fetch performs zero RAW renders, zero disk reads, and zero PNG decodes")
 
-        // 4. Edit again to v2 (exposure = +2.2): v1 must be immediately evicted from NSCache.
+        // 4. Edit again to v2 (exposure = +2.2): v1 must be automatically evicted from NSCache without manual calls.
+        let revisionBeforeV2 = previews.revision
         var settingsV2 = settingsV1; settingsV2.exposure = 2.2
         let outcomeV2 = session.commitEdit(expected: recordV1, state: PhotoEditState(settings: settingsV2, filmID: ""))
         check(outcomeV2.status == .applied, "Edit v2 committed")
-        thumbnails.invalidateEdited(atPath: outcomeV2.saved!.identity.path)
-        previews.refresh()
+        check(previews.revision > revisionBeforeV2, "Edit v2 automatically advances preview revision")
 
-        check(thumbnails.cachedImage(for: keyV1) == nil, "Edit v2 evicts v1 edited entry from NSCache")
-        check(previews.cachedThumbnail(for: photo) == nil, "Edit v2 clears v1 active presentation")
+        check(thumbnails.cachedImage(for: keyV1) == nil, "Edit v2 automatically evicts v1 edited entry from NSCache")
+        check(previews.cachedThumbnail(for: photo) == nil, "Edit v2 automatically clears v1 active presentation")
         let staleV1 = await previews.cachedImage(for: recordV1)
         check(staleV1 == nil, "Stale record v1 no longer resolves cached image")
 
@@ -267,19 +284,162 @@ struct ThumbnailCacheTests {
         check(RenderEngine.renderCalls == 2, "Edit v2 renders updated preview once")
         check(thumbnails.cachedImage(for: keyV2) === renderedV2, "Edit v2 stored in NSCache")
 
-        // 5. Reset to unmodified: v2 must be evicted; unedited thumbnail remains valid without re-decoding.
+        // 5. Reset to unmodified: v2 must be automatically evicted without manual calls; unedited entry stays valid.
+        let revisionBeforeReset = previews.revision
         let cleared = try session.resetToUnmodified(photo)
-        thumbnails.invalidateEdited(atPath: cleared.identity.path)
-        previews.refresh()
+        check(cleared.state == nil, "Reset cleared persisted state")
+        check(previews.revision > revisionBeforeReset, "Reset automatically advances preview revision")
 
-        check(thumbnails.cachedImage(for: keyV2) == nil, "Reset evicts edited entry from NSCache")
-        check(previews.cachedThumbnail(for: photo) == nil, "Reset clears edited active presentation")
+        check(thumbnails.cachedImage(for: keyV2) == nil, "Reset automatically evicts edited entry from NSCache")
+        check(previews.cachedThumbnail(for: photo) == nil, "Reset automatically clears edited active presentation")
 
         let recordAfterReset = try await previews.record(for: photo)
         check(!MacPhotoPreviewPlan.isEdited(recordAfterReset), "Record is unedited after reset")
         let restoredOriginal = await previews.originalImage(for: photo, identity: recordAfterReset.identity)
         check(restoredOriginal === uneditedImg && thumbnails.decodeCount == 1,
               "After reset, unedited thumbnail is served from unedited cache entry without re-decoding")
+    }
+
+    @MainActor
+    private static func verifyResetIdempotentSingleInvalidation(in root: URL) async throws {
+        RenderEngine.resetCounts()
+        let dir = root.appendingPathComponent("reset-idempotency", isDirectory: true)
+        let editsDir = dir.appendingPathComponent("edits", isDirectory: true)
+        let diskCacheDir = dir.appendingPathComponent("disk-cache", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let photo = dir.appendingPathComponent("reset-photo.png")
+        try writePNG(to: photo, red: 0.35)
+
+        let store = try EditPersistence(directory: editsDir)
+        let session = AdjustmentTransferSession(store: store)
+        let thumbnails = PhotoThumbnails()
+        let previews = MacEditedPhotoPreviews(editDirectory: editsDir, cacheDirectory: diskCacheDir, thumbnails: thumbnails)
+
+        let initial = try await previews.record(for: photo)
+        let uneditedImg = await previews.originalImage(for: photo, identity: initial.identity)!
+
+        // Commit edited state and render edited tile.
+        var editedSettings = Adjustments(); editedSettings.exposureMode = .sensor; editedSettings.exposure = 1.5
+        let editOutcome = session.commitEdit(expected: initial, state: PhotoEditState(settings: editedSettings, filmID: ""))
+        check(editOutcome.status == .applied, "Initial edit committed")
+
+        var tile = WorkspacePhotoTileState()
+        await tile.refresh(url: photo, previews: previews)
+        check(tile.adjustedThumbnail && tile.edited && tile.thumbnail !== uneditedImg, "Tile shows edited thumbnail")
+
+        let thumbInvalidationsBeforeReset = thumbnails.editedInvalidationCount
+        let previewInvalidationsBeforeReset = previews.editedInvalidationCount
+
+        // Reset by committing neutral Adjustments (same as EditorModel Reset All via commitAdjustment).
+        var neutralSettings = Adjustments(); neutralSettings.exposureMode = .sensor
+        let neutralOutcome = session.commitEdit(expected: editOutcome.saved!, state: PhotoEditState(settings: neutralSettings, filmID: ""))
+        check(neutralOutcome.status == .applied, "Neutral reset state committed")
+        check(thumbnails.editedInvalidationCount == thumbInvalidationsBeforeReset + 1,
+              "Reset invalidates PhotoThumbnails edited state exactly once")
+        check(previews.editedInvalidationCount == previewInvalidationsBeforeReset + 1,
+              "Reset invalidates MacEditedPhotoPreviews edited presentation exactly once")
+
+        // Tile refreshes immediately to unedited thumbnail and records activeKeys[path] with isEdited = false.
+        await tile.refresh(url: photo, previews: previews)
+        check(!tile.edited && !tile.adjustedThumbnail && tile.thumbnail === uneditedImg,
+              "Tile refreshes back to cached unedited thumbnail")
+        check(previews.cachedThumbnail(for: photo)?.image === uneditedImg && previews.cachedThumbnail(for: photo)?.isEdited == false,
+              "Unedited active presentation registered before late exact-frame callback")
+
+        // Simulate late debounced .exact frame completion and duplicate invalidation calls on the neutral record.
+        let neutralFrame = try RenderEngine().render(photo, settings: neutralSettings, lut: nil, edge: 256)!.image
+        previews.accept(record: neutralOutcome.saved!, image: neutralFrame)
+        previews.invalidateEdited(for: photo)
+        _ = thumbnails.invalidateEdited(for: photo)
+
+        check(thumbnails.editedInvalidationCount == thumbInvalidationsBeforeReset + 1,
+              "Late exact frame / duplicate invalidation does not re-invalidate PhotoThumbnails")
+        check(previews.editedInvalidationCount == previewInvalidationsBeforeReset + 1,
+              "Late exact frame / duplicate invalidation does not re-invalidate MacEditedPhotoPreviews")
+
+        // View rebuild (WorkspacePhotoTile.onAppear) must synchronously hit unedited thumbnail without nil flash.
+        var rebuiltTile = WorkspacePhotoTileState()
+        rebuiltTile.appear(url: photo, previews: previews)
+        check(rebuiltTile.thumbnail === uneditedImg && !rebuiltTile.edited && !rebuiltTile.adjustedThumbnail,
+              "Rebuilt tile synchronously hits unedited thumbnail without placeholder miss")
+        check(thumbnails.decodeCount == 1, "Unedited thumbnail never re-decoded across edit, reset, and rebuild")
+    }
+
+    @MainActor
+    private static func verifyLookRemovalAndRenderFailureClearStaleTile(in root: URL) async throws {
+        RenderEngine.resetCounts()
+        let dir = root.appendingPathComponent("look-removal", isDirectory: true)
+        let editsDir = dir.appendingPathComponent("edits", isDirectory: true)
+        let diskCacheDir = dir.appendingPathComponent("disk-cache", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let photo = dir.appendingPathComponent("look-photo.png")
+        try writePNG(to: photo, red: 0.2)
+        let lut = dir.appendingPathComponent("custom.cube")
+        try Data("LUT_3D_SIZE 2\n".utf8).write(to: lut)
+        let film = Film(name: "Custom", url: lut, managedID: "managed-custom-look")
+
+        let store = try EditPersistence(directory: editsDir)
+        let session = AdjustmentTransferSession(store: store)
+        let thumbnails = PhotoThumbnails()
+        let previews = MacEditedPhotoPreviews(editDirectory: editsDir, cacheDirectory: diskCacheDir, thumbnails: thumbnails)
+        previews.films = [film]
+
+        let initial = try await previews.record(for: photo)
+        let uneditedImg = await previews.originalImage(for: photo, identity: initial.identity)!
+
+        // Apply custom look and render mounted tile.
+        var lookSettings = Adjustments(); lookSettings.exposureMode = .sensor
+        let lookCommit = session.commitEdit(expected: initial, state: PhotoEditState(settings: lookSettings, filmID: film.id))
+        check(lookCommit.status == .applied, "Look edit committed")
+        let lookPlan = try MacPhotoPreviewPlan(record: lookCommit.saved!, films: [film])
+        let lookKey = PhotoThumbnailCacheKey(identity: lookCommit.saved!.identity, previewKey: lookPlan.key)
+
+        var mountedTile = WorkspacePhotoTileState()
+        await mountedTile.refresh(url: photo, previews: previews)
+        let oldLookImg = mountedTile.thumbnail
+        check(oldLookImg != nil && oldLookImg !== uneditedImg && mountedTile.adjustedThumbnail && mountedTile.notice == nil,
+              "Mounted tile displays custom look edited thumbnail")
+        check(thumbnails.cachedImage(for: lookKey) === oldLookImg, "Look edited thumbnail cached")
+
+        // Remove the look (mirroring EditorModel.removeLook deleting LUT file and updating films).
+        try FileManager.default.removeItem(at: lut)
+        previews.films = []
+
+        check(thumbnails.cachedImage(for: lookKey) == nil, "Removing look invalidates cached edited thumbnail")
+        check(previews.cachedThumbnail(for: photo) == nil, "Removing look clears synchronous edited presentation")
+
+        // Both a mounted tile and a freshly rebuilt tile must drop oldLookImg and fall back to original + notice.
+        await mountedTile.refresh(url: photo, previews: previews)
+        check(mountedTile.thumbnail !== oldLookImg && mountedTile.thumbnail === uneditedImg,
+              "Mounted tile no longer displays removed look's stale thumbnail")
+        check(mountedTile.edited && !mountedTile.adjustedThumbnail && mountedTile.notice == "预览未更新",
+              "Mounted tile marks original fallback with outdated preview notice")
+
+        var rebuiltTile = WorkspacePhotoTileState()
+        rebuiltTile.appear(url: photo, previews: previews)
+        check(rebuiltTile.thumbnail == nil, "Rebuilt tile onAppear does not resurrect removed look's stale thumbnail")
+        await rebuiltTile.refresh(url: photo, previews: previews)
+        check(rebuiltTile.thumbnail !== oldLookImg && rebuiltTile.thumbnail === uneditedImg && !rebuiltTile.adjustedThumbnail && rebuiltTile.notice == "预览未更新",
+              "Rebuilt tile after look removal shows original fallback instead of stale look thumbnail")
+
+        // Also verify render failure on an exposure-edited photo clears stale edited thumbnail.
+        var expSettings = Adjustments(); expSettings.exposureMode = .sensor; expSettings.exposure = 1.0
+        let expCommit = session.commitEdit(expected: lookCommit.saved!, state: PhotoEditState(settings: expSettings, filmID: ""))
+        check(expCommit.status == .applied, "Exposure edit committed")
+        await mountedTile.refresh(url: photo, previews: previews)
+        let expEditedImg = mountedTile.thumbnail
+        check(expEditedImg != nil && expEditedImg !== uneditedImg && mountedTile.adjustedThumbnail,
+              "Mounted tile shows exposure-edited thumbnail")
+
+        var expSettings2 = expSettings; expSettings2.exposure = 2.0
+        let expCommit2 = session.commitEdit(expected: expCommit.saved!, state: PhotoEditState(settings: expSettings2, filmID: ""))
+        check(expCommit2.status == .applied, "Second exposure edit committed")
+        RenderEngine.failNextRender = true
+        await mountedTile.refresh(url: photo, previews: previews)
+        check(mountedTile.thumbnail !== expEditedImg && mountedTile.thumbnail === uneditedImg && !mountedTile.adjustedThumbnail && mountedTile.notice == "预览未更新",
+              "Render failure clears stale prior edited thumbnail from mounted tile")
     }
 
     @MainActor
@@ -316,6 +476,19 @@ struct ThumbnailCacheTests {
         let imgA2 = await PhotoThumbnails.shared.image(for: photoA)
         check(imgA2 != nil && PhotoThumbnails.shared.decodeCount == beforeCount + 3,
               "Fetching after folder refresh decodes fresh thumbnail once")
+
+        // Verify directory invalidation during an in-flight decode isolates post-refresh callers and caches the fresh decode.
+        let largePhoto = dirA.appendingPathComponent("inflight.png")
+        try writePNG(to: largePhoto, width: 2400, height: 1600, red: 0.5)
+        let isolated = PhotoThumbnails()
+        async let preRefreshTask = isolated.image(for: largePhoto)
+        isolated.invalidateDirectory(dirA)
+        async let postRefreshTask = isolated.image(for: largePhoto)
+        let (_, postRefreshImg) = await (preRefreshTask, postRefreshTask)
+        let largeKey = PhotoThumbnailCacheKey(uneditedFileAt: largePhoto)!
+        check(postRefreshImg != nil && isolated.cachedImage(for: largeKey) === postRefreshImg,
+              "Post-refresh caller gets and caches fresh thumbnail even if invalidateDirectory fired mid-decode")
+
         PhotoThumbnails.shared.invalidateDirectory(root)
     }
 }

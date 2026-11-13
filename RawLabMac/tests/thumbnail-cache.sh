@@ -40,7 +40,9 @@ swiftc -whole-module-optimization -swift-version 5 -sdk "$SDK" -target "$(uname 
     "$ROOT/RawLabMac/Sources/Editor/Storage/EditPersistence.swift" \
     "$ROOT/RawLabMac/Sources/Editor/Storage/AdjustmentTransferSession.swift" \
     "$ROOT/RawLabMac/Sources/Library/FileLibrary.swift" \
+    "$ROOT/RawLabMac/Sources/Library/MacWorkspaceBrowserState.swift" \
     "$ROOT/RawLabMac/Sources/Library/MacEditedPhotoPreviews.swift" \
+    "$ROOT/RawLabMac/Sources/Library/MacWorkspaceBrowser.swift" \
     "$ROOT/RawLabMac/tests/ThumbnailCacheTests.swift" \
     -framework SwiftUI -framework AppKit -framework ImageIO -o "$OUT/thumbnail-cache"
 "$OUT/thumbnail-cache"

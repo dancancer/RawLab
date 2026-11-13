@@ -45,6 +45,12 @@ struct UnusableEditRecordError: LocalizedError {
 }
 
 final class EditPersistence {
+    static let didChangeRecordsNotification = Notification.Name("RawLab.EditPersistence.didChangeRecords")
+    static let didInvalidateEditedNotification = Notification.Name("RawLab.EditPersistence.didInvalidateEdited")
+    static let directoryPathUserInfoKey = "directoryPath"
+    static let changedRecordsUserInfoKey = "changedRecords"
+    static let invalidatedPathsUserInfoKey = "invalidatedPaths"
+
     private struct Record: Codable {
         let identity: OriginalFileIdentity
         let state: PhotoEditState
@@ -278,9 +284,50 @@ final class EditPersistence {
         return Self.tryParseMigration(registry.processingMigrations?[identity.path], identity: identity)?.receipt
     }
 
+    var canonicalDirectoryPath: String {
+        directory.resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    func pathsReferencingFilms(_ identifiers: Set<String>) -> Set<String> {
+        guard !identifiers.isEmpty, let registry = try? readRegistry() else { return [] }
+        var matched = Set<String>()
+        for (path, raw) in registry.records {
+            guard let record = try? Self.parseRecord(raw), record.identity.path == path else { continue }
+            if identifiers.contains(record.state.filmID) {
+                matched.insert(path)
+            }
+        }
+        return matched
+    }
+
+    func notifyEditedInvalidation(forPaths paths: Set<String>) {
+        guard !paths.isEmpty else { return }
+        NotificationCenter.default.post(
+            name: Self.didInvalidateEditedNotification,
+            object: nil,
+            userInfo: [
+                Self.directoryPathUserInfoKey: canonicalDirectoryPath,
+                Self.invalidatedPathsUserInfoKey: paths
+            ]
+        )
+    }
+
+    private func postRecordsChanged(_ changes: [String: PhotoEditState?]) {
+        guard !changes.isEmpty else { return }
+        NotificationCenter.default.post(
+            name: Self.didChangeRecordsNotification,
+            object: nil,
+            userInfo: [
+                Self.directoryPathUserInfoKey: canonicalDirectoryPath,
+                Self.changedRecordsUserInfoKey: changes,
+                Self.invalidatedPathsUserInfoKey: Set(changes.keys)
+            ]
+        )
+    }
+
     func commitProcessingMigration(expected: PhotoEditRecord, candidate: PhotoEditState?,
                                    quality: ProcessingMigrationQuality) throws -> PhotoEditRecord {
-        try withWriteLock {
+        let result = try withWriteLock {
             var updated = try readRegistry()
             try expected.identity.requireCurrent()
             guard try snapshot(identity: expected.identity, registry: updated) == expected,
@@ -303,10 +350,14 @@ final class EditPersistence {
             try writeData(Self.encodeRegistry(updated), file)
             return try snapshot(identity: expected.identity, registry: updated)
         }
+        if let candidate, expected.state != candidate {
+            postRecordsChanged([expected.identity.path: candidate])
+        }
+        return result
     }
 
     func rollbackProcessingMigration(expected: PhotoEditRecord) throws -> PhotoEditRecord {
-        try withWriteLock {
+        let result = try withWriteLock {
             var updated = try readRegistry()
             try expected.identity.requireCurrent()
             guard try snapshot(identity: expected.identity, registry: updated) == expected,
@@ -321,6 +372,10 @@ final class EditPersistence {
             try writeData(Self.encodeRegistry(updated), file)
             return try snapshot(identity: expected.identity, registry: updated)
         }
+        if expected.state != result.state {
+            postRecordsChanged([expected.identity.path: result.state])
+        }
+        return result
     }
 
     private func snapshot(identity: OriginalFileIdentity, registry: Registry) throws -> PhotoEditRecord {
@@ -336,29 +391,32 @@ final class EditPersistence {
     }
 
     func save(_ urls: [URL], state: PhotoEditState) throws {
+        var changedPaths: [String: PhotoEditState?] = [:]
         try withWriteLock {
             try Self.validateState(state)
             var updated = try readRegistry()
-            var changed = false
             for url in urls {
                 let identity = try OriginalFileIdentity(url)
                 if try snapshot(identity: identity, registry: updated).state == state { continue }
                 updated.records[identity.path] = try JSONEncoder().encode(Record(identity: identity, state: state))
-                changed = true
+                changedPaths[identity.path] = state
             }
-            if changed { try writeData(Self.encodeRegistry(updated), file) }
+            if !changedPaths.isEmpty { try writeData(Self.encodeRegistry(updated), file) }
         }
+        postRecordsChanged(changedPaths)
     }
 
     @discardableResult func saveState(identity: OriginalFileIdentity, state: PhotoEditState?,
                                       clearsProcessingMigration: Bool = false) throws -> PhotoEditRecord {
-        try withWriteLock {
+        var stateChanged = false
+        let result = try withWriteLock {
             if let state { try Self.validateState(state) }
             var updated = try readRegistry()
             try identity.requireCurrent()
             let current = try snapshot(identity: identity, registry: updated)
+            stateChanged = current.state != state
             let clearsMigration = clearsProcessingMigration && updated.processingMigrations?[identity.path] != nil
-            guard current.state != state || clearsMigration else { return current }
+            guard stateChanged || clearsMigration else { return current }
             if let state { updated.records[identity.path] = try JSONEncoder().encode(Record(identity: identity, state: state)) }
             else { updated.records.removeValue(forKey: identity.path) }
             if clearsMigration {
@@ -368,10 +426,15 @@ final class EditPersistence {
             try writeData(Self.encodeRegistry(updated), file)
             return PhotoEditRecord(identity: identity, state: state)
         }
+        if stateChanged {
+            postRecordsChanged([identity.path: state])
+        }
+        return result
     }
 
     @discardableResult func resetToUnmodified(_ url: URL) throws -> PhotoEditRecord {
-        try withWriteLock {
+        var clearedPath: String?
+        let result = try withWriteLock {
             var updated = try readRegistry()
             let identity = try OriginalFileIdentity(url)
             let hadRecord = updated.records.removeValue(forKey: identity.path) != nil
@@ -380,8 +443,13 @@ final class EditPersistence {
             if hadRecord || hadMigration {
                 try writeData(Self.encodeRegistry(updated), file)
             }
+            if hadRecord { clearedPath = identity.path }
             return PhotoEditRecord(identity: identity, state: nil)
         }
+        if let clearedPath {
+            postRecordsChanged([clearedPath: nil])
+        }
+        return result
     }
 
     private func withWriteLock<T>(_ action: () throws -> T) throws -> T {

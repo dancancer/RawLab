@@ -85,7 +85,6 @@ extension EditorModel {
                     self.adjustmentSession?.adoptProcessingMigration(saved)
                     self.processingMigrationReceipt = try store.processingMigration(for: file)
                     if candidate != nil, let state = saved.state {
-                        PhotoThumbnails.shared.invalidateEdited(atPath: saved.identity.path)
                         self.adjustmentHistoryRevision &+= 1
                         self.restoreAdjustmentState(state)
                         self.editRevision = UUID()
@@ -114,7 +113,6 @@ extension EditorModel {
             committedEdit = saved
             adjustmentSession?.adoptProcessingMigration(saved)
             processingMigrationReceipt = try store.processingMigration(for: file)
-            PhotoThumbnails.shared.invalidateEdited(atPath: saved.identity.path)
             adjustmentHistoryRevision &+= 1
             if let state = saved.state { restoreAdjustmentState(state) }
             editRevision = UUID()
