@@ -337,9 +337,15 @@ class RealCliTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotEqual(direct.returncode, 0)
             direct_value = json.loads(direct.stdout)
             self.assertFalse(direct_value["ok"])
+            # Contract: lutools/docs/edit-json.md ("JPEG, PNG and DNG encoding all
+            # publish through staged writes, so an output storage failure reports
+            # status 6 (output_io_error) for every format"). 2aa25048 (PR #242)
+            # migrated PNG to staged writes; 3ad54e63 realigned the CLI assertions
+            # and a6ffa929 synced the spec. A missing output parent is such a
+            # storage failure, so the native side reports output_io_error(6).
             self.assertEqual(
                 (direct_value["error"]["code"], direct_value["error"]["status"]),
-                ("processing_error", 4),
+                ("output_io_error", 6),
             )
 
             params = StdioServerParameters(command=sys.executable, args=[
