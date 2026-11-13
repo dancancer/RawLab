@@ -61,3 +61,4 @@
 - 2026-11-14 · **WP-03 合入**：#293 复审 approve（latch 全链+全轮询点+字节预算 probe 五项复核过，全量 ctest 干净）→ dancancer merge（总 50 PR）。#290 复审 request-changes：自述「三端」实际 Android load() 仍把 I/O 失败与内容损坏混在同一 catch（好文件/未来日志被误隔离覆盖，评审三例实跑复现）→ 回炉原返工者补三条红锚点。
 - 2026-11-14 · 看板切换：任务跟踪改用 DSH kanban 插件（Todo/In Progress/Review/Done，label=remediation；在途卡 k18=#291、k20=#290、k22=#286），hermes 板停止同步。
 - 2026-11-14 · **WP-01 拍板**：① 审批策略→「all external contributors」（用户 Web 端操作）；② JIT 派发器 Go（native subagent jit-dispatcher 实现，opt-in、不动现役 Listener）。用户定调：后续 CI 整体迁云端，派发器须自包含可废弃；攻击性验证 PR 留到启用时做。
+- 2026-11-14 · WP-01② 交付：**PR #295** JIT 派发器（`b373e681`，225 行+22 测+plist 示例未装载+ci.md 三步文档；opt-in、现役 Listener 未动、CI 全绿）。碳审在途（review-mwfa6gl1）。启用时补攻击性验证 PR。
