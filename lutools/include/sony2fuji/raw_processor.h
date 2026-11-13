@@ -19,6 +19,13 @@ enum class BayerDemosaicMethod {
 
 enum class X3fMode { Legacy = 0, Normal = 1 };
 
+enum class ProbeSizeResult {
+    Probed,
+    DeferredPostDecode,
+    Unsupported,
+    OpenFailed,
+};
+
 // 有效 sensor 区域，尚未白平衡或旋转。相机标定与原始 RAW 一起保存。
 struct RAWBayerSource {
     int width = 0, height = 0, flip = 0;
@@ -114,6 +121,10 @@ public:
     ErrorCode loadFile(const std::string& filepath, X3fMode mode);
     // 能力探测只识别元数据，不解包 RAW 像素。
     ErrorCode inspectFile(const std::string& filepath);
+    // Probes the oriented native output canvas from RAW/DNG metadata without unpacking pixels.
+    static ProbeSizeResult probeOutputSize(const std::string& filepath, bool legacySonyCrop,
+                                           uint32_t& width, uint32_t& height,
+                                           X3fMode x3fMode = X3fMode::Legacy);
     // Compare the two inset rectangles before fitting an automatic color migration.
     static ErrorCode sonyFramingChanged(const std::string& filepath, bool& changed);
     // Inspects a supported camera HDR source without unpacking the mosaic.

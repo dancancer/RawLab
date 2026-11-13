@@ -802,6 +802,48 @@ ErrorCode RAWProcessor::inspectFile(const std::string& filepath) {
     return pImpl_->loadFile(filepath, X3fMode::Legacy, true);
 }
 
+ProbeSizeResult RAWProcessor::probeOutputSize(const std::string& filepath, bool legacySonyCrop,
+                                              uint32_t& width, uint32_t& height, X3fMode x3fMode) {
+    width = 0;
+    height = 0;
+    if (filepath.empty() || filepath.find('\0') != std::string::npos) return ProbeSizeResult::OpenFailed;
+    auto canOpenInput = [&]() -> bool {
+#ifdef _WIN32
+        std::ifstream testStream(std::filesystem::u8path(filepath), std::ios::binary);
+#else
+        std::ifstream testStream(filepath, std::ios::binary);
+#endif
+        return static_cast<bool>(testStream);
+    };
+    if (!canOpenInput()) return ProbeSizeResult::OpenFailed;
+    // Normal X3F uses x3f-bridge CAMF KeepImageArea, which differs from LibRaw foveon_data.
+    if (x3fMode == X3fMode::Normal && hasX3fSignature(filepath)) {
+        return ProbeSizeResult::DeferredPostDecode;
+    }
+    auto raw = std::make_unique<LibRaw>();
+    if (legacySonyCrop) raw->imgdata.rawparams.options |= kLegacySonyCrop;
+    RawCancellationScope cancellation(*raw);
+    const int status = openRawFile(*raw, filepath);
+    if (status == LIBRAW_CANCELLED_BY_CALLBACK) throw ProcessingCancelled();
+    if (status != LIBRAW_SUCCESS) {
+        return (status == LIBRAW_IO_ERROR && !canOpenInput())
+            ? ProbeSizeResult::OpenFailed
+            : ProbeSizeResult::Unsupported;
+    }
+    const char* decoder = raw->unpack_function_name();
+    // JPEG XL DNG applies ActiveArea/DefaultUserCrop/Stage3 opcodes during DNG SDK unpack; verify post-decode.
+    if (decoder && std::strcmp(decoder, "jxl_dng_load_raw_placeholder()") == 0) {
+        return ProbeSizeResult::DeferredPostDecode;
+    }
+    raw->adjust_to_raw_inset_crop(3);
+    int outWidth = 0, outHeight = 0, colors = 0, bps = 0;
+    raw->get_mem_image_format(&outWidth, &outHeight, &colors, &bps);
+    if (outWidth <= 0 || outHeight <= 0) return ProbeSizeResult::DeferredPostDecode;
+    width = static_cast<uint32_t>(outWidth);
+    height = static_cast<uint32_t>(outHeight);
+    return ProbeSizeResult::Probed;
+}
+
 ErrorCode RAWProcessor::sonyFramingChanged(const std::string& filepath, bool& changed) {
     changed = false;
     auto raw = std::make_unique<LibRaw>();
@@ -1137,8 +1179,7 @@ ErrorCode ImageEncoder::saveJPEG(
 
     const uint64_t rgbBytes =
         static_cast<uint64_t>(image.width) * static_cast<uint64_t>(image.height) * 3u;
-    if (rgbBytes > static_cast<uint64_t>(std::numeric_limits<int>::max()) ||
-        rgbBytes > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
+    if (rgbBytes > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
         return ErrorCode::ProcessingError;
     }
 
@@ -1300,9 +1341,13 @@ ErrorCode ImageEncoder::savePNG(const ImageData& image, const std::string& filep
             z_stream* stream;
             ~DeflateGuard() { deflateEnd(stream); }
         } deflateGuard{&stream};
-        std::vector<unsigned char> row(static_cast<size_t>(image.width)*6+1);
+        const uint64_t rowBytes64 = static_cast<uint64_t>(image.width) * 6u + 1u;
+        if (rowBytes64 > static_cast<uint64_t>(std::numeric_limits<size_t>::max()))
+            return ErrorCode::OutOfMemory;
+        std::vector<unsigned char> row(static_cast<size_t>(rowBytes64));
         std::array<unsigned char, 65536> compressed;
         constexpr size_t kCancelCheckPixels = 65536;
+        constexpr size_t kMaxDeflateInput = static_cast<size_t>(std::numeric_limits<uInt>::max());
         size_t pixelsSinceCheck = 0;
         for (int y=0; y<image.height && ok; ++y) {
             pixelsSinceCheck += static_cast<size_t>(image.width);
@@ -1314,23 +1359,31 @@ ErrorCode ImageEncoder::savePNG(const ImageData& image, const std::string& filep
             for (int x=0; x<image.width; ++x) {
                 const auto& p = image.at(x,y);
                 const uint16_t values[] = {floatToUint16(p.r),floatToUint16(p.g),floatToUint16(p.b)};
-                for (int c=0;c<3;++c) {
-                    row[1+x*6+c*2] = static_cast<unsigned char>(values[c]>>8);
-                    row[2+x*6+c*2] = static_cast<unsigned char>(values[c]);
+                const size_t base = 1u + static_cast<size_t>(x) * 6u;
+                for (size_t c=0;c<3;++c) {
+                    row[base + c*2u] = static_cast<unsigned char>(values[c]>>8);
+                    row[base + c*2u + 1u] = static_cast<unsigned char>(values[c]);
                 }
             }
-            stream.next_in = row.data();
-            stream.avail_in = static_cast<uInt>(row.size());
-            const int flush = y == image.height-1 ? Z_FINISH : Z_NO_FLUSH;
-            int status;
-            do {
-                stream.next_out = compressed.data();
-                stream.avail_out = compressed.size();
-                status = deflate(&stream, flush);
-                if (status != Z_OK && status != Z_STREAM_END) { ok=false; break; }
-                const size_t size = compressed.size()-stream.avail_out;
-                if (size) chunk("IDAT", compressed.data(), size);
-            } while (stream.avail_in || stream.avail_out == 0 || (flush == Z_FINISH && status != Z_STREAM_END));
+            unsigned char* nextIn = row.data();
+            size_t remainingIn = row.size();
+            while (remainingIn > 0 && ok) {
+                const size_t slice = std::min(remainingIn, kMaxDeflateInput);
+                remainingIn -= slice;
+                stream.next_in = nextIn;
+                stream.avail_in = static_cast<uInt>(slice);
+                nextIn += slice;
+                const int flush = (y == image.height-1 && remainingIn == 0) ? Z_FINISH : Z_NO_FLUSH;
+                int status;
+                do {
+                    stream.next_out = compressed.data();
+                    stream.avail_out = static_cast<uInt>(compressed.size());
+                    status = deflate(&stream, flush);
+                    if (status != Z_OK && status != Z_STREAM_END) { ok=false; break; }
+                    const size_t size = compressed.size()-stream.avail_out;
+                    if (size) chunk("IDAT", compressed.data(), size);
+                } while (stream.avail_in || stream.avail_out == 0 || (flush == Z_FINISH && status != Z_STREAM_END));
+            }
         }
         chunk("IEND", nullptr, 0);
         if (!ok || std::fflush(file) != 0 || std::ferror(file) != 0) return ErrorCode::ProcessingError;
