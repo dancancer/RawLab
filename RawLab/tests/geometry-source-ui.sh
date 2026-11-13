@@ -29,8 +29,8 @@ import difflib, json, pathlib, plistlib, subprocess, sys
 root, out, original = map(pathlib.Path, sys.argv[1:])
 transforms = {
     "RawLab/RawLab/UI/EditorState/EditorLayout.swift": (
-        '.frame(height: side ? nil : adjustmentRegionHeight(size: size, accessibility: accessibility))',
-        '.frame(height: side ? nil : adjustmentRegionHeight(size: size, accessibility: accessibility))\n                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in GeometrySourceProbe.shared.layoutFrames["panel"] = [frame.minX, frame.minY, frame.width, frame.height]; GeometrySourceProbe.shared.layoutPolicy = ["width": size.width, "height": size.height, "accessibility": accessibility, "buttonWidth": groupNavigationButtonWidth, "buttonHeight": groupNavigationButtonHeight, "scrollTools": scrollTools, "sideWidth": sideWidth, "side": side, "contentSizeCategory": UIApplication.shared.preferredContentSizeCategory.rawValue] }'),
+        '.frame(height: side ? nil : parameterHeight)',
+        '.frame(height: side ? nil : parameterHeight)\n                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in GeometrySourceProbe.shared.layoutFrames["panel"] = [frame.minX, frame.minY, frame.width, frame.height]; GeometrySourceProbe.shared.layoutPolicy = ["width": size.width, "height": size.height, "accessibility": accessibility, "buttonWidth": groupNavigationButtonWidth, "buttonHeight": groupNavigationButtonHeight, "scrollTools": scrollsToolsWithParameters(size: size, accessibility: accessibility), "sideWidth": panelWidth, "side": side, "contentSizeCategory": UIApplication.shared.preferredContentSizeCategory.rawValue] }'),
     "RawLab/RawLab/UI/Editor/ContentView.swift": ("        .onAppear {\n            viewModel.loadLUTsIfNeeded()",
                           "        .onAppear {\n            Task { await self.runGeometrySourceReview() }\n            viewModel.loadLUTsIfNeeded()"),
     "RawLab/RawLab/UI/Editor/ContentView+Panels.swift": ("onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) }",
@@ -39,8 +39,8 @@ transforms = {
         "        lastPreviewRequest = request",
         "        MainActor.assumeIsolated { GeometrySourceProbe.shared.recordPreview(settings, request: request, source: self.sourceRevision) }\n        lastPreviewRequest = request"),
     "RawLab/RawLab/Core/Persistence/EditPersistence.swift": (
-        "        store.records[identity.key] = state",
-        "        MainActor.assumeIsolated { if let state { GeometrySourceProbe.shared.saveAttempts.append(state); GeometrySourceProbe.shared.saveReceipts.append([\"identity\": identity.key, \"state\": try! JSONSerialization.jsonObject(with: JSONEncoder().encode(state))]) } }\n        store.records[identity.key] = state")
+        "            store.records[identity.editKey] = encodedState",
+        "            MainActor.assumeIsolated { if let state { GeometrySourceProbe.shared.saveAttempts.append(state); GeometrySourceProbe.shared.saveReceipts.append([\"identity\": identity.key, \"state\": try! JSONSerialization.jsonObject(with: JSONEncoder().encode(state))]) } }\n            store.records[identity.editKey] = encodedState")
 }
 diffs = []
 for name, (before, after) in transforms.items():
@@ -49,15 +49,16 @@ for name, (before, after) in transforms.items():
     if text.count(before) != 1:
         raise SystemExit(f"Expected exactly one marker in {source}")
     changed = text.replace(before, after)
-    if name.endswith("ContentView+Panels.swift"):
+    if name.endswith("EditorLayout.swift"):
         fine_marker = '.accessibilityIdentifier("editor.fine")'
         assert changed.count(fine_marker) == 1
-        changed = changed.replace(fine_marker, fine_marker + '\n                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in GeometrySourceProbe.shared.layoutFrames["fine"] = [frame.minX, frame.minY, frame.width, frame.height] }')
+        changed = changed.replace(fine_marker, fine_marker + '\n                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in GeometrySourceProbe.shared.layoutFrames["fine"] = [frame.minX, frame.minY, frame.width, frame.height] }')
+    if name.endswith("ContentView+Panels.swift"):
         text_marker = "Text(group.title).font(.caption).lineLimit(singleLine ? 1 : 2)"
         rect_marker = "            .frame(width: width, height: height)\n            .contentShape(Rectangle())"
         assert changed.count(text_marker) == 1 and changed.count(rect_marker) == 1
         changed = changed.replace(text_marker, text_marker + '\n                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in GeometrySourceProbe.shared.groupTextRects[group.rawValue] = [frame.minX, frame.minY, frame.width, frame.height] }')
-        changed = changed.replace(rect_marker, rect_marker + '\n            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in GeometrySourceProbe.shared.groupRects[group.rawValue] = [frame.minX, frame.minY, frame.width, frame.height] }')
+        changed = changed.replace(rect_marker, rect_marker + '\n            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in GeometrySourceProbe.shared.groupRects[group.rawValue] = [frame.minX, frame.minY, frame.width, frame.height]; GeometrySourceProbe.shared.layoutFrames["buttonHeight"] = [Double(height)] }')
     if name.endswith("RawEditorViewModel+Rendering.swift"):
         resize_call = "            self.updatePreview(settings: self.currentPreviewSettings)"
         assert changed.count(resize_call) == 1

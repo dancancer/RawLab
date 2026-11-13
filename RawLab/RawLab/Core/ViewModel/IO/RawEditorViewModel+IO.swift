@@ -133,7 +133,6 @@ extension RawEditorViewModel {
         adjustmentInteraction = nil
         adjustmentInteractionRejected = false
         statusMessage = nil
-        hdrResourceNotice = HDRResourceNotice()
         isBusy = true
         let importRevision = UUID()
         if activeImportRevision==nil { importPreviousRevision=sourceRevision }

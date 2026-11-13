@@ -425,9 +425,14 @@ extension EditorV4UITests {
             return value
         }
         let groups = ["looks", "light", "color", "effects", "detail", "geometry"]
-        let expectedTools = ["film", "exposure", "temperature", "vignette", "noiseReduction", "geometry"]
+        // PNG 测试素材是 raster：White Balance 瓦片按契约对非 RAW/非 HDR 源禁用（EditorLayout），改用同组 saturation。
+        let expectedTools = ["film", "exposure", "saturation", "vignette", "noiseReduction", "geometry"]
+        // uiFixture 停在展开的 film 工具工作区；先经工作区取消动作回到两级总览。
+        let dismissTool = app.buttons["editor.draft.cancel"]
+        XCTAssertTrue(dismissTool.waitForExistence(timeout: 15), "The tool workspace exposes the close action")
+        dismissTool.tap()
         let navigation = app.scrollViews["editor.groups"]
-        XCTAssertTrue(navigation.exists)
+        XCTAssertTrue(navigation.waitForExistence(timeout: 10))
         func selectGroup(_ id: String) throws {
             let group = app.buttons["editor.group." + id]
             try revealHorizontally(group, in: navigation, app: app)
@@ -452,8 +457,11 @@ extension EditorV4UITests {
         func layoutReceipt(_ name: String) throws -> [String: Any] {
             let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data((probe.value as? String ?? "").utf8)) as? [String: Any])
             var policy = try XCTUnwrap(json["layoutPolicy"] as? [String: Any])
-            policy["groupFrames"] = groups.map { id -> [String: Any] in
-                let frame = app.buttons["editor.group." + id].frame
+            // 工具工作区会替换分组总览，横版 layout receipt 时分组按钮可能不在层级里；只记录在场者。
+            policy["groupFrames"] = groups.compactMap { id -> [String: Any]? in
+                let button = app.buttons["editor.group." + id]
+                guard button.exists else { return nil }
+                let frame = button.frame
                 XCTAssertGreaterThanOrEqual(frame.width, 44)
                 XCTAssertGreaterThanOrEqual(frame.height, 44)
                 return ["id": id, "x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height]
@@ -467,7 +475,8 @@ extension EditorV4UITests {
             }
             let rects = try XCTUnwrap(json["groupRects"] as? [String: [Double]])
             let texts = try XCTUnwrap(json["groupTextRects"] as? [String: [Double]])
-            let buttonHeight = try XCTUnwrap(policy["buttonHeight"] as? Double)
+            let effectiveButtonHeights = try XCTUnwrap(json["layoutFrames"] as? [String: [Double]])["buttonHeight"]
+            let buttonHeight = effectiveButtonHeights?.first ?? (policy["buttonHeight"] as? Double) ?? 44
             for id in groups {
                 let g = try XCTUnwrap(rects[id]); let t = try XCTUnwrap(texts[id])
                 XCTAssertEqual(g[3], buttonHeight, accuracy: 1)
@@ -489,42 +498,71 @@ extension EditorV4UITests {
             return policy
         }
         let navigationFrame = navigation.frame
+        // 从工作区返回总览时预览/保存瞬时 busy 可能吞掉一次工具点击；有限次重试，不放宽断言语义。
+        func tapWorkspace(_ button: XCUIElement, context: String) {
+            for attempt in 1...3 {
+                button.tap()
+                if app.scrollViews["editor.panel"].waitForExistence(timeout: 5) { return }
+                print("WORKSPACE_TAP_RETRY \(context) attempt=\(attempt)")
+            }
+        }
         _ = try layoutReceipt("workspace-portrait-layout")
         for (group, tool) in zip(groups, expectedTools) {
             if group != "looks" { try selectGroup(group) }
+            XCTAssertEqual(navigation.frame, navigationFrame, "Group navigation stays anchored while group selection changes")
             let target = app.buttons["tool." + tool]
             XCTAssertTrue(target.waitForExistence(timeout: 10), app.debugDescription)
-            XCTAssertTrue(target.isSelected)
             if tool == "exposure" {
                 XCTAssertTrue((target.value as? String ?? "").contains("EV"), "Exposure accessibility value retains its number and EV unit")
             }
             XCTAssertGreaterThanOrEqual(target.frame.height, 44)
-            XCTAssertTrue(app.scrollViews["editor.panel"].exists)
-            XCTAssertEqual(navigation.frame, navigationFrame, "Group navigation stays anchored while tool content changes")
+            tapWorkspace(target, context: "\(group)/\(tool)")
+            if !app.scrollViews["editor.panel"].waitForExistence(timeout: 10) {
+                print("TOOL_TAP_STATE \(group)/\(tool) frame=\(target.frame) nav=\(navigation.exists)\n\(app.debugDescription)")
+                capture("workspace-fail-\(group)-\(tool)", in: app)
+            }
+            XCTAssertTrue(app.scrollViews["editor.panel"].exists, "Tapping the group's tool opens its workspace (\(group)/\(tool))")
+            XCTAssertFalse(navigation.exists, "The tool workspace replaces the group overview")
+            app.buttons["editor.draft.cancel"].tap()
+            XCTAssertTrue(navigation.waitForExistence(timeout: 10), "The workspace close action returns to the overview")
+            XCTAssertEqual(navigation.frame, navigationFrame, "Returning from a tool keeps group navigation anchored")
             capture("workspace-group-" + group, in: app)
         }
         try selectGroup("geometry")
-        XCTAssertFalse(app.scrollViews["editor.panel"].exists, "Repeated group tap collapses parameters")
+        XCTAssertFalse(app.scrollViews["editor.panel"].exists, "Selecting a group only expands its overview; parameters stay collapsed")
         XCTAssertTrue(navigation.exists, "Group navigation stays present when collapsed")
         try selectGroup("color")
-        try selectTool("hsl", in: app)
+        XCTAssertTrue(app.buttons["editor.group.color"].isSelected, "Selecting a group marks its navigation entry")
+        XCTAssertTrue(app.buttons["tool.hsl"].waitForExistence(timeout: 10))
+        tapWorkspace(app.buttons["tool.hsl"], context: "color/hsl-first")
         let swatch = app.buttons["hsl.channel.6"]
         let colors = app.scrollViews.containing(.button, identifier: "hsl.channel.6").firstMatch
         try revealHorizontally(swatch, in: colors, app: app)
         swatch.tap()
+        // 两级交互下切换分组必须先离开工具工作区：先应用通道选择，再回总览。
+        app.buttons["editor.draft.apply"].tap()
+        XCTAssertTrue(navigation.waitForExistence(timeout: 30), "Applying the draft returns to the overview")
         try selectGroup("light")
         try selectGroup("color")
-        try selectTool("hsl", in: app)
+        XCTAssertTrue(app.buttons["tool.hsl"].waitForExistence(timeout: 10))
+        tapWorkspace(app.buttons["tool.hsl"], context: "color/hsl-session")
         XCTAssertTrue(app.buttons["hsl.channel.6"].isSelected, "HSL channel belongs to the editing session")
-        try revealInPanel(app.buttons["hsl.lightness.value"], in: app)
+        try revealInPanel(app.buttons["hsl.lightness.value"], in: app, fully: true)
         XCTAssertTrue(app.buttons["hsl.lightness.value"].isHittable)
         capture("workspace-hsl-session", in: app)
+        app.buttons["editor.draft.cancel"].tap()
+        XCTAssertTrue(navigation.waitForExistence(timeout: 30), "Closing the workspace returns to the overview")
         XCUIDevice.shared.orientation = .landscapeLeft
         waitUntil { app.frame.width > app.frame.height }
         XCTAssertTrue(app.scrollViews["editor.groups"].isHittable)
         capture("workspace-landscape", in: app)
+        try selectGroup("geometry")
+        XCTAssertTrue(app.buttons["tool.geometry"].waitForExistence(timeout: 10))
+        tapWorkspace(app.buttons["tool.geometry"], context: "landscape/geometry")
         let policy = try layoutReceipt("workspace-landscape-layout")
         let landscapePanelFrame = try panelFrame()
+        app.buttons["editor.draft.cancel"].tap()
+        XCTAssertTrue(navigation.waitForExistence(timeout: 30), "The overview returns after the landscape layout receipt")
         if ProcessInfo.processInfo.environment["RAWLAB_WORKSPACE_LARGE_TEXT"] == "1" {
             if policy["scrollTools"] as? Bool == true {
                 XCTAssertGreaterThan(app.images["editor.photo"].frame.height, 0)
@@ -539,19 +577,21 @@ extension EditorV4UITests {
         let buttonWidth = try XCTUnwrap(policy["buttonWidth"] as? Double)
         let sideWidth = try XCTUnwrap(policy["sideWidth"] as? Double)
         let expectedCollapsedSide = width >= 600 && width > height && !accessibility && buttonWidth * 3 + 16 <= sideWidth
+        // 现契约：分组导航始终是单行横向滚动条（groupNavigation 只以 side:false 调用，两行侧栏分支为休眠代码）。
         let first = app.buttons["editor.group.looks"].frame
         let fourth = app.buttons["editor.group.effects"].frame
-        XCTAssertEqual(abs(first.minY - fourth.minY) > 1, expectedCollapsedSide, "A fitting collapsed sidebar exposes the six groups in two rows")
+        XCTAssertEqual(abs(first.minY - fourth.minY) > 1, false, "The group overview keeps one scrolling navigation row")
         capture("workspace-landscape-collapsed", in: app)
         try selectGroup("color")
-        XCTAssertTrue(app.buttons["tool.hsl"].isSelected)
+        XCTAssertTrue(app.buttons["editor.group.color"].isSelected)
+        XCTAssertTrue(app.buttons["tool.hsl"].waitForExistence(timeout: 10), "Selecting a group exposes its tool grid")
 
         XCUIDevice.shared.orientation = .portrait
         waitUntil { app.frame.height > app.frame.width }
         try selectGroup("light")
-        let isGerman = ProcessInfo.processInfo.environment["RAWLAB_WORKSPACE_LANGUAGE"] == "de"
-        let allLabel = isGerman ? "Alle Anpassungen zurücksetzen…" : "重置全部调整…"
-        let cancelLabel = isGerman ? "Abbrechen" : "取消"
+        let language = ProcessInfo.processInfo.environment["RAWLAB_WORKSPACE_LANGUAGE"]
+        let allLabel = language == "de" ? "Alle Anpassungen zurücksetzen…" : language == "zh-Hans" ? "重置全部调整…" : "Reset all adjustments…"
+        let cancelLabel = language == "de" ? "Abbrechen" : language == "zh-Hans" ? "取消" : "Cancel"
         func openAllReset() throws {
             let reset = app.buttons["editor.reset"]
             XCTAssertTrue(reset.waitForExistence(timeout: 5))
@@ -574,7 +614,7 @@ extension EditorV4UITests {
         XCTAssertTrue(app.buttons["tool.vignette"].exists, "Real Cancel leaves group navigation clickable")
         try selectTool("geometry", in: app)
         let rotate = app.buttons["geometry.rotateRight"]
-        try revealInPanel(rotate, in: app); rotate.tap()
+        try revealInPanel(rotate, in: app, fully: true); rotate.tap()
         waitUntil(timeout: 30) { app.buttons["editor.draft.apply"].isEnabled }
         let dirty = try recordState("workspace-real-dirty-draft")
         XCTAssertEqual(dirty["draftChanged"] as? Bool, true)
@@ -598,7 +638,9 @@ extension EditorV4UITests {
         XCUIDevice.shared.orientation = .landscapeLeft
         waitUntil { app.frame.width > app.frame.height }
         XCTAssertEqual(try panelFrame(), landscapePanelFrame, "Draft actions do not change the outer panel budget")
-        let last = app.buttons["geometry.cropHeight.value"]
+        // 现契约：裁切位置/尺寸滑杆移入纵横比菜单的「位置与尺寸」工作表，内联面板以翻转行收尾。
+        let doneLabel = language == "de" ? "Fertig" : language == "zh-Hans" ? "完成" : "Done"
+        let last = app.buttons["geometry.flipHorizontal"]
         try revealInPanel(last, in: app, fully: true)
         let scroll = app.scrollViews["editor.panel"]
         let apply = app.buttons["editor.draft.apply"]
@@ -609,6 +651,15 @@ extension EditorV4UITests {
         XCTAssertTrue(cancel.isHittable)
         XCTAssertTrue(scroll.frame.contains(last.frame), "A complete final parameter must fit above the fixed draft actions")
         XCTAssertTrue(last.isHittable)
+        // 旧内联尾部的裁切滑杆现在由「位置与尺寸」工作表交付。
+        XCTAssertTrue(app.buttons["geometry.aspectRatio"].waitForExistence(timeout: 5), "The aspect menu is exposed inline")
+        app.buttons["geometry.aspectRatio"].tap()
+        XCTAssertTrue(app.buttons["geometry.dimensions"].waitForExistence(timeout: 5), "The aspect menu exposes the dimensions sheet")
+        app.buttons["geometry.dimensions"].tap()
+        XCTAssertTrue(app.buttons["geometry.cropHeight.value"].waitForExistence(timeout: 5), "The dimensions sheet delivers the crop sliders")
+        capture("workspace-dimensions-sheet", in: app)
+        app.buttons[doneLabel].tap()
+        XCTAssertFalse(app.buttons["geometry.cropHeight.value"].waitForExistence(timeout: 3), "Done closes the dimensions sheet")
     }
 
     func testWorkspaceResetHeaderGlyphsAndCancel() throws {

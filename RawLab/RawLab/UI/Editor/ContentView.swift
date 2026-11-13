@@ -116,7 +116,6 @@ struct ContentView: View {
     @State var preparedReset: PreparedEditorReset?
     @State var preparedResetScope: EditorAdjustmentScope?
     @State var resetConfirmationPresented = false
-    @State var suppressNextDraftPreview = false
     @State var autoExposing = false
     @State var settingsRevision = UUID()
     @State var selectedPhotoItem: PhotosPickerItem?
@@ -155,7 +154,6 @@ struct ContentView: View {
     @ScaledMetric(relativeTo: .body) var panelHeight = 220.0
     @ScaledMetric(relativeTo: .subheadline) var panelHeaderHeight = 44.0
     @State var parameterContentHeight: CGFloat = 0
-    @State var parameterActionsHeight: CGFloat = 0
 
     var body: some View {
         let _ = localizationLocale
@@ -373,8 +371,7 @@ struct ContentView: View {
         .onChange(of: editorDraftSnapshot) { old, draft in
             viewModel.hasAdjustmentDraft = draft.isActive
             if old.projecting(on: settings) != draft.projecting(on: settings), draft.isActive {
-                if suppressNextDraftPreview { suppressNextDraftPreview = false }
-                else { previewEditorDraft() }
+                previewEditorDraft()
             }
         }
         .onChange(of: geometryDraftState) { _, _ in syncGeometryDraft() }
@@ -403,7 +400,6 @@ struct ContentView: View {
             preparedReset = nil
             preparedResetScope = nil
             resetConfirmationPresented = false
-            suppressNextDraftPreview = false
             draftExitPresented = false
             cancelRulerFocus()
             // Import renders the committed crop; the retained geometry tool needs the full image.
