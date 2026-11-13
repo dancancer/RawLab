@@ -8,6 +8,8 @@ import importlib.util
 import io
 import os
 from pathlib import Path
+import subprocess
+import tempfile
 import unittest
 import unittest.mock
 import urllib.error
@@ -35,13 +37,17 @@ def jobs(labels=None, status="queued", count=1):
 
 
 class FakeAPI:
-    """Stub with the live-pinned contract: jobs list, queue, and the generate-jitconfig shape."""
+    """Stub with the live-pinned contract: jobs list, queue, and the generate-jitconfig shapes.
+
+    The stub also rejects request keys outside the pinned schema, so a reappearing invented
+    field (runner_label, ephemeral, ...) turns the table red without touching the network."""
 
     def __init__(self, jobs_by_run=None, config="cfg-1", runs=()):
         self.jobs_by_run = jobs_by_run or {}
         self.config = config
         self.runs = list(runs)
         self.generated = []
+        self.deleted = []
 
     def queued_runs(self):
         return self.runs
@@ -51,10 +57,29 @@ class FakeAPI:
 
     def generate_jitconfig(self, payload):
         self.generated.append(payload)
+        assert {"name", "runner_group_id", "labels"} <= set(payload) <= {"name", "runner_group_id",
+                                                                         "labels", "work_folder"}, \
+            f"request keys drifted from the pinned schema: {sorted(payload)}"
         runner = {"id": 25, "name": payload.get("name", ""), "os": "macOS", "status": "offline",
                   "busy": False, "version": "2.338.2", "runner_group_id": payload.get("runner_group_id"),
                   "labels": [{"id": 0, "name": label} for label in payload.get("labels", [])]}
         return {"runner": runner, "encoded_jit_config": self.config} if self.config else {"runner": runner}
+
+    def delete_runner(self, runner_id):
+        self.deleted.append(runner_id)
+
+
+class FakeProcess:
+    pid = 4242
+
+    def __init__(self, returncode=0, raise_on_wait=None):
+        self.returncode = returncode
+        self.raise_on_wait = raise_on_wait
+
+    def wait(self, timeout=None):
+        if self.raise_on_wait:
+            raise self.raise_on_wait
+        return self.returncode
 
 
 class DecisionTableTests(unittest.TestCase):
@@ -173,26 +198,44 @@ class DispatchPayloadTests(unittest.TestCase):
         self.launches.append((config, runner_dir, argv, timeout))
         return 0
 
+    def popen_factory(self, seen, process=None):
+        def factory(argv, cwd=None, env=None, start_new_session=False):
+            seen.update(argv=argv, cwd=cwd, env=env, start_new_session=start_new_session)
+            return process or FakeProcess()
+        return factory
+
     def test_jit_payload_carries_the_live_pinned_contract(self):
         api = FakeAPI(jobs_by_run={101: jobs()})
         code = jit.dispatch(run(), api, runner_label=LABEL, work_folder="/Volumes/RawLabCI/_work",
                             launch_argv=None, run_process=self.launch, log=lambda *a: None)
         self.assertEqual(code, 0)
         payload = api.generated[0]
+        self.assertEqual(set(payload), {"name", "runner_group_id", "labels", "work_folder"},
+                         "the request schema is exactly these four keys; no invented fields")
         self.assertEqual(payload["runner_group_id"], 1, "the API 422s without the runner group (probe 2026-11-14)")
         self.assertEqual(payload["labels"], REGISTRATION)
-        self.assertEqual(payload["runner_label"], LABEL)
-        self.assertTrue(payload["ephemeral"], "the runner must burn down after one job")
         self.assertEqual(payload["work_folder"], "/Volumes/RawLabCI/_work")
         self.assertRegex(payload["name"], r"-101-900-[0-9a-f]{6}$")
         self.assertLessEqual(len(payload["name"]), 64, "unique suffix, clamped to the API's runner-name limit")
         self.assertEqual(self.launches, [("cfg-1", ".", None, jit.DEFAULT_RUNNER_TIMEOUT)])
 
-    def test_missing_encoded_jit_config_fails_instead_of_launching_anything(self):
+    def test_missing_encoded_jit_config_deletes_the_registration(self):
         api = FakeAPI(jobs_by_run={101: jobs()}, config="")
         with self.assertRaisesRegex(RuntimeError, "encoded_jit_config"):
             jit.dispatch(run(), api, run_process=self.launch, log=lambda *a: None)
         self.assertEqual(self.launches, [])
+        self.assertEqual(api.deleted, [25], "the POST created a runner; do not leak it offline")
+
+    def test_failed_launch_cleans_up_the_registration(self):
+        api = FakeAPI(jobs_by_run={101: jobs()})
+
+        def boom(config, runner_dir, argv, timeout):
+            raise FileNotFoundError(2, "No such file or directory", "./run.sh")
+
+        with self.assertRaises(FileNotFoundError):
+            jit.dispatch(run(), api, run_process=boom, log=lambda *a: None)
+        self.assertEqual(len(api.generated), 1)
+        self.assertEqual(api.deleted, [25], "no offline-runner leak storm per poll interval")
 
     def test_vanished_job_aborts_before_spending_a_registration(self):
         api = FakeAPI(jobs_by_run={})  # another runner won the race between poll and dispatch
@@ -200,44 +243,61 @@ class DispatchPayloadTests(unittest.TestCase):
         self.assertEqual(api.generated, [])
         self.assertEqual(self.launches, [])
 
-    def test_launch_runner_defaults_to_runsvc_env_config_and_timeout(self):
+    def test_precheck_refuses_before_spending_a_registration(self):
+        api = FakeAPI(jobs_by_run={101: jobs()})
+        with unittest.mock.patch.object(jit.subprocess, "Popen",
+                                        lambda *a, **k: self.fail("must not reach Popen")):
+            with self.assertRaisesRegex(RuntimeError, "no JIT registration spent"):
+                jit.dispatch(run(), api, runner_dir="/definitely-missing-runner-dir", log=lambda *a: None)
+        self.assertEqual(api.generated, [], "a bad --runner-dir must never burn JIT registrations")
+
+    def test_precheck_passes_and_launch_reads_config_from_the_environment(self):
+        with tempfile.TemporaryDirectory() as runner_dir:
+            script = Path(runner_dir) / "run.sh"  # the script a fresh archive root actually ships
+            script.write_text("#!/bin/sh\nexit 0\n")
+            script.chmod(0o755)
+            api = FakeAPI(jobs_by_run={101: jobs()})
+            seen = {}
+            with unittest.mock.patch.object(jit.subprocess, "Popen", self.popen_factory(seen)):
+                code = jit.dispatch(run(), api, runner_dir=runner_dir, log=lambda *a: None)
+        self.assertEqual(code, 0)
+        self.assertEqual(seen["argv"], ["./run.sh"], "no token in argv for a three-hour job")
+        self.assertEqual(seen["env"]["ACTIONS_RUNNER_INPUT_JITCONFIG"], "cfg-1")
+        self.assertTrue(seen["start_new_session"], "timeout must SIGTERM the whole group, not orphan the listener")
+        self.assertEqual(api.deleted, [])
+
+    def test_launch_runner_defaults_to_run_sh_env_config_and_group_timeout(self):
         seen = {}
-
-        class Completed:
-            returncode = 0
-
-        def fake_run(argv, cwd=None, env=None, timeout=None):
-            seen.update(argv=argv, cwd=cwd, env=env, timeout=timeout)
-            return Completed()
-
-        original = jit.subprocess.run
-        jit.subprocess.run = fake_run
-        try:
+        with unittest.mock.patch.object(jit.subprocess, "Popen", self.popen_factory(seen)):
             self.assertEqual(jit.launch_runner("cfg-9", runner_dir="/jit-runner"), 0)
-        finally:
-            jit.subprocess.run = original
-        self.assertEqual(seen["argv"], ["./runsvc.sh"], "no token exposure in `ps` for a three-hour job")
+        self.assertEqual(seen["argv"], ["./run.sh"], "runsvc.sh at the root only exists after svc.sh install")
         self.assertEqual(seen["cwd"], "/jit-runner")
         self.assertEqual(seen["env"]["ACTIONS_RUNNER_INPUT_JITCONFIG"], "cfg-9")
         self.assertEqual(seen["env"]["GITHUB_ACTIONS_SERVICE_EXIT_AFTER_N_FAILURES"], "1")
-        self.assertEqual(seen["timeout"], jit.DEFAULT_RUNNER_TIMEOUT)
+        self.assertTrue(seen["start_new_session"])
+
+    def test_launch_timeout_sigterms_the_process_group(self):
+        boom = subprocess.TimeoutExpired(cmd="./run.sh", timeout=1)
+        killed = []
+        with unittest.mock.patch.object(jit.subprocess, "Popen",
+                                        lambda *a, **k: FakeProcess(raise_on_wait=boom)), \
+                unittest.mock.patch.object(jit.os, "getpgid", lambda pid: 777), \
+                unittest.mock.patch.object(jit.os, "killpg", lambda pgid, sig: killed.append((pgid, sig))):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                jit.launch_runner("cfg-9")
+        self.assertEqual(killed, [(777, jit.signal.SIGTERM)])
+
+    def test_runsvc_override_reads_the_jit_config_from_the_environment(self):
+        seen = {}
+        with unittest.mock.patch.object(jit.subprocess, "Popen", self.popen_factory(seen)):
+            jit.launch_runner("cfg-9", runner_dir="/jit-runner", argv="./bin/runsvc.sh")
+        self.assertEqual(seen["argv"], ["./bin/runsvc.sh"], "service-mode variant lives under bin/ in a fresh archive")
+        self.assertEqual(seen["env"]["ACTIONS_RUNNER_INPUT_JITCONFIG"], "cfg-9")
 
     def test_manual_run_sh_override_still_receives_the_config_via_placeholder(self):
         seen = {}
-
-        class Completed:
-            returncode = 0
-
-        def fake_run(argv, cwd=None, env=None, timeout=None):
-            seen.update(argv=argv, env=env)
-            return Completed()
-
-        original = jit.subprocess.run
-        jit.subprocess.run = fake_run
-        try:
+        with unittest.mock.patch.object(jit.subprocess, "Popen", self.popen_factory(seen)):
             jit.launch_runner("cfg-9", runner_dir="/jit-runner", argv="./run.sh --jitconfig {config}")
-        finally:
-            jit.subprocess.run = original
         self.assertEqual(seen["argv"], ["./run.sh", "--jitconfig", "cfg-9"])
         self.assertEqual(seen["env"]["ACTIONS_RUNNER_INPUT_JITCONFIG"], "cfg-9")
 
@@ -259,10 +319,12 @@ class ApiWiringTests(unittest.TestCase):
         self.assertEqual(api.jobs(5), [])
         self.assertEqual(api.generate_jitconfig({"name": "jit"}),
                          {"runner": {"id": 25}, "encoded_jit_config": "cfg"})
+        api.delete_runner(25)
         self.assertEqual(calls[0], ("GET", "/repos/dancancer/RawLab/actions/runs?status=queued&per_page=100", None))
         self.assertEqual(calls[1], ("GET", "/repos/dancancer/RawLab/actions/runs?status=in_progress&per_page=100", None))
         self.assertEqual(calls[2], ("GET", "/repos/dancancer/RawLab/actions/runs/5/jobs?per_page=100", None))
         self.assertEqual(calls[3], ("POST", "/repos/dancancer/RawLab/actions/runners/generate-jitconfig", {"name": "jit"}))
+        self.assertEqual(calls[4], ("DELETE", "/repos/dancancer/RawLab/actions/runners/25", None))
 
     def test_generate_jitconfig_permission_error_names_the_pat_scopes(self):
         def raise_403(method, path, payload):
@@ -271,6 +333,21 @@ class ApiWiringTests(unittest.TestCase):
         api = jit.ActionsAPI("tok", request=raise_403)
         with self.assertRaisesRegex(RuntimeError, "Administration"):
             api.generate_jitconfig({"name": "jit"})
+
+    def test_urllib_survives_the_empty_204_body_of_DELETE(self):
+        class EmptyResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            @staticmethod
+            def read():
+                return b""
+
+        with unittest.mock.patch.object(jit.urllib.request, "urlopen", lambda request, timeout=None: EmptyResponse()):
+            self.assertEqual(jit.ActionsAPI("tok").delete_runner(25), None)
 
 
 class MainTests(unittest.TestCase):
@@ -313,6 +390,15 @@ class LaunchdExampleTests(unittest.TestCase):
         self.assertIn("<string>/Users/rawlab-ci/jit-runner</string>", self.text)
         self.assertNotIn("<string>/Users/rawlab-ci/runner</string>", self.text,
                          "sharing the resident directory would overwrite its .runner/.credentials")
+
+    def test_plist_launches_the_script_a_fresh_archive_actually_ships(self):
+        self.assertIn("<string>./run.sh</string>", self.text)
+        self.assertNotIn("<string>./runsvc.sh</string>", self.text,
+                         "runsvc.sh at the archive root only exists after svc.sh install")
+
+    def test_plist_comments_carry_the_provisioned_environment_files(self):
+        self.assertIn(".path", self.text, "the Apple jobs need the provisioned PATH file copied in")
+        self.assertIn(".env", self.text, "DEVELOPER_DIR and the cache keys ride on the copied .env")
 
     def test_plist_declares_process_type_interactive(self):
         self.assertIn("<key>ProcessType</key>", self.text)

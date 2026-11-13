@@ -12,10 +12,15 @@ it in the allowlist; it simply waits in the queue and expires.
 Live contract, pinned by a 2026-11-14 probe against REST API version 2022-11-28: the request
 requires ``name``, ``runner_group_id`` (the Default group is ``1``) and ``labels`` (omitting the
 group answers 422), the response is ``{"runner": {...}, "encoded_jit_config": "..."}``, and the
-POST creates the runner registration immediately — a launch that never starts leaves an offline
-runner to delete from Settings → runners. The fine-grained PAT therefore needs the repository
-``Administration`` permission (write) plus ``Actions`` (read) for polling; a classic PAT needs
-the ``repo`` scope.
+POST creates the runner registration immediately — a launch that fails to start is cleaned up
+with a best-effort DELETE of that registration (Settings → runners covers the residual case).
+The fine-grained PAT therefore needs the repository ``Administration`` permission (write) plus
+``Actions`` (read) for polling; a classic PAT needs the ``repo`` scope.
+
+A JIT runner directory is a fresh ``tar -xzf`` of the runner archive: its root ships ``run.sh``
+(``./runsvc.sh`` only exists after ``svc.sh install``), and the Apple jobs need the provisioned
+``.path``/``.env`` environment files copied in — never ``.runner*``/``.credentials*``, which
+belong to the registration itself.
 
 State discipline: every decision lives in memory and in GitHub's own queue, so retiring the
 dispatcher means deleting these files (see docs/process/ci.md); nothing private is left behind.
@@ -26,6 +31,7 @@ import http.client
 import json
 import os
 import shlex
+import signal
 import socket
 import subprocess
 import sys
@@ -125,14 +131,22 @@ def next_dispatch(runs, jobs_of, *, repo=DEFAULT_REPO, runner_label=DEFAULT_RUNN
 
 
 def launch_runner(config, runner_dir=".", argv=None, timeout=DEFAULT_RUNNER_TIMEOUT):
-    """Start the single-use runner. The configuration travels only through
-    ACTIONS_RUNNER_INPUT_JITCONFIG (never argv, so a long job does not expose it in `ps`) and
-    GITHUB_ACTIONS_SERVICE_EXIT_AFTER_N_FAILURES=1 keeps RunnerService from retry-looping on a
-    consumed config; the timeout is a last-resort backstop above the workflow's own timeout."""
+    """Start the single-use runner from a fresh archive root. The default is ``./run.sh`` —
+    ``./runsvc.sh`` exists only after ``svc.sh install``, while ``run.sh`` ships in the archive
+    root and forwards to ``Runner.Listener run``. The configuration travels only through
+    ACTIONS_RUNNER_INPUT_JITCONFIG (never argv, so a long job does not expose it in `ps`);
+    GITHUB_ACTIONS_SERVICE_EXIT_AFTER_N_FAILURES=1 guards the runsvc.sh override mode against
+    retry loops. The process leads its own group so the timeout backstop can SIGTERM the whole
+    tree (run.sh traps TERM into a graceful listener stop) instead of orphaning the listener."""
     env = {**os.environ, "ACTIONS_RUNNER_INPUT_JITCONFIG": config,
            "GITHUB_ACTIONS_SERVICE_EXIT_AFTER_N_FAILURES": "1"}
-    parts = [part.replace("{config}", config) for part in (shlex.split(argv) if argv else ["./runsvc.sh"])]
-    return subprocess.run(parts, cwd=runner_dir, env=env, timeout=timeout).returncode
+    parts = [part.replace("{config}", config) for part in (shlex.split(argv) if argv else ["./run.sh"])]
+    process = subprocess.Popen(parts, cwd=runner_dir, env=env, start_new_session=True)
+    try:
+        return process.wait(timeout)
+    except subprocess.TimeoutExpired:
+        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+        raise
 
 
 class ActionsAPI:
@@ -150,7 +164,8 @@ class ActionsAPI:
             "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": API_VERSION,
             "Authorization": f"Bearer {self.token}"})
         with urllib.request.urlopen(request, timeout=30) as response:
-            return json.load(response)
+            body = response.read()  # DELETE answers 204 with an empty body (drill 2026-11-14)
+            return json.loads(body) if body else {}
 
     def queued_runs(self, statuses=POLL_STATUSES):
         """Every run that could wait for this machine (one page each; this repo never fills one)."""
@@ -163,6 +178,9 @@ class ActionsAPI:
     def jobs(self, run_id):
         query = urllib.parse.urlencode({"per_page": 100})
         return self._request("GET", f"/repos/{self.repo}/actions/runs/{run_id}/jobs?{query}", None)["jobs"]
+
+    def delete_runner(self, runner_id):
+        self._request("DELETE", f"/repos/{self.repo}/actions/runners/{runner_id}", None)
 
     def generate_jitconfig(self, payload):
         try:
@@ -181,32 +199,52 @@ def dispatch(run, api, *, runner_label=DEFAULT_RUNNER_LABEL, runner_labels=DEFAU
     """Ask for a single-use registration and run exactly one job, then exit.
 
     The job list is re-read here; if another runner won the race in the meantime, the dispatch
-    aborts before spending a JIT registration (the POST creates the runner record immediately)."""
+    aborts before spending a JIT registration (the POST creates the runner record immediately).
+    A launch that fails to start is answered with a best-effort DELETE of that registration, so
+    a bad --runner-dir cannot leak one offline runner per poll."""
     ours = open_runner_jobs(api.jobs(run["id"]), runner_label, runner_labels)
     if not ours:
         log(f"run {run['id']}: job vanished before dispatch; no JIT token spent")
         return None
+    parts = shlex.split(launch_argv) if launch_argv else ["./run.sh"]
+    if run_process is None and not os.access(os.path.join(runner_dir, parts[0]), os.X_OK):
+        raise RuntimeError(f"launch script '{parts[0]}' is not executable in '{runner_dir}': a fresh runner "
+                           "archive ships run.sh at its root (runsvc.sh needs svc.sh install); unpack the "
+                           "archive and pass --runner-dir; no JIT registration spent")
     job_id = ours[0].get("id")
     name = f"jit-{socket.gethostname().split('.')[0]}-{run['id']}-{job_id}-{uuid.uuid4().hex[:6]}"[:64]
-    payload = {"name": name, "runner_group_id": runner_group_id, "labels": list(runner_labels),
-               "runner_label": runner_label, "ephemeral": True}
+    payload = {"name": name, "runner_group_id": runner_group_id, "labels": list(runner_labels)}
     if work_folder:
         payload["work_folder"] = work_folder
     response = api.generate_jitconfig(payload)
+    runner_id = (response.get("runner") or {}).get("id")
     config = response.get("encoded_jit_config") or ""
+
+    def cleanup():
+        if runner_id is None:
+            return
+        try:
+            api.delete_runner(runner_id)
+        except (OSError, ValueError) as error:
+            log(f"could not delete leaked runner '{name}' ({runner_id}): {error}; remove it under Settings → runners")
+
     if not config:
-        raise RuntimeError(f"generate-jitconfig returned no encoded_jit_config for run {run['id']}; "
-                           f"delete the runner registration '{name}' from Settings → runners")
+        cleanup()
+        raise RuntimeError(f"generate-jitconfig returned no encoded_jit_config for run {run['id']}")
     log(f"run {run['id']}: launching ephemeral runner {name} for job {job_id}")
     process = run_process or launch_runner
-    return process(config, runner_dir, launch_argv, runner_timeout)
+    try:
+        return process(config, runner_dir, launch_argv, runner_timeout)
+    except (OSError, subprocess.SubprocessError):
+        cleanup()
+        raise
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Poll the Actions queue and hand only trusted runs to ephemeral runners.")
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", DEFAULT_REPO))
     parser.add_argument("--runner-label", default=DEFAULT_RUNNER_LABEL,
-                        help="label passed as runner_label to restrict the JIT job (default: %(default)s)")
+                        help="job label the queue filter requires this machine to serve (default: %(default)s)")
     parser.add_argument("--runner-labels", default=DEFAULT_RUNNER_LABELS,
                         help="comma-separated labels the ephemeral runner registers with")
     parser.add_argument("--runner-group-id", type=int, default=DEFAULT_RUNNER_GROUP_ID,
@@ -216,12 +254,14 @@ def main(argv=None):
     parser.add_argument("--allowlist-env", default="RAWLAB_JIT_ALLOWLIST",
                         help="environment variable holding the comma-separated allowlist")
     parser.add_argument("--runner-dir", default=".",
-                        help="pristine actions/runner directory for JIT only (keep the resident directory separate)")
+                        help="fresh runner archive directory for JIT only (with .path/.env copied from the "
+                             "provisioned resident runner; keep the resident directory itself separate)")
     parser.add_argument("--work-folder", default="",
                         help="runner work_folder passed to generate-jitconfig (default: the server's _work)")
     parser.add_argument("--launch-command", default="",
                         help="runner launch override; the token {config} is replaced with the JIT config "
-                             "(default: './runsvc.sh', which reads ACTIONS_RUNNER_INPUT_JITCONFIG)")
+                             "(default: './run.sh', which ships in the archive root and reads "
+                             "ACTIONS_RUNNER_INPUT_JITCONFIG; './bin/runsvc.sh' is the service-mode variant)")
     parser.add_argument("--interval", type=int, default=30, help="seconds between queue passes")
     parser.add_argument("--runner-timeout", type=int, default=DEFAULT_RUNNER_TIMEOUT,
                         help="hard backstop seconds for one runner process, above the workflow timeout")

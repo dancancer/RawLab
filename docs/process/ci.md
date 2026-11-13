@@ -280,7 +280,8 @@ runs get a `POST .../runners/generate-jitconfig` registration (`name` +
 pinned the contract: omitting the group answers 422, the response field is
 `encoded_jit_config`, and JIT runners are single-use by design — one job, then
 deregister). The POST creates the runner registration immediately, so a launch that
-never starts leaves an offline runner behind to delete under Settings → runners. Fork
+fails to start triggers a best-effort DELETE of that registration (Settings →
+runners covers the residual case) instead of leaking one offline runner per poll. Fork
 and non-conforming runs are never claimed: they wait in the queue and expire. One
 caveat is stated, not hidden — the JIT service hands a started runner the oldest
 queued job carrying the label (FIFO), so an *already approved* fork job can still be
@@ -289,14 +290,21 @@ approval policy above, while the dispatcher removes the standing listener that w
 execute unreviewed queue contents unconditionally.
 
 - **Enable (host-side, one Mac at a time)**: unpack the pinned `actions/runner`
-  archive into a **pristine** directory (`mkdir -p ~/jit-runner && tar -xzf
+  archive into a **fresh** directory (`mkdir -p ~/jit-runner && tar -xzf
   <runner-archive> -C ~/jit-runner`; never reuse the resident runner directory, whose
-  `.runner`/`.credentials` a JIT run would overwrite and deregister) and symlink its
-  `_work` to the pool volume; stop the resident runner's user agent (`./svc.sh stop`
-  in the runner directory, or its `launchctl bootout gui/$(id -u)/<runner-agent>`);
-  preview one queue pass with `RAWLAB_JIT_TOKEN=<PAT> python3
-  scripts/ci/jit_dispatch.py --once --dry-run` (plain `--once` decides *and dispatches
-  one job*); then copy
+  `.runner`/`.credentials` a JIT run would overwrite and deregister) and copy in the
+  provisioned environment files — `cp <resident-runner>/.path <resident-runner>/.env
+  ~/jit-runner/`, environment only, never `.runner*`/`.credentials*`/`.service` —
+  because the Apple jobs resolve `python`, `DEVELOPER_DIR` and the cache keys from
+  exactly those files; symlink the new directory's `_work` to the pool volume; stop
+  the resident runner's user agent (`./svc.sh stop` in the runner directory, or its
+  `launchctl bootout gui/$(id -u)/<runner-agent>`); preview one queue pass with
+  `RAWLAB_JIT_TOKEN=<PAT> python3 scripts/ci/jit_dispatch.py --once --dry-run`
+  (plain `--once` decides *and dispatches one job*; both preview and dispatch take
+  `--runner-dir ~/jit-runner` for the real launch). The dispatcher starts `./run.sh`
+  from the archive root with the config in `ACTIONS_RUNNER_INPUT_JITCONFIG` —
+  `./runsvc.sh` at the root exists only after `svc.sh install`, and `--launch-command
+  ./bin/runsvc.sh` is the service-mode override; then copy
   [`scripts/ci/launchd/com.rawlab.jit-dispatcher.plist`](../../scripts/ci/launchd/com.rawlab.jit-dispatcher.plist)
   to `~/Library/LaunchAgents/`, adjust the paths and the token placeholder (keep the
   file `0600`), and load it with `launchctl bootstrap gui/$(id -u)
@@ -308,7 +316,7 @@ execute unreviewed queue contents unconditionally.
   id — or the repository name for a transitional window — to `RAWLAB_JIT_ALLOWLIST` if
   this machine must keep serving them.
 - **Disable**: `launchctl bootout gui/$(id -u)/com.rawlab.jit-dispatcher`, remove the
-  copied plist, and restart the resident `Runner.Listener` agent; the pristine
+  copied plist, and restart the resident `Runner.Listener` agent; the fresh
   `~/jit-runner` directory can stay for the next activation. Queued jobs resume being
   served unchanged because no workflow file changed while the dispatcher was on.
 - **Attack-verification PR (one-time, after enabling)**: open a pull request from a
@@ -317,7 +325,7 @@ execute unreviewed queue contents unconditionally.
   rawlab-apple]`), and confirm all four observations: the dispatcher logs the run as
   `skip (untrusted …)`; no JIT token is generated for it while the allowlist stays
   empty, so with the resident listener stopped the job only queues; after allowlisting
-  the run id and re-running `--once`, one ephemeral runner claims it and deregisters;
+  the run id and re-running `--once --runner-dir ~/jit-runner`, one ephemeral runner claims it and deregisters;
   without the allowlist entry the job expires in the queue instead of executing on the
   machine.
 - **Retirement for hosted runners (deprecation path)**: the dispatcher keeps no state
