@@ -845,6 +845,44 @@ int main(int argc, char** argv) {
         "Sharpening changes real edges rather than only preview resizing");
     sony2fuji_release_buffer(&unsharpened);
     sony2fuji_release_buffer(&fullDetail); sony2fuji_release_buffer(&previewDetail);
+    {
+        auto bytesOf = [](const sony2fuji_buffer& b) {
+            const auto* p = static_cast<const unsigned char*>(b.data);
+            return p ? std::vector<unsigned char>(p, p + b.size_bytes) : std::vector<unsigned char>{};
+        };
+        auto denoiseRequest = request(detail.data());
+        denoiseRequest.input_width = denoiseRequest.input_height = 16;
+        denoiseRequest.size_mode = SONY2FUJI_SIZE_FIT_LONG_EDGE; denoiseRequest.long_edge = 8;
+        denoiseRequest.noise_reduction = 1.0f;
+        denoiseRequest.intent = SONY2FUJI_INTENT_FINAL;
+        sony2fuji_buffer exported{}, preview{}, plain{}, sharpened{}, viewport{};
+        const auto exportStatus = sony2fuji_process(session, &denoiseRequest, &exported);
+        auto previewRequest = denoiseRequest;
+        previewRequest.intent = SONY2FUJI_INTENT_PREVIEW; previewRequest.preview_long_edge = 8;
+        const auto previewStatus = sony2fuji_process(session, &previewRequest, &preview);
+        auto plainRequest = denoiseRequest; plainRequest.noise_reduction = 0;
+        const auto plainStatus = sony2fuji_process(session, &plainRequest, &plain);
+        check(exportStatus == SONY2FUJI_STATUS_OK && previewStatus == SONY2FUJI_STATUS_OK &&
+            exported.width == 8 && exported.height == 8 && bytesOf(exported) == bytesOf(preview),
+            "Legacy noise reduction uses original pixel scale in preview and final output");
+        check(plainStatus == SONY2FUJI_STATUS_OK && bytesOf(exported) != bytesOf(plain),
+            "Legacy noise reduction changes pixels rather than only preview resizing");
+        auto sharpenRequest = previewRequest; sharpenRequest.sharpening = 1e-4f;
+        const auto sharpenStatus = sony2fuji_process(session, &sharpenRequest, &sharpened);
+        const auto base = bytesOf(preview), nudged = bytesOf(sharpened);
+        int maxDelta = base.size() == nudged.size() && !base.empty() ? 0 : 256;
+        for (size_t i = 0; maxDelta <= 255 && i < base.size(); ++i)
+            maxDelta = std::max(maxDelta, std::abs(int(base[i]) - int(nudged[i])));
+        check(sharpenStatus == SONY2FUJI_STATUS_OK && maxDelta <= 1,
+            "Denoised preview stays continuous when sharpening leaves zero");
+        sony2fuji_session_set_viewport_preview(session, 1);
+        const auto viewportStatus = sony2fuji_process(session, &previewRequest, &viewport);
+        sony2fuji_session_set_viewport_preview(session, 0);
+        check(viewportStatus == SONY2FUJI_STATUS_OK && viewport.width == 8 && viewport.height == 8 &&
+            viewport.size_bytes == 8 * 8 * 3,
+            "Viewport preview keeps the reduced approximation for legacy noise reduction");
+        for (auto* b : {&exported, &preview, &plain, &sharpened, &viewport}) sony2fuji_release_buffer(b);
+    }
     std::vector<unsigned char> sizingPixels(18 * 12 * 3, 80);
     auto sizingRequest = request(sizingPixels.data());
     sizingRequest.input_width = 18; sizingRequest.input_height = 12;
