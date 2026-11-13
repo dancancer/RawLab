@@ -82,6 +82,7 @@ internal static class ControllerChecks
         await StartupAndQuit(check);
         await StateRepair(check);
         await FutureEnumStateStaysEditable(check);
+        await EvidenceComboKeepsInstallGate(check);
         await PreInstallSignatureRejectionDoesNotLockEditing(check);
         await InstallationFailureStaysEditable(check);
         await UpdateExeLaunchFailureStaysRetryable(check);
@@ -608,7 +609,7 @@ internal static class ControllerChecks
 
     private static async Task FutureEnumStateStaysEditable(Action<bool, string> check)
     {
-        // Q13 回滚兼容：旧版读到新版写入的未知枚举值时降级为 Idle，编辑区保持可用；
+        // Q13 回滚兼容：旧版读到新版写入的未知枚举值（无安装证据）时降级为 Idle，编辑区保持可用；
         // 已知 Installing/PendingRestart 的锁定语义由 WP-09 用例继续把守。
         var root = Path.Combine(Path.GetTempPath(), "rawlab-future-enum-" + Guid.NewGuid().ToString("N"));
         try
@@ -621,7 +622,9 @@ internal static class ControllerChecks
                 saved.PendingUpdate.Found(new("0.9.1", "19", "windows", "x64", "stable", "https://example.invalid/update.nupkg", 12, null, "Notes"), token);
                 var download = saved.PendingUpdate.BeginDownload()!.Value;
                 saved.PendingUpdate.Preparing(download); saved.PendingUpdate.Verified(download);
-                saved.PendingUpdate.Fail("network", "dropped", download);
+                saved.PendingUpdate.Choose(UpdateInstallChoice.AfterTasks);
+                // 失败阶段槽位用 Failed 基底；Phase/Choice 槽位保持 PackageReady 待装基底（评审 nit：贴合真实待装选择回滚）。
+                if (slot == "FailureStage") saved.PendingUpdate.Fail("network", "dropped", download);
                 var document = JsonNode.Parse(JsonSerializer.Serialize(saved))!.AsObject();
                 var pending = document["PendingUpdate"]!.AsObject();
                 if (slot == "Phase") pending["Phase"] = 99;
@@ -641,6 +644,51 @@ internal static class ControllerChecks
                 check(controller.State.Phase == UpdatePhase.Available && adapter.Checks == 1 &&
                     store.Load(true).PendingUpdate.Phase == UpdatePhase.Available,
                     "Future " + slot + " downgrade leaves the update state machine usable");
+            }
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    private static async Task EvidenceComboKeepsInstallGate(Action<bool, string> check)
+    {
+        // Q13 边界（碳审 critical）：未知枚举与安装证据并存时不得进入「删备份」的降级分支——
+        // 保持启动存储门禁、不触发 DiscardUnreferencedBackups、磁盘 BackupPath 保持被引用。
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-evidence-combo-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            foreach (var name in new[] { "Installing+futureChoice", "PendingRestart+futureChoice", "Failed@Installing+futureChoice", "futurePhase+backup", "futureStage+backup" })
+            {
+                var directory = Path.Combine(root, name.Replace('@', '-').Replace('+', '_'));
+                var store = new UpdateStore(directory); Directory.CreateDirectory(directory);
+                var backup = new UpdateDataBackup(Path.GetDirectoryName(directory)!, directory).Create("0.8.2", "14");
+                var saved = new UpdatePreferences { AutomaticCheck = true, LastCheck = DateTimeOffset.FromUnixTimeSeconds(1800000000) };
+                var token = saved.PendingUpdate.BeginCheck();
+                saved.PendingUpdate.Found(new("0.9.1", "19", "windows", "x64", "stable", "https://example.invalid/update.nupkg", 12, null, "Notes"), token);
+                var download = saved.PendingUpdate.BeginDownload()!.Value;
+                saved.PendingUpdate.Preparing(download); saved.PendingUpdate.Verified(download);
+                saved.PendingUpdate.Choose(UpdateInstallChoice.RestartNow);
+                var document = JsonNode.Parse(JsonSerializer.Serialize(saved))!.AsObject();
+                var pending = document["PendingUpdate"]!.AsObject();
+                pending["Choice"] = 99; pending["BackupPath"] = backup; pending["PreviousVersion"] = "0.8.2"; pending["PreviousBuild"] = "14";
+                if (name.StartsWith("Installing")) pending["Phase"] = (int)UpdatePhase.Installing;
+                else if (name.StartsWith("PendingRestart")) pending["Phase"] = (int)UpdatePhase.PendingRestart;
+                else if (name.StartsWith("Failed@")) { pending["Phase"] = (int)UpdatePhase.Failed;
+                    pending["Failure"] = new JsonObject { ["Stage"] = (int)UpdatePhase.Installing, ["Code"] = "interrupted", ["Detail"] = "lost" }; }
+                else if (name.StartsWith("futurePhase")) pending["Phase"] = 99;
+                else { pending["Phase"] = (int)UpdatePhase.Failed;
+                    pending["Failure"] = new JsonObject { ["Stage"] = 99, ["Code"] = "interrupted", ["Detail"] = "lost" }; }
+                File.WriteAllBytes(store.StatePath, JsonSerializer.SerializeToUtf8Bytes(document));
+                var onDisk = File.ReadAllBytes(store.StatePath);
+                var adapter = new Adapter();
+                var controller = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14");
+                check(controller.StorageError != null && controller.BlocksEditing && !controller.CanCheck && !controller.CanRepairState &&
+                    Directory.Exists(backup) && controller.State.Phase == UpdatePhase.Idle && File.ReadAllBytes(store.StatePath).SequenceEqual(onDisk),
+                    "Unknown enum with installation evidence (" + name + ") keeps the install gate and preserves the backup (Q13 boundary)");
+                var reopened = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14");
+                check(reopened.BlocksEditing && Directory.Exists(backup) && File.Exists(Path.Combine(backup, "manifest.json")) &&
+                    File.ReadAllBytes(store.StatePath).SequenceEqual(onDisk),
+                    "Reopening the evidence combo (" + name + ") still refuses silent backup deletion");
+                await Task.CompletedTask;
             }
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
