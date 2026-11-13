@@ -74,14 +74,15 @@ internal class CameraTetherJournal(private val directory: File) {
         return current
     }
 
-    fun load(): List<CameraTetherRun> = directory.listFiles().orEmpty().filter { it.isFile && it.extension == "json" }.map { file ->
-        try {
+    /** 逐个解析；读不出的记录原样保留并跳过，不影响其它联机记录。写回失败仍向上报告。 */
+    fun load(): List<CameraTetherRun> = directory.listFiles().orEmpty().filter { it.isFile && it.extension == "json" }.mapNotNull { file ->
+        val run = try {
             if (!validId(file.nameWithoutExtension) || file.length() > MAX_BYTES) throw IOException("Invalid tether journal file")
             val json = JSONObject(file.readText())
             if (json.getInt("version") != 1) throw IOException("Unsupported tether journal version")
             val batches = json.getJSONArray("batches")
             if (batches.length() > MAX_PHOTOS) throw IOException("Too many tether batches")
-            val run = CameraTetherRun(file.nameWithoutExtension, json.getString("camera"), json.getString("profile"), json.getLong("time"),
+            CameraTetherRun(file.nameWithoutExtension, json.getString("camera"), json.getString("profile"), json.getLong("time"),
                 readPhotos(json.getJSONArray("baseline")), CameraImportDestination(json.getString("directory"),
                     CameraDirectoryGrouping.valueOf(json.getString("grouping"))),
                 (0 until batches.length()).map { index -> batches.getJSONObject(index).let { batch ->
@@ -89,11 +90,9 @@ internal class CameraTetherJournal(private val directory: File) {
                 } }, CameraTetherStatus.valueOf(json.getString("status")),
                 if (json.has("shutterRequestedAt")) json.getLong("shutterRequestedAt") else null,
                 json.optJSONObject("hardwareIdentity")?.let { CameraHardwareIdentity(it.getString("model"), it.getString("serial")) },
-                json.optInt("rebasedBatches"))
-            validate(run)
-            if (run.status == CameraTetherStatus.ACTIVE) run.copy(status = CameraTetherStatus.PAUSED).also(::save) else run
-        } catch (error: IOException) { throw error }
-        catch (error: Exception) { throw IOException("Invalid tether journal", error) }
+                json.optInt("rebasedBatches")).also(::validate)
+        } catch (_: Exception) { return@mapNotNull null }
+        if (run.status == CameraTetherStatus.ACTIVE) run.copy(status = CameraTetherStatus.PAUSED).also(::save) else run
     }.sortedByDescending { it.createdAt }
 
     @Synchronized fun save(run: CameraTetherRun) {

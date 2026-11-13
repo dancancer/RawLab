@@ -414,6 +414,36 @@ class CameraImportStoreTest {
         assertTrue(fixture.media.rows.containsKey(saved.items.single().saved!!.uri))
     }
 
+    @Test fun unreadableJournalIsKeptWithoutHidingOtherJobsOrCleaningItsMedia() {
+        val damages = listOf<(File) -> Unit>(
+            { it.writeText("{broken") },
+            { it.writeText(JSONObject(it.readText()).put("version", 3).toString()) },
+            { it.writeText(JSONObject(it.readText()).put("status", "ARCHIVED").toString()) },
+            { it.appendBytes(ByteArray(8 * 1024 * 1024)) })
+        for (damage in damages) withStore { fixture, store ->
+            val kept = save(store)
+            // 待发布媒体已登记后中断，随后这份日志变得无法读取。
+            fixture.media.failBeforePublish = true
+            assertThrows(IOException::class.java) { save(store, raw.copyOf().also { it[20] = 7 }) }
+            fixture.media.failBeforePublish = false
+            val pending = fixture.media.rows.values.single { it.pending }
+            val journal = File(fixture.root, "jobs").listFiles()!!.single { it.nameWithoutExtension != kept.id }
+            damage(journal)
+            val damaged = journal.readBytes()
+
+            val reopened = fixture.store()
+            assertEquals(listOf(kept.id), reopened.load().map { it.id })
+            assertEquals(setOf(journal.nameWithoutExtension), reopened.unreadableJobIds)
+            assertTrue(fixture.media.rows.getValue(pending.uri).pending)
+            assertThrows(Exception::class.java) {
+                reopened.create("camera", listOf(photo()), CameraImportDestination(), id = journal.nameWithoutExtension)
+            }
+            assertEquals(CameraJobStatus.COMPLETE, save(reopened, raw.copyOf().also { it[21] = 9 }).status)
+            assertTrue(fixture.media.rows.getValue(pending.uri).pending)
+            assertArrayEquals(damaged, journal.readBytes())
+        }
+    }
+
     @Test fun restartingAfterExternalDeletionDoesNotReportTheOriginalAsSaved() = withStore { fixture, store ->
         val job = save(store)
         fixture.media.file(job.items.single().saved!!.uri).delete()
