@@ -579,6 +579,10 @@ private fun HDRRenditionRows(settings: HDRRenditionSettings, enabled: Boolean,
     NumericControl(R.string.hdr_sdr_saturation, settings.sdrSaturation, -100f..100f, "%", enabled,
         { value, dragging -> change(settings.copy(sdrSaturation = value), dragging) },
         { change(settings.copy(sdrSaturation = 0f), false) })
+    TextButton(onClick = { change(HDRRenditionSettings(), false) }, enabled = enabled && !settings.isDefault,
+        modifier = Modifier.testTag("hdr-rendition-reset")) {
+        Text(stringResource(R.string.editor_reset_confirm))
+    }
 }
 
 @Composable
@@ -642,8 +646,15 @@ internal fun HDRCameraDevelopmentRows(settings: HDRCameraDevelopmentSettings, en
             }
         }
     }
-    TextButton(onClick = { apply(draft) }, enabled = enabled && draft != settings, modifier = Modifier.testTag("hdr-camera-apply")) {
-        Text(stringResource(R.string.adjustment_apply))
+    Row {
+        // 只复位草稿；点「应用」后沿用既有预检与提交流程。
+        TextButton(onClick = { changeDraft(HDRCameraDevelopmentSettings()) }, enabled = enabled && !draft.isDefault,
+            modifier = Modifier.testTag("hdr-camera-reset")) {
+            Text(stringResource(R.string.editor_reset_confirm))
+        }
+        TextButton(onClick = { apply(draft) }, enabled = enabled && draft != settings, modifier = Modifier.testTag("hdr-camera-apply")) {
+            Text(stringResource(R.string.adjustment_apply))
+        }
     }
 }
 

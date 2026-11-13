@@ -147,7 +147,9 @@ object EditorAdjustmentRules {
     }
 
     private fun resetStored(scope: EditorResetScope, s: EditSettings, d: EditSettings): EditSettings = when (scope) {
-        EditorResetScope.All -> if (s.isHDREditing) d else d.copy(film = "neutral", recipeID = null, strength = 1f)
+        // 普通模式只复位 SDR 参数；休眠 HDR 快照及其 ProRAW 解码标识原样保留，isModified(All) 因此也忽略它们。
+        EditorResetScope.All -> if (s.isHDREditing) d else d.copy(film = "neutral", recipeID = null, strength = 1f,
+            hdr = s.hdr, sdrSnapshot = s.sdrSnapshot, proRAWDecodeVersion = s.proRAWDecodeVersion)
         EditorResetScope.AllGrading -> s.withEditingGrading(d.editingGrading)
         is EditorResetScope.GradingZone -> s.withEditingGrading(s.editingGrading.with(scope.zone, d.editingGrading[scope.zone]))
         EditorResetScope.AllHsl -> s.withEditingHsl(d.editingHsl)
