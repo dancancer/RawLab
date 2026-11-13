@@ -54,7 +54,7 @@ def dependency_inputs(root, platform, arch=None):
 
 
 def workflow_identity(root, platform, arch=None):
-    workflow = yaml.load((root / ".github/workflows/ci.yml").read_text(), Loader=yaml.BaseLoader)
+    workflow = yaml.load((root / ".github/workflows/ci.yml").read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
     job = workflow.get("jobs", {}).get(platform)
     if not isinstance(job, dict):
         raise ValueError(f"Native cache job is missing: {platform}")
@@ -157,7 +157,7 @@ def toolchain_identity(platform):
         installation = command(str(vswhere), "-latest", "-products", "*", "-requires",
                                "Microsoft.VisualStudio.Component.VC.Tools.x86.x64", "-property", "installationPath")
         vs = Path(installation)
-        version = (vs / "VC/Auxiliary/Build/Microsoft.VCToolsVersion.default.txt").read_text().strip()
+        version = (vs / "VC/Auxiliary/Build/Microsoft.VCToolsVersion.default.txt").read_text(encoding="utf-8").strip()
         compiler = vs / "VC/Tools/MSVC" / version / "bin/Hostx64/x64"
         identity["msvc"] = {"path": str(compiler), "version": version,
                             **hash_inputs(compiler, [compiler / name for name in ("cl.exe", "link.exe", "lib.exe")])}
@@ -165,7 +165,7 @@ def toolchain_identity(platform):
     elif platform == "android":
         sdk = Path(os.environ["ANDROID_HOME"])
         ndk = sdk / "ndk/27.2.12479018"
-        identity["ndk"] = (ndk / "source.properties").read_text()
+        identity["ndk"] = (ndk / "source.properties").read_text(encoding="utf-8")
         identity["compiler"] = command(str(ndk / "toolchains/llvm/prebuilt/linux-x86_64/bin/clang"), "--version")
         identity["android_cmake"] = command(str(sdk / "cmake/3.22.1/bin/cmake"), "--version")
         identity["android_home"] = str(sdk)
@@ -184,7 +184,7 @@ def main():
         files = selected_files(ROOT, paths)
         report = {"files": len(files), "bytes": sum(path.lstat().st_size for path in files)}
         print(json.dumps(report, indent=2))
-        (ROOT / "build/ci/native-cache-size.json").write_text(json.dumps(report, indent=2) + "\n")
+        (ROOT / "build/ci/native-cache-size.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         return
     inputs = dependency_inputs(ROOT, args.platform, args.arch)
     environment = toolchain_identity(args.platform)
@@ -193,9 +193,9 @@ def main():
     print(json.dumps(report, indent=2))
     output = ROOT / "build/ci/native-cache.json"
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(report, indent=2) + "\n")
+    output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     if os.environ.get("GITHUB_OUTPUT"):
-        with open(os.environ["GITHUB_OUTPUT"], "a") as stream:
+        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
             stream.write(f"key={key}\npaths<<RAWLAB_CACHE_PATHS\n" + "\n".join(paths) + "\nRAWLAB_CACHE_PATHS\n")
 
 
