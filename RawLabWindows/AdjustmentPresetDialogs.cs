@@ -61,17 +61,19 @@ internal enum PresetConfirmationChoice { Cancel, Confirm, SaveAs }
 internal sealed class AdjustmentPresetConfirmationDialog : Window
 {
     internal PresetConfirmationChoice Choice { get; private set; }
-    internal AdjustmentPresetConfirmationDialog(Window owner, AdjustmentPreset preset, bool overwrite)
+    internal AdjustmentPresetConfirmationDialog(Window owner, string name, bool overwrite)
     {
         var root = AdjustmentDialogLayout.Configure(this, owner, overwrite ? "覆盖预设？" : "删除预设？", "preset.confirmation");
         Height = 300; MinHeight = 240;
-        var text = AdjustmentDialogLayout.Text(preset.Name); text.FontWeight = FontWeights.SemiBold; root.Children.Add(text);
+        var text = AdjustmentDialogLayout.Text(name); text.FontWeight = FontWeights.SemiBold; root.Children.Add(text);
         var actions = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right }; Grid.SetRow(actions, 2); root.Children.Add(actions);
         var cancel = AdjustmentPresetPresentation.Button("取消", "preset.confirm.cancel", Close); cancel.IsCancel = true; actions.Children.Add(cancel);
         if (overwrite) actions.Children.Add(AdjustmentPresetPresentation.Button("另存", "preset.confirm.save-as", () => { Choice = PresetConfirmationChoice.SaveAs; DialogResult = false; }));
         var confirm = AdjustmentPresetPresentation.Button(overwrite ? "覆盖" : "删除", "preset.confirm.commit", () => { Choice = PresetConfirmationChoice.Confirm; DialogResult = true; });
         confirm.IsDefault = true; actions.Children.Add(confirm);
     }
+    internal AdjustmentPresetConfirmationDialog(Window owner, AdjustmentPreset preset, bool overwrite)
+        : this(owner, preset.Name, overwrite) { }
 }
 
 internal sealed class AdjustmentPresetLibraryDialog : Window
@@ -104,32 +106,56 @@ internal sealed class AdjustmentPresetLibraryDialog : Window
     {
         rows.Children.Clear(); error.Text = "";
         try {
-            var presets = store.List(); create.IsEnabled = canUsePhoto;
-            if (presets.Count == 0) {
+            var items = PresetLibraryDataSource.Load(store); create.IsEnabled = canUsePhoto;
+            if (items.Count == 0) {
                 rows.Children.Add(AdjustmentDialogLayout.Text(Loc.Text("尚无用户预设")));
                 rows.Children.Add(AdjustmentDialogLayout.Text(Loc.Text("保存所选调整，之后可应用到其他照片。")));
             }
-            foreach (var preset in presets) {
-                var row = new StackPanel { Margin = new Thickness(0, 8, 0, 14) }; rows.Children.Add(row);
-                var title = AdjustmentDialogLayout.Text(preset.Name); title.FontWeight = FontWeights.SemiBold; row.Children.Add(title);
-                AutomationProperties.SetAutomationId(row, "preset.row." + preset.ID);
-                var detail = new Expander { Header = AdjustmentDialogLayout.Text(Loc.Format("已选 {0} 项", preset.Payload.Fields.Count)),
-                    Content = AdjustmentSummaryView.Build(preset.Payload, lookName, "preset.summary." + preset.ID) };
-                AutomationProperties.SetAutomationId(detail, "preset.summary." + preset.ID); row.Children.Add(detail);
-                var actions = new WrapPanel(); row.Children.Add(actions);
-                var apply = AdjustmentPresetPresentation.Button("应用预设", "preset.apply." + preset.ID, () => { ApplyRequested = preset; DialogResult = true; });
-                apply.IsEnabled = canUsePhoto; actions.Children.Add(apply);
-                var multiple = AdjustmentPresetPresentation.Button("应用到多张照片", "preset.multiple." + preset.ID, () => { ApplyMultipleRequested = preset; DialogResult = true; });
-                multiple.IsEnabled = canUsePhoto; actions.Children.Add(multiple);
-                actions.Children.Add(AdjustmentPresetPresentation.Button("重命名", "preset.rename." + preset.ID, () => {
-                    new AdjustmentPresetNameDialog(this, "重命名预设", preset.Name, false, (name, _) => { store.Rename(preset, name); return null; }).ShowDialog();
-                    Reload();
-                }));
-                actions.Children.Add(AdjustmentPresetPresentation.Button("删除", "preset.delete." + preset.ID, () => {
-                    if (new AdjustmentPresetConfirmationDialog(this, preset, false).ShowDialog() != true) return;
-                    try { store.Delete(preset); Reload(); } catch (Exception failure) { error.Text = AdjustmentPresetPresentation.Error(failure); }
-                }));
-                rows.Children.Add(new Separator());
+            var corruptIndex = 0;
+            var corruptRowIDs = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var item in items) {
+                if (!item.IsCorrupt && item.Preset is { } preset) {
+                    var row = new StackPanel { Margin = new Thickness(0, 8, 0, 14) }; rows.Children.Add(row);
+                    var title = AdjustmentDialogLayout.Text(preset.Name); title.FontWeight = FontWeights.SemiBold; row.Children.Add(title);
+                    AutomationProperties.SetAutomationId(row, "preset.row." + preset.ID);
+                    var detail = new Expander { Header = AdjustmentDialogLayout.Text(Loc.Format("已选 {0} 项", preset.Payload.Fields.Count)),
+                        Content = AdjustmentSummaryView.Build(preset.Payload, lookName, "preset.summary." + preset.ID) };
+                    AutomationProperties.SetAutomationId(detail, "preset.summary." + preset.ID); row.Children.Add(detail);
+                    var actions = new WrapPanel(); row.Children.Add(actions);
+                    var apply = AdjustmentPresetPresentation.Button("应用预设", "preset.apply." + preset.ID, () => { ApplyRequested = preset; DialogResult = true; });
+                    apply.IsEnabled = canUsePhoto; actions.Children.Add(apply);
+                    var multiple = AdjustmentPresetPresentation.Button("应用到多张照片", "preset.multiple." + preset.ID, () => { ApplyMultipleRequested = preset; DialogResult = true; });
+                    multiple.IsEnabled = canUsePhoto; actions.Children.Add(multiple);
+                    actions.Children.Add(AdjustmentPresetPresentation.Button("重命名", "preset.rename." + preset.ID, () => {
+                        new AdjustmentPresetNameDialog(this, "重命名预设", preset.Name, false, (name, _) => { store.Rename(preset, name); return null; }).ShowDialog();
+                        Reload();
+                    }));
+                    actions.Children.Add(AdjustmentPresetPresentation.Button("删除", "preset.delete." + preset.ID, () => {
+                        if (new AdjustmentPresetConfirmationDialog(this, preset, false).ShowDialog() != true) return;
+                        try { store.Delete(preset); Reload(); } catch (Exception failure) { error.Text = AdjustmentPresetPresentation.Error(failure); }
+                    }));
+                    rows.Children.Add(new Separator());
+                } else if (item.IsCorrupt && item.Unreadable is { } bad) {
+                    corruptIndex++;
+                    // 非法或重复的 id 会退化成 "preset.row." 或重复 AutomationId；只在身份规范且未占用时采用。
+                    var rowId = bad.ID is { } badID && AdjustmentPreset.CanonicalID(badID) && corruptRowIDs.Add(badID) ? badID : "unreadable." + corruptIndex;
+                    var row = new StackPanel { Margin = new Thickness(0, 8, 0, 14), Opacity = 0.65 }; rows.Children.Add(row);
+                    var title = AdjustmentDialogLayout.Text(item.DisplayName);
+                    title.FontWeight = FontWeights.SemiBold;
+                    title.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
+                    row.Children.Add(title);
+                    AutomationProperties.SetAutomationId(row, "preset.row." + rowId);
+                    var warning = AdjustmentDialogLayout.Text(Loc.Text("此预设无法读取，可能已损坏或来自不兼容版本。"));
+                    warning.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
+                    warning.Margin = new Thickness(0, 2, 0, 4);
+                    row.Children.Add(warning);
+                    var actions = new WrapPanel(); row.Children.Add(actions);
+                    actions.Children.Add(AdjustmentPresetPresentation.Button("删除", "preset.delete." + rowId, () => {
+                        if (new AdjustmentPresetConfirmationDialog(this, item.DisplayName, false).ShowDialog() != true) return;
+                        try { store.Delete(bad); Reload(); } catch (Exception failure) { error.Text = AdjustmentPresetPresentation.Error(failure); }
+                    }));
+                    rows.Children.Add(new Separator());
+                }
             }
         } catch (Exception failure) { create.IsEnabled = false; error.Text = AdjustmentPresetPresentation.Error(failure); }
     }

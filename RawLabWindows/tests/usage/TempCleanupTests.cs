@@ -17,6 +17,7 @@ internal static class TempCleanupTests
             OwnerLivenessProtectsRunningInstance(Path.Combine(sandbox, "liveness"));
             await AnalyticsCacheReusesFixedDirectory(Path.Combine(sandbox, "analytics-cache"));
             SingleExportStagingCleanup(Path.Combine(sandbox, "export-staging"));
+            StartupSweepNeverThrowsOnFaultyDirectoryStub(Path.Combine(sandbox, "fault-isolation"));
             Console.WriteLine("PASS: Windows temp directory sweep, fixed RUM cache and single-export staging cleanup");
         }
         finally
@@ -320,6 +321,78 @@ internal static class TempCleanupTests
 
         liveLease.Dispose();
         Check(!File.Exists(liveTemp), "disposing active single-export staging lease cleans its temporary file");
+    }
+
+    private static void StartupSweepNeverThrowsOnFaultyDirectoryStub(string sandbox)
+    {
+        var tempRoot = Path.Combine(sandbox, "failing-temp");
+        var analyticsDir = Path.Combine(sandbox, "failing-analytics");
+        var stagingDir = Path.Combine(sandbox, "failing-staging");
+        Directory.CreateDirectory(tempRoot);
+        Directory.CreateDirectory(analyticsDir);
+        Directory.CreateDirectory(stagingDir);
+
+        var now = DateTime.UtcNow;
+        var expired = now - TimeSpan.FromHours(30);
+
+        // 内层逐目录隔离：不经外层兜底直接调用 SweepTempDirectories——枚举器依次给出
+        // [已过期目录, 坏重解析点目录, 已过期目录]，随后 MoveNext 抛异常。
+        var firstGood = CreateDirectoryWithFile(tempRoot, "RawLab-LUT-preview-first00000000000000000000", "source.ARW", expired);
+        var badTarget = Path.Combine(sandbox, "badlink-target");
+        Directory.CreateDirectory(badTarget);
+        File.WriteAllText(Path.Combine(badTarget, "precious.bin"), "keep");
+        var badLink = Path.Combine(tempRoot, "RawLab-LUT-preview-badlink0000000000000000000");
+        Check(TryCreateDirectoryLink(badLink, badTarget), "created faulty reparse-point directory for sweep isolation");
+        var secondGood = CreateDirectoryWithFile(tempRoot, "RawLab-LUT-preview-second000000000000000000", "source.ARW", expired);
+
+        IEnumerable<DirectoryInfo> IsolatedDirectoryEnumerator(string _)
+        {
+            yield return new DirectoryInfo(firstGood);
+            yield return new DirectoryInfo(badLink);
+            yield return new DirectoryInfo(secondGood);
+            throw new IOException("Simulated directory enumeration failure after the isolation samples");
+        }
+
+        TempCleanup.SweepTempDirectories(tempRoot, now, TempCleanup.DefaultRetention, enumerateDirectories: IsolatedDirectoryEnumerator);
+        Check(!Directory.Exists(firstGood) && !Directory.Exists(secondGood),
+            "expired owned directories on both sides of a faulty entry are swept by the inner per-directory isolation");
+        Check(Directory.Exists(badLink) && File.Exists(Path.Combine(badTarget, "precious.bin")),
+            "the faulty reparse-point directory is skipped without following it into its target");
+
+        // 外层兜底 + 不回滚已完成的清扫：MoveNext 中途抛 UnauthorizedAccessException 的桩
+        // 经 SweepStartup 永不外抛，且异常前已处理的过期目录确实被删除。
+        var survivor = CreateDirectoryWithFile(tempRoot, "RawLab-LUT-preview-survivor0000000000000000", "source.ARW", expired);
+        IEnumerable<DirectoryInfo> FaultyDirectoryEnumerator(string _)
+        {
+            yield return new DirectoryInfo(survivor);
+            throw new UnauthorizedAccessException("Simulated directory enumeration access denied");
+        }
+
+        IEnumerable<FileInfo> FaultyFileEnumerator(string _)
+        {
+            yield return new FileInfo(Path.Combine(stagingDir, "stub.json"));
+            throw new IOException("Simulated disk I/O failure during lease enumeration");
+        }
+
+        TempCleanup.SweepStartup(
+            tempRoot,
+            analyticsDir,
+            stagingDir,
+            now,
+            TempCleanup.DefaultRetention,
+            enumerateDirectories: FaultyDirectoryEnumerator,
+            enumerateFiles: FaultyFileEnumerator);
+        Check(!Directory.Exists(survivor), "startup sweep keeps work completed before a mid-enumeration failure");
+
+        // 致命异常必须穿透外层兜底原样外抛，而不是被静默吞掉。
+        var oomEscaped = false;
+        try
+        {
+            TempCleanup.SweepStartup(tempRoot, analyticsDir, stagingDir, now, TempCleanup.DefaultRetention,
+                enumerateDirectories: static _ => throw new OutOfMemoryException("Simulated fatal memory failure"));
+        }
+        catch (OutOfMemoryException) { oomEscaped = true; }
+        Check(oomEscaped, "startup sweep lets OutOfMemoryException escape instead of swallowing it");
     }
 
     private static string CreateDirectoryWithFile(string parent, string dirName, string fileName, DateTime writeUtc)

@@ -54,13 +54,22 @@ internal static class TempCleanup
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "RawLab", "Cache", "ExportStaging");
 
-    internal static void SweepStartup() =>
-        SweepStartup(
-            Path.GetTempPath(),
-            UsageAnalytics.DefaultCacheDirectory,
-            DefaultExportStagingDirectory,
-            DateTime.UtcNow,
-            DefaultRetention);
+    internal static void SweepStartup()
+    {
+        try
+        {
+            SweepStartup(
+                Path.GetTempPath(),
+                UsageAnalytics.DefaultCacheDirectory,
+                DefaultExportStagingDirectory,
+                DateTime.UtcNow,
+                DefaultRetention);
+        }
+        catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
+        {
+            Trace.WriteLine($"TempCleanup.SweepStartup: caught unhandled startup sweep exception: {error.Message}");
+        }
+    }
 
     internal static void SweepStartup(
         string tempRoot,
@@ -68,11 +77,36 @@ internal static class TempCleanup
         string exportStagingDirectory,
         DateTime utcNow,
         TimeSpan retention,
-        Func<int, long, bool>? isProcessAlive = null)
+        Func<int, long, bool>? isProcessAlive = null,
+        Func<string, IEnumerable<DirectoryInfo>>? enumerateDirectories = null,
+        Func<string, IEnumerable<FileInfo>>? enumerateFiles = null)
     {
-        SweepTempDirectories(tempRoot, utcNow, retention, isProcessAlive);
-        SweepExpiredAnalyticsCache(analyticsCacheDirectory, utcNow, retention, isProcessAlive);
-        SweepRecordedExportStaging(exportStagingDirectory, utcNow, retention, isProcessAlive);
+        try
+        {
+            SweepTempDirectories(tempRoot, utcNow, retention, isProcessAlive, enumerateDirectories);
+        }
+        catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
+        {
+            Trace.WriteLine($"TempCleanup.SweepStartup: SweepTempDirectories failed: {error.Message}");
+        }
+
+        try
+        {
+            SweepExpiredAnalyticsCache(analyticsCacheDirectory, utcNow, retention, isProcessAlive);
+        }
+        catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
+        {
+            Trace.WriteLine($"TempCleanup.SweepStartup: SweepExpiredAnalyticsCache failed: {error.Message}");
+        }
+
+        try
+        {
+            SweepRecordedExportStaging(exportStagingDirectory, utcNow, retention, isProcessAlive, enumerateFiles);
+        }
+        catch (Exception error) when (error is not (OutOfMemoryException or StackOverflowException))
+        {
+            Trace.WriteLine($"TempCleanup.SweepStartup: SweepRecordedExportStaging failed: {error.Message}");
+        }
     }
 
     internal static bool HasOwnedTempPrefix(string directoryName)
@@ -90,20 +124,35 @@ internal static class TempCleanup
         string tempRoot,
         DateTime utcNow,
         TimeSpan retention,
-        Func<int, long, bool>? isProcessAlive = null)
+        Func<int, long, bool>? isProcessAlive = null,
+        Func<string, IEnumerable<DirectoryInfo>>? enumerateDirectories = null)
     {
         if (string.IsNullOrWhiteSpace(tempRoot) || !Directory.Exists(tempRoot)) return;
         DirectoryInfo rootInfo;
         try { rootInfo = new DirectoryInfo(tempRoot); }
         catch (Exception error) when (error is ArgumentException or IOException or UnauthorizedAccessException) { return; }
-        if (IsReparsePoint(rootInfo)) return;
+        try { if (IsReparsePoint(rootInfo)) return; }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Trace.WriteLine($"TempCleanup: skipping root {tempRoot}: {error.Message}"); return; }
 
         IEnumerable<DirectoryInfo> directories;
-        try { directories = rootInfo.EnumerateDirectories(); }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return; }
+        try { directories = enumerateDirectories != null ? enumerateDirectories(tempRoot) : rootInfo.EnumerateDirectories(); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Trace.WriteLine($"TempCleanup: enumeration failed for {tempRoot}: {error.Message}"); return; }
 
-        foreach (var directory in directories)
+        using var enumerator = directories.GetEnumerator();
+        while (true)
         {
+            DirectoryInfo directory;
+            try
+            {
+                if (!enumerator.MoveNext()) break;
+                directory = enumerator.Current;
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                Trace.WriteLine($"TempCleanup: directory enumeration failed in {tempRoot}: {error.Message}");
+                break;
+            }
+
             try
             {
                 if (!HasOwnedTempPrefix(directory.Name)) continue;
@@ -115,7 +164,10 @@ internal static class TempCleanup
                 if (IsTrackedOwnerAlive(directory, isProcessAlive)) continue;
                 TryDeleteDirectoryTree(directory);
             }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                Trace.WriteLine($"TempCleanup: skipping directory {directory.FullName}: {error.Message}");
+            }
         }
     }
 
@@ -131,8 +183,16 @@ internal static class TempCleanup
         DirectoryInfo root;
         try { root = new DirectoryInfo(cacheDirectory); }
         catch (Exception error) when (error is ArgumentException or IOException or UnauthorizedAccessException) { return; }
-        if (IsReparsePoint(root)) return;
-        if (IsTrackedOwnerAlive(root, isProcessAlive)) return;
+        try
+        {
+            if (IsReparsePoint(root)) return;
+            if (IsTrackedOwnerAlive(root, isProcessAlive)) return;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            Trace.WriteLine($"TempCleanup: skipping cache {cacheDirectory}: {error.Message}");
+            return;
+        }
 
         TryDeleteFileIfOrdinary(Path.Combine(cacheDirectory, OwnerMarkerFileName));
         PruneExpiredChildren(root, utcNow, retention, depth: 0);
@@ -216,21 +276,36 @@ internal static class TempCleanup
         string leaseDirectory,
         DateTime utcNow,
         TimeSpan retention,
-        Func<int, long, bool>? isProcessAlive = null)
+        Func<int, long, bool>? isProcessAlive = null,
+        Func<string, IEnumerable<FileInfo>>? enumerateFiles = null)
     {
         if (string.IsNullOrWhiteSpace(leaseDirectory) || !Directory.Exists(leaseDirectory)) return;
         DirectoryInfo root;
         try { root = new DirectoryInfo(leaseDirectory); }
         catch (Exception error) when (error is ArgumentException or IOException or UnauthorizedAccessException) { return; }
-        if (IsReparsePoint(root)) return;
+        try { if (IsReparsePoint(root)) return; }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Trace.WriteLine($"TempCleanup: skipping lease directory {leaseDirectory}: {error.Message}"); return; }
 
         var checkAlive = isProcessAlive ?? IsProcessAlive;
         IEnumerable<FileInfo> leases;
-        try { leases = root.EnumerateFiles("*.json"); }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return; }
+        try { leases = enumerateFiles != null ? enumerateFiles(leaseDirectory) : root.EnumerateFiles("*.json"); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Trace.WriteLine($"TempCleanup: lease enumeration failed for {leaseDirectory}: {error.Message}"); return; }
 
-        foreach (var lease in leases)
+        using var enumerator = leases.GetEnumerator();
+        while (true)
         {
+            FileInfo lease;
+            try
+            {
+                if (!enumerator.MoveNext()) break;
+                lease = enumerator.Current;
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                Trace.WriteLine($"TempCleanup: lease enumeration error in {leaseDirectory}: {error.Message}");
+                break;
+            }
+
             try
             {
                 if (IsReparsePoint(lease)) continue;
@@ -261,7 +336,10 @@ internal static class TempCleanup
                 if (TryDeleteExportStagingFile(record.StagingPath) || !File.Exists(record.StagingPath))
                     TryDeleteFileIfOrdinary(lease.FullName);
             }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                Trace.WriteLine($"TempCleanup: skipping lease file {lease.FullName}: {error.Message}");
+            }
         }
     }
 
@@ -421,51 +499,84 @@ internal static class TempCleanup
 
     internal static bool IsReparsePoint(FileSystemInfo info)
     {
-        info.Refresh();
-        var attributes = info.Attributes;
-        if (attributes == (FileAttributes)(-1)) return false;
-        return (attributes & FileAttributes.ReparsePoint) != 0 || info.LinkTarget != null;
+        try
+        {
+            info.Refresh();
+            var attributes = info.Attributes;
+            if (attributes == (FileAttributes)(-1)) return false;
+            return (attributes & FileAttributes.ReparsePoint) != 0 || info.LinkTarget != null;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            Trace.WriteLine($"TempCleanup: failed to read reparse point attributes for {info.FullName}: {error.Message}");
+            return true;
+        }
     }
 
     internal static void TryDeleteDirectoryTree(DirectoryInfo directory, int depth = 0)
     {
         if (depth > MaxTraversalDepth) return;
-        directory.Refresh();
-        var dirAttributes = directory.Attributes;
-        if (dirAttributes == (FileAttributes)(-1)) return;
-        if ((dirAttributes & FileAttributes.ReparsePoint) != 0 || directory.LinkTarget != null)
+        try
         {
-            // 顶层候选目录若本身是重解析点绝不触碰；子级重解析点只删链接自身，绝不进入目标目录。
-            if (depth > 0) directory.Delete(recursive: false);
-            return;
-        }
+            directory.Refresh();
+            var dirAttributes = directory.Attributes;
+            if (dirAttributes == (FileAttributes)(-1)) return;
+            if ((dirAttributes & FileAttributes.ReparsePoint) != 0 || directory.LinkTarget != null)
+            {
+                // 顶层候选目录若本身是重解析点绝不触碰；子级重解析点只删链接自身，绝不进入目标目录。
+                if (depth > 0) directory.Delete(recursive: false);
+                return;
+            }
 
-        foreach (var entry in directory.EnumerateFileSystemInfos())
-        {
-            var attributes = entry.Attributes;
-            if (attributes == (FileAttributes)(-1)) continue;
-            if ((attributes & FileAttributes.ReparsePoint) != 0 || entry.LinkTarget != null)
-            {
-                if (entry is DirectoryInfo linkDirectory) linkDirectory.Delete(recursive: false);
-                else entry.Delete();
-                continue;
-            }
-            if (entry is DirectoryInfo subdirectory)
-            {
-                TryDeleteDirectoryTree(subdirectory, depth + 1);
-            }
-            else if (entry is FileInfo file)
-            {
-                ClearReadOnly(file, attributes);
-                file.Delete();
-            }
-        }
+            IEnumerable<FileSystemInfo> entries;
+            try { entries = directory.EnumerateFileSystemInfos(); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return; }
 
-        directory.Refresh();
-        dirAttributes = directory.Attributes;
-        if (dirAttributes == (FileAttributes)(-1)) return;
-        ClearReadOnly(directory, dirAttributes);
-        directory.Delete(recursive: false);
+            using var enumerator = entries.GetEnumerator();
+            while (true)
+            {
+                FileSystemInfo entry;
+                try
+                {
+                    if (!enumerator.MoveNext()) break;
+                    entry = enumerator.Current;
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+                {
+                    Trace.WriteLine($"TempCleanup: entry enumeration failed in {directory.FullName}: {error.Message}");
+                    break;
+                }
+
+                try
+                {
+                    var attributes = entry.Attributes;
+                    if (attributes == (FileAttributes)(-1)) continue;
+                    if ((attributes & FileAttributes.ReparsePoint) != 0 || entry.LinkTarget != null)
+                    {
+                        if (entry is DirectoryInfo linkDirectory) linkDirectory.Delete(recursive: false);
+                        else entry.Delete();
+                        continue;
+                    }
+                    if (entry is DirectoryInfo subdirectory)
+                    {
+                        TryDeleteDirectoryTree(subdirectory, depth + 1);
+                    }
+                    else if (entry is FileInfo file)
+                    {
+                        ClearReadOnly(file, attributes);
+                        file.Delete();
+                    }
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException) { }
+            }
+
+            directory.Refresh();
+            dirAttributes = directory.Attributes;
+            if (dirAttributes == (FileAttributes)(-1)) return;
+            ClearReadOnly(directory, dirAttributes);
+            directory.Delete(recursive: false);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
     }
 
     internal static void TryDeleteFileIfOrdinary(string? path)
@@ -549,8 +660,22 @@ internal static class TempCleanup
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return true; }
 
         var hasRemainingEntries = false;
-        foreach (var entry in entries)
+        using var enumerator = entries.GetEnumerator();
+        while (true)
         {
+            FileSystemInfo entry;
+            try
+            {
+                if (!enumerator.MoveNext()) break;
+                entry = enumerator.Current;
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                Trace.WriteLine($"TempCleanup: entry enumeration failed in {directory.FullName}: {error.Message}");
+                hasRemainingEntries = true;
+                break;
+            }
+
             try
             {
                 var attributes = entry.Attributes;
@@ -591,7 +716,7 @@ internal static class TempCleanup
                     }
                 }
             }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
             {
                 hasRemainingEntries = true;
             }

@@ -2869,6 +2869,20 @@
       ],
       "source": "已选 {0} 项"
     },
+    "{0}（损坏）": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "{0}（损坏）"
+    },
+    "损坏的预设": {
+      "formats": [],
+      "source": "损坏的预设"
+    },
+    "此预设无法读取，可能已损坏或来自不兼容版本。": {
+      "formats": [],
+      "source": "此预设无法读取，可能已损坏或来自不兼容版本。"
+    },
     "应用预设": {
       "formats": [],
       "source": "应用预设"
@@ -4344,6 +4358,30 @@
     }
   },
   "unique": {
+    "{0}（损坏）": {
+      "zh-Hans": "{0}（损坏）",
+      "en": "{0} (damaged)",
+      "de": "{0} (beschädigt)",
+      "fr": "{0} (endommagé)",
+      "ja": "{0}（破損）",
+      "es": "{0} (dañado)"
+    },
+    "损坏的预设": {
+      "zh-Hans": "损坏的预设",
+      "en": "Damaged preset",
+      "de": "Beschädigte Vorgabe",
+      "fr": "Préréglage endommagé",
+      "ja": "破損したプリセット",
+      "es": "Preajuste dañado"
+    },
+    "此预设无法读取，可能已损坏或来自不兼容版本。": {
+      "zh-Hans": "此预设无法读取，可能已损坏或来自不兼容版本。",
+      "en": "This preset cannot be read. It may be damaged or from an incompatible version.",
+      "de": "Diese Vorgabe kann nicht gelesen werden. Sie ist möglicherweise beschädigt oder stammt aus einer inkompatiblen Version.",
+      "fr": "Ce préréglage est illisible. Il est peut-être endommagé ou issu d’une version incompatible.",
+      "ja": "このプリセットは読み取れません。破損しているか、互換性のないバージョンの可能性があります。",
+      "es": "Este preajuste no se puede leer. Puede estar dañado o proceder de una versión incompatible."
+    },
     "不支持此相机 RAW 的 HDR 显影。": {
       "zh-Hans": "不支持此相机 RAW 的 HDR 显影。",
       "en": "HDR development is not supported for this camera RAW.",

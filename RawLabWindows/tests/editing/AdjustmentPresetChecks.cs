@@ -25,6 +25,7 @@ internal static class AdjustmentPresetChecks
             IdentityAndStaleConfirmation(Path.Combine(root, "identity"));
             FailureAndConcurrency(Path.Combine(root, "failures"));
             UnreadableEntry(Path.Combine(root, "unreadable"));
+            UnreadableIdentityOverlaps(Path.Combine(root, "unreadable-overlaps"));
             Vectors(Path.Combine(root, "vectors"));
             Application(Path.Combine(root, "application"));
             Console.WriteLine($"PASS: {checks} user preset store checks with 55 shared vectors");
@@ -113,8 +114,46 @@ internal static class AdjustmentPresetChecks
         Reject(() => store.Create("Future", Payload()), "unreadable entry name stays reserved", PresetFailure.DuplicateName);
         Reject(() => new AdjustmentPresetStore(directory, makeID: () => future).Create("Collision", Payload()),
             "unreadable entry ID stays reserved", PresetFailure.IdentityCollision);
+        var dialogItems = PresetLibraryDataSource.Load(store);
+        Check(dialogItems.Count == 3 && dialogItems.Any(item => item.IsCorrupt && item.DisplayName == "Future（损坏）" && item.ID == future),
+            "corrupt preset is surfaced in preset library dialog data source with damaged label");
         store.Delete(updated); store.Delete(created);
         Check(store.List().Count == 0 && File.ReadAllText(path).Contains(raw), "deleting readable presets keeps the unreadable entry");
+        var onlyCorrupt = PresetLibraryDataSource.Load(store);
+        Check(onlyCorrupt.Count == 1 && onlyCorrupt.Single().IsCorrupt && onlyCorrupt.Single().Unreadable == unreadable,
+            "dialog data source contains only the corrupt item when all valid presets deleted");
+        store.Delete(unreadable);
+        Check(store.ListUnreadable().Count == 0 && PresetLibraryDataSource.Load(store).Count == 0 && !File.ReadAllText(path).Contains(raw),
+            "corrupt preset can be removed and clears from dialog data source and disk");
+    }
+
+    // 红锚点：坏预设与有效预设共用身份、或多条坏预设共用非法 id 时的删除语义。
+    private static void UnreadableIdentityOverlaps(string directory)
+    {
+        var store = new AdjustmentPresetStore(directory);
+        var valid = store.Create("Valid", Payload());
+        var path = Path.Combine(directory, "presets.json");
+        var twin = "{ \"id\": \"" + valid.ID + "\", \"name\": \"Twin\", \"created_at\": 1, \"updated_at\": 1, \"payload\": { \"payload_version\": 9 }, \"future_field\": \"keep\" }";
+        var alpha = "{ \"id\": \"0\", \"name\": \"Alpha\", \"created_at\": 1, \"updated_at\": 1, \"payload\": { \"payload_version\": 9 } }";
+        var beta = "{ \"id\": \"0\", \"name\": \"Beta\", \"created_at\": 1, \"updated_at\": 1, \"payload\": { \"payload_version\": 9 } }";
+        File.WriteAllText(path, File.ReadAllText(path).Replace("\"presets\":[", "\"presets\":[" + twin + "," + alpha + "," + beta + ","));
+        Check(store.List().Single().SameAs(valid) && store.ListUnreadable().Count == 3, "twin ID and duplicate illegal IDs load side by side");
+
+        // 删除与有效预设同 id 的坏预设：id 未真正退场，不得写进 retired_ids 把整库判死。
+        var twinEntry = store.ListUnreadable().Single(item => item.Json == twin);
+        store.Delete(twinEntry);
+        Check(store.List().Single().SameAs(valid) && store.ListUnreadable().Select(item => item.Json).SequenceEqual([alpha, beta]),
+            "deleting the same-ID corrupt preset keeps the whole library readable");
+        using (var after = JsonDocument.Parse(File.ReadAllText(path)))
+            Check(!after.RootElement.GetProperty("retired_ids").EnumerateArray().Any(item => item.GetString() == valid.ID),
+                "same-ID corrupt preset does not retire the live identity");
+
+        // 两条非法 id 相同的坏预设：删除第二条必须精确命中自身，不得误删同 id 的第一条。
+        var betaEntry = store.ListUnreadable().Single(item => item.Json == beta);
+        store.Delete(betaEntry);
+        Check(store.ListUnreadable().Single().Json == alpha && File.ReadAllText(path).Contains(alpha) && !File.ReadAllText(path).Contains(beta),
+            "deleting the second duplicate-ID corrupt preset removes it, not its same-ID sibling");
+        Reject(() => store.Delete(betaEntry), "already deleted corrupt preset needs a fresh confirmation", PresetFailure.Changed);
     }
 
     private static void Application(string directory)
