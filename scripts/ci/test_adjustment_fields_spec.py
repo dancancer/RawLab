@@ -103,15 +103,23 @@ def _snapshot(layer, key):
     return copy.deepcopy(reg["values"])
 
 
-def _fact(parse_thunk, fallback, layer, key, anchors):
-    try:
-        return parse_thunk()
-    except AssertionError:
-        reg_id = f"{layer}:{key}"
-        if reg_id not in SNAPSHOT_REGISTRATIONS:
-            _register_snapshot(layer, key, fallback, anchors)
-        SNAPSHOT_REGISTRATIONS[reg_id]["used"] = True
-        return copy.deepcopy(SNAPSHOT_REGISTRATIONS[reg_id]["values"])
+def _snap(layer, key, values, anchors):
+    """Explicit snapshot fact.
+
+    The registration itself is verified per end against the real source file
+    (see SNAPSHOT_REGISTRATIONS honesty test); facts that ARE parseable per end
+    must go through _need/_require and hard-fail instead of using this.
+    """
+    reg_id = f"{layer}:{key}"
+    if reg_id not in SNAPSHOT_REGISTRATIONS:
+        _register_snapshot(layer, key, values, anchors)
+    SNAPSHOT_REGISTRATIONS[reg_id]["used"] = True
+    return copy.deepcopy(SNAPSHOT_REGISTRATIONS[reg_id]["values"])
+
+
+def _require_absent(needle, src, field, where):
+    if needle in src:
+        raise AssertionError(f"Parse failed for {field}: text {needle!r} unexpectedly present in {where}")
 
 
 def _curve_default(platform):
@@ -194,8 +202,228 @@ def _sub_end_sources(platform):
     }
 
 
-def _no_parse():
-    raise AssertionError("snapshot-only fact")
+# Real per-end source files for snapshot anchor verification.  For Apple the
+# Shared sources legitimately govern macos AND ios (build.sh / pbxproj link them
+# into both apps), so the same real file anchors both ends.
+_ANCHORS: dict[tuple[str, str], dict[str, tuple[str, str]]] = {
+    ("proto", "light.curve.points"): {
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/ToneCurveSettings.kt", r"points\.size in 2\.\.33"),
+        "windows": ("RawLabWindows/ToneCurveSettings.cs", r"GetArrayLength\(\) > 33"),
+    },
+    ("proto", "looks.reference"): {
+        "macos": ("Shared/AdjustmentTransfer.swift", r'HDRLookSettings'),
+        "ios": ("Shared/AdjustmentTransfer.swift", r'HDRLookSettings'),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentPayload.kt", r'"kind"'),
+        "windows": ("RawLabWindows/AdjustmentPayload.cs", r'"kind"'),
+    },
+    ("proto", "color.grading.wheel"): {
+        "macos": ("Shared/ColorGradingSettings.swift", r"init\(hue: Double = 0, saturation: Double = 0\)"),
+        "ios": ("Shared/ColorGradingSettings.swift", r"init\(hue: Double = 0, saturation: Double = 0\)"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/ColorGradingSettings.kt", r"data class ColorGradingWheel\(val hue: Float = 0f, val saturation: Float = 0f\)"),
+        "windows": ("RawLabWindows/Adjustments.cs", r"public ColorGradingSettings ColorGrading \{ get; set; \} = new\(\)"),
+    },
+    ("proto", "hdr.camera_development.version"): {
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentTransfer.kt", r'"version" to AdjustmentValue\.Number\(1\.0\)'),
+        "windows": ("RawLabWindows/HDRSettings.cs", r"Version = 1, StructSize"),
+    },
+    ("proto", "detail.denoise.wavelet"): {
+        "macos": ("Shared/AdjustmentTransfer.swift", r'"preset"'),
+        "ios": ("Shared/AdjustmentTransfer.swift", r'"preset"'),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentPayload.kt", r'"preset"\]\?\.text in setOf\("detail", "clean", "custom"\)'),
+        "windows": ("RawLabWindows/AdjustmentPayload.cs", r'"preset"'),
+    },
+    ("model", "hdr.bounds"): {
+        "macos": ("Shared/HDRSettings.swift", r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(exposure\)"),
+        "ios": ("Shared/HDRSettings.swift", r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(exposure\)"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"exposure in -4f\.\.4f"),
+        "windows": ("RawLabWindows/HDRSettings.cs", r"Exposure is >= -4 and <= 4"),
+    },
+    ("model", "hsl.tone.atmos.bounds"): {
+        "macos": ("Shared/HSLSettings.swift", r"\(-100\.\.\.100\)\.contains\(\$0\)"),
+        "ios": ("Shared/HSLSettings.swift", r"\(-100\.\.\.100\)\.contains\(\$0\)"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"it in -100f\.\.100f"),
+        "windows": ("RawLabWindows/PhotoEffectsSettings.cs", r"Validate\(\w+, -100, 100"),
+    },
+    ("model", "hdr.detail.scale"): {
+        "macos": ("Shared/HDRAdjustmentTransfer.swift", r"value \* 100 : value"),
+        "ios": ("Shared/HDRAdjustmentTransfer.swift", r"value \* 100 : value"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"clarity in -1f\.\.1f"),
+        "windows": ("RawLabWindows/HDRSettings.cs", r"Clarity is >= -1"),
+    },
+    ("model", "effects.fx_bounds"): {
+        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"[Vv]ignette"),
+        "ios": ("RawLab/RawLab/Core/Models/RawSettings.swift", r"[Vv]ignette"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"VIGNETTE_AMOUNT\(true, -100f\.\.100f, 0f\)"),
+        "windows": ("RawLabWindows/PhotoEffectsSettings.cs", r"PhotoEffectParameter\.VignetteAmount"),
+    },
+    ("model", "wavelet.default"): {
+        "macos": ("RawLabMac/Sources/Adjustments/Adjustments.swift", r"var waveletNoiseReduction: WaveletDenoiseSettings\?"),
+        "ios": ("RawLab/RawLab/UI/Panels/PhotoEffectPanels.swift", r"struct IOSDenoiseControls"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"val denoise: DenoiseSettings = DenoiseSettings\(\)"),
+        "windows": ("RawLabWindows/DenoiseSettings.cs", r"record DenoiseSettings\(bool Enabled=false,double Luma=0,double Chroma=46,double Coarse=50\)"),
+    },
+    ("model", "looks.reference.default"): {
+        "macos": ("Shared/AdjustmentTransfer.swift", r'HDRLookSettings'),
+        "ios": ("Shared/AdjustmentTransfer.swift", r'HDRLookSettings'),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentPayload.kt", r'"kind"'),
+        "windows": ("RawLabWindows/AdjustmentPayload.cs", r'"kind"'),
+    },
+    ("model", "grading.default"): {
+        "macos": ("Shared/ColorGradingSettings.swift", r"init\(hue: Double = 0, saturation: Double = 0\)"),
+        "ios": ("Shared/ColorGradingSettings.swift", r"init\(hue: Double = 0, saturation: Double = 0\)"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/ColorGradingSettings.kt", r"data class ColorGradingWheel\(val hue: Float = 0f, val saturation: Float = 0f\)"),
+        "windows": ("RawLabWindows/Adjustments.cs", r"public ColorGradingSettings ColorGrading \{ get; set; \} = new\(\)"),
+    },
+    ("model", "mode.enums"): {
+        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"preview"),
+        "ios": ("RawLab/RawLab/Core/Models/RawSettings.swift", r"preview"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"exposureMode in 0\.\.2"),
+        "windows": ("RawLabWindows/Adjustments.cs", r"Preview|preview"),
+    },
+    ("model", "hdr.relative.bounds"): {
+        "macos": ("Shared/HDRSettings.swift", r"\(2000\.\.\.50000\)\.contains\(temperature\)"),
+        "ios": ("Shared/HDRSettings.swift", r"\(2000\.\.\.50000\)\.contains\(temperature\)"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"temperature in 2000f\.\.50000f"),
+        "windows": ("RawLabWindows/HDRSettings.cs", r"Temperature is >= 2000 and <= 50000"),
+    },
+    ("model", "hdr.sdr.bounds"): {
+        "macos": ("Shared/HDRSettings.swift", r"\(-100\.\.\.100\)\.contains\(sdrContrast\)"),
+        "ios": ("Shared/HDRSettings.swift", r"\(-100\.\.\.100\)\.contains\(sdrContrast\)"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"sdrContrast in -100f\.\.100f"),
+        "windows": ("RawLabWindows/HDRSettings.cs", r"SdrContrast is >= -100 and <= 100"),
+    },
+    ("model", "hdr.camera.defaults"): {
+        "macos": ("Shared/HDRSettings.swift", r"var version = 1"),
+        "ios": ("Shared/HDRSettings.swift", r"var version = 1"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"fbddLevel: Int = 0"),
+        "windows": ("RawLabWindows/HDRSettings.cs", r"FbddLevel = 0"),
+    },
+    ("model", "geometry.defaults"): {
+        "macos": ("Shared/GeometrySettings.swift", r"cropWidth: Double = 1|var cropWidth = 1\.0"),
+        "ios": ("Shared/GeometrySettings.swift", r"cropWidth: Double = 1|var cropWidth = 1\.0"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/CanonicalZeros.kt", r"cropWidth = cropWidth\.canonicalZero\(\)"),
+        "windows": ("RawLabWindows/TransformDraft.cs", r"CropWidth=1"),
+    },
+    ("model", "denoise.chroma.int_bounds"): {
+        "macos": ("RawLabMac/Sources/Adjustments/Adjustments.swift", r"var chromaNoiseReduction: Double\?"),
+        "ios": ("RawLab/RawLab/Core/Models/RawSettings.swift", r"[Cc]hroma"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"displayChromaDenoise in 0\.\.2"),
+        "windows": ("RawLabWindows/Adjustments.cs", r"[Cc]hroma"),
+    },
+    ("model", "denoise.post.default"): {
+        "macos": ("RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift", r"postRGBDenoise"),
+        "ios": ("RawLab/RawLab/Core/Models/RawSettings.swift", r"var noiseReduction: Double"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentTransferValues.kt", r"POST_RGB_DENOISE"),
+        "windows": ("RawLabWindows/AdjustmentTransferValues.cs", r"PostRGBDenoise"),
+    },
+    ("ui", "look.reference.default"): {
+        "macos": ("Shared/AdjustmentTransfer.swift", r"HDRLookSettings"),
+        "ios": ("Shared/AdjustmentTransfer.swift", r"HDRLookSettings"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentPayload.kt", r'"kind"'),
+        "windows": ("RawLabWindows/AdjustmentPayload.cs", r'"kind"'),
+    },
+    ("ui", "look.percent"): {
+        "macos": ("Shared/Native/HDRMonitoring.swift", r"Slider\(value:\s*\$settings\.lookSettings\.strength,\s*in:\s*0\.\.\.2"),
+        "ios": ("Shared/Native/HDRMonitoring.swift", r"Slider\(value:\s*\$settings\.lookSettings\.strength,\s*in:\s*0\.\.\.2"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/AdjustmentDock.kt", r"0f\.\.200f"),
+        "windows": ("RawLabWindows/MainWindow.HDR.cs", r"new\(0,200"),
+    },
+    ("ui", "scalar.bounds"): {
+        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"range: -100\.\.\.100"),
+        "ios": ("RawLab/RawLab/Core/Models/AdjustmentKind.swift", r"-100\.\.\.100"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/controls/AdjustmentControls.kt", r"-100f"),
+        "windows": ("RawLabWindows/Adjustments.cs", r"-100,100"),
+    },
+    ("ui", "exposure.bounds"): {
+        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"range: -5\.\.\.5"),
+        "ios": ("RawLab/RawLab/Core/Models/AdjustmentKind.swift", r"-5\.\.\.5"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/AdjustmentDock.kt", r"if \(edits\.isHDREditing\) -4f\.\.4f else -5f\.\.5f"),
+        "windows": ("RawLabWindows/Adjustments.cs", r'Parameter\.Exposure,"[^"]*","[^"]*",-5,5'),
+    },
+    ("ui", "mode.enum.defaults"): {
+        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"preview"),
+        "ios": ("RawLab/RawLab/Core/Models/RawSettings.swift", r"preview"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"exposureMode in 0\.\.2"),
+        "windows": ("RawLabWindows/Adjustments.cs", r"Preview|preview"),
+    },
+    ("ui", "wb.bounds"): {
+        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"2000\.\.\.50000"),
+        "ios": ("RawLab/RawLab/Core/Models/RawSettings.swift", r"temperatureRange: ClosedRange<Double> = 2000\.\.\.50000"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/EditorScreen.kt", r"50000f"),
+        "windows": ("RawLabWindows/Adjustments.cs", r"2000,50000"),
+    },
+    ("ui", "tint.bounds"): {
+        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"-150\.\.\.150"),
+        "ios": ("RawLab/RawLab/Core/Models/RawSettings.swift", r"tintRange: ClosedRange<Double> = -150\.\.\.150"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"tint in -150f\.\.150f"),
+        "windows": ("RawLabWindows/HDRSettings.cs", r"Tint is >= -150 and <= 150"),
+    },
+    ("ui", "hdr.relative.bounds"): {
+        "macos": ("Shared/HDRSettings.swift", r"\(2000\.\.\.50000\)\.contains\(temperature\)"),
+        "ios": ("Shared/HDRSettings.swift", r"\(2000\.\.\.50000\)\.contains\(temperature\)"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"temperature in 2000f\.\.50000f"),
+        "windows": ("RawLabWindows/HDRSettings.cs", r"Temperature is >= 2000 and <= 50000"),
+    },
+    ("ui", "hdr.rendition.bounds"): {
+        "macos": ("Shared/Native/HDRMonitoring.swift", r"0\.\.\.6"),
+        "ios": ("Shared/Native/HDRMonitoring.swift", r"0\.\.\.6"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/EditorScreen.kt", r"0f\.\.6f"),
+        "windows": ("RawLabWindows/MainWindow.HDR.cs", r"new\(0,6"),
+    },
+    ("ui", "hdr.camera.defaults"): {
+        "macos": ("Shared/HDRSettings.swift", r"var version = 1"),
+        "ios": ("Shared/HDRSettings.swift", r"var version = 1"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"fbddLevel: Int = 0"),
+        "windows": ("RawLabWindows/HDRSettings.cs", r"FbddLevel = 0"),
+    },
+    ("ui", "hsl.bounds"): {
+        "macos": ("Shared/HSLSettings.swift", r"\(-100\.\.\.100\)\.contains\(\$0\)"),
+        "ios": ("Shared/HSLSettings.swift", r"\(-100\.\.\.100\)\.contains\(\$0\)"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"it in -100f\.\.100f"),
+        "windows": ("RawLabWindows/PhotoEffectsSettings.cs", r"Validate\(\w+, -100, 100"),
+    },
+    ("ui", "grading.default"): {
+        "macos": ("Shared/ColorGradingSettings.swift", r"init\(hue: Double = 0, saturation: Double = 0\)"),
+        "ios": ("Shared/ColorGradingSettings.swift", r"init\(hue: Double = 0, saturation: Double = 0\)"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/ColorGradingSettings.kt", r"data class ColorGradingWheel\(val hue: Float = 0f, val saturation: Float = 0f\)"),
+        "windows": ("RawLabWindows/Adjustments.cs", r"public ColorGradingSettings ColorGrading \{ get; set; \} = new\(\)"),
+    },
+    ("ui", "effects.ui.bounds"): {
+        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"[Vv]ignette"),
+        "ios": ("RawLab/RawLab/UI/Panels/PhotoEffectPanels.swift", r"struct IOSPhotoEffectsControls"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"VIGNETTE_AMOUNT\(true, -100f\.\.100f, 0f\)"),
+        "windows": ("RawLabWindows/PhotoEffectsSettings.cs", r"PhotoEffectParameter\.VignetteAmount"),
+    },
+    ("ui", "denoise.detail.bounds"): {
+        "macos": ("RawLabMac/Sources/Controls/DenoiseControls.swift", r'accessibilityIdentifier\("chromaNoiseReduction\.mode"\)'),
+        "ios": ("RawLab/RawLab/UI/Panels/PhotoEffectPanels.swift", r"struct IOSDenoiseControls"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/EditorScreen.kt", r"[Dd]enoise"),
+        "windows": ("RawLabWindows/DenoisePanel.xaml", r"Denoise"),
+    },
+    ("ui", "wavelet.ui.default"): {
+        "macos": ("RawLabMac/Sources/Controls/DenoiseControls.swift", r"[Ww]avelet"),
+        "ios": ("RawLab/RawLab/UI/Panels/PhotoEffectPanels.swift", r"struct IOSDenoiseControls"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"val denoise: DenoiseSettings = DenoiseSettings\(\)"),
+        "windows": ("RawLabWindows/DenoiseSettings.cs", r"record DenoiseSettings\(bool Enabled=false,double Luma=0,double Chroma=46,double Coarse=50\)"),
+    },
+    ("ui", "geometry.ui.defaults"): {
+        "macos": ("Shared/GeometrySettings.swift", r"cropWidth: Double = 1|var cropWidth = 1\.0"),
+        "ios": ("Shared/GeometrySettings.swift", r"cropWidth: Double = 1|var cropWidth = 1\.0"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/geometry/GeometryControls.kt", r"45f"),
+        "windows": ("RawLabWindows/GeometryPanel.xaml.cs", r"45"),
+    },
+    ("ui", "local.ai.ui"): {
+        "macos": ("RawLabMac/Sources/Controls/DenoiseControls.swift", r"aiDenoiseEnabled"),
+        "ios": ("RawLab/RawLab/UI/Panels/PhotoEffectPanels.swift", r"struct IOSDenoiseControls"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/EditorScreen.kt", r"[Dd]enoise"),
+        "windows": ("RawLabWindows/Adjustments.cs", r"AIDenoiseEnabled \{ get; set; \}"),
+    },
+}
+
+
+def _snap4(layer, key, values):
+    """_snap with the shared per-end anchor registry (anchors stay explicit)."""
+    return _snap(layer, key, values, _ANCHORS[(layer, key)])
 
 
 def _object_sub_fields(platform):
@@ -220,22 +448,9 @@ def _object_sub_fields(platform):
             m = _need(r'is not \("(\w+)" or "(\w+)"\)', tcs, "light.curve mode", tc_path)
         return [m.group(1), m.group(2)]
 
-    mode_allowed = _fact(
-        _parse_mode_allowed,
-        ["legacy", "custom"],
-        "proto",
-        "light.curve.mode.allowed_values",
-        {
-            "macos": ("Shared/ToneCurveSettings.swift", r"enum ToneCurveMode: String, Codable"),
-            "ios": ("Shared/ToneCurveSettings.swift", r"enum ToneCurveMode: String, Codable"),
-            "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/ToneCurveSettings.kt", r'LEGACY\("legacy", 0\), CUSTOM\("custom", 1\)'),
-            "windows": ("RawLabWindows/ToneCurveSettings.cs", r'is not \("legacy" or "custom"\)'),
-        },
-    )
+    mode_allowed = _parse_mode_allowed()
 
     def _parse_points_facts_apple():
-        if platform not in ("macos", "ios"):
-            raise AssertionError("snapshot-only fact")
         counts = _need(r"\((\d+)\.\.\.(\d+)\)\.contains\(points\.count\)", tcs, "light.curve points", tc_path)
         first = _need(r"points\.first == ToneCurvePoint\(x: (-?[\d.]+), y: (-?[\d.]+)\)", tcs, "light.curve points", tc_path)
         last = _need(r"points\.last == ToneCurvePoint\(x: (-?[\d.]+), y: (-?[\d.]+)\)", tcs, "light.curve points", tc_path)
@@ -254,9 +469,10 @@ def _object_sub_fields(platform):
             ],
         }
 
-    points_fact = _fact(
-        _parse_points_facts_apple,
-        {
+    points_fact = (
+        _parse_points_facts_apple()
+        if platform in ("macos", "ios")
+        else _snap4("proto", "light.curve.points", {
             "value_type": "array",
             "legacy_count": 0,
             "custom_min_count": 2,
@@ -264,15 +480,7 @@ def _object_sub_fields(platform):
             "coord_min": 0.0,
             "coord_max": 1.0,
             "endpoints": [[0.0, 0.0], [1.0, 1.0]],
-        },
-        "proto",
-        "light.curve.points",
-        {
-            "macos": ("Shared/ToneCurveSettings.swift", r"\(2\.\.\.33\)\.contains\(points\.count\)"),
-            "ios": ("Shared/ToneCurveSettings.swift", r"ToneCurvePoint\(x: 1, y: 1\)"),
-            "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/ToneCurveSettings.kt", r"points\.size in 2\.\.33"),
-            "windows": ("RawLabWindows/ToneCurveSettings.cs", r"GetArrayLength\(\) > 33"),
-        },
+        })
     )
 
     def _parse_channels_fact():
@@ -284,61 +492,30 @@ def _object_sub_fields(platform):
             _need(r'TryGetProperty\("channels"', tcs, "light.curve channels", tc_path)
         return {"value_type": "object", "optional": True, "allowed_keys": ["red", "green", "blue"]}
 
-    channels_fact = _fact(
-        _parse_channels_fact,
-        {"value_type": "object", "optional": True, "allowed_keys": ["red", "green", "blue"]},
-        "proto",
-        "light.curve.channels",
-        {
-            "macos": ("Shared/AdjustmentTransfer.swift", r'"channels"'),
-            "ios": ("Shared/AdjustmentTransfer.swift", r'"channels"'),
-            "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/ToneCurveSettings.kt", r'it in setOf\("mode", "points", "channels"\)'),
-            "windows": ("RawLabWindows/ToneCurveSettings.cs", r'TryGetProperty\("channels"'),
-        },
-    )
+    channels_fact = _parse_channels_fact()
     out["light.curve"] = {
         "mode": {"value_type": "string", "allowed_values": mode_allowed},
         "points": points_fact,
         "channels": channels_fact,
     }
 
-    out["looks.reference"] = _fact(
-        _no_parse,
-        {
-            "kind": {"value_type": "string", "allowed_values": ["neutral", "builtin", "managed", "recipe", "recipe_lut"]},
-            "id": {"value_type": "string", "nullable_when_kind": "neutral", "non_empty": True},
-        },
-        "proto",
-        "looks.reference",
-        {
-            "macos": ("Shared/AdjustmentTransfer.swift", r'\["kind", "id"\]'),
-            "ios": ("Shared/AdjustmentTransfer.swift", r'\["kind", "id"\]'),
-            "android": (xfer_path, r'"kind"'),
-            "windows": (xfer_path, r'"kind"'),
-        },
-    )
+    out["looks.reference"] = _snap4("proto", "looks.reference", {
+        "kind": {"value_type": "string", "allowed_values": ["neutral", "builtin", "managed", "recipe", "recipe_lut"]},
+        "id": {"value_type": "string", "nullable_when_kind": "neutral", "non_empty": True},
+    })
 
-    grad_subs = _fact(
-        _no_parse,
-        {
-            "hue": {"value_type": "number", "min": 0.0, "max": 360.0, "exclusive_max": True},
-            "saturation": {"value_type": "number", "min": 0.0, "max": 100.0},
-        },
-        "proto",
-        "color.grading.wheel",
-        {
-            "macos": ("Shared/AdjustmentTransfer.swift", r'"hue"'),
-            "ios": ("Shared/AdjustmentTransfer.swift", r'"hue"'),
-            "android": (xfer_path, r'"hue"'),
-            "windows": (xfer_path, r'"hue"'),
-        },
-    )
+    grad_subs = _snap4("proto", "color.grading.wheel", {
+        "hue": {"value_type": "number", "min": 0.0, "max": 360.0, "exclusive_max": True},
+        "saturation": {"value_type": "number", "min": 0.0, "max": 100.0},
+    })
     for zone in ("shadows", "midtones", "highlights"):
         out[f"color.grading.{zone}"] = copy.deepcopy(grad_subs)
 
     def _look_scope():
         if platform == "windows":
             return _need(r"record HDRLookSettings\(.*?\n\}", hdrs, "hdr.look scope", hdr_path, re.S).group(0)
+        if platform == "android":
+            return _need(r"data class HDRLookSettings\(.*?\n\}", hdrs, "hdr.look scope", hdr_path, re.S).group(0)
         return hdrs
 
     def _look_sha_len():
@@ -348,18 +525,7 @@ def _object_sub_fields(platform):
             return int(_need(r"\[a-f0-9\]\{(\d+)\}", hdrs, "hdr.look sha256", hdr_path).group(1))
         return int(_need(r"value is \{ Length: (\d+) \}", _look_scope(), "hdr.look sha256", hdr_path).group(1))
 
-    sha_len = _fact(
-        _look_sha_len,
-        64,
-        "proto",
-        "hdr.look.sha256.hex_length",
-        {
-            "macos": ("Shared/HDRSettings.swift", r"\.utf8\.count == 64"),
-            "ios": ("Shared/HDRSettings.swift", r"\.utf8\.count == 64"),
-            "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"\[a-f0-9\]\{64\}"),
-            "windows": ("RawLabWindows/HDRSettings.cs", r"value is \{ Length: 64 \}"),
-        },
-    )
+    sha_len = _look_sha_len()
 
     def _look_name_bounds():
         if platform in ("macos", "ios"):
@@ -371,40 +537,18 @@ def _object_sub_fields(platform):
             return 1, int(m.group(1))
         return int(m.group(1)), int(m.group(2))
 
-    name_min, name_max = _fact(
-        _look_name_bounds,
-        (1, 512),
-        "proto",
-        "hdr.look.name.utf8",
-        {
-            "macos": ("Shared/HDRSettings.swift", r"name\.utf8\.count"),
-            "ios": ("Shared/HDRSettings.swift", r"name\.utf8\.count"),
-            "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"UTF_8\)\.size in"),
-            "windows": ("RawLabWindows/HDRSettings.cs", r"GetByteCount\("),
-        },
-    )
+    name_min, name_max = _look_name_bounds()
 
     def _look_strength_bounds():
         if platform in ("macos", "ios"):
-            m = _need(r"strength >= (-?[\d.]+) && strength <= (-?[\d.]+)", hdrs, "hdr.look strength", hdr_path)
+            m = _need(r"\((\d+)\.\.\.(\d+)\)\.contains\(strength\)", hdrs, "hdr.look strength", hdr_path)
         elif platform == "android":
-            m = _need(r"strength in (-?[\d.]+)f\.\.(-?[\d.]+)f", hdrs, "hdr.look strength", hdr_path)
+            m = _need(r"strength in (-?[\d.]+)f\.\.(-?[\d.]+)f", _look_scope(), "hdr.look strength", hdr_path)
         else:
             m = _need(r"Strength is >= (-?[\d.]+) and <= (-?[\d.]+)", _look_scope(), "hdr.look strength", hdr_path)
         return float(m.group(1)), float(m.group(2))
 
-    strength_lo, strength_hi = _fact(
-        _look_strength_bounds,
-        (0.0, 2.0),
-        "proto",
-        "hdr.look.strength.bounds",
-        {
-            "macos": ("Shared/HDRSettings.swift", r"struct HDRLookSettings"),
-            "ios": ("Shared/HDRSettings.swift", r"struct HDRLookSettings"),
-            "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"data class HDRLookSettings"),
-            "windows": ("RawLabWindows/HDRSettings.cs", r"record HDRLookSettings"),
-        },
-    )
+    strength_lo, strength_hi = _look_strength_bounds()
     out["hdr.look"] = {
         "sha256": {"value_type": "string", "hex_length": sha_len},
         "name": {"value_type": "string", "min_utf8_bytes": name_min, "max_utf8_bytes": name_max},
@@ -414,75 +558,44 @@ def _object_sub_fields(platform):
     def _cam_version():
         if platform in ("macos", "ios"):
             return int(_need(r"var version = (\d+)", hdrs, "hdr.camera_development version", hdr_path).group(1))
-        if platform == "android":
-            return int(_need(r"val version: Int = (\d+)", hdrs, "hdr.camera_development version", hdr_path).group(1))
-        return int(_need(r"int Version = (\d+)", hdrs, "hdr.camera_development version", hdr_path).group(1))
+        return None
 
-    version = _fact(
-        _cam_version,
-        1,
-        "proto",
-        "hdr.camera_development.version",
-        {
-            "macos": ("Shared/AdjustmentTransfer.swift", r'"white_balance_mode"'),
-            "ios": ("Shared/AdjustmentTransfer.swift", r'"white_balance_mode"'),
-            "android": (xfer_path, r'"white_balance_mode"'),
-            "windows": (xfer_path, r'"white_balance_mode"'),
-        },
-    )
+    version = _cam_version()
+    if version is None:
+        version = _snap4("proto", "hdr.camera_development.version", 1)
 
     def _cam_temp():
-        m = _need(r"temperature in (-?[\d.]+)f?\.\.(-?[\d.]+)f?", hdrs, "hdr.camera_development temperature", hdr_path)
+        if platform in ("macos", "ios"):
+            m = _need(r"\((\d+)\.\.\.(\d+)\)\.contains\(temperature\)", hdrs, "hdr.camera_development temperature", hdr_path)
+        elif platform == "android":
+            m = _need(r"temperature in (-?[\d.]+)f\.\.(-?[\d.]+)f", hdrs, "hdr.camera_development temperature", hdr_path)
+        else:
+            m = _need(r"Temperature is >= (-?[\d.]+) and <= (-?[\d.]+)", hdrs, "hdr.camera_development temperature", hdr_path)
         return float(m.group(1)), float(m.group(2))
 
-    temp_min, temp_max = _fact(
-        _cam_temp,
-        (2000.0, 50000.0),
-        "proto",
-        "hdr.camera_development.temperature",
-        {
-            "macos": ("Shared/AdjustmentTransfer.swift", r'"temperature"'),
-            "ios": ("Shared/AdjustmentTransfer.swift", r'"temperature"'),
-            "android": (xfer_path, r'"temperature"'),
-            "windows": (xfer_path, r'"temperature"'),
-        },
-    )
+    temp_min, temp_max = _cam_temp()
 
     def _cam_tint():
-        m = _need(r"tint in (-?[\d.]+)f?\.\.(-?[\d.]+)f?", hdrs, "hdr.camera_development tint", hdr_path)
+        if platform in ("macos", "ios"):
+            m = _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(tint\)", hdrs, "hdr.camera_development tint", hdr_path)
+        elif platform == "android":
+            m = _need(r"tint in (-?[\d.]+)f\.\.(-?[\d.]+)f", hdrs, "hdr.camera_development tint", hdr_path)
+        else:
+            m = _need(r"Tint is >= (-?[\d.]+) and <= (-?[\d.]+)", hdrs, "hdr.camera_development tint", hdr_path)
         return float(m.group(1)), float(m.group(2))
 
-    tint_min, tint_max = _fact(
-        _cam_tint,
-        (-150.0, 150.0),
-        "proto",
-        "hdr.camera_development.tint",
-        {
-            "macos": ("Shared/AdjustmentTransfer.swift", r'"tint"'),
-            "ios": ("Shared/AdjustmentTransfer.swift", r'"tint"'),
-            "android": (xfer_path, r'"tint"'),
-            "windows": (xfer_path, r'"tint"'),
-        },
-    )
+    tint_min, tint_max = _cam_tint()
 
     def _cam_fbdd():
-        m = _need(r"fbddLevel in (\d+)\.\.(\d+)", hdrs, "hdr.camera_development fbdd", hdr_path)
+        if platform in ("macos", "ios"):
+            m = _need(r"\((\d+)\.\.\.(\d+)\)\.contains\(fbddLevel\)", hdrs, "hdr.camera_development fbdd", hdr_path)
+        elif platform == "android":
+            m = _need(r"fbddLevel in (\d+)\.\.(\d+)", hdrs, "hdr.camera_development fbdd", hdr_path)
+        else:
+            m = _need(r"FbddLevel is >= (\d+) and <= (\d+)", hdrs, "hdr.camera_development fbdd", hdr_path)
         return list(range(int(m.group(1)), int(m.group(2)) + 1))
 
-    fbdd = _fact(
-        _cam_fbdd,
-        [0, 1, 2],
-        "proto",
-        "hdr.camera_development.fbdd_level",
-        {
-            "macos": ("Shared/AdjustmentTransfer.swift", r'"fbdd_level"'),
-            "ios": ("Shared/AdjustmentTransfer.swift", r'"fbdd_level"'),
-            "android": (xfer_path, r'"fbdd_level"'),
-            "windows": (xfer_path, r'"fbdd_level"'),
-        },
-    )
-    _need(r'"white_balance_mode"', xfer, "hdr.camera_development wire keys", xfer_path)
-    _need(r'"exposure_reference"', xfer, "hdr.camera_development wire keys", xfer_path)
+    fbdd = _cam_fbdd()
     out["hdr.camera_development"] = {
         "version": {"value_type": "integer", "allowed_values": [version]},
         "white_balance_mode": {"value_type": "string", "allowed_values": ["as_shot", "temperature"]},
@@ -492,24 +605,13 @@ def _object_sub_fields(platform):
         "fbdd_level": {"value_type": "integer", "allowed_values": fbdd},
     }
 
-    out["detail.denoise.wavelet"] = _fact(
-        _no_parse,
-        {
-            "enabled": {"value_type": "boolean"},
-            "preset": {"value_type": "string", "allowed_values": ["detail", "clean", "custom"]},
-            "luma": {"value_type": "number", "min": 0.0, "max": 100.0},
-            "chroma": {"value_type": "number", "min": 0.0, "max": 100.0},
-            "coarse": {"value_type": "number", "min": 0.0, "max": 100.0},
-        },
-        "proto",
-        "detail.denoise.wavelet",
-        {
-            "macos": ("Shared/AdjustmentTransfer.swift", r'"preset"'),
-            "ios": ("Shared/AdjustmentTransfer.swift", r'"preset"'),
-            "android": (xfer_path, r'"preset"'),
-            "windows": (xfer_path, r'"preset"'),
-        },
-    )
+    out["detail.denoise.wavelet"] = _snap4("proto", "detail.denoise.wavelet", {
+        "enabled": {"value_type": "boolean"},
+        "preset": {"value_type": "string", "allowed_values": ["detail", "clean", "custom"]},
+        "luma": {"value_type": "number", "min": 0.0, "max": 100.0},
+        "chroma": {"value_type": "number", "min": 0.0, "max": 100.0},
+        "coarse": {"value_type": "number", "min": 0.0, "max": 100.0},
+    })
     return out
 
 
@@ -1347,29 +1449,35 @@ def parse_models_from_sources() -> dict[str, dict[str, dict]]:
     # Parse shared HDR ranges/defaults from HDRSettings.swift & HDRSettings.kt
     hdr_exp_range = tuple(
         float(x)
-        for x in re.search(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(exposure\)", hdr_swift).groups()
+        for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(exposure\)", hdr_swift, "hdr.exposure bounds", "Shared/HDRSettings.swift").groups()
     )
     hdr_scalar_100 = tuple(
         float(x)
-        for x in re.search(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(contrast\)", hdr_swift).groups()
+        for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(contrast\)", hdr_swift, "hdr.scalar ±100 bounds", "Shared/HDRSettings.swift").groups()
     )
     hdr_peak_range = tuple(
         float(x)
-        for x in re.search(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(peakLimitEV\)", hdr_swift).groups()
+        for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(peakLimitEV\)", hdr_swift, "hdr.peak bounds", "Shared/HDRSettings.swift").groups()
     )
     hdr_sdr_exp_range = tuple(
         float(x)
-        for x in re.search(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(sdrExposureEV\)", hdr_swift).groups()
+        for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(sdrExposureEV\)", hdr_swift, "hdr.sdr_exposure bounds", "Shared/HDRSettings.swift").groups()
     )
     hdr_sharp_range = tuple(
         float(x)
-        for x in re.search(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(sharpening\)", hdr_swift).groups()
+        for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(sharpening\)", hdr_swift, "hdr.sharpen bounds", "Shared/HDRSettings.swift").groups()
     )
     hdr_clarity_range = tuple(
         float(x)
-        for x in re.search(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(clarity\)", hdr_swift).groups()
+        for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(clarity\)", hdr_swift, "hdr.clarity bounds", "Shared/HDRSettings.swift").groups()
     )
-    assert "exposure in -4f..4f" in kt_hdr
+    _require("exposure in -4f..4f", kt_hdr, "hdr.exposure bounds", "settings/HDRSettings.kt")
+    _snap4("model", "hdr.bounds", {
+        "hdr_exposure": [-4.0, 4.0],
+        "hdr_scalar_100": [-100.0, 100.0],
+        "hdr_sharp": [0.0, 2.0],
+        "hdr_clarity": [-1.0, 1.0],
+    })
 
     # Parse Mac AdjustmentParameter.spec ranges & defaults + MacAdjustmentTransferValues scales
     mac_specs = {}
@@ -1379,31 +1487,31 @@ def parse_models_from_sources() -> dict[str, dict[str, dict]]:
     ):
         mac_specs[m.group(1)] = (float(m.group(2)), float(m.group(3)), float(m.group(4)))
 
-    mac_contrast_scale = "(p - 1) * 100" if "case .contrast, .saturation: native = (value - 1) * 100" in mac_tv else "p"
-    mac_hi_scale = "-p * 100" if "case .highlights: native = -value * 100" in mac_tv else "p * 100"
-    mac_sh_scale = "p * 100" if "case .shadows, .sCurve, .sharpening: native = value * 100" in mac_tv else "p"
-    mac_chroma_opt = "var chromaNoiseReduction: Double?" in mac_adj
-    mac_wavelet_opt = "var waveletNoiseReduction: WaveletDenoiseSettings?" in mac_adj
-    mac_post_rgb_sdr_unsupported = "if let value = payload[.postRGBDenoise]?.number, value != 0 {\n            throw AdjustmentTransferError.incompatible" in mac_tv
-    mac_ai_sdr = "var aiDenoiseEnabled = false" in mac_adj
-    mac_ai_hdr = "var hdrCameraAIEnabled: Bool" in mac_adj
+    _require("case .contrast, .saturation: native = (value - 1) * 100", mac_tv, "contrast/saturation scale", "MacAdjustmentTransferValues.swift")
+    _require("case .highlights: native = -value * 100", mac_tv, "highlights scale", "MacAdjustmentTransferValues.swift")
+    _require("case .shadows, .sCurve, .sharpening: native = value * 100", mac_tv, "shadows/sCurve/sharpening scale", "MacAdjustmentTransferValues.swift")
+    mac_contrast_scale, mac_hi_scale, mac_sh_scale = "(p - 1) * 100", "-p * 100", "p * 100"
+    _require("var chromaNoiseReduction: Double?", mac_adj, "detail.denoise.chroma_mode nullable", "Adjustments.swift")
+    _require("var waveletNoiseReduction: WaveletDenoiseSettings?", mac_adj, "detail.denoise.wavelet nullable", "Adjustments.swift")
+    _require("if let value = payload[.postRGBDenoise]?.number, value != 0 {\n            throw AdjustmentTransferError.incompatible", mac_tv, "detail.denoise.post_rgb mac sdr unsupported", "MacAdjustmentTransferValues.swift")
+    _require("var aiDenoiseEnabled = false", mac_adj, "local.ai_denoise_enabled mac", "Adjustments.swift")
+    _require("var hdrCameraAIEnabled: Bool", mac_adj, "local.hdr_camera_ai_enabled mac", "Adjustments.swift")
 
     # Parse iOS EditorAdjustmentRules.valid(_:) + RawSettings defaults + IOSAdjustmentTransfer rules
     ios_valid_ranges = {}
-    valid_section = re.search(r"static func valid\(_ settings: RawSettings\) -> Bool \{(.*?)\n    \}", ios_rules, re.S).group(1)
+    valid_section = _need(r"static func valid\(_ settings: RawSettings\) -> Bool \{(.*?)\n    \}", ios_rules, "ios valid() bounds section", "EditorAdjustmentRules.swift", re.S).group(1)
     for prop, lo, hi in re.findall(r"\(settings\.(\w+),\s*(-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?)\)", valid_section):
         ios_valid_ranges[prop] = (float(lo), float(hi))
-    ios_lut_range = tuple(float(x) for x in re.search(r"lutStrengthRange:\s*ClosedRange<Double>\s*=\s*(-?\d+)\.\.\.(-?\d+)", ios_raw).groups())
-    ios_temp_range = tuple(float(x) for x in re.search(r"temperatureRange:\s*ClosedRange<Double>\s*=\s*(-?\d+)\.\.\.(-?\d+)", ios_raw).groups())
-    ios_tint_range = tuple(float(x) for x in re.search(r"tintRange:\s*ClosedRange<Double>\s*=\s*(-?\d+)\.\.\.(-?\d+)", ios_raw).groups())
-    ios_contrast_default = float(re.search(r"contrast = try values\.decodeIfPresent.*? \?\? (\d+)", ios_raw).group(1))
-    ios_sat_default = float(re.search(r"saturation = try values\.decodeIfPresent.*? \?\? (\d+)", ios_raw).group(1))
-    ios_strength_default = float(re.search(r"lutStrength = try values\.decodeIfPresent.*? \?\? (\d+)", ios_raw).group(1))
-    ios_fx_rounds_int = "value.rounded()" in re.search(r"private static func clamped.*?\n    \}", ios_raw, re.S).group(0)
-    ios_fx_rejects_frac = "guard value.rounded() == value else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }" in ios_tr
-    ios_raw_dn_unsupported = "if let raw = payload[.rawDenoise]?.number, raw != 0 { throw AdjustmentTransferError.incompatible" in ios_tv
-    ios_direct_scalar = "for (field, key) in scalarKeys { result[field.rawValue] = .number(settings[keyPath: key]) }" in ios_tv
-    assert ios_direct_scalar
+    ios_lut_range = tuple(float(x) for x in _need(r"lutStrengthRange:\s*ClosedRange<Double>\s*=\s*(-?\d+)\.\.\.(-?\d+)", ios_raw, "looks.strength bounds", "RawSettings.swift").groups())
+    ios_temp_range = tuple(float(x) for x in _need(r"temperatureRange:\s*ClosedRange<Double>\s*=\s*(-?\d+)\.\.\.(-?\d+)", ios_raw, "white_balance.temperature bounds", "RawSettings.swift").groups())
+    ios_tint_range = tuple(float(x) for x in _need(r"tintRange:\s*ClosedRange<Double>\s*=\s*(-?\d+)\.\.\.(-?\d+)", ios_raw, "white_balance.tint bounds", "RawSettings.swift").groups())
+    ios_contrast_default = float(_need(r"contrast = try values\.decodeIfPresent.*? \?\? (\d+)", ios_raw, "contrast default", "RawSettings.swift").group(1))
+    ios_sat_default = float(_need(r"saturation = try values\.decodeIfPresent.*? \?\? (\d+)", ios_raw, "saturation default", "RawSettings.swift").group(1))
+    ios_strength_default = float(_need(r"lutStrength = try values\.decodeIfPresent.*? \?\? (\d+)", ios_raw, "lut strength default", "RawSettings.swift").group(1))
+    _need(r"private static func clamped[\s\S]*?value\.rounded\(\)", ios_raw, "effects ios quantization", "RawSettings.swift", re.S)
+    _require("guard value.rounded() == value else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }", ios_tr, "effects ios transfer rejects fractional", "IOSAdjustmentTransfer.swift")
+    _require("if let raw = payload[.rawDenoise]?.number, raw != 0 { throw AdjustmentTransferError.incompatible", ios_tv, "detail.denoise.raw_level ios unsupported", "IOSAdjustmentTransferValues.swift")
+    _require("for (field, key) in scalarKeys { result[field.rawValue] = .number(settings[keyPath: key]) }", ios_tv, "ios direct scalar transfer", "IOSAdjustmentTransferValues.swift")
 
     # Parse Android EditSettings defaults & require() bounds + AdjustmentTransferValues scales
     kt_defaults = {}
@@ -1412,10 +1520,11 @@ def parse_models_from_sources() -> dict[str, dict[str, dict]]:
     kt_bounds = {}
     for prop, lo, hi in re.findall(r"require\((\w+)\.isFinite\(\)\s*&&\s*\1 in (-?\d+(?:\.\d+)?)f\.\.(-?\d+(?:\.\d+)?)f\)", kt_edit):
         kt_bounds[prop] = (float(lo), float(hi))
-    kt_contrast_scale = "p - 1" if "AdjustmentField.CONTRAST -> settings.copy(contrast = (value - 1).toFloat())" in kt_tv else "p"
-    kt_sat_scale = "p - 1" if "AdjustmentField.SATURATION -> settings.copy(saturation = (value - 1).toFloat())" in kt_tv else "p"
-    kt_hi_scale = "-p" if "AdjustmentField.HIGHLIGHTS -> settings.copy(highlights = (-value.toFloat())" in kt_tv else "p"
-    kt_dn_unsupported = "for (field in listOf(AdjustmentField.RAW_DENOISE, AdjustmentField.POST_RGB_DENOISE))" in kt_tv
+    _require("AdjustmentField.CONTRAST -> settings.copy(contrast = (value - 1).toFloat())", kt_tv, "contrast scale", "AdjustmentTransferValues.kt")
+    _require("AdjustmentField.SATURATION -> settings.copy(saturation = (value - 1).toFloat())", kt_tv, "saturation scale", "AdjustmentTransferValues.kt")
+    _require("AdjustmentField.HIGHLIGHTS -> settings.copy(highlights = (-value.toFloat())", kt_tv, "highlights scale", "AdjustmentTransferValues.kt")
+    kt_contrast_scale, kt_sat_scale, kt_hi_scale = "p - 1", "p - 1", "-p"
+    _require("for (field in listOf(AdjustmentField.RAW_DENOISE, AdjustmentField.POST_RGB_DENOISE))", kt_tv, "detail.denoise kt sdr unsupported", "AdjustmentTransferValues.kt")
 
     # Parse Windows ParameterSpec.All + values[] + PhotoEffectSpec + SetEffect rounding + AdjustmentTransferValues scales
     cs_specs = {}
@@ -1426,24 +1535,34 @@ def parse_models_from_sources() -> dict[str, dict[str, dict]]:
         cs_specs[m.group(1)] = (float(m.group(2)), float(m.group(3)), float(m.group(4)))
     cs_defaults_arr = [
         float(x)
-        for x in re.search(r"private double\[\] values = \[([^\]]+)\];", cs_adj).group(1).split(",")
+        for x in _need(r"private double\[\] values = \[([^\]]+)\];", cs_adj, "windows defaults array", "Adjustments.cs").group(1).split(",")
     ]
-    cs_param_order = ["Strength", "Exposure", "Temperature", "Tint", "Contrast", "Highlights", "Shadows", "ToneCurve", "Saturation", "Sharpening"]
+    cs_param_order = re.findall(
+        r"[A-Za-z]\w*",
+        _need(r"public enum Parameter \{([^}]*)\}", cs_adj, "windows Parameter enum order", "Adjustments.cs", re.S).group(1),
+    )
+    assert cs_param_order[: len(cs_defaults_arr)] == [
+        "Strength", "Exposure", "Temperature", "Tint", "Contrast",
+        "Highlights", "Shadows", "ToneCurve", "Saturation", "Sharpening",
+    ], f"windows Parameter enum order drifted: {cs_param_order[:10]}"
     cs_defaults = dict(zip(cs_param_order, cs_defaults_arr))
-    cs_fx_round_1 = "Math.Round(value, 1, MidpointRounding.AwayFromZero)" in cs_adj
-    cs_contrast_scale = "(p - 1) * 100" if "F.Contrast or F.Saturation=>(value-1)*100" in cs_tv else "p"
-    cs_hi_scale = "-p * 100" if "F.Highlights=>-value*100" in cs_tv else "p * 100"
-    cs_other_scale = "p * 100" if "_=>value*100" in cs_tv else "p"
-    cs_dn_unsupported = "foreach(var field in new[]{F.RawDenoise,F.PostRGBDenoise})" in cs_tv
-    cs_ai_sdr = "public bool AIDenoiseEnabled { get; set; }" in cs_adj
-    cs_ai_hdr = "internal bool HDRCameraAIEnabled { get; set; }" in cs_adj
+    _require("Math.Round(value, 1, MidpointRounding.AwayFromZero)", cs_adj, "effects windows quantization", "Adjustments.cs")
+    _require("F.Contrast or F.Saturation=>(value-1)*100", cs_tv, "contrast/saturation scale", "AdjustmentTransferValues.cs")
+    _require("F.Highlights=>-value*100", cs_tv, "highlights scale", "AdjustmentTransferValues.cs")
+    _require("_=>value*100", cs_tv, "default scale", "AdjustmentTransferValues.cs")
+    cs_contrast_scale, cs_hi_scale, cs_other_scale = "(p - 1) * 100", "-p * 100", "p * 100"
+    _require("foreach(var field in new[]{F.RawDenoise,F.PostRGBDenoise})", cs_tv, "detail.denoise windows sdr unsupported", "AdjustmentTransferValues.cs")
+    _require("public bool AIDenoiseEnabled { get; set; }", cs_adj, "local.ai_denoise_enabled windows", "Adjustments.cs")
+    _require("internal bool HDRCameraAIEnabled { get; set; }", cs_adj, "local.hdr_camera_ai_enabled windows", "Adjustments.cs")
 
     # Shared sub-settings defaults/ranges
-    hsl_range = tuple(float(x) for x in re.search(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(\$0\)", hsl_swift).groups())
-    tone_range = tuple(float(x) for x in re.search(r"(-?\d+)\.\.\.(-?\d+)", tone_swift).groups())
-    atmos_range = tuple(float(x) for x in re.search(r"(-?\d+)\.\.\.(-?\d+)", atmos_swift).groups())
-    assert "cropWidth: Double = 1" in geom_swift or "var cropWidth = 1.0" in geom_swift
-    hdr_detail_clarity_scale = "p / 100" if "field == .clarity || field == .dehaze ? value * 100 : value" in hdr_transfer_swift else "p"
+    hsl_range = tuple(float(x) for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(\$0\)", hsl_swift, "color.hsl bounds", "Shared/HSLSettings.swift").groups())
+    tone_range = tuple(float(x) for x in _need(r"(-?\d+)\.\.\.(-?\d+)", tone_swift, "tone controls bounds", "Shared/ToneControlsSettings.swift").groups())
+    atmos_range = tuple(float(x) for x in _need(r"(-?\d+)\.\.\.(-?\d+)", atmos_swift, "atmosphere bounds", "Shared/AtmosphereSettings.swift").groups())
+    _snap4("model", "hsl.tone.atmos.bounds", {"bounds": [-100.0, 100.0]})
+    _need(r"cropWidth: Double = 1|var cropWidth = 1\.0", geom_swift, "geometry crop default", "Shared/GeometrySettings.swift")
+    _require("field == .clarity || field == .dehaze ? value * 100 : value", hdr_transfer_swift, "hdr.detail clarity/dehaze scale", "Shared/HDRAdjustmentTransfer.swift")
+    _snap4("model", "hdr.detail.scale", {"hdr_scale_from_protocol": "p / 100"})
 
     cs_fx_defs = {}
     for m in re.finditer(
@@ -1451,23 +1570,27 @@ def parse_models_from_sources() -> dict[str, dict[str, dict]]:
         cs_fx,
     ):
         cs_fx_defs[m.group(1)] = (float(m.group(2)), float(m.group(3)), float(m.group(4)))
+    # The Windows PhotoEffectParameter table is the single 4-end bounds source
+    # for the 8 effects fields; the snapshot registers that cross-end fact with
+    # a real anchor per end (reviewer S1) instead of silently borrowing it.
+    fx_bounds = _snap4("model", "effects.fx_bounds", cs_fx_defs)
 
-    dn_m = re.search(
+    dn_m = _need(
         r"record DenoiseSettings\(bool Enabled=(false|true),double Luma=(\d+),double Chroma=(\d+),double Coarse=(\d+)\)",
-        cs_dn,
+        cs_dn, "detail.denoise.wavelet defaults", "DenoiseSettings.cs",
     )
-    wavelet_default = {
+    wavelet_default = _snap4("model", "wavelet.default", {
         "enabled": dn_m.group(1) == "true",
         "luma": float(dn_m.group(2)),
         "chroma": float(dn_m.group(3)),
         "coarse": float(dn_m.group(4)),
         "preset": "detail",
-    }
+    })
 
     models: dict[str, dict[str, dict]] = {}
 
     # 1. looks.reference & 2. looks.strength
-    look_def = {"kind": "neutral", "id": None}
+    look_def = _snap4("model", "looks.reference.default", {"kind": "neutral", "id": None})
     models["looks.reference"] = {
         p: _model_entry("object", modes=("sdr",), default=look_def, quantization="discrete")
         for p in PLATFORMS
@@ -1534,11 +1657,16 @@ def parse_models_from_sources() -> dict[str, dict[str, dict]]:
         }
 
     # 13-15. color.grading.*
-    grad_def = {"hue": 0.0, "saturation": 0.0}
+    grad_def = _snap4("model", "grading.default", {"hue": 0.0, "saturation": 0.0})
     for zone in ("shadows", "midtones", "highlights"):
         models[f"color.grading.{zone}"] = {p: _model_entry("object", default=grad_def) for p in PLATFORMS}
 
     # 16-19. white balance & saturation
+    _snap4("model", "mode.enums", {
+        "exposure_mode_default": "preview",
+        "wb_mode_default": "camera",
+        "int_mode_bounds": [0, 2],
+    })
     models["color.white_balance.mode"] = {
         "macos": _model_entry("enum", modes=("sdr",), default="camera", quantization="discrete"),
         "ios": _model_entry("enum", modes=("sdr",), default="camera", quantization="discrete"),
@@ -1565,6 +1693,10 @@ def parse_models_from_sources() -> dict[str, dict[str, dict]]:
     }
 
     # 20-27. HDR-only fields
+    _snap4("model", "hdr.relative.bounds", {
+        "temperature": [2000.0, 50000.0, 6500.0],
+        "tint": [-150.0, 150.0, 0.0],
+    })
     models["hdr.relative_temperature"] = {
         p: _model_entry("float" if p == "android" else "double", modes=("hdr",), min_val=2000.0, max_val=50000.0, default=6500.0)
         for p in PLATFORMS
@@ -1573,11 +1705,15 @@ def parse_models_from_sources() -> dict[str, dict[str, dict]]:
         p: _model_entry("float" if p == "android" else "double", modes=("hdr",), min_val=-150.0, max_val=150.0, default=0.0)
         for p in PLATFORMS
     }
+    sdr_bounds = _snap4("model", "hdr.sdr.bounds", {
+        "sdr_contrast": [-100.0, 100.0],
+        "sdr_saturation": [-100.0, 100.0],
+    })
     for fid, (lo, hi) in (
         ("hdr.peak_limit_ev", hdr_peak_range),
         ("hdr.sdr_exposure_ev", hdr_sdr_exp_range),
-        ("hdr.sdr_contrast", (-100.0, 100.0)),
-        ("hdr.sdr_saturation", (-100.0, 100.0)),
+        ("hdr.sdr_contrast", tuple(sdr_bounds["sdr_contrast"])),
+        ("hdr.sdr_saturation", tuple(sdr_bounds["sdr_saturation"])),
     ):
         models[fid] = {
             p: _model_entry("float" if p == "android" else "double", modes=("hdr",), min_val=lo, max_val=hi, default=0.0)
@@ -1586,14 +1722,14 @@ def parse_models_from_sources() -> dict[str, dict[str, dict]]:
     models["hdr.look"] = {
         p: _model_entry("object", modes=("hdr",), nullable=True, default=_look_default(p)) for p in PLATFORMS
     }
-    hdr_cam_def = {
+    hdr_cam_def = _snap4("model", "hdr.camera.defaults", {
         "version": 1,
         "white_balance_mode": "as_shot",
         "temperature": 0.0,
         "tint": 0.0,
         "exposure_reference": "metadata",
         "fbdd_level": 0,
-    }
+    })
     models["hdr.camera_development"] = {p: _model_entry("object", modes=("hdr",), default=hdr_cam_def) for p in PLATFORMS}
 
     # 28-51. HSL
@@ -1616,7 +1752,7 @@ def parse_models_from_sources() -> dict[str, dict[str, dict]]:
         ("effects.grain.roughness", "GrainRoughness"),
     ]
     for fid, cs_name in fx_map:
-        lo, hi, dflt = cs_fx_defs[cs_name]
+        lo, hi, dflt = fx_bounds[cs_name]
         models[fid] = {
             "macos": _model_entry("double", min_val=lo, max_val=hi, default=dflt),
             "ios": _model_entry(
@@ -1624,11 +1760,11 @@ def parse_models_from_sources() -> dict[str, dict[str, dict]]:
                 min_val=lo,
                 max_val=hi,
                 default=dflt,
-                quantization="round_int" if ios_fx_rounds_int else "continuous",
-                transfer_rejects_fractional=ios_fx_rejects_frac,
+                quantization="round_int",
+                transfer_rejects_fractional=True,
             ),
             "android": _model_entry("float", min_val=lo, max_val=hi, default=dflt),
-            "windows": _model_entry("double", min_val=lo, max_val=hi, default=dflt, quantization="round_1" if cs_fx_round_1 else "continuous"),
+            "windows": _model_entry("double", min_val=lo, max_val=hi, default=dflt, quantization="round_1"),
         }
     for fid in ("effects.clarity", "effects.dehaze"):
         models[fid] = {
@@ -1641,7 +1777,7 @@ def parse_models_from_sources() -> dict[str, dict[str, dict]]:
                 default=0.0,
                 hdr_default=0.0,
                 scale_from_protocol="p",
-                hdr_scale_from_protocol=hdr_detail_clarity_scale,
+                hdr_scale_from_protocol="p / 100",
             )
             for p in PLATFORMS
         }
@@ -1655,30 +1791,43 @@ def parse_models_from_sources() -> dict[str, dict[str, dict]]:
     }
     models["detail.denoise.raw_level"] = {
         "macos": _model_entry("double", modes=("sdr",), min_val=mac_specs["rawNoiseReduction"][0], max_val=mac_specs["rawNoiseReduction"][1], default=0.0, quantization="discrete"),
-        "ios": _model_entry("none", supported=not ios_raw_dn_unsupported, modes=(), scale_from_protocol="none", quantization="none"),
-        "android": _model_entry("none", supported=not kt_dn_unsupported, modes=(), scale_from_protocol="none", quantization="none"),
-        "windows": _model_entry("none", supported=not cs_dn_unsupported, modes=(), scale_from_protocol="none", quantization="none"),
+        "ios": _model_entry("none", supported=False, modes=(), scale_from_protocol="none", quantization="none"),
+        "android": _model_entry("none", supported=False, modes=(), scale_from_protocol="none", quantization="none"),
+        "windows": _model_entry("none", supported=False, modes=(), scale_from_protocol="none", quantization="none"),
     }
+    _snap4("model", "denoise.post.default", {"bounds": [0.0, 1.0], "default": 0.0})
     models["detail.denoise.post_rgb"] = {
-        "macos": _model_entry("double", modes=("hdr",) if mac_post_rgb_sdr_unsupported else ("sdr", "hdr"), min_val=0.0, max_val=1.0, default=0.0),
+        "macos": _model_entry("double", modes=("hdr",), min_val=0.0, max_val=1.0, default=0.0),
         "ios": _model_entry("double", modes=("sdr", "hdr"), min_val=ios_valid_ranges["noiseReduction"][0], max_val=ios_valid_ranges["noiseReduction"][1], default=0.0),
-        "android": _model_entry("float", modes=("hdr",) if kt_dn_unsupported else ("sdr", "hdr"), min_val=0.0, max_val=1.0, default=0.0),
-        "windows": _model_entry("double", modes=("hdr",) if cs_dn_unsupported else ("sdr", "hdr"), min_val=0.0, max_val=1.0, default=0.0),
+        "android": _model_entry("float", modes=("hdr",), min_val=0.0, max_val=1.0, default=0.0),
+        "windows": _model_entry("double", modes=("hdr",), min_val=0.0, max_val=1.0, default=0.0),
     }
+    _snap4("model", "denoise.chroma.int_bounds", {"int_bounds": [0, 2], "default": 0})
     models["detail.denoise.chroma_mode"] = {
-        "macos": _model_entry("double", modes=("sdr",), nullable=mac_chroma_opt, min_val=0.0, max_val=2.0, default=None, quantization="discrete"),
+        "macos": _model_entry("double", modes=("sdr",), nullable=True, min_val=0.0, max_val=2.0, default=None, quantization="discrete"),
         "ios": _model_entry("int", modes=("sdr",), min_val=0, max_val=2, default=0, quantization="discrete"),
         "android": _model_entry("int", modes=("sdr",), min_val=0, max_val=2, default=0, quantization="discrete"),
         "windows": _model_entry("int", modes=("sdr",), min_val=0, max_val=2, default=0, quantization="discrete"),
     }
     models["detail.denoise.wavelet"] = {
-        "macos": _model_entry("object", modes=("sdr",), nullable=mac_wavelet_opt, default=None),
+        "macos": _model_entry("object", modes=("sdr",), nullable=True, default=None),
         "ios": _model_entry("object", modes=("sdr",), default=wavelet_default),
         "android": _model_entry("object", modes=("sdr",), default=wavelet_default),
         "windows": _model_entry("object", modes=("sdr",), default=wavelet_default),
     }
 
     # 67-81. geometry & lens
+    _snap4("model", "geometry.defaults", {
+        "crop_bounds": [0.0, 1.0],
+        "crop_xy_default": 0.0,
+        "crop_wh_default": 1.0,
+        "quarter_turn_bounds": [0, 3],
+        "flip_default": False,
+        "straighten_bounds": [-45.0, 45.0],
+        "perspective_bounds": [-1.0, 1.0],
+        "lens_defaults": {"distortion": False, "tca": False, "vignetting": False, "auto_crop": True},
+        "profile_default": None,
+    })
     for fid, dflt in (
         ("geometry.crop.x", 0.0),
         ("geometry.crop.y", 0.0),
@@ -1718,16 +1867,16 @@ def parse_models_from_sources() -> dict[str, dict[str, dict]]:
 
     # 82-83. local desktop AI denoise
     models["local.ai_denoise_enabled"] = {
-        "macos": _model_entry("bool", supported=mac_ai_sdr, modes=("sdr",), default=False, scale_from_protocol="none", quantization="discrete"),
+        "macos": _model_entry("bool", supported=True, modes=("sdr",), default=False, scale_from_protocol="none", quantization="discrete"),
         "ios": _model_entry("none", supported=False, modes=(), scale_from_protocol="none", quantization="none"),
         "android": _model_entry("none", supported=False, modes=(), scale_from_protocol="none", quantization="none"),
-        "windows": _model_entry("bool", supported=cs_ai_sdr, modes=("sdr",), default=False, scale_from_protocol="none", quantization="discrete"),
+        "windows": _model_entry("bool", supported=True, modes=("sdr",), default=False, scale_from_protocol="none", quantization="discrete"),
     }
     models["local.hdr_camera_ai_enabled"] = {
-        "macos": _model_entry("bool", supported=mac_ai_hdr, modes=("hdr",), default=False, scale_from_protocol="none", quantization="discrete"),
+        "macos": _model_entry("bool", supported=True, modes=("hdr",), default=False, scale_from_protocol="none", quantization="discrete"),
         "ios": _model_entry("none", supported=False, modes=(), scale_from_protocol="none", quantization="none"),
         "android": _model_entry("none", supported=False, modes=(), scale_from_protocol="none", quantization="none"),
-        "windows": _model_entry("bool", supported=cs_ai_hdr, modes=("hdr",), default=False, scale_from_protocol="none", quantization="discrete"),
+        "windows": _model_entry("bool", supported=True, modes=("hdr",), default=False, scale_from_protocol="none", quantization="discrete"),
     }
 
     return models
@@ -1824,9 +1973,10 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
         6,
     )
     mac_persp_unit = re.search(r'case \.perspectiveHorizontal,\s*\.perspectiveVertical:\s*return "([^"]*)"', mac_types_src).group(1)
-    mac_sdr_lens_has_vig = "vignetting" in re.search(r"private var correctionOptions.*?\}", mac_lens_src, re.S).group(0)
-    mac_has_chroma_picker = 'accessibilityIdentifier("chromaNoiseReduction.mode")' in mac_dn_src
-    mac_hdr_dock_uses_prec = "precision: isEV ? .exposure : .standard" in mac_dock_src
+    mac_lens_options_block = _need(r"private var correctionOptions.*?\}", mac_lens_src, "geometry.lens.vignetting mac sdr scope", "LensControls.swift", re.S).group(0)
+    _require_absent("vignetting", mac_lens_options_block, "geometry.lens.vignetting mac sdr", "LensControls.swift correctionOptions")
+    _require('accessibilityIdentifier("chromaNoiseReduction.mode")', mac_dn_src, "detail.denoise.chroma_mode mac picker", "DenoiseControls.swift")
+    _require("precision: isEV ? .exposure : .standard", mac_dock_src, "hdr UI precision steps", "AdjustmentDock.swift")
 
     # Extract Apple HDRMonitoring steps (shared by Mac secondary inspector + iOS)
     hdr_mon_peak_step = float(re.search(r'slider\("HDR 亮度上限".*?step:\s*(\d+(?:\.\d+)?)', hdr_mon_src).group(1))
@@ -1850,7 +2000,7 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
         re.search(r'AdjustmentControl\(title:\s*L10n\.text\("S 曲线"\).*?range:\s*-100\.\.\.100,\s*step:\s*(\d+(?:\.\d+)?)', ios_curve_src, re.S).group(1)
     )
     ios_hdr_denoise_step_pct = round(ios_steps["noiseReduction"] * 100.0, 6)
-    ios_sdr_denoise_uses_wavelet = "selectedAdjustment == .noiseReduction && !workingSettings.isHDREditing" in ios_panels_src
+    _require("selectedAdjustment == .noiseReduction && !workingSettings.isHDREditing", ios_panels_src, "detail.denoise.post_rgb ios sdr", "AdjustmentPanels.swift")
     ios_grad_step = float(re.search(r'identifier:\s*"grading\.hue"', ios_grad_src).string and re.search(r"range:\s*0\.\.\.360,\s*step:\s*(\d+(?:\.\d+)?)", ios_grad_src).group(1))
     ios_fx_step = float(re.search(r"struct IOSPhotoEffectsControls.*?range:\s*parameter\.range,\s*step:\s*(\d+(?:\.\d+)?)", ios_fx_src, re.S).group(1))
     ios_wavelet_step = float(re.search(r"struct IOSDenoiseControls.*?range:\s*0\.\.\.100,\s*step:\s*(\d+(?:\.\d+)?)", ios_fx_src, re.S).group(1))
@@ -1863,7 +2013,7 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
         re.search(r'AdjustmentControl\(title:\s*L10n\.text\("拉直"\).*?step:\s*(\d+(?:\.\d+)?)', ios_geom_src, re.S).group(1)
     )
     ios_persp_step = float(re.search(r"func perspectiveControl.*?range:\s*-100\.\.\.100,\s*step:\s*(\d+(?:\.\d+)?)", ios_geom_src, re.S).group(1))
-    ios_sdr_lens_has_vig = 'accessibilityIdentifier("lens.vignetting")' in ios_lens_src
+    _require('accessibilityIdentifier("lens.vignetting")', ios_lens_src, "geometry.lens.vignetting ios sdr", "LensControls.swift")
 
     # Extract Android NumericControl step table & screen overrides
     kt_step_block = re.search(r"val step = stepOverride \?: when \(label\) \{(.*?)\n    \}", kt_ctrl_src, re.S).group(1)
@@ -1879,10 +2029,10 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
     kt_hdr_peak_step = float(
         re.search(r"R\.string\.hdr_peak_limit.*?stepOverride\s*=\s*(\.\d+|\d+(?:\.\d+)?)f", kt_screen_src, re.S).group(1)
     )
-    kt_hdr_cam_uses_temp_label = "NumericControl(R.string.temperature, draft.temperature" in kt_screen_src
+    _require("NumericControl(R.string.temperature, draft.temperature", kt_screen_src, "hdr.camera_development temp step", "EditorScreen.kt")
     kt_crop_min_pct = float(re.search(r"R\.string\.geometry_crop_width.*?minOf\((\.\d+|\d+(?:\.\d+)?)f,", kt_geom_src).group(1))
     kt_persp_unit = re.search(r'R\.string\.geometry_perspective_horizontal,\s*value\.perspectiveHorizontal \* 100f,\s*-100f\.\.100f,\s*"([^"]*)"', kt_geom_src).group(1)
-    kt_sdr_lens_has_vig = '"lens.vignetting"' in kt_lens_src
+    _require('"lens.vignetting"', kt_lens_src, "geometry.lens.vignetting android sdr", "LensControls.kt")
 
     # Extract Windows NumericRange default Grid & panel-specific steps/ranges
     cs_default_grid = float(re.search(r"record NumericRange\(double Min,\s*double Max,\s*double Grid\s*=\s*(\.\d+|\d+(?:\.\d+)?)", cs_inter_src).group(1))
@@ -1900,7 +2050,8 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
     cs_crop_m = re.search(r"new\(i<2 \? 0 : (\.\d+),maxima\[i\]\*100,(\.\d+),", cs_geom_src)
     cs_crop_min_pct = float(cs_crop_m.group(1))
     cs_crop_step = float(cs_crop_m.group(2))
-    cs_sdr_lens_has_vig = 'x:Name="Vignetting"' in cs_lens_xaml
+    _require_absent('x:Name="Vignetting"', cs_lens_xaml, "geometry.lens.vignetting windows sdr", "LensPanel.xaml")
+    _require("AppliedVignetting", cs_adj_src, "geometry.lens.vignetting windows hdr summary", "Adjustments.cs")
     cs_hdr_cam_temp_step = float(re.search(r'temperature\.Refresh\(Loc\.Text\("色温"\),new\(2000,50000,(\d+)\)', cs_hdr_src).group(1))
     cs_hdr_cam_tint_step = float(re.search(r'tint\.Refresh\(Loc\.Text\("色调"\),new\(-150,150,(\d+)\)', cs_hdr_src).group(1))
     cs_hdr_look_step = float(re.search(r'strength\.Refresh\(Loc\.Text\("外观强度"\),new\(0,200,(\d+)\)', cs_hdr_src).group(1))
@@ -1909,7 +2060,8 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
     ui: dict[str, dict[str, dict]] = {}
 
     # 1. looks.reference & 2. looks.strength
-    look_def = {"kind": "neutral", "id": None}
+    look_def = _snap4("ui", "look.reference.default", {"kind": "neutral", "id": None})
+    _snap4("ui", "look.percent", {"unit": "%", "bounds": [0.0, 200.0], "default": 100.0})
     ui["looks.reference"] = {p: _ui_entry(modes=("sdr",), default=look_def) for p in PLATFORMS}
     ui["looks.strength"] = {
         "macos": _ui_entry(modes=("sdr",), unit="%", min_val=0.0, max_val=200.0, default=100.0, step=mac_fine["standard"]),
@@ -1919,6 +2071,12 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
     }
 
     # 3. light.exposure & 4. light.exposure_mode
+    _snap4("ui", "exposure.bounds", {
+        "unit": "EV",
+        "sdr_bounds": [-5.0, 5.0],
+        "hdr_bounds": [-4.0, 4.0],
+        "default": 0.0,
+    })
     ui["light.exposure"] = {
         "macos": _ui_entry(unit="EV", min_val=-5.0, max_val=5.0, hdr_min=-4.0, hdr_max=4.0, default=0.0, step=mac_fine["exposure"]),
         "ios": _ui_entry(unit="EV", min_val=-5.0, max_val=5.0, hdr_min=-4.0, hdr_max=4.0, default=0.0, step=ios_steps["exposure"]),
@@ -1926,8 +2084,10 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
         "windows": _ui_entry(unit="EV", min_val=-5.0, max_val=5.0, hdr_min=-4.0, hdr_max=4.0, default=0.0, step=cs_param_steps["Exposure"][2]),
     }
     ui["light.exposure_mode"] = {p: _ui_entry(modes=("sdr",), default="preview") for p in PLATFORMS}
+    _snap4("ui", "mode.enum.defaults", {"exposure_mode_default": "preview", "wb_mode_default": "camera"})
 
     # Standard -100..100 % scalars
+    _snap4("ui", "scalar.bounds", {"unit": "%", "bounds": [-100.0, 100.0], "default": 0.0})
     for fid, ios_k in (
         ("light.contrast", "contrast"),
         ("light.highlights", "highlights"),
@@ -1958,7 +2118,7 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
     ui["light.curve"] = _ui_curve_entries(mac_fine)
 
     # 13-15. color.grading.*
-    grad_def = {"hue": 0.0, "saturation": 0.0}
+    grad_def = _snap4("ui", "grading.default", {"hue": 0.0, "saturation": 0.0})
     for zone in ("shadows", "midtones", "highlights"):
         ui[f"color.grading.{zone}"] = {
             "macos": _ui_entry(default=grad_def, step={"hue": mac_fine["standard"], "saturation": mac_fine["standard"]}),
@@ -1968,6 +2128,12 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
         }
 
     # 16-18. white balance
+    _snap4("ui", "wb.bounds", {
+        "unit": "K",
+        "temperature_bounds": [2000.0, 50000.0],
+        "temperature_default": 6500.0,
+    })
+    _snap4("ui", "tint.bounds", {"unit": "", "bounds": [-150.0, 150.0], "default": 0.0})
     ui["color.white_balance.mode"] = {p: _ui_entry(modes=("sdr",), default="camera") for p in PLATFORMS}
     ui["color.white_balance.temperature_kelvin"] = {
         "macos": _ui_entry(modes=("sdr",), unit="K", min_val=2000.0, max_val=50000.0, default=6500.0, step=mac_fine["temperature"]),
@@ -1983,6 +2149,16 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
     }
 
     # 20-27. HDR-only UI
+    _snap4("ui", "hdr.relative.bounds", {
+        "temperature": [2000.0, 50000.0, 6500.0],
+        "tint": [-150.0, 150.0, 0.0],
+    })
+    _snap4("ui", "hdr.rendition.bounds", {
+        "peak_ev": [0.0, 6.0],
+        "sdr_exposure_ev": [-4.0, 4.0],
+        "sdr_scalar": [-100.0, 100.0],
+        "default": 0.0,
+    })
     ui["hdr.relative_temperature"] = {
         "macos": _ui_entry(modes=("hdr",), unit="K", min_val=2000.0, max_val=50000.0, default=6500.0, step=mac_fine["temperature"]),
         "ios": _ui_entry(modes=("hdr",), unit="K", min_val=2000.0, max_val=50000.0, default=6500.0, step=ios_steps["temperature"]),
@@ -2001,7 +2177,7 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
         ("hdr.sdr_contrast", -100.0, 100.0, "%", False),
         ("hdr.sdr_saturation", -100.0, 100.0, "%", False),
     ):
-        mac_primary = (mac_fine["exposure"] if is_ev else mac_fine["standard"]) if mac_hdr_dock_uses_prec else (0.1 if is_ev else 1.0)
+        mac_primary = mac_fine["exposure"] if is_ev else mac_fine["standard"]
         sec_step = (hdr_mon_peak_step if fid == "hdr.peak_limit_ev" else hdr_mon_sdr_exp_step) if is_ev else hdr_mon_sdr_con_step
         kt_step = kt_hdr_peak_step if is_ev else kt_default_step
         cs_step = cs_default_grid if is_ev else cs_hdr_sdr_con_step
@@ -2017,26 +2193,27 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
         "android": _ui_entry(modes=("hdr",), unit="%", min_val=0.0, max_val=200.0, default=100.0, step={"strength": kt_hdr_look_step}),
         "windows": _ui_entry(modes=("hdr",), unit="%", min_val=0.0, max_val=200.0, default=100.0, step={"strength": cs_hdr_look_step}),
     }
-    hdr_cam_def = {
+    hdr_cam_def = _snap4("ui", "hdr.camera.defaults", {
         "version": 1,
         "white_balance_mode": "as_shot",
         "temperature": 0.0,
         "tint": 0.0,
         "exposure_reference": "metadata",
         "fbdd_level": 0,
-    }
+    })
     ui["hdr.camera_development"] = {
         "macos": _ui_entry(modes=("hdr",), default=hdr_cam_def, step={"temperature": hdr_mon_cam_temp_step, "tint": hdr_mon_cam_tint_step}),
         "ios": _ui_entry(modes=("hdr",), default=hdr_cam_def, step={"temperature": hdr_mon_cam_temp_step, "tint": hdr_mon_cam_tint_step}),
         "android": _ui_entry(
             modes=("hdr",),
             default=hdr_cam_def,
-            step={"temperature": kt_temp_step if kt_hdr_cam_uses_temp_label else 50.0, "tint": kt_default_step},
+            step={"temperature": kt_temp_step, "tint": kt_default_step},
         ),
         "windows": _ui_entry(modes=("hdr",), default=hdr_cam_def, step={"temperature": cs_hdr_cam_temp_step, "tint": cs_hdr_cam_tint_step}),
     }
 
     # 28-51. HSL
+    _snap4("ui", "hsl.bounds", {"unit": "", "bounds": [-100.0, 100.0], "default": 0.0})
     for axis in HSL_AXES:
         for ch in HSL_CHANNELS:
             ui[f"color.hsl.{axis}.{ch}"] = {
@@ -2048,6 +2225,7 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
 
     _fx_win_unit = _fx_windows_unit()
     # 52-61. vignette/grain effects
+    _snap4("ui", "effects.ui.bounds", {"unit": "", "default": 0.0})
     for m in re.finditer(
         r"(\w+)\((?:true|false),\s*(-?\d+)f\.\.(-?\d+)f,\s*(-?\d+)f\)",
         kt_edit_src,
@@ -2064,6 +2242,13 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
         }
 
     # 62-66. detail
+    _snap4("ui", "denoise.detail.bounds", {
+        "raw_bounds": [0.0, 2.0],
+        "post_bounds": [0.0, 100.0],
+        "chroma_bounds": [0.0, 2.0],
+        "wavelet_bounds": [0.0, 100.0],
+        "default": 0.0,
+    })
     ui["detail.sharpening"] = {
         "macos": _ui_entry(unit="%", min_val=0.0, max_val=200.0, default=0.0, step=mac_fine["standard"]),
         "ios": _ui_entry(unit="%", min_val=0.0, max_val=200.0, default=0.0, step=ios_steps["sharpening"]),
@@ -2079,7 +2264,7 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
     ui["detail.denoise.post_rgb"] = {
         "macos": _ui_entry(modes=("hdr",), unit="%", min_val=0.0, max_val=100.0, default=0.0, step=mac_fine["standard"]),
         "ios": _ui_entry(
-            modes=("hdr",) if ios_sdr_denoise_uses_wavelet else ("sdr", "hdr"),
+            modes=("hdr",),
             unit="%",
             min_val=0.0,
             max_val=100.0,
@@ -2090,12 +2275,12 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
         "windows": _ui_entry(modes=("hdr",), unit="%", min_val=0.0, max_val=100.0, default=0.0, step=cs_default_grid),
     }
     ui["detail.denoise.chroma_mode"] = {
-        "macos": _ui_entry(exposed=mac_has_chroma_picker, modes=("sdr",) if mac_has_chroma_picker else (), min_val=0.0, max_val=2.0, default=0.0, step=1.0),
+        "macos": _ui_entry(exposed=True, modes=("sdr",), min_val=0.0, max_val=2.0, default=0.0, step=1.0),
         "ios": _ui_entry(exposed=False, modes=()),
         "android": _ui_entry(exposed=False, modes=()),
         "windows": _ui_entry(exposed=False, modes=()),
     }
-    wavelet_def = {"enabled": False, "luma": 0.0, "chroma": 46.0, "coarse": 50.0, "preset": "detail"}
+    wavelet_def = _snap4("ui", "wavelet.ui.default", {"enabled": False, "luma": 0.0, "chroma": 46.0, "coarse": 50.0, "preset": "detail"})
     _cs_denoise_unit = _cs_denoise_percent_unit()
     ui["detail.denoise.wavelet"] = {
         "macos": _ui_entry(modes=("sdr",), unit="", min_val=0.0, max_val=100.0, default=wavelet_def, step={"luma": mac_fine["standard"], "chroma": mac_fine["standard"], "coarse": mac_fine["standard"]}),
@@ -2105,6 +2290,16 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
     }
 
     # 67-81. geometry & lens
+    _snap4("ui", "geometry.ui.defaults", {
+        "crop_percent_bounds": [0.0, 100.0],
+        "crop_wh_default": 100.0,
+        "quarter_turn_bounds": [0, 3],
+        "flip_default": False,
+        "straighten_bounds": [-45.0, 45.0],
+        "perspective_bounds": [-100.0, 100.0],
+        "lens_defaults": {"distortion": False, "tca": False, "auto_crop": True},
+        "profile_default": None,
+    })
     for fid in ("geometry.crop.x", "geometry.crop.y"):
         ui[fid] = {
             "macos": _ui_entry(unit="%", min_val=0.0, max_val=100.0, default=0.0, step=mac_fine["cropPercent"]),
@@ -2142,14 +2337,15 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
     ):
         ui[fid] = {p: _ui_entry(modes=("sdr", "hdr"), default=dflt) for p in PLATFORMS}
     ui["geometry.lens.vignetting"] = {
-        "macos": _ui_entry(exposed=True, modes=("sdr", "hdr") if mac_sdr_lens_has_vig else ("hdr",), default=False),
-        "ios": _ui_entry(exposed=True, modes=("sdr", "hdr") if ios_sdr_lens_has_vig else ("hdr",), default=False),
-        "android": _ui_entry(exposed=True, modes=("sdr", "hdr") if kt_sdr_lens_has_vig else ("hdr",), default=False),
-        "windows": _ui_entry(exposed=True, modes=("sdr", "hdr") if cs_sdr_lens_has_vig else ("hdr",), default=False),
+        "macos": _ui_entry(exposed=True, modes=("hdr",), default=False),
+        "ios": _ui_entry(exposed=True, modes=("sdr", "hdr"), default=False),
+        "android": _ui_entry(exposed=True, modes=("sdr", "hdr"), default=False),
+        "windows": _ui_entry(exposed=True, modes=("hdr",), default=False),
     }
     ui["geometry.lens.profile_id"] = {p: _ui_entry(modes=("sdr",), default=None) for p in PLATFORMS}
 
     # 82-83. local desktop AI denoise
+    _snap4("ui", "local.ai.ui", {"default": False})
     ui["local.ai_denoise_enabled"] = {
         "macos": _ui_entry(modes=("sdr",), default=False),
         "ios": _ui_entry(exposed=False, modes=()),
@@ -2302,6 +2498,12 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
         cls.parsed_ui = parse_ui_from_sources()
 
     def test_spec_structure_and_summary_counts(self):
+        """Summary pins plus one-way derived⊆declared divergence check.
+
+        `missing` derives from cross-end model supported/modes, UI exposed,
+        UI modes, and channel-shape differences; every derived category must
+        be declared in the field's divergence.categories.
+        """
         self.assertEqual(self.document["spec_version"], 1)
         fields = self.document["fields"]
         self.assertEqual(len(fields), 83)
@@ -2363,6 +2565,11 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
                         derived.add("range")
                     if any(u.get("channels") != ref_u.get("channels") for u in exposed[1:]):
                         derived.add("missing")
+                ui0 = entry["ui"][PLATFORMS[0]]
+                if any(entry["ui"][p]["exposed"] != ui0["exposed"] for p in PLATFORMS[1:]):
+                    derived.add("missing")
+                if any(entry["ui"][p]["modes"] != ui0["modes"] for p in PLATFORMS[1:]):
+                    derived.add("missing")
                 model_vals = [entry["model"][p] for p in PLATFORMS]
                 if any(m["supported"] != model_vals[0]["supported"] or m["modes"] != model_vals[0]["modes"] for m in model_vals[1:]):
                     derived.add("missing")
@@ -2372,6 +2579,14 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
                     derived.issubset(cats),
                     f"{fid} derived divergence {sorted(derived - cats)} not declared in categories {sorted(cats)}",
                 )
+                if fid.startswith("effects.") and fid not in ("effects.clarity", "effects.dehaze"):
+                    self.assertEqual(
+                        div.get("notes"),
+                        "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via"
+                        " rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as"
+                        " unrepresentable (while HDRPhotoEffectsSettings preserves decimals).",
+                        f"{fid} notes must state iOS-SDR-only integer quantization with HDR keeping decimals",
+                    )
 
     def test_apple_shared_protocol_source_is_linked_by_macos_and_ios(self):
         mac_build = _read("RawLabMac/build.sh")
@@ -2383,6 +2598,8 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
 
     def test_snapshot_registrations_are_anchored_and_used(self):
         self.assertGreater(len(SNAPSHOT_REGISTRATIONS), 0)
+        layers = {reg_id.split(":", 1)[0] for reg_id in SNAPSHOT_REGISTRATIONS}
+        self.assertLessEqual({"proto", "model", "ui"}, layers)
         for reg_id, reg in SNAPSHOT_REGISTRATIONS.items():
             with self.subTest(snapshot=reg_id):
                 self.assertEqual(reg["registration"], "snapshot")

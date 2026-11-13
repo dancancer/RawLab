@@ -7414,7 +7414,7 @@
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR/HDR model rounds to integer and transfer rejects fractional values, Windows SDR SetEffect rounds to 0.1, Mac/Android store continuous float/double; Windows PhotoEffectsPanel displays '%' suffix while Mac/iOS/Android display unitless values."
+        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
       }
     },
     {
@@ -7552,7 +7552,7 @@
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR/HDR model rounds to integer and transfer rejects fractional values, Windows SDR SetEffect rounds to 0.1, Mac/Android store continuous float/double; Windows PhotoEffectsPanel displays '%' suffix while Mac/iOS/Android display unitless values."
+        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
       }
     },
     {
@@ -7690,7 +7690,7 @@
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR/HDR model rounds to integer and transfer rejects fractional values, Windows SDR SetEffect rounds to 0.1, Mac/Android store continuous float/double; Windows PhotoEffectsPanel displays '%' suffix while Mac/iOS/Android display unitless values."
+        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
       }
     },
     {
@@ -7828,7 +7828,7 @@
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR/HDR model rounds to integer and transfer rejects fractional values, Windows SDR SetEffect rounds to 0.1, Mac/Android store continuous float/double; Windows PhotoEffectsPanel displays '%' suffix while Mac/iOS/Android display unitless values."
+        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
       }
     },
     {
@@ -7966,7 +7966,7 @@
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR/HDR model rounds to integer and transfer rejects fractional values, Windows SDR SetEffect rounds to 0.1, Mac/Android store continuous float/double; Windows PhotoEffectsPanel displays '%' suffix while Mac/iOS/Android display unitless values."
+        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
       }
     },
     {
@@ -8104,7 +8104,7 @@
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR/HDR model rounds to integer and transfer rejects fractional values, Windows SDR SetEffect rounds to 0.1, Mac/Android store continuous float/double; Windows PhotoEffectsPanel displays '%' suffix while Mac/iOS/Android display unitless values."
+        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
       }
     },
     {
@@ -8542,7 +8542,7 @@
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR/HDR model rounds to integer and transfer rejects fractional values, Windows SDR SetEffect rounds to 0.1, Mac/Android store continuous float/double; Windows PhotoEffectsPanel displays '%' suffix while Mac/iOS/Android display unitless values."
+        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
       }
     },
     {
@@ -8680,7 +8680,7 @@
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR/HDR model rounds to integer and transfer rejects fractional values, Windows SDR SetEffect rounds to 0.1, Mac/Android store continuous float/double; Windows PhotoEffectsPanel displays '%' suffix while Mac/iOS/Android display unitless values."
+        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
       }
     },
     {
