@@ -77,6 +77,10 @@ private struct RenditionHostView: View {
         // 返回 kAXErrorAPIDisabled，读不到任何控件。这里明确跳过而不是报缺陷；
         // CI 的自托管家 runner 有授权，AX 断言照常执行。
         guard AXIsProcessTrusted() else {
+            // CI 必须真的执行这些断言：设置了 RAWLAB_REQUIRE_AX 却未授权时判失败，而不是静默跳过。
+            if !(ProcessInfo.processInfo.environment["RAWLAB_REQUIRE_AX"] ?? "").isEmpty {
+                throw Failure.assertion("RAWLAB_REQUIRE_AX is set but accessibility is not granted; the AX checks cannot run")
+            }
             print("SKIP: accessibility is not trusted here; run from an approved terminal to exercise the AX checks")
             return
         }
