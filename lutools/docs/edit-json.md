@@ -373,6 +373,11 @@ Schemas 1–4 reject the new fields, and serialization refuses to discard nonzer
 controls into an older schema. CLI capabilities advertises their algorithm
 version, minimum recipe version, stable field names and range in `tone_controls`.
 
+Schema 5 also accepts optional `edits.effects.clarity` and `edits.effects.dehaze`,
+each a finite number in `[-1,1]`, default zero. They drive the atmosphere stage
+documented in [atmosphere v1](atmosphere-v1.md); schemas 1–4 reject both keys, and
+serialization never discards a nonzero value into an older schema.
+
 Schema 5 also accepts an optional `edits.color_grading` object with
 `shadows`, `midtones` and `highlights`. Each present zone must contain both
 `hue` (degrees in `[0,360)`) and `saturation` (`[0,100]`). Missing zones default
