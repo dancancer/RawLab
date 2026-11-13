@@ -1234,6 +1234,12 @@ ErrorCode ImageEncoder::savePNG(const ImageData& image, const std::string& filep
         chunk("sRGB", &intent, 1);
         z_stream stream{};
         if (deflateInit(&stream, Z_DEFAULT_COMPRESSION) != Z_OK) return ErrorCode::ProcessingError;
+        // deflateEnd must run on every exit path, including a bad_alloc while the row buffer
+        // below is allocated or a cancellation raised before the publish.
+        struct DeflateGuard {
+            z_stream* stream;
+            ~DeflateGuard() { deflateEnd(stream); }
+        } deflateGuard{&stream};
         std::vector<unsigned char> row(static_cast<size_t>(image.width)*6+1);
         std::array<unsigned char, 65536> compressed;
         for (int y=0; y<image.height && ok; ++y) {
@@ -1259,7 +1265,6 @@ ErrorCode ImageEncoder::savePNG(const ImageData& image, const std::string& filep
                 if (size) chunk("IDAT", compressed.data(), size);
             } while (stream.avail_in || stream.avail_out == 0 || (flush == Z_FINISH && status != Z_STREAM_END));
         }
-        deflateEnd(&stream);
         chunk("IEND", nullptr, 0);
         if (!ok || std::fflush(file) != 0 || std::ferror(file) != 0) return ErrorCode::ProcessingError;
         // 提交点：编码完成后、替换目标文件之前再看一次取消。

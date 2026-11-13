@@ -13,8 +13,31 @@
 #include <iostream>
 #include <iterator>
 #include <string>
-#include <unistd.h>
 #include <vector>
+#ifdef _WIN32
+#include <process.h>
+#define RAWLAB_TEST_GETPID _getpid
+#else
+#include <unistd.h>
+#define RAWLAB_TEST_GETPID getpid
+#endif
+
+namespace {
+
+// Matches every staging name the encoders can leave behind: the POSIX mkstemp
+// patterns contain ".rawlab-", and GetTempFileNameW emits "<prefix>####.tmp".
+bool isStagingFile(const std::filesystem::path& path) {
+    const std::string name = path.filename().string();
+    if (name.find(".rawlab-") != std::string::npos) return true;
+#ifdef _WIN32
+    if (path.extension() == ".tmp" &&
+        (name.rfind("rlj", 0) == 0 || name.rfind("rlp", 0) == 0 || name.rfind("rld", 0) == 0))
+        return true;
+#endif
+    return false;
+}
+
+} // namespace
 
 int main() {
     int failures = 0;
@@ -83,7 +106,7 @@ int main() {
             sony2fuji_release_buffer(&output);
         }
         const auto lutPath = std::filesystem::temp_directory_path() /
-            ("rawlab-cancel-foreign-" + std::to_string(::getpid()) + ".cube");
+            ("rawlab-cancel-foreign-" + std::to_string(RAWLAB_TEST_GETPID()) + ".cube");
         {
             std::ofstream cubeFile(lutPath, std::ios::binary);
             cubeFile << "LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n";
@@ -162,7 +185,7 @@ int main() {
     // pre-populated so "cancelled" can be distinguished from "wrote a fresh file".
     {
         const auto root = std::filesystem::temp_directory_path() /
-            ("rawlab-cancel-final-" + std::to_string(::getpid()));
+            ("rawlab-cancel-final-" + std::to_string(RAWLAB_TEST_GETPID()));
         std::error_code cleanupError;
         std::filesystem::remove_all(root, cleanupError);
         std::filesystem::create_directories(root);
@@ -179,7 +202,7 @@ int main() {
         auto stagingResidue = [](const std::filesystem::path& dir) {
             int count = 0;
             for (const auto& entry : std::filesystem::directory_iterator(dir))
-                if (entry.path().filename().string().find(".rawlab-") != std::string::npos) ++count;
+                if (isStagingFile(entry.path())) ++count;
             return count;
         };
 
@@ -246,7 +269,7 @@ int main() {
                     std::error_code error;
                     for (std::filesystem::directory_iterator it(watch.directory, error), last;
                          !error && it != last; it.increment(error)) {
-                        if (it->path().filename().string().find(".rawlab-") != std::string::npos) return 1;
+                        if (isStagingFile(it->path())) return 1;
                     }
                     return 0;
                 }, &watch);
