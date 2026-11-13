@@ -91,13 +91,19 @@ struct IOSCameraImportPreferences: Codable {
     private var run: IOSCameraRun?
     private var sessionStartedAt = Date.distantFuture
     private var contentsFamily: CameraContentsFamily?
-    private let backend = CameraWorkspaceBackend.shared
+    private let backend: CameraWorkspaceBackend
+    private var skippedCameraKey: String?
     private(set) var endpoint: IOSCameraEndpoint?
     private(set) var mode = IOSCameraMode.importing
     @Published private(set) var originalBrowsingAvailable = true
     @Published private(set) var manualImportRequired = false
+    @Published private(set) var listingLimitExceeded = false
+    @Published private(set) var skippedAssets: [CameraAssetSnapshot] = []
 
-    init() { reloadHistory() }
+    init(backend: CameraWorkspaceBackend = .shared) {
+        self.backend = backend
+        reloadHistory()
+    }
     var connected: Bool { run != nil && phase != .connecting && phase != .paused && phase != .idle }
     var busy: Bool { [.connecting, .receiving, .capturing].contains(phase) || parameterBusy || scanning }
     var selectedAssets: [CameraRemoteAsset] { assets.filter { selection.contains($0.id) } }
@@ -107,7 +113,7 @@ struct IOSCameraImportPreferences: Codable {
     }
     var canCapture: Bool { connected && phase == .ready && !parameterBusy && shutterReady && originalBrowsingAvailable }
     var hasUnknownShot: Bool { manifest.tether?.shutterRequestedAt != nil }
-    var unfinishedJobs: [CameraTransferJob] { manifest.jobs.filter { !$0.complete }.reversed() }
+    var unfinishedJobs: [CameraTransferJob] { manifest.jobs.filter { $0.dismissed != true && !$0.pendingItems.isEmpty }.reversed() }
     var originals: [CameraStoredOriginal] { manifest.originals.reversed() }
     var pendingIncrementalJob: CameraTransferJob? {
         guard let device, let endpoint else { return nil }
@@ -124,7 +130,7 @@ struct IOSCameraImportPreferences: Codable {
     }
 
     func connect(endpoint: IOSCameraEndpoint, mode: IOSCameraMode, cardConfirmed: Bool, resume: Bool) {
-        manualImportRequired = false
+        manualImportRequired = false; listingLimitExceeded = false
         self.endpoint = endpoint; self.mode = mode; sessionStartedAt = Date()
         scanning = false; incrementalJobID = nil; contentsFamily = nil
         assets = []; selection = []; thumbnails = [:]; pendingThumbnails = []; unavailableThumbnails = []; thumbnailOrder = []
@@ -149,6 +155,10 @@ struct IOSCameraImportPreferences: Codable {
             phase = value
             if value == .browsing || value == .ready { pendingThumbnails = [] }
         case .device(let value, let family):
+            if skippedCameraKey != value.stableKey {
+                skippedCameraKey = value.stableKey
+                skippedAssets = []
+            }
             device = value; contentsFamily = family; originalBrowsingAvailable = family != nil
             if mode == .importing {
                 let saved = importPreferencesKey.flatMap { UserDefaults.standard.data(forKey: $0) }
@@ -156,6 +166,7 @@ struct IOSCameraImportPreferences: Codable {
                     ?? IOSCameraImportPreferences()
             }
         case .assets(let values):
+            listingLimitExceeded = false
             assets = values; selection.formIntersection(Set(values.map(\.id))); scanning = false
         case .properties(let values, let writable, let shutter): properties = values; self.writable = writable; shutterReady = shutter
         case .manifest(let value): manifest = value
@@ -183,6 +194,7 @@ struct IOSCameraImportPreferences: Codable {
             parameterBusy = false; previewLoading = false; shutterReady = false; scanning = false; progress = nil
             if case CameraProtocolError.tetherRecoveryRequired = error { manualImportRequired = true }
             else { manualImportRequired = false }
+            if case CameraProtocolError.photoLimitExceeded = error { listingLimitExceeded = true }
             notice = message(error)
         case .notice(let detail):
             parameterBusy = false
@@ -200,7 +212,7 @@ struct IOSCameraImportPreferences: Codable {
     func stop(completion: @escaping () -> Void = {}) {
         let previous = run
         callbackOwner = UUID(); run = nil; phase = .paused; parameterBusy = false; shutterReady = false
-        previewLoading = false; pendingThumbnails = []; scanning = false; progress = nil
+        previewLoading = false; pendingThumbnails = []; scanning = false; progress = nil; listingLimitExceeded = false
         backend.stop(previous) { [weak self] in
             Task { @MainActor in self?.reloadHistory(); completion() }
         }
@@ -223,6 +235,17 @@ struct IOSCameraImportPreferences: Codable {
     func resumeImport(_ job: CameraTransferJob) {
         guard let run, mode == .importing, phase == .browsing, !scanning else { return }
         phase = .receiving; notice = nil; backend.resumeImport(jobID: job.id, run: run)
+    }
+    func skipFailedIncrementalItems(_ job: CameraTransferJob) {
+        guard !busy, !job.failedItems.isEmpty else { return }
+        if skippedCameraKey != job.camera.stableKey {
+            skippedCameraKey = job.camera.stableKey
+            skippedAssets = []
+        }
+        for item in job.failedItems where !skippedAssets.contains(item.asset) {
+            skippedAssets.append(item.asset)
+        }
+        dismissIncrementalJob(job)
     }
     func dismissIncrementalJob(_ job: CameraTransferJob) {
         guard !busy else { return }
@@ -282,12 +305,24 @@ struct IOSCameraImportPreferences: Codable {
         if let owner = assets.first?.owner, customCutoff == nil {
             savedKeys = manifest.savedIncrementalKeys(owner: owner, jpeg: importPreferences.jpeg)
         } else { savedKeys = [] }
+        let skippedKeys: Set<String>
+        if skippedAssets.isEmpty {
+            skippedKeys = []
+        } else {
+            let exact = Set(skippedAssets.map(\.key))
+            let locators = Set(skippedAssets.map(\.withoutLocator))
+            skippedKeys = Set(assets.compactMap { asset in
+                exact.contains(asset.snapshot.key) || locators.contains(asset.snapshot.withoutLocator)
+                    ? asset.snapshot.key : nil
+            })
+        }
         return CameraIncrementalScan(assets: assets, boundaries: boundaries, cutoff: defaultIncrementalStart,
                                      customCutoff: customCutoff, format: importPreferences.format,
-                                     includeUndated: includeUndated, savedKeys: savedKeys)
+                                     includeUndated: includeUndated, savedKeys: savedKeys, skippedKeys: skippedKeys)
     }
     func startIncremental(_ scan: CameraIncrementalScan) {
         guard let run, mode == .importing, phase == .browsing, !scanning, !scan.assets.isEmpty,
+              scan.assets.count <= CameraIncrementalScan.maximumAssets,
               scan.assets.allSatisfy({ $0.snapshot.transferable }) else { return }
         let plan = CameraIncrementalPlan(format: importPreferences.format, jpeg: importPreferences.jpeg,
                                          boundary: nil, owner: scan.assets.first?.owner, boundaries: scan.nextBoundaries)
@@ -394,6 +429,8 @@ struct IOSCameraImportPreferences: Codable {
         case CameraProtocolError.jpegProcessing: return L10n.text("无法按所选设置处理 JPEG。")
         case CameraProtocolError.jpegGainMapAdjustment: return L10n.text("此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。")
         case CameraProtocolError.importRecoveryRequired: return L10n.text("无法确认上次导入的原始文件，请重新选择照片。")
+        case CameraProtocolError.photoLimitExceeded: return L10n.format("%@ · %@", L10n.text("照片"), L10n.text("已到上限"))
+        case CameraProtocolError.itemFailed(let name, _): return L10n.format("保存 %@ 失败。", name)
         case CameraProtocolError.invalid: return L10n.text("相机数据或原件校验未通过，已暂停。")
         default: return L10n.text("相机连接已断开。已保存的照片仍可查看。")
         }

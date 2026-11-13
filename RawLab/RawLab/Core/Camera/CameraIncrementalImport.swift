@@ -68,7 +68,7 @@ struct CameraIncrementalScan {
     let nextBoundaries: [String: CameraImportBoundary]
 
     init(assets: [CameraRemoteAsset], boundaries: [String: CameraImportBoundary], cutoff: Date, customCutoff: Date?,
-         format: CameraImportFormat, includeUndated: Bool, savedKeys: Set<String> = []) {
+         format: CameraImportFormat, includeUndated: Bool, savedKeys: Set<String> = [], skippedKeys: Set<String> = []) {
         let owner = assets.first?.owner
         let storage = Set(assets.map { $0.snapshot.storage })
         let listed = assets.map { ($0, $0.snapshot.captureDate) }
@@ -83,7 +83,8 @@ struct CameraIncrementalScan {
         start = starts.values.min() ?? cutoff
         needsCutoffConfirmation = customCutoff == nil && format.kinds.contains { boundaries[$0] != nil && confirmed[$0] == nil }
         let undated = listed.compactMap { asset, date in
-            date == nil && format.includes(asset.snapshot) && !savedKeys.contains(asset.snapshot.key) ? asset : nil
+            date == nil && format.includes(asset.snapshot) && !savedKeys.contains(asset.snapshot.key) &&
+                !skippedKeys.contains(asset.snapshot.key) ? asset : nil
         }
         undatedCount = undated.count
 
@@ -93,11 +94,16 @@ struct CameraIncrementalScan {
             return
         }
 
-        let eligible = dated.filter { asset, date in
-            guard let start = starts[asset.snapshot.kind], date >= start, !savedKeys.contains(asset.snapshot.key) else { return false }
+        func afterConfirmedBoundary(_ asset: CameraRemoteAsset, _ date: Date) -> Bool {
             guard customCutoff == nil, let boundary = confirmed[asset.snapshot.kind],
                   date == boundary.date, asset.owner == boundary.owner else { return true }
             return !boundary.keys.contains(asset.snapshot.key)
+        }
+
+        let eligible = dated.filter { asset, date in
+            guard let start = starts[asset.snapshot.kind], date >= start,
+                  !savedKeys.contains(asset.snapshot.key), !skippedKeys.contains(asset.snapshot.key) else { return false }
+            return afterConfirmedBoundary(asset, date)
         }
         self.assets = eligible.sorted {
             if $0.1 != $1.1 { return $0.1 < $1.1 }
@@ -108,7 +114,26 @@ struct CameraIncrementalScan {
         var next: [String: CameraImportBoundary] = [:]
         if let owner {
             for (kind, selected) in selectedByKind where customCutoff == nil || confirmed[kind] == nil {
-                next[kind] = CameraImportBoundary.latest(from: selected, storage: storage, owner: owner)
+                let kindStart = starts[kind] ?? cutoff
+                let skippedDate = dated.compactMap { asset, date -> Date? in
+                    guard asset.snapshot.kind == kind, date >= kindStart,
+                          skippedKeys.contains(asset.snapshot.key), afterConfirmedBoundary(asset, date) else { return nil }
+                    return date
+                }.min()
+                if let skippedDate {
+                    let selectedKeys = Set(selected.map(\.key))
+                    let safe = dated.compactMap { asset, date -> CameraAssetSnapshot? in
+                        let key = asset.snapshot.key
+                        guard asset.snapshot.kind == kind, date >= kindStart, date <= skippedDate, !skippedKeys.contains(key),
+                              selectedKeys.contains(key) || savedKeys.contains(key) ||
+                                (customCutoff == nil && confirmed[kind]?.date == date && confirmed[kind]?.keys.contains(key) == true)
+                        else { return nil }
+                        return asset.snapshot
+                    }
+                    next[kind] = CameraImportBoundary.latest(from: safe, storage: storage, owner: owner) ?? confirmed[kind]
+                } else {
+                    next[kind] = CameraImportBoundary.latest(from: selected, storage: storage, owner: owner)
+                }
             }
         }
         nextBoundaries = next

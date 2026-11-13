@@ -41,7 +41,7 @@ struct IOSCameraIncrementalImport: View {
             VStack(spacing: 0) {
                 if model.phase == .receiving {
                     action(L10n.text("停止导入"), id: "camera.incremental.stop", perform: { model.stop() })
-                } else if let pending, requiresNewImport(pending) {
+                } else if let pending, pending.pendingItems.isEmpty || requiresNewImport(pending) {
                     if model.connected {
                         action(L10n.text("开始新的增量导入"), id: "camera.incremental.new-import", disabled: model.busy,
                                perform: { model.dismissIncrementalJob(pending) })
@@ -55,7 +55,8 @@ struct IOSCameraIncrementalImport: View {
                     action(L10n.text("重新连接"), id: "camera.incremental.reconnect", perform: reconnect)
                 } else if let scan, !scan.assets.isEmpty {
                     action(L10n.format("导入 %@ 个文件", String(scan.assets.count)), id: "camera.incremental.start",
-                           disabled: !scan.assets.allSatisfy { $0.snapshot.transferable }, perform: { model.startIncremental(scan) })
+                           disabled: scan.assets.count > CameraIncrementalScan.maximumAssets ||
+                            !scan.assets.allSatisfy { $0.snapshot.transferable }, perform: { model.startIncremental(scan) })
                 }
             }.padding(.horizontal, 14).background(Color(white: 0.16))
         }
@@ -96,14 +97,14 @@ struct IOSCameraIncrementalImport: View {
                     .accessibilityIdentifier("camera.incremental.cutoff-required")
             } else {
                 let count = scan.assets.count
-                Text(count == 0 ? L10n.text("没有新的照片") : L10n.format("待导入 %@ 个文件", String(count)))
+                Text(count == 0 ? L10n.text(model.listingLimitExceeded ? "已到上限" : "没有新的照片") : L10n.format("待导入 %@ 个文件", String(count)))
                     .font(.headline).accessibilityIdentifier("camera.incremental.count")
                 if count > 0 {
                     let raw = scan.assets.filter { $0.snapshot.kind == "RAW" }.count
                     let formats = [raw > 0 ? "\(raw) RAW" : nil, count > raw ? "\(count - raw) JPEG" : nil]
                     Text(formats.compactMap { $0 }.joined(separator: " · "))
                         .font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
-                    if !scan.assets.allSatisfy({ $0.snapshot.transferable }) {
+                    if count > CameraIncrementalScan.maximumAssets || !scan.assets.allSatisfy({ $0.snapshot.transferable }) {
                         Text(L10n.text("有文件超出相机导入上限，请调整起点或格式。")).font(.callout).foregroundStyle(.orange)
                     }
                 }
@@ -166,8 +167,24 @@ struct IOSCameraIncrementalImport: View {
             Text(L10n.text(model.phase == .receiving ? "正在导入照片…" : "上次导入未完成"))
                 .font(.headline).accessibilityIdentifier("camera.incremental.status")
             if let job {
-                Text(L10n.format("已保存 %@ / %@ 个文件", String(job.items.count - job.pendingItems.count), String(job.items.count)))
+                Text(L10n.format("已保存 %@ / %@ 个文件", String(job.savedCount), String(job.items.count)))
                     .monospacedDigit().accessibilityIdentifier("camera.incremental.saved")
+                if !job.failedItems.isEmpty {
+                    Text(L10n.format("成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张",
+                                     String(job.savedCount), String(job.failedItems.count), String(job.pendingItems.count)))
+                        .font(.subheadline).monospacedDigit().foregroundStyle(.orange)
+                        .accessibilityIdentifier("camera.incremental.failed")
+                    ForEach(job.failedItems.prefix(3)) { item in
+                        Text(L10n.format("保存 %@ 失败。", item.asset.name))
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if model.phase != .receiving {
+                        Button(L10n.text("跳过")) { model.skipFailedIncrementalItems(job) }
+                            .disabled(model.busy)
+                            .frame(minHeight: 44)
+                            .accessibilityIdentifier("camera.incremental.skip")
+                    }
+                }
             }
             if let progress = model.progress, progress.total > 0 {
                 ProgressView(value: Double(progress.bytes), total: Double(progress.total))

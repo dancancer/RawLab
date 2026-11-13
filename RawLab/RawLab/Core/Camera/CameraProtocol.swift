@@ -4,6 +4,7 @@ enum CameraProtocolError: Error, LocalizedError {
     case invalid(String), unsupported(String), response(UInt16, UInt16)
     case disconnected, cancelled, timeout, jpegProcessing, jpegGainMapAdjustment, importRecoveryRequired
     case captureNotSent(String), captureUnknown, tetherRecoveryRequired
+    case photoLimitExceeded, itemFailed(String, String)
 
     var errorDescription: String? {
         switch self {
@@ -17,6 +18,8 @@ enum CameraProtocolError: Error, LocalizedError {
         case .importRecoveryRequired: return "Cannot verify the camera original; select it again"
         case .captureUnknown: return "Shutter result is unknown; check the camera"
         case .tetherRecoveryRequired: return "Cannot verify the previous camera-card baseline; select originals manually or start a new session"
+        case .photoLimitExceeded: return "Camera card exceeds the photo listing limit"
+        case .itemFailed(_, let detail): return detail
         }
     }
 }

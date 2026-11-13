@@ -5,6 +5,9 @@ enum CameraSessionPurpose { case importing, tethering }
 enum CameraContentsFamily { case mobile, legacy }
 
 final class SonyCameraSession {
+    static let maximumListedAssets = 10_000
+    static let maximumMobilePages = 1_000
+
     let id = UUID()
     let device: CameraDeviceIdentity
     let family: CameraContentsFamily?
@@ -118,29 +121,32 @@ final class SonyCameraSession {
             switch family {
             case .mobile:
                 var cursor: UInt64 = 0, assets: [CameraRemoteAsset] = [], seen: Set<String> = []
-                for _ in 0..<100 {
+                for _ in 0..<Self.maximumMobilePages {
                     try checkRunning()
                     let bytes = try client.operation(0x923c, parameters: [UInt32(truncatingIfNeeded: cursor), UInt32(cursor >> 32), 100, 1, 0],
                                                      requiresData: true, limit: CameraWire.dataLimit)
                     let page = try CameraWire.mobilePage(bytes, owner: id)
                     for asset in page.assets where seen.insert(asset.snapshot.key).inserted { assets.append(asset) }
-                    guard assets.count <= 10000 else { throw CameraProtocolError.invalid("Camera photo list exceeds budget") }
+                    guard assets.count <= Self.maximumListedAssets else { throw CameraProtocolError.photoLimitExceeded }
                     if page.count < 100 { return assets }
                     guard page.cursor > cursor else { throw CameraProtocolError.invalid("Camera page cursor did not advance") }
                     cursor = page.cursor
                 }
-                throw CameraProtocolError.invalid("Camera page limit reached")
+                throw CameraProtocolError.photoLimitExceeded
             case .legacy:
                 guard contentsEntered else { throw CameraProtocolError.unsupported("Open a separate card session before reading legacy contents") }
                 var handles: Set<UInt32> = [], assets: [CameraRemoteAsset] = []
                 for storage in try storageIDs() {
-                    var reader = CameraDataReader(try client.operation(0x1007, parameters: [storage, 0, 0], requiresData: true, limit: 40004))
+                    var reader = CameraDataReader(try client.operation(0x1007, parameters: [storage, 0, 0], requiresData: true, limit: CameraWire.dataLimit))
                     let count = Int(try reader.u32())
-                    guard count <= 10000, reader.remaining == count * 4 else { throw CameraProtocolError.invalid("Invalid camera object handles") }
+                    guard count >= 0, reader.remaining == count * 4 else { throw CameraProtocolError.invalid("Invalid camera object handles") }
+                    guard count <= Self.maximumListedAssets, handles.count + count <= Self.maximumListedAssets else {
+                        throw CameraProtocolError.photoLimitExceeded
+                    }
                     for _ in 0..<count {
                         try checkRunning()
                         let handle = try reader.u32()
-                        guard handles.insert(handle).inserted, handles.count <= 10000 else { throw CameraProtocolError.invalid("Duplicate or excessive camera handles") }
+                        guard handles.insert(handle).inserted else { throw CameraProtocolError.invalid("Duplicate camera handles") }
                         let asset = try legacyAsset(handle)
                         if CameraWire.photoName(asset.snapshot.name), asset.snapshot.size > 0 { assets.append(asset) }
                     }
@@ -149,6 +155,7 @@ final class SonyCameraSession {
             case nil: throw CameraProtocolError.unsupported("Original photo browsing is unavailable")
             }
         } catch CameraProtocolError.response(let op, let code) { throw CameraProtocolError.response(op, code) }
+        catch CameraProtocolError.photoLimitExceeded { throw CameraProtocolError.photoLimitExceeded }
         catch { client.close(); throw error }
     }
     private func legacyAsset(_ handle: UInt32) throws -> CameraRemoteAsset {
@@ -192,7 +199,7 @@ final class SonyCameraSession {
                 let count = min(UInt64(3 << 20), asset.snapshot.size - received)
                 let bytes = try client.operation(0x923d, parameters: [asset.snapshot.content, 1 << 24 | asset.snapshot.file,
                     UInt32(truncatingIfNeeded: received), UInt32(received >> 32), UInt32(count)], requiresData: true, limit: Int(count))
-                guard bytes.count == count else { client.close(); throw CameraProtocolError.invalid("Original chunk size changed") }
+                guard bytes.count == count else { throw CameraProtocolError.invalid("Original chunk size changed") }
                 try receive(bytes)
             }
             guard try listAssets().contains(where: { $0.snapshot == asset.snapshot }) else { throw CameraProtocolError.invalid("Original metadata changed during transfer") }
