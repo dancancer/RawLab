@@ -73,6 +73,13 @@ private struct RenditionHostView: View {
     }
 
     @MainActor static func run() async throws {
+        // 无辅助功能授权的进程（无头 CLI、未批准的终端）里 AXUIElementCopyAttributeValue
+        // 返回 kAXErrorAPIDisabled，读不到任何控件。这里明确跳过而不是报缺陷；
+        // CI 的自托管家 runner 有授权，AX 断言照常执行。
+        guard AXIsProcessTrusted() else {
+            print("SKIP: accessibility is not trusted here; run from an approved terminal to exercise the AX checks")
+            return
+        }
         let model = RenditionTestModel()
         let host = NSHostingView(rootView: RenditionHostView(model: model))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 380, height: 320),
