@@ -80,7 +80,7 @@ class WorkflowContractTests(unittest.TestCase):
                     condition = job["if"]
                     self.assertIn(f"needs.changes.outputs.{name} == 'true'", condition)
                     # 自托管 runner 不能在 fork 的 PR 上执行任意代码。
-                    if "self-hosted" in str(job["runs-on"]) or name in ("windows", "ios"):
+                    if "self-hosted" in str(job["runs-on"]) or name in ("windows", "ios", "macos"):
                         self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", condition)
                 else:
                     self.assertNotIn("self-hosted", job["runs-on"])

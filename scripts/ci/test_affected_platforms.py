@@ -15,8 +15,12 @@ spec.loader.exec_module(selection)
 EVERY = set(selection.PLATFORMS)
 
 
-def pull(base="development", head="feature/x", draft=False):
-    return {"pull_request": {"base": {"ref": base}, "head": {"ref": head}, "draft": draft}}
+def pull(base="development", head="feature/x", draft=False, external=False):
+    event = {"pull_request": {"base": {"ref": base}, "head": {"ref": head}, "draft": draft}}
+    if external:
+        event["pull_request"]["base"]["repo"] = {"full_name": "dancancer/RawLab"}
+        event["pull_request"]["head"]["repo"] = {"full_name": "contributor/RawLab"}
+    return event
 
 
 def unavailable(*_):
@@ -104,6 +108,15 @@ class SelectionTests(unittest.TestCase):
             with self.subTest(base=base, head=head):
                 result = selection.select("pull_request", pull(base, head), "s", unavailable, unavailable)
                 self.assertEqual(result[:3], (EVERY, True, False))
+
+    def test_external_branch_names_never_trigger_a_cold_full_build(self):
+        # 一个 fork 里叫 hotfix/* 的分支不能因为名字就要求全量冷构建。
+        for base, head in (("main", "hotfix/crash"), ("development", "release/0.9.0")):
+            with self.subTest(base=base, head=head):
+                external = selection.configuration("pull_request", pull(base, head, external=True))
+                internal = selection.configuration("pull_request", pull(base, head))
+                self.assertEqual(external["checks"], "models")
+                self.assertEqual(internal["checks"], "full")
 
     def test_pushes_compare_with_the_last_successful_push_run(self):
         seen = []

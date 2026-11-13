@@ -46,6 +46,12 @@ def affected(paths):
 
 
 def is_cold_pull_request(pull):
+    # 外部贡献者的分支名不可信：一个 fork 里的 hotfix/* 不该触发全量冷构建。
+    head_repo = (pull.get("head") or {}).get("repo") or {}
+    base_repo = (pull.get("base") or {}).get("repo") or {}
+    if head_repo.get("full_name") and base_repo.get("full_name") and \
+            head_repo["full_name"] != base_repo["full_name"]:
+        return False
     base, head = pull["base"]["ref"], pull["head"]["ref"]
     return base == "main" or base.startswith("release/") or head.startswith(("release/", "hotfix/"))
 

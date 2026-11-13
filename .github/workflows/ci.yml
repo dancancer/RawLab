@@ -127,7 +127,11 @@ jobs:
   macos:
     name: macOS ${{ needs.changes.outputs.checks }} (${{ matrix.arch }}, ${{ matrix.suite }})
     needs: changes
-    if: needs.changes.outputs.macos == 'true'
+    # 自托管 runner 只在同仓库分支上执行：fork 的 PR 会带来任意代码。
+    if: >-
+      needs.changes.outputs.macos == 'true' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     strategy:
