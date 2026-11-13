@@ -83,11 +83,10 @@ def _need_key(mapping, key, field, where):
 
 def _register_snapshot(layer, key, values, anchors):
     reg_id = f"{layer}:{key}"
-    for platform, (path, pattern) in anchors.items():
-        if re.search(pattern, _read(path)) is None:
-            raise AssertionError(
-                f"Snapshot {reg_id} anchor missing for {platform}: {pattern!r} not found in {path}"
-            )
+    for platform, (path, pattern, context) in anchors.items():
+        problem = _anchor_hit(path, pattern, context)
+        if problem:
+            raise AssertionError(f"Snapshot {reg_id} anchor invalid for {platform}: {problem}")
     SNAPSHOT_REGISTRATIONS[reg_id] = {
         "values": values,
         "anchors": anchors,
@@ -120,6 +119,21 @@ def _snap(layer, key, values, anchors):
 def _require_absent(needle, src, field, where):
     if needle in src:
         raise AssertionError(f"Parse failed for {field}: text {needle!r} unexpectedly present in {where}")
+
+
+def _anchor_hit(path, pattern, context, window=600):
+    """Verify an anchor hits its file AND the hit sits in a semantically
+    consistent context: `context` must match within ±window chars of the hit.
+    Guards against false hits (comment text, unrelated same-value literals).
+    Returns None on success, else a human-readable problem string."""
+    text = _read(path)
+    m = re.search(pattern, text)
+    if m is None:
+        return f"pattern {pattern!r} not found in {path}"
+    if not re.search(context, text[max(0, m.start() - window):m.end() + window], re.S):
+        return (f"context {context!r} absent within {window} chars of the "
+                f"{pattern!r} hit in {path}")
+    return None
 
 
 def _curve_default(platform):
@@ -205,218 +219,212 @@ def _sub_end_sources(platform):
 # Real per-end source files for snapshot anchor verification.  For Apple the
 # Shared sources legitimately govern macos AND ios (build.sh / pbxproj link them
 # into both apps), so the same real file anchors both ends.
-_ANCHORS: dict[tuple[str, str], dict[str, tuple[str, str]]] = {
+_ANCHORS: dict[tuple[str, str], dict[str, tuple[str, str, str]]] = {
     ("proto", "light.curve.points"): {
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/ToneCurveSettings.kt", r"points\.size in 2\.\.33"),
-        "windows": ("RawLabWindows/ToneCurveSettings.cs", r"GetArrayLength\(\) > 33"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/ToneCurveSettings.kt", r"points\.size in 2\.\.33", r"ToneCurvePoint\(0\.0, 0\.0\)"),
+        "windows": ("RawLabWindows/ToneCurveSettings.cs", r"GetArrayLength\(\) > 33", r"JsonException"),
     },
     ("proto", "looks.reference"): {
-        "macos": ("Shared/AdjustmentTransfer.swift", r'HDRLookSettings'),
-        "ios": ("Shared/AdjustmentTransfer.swift", r'HDRLookSettings'),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentPayload.kt", r'"kind"'),
-        "windows": ("RawLabWindows/AdjustmentPayload.cs", r'"kind"'),
-    },
-    ("proto", "color.grading.wheel"): {
-        "macos": ("Shared/ColorGradingSettings.swift", r"init\(hue: Double = 0, saturation: Double = 0\)"),
-        "ios": ("Shared/ColorGradingSettings.swift", r"init\(hue: Double = 0, saturation: Double = 0\)"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/ColorGradingSettings.kt", r"data class ColorGradingWheel\(val hue: Float = 0f, val saturation: Float = 0f\)"),
-        "windows": ("RawLabWindows/Adjustments.cs", r"public ColorGradingSettings ColorGrading \{ get; set; \} = new\(\)"),
+        "macos": ("Shared/AdjustmentTransfer.swift", r"guard \[\"builtin\", \"managed\", \"recipe\", \"recipe_lut\"\]\.contains\(kind\)", r"case \.look:"),
+        "ios": ("Shared/AdjustmentTransfer.swift", r"guard \[\"builtin\", \"managed\", \"recipe\", \"recipe_lut\"\]\.contains\(kind\)", r"case \.look:"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentPayload.kt", r'"kind"', r"recipe\.look"),
+        "windows": ("RawLabWindows/AdjustmentPayload.cs", r'"kind"', r"AdjustmentField\.Look"),
     },
     ("proto", "hdr.camera_development.version"): {
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentTransfer.kt", r'"version" to AdjustmentValue\.Number\(1\.0\)'),
-        "windows": ("RawLabWindows/HDRSettings.cs", r"Version = 1, StructSize"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentTransfer.kt", r'"version" to AdjustmentValue\.Number\(1\.0\)', r"fun cameraValue"),
+        "windows": ("RawLabWindows/HDRSettings.cs", r"Version = 1, StructSize", r"ProcessingVersion"),
     },
     ("proto", "detail.denoise.wavelet"): {
-        "macos": ("Shared/AdjustmentTransfer.swift", r'"preset"'),
-        "ios": ("Shared/AdjustmentTransfer.swift", r'"preset"'),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentPayload.kt", r'"preset"\]\?\.text in setOf\("detail", "clean", "custom"\)'),
-        "windows": ("RawLabWindows/AdjustmentPayload.cs", r'"preset"'),
+        "macos": ("Shared/AdjustmentTransfer.swift", r'"preset"', r"wavelet\.keys"),
+        "ios": ("Shared/AdjustmentTransfer.swift", r'"preset"', r"wavelet\.keys"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentPayload.kt", r'"preset"\]\?\.text in setOf\("detail", "clean", "custom"\)', r"wavelet\[\"enabled\"\]"),
+        "windows": ("RawLabWindows/AdjustmentPayload.cs", r'"preset"', r"ObjectKeys"),
     },
     ("model", "hdr.bounds"): {
-        "macos": ("Shared/HDRSettings.swift", r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(exposure\)"),
-        "ios": ("Shared/HDRSettings.swift", r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(exposure\)"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"exposure in -4f\.\.4f"),
-        "windows": ("RawLabWindows/HDRSettings.cs", r"Exposure is >= -4 and <= 4"),
+        "macos": ("Shared/HDRSettings.swift", r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(exposure\)", r"\.contains\(temperature\)"),
+        "ios": ("Shared/HDRSettings.swift", r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(exposure\)", r"\.contains\(temperature\)"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"exposure in -4f\.\.4f", r"exposure\.isFinite"),
+        "windows": ("RawLabWindows/HDRSettings.cs", r"Exposure is >= -4 and <= 4", r"Temperature is >= 2000"),
     },
     ("model", "hsl.tone.atmos.bounds"): {
-        "macos": ("Shared/HSLSettings.swift", r"\(-100\.\.\.100\)\.contains\(\$0\)"),
-        "ios": ("Shared/HSLSettings.swift", r"\(-100\.\.\.100\)\.contains\(\$0\)"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"it in -100f\.\.100f"),
-        "windows": ("RawLabWindows/PhotoEffectsSettings.cs", r"Validate\(\w+, -100, 100"),
+        "macos": ("Shared/HSLSettings.swift", r"\(-100\.\.\.100\)\.contains\(\$0\)", r"hue, saturation, lightness"),
+        "ios": ("Shared/HSLSettings.swift", r"\(-100\.\.\.100\)\.contains\(\$0\)", r"hue, saturation, lightness"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"it in -100f\.\.100f", r"blackPoint, whitePoint, vibrance"),
+        "windows": ("RawLabWindows/HslSettings.cs", r"value is < -100 or > 100", r"HslSettings"),
     },
     ("model", "hdr.detail.scale"): {
-        "macos": ("Shared/HDRAdjustmentTransfer.swift", r"value \* 100 : value"),
-        "ios": ("Shared/HDRAdjustmentTransfer.swift", r"value \* 100 : value"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"clarity in -1f\.\.1f"),
-        "windows": ("RawLabWindows/HDRSettings.cs", r"Clarity is >= -1"),
+        "macos": ("Shared/HDRAdjustmentTransfer.swift", r"value \* 100 : value", r"field == \.dehaze"),
+        "ios": ("Shared/HDRAdjustmentTransfer.swift", r"value \* 100 : value", r"field == \.dehaze"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"clarity in -1f\.\.1f", r"sharpening in 0f\.\.2f"),
+        "windows": ("RawLabWindows/HDRSettings.cs", r"Clarity is >= -1", r"Sharpening is >= 0 and <= 2"),
     },
     ("model", "effects.fx_bounds"): {
-        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"[Vv]ignette"),
-        "ios": ("RawLab/RawLab/Core/Models/RawSettings.swift", r"[Vv]ignette"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"VIGNETTE_AMOUNT\(true, -100f\.\.100f, 0f\)"),
-        "windows": ("RawLabWindows/PhotoEffectsSettings.cs", r"PhotoEffectParameter\.VignetteAmount"),
+        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"var vignetteAmount = 0\.0", r"var vignetteMidpoint = 50\.0"),
+        "ios": ("RawLab/RawLab/Core/Models/RawSettings.swift", r"vignetteAmountRange: ClosedRange<Double> = -100\.\.\.100", r"struct PhotoEffectsSettings"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"VIGNETTE_AMOUNT\(true, -100f\.\.100f, 0f\)", r"VIGNETTE_MIDPOINT"),
+        "windows": ("RawLabWindows/PhotoEffectsSettings.cs", r"PhotoEffectParameter\.VignetteAmount", r"true, -100, 100, 0"),
     },
     ("model", "wavelet.default"): {
-        "macos": ("RawLabMac/Sources/Adjustments/Adjustments.swift", r"var waveletNoiseReduction: WaveletDenoiseSettings\?"),
-        "ios": ("RawLab/RawLab/UI/Panels/PhotoEffectPanels.swift", r"struct IOSDenoiseControls"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"val denoise: DenoiseSettings = DenoiseSettings\(\)"),
-        "windows": ("RawLabWindows/DenoiseSettings.cs", r"record DenoiseSettings\(bool Enabled=false,double Luma=0,double Chroma=46,double Coarse=50\)"),
+        "macos": ("RawLabMac/Sources/Adjustments/Adjustments.swift", r"var waveletNoiseReduction: WaveletDenoiseSettings\?", r"var chromaNoiseReduction: Double\?"),
+        "ios": ("RawLab/RawLab/UI/Panels/PhotoEffectPanels.swift", r"struct IOSDenoiseControls", r": View"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"val denoise: DenoiseSettings = DenoiseSettings\(\)", r"val sharpening: Float = 0f"),
+        "windows": ("RawLabWindows/DenoiseSettings.cs", r"record DenoiseSettings\(bool Enabled=false,double Luma=0,double Chroma=46,double Coarse=50\)", r"sealed record"),
     },
     ("model", "looks.reference.default"): {
-        "macos": ("Shared/AdjustmentTransfer.swift", r'HDRLookSettings'),
-        "ios": ("Shared/AdjustmentTransfer.swift", r'HDRLookSettings'),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentPayload.kt", r'"kind"'),
-        "windows": ("RawLabWindows/AdjustmentPayload.cs", r'"kind"'),
+        "macos": ("Shared/AdjustmentTransfer.swift", r"guard \[\"builtin\", \"managed\", \"recipe\", \"recipe_lut\"\]\.contains\(kind\)", r"case \.look:"),
+        "ios": ("Shared/AdjustmentTransfer.swift", r"guard \[\"builtin\", \"managed\", \"recipe\", \"recipe_lut\"\]\.contains\(kind\)", r"case \.look:"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentPayload.kt", r'"kind"', r"recipe\.look"),
+        "windows": ("RawLabWindows/AdjustmentPayload.cs", r'"kind"', r"AdjustmentField\.Look"),
     },
     ("model", "grading.default"): {
-        "macos": ("Shared/ColorGradingSettings.swift", r"init\(hue: Double = 0, saturation: Double = 0\)"),
-        "ios": ("Shared/ColorGradingSettings.swift", r"init\(hue: Double = 0, saturation: Double = 0\)"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/ColorGradingSettings.kt", r"data class ColorGradingWheel\(val hue: Float = 0f, val saturation: Float = 0f\)"),
-        "windows": ("RawLabWindows/Adjustments.cs", r"public ColorGradingSettings ColorGrading \{ get; set; \} = new\(\)"),
+        "macos": ("Shared/ColorGradingSettings.swift", r"init\(hue: Double = 0, saturation: Double = 0\)", r"self\.hue = hue"),
+        "ios": ("Shared/ColorGradingSettings.swift", r"init\(hue: Double = 0, saturation: Double = 0\)", r"self\.hue = hue"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/ColorGradingSettings.kt", r"data class ColorGradingWheel\(val hue: Float = 0f, val saturation: Float = 0f\)", r"require\(valid\(hue\.toDouble"),
+        "windows": ("RawLabWindows/Adjustments.cs", r"public ColorGradingSettings ColorGrading \{ get; set; \} = new\(\)", r"public PhotoEffectsSettings Effects \{ get; set; \} = new\(\)"),
     },
     ("model", "mode.enums"): {
-        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"preview"),
-        "ios": ("RawLab/RawLab/Core/Models/RawSettings.swift", r"preview"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"exposureMode in 0\.\.2"),
-        "windows": ("RawLabWindows/Adjustments.cs", r"Preview|preview"),
+        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"case preview = \"匹配内嵌预览\"", r"enum ExposureMode"),
+        "ios": ("RawLab/RawLab/Core/Models/RawSettings.swift", r"case scene = 0, preview = 1, sensor = 2", r"enum RawExposureMode: Int"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"require\(exposureMode in 0\.\.2\)", r"masterRecipeSettingsVersion in 2\.\.4"),
+        "windows": ("RawLabWindows/AdjustmentTransferValues.cs", r"new\[\]\{\"scene\",\"preview\",\"sensor\"\}\[s\.ExposureMode\]", r"F\.ExposureMode"),
     },
     ("model", "hdr.relative.bounds"): {
-        "macos": ("Shared/HDRSettings.swift", r"\(2000\.\.\.50000\)\.contains\(temperature\)"),
-        "ios": ("Shared/HDRSettings.swift", r"\(2000\.\.\.50000\)\.contains\(temperature\)"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"temperature in 2000f\.\.50000f"),
-        "windows": ("RawLabWindows/HDRSettings.cs", r"Temperature is >= 2000 and <= 50000"),
+        "macos": ("Shared/HDRSettings.swift", r"\(2000\.\.\.50000\)\.contains\(temperature\)", r"\(-150\.\.\.150\)\.contains\(tint\)"),
+        "ios": ("Shared/HDRSettings.swift", r"\(2000\.\.\.50000\)\.contains\(temperature\)", r"\(-150\.\.\.150\)\.contains\(tint\)"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"temperature in 2000f\.\.50000f", r"tint in -150f\.\.150f"),
+        "windows": ("RawLabWindows/HDRSettings.cs", r"Temperature is >= 2000 and <= 50000", r"Tint is >= -150 and <= 150"),
     },
     ("model", "hdr.sdr.bounds"): {
-        "macos": ("Shared/HDRSettings.swift", r"\(-100\.\.\.100\)\.contains\(sdrContrast\)"),
-        "ios": ("Shared/HDRSettings.swift", r"\(-100\.\.\.100\)\.contains\(sdrContrast\)"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"sdrContrast in -100f\.\.100f"),
-        "windows": ("RawLabWindows/HDRSettings.cs", r"SdrContrast is >= -100 and <= 100"),
+        "macos": ("Shared/HDRSettings.swift", r"\(-100\.\.\.100\)\.contains\(sdrContrast\)", r"sdrSaturation"),
+        "ios": ("Shared/HDRSettings.swift", r"\(-100\.\.\.100\)\.contains\(sdrContrast\)", r"sdrSaturation"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"sdrContrast in -100f\.\.100f", r"sdrSaturation in -100f\.\.100f"),
+        "windows": ("RawLabWindows/HDRSettings.cs", r"SdrContrast is >= -100 and <= 100", r"SdrSaturation is >= -100"),
     },
     ("model", "hdr.camera.defaults"): {
-        "macos": ("Shared/HDRSettings.swift", r"var version = 1"),
-        "ios": ("Shared/HDRSettings.swift", r"var version = 1"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"fbddLevel: Int = 0"),
-        "windows": ("RawLabWindows/HDRSettings.cs", r"FbddLevel = 0"),
+        "macos": ("Shared/HDRSettings.swift", r"var version = 1", r"struct HDRCameraDevelopmentSettings"),
+        "ios": ("Shared/HDRSettings.swift", r"var version = 1", r"struct HDRCameraDevelopmentSettings"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"fbddLevel: Int = 0", r"sensorExposure: Boolean = false"),
+        "windows": ("RawLabWindows/HDRSettings.cs", r"FbddLevel = 0", r"SensorExposure = false"),
     },
     ("model", "geometry.defaults"): {
-        "macos": ("Shared/GeometrySettings.swift", r"cropWidth: Double = 1|var cropWidth = 1\.0"),
-        "ios": ("Shared/GeometrySettings.swift", r"cropWidth: Double = 1|var cropWidth = 1\.0"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/CanonicalZeros.kt", r"cropWidth = cropWidth\.canonicalZero\(\)"),
-        "windows": ("RawLabWindows/TransformDraft.cs", r"CropWidth=1"),
+        "macos": ("Shared/GeometrySettings.swift", r"var cropWidth: Double = 1", r"var cropHeight: Double = 1"),
+        "ios": ("Shared/GeometrySettings.swift", r"var cropWidth: Double = 1", r"var cropHeight: Double = 1"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/CanonicalZeros.kt", r"cropWidth = cropWidth\.canonicalZero\(\)", r"cropHeight = cropHeight\.canonicalZero\(\)"),
+        "windows": ("RawLabWindows/TransformDraft.cs", r"CropWidth=1", r"CropHeight=1"),
     },
     ("model", "denoise.chroma.int_bounds"): {
-        "macos": ("RawLabMac/Sources/Adjustments/Adjustments.swift", r"var chromaNoiseReduction: Double\?"),
-        "ios": ("RawLab/RawLab/Core/Models/RawSettings.swift", r"[Cc]hroma"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"displayChromaDenoise in 0\.\.2"),
-        "windows": ("RawLabWindows/Adjustments.cs", r"[Cc]hroma"),
+        "macos": ("RawLabMac/Sources/Adjustments/Adjustments.swift", r"var chromaNoiseReduction: Double\?", r"var rawNoiseReduction = 0\.0"),
+        "ios": ("RawLab/RawLab/Core/Models/RawSettings.swift", r"var chroma = 46\.0", r"var luma = 0\.0"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"displayChromaDenoise in 0\.\.2", r"sharpening\.isFinite\(\) && sharpening in 0f\.\.2f"),
+        "windows": ("RawLabWindows/Adjustments.cs", r"private int displayChromaDenoise;", r"public int DisplayChromaDenoise"),
     },
     ("model", "denoise.post.default"): {
-        "macos": ("RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift", r"postRGBDenoise"),
-        "ios": ("RawLab/RawLab/Core/Models/RawSettings.swift", r"var noiseReduction: Double"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentTransferValues.kt", r"POST_RGB_DENOISE"),
-        "windows": ("RawLabWindows/AdjustmentTransferValues.cs", r"PostRGBDenoise"),
+        "macos": ("RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift", r"postRGBDenoise", r"\.number\(0\)"),
+        "ios": ("RawLab/RawLab/Core/Models/RawSettings.swift", r"var noiseReduction: Double", r"var sharpening: Double"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentTransferValues.kt", r"POST_RGB_DENOISE", r"number\(AdjustmentField\.RAW_DENOISE, 0\)"),
+        "windows": ("RawLabWindows/AdjustmentTransferValues.cs", r"PostRGBDenoise", r"Put\(F\.RawDenoise,0\)"),
     },
     ("ui", "look.reference.default"): {
-        "macos": ("Shared/AdjustmentTransfer.swift", r"HDRLookSettings"),
-        "ios": ("Shared/AdjustmentTransfer.swift", r"HDRLookSettings"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentPayload.kt", r'"kind"'),
-        "windows": ("RawLabWindows/AdjustmentPayload.cs", r'"kind"'),
+        "macos": ("Shared/AdjustmentTransfer.swift", r"guard \[\"builtin\", \"managed\", \"recipe\", \"recipe_lut\"\]\.contains\(kind\)", r"case \.look:"),
+        "ios": ("Shared/AdjustmentTransfer.swift", r"guard \[\"builtin\", \"managed\", \"recipe\", \"recipe_lut\"\]\.contains\(kind\)", r"case \.look:"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentPayload.kt", r'"kind"', r"recipe\.look"),
+        "windows": ("RawLabWindows/AdjustmentPayload.cs", r'"kind"', r"AdjustmentField\.Look"),
     },
     ("ui", "look.percent"): {
-        "macos": ("Shared/Native/HDRMonitoring.swift", r"Slider\(value:\s*\$settings\.lookSettings\.strength,\s*in:\s*0\.\.\.2"),
-        "ios": ("Shared/Native/HDRMonitoring.swift", r"Slider\(value:\s*\$settings\.lookSettings\.strength,\s*in:\s*0\.\.\.2"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/AdjustmentDock.kt", r"0f\.\.200f"),
-        "windows": ("RawLabWindows/MainWindow.HDR.cs", r"new\(0,200"),
+        "macos": ("Shared/Native/HDRMonitoring.swift", r"Slider\(value:\s*\$settings\.lookSettings\.strength,\s*in:\s*0\.\.\.2", r"step: 0\.01"),
+        "ios": ("Shared/Native/HDRMonitoring.swift", r"Slider\(value:\s*\$settings\.lookSettings\.strength,\s*in:\s*0\.\.\.2", r"step: 0\.01"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/AdjustmentDock.kt", r"0f\.\.200f", r"transfer_field_strength"),
+        "windows": ("RawLabWindows/MainWindow.HDR.cs", r"new\(0,200", r"Strength\*100"),
     },
     ("ui", "scalar.bounds"): {
-        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"range: -100\.\.\.100"),
-        "ios": ("RawLab/RawLab/Core/Models/AdjustmentKind.swift", r"-100\.\.\.100"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/controls/AdjustmentControls.kt", r"-100f"),
-        "windows": ("RawLabWindows/Adjustments.cs", r"-100,100"),
+        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"range: -100\.\.\.100", r"case \.blackPoint"),
+        "ios": ("RawLab/RawLab/Core/Models/AdjustmentKind.swift", r"-100\.\.\.100", r"case \.contrast, \.blackPoint"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/AdjustmentDock.kt", r"-100f\.\.100f", r"NumericControl\(R\.string\.highlights"),
+        "windows": ("RawLabWindows/Adjustments.cs", r"-100,100", r"Parameter\.Contrast"),
     },
     ("ui", "exposure.bounds"): {
-        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"range: -5\.\.\.5"),
-        "ios": ("RawLab/RawLab/Core/Models/AdjustmentKind.swift", r"-5\.\.\.5"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/AdjustmentDock.kt", r"if \(edits\.isHDREditing\) -4f\.\.4f else -5f\.\.5f"),
-        "windows": ("RawLabWindows/Adjustments.cs", r'Parameter\.Exposure,"[^"]*","[^"]*",-5,5'),
+        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"range: -5\.\.\.5", r"case \.exposure"),
+        "ios": ("RawLab/RawLab/Core/Models/AdjustmentKind.swift", r"-5\.\.\.5", r"case \.exposure"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/AdjustmentDock.kt", r"if \(edits\.isHDREditing\) -4f\.\.4f else -5f\.\.5f", r"R\.string\.exposure"),
+        "windows": ("RawLabWindows/Adjustments.cs", r'Parameter\.Exposure,"[^"]*","[^"]*",-5,5', r'"曝光","输入"'),
     },
     ("ui", "mode.enum.defaults"): {
-        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"preview"),
-        "ios": ("RawLab/RawLab/Core/Models/RawSettings.swift", r"preview"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"exposureMode in 0\.\.2"),
-        "windows": ("RawLabWindows/Adjustments.cs", r"Preview|preview"),
+        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"case preview = \"匹配内嵌预览\"", r"enum ExposureMode"),
+        "ios": ("RawLab/RawLab/Core/Models/RawSettings.swift", r"case scene = 0, preview = 1, sensor = 2", r"enum RawExposureMode: Int"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"require\(exposureMode in 0\.\.2\)", r"masterRecipeSettingsVersion in 2\.\.4"),
+        "windows": ("RawLabWindows/Adjustments.cs", r"public int ExposureMode \{ get; set; \} = 1;", r"IsHDREditing => HDR\?\.Mode"),
     },
     ("ui", "wb.bounds"): {
-        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"2000\.\.\.50000"),
-        "ios": ("RawLab/RawLab/Core/Models/RawSettings.swift", r"temperatureRange: ClosedRange<Double> = 2000\.\.\.50000"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/EditorScreen.kt", r"50000f"),
-        "windows": ("RawLabWindows/Adjustments.cs", r"2000,50000"),
+        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"2000\.\.\.50000", r"case \.temperature"),
+        "ios": ("RawLab/RawLab/Core/Models/RawSettings.swift", r"temperatureRange: ClosedRange<Double> = 2000\.\.\.50000", r"static let"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/EditorScreen.kt", r"50000f", r"2000f\.\.50000f"),
+        "windows": ("RawLabWindows/Adjustments.cs", r"2000,50000", r"Parameter\.Temperature"),
     },
     ("ui", "tint.bounds"): {
-        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"-150\.\.\.150"),
-        "ios": ("RawLab/RawLab/Core/Models/RawSettings.swift", r"tintRange: ClosedRange<Double> = -150\.\.\.150"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"tint in -150f\.\.150f"),
-        "windows": ("RawLabWindows/HDRSettings.cs", r"Tint is >= -150 and <= 150"),
+        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"-150\.\.\.150", r"case \.tint"),
+        "ios": ("RawLab/RawLab/Core/Models/RawSettings.swift", r"tintRange: ClosedRange<Double> = -150\.\.\.150", r"static let"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"tint in -150f\.\.150f", r"temperature in 2000f\.\.50000f"),
+        "windows": ("RawLabWindows/HDRSettings.cs", r"Tint is >= -150 and <= 150", r"Temperature is >= 2000"),
     },
     ("ui", "hdr.relative.bounds"): {
-        "macos": ("Shared/HDRSettings.swift", r"\(2000\.\.\.50000\)\.contains\(temperature\)"),
-        "ios": ("Shared/HDRSettings.swift", r"\(2000\.\.\.50000\)\.contains\(temperature\)"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"temperature in 2000f\.\.50000f"),
-        "windows": ("RawLabWindows/HDRSettings.cs", r"Temperature is >= 2000 and <= 50000"),
+        "macos": ("Shared/HDRSettings.swift", r"\(2000\.\.\.50000\)\.contains\(temperature\)", r"\(-150\.\.\.150\)\.contains\(tint\)"),
+        "ios": ("Shared/HDRSettings.swift", r"\(2000\.\.\.50000\)\.contains\(temperature\)", r"\(-150\.\.\.150\)\.contains\(tint\)"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"temperature in 2000f\.\.50000f", r"tint in -150f\.\.150f"),
+        "windows": ("RawLabWindows/HDRSettings.cs", r"Temperature is >= 2000 and <= 50000", r"Tint is >= -150 and <= 150"),
     },
     ("ui", "hdr.rendition.bounds"): {
-        "macos": ("Shared/Native/HDRMonitoring.swift", r"0\.\.\.6"),
-        "ios": ("Shared/Native/HDRMonitoring.swift", r"0\.\.\.6"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/EditorScreen.kt", r"0f\.\.6f"),
-        "windows": ("RawLabWindows/MainWindow.HDR.cs", r"new\(0,6"),
+        "macos": ("Shared/Native/HDRMonitoring.swift", r"0\.\.\.6", r"peakLimit"),
+        "ios": ("Shared/Native/HDRMonitoring.swift", r"0\.\.\.6", r"peakLimit"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/EditorScreen.kt", r"0f\.\.6f", r"R\.string\.hdr_peak_limit"),
+        "windows": ("RawLabWindows/MainWindow.HDR.cs", r"new\(0,6", r"\"peakLimit\""),
     },
     ("ui", "hdr.camera.defaults"): {
-        "macos": ("Shared/HDRSettings.swift", r"var version = 1"),
-        "ios": ("Shared/HDRSettings.swift", r"var version = 1"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"fbddLevel: Int = 0"),
-        "windows": ("RawLabWindows/HDRSettings.cs", r"FbddLevel = 0"),
+        "macos": ("Shared/HDRSettings.swift", r"var version = 1", r"struct HDRCameraDevelopmentSettings"),
+        "ios": ("Shared/HDRSettings.swift", r"var version = 1", r"struct HDRCameraDevelopmentSettings"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"fbddLevel: Int = 0", r"sensorExposure: Boolean = false"),
+        "windows": ("RawLabWindows/HDRSettings.cs", r"FbddLevel = 0", r"SensorExposure = false"),
     },
     ("ui", "hsl.bounds"): {
-        "macos": ("Shared/HSLSettings.swift", r"\(-100\.\.\.100\)\.contains\(\$0\)"),
-        "ios": ("Shared/HSLSettings.swift", r"\(-100\.\.\.100\)\.contains\(\$0\)"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"it in -100f\.\.100f"),
-        "windows": ("RawLabWindows/PhotoEffectsSettings.cs", r"Validate\(\w+, -100, 100"),
+        "macos": ("Shared/HSLSettings.swift", r"\(-100\.\.\.100\)\.contains\(\$0\)", r"hue, saturation, lightness"),
+        "ios": ("Shared/HSLSettings.swift", r"\(-100\.\.\.100\)\.contains\(\$0\)", r"hue, saturation, lightness"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"it in -100f\.\.100f", r"blackPoint, whitePoint, vibrance"),
+        "windows": ("RawLabWindows/HslSettings.cs", r"value is < -100 or > 100", r"HslSettings"),
     },
     ("ui", "grading.default"): {
-        "macos": ("Shared/ColorGradingSettings.swift", r"init\(hue: Double = 0, saturation: Double = 0\)"),
-        "ios": ("Shared/ColorGradingSettings.swift", r"init\(hue: Double = 0, saturation: Double = 0\)"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/ColorGradingSettings.kt", r"data class ColorGradingWheel\(val hue: Float = 0f, val saturation: Float = 0f\)"),
-        "windows": ("RawLabWindows/Adjustments.cs", r"public ColorGradingSettings ColorGrading \{ get; set; \} = new\(\)"),
+        "macos": ("Shared/ColorGradingSettings.swift", r"init\(hue: Double = 0, saturation: Double = 0\)", r"self\.hue = hue"),
+        "ios": ("Shared/ColorGradingSettings.swift", r"init\(hue: Double = 0, saturation: Double = 0\)", r"self\.hue = hue"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/ColorGradingSettings.kt", r"data class ColorGradingWheel\(val hue: Float = 0f, val saturation: Float = 0f\)", r"require\(valid\(hue\.toDouble"),
+        "windows": ("RawLabWindows/Adjustments.cs", r"public ColorGradingSettings ColorGrading \{ get; set; \} = new\(\)", r"public PhotoEffectsSettings Effects \{ get; set; \} = new\(\)"),
     },
     ("ui", "effects.ui.bounds"): {
-        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"[Vv]ignette"),
-        "ios": ("RawLab/RawLab/UI/Panels/PhotoEffectPanels.swift", r"struct IOSPhotoEffectsControls"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"VIGNETTE_AMOUNT\(true, -100f\.\.100f, 0f\)"),
-        "windows": ("RawLabWindows/PhotoEffectsSettings.cs", r"PhotoEffectParameter\.VignetteAmount"),
+        "macos": ("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift", r"var vignetteAmount = 0\.0", r"var vignetteMidpoint = 50\.0"),
+        "ios": ("RawLab/RawLab/UI/Panels/PhotoEffectPanels.swift", r"struct IOSPhotoEffectsControls", r": View"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"VIGNETTE_AMOUNT\(true, -100f\.\.100f, 0f\)", r"VIGNETTE_MIDPOINT"),
+        "windows": ("RawLabWindows/PhotoEffectsSettings.cs", r"PhotoEffectParameter\.VignetteAmount", r"Loc\.Text\(\"强度\"\)"),
     },
     ("ui", "denoise.detail.bounds"): {
-        "macos": ("RawLabMac/Sources/Controls/DenoiseControls.swift", r'accessibilityIdentifier\("chromaNoiseReduction\.mode"\)'),
-        "ios": ("RawLab/RawLab/UI/Panels/PhotoEffectPanels.swift", r"struct IOSDenoiseControls"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/EditorScreen.kt", r"[Dd]enoise"),
-        "windows": ("RawLabWindows/DenoisePanel.xaml", r"Denoise"),
+        "macos": ("RawLabMac/Sources/Controls/DenoiseControls.swift", r'accessibilityIdentifier\("chromaNoiseReduction\.mode"\)', r"ChromaNoiseReductionMode\.allCases"),
+        "ios": ("RawLab/RawLab/UI/Panels/PhotoEffectPanels.swift", r"struct IOSDenoiseControls", r": View"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/EditorScreen.kt", r"R\.string\.transfer_field_raw_denoise", r"stringResource"),
+        "windows": ("RawLabWindows/DenoisePanel.xaml", r"x:Class=\"RawLab\.Windows\.DenoisePanel\"", r"UserControl"),
     },
     ("ui", "wavelet.ui.default"): {
-        "macos": ("RawLabMac/Sources/Controls/DenoiseControls.swift", r"[Ww]avelet"),
-        "ios": ("RawLab/RawLab/UI/Panels/PhotoEffectPanels.swift", r"struct IOSDenoiseControls"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"val denoise: DenoiseSettings = DenoiseSettings\(\)"),
-        "windows": ("RawLabWindows/DenoiseSettings.cs", r"record DenoiseSettings\(bool Enabled=false,double Luma=0,double Chroma=46,double Coarse=50\)"),
+        "macos": ("RawLabMac/Sources/Controls/DenoiseControls.swift", r"model\.settings\.waveletSettings\.enabled", r"aiDenoiseEnabled"),
+        "ios": ("RawLab/RawLab/UI/Panels/PhotoEffectPanels.swift", r"struct IOSDenoiseControls", r": View"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/EditSettings.kt", r"val denoise: DenoiseSettings = DenoiseSettings\(\)", r"val sharpening: Float = 0f"),
+        "windows": ("RawLabWindows/DenoiseSettings.cs", r"record DenoiseSettings\(bool Enabled=false,double Luma=0,double Chroma=46,double Coarse=50\)", r"sealed record"),
     },
     ("ui", "geometry.ui.defaults"): {
-        "macos": ("Shared/GeometrySettings.swift", r"cropWidth: Double = 1|var cropWidth = 1\.0"),
-        "ios": ("Shared/GeometrySettings.swift", r"cropWidth: Double = 1|var cropWidth = 1\.0"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/geometry/GeometryControls.kt", r"45f"),
-        "windows": ("RawLabWindows/GeometryPanel.xaml.cs", r"45"),
+        "macos": ("Shared/GeometrySettings.swift", r"var cropWidth: Double = 1", r"var cropHeight: Double = 1"),
+        "ios": ("Shared/GeometrySettings.swift", r"var cropWidth: Double = 1", r"var cropHeight: Double = 1"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/geometry/GeometryControls.kt", r"-45f\.\.45f", r"R\.string\.geometry_straighten"),
+        "windows": ("RawLabWindows/GeometryPanel.xaml.cs", r"new\(-45,45", r"拉直"),
     },
     ("ui", "local.ai.ui"): {
-        "macos": ("RawLabMac/Sources/Controls/DenoiseControls.swift", r"aiDenoiseEnabled"),
-        "ios": ("RawLab/RawLab/UI/Panels/PhotoEffectPanels.swift", r"struct IOSDenoiseControls"),
-        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/EditorScreen.kt", r"[Dd]enoise"),
-        "windows": ("RawLabWindows/Adjustments.cs", r"AIDenoiseEnabled \{ get; set; \}"),
+        "macos": ("RawLabMac/Sources/Controls/DenoiseControls.swift", r"aiDenoiseEnabled", r"ordinaryControls\.disabled"),
+        "ios": ("RawLab/RawLab/UI/Panels/PhotoEffectPanels.swift", r"struct IOSDenoiseControls", r": View"),
+        "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/EditorScreen.kt", r"R\.string\.transfer_field_raw_denoise", r"stringResource"),
+        "windows": ("RawLabWindows/Adjustments.cs", r"public bool AIDenoiseEnabled \{ get; set; \}", r"HDRCameraAIEnabled"),
     },
 }
 
@@ -504,10 +512,25 @@ def _object_sub_fields(platform):
         "id": {"value_type": "string", "nullable_when_kind": "neutral", "non_empty": True},
     })
 
-    grad_subs = _snap4("proto", "color.grading.wheel", {
-        "hue": {"value_type": "number", "min": 0.0, "max": 360.0, "exclusive_max": True},
-        "saturation": {"value_type": "number", "min": 0.0, "max": 100.0},
-    })
+    if platform in ("macos", "ios"):
+        cg_where = "Shared/ColorGradingSettings.swift"
+        cg_src = _strip_line_comments(_read(cg_where))
+        cg_hue = _need(r"hue >= ([0-9.]+) && hue < ([0-9.]+)", cg_src, "color.grading.wheel hue bounds", cg_where)
+        cg_sat = _need(r"\(([0-9.]+)\.\.\.([0-9.]+)\)\.contains\(saturation\)", cg_src, "color.grading.wheel saturation bounds", cg_where)
+    elif platform == "android":
+        cg_where = "RawLabAndroid/app/src/main/java/com/rawlab/android/settings/ColorGradingSettings.kt"
+        cg_src = _strip_line_comments(_read(cg_where))
+        cg_hue = _need(r"hue >= ([0-9.]+) && hue < ([0-9.]+)", cg_src, "color.grading.wheel hue bounds", cg_where)
+        cg_sat = _need(r"saturation in ([0-9.]+)\.\.([0-9.]+)", cg_src, "color.grading.wheel saturation bounds", cg_where)
+    else:
+        cg_where = "RawLabWindows/ColorGradingSettings.cs"
+        cg_src = _strip_line_comments(_read(cg_where))
+        cg_hue = _need(r"Hue is >= ([0-9.]+) and < ([0-9.]+)", cg_src, "color.grading.wheel hue bounds", cg_where)
+        cg_sat = _need(r"Saturation is >= ([0-9.]+) and <= ([0-9.]+)", cg_src, "color.grading.wheel saturation bounds", cg_where)
+    grad_subs = {
+        "hue": {"value_type": "number", "min": float(cg_hue.group(1)), "max": float(cg_hue.group(2)), "exclusive_max": True},
+        "saturation": {"value_type": "number", "min": float(cg_sat.group(1)), "max": float(cg_sat.group(2))},
+    }
     for zone in ("shadows", "midtones", "highlights"):
         out[f"color.grading.{zone}"] = copy.deepcopy(grad_subs)
 
@@ -657,10 +680,10 @@ def _ui_curve_entries(mac_fine):
         "light.curve.bounds",
         {"min": 0.0, "max": 1.0, "hdr_min": -8.0, "hdr_max": 8.0},
         {
-            "macos": ("Shared/ToneCurveSettings.swift", r"x > 0, x < 1"),
-            "ios": (ios_path, "usesExposureStops"),
-            "android": (kt_path, r"-8\.0\.\.8\.0 else 0\.0\.\.1\.0"),
-            "windows": (cs_path, r"new NumericRange\(-8, 8,"),
+            "macos": ("Shared/ToneCurveSettings.swift", r"x > 0, x < 1", r"points\.count < 33"),
+            "ios": (ios_path, "var usesExposureStops = false", r"var "),
+            "android": (kt_path, r"-8\.0\.\.8\.0 else 0\.0\.\.1\.0", r"(?i)range"),
+            "windows": (cs_path, r"new NumericRange\(-8, 8,", r"(?i)range"),
         },
     )
     kt_src = _read(kt_path)
@@ -2051,7 +2074,7 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
     cs_crop_min_pct = float(cs_crop_m.group(1))
     cs_crop_step = float(cs_crop_m.group(2))
     _require_absent('x:Name="Vignetting"', cs_lens_xaml, "geometry.lens.vignetting windows sdr", "LensPanel.xaml")
-    _require("AppliedVignetting", cs_adj_src, "geometry.lens.vignetting windows hdr summary", "Adjustments.cs")
+    _require('LensToggle("暗角校正",draft.LensVignetting', cs_hdr_src, "geometry.lens.vignetting windows hdr toggle", "MainWindow.HDR.cs")
     cs_hdr_cam_temp_step = float(re.search(r'temperature\.Refresh\(Loc\.Text\("色温"\),new\(2000,50000,(\d+)\)', cs_hdr_src).group(1))
     cs_hdr_cam_tint_step = float(re.search(r'tint\.Refresh\(Loc\.Text\("色调"\),new\(-150,150,(\d+)\)', cs_hdr_src).group(1))
     cs_hdr_look_step = float(re.search(r'strength\.Refresh\(Loc\.Text\("外观强度"\),new\(0,200,(\d+)\)', cs_hdr_src).group(1))
@@ -2605,12 +2628,10 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
                 self.assertEqual(reg["registration"], "snapshot")
                 self.assertTrue(reg["used"], f"{reg_id} registered but never consumed")
                 self.assertTrue(reg["anchors"], f"{reg_id} has no anchors")
-                for platform, (path, pattern) in reg["anchors"].items():
+                for platform, (path, pattern, context) in reg["anchors"].items():
                     self.assertIn(platform, PLATFORMS)
-                    self.assertTrue(
-                        re.search(pattern, _read(path)),
-                        f"{reg_id} anchor invalid for {platform}: {pattern!r} in {path}",
-                    )
+                    problem = _anchor_hit(path, pattern, context)
+                    self.assertIsNone(problem, f"{reg_id} {platform}: {problem}")
 
     def test_layer1_protocol_four_end_hard_parity(self):
         validate_layer1_protocol(
