@@ -88,3 +88,4 @@
 - 2026-11-14 · #300 二轮返工（`7928baf3`，checks 7/7）：v14/v15 schema pattern 收窄（\n 收、\0/\r/C0 拒）+多行合成 lens_profile 双层拒绝回归；jsonschema 缺依赖 exit 77+CMake SKIP_RETURN_CODE 显式化。二轮复审在途（review-mwfil65j）。
 - 2026-11-14 · **Mac 全套件基线摸底完成**（108 脚本=88 绿/18 红/2 SKIP；盲区 88 个不被 models-CI 覆盖）。新红 16 分四类：A 簇 10 脚本同根因（硬编码源列表缺 HDR 新文件）已派 `fix-mac-srclist`（含共享列表收敛）；B 簇 3 断言红已派 `diag-mac-b-reds` 诊断；C 类 3 条待桌面复核、D 类 5 条素材要求已挂 d-followup 台账。
 - 2026-11-14 · #291 四轮返工（`52b8d591`）：B1=退出草稿四类路径（settings 不变/observer 不触发）显式重锚 committedPreviewSettings，缓存/渲染两路同落位；B2=收起守卫补 adjustmentsExpanded+清 choosingMasterRecipe；锚点 7 条复用评审场景（cancel.*×2+exposureCollapse.*×5）；raster e2e 变异翻红闭环；174/0 无回归。四轮复审在途（review-mwfj4x6p）。
+- 2026-11-14 · #301 二轮返工（`07a023cf`，7/7）：B1 Windows 断言补 Ignore+提示双断言；B2 iOS Sheet 内嵌提示行+快捷预设非阻塞 4s 横幅（statusMessage 只留真错误）+effectiveNotices seam；B3 Windows Interlocked 一次性并入（持久到可见）、Android Snackbar；S1 按实际应用过滤三端对等、S3 fixture notices_by_platform。二轮复审在途（review-mwfj889q）。
