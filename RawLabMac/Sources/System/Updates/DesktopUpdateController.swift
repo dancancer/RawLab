@@ -4,6 +4,7 @@ import Combine
 @MainActor final class DesktopUpdateController: ObservableObject {
     @Published private(set) var preferences: UpdatePreferences
     @Published private(set) var storageError: String?
+    @Published private(set) var storageBlocksEditing = false
     @Published private(set) var preparingInstallation = false
     @Published private(set) var recovering = false
     @Published private(set) var recoveryError: String?
@@ -27,17 +28,19 @@ import Combine
     private var recoveryStartup = false
     private var repairSnapshot: Data?
     private var repairHealthFailed = false
+    private var pendingSave: UpdatePreferences?
     var state: UpdateTaskState { preferences.pendingUpdate }
-    var blocksEditing: Bool { storageError != nil || preparingInstallation || requiresStartupHealthCheck || requiresRecovery }
-    var unavailableReason: String? { storageError == nil ? adapter.unavailableReason : "storage" }
-    var canCheck: Bool { unavailableReason == nil && adapter.canCheck && !preparingInstallation && !requiresRecovery && !requiresStartupHealthCheck }
-    var canDownload: Bool { unavailableReason == nil && state.phase == .available }
+    var blocksEditing: Bool { storageBlocksEditing || preparingInstallation || requiresStartupHealthCheck || requiresRecovery }
+    var unavailableReason: String? { storageBlocksEditing ? "storage" : adapter.unavailableReason }
+    var canCheck: Bool { storageError == nil && unavailableReason == nil && adapter.canCheck && !preparingInstallation && !requiresRecovery && !requiresStartupHealthCheck }
+    var canDownload: Bool { storageError == nil && unavailableReason == nil && state.phase == .available }
     var canCancel: Bool { [.checking, .downloading, .verifying, .packageReady, .waitingForTasks, .readyToInstall].contains(state.phase) && !preparingInstallation }
-    var canChooseInstall: Bool { unavailableReason == nil && [.packageReady, .waitingForTasks, .readyToInstall].contains(state.phase) && !preparingInstallation }
+    var canChooseInstall: Bool { storageError == nil && unavailableReason == nil && [.packageReady, .waitingForTasks, .readyToInstall].contains(state.phase) && !preparingInstallation }
     var requiresStartupHealthCheck: Bool { preferences.stateRepairReceipt != nil || [.installing, .pendingRestart].contains(state.phase) }
     var requiresRecovery: Bool { backup.hasPendingRecovery || recovering || recoveryNeedsRestart || repairHealthFailed ||
         state.failure.map { [.installing, .pendingRestart].contains($0.stage) } == true }
     var canRepairState: Bool { storageError != nil && repairSnapshot != nil && !recoveryNeedsRestart }
+    var canRetrySave: Bool { storageError != nil && !storageBlocksEditing && pendingSave != nil }
     var stateArchive: URL? { preferences.stateRepairReceipt.map(store.repairedStateArchive) }
     var canRestorePreviousData: Bool { recoveryStartup && requiresRecovery && !recovering && !recoveryNeedsRestart &&
         storageError == nil && adapter.unavailableReason == nil && state.previousVersion == currentVersion &&
@@ -49,15 +52,18 @@ import Combine
         self.currentVersion = currentVersion; self.currentBuild = currentBuild; self.now = now
         backup = UpdateDataBackup(dataRoot: store.directory.deletingLastPathComponent(), updateRoot: store.directory)
         do { preferences = try store.load(automaticCheck: automaticCheck) }
-        catch { preferences = UpdatePreferences(); storageError = error.localizedDescription; repairSnapshot = try? store.repairableState() }
+        catch {
+            preferences = UpdatePreferences(); storageError = error.localizedDescription
+            storageBlocksEditing = true; repairSnapshot = try? store.repairableState()
+        }
         if storageError == nil, backup.hasPendingRecovery, let receipt = preferences.recoveryReceipt {
             do { try backup.finishRecovery(receipt) } catch { recoveryError = error.localizedDescription }
         }
         recoveryStartup = requiresStartupHealthCheck || requiresRecovery
         if storageError == nil && !requiresStartupHealthCheck {
-            let old = preferences.pendingUpdate
-            preferences.pendingUpdate.restoreAfterLaunch(version: currentVersion, build: currentBuild, trusted: false)
-            if preferences.pendingUpdate != old { _ = save(preferences) }
+            var restored = preferences
+            restored.pendingUpdate.restoreAfterLaunch(version: currentVersion, build: currentBuild, trusted: false)
+            if restored.pendingUpdate != preferences.pendingUpdate { _ = save(restored) }
         }
         if storageError == nil, !requiresStartupHealthCheck, !requiresRecovery,
            FileManager.default.fileExists(atPath: store.stateURL.path) {
@@ -69,8 +75,26 @@ import Combine
         guard canRepairState, let snapshot = repairSnapshot else { return }
         do {
             let next = try store.repairState(expected: snapshot)
-            preferences = next; storageError = nil; repairSnapshot = nil; recoveryNeedsRestart = true
-        } catch { storageError = error.localizedDescription; repairSnapshot = try? store.repairableState() }
+            preferences = next; storageError = nil; storageBlocksEditing = false; pendingSave = nil
+            repairSnapshot = nil; recoveryNeedsRestart = true
+        } catch {
+            storageError = error.localizedDescription; storageBlocksEditing = true; repairSnapshot = try? store.repairableState()
+        }
+    }
+
+    @discardableResult func retrySave() -> Bool {
+        guard canRetrySave, let next = pendingSave else { return false }
+        do {
+            let obsolete = preferences.pendingUpdate.backupPath
+            try store.save(next); preferences = next; storageError = nil; pendingSave = nil
+            if let obsolete, obsolete != next.pendingUpdate.backupPath {
+                try? backup.discard(URL(fileURLWithPath: obsolete))
+            }
+            return true
+        } catch {
+            storageError = error.localizedDescription
+            return false
+        }
     }
 
     func restorePreviousData() async {
@@ -224,7 +248,7 @@ import Combine
         if selected && canChooseInstall {
             Task {
                 if await self.installPrepared(restart: false) { completion(true) }
-                else if self.requiresRecovery || self.storageError != nil { completion(false) }
+                else if self.requiresRecovery || self.storageBlocksEditing { completion(false) }
                 else if self.state.phase == .failed { self.finishQuitAfterCancellation(completion) }
                 else { self.cancelInstallerForQuit(preservingChoice: true, completion) }
             }; return
@@ -234,7 +258,7 @@ import Combine
 
     private func cancelInstallerForQuit(preservingChoice: Bool, _ completion: @escaping (Bool) -> Void) {
         var next = preferences; next.pendingUpdate.cancel(preservingChoice: preservingChoice)
-        guard save(next) else { completion(false); return }
+        if next != preferences, !save(next), storageBlocksEditing { completion(false); return }
         finishQuitAfterCancellation(completion)
     }
 
@@ -314,18 +338,40 @@ import Combine
         var next = preferences
         if next.pendingUpdate.fail((error as? UpdateAdapterError)?.code ?? "operation", detail: error.localizedDescription, token: token) { _ = save(next); adapter.cancel() }
     }
+    private func isCriticalSave(_ next: UpdatePreferences) -> Bool {
+        recovering || recoveryNeedsRestart || requiresRecovery || requiresStartupHealthCheck ||
+            next.recoveryReceipt != preferences.recoveryReceipt || next.stateRepairReceipt != nil ||
+            [.installing, .pendingRestart].contains(next.pendingUpdate.phase) ||
+            next.pendingUpdate.failure.map { [.installing, .pendingRestart].contains($0.stage) } == true
+    }
     @discardableResult private func save(_ next: UpdatePreferences, discardObsoleteBackup: Bool = true) -> Bool {
-        guard storageError == nil else { return false }
+        if storageError != nil {
+            if isCriticalSave(next) { storageBlocksEditing = true; pendingSave = nil }
+            return false
+        }
         do {
             let obsolete = preferences.pendingUpdate.backupPath
-            try store.save(next); preferences = next
+            try store.save(next); preferences = next; pendingSave = nil
             if discardObsoleteBackup, let obsolete, obsolete != next.pendingUpdate.backupPath {
                 try? backup.discard(URL(fileURLWithPath: obsolete))
             }
             return true
-        }
-        catch {
-            storageError = error.localizedDescription; preferences.pendingUpdate.cancel(); adapter.cancel(); return false
+        } catch {
+            storageError = error.localizedDescription
+            if isCriticalSave(next) {
+                storageBlocksEditing = true; pendingSave = nil
+                if ![.installing, .pendingRestart].contains(preferences.pendingUpdate.phase) {
+                    preferences.pendingUpdate.cancel(); adapter.cancel()
+                }
+            } else {
+                var retryable = next
+                if [.checking, .downloading, .verifying, .packageReady, .waitingForTasks, .readyToInstall].contains(retryable.pendingUpdate.phase) {
+                    if retryable.pendingUpdate.phase == .checking { retryable.lastCheck = preferences.lastCheck }
+                    retryable.pendingUpdate.cancel(preservingChoice: [.onQuit, .automaticOnQuit].contains(retryable.pendingUpdate.choice))
+                }
+                preferences = retryable; pendingSave = retryable; adapter.cancel()
+            }
+            return false
         }
     }
 }

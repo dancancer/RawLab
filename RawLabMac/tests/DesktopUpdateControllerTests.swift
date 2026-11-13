@@ -1,4 +1,6 @@
 import Foundation
+import AppKit
+import SwiftUI
 
 @MainActor private final class FakeUpdateAdapter: UpdateAdapter {
     var unavailableReason: String?
@@ -39,6 +41,7 @@ import Foundation
     @MainActor static func main() async throws {
         try await automaticCheckRetries()
         try await stateRepair()
+        try await storageFailureCriticalityAndRetry()
         try await preHandoffFailureAllowsRetry()
         try await installationFailureBlocksEditing()
         try await blockedQuitFallsBack()
@@ -214,6 +217,102 @@ import Foundation
     static func checkData(_ path: URL, _ expected: String) throws {
         let value = try String(contentsOf: path, encoding: .utf8)
         check(value == expected, "Recovery restores the verified backup contents")
+    }
+
+    @MainActor static func renderPNG(_ view: SoftwareUpdateView) throws -> Data {
+        let host = NSHostingView(rootView: view)
+        host.frame = NSRect(x: 0, y: 0, width: 560, height: 680)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.contentView = host; host.layoutSubtreeIfNeeded()
+        defer { window.contentView = nil; window.close() }
+        guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
+            throw UpdateAdapterError(code: "ui", detail: "Missing bitmap")
+        }
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        return bitmap.representation(using: .png, properties: [:]) ?? Data()
+    }
+    @MainActor static func storageFailureCriticalityAndRetry() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-storage-criticality-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        var failAllSaves = true
+        var failPhase: UpdatePhase?
+        let store = UpdateStore(directory: root.appendingPathComponent("Updates")) { preferences, stateURL in
+            if failAllSaves || preferences.pendingUpdate.phase == failPhase {
+                throw UpdateAdapterError(code: "storage", detail: "Injected write failure")
+            }
+            try UpdateStore.writeAtomically(preferences, to: stateURL)
+        }
+        let adapter = FakeUpdateAdapter()
+        let controller = DesktopUpdateController(adapter: adapter, gate: UpdateInstallGate(), store: store,
+            currentVersion: "0.8.2", currentBuild: "14", automaticCheck: false)
+        controller.check(manual: true)
+        check(controller.storageError != nil && !controller.blocksEditing && controller.canRetrySave && adapter.checks == 0,
+            "Save failure when starting a check does not block editing and offers retrySave")
+        _ = NSApplication.shared
+        let defaults = UserDefaults(suiteName: "dev.rawlab.update-storage-test.\(UUID())")!
+        let legacy = UpdateChecker(defaults: defaults, currentVersion: "0.8.2", fetch: { throw URLError(.notConnectedToInternet) })
+        let errorPNG = try renderPNG(SoftwareUpdateView(updates: controller, legacy: legacy))
+        let notice = UpdatePresentation.storageNotice(canRetrySave: controller.canRetrySave, canRepairState: controller.canRepairState)
+        check(!errorPNG.isEmpty &&
+            notice == "无法读取或写入文件，请检查路径和访问权限。" &&
+            notice != "无法确认更新或恢复状态，请保留全部文件并联系支持。",
+            "SoftwareUpdateView renders non-blocking save notice and retry button on non-critical write failure")
+        check(!controller.retrySave() && controller.storageError != nil && !controller.blocksEditing && controller.canRetrySave,
+            "Repeated non-critical save failure stays unblocked and retryable")
+        failAllSaves = false
+        check(controller.retrySave() && controller.storageError == nil && !controller.canRetrySave && controller.canCheck,
+            "Retrying save clears non-critical storage error and restores update checks")
+        let clearedPNG = try renderPNG(SoftwareUpdateView(updates: controller, legacy: legacy))
+        check(!clearedPNG.isEmpty && clearedPNG != errorPNG,
+            "Clearing non-critical storage error updates the rendered SoftwareUpdateView")
+        let release = UpdateDescriptor(version: "0.9.1", build: "19", platform: "macos", architecture: "arm64", channel: "stable",
+            assetURL: "https://example.invalid/update.zip", size: 12, sha256: nil, notes: "")
+        controller.check(manual: true); adapter.send(.found(release)); controller.download()
+        adapter.send(.preparing); adapter.hasPreparedInstaller = true; adapter.send(.verified)
+        failPhase = .installing
+        controller.choose(.restartNow)
+        for _ in 0..<400 where controller.preparingInstallation || controller.storageError == nil { try await Task.sleep(for: .milliseconds(10)) }
+        check(controller.storageError != nil && controller.blocksEditing && !controller.canRetrySave && !controller.canCheck && adapter.installs == 0,
+            "Save failure when recording installing locks editing and blocks retry")
+        let pendingStore = UpdateStore(directory: root.appendingPathComponent("PendingRestartUpdates")) { preferences, stateURL in
+            if preferences.pendingUpdate.phase == .pendingRestart {
+                throw UpdateAdapterError(code: "storage", detail: "Injected pendingRestart write failure")
+            }
+            try UpdateStore.writeAtomically(preferences, to: stateURL)
+        }
+        let pendingAdapter = FakeUpdateAdapter()
+        let pendingController = DesktopUpdateController(adapter: pendingAdapter, gate: UpdateInstallGate(), store: pendingStore,
+            currentVersion: "0.8.2", currentBuild: "14", automaticCheck: false)
+        pendingController.check(manual: true); pendingAdapter.send(.found(release)); pendingController.download()
+        pendingAdapter.send(.preparing); pendingAdapter.hasPreparedInstaller = true; pendingAdapter.send(.verified)
+        pendingController.choose(.restartNow)
+        for _ in 0..<400 where pendingController.preparingInstallation || pendingController.storageError == nil { try await Task.sleep(for: .milliseconds(10)) }
+        check(pendingController.storageError != nil && pendingController.blocksEditing && !pendingController.canRetrySave,
+            "Save failure when recording pendingRestart locks editing")
+        let recoveryRoot = root.appendingPathComponent("Recovery")
+        let edits = recoveryRoot.appendingPathComponent("Edits")
+        try FileManager.default.createDirectory(at: edits, withIntermediateDirectories: true)
+        try Data("old".utf8).write(to: edits.appendingPathComponent("photo.json"))
+        var failRecoverySave = false
+        let recoveryStore = UpdateStore(directory: recoveryRoot.appendingPathComponent("Updates")) { preferences, stateURL in
+            if failRecoverySave { throw UpdateAdapterError(code: "storage", detail: "Injected recovery write failure") }
+            try UpdateStore.writeAtomically(preferences, to: stateURL)
+        }
+        let backup = try UpdateDataBackup(dataRoot: recoveryRoot, updateRoot: recoveryStore.directory)
+            .create(previous: "0.8.2", target: "0.9.1", previousBuild: "14")
+        var failed = UpdatePreferences(); var token = failed.pendingUpdate.beginCheck()
+        _ = failed.pendingUpdate.found(release, token: token); token = failed.pendingUpdate.beginDownload()!
+        _ = failed.pendingUpdate.preparing(token: token); _ = failed.pendingUpdate.verified(token: token)
+        _ = failed.pendingUpdate.choose(.onQuit); _ = failed.pendingUpdate.admit(blockedBy: [])
+        failed.pendingUpdate.backupPath = backup.path; failed.pendingUpdate.previousVersion = "0.8.2"; failed.pendingUpdate.previousBuild = "14"
+        _ = failed.pendingUpdate.installing(token: token); _ = failed.pendingUpdate.fail("install", detail: "", token: token)
+        try recoveryStore.save(failed)
+        failRecoverySave = true
+        let recovering = DesktopUpdateController(adapter: FakeUpdateAdapter(), gate: UpdateInstallGate(), store: recoveryStore,
+            currentVersion: "0.8.2", currentBuild: "14")
+        await recovering.restorePreviousData()
+        check(recovering.storageError != nil && recovering.blocksEditing && !recovering.canRetrySave,
+            "Save failure during data recovery locks editing")
     }
 
     @MainActor static func preHandoffFailureAllowsRetry() async throws {

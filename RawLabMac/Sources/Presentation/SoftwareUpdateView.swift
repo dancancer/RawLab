@@ -18,7 +18,7 @@ struct SoftwareUpdateView: View {
                         updates.setAutomaticCheck($0); legacy.automatic = updates.preferences.automaticCheck
                     })).disabled(updates.storageError != nil || updates.requiresRecovery || updates.requiresStartupHealthCheck).accessibilityIdentifier("updates.automaticCheck")
                     Toggle(L10n.text("自动下载并在退出时安装"), isOn: Binding(get: { updates.preferences.automaticInstall }, set: updates.setAutomaticInstall))
-                        .disabled(updates.unavailableReason != nil || updates.requiresRecovery || updates.requiresStartupHealthCheck).accessibilityIdentifier("updates.automaticInstall")
+                        .disabled(updates.storageError != nil || updates.unavailableReason != nil || updates.requiresRecovery || updates.requiresStartupHealthCheck).accessibilityIdentifier("updates.automaticInstall")
                     Text(L10n.text("自动安装默认关闭。安装前会保存已提交的编辑，并等待草稿和任务处理完成。"))
                         .font(detailFont).foregroundStyle(.secondary)
                     Divider()
@@ -56,8 +56,10 @@ struct SoftwareUpdateView: View {
                 }
                 if let error = updates.storageError {
                     Text(error).font(detailFont).textSelection(.enabled)
-                    Text(L10n.text(updates.canRepairState ? "保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。" : "无法确认更新或恢复状态，请保留全部文件并联系支持。"))
-                    if updates.canRepairState {
+                    Text(L10n.text(UpdatePresentation.storageNotice(canRetrySave: updates.canRetrySave, canRepairState: updates.canRepairState)))
+                    if updates.canRetrySave {
+                        Button(L10n.text("重试")) { _ = updates.retrySave() }.accessibilityIdentifier("updates.retrySave")
+                    } else if updates.canRepairState {
                         Button(L10n.text("重建更新设置"), action: updates.repairState).accessibilityIdentifier("updates.repairState")
                     }
                 }
@@ -143,6 +145,10 @@ enum UpdatePresentation {
         case .complete: return "更新已完成"
         case .failed: return "更新失败"
         }
+    }
+    static func storageNotice(canRetrySave: Bool, canRepairState: Bool) -> String {
+        if canRetrySave { return "无法读取或写入文件，请检查路径和访问权限。" }
+        return canRepairState ? "保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。" : "无法确认更新或恢复状态，请保留全部文件并联系支持。"
     }
     static func blocker(_ value: String) -> String {
         switch value {

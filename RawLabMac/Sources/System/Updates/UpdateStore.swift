@@ -3,12 +3,22 @@ import CryptoKit
 
 struct UpdateStore {
     let directory: URL
+    private let writeState: (UpdatePreferences, URL) throws -> Void
     var stateURL: URL { directory.appendingPathComponent("state.json") }
     static var defaultDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("RawLab/Updates", isDirectory: true)
     }
-    init(directory: URL = defaultDirectory) { self.directory = directory }
+    init(directory: URL = defaultDirectory,
+         writeState: @escaping (UpdatePreferences, URL) throws -> Void = Self.writeAtomically) {
+        self.directory = directory
+        self.writeState = writeState
+    }
+    static func writeAtomically(_ preferences: UpdatePreferences, to stateURL: URL) throws {
+        try FileManager.default.createDirectory(at: stateURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONEncoder().encode(preferences).write(to: stateURL, options: .atomic)
+        let file = try FileHandle(forWritingTo: stateURL); defer { try? file.close() }; try file.synchronize()
+    }
     func load(automaticCheck: Bool) throws -> UpdatePreferences {
         guard FileManager.default.fileExists(atPath: stateURL.path) else {
             var result = UpdatePreferences(); result.automaticCheck = automaticCheck; return result
@@ -134,9 +144,7 @@ struct UpdateStore {
     }
     private func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
     func save(_ preferences: UpdatePreferences) throws {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try JSONEncoder().encode(preferences).write(to: stateURL, options: .atomic)
-        let file = try FileHandle(forWritingTo: stateURL); defer { try? file.close() }; try file.synchronize()
+        try writeState(preferences, stateURL)
     }
 }
 

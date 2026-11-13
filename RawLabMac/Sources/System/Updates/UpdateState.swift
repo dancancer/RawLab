@@ -133,7 +133,7 @@ struct UpdateTaskState: Codable, Equatable {
     private func accepts(_ token: UUID, in phases: [UpdatePhase]) -> Bool { attempt == token && phases.contains(phase) }
 }
 
-struct UpdatePreferences: Codable {
+struct UpdatePreferences: Codable, Equatable {
     var automaticCheck = true
     var automaticInstall = false
     var skippedVersion: String?
