@@ -221,8 +221,14 @@ void completeEdits(const Json& edits, EditRecipe& parsed) {
         parsed.lensTca = boolean(lens, "tca", "edits.lens_correction");
         parsed.lensVignetting = boolean(lens, "vignetting", "edits.lens_correction");
         parsed.lensAutoCrop = !lens.contains("auto_crop") || boolean(lens, "auto_crop", "edits.lens_correction");
-        if (lens.contains("profile_id") && !lens.at("profile_id").is_null())
+        if (lens.contains("profile_id") && !lens.at("profile_id").is_null()) {
             parsed.lensProfileId = text(lens.at("profile_id"), "edits.lens_correction.profile_id");
+            // 与 HDR 的 lens_profile 一致：过长的 id 或控制字符会在下游变成不可诊断的失败。
+            if (parsed.lensProfileId.size() > 1024 ||
+                std::any_of(parsed.lensProfileId.begin(), parsed.lensProfileId.end(),
+                    [](unsigned char c) { return c < 32 || c == 127; }))
+                throw std::invalid_argument("edits.lens_correction.profile_id must be a valid id");
+        }
     }
 }
 

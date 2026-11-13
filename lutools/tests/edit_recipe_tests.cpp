@@ -234,6 +234,12 @@ void completeEdits() {
     for (int version = 1; version <= 3; ++version)
         reject(replaceOnce(v4(R"(,"tone":{})"), "\"schema_version\":4", "\"schema_version\":" + std::to_string(version)),
                "old versions reject new controls", "edits.tone");
+    // profile_id 与 HDR 的 lens_profile 使用同一套约束：长度上限与控制字符。
+    reject(v4(R"(,"lens_correction":{"profile_id":")" + std::string(1025, 'a') + R"("})"),
+           "overlong lens profile id", "edits.lens_correction.profile_id");
+    reject(v4(R"(,"lens_correction":{"profile_id":"a\u0001b"})"),
+           "control character in lens profile id", "edits.lens_correction.profile_id");
+    parse(v4(R"(,"lens_correction":{"profile_id":")" + std::string(1024, 'a') + R"("})"));
     parse(v4(R"(,"tone":{"contrast":0,"saturation":2,"highlights":-1,"shadows":1,"s_curve":-1},"detail":{"sharpening":2},"hsl":{"hue":[-100,100,0,0,0,0,0,0]},"look":{"path":null,"strength":2})"));
 }
 
