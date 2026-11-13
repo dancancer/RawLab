@@ -18,7 +18,7 @@
 | WP-06 | iOS HDR 提示缓存重置 + 死状态清理（P1-05、P1-18、D 项）——须在 P1-③ 切 iOS 分支**前**合入 | 1 | PR #291 request-changes→排队返工（B1-B3） |
 | WP-07 | 三端批量日志逐任务损坏隔离（完成-37 iOS/Android/Win） | 1 | PR #290 request-changes→返工中（Must=未来版本保护三端一致） |
 | WP-08 | Windows 启动清扫防崩、内嵌预览兜底、坏预设展示（完成-05、完成-23、E） | 1 | **PR #288 评审中**（Windows 面靠 CI 验证） |
-| WP-09 | Windows 更新器启动失败回退（完成-27，并入 S6 更新器矩阵） | 2 | PR #294 request-changes→排队返工（P1=UI 断言漏翻转） |
+| WP-09 | Windows 更新器启动失败回退（完成-27，并入 S6 更新器矩阵） | 2 | PR #294 返工完成（`04447468`，方案一收口 P1+P2）复审在途 |
 | WP-10 | Android 相机三合包（完成-07/15/16）；与 P1-23/P1-25 共用 `CameraImportStore.kt`，按集成规范排 owner | 2 | todo |
 | WP-11 | 核心 GLES 先绑后建与跨 API 恢复（F/P3-05，并入 P3 GPU 批次） | 3 | todo |
 
