@@ -8,6 +8,10 @@ import urllib.parse
 import urllib.request
 
 
+# macOS and iOS only exist as self-hosted runners, so a fork pull request can never run them;
+# selecting them would leave the aggregate result red for a reason unrelated to the change.
+SELF_HOSTED_ONLY = {"macos", "ios"}
+
 PLATFORMS = ("macos", "windows", "android", "ios")
 CHECK_GROUPS = ("contracts", "models", "build", "native", "full")
 # No build, package or test reads these files. Anything not classified below selects every platform.
@@ -45,12 +49,16 @@ def affected(paths):
     return selected
 
 
-def is_cold_pull_request(pull):
-    # 外部贡献者的分支名不可信：一个 fork 里的 hotfix/* 不该触发全量冷构建。
+def is_external_pull_request(pull):
     head_repo = (pull.get("head") or {}).get("repo") or {}
     base_repo = (pull.get("base") or {}).get("repo") or {}
-    if head_repo.get("full_name") and base_repo.get("full_name") and \
-            head_repo["full_name"] != base_repo["full_name"]:
+    return bool(head_repo.get("full_name") and base_repo.get("full_name")
+                and head_repo["full_name"] != base_repo["full_name"])
+
+
+def is_cold_pull_request(pull):
+    # 外部贡献者的分支名不可信：一个 fork 里的 hotfix/* 不该触发全量冷构建。
+    if is_external_pull_request(pull):
         return False
     base, head = pull["base"]["ref"], pull["head"]["ref"]
     return base == "main" or base.startswith("release/") or head.startswith(("release/", "hotfix/"))
@@ -94,7 +102,12 @@ def select(event_name, event, sha, changed_files, last_success):
             return set(), False, True, "draft pull request: platform checks wait for ready for review"
         if is_cold_pull_request(pull):
             return every, True, False, "release or hotfix pull request: full cold build"
-        return _from_diff(lambda: changed_files("HEAD^1"), False, "pull request changes")
+        platforms, cold, draft, reason = _from_diff(lambda: changed_files("HEAD^1"), False, "pull request changes")
+        if is_external_pull_request(pull):
+            kept = platforms - SELF_HOSTED_ONLY
+            if kept != platforms:
+                return kept, cold, draft, f"{reason}; fork pull request: {', '.join(sorted(platforms & SELF_HOSTED_ONLY))} stay off self-hosted runners"
+        return platforms, cold, draft, reason
     if event_name == "push":
         def diff_since_last_success():
             base = last_success("push")
