@@ -32,7 +32,49 @@ internal static class ControllerChecks
             if (RejectInstall) throw new IOException("Injected dispatch failure");
         }
     }
-    internal static async Task Run(Action<bool, string> check)
+    private sealed class SerialSynchronizationContext : SynchronizationContext
+    {
+        private readonly Queue<(SendOrPostCallback Callback, object? State)> queue = new();
+        private bool finished;
+        public override void Post(SendOrPostCallback d, object? state)
+        {
+            lock (queue) { queue.Enqueue((d, state)); Monitor.Pulse(queue); }
+        }
+        public override SynchronizationContext CreateCopy() => this;
+        public void Complete()
+        {
+            lock (queue) { finished = true; Monitor.Pulse(queue); }
+        }
+        public void Pump()
+        {
+            while (true)
+            {
+                (SendOrPostCallback Callback, object? State) item;
+                lock (queue)
+                {
+                    while (queue.Count == 0 && !finished) Monitor.Wait(queue);
+                    if (queue.Count == 0) return;
+                    item = queue.Dequeue();
+                }
+                item.Callback(item.State);
+            }
+        }
+    }
+    internal static Task Run(Action<bool, string> check)
+    {
+        var previous = SynchronizationContext.Current;
+        var context = new SerialSynchronizationContext();
+        SynchronizationContext.SetSynchronizationContext(context);
+        try
+        {
+            var task = RunCore(check);
+            _ = task.ContinueWith(_ => context.Complete(), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            context.Pump();
+            return task;
+        }
+        finally { SynchronizationContext.SetSynchronizationContext(previous); }
+    }
+    private static async Task RunCore(Action<bool, string> check)
     {
         await AutomaticCheckRetries(check);
         await StartupAndQuit(check);
@@ -524,11 +566,14 @@ internal static class ControllerChecks
     private static async Task RuntimeSaveFailureRecovery(Action<bool, string> check)
     {
         static IOException SharingViolation() => new("Simulated sharing violation", unchecked((int)0x80070020));
+        static UpdateTaskState SavedState(byte[] bytes) =>
+            JsonSerializer.Deserialize<UpdatePreferences>(bytes)!.PendingUpdate;
         var root = Path.Combine(Path.GetTempPath(), "rawlab-save-recovery-" + Guid.NewGuid().ToString("N"));
         try
         {
             var files = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
-            Func<Exception?>? writeFault = null, moveFault = null;
+            Func<Exception?>? writeFault = null;
+            Func<byte[], Exception?>? moveFault = null;
             int writeCalls = 0, moveCalls = 0;
             var elapsed = TimeSpan.Zero;
             var delays = new List<int>();
@@ -544,7 +589,7 @@ internal static class ControllerChecks
                 (source, destination) =>
                 {
                     moveCalls++;
-                    if (moveFault?.Invoke() is { } fault) throw fault;
+                    if (moveFault?.Invoke(files[source]) is { } fault) throw fault;
                     files[destination] = files[source];
                     files.Remove(source);
                 },
@@ -557,7 +602,7 @@ internal static class ControllerChecks
             var store = CreateStore("a");
             var adapter = new Adapter();
             var controller = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14", now: () => virtualNow);
-            moveFault = () => new UnauthorizedAccessException("Injected access denied");
+            moveFault = _ => new UnauthorizedAccessException("Injected access denied");
             ResetCounters();
             var saveThrew = false;
             try { store.Save(new()); }
@@ -583,7 +628,7 @@ internal static class ControllerChecks
             await controller.DownloadAsync();
             check(controller.State.Phase == UpdatePhase.PackageReady, "Package reaches ready state before simulated sharing conflict");
 
-            moveFault = SharingViolation;
+            moveFault = _ => SharingViolation();
             ResetCounters();
             var sharingThrew = false;
             try { store.Save(controller.Preferences); }
@@ -602,7 +647,7 @@ internal static class ControllerChecks
             await controller.DownloadAsync();
             await controller.ChooseAsync(UpdateInstallChoice.OnQuit);
             adapter.RejectInstall = true;
-            moveFault = () => controller.State.Phase == UpdatePhase.Installing ? SharingViolation() : null;
+            moveFault = bytes => SavedState(bytes) is { Phase: UpdatePhase.Failed, Failure: { Stage: UpdatePhase.Installing } } ? SharingViolation() : null;
             ResetCounters();
             var quitApproved = await controller.PrepareForQuitAsync();
             check(!quitApproved && adapter.Installs == 1 && delays.SequenceEqual(new[] { 10, 50, 200 }) &&
@@ -620,12 +665,11 @@ internal static class ControllerChecks
 
             var store2 = CreateStore("b");
             var adapter2 = new Adapter();
-            DesktopUpdateController? controller2 = null;
-            controller2 = new DesktopUpdateController(adapter2, new(), store2, "0.8.2", "14", now: () => virtualNow);
+            var controller2 = new DesktopUpdateController(adapter2, new(), store2, "0.8.2", "14", now: () => virtualNow);
             var restarted = false; controller2.RestartRequested += () => restarted = true;
             await controller2.CheckAsync(true);
             await controller2.DownloadAsync();
-            moveFault = () => controller2!.State.Phase == UpdatePhase.Installing ? SharingViolation() : null;
+            moveFault = bytes => SavedState(bytes).Phase == UpdatePhase.PendingRestart ? SharingViolation() : null;
             ResetCounters();
             await controller2.ChooseAsync(UpdateInstallChoice.RestartNow);
             check(adapter2.Installs == 1 && restarted && delays.SequenceEqual(new[] { 10, 50, 200 }) &&
