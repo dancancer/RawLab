@@ -5,10 +5,13 @@
 #include "photo_rendering.h"
 #include "white_balance.h"
 #include "file_path.h"
+#include "output_file_mode.h"
 #include "processing_cancellation.h"
 #include <libraw/libraw.h>
 #include "x3f_processor.h"
 #include <algorithm>
+#include <atomic>
+#include <cerrno>
 #include <cmath>
 #include <iostream>
 #include <memory>
@@ -35,6 +38,8 @@
 #undef near
 #undef far
 #else
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 #ifdef SONY2FUJI_ENABLE_DNGSDK
@@ -973,19 +978,21 @@ public:
             throw;
         }
 #else
-        std::vector<char> temporaryName;
+        std::string temporaryName;
         int createdFd = -1;
         try {
             std::filesystem::path parent = destination.parent_path();
             if (parent.empty()) parent = ".";
             const std::string base = kind_ == Kind::Jpeg ? ".rawlab-jpeg" : ".rawlab-png";
-            const std::string pattern = (parent / (base + "-XXXXXX")).string();
-            temporaryName.assign(pattern.begin(), pattern.end());
-            temporaryName.push_back('\0');
-            createdFd = ::mkstemp(temporaryName.data());
+            for (int attempt = 0; attempt < 64 && createdFd < 0; ++attempt) {
+                temporaryName = (parent / (base + "-" + stagingSuffix() + ".tmp")).string();
+                createdFd = ::open(temporaryName.c_str(), O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0666);
+                if (createdFd < 0 && errno != EEXIST) return false;
+            }
             if (createdFd < 0) return false;
+            preserveDestinationMode(createdFd, destination);
 
-            path_ = std::filesystem::path(temporaryName.data());
+            path_ = std::filesystem::path(temporaryName);
             file_ = ::fdopen(createdFd, "wb");
             if (!file_) {
                 (void)::close(createdFd);
@@ -998,7 +1005,7 @@ public:
         } catch (...) {
             if (createdFd >= 0) (void)::close(createdFd);
             cleanup();
-            if (!temporaryName.empty()) (void)::unlink(temporaryName.data());
+            if (!temporaryName.empty()) (void)::unlink(temporaryName.c_str());
             throw;
         }
 #endif
