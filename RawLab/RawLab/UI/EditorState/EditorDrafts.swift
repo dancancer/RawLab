@@ -145,13 +145,14 @@ extension ContentView {
         return selectedAdjustment.map(EditorToolSelection.adjustment) ?? .film
     }
 
-    func activateEditorTool(_ selection: EditorToolSelection, resettingFine: Bool = true) {
+    func activateEditorTool(_ selection: EditorToolSelection, resettingFine: Bool = true, leavingWorkspace: Bool = false) {
         viewModel.closeQuickPresets()
         cancelHSLTarget()
         cancelSliderInteraction()
         if resettingFine && selection != currentEditorTool { adjustmentFine = false }
         collapsedEditorTool = nil
-        let leavingDraft = isEditorDraftActive
+        // finishDraftNavigation 已先清 workspaceDraft/toolWorkspaceOpen；导航来源仍要按离开草稿处理。
+        let leavingDraft = isEditorDraftActive || leavingWorkspace
         if leavingDraft { clearRecoverableDraft(); viewModel.discardDraftSaveFailure(settings: settings) }
         pendingToolSelection = nil
         draftExitPresented = false
@@ -173,7 +174,8 @@ extension ContentView {
         workspaceDraft = EditorToolDraft(tool: selection, original: settings)
         toolWorkspaceOpen = true
         if leavingDraft && !geometrySelected && !lensSelected {
-            // 未改动切工具 settings 不变，比对参考同样先重锚回 committed 再交付终态画面。
+            // 离开草稿切往普通工具时 settings 可能不变或刚提交，比对参考先重锚回 committed
+            // 再交付终态画面（导航 apply 后也走这里，避免画布滞留在未裁切草稿）。
             viewModel.committedPreviewSettings = settings
             viewModel.updatePreview(settings: settings, includeHistogram: true, quality: .final)
         } else if geometrySelected || lensSelected {
@@ -242,6 +244,8 @@ extension ContentView {
     }
 
     func finishDraftNavigation(apply: Bool) {
+        // 进入导航前是否正开着工具工作区是唯一可靠事实：commit/discard 会先清 workspaceDraft。
+        let leavingWorkspace = isEditorDraftActive
         if apply {
             guard commitEditorDraft() else { return }
         } else { discardEditorDraft() }
@@ -270,8 +274,8 @@ extension ContentView {
         let expansion = pendingAdjustmentExpansion
         pendingToolSelection = nil
         pendingAdjustmentExpansion = nil
-        if expansion == false { completeAdjustmentExpansion(false); return }
-        if let selection { activateEditorTool(selection) }
+        if expansion == false { completeAdjustmentExpansion(false, closingWorkspace: leavingWorkspace); return }
+        if let selection { activateEditorTool(selection, leavingWorkspace: leavingWorkspace) }
         if let expansion { completeAdjustmentExpansion(expansion) }
     }
 
@@ -355,15 +359,14 @@ extension ContentView {
         } else { completeAdjustmentExpansion(expanded) }
     }
 
-    func completeAdjustmentExpansion(_ expanded: Bool) {
+    func completeAdjustmentExpansion(_ expanded: Bool, closingWorkspace: Bool = false) {
         if !expanded && !hslTargetEnabled { cancelSliderInteraction() }
         if expanded {
             if let tool = collapsedEditorTool { activateEditorTool(tool) }
-        } else if adjustmentsExpanded || isEditorDraftActive || geometrySelected || lensSelected {
-            // 草稿可能已先经 commit/discard 收尾（workspaceDraft 已清），但工具会话状态仍在——
-            // 几何/镜头幽灵态，或曝光/胶片/配方等工具在 finishDraftNavigation 收起路径里被提前清空。
-            // 一律走 finishEditorTool 落位 committed 画面、记录 collapsedEditorTool 并清选择态，
-            // 否则画布滞留在已放弃的草稿渲染、再展开无法回到收起前的工具。
+        } else if closingWorkspace || isEditorDraftActive || geometrySelected || lensSelected {
+            // 只有关闭中的工具工作区或仍残留的工具会话才收尾：导航收起路径已先 commit/discard
+            // 清掉 workspaceDraft，靠 closingWorkspace 传入事实；总览态（无工作区、无草稿）收起
+            // 不记 collapsedEditorTool，否则后续选组/预设/展开会被 onChange 劫持进草稿工作区。
             let tool = currentEditorTool
             let group = selectedGroup
             // 收起结束实际草稿并恢复 committed 画面；记住的工具只属于导航会话。

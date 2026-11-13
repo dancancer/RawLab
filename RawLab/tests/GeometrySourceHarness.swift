@@ -256,6 +256,48 @@ extension ContentView {
             cancelEditorDraft()
             try await geometryReviewSettled()
 
+            // 四轮锚点：总览态（工作区已关、无草稿）点「收起调整栏」不得触碰工具会话——
+            // collapsedEditorTool 误记会让随后的选组/展开被 onChange 劫持进草稿工作区。
+            // 每步 settle，暴露同步段内被合并掉的 .onChange(of: adjustmentsExpanded)。
+            probe.check("overviewCollapse.Precondition", !toolWorkspaceOpen && !isEditorDraftActive &&
+                        adjustmentsExpanded && collapsedEditorTool == nil)
+            requestAdjustmentExpansion(false)
+            try await geometryReviewSettled()
+            probe.check("overviewCollapse.StaysToolless", collapsedEditorTool == nil && !toolWorkspaceOpen &&
+                        !isEditorDraftActive && !adjustmentsExpanded)
+            selectEditorGroup(.color)
+            try await geometryReviewSettled()
+            probe.check("overviewCollapse.GroupSelectSurvives", selectedGroup == .color && !toolWorkspaceOpen &&
+                        !isEditorDraftActive)
+            requestAdjustmentExpansion(true)
+            try await geometryReviewSettled()
+            probe.check("overviewCollapse.ExpandStaysOverview", collapsedEditorTool == nil && !toolWorkspaceOpen &&
+                        !isEditorDraftActive && adjustmentsExpanded)
+
+            // 四轮 Should-Fix 锚点：导航「应用」切普通工具，commit 后必须交付 committed 终帧
+            // （修复前 leavingDraft 判假漏重渲，画布与比对底图滞留在未裁切草稿）。
+            selectEditorTool(.geometry)
+            try await geometryReviewSettled()
+            var lowered = geometryDraftBinding.wrappedValue
+            lowered.cropHeight = 0.5
+            geometryDraftBinding.wrappedValue = lowered
+            try await geometryReviewSettled()
+            probe.check("navApplySwitch.DraftDirty", isEditorDraftChanged)
+            selectEditorTool(.adjustment(.exposure))
+            probe.check("navApplySwitch.PresentsDraftExit", draftExitPresented &&
+                        pendingToolSelection == .adjustment(.exposure))
+            finishDraftNavigation(apply: true)
+            try await geometryReviewSettled()
+            let switchedCommittedPixels = try geometryReviewPreview(settings: settings)
+            probe.check("navApplySwitch.LandsCommittedCrop", settings.geometry.cropHeight == 0.5 &&
+                        selectedAdjustment == .exposure && toolWorkspaceOpen &&
+                        viewModel.basePreviewGeometry.cropHeight == 0.5 &&
+                        viewModel.previewImage?.pngData() == switchedCommittedPixels)
+            cancelEditorDraft()
+            try await geometryReviewSettled()
+            // Restore the fixture: the navigation-apply commit above persisted a modified crop.
+            try persistence.save(bID, state: PhotoEditState(settings: bSettings))
+
             if isEditorDraftActive { cancelEditorDraft() }
             try await geometryReviewImport(bURL, identity: bID)
             selectEditorTool(.geometry)
