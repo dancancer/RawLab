@@ -266,6 +266,7 @@ struct AdjustmentTransferTests {
         try toneControls()
         try aiDenoiseBoundary()
         try postRGBCompatibility()
+        try ignoreNoticesAndVersion()
         try scopesAndFreeze()
         try recipeConversions()
         try recipeSourceOnHDR()
@@ -310,9 +311,13 @@ struct AdjustmentTransferTests {
         check(try MacAdjustmentTransfer.prepare(payload: zero, target: before, context: raw) == before,
             "Post-RGB zero is representable without changing Mac denoise")
         let legacy = try AdjustmentTransferPayload(source: source, values: [key: .number(0.25)])
-        rejects("Post-RGB denoise never maps to Mac RAW FBDD") {
-            _ = try MacAdjustmentTransfer.prepare(payload: legacy, target: before, context: raw)
-        }
+        var ignored: [AdjustmentTransferNotice] = []
+        var noticing = raw
+        noticing.transferNotices = { ignored.append($0) }
+        check(try MacAdjustmentTransfer.prepare(payload: legacy, target: before, context: noticing) == before,
+            "Post-RGB denoise is ignored on Mac SDR and never maps to RAW FBDD")
+        check(Set(ignored) == [.ignoredPostRGBDenoise, .retainedTargetProcessingVersion],
+            "Ignored post-RGB and retained processing version are each reported once")
         let all = try MacAdjustmentTransfer.capture(scope: .all, snapshot: before, context: raw)
         check(all.values[key] == .number(0), "Mac all scope explicitly captures supported post-RGB zero")
         rejects("Out-of-range post-RGB requests are rejected") {
@@ -324,8 +329,32 @@ struct AdjustmentTransferTests {
         }
     }
 
-    static func scopesAndFreeze() throws {
-        var source = Adjustments()
+    // Q3/Q4：本平台未建模的键收到非 0 值时忽略并提示；处理版本沿用目标，不拒绝粘贴。
+    static func ignoreNoticesAndVersion() throws {
+        var notices = [AdjustmentTransferNotice]()
+        var context = raw
+        context.transferNotices = { notices.append($0) }
+        var target = Adjustments()
+        target.resolveRawNoiseReductionSupport(true)
+        let oldSource = AdjustmentTransferSource(identifier: "old-photo", isRaw: true, processingVersion: 1, recipe: nil)
+        let payload = try AdjustmentTransferPayload(source: oldSource, values: [
+            "light.exposure": .number(0.33), "detail.denoise.raw_level": .number(1), "detail.denoise.post_rgb": .number(0.5)])
+        let result = try MacAdjustmentTransfer.prepare(payload: payload, target: state(target), context: context)
+        check(result.settings.exposure == 0.33 && result.settings.rawNoiseReduction == 1 &&
+            result.settings.processing.version == 3,
+            "Mac applies raw_level, ignores post_rgb and keeps the target processing version on mismatch")
+        check(notices == [.retainedTargetProcessingVersion, .ignoredPostRGBDenoise],
+            "Mac reports the retained processing version first and the ignored post-RGB key once")
+        var silentNotices = [AdjustmentTransferNotice]()
+        var quiet = raw
+        quiet.transferNotices = { silentNotices.append($0) }
+        let currentSource = AdjustmentTransferSource(identifier: "new-photo", isRaw: true, processingVersion: 3, recipe: nil)
+        let silent = try AdjustmentTransferPayload(source: currentSource, values: ["detail.denoise.post_rgb": .number(0)])
+        _ = try MacAdjustmentTransfer.prepare(payload: silent, target: state(target), context: quiet)
+        check(silentNotices.isEmpty, "Matching processing version and zero placeholders prompt nothing")
+    }
+
+    static func scopesAndFreeze() throws {        var source = Adjustments()
         source.exposure = 1.25
         source.contrast = 20
         source.geometry = GeometrySettings()
@@ -901,6 +930,10 @@ struct AdjustmentTransferTests {
             }
 
             let payload = try JSONDecoder().decode(AdjustmentTransferPayload.self, from: JSONSerialization.data(withJSONObject: scenario["payload"]!))
+            // S3：场景提示断言——收集 prepare 期间的忽略/版本提示，与 fixture 声明按集合比较。
+            var scenarioNotices = [AdjustmentTransferNotice]()
+            var noticeContext = context
+            noticeContext.transferNotices = { scenarioNotices.append($0) }
             let expectSpec = (scenario["platform_expect"] as? [String: [String: Any]])?["macos"] ?? (scenario["expect"] as! [String: Any])
             let expectedStatus = expectSpec["status"] as! String
             if expectedStatus == "rejected" {
@@ -916,9 +949,14 @@ struct AdjustmentTransferTests {
                 }
                 continue
             }
-            let candidate = try MacAdjustmentTransfer.prepare(payload: payload, target: targetState, context: context)
+            let candidate = try MacAdjustmentTransfer.prepare(payload: payload, target: targetState, context: noticeContext)
             let actualStatus = candidate == targetState ? "unchanged" : "applied"
             check(actualStatus == expectedStatus, "Scenario \(id): status \(expectedStatus)")
+            let noticesByPlatform = ((scenario["expect"] as? [String: Any])?["notices_by_platform"] as? [String: Any])?["macos"] as? [String]
+            if let expectedNotices = noticesByPlatform ?? (expectSpec["notices"] as? [String]) {
+                check(Set(scenarioNotices.map(\.fixtureId)) == Set(expectedNotices),
+                    "Scenario \(id): notices \(expectedNotices.sorted().joined(separator: ","))")
+            }
             if let valuesObj = expectSpec["values"] {
                 let expectedValues = try JSONDecoder().decode([String: AdjustmentTransferValue].self, from: JSONSerialization.data(withJSONObject: valuesObj))
                 let captured = try MacAdjustmentTransfer.capture(scope: .all, snapshot: candidate, context: context).values

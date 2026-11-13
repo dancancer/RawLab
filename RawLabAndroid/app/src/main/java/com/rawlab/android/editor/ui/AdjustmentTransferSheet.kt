@@ -32,6 +32,23 @@ import com.rawlab.android.ui.EditorSheetSystemBars
 internal enum class AdjustmentSheet { COPY, PASTE, HISTORY }
 private val unfinished = setOf(AdjustmentStatus.BLOCKED, AdjustmentStatus.FAILED, AdjustmentStatus.CONFLICT)
 
+// Q3/Q4 粘贴提示的文案资源（登记于 Shared/strings 的 android 目录）。
+@androidx.annotation.StringRes
+internal fun transferNoticeLabel(notice: AdjustmentTransferNotice): Int = when (notice) {
+    AdjustmentTransferNotice.IGNORED_RAW_DENOISE -> R.string.transfer_notice_ignored_raw_denoise
+    AdjustmentTransferNotice.IGNORED_POST_RGB_DENOISE -> R.string.transfer_notice_ignored_post_rgb
+    AdjustmentTransferNotice.RETAINED_TARGET_PROCESSING_VERSION -> R.string.transfer_notice_processing_version
+}
+
+// Q3/S1：仅聚合实际应用（或确认无需改动）目标的提示；跳过、失败或冲突目标不提示。
+@Composable
+internal fun transferNoticeSummary(prepared: PreparedAdjustmentTransfer?, results: List<AdjustmentOutcome>): String? {
+    if (results.isEmpty()) return null
+    val notices = effectiveTransferNotices(prepared?.targets.orEmpty(), results)
+    if (notices.isEmpty()) return null
+    return notices.map { stringResource(transferNoticeLabel(it)) }.joinToString("；")
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentSheet, preset: AdjustmentPreset? = null, synchronization: CollectionSynchronization? = null,
@@ -134,6 +151,11 @@ internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentShe
                                 transfer.results.count { it.status == AdjustmentStatus.UNCHANGED }.toString(),
                                 transfer.results.count { it.status == AdjustmentStatus.SKIPPED }.toString(), undone.size.toString(),
                                 transfer.results.count { it.status in unfinished }.toString()), Modifier.testTag("adjustment-paste-summary"))
+                        }
+                        // Q3/Q4：忽略键与处理版本沿用随实际粘贴结果在结果区一次性展示，不阻塞、不入历史。
+                        transferNoticeSummary(prepared, transfer.results)?.let {
+                            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.testTag("adjustment-paste-notices"))
                         }
                         if (transfer.results.isEmpty() || transfer.results.any { it.status in unfinished })
                             Button(onClick = { prepared?.let { model.applyAdjustmentPaste(it, skipped) } }, enabled = ready && !editor.committingAdjustments,

@@ -249,6 +249,31 @@ import Foundation
         }
     }
 
+    // Q3/Q4：iOS 不建模解马赛克前 FBDD，非 0 值忽略并提示；处理版本沿用目标，不拒绝粘贴。
+    static func ignoreNoticesAndVersion() throws {
+        var notices = [AdjustmentTransferNotice]()
+        var context = raw
+        context.transferNotices = { notices.append($0) }
+        var target = RawSettings.default
+        target.noiseReduction = 0.2
+        let old = AdjustmentTransferSource(identifier: "old", isRaw: true, processingVersion: 1, recipe: nil)
+        let payload = try AdjustmentTransferPayload(source: old, values: [
+            "light.exposure": .number(0.33), "detail.denoise.raw_level": .number(1), "detail.denoise.post_rgb": .number(0.5)])
+        let result = try IOSAdjustmentTransfer.prepare(payload: payload, target: state(target), context: context)
+        check(result.settings.exposure == 0.33 && result.settings.noiseReduction == 0.5 &&
+            result.settings.processing.version == 3,
+            "iOS applies post_rgb, ignores raw_level and keeps the target processing version on mismatch")
+        check(notices == [.retainedTargetProcessingVersion, .ignoredRawDenoise],
+            "iOS reports the retained processing version first and the ignored raw level once")
+        var silentNotices = [AdjustmentTransferNotice]()
+        var quiet = raw
+        quiet.transferNotices = { silentNotices.append($0) }
+        let current = AdjustmentTransferSource(identifier: "new", isRaw: true, processingVersion: 3, recipe: nil)
+        let silent = try AdjustmentTransferPayload(source: current, values: ["detail.denoise.raw_level": .number(0)])
+        _ = try IOSAdjustmentTransfer.prepare(payload: silent, target: state(target), context: quiet)
+        check(silentNotices.isEmpty, "Matching processing version and zero placeholders prompt nothing")
+    }
+
     static func main() throws {
         try scenarioFixtures()
         try neutralRawRequestsOnRaster()
@@ -260,6 +285,7 @@ import Foundation
         try atmospherePersistence()
         try atmosphereControls()
         try toneControls()
+        try ignoreNoticesAndVersion()
         try scopes()
         try recipes()
         try recipeSourceOnHDR()
@@ -544,9 +570,13 @@ import Foundation
                 _ = try IOSAdjustmentTransfer.prepare(payload: fixed, target: target, context: raster)
             }
         }
-        rejects("Nonzero RAW FBDD is still incompatible with JPEG") {
-            _ = try IOSAdjustmentTransfer.prepare(payload: payload(["detail.denoise.raw_level": .number(1)]), target: target, context: raster)
-        }
+        var ignoredRaw: [AdjustmentTransferNotice] = []
+        var noticing = raster
+        noticing.transferNotices = { ignoredRaw.append($0) }
+        check(try IOSAdjustmentTransfer.prepare(payload: payload(["detail.denoise.raw_level": .number(1)]), target: target, context: noticing) == target,
+            "Nonzero RAW FBDD is ignored on raster targets instead of rejecting")
+        check(Set(ignoredRaw) == [.ignoredRawDenoise, .retainedTargetProcessingVersion],
+            "Ignored RAW FBDD and retained processing version are each reported once")
     }
 
     static func whiteBalance() throws {
@@ -581,9 +611,13 @@ import Foundation
         check(copy.fields == [.postRGBDenoise] && copy[.postRGBDenoise] == .number(0.25), "Legacy post-RGB request has its own field")
         check(try IOSAdjustmentTransfer.prepare(payload: copy, target: state(), context: raw).settings.noiseReduction == 0.25,
             "Legacy post-RGB request survives iOS transfer")
-        rejects("RAW FBDD is not mapped to iOS post-RGB denoise") {
-            _ = try IOSAdjustmentTransfer.prepare(payload: payload(["detail.denoise.raw_level": .number(1)]), target: state(), context: raw)
-        }
+        var rawOnlyNotices: [AdjustmentTransferNotice] = []
+        var rawNoticing = raw
+        rawNoticing.transferNotices = { rawOnlyNotices.append($0) }
+        let ignored = try IOSAdjustmentTransfer.prepare(payload: payload(["detail.denoise.raw_level": .number(1)]), target: state(), context: rawNoticing)
+        check(ignored.settings.noiseReduction == RawSettings.default.noiseReduction &&
+            rawOnlyNotices == [.retainedTargetProcessingVersion, .ignoredRawDenoise],
+            "RAW FBDD is ignored with a notice and never maps to iOS post-RGB denoise")
         var target = RawSettings.default; target.displayChromaDenoise = 2
         let nullChroma = try IOSAdjustmentTransfer.prepare(payload: payload(["detail.denoise.chroma_mode": .null]), target: state(target), context: raw)
         check(nullChroma.settings.displayChromaDenoise == 0, "Null legacy chroma maps to the real disabled native request")
@@ -754,6 +788,10 @@ import Foundation
             }
 
             let payload = try JSONDecoder().decode(AdjustmentTransferPayload.self, from: JSONSerialization.data(withJSONObject: scenario["payload"]!))
+            // S3：场景提示断言——收集 prepare 期间的忽略/版本提示，与 fixture 声明按集合比较。
+            var scenarioNotices = [AdjustmentTransferNotice]()
+            var noticeContext = context
+            noticeContext.transferNotices = { scenarioNotices.append($0) }
             let expectSpec = (scenario["platform_expect"] as? [String: [String: Any]])?["ios"] ?? (scenario["expect"] as! [String: Any])
             let expectedStatus = expectSpec["status"] as! String
             if expectedStatus == "rejected" {
@@ -769,9 +807,14 @@ import Foundation
                 }
                 continue
             }
-            let candidate = try IOSAdjustmentTransfer.prepare(payload: payload, target: targetState, context: context)
+            let candidate = try IOSAdjustmentTransfer.prepare(payload: payload, target: targetState, context: noticeContext)
             let actualStatus = candidate == targetState ? "unchanged" : "applied"
             check(actualStatus == expectedStatus, "Scenario \(id): status \(expectedStatus)")
+            let noticesByPlatform = ((scenario["expect"] as? [String: Any])?["notices_by_platform"] as? [String: Any])?["ios"] as? [String]
+            if let expectedNotices = noticesByPlatform ?? (expectSpec["notices"] as? [String]) {
+                check(Set(scenarioNotices.map(\.fixtureId)) == Set(expectedNotices),
+                    "Scenario \(id): notices \(expectedNotices.sorted().joined(separator: ","))")
+            }
             if let valuesObj = expectSpec["values"] {
                 let expectedValues = try JSONDecoder().decode([String: AdjustmentTransferValue].self, from: JSONSerialization.data(withJSONObject: valuesObj))
                 let captured = try IOSAdjustmentTransfer.capture(scope: .all, snapshot: candidate, context: context).values

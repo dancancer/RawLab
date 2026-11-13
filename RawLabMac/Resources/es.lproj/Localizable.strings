@@ -268,6 +268,7 @@
 "处理 v3" = "Procesamiento v3";
 "处理失败：%@" = "Error de procesamiento: %@";
 "处理版本" = "Versión de procesamiento";
+"处理版本与来源不同，已沿用当前照片的处理版本" = "La versión de procesamiento difiere de la fuente; se conserva la versión de procesamiento de la foto actual";
 "处理结果为空" = "El resultado del procesamiento está vacío.";
 "复制范围" = "Alcance de la copia";
 "复制调整" = "Copiar ajustes";
@@ -361,6 +362,8 @@
 "已应用" = "Aplicado";
 "已应用 AI 降噪；曝光和外观调整复用结果。" = "Reducción de ruido con IA aplicada. Los ajustes de exposición y apariencia reutilizan el resultado.";
 "已开启" = "Activado";
+"已忽略旧版 RAW 降噪（FBDD）" = "Reducción de ruido RAW heredada (FBDD) ignorada";
+"已忽略渲染后 RGB 降噪" = "Reducción de ruido RGB posterior al renderizado ignorada";
 "已恢复上次调整" = "Ajustes anteriores restaurados";
 "已撤销" = "Deshecho";
 "已撤销 %@ 张 · 未完成 %@ 张" = "Deshechas %@ · Pendientes %@";

@@ -1,3 +1,4 @@
+using System.Threading;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows.Automation;
@@ -243,7 +244,9 @@ public partial class MainWindow
                     if(transform.Tool==TransformTool.Geometry)GeometryEditor.SetCanvasSize(rendered.NativeWidth,rendered.NativeHeight);
                     RefreshCropDraft();
                 }
-                SetStatus(() => $"{(work.Interactive ? Loc.Text("交互预览") : work.Edge==0 ? Loc.Text("原尺寸") : Loc.Text("预览"))} {rendered.Image.PixelWidth} × {rendered.Image.PixelHeight} · {Path.GetFileName(work.File)}");
+                // Q3/Q4：把仍在等待可见的粘贴提示并入预览状态一次（持久到可见）。
+                var transferNotice=Interlocked.Exchange(ref pendingTransferNoticeStatus,null);
+                SetStatus(() => $"{(work.Interactive ? Loc.Text("交互预览") : work.Edge==0 ? Loc.Text("原尺寸") : Loc.Text("预览"))} {rendered.Image.PixelWidth} × {rendered.Image.PixelHeight} · {Path.GetFileName(work.File)}" + (transferNotice is {} notice ? "；" + notice : ""));
                 if (current && openRevision != photoImportReportedRevision)
                 {
                     photoImportReportedRevision = openRevision;

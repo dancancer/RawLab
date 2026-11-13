@@ -8694,5 +8694,29 @@
     "es": "Fotos recientes",
     "fr": "Photos récentes",
     "ja": "最近の写真"
+  },
+  "已忽略旧版 RAW 降噪（FBDD）": {
+    "en": "Legacy RAW denoise (FBDD) ignored",
+    "de": "Frühere RAW-Rauschunterdrückung (FBDD) ignoriert",
+    "fr": "Réduction du bruit RAW héritée (FBDD) ignorée",
+    "es": "Reducción de ruido RAW heredada (FBDD) ignorada",
+    "ja": "旧RAWノイズリダクション（FBDD）を無視しました",
+    "zh-Hans": "已忽略旧版 RAW 降噪（FBDD）"
+  },
+  "已忽略渲染后 RGB 降噪": {
+    "en": "Post-render RGB denoise ignored",
+    "de": "RGB-Rauschunterdrückung nach dem Rendern ignoriert",
+    "fr": "Réduction du bruit RVB post-rendu ignorée",
+    "es": "Reducción de ruido RGB posterior al renderizado ignorada",
+    "ja": "レンダリング後のRGBノイズリダクションを無視しました",
+    "zh-Hans": "已忽略渲染后 RGB 降噪"
+  },
+  "处理版本与来源不同，已沿用当前照片的处理版本": {
+    "en": "Processing version differs from the source; the current photo's processing version is kept",
+    "de": "Verarbeitungsversion unterscheidet sich von der Quelle; die Verarbeitungsversion des aktuellen Fotos wird beibehalten",
+    "fr": "Version de traitement différente de la source ; la version de traitement de la photo actuelle est conservée",
+    "es": "La versión de procesamiento difiere de la fuente; se conserva la versión de procesamiento de la foto actual",
+    "ja": "処理バージョンがソースと異なるため、現在の写真の処理バージョンを維持しました",
+    "zh-Hans": "处理版本与来源不同，已沿用当前照片的处理版本"
   }
 }

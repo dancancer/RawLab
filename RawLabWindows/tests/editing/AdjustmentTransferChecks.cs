@@ -178,6 +178,8 @@ internal static class AdjustmentTransferChecks
 
         var payload = AdjustmentPayload.Parse(scenario.GetProperty("payload").GetRawText());
         Check(SamePayload(payload, AdjustmentPayload.Parse(payload.ToJson())), $"Scenario {id}: payload round-trip");
+        // S3：收集 prepare 期间的忽略/版本提示，与 fixture 声明按集合比较。
+        var scenarioNotices = new List<AdjustmentTransferNotice>();
         var expectSpec = scenario.TryGetProperty("platform_expect", out var platformExpect) &&
                          platformExpect.ValueKind == JsonValueKind.Object &&
                          platformExpect.TryGetProperty("windows", out var windowsExpect) &&
@@ -211,7 +213,7 @@ internal static class AdjustmentTransferChecks
         SavedEdit candidate;
         try
         {
-            candidate = AdjustmentTransfer.Prepare(payload, targetState, scenarioContext);
+            candidate = AdjustmentTransfer.Prepare(payload, targetState, scenarioContext with { OnTransferNotice = scenarioNotices.Add });
         }
         catch (AdjustmentTransferException error)
         {
@@ -224,6 +226,22 @@ internal static class AdjustmentTransferChecks
         {
             var statusKey = isUnchangedWithoutValues ? $"status:{actualStatus}" : "status";
             diffs.Add(new(statusKey, $"status expected={expectedStatus}, actual={actualStatus}"));
+        }
+        JsonElement noticesSpec = default;
+        foreach (var noticeSource in new[] { expectSpec, scenario.GetProperty("expect") })
+        {
+            if (noticeSource.TryGetProperty("notices_by_platform", out var scopedElem) && scopedElem.ValueKind == JsonValueKind.Object
+                && scopedElem.TryGetProperty("windows", out var scopedNotices) && scopedNotices.ValueKind == JsonValueKind.Array)
+            { noticesSpec = scopedNotices; break; }
+            if (noticeSource.TryGetProperty("notices", out var flatNotices) && flatNotices.ValueKind == JsonValueKind.Array)
+            { noticesSpec = flatNotices; break; }
+        }
+        if (noticesSpec.ValueKind == JsonValueKind.Array)
+        {
+            var expectedNotices = noticesSpec.EnumerateArray().Select(x => x.GetString()!).ToHashSet();
+            var actualNotices = scenarioNotices.Select(notice => notice.FixtureId()).ToHashSet();
+            if (!expectedNotices.SetEquals(actualNotices))
+                diffs.Add(new("notices", $"notices expected=[{string.Join(", ", expectedNotices.Order(StringComparer.Ordinal))}], actual=[{string.Join(", ", actualNotices.Order(StringComparer.Ordinal))}]"));
         }
         if (isUnchangedWithoutValues && actualStatus == "applied")
         {
@@ -366,7 +384,10 @@ internal static class AdjustmentTransferChecks
         foreach(var fixedWB in new[]{Payload((F.WhiteBalanceMode,"temperature"),(F.Temperature,5400),(F.Tint,3.5)),
             Payload((F.Temperature,5400)),Payload((F.Tint,3.5))})
             Reject(()=>AdjustmentTransfer.Prepare(fixedWB,target,raster),"Fixed RAW WB is incompatible with JPEG");
-        Reject(()=>AdjustmentTransfer.Prepare(Payload((F.RawDenoise,1)),target,raster),"Nonzero RAW FBDD is incompatible with JPEG");
+        var rasterFbddNotices=new List<AdjustmentTransferNotice>();
+        Check(AdjustmentTransfer.Prepare(Payload((F.RawDenoise,1)),target,raster with {OnTransferNotice=rasterFbddNotices.Add}).Settings.SameAs(target.Settings),
+            "Nonzero RAW FBDD is ignored on JPEG instead of rejecting");
+        Check(rasterFbddNotices.Contains(AdjustmentTransferNotice.IgnoredRawDenoise),"Ignored JPEG FBDD reports a one-time prompt");
         Console.WriteLine("PASS: Windows neutral RAW default/partial paste on JPEG, unchanged detection and incompatible effective requests");
     }
     private static void NonRawSourcePreservesRawExposureAndWhiteBalance()
@@ -487,8 +508,19 @@ internal static class AdjustmentTransferChecks
             Check(Prepare(Payload((F.Exposure,endpoint))).Settings.Restore()[Parameter.Exposure]==endpoint,
                 "ordinary exposure endpoints survive selective transfer");
         Reject(()=>Prepare(Payload((F.Exposure,5.01))),"native exposure range is narrower than payload");
-        Reject(()=>Prepare(Payload((F.RawDenoise,1))),"FBDD is unsupported");
-        Reject(()=>Prepare(Payload((F.PostRGBDenoise,.1))),"post RGB is unsupported");
+        var denoiseNotices=new List<AdjustmentTransferNotice>();
+        Check(Prepare(Payload((F.RawDenoise,1)),context:Context with {OnTransferNotice=denoiseNotices.Add}).Settings.SameAs(Edit(null).Settings),
+            "nonzero FBDD is ignored with a notice instead of rejecting");
+        Check(denoiseNotices.Contains(AdjustmentTransferNotice.IgnoredRawDenoise),"ignored FBDD reports a one-time prompt");
+        var postNotices=new List<AdjustmentTransferNotice>();
+        Check(Prepare(Payload((F.PostRGBDenoise,.1)),context:Context with {OnTransferNotice=postNotices.Add}).Settings.SameAs(Edit(null).Settings),
+            "nonzero post RGB is ignored with a notice instead of rejecting");
+        Check(postNotices.Contains(AdjustmentTransferNotice.IgnoredPostRGBDenoise),"ignored post RGB reports a one-time prompt");
+        // Q4：来源处理版本（v2）低于目标（v3）不拒绝，沿用目标处理版本并一次性提示。
+        var versionNotices=new List<AdjustmentTransferNotice>();
+        Check(Prepare(Payload((F.Exposure,1.25)),context:Context with {OnTransferNotice=versionNotices.Add}).Settings.Restore()[Parameter.Exposure]==1.25,
+            "stale source processing version pastes through instead of rejecting");
+        Check(versionNotices.Contains(AdjustmentTransferNotice.RetainedTargetProcessingVersion),"retained processing version reports a one-time prompt");
         Reject(()=>Prepare(Payload((F.LensDistortion,true))),"lens enabled requires target calibration");
         var lensValidated=false;var lens=Prepare(Payload((F.LensDistortion,true)),context:Context with {ValidateLens=l=>lensValidated=l.Distortion});
         Check(lensValidated && lens.Settings.Lens!.Distortion,"lens validator called");

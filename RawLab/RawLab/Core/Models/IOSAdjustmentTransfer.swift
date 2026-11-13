@@ -14,6 +14,7 @@ struct IOSAdjustmentTransferContext {
     var hasUncommittedDraft = false
     var validateLensRequest: ((LensCorrectionSettings) throws -> Void)? = nil
     var validateHDRCameraRequest: ((RawSettings) throws -> Void)? = nil
+    var transferNotices: ((AdjustmentTransferNotice) -> Void)? = nil
 }
 
 enum IOSAdjustmentTransfer {
@@ -71,6 +72,10 @@ enum IOSAdjustmentTransfer {
         }
         if payload.source.isHDR {
             return try prepare(payload: HDRAdjustmentTransfer.legacyPayload(payload), target: target, context: context)
+        }
+        // Q4：来源与目标处理版本不同不拒绝，沿用目标处理版本并一次性提示。
+        if payload.source.processingVersion != target.settings.processing.version {
+            context.transferNotices?(.retainedTargetProcessingVersion)
         }
         try validate(target.settings)
         var result = target.settings, filmID = target.filmID

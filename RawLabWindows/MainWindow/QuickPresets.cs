@@ -74,6 +74,7 @@ public partial class MainWindow
             if (operation.Targets.FirstOrDefault()?.Error is { } targetError) throw targetError;
             if (operation.Targets.Count != 1) throw new AdjustmentOperationExpiredException();
             var outcome = AdoptAdjustmentOutcomes(session.Apply(operation), []).Single();
+            ShowAdjustmentTransferNotices(operation,[outcome]);
             if (outcome.Status == AdjustmentStatus.Applied && (outcome.Error != null || outcome.Saved?.SameAs(currentEditRecord) != true)) {
                 quickPreset = new(QuickPresetPhase.Failed, preset, Message: Loc.Text("调整已保存，界面未更新。"));
             } else if (outcome.Error == null && outcome.Saved?.SameAs(currentEditRecord) == true && outcome.Status is AdjustmentStatus.Applied or AdjustmentStatus.Unchanged) {

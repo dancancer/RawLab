@@ -26,6 +26,7 @@ struct AdjustmentTransferSessionTests {
         AdjustmentTransferTarget(url: url, defaultState: state(0), context: context(url))
     }
     static func main() throws {
+        Self.effectiveNoticesFilter()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -450,5 +451,25 @@ struct AdjustmentTransferSessionTests {
             } catch is CocoaError { }
         }
         check(true, "Whole-store structural corruption remains fail-closed")
+    }
+
+    // Q3/S1 seam：提示按实际应用结果过滤；跳过与预检失败目标不产生误报。
+    static func effectiveNoticesFilter() {
+        let payload = try! AdjustmentTransferPayload(source: .init(identifier: "src", isRaw: true, processingVersion: 2,
+            recipe: nil, hdrProcessingVersion: nil), values: ["light.exposure": .number(0.5)])
+        func target(_ id: String, _ error: Error?, _ notices: [AdjustmentTransferNotice]) -> PreparedAdjustmentTransfer.Target {
+            .init(id: id, original: nil, candidate: nil, unchanged: false, isCurrent: nil, error: error, notices: notices)
+        }
+        let prepared = PreparedAdjustmentTransfer(id: UUID(), payload: payload, targets: [
+            target("a", nil, [.ignoredRawDenoise]), target("b", nil, [.ignoredPostRGBDenoise]),
+            target("c", nil, [.retainedTargetProcessingVersion]),
+            target("d", NSError(domain: "gone", code: 1), [.ignoredRawDenoise])], action: .paste, notices: [.ignoredRawDenoise])
+        let outcomes = [AdjustmentTransferOutcome(targetID: "a", status: .applied, saved: nil, error: nil),
+            AdjustmentTransferOutcome(targetID: "b", status: .skipped, saved: nil, error: nil),
+            AdjustmentTransferOutcome(targetID: "c", status: .failed, saved: nil, error: nil),
+            AdjustmentTransferOutcome(targetID: "d", status: .applied, saved: nil, error: nil)]
+        check(prepared.effectiveNotices(outcomes) == [.ignoredRawDenoise],
+            "Paste notices surface only for targets that actually applied")
+        check(prepared.effectiveNotices([]).isEmpty, "Prepared notices stay hidden until apply outcomes exist")
     }
 }

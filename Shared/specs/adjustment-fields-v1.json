@@ -8942,7 +8942,7 @@
           "D-02",
           "P2-23"
         ],
-        "notes": "SDR legacy FBDD raw_level exists only on Mac; iOS/Android/Windows reject non-zero SDR raw_level as incompatible."
+        "notes": "Q3: raw_level is the pre-demosaic Bayer FBDD level (integer 0/1/2) and is modeled only on Mac (SDR RAW). Ends without the key (iOS/Android/Windows) ignore a non-zero value and show a one-time prompt instead of rejecting the paste; Mac still rejects non-zero when its target cannot represent it (SDR raster target)."
       }
     },
     {
@@ -9071,7 +9071,7 @@
           "D-02",
           "P2-23"
         ],
-        "notes": "SDR post_rgb model retained only on iOS (no SDR UI slider); HDR denoise UI step is 0.1% on Mac/Windows, 1% on Android, and 5% (0.05) on iOS via AdjustmentKind.noiseReduction."
+        "notes": "Q3: post_rgb is post-render RGB denoise (0-1 float), the current HDR v6+ key; Mac and Android/Windows model it on HDR only, iOS on SDR+HDR (no SDR UI slider). Ends whose SDR path does not model the key (Mac, Android, Windows) ignore a non-zero value and show a one-time prompt instead of rejecting the paste; iOS keeps rejecting non-zero on raster targets. HDR denoise UI step is 0.1% on Mac/Windows, 1% on Android, and 5% (0.05) on iOS via AdjustmentKind.noiseReduction."
       }
     },
     {

@@ -470,6 +470,24 @@ struct ContentView: View {
 
     private func applyEditorSheets<Content: View>(to content: Content) -> some View {
         content
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            // Q3/Q4：快捷预设（无粘贴 Sheet）用非阻塞横幅展示提示，数秒后自动消失；
+            // Sheet 打开时不显示横幅，提示保留在属性里，由 Sheet 内嵌提示行呈现。
+            if viewModel.transferResultNotices.isEmpty || adjustmentSheet != nil {
+                Color.clear.frame(height: 0)
+            } else {
+                Text(viewModel.transferResultNotices.joined(separator: "；"))
+                    .font(.footnote)
+                    .padding(.vertical, 8).padding(.horizontal, 12)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .background(.bar)
+                    .accessibilityIdentifier("adjustment.notices.banner")
+                    .task {
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
+                        viewModel.transferResultNotices = []
+                    }
+            }
+        }
         .sheet(item: $adjustmentSheet, onDismiss: finishAdjustmentSheet) { kind in
             switch kind {
             case .presets, .presetSave:

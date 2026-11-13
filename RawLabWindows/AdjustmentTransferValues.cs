@@ -84,8 +84,9 @@ internal static class AdjustmentTransferValues
     {
         double N(F f,double fallback)=>Number(p[f]) ?? fallback;
         bool B(F f,bool fallback)=>Boolean(p[f]) ?? fallback;
+        // Q3：Windows 的 SDR 管线不建模这两个键，收到非 0 值忽略并提示，不再拒绝。
         foreach(var field in new[]{F.RawDenoise,F.PostRGBDenoise})
-            if(p[field]!=null && Number(p[field])!=0) throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,field.ID());
+            if(p[field]!=null && Number(p[field])!=0) context.OnTransferNotice?.Invoke(field==F.RawDenoise ? AdjustmentTransferNotice.IgnoredRawDenoise : AdjustmentTransferNotice.IgnoredPostRGBDenoise);
         if(s.AIDenoiseEnabled && p.Fields.Overlaps(AdjustmentFields.Denoise))
             throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"AI denoise is enabled on target");
         if(p[F.ChromaDenoise]!=null) s=s with {DisplayChromaDenoise=(int)(Number(p[F.ChromaDenoise]) ?? 0)};

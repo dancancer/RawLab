@@ -489,6 +489,9 @@
     <string name="transfer_modified">"仅已修改"</string>
     <string name="transfer_no_clipboard">"尚未复制调整。请先从一张照片复制所需范围。"</string>
     <string name="transfer_no_history">"暂无编辑历史。"</string>
+    <string name="transfer_notice_ignored_post_rgb">"已忽略渲染后 RGB 降噪"</string>
+    <string name="transfer_notice_ignored_raw_denoise">"已忽略旧版 RAW 降噪（FBDD）"</string>
+    <string name="transfer_notice_processing_version">"处理版本与来源不同，已沿用当前照片的处理版本"</string>
     <string name="transfer_paste">"粘贴调整"</string>
     <string name="transfer_preflight">"检查目标"</string>
     <string name="transfer_preparing">"正在检查目标…"</string>

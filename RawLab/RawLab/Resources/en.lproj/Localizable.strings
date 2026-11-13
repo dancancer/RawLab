@@ -259,6 +259,7 @@
 "增量导入完成" = "Incremental import complete";
 "增量起点" = "Start time";
 "处理失败：%@" = "Processing failed: %@";
+"处理版本与来源不同，已沿用当前照片的处理版本" = "Processing version differs from the source; the current photo's processing version is kept";
 "复制范围" = "Copy scope";
 "复制调整" = "Copy Adjustments";
 "外观" = "Looks";
@@ -352,6 +353,8 @@
 "已导出 %@ 个渲染型 DNG" = "Rendered DNG Files Exported: %@";
 "已导出渲染型 DNG。" = "Rendered DNG Exported.";
 "已展开" = "Expanded";
+"已忽略旧版 RAW 降噪（FBDD）" = "Legacy RAW denoise (FBDD) ignored";
+"已忽略渲染后 RGB 降噪" = "Post-render RGB denoise ignored";
 "已恢复上次调整" = "Previous Adjustments Restored";
 "已恢复已登记的接收任务。断线期间拍摄的照片请从相机手动导入。" = "Registered transfers have been restored. Import photos taken while disconnected manually from the camera.";
 "已撤销" = "Undone";

@@ -28,6 +28,8 @@ final class RawEditorViewModel: ObservableObject {
             resetUnusableImportRecord = nil
         }
     }
+    // Q3/Q4：粘贴提示（已翻译文案）。非阻塞：粘贴 Sheet 打开时由 Sheet 展示，否则由根视图横幅展示。
+    @Published var transferResultNotices: [String] = []
     var hdrResourceNotice = HDRResourceNotice()
     @Published var statusHasDiagnostics = false
     @Published var retryLegacyX3fImport: ((@escaping (RawSettings) -> Void) -> Void)?

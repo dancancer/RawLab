@@ -139,6 +139,12 @@ struct IOSAdjustmentTransferView: View {
                 }
             }
             Section {
+                // Q3/Q4：提示随实际生效的粘贴结果展示在 Sheet 内，模态层级不会吞掉它。
+                if !model.transferResultNotices.isEmpty {
+                    Text(model.transferResultNotices.joined(separator: "；"))
+                        .font(.caption).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("adjustment.paste.notices")
+                }
                 if let transaction = model.adjustmentSession?.transactions.first(where: { $0.id == prepared?.id }) {
                     transactionButtons(transaction)
                 }

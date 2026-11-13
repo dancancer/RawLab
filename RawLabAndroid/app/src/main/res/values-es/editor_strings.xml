@@ -489,6 +489,9 @@
     <string name="transfer_modified">"Solo modificados"</string>
     <string name="transfer_no_clipboard">"Aún no se han copiado ajustes. Copia primero los ajustes deseados de una foto."</string>
     <string name="transfer_no_history">"Aún no hay historial de edición."</string>
+    <string name="transfer_notice_ignored_post_rgb">"Reducción de ruido RGB posterior al renderizado ignorada"</string>
+    <string name="transfer_notice_ignored_raw_denoise">"Reducción de ruido RAW heredada (FBDD) ignorada"</string>
+    <string name="transfer_notice_processing_version">"La versión de procesamiento difiere de la fuente; se conserva la versión de procesamiento de la foto actual"</string>
     <string name="transfer_paste">"Pegar ajustes"</string>
     <string name="transfer_preflight">"Comprobar fotos"</string>
     <string name="transfer_preparing">"Comprobando fotos…"</string>

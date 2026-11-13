@@ -29,11 +29,23 @@ struct PreparedAdjustmentTransfer {
         let isCurrent: (() -> Bool)?
         let error: Error?
         var editGeneration: UInt64 = 0
+        var notices: [AdjustmentTransferNotice] = []
     }
     let id: UUID
     let payload: AdjustmentTransferPayload
     let targets: [Target]
     let action: AdjustmentHistoryTransaction.Action
+    var notices: [AdjustmentTransferNotice] = []
+
+    // Q3/S1：仅呈现实际应用（或确认无需改动）目标的去重提示；跳过、失败或冲突目标不提示。
+    func effectiveNotices(_ outcomes: [AdjustmentTransferOutcome]) -> [AdjustmentTransferNotice] {
+        var merged = [AdjustmentTransferNotice]()
+        for target in targets where target.error == nil
+            && outcomes.contains(where: { $0.targetID == target.id && ($0.status == .applied || $0.status == .unchanged) }) {
+            for notice in target.notices where !merged.contains(notice) { merged.append(notice) }
+        }
+        return merged
+    }
 }
 
 struct AdjustmentHistoryTransaction {
@@ -118,15 +130,20 @@ final class AdjustmentTransferSession {
                 if let expected = target.expectedIdentity, original.identity != expected { throw AdjustmentCommitError.photoChanged }
                 let stored = try original.state ?? target.resolveDefaultState?() ?? target.defaultState
                 let effective = try target.resolveMetadata?(stored) ?? stored
-                let candidate = try MacAdjustmentTransfer.prepare(payload: payload, target: effective, context: target.context)
+                var notices = [AdjustmentTransferNotice]()
+                var context = target.context
+                context.transferNotices = { notices.append($0) }
+                let candidate = try MacAdjustmentTransfer.prepare(payload: payload, target: effective, context: context)
                 prepared.append(.init(id: id, original: original, candidate: candidate, unchanged: candidate == effective,
-                    isCurrent: target.isCurrent, error: nil, editGeneration: generation))
+                    isCurrent: target.isCurrent, error: nil, editGeneration: generation, notices: notices))
             } catch {
                 prepared.append(.init(id: id, original: nil, candidate: nil, unchanged: false,
                     isCurrent: target.isCurrent, error: error))
             }
         }
-        return PreparedAdjustmentTransfer(id: UUID(), payload: payload, targets: prepared, action: action)
+        var mergedNotices = [AdjustmentTransferNotice]()
+        for notice in prepared.flatMap(\.notices) where !mergedNotices.contains(notice) { mergedNotices.append(notice) }
+        return PreparedAdjustmentTransfer(id: UUID(), payload: payload, targets: prepared, action: action, notices: mergedNotices)
     }
 
     func apply(_ operation: PreparedAdjustmentTransfer, skipping: Set<String> = []) -> [AdjustmentTransferOutcome] {

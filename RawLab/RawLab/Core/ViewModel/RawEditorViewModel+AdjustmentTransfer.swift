@@ -157,6 +157,9 @@ extension RawEditorViewModel {
     func applyAdjustmentPaste(_ operation: IOSPreparedAdjustmentTransfer, skipping: Set<String>) -> [IOSAdjustmentTransferOutcome] {
         let results = adjustmentSession?.apply(operation, skipping: skipping) ?? []
         acceptAdjustmentOutcomes(results)
+        // Q3/Q4：忽略键与处理版本沿用按实际应用结果过滤后呈现：Sheet 路径由粘贴 Sheet 展示，
+        // 快捷预设路径由根视图非阻塞横幅展示（不再经模态 Alert，避免被 Sheet 吞掉或阻塞）。
+        transferResultNotices = operation.effectiveNotices(results).map { L10n.text($0.promptKey) }
         if operation.action == .synchronize {
             batchSelection.selection.recordSynchronization(operation.id, changed: results.contains { $0.status == .applied })
         }

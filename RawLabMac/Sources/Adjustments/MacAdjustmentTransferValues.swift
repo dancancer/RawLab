@@ -110,8 +110,9 @@ extension MacAdjustmentTransfer {
 
     static func applyObjects(_ payload: AdjustmentTransferPayload, to settings: inout Adjustments,
                              context: MacAdjustmentTransferContext) throws {
+        // Q3：Mac 的 SDR 管线不建模 post_rgb，收到非 0 值忽略并提示，不再拒绝。
         if let value = payload[.postRGBDenoise]?.number, value != 0 {
-            throw AdjustmentTransferError.incompatible(Field.postRGBDenoise.rawValue)
+            context.transferNotices?(.ignoredPostRGBDenoise)
         }
         if let raw = payload[.rawDenoise]?.number, payload.source.isRaw || !context.isRaw {
             guard raw == 0 || (context.isRaw && settings.supportsRawNoiseReduction) else {

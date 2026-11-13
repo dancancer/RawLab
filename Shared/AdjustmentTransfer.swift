@@ -10,6 +10,32 @@ enum AdjustmentTransferError: Error, Equatable {
     case unrepresentable(String)
 }
 
+// Q3/Q4 粘贴提示：本平台不支持的键收到非 0 值时忽略并提示；处理版本与来源不同
+// 时沿用目标处理版本并提示。两种情况都不拒绝粘贴，也不改动目标的其它字段。
+enum AdjustmentTransferNotice: Equatable, Hashable {
+    case ignoredRawDenoise
+    case ignoredPostRGBDenoise
+    case retainedTargetProcessingVersion
+
+    // 共享场景 fixture（adjustment-transfer-scenarios-v1.json expect.notices）的稳定标识。
+    var fixtureId: String {
+        switch self {
+        case .ignoredRawDenoise: return "ignored_raw_denoise"
+        case .ignoredPostRGBDenoise: return "ignored_post_rgb_denoise"
+        case .retainedTargetProcessingVersion: return "retained_target_processing_version"
+        }
+    }
+
+    // 文案键登记在 Shared/strings；同一次粘贴把去重后的提示合并为一条一次性提示。
+    var promptKey: String {
+        switch self {
+        case .ignoredRawDenoise: return "已忽略旧版 RAW 降噪（FBDD）"
+        case .ignoredPostRGBDenoise: return "已忽略渲染后 RGB 降噪"
+        case .retainedTargetProcessingVersion: return "处理版本与来源不同，已沿用当前照片的处理版本"
+        }
+    }
+}
+
 enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
     case look = "looks.reference", strength = "looks.strength"
     case exposure = "light.exposure", exposureMode = "light.exposure_mode"

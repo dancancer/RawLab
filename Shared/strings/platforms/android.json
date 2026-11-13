@@ -6795,6 +6795,24 @@
       "formats": [],
       "source": "放弃",
       "types": []
+    },
+    "transfer_notice_ignored_raw_denoise": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "已忽略旧版 RAW 降噪（FBDD）",
+      "types": []
+    },
+    "transfer_notice_ignored_post_rgb": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "已忽略渲染后 RGB 降噪",
+      "types": []
+    },
+    "transfer_notice_processing_version": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "处理版本与来源不同，已沿用当前照片的处理版本",
+      "types": []
     }
   },
   "overrides": {
