@@ -87,7 +87,7 @@ public partial class MainWindow
         photoInfoMode = photoInfoMode.Next();
         RefreshPhotoInfo(); RefreshControls();
     }
-    internal Func<string, EmbeddedPreview> ReadEmbeddedPreviewHook { get; set; } = RenderEngine.ReadEmbeddedPreview;
+    internal Func<string, EmbeddedPreview> ReadEmbeddedPreviewHook { get; set; } = path => RenderEngine.ReadEmbeddedPreview(path);
 
     private async void PumpEmbedded()
     {

@@ -147,7 +147,7 @@ internal static class TempCleanup
                 if (!enumerator.MoveNext()) break;
                 directory = enumerator.Current;
             }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
             {
                 Trace.WriteLine($"TempCleanup: directory enumeration failed in {tempRoot}: {error.Message}");
                 break;
@@ -164,7 +164,7 @@ internal static class TempCleanup
                 if (IsTrackedOwnerAlive(directory, isProcessAlive)) continue;
                 TryDeleteDirectoryTree(directory);
             }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
             {
                 Trace.WriteLine($"TempCleanup: skipping directory {directory.FullName}: {error.Message}");
             }
@@ -300,7 +300,7 @@ internal static class TempCleanup
                 if (!enumerator.MoveNext()) break;
                 lease = enumerator.Current;
             }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
             {
                 Trace.WriteLine($"TempCleanup: lease enumeration error in {leaseDirectory}: {error.Message}");
                 break;
@@ -336,7 +336,7 @@ internal static class TempCleanup
                 if (TryDeleteExportStagingFile(record.StagingPath) || !File.Exists(record.StagingPath))
                     TryDeleteFileIfOrdinary(lease.FullName);
             }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
             {
                 Trace.WriteLine($"TempCleanup: skipping lease file {lease.FullName}: {error.Message}");
             }
@@ -541,7 +541,7 @@ internal static class TempCleanup
                     if (!enumerator.MoveNext()) break;
                     entry = enumerator.Current;
                 }
-                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
                 {
                     Trace.WriteLine($"TempCleanup: entry enumeration failed in {directory.FullName}: {error.Message}");
                     break;
@@ -567,7 +567,7 @@ internal static class TempCleanup
                         file.Delete();
                     }
                 }
-                catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException) { }
             }
 
             directory.Refresh();
@@ -669,7 +669,7 @@ internal static class TempCleanup
                 if (!enumerator.MoveNext()) break;
                 entry = enumerator.Current;
             }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
             {
                 Trace.WriteLine($"TempCleanup: entry enumeration failed in {directory.FullName}: {error.Message}");
                 hasRemainingEntries = true;
@@ -716,7 +716,7 @@ internal static class TempCleanup
                     }
                 }
             }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
             {
                 hasRemainingEntries = true;
             }

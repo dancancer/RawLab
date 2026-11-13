@@ -125,7 +125,7 @@ internal static class UnhandledExceptionWindowChecks
             finally
             {
                 Trace.Listeners.Remove(traceListener);
-                window.ReadEmbeddedPreviewHook = RenderEngine.ReadEmbeddedPreview;
+                window.ReadEmbeddedPreviewHook = path => RenderEngine.ReadEmbeddedPreview(path);
             }
 
             // 4. Early startup unhandled exception (startupCompleted == false, no MainWindow):

@@ -112,6 +112,7 @@ internal sealed class AdjustmentPresetLibraryDialog : Window
                 rows.Children.Add(AdjustmentDialogLayout.Text(Loc.Text("保存所选调整，之后可应用到其他照片。")));
             }
             var corruptIndex = 0;
+            var corruptRowIDs = new HashSet<string>(StringComparer.Ordinal);
             foreach (var item in items) {
                 if (!item.IsCorrupt && item.Preset is { } preset) {
                     var row = new StackPanel { Margin = new Thickness(0, 8, 0, 14) }; rows.Children.Add(row);
@@ -136,15 +137,16 @@ internal sealed class AdjustmentPresetLibraryDialog : Window
                     rows.Children.Add(new Separator());
                 } else if (item.IsCorrupt && item.Unreadable is { } bad) {
                     corruptIndex++;
-                    var rowId = bad.ID ?? ("unreadable." + corruptIndex);
+                    // 非法或重复的 id 会退化成 "preset.row." 或重复 AutomationId；只在身份规范且未占用时采用。
+                    var rowId = bad.ID is { } badID && AdjustmentPreset.CanonicalID(badID) && corruptRowIDs.Add(badID) ? badID : "unreadable." + corruptIndex;
                     var row = new StackPanel { Margin = new Thickness(0, 8, 0, 14), Opacity = 0.65 }; rows.Children.Add(row);
                     var title = AdjustmentDialogLayout.Text(item.DisplayName);
                     title.FontWeight = FontWeights.SemiBold;
-                    title.SetResourceReference(TextBlock.ForegroundProperty, "MutedForeground");
+                    title.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
                     row.Children.Add(title);
                     AutomationProperties.SetAutomationId(row, "preset.row." + rowId);
                     var warning = AdjustmentDialogLayout.Text(Loc.Text("此预设无法读取，可能已损坏或来自不兼容版本。"));
-                    warning.SetResourceReference(TextBlock.ForegroundProperty, "MutedForeground");
+                    warning.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
                     warning.Margin = new Thickness(0, 2, 0, 4);
                     row.Children.Add(warning);
                     var actions = new WrapPanel(); row.Children.Add(actions);

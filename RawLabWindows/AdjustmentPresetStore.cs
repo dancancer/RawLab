@@ -49,17 +49,19 @@ public static class PresetLibraryDataSource
 {
     public static IReadOnlyList<PresetDialogItem> Load(AdjustmentPresetStore store)
     {
+        // 单次解析同时取有效与读不懂的条目，避免两次读取之间库被并发修改造成视图不一致。
+        var (presets, unreadable) = store.LoadSnapshot();
         var items = new List<PresetDialogItem>();
-        foreach (var preset in store.List())
+        foreach (var preset in presets)
         {
             items.Add(new(preset.ID, preset.Name, IsCorrupt: false, Preset: preset, Unreadable: null));
         }
-        foreach (var unreadable in store.ListUnreadable())
+        foreach (var bad in unreadable)
         {
-            var name = !string.IsNullOrWhiteSpace(unreadable.Name)
-                ? Loc.Format("{0}（损坏）", unreadable.Name)
+            var name = !string.IsNullOrWhiteSpace(bad.Name)
+                ? Loc.Format("{0}（损坏）", bad.Name)
                 : Loc.Text("损坏的预设");
-            items.Add(new(unreadable.ID, name, IsCorrupt: true, Preset: null, Unreadable: unreadable));
+            items.Add(new(bad.ID, name, IsCorrupt: true, Preset: null, Unreadable: bad));
         }
         return items.AsReadOnly();
     }
@@ -84,6 +86,11 @@ public sealed class AdjustmentPresetStore
     }
     public IReadOnlyList<AdjustmentPreset> List() => Read().Presets.AsReadOnly();
     public IReadOnlyList<UnreadablePreset> ListUnreadable() => Read().Unreadable.AsReadOnly();
+    internal (IReadOnlyList<AdjustmentPreset> Presets, IReadOnlyList<UnreadablePreset> Unreadable) LoadSnapshot()
+    {
+        var registry = Read();
+        return (registry.Presets.AsReadOnly(), registry.Unreadable.AsReadOnly());
+    }
 
     public AdjustmentPreset Create(string name, AdjustmentPayload payload)
     {
@@ -114,13 +121,15 @@ public sealed class AdjustmentPresetStore
     public void DeleteUnreadable(UnreadablePreset expected)
     {
         using var held = AcquireLock(); var registry = Read();
-        var index = registry.Unreadable.FindIndex(item =>
-            (expected.ID != null && item.ID == expected.ID) ||
-            item.Json == expected.Json);
+        // 只按身份定位这一条：多条坏预设共享非法 id 时按 id 匹配会误删首条，且内容被并发改动时必须报 Changed。
+        var index = registry.Unreadable.FindIndex(item => item.ID == expected.ID && item.Json == expected.Json);
         if (index < 0) throw new AdjustmentPresetException(PresetFailure.Changed);
         var removed = registry.Unreadable[index];
         registry.Unreadable.RemoveAt(index);
-        if (!string.IsNullOrEmpty(removed.ID) && AdjustmentPreset.CanonicalID(removed.ID) && !registry.RetiredIDs.Contains(removed.ID))
+        // 退场名单只记真正消失的身份：同 id 仍被有效或读不懂的条目占用时退休它，会让 Read() 把整库判为 CorruptLibrary。
+        if (!string.IsNullOrEmpty(removed.ID) && AdjustmentPreset.CanonicalID(removed.ID) &&
+            registry.Presets.All(item => item.ID != removed.ID) && registry.Unreadable.All(item => item.ID != removed.ID) &&
+            !registry.RetiredIDs.Contains(removed.ID))
             registry.RetiredIDs.Add(removed.ID);
         Write(registry);
     }
