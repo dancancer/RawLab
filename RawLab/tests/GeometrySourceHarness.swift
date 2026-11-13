@@ -184,7 +184,16 @@ extension ContentView {
                     probe.check("editApply.DraftKeepsUncroppedPreview", viewModel.previewImage?.pngData() == (try geometryReviewPreview()))
                     committed.geometry = edited
                 }
-                if action == "cancel" { cancelEditorDraft() }
+                if action == "cancel" {
+                    // 返工 R3 锚点1：旋转脏草稿取消——草稿期底图与比对基准都是未裁切旋转态。
+                    var turned = geometryDraftBinding.wrappedValue
+                    turned.quarterTurns = 1
+                    geometryDraftBinding.wrappedValue = turned
+                    try await geometryReviewSettled()
+                    probe.check("cancel.DraftRotationStaysUncropped", viewModel.basePreviewGeometry.cropWidth == 1 &&
+                                viewModel.basePreviewGeometry.cropHeight == 1)
+                    cancelEditorDraft()
+                }
                 else if action == "apply" {
                     let saves = probe.saveAttempts.count
                     applyEditorDraft()
@@ -193,6 +202,13 @@ extension ContentView {
                 } else { applyEditorDraft() }
                 try await geometryReviewSettled()
                 probe.check("\(action).CommittedCropCorrect", settings == committed && !isEditorDraftActive)
+                if action == "cancel" {
+                    let committedPixels = try geometryReviewPreview(settings: settings)
+                    probe.check("cancel.ComparisonRebasesToCommitted",
+                                viewModel.committedPreviewSettings?.geometry == settings.geometry &&
+                                viewModel.basePreviewGeometry == settings.geometry &&
+                                viewModel.previewImage?.pngData() == committedPixels)
+                }
                 probe.check("\(action).PersistedCropCorrect", try persistence.state(for: bID)?.settings == committed)
                 let data: Data = try await withCheckedThrowingContinuation { continuation in
                     viewModel.exportJPEG(settings: settings) { continuation.resume(with: $0) }
@@ -208,6 +224,37 @@ extension ContentView {
                 // Restore the fixture for the following independent transition.
                 try persistence.save(bID, state: PhotoEditState(settings: bSettings))
             }
+
+            // 返工 R3 锚点2：非几何工具（曝光）脏草稿收起-放弃不得跳过 finishEditorTool——
+            // 画布必须回到 committed 画面，收起的工具要能记住并再展开。
+            selectEditorTool(.adjustment(.exposure))
+            try await geometryReviewSettled()
+            if !adjustmentsExpanded {
+                requestAdjustmentExpansion(true)
+                try await geometryReviewSettled()
+            }
+            var drafted = workingSettingsBinding.wrappedValue
+            drafted.exposure = 2.5
+            workingSettingsBinding.wrappedValue = drafted
+            try await geometryReviewSettled()
+            probe.check("exposureCollapse.DraftDirty", isEditorDraftChanged && toolWorkspaceOpen)
+            requestAdjustmentExpansion(false)
+            probe.check("exposureCollapse.AsksDirtyDraft", draftExitPresented && adjustmentsExpanded &&
+                        pendingAdjustmentExpansion == false)
+            finishDraftNavigation(apply: false)
+            try await geometryReviewSettled()
+            let exposureCommittedPixels = try geometryReviewPreview(settings: settings)
+            probe.check("exposureCollapse.DiscardLandsCommittedCanvas",
+                        viewModel.previewImage?.pngData() == exposureCommittedPixels &&
+                        viewModel.acceptedPreviewRequest?.settings.exposure == settings.exposure &&
+                        settings.exposure == 0.25)
+            probe.check("exposureCollapse.DiscardRemembersTool", collapsedEditorTool == .adjustment(.exposure) &&
+                        !choosingMasterRecipe)
+            requestAdjustmentExpansion(true)
+            try await geometryReviewSettled()
+            probe.check("exposureCollapse.ReopenRestoresTool", selectedAdjustment == .exposure && isEditorDraftActive)
+            cancelEditorDraft()
+            try await geometryReviewSettled()
 
             if isEditorDraftActive { cancelEditorDraft() }
             try await geometryReviewImport(bURL, identity: bID)

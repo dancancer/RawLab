@@ -173,6 +173,8 @@ extension ContentView {
         workspaceDraft = EditorToolDraft(tool: selection, original: settings)
         toolWorkspaceOpen = true
         if leavingDraft && !geometrySelected && !lensSelected {
+            // 未改动切工具 settings 不变，比对参考同样先重锚回 committed 再交付终态画面。
+            viewModel.committedPreviewSettings = settings
             viewModel.updatePreview(settings: settings, includeHistogram: true, quality: .final)
         } else if geometrySelected || lensSelected {
             // 几何/镜头草稿以未裁切底图（draftPreviewSettings）为工作区底图；
@@ -195,8 +197,14 @@ extension ContentView {
         // 取消退出草稿意味着放弃未完成的导航目的地，快照 destination 不得残留。
         pendingToolSelection = nil
         geometrySelected = false; lensSelected = false
+        // 工作区关闭同时退出配方选择态，currentEditorTool 不得残留已收起的工具。
+        choosingMasterRecipe = false
         geometryDraft = nil; lensDraft = nil
         viewModel.hasAdjustmentDraft = false
+        // 退出草稿（取消/放弃/未改动）时 settings 可能不变、observer 不触发，显式把预览参考与
+        // 比对基准重锚回 committed 设置；否则 updatePreview 的 referenceSettings 命中刚丢弃的
+        // 草稿锚点，comparisonChanged 恒假，比对底图永远滞留在已放弃的草稿构图。
+        viewModel.committedPreviewSettings = settings
         viewModel.updatePreview(settings: settings, includeHistogram: true, quality: .final)
     }
 
@@ -351,10 +359,11 @@ extension ContentView {
         if !expanded && !hslTargetEnabled { cancelSliderInteraction() }
         if expanded {
             if let tool = collapsedEditorTool { activateEditorTool(tool) }
-        } else if isEditorDraftActive || geometrySelected || lensSelected {
-            // 草稿可能已先经 commit/discard 收尾（导航收起路径），但几何/镜头会话仍在：
-            // 必须同样走 finishEditorTool 落位 committed 画面并记录 collapsedEditorTool，
-            // 否则 geometrySelected 残留会让快照持续视为激活草稿并锁死编辑门禁。
+        } else if adjustmentsExpanded || isEditorDraftActive || geometrySelected || lensSelected {
+            // 草稿可能已先经 commit/discard 收尾（workspaceDraft 已清），但工具会话状态仍在——
+            // 几何/镜头幽灵态，或曝光/胶片/配方等工具在 finishDraftNavigation 收起路径里被提前清空。
+            // 一律走 finishEditorTool 落位 committed 画面、记录 collapsedEditorTool 并清选择态，
+            // 否则画布滞留在已放弃的草稿渲染、再展开无法回到收起前的工具。
             let tool = currentEditorTool
             let group = selectedGroup
             // 收起结束实际草稿并恢复 committed 画面；记住的工具只属于导航会话。
