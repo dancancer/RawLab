@@ -8,10 +8,12 @@ struct AdjustmentDock: View {
     @State private var showsExposure = true
     @State private var showsTones = true
     @State private var collapsedTool: EditorAdjustmentTool?
-    private var navigation: EditorAdjustmentNavigation { model.adjustmentNavigation }
+    private var navigation: EditorAdjustmentNavigation {
+        model.adjustmentNavigation.normalized(isHDREditing: model.settings.isHDREditing)
+    }
 
     private var visibleGroups: [EditorAdjustmentGroup] {
-        EditorAdjustmentGroup.allCases.filter { $0 != .hdrRendition || model.settings.isHDREditing }
+        EditorAdjustmentGroup.visibleGroups(isHDREditing: model.settings.isHDREditing)
     }
 
     var body: some View {
@@ -33,7 +35,7 @@ struct AdjustmentDock: View {
             }.frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 6).padding(.vertical, 2)
             Divider()
-            if let group = navigation.expandedGroup {
+            if let group = navigation.expandedGroup, groups.contains(group) {
                 if group == .looks && !model.settings.isHDREditing {
                     VStack(alignment: .leading, spacing: 3) {
                         parameterRow(.strength, title: L10n.text("外观强度"))

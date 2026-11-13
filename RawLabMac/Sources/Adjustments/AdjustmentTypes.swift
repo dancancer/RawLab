@@ -320,6 +320,10 @@ enum EditorAdjustmentGroup: String, CaseIterable, Identifiable {
         }
     }
     var defaultTool: EditorAdjustmentTool { tools[0] }
+    func isVisible(isHDREditing: Bool) -> Bool { self != .hdrRendition || isHDREditing }
+    static func visibleGroups(isHDREditing: Bool) -> [Self] {
+        allCases.filter { $0.isVisible(isHDREditing: isHDREditing) }
+    }
 }
 
 enum EditorAdjustmentTool: String, CaseIterable, Identifiable {
@@ -405,6 +409,20 @@ struct EditorAdjustmentNavigation: Equatable {
         else { expandedGroup = group; tool = group.defaultTool }
     }
     mutating func selectTool(_ target: EditorAdjustmentTool) { tool = target; expandedGroup = target.group }
+    mutating func normalize(isHDREditing: Bool) {
+        let wasCollapsed = expandedGroup == nil
+        if !tool.group.isVisible(isHDREditing: isHDREditing) {
+            selectTool(.exposure)
+            if wasCollapsed { expandedGroup = nil }
+        } else if let group = expandedGroup, !group.isVisible(isHDREditing: isHDREditing) {
+            expandedGroup = tool.group
+        }
+    }
+    func normalized(isHDREditing: Bool) -> Self {
+        var copy = self
+        copy.normalize(isHDREditing: isHDREditing)
+        return copy
+    }
 }
 
 enum EditorResetScope: Equatable {

@@ -669,7 +669,7 @@ struct EditorView: View {
 
     private var resetMenu: some View {
         Menu {
-            let tool = model.adjustmentNavigation.tool
+            let tool = model.adjustmentNavigation.normalized(isHDREditing: model.settings.isHDREditing).tool
             if tool == .colorGrading {
                 resetButton(.gradingZone(model.adjustmentNavigation.selectedGradingZone), title: L10n.text("重置当前分区"))
                 resetButton(.allGrading, title: L10n.text("重置颜色分级"))

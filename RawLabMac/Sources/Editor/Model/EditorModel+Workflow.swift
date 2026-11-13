@@ -117,7 +117,13 @@ extension EditorModel {
         }
     }
 
+    func normalizeAdjustmentNavigation() {
+        let normalized = adjustmentNavigation.normalized(isHDREditing: settings.isHDREditing)
+        if adjustmentNavigation != normalized { adjustmentNavigation = normalized }
+    }
+
     func selectAdjustmentGroup(_ group: EditorAdjustmentGroup) {
+        guard group.isVisible(isHDREditing: settings.isHDREditing) else { return }
         if group == .looks && !quickPresetsVisible && (settings.isHDREditing || geometryDraft != nil) {
             showQuickPresets(); return
         }
@@ -128,7 +134,8 @@ extension EditorModel {
     }
 
     func selectAdjustmentTool(_ tool: EditorAdjustmentTool) {
-        guard quickPresetsVisible || tool != adjustmentNavigation.tool || adjustmentNavigation.expandedGroup == nil else { return }
+        guard tool.group.isVisible(isHDREditing: settings.isHDREditing),
+              quickPresetsVisible || tool != adjustmentNavigation.tool || adjustmentNavigation.expandedGroup == nil else { return }
         if quickPresetsVisible { closeQuickPresets() }
         var target = adjustmentNavigation; target.selectTool(tool)
         navigateAdjustment(to: target)
@@ -214,6 +221,7 @@ extension EditorModel {
             guard beginGeometryDraft(tab: resetReturnGeometryTab ?? (tool == .lens ? .lens : .crop)) else { return }
         }
         adjustmentNavigation.selectTool(tool)
+        normalizeAdjustmentNavigation()
         resetReturnTool = nil; resetReturnGeometryTab = nil; resetSource = nil
     }
 
@@ -588,6 +596,7 @@ extension EditorModel {
             selectedFilmID = films.first(where: { $0.id == filmID || "builtin:\($0.url.lastPathComponent)" == filmID })?.id ?? filmID
         }
         updatingMetadata = false
+        normalizeAdjustmentNavigation()
         dirty = false
         saveStatusKey = restored == nil ? "" : "已恢复上次调整"
         processingMigrationReceipt = try? editStore?.processingMigration(for: url)

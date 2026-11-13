@@ -24,31 +24,10 @@ enum HDRCameraProfileAssetStore {
     }
 }
 
-private struct ResetControlProbeView: View {
-    let presentation: HDRRenditionResetPresentation?
-    var body: some View {
-        HDRRenditionResetControl(presentation: presentation, onReset: {})
-    }
-}
-
 private struct FullControlsProbeView: View {
     @ObservedObject var model: RenditionResetHostModel
     var body: some View {
         model.controls.fixedSize()
-    }
-}
-
-private struct HeaderWithoutResetProbeView: View {
-    var body: some View {
-        DisclosureGroup {
-            EmptyView()
-        } label: {
-            HStack {
-                Text(L10n.text("HDR 输出与 SDR 底图"))
-                Spacer()
-            }
-        }
-        .fixedSize()
     }
 }
 
@@ -58,7 +37,7 @@ private struct HeaderWithoutResetProbeView: View {
         let app = NSApplication.shared
         app.setActivationPolicy(.prohibited)
         Task { @MainActor in
-            do { try run(); exit(0) }
+            do { try await run(); exit(0) }
             catch { fputs("FAIL: \(error)\n", stderr); exit(1) }
         }
         app.run()
@@ -76,47 +55,58 @@ private struct HeaderWithoutResetProbeView: View {
         print("PASS: \(message)")
     }
 
-    @MainActor static func requirePresentation(_ value: HDRRenditionResetPresentation?, _ message: String) throws -> HDRRenditionResetPresentation {
-        guard let value else { throw Failure.assertion(message) }
-        return value
-    }
-
-    @MainActor static func measure<V: View>(_ view: V) -> NSSize {
-        let host = NSHostingView(rootView: view)
+    @MainActor static func settle<V: View>(_ host: NSHostingView<V>) async throws {
         host.invalidateIntrinsicContentSize()
         host.layoutSubtreeIfNeeded()
-        return host.fittingSize
+        try await Task.sleep(for: .milliseconds(30))
+        host.invalidateIntrinsicContentSize()
+        host.layoutSubtreeIfNeeded()
     }
 
-    @MainActor static func run() throws {
-        let model = RenditionResetHostModel()
+    @MainActor static func buttons(in view: NSView) -> [NSButton] {
+        let own = (view as? NSButton).map { [$0] } ?? []
+        return own + view.subviews.flatMap { buttons(in: $0) }
+    }
 
-        // 1. 默认状态：控件存在、identifier 为 hdr.rendition.reset、标题复用现有「重置」、默认态禁用
-        let initial = try requirePresentation(
-            model.controls.resetPresentation,
-            "Missing HDRRenditionResetPresentation on HDRRenditionControls"
-        )
+    @MainActor static func requireResetButton(in view: NSView) throws -> NSButton {
+        let candidates = buttons(in: view)
+        guard candidates.count == 1, let button = candidates.first else {
+            throw Failure.assertion("Expected a single materialized reset NSButton in HDRRenditionControls, found \(candidates.count)")
+        }
+        return button
+    }
+
+    @MainActor static func run() async throws {
+        let model = RenditionResetHostModel()
+        let host = NSHostingView(rootView: FullControlsProbeView(model: model))
+        host.frame = NSRect(x: 0, y: 0, width: 320, height: 120)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.contentView = nil; window.close() }
+        try await settle(host)
+
+        // 1. 默认状态：表示模型携带 hdr.rendition.reset 与本地化「重置」文案，默认态禁用
+        let initial = model.controls.resetPresentation
         try check(initial.identifier == "hdr.rendition.reset",
                   "Reset control uses accessibilityIdentifier hdr.rendition.reset")
         try check(initial.title == L10n.text("重置"),
                   "Reset control reuses existing localized title key")
         try check(!initial.isEnabled,
-                  "Reset control is disabled when rendition settings are default")
+                  "Reset presentation is disabled when rendition settings are default")
 
-        // 2. 真实 SwiftUI/NSHostingView 布局尺寸断言（不依赖辅助功能权限）：撤掉按钮会直接变红
-        let resetSize = measure(ResetControlProbeView(presentation: initial))
-        let hiddenSize = measure(ResetControlProbeView(presentation: nil))
-        try check(resetSize.width > 12 && resetSize.height > 10,
-                  "Rendered HDRRenditionResetControl has non-zero layout bounds (\(resetSize))")
-        try check(hiddenSize.width < 1 && hiddenSize.height < 1,
-                  "Nil presentation collapses HDRRenditionResetControl layout bounds")
+        // 2. 无 AX 环境下真实 NSHostingView 视图树断言：物化 NSButton 尺寸非空、默认禁用且点击无副作用
+        let defaultButton = try requireResetButton(in: host)
+        try check(!defaultButton.isHidden && defaultButton.frame.width > 12 && defaultButton.frame.height > 10 &&
+                  host.fittingSize.width > defaultButton.frame.width,
+                  "Materialized reset NSButton has non-zero layout bounds (\(defaultButton.frame.size)) inside header (\(host.fittingSize))")
+        try check(!defaultButton.isEnabled,
+                  "Materialized reset NSButton is disabled when rendition settings are default")
+        defaultButton.performClick(nil)
+        try check(model.writes == 0,
+                  "Disabled reset NSButton ignores performClick")
 
-        let fullHeaderSize = measure(FullControlsProbeView(model: model))
-        let bareHeaderSize = measure(HeaderWithoutResetProbeView())
-        try check(fullHeaderSize.width >= bareHeaderSize.width + resetSize.width * 0.75,
-                  "HDRRenditionControls header layout embeds reset button width (full=\(fullHeaderSize.width), bare=\(bareHeaderSize.width), reset=\(resetSize.width))")
-
-        // 3. 四项中任意单项改动后，重置按钮切换为启用态
+        // 3. 四项中任意单项改动后，表示模型与真实 NSButton 同步切换为启用态
         for (name, mutate) in [
             ("peakLimitEV", { (s: inout HDRRenditionSettings) in s.peakLimitEV = 1.5 }),
             ("sdrExposureEV", { (s: inout HDRRenditionSettings) in s.sdrExposureEV = -0.8 }),
@@ -126,15 +116,14 @@ private struct HeaderWithoutResetProbeView: View {
             var edited = HDRRenditionSettings()
             mutate(&edited)
             model.settings = edited
-            let active = try requirePresentation(
-                model.controls.resetPresentation,
-                "Missing reset presentation after editing \(name)"
-            )
-            try check(active.identifier == "hdr.rendition.reset" && active.isEnabled,
-                      "Reset control enables when \(name) is modified")
+            try await settle(host)
+            let active = model.controls.resetPresentation
+            let button = try requireResetButton(in: host)
+            try check(active.identifier == "hdr.rendition.reset" && active.isEnabled && button.isEnabled,
+                      "Reset presentation and materialized NSButton enable when \(name) is modified")
         }
 
-        // 4. 四项同时改动后触发重置：一次写回共享绑定并回到禁用态
+        // 4. 四项同时改动后穿透真实 NSButton.performClick(nil)：走通 onReset -> reset() -> 共享绑定单次写回并回到禁用态
         var combined = HDRRenditionSettings()
         combined.peakLimitEV = 2.4
         combined.sdrExposureEV = -1.2
@@ -142,23 +131,19 @@ private struct HeaderWithoutResetProbeView: View {
         combined.sdrSaturation = -25
         model.settings = combined
         model.writes = 0
-        let combinedPresentation = try requirePresentation(
-            model.controls.resetPresentation,
-            "Missing reset presentation when all four fields are modified"
-        )
-        try check(combinedPresentation.isEnabled,
-                  "Reset control is enabled when all four rendition fields are modified")
+        try await settle(host)
+        let activeButton = try requireResetButton(in: host)
+        try check(model.controls.resetPresentation.isEnabled && activeButton.isEnabled,
+                  "Materialized reset NSButton is enabled when all four rendition fields are modified")
 
-        model.controls.reset()
+        activeButton.performClick(nil)
+        try await settle(host)
         try check(model.settings == HDRRenditionSettings() && model.settings.isDefault,
-                  "Reset action restores all four HDR rendition fields to default")
+                  "performClick on reset NSButton restores all four HDR rendition fields to default")
         try check(model.writes == 1,
-                  "Reset action writes once through shared binding for a single undo entry")
-        let afterReset = try requirePresentation(
-            model.controls.resetPresentation,
-            "Missing reset presentation after resetting to default"
-        )
-        try check(!afterReset.isEnabled,
-                  "Reset control returns to disabled state after reset")
+                  "performClick on reset NSButton writes once through shared binding for a single undo entry")
+        let afterResetButton = try requireResetButton(in: host)
+        try check(!model.controls.resetPresentation.isEnabled && !afterResetButton.isEnabled,
+                  "Materialized reset NSButton returns to disabled state after reset")
     }
 }

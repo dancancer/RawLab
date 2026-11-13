@@ -35,7 +35,7 @@ struct HDRRenditionResetPresentation: Equatable {
     let title: String
     let isEnabled: Bool
 
-    static func make(settings: HDRRenditionSettings) -> Self? {
+    static func make(settings: HDRRenditionSettings) -> Self {
         Self(identifier: "hdr.rendition.reset",
              title: L10n.text("重置"),
              isEnabled: !settings.isDefault)
@@ -43,16 +43,14 @@ struct HDRRenditionResetPresentation: Equatable {
 }
 
 struct HDRRenditionResetControl: View {
-    let presentation: HDRRenditionResetPresentation?
+    let presentation: HDRRenditionResetPresentation
     let onReset: () -> Void
 
     var body: some View {
-        if let presentation {
-            Button(presentation.title, action: onReset)
-                .buttonStyle(.borderless)
-                .disabled(!presentation.isEnabled)
-                .accessibilityIdentifier(presentation.identifier)
-        }
+        Button(presentation.title, action: onReset)
+            .buttonStyle(.borderless)
+            .disabled(!presentation.isEnabled)
+            .accessibilityIdentifier(presentation.identifier)
     }
 }
 
@@ -62,7 +60,7 @@ struct HDRRenditionControls: View {
     let onCancelled: () -> Void
     @State private var editing = false
 
-    var resetPresentation: HDRRenditionResetPresentation? {
+    var resetPresentation: HDRRenditionResetPresentation {
         HDRRenditionResetPresentation.make(settings: settings)
     }
 
