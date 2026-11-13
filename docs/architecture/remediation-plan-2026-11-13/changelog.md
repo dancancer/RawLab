@@ -96,3 +96,4 @@
 - 2026-11-14 · B1 交卷：**PR #304**（`e580d2ab`，纯测试断言 +36/−15）：非零强度配方行改 Auto→CPU 诚实回退+像素一致（removal() 先例），0% 行保留 forced parity，新增逐行 UNSUPPORTED 负断言钉契约两方向；双 fixture 277 PASS exit 0。碳审在途（review-mwfkstbk）。
 - 2026-11-14 · #291 五轮返工（`be72e292`）：弃 adjustmentsExpanded 守卫，改 finishDraftNavigation 清空前捕获 `leavingWorkspace` 显式传守卫与 activateEditorTool（同源 Should-Fix：apply 后切普通工具漏交付，一并修）；总览态语义复原（A1/A2/A3 消除，GroupSelectSurvives 直接锁契约）。新锚点 overviewCollapse×4+navApplySwitch×3，181/0 零倒退，变异精准翻红。五轮复审在途（review-mwfkzt9p）。
 - 2026-11-14 · 台账两小包排上：`fix-mcp-parity`（mcp-cli-parity 状态码漂移，先定哪侧为准）、`fix-compact-baseline`（compact-controls 快照/结构期望矩阵级重基线，无显示环境项不硬判）。
+- 2026-11-14 · mcp 漂移归因收口：**PR #305**（`93c6d355`）——判定测试期望未更（0ef4ed71 停留迁移前），证据链 2aa25048→3ad54e63→a6ffa929→契约文本完整；产品零改动，README 同步。碳审在途（review-mwfl8r5q）。

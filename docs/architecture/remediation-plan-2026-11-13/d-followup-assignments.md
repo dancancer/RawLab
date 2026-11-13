@@ -60,4 +60,4 @@
 - 另录：hdr-rendition-ui E.2-L1 无 AX 授权静默 return（绿≠真跑，与 Q14 axTrusted/REQUIRE_AX 挂行同族）。
 - **CI 阶段2 家族新行（11-14，#300 评审发现）**：`RawLabMac/build.sh` 未传 `-DPython3_EXECUTABLE`，CMake 绑定 Homebrew Python（无 jsonschema）→ macOS native CI 中 `edit_recipe_schema` 实为 Skipped（对照 Windows build.ps1 已透传）。阶段2 统一透传解释器并核查 SKIP 清单。
 - **A 簇修后新挂（11-14，PR #303 交卷时发现）**：①`compact-controls-presentation` 快照期望过时需要整体重基线（a74a6baf 重设计未重基线：`editor-minimum expected 1 numeric fields; found 6`，改期望后又败于可达性断言）已派 `fix-compact-baseline` 矩阵级重基线（无依据项不硬判，留待有显示会话）；②`photo-effects-presentation` 与本会话锁屏下的 `mac-geometry-draft` 末位激活检查同属「无显示/锁屏会话」环境红，待有显示器会话复核即关。
-- **既有红新登记（11-14，#300 native run 顺带发现）**：`tools/mcp` `mcp-cli-parity` 契约漂移——`test_missing_output_parent_is_mcp_policy_vs_native_parity` 期望 `processing_error(4)` 实得 `output_io_error(6)`，双套件一致复现，疑输出策略变更后期望未更。已派 `fix-mcp-parity` 小包（先判契约/测试哪侧为准）。
+- **既有红新登记（11-14，#300 native run 顺带发现）**：`tools/mcp` `mcp-cli-parity` 契约漂移——`test_missing_output_parent_is_mcp_policy_vs_native_parity` 期望 `processing_error(4)` 实得 `output_io_error(6)`，双套件一致复现，疑输出策略变更后期望未更。判定=测试期望未更（2aa25048 staged write 迁移+edit-json.md L124-125 明文 status 6），**PR #305** 修期望，碳审在途。
