@@ -171,6 +171,10 @@ struct PhotoThumbnailCacheKey: Hashable, Sendable {
         self.adjustmentRevision = appliesAdjustments ? adjustmentRevision : nil
     }
 
+    var fileIdentity: PhotoThumbnails.FileIdentity {
+        .init(fileSize: fileSize, modified: modified, fileNumber: fileNumber)
+    }
+
     init?(uneditedFileAt url: URL, maxPixelSize: Int = PhotoThumbnails.defaultMaxPixelSize) {
         let path = Self.canonicalPath(for: url)
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
@@ -200,10 +204,30 @@ final class PhotoThumbnails: @unchecked Sendable {
         let generation: UInt64
     }
 
+    struct FileIdentity: Hashable, Sendable {
+        let fileSize: UInt64
+        let modified: Date
+        let fileNumber: UInt64
+    }
+
+    struct EditedRevision: Hashable, Sendable {
+        let identity: FileIdentity
+        let revision: String
+    }
+
     enum TrackedEditState: Equatable {
-        case cached
-        case revision(String)
-        case invalidated(String)
+        case cached(FileIdentity)
+        case revision(EditedRevision)
+        case invalidated(EditedRevision)
+
+        var identity: FileIdentity {
+            switch self {
+            case .cached(let identity):
+                return identity
+            case .revision(let edited), .invalidated(let edited):
+                return edited.identity
+            }
+        }
     }
 
     static let defaultMaxPixelSize = 180
@@ -244,7 +268,16 @@ final class PhotoThumbnails: @unchecked Sendable {
                 .sink { [weak self] notification in
                     guard let paths = notification.userInfo?["invalidatedPaths"] as? Set<String> else { return }
                     let revisions = notification.userInfo?["editedRevisions"] as? [String: String] ?? [:]
-                    for path in paths { self?.reconcileEditedRevision(revisions[path], atPath: path) }
+                    let identities = notification.userInfo?["fileIdentities"] as? [String: (UInt64, Date, UInt64)] ?? [:]
+                    for path in paths {
+                        if let revision = revisions[path] {
+                            guard let rawIdentity = identities[path] else { continue }
+                            let identity = FileIdentity(fileSize: rawIdentity.0, modified: rawIdentity.1, fileNumber: rawIdentity.2)
+                            self?.reconcileEditedRevision(EditedRevision(identity: identity, revision: revision), atPath: path)
+                        } else {
+                            self?.reconcileEditedRevision(nil, atPath: path)
+                        }
+                    }
                 }
                 .store(in: &persistenceCancellables)
             NotificationCenter.default.publisher(for: Notification.Name("RawLab.EditPersistence.didInvalidateEdited"))
@@ -300,10 +333,11 @@ final class PhotoThumbnails: @unchecked Sendable {
         return editGenerations[path, default: 0]
     }
 
-    func seedEditedRevisionIfUntracked(_ revision: String, atPath path: String) -> (generation: UInt64, seeded: Bool) {
+    func seedEditedRevisionIfUntracked(_ edited: EditedRevision, atPath path: String) -> (generation: UInt64, seeded: Bool) {
         lock.lock(); defer { lock.unlock() }
-        if trackedEditStates[path] == nil {
-            trackedEditStates[path] = .revision(revision)
+        if trackedEditStates[path]?.identity != edited.identity {
+            trackedEditStates[path] = .revision(edited)
+            _ = removeEditedKeysLocked(atPath: path)
             let next = editGenerations[path, default: 0] &+ 1
             editGenerations[path] = next
             _editedInvalidationCount += 1
@@ -313,9 +347,9 @@ final class PhotoThumbnails: @unchecked Sendable {
     }
 
     @discardableResult
-    func reconcileEditedRevision(_ revision: String?, available: Bool = true, atPath path: String) -> Bool {
+    func reconcileEditedRevision(_ edited: EditedRevision?, available: Bool = true, atPath path: String) -> Bool {
         lock.lock(); defer { lock.unlock() }
-        guard let revision else {
+        guard let edited else {
             let hadTracked = trackedEditStates.removeValue(forKey: path) != nil
             let removedKeys = removeEditedKeysLocked(atPath: path)
             guard hadTracked || removedKeys else { return false }
@@ -323,11 +357,11 @@ final class PhotoThumbnails: @unchecked Sendable {
             _editedInvalidationCount += 1
             return true
         }
-        let target: TrackedEditState = available ? .revision(revision) : .invalidated(revision)
+        let target: TrackedEditState = available ? .revision(edited) : .invalidated(edited)
         switch trackedEditStates[path] {
-        case .revision(revision) where available:
+        case .revision(edited) where available:
             return false
-        case .invalidated(revision):
+        case .invalidated(edited):
             return false
         default:
             trackedEditStates[path] = target
@@ -345,13 +379,16 @@ final class PhotoThumbnails: @unchecked Sendable {
             return
         }
         if key.appliesAdjustments {
+            let fileIdentity = key.fileIdentity
             switch trackedEditStates[key.path] {
-            case .invalidated(let rev):
-                trackedEditStates[key.path] = .revision(rev)
-            case .none:
-                trackedEditStates[key.path] = .cached
-            case .revision, .cached:
+            case .invalidated(let edited) where edited.identity == fileIdentity:
+                trackedEditStates[key.path] = .revision(edited)
+            case .revision(let edited) where edited.identity == fileIdentity:
                 break
+            case .cached(fileIdentity):
+                break
+            case .none, .invalidated, .revision, .cached:
+                trackedEditStates[key.path] = .cached(fileIdentity)
             }
             if var existing = keysByPath[key.path] {
                 for prior in existing where prior.appliesAdjustments && prior != key {
@@ -477,11 +514,12 @@ final class PhotoThumbnails: @unchecked Sendable {
                                 fileNumber: UInt64, stateRevision: String? = nil,
                                 editedRevision: String?, expectedEditGeneration: UInt64? = nil) -> Bool {
         lock.lock(); defer { lock.unlock() }
+        let fileIdentity = FileIdentity(fileSize: fileSize, modified: modified, fileNumber: fileNumber)
         var removedFile = false
         var removedEdited = false
         if var keys = keysByPath[path] {
             for key in keys {
-                let fileChanged = key.fileSize != fileSize || key.modified != modified || key.fileNumber != fileNumber
+                let fileChanged = key.fileIdentity != fileIdentity
                 let editChanged = key.appliesAdjustments && (editedRevision == nil || key.adjustmentRevision != editedRevision)
                 if fileChanged || editChanged {
                     keys.remove(key)
@@ -496,22 +534,23 @@ final class PhotoThumbnails: @unchecked Sendable {
         }
         if expectedEditGeneration == nil || editGenerations[path, default: 0] == expectedEditGeneration {
             if let stateRevision {
+                let target = EditedRevision(identity: fileIdentity, revision: stateRevision)
                 if editedRevision != nil {
                     switch trackedEditStates[path] {
-                    case .revision(stateRevision), .invalidated(stateRevision):
+                    case .revision(target), .invalidated(target):
                         break
-                    case .cached:
-                        trackedEditStates[path] = .revision(stateRevision)
-                    case .revision, .invalidated, .none:
-                        trackedEditStates[path] = .revision(stateRevision)
+                    case .cached(fileIdentity):
+                        trackedEditStates[path] = .revision(target)
+                    case .revision, .invalidated, .cached, .none:
+                        trackedEditStates[path] = .revision(target)
                         removedEdited = true
                     }
                 } else {
                     switch trackedEditStates[path] {
-                    case .invalidated(stateRevision):
+                    case .invalidated(target):
                         break
                     case .revision, .invalidated, .cached, .none:
-                        trackedEditStates[path] = .invalidated(stateRevision)
+                        trackedEditStates[path] = .invalidated(target)
                         removedEdited = true
                     }
                 }
@@ -521,7 +560,10 @@ final class PhotoThumbnails: @unchecked Sendable {
         }
         if removedFile {
             fileGenerations[path, default: 0] &+= 1
-            if markEditedInvalidatedLocked(atPath: path) { removedEdited = true }
+            if trackedEditStates[path]?.identity != fileIdentity,
+               markEditedInvalidatedLocked(atPath: path) {
+                removedEdited = true
+            }
         }
         if removedEdited {
             editGenerations[path, default: 0] &+= 1

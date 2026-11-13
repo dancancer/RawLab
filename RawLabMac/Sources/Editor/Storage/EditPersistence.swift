@@ -53,6 +53,7 @@ final class EditPersistence {
     static let changedRecordsUserInfoKey = "changedRecords"
     static let invalidatedPathsUserInfoKey = "invalidatedPaths"
     static let editedRevisionsUserInfoKey = "editedRevisions"
+    static let fileIdentitiesUserInfoKey = "fileIdentities"
 
     private struct Record: Codable {
         let identity: OriginalFileIdentity
@@ -336,11 +337,13 @@ final class EditPersistence {
         return stateRevisionDigest(for: state)
     }
 
-    private func postRecordsChanged(_ changes: [String: PhotoEditState?]) {
+    private func postRecordsChanged(_ changes: [String: PhotoEditRecord]) {
         guard !changes.isEmpty else { return }
         var editedRevisions: [String: String] = [:]
-        for (path, state) in changes {
-            if let revision = Self.editedRevision(for: state, atPath: path) {
+        var fileIdentities: [String: (UInt64, Date, UInt64)] = [:]
+        for (path, record) in changes {
+            fileIdentities[path] = (record.identity.size, record.identity.modified, record.identity.fileNumber)
+            if let revision = Self.editedRevision(for: record.state, atPath: path) {
                 editedRevisions[path] = revision
             }
         }
@@ -351,7 +354,8 @@ final class EditPersistence {
                 Self.directoryPathUserInfoKey: canonicalDirectoryPath,
                 Self.changedRecordsUserInfoKey: changes,
                 Self.invalidatedPathsUserInfoKey: Set(changes.keys),
-                Self.editedRevisionsUserInfoKey: editedRevisions
+                Self.editedRevisionsUserInfoKey: editedRevisions,
+                Self.fileIdentitiesUserInfoKey: fileIdentities
             ]
         )
     }
@@ -382,7 +386,7 @@ final class EditPersistence {
             return try snapshot(identity: expected.identity, registry: updated)
         }
         if let candidate, expected.state != candidate {
-            postRecordsChanged([expected.identity.path: candidate])
+            postRecordsChanged([expected.identity.path: result])
         }
         return result
     }
@@ -404,7 +408,7 @@ final class EditPersistence {
             return try snapshot(identity: expected.identity, registry: updated)
         }
         if expected.state != result.state {
-            postRecordsChanged([expected.identity.path: result.state])
+            postRecordsChanged([expected.identity.path: result])
         }
         return result
     }
@@ -422,7 +426,7 @@ final class EditPersistence {
     }
 
     func save(_ urls: [URL], state: PhotoEditState) throws {
-        var changedPaths: [String: PhotoEditState?] = [:]
+        var changedPaths: [String: PhotoEditRecord] = [:]
         try withWriteLock {
             try Self.validateState(state)
             var updated = try readRegistry()
@@ -430,7 +434,7 @@ final class EditPersistence {
                 let identity = try OriginalFileIdentity(url)
                 if try snapshot(identity: identity, registry: updated).state == state { continue }
                 updated.records[identity.path] = try JSONEncoder().encode(Record(identity: identity, state: state))
-                changedPaths[identity.path] = state
+                changedPaths[identity.path] = PhotoEditRecord(identity: identity, state: state)
             }
             if !changedPaths.isEmpty { try writeData(Self.encodeRegistry(updated), file) }
         }
@@ -458,7 +462,7 @@ final class EditPersistence {
             return PhotoEditRecord(identity: identity, state: state)
         }
         if stateChanged {
-            postRecordsChanged([identity.path: state])
+            postRecordsChanged([identity.path: result])
         }
         return result
     }
@@ -478,7 +482,7 @@ final class EditPersistence {
             return PhotoEditRecord(identity: identity, state: nil)
         }
         if let clearedPath {
-            postRecordsChanged([clearedPath: nil])
+            postRecordsChanged([clearedPath: result])
         }
         return result
     }
