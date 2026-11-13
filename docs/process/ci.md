@@ -333,7 +333,13 @@ CI never repeats runtime UI checks. UI-test target compilation is not a UI-test 
   failure. The same contract stays gated by the AX-free presentation-layer suite
   `hdr-rendition-reset.sh`. Host-executed suites with "UI" in the name, such as
   `ios-reset-entry-ui.sh`, are presentation-layer model assertions, not XCUITest.
-  A `SKIP` reason in a CI suite log counts as a failed gate, never as a pass.
+  A `SKIP` reason in a CI suite log counts as a failed gate, never as a pass;
+  the gate matches a line-leading `SKIP` marker, so paths, identifiers and
+  `PASS:` wording that merely contain "SKIP" stay green. This is distinct from
+  CTest `SKIP_RETURN_CODE 77`, which registers an explicit visible skip for
+  optional external models or private samples (such as `dualdn_skip` and
+  `dualdn_onnx_skip`); the `full` gate still hard-fails a missing AI model
+  earlier through `scripts/ci/ai-inputs.py`.
 - Android compiles instrumentation tests but does **not** run connected-device
   tests. GLES, SAF, OEM locale and physical interaction evidence stays separate.
 - Building both architectures with a 14.0 minimum on a newer macOS does not establish

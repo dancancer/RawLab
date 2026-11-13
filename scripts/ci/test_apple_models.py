@@ -66,44 +66,59 @@ exit "$PROBE_EXIT"
                     else:
                         self.assertGreater(len(calls), 1)
 
-    def test_logged_skip_fails_even_if_child_suite_exited_zero(self):
-        with tempfile.TemporaryDirectory(prefix="rawlab model skip ") as directory:
-            root = Path(directory)
-            runner = root / "scripts/ci/apple-models.sh"
-            runner.parent.mkdir(parents=True)
-            shutil.copy2(ROOT / "scripts/ci/apple-models.sh", runner)
-            tools = root / "bin"
-            tools.mkdir()
-            for name in ("xcode-select", "xcrun", "python3"):
-                tool = tools / name
-                tool.write_text("#!/bin/sh\necho /unused/sdk\n")
-                tool.chmod(0o755)
-            child = tools / "bash"
-            child.write_text('''#!/bin/bash
+    def _skip_probe_root(self):
+        directory = tempfile.TemporaryDirectory(prefix="rawlab model skip ")
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        runner = root / "scripts/ci/apple-models.sh"
+        runner.parent.mkdir(parents=True)
+        shutil.copy2(ROOT / "scripts/ci/apple-models.sh", runner)
+        tools = root / "bin"
+        tools.mkdir()
+        for name in ("xcode-select", "xcrun", "python3"):
+            tool = tools / name
+            tool.write_text("#!/bin/sh\necho /unused/sdk\n")
+            tool.chmod(0o755)
+        child = tools / "bash"
+        child.write_text('''#!/bin/bash
 set -eu
-if [[ "${INJECT_SKIP:-0}" == "1" ]]; then
-    echo "SKIP: simulated skipped capability"
-else
-    echo "PASS: simulated success without skip"
-fi
+printf '%s\\n' "${INJECT_OUT:-PASS: simulated success without skip}"
 exit 0
 ''')
-            child.chmod(0o755)
+        child.chmod(0o755)
+        return root, runner, tools
 
-            # Injected SKIP with exit 0 must fail non-zero
-            result_skip = subprocess.run(["/bin/bash", str(runner), "macos"],
-                env={**os.environ, "PATH": f"{tools}:{os.environ['PATH']}",
-                     "TMPDIR": str(root), "INJECT_SKIP": "1"},
-                capture_output=True, text=True)
-            self.assertNotEqual(result_skip.returncode, 0, "Suite logging SKIP must fail")
-            self.assertIn("SKIP", result_skip.stdout + result_skip.stderr)
+    def _run_skip_probe(self, root, runner, tools, platform, injected):
+        return subprocess.run(["/bin/bash", str(runner), platform],
+            env={**os.environ, "PATH": f"{tools}:{os.environ['PATH']}",
+                 "TMPDIR": str(root), "INJECT_OUT": injected},
+            capture_output=True, text=True)
 
-            # Normal output without SKIP must pass with exit 0
-            result_ok = subprocess.run(["/bin/bash", str(runner), "macos"],
-                env={**os.environ, "PATH": f"{tools}:{os.environ['PATH']}",
-                     "TMPDIR": str(root), "INJECT_SKIP": "0"},
-                capture_output=True, text=True)
-            self.assertEqual(result_ok.returncode, 0, result_ok.stdout + result_ok.stderr)
+    def test_logged_skip_fails_both_platform_routes_even_if_child_exited_zero(self):
+        root, runner, tools = self._skip_probe_root()
+        markers = {"colon-marker": "SKIP: simulated skipped capability",
+                   "fixture-marker": "SKIP HDR originals: pass read-only HDR fixture paths"}
+        for platform in ("macos", "ios"):
+            for name, injected in markers.items():
+                with self.subTest(platform=platform, marker=name):
+                    result = self._run_skip_probe(root, runner, tools, platform, injected)
+                    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                    self.assertIn("logged SKIP (forbidden by CI invariant 7)", result.stderr)
+
+    def test_benign_skip_like_output_stays_green(self):
+        root, runner, tools = self._skip_probe_root()
+        benign = "\n".join((
+            "PASS: RAWLAB_SKIP_AX=0 and SKIP_RETURN_CODE=77",
+            "PASS: skipped=0 SKIPPED=0 CGImageAlphaInfo.noneSkipLast",
+            "/tmp/worktree-SKIP-check/Shared/Localization.swift:12:5: warning: unused value",
+            "/Users/SKIP/repo/Shared/HDRSettings.swift:8:1: note: in expansion of macro",
+            "PASS: batch export SKIP action preserves active draft",
+        ))
+        for platform in ("macos", "ios"):
+            with self.subTest(platform=platform):
+                result = self._run_skip_probe(root, runner, tools, platform, benign)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("PASS: batch export SKIP action preserves active draft", result.stdout)
 
 
 if __name__ == "__main__":
