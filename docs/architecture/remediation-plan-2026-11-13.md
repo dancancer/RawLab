@@ -44,6 +44,7 @@ architecture-review-2026-11-13.md。
 | [f-overall-plan.md](remediation-plan-2026-11-13/f-overall-plan.md) | 整体方案：路线、十条验收不变量、地基层、**阶段表（活）**、插队准入、失败预测 | 阶段推进时 |
 | [g-product-decisions.md](remediation-plan-2026-11-13/g-product-decisions.md) | **产品决策登记（活，Q1–Q14，Q11 空号）** | 用户裁定时 |
 | [review-evidence.md](remediation-plan-2026-11-13/review-evidence.md) | 独立复核证据（口径、安全、覆盖缺口、边界） | 独立复核会话维护 |
+| [h-review-workpackages.md](remediation-plan-2026-11-13/h-review-workpackages.md) | **独立复核处置（/agy-brain carbon 裁决）**：25 条判定 + needs-fix 工作包 WP-01–11（含波次/并行/状态）+ 条件接受与待验证清单 | 工作包推进时 |
 | [changelog.md](remediation-plan-2026-11-13/changelog.md) | 变更记录（追加式） | 每次合入/评审/决策 |
 
 ## 关联文档

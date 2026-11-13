@@ -40,3 +40,5 @@
 - 2026-11-13 · 独立复核增量（`588c9b3e`）· #285 的 P1-11、P1-12 红绿均实跑，新增 2 条通过；本轮合计 60 条中 41 条通过。P1-10 仍未修。
 - 2026-11-13 · PR #286 开（`6c1181a9`，未合）· P1 第②步地基：`Shared/specs/adjustment-fields-v1.json`（83 字段）+ 三层 Python 静态 parity（协议/模型/UI，全 python 解析四端生产源）。109 单测绿、协议与 UI 各一条真文件红锚点复现；对审计前提报告登记 11 项源码勘误、divergent=64/identical=19。评审中。
 - 2026-11-13 · 纯文档 · 台账拆分为「索引 + 细分项」：本 changelog 及各专项移入 `remediation-plan-2026-11-13/` 目录，索引只留摘要/导航/维护纪律；内容零删改（B 表 178 行核对无缺失）。roadmap 文档 §2/§5/§6 确认为早期滞后快照，以 f-overall-plan.md、g-product-decisions.md 为准，待后续合并。
+- 2026-11-13 · /agy-brain carbon 裁决（`staffer-mwf1om9u`）· 独立复核 25 条处置固化 → 新增 [h-review-workpackages.md](remediation-plan-2026-11-13/h-review-workpackages.md)：确认为主、2 处定性修正（完成-06 条件接受、完成-22/37 拆分）、3 条件接受、3 待验证；needs-fix 打成 WP-01–11。第 0 波已启动：WP-02（`fix/ci-no-fake-green`）、WP-03（`fix/core-cancel-latch`）、WP-04（`fix/abi-callback-prototype`）worker 在途，WP-01 待策略开关+派发器方案。
+- 2026-11-13 · PR #286 评审 request-changes（carbon，3B/4S）· Layer2/3 自证+spec 两处非法默认值（light.curve points、hdr.look strength）→ 原 worker continuation 返工中（`implement-mwf29ykl`），identical=19 预计修正为 66/17 口径。
