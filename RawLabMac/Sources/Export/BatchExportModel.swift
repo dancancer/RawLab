@@ -334,6 +334,7 @@ final class BatchExportModel: ObservableObject {
                     if cancellation.cancelled { throw RenderError.aiCancelled }
                     _ = try self.engine!.render(input, settings: settings, lut: look, edge: 32)
                     _ = try self.engine!.render(input, settings: settings, lut: look, edge: nil, output: output,
+                        stageOutput: false,
                         exportLongEdge:frozen.longEdge,exportFormat:frozen.outputFormat)
                 }
             } catch {

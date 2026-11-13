@@ -207,6 +207,28 @@ final class RenderEngine {
     private var whiteBalanceCache: (key: RawWhiteBalanceCacheKey, processing: ProcessingIdentity, x3fMode: X3fMode, value: WhiteBalance?)?
     static var x3fAvailable: Bool { sony2fuji_x3f_available() != 0 }
     static func isX3fInput(_ url: URL?) -> Bool { url?.pathExtension.lowercased() == "x3f" }
+
+    /// 覆盖保护复核：真实输出与原片或外观是同一文件（标准化同路径、符号链接或硬链接别名）时，
+    /// 抛出与核心层拒绝覆盖一致的 INVALID_ARGUMENT 保护错误，绝不静默覆盖损毁原片。
+    static func rejectSourceOverwrite(_ output: URL, input: URL, look: URL?) throws {
+        if RenderError.aliases(input, output) || (look.map { RenderError.aliases($0, output) } ?? false) {
+            throw RenderError.processing(SONY2FUJI_STATUS_INVALID_ARGUMENT, input: input, look: look, output: output)
+        }
+    }
+
+    /// 与核心层发布语义一致（output_file_mode.h + raw_processor.cpp）：覆盖已存在的普通文件时
+    /// 保留目标文件原有 POSIX 权限位，并以单次 rename 原子发布；目标为符号链接时替换链接本身，
+    /// 不跟随写穿；失败统一映射为 RenderError.outputIO，不留裸 CocoaError。
+    static func publish(staging: URL, to output: URL) throws {
+        // 与核心一致：跟随符号链接 stat；目标已是普通文件时把其权限位带到暂存文件再发布。
+        if let attributes = try? FileManager.default.attributesOfItem(atPath: output.path),
+           attributes[.type] as? FileAttributeType == .typeRegular,
+           let mode = attributes[.posixPermissions] as? NSNumber {
+            Darwin.chmod(staging.path, mode_t(mode.int32Value & 0o777))
+        }
+        guard Darwin.rename(staging.path, output.path) == 0 else { throw RenderError.outputIO }
+    }
+
     static func defaultSettings(for url: URL,
                                 probeHDRSource: HDRSourceInfo.Probe = { try HDRSourceInfo.probe($0, onSDRFallback: $1) }) throws -> Adjustments {
         try defaultSettings(for: url, sourceIsHDR: probeHDRSource(url, {}) != nil)
@@ -677,7 +699,7 @@ final class RenderEngine {
         return ProcessingMigrationOutcome(native)
     }
 
-    func render(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL? = nil, interactive: Bool = false, exportLongEdge: Int? = nil, viewportPreview: Bool = false, exportFormat: ExportFormat? = nil) throws -> RenderedImage? {
+    func render(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL? = nil, stageOutput: Bool = true, interactive: Bool = false, exportLongEdge: Int? = nil, viewportPreview: Bool = false, exportFormat: ExportFormat? = nil) throws -> RenderedImage? {
         if settings.isHDREditing {
             return try renderHDR(url,settings:settings,edge:edge,output:output,longEdge:exportLongEdge,format:exportFormat)
         }
@@ -692,7 +714,11 @@ final class RenderEngine {
         defer { sony2fuji_release_buffer(&buffer) }
         var stagingURL: URL?
         var destinationURL = output
-        if let output, !output.lastPathComponent.hasPrefix(".rawlab-") {
+        if let output, stageOutput, ExportFormat.forOutput(output) != .renderedDNG {
+            // 核心层的覆盖保护检查的是真实输出；暂存重定向后它只会看到全新暂存文件，
+            // 因此创建暂存前先在真实目标上复核「目标已存在且与原片/外观是同一路径或别名」，
+            // 命中时映射到与核心一致的 INVALID_ARGUMENT 覆盖保护错误。
+            try Self.rejectSourceOverwrite(output, input: url, look: lut)
             let directory = output.deletingLastPathComponent()
             let suffix = output.pathExtension.isEmpty ? ExportFormat.forOutput(output).suffix : output.pathExtension
             let staging = directory.appendingPathComponent(".rawlab-\(UUID().uuidString).\(suffix)")
@@ -733,11 +759,9 @@ final class RenderEngine {
                 try metadataPreserver(url, targetURL, fallback)
             }
             if let stagingURL {
-                if FileManager.default.fileExists(atPath: output.path) {
-                    _ = try FileManager.default.replaceItemAt(output, withItemAt: stagingURL, backupItemName: nil, options: .usingNewMetadataOnly)
-                } else {
-                    try FileManager.default.moveItem(at: stagingURL, to: output)
-                }
+                // 发布前复核（TOCTOU）：元数据补写期间真实目标可能被换成原片/外观的别名，不得静默覆盖。
+                try Self.rejectSourceOverwrite(output, input: url, look: lut)
+                try Self.publish(staging: stagingURL, to: output)
                 cleanupStaging = nil
             }
             return nil
