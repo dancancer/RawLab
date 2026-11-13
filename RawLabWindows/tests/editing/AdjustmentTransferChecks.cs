@@ -183,7 +183,7 @@ internal static class AdjustmentTransferChecks
             var source=new Adjustments();source.ApplyMasterRecipe(recipe);
             source.Set(Parameter.Strength,strength*100);
             source.Set(Parameter.Exposure,1.2);source.Set(Parameter.Contrast,40);
-            source.Set(Parameter.Highlights,-60);source.Set(Parameter.Shadows,80);source.Set(Parameter.Saturation,-20);
+            source.Set(Parameter.Highlights,-60);source.Set(Parameter.Shadows,60);source.Set(Parameter.Saturation,-20);
             var copy=AdjustmentPayload.Parse(AdjustmentTransfer.Capture(AdjustmentScope.Custom(scalarFields),Edit(source),Context).ToJson());
             var summary=new AdjustmentSummary(copy,System.Globalization.CultureInfo.InvariantCulture,text=>text);
             Check(summary.RecipeNote!=null && summary.RecipeNote.Contains("按此强度换算"),"Recipe summary states strength conversion");
@@ -191,10 +191,14 @@ internal static class AdjustmentTransferChecks
             Check(Math.Abs(applied.Exposure-1.2*strength)<1e-9 &&
                 Math.Abs(applied.Contrast-40*strength)<1e-9 &&
                 Math.Abs(applied.Highlights-(-60*strength))<1e-9 &&
-                Math.Abs(applied.Shadows-80*strength)<1e-9 &&
+                Math.Abs(applied.Shadows-60*strength)<1e-9 &&
                 Math.Abs(applied.Saturation-(-20*strength))<1e-9,
                 "Recipe source scalars scale once on HDR target at strength "+strength);
         }
+        var overflow=new Adjustments();overflow.ApplyMasterRecipe(recipe);
+        overflow.Set(Parameter.Strength,150);overflow.Set(Parameter.Shadows,80);
+        var overflowCopy=AdjustmentTransfer.Capture(AdjustmentScope.Custom(new[]{F.Shadows}),Edit(overflow),Context);
+        Reject(()=>AdjustmentTransfer.Prepare(overflowCopy,hdrTarget,hdrContext),"Scaled recipe value beyond HDR range is rejected");
         var plain=new Adjustments();plain.Set(Parameter.Exposure,1.2);plain.Set(Parameter.Contrast,40);
         var plainCopy=AdjustmentTransfer.Capture(AdjustmentScope.Custom(new[]{F.Exposure,F.Contrast}),Edit(plain),Context);
         var plainApplied=AdjustmentTransfer.Prepare(plainCopy,hdrTarget,hdrContext).Settings.HDR!;
