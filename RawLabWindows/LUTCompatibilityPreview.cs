@@ -53,7 +53,7 @@ internal sealed class LUTPreviewWorker : IDisposable
         session = NewSession(); source = Path.Combine(directory, "source" + Path.GetExtension(photo));
         lut = Path.Combine(directory, "look" + Path.GetExtension(look)); DisplayInput = PhotoInput.IsRaster(photo);
         try {
-            Directory.CreateDirectory(directory); File.Copy(look, lut); File.Copy(photo, source);
+            Directory.CreateDirectory(directory); CopyWritable(look, lut); CopyWritable(photo, source);
             if (DisplayInput)
             {
                 if (PhotoInput.ProbeHDR(photo, out _) == HDRProbeState.Supported)
@@ -65,6 +65,11 @@ internal sealed class LUTPreviewWorker : IDisposable
                 else Native.Check(Native.sony2fuji_load_display_image(source, ref display));
             }
         } catch { Dispose(); throw; }
+    }
+    // File.Copy 会带上只读属性（相机“保护”过的照片很常见），去掉后临时副本才能被删除。
+    private static void CopyWritable(string from, string to)
+    {
+        File.Copy(from, to); File.SetAttributes(to, File.GetAttributes(to) & ~FileAttributes.ReadOnly);
     }
     private static Native.Session NewSession()
     {
@@ -118,7 +123,9 @@ internal sealed class LUTPreviewWorker : IDisposable
     {
         if (hdrDisplay == null) Native.sony2fuji_release_buffer(ref display);
         hdrDisplay?.Dispose(); hdrDisplay = null; session.Dispose();
-        try { if (Directory.Exists(directory)) Directory.Delete(directory, true); } catch (IOException) { }
+        // 只吞掉临时目录的清理失败；预览本身的错误由调用方照常抛出。
+        try { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
     }
 }
 
@@ -131,7 +138,7 @@ internal sealed class LUTPreviewService : IDisposable
     private bool closed;
     internal LUTPreviewService() => queue = new(CancellationToken.None, TaskCreationOptions.None, TaskContinuationOptions.None, scheduler.ExclusiveScheduler);
     internal Task<(LUTPreviewFrame Baseline, bool DisplayInput)> Load(string look, string photo, CancellationToken token) => queue.StartNew(() => {
-        token.ThrowIfCancellationRequested(); worker?.Dispose(); worker = null;
+        token.ThrowIfCancellationRequested(); var previous = worker; worker = null; previous?.Dispose();
         worker = new LUTPreviewWorker(look, photo); return (worker.Render(null), worker.DisplayInput);
     }, token);
     internal Task<LUTPreviewFrame> Render(LUTCompatibility draft, CancellationToken token) => queue.StartNew(() => {
@@ -145,6 +152,6 @@ internal sealed class LUTPreviewService : IDisposable
     public void Dispose()
     {
         if (closed) return; closed = true;
-        _ = queue.StartNew(() => { worker?.Dispose(); worker = null; }).ContinueWith(_ => scheduler.Complete(), TaskScheduler.Default);
+        _ = queue.StartNew(() => { var previous = worker; worker = null; previous?.Dispose(); }).ContinueWith(_ => scheduler.Complete(), TaskScheduler.Default);
     }
 }

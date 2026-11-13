@@ -185,6 +185,7 @@ static class Program
                 var masked=engine.RenderPreview(unicodeRaw,settings,unicodeLut,800,false,true,true);
                 Check(masked.Neutral.Clipping==null && masked.Result.Clipping!=null && Pixels(masked.Result.Clipping).SequenceEqual(Pixels(viewport.Clipping!)),"Clipping applies only to the edited result, never the original");
                 PreviewChecks.Run(engine,unicodeRaw,unicodeLut,Check);
+                LUTPreviewCleanupChecks.Run(output,unicodeRaw,unicodeLut,Check);
                 settings.ResolveWhiteBalance(rendered.WhiteBalance);
                 foreach(var parameter in new[]{Parameter.Exposure,Parameter.Contrast,Parameter.Highlights,Parameter.Shadows,Parameter.ToneCurve,Parameter.Saturation,Parameter.Sharpening})
                 {
