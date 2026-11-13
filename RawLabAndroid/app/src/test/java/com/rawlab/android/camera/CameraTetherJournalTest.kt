@@ -75,12 +75,14 @@ class CameraTetherJournalTest {
     }
 
     @Test fun malformedOrUnknownVersionIsNotSilentlyDiscarded() = withJournal { root, journal ->
+        val kept = journal.create("camera", "sony-test", emptyList(), CameraImportDestination())
         val run = journal.create("camera", "sony-test", emptyList(), CameraImportDestination())
         val file = File(root, "${run.id}.json")
-        file.writeText("{broken")
-        assertThrows(IOException::class.java) { journal.load() }
-        file.writeText("{\"version\":99}")
-        assertThrows(IOException::class.java) { journal.load() }
+        for (damaged in listOf("{broken", "{\"version\":99}")) {
+            file.writeText(damaged)
+            assertEquals(kept.id, CameraTetherJournal(root).load().single().id)
+            assertEquals(damaged, file.readText())
+        }
     }
 
     @Test fun missingBaselineOrReusedHandleCannotTurnAChangedCardIntoNewPhotos() = withJournal { root, journal ->

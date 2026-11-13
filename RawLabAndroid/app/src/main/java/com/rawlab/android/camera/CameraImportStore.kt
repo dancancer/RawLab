@@ -110,7 +110,8 @@ internal class CameraImportStore(private val directory: File, private val tempor
             require(plan.jpeg.isValid)
             require(photos.all(plan.format::includes))
         }
-        readJobs().firstOrNull { it.id == id }?.let { existing ->
+        // 只核对本任务的日志：读不出时报错而不是覆盖，也不受其它日志影响。
+        File(directory, "$id.json").takeIf { it.isFile }?.let(::readJob)?.let { existing ->
             if (existing.cameraId != cameraId || existing.hardwareIdentity != hardwareIdentity ||
                 existing.destination != destination || existing.incremental != incremental ||
                 existing.listingOwner != listingOwner || existing.items.size != photos.size ||
@@ -127,11 +128,20 @@ internal class CameraImportStore(private val directory: File, private val tempor
     /** 仅在初始化或已停下的队列中调用，调用方持有队列锁。 */
     fun load(): List<CameraImportJob> {
         cleanupLoadArtifacts()
-        val jobs = readJobs().map(::migrateLegacyBoundary)
-        val referenced = jobs.flatMap { it.items.flatMap { item -> listOfNotNull(item.prepared?.uri, item.saved?.uri) } }.toSet()
-        media.cleanupOrphans(referenced)
+        val unreadable = mutableSetOf<String>()
+        val jobs = readJobs(unreadable).map(::migrateLegacyBoundary)
+        unreadableJobIds = unreadable
+        // 读不出的日志可能引用待发布媒体，存在时不能据此判定孤儿。
+        if (unreadable.isEmpty()) {
+            val referenced = jobs.flatMap { it.items.flatMap { item -> listOfNotNull(item.prepared?.uri, item.saved?.uri) } }.toSet()
+            media.cleanupOrphans(referenced)
+        }
         return jobs.map(::recoverJob)
     }
+
+    /** 最近一次 load 中无法读取的任务日志；文件原样保留，不参与恢复和孤儿清理。 */
+    @Volatile var unreadableJobIds: Set<String> = emptySet()
+        private set
 
     /** Revalidates one resumable job without recovering unrelated jobs or cleaning their media. */
     fun recover(id: String): CameraImportJob? {
@@ -294,9 +304,13 @@ internal class CameraImportStore(private val directory: File, private val tempor
         } finally { part.delete() }
     }
 
-    private fun readJobs(): List<CameraImportJob> = directory.listFiles().orEmpty()
+    /** 逐个解析；单个日志读不出时跳过并记下，不影响其它任务。 */
+    private fun readJobs(unreadable: MutableSet<String>? = null): List<CameraImportJob> = directory.listFiles().orEmpty()
         .filter { it.isFile && it.extension == "json" && validId(it.nameWithoutExtension) }
-        .map(::readJob).sortedByDescending { it.createdAt }
+        .mapNotNull { file ->
+            try { readJob(file) }
+            catch (_: Exception) { unreadable?.add(file.nameWithoutExtension); null }
+        }.sortedByDescending { it.createdAt }
 
     private fun readJob(file: File): CameraImportJob {
         if (file.length() > 8L * 1024 * 1024) throw IOException("Camera journal exceeds budget")
