@@ -183,6 +183,20 @@ final class SonyCameraSession {
         try readOriginal(asset, progress: progress) { _ in }
     }
 
+    func readMobileRange(_ asset: CameraRemoteAsset, offset: UInt64, length: Int) throws -> Data {
+        try checkRunning()
+        guard family == .mobile, asset.owner == id, asset.snapshot.transferable,
+              length > 0, UInt64(length) <= asset.snapshot.size, offset <= asset.snapshot.size - UInt64(length) else {
+            throw CameraProtocolError.unsupported("Mobile range read is unavailable")
+        }
+        let bytes = try client.operation(0x923d, parameters: [
+            asset.snapshot.content, 1 << 24 | asset.snapshot.file,
+            UInt32(truncatingIfNeeded: offset), UInt32(offset >> 32), UInt32(length)
+        ], requiresData: true, limit: length)
+        guard bytes.count == length else { throw CameraProtocolError.invalid("Original chunk size changed") }
+        return bytes
+    }
+
     private func readOriginal(_ asset: CameraRemoteAsset, progress: (UInt64) -> Void,
                               consume: (Data) throws -> Void) throws -> String {
         try checkRunning()

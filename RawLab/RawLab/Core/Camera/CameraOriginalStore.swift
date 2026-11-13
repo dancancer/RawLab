@@ -245,6 +245,12 @@ final class CameraOriginalStore {
     }
     private func partialURL(_ item: UUID) -> URL { partialDirectory.appendingPathComponent(item.uuidString.lowercased() + ".partial") }
     private func adjustedURL(_ item: UUID) -> URL { partialURL(item).deletingPathExtension().appendingPathExtension("jpeg-partial") }
+    static let sampleSegmentBytes = 64 << 10
+    static func sampleOffsets(forSize size: UInt64) -> [UInt64]? {
+        let chunk = UInt64(sampleSegmentBytes)
+        guard size >= chunk * 3 else { return nil }
+        return [0, (size - chunk) / 2, size - chunk]
+    }
     static func hash(_ url: URL) throws -> (size: UInt64, digest: String) {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
@@ -383,6 +389,78 @@ final class CameraOriginalStore {
             }
             if staged != partial { try? FileManager.default.removeItem(at: partial) }
             return state.originals.last!
+        }
+    }
+    func samplingCandidate(job: UUID, item: UUID) -> (source: CameraStoredOriginal, url: URL)? {
+        locked {
+            guard let (j, i) = try? indices(job: job, item: item) else { return nil }
+            let currentJob = state.jobs[j], transfer = currentJob.items[i]
+            guard transfer.phase != .saved, transfer.phase != .prepared else { return nil }
+            if currentJob.incremental?.jpeg.adjust == true && transfer.asset.kind == "JPEG" { return nil }
+            let target = transfer.asset
+            guard Self.sampleOffsets(forSize: target.size) != nil, let captureDate = target.captureDate else { return nil }
+            var matchedIDs = Set<UUID>()
+            for pastJob in state.jobs {
+                for pastItem in pastJob.items where pastItem.phase == .saved {
+                    guard let sourceID = pastItem.sourceID,
+                          pastItem.asset.kind == target.kind,
+                          pastItem.asset.name == target.name,
+                          pastItem.asset.size == target.size,
+                          pastItem.asset.captureDate == captureDate else { continue }
+                    matchedIDs.insert(sourceID)
+                }
+            }
+            guard !matchedIDs.isEmpty else { return nil }
+            var validSources: [CameraStoredOriginal] = []
+            for index in state.originals.indices where matchedIDs.contains(state.originals[index].id) {
+                let source = state.originals[index]
+                guard source.jpegSource == nil, source.availability == .available, source.size == target.size,
+                      transfer.sourceDigest == nil || transfer.sourceDigest == source.digest else { continue }
+                let status = availability(source)
+                if status != source.availability {
+                    try? change { state.originals[index].availability = status }
+                }
+                if status == .available {
+                    validSources.append(state.originals[index])
+                }
+            }
+            guard Set(validSources.map(\.digest)).count == 1, let chosen = validSources.last else { return nil }
+            return (chosen, originalURL(chosen))
+        }
+    }
+    func reuseSampledOriginal(job: UUID, item: UUID, sourceID: UUID) throws -> CameraStoredOriginal {
+        try locked {
+            let (j, i) = try indices(job: job, item: item)
+            let transfer = state.jobs[j].items[i]
+            guard transfer.phase != .saved, transfer.phase != .prepared else {
+                throw CameraProtocolError.invalid("Published original cannot be reused again")
+            }
+            guard !(state.jobs[j].incremental?.jpeg.adjust == true && transfer.asset.kind == "JPEG"),
+                  let sourceIndex = state.originals.firstIndex(where: { $0.id == sourceID }) else {
+                throw CameraProtocolError.invalid("Sampled original is unavailable")
+            }
+            let existing = state.originals[sourceIndex]
+            guard existing.jpegSource == nil, existing.availability == .available,
+                  existing.size == transfer.asset.size,
+                  transfer.sourceDigest == nil || transfer.sourceDigest == existing.digest else {
+                throw CameraProtocolError.invalid("Sampled original metadata mismatch")
+            }
+            let status = availability(existing)
+            if status != existing.availability {
+                try change { state.originals[sourceIndex].availability = status }
+            }
+            guard status == .available else {
+                throw CameraProtocolError.invalid("Sampled original is missing or changed")
+            }
+            try change {
+                state.jobs[j].items[i].sourceDigest = existing.digest
+                state.jobs[j].items[i].sourceID = existing.id
+                state.jobs[j].items[i].digest = existing.digest
+                state.jobs[j].items[i].failure = nil
+                state.jobs[j].items[i].phase = .saved
+                state.jobs[j].items[i].reused = true
+            }
+            return state.originals[sourceIndex]
         }
     }
     func interrupt(job: UUID, item: UUID, error: String?, cancelled: Bool) throws {
