@@ -54,7 +54,7 @@
 ## Mac 手动全套件基线盘点（2026-11-14，mac-suite-inventory，证据 /tmp/rawlab-mac-suite-inv/）
 108 脚本：88 绿 / 18 红 / 2 SKIP（source 库）。models-only CI 仅覆盖约 20 个，盲区 88。已知对照 agent-recipe-render（#300 在修）、mac-geometry-draft 计入 18。
 - **A 簇（已派 `fix-mac-srclist`）**：10 脚本同根因=硬编码 Swift 源列表缺 `HDRPresentation/HDRDisplay/HDRCameraProfileAssetStore`（ab9be520、6f940269 引入）：compact-controls-presentation、geometry-render、geometry-viewport、mac-perspective-integration、photo-effects-presentation、progressive-render、batch-import-presentation、single-preview-interaction、mac-straighten-preview、update-ui；含共享列表收敛防再犯。
-- **B 簇（已派 `diag-mac-b-reds`）**：master-recipe-render（v4 recipe 矩阵 throw，疑 cccf70dc）、mac-lens-draft-presentation（@2x backing 尺寸）、color-grading-input-ui（AX wheel missing）。
+- **B 簇（诊断完毕 11-14）**：B1 master-recipe-render=产品契约已定（basic-controls-v3.md L46-47 Force→unsupported，00aa7e20 漏更测试期望）→ 按 A 案派 `fix-master-recipe-exp` 对齐；B2 mac-lens-draft-presentation=backing scale 测试腐化，已修 **PR #302**；B3 color-grading-input-ui=本 harness 无桌面 AX（AXIsProcessTrusted=false、树自指导致），待桌面复核 wheel 动作，建议并入 CI 阶段2 ② `RAWLAB_REQUIRE_AX`（与 hdr-rendition-ui 绿≠真跑同族）。
 - **C 类（台账挂行，待桌面会话复核 3 条）**：edit-model 链跑 mac-viewing-model 缺「CLT 缺 SwiftUIMacros→强制 26.5 SDK」护栏；ai-batch-native 沙箱 `sandbox_extension_issue` EPERM 缓存未隔离；system-menu-language 德语菜单读出为空（需桌面+AX 授权）。
 - **D 类（素材要求记档 5 条）**：lens-render/export-metadata 默认 DSC06251.ARW 未入库（.cache/shared 可补）；hdr-sdr-preview/hdr-lut-preview 需 `RAWLAB_TEST_HDR` gain-map；fuji-compatibility 需 RAW+彩色 CUBE（ACROS/identity 走 missingColor 属预期）。
 - 另录：hdr-rendition-ui E.2-L1 无 AX 授权静默 return（绿≠真跑，与 Q14 axTrusted/REQUIRE_AX 挂行同族）。
