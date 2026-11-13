@@ -231,6 +231,7 @@ class EditorViewModel @JvmOverloads constructor(
         }
     private var pendingResetMigrationClear: Pair<Long, EditSettings>? = null
     private var pendingHDRLookImport: Triple<Long, Long, Long>? = null
+    private var hdrLookJob: Job? = null
     private var pendingHDRCameraProfileImport: Pair<Long, Long>? = null
     @Volatile private var editRevision = 0L
         set(value) { if (field != value) cancelProcessingMigration(); field = value }
@@ -759,22 +760,31 @@ class EditorViewModel @JvmOverloads constructor(
         val photo = current.photo ?: return
         if (!current.controlsEnabled || !current.edits.isHDREditing || (current.draft != null && current.draft.group != AdjustmentGroup.LOOK)) return
         val expected = Triple(sourceRevision, editRevision, draftRevision)
-        mutable.value = current.copy(operation = Operation.IMPORT_LOOK, error = null)
-        viewModelScope.launch {
-            val imported = try {
-                Result.success(kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { prepare(photo,current.visibleEdits) })
-            }
-                catch (error: kotlinx.coroutines.CancellationException) { throw error }
-                catch (error: Exception) { Result.failure(error) }
-            if (disposed || expected != Triple(sourceRevision, editRevision, draftRevision) || mutable.value.operation != Operation.IMPORT_LOOK) return@launch
-            val ready = mutable.value.copy(operation = Operation.NONE)
-            mutable.value = ready
-            imported.onSuccess { settings ->
-                edit(settings)
-            }.onFailure {
-                mutable.value = ready.copy(error = text(R.string.collection_look_unavailable))
+        mutable.value = current.copy(operation = Operation.IMPORT_LOOK, error = null, importingHDRLook = true)
+        val job = viewModelScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+            val self = coroutineContext[Job]
+            runHDRLookImport({ withContext(Dispatchers.IO) { prepare(photo, current.visibleEdits) } },
+                { expected == Triple(sourceRevision, editRevision, draftRevision) && mutable.value.operation == Operation.IMPORT_LOOK }) { imported ->
+                // 返回键已放弃本次导入时，迟到的结果不再改动界面。
+                if (disposed || hdrLookJob !== self) return@runHDRLookImport
+                hdrLookJob = null
+                mutable.value = finishedHDRLook(imported)
+                imported.onSuccess { settings -> edit(settings) }
             }
         }
+        hdrLookJob = job
+        job.start()
+    }
+
+    private fun finishedHDRLook(outcome: Result<*>) = EditorStateReducer.hdrLookImportFinished(mutable.value, outcome,
+        text(R.string.message_cancelled), text(R.string.collection_look_unavailable))
+
+    fun cancelHDRLookImport() {
+        val job = hdrLookJob ?: return
+        hdrLookJob = null
+        job.cancel()
+        // 后台写入无法中断，已写出的外观文件不会被应用；明确提示取消而不是静默结束。
+        mutable.value = finishedHDRLook(Result.failure<Unit>(kotlinx.coroutines.CancellationException()))
     }
 
     fun dismissLookImportReport() { mutable.value = mutable.value.copy(lookImportReport = null) }

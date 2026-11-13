@@ -15,6 +15,8 @@ import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.looks.DcpImportChoices
 import com.rawlab.android.looks.LUTCompatibility
 import android.net.Uri
+import com.rawlab.android.settings.AdjustmentOperationExpiredException
+import kotlinx.coroutines.CancellationException
 
 sealed interface PendingLookImport {
     val uri: Uri
@@ -73,6 +75,7 @@ data class EditorState(
     val message: String? = null,
     val lookImportReport: String? = null,
     val importingHDRCameraProfile: Boolean = false,
+    val importingHDRLook: Boolean = false,
     val hdrCameraDraft: HDRCameraPanelDraft? = null,
     val pendingLookImports: List<PendingLookImport> = emptyList(),
     val lookImportPreparing: Boolean = false,
@@ -150,6 +153,15 @@ internal object EditorStateReducer {
             error = null,
         )
         return EditorMutation(state, edits.takeIf { rerender })
+    }
+
+    // HDR 外观导入结束必然交还 operation；过期或取消明确提示，读取失败报错，成功由调用方继续提交编辑。
+    fun hdrLookImportFinished(current: EditorState, outcome: Result<*>, cancelled: String, unavailable: String): EditorState {
+        val ready = current.copy(importingHDRLook = false,
+            operation = if (current.operation == Operation.IMPORT_LOOK) Operation.NONE else current.operation)
+        val failure = outcome.exceptionOrNull() ?: return ready
+        return if (failure is AdjustmentOperationExpiredException || failure is CancellationException) ready.copy(message = cancelled)
+        else ready.copy(error = unavailable)
     }
 }
 

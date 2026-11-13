@@ -103,6 +103,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onImportLook: () -> Unit = {}, onRenameLook: (String, String) -> Unit = { _, _ -> },
     onImportHDRLook: () -> Unit = {},
     onApplyHDRSilver: (Boolean) -> Unit = {},
+    onCancelHDRLookImport: () -> Unit = {},
     onDeleteLook: (String) -> Unit = {}, onLookImportReportDismiss: () -> Unit = {},
     onAbout: () -> Unit = {}, updateVersion: String? = null,
     onPreviewSizeChange: (Int) -> Unit = {},
@@ -248,6 +249,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     LaunchedEffect(state.draft?.group) { state.draft?.let { tool = it.group.tool; toolOpen = true } }
     BackHandler(enabled = toolOpen) { leave { toolOpen = false } }
     BackHandler(enabled = state.operation == Operation.EXPORT, onBack = onCancelExport)
+    BackHandler(enabled = state.importingHDRLook, onBack = onCancelHDRLookImport)
     if (pendingLeave != null) AlertDialog(onDismissRequest = { cancelLeave() },
         title = { Text(stringResource(R.string.adjustment_leave)) },
         confirmButton = { TextButton(onClick = { applyAndLeave() },
