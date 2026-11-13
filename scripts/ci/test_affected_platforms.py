@@ -118,6 +118,26 @@ class SelectionTests(unittest.TestCase):
                 self.assertEqual(external["checks"], "models")
                 self.assertEqual(internal["checks"], "full")
 
+    def test_fork_pull_requests_never_select_a_self_hosted_platform(self):
+        """A fork cannot run on the self-hosted macOS and iOS runners, so selecting them makes the aggregate result red."""
+        files = {"HEAD^1": ["Shared/AdjustmentTransfer.swift"]}
+        internal, _, _, _ = selection.select("pull_request", pull(), "s", files.__getitem__, unavailable)
+        external, cold, _, reason = selection.select("pull_request", pull(external=True), "s", files.__getitem__, unavailable)
+        self.assertEqual(internal, {"macos", "ios", "android", "windows"})
+        self.assertEqual(external, {"android", "windows"})
+        self.assertFalse(cold)
+        self.assertIn("fork pull request", reason)
+
+    def test_fork_pull_request_leaves_a_consistent_verify_result(self):
+        files = {"HEAD^1": ["Shared/AdjustmentTransfer.swift"]}
+        platforms, _, _, _ = selection.select("pull_request", pull(external=True), "s", files.__getitem__, unavailable)
+        # 与真实 CI 一致：能跑的只有非自托管平台，其余作业会被跳过。
+        runnable = platforms & {"android", "windows"}
+        results = {platform: ("success" if platform in runnable else "skipped")
+                   for platform in selection.PLATFORMS}
+        needs = VerifyTests().needs(platforms, results)
+        self.assertEqual(selection.verify(needs), [])
+
     def test_pushes_compare_with_the_last_successful_push_run(self):
         seen = []
         def files(base):
