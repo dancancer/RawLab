@@ -68,6 +68,11 @@ import Foundation
         check(base != MacNeutralReferenceKey(source: MacReferenceSource(file, raster: true), settings: settings, edge: 800), "input kind participates in reference identity")
         try Data([1,2]).write(to: file)
         check(identity != MacReferenceSource(file, raster: false), "same path rewritten source invalidates neutral identity")
+        // Q8 cap derivation: two worst-case (square) reference frames with masks at the cap
+        // occupy half the 512 MB exact-preview budget (RGBA8 + 32-bit mask = 8 bytes/pixel/frame).
+        check(MacReferenceFramePolicy.longEdgeCap == 4096 &&
+              MacReferenceFramePolicy.longEdgeCap * MacReferenceFramePolicy.longEdgeCap * 16 == 512 * 1024 * 1024 / 2,
+              "the reference long-edge cap bounds two worst-case frames at half the exact-preview budget")
         print("PASS: \(count) Mac viewing checks")
     }
 }

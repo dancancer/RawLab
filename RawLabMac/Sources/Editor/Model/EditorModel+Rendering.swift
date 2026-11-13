@@ -138,17 +138,21 @@ extension EditorModel {
                     DispatchQueue.main.async { self.finish(request,neutral:neutral,result:result,failure:nil) }
                     return
                 }
-                // nil edge explicitly requests the existing immutable full-native baseline.
+                // nil edge requests the immutable baseline; Q8 caps its long edge (never enlarges).
                 let originalKey = MacNeutralReferenceKey(source: work.source, settings: work.settings.neutralSettings, edge: nil)
                 if self.originalCache?.key != originalKey || self.originalCache?.frame.histogram.count != 3 {
                     self.originalCache = nil
                     self.geometryReferenceCache = nil
-                    if let original = try self.engine!.render(work.file, settings: work.settings.neutralSettings, lut: nil, edge: nil) {
+                    if let original = try self.engine!.render(work.file, settings: work.settings.neutralSettings, lut: nil, edge: nil,
+                                                              referenceLongEdge: MacReferenceFramePolicy.longEdgeCap) {
                         self.originalCache = (originalKey, original)
                     }
                 }
                 let neutral: RenderedImage?
-                let key = MacNeutralReferenceKey(source: work.source, settings: work.settings, edge: work.edge)
+                // Q8：SDR 参考帧是与面板尺寸无关的固定封顶基准（edge: nil + 长边上限），
+                // 缓存键必须同样用 edge: nil——渲染、键与 canServe 判定三者对齐；
+                // 否则面板尺寸每变一次都会重渲染同一张封顶基准并清空核内 RAW 缓存。
+                let key = MacNeutralReferenceKey(source: work.source, settings: work.settings, edge: nil)
                 if work.editingGeometry || key.usesOriginal {
                     neutral = self.originalCache?.frame
                 } else if let cached = self.geometryReferenceCache, cached.frame.histogram.count == 3,
@@ -157,7 +161,8 @@ extension EditorModel {
                     self.geometryReferenceCache = (key, cached.frame)
                 } else {
                     neutral = try self.engine!.render(work.file, settings: work.settings.neutralGeometrySettings,
-                                                      lut: nil, edge: nil)
+                                                      lut: nil, edge: nil,
+                                                      referenceLongEdge: MacReferenceFramePolicy.longEdgeCap)
                     if let neutral { self.geometryReferenceCache = (key, neutral) }
                 }
                 let result = try self.engine!.render(work.file, settings: work.settings, lut: work.lut,
@@ -300,17 +305,26 @@ struct MacExactPreviewCache {
         guard work.pass == .exact, scope != nil, work.previewScope == scope,
               (result.hdr != nil || result.histogram.count == 3),
               (neutral.hdr != nil || neutral.histogram.count == 3) else { return }
-        // SDR 对照帧由编辑器原有的全尺寸参考缓存持有。
-        let bytes = Self.bytes(result) + (neutral.hdr == nil ? 0 : Self.bytes(neutral))
-        guard bytes <= Self.budget else { return }
+        // Q8：SDR 对照帧已按长边上限封顶，按封顶后的实际尺寸计入预算；条目本身只记
+        // 结果帧字节，共享的基准帧由 totalBytes 按图像对象身份去重后计费一次，
+        // 避免同一张基准在多个档位条目里被乘算（Should#3）。
         entries.removeAll { $0.edge == work.edge }
-        while entries.count >= 3 || entries.reduce(bytes, { $0 + $1.bytes }) > Self.budget {
-            entries.removeFirst()
-        }
-        entries.append((work.edge, neutral, result, bytes))
+        entries.append((work.edge, neutral, result, Self.bytes(result)))
+        while entries.count > 3 || totalBytes > Self.budget { entries.removeFirst() }
     }
 
-    private static func bytes(_ frame: RenderedImage) -> Int {
+    /// 预算核算视角：结果帧合计 + 每张不同的共享基准帧计费一次（含封顶后的参考帧尺寸）。
+    var totalBytes: Int {
+        var countedNeutrals = Set<ObjectIdentifier>()
+        return entries.reduce(0) { $0 + $1.bytes }
+            + entries.reduce(into: 0) { total, entry in
+                if countedNeutrals.insert(ObjectIdentifier(entry.neutral.image)).inserted {
+                    total += Self.bytes(entry.neutral)
+                }
+            }
+    }
+
+    static func bytes(_ frame: RenderedImage) -> Int {
         let mask = frame.clipping.map { $0.bytesPerRow * $0.height } ?? 0
         return frame.image.bytesPerRow * frame.image.height + mask + (frame.hdr?.image.byteCount ?? 0)
     }

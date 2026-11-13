@@ -1,5 +1,18 @@
 import Foundation
 
+/// SDR 中性参考帧的长边策略（整改决策 Q8：限制长边并计入预算，关闭 M3/D-04）。
+///
+/// 取值推导（与既有预算体系一致）：`MacExactPreviewCache` 的预算是 512 MiB。
+/// 编辑器最多同时持有两张整幅中性参考帧（原始基准 + 带几何基准），每帧是
+/// RGBA8 图像加同尺寸溢出蒙版 ≈ 8 字节/像素。取长边 4096 后，最坏情况（1:1
+/// 方形画幅）两帧合计 2 × 4096² × 8 B = 256 MiB，恰好等于既有预算的一半，
+/// 另一半留给至多 3 条精确预览缓存项。4096 也是本机已有的导出尺寸预设
+/// （`ExportSizePicker`），足以覆盖 5K 面板上的 1:1 对照缩放。
+/// 渲染走 SIZE_LIMIT_LONG_EDGE（只降不放大），长边不超过上限的照片保持原生帧。
+enum MacReferenceFramePolicy {
+    static let longEdgeCap = 4096
+}
+
 struct MacReferenceSource: Equatable {
     let url: URL
     let modified: Date?
