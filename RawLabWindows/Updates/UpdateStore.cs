@@ -53,12 +53,8 @@ public sealed class UpdateStore(string directory)
         RequireFields(root.GetProperty("PendingUpdate"), "Format", "Phase", "Attempt", "Choice", "Progress", "Blockers");
         var value = JsonSerializer.Deserialize<UpdatePreferences>(data) ?? throw new InvalidDataException("Missing update state");
         if (value.Channel != "stable" || value.PendingUpdate == null || value.PendingUpdate.Format != 1) throw new InvalidDataException("Unsupported update state");
-        // Q13 回滚兼容：新版写入的未知枚举值（Phase/Choice/失败阶段）降级为 Idle，不锁编辑区；
-        // 已知取值的结构校验保持严格，安装证据由 RepairableState 的 BackupPath 门禁兜底。
-        if (!Enum.IsDefined(value.PendingUpdate.Phase) || !Enum.IsDefined(value.PendingUpdate.Choice) ||
-            value.PendingUpdate.Failure is {} unknownStage && !Enum.IsDefined(unknownStage.Stage))
-            value.PendingUpdate = new UpdateTaskState();
-        else if (!double.IsFinite(value.PendingUpdate.Progress) || value.PendingUpdate.Progress is < 0 or > 1 || value.PendingUpdate.Blockers == null)
+        // 结构完整性先于枚举知识校验：缺字段/越界/Failed 记录不完整属损坏，未知枚举不得掩盖。
+        if (!double.IsFinite(value.PendingUpdate.Progress) || value.PendingUpdate.Progress is < 0 or > 1 || value.PendingUpdate.Blockers == null)
             throw new InvalidDataException("Unsupported update state");
         // 失败阶段决定启动恢复门禁，缺失字段不能被默认值掩盖。
         if (value.PendingUpdate.Phase == UpdatePhase.Failed)
@@ -67,6 +63,19 @@ public sealed class UpdateStore(string directory)
             if (failed == null || failed.Stage is UpdatePhase.Idle or UpdatePhase.Available or UpdatePhase.Complete or UpdatePhase.Failed ||
                 string.IsNullOrEmpty(failed.Code) || failed.Detail == null)
                 throw new InvalidDataException("Incomplete update failure");
+        }
+        // Q13 回滚兼容：结构完整、仅含未知枚举（新版新 Phase/Choice/失败阶段）时降级为 Idle；
+        // 安装证据（安装阶段、备份、上一版本身份）在场时不得进入会释放 BackupPath 引用的降级分支，
+        // 保持存储门禁并由 RepairableState 的 BackupPath/Previous* 拒绝重建兜底，避免启动删备份。
+        if (!Enum.IsDefined(value.PendingUpdate.Phase) || !Enum.IsDefined(value.PendingUpdate.Choice) ||
+            value.PendingUpdate.Failure is {} unknownStage && !Enum.IsDefined(unknownStage.Stage))
+        {
+            var pending = value.PendingUpdate;
+            if (pending.Phase is UpdatePhase.Installing or UpdatePhase.PendingRestart ||
+                pending.Failure is { Stage: UpdatePhase.Installing or UpdatePhase.PendingRestart } ||
+                pending.BackupPath != null || pending.PreviousVersion != null || pending.PreviousBuild != null)
+                throw new InvalidDataException("Unsupported update state");
+            value.PendingUpdate = new UpdateTaskState();
         }
         if (value.CheckFailure is { } checkFailure)
         {
@@ -128,7 +137,9 @@ public sealed class UpdateStore(string directory)
                     new[] { "Format", "Phase", "Attempt", "Choice", "Progress", "Blockers" }.All(name => known.TryGetProperty(name, out _))) {
                     try {
                         var decoded = known.Deserialize<UpdateTaskState>();
-                        knownNonInstallation = decoded != null && (decoded.Phase != UpdatePhase.Failed || decoded.Failure is {} detail &&
+                        // Q13：未知 Phase/失败阶段不可按「已知非安装」放行——备份或恢复证据在场时仍拒绝重建。
+                        knownNonInstallation = decoded != null && (Enum.IsDefined(decoded.Phase) && decoded.Phase != UpdatePhase.Failed ||
+                            decoded.Phase == UpdatePhase.Failed && decoded.Failure is {} detail && Enum.IsDefined(detail.Stage) &&
                             detail.Stage is not (UpdatePhase.Idle or UpdatePhase.Available or UpdatePhase.Complete or UpdatePhase.Failed) && !string.IsNullOrEmpty(detail.Code));
                     } catch (JsonException) { }
                 }
