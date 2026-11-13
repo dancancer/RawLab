@@ -15,6 +15,7 @@ internal static class UpdateStoreChecks
         StateRepair(check);
         FailedStateValidation(check);
         CheckFailureCompatibility(check);
+        RollbackCompatibility(check);
         var root = Path.Combine(Path.GetTempPath(), "rawlab-update-store-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
         try
         {
@@ -90,7 +91,13 @@ internal static class UpdateStoreChecks
             {
                 store.Save(new()); var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(store.StatePath))!;
                 json["PendingUpdate"]![field] = 99; File.WriteAllText(store.StatePath, json.ToJsonString());
-                check(Rejected(() => store.Load(false)) && Rejected(() => store.RepairableState()), "Future enum state cannot open editing or be reset: " + field);
+                UpdatePreferences? downgraded = null; try { downgraded = store.Load(false); } catch { }
+                check(downgraded != null && downgraded.PendingUpdate.Phase == UpdatePhase.Idle &&
+                    downgraded.PendingUpdate.Choice == UpdateInstallChoice.None && downgraded.PendingUpdate.Failure == null,
+                    "Future enum state opens editing as idle (Q13 rollback): " + field);
+                string? rebuildError = null; try { store.RepairableState(); } catch (InvalidDataException error) { rebuildError = error.Message; }
+                check(rebuildError != null && rebuildError.Contains("readable", StringComparison.Ordinal),
+                    "Unknown enum state reports readable instead of demanding a rebuild: " + field);
             }
             byte[] damaged = "{broken"u8.ToArray(); File.WriteAllBytes(store.StatePath, damaged);
             var snapshot = store.RepairableState(); var repaired = store.RepairState(snapshot); var receipt = repaired.StateRepairReceipt!;
@@ -165,6 +172,138 @@ internal static class UpdateStoreChecks
                 check(File.ReadAllText(store.StatePath) == damaged, "Rejected failure input is preserved: " + name);
             }
             check(accepted.Count == 0, "Malformed failed states must be rejected; accepted: " + string.Join(", ", accepted));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    private static void RollbackCompatibility(Action<bool, string> check)
+    {
+        // Q13 回滚兼容：新版写入旧版读不懂的枚举值时降级为 Idle，不锁编辑区；
+        // 真正的损坏与安装证据仍走显式存储修复。
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-rollback-compat-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new UpdateStore(root); Directory.CreateDirectory(store.DirectoryPath);
+            var lastCheck = DateTimeOffset.FromUnixTimeSeconds(1800000000);
+            var release = new UpdateDescriptor("0.9.1", "19", "windows", "x64", "stable", "https://example.invalid/update.nupkg", 12, null, "Notes");
+            UpdatePreferences Prepared()
+            {
+                var prefs = new UpdatePreferences { AutomaticCheck = true, LastCheck = lastCheck, SkippedVersion = "0.9.0" };
+                var token = prefs.PendingUpdate.BeginCheck();
+                prefs.PendingUpdate.Found(release, token);
+                var download = prefs.PendingUpdate.BeginDownload()!.Value;
+                prefs.PendingUpdate.Preparing(download); prefs.PendingUpdate.Verified(download);
+                return prefs;
+            }
+            void Patch(Action<System.Text.Json.Nodes.JsonObject> edit)
+            {
+                var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(store.StatePath))!.AsObject();
+                edit(json); File.WriteAllText(store.StatePath, json.ToJsonString());
+            }
+            UpdatePreferences? Downgrade() { try { return store.Load(false); } catch { return null; } }
+
+            store.Save(Prepared());
+            Patch(json => json["PendingUpdate"]!["Phase"] = 99);
+            var onDisk = File.ReadAllBytes(store.StatePath);
+            var fromPhase = Downgrade();
+            check(fromPhase != null && fromPhase.PendingUpdate.Phase == UpdatePhase.Idle && fromPhase.PendingUpdate.Release == null &&
+                fromPhase.PendingUpdate.Attempt != Guid.Empty, "Future Phase downgrades to a fresh idle record");
+            check(fromPhase != null && fromPhase.AutomaticCheck && fromPhase.LastCheck == lastCheck && fromPhase.SkippedVersion == "0.9.0",
+                "Future Phase downgrade preserves preferences outside the pending update");
+            check(File.ReadAllBytes(store.StatePath).SequenceEqual(onDisk), "Future Phase downgrade never rewrites state during load");
+
+            store.Save(Prepared());
+            Patch(json => json["PendingUpdate"]!["Choice"] = 99);
+            var fromChoice = Downgrade();
+            check(fromChoice != null && fromChoice.PendingUpdate.Phase == UpdatePhase.Idle && fromChoice.PendingUpdate.Release == null,
+                "Future install choice downgrades to idle instead of locking the editor");
+
+            var failed = Prepared(); var downloadToken = failed.PendingUpdate.Attempt;
+            failed.PendingUpdate.Fail("network", "dropped", downloadToken);
+            store.Save(failed);
+            Patch(json => json["PendingUpdate"]!["Failure"]!["Stage"] = 99);
+            var fromStage = Downgrade();
+            check(fromStage != null && fromStage.PendingUpdate.Phase == UpdatePhase.Idle && fromStage.PendingUpdate.Failure == null,
+                "Future failure stage downgrades to idle instead of locking the editor");
+
+            store.Save(Prepared());
+            Patch(json => json["PendingUpdate"]!["Progress"] = 2.5);
+            var rejected = false; try { store.Load(false); } catch (InvalidDataException) { rejected = true; }
+            check(rejected, "Known enum values with out-of-range progress remain rejected");
+
+            store.Save(failed);
+            Patch(json => { json["PendingUpdate"]!["Failure"]!["Stage"] = 99; json["AutomaticCheck"] = "broken"; });
+            var bytes = File.ReadAllBytes(store.StatePath);
+            rejected = false; try { store.Load(false); } catch (JsonException) { rejected = true; }
+            check(rejected, "Future enum plus unrelated corruption still requires explicit repair");
+            byte[]? rebuild = null; try { rebuild = store.RepairableState(); } catch { }
+            check(rebuild != null && rebuild.SequenceEqual(bytes) && File.ReadAllBytes(store.StatePath).SequenceEqual(bytes),
+                "Future enum no longer refuses an otherwise-corrupt state rebuild");
+            var repaired = store.RepairState(store.RepairableState());
+            check(repaired.PendingUpdate.Phase == UpdatePhase.Idle && repaired.StateRepairReceipt != null && !repaired.AutomaticCheck,
+                "Explicit rebuild of a future-enum state still archives bytes and disables automatic updates");
+
+            var evidenceStore = new UpdateStore(Path.Combine(root, "evidence")); Directory.CreateDirectory(evidenceStore.DirectoryPath);
+            File.WriteAllBytes(evidenceStore.StatePath, bytes);
+            var json2 = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(evidenceStore.StatePath))!.AsObject();
+            json2["AutomaticCheck"] = true; json2["PendingUpdate"]!["BackupPath"] = "C:\\RawLab\\Backups\\pending";
+            File.WriteAllText(evidenceStore.StatePath, json2.ToJsonString());
+            string? rebuildReason = null; try { evidenceStore.RepairableState(); } catch (InvalidDataException error) { rebuildReason = error.Message; }
+            check(rebuildReason != null && rebuildReason.Contains("cannot be rebuilt", StringComparison.Ordinal),
+                "Installation evidence still refuses the rollback-compat rebuild");
+            rejected = false; try { evidenceStore.Load(false); } catch (InvalidDataException) { rejected = true; }
+            check(rejected, "Evidence combo keeps the storage gate instead of downgrading to idle");
+
+            // — Q13 组合：未知枚举与安装证据并存时不得进入「删备份」的降级分支 —
+            store.Save(Prepared());
+            Patch(json => { var pending = json["PendingUpdate"]!.AsObject();
+                pending["Phase"] = (int)UpdatePhase.Installing; pending["Choice"] = 99; pending["BackupPath"] = "pending-backup"; pending["PreviousVersion"] = "0.8.2"; });
+            var comboBytes = File.ReadAllBytes(store.StatePath);
+            rejected = false; try { store.Load(false); } catch (InvalidDataException) { rejected = true; }
+            check(rejected && File.ReadAllBytes(store.StatePath).SequenceEqual(comboBytes),
+                "Known Installing with a future choice keeps the storage gate instead of downgrading");
+
+            store.Save(Prepared());
+            Patch(json => { var pending = json["PendingUpdate"]!.AsObject(); pending["Phase"] = 99; pending["PreviousBuild"] = "19"; });
+            rejected = false; try { store.Load(false); } catch (InvalidDataException) { rejected = true; }
+            check(rejected, "Future phase with previous build identity keeps the storage gate");
+
+            store.Save(failed);
+            Patch(json => { var pending = json["PendingUpdate"]!.AsObject(); pending["Choice"] = 99; pending["Failure"]!["Stage"] = (int)UpdatePhase.Installing; });
+            rejected = false; try { store.Load(false); } catch (InvalidDataException) { rejected = true; }
+            check(rejected, "Future choice over a Failed(Installing) record keeps the recovery gate");
+
+            // — 结构完整性先于降级判定：未知枚举不得掩盖损坏（评审 Finding 2） —
+            store.Save(Prepared());
+            Patch(json => { json["PendingUpdate"]!["Phase"] = 99; json["PendingUpdate"]!["Progress"] = 2.5; });
+            rejected = false; try { store.Load(false); } catch (InvalidDataException) { rejected = true; }
+            check(rejected, "Future enum with out-of-range progress still routes to explicit repair");
+
+            store.Save(Prepared());
+            Patch(json => { json["PendingUpdate"]!["Phase"] = 99; json["PendingUpdate"]!["Blockers"] = null; });
+            rejected = false; try { store.Load(false); } catch (InvalidDataException) { rejected = true; }
+            check(rejected, "Future enum with null blockers still routes to explicit repair");
+
+            store.Save(failed);
+            Patch(json => { var pending = json["PendingUpdate"]!.AsObject(); pending["Choice"] = 99; pending.Remove("Failure"); });
+            var incomplete = ""; try { store.Load(false); } catch (InvalidDataException error) { incomplete = error.Message; }
+            check(incomplete.Contains("Incomplete update failure", StringComparison.Ordinal),
+                "Failed phase with a missing failure record is not masked by a future choice downgrade");
+
+            // — 未知 Phase/Stage 不得按「已知非安装」放行孤儿备份（评审 Finding 3） —
+            foreach (var slot in new[] { "Phase", "FailureStage" })
+            {
+                var gate = new UpdateStore(Path.Combine(root, "gate-" + slot)); Directory.CreateDirectory(gate.DirectoryPath);
+                var orphan = Path.Combine(gate.DirectoryPath, "Backups", Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(orphan); File.WriteAllText(Path.Combine(orphan, "part.json"), "orphan copy");
+                var node = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(failed))!.AsObject();
+                node["AutomaticCheck"] = "broken";
+                if (slot == "Phase") node["PendingUpdate"]!["Phase"] = 99; else node["PendingUpdate"]!["Failure"]!["Stage"] = 99;
+                File.WriteAllText(gate.StatePath, node.ToJsonString());
+                rejected = false;
+                try { gate.RepairableState(); } catch (InvalidDataException error) { rejected = error.Message.Contains("status is unknown", StringComparison.Ordinal); }
+                check(rejected, "Unknown " + slot + " is not treated as known-non-installation when backups exist");
+            }
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
