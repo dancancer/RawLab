@@ -83,3 +83,4 @@
 - 2026-11-14 · **WP-10 合入**：**#296** MERGED（二轮 approve 0 Blocking/0 Should/2 Nit，总 55 PR）。遗留（评审认可入台账）：真 Sony 机场景（超尺寸卡/首拍断连/坏日志 UI）待真机验证；UI 测试仅编译未执行。
 - 2026-11-14 · #295 二轮返工（head `875ec04c`）：NB1 四层（默认 ./run.sh+POST 前预检+失败 DELETE 清注册+killpg；演练抓出 DELETE 204 空 body 假报 bug）；NB2 cp 白名单 .path/.env；S1 schema 实钉键集合。真网演练至 listener Connected+DELETE 复原层（未夺真 job=队列空）。事故：CONFLICTING 期间 GitHub 吞 PR 事件，MERGEABLE 恢复即回流。三轮复审在途（review-mwfhx0iv）。
 - 2026-11-14 · **WP-01 闭环**：**#295** MERGED（r3 approve 0B/0S，总 56 PR）。JIT 派发器入库（opt-in，默认不启用；启用步骤+ci.md+plist 随包）。①审批策略仍待用户点确认（Web-only）。#301 request-changes（B1 Windows models 断言漏改+分支冲突；B2 iOS Sheet 提示被模态吞/快捷预设变阻塞弹窗；B3 Win/Android 同步与快捷预设入口漏提示+Windows 提示被异步刷新覆盖）→ q3q4 续修。
+- 2026-11-14 · #291 三轮 request-changes（B3 seam/断言恢复均过）：B1=修复②在取消/放弃/未改动应用/未改动收起四类路径残留草稿态 committedPreviewSettings（模拟器实证 base=1493×2240 竖幅草稿）+契约引入提交更正为 d2146d63（10-22）；B2=收起守卫未覆盖 .adjustment/.film/.recipe 工作区草稿（discard 后画布卡脏草稿、collapsedEditorTool 丢工具）。四轮在修。
