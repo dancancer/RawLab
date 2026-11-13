@@ -222,6 +222,7 @@ extension RawEditorViewModel {
                                 self.nativeImageSize=CGSize(width:edited.outputNativeWidth,height:edited.outputNativeHeight)
                                 self.hasImage=true; self.isBusy=false; self.sourceRevision=UUID()
                                 self.statusMessage = hdr.missingResourceMessage
+                                self.hdrResourceNotice = HDRResourceNotice(message: hdr.missingResourceMessage)
                                 self.recordImportedComparison(settings:restoredSettings)
                                 self.acceptImportedEditRecord(record,settings:restoredSettings)
                                 self.persistedEditorSettings=nil; self.failedDraftSource=nil

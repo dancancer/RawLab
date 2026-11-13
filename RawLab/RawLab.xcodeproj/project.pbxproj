@@ -46,6 +46,7 @@
 		E204508795BC931CB03A6448 /* AdjustmentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F8BB9466E8CAD133844D3A8 /* AdjustmentTransfer.swift */; };
 		D15100000000000000000001 /* AdjustmentTransferSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15100000000000000000011 /* AdjustmentTransferSummary.swift */; };
 		AB2300000000000000000001 /* EditorResetTransaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2300000000000000000002 /* EditorResetTransaction.swift */; };
+		AB2400000000000000000001 /* HDRResourceNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2400000000000000000002 /* HDRResourceNotice.swift */; };
 		AB2200000000000000000001 /* EditorAdjustmentRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2200000000000000000002 /* EditorAdjustmentRules.swift */; };
         A8CACE000000000000000001 /* CachedPhotoFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8CACE000000000000000002; };
         A8D1A6000000000000000001 /* ErrorDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8D1A6000000000000000002; };
@@ -303,6 +304,7 @@
 		4F8BB9466E8CAD133844D3A8 /* AdjustmentTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "AdjustmentTransfer.swift"; path = "../Shared/AdjustmentTransfer.swift"; sourceTree = SOURCE_ROOT; };
 		D15100000000000000000011 /* AdjustmentTransferSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "AdjustmentTransferSummary.swift"; path = "../Shared/AdjustmentTransferSummary.swift"; sourceTree = SOURCE_ROOT; };
 		AB2300000000000000000002 /* EditorResetTransaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorResetTransaction.swift; sourceTree = "<group>"; };
+		AB2400000000000000000002 /* HDRResourceNotice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDRResourceNotice.swift; sourceTree = "<group>"; };
 		AB2200000000000000000002 /* EditorAdjustmentRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorAdjustmentRules.swift; sourceTree = "<group>"; };
         A8CACE000000000000000002 /* CachedPhotoFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Persistence/CachedPhotoFile.swift"; sourceTree = SOURCE_ROOT; };
         A8D1A6000000000000000002 /* ErrorDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Persistence/ErrorDiagnostics.swift"; sourceTree = SOURCE_ROOT; };
@@ -834,6 +836,7 @@
 				3DEF2D58795BEAC7AE14A5A5 /* RawEditorViewModel+AdjustmentHistory.swift */,
 				8CA9FA3A0CD1617F35B39A4E /* RawEditorViewModel+ProcessingMigration.swift */,
 				AB2300000000000000000002 /* EditorResetTransaction.swift */,
+				AB2400000000000000000002 /* HDRResourceNotice.swift */,
 				5BBA826F203D41BCC1DF31C0,
 				893AFB855B8D4C46BF182760,
 				FEE59480F18546D2BD9AEB9E,
@@ -1429,6 +1432,7 @@
 				AB2200000000000000000001 /* EditorAdjustmentRules.swift in Sources */,
 				AABB20261110000000000001 /* EditorToolDraft.swift in Sources */,
 				AB2300000000000000000001 /* EditorResetTransaction.swift in Sources */,
+				AB2400000000000000000001 /* HDRResourceNotice.swift in Sources */,
 				2C5BFAB858B74B81AFAC16D0,
 				D883E2F5F205AC0EFBF9C319,
 				7A32C02543E94D8D8AD059DA,
