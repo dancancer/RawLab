@@ -116,7 +116,8 @@ struct UpdateTaskState: Codable, Equatable {
         if choice == .automaticOnQuit { cancel() }
     }
 
-    mutating func restoreAfterLaunch(version: String, build: String, trusted: Bool) {
+    mutating func restoreAfterLaunch(version: String, build: String, trusted: Bool,
+                                     failureCode: String = "interrupted", failureDetail: String = "") {
         attempt = UUID(); blockers = []
         if phase != .available && phase != .checking && !(phase == .failed && failure?.stage == .checking) { choice = .none }
         guard phase != .failed && phase != .complete && phase != .idle && phase != .available else { return }
@@ -125,7 +126,11 @@ struct UpdateTaskState: Codable, Equatable {
             phase = .complete; failure = nil
             backupPath = nil; previousVersion = nil; previousBuild = nil
         } else {
-            failure = UpdateFailure(stage: phase, code: "interrupted", detail: "")
+            let versionMatched = [.installing, .pendingRestart].contains(phase) &&
+                release?.version == version && release?.build == build
+            failure = UpdateFailure(stage: phase,
+                code: versionMatched && !failureCode.isEmpty ? failureCode : "interrupted",
+                detail: versionMatched ? failureDetail : "")
             phase = .failed
         }
     }
@@ -133,7 +138,7 @@ struct UpdateTaskState: Codable, Equatable {
     private func accepts(_ token: UUID, in phases: [UpdatePhase]) -> Bool { attempt == token && phases.contains(phase) }
 }
 
-struct UpdatePreferences: Codable {
+struct UpdatePreferences: Codable, Equatable {
     var automaticCheck = true
     var automaticInstall = false
     var skippedVersion: String?

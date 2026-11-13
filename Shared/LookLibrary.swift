@@ -224,8 +224,18 @@ final class LookLibrary {
     init(directory: URL = LookLibrary.defaultDirectory) throws {
         self.directory = directory
         guard manager.fileExists(atPath: registryURL.path) else { return }
+        looks = try Self.readLooks(at: registryURL)
+        do { try recoverRemovals() } catch { throw LookLibraryError.invalidRegistry }
+    }
+
+    var isReadable: Bool {
+        guard manager.fileExists(atPath: registryURL.path) else { return true }
+        return (try? Self.readLooks(at: registryURL)) != nil
+    }
+
+    private static func readLooks(at url: URL) throws -> [UserLook] {
         do {
-            let registry = try JSONDecoder().decode(Registry.self, from: Data(contentsOf: registryURL))
+            let registry = try JSONDecoder().decode(Registry.self, from: Data(contentsOf: url))
             guard registry.version == 1,
                   Set(registry.looks.map(\.id)).count == registry.looks.count,
                   registry.looks.allSatisfy({ look in
@@ -235,8 +245,7 @@ final class LookLibrary {
                        (look.format == "vlt" && look.formatVersion == 1) ||
                        (look.format == "rlook" && (1...2).contains(look.formatVersion)))
                   }) else { throw LookLibraryError.invalidRegistry }
-            looks = registry.looks
-            try recoverRemovals()
+            return registry.looks
         } catch {
             throw LookLibraryError.invalidRegistry
         }
