@@ -98,3 +98,4 @@
 - 2026-11-14 · 台账两小包排上：`fix-mcp-parity`（mcp-cli-parity 状态码漂移，先定哪侧为准）、`fix-compact-baseline`（compact-controls 快照/结构期望矩阵级重基线，无显示环境项不硬判）。
 - 2026-11-14 · mcp 漂移归因收口：**PR #305**（`93c6d355`）——判定测试期望未更（0ef4ed71 停留迁移前），证据链 2aa25048→3ad54e63→a6ffa929→契约文本完整；产品零改动，README 同步。碳审在途（review-mwfl8r5q）。
 - 2026-11-14 · **三连合入（总 62 PR）**：#291（WP-06，r5 approve，五轮收口——P1 步骤③解锁）、#300（profile_id 契约三方一致+三态 SKIP）、#305（mcp 期望对齐，合入前正文 CI 表述按评审勘正：mcp-cli-parity 属 native 手动阶段非自动 CI 复核）。回炉：#303（漏 ai-denoise.sh 第 11 脚本→契约测试升级全量枚举）、#304（B1 runtime 自适应选期望致假绿→无条件 METAL 断言；S1 neutral+LUT 覆盖恢复）。
+- 2026-11-14 · compact 重基线交卷：**PR #306**（`839376a6`）——editor-minimum 1→6（Light 组默认展开事实+标识符集合断言）、可达性升级为「低于折行 scrollToVisible 后全可见」（引设计条文）、limitations 按实际常量更新；11 项复核维持；与 #303 同文件重叠已注先后处理。碳审在途（review-mwflrtjt）。
