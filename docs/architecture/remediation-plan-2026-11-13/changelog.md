@@ -70,3 +70,5 @@
 - 2026-11-14 · 纠偏：Q3/Q4/Q6/Q8/Q9/Q10/Q12/Q13 并非待拍板——g 文件载明 2026-11-13 用户已全裁，系**实现单**。已派三路不冲突实现：Q9（`q9-agent-recipe`，AgentRecipe→tests+README）、Q13（`q13-update-fallback`，UpdateStore 未知枚举降级 Idle）、Q8（`q8-ref-frame-cap`，Mac 参考帧长边上限+入预算）。Q3/Q4 涉 Shared/specs 等 #286 合入后动；Q6 存储层单独排；Q10/Q12 留真机/后续批。
 - 2026-11-14 · Q13 交付：**PR #297**（`fa54147f`，仅 UpdateStore.cs+两测试）：未知枚举三槽位降级 Idle、结构校验不放宽、安装证据仍拒、#294 锁语义保持（updates-sdk 150 PASS）。碳审在途；Windows 真机未验注明。
 - 2026-11-14 · 五连 request-changes 全部回炉（各原班 resume）：#291（B1 测试侧反转断言×2、B3 文本搜索假绿）；#286（8 条 _ANCHORS 假命中/错指+color.grading.wheel 四端边界未绑，要求命中上下文断言）；#295（NB1 全新解压无 runsvc.sh+注册泄漏、NB2 缺 .path/.env）；#296（3B：PHOTO_LIMIT 可走 canResume+10000→10001 跨界用例等）；#297（critical：未知枚举+安装证据并存静默绕锁**并删空备份目录**；校验顺序+孤儿备份判定）。门禁从严模式持续有效。
+- 2026-11-14 · Q9 交付：**PR #298**（`e42bd08a`，AgentRecipe→tests 两端+README 双语，nm 符号=0）；碳审在途（review-mwff5245）。**附带挖出 development 既有红**：`agent-recipe-render` recipe-0——#259 控制字符校验拒 lenses.xml 换行拼接合成 id（基线 stash 复跑逐字节相同=既有）。派 `fix-lens-id-red` 归因修复。
+- 2026-11-14 · #297 返工定案（`2bf2386f`）：「结构→证据→降级」三层裁决，安装证据在场保持严格拒绝（备份目录不被删）、孤儿备份判定收紧、证据断言强化；160 PASS+变异红证+Windows 真 runner 绿。二轮复审在途（review-mwff5gos）。
