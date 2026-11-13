@@ -54,14 +54,23 @@ internal class CameraTetherJournal(private val directory: File) {
         validate(run)
         val current = checkedListing(observed)
         val listed = current.values.groupBy { it.resumeMetadataKey }
-        // 截断 run 只承诺最近窗口：窗口外的旧对象缺席不算来源变化。
+        // 会话只承诺最近 10000 个对象（trimRecentAssets 按 created/name 降序保留）：满窗口列表才允许更早的基线对象缺席；
+        // 候选存在但不匹配或有歧义一律拒绝，已登记批次的原件无论新旧都必须仍在卡上。窗口标记按新快照刷新。
+        val windowed = current.size >= MAX_PHOTOS
+        val floor = if (windowed) current.values.minWith(windowOrder) else null
+        val reserved = run.batches.drop(run.rebasedBatches).flatMap { it.photos }.map { it.key }.toSet()
         val matched = run.observedPhotos.mapNotNull { photo ->
-            listed[photo.resumeMetadataKey]?.singleOrNull { photo.matchesResumeMetadata(it) }?.key
-                ?: if (run.truncatedListing) null else throw CameraTetherSourceException()
+            val match = listed[photo.resumeMetadataKey]?.singleOrNull { photo.matchesResumeMetadata(it) }
+            when {
+                match != null -> match.key
+                listed.containsKey(photo.resumeMetadataKey) -> throw CameraTetherSourceException()
+                photo.key in reserved || floor == null || windowOrder.compare(photo, floor) >= 0 -> throw CameraTetherSourceException()
+                else -> null
+            }
         }
         if (matched.toSet().size != matched.size) throw CameraTetherSourceException()
         return run.copy(baseline = current.values.toList(), rebasedBatches = run.batches.size,
-            status = CameraTetherStatus.ACTIVE, shutterRequestedAt = null)
+            status = CameraTetherStatus.ACTIVE, shutterRequestedAt = null, truncatedListing = windowed)
     }
 
     /**
@@ -80,10 +89,13 @@ internal class CameraTetherJournal(private val directory: File) {
         if (!run.truncatedListing && knownByKey.size + current.keys.count { it !in knownByKey } > MAX_PHOTOS)
             throw CameraMediaSession.PhotoLimitExceededException("Too many camera objects")
         when (mode) {
-            is CameraTetherObservationMode.Full ->
-                // 截断 run 的基线是截窗：窗口外对象离开当前列表属预期，只有仍在列表中的对象需快照一致。
+            is CameraTetherObservationMode.Full -> {
+                // 满窗口列表按 trimRecentAssets 的下界放行更早的基线对象缺席；窗口未成形时缺席仍是来源变化（含快照不一致）。
+                val floor = if (current.size >= MAX_PHOTOS) current.values.minWith(windowOrder) else null
                 if (run.observedPhotos.any { photo -> current[photo.key]?.let { !photo.matchesSnapshot(it) } == true ||
-                        (current[photo.key] == null && !run.truncatedListing) }) throw CameraTetherSourceException()
+                        current[photo.key] == null && (floor == null || windowOrder.compare(photo, floor) >= 0) })
+                    throw CameraTetherSourceException()
+            }
             is CameraTetherObservationMode.Incremental -> {
                 if (mode.afterCursor != null && run.observedPhotos.any { it.created > mode.afterCursor && current[it.key]?.let(it::matchesSnapshot) != true })
                     throw CameraTetherSourceException()
@@ -196,6 +208,7 @@ internal class CameraTetherJournal(private val directory: File) {
 
     companion object {
         const val BATCH_SIZE = 16
+        private val windowOrder = compareBy<CameraPhoto>({ it.created }, { it.name })
         private const val MAX_PHOTOS = 10000
         private const val MAX_BYTES = 8 * 1024 * 1024
     }

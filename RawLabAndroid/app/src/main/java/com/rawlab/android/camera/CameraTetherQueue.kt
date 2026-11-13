@@ -96,11 +96,8 @@ internal fun CameraTetherRun.recoveryJobs(jobs: List<CameraImportJob>): List<Cam
     // 避免重连后从头校验同一批文件，或把上一次连接的校验当成当前卡的凭据。
     if (registered.sumOf { it.items.size } > CameraTetherQueue.MAX_PENDING ||
         registered.sumOf { it.totalBytes } > CameraTetherQueue.MAX_PENDING_BYTES) return null
-    val sources = registered.flatMap { job -> job.items.map { it.photo } }.groupBy { it.resumeMetadataKey }
-    // 首次连接时只观察、未接收的基线对象没有摘要。不要把重连后同名文件当成旧对象。
-    if (baseline.any { photo ->
-        sources[photo.resumeMetadataKey].orEmpty().count { photo.matchesResumeMetadata(it) } != 1
-    }) return null
+    // 未下载过的基线对象本就没有摘要：卡内来源核对（含截断窗口边界）由 rebase 逐对象兜底，
+    // 不能反过来要求基线在已登记批次里有摘要，否则第一张拍成后续接就消失。
     return registered
 }
 

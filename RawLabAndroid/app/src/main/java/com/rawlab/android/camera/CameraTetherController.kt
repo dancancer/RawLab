@@ -255,7 +255,8 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
             storeLock.withLock {
                 runCatching { journal.save(ended) }
                     .onSuccess { mutable.update { it.copy(runs = it.runs.map { run -> if (run.id == ended.id) ended else run }) } }
-                    .onFailure { mutable.update { it.copy(failure = CameraTetherFailure.STORAGE) } }
+                    .onFailure { mutable.update { state -> if (state.run == null) state.copy(run = paused,
+                        phase = CameraTetherPhase.PAUSED, failure = CameraTetherFailure.STORAGE) else state } }
             }
         }
     }
@@ -359,7 +360,9 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
     /** 列表超限是运行期属性：持续提示直到新会话开始，避免被下一次增量轮询清掉。 */
     private fun publishLimitNotice(truncated: Boolean) {
         mutable.update { it.copy(failure = when {
-            truncated -> CameraTetherFailure.PHOTO_LIMIT
+            // 超限是持续的运行期提示，但不得覆盖待确认快门、机身设置等更高优先级的动作失败。
+            truncated -> if (it.failure == null || it.failure == CameraTetherFailure.PHOTO_LIMIT)
+                CameraTetherFailure.PHOTO_LIMIT else it.failure
             it.failure == CameraTetherFailure.PHOTO_LIMIT -> null
             else -> it.failure
         }) }

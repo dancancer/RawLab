@@ -507,10 +507,10 @@ public final class SonyTetherSession implements Closeable {
             if (data.cursor<=cursor) throw new IOException("Remote contents cursor did not advance");
             cursor=data.cursor;
         }
-        // 翻页耗尽同样按最近窗口返回：游标仍有效，后续轮询继续增量接收。
+        // 1000 页仍未到卡尾时游标停在卡中段，不能当增量起点静默放行：继续按上限拒绝，避免把卡内既有照片当新拍下载。
         SonyMobileSession.trimRecentAssets(result);
         rememberAssets(result);
-        return new IncrementalContents(result, hasEntries ? latestCursor : 0L, hasEntries, true);
+        throw new CameraMediaSession.PhotoLimitExceededException("Remote contents page limit exceeded", result);
     }
 
     private void rememberAssets(List<Asset> assets) {

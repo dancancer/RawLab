@@ -83,6 +83,21 @@ class CameraTetherStateTest {
         assertFalse(resumable.canConfirmAndContinue)
     }
 
+    @Test fun resumeStaysOfferedAfterRegisteredShotOnUnverifiedBaseline() {
+        val identity = CameraHardwareIdentity("ILCE-7CM2", "1234567")
+        val baseline = photo("baseline")
+        val shot = photo("shot")
+        val run = CameraTetherRun("run", "camera", "profile", 0, listOf(baseline), CameraImportDestination(),
+            batches = listOf(CameraTetherBatch("job", listOf(shot))), status = CameraTetherStatus.PAUSED, hardwareIdentity = identity)
+        // 基线从未下载没有摘要；拍成第一张后（批次已登记）续接不能因此退回 null。
+        val job = CameraImportJob("job", "camera", 0, listOf(
+            CameraImportItem(shot, saved = MediaPhoto("content://media/job", shot.name, "Pictures/", false), digest = "x")),
+            CameraJobStatus.COMPLETE)
+        assertEquals(listOf(job), run.recoveryJobs(listOf(job)))
+        // 已登记批次缺失时仍然拒绝续接，由「确认结果后继续」兜底。
+        assertNull(run.recoveryJobs(emptyList()))
+    }
+
     private fun photo(key: String) = CameraPhoto(key, "$key.JPG", 100, 0)
     private fun run(batches: List<CameraTetherBatch>) = CameraTetherRun("run", "camera", "profile", 0, emptyList(), CameraImportDestination(), batches)
     private fun saved(id: String, photo: CameraPhoto) = CameraImportJob(id, "camera", 0, listOf(

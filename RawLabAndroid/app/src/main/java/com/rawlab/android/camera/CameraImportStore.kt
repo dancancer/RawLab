@@ -171,7 +171,8 @@ internal class CameraImportStore(private val directory: File, private val tempor
     /** 用户确认放弃一条坏日志：删除隔离文件，其待发布媒体由下一次 load 的孤儿清理回收。 */
     fun discardUnreadableJob(id: String): Boolean {
         if (id !in unreadableJobIds || !validId(id)) return false
-        File(directory, "$id.json").delete() // 文件已不在也视为放弃成功。
+        val file = File(directory, "$id.json")
+        if (file.exists() && !file.delete()) return false // 删除失败保留隔离标记，可再次尝试。
         unreadableJobIds = unreadableJobIds - id
         return true
     }

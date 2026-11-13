@@ -203,7 +203,7 @@ class CameraImportStoreTest {
         assertEquals(1, fixture.media.rows.size)
     }
 
-    @Test fun tetherRecoveryCannotRebaseAnUnverifiedBaseline() = withStore { fixture, store ->
+    @Test fun tetherRebaseVerifiesUnverifiedBaselineByObjectMetadata() = withStore { fixture, store ->
         val journal = CameraTetherJournal(File(fixture.root, "runs"))
         val hardware = CameraHardwareIdentity("ILCE-7CM2", "1234567")
         val original = photo("old")

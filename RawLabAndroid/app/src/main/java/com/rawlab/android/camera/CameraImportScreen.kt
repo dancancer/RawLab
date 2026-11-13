@@ -249,7 +249,8 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
                 TextButton(onClick = { unreadableOpen = true }, modifier = Modifier.testTag("camera-unreadable-view")) {
                     Text(stringResource(R.string.message_view))
                 }
-                TextButton(onClick = model::discardUnreadableLogs, modifier = Modifier.testTag("camera-unreadable-discard")) {
+                TextButton(onClick = model::discardUnreadableLogs, enabled = !state.transferring && !state.preparing && !state.closing,
+                    modifier = Modifier.testTag("camera-unreadable-discard")) {
                     Text(stringResource(R.string.camera_unreadable_discard))
                 }
             }

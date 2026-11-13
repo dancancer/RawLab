@@ -315,6 +315,8 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     fun dismissMessage() { mutable.update { it.copy(failure = null, message = null) } }
     /** 放弃全部读不出的导入记录：删除隔离日志，其待发布媒体由随后的孤儿清理回收。 */
     fun discardUnreadableLogs() {
+        // 与 setDestination/selectJob 同门禁：store.load() 会改写活动任务并清理 .part，只能在停下的队列上跑。
+        if (mutable.value.transferring || mutable.value.preparing || mutable.value.closing || tether.state.value.active) return
         viewModelScope.launch {
             val refreshed = withContext(Dispatchers.IO) { storeLock.withLock {
                 store.unreadableJobIds.sorted().forEach { store.discardUnreadableJob(it) }
@@ -322,8 +324,10 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
             } }
             mutable.update { state -> refreshed?.let { jobs ->
                 val pending = jobs.firstOrNull { it.status != CameraJobStatus.COMPLETE }
-                state.copy(jobs = jobs, job = pending ?: jobs.firstOrNull(), unreadableLogs = store.unreadableJobIds.sorted())
+                val current = state.job?.takeIf { job -> jobs.any { it.id == job.id } } ?: pending ?: jobs.firstOrNull()
+                state.copy(jobs = jobs, job = current, unreadableLogs = store.unreadableJobIds.sorted())
             } ?: state.copy(unreadableLogs = store.unreadableJobIds.sorted(), message = R.string.camera_storage_failed) }
+            refreshed?.let { tether.refreshJobs(it) }
         }
     }
     fun setDestination(destination: CameraImportDestination) {
