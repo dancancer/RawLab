@@ -67,3 +67,4 @@
 - 2026-11-14 · WP-10 交付：**PR #296**（`74e5146c`，Android 相机三合包：07 续接收口+确认继续、15 超限裁窗不断连、16 坏日志查看/放弃；三锚点撤生产必红+假 PTP 万张卡端到端+本地化 5 键）。碳审在途。
 - 2026-11-14 · #286 二轮返工（`077a9729`）：_fact 静默兜底删除、14 处静默三元按行号逐条清零（awk 复核 0）、_ANCHORS 37 条硬锚点注册+诚实性三层覆盖、S4 补 ui.exposed/modes、4 变异 RED→GREEN。三轮复审在途（review-mwfctgt0）。本轮自述含探针误回退重建插曲，已如实入 PR。
 - 2026-11-14 · #291 返工完成（`a18b00a6`）：B1 geometry-source-ui.sh 全链 exit 0（真机模拟器 167 检查 0 FAIL、IndependentConfirmation×4 真执行）；B2 复位绑 SDR 帧交付三处；B3 StatusProbe 驱动生产组件+逐处 revert 红证；S1 清死状态；S2 D 项去向已落 d-followup-assignments（随 ② REQUIRE_AX 承接）。复审在途（review-mwfd6dlm）。
+- 2026-11-14 · 纠偏：Q3/Q4/Q6/Q8/Q9/Q10/Q12/Q13 并非待拍板——g 文件载明 2026-11-13 用户已全裁，系**实现单**。已派三路不冲突实现：Q9（`q9-agent-recipe`，AgentRecipe→tests+README）、Q13（`q13-update-fallback`，UpdateStore 未知枚举降级 Idle）、Q8（`q8-ref-frame-cap`，Mac 参考帧长边上限+入预算）。Q3/Q4 涉 Shared/specs 等 #286 合入后动；Q6 存储层单独排；Q10/Q12 留真机/后续批。
