@@ -49,9 +49,12 @@ struct MacLensDraftPresentationTests {
             throw RenderError.failed("Cannot create lens fixture bitmap")
         }
         host.cacheDisplay(in: host.bounds, to: bitmap)
-        guard bitmap.pixelsWide == Int(size.width), bitmap.pixelsHigh == Int(size.height),
+        // Snapshot bitmaps follow the test window's backing resolution (Retina is 2×);
+        // assert against the backing size, like the sibling presentation suites do.
+        let backingSize = window.convertToBacking(host.bounds).size
+        guard bitmap.pixelsWide == Int(backingSize.width), bitmap.pixelsHigh == Int(backingSize.height),
               let data = bitmap.representation(using: .png, properties: [:]) else {
-            throw RenderError.failed("\(name): expected \(Int(size.width))×\(Int(size.height)), bitmap \(bitmap.pixelsWide)×\(bitmap.pixelsHigh), host \(host.bounds)")
+            throw RenderError.failed("\(name): expected backing \(Int(backingSize.width))×\(Int(backingSize.height)) for \(Int(size.width))×\(Int(size.height)) points, bitmap \(bitmap.pixelsWide)×\(bitmap.pixelsHigh), host \(host.bounds)")
         }
         let filename = "\(name)-\(language.rawValue).png"
         try data.write(to: output.appendingPathComponent(filename))
