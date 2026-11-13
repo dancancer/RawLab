@@ -760,8 +760,10 @@ if __name__ == "__main__":
     parser.add_argument("--cli", type=pathlib.Path, required=True)
     arguments, remaining = parser.parse_known_args()
     CLI = arguments.cli.resolve()
+    result = unittest.main(argv=[__file__, *remaining], exit=False).result
+    if not result.wasSuccessful():
+        raise SystemExit(1)
     if jsonschema is None:
-        # 可选依赖缺失时显式声明 Skip（ctest SKIP_RETURN_CODE 77），不得静默假绿。
-        print("SKIP: python jsonschema is not installed; the schema contract was not exercised")
+        # 可选依赖只降级 schema-validate 分支（ctest SKIP_RETURN_CODE 77），CLI 规范化测试照常执行完毕。
+        print("SKIP: python jsonschema is not installed; the schema contract branches did not run")
         raise SystemExit(77)
-    unittest.main(argv=[__file__, *remaining])
