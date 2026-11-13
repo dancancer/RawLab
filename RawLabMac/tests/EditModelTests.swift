@@ -222,6 +222,147 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         return result
     }
 
+    private static func writeFlatPNG(width: Int, height: Int, to url: URL) throws {
+        let bytes = [UInt8](repeating: 128, count: width * height * 4)
+        guard let provider = CGDataProvider(data: Data(bytes) as CFData) else {
+            throw Failure(message: "cannot build \(width)x\(height) data provider")
+        }
+        let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                            bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
+        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else {
+            throw Failure(message: "cannot create PNG destination")
+        }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else {
+            throw Failure(message: "cannot write \(width)x\(height) PNG fixture")
+        }
+    }
+
+    private static func memoryFootprintMB() -> Double {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let status = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        return status == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : -1
+    }
+
+    /// Samples the process footprint from a helper thread while body runs, and returns the observed peak.
+    private static func peakFootprintMB(during body: () throws -> Void) rethrows -> Double {
+        let peak = Locked(value: memoryFootprintMB())
+        let done = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            while done.wait(timeout: .now()) == .timedOut {
+                peak.max(memoryFootprintMB())
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+            peak.max(memoryFootprintMB())
+        }
+        defer {
+            done.signal()
+            peak.max(memoryFootprintMB())
+        }
+        try body()
+        return peak.value
+    }
+
+    private final class Locked {
+        private let lock = NSLock()
+        private var stored: Double
+        init(value: Double) { stored = value }
+        func max(_ candidate: Double) {
+            lock.lock(); if candidate > stored { stored = candidate }; lock.unlock()
+        }
+        var value: Double { lock.lock(); defer { lock.unlock() }; return stored }
+    }
+
+    // Q8 (M3/D-04): the SDR neutral reference frame caps its long edge and its
+    // capped size is charged into the exact-preview memory budget.
+    static func referenceFrameCapChecks(root: URL) throws {
+        let fixtureRoot = root.appendingPathComponent("reference-frame-cap")
+        try FileManager.default.createDirectory(at: fixtureRoot, withIntermediateDirectories: true)
+        func model() -> EditorModel {
+            let editor = EditorModel(lookDirectory: fixtureRoot.appendingPathComponent("looks"),
+                                     editDirectory: fixtureRoot.appendingPathComponent("edits"),
+                                     batchDirectory: fixtureRoot.appendingPathComponent("batch"))
+            editor.fullResolution = true
+            return editor
+        }
+
+        // Over-cap input: 6144×1536 exceeds the 4096 long-edge cap on both anchors' scale.
+        let aboveCap = fixtureRoot.appendingPathComponent("above-cap.png")
+        try writeFlatPNG(width: 6144, height: 1536, to: aboveCap)
+        let footprintBeforeOpen = memoryFootprintMB()
+        let over = model()
+        let peak = try peakFootprintMB {
+            over.open(aboveCap)
+            try waitForRender(over, "above-cap reference open")
+        }
+        let footprintAfterOpen = memoryFootprintMB()
+        let neutralOver = over.neutral!
+        print(String(format: "[Q8] above-cap open footprint %.1f MB -> %.1f MB, peak %.1f MB (neutral %dx%d)",
+                     footprintBeforeOpen, footprintAfterOpen, peak, neutralOver.image.width, neutralOver.image.height))
+
+        // Q8 product assertions. Q8_SKIP_MEMO keeps memo-only measurement runs compiling on an old tree.
+        if ProcessInfo.processInfo.environment["Q8_SKIP_MEMO"] == nil {
+            try check(neutralOver.image.width == 4096 && neutralOver.image.height == 1024,
+                      "over-cap neutral reference is downsampled to the long-edge cap")
+            try check(!neutralOver.isFullResolution, "a capped reference no longer claims a native frame")
+            try check(over.result!.image.width == 6144 && over.result!.image.height == 1536 && over.result!.isFullResolution,
+                      "full-resolution mode keeps the result frame native beside a capped reference")
+            // Budget accounting must observe the capped reference size.
+            let expectedCharge = MacExactPreviewCache.bytes(over.result!) + MacExactPreviewCache.bytes(neutralOver)
+            try check(over.exactPreviewCache.totalBytes == expectedCharge,
+                      "the exact-preview budget charges the reference frame at its capped size")
+        }
+
+        // D-04 evidence: a 63MP-class open must cap the reference and lower the measured peak.
+        let giant = fixtureRoot.appendingPathComponent("giant-63mp.png")
+        try writeFlatPNG(width: 8192, height: 7680, to: giant)
+        let giantModel = model()
+        let giantPeak = try peakFootprintMB {
+            giantModel.open(giant)
+            try waitForRender(giantModel, "63MP reference open")
+        }
+        let giantNeutral = giantModel.neutral!
+        print(String(format: "[Q8] 63MP-class open peak %.1f MB (neutral %dx%d)",
+                     giantPeak, giantNeutral.image.width, giantNeutral.image.height))
+        if ProcessInfo.processInfo.environment["Q8_SKIP_MEMO"] == nil {
+            try check(giantNeutral.image.width == 4096 && giantNeutral.image.height == 3840,
+                      "a 63MP-class neutral reference is capped to the long edge")
+        }
+
+        // Boundary: at exactly the cap the baseline stays native and is never enlarged…
+        let atCap = fixtureRoot.appendingPathComponent("at-cap.png")
+        try writeFlatPNG(width: 4096, height: 1024, to: atCap)
+        let at = model()
+        at.open(atCap)
+        try waitForRender(at, "at-cap reference open")
+        if ProcessInfo.processInfo.environment["Q8_SKIP_MEMO"] == nil {
+            try check(at.neutral!.image.width == 4096 && at.neutral!.image.height == 1024 && at.neutral!.isFullResolution,
+                      "a reference at exactly the long-edge cap stays native and is never enlarged")
+        }
+        // …while one pixel above the cap downsamples to exactly the cap.
+        let capPlusOne = fixtureRoot.appendingPathComponent("cap-plus-one.png")
+        try writeFlatPNG(width: 4097, height: 2048, to: capPlusOne)
+        let edge = model()
+        edge.open(capPlusOne)
+        try waitForRender(edge, "cap-plus-one reference open")
+        if ProcessInfo.processInfo.environment["Q8_SKIP_MEMO"] == nil {
+            try check(edge.neutral!.image.width == 4096 && edge.neutral!.image.height == 2048 && !edge.neutral!.isFullResolution,
+                      "one pixel above the cap downsamples the reference to exactly the cap")
+        }
+        if ProcessInfo.processInfo.environment["Q8_SKIP_MEMO"] == nil {
+            try check(MacReferenceFramePolicy.longEdgeCap == 4096,
+                      "the reference cap matches the budget derivation in MacReferenceFramePolicy")
+        }
+        print("PASS: Over-cap neutral reference is capped to the long edge and charged at the capped size (Q8/M3)")
+    }
+
     static func checkRasterMetadata(_ model: EditorModel, _ label: String) throws {
         guard let neutral = model.neutral, let result = model.result else {
             throw Failure(message: label + ": raster result is missing")
@@ -674,6 +815,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         try rasterEditorChecks(root: root, lut: rasterLUT)
         try unusableRecordOpenRecoveryChecks(root: root)
         print("PASS: EditorModel persistent restore, unseen defaults, reset and failed-save protection")
+        try referenceFrameCapChecks(root: root)
         if CommandLine.arguments.count > 1 {
             fputs("[RAW SUCCESS REQUIRED] EditModelTests.realRAW: \(CommandLine.arguments[1]) must render successfully; decoder failures for this input are not expected.\n", stderr)
             let raw = URL(fileURLWithPath: CommandLine.arguments[1])

@@ -138,12 +138,13 @@ extension EditorModel {
                     DispatchQueue.main.async { self.finish(request,neutral:neutral,result:result,failure:nil) }
                     return
                 }
-                // nil edge explicitly requests the existing immutable full-native baseline.
+                // nil edge requests the immutable baseline; Q8 caps its long edge (never enlarges).
                 let originalKey = MacNeutralReferenceKey(source: work.source, settings: work.settings.neutralSettings, edge: nil)
                 if self.originalCache?.key != originalKey || self.originalCache?.frame.histogram.count != 3 {
                     self.originalCache = nil
                     self.geometryReferenceCache = nil
-                    if let original = try self.engine!.render(work.file, settings: work.settings.neutralSettings, lut: nil, edge: nil) {
+                    if let original = try self.engine!.render(work.file, settings: work.settings.neutralSettings, lut: nil, edge: nil,
+                                                              referenceLongEdge: MacReferenceFramePolicy.longEdgeCap) {
                         self.originalCache = (originalKey, original)
                     }
                 }
@@ -157,7 +158,8 @@ extension EditorModel {
                     self.geometryReferenceCache = (key, cached.frame)
                 } else {
                     neutral = try self.engine!.render(work.file, settings: work.settings.neutralGeometrySettings,
-                                                      lut: nil, edge: nil)
+                                                      lut: nil, edge: nil,
+                                                      referenceLongEdge: MacReferenceFramePolicy.longEdgeCap)
                     if let neutral { self.geometryReferenceCache = (key, neutral) }
                 }
                 let result = try self.engine!.render(work.file, settings: work.settings, lut: work.lut,
@@ -300,8 +302,9 @@ struct MacExactPreviewCache {
         guard work.pass == .exact, scope != nil, work.previewScope == scope,
               (result.hdr != nil || result.histogram.count == 3),
               (neutral.hdr != nil || neutral.histogram.count == 3) else { return }
-        // SDR 对照帧由编辑器原有的全尺寸参考缓存持有。
-        let bytes = Self.bytes(result) + (neutral.hdr == nil ? 0 : Self.bytes(neutral))
+        // Q8：SDR 对照帧已按长边上限封顶，这里按封顶后的实际尺寸计入本预算
+        // （同一基准帧被多条缓存项共享时按条计费，预算偏保守）。
+        let bytes = Self.bytes(result) + Self.bytes(neutral)
         guard bytes <= Self.budget else { return }
         entries.removeAll { $0.edge == work.edge }
         while entries.count >= 3 || entries.reduce(bytes, { $0 + $1.bytes }) > Self.budget {
@@ -310,7 +313,10 @@ struct MacExactPreviewCache {
         entries.append((work.edge, neutral, result, bytes))
     }
 
-    private static func bytes(_ frame: RenderedImage) -> Int {
+    /// 预算核算视角：当前缓存实际计费的字节数（含封顶后的参考帧尺寸）。
+    var totalBytes: Int { entries.reduce(0) { $0 + $1.bytes } }
+
+    static func bytes(_ frame: RenderedImage) -> Int {
         let mask = frame.clipping.map { $0.bytesPerRow * $0.height } ?? 0
         return frame.image.bytesPerRow * frame.image.height + mask + (frame.hdr?.image.byteCount ?? 0)
     }

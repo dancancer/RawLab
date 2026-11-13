@@ -544,7 +544,8 @@ final class RenderEngine {
     }
 
     private func photoRequest(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL?,
-                              interactive: Bool, exportLongEdge: Int?, viewportPreview: Bool) throws -> (Adjustments, sony2fuji_request) {
+                              interactive: Bool, exportLongEdge: Int?, viewportPreview: Bool,
+                              referenceLongEdge: Int? = nil) throws -> (Adjustments, sony2fuji_request) {
         if let exportLongEdge, !(1...65535).contains(exportLongEdge) {
             throw RenderError.failed(L10n.text("导出长边必须为 1-65535 像素。"))
         }
@@ -618,6 +619,12 @@ final class RenderEngine {
             request.intent = SONY2FUJI_INTENT_FINAL
             request.size_mode = SONY2FUJI_SIZE_LIMIT_LONG_EDGE
             request.long_edge = UInt32(exportLongEdge)
+        }
+        // Q8：中性参考帧的 FINAL 基准只按长边上限降采样、绝不放大
+        // （SIZE_LIMIT_LONG_EDGE），与 PREVIEW 的按需缩放语义区分开。
+        if edge == nil, let referenceLongEdge {
+            request.size_mode = SONY2FUJI_SIZE_LIMIT_LONG_EDGE
+            request.long_edge = UInt32(referenceLongEdge)
         }
         if let edge { request.preview_long_edge = UInt32(edge) }
         request.output_target = output == nil ? SONY2FUJI_TARGET_BUFFER : SONY2FUJI_TARGET_FILE
@@ -699,7 +706,9 @@ final class RenderEngine {
         return ProcessingMigrationOutcome(native)
     }
 
-    func render(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL? = nil, stageOutput: Bool = true, interactive: Bool = false, exportLongEdge: Int? = nil, viewportPreview: Bool = false, exportFormat: ExportFormat? = nil) throws -> RenderedImage? {
+    /// `referenceLongEdge` 仅用于 `edge == nil` 的中性基准帧：FINAL 质量路径加
+    /// 「只降不放大」的长边封顶（Q8）；`edge != nil` 的按需预览不受影响。
+    func render(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL? = nil, stageOutput: Bool = true, interactive: Bool = false, exportLongEdge: Int? = nil, viewportPreview: Bool = false, referenceLongEdge: Int? = nil, exportFormat: ExportFormat? = nil) throws -> RenderedImage? {
         if settings.isHDREditing {
             return try renderHDR(url,settings:settings,edge:edge,output:output,longEdge:exportLongEdge,format:exportFormat)
         }
@@ -707,7 +716,8 @@ final class RenderEngine {
             throw RenderError.failed(exportFormat.hdrRequiredMessage)
         }
         let (settings, prepared) = try photoRequest(url, settings: settings, lut: lut, edge: edge, output: output,
-            interactive: interactive, exportLongEdge: exportLongEdge, viewportPreview: viewportPreview)
+            interactive: interactive, exportLongEdge: exportLongEdge, viewportPreview: viewportPreview,
+            referenceLongEdge: referenceLongEdge)
         var request = prepared
         let key = try? RawWhiteBalanceCacheKey(url)
         var buffer = sony2fuji_buffer()
@@ -799,7 +809,11 @@ final class RenderEngine {
                 bitmapInfo: bitmap, provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
         else { throw RenderError.failed(L10n.text("无法显示处理结果")) }
         let statistics = statisticsProvider(&buffer)
-        return RenderedImage(image: image, isFullResolution: edge == nil, clipping: statistics?.clipping, histogram: statistics?.histogram ?? [],
+        // Q8：被长边上限降过样的参考帧不再是原生帧；如实标记，让按面板尺寸的
+        // 复用判断（canServe）照常重渲染封顶帧，而不是把封顶帧当整幅基准。
+        let nativeLongEdge = max(Int(nativeWidth), Int(nativeHeight))
+        let referenceDownsampled = edge == nil && referenceLongEdge.map { nativeLongEdge > $0 } == true
+        return RenderedImage(image: image, isFullResolution: edge == nil && !referenceDownsampled, clipping: statistics?.clipping, histogram: statistics?.histogram ?? [],
             shadows: statistics?.shadows, highlights: statistics?.highlights,
             baselineEV: Double(baseline), metadataEV: Double(metadata), asShotWhiteBalance: cameraWhiteBalance,
             supportsRawNoiseReduction: noiseReductionSupported == 1, lensInfo: raster ? nil : lensInfo(for: url),
