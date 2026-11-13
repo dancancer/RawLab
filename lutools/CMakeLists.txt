@@ -843,6 +843,7 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
             add_test(NAME edit_recipe_schema COMMAND ${Python3_EXECUTABLE}
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_edit_recipe_schema.py"
                 --cli $<TARGET_FILE:sony2fuji_cli>)
+            set_tests_properties(edit_recipe_schema PROPERTIES SKIP_RETURN_CODE 77)
         endif()
     endif()
     add_executable(rendered_dng_tests tests/rendered_dng_tests.cpp)

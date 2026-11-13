@@ -27,6 +27,13 @@ std::string document(const std::string& exposure = R"({"mode":"scene"})",
         exposure + edits + R"(},"output":{"path":"out.jpg","format":")" + format + '"' + output + "}}";
 }
 
+std::string hdrDocument(const std::string& cameraDevelopment) {
+    return R"({"schema_version":14,"processing":{"family":"rawlab_hdr","version":7,"quality":"standard"},)"
+        R"("input":{"path":"photo.ARW","type":"raw","camera_development":{)" + cameraDevelopment + R"(}},)"
+        R"("edits":{"exposure":{"ev":0.5},"white_balance":{"mode":"relative"}},)"
+        R"("output":{"path":"out.jpg","format":"hdr_jpeg","base_color":"srgb"}})";
+}
+
 std::string replaceOnce(std::string value, const std::string& from, const std::string& to) {
     const auto position = value.find(from);
     if (position == std::string::npos) throw std::runtime_error("Missing test fixture token: " + from);
@@ -235,14 +242,33 @@ void completeEdits() {
         reject(replaceOnce(v4(R"(,"tone":{})"), "\"schema_version\":4", "\"schema_version\":" + std::to_string(version)),
                "old versions reject new controls", "edits.tone");
     // profile_id 与 HDR 的 lens_profile 使用同一套约束：长度上限与控制字符。
+    // '\n' 是目录 id 的合成分隔符（maker/model/mount/crop factor），必须放行；其余控制字符拒绝。
     reject(v4(R"(,"lens_correction":{"profile_id":")" + std::string(1025, 'a') + R"("})"),
            "overlong lens profile id", "edits.lens_correction.profile_id");
     reject(v4(R"(,"lens_correction":{"profile_id":"a\u0001b"})"),
            "control character in lens profile id", "edits.lens_correction.profile_id");
+    reject(v4(R"(,"lens_correction":{"profile_id":"a\rb"})"),
+           "carriage return in lens profile id", "edits.lens_correction.profile_id");
     parse(v4(R"(,"lens_correction":{"profile_id":")" + std::string(1024, 'a') + R"("})"));
+    // 合成目录 id 必须能通过解析并往返，且解码值逐字保留分隔符（fixture lenses.xml 中匹配镜头的真实 id 形态）。
+    const auto composite = parse(v4(R"(,"lens_correction":{"profile_id":"RawLab\nTest 24mm f/2.8\nRawLab Test\n1.000000"})"));
+    check(composite.lensProfileId == "RawLab\nTest 24mm f/2.8\nRawLab Test\n1.000000",
+          "composite catalog id parses with its newline separators intact");
+    check(sameRecipe(parse(sony2fuji::serializeEditRecipe(composite)), composite), "composite catalog id round trips");
     parse(v4(R"(,"tone":{"contrast":0,"saturation":2,"highlights":-1,"shadows":1,"s_curve":-1},"detail":{"sharpening":2},"hsl":{"hue":[-100,100,0,0,0,0,0,0]},"look":{"path":null,"strength":2})"));
 }
 
+
+// HDR lens_profile 与 SDR profile_id 共用 validProfileId：'\n' 是目录 id 的分隔符必须放行，其余控制字符照旧拒绝。
+void hdrLensProfileBounds() {
+    const auto parsed = parse(hdrDocument(R"("lens_distortion":true,"lens_profile":"RawLab\nTest 24mm f/2.8\nRawLab Test\n1.000000")"));
+    check(parsed.hdr && parsed.hdr->lensProfile == "RawLab\nTest 24mm f/2.8\nRawLab Test\n1.000000",
+          "HDR lens_profile accepts newline-separated catalog ids");
+    reject(hdrDocument(R"("lens_distortion":true,"lens_profile":"a\rb")"),
+           "HDR carriage return lens profile", "lens_profile");
+    reject(hdrDocument(R"("lens_distortion":true,"lens_profile":"a\u0001b")"),
+           "HDR control character lens profile", "lens_profile");
+}
 
 void invalidFields() {
     const auto minimal = document();
@@ -399,6 +425,7 @@ int main() {
         outputAndRoundTrip();
         legacyRequestParity();
         completeEdits();
+        hdrLensProfileBounds();
         invalidFields();
         unknownAndDuplicateKeys();
         malformedAndUnicode();

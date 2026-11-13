@@ -316,7 +316,7 @@ camera state from a neighboring RAW photo.
 | `edits.denoise.wavelet.luma`, `chroma`, `coarse` | [0,100] | 0, 46, 50 |
 | `edits.lens_correction.distortion`, `tca` | Boolean | `false` |
 | `edits.lens_correction.auto_crop` | Boolean | `true` |
-| `edits.lens_correction.profile_id` | Nonempty catalog ID or `null`; `null` selects automatic matching | `null` |
+| `edits.lens_correction.profile_id` | Nonempty catalog ID (at most 1024 UTF-8 bytes) or `null`; `null` selects automatic matching. Catalog IDs join maker, model, mount and crop factor with newlines; no other control characters are accepted | `null` |
 
 For raster input, the effective defaults are `sensor` exposure, `none` white
 balance, `raw_level: 0`, and disabled/null lens correction. A raw recipe may
@@ -576,7 +576,7 @@ follow the Mac camera HDR development settings, before the separate relative
 | `fbdd_level` | Integer 0–2, default 0 |
 | `lens_distortion`, `lens_tca`, `lens_vignetting` | Booleans, default false; vignetting is omitted when false |
 | `lens_auto_crop` | Boolean, default true; active only with lens correction |
-| `lens_profile` | Optional nonempty profile id, at most 1024 UTF-8 bytes, requiring active lens correction |
+| `lens_profile` | Optional nonempty profile id (newline-joined catalog segments; no other control characters), at most 1024 UTF-8 bytes, requiring active lens correction |
 | `camera_profile` | Optional `{ "path": "camera.dcp", "sha256": "<64 lowercase hex digits>" }` for a D65 camera-matrix DCP or RLOOKHDR |
 
 Camera profile paths resolve relative to the recipe, like look paths. The
