@@ -299,7 +299,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         var next = preferences.Copy(); if (!next.PendingUpdate.Admit(gate.Prepare())) { Save(next); return false; }
         if (!Save(next)) return false;
         var attempt = State.Attempt; PreparingInstallation = true; Notify();
-        string? path = null; var installationRecorded = false;
+        string? path = null; var installationRecorded = false; var dispatched = false;
         try
         {
             try { await Task.Run(() => adapter.VerifyBeforeInstall(release)); }
@@ -314,7 +314,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             // 原子替换后的保存异常无法证明磁盘未引用此备份。
             installationRecorded = true;
             if (!Save(next)) return false;
-            await Task.Run(() => adapter.Install(release, restart));
+            await Task.Run(() => { adapter.Install(release, restart); dispatched = true; });
             next = preferences.Copy();
             if (!next.PendingUpdate.AwaitingRestart(attempt)) return false;
             Save(next, keepNextOnFailure: true);
@@ -325,7 +325,13 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             FailVerification(error, attempt);
             return false;
         }
-        catch (Exception error) { Fail(error, attempt); return false; }
+        catch (Exception error)
+        {
+            // 进程未拉起时 Install 抛出的 Win32Exception/InvalidOperationException 等启动异常退回就绪阶段的
+            // 普通失败：可继续编辑、可直接重试；只有进程已拉起之后的中断才保留 Installing/RequiresRecovery 语义。
+            Fail(error, attempt, !dispatched && State.Phase == UpdatePhase.Installing ? UpdatePhase.ReadyToInstall : State.Phase);
+            return false;
+        }
         finally {
             if (!installationRecorded && path != null) { try { backup.Discard(path); } catch { } }
             PreparingInstallation = false; Notify();
@@ -353,20 +359,21 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         CryptographicException => "signature",
         _ => "verification"
     };
-    private void Fail(Exception error, Guid attempt)
+    private void Fail(Exception error, Guid attempt) => Fail(error, attempt, State.Phase);
+    private void Fail(Exception error, Guid attempt, UpdatePhase stage)
     {
-        var stage = State.Phase;
         var next = preferences.Copy();
-        var postInstall = stage is UpdatePhase.Installing or UpdatePhase.PendingRestart;
+        // 磁盘记录停留在 Installing/PendingRestart 时 Cancel 无法回退该阶段；持久化失败必须保留内存中的失败记录。
+        var persistedDispatch = preferences.PendingUpdate.Phase is UpdatePhase.Installing or UpdatePhase.PendingRestart;
         var code = stage == UpdatePhase.Checking ? CategorizeCheckError(error) : "operation";
         var detail = error.Message ?? "";
-        if (!next.PendingUpdate.Fail(code, detail, attempt)) return;
+        if (!next.PendingUpdate.Fail(stage, code, detail, attempt)) return;
         if (stage == UpdatePhase.Checking)
         {
             var count = (preferences.CheckFailure?.ConsecutiveFailures ?? 0) + 1;
             next.CheckFailure = new(now(), code, Math.Max(1, count), detail);
         }
-        Save(next, keepNextOnFailure: postInstall);
+        Save(next, keepNextOnFailure: persistedDispatch);
     }
     private bool Save(UpdatePreferences next, bool discardObsoleteBackup = true, bool keepNextOnFailure = false)
     {

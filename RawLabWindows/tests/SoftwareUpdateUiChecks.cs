@@ -147,12 +147,12 @@ internal static class SoftwareUpdateUiChecks
             InteractionChecks.PumpUntil(()=>installing.IsCompleted && !controller.PreparingInstallation);
             failStateSave=null;
             check(uiDelays.SequenceEqual(new[]{10,50,200}) && controller.StorageError!=null &&
-                controller.State.Phase==UpdatePhase.Failed && controller.State.Failure?.Stage==UpdatePhase.Installing &&
-                !window.EditorShell.IsEnabled && window.UpdateLockBanner.IsVisible && store.ReadState(photo).SameAs(beforeFailure),
-                "A failed installer dispatch disables the real editor and preserves saved edits even when Fail() persistence fails");
-            check(!collection.IsEnabled,"Installation lock also disables an existing collection window");
+                controller.State.Phase==UpdatePhase.Failed && controller.State.Failure?.Stage==UpdatePhase.ReadyToInstall && !controller.RequiresRecovery &&
+                window.EditorShell.IsEnabled && !window.UpdateLockBanner.IsVisible && store.ReadState(photo).SameAs(beforeFailure),
+                "A failed installer dispatch keeps the real editor enabled and preserves saved edits even when Fail() persistence fails");
+            check(collection.IsEnabled,"A launch failure without the installation lock leaves an existing collection window usable");
             collection.Close();Invoke(window,"ShowCollection");collection=Get<BatchSelectionWindow>(window,"collectionWindow");
-            check(!collection.IsEnabled,"A collection window created during the installation lock starts disabled");
+            check(collection.IsEnabled,"A collection window created after the launch failure starts enabled");
             collection.Close();
             var openUpdates=Button(window,"updates.lock.open");window.Activate();openUpdates.Focus();
             var tab=new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(openUpdates),Environment.TickCount,Key.Tab){RoutedEvent=Keyboard.PreviewKeyDownEvent};
