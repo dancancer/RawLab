@@ -36,6 +36,15 @@ std::string text(const Json& value, const std::string& path) {
     return result;
 }
 
+// 目录 id 是生产代码（lens_correction.cpp 的 Impl::id）以换行拼接的合成值
+// （maker/model/mount/crop factor），因此 '\n' 是格式自身的分隔符而非损坏字节；
+// 其余 C0/DEL 控制字符或超长 id 会在下游变成不可诊断的失败。
+// HDR 的 lens_profile 与 SDR 的 profile_id 共用这一约束。
+bool validProfileId(const std::string& id) {
+    return id.size() <= 1024 &&
+        !std::any_of(id.begin(), id.end(), [](unsigned char c) { return (c < 32 && c != '\n') || c == 127; });
+}
+
 float number(const Json& object, const char* key, float fallback, double minimum,
              double maximum, const std::string& path) {
     if (!object.contains(key)) return fallback;
@@ -223,10 +232,7 @@ void completeEdits(const Json& edits, EditRecipe& parsed) {
         parsed.lensAutoCrop = !lens.contains("auto_crop") || boolean(lens, "auto_crop", "edits.lens_correction");
         if (lens.contains("profile_id") && !lens.at("profile_id").is_null()) {
             parsed.lensProfileId = text(lens.at("profile_id"), "edits.lens_correction.profile_id");
-            // 与 HDR 的 lens_profile 一致：过长的 id 或控制字符会在下游变成不可诊断的失败。
-            if (parsed.lensProfileId.size() > 1024 ||
-                std::any_of(parsed.lensProfileId.begin(), parsed.lensProfileId.end(),
-                    [](unsigned char c) { return c < 32 || c == 127; }))
+            if (!validProfileId(parsed.lensProfileId))
                 throw std::invalid_argument("edits.lens_correction.profile_id must be a valid id");
         }
     }
@@ -327,8 +333,7 @@ EditRecipe parseHDR(const Json& root, uint32_t schema) {
         if (config.lens_flags && parsed.hdr->lensAutoCrop) config.lens_flags|=SONY2FUJI_HDR_CAMERA_LENS_AUTO_CROP;
         if (camera.contains("lens_profile") && !camera.at("lens_profile").is_null()) {
             parsed.hdr->lensProfile=text(camera.at("lens_profile"),path+".lens_profile");
-            if (!config.lens_flags || parsed.hdr->lensProfile.size()>1024 ||
-                std::any_of(parsed.hdr->lensProfile.begin(),parsed.hdr->lensProfile.end(),[](unsigned char c) { return c<32 || c==127; }))
+            if (!config.lens_flags || !validProfileId(parsed.hdr->lensProfile))
                 throw std::invalid_argument(path+".lens_profile requires active lens correction and a valid id");
         }
         if (camera.contains("camera_profile") && !camera.at("camera_profile").is_null()) {

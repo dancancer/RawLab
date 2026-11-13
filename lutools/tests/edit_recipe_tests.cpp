@@ -235,11 +235,16 @@ void completeEdits() {
         reject(replaceOnce(v4(R"(,"tone":{})"), "\"schema_version\":4", "\"schema_version\":" + std::to_string(version)),
                "old versions reject new controls", "edits.tone");
     // profile_id 与 HDR 的 lens_profile 使用同一套约束：长度上限与控制字符。
+    // '\n' 是目录 id 的合成分隔符（maker/model/mount/crop factor），必须放行；其余控制字符拒绝。
     reject(v4(R"(,"lens_correction":{"profile_id":")" + std::string(1025, 'a') + R"("})"),
            "overlong lens profile id", "edits.lens_correction.profile_id");
     reject(v4(R"(,"lens_correction":{"profile_id":"a\u0001b"})"),
            "control character in lens profile id", "edits.lens_correction.profile_id");
+    reject(v4(R"(,"lens_correction":{"profile_id":"a\rb"})"),
+           "carriage return in lens profile id", "edits.lens_correction.profile_id");
     parse(v4(R"(,"lens_correction":{"profile_id":")" + std::string(1024, 'a') + R"("})"));
+    // 合成目录 id 必须能通过解析并往返（fixture lenses.xml 中匹配镜头的真实 id 形态）。
+    parse(v4(R"(,"lens_correction":{"profile_id":"RawLab\nTest 24mm f/2.8\nRawLab Test\n1.000000"})"));
     parse(v4(R"(,"tone":{"contrast":0,"saturation":2,"highlights":-1,"shadows":1,"s_curve":-1},"detail":{"sharpening":2},"hsl":{"hue":[-100,100,0,0,0,0,0,0]},"look":{"path":null,"strength":2})"));
 }
 
