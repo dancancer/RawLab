@@ -1,5 +1,7 @@
+import CryptoKit
 import Foundation
 import Darwin
+import UniformTypeIdentifiers
 
 struct OriginalFileIdentity: Codable, Equatable {
     let path: String
@@ -50,6 +52,7 @@ final class EditPersistence {
     static let directoryPathUserInfoKey = "directoryPath"
     static let changedRecordsUserInfoKey = "changedRecords"
     static let invalidatedPathsUserInfoKey = "invalidatedPaths"
+    static let editedRevisionsUserInfoKey = "editedRevisions"
 
     private struct Record: Codable {
         let identity: OriginalFileIdentity
@@ -312,15 +315,43 @@ final class EditPersistence {
         )
     }
 
+    static func stateRevisionDigest(for state: PhotoEditState) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let data = (try? encoder.encode(state)) ?? Data(String(describing: state).utf8)
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func editedRevision(for state: PhotoEditState?, atPath path: String) -> String? {
+        guard let state else { return nil }
+        let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
+        let isRaster = UTType(filenameExtension: ext).map { $0.conforms(to: .image) && !$0.conforms(to: .rawImage) } ?? false
+        let raw = !isRaster
+        let context = EditorAdjustmentContext(
+            isRaw: raw,
+            defaultExposureMode: raw ? Adjustments().exposureMode : .sensor,
+            neutralFilmID: ""
+        )
+        guard EditorAdjustmentRules.isModified(scope: .all, snapshot: state, context: context) else { return nil }
+        return stateRevisionDigest(for: state)
+    }
+
     private func postRecordsChanged(_ changes: [String: PhotoEditState?]) {
         guard !changes.isEmpty else { return }
+        var editedRevisions: [String: String] = [:]
+        for (path, state) in changes {
+            if let revision = Self.editedRevision(for: state, atPath: path) {
+                editedRevisions[path] = revision
+            }
+        }
         NotificationCenter.default.post(
             name: Self.didChangeRecordsNotification,
             object: nil,
             userInfo: [
                 Self.directoryPathUserInfoKey: canonicalDirectoryPath,
                 Self.changedRecordsUserInfoKey: changes,
-                Self.invalidatedPathsUserInfoKey: Set(changes.keys)
+                Self.invalidatedPathsUserInfoKey: Set(changes.keys),
+                Self.editedRevisionsUserInfoKey: editedRevisions
             ]
         )
     }

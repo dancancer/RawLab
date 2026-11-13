@@ -108,6 +108,7 @@ struct ThumbnailCacheTests {
         try await verifyUneditedCacheHitAndDeduplication(in: root)
         try await verifyKeyIsolationAndCostLimit(in: root)
         try await verifyEditedPreviewHitAndInvalidation(in: root)
+        try await verifyFirstEditRacesInFlightOriginalDecode(in: root)
         try await verifyResetIdempotentSingleInvalidation(in: root)
         try await verifyLookRemovalAndRenderFailureClearStaleTile(in: root)
         try await verifyFolderRefreshInvalidation(in: root)
@@ -298,6 +299,189 @@ struct ThumbnailCacheTests {
         let restoredOriginal = await previews.originalImage(for: photo, identity: recordAfterReset.identity)
         check(restoredOriginal === uneditedImg && thumbnails.decodeCount == 1,
               "After reset, unedited thumbnail is served from unedited cache entry without re-decoding")
+    }
+
+    @MainActor
+    private static func verifyFirstEditRacesInFlightOriginalDecode(in root: URL) async throws {
+        RenderEngine.resetCounts()
+        let dir = root.appendingPathComponent("first-edit-race", isDirectory: true)
+        let editsDir = dir.appendingPathComponent("edits", isDirectory: true)
+        let diskCacheDir = dir.appendingPathComponent("disk-cache", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        final class DecodeGate: @unchecked Sendable {
+            private let lock = NSLock()
+            private var armedPath: String?
+            private var onEnter: (@Sendable () -> Void)?
+            private var releaseSemaphore: DispatchSemaphore?
+
+            func arm(for url: URL, onEnter: @escaping @Sendable () -> Void) -> DispatchSemaphore {
+                let sem = DispatchSemaphore(value: 0)
+                lock.lock()
+                armedPath = PhotoThumbnailCacheKey.canonicalPath(for: url)
+                self.onEnter = onEnter
+                releaseSemaphore = sem
+                lock.unlock()
+                return sem
+            }
+
+            func interceptIfNeeded(for url: URL) {
+                let path = PhotoThumbnailCacheKey.canonicalPath(for: url)
+                lock.lock()
+                guard armedPath == path, let sem = releaseSemaphore else {
+                    lock.unlock()
+                    return
+                }
+                let callback = onEnter
+                armedPath = nil
+                onEnter = nil
+                releaseSemaphore = nil
+                lock.unlock()
+                callback?()
+                _ = sem.wait(timeout: .now() + 5)
+            }
+        }
+
+        let gate = DecodeGate()
+        // Enable observesEditPersistence to match PhotoThumbnails.shared alongside MacEditedPhotoPreviews.
+        let thumbnails = PhotoThumbnails(observesEditPersistence: true) { url, maxPixelSize in
+            gate.interceptIfNeeded(for: url)
+            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                  let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                      kCGImageSourceCreateThumbnailFromImageAlways: true,
+                      kCGImageSourceCreateThumbnailWithTransform: true,
+                      kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+                      kCGImageSourceShouldCache: false
+                  ] as CFDictionary) else { return nil }
+            return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        }
+        let store = try EditPersistence(directory: editsDir)
+        let session = AdjustmentTransferSession(store: store)
+        let previews = MacEditedPhotoPreviews(editDirectory: editsDir, cacheDirectory: diskCacheDir, thumbnails: thumbnails)
+
+        // Case A: First edit committed AND edited thumbnail stored while pre-edit originalImage decode is in flight.
+        let photo1 = dir.appendingPathComponent("race-after-render.png")
+        try writePNG(to: photo1, red: 0.15)
+        let path1 = PhotoThumbnailCacheKey.canonicalPath(for: photo1)
+        let initial1 = try await previews.record(for: photo1)
+        check(!MacPhotoPreviewPlan.isEdited(initial1), "Photo 1 starts unedited")
+        check(thumbnails.editGeneration(forPath: path1) == 0, "Unedited photo starts at editGeneration 0")
+
+        let (enteredStream1, enteredCont1) = AsyncStream<Void>.makeStream()
+        let release1 = gate.arm(for: photo1) { enteredCont1.yield() }
+        let inFlightOriginal1 = Task { @MainActor in
+            await previews.originalImage(for: photo1, identity: initial1.identity, recordAsActive: true)
+        }
+        var iter1 = enteredStream1.makeAsyncIterator()
+        _ = await iter1.next()
+
+        // Commit the very first edit (before beginEditedRender or store has ever run for path1).
+        var settings1 = Adjustments(); settings1.exposureMode = .sensor; settings1.exposure = 1.4
+        let state1 = PhotoEditState(settings: settings1, filmID: "")
+        let commit1 = session.commitEdit(expected: initial1, state: state1)
+        check(commit1.status == .applied, "First edit committed while unedited decode is in flight")
+        check(thumbnails.editGeneration(forPath: path1) == 1,
+              "First edit immediately advances editGeneration from 0 to 1 without waiting for render")
+        check(thumbnails.editedInvalidationCount == 1 && previews.editedInvalidationCount == 1,
+              "First edit advances invalidation counters once even with dual persistence observers")
+
+        // Verify idempotency: duplicate notifications / reconcile calls for the same edit state must not re-advance.
+        let rev1 = EditPersistence.editedRevision(for: state1, atPath: path1)!
+        NotificationCenter.default.post(
+            name: EditPersistence.didChangeRecordsNotification,
+            object: nil,
+            userInfo: [
+                EditPersistence.directoryPathUserInfoKey: store.canonicalDirectoryPath,
+                EditPersistence.changedRecordsUserInfoKey: [path1: Optional(state1)],
+                EditPersistence.invalidatedPathsUserInfoKey: Set([path1]),
+                EditPersistence.editedRevisionsUserInfoKey: [path1: rev1]
+            ]
+        )
+        check(!thumbnails.reconcileEditedRevision(rev1, atPath: path1),
+              "Duplicate reconcileEditedRevision for identical revision is a no-op")
+        check(thumbnails.editGeneration(forPath: path1) == 1,
+              "Duplicate notifications for same edit do not advance editGeneration again")
+        check(thumbnails.editedInvalidationCount == 1 && previews.editedInvalidationCount == 1,
+              "Duplicate notifications for same edit do not increment invalidation counts")
+
+        // Render and store edited preview while unedited decode is still blocked in flight.
+        let editedRecord1 = commit1.saved!
+        let editedImg1 = try await previews.image(for: editedRecord1)
+        check(previews.cachedThumbnail(for: photo1)?.image === editedImg1 && previews.cachedThumbnail(for: photo1)?.isEdited == true,
+              "Edited thumbnail active at generation 1 before in-flight original decode finishes")
+
+        // Release in-flight unedited decode captured at generation 0; it must NOT overwrite activeKeys.
+        release1.signal()
+        let lateOriginalImg1 = await inFlightOriginal1.value
+        check(lateOriginalImg1 != nil && lateOriginalImg1 !== editedImg1, "In-flight unedited decode completed")
+        check(previews.cachedThumbnail(for: photo1)?.image === editedImg1 && previews.cachedThumbnail(for: photo1)?.isEdited == true,
+              "Late pre-edit originalImage decode rejected and did not overwrite edited active presentation")
+
+        var tile1 = WorkspacePhotoTileState()
+        tile1.appear(url: photo1, previews: previews)
+        check(tile1.thumbnail === editedImg1 && tile1.edited && tile1.adjustedThumbnail,
+              "Rebuilt tile onAppear displays edited image rather than late pre-edit original")
+        await tile1.refresh(url: photo1, previews: previews)
+        check(tile1.thumbnail === editedImg1 && tile1.edited && tile1.adjustedThumbnail && tile1.notice == nil,
+              "Tile refresh keeps displaying edited image after late pre-edit decode")
+
+        // Case B: Unedited WorkspacePhotoTileState.refresh starts decode, first edit commits, late decode finishes before edited render, then tile refreshes.
+        let photo2 = dir.appendingPathComponent("race-before-render.png")
+        try writePNG(to: photo2, red: 0.55)
+        let path2 = PhotoThumbnailCacheKey.canonicalPath(for: photo2)
+
+        let (enteredStream2, enteredCont2) = AsyncStream<Void>.makeStream()
+        let release2 = gate.arm(for: photo2) { enteredCont2.yield() }
+        var tile2 = WorkspacePhotoTileState()
+        let staleTileTask = Task { @MainActor in
+            var copy = tile2
+            await copy.refresh(url: photo2, previews: previews)
+            return copy
+        }
+        var iter2 = enteredStream2.makeAsyncIterator()
+        _ = await iter2.next()
+
+        let initial2 = try store.readState(for: photo2)
+        let commit2 = session.commitEdit(expected: initial2, state: state1)
+        check(commit2.status == .applied && thumbnails.editGeneration(forPath: path2) == 1,
+              "First edit on photo 2 advances editGeneration from 0 to 1 while tile original decode is in flight")
+        staleTileTask.cancel()
+        release2.signal()
+        _ = await staleTileTask.value
+
+        check(previews.cachedThumbnail(for: photo2) == nil,
+              "Late unedited decode from cancelled pre-edit tile refresh is rejected from activeKeys")
+        await tile2.refresh(url: photo2, previews: previews)
+        let uneditedKey2 = PhotoThumbnailCacheKey(uneditedFileAt: photo2)!
+        let cachedUnedited2 = thumbnails.cachedImage(for: uneditedKey2)
+        check(cachedUnedited2 != nil, "Unedited NSCache key remains intact without relaxing cache key dimensions")
+        check(tile2.edited && tile2.adjustedThumbnail && tile2.thumbnail != nil && tile2.thumbnail !== cachedUnedited2 && tile2.notice == nil,
+              "Tile ultimately displays edited image instead of pre-edit original")
+
+        // Case C: Re-entering edited state after reset while a post-reset unedited decode is in flight.
+        let cleared2 = try session.resetToUnmodified(photo2)
+        check(cleared2.state == nil && thumbnails.editGeneration(forPath: path2) == 2,
+              "Reset advances editGeneration to 2")
+        thumbnails.invalidate(for: photo2)
+        let genAfterFileInvalidate = thumbnails.editGeneration(forPath: path2)
+
+        let (enteredStream3, enteredCont3) = AsyncStream<Void>.makeStream()
+        let release3 = gate.arm(for: photo2) { enteredCont3.yield() }
+        let inFlightPostReset = Task { @MainActor in
+            await previews.originalImage(for: photo2, identity: cleared2.identity, recordAsActive: true)
+        }
+        var iter3 = enteredStream3.makeAsyncIterator()
+        _ = await iter3.next()
+
+        var settings3 = settings1; settings3.exposure = 2.1
+        let commit3 = session.commitEdit(expected: cleared2, state: PhotoEditState(settings: settings3, filmID: ""))
+        check(commit3.status == .applied && thumbnails.editGeneration(forPath: path2) == genAfterFileInvalidate + 1,
+              "Re-editing after reset immediately advances editGeneration again")
+        let editedImg3 = try await previews.image(for: commit3.saved!)
+        release3.signal()
+        _ = await inFlightPostReset.value
+        check(previews.cachedThumbnail(for: photo2)?.image === editedImg3 && previews.cachedThumbnail(for: photo2)?.isEdited == true,
+              "Post-reset in-flight unedited decode cannot overwrite newly re-edited presentation")
     }
 
     @MainActor
