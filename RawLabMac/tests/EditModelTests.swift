@@ -828,14 +828,19 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
             let identity = try OriginalFileIdentity(raw)
             try autoreleasepool { try processingEditorChecks(root: root, input: raw) }
             let live = model()
-            live.open(raw)
             func waitForRender() throws {
                 let deadline = Date().addingTimeInterval(120)
                 while live.busy && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
                 try check(!live.busy && live.error == nil && live.result != nil, "real RAW render must complete")
             }
-            try waitForRender()
+            let rawOpenPeak = try peakFootprintMB {
+                live.open(raw)
+                try waitForRender()
+            }
             let original = live.neutral!.image
+            print(String(format: "[Q8-RAW] real RAW open peak %.1f MB (neutral %dx%d, native %@)",
+                         rawOpenPeak, original.width, original.height,
+                         live.neutral!.nativeWidth.map { "\($0)x\(live.neutral!.nativeHeight ?? 0)" } ?? "unknown"))
             let baselineNative = max(live.neutral!.nativeWidth ?? live.neutral!.image.width,
                                      live.neutral!.nativeHeight ?? live.neutral!.image.height)
             try check(max(live.neutral!.image.width, live.neutral!.image.height)
