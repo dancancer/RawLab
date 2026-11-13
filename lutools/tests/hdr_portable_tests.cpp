@@ -79,6 +79,27 @@ void sdrNclxColors() {
         cmsDeleteTransform(transform);cmsCloseProfile(profile);cmsCloseProfile(srgb);
     }
 }
+// 主目录、Exif、GPS 各 4096 条；前 whole 个普通条目都声明“值就是整个 EXIF 块”。
+std::vector<uint8_t> amplifiedExif(size_t whole) {
+    const size_t directory=2+4096*12+4, size=8+3*directory;
+    std::vector<uint8_t> tiff(size,0);
+    const auto put16=[&](size_t at,uint16_t value) { tiff[at]=uint8_t(value); tiff[at+1]=uint8_t(value>>8); };
+    const auto put32=[&](size_t at,uint32_t value) { for (int i=0;i<4;++i) tiff[at+i]=uint8_t(value>>(8*i)); };
+    tiff[0]=tiff[1]='I'; put16(2,42); put32(4,8);
+    for (size_t index=0;index<3;++index) {
+        const size_t offset=8+index*directory; put16(offset,4096);
+        for (uint16_t i=0;i<4096;++i) {
+            const size_t at=offset+2+size_t(i)*12;
+            if (index==0 && i>=4094) {
+                put16(at,i==4094 ? 0x8769 : 0x8825); put16(at+2,4); put32(at+4,1);
+                put32(at+8,uint32_t(8+(i-4093)*directory)); continue;
+            }
+            put16(at,uint16_t(0x1000+i)); put16(at+2,7);
+            put32(at+4,whole ? uint32_t(size) : 1); put32(at+8,0); whole-=whole!=0;
+        }
+    }
+    return tiff;
+}
 }
 
 int main(int argc, const char* argv[]) {
@@ -87,6 +108,14 @@ int main(int argc, const char* argv[]) {
     std::filesystem::create_directories(root);
     try {
         sdrNclxColors();
+        {
+            // 一条值覆盖整块（例如计数偏大的 MakerNote）仍在预算余量内。
+            const auto single=amplifiedExif(1);
+            check(sony2fuji::hdr::exifOrientation(single.data(),single.size())==1,"a single whole-block EXIF value stays within the budget");
+            const auto amplified=amplifiedExif(3*4096);
+            try { sony2fuji::hdr::exifOrientation(amplified.data(),amplified.size()); check(false,"amplified EXIF admitted"); }
+            catch (const sony2fuji::hdr::Error& error) { check(error.reason==SONY2FUJI_HDR_REASON_MALFORMED_AUX,"amplified EXIF has wrong diagnostic"); }
+        }
         const std::string xmp="<x:xmpmeta xmlns:x=\"adobe:ns:meta/\" xmlns:g=\"http://ns.apple.com/HDRGainMap/1.0/\"><g:HDRGainMapVersion>65536</g:HDRGainMapVersion></x:xmpmeta>";
         check(sony2fuji::hdr::appleXMPHeadroom(xmp.data(),xmp.size())==0,"valid Apple gain-map metadata rejected");
         auto future=xmp; future.replace(future.find("65536"),5,"65537");
