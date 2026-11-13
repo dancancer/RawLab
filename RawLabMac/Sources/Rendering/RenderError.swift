@@ -49,7 +49,7 @@ enum RenderError: LocalizedError {
         }
     }
 
-    private static func aliases(_ source: URL, _ destination: URL) -> Bool {
+    static func aliases(_ source: URL, _ destination: URL) -> Bool {
         if source.resolvingSymlinksInPath().standardizedFileURL == destination.resolvingSymlinksInPath().standardizedFileURL {
             return true
         }
