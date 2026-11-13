@@ -116,7 +116,6 @@ struct ContentView: View {
     @State var preparedReset: PreparedEditorReset?
     @State var preparedResetScope: EditorAdjustmentScope?
     @State var resetConfirmationPresented = false
-    @State var resetRestoreTool: EditorToolSelection?
     @State var resetIntentSource: EditorEditSource?
     @State var resetDraftSuspended = false
     @State var resetWaitingForReady = false
@@ -407,7 +406,6 @@ struct ContentView: View {
             preparedReset = nil
             preparedResetScope = nil
             resetConfirmationPresented = false
-            resetRestoreTool = nil
             resetIntentSource = nil
             resetDraftSuspended = false
             resetWaitingForReady = false
@@ -427,10 +425,7 @@ struct ContentView: View {
                 isImporting = false
                 photoImportRequestID = nil
             }
-            continuePendingAllReset()
         }
-        .onChange(of: viewModel.previewRendering) { _, _ in continuePendingAllReset() }
-        .onChange(of: viewModel.previewResizePending) { _, _ in continuePendingAllReset() }
         .onChange(of: viewModel.basePreviewImage) { _, image in
             if image == nil { photoViewing.endTemporaryViewing() }
         }

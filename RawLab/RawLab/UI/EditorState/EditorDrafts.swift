@@ -252,15 +252,6 @@ extension ContentView {
             continueEditorImport()
             return
         }
-        if resetRestoreTool != nil {
-            resetDraftSuspended = true
-            resetWaitingForReady = true
-            draftExitPresented = false
-            // Apply/Discard 已结束；最终确认取消也不回退这一步。
-            viewModel.updatePreview(settings: settings, includeHistogram: true, quality: .final)
-            continuePendingAllReset()
-            return
-        }
         let selection = pendingToolSelection
         let expansion = pendingAdjustmentExpansion
         pendingToolSelection = nil
@@ -272,7 +263,7 @@ extension ContentView {
 
     func retryEditorSave() {
         if isEditorDraftActive && viewModel.hasFailedDraftSave {
-            if pendingToolSelection != nil || pendingAdjustmentExpansion != nil || resetRestoreTool != nil || pendingFileImport || pendingPhotoImport || !pendingSystemPhotoURLs.isEmpty || pendingAdjustmentAction != nil || pendingCollectionNavigation != nil { finishDraftNavigation(apply: true) }
+            if pendingToolSelection != nil || pendingAdjustmentExpansion != nil || pendingFileImport || pendingPhotoImport || !pendingSystemPhotoURLs.isEmpty || pendingAdjustmentAction != nil || pendingCollectionNavigation != nil { finishDraftNavigation(apply: true) }
             else { applyEditorDraft() }
         } else if !pendingSystemPhotoURLs.isEmpty {
             continueSystemPhotoImport()
@@ -374,7 +365,6 @@ extension ContentView {
         pendingPhotoImport = false
         pendingToolSelection = nil
         pendingAdjustmentExpansion = nil
-        resetRestoreTool = nil
         resetIntentSource = nil
         resetWaitingForReady = false
         if skippedSystemPhoto {
@@ -404,20 +394,11 @@ extension ContentView {
         presentEditorReset(scope)
     }
 
-    func continuePendingAllReset() {
-        guard resetWaitingForReady else { return }
-        guard resetIntentSource == viewModel.editorEditSource else { cancelEditorReset(); return }
-        guard !editorBusy, !viewModel.previewRendering, !viewModel.previewResizePending, !isAdjustingSlider else { return }
-        resetWaitingForReady = false
-        presentEditorReset(.all)
-    }
-
     func presentEditorReset(_ scope: EditorAdjustmentScope) {
         switch prepareEditorReset(scope) {
-        case .unchanged: restoreResetDraft()
+        case .unchanged: break
         case .blocked(let reason):
             viewModel.statusMessage = resetBlockedMessage(reason)
-            restoreResetDraft()
         case .prepared(let candidate):
             preparedResetScope = scope
             preparedReset = candidate
@@ -427,35 +408,15 @@ extension ContentView {
     }
 
     func confirmEditorReset() {
-        guard let candidate = preparedReset else { restoreResetDraft(); return }
+        guard let candidate = preparedReset else { return }
         if !commitEditorReset(candidate) { viewModel.statusMessage = L10n.text("照片或调整已变化，请重新确认重置。") }
         preparedReset = nil
         preparedResetScope = nil
-        restoreResetDraft(preview: false)
     }
 
     func cancelEditorReset() {
         preparedReset = nil
         preparedResetScope = nil
-        restoreResetDraft()
-    }
-
-    func restoreResetDraft(preview: Bool = true) {
-        guard let tool = resetRestoreTool else { return }
-        let sameSource = resetIntentSource == viewModel.editorEditSource
-        resetRestoreTool = nil
-        resetIntentSource = nil
-        resetDraftSuspended = false
-        resetWaitingForReady = false
-        guard sameSource else { return }
-        let freshGeometry = tool == .geometry ? settings.geometrySettings : nil
-        let freshLens = tool == .lens ? settings : nil
-        if geometryDraft != freshGeometry || lensDraft != freshLens {
-            // 确认后的 settings observer 已负责预览；取消时重进几何要恢复 uncropped 画面。
-            suppressNextDraftPreview = !preview
-        }
-        geometryDraft = freshGeometry
-        lensDraft = freshLens
     }
 
     var resetConfirmationTitle: String {

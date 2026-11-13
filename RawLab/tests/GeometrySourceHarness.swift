@@ -466,7 +466,7 @@ extension ContentView {
                 probe.check(prefix + ".AsksDraftFirst", draftExitPresented && preparedReset == nil)
                 cancelDraftNavigation()
                 draftExitPresented = false
-                probe.check(prefix + ".StayKeepsDirtyDraft", isEditorDraftChanged && resetRestoreTool == nil)
+                probe.check(prefix + ".StayKeepsDirtyDraft", isEditorDraftChanged)
                 requestEditorReset(.all)
                 finishDraftNavigation(apply: apply)
                 try await geometryReviewSettled()
