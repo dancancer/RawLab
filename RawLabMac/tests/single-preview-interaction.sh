@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/Shared/tests/mac-native-sources.sh"
 source "$ROOT/RawLabMac/tests/native-env.sh"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
@@ -18,8 +19,8 @@ for dependency in libraw_r opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4; do
 done
 swiftc -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
     -module-cache-path "$OUT/module-cache" \
-    -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-    "${SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT/RawLabMac/tests/SinglePreviewInteractionApp.swift" \
+    -import-objc-header "$MAC_NATIVE_BRIDGING_HEADER" \
+    "${SOURCES[@]}" "${MAC_SHARED_SWIFT_SOURCES[@]}" "$ROOT/RawLabMac/tests/SinglePreviewInteractionApp.swift" \
     "${CORE_LINK[@]}" \
     $(pkg-config --libs libraw_r opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
     -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \

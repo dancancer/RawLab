@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/Shared/tests/mac-native-sources.sh"
 source "$ROOT/RawLabMac/tests/native-env.sh"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
@@ -11,12 +12,12 @@ test -f "$RAW" || { echo 'Set RAWLAB_TEST_RAW or pass an existing RAW path' >&2;
 test -f "$BUILD/libsony2fuji_core.a" || { echo 'Build the Mac core first: bash RawLabMac/build.sh' >&2; exit 1; }
 mkdir -p "$OUT"
 SOURCES=()
-for name in MacNeutralReference Engine RenderError Film Adjustments AdjustmentTypes MasterRecipe EditPersistence BatchExport BatchSelection EditorModel+BatchSelection EditorModel EditorModel+Geometry EditorModel+Workflow EditorModel+Rendering EditorModel+HSLTarget RenderScheduling FileLibrary BatchExportModel ExportSizePicker MacGeometryWindowGuard GeometryControls ParameterValueField ParameterPrecision AdjustmentRow MacRotationRuler MacStraightenPreview MacCropInteraction; do
+for name in MacNeutralReference Engine RenderError Film Adjustments AdjustmentTypes MasterRecipe EditPersistence BatchExport BatchSelection EditorModel+BatchSelection EditorModel EditorModel+Geometry EditorModel+HDR EditorModel+ProcessingMigration EditorModel+Workflow EditorModel+Rendering EditorModel+HSLTarget RenderScheduling FileLibrary BatchExportModel ExportSizePicker MacGeometryWindowGuard DesktopUpdateController UpdateAdapter UpdateState UpdateStore UpdateInstallGate LUTCompatibilityDialog FileBrowser GeometryControls ParameterValueField ParameterPrecision AdjustmentRow MacRotationRuler MacStraightenPreview MacCropInteraction; do
     source="$(find "$ROOT/RawLabMac/Sources" -name "$name.swift" -print -quit)"
     test -n "$source" || { echo "Missing Mac source: $name" >&2; exit 1; }
     SOURCES+=("$source")
 done
-for name in Localization BatchSelectionSession GeometrySettings HSLSettings HSLTargetAdjustment HSLNative HSLTargetNative ToneControlsSettings ToneControlsNative ColorGradingSettings ColorGradingNative ExportMetadata UsageAnalytics BundledLook DCPCompiler LookLibrary; do
+for name in Localization BatchSelectionSession GeometrySettings AtmosphereSettings AtmosphereNative HDRDisplay HDRSettings HSLSettings HSLTargetAdjustment HSLNative HSLTargetNative ToneControlsSettings ToneControlsNative ToneCurveSettings ToneCurveNative ProcessingMigration HDRRecipe ColorGradingSettings ColorGradingNative ExportMetadata UsageAnalytics BundledLook DCPCompiler LookLibrary LUTCompatibilityPreview LUTCompatibilityView LookBrowser; do
     SOURCES+=("$ROOT/Shared/$name.swift")
 done
 TRANSFER_SOURCES=(
@@ -31,8 +32,8 @@ TRANSFER_SOURCES=(
   "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentPresets.swift"
 )
 swiftc "${TRANSFER_SOURCES[@]}" -parse-as-library -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
-    -module-cache-path "$OUT/ModuleCache" -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-    "${SOURCES[@]}" "$ROOT/RawLabMac/tests/Geometry/"*.swift \
+    -module-cache-path "$OUT/ModuleCache" -import-objc-header "$MAC_NATIVE_BRIDGING_HEADER" \
+    "${SOURCES[@]}" "${MAC_NATIVE_SWIFT_SOURCES[@]}" "$ROOT/RawLabMac/tests/Geometry/"*.swift \
     "${CORE_LINK[@]}" $(pkg-config --libs libraw_r rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) \
     -Xlinker -rpath -Xlinker "$(pkg-config --variable=libdir opencv4)" \
     -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/test"

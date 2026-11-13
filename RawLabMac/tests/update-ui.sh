@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/Shared/tests/mac-native-sources.sh"
 source "$ROOT/RawLabMac/tests/native-env.sh"
 FIXTURE="${1:?Pass a fixture}"
 OUT="${2:?Pass an isolated output directory}"
@@ -26,8 +27,8 @@ files = {name: hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest() for n
 PY
 swiftc -swift-version 5 -O -whole-module-optimization -num-threads 4 \
     -sdk "${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}" -target "$(uname -m)-apple-macosx14.0" \
-    -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-    "${SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT/RawLabMac/tests/SoftwareUpdateUITests.swift" \
+    -import-objc-header "$MAC_NATIVE_BRIDGING_HEADER" \
+    "${SOURCES[@]}" "${MAC_SHARED_SWIFT_SOURCES[@]}" "$ROOT/RawLabMac/tests/SoftwareUpdateUITests.swift" \
     "${CORE_LINK[@]}" \
     $(pkg-config --libs libraw_r opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
     -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \
