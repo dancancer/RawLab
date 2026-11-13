@@ -82,7 +82,7 @@ extension IOSAdjustmentTransfer {
     static func applyObjects(_ payload: AdjustmentTransferPayload, to settings: inout RawSettings,
                              context: IOSAdjustmentTransferContext) throws {
         if let raw = payload[.rawDenoise]?.number, raw != 0 { throw AdjustmentTransferError.incompatible(Field.rawDenoise.rawValue) }
-        if let post = payload[.postRGBDenoise]?.number {
+        if let post = payload[.postRGBDenoise]?.number, payload.source.isRaw || !context.isRaw {
             guard context.isRaw || post == 0 else { throw AdjustmentTransferError.incompatible(Field.postRGBDenoise.rawValue) }
             settings.noiseReduction = post
         }
@@ -107,23 +107,28 @@ extension IOSAdjustmentTransfer {
             settings.geometry = geometry
         }
         if !payload.fields.isDisjoint(with: Field.lensFields) {
-            var lens = settings.lensSettings
-            if let value = payload[.lensDistortion]?.boolean { lens.distortion = value }
-            if let value = payload[.lensTCA]?.boolean { lens.tca = value }
-            if let value = payload[.lensVignetting]?.boolean { lens.vignetting = value }
-            if let value = payload[.lensAutoCrop]?.boolean { lens.autoCrop = value }
-            if let value = payload[.lensProfile] { lens.mode = value == .null ? .automatic : .manual; lens.profileID = value.string == "__rawlab_manual_selection_required__" ? nil : value.string }
-            if lens.isEnabled && lens.mode == .manual && lens.profileID == nil {
-                throw AdjustmentTransferError.unrepresentable(Field.lensProfile.rawValue)
-            }
-            if lens.isEnabled {
-                guard let validate = context.validateLensRequest else { throw AdjustmentTransferError.incompatible("target lens calibration unavailable") }
-                try validate(lens)
-            }
-            let previous = settings.lensSettings
-            if lens.distortion != previous.distortion || lens.tca != previous.tca || lens.vignetting != previous.vignetting || lens.autoCrop != previous.autoCrop
-                || lens.mode != previous.mode || lens.mode == .manual && lens.profileID != previous.profileID {
-                settings.lensCorrection = lens == LensCorrectionSettings() ? nil : lens
+            let neutral: [Field: Value] = [.lensDistortion: .boolean(false), .lensTCA: .boolean(false), .lensVignetting: .boolean(false),
+                .lensAutoCrop: .boolean(true), .lensProfile: .null]
+            let isNeutralLens = neutral.allSatisfy { payload[$0.key] == nil || payload[$0.key] == $0.value }
+            if payload.source.isRaw || !context.isRaw || !isNeutralLens {
+                var lens = settings.lensSettings
+                if let value = payload[.lensDistortion]?.boolean { lens.distortion = value }
+                if let value = payload[.lensTCA]?.boolean { lens.tca = value }
+                if let value = payload[.lensVignetting]?.boolean { lens.vignetting = value }
+                if let value = payload[.lensAutoCrop]?.boolean { lens.autoCrop = value }
+                if let value = payload[.lensProfile] { lens.mode = value == .null ? .automatic : .manual; lens.profileID = value.string == "__rawlab_manual_selection_required__" ? nil : value.string }
+                if lens.isEnabled && lens.mode == .manual && lens.profileID == nil {
+                    throw AdjustmentTransferError.unrepresentable(Field.lensProfile.rawValue)
+                }
+                if lens.isEnabled {
+                    guard let validate = context.validateLensRequest else { throw AdjustmentTransferError.incompatible("target lens calibration unavailable") }
+                    try validate(lens)
+                }
+                let previous = settings.lensSettings
+                if lens.distortion != previous.distortion || lens.tca != previous.tca || lens.vignetting != previous.vignetting || lens.autoCrop != previous.autoCrop
+                    || lens.mode != previous.mode || lens.mode == .manual && lens.profileID != previous.profileID {
+                    settings.lensCorrection = lens == LensCorrectionSettings() ? nil : lens
+                }
             }
         }
     }

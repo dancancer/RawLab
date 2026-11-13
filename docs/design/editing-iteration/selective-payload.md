@@ -2,7 +2,8 @@
 
 本文件记录 ITER-03 的逻辑交换格式与 Mac、iOS、Android、Windows adapter 的边界。共享 Swift 实现为
 `Shared/AdjustmentTransfer.swift`；跨端解码与有效值向量位于
-`Shared/fixtures/adjustment-transfer-v1.json`。其他端接入时消费同一向量，不能直接复制
+`Shared/fixtures/adjustment-transfer-v1.json`，粘贴场景向量位于
+`Shared/fixtures/adjustment-transfer-scenarios-v1.json`。其他端接入时消费同一向量，不能直接复制
 Mac 的 UI 百分比、native snapshot 或 Agent render recipe。
 
 四端已实现 adapter、真实本机存储事务、编辑入口和普通手势历史。
@@ -110,6 +111,17 @@ WB 的模式、Kelvin 和 tint 可独立选择。只选固定 Kelvin/tint 时，
 模式时返回不兼容，用户可改选完整 WB 请求。recipe tint 在目标校准上解析；缺少必要
 校准或新偏移超出目标范围时 blocked。已存在的 renderer clipping 是旧渲染语义，相同
 请求仍为 unchanged；adapter 不给新的不可表达值增加 clamp。
+
+### 非 RAW 来源粘到 RAW 目标的占位跳过规则
+
+交换格式（`payload_version` 1/2 的字段名、取值范围与校验）完全不变，历史剪贴板和已保存预设无需迁移；统一在粘贴端 `prepare` 当 `!source.is_raw && target.is_raw` 时按以下规则跳过非 RAW 占位值：
+
+1. `light.exposure_mode`：非 RAW 来源固定编码占位 `"sensor"`，粘到 RAW 目标时跳过写入，保留目标原有的 `scene`/`preview`/`sensor` 曝光基准。
+2. `color.white_balance.*`（`mode`、`temperature_kelvin`、`tint` 三项）：当来源没有大师配方，或虽有配方但未选中 `color.white_balance.tint`（`source.recipe == nil || !.tint in selected`）时，粘贴端将白平衡选中集视为空集跳过，不把目标 RAW 的自定义白平衡或配方白平衡重置回相机白平衡。**配方相对 `tint` 例外**：当 `source.recipe != nil` 且选中包含 `color.white_balance.tint` 时，仍保留相对 `tint` 跨 RAW 复用并在目标 `as_shot` 校准上解析（完整配方同时保留配方身份与逻辑相对 `tint`）。
+3. 旧版降噪（`detail.denoise.raw_level` 与 `detail.denoise.post_rgb`）：非 RAW 来源在 SDR 下只能输出 `0` 占位值，粘到 RAW 目标时跳过写入，保留目标 RAW 已有的旧版降噪设置。**双键语义与保留约束**：`detail.denoise.raw_level` 是 Mac 旧版 Bayer FBDD 请求；`detail.denoise.post_rgb` 在 SDR `payload_version=1` 中对应 iOS 旧版 `RawSettings.noiseReduction` 的 post-RGB 请求，同时也是四端 HDR v6+（`HDRDetailSettings.denoise`）现役共用降噪键，两个键语义独立，不可删除或合并。
+4. `geometry.lens.*`（`distortion`、`tca`、`vignetting`、`auto_crop`、`profile_id` 五项）：仅当 `!source.is_raw && target.is_raw` 且 payload 中这五项全为默认占位态（`distortion != true && tca != true && vignetting != true && auto_crop != false && profile_id == null`，部分选择中未出现的项按未请求处理）时整组跳过，保留目标 RAW 的镜头校正。**移动端非默认镜头例外**：若五项中至少一项非默认（例如 iOS/Android 用户在普通图片上显式开启校正、关闭 `auto_crop` 或指定 `profile_id`），则照常合并选中镜头字段并执行既有目标 `validateLensRequest` 校验。
+
+当普通图片仅显式勾选上述被跳过的占位项粘到 RAW 目标时，候选结果不产生修改，状态报告为 `unchanged`。
 
 ## Capture 与 prepare
 

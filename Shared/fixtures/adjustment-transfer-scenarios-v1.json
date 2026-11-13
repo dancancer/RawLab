@@ -1,0 +1,1601 @@
+{
+  "fixture_version": 1,
+  "scenarios": [
+    {
+      "id": "raster-all-preserves-raw-scene-wb-lens",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": true,
+        "available_looks": [
+          "builtin:PROVIA.cube",
+          "recipe:hamada_daylight_v2"
+        ],
+        "seed_payload": {
+          "payload_version": 1,
+          "scope_version": 1,
+          "source": {
+            "identifier": "seed.ARW",
+            "is_raw": true,
+            "processing_version": 3
+          },
+          "values": {
+            "light.exposure_mode": "scene",
+            "color.white_balance.mode": "temperature",
+            "color.white_balance.temperature_kelvin": 5850,
+            "color.white_balance.tint": -18,
+            "geometry.lens.distortion": true,
+            "geometry.lens.tca": true,
+            "geometry.lens.vignetting": true,
+            "geometry.lens.auto_crop": false,
+            "geometry.lens.profile_id": "fixture-profile"
+          }
+        }
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.jpg",
+          "is_raw": false,
+          "processing_version": 3
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": 0,
+            "saturation": 0
+          },
+          "color.grading.midtones": {
+            "hue": 0,
+            "saturation": 0
+          },
+          "color.grading.shadows": {
+            "hue": 0,
+            "saturation": 0
+          },
+          "color.hsl.hue.aqua": 0,
+          "color.hsl.hue.blue": 0,
+          "color.hsl.hue.green": 0,
+          "color.hsl.hue.magenta": 0,
+          "color.hsl.hue.orange": 0,
+          "color.hsl.hue.purple": 0,
+          "color.hsl.hue.red": 0,
+          "color.hsl.hue.yellow": 0,
+          "color.hsl.lightness.aqua": 0,
+          "color.hsl.lightness.blue": 0,
+          "color.hsl.lightness.green": 0,
+          "color.hsl.lightness.magenta": 0,
+          "color.hsl.lightness.orange": 0,
+          "color.hsl.lightness.purple": 0,
+          "color.hsl.lightness.red": 0,
+          "color.hsl.lightness.yellow": 0,
+          "color.hsl.saturation.aqua": 0,
+          "color.hsl.saturation.blue": 0,
+          "color.hsl.saturation.green": 0,
+          "color.hsl.saturation.magenta": 0,
+          "color.hsl.saturation.orange": 0,
+          "color.hsl.saturation.purple": 0,
+          "color.hsl.saturation.red": 0,
+          "color.hsl.saturation.yellow": 0,
+          "color.saturation": 1,
+          "color.vibrance": 0,
+          "color.white_balance.mode": "none",
+          "color.white_balance.temperature_kelvin": null,
+          "color.white_balance.tint": null,
+          "detail.denoise.chroma_mode": null,
+          "detail.denoise.post_rgb": 0,
+          "detail.denoise.raw_level": 0,
+          "detail.denoise.wavelet": null,
+          "detail.sharpening": 0,
+          "effects.clarity": 0,
+          "effects.dehaze": 0,
+          "effects.grain.amount": 0,
+          "effects.grain.roughness": 50,
+          "effects.grain.size": 25,
+          "effects.vignette.amount": 0,
+          "effects.vignette.feather": 50,
+          "effects.vignette.highlights": 0,
+          "effects.vignette.midpoint": 50,
+          "effects.vignette.roundness": 0,
+          "geometry.crop.height": 1,
+          "geometry.crop.width": 1,
+          "geometry.crop.x": 0,
+          "geometry.crop.y": 0,
+          "geometry.flip_horizontal": false,
+          "geometry.flip_vertical": false,
+          "geometry.lens.auto_crop": true,
+          "geometry.lens.distortion": false,
+          "geometry.lens.profile_id": null,
+          "geometry.lens.tca": false,
+          "geometry.lens.vignetting": false,
+          "geometry.perspective.horizontal": 0,
+          "geometry.perspective.vertical": 0,
+          "geometry.quarter_turns": 0,
+          "geometry.straighten_degrees": 0,
+          "light.contrast": 1,
+          "light.curve": {
+            "mode": "legacy",
+            "points": []
+          },
+          "light.exposure": 0.75,
+          "light.exposure_mode": "sensor",
+          "light.highlights": 0,
+          "light.s_curve": 0,
+          "light.shadows": 0,
+          "looks.reference": {
+            "id": null,
+            "kind": "neutral"
+          },
+          "looks.strength": 1,
+          "tone.black_point": 0,
+          "tone.white_point": 0
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "light.exposure": 0.75,
+          "light.exposure_mode": "scene",
+          "color.white_balance.mode": "temperature",
+          "color.white_balance.temperature_kelvin": 5850,
+          "color.white_balance.tint": -18,
+          "geometry.lens.distortion": true,
+          "geometry.lens.tca": true,
+          "geometry.lens.vignetting": true,
+          "geometry.lens.auto_crop": false,
+          "geometry.lens.profile_id": "fixture-profile"
+        },
+        "effective": {
+          "light.exposure": 0.75
+        }
+      }
+    },
+    {
+      "id": "raster-all-preserves-raw-preview-wb-auto-lens",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": true,
+        "available_looks": [
+          "builtin:PROVIA.cube",
+          "recipe:hamada_daylight_v2"
+        ],
+        "seed_payload": {
+          "payload_version": 1,
+          "scope_version": 1,
+          "source": {
+            "identifier": "seed.ARW",
+            "is_raw": true,
+            "processing_version": 3
+          },
+          "values": {
+            "light.exposure_mode": "preview",
+            "color.white_balance.mode": "temperature",
+            "color.white_balance.temperature_kelvin": 4650,
+            "color.white_balance.tint": 14,
+            "geometry.lens.distortion": true,
+            "geometry.lens.tca": false,
+            "geometry.lens.vignetting": false,
+            "geometry.lens.auto_crop": true,
+            "geometry.lens.profile_id": null
+          }
+        }
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.jpg",
+          "is_raw": false,
+          "processing_version": 3
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": 0,
+            "saturation": 0
+          },
+          "color.grading.midtones": {
+            "hue": 0,
+            "saturation": 0
+          },
+          "color.grading.shadows": {
+            "hue": 0,
+            "saturation": 0
+          },
+          "color.hsl.hue.aqua": 0,
+          "color.hsl.hue.blue": 0,
+          "color.hsl.hue.green": 0,
+          "color.hsl.hue.magenta": 0,
+          "color.hsl.hue.orange": 0,
+          "color.hsl.hue.purple": 0,
+          "color.hsl.hue.red": 0,
+          "color.hsl.hue.yellow": 0,
+          "color.hsl.lightness.aqua": 0,
+          "color.hsl.lightness.blue": 0,
+          "color.hsl.lightness.green": 0,
+          "color.hsl.lightness.magenta": 0,
+          "color.hsl.lightness.orange": 0,
+          "color.hsl.lightness.purple": 0,
+          "color.hsl.lightness.red": 0,
+          "color.hsl.lightness.yellow": 0,
+          "color.hsl.saturation.aqua": 0,
+          "color.hsl.saturation.blue": 0,
+          "color.hsl.saturation.green": 0,
+          "color.hsl.saturation.magenta": 0,
+          "color.hsl.saturation.orange": 0,
+          "color.hsl.saturation.purple": 0,
+          "color.hsl.saturation.red": 0,
+          "color.hsl.saturation.yellow": 0,
+          "color.saturation": 1,
+          "color.vibrance": 0,
+          "color.white_balance.mode": "none",
+          "color.white_balance.temperature_kelvin": null,
+          "color.white_balance.tint": null,
+          "detail.denoise.chroma_mode": null,
+          "detail.denoise.post_rgb": 0,
+          "detail.denoise.raw_level": 0,
+          "detail.denoise.wavelet": null,
+          "detail.sharpening": 0,
+          "effects.clarity": 0,
+          "effects.dehaze": 0,
+          "effects.grain.amount": 0,
+          "effects.grain.roughness": 50,
+          "effects.grain.size": 25,
+          "effects.vignette.amount": 0,
+          "effects.vignette.feather": 50,
+          "effects.vignette.highlights": 0,
+          "effects.vignette.midpoint": 50,
+          "effects.vignette.roundness": 0,
+          "geometry.crop.height": 1,
+          "geometry.crop.width": 1,
+          "geometry.crop.x": 0,
+          "geometry.crop.y": 0,
+          "geometry.flip_horizontal": false,
+          "geometry.flip_vertical": false,
+          "geometry.lens.auto_crop": true,
+          "geometry.lens.distortion": false,
+          "geometry.lens.profile_id": null,
+          "geometry.lens.tca": false,
+          "geometry.lens.vignetting": false,
+          "geometry.perspective.horizontal": 0,
+          "geometry.perspective.vertical": 0,
+          "geometry.quarter_turns": 0,
+          "geometry.straighten_degrees": 0,
+          "light.contrast": 1.2,
+          "light.curve": {
+            "mode": "legacy",
+            "points": []
+          },
+          "light.exposure": -0.5,
+          "light.exposure_mode": "sensor",
+          "light.highlights": 0,
+          "light.s_curve": 0,
+          "light.shadows": 0,
+          "looks.reference": {
+            "id": null,
+            "kind": "neutral"
+          },
+          "looks.strength": 1,
+          "tone.black_point": 0,
+          "tone.white_point": 0
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "light.exposure": -0.5,
+          "light.contrast": 1.2,
+          "light.exposure_mode": "preview",
+          "color.white_balance.mode": "temperature",
+          "color.white_balance.temperature_kelvin": 4650,
+          "color.white_balance.tint": 14,
+          "geometry.lens.distortion": true,
+          "geometry.lens.tca": false,
+          "geometry.lens.vignetting": false,
+          "geometry.lens.auto_crop": true,
+          "geometry.lens.profile_id": null
+        },
+        "effective": {
+          "light.exposure": -0.5,
+          "light.contrast": 1.2
+        }
+      }
+    },
+    {
+      "id": "raster-all-preserves-macos-raw-denoise",
+      "platforms": [
+        "macos"
+      ],
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": true,
+        "available_looks": [
+          "builtin:PROVIA.cube",
+          "recipe:hamada_daylight_v2"
+        ],
+        "seed_payload": {
+          "payload_version": 1,
+          "scope_version": 1,
+          "source": {
+            "identifier": "seed.ARW",
+            "is_raw": true,
+            "processing_version": 3
+          },
+          "values": {
+            "light.exposure_mode": "scene",
+            "color.white_balance.mode": "temperature",
+            "color.white_balance.temperature_kelvin": 5850,
+            "color.white_balance.tint": -18,
+            "geometry.lens.distortion": true,
+            "geometry.lens.tca": true,
+            "geometry.lens.vignetting": true,
+            "geometry.lens.auto_crop": false,
+            "geometry.lens.profile_id": "fixture-profile",
+            "detail.denoise.raw_level": 2
+          }
+        }
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.jpg",
+          "is_raw": false,
+          "processing_version": 3
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": 0,
+            "saturation": 0
+          },
+          "color.grading.midtones": {
+            "hue": 0,
+            "saturation": 0
+          },
+          "color.grading.shadows": {
+            "hue": 0,
+            "saturation": 0
+          },
+          "color.hsl.hue.aqua": 0,
+          "color.hsl.hue.blue": 0,
+          "color.hsl.hue.green": 0,
+          "color.hsl.hue.magenta": 0,
+          "color.hsl.hue.orange": 0,
+          "color.hsl.hue.purple": 0,
+          "color.hsl.hue.red": 0,
+          "color.hsl.hue.yellow": 0,
+          "color.hsl.lightness.aqua": 0,
+          "color.hsl.lightness.blue": 0,
+          "color.hsl.lightness.green": 0,
+          "color.hsl.lightness.magenta": 0,
+          "color.hsl.lightness.orange": 0,
+          "color.hsl.lightness.purple": 0,
+          "color.hsl.lightness.red": 0,
+          "color.hsl.lightness.yellow": 0,
+          "color.hsl.saturation.aqua": 0,
+          "color.hsl.saturation.blue": 0,
+          "color.hsl.saturation.green": 0,
+          "color.hsl.saturation.magenta": 0,
+          "color.hsl.saturation.orange": 0,
+          "color.hsl.saturation.purple": 0,
+          "color.hsl.saturation.red": 0,
+          "color.hsl.saturation.yellow": 0,
+          "color.saturation": 1,
+          "color.vibrance": 0,
+          "color.white_balance.mode": "none",
+          "color.white_balance.temperature_kelvin": null,
+          "color.white_balance.tint": null,
+          "detail.denoise.chroma_mode": null,
+          "detail.denoise.post_rgb": 0,
+          "detail.denoise.raw_level": 0,
+          "detail.denoise.wavelet": null,
+          "detail.sharpening": 0,
+          "effects.clarity": 0,
+          "effects.dehaze": 0,
+          "effects.grain.amount": 0,
+          "effects.grain.roughness": 50,
+          "effects.grain.size": 25,
+          "effects.vignette.amount": 0,
+          "effects.vignette.feather": 50,
+          "effects.vignette.highlights": 0,
+          "effects.vignette.midpoint": 50,
+          "effects.vignette.roundness": 0,
+          "geometry.crop.height": 1,
+          "geometry.crop.width": 1,
+          "geometry.crop.x": 0,
+          "geometry.crop.y": 0,
+          "geometry.flip_horizontal": false,
+          "geometry.flip_vertical": false,
+          "geometry.lens.auto_crop": true,
+          "geometry.lens.distortion": false,
+          "geometry.lens.profile_id": null,
+          "geometry.lens.tca": false,
+          "geometry.lens.vignetting": false,
+          "geometry.perspective.horizontal": 0,
+          "geometry.perspective.vertical": 0,
+          "geometry.quarter_turns": 0,
+          "geometry.straighten_degrees": 0,
+          "light.contrast": 1,
+          "light.curve": {
+            "mode": "legacy",
+            "points": []
+          },
+          "light.exposure": 0.75,
+          "light.exposure_mode": "sensor",
+          "light.highlights": 0,
+          "light.s_curve": 0,
+          "light.shadows": 0,
+          "looks.reference": {
+            "id": null,
+            "kind": "neutral"
+          },
+          "looks.strength": 1,
+          "tone.black_point": 0,
+          "tone.white_point": 0
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "light.exposure": 0.75,
+          "light.exposure_mode": "scene",
+          "color.white_balance.mode": "temperature",
+          "color.white_balance.temperature_kelvin": 5850,
+          "color.white_balance.tint": -18,
+          "detail.denoise.raw_level": 2,
+          "geometry.lens.distortion": true,
+          "geometry.lens.tca": true,
+          "geometry.lens.vignetting": true,
+          "geometry.lens.auto_crop": false,
+          "geometry.lens.profile_id": "fixture-profile"
+        }
+      }
+    },
+    {
+      "id": "raster-all-preserves-ios-post-rgb-denoise",
+      "platforms": [
+        "ios"
+      ],
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": false,
+        "available_looks": [
+          "builtin:PROVIA.cube",
+          "recipe:hamada_daylight_v2"
+        ],
+        "seed_payload": {
+          "payload_version": 1,
+          "scope_version": 1,
+          "source": {
+            "identifier": "seed.ARW",
+            "is_raw": true,
+            "processing_version": 3
+          },
+          "values": {
+            "light.exposure_mode": "scene",
+            "color.white_balance.mode": "temperature",
+            "color.white_balance.temperature_kelvin": 5850,
+            "color.white_balance.tint": -18,
+            "geometry.lens.distortion": true,
+            "geometry.lens.tca": true,
+            "geometry.lens.vignetting": true,
+            "geometry.lens.auto_crop": false,
+            "geometry.lens.profile_id": "fixture-profile",
+            "detail.denoise.post_rgb": 0.25
+          }
+        }
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.jpg",
+          "is_raw": false,
+          "processing_version": 3
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": 0,
+            "saturation": 0
+          },
+          "color.grading.midtones": {
+            "hue": 0,
+            "saturation": 0
+          },
+          "color.grading.shadows": {
+            "hue": 0,
+            "saturation": 0
+          },
+          "color.hsl.hue.aqua": 0,
+          "color.hsl.hue.blue": 0,
+          "color.hsl.hue.green": 0,
+          "color.hsl.hue.magenta": 0,
+          "color.hsl.hue.orange": 0,
+          "color.hsl.hue.purple": 0,
+          "color.hsl.hue.red": 0,
+          "color.hsl.hue.yellow": 0,
+          "color.hsl.lightness.aqua": 0,
+          "color.hsl.lightness.blue": 0,
+          "color.hsl.lightness.green": 0,
+          "color.hsl.lightness.magenta": 0,
+          "color.hsl.lightness.orange": 0,
+          "color.hsl.lightness.purple": 0,
+          "color.hsl.lightness.red": 0,
+          "color.hsl.lightness.yellow": 0,
+          "color.hsl.saturation.aqua": 0,
+          "color.hsl.saturation.blue": 0,
+          "color.hsl.saturation.green": 0,
+          "color.hsl.saturation.magenta": 0,
+          "color.hsl.saturation.orange": 0,
+          "color.hsl.saturation.purple": 0,
+          "color.hsl.saturation.red": 0,
+          "color.hsl.saturation.yellow": 0,
+          "color.saturation": 1,
+          "color.vibrance": 0,
+          "color.white_balance.mode": "none",
+          "color.white_balance.temperature_kelvin": null,
+          "color.white_balance.tint": null,
+          "detail.denoise.chroma_mode": null,
+          "detail.denoise.post_rgb": 0,
+          "detail.denoise.raw_level": 0,
+          "detail.denoise.wavelet": null,
+          "detail.sharpening": 0,
+          "effects.clarity": 0,
+          "effects.dehaze": 0,
+          "effects.grain.amount": 0,
+          "effects.grain.roughness": 50,
+          "effects.grain.size": 25,
+          "effects.vignette.amount": 0,
+          "effects.vignette.feather": 50,
+          "effects.vignette.highlights": 0,
+          "effects.vignette.midpoint": 50,
+          "effects.vignette.roundness": 0,
+          "geometry.crop.height": 1,
+          "geometry.crop.width": 1,
+          "geometry.crop.x": 0,
+          "geometry.crop.y": 0,
+          "geometry.flip_horizontal": false,
+          "geometry.flip_vertical": false,
+          "geometry.lens.auto_crop": true,
+          "geometry.lens.distortion": false,
+          "geometry.lens.profile_id": null,
+          "geometry.lens.tca": false,
+          "geometry.lens.vignetting": false,
+          "geometry.perspective.horizontal": 0,
+          "geometry.perspective.vertical": 0,
+          "geometry.quarter_turns": 0,
+          "geometry.straighten_degrees": 0,
+          "light.contrast": 1,
+          "light.curve": {
+            "mode": "legacy",
+            "points": []
+          },
+          "light.exposure": 0.75,
+          "light.exposure_mode": "sensor",
+          "light.highlights": 0,
+          "light.s_curve": 0,
+          "light.shadows": 0,
+          "looks.reference": {
+            "id": null,
+            "kind": "neutral"
+          },
+          "looks.strength": 1,
+          "tone.black_point": 0,
+          "tone.white_point": 0
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "light.exposure": 0.75,
+          "light.exposure_mode": "scene",
+          "color.white_balance.mode": "temperature",
+          "color.white_balance.temperature_kelvin": 5850,
+          "color.white_balance.tint": -18,
+          "detail.denoise.post_rgb": 0.25,
+          "geometry.lens.distortion": true,
+          "geometry.lens.tca": true,
+          "geometry.lens.vignetting": true,
+          "geometry.lens.auto_crop": false,
+          "geometry.lens.profile_id": "fixture-profile"
+        }
+      }
+    },
+    {
+      "id": "raster-neutral-all-unchanged-on-seeded-raw",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": true,
+        "available_looks": [
+          "builtin:PROVIA.cube",
+          "recipe:hamada_daylight_v2"
+        ],
+        "seed_payload": {
+          "payload_version": 1,
+          "scope_version": 1,
+          "source": {
+            "identifier": "seed.ARW",
+            "is_raw": true,
+            "processing_version": 3
+          },
+          "values": {
+            "light.exposure_mode": "scene",
+            "color.white_balance.mode": "temperature",
+            "color.white_balance.temperature_kelvin": 5850,
+            "color.white_balance.tint": -18,
+            "geometry.lens.distortion": true,
+            "geometry.lens.tca": true,
+            "geometry.lens.vignetting": true,
+            "geometry.lens.auto_crop": false,
+            "geometry.lens.profile_id": "fixture-profile"
+          }
+        }
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.jpg",
+          "is_raw": false,
+          "processing_version": 3
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": 0,
+            "saturation": 0
+          },
+          "color.grading.midtones": {
+            "hue": 0,
+            "saturation": 0
+          },
+          "color.grading.shadows": {
+            "hue": 0,
+            "saturation": 0
+          },
+          "color.hsl.hue.aqua": 0,
+          "color.hsl.hue.blue": 0,
+          "color.hsl.hue.green": 0,
+          "color.hsl.hue.magenta": 0,
+          "color.hsl.hue.orange": 0,
+          "color.hsl.hue.purple": 0,
+          "color.hsl.hue.red": 0,
+          "color.hsl.hue.yellow": 0,
+          "color.hsl.lightness.aqua": 0,
+          "color.hsl.lightness.blue": 0,
+          "color.hsl.lightness.green": 0,
+          "color.hsl.lightness.magenta": 0,
+          "color.hsl.lightness.orange": 0,
+          "color.hsl.lightness.purple": 0,
+          "color.hsl.lightness.red": 0,
+          "color.hsl.lightness.yellow": 0,
+          "color.hsl.saturation.aqua": 0,
+          "color.hsl.saturation.blue": 0,
+          "color.hsl.saturation.green": 0,
+          "color.hsl.saturation.magenta": 0,
+          "color.hsl.saturation.orange": 0,
+          "color.hsl.saturation.purple": 0,
+          "color.hsl.saturation.red": 0,
+          "color.hsl.saturation.yellow": 0,
+          "color.saturation": 1,
+          "color.vibrance": 0,
+          "color.white_balance.mode": "none",
+          "color.white_balance.temperature_kelvin": null,
+          "color.white_balance.tint": null,
+          "detail.denoise.chroma_mode": null,
+          "detail.denoise.post_rgb": 0,
+          "detail.denoise.raw_level": 0,
+          "detail.denoise.wavelet": null,
+          "detail.sharpening": 0,
+          "effects.clarity": 0,
+          "effects.dehaze": 0,
+          "effects.grain.amount": 0,
+          "effects.grain.roughness": 50,
+          "effects.grain.size": 25,
+          "effects.vignette.amount": 0,
+          "effects.vignette.feather": 50,
+          "effects.vignette.highlights": 0,
+          "effects.vignette.midpoint": 50,
+          "effects.vignette.roundness": 0,
+          "geometry.crop.height": 1,
+          "geometry.crop.width": 1,
+          "geometry.crop.x": 0,
+          "geometry.crop.y": 0,
+          "geometry.flip_horizontal": false,
+          "geometry.flip_vertical": false,
+          "geometry.lens.auto_crop": true,
+          "geometry.lens.distortion": false,
+          "geometry.lens.profile_id": null,
+          "geometry.lens.tca": false,
+          "geometry.lens.vignetting": false,
+          "geometry.perspective.horizontal": 0,
+          "geometry.perspective.vertical": 0,
+          "geometry.quarter_turns": 0,
+          "geometry.straighten_degrees": 0,
+          "light.contrast": 1,
+          "light.curve": {
+            "mode": "legacy",
+            "points": []
+          },
+          "light.exposure": 0,
+          "light.exposure_mode": "sensor",
+          "light.highlights": 0,
+          "light.s_curve": 0,
+          "light.shadows": 0,
+          "looks.reference": {
+            "id": null,
+            "kind": "neutral"
+          },
+          "looks.strength": 1,
+          "tone.black_point": 0,
+          "tone.white_point": 0
+        }
+      },
+      "expect": {
+        "status": "unchanged"
+      }
+    },
+    {
+      "id": "raster-placeholders-only-unchanged-on-raw",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": true,
+        "available_looks": [
+          "builtin:PROVIA.cube",
+          "recipe:hamada_daylight_v2"
+        ],
+        "seed_payload": {
+          "payload_version": 1,
+          "scope_version": 1,
+          "source": {
+            "identifier": "seed.ARW",
+            "is_raw": true,
+            "processing_version": 3
+          },
+          "values": {
+            "light.exposure_mode": "scene",
+            "color.white_balance.mode": "temperature",
+            "color.white_balance.temperature_kelvin": 5850,
+            "color.white_balance.tint": -18,
+            "geometry.lens.distortion": true,
+            "geometry.lens.tca": true,
+            "geometry.lens.vignetting": true,
+            "geometry.lens.auto_crop": false,
+            "geometry.lens.profile_id": "fixture-profile"
+          }
+        }
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.jpg",
+          "is_raw": false,
+          "processing_version": 3
+        },
+        "values": {
+          "light.exposure_mode": "sensor",
+          "color.white_balance.mode": "none",
+          "color.white_balance.temperature_kelvin": null,
+          "color.white_balance.tint": null,
+          "detail.denoise.raw_level": 0,
+          "detail.denoise.post_rgb": 0,
+          "geometry.lens.distortion": false,
+          "geometry.lens.tca": false,
+          "geometry.lens.vignetting": false,
+          "geometry.lens.auto_crop": true,
+          "geometry.lens.profile_id": null
+        }
+      },
+      "expect": {
+        "status": "unchanged"
+      }
+    },
+    {
+      "id": "raster-wb-mode-only-unchanged-on-custom-wb-raw",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": true,
+        "available_looks": [],
+        "seed_payload": {
+          "payload_version": 1,
+          "scope_version": 1,
+          "source": {
+            "identifier": "seed.ARW",
+            "is_raw": true,
+            "processing_version": 3
+          },
+          "values": {
+            "light.exposure_mode": "scene",
+            "color.white_balance.mode": "temperature",
+            "color.white_balance.temperature_kelvin": 5850,
+            "color.white_balance.tint": -18,
+            "geometry.lens.distortion": true,
+            "geometry.lens.tca": true,
+            "geometry.lens.vignetting": true,
+            "geometry.lens.auto_crop": false,
+            "geometry.lens.profile_id": "fixture-profile"
+          }
+        }
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.jpg",
+          "is_raw": false,
+          "processing_version": 3
+        },
+        "values": {
+          "color.white_balance.mode": "none"
+        }
+      },
+      "expect": {
+        "status": "unchanged"
+      }
+    },
+    {
+      "id": "raster-partial-default-lens-unchanged-on-raw",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": true,
+        "available_looks": [],
+        "seed_payload": {
+          "payload_version": 1,
+          "scope_version": 1,
+          "source": {
+            "identifier": "seed.ARW",
+            "is_raw": true,
+            "processing_version": 3
+          },
+          "values": {
+            "light.exposure_mode": "scene",
+            "color.white_balance.mode": "temperature",
+            "color.white_balance.temperature_kelvin": 5850,
+            "color.white_balance.tint": -18,
+            "geometry.lens.distortion": true,
+            "geometry.lens.tca": true,
+            "geometry.lens.vignetting": true,
+            "geometry.lens.auto_crop": false,
+            "geometry.lens.profile_id": "fixture-profile"
+          }
+        }
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.jpg",
+          "is_raw": false,
+          "processing_version": 3
+        },
+        "values": {
+          "geometry.lens.distortion": false,
+          "geometry.lens.auto_crop": true
+        }
+      },
+      "expect": {
+        "status": "unchanged"
+      }
+    },
+    {
+      "id": "raster-raw-denoise-zero-unchanged-on-macos-raw",
+      "platforms": [
+        "macos"
+      ],
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": true,
+        "available_looks": [],
+        "seed_payload": {
+          "payload_version": 1,
+          "scope_version": 1,
+          "source": {
+            "identifier": "seed.ARW",
+            "is_raw": true,
+            "processing_version": 3
+          },
+          "values": {
+            "light.exposure_mode": "scene",
+            "color.white_balance.mode": "temperature",
+            "color.white_balance.temperature_kelvin": 5850,
+            "color.white_balance.tint": -18,
+            "geometry.lens.distortion": true,
+            "geometry.lens.tca": true,
+            "geometry.lens.vignetting": true,
+            "geometry.lens.auto_crop": false,
+            "geometry.lens.profile_id": "fixture-profile",
+            "detail.denoise.raw_level": 2
+          }
+        }
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.jpg",
+          "is_raw": false,
+          "processing_version": 3
+        },
+        "values": {
+          "detail.denoise.raw_level": 0
+        }
+      },
+      "expect": {
+        "status": "unchanged"
+      }
+    },
+    {
+      "id": "raster-post-rgb-zero-unchanged-on-ios-raw",
+      "platforms": [
+        "ios"
+      ],
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": {
+          "payload_version": 1,
+          "scope_version": 1,
+          "source": {
+            "identifier": "seed.ARW",
+            "is_raw": true,
+            "processing_version": 3
+          },
+          "values": {
+            "light.exposure_mode": "scene",
+            "color.white_balance.mode": "temperature",
+            "color.white_balance.temperature_kelvin": 5850,
+            "color.white_balance.tint": -18,
+            "geometry.lens.distortion": true,
+            "geometry.lens.tca": true,
+            "geometry.lens.vignetting": true,
+            "geometry.lens.auto_crop": false,
+            "geometry.lens.profile_id": "fixture-profile",
+            "detail.denoise.post_rgb": 0.25
+          }
+        }
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.jpg",
+          "is_raw": false,
+          "processing_version": 3
+        },
+        "values": {
+          "detail.denoise.post_rgb": 0
+        }
+      },
+      "expect": {
+        "status": "unchanged"
+      }
+    },
+    {
+      "id": "raster-full-recipe-preserves-identity-and-relative-tint-on-raw",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": true,
+        "available_looks": [
+          "recipe:hamada_daylight_v2"
+        ],
+        "seed_payload": {
+          "payload_version": 1,
+          "scope_version": 1,
+          "source": {
+            "identifier": "seed.ARW",
+            "is_raw": true,
+            "processing_version": 3
+          },
+          "values": {
+            "light.exposure_mode": "scene",
+            "color.white_balance.mode": "temperature",
+            "color.white_balance.temperature_kelvin": 5850,
+            "color.white_balance.tint": -18,
+            "geometry.lens.distortion": true,
+            "geometry.lens.tca": true,
+            "geometry.lens.vignetting": true,
+            "geometry.lens.auto_crop": false,
+            "geometry.lens.profile_id": "fixture-profile"
+          }
+        }
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.jpg",
+          "is_raw": false,
+          "processing_version": 3,
+          "recipe": {
+            "id": "hamada_daylight_v2",
+            "settings_version": 4,
+            "strength": 0.5
+          }
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": 45,
+            "saturation": 2
+          },
+          "color.grading.midtones": {
+            "hue": 35,
+            "saturation": 0
+          },
+          "color.grading.shadows": {
+            "hue": 200,
+            "saturation": 1
+          },
+          "color.hsl.hue.aqua": 0,
+          "color.hsl.hue.blue": 0,
+          "color.hsl.hue.green": 0,
+          "color.hsl.hue.magenta": 0,
+          "color.hsl.hue.orange": 0,
+          "color.hsl.hue.purple": 0,
+          "color.hsl.hue.red": 0,
+          "color.hsl.hue.yellow": 1,
+          "color.hsl.lightness.aqua": -1,
+          "color.hsl.lightness.blue": 0,
+          "color.hsl.lightness.green": 0,
+          "color.hsl.lightness.magenta": 0,
+          "color.hsl.lightness.orange": 0,
+          "color.hsl.lightness.purple": 0,
+          "color.hsl.lightness.red": 0,
+          "color.hsl.lightness.yellow": 0,
+          "color.hsl.saturation.aqua": 4,
+          "color.hsl.saturation.blue": 1,
+          "color.hsl.saturation.green": 0,
+          "color.hsl.saturation.magenta": 0,
+          "color.hsl.saturation.orange": 1,
+          "color.hsl.saturation.purple": 0,
+          "color.hsl.saturation.red": 0,
+          "color.hsl.saturation.yellow": 1,
+          "color.saturation": 0.92,
+          "color.vibrance": 4,
+          "color.white_balance.mode": "none",
+          "color.white_balance.temperature_kelvin": null,
+          "color.white_balance.tint": 5,
+          "detail.denoise.chroma_mode": null,
+          "detail.denoise.post_rgb": 0,
+          "detail.denoise.raw_level": 0,
+          "detail.denoise.wavelet": null,
+          "detail.sharpening": 0,
+          "effects.clarity": 0,
+          "effects.dehaze": 0,
+          "effects.grain.amount": 0,
+          "effects.grain.roughness": 50,
+          "effects.grain.size": 25,
+          "effects.vignette.amount": 0,
+          "effects.vignette.feather": 50,
+          "effects.vignette.highlights": 0,
+          "effects.vignette.midpoint": 50,
+          "effects.vignette.roundness": 0,
+          "geometry.crop.height": 1,
+          "geometry.crop.width": 1,
+          "geometry.crop.x": 0,
+          "geometry.crop.y": 0,
+          "geometry.flip_horizontal": false,
+          "geometry.flip_vertical": false,
+          "geometry.lens.auto_crop": true,
+          "geometry.lens.distortion": false,
+          "geometry.lens.profile_id": null,
+          "geometry.lens.tca": false,
+          "geometry.lens.vignetting": false,
+          "geometry.perspective.horizontal": 0,
+          "geometry.perspective.vertical": 0,
+          "geometry.quarter_turns": 0,
+          "geometry.straighten_degrees": 0,
+          "light.contrast": 0.95,
+          "light.curve": {
+            "mode": "custom",
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                0.1,
+                0.115
+              ],
+              [
+                0.35,
+                0.365
+              ],
+              [
+                0.6,
+                0.61
+              ],
+              [
+                0.85,
+                0.825
+              ],
+              [
+                1,
+                1
+              ]
+            ]
+          },
+          "light.exposure": 0.4,
+          "light.exposure_mode": "sensor",
+          "light.highlights": 0.15,
+          "light.s_curve": 0,
+          "light.shadows": 0.2,
+          "looks.reference": {
+            "id": "hamada_daylight_v2",
+            "kind": "recipe"
+          },
+          "looks.strength": 0.5,
+          "tone.black_point": 0,
+          "tone.white_point": -1
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "looks.reference": {
+            "kind": "recipe",
+            "id": "hamada_daylight_v2"
+          },
+          "looks.strength": 0.5,
+          "color.white_balance.mode": "camera",
+          "color.white_balance.temperature_kelvin": null,
+          "color.white_balance.tint": 5,
+          "light.exposure_mode": "scene",
+          "geometry.lens.distortion": true,
+          "geometry.lens.tca": true,
+          "geometry.lens.vignetting": true,
+          "geometry.lens.auto_crop": false,
+          "geometry.lens.profile_id": "fixture-profile"
+        },
+        "effective": {
+          "light.exposure": 0.2
+        }
+      }
+    },
+    {
+      "id": "raster-recipe-wb-only-resolves-relative-tint-on-raw",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": true,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.jpg",
+          "is_raw": false,
+          "processing_version": 3,
+          "recipe": {
+            "id": "hamada_daylight_v2",
+            "strength": 0.5,
+            "settings_version": 4
+          }
+        },
+        "values": {
+          "color.white_balance.mode": "none",
+          "color.white_balance.temperature_kelvin": null,
+          "color.white_balance.tint": 5
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "color.white_balance.mode": "temperature",
+          "color.white_balance.temperature_kelvin": 5200,
+          "color.white_balance.tint": 10.5
+        }
+      }
+    },
+    {
+      "id": "raster-recipe-wb-without-tint-unchanged-on-raw",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": true,
+        "available_looks": [],
+        "seed_payload": {
+          "payload_version": 1,
+          "scope_version": 1,
+          "source": {
+            "identifier": "seed.ARW",
+            "is_raw": true,
+            "processing_version": 3
+          },
+          "values": {
+            "light.exposure_mode": "scene",
+            "color.white_balance.mode": "temperature",
+            "color.white_balance.temperature_kelvin": 5850,
+            "color.white_balance.tint": -18,
+            "geometry.lens.distortion": true,
+            "geometry.lens.tca": true,
+            "geometry.lens.vignetting": true,
+            "geometry.lens.auto_crop": false,
+            "geometry.lens.profile_id": "fixture-profile"
+          }
+        }
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.jpg",
+          "is_raw": false,
+          "processing_version": 3,
+          "recipe": {
+            "id": "hamada_daylight_v2",
+            "strength": 0.5,
+            "settings_version": 4
+          }
+        },
+        "values": {
+          "color.white_balance.mode": "none",
+          "color.white_balance.temperature_kelvin": null
+        }
+      },
+      "expect": {
+        "status": "unchanged"
+      }
+    },
+    {
+      "id": "raster-explicit-lens-distortion-merges-on-raw",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": true,
+        "available_looks": [],
+        "seed_payload": {
+          "payload_version": 1,
+          "scope_version": 1,
+          "source": {
+            "identifier": "seed.ARW",
+            "is_raw": true,
+            "processing_version": 3
+          },
+          "values": {
+            "geometry.lens.tca": true,
+            "geometry.lens.auto_crop": false,
+            "geometry.lens.profile_id": "fixture-profile"
+          }
+        }
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.jpg",
+          "is_raw": false,
+          "processing_version": 3
+        },
+        "values": {
+          "geometry.lens.distortion": true
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "geometry.lens.distortion": true,
+          "geometry.lens.tca": true,
+          "geometry.lens.auto_crop": false,
+          "geometry.lens.profile_id": "fixture-profile"
+        }
+      }
+    },
+    {
+      "id": "raster-all-with-explicit-lens-distortion-applies-on-raw",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": true,
+        "available_looks": [
+          "builtin:PROVIA.cube",
+          "recipe:hamada_daylight_v2"
+        ],
+        "seed_payload": {
+          "payload_version": 1,
+          "scope_version": 1,
+          "source": {
+            "identifier": "seed.ARW",
+            "is_raw": true,
+            "processing_version": 3
+          },
+          "values": {
+            "light.exposure_mode": "scene",
+            "color.white_balance.mode": "temperature",
+            "color.white_balance.temperature_kelvin": 5850,
+            "color.white_balance.tint": -18,
+            "geometry.lens.tca": true
+          }
+        }
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.jpg",
+          "is_raw": false,
+          "processing_version": 3
+        },
+        "values": {
+          "color.grading.highlights": {
+            "hue": 0,
+            "saturation": 0
+          },
+          "color.grading.midtones": {
+            "hue": 0,
+            "saturation": 0
+          },
+          "color.grading.shadows": {
+            "hue": 0,
+            "saturation": 0
+          },
+          "color.hsl.hue.aqua": 0,
+          "color.hsl.hue.blue": 0,
+          "color.hsl.hue.green": 0,
+          "color.hsl.hue.magenta": 0,
+          "color.hsl.hue.orange": 0,
+          "color.hsl.hue.purple": 0,
+          "color.hsl.hue.red": 0,
+          "color.hsl.hue.yellow": 0,
+          "color.hsl.lightness.aqua": 0,
+          "color.hsl.lightness.blue": 0,
+          "color.hsl.lightness.green": 0,
+          "color.hsl.lightness.magenta": 0,
+          "color.hsl.lightness.orange": 0,
+          "color.hsl.lightness.purple": 0,
+          "color.hsl.lightness.red": 0,
+          "color.hsl.lightness.yellow": 0,
+          "color.hsl.saturation.aqua": 0,
+          "color.hsl.saturation.blue": 0,
+          "color.hsl.saturation.green": 0,
+          "color.hsl.saturation.magenta": 0,
+          "color.hsl.saturation.orange": 0,
+          "color.hsl.saturation.purple": 0,
+          "color.hsl.saturation.red": 0,
+          "color.hsl.saturation.yellow": 0,
+          "color.saturation": 1,
+          "color.vibrance": 0,
+          "color.white_balance.mode": "none",
+          "color.white_balance.temperature_kelvin": null,
+          "color.white_balance.tint": null,
+          "detail.denoise.chroma_mode": 0,
+          "detail.denoise.post_rgb": 0,
+          "detail.denoise.raw_level": 0,
+          "detail.denoise.wavelet": {
+            "enabled": false,
+            "luma": 0,
+            "chroma": 46,
+            "coarse": 50,
+            "preset": "detail"
+          },
+          "detail.sharpening": 0,
+          "effects.clarity": 0,
+          "effects.dehaze": 0,
+          "effects.grain.amount": 0,
+          "effects.grain.roughness": 50,
+          "effects.grain.size": 25,
+          "effects.vignette.amount": 0,
+          "effects.vignette.feather": 50,
+          "effects.vignette.highlights": 0,
+          "effects.vignette.midpoint": 50,
+          "effects.vignette.roundness": 0,
+          "geometry.crop.height": 1,
+          "geometry.crop.width": 1,
+          "geometry.crop.x": 0,
+          "geometry.crop.y": 0,
+          "geometry.flip_horizontal": false,
+          "geometry.flip_vertical": false,
+          "geometry.lens.auto_crop": true,
+          "geometry.lens.distortion": true,
+          "geometry.lens.profile_id": null,
+          "geometry.lens.tca": false,
+          "geometry.lens.vignetting": false,
+          "geometry.perspective.horizontal": 0,
+          "geometry.perspective.vertical": 0,
+          "geometry.quarter_turns": 0,
+          "geometry.straighten_degrees": 0,
+          "light.contrast": 1,
+          "light.curve": {
+            "mode": "legacy",
+            "points": []
+          },
+          "light.exposure": 0.75,
+          "light.exposure_mode": "sensor",
+          "light.highlights": 0,
+          "light.s_curve": 0,
+          "light.shadows": 0,
+          "looks.reference": {
+            "id": null,
+            "kind": "neutral"
+          },
+          "looks.strength": 1,
+          "tone.black_point": 0,
+          "tone.white_point": 0
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "light.exposure": 0.75,
+          "light.exposure_mode": "scene",
+          "color.white_balance.mode": "temperature",
+          "color.white_balance.temperature_kelvin": 5850,
+          "color.white_balance.tint": -18,
+          "geometry.lens.distortion": true,
+          "geometry.lens.tca": false,
+          "geometry.lens.vignetting": false,
+          "geometry.lens.auto_crop": true,
+          "geometry.lens.profile_id": null
+        }
+      }
+    },
+    {
+      "id": "raster-explicit-lens-distortion-rejected-when-lens-invalid",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": false,
+        "supports_raw_denoise": true,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.jpg",
+          "is_raw": false,
+          "processing_version": 3
+        },
+        "values": {
+          "geometry.lens.distortion": true
+        }
+      },
+      "expect": {
+        "status": "rejected",
+        "reason": "incompatible"
+      }
+    },
+    {
+      "id": "raster-explicit-lens-distortion-on-raster-target",
+      "target": {
+        "kind": "sdr_raster",
+        "lens_valid": true,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.jpg",
+          "is_raw": false,
+          "processing_version": 3
+        },
+        "values": {
+          "geometry.lens.distortion": true
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "geometry.lens.distortion": true
+        }
+      },
+      "platform_expect": {
+        "macos": {
+          "status": "rejected",
+          "reason": "incompatible"
+        },
+        "windows": {
+          "status": "rejected",
+          "reason": "incompatible"
+        }
+      }
+    },
+    {
+      "id": "hdr-v6-post-rgb-denoise-applies",
+      "target": {
+        "kind": "hdr",
+        "lens_valid": false,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 2,
+        "scope_version": 2,
+        "source": {
+          "identifier": "hdr-source.HIF",
+          "is_raw": false,
+          "processing_version": 3,
+          "hdr_processing_version": 6
+        },
+        "values": {
+          "detail.denoise.post_rgb": 0.25
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "detail.denoise.post_rgb": 0.25
+        }
+      }
+    }
+  ]
+}

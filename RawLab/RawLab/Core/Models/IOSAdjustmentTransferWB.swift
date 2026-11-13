@@ -29,7 +29,11 @@ extension IOSAdjustmentTransfer {
     }
     static func applyWhiteBalance(_ payload: AdjustmentTransferPayload, target: RawSettings, to result: inout RawSettings,
                                   context: IOSAdjustmentTransferContext, fullRecipe: Bool, contextChanged: Bool) throws {
-        let selected = payload.fields.intersection(Field.whiteBalanceFields)
+        var selected = payload.fields.intersection(Field.whiteBalanceFields)
+        // 非 RAW 来源没有独立白平衡，none/null 占位值不覆盖 RAW 目标白平衡；配方相对 tint 仍跨 RAW 复用。
+        if !payload.source.isRaw && context.isRaw && (payload.source.recipe == nil || !selected.contains(.tint)) {
+            selected.removeAll()
+        }
         if selected.isEmpty {
             if context.isRaw && contextChanged && renderWB(result, context: context) != renderWB(target, context: context) {
                 try requireTargetCalibration(target, context: context)
@@ -122,7 +126,7 @@ extension IOSAdjustmentTransfer {
     }
     static func resolvedWB(_ value: [String: Value], recipe: AdjustmentRecipeContext?, sourceIsRaw: Bool,
                            context: IOSAdjustmentTransferContext) throws -> ResolvedWB {
-        guard context.isRaw && (sourceIsRaw || recipe != nil) else { return .init(camera: true, temperature: 6500, tint: 0) }
+        guard context.isRaw else { return .init(camera: true, temperature: 6500, tint: 0) }
         let camera = value["mode"]!.string == "camera", offset = value["tint_mode"]!.string == "camera_offset"
         let tint = value["tint"]!.number! * (offset ? recipe?.strength ?? 1 : 1)
         if camera && tint == 0 { return .init(camera: true, temperature: 6500, tint: 0) }
