@@ -70,6 +70,7 @@ final class PhotoFolder: ObservableObject, Identifiable {
     }
     func refresh() {
         guard !loading else { return }
+        PhotoThumbnails.shared.invalidateDirectory(url)
         loaded = false
         load()
     }
@@ -138,38 +139,342 @@ final class PhotoLibrary: ObservableObject {
         if accepted { persist() }
         return accepted
     }
-    func remove(_ root: PhotoFolder) { roots.removeAll { $0.id == root.id }; persist() }
+    func remove(_ root: PhotoFolder) {
+        PhotoThumbnails.shared.invalidateDirectory(root.url)
+        roots.removeAll { $0.id == root.id }
+        persist()
+    }
     private func persist() { defaults.set(roots.map { $0.url.path }, forKey: "photoFolders") }
+}
+
+struct PhotoThumbnailCacheKey: Hashable, Sendable {
+    let path: String
+    let fileSize: UInt64
+    let modified: Date
+    let fileNumber: UInt64
+    let maxPixelSize: Int
+    let appliesAdjustments: Bool
+    let adjustmentRevision: String?
+
+    static func canonicalPath(for url: URL) -> String {
+        url.resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    init(path: String, fileSize: UInt64, modified: Date, fileNumber: UInt64,
+         maxPixelSize: Int, appliesAdjustments: Bool, adjustmentRevision: String? = nil) {
+        self.path = path
+        self.fileSize = fileSize
+        self.modified = modified
+        self.fileNumber = fileNumber
+        self.maxPixelSize = maxPixelSize
+        self.appliesAdjustments = appliesAdjustments
+        self.adjustmentRevision = appliesAdjustments ? adjustmentRevision : nil
+    }
+
+    init?(uneditedFileAt url: URL, maxPixelSize: Int = PhotoThumbnails.defaultMaxPixelSize) {
+        let path = Self.canonicalPath(for: url)
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+              attributes[.type] as? FileAttributeType == .typeRegular,
+              let size = attributes[.size] as? NSNumber,
+              let modified = attributes[.modificationDate] as? Date else { return nil }
+        let fileNumber = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0
+        self.init(path: path, fileSize: size.uint64Value, modified: modified, fileNumber: fileNumber,
+                  maxPixelSize: maxPixelSize, appliesAdjustments: false, adjustmentRevision: nil)
+    }
 }
 
 // NSCache and OperationQueue are thread-safe; cached CGImage-backed images are immutable.
 final class PhotoThumbnails: @unchecked Sendable {
-    static let shared = PhotoThumbnails()
-    private let cache = NSCache<NSString, NSImage>()
+    private final class EntryKey: NSObject {
+        let value: PhotoThumbnailCacheKey
+        init(_ value: PhotoThumbnailCacheKey) { self.value = value }
+        override var hash: Int { value.hashValue }
+        override func isEqual(_ object: Any?) -> Bool {
+            guard let other = object as? Self else { return false }
+            return value == other.value
+        }
+    }
+
+    private struct InFlightKey: Hashable {
+        let key: PhotoThumbnailCacheKey
+        let generation: UInt64
+    }
+
+    static let defaultMaxPixelSize = 180
+    static let defaultTotalCostLimit = 64 * 1024 * 1024
+    static let defaultCountLimit = 512
+    static let shared = PhotoThumbnails(observesEditPersistence: true)
+
+    let totalCostLimit: Int
+    let countLimit: Int
+    private let cache = NSCache<EntryKey, NSImage>()
+    private let lock = NSLock()
+    private var keysByPath: [String: Set<PhotoThumbnailCacheKey>] = [:]
+    private var fileGenerations: [String: UInt64] = [:]
+    private var editGenerations: [String: UInt64] = [:]
+    private var dirtyEditGenerations: Set<String> = []
+    private var trackedKeyCount = 0
+    private var inFlight: [InFlightKey: [CheckedContinuation<NSImage?, Never>]] = [:]
+    private var _decodeCount = 0
+    private var _editedInvalidationCount = 0
+    private var persistenceCancellables: Set<AnyCancellable> = []
+    private let decodeThumbnail: @Sendable (URL, Int) -> NSImage?
     private let queue: OperationQueue = {
         let queue = OperationQueue(); queue.maxConcurrentOperationCount = 2
         queue.qualityOfService = .utility; return queue
     }()
-    private init() { cache.countLimit = 300 }
-    func image(for url: URL) async -> NSImage? {
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else { return nil }
-        let modified = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
-        let key = "\(url.standardizedFileURL.path)|\(attributes[.size] ?? 0)|\(modified)|\(attributes[.systemFileNumber] ?? 0)"
-        if let image = cache.object(forKey: key as NSString) { return image }
-        return await withCheckedContinuation { continuation in
-            queue.addOperation { [self] in
-                let raster = !DirectoryContents.rawExtensions.contains(url.pathExtension.lowercased())
-                let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
-                    kCGImageSourceCreateThumbnailFromImageAlways: raster,
-                    kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 180,
-                    kCGImageSourceShouldCache: false]
-                var result: NSImage?
-                if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-                   let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
-                    result = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
-                    cache.setObject(result!, forKey: key as NSString)
+
+    init(totalCostLimit: Int = PhotoThumbnails.defaultTotalCostLimit,
+         countLimit: Int = PhotoThumbnails.defaultCountLimit,
+         observesEditPersistence: Bool = false,
+         decodeThumbnail: @escaping @Sendable (URL, Int) -> NSImage? = PhotoThumbnails.defaultDecodeThumbnail) {
+        self.totalCostLimit = max(1, totalCostLimit)
+        self.countLimit = max(1, countLimit)
+        self.decodeThumbnail = decodeThumbnail
+        cache.totalCostLimit = self.totalCostLimit
+        cache.countLimit = self.countLimit
+        if observesEditPersistence {
+            let names = [
+                Notification.Name("RawLab.EditPersistence.didChangeRecords"),
+                Notification.Name("RawLab.EditPersistence.didInvalidateEdited")
+            ]
+            for name in names {
+                NotificationCenter.default.publisher(for: name)
+                    .sink { [weak self] notification in
+                        guard let paths = notification.userInfo?["invalidatedPaths"] as? Set<String> else { return }
+                        for path in paths { self?.invalidateEdited(atPath: path) }
+                    }
+                    .store(in: &persistenceCancellables)
+            }
+        }
+    }
+
+    var decodeCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return _decodeCount
+    }
+
+    var editedInvalidationCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return _editedInvalidationCount
+    }
+
+    static func imageCost(_ image: NSImage) -> Int {
+        if let bitmap = image.representations.first as? NSBitmapImageRep, bitmap.bytesPerRow > 0, bitmap.pixelsHigh > 0 {
+            return max(bitmap.bytesPerRow * bitmap.pixelsHigh, bitmap.pixelsWide * bitmap.pixelsHigh * 4)
+        }
+        if let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            return max(cgImage.bytesPerRow * cgImage.height, cgImage.width * cgImage.height * 4)
+        }
+        let rep = image.representations.first
+        let width = max(rep?.pixelsWide ?? 0, Int(image.size.width.rounded(.up)))
+        let height = max(rep?.pixelsHigh ?? 0, Int(image.size.height.rounded(.up)))
+        return max(1, width * height * 4)
+    }
+
+    @Sendable private static func defaultDecodeThumbnail(url: URL, maxPixelSize: Int) -> NSImage? {
+        let raster = !DirectoryContents.rawExtensions.contains(url.pathExtension.lowercased())
+        let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+            kCGImageSourceCreateThumbnailFromImageAlways: raster,
+            kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+            kCGImageSourceShouldCache: false]
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+    }
+
+    func cachedImage(for key: PhotoThumbnailCacheKey) -> NSImage? {
+        lock.lock(); defer { lock.unlock() }
+        return cache.object(forKey: EntryKey(key))
+    }
+
+    func editGeneration(forPath path: String) -> UInt64 {
+        lock.lock(); defer { lock.unlock() }
+        return editGenerations[path, default: 0]
+    }
+
+    func beginEditedGeneration(forPath path: String) -> UInt64 {
+        lock.lock(); defer { lock.unlock() }
+        dirtyEditGenerations.insert(path)
+        return editGenerations[path, default: 0]
+    }
+
+    func store(_ image: NSImage, for key: PhotoThumbnailCacheKey, expectedEditGeneration: UInt64? = nil) {
+        let cost = Self.imageCost(image)
+        lock.lock(); defer { lock.unlock() }
+        if let expectedEditGeneration, editGenerations[key.path, default: 0] != expectedEditGeneration {
+            return
+        }
+        if key.appliesAdjustments {
+            dirtyEditGenerations.insert(key.path)
+            if var existing = keysByPath[key.path] {
+                for prior in existing where prior.appliesAdjustments && prior != key {
+                    existing.remove(prior)
+                    trackedKeyCount -= 1
+                    cache.removeObject(forKey: EntryKey(prior))
                 }
-                continuation.resume(returning: result)
+                keysByPath[key.path] = existing
+            }
+        }
+        insertLocked(image, for: key, cost: cost)
+    }
+
+    private func insertLocked(_ image: NSImage, for key: PhotoThumbnailCacheKey, cost: Int) {
+        cache.setObject(image, forKey: EntryKey(key), cost: cost)
+        if keysByPath[key.path, default: []].insert(key).inserted {
+            trackedKeyCount += 1
+        }
+        if trackedKeyCount > countLimit * 2 {
+            pruneEvictedKeysLocked()
+        }
+    }
+
+    private func pruneEvictedKeysLocked() {
+        var remaining = 0
+        for (path, keys) in keysByPath {
+            let live = keys.filter { cache.object(forKey: EntryKey($0)) != nil }
+            if live.isEmpty {
+                keysByPath.removeValue(forKey: path)
+            } else {
+                keysByPath[path] = live
+                remaining += live.count
+            }
+        }
+        trackedKeyCount = remaining
+    }
+
+    @discardableResult
+    func invalidateEdited(for url: URL) -> Bool {
+        invalidateEdited(atPath: PhotoThumbnailCacheKey.canonicalPath(for: url))
+    }
+
+    @discardableResult
+    func invalidateEdited(atPath path: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        let wasDirty = dirtyEditGenerations.remove(path) != nil
+        var removedAny = false
+        if var keys = keysByPath[path] {
+            let removed = keys.filter(\.appliesAdjustments)
+            if !removed.isEmpty {
+                removedAny = true
+                for key in removed {
+                    keys.remove(key)
+                    trackedKeyCount -= 1
+                    cache.removeObject(forKey: EntryKey(key))
+                }
+                if keys.isEmpty { keysByPath.removeValue(forKey: path) }
+                else { keysByPath[path] = keys }
+            }
+        }
+        guard wasDirty || removedAny else { return false }
+        editGenerations[path, default: 0] &+= 1
+        _editedInvalidationCount += 1
+        return true
+    }
+
+    func invalidate(for url: URL) {
+        invalidate(atPath: PhotoThumbnailCacheKey.canonicalPath(for: url))
+    }
+
+    func invalidate(atPath path: String) {
+        lock.lock(); defer { lock.unlock() }
+        fileGenerations[path, default: 0] &+= 1
+        let hadEdited = dirtyEditGenerations.remove(path) != nil ||
+            (keysByPath[path]?.contains(where: \.appliesAdjustments) == true)
+        if hadEdited {
+            editGenerations[path, default: 0] &+= 1
+            _editedInvalidationCount += 1
+        }
+        guard let keys = keysByPath.removeValue(forKey: path) else { return }
+        trackedKeyCount -= keys.count
+        for key in keys { cache.removeObject(forKey: EntryKey(key)) }
+    }
+
+    func invalidateDirectory(_ url: URL) {
+        let directoryPath = PhotoThumbnailCacheKey.canonicalPath(for: url)
+        let prefix = directoryPath.hasSuffix("/") ? directoryPath : directoryPath + "/"
+        lock.lock(); defer { lock.unlock() }
+        let candidates = Set(keysByPath.keys)
+            .union(dirtyEditGenerations)
+            .union(inFlight.keys.map(\.key.path))
+        for path in candidates where path == directoryPath || path.hasPrefix(prefix) {
+            fileGenerations[path, default: 0] &+= 1
+            let hadEdited = dirtyEditGenerations.remove(path) != nil ||
+                (keysByPath[path]?.contains(where: \.appliesAdjustments) == true)
+            if hadEdited {
+                editGenerations[path, default: 0] &+= 1
+                _editedInvalidationCount += 1
+            }
+            if let keys = keysByPath.removeValue(forKey: path) {
+                trackedKeyCount -= keys.count
+                for key in keys { cache.removeObject(forKey: EntryKey(key)) }
+            }
+        }
+    }
+
+    @discardableResult
+    func invalidateStaleEntries(atPath path: String, fileSize: UInt64, modified: Date,
+                                fileNumber: UInt64, editedRevision: String?) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        var removedFile = false
+        var removedEdited = false
+        if var keys = keysByPath[path] {
+            for key in keys {
+                let fileChanged = key.fileSize != fileSize || key.modified != modified || key.fileNumber != fileNumber
+                let editChanged = key.appliesAdjustments && (editedRevision == nil || key.adjustmentRevision != editedRevision)
+                if fileChanged || editChanged {
+                    keys.remove(key)
+                    trackedKeyCount -= 1
+                    cache.removeObject(forKey: EntryKey(key))
+                    if fileChanged { removedFile = true }
+                    if editChanged || fileChanged { removedEdited = true }
+                }
+            }
+            if keys.isEmpty { keysByPath.removeValue(forKey: path) }
+            else { keysByPath[path] = keys }
+        }
+        if editedRevision == nil, dirtyEditGenerations.remove(path) != nil {
+            removedEdited = true
+        }
+        if removedFile { fileGenerations[path, default: 0] &+= 1 }
+        if removedEdited {
+            dirtyEditGenerations.remove(path)
+            editGenerations[path, default: 0] &+= 1
+            _editedInvalidationCount += 1
+        }
+        return removedFile || removedEdited
+    }
+
+    func image(for url: URL, maxPixelSize: Int = PhotoThumbnails.defaultMaxPixelSize) async -> NSImage? {
+        guard let key = PhotoThumbnailCacheKey(uneditedFileAt: url, maxPixelSize: maxPixelSize) else { return nil }
+        return await withCheckedContinuation { continuation in
+            lock.lock()
+            if let cached = cache.object(forKey: EntryKey(key)) {
+                lock.unlock()
+                continuation.resume(returning: cached)
+                return
+            }
+            let fileGen = fileGenerations[key.path, default: 0]
+            let flightKey = InFlightKey(key: key, generation: fileGen)
+            if inFlight[flightKey] != nil {
+                inFlight[flightKey]!.append(continuation)
+                lock.unlock()
+                return
+            }
+            inFlight[flightKey] = [continuation]
+            lock.unlock()
+
+            queue.addOperation { [self] in
+                let result = decodeThumbnail(url, maxPixelSize)
+                let cost = result.map(Self.imageCost) ?? 0
+                lock.lock()
+                _decodeCount += 1
+                if let result, fileGenerations[key.path, default: 0] == fileGen {
+                    insertLocked(result, for: key, cost: cost)
+                }
+                let waiters = inFlight.removeValue(forKey: flightKey) ?? []
+                lock.unlock()
+                for waiter in waiters { waiter.resume(returning: result) }
             }
         }
     }
