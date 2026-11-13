@@ -51,6 +51,38 @@ class CameraTetherStateTest {
         assertFalse(needsCardReconciliation(SonyCameraModel.ZVE10, false, 60_000, 1_000, 0))
     }
 
+    @Test fun unregisteredFirstShotRemainsRecoverableAfterDisconnect() {
+        val identity = CameraHardwareIdentity("ILCE-7CM2", "1234567")
+        val paused = CameraTetherRun("run", "camera", "profile", 0, emptyList(), CameraImportDestination(),
+            status = CameraTetherStatus.PAUSED, shutterRequestedAt = 1L, hardwareIdentity = identity)
+        // 首拍还没登记成批次就断线：没有已预留原件可重验，续接只允许 rebase。
+        assertEquals(emptyList<CameraImportJob>(), paused.recoveryJobs(emptyList()))
+        val withBaseline = paused.copy(baseline = listOf(photo("baseline")))
+        assertEquals(emptyList<CameraImportJob>(), withBaseline.recoveryJobs(emptyList()))
+        // 已结束或缺机身序列号的 run 仍然不可续接。
+        assertNull(paused.copy(status = CameraTetherStatus.ENDED).recoveryJobs(emptyList()))
+        assertNull(paused.copy(hardwareIdentity = null).recoveryJobs(emptyList()))
+    }
+
+    @Test fun confirmAndContinueIsOfferedOnlyForStuckPausedRuns() {
+        val identity = CameraHardwareIdentity("ILCE-7CM2", "1234567")
+        val batch = CameraTetherBatch("unregistered-batch", listOf(photo("shot")))
+        val stuck = CameraTetherRun("run", "camera", "profile", 0, emptyList(), CameraImportDestination(),
+            batches = listOf(batch), status = CameraTetherStatus.PAUSED, shutterRequestedAt = 1L, hardwareIdentity = identity)
+        val stuckState = CameraTetherState(phase = CameraTetherPhase.PAUSED, run = stuck, failure = CameraTetherFailure.UNKNOWN_SHOT)
+        assertFalse(stuckState.canResume)
+        assertTrue(stuckState.canConfirmAndContinue)
+        assertTrue(stuckState.copy(failure = CameraTetherFailure.PHOTO_LIMIT).canConfirmAndContinue)
+        assertFalse(stuckState.copy(failure = CameraTetherFailure.SOURCE).canConfirmAndContinue)
+        assertFalse(stuckState.copy(phase = CameraTetherPhase.RECEIVING).canConfirmAndContinue)
+        assertFalse(CameraTetherState(phase = CameraTetherPhase.PAUSED, failure = CameraTetherFailure.UNKNOWN_SHOT).canConfirmAndContinue)
+        // 能续接时继续走重连入口；确认按钮只给无法续接的卡死 run。
+        val resumable = CameraTetherState(phase = CameraTetherPhase.PAUSED,
+            run = stuck.copy(batches = emptyList()), failure = CameraTetherFailure.UNKNOWN_SHOT)
+        assertTrue(resumable.canResume)
+        assertFalse(resumable.canConfirmAndContinue)
+    }
+
     private fun photo(key: String) = CameraPhoto(key, "$key.JPG", 100, 0)
     private fun run(batches: List<CameraTetherBatch>) = CameraTetherRun("run", "camera", "profile", 0, emptyList(), CameraImportDestination(), batches)
     private fun saved(id: String, photo: CameraPhoto) = CameraImportJob(id, "camera", 0, listOf(

@@ -189,6 +189,9 @@
     <string name="camera_transfer_format">"Formato de transferencia"</string>
     <string name="camera_unknown_capture_date">"Fecha de captura desconocida"</string>
     <string name="camera_unknown_date_hint">"Las fotos sin fecha de captura se guardan en la carpeta «Unknown date»."</string>
+    <string name="camera_unreadable_discard">"Descartar"</string>
+    <string name="camera_unreadable_logs">"No se pudieron leer %1$d registros de importación."</string>
+    <string name="camera_unreadable_title">"Registros de importación ilegibles"</string>
     <string name="camera_use_wifi">"Conectado, continuar"</string>
     <string name="camera_view_album">"Ver en la galería"</string>
     <string name="camera_view_all_photos">"Ver todas las fotos"</string>
@@ -477,6 +480,7 @@
     <string name="tether_capturing">"Tomando la foto"</string>
     <string name="tether_card_confirm">"He confirmado que la cámara también guarda los originales en la tarjeta de memoria."</string>
     <string name="tether_card_hint">"Selecciona disparo único y guarda también los originales en la tarjeta. La vista en directo y las miniaturas no confirman que se hayan guardado los originales."</string>
+    <string name="tether_confirm_continue">"Confirmar el resultado y continuar"</string>
     <string name="tether_foreground">"Si sales de esta página, se pausará el disparo conectado. Las fotos guardadas no se verán afectadas."</string>
     <string name="tether_grid">"Cuadrícula de composición"</string>
     <string name="tether_intro">"Encuadra y toma fotos individuales desde el teléfono; los originales RAW y JPEG de la tarjeta de la cámara se guardan automáticamente."</string>
@@ -487,6 +491,7 @@
     <string name="tether_pause">"Pausar el disparo conectado"</string>
     <string name="tether_paused">"Disparo conectado pausado"</string>
     <string name="tether_pending">"%1$d fotos pendientes de recibir."</string>
+    <string name="tether_photo_limit">"La cámara tiene más archivos que el límite de tethering; solo se muestran los archivos más recientes."</string>
     <string name="tether_preparing">"Preparando la vista en directo"</string>
     <string name="tether_preview_missing">"La vista previa no está disponible temporalmente"</string>
     <string name="tether_preview_note">"Vista previa; pellizca para ampliar"</string>

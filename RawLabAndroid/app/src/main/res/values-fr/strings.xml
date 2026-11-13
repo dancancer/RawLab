@@ -189,6 +189,9 @@
     <string name="camera_transfer_format">"Format de transfert"</string>
     <string name="camera_unknown_capture_date">"Date de prise de vue inconnue"</string>
     <string name="camera_unknown_date_hint">"Les photos sans date de prise de vue sont enregistrées dans le dossier « Unknown date »."</string>
+    <string name="camera_unreadable_discard">"Abandonner"</string>
+    <string name="camera_unreadable_logs">"%1$d enregistrements d’importation illisibles."</string>
+    <string name="camera_unreadable_title">"Enregistrements d’importation illisibles"</string>
     <string name="camera_use_wifi">"Connecté, continuer"</string>
     <string name="camera_view_album">"Afficher dans la galerie"</string>
     <string name="camera_view_all_photos">"Afficher toutes les photos"</string>
@@ -477,6 +480,7 @@
     <string name="tether_capturing">"Prise de vue en cours"</string>
     <string name="tether_card_confirm">"J’ai confirmé que l’appareil enregistre aussi les originaux sur la carte mémoire."</string>
     <string name="tether_card_hint">"Sélectionnez la prise de vue unique et conservez les originaux sur la carte mémoire. Les images de visée et miniatures ne confirment pas l’enregistrement des originaux."</string>
+    <string name="tether_confirm_continue">"Confirmer le résultat et continuer"</string>
     <string name="tether_foreground">"Quitter cette page mettra la prise de vue connectée en pause. Les photos déjà enregistrées ne sont pas affectées."</string>
     <string name="tether_grid">"Grille de composition"</string>
     <string name="tether_intro">"Cadrez et prenez des photos individuelles depuis votre téléphone ; les originaux RAW et JPEG de la carte de l’appareil sont automatiquement enregistrés."</string>
@@ -487,6 +491,7 @@
     <string name="tether_pause">"Mettre la prise de vue connectée en pause"</string>
     <string name="tether_paused">"Prise de vue connectée en pause"</string>
     <string name="tether_pending">"%1$d photos en attente de réception."</string>
+    <string name="tether_photo_limit">"La carte contient plus de fichiers que la limite de la capture pilotée ; seules les photos les plus récentes sont répertoriées."</string>
     <string name="tether_preparing">"Préparation de la visée en direct"</string>
     <string name="tether_preview_missing">"Aperçu temporairement indisponible"</string>
     <string name="tether_preview_note">"Aperçu ; pincez pour zoomer"</string>

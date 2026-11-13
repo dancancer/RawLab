@@ -189,6 +189,9 @@
     <string name="camera_transfer_format">"传输格式"</string>
     <string name="camera_unknown_capture_date">"未知拍摄日期"</string>
     <string name="camera_unknown_date_hint">"缺少拍摄日期的照片会保存到“Unknown date”目录。"</string>
+    <string name="camera_unreadable_discard">"放弃"</string>
+    <string name="camera_unreadable_logs">"有 %1$d 条无法读取的导入记录。"</string>
+    <string name="camera_unreadable_title">"无法读取的导入记录"</string>
     <string name="camera_use_wifi">"已连接，继续"</string>
     <string name="camera_view_album">"在相册中查看"</string>
     <string name="camera_view_all_photos">"查看全部照片"</string>
@@ -477,6 +480,7 @@
     <string name="tether_capturing">"正在拍摄"</string>
     <string name="tether_card_confirm">"已确认相机同时将原件保存到存储卡。"</string>
     <string name="tether_card_hint">"在相机上选择单张拍摄，并将原件同时保留在存储卡。手机收到的取景图和缩略图不是原件保存成功的凭据。"</string>
+    <string name="tether_confirm_continue">"确认结果后继续"</string>
     <string name="tether_foreground">"离开此页面会暂停联机，已保存照片不受影响。"</string>
     <string name="tether_grid">"构图网格"</string>
     <string name="tether_intro">"在手机上取景、单拍，自动保存相机卡内的 RAW 和 JPEG 原件。"</string>
@@ -487,6 +491,7 @@
     <string name="tether_pause">"暂停联机"</string>
     <string name="tether_paused">"联机已暂停"</string>
     <string name="tether_pending">"待接收 %1$d 张。"</string>
+    <string name="tether_photo_limit">"相机文件超过上限，联机拍摄只列出最近的照片。"</string>
     <string name="tether_preparing">"正在准备取景"</string>
     <string name="tether_preview_missing">"暂时无法显示预览"</string>
     <string name="tether_preview_note">"预览图，可双指缩放"</string>

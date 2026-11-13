@@ -209,11 +209,19 @@ class CameraImportStoreTest {
         val original = photo("old")
         journal.create("camera", "profile", listOf(original), CameraImportDestination(), hardware)
         val paused = journal.load().single()
+        // 空批次（首拍未登记）不再拒绝续接：由 rebase 逐个核对来源元数据兜底，同名同尺寸的句柄更换视为同一对象。
+        val resumed = CameraTetherQueue(store, journal).resume(paused, listOf(original.copy(key = "different-card")), hardware,
+            emptyList(), CameraTransferPermit(), { _, _ -> error("There is no original digest to verify") }, {})
+        assertEquals(CameraTetherStatus.ACTIVE, resumed.status)
+        assertEquals(listOf(original.copy(key = "different-card")), resumed.baseline)
+        // 元数据对不上时，未验证基线仍拒绝续接，落盘的仍是续接成功的记录。
         assertThrows(CameraTetherSourceException::class.java) {
-            CameraTetherQueue(store, journal).resume(paused, listOf(original.copy(key = "different-card")), hardware,
+            CameraTetherQueue(store, journal).resume(paused, listOf(original.copy(name = "other.ARW")), hardware,
                 emptyList(), CameraTransferPermit(), { _, _ -> error("There is no original digest to verify") }, {})
         }
-        assertEquals(paused, journal.load().single())
+        val persisted = journal.load().single()
+        assertEquals(listOf(original.copy(key = "different-card")), persisted.baseline)
+        assertEquals(CameraTetherStatus.PAUSED, persisted.status)
     }
 
     @Test fun tetherRecoveryRejectsOverBudgetProofBeforeDownloading() = withStore { fixture, store ->
@@ -442,6 +450,35 @@ class CameraImportStoreTest {
             assertTrue(fixture.media.rows.getValue(pending.uri).pending)
             assertArrayEquals(damaged, journal.readBytes())
         }
+    }
+
+    @Test fun discardedUnreadableJournalStopsProtectingItsPendingMedia() = withStore { fixture, store ->
+        val kept = save(store)
+        // 待发布媒体已登记后中断，随后这份日志变得无法读取。
+        fixture.media.failBeforePublish = true
+        assertThrows(IOException::class.java) { save(store, raw.copyOf().also { it[20] = 7 }) }
+        fixture.media.failBeforePublish = false
+        val pending = fixture.media.rows.values.single { it.pending }
+        val journal = File(fixture.root, "jobs").listFiles()!!.single { it.nameWithoutExtension != kept.id }
+        journal.writeText("{broken")
+        val damaged = journal.nameWithoutExtension
+
+        val reopened = fixture.store()
+        assertEquals(listOf(kept.id), reopened.load().map { it.id })
+        assertEquals(setOf(damaged), reopened.unreadableJobIds)
+        // 只有隔离集合里的坏记录能被放弃；其它 id 一律拒绝，不碰文件。
+        assertFalse(reopened.discardUnreadableJob("not-a-uuid"))
+        assertFalse(reopened.discardUnreadableJob(kept.id))
+        assertEquals(setOf(damaged), reopened.unreadableJobIds)
+        assertTrue(reopened.discardUnreadableJob(damaged))
+        assertTrue(reopened.unreadableJobIds.isEmpty())
+        assertFalse(journal.exists())
+        // 放弃当时不删媒体；坏记录不再阻塞孤儿清理，下一次 load 回收待发布原件并确认其它任务完好。
+        assertTrue(fixture.media.rows.getValue(pending.uri).pending)
+        fixture.store().load()
+        assertFalse(fixture.media.rows.containsKey(pending.uri))
+        assertEquals(listOf(kept.id), reopened.load().map { it.id })
+        assertFalse(reopened.discardUnreadableJob(damaged))
     }
 
     @Test fun restartingAfterExternalDeletionDoesNotReportTheOriginalAsSaved() = withStore { fixture, store ->

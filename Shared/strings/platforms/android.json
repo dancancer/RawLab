@@ -6761,6 +6761,40 @@
       "formats": [],
       "source": "清理系统相册副本失败，请重试。",
       "types": []
+    },
+    "tether_confirm_continue": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "确认结果后继续",
+      "types": []
+    },
+    "tether_photo_limit": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "相机文件超过上限，联机拍摄只列出最近的照片。",
+      "types": []
+    },
+    "camera_unreadable_title": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "无法读取的导入记录",
+      "types": []
+    },
+    "camera_unreadable_logs": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$d"
+      ],
+      "source": "有 {0} 条无法读取的导入记录。",
+      "types": [
+        "d"
+      ]
+    },
+    "camera_unreadable_discard": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "放弃",
+      "types": []
     }
   },
   "overrides": {
@@ -8294,6 +8328,46 @@
       "fr": "Impossible de nettoyer les copies de la galerie système. Réessayez.",
       "es": "No se pudieron limpiar las copias de la galería del sistema. Inténtalo de nuevo.",
       "ja": "システムギャラリーのコピーを整理できませんでした。もう一度お試しください。"
+    },
+    "确认结果后继续": {
+      "de": "Ergebnis bestätigen und fortfahren",
+      "en": "Confirm the result and continue",
+      "es": "Confirmar el resultado y continuar",
+      "fr": "Confirmer le résultat et continuer",
+      "ja": "結果を確認して続行",
+      "zh-Hans": "确认结果后继续"
+    },
+    "相机文件超过上限，联机拍摄只列出最近的照片。": {
+      "de": "Die Karte enthält mehr Dateien als das Tethering-Limit; nur die neuesten Fotos werden aufgelistet.",
+      "en": "The camera holds more files than the tethering limit; only the most recent photos are listed.",
+      "es": "La cámara tiene más archivos que el límite de tethering; solo se muestran los archivos más recientes.",
+      "fr": "La carte contient plus de fichiers que la limite de la capture pilotée ; seules les photos les plus récentes sont répertoriées.",
+      "ja": "カメラ内のファイルがテザリング撮影の上限を超えるため、直近の写真のみを一覧表示します。",
+      "zh-Hans": "相机文件超过上限，联机拍摄只列出最近的照片。"
+    },
+    "无法读取的导入记录": {
+      "de": "Unlesbare Importdatensätze",
+      "en": "Unreadable import records",
+      "es": "Registros de importación ilegibles",
+      "fr": "Enregistrements d’importation illisibles",
+      "ja": "読み込めないインポート記録",
+      "zh-Hans": "无法读取的导入记录"
+    },
+    "有 {0} 条无法读取的导入记录。": {
+      "de": "{0} Importdatensätze konnten nicht gelesen werden.",
+      "en": "{0} import records could not be read.",
+      "es": "No se pudieron leer {0} registros de importación.",
+      "fr": "{0} enregistrements d’importation illisibles.",
+      "ja": "読み込めないインポート記録が {0} 件あります。",
+      "zh-Hans": "有 {0} 条无法读取的导入记录。"
+    },
+    "放弃": {
+      "de": "Verwerfen",
+      "en": "Discard",
+      "es": "Descartar",
+      "fr": "Abandonner",
+      "ja": "破棄",
+      "zh-Hans": "放弃"
     }
   }
 }

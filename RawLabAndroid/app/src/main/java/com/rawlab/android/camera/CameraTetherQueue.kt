@@ -80,7 +80,10 @@ internal class CameraTetherQueue(private val store: CameraImportStore, private v
 
 /** 恢复前须有旧清单的来源凭据，机身序列号和卡槽都不能代替原件摘要。 */
 internal fun CameraTetherRun.recoveryJobs(jobs: List<CameraImportJob>): List<CameraImportJob>? {
-    if (status == CameraTetherStatus.ENDED || hardwareIdentity == null || batches.isEmpty()) return null
+    if (status == CameraTetherStatus.ENDED || hardwareIdentity == null) return null
+    // 首拍还没登记成批次就断线：没有已预留的原件可重验，续接只做 rebase 并折叠当前卡清单；
+    // 卡内来源唯一性由 rebase 逐个核对兜底，基线是否完整不再阻塞续接。
+    if (batches.isEmpty()) return emptyList()
     val byId = jobs.associateBy { it.id }
     val registered = batches.map { batch ->
         val job = byId[batch.id] ?: return null

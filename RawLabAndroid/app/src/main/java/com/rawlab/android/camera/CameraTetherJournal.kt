@@ -18,7 +18,7 @@ internal data class CameraTetherRun(val id: String, val cameraId: String, val pr
     val baseline: List<CameraPhoto>, val destination: CameraImportDestination,
     val batches: List<CameraTetherBatch> = emptyList(), val status: CameraTetherStatus = CameraTetherStatus.ACTIVE,
     val shutterRequestedAt: Long? = null, val hardwareIdentity: CameraHardwareIdentity? = null,
-    val rebasedBatches: Int = 0) {
+    val rebasedBatches: Int = 0, val truncatedListing: Boolean = false) {
     val observedPhotos: List<CameraPhoto> get() = baseline + batches.drop(rebasedBatches).flatMap { it.photos }
 }
 
@@ -32,9 +32,9 @@ internal class CameraTetherJournal(private val directory: File) {
     init { directory.mkdirs() }
 
     fun create(cameraId: String, profileId: String, baseline: List<CameraPhoto>, destination: CameraImportDestination,
-        hardwareIdentity: CameraHardwareIdentity? = null): CameraTetherRun =
+        hardwareIdentity: CameraHardwareIdentity? = null, truncatedListing: Boolean = false): CameraTetherRun =
         CameraTetherRun(UUID.randomUUID().toString(), cameraId, profileId, System.currentTimeMillis(), baseline, destination,
-            hardwareIdentity = hardwareIdentity).also(::save)
+            hardwareIdentity = hardwareIdentity, truncatedListing = truncatedListing).also(::save)
 
     fun reserve(run: CameraTetherRun, observed: List<CameraPhoto>,
         mode: CameraTetherObservationMode = CameraTetherObservationMode.Full): Pair<CameraTetherRun, CameraTetherBatch?> {
@@ -54,9 +54,10 @@ internal class CameraTetherJournal(private val directory: File) {
         validate(run)
         val current = checkedListing(observed)
         val listed = current.values.groupBy { it.resumeMetadataKey }
-        val matched = run.observedPhotos.map { photo ->
+        // 截断 run 只承诺最近窗口：窗口外的旧对象缺席不算来源变化。
+        val matched = run.observedPhotos.mapNotNull { photo ->
             listed[photo.resumeMetadataKey]?.singleOrNull { photo.matchesResumeMetadata(it) }?.key
-                ?: throw CameraTetherSourceException()
+                ?: if (run.truncatedListing) null else throw CameraTetherSourceException()
         }
         if (matched.toSet().size != matched.size) throw CameraTetherSourceException()
         return run.copy(baseline = current.values.toList(), rebasedBatches = run.batches.size,
@@ -76,11 +77,13 @@ internal class CameraTetherJournal(private val directory: File) {
         validate(run)
         val current = checkedListing(observed)
         val knownByKey = run.observedPhotos.associateBy { it.key }
-        if (knownByKey.size + current.keys.count { it !in knownByKey } > MAX_PHOTOS)
+        if (!run.truncatedListing && knownByKey.size + current.keys.count { it !in knownByKey } > MAX_PHOTOS)
             throw CameraMediaSession.PhotoLimitExceededException("Too many camera objects")
         when (mode) {
             is CameraTetherObservationMode.Full ->
-                if (run.observedPhotos.any { current[it.key]?.let(it::matchesSnapshot) != true }) throw CameraTetherSourceException()
+                // 截断 run 的基线是截窗：窗口外对象离开当前列表属预期，只有仍在列表中的对象需快照一致。
+                if (run.observedPhotos.any { photo -> current[photo.key]?.let { !photo.matchesSnapshot(it) } == true ||
+                        (current[photo.key] == null && !run.truncatedListing) }) throw CameraTetherSourceException()
             is CameraTetherObservationMode.Incremental -> {
                 if (mode.afterCursor != null && run.observedPhotos.any { it.created > mode.afterCursor && current[it.key]?.let(it::matchesSnapshot) != true })
                     throw CameraTetherSourceException()
@@ -129,7 +132,7 @@ internal class CameraTetherJournal(private val directory: File) {
                 } }, CameraTetherStatus.valueOf(json.getString("status")),
                 if (json.has("shutterRequestedAt")) json.getLong("shutterRequestedAt") else null,
                 json.optJSONObject("hardwareIdentity")?.let { CameraHardwareIdentity(it.getString("model"), it.getString("serial")) },
-                json.optInt("rebasedBatches")).also(::validate)
+                json.optInt("rebasedBatches"), json.optBoolean("truncated")).also(::validate)
         } catch (_: Exception) { return@mapNotNull null }
         if (run.status == CameraTetherStatus.ACTIVE) run.copy(status = CameraTetherStatus.PAUSED).also(::save) else run
     }.sortedByDescending { it.createdAt }
@@ -141,7 +144,7 @@ internal class CameraTetherJournal(private val directory: File) {
         val json = JSONObject().put("version", 1).put("camera", run.cameraId).put("profile", run.profileId).put("time", run.createdAt)
             .put("status", run.status.name).put("directory", run.destination.directory).put("grouping", run.destination.grouping.name)
             .put("baseline", photosJson(run.baseline)).put("batches", batches).put("shutterRequestedAt", run.shutterRequestedAt)
-            .put("rebasedBatches", run.rebasedBatches.takeIf { it != 0 })
+            .put("rebasedBatches", run.rebasedBatches.takeIf { it != 0 }).also { if (run.truncatedListing) it.put("truncated", true) }
         run.hardwareIdentity?.let { json.put("hardwareIdentity", JSONObject().put("model", it.model).put("serial", it.serial)) }
         val bytes = json.toString().toByteArray()
         if (bytes.size > MAX_BYTES) throw IOException("Tether journal exceeds budget")
@@ -164,7 +167,7 @@ internal class CameraTetherJournal(private val directory: File) {
             batch.photos.forEach(::validatePhoto)
         }
         val photos = run.observedPhotos
-        if (photos.size > MAX_PHOTOS || run.batches.sumOf { it.photos.size } > MAX_PHOTOS ||
+        if ((!run.truncatedListing && (photos.size > MAX_PHOTOS || run.batches.sumOf { it.photos.size } > MAX_PHOTOS)) ||
             photos.map { it.key }.distinct().size != photos.size) throw IOException("Invalid tether object identities")
         run.baseline.forEach(::validatePhoto)
     }

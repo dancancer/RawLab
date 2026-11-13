@@ -151,4 +151,31 @@ class CameraTetherJournalTest {
             journal.reserve(nearLimitRun, delta, CameraTetherObservationMode.Incremental(afterCursor = 9_994_999L))
         }
     }
+
+    @Test fun truncatedRunSlidesWindowPastLimitInsteadOfThrowing() = withJournal { root, journal ->
+        val baseline = (1..10_000).map(::photo)
+        val run = journal.create("camera", "sony-test", baseline, CameraImportDestination(), truncatedListing = true)
+        assertTrue(run.truncatedListing)
+        // 最旧对象离开卡窗口：截断 run 按最近窗口语义继续，不报来源变化。
+        val dropped = baseline.drop(7)
+        assertEquals(run to null, journal.reserve(run, dropped))
+        // 增量新增越过 10000（窗口一进一出保持枚举预算内）：截断 run 继续预留批次，而不是抛上限把连接断掉。
+        val added = (10_001..10_007).map(::photo)
+        val (grown, batch) = journal.reserve(run, dropped + added, CameraTetherObservationMode.Incremental())
+        assertEquals(added, batch!!.photos)
+        assertEquals(baseline.size + added.size, grown.observedPhotos.size)
+        // 截断 run 的 rebase 同样只核对窗口内对象。
+        val rebased = journal.rebase(run.copy(shutterRequestedAt = 5L), dropped)
+        assertEquals(dropped.size, rebased.baseline.size)
+        assertNull(rebased.shutterRequestedAt)
+        assertTrue(rebased.truncatedListing)
+        // 持久化保留截断标记。
+        assertTrue(CameraTetherJournal(root).load().single().truncatedListing)
+        // 对照：非截断 run 仍拒绝窗口丢失，并在越过 10000 时抛上限。
+        val normal = journal.create("camera", "sony-test", baseline, CameraImportDestination())
+        assertThrows(CameraTetherSourceException::class.java) { journal.reserve(normal, dropped) }
+        assertThrows(com.rawlab.android.camera.protocol.CameraMediaSession.PhotoLimitExceededException::class.java) {
+            journal.reserve(normal, dropped + added, CameraTetherObservationMode.Incremental())
+        }
+    }
 }

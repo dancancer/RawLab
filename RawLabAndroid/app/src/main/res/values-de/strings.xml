@@ -189,6 +189,9 @@
     <string name="camera_transfer_format">"Übertragungsformat"</string>
     <string name="camera_unknown_capture_date">"Unbekanntes Aufnahmedatum"</string>
     <string name="camera_unknown_date_hint">"Fotos ohne Aufnahmedatum werden im Ordner „Unknown date“ gespeichert."</string>
+    <string name="camera_unreadable_discard">"Verwerfen"</string>
+    <string name="camera_unreadable_logs">"%1$d Importdatensätze konnten nicht gelesen werden."</string>
+    <string name="camera_unreadable_title">"Unlesbare Importdatensätze"</string>
     <string name="camera_use_wifi">"Verbunden, weiter"</string>
     <string name="camera_view_album">"In der Galerie ansehen"</string>
     <string name="camera_view_all_photos">"Alle Fotos ansehen"</string>
@@ -477,6 +480,7 @@
     <string name="tether_capturing">"Aufnahme läuft"</string>
     <string name="tether_card_confirm">"Ich habe bestätigt, dass die Kamera Originale auch auf der Speicherkarte speichert."</string>
     <string name="tether_card_hint">"Wählen Sie Einzelaufnahme und speichern Sie Originale auch auf der Speicherkarte. Livebilder und Miniaturbilder bestätigen nicht, dass Originale gespeichert wurden."</string>
+    <string name="tether_confirm_continue">"Ergebnis bestätigen und fortfahren"</string>
     <string name="tether_foreground">"Wenn Sie diese Seite verlassen, wird die Tether-Aufnahme pausiert. Bereits gespeicherte Fotos bleiben erhalten."</string>
     <string name="tether_grid">"Kompositionsraster"</string>
     <string name="tether_intro">"Auf dem Smartphone den Bildausschnitt wählen, einzelne Fotos aufnehmen und die originalen RAW- und JPEG-Dateien von der Speicherkarte automatisch speichern."</string>
@@ -487,6 +491,7 @@
     <string name="tether_pause">"Tether-Aufnahme pausieren"</string>
     <string name="tether_paused">"Tether-Aufnahme pausiert"</string>
     <string name="tether_pending">"%1$d Fotos warten auf den Empfang."</string>
+    <string name="tether_photo_limit">"Die Karte enthält mehr Dateien als das Tethering-Limit; nur die neuesten Fotos werden aufgelistet."</string>
     <string name="tether_preparing">"Livebild wird vorbereitet"</string>
     <string name="tether_preview_missing">"Vorschau vorübergehend nicht verfügbar"</string>
     <string name="tether_preview_note">"Vorschaubild; zum Zoomen zwei Finger verwenden"</string>

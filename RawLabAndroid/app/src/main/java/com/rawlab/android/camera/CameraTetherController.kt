@@ -50,6 +50,9 @@ internal data class CameraTetherState(
     val receiving: Boolean get() = phase == CameraTetherPhase.RECEIVING
     val active: Boolean get() = phase !in setOf(CameraTetherPhase.IDLE, CameraTetherPhase.PAUSED)
     val canResume: Boolean get() = failure != CameraTetherFailure.SOURCE && run?.recoveryJobs(jobs) != null
+    // 「确认结果后继续」入口：无法续接的暂停 run（快门结果已在机身核对，或列表只保留最近窗口）先结束再开始新会话。
+    val canConfirmAndContinue: Boolean get() = !active && run != null && !canResume &&
+        failure in setOf(CameraTetherFailure.UNKNOWN_SHOT, CameraTetherFailure.PHOTO_LIMIT)
     val saved: List<CameraTetherSaved> get() {
         val byId = jobs.associateBy { it.id }
         return run?.batches.orEmpty().flatMap { batch -> byId[batch.id]?.items.orEmpty().mapNotNull { item ->
@@ -72,6 +75,7 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
     val state = mutable.asStateFlow()
     private val queue = CameraTetherQueue(store, journal)
     private var work: Job? = null
+    private var confirmWork: Job? = null
     fun refreshJobs(jobs: List<CameraImportJob>) { jobs.forEach(::updateJob) }
 
     @Volatile private var active: Active? = null
@@ -241,6 +245,21 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
         if (current.shutter.trySend(Unit).isFailure) { current.shutterPending.set(false); ready(current) }
     }
 
+    /** 用户已在相机上核对结果：结束无法续接的暂停 run 并清掉待确认快门，之后可开始新的联机会话。 */
+    fun confirmPausedRun() {
+        if (active != null) return
+        val paused = mutable.value.run ?: return
+        val ended = paused.copy(status = CameraTetherStatus.ENDED, shutterRequestedAt = null)
+        mutable.update { it.copy(run = null, phase = CameraTetherPhase.IDLE, failure = null) }
+        confirmWork = scope.launch(Dispatchers.IO) {
+            storeLock.withLock {
+                runCatching { journal.save(ended) }
+                    .onSuccess { mutable.update { it.copy(runs = it.runs.map { run -> if (run.id == ended.id) ended else run }) } }
+                    .onFailure { mutable.update { it.copy(failure = CameraTetherFailure.STORAGE) } }
+            }
+        }
+    }
+
     fun stop(ended: Boolean = false) {
         val current = active ?: return
         current.ended = ended
@@ -261,7 +280,7 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
         mutable.update { it.copy(parameters = it.parameters.copy(busy = true, failure = null, reason = null)) }
         current.parameterRequests.trySend(ParameterRequest(code, requested))
     }
-    suspend fun join() { work?.join() }
+    suspend fun join() { work?.join(); confirmWork?.join() }
 
     private suspend fun observe(current: Active, cameraId: String, model: SonyCameraModel,
         destination: CameraImportDestination, host: List<CameraHostOriginal> = emptyList()) {
@@ -286,10 +305,12 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                 }
             }
             if (current.run == null) {
-                current.run = journal.create(cameraId, model.profileId, snapshot.photos, destination, snapshot.hardwareIdentity)
+                current.run = journal.create(cameraId, model.profileId, snapshot.photos, destination, snapshot.hardwareIdentity,
+                    truncatedListing = snapshot.limitExceeded)
                 snapshot.commit()
                 current.initialObservation = false
                 updateRun(checkNotNull(current.run))
+                publishLimitNotice(snapshot.limitExceeded)
                 return@withLock
             }
             if (current.run?.hardwareIdentity?.let { it != snapshot.hardwareIdentity } == true) throw CameraTetherSourceException()
@@ -331,7 +352,17 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                 updateRun(checkNotNull(current.run))
             }
             mutable.update { it.copy(current = null, currentBytes = 0) }
+            publishLimitNotice(checkNotNull(current.run).truncatedListing)
         }
+    }
+
+    /** 列表超限是运行期属性：持续提示直到新会话开始，避免被下一次增量轮询清掉。 */
+    private fun publishLimitNotice(truncated: Boolean) {
+        mutable.update { it.copy(failure = when {
+            truncated -> CameraTetherFailure.PHOTO_LIMIT
+            it.failure == CameraTetherFailure.PHOTO_LIMIT -> null
+            else -> it.failure
+        }) }
     }
 
     private fun ready(current: Active) {

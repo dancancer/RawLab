@@ -72,7 +72,7 @@ internal fun CameraTetherScreen(model: CameraImportViewModel, storage: PhotoStor
         cameraName = (SonyCameraModel.entries.find { it.profileId == tether.run?.profileId } ?: connection.model).displayName,
         onBack = ::back, onChangeCamera = { onConnect(false) }, onDisconnect = model::disconnect,
         onDestination = { settings = true }, destinationEnabled = !tether.active && !connection.closing,
-        onHistory = onHistory, onImport = onImport)
+        onHistory = onHistory, onImport = onImport, onConfirmContinue = { model.tether.confirmPausedRun(); onConnect(false) })
     if (settings) CameraImportSettings(connection.destination,
         onSave = { model.setDestination(it); settings = false }, onDismiss = { settings = false })
 }
@@ -84,7 +84,7 @@ internal fun CameraTetherWorkspace(state: CameraTetherState,
     onEdit: (CameraTetherSaved) -> Unit, onSetParameter: (Int, Long) -> Unit = { _, _ -> },
     cameraName: String = "Sony", onBack: () -> Unit = {}, onChangeCamera: () -> Unit = {},
     onDisconnect: () -> Unit = {}, onDestination: () -> Unit = {}, destinationEnabled: Boolean = true,
-    onHistory: () -> Unit = {}, onImport: () -> Unit = {}) {
+    onHistory: () -> Unit = {}, onImport: () -> Unit = {}, onConfirmContinue: () -> Unit = {}) {
     var grid by rememberSaveable { mutableStateOf(false) }
     var autoReview by rememberSaveable { mutableStateOf(false) }
     var reviewUri by rememberSaveable { mutableStateOf<String?>(null) }
@@ -145,6 +145,8 @@ internal fun CameraTetherWorkspace(state: CameraTetherState,
                         if (state.canResume || state.run == null && state.failure != CameraTetherFailure.SOURCE) {
                             TextButton(onClick = onReconnect, modifier = Modifier.testTag("tether-reconnect")) { Text(stringResource(R.string.tether_reconnect)) }
                         } else {
+                            if (state.canConfirmAndContinue) TextButton(onClick = onConfirmContinue,
+                                modifier = Modifier.testTag("tether-confirm-continue")) { Text(stringResource(R.string.tether_confirm_continue)) }
                             TextButton(onClick = onImport, modifier = Modifier.testTag("tether-import-instead")) { Text(stringResource(R.string.camera_import)) }
                         }
                     }
@@ -345,7 +347,7 @@ private fun TetherStatus(state: CameraTetherState) {
                 CameraTetherFailure.BACKLOG -> if (state.canResume) R.string.tether_backlog_error else R.string.tether_source_error
                 CameraTetherFailure.LIVE -> R.string.tether_live_error
                 CameraTetherFailure.UNSUPPORTED -> R.string.tether_unsupported
-                CameraTetherFailure.PHOTO_LIMIT -> R.string.camera_incremental_oversized
+                CameraTetherFailure.PHOTO_LIMIT -> R.string.tether_photo_limit
                 CameraTetherFailure.CONNECTION -> R.string.camera_connection_failed
             }
             Text(stringResource(message), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)

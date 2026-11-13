@@ -465,10 +465,15 @@ public final class SonyTetherSession implements Closeable {
         public final List<Asset> assets;
         public final long cursor;
         public final boolean hasEntries;
+        public final boolean truncated;
         IncrementalContents(List<Asset> assets,long cursor,boolean hasEntries) {
+            this(assets,cursor,hasEntries,false);
+        }
+        IncrementalContents(List<Asset> assets,long cursor,boolean hasEntries,boolean truncated) {
             this.assets=Collections.unmodifiableList(new ArrayList<>(assets));
             this.cursor=cursor;
             this.hasEntries=hasEntries;
+            this.truncated=truncated;
         }
     }
 
@@ -496,15 +501,16 @@ public final class SonyTetherSession implements Closeable {
             if (data.count<100) {
                 if (exceeded) SonyMobileSession.trimRecentAssets(result);
                 rememberAssets(result);
-                if (exceeded) throw new CameraMediaSession.PhotoLimitExceededException("Remote contents budget exceeded", result);
-                return new IncrementalContents(result, hasEntries ? latestCursor : 0L, hasEntries);
+                // 超过枚举上限时返回最近窗口并保持连接，由调用方提示截断，而不是断开会话。
+                return new IncrementalContents(result, hasEntries ? latestCursor : 0L, hasEntries, exceeded);
             }
             if (data.cursor<=cursor) throw new IOException("Remote contents cursor did not advance");
             cursor=data.cursor;
         }
+        // 翻页耗尽同样按最近窗口返回：游标仍有效，后续轮询继续增量接收。
         SonyMobileSession.trimRecentAssets(result);
         rememberAssets(result);
-        throw new CameraMediaSession.PhotoLimitExceededException("Remote contents page limit exceeded", result);
+        return new IncrementalContents(result, hasEntries ? latestCursor : 0L, hasEntries, true);
     }
 
     private void rememberAssets(List<Asset> assets) {

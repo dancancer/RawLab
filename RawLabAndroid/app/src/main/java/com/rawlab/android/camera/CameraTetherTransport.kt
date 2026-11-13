@@ -14,6 +14,7 @@ internal data class CameraHostOriginal(val name: String, val size: Long, val dig
 internal data class CameraCardSnapshot(val photos: List<CameraPhoto>, val hardwareIdentity: CameraHardwareIdentity?,
     val observationMode: CameraTetherObservationMode = CameraTetherObservationMode.Full,
     val commit: () -> Unit = {},
+    val limitExceeded: Boolean = false,
     val download: (CameraPhoto, OutputStream, (Long) -> Unit) -> String)
 internal data class CameraTetherParameter(val code: Int, val current: Long, val options: List<Long>,
     val writable: Boolean, val enabled: Boolean)
@@ -64,7 +65,7 @@ internal class CameraTetherTransport(private val factory: SocketFactory, private
                     remoteInitialized = true
                 }
             }
-            return CameraCardSnapshot(listed.values.map { it.photo() }, hardwareIdentity, mode, commit) { photo, output, progress ->
+            return CameraCardSnapshot(listed.values.map { it.photo() }, hardwareIdentity, mode, commit, listing.truncated) { photo, output, progress ->
                 val target = remoteAssets[photo.key] ?: throw IOException("Remote original outside current session")
                 openedRemote.download(target, object : OutputStream() {
                     var count = 0L
