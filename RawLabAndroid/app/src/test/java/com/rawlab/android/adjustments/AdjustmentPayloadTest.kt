@@ -56,15 +56,16 @@ class AdjustmentPayloadTest {
     }
 }
 
-internal fun resolveSharedFixture(name: String): File {
-    val relative = "Shared/fixtures/$name"
-    val direct = listOf(File(relative), File("../../$relative")).firstOrNull { it.isFile }
+internal fun resolveSharedPath(relativePath: String): File {
+    val direct = listOf(File(relativePath), File("../../$relativePath")).firstOrNull { it.isFile }
     if (direct != null) return direct
     var dir: File? = File("").absoluteFile
     while (dir != null) {
-        val candidate = File(dir, relative)
+        val candidate = File(dir, relativePath)
         if (candidate.isFile) return candidate
         dir = dir.parentFile
     }
-    error("Shared fixture not found: $relative")
+    error("Shared file not found: $relativePath")
 }
+
+internal fun resolveSharedFixture(name: String): File = resolveSharedPath("Shared/fixtures/$name")

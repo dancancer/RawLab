@@ -26,7 +26,7 @@ class AdjustmentTransferTest {
         AdjustmentTransfer.capture(AdjustmentScope.Custom(fields.toSet()), settings, context.copy(identifier = "source"))
 
     private fun builtinRecipes(): List<MasterRecipe> {
-        val rows = JSONArray(File("../../Shared/master-recipes.json").readText())
+        val rows = JSONArray(resolveSharedPath("Shared/master-recipes.json").readText())
         return (0 until rows.length()).map { MasterRecipe.decode(rows.getJSONObject(it)) }
     }
 
@@ -316,22 +316,48 @@ class AdjustmentTransferTest {
         "raster-neutral-all-unchanged-on-seeded-raw" to ScenarioDivergence(
             ledgerId = "P1-11",
             reason = "非 RAW 中性全量载荷未跳过曝光基准、白平衡与镜头占位，导致已编辑 RAW 目标被改写为 applied",
-            expectedKeys = setOf("status"),
+            expectedKeys = setOf(
+                "changed:color.white_balance.mode",
+                "changed:color.white_balance.temperature_kelvin",
+                "changed:color.white_balance.tint",
+                "changed:geometry.lens.auto_crop",
+                "changed:geometry.lens.distortion",
+                "changed:geometry.lens.profile_id",
+                "changed:geometry.lens.tca",
+                "changed:geometry.lens.vignetting",
+                "changed:light.exposure_mode",
+                "status:applied",
+            ),
         ),
         "raster-placeholders-only-unchanged-on-raw" to ScenarioDivergence(
             ledgerId = "P1-11",
             reason = "非 RAW 曝光基准与白平衡占位子集未在 RAW 目标上跳过，导致预期 unchanged 实际变为 applied",
-            expectedKeys = setOf("status"),
+            expectedKeys = setOf(
+                "changed:color.white_balance.mode",
+                "changed:color.white_balance.temperature_kelvin",
+                "changed:color.white_balance.tint",
+                "changed:geometry.lens.auto_crop",
+                "changed:geometry.lens.distortion",
+                "changed:geometry.lens.profile_id",
+                "changed:geometry.lens.tca",
+                "changed:geometry.lens.vignetting",
+                "changed:light.exposure_mode",
+                "status:applied",
+            ),
         ),
         "raster-wb-mode-only-unchanged-on-custom-wb-raw" to ScenarioDivergence(
             ledgerId = "P1-11",
             reason = "非 RAW 单独粘贴 color.white_balance.mode=none 未在自定义白平衡 RAW 目标上跳过，触发缺色温 unrepresentable 拒绝",
-            expectedKeys = setOf("status"),
+            expectedKeys = setOf("status:rejected:unrepresentable"),
         ),
         "raster-partial-default-lens-unchanged-on-raw" to ScenarioDivergence(
             ledgerId = "P1-11",
             reason = "非 RAW 默认关闭镜头子集未在已启用镜头校正的 RAW 目标上跳过，导致预期 unchanged 实际变为 applied",
-            expectedKeys = setOf("status"),
+            expectedKeys = setOf(
+                "changed:geometry.lens.auto_crop",
+                "changed:geometry.lens.distortion",
+                "status:applied",
+            ),
         ),
         "raster-full-recipe-preserves-identity-and-relative-tint-on-raw" to ScenarioDivergence(
             ledgerId = "P1-11",
@@ -348,7 +374,7 @@ class AdjustmentTransferTest {
         "raster-recipe-wb-without-tint-unchanged-on-raw" to ScenarioDivergence(
             ledgerId = "P1-11",
             reason = "非 RAW 配方来源仅选白平衡模式但未携带色调时未跳过占位，触发缺色调 unrepresentable 拒绝",
-            expectedKeys = setOf("status"),
+            expectedKeys = setOf("status:rejected:unrepresentable"),
         ),
         "raster-all-with-explicit-lens-distortion-applies-on-raw" to ScenarioDivergence(
             ledgerId = "P1-11",
@@ -482,15 +508,35 @@ class AdjustmentTransferTest {
             return diffs
         }
 
+        val isUnchangedWithoutValues = expectedStatus == "unchanged" && (!expectSpec.has("values") || expectSpec.isNull("values"))
         val candidate = try {
             AdjustmentTransfer.prepare(payload, targetState, scenarioContext)
         } catch (error: AdjustmentTransferException) {
-            diffs.add(ScenarioDiff("status", "status expected=$expectedStatus, actual=rejected(${errorReason(error)}: ${error.message})"))
+            val statusKey = if (isUnchangedWithoutValues) "status:rejected:${errorReason(error)}" else "status"
+            diffs.add(ScenarioDiff(statusKey, "status expected=$expectedStatus, actual=rejected(${errorReason(error)}: ${error.message})"))
             return diffs
         }
         val actualStatus = if (candidate == targetState) "unchanged" else "applied"
         if (actualStatus != expectedStatus) {
-            diffs.add(ScenarioDiff("status", "status expected=$expectedStatus, actual=$actualStatus"))
+            val statusKey = if (isUnchangedWithoutValues) "status:$actualStatus" else "status"
+            diffs.add(ScenarioDiff(statusKey, "status expected=$expectedStatus, actual=$actualStatus"))
+        }
+        if (isUnchangedWithoutValues && actualStatus == "applied") {
+            val targetCaptured = AdjustmentTransfer.capture(AdjustmentScope.All, targetState, scenarioContext).values
+            val candidateCaptured = AdjustmentTransfer.capture(AdjustmentScope.All, candidate, scenarioContext).values
+            val allFields = (targetCaptured.keys + candidateCaptured.keys).sortedBy { it.id }
+            for (field in allFields) {
+                val before = targetCaptured[field]
+                val after = candidateCaptured[field]
+                val matches = when {
+                    before == null && after == null -> true
+                    before == null || after == null -> false
+                    else -> matchesValue(after, before)
+                }
+                if (!matches) {
+                    diffs.add(ScenarioDiff("changed:${field.id}", "changed ${field.id} before=${formatValue(before)}, after=${formatValue(after)}"))
+                }
+            }
         }
         if (expectSpec.has("values") && !expectSpec.isNull("values")) {
             val valuesObj = expectSpec.getJSONObject("values")

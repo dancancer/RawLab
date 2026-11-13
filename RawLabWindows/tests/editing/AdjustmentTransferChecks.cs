@@ -84,6 +84,8 @@ internal static class AdjustmentTransferChecks
         var fixtureFields=ScenarioFixtureAllFieldIDs();
         Check(AdjustmentFields.All.Count==fixtureFields.Count &&
             AdjustmentFields.All.Select(f=>f.ID()).ToHashSet().SetEquals(fixtureFields),"stable field catalog matches scenario fixture");
+        Check(AdjustmentTransfer.Capture(AdjustmentScope.All,Edit(),Context).Fields.Select(f=>f.ID()).ToHashSet().SetEquals(fixtureFields),
+            "all-scope capture matches scenario fixture");
         Console.WriteLine($"PASS: {seen.Count} shared payload vectors and native request equality");
     }
     private sealed record ScenarioDiff(string Key, string Summary);
@@ -110,15 +112,36 @@ internal static class AdjustmentTransferChecks
             ["raster-neutral-all-unchanged-on-seeded-raw"] = new(
                 "P1-12",
                 "非 RAW 中性全量载荷未跳过默认关闭镜头占位，导致已启用镜头校正的 RAW 目标变为 applied",
-                new HashSet<string> { "status" }),
+                new HashSet<string>
+                {
+                    "changed:geometry.lens.auto_crop",
+                    "changed:geometry.lens.distortion",
+                    "changed:geometry.lens.profile_id",
+                    "changed:geometry.lens.tca",
+                    "changed:geometry.lens.vignetting",
+                    "status:applied"
+                }),
             ["raster-placeholders-only-unchanged-on-raw"] = new(
                 "P1-12",
                 "非 RAW 占位子集中的默认关闭镜头字段未在 RAW 目标上跳过，导致预期 unchanged 实际变为 applied",
-                new HashSet<string> { "status" }),
+                new HashSet<string>
+                {
+                    "changed:geometry.lens.auto_crop",
+                    "changed:geometry.lens.distortion",
+                    "changed:geometry.lens.profile_id",
+                    "changed:geometry.lens.tca",
+                    "changed:geometry.lens.vignetting",
+                    "status:applied"
+                }),
             ["raster-partial-default-lens-unchanged-on-raw"] = new(
                 "P1-12",
                 "非 RAW 默认关闭镜头子集未在已启用镜头校正的 RAW 目标上跳过，导致预期 unchanged 实际变为 applied",
-                new HashSet<string> { "status" }),
+                new HashSet<string>
+                {
+                    "changed:geometry.lens.auto_crop",
+                    "changed:geometry.lens.distortion",
+                    "status:applied"
+                }),
             ["raster-full-recipe-preserves-identity-and-relative-tint-on-raw"] = new(
                 "P1-12",
                 "非 RAW 完整配方全量粘贴到 RAW 目标时未跳过默认关闭镜头占位，覆盖了目标镜头校正",
@@ -244,6 +267,8 @@ internal static class AdjustmentTransferChecks
             return diffs;
         }
 
+        var isUnchangedWithoutValues = expectedStatus == "unchanged" &&
+            (!expectSpec.TryGetProperty("values", out var vElem) || vElem.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined);
         SavedEdit candidate;
         try
         {
@@ -251,12 +276,31 @@ internal static class AdjustmentTransferChecks
         }
         catch (AdjustmentTransferException error)
         {
-            diffs.Add(new("status", $"status expected={expectedStatus}, actual=rejected({ErrorReason(error)}: {error.Message})"));
+            var statusKey = isUnchangedWithoutValues ? $"status:rejected:{ErrorReason(error)}" : "status";
+            diffs.Add(new(statusKey, $"status expected={expectedStatus}, actual=rejected({ErrorReason(error)}: {error.Message})"));
             return diffs;
         }
         var actualStatus = candidate.SameAs(targetState) ? "unchanged" : "applied";
         if (actualStatus != expectedStatus)
-            diffs.Add(new("status", $"status expected={expectedStatus}, actual={actualStatus}"));
+        {
+            var statusKey = isUnchangedWithoutValues ? $"status:{actualStatus}" : "status";
+            diffs.Add(new(statusKey, $"status expected={expectedStatus}, actual={actualStatus}"));
+        }
+        if (isUnchangedWithoutValues && actualStatus == "applied")
+        {
+            var targetCaptured = AdjustmentTransfer.Capture(AdjustmentScope.All, targetState, scenarioContext).Values;
+            var candidateCaptured = AdjustmentTransfer.Capture(AdjustmentScope.All, candidate, scenarioContext).Values;
+            foreach (var field in AdjustmentFields.All.OrderBy(f => f.ID(), StringComparer.Ordinal))
+            {
+                var hasTarget = targetCaptured.TryGetValue(field, out var before);
+                var hasCandidate = candidateCaptured.TryGetValue(field, out var after);
+                if (!hasTarget && !hasCandidate) continue;
+                if (!hasTarget || !hasCandidate || !MatchesJsonValue(after, before))
+                {
+                    diffs.Add(new("changed:" + field.ID(), $"changed {field.ID()} before={(hasTarget ? JsonSerializer.Serialize(before) : "<missing>")}, after={(hasCandidate ? JsonSerializer.Serialize(after) : "<missing>")}"));
+                }
+            }
+        }
         if (expectSpec.TryGetProperty("values", out var valuesElem) && valuesElem.ValueKind == JsonValueKind.Object)
         {
             var captured = AdjustmentTransfer.Capture(AdjustmentScope.All, candidate, scenarioContext).Values;
