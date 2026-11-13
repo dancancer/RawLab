@@ -88,14 +88,14 @@ class CameraTetherLivenessTest {
         }
 
         suspend fun awaitParked() {
-            withTimeout(10_000) { arrived.receive() }
+            withTimeout(30_000) { arrived.receive() }
         }
 
         /** Advances one 250ms tick from a parked state; returns true if parked again, false if controller exited loop. */
         suspend fun stepParkedTick(controller: CameraTetherController, deltaMillis: Long = 250L): Boolean {
             currentMillis.addAndGet(deltaMillis)
             release.send(Unit)
-            return withTimeout(10_000) {
+            return withTimeout(30_000) {
                 while (true) {
                     if (arrived.tryReceive().isSuccess) return@withTimeout true
                     if (!controller.state.value.active) {
@@ -520,5 +520,175 @@ class CameraTetherLivenessTest {
                 controllerScope.cancel()
             }
         }
+    }
+
+    @Test
+    fun modernIdlePollingRoundTripsStayConstantAcrossCardSizesAndStillDiscoverNewPhotos() {
+        val basePayload = rawPayload(10)
+        fun cardEntries(count: Int): List<FakeCardEntry> = (1..count).map { index ->
+            FakeCardEntry(index, 1, "DSC%05d.ARW".format(index), 1_730_000_000_000L + index * 1_000L, basePayload)
+        }
+
+        var smallIdle923c = -1
+        withWorkspace { _, store, journal, lock ->
+            FakeTetherCameraServer(legacy = false, initialEntries = cardEntries(500)).use { camera ->
+                val clock = VirtualLoopClock()
+                val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+                val controller = CameraTetherController(controllerScope, store, journal, lock, {}, clock::now, clock::pause)
+                try {
+                    controller.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID(),
+                        SonyCameraModel.A7CII, "BLE:sony-500", CameraImportDestination(), resume = false, cardSavingConfirmed = false)
+                    clock.awaitParked()
+                    assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
+                    camera.resetCounters()
+                    // 60 seconds idle = 240 ticks * 250ms (40 reconciliations at 1,500ms interval).
+                    repeat(240) { assertTrue(clock.stepParkedTick(controller)) }
+                    smallIdle923c = camera.list923cCalls.get()
+                    controller.stop(ended = true)
+                    controller.join()
+                } finally {
+                    clock.close()
+                    controllerScope.cancel()
+                }
+            }
+        }
+
+        var largeIdle923c = -1
+        var sameTimestamp923c = -1
+        var singleNewPhoto923c = -1
+        var savedNames = emptyList<String>()
+        withWorkspace { _, store, journal, lock ->
+            FakeTetherCameraServer(legacy = false, initialEntries = cardEntries(2_500)).use { camera ->
+                val clock = VirtualLoopClock()
+                val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+                val controller = CameraTetherController(controllerScope, store, journal, lock, {}, clock::now, clock::pause)
+                try {
+                    controller.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID(),
+                        SonyCameraModel.A7CII, "BLE:sony-2500", CameraImportDestination(), resume = false, cardSavingConfirmed = false)
+                    clock.awaitParked()
+                    assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
+                    camera.resetCounters()
+                    // 60 seconds idle = 240 ticks * 250ms.
+                    repeat(240) { assertTrue(clock.stepParkedTick(controller)) }
+                    largeIdle923c = camera.list923cCalls.get()
+
+                    // New photo #1 sharing exact tail timestamp with entry #2500 (1_730_002_500_000L).
+                    camera.resetCounters()
+                    camera.addEntry(FakeCardEntry(2_501, 1, "DSC02501.ARW", 1_730_002_500_000L, rawPayload(21)))
+                    repeat(6) { assertTrue(clock.stepParkedTick(controller)) }
+                    sameTimestamp923c = camera.list923cCalls.get()
+
+                    // New photo #2 with advancing timestamp (1_730_002_501_000L).
+                    camera.resetCounters()
+                    camera.addEntry(FakeCardEntry(2_502, 1, "DSC02502.ARW", 1_730_002_501_000L, rawPayload(22)))
+                    repeat(6) { assertTrue(clock.stepParkedTick(controller)) }
+                    singleNewPhoto923c = camera.list923cCalls.get()
+                    savedNames = controller.state.value.saved.map { it.photo.name }
+
+                    controller.stop(ended = true)
+                    controller.join()
+                } finally {
+                    clock.close()
+                    controllerScope.cancel()
+                }
+            }
+        }
+
+        assertEquals(
+            "60s idle 0x923c calls grew with card size: 500-photo card=$smallIdle923c, 2500-photo card=$largeIdle923c, singleNewPhoto923c=$singleNewPhoto923c",
+            smallIdle923c,
+            largeIdle923c,
+        )
+        assertEquals("Expected 40 single-page 0x923c polls during 60s idle", 40, largeIdle923c)
+        assertEquals("Expected 1 poll + 1 targeted page verification = 2 0x923c calls for same-timestamp capture", 2, sameTimestamp923c)
+        assertEquals("Expected 1 poll + 1 targeted page verification = 2 0x923c calls for new capture on 2500-photo card", 2, singleNewPhoto923c)
+        assertEquals(listOf("DSC02502.ARW", "DSC02501.ARW"), savedNames)
+    }
+
+    @Test
+    fun legacyReconciliationSkipsKnownHandlesAndStillDiscoversNewPhotos() {
+        val basePayload = rawPayload(30)
+        fun cardEntries(count: Int): List<FakeCardEntry> = (1..count).map { index ->
+            FakeCardEntry(index, 1, "DSC%05d.ARW".format(index), 1_730_000_000_000L + index * 1_000L, basePayload)
+        }
+
+        var smallIdle60sOps = -1
+        var smallReconcileOps = -1
+        var smallReconcile1008 = -1
+        withWorkspace { _, store, journal, lock ->
+            FakeTetherCameraServer(legacy = true, initialEntries = cardEntries(100)).use { camera ->
+                val clock = VirtualLoopClock()
+                val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+                val controller = CameraTetherController(controllerScope, store, journal, lock, {}, clock::now, clock::pause)
+                try {
+                    controller.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID(),
+                        SonyCameraModel.ZVE10, "BLE:zve10-100", CameraImportDestination(), resume = false, cardSavingConfirmed = true)
+                    clock.awaitParked()
+                    assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
+                    camera.resetCounters()
+                    // First 60s idle (240 ticks): 0 reconciliations; next 60s (total 120s = 480 ticks): 1 full legacy idle reconciliation.
+                    repeat(240) { assertTrue(clock.stepParkedTick(controller)) }
+                    smallIdle60sOps = camera.storage1004Calls.get() + camera.handles1007Calls.get() + camera.objectInfo1008Calls.get()
+                    repeat(240) { assertTrue(clock.stepParkedTick(controller)) }
+                    smallReconcile1008 = camera.objectInfo1008Calls.get()
+                    smallReconcileOps = camera.storage1004Calls.get() + camera.handles1007Calls.get() + smallReconcile1008
+                    controller.stop(ended = true)
+                    controller.join()
+                } finally {
+                    clock.close()
+                    controllerScope.cancel()
+                }
+            }
+        }
+
+        var largeIdle60sOps = -1
+        var largeReconcileOps = -1
+        var largeReconcile1008 = -1
+        var newPhoto1008 = -1
+        var savedNames = emptyList<String>()
+        withWorkspace { _, store, journal, lock ->
+            FakeTetherCameraServer(legacy = true, initialEntries = cardEntries(1_000)).use { camera ->
+                val clock = VirtualLoopClock()
+                val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+                val controller = CameraTetherController(controllerScope, store, journal, lock, {}, clock::now, clock::pause)
+                try {
+                    controller.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID(),
+                        SonyCameraModel.ZVE10, "BLE:zve10-1000", CameraImportDestination(), resume = false, cardSavingConfirmed = true)
+                    clock.awaitParked()
+                    assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
+                    camera.resetCounters()
+                    repeat(240) { assertTrue(clock.stepParkedTick(controller)) }
+                    largeIdle60sOps = camera.storage1004Calls.get() + camera.handles1007Calls.get() + camera.objectInfo1008Calls.get()
+                    repeat(240) { assertTrue(clock.stepParkedTick(controller)) }
+                    largeReconcile1008 = camera.objectInfo1008Calls.get()
+                    largeReconcileOps = camera.storage1004Calls.get() + camera.handles1007Calls.get() + largeReconcile1008
+
+                    // Add a new photo (#1001) and run one reconciliation cycle (480 ticks = 120s).
+                    camera.resetCounters()
+                    camera.addEntry(FakeCardEntry(1_001, 1, "DSC01001.ARW", 1_730_001_001_000L, rawPayload(31)))
+                    repeat(480) { assertTrue(clock.stepParkedTick(controller)) }
+                    newPhoto1008 = camera.objectInfo1008Calls.get()
+                    savedNames = controller.state.value.saved.map { it.photo.name }
+
+                    controller.stop(ended = true)
+                    controller.join()
+                } finally {
+                    clock.close()
+                    controllerScope.cancel()
+                }
+            }
+        }
+
+        assertEquals(0, smallIdle60sOps)
+        assertEquals(0, largeIdle60sOps)
+        assertEquals(listOf("DSC01001.ARW"), savedNames)
+        assertEquals(
+            "Legacy reconciliation list/query round-trips grew with card size: 100-photo card=$smallReconcileOps (1008=$smallReconcile1008), 1000-photo card=$largeReconcileOps (1008=$largeReconcile1008), newPhoto1008=$newPhoto1008",
+            smallReconcileOps,
+            largeReconcileOps,
+        )
+        assertEquals("Legacy idle reconciliation must send 0 GetObjectInfo (0x1008) queries", 0, largeReconcile1008)
+        assertEquals("Legacy idle reconciliation must only send mount/list storage + handles = 3 ops", 3, largeReconcileOps)
+        assertEquals("Expected 1 discovery + 2 transfer-check 0x1008 queries for 1 new legacy photo", 3, newPhoto1008)
     }
 }

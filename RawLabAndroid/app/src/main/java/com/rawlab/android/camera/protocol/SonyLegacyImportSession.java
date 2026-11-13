@@ -30,17 +30,34 @@ public final class SonyLegacyImportSession implements CameraMediaSession {
         } catch(IOException failure) { close();throw failure; }
     }
 
+    public static final class IncrementalListing {
+        public final Set<Integer> handles;
+        public final Set<Integer> photoHandles;
+        public final List<SonyMobileSession.Asset> photos;
+        IncrementalListing(Set<Integer> handles,Set<Integer> photoHandles,List<SonyMobileSession.Asset> photos) {
+            this.handles=handles;
+            this.photoHandles=Collections.unmodifiableSet(new LinkedHashSet<>(photoHandles));
+            this.photos=Collections.unmodifiableList(new ArrayList<>(photos));
+        }
+    }
+
     @Override public List<SonyMobileSession.Asset> listPhotos(SonyMobileSession.Device device) throws IOException {
+        return listPhotos(device,Collections.emptySet()).photos;
+    }
+
+    public IncrementalListing listPhotos(SonyMobileSession.Device device,Set<Integer> baselineHandles) throws IOException {
         if(!opened) throw new IOException("Legacy import session not open");
         objects.clear();
+        SonyTetherSession.LegacyListing listing=transport.listLegacyPhotosIncremental(baselineHandles);
         List<SonyMobileSession.Asset> result=new ArrayList<>();
-        for(SonyTetherSession.LegacyObject object:transport.listLegacyPhotos()) {
+        Set<Integer> photoHandles=new LinkedHashSet<>();
+        for(SonyTetherSession.LegacyObject object:listing.photos) {
             SonyMobileSession.Asset asset = new SonyMobileSession.Asset(this, object.storage, object.handle,
                 object.name, object.size, createdTime(object.created, TimeZone.getDefault()), "legacy:" + object.storage,
                 createdTime(object.created, TimeZone.getTimeZone("GMT")), object.key());
-            objects.put(asset,object);result.add(asset);
+            objects.put(asset,object);result.add(asset);photoHandles.add(object.handle);
         }
-        return result;
+        return new IncrementalListing(listing.handles,photoHandles,result);
     }
 
     private SonyTetherSession.LegacyObject original(SonyMobileSession.Asset asset) throws IOException {

@@ -22,6 +22,11 @@ internal data class CameraTetherRun(val id: String, val cameraId: String, val pr
     val observedPhotos: List<CameraPhoto> get() = baseline + batches.drop(rebasedBatches).flatMap { it.photos }
 }
 
+internal sealed interface CameraTetherObservationMode {
+    data object Full : CameraTetherObservationMode
+    data class Incremental(val afterCursor: Long? = null) : CameraTetherObservationMode
+}
+
 /** 只记录发现与预留任务；原件和发布结果由 CameraImportStore 持有。调用方共用同一存储锁。 */
 internal class CameraTetherJournal(private val directory: File) {
     init { directory.mkdirs() }
@@ -31,8 +36,9 @@ internal class CameraTetherJournal(private val directory: File) {
         CameraTetherRun(UUID.randomUUID().toString(), cameraId, profileId, System.currentTimeMillis(), baseline, destination,
             hardwareIdentity = hardwareIdentity).also(::save)
 
-    fun reserve(run: CameraTetherRun, observed: List<CameraPhoto>): Pair<CameraTetherRun, CameraTetherBatch?> {
-        val current = checkedObservation(run, observed)
+    fun reserve(run: CameraTetherRun, observed: List<CameraPhoto>,
+        mode: CameraTetherObservationMode = CameraTetherObservationMode.Full): Pair<CameraTetherRun, CameraTetherBatch?> {
+        val current = checkedObservation(run, observed, mode)
         if (run.status != CameraTetherStatus.ACTIVE) throw IOException("Tether run is not active")
         val known = run.observedPhotos.map { it.key }.toSet()
         val added = current.values.filter { it.key !in known }.take(BATCH_SIZE)
@@ -57,11 +63,42 @@ internal class CameraTetherJournal(private val directory: File) {
             status = CameraTetherStatus.ACTIVE, shutterRequestedAt = null)
     }
 
-    private fun checkedObservation(run: CameraTetherRun, observed: List<CameraPhoto>): Map<String, CameraPhoto> {
+    /**
+     * 全量观测要求历史照片全部仍在当前列表且元数据一致；增量轮询只拉取游标之后的尾部页或新增句柄，
+     * 因此游标之前的历史照片本就不会出现在 `observed` 中，改按增量语义守住同一安全边界：
+     * 1. 新协议（`afterCursor != null`）要求所有 `created > afterCursor` 的尾部锚点仍在本次返回中且快照一致，
+     *    换卡、格式化或删改尾部对象会因尾部锚点缺失/不一致立即报 `CameraTetherSourceException`。
+     * 2. 旧协议已由传输层先经 `0x1007` 一次性核实全部历史照片句柄仍在卡上，再仅对新增句柄查 `0x1008`。
+     * 3. 任何重现的历史 `key` 或被复用的相机对象槽位（`mobile:content:file` / `legacy:storage:handle`）
+     *    若与已记录快照不一致，立即拒绝，不会把被覆写/重用的槽位当成新照片；并校验总对象数不超上限。
+     */
+    private fun checkedObservation(run: CameraTetherRun, observed: List<CameraPhoto>, mode: CameraTetherObservationMode): Map<String, CameraPhoto> {
         validate(run)
         val current = checkedListing(observed)
-        if (run.observedPhotos.any { current[it.key]?.let(it::matchesSnapshot) != true }) throw CameraTetherSourceException()
+        val knownByKey = run.observedPhotos.associateBy { it.key }
+        if (knownByKey.size + current.keys.count { it !in knownByKey } > MAX_PHOTOS)
+            throw CameraMediaSession.PhotoLimitExceededException("Too many camera objects")
+        when (mode) {
+            is CameraTetherObservationMode.Full ->
+                if (run.observedPhotos.any { current[it.key]?.let(it::matchesSnapshot) != true }) throw CameraTetherSourceException()
+            is CameraTetherObservationMode.Incremental -> {
+                if (mode.afterCursor != null && run.observedPhotos.any { it.created > mode.afterCursor && current[it.key]?.let(it::matchesSnapshot) != true })
+                    throw CameraTetherSourceException()
+                val knownBySlot = mutableMapOf<String, CameraPhoto>()
+                for (known in run.observedPhotos) known.objectSlotKey()?.let { knownBySlot.putIfAbsent(it, known) }
+                for (photo in current.values) {
+                    knownByKey[photo.key]?.let { if (!it.matchesSnapshot(photo)) throw CameraTetherSourceException() }
+                    photo.objectSlotKey()?.let { slot -> knownBySlot[slot]?.let { if (!it.matchesSnapshot(photo)) throw CameraTetherSourceException() } }
+                }
+            }
+        }
         return current
+    }
+
+    private fun CameraPhoto.objectSlotKey(): String? {
+        val identity = resumeIdentity ?: return null
+        val parts = identity.split(':', limit = 4)
+        return if (parts.size >= 3 && (parts[0] == "mobile" || parts[0] == "legacy")) "${parts[0]}:${parts[1]}:${parts[2]}" else null
     }
 
     private fun checkedListing(observed: List<CameraPhoto>): Map<String, CameraPhoto> {

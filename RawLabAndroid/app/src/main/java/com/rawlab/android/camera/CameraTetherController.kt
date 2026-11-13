@@ -265,7 +265,7 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
 
     private suspend fun observe(current: Active, cameraId: String, model: SonyCameraModel,
         destination: CameraImportDestination, host: List<CameraHostOriginal> = emptyList()) {
-        val snapshot = current.transport.readCard()
+        val snapshot = current.transport.readCard(incremental = !current.initialObservation)
         storeLock.withLock {
             current.permit.check()
             // 恢复先核实原件；活动接收不反复散列历史媒体，打开编辑前会再次核实目标文件。
@@ -284,16 +284,18 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                     updateRun(resumed)
                     if (hadUnconfirmedShutter) mutable.update { it.copy(failure = CameraTetherFailure.UNKNOWN_SHOT) }
                 }
-                current.initialObservation = false
             }
             if (current.run == null) {
                 current.run = journal.create(cameraId, model.profileId, snapshot.photos, destination, snapshot.hardwareIdentity)
+                snapshot.commit()
+                current.initialObservation = false
                 updateRun(checkNotNull(current.run))
                 return@withLock
             }
             if (current.run?.hardwareIdentity?.let { it != snapshot.hardwareIdentity } == true) throw CameraTetherSourceException()
-            val expected = hostDigestsForCard(host, snapshot.photos)
             val run = checkNotNull(current.run)
+            val allCardPhotos = (run.observedPhotos + snapshot.photos).distinctBy { it.key }
+            val expected = hostDigestsForCard(host, allCardPhotos)
             val activeBatchIds = run.batches.drop(run.rebasedBatches).map { it.id }.toSet()
             for (job in mutable.value.jobs.filter { it.id in activeBatchIds }) for (item in job.items) {
                 if (item.saved != null && expected[item.photo.key]?.let { it != item.digest } == true)
@@ -313,7 +315,9 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                     if (job.savedCount > before && canFinishShutterWait(current.requestAcknowledged, current.requestBatchIds, job))
                         receivedAfterRequest = true
                     updateJob(job)
-                })
+                }, mode = snapshot.observationMode)
+                snapshot.commit()
+                current.initialObservation = false
             } catch (error: IOException) {
                 if (error.message?.contains("metadata changed") == true || error.message?.contains("baseline changed") == true)
                     throw CameraTetherSourceException()

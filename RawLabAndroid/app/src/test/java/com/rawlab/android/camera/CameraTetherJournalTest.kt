@@ -111,4 +111,44 @@ class CameraTetherJournalTest {
             journal.rebase(run, oversized)
         }
     }
+
+    @Test fun incrementalReserveVerifiesTailAnchorSlotReuseAndSessionPhotoLimit() = withJournal { _, journal ->
+        fun mobilePhoto(content: Int, file: Int = 1, created: Long, size: Long = 100): CameraPhoto {
+            val name = "DSC%05d.ARW".format(content)
+            val key = "$content:$file:$name:$size:$created"
+            return CameraPhoto(key, name, size, created, resumeIdentity = "mobile:$key", storageToken = "mobile", captureTimestamp = created)
+        }
+        val old = mobilePhoto(1, created = 1_000L)
+        val tail = mobilePhoto(2, created = 2_000L)
+        val run = journal.create("camera", "sony-test", listOf(old, tail), CameraImportDestination())
+
+        val mode = CameraTetherObservationMode.Incremental(afterCursor = 1_999L)
+        // Older photo before cursor is omitted; tail anchor is present -> idle incremental poll succeeds with null batch.
+        assertNull(journal.reserve(run, listOf(tail), mode).second)
+
+        // Missing tail anchor inside queried cursor window -> rejected as source change.
+        val added = mobilePhoto(3, created = 3_000L)
+        assertThrows(CameraTetherSourceException::class.java) {
+            journal.reserve(run, listOf(added), mode)
+        }
+
+        // Reusing an older photo's camera object slot (mobile:1:1) with changed metadata -> rejected even when before cursor.
+        val reusedSlot = mobilePhoto(1, created = 3_000L, size = 200)
+        assertThrows(CameraTetherSourceException::class.java) {
+            journal.reserve(run, listOf(tail, reusedSlot), mode)
+        }
+
+        // Valid new photo + same-timestamp photo are reserved cleanly without re-sending old baseline.
+        val sameTime = mobilePhoto(4, created = 2_000L)
+        val (updated, batch) = journal.reserve(run, listOf(tail, sameTime, added), mode)
+        assertEquals(listOf(sameTime, added), batch!!.photos)
+        assertEquals(4, updated.observedPhotos.size)
+
+        // Incremental addition pushing total session photos past 10,000 throws PhotoLimitExceededException.
+        val nearLimitRun = journal.create("camera", "sony-test", (1..9_995).map { mobilePhoto(it, created = it * 1_000L) }, CameraImportDestination())
+        val delta = listOf(mobilePhoto(9_995, created = 9_995_000L)) + (9_996..10_002).map { mobilePhoto(it, created = it * 1_000L) }
+        assertThrows(com.rawlab.android.camera.protocol.CameraMediaSession.PhotoLimitExceededException::class.java) {
+            journal.reserve(nearLimitRun, delta, CameraTetherObservationMode.Incremental(afterCursor = 9_994_999L))
+        }
+    }
 }
