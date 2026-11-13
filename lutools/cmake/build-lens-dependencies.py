@@ -75,6 +75,23 @@ def tool_wheel_key(name):
     return "ninja-linux-" + platform.machine()
 
 
+ANDROID_TRIPLES = {"arm64-v8a": "aarch64-linux-android", "x86_64": "x86_64-linux-android"}
+
+
+def android_triple(arch):
+    """Map an Android ABI to its clang target triple, rejecting unknown ABIs.
+
+    Falling back to x86_64 would build the wrong binaries with the wrong
+    toolchain and only fail much later, so an unsupported ABI is an error.
+    """
+    try:
+        return ANDROID_TRIPLES[arch]
+    except KeyError:
+        raise RuntimeError(
+            "Unsupported Android ABI: " + str(arch) + "; expected one of "
+            + ", ".join(sorted(ANDROID_TRIPLES))) from None
+
+
 def install_tools(tools, pins, sources, cache):
     keys = {name: tool_wheel_key(name) for name in ("meson", "ninja")}
     missing = [key for key in keys.values() if key not in pins]
@@ -113,7 +130,7 @@ def cross_file(args):
         flags += ["-mmacosx-version-min=" + args.minimum]
         link_flags = flags
     elif system == "android":
-        triple = "aarch64-linux-android" if args.arch == "arm64-v8a" else "x86_64-linux-android"
+        triple = android_triple(args.arch)
         toolchain = Path(args.cc).parent
         suffix = ".cmd" if os.name == "nt" else ""
         binaries["c"] = str(toolchain / (triple + args.minimum + "-clang" + suffix))
@@ -223,7 +240,7 @@ def main():
         extract(archives["iconv"], iconv)
         iconv_build = base / "iconv"
         iconv_build.mkdir(exist_ok=True)
-        triple = "aarch64-linux-android" if args.arch == "arm64-v8a" else "x86_64-linux-android"
+        triple = android_triple(args.arch)
         toolchain = Path(args.cc).parent
         iconv_env = env.copy()
         iconv_env.update(CC=str(toolchain / (triple + args.minimum + "-clang")), AR=args.ar,

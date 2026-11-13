@@ -25,6 +25,14 @@ SPEC.loader.exec_module(BUILDER)
 class LensDependencyContracts(unittest.TestCase):
     ROOT = BUILDER_PATH.parents[2]
 
+    def test_android_abis_map_and_reject_unknown(self):
+        """An unsupported ABI must be rejected instead of silently building x86_64."""
+        self.assertEqual(BUILDER.android_triple("arm64-v8a"), "aarch64-linux-android")
+        self.assertEqual(BUILDER.android_triple("x86_64"), "x86_64-linux-android")
+        for arch in ("armeabi-v7a", "x86", ""):
+            with self.assertRaisesRegex(RuntimeError, "Unsupported Android ABI"):
+                BUILDER.android_triple(arch)
+
     def test_invalid_download_is_never_published_to_shared_cache(self):
         with tempfile.TemporaryDirectory() as temporary:
             sources = Path(temporary)
