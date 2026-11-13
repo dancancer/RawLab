@@ -131,7 +131,8 @@ class SelectionTests(unittest.TestCase):
     def test_fork_pull_request_leaves_a_consistent_verify_result(self):
         files = {"HEAD^1": ["Shared/AdjustmentTransfer.swift"]}
         platforms, _, _, _ = selection.select("pull_request", pull(external=True), "s", files.__getitem__, unavailable)
-        # 与真实 CI 一致：能跑的只有非自托管平台，其余作业会被跳过。
+        # 与真实 CI 一致：托管平台（android、windows）可执行——Windows 作业的
+        # 源门禁放行 windows-2022 路由（test_workflow 锁住该条件），自托管作业被跳过。
         runnable = platforms & {"android", "windows"}
         results = {platform: ("success" if platform in runnable else "skipped")
                    for platform in selection.PLATFORMS}

@@ -80,8 +80,17 @@ class WorkflowContractTests(unittest.TestCase):
                     condition = job["if"]
                     self.assertIn(f"needs.changes.outputs.{name} == 'true'", condition)
                     # 自托管 runner 不能在 fork 的 PR 上执行任意代码。
-                    if "self-hosted" in str(job["runs-on"]) or name in ("windows", "ios", "macos"):
+                    if name in ("ios", "macos"):
                         self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", condition)
+                        self.assertNotIn("windows_runner", condition)
+                    elif name == "windows":
+                        # fork 的选择结果永远走托管路由，Windows 作业只在托管路由放行 fork；
+                        # 自托管路由（冷构建、手动 build/native/full）保持同仓库限定。
+                        self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", condition)
+                        self.assertIn('needs.changes.outputs.windows_runner == \'"windows-2022"\'', condition)
+                    else:
+                        # Android 作业跑在托管 ubuntu，没有源门禁；回到可信 guest 前必须补门禁。
+                        self.assertNotIn("head.repo.full_name", condition)
                 else:
                     self.assertNotIn("self-hosted", job["runs-on"])
         self.assertEqual(jobs["contracts"]["if"], "needs.changes.outputs.contracts == 'true'")

@@ -30,6 +30,7 @@ The supported camera/settings boundary remains the [X3F contract](../../lutools/
 | --- | --- |
 | Ordinary PR / `development` push | Static contracts plus fast models for affected platforms; no product/native dependency build |
 | Draft PR | Contracts only; platform checks and aggregate result stay skipped |
+| External fork PR | Contracts plus hosted Android and Windows checks when selected; the self-hosted macOS and iOS jobs stay skipped (see [External fork pull requests](#external-fork-pull-requests)) |
 | Release or hotfix PR | Every platform, complete non-UI coverage and cold native dependencies |
 | Manual run | Exactly the requested platform and check group; a separately named result |
 
@@ -82,6 +83,8 @@ this is not reuse of an unverified product binary.
 5. Before merge, check the current source/base, required automatic result and any
    requested specialized results. A failed, cancelled or unfinished check is not a
    pass. A manual partial result does not satisfy the automatic aggregate gate.
+   For an external fork PR, the skipped platforms also require the maintainer
+   verification in [External fork pull requests](#external-fork-pull-requests).
 6. After a change, rerun only checks whose source, configuration or integration
    assumptions changed. Documentation-only updates require content, link and diff
    checks; preserve earlier native/UI evidence with its actual tested SHA and
@@ -163,7 +166,94 @@ PRs compare the test merge against its base. Pushes compare with the last
 successful `development` push run, so a cancelled run cannot conceal unverified
 changes. Missing history selects all platforms at the event's level: ordinary
 changes still run models; release/hotfix PRs run everything cold. Manual selection
-is explicit and does not infer its scope from the branch diff.
+is explicit and does not infer its scope from the branch diff. An external fork PR
+additionally removes the self-hosted-only platforms from the selected set; see
+[External fork pull requests](#external-fork-pull-requests).
+
+## External Fork Pull Requests
+
+External fork pull requests are accepted, and their normal automatic run
+schedules only GitHub-hosted checks. GitHub runs the workflow in the base
+repository but takes the workflow file from the pull request's merge commit; the
+`macos` and `ios` jobs in that file each require
+`github.event.pull_request.head.repo.full_name == github.repository`
+([workflow](../../.github/workflows/ci.yml)), so a fork PR that leaves the
+workflow unchanged skips both. The `windows` job carries the same
+head-repository clause with one escape: it also runs when the selected route is
+`windows-2022`, so a fork diff can be built and tested on the hosted runner
+while the trusted machines stay reserved for same-repository code. The gate
+keeps normal fork changes off the trusted machines that persist SDKs, caches
+and runner installations. The selector
+also removes the platforms that exist only as self-hosted runners before the
+result gate sees the run: `SELF_HOSTED_ONLY = {"macos", "ios"}` in
+[`affected_platforms.py`](../../scripts/ci/affected_platforms.py). An external
+branch is never treated as a release/hotfix cold build, so its check group stays
+`models` even when it targets `main` or `release/**`. The automatic coverage of a
+ready-for-review fork PR is therefore:
+
+- **Contracts and CI policy** always run on `ubuntu-24.04`.
+- **Android** runs on hosted `ubuntu-24.04` when the diff selects it.
+- **macOS and iOS** are not selected, and their jobs are skipped by the source
+  gate. `verify` requires a selected platform to succeed and an unselected one to
+  be `skipped`, so these two skips are accepted; the selection reason records
+  them (for example, `fork pull request: ios, macos stay off self-hosted
+  runners`).
+- **Windows** stays selected because its ordinary route is hosted:
+  `windows_runner` returns `windows-2022`, and the job's source gate admits that
+  route, so the fork diff compiles and runs its model checks on `windows-2022`
+  exactly like an internal PR. Self-hosted Windows routing (cold builds and
+  manual `build`/`native`/`full`) stays same-repository only, so fork code never
+  executes on the dedicated KVM guest.
+
+A fork PR whose diff selects only the removed macOS/iOS platforms leaves no
+platform selected: contracts run, every platform job is skipped, and the green
+result means those platforms were not tested. A draft fork PR keeps the normal
+draft behavior: platform checks wait for **Ready for review**, and the coverage
+above applies to the ready-for-review run.
+
+Because the workflow file comes from the merge commit, a fork PR that edits
+`.github/workflows/` can run its edited version. GitHub's fork approval policy,
+read-only token and withheld secrets reduce that risk; they do not make a
+self-hosted runner safe. Review workflow edits in a fork PR as security-sensitive,
+and never approve or merge one that removes or weakens a `head.repo.full_name`
+condition or routes fork code to a self-hosted runner. Contributors must not try
+to bypass the gate by editing the workflow on their fork either; the supported
+path is review followed by the trusted-ref verification below.
+
+### Verifying a Fork Pull Request Before Merge
+
+The automatic run leaves the skipped platforms unverified, so a maintainer with
+write access must run them on a trusted ref after reviewing the change. Bring the
+reviewed head into a branch in this repository (a fork branch cannot be selected
+by **Run workflow**) or check it out locally and use the
+[local entry points](#local-and-targeted-entry-points) for the platform-specific
+scripts. For a **Run workflow** dispatch, open **Actions → Hosted CI → Run
+workflow** on that branch:
+
+- Set `platform` to `macos`, `windows` or `ios`; use `all` when the whole matrix
+  is needed. `contracts` ignores this selector.
+- Set `checks` to `models` for the standalone model suites at minimum, or to
+  `build`, `native` or `full` when the change needs the corresponding build or
+  native coverage from the [Verification Levels](#verification-levels) groups.
+  `native` omits the independent model suites, so use `full` when both are
+  required.
+- Confirm the logged checkout SHA is the reviewed source you intend to verify,
+  record the manual result and any local UI/device evidence in the PR, and treat
+  a missing, cancelled or stale-head run as unverified. The manual run's
+  aggregate check is named `Manual verification (<platform>, <checks>)` and does
+  not replace `CI result`.
+
+For a shared-core change, at minimum run `models` for each skipped platform and
+add `build`, `native` or `full` only for the coverage the change requires.
+
+`workflow_dispatch` runs the workflow file from the selected branch and is not
+subject to the pull-request source gate. Before dispatching, confirm the branch's
+workflow files contain only the changes you reviewed and do not weaken the gate;
+otherwise the dispatch would execute unreviewed workflow code on self-hosted
+machines. Do not bypass the gate for a fork: do not remove a
+`head.repo.full_name` condition or copy unreviewed fork code into a
+same-repository branch to obtain a privileged run; `pull_request_target` remains
+forbidden ([Safety and Results](#safety-and-results)).
 
 ## Local and Targeted Entry Points
 
@@ -246,10 +336,15 @@ CI never repeats runtime UI checks. UI-test target compilation is not a UI-test 
 
 Actions are pinned to full commit SHAs. Workflow permission is `contents: read`;
 only the selection job adds `actions: read` to look up earlier runs. Checkout
-credentials are not persisted, and no `pull_request_target` is used. The workflow
-has bounded jobs and cancels obsolete runs for the same PR/ref; manual
-runs use their own concurrency groups so a push neither cancels nor is cancelled
-by a manual verification.
+credentials are not persisted, and no `pull_request_target` is used. The
+`macos` and `ios` jobs also require the pull request head to come from
+this repository, so a normal fork PR skips both; the `windows` job carries the
+same clause but admits the hosted `windows-2022` route, so only that route can
+execute fork code. Workflow edits in a fork PR
+require security review ([External fork pull requests](#external-fork-pull-requests)).
+The workflow has bounded jobs and cancels obsolete runs for the same PR/ref;
+manual runs use their own concurrency groups so a push neither cancels nor is
+cancelled by a manual verification.
 
 The separate [PR cache cleanup](../../.github/workflows/pr-cache-cleanup.yml)
 workflow runs when a same-repository PR closes. With `actions: write` and no
@@ -296,7 +391,10 @@ first when the variable is set; `URL_HASH` verifies it again.
 This is a persistent, trusted-contributor runner: SDKs, download caches and the
 runner installation survive jobs. Checkout cleanup is not a security boundary
 against malicious workflow code. Review external contributions before allowing
-them onto this runner; do not treat it as an untrusted-code sandbox.
+them onto this runner; do not treat it as an untrusted-code sandbox. The Android
+job has no head-repository source gate because it currently runs on hosted
+Ubuntu; returning it to this guest without one would execute fork PR code here
+([External fork pull requests](#external-fork-pull-requests)).
 
 Only one job runs in this runner workspace at a time. Checkout retains its
 default clean behavior, so product output and previous test results cannot
@@ -319,7 +417,11 @@ Model checks, including ordinary non-draft PRs targeting `development`, use the
 standard hosted `windows-2022` runner. They can run concurrently without occupying the dedicated
 integration runner. Release/hotfix PRs and manual build/native/full runs select `[self-hosted, windows, x64, rawlab-windows]` in the dedicated
 Windows 11 KVM guest with 32 vCPUs, 32 GiB memory, VS 2022 C++ Build Tools and the
-Windows SDK. Drafts still skip all platform jobs. This is event-based routing,
+Windows SDK. Drafts still skip all platform jobs. A fork PR runs the Windows job
+only on the hosted `windows-2022` route; the self-hosted selection keeps the
+head-repository source gate, so fork code never queues on the dedicated guest
+([External fork pull requests](#external-fork-pull-requests)).
+This is event-based routing,
 not a busy-runner probe or an automatic fallback when the dedicated runner is
 offline. Hosted jobs remain subject to GitHub's account concurrency limits.
 
