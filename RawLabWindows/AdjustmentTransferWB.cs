@@ -35,7 +35,7 @@ internal static class AdjustmentTransferWB
     private static Resolved Resolve(bool camera,double? temperature,double tint,bool relative,AdjustmentRecipeContext? recipe,
         bool sourceIsRaw,bool targetIsRaw,AdjustmentSnapshot target)
     {
-        if(!targetIsRaw || !sourceIsRaw && recipe==null)return new(true);
+        if(!targetIsRaw)return new(true);
         var offset=tint*(relative ? recipe?.Strength ?? 1 : 1);
         if(camera && offset==0)return new(true);
         if(camera || relative)_=Camera(target);
@@ -64,6 +64,8 @@ internal static class AdjustmentTransferWB
         AdjustmentTransferContext context,bool fullRecipe,bool changed)
     {
         var selected=p.Fields.Intersect(AdjustmentFields.WhiteBalance).ToHashSet();
+        // 非 RAW 来源没有独立白平衡，none/null 占位值不覆盖 RAW 目标白平衡；配方相对 tint 仍跨 RAW 复用。
+        if(!p.Source.IsRaw && context.IsRaw && (p.Source.Recipe==null || !selected.Contains(F.Tint)))selected.Clear();
         if(selected.Count==0) {
             if(context.IsRaw && changed && Render(s)!=Render(target)) {
                 RequireCalibration(target);var desired=Render(target);s=ApplyResolved(desired,s);

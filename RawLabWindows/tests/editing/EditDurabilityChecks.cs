@@ -64,7 +64,7 @@ internal static class EditDurabilityChecks
                   afterWrite.Edit.Settings.Restore()[Parameter.Exposure] == 1.25,
                 "Saving SDR edits preserves unknown ProRAWDecodeVersion verbatim");
 
-            // 局部 SDR 重置保留休眠 ProRAWDecodeVersion；真实「重置全部调整」（对齐 Mac/iOS/Android prepareReset(.all)）清空休眠字段。
+            // 局部与全部 SDR 重置都保留休眠 ProRAWDecodeVersion 与 HDR 快照（对齐 Mac/iOS/Android 的新规则）。
             var toolReset = EditorAdjustmentRules.PrepareReset(
                 new EditorResetScope(EditorResetKind.Tool, Tool: EditorAdjustmentTool.Exposure), afterWrite.Edit!);
             Check(toolReset.Status == EditorResetStatus.Ready &&
@@ -75,9 +75,9 @@ internal static class EditDurabilityChecks
                 new EditorResetScope(EditorResetKind.All), photo, openRevision: 1, editRevision: 1,
                 afterWrite.Edit!, new EditorResetContext(null, TransformGeneration: 0));
             Check(fullSdrReset.Status == EditorResetStatus.Ready &&
-                  fullSdrReset.Candidate!.Settings.ProRAWDecodeVersion == null &&
-                  fullSdrReset.Candidate.Settings.HDR == null,
-                "Real SDR all-reset transaction clears dormant ProRAWDecodeVersion and HDR snapshot");
+                  fullSdrReset.Candidate!.Settings.ProRAWDecodeVersion == 99 &&
+                  fullSdrReset.Candidate.Settings.HDR?.Mode == HDRMode.Sdr,
+                "Real SDR all-reset transaction preserves dormant ProRAWDecodeVersion and HDR snapshot");
 
             // SDR 导出校验放行休眠字段。
             var sdrBatch = BatchJob.Create(photo, afterWrite.Edit!.Settings, null, "SDR");

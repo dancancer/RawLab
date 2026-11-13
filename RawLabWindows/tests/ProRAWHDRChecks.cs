@@ -92,12 +92,13 @@ internal static class ProRAWHDRChecks
                 hdrAllReset.Candidate!.Settings.ProRAWDecodeVersion == 99,
                 "Active HDR all-reset preserves ProRAWDecodeVersion");
 
-            // 对齐 Mac/iOS/Android 三端 prepareReset(.all)：SDR 模式下「重置全部调整」清空休眠的 ProRAWDecodeVersion 与 HDR 快照。
+            // SDR 模式下「重置全部调整」只重置激活的 SDR 快照，保留休眠的 ProRAWDecodeVersion 与 HDR 快照。
             var sdrAllReset = EditorAdjustmentRules.PrepareReset(new EditorResetScope(EditorResetKind.All), editedSaved);
             check(sdrAllReset.Status == EditorResetStatus.Ready &&
-                sdrAllReset.Candidate!.Settings.ProRAWDecodeVersion == null &&
-                sdrAllReset.Candidate.Settings.HDR == null,
-                "Real SDR all-reset clears dormant ProRAWDecodeVersion and HDR snapshot like Mac/iOS/Android");
+                sdrAllReset.Candidate!.Settings.ProRAWDecodeVersion == 99 &&
+                sdrAllReset.Candidate.Settings.HDR == editedSaved.Settings.HDR &&
+                !EditorAdjustmentRules.IsModified(new EditorResetScope(EditorResetKind.All), sdrAllReset.Candidate),
+                "Real SDR all-reset preserves dormant ProRAWDecodeVersion and HDR snapshot and clears modified state");
 
             var sdrJob = BatchJob.Create(dng, editedSdr.Capture(), null, "SDR");
             sdrJob.SourceIsProRAW = true;

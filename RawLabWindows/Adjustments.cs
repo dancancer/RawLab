@@ -354,9 +354,6 @@ public sealed class Adjustments
         };
     }
     public void ResetEffect(PhotoEffectParameter id) => SetEffect(id, EffectDefault(id));
-    public void ResetEffects(bool vignette) {
-        foreach (var spec in PhotoEffectSpec.All.Where(x => x.IsVignette == vignette)) ResetEffect(spec.Id);
-    }
     public bool IsEffectDefault(bool vignette) => PhotoEffectSpec.All.Where(x => x.IsVignette == vignette)
         .All(spec => EditingEffects[spec.Id] == spec.DefaultValue);
     public void ResetGroup(string group)

@@ -8,6 +8,8 @@ internal static class AdjustmentTransferChecks
     internal static void Run()
     {
         NeutralRawRequestsOnRaster();
+        NonRawSourcePreservesRawExposureAndWhiteBalance();
+        RecipeSourceScalesOnHDRTarget();
         FullNeutralRecipeOnRaster();
         BuiltinRawRecipesOnRaster();
         var context = new AdjustmentTransferContext("source", true);
@@ -126,6 +128,82 @@ internal static class AdjustmentTransferChecks
             Reject(()=>AdjustmentTransfer.Prepare(fixedWB,target,raster),"Fixed RAW WB is incompatible with JPEG");
         Reject(()=>AdjustmentTransfer.Prepare(Payload((F.RawDenoise,1)),target,raster),"Nonzero RAW FBDD is incompatible with JPEG");
         Console.WriteLine("PASS: Windows neutral RAW default/partial paste on JPEG, unchanged detection and incompatible effective requests");
+    }
+    private static void NonRawSourcePreservesRawExposureAndWhiteBalance()
+    {
+        var raster=Context with {Identifier="source.jpg",IsRaw=false};
+        var jpeg=new Adjustments {ExposureMode=2};jpeg.Set(Parameter.Exposure,.75);
+        var scopes=new[]{AdjustmentScope.All,AdjustmentScope.Standard,
+            AdjustmentScope.Custom(new[]{F.Exposure,F.ExposureMode,F.WhiteBalanceMode,F.Temperature,F.Tint}),
+            AdjustmentScope.Custom(new[]{F.ExposureMode}),AdjustmentScope.Custom(new[]{F.WhiteBalanceMode})};
+        foreach(var mode in new[]{0,1}) foreach(var customWb in new[]{false,true}) {
+            var target=new Adjustments {ExposureMode=mode};target.ResolveWhiteBalance((5120,14));
+            if(customWb) {target.Set(Parameter.Temperature,5850);target.Set(Parameter.Tint,-18);}
+            var before=target.Capture();
+            foreach(var scope in scopes) {
+                var copy=AdjustmentPayload.Parse(AdjustmentTransfer.Capture(scope,Edit(jpeg),raster).ToJson());
+                if(copy[F.ExposureMode] is {} em)Check(Text(em)=="sensor","Non-RAW source captures sensor exposure placeholder");
+                if(copy[F.WhiteBalanceMode] is {} wm)Check(Text(wm)=="none","Non-RAW source captures none WB placeholder");
+                var applied=AdjustmentTransfer.Prepare(copy,Edit(target),Context).Settings;
+                Check(applied.ExposureMode==mode,"Non-RAW paste preserves RAW target ExposureMode "+mode);
+                Check(applied.CameraWhiteBalance==before.CameraWhiteBalance &&
+                    applied.Values[(int)Parameter.Temperature]==before.Values[(int)Parameter.Temperature] &&
+                    applied.Values[(int)Parameter.Tint]==before.Values[(int)Parameter.Tint],
+                    "Non-RAW paste preserves RAW target white balance");
+                if(copy.Fields.Contains(F.Exposure))Check(applied.Values[(int)Parameter.Exposure]==.75,"Non-RAW paste still applies exposure");
+            }
+            var neutralJpeg=new Adjustments {ExposureMode=2};
+            foreach(var scope in new[]{AdjustmentScope.Standard,AdjustmentScope.All}) {
+                var neutralCopy=AdjustmentTransfer.Capture(scope,Edit(neutralJpeg),raster);
+                Check(AdjustmentTransfer.Prepare(neutralCopy,Edit(target),Context).Settings.SameAs(before),
+                    "Neutral non-RAW paste is unchanged on RAW with custom exposure baseline or WB");
+            }
+        }
+        var rasterTarget=Edit(new Adjustments {ExposureMode=2});
+        Check(AdjustmentTransfer.Prepare(AdjustmentTransfer.Capture(AdjustmentScope.Standard,Edit(jpeg),raster),rasterTarget,raster).Settings.ExposureMode==2,
+            "Ordinary target still keeps sensor exposure mode");
+        foreach(var mode in new[]{0,2}) {
+            var rawSource=new Adjustments {ExposureMode=mode};rawSource.ResolveWhiteBalance((5120,14));
+            rawSource.Set(Parameter.Temperature,6100);rawSource.Set(Parameter.Tint,9);
+            var rawAll=AdjustmentTransfer.Capture(AdjustmentScope.Standard,Edit(rawSource),Context);
+            var rawApplied=Prepare(rawAll).Settings;
+            Check(rawApplied.ExposureMode==mode && !rawApplied.CameraWhiteBalance &&
+                rawApplied.Values[(int)Parameter.Temperature]==6100 && rawApplied.Values[(int)Parameter.Tint]==9,
+                "RAW source still transfers ExposureMode and white balance to RAW target");
+        }
+        Console.WriteLine("PASS: Non-RAW placeholder exposure baseline and white balance are skipped on RAW targets");
+    }
+    private static void RecipeSourceScalesOnHDRTarget()
+    {
+        var recipe=MasterRecipe.All[0];
+        var hdrContext=new AdjustmentTransferContext("hdr.jpg",false);
+        var hdrTarget=new SavedEdit(new("hdr.jpg",1,2,3),new Adjustments {HDR=new HDRSettings {Mode=HDRMode.Hdr}}.Capture(),null);
+        var scalarFields=new[]{F.Exposure,F.Contrast,F.Highlights,F.Shadows,F.Saturation};
+        foreach(var strength in new[]{0.0,.5,1.0,1.5}) {
+            var source=new Adjustments();source.ApplyMasterRecipe(recipe);
+            source.Set(Parameter.Strength,strength*100);
+            source.Set(Parameter.Exposure,1.2);source.Set(Parameter.Contrast,40);
+            source.Set(Parameter.Highlights,-60);source.Set(Parameter.Shadows,60);source.Set(Parameter.Saturation,-20);
+            var copy=AdjustmentPayload.Parse(AdjustmentTransfer.Capture(AdjustmentScope.Custom(scalarFields),Edit(source),Context).ToJson());
+            var summary=new AdjustmentSummary(copy,System.Globalization.CultureInfo.InvariantCulture,text=>text);
+            Check(summary.RecipeNote!=null && summary.RecipeNote.Contains("按此强度换算"),"Recipe summary states strength conversion");
+            var applied=AdjustmentTransfer.Prepare(copy,hdrTarget,hdrContext).Settings.HDR!;
+            Check(Math.Abs(applied.Exposure-1.2*strength)<1e-9 &&
+                Math.Abs(applied.Contrast-40*strength)<1e-9 &&
+                Math.Abs(applied.Highlights-(-60*strength))<1e-9 &&
+                Math.Abs(applied.Shadows-60*strength)<1e-9 &&
+                Math.Abs(applied.Saturation-(-20*strength))<1e-9,
+                "Recipe source scalars scale once on HDR target at strength "+strength);
+        }
+        var overflow=new Adjustments();overflow.ApplyMasterRecipe(recipe);
+        overflow.Set(Parameter.Strength,150);overflow.Set(Parameter.Shadows,80);
+        var overflowCopy=AdjustmentTransfer.Capture(AdjustmentScope.Custom(new[]{F.Shadows}),Edit(overflow),Context);
+        Reject(()=>AdjustmentTransfer.Prepare(overflowCopy,hdrTarget,hdrContext),"Scaled recipe value beyond HDR range is rejected");
+        var plain=new Adjustments();plain.Set(Parameter.Exposure,1.2);plain.Set(Parameter.Contrast,40);
+        var plainCopy=AdjustmentTransfer.Capture(AdjustmentScope.Custom(new[]{F.Exposure,F.Contrast}),Edit(plain),Context);
+        var plainApplied=AdjustmentTransfer.Prepare(plainCopy,hdrTarget,hdrContext).Settings.HDR!;
+        Check(plainApplied.Exposure==1.2 && plainApplied.Contrast==40,"Plain source scalars stay unscaled on HDR target");
+        Console.WriteLine("PASS: Recipe source strength scales the five shared scalars on HDR targets");
     }
     private static void AdapterChecks()
     {

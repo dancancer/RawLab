@@ -14,6 +14,19 @@ internal static class EditedPhotoPreviewChecks
             var defaults=new SavedEdit(record.Identity,settings.Capture(),null);
             record=store.SaveState(record.Identity,defaults);
             Check(!EditedPhotoPreviewKey.IsEdited(record),"Saved defaults are unedited");
+            var dormantHdr=new HDRSettings {Mode=HDRMode.Sdr,Exposure=1.25,Contrast=20};
+            var dormantDefault=new SavedEdit(record.Identity,defaults.Settings with {HDR=dormantHdr},null);
+            Check(!EditedPhotoPreviewKey.IsEdited(store.SaveState(record.Identity,dormantDefault)),
+                "Dormant HDR snapshot does not mark ordinary library record as edited");
+            var dormantEditedState=dormantDefault.Settings.Restore();dormantEditedState.Set(Parameter.Exposure,.5);
+            var dormantEdited=new SavedEdit(record.Identity,dormantEditedState.Capture(),null);
+            Check(EditedPhotoPreviewKey.IsEdited(store.SaveState(record.Identity,dormantEdited)),
+                "Active SDR edit with dormant HDR marks library record as edited");
+            var dormantReset=EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All),dormantEdited);
+            Check(dormantReset.Status==EditorResetStatus.Ready && dormantReset.Candidate!.Settings.HDR==dormantHdr &&
+                !EditedPhotoPreviewKey.IsEdited(store.SaveState(record.Identity,dormantReset.Candidate)),
+                "SDR all-reset clears library edited marker while keeping dormant HDR");
+            store.SaveState(record.Identity,defaults);
             settings.Set(Parameter.Exposure,1);
             record=store.SaveState(record.Identity,new(record.Identity,settings.Capture(),null));
             Check(EditedPhotoPreviewKey.IsEdited(record),"Saved exposure is edited");
