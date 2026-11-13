@@ -14,6 +14,7 @@ internal static class HDRChecks
         SnapshotKeepsInactiveHDRIndependent();
         EnablingPreservesLegacyState();
         ResetOnlyTouchesHDRRecord();
+        ResetAndModifiedIsolateActiveMode();
         TransferUsesHDRPayloadV2AndFloatMappings();
         ToneKeepsHDRAndSDRIndependent();
         ColorKeepsHDRAndSDRIndependent();
@@ -126,6 +127,84 @@ internal static class HDRChecks
         var resetEdit = candidate.Candidate!;
         Check(resetEdit.Settings.Values[(int)Parameter.Exposure] == 0,
             "HDR reset leaves the independent SDR scalar untouched");
+    }
+
+    private static void ResetAndModifiedIsolateActiveMode()
+    {
+        var all = new EditorResetScope(EditorResetKind.All);
+        var rawIdentity = new OriginalIdentity("bayer.dng", 1, 2, 3);
+        var dormantHdr = new HDRSettings { Mode = HDRMode.Sdr, Exposure = -1.25, Contrast = 30 };
+
+        var sdrDefault = new Adjustments { HDR = dormantHdr, HDRCameraAIEnabled = true };
+        sdrDefault.ResolveWhiteBalance((5200, 8));
+        var sdrUnedited = new SavedEdit(rawIdentity, sdrDefault.Capture(), null);
+        Check(!EditorAdjustmentRules.IsModified(all, sdrUnedited) &&
+              EditorAdjustmentRules.PrepareReset(all, sdrUnedited).Status == EditorResetStatus.NoChange,
+            "Dormant HDR and HDRCameraAIEnabled do not mark unedited SDR as modified");
+
+        var sdrEditedState = sdrDefault.Clone();
+        sdrEditedState.Set(Parameter.Exposure, .75);
+        sdrEditedState.AIDenoiseEnabled = true;
+        var sdrEdited = new SavedEdit(rawIdentity, sdrEditedState.Capture(), "builtin:classic");
+        Check(EditorAdjustmentRules.IsModified(all, sdrEdited), "Active SDR edits mark All as modified");
+        var sdrReset = EditorAdjustmentRules.PrepareReset(all, sdrEdited);
+        Check(sdrReset.Status == EditorResetStatus.Ready &&
+              sdrReset.Candidate!.Look == null &&
+              !sdrReset.Candidate.Settings.AIDenoiseEnabled &&
+              sdrReset.Candidate.Settings.Values[(int)Parameter.Exposure] == 0 &&
+              sdrReset.Candidate.Settings.HDR == dormantHdr &&
+              sdrReset.Candidate.Settings.HDRCameraAIEnabled &&
+              !EditorAdjustmentRules.IsModified(all, sdrReset.Candidate),
+            "SDR all-reset preserves dormant HDR and HDRCameraAIEnabled and immediately clears IsModified(All)");
+
+        var proRawDefault = new Adjustments { HDR = dormantHdr, ProRAWDecodeVersion = 1 };
+        proRawDefault.ResolveWhiteBalance((5200, 8));
+        Check(!EditorAdjustmentRules.IsModified(all, new SavedEdit(rawIdentity, proRawDefault.Capture(), null)),
+            "Dormant ProRAWDecodeVersion does not mark unedited SDR as modified");
+        var proRawEdited = proRawDefault.Clone();
+        proRawEdited.Set(Parameter.Exposure, -.5);
+        var proRawReset = EditorAdjustmentRules.PrepareReset(all, new SavedEdit(rawIdentity, proRawEdited.Capture(), null));
+        Check(proRawReset.Status == EditorResetStatus.Ready &&
+              proRawReset.Candidate!.Settings.ProRAWDecodeVersion == 1 &&
+              proRawReset.Candidate.Settings.HDR == dormantHdr &&
+              !EditorAdjustmentRules.IsModified(all, proRawReset.Candidate),
+            "SDR all-reset preserves dormant ProRAWDecodeVersion and clears IsModified(All)");
+
+        void CheckHdrIsolation(Adjustments baseSdr, int? proRawVersion, bool hdrCameraAI)
+        {
+            var unedited = new SavedEdit(rawIdentity, (baseSdr.Capture() with {
+                HDR = new HDRSettings { Mode = HDRMode.Hdr },
+                ProRAWDecodeVersion = proRawVersion,
+                HDRCameraAIEnabled = false
+            }), "builtin:classic");
+            Check(!EditorAdjustmentRules.IsModified(all, unedited) &&
+                  EditorAdjustmentRules.PrepareReset(all, unedited).Status == EditorResetStatus.NoChange,
+                "Active HDR ignores dormant SDR edits, Look, unknown recipe and ProRAWDecodeVersion when HDR is default");
+            var activeHdr = new HDRSettings { Mode = HDRMode.Hdr, Exposure = 1.5, Contrast = 25 }
+                .WithRendition(new HDRRenditionSettings { PeakLimitEV = 2 });
+            var edited = unedited with {
+                Settings = unedited.Settings with { HDR = activeHdr, HDRCameraAIEnabled = hdrCameraAI }
+            };
+            Check(EditorAdjustmentRules.IsModified(all, edited), "Active HDR edits mark All as modified");
+            var reset = EditorAdjustmentRules.PrepareReset(all, edited);
+            Check(reset.Status == EditorResetStatus.Ready &&
+                  reset.Candidate!.Settings.HDR!.IsIdentity &&
+                  !reset.Candidate.Settings.HDRCameraAIEnabled &&
+                  reset.Candidate.Look == "builtin:classic" &&
+                  reset.Candidate.Settings.Values[(int)Parameter.Exposure] == .75 &&
+                  reset.Candidate.Settings.Denoise == DenoiseSettings.Clean &&
+                  reset.Candidate.Settings.AIDenoiseEnabled &&
+                  reset.Candidate.Settings.MasterRecipeID == "unknown-dormant-recipe" &&
+                  reset.Candidate.Settings.ProRAWDecodeVersion == proRawVersion &&
+                  !EditorAdjustmentRules.IsModified(all, reset.Candidate),
+                "Active HDR all-reset preserves dormant SDR snapshot, Look and ProRAWDecodeVersion and clears IsModified(All)");
+        }
+        var dormantSdr = new Adjustments { Denoise = DenoiseSettings.Clean, AIDenoiseEnabled = true };
+        dormantSdr.ResolveWhiteBalance((5200, 8));
+        dormantSdr.Set(Parameter.Exposure, .75);
+        dormantSdr.MasterRecipeID = "unknown-dormant-recipe";
+        CheckHdrIsolation(dormantSdr, proRawVersion: 1, hdrCameraAI: false);
+        CheckHdrIsolation(dormantSdr, proRawVersion: null, hdrCameraAI: true);
     }
 
     private static void EnablingPreservesLegacyState()

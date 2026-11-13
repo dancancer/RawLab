@@ -76,6 +76,9 @@ internal static class HDRAdjustmentTransfer
         {
             if (payload[field] is not { } raw) continue;
             var number = Number(raw) ?? throw new AdjustmentTransferException(AdjustmentFailure.InvalidPayload, field.ID());
+            // 带配方的普通来源复制的是配方逻辑值；与普通目标一致，按来源强度换算为实际贡献。
+            if (payload.Source.Recipe is { } recipe && recipe.Strength != 1 && AdjustmentTransferValues.Scaled.Contains(field))
+                number = field is F.Contrast or F.Saturation ? 1 + (number - 1) * recipe.Strength : number * recipe.Strength;
             var value = field switch {
                 F.Contrast or F.Saturation => Percent((number - 1) * 100),
                 F.Highlights => Percent(-number * 100),

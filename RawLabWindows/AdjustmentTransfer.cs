@@ -113,8 +113,8 @@ public static class AdjustmentTransfer
         }
         foreach(var field in fields) if(EffectiveNumbers(s)[field]!=Expected(field)) s=AssignEffective(s,field,Expected(field));
         s=AdjustmentTransferWB.Apply(p,target.Settings,s,context,fullRecipe,changed);
-        if(Text(p[F.ExposureMode]) is {} mode) {
-            // 普通图片没有 RAW 曝光基准，选中任何来源模式均保持 sensor。
+        if(Text(p[F.ExposureMode]) is {} mode && (p.Source.IsRaw || !context.IsRaw)) {
+            // 普通图片没有 RAW 曝光基准：其 sensor 占位值不改变 RAW 目标；普通目标始终保持 sensor。
             s=s with {ExposureMode=!context.IsRaw ? 2 : Array.IndexOf(new[]{"scene","preview","sensor"},mode)};
         }
         s=AdjustmentTransferValues.ApplyObjects(p,s,context);

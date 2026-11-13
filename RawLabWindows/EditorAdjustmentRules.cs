@@ -88,15 +88,15 @@ public static class EditorAdjustmentRules
         catch (Exception error) when (error is ArgumentException or System.IO.InvalidDataException or NullReferenceException) {
             return new(EditorResetStatus.Invalid, Reason: error.Message);
         }
-        if (edit.Settings.MasterRecipeID is {} recipe && MasterRecipe.Find(recipe) == null)
-            return new(EditorResetStatus.Blocked, Reason: "Unknown master recipe.");
         if (edit.Settings.HDR is { Mode: HDRMode.Hdr })
         {
             var reset = ResetHDR(scope, edit.Settings);
             if (reset == edit.Settings) return new(EditorResetStatus.NoChange);
-            return new(EditorResetStatus.Ready, new SavedEdit(edit.Identity, reset, edit.Look),
+            return new(EditorResetStatus.Ready, new SavedEdit(edit.Identity, reset.Copy(), edit.Look),
                 RequiresConfirmation: false);
         }
+        if (edit.Settings.MasterRecipeID is {} recipe && MasterRecipe.Find(recipe) == null)
+            return new(EditorResetStatus.Blocked, Reason: "Unknown master recipe.");
         var defaults = Defaults(edit);
         if (SameScope(scope, edit, defaults)) return new(EditorResetStatus.NoChange);
         var source = edit.Settings.Copy();
@@ -161,7 +161,13 @@ public static class EditorAdjustmentRules
     private static readonly Parameter[] ColorParameters = [Parameter.Temperature, Parameter.Tint, Parameter.Saturation];
     private static SavedEdit Defaults(SavedEdit edit)
     {
-        var state = new Adjustments { Processing = edit.Settings.Processing, X3fMode = edit.Settings.X3fMode };
+        var state = new Adjustments {
+            Processing = edit.Settings.Processing,
+            X3fMode = edit.Settings.X3fMode,
+            HDR = edit.Settings.HDR,
+            HDRCameraAIEnabled = edit.Settings.HDRCameraAIEnabled,
+            ProRAWDecodeVersion = edit.Settings.ProRAWDecodeVersion
+        };
         if (PhotoInput.IsRaw(edit.Identity.Path)) state.ResolveWhiteBalance(edit.Settings.AsShotTemperature is {} t && edit.Settings.AsShotTint is {} tint ? (t, tint) : null);
         state = PhotoInput.PrepareInputSettings(edit.Identity.Path, state);
         return new(edit.Identity, state.Capture(), null);

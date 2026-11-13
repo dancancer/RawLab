@@ -66,7 +66,7 @@ internal static class HDRReviewChecks
         var raw=Path.Combine(repo,"lutools","tests","fixtures","linear-uncompressed.dng");
         var sdr=new Adjustments {HDR=new HDRSettings {Mode=HDRMode.Sdr}};sdr.Set(Parameter.Exposure,.5);
         var reset=EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All),new(OriginalIdentity.Read(source),sdr.Capture(),null));
-        check(reset.Status==EditorResetStatus.Ready && reset.Candidate!.Settings.HDR==null,"SDR reset produces the legacy-compatible snapshot without an HDR field");
+        check(reset.Status==EditorResetStatus.Ready && reset.Candidate!.Settings.HDR==sdr.HDR,"SDR reset preserves the dormant HDR snapshot");
         foreach(var snapshot in new[]{reset.Candidate!.Settings,new Adjustments().Capture(),sdr.Capture()}) {
             var job=BatchJob.Create(source,snapshot,null,"Neutral");
             foreach(var target in new[]{source,ordinary,raw}) {
