@@ -261,6 +261,81 @@ machines. Do not bypass the gate for a fork: do not remove a
 same-repository branch to obtain a privileged run; `pull_request_target` remains
 forbidden ([Safety and Results](#safety-and-results)).
 
+### JIT Dispatcher for Self-Hosted Jobs (Opt-In, Not Enabled)
+
+[`scripts/ci/jit_dispatch.py`](../../scripts/ci/jit_dispatch.py) is the opt-in WP-01
+replacement for the resident `Runner.Listener` on the Apple pool Macs. While it stays
+disabled — the current state — the resident listener serves every run exactly as before;
+enabling it is a host-side change, not a workflow change, and no CI file loads it.
+
+The dispatcher polls `GET /repos/<repo>/actions/runs` for `queued` and `in_progress`
+runs and judges each run only by GitHub's server-side fields, which fork workflow YAML
+cannot forge: the run `event`, `head_repository.full_name`, and the queued jobs'
+`labels` (a job is only claimable when its label set is one this machine actually
+registers). A run may reach the physical machine only when it is a `push` on this
+repository or an operator admitted it through the `RAWLAB_JIT_ALLOWLIST` environment
+variable (comma-separated run ids, head repositories, or `head-repo:branch`). Claimed
+runs get a `POST .../runners/generate-jitconfig` registration (`name` +
+`runner_group_id` + `labels`; a 2026-11-14 live probe against API version 2022-11-28
+pinned the contract: omitting the group answers 422, the response field is
+`encoded_jit_config`, and JIT runners are single-use by design — one job, then
+deregister). The POST creates the runner registration immediately, so a launch that
+fails to start triggers a best-effort DELETE of that registration (Settings →
+runners covers the residual case) instead of leaking one offline runner per poll. Fork
+and non-conforming runs are never claimed: they wait in the queue and expire. One
+caveat is stated, not hidden — the JIT service hands a started runner the oldest
+queued job carrying the label (FIFO), so an *already approved* fork job can still be
+picked up by a runner dispatched for a trusted run; the review gate stays the fork
+approval policy above, while the dispatcher removes the standing listener that would
+execute unreviewed queue contents unconditionally.
+
+- **Enable (host-side, one Mac at a time)**: unpack the pinned `actions/runner`
+  archive into a **fresh** directory (`mkdir -p ~/jit-runner && tar -xzf
+  <runner-archive> -C ~/jit-runner`; never reuse the resident runner directory, whose
+  `.runner`/`.credentials` a JIT run would overwrite and deregister) and copy in the
+  provisioned environment files — `cp <resident-runner>/.path <resident-runner>/.env
+  ~/jit-runner/`, environment only, never `.runner*`/`.credentials*`/`.service` —
+  because the Apple jobs resolve `python`, `DEVELOPER_DIR` and the cache keys from
+  exactly those files; symlink the new directory's `_work` to the pool volume; stop
+  the resident runner's user agent (`./svc.sh stop` in the runner directory, or its
+  `launchctl bootout gui/$(id -u)/<runner-agent>`); preview one queue pass with
+  `RAWLAB_JIT_TOKEN=<PAT> python3 scripts/ci/jit_dispatch.py --once --dry-run`
+  (plain `--once` decides *and dispatches one job*; both preview and dispatch take
+  `--runner-dir ~/jit-runner` for the real launch). The dispatcher starts `./run.sh`
+  from the archive root with the config in `ACTIONS_RUNNER_INPUT_JITCONFIG` —
+  `./runsvc.sh` at the root exists only after `svc.sh install`, and `--launch-command
+  ./bin/runsvc.sh` is the service-mode override; then copy
+  [`scripts/ci/launchd/com.rawlab.jit-dispatcher.plist`](../../scripts/ci/launchd/com.rawlab.jit-dispatcher.plist)
+  to `~/Library/LaunchAgents/`, adjust the paths and the token placeholder (keep the
+  file `0600`), and load it with `launchctl bootstrap gui/$(id -u)
+  ~/Library/LaunchAgents/com.rawlab.jit-dispatcher.plist`. The token needs repository
+  `Administration` (write) for `generate-jitconfig` plus `Actions` (read) for the
+  queue poll on fine-grained PATs — `Actions: write` alone answers 403 on the dispatch
+  POST — or the classic `repo` scope. Same-repository `pull_request` and
+  `workflow_dispatch` (manual *Run workflow*) jobs are not push events, so add the run
+  id — or the repository name for a transitional window — to `RAWLAB_JIT_ALLOWLIST` if
+  this machine must keep serving them.
+- **Disable**: `launchctl bootout gui/$(id -u)/com.rawlab.jit-dispatcher`, remove the
+  copied plist, and restart the resident `Runner.Listener` agent; the fresh
+  `~/jit-runner` directory can stay for the next activation. Queued jobs resume being
+  served unchanged because no workflow file changed while the dispatcher was on.
+- **Attack-verification PR (one-time, after enabling)**: open a pull request from a
+  throwaway fork whose diff edits `.github/workflows/ci.yml` to drop one self-hosted
+  job's `head.repo.full_name` clause (or route it to `[self-hosted, macOS, ARM64,
+  rawlab-apple]`), and confirm all four observations: the dispatcher logs the run as
+  `skip (untrusted …)`; no JIT token is generated for it while the allowlist stays
+  empty, so with the resident listener stopped the job only queues; after allowlisting
+  the run id and re-running `--once --runner-dir ~/jit-runner`, one ephemeral runner claims it and deregisters;
+  without the allowlist entry the job expires in the queue instead of executing on the
+  machine.
+- **Retirement for hosted runners (deprecation path)**: the dispatcher keeps no state
+  outside this repository — decisions are in memory and the queue is GitHub's. When the
+  self-hosted jobs move to hosted runners, bootout the LaunchAgent, drop the host-side
+  leftovers (the copied plist and the pristine `~/jit-runner` directory), and delete
+  `scripts/ci/jit_dispatch.py`, `scripts/ci/test_jit_dispatch.py`,
+  `scripts/ci/launchd/com.rawlab.jit-dispatcher.plist` and this subsection; nothing
+  else references them, so the repository is back at zero.
+
 ## Local and Targeted Entry Points
 
 Run affected UI tests locally before committing UI changes. Record source version,
