@@ -43,7 +43,7 @@ internal class CameraTetherJournal(private val directory: File) {
         return updated to batch
     }
 
-    /** 元数据只用于定位候选。队列在保存基线前核对已登记原件的字节。 */
+    /** 元数据只用于定位候选。队列在保存基线前核对已登记原件的字节；续接后旧连接未确认的快门结果需到机身核对，不再继承。 */
     fun rebase(run: CameraTetherRun, observed: List<CameraPhoto>): CameraTetherRun {
         validate(run)
         val current = checkedListing(observed)
@@ -53,7 +53,8 @@ internal class CameraTetherJournal(private val directory: File) {
                 ?: throw CameraTetherSourceException()
         }
         if (matched.toSet().size != matched.size) throw CameraTetherSourceException()
-        return run.copy(baseline = current.values.toList(), rebasedBatches = run.batches.size, status = CameraTetherStatus.ACTIVE)
+        return run.copy(baseline = current.values.toList(), rebasedBatches = run.batches.size,
+            status = CameraTetherStatus.ACTIVE, shutterRequestedAt = null)
     }
 
     private fun checkedObservation(run: CameraTetherRun, observed: List<CameraPhoto>): Map<String, CameraPhoto> {

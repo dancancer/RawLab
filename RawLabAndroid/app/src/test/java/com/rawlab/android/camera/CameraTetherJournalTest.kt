@@ -67,7 +67,7 @@ class CameraTetherJournalTest {
         val registered = journal.reserve(initial, listOf(photo(1), photo(2))).first.copy(shutterRequestedAt = 42)
         val resumed = journal.rebase(registered, listOf(photo(1), photo(2), photo(3)))
         assertEquals(registered.batches, resumed.batches)
-        assertEquals(42L, resumed.shutterRequestedAt)
+        assertNull(resumed.shutterRequestedAt)
         assertEquals(listOf(photo(1), photo(2), photo(3)), resumed.baseline)
         assertNull(journal.reserve(resumed, listOf(photo(1), photo(2), photo(3))).second)
         assertEquals(listOf(photo(4)), journal.reserve(resumed, listOf(photo(1), photo(2), photo(3), photo(4))).second!!.photos)
