@@ -81,3 +81,4 @@
 - 2026-11-14 · #291 二轮收口（`05e2b81e`）：组1 根因升级为生产既有回归——比对基准 committedPreviewSettings 自 ab9be520（10-28）后不随几何草稿重锚，修复+run18 诊断 baseGeom 0,0,1,1×3 实证；组2 断言原方向恢复+守卫扩三条件（geometrySelected 幽灵锁死修复）；B3 文本搜索全删、生产 seam delivered() 收口三站点+真实 VM e2e 两路；变异教训（双保险致首变异存活）如实入 PR。三轮复审在途（review-mwfh8ej4）。
 - 2026-11-14 · Q3+Q4 交付：**PR #301**（`7ca29d80`，18 源文件+文案 3 条）：SDR 不支持键 throw→「忽略+一次性提示」四端统一（会话层聚合去重）；raster/HDR 边界不变；spec notes 重写（新 SHA，计数不变）+fixture 2 向量；Q4 四端沿用目标版本+提示。碳审在途（review-mwfhef2f）。
 - 2026-11-14 · **WP-10 合入**：**#296** MERGED（二轮 approve 0 Blocking/0 Should/2 Nit，总 55 PR）。遗留（评审认可入台账）：真 Sony 机场景（超尺寸卡/首拍断连/坏日志 UI）待真机验证；UI 测试仅编译未执行。
+- 2026-11-14 · #295 二轮返工（head `875ec04c`）：NB1 四层（默认 ./run.sh+POST 前预检+失败 DELETE 清注册+killpg；演练抓出 DELETE 204 空 body 假报 bug）；NB2 cp 白名单 .path/.env；S1 schema 实钉键集合。真网演练至 listener Connected+DELETE 复原层（未夺真 job=队列空）。事故：CONFLICTING 期间 GitHub 吞 PR 事件，MERGEABLE 恢复即回流。三轮复审在途（review-mwfhx0iv）。
