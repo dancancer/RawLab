@@ -25,6 +25,31 @@ class NativeCacheTests(unittest.TestCase):
     def setUp(self):
         self.assertIsNotNone(self.cache, "Native dependency cache helper is missing")
 
+    def test_every_text_io_declares_utf8(self):
+        """The Windows runner's default codec is not UTF-8, so text IO must not rely on it."""
+        import ast
+
+        tree = ast.parse(MODULE_PATH.read_text(encoding="utf-8"))
+        offenders = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = getattr(node.func, "attr", getattr(node.func, "id", ""))
+            if name not in {"read_text", "write_text", "open"}:
+                continue
+            if name == "open" and len(node.args) >= 2:
+                mode = node.args[1]
+                if isinstance(mode, ast.Constant) and "b" in str(mode.value):
+                    continue
+            if not any(keyword.arg == "encoding" for keyword in node.keywords):
+                offenders.append(f"{MODULE_PATH.name}:{node.lineno}:{name}")
+        self.assertEqual(offenders, [], "text IO without an explicit encoding: " + ", ".join(offenders))
+
+    def test_workflow_with_non_ascii_comments_loads(self):
+        """ci.yml carries Chinese comments, so the loader must not depend on the locale codec."""
+        identity = self.cache.workflow_identity(ROOT, "windows", "x86_64")
+        self.assertTrue(identity)
+
     def test_toolchain_architecture_and_workspace_change_identity(self):
         inputs = {"dependency.cmake": "abc123"}
         environment = {"compiler": "clang 18", "sdk": "26.0", "workspace": "/work/RawLab"}
