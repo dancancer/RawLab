@@ -79,10 +79,11 @@ class AbiLayoutFixtureTests(unittest.TestCase):
 
         data = json.loads(self.baseline_text)
         self.assertEqual(data.get("version"), 1)
-        self.assertEqual(data.get("fixture_version"), 2)
+        self.assertEqual(data.get("fixture_version"), 3)
         self.assertGreaterEqual(len(data.get("structs", [])), 48)
         self.assertGreaterEqual(len(data.get("functions", [])), 95)
         self.assertGreaterEqual(len(data.get("enums", [])), 23)
+        self.assertGreaterEqual(len(data.get("callbacks", [])), 4)
 
         for fn in data["functions"]:
             self.assertEqual(set(fn.keys()), {"name", "return_type", "params", "symbol"})
@@ -98,6 +99,21 @@ class AbiLayoutFixtureTests(unittest.TestCase):
             for item in en["values"]:
                 self.assertEqual(set(item.keys()), {"name", "value"})
                 self.assertIsInstance(item["value"], int)
+
+        for cb in data["callbacks"]:
+            self.assertEqual(set(cb.keys()), {"name", "return_type", "params"})
+            self.assertTrue(cb["name"].startswith("sony2fuji_"))
+            self.assertIsInstance(cb["return_type"], str)
+            self.assertGreater(len(cb["return_type"]), 0)
+            self.assertIsInstance(cb["params"], list)
+
+        cancel_cb = next(
+            (cb for cb in data["callbacks"] if cb["name"] == "sony2fuji_cancel_callback"),
+            None,
+        )
+        self.assertIsNotNone(cancel_cb, "sony2fuji_cancel_callback missing from callbacks fixture")
+        self.assertEqual(cancel_cb["return_type"], "int32_t")
+        self.assertEqual(cancel_cb["params"], ["void*"])
 
     def test_enum_value_drift_is_detected(self):
         self.assertEqual(self.baseline_result.returncode, 0)
@@ -155,6 +171,31 @@ class AbiLayoutFixtureTests(unittest.TestCase):
         self.assertNotEqual(baseline["functions"], regenerated["functions"])
         fn = next(f for f in regenerated["functions"] if f["name"] == "sony2fuji_release_buffer")
         self.assertEqual(fn["params"], ["sony2fuji_buffer*", "int32_t"])
+
+    def test_callback_prototype_drift_is_detected(self):
+        self.assertEqual(self.baseline_result.returncode, 0)
+        baseline = json.loads(self.baseline_text)
+        with tempfile.TemporaryDirectory(prefix="rawlab-abi-cb-") as tmp:
+            inc = Path(tmp) / "include"
+            shutil.copytree(INCLUDE_DIR, inc)
+            c_header = inc / "sony2fuji/ffi/sony2fuji_c.h"
+            text = c_header.read_text(encoding="utf-8")
+            mutated = text.replace(
+                "typedef int32_t (*sony2fuji_cancel_callback)(void* context);",
+                "typedef int32_t (*sony2fuji_cancel_callback)(void* context, int32_t reason);",
+                1,
+            )
+            self.assertTrue(text != mutated, "Failed to apply callback prototype mutation")
+            c_header.write_text(mutated, encoding="utf-8")
+
+            out_path = Path(tmp) / "abi-layout-v1.json"
+            result = self.regenerate(out_path, inc)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            regenerated = json.loads(out_path.read_text(encoding="utf-8"))
+
+        self.assertNotEqual(baseline["callbacks"], regenerated["callbacks"])
+        cb = next(c for c in regenerated["callbacks"] if c["name"] == "sony2fuji_cancel_callback")
+        self.assertEqual(cb["params"], ["void*", "int32_t"])
 
     def test_formatting_comments_and_param_names_do_not_drift(self):
         self.assertEqual(self.baseline_result.returncode, 0)
