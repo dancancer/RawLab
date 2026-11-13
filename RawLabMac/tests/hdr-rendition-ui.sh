@@ -1,4 +1,6 @@
 #!/bin/bash
+# 本地/发布前手工 UI 检查（依赖 macOS 辅助功能 AXUIElement 授权，CI 不执行；
+# CI 模型门禁改由不依赖辅助功能权限的 RawLabMac/tests/hdr-rendition-reset.sh 覆盖）。
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-hdr-rendition-ui.XXXXXX")"

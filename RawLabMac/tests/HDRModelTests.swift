@@ -159,6 +159,96 @@ import Foundation
         let restoredEffect = try hdrFromEffect.withHDRMode(false, sourceIsHDR: true)
         check(hdrFromEffect.isHDREditing && restoredEffect.photoEffects?.vignetteMidpoint == 60,
               "HDR switch did not preserve the SDR effect")
+
+        // Q5: HDR 显示映射（HDR 亮度上限 + SDR 底图曝光/对比度/饱和度）分组重置与单项重置，且不混入相机显影、不破坏既有重置全部语义
+        check(EditorAdjustmentGroup.hdrRendition.tools == [.hdrPeakLimit, .hdrSDRExposure, .hdrSDRContrast, .hdrSDRSaturation],
+              "HDR rendition group did not own the exact four display-mapping tools")
+        var renditionHDR = try sdr.withHDRMode(true, sourceIsHDR: false, cameraRAW: true)
+        renditionHDR.set(.exposure, to: 1.5)
+        renditionHDR.hdr?.cameraDevelopmentSettings.fbddLevel = 2
+        let untouchedRendition = PhotoEditState(settings: renditionHDR, filmID: "dormant-look")
+        check(!EditorAdjustmentRules.isModified(scope: .group(.hdrRendition), snapshot: untouchedRendition, context: context) &&
+              EditorAdjustmentGroup.hdrRendition.tools.allSatisfy { !EditorAdjustmentRules.isModified(scope: .tool($0), snapshot: untouchedRendition, context: context) },
+              "Untouched HDR rendition or camera development falsely marked HDR rendition modified")
+        check(EditorAdjustmentRules.prepareReset(scope: .group(.hdrRendition), snapshot: untouchedRendition, context: context) == .unchanged &&
+              renditionHDR.hdr?.processingVersion == 1,
+              "No-op HDR rendition group reset mutated version or returned a candidate")
+
+        var fullRendition = HDRRenditionSettings()
+        fullRendition.peakLimitEV = 2.4
+        fullRendition.sdrExposureEV = -1.2
+        fullRendition.sdrContrast = 35
+        fullRendition.sdrSaturation = -25
+        renditionHDR.hdr?.renditionSettings = fullRendition
+        let renditionSnapshot = PhotoEditState(settings: renditionHDR, filmID: "dormant-look")
+        check(renditionHDR.hdr?.processingVersion == 4, "HDR rendition edit did not upgrade processingVersion to 4")
+        check(EditorAdjustmentRules.isModified(scope: .group(.hdrRendition), snapshot: renditionSnapshot, context: context) &&
+              EditorAdjustmentGroup.hdrRendition.tools.allSatisfy { EditorAdjustmentRules.isModified(scope: .tool($0), snapshot: renditionSnapshot, context: context) },
+              "Modified HDR rendition fields did not mark group and tools modified")
+
+        for (tool, keyPath) in [
+            (EditorAdjustmentTool.hdrPeakLimit, \HDRRenditionSettings.peakLimitEV),
+            (.hdrSDRExposure, \.sdrExposureEV),
+            (.hdrSDRContrast, \.sdrContrast),
+            (.hdrSDRSaturation, \.sdrSaturation),
+        ] {
+            guard case .candidate(let singleReset) = EditorAdjustmentRules.prepareReset(scope: .tool(tool), snapshot: renditionSnapshot, context: context) else {
+                fatalError("Single HDR rendition tool reset was not prepared for \(tool.rawValue)")
+            }
+            var expectedRendition = fullRendition
+            expectedRendition[keyPath: keyPath] = 0
+            check(singleReset.settings.hdr?.renditionSettings == expectedRendition,
+                  "Single HDR rendition reset for \(tool.rawValue) mutated sibling rendition fields")
+            check(!EditorAdjustmentRules.isModified(scope: .tool(tool), snapshot: singleReset, context: context) &&
+                  EditorAdjustmentRules.isModified(scope: .group(.hdrRendition), snapshot: singleReset, context: context),
+                  "Single HDR rendition reset for \(tool.rawValue) left wrong modified state")
+            check(singleReset.settings.hdr?.exposure == 1.5 &&
+                  singleReset.settings.hdr?.cameraDevelopmentSettings.fbddLevel == 2 &&
+                  singleReset.settings.exposure == sdr.exposure && singleReset.filmID == "dormant-look",
+                  "Single HDR rendition reset touched other HDR groups, camera development, or dormant SDR")
+        }
+
+        guard case .candidate(let groupReset) = EditorAdjustmentRules.prepareReset(scope: .group(.hdrRendition), snapshot: renditionSnapshot, context: context) else {
+            fatalError("HDR rendition group reset was not prepared")
+        }
+        check(groupReset.settings.hdr?.renditionSettings == HDRRenditionSettings() &&
+              groupReset.settings.hdr?.renditionSettings.isDefault == true &&
+              groupReset.settings.hdr?.processingVersion == 4,
+              "HDR rendition group reset did not restore all four fields to default or lost processingVersion")
+        check(groupReset.settings.hdr?.exposure == 1.5 &&
+              groupReset.settings.hdr?.cameraDevelopmentSettings.fbddLevel == 2 &&
+              groupReset.settings.exposure == sdr.exposure &&
+              groupReset.settings.contrast == sdr.contrast &&
+              groupReset.filmID == "dormant-look",
+              "HDR rendition group reset mutated other HDR edits, camera development, or dormant SDR")
+        check(!EditorAdjustmentRules.isModified(scope: .group(.hdrRendition), snapshot: groupReset, context: context) &&
+              EditorAdjustmentRules.prepareReset(scope: .group(.hdrRendition), snapshot: groupReset, context: context) == .unchanged,
+              "HDR rendition group reset was not idempotent")
+
+        let dormantRenditionSDR = try renditionHDR.withHDRMode(false, sourceIsHDR: false, cameraRAW: true)
+        let dormantSnapshot = PhotoEditState(settings: dormantRenditionSDR, filmID: "dormant-look")
+        check(!EditorAdjustmentRules.isModified(scope: .group(.hdrRendition), snapshot: dormantSnapshot, context: context) &&
+              EditorAdjustmentGroup.hdrRendition.tools.allSatisfy { !EditorAdjustmentRules.isModified(scope: .tool($0), snapshot: dormantSnapshot, context: context) } &&
+              EditorAdjustmentRules.prepareReset(scope: .group(.hdrRendition), snapshot: dormantSnapshot, context: context) == .unchanged,
+              "Dormant HDR rendition was exposed or resettable in ordinary SDR mode")
+        guard case .candidate(let sdrResetAll) = EditorAdjustmentRules.prepareReset(scope: .all, snapshot: dormantSnapshot, context: context) else {
+            fatalError("Ordinary SDR reset-all with dormant HDR rendition was not prepared")
+        }
+        check(sdrResetAll.settings.hdr?.renditionSettings == fullRendition &&
+              sdrResetAll.settings.hdr?.cameraDevelopmentSettings.fbddLevel == 2 &&
+              !sdrResetAll.settings.isHDREditing && sdrResetAll.settings.exposure == 0,
+              "Ordinary SDR reset-all mutated dormant HDR rendition or camera development")
+        guard case .candidate(let hdrResetAll) = EditorAdjustmentRules.prepareReset(scope: .all, snapshot: renditionSnapshot, context: context) else {
+            fatalError("HDR reset-all with rendition edits was not prepared")
+        }
+        check(hdrResetAll.settings.isHDREditing &&
+              hdrResetAll.settings.hdr?.renditionSettings.isDefault == true &&
+              hdrResetAll.settings.hdr?.isIdentity == true &&
+              hdrResetAll.settings.exposure == sdr.exposure &&
+              hdrResetAll.settings.contrast == sdr.contrast &&
+              hdrResetAll.filmID == "dormant-look",
+              "HDR reset-all failed to reset HDR rendition or mutated dormant SDR")
+
         print("PASS Mac HDR legacy, record, conversion, control routing and reset")
     }
 }

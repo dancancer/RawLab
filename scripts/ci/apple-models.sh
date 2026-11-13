@@ -7,11 +7,11 @@ SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
 export SDKROOT
 case "${1:-}" in
     macos)
-        # 自托管 runner 目前没有辅助功能授权，HDRRenditionUITests 会打印 ::warning:: 后跳过；
-        # 授权可用时设置 RAWLAB_REQUIRE_AX=1，让它变成硬失败而不是静默通过。
+        # HDR 渲染重置按钮契约由不依赖辅助功能授权的 hdr-rendition-reset.sh 覆盖；
+        # 依赖 AXUIElement 的 hdr-rendition-ui.sh 保留为本地/发布前手工检查，CI 不执行。
         python3 RawLabMac/tests/test_build_environment.py
         python3 lutools/tests/test_lens_dependencies.py
-        suites=(Shared/tests/edited-photo-preview-cache.sh Shared/tests/hdr-settings.sh Shared/tests/hdr-transfer.sh Shared/tests/hdr-native-request.sh Shared/tests/hdr-source-probe.sh Shared/tests/hdr-display.sh RawLabMac/tests/hdr-model.sh RawLabMac/tests/hdr-rendition-ui.sh
+        suites=(Shared/tests/edited-photo-preview-cache.sh Shared/tests/hdr-settings.sh Shared/tests/hdr-transfer.sh Shared/tests/hdr-native-request.sh Shared/tests/hdr-source-probe.sh Shared/tests/hdr-display.sh RawLabMac/tests/hdr-model.sh RawLabMac/tests/hdr-rendition-reset.sh
             RawLabMac/tests/horizontal-picker.sh RawLabMac/tests/mac-viewing.sh
             RawLabMac/tests/control-groups.sh RawLabMac/tests/adjustment-transfer.sh
             RawLabMac/tests/adjustment-transfer-session.sh Shared/tests/adjustment-presets.sh Shared/tests/adjustment-summary.sh

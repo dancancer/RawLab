@@ -44,9 +44,9 @@ struct ControlGroupTests {
     }
 
     private static func currentTools() throws {
-        check(EditorAdjustmentGroup.allCases.map(\.rawValue) == ["looks", "light", "color", "effects", "detail", "geometry"], "Six stable group IDs keep their order")
-        check(EditorAdjustmentGroup.allCases.map(\.defaultTool) == [.film, .exposure, .whiteBalance, .clarity, .denoise, .geometry], "Each group opens its declared default tool")
-        check(EditorAdjustmentGroup.allCases.flatMap(\.tools).count == 23 && EditorAdjustmentTool.allCases.allSatisfy { $0.group.tools.contains($0) }, "One descriptor owns all twenty-three tools")
+        check(EditorAdjustmentGroup.allCases.map(\.rawValue) == ["looks", "light", "color", "effects", "detail", "geometry", "hdrRendition"], "Seven stable group IDs keep their order")
+        check(EditorAdjustmentGroup.allCases.map(\.defaultTool) == [.film, .exposure, .whiteBalance, .clarity, .denoise, .geometry, .hdrPeakLimit], "Each group opens its declared default tool")
+        check(EditorAdjustmentGroup.allCases.flatMap(\.tools).count == 27 && EditorAdjustmentTool.allCases.allSatisfy { $0.group.tools.contains($0) }, "One descriptor owns all twenty-seven tools")
         var navigation = EditorAdjustmentNavigation()
         navigation.selectedHSLChannel = 6
         navigation.selectGroup(.color)
@@ -210,7 +210,7 @@ struct ControlGroupTests {
     }
 
     private static func editorGroups() throws {
-        check(EditorAdjustmentGroup.allCases.map(\.rawValue) == ["looks", "light", "color", "effects", "detail", "geometry"],
+        check(EditorAdjustmentGroup.allCases.map(\.rawValue) == ["looks", "light", "color", "effects", "detail", "geometry", "hdrRendition"],
               "Editor group IDs are stable and independent of the old eight groups")
         let neutral = state()
         check(EditorAdjustmentGroup.allCases.allSatisfy {
