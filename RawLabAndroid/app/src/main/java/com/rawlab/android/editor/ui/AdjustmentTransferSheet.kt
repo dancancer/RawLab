@@ -40,6 +40,15 @@ internal fun transferNoticeLabel(notice: AdjustmentTransferNotice): Int = when (
     AdjustmentTransferNotice.RETAINED_TARGET_PROCESSING_VERSION -> R.string.transfer_notice_processing_version
 }
 
+// Q3/S1：仅聚合实际应用（或确认无需改动）目标的提示；跳过、失败或冲突目标不提示。
+@Composable
+internal fun transferNoticeSummary(prepared: PreparedAdjustmentTransfer?, results: List<AdjustmentOutcome>): String? {
+    if (results.isEmpty()) return null
+    val notices = effectiveTransferNotices(prepared?.targets.orEmpty(), results)
+    if (notices.isEmpty()) return null
+    return notices.map { stringResource(transferNoticeLabel(it)) }.joinToString("；")
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentSheet, preset: AdjustmentPreset? = null, synchronization: CollectionSynchronization? = null,
@@ -100,11 +109,6 @@ internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentShe
                             AdjustmentSummaryContent(payload, model::adjustmentSummaryLookName)
                         }
                         Text(stringResource(R.string.transfer_targets, targets.size.toString()))
-                        // Q3/Q4：忽略键与处理版本沿用作为一次性提示，随预检结果展示，不阻塞粘贴。
-                        prepared?.notices?.takeIf { it.isNotEmpty() }?.let { notices ->
-                            Text(notices.map { stringResource(transferNoticeLabel(it)) }.joinToString("；"),
-                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
                         if (synchronization == null) TextButton(onClick = { files.launch(arrayOf("*/*")) }, enabled = !busy,
                             modifier = Modifier.testTag("adjustment-paste-files")) { Text(stringResource(R.string.transfer_choose_files)) }
                         if (transfer.results.isEmpty() && (transfer.error != null || prepared?.targets?.any { it.error != null } == true)) Button(onClick = { skipped = emptySet(); model.prepareAdjustmentPaste(payload, targets, if (synchronization != null) AdjustmentHistoryTransaction.Action.SYNCHRONIZE else if (preset == null) AdjustmentHistoryTransaction.Action.PASTE else AdjustmentHistoryTransaction.Action.PRESET) },
@@ -147,6 +151,11 @@ internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentShe
                                 transfer.results.count { it.status == AdjustmentStatus.UNCHANGED }.toString(),
                                 transfer.results.count { it.status == AdjustmentStatus.SKIPPED }.toString(), undone.size.toString(),
                                 transfer.results.count { it.status in unfinished }.toString()), Modifier.testTag("adjustment-paste-summary"))
+                        }
+                        // Q3/Q4：忽略键与处理版本沿用随实际粘贴结果在结果区一次性展示，不阻塞、不入历史。
+                        transferNoticeSummary(prepared, transfer.results)?.let {
+                            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.testTag("adjustment-paste-notices"))
                         }
                         if (transfer.results.isEmpty() || transfer.results.any { it.status in unfinished })
                             Button(onClick = { prepared?.let { model.applyAdjustmentPaste(it, skipped) } }, enabled = ready && !editor.committingAdjustments,

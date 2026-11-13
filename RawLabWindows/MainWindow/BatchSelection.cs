@@ -127,6 +127,7 @@ public partial class MainWindow
             dialog=new(owner,"同步调整",initial,true,skipping=>{
                 var results=AdoptAdjustmentOutcomes(session.Apply(operation,skipping),adopted);
                 Collection.RecordSynchronization(operation.ID,results.Any(result=>result.Status==AdjustmentStatus.Applied));
+                ShowAdjustmentTransferNotices(operation,results);
                 return results;
             },sourceSummary:Loc.Format("来源：{0} · {1} 项调整",Path.GetFileName(source.Path),payload.Fields.Count),
                 historyParts:()=>session.Transactions.FirstOrDefault(transaction=>transaction.ID==operation.ID)?.Parts ?? [],

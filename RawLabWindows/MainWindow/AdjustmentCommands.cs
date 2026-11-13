@@ -120,15 +120,24 @@ public partial class MainWindow
                 Error:t.Error,RequiresHistoryDecision:t.Error!=null)).ToArray();
             var adopted=new Dictionary<string,Exception?>();
             var session=TransferSession;AdjustmentResultDialog? dialog=null;
-            dialog=new AdjustmentResultDialog(this,action==AdjustmentHistoryAction.Preset ? "应用预设" : "粘贴调整",initial,true,skipping=>{var adoptedOutcomes=AdoptAdjustmentOutcomes(session.Apply(operation,skipping),adopted);ShowAdjustmentTransferNotices(operation);return adoptedOutcomes;},
+            dialog=new AdjustmentResultDialog(this,action==AdjustmentHistoryAction.Preset ? "应用预设" : "粘贴调整",initial,true,skipping=>{var adoptedOutcomes=AdoptAdjustmentOutcomes(session.Apply(operation,skipping),adopted);ShowAdjustmentTransferNotices(operation,adoptedOutcomes);return adoptedOutcomes;},
                 Loc.Format("来源：{0} · {1} 项调整",sourceName ?? Path.GetFileName(payload.Source.Identifier),payload.Fields.Count),
                 ()=>session.Transactions.FirstOrDefault(t=>t.ID==operation.ID)?.Parts ?? [],undo=>RunAdjustmentHistory(operation.ID,null,undo,dialog!),payload,AdjustmentSummaryLookName);
             dialog.ShowDialog();
         }catch(Exception error){ShowAdjustmentError(error);}
     }
     // Q3/Q4：忽略键与处理版本沿用作为一次性状态提示，只提示，不进入结果表或历史。
-    private void ShowAdjustmentTransferNotices(PreparedAdjustmentTransfer operation){
-        if(operation.Notices is {} notices && notices.Count>0)SetStatus(()=>string.Join("；",notices.Select(n=>Loc.Text(n.PromptKey()))),true);
+    // 提示写入状态通道后由下一次预览状态写入保留（持久到可见），
+    // 避免模态结果窗关闭前被异步预览刷新覆盖；按实际应用结果过滤（跳过/失败目标不误报）。
+    private string? pendingTransferNoticeStatus;
+    private void ShowAdjustmentTransferNotices(PreparedAdjustmentTransfer operation,IReadOnlyList<AdjustmentOutcome>? outcomes=null){
+        var effective=outcomes==null?operation.Targets:operation.Targets
+            .Where(target=>target.Error==null&&outcomes.Any(outcome=>outcome.TargetID==target.ID&&outcome.Status is AdjustmentStatus.Applied or AdjustmentStatus.Unchanged));
+        var notices=effective.SelectMany(target=>target.Notices??[]).Distinct().ToList();
+        if(notices.Count==0)return;
+        var text=string.Join("；",notices.Select(notice=>Loc.Text(notice.PromptKey())));
+        pendingTransferNoticeStatus=text;
+        SetStatus(()=>text);
     }
     private IReadOnlyList<AdjustmentOutcome> AdoptAdjustmentOutcomes(IReadOnlyList<AdjustmentOutcome> outcomes,Dictionary<string,Exception?> adopted)
     {

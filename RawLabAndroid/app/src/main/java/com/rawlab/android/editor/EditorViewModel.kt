@@ -1529,6 +1529,12 @@ class EditorViewModel @JvmOverloads constructor(
             completed(accepted)
         }
     }
+    // Q3/S1：聚合实际应用（或确认无需改动）目标的去重提示；跳过、失败目标不误报。
+    private fun transferNoticeText(operation: PreparedAdjustmentTransfer, outcomes: List<AdjustmentOutcome>): String? {
+        val notices = effectiveTransferNotices(operation.targets, outcomes)
+        if (notices.isEmpty()) return null
+        return notices.joinToString("；") { text(com.rawlab.android.editor.ui.transferNoticeLabel(it)) }
+    }
     fun closeAdjustmentOperation() {
         quickPresetGeneration = UUID.randomUUID()
         mutableQuickPreset.value = EditorQuickPresetState(visible = mutableQuickPreset.value.visible)
@@ -1598,6 +1604,10 @@ class EditorViewModel @JvmOverloads constructor(
                         else -> { failed(outcome.error); return@applyAdjustmentPaste }
                     }
                     mutableQuickPreset.value = EditorQuickPresetState(true, phase, preset, operation.id)
+                    // Q3/B3：快捷预设不打开粘贴 Sheet，提示经非阻塞 Snackbar 呈现。
+                    transferNoticeText(operation, listOf(outcome))?.let { message ->
+                        mutable.value = mutable.value.copy(message = message)
+                    }
                 }
             }
         }

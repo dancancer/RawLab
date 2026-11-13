@@ -14,6 +14,7 @@ PLATFORMS = {"macos", "ios", "android", "windows"}
 TARGET_KINDS = {"sdr_raw", "sdr_raster", "hdr"}
 STATUSES = {"applied", "unchanged", "rejected"}
 REASONS = {"incompatible", "unrepresentable", "missing_look"}
+NOTICES = {"ignored_raw_denoise", "ignored_post_rgb_denoise", "retained_target_processing_version"}
 
 
 class TransferScenarioContracts(unittest.TestCase):
@@ -59,6 +60,29 @@ class TransferScenarioContracts(unittest.TestCase):
                 self.assertLessEqual(set(scenario.get("platform_expect", {})), PLATFORMS)
                 for override in scenario.get("platform_expect", {}).values():
                     self.assertIn(override["status"], STATUSES)
+
+    def test_notice_expectations_use_known_notice_ids(self):
+        for scenario in self.scenarios:
+            expect = scenario["expect"]
+            by_platform = expect.get("notices_by_platform", {})
+            self.assertLessEqual(set(by_platform), PLATFORMS, "unknown platform in notices_by_platform")
+            declared = set(expect.get("notices", []))
+            for names in by_platform.values():
+                self.assertIsInstance(names, list)
+                declared |= set(names)
+            self.assertLessEqual(declared, NOTICES, "unknown notice id in expect notices")
+
+    def test_q3_q4_scenarios_declare_per_platform_notice_expectations(self):
+        # Q3/Q4：不支持键忽略与处理版本沿用必须由共享 fixture 显式声明四端提示预期。
+        by_id = {scenario["id"]: scenario for scenario in self.scenarios}
+        ignored = by_id["raw-source-nonzero-legacy-denoise-pasted"]["expect"]["notices_by_platform"]
+        self.assertEqual(set(ignored), PLATFORMS, "Q3 scenario must declare notices for all four platforms")
+        self.assertEqual(set(ignored["macos"]), {"ignored_post_rgb_denoise"})
+        self.assertEqual(set(ignored["ios"]), {"ignored_raw_denoise"})
+        self.assertEqual(set(ignored["android"]), {"ignored_raw_denoise", "ignored_post_rgb_denoise"})
+        self.assertEqual(set(ignored["windows"]), {"ignored_raw_denoise", "ignored_post_rgb_denoise"})
+        retained = by_id["sdr-source-v1-pasted-retains-target-version"]["expect"]["notices"]
+        self.assertEqual(retained, ["retained_target_processing_version"])
 
     def test_seed_payloads_are_full_payloads(self):
         for scenario in self.scenarios:

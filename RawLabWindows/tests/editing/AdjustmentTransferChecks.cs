@@ -178,6 +178,8 @@ internal static class AdjustmentTransferChecks
 
         var payload = AdjustmentPayload.Parse(scenario.GetProperty("payload").GetRawText());
         Check(SamePayload(payload, AdjustmentPayload.Parse(payload.ToJson())), $"Scenario {id}: payload round-trip");
+        // S3：收集 prepare 期间的忽略/版本提示，与 fixture 声明按集合比较。
+        var scenarioNotices = new List<AdjustmentTransferNotice>();
         var expectSpec = scenario.TryGetProperty("platform_expect", out var platformExpect) &&
                          platformExpect.ValueKind == JsonValueKind.Object &&
                          platformExpect.TryGetProperty("windows", out var windowsExpect) &&
@@ -211,7 +213,7 @@ internal static class AdjustmentTransferChecks
         SavedEdit candidate;
         try
         {
-            candidate = AdjustmentTransfer.Prepare(payload, targetState, scenarioContext);
+            candidate = AdjustmentTransfer.Prepare(payload, targetState, scenarioContext with { OnTransferNotice = scenarioNotices.Add });
         }
         catch (AdjustmentTransferException error)
         {
@@ -224,6 +226,22 @@ internal static class AdjustmentTransferChecks
         {
             var statusKey = isUnchangedWithoutValues ? $"status:{actualStatus}" : "status";
             diffs.Add(new(statusKey, $"status expected={expectedStatus}, actual={actualStatus}"));
+        }
+        JsonElement noticesSpec = default;
+        foreach (var noticeSource in new[] { expectSpec, scenario.GetProperty("expect") })
+        {
+            if (noticeSource.TryGetProperty("notices_by_platform", out var scopedElem) && scopedElem.ValueKind == JsonValueKind.Object
+                && scopedElem.TryGetProperty("windows", out var scopedNotices) && scopedNotices.ValueKind == JsonValueKind.Array)
+            { noticesSpec = scopedNotices; break; }
+            if (noticeSource.TryGetProperty("notices", out var flatNotices) && flatNotices.ValueKind == JsonValueKind.Array)
+            { noticesSpec = flatNotices; break; }
+        }
+        if (noticesSpec.ValueKind == JsonValueKind.Array)
+        {
+            var expectedNotices = noticesSpec.EnumerateArray().Select(x => x.GetString()!).ToHashSet();
+            var actualNotices = scenarioNotices.Select(notice => notice.FixtureId()).ToHashSet();
+            if (!expectedNotices.SetEquals(actualNotices))
+                diffs.Add(new("notices", $"notices expected=[{string.Join(", ", expectedNotices.Order(StringComparer.Ordinal))}], actual=[{string.Join(", ", actualNotices.Order(StringComparer.Ordinal))}]"));
         }
         if (isUnchangedWithoutValues && actualStatus == "applied")
         {
@@ -366,7 +384,10 @@ internal static class AdjustmentTransferChecks
         foreach(var fixedWB in new[]{Payload((F.WhiteBalanceMode,"temperature"),(F.Temperature,5400),(F.Tint,3.5)),
             Payload((F.Temperature,5400)),Payload((F.Tint,3.5))})
             Reject(()=>AdjustmentTransfer.Prepare(fixedWB,target,raster),"Fixed RAW WB is incompatible with JPEG");
-        Reject(()=>AdjustmentTransfer.Prepare(Payload((F.RawDenoise,1)),target,raster),"Nonzero RAW FBDD is incompatible with JPEG");
+        var rasterFbddNotices=new List<AdjustmentTransferNotice>();
+        Check(AdjustmentTransfer.Prepare(Payload((F.RawDenoise,1)),target,raster with {OnTransferNotice=rasterFbddNotices.Add}).Settings.SameAs(target.Settings),
+            "Nonzero RAW FBDD is ignored on JPEG instead of rejecting");
+        Check(rasterFbddNotices.Contains(AdjustmentTransferNotice.IgnoredRawDenoise),"Ignored JPEG FBDD reports a one-time prompt");
         Console.WriteLine("PASS: Windows neutral RAW default/partial paste on JPEG, unchanged detection and incompatible effective requests");
     }
     private static void NonRawSourcePreservesRawExposureAndWhiteBalance()

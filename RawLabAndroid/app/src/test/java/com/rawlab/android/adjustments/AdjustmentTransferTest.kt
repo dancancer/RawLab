@@ -228,6 +228,21 @@ class AdjustmentTransferTest {
         assertTrue(silent.none { it.fieldId != null })
     }
 
+    @Test fun effectiveNoticesExcludeSkippedAndFailedTargets() {
+        // Q3/S1：提示只随实际应用或确认无关改动的目标产生。
+        fun target(id: String, notices: List<AdjustmentTransferNotice>, error: Throwable? = null) =
+            PreparedAdjustmentTransfer.Target(id, id, null, null, false, { true }, null, error = error, notices = notices)
+        val targets = listOf(
+            target("applied", listOf(AdjustmentTransferNotice.IGNORED_RAW_DENOISE)),
+            target("skipped", listOf(AdjustmentTransferNotice.IGNORED_POST_RGB_DENOISE)),
+            target("failed", listOf(AdjustmentTransferNotice.RETAINED_TARGET_PROCESSING_VERSION)),
+            target("errored", listOf(AdjustmentTransferNotice.IGNORED_RAW_DENOISE), error = AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE)))
+        val outcomes = listOf(AdjustmentOutcome("applied", AdjustmentStatus.APPLIED),
+            AdjustmentOutcome("skipped", AdjustmentStatus.SKIPPED), AdjustmentOutcome("failed", AdjustmentStatus.FAILED))
+        assertEquals(listOf(AdjustmentTransferNotice.IGNORED_RAW_DENOISE), effectiveTransferNotices(targets, outcomes))
+        assertTrue(effectiveTransferNotices(targets, emptyList()).isEmpty())
+    }
+
     @Test fun processingVersionMismatchReusesTargetVersionAndNotifiesOnce() {
         // Q4：来源与目标处理版本不同不拒绝，沿用目标处理版本并一次性提示。
         val notices = mutableListOf<AdjustmentTransferNotice>()
@@ -415,6 +430,8 @@ class AdjustmentTransferTest {
 
         val payload = AdjustmentPayload.decode(scenario.getJSONObject("payload").toString())
         assertEquals("Scenario $id: payload round-trip", payload, AdjustmentPayload.decode(payload.encode()))
+        // S3：收集 prepare 期间的忽略/版本提示，与 fixture 声明按集合比较。
+        val notices = mutableListOf<AdjustmentTransferNotice>()
         val expectSpec = scenario.optJSONObject("platform_expect")?.optJSONObject("android")
             ?: scenario.getJSONObject("expect")
         val expectedStatus = expectSpec.getString("status")
@@ -436,7 +453,7 @@ class AdjustmentTransferTest {
 
         val isUnchangedWithoutValues = expectedStatus == "unchanged" && (!expectSpec.has("values") || expectSpec.isNull("values"))
         val candidate = try {
-            AdjustmentTransfer.prepare(payload, targetState, scenarioContext)
+            AdjustmentTransfer.prepare(payload, targetState, scenarioContext.copy(onTransferNotice = { notices.add(it) }))
         } catch (error: AdjustmentTransferException) {
             val statusKey = if (isUnchangedWithoutValues) "status:rejected:${errorReason(error)}" else "status"
             diffs.add(ScenarioDiff(statusKey, "status expected=$expectedStatus, actual=rejected(${errorReason(error)}: ${error.message})"))
@@ -446,6 +463,15 @@ class AdjustmentTransferTest {
         if (actualStatus != expectedStatus) {
             val statusKey = if (isUnchangedWithoutValues) "status:$actualStatus" else "status"
             diffs.add(ScenarioDiff(statusKey, "status expected=$expectedStatus, actual=$actualStatus"))
+        }
+        val expectNotices = sequenceOf(expectSpec, scenario.getJSONObject("expect")).mapNotNull { base ->
+            base.optJSONObject("notices_by_platform")?.optJSONArray("android")?.let { arr -> (0 until arr.length()).map { arr.getString(it) } }
+                ?: base.optJSONArray("notices")?.let { arr -> (0 until arr.length()).map { arr.getString(it) } }
+        }.firstOrNull()
+        if (expectNotices != null) {
+            val actualNotices = notices.map { it.fixtureId }.toSet()
+            if (actualNotices != expectNotices.toSet())
+                diffs.add(ScenarioDiff("notices", "notices expected=${expectNotices.sorted()}, actual=${actualNotices.sorted()}"))
         }
         if (isUnchangedWithoutValues && actualStatus == "applied") {
             val targetCaptured = AdjustmentTransfer.capture(AdjustmentScope.All, targetState, scenarioContext).values

@@ -37,6 +37,16 @@ struct IOSPreparedAdjustmentTransfer {
     let action: IOSAdjustmentHistoryTransaction.Action
     let targets: [Target]
     var notices: [AdjustmentTransferNotice] = []
+
+    // Q3/S1：仅呈现实际应用（或确认无需改动）目标的去重提示；跳过、失败或冲突目标不提示。
+    func effectiveNotices(_ outcomes: [IOSAdjustmentTransferOutcome]) -> [AdjustmentTransferNotice] {
+        var merged = [AdjustmentTransferNotice]()
+        for target in targets where target.error == nil
+            && outcomes.contains(where: { $0.targetID == target.id && ($0.status == .applied || $0.status == .unchanged) }) {
+            for notice in target.notices where !merged.contains(notice) { merged.append(notice) }
+        }
+        return merged
+    }
 }
 
 struct IOSAdjustmentHistoryTransaction {
@@ -146,7 +156,7 @@ final class IOSAdjustmentTransferSession {
     }
 
     func apply(_ operation: IOSPreparedAdjustmentTransfer,
-               skipping: Set<String> = []) -> [IOSAdjustmentTransferOutcome] {
+        skipping: Set<String> = []) -> [IOSAdjustmentTransferOutcome] {
         guard operation.targets.allSatisfy({ $0.error == nil || skipping.contains($0.id) }) else {
             return operation.targets.map {
                 outcome($0.id, .blocked,

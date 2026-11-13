@@ -157,19 +157,24 @@ extension EditorModel {
 
     func applyAdjustmentPaste(_ operation: PreparedAdjustmentTransfer, skipping: Set<String> = []) {
         guard let session = adjustmentSession else { return }
-        acceptAdjustmentOutcomes(session.apply(operation, skipping: skipping))
+        let results = session.apply(operation, skipping: skipping)
+        acceptAdjustmentOutcomes(results)
         if session.transactions.contains(where: { $0.id == operation.id }) {
             lastAdjustmentTransaction = operation.id
             if operation.action == .synchronize { batchSelection.recordSynchronization(operation.id, changed: true) }
         }
-        showAdjustmentTransferNotices(operation)
+        showAdjustmentTransferNotices(operation, results)
     }
 
     // Q3/Q4：忽略键与处理版本沿用作为一次性状态提示，不阻塞后续操作，也不进入历史。
-    private func showAdjustmentTransferNotices(_ operation: PreparedAdjustmentTransfer) {
-        let text = operation.notices.map { L10n.text($0.promptKey) }.joined(separator: "；")
-        guard !text.isEmpty else { return }
-        saveStatusKey = text
+    // Q3/S1：提示按实际应用结果过滤；同时保留在 adjustmentPasteNotices 供粘贴面板在 3 秒状态条超时后继续可见。
+    private func showAdjustmentTransferNotices(_ operation: PreparedAdjustmentTransfer, _ outcomes: [AdjustmentTransferOutcome]) {
+        let notices = operation.effectiveNotices(outcomes)
+        adjustmentPasteNotices = notices
+        // N1：saveStatusKey 存文案键，视图读取时统一 L10n，避免二次翻译。
+        let key = notices.map(\.promptKey).joined(separator: "；")
+        guard !key.isEmpty else { return }
+        saveStatusKey = key
         clearSaveStatusLater()
     }
 

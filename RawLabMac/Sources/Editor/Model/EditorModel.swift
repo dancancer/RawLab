@@ -252,6 +252,8 @@ final class EditorModel: ObservableObject {
         }
     }
     @Published var saveStatusKey = ""
+    // Q3/Q4：粘贴面板内嵌的一次性提示（按实际应用结果过滤），不随状态条 3 秒超时消失。
+    @Published var adjustmentPasteNotices: [AdjustmentTransferNotice] = []
     var pendingSDRFallbackNotice = false
     var sourceUsesSDRFallback = false
     var probeHDRSource: HDRSourceInfo.Probe = { try HDRSourceInfo.probe($0, onSDRFallback: $1) }

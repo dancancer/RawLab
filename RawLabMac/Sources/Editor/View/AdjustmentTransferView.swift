@@ -165,6 +165,12 @@ struct AdjustmentTransferView: View {
                             .accessibilityIdentifier("adjustment.paste.apply")
                     }
                 }
+                if !pasteResults.isEmpty && !model.adjustmentPasteNotices.isEmpty {
+                    // Q3/Q4：提示随实际生效的粘贴结果展示在面板内，3 秒状态条超时后仍可见。
+                    Text(model.adjustmentPasteNotices.map { L10n.text($0.promptKey) }.joined(separator: "；"))
+                        .font(.caption).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("adjustment.paste.notices")
+                }
                 if historyID != nil, historyResults.contains(where: { $0.requiresHistoryDecision || $0.status == .failed }) {
                     ScrollView { conflictActions.frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 160)
                 }
@@ -310,6 +316,7 @@ struct AdjustmentTransferView: View {
     private func invalidatePreparation() {
         operationGeneration = UUID(); preparing = false
         prepared = nil; pasteResults = []; historyResults = []; message = nil; historyID = nil; historyPhoto = nil
+        model.adjustmentPasteNotices = []
     }
     private func prepare() {
         invalidatePreparation()

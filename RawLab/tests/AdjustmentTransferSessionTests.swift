@@ -10,6 +10,7 @@ import Foundation
         return .init(settings: settings, updatedAt: Date(timeIntervalSince1970: 100))
     }
     static func main() throws {
+        try Self.effectiveNoticesFilter()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try EditPersistence(directory: root), session = IOSAdjustmentTransferSession(store: store)
@@ -366,5 +367,27 @@ import Foundation
                   (try store.readState(for: sibling)).state?.settings.exposure == 0.75 &&
                   (try store.readState(for: content)).state?.settings.exposure == 0.75,
                   "Session resetToUnmodified clears target history and record while preserving same-PHAsset-other-bytes and content:<id>")
+    }
+
+    // Q3/S1 seam：粘贴提示只随实际应用或确认无关改动的目标呈现（修前提示走根 statusMessage，
+    // 被粘贴 Sheet 的模态层级吞掉，快捷预设路径又弹成阻塞 Alert）。
+    static func effectiveNoticesFilter() throws {
+        let payload = try AdjustmentTransferPayload(source: .init(identifier: "src", isRaw: true, processingVersion: 2,
+            recipe: nil, hdrProcessingVersion: nil), values: ["light.exposure": .number(0.5)])
+        func target(_ id: String, _ error: Error?, _ notices: [AdjustmentTransferNotice]) -> IOSPreparedAdjustmentTransfer.Target {
+            .init(id: id, displayName: id, original: nil, candidate: nil, unchanged: false, isCurrent: nil,
+                validateSource: nil, error: error, editGeneration: 0, notices: notices)
+        }
+        let prepared = IOSPreparedAdjustmentTransfer(id: UUID(), payload: payload, action: .paste, targets: [
+            target("a", nil, [.ignoredRawDenoise]), target("b", nil, [.ignoredPostRGBDenoise]),
+            target("c", nil, [.retainedTargetProcessingVersion]),
+            target("d", NSError(domain: "gone", code: 1), [.ignoredRawDenoise])], notices: [.ignoredRawDenoise])
+        let outcomes = [IOSAdjustmentTransferOutcome(targetID: "a", status: .applied, saved: nil, error: nil),
+            IOSAdjustmentTransferOutcome(targetID: "b", status: .skipped, saved: nil, error: nil),
+            IOSAdjustmentTransferOutcome(targetID: "c", status: .failed, saved: nil, error: nil),
+            IOSAdjustmentTransferOutcome(targetID: "d", status: .applied, saved: nil, error: nil)]
+        try check(prepared.effectiveNotices(outcomes) == [.ignoredRawDenoise],
+            "Paste notices surface only for targets that actually applied")
+        try check(prepared.effectiveNotices([]).isEmpty, "Prepared notices stay hidden until apply outcomes exist")
     }
 }

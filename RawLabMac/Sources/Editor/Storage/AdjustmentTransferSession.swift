@@ -36,6 +36,16 @@ struct PreparedAdjustmentTransfer {
     let targets: [Target]
     let action: AdjustmentHistoryTransaction.Action
     var notices: [AdjustmentTransferNotice] = []
+
+    // Q3/S1：仅呈现实际应用（或确认无需改动）目标的去重提示；跳过、失败或冲突目标不提示。
+    func effectiveNotices(_ outcomes: [AdjustmentTransferOutcome]) -> [AdjustmentTransferNotice] {
+        var merged = [AdjustmentTransferNotice]()
+        for target in targets where target.error == nil
+            && outcomes.contains(where: { $0.targetID == target.id && ($0.status == .applied || $0.status == .unchanged) }) {
+            for notice in target.notices where !merged.contains(notice) { merged.append(notice) }
+        }
+        return merged
+    }
 }
 
 struct AdjustmentHistoryTransaction {

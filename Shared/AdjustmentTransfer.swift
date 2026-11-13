@@ -17,6 +17,15 @@ enum AdjustmentTransferNotice: Equatable, Hashable {
     case ignoredPostRGBDenoise
     case retainedTargetProcessingVersion
 
+    // 共享场景 fixture（adjustment-transfer-scenarios-v1.json expect.notices）的稳定标识。
+    var fixtureId: String {
+        switch self {
+        case .ignoredRawDenoise: return "ignored_raw_denoise"
+        case .ignoredPostRGBDenoise: return "ignored_post_rgb_denoise"
+        case .retainedTargetProcessingVersion: return "retained_target_processing_version"
+        }
+    }
+
     // 文案键登记在 Shared/strings；同一次粘贴把去重后的提示合并为一条一次性提示。
     var promptKey: String {
         switch self {

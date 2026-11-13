@@ -788,6 +788,10 @@ import Foundation
             }
 
             let payload = try JSONDecoder().decode(AdjustmentTransferPayload.self, from: JSONSerialization.data(withJSONObject: scenario["payload"]!))
+            // S3：场景提示断言——收集 prepare 期间的忽略/版本提示，与 fixture 声明按集合比较。
+            var scenarioNotices = [AdjustmentTransferNotice]()
+            var noticeContext = context
+            noticeContext.transferNotices = { scenarioNotices.append($0) }
             let expectSpec = (scenario["platform_expect"] as? [String: [String: Any]])?["ios"] ?? (scenario["expect"] as! [String: Any])
             let expectedStatus = expectSpec["status"] as! String
             if expectedStatus == "rejected" {
@@ -803,9 +807,14 @@ import Foundation
                 }
                 continue
             }
-            let candidate = try IOSAdjustmentTransfer.prepare(payload: payload, target: targetState, context: context)
+            let candidate = try IOSAdjustmentTransfer.prepare(payload: payload, target: targetState, context: noticeContext)
             let actualStatus = candidate == targetState ? "unchanged" : "applied"
             check(actualStatus == expectedStatus, "Scenario \(id): status \(expectedStatus)")
+            let noticesByPlatform = ((scenario["expect"] as? [String: Any])?["notices_by_platform"] as? [String: Any])?["ios"] as? [String]
+            if let expectedNotices = noticesByPlatform ?? (expectSpec["notices"] as? [String]) {
+                check(Set(scenarioNotices.map(\.fixtureId)) == Set(expectedNotices),
+                    "Scenario \(id): notices \(expectedNotices.sorted().joined(separator: ","))")
+            }
             if let valuesObj = expectSpec["values"] {
                 let expectedValues = try JSONDecoder().decode([String: AdjustmentTransferValue].self, from: JSONSerialization.data(withJSONObject: valuesObj))
                 let captured = try IOSAdjustmentTransfer.capture(scope: .all, snapshot: candidate, context: context).values

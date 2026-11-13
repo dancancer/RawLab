@@ -14,6 +14,15 @@ public enum AdjustmentTransferNotice
 
 public static class AdjustmentTransferNoticeExtensions
 {
+    // 共享场景 fixture（adjustment-transfer-scenarios-v1.json expect.notices）的稳定标识。
+    public static string FixtureId(this AdjustmentTransferNotice notice) => notice switch
+    {
+        AdjustmentTransferNotice.IgnoredRawDenoise => "ignored_raw_denoise",
+        AdjustmentTransferNotice.IgnoredPostRGBDenoise => "ignored_post_rgb_denoise",
+        AdjustmentTransferNotice.RetainedTargetProcessingVersion => "retained_target_processing_version",
+        _ => throw new ArgumentOutOfRangeException(nameof(notice))
+    };
+
     // 文案键登记在 Shared/strings；同一次粘贴把去重后的提示合并为一条一次性提示。
     public static string PromptKey(this AdjustmentTransferNotice notice)=>notice switch
     {

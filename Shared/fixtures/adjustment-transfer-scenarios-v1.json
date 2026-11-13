@@ -1628,6 +1628,22 @@
         "status": "applied",
         "values": {
           "light.exposure": 0.33
+        },
+        "notices_by_platform": {
+          "macos": [
+            "ignored_post_rgb_denoise"
+          ],
+          "ios": [
+            "ignored_raw_denoise"
+          ],
+          "android": [
+            "ignored_raw_denoise",
+            "ignored_post_rgb_denoise"
+          ],
+          "windows": [
+            "ignored_raw_denoise",
+            "ignored_post_rgb_denoise"
+          ]
         }
       }
     },
@@ -1660,7 +1676,10 @@
         "status": "applied",
         "values": {
           "light.exposure": 0.42
-        }
+        },
+        "notices": [
+          "retained_target_processing_version"
+        ]
       }
     }
   ]
