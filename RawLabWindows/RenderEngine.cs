@@ -560,7 +560,8 @@ internal sealed partial class RenderEngine : IDisposable
         return new(report.State, Native.Text(report.LensModel), Native.Text(report.Profile.Model), report.AppliedDistortion != 0,
             report.AppliedTca != 0, report.CropScale, lensCandidates, extended.AppliedVignetting != 0);
     }
-    private Adjustments PrepareRecipe(string path, Adjustments settings)
+    // internal：tests 的 AgentRecipeTestTool（Q9 测试工具）经 InternalsVisibleTo 复用同一冻结入口。
+    internal Adjustments PrepareRecipe(string path, Adjustments settings)
     {
         if(LibraryEntry.IsRaster(path))return PrepareInputSettings(path,settings);
         if (settings.MasterRecipeID == null || (settings.CameraWhiteBalance && settings[Parameter.Tint] * settings[Parameter.Strength] == 0)) return settings;
