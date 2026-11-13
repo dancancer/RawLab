@@ -83,8 +83,9 @@ this is not reuse of an unverified product binary.
 5. Before merge, check the current source/base, required automatic result and any
    requested specialized results. A failed, cancelled or unfinished check is not a
    pass. A manual partial result does not satisfy the automatic aggregate gate.
-   For an external fork PR, the skipped platforms also require the maintainer
-   verification in [External fork pull requests](#external-fork-pull-requests).
+   For an external fork PR, the skipped platforms and the build/native coverage
+   that fork runs never trigger also require the maintainer verification in
+   [External fork pull requests](#external-fork-pull-requests).
 6. After a change, rerun only checks whose source, configuration or integration
    assumptions changed. Documentation-only updates require content, link and diff
    checks; preserve earlier native/UI evidence with its actual tested SHA and
@@ -180,7 +181,7 @@ repository but takes the workflow file from the pull request's merge commit; the
 ([workflow](../../.github/workflows/ci.yml)), so a fork PR that leaves the
 workflow unchanged skips both. The `windows` job carries the same
 head-repository clause with one escape: it also runs when the selected route is
-`windows-2022`, so a fork diff can be built and tested on the hosted runner
+`windows-2022`, so a fork diff's model checks run on the hosted runner
 while the trusted machines stay reserved for same-repository code. The gate
 keeps normal fork changes off the trusted machines that persist SDKs, caches
 and runner installations. The selector
@@ -222,19 +223,24 @@ path is review followed by the trusted-ref verification below.
 
 ### Verifying a Fork Pull Request Before Merge
 
-The automatic run leaves the skipped platforms unverified, so a maintainer with
-write access must run them on a trusted ref after reviewing the change. Bring the
+The automatic run leaves two kinds of gaps: fork PRs never select the
+self-hosted-only platforms (`macos`, `ios`), and they always lock `checks` to
+`models`, so build and native regressions stay unrun wherever the diff touches
+platform or native code — including `android`, whose hosted `models` run did
+pass. After reviewing the change, a maintainer with write access fills the gaps
+relevant to the diff on a trusted ref. Bring the
 reviewed head into a branch in this repository (a fork branch cannot be selected
 by **Run workflow**) or check it out locally and use the
 [local entry points](#local-and-targeted-entry-points) for the platform-specific
 scripts. For a **Run workflow** dispatch, open **Actions → Hosted CI → Run
 workflow** on that branch:
 
-- Set `platform` to `macos`, `windows` or `ios`; use `all` when the whole matrix
-  is needed. `contracts` ignores this selector.
-- Set `checks` to `models` for the standalone model suites at minimum, or to
-  `build`, `native` or `full` when the change needs the corresponding build or
-  native coverage from the [Verification Levels](#verification-levels) groups.
+- Set `platform` to `macos`, `windows`, `android` or `ios`; use `all` when the
+  whole matrix is needed. `contracts` ignores this selector.
+- Set `checks` to `models` at minimum for the platforms the fork selection
+  skipped (`macos`, `ios`), and to `build`, `native` or `full` on every platform
+  whose build or native code the diff touches, per the
+  [Verification Levels](#verification-levels) groups.
   `native` omits the independent model suites, so use `full` when both are
   required.
 - Confirm the logged checkout SHA is the reviewed source you intend to verify,
@@ -483,7 +489,10 @@ exact dependency-cache policy. Do not replace it with `build.ps1 -Test`, which
 requires physical GPU/external-RAW evidence. Service-session results do not
 cover real Explorer/UIA interaction. To route every event back to the dedicated
 runner, change `windows_runner` in `affected_platforms.py` and its scheduling
-regressions; do not skip required checks or remove the runner environment setup.
+regressions, and keep the job gate coherent: either add `windows` to
+`SELF_HOSTED_ONLY` or adjust the hosted-route escape, otherwise fork PRs that
+select Windows would skip the job again and the aggregate turns red; do not skip
+required checks or remove the runner environment setup.
 
 ## Local Apple Runners
 

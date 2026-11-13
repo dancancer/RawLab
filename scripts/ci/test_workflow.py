@@ -77,20 +77,31 @@ class WorkflowContractTests(unittest.TestCase):
                     self.assertNotIn("permissions", job)
                 if name in PLATFORM_JOBS:
                     self.assertEqual(job["needs"], "changes")
-                    condition = job["if"]
-                    self.assertIn(f"needs.changes.outputs.{name} == 'true'", condition)
-                    # 自托管 runner 不能在 fork 的 PR 上执行任意代码。
+                    condition = " ".join(job["if"].split())
+                    # 完整锁定门禁表达式：漏括号导致 && 优先于 || 的反转、漏 event_name 守卫
+                    # 这类回改都改变语义，但子串断言全部察觉不到。
                     if name in ("ios", "macos"):
-                        self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", condition)
-                        self.assertNotIn("windows_runner", condition)
+                        # 自托管 runner 不能在 fork 的 PR 上执行任意代码。
+                        self.assertEqual(
+                            condition,
+                            f"needs.changes.outputs.{name} == 'true' && "
+                            "(github.event_name != 'pull_request' || "
+                            "github.event.pull_request.head.repo.full_name == github.repository)",
+                        )
                     elif name == "windows":
                         # fork 的选择结果永远走托管路由，Windows 作业只在托管路由放行 fork；
                         # 自托管路由（冷构建、手动 build/native/full）保持同仓库限定。
-                        self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", condition)
-                        self.assertIn('needs.changes.outputs.windows_runner == \'"windows-2022"\'', condition)
+                        self.assertEqual(
+                            condition,
+                            "needs.changes.outputs.windows == 'true' && "
+                            "(github.event_name != 'pull_request' || "
+                            "github.event.pull_request.head.repo.full_name == github.repository || "
+                            'needs.changes.outputs.windows_runner == \'"windows-2022"\')',
+                        )
                     else:
                         # Android 作业跑在托管 ubuntu，没有源门禁；回到可信 guest 前必须补门禁。
-                        self.assertNotIn("head.repo.full_name", condition)
+                        self.assertEqual(condition, "needs.changes.outputs.android == 'true'")
+                        self.assertNotIn("self-hosted", str(job["runs-on"]))
                 else:
                     self.assertNotIn("self-hosted", job["runs-on"])
         self.assertEqual(jobs["contracts"]["if"], "needs.changes.outputs.contracts == 'true'")
