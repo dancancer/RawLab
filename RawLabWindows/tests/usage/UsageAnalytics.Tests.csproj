@@ -5,12 +5,16 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);RAWLAB_RUM_TRANSPORT_TEST</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="RumConfigurationTests.cs" />
     <Compile Include="UsageLifecycleTests.cs" />
+    <Compile Include="TempCleanupTests.cs" />
+    <Compile Include="../../TempCleanup.cs" Link="TempCleanup.cs" />
     <Compile Include="../../UsageAnalytics.cs" Link="UsageAnalytics.cs" />
     <Compile Include="../../RumConfiguration.cs" Link="RumConfiguration.cs" />
+    <Compile Include="../../RumUsageAnalyticsTransport.cs" Link="RumUsageAnalyticsTransport.cs" />
   </ItemGroup>
 </Project>

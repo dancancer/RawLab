@@ -169,7 +169,11 @@ public partial class App : Application
         var version = typeof(App).Assembly.GetName().Version;
         var current = version?.ToString(3) ?? "unknown";
         var legacy = new UpdateChecker(current);
-        var adapter = await Task.Run(() => VelopackUpdateAdapter.Create(current));
+        var adapter = await Task.Run(() =>
+        {
+            TempCleanup.SweepStartup();
+            return VelopackUpdateAdapter.Create(current);
+        });
         var fileVersion=System.Diagnostics.FileVersionInfo.GetVersionInfo(typeof(App).Assembly.Location);
         var updates = new DesktopUpdateController(adapter, new(), new(UpdateStore.DefaultDirectory), current,
             fileVersion.FilePrivatePart.ToString(), legacy.Automatic);

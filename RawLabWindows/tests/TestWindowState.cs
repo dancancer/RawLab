@@ -44,6 +44,7 @@ internal static class TestWindowState
         Set("recentLooks",new RecentLooks());
         Set("presetStore",new AdjustmentPresetStore(Path.Combine(root,"presets")));
         Set("batchJournal",new BatchJournal(Path.Combine(root,"batch")));
+        Set("exportStagingDirectory",Path.Combine(root,"export-staging"));
         Set("aiPreferenceStore",new AIGpuPreferenceStore(Path.Combine(root,"ai-gpu.json")));
         Set("aiDiagnostics",new AIDiagnosticStore(Path.Combine(root,"ai-diagnostics")));
         Set("aiPreference",new AIGpuPreference());
