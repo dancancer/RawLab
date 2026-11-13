@@ -66,6 +66,45 @@ exit "$PROBE_EXIT"
                     else:
                         self.assertGreater(len(calls), 1)
 
+    def test_logged_skip_fails_even_if_child_suite_exited_zero(self):
+        with tempfile.TemporaryDirectory(prefix="rawlab model skip ") as directory:
+            root = Path(directory)
+            runner = root / "scripts/ci/apple-models.sh"
+            runner.parent.mkdir(parents=True)
+            shutil.copy2(ROOT / "scripts/ci/apple-models.sh", runner)
+            tools = root / "bin"
+            tools.mkdir()
+            for name in ("xcode-select", "xcrun", "python3"):
+                tool = tools / name
+                tool.write_text("#!/bin/sh\necho /unused/sdk\n")
+                tool.chmod(0o755)
+            child = tools / "bash"
+            child.write_text('''#!/bin/bash
+set -eu
+if [[ "${INJECT_SKIP:-0}" == "1" ]]; then
+    echo "SKIP: simulated skipped capability"
+else
+    echo "PASS: simulated success without skip"
+fi
+exit 0
+''')
+            child.chmod(0o755)
+
+            # Injected SKIP with exit 0 must fail non-zero
+            result_skip = subprocess.run(["/bin/bash", str(runner), "macos"],
+                env={**os.environ, "PATH": f"{tools}:{os.environ['PATH']}",
+                     "TMPDIR": str(root), "INJECT_SKIP": "1"},
+                capture_output=True, text=True)
+            self.assertNotEqual(result_skip.returncode, 0, "Suite logging SKIP must fail")
+            self.assertIn("SKIP", result_skip.stdout + result_skip.stderr)
+
+            # Normal output without SKIP must pass with exit 0
+            result_ok = subprocess.run(["/bin/bash", str(runner), "macos"],
+                env={**os.environ, "PATH": f"{tools}:{os.environ['PATH']}",
+                     "TMPDIR": str(root), "INJECT_SKIP": "0"},
+                capture_output=True, text=True)
+            self.assertEqual(result_ok.returncode, 0, result_ok.stdout + result_ok.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

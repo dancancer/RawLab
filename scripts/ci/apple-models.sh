@@ -37,5 +37,10 @@ trap 'rm -rf "$MODEL_CACHE"' EXIT
 export RAWLAB_TRANSFER_MODULE_CACHE="$MODEL_CACHE/transfer"
 for suite in "${suites[@]}"; do
     printf '[model] %s\n' "$suite"
-    bash "$suite"
+    suite_log="$MODEL_CACHE/suite.log"
+    bash "$suite" 2>&1 | tee "$suite_log"
+    if grep -q -E '(^|[^A-Za-z0-9_])SKIP([^A-Za-z0-9_]|$)' "$suite_log"; then
+        printf 'error: %s logged SKIP (forbidden by CI invariant 7)\n' "$suite" >&2
+        exit 1
+    fi
 done
