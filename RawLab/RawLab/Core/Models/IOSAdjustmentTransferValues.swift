@@ -81,7 +81,8 @@ extension IOSAdjustmentTransfer {
     }
     static func applyObjects(_ payload: AdjustmentTransferPayload, to settings: inout RawSettings,
                              context: IOSAdjustmentTransferContext) throws {
-        if let raw = payload[.rawDenoise]?.number, raw != 0 { throw AdjustmentTransferError.incompatible(Field.rawDenoise.rawValue) }
+        // Q3：iOS 不建模解马赛克前 FBDD，收到非 0 raw_level 忽略并提示，不再拒绝。
+        if let raw = payload[.rawDenoise]?.number, raw != 0 { context.transferNotices?(.ignoredRawDenoise) }
         if let post = payload[.postRGBDenoise]?.number, payload.source.isRaw || !context.isRaw {
             guard context.isRaw || post == 0 else { throw AdjustmentTransferError.incompatible(Field.postRGBDenoise.rawValue) }
             settings.noiseReduction = post

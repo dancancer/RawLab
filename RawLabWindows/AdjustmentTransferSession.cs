@@ -7,8 +7,10 @@ public sealed record AdjustmentTransferTarget(string Path,SavedEdit DefaultEdit,
 public enum AdjustmentStatus { Applied, Unchanged, Skipped, Blocked, Conflict, Failed }
 public sealed record AdjustmentOutcome(string TargetID,AdjustmentStatus Status,PhotoEditState? Saved=null,Exception? Error=null,bool RequiresHistoryDecision=false);
 public sealed record PreparedAdjustmentTransfer(Guid ID,AdjustmentPayload Payload,IReadOnlyList<PreparedAdjustmentTarget> Targets,
-    AdjustmentHistoryAction Action = AdjustmentHistoryAction.Paste, OriginalIdentity? FrozenSource = null);
-public sealed record PreparedAdjustmentTarget(string ID,string DisplayName,PhotoEditState? Original,SavedEdit? Candidate,bool Unchanged,Func<bool>? IsCurrent,Exception? Error,long EditGeneration=0);
+    AdjustmentHistoryAction Action = AdjustmentHistoryAction.Paste, OriginalIdentity? FrozenSource = null,
+    IReadOnlyList<AdjustmentTransferNotice>? Notices = null);
+public sealed record PreparedAdjustmentTarget(string ID,string DisplayName,PhotoEditState? Original,SavedEdit? Candidate,bool Unchanged,Func<bool>? IsCurrent,Exception? Error,long EditGeneration=0,
+    IReadOnlyList<AdjustmentTransferNotice>? Notices=null);
 public enum AdjustmentHistoryAction { Paste, Edit, Preset, Synchronize }
 public enum AdjustmentHistoryState { Applied, Undone, RedoInvalidated }
 public sealed record AdjustmentHistoryPart(Guid ID,Guid? PriorHead,OriginalIdentity Identity,string DisplayName,SavedEdit? Before,SavedEdit? After,AdjustmentHistoryState State);
@@ -101,11 +103,13 @@ public sealed class AdjustmentTransferSession(EditStore store)
                 var original=X3fModeReset.RepairLegacyNormalX3f(rawOriginal).State;
                 var before=original.Edit ?? X3fModeReset.RepairLegacyNormalX3f(new PhotoEditState(original.Identity,target.DefaultEdit)).State.Edit!;
                 if(!before.Identity.SameFile(original.Identity))throw new PhotoChangedException();
-                var candidate=AdjustmentTransfer.Prepare(payload,before,target.Context);
-                prepared.Add(new(id,Path.GetFileName(id),original,candidate.Copy(),candidate.SameAs(before),target.IsCurrent,null,generation));
+                var notices=new List<AdjustmentTransferNotice>();
+                var candidate=AdjustmentTransfer.Prepare(payload,before,target.Context with {OnTransferNotice=notices.Add});
+                prepared.Add(new(id,Path.GetFileName(id),original,candidate.Copy(),candidate.SameAs(before),target.IsCurrent,null,generation,notices));
             }catch(Exception error) {prepared.Add(new(id,Path.GetFileName(id),null,null,false,target.IsCurrent,error));}
         }
-        return new(Guid.NewGuid(),payload,prepared.AsReadOnly(),action,frozenSource);
+        var mergedNotices=prepared.Where(t=>t.Notices!=null).SelectMany(t=>t.Notices!).Distinct().ToList();
+        return new(Guid.NewGuid(),payload,prepared.AsReadOnly(),action,frozenSource,mergedNotices);
     }
     public IReadOnlyList<AdjustmentOutcome> Apply(PreparedAdjustmentTransfer operation,IReadOnlySet<string>? skipping=null)
     {

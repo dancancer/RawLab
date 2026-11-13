@@ -12,10 +12,12 @@ enum class AdjustmentStatus { APPLIED, UNCHANGED, SKIPPED, BLOCKED, CONFLICT, FA
 data class AdjustmentOutcome(val targetID: String, val status: AdjustmentStatus,
     val saved: PhotoEditState? = null, val error: Throwable? = null, val requiresHistoryDecision: Boolean = false)
 data class PreparedAdjustmentTransfer(val id: UUID, val payload: AdjustmentPayload, val targets: List<Target>,
-    val action: AdjustmentHistoryTransaction.Action = AdjustmentHistoryTransaction.Action.PASTE) {
+    val action: AdjustmentHistoryTransaction.Action = AdjustmentHistoryTransaction.Action.PASTE,
+    val notices: List<AdjustmentTransferNotice> = emptyList()) {
     data class Target(val id: String, val displayName: String, val original: PhotoEditState?, val candidate: EditSettings?,
         val unchanged: Boolean, val isCurrent: () -> Boolean, val validateSource: (() -> Unit)?, val error: Throwable?,
-        val validateHistorySource: (() -> Unit)? = validateSource, val editGeneration: Long = 0L)
+        val validateHistorySource: (() -> Unit)? = validateSource, val editGeneration: Long = 0L,
+        val notices: List<AdjustmentTransferNotice> = emptyList())
 }
 data class AdjustmentHistoryTransaction(val id: UUID, val action: Action, val fields: Set<AdjustmentField>, val parts: List<Part>) {
     enum class Action { PASTE, EDIT, PRESET, SYNCHRONIZE }
@@ -94,15 +96,19 @@ class AdjustmentTransferSession(private val store: EditStore) {
                     val generation = editGeneration(target.identity)
                     val original = store.readState(target.identity)
                     val before = original.settings ?: target.defaultSettings
-                    val candidate = AdjustmentTransfer.prepare(payload, before, target.context)
+                    val notices = mutableListOf<AdjustmentTransferNotice>()
+                    val candidate = AdjustmentTransfer.prepare(payload, before, target.context.copy(
+                        onTransferNotice = { notices.add(it) }))
                     PreparedAdjustmentTransfer.Target(target.identity.value, target.displayName, original, candidate,
-                        candidate == before, target.isCurrent, target.validateSource, null, target.validateHistorySource, generation)
+                        candidate == before, target.isCurrent, target.validateSource, null, target.validateHistorySource, generation,
+                        notices.toList())
                 } catch (error: Exception) {
                     PreparedAdjustmentTransfer.Target(target.identity.value, target.displayName, null, null,
                         false, target.isCurrent, target.validateSource, error, target.validateHistorySource)
                 }
             }
-        return PreparedAdjustmentTransfer(UUID.randomUUID(), payload, prepared, action)
+        return PreparedAdjustmentTransfer(UUID.randomUUID(), payload, prepared, action,
+            prepared.flatMap { it.notices }.distinct())
     }
     fun apply(operation: PreparedAdjustmentTransfer, skipping: Set<String> = emptySet()): List<AdjustmentOutcome> {
         if (operation.targets.any { it.error != null && it.id !in skipping }) return operation.targets.map {

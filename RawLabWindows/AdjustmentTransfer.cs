@@ -3,10 +3,30 @@ using static RawLab.Windows.AdjustmentPayload;
 
 namespace RawLab.Windows;
 
+// Q3/Q4 粘贴提示：本平台不支持的键收到非 0 值时忽略并提示；处理版本与来源不同
+// 时沿用目标处理版本并提示。两种情况都不拒绝粘贴，也不改动目标的其它字段。
+public enum AdjustmentTransferNotice
+{
+    IgnoredRawDenoise,
+    IgnoredPostRGBDenoise,
+    RetainedTargetProcessingVersion
+}
+
+public static class AdjustmentTransferNoticeExtensions
+{
+    // 文案键登记在 Shared/strings；同一次粘贴把去重后的提示合并为一条一次性提示。
+    public static string PromptKey(this AdjustmentTransferNotice notice)=>notice switch
+    {
+        AdjustmentTransferNotice.IgnoredRawDenoise=>"已忽略旧版 RAW 降噪（FBDD）",
+        AdjustmentTransferNotice.IgnoredPostRGBDenoise=>"已忽略渲染后 RGB 降噪",
+        _=>"处理版本与来源不同，已沿用当前照片的处理版本"
+    };
+}
+
 public sealed record AdjustmentTransferContext(string Identifier,bool IsRaw,
     IReadOnlySet<string>? AvailableLookIDs=null,int DefaultExposureMode=1,bool HasUncommittedDraft=false,Action<LensSettings>? ValidateLens=null,
     (double Temperature,double Tint)? CameraWhiteBalance=null, bool IsProRAW=false, bool SupportsCameraHDR=false,
-    Action<Adjustments>? ValidateHDRCamera=null)
+    Action<Adjustments>? ValidateHDRCamera=null,Action<AdjustmentTransferNotice>? OnTransferNotice=null)
 {
     internal bool SupportsHDRCameraDevelopment => IsRaw && SupportsCameraHDR && !IsProRAW;
 }
@@ -83,6 +103,8 @@ public static class AdjustmentTransfer
             p=new(p.Source with {HdrProcessingVersion=null},p.Values.ToDictionary(pair=>pair.Key,pair=>pair.Value));
         }
         var storedTarget=target;
+        // Q4：来源与目标处理版本不同不拒绝，沿用目标处理版本并一次性提示。
+        if(p.Source.ProcessingVersion!=storedTarget.Settings.Processing.Version) context.OnTransferNotice?.Invoke(AdjustmentTransferNotice.RetainedTargetProcessingVersion);
         if(context.IsRaw && context.CameraWhiteBalance is {} calibration) {
             var calibrated=target.Settings.Restore();calibrated.ResolveWhiteBalance(calibration);target=target with {Settings=calibrated.Capture()};
         }

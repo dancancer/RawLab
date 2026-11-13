@@ -30,11 +30,13 @@ struct IOSPreparedAdjustmentTransfer {
         let validateSource: (() throws -> Void)?
         let error: Error?
         let editGeneration: UInt64
+        var notices: [AdjustmentTransferNotice] = []
     }
     let id: UUID
     let payload: AdjustmentTransferPayload
     let action: IOSAdjustmentHistoryTransaction.Action
     let targets: [Target]
+    var notices: [AdjustmentTransferNotice] = []
 }
 
 struct IOSAdjustmentHistoryTransaction {
@@ -125,17 +127,22 @@ final class IOSAdjustmentTransferSession {
                 let generation = editGeneration(for: target.identity)
                 let original = try store.readState(for: target.identity, requiringLegacyDecision: true)
                 let before = original.state ?? target.defaultState
-                let candidate = try IOSAdjustmentTransfer.prepare(payload: payload, target: before, context: target.context)
+                var notices = [AdjustmentTransferNotice]()
+                var context = target.context
+                context.transferNotices = { notices.append($0) }
+                let candidate = try IOSAdjustmentTransfer.prepare(payload: payload, target: before, context: context)
                 prepared.append(.init(id: id, displayName: target.displayName, original: original, candidate: candidate,
                     unchanged: candidate.hasSameAdjustments(as: before), isCurrent: target.isCurrent,
-                    validateSource: target.validateSource, error: nil, editGeneration: generation))
+                    validateSource: target.validateSource, error: nil, editGeneration: generation, notices: notices))
             } catch {
                 prepared.append(.init(id: id, displayName: target.displayName, original: nil, candidate: nil,
                     unchanged: false, isCurrent: target.isCurrent, validateSource: target.validateSource,
                     error: error, editGeneration: editGeneration(for: target.identity)))
             }
         }
-        return .init(id: UUID(), payload: payload, action: action, targets: prepared)
+        var mergedNotices = [AdjustmentTransferNotice]()
+        for notice in prepared.flatMap(\.notices) where !mergedNotices.contains(notice) { mergedNotices.append(notice) }
+        return .init(id: UUID(), payload: payload, action: action, targets: prepared, notices: mergedNotices)
     }
 
     func apply(_ operation: IOSPreparedAdjustmentTransfer,

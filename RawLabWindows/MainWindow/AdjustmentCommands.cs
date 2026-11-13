@@ -120,11 +120,15 @@ public partial class MainWindow
                 Error:t.Error,RequiresHistoryDecision:t.Error!=null)).ToArray();
             var adopted=new Dictionary<string,Exception?>();
             var session=TransferSession;AdjustmentResultDialog? dialog=null;
-            dialog=new AdjustmentResultDialog(this,action==AdjustmentHistoryAction.Preset ? "应用预设" : "粘贴调整",initial,true,skipping=>AdoptAdjustmentOutcomes(session.Apply(operation,skipping),adopted),
+            dialog=new AdjustmentResultDialog(this,action==AdjustmentHistoryAction.Preset ? "应用预设" : "粘贴调整",initial,true,skipping=>{var adoptedOutcomes=AdoptAdjustmentOutcomes(session.Apply(operation,skipping),adopted);ShowAdjustmentTransferNotices(operation);return adoptedOutcomes;},
                 Loc.Format("来源：{0} · {1} 项调整",sourceName ?? Path.GetFileName(payload.Source.Identifier),payload.Fields.Count),
                 ()=>session.Transactions.FirstOrDefault(t=>t.ID==operation.ID)?.Parts ?? [],undo=>RunAdjustmentHistory(operation.ID,null,undo,dialog!),payload,AdjustmentSummaryLookName);
             dialog.ShowDialog();
         }catch(Exception error){ShowAdjustmentError(error);}
+    }
+    // Q3/Q4：忽略键与处理版本沿用作为一次性状态提示，只提示，不进入结果表或历史。
+    private void ShowAdjustmentTransferNotices(PreparedAdjustmentTransfer operation){
+        if(operation.Notices is {} notices && notices.Count>0)SetStatus(()=>string.Join("；",notices.Select(n=>Loc.Text(n.PromptKey()))),true);
     }
     private IReadOnlyList<AdjustmentOutcome> AdoptAdjustmentOutcomes(IReadOnlyList<AdjustmentOutcome> outcomes,Dictionary<string,Exception?> adopted)
     {

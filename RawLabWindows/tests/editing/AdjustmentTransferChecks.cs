@@ -487,8 +487,19 @@ internal static class AdjustmentTransferChecks
             Check(Prepare(Payload((F.Exposure,endpoint))).Settings.Restore()[Parameter.Exposure]==endpoint,
                 "ordinary exposure endpoints survive selective transfer");
         Reject(()=>Prepare(Payload((F.Exposure,5.01))),"native exposure range is narrower than payload");
-        Reject(()=>Prepare(Payload((F.RawDenoise,1))),"FBDD is unsupported");
-        Reject(()=>Prepare(Payload((F.PostRGBDenoise,.1))),"post RGB is unsupported");
+        var denoiseNotices=new List<AdjustmentTransferNotice>();
+        Check(Prepare(Payload((F.RawDenoise,1)),context:Context with {OnTransferNotice=denoiseNotices.Add}).Settings.SameAs(Edit(null).Settings),
+            "nonzero FBDD is ignored with a notice instead of rejecting");
+        Check(denoiseNotices.Contains(AdjustmentTransferNotice.IgnoredRawDenoise),"ignored FBDD reports a one-time prompt");
+        var postNotices=new List<AdjustmentTransferNotice>();
+        Check(Prepare(Payload((F.PostRGBDenoise,.1)),context:Context with {OnTransferNotice=postNotices.Add}).Settings.SameAs(Edit(null).Settings),
+            "nonzero post RGB is ignored with a notice instead of rejecting");
+        Check(postNotices.Contains(AdjustmentTransferNotice.IgnoredPostRGBDenoise),"ignored post RGB reports a one-time prompt");
+        // Q4：来源处理版本（v2）低于目标（v3）不拒绝，沿用目标处理版本并一次性提示。
+        var versionNotices=new List<AdjustmentTransferNotice>();
+        Check(Prepare(Payload((F.Exposure,1.25)),context:Context with {OnTransferNotice=versionNotices.Add}).Settings.Restore()[Parameter.Exposure]==1.25,
+            "stale source processing version pastes through instead of rejecting");
+        Check(versionNotices.Contains(AdjustmentTransferNotice.RetainedTargetProcessingVersion),"retained processing version reports a one-time prompt");
         Reject(()=>Prepare(Payload((F.LensDistortion,true))),"lens enabled requires target calibration");
         var lensValidated=false;var lens=Prepare(Payload((F.LensDistortion,true)),context:Context with {ValidateLens=l=>lensValidated=l.Distortion});
         Check(lensValidated && lens.Settings.Lens!.Distortion,"lens validator called");

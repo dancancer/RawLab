@@ -162,6 +162,15 @@ extension EditorModel {
             lastAdjustmentTransaction = operation.id
             if operation.action == .synchronize { batchSelection.recordSynchronization(operation.id, changed: true) }
         }
+        showAdjustmentTransferNotices(operation)
+    }
+
+    // Q3/Q4：忽略键与处理版本沿用作为一次性状态提示，不阻塞后续操作，也不进入历史。
+    private func showAdjustmentTransferNotices(_ operation: PreparedAdjustmentTransfer) {
+        let text = operation.notices.map { L10n.text($0.promptKey) }.joined(separator: "；")
+        guard !text.isEmpty else { return }
+        saveStatusKey = text
+        clearSaveStatusLater()
     }
 
     func changeAdjustmentTransaction(_ id: UUID, undo: Bool, skipping: Set<String> = []) {

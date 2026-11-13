@@ -95,7 +95,7 @@ class AdjustmentTransferTest {
         }
     }
 
-    @Test fun fixedRawWhiteBalanceAndNonzeroFbddStillRejectRaster() {
+    @Test fun fixedRawWhiteBalanceRejectsRasterAndNonzeroFbddIsIgnoredWithNotice() {
         val raster = context.copy(isRaw = false)
         val fixed = EditSettings(customWb = true, temperature = 5400f, tint = 3.5f)
         for (fields in listOf(F.WHITE_BALANCE, setOf(F.TEMPERATURE), setOf(F.TINT))) {
@@ -103,10 +103,13 @@ class AdjustmentTransferTest {
             val error = assertThrows(AdjustmentTransferException::class.java) { prepare(request, context = raster) }
             assertEquals(AdjustmentFailure.INCOMPATIBLE, error.reason)
         }
-        val error = assertThrows(AdjustmentTransferException::class.java) {
-            prepare(payload(F.RAW_DENOISE to AdjustmentValue.Number(1.0)), context = raster)
-        }
-        assertEquals(AdjustmentFailure.INCOMPATIBLE, error.reason)
+        // Q3：Android 不建模解马赛克前 FBDD，非 0 值忽略并提示，不再因目标类型拒绝。
+        val notices = mutableListOf<AdjustmentTransferNotice>()
+        val ignored = prepare(payload(F.RAW_DENOISE to AdjustmentValue.Number(1.0)),
+            context = raster.copy(onTransferNotice = { notices.add(it) }))
+        assertEquals(EditSettings(), ignored)
+        assertEquals(listOf(AdjustmentTransferNotice.RETAINED_TARGET_PROCESSING_VERSION,
+            AdjustmentTransferNotice.IGNORED_RAW_DENOISE), notices)
     }
 
     @Test fun defaultScopePasteIntoEqualPhotoDoesNotCreateNegativeZeroOrChange() {
@@ -205,14 +208,37 @@ class AdjustmentTransferTest {
         assertThrows(AdjustmentTransferException::class.java) { prepare(payload(F.TEMPERATURE to AdjustmentValue.Number(4200.0))) }
     }
 
-    @Test fun nullLegacyDenoiseMapsToTheExistingDisabledPathButUnsupportedRequestsBlock() {
+    @Test fun nullLegacyDenoiseMapsToTheExistingDisabledPathButUnsupportedRequestsNotify() {
         val original = EditSettings(denoise = DenoiseSettings(true, 10f, 72f, 100f), displayChromaDenoise = 2)
         val result = prepare(payload(F.WAVELET_DENOISE to AdjustmentValue.Null), original)
         assertEquals(DenoiseSettings(), result.denoise); assertEquals(2, result.displayChromaDenoise)
         assertEquals(0, prepare(payload(F.CHROMA_DENOISE to AdjustmentValue.Null), original).displayChromaDenoise)
-        assertThrows(AdjustmentTransferException::class.java) { prepare(payload(F.RAW_DENOISE to AdjustmentValue.Number(1.0))) }
-        assertThrows(AdjustmentTransferException::class.java) { prepare(payload(F.POST_RGB_DENOISE to AdjustmentValue.Number(.2))) }
-        assertEquals(EditSettings(), prepare(payload(F.POST_RGB_DENOISE to AdjustmentValue.Number(0.0))))
+        // Q3：非 0 的旧降噪键忽略并保持目标原值，同时给一次性提示。
+        val rawNotices = mutableListOf<AdjustmentTransferNotice>()
+        assertEquals(original, prepare(payload(F.RAW_DENOISE to AdjustmentValue.Number(1.0)), original,
+            context.copy(onTransferNotice = { rawNotices.add(it) })))
+        assertTrue(rawNotices.contains(AdjustmentTransferNotice.IGNORED_RAW_DENOISE))
+        val postNotices = mutableListOf<AdjustmentTransferNotice>()
+        assertEquals(EditSettings(), prepare(payload(F.POST_RGB_DENOISE to AdjustmentValue.Number(.2)),
+            context = context.copy(onTransferNotice = { postNotices.add(it) })))
+        assertTrue(postNotices.contains(AdjustmentTransferNotice.IGNORED_POST_RGB_DENOISE))
+        val silent = mutableListOf<AdjustmentTransferNotice>()
+        assertEquals(EditSettings(), prepare(payload(F.POST_RGB_DENOISE to AdjustmentValue.Number(0.0)),
+            EditSettings(), context.copy(onTransferNotice = { silent.add(it) })))
+        assertTrue(silent.none { it.fieldId != null })
+    }
+
+    @Test fun processingVersionMismatchReusesTargetVersionAndNotifiesOnce() {
+        // Q4：来源与目标处理版本不同不拒绝，沿用目标处理版本并一次性提示。
+        val notices = mutableListOf<AdjustmentTransferNotice>()
+        val old = AdjustmentPayload(AdjustmentSource("old", true, 1), mapOf(F.EXPOSURE to AdjustmentValue.Number(.42)))
+        val applied = prepare(old, context = context.copy(onTransferNotice = { notices.add(it) }))
+        assertEquals(.42f, applied.exposure); assertEquals(3, applied.processing.version)
+        assertEquals(listOf(AdjustmentTransferNotice.RETAINED_TARGET_PROCESSING_VERSION), notices)
+        val silent = mutableListOf<AdjustmentTransferNotice>()
+        val current = AdjustmentPayload(AdjustmentSource("same", true, 3), mapOf(F.EXPOSURE to AdjustmentValue.Number(.42)))
+        prepare(current, context = context.copy(onTransferNotice = { silent.add(it) }))
+        assertTrue(silent.isEmpty())
     }
 
     @Test fun geometryMergesAtomicallyAndLensRequiresActualTargetValidation() {

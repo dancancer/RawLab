@@ -268,6 +268,7 @@
 "处理 v3" = "Processing v3";
 "处理失败：%@" = "Processing failed: %@";
 "处理版本" = "Processing version";
+"处理版本与来源不同，已沿用当前照片的处理版本" = "Processing version differs from the source; the current photo's processing version is kept";
 "处理结果为空" = "The processing result is empty";
 "复制范围" = "Copy scope";
 "复制调整" = "Copy Adjustments";
@@ -361,6 +362,8 @@
 "已应用" = "Applied";
 "已应用 AI 降噪；曝光和外观调整复用结果。" = "AI denoise applied. Exposure and look adjustments reuse the result.";
 "已开启" = "On";
+"已忽略旧版 RAW 降噪（FBDD）" = "Legacy RAW denoise (FBDD) ignored";
+"已忽略渲染后 RGB 降噪" = "Post-render RGB denoise ignored";
 "已恢复上次调整" = "Previous Adjustments Restored";
 "已撤销" = "Undone";
 "已撤销 %@ 张 · 未完成 %@ 张" = "Undone %@ · Incomplete %@";

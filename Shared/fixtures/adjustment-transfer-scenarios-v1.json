@@ -1596,6 +1596,72 @@
           "detail.denoise.post_rgb": 0.25
         }
       }
+    },
+    {
+      "id": "raw-source-nonzero-legacy-denoise-pasted",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": true,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "light.exposure": 0.33,
+          "detail.denoise.raw_level": 1,
+          "detail.denoise.post_rgb": 0.5
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "light.exposure": 0.33
+        }
+      }
+    },
+    {
+      "id": "sdr-source-v1-pasted-retains-target-version",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": true,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "old-source.ARW",
+          "is_raw": true,
+          "processing_version": 1
+        },
+        "values": {
+          "light.exposure": 0.42
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "light.exposure": 0.42
+        }
+      }
     }
   ]
 }

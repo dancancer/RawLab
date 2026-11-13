@@ -157,6 +157,9 @@ extension RawEditorViewModel {
     func applyAdjustmentPaste(_ operation: IOSPreparedAdjustmentTransfer, skipping: Set<String>) -> [IOSAdjustmentTransferOutcome] {
         let results = adjustmentSession?.apply(operation, skipping: skipping) ?? []
         acceptAdjustmentOutcomes(results)
+        // Q3/Q4：忽略键与处理版本沿用作为一次性状态提示，不阻塞后续操作，也不进入历史。
+        let noticeText = operation.notices.map { L10n.text($0.promptKey) }.joined(separator: "；")
+        if !noticeText.isEmpty { statusMessage = noticeText }
         if operation.action == .synchronize {
             batchSelection.selection.recordSynchronization(operation.id, changed: results.contains { $0.status == .applied })
         }

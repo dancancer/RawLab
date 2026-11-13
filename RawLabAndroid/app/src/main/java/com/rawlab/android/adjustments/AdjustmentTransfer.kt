@@ -8,7 +8,8 @@ data class AdjustmentTransferContext(val identifier: String, val isRaw: Boolean,
     val cameraTemperature: Float? = null, val cameraTint: Float? = null, val defaultExposureMode: Int = 1,
     val hasUncommittedDraft: Boolean = false, val validateLens: ((LensSettings) -> Unit)? = null,
     val sourceSupportsCameraHDR: Boolean = false, val sourceIsProRAW: Boolean = false, val hdrLookDirectory: File? = null,
-    val validateHDRCamera: ((EditSettings) -> Unit)? = null, val recipeTintDefaults: Map<String, Float> = emptyMap()) {
+    val validateHDRCamera: ((EditSettings) -> Unit)? = null, val recipeTintDefaults: Map<String, Float> = emptyMap(),
+    val onTransferNotice: ((AdjustmentTransferNotice) -> Unit)? = null) {
     val supportsHDRCameraDevelopment get() = isRaw && sourceSupportsCameraHDR && !sourceIsProRAW
 }
 
@@ -84,6 +85,9 @@ object AdjustmentTransfer {
     private fun prepareChecked(payload: AdjustmentPayload, target: EditSettings, context: AdjustmentTransferContext): EditSettings {
         if (context.hasUncommittedDraft) throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
         payload.validate()
+        // Q4：来源与目标处理版本不同不拒绝，沿用目标处理版本并一次性提示。
+        if (payload.source.processingVersion != target.processing.version)
+            context.onTransferNotice?.invoke(AdjustmentTransferNotice.RETAINED_TARGET_PROCESSING_VERSION)
         var result = target
         val before = effectiveNumbers(target)
         val originalValues = AdjustmentTransferValues.values(target, context)

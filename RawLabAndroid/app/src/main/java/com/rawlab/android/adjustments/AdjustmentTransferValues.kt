@@ -102,8 +102,11 @@ internal object AdjustmentTransferValues {
     fun applyObjects(payload: AdjustmentPayload, original: EditSettings, context: AdjustmentTransferContext): EditSettings {
         fun number(field: AdjustmentField, fallback: Float) = payload[field]?.number?.toFloat() ?: fallback
         fun boolean(field: AdjustmentField, fallback: Boolean) = payload[field]?.boolean ?: fallback
+        // Q3：Android 的 SDR 管线不建模这两个键，收到非 0 值忽略并提示，不再拒绝。
         for (field in listOf(AdjustmentField.RAW_DENOISE, AdjustmentField.POST_RGB_DENOISE)) {
-            if (payload[field]?.number?.let { it != 0.0 } == true) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, field.id)
+            if (payload[field]?.number?.let { it != 0.0 } == true) context.onTransferNotice?.invoke(
+                if (field == AdjustmentField.RAW_DENOISE) AdjustmentTransferNotice.IGNORED_RAW_DENOISE
+                else AdjustmentTransferNotice.IGNORED_POST_RGB_DENOISE)
         }
         var result = original
         payload[AdjustmentField.CHROMA_DENOISE]?.let { result = result.copy(displayChromaDenoise = it.number?.toInt() ?: 0) }

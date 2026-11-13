@@ -259,6 +259,7 @@
 "增量导入完成" = "Importación incremental completada";
 "增量起点" = "Fecha de inicio";
 "处理失败：%@" = "Error de procesamiento: %@";
+"处理版本与来源不同，已沿用当前照片的处理版本" = "La versión de procesamiento difiere de la fuente; se conserva la versión de procesamiento de la foto actual";
 "复制范围" = "Alcance de la copia";
 "复制调整" = "Copiar ajustes";
 "外观" = "Aspectos";
@@ -352,6 +353,8 @@
 "已导出 %@ 个渲染型 DNG" = "Archivos DNG revelados exportados: %@";
 "已导出渲染型 DNG。" = "DNG revelado exportado.";
 "已展开" = "Expandido";
+"已忽略旧版 RAW 降噪（FBDD）" = "Reducción de ruido RAW heredada (FBDD) ignorada";
+"已忽略渲染后 RGB 降噪" = "Reducción de ruido RGB posterior al renderizado ignorada";
 "已恢复上次调整" = "Ajustes anteriores restaurados";
 "已恢复已登记的接收任务。断线期间拍摄的照片请从相机手动导入。" = "Se han restaurado las transferencias registradas. Importa manualmente las fotos tomadas durante la desconexión.";
 "已撤销" = "Deshecho";

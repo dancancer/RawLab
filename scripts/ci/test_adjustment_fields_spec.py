@@ -1516,7 +1516,7 @@ def parse_models_from_sources() -> dict[str, dict[str, dict]]:
     mac_contrast_scale, mac_hi_scale, mac_sh_scale = "(p - 1) * 100", "-p * 100", "p * 100"
     _require("var chromaNoiseReduction: Double?", mac_adj, "detail.denoise.chroma_mode nullable", "Adjustments.swift")
     _require("var waveletNoiseReduction: WaveletDenoiseSettings?", mac_adj, "detail.denoise.wavelet nullable", "Adjustments.swift")
-    _require("if let value = payload[.postRGBDenoise]?.number, value != 0 {\n            throw AdjustmentTransferError.incompatible", mac_tv, "detail.denoise.post_rgb mac sdr unsupported", "MacAdjustmentTransferValues.swift")
+    _require("if let value = payload[.postRGBDenoise]?.number, value != 0 {\n            context.transferNotices?(.ignoredPostRGBDenoise)", mac_tv, "detail.denoise.post_rgb mac sdr ignored with notice", "MacAdjustmentTransferValues.swift")
     _require("var aiDenoiseEnabled = false", mac_adj, "local.ai_denoise_enabled mac", "Adjustments.swift")
     _require("var hdrCameraAIEnabled: Bool", mac_adj, "local.hdr_camera_ai_enabled mac", "Adjustments.swift")
 
@@ -1533,8 +1533,19 @@ def parse_models_from_sources() -> dict[str, dict[str, dict]]:
     ios_strength_default = float(_need(r"lutStrength = try values\.decodeIfPresent.*? \?\? (\d+)", ios_raw, "lut strength default", "RawSettings.swift").group(1))
     _need(r"private static func clamped[\s\S]*?value\.rounded\(\)", ios_raw, "effects ios quantization", "RawSettings.swift", re.S)
     _require("guard value.rounded() == value else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }", ios_tr, "effects ios transfer rejects fractional", "IOSAdjustmentTransfer.swift")
-    _require("if let raw = payload[.rawDenoise]?.number, raw != 0 { throw AdjustmentTransferError.incompatible", ios_tv, "detail.denoise.raw_level ios unsupported", "IOSAdjustmentTransferValues.swift")
+    _require("if let raw = payload[.rawDenoise]?.number, raw != 0 { context.transferNotices?(.ignoredRawDenoise) }", ios_tv, "detail.denoise.raw_level ios ignored with notice", "IOSAdjustmentTransferValues.swift")
     _require("for (field, key) in scalarKeys { result[field.rawValue] = .number(settings[keyPath: key]) }", ios_tv, "ios direct scalar transfer", "IOSAdjustmentTransferValues.swift")
+
+    # Q4: 四端来源与目标处理版本不一致时沿用目标版本并提示，不拒绝（SDR 粘贴路径）。
+    mac_tr = _strip_line_comments(_read("RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift"))
+    kt_tr = _strip_line_comments(_read("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentTransfer.kt"))
+    cs_tr = _strip_line_comments(_read("RawLabWindows/AdjustmentTransfer.cs"))
+    _require("context.transferNotices?(.retainedTargetProcessingVersion)", mac_tr, "processing version mac retains target with notice", "MacAdjustmentTransfer.swift")
+    _require("context.transferNotices?(.retainedTargetProcessingVersion)", ios_tr, "processing version ios retains target with notice", "IOSAdjustmentTransfer.swift")
+    _require("context.onTransferNotice?.invoke(AdjustmentTransferNotice.RETAINED_TARGET_PROCESSING_VERSION)", kt_tr, "processing version android retains target with notice", "AdjustmentTransfer.kt")
+    _require("context.OnTransferNotice?.Invoke(AdjustmentTransferNotice.RetainedTargetProcessingVersion)", cs_tr, "processing version windows retains target with notice", "AdjustmentTransfer.cs")
+    _require("context.onTransferNotice?.invoke(", kt_tv, "detail.denoise kt sdr ignored with notice", "AdjustmentTransferValues.kt")
+    _require("context.OnTransferNotice?.Invoke(", cs_tv, "detail.denoise cs sdr ignored with notice", "AdjustmentTransferValues.cs")
 
     # Parse Android EditSettings defaults & require() bounds + AdjustmentTransferValues scales
     kt_defaults = {}

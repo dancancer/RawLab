@@ -489,6 +489,9 @@
     <string name="transfer_modified">"Modified only"</string>
     <string name="transfer_no_clipboard">"No adjustments copied yet. Copy the desired settings from a photo first."</string>
     <string name="transfer_no_history">"No edit history yet."</string>
+    <string name="transfer_notice_ignored_post_rgb">"Post-render RGB denoise ignored"</string>
+    <string name="transfer_notice_ignored_raw_denoise">"Legacy RAW denoise (FBDD) ignored"</string>
+    <string name="transfer_notice_processing_version">"Processing version differs from the source; the current photo\'s processing version is kept"</string>
     <string name="transfer_paste">"Paste Adjustments"</string>
     <string name="transfer_preflight">"Check Photos"</string>
     <string name="transfer_preparing">"Checking photos…"</string>

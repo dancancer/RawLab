@@ -32,6 +32,14 @@ import com.rawlab.android.ui.EditorSheetSystemBars
 internal enum class AdjustmentSheet { COPY, PASTE, HISTORY }
 private val unfinished = setOf(AdjustmentStatus.BLOCKED, AdjustmentStatus.FAILED, AdjustmentStatus.CONFLICT)
 
+// Q3/Q4 粘贴提示的文案资源（登记于 Shared/strings 的 android 目录）。
+@androidx.annotation.StringRes
+internal fun transferNoticeLabel(notice: AdjustmentTransferNotice): Int = when (notice) {
+    AdjustmentTransferNotice.IGNORED_RAW_DENOISE -> R.string.transfer_notice_ignored_raw_denoise
+    AdjustmentTransferNotice.IGNORED_POST_RGB_DENOISE -> R.string.transfer_notice_ignored_post_rgb
+    AdjustmentTransferNotice.RETAINED_TARGET_PROCESSING_VERSION -> R.string.transfer_notice_processing_version
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentSheet, preset: AdjustmentPreset? = null, synchronization: CollectionSynchronization? = null,
@@ -92,6 +100,11 @@ internal fun AdjustmentTransferSheet(model: EditorViewModel, kind: AdjustmentShe
                             AdjustmentSummaryContent(payload, model::adjustmentSummaryLookName)
                         }
                         Text(stringResource(R.string.transfer_targets, targets.size.toString()))
+                        // Q3/Q4：忽略键与处理版本沿用作为一次性提示，随预检结果展示，不阻塞粘贴。
+                        prepared?.notices?.takeIf { it.isNotEmpty() }?.let { notices ->
+                            Text(notices.map { stringResource(transferNoticeLabel(it)) }.joinToString("；"),
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         if (synchronization == null) TextButton(onClick = { files.launch(arrayOf("*/*")) }, enabled = !busy,
                             modifier = Modifier.testTag("adjustment-paste-files")) { Text(stringResource(R.string.transfer_choose_files)) }
                         if (transfer.results.isEmpty() && (transfer.error != null || prepared?.targets?.any { it.error != null } == true)) Button(onClick = { skipped = emptySet(); model.prepareAdjustmentPaste(payload, targets, if (synchronization != null) AdjustmentHistoryTransaction.Action.SYNCHRONIZE else if (preset == null) AdjustmentHistoryTransaction.Action.PASTE else AdjustmentHistoryTransaction.Action.PRESET) },

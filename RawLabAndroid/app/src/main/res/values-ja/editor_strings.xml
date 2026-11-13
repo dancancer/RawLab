@@ -489,6 +489,9 @@
     <string name="transfer_modified">"変更した項目のみ"</string>
     <string name="transfer_no_clipboard">"調整はまだコピーされていません。写真から必要な項目をコピーしてください。"</string>
     <string name="transfer_no_history">"編集履歴はまだありません。"</string>
+    <string name="transfer_notice_ignored_post_rgb">"レンダリング後のRGBノイズリダクションを無視しました"</string>
+    <string name="transfer_notice_ignored_raw_denoise">"旧RAWノイズリダクション（FBDD）を無視しました"</string>
+    <string name="transfer_notice_processing_version">"処理バージョンがソースと異なるため、現在の写真の処理バージョンを維持しました"</string>
     <string name="transfer_paste">"調整を貼り付け"</string>
     <string name="transfer_preflight">"対象を確認"</string>
     <string name="transfer_preparing">"対象を確認中…"</string>
