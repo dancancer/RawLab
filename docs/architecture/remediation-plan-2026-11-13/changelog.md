@@ -85,3 +85,4 @@
 - 2026-11-14 · **WP-01 闭环**：**#295** MERGED（r3 approve 0B/0S，总 56 PR）。JIT 派发器入库（opt-in，默认不启用；启用步骤+ci.md+plist 随包）。①审批策略仍待用户点确认（Web-only）。#301 request-changes（B1 Windows models 断言漏改+分支冲突；B2 iOS Sheet 提示被模态吞/快捷预设变阻塞弹窗；B3 Win/Android 同步与快捷预设入口漏提示+Windows 提示被异步刷新覆盖）→ q3q4 续修。
 - 2026-11-14 · #291 三轮 request-changes（B3 seam/断言恢复均过）：B1=修复②在取消/放弃/未改动应用/未改动收起四类路径残留草稿态 committedPreviewSettings（模拟器实证 base=1493×2240 竖幅草稿）+契约引入提交更正为 d2146d63（10-22）；B2=收起守卫未覆盖 .adjustment/.film/.recipe 工作区草稿（discard 后画布卡脏草稿、collapsedEditorTool 丢工具）。四轮在修。
 - 2026-11-14 · #299 二轮返工（`3e73dcce`）：三套件断言改封顶语义 min(原生,cap)；缓存键=edge:nil 三方对齐+「切 fullResolution 对象同一」回归（旧树恰红）；totalBytes ObjectIdentifier 去重；参数校验守卫；7RM4 实测峰值 −450MB/−9.2%（单帧常驻 ~229→~42MB）。二轮复审在途（review-mwfijn9j）。
+- 2026-11-14 · #300 二轮返工（`7928baf3`，checks 7/7）：v14/v15 schema pattern 收窄（\n 收、\0/\r/C0 拒）+多行合成 lens_profile 双层拒绝回归；jsonschema 缺依赖 exit 77+CMake SKIP_RETURN_CODE 显式化。二轮复审在途（review-mwfil65j）。
