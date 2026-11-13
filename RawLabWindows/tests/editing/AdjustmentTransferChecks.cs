@@ -25,7 +25,7 @@ internal static class AdjustmentTransferChecks
         if (candidate.Settings.Restore()[Parameter.Exposure] != 1.25 || candidate.Settings.Processing != ProcessingIdentity.Legacy)
             throw new Exception("Frozen logical values preserve target processing");
         Console.WriteLine("PASS: Windows selective payload capture, frozen JSON and processing provenance");
-        Vectors(); AdapterChecks();
+        Vectors(); Scenarios(); AdapterChecks();
     }
     private static void Check(bool condition,string message) {if(!condition)throw new Exception(message);}
     private static void Reject(Action action,string message)
@@ -36,22 +36,279 @@ internal static class AdjustmentTransferChecks
     private static AdjustmentPayload Payload(params (F Field,object? Value)[] values)=>new(new("source",true,2),values.ToDictionary(p=>p.Field,p=>Value(p.Value)));
     private static SavedEdit Prepare(AdjustmentPayload payload,Adjustments? target=null,AdjustmentTransferContext? context=null)=>AdjustmentTransfer.Prepare(payload,Edit(target),context ?? Context);
     private static AdjustmentPayload Copy(Adjustments source,params F[] fields)=>AdjustmentTransfer.Capture(AdjustmentScope.Custom(fields),Edit(source),Context);
+    private static string ResolveFixturePath(string relativePath)
+    {
+        if (File.Exists(relativePath)) return relativePath;
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+        {
+            var candidate = Path.Combine(dir.FullName, relativePath);
+            if (File.Exists(candidate)) return candidate;
+        }
+        throw new FileNotFoundException("Shared fixture not found: " + relativePath);
+    }
+    private static bool SamePayload(AdjustmentPayload a, AdjustmentPayload b) =>
+        a.PayloadVersion == b.PayloadVersion &&
+        a.ScopeVersion == b.ScopeVersion &&
+        a.Source == b.Source &&
+        a.Values.Count == b.Values.Count &&
+        a.Values.All(pair => b.Values.TryGetValue(pair.Key, out var other) && Same(pair.Value, other));
+    private static HashSet<string> ScenarioFixtureAllFieldIDs()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(ResolveFixturePath("Shared/fixtures/adjustment-transfer-scenarios-v1.json")));
+        foreach (var scenario in document.RootElement.GetProperty("scenarios").EnumerateArray())
+        {
+            if (scenario.GetProperty("id").GetString() == "raster-all-preserves-raw-scene-wb-lens")
+                return scenario.GetProperty("payload").GetProperty("values").EnumerateObject().Select(p => p.Name).ToHashSet();
+        }
+        throw new Exception("Missing baseline all-scope scenario in adjustment-transfer-scenarios-v1.json");
+    }
     private static void Vectors()
     {
-        using var document=JsonDocument.Parse(File.ReadAllText("Shared/fixtures/adjustment-transfer-v1.json"));
-        var count=0;
-        foreach(var vector in document.RootElement.GetProperty("vectors").EnumerateArray()) {
-            var json=vector.GetProperty("payload").GetRawText();var id=vector.GetProperty("id").GetString();
-            if(!vector.GetProperty("valid").GetBoolean()) {Reject(()=>AdjustmentPayload.Parse(json),"accepted invalid vector "+id);count++;continue;}
-            var payload=AdjustmentPayload.Parse(json);_=AdjustmentPayload.Parse(payload.ToJson());
+        using var document=JsonDocument.Parse(File.ReadAllText(ResolveFixturePath("Shared/fixtures/adjustment-transfer-v1.json")));
+        Check(document.RootElement.GetProperty("fixture_version").GetInt32()==1,"Payload fixture version must be 1");
+        var vectors=document.RootElement.GetProperty("vectors");
+        Check(vectors.GetArrayLength()>0,"Payload fixture must not be empty");
+        var seen=new HashSet<string>();
+        foreach(var vector in vectors.EnumerateArray()) {
+            var json=vector.GetProperty("payload").GetRawText();var id=vector.GetProperty("id").GetString()!;
+            Check(seen.Add(id),"Duplicate vector ID: "+id);
+            if(!vector.GetProperty("valid").GetBoolean()) {Reject(()=>AdjustmentPayload.Parse(json),"accepted invalid vector "+id);continue;}
+            var payload=AdjustmentPayload.Parse(json);
+            Check(SamePayload(payload,AdjustmentPayload.Parse(payload.ToJson())),"round-trip mismatch "+id);
             if(vector.TryGetProperty("neutral_effective",out var expected)) {
                 var actual=AdjustmentTransfer.EffectiveNumbers(Prepare(payload).Settings);
                 foreach(var field in expected.EnumerateObject())Check(actual[AdjustmentFields.Parse(field.Name)]==(float)field.Value.GetDouble(),"native request mismatch "+id+" "+field.Name);
             }
-            count++;
         }
-        Check(AdjustmentFields.All.Count==73,"stable field catalog");
-        Console.WriteLine($"PASS: {count} shared payload vectors and native request equality");
+        Check(seen.Count==vectors.GetArrayLength(),"All shared payload vectors consumed");
+        var fixtureFields=ScenarioFixtureAllFieldIDs();
+        Check(AdjustmentFields.All.Count==fixtureFields.Count &&
+            AdjustmentFields.All.Select(f=>f.ID()).ToHashSet().SetEquals(fixtureFields),"stable field catalog matches scenario fixture");
+        Console.WriteLine($"PASS: {seen.Count} shared payload vectors and native request equality");
+    }
+    private sealed record ScenarioDiff(string Key, string Summary);
+    private sealed record ScenarioDivergence(string LedgerId, string Reason, IReadOnlySet<string> ExpectedKeys);
+    // 显式例外清单：未登记的分歧（或同一场景出现清单外的字段差异）必红；已修复项仍留在此表也必红（棘轮只减不增）。
+    private static readonly IReadOnlyDictionary<string, ScenarioDivergence> KnownScenarioDivergences =
+        new Dictionary<string, ScenarioDivergence>
+        {
+            ["raster-all-preserves-raw-scene-wb-lens"] = new(
+                "P1-12",
+                "非 RAW 来源全量粘贴时默认关闭镜头占位覆盖了 RAW 目标既有手动镜头校正",
+                new HashSet<string>
+                {
+                    "value:geometry.lens.auto_crop",
+                    "value:geometry.lens.distortion",
+                    "value:geometry.lens.profile_id",
+                    "value:geometry.lens.tca",
+                    "value:geometry.lens.vignetting"
+                }),
+            ["raster-all-preserves-raw-preview-wb-auto-lens"] = new(
+                "P1-12",
+                "非 RAW 来源全量粘贴时默认关闭镜头占位覆盖了 RAW 目标既有自动畸变校正",
+                new HashSet<string> { "value:geometry.lens.distortion" }),
+            ["raster-neutral-all-unchanged-on-seeded-raw"] = new(
+                "P1-12",
+                "非 RAW 中性全量载荷未跳过默认关闭镜头占位，导致已启用镜头校正的 RAW 目标变为 applied",
+                new HashSet<string> { "status" }),
+            ["raster-placeholders-only-unchanged-on-raw"] = new(
+                "P1-12",
+                "非 RAW 占位子集中的默认关闭镜头字段未在 RAW 目标上跳过，导致预期 unchanged 实际变为 applied",
+                new HashSet<string> { "status" }),
+            ["raster-partial-default-lens-unchanged-on-raw"] = new(
+                "P1-12",
+                "非 RAW 默认关闭镜头子集未在已启用镜头校正的 RAW 目标上跳过，导致预期 unchanged 实际变为 applied",
+                new HashSet<string> { "status" }),
+            ["raster-full-recipe-preserves-identity-and-relative-tint-on-raw"] = new(
+                "P1-12",
+                "非 RAW 完整配方全量粘贴到 RAW 目标时未跳过默认关闭镜头占位，覆盖了目标镜头校正",
+                new HashSet<string>
+                {
+                    "value:geometry.lens.auto_crop",
+                    "value:geometry.lens.distortion",
+                    "value:geometry.lens.profile_id",
+                    "value:geometry.lens.tca",
+                    "value:geometry.lens.vignetting"
+                })
+        };
+    private static void Scenarios()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(ResolveFixturePath("Shared/fixtures/adjustment-transfer-scenarios-v1.json")));
+        var root = document.RootElement;
+        Check(root.GetProperty("fixture_version").GetInt32() == 1, "Scenario fixture version must be 1");
+        var scenarios = root.GetProperty("scenarios");
+        Check(scenarios.GetArrayLength() > 0, "Scenario fixture must not be empty");
+        var seenIDs = new HashSet<string>();
+        var evaluatedIDs = new HashSet<string>();
+        var skippedIDs = new HashSet<string>();
+        var problems = new List<string>();
+
+        foreach (var scenario in scenarios.EnumerateArray())
+        {
+            var id = scenario.GetProperty("id").GetString() ?? throw new Exception("Scenario missing id");
+            Check(seenIDs.Add(id), "Duplicate scenario ID: " + id);
+            if (scenario.TryGetProperty("platforms", out var platformsElem) && platformsElem.ValueKind == JsonValueKind.Array)
+            {
+                var platforms = platformsElem.EnumerateArray().Select(item => item.GetString()!).ToHashSet();
+                if (!platforms.Contains("windows"))
+                {
+                    skippedIDs.Add(id);
+                    continue;
+                }
+            }
+            evaluatedIDs.Add(id);
+            var diffs = EvaluateScenario(id, scenario);
+            var actualKeys = diffs.Select(d => d.Key).ToHashSet();
+            var summary = string.Join("; ", diffs.Select(d => d.Summary));
+            var hasKnown = KnownScenarioDivergences.TryGetValue(id, out var known);
+            if (diffs.Count > 0 && !hasKnown)
+                problems.Add($"Scenario {id} diverged: {summary}");
+            else if (diffs.Count == 0 && hasKnown)
+                problems.Add($"Scenario {id} now matches fixture; remove stale divergence ({known!.LedgerId}: {known.Reason})");
+            else if (hasKnown && !actualKeys.SetEquals(known!.ExpectedKeys))
+                problems.Add($"Scenario {id} divergence keys changed (expected=[{string.Join(", ", known.ExpectedKeys.Order(StringComparer.Ordinal))}], actual=[{string.Join(", ", actualKeys.Order(StringComparer.Ordinal))}]): {summary}");
+            else if (hasKnown)
+                Console.WriteLine($"KNOWN DIVERGENCE [{id}] ({known!.LedgerId} - {known.Reason}): {summary}");
+        }
+
+        Check(seenIDs.Count == scenarios.GetArrayLength(), "All scenario IDs visited");
+        Check(evaluatedIDs.Count + skippedIDs.Count == scenarios.GetArrayLength(), "All scenarios accounted for");
+        var unknownRegistered = KnownScenarioDivergences.Keys.Except(evaluatedIDs).ToArray();
+        Check(unknownRegistered.Length == 0, "Registered divergences do not match evaluated scenarios: " + string.Join(", ", unknownRegistered));
+        if (problems.Count > 0) throw new Exception(string.Join(Environment.NewLine, problems));
+        Console.WriteLine($"PASS: {evaluatedIDs.Count} Windows transfer scenarios evaluated ({skippedIDs.Count} platform-scoped skipped, {KnownScenarioDivergences.Count} registered divergences)");
+    }
+    private static List<ScenarioDiff> EvaluateScenario(string id, JsonElement scenario)
+    {
+        var targetSpec = scenario.GetProperty("target");
+        var kind = targetSpec.GetProperty("kind").GetString() ?? throw new Exception($"Scenario {id}: missing target kind");
+        (double Temperature, double Tint)? asShot = null;
+        if (targetSpec.TryGetProperty("as_shot_wb", out var wbElem) && wbElem.ValueKind == JsonValueKind.Array)
+        {
+            var items = wbElem.EnumerateArray().Select(x => x.GetDouble()).ToArray();
+            asShot = (items[0], items[1]);
+        }
+        var lensValid = targetSpec.GetProperty("lens_valid").GetBoolean();
+        var availableLooks = targetSpec.GetProperty("available_looks").EnumerateArray().Select(x => x.GetString()!).ToHashSet();
+        var targetIdentity = new OriginalIdentity(kind == "sdr_raw" ? "scenario-target.arw" : "scenario-target.jpg", 1, 2, 3);
+        var initialSettings = kind switch
+        {
+            "sdr_raw" => new Adjustments(),
+            "sdr_raster" => new Adjustments { ExposureMode = 2 },
+            "hdr" => new Adjustments { HDR = new HDRSettings { Mode = HDRMode.Hdr } },
+            _ => throw new Exception($"Scenario {id}: unsupported target kind {kind}")
+        };
+        if (kind == "sdr_raw" && asShot is { } wb) initialSettings.ResolveWhiteBalance(wb);
+        var scenarioContext = new AdjustmentTransferContext(
+            "scenario-target",
+            kind == "sdr_raw",
+            AvailableLookIDs: availableLooks,
+            DefaultExposureMode: kind == "sdr_raw" ? 1 : 2,
+            ValidateLens: lensValid ? (_ => { }) : null,
+            CameraWhiteBalance: kind == "sdr_raw" ? asShot : null);
+        var targetState = new SavedEdit(targetIdentity, initialSettings.Capture(), null);
+        if (targetSpec.TryGetProperty("seed_payload", out var seedElem) && seedElem.ValueKind != JsonValueKind.Null)
+        {
+            var seedPayload = AdjustmentPayload.Parse(seedElem.GetRawText());
+            Check(SamePayload(seedPayload, AdjustmentPayload.Parse(seedPayload.ToJson())), $"Scenario {id}: seed payload round-trip");
+            targetState = AdjustmentTransfer.Prepare(seedPayload, targetState, scenarioContext with { ValidateLens = _ => { } });
+        }
+
+        var payload = AdjustmentPayload.Parse(scenario.GetProperty("payload").GetRawText());
+        Check(SamePayload(payload, AdjustmentPayload.Parse(payload.ToJson())), $"Scenario {id}: payload round-trip");
+        var expectSpec = scenario.TryGetProperty("platform_expect", out var platformExpect) &&
+                         platformExpect.ValueKind == JsonValueKind.Object &&
+                         platformExpect.TryGetProperty("windows", out var windowsExpect) &&
+                         windowsExpect.ValueKind == JsonValueKind.Object
+            ? windowsExpect
+            : scenario.GetProperty("expect");
+        var expectedStatus = expectSpec.GetProperty("status").GetString()!;
+        var diffs = new List<ScenarioDiff>();
+        if (expectedStatus == "rejected")
+        {
+            var expectedReason = expectSpec.TryGetProperty("reason", out var reasonElem) && reasonElem.ValueKind == JsonValueKind.String
+                ? reasonElem.GetString()
+                : null;
+            try
+            {
+                var unexpected = AdjustmentTransfer.Prepare(payload, targetState, scenarioContext);
+                var unexpectedStatus = unexpected.SameAs(targetState) ? "unchanged" : "applied";
+                diffs.Add(new("status", $"status expected=rejected({expectedReason ?? "any"}), actual={unexpectedStatus}"));
+            }
+            catch (AdjustmentTransferException error)
+            {
+                var actualReason = ErrorReason(error);
+                if (expectedReason != null && actualReason != expectedReason)
+                    diffs.Add(new("rejected_reason", $"rejected reason expected={expectedReason}, actual={actualReason} ({error.Message})"));
+            }
+            return diffs;
+        }
+
+        SavedEdit candidate;
+        try
+        {
+            candidate = AdjustmentTransfer.Prepare(payload, targetState, scenarioContext);
+        }
+        catch (AdjustmentTransferException error)
+        {
+            diffs.Add(new("status", $"status expected={expectedStatus}, actual=rejected({ErrorReason(error)}: {error.Message})"));
+            return diffs;
+        }
+        var actualStatus = candidate.SameAs(targetState) ? "unchanged" : "applied";
+        if (actualStatus != expectedStatus)
+            diffs.Add(new("status", $"status expected={expectedStatus}, actual={actualStatus}"));
+        if (expectSpec.TryGetProperty("values", out var valuesElem) && valuesElem.ValueKind == JsonValueKind.Object)
+        {
+            var captured = AdjustmentTransfer.Capture(AdjustmentScope.All, candidate, scenarioContext).Values;
+            foreach (var prop in valuesElem.EnumerateObject().OrderBy(p => p.Name, StringComparer.Ordinal))
+            {
+                var field = AdjustmentFields.Parse(prop.Name);
+                var hasActual = captured.TryGetValue(field, out var actualVal);
+                if (!MatchesJsonValue(hasActual ? actualVal : null, prop.Value))
+                    diffs.Add(new("value:" + prop.Name, $"value {prop.Name} expected={prop.Value.GetRawText()}, actual={(hasActual ? JsonSerializer.Serialize(actualVal) : "<missing>")}"));
+            }
+        }
+        if (expectSpec.TryGetProperty("effective", out var effectiveElem) && effectiveElem.ValueKind == JsonValueKind.Object)
+        {
+            var actualEffective = AdjustmentTransfer.EffectiveNumbers(candidate.Settings);
+            foreach (var prop in effectiveElem.EnumerateObject().OrderBy(p => p.Name, StringComparer.Ordinal))
+            {
+                var field = AdjustmentFields.Parse(prop.Name);
+                var expectedNum = prop.Value.GetDouble();
+                var hasActual = actualEffective.TryGetValue(field, out var actualNum);
+                if (!hasActual || Math.Abs(actualNum - expectedNum) > 1e-6)
+                    diffs.Add(new("effective:" + prop.Name, $"effective {prop.Name} expected={expectedNum}, actual={(hasActual ? actualNum.ToString(System.Globalization.CultureInfo.InvariantCulture) : "<missing>")}"));
+            }
+        }
+        return diffs;
+    }
+    private static string ErrorReason(AdjustmentTransferException error) => error.Failure switch
+    {
+        AdjustmentFailure.Incompatible => "incompatible",
+        AdjustmentFailure.Unrepresentable => "unrepresentable",
+        AdjustmentFailure.MissingLook => "missing_look",
+        _ => $"other({error.Failure})"
+    };
+    private static bool MatchesJsonValue(JsonElement? actual, JsonElement expected, double tolerance = 1e-6)
+    {
+        if (actual is not { } actualValue || actualValue.ValueKind != expected.ValueKind) return false;
+        return expected.ValueKind switch
+        {
+            JsonValueKind.Null or JsonValueKind.True or JsonValueKind.False => true,
+            JsonValueKind.String => actualValue.GetString() == expected.GetString(),
+            JsonValueKind.Number => Math.Abs(actualValue.GetDouble() - expected.GetDouble()) <= tolerance,
+            JsonValueKind.Array => actualValue.GetArrayLength() == expected.GetArrayLength() &&
+                actualValue.EnumerateArray().Zip(expected.EnumerateArray()).All(pair => MatchesJsonValue(pair.First, pair.Second, tolerance)),
+            JsonValueKind.Object => MatchesJsonObject(actualValue, expected, tolerance),
+            _ => false
+        };
+    }
+    private static bool MatchesJsonObject(JsonElement actual, JsonElement expected, double tolerance)
+    {
+        var actualProps = actual.EnumerateObject().ToDictionary(p => p.Name, p => p.Value);
+        var expectedProps = expected.EnumerateObject().ToDictionary(p => p.Name, p => p.Value);
+        return actualProps.Count == expectedProps.Count &&
+               expectedProps.All(pair => actualProps.TryGetValue(pair.Key, out var av) && MatchesJsonValue(av, pair.Value, tolerance));
     }
     private static void FullNeutralRecipeOnRaster()
     {

@@ -133,8 +133,10 @@ class AdjustmentTransferTest {
     @Test fun allIncludesGeometryAndModifiedUsesDefaultsWithoutGeometry() {
         val source = EditSettings(exposure = .5f, geometry = GeometrySettings(cropWidth = .5f))
         val all = AdjustmentTransfer.capture(AdjustmentScope.All, source, context).fields
+        val fixtureAllFieldIDs = scenarioFixtureAllFieldIDs()
         assertEquals(F.entries.filterNot { it.isHDROnly }.toSet(), all)
-        assertEquals(73, all.size)
+        assertEquals(fixtureAllFieldIDs.size, all.size)
+        assertEquals(fixtureAllFieldIDs, all.map { it.id }.toSet())
         assertEquals(setOf(F.EXPOSURE), AdjustmentTransfer.capture(AdjustmentScope.Modified, source, context).fields)
         assertThrows(AdjustmentTransferException::class.java) {
             AdjustmentTransfer.capture(AdjustmentScope.Modified, EditSettings(), context)
@@ -266,7 +268,8 @@ class AdjustmentTransferTest {
     }
 
     @Test fun sharedEffectiveVectorsApplyWithTargetNativePrecision() {
-        val vectors = JSONObject(File("../../Shared/fixtures/adjustment-transfer-v1.json").readText()).getJSONArray("vectors")
+        val vectors = JSONObject(resolveSharedFixture("adjustment-transfer-v1.json").readText()).getJSONArray("vectors")
+        assertTrue(vectors.length() > 0)
         for (index in 0 until vectors.length()) {
             val vector = vectors.getJSONObject(index)
             if (!vector.has("neutral_effective")) continue
@@ -277,5 +280,284 @@ class AdjustmentTransferTest {
             for (id in expected.keys()) assertEquals(vector.getString("id") + ":" + id,
                 expected.getDouble(id).toFloat(), actual[AdjustmentField.fromID(id)]!!, 1e-6f)
         }
+    }
+
+    private data class ScenarioDiff(val key: String, val summary: String)
+    private data class ScenarioDivergence(val ledgerId: String, val reason: String, val expectedKeys: Set<String>)
+
+    // 显式例外清单：未登记的分歧（或同一场景出现清单外的字段差异）必红；已修复项仍留在此表也必红（棘轮只减不增）。
+    private val knownScenarioDivergences = mapOf(
+        "raster-all-preserves-raw-scene-wb-lens" to ScenarioDivergence(
+            ledgerId = "P1-11",
+            reason = "非 RAW 来源的 sensor 曝光基准、none 白平衡与默认关闭镜头占位覆盖了 RAW 目标既有设置",
+            expectedKeys = setOf(
+                "value:color.white_balance.mode",
+                "value:color.white_balance.temperature_kelvin",
+                "value:color.white_balance.tint",
+                "value:geometry.lens.auto_crop",
+                "value:geometry.lens.distortion",
+                "value:geometry.lens.profile_id",
+                "value:geometry.lens.tca",
+                "value:geometry.lens.vignetting",
+                "value:light.exposure_mode",
+            ),
+        ),
+        "raster-all-preserves-raw-preview-wb-auto-lens" to ScenarioDivergence(
+            ledgerId = "P1-11",
+            reason = "非 RAW 来源的 sensor 曝光基准、none 白平衡与默认关闭镜头占位覆盖了 RAW 目标预览基准、手动白平衡与自动镜头校正",
+            expectedKeys = setOf(
+                "value:color.white_balance.mode",
+                "value:color.white_balance.temperature_kelvin",
+                "value:color.white_balance.tint",
+                "value:geometry.lens.distortion",
+                "value:light.exposure_mode",
+            ),
+        ),
+        "raster-neutral-all-unchanged-on-seeded-raw" to ScenarioDivergence(
+            ledgerId = "P1-11",
+            reason = "非 RAW 中性全量载荷未跳过曝光基准、白平衡与镜头占位，导致已编辑 RAW 目标被改写为 applied",
+            expectedKeys = setOf("status"),
+        ),
+        "raster-placeholders-only-unchanged-on-raw" to ScenarioDivergence(
+            ledgerId = "P1-11",
+            reason = "非 RAW 曝光基准与白平衡占位子集未在 RAW 目标上跳过，导致预期 unchanged 实际变为 applied",
+            expectedKeys = setOf("status"),
+        ),
+        "raster-wb-mode-only-unchanged-on-custom-wb-raw" to ScenarioDivergence(
+            ledgerId = "P1-11",
+            reason = "非 RAW 单独粘贴 color.white_balance.mode=none 未在自定义白平衡 RAW 目标上跳过，触发缺色温 unrepresentable 拒绝",
+            expectedKeys = setOf("status"),
+        ),
+        "raster-partial-default-lens-unchanged-on-raw" to ScenarioDivergence(
+            ledgerId = "P1-11",
+            reason = "非 RAW 默认关闭镜头子集未在已启用镜头校正的 RAW 目标上跳过，导致预期 unchanged 实际变为 applied",
+            expectedKeys = setOf("status"),
+        ),
+        "raster-full-recipe-preserves-identity-and-relative-tint-on-raw" to ScenarioDivergence(
+            ledgerId = "P1-11",
+            reason = "非 RAW 完整配方全量粘贴到 RAW 目标时，未跳过来源的 sensor 曝光基准与默认关闭镜头占位",
+            expectedKeys = setOf(
+                "value:geometry.lens.auto_crop",
+                "value:geometry.lens.distortion",
+                "value:geometry.lens.profile_id",
+                "value:geometry.lens.tca",
+                "value:geometry.lens.vignetting",
+                "value:light.exposure_mode",
+            ),
+        ),
+        "raster-recipe-wb-without-tint-unchanged-on-raw" to ScenarioDivergence(
+            ledgerId = "P1-11",
+            reason = "非 RAW 配方来源仅选白平衡模式但未携带色调时未跳过占位，触发缺色调 unrepresentable 拒绝",
+            expectedKeys = setOf("status"),
+        ),
+        "raster-all-with-explicit-lens-distortion-applies-on-raw" to ScenarioDivergence(
+            ledgerId = "P1-11",
+            reason = "非 RAW 全量粘贴显式镜头畸变校正时，仍把来源的 sensor 曝光基准与 none 白平衡占位写入 RAW 目标",
+            expectedKeys = setOf(
+                "value:color.white_balance.mode",
+                "value:color.white_balance.temperature_kelvin",
+                "value:color.white_balance.tint",
+                "value:light.exposure_mode",
+            ),
+        ),
+    )
+
+    private fun scenarioFixtureAllFieldIDs(): Set<String> {
+        val scenarios = JSONObject(resolveSharedFixture("adjustment-transfer-scenarios-v1.json").readText())
+            .getJSONArray("scenarios")
+        for (index in 0 until scenarios.length()) {
+            val scenario = scenarios.getJSONObject(index)
+            if (scenario.getString("id") == "raster-all-preserves-raw-scene-wb-lens") {
+                return scenario.getJSONObject("payload").getJSONObject("values").keys().asSequence().toSet()
+            }
+        }
+        error("Missing baseline all-scope scenario in adjustment-transfer-scenarios-v1.json")
+    }
+
+    @Test fun sharedScenarioFixtures() {
+        val root = JSONObject(resolveSharedFixture("adjustment-transfer-scenarios-v1.json").readText())
+        assertEquals("Scenario fixture version is 1", 1, root.getInt("fixture_version"))
+        val scenarios = root.getJSONArray("scenarios")
+        assertTrue("Scenario fixture must not be empty", scenarios.length() > 0)
+        val recipes = builtinRecipes()
+        val recipeTints = recipes.associate { it.id to it.tint }
+        val seenIDs = linkedSetOf<String>()
+        val evaluatedIDs = linkedSetOf<String>()
+        val skippedIDs = linkedSetOf<String>()
+        val problems = mutableListOf<String>()
+
+        for (index in 0 until scenarios.length()) {
+            val scenario = scenarios.getJSONObject(index)
+            val id = scenario.getString("id")
+            assertTrue("Unique scenario ID: $id", seenIDs.add(id))
+            if (scenario.has("platforms")) {
+                val platforms = scenario.getJSONArray("platforms")
+                val names = (0 until platforms.length()).map { platforms.getString(it) }.toSet()
+                if ("android" !in names) {
+                    skippedIDs.add(id)
+                    continue
+                }
+            }
+            evaluatedIDs.add(id)
+            val diffs = evaluateScenario(id, scenario, recipeTints)
+            val actualKeys = diffs.map { it.key }.toSet()
+            val summary = diffs.joinToString("; ") { it.summary }
+            val known = knownScenarioDivergences[id]
+            when {
+                diffs.isNotEmpty() && known == null ->
+                    problems.add("Scenario $id diverged: $summary")
+                diffs.isEmpty() && known != null ->
+                    problems.add("Scenario $id now matches fixture; remove stale divergence (${known.ledgerId}: ${known.reason})")
+                known != null && actualKeys != known.expectedKeys ->
+                    problems.add("Scenario $id divergence keys changed (expected=${known.expectedKeys}, actual=$actualKeys): $summary")
+                known != null ->
+                    println("KNOWN DIVERGENCE [$id] (${known.ledgerId} - ${known.reason}): $summary")
+            }
+        }
+
+        assertEquals(scenarios.length(), seenIDs.size)
+        assertEquals(scenarios.length(), evaluatedIDs.size + skippedIDs.size)
+        val unknownRegistered = knownScenarioDivergences.keys - evaluatedIDs
+        assertTrue("Registered divergences do not match evaluated scenarios: $unknownRegistered", unknownRegistered.isEmpty())
+        if (problems.isNotEmpty()) fail(problems.joinToString("\n"))
+    }
+
+    private fun evaluateScenario(id: String, scenario: JSONObject, recipeTints: Map<String, Float>): List<ScenarioDiff> {
+        val targetSpec = scenario.getJSONObject("target")
+        val kind = targetSpec.getString("kind")
+        val asShot = targetSpec.optJSONArray("as_shot_wb")?.let {
+            it.getDouble(0).toFloat() to it.getDouble(1).toFloat()
+        }
+        val lensValid = targetSpec.getBoolean("lens_valid")
+        val looksArray = targetSpec.getJSONArray("available_looks")
+        val availableLooks = (0 until looksArray.length()).map { looksArray.getString(it) }.toSet()
+        val builtins = buildMap {
+            for (look in availableLooks) if (look.startsWith("builtin:")) {
+                val file = look.removePrefix("builtin:")
+                put(file, file.substringBeforeLast('.'))
+            }
+        }
+        val initialSettings = when (kind) {
+            "sdr_raw" -> EditSettings()
+            "sdr_raster" -> EditSettings(exposureMode = 2)
+            "hdr" -> EditSettings().withHDRMode(true, true)
+            else -> error("Scenario $id: unsupported target kind $kind")
+        }
+        val scenarioContext = AdjustmentTransferContext(
+            identifier = "scenario-target",
+            isRaw = kind == "sdr_raw",
+            availableLookIDs = availableLooks,
+            builtinLookIDs = builtins,
+            cameraTemperature = if (kind == "sdr_raw") asShot?.first else null,
+            cameraTint = if (kind == "sdr_raw") asShot?.second else null,
+            defaultExposureMode = if (kind == "sdr_raw") 1 else 2,
+            validateLens = if (lensValid) ({ }) else null,
+            recipeTintDefaults = recipeTints,
+        )
+        var targetState = initialSettings
+        if (targetSpec.has("seed_payload") && !targetSpec.isNull("seed_payload")) {
+            val seedPayload = AdjustmentPayload.decode(targetSpec.getJSONObject("seed_payload").toString())
+            assertEquals("Scenario $id: seed payload round-trip", seedPayload, AdjustmentPayload.decode(seedPayload.encode()))
+            targetState = AdjustmentTransfer.prepare(seedPayload, targetState, scenarioContext.copy(validateLens = {}))
+        }
+
+        val payload = AdjustmentPayload.decode(scenario.getJSONObject("payload").toString())
+        assertEquals("Scenario $id: payload round-trip", payload, AdjustmentPayload.decode(payload.encode()))
+        val expectSpec = scenario.optJSONObject("platform_expect")?.optJSONObject("android")
+            ?: scenario.getJSONObject("expect")
+        val expectedStatus = expectSpec.getString("status")
+        val diffs = mutableListOf<ScenarioDiff>()
+        if (expectedStatus == "rejected") {
+            val expectedReason = expectSpec.optString("reason").takeIf { expectSpec.has("reason") && !expectSpec.isNull("reason") }
+            try {
+                val candidate = AdjustmentTransfer.prepare(payload, targetState, scenarioContext)
+                val actualStatus = if (candidate == targetState) "unchanged" else "applied"
+                diffs.add(ScenarioDiff("status", "status expected=rejected(${expectedReason ?: "any"}), actual=$actualStatus"))
+            } catch (error: AdjustmentTransferException) {
+                val actualReason = errorReason(error)
+                if (expectedReason != null && actualReason != expectedReason) {
+                    diffs.add(ScenarioDiff("rejected_reason", "rejected reason expected=$expectedReason, actual=$actualReason (${error.message})"))
+                }
+            }
+            return diffs
+        }
+
+        val candidate = try {
+            AdjustmentTransfer.prepare(payload, targetState, scenarioContext)
+        } catch (error: AdjustmentTransferException) {
+            diffs.add(ScenarioDiff("status", "status expected=$expectedStatus, actual=rejected(${errorReason(error)}: ${error.message})"))
+            return diffs
+        }
+        val actualStatus = if (candidate == targetState) "unchanged" else "applied"
+        if (actualStatus != expectedStatus) {
+            diffs.add(ScenarioDiff("status", "status expected=$expectedStatus, actual=$actualStatus"))
+        }
+        if (expectSpec.has("values") && !expectSpec.isNull("values")) {
+            val valuesObj = expectSpec.getJSONObject("values")
+            val captured = AdjustmentTransfer.capture(AdjustmentScope.All, candidate, scenarioContext).values
+            for (key in valuesObj.keys().asSequence().sorted()) {
+                val field = requireNotNull(F.fromID(key)) { "Scenario $id: unknown field $key" }
+                val expected = decodeExpectedValue(valuesObj.get(key))
+                val actual = captured[field]
+                if (!matchesValue(actual, expected)) {
+                    diffs.add(ScenarioDiff("value:$key", "value $key expected=${formatValue(expected)}, actual=${formatValue(actual)}"))
+                }
+            }
+        }
+        if (expectSpec.has("effective") && !expectSpec.isNull("effective")) {
+            val effectiveObj = expectSpec.getJSONObject("effective")
+            val actualEffective = AdjustmentTransfer.effectiveNumbers(candidate)
+            for (key in effectiveObj.keys().asSequence().sorted()) {
+                val field = requireNotNull(F.fromID(key)) { "Scenario $id: unknown effective field $key" }
+                val expected = effectiveObj.getDouble(key)
+                val actual = actualEffective[field]?.toDouble()
+                if (actual == null || kotlin.math.abs(actual - expected) > 1e-6) {
+                    diffs.add(ScenarioDiff("effective:$key", "effective $key expected=$expected, actual=$actual"))
+                }
+            }
+        }
+        return diffs
+    }
+
+    private fun errorReason(error: AdjustmentTransferException): String = when (error.reason) {
+        AdjustmentFailure.INCOMPATIBLE -> "incompatible"
+        AdjustmentFailure.UNREPRESENTABLE -> "unrepresentable"
+        AdjustmentFailure.MISSING_LOOK -> "missing_look"
+        else -> "other(${error.reason})"
+    }
+
+    private fun decodeExpectedValue(raw: Any?): V = when (raw) {
+        null, JSONObject.NULL -> AdjustmentValue.Null
+        is Boolean -> AdjustmentValue.Boolean(raw)
+        is Number -> AdjustmentValue.Number(raw.toDouble())
+        is String -> AdjustmentValue.Text(raw)
+        is JSONObject -> AdjustmentValue.Object(raw.keys().asSequence().associateWith { decodeExpectedValue(raw.get(it)) })
+        is JSONArray -> AdjustmentValue.Array((0 until raw.length()).map { decodeExpectedValue(raw.get(it)) })
+        else -> error("Unsupported fixture JSON value: $raw")
+    }
+
+    private fun matchesValue(actual: V?, expected: V, tolerance: Double = 1e-6): Boolean = when {
+        actual == null -> false
+        actual is AdjustmentValue.Null && expected is AdjustmentValue.Null -> true
+        actual is AdjustmentValue.Boolean && expected is AdjustmentValue.Boolean -> actual.value == expected.value
+        actual is AdjustmentValue.Text && expected is AdjustmentValue.Text -> actual.value == expected.value
+        actual is AdjustmentValue.Number && expected is AdjustmentValue.Number -> kotlin.math.abs(actual.value - expected.value) <= tolerance
+        actual is AdjustmentValue.Array && expected is AdjustmentValue.Array ->
+            actual.value.size == expected.value.size &&
+                actual.value.zip(expected.value).all { (a, b) -> matchesValue(a, b, tolerance) }
+        actual is AdjustmentValue.Object && expected is AdjustmentValue.Object ->
+            actual.value.keys == expected.value.keys &&
+                expected.value.all { (k, v) -> matchesValue(actual.value[k], v, tolerance) }
+        else -> false
+    }
+
+    private fun formatValue(value: V?): String = when (value) {
+        null -> "<missing>"
+        AdjustmentValue.Null -> "null"
+        is AdjustmentValue.Boolean -> value.value.toString()
+        is AdjustmentValue.Number -> value.value.toString()
+        is AdjustmentValue.Text -> "\"${value.value}\""
+        is AdjustmentValue.Array -> value.value.joinToString(", ", "[", "]") { formatValue(it) }
+        is AdjustmentValue.Object -> value.value.entries.sortedBy { it.key }.joinToString(", ", "{", "}") { "${it.key}:${formatValue(it.value)}" }
     }
 }
