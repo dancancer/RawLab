@@ -89,16 +89,26 @@ final class IOSCameraRun {
 
 final class CameraWorkspaceBackend {
     static let shared = CameraWorkspaceBackend()
+    private static let sessionFailureCodes: Set<UInt16> = [0x2003, 0x2004, 0x2013, 0x201e]
     let queue = DispatchQueue(label: "rawlab.camera.owner", qos: .userInitiated)
     private var storage: CameraOriginalStore?
     private let ownerLock = NSLock()
     private var active: IOSCameraRun?
     private let clientID: UUID
+    private let sessionOpener: ((IOSCameraRun, CameraSessionPurpose, UUID) throws -> SonyCameraSession)?
 
-    private init() {
-        let defaults = UserDefaults.standard, key = "camera.ptpip.clientID"
-        clientID = defaults.string(forKey: key).flatMap(UUID.init(uuidString:)) ?? UUID()
-        defaults.set(clientID.uuidString, forKey: key)
+    init(storage: CameraOriginalStore? = nil, clientID: UUID? = nil,
+         openSession: ((IOSCameraRun, CameraSessionPurpose, UUID) throws -> SonyCameraSession)? = nil) {
+        self.storage = storage
+        self.sessionOpener = openSession
+        if let clientID {
+            self.clientID = clientID
+        } else {
+            let defaults = UserDefaults.standard, key = "camera.ptpip.clientID"
+            let resolved = defaults.string(forKey: key).flatMap(UUID.init(uuidString:)) ?? UUID()
+            defaults.set(resolved.uuidString, forKey: key)
+            self.clientID = resolved
+        }
     }
     private func store() throws -> CameraOriginalStore {
         if let storage { return storage }
@@ -131,6 +141,11 @@ final class CameraWorkspaceBackend {
                 switch error {
                 case CameraProtocolError.importRecoveryRequired, CameraProtocolError.jpegGainMapAdjustment:
                     run.emit(.phase(.browsing)); run.emit(.failure(error))
+                case CameraProtocolError.photoLimitExceeded where run.mode == .importing:
+                    run.knownAssets = []
+                    run.emit(.assets([]))
+                    run.emit(.phase(.browsing))
+                    run.emit(.failure(error))
                 default: self.failure(error, run: run)
                 }
             }
@@ -138,7 +153,8 @@ final class CameraWorkspaceBackend {
     }
     private func open(_ run: IOSCameraRun, purpose: CameraSessionPurpose) throws -> SonyCameraSession {
         guard owns(run) else { throw CameraProtocolError.cancelled }
-        let session = try SonyCameraSession.open(host: run.endpoint.host, purpose: purpose, clientID: clientID, register: run.installing)
+        let session = try sessionOpener?(run, purpose, clientID) ??
+            SonyCameraSession.open(host: run.endpoint.host, purpose: purpose, clientID: clientID, register: run.installing)
         run.install(session)
         guard owns(run) else { session.close(); throw CameraProtocolError.cancelled }
         return session
@@ -331,9 +347,37 @@ final class CameraWorkspaceBackend {
             assets: assets, allowAlternateConnection: run.mode == .importing)
         try receive(jobID: job.id, pending: pending, run: run)
     }
+    private func isItemFailure(_ error: Error, session: SonyCameraSession, run: IOSCameraRun) -> Bool {
+        guard run.mode == .importing, owns(run), !session.stopped else { return false }
+        switch error {
+        case CameraProtocolError.jpegProcessing,
+             CameraProtocolError.jpegGainMapAdjustment,
+             CameraProtocolError.importRecoveryRequired:
+            return true
+        case CameraProtocolError.response(let op, let code):
+            return [UInt16(0x1008), 0x1009, 0x923d].contains(op) && !Self.sessionFailureCodes.contains(code)
+        case CameraProtocolError.invalid(let detail):
+            return detail != "Camera task history exceeds storage budget" &&
+                detail != "Cannot create camera partial file" &&
+                detail != "Camera original exceeds budget"
+        default:
+            return false
+        }
+    }
+    private func itemNoticeError(_ error: Error, asset: CameraRemoteAsset) -> Error {
+        switch error {
+        case CameraProtocolError.jpegProcessing,
+             CameraProtocolError.jpegGainMapAdjustment,
+             CameraProtocolError.importRecoveryRequired:
+            return error
+        default:
+            return CameraProtocolError.itemFailed(asset.snapshot.name, error.localizedDescription)
+        }
+    }
     private func receive(jobID: UUID, pending: [CameraTransferJob.BoundItem], run: IOSCameraRun) throws {
         let store = try store(), session = try run.currentSession()
         run.emit(.phase(.receiving))
+        var firstItemError: Error?
         for (item, asset) in pending {
             guard owns(run) else { throw CameraProtocolError.cancelled }
             let target = try store.begin(job: jobID, item: item.id)
@@ -346,13 +390,21 @@ final class CameraWorkspaceBackend {
                 publishManifest(run); run.emit(.saved(original))
             } catch {
                 try? target.handle.close()
-                try? store.interrupt(job: jobID, item: item.id, error: error.localizedDescription, cancelled: run.stopped)
+                let itemFailed = isItemFailure(error, session: session, run: run)
+                try? store.interrupt(job: jobID, item: item.id, error: error.localizedDescription, cancelled: !itemFailed)
                 publishManifest(run)
+                if itemFailed {
+                    if firstItemError == nil { firstItemError = itemNoticeError(error, asset: asset) }
+                    continue
+                }
                 if run.mode == .tethering, case CameraProtocolError.importRecoveryRequired = error {
                     throw CameraProtocolError.tetherRecoveryRequired
                 }
                 throw error
             }
+        }
+        if let firstItemError {
+            run.emit(.failure(firstItemError))
         }
     }
     func importAssets(_ assets: [CameraRemoteAsset], incremental: CameraIncrementalPlan? = nil, run: IOSCameraRun) {
@@ -380,6 +432,10 @@ final class CameraWorkspaceBackend {
                 throw CameraProtocolError.invalid("Camera transfer job is missing")
             }
             if job.incremental != nil { run.emit(.incrementalJob(job.id)) }
+            guard !job.pendingItems.isEmpty else {
+                run.emit(.phase(.browsing))
+                return
+            }
             let assets = try run.currentSession().listAssets()
             run.knownAssets = assets; run.emit(.assets(assets))
             try self.receive(job, assets: assets, run: run)

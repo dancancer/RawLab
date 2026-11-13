@@ -37,6 +37,7 @@ struct IOSCameraBrowser: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
+                    Button(L10n.text("重新扫描"), action: model.refreshImport).disabled(!model.connected || model.busy)
                     Button(L10n.text("导入记录"), action: history)
                     Button(L10n.text("保存位置"), action: storage)
                     Button(L10n.text("更换相机"), action: reconnect)
@@ -88,7 +89,8 @@ struct IOSCameraBrowser: View {
             if let notice = model.notice { Text(notice).font(.caption).foregroundStyle(.orange).padding(.horizontal, 14).padding(.vertical, 6) }
             ScrollView {
                 if model.assets.isEmpty {
-                    ContentUnavailableView(L10n.text("相机中没有可导入的 RAW 或 JPEG 照片。"), systemImage: "photo.on.rectangle")
+                    ContentUnavailableView(L10n.text(model.listingLimitExceeded ? "已到上限" : "相机中没有可导入的 RAW 或 JPEG 照片。"),
+                                           systemImage: "photo.on.rectangle")
                 } else if visible.isEmpty {
                     ContentUnavailableView(L10n.text("没有符合筛选条件的照片。"), systemImage: "line.3.horizontal.decrease")
                 } else {
@@ -261,7 +263,7 @@ struct IOSCameraHistory: View {
                     ForEach(model.unfinishedJobs) { job in
                         VStack(alignment: .leading, spacing: 6) {
                             Text(job.camera.model).font(.headline)
-                            Text("\(job.items.filter { $0.phase == .saved }.count) / \(job.items.count)").font(.caption).monospacedDigit()
+                            Text("\(job.savedCount) / \(job.items.count)").font(.caption).monospacedDigit()
                             Button(L10n.text("继续未完成")) { resume(job) }.disabled(model.busy)
                         }
                     }

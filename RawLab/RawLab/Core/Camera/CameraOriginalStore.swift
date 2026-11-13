@@ -26,7 +26,9 @@ struct CameraTransferJob: Codable, Identifiable {
     var listingOwner: UUID?
     var originalListingOwner: UUID? { listingOwner ?? incremental?.owner }
     var complete: Bool { items.allSatisfy { $0.phase == .saved } }
-    var pendingItems: [CameraTransferItem] { items.filter { $0.phase != .saved } }
+    var savedCount: Int { items.filter { $0.phase == .saved }.count }
+    var failedItems: [CameraTransferItem] { items.filter { $0.phase == .failed } }
+    var pendingItems: [CameraTransferItem] { items.filter { $0.phase != .saved && $0.phase != .failed } }
     var itemLimit: Int { incremental == nil ? 64 : CameraIncrementalScan.maximumAssets }
 
     func matches(camera device: CameraDeviceIdentity, connectionKey: String, allowAlternateConnection: Bool = true) -> Bool {
