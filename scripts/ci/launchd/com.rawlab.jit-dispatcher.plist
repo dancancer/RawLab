@@ -4,6 +4,12 @@
      copy it to ~/Library/LaunchAgents/com.rawlab.jit-dispatcher.plist on one Apple pool Mac,
      replace the token placeholder (keep the file 0600), adjust the paths to that host, and
      bootstrap it only after the resident Runner.Listener agent has been stopped.
+     --runner-dir must be a PRISTINE actions/runner directory (unpack the pinned runner archive
+     with `tar -xzf <archive> -C ~/jit-runner`; never point it at the resident runner directory,
+     or the JIT run would overwrite and deregister the resident .runner/.credentials, whose
+     .runner_migrated marker makes a JIT launch crash on the spot). Symlink
+     `~/jit-runner/_work -> /Volumes/RawLabCI/_work` to keep workspaces on the pool volume while
+     generate-jitconfig keeps its default relative work_folder.
      Enable/disable steps: docs/process/ci.md (JIT Dispatcher for Self-Hosted Jobs). -->
 <plist version="1.0">
 <dict>
@@ -16,9 +22,7 @@
         <string>--repo</string>
         <string>dancancer/RawLab</string>
         <string>--runner-dir</string>
-        <string>/Users/rawlab-ci/runner</string>
-        <string>--work-dir</string>
-        <string>/Volumes/RawLabCI/_work</string>
+        <string>/Users/rawlab-ci/jit-runner</string>
         <string>--launch-command</string>
         <string>./runsvc.sh</string>
         <string>--interval</string>
@@ -26,7 +30,9 @@
     </array>
     <key>EnvironmentVariables</key>
     <dict>
-        <!-- Fine-grained PAT scoped to dancancer/RawLab with Actions: write. -->
+        <!-- Fine-grained PAT scoped to dancancer/RawLab: repository Administration (write) for
+             generate-jitconfig plus Actions (read) for the queue poll; a classic PAT needs the
+             repo scope. Actions: write alone answers 403 on the dispatch POST. -->
         <key>RAWLAB_JIT_TOKEN</key>
         <string>__REPLACE_WITH_FINE_GRAINED_PAT__</string>
         <!-- Empty default: only push runs on this repository are claimed. Entries are comma-
@@ -42,6 +48,8 @@
     <true/>
     <key>ThrottleInterval</key>
     <integer>15</integer>
+    <key>ProcessType</key>
+    <string>Interactive</string>
     <key>StandardOutPath</key>
     <string>/Users/rawlab-ci/Library/Logs/com.rawlab.jit-dispatcher.log</string>
     <key>StandardErrorPath</key>

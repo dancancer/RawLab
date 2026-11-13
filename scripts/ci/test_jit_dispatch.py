@@ -1,7 +1,16 @@
-"""Decision-table regressions for the JIT dispatcher; the injected HTTP layer keeps them offline."""
+"""Decision-table regressions for the JIT dispatcher; the injected HTTP layer keeps them offline.
+
+FakeAPI mirrors the live 2022-11-28 shapes pinned by the 2026-11-14 probe (request requires
+name/runner_group_id/labels; response is {"runner": ..., "encoded_jit_config": ...}), so a stub
+drift away from the real contract turns the table red."""
+import contextlib
 import importlib.util
+import io
+import os
 from pathlib import Path
 import unittest
+import unittest.mock
+import urllib.error
 
 spec = importlib.util.spec_from_file_location("jit_dispatch", Path(__file__).with_name("jit_dispatch.py"))
 jit = importlib.util.module_from_spec(spec)
@@ -10,6 +19,8 @@ spec.loader.exec_module(jit)
 OWN = "dancancer/RawLab"
 LABEL = "rawlab-apple"
 FOREIGN = "contributor/RawLab"
+REGISTRATION = ["self-hosted", "macOS", "ARM64", LABEL]
+NO_JOB = f"labels-mismatch (no open job asks for {LABEL})"
 
 
 def run(run_id=101, event="push", repo=OWN, branch="development", created="2026-11-13T00:00:00Z"):
@@ -18,23 +29,32 @@ def run(run_id=101, event="push", repo=OWN, branch="development", created="2026-
             "head_repository": {"full_name": repo}, "created_at": created}
 
 
-def jobs(label=LABEL, status="queued", count=1):
-    return [{"id": 900 + index, "status": status, "labels": ["self-hosted", "macOS", "ARM64", label]}
+def jobs(labels=None, status="queued", count=1):
+    return [{"id": 900 + index, "status": status, "labels": list(labels or REGISTRATION)}
             for index in range(count)]
 
 
 class FakeAPI:
-    def __init__(self, jobs_by_run=None, config="cfg-1"):
+    """Stub with the live-pinned contract: jobs list, queue, and the generate-jitconfig shape."""
+
+    def __init__(self, jobs_by_run=None, config="cfg-1", runs=()):
         self.jobs_by_run = jobs_by_run or {}
         self.config = config
+        self.runs = list(runs)
         self.generated = []
+
+    def queued_runs(self):
+        return self.runs
 
     def jobs(self, run_id):
         return self.jobs_by_run.get(run_id, [])
 
     def generate_jitconfig(self, payload):
         self.generated.append(payload)
-        return {"jitConfig": self.config} if self.config else {"runner": {"id": 1}}
+        runner = {"id": 25, "name": payload.get("name", ""), "os": "macOS", "status": "offline",
+                  "busy": False, "version": "2.338.2", "runner_group_id": payload.get("runner_group_id"),
+                  "labels": [{"id": 0, "name": label} for label in payload.get("labels", [])]}
+        return {"runner": runner, "encoded_jit_config": self.config} if self.config else {"runner": runner}
 
 
 class DecisionTableTests(unittest.TestCase):
@@ -55,23 +75,31 @@ class DecisionTableTests(unittest.TestCase):
         self.assertEqual(self.decide(run(event="pull_request", repo=FOREIGN), jobs()),
                          (False, "untrusted (event=pull_request, head=contributor/RawLab)"))
 
-    def test_unapproved_waiting_fork_job_is_refused_by_trust_not_labels(self):
-        self.assertEqual(self.decide(run(event="pull_request", repo=FOREIGN), jobs(status="waiting")),
-                         (False, "untrusted (event=pull_request, head=contributor/RawLab)"))
+    def test_in_progress_job_is_already_claimed_and_never_resent(self):
+        # Re-dispatching it would spend a JIT registration that no queued job picks up.
+        self.assertEqual(self.decide(run(), jobs(status="in_progress")), (False, NO_JOB))
 
-    def test_labels_without_the_runner_label_are_not_claimed(self):
-        foreign_labels = jobs(label="rawlab-windows")
-        self.assertEqual(self.decide(run(), foreign_labels),
-                         (False, "labels-mismatch (no open job asks for rawlab-apple)"))
-
-    def test_labels_mismatch_stays_refused_even_when_allowlisted(self):
-        self.assertEqual(self.decide(run(event="pull_request", repo=FOREIGN), jobs(label="rawlab-android"),
-                                     {"contributor/RawLab"}),
-                         (False, "labels-mismatch (no open job asks for rawlab-apple)"))
+    def test_environment_gated_waiting_job_is_not_claimed(self):
+        self.assertEqual(self.decide(run(), jobs(status="waiting")), (False, NO_JOB))
 
     def test_completed_jobs_are_not_claimed(self):
-        self.assertEqual(self.decide(run(), jobs(status="completed")),
-                         (False, "labels-mismatch (no open job asks for rawlab-apple)"))
+        self.assertEqual(self.decide(run(), jobs(status="completed")), (False, NO_JOB))
+
+    def test_labels_without_the_runner_label_are_not_claimed(self):
+        self.assertEqual(self.decide(run(), jobs(labels=["self-hosted", "rawlab-windows"])), (False, NO_JOB))
+
+    def test_job_asking_a_label_we_do_not_register_is_not_claimed(self):
+        heavier = jobs(labels=REGISTRATION + ["rawlab-heavy"])
+        self.assertEqual(self.decide(run(), heavier), (False, NO_JOB))
+
+    def test_job_with_a_subset_of_our_registration_is_claimed(self):
+        self.assertEqual(self.decide(run(), jobs(labels=["self-hosted", LABEL])),
+                         (True, "trusted push on this repository"))
+
+    def test_labels_mismatch_stays_refused_even_when_allowlisted(self):
+        self.assertEqual(self.decide(run(event="pull_request", repo=FOREIGN),
+                                     jobs(labels=["self-hosted", "rawlab-android"]), {"contributor/RawLab"}),
+                         (False, NO_JOB))
 
     def test_unplanned_run_retries_instead_of_being_claimed(self):
         self.assertEqual(self.decide(run(), []), (False, "await-planning (jobs not visible yet)"))
@@ -128,71 +156,89 @@ class QueuePassTests(unittest.TestCase):
         candidate = jit.next_dispatch([fork], api.jobs, allowlist={"contributor/RawLab"})
         self.assertEqual(candidate["id"], 6)
 
+    def test_job_running_elsewhere_does_not_block_the_queued_sibling(self):
+        # Two rawlab-apple machines: one job in_progress on the other, one still queued here.
+        mixed = [{"id": 900, "status": "in_progress", "labels": REGISTRATION},
+                 {"id": 901, "status": "queued", "labels": REGISTRATION}]
+        api = FakeAPI(jobs_by_run={7: mixed})
+        candidate = jit.next_dispatch([run(run_id=7)], api.jobs)
+        self.assertEqual(candidate["id"], 7)
+
 
 class DispatchPayloadTests(unittest.TestCase):
-    def launch(self, config, runner_dir, argv):
-        self.launches.append((config, runner_dir, argv))
-        return 0
-
     def setUp(self):
         self.launches = []
 
-    def test_jit_payload_is_single_use_label_bound_and_names_the_job(self):
+    def launch(self, config, runner_dir, argv, timeout):
+        self.launches.append((config, runner_dir, argv, timeout))
+        return 0
+
+    def test_jit_payload_carries_the_live_pinned_contract(self):
         api = FakeAPI(jobs_by_run={101: jobs()})
-        code = jit.dispatch(run(), api, runner_label=LABEL, work_dir="/Volumes/RawLabCI/_work",
+        code = jit.dispatch(run(), api, runner_label=LABEL, work_folder="/Volumes/RawLabCI/_work",
                             launch_argv=None, run_process=self.launch, log=lambda *a: None)
         self.assertEqual(code, 0)
         payload = api.generated[0]
-        self.assertTrue(payload["ephemeral"], "the runner must burn down after one job")
+        self.assertEqual(payload["runner_group_id"], 1, "the API 422s without the runner group (probe 2026-11-14)")
+        self.assertEqual(payload["labels"], REGISTRATION)
         self.assertEqual(payload["runner_label"], LABEL)
-        self.assertEqual(payload["labels"], ["self-hosted", "macOS", "ARM64", "rawlab-apple"])
-        self.assertEqual(payload["work_directory"], "/Volumes/RawLabCI/_work")
-        self.assertIn("-101-900", payload["name"])
-        self.assertEqual(self.launches, [("cfg-1", ".", None)])
+        self.assertTrue(payload["ephemeral"], "the runner must burn down after one job")
+        self.assertEqual(payload["work_folder"], "/Volumes/RawLabCI/_work")
+        self.assertRegex(payload["name"], r"-101-900-[0-9a-f]{6}$")
+        self.assertLessEqual(len(payload["name"]), 64, "unique suffix, clamped to the API's runner-name limit")
+        self.assertEqual(self.launches, [("cfg-1", ".", None, jit.DEFAULT_RUNNER_TIMEOUT)])
 
-    def test_missing_jit_config_fails_instead_of_launching_anything(self):
+    def test_missing_encoded_jit_config_fails_instead_of_launching_anything(self):
         api = FakeAPI(jobs_by_run={101: jobs()}, config="")
-        with self.assertRaises(RuntimeError):
+        with self.assertRaisesRegex(RuntimeError, "encoded_jit_config"):
             jit.dispatch(run(), api, run_process=self.launch, log=lambda *a: None)
         self.assertEqual(self.launches, [])
 
-    def test_launch_runner_default_forwards_jitconfig_and_sets_the_service_env(self):
+    def test_vanished_job_aborts_before_spending_a_registration(self):
+        api = FakeAPI(jobs_by_run={})  # another runner won the race between poll and dispatch
+        self.assertIsNone(jit.dispatch(run(), api, run_process=self.launch, log=lambda *a: None))
+        self.assertEqual(api.generated, [])
+        self.assertEqual(self.launches, [])
+
+    def test_launch_runner_defaults_to_runsvc_env_config_and_timeout(self):
         seen = {}
 
         class Completed:
             returncode = 0
 
-        def fake_run(argv, cwd, env):
-            seen.update(argv=argv, cwd=cwd, env=env)
+        def fake_run(argv, cwd=None, env=None, timeout=None):
+            seen.update(argv=argv, cwd=cwd, env=env, timeout=timeout)
             return Completed()
 
         original = jit.subprocess.run
         jit.subprocess.run = fake_run
         try:
-            self.assertEqual(jit.launch_runner("cfg-9", runner_dir="/runner"), 0)
+            self.assertEqual(jit.launch_runner("cfg-9", runner_dir="/jit-runner"), 0)
         finally:
             jit.subprocess.run = original
-        self.assertEqual(seen["argv"], ["./run.sh", "--jitconfig", "cfg-9"])
-        self.assertEqual(seen["cwd"], "/runner")
+        self.assertEqual(seen["argv"], ["./runsvc.sh"], "no token exposure in `ps` for a three-hour job")
+        self.assertEqual(seen["cwd"], "/jit-runner")
         self.assertEqual(seen["env"]["ACTIONS_RUNNER_INPUT_JITCONFIG"], "cfg-9")
+        self.assertEqual(seen["env"]["GITHUB_ACTIONS_SERVICE_EXIT_AFTER_N_FAILURES"], "1")
+        self.assertEqual(seen["timeout"], jit.DEFAULT_RUNNER_TIMEOUT)
 
-    def test_runsvc_launch_reads_the_jit_config_from_the_environment(self):
+    def test_manual_run_sh_override_still_receives_the_config_via_placeholder(self):
         seen = {}
 
         class Completed:
             returncode = 0
 
-        def fake_run(argv, cwd, env):
+        def fake_run(argv, cwd=None, env=None, timeout=None):
             seen.update(argv=argv, env=env)
             return Completed()
 
         original = jit.subprocess.run
         jit.subprocess.run = fake_run
         try:
-            jit.launch_runner("cfg-9", runner_dir="/runner", argv="./runsvc.sh")
+            jit.launch_runner("cfg-9", runner_dir="/jit-runner", argv="./run.sh --jitconfig {config}")
         finally:
             jit.subprocess.run = original
-        self.assertEqual(seen["argv"], ["./runsvc.sh"])
+        self.assertEqual(seen["argv"], ["./run.sh", "--jitconfig", "cfg-9"])
         self.assertEqual(seen["env"]["ACTIONS_RUNNER_INPUT_JITCONFIG"], "cfg-9")
 
 
@@ -203,7 +249,7 @@ class ApiWiringTests(unittest.TestCase):
         def fake_request(method, path, payload):
             calls.append((method, path, payload))
             if "generate-jitconfig" in path:
-                return {"jitConfig": "cfg"}
+                return {"runner": {"id": 25}, "encoded_jit_config": "cfg"}
             if "/jobs" in path:
                 return {"jobs": []}
             return {"workflow_runs": [{"id": 5}]}
@@ -211,11 +257,65 @@ class ApiWiringTests(unittest.TestCase):
         api = jit.ActionsAPI("tok", repo=OWN, root="https://api.example", request=fake_request)
         self.assertEqual(api.queued_runs(), [{"id": 5}, {"id": 5}])
         self.assertEqual(api.jobs(5), [])
-        self.assertEqual(api.generate_jitconfig({"name": "jit"}), {"jitConfig": "cfg"})
+        self.assertEqual(api.generate_jitconfig({"name": "jit"}),
+                         {"runner": {"id": 25}, "encoded_jit_config": "cfg"})
         self.assertEqual(calls[0], ("GET", "/repos/dancancer/RawLab/actions/runs?status=queued&per_page=100", None))
         self.assertEqual(calls[1], ("GET", "/repos/dancancer/RawLab/actions/runs?status=in_progress&per_page=100", None))
         self.assertEqual(calls[2], ("GET", "/repos/dancancer/RawLab/actions/runs/5/jobs?per_page=100", None))
         self.assertEqual(calls[3], ("POST", "/repos/dancancer/RawLab/actions/runners/generate-jitconfig", {"name": "jit"}))
+
+    def test_generate_jitconfig_permission_error_names_the_pat_scopes(self):
+        def raise_403(method, path, payload):
+            raise urllib.error.HTTPError("https://api.example", 403, "Forbidden", {}, io.BytesIO(b'{"message":"Forbidden"}'))
+
+        api = jit.ActionsAPI("tok", request=raise_403)
+        with self.assertRaisesRegex(RuntimeError, "Administration"):
+            api.generate_jitconfig({"name": "jit"})
+
+
+class MainTests(unittest.TestCase):
+    """--once must actually dispatch (the ci.md attack-verification checklist depends on it)."""
+
+    def once(self, argv):
+        dispatched = []
+        api = FakeAPI(runs=[run()], jobs_by_run={101: jobs()})
+        with contextlib.redirect_stderr(io.StringIO()) as err, unittest.mock.patch.dict(
+                os.environ, {"RAWLAB_JIT_TOKEN": "tok"}), \
+                unittest.mock.patch.object(jit, "ActionsAPI", lambda token, repo=None: api), \
+                unittest.mock.patch.object(jit, "dispatch", lambda candidate, _api, **kw: dispatched.append(candidate["id"]) or 0):
+            code = jit.main(argv)
+        return code, dispatched, err.getvalue()
+
+    def test_once_dispatches_the_chosen_run(self):
+        code, dispatched, _ = self.once(["--once"])
+        self.assertEqual((code, dispatched), (0, [101]))
+
+    def test_once_dry_run_decides_without_dispatching(self):
+        code, dispatched, _ = self.once(["--once", "--dry-run"])
+        self.assertEqual((code, dispatched), (0, []))
+
+    def test_missing_token_names_the_fine_grained_permissions(self):
+        with contextlib.redirect_stderr(io.StringIO()) as err, \
+                unittest.mock.patch.dict(os.environ, {"RAWLAB_JIT_TOKEN": "", "GITHUB_TOKEN": ""}):
+            code = jit.main(["--once"])
+        self.assertEqual(code, 2)
+        self.assertIn("Administration", err.getvalue())
+
+
+class LaunchdExampleTests(unittest.TestCase):
+    """B3: the plist must isolate JIT in a pristine runner directory, never the resident one."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.text = (Path(__file__).with_name("launchd") / "com.rawlab.jit-dispatcher.plist").read_text()
+
+    def test_plist_points_at_a_separate_jit_runner_directory(self):
+        self.assertIn("<string>/Users/rawlab-ci/jit-runner</string>", self.text)
+        self.assertNotIn("<string>/Users/rawlab-ci/runner</string>", self.text,
+                         "sharing the resident directory would overwrite its .runner/.credentials")
+
+    def test_plist_declares_process_type_interactive(self):
+        self.assertIn("<key>ProcessType</key>", self.text)
 
 
 if __name__ == "__main__":
