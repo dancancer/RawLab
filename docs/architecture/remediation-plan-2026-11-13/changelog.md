@@ -54,3 +54,4 @@
 - 2026-11-14 · **WP-04 合入**：#287 复审 approve（矩阵复跑 143/2 pre-existing 复核成立、S1/S2 锚点复核过）→ dancancer merge（CI 7/7），本波首个落地。面板状态显示 bug：迁移过渡期 6 条 DB 僵尸 running 行（旧 worker 完成不写 DB、面板无 sidecar 纠正）→ 手工对账 + state-db 读侧对账根治派给 staff-state-sqlite。
 - 2026-11-14 · **WP-02 合入**：#292 返工复审双 approve（Must+Should 全落实，7/7 绿）→ dancancer merge。至此本波先行合入 2/8；面板僵尸行对账的读侧根治由 staff-state-sqlite 续做中。
 - 2026-11-14 · #294 返工完成（`04447468`）：P2 采纳评审方案一（失败记录落盘失败→保守锁定同锁），P1 的 L157-173 UI 断言前提天然恢复免翻转；141 PASS+新 head CI 全绿；usage/system-open 本机 134 已 stash 对照归因既有环境性。复审在途（review-mwf7dc48）。
+- 2026-11-14 · #289 返工完成（`3b349bf8`）：覆盖保护按核心别名语义（同路径+device:inode，TOCTOU 双校验），raster-render 红→绿复现；缺样片改显式 FAIL；权限/符号链接对齐核心。#288 返工完成（`4b3629af`）：词条正规登记（30 catalogs 一致）、两 P1 锚点先红后绿、附带修掉本 PR 自带 CS0123 编译断裂，CI 7/7。两路复审在途（review-mwf7hbon / mwf7g…）。
