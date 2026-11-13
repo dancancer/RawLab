@@ -71,6 +71,7 @@ $sources = Join-Path $CiRoot 'cache\lens-sources'
 Invoke-Checked tar.exe @('-xf', $LensSourcesTar, '-C', $sources)
 $manifest = Get-Content -LiteralPath $LensManifest -Raw | ConvertFrom-Json
 foreach ($entry in $manifest.PSObject.Properties) {
+    if ($entry.Name -eq 'tools') { continue }
     $spec = $entry.Value
     if ([IO.Path]::GetFileName($spec.file) -ne $spec.file) { throw 'Invalid source archive filename.' }
     Assert-Hash (Join-Path $sources $spec.file) $spec.sha256

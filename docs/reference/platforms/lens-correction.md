@@ -51,11 +51,15 @@ upstream bundled TRE regular-expression library. Android API 26 uses GNU libicon
 1.18 and libcharset; iOS uses its system iconv. JIT is disabled.
 
 `lutools/cmake/lens-dependencies.json` contains source URLs and SHA256 pins.
+Its `tools` entry pins the Meson 1.12.1 and Ninja 1.13.2 wheels by file name and
+SHA256 for the supported build hosts: macOS (universal2), Windows amd64 and Linux
+x86_64/aarch64 (manylinux, because the NDK host toolchain needs glibc). Other hosts
+fail with a missing-pin error.
 `build-lens-dependencies.py` uses Python 3.11+, isolated Meson/Ninja tools, target
 compilers and only the GLib libraries used by Lensfun. The GLib pipe2 declaration
 probe is adjusted to respect iOS 18 availability when building with SDK 27.
-`RAWLAB_LENS_SOURCE_CACHE` optionally supplies checksum-verified archives. Nothing
-is downloaded by the application at runtime. Android builds additionally require
+`RAWLAB_LENS_SOURCE_CACHE` optionally supplies checksum-verified archives and tool
+wheels. Nothing is downloaded by the application at runtime. Android builds additionally require
 a POSIX shell and make on the build host for GNU libiconv.
 
 iOS framework resources contain `Lensfun` and `Licenses/lensfun`; the application
