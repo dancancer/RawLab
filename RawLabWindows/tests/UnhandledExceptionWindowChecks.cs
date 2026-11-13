@@ -103,7 +103,32 @@ internal static class UnhandledExceptionWindowChecks
             check(window.FolderBreadcrumb.Text == "LibraryRoot",
                 "Folder browser remains operable after unhandled BrowseFolder exception");
 
-            // 3. Early startup unhandled exception (startupCompleted == false, no MainWindow):
+            // 3. PumpEmbedded FormatException / COMException fallback:
+            //    When embedded preview decoding throws FormatException, PumpEmbedded must catch,
+            //    log and degrade to no-preview without propagating an unhandled exception to AppDispatcher.
+            var embeddedFallbackLogged = false;
+            using var traceListener = new FallbackTraceListener(line => {
+                if (line.Contains("Embedded preview fallback")) embeddedFallbackLogged = true;
+            });
+            Trace.Listeners.Add(traceListener);
+            try
+            {
+                window.ReadEmbeddedPreviewHook = _ => throw new FormatException("Simulated corrupted EXIF/preview stream");
+                var dummyPhoto = Path.Combine(root, "bad-embedded.ARW");
+                File.WriteAllBytes(dummyPhoto, [1, 2, 3]);
+                window.OpenFile(dummyPhoto);
+                PumpUntil(app.Dispatcher, () => embeddedFallbackLogged, "Timed out waiting for embedded preview fallback");
+                check(observedExitCode == null, "PumpEmbedded FormatException does not crash the application");
+                check(typeof(MainWindow).GetField("openingPreview", PrivateInstance)!.GetValue(window) == null,
+                    "Embedded preview degrades to no preview state upon FormatException");
+            }
+            finally
+            {
+                Trace.Listeners.Remove(traceListener);
+                window.ReadEmbeddedPreviewHook = RenderEngine.ReadEmbeddedPreview;
+            }
+
+            // 4. Early startup unhandled exception (startupCompleted == false, no MainWindow):
             //    hides Continue button and exits with code 1 instead of OnLastWindowClose code 0.
             window.Close();
             window = null;
@@ -186,5 +211,13 @@ internal static class UnhandledExceptionWindowChecks
             timer.Start();
             Dispatcher.PushFrame(frame);
         }
+    }
+
+    private sealed class FallbackTraceListener : TraceListener
+    {
+        private readonly Action<string> onLine;
+        public FallbackTraceListener(Action<string> onLine) => this.onLine = onLine;
+        public override void Write(string? message) { if (message != null) onLine(message); }
+        public override void WriteLine(string? message) { if (message != null) onLine(message); }
     }
 }

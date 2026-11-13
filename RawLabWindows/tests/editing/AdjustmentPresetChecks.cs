@@ -113,8 +113,17 @@ internal static class AdjustmentPresetChecks
         Reject(() => store.Create("Future", Payload()), "unreadable entry name stays reserved", PresetFailure.DuplicateName);
         Reject(() => new AdjustmentPresetStore(directory, makeID: () => future).Create("Collision", Payload()),
             "unreadable entry ID stays reserved", PresetFailure.IdentityCollision);
+        var dialogItems = PresetLibraryDataSource.Load(store);
+        Check(dialogItems.Count == 3 && dialogItems.Any(item => item.IsCorrupt && item.DisplayName == "Future（损坏）" && item.ID == future),
+            "corrupt preset is surfaced in preset library dialog data source with damaged label");
         store.Delete(updated); store.Delete(created);
         Check(store.List().Count == 0 && File.ReadAllText(path).Contains(raw), "deleting readable presets keeps the unreadable entry");
+        var onlyCorrupt = PresetLibraryDataSource.Load(store);
+        Check(onlyCorrupt.Count == 1 && onlyCorrupt.Single().IsCorrupt && onlyCorrupt.Single().Unreadable == unreadable,
+            "dialog data source contains only the corrupt item when all valid presets deleted");
+        store.Delete(unreadable);
+        Check(store.ListUnreadable().Count == 0 && PresetLibraryDataSource.Load(store).Count == 0 && !File.ReadAllText(path).Contains(raw),
+            "corrupt preset can be removed and clears from dialog data source and disk");
     }
 
     private static void Application(string directory)

@@ -87,6 +87,8 @@ public partial class MainWindow
         photoInfoMode = photoInfoMode.Next();
         RefreshPhotoInfo(); RefreshControls();
     }
+    internal Func<string, EmbeddedPreview> ReadEmbeddedPreviewHook { get; set; } = RenderEngine.ReadEmbeddedPreview;
+
     private async void PumpEmbedded()
     {
         var ticket=embeddedScheduler.Start();if(ticket==null)return;
@@ -94,19 +96,30 @@ public partial class MainWindow
         var current=false;
         try
         {
-            try{preview=await Task.Run(()=>RenderEngine.ReadEmbeddedPreview(ticket.Value.Path));}
-            catch(Exception ex) when(ex is IOException or InvalidOperationException or DllNotFoundException or BadImageFormatException or EntryPointNotFoundException) { }
+            try{preview=await Task.Run(()=>ReadEmbeddedPreviewHook(ticket.Value.Path));}
+            catch(Exception ex) when(ex is not (OutOfMemoryException or StackOverflowException))
+            {
+                Trace.WriteLine($"Embedded preview fallback for {ticket.Value.Path}: {ex.Message}");
+                preview=null;
+            }
         }
         finally { current=embeddedScheduler.Finish(ticket); }
         if(closing)return;
-        if(current && ticket.Value.Revision==openRevision && ticket.Value.Path==file && preview!=null && settings.Geometry.IsIdentity)
+        try
         {
-            if(viewport.SourceSize.Width==0)viewport.SetSourceSize(preview.Width,preview.Height);
-            if(result==null && !renderFailed && preview.Image!=null)
+            if(current && ticket.Value.Revision==openRevision && ticket.Value.Path==file && preview!=null && settings.Geometry.IsIdentity)
             {
-                openingPreview=preview.Image;RefreshViewingFrames();
-                SetStatus(() => Loc.Text("相机内嵌预览 · 正在显影…"));
+                if(viewport.SourceSize.Width==0)viewport.SetSourceSize(preview.Width,preview.Height);
+                if(result==null && !renderFailed && preview.Image!=null)
+                {
+                    openingPreview=preview.Image;RefreshViewingFrames();
+                    SetStatus(() => Loc.Text("相机内嵌预览 · 正在显影…"));
+                }
             }
+        }
+        catch(Exception ex) when(ex is not (OutOfMemoryException or StackOverflowException))
+        {
+            Trace.WriteLine($"Embedded preview update error for {ticket.Value.Path}: {ex.Message}");
         }
         PumpEmbedded();
     }

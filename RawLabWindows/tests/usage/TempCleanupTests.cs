@@ -17,6 +17,7 @@ internal static class TempCleanupTests
             OwnerLivenessProtectsRunningInstance(Path.Combine(sandbox, "liveness"));
             await AnalyticsCacheReusesFixedDirectory(Path.Combine(sandbox, "analytics-cache"));
             SingleExportStagingCleanup(Path.Combine(sandbox, "export-staging"));
+            StartupSweepNeverThrowsOnFaultyDirectoryStub(Path.Combine(sandbox, "fault-isolation"));
             Console.WriteLine("PASS: Windows temp directory sweep, fixed RUM cache and single-export staging cleanup");
         }
         finally
@@ -320,6 +321,44 @@ internal static class TempCleanupTests
 
         liveLease.Dispose();
         Check(!File.Exists(liveTemp), "disposing active single-export staging lease cleans its temporary file");
+    }
+
+    private static void StartupSweepNeverThrowsOnFaultyDirectoryStub(string sandbox)
+    {
+        var tempRoot = Path.Combine(sandbox, "failing-temp");
+        var analyticsDir = Path.Combine(sandbox, "failing-analytics");
+        var stagingDir = Path.Combine(sandbox, "failing-staging");
+        Directory.CreateDirectory(tempRoot);
+        Directory.CreateDirectory(analyticsDir);
+        Directory.CreateDirectory(stagingDir);
+
+        var goodDir = Path.Combine(tempRoot, "RawLab-LUT-preview-good00000000000000000000");
+        Directory.CreateDirectory(goodDir);
+
+        // 构造枚举中途抛 UnauthorizedAccessException / IOException 的目录桩与租约桩
+        IEnumerable<DirectoryInfo> FaultyDirectoryEnumerator(string _)
+        {
+            yield return new DirectoryInfo(goodDir);
+            throw new UnauthorizedAccessException("Simulated directory enumeration access denied");
+        }
+
+        IEnumerable<FileInfo> FaultyFileEnumerator(string _)
+        {
+            yield return new FileInfo(Path.Combine(stagingDir, "stub.json"));
+            throw new IOException("Simulated disk I/O failure during lease enumeration");
+        }
+
+        // 断言 SweepStartup 在目录桩中途抛异常时永不向外抛出未捕获异常
+        TempCleanup.SweepStartup(
+            tempRoot,
+            analyticsDir,
+            stagingDir,
+            DateTime.UtcNow,
+            TempCleanup.DefaultRetention,
+            enumerateDirectories: FaultyDirectoryEnumerator,
+            enumerateFiles: FaultyFileEnumerator);
+
+        Check(true, "startup sweep never throws when directory enumeration fails midway");
     }
 
     private static string CreateDirectoryWithFile(string parent, string dirName, string fileName, DateTime writeUtc)

@@ -35,6 +35,36 @@ public sealed record AdjustmentPreset(string ID, string Name, long CreatedAt, lo
 // 原文 Json 在任何写回中逐字节透传，ID/名称只用于避免新预设与它冲突。
 public sealed record UnreadablePreset(string? ID, string? Name, string Json);
 
+public sealed record PresetDialogItem(
+    string? ID,
+    string DisplayName,
+    bool IsCorrupt,
+    AdjustmentPreset? Preset,
+    UnreadablePreset? Unreadable)
+{
+    public bool CanApply => !IsCorrupt;
+}
+
+public static class PresetLibraryDataSource
+{
+    public static IReadOnlyList<PresetDialogItem> Load(AdjustmentPresetStore store)
+    {
+        var items = new List<PresetDialogItem>();
+        foreach (var preset in store.List())
+        {
+            items.Add(new(preset.ID, preset.Name, IsCorrupt: false, Preset: preset, Unreadable: null));
+        }
+        foreach (var unreadable in store.ListUnreadable())
+        {
+            var name = !string.IsNullOrWhiteSpace(unreadable.Name)
+                ? Loc.Format("{0}（损坏）", unreadable.Name)
+                : Loc.Text("损坏的预设");
+            items.Add(new(unreadable.ID, name, IsCorrupt: true, Preset: null, Unreadable: unreadable));
+        }
+        return items.AsReadOnly();
+    }
+}
+
 public sealed class AdjustmentPresetStore
 {
     private sealed record Registry(List<AdjustmentPreset> Presets, List<string> RetiredIDs, List<UnreadablePreset> Unreadable);
@@ -79,6 +109,20 @@ public sealed class AdjustmentPresetStore
     {
         using var held = AcquireLock(); var registry = Read();
         registry.Presets.RemoveAt(MatchingIndex(expected, registry)); registry.RetiredIDs.Add(expected.ID); Write(registry);
+    }
+    public void Delete(UnreadablePreset expected) => DeleteUnreadable(expected);
+    public void DeleteUnreadable(UnreadablePreset expected)
+    {
+        using var held = AcquireLock(); var registry = Read();
+        var index = registry.Unreadable.FindIndex(item =>
+            (expected.ID != null && item.ID == expected.ID) ||
+            item.Json == expected.Json);
+        if (index < 0) throw new AdjustmentPresetException(PresetFailure.Changed);
+        var removed = registry.Unreadable[index];
+        registry.Unreadable.RemoveAt(index);
+        if (!string.IsNullOrEmpty(removed.ID) && AdjustmentPreset.CanonicalID(removed.ID) && !registry.RetiredIDs.Contains(removed.ID))
+            registry.RetiredIDs.Add(removed.ID);
+        Write(registry);
     }
     private AdjustmentPreset Update(AdjustmentPreset expected, string name, AdjustmentPayload payload)
     {
