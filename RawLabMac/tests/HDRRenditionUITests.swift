@@ -81,7 +81,10 @@ private struct RenditionHostView: View {
             if !(ProcessInfo.processInfo.environment["RAWLAB_REQUIRE_AX"] ?? "").isEmpty {
                 throw Failure.assertion("RAWLAB_REQUIRE_AX is set but accessibility is not granted; the AX checks cannot run")
             }
-            print("SKIP: accessibility is not trusted here; run from an approved terminal to exercise the AX checks")
+            let notice = "SKIP: accessibility is not trusted here; the HDR rendition AX checks did not run"
+            print(notice)
+            // CI 上与 GitHub Actions 的注解语法一致；本地普通终端只会多一行 ::warning::。
+            print("::warning::" + notice)
             return
         }
         let model = RenditionTestModel()
