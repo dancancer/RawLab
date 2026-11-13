@@ -40,12 +40,18 @@ int main() {
     const auto matched = db->inspect(metadata, options);
     assert(matched.state == LensCorrectionState::Matched && !matched.profile.id.empty());
     assert(matched.profile.hasDistortion && matched.profile.hasTCA);
-    // 守卫：合成 id 只用 '\n' 作分隔符，其余字符必须可见可打印。CLI 配方校验
+    // 守卫：合成 id 只用 '\n' 作分隔符，其余字节必须可打印且非 DEL(0x7F)。CLI 配方校验
     // （edit_recipe.cpp validProfileId）依赖这一约定放行换行、拒绝其他控制字节；
-    // fixture 若引入新的不可见字符，这里必须在 CI 变红。
-    assert(std::count(matched.profile.id.begin(), matched.profile.id.end(), '\n') == 3);
-    for (const char ch : matched.profile.id)
-        assert(ch == '\n' || static_cast<unsigned char>(ch) >= 32);
+    // fixture 若混入新的不可见字符，这里必须在 CI 变红。检查库内全部合成 id，不止匹配到的那条。
+    std::vector<std::string> compositeIds{matched.profile.id};
+    for (const auto& profile : profiles) compositeIds.push_back(profile.id);
+    for (const auto& id : compositeIds) {
+        assert(std::count(id.begin(), id.end(), '\n') == 3);
+        for (const char ch : id) {
+            const auto byte = static_cast<unsigned char>(ch);
+            assert(ch == '\n' || (byte >= 32 && byte != 127));
+        }
+    }
     auto unknownCamera = metadata;
     unknownCamera.cameraModel = "Unknown Camera";
     unknownCamera.cropFactor = 1;

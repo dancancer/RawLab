@@ -143,6 +143,28 @@ class EditRecipeSchema(unittest.TestCase):
             document["input"]["camera_development"] = {}
             self.reject(document, "camera_development")
 
+    def test_v14_v15_lens_profile_multiline_catalog_id(self):
+        catalog = "RawLab\nTest 24mm f/2.8\nRawLab Test\n1.000000"
+        for version, processing in ((14, 7), (15, 8)):
+            with self.subTest(version=version):
+                document = self.hdr_v14()
+                document["schema_version"] = version
+                document["processing"]["version"] = processing
+                document["input"]["camera_development"] = {"lens_distortion": True, "lens_profile": catalog}
+                normalized = self.normalize(document)
+                self.assertEqual(normalized["input"]["camera_development"]["lens_profile"], catalog)
+                if jsonschema:
+                    validator = jsonschema.Draft202012Validator(
+                        json.loads((ROOT / f"docs/edit-json-v{version}.schema.json").read_text()))
+                    validator.validate(document)
+                    validator.validate(normalized)
+                for broken in ("a\rb", "a\u0001b"):
+                    invalid = copy.deepcopy(document)
+                    invalid["input"]["camera_development"]["lens_profile"] = broken
+                    self.reject(invalid, "lens_profile")
+                    if jsonschema:
+                        self.assertFalse(validator.is_valid(invalid))
+
     def test_old_hdr_schemas_reject_v14_extensions(self):
         for version, processing in ((6, 1), (8, 2), (9, 3), (10, 4), (11, 5), (12, 6), (13, 7)):
             for source in ("raw", "proraw"):
@@ -738,4 +760,8 @@ if __name__ == "__main__":
     parser.add_argument("--cli", type=pathlib.Path, required=True)
     arguments, remaining = parser.parse_known_args()
     CLI = arguments.cli.resolve()
+    if jsonschema is None:
+        # 可选依赖缺失时显式声明 Skip（ctest SKIP_RETURN_CODE 77），不得静默假绿。
+        print("SKIP: python jsonschema is not installed; the schema contract was not exercised")
+        raise SystemExit(77)
     unittest.main(argv=[__file__, *remaining])

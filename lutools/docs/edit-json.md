@@ -316,7 +316,7 @@ camera state from a neighboring RAW photo.
 | `edits.denoise.wavelet.luma`, `chroma`, `coarse` | [0,100] | 0, 46, 50 |
 | `edits.lens_correction.distortion`, `tca` | Boolean | `false` |
 | `edits.lens_correction.auto_crop` | Boolean | `true` |
-| `edits.lens_correction.profile_id` | Nonempty catalog ID or `null`; `null` selects automatic matching. Catalog IDs join maker, model, mount and crop factor with newlines; no other control characters are accepted | `null` |
+| `edits.lens_correction.profile_id` | Nonempty catalog ID (at most 1024 UTF-8 bytes) or `null`; `null` selects automatic matching. Catalog IDs join maker, model, mount and crop factor with newlines; no other control characters are accepted | `null` |
 
 For raster input, the effective defaults are `sensor` exposure, `none` white
 balance, `raw_level: 0`, and disabled/null lens correction. A raw recipe may
