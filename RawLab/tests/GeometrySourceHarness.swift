@@ -165,12 +165,12 @@ extension ContentView {
                 let expectedViewport = probe.viewportEdges.last
                 probe.check("\(action).ViewportMatchesWindow", viewModel.previewLongEdge == expectedViewport &&
                             viewModel.requestedPreviewLongEdge == expectedViewport)
-                // 现契约：导入关闭 workspace 后按 committed 几何交付；未裁切画面只在草稿编辑期出现（DraftKeepsUncroppedPreview）。
-                let expected = try geometryReviewPreview(settings: settings)
-                try await geometryReviewSettled()
+                // 原契约：几何草稿工作区的底图必须是未裁切画面，裁切框才叠得准（activateEditorTool 进几何即请求草稿预览）。
+                let expected = try geometryReviewPreview()
                 guard let actual = viewModel.previewImage?.pngData() else { throw EditorError.renderFailed }
-                probe.check("\(action).RestoredPreviewPixels", actual == expected)
-                probe.check("\(action).BaseTracksCommittedCrop", viewModel.basePreviewGeometry == bSettings.geometry)
+                probe.check("\(action).UncroppedPreviewPixels", actual == expected)
+                probe.check("\(action).UncroppedComparison", viewModel.basePreviewGeometry.cropWidth == 1 &&
+                            viewModel.basePreviewGeometry.cropHeight == 1)
                 probe.details["\(action).actualPreviewSHA256"] = geometryReviewDigest(actual)
                 probe.details["\(action).expectedPreviewSHA256"] = geometryReviewDigest(expected)
 
@@ -377,10 +377,12 @@ extension ContentView {
                     selectEditorTool(.adjustment(.exposure))
                 }
                 try await geometryReviewSettled()
+                // cancel 场景放弃导航目的地（工作区必须关闭）；revert 场景继续导航到曝光（工作区按当前实现保持打开，
+                // 以草稿已落位 !isEditorDraftChanged 表达原「draft 已解决」语义）。两分支都必须清掉 destination。
                 probe.check("\(resolve)FailedDraft.ClearsFailureAndDestination", resolve == "cancel"
-                            ? !viewModel.hasFailedDraftSave && !isEditorDraftActive
-                            : !viewModel.hasFailedDraftSave && pendingToolSelection == nil &&
-                              selectedAdjustment == .exposure && !isEditorDraftChanged)
+                            ? !viewModel.hasFailedDraftSave && pendingToolSelection == nil && !isEditorDraftActive
+                            : !viewModel.hasFailedDraftSave && pendingToolSelection == nil && !isEditorDraftChanged &&
+                              selectedAdjustment == .exposure)
                 probe.check("\(resolve)FailedDraft.AllowsNormalSaveGate", viewModel.saveCurrentSettings(settings))
             }
             try await reviewWorkspaceGroups(persistence: persistence, url: bURL, identity: bID)
@@ -434,9 +436,9 @@ extension ContentView {
             let saves = probe.saveAttempts.count
             finishDraftNavigation(apply: apply)
             try await geometryReviewSettled()
-            probe.check(prefix + ".CollapsedInactive", !adjustmentsExpanded && !isEditorDraftActive && !lensSelected)
+            probe.check(prefix + ".CollapsedInactive", !adjustmentsExpanded && !isEditorDraftActive && !geometrySelected && !lensSelected)
             probe.details[prefix + ".collapsedState"] = "expanded=\(adjustmentsExpanded), wsOpen=\(toolWorkspaceOpen), geometrySel=\(geometrySelected), draftActive=\(isEditorDraftActive)"
-            probe.check(prefix + ".CollapsedUncroppedPixels", viewModel.previewImage?.pngData() == (try geometryReviewPreview()))
+            probe.check(prefix + ".CommittedPixels", viewModel.previewImage?.pngData() == (try geometryReviewPreview(settings: settings)))
             probe.details[prefix + ".actualSHA256"] = geometryReviewDigest(viewModel.previewImage?.pngData())
             probe.details[prefix + ".viewportReferenceSHA256"] = geometryReviewDigest(try geometryReviewPreview(settings: settings))
             probe.details[prefix + ".nonViewportReferenceSHA256"] = geometryReviewDigest(try geometryReviewPreview(settings: settings, viewportPreview: false))
@@ -444,13 +446,13 @@ extension ContentView {
             probe.check(prefix + ".SaveCount", probe.saveAttempts.count == saves + (apply ? 1 : 0))
             requestAdjustmentExpansion(true)
             try await geometryReviewSettled()
-            probe.check(prefix + ".FreshProjectionOnReopen", geometrySelected && !isEditorDraftChanged && geometryDraftBinding.wrappedValue == settings.geometry)
+            probe.check(prefix + ".FreshDraftOnReopen", geometrySelected && !isEditorDraftChanged && geometryDraft == settings.geometry)
             probe.check(prefix + ".UncroppedOnReopen", viewModel.previewImage?.pngData() == (try geometryReviewPreview()))
             let unchangedSaves = probe.saveAttempts.count
             requestAdjustmentExpansion(false)
             try await geometryReviewSettled()
-            probe.check(prefix + ".UnchangedCollapseInactive", !isEditorDraftActive && !adjustmentsExpanded)
-            probe.check(prefix + ".UnchangedCollapseUncroppedPixels", viewModel.previewImage?.pngData() == (try geometryReviewPreview()))
+            probe.check(prefix + ".UnchangedCollapseInactive", !isEditorDraftActive && !adjustmentsExpanded && !geometrySelected)
+            probe.check(prefix + ".UnchangedCollapseCommittedPixels", viewModel.previewImage?.pngData() == (try geometryReviewPreview(settings: settings)))
             probe.check(prefix + ".UnchangedCollapseNoSave", probe.saveAttempts.count == unchangedSaves)
             requestAdjustmentExpansion(true)
             cancelEditorDraft()

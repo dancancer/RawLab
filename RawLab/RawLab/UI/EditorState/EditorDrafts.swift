@@ -174,6 +174,10 @@ extension ContentView {
         toolWorkspaceOpen = true
         if leavingDraft && !geometrySelected && !lensSelected {
             viewModel.updatePreview(settings: settings, includeHistogram: true, quality: .final)
+        } else if geometrySelected || lensSelected {
+            // 几何/镜头草稿以未裁切底图（draftPreviewSettings）为工作区底图；
+            // 新会话即使投影与 committed 相等（fresh draft）也必须换掉已裁切的交付画面。
+            previewEditorDraft()
         }
     }
 
@@ -188,6 +192,8 @@ extension ContentView {
         workspaceDraftID = UUID()
         workspaceDraft = nil
         toolWorkspaceOpen = false
+        // 取消退出草稿意味着放弃未完成的导航目的地，快照 destination 不得残留。
+        pendingToolSelection = nil
         geometrySelected = false; lensSelected = false
         geometryDraft = nil; lensDraft = nil
         viewModel.hasAdjustmentDraft = false
@@ -308,6 +314,9 @@ extension ContentView {
     func previewEditorDraft() {
         guard !editorBusy, viewModel.hasImage else { return }
         showingBefore = false
+        // 草稿工作区的画布与比对基准必须同态：把比对参考重锚到草稿预览设置，
+        // 交付时 applyComparison 随草稿裁切推进 basePreviewGeometry，几何裁切框在画布与比对态都对齐。
+        viewModel.committedPreviewSettings = draftPreviewSettings
         if isAdjustingSlider {
             viewModel.schedulePreviewUpdate(settings: draftPreviewSettings, delay: 0.08,
                                            includeHistogram: false, quality: .interactive)
@@ -342,7 +351,10 @@ extension ContentView {
         if !expanded && !hslTargetEnabled { cancelSliderInteraction() }
         if expanded {
             if let tool = collapsedEditorTool { activateEditorTool(tool) }
-        } else if isEditorDraftActive {
+        } else if isEditorDraftActive || geometrySelected || lensSelected {
+            // 草稿可能已先经 commit/discard 收尾（导航收起路径），但几何/镜头会话仍在：
+            // 必须同样走 finishEditorTool 落位 committed 画面并记录 collapsedEditorTool，
+            // 否则 geometrySelected 残留会让快照持续视为激活草稿并锁死编辑门禁。
             let tool = currentEditorTool
             let group = selectedGroup
             // 收起结束实际草稿并恢复 committed 画面；记住的工具只属于导航会话。

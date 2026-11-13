@@ -10,6 +10,12 @@ struct HDRResourceNotice {
 
     var message: String?
 
+    /// 交付时状态转换（导入三个交付站点共用）：HDR 帧记录本帧缺失资源消息，SDR 交付复位通知缓存。
+    /// 收口成单一判定，防止逐站点手写赋值漂移；预览撤回路径继续走 `change(to:status:)` 去重。
+    static func delivered(isHDREditing: Bool, missingMessage: String?) -> HDRResourceNotice {
+        isHDREditing ? HDRResourceNotice(message: missingMessage) : HDRResourceNotice()
+    }
+
     mutating func change(to message: String?, status: String?) -> Change {
         guard message != self.message else { return .keep }
         let previous = self.message

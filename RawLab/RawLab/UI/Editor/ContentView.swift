@@ -402,10 +402,6 @@ struct ContentView: View {
             resetConfirmationPresented = false
             draftExitPresented = false
             cancelRulerFocus()
-            // Import renders the committed crop; the retained geometry tool needs the full image.
-            if geometrySelected && !viewModel.isBusy {
-                viewModel.updatePreview(settings: draftPreviewSettings, includeHistogram: true, quality: .final)
-            }
         }
         .onChange(of: viewModel.isBusy) { _, busy in
             if !busy, let current = viewModel.batchSelection.selection.current, current != viewModel.sourceIdentity?.key {
