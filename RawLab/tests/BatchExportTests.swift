@@ -655,6 +655,36 @@ private func checkCorruptJobIsolation(_ root: URL) throws {
                                           ofItemAtPath: lockedStore.directory.path)
     BatchExportTests.check(renameFailureSurfaced && stuckStillActive,
                            "pendingJobs reports quarantine rename failures instead of leaving the corrupt record to be overwritten")
+
+    // A good but unreadable record (0o000) must surface the read I/O instead of being quarantined and overwritten.
+    let unreadableStore = try BatchJournalStore(directory: root.appendingPathComponent("corrupt-isolation-unreadable", isDirectory: true))
+    var healthyJob = BatchExportJob(id: UUID(), source: source,
+                                    targets: [BatchTarget(identity: identity, sourceURL: input, displayName: "isolation-source.ARW")],
+                                    outputFormat: .jpeg, longEdge: 2048)
+    healthyJob.status = .failed
+    try unreadableStore.save(healthyJob)
+    let healthyFile = unreadableStore.directory.appendingPathComponent("\(healthyJob.id.uuidString).json")
+    try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o000)], ofItemAtPath: healthyFile.path)
+    var unreadableSurfaced = false
+    var healthyStillActive = false
+    var unreadableOverwriteRejected = false
+    var unreadableNothingQuarantined = false
+    do {
+        _ = try unreadableStore.pendingJobs()
+    } catch {
+        unreadableSurfaced = true
+        healthyStillActive = FileManager.default.fileExists(atPath: healthyFile.path)
+        do {
+            try unreadableStore.save(healthyJob)
+        } catch {
+            unreadableOverwriteRejected = true
+        }
+        unreadableNothingQuarantined = try FileManager.default.contentsOfDirectory(at: unreadableStore.directory, includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.contains(".corrupt-") }.isEmpty
+    }
+    try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o600)], ofItemAtPath: healthyFile.path)
+    BatchExportTests.check(unreadableSurfaced && healthyStillActive && unreadableOverwriteRejected && unreadableNothingQuarantined,
+                           "pendingJobs/save surface an unreadable good journal instead of quarantining and overwriting it")
 }
 
 private func checkFutureJournalRefusesQuarantine(_ root: URL) throws {

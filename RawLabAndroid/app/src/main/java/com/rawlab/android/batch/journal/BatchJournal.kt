@@ -4,7 +4,9 @@ import android.util.Log
 import com.rawlab.android.batch.BatchJob
 import com.rawlab.android.batch.BatchRowStatus
 import com.rawlab.android.settings.ProcessingIdentity
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.EOFException
 import java.io.File
@@ -46,11 +48,9 @@ class BatchJournal(private val directory: File) {
 
     fun contains(id: String): Boolean = journalFile(id).isFile
 
-    private fun isUnsupportedFuture(id: String): Boolean {
-        val file = journalFile(id)
-        if (!file.isFile) return false
+    private fun isUnsupportedFuture(snapshotBytes: ByteArray): Boolean {
         return try {
-            val properties = Properties().also { file.inputStream().use(it::load) }
+            val properties = Properties().also { it.load(snapshotBytes.inputStream()) }
             val version = properties.getProperty("journal.version")?.toIntOrNull()
             if (version != null && version > JournalCodec.VERSION) return true
             // 已处理版本与冻结设置里的未来版本同样是「可识别但更新」，不得当坏文件隔离。
@@ -97,14 +97,12 @@ class BatchJournal(private val directory: File) {
     fun save(job: BatchJob) {
         // 旧实例不得覆盖另一个版本已经保存的新格式。
         if (contains(job.id)) {
-            if (isUnsupportedFuture(job.id)) {
+            try {
                 load(job.id)
-            } else {
-                try {
-                    load(job.id)
-                } catch (error: Exception) {
-                    quarantine(job.id, error)
-                }
+            } catch (error: Exception) {
+                // 读 I/O 与未来版本原样传播、不动原文件；只有「读得到但坏了」才隔离。
+                if (error !is CorruptBatchJournalEntry) throw error
+                quarantine(job.id, error)
             }
         }
         generations.remove(job.id)
@@ -151,40 +149,56 @@ class BatchJournal(private val directory: File) {
 
     @Synchronized
     fun load(id: String): BatchJob? {
-        if (!contains(id)) return null
-        val properties = Properties().also { journalFile(id).inputStream().use(it::load) }
-        val snapshot = JournalCodec.readSnapshot(id, properties)
-        val replayed = replay(snapshot, properties.getProperty("journal.generation"))
-        return replayed.withRows(replayed.rows.map { row ->
-            row.copy(status = when (row.status) {
-                BatchRowStatus.PROCESSING -> BatchRowStatus.PENDING
-                BatchRowStatus.PUBLISHING -> BatchRowStatus.NEEDS_CONFIRMATION
-                else -> row.status
+        val snapshotFile = journalFile(id)
+        if (!snapshotFile.isFile) return null
+        // 「读不了」≠「坏了」：先把整份字节读进内存，读 I/O 失败原样上抛且不动原文件；
+        // 只有内存字节的解析/版本判定才走损坏隔离与未来版本拒绝（对齐 Mac readJob）。
+        val snapshotBytes = snapshotFile.readBytes()
+        val log = logFile(id)
+        val logBytes = if (log.isFile) log.readBytes() else null
+        return try {
+            val properties = Properties().also { it.load(snapshotBytes.inputStream()) }
+            val snapshot = JournalCodec.readSnapshot(id, properties)
+            val replayed = replay(snapshot, properties.getProperty("journal.generation"), logBytes)
+            replayed.withRows(replayed.rows.map { row ->
+                row.copy(status = when (row.status) {
+                    BatchRowStatus.PROCESSING -> BatchRowStatus.PENDING
+                    BatchRowStatus.PUBLISHING -> BatchRowStatus.NEEDS_CONFIRMATION
+                    else -> row.status
+                })
             })
-        })
+        } catch (error: Exception) {
+            if (isUnsupportedFuture(snapshotBytes)) throw error
+            throw CorruptBatchJournalEntry(id, error)
+        }
     }
 
-    private fun replay(job: BatchJob, generation: String?): BatchJob {
-        val file = logFile(job.id)
-        if (generation == null || logGeneration(file) != generation) return job
+    private fun replay(job: BatchJob, generation: String?, logBytes: ByteArray?): BatchJob {
+        if (generation == null || logBytes == null || logHeader(logBytes) != generation) return job
         val rows = job.rows.toMutableList()
-        RandomAccessFile(file, "r").use { input ->
-            input.readInt()
-            input.readUTF()
-            while (input.length() - input.filePointer >= 4) {
-                val size = input.readInt()
-                if (size <= 0 || size.toLong() > input.length() - input.filePointer - 4) break
-                val payload = ByteArray(size).also(input::readFully)
-                if (input.readInt() != CRC32().apply { update(payload) }.value.toInt()) break
-                try {
-                    val properties = Properties().also { it.load(payload.inputStream()) }
-                    val index = properties.getProperty("row.index")?.toIntOrNull() ?: break
-                    if (index !in rows.indices || properties.getProperty("row.id") != rows[index].id) break
-                    rows[index] = JournalCodec.readRow(properties, rows[index])
-                } catch (_: IllegalArgumentException) { break }
-            }
+        val log = LogReader(logBytes)
+        log.readInt()
+        log.readString()
+        while (log.remaining >= 4) {
+            val size = log.readInt()
+            if (size <= 0 || size > log.remaining - 4) break
+            val payload = log.readBytes(size)
+            if (log.readInt() != CRC32().apply { update(payload) }.value.toInt()) break
+            try {
+                val properties = Properties().also { it.load(payload.inputStream()) }
+                val index = properties.getProperty("row.index")?.toIntOrNull() ?: break
+                if (index !in rows.indices || properties.getProperty("row.id") != rows[index].id) break
+                rows[index] = JournalCodec.readRow(properties, rows[index])
+            } catch (_: IllegalArgumentException) { break }
         }
         return job.withRows(rows)
+    }
+
+    private fun logHeader(bytes: ByteArray): String? = try {
+        val log = LogReader(bytes)
+        if (log.readInt() != LOG_MAGIC) null else log.readString()
+    } catch (_: EOFException) {
+        null
     }
 
     private fun logGeneration(file: File): String? {
@@ -193,6 +207,25 @@ class BatchJournal(private val directory: File) {
             RandomAccessFile(file, "r").use { if (it.readInt() == LOG_MAGIC) it.readUTF() else null }
         } catch (_: EOFException) { null }
         catch (_: UTFDataFormatException) { null }
+    }
+
+    /** 行日志的内存游标：按 writeInt/writeUTF 布局精确前进，长度取自 2 字节前缀，不受编码差异影响。 */
+    private class LogReader(bytes: ByteArray) {
+        private val stream = DataInputStream(ByteArrayInputStream(bytes))
+        var remaining = bytes.size
+            private set
+        fun readInt(): Int { val value = stream.readInt(); remaining -= 4; return value }
+        fun readString(): String {
+            val length = stream.readUnsignedShort()
+            val raw = ByteArray(length).also(stream::readFully)
+            remaining -= 2 + length
+            return String(raw, Charsets.UTF_8)
+        }
+        fun readBytes(count: Int): ByteArray {
+            val value = ByteArray(count).also(stream::readFully)
+            remaining -= count
+            return value
+        }
     }
 
     private fun replace(file: File, write: (FileOutputStream) -> Unit) {
@@ -265,7 +298,8 @@ class BatchJournal(private val directory: File) {
                     } else job.takeIf { it.rows.isNotEmpty() }?.id
                 }
             } catch (error: Exception) {
-                if (isUnsupportedFuture(id)) throw error
+                // 读 I/O 与未来版本原样传播；只有「读得到但坏了」才隔离并继续扫描其余待办。
+                if (error !is CorruptBatchJournalEntry) throw error
                 quarantine(id, error)
                 null
             }
@@ -279,3 +313,10 @@ class BatchJournal(private val directory: File) {
         File(directory, id).deleteRecursively()
     }
 }
+
+/**
+ * 「读得到但坏了」的专属标记：调用方只对这类异常做损坏隔离；
+ * 读 I/O 失败与未来版本必须原样传播，不动、不覆盖原文件（对齐 Mac/iOS/Windows 边界）。
+ */
+private class CorruptBatchJournalEntry(id: String, cause: Exception) :
+    Exception("Corrupt batch journal $id (${cause.message ?: cause.javaClass.simpleName})", cause)

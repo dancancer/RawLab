@@ -396,4 +396,68 @@ class BatchJournalTest {
             root.setWritable(true)
         }
     }
+
+    // 「读不了」≠「坏了」：读 I/O 失败必须原样上抛，好文件不隔离、未来日志不被覆盖（对齐 Mac readJob）。
+
+    @Test fun unreadableHealthyJournalPropagatesFromPendingWithoutQuarantine() {
+        val unreadableRoot = temporary.newFolder("unreadable-pending")
+        val journal = BatchJournal(unreadableRoot)
+        val id = "healthy-unreadable"
+        journal.save(job().copy(id = id))
+        val record = File(unreadableRoot, "$id.properties")
+        assumeTrue("filesystem must enforce file read permission for this anchor", record.setReadable(false))
+        try {
+            var thrown = false
+            try { journal.pending() } catch (error: Exception) { thrown = error is java.io.IOException }
+            assertTrue("pending must surface an unreadable healthy journal instead of quarantining it", thrown)
+            assertTrue("Unreadable snapshot must stay on its active path", record.exists())
+            assertTrue("Unreadable rows log must stay on its active path", File(unreadableRoot, "$id.rows").exists())
+            assertTrue("A read failure must not quarantine anything",
+                unreadableRoot.listFiles()?.none { it.name.contains(".corrupt-") } ?: true)
+        } finally {
+            record.setReadable(true)
+        }
+    }
+
+    @Test fun unreadableFutureJournalSaveRefusesQuarantineAndOverwrite() {
+        val unreadableRoot = temporary.newFolder("unreadable-future")
+        val journal = BatchJournal(unreadableRoot)
+        val id = "future-unreadable"
+        journal.save(job().copy(id = id))
+        val record = File(unreadableRoot, "$id.properties")
+        record.writeText(record.readText().replace("journal.version=${JournalCodec.VERSION}", "journal.version=${JournalCodec.VERSION + 5}"))
+        assumeTrue("filesystem must enforce file read permission for this anchor", record.setReadable(false))
+        try {
+            var thrown = false
+            try { journal.save(job().copy(id = id)) } catch (error: Exception) { thrown = error is java.io.IOException }
+            assertTrue("save must refuse to overwrite an unreadable future-version journal", thrown)
+            assertTrue("An unreadable future journal must not be quarantined away",
+                unreadableRoot.listFiles()?.none { it.name.contains(".corrupt-") } ?: true)
+            record.setReadable(true)
+            assertTrue("Refused save must leave the future version bytes in place",
+                record.readText().contains("journal.version=${JournalCodec.VERSION + 5}"))
+        } finally {
+            record.setReadable(true)
+        }
+    }
+
+    @Test fun unreadableRowsLogPropagatesWithoutQuarantine() {
+        val unreadableRoot = temporary.newFolder("unreadable-rows")
+        val journal = BatchJournal(unreadableRoot)
+        val id = "rows-unreadable"
+        journal.save(job().copy(id = id))
+        val rows = File(unreadableRoot, "$id.rows")
+        assumeTrue("filesystem must enforce file read permission for this anchor", rows.setReadable(false))
+        try {
+            var thrown = false
+            try { journal.pending() } catch (error: Exception) { thrown = error is java.io.IOException }
+            assertTrue("pending must surface an unreadable rows log instead of quarantining the healthy journal", thrown)
+            assertTrue("Healthy snapshot must stay on its active path", File(unreadableRoot, "$id.properties").exists())
+            assertTrue("Unreadable rows log must stay on its active path", rows.exists())
+            assertTrue("An unreadable rows log must not quarantine the whole journal",
+                unreadableRoot.listFiles()?.none { it.name.contains(".corrupt-") } ?: true)
+        } finally {
+            rows.setReadable(true)
+        }
+    }
 }
