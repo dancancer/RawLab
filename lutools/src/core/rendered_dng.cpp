@@ -1,5 +1,7 @@
 #include "rendered_dng.h"
 
+#include "processing_cancellation.h"
+
 #include <cstddef>
 #include <cstdio>
 #include <jpeglib.h>
@@ -613,6 +615,8 @@ ErrorCode saveRenderedDNG(const ImageData& image, const std::string& filepath) {
         return ErrorCode::ProcessingError;
     }
     if (!TIFFWriteDirectory(tif) || !TIFFFlush(tif)) return ErrorCode::IOError;
+    // 提交点：编码完成后、替换目标文件之前再看一次取消。
+    checkProcessingCancellation();
     try {
         if (!staging.publish(outputPath)) return ErrorCode::IOError;
     } catch (const std::bad_alloc&) {

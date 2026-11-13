@@ -6,10 +6,13 @@
 #include "core/photo_effects.h"
 #include "core/photo_geometry.h"
 #include "core/photo_lut.h"
+#include <algorithm>
 #include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
+#include <string>
 #include <unistd.h>
 #include <vector>
 
@@ -155,6 +158,123 @@ int main() {
         sony2fuji::GammaConverter::FLog2Options options;
         sony2fuji::GammaConverter::applyFLog2ToImage(image, options);
     });
+    // FINAL exports honour the callback and never publish a partial file. The destination is
+    // pre-populated so "cancelled" can be distinguished from "wrote a fresh file".
+    {
+        const auto root = std::filesystem::temp_directory_path() /
+            ("rawlab-cancel-final-" + std::to_string(::getpid()));
+        std::error_code cleanupError;
+        std::filesystem::remove_all(root, cleanupError);
+        std::filesystem::create_directories(root);
+        const std::vector<unsigned char> existing = {0x6f, 0x6c, 0x64};
+        auto writeFile = [](const std::filesystem::path& path, const std::vector<unsigned char>& bytes) {
+            std::ofstream out(path, std::ios::binary | std::ios::trunc);
+            out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+        };
+        auto readFile = [](const std::filesystem::path& path) {
+            std::ifstream in(path, std::ios::binary);
+            return std::vector<unsigned char>(std::istreambuf_iterator<char>(in),
+                std::istreambuf_iterator<char>());
+        };
+        auto stagingResidue = [](const std::filesystem::path& dir) {
+            int count = 0;
+            for (const auto& entry : std::filesystem::directory_iterator(dir))
+                if (entry.path().filename().string().find(".rawlab-") != std::string::npos) ++count;
+            return count;
+        };
+
+        std::vector<unsigned char> exportPixels(256 * 256 * 3, 96);
+        sony2fuji_request exportRequest = request;
+        exportRequest.input_pixels = exportPixels.data();
+        exportRequest.input_width = exportRequest.input_height = 256;
+        exportRequest.intent = SONY2FUJI_INTENT_FINAL;
+        exportRequest.output_target = SONY2FUJI_TARGET_FILE;
+        exportRequest.size_mode = SONY2FUJI_SIZE_EXACT;
+        exportRequest.target_width = exportRequest.target_height = 128;
+        exportRequest.jpeg_quality = 90;
+
+        struct ExportCase { sony2fuji_output_format format; const char* name; const char* label; std::vector<unsigned char> magic; };
+        for (const auto& exportCase : {ExportCase{SONY2FUJI_OUTPUT_JPEG, "export.jpg", "JPEG", {0xff, 0xd8}},
+                                       ExportCase{SONY2FUJI_OUTPUT_PNG, "export.png", "PNG", {0x89, 'P', 'N', 'G'}},
+                                       ExportCase{SONY2FUJI_OUTPUT_DNG, "export.dng", "DNG", {'I', 'I'}}}) {
+            const auto target = root / exportCase.name;
+            const std::string okLabel = std::string("FINAL ") + exportCase.label +
+                " export succeeds and polls the cancellation callback";
+            const std::string targetPath = target.u8string();
+            exportRequest.output_format = exportCase.format;
+            exportRequest.output_path = targetPath.c_str();
+            writeFile(target, existing);
+
+            std::atomic<int> polls{0};
+            sony2fuji_session_set_cancellation_callback(session, +[](void* context) -> int32_t {
+                static_cast<std::atomic<int>*>(context)->fetch_add(1);
+                return 0;
+            }, &polls);
+            sony2fuji_buffer exported{};
+            const auto exportStatus = sony2fuji_process(session, &exportRequest, &exported);
+            sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr);
+            sony2fuji_release_buffer(&exported);
+            check(exportStatus == SONY2FUJI_STATUS_OK && polls.load() > 0, okLabel.c_str());
+            if (exportStatus != SONY2FUJI_STATUS_OK || polls.load() <= 0) continue;
+            const std::string earlyLabel = std::string("FINAL ") + exportCase.label +
+                " export cancels early without publishing a buffer";
+            {
+                writeFile(target, existing);
+                std::atomic<int> remaining{1};
+                sony2fuji_session_set_cancellation_callback(session, +[](void* context) -> int32_t {
+                    return static_cast<std::atomic<int>*>(context)->fetch_sub(1) <= 1;
+                }, &remaining);
+                sony2fuji_buffer cancelled{};
+                const auto cancelStatus = sony2fuji_process(session, &exportRequest, &cancelled);
+                sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr);
+                sony2fuji_release_buffer(&cancelled);
+                check(cancelStatus == SONY2FUJI_STATUS_CANCELLED && cancelled.data == nullptr,
+                    earlyLabel.c_str());
+                check(readFile(target) == existing, "Cancelled FINAL export keeps the existing target byte-identical");
+                check(stagingResidue(root) == 0, "Cancelled FINAL export removes its staging file");
+            }
+
+            // Cancel as soon as the encoder has staged bytes but has not replaced the target yet. This
+            // is the commit point: it holds for every format without depending on a poll count, and it
+            // fails (export completes, target replaced) when the encoder skips its final check.
+            {
+                writeFile(target, existing);
+                struct StagingWatch { std::filesystem::path directory; };
+                StagingWatch watch{root};
+                sony2fuji_session_set_cancellation_callback(session, +[](void* context) -> int32_t {
+                    const auto& watch = *static_cast<StagingWatch*>(context);
+                    std::error_code error;
+                    for (std::filesystem::directory_iterator it(watch.directory, error), last;
+                         !error && it != last; it.increment(error)) {
+                        if (it->path().filename().string().find(".rawlab-") != std::string::npos) return 1;
+                    }
+                    return 0;
+                }, &watch);
+                sony2fuji_buffer cancelled{};
+                const auto cancelStatus = sony2fuji_process(session, &exportRequest, &cancelled);
+                sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr);
+                sony2fuji_release_buffer(&cancelled);
+                const std::string commitLabel = std::string("FINAL ") + exportCase.label +
+                    " export cancels at the commit point instead of publishing staged bytes";
+                check(cancelStatus == SONY2FUJI_STATUS_CANCELLED && cancelled.data == nullptr,
+                    commitLabel.c_str());
+                check(readFile(target) == existing,
+                    "Cancelling at the commit point keeps the existing target byte-identical");
+                check(stagingResidue(root) == 0,
+                    "Cancelling at the commit point removes the staging file");
+            }
+
+            sony2fuji_buffer published{};
+            check(sony2fuji_process(session, &exportRequest, &published) == SONY2FUJI_STATUS_OK,
+                "The session exports the same FINAL request successfully after a cancellation");
+            sony2fuji_release_buffer(&published);
+            const auto written = readFile(target);
+            check(written.size() > existing.size() && written.size() >= exportCase.magic.size() &&
+                  std::equal(exportCase.magic.begin(), exportCase.magic.end(), written.begin()),
+                "A completed FINAL export replaces the target with the encoded file");
+        }
+        std::filesystem::remove_all(root, cleanupError);
+    }
     sony2fuji_session_destroy(session);
     return failures ? 1 : 0;
 }

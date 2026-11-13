@@ -937,13 +937,17 @@ void removeStagingPathNoThrow(const std::filesystem::path& path) noexcept {
     std::filesystem::remove(path, error);
 }
 
-class JpegStagingFile final {
+// 编码结果先写入目标目录内的临时文件，最后一次原子替换发布。这样取消或失败都不会
+// 破坏目标位置已有的文件，也不会留下半成品。
+class EncodedStagingFile final {
 public:
-    JpegStagingFile() = default;
-    JpegStagingFile(const JpegStagingFile&) = delete;
-    JpegStagingFile& operator=(const JpegStagingFile&) = delete;
+    enum class Kind { Jpeg, Png };
 
-    ~JpegStagingFile() { cleanup(); }
+    explicit EncodedStagingFile(Kind kind) : kind_(kind) {}
+    EncodedStagingFile(const EncodedStagingFile&) = delete;
+    EncodedStagingFile& operator=(const EncodedStagingFile&) = delete;
+
+    ~EncodedStagingFile() { cleanup(); }
 
     bool create(const std::filesystem::path& destination) {
 #ifdef _WIN32
@@ -952,7 +956,8 @@ public:
             std::filesystem::path parent = destination.parent_path();
             if (parent.empty()) parent = L".";
             const std::wstring parentString = parent.wstring();
-            if (GetTempFileNameW(parentString.c_str(), L"rlj", 0, temporaryName) == 0) {
+            const wchar_t* prefix = kind_ == Kind::Jpeg ? L"rlj" : L"rlp";
+            if (GetTempFileNameW(parentString.c_str(), prefix, 0, temporaryName) == 0) {
                 return false;
             }
             path_ = std::filesystem::path(temporaryName);
@@ -973,7 +978,8 @@ public:
         try {
             std::filesystem::path parent = destination.parent_path();
             if (parent.empty()) parent = ".";
-            const std::string pattern = (parent / ".rawlab-jpeg-XXXXXX").string();
+            const std::string base = kind_ == Kind::Jpeg ? ".rawlab-jpeg" : ".rawlab-png";
+            const std::string pattern = (parent / (base + "-XXXXXX")).string();
             temporaryName.assign(pattern.begin(), pattern.end());
             temporaryName.push_back('\0');
             createdFd = ::mkstemp(temporaryName.data());
@@ -1038,6 +1044,7 @@ private:
         path_.clear();
     }
 
+    Kind kind_ = Kind::Jpeg;
     std::filesystem::path path_;
     std::FILE* file_ = nullptr;
     bool published_ = false;
@@ -1125,7 +1132,7 @@ ErrorCode ImageEncoder::saveJPEG(
         }
 #endif
 
-        JpegStagingFile staging;
+        EncodedStagingFile staging(EncodedStagingFile::Kind::Jpeg);
         if (!staging.create(destination)) {
             std::cerr << "保存 JPEG 失败: " << filepath << std::endl;
             return ErrorCode::IOError;
@@ -1150,10 +1157,14 @@ ErrorCode ImageEncoder::saveJPEG(
             std::cerr << "保存 JPEG 失败: " << filepath << std::endl;
             return ErrorCode::ProcessingError;
         }
+        // 提交点：编码完成后、替换目标文件之前再看一次取消。
+        checkProcessingCancellation();
         if (!staging.finishAndPublish(destination)) {
             std::cerr << "保存 JPEG 失败: " << filepath << std::endl;
             return ErrorCode::IOError;
         }
+    } catch (const ProcessingCancelled&) {
+        throw;
     } catch (const std::bad_alloc&) {
         return ErrorCode::OutOfMemory;
     } catch (...) {
@@ -1166,68 +1177,103 @@ ErrorCode ImageEncoder::saveJPEG(
 }
 
 ErrorCode ImageEncoder::savePNG(const ImageData& image, const std::string& filepath) {
-    if (image.width <= 0 || image.height <= 0 ||
+    if (filepath.empty() || filepath.find('\0') != std::string::npos ||
+        image.width <= 0 || image.height <= 0 ||
         image.pixels.size() != static_cast<size_t>(image.width) * image.height)
         return ErrorCode::ProcessingError;
-    std::ofstream file(std::filesystem::u8path(filepath), std::ios::binary);
-    if (!file) return ErrorCode::ProcessingError;
-    auto write32 = [&](uint32_t value) {
-        unsigned char bytes[] = {static_cast<unsigned char>(value>>24),
-            static_cast<unsigned char>(value>>16), static_cast<unsigned char>(value>>8),
-            static_cast<unsigned char>(value)};
-        file.write(reinterpret_cast<char*>(bytes), 4);
-    };
-    auto chunk = [&](const char* type, const unsigned char* data, size_t length) {
-        write32(static_cast<uint32_t>(length));
-        file.write(type, 4);
-        if (length) file.write(reinterpret_cast<const char*>(data), length);
-        uLong crc = crc32(0, reinterpret_cast<const Bytef*>(type), 4);
-        if (length) crc = crc32(crc, data, static_cast<uInt>(length));
-        write32(static_cast<uint32_t>(crc));
-    };
-    const unsigned char signature[] = {137,80,78,71,13,10,26,10};
-    file.write(reinterpret_cast<const char*>(signature), sizeof(signature));
-    unsigned char header[13] = {};
-    for (int i=0; i<4; ++i) {
-        header[i] = static_cast<unsigned char>(image.width >> (24-8*i));
-        header[4+i] = static_cast<unsigned char>(image.height >> (24-8*i));
+
+    std::filesystem::path destination;
+    try {
+#ifdef _WIN32
+        destination = std::filesystem::u8path(filepath);
+#else
+        destination = std::filesystem::path(filepath);
+#endif
+    } catch (const std::bad_alloc&) {
+        return ErrorCode::OutOfMemory;
+    } catch (...) {
+        return ErrorCode::IOError;
     }
-    header[8]=16; header[9]=2;
-    chunk("IHDR", header, sizeof(header));
-    const unsigned char intent = 0;
-    chunk("sRGB", &intent, 1);
-    z_stream stream{};
-    if (deflateInit(&stream, Z_DEFAULT_COMPRESSION) != Z_OK) return ErrorCode::ProcessingError;
-    std::vector<unsigned char> row(static_cast<size_t>(image.width)*6+1);
-    std::array<unsigned char, 65536> compressed;
-    bool ok = true;
-    for (int y=0; y<image.height && ok; ++y) {
-        row[0]=0;
-        for (int x=0; x<image.width; ++x) {
-            const auto& p = image.at(x,y);
-            const uint16_t values[] = {floatToUint16(p.r),floatToUint16(p.g),floatToUint16(p.b)};
-            for (int c=0;c<3;++c) {
-                row[1+x*6+c*2] = static_cast<unsigned char>(values[c]>>8);
-                row[2+x*6+c*2] = static_cast<unsigned char>(values[c]);
-            }
+    std::error_code directoryError;
+    if (!destination.has_filename() || std::filesystem::is_directory(destination, directoryError))
+        return ErrorCode::IOError;
+
+    try {
+        EncodedStagingFile staging(EncodedStagingFile::Kind::Png);
+        if (!staging.create(destination)) return ErrorCode::IOError;
+        std::FILE* file = staging.file();
+        bool ok = true;
+        auto writeBytes = [&](const void* data, size_t length) {
+            if (!ok || length == 0) return;
+            if (std::fwrite(data, 1, length, file) != length) ok = false;
+        };
+        auto write32 = [&](uint32_t value) {
+            unsigned char bytes[] = {static_cast<unsigned char>(value>>24),
+                static_cast<unsigned char>(value>>16), static_cast<unsigned char>(value>>8),
+                static_cast<unsigned char>(value)};
+            writeBytes(bytes, sizeof(bytes));
+        };
+        auto chunk = [&](const char* type, const unsigned char* data, size_t length) {
+            write32(static_cast<uint32_t>(length));
+            writeBytes(type, 4);
+            writeBytes(data, length);
+            uLong crc = crc32(0, reinterpret_cast<const Bytef*>(type), 4);
+            if (length) crc = crc32(crc, data, static_cast<uInt>(length));
+            write32(static_cast<uint32_t>(crc));
+        };
+        const unsigned char signature[] = {137,80,78,71,13,10,26,10};
+        writeBytes(signature, sizeof(signature));
+        unsigned char header[13] = {};
+        for (int i=0; i<4; ++i) {
+            header[i] = static_cast<unsigned char>(image.width >> (24-8*i));
+            header[4+i] = static_cast<unsigned char>(image.height >> (24-8*i));
         }
-        stream.next_in = row.data();
-        stream.avail_in = static_cast<uInt>(row.size());
-        const int flush = y == image.height-1 ? Z_FINISH : Z_NO_FLUSH;
-        int status;
-        do {
-            stream.next_out = compressed.data();
-            stream.avail_out = compressed.size();
-            status = deflate(&stream, flush);
-            if (status != Z_OK && status != Z_STREAM_END) { ok=false; break; }
-            const size_t size = compressed.size()-stream.avail_out;
-            if (size) chunk("IDAT", compressed.data(), size);
-        } while (stream.avail_in || stream.avail_out == 0 || (flush == Z_FINISH && status != Z_STREAM_END));
+        header[8]=16; header[9]=2;
+        chunk("IHDR", header, sizeof(header));
+        const unsigned char intent = 0;
+        chunk("sRGB", &intent, 1);
+        z_stream stream{};
+        if (deflateInit(&stream, Z_DEFAULT_COMPRESSION) != Z_OK) return ErrorCode::ProcessingError;
+        std::vector<unsigned char> row(static_cast<size_t>(image.width)*6+1);
+        std::array<unsigned char, 65536> compressed;
+        for (int y=0; y<image.height && ok; ++y) {
+            row[0]=0;
+            for (int x=0; x<image.width; ++x) {
+                const auto& p = image.at(x,y);
+                const uint16_t values[] = {floatToUint16(p.r),floatToUint16(p.g),floatToUint16(p.b)};
+                for (int c=0;c<3;++c) {
+                    row[1+x*6+c*2] = static_cast<unsigned char>(values[c]>>8);
+                    row[2+x*6+c*2] = static_cast<unsigned char>(values[c]);
+                }
+            }
+            stream.next_in = row.data();
+            stream.avail_in = static_cast<uInt>(row.size());
+            const int flush = y == image.height-1 ? Z_FINISH : Z_NO_FLUSH;
+            int status;
+            do {
+                stream.next_out = compressed.data();
+                stream.avail_out = compressed.size();
+                status = deflate(&stream, flush);
+                if (status != Z_OK && status != Z_STREAM_END) { ok=false; break; }
+                const size_t size = compressed.size()-stream.avail_out;
+                if (size) chunk("IDAT", compressed.data(), size);
+            } while (stream.avail_in || stream.avail_out == 0 || (flush == Z_FINISH && status != Z_STREAM_END));
+        }
+        deflateEnd(&stream);
+        chunk("IEND", nullptr, 0);
+        if (!ok || std::fflush(file) != 0 || std::ferror(file) != 0) return ErrorCode::ProcessingError;
+        // 提交点：编码完成后、替换目标文件之前再看一次取消。
+        checkProcessingCancellation();
+        if (!staging.finishAndPublish(destination)) return ErrorCode::IOError;
+    } catch (const ProcessingCancelled&) {
+        throw;
+    } catch (const std::bad_alloc&) {
+        return ErrorCode::OutOfMemory;
+    } catch (...) {
+        return ErrorCode::IOError;
     }
-    deflateEnd(&stream);
-    chunk("IEND", nullptr, 0);
-    file.flush();
-    return ok && file.good() ? ErrorCode::Success : ErrorCode::ProcessingError;
+
+    return ErrorCode::Success;
 }
 
 } // namespace sony2fuji
