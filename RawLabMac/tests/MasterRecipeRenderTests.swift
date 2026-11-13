@@ -173,7 +173,8 @@ private func manualSettings(_ recipe: MasterRecipe, camera: WhiteBalance, streng
             let combinedActual = try combinedColdEngine.render(input, settings: combined, lut: combinedLUT, edge: 128)!
             try check(pixels(combinedActual) == pixels(combinedReference),
                       "\(input.lastPathComponent): recipe WB primer preserves the current HSL controls")
-            // v4 增量含基本影调/atmosphere（CPU-only）：forced-Metal parity 改钉 Auto 诚实回退与像素一致。
+            // 配方 v4 行的基本影调增量（shadows/highlights/contrast/tone；目录内 atmosphere 均为 0）
+            // 激活 CPU-only 阶段：forced-Metal parity 改钉 Auto 诚实回退与像素一致。
             let combinedFallback = try automatic.render(input, settings: combined, lut: combinedLUT, edge: 128)!
             try check(pixels(combinedFallback) == pixels(combinedReference) && automatic.lastBackend == SONY2FUJI_BACKEND_CPU,
                       "\(input.lastPathComponent): display-sRGB recipe plus HSL uses the honest Auto CPU fallback (was forced Metal parity)")
@@ -211,11 +212,36 @@ private func manualSettings(_ recipe: MasterRecipe, camera: WhiteBalance, streng
                         recipeOutputs.insert(pixels(actual))
                         try check(pixels(actual) != pixels(reference), "\(label): recipe has a visible non-neutral result")
                     }
-                    // 契约两个方向（basic-controls-v3.md L46-47）：仅 GPU 支持面（neutral+LUT）保留 forced-Metal parity；
-                    // CPU-only 阶段激活时 Auto 必须诚实回退整条 CPU 路径，Force 必须显式 UNSUPPORTED。
+                    // 期望独立于被测对象（docs/process/ci.md「独立期望」）：由输入 strength 与契约
+                    // （basic-controls-v3.md L46-47）静态决定，不按运行时 backend 自适应，否则
+                    // cpuOnlyStages 分类回归会让用例跟着换分支静默假绿。
+                    // 14 配方均为 v4 且 shadows/highlights/contrast/tone 增量非零（atmosphere 目录内为 0），
+                    // 非零强度必激活 CPU-only 阶段：Auto 诚实返回完整 CPU 路径，Force 显式 UNSUPPORTED。
                     let fallback = try automatic.render(input, settings: saved, lut: lut, edge: 128)!
-                    if automatic.lastBackend == SONY2FUJI_BACKEND_CPU {
-                        try check(pixels(fallback) == pixels(actual),
+                    if strength == 0 {
+                        // 纯 neutral 是 GPU 支持面：Auto 与 Force 都必须走 Metal，无条件钉死。
+                        let fallbackPixels = pixels(fallback), expectedPixels = pixels(actual)
+                        let fallbackDifference = zip(fallbackPixels, expectedPixels).map { abs(Int($0.0) - Int($0.1)) }.max() ?? 0
+                        try check(fallbackPixels.count == expectedPixels.count && fallbackDifference <= 2 &&
+                                  automatic.lastBackend == SONY2FUJI_BACKEND_METAL,
+                                  "\(label): neutral GPU surface keeps Auto on Metal max \(fallbackDifference) DN")
+                        let gpu = try metal.render(input, settings: saved, lut: lut, edge: 128)!
+                        let a = pixels(gpu), b = pixels(actual)
+                        let maxDifference = zip(a, b).map { abs(Int($0.0) - Int($0.1)) }.max() ?? 0
+                        try check(a.count == b.count && maxDifference <= 2 && metal.lastBackend == SONY2FUJI_BACKEND_METAL,
+                                  "\(label) 0%: forced Metal parity max \(maxDifference) DN")
+                        // 0% 行 lut_strength=0，核心跳过 .cube（use_lut=false），上面只是纯 neutral；
+                        // neutral+LUT 才是配方 3D-LUT 真正进入 Metal 管线的面，逐配方钉 forced-Metal parity。
+                        let neutralSettings = Adjustments()
+                        let neutralReference = try cpu.render(input, settings: neutralSettings, lut: lut, edge: 128)!
+                        let neutralForced = try metal.render(input, settings: neutralSettings, lut: lut, edge: 128)!
+                        let neutralA = pixels(neutralForced), neutralB = pixels(neutralReference)
+                        let neutralDifference = zip(neutralA, neutralB).map { abs(Int($0.0) - Int($0.1)) }.max() ?? 0
+                        try check(neutralA.count == neutralB.count && neutralDifference <= 2 &&
+                                  metal.lastBackend == SONY2FUJI_BACKEND_METAL,
+                                  "\(label): neutral plus LUT keeps forced Metal parity max \(neutralDifference) DN")
+                    } else {
+                        try check(pixels(fallback) == pixels(actual) && automatic.lastBackend == SONY2FUJI_BACKEND_CPU,
                                   "\(label) \(Int(strength * 100))%: forced Metal parity → honest Auto CPU fallback")
                         let forcedMessage: String?
                         do {
@@ -226,12 +252,6 @@ private func manualSettings(_ recipe: MasterRecipe, camera: WhiteBalance, streng
                         }
                         try check(forcedMessage == unsupportedMessage,
                                   "\(label) \(Int(strength * 100))%: CPU-only stages report UNSUPPORTED under Force")
-                    } else {
-                        let gpu = try metal.render(input, settings: saved, lut: lut, edge: 128)!
-                        let a = pixels(gpu), b = pixels(actual)
-                        let maxDifference = zip(a, b).map { abs(Int($0.0) - Int($0.1)) }.max() ?? 0
-                        try check(a.count == b.count && maxDifference <= 2 && metal.lastBackend == SONY2FUJI_BACKEND_METAL,
-                                  "\(label) \(Int(strength * 100))%: forced Metal parity max \(maxDifference) DN")
                     }
                 }
                 saved.strength = 1
