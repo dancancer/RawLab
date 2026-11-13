@@ -80,3 +80,4 @@
 - 2026-11-14 · #296 二轮返工（`a19258af`）：B1 rebase 承接窗口升级（跨线重连续跑）；B2 翻页耗尽恢复拒绝（游标停中段≠增量起点）、预算超限仍裁窗；B3 缺席放宽收紧为满窗口+严格早于 (created,name) 下界；3S/3N 全收；10000→10001 与 100001 两条端到端+逐条 stash 红证。二轮复审在途（review-mwfgydb9）。
 - 2026-11-14 · #291 二轮收口（`05e2b81e`）：组1 根因升级为生产既有回归——比对基准 committedPreviewSettings 自 ab9be520（10-28）后不随几何草稿重锚，修复+run18 诊断 baseGeom 0,0,1,1×3 实证；组2 断言原方向恢复+守卫扩三条件（geometrySelected 幽灵锁死修复）；B3 文本搜索全删、生产 seam delivered() 收口三站点+真实 VM e2e 两路；变异教训（双保险致首变异存活）如实入 PR。三轮复审在途（review-mwfh8ej4）。
 - 2026-11-14 · Q3+Q4 交付：**PR #301**（`7ca29d80`，18 源文件+文案 3 条）：SDR 不支持键 throw→「忽略+一次性提示」四端统一（会话层聚合去重）；raster/HDR 边界不变；spec notes 重写（新 SHA，计数不变）+fixture 2 向量；Q4 四端沿用目标版本+提示。碳审在途（review-mwfhef2f）。
+- 2026-11-14 · **WP-10 合入**：**#296** MERGED（二轮 approve 0 Blocking/0 Should/2 Nit，总 55 PR）。遗留（评审认可入台账）：真 Sony 机场景（超尺寸卡/首拍断连/坏日志 UI）待真机验证；UI 测试仅编译未执行。

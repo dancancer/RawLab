@@ -19,7 +19,7 @@
 | WP-07 | 三端批量日志逐任务损坏隔离（完成-37 iOS/Android/Win） | 1 | PR #290 复审 request-changes（Android I/O≠corrupt 未落地）回炉中 |
 | WP-08 | Windows 启动清扫防崩、内嵌预览兜底、坏预设展示（完成-05、完成-23、E） | 1 | PR #288 **已合入**（复审 approve，CI 7/7） |
 | WP-09 | Windows 更新器启动失败回退（完成-27，并入 S6 更新器矩阵） | 2 | PR #294 **已合入**（复审 approve） |
-| WP-10 | Android 相机三合包（完成-07/15/16）；与 P1-23/P1-25 共用 `CameraImportStore.kt`，按集成规范排 owner | 2 | PR #296 评审 request-changes（3B：PHOTO_LIMIT 续接+跨界用例），回炉中 |
+| WP-10 | Android 相机三合包（完成-07/15/16）；与 P1-23/P1-25 共用 `CameraImportStore.kt`，按集成规范排 owner | 2 | PR #296 已合入（`a19258af`，二轮 approve 0B） |
 | WP-11 | 核心 GLES 先绑后建与跨 API 恢复（F/P3-05，并入 P3 GPU 批次） | 3 | todo |
 
 - **完成-06 契约注记落盘**：随 P1-23(A12/Q7)/P3-47(L4) 一并写入（条件接受的前置）。
