@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace RawLab.Windows;
 
@@ -30,9 +31,13 @@ public sealed record AdjustmentPreset(string ID, string Name, long CreatedAt, lo
         .Concat(new[] { 0x20, 0x85, 0xA0, 0x1680, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000 }).Select(value => (char)value).ToArray();
 }
 
+// 本版本读不懂的条目（通常由更新版本写入）：其余预设照常可用，供界面标为需要更新版本；
+// 原文 Json 在任何写回中逐字节透传，ID/名称只用于避免新预设与它冲突。
+public sealed record UnreadablePreset(string? ID, string? Name, string Json);
+
 public sealed class AdjustmentPresetStore
 {
-    private sealed record Registry(List<AdjustmentPreset> Presets, List<string> RetiredIDs);
+    private sealed record Registry(List<AdjustmentPreset> Presets, List<string> RetiredIDs, List<UnreadablePreset> Unreadable);
     public static string DefaultDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "Presets");
     public string DirectoryPath { get; }
     private readonly string path;
@@ -48,6 +53,7 @@ public sealed class AdjustmentPresetStore
         this.clock = clock ?? (() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
     }
     public IReadOnlyList<AdjustmentPreset> List() => Read().Presets.AsReadOnly();
+    public IReadOnlyList<UnreadablePreset> ListUnreadable() => Read().Unreadable.AsReadOnly();
 
     public AdjustmentPreset Create(string name, AdjustmentPayload payload)
     {
@@ -57,7 +63,8 @@ public sealed class AdjustmentPresetStore
         string? id = null;
         for (var attempt = 0; attempt < 8; attempt++) {
             var candidate = makeID();
-            if (AdjustmentPreset.CanonicalID(candidate) && !registry.RetiredIDs.Contains(candidate) && registry.Presets.All(item => item.ID != candidate)) {
+            if (AdjustmentPreset.CanonicalID(candidate) && !registry.RetiredIDs.Contains(candidate) && registry.Presets.All(item => item.ID != candidate) &&
+                registry.Unreadable.All(item => item.ID != candidate)) {
                 id = candidate; break;
             }
         }
@@ -104,31 +111,29 @@ public sealed class AdjustmentPresetStore
     {
         if (registry.Presets.FirstOrDefault(item => item.ID != excluding && item.Name == name) is { } duplicate)
             throw new AdjustmentPresetException(PresetFailure.DuplicateName, duplicate);
+        if (registry.Unreadable.Any(item => item.Name == name)) throw new AdjustmentPresetException(PresetFailure.DuplicateName);
     }
 
     private Registry Read()
     {
-        if (!File.Exists(path)) return new([], []);
+        if (!File.Exists(path)) return new([], [], []);
         var text = File.ReadAllText(path);
         try {
             using var document = JsonDocument.Parse(text);
             var root = document.RootElement;
             Keys(root, ["registry_version", "presets"], ["retired_ids"]);
             if (Integer(root.GetProperty("registry_version")) != 1) throw new AdjustmentPresetException(PresetFailure.UnsupportedVersion);
-            var entries = new List<AdjustmentPreset>();
+            var entries = new List<AdjustmentPreset>(); var unreadable = new List<UnreadablePreset>();
             foreach (var item in root.GetProperty("presets").EnumerateArray()) {
-                Keys(item, ["id", "name", "created_at", "updated_at", "payload"]);
-                var preset = new AdjustmentPreset(Text(item.GetProperty("id")), Text(item.GetProperty("name")),
-                    Integer(item.GetProperty("created_at")), Integer(item.GetProperty("updated_at")),
-                    AdjustmentPayload.Parse(item.GetProperty("payload").GetRawText()));
-                preset.Validate(); entries.Add(preset);
+                if (Entry(item) is { } preset) entries.Add(preset);
+                else unreadable.Add(new(OptionalText(item, "id"), OptionalText(item, "name"), item.GetRawText()));
             }
             var retired = root.TryGetProperty("retired_ids", out var ids) ? ids.EnumerateArray().Select(Text).ToList() : [];
             if (retired.Any(id => !AdjustmentPreset.CanonicalID(id)) || retired.Distinct(StringComparer.Ordinal).Count() != retired.Count ||
                 entries.Select(item => item.ID).Distinct(StringComparer.Ordinal).Count() != entries.Count ||
                 entries.Select(item => item.Name).Distinct(StringComparer.Ordinal).Count() != entries.Count || entries.Any(item => retired.Contains(item.ID)))
                 throw new AdjustmentPresetException(PresetFailure.CorruptLibrary);
-            return new(entries, retired);
+            return new(entries, retired, unreadable);
         } catch (AdjustmentPresetException) { throw; }
           catch (AdjustmentTransferException error) {
             throw new AdjustmentPresetException(error.Failure == AdjustmentFailure.UnsupportedVersion ? PresetFailure.UnsupportedVersion : PresetFailure.CorruptLibrary);
@@ -136,6 +141,22 @@ public sealed class AdjustmentPresetStore
             throw new AdjustmentPresetException(PresetFailure.CorruptLibrary);
         }
     }
+    // 单条预设读不懂只隔离这一条；注册表本身（版本、字段、重复身份）出错仍让整个库失败。
+    private static AdjustmentPreset? Entry(JsonElement item)
+    {
+        try {
+            Keys(item, ["id", "name", "created_at", "updated_at", "payload"]);
+            var preset = new AdjustmentPreset(Text(item.GetProperty("id")), Text(item.GetProperty("name")),
+                Integer(item.GetProperty("created_at")), Integer(item.GetProperty("updated_at")),
+                AdjustmentPayload.Parse(item.GetProperty("payload").GetRawText()));
+            preset.Validate(); return preset;
+        } catch (Exception error) when (error is AdjustmentPresetException or AdjustmentTransferException or
+            JsonException or InvalidOperationException or KeyNotFoundException or FormatException or ArgumentException) {
+            return null;
+        }
+    }
+    private static string? OptionalText(JsonElement item, string key) => item.ValueKind == JsonValueKind.Object &&
+        item.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
     private static string Text(JsonElement value) => value.ValueKind == JsonValueKind.String && value.GetString() is { } text
         ? text : throw new AdjustmentPresetException(PresetFailure.CorruptLibrary);
     private static long Integer(JsonElement value)
@@ -156,10 +177,18 @@ public sealed class AdjustmentPresetStore
     private void Write(Registry registry)
     {
         foreach (var item in registry.Presets) item.Validate();
-        write(path, new { registry_version = 1, presets = registry.Presets.Select(item => new {
+        write(path, new { registry_version = 1, presets = registry.Presets.Select(item => (object)new {
             id = item.ID, name = item.Name, created_at = item.CreatedAt, updated_at = item.UpdatedAt,
             payload = JsonSerializer.Deserialize<JsonElement>(item.Payload.ToJson())
-        }).ToArray(), retired_ids = registry.RetiredIDs });
+        }).Concat(registry.Unreadable.Select(item => (object)new RawEntry(item.Json))).ToArray(), retired_ids = registry.RetiredIDs });
+    }
+    // JsonElement 写回会重新转义字符串；读不懂的条目必须按原文写出。
+    [JsonConverter(typeof(RawEntryConverter))]
+    private sealed record RawEntry(string Json);
+    private sealed class RawEntryConverter : JsonConverter<RawEntry>
+    {
+        public override RawEntry Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => throw new NotSupportedException();
+        public override void Write(Utf8JsonWriter writer, RawEntry value, JsonSerializerOptions options) => writer.WriteRawValue(value.Json);
     }
     private FileStream AcquireLock()
     {

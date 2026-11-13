@@ -24,6 +24,7 @@ internal static class AdjustmentPresetChecks
             Lifecycle(Path.Combine(root, "lifecycle"));
             IdentityAndStaleConfirmation(Path.Combine(root, "identity"));
             FailureAndConcurrency(Path.Combine(root, "failures"));
+            UnreadableEntry(Path.Combine(root, "unreadable"));
             Vectors(Path.Combine(root, "vectors"));
             Application(Path.Combine(root, "application"));
             Console.WriteLine($"PASS: {checks} user preset store checks with 55 shared vectors");
@@ -92,6 +93,30 @@ internal static class AdjustmentPresetChecks
         Check(File.ReadAllText(path) == "{broken", "malformed bytes preserved");
     }
 
+    // 新版本写入的预设（未知字段、未来版本）只让这一条不可用，其余照常列出、应用和修改。
+    private static void UnreadableEntry(string directory)
+    {
+        var store = new AdjustmentPresetStore(directory); var valid = store.Create("Valid", Payload());
+        var path = Path.Combine(directory, "presets.json"); var text = File.ReadAllText(path); var future = Guid.NewGuid().ToString();
+        var raw = "{ \"id\": \"" + future + "\", \"name\": \"Future\", \"created_at\": 1, \"updated_at\": 1,\n  \"payload\": { \"payload_version\": 9 }, \"future_field\": \"caf\\u00e9\" }";
+        Check(text.Contains("\"presets\":["), "library splice point");
+        File.WriteAllText(path, text.Replace("\"presets\":[", "\"presets\":[" + raw + ","));
+        var listed = store.List().Single();
+        Check(listed.SameAs(valid) && AdjustmentPayload.Number(listed.Payload[AdjustmentField.Exposure]) == 1.25,
+            "unreadable entry leaves the remaining preset usable");
+        var unreadable = store.ListUnreadable().Single();
+        Check(unreadable.ID == future && unreadable.Name == "Future" && unreadable.Json == raw, "unreadable entry keeps identity and original text");
+        var created = store.Create("Created", Payload(.5));
+        var updated = store.Overwrite(store.Rename(valid, "Renamed"), Payload(2));
+        Check(File.ReadAllText(path).Contains(raw) && store.ListUnreadable().Single().Json == raw && store.List().Count == 2,
+            "create, rename and overwrite pass the unreadable entry through unchanged");
+        Reject(() => store.Create("Future", Payload()), "unreadable entry name stays reserved", PresetFailure.DuplicateName);
+        Reject(() => new AdjustmentPresetStore(directory, makeID: () => future).Create("Collision", Payload()),
+            "unreadable entry ID stays reserved", PresetFailure.IdentityCollision);
+        store.Delete(updated); store.Delete(created);
+        Check(store.List().Count == 0 && File.ReadAllText(path).Contains(raw), "deleting readable presets keeps the unreadable entry");
+    }
+
     private static void Application(string directory)
     {
         Directory.CreateDirectory(directory);
@@ -125,6 +150,14 @@ internal static class AdjustmentPresetChecks
             store.ReadState(target).SameAs(prior), "missing preset look blocks before any write");
     }
 
+    // 注册表本身无法解读的向量仍让整个库失败；其余无效向量只是单条预设读不懂。
+    private static readonly HashSet<string> RegistryFailures = [
+        "future-registry", "unknown-registry-field", "duplicate-id", "duplicate-name", "invalid-retired-id", "overlapping-retired-id",
+        "duplicate-retired-id", "registry-decimal", "registry-exponent", "registry-rounded-fraction", "registry-boolean", "registry-string",
+        "registry-null", "json-unquoted-metadata-key", "json-single-quoted-key", "json-trailing-document", "json-trailing-comma", "json-comment",
+        "duplicate-root-key", "duplicate-escaped-root-key"
+    ];
+
     private static void Vectors(string directory)
     {
         Directory.CreateDirectory(directory);
@@ -138,6 +171,12 @@ internal static class AdjustmentPresetChecks
             if (fixture.GetProperty("valid").GetBoolean()) {
                 var entry = store.List().Single();
                 Check(AdjustmentPayload.Number(entry.Payload[AdjustmentField.Exposure]) == 1.25, id);
+            } else if (!RegistryFailures.Contains(id)) {
+                using var registry = JsonDocument.Parse(json);
+                var entryJson = registry.RootElement.GetProperty("presets")[0].GetRawText();
+                Check(store.List().Count == 0 && store.ListUnreadable().Single().Json == entryJson, id + " isolated as unreadable entry");
+                var created = store.Create("Writable", Payload());
+                Check(store.List().Single().SameAs(created) && File.ReadAllText(path).Contains(entryJson), id + " entry passed through unchanged");
             } else {
                 Reject(() => store.List(), id);
                 Reject(() => store.Create("Blocked", Payload()), id + " write blocked");
