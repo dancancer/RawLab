@@ -81,6 +81,7 @@ internal static class ControllerChecks
         await AutomaticCheckRetries(check);
         await StartupAndQuit(check);
         await StateRepair(check);
+        await FutureEnumStateStaysEditable(check);
         await PreInstallSignatureRejectionDoesNotLockEditing(check);
         await InstallationFailureStaysEditable(check);
         await UpdateExeLaunchFailureStaysRetryable(check);
@@ -601,6 +602,46 @@ internal static class ControllerChecks
             var healthy = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14"); await healthy.FinishStartupHealthCheckAsync(true);
             check(!healthy.RequiresStartupHealthCheck && !healthy.RequiresRecovery && healthy.CanCheck && !healthy.Preferences.AutomaticInstall,
                 "Only a fresh healthy startup completes explicit state repair");
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    private static async Task FutureEnumStateStaysEditable(Action<bool, string> check)
+    {
+        // Q13 回滚兼容：旧版读到新版写入的未知枚举值时降级为 Idle，编辑区保持可用；
+        // 已知 Installing/PendingRestart 的锁定语义由 WP-09 用例继续把守。
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-future-enum-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            foreach (var slot in new[] { "Phase", "Choice", "FailureStage" })
+            {
+                var store = new UpdateStore(Path.Combine(root, slot)); Directory.CreateDirectory(store.DirectoryPath);
+                var saved = new UpdatePreferences { AutomaticCheck = true, LastCheck = DateTimeOffset.FromUnixTimeSeconds(1800000000) };
+                var token = saved.PendingUpdate.BeginCheck();
+                saved.PendingUpdate.Found(new("0.9.1", "19", "windows", "x64", "stable", "https://example.invalid/update.nupkg", 12, null, "Notes"), token);
+                var download = saved.PendingUpdate.BeginDownload()!.Value;
+                saved.PendingUpdate.Preparing(download); saved.PendingUpdate.Verified(download);
+                saved.PendingUpdate.Fail("network", "dropped", download);
+                var document = JsonNode.Parse(JsonSerializer.Serialize(saved))!.AsObject();
+                var pending = document["PendingUpdate"]!.AsObject();
+                if (slot == "Phase") pending["Phase"] = 99;
+                else if (slot == "Choice") pending["Choice"] = 99;
+                else pending["Failure"]!["Stage"] = 99;
+                File.WriteAllBytes(store.StatePath, JsonSerializer.SerializeToUtf8Bytes(document));
+                var onDisk = File.ReadAllBytes(store.StatePath);
+                var adapter = new Adapter();
+                var controller = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14");
+                check(controller.StorageError == null && !controller.BlocksEditing && !controller.RequiresStartupHealthCheck &&
+                    !controller.RequiresRecovery && !controller.CanRepairState && controller.State.Phase == UpdatePhase.Idle &&
+                    controller.CanCheck && controller.UnavailableReason == null,
+                    "Future " + slot + " value opens the editor as idle instead of the storage gate (Q13 rollback)");
+                check(File.ReadAllBytes(store.StatePath).SequenceEqual(onDisk),
+                    "Future " + slot + " startup leaves the newer state file untouched until the next save");
+                await controller.CheckAsync(true);
+                check(controller.State.Phase == UpdatePhase.Available && adapter.Checks == 1 &&
+                    store.Load(true).PendingUpdate.Phase == UpdatePhase.Available,
+                    "Future " + slot + " downgrade leaves the update state machine usable");
+            }
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
