@@ -2,6 +2,7 @@
 #include "platform/hdr_heif.h"
 #include "platform/hdr_metadata.h"
 #include "core/hdr_jpeg.h"
+#include "core/output_file_mode.h"
 #include "core/proraw_source.h"
 #include "core/processing_cancellation.h"
 #include "core/sha256.h"
@@ -10,6 +11,7 @@
 #include <zlib.h>
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
@@ -17,6 +19,7 @@
 #include <limits>
 #ifndef _WIN32
 #include <fcntl.h>
+#include <sys/stat.h>
 #endif
 #ifdef _WIN32
 #include <windows.h>
@@ -163,10 +166,16 @@ public:
             fail(SONY2FUJI_STATUS_OUTPUT_IO_ERROR,SONY2FUJI_HDR_REASON_OUTPUT_IO,"Cannot create HDR output transaction");
         path_=path;
 #else
-        auto pattern=(parent/".rawlab-hdr-XXXXXX").u8string(); std::vector<char> name(pattern.begin(),pattern.end()); name.push_back(0);
-        const int fd=mkstemp(name.data());
+        int fd=-1;
+        std::filesystem::path candidate;
+        for (int attempt=0;attempt<64 && fd<0;++attempt) {
+            candidate=parent/(".rawlab-hdr-"+stagingSuffix()+".tmp");
+            fd=::open(candidate.c_str(),O_CREAT|O_EXCL|O_WRONLY|O_CLOEXEC,0666);
+            if (fd<0 && errno!=EEXIST) break;
+        }
         if (fd<0) fail(SONY2FUJI_STATUS_OUTPUT_IO_ERROR,SONY2FUJI_HDR_REASON_OUTPUT_IO,"Cannot create HDR output transaction");
-        close(fd); path_=name.data();
+        preserveDestinationMode(fd,destination);
+        close(fd); path_=std::move(candidate);
 #endif
     }
     ~Temporary() { std::error_code error; std::filesystem::remove(path_,error); }

@@ -1,5 +1,6 @@
 #include "platform/hdr_image.h"
 #include "core/hdr_jpeg.h"
+#include "core/output_file_mode.h"
 #include "core/processing_cancellation.h"
 #import <Foundation/Foundation.h>
 #import <CoreImage/CoreImage.h>
@@ -17,6 +18,8 @@
 #include <memory>
 #include <malloc/malloc.h>
 #include <cerrno>
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 namespace sony2fuji::hdr {
@@ -364,14 +367,24 @@ void atomicWrite(NSData* data,const char* path) {
 }
 
 void atomicStreamWrite(NSData* data, const char* path, const sony2fuji_hdr_export_config_v1& config) {
-    std::string temporary = std::string(path) + ".rawlab-XXXXXX";
+    std::string temporary;
+    int createdFd = -1;
+    for (int attempt = 0; attempt < 64 && createdFd < 0; ++attempt) {
+        temporary = std::string(path) + ".rawlab-" + stagingSuffix() + ".tmp";
+        createdFd = ::open(temporary.c_str(), O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0666);
+        if (createdFd < 0) {
+            if (errno != EEXIST) break;
+            temporary.clear();
+        }
+    }
+    if (createdFd < 0)
+        error(SONY2FUJI_STATUS_OUTPUT_IO_ERROR, SONY2FUJI_HDR_REASON_OUTPUT_IO, "Cannot stage streamed JPEG output");
     struct Pending {
         int descriptor;
         const std::string& path;
         ~Pending() { if (descriptor >= 0) close(descriptor); unlink(path.c_str()); }
-    } pending{mkstemp(temporary.data()), temporary};
-    if (pending.descriptor < 0)
-        error(SONY2FUJI_STATUS_OUTPUT_IO_ERROR, SONY2FUJI_HDR_REASON_OUTPUT_IO, "Cannot stage streamed JPEG output");
+    } pending{createdFd, temporary};
+    preserveDestinationMode(pending.descriptor, std::filesystem::u8path(path));
     const auto* bytes = static_cast<const uint8_t*>(data.bytes);
     for (size_t offset = 0; offset < data.length;) {
         checkProcessingCancellation();

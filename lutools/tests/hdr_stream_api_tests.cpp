@@ -10,11 +10,20 @@
 #include <iostream>
 #include <stdexcept>
 #include <chrono>
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
 
 using namespace sony2fuji;
 namespace fs = std::filesystem;
 namespace {
 void check(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
+#ifndef _WIN32
+unsigned fileMode(const fs::path& path) {
+    struct stat info{};
+    return ::stat(path.c_str(), &info) == 0 ? static_cast<unsigned>(info.st_mode & 0777) : 0u;
+}
+#endif
 template<class T> T initialized() { T value{}; value.version = 1; value.struct_size = sizeof(value); return value; }
 void write(const fs::path& path, const std::vector<uint8_t>& bytes) {
     std::ofstream file(path, std::ios::binary); file.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
@@ -98,6 +107,22 @@ int main(int argc, char* argv[]) {
             "Complete stream API export failed or lost provenance");
         check(hdr::probeFile(output.u8string().c_str()).width == 48, "Stream output does not contain a valid gain map");
         const auto existing = read(output);
+#ifndef _WIN32
+        {
+            const auto permTarget = directory / "perm-target.jpg";
+            write(permTarget, {0});
+            check(::chmod(permTarget.c_str(), 0640) == 0, "Cannot set fixture permissions");
+            check(run(permTarget) == SONY2FUJI_STATUS_OK && fileMode(permTarget) == 0640u,
+                "Replacing an existing HDR export keeps its permissions");
+            fs::remove(permTarget);
+            const auto previousUmask = ::umask(022);
+            const auto freshStatus = run(permTarget);
+            ::umask(previousUmask);
+            check(freshStatus == SONY2FUJI_STATUS_OK && fileMode(permTarget) == 0644u,
+                "A new HDR export honours umask like a plain write");
+            fs::remove(permTarget);
+        }
+#endif
         source.source_intent = SONY2FUJI_INTENT_PREVIEW;
         check(run(output) == SONY2FUJI_STATUS_INVALID_ARGUMENT && diagnostic.reason == SONY2FUJI_HDR_REASON_PREVIEW_SOURCE && read(output) == existing,
             "Proxy source overwrote existing output");
