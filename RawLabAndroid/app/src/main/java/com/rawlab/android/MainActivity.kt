@@ -326,6 +326,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             onImportLook = { openLook.launch(arrayOf("*/*")) }, onRenameLook = model::renameLook,
             onImportHDRLook = { if (model.beginHDRLookImport()) openHDRLook.launch(arrayOf("*/*")) },
             onApplyHDRSilver = model::applyHDRSilver,
+            onCancelHDRLookImport = model::cancelHDRLookImport,
             onDeleteLook = model::deleteLook, onLookImportReportDismiss = model::dismissLookImportReport,
             onAbout = { about = true }, updateVersion = updateState.available?.version,
             onPreviewSizeChange = model::updatePreviewSize,
