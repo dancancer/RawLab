@@ -23,6 +23,7 @@ enum class ProbeSizeResult {
     Probed,
     DeferredPostDecode,
     Unsupported,
+    OpenFailed,
 };
 
 // 有效 sensor 区域，尚未白平衡或旋转。相机标定与原始 RAW 一起保存。

@@ -22,6 +22,7 @@
 #include "core/photo_lut.h"
 #include "core/photo_lut_contract.h"
 #include "core/lut_compatibility.h"
+#include "core/rendered_dng.h"
 #include "gpu/image_stats.h"
 #include "platform/hdr_image.h"
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
@@ -523,11 +524,21 @@ bool isJpegFileOutput(const sony2fuji_request& request) {
         request.output_format == SONY2FUJI_OUTPUT_JPEG;
 }
 
+bool isDngFileOutput(const sony2fuji_request& request) {
+    return request.output_target == SONY2FUJI_TARGET_FILE &&
+        request.output_format == SONY2FUJI_OUTPUT_DNG;
+}
+
 bool exceedsOutputTargetCap(const sony2fuji_request& request, uint32_t width, uint32_t height) {
     if (exceedsOutputPixelCap(width, height)) {
         return true;
     }
     if (isJpegFileOutput(request) && (width > kMaxJpegDimension || height > kMaxJpegDimension)) {
+        return true;
+    }
+    // Rendered DNG uses a Classic TIFF container (<= 2^32 - 1 bytes) storing 16-bit 3-channel
+    // strips, strip offset/byte-count tables, 64 KiB metadata reservation, and neutral XMP.
+    if (isDngFileOutput(request) && sony2fuji::exceedsRenderedDngCapacity(width, height)) {
         return true;
     }
     if (request.output_target == SONY2FUJI_TARGET_BUFFER) {
@@ -860,19 +871,20 @@ sony2fuji::ProbeSizeResult probeInputHeaderSize(
     outWidth = 0;
     outHeight = 0;
     if (isEmptyString(inputPath)) {
-        return sony2fuji::ProbeSizeResult::Unsupported;
+        return sony2fuji::ProbeSizeResult::OpenFailed;
     }
     std::error_code fsError;
     const auto path = std::filesystem::u8path(inputPath);
     const uint64_t fileSize = std::filesystem::file_size(path, fsError);
-    if (fsError || fileSize < 4) return sony2fuji::ProbeSizeResult::Unsupported;
+    if (fsError) return sony2fuji::ProbeSizeResult::OpenFailed;
+    if (fileSize < 4) return sony2fuji::ProbeSizeResult::Unsupported;
 
     std::ifstream stream(path, std::ios::binary);
-    if (!stream) return sony2fuji::ProbeSizeResult::Unsupported;
+    if (!stream) return sony2fuji::ProbeSizeResult::OpenFailed;
     uint8_t head[24]{};
     stream.read(reinterpret_cast<char*>(head), sizeof(head));
     const std::streamsize headSize = stream.gcount();
-    if (headSize < 4) return sony2fuji::ProbeSizeResult::Unsupported;
+    if (headSize < 4) return sony2fuji::ProbeSizeResult::OpenFailed;
 
     if (x3fMode == SONY2FUJI_X3F_NORMAL && std::memcmp(head, "FOVb", 4) == 0) {
         return sony2fuji::ProbeSizeResult::DeferredPostDecode;
@@ -903,7 +915,7 @@ sony2fuji::ProbeSizeResult probeInputHeaderSize(
     }
 
     std::ifstream tiffStream(path, std::ios::binary);
-    if (!tiffStream) return sony2fuji::ProbeSizeResult::Unsupported;
+    if (!tiffStream) return sony2fuji::ProbeSizeResult::OpenFailed;
     return probeTiffHeaderSize(tiffStream, head, headSize, fileSize, outWidth, outHeight)
         ? sony2fuji::ProbeSizeResult::Probed
         : sony2fuji::ProbeSizeResult::Unsupported;
@@ -929,8 +941,9 @@ sony2fuji_status validateRequestSize(const sony2fuji_request& request) {
             }
             return SONY2FUJI_STATUS_OK;
         case SONY2FUJI_SIZE_FIT_LONG_EDGE:
-            if (long_edge == 0 || exceedsOutputPixelCap(long_edge, 1) ||
-                (isJpegFileOutput(request) && long_edge > kMaxJpegDimension)) {
+            if (long_edge == 0 ||
+                (exceedsOutputTargetCap(request, long_edge, 1) &&
+                 exceedsOutputTargetCap(request, 1, long_edge))) {
                 return SONY2FUJI_STATUS_INVALID_ARGUMENT;
             }
             return SONY2FUJI_STATUS_OK;
@@ -2775,12 +2788,15 @@ static sony2fuji_status processImpl(
                     uint32_t probedW = 0, probedH = 0;
                     const auto probeRes = probeInputHeaderSize(
                         local.input_path, legacySonyCrop, session->x3f_mode, probedW, probedH);
-                    session->probed_header_key = probeKey;
-                    session->probed_header_result = probeRes;
-                    session->probed_header_width = probedW;
-                    session->probed_header_height = probedH;
+                    if (probeRes != sony2fuji::ProbeSizeResult::OpenFailed) {
+                        session->probed_header_key = probeKey;
+                        session->probed_header_result = probeRes;
+                        session->probed_header_width = probedW;
+                        session->probed_header_height = probedH;
+                    }
                 }
-                if (session->probed_header_result == sony2fuji::ProbeSizeResult::Probed) {
+                if (session->probed_header_key == probeKey &&
+                    session->probed_header_result == sony2fuji::ProbeSizeResult::Probed) {
                     source_width = session->probed_header_width;
                     source_height = session->probed_header_height;
                     has_source_size = true;

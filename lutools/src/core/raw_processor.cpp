@@ -806,7 +806,16 @@ ProbeSizeResult RAWProcessor::probeOutputSize(const std::string& filepath, bool 
                                               uint32_t& width, uint32_t& height, X3fMode x3fMode) {
     width = 0;
     height = 0;
-    if (filepath.empty() || filepath.find('\0') != std::string::npos) return ProbeSizeResult::Unsupported;
+    if (filepath.empty() || filepath.find('\0') != std::string::npos) return ProbeSizeResult::OpenFailed;
+    auto canOpenInput = [&]() -> bool {
+#ifdef _WIN32
+        std::ifstream testStream(std::filesystem::u8path(filepath), std::ios::binary);
+#else
+        std::ifstream testStream(filepath, std::ios::binary);
+#endif
+        return static_cast<bool>(testStream);
+    };
+    if (!canOpenInput()) return ProbeSizeResult::OpenFailed;
     // Normal X3F uses x3f-bridge CAMF KeepImageArea, which differs from LibRaw foveon_data.
     if (x3fMode == X3fMode::Normal && hasX3fSignature(filepath)) {
         return ProbeSizeResult::DeferredPostDecode;
@@ -816,7 +825,11 @@ ProbeSizeResult RAWProcessor::probeOutputSize(const std::string& filepath, bool 
     RawCancellationScope cancellation(*raw);
     const int status = openRawFile(*raw, filepath);
     if (status == LIBRAW_CANCELLED_BY_CALLBACK) throw ProcessingCancelled();
-    if (status != LIBRAW_SUCCESS) return ProbeSizeResult::Unsupported;
+    if (status != LIBRAW_SUCCESS) {
+        return (status == LIBRAW_IO_ERROR && !canOpenInput())
+            ? ProbeSizeResult::OpenFailed
+            : ProbeSizeResult::Unsupported;
+    }
     const char* decoder = raw->unpack_function_name();
     // JPEG XL DNG applies ActiveArea/DefaultUserCrop/Stage3 opcodes during DNG SDK unpack; verify post-decode.
     if (decoder && std::strcmp(decoder, "jxl_dng_load_raw_placeholder()") == 0) {

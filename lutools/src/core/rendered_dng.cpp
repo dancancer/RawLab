@@ -468,34 +468,46 @@ ErrorCode writeJpegPreview(TIFF* tif, const ImageData& image, PreviewSize size, 
 
 } // namespace
 
+bool exceedsRenderedDngCapacity(uint32_t width, uint32_t height, uint64_t* remainingPreviewBytes) {
+    if (remainingPreviewBytes) *remainingPreviewBytes = 0;
+    const uint64_t rowSampleCount = static_cast<uint64_t>(width) * 3u;
+    const uint64_t rowBytes = rowSampleCount * sizeof(uint16_t);
+    if (rowSampleCount > std::numeric_limits<size_t>::max() ||
+        rowSampleCount > std::vector<uint16_t>().max_size() ||
+        rowBytes > static_cast<uint64_t>(std::numeric_limits<size_t>::max()) ||
+        rowBytes > static_cast<uint64_t>(std::numeric_limits<tmsize_t>::max())) {
+        return true;
+    }
+    if (rowBytes != 0 && static_cast<uint64_t>(height) >
+            std::numeric_limits<uint64_t>::max() / rowBytes) {
+        return true;
+    }
+    const uint64_t pixelBytes = rowBytes * static_cast<uint64_t>(height);
+    const uint64_t stripCount =
+        (static_cast<uint64_t>(height) + kRowsPerStrip - 1u) / kRowsPerStrip;
+    const uint64_t stripTableBytes = stripCount * sizeof(uint32_t) * 2u;
+    const uint64_t metadataBytes = kMetadataReservation + (sizeof(kNeutralXmp) - 1u);
+    if (pixelBytes > kMaxClassicTiffBytes ||
+        stripTableBytes > kMaxClassicTiffBytes - pixelBytes ||
+        metadataBytes > kMaxClassicTiffBytes - pixelBytes - stripTableBytes) {
+        return true;
+    }
+    if (remainingPreviewBytes) {
+        *remainingPreviewBytes = kMaxClassicTiffBytes - pixelBytes - stripTableBytes - metadataBytes;
+    }
+    return false;
+}
+
 ErrorCode saveRenderedDNG(const ImageData& image, const std::string& filepath) {
     if (filepath.empty() || !validImage(image)) return ErrorCode::ProcessingError;
 
     const uint32_t width = static_cast<uint32_t>(image.width);
     const uint32_t height = static_cast<uint32_t>(image.height);
-    const uint64_t rowSampleCount = static_cast<uint64_t>(image.width) * 3;
-    const uint64_t rowBytes = rowSampleCount * sizeof(uint16_t);
-    if (rowSampleCount > std::numeric_limits<size_t>::max() ||
-        rowSampleCount > std::vector<uint16_t>().max_size() ||
-        rowBytes > static_cast<uint64_t>(std::numeric_limits<size_t>::max()) ||
-        rowBytes > static_cast<uint64_t>(std::numeric_limits<tmsize_t>::max()))
+    uint64_t previewBytesRemaining = 0;
+    if (exceedsRenderedDngCapacity(width, height, &previewBytesRemaining))
         return ErrorCode::ProcessingError;
 
-    if (rowBytes != 0 && static_cast<uint64_t>(height) >
-            std::numeric_limits<uint64_t>::max() / rowBytes)
-        return ErrorCode::ProcessingError;
-    const uint64_t pixelBytes = rowBytes * height;
-    const uint64_t stripCount =
-        (static_cast<uint64_t>(height) + kRowsPerStrip - 1) / kRowsPerStrip;
-    const uint64_t stripTableBytes = stripCount * sizeof(uint32_t) * 2;
-    const uint64_t metadataBytes = kMetadataReservation + (sizeof(kNeutralXmp) - 1);
-    if (pixelBytes > kMaxClassicTiffBytes ||
-        stripTableBytes > kMaxClassicTiffBytes - pixelBytes ||
-        metadataBytes > kMaxClassicTiffBytes - pixelBytes - stripTableBytes)
-        return ErrorCode::ProcessingError;
-    uint64_t previewBytesRemaining = kMaxClassicTiffBytes - pixelBytes - stripTableBytes - metadataBytes;
-
-    const size_t rowSamples = static_cast<size_t>(rowSampleCount);
+    const size_t rowSamples = static_cast<size_t>(width) * 3u;
 
     std::filesystem::path outputPath;
     try {
