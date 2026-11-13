@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/Shared/tests/mac-native-sources.sh"
 source "$ROOT/RawLabMac/build-env.sh"
 source "$ROOT/RawLabMac/tests/core-link.sh"
 DEPENDENCY_PREFIX="$RAWLAB_DEPENDENCY_PREFIX"
@@ -21,8 +22,9 @@ while IFS= read -r -d '' source; do
     SOURCES+=("$source")
 done < <(find "$ROOT/RawLabMac/Sources" -name '*.swift' -print0)
 swiftc -parse-as-library -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
-    -module-cache-path "$OUT/ModuleCache" -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-    "${SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT/RawLabMac/tests/GeometryRenderTests.swift" \
+    -module-cache-path "$OUT/ModuleCache" -import-objc-header "$MAC_NATIVE_BRIDGING_HEADER" \
+    "${SOURCES[@]}" "${MAC_SHARED_SWIFT_SOURCES[@]}" \
+    "$ROOT/RawLabMac/tests/GeometryRenderTests.swift" \
     "${CORE_LINK[@]}" $(pkg-config --libs "${LINK_PACKAGES[@]}") \
     -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/test"
 "$OUT/test" "$RAW" "$OUT"

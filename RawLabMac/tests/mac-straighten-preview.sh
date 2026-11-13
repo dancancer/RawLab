@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/Shared/tests/mac-native-sources.sh"
 source "$ROOT/RawLabMac/tests/native-env.sh"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
@@ -21,8 +22,8 @@ swiftc -parse-as-library -swift-version 5 -O -whole-module-optimization \
     -num-threads "${JOBS:-$(sysctl -n hw.ncpu)}" \
     -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
     -module-cache-path "$OUT/ModuleCache" \
-    -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-    "${SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT/RawLabMac/tests/MacStraightenPreviewTests.swift" \
+    -import-objc-header "$MAC_NATIVE_BRIDGING_HEADER" \
+    "${SOURCES[@]}" "${MAC_SHARED_SWIFT_SOURCES[@]}" "$ROOT/RawLabMac/tests/MacStraightenPreviewTests.swift" \
     "$ROOT/RawLabMac/tests/StraightenPreviewFixtures.swift" \
     "${CORE_LINK[@]}" $(pkg-config --libs libraw_r rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) \
     -Xlinker -rpath -Xlinker "$(pkg-config --variable=libdir opencv4)" \
