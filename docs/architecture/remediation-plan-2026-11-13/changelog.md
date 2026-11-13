@@ -73,3 +73,4 @@
 - 2026-11-14 · Q9 交付：**PR #298**（`e42bd08a`，AgentRecipe→tests 两端+README 双语，nm 符号=0）；碳审在途（review-mwff5245）。**附带挖出 development 既有红**：`agent-recipe-render` recipe-0——#259 控制字符校验拒 lenses.xml 换行拼接合成 id（基线 stash 复跑逐字节相同=既有）。派 `fix-lens-id-red` 归因修复。
 - 2026-11-14 · #297 返工定案（`2bf2386f`）：「结构→证据→降级」三层裁决，安装证据在场保持严格拒绝（备份目录不被删）、孤儿备份判定收紧、证据断言强化；160 PASS+变异红证+Windows 真 runner 绿。二轮复审在途（review-mwff5gos）。
 - 2026-11-14 · #286 三轮收口（`3cff7ff0`，仅测试文件）：8 条锚点逐条改锚+旧锚假命中行号反证；新机制=±600 上下文断言双重校验（注册时+诚实性）；wheel 退出快照、逐端真解析 [0,360)/[0,100]+5 变异 RED；136 端侧 pattern+ctx 双校验 0 失败。四轮复审在途（review-mwffj4kv）。
+- 2026-11-14 · **三连合入（总 54 PR）**：#297（Q13，`2bf2386f`，r2 approve）、#298（Q9，`e42bd08a`，approve）、#286（WP-11 spec，`3cff7ff0`，r4 approve；残余风险±600 启发式已记录）。worktree/分支已清。#286 合入解锁 Shared/specs → 派 `q3q4-spec-paste`（Q3 双键口径+忽略并提示盘点；Q4 粘贴沿用目标版本+提示，四端统一）。
