@@ -1,14 +1,18 @@
 """Contracts for target-built Lensfun/GLib dependency configuration."""
 import argparse
 import ast
+import hashlib
 import importlib.util
 import io
+import json
+import os
 from pathlib import Path
 import shlex
 import subprocess
 import tempfile
 import unittest
 from unittest import mock
+import zipfile
 
 
 BUILDER_PATH = Path(__file__).parents[1] / "cmake" / "build-lens-dependencies.py"
@@ -30,6 +34,71 @@ class LensDependencyContracts(unittest.TestCase):
                     BUILDER.fetch(spec, sources, None)
             self.assertFalse((sources / spec["file"]).exists())
             self.assertEqual(list(sources.iterdir()), [])
+
+    @staticmethod
+    def fake_tool_pins(cache):
+        """Write wheel-shaped archives into cache and pin them like the manifest does."""
+        binary = "ninja-1.13.2.data/scripts/" + ("ninja.exe" if os.name == "nt" else "ninja")
+        pins = {}
+        for name, member in (("meson", "mesonbuild/__init__.py"), ("ninja", binary)):
+            key = BUILDER.tool_wheel_key(name)
+            wheel = cache / (key + ".whl")
+            with zipfile.ZipFile(wheel, "w") as package:
+                package.writestr(member, "fake " + name)
+            pins[key] = {"url": "https://example.invalid/" + wheel.name, "file": wheel.name,
+                         "sha256": hashlib.sha256(wheel.read_bytes()).hexdigest()}
+        return pins
+
+    def test_tool_wheels_install_offline_from_pinned_source_cache(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cache = root / "cache"
+            cache.mkdir()
+            pins = self.fake_tool_pins(cache)
+            with mock.patch.object(BUILDER.urllib.request, "urlopen", side_effect=AssertionError("network used")):
+                BUILDER.install_tools(root / "tools", pins, root / "sources", cache)
+            self.assertTrue((root / "tools" / "mesonbuild" / "__init__.py").is_file())
+            self.assertTrue((root / "tools" / "bin" / ("ninja.exe" if os.name == "nt" else "ninja")).is_file())
+
+    def test_tampered_tool_wheel_fails_manifest_checksum(self):
+        for name in ("meson", "ninja"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                cache = root / "cache"
+                cache.mkdir()
+                pins = self.fake_tool_pins(cache)
+                wheel = cache / pins[BUILDER.tool_wheel_key(name)]["file"]
+                data = bytearray(wheel.read_bytes())
+                data[-1] ^= 1
+                wheel.write_bytes(bytes(data))
+                with mock.patch.object(BUILDER.urllib.request, "urlopen", side_effect=AssertionError("network used")):
+                    with self.assertRaisesRegex(RuntimeError, "checksum mismatch: " + wheel.name):
+                        BUILDER.install_tools(root / "tools", pins, root / "sources", cache)
+
+    def test_missing_host_tool_pin_is_an_explicit_error(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            pins = {"meson": {"url": "https://example.invalid/m.whl", "file": "m.whl", "sha256": "0" * 64}}
+            with mock.patch.object(BUILDER, "fetch") as fetch, \
+                    mock.patch.object(BUILDER.platform, "machine", return_value="riscv64"), \
+                    mock.patch.object(BUILDER.sys, "platform", "linux"), \
+                    mock.patch.object(BUILDER.os, "name", "posix"):
+                with self.assertRaisesRegex(RuntimeError, "No pinned Meson/Ninja wheel .*: ninja-linux-riscv64$"):
+                    BUILDER.install_tools(root / "tools", pins, root / "sources", None)
+            fetch.assert_not_called()
+
+    def test_manifest_pins_tool_wheels_for_supported_build_hosts(self):
+        manifest = json.loads((self.ROOT / "lutools/cmake/lens-dependencies.json").read_text())
+        pins = manifest["tools"]
+        self.assertEqual(set(pins), {"meson", "ninja-macos", "ninja-windows-amd64",
+                                     "ninja-linux-x86_64", "ninja-linux-aarch64"})
+        for key, spec in pins.items():
+            version = "meson-1.12.1-" if key == "meson" else "ninja-1.13.2-"
+            self.assertTrue(spec["file"].startswith(version), spec["file"])
+            self.assertTrue(spec["url"].endswith("/" + spec["file"]), spec["url"])
+            self.assertRegex(spec["sha256"], "^[0-9a-f]{64}$")
+        for key in ("ninja-linux-x86_64", "ninja-linux-aarch64"):
+            self.assertIn("-manylinux", pins[key]["file"])
 
     @staticmethod
     def mac_args():

@@ -63,20 +63,26 @@ def patch_meson(archive, subprojects):
         package.extractall(subprojects)
 
 
-def install_tools(tools, sources):
-    for name, version in (("meson", "1.12.1"), ("ninja", "1.13.2")):
-        with urllib.request.urlopen(f"https://pypi.org/pypi/{name}/{version}/json", timeout=60) as response:
-            release = json.load(response)
-        if name == "meson":
-            suffix = "-py3-none-any.whl"
-        elif os.name == "nt":
-            suffix = "-win_amd64.whl"
-        elif sys.platform == "darwin":
-            suffix = "-macosx_10_9_universal2.whl"
-        else:
-            suffix = "_" + platform.machine() + ".whl"
-        wheel = next(item for item in release["urls"] if item["filename"].endswith(suffix))
-        archive = fetch({"url": wheel["url"], "file": wheel["filename"], "sha256": wheel["digests"]["sha256"]}, sources, None)
+def tool_wheel_key(name):
+    """Return the lens-dependencies.json tools entry for this build host."""
+    if name == "meson":
+        return "meson"
+    if os.name == "nt":
+        return "ninja-windows-amd64"
+    if sys.platform == "darwin":
+        return "ninja-macos"
+    # Android NDK 宿主工具链依赖 glibc，因此 Linux 只钉 manylinux，不用 musllinux。
+    return "ninja-linux-" + platform.machine()
+
+
+def install_tools(tools, pins, sources, cache):
+    keys = {name: tool_wheel_key(name) for name in ("meson", "ninja")}
+    missing = [key for key in keys.values() if key not in pins]
+    if missing:
+        raise RuntimeError("No pinned Meson/Ninja wheel for this build host in lens-dependencies.json tools: "
+                           + ", ".join(missing))
+    for name, key in keys.items():
+        archive = fetch(pins[key], sources, cache)
         with zipfile.ZipFile(archive) as package:
             package.extractall(tools)
             if name == "ninja":
@@ -202,13 +208,14 @@ def main():
     env = os.environ.copy()
     env["PYTHONPATH"] = str(tools)
     ninja = tools / "bin" / ("ninja.exe" if os.name == "nt" else "ninja")
-    if not ninja.is_file() or not (tools / "mesonbuild").is_dir():
-        install_tools(tools, sources)
-    env["NINJA"] = str(ninja)
-    env["PATH"] = str(ninja.parent) + os.pathsep + env.get("PATH", "")
     specs = json.loads(Path(__file__).with_name("lens-dependencies.json").read_text())
+    tool_pins = specs.pop("tools")
     archive_directory = archive_sources(args.platform, sources, args.source_cache)
     archive_cache = None if archive_directory != sources else args.source_cache
+    if not ninja.is_file() or not (tools / "mesonbuild").is_dir():
+        install_tools(tools, tool_pins, archive_directory, archive_cache)
+    env["NINJA"] = str(ninja)
+    env["PATH"] = str(ninja.parent) + os.pathsep + env.get("PATH", "")
     archives = {name: fetch(spec, archive_directory, archive_cache) for name, spec in specs.items()
                 if name != "iconv" or args.platform == "android"}
     if args.platform == "android":
