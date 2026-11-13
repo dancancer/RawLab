@@ -47,7 +47,14 @@ struct HDRRenditionControls: View {
             }.padding(.top, 6)
                 .onDisappear { if editing { editing = false; onCancelled() } }
         } label: {
-            Text(L10n.text("HDR 输出与 SDR 底图")).accessibilityIdentifier("hdr.rendition")
+            HStack {
+                Text(L10n.text("HDR 输出与 SDR 底图")).accessibilityIdentifier("hdr.rendition")
+                Spacer()
+                // 与滑杆共用同一绑定，一次写回四个显示映射参数，进入同一撤销记录。
+                Button(L10n.text("重置")) { settings = HDRRenditionSettings() }
+                    .buttonStyle(.borderless).disabled(settings.isDefault)
+                    .accessibilityIdentifier("hdr.rendition.reset")
+            }
         }
     }
 

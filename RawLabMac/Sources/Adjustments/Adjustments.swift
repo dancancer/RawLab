@@ -458,6 +458,7 @@ struct Adjustments: Equatable, Codable {
         }
         let inactiveHDR = hdr
         let inactiveHDRCameraAI = hdrCameraAI
+        let decodeVersion = proRAWDecodeVersion
         let identity = processing
         let x3f = x3fMode
         let camera = asShotWhiteBalance
@@ -465,6 +466,7 @@ struct Adjustments: Equatable, Codable {
         self = Adjustments()
         hdr = inactiveHDR
         hdrCameraAI = inactiveHDRCameraAI
+        proRAWDecodeVersion = decodeVersion
         processing = identity
         x3fMode = x3f
         resolveWhiteBalance(camera)

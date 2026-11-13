@@ -2,6 +2,14 @@ import Foundation
 
 @main enum HDRModelTests {
     static func check(_ value: @autoclosure () -> Bool, _ message: String) { if !value() { fatalError(message) } }
+    static func resetAll(_ settings: RawSettings,
+                         context: EditorAdjustmentContext = .init(isRaw: false, defaultExposureMode: .sensor)) -> RawSettings {
+        switch EditorAdjustmentRules.prepareReset(.all, snapshot: PhotoEditState(settings: settings), context: context) {
+        case .candidate(let state, _): return state.settings
+        case .unchanged: return settings
+        case .blocked(let reason): fatalError("unexpected reset block: \(reason)")
+        }
+    }
     static func main() throws {
         let legacy = try JSONDecoder().decode(RawSettings.self, from: Data("{}".utf8))
         check(legacy.hdr == nil && !legacy.isHDREditing && legacy.processing == .legacy, "legacy record changed mode or processing")
@@ -34,7 +42,7 @@ import Foundation
         check(!disabled.isHDREditing && disabled.exposure == 1 && disabled.hdr?.exposure == 2, "SDR restore lost either snapshot")
         let reenabled = try disabled.withHDRMode(true, sourceIsHDR: true)
         check(reenabled.hdr?.exposure == 2, "existing HDR snapshot was rebuilt")
-        let reset = reenabled.resettingAdjustments()
+        let reset = resetAll(reenabled)
         check(reset.isHDREditing && reset.hdr?.isIdentity == true && reset.exposure == 1, "reset changed mode or dormant SDR edit")
         var cameraSDR = sdr
         cameraSDR.sharpening = 0.1
@@ -59,7 +67,7 @@ import Foundation
               "HDR custom curve did not stay separate from the SDR curve")
         let savedCamera = try JSONDecoder().decode(RawSettings.self, from: JSONEncoder().encode(cameraHDR))
         check(savedCamera == cameraHDR, "HDR tone settings did not survive serialization")
-        let resetTone = cameraHDR.resettingAdjustments()
+        let resetTone = resetAll(cameraHDR)
         check(resetTone.hdr?.toneSettings.isDefault == true && resetTone.hdr?.processingVersion == 2 &&
               resetTone.blackPoint == -8 && resetTone.curveSettings == .identity,
               "HDR reset lost its version or changed dormant tone")
@@ -70,7 +78,7 @@ import Foundation
         check(hdrColor.hdr?.processingVersion == 3 && hdrColor.vibrance == 0 && hdrColor.hsl.isIdentity &&
               hdrColor.gradingSettings.isDefault && AdjustmentKind.hsl.progress(in: hdrColor) != 0,
               "HDR color controls changed dormant SDR state or progress used its values")
-        let resetColor = hdrColor.resettingAdjustments()
+        let resetColor = resetAll(hdrColor)
         check(resetColor.hdr?.colorSettings.isDefault == true && resetColor.hdr?.processingVersion == 3,
               "HDR reset retained color or changed processing version")
         let cameraOff = try savedCamera.withHDRMode(false, sourceIsHDR: false, cameraRAW: true)
@@ -88,6 +96,38 @@ import Foundation
         let restoredEffect = try hdrFromEffect.withHDRMode(false, sourceIsHDR: true)
         check(hdrFromEffect.isHDREditing && restoredEffect.photoEffects.vignetteMidpoint == 60,
               "HDR switch did not preserve the SDR effect")
+        let context = EditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor)
+        var modeSource = RawSettings.default; modeSource.exposure = 1; modeSource.proRAWDecodeVersion = 2
+        var modeHDR = try modeSource.withHDRMode(true, sourceIsHDR: true)
+        AdjustmentKind.exposure.setValue(2, in: &modeHDR)
+        let modeSDR = try modeHDR.withHDRMode(false, sourceIsHDR: true)
+        var cleanSDR = modeSDR; cleanSDR.exposure = 0
+        check(!EditorAdjustmentRules.isModified(.all, snapshot: PhotoEditState(settings: cleanSDR), context: context),
+              "dormant HDR marked clean normal mode modified")
+        guard case .candidate(let sdrCandidate, _) = EditorAdjustmentRules.prepareReset(.all,
+            snapshot: PhotoEditState(settings: modeSDR), context: context) else {
+            fatalError("normal reset all was not prepared")
+        }
+        check(!sdrCandidate.settings.isHDREditing && sdrCandidate.settings.hdr == modeSDR.hdr &&
+              sdrCandidate.settings.proRAWDecodeVersion == 2 && sdrCandidate.settings.exposure == 0,
+              "normal reset all altered dormant HDR or decode version")
+        check(!EditorAdjustmentRules.isModified(.all, snapshot: sdrCandidate, context: context),
+              "normal reset all left the all marker set")
+        if case .unchanged = EditorAdjustmentRules.prepareReset(.all, snapshot: sdrCandidate, context: context) {} else {
+            fatalError("normal reset all is not idempotent with dormant HDR")
+        }
+        guard case .candidate(let hdrCandidate, _) = EditorAdjustmentRules.prepareReset(.all,
+            snapshot: PhotoEditState(settings: modeHDR), context: context) else {
+            fatalError("HDR reset all was not prepared")
+        }
+        check(hdrCandidate.settings.isHDREditing && hdrCandidate.settings.hdr?.isIdentity == true &&
+              hdrCandidate.settings.exposure == 1 && hdrCandidate.settings.proRAWDecodeVersion == 2,
+              "HDR reset all altered dormant SDR snapshot or decode version")
+        check(!EditorAdjustmentRules.isModified(.all, snapshot: hdrCandidate, context: context),
+              "HDR reset all left the all marker set despite dormant SDR")
+        if case .unchanged = EditorAdjustmentRules.prepareReset(.all, snapshot: hdrCandidate, context: context) {} else {
+            fatalError("HDR reset all is not idempotent with dormant SDR")
+        }
         print("PASS iOS HDR legacy, record, conversion, control routing and reset")
     }
 }
