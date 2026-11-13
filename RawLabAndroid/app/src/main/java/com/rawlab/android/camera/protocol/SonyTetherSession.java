@@ -222,14 +222,28 @@ public final class SonyTetherSession implements Closeable {
         return handles;
     }
 
-    public synchronized List<LegacyObject> listLegacyPhotos(Set<Integer> baseline) throws IOException {
+    public static final class LegacyListing {
+        public final Set<Integer> handles;
+        public final List<LegacyObject> photos;
+        LegacyListing(Set<Integer> handles,List<LegacyObject> photos) {
+            this.handles=Collections.unmodifiableSet(new LinkedHashSet<>(handles));
+            this.photos=Collections.unmodifiableList(new ArrayList<>(photos));
+        }
+    }
+
+    public synchronized LegacyListing listLegacyPhotosIncremental(Set<Integer> baseline) throws IOException {
+        Set<Integer> handles=legacyHandles();
         List<LegacyObject> result=new ArrayList<>();
-        for(int handle:legacyHandles()) {
+        for(int handle:handles) {
             if(baseline.contains(handle)) continue;
             LegacyObject object=legacyObject(handle);
             if(object.isPhoto()) { result.add(object);knownLegacyObjects.add(object.key()); }
         }
-        return result;
+        return new LegacyListing(handles,result);
+    }
+
+    public synchronized List<LegacyObject> listLegacyPhotos(Set<Integer> baseline) throws IOException {
+        return listLegacyPhotosIncremental(baseline).photos;
     }
 
     public synchronized byte[] previewLegacy(LegacyObject object) throws IOException {
@@ -447,14 +461,31 @@ public final class SonyTetherSession implements Closeable {
         catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new IOException("Remote operation interrupted",interrupted); }
     }
 
+    public static final class IncrementalContents {
+        public final List<Asset> assets;
+        public final long cursor;
+        public final boolean hasEntries;
+        IncrementalContents(List<Asset> assets,long cursor,boolean hasEntries) {
+            this.assets=Collections.unmodifiableList(new ArrayList<>(assets));
+            this.cursor=cursor;
+            this.hasEntries=hasEntries;
+        }
+    }
+
     public synchronized List<Asset> listPhotos() throws IOException {
+        return listPhotosFrom(0L).assets;
+    }
+
+    public synchronized IncrementalContents listPhotosFrom(long startCursor) throws IOException {
         if (!remoteReady) throw new IOException("Remote handshake incomplete");
-        List<Asset> result = new ArrayList<>(); Set<String> seen = new HashSet<>(); long cursor=0;
+        List<Asset> result = new ArrayList<>(); Set<String> seen = new HashSet<>(); long cursor = Math.max(0L, startCursor);
+        long latestCursor = 0L; boolean hasEntries = false;
         boolean exceeded = false;
         for (int page=0;page<1000;page++) {
             byte[] bytes=call(0x923c,new int[]{(int)cursor,(int)(cursor>>>32),100,1,0},null,LIMIT,true);
             SonyMobileSession.Page data;
             try { data=parseContents(bytes,this); } catch(IOException invalid) { close();throw invalid; }
+            if (data.count > 0) { hasEntries = true; latestCursor = data.cursor; }
             for (Asset asset : data.assets) if (seen.add(asset.key())) {
                 result.add(asset);
                 if (result.size()>CameraMediaSession.MAX_LISTED_PHOTOS) {
@@ -466,7 +497,7 @@ public final class SonyTetherSession implements Closeable {
                 if (exceeded) SonyMobileSession.trimRecentAssets(result);
                 rememberAssets(result);
                 if (exceeded) throw new CameraMediaSession.PhotoLimitExceededException("Remote contents budget exceeded", result);
-                return result;
+                return new IncrementalContents(result, hasEntries ? latestCursor : 0L, hasEntries);
             }
             if (data.cursor<=cursor) throw new IOException("Remote contents cursor did not advance");
             cursor=data.cursor;
@@ -482,13 +513,13 @@ public final class SonyTetherSession implements Closeable {
     }
 
     private boolean hasRemoteAsset(Asset target) throws IOException {
-        long cursor = 0;
+        long cursor = target.created > 0 ? target.created - 1 : 0;
         for (int page = 0; page < 1000; page++) {
             byte[] bytes = call(0x923c, new int[]{(int)cursor, (int)(cursor>>>32), 100, 1, 0}, null, LIMIT, true);
             SonyMobileSession.Page data;
             try { data = parseContents(bytes, this); } catch (IOException invalid) { close(); throw invalid; }
             for (Asset candidate : data.assets) if (target.same(candidate)) return true;
-            if (data.count < 100) return false;
+            if (data.count < 100 || data.cursor > target.created) return false;
             if (data.cursor <= cursor) throw new IOException("Remote contents cursor did not advance");
             cursor = data.cursor;
         }

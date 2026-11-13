@@ -8,10 +8,11 @@ import java.io.OutputStream
 internal class CameraTetherQueue(private val store: CameraImportStore, private val journal: CameraTetherJournal) {
     fun receive(initial: CameraTetherRun, observed: List<CameraPhoto>, permit: CameraTransferPermit,
         download: (CameraPhoto, FileOutputStream) -> String,
-        onRun: (CameraTetherRun) -> Unit = {}, onJob: (CameraImportJob) -> Unit = {}): CameraTetherRun {
+        onRun: (CameraTetherRun) -> Unit = {}, onJob: (CameraImportJob) -> Unit = {},
+        mode: CameraTetherObservationMode = CameraTetherObservationMode.Full): CameraTetherRun {
         permit.check()
-        // reserve 先核对全卡身份，防止缺失基线或重用对象被当作新照片。
-        var run = journal.reserve(initial, observed).first
+        // reserve 按观测模式核对基线/尾部锚点与对象槽位身份，防止换卡或句柄重用被当作新照片。
+        var run = journal.reserve(initial, observed, mode).first
         onRun(run)
         var count = 0
         var bytes = 0L
@@ -27,7 +28,7 @@ internal class CameraTetherQueue(private val store: CameraImportStore, private v
                     download(photo, output)
                 }, onJob, continueOnPhotoError = false))
             }
-            val (updated, batch) = journal.reserve(run, observed)
+            val (updated, batch) = journal.reserve(run, observed, mode)
             run = updated
             if (batch == null) return run
             onRun(run)

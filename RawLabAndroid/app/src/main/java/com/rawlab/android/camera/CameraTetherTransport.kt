@@ -1,6 +1,7 @@
 package com.rawlab.android.camera
 
 import com.rawlab.android.camera.protocol.SonyLegacyImportSession
+import com.rawlab.android.camera.protocol.SonyMobileSession
 import com.rawlab.android.camera.protocol.SonyTetherSession
 import java.io.IOException
 import java.io.OutputStream
@@ -11,6 +12,8 @@ import javax.net.SocketFactory
 
 internal data class CameraHostOriginal(val name: String, val size: Long, val digest: String)
 internal data class CameraCardSnapshot(val photos: List<CameraPhoto>, val hardwareIdentity: CameraHardwareIdentity?,
+    val observationMode: CameraTetherObservationMode = CameraTetherObservationMode.Full,
+    val commit: () -> Unit = {},
     val download: (CameraPhoto, OutputStream, (Long) -> Unit) -> String)
 internal data class CameraTetherParameter(val code: Int, val current: Long, val options: List<Long>,
     val writable: Boolean, val enabled: Boolean)
@@ -23,18 +26,47 @@ internal class CameraTetherTransport(private val factory: SocketFactory, private
     var usesLegacyContents = false
         private set
     private var hardwareIdentity: CameraHardwareIdentity? = null
+    private val remoteAssets = linkedMapOf<String, SonyMobileSession.Asset>()
+    private var remoteCursor = 0L
+    private var remoteHadEntries = false
+    private var remoteInitialized = false
+    private var legacyInspectedHandles: Set<Int>? = null
+    private var legacyPhotoHandles: Set<Int>? = null
     @Volatile private var stopped = false
     @Volatile private var remote: SonyTetherSession? = null
     @Volatile private var media: SonyLegacyImportSession? = null
 
     @Synchronized
-    fun readCard(): CameraCardSnapshot {
+    fun readCard(incremental: Boolean = false): CameraCardSnapshot {
         checkRunning()
         val openedRemote = activateRemoteSession()
         if (!usesLegacyContents) {
-            val assets = openedRemote.listPhotos().associateBy { it.key() }
-            return CameraCardSnapshot(assets.values.map { it.photo() }, hardwareIdentity) { photo, output, progress ->
-                openedRemote.download(assets.getValue(photo.key), object : OutputStream() {
+            val useIncremental = incremental && remoteInitialized
+            val queryCursor = if (useIncremental && remoteHadEntries && remoteCursor > 0L) remoteCursor - 1L else 0L
+            val listing = openedRemote.listPhotosFrom(queryCursor)
+            if (useIncremental && remoteHadEntries && (!listing.hasEntries || listing.cursor < remoteCursor))
+                throw CameraTetherSourceException()
+            val listed = linkedMapOf<String, SonyMobileSession.Asset>()
+            if (!useIncremental) remoteAssets.clear()
+            for (asset in listing.assets) {
+                listed[asset.key()] = asset
+                remoteAssets[asset.key()] = asset
+            }
+            val mode = if (useIncremental && queryCursor > 0L) CameraTetherObservationMode.Incremental(afterCursor = queryCursor)
+                else CameraTetherObservationMode.Full
+            val commit: () -> Unit = {
+                if (useIncremental) {
+                    remoteCursor = maxOf(remoteCursor, listing.cursor)
+                    remoteHadEntries = remoteHadEntries || listing.hasEntries
+                } else {
+                    remoteCursor = listing.cursor
+                    remoteHadEntries = listing.hasEntries
+                    remoteInitialized = true
+                }
+            }
+            return CameraCardSnapshot(listed.values.map { it.photo() }, hardwareIdentity, mode, commit) { photo, output, progress ->
+                val target = remoteAssets[photo.key] ?: throw IOException("Remote original outside current session")
+                openedRemote.download(target, object : OutputStream() {
                     var count = 0L
                     override fun write(value: Int) { output.write(value); progress(++count) }
                     override fun write(bytes: ByteArray, offset: Int, length: Int) {
@@ -51,11 +83,24 @@ internal class CameraTetherTransport(private val factory: SocketFactory, private
         checkRunning()
         val info = opened.deviceInfo()
         opened.openSession()
-        val assets = opened.listPhotos(info).associateBy { it.key() }
         val mediaIdentity = CameraHardwareIdentity.read(info)
         if (hardwareIdentity != null && mediaIdentity != hardwareIdentity) throw CameraTetherSourceException()
-        return CameraCardSnapshot(assets.values.map { it.photo() }, mediaIdentity) { photo, output, progress ->
-            opened.download(info, assets.getValue(photo.key), output) { bytes, _ -> progress(bytes) }
+        val inspected = legacyInspectedHandles
+        val requiredPhotos = legacyPhotoHandles
+        val useIncremental = incremental && inspected != null && requiredPhotos != null
+        val listing = opened.listPhotos(info, if (useIncremental) checkNotNull(inspected) else emptySet())
+        if (useIncremental && !listing.handles.containsAll(checkNotNull(requiredPhotos)))
+            throw CameraTetherSourceException()
+        val assets = listing.photos.associateBy { it.key() }
+        val mode = if (useIncremental) CameraTetherObservationMode.Incremental() else CameraTetherObservationMode.Full
+        val commit: () -> Unit = {
+            legacyInspectedHandles = listing.handles
+            legacyPhotoHandles = if (useIncremental) checkNotNull(requiredPhotos) + listing.photoHandles
+                else listing.photoHandles
+        }
+        return CameraCardSnapshot(assets.values.map { it.photo() }, mediaIdentity, mode, commit) { photo, output, progress ->
+            val target = assets[photo.key] ?: throw IOException("Legacy original outside current listing")
+            opened.download(info, target, output) { bytes, _ -> progress(bytes) }
         }
     }
 
@@ -120,11 +165,20 @@ internal class CameraTetherTransport(private val factory: SocketFactory, private
     private fun trace(message: String) {
         if (com.rawlab.android.BuildConfig.DEBUG) android.util.Log.d("RawLabCamera", message)
     }
-    fun close() { stopped = true; remote?.close(); remote = null; media?.close(); media = null }
+    fun close() {
+        stopped = true
+        remote?.close(); remote = null
+        media?.close(); media = null
+        remoteAssets.clear()
+        remoteCursor = 0L; remoteHadEntries = false; remoteInitialized = false
+        legacyInspectedHandles = null; legacyPhotoHandles = null
+    }
     private fun checkRunning() { if (stopped) throw IOException("Camera tether stopped") }
     private fun activateRemoteSession(): SonyTetherSession {
         if (remote == null) {
             media?.finish(); media = null
+            remoteAssets.clear()
+            remoteCursor = 0L; remoteHadEntries = false; remoteInitialized = false
             val opened = SonyTetherSession(factory, address, clientId, ::trace)
             remote = opened
             checkRunning()

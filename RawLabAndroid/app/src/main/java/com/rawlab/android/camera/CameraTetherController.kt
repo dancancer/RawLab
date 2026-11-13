@@ -17,6 +17,7 @@ import java.net.InetAddress
 import java.net.URL
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import javax.net.SocketFactory
 
 internal enum class CameraTetherPhase { IDLE, PREPARING, READY, CAPTURING, WAITING, RECEIVING, PAUSED }
 internal enum class CameraTetherFailure { CONNECTION, LIVE, SETTINGS, SOURCE, STORAGE, BACKLOG, UNKNOWN_SHOT, UNSUPPORTED, PHOTO_LIMIT }
@@ -64,7 +65,9 @@ internal data class CameraTetherState(
 /** Activity 的相机 owner 创建并持有本控制器，存储实例和锁与选片导入完全共用。 */
 internal class CameraTetherController(private val scope: CoroutineScope, private val store: CameraImportStore,
     private val journal: CameraTetherJournal, private val storeLock: Mutex,
-    private val onJob: (CameraImportJob) -> Unit) {
+    private val onJob: (CameraImportJob) -> Unit,
+    private val clock: () -> Long = ::monotonicMillis,
+    private val loopPause: suspend () -> Unit = { delay(250) }) {
     private val mutable = MutableStateFlow(CameraTetherState())
     val state = mutable.asStateFlow()
     private val queue = CameraTetherQueue(store, journal)
@@ -73,7 +76,7 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
 
     @Volatile private var active: Active? = null
 
-    private class Active(val transport: CameraTetherTransport, val network: Network) {
+    private class Active(val transport: CameraTetherTransport, val openLiveConnection: (URL) -> HttpURLConnection) {
         val permit = CameraTransferPermit()
         val shutter = Channel<Unit>(1)
         val parameterRequests = Channel<ParameterRequest>(Channel.UNLIMITED)
@@ -96,15 +99,23 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
         check(active == null)
         val previous = runs.firstOrNull { it.status == CameraTetherStatus.PAUSED }
         mutable.value = CameraTetherState(run = previous, runs = runs, jobs = jobs,
-            phase = if (previous == null) CameraTetherPhase.IDLE else CameraTetherPhase.PAUSED)
+            phase = if (previous == null) CameraTetherPhase.IDLE else CameraTetherPhase.PAUSED,
+            failure = CameraTetherFailure.UNKNOWN_SHOT.takeIf { previous?.shutterRequestedAt != null })
     }
 
     fun start(network: Network, address: InetAddress, clientId: UUID, model: SonyCameraModel, cameraId: String,
-        destination: CameraImportDestination, resume: Boolean, cardSavingConfirmed: Boolean) {
+        destination: CameraImportDestination, resume: Boolean, cardSavingConfirmed: Boolean) =
+        start(network.socketFactory, address, clientId, model, cameraId, destination, resume, cardSavingConfirmed) {
+            network.openConnection(it) as HttpURLConnection
+        }
+
+    internal fun start(socketFactory: SocketFactory, address: InetAddress, clientId: UUID, model: SonyCameraModel, cameraId: String,
+        destination: CameraImportDestination, resume: Boolean, cardSavingConfirmed: Boolean,
+        openLiveConnection: (URL) -> HttpURLConnection = { throw IOException("Live view network unavailable") }) {
         check(work?.isActive != true && active == null)
         val paused = mutable.value
         val previous = paused.run.takeIf { resume }
-        val current = Active(CameraTetherTransport(network.socketFactory, address, clientId, model, cardSavingConfirmed), network)
+        val current = Active(CameraTetherTransport(socketFactory, address, clientId, model, cardSavingConfirmed), openLiveConnection)
         active = current
         mutable.update { it.copy(phase = CameraTetherPhase.PREPARING, failure = null, live = false, frame = null, frameTime = 0,
             parameters = CameraTetherParameterState(), liveAvailable = true, resumedRegisteredOnly = previous != null) }
@@ -115,7 +126,6 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                     if (resume && (!paused.canResume || previous?.cameraId != cameraId))
                         throw CameraTetherSourceException()
                     current.run = previous?.copy(status = CameraTetherStatus.ACTIVE)
-                    current.shutterPending.set(previous?.shutterRequestedAt != null)
                     observe(current, cameraId, model, destination)
                     val liveUrl = current.transport.activateRemote()
                     runCatching { current.transport.readParameters() }
@@ -124,21 +134,21 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                     openLive(current, liveUrl, this)
                     // 基线之前的临时手机队列不属于这次新拍范围。
                     if (current.transport.usesLegacyContents) current.transport.drainHostImages()
-                    var lastCheck = monotonicMillis()
-                    var requestedAt = if (current.run?.shutterRequestedAt != null) lastCheck else 0L
+                    var lastCheck = clock()
+                    var requestedAt = 0L
                     var busy = 0
-                    var lastParameterRead = monotonicMillis()
+                    var lastParameterRead = clock()
                     ready(current)
                     while (isActive && !current.stopped) {
-                        delay(250)
+                        loopPause()
                         if (current.liveFailure) throw CameraTetherLiveException()
                         current.parameterRequests.tryReceive().getOrNull()?.let { processParameter(current, it) }
-                        if (mutable.value.phase == CameraTetherPhase.READY && monotonicMillis() - lastParameterRead >= 3_000) {
+                        if (mutable.value.phase == CameraTetherPhase.READY && clock() - lastParameterRead >= 3_000) {
                             processParameter(current, ParameterRequest())
-                            lastParameterRead = monotonicMillis()
+                            lastParameterRead = clock()
                         }
                         if (current.shutter.tryReceive().isSuccess) {
-                            mutable.update { it.copy(phase = CameraTetherPhase.CAPTURING) }
+                            mutable.update { it.copy(phase = CameraTetherPhase.CAPTURING, failure = null) }
                             storeLock.withLock {
                                 current.permit.check()
                                 current.requestBatchIds = checkNotNull(current.run).batches.map { it.id }.toSet()
@@ -146,7 +156,7 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                                 current.run = checkNotNull(current.run).copy(shutterRequestedAt = System.currentTimeMillis()).also(journal::save)
                                 updateRun(checkNotNull(current.run))
                             }
-                            requestedAt = monotonicMillis()
+                            requestedAt = clock()
                             try { current.transport.capture() }
                             catch (notSent: SonyTetherSession.CaptureNotSentException) {
                                 storeLock.withLock {
@@ -161,7 +171,7 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                             current.requestAcknowledged = true
                             mutable.update { it.copy(phase = CameraTetherPhase.WAITING) }
                         }
-                        val now = monotonicMillis()
+                        val now = clock()
                         val pending = current.transport.usesLegacyContents && current.transport.hasPendingHostImage()
                         if (needsCardReconciliation(model, pending, now, lastCheck, requestedAt, current.transport.usesLegacyContents)) {
                             val host = if (pending) current.transport.drainHostImages() else emptyList()
@@ -175,11 +185,11 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                             }
                             current.permit.check()
                             if (current.transport.usesLegacyContents) openLive(current, current.transport.activateRemote(), this)
-                            lastCheck = monotonicMillis()
+                            lastCheck = clock()
                             ready(current)
                         }
                         if (requestedAt != 0L && current.run?.shutterRequestedAt == null) requestedAt = 0L
-                        if (requestedAt != 0L && monotonicMillis() - requestedAt > 35_000) throw CameraTetherUnknownShotException()
+                        if (requestedAt != 0L && clock() - requestedAt > 35_000) throw CameraTetherUnknownShotException()
                     }
                 }
             } catch (_: CancellationException) {
@@ -209,6 +219,8 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                             .onFailure { failure = CameraTetherFailure.STORAGE }
                         current.run?.let { run ->
                             val paused = run.copy(status = if (current.ended) CameraTetherStatus.ENDED else CameraTetherStatus.PAUSED)
+                            if (failure == null && !current.ended && paused.shutterRequestedAt != null)
+                                failure = CameraTetherFailure.UNKNOWN_SHOT
                             runCatching { journal.save(paused) }.onSuccess { updateRun(paused) }
                                 .onFailure { failure = CameraTetherFailure.STORAGE }
                         }
@@ -225,7 +237,7 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
     fun capture() {
         val current = active ?: return
         if (mutable.value.phase != CameraTetherPhase.READY || !mutable.value.parameters.captureReady || mutable.value.parameters.busy || current.stopped || !current.shutterPending.compareAndSet(false, true)) return
-        mutable.update { it.copy(phase = CameraTetherPhase.CAPTURING) }
+        mutable.update { it.copy(phase = CameraTetherPhase.CAPTURING, failure = null) }
         if (current.shutter.trySend(Unit).isFailure) { current.shutterPending.set(false); ready(current) }
     }
 
@@ -253,7 +265,7 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
 
     private suspend fun observe(current: Active, cameraId: String, model: SonyCameraModel,
         destination: CameraImportDestination, host: List<CameraHostOriginal> = emptyList()) {
-        val snapshot = current.transport.readCard()
+        val snapshot = current.transport.readCard(incremental = !current.initialObservation)
         storeLock.withLock {
             current.permit.check()
             // 恢复先核实原件；活动接收不反复散列历史媒体，打开编辑前会再次核实目标文件。
@@ -261,6 +273,7 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                 val jobs = store.load()
                 jobs.forEach(::updateJob)
                 current.run?.let { previous ->
+                    val hadUnconfirmedShutter = previous.shutterRequestedAt != null
                     val resumed = queue.resume(previous, snapshot.photos, snapshot.hardwareIdentity, jobs, current.permit, { photo, output ->
                         mutable.update { it.copy(phase = CameraTetherPhase.RECEIVING, current = photo, currentBytes = 0) }
                         snapshot.download(photo, output) { bytes ->
@@ -269,17 +282,20 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                     }, ::updateJob)
                     current.run = resumed
                     updateRun(resumed)
+                    if (hadUnconfirmedShutter) mutable.update { it.copy(failure = CameraTetherFailure.UNKNOWN_SHOT) }
                 }
-                current.initialObservation = false
             }
             if (current.run == null) {
                 current.run = journal.create(cameraId, model.profileId, snapshot.photos, destination, snapshot.hardwareIdentity)
+                snapshot.commit()
+                current.initialObservation = false
                 updateRun(checkNotNull(current.run))
                 return@withLock
             }
             if (current.run?.hardwareIdentity?.let { it != snapshot.hardwareIdentity } == true) throw CameraTetherSourceException()
-            val expected = hostDigestsForCard(host, snapshot.photos)
             val run = checkNotNull(current.run)
+            val allCardPhotos = (run.observedPhotos + snapshot.photos).distinctBy { it.key }
+            val expected = hostDigestsForCard(host, allCardPhotos)
             val activeBatchIds = run.batches.drop(run.rebasedBatches).map { it.id }.toSet()
             for (job in mutable.value.jobs.filter { it.id in activeBatchIds }) for (item in job.items) {
                 if (item.saved != null && expected[item.photo.key]?.let { it != item.digest } == true)
@@ -299,7 +315,9 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                     if (job.savedCount > before && canFinishShutterWait(current.requestAcknowledged, current.requestBatchIds, job))
                         receivedAfterRequest = true
                     updateJob(job)
-                })
+                }, mode = snapshot.observationMode)
+                snapshot.commit()
+                current.initialObservation = false
             } catch (error: IOException) {
                 if (error.message?.contains("metadata changed") == true || error.message?.contains("baseline changed") == true)
                     throw CameraTetherSourceException()
@@ -370,7 +388,7 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
         current.liveJob = childScope.launch(Dispatchers.IO) {
             var connection: HttpURLConnection? = null
             try {
-                connection = current.network.openConnection(url) as HttpURLConnection
+                connection = current.openLiveConnection(url)
                 connection.instanceFollowRedirects = false
                 connection.connectTimeout = 5_000; connection.readTimeout = 5_000
                 current.connection = connection
@@ -380,7 +398,7 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                 connection.inputStream.use { input ->
                     while (isActive && !current.stopped && token == current.liveGeneration) {
                         val bytes = SonyTetherSession.readFrame(input)
-                        val now = monotonicMillis()
+                        val now = clock()
                         if (shown != 0L && now - shown > 5_000) throw CameraTetherLiveException()
                         if (now - shown < 100) continue
                         val bitmap = decodeCameraPreview(bytes, large = true, pixelBudget = 16_000_000) ?: continue
@@ -396,10 +414,10 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                 }
             } finally { connection?.disconnect(); if (current.connection === connection) current.connection = null }
         }
-        val deadline = monotonicMillis() + 8_000
+        val deadline = clock() + 8_000
         while (!mutable.value.live) {
             current.permit.check()
-            if (current.liveFailure || monotonicMillis() > deadline) throw CameraTetherLiveException()
+            if (current.liveFailure || clock() > deadline) throw CameraTetherLiveException()
             delay(50)
         }
     }
