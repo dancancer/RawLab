@@ -19,7 +19,9 @@ internal static class LUTPreviewCleanupChecks
             var first = service.Load(look, photos[0], CancellationToken.None).GetAwaiter().GetResult();
             var second = service.Load(look, photos[1], CancellationToken.None).GetAwaiter().GetResult();
             check(first.Baseline.Pixels.Length > 0 && second.Baseline.Pixels.Length > 0, "Read-only photo and LUT still preview after switching photos");
-            check(Previews().Except(before).Count() == 1, "Switching photos removes the previous read-only preview copy");
+            var active = Previews().Except(before).ToArray();
+            check(active.Length == 1 && TempCleanup.IsTrackedOwnerAlive(new DirectoryInfo(active[0])),
+                "Switching photos removes the previous read-only preview copy and marks the active preview owner");
             service.Dispose();
             var clock = System.Diagnostics.Stopwatch.StartNew();
             while (Previews().Except(before).Any() && clock.Elapsed < TimeSpan.FromSeconds(10)) Thread.Sleep(20);

@@ -1,12 +1,38 @@
-#if RAWLAB_RUM_SDK
+#if RAWLAB_RUM_SDK || RAWLAB_RUM_TRANSPORT_TEST
 using System.IO;
 using System.Runtime.InteropServices;
 
 namespace RawLab.Windows;
 
+internal interface IRumNative
+{
+    IntPtr OptionsNew();
+    void OptionsFree(IntPtr options);
+    void SetConfigAddress(IntPtr options, string configAddress);
+    void SetAppId(IntPtr options, string appId);
+    void SetAppName(IntPtr options, string appName);
+    void SetAppVersion(IntPtr options, string appVersion);
+    void SetEnv(IntPtr options, int env);
+    void SetUtdid(IntPtr options, string utdid);
+    void SetDebugLevel(IntPtr options, int level);
+    void SetCachePath(IntPtr options, string path);
+    void SetAutoCrashTracking(IntPtr options, int enabled);
+    void SetAutoCurlTracking(IntPtr options, int enabled);
+    void SetAutoCefTracking(IntPtr options, int enabled);
+    int Init(IntPtr options);
+    int Close();
+    IntPtr CustomEventNew(string type, string name);
+    void CustomEventSetValue(IntPtr nativeEvent, double value);
+    void CustomEventSetGroup(IntPtr nativeEvent, string group);
+    void CustomEventAddExtra(IntPtr nativeEvent, string key, string value);
+    void CustomEventFree(IntPtr nativeEvent);
+    void CustomEventReport(IntPtr nativeEvent);
+}
+
 // ┌──────────────────────────────────────────────────────────────────────┐
 // │ 阿里云 RUM PC SDK 0.4.4 适配：只开自定义事件，关闭崩溃/网络/CEF 自动采集。 │
 // │ 设备标识由 UsageAnalytics 传入（本机随机安装标识），不读取任何硬件编号。   │
+// │ 缓存复用固定目录，启动清扫仅移除过期的发送失败残留，保留未过期待发缓存。   │
 // │ 原生 options 只在 alibabacloud_rum_close() 确认成功后才释放；关闭失败或   │
 // │ 退出时放弃等待，都不会提前释放 SDK 仍可能在用的指针。                     │
 // └──────────────────────────────────────────────────────────────────────┘
@@ -20,6 +46,8 @@ public sealed class RumUsageAnalyticsTransport : IUsageAnalyticsTransport
     private static RumUsageAnalyticsTransport? active;
 
     private readonly RumConfiguration configuration;
+    private readonly IRumNative native;
+    private string? configuredCacheDirectory;
     private bool started;
     private volatile bool lifecycleFailed;
     private Exception? lifecycleFailure;
@@ -27,14 +55,56 @@ public sealed class RumUsageAnalyticsTransport : IUsageAnalyticsTransport
     private string? cachePath;
 
     public RumUsageAnalyticsTransport(RumConfiguration configuration)
+        : this(configuration, null, null)
+    {
+    }
+
+    internal RumUsageAnalyticsTransport(RumConfiguration configuration, string? cacheDirectory, IRumNative? native = null)
     {
         this.configuration = configuration;
+        configuredCacheDirectory = cacheDirectory;
+        this.native = native ?? PInvokeRumNative.Instance;
     }
 
     public bool IsAvailable => !lifecycleFailed;
 
+    public string CacheDirectory
+    {
+        get
+        {
+            lock (NativeGate)
+                return Path.GetFullPath(configuredCacheDirectory ?? UsageAnalytics.DefaultCacheDirectory);
+        }
+    }
+
+    internal void BindDefaultCacheDirectory(string directory)
+    {
+        lock (NativeGate)
+        {
+            if (!started && configuredCacheDirectory == null)
+                configuredCacheDirectory = directory;
+        }
+    }
+
+    internal static bool IsCacheInUse(string directory)
+    {
+        if (string.IsNullOrWhiteSpace(directory)) return false;
+        string full;
+        try { full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory)); }
+        catch (ArgumentException) { return false; }
+        lock (NativeGate)
+        {
+            return active?.cachePath is { } activePath &&
+                StringComparer.OrdinalIgnoreCase.Equals(
+                    Path.TrimEndingDirectorySeparator(Path.GetFullPath(activePath)),
+                    full);
+        }
+    }
+
     // ─── 正式构建用写死的正式配置，本地验证构建用环境变量配置；SDK 不在程序旁边就当作不可用 ───
-    public static IUsageAnalyticsTransport CreateDefault()
+    public static IUsageAnalyticsTransport CreateDefault() => CreateDefault(null);
+
+    internal static IUsageAnalyticsTransport CreateDefault(string? cacheDirectory)
     {
         var environment = RumConfiguration.ProcessEnvironment();
         var version = typeof(RumUsageAnalyticsTransport).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
@@ -44,7 +114,7 @@ public sealed class RumUsageAnalyticsTransport : IUsageAnalyticsTransport
         var configured = RumConfiguration.TryProduction(environment, version, out var configuration);
 #endif
         return configured && configuration != null && File.Exists(Path.Combine(AppContext.BaseDirectory, LibraryName))
-            ? new RumUsageAnalyticsTransport(configuration)
+            ? new RumUsageAnalyticsTransport(configuration, cacheDirectory)
             : new UnavailableUsageAnalyticsTransport();
     }
 
@@ -64,38 +134,33 @@ public sealed class RumUsageAnalyticsTransport : IUsageAnalyticsTransport
             if (active != null && !ReferenceEquals(active, this))
                 throw new InvalidOperationException("The Windows RUM SDK already has an active instance.");
 
-            var cache = Path.Combine(Path.GetTempPath(), "rawlab-rum-" + Guid.NewGuid().ToString("N"));
+            var cache = Path.GetFullPath(configuredCacheDirectory ?? UsageAnalytics.DefaultCacheDirectory);
+            if (Directory.Exists(cache) && TempCleanup.IsReparsePoint(new DirectoryInfo(cache)))
+                throw new IOException("The Windows RUM SDK cache directory cannot be a reparse point.");
+            TempCleanup.SweepExpiredAnalyticsCache(cache, DateTime.UtcNow, TempCleanup.DefaultRetention);
             Directory.CreateDirectory(cache);
-            IntPtr nativeOptions;
-            try { nativeOptions = Native.alibabacloud_rum_options_new(); }
-            catch
-            {
-                DeleteCache(cache);
-                throw;
-            }
+            var nativeOptions = native.OptionsNew();
             if (nativeOptions == IntPtr.Zero)
-            {
-                DeleteCache(cache);
                 throw new InvalidOperationException("The Windows RUM SDK could not allocate options.");
-            }
 
             options = nativeOptions;
             cachePath = cache;
             active = this;
+            TempCleanup.WriteOwnerMarker(cache);
             try
             {
-                Native.alibabacloud_rum_options_set_config_address(options, configuration.ConfigAddress);
-                Native.alibabacloud_rum_options_set_app_id(options, configuration.AppId);
-                Native.alibabacloud_rum_options_set_app_name(options, AppName);
-                Native.alibabacloud_rum_options_set_app_version(options, configuration.AppVersion);
-                Native.alibabacloud_rum_options_set_env(options, (int)configuration.Env);
-                Native.alibabacloud_rum_options_set_utdid(options, installId);
-                Native.alibabacloud_rum_options_set_debug_level(options, RumLevelFatal);
-                Native.alibabacloud_rum_options_set_cache_path(options, cache);
-                Native.alibabacloud_rum_options_set_auto_crash_tracking(options, 0);
-                Native.alibabacloud_rum_options_set_auto_curl_tracking(options, 0);
-                Native.alibabacloud_rum_options_set_auto_cef_tracking(options, 0);
-                if (Native.alibabacloud_rum_init(options) != 0)
+                native.SetConfigAddress(options, configuration.ConfigAddress);
+                native.SetAppId(options, configuration.AppId);
+                native.SetAppName(options, AppName);
+                native.SetAppVersion(options, configuration.AppVersion);
+                native.SetEnv(options, (int)configuration.Env);
+                native.SetUtdid(options, installId);
+                native.SetDebugLevel(options, RumLevelFatal);
+                native.SetCachePath(options, cache);
+                native.SetAutoCrashTracking(options, 0);
+                native.SetAutoCurlTracking(options, 0);
+                native.SetAutoCefTracking(options, 0);
+                if (native.Init(options) != 0)
                     throw new InvalidOperationException("The Windows RUM SDK could not initialize.");
 
                 started = true;
@@ -111,15 +176,15 @@ public sealed class RumUsageAnalyticsTransport : IUsageAnalyticsTransport
     {
         try
         {
-            if (Native.alibabacloud_rum_close() != 0)
+            if (native.Close() != 0)
                 throw new InvalidOperationException("The Windows RUM SDK could not confirm failed-start cleanup.");
 
-            Native.alibabacloud_rum_options_free(options);
+            native.OptionsFree(options);
             options = IntPtr.Zero;
             active = null;
             var cache = cachePath;
             cachePath = null;
-            if (cache != null) DeleteCache(cache);
+            if (cache != null) TempCleanup.RemoveOwnerMarker(cache);
             return initializationFailure;
         }
         catch (Exception cleanupFailure)
@@ -136,25 +201,25 @@ public sealed class RumUsageAnalyticsTransport : IUsageAnalyticsTransport
         lock (NativeGate)
         {
             if (lifecycleFailure != null || !started || !ReferenceEquals(active, this)) return;
-            var nativeEvent = Native.alibabacloud_rum_custom_event_new("usage", usageEvent.Name);
+            var nativeEvent = native.CustomEventNew("usage", usageEvent.Name);
             if (nativeEvent == IntPtr.Zero) return;
 
             try
             {
-                Native.alibabacloud_rum_custom_event_set_group(nativeEvent, usageEvent.Group);
-                Native.alibabacloud_rum_custom_event_set_value(nativeEvent, usageEvent.Value);
+                native.CustomEventSetGroup(nativeEvent, usageEvent.Group);
+                native.CustomEventSetValue(nativeEvent, usageEvent.Value);
                 foreach (var property in usageEvent.Properties)
-                    Native.alibabacloud_rum_custom_event_add_extra(nativeEvent, property.Key, property.Value);
+                    native.CustomEventAddExtra(nativeEvent, property.Key, property.Value);
                 if (configuration.ValidationRun != null)
-                    Native.alibabacloud_rum_custom_event_add_extra(
+                    native.CustomEventAddExtra(
                         nativeEvent, "validation_run", configuration.ValidationRun);
-                Native.alibabacloud_rum_custom_event_report(nativeEvent);
+                native.CustomEventReport(nativeEvent);
                 nativeEvent = IntPtr.Zero;
             }
             finally
             {
                 if (nativeEvent != IntPtr.Zero)
-                    Native.alibabacloud_rum_custom_event_free(nativeEvent);
+                    native.CustomEventFree(nativeEvent);
             }
         }
     }
@@ -166,7 +231,7 @@ public sealed class RumUsageAnalyticsTransport : IUsageAnalyticsTransport
             if (lifecycleFailure != null) throw lifecycleFailure;
             if (!started || !ReferenceEquals(active, this)) return;
             int result;
-            try { result = Native.alibabacloud_rum_close(); }
+            try { result = native.Close(); }
             catch (Exception error)
             {
                 throw MarkLifecycleFailure(new InvalidOperationException(
@@ -183,8 +248,8 @@ public sealed class RumUsageAnalyticsTransport : IUsageAnalyticsTransport
             active = null;
             var cache = cachePath;
             cachePath = null;
-            Native.alibabacloud_rum_options_free(nativeOptions);
-            if (cache != null) DeleteCache(cache);
+            native.OptionsFree(nativeOptions);
+            if (cache != null) TempCleanup.RemoveOwnerMarker(cache);
         }
     }
 
@@ -195,9 +260,38 @@ public sealed class RumUsageAnalyticsTransport : IUsageAnalyticsTransport
         return error;
     }
 
-    private static void DeleteCache(string path)
+    private sealed class PInvokeRumNative : IRumNative
     {
-        if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
+        internal static readonly PInvokeRumNative Instance = new();
+        public IntPtr OptionsNew() => Native.alibabacloud_rum_options_new();
+        public void OptionsFree(IntPtr options) => Native.alibabacloud_rum_options_free(options);
+        public void SetConfigAddress(IntPtr options, string configAddress) =>
+            Native.alibabacloud_rum_options_set_config_address(options, configAddress);
+        public void SetAppId(IntPtr options, string appId) => Native.alibabacloud_rum_options_set_app_id(options, appId);
+        public void SetAppName(IntPtr options, string appName) => Native.alibabacloud_rum_options_set_app_name(options, appName);
+        public void SetAppVersion(IntPtr options, string appVersion) =>
+            Native.alibabacloud_rum_options_set_app_version(options, appVersion);
+        public void SetEnv(IntPtr options, int env) => Native.alibabacloud_rum_options_set_env(options, env);
+        public void SetUtdid(IntPtr options, string utdid) => Native.alibabacloud_rum_options_set_utdid(options, utdid);
+        public void SetDebugLevel(IntPtr options, int level) => Native.alibabacloud_rum_options_set_debug_level(options, level);
+        public void SetCachePath(IntPtr options, string path) => Native.alibabacloud_rum_options_set_cache_path(options, path);
+        public void SetAutoCrashTracking(IntPtr options, int enabled) =>
+            Native.alibabacloud_rum_options_set_auto_crash_tracking(options, enabled);
+        public void SetAutoCurlTracking(IntPtr options, int enabled) =>
+            Native.alibabacloud_rum_options_set_auto_curl_tracking(options, enabled);
+        public void SetAutoCefTracking(IntPtr options, int enabled) =>
+            Native.alibabacloud_rum_options_set_auto_cef_tracking(options, enabled);
+        public int Init(IntPtr options) => Native.alibabacloud_rum_init(options);
+        public int Close() => Native.alibabacloud_rum_close();
+        public IntPtr CustomEventNew(string type, string name) => Native.alibabacloud_rum_custom_event_new(type, name);
+        public void CustomEventSetValue(IntPtr nativeEvent, double value) =>
+            Native.alibabacloud_rum_custom_event_set_value(nativeEvent, value);
+        public void CustomEventSetGroup(IntPtr nativeEvent, string group) =>
+            Native.alibabacloud_rum_custom_event_set_group(nativeEvent, group);
+        public void CustomEventAddExtra(IntPtr nativeEvent, string key, string value) =>
+            Native.alibabacloud_rum_custom_event_add_extra(nativeEvent, key, value);
+        public void CustomEventFree(IntPtr nativeEvent) => Native.alibabacloud_rum_custom_event_free(nativeEvent);
+        public void CustomEventReport(IntPtr nativeEvent) => Native.alibabacloud_rum_custom_event_report(nativeEvent);
     }
 
     private static class Native

@@ -120,33 +120,58 @@ public sealed class UsageAnalytics : INotifyPropertyChanged, IAsyncDisposable
         "usage.json");
 #endif
     public static string DefaultInstallIdPath => InstallIdPathFor(DefaultSettingsPath);
+    public static string DefaultCacheDirectory => CacheDirectoryFor(DefaultSettingsPath);
 
-    // 安装标识跟同意文件放在一起、同名前缀：usage.json → usage-install-id.txt，
-    // 本地验证构建（usage-local.json）与测试的私有同意文件因此各有各的标识
+    // 安装标识与 SDK 缓存目录都跟同意文件同目录、同名前缀：
+    // usage.json → usage-install-id.txt / usage-rum-cache，
+    // 本地验证构建（usage-local.json）与测试的私有同意文件因此各有各的独立路径。
     public static string InstallIdPathFor(string settingsPath) => Path.Combine(
         Path.GetDirectoryName(settingsPath) ?? "", Path.GetFileNameWithoutExtension(settingsPath) + "-install-id.txt");
+
+    public static string CacheDirectoryFor(string settingsPath)
+    {
+        var full = Path.GetFullPath(settingsPath);
+        return Path.Combine(
+            Path.GetDirectoryName(full) ?? Path.GetTempPath(),
+            Path.GetFileNameWithoutExtension(full) + "-rum-cache");
+    }
+
+    internal static bool IsCacheInUse(string directory)
+    {
+#if RAWLAB_RUM_SDK || RAWLAB_RUM_TRANSPORT_TEST
+        return RumUsageAnalyticsTransport.IsCacheInUse(directory);
+#else
+        return false;
+#endif
+    }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public UsageAnalytics(string? settingsPath = null, IUsageAnalyticsTransport? transport = null)
     {
         this.settingsPath = settingsPath ?? DefaultSettingsPath;
+        CacheDirectory = CacheDirectoryFor(this.settingsPath);
         installId = new UsageInstallId(InstallIdPathFor(this.settingsPath));
-        this.transport = transport ?? CreateDefaultTransport();
+        this.transport = transport ?? CreateDefaultTransport(CacheDirectory);
+#if RAWLAB_RUM_SDK || RAWLAB_RUM_TRANSPORT_TEST
+        if (this.transport is RumUsageAnalyticsTransport rumTransport)
+            rumTransport.BindDefaultCacheDirectory(CacheDirectory);
+#endif
         consentGiven = ReadConsent();
         RefreshStatus();
     }
 
+    public string CacheDirectory { get; }
     public bool ConsentGiven => consentGiven;
     public bool CanEnable => transport.IsAvailable;
     public bool IsActive => consentGiven && started && !disposed;
     public string Status => status;
     public string StorageWarning => storageWarning;
 
-    private static IUsageAnalyticsTransport CreateDefaultTransport()
+    private static IUsageAnalyticsTransport CreateDefaultTransport(string cacheDirectory)
     {
 #if RAWLAB_RUM_SDK
-        return RumUsageAnalyticsTransport.CreateDefault();
+        return RumUsageAnalyticsTransport.CreateDefault(cacheDirectory);
 #else
         return new UnavailableUsageAnalyticsTransport();
 #endif
@@ -162,8 +187,12 @@ public sealed class UsageAnalytics : INotifyPropertyChanged, IAsyncDisposable
         {
             if (disposed || epoch != consentEpoch || (enabled && (!transport.IsAvailable || stopFailed))) return false;
             var stopped = enabled || await StopAsync().ConfigureAwait(false);
-            // 关闭统计时一并删除安装标识；重新开启后下次启动 SDK 会生成新的
-            if (!enabled) installId.Delete();
+            // 关闭统计时一并删除安装标识与未发出的本地缓存；重新开启后下次启动 SDK 会生成新的标识
+            if (!enabled)
+            {
+                installId.Delete();
+                if (stopped && !stopFailed) TempCleanup.ClearAnalyticsCache(CacheDirectory);
+            }
             if (!SaveConsent(enabled))
             {
                 consentGiven = false;
@@ -199,8 +228,12 @@ public sealed class UsageAnalytics : INotifyPropertyChanged, IAsyncDisposable
             {
                 if (sessionBegan) return;
                 sessionBegan = true;
-                // 上次关闭统计时若没删掉安装标识，启动时补删
-                if (!consentGiven) installId.Delete();
+                // 上次关闭统计时若没删掉安装标识或缓存，启动时补删
+                if (!consentGiven)
+                {
+                    installId.Delete();
+                    if (!stopFailed) TempCleanup.ClearAnalyticsCache(CacheDirectory);
+                }
                 await StartIfAllowedAsync(epoch).ConfigureAwait(false);
                 RefreshStatus();
                 return;

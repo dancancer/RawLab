@@ -53,7 +53,7 @@ internal sealed class LUTPreviewWorker : IDisposable
         session = NewSession(); source = Path.Combine(directory, "source" + Path.GetExtension(photo));
         lut = Path.Combine(directory, "look" + Path.GetExtension(look)); DisplayInput = PhotoInput.IsRaster(photo);
         try {
-            Directory.CreateDirectory(directory); CopyWritable(look, lut); CopyWritable(photo, source);
+            Directory.CreateDirectory(directory); TempCleanup.WriteOwnerMarker(directory); CopyWritable(look, lut); CopyWritable(photo, source);
             if (DisplayInput)
             {
                 if (PhotoInput.ProbeHDR(photo, out _) == HDRProbeState.Supported)
@@ -124,7 +124,7 @@ internal sealed class LUTPreviewWorker : IDisposable
         if (hdrDisplay == null) Native.sony2fuji_release_buffer(ref display);
         hdrDisplay?.Dispose(); hdrDisplay = null; session.Dispose();
         // 只吞掉临时目录的清理失败；预览本身的错误由调用方照常抛出。
-        try { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+        try { if (Directory.Exists(directory)) TempCleanup.TryDeleteDirectoryTree(new DirectoryInfo(directory)); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
     }
 }

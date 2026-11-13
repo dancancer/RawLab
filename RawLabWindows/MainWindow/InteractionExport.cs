@@ -15,6 +15,7 @@ using Microsoft.Win32;
 namespace RawLab.Windows;
 public partial class MainWindow
 {
+    private string exportStagingDirectory = TempCleanup.DefaultExportStagingDirectory;
     private void CompareClicked(object sender,RoutedEventArgs e)
     {if(compare)SetComparisonMode(false,false);else SetComparisonMode(true,view.PreferredMode==ComparisonMode.Wipe);}
     private void ExportMenuClicked(object sender,RoutedEventArgs e)=>ZoomClicked(sender,e);
@@ -159,9 +160,11 @@ public partial class MainWindow
         if(Path.GetFullPath(destination).Equals(Path.GetFullPath(file),StringComparison.OrdinalIgnoreCase)){SetStatus(() => Loc.Text("不能覆盖原始文件。"),true);return;}
         var input=file;var adjustment=settings.Clone();var film=lut;
         // Render to a sibling temporary file, then replace only after encoding succeeds.
-        var temp=Path.Combine(Path.GetDirectoryName(destination)!,".rawlab-"+Guid.NewGuid().ToString("N")+"."+format.Suffix());
+        var temp=TempCleanup.CreateExportStagingPath(destination,format.Suffix());
+        var stagingDirectory=exportStagingDirectory;
         var size=exportLongEdge;
         foregroundBusy=true;RefreshControls();SetStatus(() => Loc.Text("正在导出…"));
+        ExportStagingLease? staging=null;
         try
         {
             using var sourceLock = WindowsFileIdentity.OpenReadLock(input);
@@ -170,7 +173,11 @@ public partial class MainWindow
                 SetStatus(() => Loc.Text("不能覆盖原始文件。"), true);
                 return;
             }
-            await Task.Run(()=>engine.Render(input,adjustment,film,0,false,temp,longEdge:size,formatOverride:format));
+            await Task.Run(()=> {
+                TempCleanup.SweepExpiredExportStagingInDirectory(Path.GetDirectoryName(temp)!, DateTime.UtcNow, TempCleanup.DefaultRetention, stagingDirectory);
+                staging = TempCleanup.BeginExportStaging(temp, stagingDirectory);
+                engine.Render(input,adjustment,film,0,false,temp,longEdge:size,formatOverride:format);
+            });
             if (WindowsFileIdentity.IsSameFile(sourceLock, destination))
             {
                 SetStatus(() => Loc.Text("不能覆盖原始文件。"), true);
@@ -182,7 +189,7 @@ public partial class MainWindow
             SetStatus(() => Loc.Format("已导出（{0}）：{1}", (engine.LastBackend==3 ? "Direct3D 11" : "CPU"), destination));
         }
         catch(Exception ex){if(!HandleAIFailure(ex))Report(ex);}
-        finally {try{if(File.Exists(temp))File.Delete(temp);}catch(IOException){} foregroundBusy=false;RefreshControls();if(closing)FinishClose();else ResumePreview();}
+        finally {staging?.Dispose();TempCleanup.TryDeleteExportStagingFile(temp); foregroundBusy=false;RefreshControls();if(closing)FinishClose();else ResumePreview();}
     }
     private static bool IsBuiltInLook(string path) => StringComparer.OrdinalIgnoreCase.Equals(
         Path.GetFullPath(Path.GetDirectoryName(path) ?? ""), Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "LUTs")));

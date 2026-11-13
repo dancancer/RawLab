@@ -17,6 +17,7 @@
   <Import Project="../../../RawLabWindows/RumSdk.targets" />
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="../../../RawLabWindows/TempCleanup.cs" Link="TempCleanup.cs" />
     <Compile Include="../../../RawLabWindows/UsageAnalytics.cs" Link="UsageAnalytics.cs" />
     <Compile Include="../../../RawLabWindows/RumConfiguration.cs" Link="RumConfiguration.cs" />
     <Compile Include="../../../RawLabWindows/RumUsageAnalyticsTransport.cs" Link="RumUsageAnalyticsTransport.cs" />

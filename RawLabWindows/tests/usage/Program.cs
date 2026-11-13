@@ -12,6 +12,7 @@ try
 {
     RumConfigurationTests.Run();
     await UsageLifecycleTests.Run(root);
+    await TempCleanupTests.Run(root);
     var unavailableTransport = new FakeTransport(false);
     var unavailablePath = Path.Combine(root, "unavailable.json");
     await using (var unavailable = new UsageAnalytics(unavailablePath, unavailableTransport))
