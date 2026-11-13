@@ -58,3 +58,4 @@
 - **C 类（台账挂行，待桌面会话复核 3 条）**：edit-model 链跑 mac-viewing-model 缺「CLT 缺 SwiftUIMacros→强制 26.5 SDK」护栏；ai-batch-native 沙箱 `sandbox_extension_issue` EPERM 缓存未隔离；system-menu-language 德语菜单读出为空（需桌面+AX 授权）。
 - **D 类（素材要求记档 5 条）**：lens-render/export-metadata 默认 DSC06251.ARW 未入库（.cache/shared 可补）；hdr-sdr-preview/hdr-lut-preview 需 `RAWLAB_TEST_HDR` gain-map；fuji-compatibility 需 RAW+彩色 CUBE（ACROS/identity 走 missingColor 属预期）。
 - 另录：hdr-rendition-ui E.2-L1 无 AX 授权静默 return（绿≠真跑，与 Q14 axTrusted/REQUIRE_AX 挂行同族）。
+- **CI 阶段2 家族新行（11-14，#300 评审发现）**：`RawLabMac/build.sh` 未传 `-DPython3_EXECUTABLE`，CMake 绑定 Homebrew Python（无 jsonschema）→ macOS native CI 中 `edit_recipe_schema` 实为 Skipped（对照 Windows build.ps1 已透传）。阶段2 统一透传解释器并核查 SKIP 清单。
