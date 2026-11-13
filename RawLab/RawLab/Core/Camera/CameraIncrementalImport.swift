@@ -80,8 +80,12 @@ struct CameraIncrementalScan {
             }
         }
         let starts = Dictionary(uniqueKeysWithValues: format.kinds.map { ($0, customCutoff ?? confirmed[$0]?.date ?? cutoff) })
-        start = starts.values.min() ?? cutoff
         needsCutoffConfirmation = customCutoff == nil && format.kinds.contains { boundaries[$0] != nil && confirmed[$0] == nil }
+        if needsCutoffConfirmation {
+            start = format.kinds.compactMap { boundaries[$0]?.date }.min() ?? cutoff
+        } else {
+            start = starts.values.min() ?? cutoff
+        }
         let undated = listed.compactMap { asset, date in
             date == nil && format.includes(asset.snapshot) && !savedKeys.contains(asset.snapshot.key) &&
                 !skippedKeys.contains(asset.snapshot.key) ? asset : nil

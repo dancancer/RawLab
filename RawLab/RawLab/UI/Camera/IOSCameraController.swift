@@ -83,6 +83,8 @@ struct IOSCameraImportPreferences: Codable {
     @Published private(set) var importPreferences = IOSCameraImportPreferences()
     @Published private(set) var scanning = false
     @Published private(set) var incrementalJobID: UUID?
+    @Published var customCutoff: Date?
+    @Published var includeUndated = false
     @Published var notice: String?
     @Published var selection: Set<String> = []
     private var unavailableThumbnails: Set<String> = []
@@ -133,6 +135,7 @@ struct IOSCameraImportPreferences: Codable {
         manualImportRequired = false; listingLimitExceeded = false
         self.endpoint = endpoint; self.mode = mode; sessionStartedAt = Date()
         scanning = false; incrementalJobID = nil; contentsFamily = nil
+        customCutoff = nil; includeUndated = false
         assets = []; selection = []; thumbnails = [:]; pendingThumbnails = []; unavailableThumbnails = []; thumbnailOrder = []
         latestOriginal = nil; previewLoading = false
         properties = [:]; device = nil; writable = false; shutterReady = false; parameterBusy = false
@@ -166,10 +169,18 @@ struct IOSCameraImportPreferences: Codable {
                     ?? IOSCameraImportPreferences()
             }
         case .assets(let values):
+            if assets.first?.owner != values.first?.owner {
+                customCutoff = nil; includeUndated = false
+            }
             listingLimitExceeded = false
             assets = values; selection.formIntersection(Set(values.map(\.id))); scanning = false
         case .properties(let values, let writable, let shutter): properties = values; self.writable = writable; shutterReady = shutter
-        case .manifest(let value): manifest = value
+        case .manifest(let value):
+            let wasComplete = incrementalJobID.flatMap { id in manifest.jobs.first { $0.id == id }?.complete } == true
+            manifest = value
+            if !wasComplete, incrementalJobID.flatMap({ id in value.jobs.first { $0.id == id }?.complete }) == true {
+                customCutoff = nil; includeUndated = false
+            }
         case .incrementalJob(let id):
             incrementalJobID = id
             if !importPreferences.incremental { setIncrementalMode(true) }
@@ -319,6 +330,11 @@ struct IOSCameraImportPreferences: Codable {
         return CameraIncrementalScan(assets: assets, boundaries: boundaries, cutoff: defaultIncrementalStart,
                                      customCutoff: customCutoff, format: importPreferences.format,
                                      includeUndated: includeUndated, savedKeys: savedKeys, skippedKeys: skippedKeys)
+    }
+    func confirmSuggestedCutoff() {
+        let scan = incrementalScan(customCutoff: nil, includeUndated: includeUndated)
+        guard scan.needsCutoffConfirmation else { return }
+        customCutoff = scan.start
     }
     func startIncremental(_ scan: CameraIncrementalScan) {
         guard let run, mode == .importing, phase == .browsing, !scanning, !scan.assets.isEmpty,

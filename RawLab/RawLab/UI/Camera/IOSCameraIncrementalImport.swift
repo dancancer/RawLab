@@ -6,17 +6,15 @@ struct IOSCameraIncrementalImport: View {
     let reconnect: () -> Void
     let resume: (CameraTransferJob) -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @State private var customCutoff: Date?
     @State private var cutoffDraft: Date?
     @State private var showCutoff = false
     @State private var showJPEG = false
-    @State private var includeUndated = false
 
     var body: some View {
         let job = model.displayedIncrementalJob
         let pending = job.flatMap { !$0.complete ? $0 : nil }
         let scan = model.phase == .browsing && !model.scanning && pending == nil
-            ? model.incrementalScan(customCutoff: customCutoff, includeUndated: includeUndated) : nil
+            ? model.incrementalScan(customCutoff: model.customCutoff, includeUndated: model.includeUndated) : nil
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -53,6 +51,10 @@ struct IOSCameraIncrementalImport: View {
                            id: "camera.incremental.resume", perform: { resume(pending) })
                 } else if !model.connected {
                     action(L10n.text("重新连接"), id: "camera.incremental.reconnect", perform: reconnect)
+                } else if let scan, scan.needsCutoffConfirmation {
+                    action(L10n.format("%@ · %@", L10n.text("应用"), L10n.format("从 %@ 开始（相机时间）", formatted(scan.start))),
+                           id: "camera.incremental.confirm-cutoff", disabled: model.busy,
+                           perform: model.confirmSuggestedCutoff)
                 } else if let scan, !scan.assets.isEmpty {
                     action(L10n.format("导入 %@ 个文件", String(scan.assets.count)), id: "camera.incremental.start",
                            disabled: scan.assets.count > CameraIncrementalScan.maximumAssets ||
@@ -61,15 +63,7 @@ struct IOSCameraIncrementalImport: View {
             }.padding(.horizontal, 14).background(Color(white: 0.16))
         }
         .onChange(of: model.assets.first?.owner) { _, _ in
-            customCutoff = nil
-            includeUndated = false
             showCutoff = false
-        }
-        .onChange(of: job?.complete == true ? job?.id : nil) { _, completed in
-            if completed != nil {
-                customCutoff = nil
-                includeUndated = false
-            }
         }
         .sheet(isPresented: $showJPEG) {
             IOSCameraJPEGSettings(draft: model.importPreferences.jpeg, apply: model.setJPEGOptions)
@@ -135,15 +129,15 @@ struct IOSCameraIncrementalImport: View {
                 }.buttonStyle(.plain).accessibilityIdentifier("camera.jpeg.settings")
             }
             if scan.undatedCount > 0 {
-                Toggle(L10n.format("一并导入 %@ 个日期未知的文件", String(scan.undatedCount)), isOn: $includeUndated)
+                Toggle(L10n.format("一并导入 %@ 个日期未知的文件", String(scan.undatedCount)), isOn: $model.includeUndated)
                     .frame(minHeight: 44).accessibilityIdentifier("camera.incremental.undated")
             }
             HStack {
                 Button(L10n.text("重新扫描"), action: model.refreshImport)
                     .frame(minHeight: 44).accessibilityIdentifier("camera.incremental.refresh")
-                if customCutoff != nil {
+                if model.customCutoff != nil {
                     Spacer(minLength: 12)
-                    Button(L10n.text("使用默认起点")) { customCutoff = nil }.frame(minHeight: 44)
+                    Button(L10n.text("使用默认起点")) { model.customCutoff = nil }.frame(minHeight: 44)
                 }
             }.font(.callout)
         }
@@ -234,13 +228,13 @@ struct IOSCameraIncrementalImport: View {
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button(L10n.text("取消")) { showCutoff = false } }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button(L10n.text("应用")) { customCutoff = cutoffDraft; showCutoff = false }
+                        Button(L10n.text("应用")) { model.customCutoff = cutoffDraft; showCutoff = false }
                     }
                 }
         }
     }
     private func formatted(_ date: Date) -> String {
-        var style = Date.FormatStyle(date: .abbreviated, time: .shortened, locale: L10n.locale)
+        var style = Date.FormatStyle(date: .abbreviated, time: .standard, locale: L10n.locale)
         style.timeZone = model.cameraTimeZone
         return date.formatted(style)
     }

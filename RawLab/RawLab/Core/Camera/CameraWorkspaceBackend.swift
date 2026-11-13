@@ -380,6 +380,11 @@ final class CameraWorkspaceBackend {
         var firstItemError: Error?
         for (item, asset) in pending {
             guard owns(run) else { throw CameraProtocolError.cancelled }
+            if let reused = try reuseByMobileSampling(jobID: jobID, item: item, asset: asset,
+                                                      store: store, session: session, run: run) {
+                publishManifest(run); run.emit(.saved(reused))
+                continue
+            }
             let target = try store.begin(job: jobID, item: item.id)
             do {
                 let digest = try session.download(asset, to: target.handle) { bytes in
@@ -405,6 +410,40 @@ final class CameraWorkspaceBackend {
         }
         if let firstItemError {
             run.emit(.failure(firstItemError))
+        }
+    }
+    private func reuseByMobileSampling(jobID: UUID, item: CameraTransferItem, asset: CameraRemoteAsset,
+                                       store: CameraOriginalStore, session: SonyCameraSession,
+                                       run: IOSCameraRun) throws -> CameraStoredOriginal? {
+        guard run.mode == .importing, session.family == .mobile,
+              let offsets = CameraOriginalStore.sampleOffsets(forSize: asset.snapshot.size),
+              let candidate = store.samplingCandidate(job: jobID, item: item.id) else {
+            return nil
+        }
+        do {
+            let localHandle = try FileHandle(forReadingFrom: candidate.url)
+            defer { try? localHandle.close() }
+            let length = CameraOriginalStore.sampleSegmentBytes
+            for offset in offsets {
+                guard owns(run) else { throw CameraProtocolError.cancelled }
+                try localHandle.seek(toOffset: offset)
+                guard let localBytes = try localHandle.read(upToCount: length), localBytes.count == length else {
+                    return nil
+                }
+                if offset == 0 {
+                    try CameraWire.validateHeader(name: asset.snapshot.name, data: localBytes.prefix(4))
+                }
+                let remoteBytes = try session.readMobileRange(asset, offset: offset, length: length)
+                guard remoteBytes == localBytes else { return nil }
+            }
+            return try store.reuseSampledOriginal(job: jobID, item: item.id, sourceID: candidate.source.id)
+        } catch {
+            guard owns(run) else { throw CameraProtocolError.cancelled }
+            if session.stopped { throw error }
+            if case CameraProtocolError.response(_, let code) = error, Self.sessionFailureCodes.contains(code) {
+                throw error
+            }
+            return nil
         }
     }
     func importAssets(_ assets: [CameraRemoteAsset], incremental: CameraIncrementalPlan? = nil, run: IOSCameraRun) {
