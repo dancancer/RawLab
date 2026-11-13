@@ -53,9 +53,12 @@ public sealed class UpdateStore(string directory)
         RequireFields(root.GetProperty("PendingUpdate"), "Format", "Phase", "Attempt", "Choice", "Progress", "Blockers");
         var value = JsonSerializer.Deserialize<UpdatePreferences>(data) ?? throw new InvalidDataException("Missing update state");
         if (value.Channel != "stable" || value.PendingUpdate == null || value.PendingUpdate.Format != 1) throw new InvalidDataException("Unsupported update state");
+        // Q13 回滚兼容：新版写入的未知枚举值（Phase/Choice/失败阶段）降级为 Idle，不锁编辑区；
+        // 已知取值的结构校验保持严格，安装证据由 RepairableState 的 BackupPath 门禁兜底。
         if (!Enum.IsDefined(value.PendingUpdate.Phase) || !Enum.IsDefined(value.PendingUpdate.Choice) ||
-            value.PendingUpdate.Failure is {} failure && !Enum.IsDefined(failure.Stage) ||
-            !double.IsFinite(value.PendingUpdate.Progress) || value.PendingUpdate.Progress is < 0 or > 1 || value.PendingUpdate.Blockers == null)
+            value.PendingUpdate.Failure is {} unknownStage && !Enum.IsDefined(unknownStage.Stage))
+            value.PendingUpdate = new UpdateTaskState();
+        else if (!double.IsFinite(value.PendingUpdate.Progress) || value.PendingUpdate.Progress is < 0 or > 1 || value.PendingUpdate.Blockers == null)
             throw new InvalidDataException("Unsupported update state");
         // 失败阶段决定启动恢复门禁，缺失字段不能被默认值掩盖。
         if (value.PendingUpdate.Phase == UpdatePhase.Failed)
@@ -110,14 +113,15 @@ public sealed class UpdateStore(string directory)
                     if (pending.ValueKind != JsonValueKind.Object) throw new InvalidDataException("Unknown pending update state");
                     static bool Installation(JsonElement element) => element.TryGetInt32(out var number) &&
                         (number == (int)UpdatePhase.Installing || number == (int)UpdatePhase.PendingRestart);
+                    // Q13：未知枚举数值随 Load 的降级路径一样可重建；安装阶段与安装身份字段仍拒绝重置。
                     if (pending.TryGetProperty("Format", out var format) && format.GetInt32() != 1 ||
-                        pending.TryGetProperty("Phase", out var phase) && (!phase.TryGetInt32(out var number) || !Enum.IsDefined(typeof(UpdatePhase), number) || Installation(phase)) ||
+                        pending.TryGetProperty("Phase", out var phase) && (!phase.TryGetInt32(out _) || Installation(phase)) ||
                         pending.TryGetProperty("BackupPath", out var path) && path.ValueKind != JsonValueKind.Null ||
                         pending.TryGetProperty("PreviousVersion", out var previousVersion) && previousVersion.ValueKind != JsonValueKind.Null ||
                         pending.TryGetProperty("PreviousBuild", out var previousBuild) && previousBuild.ValueKind != JsonValueKind.Null ||
-                        pending.TryGetProperty("Choice", out var choice) && (!choice.TryGetInt32(out var choiceNumber) || !Enum.IsDefined(typeof(UpdateInstallChoice), choiceNumber)) ||
+                        pending.TryGetProperty("Choice", out var choice) && !choice.TryGetInt32(out _) ||
                         pending.TryGetProperty("Failure", out var failure) && failure.ValueKind == JsonValueKind.Object &&
-                            failure.TryGetProperty("Stage", out var stage) && (!stage.TryGetInt32(out var stageNumber) || !Enum.IsDefined(typeof(UpdatePhase), stageNumber) || Installation(stage)))
+                            failure.TryGetProperty("Stage", out var stage) && (!stage.TryGetInt32(out _) || Installation(stage)))
                         throw new InvalidDataException("Unsupported update state cannot be rebuilt");
                 }
                 if (root.TryGetProperty("PendingUpdate", out var known) && known.ValueKind == JsonValueKind.Object &&
