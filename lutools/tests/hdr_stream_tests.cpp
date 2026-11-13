@@ -51,8 +51,10 @@ void interruptSDRJPEGAfterGrowth() {
 
     bool cancel = false, cancelled = false;
     uint32_t rowsRead = 0;
-    ProcessingCancellationScope cancellation({[](void* context) { return *static_cast<bool*>(context) ? 1 : 0; }, &cancel});
+    // One scope per encode: the cancellation latch belongs to the scope's operation, so a
+    // fired pulse must not leak into the following rejection/recovery encodes.
     try {
+        ProcessingCancellationScope cancellation({[](void* context) { return *static_cast<bool*>(context) ? 1 : 0; }, &cancel});
         (void)hdr::encodeSDRJPEGRows(width, height, 100, [&](uint32_t y) {
             cancel = ++rowsRead == interruptRow;
             return row(y);
@@ -63,6 +65,7 @@ void interruptSDRJPEGAfterGrowth() {
     cancel = false;
     bool rejected = false;
     try {
+        ProcessingCancellationScope cancellation({[](void* context) { return *static_cast<bool*>(context) ? 1 : 0; }, &cancel});
         (void)hdr::encodeSDRJPEGRows(width, height, 100, [&](uint32_t y) {
             return y == interruptRow ? nullptr : row(y);
         });
@@ -176,19 +179,27 @@ int main(int argc, char* argv[]) {
         source.read = [&](bool hdr, uint32_t row, uint32_t count, RGB* result) {
             reader(hdr, row, count, result); cancel = true;
         };
-        ProcessingCancellationScope cancellation({[](void* context) { return *static_cast<bool*>(context) ? 1 : 0; }, &cancel});
         rejected = false;
-        try { (void)hdr::encodeStream(source, options, true, 95, SONY2FUJI_HDR_COLOR_DISPLAY_P3, root); }
+        try {
+            ProcessingCancellationScope cancellation({[](void* context) { return *static_cast<bool*>(context) ? 1 : 0; }, &cancel});
+            (void)hdr::encodeStream(source, options, true, 95, SONY2FUJI_HDR_COLOR_DISPLAY_P3, root);
+        }
         catch (const ProcessingCancelled&) { rejected = true; }
         check(rejected && fs::is_empty(root), "Cancellation did not clean decode work");
         source.read = reader; cancel = false;
         source.finish = [&] { cancel = true; };
         rejected = false;
-        try { (void)hdr::encodeStream(source, options, true, 95, SONY2FUJI_HDR_COLOR_DISPLAY_P3, root); }
+        try {
+            ProcessingCancellationScope cancellation({[](void* context) { return *static_cast<bool*>(context) ? 1 : 0; }, &cancel});
+            (void)hdr::encodeStream(source, options, true, 95, SONY2FUJI_HDR_COLOR_DISPLAY_P3, root);
+        }
         catch (const ProcessingCancelled&) { rejected = true; }
         check(rejected && fs::is_empty(root), "Post-decode cancellation continued to encode");
         source.finish = [] {}; cancel = false;
-        const auto recovered = hdr::encodeStream(source, options, true, 95, SONY2FUJI_HDR_COLOR_DISPLAY_P3, root);
+        const auto recovered = [&] {
+            ProcessingCancellationScope cancellation({[](void* context) { return *static_cast<bool*>(context) ? 1 : 0; }, &cancel});
+            return hdr::encodeStream(source, options, true, 95, SONY2FUJI_HDR_COLOR_DISPLAY_P3, root);
+        }();
         check(!recovered.jpeg.empty() && fs::is_empty(root), "Stream did not recover after failures");
         options.geometry = {}; options.longEdge = 0;
         const float original = pair.hdr.pixels[0].r;

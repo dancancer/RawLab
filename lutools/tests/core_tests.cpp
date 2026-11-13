@@ -1027,6 +1027,96 @@ int main(int argc, char** argv) {
         oobChildReq.input_path = oobChildTiffStr.c_str();
         expectRejected(oobChildReq, "TIFF with OOB SubIFDs/DefaultCropSize/nextIfd offsets preserves valid IFD0 preflight");
 
+        // WP-03 (3b): Plain TIFF fallback traverses nextIfdOffset chain across dual-IFD TIFFs (IFD0 thumbnail + IFD1 primary and vice versa).
+        {
+            auto writeDualMainIfdTiff = [&](const std::filesystem::path& target,
+                                            uint32_t subfile0, uint32_t w0, uint32_t h0,
+                                            uint32_t subfile1, uint32_t w1, uint32_t h1,
+                                            bool cyclic = false) {
+                std::vector<uint8_t> b = {'I', 'I'};
+                append16(b, 42u, true);
+                append32(b, 8u, true);
+                // IFD0 at offset 8: 2 + 3*12 + 4 = 42 bytes -> IFD1 at offset 50
+                append16(b, 3u, true);
+                append16(b, 254u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, subfile0, true);
+                append16(b, 256u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, w0, true);
+                append16(b, 257u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, h0, true);
+                append32(b, 50u, true); // nextIfdOffset -> IFD1
+                // IFD1 at offset 50
+                append16(b, 3u, true);
+                append16(b, 254u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, subfile1, true);
+                append16(b, 256u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, w1, true);
+                append16(b, 257u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, h1, true);
+                append32(b, cyclic ? 8u : 0u, true);
+                writeBytesFile(target, b);
+            };
+
+            const auto thumbThenHugeTiff = dir / "tiff-ifd0-thumb-ifd1-huge.tiff";
+            writeDualMainIfdTiff(thumbThenHugeTiff, 1u, 160u, 120u, 0u, 50000u, 50000u);
+            const std::string thumbThenHugeStr = thumbThenHugeTiff.string();
+            auto thumbThenHugeReq = bigTiffReq;
+            thumbThenHugeReq.input_path = thumbThenHugeStr.c_str();
+            expectRejected(thumbThenHugeReq, "Dual-IFD TIFF (IFD0 160x120 thumbnail + IFD1 50000x50000 primary) rejects via nextIfdOffset");
+
+            const auto wideThumbSquareMainTiff = dir / "tiff-ifd0-160x40-thumb-ifd1-3000x3000-main.tiff";
+            writeDualMainIfdTiff(wideThumbSquareMainTiff, 1u, 160u, 40u, 0u, 3000u, 3000u);
+            const std::string wideThumbSquareMainStr = wideThumbSquareMainTiff.string();
+            auto wideThumbSquareReq = makeNativeRawReq(wideThumbSquareMainStr);
+            wideThumbSquareReq.output_target = SONY2FUJI_TARGET_FILE;
+            wideThumbSquareReq.output_format = SONY2FUJI_OUTPUT_JPEG;
+            wideThumbSquareReq.output_path = wideJpegOut.c_str();
+            wideThumbSquareReq.size_mode = SONY2FUJI_SIZE_FIT_SHORT_EDGE;
+            wideThumbSquareReq.short_edge = 20000u; // IFD0 160x40 -> 80000x20000 (reject); IFD1 3000x3000 -> 20000x20000 (OK)
+            check(sony2fuji_process(session, &wideThumbSquareReq, nullptr) == SONY2FUJI_STATUS_UNSUPPORTED,
+                  "Dual-IFD TIFF (IFD0 160x40 thumbnail + IFD1 3000x3000 primary) probes IFD1 aspect instead of false rejection");
+
+            const auto hugeThenThumbTiff = dir / "tiff-ifd0-huge-ifd1-thumb.tiff";
+            writeDualMainIfdTiff(hugeThenThumbTiff, 0u, 50000u, 50000u, 1u, 160u, 120u);
+            const std::string hugeThenThumbStr = hugeThenThumbTiff.string();
+            auto hugeThenThumbReq = bigTiffReq;
+            hugeThenThumbReq.input_path = hugeThenThumbStr.c_str();
+            expectRejected(hugeThenThumbReq, "Dual-IFD TIFF (IFD0 50000x50000 primary + IFD1 160x120 thumbnail) retains IFD0 primary");
+
+            const auto squareMainWideThumbTiff = dir / "tiff-ifd0-3000x3000-main-ifd1-160x40-thumb.tiff";
+            writeDualMainIfdTiff(squareMainWideThumbTiff, 0u, 3000u, 3000u, 1u, 160u, 40u);
+            const std::string squareMainWideThumbStr = squareMainWideThumbTiff.string();
+            auto squareMainWideThumbReq = wideThumbSquareReq;
+            squareMainWideThumbReq.input_path = squareMainWideThumbStr.c_str();
+            check(sony2fuji_process(session, &squareMainWideThumbReq, nullptr) == SONY2FUJI_STATUS_UNSUPPORTED,
+                  "Dual-IFD TIFF (IFD0 3000x3000 primary + IFD1 160x40 thumbnail) retains IFD0 primary dimensions");
+
+            const auto cyclicDualTiff = dir / "tiff-cyclic-nextifd.tiff";
+            writeDualMainIfdTiff(cyclicDualTiff, 1u, 160u, 120u, 0u, 50000u, 50000u, true);
+            const std::string cyclicDualStr = cyclicDualTiff.string();
+            auto cyclicDualReq = bigTiffReq;
+            cyclicDualReq.input_path = cyclicDualStr.c_str();
+            expectRejected(cyclicDualReq, "Dual-IFD TIFF with cyclic nextIfdOffset terminates and probes IFD1 primary");
+
+            const auto dualBigTiff = dir / "dual-ifd-bigtiff-thumb-then-huge.tiff";
+            {
+                std::vector<uint8_t> b = {'I', 'I'};
+                append16(b, 43u, true);
+                append16(b, 8u, true);
+                append16(b, 0u, true);
+                append64(b, 16ull, true); // IFD0 offset = 16; IFD0 size = 8 + 3*20 + 8 = 76 -> IFD1 offset = 92
+                append64(b, 3ull, true);
+                append16(b, 254u, true); append16(b, 4u, true); append64(b, 1ull, true); append64(b, 1ull, true);
+                append16(b, 256u, true); append16(b, 4u, true); append64(b, 1ull, true); append64(b, 160ull, true);
+                append16(b, 257u, true); append16(b, 4u, true); append64(b, 1ull, true); append64(b, 120ull, true);
+                append64(b, 92ull, true); // 8-byte nextIfdOffset -> IFD1
+                append64(b, 3ull, true);
+                append16(b, 254u, true); append16(b, 4u, true); append64(b, 1ull, true); append64(b, 0ull, true);
+                append16(b, 256u, true); append16(b, 4u, true); append64(b, 1ull, true); append64(b, 50000ull, true);
+                append16(b, 257u, true); append16(b, 4u, true); append64(b, 1ull, true); append64(b, 50000ull, true);
+                append64(b, 0ull, true);
+                writeBytesFile(dualBigTiff, b);
+            }
+            const std::string dualBigTiffStr = dualBigTiff.string();
+            auto dualBigReq = bigTiffReq;
+            dualBigReq.input_path = dualBigTiffStr.c_str();
+            expectRejected(dualBigReq, "Dual-IFD BigTIFF traverses 8-byte nextIfdOffset to IFD1 primary");
+        }
+
         // SHOULD-FIX 1: parseExifOrientation must require count == 1 (count=3 with valueOffset=8 must not transpose as Orientation=8).
         auto writeExifOrientJpg = [&](const std::filesystem::path& target, uint32_t orientCount, uint32_t orientValOrOffset) {
             std::vector<uint8_t> b = {0xFF, 0xD8, 0xFF, 0xE1};
@@ -1409,6 +1499,146 @@ int main(int argc, char** argv) {
 
             check(okA && okB,
                   "resizeBilinear/sampleBilinear preserves exact endpoint indexing and bounds above 2^24 width");
+        }
+
+        // WP-03 (2): Exact integer half-up scaling avoids float double-rounding false rejection at 65535 JPEG limit.
+        // 4717x75453 with FIT_SHORT_EDGE=4097 has exact long edge 75453 * 4097 / 4717 = 65535 + 2346/4717 (< .5 -> 65535),
+        // whereas 32-bit float scale (4097.0f / 4717.0f) rounds up to 65535.502 -> 65536 and falsely rejects.
+        {
+            const auto exact65535Png = dir / "header-4717x75453.png";
+            writePngHeaderOnly(exact65535Png, 4717u, 75453u);
+            const std::string exact65535PngStr = exact65535Png.string();
+            auto short4097Jpeg = makeNativeRawReq(exact65535PngStr);
+            short4097Jpeg.output_target = SONY2FUJI_TARGET_FILE;
+            short4097Jpeg.output_format = SONY2FUJI_OUTPUT_JPEG;
+            short4097Jpeg.output_path = wideJpegOut.c_str();
+            short4097Jpeg.size_mode = SONY2FUJI_SIZE_FIT_SHORT_EDGE;
+            short4097Jpeg.short_edge = 4097u;
+            check(sony2fuji_process(session, &short4097Jpeg, nullptr) == SONY2FUJI_STATUS_UNSUPPORTED,
+                  "4717x75453 FIT_SHORT_EDGE=4097 JPEG computes exact 65535 long edge and passes preflight");
+
+            sony2fuji_session* short4097BufSession = nullptr;
+            sony2fuji_session_create(&short4097BufSession);
+            int short4097Polls = 0;
+            sony2fuji_session_set_cancellation_callback(short4097BufSession, [](void* ctx) -> int {
+                int& c = *static_cast<int*>(ctx);
+                return (++c >= 2) ? 1 : 0;
+            }, &short4097Polls);
+            auto short4097Buf = request(dngPixels);
+            short4097Buf.input_width = 4717u;
+            short4097Buf.input_height = 75453u;
+            short4097Buf.intent = SONY2FUJI_INTENT_FINAL;
+            short4097Buf.output_target = SONY2FUJI_TARGET_FILE;
+            short4097Buf.output_format = SONY2FUJI_OUTPUT_JPEG;
+            short4097Buf.output_path = wideJpegOut.c_str();
+            short4097Buf.size_mode = SONY2FUJI_SIZE_FIT_SHORT_EDGE;
+            short4097Buf.short_edge = 4097u;
+            const auto short4097BufSt = sony2fuji_process(short4097BufSession, &short4097Buf, nullptr);
+            sony2fuji_session_destroy(short4097BufSession);
+            check(short4097BufSt == SONY2FUJI_STATUS_CANCELLED && short4097Polls == 2,
+                  "4717x75453 INPUT_BUFFER FIT_SHORT_EDGE=4097 JPEG passes preflight before buffer load");
+
+            const auto over65536Png = dir / "header-4717x75454.png";
+            writePngHeaderOnly(over65536Png, 4717u, 75454u);
+            const std::string over65536PngStr = over65536Png.string();
+            auto short4097Over = short4097Jpeg;
+            short4097Over.input_path = over65536PngStr.c_str();
+            short4097Over.lut_path = absentLut.c_str();
+            short4097Over.lut_strength = 1.0f;
+            expectRejected(short4097Over, "4717x75454 FIT_SHORT_EDGE=4097 JPEG (65536.36 -> 65536) rejects in preflight");
+
+            const auto halfUp65536Png = dir / "header-4x131071.png";
+            writePngHeaderOnly(halfUp65536Png, 4u, 131071u);
+            const std::string halfUp65536PngStr = halfUp65536Png.string();
+            auto halfUpOver = short4097Over;
+            halfUpOver.input_path = halfUp65536PngStr.c_str();
+            halfUpOver.short_edge = 2u; // 131071 * 2 / 4 = 65535.5 -> half-up rounds to 65536 -> reject
+            expectRejected(halfUpOver, "Exact .5 boundary (4x131071 FIT_SHORT_EDGE=2 -> 65535.5) rounds half-up to 65536 and rejects");
+        }
+
+        // WP-03 (3a): JPEG header preflight scans markers under a 4 MiB byte budget instead of a fixed
+        // 4096-marker cap: SOFn behind more than 4096 COM/TEM segments is still hit during preflight,
+        // and only padding beyond the byte budget defers the size check to post-decode.
+        {
+            auto writePaddedJpeg = [&](const std::filesystem::path& target, size_t paddingMarkers,
+                                       bool useTemMarker, uint16_t w, uint16_t h) {
+                std::vector<uint8_t> b = {0xFF, 0xD8};
+                b.reserve(2u + paddingMarkers * (useTemMarker ? 2u : 4u) + 16u);
+                for (size_t i = 0; i < paddingMarkers; ++i) {
+                    if (useTemMarker) {
+                        b.push_back(0xFFu);
+                        b.push_back(0x01u); // TEM standalone marker
+                    } else {
+                        b.push_back(0xFFu);
+                        b.push_back(0xFEu); // COM marker with empty 2-byte length
+                        b.push_back(0x00u);
+                        b.push_back(0x02u);
+                    }
+                }
+                const uint8_t sofAndSos[] = {
+                    0xFFu, 0xC0u, 0x00u, 0x0Bu, 0x08u,
+                    static_cast<uint8_t>(h >> 8), static_cast<uint8_t>(h & 0xFFu),
+                    static_cast<uint8_t>(w >> 8), static_cast<uint8_t>(w & 0xFFu),
+                    0x01u, 0x11u, 0x00u,
+                    0xFFu, 0xDAu, 0x00u, 0x02u
+                };
+                b.insert(b.end(), std::begin(sofAndSos), std::end(sofAndSos));
+                writeBytesFile(target, b);
+            };
+
+            const auto jpg4096ValidCom = dir / "jpeg-4096-com-then-64x48.jpg";
+            const auto jpg4096ValidTem = dir / "jpeg-4096-tem-then-64x48.jpg";
+            writePaddedJpeg(jpg4096ValidCom, 4096u, false, 64u, 48u);
+            writePaddedJpeg(jpg4096ValidTem, 4096u, true, 64u, 48u);
+            const std::string jpg4096ValidComStr = jpg4096ValidCom.string();
+            const std::string jpg4096ValidTemStr = jpg4096ValidTem.string();
+            auto padComReq = makeNativeRawReq(jpg4096ValidComStr);
+            padComReq.output_target = SONY2FUJI_TARGET_FILE;
+            padComReq.output_format = SONY2FUJI_OUTPUT_JPEG;
+            padComReq.output_path = wideJpegOut.c_str();
+            auto padTemReq = padComReq;
+            padTemReq.input_path = jpg4096ValidTemStr.c_str();
+            const auto padComSt = sony2fuji_process(session, &padComReq, nullptr);
+            const auto padTemSt = sony2fuji_process(session, &padTemReq, nullptr);
+            check(padComSt == SONY2FUJI_STATUS_UNSUPPORTED && padTemSt == SONY2FUJI_STATUS_UNSUPPORTED,
+                  "JPEG with 4096 COM/TEM padding markers hits SOF0 in preflight within the byte budget and is rejected only at RAW decode");
+
+            const auto jpg4095Huge = dir / "jpeg-4095-com-then-50000x50000.jpg";
+            const auto jpg4096Huge = dir / "jpeg-4096-com-then-50000x50000.jpg";
+            const auto jpg4097Huge = dir / "jpeg-4097-com-then-50000x50000.jpg";
+            writePaddedJpeg(jpg4095Huge, 4095u, false, 50000u, 50000u);
+            writePaddedJpeg(jpg4096Huge, 4096u, false, 50000u, 50000u);
+            writePaddedJpeg(jpg4097Huge, 4097u, false, 50000u, 50000u);
+            const std::string jpg4095HugeStr = jpg4095Huge.string();
+            const std::string jpg4096HugeStr = jpg4096Huge.string();
+            const std::string jpg4097HugeStr = jpg4097Huge.string();
+            auto huge4095Req = makeNativeRawReq(jpg4095HugeStr);
+            huge4095Req.lut_path = absentLut.c_str();
+            huge4095Req.lut_strength = 1.0f;
+            expectRejected(huge4095Req, "JPEG with 4095 COM segments reaches SOF0 at marker #4096 and rejects in preflight");
+
+            auto huge4096Req = huge4095Req;
+            huge4096Req.input_path = jpg4096HugeStr.c_str();
+            expectRejected(huge4096Req, "JPEG with 4096 COM segments reaches SOF0 within the byte budget and rejects in preflight");
+
+            // WP-03 验收：>4096 COM 段的 JPEG 预检必须命中真实主图尺寸（50000x50000 在预检即拒，
+            // 而非延后到 load 才报 UNSUPPORTED）。撤回字节预算改为 4096 标记封顶即红。
+            auto huge4097Req = huge4095Req;
+            huge4097Req.input_path = jpg4097HugeStr.c_str();
+            expectRejected(huge4097Req, "JPEG with >4096 COM segments still hits the real SOFn size in preflight and rejects in preflight");
+
+            // COM padding beyond the 4 MiB scan budget defers the size check instead of scanning forever:
+            // the 50000x50000 SOFn stays unpreflighted and the request reaches load (UNSUPPORTED, not INVALID_ARGUMENT).
+            const auto jpgBudgetHuge = dir / "jpeg-1048577-com-then-50000x50000.jpg";
+            writePaddedJpeg(jpgBudgetHuge, 1048577u, false, 50000u, 50000u);
+            const std::string jpgBudgetHugeStr = jpgBudgetHuge.string();
+            auto budgetHugeReq = huge4095Req;
+            budgetHugeReq.input_path = jpgBudgetHugeStr.c_str();
+            sony2fuji_buffer budgetHugeOut{};
+            const auto budgetHugeSt = sony2fuji_process(session, &budgetHugeReq, &budgetHugeOut);
+            sony2fuji_release_buffer(&budgetHugeOut);
+            check(budgetHugeSt == SONY2FUJI_STATUS_UNSUPPORTED,
+                  "JPEG with COM padding beyond the 4 MiB header budget defers preflight and reaches load");
         }
     }
     auto dngRequest = request(dngPixels);

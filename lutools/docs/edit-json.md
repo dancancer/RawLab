@@ -121,10 +121,9 @@ containing `code`, `message` and `status`. Native status values 1–6 map to
 and `output_io_error`. `invalid_recipe` identifies a JSON schema/parser failure.
 Argument/parser failures have `status:null`; backend failures retain the actual
 native status. A backend error is never relabeled as success or another status.
-The existing DNG writer reports output storage failures as status 6; legacy
-JPEG/PNG encoding can report status 4 for such a failure. Results preserve that
-distinction. Paths in successful exports are absolute, without requiring symlink
-canonicalization.
+JPEG, PNG and DNG encoding all publish through staged writes, so an output
+storage failure reports status 6 (`output_io_error`) for every format. Paths in
+successful exports are absolute, without requiring symlink canonicalization.
 
 Capability results list only currently supported commands, recipe versions,
 input types, file formats and exposure modes. Querying requires no photo or

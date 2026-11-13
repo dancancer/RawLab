@@ -589,49 +589,62 @@ uint32_t parseExifOrientation(const uint8_t* tiff, size_t size) {
     return 1;
 }
 
-bool probeJpegHeaderSize(std::ifstream& stream, uint32_t& width, uint32_t& height) {
+sony2fuji::ProbeSizeResult probeJpegHeaderSize(std::ifstream& stream, uint32_t& width, uint32_t& height) {
     stream.clear();
     stream.seekg(2, std::ios::beg);
-    if (!stream) return false;
+    if (!stream) return sony2fuji::ProbeSizeResult::Unsupported;
     uint32_t orientation = 1;
-    for (int step = 0; step < 4096; ++step) {
+    // 头预检按字节预算扫描（而非固定标记个数）：>4096 个 COM/TEM 段后的 SOF 仍能在
+    // 预检阶段命中真实主图尺寸，而 0xFF 填充或海量无载荷段也无法用近乎零成本的标记
+    // 绕过尺寸预检。超出预算时延后到解码后再校验（DeferredPostDecode），不虚假拒绝。
+    constexpr uint64_t kMaxHeaderScanBytes = 4ull << 20; // 4 MiB
+    uint64_t scanned = 2; // SOI 已消耗两字节
+    while (scanned < kMaxHeaderScanBytes) {
         int byte = stream.get();
-        if (byte != 0xFF) return false;
-        while (byte == 0xFF) byte = stream.get();
-        if (byte < 0 || byte == 0x00 || byte == 0xD9 || byte == 0xDA) return false;
+        ++scanned;
+        if (byte != 0xFF) return sony2fuji::ProbeSizeResult::Unsupported;
+        while (byte == 0xFF) {
+            byte = stream.get();
+            ++scanned;
+            if (scanned > kMaxHeaderScanBytes) return sony2fuji::ProbeSizeResult::DeferredPostDecode;
+        }
+        if (byte < 0 || byte == 0x00 || byte == 0xD9 || byte == 0xDA) return sony2fuji::ProbeSizeResult::Unsupported;
         if (byte == 0x01 || (byte >= 0xD0 && byte <= 0xD7)) continue;
         uint8_t lenBytes[2]{};
         stream.read(reinterpret_cast<char*>(lenBytes), 2);
-        if (stream.gcount() != 2) return false;
+        if (stream.gcount() != 2) return sony2fuji::ProbeSizeResult::Unsupported;
+        scanned += 2;
         const uint16_t segLen = readEndian16(lenBytes, false);
-        if (segLen < 2) return false;
+        if (segLen < 2) return sony2fuji::ProbeSizeResult::Unsupported;
         const uint32_t payloadLen = static_cast<uint32_t>(segLen - 2);
         if (byte == 0xE1 && payloadLen >= 14) {
             std::vector<uint8_t> app1(payloadLen);
             stream.read(reinterpret_cast<char*>(app1.data()), payloadLen);
-            if (stream.gcount() != static_cast<std::streamsize>(payloadLen)) return false;
+            if (stream.gcount() != static_cast<std::streamsize>(payloadLen)) return sony2fuji::ProbeSizeResult::Unsupported;
+            scanned += payloadLen;
             if (std::memcmp(app1.data(), "Exif\0\0", 6) == 0) {
                 orientation = parseExifOrientation(app1.data() + 6, app1.size() - 6);
             }
             continue;
         }
         if (byte >= 0xC0 && byte <= 0xCF && byte != 0xC4 && byte != 0xC8 && byte != 0xCC) {
-            if (payloadLen < 5) return false;
+            if (payloadLen < 5) return sony2fuji::ProbeSizeResult::Unsupported;
             uint8_t sof[5]{};
             stream.read(reinterpret_cast<char*>(sof), 5);
-            if (stream.gcount() != 5) return false;
+            if (stream.gcount() != 5) return sony2fuji::ProbeSizeResult::Unsupported;
             uint32_t h = readEndian16(sof + 1, false);
             uint32_t w = readEndian16(sof + 3, false);
-            if (w == 0 || h == 0) return false;
+            if (w == 0 || h == 0) return sony2fuji::ProbeSizeResult::Unsupported;
             if (orientation >= 5 && orientation <= 8) std::swap(w, h);
             width = w;
             height = h;
-            return true;
+            return sony2fuji::ProbeSizeResult::Probed;
         }
         stream.seekg(payloadLen, std::ios::cur);
-        if (!stream) return false;
+        if (!stream) return sony2fuji::ProbeSizeResult::Unsupported;
+        scanned += payloadLen;
     }
-    return false;
+    return sony2fuji::ProbeSizeResult::DeferredPostDecode;
 }
 
 bool probeTiffHeaderSize(std::ifstream& stream, const uint8_t* head, std::streamsize headSize,
@@ -680,6 +693,7 @@ bool probeTiffHeaderSize(std::ifstream& stream, const uint8_t* head, std::stream
         uint64_t cropHeight = 0;
         uint32_t subfileType = 0;
         uint32_t orientation = 0;
+        uint64_t nextIfdOffset = 0;
         std::vector<uint64_t> subIfds;
     };
 
@@ -763,20 +777,60 @@ bool probeTiffHeaderSize(std::ifstream& stream, const uint8_t* head, std::stream
                 info.cropHeight = u64s[1];
             }
         }
+        const uint64_t nextOffsetPos = pos + tableBytes;
+        if (bigTiff) {
+            uint8_t nextBuf[8]{};
+            if (readAt(nextOffsetPos, nextBuf, 8)) {
+                info.nextIfdOffset = readEndian64(nextBuf, little);
+            }
+        } else {
+            uint8_t nextBuf[4]{};
+            if (readAt(nextOffsetPos, nextBuf, 4)) {
+                info.nextIfdOffset = readEndian32(nextBuf, little);
+            }
+        }
         return true;
     };
 
-    IfdInfo root{};
-    if (!parseIfd(ifd0Offset, root)) return false;
+    if (ifd0Offset == 0) return false;
 
+    constexpr size_t kMaxMainIfds = 64;
     std::vector<IfdInfo> candidates;
-    candidates.push_back(root);
-    for (uint64_t subOffset : root.subIfds) {
-        IfdInfo sub{};
-        if (parseIfd(subOffset, sub)) {
-            if (sub.orientation == 0) sub.orientation = root.orientation;
-            candidates.push_back(std::move(sub));
+    std::vector<uint64_t> visitedMainIfds;
+    // 已解析偏移跨主链与 SubIFDs 共用：多个主 IFD 重复指向同一批 SubIFDs 时不再冗余读取。
+    std::vector<uint64_t> visitedIfds;
+    uint32_t rootOrientation = 0;
+    uint64_t currentIfdOffset = ifd0Offset;
+    for (size_t step = 0; step < kMaxMainIfds && currentIfdOffset != 0; ++step) {
+        if (std::find(visitedMainIfds.begin(), visitedMainIfds.end(), currentIfdOffset) != visitedMainIfds.end()) {
+            break;
         }
+        visitedMainIfds.push_back(currentIfdOffset);
+        visitedIfds.push_back(currentIfdOffset);
+        IfdInfo mainIfd{};
+        if (!parseIfd(currentIfdOffset, mainIfd)) {
+            if (step == 0) return false;
+            break;
+        }
+        if (step == 0) {
+            rootOrientation = mainIfd.orientation;
+        } else if (mainIfd.orientation == 0) {
+            mainIfd.orientation = rootOrientation;
+        }
+        const uint64_t nextOffset = mainIfd.nextIfdOffset;
+        const auto subOffsets = mainIfd.subIfds;
+        const uint32_t parentOrientation = mainIfd.orientation;
+        candidates.push_back(std::move(mainIfd));
+        for (uint64_t subOffset : subOffsets) {
+            if (std::find(visitedIfds.begin(), visitedIfds.end(), subOffset) != visitedIfds.end()) continue;
+            visitedIfds.push_back(subOffset);
+            IfdInfo sub{};
+            if (parseIfd(subOffset, sub)) {
+                if (sub.orientation == 0) sub.orientation = parentOrientation;
+                candidates.push_back(std::move(sub));
+            }
+        }
+        currentIfdOffset = nextOffset;
     }
 
     const IfdInfo* best = nullptr;
@@ -902,9 +956,7 @@ sony2fuji::ProbeSizeResult probeInputHeaderSize(
     }
 
     if (head[0] == 0xFF && head[1] == 0xD8 && head[2] == 0xFF) {
-        return probeJpegHeaderSize(stream, outWidth, outHeight)
-            ? sony2fuji::ProbeSizeResult::Probed
-            : sony2fuji::ProbeSizeResult::Unsupported;
+        return probeJpegHeaderSize(stream, outWidth, outHeight);
     }
 
     stream.close();
@@ -1093,6 +1145,19 @@ sony2fuji_status computeTargetSize(
         long_edge = request.preview_long_edge;
     }
 
+    // Exact rational round-half-up scaling: floor(src * num / den + 0.5), clamped to >= 1.
+    // Avoids binary32 intermediate scale rounding (e.g. 4717x75453 at short_edge=4097 -> exact 65535, not 65536).
+    auto scaleEdgeHalfUp = [](uint32_t src, uint32_t num, uint32_t den, uint32_t& out) -> bool {
+        const uint64_t scaled =
+            (static_cast<uint64_t>(src) * static_cast<uint64_t>(num) + static_cast<uint64_t>(den / 2u)) /
+            static_cast<uint64_t>(den);
+        if (scaled > static_cast<uint64_t>(UINT32_MAX)) {
+            return false;
+        }
+        out = static_cast<uint32_t>(std::max<uint64_t>(1u, scaled));
+        return true;
+    };
+
     uint32_t width = 0;
     uint32_t height = 0;
     switch (mode) {
@@ -1113,33 +1178,25 @@ sony2fuji_status computeTargetSize(
                 (exceedsOutputPixelCap(long_edge, 1) || (isJpegFileOutput(request) && long_edge > kMaxJpegDimension)))) {
                 return SONY2FUJI_STATUS_INVALID_ARGUMENT;
             }
-            uint32_t max_edge = std::max(src_width, src_height);
-            float scale = static_cast<float>(long_edge) / static_cast<float>(max_edge);
-            if (mode == SONY2FUJI_SIZE_LIMIT_LONG_EDGE) scale = std::min(1.0f, scale);
-            const double scaled_w = std::round(src_width * scale);
-            const double scaled_h = std::round(src_height * scale);
-            if (!(scaled_w <= static_cast<double>(UINT32_MAX) &&
-                  scaled_h <= static_cast<double>(UINT32_MAX))) {
+            const uint32_t max_edge = std::max(src_width, src_height);
+            if (mode == SONY2FUJI_SIZE_LIMIT_LONG_EDGE && long_edge >= max_edge) {
+                width = src_width;
+                height = src_height;
+            } else if (!scaleEdgeHalfUp(src_width, long_edge, max_edge, width) ||
+                       !scaleEdgeHalfUp(src_height, long_edge, max_edge, height)) {
                 return SONY2FUJI_STATUS_INVALID_ARGUMENT;
             }
-            width = static_cast<uint32_t>(std::max(1.0, scaled_w));
-            height = static_cast<uint32_t>(std::max(1.0, scaled_h));
             break;
         }
         case SONY2FUJI_SIZE_FIT_SHORT_EDGE: {
             if (short_edge == 0 || exceedsOutputTargetCap(request, short_edge, short_edge)) {
                 return SONY2FUJI_STATUS_INVALID_ARGUMENT;
             }
-            uint32_t min_edge = std::min(src_width, src_height);
-            float scale = static_cast<float>(short_edge) / static_cast<float>(min_edge);
-            const double scaled_w = std::round(src_width * scale);
-            const double scaled_h = std::round(src_height * scale);
-            if (!(scaled_w <= static_cast<double>(UINT32_MAX) &&
-                  scaled_h <= static_cast<double>(UINT32_MAX))) {
+            const uint32_t min_edge = std::min(src_width, src_height);
+            if (!scaleEdgeHalfUp(src_width, short_edge, min_edge, width) ||
+                !scaleEdgeHalfUp(src_height, short_edge, min_edge, height)) {
                 return SONY2FUJI_STATUS_INVALID_ARGUMENT;
             }
-            width = static_cast<uint32_t>(std::max(1.0, scaled_w));
-            height = static_cast<uint32_t>(std::max(1.0, scaled_h));
             break;
         }
         default:
