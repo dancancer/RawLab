@@ -86,3 +86,4 @@
 - 2026-11-14 · #291 三轮 request-changes（B3 seam/断言恢复均过）：B1=修复②在取消/放弃/未改动应用/未改动收起四类路径残留草稿态 committedPreviewSettings（模拟器实证 base=1493×2240 竖幅草稿）+契约引入提交更正为 d2146d63（10-22）；B2=收起守卫未覆盖 .adjustment/.film/.recipe 工作区草稿（discard 后画布卡脏草稿、collapsedEditorTool 丢工具）。四轮在修。
 - 2026-11-14 · #299 二轮返工（`3e73dcce`）：三套件断言改封顶语义 min(原生,cap)；缓存键=edge:nil 三方对齐+「切 fullResolution 对象同一」回归（旧树恰红）；totalBytes ObjectIdentifier 去重；参数校验守卫；7RM4 实测峰值 −450MB/−9.2%（单帧常驻 ~229→~42MB）。二轮复审在途（review-mwfijn9j）。
 - 2026-11-14 · #300 二轮返工（`7928baf3`，checks 7/7）：v14/v15 schema pattern 收窄（\n 收、\0/\r/C0 拒）+多行合成 lens_profile 双层拒绝回归；jsonschema 缺依赖 exit 77+CMake SKIP_RETURN_CODE 显式化。二轮复审在途（review-mwfil65j）。
+- 2026-11-14 · **Mac 全套件基线摸底完成**（108 脚本=88 绿/18 红/2 SKIP；盲区 88 个不被 models-CI 覆盖）。新红 16 分四类：A 簇 10 脚本同根因（硬编码源列表缺 HDR 新文件）已派 `fix-mac-srclist`（含共享列表收敛）；B 簇 3 断言红已派 `diag-mac-b-reds` 诊断；C 类 3 条待桌面复核、D 类 5 条素材要求已挂 d-followup 台账。
