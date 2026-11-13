@@ -74,10 +74,10 @@ private struct RenditionHostView: View {
 
     @MainActor static func run() async throws {
         // 无辅助功能授权的进程（无头 CLI、未批准的终端）里 AXUIElementCopyAttributeValue
-        // 返回 kAXErrorAPIDisabled，读不到任何控件。这里明确跳过而不是报缺陷；
-        // CI 的自托管家 runner 有授权，AX 断言照常执行。
+        // 返回 kAXErrorAPIDisabled，读不到任何控件。本测试保留为本地/发布前手工检查（CI 不执行）；
+        // CI 门禁改由 HDRRenditionResetTests（纯表示模型 + 真实布局尺寸）覆盖。
         guard AXIsProcessTrusted() else {
-            // CI 必须真的执行这些断言：设置了 RAWLAB_REQUIRE_AX 却未授权时判失败，而不是静默跳过。
+            // 手工验收显式要求 AX 时设置 RAWLAB_REQUIRE_AX=1，未授权将直接判失败。
             if !(ProcessInfo.processInfo.environment["RAWLAB_REQUIRE_AX"] ?? "").isEmpty {
                 throw Failure.assertion("RAWLAB_REQUIRE_AX is set but accessibility is not granted; the AX checks cannot run")
             }

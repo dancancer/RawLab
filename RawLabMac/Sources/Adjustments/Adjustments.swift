@@ -617,6 +617,7 @@ enum EditorAdjustmentRules {
             case .denoise: return settings.aiDenoiseEnabled || settings.rawNoiseReduction != 0 || (settings.chromaNoiseReduction ?? 0) != 0 || settings.waveletSettings != WaveletDenoiseSettings()
             case .geometry: return !settings.geometrySettings.isIdentity
             case .lens: return settings.lensSettings != LensCorrectionSettings()
+            case .hdrPeakLimit, .hdrSDRExposure, .hdrSDRContrast, .hdrSDRSaturation: return false
             default: return settings[keyPath: tool.parameter!.spec.keyPath] != tool.parameter!.spec.defaultValue
             }
         case .all:
@@ -644,6 +645,8 @@ enum EditorAdjustmentRules {
                 (settings.chromaNoiseReduction ?? 0) != 0 || settings.waveletSettings != WaveletDenoiseSettings()
         case .group(.geometry):
             return !settings.geometrySettings.isIdentity || settings.lensSettings != LensCorrectionSettings()
+        case .group(.hdrRendition):
+            return false
         }
     }
 
@@ -681,6 +684,7 @@ enum EditorAdjustmentRules {
                     result.settings.rawNoiseReduction = 0; result.settings.chromaNoiseReduction = nil; result.settings.waveletNoiseReduction = nil
                 case .geometry: result.settings.geometry = nil
                 case .lens: result.settings.lensCorrection = nil
+                case .hdrPeakLimit, .hdrSDRExposure, .hdrSDRContrast, .hdrSDRSaturation: break
                 default: result.settings[keyPath: tool.parameter!.spec.keyPath] = tool.parameter!.spec.defaultValue
                 }
             case .all:
@@ -711,6 +715,7 @@ enum EditorAdjustmentRules {
                 result.settings.sharpening = 0; result.settings.rawNoiseReduction = 0
                 result.settings.chromaNoiseReduction = nil; result.settings.waveletNoiseReduction = nil
             case .group(.geometry): result.settings.geometry = nil; result.settings.lensCorrection = nil
+            case .group(.hdrRendition): break
             case .allGrading: result.settings.colorGrading = nil
             case .gradingZone(let zone): result.settings.gradingSettings[zone] = ColorGradingWheel()
             case .hslAll: result.settings.hsl = nil
@@ -735,6 +740,7 @@ enum EditorAdjustmentRules {
             result.hdr?.reset()
             result.hdrCameraAIEnabled = false
         case .group(.looks), .tool(.film): result.hdr?.lookSettings = HDRLookSettings()
+        case .group(.hdrRendition): result.hdr?.renditionSettings = HDRRenditionSettings()
         case .group(let group):
             for tool in group.tools { result=resettingHDR(.tool(tool),settings:result) }
         case .tool(.geometry): result.setGeometrySettings(GeometrySettings())
@@ -756,7 +762,8 @@ enum EditorAdjustmentRules {
             result.hdr?.detailSettings.denoise = 0
             result.hdrCameraAIEnabled = false
         case .tool(let tool):
-            if let parameter=tool.parameter,let key=parameter.hdrKeyPath { result.hdr?[keyPath:key]=HDRSettings()[keyPath:key] }
+            if let key = tool.hdrRenditionKeyPath { result.hdr?.renditionSettings[keyPath: key] = HDRRenditionSettings()[keyPath: key] }
+            else if let parameter=tool.parameter,let key=parameter.hdrKeyPath { result.hdr?[keyPath:key]=HDRSettings()[keyPath:key] }
         }
         return result
     }

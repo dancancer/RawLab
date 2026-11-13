@@ -303,10 +303,10 @@ enum AdjustmentGroup: String, CaseIterable, Identifiable {
 
 // 编辑导航仅属于会话，不能写入照片调整记录。
 enum EditorAdjustmentGroup: String, CaseIterable, Identifiable {
-    case looks, light, color, effects, detail, geometry
+    case looks, light, color, effects, detail, geometry, hdrRendition
     var id: String { rawValue }
     var title: String {
-        L10n.text(["外观", "光线", "颜色", "效果", "细节", "几何与镜头"][Self.allCases.firstIndex(of: self)!])
+        L10n.text(["外观", "光线", "颜色", "效果", "细节", "几何与镜头", "HDR 输出与 SDR 底图"][Self.allCases.firstIndex(of: self)!])
     }
     var tools: [EditorAdjustmentTool] {
         switch self {
@@ -316,17 +316,32 @@ enum EditorAdjustmentGroup: String, CaseIterable, Identifiable {
         case .effects: return [.clarity, .dehaze, .vignette, .grain]
         case .detail: return [.denoise, .sharpening]
         case .geometry: return [.geometry, .lens]
+        case .hdrRendition: return [.hdrPeakLimit, .hdrSDRExposure, .hdrSDRContrast, .hdrSDRSaturation]
         }
     }
     var defaultTool: EditorAdjustmentTool { tools[0] }
+    func isVisible(isHDREditing: Bool) -> Bool { self != .hdrRendition || isHDREditing }
+    static func visibleGroups(isHDREditing: Bool) -> [Self] {
+        allCases.filter { $0.isVisible(isHDREditing: isHDREditing) }
+    }
 }
 
 enum EditorAdjustmentTool: String, CaseIterable, Identifiable {
     case film, recipe, strength, exposure, highlights, shadows, blackPoint, whitePoint, vibrance, contrast, toneCurve
     case clarity, dehaze
     case whiteBalance, saturation, hsl, colorGrading, vignette, grain, denoise, sharpening, geometry, lens
+    case hdrPeakLimit, hdrSDRExposure, hdrSDRContrast, hdrSDRSaturation
     var id: String { rawValue }
     var group: EditorAdjustmentGroup { EditorAdjustmentGroup.allCases.first { $0.tools.contains(self) }! }
+    var hdrRenditionKeyPath: WritableKeyPath<HDRRenditionSettings, Double>? {
+        switch self {
+        case .hdrPeakLimit: return \.peakLimitEV
+        case .hdrSDRExposure: return \.sdrExposureEV
+        case .hdrSDRContrast: return \.sdrContrast
+        case .hdrSDRSaturation: return \.sdrSaturation
+        default: return nil
+        }
+    }
     var parameter: AdjustmentParameter? {
         switch self {
         case .strength: return .strength
@@ -359,6 +374,10 @@ enum EditorAdjustmentTool: String, CaseIterable, Identifiable {
         case .hsl: return "HSL"
         case .geometry: return L10n.text("几何")
         case .lens: return L10n.text("镜头")
+        case .hdrPeakLimit: return L10n.text("HDR 亮度上限")
+        case .hdrSDRExposure: return L10n.text("SDR 底图曝光")
+        case .hdrSDRContrast: return L10n.text("SDR 底图对比度")
+        case .hdrSDRSaturation: return L10n.text("SDR 底图饱和度")
         default: return parameter!.spec.title
         }
     }
@@ -370,6 +389,10 @@ enum EditorAdjustmentTool: String, CaseIterable, Identifiable {
         case .hsl: return "slider.horizontal.3"
         case .geometry: return "crop.rotate"
         case .lens: return "viewfinder"
+        case .hdrPeakLimit: return "sun.max"
+        case .hdrSDRExposure: return "plusminus.circle"
+        case .hdrSDRContrast: return "circle.lefthalf.filled"
+        case .hdrSDRSaturation: return "drop.halffull"
         default: return parameter!.symbol
         }
     }
@@ -386,6 +409,20 @@ struct EditorAdjustmentNavigation: Equatable {
         else { expandedGroup = group; tool = group.defaultTool }
     }
     mutating func selectTool(_ target: EditorAdjustmentTool) { tool = target; expandedGroup = target.group }
+    mutating func normalize(isHDREditing: Bool) {
+        let wasCollapsed = expandedGroup == nil
+        if !tool.group.isVisible(isHDREditing: isHDREditing) {
+            selectTool(.exposure)
+            if wasCollapsed { expandedGroup = nil }
+        } else if let group = expandedGroup, !group.isVisible(isHDREditing: isHDREditing) {
+            expandedGroup = tool.group
+        }
+    }
+    func normalized(isHDREditing: Bool) -> Self {
+        var copy = self
+        copy.normalize(isHDREditing: isHDREditing)
+        return copy
+    }
 }
 
 enum EditorResetScope: Equatable {

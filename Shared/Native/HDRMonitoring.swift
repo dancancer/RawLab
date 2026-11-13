@@ -30,11 +30,43 @@ struct HDRMonitoringControls: View {
     }
 }
 
+struct HDRRenditionResetPresentation: Equatable {
+    let identifier: String
+    let title: String
+    let isEnabled: Bool
+
+    static func make(settings: HDRRenditionSettings) -> Self {
+        Self(identifier: "hdr.rendition.reset",
+             title: L10n.text("重置"),
+             isEnabled: !settings.isDefault)
+    }
+}
+
+struct HDRRenditionResetControl: View {
+    let presentation: HDRRenditionResetPresentation
+    let onReset: () -> Void
+
+    var body: some View {
+        Button(presentation.title, action: onReset)
+            .buttonStyle(.borderless)
+            .disabled(!presentation.isEnabled)
+            .accessibilityIdentifier(presentation.identifier)
+    }
+}
+
 struct HDRRenditionControls: View {
     @Binding var settings: HDRRenditionSettings
     let onEditingChanged: (Bool) -> Void
     let onCancelled: () -> Void
     @State private var editing = false
+
+    var resetPresentation: HDRRenditionResetPresentation {
+        HDRRenditionResetPresentation.make(settings: settings)
+    }
+
+    func reset() {
+        settings = HDRRenditionSettings()
+    }
 
     var body: some View {
         DisclosureGroup {
@@ -51,9 +83,7 @@ struct HDRRenditionControls: View {
                 Text(L10n.text("HDR 输出与 SDR 底图")).accessibilityIdentifier("hdr.rendition")
                 Spacer()
                 // 与滑杆共用同一绑定，一次写回四个显示映射参数，进入同一撤销记录。
-                Button(L10n.text("重置")) { settings = HDRRenditionSettings() }
-                    .buttonStyle(.borderless).disabled(settings.isDefault)
-                    .accessibilityIdentifier("hdr.rendition.reset")
+                HDRRenditionResetControl(presentation: resetPresentation, onReset: reset)
             }
         }
     }

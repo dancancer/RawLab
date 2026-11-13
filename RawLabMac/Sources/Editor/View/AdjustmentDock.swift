@@ -8,21 +8,34 @@ struct AdjustmentDock: View {
     @State private var showsExposure = true
     @State private var showsTones = true
     @State private var collapsedTool: EditorAdjustmentTool?
-    private var navigation: EditorAdjustmentNavigation { model.adjustmentNavigation }
+    private var navigation: EditorAdjustmentNavigation {
+        model.adjustmentNavigation.normalized(isHDREditing: model.settings.isHDREditing)
+    }
+
+    private var visibleGroups: [EditorAdjustmentGroup] {
+        EditorAdjustmentGroup.visibleGroups(isHDREditing: model.settings.isHDREditing)
+    }
 
     var body: some View {
         let _ = localizationLocale
+        let groups = visibleGroups
+        let split = (groups.count + 1) / 2
         VStack(spacing: 0) {
             ViewThatFits(in: .horizontal) {
-                groupRow(EditorAdjustmentGroup.allCases)
+                groupRow(groups)
                 VStack(alignment: .leading, spacing: 2) {
-                    groupRow(EditorAdjustmentGroup.allCases.prefix(3))
-                    groupRow(EditorAdjustmentGroup.allCases.suffix(3))
+                    groupRow(groups.prefix(split))
+                    groupRow(groups.dropFirst(split))
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    groupRow(groups.prefix(3))
+                    groupRow(groups.dropFirst(3).prefix(3))
+                    if groups.count > 6 { groupRow(groups.dropFirst(6)) }
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 6).padding(.vertical, 2)
             Divider()
-            if let group = navigation.expandedGroup {
+            if let group = navigation.expandedGroup, groups.contains(group) {
                 if group == .looks && !model.settings.isHDREditing {
                     VStack(alignment: .leading, spacing: 3) {
                         parameterRow(.strength, title: L10n.text("外观强度"))
@@ -235,6 +248,8 @@ struct AdjustmentDock: View {
         } else if let parameter = tool.parameter, parameter.isPhotoEffect {
             PhotoEffectsControls(model: model, tool: parameter, onReset: { model.requestAdjustmentReset(.tool(tool)) })
                 .id("\(parameter.rawValue).\(resetVersion)")
+        } else if let keyPath = tool.hdrRenditionKeyPath {
+            hdrRenditionRow(tool, keyPath: keyPath)
         } else if let parameter = tool.parameter {
             if parameter.isWhiteBalance { whiteBalance }
             else { parameterRow(parameter) }
@@ -243,6 +258,32 @@ struct AdjustmentDock: View {
         } else if tool == .film {
             FilmDock(model: model)
         }
+    }
+
+    private func hdrRenditionRow(_ tool: EditorAdjustmentTool, keyPath: WritableKeyPath<HDRRenditionSettings, Double>) -> some View {
+        let isEV = tool == .hdrPeakLimit || tool == .hdrSDRExposure
+        let range: ClosedRange<Double> = tool == .hdrPeakLimit ? 0...6 : (isEV ? -4...4 : -100...100)
+        return ParameterRow(
+            title: tool.title,
+            value: Binding(
+                get: { model.settings.hdr?.renditionSettings[keyPath: keyPath] ?? 0 },
+                set: { newValue in
+                    guard model.settings.isHDREditing, var state = model.settings.hdr, newValue.isFinite else { return }
+                    state.renditionSettings[keyPath: keyPath] = newValue
+                    guard state.isValid else { return }
+                    model.settings.hdr = state
+                }
+            ),
+            range: range,
+            defaultValue: 0,
+            unit: isEV ? "EV" : "%",
+            precision: isEV ? .exposure : .standard,
+            identifier: "value.\(tool.rawValue)",
+            onEditingChanged: model.setInteracting,
+            compact: true
+        )
+        .id("\(tool.rawValue).\(resetVersion)")
+        .disabled(model.result == nil)
     }
 
     private var whiteBalance: some View {
@@ -289,6 +330,6 @@ struct AdjustmentDock: View {
 
     private func supportsHDR(_ tool: EditorAdjustmentTool) -> Bool {
         tool == .geometry || tool == .whiteBalance || tool == .hsl || tool == .colorGrading ||
-            tool == .vignette || tool == .grain || tool.parameter?.hdrKeyPath != nil
+            tool == .vignette || tool == .grain || tool.hdrRenditionKeyPath != nil || tool.parameter?.hdrKeyPath != nil
     }
 }

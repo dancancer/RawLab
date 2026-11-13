@@ -44,9 +44,9 @@ struct ControlGroupTests {
     }
 
     private static func currentTools() throws {
-        check(EditorAdjustmentGroup.allCases.map(\.rawValue) == ["looks", "light", "color", "effects", "detail", "geometry"], "Six stable group IDs keep their order")
-        check(EditorAdjustmentGroup.allCases.map(\.defaultTool) == [.film, .exposure, .whiteBalance, .clarity, .denoise, .geometry], "Each group opens its declared default tool")
-        check(EditorAdjustmentGroup.allCases.flatMap(\.tools).count == 23 && EditorAdjustmentTool.allCases.allSatisfy { $0.group.tools.contains($0) }, "One descriptor owns all twenty-three tools")
+        check(EditorAdjustmentGroup.allCases.map(\.rawValue) == ["looks", "light", "color", "effects", "detail", "geometry", "hdrRendition"], "Seven stable group IDs keep their order")
+        check(EditorAdjustmentGroup.allCases.map(\.defaultTool) == [.film, .exposure, .whiteBalance, .clarity, .denoise, .geometry, .hdrPeakLimit], "Each group opens its declared default tool")
+        check(EditorAdjustmentGroup.allCases.flatMap(\.tools).count == 27 && EditorAdjustmentTool.allCases.allSatisfy { $0.group.tools.contains($0) }, "One descriptor owns all twenty-seven tools")
         var navigation = EditorAdjustmentNavigation()
         navigation.selectedHSLChannel = 6
         navigation.selectGroup(.color)
@@ -55,6 +55,35 @@ struct ControlGroupTests {
         check(navigation.selectedHSLChannel == 6, "HSL session channel survives group and tool changes")
         navigation.selectGroup(.color)
         check(navigation.expandedGroup == nil && navigation.tool == .hsl, "Repeated group click collapses without clearing tool")
+        check(EditorAdjustmentGroup.visibleGroups(isHDREditing: false) == [.looks, .light, .color, .effects, .detail, .geometry] &&
+              !EditorAdjustmentGroup.visibleGroups(isHDREditing: false).contains(.hdrRendition),
+              "SDR mode exposes six visible groups and excludes hdrRendition")
+        check(EditorAdjustmentGroup.visibleGroups(isHDREditing: true) == EditorAdjustmentGroup.allCases,
+              "HDR mode exposes all seven groups including hdrRendition")
+        navigation.selectedGradingZone = .highlights
+        for hdrTool in EditorAdjustmentGroup.hdrRendition.tools {
+            navigation.selectTool(hdrTool)
+            check(navigation.normalized(isHDREditing: true) == navigation,
+                  "HDR mode retains \(hdrTool.rawValue) navigation")
+            let sdrNormalized = navigation.normalized(isHDREditing: false)
+            check(sdrNormalized.tool.group != .hdrRendition &&
+                  sdrNormalized.expandedGroup != .hdrRendition &&
+                  sdrNormalized.tool == .exposure &&
+                  sdrNormalized.expandedGroup == .light &&
+                  sdrNormalized.selectedHSLChannel == 6 &&
+                  sdrNormalized.selectedGradingZone == .highlights,
+                  "SDR normalization exits hdrRendition from \(hdrTool.rawValue) while preserving session channels")
+        }
+        navigation.selectTool(.hdrPeakLimit)
+        navigation.selectGroup(.hdrRendition)
+        let collapsedNormalized = navigation.normalized(isHDREditing: false)
+        check(collapsedNormalized.expandedGroup == nil &&
+              collapsedNormalized.tool == .exposure &&
+              collapsedNormalized.tool.group != .hdrRendition,
+              "SDR normalization clears collapsed hdrRendition tool without forcing expansion")
+        navigation.selectTool(.hsl)
+        check(navigation.normalized(isHDREditing: false) == navigation,
+              "SDR normalization leaves visible SDR tools untouched")
         var source = Adjustments()
         source.exposure = 1; source.highlights = 22; source.sharpening = 15
         source.photoEffects = PhotoEffectsSettings(vignetteMidpoint: 12, grainSize: 62)
@@ -210,7 +239,7 @@ struct ControlGroupTests {
     }
 
     private static func editorGroups() throws {
-        check(EditorAdjustmentGroup.allCases.map(\.rawValue) == ["looks", "light", "color", "effects", "detail", "geometry"],
+        check(EditorAdjustmentGroup.allCases.map(\.rawValue) == ["looks", "light", "color", "effects", "detail", "geometry", "hdrRendition"],
               "Editor group IDs are stable and independent of the old eight groups")
         let neutral = state()
         check(EditorAdjustmentGroup.allCases.allSatisfy {

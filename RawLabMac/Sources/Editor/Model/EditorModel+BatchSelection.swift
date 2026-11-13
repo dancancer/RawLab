@@ -87,6 +87,7 @@ extension EditorModel {
             let restored = try committedEdit.state ?? PhotoEditState(settings: RenderEngine.defaultSettings(for: photo.url, sourceIsHDR: sourceIsHDR), filmID: "")
             restoreAdjustmentState(restored)
         } catch { saveError = error.localizedDescription; return false }
+        normalizeAdjustmentNavigation()
         dirty = false; saveError = nil; editRevision = UUID(); schedule(forceExact: true)
         return true
     }

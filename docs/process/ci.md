@@ -327,6 +327,13 @@ CI never repeats runtime UI checks. UI-test target compilation is not a UI-test 
   is not provided by CI by default.
 - The iOS job compiles UI tests with `build-for-testing`; it does **not** execute
   XCTest, import Photos fixtures, sign a device app or validate installation.
+- UI tests are not a CI gate. The self-hosted macOS runner has no accessibility
+  grant, so `hdr-rendition-ui.sh` (`AXUIElement`) runs locally and pre-release
+  instead of in the model suites; `RAWLAB_REQUIRE_AX=1` turns its skip into a
+  failure. The same contract stays gated by the AX-free presentation-layer suite
+  `hdr-rendition-reset.sh`. Host-executed suites with "UI" in the name, such as
+  `ios-reset-entry-ui.sh`, are presentation-layer model assertions, not XCUITest.
+  A `SKIP` reason in a CI suite log counts as a failed gate, never as a pass.
 - Android compiles instrumentation tests but does **not** run connected-device
   tests. GLES, SAF, OEM locale and physical interaction evidence stays separate.
 - Building both architectures with a 14.0 minimum on a newer macOS does not establish
