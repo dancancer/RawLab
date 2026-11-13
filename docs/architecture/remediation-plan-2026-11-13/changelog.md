@@ -74,3 +74,4 @@
 - 2026-11-14 · #297 返工定案（`2bf2386f`）：「结构→证据→降级」三层裁决，安装证据在场保持严格拒绝（备份目录不被删）、孤儿备份判定收紧、证据断言强化；160 PASS+变异红证+Windows 真 runner 绿。二轮复审在途（review-mwff5gos）。
 - 2026-11-14 · #286 三轮收口（`3cff7ff0`，仅测试文件）：8 条锚点逐条改锚+旧锚假命中行号反证；新机制=±600 上下文断言双重校验（注册时+诚实性）；wheel 退出快照、逐端真解析 [0,360)/[0,100]+5 变异 RED；136 端侧 pattern+ctx 双校验 0 失败。四轮复审在途（review-mwffj4kv）。
 - 2026-11-14 · **三连合入（总 54 PR）**：#297（Q13，`2bf2386f`，r2 approve）、#298（Q9，`e42bd08a`，approve）、#286（WP-11 spec，`3cff7ff0`，r4 approve；残余风险±600 启发式已记录）。worktree/分支已清。#286 合入解锁 Shared/specs → 派 `q3q4-spec-paste`（Q3 双键口径+忽略并提示盘点；Q4 粘贴沿用目标版本+提示，四端统一）。
+- 2026-11-14 · Q8 交付：**PR #299**：`longEdgeCap=4096`（512MiB 预算半推导钉码）、只降不放大（FINAL+SIZE_LIMIT_LONG_EDGE，C ABI 不变）、封顶帧 isFullResolution 如实、cache 计费补 SDR 对照帧（旧洞=0）；63MP 常驻 ~1GB→~630MB（D-04 实测入 PR）。碳审在途（review-mwfg355q）。**第二个既有红**：`mac-geometry-draft.sh` 缺 ToneCurveSettings 源编译失败（干净树同红）。拟排「Mac 手动全套件基线盘点」一次性摸底，防 models-only CI 下再潜伏。
