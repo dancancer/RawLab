@@ -156,6 +156,8 @@ enum UpdatePresentation {
         case "unsaved": return "照片编辑尚未保存"
         case "save": return "照片编辑保存失败，请先重试保存"
         case "journal": return "批量任务记录尚未安全保存"
+        case "presets": return "预设库无法读取，原文件保持不变。请从备份恢复后重试。"
+        case "looks": return "无法读取已保存的外观库，原有记录未被覆盖。"
         default: return "正在等待预览、导出或批量任务结束"
         }
     }

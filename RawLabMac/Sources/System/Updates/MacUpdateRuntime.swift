@@ -52,7 +52,8 @@ final class MacUpdateRunLease {
     }
 
     private func openEditor(_ candidate: EditorModel, updates: DesktopUpdateController, delegate: RawLabMacDelegate) async {
-        await updates.finishStartupHealthCheck(healthy: candidate.updateDataHealthy && !updates.storageBlocksEditing)
+        let dataFailures = candidate.updateDataFailures
+        await updates.finishStartupHealthCheck(healthy: dataFailures.isEmpty && !updates.storageBlocksEditing, dataFailures: dataFailures)
         if updates.requiresStartupHealthCheck && !updates.requiresRecovery {
             startupError = "trust"; return
         }

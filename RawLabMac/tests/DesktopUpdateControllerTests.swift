@@ -2,6 +2,40 @@ import Foundation
 import AppKit
 import SwiftUI
 
+@_cdecl("sony2fuji_validate_look") func stubValidateLook(_: UnsafePointer<CChar>?, _: UnsafeMutablePointer<sony2fuji_look_format>?, _: UnsafeMutablePointer<UInt32>?) -> sony2fuji_status { SONY2FUJI_STATUS_INVALID_ARGUMENT }
+@_cdecl("sony2fuji_inspect_lut_color") func stubInspectLUTColor(_: UnsafePointer<CChar>?) -> sony2fuji_lut_color_state { sony2fuji_lut_color_state(rawValue: 0) }
+@_cdecl("sony2fuji_inspect_lut_compatibility") func stubInspectLUTCompatibility(_: UnsafePointer<CChar>?, _: UnsafeMutablePointer<sony2fuji_blob>?) -> sony2fuji_status { SONY2FUJI_STATUS_INVALID_ARGUMENT }
+@_cdecl("sony2fuji_prepare_lut_compatibility") func stubPrepareLUTCompatibility(_: UnsafePointer<CChar>?, _: UnsafePointer<CChar>?, _: UnsafeMutablePointer<sony2fuji_blob>?) -> sony2fuji_status { SONY2FUJI_STATUS_INVALID_ARGUMENT }
+@_cdecl("sony2fuji_compile_dcp_with_options") func stubCompileDCP(_: UnsafeRawPointer?, _: Int, _: UnsafePointer<CChar>?, _: UnsafeRawPointer?, _: Int, _: UInt32, _: UnsafeMutablePointer<sony2fuji_blob>?, _: UnsafeMutablePointer<sony2fuji_dcp_error>?) -> sony2fuji_status { SONY2FUJI_STATUS_INVALID_ARGUMENT }
+@_cdecl("sony2fuji_release_blob") func stubReleaseBlob(_: UnsafeMutablePointer<sony2fuji_blob>?) {}
+
+enum ParameterValueField { static var hasPendingInputs = false }
+
+@MainActor final class EditorModel {
+    struct Scheduler { var interacting = false }
+    struct AIState { var isRunning = false }
+    final class BatchStub {
+        var running = false, stopping = false, validating = false, previewing = false, updateJournalFailed = false
+        func prepareForUpdate() -> Bool { !updateJournalFailed }
+    }
+    var editStore: AnyObject? = NSObject()
+    var lookLibrary: LookLibrary?
+    var updateJournalLoadFailed = false
+    let presetStore: AdjustmentPresetStore
+    var batch: BatchStub?
+    var geometryDraft: Any?
+    var scheduler = Scheduler()
+    var dirty = false
+    var saveError: String?
+    var workerActive = false, busy = false, exporting = false, lookLibraryBusy = false
+    var aiState = AIState()
+    init(presetDirectory: URL, lookDirectory: URL) {
+        presetStore = AdjustmentPresetStore(directory: presetDirectory)
+        lookLibrary = try? LookLibrary(directory: lookDirectory)
+    }
+    func saveEdits() -> Bool { saveError == nil && editStore != nil }
+}
+
 @MainActor private final class FakeUpdateAdapter: UpdateAdapter {
     var unavailableReason: String?
     var canCheck = true
@@ -43,6 +77,7 @@ import SwiftUI
         try await stateRepair()
         try await storageFailureCriticalityAndRetry()
         try await preHandoffFailureAllowsRetry()
+        try await presetAndLookGateAndHealthCodes()
         try await installationFailureBlocksEditing()
         try await blockedQuitFallsBack()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-update-controller-\(UUID().uuidString)")
@@ -353,6 +388,74 @@ import SwiftUI
         check(allowed && controller.state.phase == .failed && controller.state.failure?.stage == .readyToInstall &&
             !controller.requiresRecovery && !controller.blocksEditing && remainingAfterQuit.isEmpty && controller.canCheck,
             "Missing prepared installer callback before Sparkle handoff also records readyToInstall failure without locking editing")
+    }
+
+    @MainActor static func presetAndLookGateAndHealthCodes() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-preset-look-gate-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let presetsDir = root.appendingPathComponent("Presets"), looksDir = root.appendingPathComponent("Looks")
+        try FileManager.default.createDirectory(at: presetsDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: looksDir, withIntermediateDirectories: true)
+        try Data("{corrupt".utf8).write(to: presetsDir.appendingPathComponent("presets.json"))
+        let model = EditorModel(presetDirectory: presetsDir, lookDirectory: looksDir)
+        let gate = UpdateInstallGate(), adapter = FakeUpdateAdapter()
+        model.registerUpdateGate(gate)
+        let controller = DesktopUpdateController(adapter: adapter, gate: gate,
+            store: UpdateStore(directory: root.appendingPathComponent("Updates")), currentVersion: "0.8.2", currentBuild: "14", automaticCheck: false)
+        let release = UpdateDescriptor(version: "0.9.1", build: "19", platform: "macos", architecture: "arm64", channel: "stable",
+            assetURL: "https://example.invalid/update.zip", size: 12, sha256: nil, notes: "")
+        controller.check(manual: true); adapter.send(.found(release)); controller.download()
+        adapter.send(.preparing); adapter.hasPreparedInstaller = true; adapter.send(.verified)
+        controller.choose(.restartNow)
+        try await Task.sleep(for: .milliseconds(50))
+        check(gate.blockers().contains("presets") &&
+            controller.state.blockers.contains("presets") &&
+            UpdatePresentation.blocker("presets") == "预设库无法读取，原文件保持不变。请从备份恢复后重试。" &&
+            controller.state.phase == .waitingForTasks && !controller.blocksEditing && adapter.installs == 0,
+            "Corrupt presets.json blocks pre-install gate with presets reason before installing")
+        try FileManager.default.removeItem(at: presetsDir.appendingPathComponent("presets.json"))
+        try Data("{corrupt".utf8).write(to: looksDir.appendingPathComponent("registry.json"))
+        controller.choose(.afterTasks)
+        controller.refreshGate()
+        try await Task.sleep(for: .milliseconds(30))
+        check(gate.blockers().contains("looks") && !gate.blockers().contains("presets") &&
+            controller.state.blockers.contains("looks") &&
+            UpdatePresentation.blocker("looks") == "无法读取已保存的外观库，原有记录未被覆盖。" &&
+            controller.state.phase == .waitingForTasks && !controller.preparingInstallation && adapter.installs == 0,
+            "Corrupt Looks/registry.json blocks pre-install gate with looks reason even when corrupted mid-session")
+
+        var codes: [String: String] = [:]
+        for item in ["presets", "looks", "edits", "journal"] {
+            let caseRoot = root.appendingPathComponent("health-\(item)")
+            let casePresets = caseRoot.appendingPathComponent("Presets"), caseLooks = caseRoot.appendingPathComponent("Looks")
+            try FileManager.default.createDirectory(at: casePresets, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: caseLooks, withIntermediateDirectories: true)
+            if item == "presets" { try Data("{corrupt".utf8).write(to: casePresets.appendingPathComponent("presets.json")) }
+            if item == "looks" { try Data("{corrupt".utf8).write(to: caseLooks.appendingPathComponent("registry.json")) }
+            let candidate = EditorModel(presetDirectory: casePresets, lookDirectory: caseLooks)
+            if item == "edits" { candidate.editStore = nil }
+            if item == "journal" { candidate.updateJournalLoadFailed = true }
+            let store = UpdateStore(directory: caseRoot.appendingPathComponent("Updates"))
+            let backup = try UpdateDataBackup(dataRoot: caseRoot, updateRoot: store.directory)
+                .create(previous: "0.8.2", target: "0.9.1", previousBuild: "14")
+            var pending = UpdatePreferences(); var token = pending.pendingUpdate.beginCheck()
+            _ = pending.pendingUpdate.found(release, token: token); token = pending.pendingUpdate.beginDownload()!
+            _ = pending.pendingUpdate.preparing(token: token); _ = pending.pendingUpdate.verified(token: token)
+            _ = pending.pendingUpdate.choose(.restartNow); _ = pending.pendingUpdate.admit(blockedBy: [])
+            pending.pendingUpdate.backupPath = backup.path; pending.pendingUpdate.previousVersion = "0.8.2"; pending.pendingUpdate.previousBuild = "14"
+            _ = pending.pendingUpdate.installing(token: token); _ = pending.pendingUpdate.awaitingRestart(token: token)
+            try store.save(pending)
+            let postInstall = DesktopUpdateController(adapter: FakeUpdateAdapter(), gate: UpdateInstallGate(), store: store,
+                currentVersion: "0.9.1", currentBuild: "19")
+            let failures = candidate.updateDataFailures
+            await postInstall.finishStartupHealthCheck(healthy: failures.isEmpty, dataFailures: failures)
+            codes[item] = postInstall.state.failure?.code ?? ""
+            check(postInstall.state.failure?.detail == item, "Startup health check failure detail records failed item: \(item)")
+        }
+        check(codes["presets"] == "data_presets" && codes["looks"] == "data_looks" &&
+            codes["edits"] == "data_edits" && codes["journal"] == "data_journal" &&
+            Set(codes.values).count == 4,
+            "Startup health check failure codes distinguish presets, looks, edits and journal data causes")
     }
 
     @MainActor static func installationFailureBlocksEditing() async throws {

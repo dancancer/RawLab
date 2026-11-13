@@ -129,10 +129,15 @@ import Combine
     }
     func stopPolling() { timer?.invalidate(); timer = nil }
 
-    func finishStartupHealthCheck(healthy: Bool) async {
+    func finishStartupHealthCheck(healthy: Bool, dataFailures: [String] = []) async {
         guard requiresStartupHealthCheck, !backup.hasPendingRecovery, !recoveryNeedsRestart else { return }
         if preferences.stateRepairReceipt != nil {
-            guard healthy else { repairHealthFailed = true; recoveryError = "User data failed startup validation"; return }
+            guard healthy else {
+                repairHealthFailed = true
+                let suffix = dataFailures.isEmpty ? "" : ": " + dataFailures.joined(separator: ", ")
+                recoveryError = "User data failed startup validation" + suffix
+                return
+            }
             var next = preferences; next.stateRepairReceipt = nil
             if save(next) { try? backup.discardUnreferencedBackups(retaining: state.backupPath, recoveryReceipt: preferences.recoveryReceipt) }
             return
@@ -141,18 +146,42 @@ import Combine
         checkingStartupTrust = true; startupTrustError = nil
         defer { checkingStartupTrust = false }
         var trusted = false
+        var trustFailure: (code: String, detail: String)?
         do { try await adapter.validateHostTrust(); trusted = true }
         catch let error as UpdateAdapterError where error.code == "trust_temporary" {
             startupTrustError = error.localizedDescription
             return
-        } catch { startupTrustError = error.localizedDescription }
+        } catch {
+            startupTrustError = error.localizedDescription
+            trustFailure = ((error as? UpdateAdapterError)?.code ?? "identity", error.localizedDescription)
+        }
         var backupValid = false
-        if let path = state.backupPath, let manifest = try? backup.verify(URL(fileURLWithPath: path)) {
-            backupValid = manifest.targetVersion == state.release?.version && manifest.previousVersion == state.previousVersion && manifest.previousBuild == state.previousBuild
+        var backupDetail = ""
+        if let path = state.backupPath {
+            do {
+                let manifest = try backup.verify(URL(fileURLWithPath: path))
+                backupValid = manifest.targetVersion == state.release?.version && manifest.previousVersion == state.previousVersion && manifest.previousBuild == state.previousBuild
+                if !backupValid { backupDetail = "Backup manifest does not match update versions" }
+            } catch { backupDetail = error.localizedDescription }
+        }
+        let failureCode: String
+        let failureDetail: String
+        if !trusted {
+            failureCode = trustFailure?.code ?? "identity"
+            failureDetail = trustFailure?.detail ?? ""
+        } else if !backupValid {
+            failureCode = "backup"
+            failureDetail = backupDetail
+        } else if !healthy {
+            failureCode = dataFailures.isEmpty ? "data" : "data_" + dataFailures.joined(separator: "+")
+            failureDetail = dataFailures.joined(separator: ", ")
+        } else {
+            failureCode = "interrupted"
+            failureDetail = ""
         }
         var next = preferences
         next.pendingUpdate.restoreAfterLaunch(version: currentVersion, build: currentBuild,
-            trusted: healthy && backupValid && trusted)
+            trusted: healthy && backupValid && trusted, failureCode: failureCode, failureDetail: failureDetail)
         _ = save(next)
     }
 
@@ -234,7 +263,7 @@ import Combine
         if reasons != state.blockers {
             var next = preferences; _ = next.pendingUpdate.admit(blockedBy: reasons); guard save(next) else { return }
         }
-        if state.choice == .afterTasks && !reasons.contains(where: { ["draft", "save", "journal", "tasks"].contains($0) }) {
+        if state.choice == .afterTasks && reasons.allSatisfy({ $0 == "unsaved" }) {
             Task { _ = await self.installPrepared(restart: true) }
         }
     }
