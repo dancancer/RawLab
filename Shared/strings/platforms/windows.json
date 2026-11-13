@@ -4295,6 +4295,12 @@
     "更新包未通过验证，已拒绝": {
       "formats": [],
       "source": "更新包未通过验证，已拒绝"
+    },
+    "已将损坏的上次批量任务记录移出为：{0}": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "已将损坏的上次批量任务记录移出为：{0}"
     }
   },
   "overrides": {
@@ -5951,6 +5957,14 @@
       "fr": "Le paquet de mise à jour n’a pas passé la vérification et a été refusé.",
       "es": "El paquete de actualización no superó la verificación y se rechazó.",
       "ja": "更新パッケージは検証に合格しなかったため、拒否されました。"
+    },
+    "已将损坏的上次批量任务记录移出为：{0}": {
+      "zh-Hans": "已将损坏的上次批量任务记录移出为：{0}",
+      "en": "Moved the corrupt last batch task record to: {0}",
+      "de": "Beschädigten letzten Stapelauftrag verschoben nach: {0}",
+      "fr": "Enregistrement de la dernière tâche par lots endommagé, déplacé vers : {0}",
+      "ja": "破損した前回の一括タスク記録を次に移動しました: {0}",
+      "es": "Registro dañado de la última tarea por lotes movido a: {0}"
     }
   }
 }

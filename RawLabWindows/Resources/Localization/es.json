@@ -332,6 +332,7 @@
     "已导出渲染型 DNG。": "DNG revelado exportado.",
     "已导出（{0}）：{1}": "Exportado ({0}): {1}",
     "已将当前设置应用到 {0} 张照片": "Ajustes actuales aplicados (fotos: {0})",
+    "已将损坏的上次批量任务记录移出为：{0}": "Registro dañado de la última tarea por lotes movido a: {0}",
     "已展开": "Expandido",
     "已应用": "Aplicado",
     "已应用 AI 降噪；曝光和外观调整复用结果。": "Reducción de ruido con IA aplicada. Los ajustes de exposición y apariencia reutilizan el resultado.",
