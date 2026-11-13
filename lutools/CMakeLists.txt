@@ -894,6 +894,16 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         add_test(NAME gles_shader COMMAND "${RAWLAB_SHADER_PYTHON}"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_gles_shader.py" --validator "${RAWLAB_GLSLANG}")
     endif()
+    if(UNIX)
+        find_program(RAWLAB_ABI_CLANGXX NAMES clang++)
+        find_program(RAWLAB_ABI_BASH NAMES bash)
+        if(RAWLAB_ABI_CLANGXX AND RAWLAB_ABI_BASH AND RAWLAB_SHADER_PYTHON)
+            add_test(NAME abi_layout_fixture COMMAND "${RAWLAB_SHADER_PYTHON}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/ci/test_abi_layout.py")
+            set_tests_properties(abi_layout_fixture PROPERTIES ENVIRONMENT
+                "CXX=${RAWLAB_ABI_CLANGXX};RAWLAB_REQUIRE_ABI_CHECK=1")
+        endif()
+    endif()
     add_executable(gles_lut_binding_tests tests/gles_lut_binding_tests.cpp
         src/gpu/gles_lut.cpp src/gpu/lut_gpu.cpp src/core/lut_applicator.cpp src/core/lut_parser.cpp)
     target_include_directories(gles_lut_binding_tests PRIVATE tests/gles_stub)
