@@ -66,3 +66,4 @@
 - 2026-11-14 · **WP-07 合入**：#290 三轮复审 approve（Android I/O≠corrupt 分离+三锚点+iOS 0o000 锚点，CI 全绿）→ dancancer merge（总 51 PR；WP-10 解锁待派）。#295 碳审 request-changes（5B：generate-jitconfig 请求/响应与 REST 真实形状失配、FakeAPI 想象桩、PAT 权限 403——要求实网只读演练钉形状）；#286 二轮复审 request-changes（B1/B3/S3 过，B2/S1 自述不实：_fact 静默兜底未删、Layer2/3 残留 14 处静默三元）→ 双回炉。
 - 2026-11-14 · WP-10 交付：**PR #296**（`74e5146c`，Android 相机三合包：07 续接收口+确认继续、15 超限裁窗不断连、16 坏日志查看/放弃；三锚点撤生产必红+假 PTP 万张卡端到端+本地化 5 键）。碳审在途。
 - 2026-11-14 · #286 二轮返工（`077a9729`）：_fact 静默兜底删除、14 处静默三元按行号逐条清零（awk 复核 0）、_ANCHORS 37 条硬锚点注册+诚实性三层覆盖、S4 补 ui.exposed/modes、4 变异 RED→GREEN。三轮复审在途（review-mwfctgt0）。本轮自述含探针误回退重建插曲，已如实入 PR。
+- 2026-11-14 · #291 返工完成（`a18b00a6`）：B1 geometry-source-ui.sh 全链 exit 0（真机模拟器 167 检查 0 FAIL、IndependentConfirmation×4 真执行）；B2 复位绑 SDR 帧交付三处；B3 StatusProbe 驱动生产组件+逐处 revert 红证；S1 清死状态；S2 D 项去向已落 d-followup-assignments（随 ② REQUIRE_AX 承接）。复审在途（review-mwfd6dlm）。
