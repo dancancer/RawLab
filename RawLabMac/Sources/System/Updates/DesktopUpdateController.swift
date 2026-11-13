@@ -225,6 +225,7 @@ import Combine
             Task {
                 if await self.installPrepared(restart: false) { completion(true) }
                 else if self.requiresRecovery || self.storageError != nil { completion(false) }
+                else if self.state.phase == .failed { self.finishQuitAfterCancellation(completion) }
                 else { self.cancelInstallerForQuit(preservingChoice: true, completion) }
             }; return
         }
@@ -234,6 +235,10 @@ import Combine
     private func cancelInstallerForQuit(preservingChoice: Bool, _ completion: @escaping (Bool) -> Void) {
         var next = preferences; next.pendingUpdate.cancel(preservingChoice: preservingChoice)
         guard save(next) else { completion(false); return }
+        finishQuitAfterCancellation(completion)
+    }
+
+    private func finishQuitAfterCancellation(_ completion: @escaping (Bool) -> Void) {
         guard adapter.hasActiveSession, let token = adapterToken else { completion(true); return }
         cancelForQuit = (token, completion)
         adapter.cancel()
@@ -257,6 +262,7 @@ import Combine
             var installationRecorded = false
             defer { if !installationRecorded { try? backup.discard(path) } }
             _ = try backup.verify(path)
+            try await adapter.prepareInstall()
             guard state.attempt == token else { return false }
             next = preferences
             guard next.pendingUpdate.admit(blockedBy: gate.prepare()) else { _ = save(next); return false }

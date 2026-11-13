@@ -11,13 +11,20 @@ import Foundation
     var checks = 0, downloads = 0, cancellations = 0, installs = 0
     var rejectInstall = false
     var trustError: UpdateAdapterError?
+    var onPrepareInstall: (() -> Void)?
     func validateHostTrust() async throws { if let trustError { throw trustError } }
+    func prepareInstall() async throws {
+        onPrepareInstall?()
+        try await validateHostTrust()
+        guard hasPreparedInstaller else { throw UpdateAdapterError(code: "recheck", detail: "") }
+    }
     func check(token: UUID, emit: @escaping (UUID, UpdateAdapterEvent) -> Void) throws {
         self.token = token; callback = emit; checks += 1; canCheck = false
     }
     func download(_ release: UpdateDescriptor, token: UUID) throws { self.token = token; hasAvailableRelease = false; downloads += 1 }
     func cancel() { cancellations += 1; hasPreparedInstaller = false; hasAvailableRelease = false; canCheck = true; callback?(token, .ended) }
     func install(restart: Bool) throws {
+        guard hasPreparedInstaller else { throw UpdateAdapterError(code: "recheck", detail: "") }
         installs += 1
         if rejectInstall { throw UpdateAdapterError(code: "install", detail: "Injected dispatch failure") }
         callback?(token, .pendingRestart)
@@ -32,6 +39,7 @@ import Foundation
     @MainActor static func main() async throws {
         try await automaticCheckRetries()
         try await stateRepair()
+        try await preHandoffFailureAllowsRetry()
         try await installationFailureBlocksEditing()
         try await blockedQuitFallsBack()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-update-controller-\(UUID().uuidString)")
@@ -206,6 +214,46 @@ import Foundation
     static func checkData(_ path: URL, _ expected: String) throws {
         let value = try String(contentsOf: path, encoding: .utf8)
         check(value == expected, "Recovery restores the verified backup contents")
+    }
+
+    @MainActor static func preHandoffFailureAllowsRetry() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-prehandoff-failure-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let edits = root.appendingPathComponent("Edits"); try FileManager.default.createDirectory(at: edits, withIntermediateDirectories: true)
+        try Data("committed edit".utf8).write(to: edits.appendingPathComponent("photo.json"))
+        let store = UpdateStore(directory: root.appendingPathComponent("Updates")), adapter = FakeUpdateAdapter()
+        let backupsDir = store.directory.appendingPathComponent("Backups")
+        let controller = DesktopUpdateController(adapter: adapter, gate: UpdateInstallGate(), store: store, currentVersion: "0.8.2", currentBuild: "14")
+        let release = UpdateDescriptor(version: "0.9.1", build: "19", platform: "macos", architecture: "arm64", channel: "stable",
+            assetURL: "https://example.invalid/update.zip", size: 12, sha256: nil, notes: "")
+        var sawBackupBeforeHandoff = false
+        adapter.onPrepareInstall = {
+            sawBackupBeforeHandoff = ((try? FileManager.default.contentsOfDirectory(atPath: backupsDir.path)) ?? []).count == 1
+        }
+        controller.check(manual: true); adapter.send(.found(release)); controller.download()
+        adapter.send(.preparing); adapter.hasPreparedInstaller = true; adapter.send(.verified)
+        adapter.trustError = UpdateAdapterError(code: "identity", detail: "Injected pre-handoff host failure")
+        controller.choose(.restartNow)
+        for _ in 0..<400 where controller.state.phase != .failed || controller.preparingInstallation { try await Task.sleep(for: .milliseconds(10)) }
+        let remainingBackups = (try? FileManager.default.contentsOfDirectory(atPath: backupsDir.path)) ?? []
+        check(sawBackupBeforeHandoff && controller.state.failure?.stage == .readyToInstall &&
+            !controller.requiresRecovery && !controller.blocksEditing &&
+            controller.state.backupPath == nil && remainingBackups.isEmpty && controller.canCheck && adapter.installs == 0,
+            "Pre-handoff validation failure stays out of recovery, unlocks editing, discards backup and permits retry")
+        adapter.trustError = nil; adapter.onPrepareInstall = nil
+        controller.retry(); adapter.send(.found(release))
+        check(controller.state.phase == .downloading && adapter.downloads == 2,
+            "Explicit retry recovers cleanly after a pre-handoff validation failure")
+        adapter.send(.preparing); adapter.hasPreparedInstaller = true; adapter.send(.verified)
+        adapter.hasPreparedInstaller = false
+        controller.choose(.onQuit)
+        let allowed = await withCheckedContinuation { continuation in
+            controller.prepareForQuit { continuation.resume(returning: $0) }
+        }
+        let remainingAfterQuit = (try? FileManager.default.contentsOfDirectory(atPath: backupsDir.path)) ?? []
+        check(allowed && controller.state.phase == .failed && controller.state.failure?.stage == .readyToInstall &&
+            !controller.requiresRecovery && !controller.blocksEditing && remainingAfterQuit.isEmpty && controller.canCheck,
+            "Missing prepared installer callback before Sparkle handoff also records readyToInstall failure without locking editing")
     }
 
     @MainActor static func installationFailureBlocksEditing() async throws {
