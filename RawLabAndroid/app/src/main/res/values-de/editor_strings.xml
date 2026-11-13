@@ -390,6 +390,13 @@
     <string name="reset_all_title">"Alle Anpassungen zurücksetzen?"</string>
     <string name="reset_effect">"%1$s zurücksetzen"</string>
     <string name="select_photo">"Foto auswählen"</string>
+    <string name="storage_clear_confirm_action">"Bereinigen"</string>
+    <string name="storage_clear_system_photo_copies">"Kopien aus der Systemgalerie bereinigen"</string>
+    <string name="storage_clear_system_photo_copies_confirm">"Dadurch werden die in der App gespeicherten Fotokopien gelöscht (%1$d Dateien, %2$s). Dieser Vorgang kann nicht rückgängig gemacht werden.\n\nOriginalfotos, die sich noch in der Systemgalerie befinden, sind nicht betroffen; nach dem Löschen der Kopien wird das Foto beim nächsten Öffnen erneut kopiert."</string>
+    <string name="storage_clear_system_photo_copies_done">"%1$d Dateien bereinigt, %2$s freigegeben."</string>
+    <string name="storage_clear_system_photo_copies_failed">"Kopien aus der Systemgalerie konnten nicht bereinigt werden. Versuchen Sie es erneut."</string>
+    <string name="storage_section_title">"Speicher"</string>
+    <string name="storage_system_photo_copies_summary">"%1$d Dateien · %2$s"</string>
     <string name="system_open_photo_too_large">"Die Fotodatei ist größer als 1 GiB und kann nicht importiert werden."</string>
     <string name="system_open_storage_full">"Es ist nicht genügend Speicherplatz vorhanden, um das Foto zu importieren."</string>
     <string name="system_open_unsupported_photo">"Nicht unterstützte Bilddatei"</string>

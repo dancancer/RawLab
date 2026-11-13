@@ -6701,6 +6701,66 @@
         "d",
         "d"
       ]
+    },
+    "storage_section_title": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "存储",
+      "types": []
+    },
+    "storage_clear_system_photo_copies": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "清理系统相册副本",
+      "types": []
+    },
+    "storage_system_photo_copies_summary": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$d",
+        "%2$s"
+      ],
+      "source": "共 {0} 个文件 · {1}",
+      "types": [
+        "d",
+        "s"
+      ]
+    },
+    "storage_clear_system_photo_copies_confirm": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$d",
+        "%2$s"
+      ],
+      "source": "将删除应用内保存的照片副本（共 {0} 个文件，占用 {1}），此操作不可撤销。\n\n原照片仍在系统相册时不受影响；副本删除后，下次打开该照片会重新复制。",
+      "types": [
+        "d",
+        "s"
+      ]
+    },
+    "storage_clear_confirm_action": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "清理",
+      "types": []
+    },
+    "storage_clear_system_photo_copies_done": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$d",
+        "%2$s"
+      ],
+      "source": "已清理 {0} 个文件，释放 {1}。",
+      "types": [
+        "d",
+        "s"
+      ]
+    },
+    "storage_clear_system_photo_copies_failed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "清理系统相册副本失败，请重试。",
+      "types": []
     }
   },
   "overrides": {
@@ -8178,6 +8238,62 @@
       "es": "Cerrar búsqueda",
       "fr": "Fermer la recherche",
       "ja": "検索を閉じる"
+    },
+    "存储": {
+      "zh-Hans": "存储",
+      "en": "Storage",
+      "de": "Speicher",
+      "fr": "Stockage",
+      "es": "Almacenamiento",
+      "ja": "ストレージ"
+    },
+    "清理系统相册副本": {
+      "zh-Hans": "清理系统相册副本",
+      "en": "Clear system gallery copies",
+      "de": "Kopien aus der Systemgalerie bereinigen",
+      "fr": "Nettoyer les copies de la galerie système",
+      "es": "Limpiar copias de la galería del sistema",
+      "ja": "システムギャラリーのコピーを整理"
+    },
+    "共 {0} 个文件 · {1}": {
+      "zh-Hans": "共 {0} 个文件 · {1}",
+      "en": "{0} files · {1}",
+      "de": "{0} Dateien · {1}",
+      "fr": "{0} fichiers · {1}",
+      "es": "{0} archivos · {1}",
+      "ja": "{0} 件のファイル · {1}"
+    },
+    "将删除应用内保存的照片副本（共 {0} 个文件，占用 {1}），此操作不可撤销。\n\n原照片仍在系统相册时不受影响；副本删除后，下次打开该照片会重新复制。": {
+      "zh-Hans": "将删除应用内保存的照片副本（共 {0} 个文件，占用 {1}），此操作不可撤销。\n\n原照片仍在系统相册时不受影响；副本删除后，下次打开该照片会重新复制。",
+      "en": "This will delete the photo copies saved in the app ({0} files, {1}). This action cannot be undone.\n\nOriginal photos still in the system gallery are not affected; after copies are deleted, opening the photo again will make a new copy.",
+      "de": "Dadurch werden die in der App gespeicherten Fotokopien gelöscht ({0} Dateien, {1}). Dieser Vorgang kann nicht rückgängig gemacht werden.\n\nOriginalfotos, die sich noch in der Systemgalerie befinden, sind nicht betroffen; nach dem Löschen der Kopien wird das Foto beim nächsten Öffnen erneut kopiert.",
+      "fr": "Cela supprimera les copies de photos enregistrées dans l’application ({0} fichiers, {1}). Cette action est irréversible.\n\nLes photos d’origine toujours présentes dans la galerie système ne sont pas affectées ; une fois les copies supprimées, la photo sera de nouveau copiée lors de sa prochaine ouverture.",
+      "es": "Se eliminarán las copias de fotos guardadas en la aplicación ({0} archivos, {1}). Esta acción no se puede deshacer.\n\nLas fotos originales que sigan en la galería del sistema no se verán afectadas; tras eliminar las copias, la foto se volverá a copiar la próxima vez que la abras.",
+      "ja": "アプリ内に保存された写真のコピー（合計 {0} 件、{1}）を削除します。この操作は元に戻せません。\n\n元の写真がシステムギャラリーに残っている場合は影響ありません。コピーの削除後、次回その写真を開くと再度コピーされます。"
+    },
+    "清理": {
+      "zh-Hans": "清理",
+      "en": "Clear",
+      "de": "Bereinigen",
+      "fr": "Nettoyer",
+      "es": "Limpiar",
+      "ja": "整理"
+    },
+    "已清理 {0} 个文件，释放 {1}。": {
+      "zh-Hans": "已清理 {0} 个文件，释放 {1}。",
+      "en": "Cleared {0} files and freed {1}.",
+      "de": "{0} Dateien bereinigt, {1} freigegeben.",
+      "fr": "{0} fichiers nettoyés, {1} libérés.",
+      "es": "Se limpiaron {0} archivos y se liberaron {1}.",
+      "ja": "{0} 件のファイルを整理し、{1} を解放しました。"
+    },
+    "清理系统相册副本失败，请重试。": {
+      "zh-Hans": "清理系统相册副本失败，请重试。",
+      "en": "Couldn’t clear system gallery copies. Try again.",
+      "de": "Kopien aus der Systemgalerie konnten nicht bereinigt werden. Versuchen Sie es erneut.",
+      "fr": "Impossible de nettoyer les copies de la galerie système. Réessayez.",
+      "es": "No se pudieron limpiar las copias de la galería del sistema. Inténtalo de nuevo.",
+      "ja": "システムギャラリーのコピーを整理できませんでした。もう一度お試しください。"
     }
   }
 }

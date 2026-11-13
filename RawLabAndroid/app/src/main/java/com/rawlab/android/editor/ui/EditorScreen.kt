@@ -35,8 +35,12 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import android.text.format.Formatter
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.IOException
 import com.rawlab.android.R
 import com.rawlab.android.about.LanguageMenu
 import com.rawlab.android.analytics.UsageFilmKind
@@ -58,6 +62,8 @@ import com.rawlab.android.editor.controls.editorDockLayout
 import com.rawlab.android.geometry.GeometryRatio
 import com.rawlab.android.photo.PhotoInfo
 import com.rawlab.android.photo.PhotoInfoReader
+import com.rawlab.android.photo.RetainedCopiesSummary
+import com.rawlab.android.photo.SystemPhotoStore
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.HDRCameraDevelopmentSettings
 import com.rawlab.android.settings.HDRRenditionSettings
@@ -324,6 +330,11 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                 Switch(haptics, { haptics = it; preferences.edit().putBoolean("haptics", it).apply() })
             }
             LanguageMenu()
+            HorizontalDivider()
+            SystemPhotoStorageSection(
+                enabled = state.operation == Operation.NONE && systemPhotoRequest == null,
+                directory = remember(context) { File(context.filesDir, "system-photos") },
+            )
         } }, confirmButton = { TextButton(onClick = { settings = false }) { Text(stringResource(R.string.confirm)) } })
     val liveTarget by rememberUpdatedState(hslTarget)
     val hdrMode = state.edits.isHDREditing
@@ -655,6 +666,143 @@ internal fun HDRCameraDevelopmentRows(settings: HDRCameraDevelopmentSettings, en
         TextButton(onClick = { apply(draft) }, enabled = enabled && draft != settings, modifier = Modifier.testTag("hdr-camera-apply")) {
             Text(stringResource(R.string.adjustment_apply))
         }
+    }
+}
+
+private sealed interface StorageCleanupFeedback {
+    data class Cleared(val fileCount: Int, val totalBytes: Long) : StorageCleanupFeedback
+    data object Failed : StorageCleanupFeedback
+}
+
+@Composable
+private fun SystemPhotoStorageSection(enabled: Boolean, directory: File) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var summary by remember(directory) { mutableStateOf<RetainedCopiesSummary?>(null) }
+    var loading by remember(directory) { mutableStateOf(true) }
+    var clearing by remember(directory) { mutableStateOf(false) }
+    var confirmTarget by remember(directory) { mutableStateOf<RetainedCopiesSummary?>(null) }
+    var feedback by remember(directory) { mutableStateOf<StorageCleanupFeedback?>(null) }
+    LaunchedEffect(directory) {
+        loading = true
+        try {
+            summary = withContext(Dispatchers.IO) { SystemPhotoStore.inspectRetainedCopies(directory) }
+        } catch (_: IOException) {
+            summary = null
+            feedback = StorageCleanupFeedback.Failed
+        } finally {
+            loading = false
+        }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(stringResource(R.string.storage_section_title), style = MaterialTheme.typography.titleSmall)
+        summary?.let { current ->
+            Text(
+                stringResource(
+                    R.string.storage_system_photo_copies_summary,
+                    current.fileCount,
+                    Formatter.formatShortFileSize(context, current.totalBytes),
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("settings-system-photos-summary"),
+            )
+        }
+        OutlinedButton(
+            onClick = {
+                scope.launch {
+                    loading = true
+                    feedback = null
+                    try {
+                        val latest = withContext(Dispatchers.IO) { SystemPhotoStore.inspectRetainedCopies(directory) }
+                        summary = latest
+                        confirmTarget = latest
+                    } catch (_: IOException) {
+                        feedback = StorageCleanupFeedback.Failed
+                    } finally {
+                        loading = false
+                    }
+                }
+            },
+            enabled = enabled && !loading && !clearing,
+            modifier = Modifier.testTag("settings-clear-system-photos"),
+        ) {
+            Text(stringResource(R.string.storage_clear_system_photo_copies))
+        }
+        when (val currentFeedback = feedback) {
+            is StorageCleanupFeedback.Cleared -> Text(
+                stringResource(
+                    R.string.storage_clear_system_photo_copies_done,
+                    currentFeedback.fileCount,
+                    Formatter.formatShortFileSize(context, currentFeedback.totalBytes),
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("settings-system-photos-feedback"),
+            )
+            StorageCleanupFeedback.Failed -> Text(
+                stringResource(R.string.storage_clear_system_photo_copies_failed),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag("settings-system-photos-feedback"),
+            )
+            null -> Unit
+        }
+    }
+    confirmTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { if (!clearing) confirmTarget = null },
+            title = { Text(stringResource(R.string.storage_clear_system_photo_copies)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.storage_clear_system_photo_copies_confirm,
+                        target.fileCount,
+                        Formatter.formatShortFileSize(context, target.totalBytes),
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            clearing = true
+                            try {
+                                val cleared = withContext(Dispatchers.IO) { SystemPhotoStore.clearRetainedCopies(directory) }
+                                val refreshed = withContext(Dispatchers.IO) {
+                                    runCatching { SystemPhotoStore.inspectRetainedCopies(directory) }
+                                        .getOrDefault(RetainedCopiesSummary(0, 0L))
+                                }
+                                summary = refreshed
+                                feedback = StorageCleanupFeedback.Cleared(cleared.fileCount, cleared.totalBytes)
+                            } catch (_: IOException) {
+                                val refreshed = withContext(Dispatchers.IO) {
+                                    runCatching { SystemPhotoStore.inspectRetainedCopies(directory) }.getOrNull()
+                                }
+                                if (refreshed != null) summary = refreshed
+                                feedback = StorageCleanupFeedback.Failed
+                            } finally {
+                                clearing = false
+                                confirmTarget = null
+                            }
+                        }
+                    },
+                    enabled = !clearing,
+                    modifier = Modifier.testTag("settings-clear-system-photos-confirm"),
+                ) {
+                    Text(stringResource(R.string.storage_clear_confirm_action))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { confirmTarget = null },
+                    enabled = !clearing,
+                    modifier = Modifier.testTag("settings-clear-system-photos-cancel"),
+                ) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
     }
 }
 

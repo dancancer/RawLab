@@ -20,10 +20,16 @@ internal class ChangedSystemPhoto : IOException()
 internal class SystemPhotoTooLarge : IOException()
 internal class SystemPhotoStorageFull : IOException()
 
+internal data class RetainedCopiesSummary(
+    val fileCount: Int,
+    val totalBytes: Long,
+)
+
 internal object SystemPhotoStore {
     // 系统分享输入允许到 1 GiB，覆盖约 40MP、304 MiB 的相机 RAW，同时避免无限制占满应用空间。
     const val MAX_BYTES = 1024L * 1024L * 1024L
     private const val HEADER_BYTES = 64
+    private val RETAINED_COPY_NAME = Regex("[0-9a-fA-F]{64}\\.(?:raw|x3f|jpg|png|heic|name)")
 
     @Synchronized
     fun retain(directory: File, input: InputStream, name: String, mime: String?,
@@ -100,6 +106,51 @@ internal object SystemPhotoStore {
             if (file.isFile && file.name.matches(Regex("raw-[^.]+\\.(?:input|x3f)")) ||
                 file.isFile && file.name.matches(Regex("\\.[0-9a-fA-F]{64}\\.(?:raw|x3f|jpg|png|heic)\\.part")) ||
                 file.isFile && file.name.matches(Regex("\\.[0-9a-fA-F]{64}\\.name\\.part"))) file.delete()
+        }
+    }
+
+    @Synchronized
+    fun inspectRetainedCopies(directory: File): RetainedCopiesSummary {
+        val files = listRetainedCopyFiles(directory)
+        return RetainedCopiesSummary(
+            fileCount = files.size,
+            totalBytes = files.sumOf { it.length() },
+        )
+    }
+
+    /** 仅由用户在设置中手动触发，只删除本应用拥有的 `<sha256>.<ext>` 与 `<sha256>.name` 副本文件。 */
+    @Synchronized
+    fun clearRetainedCopies(directory: File): RetainedCopiesSummary {
+        val files = listRetainedCopyFiles(directory)
+        var deletedCount = 0
+        var deletedBytes = 0L
+        var firstError: IOException? = null
+        for (file in files) {
+            val length = file.length()
+            try {
+                Files.delete(file.toPath())
+                deletedCount++
+                deletedBytes += length
+            } catch (error: IOException) {
+                if (firstError == null) firstError = error else firstError.addSuppressed(error)
+            }
+        }
+        if (firstError != null) throw firstError
+        return RetainedCopiesSummary(fileCount = deletedCount, totalBytes = deletedBytes)
+    }
+
+    private fun listRetainedCopyFiles(directory: File): List<File> {
+        if (!directory.exists()) return emptyList()
+        if (Files.isSymbolicLink(directory.toPath()) || !directory.isDirectory) {
+            throw IOException("System photo store is not a directory")
+        }
+        val root = directory.canonicalFile.toPath()
+        val entries = directory.listFiles() ?: throw IOException("Cannot list system photo store")
+        return entries.filter { entry ->
+            RETAINED_COPY_NAME.matches(entry.name) &&
+                !Files.isSymbolicLink(entry.toPath()) &&
+                entry.isFile &&
+                entry.canonicalFile.toPath().parent == root
         }
     }
 

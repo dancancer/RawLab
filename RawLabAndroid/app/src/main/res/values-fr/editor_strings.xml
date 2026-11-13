@@ -390,6 +390,13 @@
     <string name="reset_all_title">"Réinitialiser tous les réglages ?"</string>
     <string name="reset_effect">"Réinitialiser %1$s"</string>
     <string name="select_photo">"Choisir une photo"</string>
+    <string name="storage_clear_confirm_action">"Nettoyer"</string>
+    <string name="storage_clear_system_photo_copies">"Nettoyer les copies de la galerie système"</string>
+    <string name="storage_clear_system_photo_copies_confirm">"Cela supprimera les copies de photos enregistrées dans l’application (%1$d fichiers, %2$s). Cette action est irréversible.\n\nLes photos d’origine toujours présentes dans la galerie système ne sont pas affectées ; une fois les copies supprimées, la photo sera de nouveau copiée lors de sa prochaine ouverture."</string>
+    <string name="storage_clear_system_photo_copies_done">"%1$d fichiers nettoyés, %2$s libérés."</string>
+    <string name="storage_clear_system_photo_copies_failed">"Impossible de nettoyer les copies de la galerie système. Réessayez."</string>
+    <string name="storage_section_title">"Stockage"</string>
+    <string name="storage_system_photo_copies_summary">"%1$d fichiers · %2$s"</string>
     <string name="system_open_photo_too_large">"Le fichier photo dépasse 1 Gio et ne peut pas être importé."</string>
     <string name="system_open_storage_full">"L’espace de stockage est insuffisant pour importer la photo."</string>
     <string name="system_open_unsupported_photo">"Fichier image non pris en charge"</string>
