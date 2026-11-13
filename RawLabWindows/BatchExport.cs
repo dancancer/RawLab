@@ -1,5 +1,6 @@
 using System.IO;
 using System.Security.Cryptography;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace RawLab.Windows;
@@ -161,6 +162,7 @@ public sealed class BatchJournal
     public static string DefaultDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "Batch");
     public string DirectoryPath { get; }
     private string PathName => Path.Combine(DirectoryPath, "job.json");
+    public string? LastQuarantinedPath { get; private set; }
     public BatchJournal(string directory) => DirectoryPath = directory;
     public void Save(BatchJob job)
     {
@@ -183,12 +185,83 @@ public sealed class BatchJournal
         job.Validate();
     }
 
+    public string QuarantineCorruptJob()
+    {
+        if (!File.Exists(PathName)) return PathName;
+        var now = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
+        var baseName = $"job.json.corrupt-{now}";
+        var candidate = Path.Combine(DirectoryPath, baseName);
+        var suffix = 1;
+        while (File.Exists(candidate))
+        {
+            candidate = Path.Combine(DirectoryPath, $"{baseName}-{suffix++}");
+        }
+        File.Move(PathName, candidate);
+        LastQuarantinedPath = candidate;
+        return candidate;
+    }
+
+    private static bool IsUnsupportedFutureJournal(string path)
+    {
+        try
+        {
+            var text = File.ReadAllText(path);
+            using var doc = JsonDocument.Parse(text);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("Version", out var v) && v.ValueKind == JsonValueKind.Number && v.GetInt32() > 3)
+                return true;
+            if (root.TryGetProperty("version", out var vLower) && vLower.ValueKind == JsonValueKind.Number && vLower.GetInt32() > 3)
+                return true;
+            if (root.TryGetProperty("Settings", out var s) && s.ValueKind == JsonValueKind.Object)
+            {
+                if (s.TryGetProperty("Processing", out var p) && p.ValueKind == JsonValueKind.Object &&
+                    p.TryGetProperty("version", out var pv) && pv.ValueKind == JsonValueKind.Number && pv.GetInt32() > ProcessingIdentity.Current.Version)
+                    return true;
+            }
+            if (root.TryGetProperty("settings", out var sLower) && sLower.ValueKind == JsonValueKind.Object)
+            {
+                if (sLower.TryGetProperty("processing", out var p) && p.ValueKind == JsonValueKind.Object &&
+                    p.TryGetProperty("version", out var pv) && pv.ValueKind == JsonValueKind.Number && pv.GetInt32() > ProcessingIdentity.Current.Version)
+                    return true;
+            }
+            if (root.TryGetProperty("Items", out var items) && items.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in items.EnumerateArray())
+                {
+                    if (item.TryGetProperty("Frozen", out var frozen) && frozen.ValueKind == JsonValueKind.Object)
+                    {
+                        if (frozen.TryGetProperty("Version", out var fv) && fv.ValueKind == JsonValueKind.Number && fv.GetInt32() > 1) return true;
+                        if (frozen.TryGetProperty("SettingsVersion", out var fsv) && fsv.ValueKind == JsonValueKind.Number && fsv.GetInt32() > 1) return true;
+                        if (frozen.TryGetProperty("Settings", out var fs) && fs.ValueKind == JsonValueKind.Object &&
+                            fs.TryGetProperty("Processing", out var fp) && fp.ValueKind == JsonValueKind.Object &&
+                            fp.TryGetProperty("version", out var fpv) && fpv.ValueKind == JsonValueKind.Number && fpv.GetInt32() > ProcessingIdentity.Current.Version)
+                            return true;
+                    }
+                }
+            }
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private BatchJob? ReadJob()
     {
         if (!File.Exists(PathName)) return null;
-        var job = AtomicJson.Read<BatchJob>(PathName);
-        Validate(job);
-        return job;
+        try
+        {
+            var job = AtomicJson.Read<BatchJob>(PathName);
+            Validate(job);
+            return job;
+        }
+        catch (Exception)
+        {
+            if (IsUnsupportedFutureJournal(PathName)) throw;
+            QuarantineCorruptJob();
+            return null;
+        }
     }
 
     public BatchJob? Load()

@@ -85,6 +85,7 @@ static class BatchFrozenChecks
         }
         finally { Directory.Delete(root, true); }
         RunUniformX3fTargetModeChecks();
+        RunCorruptJobIsolationChecks();
         Console.WriteLine("PASS: per-target journal, cancellation, recovery and retry");
     }
 
@@ -242,5 +243,50 @@ static class BatchFrozenChecks
         }
         finally { Directory.Delete(root, true); }
         Console.WriteLine("PASS: uniform batch X3F target-first mode resolution");
+    }
+
+    internal static void RunCorruptJobIsolationChecks()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-corrupt-journal-" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        try
+        {
+            var journal = new BatchJournal(root);
+            var journalPath = Path.Combine(root, "job.json");
+
+            // Write 1 truncated/garbled job file
+            File.WriteAllText(journalPath, "{\"Id\": \"corrupt\", \"Version\": 3, \"Items\": [truncated...");
+
+            // Load() isolates the corrupt file and allows recovery to proceed (returns null)
+            var loaded = journal.Load();
+            Check(loaded == null, "Corrupt job.json returns null on load without throwing");
+            Check(!File.Exists(journalPath), "Corrupt job.json is moved from active path");
+            var quarantined = Directory.GetFiles(root, "job.json.corrupt-*");
+            Check(quarantined.Length == 1, "Corrupt job.json is quarantined with timestamp");
+
+            // Subsequent Save() succeeds and is not blocked
+            var input = Path.Combine(root, "test.raw");
+            File.WriteAllText(input, "raw");
+            var validJob = BatchJob.Create(input, new Adjustments().Capture(), null, "Neutral");
+            journal.Save(validJob);
+            Check(File.Exists(journalPath), "Subsequent Save() succeeds and writes new job.json");
+
+            var reloaded = journal.Load();
+            Check(reloaded != null && reloaded.Id == validJob.Id, "Reloading returns valid job");
+
+            // Direct Save() when job.json is corrupt also isolates and succeeds
+            File.WriteAllText(journalPath, "not valid json {");
+            var anotherJob = BatchJob.Create(input, new Adjustments().Capture(), null, "Another");
+            journal.Save(anotherJob);
+            Check(File.Exists(journalPath), "Direct Save() isolates corrupt job and writes new job");
+            var reloadedAnother = journal.Load();
+            Check(reloadedAnother != null && reloadedAnother.Id == anotherJob.Id, "Direct Save() job reloads successfully");
+            Check(Directory.GetFiles(root, "job.json.corrupt-*").Length >= 2, "Both corrupt files are quarantined");
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+        Console.WriteLine("PASS: corrupt batch journal entry isolation and save unblocking");
     }
 }

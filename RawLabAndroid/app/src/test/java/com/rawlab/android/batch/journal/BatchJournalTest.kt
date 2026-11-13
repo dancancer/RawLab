@@ -248,4 +248,25 @@ class BatchJournalTest {
         assertEquals(listOf(BatchRowStatus.SUCCESS, BatchRowStatus.FAILED), failed.rows.map { it.status })
         assertEquals(failed, BatchJournal(root).load(original.id))
     }
+
+    @Test fun corruptEntryIsIsolatedAndDoesNotBlockPendingOrSubsequentSave() {
+        val journal = BatchJournal(root)
+        val validJob = job().copy(id = "valid-job")
+        journal.save(validJob)
+
+        val corruptFile = File(root, "corrupt-job.properties")
+        corruptFile.writeText("journal.version=bad\nincomplete-data")
+        val corruptRows = File(root, "corrupt-job.rows")
+        corruptRows.writeBytes(byteArrayOf(0, 1, 2, 3))
+
+        val pendingJobs = journal.pending()
+        assertEquals(listOf("valid-job"), pendingJobs)
+        assertFalse("Corrupt properties file must be quarantined from its active path", corruptFile.exists())
+        val quarantined = root.listFiles()?.filter { it.name.startsWith("corrupt-job.properties.corrupt-") }.orEmpty()
+        assertEquals("Quarantined corrupt properties file must exist", 1, quarantined.size)
+
+        val anotherJob = job().copy(id = "another-job")
+        journal.save(anotherJob)
+        assertEquals(setOf("valid-job", "another-job"), journal.pending().toSet())
+    }
 }

@@ -79,6 +79,7 @@ struct BatchExportTests {
         try checkPerTargetSnapshots(root)
         try checkUniformBatchX3fTargetMode(root)
         try checkOrphanedJobDirectories(root)
+        try checkCorruptJobIsolation(root)
         try BatchSourceJournalTests.run(root: root.appendingPathComponent("source-journal"))
 
         let sourceURL = root.appendingPathComponent("source.ARW")
@@ -572,6 +573,48 @@ private func checkOrphanedJobDirectories(_ root: URL) throws {
     BatchExportTests.check(Set(pending.map(\.id)) == [failed.id, cancelled.id, completedDNG.id] &&
                            pending.allSatisfy { FileManager.default.fileExists(atPath: $0.targets[0].sourceURL.path) },
                            "jobs kept by launch cleanup remain recoverable with their frozen inputs")
+}
+
+private func checkCorruptJobIsolation(_ root: URL) throws {
+    let journal = try BatchJournalStore(directory: root.appendingPathComponent("corrupt-isolation-journal", isDirectory: true))
+    let sourceURL = root.appendingPathComponent("isolation-source.ARW")
+    try Data("isolation-source".utf8).write(to: sourceURL)
+    let identity = PhotoIdentity(resourceIdentifier: "isolation-source")
+    let id = UUID()
+    let input = try BatchInputStore.copy(sourceURL, identity: identity, jobID: id, root: journal.directory)
+    let source = BatchSourceSnapshot(identity: identity, sourceFile: .externallyManaged(input),
+                                     displayName: "isolation-source.ARW", settings: .default)
+    var validJob = BatchExportJob(id: id, source: source,
+                                  targets: [BatchTarget(identity: identity, sourceURL: input, displayName: "isolation-source.ARW")],
+                                  outputFormat: .jpeg, longEdge: 3000)
+    validJob.status = .failed
+    try journal.save(validJob)
+
+    // Write a truncated/garbled job file
+    let corruptID = UUID()
+    let corruptFile = journal.directory.appendingPathComponent("\(corruptID.uuidString).json")
+    try Data("{\"id\": \"corrupt\", \"version\": truncated...".utf8).write(to: corruptFile)
+
+    // pendingJobs() must still return valid job, isolate the corrupt file, and not fail
+    let pending = try journal.pendingJobs()
+    BatchExportTests.check(pending.count == 1 && pending.first?.id == validJob.id,
+                           "pendingJobs isolates corrupt job and returns valid job")
+    BatchExportTests.check(!FileManager.default.fileExists(atPath: corruptFile.path),
+                           "corrupt job file removed from active json location")
+    let quarantinedFiles = try FileManager.default.contentsOfDirectory(at: journal.directory, includingPropertiesForKeys: nil)
+        .filter { $0.lastPathComponent.contains("\(corruptID.uuidString).json.corrupt-") }
+    BatchExportTests.check(quarantinedFiles.count == 1,
+                           "corrupt job file quarantined with timestamp")
+
+    // Subsequent save must succeed
+    var nextJob = BatchExportJob(id: UUID(), source: source,
+                                 targets: [BatchTarget(identity: identity, sourceURL: input, displayName: "isolation-source.ARW")],
+                                 outputFormat: .jpeg, longEdge: 2048)
+    nextJob.status = .failed
+    try journal.save(nextJob)
+    let reloaded = try journal.pendingJobs()
+    BatchExportTests.check(reloaded.count == 2,
+                           "subsequent save succeeds after corrupt job isolation")
 }
 
 private func checkUniformBatchX3fTargetMode(_ root: URL) throws {

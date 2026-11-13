@@ -17,6 +17,8 @@ final class BatchJournalStore {
         return try BatchJournalStore(directory: root.appendingPathComponent("RawLab/BatchJobs", isDirectory: true))
     }
 
+    private(set) var lastQuarantinedURL: URL?
+
     func save(_ job: BatchExportJob) throws {
         try job.validate()
         _ = try load(id: job.id)
@@ -29,7 +31,12 @@ final class BatchJournalStore {
     func load(id: UUID) throws -> BatchExportJob? {
         let file = directory.appendingPathComponent("\(id.uuidString).json")
         guard FileManager.default.fileExists(atPath: file.path) else { return nil }
-        return relocateOwnedFiles(try JSONDecoder().decode(BatchExportJob.self, from: Data(contentsOf: file)))
+        do {
+            return relocateOwnedFiles(try JSONDecoder().decode(BatchExportJob.self, from: Data(contentsOf: file)))
+        } catch {
+            _ = try? quarantineCorruptJob(at: file)
+            return nil
+        }
     }
 
     func pendingJobs() throws -> [BatchExportJob] {
@@ -37,7 +44,13 @@ final class BatchJournalStore {
                                                                  includingPropertiesForKeys: nil)
             .filter { $0.pathExtension == "json" }
         return try urls.compactMap { url -> BatchExportJob? in
-            let original = try JSONDecoder().decode(BatchExportJob.self, from: Data(contentsOf: url))
+            let original: BatchExportJob
+            do {
+                original = try JSONDecoder().decode(BatchExportJob.self, from: Data(contentsOf: url))
+            } catch {
+                _ = try? quarantineCorruptJob(at: url)
+                return nil
+            }
             let recovered = relocateOwnedFiles(original).recovered()
             // Photos owns completed JPEGs. Keep the completed DNG journal until dismissal;
             // exported files in Documents/Exports persist independently of the journal.
@@ -48,6 +61,32 @@ final class BatchJournalStore {
             if recovered != original { try save(recovered) }
             return recovered
         }.sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    @discardableResult
+    func quarantineCorruptJob(at url: URL, now: Date = Date()) throws -> URL {
+        let baseName = "\(url.lastPathComponent).corrupt-\(Self.corruptTimestamp(now))"
+        var suffix = 0
+        while true {
+            let name = suffix == 0 ? baseName : "\(baseName)-\(suffix)"
+            let candidate = url.deletingLastPathComponent().appendingPathComponent(name)
+            if !FileManager.default.fileExists(atPath: candidate.path) {
+                try FileManager.default.moveItem(at: url, to: candidate)
+                NSLog("Quarantined corrupt batch job from %@ to %@", url.lastPathComponent, candidate.lastPathComponent)
+                lastQuarantinedURL = candidate
+                return candidate
+            }
+            suffix += 1
+        }
+    }
+
+    private static func corruptTimestamp(_ date: Date) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let parts = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        return String(format: "%04d%02d%02d-%02d%02d%02d",
+                      parts.year ?? 0, parts.month ?? 0, parts.day ?? 0,
+                      parts.hour ?? 0, parts.minute ?? 0, parts.second ?? 0)
     }
 
     private func relocateOwnedFiles(_ original: BatchExportJob) -> BatchExportJob {

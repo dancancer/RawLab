@@ -12,7 +12,11 @@ import java.io.RandomAccessFile
 import java.io.UTFDataFormatException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.Properties
+import java.util.TimeZone
 import java.util.UUID
 import java.util.zip.CRC32
 
@@ -31,10 +35,32 @@ class BatchJournal(private val directory: File) {
 
     fun contains(id: String): Boolean = journalFile(id).isFile
 
+    private fun isUnsupportedFuture(id: String): Boolean {
+        val file = journalFile(id)
+        if (!file.isFile) return false
+        return try {
+            val properties = Properties().also { file.inputStream().use(it::load) }
+            val version = properties.getProperty("journal.version")?.toIntOrNull()
+            version != null && version > JournalCodec.VERSION
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     @Synchronized
     fun save(job: BatchJob) {
         // 旧实例不得覆盖另一个版本已经保存的新格式。
-        if (contains(job.id)) load(job.id)
+        if (contains(job.id)) {
+            if (isUnsupportedFuture(job.id)) {
+                load(job.id)
+            } else {
+                try {
+                    load(job.id)
+                } catch (_: Exception) {
+                    quarantine(job.id)
+                }
+            }
+        }
         generations.remove(job.id)
         val generation = UUID.randomUUID().toString()
         replace(journalFile(job.id)) { JournalCodec.snapshot(job, generation).store(it, null) }
@@ -135,14 +161,55 @@ class BatchJournal(private val directory: File) {
         } finally { temporary.delete() }
     }
 
+    private fun timestamp(): String = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).apply {
+        timeZone = TimeZone.getTimeZone("UTC")
+    }.format(Date())
+
+    @Synchronized
+    fun quarantine(id: String) {
+        generations.remove(id)
+        val ts = timestamp()
+        fun isolateFile(file: File) {
+            if (!file.isFile) return
+            var target = File(directory, "${file.name}.corrupt-$ts")
+            var suffix = 1
+            while (target.exists()) {
+                target = File(directory, "${file.name}.corrupt-$ts-$suffix")
+                suffix++
+            }
+            file.renameTo(target)
+        }
+        isolateFile(journalFile(id))
+        isolateFile(logFile(id))
+        val jobDir = File(directory, id)
+        if (jobDir.isDirectory) {
+            var targetDir = File(directory, "${id}.corrupt-$ts")
+            var suffix = 1
+            while (targetDir.exists()) {
+                targetDir = File(directory, "${id}.corrupt-$ts-$suffix")
+                suffix++
+            }
+            jobDir.renameTo(targetDir)
+        }
+    }
+
     fun pending(): List<String> = directory.listFiles().orEmpty()
         .filter { it.extension == "properties" }
-        .mapNotNull { file -> load(file.nameWithoutExtension)?.let { job ->
-            if (job.rows.isNotEmpty() && job.rows.all { it.status == BatchRowStatus.SUCCESS }) {
-                discard(job.id)
+        .mapNotNull { file ->
+            val id = file.nameWithoutExtension
+            try {
+                load(id)?.let { job ->
+                    if (job.rows.isNotEmpty() && job.rows.all { it.status == BatchRowStatus.SUCCESS }) {
+                        discard(job.id)
+                        null
+                    } else job.takeIf { it.rows.isNotEmpty() }?.id
+                }
+            } catch (error: Exception) {
+                if (isUnsupportedFuture(id)) throw error
+                quarantine(id)
                 null
-            } else job.takeIf { it.rows.isNotEmpty() }?.id
-        } }
+            }
+        }
 
     @Synchronized
     fun discard(id: String) {
