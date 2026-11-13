@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Example LaunchAgent for the opt-in JIT dispatcher (WP-01). Nothing in CI loads this file:
+     copy it to ~/Library/LaunchAgents/com.rawlab.jit-dispatcher.plist on one Apple pool Mac,
+     replace the token placeholder (keep the file 0600), adjust the paths to that host, and
+     bootstrap it only after the resident Runner.Listener agent has been stopped.
+     Enable/disable steps: docs/process/ci.md (JIT Dispatcher for Self-Hosted Jobs). -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.rawlab.jit-dispatcher</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/python3.12</string>
+        <string>/Users/rawlab-ci/RawLab/scripts/ci/jit_dispatch.py</string>
+        <string>--repo</string>
+        <string>dancancer/RawLab</string>
+        <string>--runner-dir</string>
+        <string>/Users/rawlab-ci/runner</string>
+        <string>--work-dir</string>
+        <string>/Volumes/RawLabCI/_work</string>
+        <string>--launch-command</string>
+        <string>./runsvc.sh</string>
+        <string>--interval</string>
+        <string>30</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- Fine-grained PAT scoped to dancancer/RawLab with Actions: write. -->
+        <key>RAWLAB_JIT_TOKEN</key>
+        <string>__REPLACE_WITH_FINE_GRAINED_PAT__</string>
+        <!-- Empty default: only push runs on this repository are claimed. Entries are comma-
+             separated run ids, head repositories, or head-repo:branch, e.g. 777,octo/RawLab. -->
+        <key>RAWLAB_JIT_ALLOWLIST</key>
+        <string></string>
+    </dict>
+    <key>WorkingDirectory</key>
+    <string>/Users/rawlab-ci/RawLab</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>15</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/rawlab-ci/Library/Logs/com.rawlab.jit-dispatcher.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/rawlab-ci/Library/Logs/com.rawlab.jit-dispatcher.log</string>
+</dict>
+</plist>
