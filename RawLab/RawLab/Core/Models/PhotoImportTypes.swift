@@ -235,6 +235,12 @@ struct PhotoImportFile: Transferable {
         try? FileManager.default.removeItem(at: folder)
     }
 
+    // 导入副本只活在单次作用域内；须在应用启动、尚无导入时调用，清掉崩溃或强杀遗留的副本。
+    static func removeStaleImports(in root: URL = directory) {
+        let entries = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
+        for entry in entries { try? FileManager.default.removeItem(at: entry) }
+    }
+
     static func loadSource(using load: () async throws -> PhotoImportSource) async throws -> PhotoImportSource {
         try Task.checkCancellation()
         let source = try await load()
