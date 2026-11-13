@@ -594,15 +594,26 @@ sony2fuji::ProbeSizeResult probeJpegHeaderSize(std::ifstream& stream, uint32_t& 
     stream.seekg(2, std::ios::beg);
     if (!stream) return sony2fuji::ProbeSizeResult::Unsupported;
     uint32_t orientation = 1;
-    for (int step = 0; step < 4096; ++step) {
+    // 头预检按字节预算扫描（而非固定标记个数）：>4096 个 COM/TEM 段后的 SOF 仍能在
+    // 预检阶段命中真实主图尺寸，而 0xFF 填充或海量无载荷段也无法用近乎零成本的标记
+    // 绕过尺寸预检。超出预算时延后到解码后再校验（DeferredPostDecode），不虚假拒绝。
+    constexpr uint64_t kMaxHeaderScanBytes = 4ull << 20; // 4 MiB
+    uint64_t scanned = 2; // SOI 已消耗两字节
+    while (scanned < kMaxHeaderScanBytes) {
         int byte = stream.get();
+        ++scanned;
         if (byte != 0xFF) return sony2fuji::ProbeSizeResult::Unsupported;
-        while (byte == 0xFF) byte = stream.get();
+        while (byte == 0xFF) {
+            byte = stream.get();
+            ++scanned;
+            if (scanned > kMaxHeaderScanBytes) return sony2fuji::ProbeSizeResult::DeferredPostDecode;
+        }
         if (byte < 0 || byte == 0x00 || byte == 0xD9 || byte == 0xDA) return sony2fuji::ProbeSizeResult::Unsupported;
         if (byte == 0x01 || (byte >= 0xD0 && byte <= 0xD7)) continue;
         uint8_t lenBytes[2]{};
         stream.read(reinterpret_cast<char*>(lenBytes), 2);
         if (stream.gcount() != 2) return sony2fuji::ProbeSizeResult::Unsupported;
+        scanned += 2;
         const uint16_t segLen = readEndian16(lenBytes, false);
         if (segLen < 2) return sony2fuji::ProbeSizeResult::Unsupported;
         const uint32_t payloadLen = static_cast<uint32_t>(segLen - 2);
@@ -610,6 +621,7 @@ sony2fuji::ProbeSizeResult probeJpegHeaderSize(std::ifstream& stream, uint32_t& 
             std::vector<uint8_t> app1(payloadLen);
             stream.read(reinterpret_cast<char*>(app1.data()), payloadLen);
             if (stream.gcount() != static_cast<std::streamsize>(payloadLen)) return sony2fuji::ProbeSizeResult::Unsupported;
+            scanned += payloadLen;
             if (std::memcmp(app1.data(), "Exif\0\0", 6) == 0) {
                 orientation = parseExifOrientation(app1.data() + 6, app1.size() - 6);
             }
@@ -630,6 +642,7 @@ sony2fuji::ProbeSizeResult probeJpegHeaderSize(std::ifstream& stream, uint32_t& 
         }
         stream.seekg(payloadLen, std::ios::cur);
         if (!stream) return sony2fuji::ProbeSizeResult::Unsupported;
+        scanned += payloadLen;
     }
     return sony2fuji::ProbeSizeResult::DeferredPostDecode;
 }

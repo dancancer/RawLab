@@ -1556,8 +1556,9 @@ int main(int argc, char** argv) {
             expectRejected(halfUpOver, "Exact .5 boundary (4x131071 FIT_SHORT_EDGE=2 -> 65535.5) rounds half-up to 65536 and rejects");
         }
 
-        // WP-03 (3a): JPEG with 4096 padding markers before SOFn skips header preflight (deferred to post-decode)
-        // without falsely rejecting valid headers, whereas 4095 padding markers still reaches SOFn at step 4095.
+        // WP-03 (3a): JPEG header preflight scans markers under a 4 MiB byte budget instead of a fixed
+        // 4096-marker cap: SOFn behind more than 4096 COM/TEM segments is still hit during preflight,
+        // and only padding beyond the byte budget defers the size check to post-decode.
         {
             auto writePaddedJpeg = [&](const std::filesystem::path& target, size_t paddingMarkers,
                                        bool useTemMarker, uint16_t w, uint16_t h) {
@@ -1600,14 +1601,17 @@ int main(int argc, char** argv) {
             const auto padComSt = sony2fuji_process(session, &padComReq, nullptr);
             const auto padTemSt = sony2fuji_process(session, &padTemReq, nullptr);
             check(padComSt == SONY2FUJI_STATUS_UNSUPPORTED && padTemSt == SONY2FUJI_STATUS_UNSUPPORTED,
-                  "JPEG with 4096 COM/TEM padding markers before SOF0 skips header preflight without false rejection");
+                  "JPEG with 4096 COM/TEM padding markers hits SOF0 in preflight within the byte budget and is rejected only at RAW decode");
 
             const auto jpg4095Huge = dir / "jpeg-4095-com-then-50000x50000.jpg";
             const auto jpg4096Huge = dir / "jpeg-4096-com-then-50000x50000.jpg";
+            const auto jpg4097Huge = dir / "jpeg-4097-com-then-50000x50000.jpg";
             writePaddedJpeg(jpg4095Huge, 4095u, false, 50000u, 50000u);
             writePaddedJpeg(jpg4096Huge, 4096u, false, 50000u, 50000u);
+            writePaddedJpeg(jpg4097Huge, 4097u, false, 50000u, 50000u);
             const std::string jpg4095HugeStr = jpg4095Huge.string();
             const std::string jpg4096HugeStr = jpg4096Huge.string();
+            const std::string jpg4097HugeStr = jpg4097Huge.string();
             auto huge4095Req = makeNativeRawReq(jpg4095HugeStr);
             huge4095Req.lut_path = absentLut.c_str();
             huge4095Req.lut_strength = 1.0f;
@@ -1615,11 +1619,26 @@ int main(int argc, char** argv) {
 
             auto huge4096Req = huge4095Req;
             huge4096Req.input_path = jpg4096HugeStr.c_str();
-            sony2fuji_buffer huge4096Out{};
-            const auto huge4096St = sony2fuji_process(session, &huge4096Req, &huge4096Out);
-            sony2fuji_release_buffer(&huge4096Out);
-            check(huge4096St == SONY2FUJI_STATUS_UNSUPPORTED,
-                  "JPEG with 4096 COM segments defers header preflight past marker cap and reaches loadLUT");
+            expectRejected(huge4096Req, "JPEG with 4096 COM segments reaches SOF0 within the byte budget and rejects in preflight");
+
+            // WP-03 验收：>4096 COM 段的 JPEG 预检必须命中真实主图尺寸（50000x50000 在预检即拒，
+            // 而非延后到 load 才报 UNSUPPORTED）。撤回字节预算改为 4096 标记封顶即红。
+            auto huge4097Req = huge4095Req;
+            huge4097Req.input_path = jpg4097HugeStr.c_str();
+            expectRejected(huge4097Req, "JPEG with >4096 COM segments still hits the real SOFn size in preflight and rejects in preflight");
+
+            // COM padding beyond the 4 MiB scan budget defers the size check instead of scanning forever:
+            // the 50000x50000 SOFn stays unpreflighted and the request reaches load (UNSUPPORTED, not INVALID_ARGUMENT).
+            const auto jpgBudgetHuge = dir / "jpeg-1048577-com-then-50000x50000.jpg";
+            writePaddedJpeg(jpgBudgetHuge, 1048577u, false, 50000u, 50000u);
+            const std::string jpgBudgetHugeStr = jpgBudgetHuge.string();
+            auto budgetHugeReq = huge4095Req;
+            budgetHugeReq.input_path = jpgBudgetHugeStr.c_str();
+            sony2fuji_buffer budgetHugeOut{};
+            const auto budgetHugeSt = sony2fuji_process(session, &budgetHugeReq, &budgetHugeOut);
+            sony2fuji_release_buffer(&budgetHugeOut);
+            check(budgetHugeSt == SONY2FUJI_STATUS_UNSUPPORTED,
+                  "JPEG with COM padding beyond the 4 MiB header budget defers preflight and reaches load");
         }
     }
     auto dngRequest = request(dngPixels);
