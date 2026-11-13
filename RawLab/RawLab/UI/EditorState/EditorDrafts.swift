@@ -401,14 +401,7 @@ extension ContentView {
 
     func requestEditorReset(_ scope: EditorAdjustmentScope) {
         guard !editorBusy else { return }
-        if scope == .all && isEditorDraftActive {
-            resetRestoreTool = currentEditorTool
-            resetIntentSource = viewModel.editorEditSource
-            if isEditorDraftChanged { draftExitPresented = true; return }
-            resetDraftSuspended = true
-            resetWaitingForReady = true
-            continuePendingAllReset()
-        } else { presentEditorReset(scope) }
+        presentEditorReset(scope)
     }
 
     func continuePendingAllReset() {
@@ -496,14 +489,12 @@ extension ContentView {
                                 fields.map { L10n.text($0) }.joined(separator: ", "))].filter { !$0.isEmpty }.joined(separator: "\n\n")
     }
 
-    func resetBlockedMessage(_ reason: EditorAdjustmentResetBlock?) -> String {
-        switch reason {
-        case .invalidInput: return L10n.text("当前照片或调整记录无效，无法安全重置。")
-        case .unknownRecipe: return L10n.text("当前配方不可用，无法安全重置外观。")
-        case .missingCameraWhiteBalance: return L10n.text("缺少拍摄时白平衡数据，无法保留配方效果。")
-        case .unrepresentable: return L10n.text("现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。")
-        case nil: return L10n.text("预览尚未就绪，请稍后重试。")
-        }
+    func resetBlockedMessage(_ reason: EditorResetBlock) -> String {
+        reason.message
+    }
+
+    func resetBlockedMessage(_ reason: EditorAdjustmentResetBlock) -> String {
+        reason.message
     }
 
     // MARK: - Interruptible focus return

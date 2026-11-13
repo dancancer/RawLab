@@ -303,65 +303,6 @@ extension ContentView {
             .padding(.vertical, 4)
     }
 
-    private var adjustmentHeader: some View {
-        HStack(spacing: 8) {
-            Spacer(minLength: 0)
-            if currentEditorTool != .film && currentEditorTool != .lens {
-                Button { adjustmentFine.toggle() } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark").opacity(adjustmentFine ? 1 : 0).accessibilityHidden(true)
-                        Text(L10n.text("精细"))
-                    }
-                    .fixedSize()
-                }
-                    .buttonStyle(EditorCompactActionStyle(selected: adjustmentFine))
-                    .accessibilityLabel(L10n.text("精细"))
-                    .accessibilityValue(L10n.text(adjustmentFine ? "四分之一灵敏度" : "标准灵敏度"))
-                    .accessibilityAddTraits(adjustmentFine ? .isSelected : [])
-                    .accessibilityHint(L10n.text(adjustmentFine ? "四分之一灵敏度" : "标准灵敏度") + " " + L10n.text("拖动灵敏度为普通模式的四分之一。"))
-                    .accessibilityIdentifier("editor.fine")
-            }
-        Menu {
-            if currentEditorTool == .adjustment(.colorGrading) {
-                Button(L10n.text("重置当前分区")) { requestEditorReset(.gradingZone(gradingZone)) }
-                    .disabled(!resetModified(.gradingZone(gradingZone)))
-                Button(L10n.text("重置颜色分级")) { requestEditorReset(.allGrading) }
-                    .disabled(!resetModified(.allGrading))
-            } else if currentEditorTool == .adjustment(.hsl) {
-                Button(L10n.format("重置当前颜色（%@）", L10n.text(HSLSettings.channelNames[hslChannel]))) {
-                    requestEditorReset(.hslChannel(hslChannel))
-                }.disabled(!resetModified(.hslChannel(hslChannel)))
-                Button(L10n.text("重置全部 HSL…")) { requestEditorReset(.allHSL) }
-                    .disabled(!resetModified(.allHSL))
-            } else {
-                Button(L10n.format("重置%@", currentEditorTool.title)) { requestEditorReset(.tool(currentEditorTool)) }
-                    .disabled(!resetModified(.tool(currentEditorTool)))
-            }
-            Button(L10n.format("重置%@组…", selectedGroup.title)) { requestEditorReset(.group(selectedGroup)) }
-                .disabled(!resetModified(.group(selectedGroup)))
-            Button(L10n.text("重置全部调整…"), role: .destructive) { requestEditorReset(.all) }
-                .disabled(!resetModified(.all))
-        } label: {
-            // 这是一组重置选项（含"全部重置"），带下拉箭头，和参数行自己的重置按钮区分开
-            HStack(spacing: 1) {
-                Image(systemName: "arrow.counterclockwise")
-                Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
-            }
-            .fixedSize()
-            .frame(minWidth: 44, minHeight: 44)
-        }
-        .accessibilityLabel(L10n.text("重置调整"))
-        .accessibilityIdentifier("editor.reset")
-        .font(.caption.weight(.medium))
-        .foregroundStyle(.secondary)
-        .disabled(!viewModel.hasImage || editorBusy || resetDraftSuspended)
-        .layoutPriority(2)
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("editor.parameterHeader")
-        .opacity(rulerFocusOpacity)
-    }
-
     var usesNormalX3f: Bool { viewModel.sourceIsX3f && settings.x3fMode == .normal }
 
     var processingContextSheet: some View {
@@ -549,74 +490,6 @@ extension ContentView {
         default: return resetModified(.tool(tool)) ? L10n.text("已调整") : ""
         }
     }
-
-    func toolStrip(width: CGFloat, accessibility: Bool) -> some View {
-        let rowHeight = editorToolRowHeight(width: width, accessibility: accessibility)
-        return VStack(spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
-                        ForEach(EditorAdjustmentRules.tools(selectedGroup), id: \.self) { tool in
-                            Button { if tool == .geometry { geometryPerspective = false }; selectEditorTool(tool) } label: {
-                                AdjustmentToolLabel(title: tool == .geometry ? L10n.text("裁切") : tool.title, symbol: tool.symbol, selected: !viewModel.quickPresetsVisible && currentEditorTool == tool && !(tool == .geometry && geometryPerspective),
-                                    progress: tool == .adjustment(.toneCurve) && !settings.editingCurveSettings.isDefault ? 1 :
-                                        tool.scalar.map(adjustmentProgress) ?? (resetModified(.tool(tool)) ? 1 : 0), width: toolWidth, height: rowHeight,
-                                    maximumWidth: accessibility ? max(44, width - 24) : nil)
-                            }
-                            .disabled((tool == .lens && usesNormalX3f) ||
-                                      (tool == .adjustment(.strength) && !settings.hasLook) ||
-                                      (settings.isHDREditing && !supportsHDR(tool)))
-                            .accessibilityLabel(tool.title)
-                            .accessibilityValue(editorToolAccessibilityValue(tool))
-                            .accessibilityHint(toolUnavailableReason(tool) ?? (resetModified(.tool(tool)) ? L10n.text("已调整") : ""))
-                            .accessibilityAddTraits(!viewModel.quickPresetsVisible && currentEditorTool == tool && !(tool == .geometry && geometryPerspective) ? .isSelected : [])
-                            .accessibilityIdentifier("tool.\(tool.stableID)")
-                            .contextMenu {
-                                Button(L10n.format("重置%@", tool.title)) { requestEditorReset(.tool(tool)) }
-                                    .disabled(!resetModified(.tool(tool)) || editorBusy || resetDraftSuspended ||
-                                              ((tool == .geometry || tool == .lens) && (!isEditorDraftActive || currentEditorTool != tool)))
-                            }
-                            .id(tool.stableID)
-                            if tool == .geometry {
-                                Button { geometryPerspective = true; selectEditorTool(.geometry) } label: {
-                                    AdjustmentToolLabel(title: L10n.text("透视"), symbol: "perspective", selected: geometrySelected && geometryPerspective,
-                                        progress: 0, width: toolWidth, height: rowHeight,
-                                        maximumWidth: accessibility ? max(44, width - 24) : nil)
-                                }.accessibilityLabel(L10n.text("透视")).accessibilityIdentifier("tool.perspective")
-                                    .accessibilityAddTraits(geometrySelected && geometryPerspective ? .isSelected : [])
-                            }
-                        }
-                        if selectedGroup == .looks {
-                            Button { if viewModel.quickPresetsVisible { closeQuickPresets() } else { showQuickPresets() } } label: {
-                                AdjustmentToolLabel(title: L10n.text("我的预设"), symbol: "bookmark", selected: viewModel.quickPresetsVisible,
-                                    progress: 0, width: toolWidth, height: rowHeight,
-                                    maximumWidth: accessibility ? max(44, width - 24) : nil)
-                            }.disabled(editorBusy).accessibilityLabel(L10n.text("我的预设"))
-                                .accessibilityIdentifier("preset.library").id("preset.quick.entry")
-                                .onAppear { if viewModel.quickPresetsVisible { proxy.scrollTo("preset.quick.entry", anchor: .trailing) } }
-                        }
-                    }.padding(.horizontal, 12)
-                }
-                // 横向滚动内容留在工作区内，避免绘制到 Duo 的纵向导航栏下方。
-                .frame(width: width, height: rowHeight)
-                .clipped()
-                .accessibilityIdentifier("editor.tools")
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _ in
-                    proxy.scrollTo(viewModel.quickPresetsVisible ? "preset.quick.entry" : currentEditorTool.stableID, anchor: viewModel.quickPresetsVisible ? .trailing : .center)
-                }
-                .onChange(of: currentEditorTool) { _, tool in proxy.scrollTo(viewModel.quickPresetsVisible ? "preset.quick.entry" : tool.stableID, anchor: viewModel.quickPresetsVisible ? .trailing : .center) }
-                .onChange(of: viewModel.quickPresetsVisible) { _, visible in
-                    proxy.scrollTo(visible ? "preset.quick.entry" : currentEditorTool.stableID, anchor: visible ? .trailing : .center)
-                }
-            }
-            .buttonStyle(.plain)
-            .disabled(editorBusy || resetDraftSuspended)
-            if !viewModel.quickPresetsVisible {
-                adjustmentHeader.padding(.horizontal, 8)
-                    .frame(maxWidth: .infinity, minHeight: editorToolHeight, alignment: .trailing)
-            }
-        }
-    }
 }
 
 struct EditorCompactActionStyle: ButtonStyle {
@@ -634,19 +507,6 @@ struct EditorCompactActionStyle: ButtonStyle {
             .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.4)
             .frame(minHeight: 44)
             .contentShape(Rectangle())
-    }
-}
-
-extension EditorAdjustmentGroup {
-    var title: String {
-        switch self {
-        case .looks: return L10n.text("外观")
-        case .light: return L10n.text("光线")
-        case .color: return L10n.text("颜色")
-        case .effects: return L10n.text("效果")
-        case .detail: return L10n.text("细节")
-        case .geometry: return L10n.text("几何与镜头")
-        }
     }
 }
 

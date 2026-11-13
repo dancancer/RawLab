@@ -54,9 +54,36 @@ struct PreparedEditorReset {
     let requiresConfirmation: Bool
 }
 
+enum EditorResetBlock: Equatable {
+    case sourceNotReady
+    case draftConflict
+    case adjustment(EditorAdjustmentResetBlock)
+}
+
+extension EditorAdjustmentResetBlock {
+    var message: String {
+        switch self {
+        case .invalidInput: return L10n.text("当前照片或调整记录无效，无法安全重置。")
+        case .unknownRecipe: return L10n.text("当前配方不可用，无法安全重置外观。")
+        case .missingCameraWhiteBalance: return L10n.text("缺少拍摄时白平衡数据，无法保留配方效果。")
+        case .unrepresentable: return L10n.text("现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。")
+        }
+    }
+}
+
+extension EditorResetBlock {
+    var message: String {
+        switch self {
+        case .sourceNotReady: return L10n.text("预览尚未就绪，请稍后重试。")
+        case .draftConflict: return L10n.text("请先应用或放弃未完成的输入和几何草稿。")
+        case .adjustment(let reason): return reason.message
+        }
+    }
+}
+
 enum EditorResetPreparation {
     case unchanged
-    case blocked(EditorAdjustmentResetBlock?)
+    case blocked(EditorResetBlock)
     case prepared(PreparedEditorReset)
 }
 
@@ -124,15 +151,14 @@ extension RawEditorViewModel {
 
     func prepareReset(_ scope: EditorAdjustmentScope, settings: RawSettings, revision: UUID,
                       draft: EditorDraftSnapshot) -> EditorResetPreparation {
-        guard let original = editSnapshot(settings: settings, revision: revision, draft: draft) else { return .blocked(nil) }
+        guard let original = editSnapshot(settings: settings, revision: revision, draft: draft) else { return .blocked(.sourceNotReady) }
         let geometryScope: Bool
         switch scope {
-        case .group(.geometry): geometryScope = true
         case .tool(.geometry):
-            guard draft.tool == .geometry else { return .blocked(nil) }
+            guard draft.tool == .geometry else { return .blocked(.draftConflict) }
             geometryScope = true
         case .tool(.lens):
-            guard draft.tool == .lens else { return .blocked(nil) }
+            guard draft.tool == .lens else { return .blocked(.draftConflict) }
             geometryScope = true
         default: geometryScope = false
         }
@@ -145,14 +171,14 @@ extension RawEditorViewModel {
             case .group(.geometry): belongs = draft.tool == .geometry || draft.tool == .lens
             default: belongs = false
             }
-            guard belongs else { return .blocked(nil) }
-        } else if geometryScope { return .blocked(nil) }
+            guard belongs else { return .blocked(.draftConflict) }
+        } else if geometryScope { return .blocked(.draftConflict) }
         let snapshot = draft.isActive
             ? original.committed.replacing(settings: draft.projecting(on: settings), preservingFilmID: original.committed.filmID)
             : original.committed
         switch EditorAdjustmentRules.prepareReset(scope, snapshot: snapshot, context: original.context) {
         case .unchanged: return .unchanged
-        case .blocked(let reason): return .blocked(reason)
+        case .blocked(let reason): return .blocked(.adjustment(reason))
         case .candidate(let candidate, let confirmation):
             return .prepared(PreparedEditorReset(scope: scope, original: original, candidate: candidate,
                                                  updatesDraft: draft.isActive, requiresConfirmation: confirmation))

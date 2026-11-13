@@ -1081,11 +1081,16 @@ final class HDRPhotoUITests: XCTestCase {
         wait { selected.isSelected }
         XCTAssertTrue(selected.label.contains("兼容导入"))
         capture("device-\(name)-sdr-look-selected", app)
+        app.buttons["editor.draft.cancel"].tap()
+        wait { !app.buttons["editor.draft.cancel"].exists }
         try deviceSaveAndAudit(app, name: name + "-sdr", width: width, height: height)
         app.buttons["editor.reset"].tap()
-        let resetLook = app.buttons["重置胶片"]
+        let resetLook = app.buttons["重置外观组…"]
         XCTAssertTrue(resetLook.waitForExistence(timeout: 10), app.debugDescription)
         resetLook.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let confirmReset = app.alerts.buttons["重置"]
+        XCTAssertTrue(confirmReset.waitForExistence(timeout: 10), app.debugDescription)
+        confirmReset.tap()
         wait { app.buttons["tool.film"].value as? String == "中性" }
         deviceEditingMode(app, hdr: true)
         wait { self.showsHDRHistogram(app) }

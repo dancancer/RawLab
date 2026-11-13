@@ -146,6 +146,7 @@
 		EA054B21750151F8A61960F0 /* LookPanels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0C49C5B9A35219B440639F /* LookPanels.swift */; };
 		4A5D819653CC5BEC83C83458 /* PhotoEffectPanels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B66B134CB4D50238C320F70 /* PhotoEffectPanels.swift */; };
 		B3D998046DAF5568B14233EF /* EditorLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = C33A1CD0D88E5254A47F3CA5 /* EditorLayout.swift */; };
+		D8A16E4C92B04F35817CC001 /* EditorWorkspaceResetControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8A16E4C92B04F35817CC002 /* EditorWorkspaceResetControl.swift */; };
 		6BD98E141C695971B42798C6 /* EditorDrafts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F40F7AA6DE556A4A238F267 /* EditorDrafts.swift */; };
 		C3A803626CF750D1B9AFFCDA /* EditorCropOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 442ED03D4FD75EBCA83B9DFE /* EditorCropOverlay.swift */; };
 		39E615609C9D5AC1B16063C7 /* EditorV4UITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC236099D6C65BBF9F3BBE58 /* EditorV4UITests.swift */; };
@@ -506,6 +507,7 @@
 		BC0C49C5B9A35219B440639F /* LookPanels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Panels/LookPanels.swift"; sourceTree = SOURCE_ROOT; };
 		9B66B134CB4D50238C320F70 /* PhotoEffectPanels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Panels/PhotoEffectPanels.swift"; sourceTree = SOURCE_ROOT; };
 		C33A1CD0D88E5254A47F3CA5 /* EditorLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorLayout.swift"; sourceTree = SOURCE_ROOT; };
+		D8A16E4C92B04F35817CC002 /* EditorWorkspaceResetControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorWorkspaceResetControl.swift"; sourceTree = SOURCE_ROOT; };
 		2F40F7AA6DE556A4A238F267 /* EditorDrafts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorDrafts.swift"; sourceTree = SOURCE_ROOT; };
 		442ED03D4FD75EBCA83B9DFE /* EditorCropOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorCropOverlay.swift"; sourceTree = SOURCE_ROOT; };
 		BC236099D6C65BBF9F3BBE58 = {
@@ -814,6 +816,7 @@
 				BC0C49C5B9A35219B440639F,
 				9B66B134CB4D50238C320F70,
 				C33A1CD0D88E5254A47F3CA5,
+				D8A16E4C92B04F35817CC002,
 				2F40F7AA6DE556A4A238F267,
 				442ED03D4FD75EBCA83B9DFE,
 				BFDCFB6A137F996DD48D076B,
@@ -1355,6 +1358,7 @@
 				EA054B21750151F8A61960F0,
 				4A5D819653CC5BEC83C83458,
 				B3D998046DAF5568B14233EF,
+				D8A16E4C92B04F35817CC001,
 				6BD98E141C695971B42798C6,
 				C3A803626CF750D1B9AFFCDA,
 				AB1700000000000000000001,
