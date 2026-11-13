@@ -1213,11 +1213,16 @@ ErrorCode ImageEncoder::saveJPEG(
         constexpr size_t kQuantizeBlock = 16384;
         const ptrdiff_t blockCount =
             static_cast<ptrdiff_t>((pixelCount + kQuantizeBlock - 1) / kQuantizeBlock);
+        std::atomic<bool> quantizeCancelled{false};
 #ifdef _OPENMP
 #pragma omp parallel for if (pixelCount >= static_cast<size_t>(kParallelThreshold))
 #endif
         for (ptrdiff_t block = 0; block < blockCount; ++block) {
-            if (cancellation.cancelled()) continue;
+            if (quantizeCancelled.load(std::memory_order_acquire)) continue;
+            if (cancellation.cancelled()) {
+                quantizeCancelled.store(true, std::memory_order_release);
+                continue;
+            }
             const size_t first = static_cast<size_t>(block) * kQuantizeBlock;
             const size_t last = std::min(pixelCount, first + kQuantizeBlock);
             for (size_t index = first; index < last; ++index) {
@@ -1225,6 +1230,9 @@ ErrorCode ImageEncoder::saveJPEG(
                 data[index * 3 + 1] = floatToUint8(image.pixels[index].g);
                 data[index * 3 + 2] = floatToUint8(image.pixels[index].b);
             }
+        }
+        if (quantizeCancelled.load(std::memory_order_acquire)) {
+            throw ProcessingCancelled();
         }
         cancellation.check();
 

@@ -273,7 +273,7 @@ class AgentPreview(unittest.TestCase):
         self.prepare_synthetic()
         target = self.cwd / "directory.png"
         target.mkdir()
-        self.envelope(self.run_cli("--recipe", self.recipe, "--preview", target, "--json"), "processing_error", status=4)
+        self.envelope(self.run_cli("--recipe", self.recipe, "--preview", target, "--json"), "output_io_error", status=6)
         self.assertEqual(list(target.iterdir()), [])
 
     def test_preview_as_legacy_output_filename(self):

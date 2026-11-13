@@ -1,4 +1,5 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include "sony2fuji/raw_processor.h"
 #include "core/processing_cancellation.h"
 #include "core/photo_color.h"
 #include "core/photo_color_grading.h"
@@ -480,6 +481,153 @@ int main() {
                 check(baseStatus == SONY2FUJI_STATUS_OK && polledStatus == SONY2FUJI_STATUS_OK &&
                       parityPolls.load() > 4 && !baselineBytes.empty() && baselineBytes == polledBytes,
                     parityLabel.c_str());
+            }
+        }
+        // Non-sticky (one-shot) cancellation callback: returning non-zero once and 0 on all subsequent
+        // polls must latch into CANCELLED across JPEG, PNG, and DNG encoders without publishing a file.
+        {
+            constexpr uint32_t kLatchW = 320;
+            constexpr uint32_t kLatchH = 256; // 81,920 px: 5 JPEG quantize blocks (16384 px) and >=65536 px for PNG/DNG
+            std::vector<unsigned char> latchInput(static_cast<size_t>(kLatchW) * kLatchH * 3u);
+            sony2fuji::ImageData latchImage(static_cast<int>(kLatchW), static_cast<int>(kLatchH));
+            for (uint32_t y = 0; y < kLatchH; ++y) {
+                for (uint32_t x = 0; x < kLatchW; ++x) {
+                    const size_t idx = static_cast<size_t>(y) * kLatchW + x;
+                    const unsigned char r = static_cast<unsigned char>((x * 73u + y * 151u + ((x ^ y) * 31u)) & 0xffu);
+                    const unsigned char g = static_cast<unsigned char>((x * 197u + y * 53u + ((x + y) * 43u)) & 0xffu);
+                    const unsigned char b = static_cast<unsigned char>((x * 41u + y * 211u + ((x * 5u ^ y) * 61u)) & 0xffu);
+                    latchInput[idx * 3u + 0u] = r;
+                    latchInput[idx * 3u + 1u] = g;
+                    latchInput[idx * 3u + 2u] = b;
+                    latchImage.pixels[idx] = sony2fuji::RGB(r / 255.0f, g / 255.0f, b / 255.0f);
+                }
+            }
+
+            sony2fuji_request latchReq = exportRequest;
+            latchReq.input_pixels = latchInput.data();
+            latchReq.input_width = kLatchW;
+            latchReq.input_height = kLatchH;
+            latchReq.size_mode = SONY2FUJI_SIZE_EXACT;
+            latchReq.target_width = kLatchW;
+            latchReq.target_height = kLatchH;
+            latchReq.jpeg_quality = 98;
+
+            struct LatchFormatCase {
+                sony2fuji_output_format ffiFormat;
+                sony2fuji::OutputFormat coreFormat;
+                const char* filename;
+                const char* label;
+            };
+            for (const auto& fmt : {
+                     LatchFormatCase{SONY2FUJI_OUTPUT_JPEG, sony2fuji::OutputFormat::JPEG, "oneshot-latch.jpg", "JPEG"},
+                     LatchFormatCase{SONY2FUJI_OUTPUT_PNG, sony2fuji::OutputFormat::PNG, "oneshot-latch.png", "PNG"},
+                     LatchFormatCase{SONY2FUJI_OUTPUT_DNG, sony2fuji::OutputFormat::DNG, "oneshot-latch.dng", "DNG"}}) {
+                const auto latchTarget = root / fmt.filename;
+                const std::string latchPath = latchTarget.u8string();
+                latchReq.output_format = fmt.ffiFormat;
+                latchReq.output_path = latchPath.c_str();
+
+                // 1) Direct encoder: measure total encoder checkpoints, then fire a single non-zero pulse at poll #1 and every checkpoint.
+                std::filesystem::remove(latchTarget, cleanupError);
+                std::atomic<int> directCount{0};
+                {
+                    sony2fuji::ProcessingCancellationScope countScope({+[](void* ctx) -> int32_t {
+                        static_cast<std::atomic<int>*>(ctx)->fetch_add(1, std::memory_order_relaxed);
+                        return 0;
+                    }, &directCount});
+                    check(sony2fuji::ImageEncoder::saveImage(latchImage, latchPath, fmt.coreFormat, 98) ==
+                              sony2fuji::ErrorCode::Success && directCount.load() >= 2,
+                        (std::string("Baseline ") + fmt.label + " encoder run records multiple cancellation checkpoints").c_str());
+                }
+                std::filesystem::remove(latchTarget, cleanupError);
+
+                bool allDirectLatched = directCount.load() >= 2;
+                for (int targetPoll = 1; targetPoll <= directCount.load(); ++targetPoll) {
+                    struct OneShot {
+                        std::atomic<int> calls{0};
+                        int fireAt = 1;
+                    } oneShot{{0}, targetPoll};
+                    bool threwCancelled = false;
+                    sony2fuji::ProcessingCancellationScope oneShotScope({+[](void* ctx) -> int32_t {
+                        auto& st = *static_cast<OneShot*>(ctx);
+                        return st.calls.fetch_add(1, std::memory_order_acq_rel) + 1 == st.fireAt ? 1 : 0;
+                    }, &oneShot});
+                    try {
+                        (void)sony2fuji::ImageEncoder::saveImage(latchImage, latchPath, fmt.coreFormat, 98);
+                    } catch (const sony2fuji::ProcessingCancelled&) {
+                        threwCancelled = true;
+                    }
+                    if (!threwCancelled || std::filesystem::exists(latchTarget) || stagingResidue(root) != 0) {
+                        allDirectLatched = false;
+                        std::filesystem::remove(latchTarget, cleanupError);
+                    }
+                }
+                const std::string directLatchLabel = std::string("One-shot non-sticky cancellation latches at every ") +
+                    fmt.label + " encoder checkpoint and leaves no output file";
+                check(allDirectLatched, directLatchLabel.c_str());
+
+                // 2) C ABI sony2fuji_process: fire only on poll #1 (subsequent polls return 0) and across every encoder-stage poll.
+                struct TracePolls {
+                    std::filesystem::path directory;
+                    std::atomic<int> calls{0};
+                    std::atomic<int> firstStagingPoll{0};
+                } trace{root};
+                sony2fuji_session_set_cancellation_callback(session, +[](void* ctx) -> int32_t {
+                    auto& st = *static_cast<TracePolls*>(ctx);
+                    const int poll = st.calls.fetch_add(1, std::memory_order_acq_rel) + 1;
+                    if (st.firstStagingPoll.load(std::memory_order_acquire) == 0) {
+                        std::error_code ec;
+                        for (std::filesystem::directory_iterator it(st.directory, ec), last;
+                             !ec && it != last; it.increment(ec)) {
+                            if (isStagingFile(it->path())) {
+                                int expected = 0;
+                                st.firstStagingPoll.compare_exchange_strong(expected, poll, std::memory_order_acq_rel);
+                                break;
+                            }
+                        }
+                    }
+                    return 0;
+                }, &trace);
+                sony2fuji_buffer traceOut{};
+                const auto traceSt = sony2fuji_process(session, &latchReq, &traceOut);
+                sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr);
+                sony2fuji_release_buffer(&traceOut);
+                std::filesystem::remove(latchTarget, cleanupError);
+
+                const int totalFfiPolls = trace.calls.load();
+                const int stagingStart = trace.firstStagingPoll.load();
+                const int quantizeBlocks = static_cast<int>((static_cast<size_t>(kLatchW) * kLatchH + 16383u) / 16384u);
+                const int encoderWindowStart = fmt.ffiFormat == SONY2FUJI_OUTPUT_JPEG
+                    ? std::max(1, stagingStart - quantizeBlocks - 1)
+                    : std::max(1, stagingStart);
+
+                std::vector<int> targetPolls = {1};
+                for (int p = encoderWindowStart; p <= totalFfiPolls; ++p) {
+                    if (p != 1) targetPolls.push_back(p);
+                }
+
+                bool allFfiLatched = traceSt == SONY2FUJI_STATUS_OK && stagingStart > 0 && totalFfiPolls >= stagingStart;
+                for (int targetPoll : targetPolls) {
+                    struct FfiOneShot {
+                        std::atomic<int> calls{0};
+                        int fireAt = 1;
+                    } oneShot{{0}, targetPoll};
+                    sony2fuji_session_set_cancellation_callback(session, +[](void* ctx) -> int32_t {
+                        auto& st = *static_cast<FfiOneShot*>(ctx);
+                        return st.calls.fetch_add(1, std::memory_order_acq_rel) + 1 == st.fireAt ? 1 : 0;
+                    }, &oneShot);
+                    sony2fuji_buffer out{};
+                    const auto st = sony2fuji_process(session, &latchReq, &out);
+                    sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr);
+                    sony2fuji_release_buffer(&out);
+                    if (st != SONY2FUJI_STATUS_CANCELLED || std::filesystem::exists(latchTarget) || stagingResidue(root) != 0) {
+                        allFfiLatched = false;
+                        std::filesystem::remove(latchTarget, cleanupError);
+                    }
+                }
+                const std::string ffiLatchLabel = std::string("FINAL ") + fmt.label +
+                    " C ABI export returns CANCELLED and leaves no file under one-shot non-sticky callback";
+                check(allFfiLatched, ffiLatchLabel.c_str());
             }
         }
         // A PREVIEW request that writes a file keeps ignoring the callback: the gate covers

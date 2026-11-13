@@ -405,8 +405,8 @@ class AgentCommands(unittest.TestCase):
         self.document["output"]["path"] = target.name
         self.document["output"]["format"] = "png"
         self.write_recipe()
-        result = self.envelope(self.run_cli("--recipe", self.recipe, "--json"), "export", "processing_error")
-        self.assertEqual(result["error"]["status"], 4)
+        result = self.envelope(self.run_cli("--recipe", self.recipe, "--json"), "export", "output_io_error")
+        self.assertEqual(result["error"]["status"], 6)
         self.assertTrue(target.is_dir())
         self.assertEqual(list(target.iterdir()), [])
 
