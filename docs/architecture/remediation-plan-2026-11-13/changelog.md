@@ -51,3 +51,4 @@
 - 2026-11-13 · #287 返工完成（原生 subagent，`aa06147e`）：真实 ctest 矩阵 143 项/2 失败经与 development 同配方对照确认 pre-existing（agent_preview/agent_commands，源自 #242），零新增失败；S1 指针深度契约+QualType 解包、S2 内联函数指针门禁各配红锚点；复审在途（review-mwf61aat）。
 - 2026-11-14 · 决定：agy-staff 暂不推上游（feature/state-sqlite 3 提交留本地，安装副本已装载生效；期间勿重装 agy-staff 包，重装会覆盖 node_modules 移植——重装前需重新装载）。
 - 2026-11-14 · #292 返工完成（`07216451`）：SKIP 门禁收行首锚点+双面锚点亲测（评审上轮 3 类误红全转绿，实测修正了评审建议正则的单括号瑕疵）；ai-denoise 去静默兜底+空模型 77 占位；ci.md 补 77 与门禁区分。复审在途（review-mwf6jxyr）。
+- 2026-11-14 · **WP-04 合入**：#287 复审 approve（矩阵复跑 143/2 pre-existing 复核成立、S1/S2 锚点复核过）→ dancancer merge（CI 7/7），本波首个落地。面板状态显示 bug：迁移过渡期 6 条 DB 僵尸 running 行（旧 worker 完成不写 DB、面板无 sidecar 纠正）→ 手工对账 + state-db 读侧对账根治派给 staff-state-sqlite。
