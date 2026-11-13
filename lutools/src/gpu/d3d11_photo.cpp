@@ -206,7 +206,7 @@ bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
             c.revision=revision;c.sourceWidth=input.width;c.sourceHeight=input.height;
         }
         const bool early=request.intent==SONY2FUJI_INTENT_PREVIEW && request.sharpening<=0 &&
-            !effects.active() && chromaDenoise == 0 && !preserveSourceResolution;
+            request.noise_reduction<=0 && !effects.active() && chromaDenoise == 0 && !preserveSourceResolution;
         const uint32_t pw=early ? width : input.width,ph=early ? height : input.height;
         c.dispatch(c.source,c.processing[0],p,0,input.width,input.height,pw,ph);
         int current=0;

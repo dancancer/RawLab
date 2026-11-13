@@ -308,7 +308,7 @@ Classic TIFF size is preflighted below 4 GiB; BigTIFF is not emitted. The additi
 `SONY2FUJI_STATUS_OUTPUT_IO_ERROR=6` distinguishes output storage failures from
 source `IO_ERROR=3`, without renumbering existing statuses or changing requests.
 
-In exact/default rendering, sharpening skips the early preview downsample. The fixed pixel-radius filter runs at source resolution before the final preview resize, matching its export footprint. The separately opted-in viewport approximation below filters the reduced input instead. At zero sharpening the existing fast preview path remains unchanged. Mac's contrast/saturation controls use percent offsets from the core's identity value 1; highlight signs are reversed at the UI boundary so positive values consistently brighten. All six output adjustments default to an identity result.
+In exact/default rendering, sharpening and legacy noise reduction skip the early preview downsample on CPU, Metal, GLES and D3D11. These fixed pixel-radius filters run at source resolution before the final preview resize, matching their export footprint. The separately opted-in viewport approximation below filters the reduced input instead. When both are zero the existing fast preview path remains unchanged. Mac's contrast/saturation controls use percent offsets from the core's identity value 1; highlight signs are reversed at the UI boundary so positive values consistently brighten. All six output adjustments default to an identity result.
 
 The film output interpretation is a declared application convention. It is not a claim that Fujifilm's short LUT overview specifies every viewing parameter. No guessed extra gamma is applied to an already rendered film LUT output.
 
@@ -789,7 +789,8 @@ white-balance edit does not also re-meter the scene.
 Windows uses a session-owned Direct3D 11 compute pipeline with hardware feature
 level 11.0 adapters. It mirrors the CPU order for gamut matrices, exposure,
 neutral/F-Log2/LUT blending, tone/color, box-blur-based detail and resizing.
-Preview reduction occurs before effects only when sharpening is zero; FINAL
+Preview reduction occurs before effects only when sharpening and legacy noise
+reduction are zero; FINAL
 resizes display output after effects. Immutable RAW uploads are keyed by decode
 revision, including interactive/exact quality transitions. LUTs use explicit
 trilinear interpolation with their declared domains. `SONY2FUJI_BACKEND_D3D11`

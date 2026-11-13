@@ -355,18 +355,43 @@ int main() {
     previewRequest.target_height = 1;
     previewRequest.lut_path = lutUtf8.c_str();
     previewRequest.lut_strength = 0.5f;
-    previewRequest.noise_reduction = 0.3f;
     compareCase(session, pixels, 4, 2, previewRequest, lut, 2, 1, "preview resize precedes effects");
 
     auto finalRequest = previewRequest;
     finalRequest.intent = SONY2FUJI_INTENT_FINAL;
     finalRequest.preview_long_edge = 0;
+    finalRequest.noise_reduction = 0.3f;
     compareCase(session, pixels, 4, 2, finalRequest, lut, 2, 1, "final resize follows effects");
 
     sony2fuji_session* forced = nullptr;
     check(sony2fuji_session_create(&forced) == SONY2FUJI_STATUS_OK, "Force comparison session creates");
     sony2fuji_gpu_config config{SONY2FUJI_GPU_CONFIG_VERSION, sizeof(config), SONY2FUJI_GPU_FORCE};
     sony2fuji_session_set_gpu_config(forced, &config);
+    {
+        // 旧版降噪是固定 3x3 像素邻域：GPU 默认预览须在源分辨率执行，结果与导出一致。
+        std::vector<unsigned char> detail(16 * 16 * 3);
+        for (int y = 0; y < 16; ++y) for (int x = 0; x < 16; ++x) for (int c = 0; c < 3; ++c)
+            detail[(y * 16 + x) * 3 + c] = static_cast<unsigned char>((x * 37 + y * 19 + c * 23) % 220 + 10);
+        auto denoiseRequest = baseRequest(detail, 16, 16);
+        denoiseRequest.target_width = denoiseRequest.target_height = 8;
+        denoiseRequest.noise_reduction = 1.0f;
+        denoiseRequest.intent = SONY2FUJI_INTENT_FINAL;
+        sony2fuji_buffer exported{}, preview{};
+        const auto exportStatus = sony2fuji_process(session, &denoiseRequest, &exported);
+        denoiseRequest.intent = SONY2FUJI_INTENT_PREVIEW;
+        denoiseRequest.preview_long_edge = 8;
+        const auto previewStatus = sony2fuji_process(forced, &denoiseRequest, &preview);
+        size_t maximum = 0;
+        bool matched = exportStatus == SONY2FUJI_STATUS_OK && previewStatus == SONY2FUJI_STATUS_OK && preview.data;
+        if (matched) {
+            const auto* bytes = static_cast<const unsigned char*>(preview.data);
+            matched = withinTwoDN(std::vector<unsigned char>(bytes, bytes + preview.size_bytes), exported, &maximum);
+        }
+        check(matched, "legacy noise reduction keeps GPU preview at source resolution (max DN " +
+            std::to_string(maximum) + ")");
+        sony2fuji_release_buffer(&exported);
+        sony2fuji_release_buffer(&preview);
+    }
     std::vector<unsigned char> ramp(17 * 13 * 3);
     for (size_t i=0; i<ramp.size(); ++i) ramp[i] = static_cast<unsigned char>((i*73+i/7)%256);
     for (const auto& inputName : {"FLog", "FLog2", "FLog2C"}) {

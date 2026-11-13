@@ -1028,7 +1028,7 @@ bool renderPhotoMetalImpl(
     const uint32_t inputWidth = static_cast<uint32_t>(input.width);
     const uint32_t inputHeight = static_cast<uint32_t>(input.height);
     const bool earlyResize = request.intent == SONY2FUJI_INTENT_PREVIEW &&
-        request.sharpening <= 0.0f && !effects.active() && chromaDenoise == 0 && !preserveSourceResolution &&
+        request.sharpening <= 0.0f && request.noise_reduction <= 0.0f && !effects.active() && chromaDenoise == 0 && !preserveSourceResolution &&
         (targetWidth != inputWidth || targetHeight != inputHeight);
     const uint32_t processingWidth = earlyResize ? targetWidth : inputWidth;
     const uint32_t processingHeight = earlyResize ? targetHeight : inputHeight;
