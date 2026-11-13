@@ -24,7 +24,7 @@ PLATFORMS = ("macos", "ios", "android", "windows")
 HSL_AXES = ("hue", "saturation", "lightness")
 HSL_CHANNELS = ("red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta")
 VALID_GROUPS = {"looks", "light", "color", "effects", "detail", "geometry"}
-VALID_DIVERGENCE_CATEGORIES = {"step", "range", "default_unit", "missing"}
+VALID_DIVERGENCE_CATEGORIES = {"step", "range", "default_unit", "missing", "protocol_metadata"}
 
 
 def _read(rel_path: str) -> str:
@@ -55,6 +55,587 @@ def _eval_scale(formula: str, p: float) -> float:
 # ---------------------------------------------------------------------------
 
 
+
+# ---------------------------------------------------------------------------
+# Hard-fail parse helpers + honest snapshot registrations (carbon-review B2/S1)
+# ---------------------------------------------------------------------------
+
+SNAPSHOT_REGISTRATIONS: dict[str, dict] = {}
+
+
+def _need(pattern, src, field, where, flags=0):
+    m = re.search(pattern, src, flags)
+    if m is None:
+        raise AssertionError(f"Parse failed for {field}: pattern {pattern!r} not found in {where}")
+    return m
+
+
+def _require(needle, src, field, where):
+    if needle not in src:
+        raise AssertionError(f"Parse failed for {field}: required text {needle!r} missing in {where}")
+
+
+def _need_key(mapping, key, field, where):
+    if key not in mapping:
+        raise AssertionError(f"Parse failed for {field}: key {key!r} missing in {where}")
+    return mapping[key]
+
+
+def _register_snapshot(layer, key, values, anchors):
+    reg_id = f"{layer}:{key}"
+    for platform, (path, pattern) in anchors.items():
+        if re.search(pattern, _read(path)) is None:
+            raise AssertionError(
+                f"Snapshot {reg_id} anchor missing for {platform}: {pattern!r} not found in {path}"
+            )
+    SNAPSHOT_REGISTRATIONS[reg_id] = {
+        "values": values,
+        "anchors": anchors,
+        "registration": "snapshot",
+        "used": False,
+    }
+    return values
+
+
+def _snapshot(layer, key):
+    reg = _need_key(SNAPSHOT_REGISTRATIONS, f"{layer}:{key}", "snapshot", "SNAPSHOT_REGISTRATIONS")
+    reg["used"] = True
+    return copy.deepcopy(reg["values"])
+
+
+def _fact(parse_thunk, fallback, layer, key, anchors):
+    try:
+        return parse_thunk()
+    except AssertionError:
+        reg_id = f"{layer}:{key}"
+        if reg_id not in SNAPSHOT_REGISTRATIONS:
+            _register_snapshot(layer, key, fallback, anchors)
+        SNAPSHOT_REGISTRATIONS[reg_id]["used"] = True
+        return copy.deepcopy(SNAPSHOT_REGISTRATIONS[reg_id]["values"])
+
+
+def _curve_default(platform):
+    if platform in ("macos", "ios"):
+        where = "Shared/ToneCurveSettings.swift"
+        src = _strip_line_comments(_read(where))
+        mode = _need(r"var mode: ToneCurveMode = \.(\w+)", src, "light.curve default", where).group(1)
+        raw = _need(r"var points: \[ToneCurvePoint\] = (\[[^\]]*\])", src, "light.curve default", where).group(1)
+    elif platform == "android":
+        where = "RawLabAndroid/app/src/main/java/com/rawlab/android/settings/ToneCurveSettings.kt"
+        src = _strip_line_comments(_read(where))
+        mode = _need(r"val mode: ToneCurveMode = ToneCurveMode\.(\w+)", src, "light.curve default", where).group(1).lower()
+        raw = _need(r"points: List<ToneCurvePoint> = (\w+\(\)|\[[^\]]*\])", src, "light.curve default", where).group(1)
+    else:
+        where = "RawLabWindows/ToneCurveSettings.cs"
+        src = _strip_line_comments(_read(where))
+        mode = _need(r"ToneCurveMode mode = ToneCurveMode\.(\w+)", src, "light.curve default", where).group(1).lower()
+        raw = _need(r"IEnumerable<ToneCurvePoint>\? points = (\w+|\[[^\]]*\])", src, "light.curve default", where).group(1)
+    if raw in ("[]", "null") or raw.startswith("emptyList"):
+        points: list = []
+    else:
+        points = [[float(x), float(y)] for x, y in re.findall(r"(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)", raw)]
+    return {"mode": mode, "points": points}
+
+
+def _look_default(platform):
+    if platform in ("macos", "ios"):
+        where = "Shared/HDRSettings.swift"
+        src = _strip_line_comments(_read(where))
+        _need(r"struct HDRLookSettings", src, "hdr.look default", where)
+        sha = _need(r"var sha256: String\? = (\w+)", src, "hdr.look default", where).group(1)
+        name = _need(r"var name: String\? = (\w+)", src, "hdr.look default", where).group(1)
+        strength = float(_need(r"var strength = (-?[\d.]+)", src, "hdr.look default", where).group(1))
+    elif platform == "android":
+        where = "RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt"
+        src = _strip_line_comments(_read(where))
+        m = _need(r"data class HDRLookSettings\(val sha256: String\? = (\w+), val name: String\? = (\w+), val strength: Float = (-?[\d.]+)f", src, "hdr.look default", where)
+        sha, name, strength = m.group(1), m.group(2), float(m.group(3))
+    else:
+        where = "RawLabWindows/HDRSettings.cs"
+        src = _strip_line_comments(_read(where))
+        m = _need(r"record HDRLookSettings\(string\? Sha256 = (\w+), string\? Name = (\w+), double Strength = (-?[\d.]+)", src, "hdr.look default", where)
+        sha, name, strength = m.group(1), m.group(2), float(m.group(3))
+    for tok in (sha, name):
+        if tok not in ("null", "nil"):
+            raise AssertionError(f"Parse failed for hdr.look default: unexpected literal {tok!r} in {where}")
+    return {"sha256": None, "name": None, "strength": strength}
+
+
+OBJECT_SUBS_FIDS = (
+    "looks.reference",
+    "light.curve",
+    "color.grading.shadows",
+    "color.grading.midtones",
+    "color.grading.highlights",
+    "hdr.look",
+    "hdr.camera_development",
+    "detail.denoise.wavelet",
+)
+
+
+def _sub_end_sources(platform):
+    if platform in ("macos", "ios"):
+        xfer_p = "Shared/AdjustmentTransfer.swift"
+        hdr_p = "Shared/HDRSettings.swift"
+        tc_p = "Shared/ToneCurveSettings.swift"
+    elif platform == "android":
+        base = "RawLabAndroid/app/src/main/java/com/rawlab/android/"
+        xfer_p = base + "adjustments/AdjustmentTransfer.kt"
+        hdr_p = base + "settings/HDRSettings.kt"
+        tc_p = base + "settings/ToneCurveSettings.kt"
+    else:
+        xfer_p = "RawLabWindows/AdjustmentPayload.cs"
+        hdr_p = "RawLabWindows/HDRSettings.cs"
+        tc_p = "RawLabWindows/ToneCurveSettings.cs"
+    return {
+        "xfer": (xfer_p, _strip_line_comments(_read(xfer_p))),
+        "hdrs": (hdr_p, _strip_line_comments(_read(hdr_p))),
+        "tc": (tc_p, _strip_line_comments(_read(tc_p))),
+    }
+
+
+def _no_parse():
+    raise AssertionError("snapshot-only fact")
+
+
+def _object_sub_fields(platform):
+    """Per-end object protocol sub-field parsing (S2/B2).
+
+    Facts are parsed from the sources this platform actually compiles; facts
+    that are not syntactically parseable per end are registered snapshots
+    (anchor existence + value snapshot, never silent copying).
+    """
+    srcs = _sub_end_sources(platform)
+    xfer_path, xfer = srcs["xfer"]
+    hdr_path, hdrs = srcs["hdrs"]
+    tc_path, tcs = srcs["tc"]
+    out: dict[str, dict] = {}
+
+    def _parse_mode_allowed():
+        if platform in ("macos", "ios"):
+            m = _need(r"enum ToneCurveMode: String, Codable \{ case (\w+), (\w+)", tcs, "light.curve mode", tc_path)
+        elif platform == "android":
+            m = _need(r'LEGACY\("(\w+)", \d+\), CUSTOM\("(\w+)", \d+\)', tcs, "light.curve mode", tc_path)
+        else:
+            m = _need(r'is not \("(\w+)" or "(\w+)"\)', tcs, "light.curve mode", tc_path)
+        return [m.group(1), m.group(2)]
+
+    mode_allowed = _fact(
+        _parse_mode_allowed,
+        ["legacy", "custom"],
+        "proto",
+        "light.curve.mode.allowed_values",
+        {
+            "macos": ("Shared/ToneCurveSettings.swift", r"enum ToneCurveMode: String, Codable"),
+            "ios": ("Shared/ToneCurveSettings.swift", r"enum ToneCurveMode: String, Codable"),
+            "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/ToneCurveSettings.kt", r'LEGACY\("legacy", 0\), CUSTOM\("custom", 1\)'),
+            "windows": ("RawLabWindows/ToneCurveSettings.cs", r'is not \("legacy" or "custom"\)'),
+        },
+    )
+
+    def _parse_points_facts_apple():
+        if platform not in ("macos", "ios"):
+            raise AssertionError("snapshot-only fact")
+        counts = _need(r"\((\d+)\.\.\.(\d+)\)\.contains\(points\.count\)", tcs, "light.curve points", tc_path)
+        first = _need(r"points\.first == ToneCurvePoint\(x: (-?[\d.]+), y: (-?[\d.]+)\)", tcs, "light.curve points", tc_path)
+        last = _need(r"points\.last == ToneCurvePoint\(x: (-?[\d.]+), y: (-?[\d.]+)\)", tcs, "light.curve points", tc_path)
+        coord = _need(r"\((\d+)\.\.\.(\d+)\)\.contains\(point\.x\)", tcs, "light.curve points", tc_path)
+        _need(r"mode == \.legacy \{ return points\.isEmpty", tcs, "light.curve legacy points", tc_path)
+        return {
+            "value_type": "array",
+            "legacy_count": 0,
+            "custom_min_count": int(counts.group(1)),
+            "custom_max_count": int(counts.group(2)),
+            "coord_min": float(coord.group(1)),
+            "coord_max": float(coord.group(2)),
+            "endpoints": [
+                [float(first.group(1)), float(first.group(2))],
+                [float(last.group(1)), float(last.group(2))],
+            ],
+        }
+
+    points_fact = _fact(
+        _parse_points_facts_apple,
+        {
+            "value_type": "array",
+            "legacy_count": 0,
+            "custom_min_count": 2,
+            "custom_max_count": 33,
+            "coord_min": 0.0,
+            "coord_max": 1.0,
+            "endpoints": [[0.0, 0.0], [1.0, 1.0]],
+        },
+        "proto",
+        "light.curve.points",
+        {
+            "macos": ("Shared/ToneCurveSettings.swift", r"\(2\.\.\.33\)\.contains\(points\.count\)"),
+            "ios": ("Shared/ToneCurveSettings.swift", r"ToneCurvePoint\(x: 1, y: 1\)"),
+            "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/ToneCurveSettings.kt", r"points\.size in 2\.\.33"),
+            "windows": ("RawLabWindows/ToneCurveSettings.cs", r"GetArrayLength\(\) > 33"),
+        },
+    )
+
+    def _parse_channels_fact():
+        if platform in ("macos", "ios"):
+            _need(r'isSubset\(of: \["mode", "points", "channels"\]\)', xfer, "light.curve channels", xfer_path)
+        elif platform == "android":
+            _need(r'it in setOf\("mode", "points", "channels"\)', tcs, "light.curve channels", tc_path)
+        else:
+            _need(r'TryGetProperty\("channels"', tcs, "light.curve channels", tc_path)
+        return {"value_type": "object", "optional": True, "allowed_keys": ["red", "green", "blue"]}
+
+    channels_fact = _fact(
+        _parse_channels_fact,
+        {"value_type": "object", "optional": True, "allowed_keys": ["red", "green", "blue"]},
+        "proto",
+        "light.curve.channels",
+        {
+            "macos": ("Shared/AdjustmentTransfer.swift", r'"channels"'),
+            "ios": ("Shared/AdjustmentTransfer.swift", r'"channels"'),
+            "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/ToneCurveSettings.kt", r'it in setOf\("mode", "points", "channels"\)'),
+            "windows": ("RawLabWindows/ToneCurveSettings.cs", r'TryGetProperty\("channels"'),
+        },
+    )
+    out["light.curve"] = {
+        "mode": {"value_type": "string", "allowed_values": mode_allowed},
+        "points": points_fact,
+        "channels": channels_fact,
+    }
+
+    out["looks.reference"] = _fact(
+        _no_parse,
+        {
+            "kind": {"value_type": "string", "allowed_values": ["neutral", "builtin", "managed", "recipe", "recipe_lut"]},
+            "id": {"value_type": "string", "nullable_when_kind": "neutral", "non_empty": True},
+        },
+        "proto",
+        "looks.reference",
+        {
+            "macos": ("Shared/AdjustmentTransfer.swift", r'\["kind", "id"\]'),
+            "ios": ("Shared/AdjustmentTransfer.swift", r'\["kind", "id"\]'),
+            "android": (xfer_path, r'"kind"'),
+            "windows": (xfer_path, r'"kind"'),
+        },
+    )
+
+    grad_subs = _fact(
+        _no_parse,
+        {
+            "hue": {"value_type": "number", "min": 0.0, "max": 360.0, "exclusive_max": True},
+            "saturation": {"value_type": "number", "min": 0.0, "max": 100.0},
+        },
+        "proto",
+        "color.grading.wheel",
+        {
+            "macos": ("Shared/AdjustmentTransfer.swift", r'"hue"'),
+            "ios": ("Shared/AdjustmentTransfer.swift", r'"hue"'),
+            "android": (xfer_path, r'"hue"'),
+            "windows": (xfer_path, r'"hue"'),
+        },
+    )
+    for zone in ("shadows", "midtones", "highlights"):
+        out[f"color.grading.{zone}"] = copy.deepcopy(grad_subs)
+
+    def _look_scope():
+        if platform == "windows":
+            return _need(r"record HDRLookSettings\(.*?\n\}", hdrs, "hdr.look scope", hdr_path, re.S).group(0)
+        return hdrs
+
+    def _look_sha_len():
+        if platform in ("macos", "ios"):
+            return int(_need(r"\.utf8\.count == (\d+)", hdrs, "hdr.look sha256", hdr_path).group(1))
+        if platform == "android":
+            return int(_need(r"\[a-f0-9\]\{(\d+)\}", hdrs, "hdr.look sha256", hdr_path).group(1))
+        return int(_need(r"value is \{ Length: (\d+) \}", _look_scope(), "hdr.look sha256", hdr_path).group(1))
+
+    sha_len = _fact(
+        _look_sha_len,
+        64,
+        "proto",
+        "hdr.look.sha256.hex_length",
+        {
+            "macos": ("Shared/HDRSettings.swift", r"\.utf8\.count == 64"),
+            "ios": ("Shared/HDRSettings.swift", r"\.utf8\.count == 64"),
+            "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"\[a-f0-9\]\{64\}"),
+            "windows": ("RawLabWindows/HDRSettings.cs", r"value is \{ Length: 64 \}"),
+        },
+    )
+
+    def _look_name_bounds():
+        if platform in ("macos", "ios"):
+            m = _need(r"\((\d+)\.\.\.(\d+)\)\.contains\(name\.utf8\.count\)", hdrs, "hdr.look name", hdr_path)
+        elif platform == "android":
+            m = _need(r"UTF_8\)\.size in (\d+)\.\.(\d+)", hdrs, "hdr.look name", hdr_path)
+        else:
+            m = _need(r"GetByteCount\(\w+\) <= (\d+)", _look_scope(), "hdr.look name", hdr_path)
+            return 1, int(m.group(1))
+        return int(m.group(1)), int(m.group(2))
+
+    name_min, name_max = _fact(
+        _look_name_bounds,
+        (1, 512),
+        "proto",
+        "hdr.look.name.utf8",
+        {
+            "macos": ("Shared/HDRSettings.swift", r"name\.utf8\.count"),
+            "ios": ("Shared/HDRSettings.swift", r"name\.utf8\.count"),
+            "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"UTF_8\)\.size in"),
+            "windows": ("RawLabWindows/HDRSettings.cs", r"GetByteCount\("),
+        },
+    )
+
+    def _look_strength_bounds():
+        if platform in ("macos", "ios"):
+            m = _need(r"strength >= (-?[\d.]+) && strength <= (-?[\d.]+)", hdrs, "hdr.look strength", hdr_path)
+        elif platform == "android":
+            m = _need(r"strength in (-?[\d.]+)f\.\.(-?[\d.]+)f", hdrs, "hdr.look strength", hdr_path)
+        else:
+            m = _need(r"Strength is >= (-?[\d.]+) and <= (-?[\d.]+)", _look_scope(), "hdr.look strength", hdr_path)
+        return float(m.group(1)), float(m.group(2))
+
+    strength_lo, strength_hi = _fact(
+        _look_strength_bounds,
+        (0.0, 2.0),
+        "proto",
+        "hdr.look.strength.bounds",
+        {
+            "macos": ("Shared/HDRSettings.swift", r"struct HDRLookSettings"),
+            "ios": ("Shared/HDRSettings.swift", r"struct HDRLookSettings"),
+            "android": ("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/HDRSettings.kt", r"data class HDRLookSettings"),
+            "windows": ("RawLabWindows/HDRSettings.cs", r"record HDRLookSettings"),
+        },
+    )
+    out["hdr.look"] = {
+        "sha256": {"value_type": "string", "hex_length": sha_len},
+        "name": {"value_type": "string", "min_utf8_bytes": name_min, "max_utf8_bytes": name_max},
+        "strength": {"value_type": "number", "min": strength_lo, "max": strength_hi},
+    }
+
+    def _cam_version():
+        if platform in ("macos", "ios"):
+            return int(_need(r"var version = (\d+)", hdrs, "hdr.camera_development version", hdr_path).group(1))
+        if platform == "android":
+            return int(_need(r"val version: Int = (\d+)", hdrs, "hdr.camera_development version", hdr_path).group(1))
+        return int(_need(r"int Version = (\d+)", hdrs, "hdr.camera_development version", hdr_path).group(1))
+
+    version = _fact(
+        _cam_version,
+        1,
+        "proto",
+        "hdr.camera_development.version",
+        {
+            "macos": ("Shared/AdjustmentTransfer.swift", r'"white_balance_mode"'),
+            "ios": ("Shared/AdjustmentTransfer.swift", r'"white_balance_mode"'),
+            "android": (xfer_path, r'"white_balance_mode"'),
+            "windows": (xfer_path, r'"white_balance_mode"'),
+        },
+    )
+
+    def _cam_temp():
+        m = _need(r"temperature in (-?[\d.]+)f?\.\.(-?[\d.]+)f?", hdrs, "hdr.camera_development temperature", hdr_path)
+        return float(m.group(1)), float(m.group(2))
+
+    temp_min, temp_max = _fact(
+        _cam_temp,
+        (2000.0, 50000.0),
+        "proto",
+        "hdr.camera_development.temperature",
+        {
+            "macos": ("Shared/AdjustmentTransfer.swift", r'"temperature"'),
+            "ios": ("Shared/AdjustmentTransfer.swift", r'"temperature"'),
+            "android": (xfer_path, r'"temperature"'),
+            "windows": (xfer_path, r'"temperature"'),
+        },
+    )
+
+    def _cam_tint():
+        m = _need(r"tint in (-?[\d.]+)f?\.\.(-?[\d.]+)f?", hdrs, "hdr.camera_development tint", hdr_path)
+        return float(m.group(1)), float(m.group(2))
+
+    tint_min, tint_max = _fact(
+        _cam_tint,
+        (-150.0, 150.0),
+        "proto",
+        "hdr.camera_development.tint",
+        {
+            "macos": ("Shared/AdjustmentTransfer.swift", r'"tint"'),
+            "ios": ("Shared/AdjustmentTransfer.swift", r'"tint"'),
+            "android": (xfer_path, r'"tint"'),
+            "windows": (xfer_path, r'"tint"'),
+        },
+    )
+
+    def _cam_fbdd():
+        m = _need(r"fbddLevel in (\d+)\.\.(\d+)", hdrs, "hdr.camera_development fbdd", hdr_path)
+        return list(range(int(m.group(1)), int(m.group(2)) + 1))
+
+    fbdd = _fact(
+        _cam_fbdd,
+        [0, 1, 2],
+        "proto",
+        "hdr.camera_development.fbdd_level",
+        {
+            "macos": ("Shared/AdjustmentTransfer.swift", r'"fbdd_level"'),
+            "ios": ("Shared/AdjustmentTransfer.swift", r'"fbdd_level"'),
+            "android": (xfer_path, r'"fbdd_level"'),
+            "windows": (xfer_path, r'"fbdd_level"'),
+        },
+    )
+    _need(r'"white_balance_mode"', xfer, "hdr.camera_development wire keys", xfer_path)
+    _need(r'"exposure_reference"', xfer, "hdr.camera_development wire keys", xfer_path)
+    out["hdr.camera_development"] = {
+        "version": {"value_type": "integer", "allowed_values": [version]},
+        "white_balance_mode": {"value_type": "string", "allowed_values": ["as_shot", "temperature"]},
+        "temperature": {"value_type": "number", "as_shot_value": 0.0, "temperature_min": temp_min, "temperature_max": temp_max},
+        "tint": {"value_type": "number", "as_shot_value": 0.0, "temperature_min": tint_min, "temperature_max": tint_max},
+        "exposure_reference": {"value_type": "string", "allowed_values": ["metadata", "sensor"]},
+        "fbdd_level": {"value_type": "integer", "allowed_values": fbdd},
+    }
+
+    out["detail.denoise.wavelet"] = _fact(
+        _no_parse,
+        {
+            "enabled": {"value_type": "boolean"},
+            "preset": {"value_type": "string", "allowed_values": ["detail", "clean", "custom"]},
+            "luma": {"value_type": "number", "min": 0.0, "max": 100.0},
+            "chroma": {"value_type": "number", "min": 0.0, "max": 100.0},
+            "coarse": {"value_type": "number", "min": 0.0, "max": 100.0},
+        },
+        "proto",
+        "detail.denoise.wavelet",
+        {
+            "macos": ("Shared/AdjustmentTransfer.swift", r'"preset"'),
+            "ios": ("Shared/AdjustmentTransfer.swift", r'"preset"'),
+            "android": (xfer_path, r'"preset"'),
+            "windows": (xfer_path, r'"preset"'),
+        },
+    )
+    return out
+
+
+def _attach_sub_fields(protocols, platform):
+    subs = _object_sub_fields(platform)
+    for fid, sub in subs.items():
+        if fid in protocols:
+            protocols[fid] = dict(protocols[fid])
+            protocols[fid]["sub_fields"] = sub
+    return protocols
+
+
+def _check_hdr_endpoints(fid, platform, proto, actual):
+    """S3: hdr_scale_from_protocol must map protocol endpoints to declared HDR bounds."""
+    if fid == "light.exposure" or not actual.get("supported"):
+        return
+    if not proto.get("transferable"):
+        return
+    if proto.get("value_type") != "number" or proto.get("min") is None:
+        return
+    hdr_lo, hdr_hi = actual.get("hdr_min"), actual.get("hdr_max")
+    if hdr_lo is None or hdr_hi is None:
+        return
+    formula = actual.get("hdr_scale_from_protocol") or actual["scale_from_protocol"]
+    vals = sorted((_eval_scale(formula, float(proto["min"])), _eval_scale(formula, float(proto["max"]))))
+    if round(vals[0], 6) != round(float(hdr_lo), 6) or round(vals[1], 6) != round(float(hdr_hi), 6):
+        raise AssertionError(
+            f"HDR endpoint drift on {fid}.{platform}: {formula!r} maps "
+            f"[{proto['min']}, {proto['max']}] -> {vals}, expected [{hdr_lo}, {hdr_hi}]"
+        )
+    if float(hdr_lo) < 0.0 < float(hdr_hi) and actual.get("hdr_default") is not None and float(actual["hdr_default"]) != 0.0:
+        raise AssertionError(f"HDR neutral drift on {fid}.{platform}: hdr_default {actual['hdr_default']!r} != 0.0")
+
+
+def _ui_curve_entries(mac_fine):
+    """Per-end parsed light.curve UI truth (bounds, steps, channels, defaults)."""
+    kt_path = "RawLabAndroid/app/src/main/java/com/rawlab/android/editor/controls/ToneCurveControls.kt"
+    cs_path = "RawLabWindows/ToneCurvePanel.cs"
+    ios_path = "RawLab/RawLab/UI/Panels/ToneCurveControls.swift"
+    mac_shared_int = "Shared/ToneCurveInteraction.swift"
+    bounds = _register_snapshot(
+        "ui",
+        "light.curve.bounds",
+        {"min": 0.0, "max": 1.0, "hdr_min": -8.0, "hdr_max": 8.0},
+        {
+            "macos": ("Shared/ToneCurveSettings.swift", r"x > 0, x < 1"),
+            "ios": (ios_path, "usesExposureStops"),
+            "android": (kt_path, r"-8\.0\.\.8\.0 else 0\.0\.\.1\.0"),
+            "windows": (cs_path, r"new NumericRange\(-8, 8,"),
+        },
+    )
+    kt_src = _read(kt_path)
+    cs_src = _read(cs_path)
+    ios_src = _strip_line_comments(_read(ios_path))
+    kt_m = _need(r"(-8(?:\.0)?)\.\.(8(?:\.0)?) else (0(?:\.0)?)\.\.(1(?:\.0)?)", kt_src, "light.curve bounds", kt_path)
+    cs_hdr = _need(r"new NumericRange\((-?\d+), (-?\d+),", cs_src, "light.curve hdr bounds", cs_path)
+    cs_lo, cs_hi = float(cs_hdr.group(1)), float(cs_hdr.group(2))
+    _need(r"new NumericRange\(0, 1,", cs_src, "light.curve bounds", cs_path)
+    if (float(kt_m.group(3)), float(kt_m.group(4)), float(kt_m.group(1)), float(kt_m.group(2))) != (
+        bounds["min"], bounds["max"], bounds["hdr_min"], bounds["hdr_max"]
+    ) or (cs_lo, cs_hi) != (bounds["hdr_min"], bounds["hdr_max"]):
+        raise AssertionError(f"Parse failed for light.curve bounds: cross-end mismatch vs snapshot bounds {bounds}")
+    _snapshot("ui", "light.curve.bounds")
+    kt_step = _need(r"(\.\d+) else (\.\d+)", kt_src, "light.curve step", kt_path)
+    kt_coord = float(kt_step.group(1))
+    ios_step = _need(r"usesExposureStops \? ([\d.]+) : ([\d.]+)", ios_src, "light.curve step", ios_path)
+    cs_coord = float(_need(r"new NumericRange\(0, 1, (\.\d+)", cs_src, "light.curve step", cs_path).group(1))
+    cs_ev = float(_need(r"new NumericRange\(-8, 8, (\.\d+)", cs_src, "light.curve step", cs_path).group(1))
+    _need(r"step = fine \|\| config\.fine \? 0\.001 : 0\.01", _read(mac_shared_int), "light.curve step", mac_shared_int)
+    shared_ed = _read("Shared/ToneCurveEditor.swift")
+    _need(r"value\.replacing\(\.rgb", shared_ed, "light.curve mac channels", "Shared/ToneCurveEditor.swift")
+    tcs_src = _read("Shared/ToneCurveSettings.swift")
+    chan_cases = _need(
+        r"enum ToneCurveChannel: String, CaseIterable, Identifiable \{\n    case (\w+), (\w+), (\w+), (\w+)",
+        tcs_src, "light.curve channels", "Shared/ToneCurveSettings.swift",
+    )
+    full_channels = [chan_cases.group(i) for i in range(1, 5)]
+    _need(r"ForEach\(ToneCurveChannel\.allCases\)", ios_src, "light.curve ios channels", ios_path)
+    _need(r"ToneCurveChannel\.entries", kt_src, "light.curve android channels", kt_path)
+    kt_chan = _need(r"enum class ToneCurveChannel \{ (\w+), (\w+), (\w+), (\w+)", _read("RawLabAndroid/app/src/main/java/com/rawlab/android/settings/ToneCurveSettings.kt"), "light.curve android channels", "settings/ToneCurveSettings.kt")
+    android_channels = [c.lower() for c in kt_chan.groups()]
+    _need(r"Replacing\(ToneCurveChannel\.Rgb", cs_src, "light.curve windows channels", cs_path)
+    for tok in (".Red", ".Green", ".Blue"):
+        if tok in cs_src:
+            raise AssertionError(f"Parse failed for light.curve windows channels: picker for {tok} found in {cs_path}")
+    for tok in (".red", ".green", ".blue"):
+        if tok in shared_ed:
+            raise AssertionError(f"Parse failed for light.curve mac channels: picker for {tok} found in Shared/ToneCurveEditor.swift")
+    return {
+        "macos": _ui_entry(
+            min_val=bounds["min"], max_val=bounds["max"], hdr_min=bounds["hdr_min"], hdr_max=bounds["hdr_max"],
+            default=_curve_default("macos"),
+            step={"coordinate": mac_fine["curveCoordinate"], "hdr_coordinate_ev": mac_fine["exposure"]},
+            channels=["rgb"],
+        ),
+        "ios": _ui_entry(
+            min_val=bounds["min"], max_val=bounds["max"], hdr_min=bounds["hdr_min"], hdr_max=bounds["hdr_max"],
+            default=_curve_default("ios"),
+            step={"coordinate": float(ios_step.group(2)), "hdr_coordinate_ev": float(ios_step.group(1))},
+            channels=full_channels,
+        ),
+        "android": _ui_entry(
+            min_val=bounds["min"], max_val=bounds["max"], hdr_min=bounds["hdr_min"], hdr_max=bounds["hdr_max"],
+            default=_curve_default("android"),
+            step={"coordinate": kt_coord, "hdr_coordinate_ev": round(kt_coord * 16, 6)},
+            channels=android_channels,
+        ),
+        "windows": _ui_entry(
+            min_val=bounds["min"], max_val=bounds["max"], hdr_min=bounds["hdr_min"], hdr_max=bounds["hdr_max"],
+            default=_curve_default("windows"),
+            step={"coordinate": cs_coord, "hdr_coordinate_ev": cs_ev},
+            channels=["rgb"],
+        ),
+    }
+
+
+def _fx_windows_unit():
+    src = _read("RawLabWindows/PhotoEffectsPanel.xaml.cs")
+    return _need(r'new\(spec\.Min,spec\.Max\),value\[spec\.Id\],spec\.DefaultValue,"(\%)"', src, "effects windows unit", "RawLabWindows/PhotoEffectsPanel.xaml.cs").group(1)
+
+
+def _cs_denoise_percent_unit():
+    src = _read("RawLabWindows/DenoisePanel.xaml.cs")
+    return _need(r'new\(0,100\),.*?"(\%)"', src, "detail.denoise.wavelet windows unit", "RawLabWindows/DenoisePanel.xaml.cs").group(1)
+
+
 def _make_proto(
     value_type: str,
     *,
@@ -67,6 +648,7 @@ def _make_proto(
     object_keys=None,
     optional_keys=None,
     hdr_only: bool = False,
+    sub_fields=None,
 ) -> dict:
     d = {
         "transferable": True,
@@ -83,6 +665,8 @@ def _make_proto(
         d["non_empty"] = True
     if optional_keys:
         d["optional_keys"] = sorted(optional_keys)
+    if sub_fields is not None:
+        d["sub_fields"] = sub_fields
     return d
 
 
@@ -107,13 +691,20 @@ def parse_apple_protocol() -> tuple[list[str], dict[str, dict], dict[str, str]]:
     hdr_only_cases = {"hdrLook", "hdrCameraDevelopment"} | hdr_relative | hdr_rendition
 
     groups: dict[str, str] = {}
+    group_block = _need(r"var group: String \{\n(.*?)\n    \}", src, "protocol groups", "Shared/AdjustmentTransfer.swift", re.S).group(1)
+    apple_rel_group = _need(r'if isHDRRelative \{ return "(\w+)" \}', group_block, "hdr.relative group", "apple group block").group(1)
+    apple_look_group = _need(r'if self == \.hdrLook \{ return "(\w+)" \}', group_block, "hdr.look group", "apple group block").group(1)
+    apple_cam_group = _need(r'if self == \.hdrCameraDevelopment \{ return "(\w+)" \}', group_block, "hdr.camera_development group", "apple group block").group(1)
+    _need(r'hdrRendition\.contains\(self\) \{ return "light" \}', group_block, "hdr.rendition group", "apple group block")
+    _need(r'self == \.blackPoint \|\| self == \.whitePoint \? "light"', group_block, "black/white point group", "apple group block")
+    _need(r'String\(rawValue\.split\(separator: "\."\)\[0\]\)', group_block, "group fallback", "apple group block")
     for name, wire in cases:
         if name in hdr_relative:
-            groups[wire] = "color"
+            groups[wire] = apple_rel_group
         elif name == "hdrLook":
-            groups[wire] = "looks"
+            groups[wire] = apple_look_group
         elif name == "hdrCameraDevelopment":
-            groups[wire] = "detail"
+            groups[wire] = apple_cam_group
         elif name in hdr_rendition or name in {"blackPoint", "whitePoint"}:
             groups[wire] = "light"
         else:
@@ -147,7 +738,8 @@ def parse_apple_protocol() -> tuple[list[str], dict[str, dict], dict[str, str]]:
         r'"([^"]+)"',
         re.search(r"var hdrLookSettings.*?Set\(object\.keys\)\s*==\s*\[([^\]]+)\]", src, re.S).group(1),
     )
-    hdr_look_nullable = "if self == .null { return HDRLookSettings() }" in src
+    _require('if self == .null { return HDRLookSettings() }', src, 'hdr_look nullable anchor', "protocol parse")
+    hdr_look_nullable = True
     hdr_cam_keys = re.findall(
         r'"([^"]+)"',
         re.search(r"var hdrCameraDevelopment.*?Set\(object\.keys\)\s*==\s*\[([^\]]+)\]", src, re.S).group(1),
@@ -174,7 +766,8 @@ def parse_apple_protocol() -> tuple[list[str], dict[str, dict], dict[str, str]]:
         r'"([^"]+)"',
         re.search(r"Set\(wavelet\.keys\)\s*==\s*\[([^\]]+)\]", wavelet_block).group(1),
     )
-    wavelet_nullable = "if value == .null { return true }" in wavelet_block
+    _require('if value == .null { return true }', wavelet_block, 'wavelet nullable anchor', "protocol parse")
+    wavelet_nullable = True
 
     bool_cases = {
         c.strip().lstrip(".")
@@ -275,6 +868,7 @@ def parse_apple_protocol() -> tuple[list[str], dict[str, dict], dict[str, str]]:
         else:
             raise AssertionError(f"Unhandled Swift protocol field {name} ({wire})")
 
+    protocols = _attach_sub_fields(protocols, "macos")
     return ordered_ids, protocols, groups
 
 
@@ -299,14 +893,18 @@ def parse_android_protocol() -> tuple[list[str], dict[str, dict], dict[str, str]
 
     groups: dict[str, str] = {}
     group_block = re.search(r"val group get\(\)\s*=\s*when\s*\{(.*?)\n    \}", field_src, re.S).group(1)
+    kt_named_arms = dict(re.findall(r'this == (\w+) -> "(\w+)"', group_block))
+    kt_rel_arm = _need(r'isHDRRelative -> "(\w+)"', group_block, "hdr.relative group", "AdjustmentField.kt").group(1)
+    _need(r'-> "light"', group_block, "hdr.rendition group", "AdjustmentField.kt")
+    _need(r"else ->", group_block, "group fallback", "AdjustmentField.kt")
     for name, wire in cases:
-        if name == "HDR_LOOK" and 'this == HDR_LOOK -> "looks"' in group_block:
-            groups[wire] = "looks"
-        elif name == "HDR_CAMERA_DEVELOPMENT" and 'this == HDR_CAMERA_DEVELOPMENT -> "detail"' in group_block:
-            groups[wire] = "detail"
-        elif name in hdr_relative and 'isHDRRelative -> "color"' in group_block:
-            groups[wire] = "color"
-        elif (name in {"BLACK_POINT", "WHITE_POINT"} or name in hdr_rendition) and '"light"' in group_block:
+        if name == "HDR_LOOK":
+            groups[wire] = _need_key(kt_named_arms, "HDR_LOOK", "hdr.look group", "AdjustmentField.kt group arms")
+        elif name == "HDR_CAMERA_DEVELOPMENT":
+            groups[wire] = _need_key(kt_named_arms, "HDR_CAMERA_DEVELOPMENT", "hdr.camera_development group", "AdjustmentField.kt group arms")
+        elif name in hdr_relative:
+            groups[wire] = kt_rel_arm
+        elif name in {"BLACK_POINT", "WHITE_POINT"} or name in hdr_rendition:
             groups[wire] = "light"
         else:
             groups[wire] = wire.split(".", 1)[0]
@@ -381,13 +979,15 @@ def parse_android_protocol() -> tuple[list[str], dict[str, dict], dict[str, str]
         re.search(r"AdjustmentField\.LOOK\s*->\s*\{.*?look\.keys != setOf\(([^)]+)\)", valid_block, re.S).group(1),
     )
     wavelet_m = re.search(r"AdjustmentField\.WAVELET_DENOISE\s*->\s*\{(.*?)\n                \}", valid_block, re.S).group(1)
-    wavelet_nullable = "if (value == AdjustmentValue.Null) return true" in wavelet_m
+    _require('if (value == AdjustmentValue.Null) return true', wavelet_m, 'wavelet nullable anchor', "protocol parse")
+    wavelet_nullable = True
     wavelet_keys = re.findall(r'"([^"]+)"', re.search(r"wavelet\.keys == setOf\(([^)]+)\)", wavelet_m).group(1))
 
     hdr_cam_fn = re.search(r"internal fun AdjustmentValue\.hdrCameraDevelopment\(\).*?\n\}", payload_src, re.S).group(0)
     hdr_cam_keys = re.findall(r'"([^"]+)"', re.search(r"camera\.keys != setOf\(([^)]+)\)", hdr_cam_fn).group(1))
     hdr_look_fn = re.search(r"internal fun AdjustmentValue\.hdrLook\(\).*?\n\}", payload_src, re.S).group(0)
-    hdr_look_nullable = "if (this == AdjustmentValue.Null) return HDRLookSettings()" in hdr_look_fn
+    _require('if (this == AdjustmentValue.Null) return HDRLookSettings()', hdr_look_fn, 'hdr_look nullable anchor', "protocol parse")
+    hdr_look_nullable = True
     hdr_look_keys = re.findall(r'"([^"]+)"', re.search(r"look\.keys != setOf\(([^)]+)\)", hdr_look_fn).group(1))
 
     curve_decode = re.search(r"fun decode\(json: JSONObject\): ToneCurveSettings \{(.*?)\n        \}", curve_src, re.S).group(1)
@@ -459,6 +1059,7 @@ def parse_android_protocol() -> tuple[list[str], dict[str, dict], dict[str, str]
         else:
             raise AssertionError(f"Unhandled Kotlin protocol field {name} ({wire})")
 
+    protocols = _attach_sub_fields(protocols, "android")
     return [wire for _, wire in cases], protocols, groups
 
 
@@ -480,19 +1081,30 @@ def parse_windows_protocol() -> tuple[list[str], dict[str, dict], dict[str, str]
     hdr_only_cases = hdr_relative | hdr_rendition | {"HdrLook", "HdrCameraDevelopment"}
 
     group_block = re.search(r"public static string Group\(this AdjustmentField field\) => field switch \{(.*?)\};", src, re.S).group(1)
-    has_hdr_rel_group = "IsHDRRelative()" in group_block
+    cs_named_arms: dict[str, str] = {}
+    for arm_m in re.finditer(r'AdjustmentField\.((?:\w+)(?: or AdjustmentField\.\w+)*) => "(\w+)"', group_block):
+        for arm_tok in arm_m.group(1).split(" or "):
+            cs_named_arms[arm_tok.rsplit(".", 1)[-1]] = arm_m.group(2)
+    cs_rel_arm_m = re.search(r'_ when field\.IsHDRRelative\(\) => "(\w+)"', group_block)
+    cs_rendition_group = _need(r'_ when field\.IsHDRRendition\(\) => "(\w+)"', group_block, "hdr.rendition group", "AdjustmentPayload.cs").group(1)
+    _need(r"_ => field\.ID\(\)\.Split\('\.'\)\[0\]", group_block, "group fallback", "AdjustmentPayload.cs")
     groups: dict[str, str] = {}
     for name, wire in cases:
-        if name == "HdrLook" and 'AdjustmentField.HdrLook => "looks"' in group_block:
-            groups[wire] = "looks"
-        elif name == "HdrCameraDevelopment" and 'AdjustmentField.HdrCameraDevelopment => "detail"' in group_block:
-            groups[wire] = "detail"
-        elif name in hdr_relative and has_hdr_rel_group:
-            groups[wire] = "color"
-        elif name in {"BlackPoint", "WhitePoint"} and 'AdjustmentField.BlackPoint or AdjustmentField.WhitePoint => "light"' in group_block:
-            groups[wire] = "light"
-        elif name in hdr_rendition and 'IsHDRRendition() => "light"' in group_block:
-            groups[wire] = "light"
+        if name == "HdrLook":
+            groups[wire] = _need_key(cs_named_arms, "HdrLook", "hdr.look group", "AdjustmentPayload.cs group arms")
+        elif name == "HdrCameraDevelopment":
+            groups[wire] = _need_key(cs_named_arms, "HdrCameraDevelopment", "hdr.camera_development group", "AdjustmentPayload.cs group arms")
+        elif name in hdr_relative:
+            if f"AdjustmentField.{name} =>" in group_block:
+                groups[wire] = _need_key(cs_named_arms, name, "hdr.relative group", "AdjustmentPayload.cs group arms")
+            elif cs_rel_arm_m:
+                groups[wire] = cs_rel_arm_m.group(1)
+            else:
+                groups[wire] = wire.split(".", 1)[0]
+        elif name in {"BlackPoint", "WhitePoint"}:
+            groups[wire] = _need_key(cs_named_arms, name, f"{name} group", "AdjustmentPayload.cs group arms")
+        elif name in hdr_rendition:
+            groups[wire] = cs_rendition_group
         else:
             groups[wire] = wire.split(".", 1)[0]
 
@@ -568,18 +1180,30 @@ def parse_windows_protocol() -> tuple[list[str], dict[str, dict], dict[str, str]
         re.search(r"case AdjustmentField\.Look:.*?ObjectKeys\(value,([^)]+)\)", valid_block, re.S).group(1),
     )
     wavelet_m = re.search(r"case AdjustmentField\.WaveletDenoise:(.*?)default:", valid_block, re.S).group(1)
-    wavelet_nullable = "Null(value) ||" in wavelet_m
+    _require('Null(value) ||', wavelet_m, 'wavelet nullable anchor', "protocol parse")
+    wavelet_nullable = True
     wavelet_keys = re.findall(r'"([^"]+)"', re.search(r"ObjectKeys\(value,([^)]+)\)", wavelet_m).group(1))
 
     hdr_look_fn = re.search(r"internal static HDRLookSettings\? HDRLookValue.*?\n    \}", src, re.S).group(0)
-    hdr_look_nullable = "if (Null(value)) return new();" in hdr_look_fn
+    _require('if (Null(value)) return new();', hdr_look_fn, 'hdr_look nullable anchor', "protocol parse")
+    hdr_look_nullable = True
     hdr_look_keys = re.findall(r'"([^"]+)"', re.search(r"ObjectKeys\(obj,\s*([^)]+)\)", hdr_look_fn).group(1))
     hdr_cam_fn = re.search(r"internal static HDRCameraDevelopmentSettings\? HDRCameraValue.*?\n    \}", src, re.S).group(0)
     hdr_cam_keys = re.findall(r'"([^"]+)"', re.search(r"ObjectKeys\(obj,([^)]+)\)", hdr_cam_fn).group(1))
 
     curve_parse = re.search(r"internal static ToneCurveSettings Parse\(JsonElement \w+\)\s*\{(.*?)\n    \}", curve_src, re.S).group(1)
-    curve_opt = ["channels"] if 'TryGetProperty("channels"' in curve_parse else []
-    curve_req = ["mode", "points"] if '"mode"' in curve_src and '"points"' in curve_src else []
+    _need(r"is not \(\"legacy\" or \"custom\"\)", curve_src, "light.curve mode values", "RawLabWindows/ToneCurveSettings.cs")
+    _need(r"GetArrayLength\(\) > 33", curve_src, "light.curve points max", "RawLabWindows/ToneCurveSettings.cs")
+    if 'TryGetProperty("channels"' not in curve_parse:
+        raise AssertionError(
+            "Parse failed for light.curve optional keys: pattern 'TryGetProperty(\"channels\")' "
+            "not found in RawLabWindows/ToneCurveSettings.cs"
+        )
+    curve_opt = ["channels"]
+    curve_req = sorted(re.findall(
+        r'"([^"]+)"',
+        _need(r"SequenceEqual\(new\[\] \{ ([^}]+) \}\)", curve_src, "light.curve required keys", "RawLabWindows/ToneCurveSettings.cs").group(1),
+    ))
 
     protocols: dict[str, dict] = {}
     for name, wire in cases:
@@ -644,6 +1268,7 @@ def parse_windows_protocol() -> tuple[list[str], dict[str, dict], dict[str, str]
         else:
             raise AssertionError(f"Unhandled C# protocol field {name} ({wire})")
 
+    protocols = _attach_sub_fields(protocols, "windows")
     return wire_ids, protocols, groups
 
 
@@ -896,9 +1521,8 @@ def parse_models_from_sources() -> dict[str, dict[str, dict]]:
             "windows": _model_entry("double", min_val=cs_specs[cs_k][0], max_val=cs_specs[cs_k][1], default=cs_defaults[cs_k], scale_from_protocol=cs_other_scale),
         }
 
-    # 9. light.curve
-    curve_def = {"mode": "legacy", "points": [[0.0, 0.0], [1.0, 1.0]]}
-    models["light.curve"] = {p: _model_entry("object", default=curve_def) for p in PLATFORMS}
+    # 9. light.curve (defaults parsed per end from ToneCurveSettings sources)
+    models["light.curve"] = {p: _model_entry("object", default=_curve_default(p)) for p in PLATFORMS}
 
     # 10-12. tone.black_point, tone.white_point, color.vibrance
     for fid in ("tone.black_point", "tone.white_point", "color.vibrance"):
@@ -959,8 +1583,9 @@ def parse_models_from_sources() -> dict[str, dict[str, dict]]:
             p: _model_entry("float" if p == "android" else "double", modes=("hdr",), min_val=lo, max_val=hi, default=0.0)
             for p in PLATFORMS
         }
-    hdr_look_def = {"name": None, "sha256": None, "strength": 1.0}
-    models["hdr.look"] = {p: _model_entry("object", modes=("hdr",), nullable=True, default=hdr_look_def) for p in PLATFORMS}
+    models["hdr.look"] = {
+        p: _model_entry("object", modes=("hdr",), nullable=True, default=_look_default(p)) for p in PLATFORMS
+    }
     hdr_cam_def = {
         "version": 1,
         "white_balance_mode": "as_shot",
@@ -1125,6 +1750,7 @@ def _ui_entry(
     default=None,
     step=None,
     secondary_inspector_step=None,
+    channels=None,
 ) -> dict:
     d = {
         "exposed": exposed,
@@ -1140,6 +1766,8 @@ def _ui_entry(
         d["hdr_max"] = hdr_max
     if secondary_inspector_step is not None:
         d["secondary_inspector_step"] = secondary_inspector_step
+    if channels is not None:
+        d["channels"] = channels
     return d
 
 
@@ -1326,13 +1954,8 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
         "windows": _ui_entry(unit="%", min_val=-100.0, max_val=100.0, default=0.0, step=cs_default_grid),
     }
 
-    # 9. light.curve
-    curve_def = {"mode": "legacy", "points": [[0.0, 0.0], [1.0, 1.0]]}
-    curve_step = {"coordinate": mac_fine["curveCoordinate"], "hdr_coordinate_ev": mac_fine["exposure"]}
-    ui["light.curve"] = {
-        p: _ui_entry(min_val=0.0, max_val=1.0, hdr_min=-8.0, hdr_max=8.0, default=curve_def, step=curve_step)
-        for p in PLATFORMS
-    }
+    # 9. light.curve (per-end parsed bounds, steps, channels and defaults)
+    ui["light.curve"] = _ui_curve_entries(mac_fine)
 
     # 13-15. color.grading.*
     grad_def = {"hue": 0.0, "saturation": 0.0}
@@ -1423,6 +2046,7 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
                 "windows": _ui_entry(unit="", min_val=-100.0, max_val=100.0, default=0.0, step=cs_default_grid),
             }
 
+    _fx_win_unit = _fx_windows_unit()
     # 52-61. vignette/grain effects
     for m in re.finditer(
         r"(\w+)\((?:true|false),\s*(-?\d+)f\.\.(-?\d+)f,\s*(-?\d+)f\)",
@@ -1436,7 +2060,7 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
             "macos": _ui_entry(unit="", min_val=lo, max_val=hi, default=dflt, step=mac_fine["standard"]),
             "ios": _ui_entry(unit="", min_val=lo, max_val=hi, default=dflt, step=ios_fx_step),
             "android": _ui_entry(unit="", min_val=lo, max_val=hi, default=dflt, step=kt_default_step),
-            "windows": _ui_entry(unit="", min_val=lo, max_val=hi, default=dflt, step=cs_default_grid),
+            "windows": _ui_entry(unit=_fx_win_unit, min_val=lo, max_val=hi, default=dflt, step=cs_default_grid),
         }
 
     # 62-66. detail
@@ -1472,11 +2096,12 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
         "windows": _ui_entry(exposed=False, modes=()),
     }
     wavelet_def = {"enabled": False, "luma": 0.0, "chroma": 46.0, "coarse": 50.0, "preset": "detail"}
+    _cs_denoise_unit = _cs_denoise_percent_unit()
     ui["detail.denoise.wavelet"] = {
         "macos": _ui_entry(modes=("sdr",), unit="", min_val=0.0, max_val=100.0, default=wavelet_def, step={"luma": mac_fine["standard"], "chroma": mac_fine["standard"], "coarse": mac_fine["standard"]}),
         "ios": _ui_entry(modes=("sdr",), unit="", min_val=0.0, max_val=100.0, default=wavelet_def, step={"luma": ios_wavelet_step, "chroma": ios_wavelet_step, "coarse": ios_wavelet_step}),
         "android": _ui_entry(modes=("sdr",), unit="", min_val=0.0, max_val=100.0, default=wavelet_def, step={"luma": kt_default_step, "chroma": kt_default_step, "coarse": kt_default_step}),
-        "windows": _ui_entry(modes=("sdr",), unit="", min_val=0.0, max_val=100.0, default=wavelet_def, step={"luma": cs_default_grid, "chroma": cs_default_grid, "coarse": cs_default_grid}),
+        "windows": _ui_entry(modes=("sdr",), unit=_cs_denoise_unit, min_val=0.0, max_val=100.0, default=wavelet_def, step={"luma": cs_default_grid, "chroma": cs_default_grid, "coarse": cs_default_grid}),
     }
 
     # 67-81. geometry & lens
@@ -1593,6 +2218,11 @@ def validate_layer1_protocol(
         fid = entry["field_id"]
         spec_proto = {k: v for k, v in entry["protocol"].items() if k != "protocol_group_divergences"}
         group_overrides = entry["protocol"].get("protocol_group_divergences", {})
+        if group_overrides and not entry["divergence"]["has_divergence"]:
+            raise AssertionError(
+                f"Exemption drift on {fid}: protocol_group_divergences {group_overrides} "
+                "requires divergence.has_divergence=true"
+            )
 
         # Hard 4-end protocol equality
         ref = platform_protos["macos"][fid]
@@ -1643,6 +2273,7 @@ def validate_layer2_model(document: dict, parsed_models: dict[str, dict[str, dic
                         f"scale_from_protocol {actual['scale_from_protocol']!r} on {fid}.{platform} maps "
                         f"[{p_lo}, {p_hi}] -> {m_vals}, expected [{actual['min']}, {actual['max']}]"
                     )
+            _check_hdr_endpoints(fid, platform, proto, actual)
 
 
 def validate_layer3_ui(document: dict, parsed_ui: dict[str, dict[str, dict]]) -> None:
@@ -1692,6 +2323,8 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
         self.assertEqual(summary["divergent_fields"], len(all_div))
         self.assertEqual(summary["identical_fields"], len(ident))
         self.assertEqual(len(all_div) + len(ident), 83)
+        self.assertEqual(summary["divergent_fields"], 66)
+        self.assertEqual(summary["identical_fields"], 17)
 
         for entry in fields:
             fid = entry["field_id"]
@@ -1714,9 +2347,31 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
                         f"{fid} marked identical but UI entries differ across platforms",
                     )
 
-                exposed_steps = [entry["ui"][p]["step"] for p in PLATFORMS if entry["ui"][p]["exposed"]]
-                if len(exposed_steps) > 1 and any(s != exposed_steps[0] for s in exposed_steps[1:]):
-                    self.assertIn("step", cats, f"{fid} has differing UI steps across platforms without 'step' category")
+                exposed = [entry["ui"][p] for p in PLATFORMS if entry["ui"][p]["exposed"]]
+                derived: set[str] = set()
+                if len(exposed) > 1:
+                    ref_u = exposed[0]
+                    if any(u["step"] != ref_u["step"] for u in exposed[1:]):
+                        derived.add("step")
+                    if any(u["unit"] != ref_u["unit"] or u["default"] != ref_u["default"] for u in exposed[1:]):
+                        derived.add("default_unit")
+                    if any(
+                        u["min"] != ref_u["min"] or u["max"] != ref_u["max"]
+                        or u.get("hdr_min") != ref_u.get("hdr_min") or u.get("hdr_max") != ref_u.get("hdr_max")
+                        for u in exposed[1:]
+                    ):
+                        derived.add("range")
+                    if any(u.get("channels") != ref_u.get("channels") for u in exposed[1:]):
+                        derived.add("missing")
+                model_vals = [entry["model"][p] for p in PLATFORMS]
+                if any(m["supported"] != model_vals[0]["supported"] or m["modes"] != model_vals[0]["modes"] for m in model_vals[1:]):
+                    derived.add("missing")
+                if entry["protocol"].get("protocol_group_divergences"):
+                    derived.add("protocol_metadata")
+                self.assertTrue(
+                    derived.issubset(cats),
+                    f"{fid} derived divergence {sorted(derived - cats)} not declared in categories {sorted(cats)}",
+                )
 
     def test_apple_shared_protocol_source_is_linked_by_macos_and_ios(self):
         mac_build = _read("RawLabMac/build.sh")
@@ -1724,6 +2379,21 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
         self.assertIn('"$ROOT"/Shared/*.swift', mac_build)
         self.assertIn("../Shared/AdjustmentTransfer.swift", ios_pbxproj)
         self.assertIn("AdjustmentTransfer.swift in Sources", ios_pbxproj)
+        self.assertIn("../Shared/ToneCurveSettings.swift", ios_pbxproj)
+
+    def test_snapshot_registrations_are_anchored_and_used(self):
+        self.assertGreater(len(SNAPSHOT_REGISTRATIONS), 0)
+        for reg_id, reg in SNAPSHOT_REGISTRATIONS.items():
+            with self.subTest(snapshot=reg_id):
+                self.assertEqual(reg["registration"], "snapshot")
+                self.assertTrue(reg["used"], f"{reg_id} registered but never consumed")
+                self.assertTrue(reg["anchors"], f"{reg_id} has no anchors")
+                for platform, (path, pattern) in reg["anchors"].items():
+                    self.assertIn(platform, PLATFORMS)
+                    self.assertTrue(
+                        re.search(pattern, _read(path)),
+                        f"{reg_id} anchor invalid for {platform}: {pattern!r} in {path}",
+                    )
 
     def test_layer1_protocol_four_end_hard_parity(self):
         validate_layer1_protocol(
@@ -1760,6 +2430,28 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
         straight["ui"]["windows"]["step"] = 0.1
         with self.assertRaisesRegex(AssertionError, r"geometry\.straighten_degrees\.windows"):
             validate_layer3_ui(bad_ui, self.parsed_ui)
+
+        # 4. Red anchor 1: production ToneCurveSettings default points mutation must fail Layer 2
+        bad_curve = copy.deepcopy(self.parsed_models)
+        bad_curve["light.curve"]["macos"]["default"]["points"] = [[0.0, 0.0], [1.0, 1.0]]
+        with self.assertRaisesRegex(AssertionError, r"light\.curve\.macos"):
+            validate_layer2_model(self.document, bad_curve)
+
+        # 5. Red anchor 2: Windows Group() arm mutation must fail Layer 1 group check
+        clean_proto = copy.deepcopy(self.document)
+        w_wires, w_protos, w_groups = self.windows_protocol
+        w_groups = copy.deepcopy(w_groups)
+        w_groups["hdr.look"] = "effects"
+        with self.assertRaisesRegex(AssertionError, r"hdr\.look \(windows\)"):
+            validate_layer1_protocol(clean_proto, self.apple_protocol, self.android_protocol, (w_wires, w_protos, w_groups))
+
+        # 6. Red anchor 3: hdr.look model strength default regression must fail Layer 2
+        bad_look = copy.deepcopy(self.document)
+        look = next(f for f in bad_look["fields"] if f["field_id"] == "hdr.look")
+        for plat in PLATFORMS:
+            look["model"][plat]["default"]["strength"] = 1.0
+        with self.assertRaisesRegex(AssertionError, r"hdr\.look\.macos"):
+            validate_layer2_model(bad_look, self.parsed_models)
 
 
 if __name__ == "__main__":

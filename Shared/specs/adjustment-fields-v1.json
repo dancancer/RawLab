@@ -5,17 +5,18 @@
     "step": "UI fine step / quantization grid differs across platforms",
     "range": "UI range, representable value set (integer vs fractional), or protocol-vs-model range differs",
     "default_unit": "Internal model unit, sign, nullability, default representation, or UI display unit differs",
-    "missing": "Field or mode-specific model/UI support is absent on one or more platforms"
+    "missing": "Field or mode-specific model/UI support is absent on one or more platforms",
+    "protocol_metadata": "Protocol field group or metadata helper differs across platforms while wire key/value contract matches"
   },
   "summary": {
     "total_fields": 83,
     "transfer_fields": 81,
     "local_only_fields": 2,
-    "divergent_fields": 64,
+    "divergent_fields": 66,
     "report_d5d62af7_divergent_fields": 59,
     "post_280_hdr_rendition_divergent_fields": 4,
-    "errata_newly_uncovered_divergent_fields": 1,
-    "identical_fields": 19
+    "errata_newly_uncovered_divergent_fields": 3,
+    "identical_fields": 17
   },
   "fields": [
     {
@@ -33,7 +34,24 @@
           "id",
           "kind"
         ],
-        "hdr_only": false
+        "hdr_only": false,
+        "sub_fields": {
+          "kind": {
+            "value_type": "string",
+            "allowed_values": [
+              "neutral",
+              "builtin",
+              "managed",
+              "recipe",
+              "recipe_lut"
+            ]
+          },
+          "id": {
+            "value_type": "string",
+            "nullable_when_kind": "neutral",
+            "non_empty": true
+          }
+        }
       },
       "model": {
         "macos": {
@@ -1166,7 +1184,43 @@
         "hdr_only": false,
         "optional_keys": [
           "channels"
-        ]
+        ],
+        "sub_fields": {
+          "mode": {
+            "value_type": "string",
+            "allowed_values": [
+              "legacy",
+              "custom"
+            ]
+          },
+          "points": {
+            "value_type": "array",
+            "legacy_count": 0,
+            "custom_min_count": 2,
+            "custom_max_count": 33,
+            "coord_min": 0.0,
+            "coord_max": 1.0,
+            "endpoints": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                1.0,
+                1.0
+              ]
+            ]
+          },
+          "channels": {
+            "value_type": "object",
+            "optional": true,
+            "allowed_keys": [
+              "red",
+              "green",
+              "blue"
+            ]
+          }
+        }
       },
       "model": {
         "macos": {
@@ -1181,16 +1235,7 @@
           "max": null,
           "default": {
             "mode": "legacy",
-            "points": [
-              [
-                0.0,
-                0.0
-              ],
-              [
-                1.0,
-                1.0
-              ]
-            ]
+            "points": []
           },
           "scale_from_protocol": "p",
           "quantization": "continuous"
@@ -1207,16 +1252,7 @@
           "max": null,
           "default": {
             "mode": "legacy",
-            "points": [
-              [
-                0.0,
-                0.0
-              ],
-              [
-                1.0,
-                1.0
-              ]
-            ]
+            "points": []
           },
           "scale_from_protocol": "p",
           "quantization": "continuous"
@@ -1233,16 +1269,7 @@
           "max": null,
           "default": {
             "mode": "legacy",
-            "points": [
-              [
-                0.0,
-                0.0
-              ],
-              [
-                1.0,
-                1.0
-              ]
-            ]
+            "points": []
           },
           "scale_from_protocol": "p",
           "quantization": "continuous"
@@ -1259,16 +1286,7 @@
           "max": null,
           "default": {
             "mode": "legacy",
-            "points": [
-              [
-                0.0,
-                0.0
-              ],
-              [
-                1.0,
-                1.0
-              ]
-            ]
+            "points": []
           },
           "scale_from_protocol": "p",
           "quantization": "continuous"
@@ -1286,23 +1304,17 @@
           "max": 1.0,
           "default": {
             "mode": "legacy",
-            "points": [
-              [
-                0.0,
-                0.0
-              ],
-              [
-                1.0,
-                1.0
-              ]
-            ]
+            "points": []
           },
           "step": {
             "coordinate": 0.001,
             "hdr_coordinate_ev": 0.01
           },
           "hdr_min": -8.0,
-          "hdr_max": 8.0
+          "hdr_max": 8.0,
+          "channels": [
+            "rgb"
+          ]
         },
         "ios": {
           "exposed": true,
@@ -1315,23 +1327,20 @@
           "max": 1.0,
           "default": {
             "mode": "legacy",
-            "points": [
-              [
-                0.0,
-                0.0
-              ],
-              [
-                1.0,
-                1.0
-              ]
-            ]
+            "points": []
           },
           "step": {
             "coordinate": 0.001,
             "hdr_coordinate_ev": 0.01
           },
           "hdr_min": -8.0,
-          "hdr_max": 8.0
+          "hdr_max": 8.0,
+          "channels": [
+            "rgb",
+            "red",
+            "green",
+            "blue"
+          ]
         },
         "android": {
           "exposed": true,
@@ -1344,23 +1353,20 @@
           "max": 1.0,
           "default": {
             "mode": "legacy",
-            "points": [
-              [
-                0.0,
-                0.0
-              ],
-              [
-                1.0,
-                1.0
-              ]
-            ]
+            "points": []
           },
           "step": {
             "coordinate": 0.001,
-            "hdr_coordinate_ev": 0.01
+            "hdr_coordinate_ev": 0.016
           },
           "hdr_min": -8.0,
-          "hdr_max": 8.0
+          "hdr_max": 8.0,
+          "channels": [
+            "rgb",
+            "red",
+            "green",
+            "blue"
+          ]
         },
         "windows": {
           "exposed": true,
@@ -1373,30 +1379,30 @@
           "max": 1.0,
           "default": {
             "mode": "legacy",
-            "points": [
-              [
-                0.0,
-                0.0
-              ],
-              [
-                1.0,
-                1.0
-              ]
-            ]
+            "points": []
           },
           "step": {
             "coordinate": 0.001,
             "hdr_coordinate_ev": 0.01
           },
           "hdr_min": -8.0,
-          "hdr_max": 8.0
+          "hdr_max": 8.0,
+          "channels": [
+            "rgb"
+          ]
         }
       },
       "divergence": {
-        "has_divergence": false,
+        "has_divergence": true,
         "report_d5d62af7_listed": false,
-        "categories": [],
-        "ledger_ids": []
+        "categories": [
+          "step",
+          "missing"
+        ],
+        "ledger_ids": [
+          "P2-23"
+        ],
+        "notes": "Mac and Windows expose only the RGB master curve in UI (no Red/Green/Blue channel tabs), whereas iOS and Android expose RGB/Red/Green/Blue channel selectors; Android CurveCanvas fine keyboard step is 0.001 normalized (0.016 EV across -8..8 EV) with freeform coordinate dialog vs 0.01 EV grid on Mac/iOS/Windows."
       }
     },
     {
@@ -1816,7 +1822,20 @@
           "hue",
           "saturation"
         ],
-        "hdr_only": false
+        "hdr_only": false,
+        "sub_fields": {
+          "hue": {
+            "value_type": "number",
+            "min": 0.0,
+            "max": 360.0,
+            "exclusive_max": true
+          },
+          "saturation": {
+            "value_type": "number",
+            "min": 0.0,
+            "max": 100.0
+          }
+        }
       },
       "model": {
         "macos": {
@@ -1984,7 +2003,20 @@
           "hue",
           "saturation"
         ],
-        "hdr_only": false
+        "hdr_only": false,
+        "sub_fields": {
+          "hue": {
+            "value_type": "number",
+            "min": 0.0,
+            "max": 360.0,
+            "exclusive_max": true
+          },
+          "saturation": {
+            "value_type": "number",
+            "min": 0.0,
+            "max": 100.0
+          }
+        }
       },
       "model": {
         "macos": {
@@ -2152,7 +2184,20 @@
           "hue",
           "saturation"
         ],
-        "hdr_only": false
+        "hdr_only": false,
+        "sub_fields": {
+          "hue": {
+            "value_type": "number",
+            "min": 0.0,
+            "max": 360.0,
+            "exclusive_max": true
+          },
+          "saturation": {
+            "value_type": "number",
+            "min": 0.0,
+            "max": 100.0
+          }
+        }
       },
       "model": {
         "macos": {
@@ -2946,9 +2991,11 @@
         }
       },
       "divergence": {
-        "has_divergence": false,
+        "has_divergence": true,
         "report_d5d62af7_listed": false,
-        "categories": [],
+        "categories": [
+          "protocol_metadata"
+        ],
         "ledger_ids": [],
         "notes": "Range/default/step identical across 4 ends; Windows AdjustmentFields.Group() returns 'hdr' instead of 'color' (dead Null branch in Android/Windows Valid after scalarRange)."
       }
@@ -3074,7 +3121,8 @@
         "has_divergence": true,
         "report_d5d62af7_listed": true,
         "categories": [
-          "step"
+          "step",
+          "protocol_metadata"
         ],
         "ledger_ids": [
           "P2-23"
@@ -3622,7 +3670,23 @@
           "sha256",
           "strength"
         ],
-        "hdr_only": true
+        "hdr_only": true,
+        "sub_fields": {
+          "sha256": {
+            "value_type": "string",
+            "hex_length": 64
+          },
+          "name": {
+            "value_type": "string",
+            "min_utf8_bytes": 1,
+            "max_utf8_bytes": 512
+          },
+          "strength": {
+            "value_type": "number",
+            "min": 0.0,
+            "max": 2.0
+          }
+        }
       },
       "model": {
         "macos": {
@@ -3637,7 +3701,7 @@
           "default": {
             "name": null,
             "sha256": null,
-            "strength": 1.0
+            "strength": 0.0
           },
           "scale_from_protocol": "p",
           "quantization": "continuous"
@@ -3654,7 +3718,7 @@
           "default": {
             "name": null,
             "sha256": null,
-            "strength": 1.0
+            "strength": 0.0
           },
           "scale_from_protocol": "p",
           "quantization": "continuous"
@@ -3671,7 +3735,7 @@
           "default": {
             "name": null,
             "sha256": null,
-            "strength": 1.0
+            "strength": 0.0
           },
           "scale_from_protocol": "p",
           "quantization": "continuous"
@@ -3688,7 +3752,7 @@
           "default": {
             "name": null,
             "sha256": null,
-            "strength": 1.0
+            "strength": 0.0
           },
           "scale_from_protocol": "p",
           "quantization": "continuous"
@@ -3752,7 +3816,8 @@
         "has_divergence": false,
         "report_d5d62af7_listed": false,
         "categories": [],
-        "ledger_ids": []
+        "ledger_ids": [],
+        "notes": "Model neutral default has sha256=null, name=null, strength=0.0 (isDefault invariant on all 4 ends); UI strength slider (0..200%, step 1%) is active when a .cube look is loaded and resets to 100% (strength=1.0)."
       }
     },
     {
@@ -3774,7 +3839,49 @@
           "version",
           "white_balance_mode"
         ],
-        "hdr_only": true
+        "hdr_only": true,
+        "sub_fields": {
+          "version": {
+            "value_type": "integer",
+            "allowed_values": [
+              1
+            ]
+          },
+          "white_balance_mode": {
+            "value_type": "string",
+            "allowed_values": [
+              "as_shot",
+              "temperature"
+            ]
+          },
+          "temperature": {
+            "value_type": "number",
+            "as_shot_value": 0.0,
+            "temperature_min": 2000.0,
+            "temperature_max": 50000.0
+          },
+          "tint": {
+            "value_type": "number",
+            "as_shot_value": 0.0,
+            "temperature_min": -150.0,
+            "temperature_max": 150.0
+          },
+          "exposure_reference": {
+            "value_type": "string",
+            "allowed_values": [
+              "metadata",
+              "sensor"
+            ]
+          },
+          "fbdd_level": {
+            "value_type": "integer",
+            "allowed_values": [
+              0,
+              1,
+              2
+            ]
+          }
+        }
       },
       "model": {
         "macos": {
@@ -7288,7 +7395,7 @@
             "sdr",
             "hdr"
           ],
-          "unit": "",
+          "unit": "%",
           "min": -100.0,
           "max": 100.0,
           "default": 0.0,
@@ -7300,13 +7407,14 @@
         "report_d5d62af7_listed": true,
         "categories": [
           "step",
-          "range"
+          "range",
+          "default_unit"
         ],
         "ledger_ids": [
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
+        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR/HDR model rounds to integer and transfer rejects fractional values, Windows SDR SetEffect rounds to 0.1, Mac/Android store continuous float/double; Windows PhotoEffectsPanel displays '%' suffix while Mac/iOS/Android display unitless values."
       }
     },
     {
@@ -7425,7 +7533,7 @@
             "sdr",
             "hdr"
           ],
-          "unit": "",
+          "unit": "%",
           "min": 0.0,
           "max": 100.0,
           "default": 50.0,
@@ -7437,13 +7545,14 @@
         "report_d5d62af7_listed": true,
         "categories": [
           "step",
-          "range"
+          "range",
+          "default_unit"
         ],
         "ledger_ids": [
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
+        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR/HDR model rounds to integer and transfer rejects fractional values, Windows SDR SetEffect rounds to 0.1, Mac/Android store continuous float/double; Windows PhotoEffectsPanel displays '%' suffix while Mac/iOS/Android display unitless values."
       }
     },
     {
@@ -7562,7 +7671,7 @@
             "sdr",
             "hdr"
           ],
-          "unit": "",
+          "unit": "%",
           "min": -100.0,
           "max": 100.0,
           "default": 0.0,
@@ -7574,13 +7683,14 @@
         "report_d5d62af7_listed": true,
         "categories": [
           "step",
-          "range"
+          "range",
+          "default_unit"
         ],
         "ledger_ids": [
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
+        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR/HDR model rounds to integer and transfer rejects fractional values, Windows SDR SetEffect rounds to 0.1, Mac/Android store continuous float/double; Windows PhotoEffectsPanel displays '%' suffix while Mac/iOS/Android display unitless values."
       }
     },
     {
@@ -7699,7 +7809,7 @@
             "sdr",
             "hdr"
           ],
-          "unit": "",
+          "unit": "%",
           "min": 0.0,
           "max": 100.0,
           "default": 50.0,
@@ -7711,13 +7821,14 @@
         "report_d5d62af7_listed": true,
         "categories": [
           "step",
-          "range"
+          "range",
+          "default_unit"
         ],
         "ledger_ids": [
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
+        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR/HDR model rounds to integer and transfer rejects fractional values, Windows SDR SetEffect rounds to 0.1, Mac/Android store continuous float/double; Windows PhotoEffectsPanel displays '%' suffix while Mac/iOS/Android display unitless values."
       }
     },
     {
@@ -7836,7 +7947,7 @@
             "sdr",
             "hdr"
           ],
-          "unit": "",
+          "unit": "%",
           "min": 0.0,
           "max": 100.0,
           "default": 0.0,
@@ -7848,13 +7959,14 @@
         "report_d5d62af7_listed": true,
         "categories": [
           "step",
-          "range"
+          "range",
+          "default_unit"
         ],
         "ledger_ids": [
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
+        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR/HDR model rounds to integer and transfer rejects fractional values, Windows SDR SetEffect rounds to 0.1, Mac/Android store continuous float/double; Windows PhotoEffectsPanel displays '%' suffix while Mac/iOS/Android display unitless values."
       }
     },
     {
@@ -7973,7 +8085,7 @@
             "sdr",
             "hdr"
           ],
-          "unit": "",
+          "unit": "%",
           "min": 0.0,
           "max": 100.0,
           "default": 0.0,
@@ -7985,13 +8097,14 @@
         "report_d5d62af7_listed": true,
         "categories": [
           "step",
-          "range"
+          "range",
+          "default_unit"
         ],
         "ledger_ids": [
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
+        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR/HDR model rounds to integer and transfer rejects fractional values, Windows SDR SetEffect rounds to 0.1, Mac/Android store continuous float/double; Windows PhotoEffectsPanel displays '%' suffix while Mac/iOS/Android display unitless values."
       }
     },
     {
@@ -8410,7 +8523,7 @@
             "sdr",
             "hdr"
           ],
-          "unit": "",
+          "unit": "%",
           "min": 0.0,
           "max": 100.0,
           "default": 25.0,
@@ -8422,13 +8535,14 @@
         "report_d5d62af7_listed": true,
         "categories": [
           "step",
-          "range"
+          "range",
+          "default_unit"
         ],
         "ledger_ids": [
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
+        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR/HDR model rounds to integer and transfer rejects fractional values, Windows SDR SetEffect rounds to 0.1, Mac/Android store continuous float/double; Windows PhotoEffectsPanel displays '%' suffix while Mac/iOS/Android display unitless values."
       }
     },
     {
@@ -8547,7 +8661,7 @@
             "sdr",
             "hdr"
           ],
-          "unit": "",
+          "unit": "%",
           "min": 0.0,
           "max": 100.0,
           "default": 50.0,
@@ -8559,13 +8673,14 @@
         "report_d5d62af7_listed": true,
         "categories": [
           "step",
-          "range"
+          "range",
+          "default_unit"
         ],
         "ledger_ids": [
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
+        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR/HDR model rounds to integer and transfer rejects fractional values, Windows SDR SetEffect rounds to 0.1, Mac/Android store continuous float/double; Windows PhotoEffectsPanel displays '%' suffix while Mac/iOS/Android display unitless values."
       }
     },
     {
@@ -9075,7 +9190,8 @@
         "has_divergence": true,
         "report_d5d62af7_listed": true,
         "categories": [
-          "default_unit"
+          "default_unit",
+          "missing"
         ],
         "ledger_ids": [
           "P2-23"
@@ -9101,7 +9217,35 @@
           "luma",
           "preset"
         ],
-        "hdr_only": false
+        "hdr_only": false,
+        "sub_fields": {
+          "enabled": {
+            "value_type": "boolean"
+          },
+          "preset": {
+            "value_type": "string",
+            "allowed_values": [
+              "detail",
+              "clean",
+              "custom"
+            ]
+          },
+          "luma": {
+            "value_type": "number",
+            "min": 0.0,
+            "max": 100.0
+          },
+          "chroma": {
+            "value_type": "number",
+            "min": 0.0,
+            "max": 100.0
+          },
+          "coarse": {
+            "value_type": "number",
+            "min": 0.0,
+            "max": 100.0
+          }
+        }
       },
       "model": {
         "macos": {
@@ -9244,7 +9388,7 @@
           "modes": [
             "sdr"
           ],
-          "unit": "",
+          "unit": "%",
           "min": 0.0,
           "max": 100.0,
           "default": {
@@ -9271,7 +9415,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "notes": "Desktop wavelet sliders use fine step 0.1 vs mobile 1 (rounded); Mac model is optional WaveletDenoiseSettings? = nil until upgraded while iOS/Android/Windows default to (false, 0, 46, 50)."
+        "notes": "Desktop wavelet sliders use fine step 0.1 vs mobile 1 (rounded); Mac model is optional WaveletDenoiseSettings? = nil until upgraded while iOS/Android/Windows default to (false, 0, 46, 50); Windows DenoisePanel displays '%' suffix while Mac/iOS/Android display unitless values."
       }
     },
     {
@@ -10448,6 +10592,7 @@
         "report_d5d62af7_listed": true,
         "categories": [
           "step",
+          "range",
           "default_unit"
         ],
         "ledger_ids": [
@@ -10583,6 +10728,7 @@
         "report_d5d62af7_listed": true,
         "categories": [
           "step",
+          "range",
           "default_unit"
         ],
         "ledger_ids": [
