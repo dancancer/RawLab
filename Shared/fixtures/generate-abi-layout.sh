@@ -3,8 +3,8 @@ set -euo pipefail
 
 # Deterministic regeneration of Shared/fixtures/abi-layout-v1.json from the C ABI headers,
 # gated by a Clang JSON AST check so non-portable types (`long`, `unsigned long`, `wchar_t`),
-# fields added inside alignment padding, struct/enum/function drift, or missing `extern "C"`
-# linkage fail immediately before updating the fixture.
+# fields added inside alignment padding, struct/enum/function/callback drift, or missing
+# `extern "C"` linkage fail immediately before updating the fixture.
 #
 # Compatibility policy:
 #   - `version` stays `1` for backward compatibility with v1 consumers (e.g. Windows
@@ -134,6 +134,8 @@ identity_typedefs = {}
 record_stack = []
 type_checks = []
 linkage_errors = []
+prototype_errors = []
+inline_gate_errors = []
 
 ALLOWED_TYPE_KINDS = {
     "PointerType",
@@ -141,22 +143,58 @@ ALLOWED_TYPE_KINDS = {
     "AttributedType",
     "ElaboratedType",
     "DecayedType",
+    "QualType",
+    "TypedefType",
 }
 
+# Matches an inline function-pointer declarator inside a qualType string, e.g.
+# `int32_t (*)(void *)` or `int32_t (*[2])(void)`. Typedef'd types render by name
+# (no parens) and pointer-to-array types like `int (*)[4]` do not match.
+INLINE_FUNCTION_POINTER_RE = re.compile(r"\([^()]*\*[^()]*\)\s*\(")
 
-def find_function_proto(node):
+
+def find_function_proto(node, pointer_depth=0):
+    """Return (FunctionProtoType node, PointerType levels traversed) or None.
+
+    TypedefType and QualType wrappers are traversed so second-level callback aliases
+    and cv-qualified function-pointer typedefs are not silently skipped; the counted
+    pointer depth lets the caller reject plain function typedefs (depth 0) and
+    pointer-to-pointer callback declarations (depth >= 2).
+    """
     if not isinstance(node, dict):
         return None
     kind = node.get("kind")
     if kind == "FunctionProtoType":
-        return node
+        return (node, pointer_depth)
     for child in node.get("inner", []):
+        if not isinstance(child, dict):
+            continue
         ckind = child.get("kind")
         if ckind in ALLOWED_TYPE_KINDS or ckind == "FunctionProtoType":
-            proto = find_function_proto(child)
-            if proto:
-                return proto
+            found = find_function_proto(
+                child, pointer_depth + (1 if ckind == "PointerType" else 0)
+            )
+            if found:
+                return found
     return None
+
+
+def strip_top_level_qual(node):
+    """Return the qualType string of a type node, unwrapping a cv-qualified QualType.
+
+    Clang keeps top-level parameter qualifiers in function-pointer typedef protos as a
+    `QualType` wrapper (e.g. `void *const`); the underlying pointer type is what defines
+    the callback ABI.
+    """
+    if not isinstance(node, dict):
+        return ""
+    if node.get("kind") == "QualType":
+        for child in node.get("inner", []):
+            if isinstance(child, dict):
+                sub_qual = (child.get("type") or {}).get("qualType", "")
+                if sub_qual:
+                    return sub_qual
+    return (node.get("type") or {}).get("qualType", "")
 
 
 def update_file_from_loc(obj):
@@ -361,32 +399,56 @@ def walk(node):
                 if tname:
                     enums_by_id[enum_id]["typedef_name"] = tname
                     enums_by_header[node_file][tname] = enums_by_id[enum_id]["values"]
-            proto = find_function_proto(node)
-            if proto and tname:
-                inners = proto.get("inner", [])
-                ret_qual = (inners[0].get("type") or {}).get("qualType", "") if inners else ""
-                raw_params = [
-                    (child.get("type") or {}).get("qualType", "")
-                    for child in inners[1:]
-                    if isinstance(child, dict)
-                ]
-                if ret_qual:
-                    type_checks.append(("callback_return", tname, None, ret_qual))
-                for idx, p_qual in enumerate(raw_params):
-                    if p_qual:
-                        type_checks.append(("callback_param", tname, f"arg{idx + 1}", p_qual))
-                callbacks_by_header[node_file][tname] = {
-                    "name": tname,
-                    "raw_return_type": ret_qual,
-                    "raw_params": raw_params,
-                    "variadic": bool(proto.get("variadic")),
-                }
+            found_proto = find_function_proto(node)
+            if found_proto:
+                proto, pointer_depth = found_proto
+                if pointer_depth != 1:
+                    prototype_errors.append(
+                        f"  - typedef `{tname or '<unnamed>'}` in C ABI header must be a "
+                        f"function-pointer callback typedef with exactly one pointer level; "
+                        f"found {pointer_depth} (raw type `{qual_type}`)"
+                    )
+                elif tname:
+                    inners = proto.get("inner", [])
+                    ret_qual = strip_top_level_qual(inners[0]) if inners else ""
+                    raw_params = [
+                        strip_top_level_qual(child)
+                        for child in inners[1:]
+                        if isinstance(child, dict)
+                    ]
+                    if ret_qual:
+                        type_checks.append(("callback_return", tname, None, ret_qual))
+                    for idx, p_qual in enumerate(raw_params):
+                        if p_qual:
+                            type_checks.append(("callback_param", tname, f"arg{idx + 1}", p_qual))
+                            if INLINE_FUNCTION_POINTER_RE.search(p_qual):
+                                inline_gate_errors.append(
+                                    f"  - callback `{tname}` parameter `arg{idx + 1}` uses the "
+                                    f"inline function pointer type `{p_qual}`; declare public "
+                                    f"C ABI callbacks through a named `sony2fuji_*` callback typedef"
+                                )
+                    callbacks_by_header[node_file][tname] = {
+                        "name": tname,
+                        "raw_return_type": ret_qual,
+                        "raw_params": raw_params,
+                        "variadic": bool(proto.get("variadic")),
+                    }
         if in_target and qual_type:
             type_checks.append(("typedef", None, tname or "<unnamed>", qual_type))
     elif kind == "FieldDecl" and in_target and not is_implicit:
         qual_type = (node.get("type") or {}).get("qualType", "")
         if qual_type:
-            type_checks.append(("field", list(record_stack), node.get("name") or "<unnamed>", qual_type))
+            fname = node.get("name") or "<unnamed>"
+            type_checks.append(("field", list(record_stack), fname, qual_type))
+            if INLINE_FUNCTION_POINTER_RE.search(qual_type):
+                names = [r.get("name") or r.get("typedef_name") for r in record_stack]
+                names = [n for n in names if n]
+                struct_label = ".".join(names) if names else "<anonymous struct>"
+                inline_gate_errors.append(
+                    f"  - struct `{struct_label}.{fname}` uses the inline function pointer "
+                    f"type `{qual_type}`; declare public C ABI callbacks through a named "
+                    f"`sony2fuji_*` callback typedef"
+                )
     elif kind == "EnumDecl" and not is_implicit:
         ename = node.get("name")
         evalues = extract_enumerators(node)
@@ -413,6 +475,12 @@ def walk(node):
                     p_qual = (child.get("type") or {}).get("qualType", "")
                     if p_qual:
                         type_checks.append(("param", fn_name, child.get("name") or "<unnamed>", p_qual))
+                        if INLINE_FUNCTION_POINTER_RE.search(p_qual):
+                            inline_gate_errors.append(
+                                f"  - function `{fn_name}` parameter `{child.get('name') or '<unnamed>'}` "
+                                f"uses the inline function pointer type `{p_qual}`; declare public "
+                                f"C ABI callbacks through a named `sony2fuji_*` callback typedef"
+                            )
                     raw_params.append(p_qual)
             mangled = node.get("mangledName") or ""
             if has_asm_label(node) or mangled not in (fn_name, f"_{fn_name}"):
@@ -537,7 +605,7 @@ gen_structs = {
     for entry in structs_fixture.get("structs", [])
 }
 
-errors = list(linkage_errors)
+errors = list(linkage_errors) + list(prototype_errors) + list(inline_gate_errors)
 
 for ename in ast_enums:
     if not ename.startswith("sony2fuji_"):
@@ -680,7 +748,7 @@ subprocess.run(
 probe_out = subprocess.check_output([probe_bin], text=True)
 enums_evaluated = json.loads(probe_out)
 
-# Preserve the exact structs block emitted by generate_abi_layout.cpp and append functions + enums.
+# Preserve the exact structs block emitted by generate_abi_layout.cpp and append functions + enums + callbacks.
 closing_suffix = "\n  ]\n}\n"
 if not structs_text.endswith(closing_suffix):
     sys.stderr.write("Unexpected generate_abi_layout output tail\n")

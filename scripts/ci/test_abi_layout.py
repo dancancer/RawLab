@@ -107,13 +107,20 @@ class AbiLayoutFixtureTests(unittest.TestCase):
             self.assertGreater(len(cb["return_type"]), 0)
             self.assertIsInstance(cb["params"], list)
 
-        cancel_cb = next(
-            (cb for cb in data["callbacks"] if cb["name"] == "sony2fuji_cancel_callback"),
-            None,
-        )
-        self.assertIsNotNone(cancel_cb, "sony2fuji_cancel_callback missing from callbacks fixture")
-        self.assertEqual(cancel_cb["return_type"], "int32_t")
-        self.assertEqual(cancel_cb["params"], ["void*"])
+        expected_callbacks = {
+            "sony2fuji_ai_progress_callback": ("int32_t", ["void*", "int32_t", "uint64_t", "uint64_t"]),
+            "sony2fuji_cancel_callback": ("int32_t", ["void*"]),
+            "sony2fuji_hdr_read_rows_callback": (
+                "sony2fuji_status",
+                ["void*", "uint32_t", "uint32_t", "uint32_t", "float*"],
+            ),
+            "sony2fuji_hdr_finish_decode_callback": ("sony2fuji_status", ["void*"]),
+        }
+        by_name = {cb["name"]: cb for cb in data["callbacks"]}
+        self.assertEqual(set(by_name), set(expected_callbacks))
+        for name, (ret, params) in expected_callbacks.items():
+            self.assertEqual(by_name[name]["return_type"], ret, f"return type of {name}")
+            self.assertEqual(by_name[name]["params"], params, f"params of {name}")
 
     def test_enum_value_drift_is_detected(self):
         self.assertEqual(self.baseline_result.returncode, 0)
@@ -197,6 +204,98 @@ class AbiLayoutFixtureTests(unittest.TestCase):
         cb = next(c for c in regenerated["callbacks"] if c["name"] == "sony2fuji_cancel_callback")
         self.assertEqual(cb["params"], ["void*", "int32_t"])
 
+    def test_qualified_and_aliased_callback_typedefs_are_extracted(self):
+        """S1 boundary: cv-qualified and second-level alias typedefs must not be skipped."""
+        self.assertEqual(self.baseline_result.returncode, 0)
+        baseline = json.loads(self.baseline_text)
+        with tempfile.TemporaryDirectory(prefix="rawlab-abi-s1pos-") as tmp:
+            inc = Path(tmp) / "include"
+            shutil.copytree(INCLUDE_DIR, inc)
+            c_header = inc / "sony2fuji/ffi/sony2fuji_c.h"
+            text = c_header.read_text(encoding="utf-8")
+            mutated = text.replace(
+                "typedef int32_t (*sony2fuji_cancel_callback)(void* context);",
+                "typedef int32_t (*sony2fuji_cancel_callback)(void* context);\n"
+                "typedef int32_t (* const sony2fuji_probe_qual_callback)(void* context);\n"
+                "typedef sony2fuji_cancel_callback sony2fuji_probe_alias_callback;",
+                1,
+            )
+            self.assertTrue(text != mutated, "Failed to apply qualified/alias typedef mutation")
+            c_header.write_text(mutated, encoding="utf-8")
+
+            out_path = Path(tmp) / "abi-layout-v1.json"
+            result = self.regenerate(out_path, inc)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            regenerated = json.loads(out_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            len(regenerated["callbacks"]), len(baseline["callbacks"]) + 2
+        )
+        by_name = {cb["name"]: cb for cb in regenerated["callbacks"]}
+        for probe in ("sony2fuji_probe_qual_callback", "sony2fuji_probe_alias_callback"):
+            self.assertIn(probe, by_name, f"{probe} silently dropped by callback extraction")
+            self.assertEqual(by_name[probe]["return_type"], "int32_t", probe)
+            self.assertEqual(by_name[probe]["params"], ["void*"], probe)
+
+    def test_non_pointer_and_double_pointer_typedefs_are_rejected(self):
+        """S1 boundary: plain function typedefs and (**fn) typedefs must fail the contract check."""
+        self.assertEqual(self.baseline_result.returncode, 0)
+        anchor = "typedef int32_t (*sony2fuji_cancel_callback)(void* context);"
+        for label, extra in (
+            ("plain", "typedef int32_t sony2fuji_probe_plain_fn(void* context);"),
+            ("deep", "typedef int32_t (**sony2fuji_probe_deep_callback)(void* context);"),
+        ):
+            with tempfile.TemporaryDirectory(prefix=f"rawlab-abi-s1{label}-") as tmp:
+                inc = Path(tmp) / "include"
+                shutil.copytree(INCLUDE_DIR, inc)
+                c_header = inc / "sony2fuji/ffi/sony2fuji_c.h"
+                text = c_header.read_text(encoding="utf-8")
+                mutated = text.replace(anchor, anchor + "\n" + extra, 1)
+                self.assertTrue(text != mutated, f"Failed to apply {label} typedef mutation")
+                c_header.write_text(mutated, encoding="utf-8")
+
+                result = self.regenerate(Path(tmp) / "abi-layout-v1.json", inc)
+                self.assertNotEqual(result.returncode, 0, f"{label} typedef accepted silently")
+                self.assertIn(
+                    "exactly one pointer level",
+                    result.stderr,
+                    f"{label} typedef missing contract error: {result.stderr}",
+                )
+
+    def test_inline_function_pointer_field_and_param_are_rejected(self):
+        """S2 boundary: anonymous inline function pointers must go through a named typedef."""
+        self.assertEqual(self.baseline_result.returncode, 0)
+        mutations = (
+            (
+                "param",
+                "void sony2fuji_release_buffer(sony2fuji_buffer* buffer);",
+                "void sony2fuji_release_buffer(sony2fuji_buffer* buffer, int32_t (*probe_cb)(void* ctx));",
+            ),
+            (
+                "field",
+                "    const char* cache_directory;\n} sony2fuji_ai_denoise_config;",
+                "    const char* cache_directory;\n"
+                "    int32_t (*probe_cb)(void* ctx);\n} sony2fuji_ai_denoise_config;",
+            ),
+        )
+        for label, old, new in mutations:
+            with tempfile.TemporaryDirectory(prefix=f"rawlab-abi-s2{label}-") as tmp:
+                inc = Path(tmp) / "include"
+                shutil.copytree(INCLUDE_DIR, inc)
+                c_header = inc / "sony2fuji/ffi/sony2fuji_c.h"
+                text = c_header.read_text(encoding="utf-8")
+                mutated = text.replace(old, new, 1)
+                self.assertTrue(text != mutated, f"Failed to apply {label} inline mutation")
+                c_header.write_text(mutated, encoding="utf-8")
+
+                result = self.regenerate(Path(tmp) / "abi-layout-v1.json", inc)
+                self.assertNotEqual(result.returncode, 0, f"{label} inline function pointer accepted")
+                self.assertIn(
+                    "inline function pointer",
+                    result.stderr,
+                    f"{label} mutation missing gate error: {result.stderr}",
+                )
+
     def test_formatting_comments_and_param_names_do_not_drift(self):
         self.assertEqual(self.baseline_result.returncode, 0)
         with tempfile.TemporaryDirectory(prefix="rawlab-abi-norm-") as tmp:
@@ -211,6 +310,14 @@ class AbiLayoutFixtureTests(unittest.TestCase):
             ).replace(
                 "sony2fuji_status sony2fuji_session_create(sony2fuji_session** out_session);",
                 "sony2fuji_status sony2fuji_session_create(struct sony2fuji_session * * different_name);",
+                1,
+            ).replace(
+                "typedef int32_t (*sony2fuji_cancel_callback)(void* context);",
+                "typedef int32_t (*sony2fuji_cancel_callback)(void* const renamed_ctx /* comment */);",
+                1,
+            ).replace(
+                "typedef int32_t (*sony2fuji_ai_progress_callback)(void* context, int32_t phase, uint64_t completed, uint64_t total);",
+                "typedef int32_t (*sony2fuji_ai_progress_callback)(\n    void *   renamed_ctx /* c */, int32_t renamed_phase,\n    uint64_t renamed_completed, uint64_t renamed_total\n);",
                 1,
             )
             self.assertTrue(text != mutated, "Failed to apply formatting mutation")
