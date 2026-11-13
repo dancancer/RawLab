@@ -59,3 +59,4 @@
 - **D 类（素材要求记档 5 条）**：lens-render/export-metadata 默认 DSC06251.ARW 未入库（.cache/shared 可补）；hdr-sdr-preview/hdr-lut-preview 需 `RAWLAB_TEST_HDR` gain-map；fuji-compatibility 需 RAW+彩色 CUBE（ACROS/identity 走 missingColor 属预期）。
 - 另录：hdr-rendition-ui E.2-L1 无 AX 授权静默 return（绿≠真跑，与 Q14 axTrusted/REQUIRE_AX 挂行同族）。
 - **CI 阶段2 家族新行（11-14，#300 评审发现）**：`RawLabMac/build.sh` 未传 `-DPython3_EXECUTABLE`，CMake 绑定 Homebrew Python（无 jsonschema）→ macOS native CI 中 `edit_recipe_schema` 实为 Skipped（对照 Windows build.ps1 已透传）。阶段2 统一透传解释器并核查 SKIP 清单。
+- **A 簇修后新挂（11-14，PR #303 交卷时发现）**：①`compact-controls-presentation` 快照期望过时需要整体重基线（a74a6baf 重设计未重基线：`editor-minimum expected 1 numeric fields; found 6`，改期望后又败于可达性断言）→ 单独小包重基线矩阵；②`photo-effects-presentation` 与本会话锁屏下的 `mac-geometry-draft` 末位激活检查同属「无显示/锁屏会话」环境红，待有显示器会话复核即关。
