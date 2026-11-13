@@ -39,6 +39,7 @@ public partial class MainWindow
         catch (Exception error) { SetSaveNotice("无法读取调整记录", AdjustmentTransferPresentation.Detail(error), true); }
         try { previousBatch = batchJournal.Load(); }
         catch (Exception error) { updateJournalLoadFailed=true;Report(new IOException(Loc.Format("无法读取上次批量任务：{0}", AdjustmentTransferPresentation.Detail(error)), error)); }
+        if (batchJournal.LastQuarantinedPath is { } quarantinedBatch) Report(new IOException(Loc.Format("已将损坏的上次批量任务记录移出为：{0}", Path.GetFileName(quarantinedBatch))));
         RefreshBatchNotice(); UpdateBusy();
         InitializeAdjustmentHistory();
     }

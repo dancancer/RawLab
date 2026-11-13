@@ -201,6 +201,33 @@ public sealed class BatchJournal
         return candidate;
     }
 
+    private static bool IsFutureInteger(JsonElement owner, string name, int limit) =>
+        owner.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number &&
+        value.TryGetInt32(out var number) && number > limit;
+
+    private static bool TryGetObject(JsonElement owner, string name, out JsonElement value)
+    {
+        var camel = char.ToLowerInvariant(name[0]) + name[1..];
+        return (owner.TryGetProperty(name, out value) || owner.TryGetProperty(camel, out value)) &&
+            value.ValueKind == JsonValueKind.Object;
+    }
+
+    // 「已处理版本」等字段高于本端当前值 = 可识别但更新；不得按损坏隔离后被 Save 覆盖。
+    private static bool HasFutureSettings(JsonElement settings)
+    {
+        if (settings.ValueKind != JsonValueKind.Object) return false;
+        if (TryGetObject(settings, "Processing", out var processing) &&
+            IsFutureInteger(processing, "version", ProcessingIdentity.Current.Version)) return true;
+        if (IsFutureInteger(settings, "MasterRecipeSettingsVersion", 4)) return true;
+        if (IsFutureInteger(settings, "ProRAWDecodeVersion", HDRNative.ProRAWDecodeVersion)) return true;
+        if (TryGetObject(settings, "HDR", out var hdr))
+        {
+            if (IsFutureInteger(hdr, "hdr_processing_version", 8) || IsFutureInteger(hdr, "record_version", 9)) return true;
+            if (TryGetObject(hdr, "camera_development", out var camera) && IsFutureInteger(camera, "version", 1)) return true;
+        }
+        return false;
+    }
+
     private static bool IsUnsupportedFutureJournal(string path)
     {
         try
@@ -208,35 +235,16 @@ public sealed class BatchJournal
             var text = File.ReadAllText(path);
             using var doc = JsonDocument.Parse(text);
             var root = doc.RootElement;
-            if (root.TryGetProperty("Version", out var v) && v.ValueKind == JsonValueKind.Number && v.GetInt32() > 3)
-                return true;
-            if (root.TryGetProperty("version", out var vLower) && vLower.ValueKind == JsonValueKind.Number && vLower.GetInt32() > 3)
-                return true;
-            if (root.TryGetProperty("Settings", out var s) && s.ValueKind == JsonValueKind.Object)
-            {
-                if (s.TryGetProperty("Processing", out var p) && p.ValueKind == JsonValueKind.Object &&
-                    p.TryGetProperty("version", out var pv) && pv.ValueKind == JsonValueKind.Number && pv.GetInt32() > ProcessingIdentity.Current.Version)
-                    return true;
-            }
-            if (root.TryGetProperty("settings", out var sLower) && sLower.ValueKind == JsonValueKind.Object)
-            {
-                if (sLower.TryGetProperty("processing", out var p) && p.ValueKind == JsonValueKind.Object &&
-                    p.TryGetProperty("version", out var pv) && pv.ValueKind == JsonValueKind.Number && pv.GetInt32() > ProcessingIdentity.Current.Version)
-                    return true;
-            }
-            if (root.TryGetProperty("Items", out var items) && items.ValueKind == JsonValueKind.Array)
+            if (IsFutureInteger(root, "Version", 3) || IsFutureInteger(root, "version", 3)) return true;
+            if (TryGetObject(root, "Settings", out var settings) && HasFutureSettings(settings)) return true;
+            if (root.TryGetProperty("Items", out var items) || root.TryGetProperty("items", out items))
             {
                 foreach (var item in items.EnumerateArray())
                 {
-                    if (item.TryGetProperty("Frozen", out var frozen) && frozen.ValueKind == JsonValueKind.Object)
-                    {
-                        if (frozen.TryGetProperty("Version", out var fv) && fv.ValueKind == JsonValueKind.Number && fv.GetInt32() > 1) return true;
-                        if (frozen.TryGetProperty("SettingsVersion", out var fsv) && fsv.ValueKind == JsonValueKind.Number && fsv.GetInt32() > 1) return true;
-                        if (frozen.TryGetProperty("Settings", out var fs) && fs.ValueKind == JsonValueKind.Object &&
-                            fs.TryGetProperty("Processing", out var fp) && fp.ValueKind == JsonValueKind.Object &&
-                            fp.TryGetProperty("version", out var fpv) && fpv.ValueKind == JsonValueKind.Number && fpv.GetInt32() > ProcessingIdentity.Current.Version)
-                            return true;
-                    }
+                    if (!TryGetObject(item, "Frozen", out var frozen)) continue;
+                    if (IsFutureInteger(frozen, "Version", 1) || IsFutureInteger(frozen, "version", 1) ||
+                        IsFutureInteger(frozen, "SettingsVersion", 1) || IsFutureInteger(frozen, "settingsVersion", 1)) return true;
+                    if (TryGetObject(frozen, "Settings", out var frozenSettings) && HasFutureSettings(frozenSettings)) return true;
                 }
             }
             return false;
@@ -247,8 +255,16 @@ public sealed class BatchJournal
         }
     }
 
+    // 与 EditPersistence.IsCorruptEntryException 同一边界：只有内容解析/校验错误才算损坏；
+    // 读不了（I/O、权限、共享冲突）必须原样抛出，避免把合法任务误隔离。
+    private static bool IsCorruptBatchEntryException(Exception error) => error is
+        JsonException or InvalidDataException or ArgumentException or InvalidOperationException or
+        IndexOutOfRangeException or KeyNotFoundException or NullReferenceException or FormatException or
+        OverflowException or NotSupportedException;
+
     private BatchJob? ReadJob()
     {
+        LastQuarantinedPath = null;
         if (!File.Exists(PathName)) return null;
         try
         {
@@ -256,10 +272,12 @@ public sealed class BatchJournal
             Validate(job);
             return job;
         }
-        catch (Exception)
+        catch (Exception error) when (IsCorruptBatchEntryException(error))
         {
             if (IsUnsupportedFutureJournal(PathName)) throw;
-            QuarantineCorruptJob();
+            var quarantined = QuarantineCorruptJob();
+            System.Diagnostics.Trace.TraceWarning(
+                "RawLab batch journal quarantined corrupt entry {0} ({1}: {2})", quarantined, error.GetType().Name, error.Message);
             return null;
         }
     }

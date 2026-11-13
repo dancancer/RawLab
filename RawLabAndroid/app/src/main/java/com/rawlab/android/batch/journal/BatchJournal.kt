@@ -1,7 +1,9 @@
 package com.rawlab.android.batch.journal
 
+import android.util.Log
 import com.rawlab.android.batch.BatchJob
 import com.rawlab.android.batch.BatchRowStatus
+import com.rawlab.android.settings.ProcessingIdentity
 import java.io.ByteArrayOutputStream
 import java.io.DataOutputStream
 import java.io.EOFException
@@ -19,14 +21,23 @@ import java.util.Properties
 import java.util.TimeZone
 import java.util.UUID
 import java.util.zip.CRC32
+import org.json.JSONObject
 
 // ============================================================================
 //  批量任务日志：快照、增量记录与恢复
 // ============================================================================
 
 class BatchJournal(private val directory: File) {
-    private companion object { const val LOG_MAGIC = 0x52424a33 }
+    private companion object {
+        const val LOG_MAGIC = 0x52424a33
+        const val LOG_TAG = "RawLabBatch"
+    }
     private val generations = mutableMapOf<String, String>()
+
+    /** 最近一次隔离移出的文件/目录名，供调用方与诊断核验。 */
+    @Volatile
+    var lastQuarantinedPaths: List<String> = emptyList()
+        private set
 
     init { if (!directory.exists() && !directory.mkdirs()) throw IOException("Cannot create batch journal") }
 
@@ -41,7 +52,42 @@ class BatchJournal(private val directory: File) {
         return try {
             val properties = Properties().also { file.inputStream().use(it::load) }
             val version = properties.getProperty("journal.version")?.toIntOrNull()
-            version != null && version > JournalCodec.VERSION
+            if (version != null && version > JournalCodec.VERSION) return true
+            // 已处理版本与冻结设置里的未来版本同样是「可识别但更新」，不得当坏文件隔离。
+            if (isFutureSettings(properties.getProperty("source.settings"))) return true
+            val count = properties.getProperty("row.count")?.toIntOrNull()?.coerceAtMost(10_000) ?: 0
+            (0 until count).any { index ->
+                val prefix = "row.$index."
+                (properties.getProperty(prefix + "frozen.version")?.toIntOrNull() ?: 0) > 1 ||
+                    (properties.getProperty(prefix + "frozen.settingsVersion")?.toIntOrNull() ?: 0) > 1 ||
+                    isFutureSettings(properties.getProperty(prefix + "frozen.settings"))
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** 「读得到但认识不了」与「版本比本端新」的区分：只在版本号高于本端当前值时判定为未来版本。 */
+    private fun isFutureSettings(value: String?): Boolean {
+        if (value == null) return false
+        if (!value.startsWith("v2:")) {
+            // 旧管道格式：processing 标识是第 54 字段；解析不出数字的按损坏处理。
+            val fields = value.split('|')
+            val parts = fields.getOrNull(53)?.split(',') ?: return false
+            val version = parts.getOrNull(1)?.toIntOrNull() ?: return false
+            return parts.getOrNull(0) == "rawlab" && version > ProcessingIdentity.CURRENT.version
+        }
+        return try {
+            val root = JSONObject(value.removePrefix("v2:"))
+            if (root.optInt("version", 2) > 2) return true
+            val settings = root.optJSONObject("settings") ?: return false
+            val processing = settings.optJSONObject("processing")
+            if (processing != null && processing.optString("family") == "rawlab" &&
+                processing.optInt("version") > ProcessingIdentity.CURRENT.version) return true
+            if (settings.optInt("masterRecipeSettingsVersion", 3) > 4) return true
+            val hdr = settings.optJSONObject("hdr")
+            hdr != null && (hdr.optInt("hdr_processing_version") > 8 || hdr.optInt("record_version") > 9 ||
+                (hdr.optJSONObject("camera_development")?.optInt("version") ?: 0) > 1)
         } catch (_: Exception) {
             false
         }
@@ -56,8 +102,8 @@ class BatchJournal(private val directory: File) {
             } else {
                 try {
                     load(job.id)
-                } catch (_: Exception) {
-                    quarantine(job.id)
+                } catch (error: Exception) {
+                    quarantine(job.id, error)
                 }
             }
         }
@@ -165,32 +211,46 @@ class BatchJournal(private val directory: File) {
         timeZone = TimeZone.getTimeZone("UTC")
     }.format(Date())
 
+    /**
+     * 把损坏的快照、行日志与任务目录改名移出扫描路径。
+     * 改名失败必须抛出：坏文件留在原位时 save 的原子写会直接覆盖它，破坏「改名可逆可查」。
+     * 返回并记录被移出的名字，便于日志与调用方核验（Should-1 可见性）。
+     */
     @Synchronized
-    fun quarantine(id: String) {
+    fun quarantine(id: String, error: Exception? = null): List<String> {
         generations.remove(id)
         val ts = timestamp()
-        fun isolateFile(file: File) {
-            if (!file.isFile) return
-            var target = File(directory, "${file.name}.corrupt-$ts")
+        val moved = mutableListOf<String>()
+        fun uniqueTarget(name: String): File {
+            var target = File(directory, "$name.corrupt-$ts")
             var suffix = 1
             while (target.exists()) {
-                target = File(directory, "${file.name}.corrupt-$ts-$suffix")
+                target = File(directory, "$name.corrupt-$ts-$suffix")
                 suffix++
             }
-            file.renameTo(target)
+            return target
+        }
+        fun isolateFile(file: File) {
+            if (!file.isFile) return
+            val target = uniqueTarget(file.name)
+            // renameTo 只返回 Boolean，失败不抛：必须自行检查，否则原坏文件会被静默覆盖。
+            if (!file.renameTo(target)) throw IOException("Cannot isolate batch journal entry ${file.name}")
+            moved += target.name
         }
         isolateFile(journalFile(id))
         isolateFile(logFile(id))
         val jobDir = File(directory, id)
         if (jobDir.isDirectory) {
-            var targetDir = File(directory, "${id}.corrupt-$ts")
-            var suffix = 1
-            while (targetDir.exists()) {
-                targetDir = File(directory, "${id}.corrupt-$ts-$suffix")
-                suffix++
-            }
-            jobDir.renameTo(targetDir)
+            val targetDir = uniqueTarget(id)
+            if (!jobDir.renameTo(targetDir)) throw IOException("Cannot isolate batch job directory $id")
+            moved += targetDir.name
         }
+        lastQuarantinedPaths = moved
+        if (moved.isNotEmpty()) {
+            Log.w(LOG_TAG, "Quarantined batch journal $id -> " + moved.joinToString(", ") +
+                (error?.let { " (cause: ${it.message ?: it.javaClass.simpleName})" } ?: ""))
+        }
+        return moved
     }
 
     fun pending(): List<String> = directory.listFiles().orEmpty()
@@ -206,7 +266,7 @@ class BatchJournal(private val directory: File) {
                 }
             } catch (error: Exception) {
                 if (isUnsupportedFuture(id)) throw error
-                quarantine(id)
+                quarantine(id, error)
                 null
             }
         }

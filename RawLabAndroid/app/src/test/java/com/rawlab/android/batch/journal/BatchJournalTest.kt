@@ -8,6 +8,7 @@ import com.rawlab.android.settings.PhotoIdentity
 import java.io.File
 import java.util.Properties
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -262,11 +263,137 @@ class BatchJournalTest {
         val pendingJobs = journal.pending()
         assertEquals(listOf("valid-job"), pendingJobs)
         assertFalse("Corrupt properties file must be quarantined from its active path", corruptFile.exists())
+        assertFalse("Corrupt rows log must be quarantined from its active path", corruptRows.exists())
         val quarantined = root.listFiles()?.filter { it.name.startsWith("corrupt-job.properties.corrupt-") }.orEmpty()
         assertEquals("Quarantined corrupt properties file must exist", 1, quarantined.size)
+        val quarantinedRows = root.listFiles()?.filter { it.name.startsWith("corrupt-job.rows.corrupt-") }.orEmpty()
+        assertEquals("Quarantined corrupt rows log must exist", 1, quarantinedRows.size)
+        assertTrue("Quarantine must expose the moved names for callers and diagnostics",
+            journal.lastQuarantinedPaths.any { it.startsWith("corrupt-job.properties.corrupt-") } &&
+                journal.lastQuarantinedPaths.any { it.startsWith("corrupt-job.rows.corrupt-") })
 
         val anotherJob = job().copy(id = "another-job")
         journal.save(anotherJob)
         assertEquals(setOf("valid-job", "another-job"), journal.pending().toSet())
+    }
+
+    @Test fun saveWithSameIdQuarantinesCorruptJournalAndRowsWithoutPendingScan() {
+        val journal = BatchJournal(root)
+        val corruptID = "same-id-job"
+        val corruptFile = File(root, "$corruptID.properties")
+        corruptFile.writeText("journal.version=bad\nrow.count=x{")
+        val corruptRows = File(root, "$corruptID.rows")
+        corruptRows.writeBytes(byteArrayOf(9, 8, 7))
+
+        // No pending() scan first: save() must isolate the corrupt same-ID journal via load(id:).
+        val job = job().copy(id = corruptID)
+        journal.save(job)
+
+        // save() rewrites the same paths with valid data; the old corrupt bytes must live on only in the isolates.
+        val movedProperties = root.listFiles()?.filter { it.name.startsWith("$corruptID.properties.corrupt-") }.orEmpty()
+        val movedRows = root.listFiles()?.filter { it.name.startsWith("$corruptID.rows.corrupt-") }.orEmpty()
+        assertEquals("save must isolate the corrupt properties file", 1, movedProperties.size)
+        assertEquals("save must isolate the corrupt rows log", 1, movedRows.size)
+        assertTrue("Isolated properties must keep the corrupt bytes", movedProperties[0].readText().contains("row.count=x{"))
+        assertTrue("save must expose isolated names through lastQuarantinedPaths",
+            journal.lastQuarantinedPaths.any { it.startsWith("$corruptID.properties.corrupt-") } &&
+                journal.lastQuarantinedPaths.any { it.startsWith("$corruptID.rows.corrupt-") })
+        assertEquals(listOf(corruptID), journal.pending())
+        assertEquals(job, journal.load(corruptID))
+    }
+
+    @Test fun futureTopJournalVersionRefusesQuarantineAndOverwrite() {
+        val journal = BatchJournal(root)
+        val id = "future-top"
+        val record = File(root, "$id.properties")
+        record.writeText("journal.version=${JournalCodec.VERSION + 5}\nrow.count=0\n")
+
+        var thrown = false
+        try { journal.pending() } catch (error: Exception) {
+            assertTrue("Future-version load must fail as a hard error", error is java.io.IOException)
+            thrown = true
+        }
+        assertTrue("pending must refuse to quarantine a future-version journal", thrown)
+        assertTrue("Future-version journal must stay on its active path", record.exists())
+        assertTrue(root.listFiles()?.none { it.name.contains(".corrupt-") } ?: true)
+
+        var saveThrown = false
+        try { journal.save(job().copy(id = id)) } catch (_: Exception) { saveThrown = true }
+        assertTrue("save must refuse to overwrite a future-version journal", saveThrown)
+        assertTrue("Rejected save must leave the future journal untouched", record.exists())
+    }
+
+    @Test fun futureFrozenVersionRefusesQuarantine() {
+        val frozenRoot = temporary.newFolder("frozen-case")
+        val journal = BatchJournal(frozenRoot)
+        val id = "future-frozen"
+        val frozenJob = BatchJob(
+            BatchSourceSnapshot(PhotoIdentity("source"), File("/source.jpg"), EditSettings(exposure = .75f),
+                lookFile = File("/look.cube"), inputKind = PhotoInputKind.RASTER),
+            (0 until 2).map { BatchTarget(PhotoIdentity("target-$it"), File("/$it.raw"), "$it.raw", "content://input/$it",
+                frozen = BatchFrozenSettings(ordinal = it, settings = EditSettings(), inputSHA256 = "a".repeat(64),
+                    outputFormat = ExportFormat.DNG, longEdge = 3000)) },
+            id = id, outputFormat = ExportFormat.DNG, outputLongEdge = 3000,
+            destination = "content://tree/output", settingsMode = BatchSettingsMode.PER_TARGET_FROZEN)
+        journal.save(frozenJob)
+
+        // A future frozen entry version is a recognizable-but-newer record, not corruption.
+        val record = File(frozenRoot, "$id.properties")
+        val properties = Properties().also { record.inputStream().use(it::load) }
+        properties.setProperty("row.0.frozen.version", "2")
+        record.outputStream().use { properties.store(it, null) }
+
+        var thrown = false
+        try { journal.pending() } catch (_: Exception) { thrown = true }
+        assertTrue("pending must refuse to quarantine a future frozen entry version", thrown)
+        assertTrue("Future frozen journal must stay on its active path", record.exists())
+        assertTrue(frozenRoot.listFiles()?.none { it.name.contains(".corrupt-") } ?: true)
+
+        var saveThrown = false
+        try { journal.save(frozenJob) } catch (_: Exception) { saveThrown = true }
+        assertTrue("save must refuse to overwrite a future frozen version record", saveThrown)
+    }
+
+    @Test fun futureProcessingVersionInSettingsRefusesQuarantine() {
+        val settingsRoot = temporary.newFolder("processing-case")
+        val journal = BatchJournal(settingsRoot)
+        val id = "future-processing"
+        val validJob = job().copy(id = id)
+        journal.save(validJob)
+
+        // Bump only the processed-image version inside source.settings to a future value.
+        val record = File(settingsRoot, "$id.properties")
+        val properties = Properties().also { record.inputStream().use(it::load) }
+        val settings = properties.getProperty("source.settings")
+        assertTrue("Fixture must carry a processing identity version", settings.contains("\"version\":3"))
+        properties.setProperty("source.settings", settings.replace("\"version\":3", "\"version\":9"))
+        record.outputStream().use { properties.store(it, null) }
+
+        var thrown = false
+        try { journal.pending() } catch (_: Exception) { thrown = true }
+        assertTrue("pending must refuse to quarantine a future processing version", thrown)
+        assertTrue("Journal with a future processing version must stay on its active path", record.exists())
+        assertTrue(settingsRoot.listFiles()?.none { it.name.contains(".corrupt-") } ?: true)
+    }
+
+    @Test fun quarantineRenameFailurePropagatesInsteadOfSilentOverwrite() {
+        val journal = BatchJournal(root)
+        val id = "locked-corrupt"
+        val record = File(root, "$id.properties")
+        record.writeText("journal.version=bad\n{broken")
+        File(root, "write-probe").writeText("probe")
+        root.setWritable(false)
+        try {
+            assumeTrue("filesystem must enforce directory write permission for this anchor",
+                !File(root, "write-probe").renameTo(File(root, "write-probe-moved")))
+            var thrown = false
+            try { journal.pending() } catch (error: Exception) {
+                thrown = error is java.io.IOException
+            }
+            assertTrue("pending must report a failed quarantine rename instead of swallowing it", thrown)
+            assertTrue("Un-renameable corrupt record must remain for manual recovery", record.exists())
+        } finally {
+            root.setWritable(true)
+        }
     }
 }
