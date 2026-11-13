@@ -6,6 +6,9 @@ private func check(_ value: Bool, _ message: String) throws {
     print("PASS: \(message)")
 }
 
+// RenderError.processing 对 UNSUPPORTED 的固定文案（RenderError.swift）。
+private let unsupportedMessage = "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。"
+
 private func pixels(_ frame: RenderedImage) -> Data {
     frame.image.dataProvider!.data! as Data
 }
@@ -78,6 +81,9 @@ private func manualSettings(_ recipe: MasterRecipe, camera: WhiteBalance, streng
             return
         }
         let metal = try RenderEngine(gpuMode: SONY2FUJI_GPU_FORCE)
+        // basic-controls-v3.md「后端、预览与兼容」：基本影调/atmosphere 阶段是 CPU-only，
+        // GPU Auto 返回完整 CPU 路径；Force 明确返回 unsupported。
+        let automatic = try RenderEngine(gpuMode: SONY2FUJI_GPU_AUTO)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-recipe-\(UUID())")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -167,22 +173,20 @@ private func manualSettings(_ recipe: MasterRecipe, camera: WhiteBalance, streng
             let combinedActual = try combinedColdEngine.render(input, settings: combined, lut: combinedLUT, edge: 128)!
             try check(pixels(combinedActual) == pixels(combinedReference),
                       "\(input.lastPathComponent): recipe WB primer preserves the current HSL controls")
-            let combinedGPU = try metal.render(input, settings: combined, lut: combinedLUT, edge: 128)!
-            let combinedDifference = zip(pixels(combinedGPU), pixels(combinedReference))
-                .map { abs(Int($0.0) - Int($0.1)) }.max() ?? 0
-            try check(combinedDifference <= 2 && metal.lastBackend == SONY2FUJI_BACKEND_METAL,
-                      "\(input.lastPathComponent): display-sRGB recipe plus HSL has forced Metal parity")
+            // v4 增量含基本影调/atmosphere（CPU-only）：forced-Metal parity 改钉 Auto 诚实回退与像素一致。
+            let combinedFallback = try automatic.render(input, settings: combined, lut: combinedLUT, edge: 128)!
+            try check(pixels(combinedFallback) == pixels(combinedReference) && automatic.lastBackend == SONY2FUJI_BACKEND_CPU,
+                      "\(input.lastPathComponent): display-sRGB recipe plus HSL uses the honest Auto CPU fallback (was forced Metal parity)")
             for strength in [0.5, 2.0] {
                 combined.strength = strength
                 var explicitHSL = manualSettings(.hamadaDaylightV2, camera: camera, strength: strength)
                 explicitHSL.hsl = combined.hslSettings.scaled(by: strength)
                 let expectedHSL = try cpu.render(input, settings: explicitHSL, lut: combinedLUT, edge: 128)!
                 let actualHSL = try combinedColdEngine.render(input, settings: combined, lut: combinedLUT, edge: 128)!
-                let gpuHSL = try metal.render(input, settings: combined, lut: combinedLUT, edge: 128)!
-                let difference = zip(pixels(gpuHSL), pixels(expectedHSL)).map { abs(Int($0.0) - Int($0.1)) }.max() ?? 0
-                try check(pixels(actualHSL) == pixels(expectedHSL) && difference <= 2 &&
-                          metal.lastBackend == SONY2FUJI_BACKEND_METAL,
-                          "\(input.lastPathComponent): \(Int(strength * 100))% manually edited HSL scales, clamps and matches Metal")
+                let fallbackHSL = try automatic.render(input, settings: combined, lut: combinedLUT, edge: 128)!
+                try check(pixels(actualHSL) == pixels(expectedHSL) && pixels(fallbackHSL) == pixels(expectedHSL) &&
+                          automatic.lastBackend == SONY2FUJI_BACKEND_CPU,
+                          "\(input.lastPathComponent): \(Int(strength * 100))% manually edited HSL scales, clamps and matches the honest Auto CPU fallback (was Metal parity)")
             }
             let clearedHSL = try cpu.render(input, settings: Adjustments(), lut: nil, edge: 128)!
             try check(pixels(clearedHSL) == pixels(reference),
@@ -207,11 +211,28 @@ private func manualSettings(_ recipe: MasterRecipe, camera: WhiteBalance, streng
                         recipeOutputs.insert(pixels(actual))
                         try check(pixels(actual) != pixels(reference), "\(label): recipe has a visible non-neutral result")
                     }
-                    let gpu = try metal.render(input, settings: saved, lut: lut, edge: 128)!
-                    let a = pixels(gpu), b = pixels(actual)
-                    let maxDifference = zip(a, b).map { abs(Int($0.0) - Int($0.1)) }.max() ?? 0
-                    try check(a.count == b.count && maxDifference <= 2 && metal.lastBackend == SONY2FUJI_BACKEND_METAL,
-                              "\(label) \(Int(strength * 100))%: forced Metal parity max \(maxDifference) DN")
+                    // 契约两个方向（basic-controls-v3.md L46-47）：仅 GPU 支持面（neutral+LUT）保留 forced-Metal parity；
+                    // CPU-only 阶段激活时 Auto 必须诚实回退整条 CPU 路径，Force 必须显式 UNSUPPORTED。
+                    let fallback = try automatic.render(input, settings: saved, lut: lut, edge: 128)!
+                    if automatic.lastBackend == SONY2FUJI_BACKEND_CPU {
+                        try check(pixels(fallback) == pixels(actual),
+                                  "\(label) \(Int(strength * 100))%: forced Metal parity → honest Auto CPU fallback")
+                        let forcedMessage: String?
+                        do {
+                            _ = try metal.render(input, settings: saved, lut: lut, edge: 128)
+                            forcedMessage = nil
+                        } catch RenderError.failed(let message) {
+                            forcedMessage = message
+                        }
+                        try check(forcedMessage == unsupportedMessage,
+                                  "\(label) \(Int(strength * 100))%: CPU-only stages report UNSUPPORTED under Force")
+                    } else {
+                        let gpu = try metal.render(input, settings: saved, lut: lut, edge: 128)!
+                        let a = pixels(gpu), b = pixels(actual)
+                        let maxDifference = zip(a, b).map { abs(Int($0.0) - Int($0.1)) }.max() ?? 0
+                        try check(a.count == b.count && maxDifference <= 2 && metal.lastBackend == SONY2FUJI_BACKEND_METAL,
+                                  "\(label) \(Int(strength * 100))%: forced Metal parity max \(maxDifference) DN")
+                    }
                 }
                 saved.strength = 1
                 let expected = manualSettings(recipe, camera: camera, strength: 1)
