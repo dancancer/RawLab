@@ -63,3 +63,4 @@
 - 2026-11-14 · **WP-01 拍板**：① 审批策略→「all external contributors」（用户 Web 端操作）；② JIT 派发器 Go（native subagent jit-dispatcher 实现，opt-in、不动现役 Listener）。用户定调：后续 CI 整体迁云端，派发器须自包含可废弃；攻击性验证 PR 留到启用时做。
 - 2026-11-14 · WP-01② 交付：**PR #295** JIT 派发器（`b373e681`，225 行+22 测+plist 示例未装载+ci.md 三步文档；opt-in、现役 Listener 未动、CI 全绿）。碳审在途（review-mwfa6gl1）。启用时补攻击性验证 PR。
 - 2026-11-14 · #286 返工完成（`71f1846c`，仅 spec+测试 2 文件）：B1 两处默认值改真值并源码校验；B2 四端独立解析、10 项带锚点快照登记+诚实性测试（静默 fallback 清零，全改 _need/_require 硬失败）；B3/S4 66/17 口径钉死；S2 八字段 sub_fields；S3 HDR 端点钉住。110 OK+6 锚点。复审在途（review-mwfaaz0n）。
+- 2026-11-14 · **WP-07 合入**：#290 三轮复审 approve（Android I/O≠corrupt 分离+三锚点+iOS 0o000 锚点，CI 全绿）→ dancancer merge（总 51 PR；WP-10 解锁待派）。#295 碳审 request-changes（5B：generate-jitconfig 请求/响应与 REST 真实形状失配、FakeAPI 想象桩、PAT 权限 403——要求实网只读演练钉形状）；#286 二轮复审 request-changes（B1/B3/S3 过，B2/S1 自述不实：_fact 静默兜底未删、Layer2/3 残留 14 处静默三元）→ 双回炉。
