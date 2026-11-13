@@ -337,7 +337,7 @@ final class PhotoThumbnails: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         if trackedEditStates[path]?.identity != edited.identity {
             trackedEditStates[path] = .revision(edited)
-            _ = removeEditedKeysLocked(atPath: path)
+            _ = removeKeysLocked(atPath: path, keeping: edited.identity)
             let next = editGenerations[path, default: 0] &+ 1
             editGenerations[path] = next
             _editedInvalidationCount += 1
@@ -365,7 +365,7 @@ final class PhotoThumbnails: @unchecked Sendable {
             return false
         default:
             trackedEditStates[path] = target
-            _ = removeEditedKeysLocked(atPath: path)
+            _ = removeKeysLocked(atPath: path, keeping: edited.identity)
             editGenerations[path, default: 0] &+= 1
             _editedInvalidationCount += 1
             return true
@@ -400,6 +400,25 @@ final class PhotoThumbnails: @unchecked Sendable {
             }
         }
         insertLocked(image, for: key, cost: cost)
+    }
+
+    /// Drops every cached key for `path` that cannot belong to `identity`: edited keys are
+    /// always stale once a new revision is tracked, and unedited keys decoded from a previous
+    /// file identity were rendered from different bytes. Leaving those behind makes the next
+    /// `invalidateStaleEntries` sweep report a file change for a path that already moved on,
+    /// which discards the fresh identity's active preview and counts a second invalidation.
+    private func removeKeysLocked(atPath path: String, keeping identity: FileIdentity) -> Bool {
+        guard var keys = keysByPath[path] else { return false }
+        let removed = keys.filter { $0.appliesAdjustments || $0.fileIdentity != identity }
+        guard !removed.isEmpty else { return false }
+        for key in removed {
+            keys.remove(key)
+            trackedKeyCount -= 1
+            cache.removeObject(forKey: EntryKey(key))
+        }
+        if keys.isEmpty { keysByPath.removeValue(forKey: path) }
+        else { keysByPath[path] = keys }
+        return true
     }
 
     private func removeEditedKeysLocked(atPath path: String) -> Bool {

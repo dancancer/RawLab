@@ -594,9 +594,12 @@ struct ThumbnailCacheTests {
         var iterC = enteredStreamC.makeAsyncIterator()
         _ = await iterC.next()
 
+        let previewInvBeforeC = previews.editedInvalidationCount
         let commitC = session.commitEdit(expected: unmodifiedC, state: state1)
         check(commitC.status == .applied && thumbnails.editGeneration(forPath: path3) == genBeforeC + 1,
               "Recommitting identical edit parameters onto unwatched replacement idC still advances editGeneration")
+        check(thumbnails.cachedImage(for: uneditedKeyB) == nil,
+              "Tracking idC drops the unedited thumbnail that was decoded from previous identity idB")
         releaseC.signal()
         let lateOriginalC = await inFlightOriginalC.value
         check(lateOriginalC != nil && previews.cachedThumbnail(for: photo3) == nil,
@@ -605,6 +608,8 @@ struct ThumbnailCacheTests {
         await tileC.refresh(url: photo3, previews: previews)
         check(tileC.edited && tileC.adjustedThumbnail && tileC.thumbnail != nil && tileC.thumbnail !== lateOriginalC && tileC.notice == nil,
               "Tile displays idC edited thumbnail rather than in-flight originalImage(idC)")
+        check(previews.editedInvalidationCount == previewInvBeforeC + 1,
+              "Tile refresh after the replacement does not count a second edited invalidation")
     }
 
     @MainActor
