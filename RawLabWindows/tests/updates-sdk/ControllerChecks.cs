@@ -714,14 +714,33 @@ internal static class ControllerChecks
             moveFault = bytes => SavedState(bytes) is { Phase: UpdatePhase.Failed, Failure: { Stage: UpdatePhase.ReadyToInstall } } ? SharingViolation() : null;
             ResetCounters();
             var quitApproved = await controller.PrepareForQuitAsync();
-            check(quitApproved && adapter.Installs == 1 && delays.SequenceEqual(new[] { 10, 50, 200 }) &&
+            check(!quitApproved && adapter.Installs == 1 && delays.SequenceEqual(new[] { 10, 50, 200 }) &&
                 controller.StorageError != null && controller.State.Phase == UpdatePhase.Failed &&
-                controller.State.Failure?.Stage == UpdatePhase.ReadyToInstall && controller.State.Choice == UpdateInstallChoice.None &&
-                !controller.BlocksEditing && !controller.RequiresRecovery && !controller.RequiresStartupHealthCheck &&
-                controller.CanCheck && !controller.CanDownload && !controller.CanChooseInstall && !controller.CanCancel,
-                "Failed installer dispatch keeps the plain retryable failure in memory even when persisting Fail() also fails");
+                controller.State.Failure?.Stage == UpdatePhase.Installing && controller.State.Choice == UpdateInstallChoice.None &&
+                controller.BlocksEditing && controller.RequiresRecovery && !controller.RequiresStartupHealthCheck &&
+                !controller.CanCheck && !controller.CanDownload && !controller.CanChooseInstall && !controller.CanCancel,
+                "Failed installer dispatch keeps the disk-phase Failed(Installing) gate in memory when persisting Fail() also fails");
+            check(controller.State.BackupPath != null && Directory.Exists(controller.State.BackupPath) &&
+                store.Load(true).PendingUpdate.Phase == UpdatePhase.Installing && await controller.PrepareForQuitAsync(),
+                "The conservative double-failure gate preserves the backup, leaves disk on Installing, and still permits quitting afterwards");
 
+            var storeR = CreateStore("r");
+            var adapterR = new Adapter();
+            var controllerR = new DesktopUpdateController(adapterR, new(), storeR, "0.8.2", "14", now: () => virtualNow);
+            var restartR = false; controllerR.RestartRequested += () => restartR = true;
+            await controllerR.CheckAsync(true);
+            await controllerR.DownloadAsync();
+            adapterR.RejectInstall = true;
+            moveFault = bytes => SavedState(bytes) is { Phase: UpdatePhase.Failed, Failure: { Stage: UpdatePhase.ReadyToInstall } } ? SharingViolation() : null;
+            ResetCounters();
+            await controllerR.ChooseAsync(UpdateInstallChoice.RestartNow);
+            check(adapterR.Installs == 1 && !restartR && controllerR.StorageError != null &&
+                controllerR.State.Failure?.Stage == UpdatePhase.Installing && controllerR.BlocksEditing && controllerR.RequiresRecovery &&
+                controllerR.State.BackupPath != null && Directory.Exists(controllerR.State.BackupPath) &&
+                storeR.Load(true).PendingUpdate.Phase == UpdatePhase.Installing && await controllerR.PrepareForQuitAsync(),
+                "A RestartNow double failure keeps editing gated with memory and disk both on the Installing backup while quit stays reachable");
             moveFault = null;
+
             var reopenedFailed = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14", now: () => virtualNow);
             await reopenedFailed.FinishStartupHealthCheckAsync(true);
             check(reopenedFailed.BlocksEditing && reopenedFailed.RequiresRecovery && reopenedFailed.CanRestorePreviousData,

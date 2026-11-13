@@ -362,18 +362,28 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     private void Fail(Exception error, Guid attempt) => Fail(error, attempt, State.Phase);
     private void Fail(Exception error, Guid attempt, UpdatePhase stage)
     {
-        var next = preferences.Copy();
         // 磁盘记录停留在 Installing/PendingRestart 时 Cancel 无法回退该阶段；持久化失败必须保留内存中的失败记录。
-        var persistedDispatch = preferences.PendingUpdate.Phase is UpdatePhase.Installing or UpdatePhase.PendingRestart;
+        var diskPhase = preferences.PendingUpdate.Phase;
+        var persistedDispatch = diskPhase is UpdatePhase.Installing or UpdatePhase.PendingRestart;
+        // 拉起前启动异常会记到更轻的 ReadyToInstall：这是仅当失败记录成功落盘才成立的乐观回退。
+        var optimisticRollback = persistedDispatch && stage != diskPhase;
+        var diskRecord = optimisticRollback ? preferences.Copy() : null;
         var code = stage == UpdatePhase.Checking ? CategorizeCheckError(error) : "operation";
         var detail = error.Message ?? "";
+        var next = preferences.Copy();
         if (!next.PendingUpdate.Fail(stage, code, detail, attempt)) return;
         if (stage == UpdatePhase.Checking)
         {
             var count = (preferences.CheckFailure?.ConsecutiveFailures ?? 0) + 1;
             next.CheckFailure = new(now(), code, Math.Max(1, count), detail);
         }
-        Save(next, keepNextOnFailure: persistedDispatch);
+        if (!Save(next, keepNextOnFailure: persistedDispatch) && optimisticRollback)
+        {
+            // 双故障边界：失败记录也没写进去时磁盘仍停在 Installing/PendingRestart 并绑定备份，
+            // 内存回退为磁盘阶段的失败（保留 BackupPath）以维持 RequiresRecovery/BlocksEditing，
+            // 避免会话内新编辑在下次启动被磁盘旧快照的强制恢复回滚（与 macOS storageBlocksEditing 门禁一致）。
+            if (diskRecord!.PendingUpdate.Fail(diskPhase, code, detail, attempt)) { preferences = diskRecord; Notify(); }
+        }
     }
     private bool Save(UpdatePreferences next, bool discardObsoleteBackup = true, bool keepNextOnFailure = false)
     {
