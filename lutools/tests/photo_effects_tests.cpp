@@ -245,7 +245,7 @@ static void apiTests() {
         assert(sony2fuji_session_get_last_backend(session) == rawlabtest::nativeBackend);
         sony2fuji_release_buffer(&rejected);
         assert(render() == accelerated);
-    } else assert(sony2fuji_process(session, &request, &rejected) == SONY2FUJI_STATUS_PROCESSING_ERROR);
+    } else assert(sony2fuji_process(session, &request, &rejected) == SONY2FUJI_STATUS_UNSUPPORTED);
     gpu.mode = SONY2FUJI_GPU_OFF;
     assert(sony2fuji_session_set_gpu_config(session, &gpu) == SONY2FUJI_STATUS_OK);
     options.vignette_amount = options.grain_amount = 0;
