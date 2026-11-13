@@ -261,6 +261,8 @@ import Foundation
         try toneControls()
         try scopes()
         try recipes()
+        try recipeSourceOnHDR()
+        try rasterExposureBaselineOnRaw()
         try whiteBalance()
         try objects()
         try manualLensSelectionTransport()
@@ -407,6 +409,37 @@ import Foundation
         var missing = raw; missing.availableLookIDs = []
         rejects("Missing recipe LUT is blocked before changing target") {
             _ = try IOSAdjustmentTransfer.prepare(payload: partial, target: state(), context: missing)
+        }
+    }
+    static func recipeSourceOnHDR() throws {
+        var hdrContext = raw; hdrContext.isRaw = false; hdrContext.sourceIsHDR = true
+        var hdrTarget = RawSettings.default; hdrTarget.hdr = HDRSettings()
+        for strength in [0.5, 1.0] {
+            var source = RawSettings.default; source.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
+            source.lutStrength = strength; source.exposure = 1; source.contrast = 1.4
+            let copy = try IOSAdjustmentTransfer.capture(scope: .custom([.exposure, .contrast]), snapshot: state(source), context: raw)
+            let applied = try IOSAdjustmentTransfer.prepare(payload: copy, target: state(hdrTarget), context: hdrContext).settings.hdr!
+            check(applied.exposure == strength && abs(applied.contrast - 40 * strength) < 1e-9,
+                "Recipe source strength is applied once on an HDR target at \(strength)")
+        }
+    }
+    static func rasterExposureBaselineOnRaw() throws {
+        var raster = raw; raster.identifier = "source.jpg"; raster.isRaw = false
+        var jpeg = RawSettings.default; jpeg.exposureMode = .sensor; jpeg.exposure = 0.75
+        for mode in [RawExposureMode.preview, .scene] {
+            var target = RawSettings.default; target.exposureMode = mode
+            for scope in [AdjustmentTransferScope.all, .custom([.exposureMode, .exposure])] {
+                let copy = try IOSAdjustmentTransfer.capture(scope: scope, snapshot: state(jpeg), context: raster)
+                let applied = try IOSAdjustmentTransfer.prepare(payload: copy, target: state(target), context: raw)
+                check(copy[.exposureMode] == .string("sensor") && applied.settings.exposureMode == mode && applied.settings.exposure == 0.75,
+                    "JPEG paste keeps the RAW exposure baseline \(mode)")
+            }
+        }
+        for mode in [RawExposureMode.scene, .sensor] {
+            var source = RawSettings.default; source.exposureMode = mode
+            let all = try IOSAdjustmentTransfer.capture(scope: .all, snapshot: state(source), context: raw)
+            check(try IOSAdjustmentTransfer.prepare(payload: all, target: state(), context: raw).settings.exposureMode == mode,
+                "RAW all paste still copies the exposure baseline \(mode)")
         }
     }
     static func fullNeutralRecipeOnRaster() throws {

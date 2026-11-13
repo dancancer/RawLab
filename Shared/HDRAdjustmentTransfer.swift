@@ -102,9 +102,13 @@ enum HDRAdjustmentTransfer {
         var result = target
         let previous = values(target)
         for (field, key) in scalarKeys {
+            guard var number = payload[field]?.number else { continue }
+            // 带配方的普通来源复制的是配方逻辑值；与普通目标一致，按来源强度换算为实际贡献。
+            if let scale = payload.source.recipe?.strength, scale != 1 {
+                number = field == .contrast || field == .saturation ? 1 + (number - 1) * scale : number * scale
+            }
             // 规范化百分比往返会有 Double 舍入；相同逻辑值保持原快照，避免空历史事务。
-            if payload[field] == previous[field.rawValue] { continue }
-            guard let number = payload[field]?.number else { continue }
+            if .number(number) == previous[field.rawValue] { continue }
             switch field {
             case .contrast, .saturation: result[keyPath: key] = (number - 1) * 100
             case .highlights: result[keyPath: key] = -number * 100

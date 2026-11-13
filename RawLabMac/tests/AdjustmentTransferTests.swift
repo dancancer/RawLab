@@ -267,6 +267,8 @@ struct AdjustmentTransferTests {
         try postRGBCompatibility()
         try scopesAndFreeze()
         try recipeConversions()
+        try recipeSourceOnHDR()
+        try rasterExposureBaselineOnRaw()
         try whiteBalanceAndCompatibility()
         try preservationAndLegacy()
         try whiteBalanceGuards()
@@ -361,6 +363,40 @@ struct AdjustmentTransferTests {
         }
         rejects("Target draft requires preflight") {
             _ = try MacAdjustmentTransfer.prepare(payload: payload, target: before, context: draft)
+        }
+    }
+
+    static func recipeSourceOnHDR() throws {
+        var hdrContext = raw; hdrContext.isRaw = false; hdrContext.sourceIsHDR = true
+        var hdrTarget = Adjustments(); hdrTarget.hdr = HDRSettings()
+        for strength in [0.5, 1.0] {
+            var source = Adjustments()
+            source.applyMasterRecipe(.hamadaDaylightV2)
+            source.exposure = 1; source.contrast = 40; source.strength = strength
+            let payload = try MacAdjustmentTransfer.capture(scope: .custom([.exposure, .contrast]), snapshot: state(source), context: raw)
+            let applied = try MacAdjustmentTransfer.prepare(payload: payload, target: state(hdrTarget), context: hdrContext).settings.hdr!
+            check(applied.exposure == strength && abs(applied.contrast - 40 * strength) < 1e-9,
+                  "Recipe source strength is applied once on an HDR target at \(strength)")
+        }
+    }
+
+    static func rasterExposureBaselineOnRaw() throws {
+        var raster = raw; raster.isRaw = false
+        var jpeg = Adjustments(); jpeg.exposureMode = .sensor; jpeg.exposure = 0.75
+        for mode in [ExposureMode.preview, .scene] {
+            var target = Adjustments(); target.exposureMode = mode
+            for scope in [AdjustmentTransferScope.all, .custom([.exposureMode, .exposure])] {
+                let payload = try MacAdjustmentTransfer.capture(scope: scope, snapshot: state(jpeg), context: raster)
+                let applied = try MacAdjustmentTransfer.prepare(payload: payload, target: state(target), context: raw)
+                check(payload[.exposureMode] == .string("sensor") && applied.settings.exposureMode == mode && applied.settings.exposure == 0.75,
+                      "JPEG paste keeps the RAW exposure baseline \(mode)")
+            }
+        }
+        for mode in [ExposureMode.scene, .sensor] {
+            var source = Adjustments(); source.exposureMode = mode
+            let all = try MacAdjustmentTransfer.capture(scope: .all, snapshot: state(source), context: raw)
+            check(try MacAdjustmentTransfer.prepare(payload: all, target: state(), context: raw).settings.exposureMode == mode,
+                  "RAW all paste still copies the exposure baseline \(mode)")
         }
     }
 
@@ -566,8 +602,8 @@ struct AdjustmentTransferTests {
               "Fixed white balance keeps absolute values")
         var raster = raw; raster.isRaw = false
         let rasterMode = try MacAdjustmentTransfer.capture(scope: .custom([.exposureMode]), snapshot: state(), context: raster)
-        check(try MacAdjustmentTransfer.prepare(payload: rasterMode, target: state(), context: raw).settings.exposureMode == .sensor,
-              "Explicit sensor mode from raster remains sensor on RAW instead of using a native default")
+        check(try MacAdjustmentTransfer.prepare(payload: rasterMode, target: state(), context: raw).settings.exposureMode == .preview,
+              "Raster sensor placeholder does not replace the RAW exposure baseline")
         rejects("RAW white balance is explicitly incompatible with raster target") {
             _ = try MacAdjustmentTransfer.prepare(payload: fixed, target: state(), context: raster)
         }
