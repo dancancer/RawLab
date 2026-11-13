@@ -72,7 +72,8 @@ struct CompactControlsPresentationTests {
 
     @MainActor private static func snapshot<V: View>(
         _ view: V, name: String, language: AppLanguage, size: NSSize,
-        expectedFields: Int, output: URL, renderModel: EditorModel? = nil, textSize: DynamicTypeSize = .large
+        expectedFields: Int, output: URL, renderModel: EditorModel? = nil, textSize: DynamicTypeSize = .large,
+        expectedIdentifiers: Set<String>? = nil
     ) async throws -> SnapshotEvidence {
         let host = NSHostingView(rootView: view.dynamicTypeSize(textSize).environment(\.locale, Locale(identifier: language.rawValue))
             .preferredColorScheme(.dark))
@@ -114,13 +115,22 @@ struct CompactControlsPresentationTests {
         guard nativeFields.count == expectedFields else {
             throw RenderError.failed("\(name): expected \(expectedFields) numeric fields; found \(nativeFields.count)")
         }
+        if let expectedIdentifiers {
+            let found = Set(nativeFields.map { $0.accessibilityIdentifier() })
+            guard found == expectedIdentifiers else {
+                throw RenderError.failed("\(name): numeric fields \(found.sorted()) differ from expected \(expectedIdentifiers.sorted())")
+            }
+        }
         var fieldEvidence: [FieldEvidence] = []
         var scrollScreenshots: [String] = []
         let windowFrame = window.frame
         for field in nativeFields {
             let initialBounds = field.convert(field.bounds, to: host)
             let initiallyFullyVisible = host.bounds.contains(initialBounds) && field.visibleRect.contains(field.bounds)
-            if !initiallyFullyVisible && textSize.isAccessibilitySize {
+            // The redesigned inspector scrolls its tools (DESIGN.md, a74a6baf: "six adjustment
+            // groups sit above independently scrolling tools"), so a below-fold row is legal at
+            // every text size; it must still become fully visible through scrolling.
+            if !initiallyFullyVisible {
                 field.scrollToVisible(field.bounds)
                 host.layoutSubtreeIfNeeded()
                 try await Task.sleep(for: .milliseconds(60))
@@ -230,7 +240,9 @@ struct CompactControlsPresentationTests {
         if ProcessInfo.processInfo.environment["RAWLAB_PARAMETER_MATRIX"] == "1" || atmosphereOnly {
             if atmosphereOnly { model.settings.clarity = 37.251234; model.settings.dehaze = -42.5 }
             let controls: [(EditorAdjustmentTool, Int)] = atmosphereOnly ? [(.clarity, 1), (.dehaze, 1)] :
-                [(.exposure, 1), (.hsl, 3), (.whiteBalance, 2), (.geometry, 1)]
+                // The exposure tool expands the Light group, whose two default-open
+                // disclosure sections show six rows (AdjustmentDock.lightSections).
+                [(.exposure, 6), (.hsl, 3), (.whiteBalance, 2), (.geometry, 1)]
             var snapshots: [SnapshotEvidence] = []
             for language in languages {
                 UserDefaults.standard.setVolatileDomain([L10n.preferenceKey: language.rawValue, "photoFolders": [String]()], forName: UserDefaults.argumentDomain)
@@ -268,10 +280,17 @@ struct CompactControlsPresentationTests {
             guard grainTitle != missing, L10n.text("颗粒强度") == grainTitle else {
                 throw RenderError.failed("Missing localization for \(language.rawValue)")
             }
+            // a74a6baf redesign: the Light group keeps 曝光 (exposure, contrast) and
+            // 明暗 (highlights, shadows, whitePoint, blackPoint) as two disclosure
+            // sections that are open by default in AdjustmentDock.lightSections, so the
+            // dock materializes all six rows in every editor snapshot.
+            let lightGroupFields: Set<String> = ["value.exposure", "value.contrast",
+                "value.highlights", "value.shadows", "value.whitePoint", "value.blackPoint"]
             for (name, size) in [("editor-minimum", NSSize(width: 950, height: 620)),
                                  ("editor-wide", NSSize(width: 1440, height: 900))] {
                 snapshots.append(try await snapshot(EditorView(model: model), name: name, language: language,
-                    size: size, expectedFields: 1, output: output, renderModel: model))
+                    size: size, expectedFields: 6, output: output, renderModel: model,
+                    expectedIdentifiers: lightGroupFields))
             }
             for (name, size, textSize) in [
                 ("hsl-target-collapsed", NSSize(width: 560, height: 150), DynamicTypeSize.large),
@@ -322,8 +341,13 @@ struct CompactControlsPresentationTests {
                 expectedFields: 5, output: output))
             for (name, size) in [("geometry-editor-minimum", NSSize(width: 950, height: 620)),
                                  ("geometry-editor-wide", NSSize(width: 1440, height: 900))] {
+                // An active geometry draft replaces the tool sections with
+                // MacGeometryWorkspace on the crop tab: the only numeric row is
+                // straighten (GeometryControls.cropControls; the precise-crop grid
+                // stays collapsed).
                 snapshots.append(try await snapshot(EditorView(model: model), name: name, language: language,
-                    size: size, expectedFields: 1, output: output, renderModel: model))
+                    size: size, expectedFields: 1, output: output, renderModel: model,
+                    expectedIdentifiers: ["geometry.value.straightenDegrees"]))
             }
             _ = model.selectGeometryDraftTab(.perspective)
             snapshots.append(try await snapshot(MacGeometryWorkspace(model: model)
@@ -353,8 +377,8 @@ struct CompactControlsPresentationTests {
             fixture: fixture.lastPathComponent, renderedWidth: frame.image.width, renderedHeight: frame.image.height,
             limitations: ["Editor snapshots cover the actual content view; window chrome and the application toolbar are excluded.",
                           "File tree starts empty with isolated temporary preferences.",
-                          "HSL and grain snapshots show the actual product components at 650 points: the workspace remaining in a 950-point window with a 300-point file tree.",
-                          "Minimum 72×26 native field geometry, unshrunk font, numeric text fit, direct locale lookup, field containment, and nonblank bitmap are strict automated checks; label wrapping requires visual inspection.",
+                          "HSL and grain snapshots show the actual product components at 650 points, the workspace content a 950-point window leaves beside the 280-point compact inspector; below 1180 points the file browser is a dismissible overlay, not a pinned tree.",
+                          "Minimum 72×26 native field geometry, unshrunk font, numeric text fit, direct locale lookup, field containment, and nonblank bitmap are strict automated checks; the redesigned inspector scrolls its tools, so below-fold fields are scrolled fully into view and re-checked at every text size, with separate reached screenshots; label wrapping requires visual inspection.",
                           "Actual mouse, keyboard, scroll-wheel, focus traversal, and VoiceOver verification remain pending while the Mac is locked.",
                           "These view snapshots do not establish that the complete native/core test gate has passed."], snapshots: snapshots)
         let encoder = JSONEncoder()
