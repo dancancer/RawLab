@@ -386,18 +386,28 @@ struct ThumbnailCacheTests {
               "First edit advances invalidation counters once even with dual persistence observers")
 
         // Verify idempotency: duplicate notifications / reconcile calls for the same edit state must not re-advance.
+        let editedRecord1 = commit1.saved!
         let rev1 = EditPersistence.editedRevision(for: state1, atPath: path1)!
+        let editedRev1 = PhotoThumbnails.EditedRevision(
+            identity: editedRecord1.identity.thumbnailFileIdentity,
+            revision: rev1
+        )
         NotificationCenter.default.post(
             name: EditPersistence.didChangeRecordsNotification,
             object: nil,
             userInfo: [
                 EditPersistence.directoryPathUserInfoKey: store.canonicalDirectoryPath,
-                EditPersistence.changedRecordsUserInfoKey: [path1: Optional(state1)],
+                EditPersistence.changedRecordsUserInfoKey: [path1: editedRecord1],
                 EditPersistence.invalidatedPathsUserInfoKey: Set([path1]),
-                EditPersistence.editedRevisionsUserInfoKey: [path1: rev1]
+                EditPersistence.editedRevisionsUserInfoKey: [path1: rev1],
+                EditPersistence.fileIdentitiesUserInfoKey: [path1: (
+                    editedRecord1.identity.size,
+                    editedRecord1.identity.modified,
+                    editedRecord1.identity.fileNumber
+                )]
             ]
         )
-        check(!thumbnails.reconcileEditedRevision(rev1, atPath: path1),
+        check(!thumbnails.reconcileEditedRevision(editedRev1, atPath: path1),
               "Duplicate reconcileEditedRevision for identical revision is a no-op")
         check(thumbnails.editGeneration(forPath: path1) == 1,
               "Duplicate notifications for same edit do not advance editGeneration again")
@@ -405,7 +415,6 @@ struct ThumbnailCacheTests {
               "Duplicate notifications for same edit do not increment invalidation counts")
 
         // Render and store edited preview while unedited decode is still blocked in flight.
-        let editedRecord1 = commit1.saved!
         let editedImg1 = try await previews.image(for: editedRecord1)
         check(previews.cachedThumbnail(for: photo1)?.image === editedImg1 && previews.cachedThumbnail(for: photo1)?.isEdited == true,
               "Edited thumbnail active at generation 1 before in-flight original decode finishes")
@@ -482,6 +491,125 @@ struct ThumbnailCacheTests {
         _ = await inFlightPostReset.value
         check(previews.cachedThumbnail(for: photo2)?.image === editedImg3 && previews.cachedThumbnail(for: photo2)?.isEdited == true,
               "Post-reset in-flight unedited decode cannot overwrite newly re-edited presentation")
+
+        // Case D: Same-name file replacement (idA -> idB) + invalidate(for:) (.invalidated) + recommitting identical edit parameters (R1).
+        let photo3 = dir.appendingPathComponent("same-name-replaced.png")
+        try writePNG(to: photo3, width: 360, height: 240, red: 0.25)
+        let path3 = PhotoThumbnailCacheKey.canonicalPath(for: photo3)
+        let initialA = try await previews.record(for: photo3)
+        let idA = initialA.identity
+        check(!MacPhotoPreviewPlan.isEdited(initialA) && thumbnails.editGeneration(forPath: path3) == 0,
+              "Photo 3 (idA) starts unedited at editGeneration 0")
+
+        let rev3 = EditPersistence.editedRevision(for: state1, atPath: path3)!
+        let commitA = session.commitEdit(expected: initialA, state: state1)
+        check(commitA.status == .applied && thumbnails.editGeneration(forPath: path3) == 1,
+              "Editing idA advances editGeneration from 0 to 1")
+        let editedImgA = try await previews.image(for: commitA.saved!)
+        check(previews.cachedThumbnail(for: photo3)?.image === editedImgA && previews.cachedThumbnail(for: photo3)?.isEdited == true,
+              "idA edited thumbnail cached as active")
+
+        // Replace photo3 on disk at the same path with new file identity idB != idA; watchedFileDidChange / invalidate(for:) marks old state invalidated.
+        try writePNG(to: photo3, width: 420, height: 280, red: 0.75)
+        let unmodifiedB = try store.readState(for: photo3)
+        let idB = unmodifiedB.identity
+        check(idB != idA && unmodifiedB.state == nil && !MacPhotoPreviewPlan.isEdited(unmodifiedB),
+              "Replaced file has distinct identity idB != idA and is unedited in EditPersistence")
+        previews.invalidate(for: photo3)
+        let genAfterReplaceInvalidate = thumbnails.editGeneration(forPath: path3)
+        check(genAfterReplaceInvalidate == 2 && previews.cachedThumbnail(for: photo3) == nil,
+              "invalidate(for:) after file replacement advances editGeneration to 2 and clears activeKeys")
+
+        let (enteredStreamB, enteredContB) = AsyncStream<Void>.makeStream()
+        let releaseB = gate.arm(for: photo3) { enteredContB.yield() }
+        let inFlightOriginalB = Task { @MainActor in
+            await previews.originalImage(for: photo3, identity: idB, recordAsActive: true)
+        }
+        var iterB = enteredStreamB.makeAsyncIterator()
+        _ = await iterB.next()
+
+        let thumbInvBeforeB = thumbnails.editedInvalidationCount
+        let previewInvBeforeB = previews.editedInvalidationCount
+        let commitB = session.commitEdit(expected: unmodifiedB, state: state1)
+        let savedB = commitB.saved!
+        check(commitB.status == .applied && EditPersistence.editedRevision(for: savedB.state, atPath: path3) == rev3,
+              "Committed identical edit parameters (same revision R1) onto replacement file idB")
+        check(thumbnails.editGeneration(forPath: path3) == genAfterReplaceInvalidate + 1,
+              "Recommitting identical edit parameters onto replaced file idB advances editGeneration")
+        check(thumbnails.editedInvalidationCount == thumbInvBeforeB + 1 && previews.editedInvalidationCount == previewInvBeforeB + 1,
+              "Replacement edit advances invalidation counters once")
+
+        // Duplicate notifications for (idB, R1) remain idempotent.
+        let editedRevB = PhotoThumbnails.EditedRevision(identity: idB.thumbnailFileIdentity, revision: rev3)
+        NotificationCenter.default.post(
+            name: EditPersistence.didChangeRecordsNotification,
+            object: nil,
+            userInfo: [
+                EditPersistence.directoryPathUserInfoKey: store.canonicalDirectoryPath,
+                EditPersistence.changedRecordsUserInfoKey: [path3: savedB],
+                EditPersistence.invalidatedPathsUserInfoKey: Set([path3]),
+                EditPersistence.editedRevisionsUserInfoKey: [path3: rev3],
+                EditPersistence.fileIdentitiesUserInfoKey: [path3: (idB.size, idB.modified, idB.fileNumber)]
+            ]
+        )
+        check(!thumbnails.reconcileEditedRevision(editedRevB, atPath: path3),
+              "Duplicate reconcileEditedRevision for same (idB, R1) is a no-op")
+        check(thumbnails.editGeneration(forPath: path3) == genAfterReplaceInvalidate + 1 &&
+              thumbnails.editedInvalidationCount == thumbInvBeforeB + 1 &&
+              previews.editedInvalidationCount == previewInvBeforeB + 1,
+              "Duplicate notifications for (idB, R1) keep editGeneration and editedInvalidationCount stable")
+
+        let editedImgB = try await previews.image(for: savedB)
+        releaseB.signal()
+        let lateOriginalB = await inFlightOriginalB.value
+        check(lateOriginalB != nil && lateOriginalB !== editedImgB,
+              "In-flight originalImage(idB) decode completed")
+        check(previews.cachedThumbnail(for: photo3)?.image === editedImgB && previews.cachedThumbnail(for: photo3)?.isEdited == true,
+              "In-flight originalImage(idB) cannot overwrite edited active presentation after same-parameter recommit")
+        let uneditedKeyB = PhotoThumbnailCacheKey(uneditedFileAt: photo3)!
+        check(thumbnails.cachedImage(for: uneditedKeyB) === lateOriginalB,
+              "Unedited NSCache key for idB remains intact alongside edited key")
+
+        var tileB = WorkspacePhotoTileState()
+        tileB.appear(url: photo3, previews: previews)
+        check(tileB.thumbnail === editedImgB && tileB.edited && tileB.adjustedThumbnail,
+              "Tile onAppear displays idB edited thumbnail rather than original")
+        await tileB.refresh(url: photo3, previews: previews)
+        check(tileB.thumbnail === editedImgB && tileB.edited && tileB.adjustedThumbnail && tileB.notice == nil,
+              "Tile refresh keeps displaying idB edited thumbnail")
+
+        // Case E: Unwatched same-name replacement (idB -> idC, no prior invalidate) + recommitting identical edit parameters (R1).
+        try writePNG(to: photo3, width: 480, height: 320, red: 0.45)
+        let unmodifiedC = try store.readState(for: photo3)
+        let idC = unmodifiedC.identity
+        check(idC != idB && unmodifiedC.state == nil,
+              "Second same-name replacement produces distinct unedited identity idC != idB")
+        let genBeforeC = thumbnails.editGeneration(forPath: path3)
+
+        let (enteredStreamC, enteredContC) = AsyncStream<Void>.makeStream()
+        let releaseC = gate.arm(for: photo3) { enteredContC.yield() }
+        let inFlightOriginalC = Task { @MainActor in
+            await previews.originalImage(for: photo3, identity: idC, recordAsActive: true)
+        }
+        var iterC = enteredStreamC.makeAsyncIterator()
+        _ = await iterC.next()
+
+        let previewInvBeforeC = previews.editedInvalidationCount
+        let commitC = session.commitEdit(expected: unmodifiedC, state: state1)
+        check(commitC.status == .applied && thumbnails.editGeneration(forPath: path3) == genBeforeC + 1,
+              "Recommitting identical edit parameters onto unwatched replacement idC still advances editGeneration")
+        check(thumbnails.cachedImage(for: uneditedKeyB) == nil,
+              "Tracking idC drops the unedited thumbnail that was decoded from previous identity idB")
+        releaseC.signal()
+        let lateOriginalC = await inFlightOriginalC.value
+        check(lateOriginalC != nil && previews.cachedThumbnail(for: photo3) == nil,
+              "Late originalImage(idC) decode finishing before edited render is rejected from activeKeys")
+        var tileC = WorkspacePhotoTileState()
+        await tileC.refresh(url: photo3, previews: previews)
+        check(tileC.edited && tileC.adjustedThumbnail && tileC.thumbnail != nil && tileC.thumbnail !== lateOriginalC && tileC.notice == nil,
+              "Tile displays idC edited thumbnail rather than in-flight originalImage(idC)")
+        check(previews.editedInvalidationCount == previewInvBeforeC + 1,
+              "Tile refresh after the replacement does not count a second edited invalidation")
     }
 
     @MainActor
