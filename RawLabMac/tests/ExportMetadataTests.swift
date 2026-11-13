@@ -132,18 +132,87 @@ struct ExportMetadataTests {
         check(!plainJPEG.isEmpty, "Images without shooting EXIF can still be exported")
     }
 
+    struct InjectedPreserveFailure: Error {}
+
+    static func singlePhotoStagingChecks(in output: URL) throws {
+        let stagingDir = output.appendingPathComponent("single-photo-staging-anchor")
+        try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+        let sourceImage = output.appendingPathComponent("original.jpg")
+
+        for suffix in ["jpg", "png"] {
+            let targetURL = stagingDir.appendingPathComponent("preexisting-target.\(suffix)")
+            let oldContent = "OLD_TARGET_CONTENT_BEFORE_EXPORT_\(suffix)"
+            let oldBytes = Data(oldContent.utf8)
+            try oldBytes.write(to: targetURL)
+
+            let engine = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)
+            engine.metadataPreserver = { _, _, _ in
+                throw InjectedPreserveFailure()
+            }
+
+            var didFail = false
+            do {
+                _ = try engine.render(sourceImage, settings: Adjustments(), lut: nil, edge: nil, output: targetURL)
+            } catch is InjectedPreserveFailure {
+                didFail = true
+            }
+            check(didFail, "\(suffix) single-photo export reports error when ExportMetadata.preserve fails")
+
+            let currentBytes = try Data(contentsOf: targetURL)
+            check(currentBytes == oldBytes, "\(suffix) pre-existing target file bytes remain intact after preserve failure")
+
+            let dirEntries = try FileManager.default.contentsOfDirectory(atPath: stagingDir.path)
+            let leftovers = dirEntries.filter { $0.hasPrefix(".rawlab-") }
+            check(leftovers.isEmpty, "\(suffix) no .rawlab-* staging files remain in destination directory after failure")
+
+            // 成功导出路径：补写元数据成功时原子替换目标文件，旧字节更新且同目录无暂存残留
+            engine.metadataPreserver = { source, destination, fallback in
+                try ExportMetadata.preserve(from: source, in: destination, fallbackSourceProperties: fallback)
+            }
+            _ = try engine.render(sourceImage, settings: Adjustments(), lut: nil, edge: nil, output: targetURL)
+            let updatedBytes = try Data(contentsOf: targetURL)
+            check(updatedBytes != oldBytes && !updatedBytes.isEmpty, "\(suffix) target file is updated when export succeeds")
+            let successEntries = try FileManager.default.contentsOfDirectory(atPath: stagingDir.path)
+            let successLeftovers = successEntries.filter { $0.hasPrefix(".rawlab-") }
+            check(successLeftovers.isEmpty, "\(suffix) no .rawlab-* staging files remain after successful export")
+
+            // 目标文件原本不存在时元数据注入失败：目标文件不被创建，且无暂存残留
+            let nonExistentTarget = stagingDir.appendingPathComponent("non-existent-target.\(suffix)")
+            engine.metadataPreserver = { _, _, _ in
+                throw InjectedPreserveFailure()
+            }
+            var nonExistentFailed = false
+            do {
+                _ = try engine.render(sourceImage, settings: Adjustments(), lut: nil, edge: nil, output: nonExistentTarget)
+            } catch is InjectedPreserveFailure {
+                nonExistentFailed = true
+            }
+            check(nonExistentFailed, "\(suffix) export to non-existent target fails on metadata error")
+            check(!FileManager.default.fileExists(atPath: nonExistentTarget.path), "\(suffix) non-existent target is not created on metadata failure")
+            let nonExistentEntries = try FileManager.default.contentsOfDirectory(atPath: stagingDir.path)
+            let nonExistentLeftovers = nonExistentEntries.filter { $0.hasPrefix(".rawlab-") }
+            check(nonExistentLeftovers.isEmpty, "\(suffix) no .rawlab-* staging files remain after failed non-existent target export")
+        }
+    }
+
     static func main() throws {
         let root = URL(fileURLWithPath: CommandLine.arguments[1])
         let output = URL(fileURLWithPath: CommandLine.arguments[2])
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         try syntheticChecks(in: output)
+        try singlePhotoStagingChecks(in: output)
         if let fixture = ProcessInfo.processInfo.environment["RAWLAB_TEST_METADATA_RAW"] {
             try unreadableRAWChecks(URL(fileURLWithPath: fixture), output: output)
         } else {
             print("SKIP: set RAWLAB_TEST_METADATA_RAW to verify an extensionless RAW with unreadable ImageIO metadata")
         }
-        let raw = ProcessInfo.processInfo.environment["RAWLAB_TEST_RAW"].map { URL(fileURLWithPath: $0) } ??
-            root.appendingPathComponent("lutools/examples/DSC06251.ARW")
+        let defaultRaw = root.appendingPathComponent("lutools/examples/DSC06251.ARW")
+        let rawCandidate = ProcessInfo.processInfo.environment["RAWLAB_TEST_RAW"].map { URL(fileURLWithPath: $0) } ?? defaultRaw
+        guard FileManager.default.fileExists(atPath: rawCandidate.path) else {
+            print("SKIP: RAW export checks (fixture not found at \(rawCandidate.path))")
+            return
+        }
+        let raw = rawCandidate
         let original = properties(raw)
         let originalEXIF = original[kCGImagePropertyExifDictionary] as! [CFString: Any]
         let engine = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)

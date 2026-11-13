@@ -237,6 +237,9 @@ final class RenderEngine {
     }
     private var lensCatalogKey: LensCatalogKey?
     private var lensCandidates: [LensCandidate] = []
+    var metadataPreserver: (URL, URL, [CFString: Any]?) throws -> Void = { source, destination, fallback in
+        try ExportMetadata.preserve(from: source, in: destination, fallbackSourceProperties: fallback)
+    }
     init(gpuMode: sony2fuji_gpu_mode = SONY2FUJI_GPU_AUTO, lensDatabaseURL: URL? = nil,
          statisticsProvider: @escaping (inout sony2fuji_buffer) -> PreviewStatistics? = PreviewStatistics.analyze,
          aiModelDirectory: URL? = RenderEngine.bundledAIModel, aiCacheDirectory: URL? = nil,
@@ -687,11 +690,26 @@ final class RenderEngine {
         let key = try? RawWhiteBalanceCacheKey(url)
         var buffer = sony2fuji_buffer()
         defer { sony2fuji_release_buffer(&buffer) }
+        var stagingURL: URL?
+        var destinationURL = output
+        if let output, !output.lastPathComponent.hasPrefix(".rawlab-") {
+            let directory = output.deletingLastPathComponent()
+            let suffix = output.pathExtension.isEmpty ? ExportFormat.forOutput(output).suffix : output.pathExtension
+            let staging = directory.appendingPathComponent(".rawlab-\(UUID().uuidString).\(suffix)")
+            stagingURL = staging
+            destinationURL = staging
+        }
+        var cleanupStaging: URL? = stagingURL
+        defer {
+            if let cleanupStaging {
+                try? FileManager.default.removeItem(at: cleanupStaging)
+            }
+        }
         let status = try withInput(url, request: &request) { inputRequest in
             (lut?.path ?? "").withCString { lutPath in
-                (output?.path ?? "").withCString { destination in
+                (destinationURL?.path ?? "").withCString { destination in
                     inputRequest.lut_path = lut == nil ? nil : lutPath
-                    inputRequest.output_path = output == nil ? nil : destination
+                    inputRequest.output_path = destinationURL == nil ? nil : destination
                     return sony2fuji_process(session, &inputRequest, &buffer)
                 }
             }
@@ -708,10 +726,19 @@ final class RenderEngine {
             throw RenderError.processing(status, input: url, look: lut, output: output)
         }
         if let output {
-            if ExportFormat.forOutput(output) != .renderedDNG {
+            let targetURL = destinationURL ?? output
+            if ExportFormat.forOutput(targetURL) != .renderedDNG {
                 // 核心已成功解码；ImageIO 不识别的 RAW 仍写入输出尺寸和方向，不捏造拍摄 EXIF。
                 let fallback: [CFString: Any]? = Self.isRasterInput(url) ? nil : [:]
-                try ExportMetadata.preserve(from: url, in: output, fallbackSourceProperties: fallback)
+                try metadataPreserver(url, targetURL, fallback)
+            }
+            if let stagingURL {
+                if FileManager.default.fileExists(atPath: output.path) {
+                    _ = try FileManager.default.replaceItemAt(output, withItemAt: stagingURL, backupItemName: nil, options: .usingNewMetadataOnly)
+                } else {
+                    try FileManager.default.moveItem(at: stagingURL, to: output)
+                }
+                cleanupStaging = nil
             }
             return nil
         }
