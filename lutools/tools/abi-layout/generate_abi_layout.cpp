@@ -714,6 +714,7 @@ int main() {
 
     std::cout << "{\n"
               << "  \"version\": 1,\n"
+              << "  \"fixture_version\": 2,\n"
               << "  \"source\": [\n"
               << "    \"lutools/include/sony2fuji/ffi/sony2fuji_c.h\",\n"
               << "    \"lutools/include/sony2fuji/ffi/sony2fuji_hdr.h\"\n"
