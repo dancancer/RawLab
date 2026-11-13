@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "fixture_version": 2,
+  "fixture_version": 3,
   "source": [
     "lutools/include/sony2fuji/ffi/sony2fuji_c.h",
     "lutools/include/sony2fuji/ffi/sony2fuji_hdr.h"
@@ -1460,6 +1460,28 @@
         {"name": "SONY2FUJI_MIGRATION_ACCEPTED", "value": 1},
         {"name": "SONY2FUJI_MIGRATION_REJECTED", "value": 2}
       ]
+    }
+  ],
+  "callbacks": [
+    {
+      "name": "sony2fuji_ai_progress_callback",
+      "return_type": "int32_t",
+      "params": ["void*", "int32_t", "uint64_t", "uint64_t"]
+    },
+    {
+      "name": "sony2fuji_cancel_callback",
+      "return_type": "int32_t",
+      "params": ["void*"]
+    },
+    {
+      "name": "sony2fuji_hdr_read_rows_callback",
+      "return_type": "sony2fuji_status",
+      "params": ["void*", "uint32_t", "uint32_t", "uint32_t", "float*"]
+    },
+    {
+      "name": "sony2fuji_hdr_finish_decode_callback",
+      "return_type": "sony2fuji_status",
+      "params": ["void*"]
     }
   ]
 }
