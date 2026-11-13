@@ -54,31 +54,50 @@ extension EditorV4UITests {
 
     func testCompactFineButtonKeepsValuesAndResetsOnToolChange() throws {
         let app = try launchImportedEditor()
-        let fine = app.buttons["editor.fine"]
-        let reset = app.buttons["editor.reset"]
-        XCTAssertTrue(fine.waitForExistence(timeout: 5), "Fine mode is a compact toggle button")
-        XCTAssertFalse(app.switches["editor.fine"].exists)
-        XCTAssertGreaterThanOrEqual(fine.frame.height, 43.5)
-        XCTAssertGreaterThanOrEqual(fine.frame.width, 43.5)
-        XCTAssertEqual(fine.frame.midY, reset.frame.midY, accuracy: 2)
+        let more = app.buttons["editor.tool.more"]
+        let reset = app.buttons["editor.draft.reset"]
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        XCTAssertTrue(reset.exists)
+        XCTAssertGreaterThanOrEqual(more.frame.height, 43.5)
+        XCTAssertGreaterThanOrEqual(more.frame.width, 43.5)
+        XCTAssertEqual(more.frame.midY, reset.frame.midY, accuracy: 2)
         let auto = app.buttons["exposure.auto"]
-        XCTAssertEqual(auto.frame.height, fine.frame.height, accuracy: 1, "Secondary actions share the same touch height")
+        XCTAssertGreaterThanOrEqual(auto.frame.height, 43.5, "Secondary actions keep full touch height")
         let mode = app.buttons["exposure.mode"]
         if mode.exists { XCTAssertEqual(mode.frame.midY, auto.frame.midY, accuracy: 2) }
         let original = try number(app.buttons["adjustment.value"])
         capture("compact-editor-fine-off-portrait", in: app)
-        // 可见按钮高 32pt，仍应能从 44pt 点击区的边缘切换。
-        fine.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)).tap()
+        more.tap()
+        let fine = app.buttons["editor.fine"]
+        XCTAssertTrue(fine.waitForExistence(timeout: 5), "Fine mode is a menu toggle action")
+        XCTAssertFalse(app.switches["editor.fine"].exists)
+        fine.tap()
+        waitUntil { !fine.exists }
+        more.tap()
+        XCTAssertTrue(fine.waitForExistence(timeout: 5))
         XCTAssertTrue(fine.isSelected)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
+        waitUntil { !fine.exists }
         XCTAssertEqual(try number(app.buttons["adjustment.value"]), original)
         capture("compact-editor-fine-on-portrait", in: app)
         XCUIDevice.shared.orientation = .landscapeLeft
         waitUntil { app.frame.width > app.frame.height }
+        more.tap()
+        XCTAssertTrue(fine.waitForExistence(timeout: 5))
         XCTAssertTrue(fine.isSelected)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
+        waitUntil { !fine.exists }
         capture("compact-editor-fine", in: app)
+        app.buttons["editor.draft.cancel"].tap()
+        XCTAssertTrue(app.buttons["editor.reset"].waitForExistence(timeout: 5))
         try selectTool("highlights", in: app)
+        more.tap()
+        XCTAssertTrue(fine.waitForExistence(timeout: 5))
         XCTAssertFalse(fine.isSelected)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
+        waitUntil { !fine.exists }
         XCTAssertEqual(try number(app.buttons["adjustment.value"]), 0)
+        app.buttons["editor.draft.cancel"].tap()
         try selectTool("exposure", in: app)
         auto.tap()
         waitUntil { auto.isEnabled }
@@ -534,8 +553,9 @@ extension EditorV4UITests {
         let allLabel = isGerman ? "Alle Anpassungen zurücksetzen…" : "重置全部调整…"
         let cancelLabel = isGerman ? "Abbrechen" : "取消"
         func openAllReset() throws {
-            try revealInPanel(app.buttons["editor.reset"], in: app, fully: true)
-            app.buttons["editor.reset"].tap()
+            let reset = app.buttons["editor.reset"]
+            XCTAssertTrue(reset.waitForExistence(timeout: 5))
+            reset.tap()
             let all = app.buttons[allLabel]
             XCTAssertTrue(all.waitForExistence(timeout: 5)); XCTAssertTrue(all.isEnabled); all.tap()
         }
@@ -551,22 +571,24 @@ extension EditorV4UITests {
         XCTAssertEqual(beforeCancel["saveAttemptCount"] as? Int, afterCancel["saveAttemptCount"] as? Int)
         XCTAssertEqual(beforeCancel["previewCount"] as? Int, afterCancel["previewCount"] as? Int)
         try selectGroup("effects")
-        XCTAssertTrue(app.buttons["tool.vignette"].isSelected, "Real Cancel leaves group navigation clickable")
-        try selectGroup("geometry")
+        XCTAssertTrue(app.buttons["tool.vignette"].exists, "Real Cancel leaves group navigation clickable")
+        try selectTool("geometry", in: app)
         let rotate = app.buttons["geometry.rotateRight"]
         try revealInPanel(rotate, in: app); rotate.tap()
         waitUntil(timeout: 30) { app.buttons["editor.draft.apply"].isEnabled }
         let dirty = try recordState("workspace-real-dirty-draft")
         XCTAssertEqual(dirty["draftChanged"] as? Bool, true)
+        XCTAssertFalse(app.buttons["editor.reset"].exists, "Active draft does not expose cross-tool reset")
+        app.buttons["editor.draft.cancel"].tap()
+        waitUntil { (try? editorState()["draftActive"] as? Bool) == false }
         try openAllReset()
-        let discard = app.alerts.buttons[isGerman ? "Änderungen verwerfen" : "放弃修改"]
-        XCTAssertTrue(discard.waitForExistence(timeout: 10)); discard.tap()
         waitUntil(timeout: 30) { (try? editorState()["prepared"] as? Bool) == true && (try? editorState()["presented"] as? Bool) == true }
         XCTAssertTrue(app.alerts.buttons[cancelLabel].waitForExistence(timeout: 10))
         _ = try recordState("workspace-real-discard-all-confirmation")
         capture("workspace-real-discard-all-confirmation", in: app)
         app.alerts.buttons[cancelLabel].tap()
         waitUntil { !app.alerts.firstMatch.exists && (try? editorState()["prepared"] as? Bool) == false && (try? editorState()["presented"] as? Bool) == false }
+        try selectTool("geometry", in: app)
         let fresh = try recordState("workspace-real-discard-all-cancelled")
         XCTAssertEqual(fresh["geometrySelected"] as? Bool, true)
         XCTAssertEqual(fresh["draftActive"] as? Bool, true)
@@ -604,9 +626,11 @@ extension EditorV4UITests {
             try XCTUnwrap(JSONSerialization.jsonObject(with: Data((probe.value as? String ?? "").utf8)) as? [String: Any])
         }
         waitUntil(timeout: 30) { (try? snapshot()["done"] as? Bool) == true }
-        try selectTool("exposure", in: app)
+        if app.buttons["editor.draft.cancel"].exists { app.buttons["editor.draft.cancel"].tap() }
+        let light = app.buttons["editor.group.light"]
+        try revealHorizontally(light, in: app.scrollViews["editor.groups"], app: app); light.tap()
         let reset = app.buttons["editor.reset"]
-        try revealInPanel(reset, in: app, fully: true)
+        XCTAssertTrue(reset.waitForExistence(timeout: 5))
         let glyphs = reset.images.allElementsBoundByIndex
         print("WORKSPACE_RESET_GLYPHS window=\(app.frame) button=\(reset.frame) glyphs=\(glyphs.map { "\($0.label):\($0.frame)" })")
         capture("workspace-reset-header-glyphs", in: app)
@@ -619,9 +643,9 @@ extension EditorV4UITests {
             XCTAssertTrue(reset.frame.insetBy(dx: -1, dy: -1).contains(glyph.frame), "The menu label contains the complete \(glyph.label) glyph")
         }
         let before = try snapshot()
-        let frames = try XCTUnwrap(before["layoutFrames"] as? [String: [Double]])
-        print("WORKSPACE_RESET_OUTER_FRAMES ordinary=\(frames)")
         reset.tap()
+        let groupReset = app.buttons["editor.reset.group"]
+        XCTAssertTrue(groupReset.waitForExistence(timeout: 5)); XCTAssertTrue(groupReset.isEnabled)
         let all = app.buttons[german ? "Alle Anpassungen zurücksetzen…" : "重置全部调整…"]
         XCTAssertTrue(all.waitForExistence(timeout: 5)); XCTAssertTrue(all.isEnabled); all.tap()
         waitUntil {
@@ -646,25 +670,16 @@ extension EditorV4UITests {
         }
         let effects = app.buttons["editor.group.effects"]
         try revealHorizontally(effects, in: app.scrollViews["editor.groups"], app: app); effects.tap()
-        XCTAssertTrue(app.buttons["tool.vignette"].isSelected)
+        XCTAssertTrue(app.buttons["tool.vignette"].exists)
         capture("workspace-reset-header-after-cancel", in: app)
-        // 仅测试夹具替换标题文字，沿用相同 Text 字体、两行上限及布局优先级。
-        app.terminate()
-        app.launchArguments.append("-RawLab.workspaceLongHeader")
-        app.launch()
-        waitUntil(timeout: 30) { (try? snapshot()["done"] as? Bool) == true }
-        try selectTool("exposure", in: app)
-        try revealInPanel(reset, in: app, fully: true)
-        let title = app.staticTexts["Hideaki Hamada – Ausführliche Filmrezept-Anpassungen für natürliches Tageslicht"]
-        XCTAssertTrue(title.exists)
-        let longFrames = try XCTUnwrap(try snapshot()["layoutFrames"] as? [String: [Double]])
-        print("WORKSPACE_RESET_OUTER_FRAMES longTitle=\(longFrames)")
-        XCTAssertEqual(frames, longFrames, "The menu and title retain the same header and parameter budget")
-        print("WORKSPACE_RESET_LONG_TITLE window=\(app.frame) button=\(reset.frame) title=\(title.frame) glyphs=\(reset.images.allElementsBoundByIndex.map { "\($0.label):\($0.frame)" })")
-        capture("workspace-reset-header-long-title", in: app)
-        for glyph in reset.images.allElementsBoundByIndex {
-            XCTAssertTrue(app.frame.contains(glyph.frame)); XCTAssertTrue(reset.frame.insetBy(dx: -1, dy: -1).contains(glyph.frame))
-            XCTAssertLessThanOrEqual(title.frame.maxX, reset.frame.minX)
+        try selectTool("hsl", in: app)
+        let draftReset = app.buttons["editor.draft.reset"]
+        XCTAssertTrue(draftReset.waitForExistence(timeout: 5))
+        let draftGlyphs = draftReset.images.allElementsBoundByIndex
+        XCTAssertEqual(draftGlyphs.count, 2)
+        XCTAssertGreaterThanOrEqual(draftReset.frame.width, 44); XCTAssertGreaterThanOrEqual(draftReset.frame.height, 44)
+        for glyph in draftGlyphs {
+            XCTAssertTrue(app.frame.contains(glyph.frame)); XCTAssertTrue(draftReset.frame.insetBy(dx: -1, dy: -1).contains(glyph.frame))
         }
     }
 

@@ -154,11 +154,7 @@ extension ContentView {
             Button { if toolWorkspaceOpen { redoEditorDraft() } else { requestAdjustmentAction(.redo) } } label: { Image(systemName: "arrow.uturn.forward").font(.system(size: 20)).frame(width: 44, height: 44) }
                 .disabled((toolWorkspaceOpen ? workspaceDraft?.canRedo != true : !viewModel.canRedoAdjustment) || editorBusy)
                 .accessibilityLabel(L10n.text("重做")).accessibilityIdentifier("editor.draft.redo")
-            if toolWorkspaceOpen {
-            Button { requestEditorReset(.tool(currentEditorTool)) } label: { Image(systemName: "arrow.counterclockwise").font(.system(size: 20)).frame(width: 44, height: 44) }
-                .disabled(editorBusy || viewModel.previewRendering).accessibilityLabel(L10n.text("重置调整"))
-                .accessibilityIdentifier("editor.draft.reset")
-            }
+            workspaceResetControl
             Spacer(minLength: 0)
             Button { photoViewing.toggleComparison() } label: { Image(systemName: "square.on.square").font(.system(size: 20)).frame(width: 44, height: 44) }
                 .disabled(geometrySelected).accessibilityLabel(L10n.text("对比"))
@@ -177,5 +173,21 @@ extension ContentView {
                 .accessibilityLabel(L10n.text("更多")).accessibilityIdentifier("editor.tool.more")
             }
         }.buttonStyle(.plain).foregroundStyle(.primary)
+    }
+
+    var workspaceResetControl: some View {
+        let available = viewModel.hasImage && !editorBusy && !viewModel.previewRendering &&
+            !resetDraftSuspended && !viewModel.quickPresetState.isPreparing
+        let presentation = EditorWorkspaceResetPresentation.make(
+            toolWorkspaceOpen: toolWorkspaceOpen,
+            quickPresetsVisible: viewModel.quickPresetsVisible,
+            selectedGroup: selectedGroup,
+            currentTool: currentEditorTool,
+            hslChannel: hslChannel,
+            gradingZone: gradingZone,
+            isAvailable: available,
+            isModified: resetModified
+        )
+        return EditorWorkspaceResetControl(presentation: presentation, onReset: requestEditorReset)
     }
 }
