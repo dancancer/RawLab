@@ -723,6 +723,9 @@ the next checkpoint skips the remaining stages. Every file encoder writes a stag
 file inside the target directory and re-checks cancellation before the atomic
 replace, so a cancelled FINAL export keeps an existing destination byte-identical
 and removes its staging file.
+Publishing replaces the directory entry: permission bits follow the destination
+that is being overwritten (otherwise `0666 & ~umask`), but a symbolic link is
+replaced by a regular file and extended attributes or ACLs are not carried over.
 Existing clients with no callback retain their rendering behavior. Android uses a
 generation captured for the entire preview request, so replacing work before JNI
 entry also cancels it; cancellation does not change the latest editing parameters.

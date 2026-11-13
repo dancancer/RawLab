@@ -987,7 +987,10 @@ public:
             for (int attempt = 0; attempt < 64 && createdFd < 0; ++attempt) {
                 temporaryName = (parent / (base + "-" + stagingSuffix() + ".tmp")).string();
                 createdFd = ::open(temporaryName.c_str(), O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0666);
-                if (createdFd < 0 && errno != EEXIST) return false;
+                if (createdFd < 0) {
+                    if (errno != EEXIST) return false;
+                    temporaryName.clear(); // the name belongs to someone else; never unlink it
+                }
             }
             if (createdFd < 0) return false;
             preserveDestinationMode(createdFd, destination);

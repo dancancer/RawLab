@@ -251,7 +251,7 @@ int main() {
             check(exportStatus == SONY2FUJI_STATUS_OK && polls.load() > 0, okLabel.c_str());
             if (exportStatus != SONY2FUJI_STATUS_OK || polls.load() <= 0) continue;
             const std::string earlyLabel = std::string("FINAL ") + exportCase.label +
-                " export cancels early without publishing a buffer";
+                " export cancels early and leaves the target untouched";
             {
                 writeFile(target, existing);
                 std::atomic<int> remaining{1};
@@ -298,10 +298,16 @@ int main() {
 
 #ifndef _WIN32
             // Overwriting must keep the destination's permissions instead of resetting them.
+            // Fix the umask so a regression cannot coincidentally produce 0640.
+            const auto overwriteUmask = ::umask(022);
             (void)::chmod(target.c_str(), 0640);
 #endif
             sony2fuji_buffer published{};
-            check(sony2fuji_process(session, &exportRequest, &published) == SONY2FUJI_STATUS_OK,
+            const auto publishStatus = sony2fuji_process(session, &exportRequest, &published);
+#ifndef _WIN32
+            ::umask(overwriteUmask);
+#endif
+            check(publishStatus == SONY2FUJI_STATUS_OK,
                 "The session exports the same FINAL request successfully after a cancellation");
             sony2fuji_release_buffer(&published);
             const auto written = readFile(target);

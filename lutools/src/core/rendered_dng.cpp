@@ -175,8 +175,12 @@ public:
             if (basename.empty()) basename = "rendered";
             for (int attempt = 0; attempt < 64 && createdFd < 0; ++attempt) {
                 temporaryName = (parent / (basename + ".rawlab-rendered-dng-" + stagingSuffix() + ".tmp")).string();
-                createdFd = ::open(temporaryName.c_str(), O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0666);
-                if (createdFd < 0 && errno != EEXIST) return false;
+                // libtiff opens the descriptor for read/write even in "w" mode.
+                createdFd = ::open(temporaryName.c_str(), O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0666);
+                if (createdFd < 0) {
+                    if (errno != EEXIST) return false;
+                    temporaryName.clear(); // the name belongs to someone else; never unlink it
+                }
             }
             if (createdFd < 0) return false;
             preserveDestinationMode(createdFd, destination);
