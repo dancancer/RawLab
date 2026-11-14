@@ -1,6 +1,7 @@
 #include "compute_denoise.h"
 #include "compute_denoise_shader.h"
 #include "filter_buffer_pool.h"
+#include "d3d11_recovery.h"
 #include <d3d11.h>
 #include <d3dcompiler.h>
 #include <dxgi.h>
@@ -18,7 +19,7 @@
 namespace sony2fuji {
 namespace {
 using Microsoft::WRL::ComPtr;
-void checked(HRESULT result) { if (FAILED(result)) throw std::runtime_error("D3D11 filter error " + std::to_string(result)); }
+void checked(HRESULT result) { if (FAILED(result)) throw D3D11Failure(result); }
 struct Buffer final : FilterBuffer {
     ComPtr<ID3D11Buffer> data;
     ComPtr<ID3D11ShaderResourceView> srv;
@@ -120,7 +121,7 @@ public:
         box.right = static_cast<UINT>(count * sizeof(float));
         box.bottom = box.back = 1;
         context->UpdateSubresource(static_cast<Buffer&>(buffer.underlying()).data.Get(), 0, &box, input, 0, 0);
-        checked(device->GetDeviceRemovedReason());
+        checked(d3d11DeviceStatus(*device.Get()));
     }
     void dispatch(FilterParams params, FilterBuffer& source, FilterBuffer* other,
                   FilterBuffer& output, FilterBuffer* second = nullptr) override {
@@ -141,7 +142,7 @@ public:
         }
         ID3D11ShaderResourceView* emptyViews[2]{}; ID3D11UnorderedAccessView* emptyOutputs[2]{};
         context->CSSetShaderResources(0, 2, emptyViews); context->CSSetUnorderedAccessViews(0, 2, emptyOutputs, nullptr);
-        checked(device->GetDeviceRemovedReason());
+        checked(d3d11DeviceStatus(*device.Get()));
     }
     void read(FilterBuffer& buffer, size_t count, float* output) override {
         if (!count || count > UINT32_MAX / sizeof(float)) throw std::runtime_error("D3D11 filter read out of range");
@@ -159,7 +160,7 @@ public:
             static_cast<Buffer&>(buffer.underlying()).data.Get(), 0, &box);
         D3D11_MAPPED_SUBRESOURCE mapped{}; checked(context->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped));
         std::memcpy(output, mapped.pData, bytes); context->Unmap(staging.Get(), 0);
-        checked(device->GetDeviceRemovedReason());
+        checked(d3d11DeviceStatus(*device.Get()));
     }
 };
 } // namespace

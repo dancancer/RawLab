@@ -56,12 +56,34 @@ void recovery() {
     } catch (const ProcessingCancelled&) {}
     require(render(renderer, output), "cancellation incorrectly entered cooldown");
     require(d3d11_test::photoInitializations == before, "cancellation discarded the healthy device");
+    ImageData input(17, 19);
+    require(!renderer.render(input, ColorSpace::SonyNative, request(), {}, {1, 1, 1}, 17, 19, 0, output),
+        "unsupported color conversion must fail");
+    require(render(renderer, output), "non-device failure entered cooldown");
+    require(d3d11_test::photoInitializations == before, "non-device failure discarded a healthy device");
+}
+void filterRecovery() {
+    ImageData input(17, 19);
+    d3d11_test::initializationFailures = 2;
+    require(!gpuDetailFilter(input, .2f, 0), "filter initialization must fail");
+    require(!gpuDetailFilter(input, .2f, 0), "filter cooldown must fail");
+    require(d3d11_test::filterInitializations == 1, "C7: shared filters rebuilt without cooldown");
+    d3d11_test::now += std::chrono::milliseconds(100);
+    require(!gpuDetailFilter(input, .2f, 0), "second filter initialization must fail");
+    d3d11_test::now += std::chrono::milliseconds(100);
+    require(!gpuDetailFilter(input, .2f, 0), "filter cooldown must double");
+    require(d3d11_test::filterInitializations == 2, "filter failure count did not survive device teardown");
+    d3d11_test::now += std::chrono::milliseconds(100);
+    require(gpuDetailFilter(input, .2f, 0), "shared filter did not recover");
 }
 }
 int main(int argc, char** argv) {
     try {
-        require(argc == 2 && std::string(argv[1]) == "recovery", "unknown test case");
-        recovery();
+        require(argc == 2, "expected a test case");
+        const std::string name = argv[1];
+        if (name == "recovery") recovery();
+        else if (name == "filter-recovery") filterRecovery();
+        else require(false, "unknown test case");
         std::cout << "PASS: D3D11 " << argv[1] << " (WARP software adapter; no hardware GPU claim)\n";
         return 0;
     } catch (const std::exception& error) {

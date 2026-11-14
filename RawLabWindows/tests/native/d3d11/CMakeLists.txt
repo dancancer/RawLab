@@ -18,3 +18,4 @@ target_compile_definitions(d3d11_trio_tests PRIVATE NOMINMAX SONY2FUJI_ENABLE_D3
 target_compile_options(d3d11_trio_tests PRIVATE /W4 /utf-8)
 target_link_libraries(d3d11_trio_tests PRIVATE d3d11 dxgi d3dcompiler)
 add_test(NAME d3d11_recovery_warp COMMAND d3d11_trio_tests recovery)
+add_test(NAME d3d11_filter_recovery_warp COMMAND d3d11_trio_tests filter-recovery)

@@ -4,6 +4,7 @@
 #include "core/chroma_denoise.h"
 #include "core/processing_cancellation.h"
 #include "gpu/denoise.h"
+#include "gpu/d3d11_recovery.h"
 #include <d3d11.h>
 #include <d3dcompiler.h>
 #include <dxgi.h>
@@ -24,7 +25,7 @@ namespace sony2fuji {
 namespace {
 using Microsoft::WRL::ComPtr;
 void checked(HRESULT result) {
-    if (FAILED(result)) throw std::runtime_error("Direct3D 11 operation failed: " + std::to_string(result));
+    if (FAILED(result)) throw D3D11Failure(result);
 }
 struct alignas(16) Parameters {
     uint32_t dimensions[4], control[4];
@@ -118,6 +119,8 @@ struct D3D11PhotoRenderer::Impl {
         std::vector<RGB> values;
         values.reserve(static_cast<size_t>(n)*n*n);
         for (int b=0;b<n;++b) for (int g=0;g<n;++g) for (int r=0;r<n;++r) values.push_back(lut->getValue(r,g,b));
+        // 分配失败时设备仍可复用，但旧 LUT 缓冲可能已释放，缓存标识也必须失效。
+        cachedLut.reset();
         allocate(film,values.size(),false);
         context->UpdateSubresource(film.data.Get(),0,nullptr,values.data(),0,0);
         cachedLut = lut;
@@ -140,7 +143,7 @@ struct D3D11PhotoRenderer::Impl {
         // Unbind before ping-pong: the next pass may read the previous UAV.
         ID3D11ShaderResourceView* emptyViews[2]{}; ID3D11UnorderedAccessView* emptyUav=nullptr;
         context->CSSetShaderResources(0,2,emptyViews);context->CSSetUnorderedAccessViews(0,1,&emptyUav,nullptr);
-        checked(device->GetDeviceRemovedReason());
+        checked(d3d11DeviceStatus(*device.Get()));
     }
     void read(Buffer& buffer, ImageData& output) {
         // 读回同样是阶段边界：取消时不启动这次 CPU 拷贝，output 保持未发布。
@@ -156,7 +159,7 @@ struct D3D11PhotoRenderer::Impl {
         checked(context->Map(staging.Get(),0,D3D11_MAP_READ,0,&mapped));
         std::memcpy(output.pixels.data(),mapped.pData,buffer.bytes);
         context->Unmap(staging.Get(),0);
-        checked(device->GetDeviceRemovedReason());
+        checked(d3d11DeviceStatus(*device.Get()));
     }
 };
 D3D11PhotoRenderer::D3D11PhotoRenderer() = default;
@@ -172,6 +175,8 @@ bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
         chromaDenoise < 0 || chromaDenoise > 2) return false;
     // Diagnostic switch also exercises Auto fallback and Force failure in regression tests.
     if (GetEnvironmentVariableW(L"RAWLAB_DISABLE_D3D11",nullptr,0)>0) return false;
+    if (!impl_ && !retry_.ready(d3d11RetryNow())) return false;
+    const bool initializing = !impl_;
     try {
         if (!impl_) { impl_=std::make_unique<Impl>();impl_->initialize(); }
         auto& c=*impl_;
@@ -240,13 +245,19 @@ bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
         auto* final=&c.processing[current];
         if (pw!=width || ph!=height) { c.dispatch(*final,c.resized,p,1,pw,ph,width,height);final=&c.resized; }
         ImageData result(static_cast<int>(width),static_cast<int>(height));c.read(*final,result);
-        output=std::move(result);return true;
+        output=std::move(result);retry_.succeeded();return true;
     } catch (const ProcessingCancelled&) {
         // 取消不是渲染失败：在通用 catch 之前重抛（P1-13 备注要求），保留 impl_（设备仍健康），
         // 否则这里会像对普通异常那样 OutputDebugStringA 并 reset 设备，且 Auto 会误判为 GPU 失败。
         throw;
     } catch (const std::exception& error) {
-        OutputDebugStringA(error.what());impl_.reset();return false;
+        OutputDebugStringA(error.what());
+        if (initializing || d3d11LostDevice(error) ||
+            (impl_ && impl_->device && FAILED(d3d11DeviceStatus(*impl_->device.Get())))) {
+            retry_.failed(d3d11RetryNow());
+            impl_.reset();
+        }
+        return false;
     }
 }
 }
