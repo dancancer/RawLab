@@ -19,6 +19,7 @@ struct AdjustmentTransferView: View {
     @State private var preparing = false
     @State private var message: String?
     @State private var operationGeneration = UUID()
+    @State private var preflight = AdjustmentTransferPreflight()
     @State private var historyID: UUID?
     @State private var historyUndo = true
     @State private var historyPhoto: URL?
@@ -314,6 +315,7 @@ struct AdjustmentTransferView: View {
         }
     }
     private func invalidatePreparation() {
+        preflight.cancel()
         operationGeneration = UUID(); preparing = false
         prepared = nil; pasteResults = []; historyResults = []; message = nil; historyID = nil; historyPhoto = nil
         model.adjustmentPasteNotices = []
@@ -329,17 +331,18 @@ struct AdjustmentTransferView: View {
         preparing = true
         let generation = UUID(), source = model.sourceRevision
         operationGeneration = generation
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result = Result { try session.prepare(payload: payload, targets: prepareTargets(), action: kind == .synchronize ? .synchronize : preset == nil ? .paste : .preset) }
-            DispatchQueue.main.async {
-                guard generation == operationGeneration, source == model.sourceRevision else { return }
-                preparing = false
-                switch result {
-                case .success(let value): prepared = value
-                case .failure(let error): message = model.adjustmentErrorMessage(error)
-                }
+        preflight.start({ shouldCancel in
+            try session.prepare(payload: payload, targets: prepareTargets(shouldCancel),
+                action: kind == .synchronize ? .synchronize : preset == nil ? .paste : .preset,
+                shouldCancel: shouldCancel)
+        }, completed: { result in
+            guard generation == operationGeneration, source == model.sourceRevision else { return }
+            preparing = false
+            switch result {
+            case .success(let value): prepared = value
+            case .failure(let error): message = model.adjustmentErrorMessage(error)
             }
-        }
+        })
     }
     private func sourceName(_ payload: AdjustmentTransferPayload) -> String {
         if let preset { return preset.name }

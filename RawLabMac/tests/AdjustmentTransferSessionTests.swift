@@ -43,6 +43,115 @@ struct AdjustmentTransferSessionTests {
         try sourceDefaults(root: root, a: a, b: b)
         try processingMigrationReset(root: root, a: a, b: b)
         try perRecordIsolationAndRecovery(root: root)
+        try cancelledPreflight(root: root, a: a, b: b)
+        try replacedPreflight(root: root, a: a, b: b)
+        try latePreflight(root: root, a: a)
+        try releasedPreflight()
+    }
+
+    static func cancelledPreflight(root: URL, a: URL, b: URL) throws {
+        let session = AdjustmentTransferSession(store: try EditPersistence(directory: root.appendingPathComponent("cancelled-preflight")))
+        for fails in [false, true] {
+            var cancelled = false, visits = 0
+            var first = target(a), second = target(b)
+            first.resolveMetadata = { state in
+                visits += 1; cancelled = true
+                if fails { throw CocoaError(.fileReadCorruptFile) }
+                return state
+            }
+            second.resolveMetadata = { state in visits += 1; return state }
+            var rejected = false
+            do {
+                _ = try session.prepare(payload: payload(1), targets: [first, second], shouldCancel: { cancelled })
+            } catch is CancellationError { rejected = true }
+            check(visits == 1, "Cancelled preflight stops after its active target, including failure (visits=\(visits), expected=1)")
+            check(rejected, "Cancelled preflight never returns an applicable partial result")
+        }
+        var visits = 0
+        var first = target(a)
+        first.resolveMetadata = { state in visits += 1; return state }
+        var rejected = false
+        do { _ = try session.prepare(payload: payload(1), targets: [first], shouldCancel: { true }) }
+        catch is CancellationError { rejected = true }
+        check(rejected && visits == 0, "Already cancelled preflight performs no target work")
+    }
+
+    static func drain(_ queue: DispatchQueue) {
+        let drained = DispatchSemaphore(value: 0)
+        queue.async { DispatchQueue.main.async { drained.signal() } }
+        let deadline = Date().addingTimeInterval(5)
+        while drained.wait(timeout: .now()) != .success {
+            guard Date() < deadline else { fatalError("Preflight queue did not drain") }
+            RunLoop.main.run(mode: .default, before: deadline)
+        }
+    }
+
+    static func replacedPreflight(root: URL, a: URL, b: URL) throws {
+        for close in [false, true] {
+            let queue = DispatchQueue(label: "preflight-replacement-test")
+            let preflight = AdjustmentTransferPreflight(queue: queue)
+            let session = AdjustmentTransferSession(store: try EditPersistence(directory: root.appendingPathComponent("replacement-\(close)")))
+            let entered = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
+            var firstVisits = 0, skippedCalls = 0, latestCalls = 0, deliveries = [Double]()
+            var first = target(a), second = target(b)
+            first.resolveMetadata = { state in firstVisits += 1; entered.signal(); release.wait(); return state }
+            second.resolveMetadata = { state in firstVisits += 1; return state }
+            let oldPayload = try payload(1), newPayload = try payload(2)
+            let receive: (Result<PreparedAdjustmentTransfer, Error>) -> Void = { result in
+                deliveries.append((try? result.get().targets.first?.candidate?.settings.exposure) ?? -1)
+            }
+            preflight.start({ cancelled in
+                try session.prepare(payload: oldPayload, targets: [first, second], shouldCancel: cancelled)
+            }, completed: receive)
+            check(entered.wait(timeout: .now() + 5) == .success, "First preflight entered its current target")
+            preflight.start({ cancelled in
+                skippedCalls += 1
+                return try session.prepare(payload: oldPayload, targets: [target(a)], shouldCancel: cancelled)
+            }, completed: receive)
+            preflight.start({ cancelled in
+                latestCalls += 1
+                return try session.prepare(payload: newPayload, targets: [target(b)], shouldCancel: cancelled)
+            }, completed: receive)
+            if close { preflight.cancel() }
+            release.signal()
+            drain(queue)
+            check(firstVisits == 1 && skippedCalls == 0 && latestCalls == (close ? 0 : 1),
+                "Replacement/close stops the active round and skips obsolete queued work (visits=\(firstVisits), skipped=\(skippedCalls), latest=\(latestCalls))")
+            check(deliveries == (close ? [] : [2]), "Only the latest open preflight generation delivers a result")
+        }
+    }
+
+    static func latePreflight(root: URL, a: URL) throws {
+        let queue = DispatchQueue(label: "preflight-late-test")
+        let preflight = AdjustmentTransferPreflight(queue: queue)
+        let session = AdjustmentTransferSession(store: try EditPersistence(directory: root.appendingPathComponent("late-preflight")))
+        let value = try session.prepare(payload: payload(1), targets: [target(a)])
+        var deliveries = 0
+        preflight.start({ _ in value }, completed: { _ in deliveries += 1 })
+        let queued = DispatchSemaphore(value: 0)
+        queue.async { queued.signal() }
+        check(queued.wait(timeout: .now() + 5) == .success, "Old completion is queued before cancellation")
+        preflight.cancel()
+        drain(queue)
+        check(deliveries == 0, "A completion already queued on main cannot write after cancellation")
+    }
+
+    static func releasedPreflight() throws {
+        let queue = DispatchQueue(label: "preflight-release-test")
+        var preflight: AdjustmentTransferPreflight? = AdjustmentTransferPreflight(queue: queue)
+        let entered = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
+        var cancellation: (() -> Bool)?
+        preflight!.start({ cancelled in
+            cancellation = cancelled
+            entered.signal(); release.wait()
+            throw CancellationError()
+        }, completed: { _ in fatalError("Released preflight delivered a result") })
+        check(entered.wait(timeout: .now() + 5) == .success, "Released preflight entered its operation")
+        preflight = nil
+        let cancelled = cancellation?() == true
+        release.signal()
+        drain(queue)
+        check(cancelled, "Releasing preflight cancels its active operation")
     }
 
     static func sourceDefaults(root: URL, a: URL, b: URL) throws {
