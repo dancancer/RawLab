@@ -133,3 +133,4 @@
 - 2026-11-14 · #313 二轮交卷（`f516f038`）：5B 全修先红后绿（漏源仅 hdr-transfer.sh 一处；B5 的 CI 覆盖表述已按 #314 教训改准确），presets 205/look 82/JVM 674、CI 全绿。二轮碳审在途（review-mwfwhfeh，独立复核「仅一处漏源」论断）。
 - 2026-11-14 · #310 三轮碳审 request-changes（4B→2B 收敛中）：iOS 锚点同构与账本设计已过；剩 B1=批量 .renderedDNG 在 picker 成功前记账（取消另存→原片+产物双灭失，Critical）、B2=Android legacy boundary 回落与 migrateLegacyBoundary 条件不同构。r4 已派 q6 crew（两条窄修+先红）。评审「未真正成功即登记」正是上轮审核词预留的 Blocking 级判据，命中。
 - 2026-11-14 · #310 四轮交卷（`c48f668c`）：批量 renderedDNG 记账挪至 picker 成功（纯函数 renderedDNGEvidenceIdentifiers 可测）；Android legacy boundary 只保自身不污染 seen（宁多留）。CI 7/7、retention 19 PASS。四轮碳审在途（review-mwfx1cx9，放行标准=仅剩保守残余）。
+- 2026-11-14 · V 系列开工过半：V-JIT/V-SPEC（氢单 xhigh）在途，V-AXUI（ax-uios crew）、V-EXP（export-uncertain crew）今日派出；剩 V-RESET（wire 表示决策 lead 已定方向：期望按 wire 级字面量+divergences 登记）、V-WIN（等氢单窗口）。#310 四审在途。
