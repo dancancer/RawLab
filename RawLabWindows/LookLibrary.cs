@@ -22,7 +22,7 @@ internal enum LookLibraryError
     InvalidRegistry,
     TooLarge,
     OutOfMemory,
-    MissingColor, MissingReference, UnsupportedColor, ConflictingColor, CompatibilityChanged, InvalidName
+    MissingColor, MissingReference, UnsupportedColor, ConflictingColor, CompatibilityChanged, InvalidName, Changed
 }
 
 internal sealed class LookLibraryException : Exception
@@ -44,6 +44,7 @@ internal sealed class LookLibraryException : Exception
         LookLibraryError.ConflictingColor => Loc.Text("LUT 颜色说明无效或互相冲突，未导入。请核对来源。"),
         LookLibraryError.CompatibilityChanged => Loc.Text("LUT 文件已变化或兼容配置无效，请重新导入并确认。"),
         LookLibraryError.InvalidName => Loc.Text("外观名称不能为空或包含控制字符。"),
+        LookLibraryError.Changed => Loc.Text("外观已变化，请重新检查。"),
         _ => Loc.Text("外观文件损坏或不兼容；需要兼容的 CUBE 或 RLOOK 文件。")
     };
 
@@ -69,9 +70,14 @@ internal sealed record ManagedLook(
     public int CompatibilityMode { get; init; }
 }
 
+// 本版本读不懂的条目（通常由更新版本写入或单条元数据损坏）：其余外观照常可用；
+// 原文 Json 在任何写回中逐字节透传，Id 仍用于避免新导入条目与它冲突。
+internal sealed record UnreadableLook(string? Id, string? Name, string? FileName, string Json);
+
 internal sealed class LookLibrary
 {
     private sealed record Registry(int Version, List<ManagedLook> Looks, Dictionary<string,string>? ExternalNames = null);
+    private sealed record PersistRegistry(int Version, object[] Looks, Dictionary<string, string>? ExternalNames = null);
 
     internal static string DefaultDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "Looks");
@@ -81,8 +87,10 @@ internal sealed class LookLibrary
     private readonly Func<string, DcpImportOptions?, byte[]> compileDcp;
     private readonly Func<string, LookValidation> validateLook;
     private readonly Func<string, LUTCompatibility, byte[]> prepareCompatibility;
+    private readonly Func<string> makeId;
     private readonly object writeGate = new();
     private ImmutableArray<ManagedLook> looks = [];
+    private ImmutableArray<UnreadableLook> unreadableLooks = [];
     private ImmutableDictionary<string,string> externalNames = ImmutableDictionary.Create<string,string>(StringComparer.OrdinalIgnoreCase);
 
     internal static bool TryLoad(string? directory, out LookLibrary? library, out Exception? error)
@@ -106,7 +114,8 @@ internal sealed class LookLibrary
         Func<string, byte[]>? compileDcp = null,
         Func<string, LookValidation>? validateLook = null,
         Func<string, LUTCompatibility, byte[]>? prepareCompatibility = null,
-        Func<string, DcpImportOptions?, byte[]>? compileDcpWithOptions = null)
+        Func<string, DcpImportOptions?, byte[]>? compileDcpWithOptions = null,
+        Func<string>? makeId = null)
     {
         this.directory = Path.GetFullPath(directory ?? DefaultDirectory);
         registryPath = Path.Combine(this.directory, "registry.json");
@@ -115,10 +124,13 @@ internal sealed class LookLibrary
         else this.compileDcp = (path, options) => DcpCompiler.Compile(path, options);
         this.validateLook = validateLook ?? ValidateNative;
         this.prepareCompatibility = prepareCompatibility ?? ((path, draft) => draft.Prepare(path));
+        this.makeId = makeId ?? (() => Guid.NewGuid().ToString("D"));
         Load();
     }
 
     internal IReadOnlyList<ManagedLook> Looks => looks;
+    internal IReadOnlyList<UnreadableLook> UnreadableLooks => unreadableLooks;
+    internal IReadOnlyList<UnreadableLook> ListUnreadable() => unreadableLooks;
 
     internal static LookValidation ValidateExternal(string path) => ValidateNative(path);
 
@@ -134,7 +146,7 @@ internal sealed class LookLibrary
         {
             var changed=looks.Select(look=>StringComparer.OrdinalIgnoreCase.Equals(look.Path,fullPath) ? look with { Name=trimmed } : look).ToImmutableArray();
             var aliases=looks.Any(look=>StringComparer.OrdinalIgnoreCase.Equals(look.Path,fullPath)) ? externalNames : externalNames.SetItem(fullPath,trimmed);
-            Persist(changed.ToList(),aliases);
+            Persist(changed.ToList(), unreadableLooks, aliases);
             looks=changed;externalNames=aliases;
         }
     }
@@ -152,7 +164,7 @@ internal sealed class LookLibrary
             throw new LookLibraryException(LookLibraryError.UnreadableSource);
 
         Directory.CreateDirectory(directory);
-        var id = Guid.NewGuid().ToString("D");
+        var id = AllocateId();
         var preparedSuffix = suffix == "dcp" ? "rlook" : suffix;
         var staging = Path.Combine(directory, $".import-{id}.{preparedSuffix}");
         var fileName = $"{id}.{preparedSuffix}";
@@ -192,8 +204,11 @@ internal sealed class LookLibrary
             {
                 lock (writeGate)
                 {
+                    if (looks.Any(item => StringComparer.OrdinalIgnoreCase.Equals(item.Id, id)) ||
+                        unreadableLooks.Any(item => StringComparer.OrdinalIgnoreCase.Equals(item.Id, id)))
+                        throw new LookLibraryException(LookLibraryError.InvalidRegistry);
                     var changed = looks.Append(look).ToImmutableArray();
-                    Persist(changed.ToList());
+                    Persist(changed.ToList(), unreadableLooks);
                     looks = changed;
                 }
             }
@@ -208,6 +223,22 @@ internal sealed class LookLibrary
         {
             TryDelete(staging);
         }
+    }
+
+    private string AllocateId()
+    {
+        lock (writeGate)
+        {
+            for (var attempt = 0; attempt < 8; attempt++)
+            {
+                var candidate = makeId();
+                if (Guid.TryParse(candidate, out _) &&
+                    looks.All(item => !StringComparer.OrdinalIgnoreCase.Equals(item.Id, candidate)) &&
+                    unreadableLooks.All(item => !StringComparer.OrdinalIgnoreCase.Equals(item.Id, candidate)))
+                    return candidate;
+            }
+        }
+        throw new LookLibraryException(LookLibraryError.InvalidRegistry);
     }
 
     internal bool TryGetByPath(string path, out ManagedLook look)
@@ -246,14 +277,15 @@ internal sealed class LookLibrary
             for (var candidate = 0; candidate < snapshot.Length; candidate++)
                 if (snapshot[candidate].Id == look.Id) { index = candidate; break; }
             if (index < 0) return;
+            var changed = snapshot.Where((_, candidate) => candidate != index).ToImmutableArray();
+            var keepFile = unreadableLooks.Any(item => StringComparer.OrdinalIgnoreCase.Equals(item.FileName, look.FileName));
             var staging = Path.Combine(directory, $".remove-{look.FileName}");
-            var exists = File.Exists(look.Path);
+            var exists = !keepFile && File.Exists(look.Path);
             if (exists) File.Move(look.Path, staging);
             var committed = false;
             try
             {
-                var changed = snapshot.Where((_, candidate) => candidate != index).ToImmutableArray();
-                Persist(changed.ToList());
+                Persist(changed.ToList(), unreadableLooks);
                 looks = changed;
                 committed = true;
             }
@@ -272,6 +304,55 @@ internal sealed class LookLibrary
         }
     }
 
+    internal void Remove(UnreadableLook expected) => RemoveUnreadable(expected);
+
+    internal void RemoveUnreadable(UnreadableLook expected)
+    {
+        lock (writeGate)
+        {
+            var snapshot = unreadableLooks;
+            var index = -1;
+            for (var candidate = 0; candidate < snapshot.Length; candidate++)
+                if (snapshot[candidate].Id == expected.Id && snapshot[candidate].Json == expected.Json) { index = candidate; break; }
+            if (index < 0) throw new LookLibraryException(LookLibraryError.Changed);
+            var removed = snapshot[index];
+            var changed = snapshot.Where((_, candidate) => candidate != index).ToImmutableArray();
+            string? targetPath = null;
+            string? staging = null;
+            var exists = false;
+            if (removed.FileName is { Length: > 0 } fileName &&
+                Path.GetFileName(fileName) == fileName &&
+                Path.GetExtension(fileName).ToLowerInvariant() is ".cube" or ".vlt" or ".rlook" &&
+                looks.All(item => !StringComparer.OrdinalIgnoreCase.Equals(item.FileName, fileName)) &&
+                changed.All(item => !StringComparer.OrdinalIgnoreCase.Equals(item.FileName, fileName)))
+            {
+                targetPath = Path.Combine(directory, fileName);
+                staging = Path.Combine(directory, $".remove-{fileName}");
+                exists = File.Exists(targetPath);
+                if (exists) File.Move(targetPath, staging);
+            }
+            var committed = false;
+            try
+            {
+                Persist(looks.ToList(), changed);
+                unreadableLooks = changed;
+                committed = true;
+            }
+            catch
+            {
+                if (exists && staging != null && targetPath != null && File.Exists(staging) && !File.Exists(targetPath))
+                {
+                    try { File.Move(staging, targetPath); } catch { }
+                }
+                throw;
+            }
+            finally
+            {
+                if (committed && staging != null) TryDelete(staging);
+            }
+        }
+    }
+
     private void Load()
     {
         if (!File.Exists(registryPath))
@@ -281,21 +362,117 @@ internal sealed class LookLibrary
         }
         try
         {
-            var registry = JsonSerializer.Deserialize<Registry>(File.ReadAllText(registryPath));
-            if (registry == null || registry.Version != 1 || registry.Looks == null ||
-                registry.Looks.Any(item => item is null || !Valid(item)) ||
-                registry.Looks.Select(item => item!.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count() != registry.Looks.Count)
+            using var document = JsonDocument.Parse(File.ReadAllText(registryPath));
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) throw new InvalidDataException();
+            var rootNames = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var property in root.EnumerateObject())
+                if (!rootNames.Add(property.Name)) throw new InvalidDataException();
+            if (!root.TryGetProperty("Version", out var versionElement) ||
+                !TryGetInt32Literal(versionElement, out var version) || version != 1 ||
+                !root.TryGetProperty("Looks", out var looksElement) ||
+                looksElement.ValueKind != JsonValueKind.Array)
                 throw new InvalidDataException();
-            looks = registry.Looks.Select(item => item! with { Path = Path.Combine(directory, item!.FileName) }).ToImmutableArray();
-            if(registry.ExternalNames?.Any(item=>!Path.IsPathFullyQualified(item.Key) || string.IsNullOrWhiteSpace(item.Value) || item.Value.Any(char.IsControl))==true)
+
+            var loaded = new List<ManagedLook>();
+            var unreadable = new List<UnreadableLook>();
+            foreach (var item in looksElement.EnumerateArray())
+            {
+                if (DecodeItem(item) is { } look)
+                    loaded.Add(look with { Path = Path.Combine(directory, look.FileName) });
+                else
+                    unreadable.Add(new(OptionalText(item, "Id"), OptionalText(item, "Name"), OptionalText(item, "FileName"), item.GetRawText()));
+            }
+            if (loaded.Select(item => item.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count() != loaded.Count)
                 throw new InvalidDataException();
-            externalNames=(registry.ExternalNames ?? new()).ToImmutableDictionary(StringComparer.OrdinalIgnoreCase);
+
+            var aliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (root.TryGetProperty("ExternalNames", out var externalElement) && externalElement.ValueKind != JsonValueKind.Null)
+            {
+                if (externalElement.ValueKind != JsonValueKind.Object) throw new InvalidDataException();
+                var seenKeys = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var entry in externalElement.EnumerateObject())
+                {
+                    if (!seenKeys.Add(entry.Name) || entry.Value.ValueKind != JsonValueKind.String ||
+                        entry.Value.GetString() is not { } value ||
+                        !Path.IsPathFullyQualified(entry.Name) ||
+                        string.IsNullOrWhiteSpace(value) ||
+                        value.Any(char.IsControl))
+                        throw new InvalidDataException();
+                    aliases[entry.Name] = value;
+                }
+            }
+
+            looks = loaded.ToImmutableArray();
+            unreadableLooks = unreadable.ToImmutableArray();
+            externalNames = aliases.ToImmutableDictionary(StringComparer.OrdinalIgnoreCase);
             RecoverRemovals();
         }
         catch (Exception error) when (error is JsonException or IOException or UnauthorizedAccessException)
         {
             throw new LookLibraryException(LookLibraryError.InvalidRegistry, error);
         }
+    }
+
+    private static readonly HashSet<string> ItemAllowedKeys =
+    [
+        "Id", "Name", "FileName", "SourceName", "Format", "FormatVersion",
+        "AppearanceUnverified", "CompatibilityMode"
+    ];
+
+    // 单条外观读不懂只隔离这一条；注册表本身（语法、版本、重复身份、外部别名）出错仍让整个库失败。
+    private static ManagedLook? DecodeItem(JsonElement item)
+    {
+        if (item.ValueKind != JsonValueKind.Object) return null;
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var property in item.EnumerateObject())
+            if (!keys.Add(property.Name) || !ItemAllowedKeys.Contains(property.Name))
+                return null;
+        if (!item.TryGetProperty("Id", out var idEl) || idEl.ValueKind != JsonValueKind.String || idEl.GetString() is not { } id ||
+            !item.TryGetProperty("Name", out var nameEl) || nameEl.ValueKind != JsonValueKind.String || nameEl.GetString() is not { } name ||
+            !item.TryGetProperty("FileName", out var fileNameEl) || fileNameEl.ValueKind != JsonValueKind.String || fileNameEl.GetString() is not { } fileName ||
+            !item.TryGetProperty("SourceName", out var sourceNameEl) || sourceNameEl.ValueKind != JsonValueKind.String || sourceNameEl.GetString() is not { } sourceName ||
+            !item.TryGetProperty("Format", out var formatEl) || !TryGetInt32Literal(formatEl, out var formatValue) ||
+            !item.TryGetProperty("FormatVersion", out var versionEl) || !TryGetUInt32Literal(versionEl, out var formatVersion))
+            return null;
+
+        var appearanceUnverified = false;
+        if (item.TryGetProperty("AppearanceUnverified", out var unverifiedEl))
+        {
+            if (unverifiedEl.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return null;
+            appearanceUnverified = unverifiedEl.GetBoolean();
+        }
+        var compatibilityMode = 0;
+        if (item.TryGetProperty("CompatibilityMode", out var compatEl))
+        {
+            if (!TryGetInt32Literal(compatEl, out compatibilityMode)) return null;
+        }
+
+        var candidate = new ManagedLook(id, name, fileName, sourceName, (LookFormat)formatValue, formatVersion)
+        {
+            AppearanceUnverified = appearanceUnverified,
+            CompatibilityMode = compatibilityMode
+        };
+        return Valid(candidate) ? candidate : null;
+    }
+
+    private static string? OptionalText(JsonElement item, string key) => item.ValueKind == JsonValueKind.Object &&
+        item.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+
+    private static bool TryGetInt32Literal(JsonElement value, out int result)
+    {
+        result = 0;
+        if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out result)) return false;
+        var raw = value.GetRawText();
+        return raw.Length > 0 && raw.All(character => character == '-' || character is >= '0' and <= '9');
+    }
+
+    private static bool TryGetUInt32Literal(JsonElement value, out uint result)
+    {
+        result = 0;
+        if (value.ValueKind != JsonValueKind.Number || !value.TryGetUInt32(out result)) return false;
+        var raw = value.GetRawText();
+        return raw.Length > 0 && raw.All(character => character is >= '0' and <= '9');
     }
 
     private static bool Valid(ManagedLook item)
@@ -352,8 +529,10 @@ internal sealed class LookLibrary
     private void RecoverRemovals()
     {
         if (!Directory.Exists(directory)) return;
-        var snapshot = looks;
-        var activeFiles = new HashSet<string>(snapshot.Select(item => item.FileName), StringComparer.OrdinalIgnoreCase);
+        var activeFiles = new HashSet<string>(
+            looks.Select(item => item.FileName)
+                .Concat(unreadableLooks.Select(item => item.FileName).Where(name => !string.IsNullOrEmpty(name))!),
+            StringComparer.OrdinalIgnoreCase);
         foreach (var staged in Directory.EnumerateFiles(directory, ".remove-*", SearchOption.TopDirectoryOnly))
         {
             var fileName = Path.GetFileName(staged)[".remove-".Length..];
@@ -370,16 +549,25 @@ internal sealed class LookLibrary
         }
     }
 
-    private void Persist(List<ManagedLook> values, ImmutableDictionary<string,string>? aliases = null)
+    private void Persist(List<ManagedLook> values, ImmutableArray<UnreadableLook> unreadable, ImmutableDictionary<string,string>? aliases = null)
     {
         var options = new JsonSerializerOptions { WriteIndented = true };
         var temporary = registryPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        var aliasMap = (aliases ?? externalNames).ToDictionary(p => p.Key, p => p.Value);
         try
         {
             Directory.CreateDirectory(directory);
             using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
-                JsonSerializer.Serialize(stream, new Registry(1, values, (aliases ?? externalNames).ToDictionary(p=>p.Key,p=>p.Value)), options);
+                if (unreadable.Length == 0)
+                {
+                    JsonSerializer.Serialize(stream, new Registry(1, values, aliasMap), options);
+                }
+                else
+                {
+                    var items = values.Cast<object>().Concat(unreadable.Select(item => (object)new RawEntry(item.Json))).ToArray();
+                    JsonSerializer.Serialize(stream, new PersistRegistry(1, items, aliasMap), options);
+                }
                 stream.Flush(flushToDisk: true);
             }
             File.Move(temporary, registryPath, overwrite: true);
@@ -388,6 +576,15 @@ internal sealed class LookLibrary
         {
             TryDelete(temporary);
         }
+    }
+
+    // JsonElement 写回会重新转义字符串；读不懂的条目必须按原文写出。
+    [JsonConverter(typeof(RawEntryConverter))]
+    private sealed record RawEntry(string Json);
+    private sealed class RawEntryConverter : JsonConverter<RawEntry>
+    {
+        public override RawEntry Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => throw new NotSupportedException();
+        public override void Write(Utf8JsonWriter writer, RawEntry value, JsonSerializerOptions options) => writer.WriteRawValue(value.Json);
     }
 
     private static void TryDelete(string path)

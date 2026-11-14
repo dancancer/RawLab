@@ -127,6 +127,16 @@ public partial class MainWindow
         } catch(Exception error){Report(error);}
         finally{foregroundBusy=false;RefreshControls();if(closing)FinishClose();}
     }
+    private async void RemoveUnreadableLook(UnreadableLook bad)
+    {
+        if(exporting || foregroundBusy || transform.Active || lookLibrary==null)return;
+        foregroundBusy=true;RefreshControls();
+        try {
+            await Task.Run(()=>lookLibrary.RemoveUnreadable(bad));
+            BuildFilms();
+        } catch(Exception error){Report(error);}
+        finally{foregroundBusy=false;RefreshControls();if(closing)FinishClose();}
+    }
     private void AddFolderClicked(object sender,RoutedEventArgs e)
     {
         var dialog=new OpenFolderDialog{Title=Loc.Text("添加照片目录"),Multiselect=true};
