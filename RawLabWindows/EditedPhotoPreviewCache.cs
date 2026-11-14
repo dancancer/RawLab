@@ -8,6 +8,7 @@ namespace RawLab.Windows;
 internal static class EditedPhotoPreviewKey
 {
     internal const int Edge = 256;
+    internal static long ResourceHashCount => FileDigestCache.Shared.ComputeCount;
     internal static PhotoEditState PrepareState(PhotoEditState state) =>
         X3fModeReset.RepairLegacyNormalX3f(state).State;
     internal static PhotoEditState ReadState(EditStore store, string path) =>
@@ -18,20 +19,23 @@ internal static class EditedPhotoPreviewKey
     internal static string Create(PhotoEditState state, string? look, int edge = Edge, int aiBackend = 2, string aiDevice = "", string? rendererVersion = null)
     {
         if (state.Edit == null) throw new AdjustmentOperationExpiredException();
-        var resources = ResourceFingerprint(state.Edit.Settings, look, aiBackend, aiDevice);
+        var resources = ResourceFingerprint(state.Edit.Settings, look, FileDigestCache.Shared, aiBackend, aiDevice);
         return Digest(JsonSerializer.SerializeToUtf8Bytes(new { Schema = 1,
             Renderer = rendererVersion ?? typeof(EditedPhotoPreviewKey).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "development",
             Source = state.Identity,
             Adjustments = state.Edit, Resources = resources, Edge = edge }));
     }
 
-    internal static string ResourceFingerprint(AdjustmentSnapshot settings, string? look, int aiBackend = 2, string aiDevice = "")
+    internal static string ResourceFingerprint(AdjustmentSnapshot settings, string? look, int aiBackend = 2, string aiDevice = "") =>
+        ResourceFingerprint(settings, look, FileDigestCache.Shared, aiBackend, aiDevice);
+
+    internal static string ResourceFingerprint(AdjustmentSnapshot settings, string? look, FileDigestCache digestCache, int aiBackend = 2, string aiDevice = "")
     {
-        if (settings.HDR is { Mode: HDRMode.Hdr } hdr && !hdr.LookSettings.AssetIsAvailable())
+        if (settings.HDR is { Mode: HDRMode.Hdr } hdr && !hdr.LookSettings.AssetIsAvailable(null, digestCache))
             throw new FileNotFoundException(Loc.Text("外观不可用。"));
         var fingerprints = ResourcePaths(settings, look).Select(path => {
-            using var stream = File.OpenRead(path);
-            return new { Identity = OriginalIdentity.Read(path), SHA256 = Convert.ToHexString(SHA256.HashData(stream)) };
+            var (identity, sha256) = digestCache.GetDigest(path);
+            return new { Identity = identity, SHA256 = sha256 };
         }).ToArray();
         return Digest(JsonSerializer.SerializeToUtf8Bytes(new { Files = fingerprints,
             Backend = settings.ActiveAIDenoise ? aiBackend : 0, Device = settings.ActiveAIDenoise ? aiDevice : "" }));

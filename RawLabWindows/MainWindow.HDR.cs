@@ -17,10 +17,23 @@ public partial class MainWindow
     private CancellationTokenSource hdrPresentationCancellation = new();
     private HDRRenderedPair? hdrPresentationResult, hdrPresentationReference;
     private float hdrPresentationHeadroom = 1;
+    private readonly HDRPresentationCoordinator hdrPresentationCoordinator = new();
+    private FrameworkElement[]? hdrOverlayElements;
 
     private void InitializeHDRPresentation()
     {
-        LayoutUpdated += (_, _) => RefreshHDRPresentation();
+        LayoutUpdated += (_, _) => {
+            if (hdrPresentationCoordinator.ShouldRunOnLayoutUpdated(
+                    IsLoaded,
+                    settings.IsHDREditing,
+                    result?.HDR != null,
+                    hdrSdrPreview,
+                    ResultHDRSurface.Available,
+                    NeutralHDRSurface.Available,
+                    transform.Active && transform.Tool == TransformTool.Geometry,
+                    clipping))
+                RefreshHDRPresentation();
+        };
         hdrDisplayTimer.Tick += (_, _) => {
             ResultHDRSurface.RefreshCapabilities(); NeutralHDRSurface.RefreshCapabilities();
             var headroom = ResultHDRSurface.Headroom;
@@ -28,7 +41,7 @@ public partial class MainWindow
                 hdrPresentationHeadroom = headroom; InvalidateHDRFalseColor(); RefreshViewingFrames();
             } else RefreshHDRPresentation();
         };
-        Closed += (_, _) => { hdrDisplayTimer.Stop(); InvalidateHDRFalseColor(); };
+        Closed += (_, _) => { hdrDisplayTimer.Stop(); InvalidateHDRFalseColor(); DisposeSourceWatches(); };
     }
     private void InvalidateHDRFalseColor()
     {
@@ -65,7 +78,7 @@ public partial class MainWindow
         if(active && !hdrDisplayTimer.IsEnabled) {
             ResultHDRSurface.RefreshCapabilities();NeutralHDRSurface.RefreshCapabilities();hdrDisplayTimer.Start();
         } else if(!active)hdrDisplayTimer.Stop();
-        var overlays=new FrameworkElement[]{NeutralLabel,FilmLabel,InfoEntryButton,InfoOverlay,LibraryOverlay,BusyIndicator,HslTargetBanner};
+        var overlays = hdrOverlayElements ??= [NeutralLabel,FilmLabel,InfoEntryButton,InfoOverlay,LibraryOverlay,BusyIndicator,HslTargetBanner];
         var resultPresented=false;
         void Present(HDRSurface surface,PhotoCanvas canvas,HDRFloatImage? image,HDRFloatImage? reference) {
             Grid.SetRow(surface,Grid.GetRow(canvas));Grid.SetColumn(surface,Grid.GetColumn(canvas));
@@ -75,10 +88,11 @@ public partial class MainWindow
             var presented=surface.ShowFrame(active ? image : null,reference,canvas,hdrSdrPreview,hdrFalseColor,overlays);
             if(ReferenceEquals(surface,ResultHDRSurface))resultPresented=presented;
         }
-        var reference=ReferenceCurrent ? neutralResult?.HDR?.HDR : null;
+        var referenceCurrent=ReferenceCurrent;
+        var reference=referenceCurrent ? neutralResult?.HDR?.HDR : null;
         Present(ResultHDRSurface,ResultCanvas,result?.HDR?.HDR,reference);
         Present(NeutralHDRSurface,NeutralCanvas,reference,null);
-        var shown=view.HoldingBefore && ReferenceCurrent ? neutralResult?.HDR : result?.HDR;
+        var shown=view.HoldingBefore && referenceCurrent ? neutralResult?.HDR : result?.HDR;
         Histogram.SetHdrStatistics(active ? shown?.Statistics.Bins : null, ResultHDRSurface.Headroom);
         if(active && shown!=null) {
             HistogramTitle.Text=Loc.Text("HDR 亮度直方图");
@@ -86,6 +100,16 @@ public partial class MainWindow
             ClipStats.Text=Loc.Format("参考白以上 {0}",shown.Statistics.AboveWhite.ToString("P1",System.Globalization.CultureInfo.CurrentCulture));
         } else HistogramTitle.Text=Loc.Text("RGB 直方图");
         HistogramHeading.Text = HistogramTitle.Text;
+        hdrPresentationCoordinator.RecordPresentation(
+            IsLoaded,
+            settings.IsHDREditing,
+            result?.HDR != null,
+            hdrSdrPreview,
+            ResultHDRSurface.Available,
+            NeutralHDRSurface.Available,
+            transform.Active && transform.Tool == TransformTool.Geometry,
+            clipping,
+            hdrDisplayTimer.IsEnabled);
     }
 
     private void RefreshHDRControls()

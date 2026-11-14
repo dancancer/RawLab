@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -170,9 +171,16 @@ public sealed class EditStore
     private sealed record Registry(int Version, Dictionary<string, JsonElement> Records,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         Dictionary<string, JsonElement>? MigrationReceipts = null);
+    private sealed record CachedRegistry(PathStatStamp Stamp, long Epoch, Registry Registry);
+    private static readonly ConcurrentDictionary<string, long> PathEpochs = new(StringComparer.OrdinalIgnoreCase);
     public static string DefaultDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "Edits");
     private readonly string path;
+    private readonly string canonicalPath;
     private readonly Action<string,object> write;
+    private readonly object cacheGate = new();
+    private CachedRegistry? cachedRegistry;
+    private long diskReadCount;
+    internal long DiskReadCount => Interlocked.Read(ref diskReadCount);
     public event Action<PhotoEditState>? Changed;
     private void NotifyChanged(PhotoEditState state)
     {
@@ -186,11 +194,92 @@ public sealed class EditStore
     public EditStore(string directory,Action<string,object>? write = null)
     {
         path = Path.Combine(directory, "edits.json");
+        canonicalPath = Path.GetFullPath(path);
         this.write=write ?? AtomicJson.Write;
         _=ReadRegistry();
     }
 
-    private Registry ReadRegistry()
+    private static long CurrentPathEpoch(string canonical) => PathEpochs.GetValueOrDefault(canonical);
+
+    private static long BumpPathEpoch(string canonical) =>
+        PathEpochs.AddOrUpdate(canonical, 1, (_, previous) => previous + 1);
+
+    private void InvalidateCache()
+    {
+        lock (cacheGate) cachedRegistry = null;
+    }
+
+    private void WriteAndCacheRegistry(Registry next)
+    {
+        var beforeStamp = PathStatStamp.Capture(canonicalPath);
+        try
+        {
+            write(path, next);
+        }
+        catch
+        {
+            InvalidateCache();
+            BumpPathEpoch(canonicalPath);
+            throw;
+        }
+
+        var nextEpoch = BumpPathEpoch(canonicalPath);
+        var afterStamp = PathStatStamp.Capture(canonicalPath);
+        if (afterStamp.Exists && afterStamp != beforeStamp)
+        {
+            lock (cacheGate) cachedRegistry = new(afterStamp, nextEpoch, next);
+        }
+        else
+        {
+            InvalidateCache();
+        }
+    }
+
+    private Registry ReadRegistry(bool forceDisk = false)
+    {
+        var currentStamp = PathStatStamp.Capture(canonicalPath);
+        if (!currentStamp.Exists)
+        {
+            InvalidateCache();
+            return new(1,new(StringComparer.OrdinalIgnoreCase));
+        }
+
+        var epoch = CurrentPathEpoch(canonicalPath);
+        if (!forceDisk)
+        {
+            lock (cacheGate)
+            {
+                if (cachedRegistry is {} cached && cached.Stamp == currentStamp && cached.Epoch == epoch)
+                    return cached.Registry;
+            }
+        }
+
+        Interlocked.Increment(ref diskReadCount);
+        Registry parsed;
+        try
+        {
+            parsed = ReadRegistryFromDisk();
+        }
+        catch
+        {
+            InvalidateCache();
+            throw;
+        }
+
+        var afterStamp = PathStatStamp.Capture(canonicalPath);
+        var afterEpoch = CurrentPathEpoch(canonicalPath);
+        if (afterStamp.Exists && afterStamp == currentStamp && afterEpoch == epoch)
+        {
+            lock (cacheGate) cachedRegistry = new(currentStamp, epoch, parsed);
+        }
+        else
+        {
+            InvalidateCache();
+        }
+        return parsed;
+    }
+
+    private Registry ReadRegistryFromDisk()
     {
         if (!File.Exists(path)) return new(1,new(StringComparer.OrdinalIgnoreCase));
         var root = AtomicJson.Read<JsonElement>(path);
@@ -281,6 +370,17 @@ public sealed class EditStore
     }
 
     public PhotoEditState ReadState(string input) => ReadRecord(ReadRegistry(),OriginalIdentity.Read(input));
+    public IReadOnlyList<PhotoEditState> ReadStates(IEnumerable<string> inputs)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
+        var paths = inputs as IReadOnlyList<string> ?? inputs.ToArray();
+        if (paths.Count == 0) return [];
+        var registry = ReadRegistry();
+        var states = new PhotoEditState[paths.Count];
+        for (var i = 0; i < paths.Count; i++)
+            states[i] = ReadRecord(registry, OriginalIdentity.Read(paths[i]));
+        return states;
+    }
     private static PhotoEditState ReadRecord(Registry registry,OriginalIdentity identity) => new(identity,
         registry.Records.TryGetValue(identity.Path,out var raw) && ParseSavedEdit(raw) is var edit && edit.Identity.SameFile(identity) ? edit.Copy() : null);
 
@@ -291,7 +391,7 @@ public sealed class EditStore
         if(expectedCurrent!=null && !expectedCurrent.Identity.SameFile(identity))throw new PhotoChangedException();
         PhotoEditState saved;
         using (AcquireLock()) {
-            var registry=ReadRegistry();identity.RequireCurrent();
+            var registry=ReadRegistry(forceDisk:true);identity.RequireCurrent();
             var current=ReadRecord(registry,identity);
             if(expectedCurrent!=null && !current.SameAs(expectedCurrent))throw new AdjustmentOperationExpiredException();
             var recordUnchanged=SavedEdit.Same(current.Edit,edit);
@@ -306,7 +406,7 @@ public sealed class EditStore
                 if(edit==null)records.Remove(identity.Path);
                 else records[identity.Path]=JsonSerializer.SerializeToElement(edit.Copy());
             }
-            write(path,new Registry(1,records,receipts));
+            WriteAndCacheRegistry(new Registry(1,records,receipts));
             saved=new(identity,edit?.Copy());
         }
         NotifyChanged(saved);
@@ -319,7 +419,7 @@ public sealed class EditStore
         PhotoEditState cleared;
         var changed = false;
         using (AcquireLock()) {
-            var registry=ReadRegistry();identity.RequireCurrent();
+            var registry=ReadRegistry(forceDisk:true);identity.RequireCurrent();
             var records=new Dictionary<string,JsonElement>(registry.Records,StringComparer.OrdinalIgnoreCase);
             var receipts=registry.MigrationReceipts == null
                 ? null : new Dictionary<string,JsonElement>(registry.MigrationReceipts,StringComparer.OrdinalIgnoreCase);
@@ -329,7 +429,7 @@ public sealed class EditStore
                 changed |= receipts.Remove(identity.Path);
                 if(receipts.Count == 0)receipts = null;
             }
-            if(changed)write(path,new Registry(1,records,receipts));
+            if(changed)WriteAndCacheRegistry(new Registry(1,records,receipts));
             cleared=new(identity,null);
         }
         if(changed)NotifyChanged(cleared);
@@ -359,7 +459,7 @@ public sealed class EditStore
         _ = expectedBefore.Settings.Restore(); _ = candidate.Settings.Restore();
         PhotoEditState saved;
         using (AcquireLock()) {
-        var registry=ReadRegistry();expectedIdentity.RequireCurrent();
+        var registry=ReadRegistry(forceDisk:true);expectedIdentity.RequireCurrent();
         var current=ReadRecord(registry,expectedIdentity);
         if (!current.SameAs(new PhotoEditState(expectedIdentity,expectedBefore)))
             throw new AdjustmentOperationExpiredException();
@@ -373,7 +473,7 @@ public sealed class EditStore
         var receipt=new ProcessingMigrationReceipt(expectedIdentity,expectedBefore.Copy(),candidate.Copy(),status);
         records[expectedIdentity.Path]=JsonSerializer.SerializeToElement(candidate.Copy());
         receipts[expectedIdentity.Path]=JsonSerializer.SerializeToElement(receipt);
-        write(path,new Registry(1,records,receipts));
+        WriteAndCacheRegistry(new Registry(1,records,receipts));
         saved=new(expectedIdentity,candidate.Copy());
         }
         NotifyChanged(saved);
@@ -385,7 +485,7 @@ public sealed class EditStore
         if (!identity.SameFile(expectedCurrent.Identity)) throw new PhotoChangedException();
         PhotoEditState saved;
         using (AcquireLock()) {
-        var registry=ReadRegistry();identity.RequireCurrent();
+        var registry=ReadRegistry(forceDisk:true);identity.RequireCurrent();
         var storedReceipts=registry.MigrationReceipts;
         if (storedReceipts == null || !storedReceipts.TryGetValue(identity.Path,out var rawReceipt) ||
             TryParseReceipt(rawReceipt,identity) is not { Status: ProcessingMigrationReceipt.Migrated } receipt)
@@ -396,7 +496,7 @@ public sealed class EditStore
         var receipts=new Dictionary<string,JsonElement>(storedReceipts,StringComparer.OrdinalIgnoreCase);
         records[identity.Path]=JsonSerializer.SerializeToElement(receipt.Before.Copy());
         receipts[identity.Path]=JsonSerializer.SerializeToElement(receipt with { Status=ProcessingMigrationReceipt.RolledBack });
-        write(path,new Registry(1,records,receipts));
+        WriteAndCacheRegistry(new Registry(1,records,receipts));
         saved=new(identity,receipt.Before.Copy());
         }
         NotifyChanged(saved);
@@ -424,7 +524,7 @@ public sealed class EditStore
         _ = settings.Restore();
         var changed = new List<PhotoEditState>();
         using (AcquireLock()) {
-            var updated = ReadRegistry();
+            var updated = ReadRegistry(forceDisk:true);
             var records = new Dictionary<string,JsonElement>(updated.Records,StringComparer.OrdinalIgnoreCase);
             foreach (var input in inputs) {
                 var identity = OriginalIdentity.Read(input);
@@ -432,7 +532,7 @@ public sealed class EditStore
                 if(records.TryGetValue(identity.Path,out var rawPrevious) && ParseSavedEdit(rawPrevious).SameAs(edit))continue;
                 records[identity.Path]=JsonSerializer.SerializeToElement(edit);changed.Add(new(identity,edit));
             }
-            if(changed.Count>0)write(path,new Registry(1,records,updated.MigrationReceipts));
+            if(changed.Count>0)WriteAndCacheRegistry(new Registry(1,records,updated.MigrationReceipts));
         }
         foreach(var state in changed)NotifyChanged(state);
     }

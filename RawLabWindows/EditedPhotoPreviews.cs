@@ -38,6 +38,9 @@ internal sealed class EditedPhotoPreviews(EditStore store, string? cacheDirector
     internal Task<PhotoEditState> ReadStateAsync(string path,CancellationToken cancellation) =>
         Task.Run(()=>EditedPhotoPreviewKey.ReadState(Store,path),cancellation);
 
+    internal Task<IReadOnlyList<PhotoEditState>> ReadStatesAsync(IEnumerable<string> paths,CancellationToken cancellation) =>
+        Task.Run(()=>Store.ReadStates(paths),cancellation);
+
     internal Task<BitmapSource> ImageAsync(PhotoEditState record,string? look,int aiBackend,string aiDevice,CancellationToken cancellation)
     {
         record=EditedPhotoPreviewKey.PrepareState(record);

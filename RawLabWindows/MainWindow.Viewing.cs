@@ -15,6 +15,11 @@ public partial class MainWindow
     private (BitmapSource Source, BitmapSource Mask)? clippingOverlay;
     private bool clippingOverlayPending;
     private bool beforeKeyDown;
+    private readonly ViewSourceState viewSourceState = new();
+    private PhotoPreviewResourceWatch? viewSourceWatch;
+    private readonly LookAvailabilityTracker lookAvailability = new();
+    private PhotoPreviewResourceWatch? lookAvailabilityWatch;
+    private string? watchedLookPath;
     [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int key);
     // 窗口外松键不会清掉 WPF 的 repeat 缓存；激活和焦点恢复时以真实键状态同步。
     private void SyncBeforeKeyState()=>beforeKeyDown=(GetAsyncKeyState(0xdc)&0x8000)!=0;
@@ -29,9 +34,53 @@ public partial class MainWindow
         if(e.RoutedEvent==ContextMenu.OpenedEvent){window.viewingMenus.Add(menu);window.CancelViewingInput();}
         else window.viewingMenus.Remove(menu);
     }
-    private OriginalIdentity? CurrentViewSource
+    private OriginalIdentity? CurrentViewSource => viewSourceState.Current(file, openRevision);
+    private OriginalIdentity CurrentOrReadViewSource() =>
+        CurrentViewSource ?? OriginalIdentity.Read(file ?? throw new InvalidOperationException());
+    private void TrackOpenViewSource(string path, long revision, OriginalIdentity? identity)
     {
-        get {if(file==null)return null;try{return OriginalIdentity.Read(file);}catch(Exception ex) when(PreviewFallback.IsFileIdentityFailure(ex)){return null;}}
+        viewSourceState.SetOpenPhoto(path, revision, identity);
+        viewSourceWatch?.Dispose();
+        var watch = new PhotoPreviewResourceWatch(() => Dispatcher.BeginInvoke(() => RefreshOpenViewSourceAsync(path, revision)));
+        watch.Watch([path]);
+        viewSourceWatch = watch;
+    }
+    private void RefreshOpenViewSourceAsync(string path, long revision)
+    {
+        if (closing || openRevision != revision || !ViewSourceState.PathsEqual(file, path)) return;
+        viewSourceState.MarkDirty(path, revision);
+        _ = Task.Run(() => ViewSourceState.TryReadIdentity(path)).ContinueWith(task => Dispatcher.BeginInvoke(() => {
+            if (closing || openRevision != revision || !ViewSourceState.PathsEqual(file, path)) return;
+            var probed = task.IsCompletedSuccessfully ? task.Result : null;
+            var outcome = viewSourceState.ApplyProbeResult(path, revision, probed);
+            if (outcome is ViewSourceProbeOutcome.Replaced or ViewSourceProbeOutcome.BecameUnavailable)
+            {
+                neutralResult = null;
+                acceptedReference = null;
+                RefreshViewingFrames();
+            }
+        }), TaskScheduler.Default);
+    }
+    private void EnsureLookWatch(string? lookPath)
+    {
+        var canonical = lookPath == null ? null : Path.GetFullPath(lookPath);
+        if (ViewSourceState.PathsEqual(watchedLookPath, canonical)) return;
+        watchedLookPath = canonical;
+        lookAvailability.Invalidate();
+        lookAvailabilityWatch?.Dispose();
+        lookAvailabilityWatch = null;
+        if (canonical == null) return;
+        var watch = new PhotoPreviewResourceWatch(() => Dispatcher.BeginInvoke(() => lookAvailability.Invalidate(canonical)));
+        watch.Watch([canonical]);
+        lookAvailabilityWatch = watch;
+    }
+    private void DisposeSourceWatches()
+    {
+        viewSourceWatch?.Dispose();
+        viewSourceWatch = null;
+        lookAvailabilityWatch?.Dispose();
+        lookAvailabilityWatch = null;
+        watchedLookPath = null;
     }
     private bool ReferenceCurrent=>neutralResult!=null && neutralRevision==openRevision && acceptedAfter==acceptedReference &&
         NeutralReference.Matches(acceptedReference,CurrentViewSource,settings.Processing,settings.Geometry,settings.Lens,RenderEdge(interacting),settings.IsHDREditing,settings.X3fMode,NeutralReference.HDRCameraSettings(settings.IsHDREditing ? settings.HDR : null));

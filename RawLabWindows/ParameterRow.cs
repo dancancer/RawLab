@@ -22,6 +22,7 @@ public sealed class ParameterRow : Grid
     private readonly TextBlock error=new(){TextWrapping=TextWrapping.Wrap,Visibility=Visibility.Collapsed};
     private readonly ParameterWheel wheel=new();
     private readonly NumericInputSession input=new();
+    private readonly ParameterRowLayoutCache layoutCache=new();
     private NumericRange range=new(0,100);
     private object? source,scope;
     private double value,defaultValue;
@@ -29,6 +30,8 @@ public sealed class ParameterRow : Grid
     private bool preserveNextBlur;
     private object? dragSource,dragScope;
     private double dragValue;
+    private bool? lastModifiedState;
+    private string? lastModifiedTitle,lastModifiedLanguage;
     public static readonly RoutedEvent GestureStartedEvent=EventManager.RegisterRoutedEvent("GestureStarted",RoutingStrategy.Bubble,typeof(RoutedEventHandler),typeof(ParameterRow));
     public static readonly RoutedEvent GestureCancelledEvent=EventManager.RegisterRoutedEvent("GestureCancelled",RoutingStrategy.Bubble,typeof(RoutedEventHandler),typeof(ParameterRow));
     public static readonly RoutedEvent GestureCompletedEvent=EventManager.RegisterRoutedEvent("GestureCompleted",RoutingStrategy.Bubble,typeof(RoutedEventHandler),typeof(ParameterRow));
@@ -93,11 +96,30 @@ public sealed class ParameterRow : Grid
     private void LayoutRow()
     {
         var fontSize = TextElement.GetFontSize(this);
+        var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        var language = Loc.Language;
+        var layoutSignature = new ParameterRowLayoutSignature(
+            fontSize,
+            Number.FontFamily.Source,
+            Number.FontStyle.ToString(),
+            Number.FontWeight.ToString(),
+            Number.FontStretch.ToString(),
+            language,
+            range.Min,
+            range.Max,
+            range.Grid,
+            suffix,
+            ActualWidth,
+            dpi,
+            Compact);
+        if (!layoutCache.NeedsLayoutMeasure(layoutSignature))
+            return;
+
         var scale = Math.Max(1, fontSize / 13);
         var typeface = new Typeface(Number.FontFamily, Number.FontStyle, Number.FontWeight, Number.FontStretch);
-        var culture = System.Globalization.CultureInfo.GetCultureInfo(Loc.Language);
+        var culture = System.Globalization.CultureInfo.GetCultureInfo(language);
         double TextWidth(double bound) => new FormattedText(range.Format(bound), culture, FlowDirection.LeftToRight,
-            typeface, Number.FontSize, Brushes.Black, VisualTreeHelper.GetDpi(this).PixelsPerDip).WidthIncludingTrailingWhitespace;
+            typeface, Number.FontSize, Brushes.Black, dpi).WidthIncludingTrailingWhitespace;
         Number.Width = Math.Max(72 * scale, Math.Ceiling(Math.Max(TextWidth(range.Min), TextWidth(range.Max))) + 18);
         unit.MinWidth = suffix.Length == 0 ? 0 : 22 * scale;
         Number.Margin = new(0, 0, suffix.Length == 0 ? 0 : 4, 0);
@@ -121,16 +143,24 @@ public sealed class ParameterRow : Grid
         if(!Equals(scope,inputScope??title))CancelDrag();
         this.title=title;this.suffix=suffix;range=limits;value=current;defaultValue=reset;scope=inputScope??title;
         var rebound=input.Bind(source,scope,limits,current);
-        label.Text=title;unit.Text=suffix;IsEnabled=enabled;
-        help=Loc.Format("默认值：{0}；范围：{1} 至 {2}；步进：{3}。",limits.Format(reset)+suffix,limits.Format(limits.Min)+suffix,limits.Format(limits.Max)+suffix,limits.StepText(limits.Grid)+suffix);
-        AutomationProperties.SetName(Slider,title);AutomationProperties.SetName(Number,title);
-        AutomationProperties.SetHelpText(Number,help);AutomationProperties.SetHelpText(Slider,help);
-        AutomationProperties.SetName(ResetButton,Loc.Format("重置{0}",title));ResetButton.ToolTip=Loc.Format("重置{0}",title);
-        label.ToolTip=help+"\n"+Loc.Text("双击名称或轨道恢复默认值。");Slider.ToolTip=label.ToolTip;
-        Slider.NumericRange=limits;Slider.ActualValue=current;Slider.DefaultValue=reset;
-        Number.NumericRange=limits;Number.ActualValue=current;
-        var span=limits.Max-limits.Min;
-        Slider.SmallChange=span>0 ? limits.Grid/span : 0;Slider.LargeChange=span>0 ? limits.Wheel/span : 0;
+        IsEnabled=enabled;
+        var metadataSignature = new ParameterRowMetadataSignature(
+            title, limits.Min, limits.Max, limits.Grid, reset, suffix, Loc.Language);
+        if (layoutCache.NeedsMetadataRefresh(metadataSignature))
+        {
+            unit.Text=suffix;
+            help=Loc.Format("默认值：{0}；范围：{1} 至 {2}；步进：{3}。",limits.Format(reset)+suffix,limits.Format(limits.Min)+suffix,limits.Format(limits.Max)+suffix,limits.StepText(limits.Grid)+suffix);
+            AutomationProperties.SetName(Slider,title);AutomationProperties.SetName(Number,title);
+            AutomationProperties.SetHelpText(Number,help);AutomationProperties.SetHelpText(Slider,help);
+            AutomationProperties.SetName(ResetButton,Loc.Format("重置{0}",title));ResetButton.ToolTip=Loc.Format("重置{0}",title);
+            label.ToolTip=help+"\n"+Loc.Text("双击名称或轨道恢复默认值。");Slider.ToolTip=label.ToolTip;
+            Slider.NumericRange=limits;
+            Number.NumericRange=limits;
+            var span=limits.Max-limits.Min;
+            Slider.SmallChange=span>0 ? limits.Grid/span : 0;Slider.LargeChange=span>0 ? limits.Wheel/span : 0;
+        }
+        Slider.ActualValue=current;Slider.DefaultValue=reset;
+        Number.ActualValue=current;
         syncing=true;Slider.Value=range.Position(value);syncing=false;
         if(rebound || !input.Dirty)RestoreText();
         UpdateModified();LayoutRow();
@@ -161,7 +191,16 @@ public sealed class ParameterRow : Grid
     private void ResetValue(){if(IsEnabled){CancelInput();Publish(Compact ? Math.Clamp(defaultValue,range.Min,range.Max) : defaultValue,false);}}
     private void UpdateModified()
     {
-        var modified=value!=defaultValue;Number.SetResourceReference(TextBox.ForegroundProperty,modified ? "Indicator" : "Foreground");
+        var modified=value!=defaultValue;
+        var language=Loc.Language;
+        if (lastModifiedState == modified &&
+            string.Equals(lastModifiedTitle, title, StringComparison.Ordinal) &&
+            string.Equals(lastModifiedLanguage, language, StringComparison.Ordinal))
+            return;
+        lastModifiedState = modified;
+        lastModifiedTitle = title;
+        lastModifiedLanguage = language;
+        Number.SetResourceReference(TextBox.ForegroundProperty,modified ? "Indicator" : "Foreground");
         label.Text=title+(modified ? " •" : "");
         AutomationProperties.SetItemStatus(Number,Loc.Text(modified ? "已调整" : "未调整"));
         AutomationProperties.SetItemStatus(Slider,Loc.Text(modified ? "已调整" : "未调整"));

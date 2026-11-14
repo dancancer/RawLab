@@ -23,7 +23,12 @@ public partial class MainWindow
     {
         AdjustmentPanel.AddHandler(ParameterRow.GestureStartedEvent,new RoutedEventHandler((_,_)=>BeginEditGesture()));
         AdjustmentPanel.AddHandler(ParameterRow.GestureCancelledEvent,new RoutedEventHandler((_,_)=>CancelEditGesture()));
-        AdjustmentPanel.AddHandler(ParameterRow.GestureCompletedEvent,new RoutedEventHandler((_,_)=>{editGesture=null;if(!transform.Active)interacting=false;}));
+        AdjustmentPanel.AddHandler(ParameterRow.GestureCompletedEvent,new RoutedEventHandler((_,_)=>{
+            editGesture=null;
+            var wasInteracting=interacting;
+            if(!transform.Active)interacting=false;
+            if(wasInteracting && !interacting)RefreshControls();
+        }));
     }
     private void BeginEditGesture()
     {
@@ -46,7 +51,7 @@ public partial class MainWindow
     private AdjustmentOutcome CommitCurrentEdit(AdjustmentSnapshot snapshot)
     {
         if(file==null)throw new InvalidOperationException("No photo is open.");
-        var candidate=new SavedEdit(OriginalIdentity.Read(file),snapshot,CurrentLookIdentity());
+        var candidate=new SavedEdit(CurrentOrReadViewSource(),snapshot,CurrentLookIdentity());
         var before=currentEditRecord ?? new PhotoEditState(candidate.Identity,null);
         SavedEdit? defaultEdit=null;
         if(before.Edit==null) {
