@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/RawLabMac/tests/ax-gate.sh"
+rawlab_ax_gate
 OUT="$(mktemp -d /tmp/rawlab-grading-input-ui.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"

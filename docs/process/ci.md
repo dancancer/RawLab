@@ -341,6 +341,9 @@ execute unreviewed queue contents unconditionally.
 Run affected UI tests locally before committing UI changes. Record source version,
 commands, results and limits in the PR; keep logs/screenshots outside tracked source.
 CI never repeats runtime UI checks. UI-test target compilation is not a UI-test pass.
+When running the UI suites pre-release, carry `RAWLAB_REQUIRE_AX=1` so the accessibility-gated
+scripts (`hdr-rendition-ui.sh`, `color-grading-input-ui.sh`, `system-menu-language.sh`) fail
+with an explicit reason instead of returning 0 with a `SKIP` for checks that did not run.
 
 - Apple fast models: `bash scripts/ci/apple-models.sh macos` or `ios`; no prebuilt
   C++ core or simulator is required.
