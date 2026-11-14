@@ -68,7 +68,12 @@ fi
 RAWLAB_ARCH="$ARCH" MACOSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" bash "$ROOT/RawLabMac/build-lens-dependency.sh"
 pkg-config --exists 'libraw_r >= 0.22.2' 'rawlab-dng-sdk >= 1.7.1' 'opencv4 = 4.12.0' \
     'wavelib >= 1.0.0' 'lensfun >= 0.3.4' 'libtiff-4 >= 4.7.1'
-cmake -S "$ROOT/lutools" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$ARCH" -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" -DSONY2FUJI_ENABLE_GPU=ON -DSONY2FUJI_ENABLE_CHROMA_DENOISE=ON -DSONY2FUJI_ENABLE_OPENMP=OFF -DSONY2FUJI_ENABLE_LENSFUN=ON -DSONY2FUJI_ENABLE_DNGSDK=ON -DBUILD_SHARED_LIB=OFF -DBUILD_TESTING=ON "${AI_CMAKE_FLAGS[@]}"
+# 对齐 RawLabWindows/build.ps1：显式透传解释器，避免 CMake 自动抓到缺 jsonschema 的
+# Homebrew Python，导致 edit_recipe_schema 等 Python 驱动 ctest 静默降级为 Skipped。
+# 默认用 PATH 上的 python3（与 CI 跑 ctest 的解释器一致），可用 PYTHON 覆盖。
+PYTHON_EXECUTABLE="$(command -v "${PYTHON:-python3}" || true)"
+test -n "$PYTHON_EXECUTABLE" || { echo "Python interpreter not found: ${PYTHON:-python3}" >&2; exit 2; }
+cmake -S "$ROOT/lutools" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$ARCH" -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" -DSONY2FUJI_ENABLE_GPU=ON -DSONY2FUJI_ENABLE_CHROMA_DENOISE=ON -DSONY2FUJI_ENABLE_OPENMP=OFF -DSONY2FUJI_ENABLE_LENSFUN=ON -DSONY2FUJI_ENABLE_DNGSDK=ON -DBUILD_SHARED_LIB=OFF -DBUILD_TESTING=ON "-DPython3_EXECUTABLE=$PYTHON_EXECUTABLE" "${AI_CMAKE_FLAGS[@]}"
 cmake --build "$BUILD" -j "${JOBS:-$(sysctl -n hw.ncpu)}"
 X3F_LINK_FLAGS=()
 if grep -qs '^SONY2FUJI_ENABLE_X3F:BOOL=ON$' "$BUILD/CMakeCache.txt"; then
