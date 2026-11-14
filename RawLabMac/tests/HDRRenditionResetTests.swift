@@ -16,13 +16,14 @@ enum HDRCameraProfileAssetStore {
     var initiallyExpanded = false
     var voiceOverOverride: Bool? = false
     var writes = 0
+    var editingLog: [Bool] = []
 
     var binding: Binding<HDRRenditionSettings> {
         Binding(get: { self.settings }, set: { self.writes += 1; self.settings = $0 })
     }
 
     var controls: HDRRenditionControls {
-        HDRRenditionControls(settings: binding, onEditingChanged: { _ in }, onCancelled: {},
+        HDRRenditionControls(settings: binding, onEditingChanged: { self.editingLog.append($0) }, onCancelled: {},
                              initiallyExpanded: initiallyExpanded, voiceOverOverride: voiceOverOverride)
     }
 }
@@ -69,6 +70,54 @@ private struct FullControlsProbeView: View {
     @MainActor static func buttons(in view: NSView) -> [NSButton] {
         let own = (view as? NSButton).map { [$0] } ?? []
         return own + view.subviews.flatMap { buttons(in: $0) }
+    }
+
+    @MainActor static func collectSliderTrackViews(in view: NSView) -> [NSView] {
+        var nativeSliders: [NSView] = []
+        var focusRings: [NSView] = []
+        func visit(_ current: NSView) {
+            if current is NSSlider {
+                nativeSliders.append(current)
+            } else if String(describing: type(of: current)).contains("FocusRingView") && current.bounds.width > 100 {
+                focusRings.append(current)
+            }
+            for subview in current.subviews { visit(subview) }
+        }
+        visit(view)
+        let tracks = nativeSliders.isEmpty ? focusRings : nativeSliders
+        return tracks.sorted {
+            $0.convert($0.bounds, to: nil).midY > $1.convert($1.bounds, to: nil).midY
+        }
+    }
+
+    @MainActor static func sendMouse(type: NSEvent.EventType, location: NSPoint, clickCount: Int,
+                                     eventNumber: Int, timestamp: TimeInterval, to window: NSWindow) {
+        let event = NSEvent.mouseEvent(
+            with: type, location: location, modifierFlags: [], timestamp: timestamp,
+            windowNumber: window.windowNumber, context: nil, eventNumber: eventNumber,
+            clickCount: clickCount, pressure: type == .leftMouseUp ? 0.0 : 1.0
+        )!
+        window.sendEvent(event)
+    }
+
+    @MainActor static func sendDoubleClick(at point: NSPoint, in window: NSWindow) async throws {
+        let base = ProcessInfo.processInfo.systemUptime
+        sendMouse(type: .leftMouseDown, location: point, clickCount: 1, eventNumber: 1, timestamp: base, to: window)
+        sendMouse(type: .leftMouseUp, location: point, clickCount: 1, eventNumber: 2, timestamp: base + 0.01, to: window)
+        try await Task.sleep(for: .milliseconds(30))
+        sendMouse(type: .leftMouseDown, location: point, clickCount: 2, eventNumber: 3, timestamp: base + 0.04, to: window)
+        sendMouse(type: .leftMouseUp, location: point, clickCount: 2, eventNumber: 4, timestamp: base + 0.05, to: window)
+        try await Task.sleep(for: .milliseconds(50))
+    }
+
+    @MainActor static func sendDrag(from start: NSPoint, to end: NSPoint, in window: NSWindow) async throws {
+        let base = ProcessInfo.processInfo.systemUptime
+        sendMouse(type: .leftMouseDown, location: start, clickCount: 1, eventNumber: 10, timestamp: base, to: window)
+        let mid = NSPoint(x: (start.x + end.x) / 2, y: start.y)
+        sendMouse(type: .leftMouseDragged, location: mid, clickCount: 1, eventNumber: 11, timestamp: base + 0.02, to: window)
+        sendMouse(type: .leftMouseDragged, location: end, clickCount: 1, eventNumber: 12, timestamp: base + 0.04, to: window)
+        sendMouse(type: .leftMouseUp, location: end, clickCount: 1, eventNumber: 13, timestamp: base + 0.05, to: window)
+        try await Task.sleep(for: .milliseconds(30))
     }
 
     @MainActor static func accessibilityElements(in root: Any) -> [AnyObject] {
@@ -208,9 +257,9 @@ private struct FullControlsProbeView: View {
         try await settle(expandedHost)
 
         let elements = accessibilityElements(in: expandedHost)
-        let focusRingCount = elements.filter { String(describing: type(of: $0)).contains("FocusRingView") }.count
-        try check(focusRingCount >= 5,
-                  "Expanded HDRRenditionControls materializes disclosure plus four slider controls (focusRings=\(focusRingCount))")
+        let trackViews = collectSliderTrackViews(in: expandedHost)
+        try check(trackViews.count == 4,
+                  "Expanded HDRRenditionControls materializes four slider track controls (tracks=\(trackViews.count))")
         if elements.contains(where: { $0.accessibilityIdentifier?() == "hdr.rendition.peakLimit" }) {
             let expectedFields: [(String, WritableKeyPath<HDRRenditionSettings, Double>)] = [
                 ("hdr.rendition.peakLimit", \.peakLimitEV),
@@ -248,7 +297,71 @@ private struct FullControlsProbeView: View {
                       (voSlider.accessibilityCustomActions?()?.contains(where: { $0.name == L10n.text("重置") }) == true),
                       "VoiceOver suppresses double-tap hint while preserving reset accessibilityAction")
         } else {
-            print("NOTE: SwiftUI accessibility slider nodes unavailable under prohibited activation policy; verified via focus rings + direct model reset")
+            print("NOTE: SwiftUI accessibility slider nodes unavailable under prohibited activation policy; verified via track views + real pointer events")
         }
+
+        // 7. 行为回归：真实鼠标双击滑杆轨道恢复默认且吞掉单击坐标跳变；拖拽与 VoiceOver 门禁保持完整
+        expandedModel.voiceOverOverride = false
+        expandedModel.settings = combined
+        expandedModel.writes = 0
+        expandedModel.editingLog = []
+        try await settle(expandedHost)
+        let peakRect = trackViews[0].convert(trackViews[0].bounds, to: nil)
+        let peakTrackPoint = NSPoint(x: peakRect.minX + peakRect.width * 0.75, y: peakRect.midY)
+        try await sendDoubleClick(at: peakTrackPoint, in: expandedWindow)
+        var afterPeakTrackReset = combined
+        afterPeakTrackReset.peakLimitEV = 0
+        try check(expandedModel.settings == afterPeakTrackReset,
+                  "Double-clicking peakLimit slider track resets to 0 instead of jumping to clicked coordinate (actual=\(expandedModel.settings.peakLimitEV))")
+        try check(expandedModel.writes == 1,
+                  "Double-clicking peakLimit slider track swallows click-1 coordinate jump (writes=\(expandedModel.writes))")
+
+        let settleMs = Int((NSEvent.doubleClickInterval * 1000).rounded(.up)) + 60
+        try await Task.sleep(for: .milliseconds(settleMs))
+        try check(expandedModel.settings == afterPeakTrackReset && expandedModel.writes == 1,
+                  "Delayed single-click timer stays cancelled after track double-click reset")
+
+        let exposureRect = trackViews[1].convert(trackViews[1].bounds, to: nil)
+        let exposureTrackPoint = NSPoint(x: exposureRect.minX + exposureRect.width * 0.75, y: exposureRect.midY)
+        expandedModel.settings = combined
+        expandedModel.writes = 0
+        expandedModel.editingLog = []
+        try await sendDoubleClick(at: exposureTrackPoint, in: expandedWindow)
+        var afterExposureTrackReset = combined
+        afterExposureTrackReset.sdrExposureEV = 0
+        try check(expandedModel.settings == afterExposureTrackReset && expandedModel.writes == 1,
+                  "Double-clicking sdrExposure slider track resets only sdrExposureEV cleanly")
+
+        expandedModel.settings = combined
+        expandedModel.writes = 0
+        expandedModel.editingLog = []
+        try await sendDrag(
+            from: NSPoint(x: peakRect.minX + peakRect.width * 0.15, y: peakRect.midY),
+            to: NSPoint(x: peakRect.minX + peakRect.width * 0.65, y: peakRect.midY),
+            in: expandedWindow
+        )
+        try check(expandedModel.settings.peakLimitEV > 3.0 && expandedModel.editingLog == [true, false],
+                  "Dragging peakLimit slider track updates value smoothly and brackets editing state")
+
+        expandedModel.voiceOverOverride = true
+        expandedModel.settings = combined
+        expandedModel.writes = 0
+        try await settle(expandedHost)
+        try await sendDoubleClick(at: peakTrackPoint, in: expandedWindow)
+        try check(expandedModel.settings.peakLimitEV != 0,
+                  "VoiceOver enabled disables double-click track reset")
+
+        // Intentional single-click on track commits cleanly once doubleClickInterval elapses
+        expandedModel.voiceOverOverride = false
+        expandedModel.settings = HDRRenditionSettings()
+        expandedModel.writes = 0
+        expandedModel.editingLog = []
+        try await settle(expandedHost)
+        let singleBase = ProcessInfo.processInfo.systemUptime
+        sendMouse(type: .leftMouseDown, location: peakTrackPoint, clickCount: 1, eventNumber: 20, timestamp: singleBase, to: expandedWindow)
+        sendMouse(type: .leftMouseUp, location: peakTrackPoint, clickCount: 1, eventNumber: 21, timestamp: singleBase + 0.01, to: expandedWindow)
+        try await Task.sleep(for: .milliseconds(settleMs))
+        try check(expandedModel.settings.peakLimitEV > 3.5 && expandedModel.writes == 1 && expandedModel.editingLog == [true, false],
+                  "Single-clicking peakLimit slider track seeks to clicked coordinate after doubleClickInterval")
     }
 }
