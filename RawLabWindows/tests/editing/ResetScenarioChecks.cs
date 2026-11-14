@@ -196,6 +196,7 @@ internal static class ResetScenarioChecks
         {
             "light.contrast" => new(EditorResetKind.Tool, Tool: EditorAdjustmentTool.Contrast),
             "detail.sharpening" => new(EditorResetKind.Tool, Tool: EditorAdjustmentTool.Sharpening),
+            "hdr.peak_limit_ev" => new(EditorResetKind.Tool, Tool: EditorAdjustmentTool.HdrPeakLimit),
             var field => throw new Exception($"Unsupported single-reset field: {field}")
         },
         "group" => scope.GetProperty("group").GetString() switch
@@ -204,6 +205,7 @@ internal static class ResetScenarioChecks
             "color" => new(EditorResetKind.Group, Group: EditorAdjustmentGroup.Color),
             "detail" => new(EditorResetKind.Group, Group: EditorAdjustmentGroup.Detail),
             "geometry" => new(EditorResetKind.Group, Group: EditorAdjustmentGroup.Geometry),
+            "hdr_rendition" => new(EditorResetKind.Group, Group: EditorAdjustmentGroup.HdrRendition),
             var group => throw new Exception($"Unsupported reset group: {group}")
         },
         "all" => new(EditorResetKind.All),

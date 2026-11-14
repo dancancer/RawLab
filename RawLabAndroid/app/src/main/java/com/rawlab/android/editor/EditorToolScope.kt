@@ -7,7 +7,8 @@ enum class AdjustmentGroup(val tool: Int) {
     LOOK(0), STRENGTH(1), EXPOSURE(2), HIGHLIGHTS(3), SHADOWS(4), CONTRAST(5), CURVE(6),
     SATURATION(7), WHITE_BALANCE(8), SHARPENING(10), DENOISE(11), VIGNETTE(12), GRAIN(13),
     HSL(14), RECIPE(15), LENS(16), GEOMETRY(17), BLACK_POINT(18), WHITE_POINT(19),
-    VIBRANCE(20), GRADING(21), CLARITY(22), DEHAZE(23);
+    VIBRANCE(20), GRADING(21), CLARITY(22), DEHAZE(23),
+    HDR_PEAK_LIMIT(24), HDR_SDR_EXPOSURE(25), HDR_SDR_CONTRAST(26), HDR_SDR_SATURATION(27);
 
     companion object {
         fun forTool(tool: Int): AdjustmentGroup = entries.first { it.tool == if (tool == 9) 8 else tool }
@@ -43,6 +44,10 @@ internal fun AdjustmentGroup.project(value: EditSettings, original: EditSettings
         AdjustmentGroup.GRADING -> current.withEditingGrading(value.editingGrading)
         AdjustmentGroup.CLARITY -> current.withEditingClarity(value.editingClarity)
         AdjustmentGroup.DEHAZE -> current.withEditingDehaze(value.editingDehaze)
+        AdjustmentGroup.HDR_PEAK_LIMIT -> if (current.isHDREditing) current.copy(hdr = current.hdr!!.withRendition(current.hdr.renditionSettings.copy(peakLimitEV = value.hdr!!.renditionSettings.peakLimitEV))) else current
+        AdjustmentGroup.HDR_SDR_EXPOSURE -> if (current.isHDREditing) current.copy(hdr = current.hdr!!.withRendition(current.hdr.renditionSettings.copy(sdrExposureEV = value.hdr!!.renditionSettings.sdrExposureEV))) else current
+        AdjustmentGroup.HDR_SDR_CONTRAST -> if (current.isHDREditing) current.copy(hdr = current.hdr!!.withRendition(current.hdr.renditionSettings.copy(sdrContrast = value.hdr!!.renditionSettings.sdrContrast))) else current
+        AdjustmentGroup.HDR_SDR_SATURATION -> if (current.isHDREditing) current.copy(hdr = current.hdr!!.withRendition(current.hdr.renditionSettings.copy(sdrSaturation = value.hdr!!.renditionSettings.sdrSaturation))) else current
     }
     return result.canonicalZeros().synchronizeHDR()
 }

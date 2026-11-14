@@ -17,6 +17,17 @@ extension RawSettings {
 enum EditorToolSelection: Hashable, Codable {
     case adjustment(AdjustmentKind)
     case film, recipe, lens, geometry
+    case hdrPeakLimit, hdrSDRExposure, hdrSDRContrast, hdrSDRSaturation
+
+    var hdrRenditionKeyPath: WritableKeyPath<HDRRenditionSettings, Double>? {
+        switch self {
+        case .hdrPeakLimit: return \.peakLimitEV
+        case .hdrSDRExposure: return \.sdrExposureEV
+        case .hdrSDRContrast: return \.sdrContrast
+        case .hdrSDRSaturation: return \.sdrSaturation
+        default: return nil
+        }
+    }
 }
 
 /// 换图时编辑器工具表示状态的重置契约（Q14 表示层断言，V-UIIOS #291）：
@@ -30,7 +41,10 @@ struct EditorToolSourceState: Equatable {
 }
 
 enum EditorAdjustmentGroup: String, CaseIterable {
-    case looks, light, color, effects, detail, geometry
+    case looks, light, color, effects, detail, geometry, hdrRendition
+
+    func isVisible(isHDREditing: Bool) -> Bool { self != .hdrRendition || isHDREditing }
+    static func visibleGroups(isHDREditing: Bool) -> [Self] { allCases.filter { $0.isVisible(isHDREditing: isHDREditing) } }
 }
 
 enum EditorAdjustmentScope: Equatable {
@@ -67,7 +81,8 @@ enum EditorAdjustmentRules {
         (.color, [.adjustment(.temperature), .adjustment(.saturation), .adjustment(.vibrance), .adjustment(.hsl), .adjustment(.colorGrading)]),
         (.effects, [.adjustment(.clarity), .adjustment(.dehaze), .adjustment(.vignette), .adjustment(.grain)]),
         (.detail, [.adjustment(.noiseReduction), .adjustment(.sharpening)]),
-        (.geometry, [.geometry, .lens])
+        (.geometry, [.geometry, .lens]),
+        (.hdrRendition, [.hdrPeakLimit, .hdrSDRExposure, .hdrSDRContrast, .hdrSDRSaturation])
     ]
 
     static func tools(_ group: EditorAdjustmentGroup) -> [EditorToolSelection] {
@@ -86,11 +101,16 @@ enum EditorAdjustmentRules {
         return group
     }
 
+    static func normalizedTool(_ tool: EditorToolSelection, isHDREditing: Bool) -> EditorToolSelection {
+        !isHDREditing && groupFor(tool) == .hdrRendition ? .adjustment(.exposure) : tool
+    }
+
     static func isModified(_ scope: EditorAdjustmentScope, snapshot: PhotoEditState,
                            context: EditorAdjustmentContext) -> Bool {
         if snapshot.settings.isHDREditing { return resettingHDR(scope,settings:snapshot.settings) != snapshot.settings }
         if case .tool(let tool) = scope {
             switch tool {
+            case .hdrPeakLimit, .hdrSDRExposure, .hdrSDRContrast, .hdrSDRSaturation: return false
             case .film: return snapshot.filmID != nil || snapshot.settings.hasLook
             case .recipe: return snapshot.settings.masterRecipeID != nil
             case .adjustment(.exposure):
@@ -263,7 +283,7 @@ enum EditorAdjustmentRules {
         case .tool(let tool):
             switch tool {
             case .film: result.lutID = nil
-            case .recipe: break // 无配方时为 NoChange；有配方时走同一无损独立化。
+            case .recipe, .hdrPeakLimit, .hdrSDRExposure, .hdrSDRContrast, .hdrSDRSaturation: break // 无配方时为 NoChange；休眠 HDR 渲染不暴露于普通模式。
             case .geometry: result.geometry = defaults.geometry
             case .lens: result.lensCorrection = defaults.lensCorrection
             case .adjustment(let kind):
@@ -304,6 +324,7 @@ enum EditorAdjustmentRules {
                 result.displayChromaDenoise = defaults.displayChromaDenoise
             case .geometry:
                 result.geometry = defaults.geometry; result.lensCorrection = defaults.lensCorrection
+            case .hdrRendition: break
             }
         }
         return result
@@ -315,6 +336,7 @@ enum EditorAdjustmentRules {
         switch scope {
         case .all: result.hdr?.reset()
         case .group(.looks), .tool(.film): result.hdr?.lookSettings = HDRLookSettings()
+        case .group(.hdrRendition): result.hdr?.renditionSettings = HDRRenditionSettings()
         case .group(let group):
             for tool in tools(group) { result=resettingHDR(.tool(tool),settings:result) }
         case .tool(.geometry): result.setGeometrySettings(GeometrySettings())
@@ -334,7 +356,8 @@ enum EditorAdjustmentRules {
         case .tool(.adjustment(let kind)):
             if kind == .temperature || kind == .tint { result.hdr?.temperature=6500; result.hdr?.tint=0 }
             else if let key=kind.hdrKeyPath { result.hdr?[keyPath:key]=HDRSettings()[keyPath:key] }
-        default: break
+        case .tool(let tool):
+            if let key = tool.hdrRenditionKeyPath { result.hdr?.renditionSettings[keyPath: key] = HDRRenditionSettings()[keyPath: key] }
         }
         return result
     }

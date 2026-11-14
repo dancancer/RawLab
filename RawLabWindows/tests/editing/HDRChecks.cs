@@ -28,6 +28,7 @@ internal static class HDRChecks
         NativeLayoutsMatchHDRContract();
         LogicalFieldsCrossFamiliesWithoutCopyingGeometryOrInactiveState();
         BatchPreparationPreservesTheFrozenModeWithoutReopeningItsSource();
+        RenditionGroupAndSingleToolResetAreIsolatedFromCameraDevelopment();
         Check(JsonSerializer.Deserialize<ExportFormat>("1")==ExportFormat.Png &&
             JsonSerializer.Deserialize<ExportFormat>("2")==ExportFormat.RenderedDng,
             "Existing journal enum numbers keep PNG and DNG meanings");
@@ -569,5 +570,119 @@ internal static class HDRChecks
         var reset = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.Group, EditorAdjustmentGroup.Color), source).Candidate!;
         Check(reset.Settings.HDR!.ProcessingVersion == 3 && reset.Settings.HDR.ColorSettings.IsDefault &&
               reset.Settings.Hsl!.Equals(sdrHsl), "HDR color reset preserves v3 and dormant color");
+    }
+
+    private static void RenditionGroupAndSingleToolResetAreIsolatedFromCameraDevelopment()
+    {
+        var renditionTools = new[] {
+            EditorAdjustmentTool.HdrPeakLimit, EditorAdjustmentTool.HdrSdrExposure,
+            EditorAdjustmentTool.HdrSdrContrast, EditorAdjustmentTool.HdrSdrSaturation
+        };
+        Check(EditorAdjustmentRules.Tools(EditorAdjustmentGroup.HdrRendition).SequenceEqual(renditionTools),
+            "HDR rendition group owns the exact four display-mapping tools");
+        Check(EditorAdjustmentRules.DefaultTool(EditorAdjustmentGroup.HdrRendition) == EditorAdjustmentTool.HdrPeakLimit,
+            "HDR rendition group opens at PeakLimit");
+        Check(!EditorAdjustmentRules.VisibleGroups(isHDREditing: false).Contains(EditorAdjustmentGroup.HdrRendition) &&
+              EditorAdjustmentRules.VisibleGroups(isHDREditing: false).Count == 6,
+            "SDR mode hides HdrRendition group");
+        Check(EditorAdjustmentRules.VisibleGroups(isHDREditing: true).Contains(EditorAdjustmentGroup.HdrRendition) &&
+              EditorAdjustmentRules.VisibleGroups(isHDREditing: true).Count == 7,
+            "HDR mode exposes all seven groups including HdrRendition");
+        foreach (var tool in renditionTools)
+        {
+            Check(EditorAdjustmentRules.NormalizeTool(tool, isHDREditing: true) == tool,
+                "HDR mode retains rendition tool selection: " + tool);
+            var normalized = EditorAdjustmentRules.NormalizeTool(tool, isHDREditing: false);
+            Check(normalized == EditorAdjustmentTool.Exposure &&
+                  EditorAdjustmentRules.GroupFor(normalized) != EditorAdjustmentGroup.HdrRendition,
+                "SDR normalization exits HdrRendition from " + tool);
+        }
+
+        var identity = new OriginalIdentity("hdr.arw", 1, 2, 3);
+        var sdrBase = new Adjustments();
+        sdrBase.Set(Parameter.Exposure, -.5);
+        sdrBase.Set(Parameter.Contrast, 25);
+        var renditionHdr = sdrBase.Clone();
+        renditionHdr.SetHDRMode(true, sourceIsHDR: false, cameraRaw: true);
+        renditionHdr.Set(Parameter.Exposure, 1.5);
+        renditionHdr.HDR = renditionHdr.HDR!.WithCameraDevelopment(new HDRCameraDevelopmentSettings(FbddLevel: 2));
+        var untouched = new SavedEdit(identity, renditionHdr.Capture(), "dormant-look");
+        var groupScope = new EditorResetScope(EditorResetKind.Group, EditorAdjustmentGroup.HdrRendition);
+        Check(!EditorAdjustmentRules.IsModified(groupScope, untouched) &&
+              renditionTools.All(tool => !EditorAdjustmentRules.IsModified(new(EditorResetKind.Tool, Tool: tool), untouched)),
+            "Untouched HDR rendition or camera development never marks HdrRendition modified");
+        Check(EditorAdjustmentRules.PrepareReset(groupScope, untouched).Status == EditorResetStatus.NoChange &&
+              untouched.Settings.HDR!.ProcessingVersion == 1,
+            "No-op HdrRendition group reset is NoChange and keeps v1");
+
+        var fullRendition = new HDRRenditionSettings { PeakLimitEV = 2.4, SdrExposureEV = -1.2, SdrContrast = 35, SdrSaturation = -25 };
+        var editedHdr = renditionHdr.Clone();
+        editedHdr.HDR = editedHdr.HDR!.WithRendition(fullRendition);
+        var editedSnapshot = new SavedEdit(identity, editedHdr.Capture(), "dormant-look");
+        Check(editedSnapshot.Settings.HDR!.ProcessingVersion == 4, "HDR rendition edit upgrades ProcessingVersion to 4");
+        Check(EditorAdjustmentRules.IsModified(groupScope, editedSnapshot) &&
+              renditionTools.All(tool => EditorAdjustmentRules.IsModified(new(EditorResetKind.Tool, Tool: tool), editedSnapshot)),
+            "Modified rendition fields mark group and all four tools modified");
+
+        foreach (var tool in renditionTools)
+        {
+            var single = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.Tool, Tool: tool), editedSnapshot);
+            Check(single.Status == EditorResetStatus.Ready && !single.RequiresConfirmation,
+                "Single rendition reset is Ready without confirmation: " + tool);
+            var expected = tool switch {
+                EditorAdjustmentTool.HdrPeakLimit => fullRendition with { PeakLimitEV = 0 },
+                EditorAdjustmentTool.HdrSdrExposure => fullRendition with { SdrExposureEV = 0 },
+                EditorAdjustmentTool.HdrSdrContrast => fullRendition with { SdrContrast = 0 },
+                _ => fullRendition with { SdrSaturation = 0 }
+            };
+            Check(single.Candidate!.Settings.HDR!.RenditionSettings == expected,
+                "Single rendition reset clears only target field: " + tool);
+            Check(!EditorAdjustmentRules.IsModified(new(EditorResetKind.Tool, Tool: tool), single.Candidate!) &&
+                  EditorAdjustmentRules.IsModified(groupScope, single.Candidate!),
+                "Single rendition reset clears tool marker while siblings keep group marker: " + tool);
+            Check(single.Candidate.Settings.HDR.Exposure == 1.5 &&
+                  single.Candidate.Settings.HDR.CameraSettings.FbddLevel == 2 &&
+                  single.Candidate.Settings.Values[(int)Parameter.Exposure] == sdrBase.Capture().Values[(int)Parameter.Exposure] &&
+                  single.Look == "dormant-look",
+                "Single rendition reset isolates other HDR groups, camera dev and dormant SDR");
+            Check(EditorAdjustmentRules.PrepareReset(new(EditorResetKind.Tool, Tool: tool), single.Candidate!).Status == EditorResetStatus.NoChange,
+                "Single rendition reset is idempotent: " + tool);
+        }
+
+        var groupReset = EditorAdjustmentRules.PrepareReset(groupScope, editedSnapshot);
+        Check(groupReset.Status == EditorResetStatus.Ready && !groupReset.RequiresConfirmation,
+            "HdrRendition group reset is Ready without confirmation");
+        Check(groupReset.Candidate!.Settings.HDR!.RenditionSettings.IsDefault &&
+              groupReset.Candidate.Settings.HDR.ProcessingVersion == 4 &&
+              groupReset.Candidate.Settings.HDR.Exposure == 1.5 &&
+              groupReset.Candidate.Settings.HDR.CameraSettings.FbddLevel == 2 &&
+              groupReset.Candidate.Settings.Values[(int)Parameter.Exposure] == sdrBase.Capture().Values[(int)Parameter.Exposure] &&
+              groupReset.Candidate.Look == "dormant-look",
+            "HdrRendition group reset clears all four fields while preserving v4, camera dev and dormant SDR");
+        Check(!EditorAdjustmentRules.IsModified(groupScope, groupReset.Candidate!) &&
+              EditorAdjustmentRules.PrepareReset(groupScope, groupReset.Candidate!).Status == EditorResetStatus.NoChange,
+            "HdrRendition group reset is idempotent");
+
+        var dormantSdr = editedHdr.Clone();
+        dormantSdr.SetHDRMode(false, sourceIsHDR: false, cameraRaw: true);
+        var dormantSnapshot = new SavedEdit(identity, dormantSdr.Capture(), "dormant-look");
+        Check(!EditorAdjustmentRules.IsModified(groupScope, dormantSnapshot) &&
+              EditorAdjustmentRules.PrepareReset(groupScope, dormantSnapshot).Status == EditorResetStatus.NoChange &&
+              renditionTools.All(tool => !EditorAdjustmentRules.IsModified(new(EditorResetKind.Tool, Tool: tool), dormantSnapshot) &&
+                  EditorAdjustmentRules.PrepareReset(new(EditorResetKind.Tool, Tool: tool), dormantSnapshot).Status == EditorResetStatus.NoChange),
+            "Dormant HDR rendition stays invisible and unresettable in SDR mode");
+        var sdrAll = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), dormantSnapshot).Candidate!;
+        Check(sdrAll.Settings.HDR!.RenditionSettings == fullRendition &&
+              sdrAll.Settings.HDR.CameraSettings.FbddLevel == 2 &&
+              !sdrAll.Settings.IsHDREditing &&
+              sdrAll.Settings.Values[(int)Parameter.Exposure] == 0,
+            "SDR ResetAll preserves dormant HDR rendition and camera development");
+        var hdrAll = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), editedSnapshot).Candidate!;
+        Check(hdrAll.Settings.IsHDREditing &&
+              hdrAll.Settings.HDR!.RenditionSettings.IsDefault &&
+              hdrAll.Settings.HDR.IsIdentity &&
+              hdrAll.Settings.Values[(int)Parameter.Exposure] == sdrBase.Capture().Values[(int)Parameter.Exposure] &&
+              hdrAll.Look == "dormant-look",
+            "HDR ResetAll resets HDR rendition while preserving dormant SDR");
     }
 }

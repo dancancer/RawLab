@@ -416,6 +416,18 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 { value, dragging -> onEdit(edits.withEditingDehaze(value), dragging) }, { onEdit(edits.withEditingDehaze(0f), false) })
             10 -> NumericControl(R.string.sharpening, edits.editingSharpening * 100, 0f..200f, "%", state.controlsEnabled,
                 { value, dragging -> onEdit(edits.withEditingSharpening(value / 100), dragging) }, { onEdit(edits.withEditingSharpening(0f), false) })
+            24 -> if (edits.isHDREditing) NumericControl(R.string.hdr_peak_limit, edits.hdr!!.renditionSettings.peakLimitEV, 0f..6f, "EV", state.controlsEnabled,
+                { value, dragging -> onEdit(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(peakLimitEV = value))), dragging) },
+                { onEdit(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(peakLimitEV = 0f))), false) }, stepOverride = .1f)
+            25 -> if (edits.isHDREditing) NumericControl(R.string.hdr_sdr_exposure, edits.hdr!!.renditionSettings.sdrExposureEV, -4f..4f, "EV", state.controlsEnabled,
+                { value, dragging -> onEdit(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrExposureEV = value))), dragging) },
+                { onEdit(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrExposureEV = 0f))), false) }, stepOverride = .1f)
+            26 -> if (edits.isHDREditing) NumericControl(R.string.hdr_sdr_contrast, edits.hdr!!.renditionSettings.sdrContrast, -100f..100f, "%", state.controlsEnabled,
+                { value, dragging -> onEdit(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrContrast = value))), dragging) },
+                { onEdit(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrContrast = 0f))), false) })
+            27 -> if (edits.isHDREditing) NumericControl(R.string.hdr_sdr_saturation, edits.hdr!!.renditionSettings.sdrSaturation, -100f..100f, "%", state.controlsEnabled,
+                { value, dragging -> onEdit(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrSaturation = value))), dragging) },
+                { onEdit(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrSaturation = 0f))), false) })
         }
         if (tool in listOf(0, 15) && !edits.isHDREditing) CompositionLocalProvider(
             com.rawlab.android.editor.controls.LocalCompactAdjustmentRows provides true) { NumericControl(R.string.strength, edits.strength * 100, 0f..200f, "%",

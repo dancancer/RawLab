@@ -326,6 +326,16 @@ public sealed class Adjustments
         ToneControlParameter.Vibrance => HDR!.ColorSettings.Vibrance,
         _ => ToneControls[id]
     } : ToneControls[id];
+    internal double EditingHDRRenditionValue(HDRRenditionParameter id) =>
+        IsHDREditing && HDR is { } hdr ? hdr.RenditionSettings[id] : 0;
+    internal void SetHDRRendition(HDRRenditionParameter id, double value)
+    {
+        if (!double.IsFinite(value)) throw new ArgumentOutOfRangeException(nameof(value));
+        if (!IsHDREditing || HDR is not { } hdr) return;
+        var spec = HDRRenditionSpec.For(id);
+        var bounded = Math.Clamp(Math.Round(value, spec.Grid < 1 ? 1 : 0, MidpointRounding.AwayFromZero), spec.Min, spec.Max);
+        HDR = hdr.WithRendition(hdr.RenditionSettings.With(id, bounded));
+    }
     public void Reset(Parameter id) => Set(id, Default(id));
     public double EffectDefault(PhotoEffectParameter id) => PhotoEffectSpec.For(id).DefaultValue;
     internal PhotoEffectsSettings EditingEffects {

@@ -391,7 +391,7 @@ try
         Check(EditorAdjustmentRules.Tools(EditorAdjustmentRules.GroupFor(tool)).Contains(tool), "every native tool belongs to one group");
     var neutral = new Adjustments(); neutral.ResolveWhiteBalance((5200, 8));
     Check(Enum.GetValues<EditorAdjustmentGroup>().Select(EditorAdjustmentRules.Id).SequenceEqual(
-        new[] { "looks", "light", "color", "effects", "detail", "geometry" }), "stable group identifiers");
+        new[] { "looks", "light", "color", "effects", "detail", "geometry", "hdrRendition" }), "stable group identifiers");
     foreach (var group in Enum.GetValues<EditorAdjustmentGroup>())
         Check(!EditorAdjustmentRules.IsModified(Group(group), Edit(neutral, null)), "neutral group has no changed marker: " + group);
     Check(EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), Edit(neutral, null)).Status == EditorResetStatus.NoChange,
@@ -406,8 +406,8 @@ try
     var mixedEdit = Edit(mixedState); var mixedFrozen = mixedEdit.Settings.Copy();
     Check(Enum.GetValues<EditorAdjustmentGroup>().Select(EditorAdjustmentRules.DefaultTool).SequenceEqual(new[] {
         EditorAdjustmentTool.Film,EditorAdjustmentTool.Exposure,EditorAdjustmentTool.WhiteBalance,EditorAdjustmentTool.Clarity,
-        EditorAdjustmentTool.Denoise,EditorAdjustmentTool.Geometry }), "Each group opens its frozen default tool");
-    foreach(var tool in Enum.GetValues<EditorAdjustmentTool>()) {
+        EditorAdjustmentTool.Denoise,EditorAdjustmentTool.Geometry,EditorAdjustmentTool.HdrPeakLimit }), "Each group opens its frozen default tool");
+    foreach(var tool in EditorAdjustmentRules.VisibleGroups(isHDREditing: false).SelectMany(EditorAdjustmentRules.Tools)) {
         var ownedState=mixedState.Clone();
         if(EditorAdjustmentRules.AtmosphereParameterFor(tool) is {} atmosphereParameter)ownedState.SetAtmosphere(atmosphereParameter,25);
         if(EditorAdjustmentRules.ToneParameterFor(tool) is {} toneParameter)ownedState.SetTone(toneParameter,25);
@@ -491,7 +491,7 @@ try
     Check(!stalePair.TryCommit(resetIdentity.Path,2,3,mixedEdit,changedDraftContext,_=>++resetCommits) && resetCommits==1,
         "draft pair changes invalidate preparation even without a generation bump");
     pairDraft.Cancel();Check(pairDraft.Geometry==mixedState.Geometry && pairDraft.Lens==mixedState.Lens,"cancel restores both original draft objects");
-    foreach (var group in Enum.GetValues<EditorAdjustmentGroup>()) {
+    foreach (var group in EditorAdjustmentRules.VisibleGroups(isHDREditing: false)) {
         Check(EditorAdjustmentRules.IsModified(Group(group), mixedEdit), "complete stored objects contribute to marker: " + group);
         var prepared = EditorAdjustmentRules.PrepareReset(Group(group), mixedEdit);
         Check(prepared.Status == EditorResetStatus.Ready && prepared.RequiresConfirmation && prepared.Candidate!.Identity == resetIdentity,
@@ -510,7 +510,7 @@ try
         if (group == EditorAdjustmentGroup.Detail) { expected.Values[9] = 0; expected = expected with { Denoise = new(), DisplayChromaDenoise = 0 }; }
         if (group == EditorAdjustmentGroup.Geometry) expected = expected with { Geometry = new(), Lens = new() };
         Check(candidate.Settings.SameAs(expected), "group reset preserves every unowned stored field: " + group);
-        foreach (var other in Enum.GetValues<EditorAdjustmentGroup>().Where(other => other != group))
+        foreach (var other in EditorAdjustmentRules.VisibleGroups(isHDREditing: false).Where(other => other != group))
             Check(EditorAdjustmentRules.IsModified(Group(other), candidate) == EditorAdjustmentRules.IsModified(Group(other), mixedEdit),
                 "unselected group marker survives reset: " + group + " / " + other);
         Check(!EditorAdjustmentRules.IsModified(Group(group), candidate), "selected group restores complete defaults: " + group);

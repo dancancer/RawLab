@@ -206,6 +206,7 @@ struct IOSResetScenarioTests {
             switch scope["field"] as! String {
             case "light.contrast": return .tool(.adjustment(.contrast))
             case "detail.sharpening": return .tool(.adjustment(.sharpening))
+            case "hdr.peak_limit_ev": return .tool(.hdrPeakLimit)
             default: fatalError("Unsupported single-reset field: \(scope["field"]!)")
             }
         case "group":
@@ -214,6 +215,7 @@ struct IOSResetScenarioTests {
             case "color": return .group(.color)
             case "detail": return .group(.detail)
             case "geometry": return .group(.geometry)
+            case "hdr_rendition": return .group(.hdrRendition)
             default: fatalError("Unsupported reset group: \(scope["group"]!)")
             }
         case "all": return .all

@@ -9,6 +9,7 @@ extension EditorAdjustmentGroup {
         case .effects: return L10n.text("效果")
         case .detail: return L10n.text("细节")
         case .geometry: return L10n.text("几何与镜头")
+        case .hdrRendition: return L10n.text("HDR 输出与 SDR 底图")
         }
     }
 }

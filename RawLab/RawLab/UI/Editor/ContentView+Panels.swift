@@ -431,21 +431,24 @@ extension ContentView {
     func groupNavigation(side: Bool, singleLine: Bool = false, availableWidth: CGFloat = 0) -> some View {
         let buttonWidth = groupNavigationButtonWidth
         let buttonHeight: CGFloat = singleLine ? 48 : groupNavigationButtonHeight
+        let rows = stride(from: 0, to: mobileEditorGroups.count, by: 3).map {
+            Array(mobileEditorGroups[$0..<min($0 + 3, mobileEditorGroups.count)])
+        }
         return ScrollView(.horizontal, showsIndicators: false) {
             let layout = side && !adjustmentsExpanded
                 ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
             layout {
                 if side && !adjustmentsExpanded {
-                    ForEach(0..<2, id: \.self) { row in
+                    ForEach(rows.indices, id: \.self) { row in
                         HStack(spacing: 0) {
-                            ForEach(Array(mobileEditorGroups[(row * 3)..<(row * 3 + 3)]), id: \.rawValue) { group in
+                            ForEach(rows[row], id: \.rawValue) { group in
                                 groupNavigationButton(group, width: buttonWidth, height: buttonHeight)
                             }
                         }
                     }
                 } else {
                     ForEach(mobileEditorGroups, id: \.rawValue) { group in
-                        let width = singleLine ? max(max(44, (availableWidth - 16) / 6), ceil((group.title as NSString).size(withAttributes:
+                        let width = singleLine ? max(max(44, (availableWidth - 16) / CGFloat(max(mobileEditorGroups.count, 1))), ceil((group.title as NSString).size(withAttributes:
                             [.font: UIFont.preferredFont(forTextStyle: .caption1)]).width) + 16) : buttonWidth
                         groupNavigationButton(group, width: width, height: buttonHeight, singleLine: singleLine)
                     }
@@ -453,7 +456,7 @@ extension ContentView {
             }
             .padding(.horizontal, 8)
         }
-        .frame(height: buttonHeight * (side && !adjustmentsExpanded ? 2 : 1))
+        .frame(height: buttonHeight * (side && !adjustmentsExpanded ? CGFloat(max(rows.count, 1)) : 1))
         .disabled(editorBusy)
         .accessibilityIdentifier("editor.groups")
     }
@@ -487,6 +490,12 @@ extension ContentView {
         case .adjustment(.toneCurve) where !settings.editingCurveSettings.isDefault:
             return L10n.format("多点曲线（%d 个控制点）", settings.editingCurveSettings.labeledPoints.count)
         case .adjustment(let adjustment): return adjustment.valueLabel(for: adjustment.value(from: settings))
+        case .hdrPeakLimit, .hdrSDRExposure, .hdrSDRContrast, .hdrSDRSaturation:
+            guard let keyPath = tool.hdrRenditionKeyPath else { return "" }
+            let value = settings.hdr?.renditionSettings[keyPath: keyPath] ?? 0
+            let isEV = tool == .hdrPeakLimit || tool == .hdrSDRExposure
+            let number = value == 0 ? "0" : String(format: isEV ? "%+.1f" : "%+.0f", locale: L10n.locale, value)
+            return "\(number) \(isEV ? "EV" : "%")"
         default: return resetModified(.tool(tool)) ? L10n.text("已调整") : ""
         }
     }
@@ -519,6 +528,10 @@ extension EditorToolSelection {
         case .lens: return "lens"
         case .geometry: return "geometry"
         case .adjustment(let kind): return kind.rawValue
+        case .hdrPeakLimit: return "hdrPeakLimit"
+        case .hdrSDRExposure: return "hdrSDRExposure"
+        case .hdrSDRContrast: return "hdrSDRContrast"
+        case .hdrSDRSaturation: return "hdrSDRSaturation"
         }
     }
     var title: String {
@@ -528,6 +541,10 @@ extension EditorToolSelection {
         case .lens: return L10n.text("镜头")
         case .geometry: return L10n.text("几何")
         case .adjustment(let kind): return kind.title
+        case .hdrPeakLimit: return L10n.text("HDR 亮度上限")
+        case .hdrSDRExposure: return L10n.text("SDR 底图曝光")
+        case .hdrSDRContrast: return L10n.text("SDR 底图对比度")
+        case .hdrSDRSaturation: return L10n.text("SDR 底图饱和度")
         }
     }
     var symbol: String {
@@ -537,6 +554,10 @@ extension EditorToolSelection {
         case .lens: return "viewfinder"
         case .geometry: return "crop.rotate"
         case .adjustment(let kind): return kind.iconName
+        case .hdrPeakLimit: return "sun.max"
+        case .hdrSDRExposure: return "plusminus.circle"
+        case .hdrSDRContrast: return "circle.lefthalf.filled"
+        case .hdrSDRSaturation: return "drop.halffull"
         }
     }
 }

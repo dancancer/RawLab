@@ -145,5 +145,21 @@ private struct FullControlsProbeView: View {
         let afterResetButton = try requireResetButton(in: host)
         try check(!model.controls.resetPresentation.isEnabled && !afterResetButton.isEnabled,
                   "Materialized reset NSButton returns to disabled state after reset")
+
+        // 5. 单项双击重置入口契约：逐项重置只将对应字段恢复默认 0，保留兄弟字段与共享绑定撤销粒度
+        for (name, keyPath) in [
+            ("peakLimitEV", \HDRRenditionSettings.peakLimitEV),
+            ("sdrExposureEV", \.sdrExposureEV),
+            ("sdrContrast", \.sdrContrast),
+            ("sdrSaturation", \.sdrSaturation),
+        ] {
+            model.settings = combined
+            model.writes = 0
+            model.controls.reset(keyPath)
+            var expected = combined
+            expected[keyPath: keyPath] = HDRRenditionSettings()[keyPath: keyPath]
+            try check(model.settings == expected && model.writes == 1,
+                      "Single rendition reset restores only \(name) via shared binding once")
+        }
     }
 }

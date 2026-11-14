@@ -142,6 +142,7 @@ extension ContentView {
         if geometrySelected { return .geometry }
         if lensSelected { return .lens }
         if choosingMasterRecipe { return .recipe }
+        if let selectedHDRRenditionTool { return selectedHDRRenditionTool }
         return selectedAdjustment.map(EditorToolSelection.adjustment) ?? .film
     }
 
@@ -163,8 +164,16 @@ extension ContentView {
         lensSelected = selection == .lens
         choosingMasterRecipe = selection == .recipe
         selectedGroup = EditorAdjustmentRules.groupFor(selection)
-        if case .adjustment(let adjustment) = selection { selectedAdjustment = adjustment }
-        else { selectedAdjustment = nil }
+        if case .adjustment(let adjustment) = selection {
+            selectedAdjustment = adjustment
+            selectedHDRRenditionTool = nil
+        } else if selection.hdrRenditionKeyPath != nil {
+            selectedAdjustment = nil
+            selectedHDRRenditionTool = selection
+        } else {
+            selectedAdjustment = nil
+            selectedHDRRenditionTool = nil
+        }
         if geometrySelected {
             geometryAspectPreset = .free; geometryLockedRatio = nil; geometryAspectSwapped = false
             geometryDraft = settings.geometrySettings
@@ -348,6 +357,18 @@ extension ContentView {
         guard !isEditorDraftActive else { return }
         selectedGroup = group
         adjustmentsExpanded = true
+    }
+
+    func normalizeHDRNavigation(isHDREditing: Bool) {
+        guard !isHDREditing else { return }
+        if selectedGroup == .hdrRendition || selectedHDRRenditionTool != nil {
+            selectedGroup = .light
+            selectedHDRRenditionTool = nil
+            selectedAdjustment = .exposure
+        }
+        if let collapsed = collapsedEditorTool, EditorAdjustmentRules.groupFor(collapsed) == .hdrRendition {
+            collapsedEditorTool = nil
+        }
     }
 
     func requestAdjustmentExpansion(_ expanded: Bool) {

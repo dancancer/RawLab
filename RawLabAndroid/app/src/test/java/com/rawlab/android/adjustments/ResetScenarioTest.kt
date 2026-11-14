@@ -208,6 +208,7 @@ class ResetScenarioTest {
         "tool" -> EditorResetScope.Tool(when (scope.getString("field")) {
             "light.contrast" -> 5
             "detail.sharpening" -> 10
+            "hdr.peak_limit_ev" -> 24
             else -> error("Unsupported single-reset field for Android tool mapping: ${scope.getString("field")}")
         })
         "group" -> EditorResetScope.Group(when (scope.getString("group")) {
@@ -215,6 +216,7 @@ class ResetScenarioTest {
             "color" -> EditorAdjustmentGroup.COLOR
             "detail" -> EditorAdjustmentGroup.DETAIL
             "geometry" -> EditorAdjustmentGroup.GEOMETRY
+            "hdr_rendition" -> EditorAdjustmentGroup.HDR_RENDITION
             else -> error("Unsupported reset group: ${scope.getString("group")}")
         })
         "all" -> EditorResetScope.All

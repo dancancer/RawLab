@@ -98,4 +98,86 @@ class HDRResetTest {
         assertFalse(EditorAdjustmentRules.isModified(EditorResetScope.All, hdrReset, rawContext))
         assertFalse(EditedPhotoPreviewKey.isEdited(hdrReset, PhotoInputKind.RAW))
     }
+
+    @Test fun hdrRenditionGroupVisibilityNormalizationAndSingleToolResetWorkIndependently() {
+        assertEquals(listOf(24, 25, 26, 27), EditorAdjustmentRules.tools(EditorAdjustmentGroup.HDR_RENDITION))
+        assertEquals(24, EditorAdjustmentRules.defaultTool(EditorAdjustmentGroup.HDR_RENDITION))
+        assertFalse(EditorAdjustmentRules.visibleGroups(false).contains(EditorAdjustmentGroup.HDR_RENDITION))
+        assertEquals(listOf(0, 2, 8, 22, 11, 17), EditorAdjustmentRules.visibleGroups(false).map(EditorAdjustmentRules::defaultTool))
+        assertTrue(EditorAdjustmentRules.visibleGroups(true).contains(EditorAdjustmentGroup.HDR_RENDITION))
+        for (tool in listOf(24, 25, 26, 27)) {
+            assertEquals(tool, EditorAdjustmentRules.normalizeTool(tool, isHDREditing = true))
+            assertEquals(2, EditorAdjustmentRules.normalizeTool(tool, isHDREditing = false))
+            assertNotEquals(EditorAdjustmentGroup.HDR_RENDITION, EditorAdjustmentRules.groupFor(EditorAdjustmentRules.normalizeTool(tool, isHDREditing = false)))
+        }
+
+        val sdrBase = EditSettings(film = "velvia", exposure = -.5f, contrast = .25f)
+        var renditionHdr = sdrBase.withHDRMode(true, false, cameraRaw = true, proRAW = false)
+            .copy(exposure = 1.5f).synchronizeHDR()
+        renditionHdr = renditionHdr.copy(hdr = renditionHdr.hdr!!.withCameraDevelopment(HDRCameraDevelopmentSettings(fbddLevel = 2)))
+        assertFalse(EditorAdjustmentRules.isModified(EditorResetScope.Group(EditorAdjustmentGroup.HDR_RENDITION), renditionHdr, rawContext))
+        for (tool in listOf(24, 25, 26, 27)) {
+            assertFalse(EditorAdjustmentRules.isModified(EditorResetScope.Tool(tool), renditionHdr, rawContext))
+        }
+        assertEquals(EditorResetResult.NoChange, EditorAdjustmentRules.prepareReset(EditorResetScope.Group(EditorAdjustmentGroup.HDR_RENDITION), renditionHdr, rawContext))
+        assertEquals(1, renditionHdr.hdr!!.processingVersion)
+
+        val fullRendition = HDRRenditionSettings(peakLimitEV = 2.4f, sdrExposureEV = -1.2f, sdrContrast = 35f, sdrSaturation = -25f)
+        val editedHdr = renditionHdr.copy(hdr = renditionHdr.hdr!!.withRendition(fullRendition))
+        assertEquals(4, editedHdr.hdr!!.processingVersion)
+        assertTrue(EditorAdjustmentRules.isModified(EditorResetScope.Group(EditorAdjustmentGroup.HDR_RENDITION), editedHdr, rawContext))
+        for (tool in listOf(24, 25, 26, 27)) {
+            assertTrue(EditorAdjustmentRules.isModified(EditorResetScope.Tool(tool), editedHdr, rawContext))
+            val expected = when (tool) {
+                24 -> fullRendition.copy(peakLimitEV = 0f)
+                25 -> fullRendition.copy(sdrExposureEV = 0f)
+                26 -> fullRendition.copy(sdrContrast = 0f)
+                else -> fullRendition.copy(sdrSaturation = 0f)
+            }
+            val single = (EditorAdjustmentRules.prepareReset(EditorResetScope.Tool(tool), editedHdr, rawContext) as EditorResetResult.Ready).candidate
+            assertEquals(expected, single.hdr!!.renditionSettings)
+            assertFalse(EditorAdjustmentRules.isModified(EditorResetScope.Tool(tool), single, rawContext))
+            assertTrue(EditorAdjustmentRules.isModified(EditorResetScope.Group(EditorAdjustmentGroup.HDR_RENDITION), single, rawContext))
+            assertEquals(1.5f, single.hdr!!.exposure)
+            assertEquals(1.5f, single.exposure)
+            assertEquals(2, single.hdr!!.cameraSettings.fbddLevel)
+            assertEquals(sdrBase.exposure, single.sdrSnapshotSettings()!!.exposure)
+            assertEquals("velvia", single.film)
+            assertEquals(EditorResetResult.NoChange, EditorAdjustmentRules.prepareReset(EditorResetScope.Tool(tool), single, rawContext))
+        }
+
+        val groupReset = (EditorAdjustmentRules.prepareReset(EditorResetScope.Group(EditorAdjustmentGroup.HDR_RENDITION), editedHdr, rawContext) as EditorResetResult.Ready).candidate
+        assertEquals(HDRRenditionSettings(), groupReset.hdr!!.renditionSettings)
+        assertTrue(groupReset.hdr!!.renditionSettings.isDefault)
+        assertEquals(4, groupReset.hdr!!.processingVersion)
+        assertEquals(1.5f, groupReset.hdr!!.exposure)
+        assertEquals(1.5f, groupReset.exposure)
+        assertEquals(2, groupReset.hdr!!.cameraSettings.fbddLevel)
+        assertEquals(sdrBase.exposure, groupReset.sdrSnapshotSettings()!!.exposure)
+        assertEquals(sdrBase.contrast, groupReset.sdrSnapshotSettings()!!.contrast)
+        assertEquals("velvia", groupReset.film)
+        assertFalse(EditorAdjustmentRules.isModified(EditorResetScope.Group(EditorAdjustmentGroup.HDR_RENDITION), groupReset, rawContext))
+        assertEquals(EditorResetResult.NoChange, EditorAdjustmentRules.prepareReset(EditorResetScope.Group(EditorAdjustmentGroup.HDR_RENDITION), groupReset, rawContext))
+
+        val dormantSdr = editedHdr.withHDRMode(false, false, cameraRaw = true, proRAW = false)
+        assertFalse(EditorAdjustmentRules.isModified(EditorResetScope.Group(EditorAdjustmentGroup.HDR_RENDITION), dormantSdr, rawContext))
+        assertEquals(EditorResetResult.NoChange, EditorAdjustmentRules.prepareReset(EditorResetScope.Group(EditorAdjustmentGroup.HDR_RENDITION), dormantSdr, rawContext))
+        for (tool in listOf(24, 25, 26, 27)) {
+            assertFalse(EditorAdjustmentRules.isModified(EditorResetScope.Tool(tool), dormantSdr, rawContext))
+            assertEquals(EditorResetResult.NoChange, EditorAdjustmentRules.prepareReset(EditorResetScope.Tool(tool), dormantSdr, rawContext))
+        }
+        val sdrResetAll = (EditorAdjustmentRules.prepareReset(EditorResetScope.All, dormantSdr, rawContext) as EditorResetResult.Ready).candidate
+        assertEquals(fullRendition, sdrResetAll.hdr!!.renditionSettings)
+        assertEquals(2, sdrResetAll.hdr!!.cameraSettings.fbddLevel)
+        assertFalse(sdrResetAll.isHDREditing)
+        assertEquals(0f, sdrResetAll.exposure)
+
+        val hdrResetAll = (EditorAdjustmentRules.prepareReset(EditorResetScope.All, editedHdr, rawContext) as EditorResetResult.Ready).candidate
+        assertTrue(hdrResetAll.isHDREditing)
+        assertTrue(hdrResetAll.hdr!!.renditionSettings.isDefault)
+        assertTrue(hdrResetAll.hdr!!.isIdentity)
+        assertEquals(0f, hdrResetAll.exposure)
+        assertEquals(sdrBase.exposure, hdrResetAll.sdrSnapshotSettings()!!.exposure)
+        assertEquals("velvia", hdrResetAll.film)
+    }
 }

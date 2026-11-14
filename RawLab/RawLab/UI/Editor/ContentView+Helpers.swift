@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 
 extension ContentView {
     func supportsHDR(_ tool: EditorToolSelection) -> Bool {
-        if tool == .geometry { return true }
+        if tool == .geometry || tool.hdrRenditionKeyPath != nil { return true }
         if case .adjustment(let kind)=tool {
             return kind.hdrKeyPath != nil || kind == .hsl || kind == .colorGrading || kind == .vignette || kind == .grain
         }
@@ -496,7 +496,7 @@ extension ContentView {
                 onImported: { UsageAnalytics.shared.record(.photoImported) }) { restored in
                 guard photoImportRequestID == requestID else { return }
                 settings = restored
-                if restored.isHDREditing { selectedGroup = .light; selectedAdjustment = .exposure }
+                if restored.isHDREditing { selectedGroup = .light; selectedAdjustment = .exposure; selectedHDRRenditionTool = nil }
             }
             selectedPhotoItem = nil
             photoImportTask = nil
@@ -635,7 +635,7 @@ extension ContentView {
                                       diagnosticContext: context,
                                       onImported: { UsageAnalytics.shared.record(.photoImported) }) { restored in
                     settings = restored
-                if restored.isHDREditing { selectedGroup = .light; selectedAdjustment = .exposure }
+                if restored.isHDREditing { selectedGroup = .light; selectedAdjustment = .exposure; selectedHDRRenditionTool = nil }
                 }
             case .failure(let error):
                 photoImportTask = nil

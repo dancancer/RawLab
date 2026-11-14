@@ -68,6 +68,14 @@ struct HDRRenditionControls: View {
         settings = HDRRenditionSettings()
     }
 
+    func reset(_ keyPath: WritableKeyPath<HDRRenditionSettings, Double>) {
+        let baseline = HDRRenditionSettings()[keyPath: keyPath]
+        guard settings[keyPath: keyPath] != baseline else { return }
+        var next = settings
+        next[keyPath: keyPath] = baseline
+        settings = next
+    }
+
     var body: some View {
         DisclosureGroup {
             VStack(alignment: .leading, spacing: 8) {
@@ -91,6 +99,10 @@ struct HDRRenditionControls: View {
     private func slider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double,
                         id: String, unit: String, unlimitedAtZero: Bool = false) -> some View {
         let current = value.wrappedValue
+        let resetSingle: () -> Void = {
+            guard !editing, value.wrappedValue != 0 else { return }
+            value.wrappedValue = 0
+        }
         let text = unlimitedAtZero && current == 0 ? L10n.text("不限") :
             String(format: unit == "EV" ? "%+.1f %@" : "%+.0f%@", locale: L10n.locale, current, unit)
         return VStack(alignment: .leading, spacing: 3) {
@@ -98,13 +110,19 @@ struct HDRRenditionControls: View {
                 Text(L10n.text(title))
                 Spacer()
                 Text(text).monospacedDigit()
-            }.font(.caption)
+            }
+            .font(.caption)
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2, perform: resetSingle)
             Slider(value: value, in: range, step: step, onEditingChanged: { active in
                 editing = active
                 onEditingChanged(active)
             })
+            .onTapGesture(count: 2, perform: resetSingle)
             .accessibilityLabel(L10n.text(title))
             .accessibilityValue(text)
+            .accessibilityAction(named: L10n.text("重置"), resetSingle)
+            .accessibilityHint(L10n.text("双击名称或轨道恢复默认值。"))
             .accessibilityIdentifier("hdr.rendition.\(id)")
         }
     }

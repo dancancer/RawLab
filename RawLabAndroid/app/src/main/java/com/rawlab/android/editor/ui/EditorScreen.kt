@@ -151,7 +151,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     var settings by rememberSaveable { mutableStateOf(false) }
     var adjusting by remember { mutableStateOf(false) }
     LaunchedEffect(tool) { if (tool == 9) tool = 8 }
-    LaunchedEffect(state.edits.isHDREditing) { if (quickPresetsVisible) onClosePresets(); if (state.edits.isHDREditing) tool = 2 }
+    LaunchedEffect(state.edits.isHDREditing) { if (quickPresetsVisible) onClosePresets(); tool = if (state.edits.isHDREditing) 2 else EditorAdjustmentRules.normalizeTool(tool, false) }
     val surroundingAlpha by animateFloatAsState(if (adjusting) .32f else 1f, tween(160), label = "adjustment-context")
     val context = LocalContext.current
     val preferences = remember(context) { context.getSharedPreferences("editor", android.content.Context.MODE_PRIVATE) }

@@ -53,13 +53,15 @@ internal val editorToolOrder = EditorAdjustmentGroup.entries.flatMap(EditorAdjus
 internal val editorToolTitles = listOf(R.string.film, R.string.strength, R.string.exposure, R.string.highlights,
     R.string.shadows, R.string.contrast, R.string.curve_title, R.string.saturation, R.string.white_balance,
     R.string.tint, R.string.sharpening, R.string.denoise, R.string.vignette, R.string.grain, R.string.hsl,
-    R.string.master_recipes, R.string.info_lens, R.string.geometry, R.string.black_point, R.string.white_point, R.string.vibrance, R.string.color_grading, R.string.clarity, R.string.dehaze)
+    R.string.master_recipes, R.string.info_lens, R.string.geometry, R.string.black_point, R.string.white_point, R.string.vibrance, R.string.color_grading, R.string.clarity, R.string.dehaze,
+    R.string.hdr_peak_limit, R.string.hdr_sdr_exposure, R.string.hdr_sdr_contrast, R.string.hdr_sdr_saturation)
 
 internal val editorToolIcons: List<ImageVector> get() = listOf(Icons.Outlined.PhotoFilter, Icons.Outlined.Tune,
     Icons.Outlined.Exposure, Icons.Outlined.WbSunny, Icons.Outlined.DarkMode, Icons.Outlined.Contrast,
     Icons.Outlined.SsidChart, Icons.Outlined.WaterDrop, Icons.Outlined.Thermostat, Icons.Outlined.Palette,
     Icons.Outlined.Deblur, Icons.Outlined.BlurOff, Icons.Outlined.Circle, Icons.Outlined.Grain,
-    Icons.Outlined.ColorLens, Icons.Outlined.Layers, Icons.Outlined.CenterFocusStrong, Icons.Outlined.CropRotate, Icons.Filled.Circle, Icons.Outlined.RadioButtonUnchecked, Icons.Filled.WaterDrop, Icons.Outlined.Palette, Icons.Outlined.Tonality, Icons.Outlined.Cloud)
+    Icons.Outlined.ColorLens, Icons.Outlined.Layers, Icons.Outlined.CenterFocusStrong, Icons.Outlined.CropRotate, Icons.Filled.Circle, Icons.Outlined.RadioButtonUnchecked, Icons.Filled.WaterDrop, Icons.Outlined.Palette, Icons.Outlined.Tonality, Icons.Outlined.Cloud,
+    Icons.Outlined.BrightnessHigh, Icons.Outlined.BrightnessMedium, Icons.Outlined.Brightness6, Icons.Outlined.Opacity)
 
 internal fun whiteBalanceChanged(edits: EditSettings, shotTemperature: Float?, shotTint: Float?): Boolean {
     val temperature = shotTemperature ?: edits.temperature
@@ -67,8 +69,9 @@ internal fun whiteBalanceChanged(edits: EditSettings, shotTemperature: Float?, s
     return abs(edits.temperature - temperature) > .0001f || abs(edits.tint - tint) > .0001f
 }
 
-internal val mobileEditorGroups = listOf(EditorAdjustmentGroup.LOOKS, EditorAdjustmentGroup.LIGHT, EditorAdjustmentGroup.COLOR,
-    EditorAdjustmentGroup.DETAIL, EditorAdjustmentGroup.GEOMETRY, EditorAdjustmentGroup.EFFECTS)
+internal fun mobileEditorGroups(isHDREditing: Boolean) = listOf(EditorAdjustmentGroup.LOOKS, EditorAdjustmentGroup.LIGHT, EditorAdjustmentGroup.COLOR,
+    EditorAdjustmentGroup.DETAIL, EditorAdjustmentGroup.GEOMETRY, EditorAdjustmentGroup.EFFECTS) +
+    if (isHDREditing) listOf(EditorAdjustmentGroup.HDR_RENDITION) else emptyList()
 internal fun mobileEditorTools(group: EditorAdjustmentGroup): List<Int> = when (group) {
     EditorAdjustmentGroup.LOOKS -> listOf(0, 15)
     EditorAdjustmentGroup.LIGHT -> listOf(2, 5, 3, 4, 19, 18, 6)
@@ -122,13 +125,17 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, navig
         20 -> Triple(edits.editingVibrance, 0f, -100f..100f)
         22 -> Triple(edits.editingClarity, 0f, -100f..100f)
         23 -> Triple(edits.editingDehaze, 0f, -100f..100f)
+        24 -> Triple(edits.hdr?.renditionSettings?.peakLimitEV ?: 0f, 0f, 0f..6f)
+        25 -> Triple(edits.hdr?.renditionSettings?.sdrExposureEV ?: 0f, 0f, -4f..4f)
+        26 -> Triple(edits.hdr?.renditionSettings?.sdrContrast ?: 0f, 0f, -100f..100f)
+        27 -> Triple(edits.hdr?.renditionSettings?.sdrSaturation ?: 0f, 0f, -100f..100f)
         else -> null
     }
     val changed = EditorAdjustmentRules.isModified(EditorResetScope.Tool(index), edits, state.resetContext())
     val primary = MaterialTheme.colorScheme.primary
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val color = if (selected) primary else muted
-    val number = scalar?.let { formatAdjustment(it.first, if (index == 2) .05f else 1f) }
+    val number = scalar?.let { formatAdjustment(it.first, if (index == 2) .05f else if (index == 24 || index == 25) .1f else 1f) }
     val title = stringResource(editorToolTitles[index])
     val status = stringResource(if (changed) R.string.hsl_adjusted else R.string.hsl_unadjusted)
     val valueDescription = if (index == 8) listOf(
@@ -174,6 +181,7 @@ internal fun groupTitle(group: EditorAdjustmentGroup): Int = when (group) {
     EditorAdjustmentGroup.EFFECTS -> R.string.editor_group_effects
     EditorAdjustmentGroup.DETAIL -> R.string.editor_group_detail
     EditorAdjustmentGroup.GEOMETRY -> R.string.editor_group_geometry
+    EditorAdjustmentGroup.HDR_RENDITION -> R.string.hdr_rendition
 }
 
 @Composable
@@ -182,7 +190,7 @@ internal fun EditorGroupStrip(state: EditorState, expanded: Boolean, tool: Int,
     navigationEnabled: Boolean = true, inlineLabels: Boolean = false, modifier: Modifier = Modifier, select: (EditorAdjustmentGroup) -> Unit) {
     LazyRow(modifier.fillMaxWidth().testTag("editor-groups"), state = list, contentPadding = PaddingValues(horizontal = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(0.dp)) {
-        items(mobileEditorGroups, key = { it.id }) { group ->
+        items(mobileEditorGroups(state.visibleEdits.isHDREditing), key = { it.id }) { group ->
             EditorGroupButton(state, group, expanded && EditorAdjustmentRules.groupFor(tool) == group,
                 Modifier.widthIn(min = 48.dp), compact = true, navigationEnabled = navigationEnabled, inlineLabels = true) { select(group) }
         }
