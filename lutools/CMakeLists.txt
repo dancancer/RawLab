@@ -910,6 +910,20 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
                 "CXX=${RAWLAB_ABI_CLANGXX};RAWLAB_REQUIRE_ABI_CHECK=1")
         endif()
     endif()
+    if(RAWLAB_SHADER_PYTHON)
+        # 编译真实 Binding 代码块，避免为顺序测试桩化整套 photo/denoise 渲染 API。
+        set(gles_bindings_header "${CMAKE_CURRENT_BINARY_DIR}/gles_binding_order_bindings.h")
+        add_custom_command(OUTPUT "${gles_bindings_header}"
+            COMMAND "${RAWLAB_SHADER_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/extract_gles_bindings.py"
+                "${gles_bindings_header}"
+            DEPENDS tests/extract_gles_bindings.py src/gpu/gles_lut.cpp src/gpu/gles_photo.cpp src/gpu/gles_denoise.cpp
+            VERBATIM)
+        add_executable(gles_binding_order_tests tests/gles_binding_order_tests.cpp "${gles_bindings_header}")
+        target_include_directories(gles_binding_order_tests PRIVATE tests/gles_stub "${CMAKE_CURRENT_BINARY_DIR}")
+        foreach(binding lut photo denoise)
+            add_test(NAME gpu_gles_binding_order_${binding} COMMAND gles_binding_order_tests ${binding})
+        endforeach()
+    endif()
     add_executable(gles_lut_binding_tests tests/gles_lut_binding_tests.cpp
         src/gpu/gles_lut.cpp src/gpu/lut_gpu.cpp src/core/lut_applicator.cpp src/core/lut_parser.cpp)
     target_include_directories(gles_lut_binding_tests PRIVATE tests/gles_stub)

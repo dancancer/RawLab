@@ -125,15 +125,16 @@ struct Binding {
     Binding& operator=(const Binding&) = delete;
 
     ~Binding() {
+        // 先恢复 client API，才能在对应 API 下恢复调用方 context。
+        if (previousApi != EGL_NONE) {
+            eglBindAPI(previousApi);
+        }
         if (bound) {
             if (previousContext != EGL_NO_CONTEXT) {
                 eglMakeCurrent(previousDisplay, previousDraw, previousRead, previousContext);
             } else {
                 eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
             }
-        }
-        if (previousApi != EGL_NONE) {
-            eglBindAPI(previousApi);
         }
     }
 };
