@@ -40,9 +40,9 @@
 
 - **生效范围**：
   - `sony2fuji_process`：仅当 `output_target == SONY2FUJI_TARGET_BUFFER || intent == SONY2FUJI_INTENT_FINAL` 时安装会话取消回调（`sony2fuji_c.cpp:2830-2834`）；**`PREVIEW + FILE` 明确忽略取消回调**。
-  - 始终响应会话取消回调的入口：`sony2fuji_session_create_hsl_probe`（`sony2fuji_c.cpp:2894`）、`sony2fuji_session_migrate_processing`（`sony2fuji_c.cpp:2711`）、带 `session` 的 `sony2fuji_hdr_*` 解码／AI 准备／ProRAW 导出／HSL probe／流式导出（`sony2fuji_hdr.cpp:322,613,716,730,749,948,981`；其中 `sony2fuji_hdr_export_stream` 同时合并 `session` 回调与 `source->is_cancelled`，见 `:1088-1091`；`sony2fuji_hdr_render` 在启用 look／细节／效果时生效，见 `:574-575`）。
-  - 独立机制或不支持会话取消的入口：`sony2fuji_session_prepare_ai` 使用专属 `sony2fuji_ai_progress_callback` 返回 `0` 取消（`sony2fuji_c.cpp:1984-1989`）；`sony2fuji_preview_lut_compatibility` 与 `sony2fuji_session_estimate_auto_exposure` 不读取 `session->cancellation_callback`。
-- **统一返回与状态保证**：内部检查点通过 `ProcessingCancelled` 异常中断管线，在 FFI 边界映射为 `SONY2FUJI_STATUS_CANCELLED`（`sony2fuji_c.cpp:2836-2837`、`sony2fuji_hdr.cpp:102`）。取消**绝不触发 GPU Auto 向 CPU 的回退**（`lutools/src/gpu/gles_photo.cpp:327`、`sony2fuji_c.cpp:2836`），不污染已有缓存，且同一 `session` 可继续处理后续请求。
+  - 始终响应会话取消回调的入口：`sony2fuji_session_create_hsl_probe`（`sony2fuji_c.cpp:2894`）、`sony2fuji_session_migrate_processing`（`sony2fuji_c.cpp:2711`）、`sony2fuji_session_prepare_ai`（P2-15/C10 起安装 `ProcessingCancellationScope`，在身份哈希、tile 进度与缓存发布前轮询）、带 `session` 的 `sony2fuji_hdr_*` 解码／AI 准备／ProRAW 导出／HSL probe／流式导出（`sony2fuji_hdr.cpp:322,613,716,730,749,948,981`；其中 `sony2fuji_hdr_export_stream` 同时合并 `session` 回调与 `source->is_cancelled`，见 `:1088-1091`；`sony2fuji_hdr_render` 在启用 look／细节／效果时生效，见 `:574-575`）。
+  - 独立机制或不支持会话取消的入口：`sony2fuji_preview_lut_compatibility` 与 `sony2fuji_session_estimate_auto_exposure` 不读取 `session->cancellation_callback`。`sony2fuji_session_prepare_ai` 的专属 `sony2fuji_ai_progress_callback` 返回 `0` 取消语义保留，并与会话取消回调双通道并存：任一通道取消都返回 `SONY2FUJI_STATUS_CANCELLED`，且不发布新的 AI 缓存文件（`cache.store` 的 `beforePublish` 在 rename 前抛出）。
+- **统一返回与状态保证**：内部检查点通过 `ProcessingCancelled` 异常中断管线，在 FFI 边界映射为 `SONY2FUJI_STATUS_CANCELLED`（`sony2fuji_c.cpp:2836-2837`、`sony2fuji_hdr.cpp:102`）。取消**绝不触发 GPU Auto 向 CPU 的回退**（`lutools/src/gpu/gles_photo.cpp:327`、`lutools/src/gpu/metal_photo.mm` 与 `lutools/src/gpu/d3d11_photo.cpp` 的 `ProcessingCancelled` 重抛、`sony2fuji_c.cpp:2836`），不污染已有缓存，且同一 `session` 可继续处理后续请求。
 
 ### 五个阶段的行为
 

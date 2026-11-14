@@ -186,12 +186,14 @@ PrepareReport AISession::prepare(const std::string& path, const RAWProcessOption
     notify(progress, Phase::Loading, 0, 1);
     ensurePackage();
     const AIExecution execution{selectedDevice_ ? &*selectedDevice_ : nullptr,&diagnostics_};
-    const auto rawKey = rawCacheKey(path, runtimeDigest_, static_cast<int>(backend_), options.legacySonyCrop);
+    // 与 HDR prepare 同口径：身份哈希传入取消检查点，长文件哈希过程中也能取消。
+    const auto rawKey = rawCacheKeyFromIdentity(sourceIdentityKey(path, checkProcessingCancellation), runtimeDigest_, static_cast<int>(backend_), options.legacySonyCrop);
     const auto rgbKey = rgbCacheKey(rawKey, options);
     const auto sceneKey = sceneRGBCacheKey(rawKey,options);
     const auto modelStamp = stamp_;
     auto validateSource = [&] {
-        if (rawCacheKey(path, runtimeDigest_, static_cast<int>(backend_), options.legacySonyCrop) != rawKey || packageStamp() != modelStamp)
+        const auto currentKey = rawCacheKeyFromIdentity(sourceIdentityKey(path, checkProcessingCancellation), runtimeDigest_, static_cast<int>(backend_), options.legacySonyCrop);
+        if (currentKey != rawKey || packageStamp() != modelStamp)
             throw std::runtime_error("RAW or model changed during AI processing; please retry");
     };
     RAWProcessor processor(options.legacySonyCrop);
@@ -234,8 +236,9 @@ PrepareReport AISession::prepare(const std::string& path, const RAWProcessOption
                 *package_,backend_,report.rgb,[&](size_t done,size_t total) { return !progress || progress(Phase::RGB,done,total); },execution);
             scene = {};
             validateSource(); notify(progress,Phase::Saving,0,1);
+            // 取消时不发布新缓存：beforePublish 在 rename 前抛出，store 负责清理临时文件。
             cache.store(sceneKey,CacheKind::SceneRGB,correction.width,correction.height,
-                correction.values.data(),correction.values.size(),{},report.rgb.backend);
+                correction.values.data(),correction.values.size(),{},report.rgb.backend,[&] { checkProcessingCancellation(); });
         }
         validateSource(); notify(progress,Phase::Saving,1,1);
         try { cache.prune(uint64_t(8)*1024*1024*1024,{sceneKey}); }
@@ -255,7 +258,7 @@ PrepareReport AISession::prepare(const std::string& path, const RAWProcessOption
         validateSource();
         notify(progress, Phase::Saving, 0, 1);
         cache.store(rawKey, CacheKind::Raw, source.width, source.height, denoised.normalizedMosaic.data(),
-                    denoised.normalizedMosaic.size(), {}, report.raw.backend);
+                    denoised.normalizedMosaic.size(), {}, report.raw.backend,[&] { checkProcessingCancellation(); });
     }
     const auto rawPayload = sha256Bytes(denoised.normalizedMosaic.data(), denoised.normalizedMosaic.size() * sizeof(float));
     if (cache.load(rgbKey, CacheKind::RGB, source.width, source.height, rawPayload, &report.rgb.backend)) {
@@ -266,7 +269,7 @@ PrepareReport AISession::prepare(const std::string& path, const RAWProcessOption
             [&](size_t done, size_t total) { return !progress || progress(Phase::RGB, done, total); },execution);
         validateSource();
         notify(progress, Phase::Saving, 0, 1);
-        cache.store(rgbKey, CacheKind::RGB, source.width, source.height, correction.values.data(), correction.values.size(), rawPayload, report.rgb.backend);
+        cache.store(rgbKey, CacheKind::RGB, source.width, source.height, correction.values.data(), correction.values.size(), rawPayload, report.rgb.backend,[&] { checkProcessingCancellation(); });
     }
     validateSource();
     notify(progress, Phase::Saving, 1, 1);

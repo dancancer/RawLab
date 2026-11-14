@@ -614,6 +614,9 @@ sony2fuji_status sony2fuji_session_set_ai_denoise(sony2fuji_session* session, co
 // Explicit full-resolution preparation. Use a separate worker-owned session so previews remain responsive.
 // Cache keys exclude exposure/LUT/geometry, include WB and processing version for RGB, and retain reusable RAW output.
 // Missing/corrupt results make process/export return AI_NOT_READY; process never starts inference or silently disables AI.
+// Cancellation: the AI progress callback returning 0 and the session cancellation callback
+// (sony2fuji_session_set_cancellation_callback) are equivalent channels; with progress==nullptr the session
+// callback is the only one. A cancelled prepare returns CANCELLED and publishes no new AI cache file.
 sony2fuji_status sony2fuji_session_prepare_ai(sony2fuji_session* session, const sony2fuji_request* request,
     sony2fuji_ai_progress_callback progress, void* context);
 // Valid until the next AI operation on this session. Always returns a non-null string.
@@ -792,8 +795,9 @@ sony2fuji_status sony2fuji_session_set_gpu_config(
 // a single operation, the callback may be invoked concurrently on multiple internal
 // worker threads (for example OpenCV/OpenMP parallel pixel loops or decoder monitor
 // threads), so its implementation must be lock-free or synchronize itself. It must
-// not throw, reenter the session, or outlive its context. Null disables cancellation.
-// Streamed HDR export checks it before publishing. A cancelled call returns CANCELLED
+// not throw, reenter the session, or outlive its context. Null disables cancellation. Streamed HDR export
+// checks it before publishing. sony2fuji_session_prepare_ai honours it on every tile, source-identity and
+// cache-publish checkpoint even when its AI progress callback is null. A cancelled call returns CANCELLED
 // without publishing partial output: a buffer stays empty, and a FINAL file export
 // keeps the destination byte-identical because every encoder writes a staging file,
 // checks cancellation during encoding and at the pre-publish commit point, and never

@@ -303,25 +303,55 @@ int main() {
         auto cancelRequest = baseline;
         cancelRequest.noise_reduction = 0.4f;
         const auto input = toLinearImage(pixels, 4, 2);
-        sony2fuji::ImageData gpu;
-        bool interrupted = false;
+
+        auto renderOnce = [](const sony2fuji::ImageData& image, const sony2fuji_request& request,
+                             sony2fuji::ImageData& output) {
+#ifdef SONY2FUJI_ENABLE_D3D11
+            static sony2fuji::D3D11PhotoRenderer renderer;
+            return renderer.render(image, sony2fuji::ColorSpace::sRGB, request, nullptr,
+                sony2fuji::RGB(1.0f, 1.0f, 1.0f), request.target_width, request.target_height, 0, output);
+#else
+            return sony2fuji::renderPhotoMetal(image, sony2fuji::ColorSpace::sRGB, request, nullptr,
+                sony2fuji::RGB(1.0f, 1.0f, 1.0f), request.target_width, request.target_height, output);
+#endif
+        };
+        auto countDown = [](std::atomic<int>& remaining) {
+            return sony2fuji::ProcessingCancellation{+[](void* context) -> int32_t {
+                return static_cast<std::atomic<int>*>(context)->fetch_sub(1) <= 1;
+            }, &remaining};
+        };
+
+        // 场景 A：首个阶段/带边界即取消——输出尚未发布。
+        sony2fuji::ImageData earlyOut;
+        bool earlyCancelled = false;
         {
             std::atomic<int> remaining{1};
-            sony2fuji::ProcessingCancellationScope cancellation({+[](void* context) -> int32_t {
-                return static_cast<std::atomic<int>*>(context)->fetch_sub(1) <= 1;
-            }, &remaining});
-            try {
-#ifdef SONY2FUJI_ENABLE_D3D11
-                static sony2fuji::D3D11PhotoRenderer cancelRenderer;
-                cancelRenderer.render(input, sony2fuji::ColorSpace::sRGB, cancelRequest, nullptr,
-                    sony2fuji::RGB(1.0f, 1.0f, 1.0f), 4, 2, 0, gpu);
-#else
-                sony2fuji::renderPhotoMetal(input, sony2fuji::ColorSpace::sRGB, cancelRequest, nullptr,
-                    sony2fuji::RGB(1.0f, 1.0f, 1.0f), 4, 2, gpu);
-#endif
-            } catch (const sony2fuji::ProcessingCancelled&) { interrupted = true; }
+            sony2fuji::ProcessingCancellationScope cancellation(countDown(remaining));
+            try { renderOnce(input, cancelRequest, earlyOut); }
+            catch (const sony2fuji::ProcessingCancelled&) { earlyCancelled = true; }
         }
-        check(interrupted, "cancelled photo render escapes the GPU backend instead of reporting a GPU failure");
+        check(earlyCancelled && earlyOut.pixels.empty(),
+              "cancelled photo render escapes the GPU backend instead of reporting a GPU failure");
+
+        // 场景 B：阶段间取消——4096×480 至少跨两个 16 MiB 预算带，第 2 个检查点落在
+        // 首个带/阶段完成之后；取消后复用同一渲染器必须仍然健康（D3D11 不 reset impl_）。
+        const std::vector<unsigned char> tallPixels(size_t(4096) * 480 * 3, 96);
+        auto tallRequest = baseRequest(tallPixels, 4096, 480);
+        tallRequest.noise_reduction = 0.4f;
+        const auto tallInput = toLinearImage(tallPixels, 4096, 480);
+        sony2fuji::ImageData midOut;
+        bool midCancelled = false;
+        {
+            std::atomic<int> remaining{2};
+            sony2fuji::ProcessingCancellationScope cancellation(countDown(remaining));
+            try { renderOnce(tallInput, tallRequest, midOut); }
+            catch (const sony2fuji::ProcessingCancelled&) { midCancelled = true; }
+        }
+        check(midCancelled && midOut.pixels.empty(),
+              "photo render cancelled between stages escapes as ProcessingCancelled with no published output");
+        sony2fuji::ImageData reused;
+        check(renderOnce(tallInput, tallRequest, reused) && !reused.pixels.empty(),
+              "photo renderer stays healthy after a cancelled render");
     }
 
     const float strengths[] = {0.0f, 0.5f, 1.0f, 2.0f};

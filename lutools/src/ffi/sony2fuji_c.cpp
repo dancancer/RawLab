@@ -2437,6 +2437,8 @@ sony2fuji_status sony2fuji_session_prepare_ai(sony2fuji_session* session, const 
         return status;
     };
     try {
+        // 入口预检（对齐 sony2fuji_hdr.cpp 安装 scope 后立即 check 的口径）：已取消则不再解析镜头库。
+        sony2fuji::processingCancellation.check();
         if (session->lens_correction.active()) ensureLensDatabase(session);
         session->ai->prepare(local.input_path, rawWhiteBalanceOptions(session, local),
             [&](sony2fuji::ai::Phase phase, size_t done, size_t total) {
