@@ -47,6 +47,22 @@ import Foundation
         try Data("{ hal".utf8).write(to: file, options: .atomic)
         try check(ExportEvidenceStore(url: file).exportedContentIdentifiers().isEmpty,
                   "An unreadable ledger yields no evidence, so cleanup only under-deletes")
+        // 渲染型 DNG：渲染落沙盒不算导出，picker 确认后才按行记账（红锚：saveJournal
+        // 无条件登记时，取消另存的行也已入账）。
+        let pickerURL = URL(fileURLWithPath: "/tmp/rendered.dng")
+        let candidates = [
+            ExportEvidenceStore.EvidenceCandidate(contentIdentifier: String(repeating: "d", count: 64),
+                                                  succeeded: true, outputFileURL: pickerURL, inPicker: true),
+            ExportEvidenceStore.EvidenceCandidate(contentIdentifier: String(repeating: "e", count: 64),
+                                                  succeeded: false, outputFileURL: nil, inPicker: false),
+            ExportEvidenceStore.EvidenceCandidate(contentIdentifier: nil,
+                                                  succeeded: true, outputFileURL: nil, inPicker: false),
+        ]
+        try check(ExportEvidenceStore.renderedDNGEvidenceIdentifiers(exported: false, candidates: candidates).isEmpty,
+                  "Rendered DNG rows stay out of the ledger until the picker confirms the save")
+        try check(ExportEvidenceStore.renderedDNGEvidenceIdentifiers(exported: true, candidates: candidates)
+                      == [String(repeating: "d", count: 64)],
+                  "A confirmed save registers exactly the succeeded rows present in the picker, one per row")
     }
 
     private static let day: TimeInterval = 24 * 60 * 60

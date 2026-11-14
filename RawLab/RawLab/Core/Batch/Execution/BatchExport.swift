@@ -444,6 +444,18 @@ final class BatchExportModel: ObservableObject {
     func finishFileExport(_ exported: Bool) {
         shouldPresentFileExport = false
         fileExportStatus = exported ? .exported : .cancelled
+        // Q6（B1/B4）：渲染型 DNG 落沙盒不等于导出；用户在 picker 确认另存后才逐行
+        // 登记证据（对齐单张 Files 导出 exported==true 口径），取消/未弹出不记账。
+        guard job.outputFormat == .renderedDNG else { return }
+        let exportedPaths = Set((fileExportURLs ?? []).map(\.path))
+        ExportEvidenceStore.shared.record(contentIdentifiers: ExportEvidenceStore.renderedDNGEvidenceIdentifiers(
+            exported: exported,
+            candidates: job.targets.map { target in
+                ExportEvidenceStore.EvidenceCandidate(contentIdentifier: target.identity.contentIdentifier,
+                                                      succeeded: target.status == .succeeded,
+                                                      outputFileURL: target.outputFileURL,
+                                                      inPicker: target.outputFileURL.map { exportedPaths.contains($0.path) } == true)
+            }))
     }
 
     @discardableResult func discard() -> Bool {
@@ -497,9 +509,12 @@ final class BatchExportModel: ObservableObject {
 
 
     private func saveJournal() {
-        // Q6（B1）：批量导出成功逐条登记进导出证据账本（幂等，succeeded 才登记）。
-        ExportEvidenceStore.shared.record(contentIdentifiers: job.targets
-            .filter { $0.status == .succeeded }.compactMap(\.identity.contentIdentifier))
+        // Q6（B1）：相册直出的批量导出成功逐条登记进导出证据账本（幂等，succeeded 才登记）；
+        // 渲染型 DNG 落沙盒时不记账，改由 finishFileExport 在 picker 确认另存后登记。
+        if job.outputFormat.publishesToPhotos {
+            ExportEvidenceStore.shared.record(contentIdentifiers: job.targets
+                .filter { $0.status == .succeeded }.compactMap(\.identity.contentIdentifier))
+        }
         guard let journalStore else { return }
         do { try journalStore.save(job) }
         catch { validationMessage = L10n.format("任务未保存：%@", String(describing: error.localizedDescription)) }

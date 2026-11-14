@@ -181,6 +181,21 @@ class CameraOriginalsRetentionTest {
         } finally { dir.deleteRecursively(); runs.deleteRecursively() }
     }
 
+    @Test fun newerUnmigratedBoundaryDoesNotShadowOlderRawCheckpoint() {
+        // r4-B2：较新的未迁移 boundary（单格式/非法日期，清理侧无从复核其格式集）
+        // 不得把双格式塞进 seen 遮蔽更早的真实 RAW 检查点；非法日期的旧记录仍保护自身
+        //（红：LEGACY_KINDS 并入 seen 的版本会删掉 rawOlder）。
+        val dir = Files.createTempDirectory("rawlab-originals-shadow").toFile()
+        val runs = runDirWith(emptyList())
+        try {
+            val rawOlder = job(dir, 40 * day, checkpoints = setOf("RAW"))
+            val legacyNewer = job(dir, 10 * day, legacyBoundary = true)
+            val newest = job(dir, day)
+            assertEquals(0, CameraOriginalsRetention.pruneExported(dir, runs).fileCount)
+            assertTrue(rawOlder.exists() && legacyNewer.exists() && newest.exists())
+        } finally { dir.deleteRecursively(); runs.deleteRecursively() }
+    }
+
     @Test fun runDirectoryThatIsAFileFailsClosed() {
         // B4：runs「目录」不可枚举（这里是一个文件）→ 引用集未知 → 一条不删。
         val dir = Files.createTempDirectory("rawlab-originals-runsfile").toFile()

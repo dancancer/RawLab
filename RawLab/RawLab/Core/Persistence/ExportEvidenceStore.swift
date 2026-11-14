@@ -49,8 +49,25 @@ final class ExportEvidenceStore {
         }
     }
 
-    private func readUnlocked() -> Set<String> {
-        guard let url, let data = try? Data(contentsOf: url),
+    struct EvidenceCandidate {
+        let contentIdentifier: String?
+        let succeeded: Bool
+        let outputFileURL: URL?
+        let inPicker: Bool
+    }
+
+    /// 渲染型 DNG 批量导出的「真正成功」口径：渲染落沙盒不算，`FileExportPicker`
+    /// 确认另存（exported == true）后，按行登记产物确在本次导出集内的 succeeded 目标
+    /// （一行成功一行记）；取消或部分失败未弹选择器 → 空集，账本保持干净（宁漏删）。
+    static func renderedDNGEvidenceIdentifiers(exported: Bool, candidates: [EvidenceCandidate]) -> [String] {
+        guard exported else { return [] }
+        return candidates.compactMap { candidate in
+            guard candidate.succeeded, candidate.inPicker else { return nil }
+            return candidate.contentIdentifier
+        }
+    }
+
+    private func readUnlocked() -> Set<String> {        guard let url, let data = try? Data(contentsOf: url),
               let index = try? JSONDecoder().decode(Index.self, from: data) else { return [] }
         return Set(index.identifiers)
     }

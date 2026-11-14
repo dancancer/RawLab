@@ -13,8 +13,10 @@ import org.json.JSONObject
 //  · 最新的任务记录始终保留（历史与重复导入检测的锚点）；
 //  · 按相机分桶（镜像 matchesCamera：hardwareIdentity 在场按机身、缺席按连接），桶内按
 //    时间倒序每格式首个含检查点（checkpoints，真实字段）的已导出记录是锚点；未迁移的
-//    incremental.boundary 回落为全格式检查点；桶内最近的增量任务保留（读取方当前会话
-//    仍会查询它的去重键）。listingOwner 每次连接都是新 UUID，按 owner 保护是空转；
+//    incremental.boundary 只保护自身、不猜测格式集（migrateLegacyBoundary 的格式来自
+//    saved/unavailable 条目且需合法 captureDateMillis，原始 JSON 无从复核，宁多留不误删）；
+//    桶内最近的增量任务保留（读取方当前会话仍会查询它的去重键）。listingOwner 每次
+//    连接都是新 UUID，按 owner 保护是空转；
 //  · 联机运行（camera-tether-runs/*.json）batches[].id 引用的记录保留：
 //    CameraTetherQueue.load 恢复会话时会回读这些批文件，删了会静默丢批次；
 //    目录读不出、运行文件或 batches 结构损坏 → 引用集未知，本轮一条不删（B4 fail-closed）；
@@ -32,8 +34,6 @@ internal object CameraOriginalsRetention {
     private val RUN_PATTERN = Regex("^$UUID_HEX\\.json$")
     // 与 CameraTetherJournal 的写入预算一致；异常大的运行文件按解析失败处理。
     private const val RUN_MAX_BYTES = 8L * 1024 * 1024
-    // 未迁移旧检查点（incremental.boundary）按 migrateLegacyBoundary 语义视为覆盖全部格式。
-    private val LEGACY_KINDS = listOf("RAW", "JPEG")
 
     /** 列目录：目录内直属任务记录文件的数量与占用字节，供设置页显示。 */
     fun inspect(directory: File): CameraOriginalsSummary {
@@ -85,10 +85,13 @@ internal object CameraOriginalsRetention {
             if (checkpoints != null) {
                 for (kind in checkpoints.keys()) kinds.add(kind)
             }
-            if (kinds.isEmpty() && incremental.optJSONObject("boundary") != null) kinds += LEGACY_KINDS
+            // 未迁移 boundary 只保护自身、不猜测其供给的格式集：migrateLegacyBoundary
+            // 要求 saved/unavailable 条目且合法 captureDateMillis，清理侧读的是原始
+            // JSON 无从复核，故不把双格式塞进 seen（宁多留不误删，B4 同向）。
+            val hasLegacyBoundary = kinds.isEmpty() && incremental.optJSONObject("boundary") != null
             val bucket = cameraBucket(entry.json)
             val seen = seenKinds.getOrPut(bucket) { mutableSetOf() }
-            if (seenBuckets.add(bucket) || kinds.any { it !in seen }) checkpointAnchors.add(entry.id)
+            if (seenBuckets.add(bucket) || hasLegacyBoundary || kinds.any { it !in seen }) checkpointAnchors.add(entry.id)
             seen += kinds
         }
         val pruned = entries.filter { entry ->
