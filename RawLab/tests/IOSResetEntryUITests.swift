@@ -174,6 +174,11 @@ private struct ResetControlHostView: View {
         defer { window.contentView = nil; window.close() }
         try await settle(host)
 
+        // 本体的 30 条表示层/模型断言不依赖辅助功能授权，必须无条件真跑（Q14，
+        // docs/process/ci.md），闸不得抢跑遮蔽真实模型失败；只有两处 `if axTrusted`
+        // 分支受 AX 状态影响。三态在 run() 末尾统一判定（形态同 ax-gate.sh，契约由
+        // scripts/ci/test_ax_gate.py 顺序锁定）：AX 在场全跑；无 AX 且设
+        // RAWLAB_REQUIRE_AX 则 FAIL exit 1；无 AX 未设档则 SKIP+::warning:: exit 0。
         let axTrusted = AXIsProcessTrusted()
         let appElement = AXUIElementCreateApplication(ProcessInfo.processInfo.processIdentifier)
 
@@ -496,5 +501,20 @@ private struct ResetControlHostView: View {
             throw Failure.assertion("Color Grading full reset failed")
         }
         print("PASS: All-Grading reset clears remaining modified zones in draft")
+
+        if !axTrusted {
+            // 闸的 FAIL 与 SKIP 在末尾同位二选一，且必须发生在 30 条模型断言全部真跑
+            // 之后（#318 二审核 Blocking：前置 FAIL 会遮蔽真实模型失败）：设了
+            // RAWLAB_REQUIRE_AX 即 throw，main 打 FAIL 行并 exit 1；未设档则打
+            // 固定 SKIP+::warning::（与 ax-gate.sh 逐字同源，apple-models.sh
+            // 不变量 7 白名单按整行精确匹配），exit 0。
+            guard (ProcessInfo.processInfo.environment["RAWLAB_REQUIRE_AX"] ?? "").isEmpty else {
+                throw Failure.assertion("RAWLAB_REQUIRE_AX is set but accessibility is not granted; the AX checks cannot run")
+            }
+            let notice = "SKIP: accessibility is not trusted here; the AX checks did not run"
+            print(notice)
+            // CI 上与 GitHub Actions 的注解语法一致；本地普通终端只会多一行 ::warning::。
+            print("::warning::" + notice)
+        }
     }
 }

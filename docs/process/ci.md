@@ -158,7 +158,8 @@ manual result to satisfy it.
 Preview paths with `git diff --name-only origin/development... | python3 scripts/ci/affected_platforms.py classify`.
 
 - Client directories select their own platform. `RawLabMac/Resources/` is packaged
-  by every client; `RawLabMac/tests/DCPTestFixtures.swift` also selects iOS.
+  by every client; `RawLabMac/tests/DCPTestFixtures.swift` and the shared AX gate
+  `RawLabMac/tests/ax-gate.sh` (sourced by the mixed iOS model suite) also select iOS.
 - `docs/` except packaged licensing, `reviews/`, `.impeccable/`, AGENTS/CLAUDE files
   and root README/CHANGELOG/DESIGN/PRODUCT/.gitignore select no platform.
 - Shared core/resources, CI/tooling, licensing and unknown paths select all platforms.
@@ -343,7 +344,11 @@ commands, results and limits in the PR; keep logs/screenshots outside tracked so
 CI never repeats runtime UI checks. UI-test target compilation is not a UI-test pass.
 When running the UI suites pre-release, carry `RAWLAB_REQUIRE_AX=1` so the accessibility-gated
 scripts (`hdr-rendition-ui.sh`, `color-grading-input-ui.sh`, `system-menu-language.sh`) fail
-with an explicit reason instead of returning 0 with a `SKIP` for checks that did not run.
+with an explicit reason instead of returning 0 with a `SKIP` for checks that did not run. The
+mixed suite `ios-reset-entry-ui.sh` is different: its 30 AX-free presentation/model assertions
+always run (in CI and locally), and after they finish the suite's trailing gate check fails the
+run (FAIL, no skip) when accessibility is missing with `RAWLAB_REQUIRE_AX=1`, or logs the
+gate's honest skip pair otherwise.
 
 - Apple fast models: `bash scripts/ci/apple-models.sh macos` or `ios`; no prebuilt
   C++ core or simulator is required.
@@ -413,7 +418,13 @@ with an explicit reason instead of returning 0 with a `SKIP` for checks that did
   `ios-reset-entry-ui.sh`, are presentation-layer model assertions, not XCUITest.
   A `SKIP` reason in a CI suite log counts as a failed gate, never as a pass;
   the gate matches a line-leading `SKIP` marker, so paths, identifiers and
-  `PASS:` wording that merely contain "SKIP" stay green. This is distinct from
+  `PASS:` wording that merely contain "SKIP" stay green. The one exception: in a
+  mixed AX model suite registered in `scripts/ci/apple-models.sh` (currently
+  `ios-reset-entry-ui.sh`) the model checks run unconditionally and the suite's
+  second-layer AX guard may pass through the gate's fixed `SKIP: accessibility ...`
+  line only when its `::warning::` annotation is logged alongside it; every other
+  `SKIP` stays red, and `RAWLAB_REQUIRE_AX=1` keeps the guard on its FAIL exit with
+  no skip at all. This is distinct from
   CTest `SKIP_RETURN_CODE 77`, which registers an explicit visible skip for
   optional external models or private samples (such as `dualdn_skip` and
   `dualdn_onnx_skip`); the `full` gate still hard-fails a missing AI model

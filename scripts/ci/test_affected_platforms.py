@@ -43,6 +43,7 @@ class ClassificationTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(selection.platforms_for(path), EVERY)
         self.assertEqual(selection.platforms_for("RawLabMac/tests/DCPTestFixtures.swift"), {"macos", "ios"})
+        self.assertEqual(selection.platforms_for("RawLabMac/tests/ax-gate.sh"), {"macos", "ios"})
 
     def test_shared_code_tooling_and_unknown_files_select_every_platform(self):
         for path in ("lutools/src/core/raw_processor.cpp", "lutools/README.md", "Shared/LookLibrary.swift",
