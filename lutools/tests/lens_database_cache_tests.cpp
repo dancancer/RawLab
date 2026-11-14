@@ -218,28 +218,59 @@ void testInvalidationAndNonPoisoning(const std::filesystem::path& tempRoot) {
     require(sony2fuji::LensCorrectionDatabase::parseCount() - b2 == 0,
         "second load of unmodified file must hit cache (0 parses)");
 
-    // Mutate content + size (note also update write time explicitly to handle coarse clocks).
-    std::string edited = fixtureXml;
-    const auto pos = edited.find("-0.12");
-    require(pos != std::string::npos, "fixture coefficient marker missing");
-    edited.replace(pos, 5, "-0.155");
-    writeFile(xmlFile, edited);
-    std::error_code ec;
-    const auto now = std::filesystem::last_write_time(xmlFile, ec);
-    if (!ec) std::filesystem::last_write_time(xmlFile, now + std::chrono::seconds(2), ec);
+    // a) Equal mtime, changed size: append trailing XML comment and explicitly restore original mtime.
+    const auto originalMtime = std::filesystem::last_write_time(xmlFile);
+    const auto originalSize = std::filesystem::file_size(xmlFile);
+    const std::string sizeEdited = fixtureXml + "\n<!-- size-only -->\n";
+    writeFile(xmlFile, sizeEdited);
+    std::filesystem::last_write_time(xmlFile, originalMtime);
+    require(std::filesystem::file_size(xmlFile) != originalSize,
+        "size-only edit must change file size");
+    require(std::filesystem::last_write_time(xmlFile) == originalMtime,
+        "size-only edit must preserve original mtime");
 
     const uint64_t b3 = sony2fuji::LensCorrectionDatabase::parseCount();
-    const auto reloaded = sony2fuji::LensCorrectionDatabase::load(xmlFile.u8string());
-    require(reloaded != nullptr && reloaded->cacheIdentity() != first->cacheIdentity(),
-        "modified XML file did not produce updated calibration identity");
+    const auto sizeReloaded = sony2fuji::LensCorrectionDatabase::load(xmlFile.u8string());
+    require(sizeReloaded != nullptr && sizeReloaded.get() != first.get(),
+        "size-only change with equal mtime did not invalidate cached DB instance");
     require(sony2fuji::LensCorrectionDatabase::parseCount() - b3 == 1,
-        "modified XML file should trigger exactly 1 reload");
+        "size-only change with equal mtime should trigger exactly 1 reload");
 
     const uint64_t b4 = sony2fuji::LensCorrectionDatabase::parseCount();
-    const auto cachedAgain = sony2fuji::LensCorrectionDatabase::load(xmlFile.u8string());
-    require(cachedAgain != nullptr && cachedAgain->cacheIdentity() == reloaded->cacheIdentity(),
-        "reload result not cached");
+    const auto sizeCached = sony2fuji::LensCorrectionDatabase::load(xmlFile.u8string());
+    require(sizeCached != nullptr && sizeCached.get() == sizeReloaded.get(),
+        "size-only reload result not cached");
     require(sony2fuji::LensCorrectionDatabase::parseCount() - b4 == 0,
+        "subsequent load after size-only change must hit updated cache (0 parses)");
+
+    // b) Equal size, changed mtime: equal-length coefficient replacement + advance mtime.
+    std::string mtimeEdited = sizeEdited;
+    const auto pos = mtimeEdited.find("-0.12");
+    require(pos != std::string::npos, "fixture coefficient marker missing");
+    mtimeEdited.replace(pos, 5, "-0.15");
+    require(mtimeEdited.size() == sizeEdited.size(),
+        "mtime-only edit must preserve file byte size");
+    writeFile(xmlFile, mtimeEdited);
+    std::filesystem::last_write_time(xmlFile, originalMtime + std::chrono::seconds(2));
+    require(std::filesystem::file_size(xmlFile) == sizeEdited.size(),
+        "mtime-only edit unexpectedly changed file size on disk");
+    require(std::filesystem::last_write_time(xmlFile) != originalMtime,
+        "mtime-only edit must advance mtime");
+
+    const uint64_t b5 = sony2fuji::LensCorrectionDatabase::parseCount();
+    const auto mtimeReloaded = sony2fuji::LensCorrectionDatabase::load(xmlFile.u8string());
+    require(mtimeReloaded != nullptr && mtimeReloaded.get() != sizeReloaded.get() &&
+        mtimeReloaded->cacheIdentity() != sizeReloaded->cacheIdentity(),
+        "mtime-only change with equal size did not produce updated calibration identity");
+    require(sony2fuji::LensCorrectionDatabase::parseCount() - b5 == 1,
+        "mtime-only change with equal size should trigger exactly 1 reload");
+
+    const uint64_t b6 = sony2fuji::LensCorrectionDatabase::parseCount();
+    const auto cachedAgain = sony2fuji::LensCorrectionDatabase::load(xmlFile.u8string());
+    require(cachedAgain != nullptr && cachedAgain.get() == mtimeReloaded.get() &&
+        cachedAgain->cacheIdentity() == mtimeReloaded->cacheIdentity(),
+        "mtime-only reload result not cached");
+    require(sony2fuji::LensCorrectionDatabase::parseCount() - b6 == 0,
         "third load after modification must hit updated cache (0 parses)");
 }
 

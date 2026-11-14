@@ -1,7 +1,6 @@
 #include "sony2fuji/lens_correction.h"
 #include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <cmath>
 #include <condition_variable>
 #include <filesystem>
@@ -9,6 +8,7 @@
 #include <list>
 #include <mutex>
 #include <sstream>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 #ifdef SONY2FUJI_ENABLE_LENSFUN
@@ -23,12 +23,15 @@ std::atomic<uint64_t> g_lensDatabaseParseCount{0};
 struct FileStamp {
     std::string path;
     uintmax_t size = 0;
-    int64_t mtimeNs = 0;
+    std::filesystem::file_time_type mtime{};
 
     bool operator==(const FileStamp& other) const {
-        return path == other.path && size == other.size && mtimeNs == other.mtimeNs;
+        return path == other.path && size == other.size && mtime == other.mtime;
     }
 };
+
+static_assert(std::is_same_v<decltype(FileStamp::mtime), std::filesystem::file_time_type>,
+    "FileStamp must store file_time_type directly to avoid integer nanosecond overflow");
 
 struct SourceDescriptor {
     std::string cacheKey;
@@ -37,10 +40,6 @@ struct SourceDescriptor {
     std::vector<std::filesystem::path> loadPaths;
     std::vector<FileStamp> stamps;
 };
-
-int64_t toTimestampNs(std::filesystem::file_time_type t) {
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(t.time_since_epoch()).count();
-}
 
 std::string normalizedPathString(const std::filesystem::path& path) {
     std::error_code error;
@@ -74,7 +73,7 @@ bool describeSource(const std::string& path, SourceDescriptor& out) {
             const auto mtime = std::filesystem::last_write_time(file, statError);
             if (statError) return false;
             out.loadPaths.push_back(file);
-            out.stamps.push_back({normalizedPathString(file), size, toTimestampNs(mtime)});
+            out.stamps.push_back({normalizedPathString(file), size, mtime});
         }
         return true;
     }
@@ -87,7 +86,7 @@ bool describeSource(const std::string& path, SourceDescriptor& out) {
     const auto canon = normalizedPathString(source);
     out.cacheKey = "file:" + canon;
     out.loadPaths.push_back(source);
-    out.stamps.push_back({canon, size, toTimestampNs(mtime)});
+    out.stamps.push_back({canon, size, mtime});
     return true;
 }
 
