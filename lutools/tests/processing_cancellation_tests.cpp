@@ -362,6 +362,33 @@ int main() {
                 "A new export honours umask like a plain write");
             exportRequest.output_path = targetPath.c_str();
             std::filesystem::remove(fresh);
+            // The mode copy must not read through a destination symbolic link: the published
+            // regular file receives the default `0666 & ~umask` mode, and the linked file
+            // keeps its own permissions and contents.
+            const auto anchor = root / (std::string("link-anchor-") + exportCase.name);
+            writeFile(anchor, existing);
+            check(::chmod(anchor.c_str(), 0600) == 0, "Cannot set symlink anchor permissions");
+            const auto linked = root / (std::string("linked-") + exportCase.name);
+            std::filesystem::remove(linked, cleanupError);
+            std::filesystem::create_symlink(anchor, linked);
+            const std::string linkedPath = linked.u8string();
+            exportRequest.output_path = linkedPath.c_str();
+            const auto symlinkUmask = ::umask(022);
+            sony2fuji_buffer symlinkOut{};
+            const auto symlinkStatus = sony2fuji_process(session, &exportRequest, &symlinkOut);
+            ::umask(symlinkUmask);
+            sony2fuji_release_buffer(&symlinkOut);
+            exportRequest.output_path = targetPath.c_str();
+            const std::string symlinkLabel = std::string("Export onto a symlink destination replaces the link ") +
+                "without copying the link target's mode (" + exportCase.label + ")";
+            check(symlinkStatus == SONY2FUJI_STATUS_OK &&
+                  !std::filesystem::is_symlink(linked) && std::filesystem::is_regular_file(linked) &&
+                  fileMode(linked) == 0644u,
+                symlinkLabel.c_str());
+            check(fileMode(anchor) == 0600u && readFile(anchor) == existing,
+                "Exporting through a symlink destination leaves the linked file's permissions and contents untouched");
+            std::filesystem::remove(linked, cleanupError);
+            std::filesystem::remove(anchor, cleanupError);
 #endif
         }
         // Large (>= 30 MP) FINAL PNG and JPEG exports must check cancellation inside the encoding
