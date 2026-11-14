@@ -79,7 +79,7 @@ public readonly record struct AdjustmentTransferNoticeState(
     {
         if (!HasPendingRenderNotice) return (this, []);
         if (frameOpenRevision != OpenRevision || currentEditRevision != EditRevision) return (Empty, []);
-        if (!isSettledFrame) return (this, []);
+        if (!isSettledFrame) return (this, ActiveNotices);
         return (Empty, ActiveNotices);
     }
 }
