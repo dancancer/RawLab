@@ -1,30 +1,43 @@
 using RawLab.Windows;
-using System.Globalization;
 using System.Text.Json;
-using F = RawLab.Windows.AdjustmentField;
 
-// P1 第③步：Windows 消费共享重置场景向量 `reset-scenarios-v1.json`。
+// V-RESET：Windows 消费共享重置场景向量 `reset-scenarios-v1.json`。
 // 种子经 `AdjustmentTransfer.Prepare` 写入，重置走生产入口 `EditorAdjustmentRules.PrepareReset`，
-// 观察通道复用 `AdjustmentTransfer.Capture`；`@spec_default` 期望引用 spec 表的 windows 默认值
-// （按 scale_from_protocol 反映射）。与现状的分歧按第①步棘轮模式登记进 KnownResetDivergences。
+// 观察通道复用 `AdjustmentTransfer.Capture` 的 `ToJson()` wire JSON 序列化值；不再本地解析 `@spec_default`，
+// 真实序列化分歧显式登记进 KnownResetDivergences。
 internal static class ResetScenarioChecks
 {
     private static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
     private sealed record ResetDiff(string Key, string Summary);
-    private sealed record ResetDivergence(string LedgerId, string Reason, IReadOnlySet<string> ExpectedKeys);
+    private sealed record ResetDivergence(string LedgerId, IReadOnlyDictionary<string, string> FieldReasons)
+    {
+        internal IReadOnlySet<string> ExpectedKeys => FieldReasons.Keys.ToHashSet(StringComparer.Ordinal);
+    }
 
-    // 显式例外清单：未登记的分歧（或清单外字段差异）必红；已修复项仍留档也必红（棘轮只减不增）。
-    // 碳审 B2：detail.denoise.raw_level 的 0 vs null 系适配层误读 supported=false 哨兵，
-    // 已按 Q3 裁定（不支持端捕获输出协议占位 0 即合规）在 Expectation 内消解，登记清零。
+    // 棘轮上限按 `(scenario, field)` 计数，只减不增；新增任何分歧、空理由、未对齐条目的留档或突破上限均必红。
+    // 收口口径（P2-23 / S1）：Windows 基线为 0（0 scenario / 0 field divergences），严禁上调；Mac 基线 4 随 SDR nil->default 收口从 4 -> 0。
+    private const int MaxKnownFieldDivergences = 0;
+
     private static readonly IReadOnlyDictionary<string, ResetDivergence> KnownResetDivergences =
         new Dictionary<string, ResetDivergence>();
 
     internal static void Run()
     {
+        VerifyWirePresenceContract();
+        foreach (var (id, div) in KnownResetDivergences)
+        {
+            Check(!string.IsNullOrWhiteSpace(div.LedgerId), $"Reset divergence {id}: non-blank LedgerId");
+            Check(div.FieldReasons.Count > 0, $"Reset divergence {id}: per-field reasons required");
+            foreach (var (field, reason) in div.FieldReasons)
+                Check(!string.IsNullOrWhiteSpace(reason), $"Reset divergence {id}.{field}: non-blank reason");
+        }
+        var totalFieldDivergences = KnownResetDivergences.Values.Sum(entry => entry.FieldReasons.Count);
+        Check(totalFieldDivergences <= MaxKnownFieldDivergences,
+            $"Reset field divergences ({totalFieldDivergences}) must not exceed monotonic ratchet cap ({MaxKnownFieldDivergences})");
+
         using var document = JsonDocument.Parse(File.ReadAllText(ResolveFixturePath("Shared/fixtures/reset-scenarios-v1.json")));
         var root = document.RootElement;
         Check(root.GetProperty("fixture_version").GetInt32() == 1, "Reset fixture version must be 1");
-        var specFields = LoadSpecFields();
         var scenarios = root.GetProperty("scenarios");
         Check(scenarios.GetArrayLength() > 0, "Reset fixture must not be empty");
         var seenIDs = new HashSet<string>();
@@ -41,28 +54,25 @@ internal static class ResetScenarioChecks
                 if (!platforms.Contains("windows")) { skippedIDs.Add(id); continue; }
             }
             evaluatedIDs.Add(id);
-            var diffs = Evaluate(id, scenario, specFields);
+            var diffs = Evaluate(id, scenario);
             var actualKeys = diffs.Select(d => d.Key).ToHashSet();
             var summary = string.Join("; ", diffs.Select(d => d.Summary));
             var hasKnown = KnownResetDivergences.TryGetValue(id, out var known);
             if (diffs.Count > 0 && !hasKnown) problems.Add($"Scenario {id} diverged: {summary}");
-            else if (diffs.Count == 0 && hasKnown) problems.Add($"Scenario {id} now matches fixture; remove stale divergence ({known!.LedgerId}: {known.Reason})");
+            else if (diffs.Count == 0 && hasKnown) problems.Add($"Scenario {id} now matches fixture; remove stale divergence ({known!.LedgerId})");
             else if (hasKnown && !actualKeys.SetEquals(known!.ExpectedKeys))
                 problems.Add($"Scenario {id} divergence keys changed (expected=[{string.Join(", ", known.ExpectedKeys.Order(StringComparer.Ordinal))}], actual=[{string.Join(", ", actualKeys.Order(StringComparer.Ordinal))}]): {summary}");
-            else if (hasKnown) Console.WriteLine($"KNOWN DIVERGENCE [{id}] ({known!.LedgerId} - {known.Reason}): {summary}");
+            else if (hasKnown)
+            {
+                foreach (var diff in diffs)
+                    Console.WriteLine($"KNOWN DIVERGENCE [{id}.{diff.Key}] ({known!.LedgerId} - {known.FieldReasons[diff.Key]}): {diff.Summary}");
+            }
         }
         Check(seenIDs.Count == scenarios.GetArrayLength(), "All reset scenario IDs visited");
         var unknownRegistered = KnownResetDivergences.Keys.Except(evaluatedIDs).ToArray();
         Check(unknownRegistered.Length == 0, "Registered reset divergences do not match evaluated scenarios: " + string.Join(", ", unknownRegistered));
         if (problems.Count > 0) throw new Exception(string.Join(Environment.NewLine, problems));
-        Console.WriteLine($"PASS: {evaluatedIDs.Count} Windows reset scenarios evaluated ({skippedIDs.Count} platform-scoped skipped, {KnownResetDivergences.Count} registered divergences)");
-    }
-
-    private static Dictionary<string, JsonElement> LoadSpecFields()
-    {
-        using var spec = JsonDocument.Parse(File.ReadAllText(ResolveFixturePath("Shared/specs/adjustment-fields-v1.json")));
-        return spec.RootElement.GetProperty("fields").EnumerateArray()
-            .ToDictionary(field => field.GetProperty("field_id").GetString()!, field => field.Clone());
+        Console.WriteLine($"PASS: {evaluatedIDs.Count} Windows reset scenarios evaluated ({skippedIDs.Count} platform-scoped skipped, {KnownResetDivergences.Count} scenario / {totalFieldDivergences} field divergences; ratchet cap {MaxKnownFieldDivergences})");
     }
 
     private static string ResolveFixturePath(string relativePath)
@@ -76,7 +86,7 @@ internal static class ResetScenarioChecks
         throw new FileNotFoundException("Shared fixture not found: " + relativePath);
     }
 
-    private static List<ResetDiff> Evaluate(string id, JsonElement scenario, Dictionary<string, JsonElement> specFields)
+    private static List<ResetDiff> Evaluate(string id, JsonElement scenario)
     {
         var targetSpec = scenario.GetProperty("target");
         var kind = targetSpec.GetProperty("kind").GetString() ?? throw new Exception($"Scenario {id}: missing target kind");
@@ -109,8 +119,8 @@ internal static class ResetScenarioChecks
         var observed = expectValues.EnumerateObject().Select(p => ParseField(p.Name))
             .Concat(untouched.Select(ParseField)).ToHashSet();
         var diffs = new List<ResetDiff>();
-        var before = observed.Count == 0 ? new Dictionary<F, JsonElement?>() :
-            AdjustmentTransfer.Capture(AdjustmentScope.Custom(observed.ToArray()), seeded, scenarioContext).Values.ToDictionary(p => p.Key, p => (JsonElement?)p.Value.Clone());
+        var before = observed.Count == 0 ? new Dictionary<string, JsonElement>() :
+            WireValues(AdjustmentTransfer.Capture(AdjustmentScope.Custom(observed.ToArray()), seeded, scenarioContext));
         var result = EditorAdjustmentRules.PrepareReset(ResetScope(scenario.GetProperty("scope")), seeded);
         var status = result.Status switch
         {
@@ -124,24 +134,61 @@ internal static class ResetScenarioChecks
         if (result.Status == EditorResetStatus.Ready)
         {
             var candidate = result.Candidate!;
-            var after = observed.Count == 0 ? new Dictionary<F, JsonElement?>() :
-                AdjustmentTransfer.Capture(AdjustmentScope.Custom(observed.ToArray()), candidate, scenarioContext).Values.ToDictionary(p => p.Key, p => (JsonElement?)p.Value.Clone());
-            foreach (var pair in expectValues.EnumerateObject().OrderBy(p => p.Name, StringComparer.Ordinal))
-            {
-                var field = ParseField(pair.Name);
-                var expected = Expectation(pair.Value, pair.Name, kind == "hdr", specFields);
-                after.TryGetValue(field, out var actual);
-                if (!Same(actual, expected)) diffs.Add(new(pair.Name, $"{pair.Name} expected={Render(expected)}, actual={Render(actual)}"));
-            }
-            foreach (var name in untouched)
-            {
-                var field = ParseField(name);
-                before.TryGetValue(field, out var from); after.TryGetValue(field, out var to);
-                if (!Same(from, to)) diffs.Add(new(name, $"{name} untouched {Render(from)} -> {Render(to)}"));
-            }
+            var after = observed.Count == 0 ? new Dictionary<string, JsonElement>() :
+                WireValues(AdjustmentTransfer.Capture(AdjustmentScope.Custom(observed.ToArray()), candidate, scenarioContext));
+            diffs.AddRange(DiffWireValues(before, after, expectValues, untouched));
         }
         return diffs;
     }
+
+    private static IEnumerable<ResetDiff> DiffWireValues(
+        IReadOnlyDictionary<string, JsonElement> before,
+        IReadOnlyDictionary<string, JsonElement> after,
+        JsonElement expectValues,
+        IEnumerable<string> untouched)
+    {
+        foreach (var pair in expectValues.EnumerateObject().OrderBy(p => p.Name, StringComparer.Ordinal))
+        {
+            JsonElement? actual = after.TryGetValue(pair.Name, out var found) ? found : null;
+            if (!Same(actual, pair.Value)) yield return new(pair.Name, $"{pair.Name} expected={Render(pair.Value)}, actual={Render(actual)}");
+        }
+        foreach (var name in untouched)
+        {
+            JsonElement? from = before.TryGetValue(name, out var beforeValue) ? beforeValue : null;
+            JsonElement? to = after.TryGetValue(name, out var afterValue) ? afterValue : null;
+            if (!Same(from, to)) yield return new(name, $"{name} untouched {Render(from)} -> {Render(to)}");
+        }
+    }
+
+    private static void VerifyWirePresenceContract()
+    {
+        using var vectorDoc = JsonDocument.Parse(
+            "{\"before_values\":{\"geometry.lens.profile_id\":null},\"after_values\":{},\"expect_values\":{\"color.white_balance.temperature_kelvin\":null},\"untouched\":[\"geometry.lens.profile_id\"]}");
+        var root = vectorDoc.RootElement;
+        var jsonNull = root.GetProperty("before_values").GetProperty("geometry.lens.profile_id");
+        Check(!Same(null, jsonNull), "Wire presence contract: missing key must not equal explicit null");
+        Check(!Same(jsonNull, null), "Wire presence contract: explicit null must not equal missing key");
+        Check(Same(jsonNull, jsonNull), "Wire presence contract: explicit null equals explicit null");
+        Check(Same(null, null), "Wire presence contract: missing equals missing");
+        var diffs = DiffWireValues(
+            ReadWireValues(root.GetProperty("before_values")),
+            ReadWireValues(root.GetProperty("after_values")),
+            root.GetProperty("expect_values"),
+            root.GetProperty("untouched").EnumerateArray().Select(x => x.GetString()!)).ToArray();
+        Check(diffs.Any(d => d.Key == "color.white_balance.temperature_kelvin" && d.Summary.Contains("expected=null, actual=<missing>", StringComparison.Ordinal)),
+            "Wire presence contract: omitted expect key must fail against explicit null");
+        Check(diffs.Any(d => d.Key == "geometry.lens.profile_id" && d.Summary.Contains("null -> <missing>", StringComparison.Ordinal)),
+            "Wire presence contract: dropped untouched null key must fail");
+    }
+
+    private static Dictionary<string, JsonElement> WireValues(AdjustmentPayload payload)
+    {
+        using var document = JsonDocument.Parse(payload.ToJson());
+        return ReadWireValues(document.RootElement.GetProperty("values"));
+    }
+
+    private static Dictionary<string, JsonElement> ReadWireValues(JsonElement valuesElement) =>
+        valuesElement.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.Clone());
 
     private static EditorResetScope ResetScope(JsonElement scope) => scope.GetProperty("kind").GetString() switch
     {
@@ -155,6 +202,7 @@ internal static class ResetScenarioChecks
         {
             "light" => new(EditorResetKind.Group, Group: EditorAdjustmentGroup.Light),
             "color" => new(EditorResetKind.Group, Group: EditorAdjustmentGroup.Color),
+            "detail" => new(EditorResetKind.Group, Group: EditorAdjustmentGroup.Detail),
             "geometry" => new(EditorResetKind.Group, Group: EditorAdjustmentGroup.Geometry),
             var group => throw new Exception($"Unsupported reset group: {group}")
         },
@@ -162,43 +210,11 @@ internal static class ResetScenarioChecks
         var kind => throw new Exception($"Unsupported reset scope kind: {kind}")
     };
 
-    private static F ParseField(string id) => AdjustmentFields.Parse(id);
-
-    /// @spec_default：spec 表本端默认值按 scale_from_protocol 反映射回协议空间；
-    /// HDR 目标优先取 hdr_default/hdr_scale_from_protocol；supported=false 键按 Q3 输出协议占位 0。
-    private static JsonElement Expectation(JsonElement marker, string fieldID, bool hdr, Dictionary<string, JsonElement> specFields)
-    {
-        if (marker.ValueKind == JsonValueKind.String && marker.GetString() == "@spec_default")
-        {
-            var model = specFields[fieldID].GetProperty("model").GetProperty("windows");
-            // Q3 裁定：supported=false 表示本端不建模该键（null 是「无字段」哨兵，协议非空），
-            // 捕获输出协议占位 0 即合规，不得把哨兵误读成期望 null。
-            if (model.TryGetProperty("supported", out var supported) && supported.ValueKind == JsonValueKind.False)
-                return JsonDocument.Parse("0").RootElement.Clone();
-            JsonElement hdrDefault = default;
-            var useHdr = hdr && model.TryGetProperty("hdr_default", out hdrDefault) && hdrDefault.ValueKind != JsonValueKind.Null;
-            var def = useHdr ? hdrDefault : model.GetProperty("default");
-            if (def.ValueKind != JsonValueKind.Number) return def.Clone();
-            var value = def.GetDouble();
-            var mapped = model.GetProperty(useHdr ? "hdr_scale_from_protocol" : "scale_from_protocol").GetString() switch
-            {
-                "p" => value,
-                "p * 100" => value / 100,
-                "(p - 1) * 100" => value / 100 + 1,
-                "p - 1" => value + 1,
-                "p / 100" => value * 100,
-                "-p * 100" => -value / 100,
-                "-p" => -value,
-                var scale => throw new Exception($"Unsupported scale_from_protocol for {fieldID}: {scale}")
-            };
-            return JsonDocument.Parse(mapped.ToString("R", CultureInfo.InvariantCulture)).RootElement.Clone();
-        }
-        return marker.Clone();
-    }
+    private static AdjustmentField ParseField(string id) => AdjustmentFields.Parse(id);
 
     private static bool Same(JsonElement? a, JsonElement? b)
     {
-        if (a == null || b == null) return (a == null || a.Value.ValueKind == JsonValueKind.Null) && (b == null || b.Value.ValueKind == JsonValueKind.Null);
+        if (a == null || b == null) return a == null && b == null;
         if (a.Value.ValueKind != b.Value.ValueKind) return false;
         return a.Value.ValueKind switch
         {

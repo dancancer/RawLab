@@ -14,33 +14,49 @@ import org.junit.Assert.*
 import org.junit.Test
 
 /**
- * P1 第③步：Android 消费共享重置场景向量 `reset-scenarios-v1.json`。
+ * V-RESET：Android 消费共享重置场景向量 `reset-scenarios-v1.json`。
  * 种子经 `AdjustmentTransfer.prepare` 写入，重置走生产入口 [EditorAdjustmentRules.prepareReset]，
- * 观察通道复用 [AdjustmentTransfer.capture]；「重置目标值」以 @spec_default 标记引用
- * `Shared/specs/adjustment-fields-v1.json` 的本端默认值（按 scale_from_protocol 反映射），
- * 不写死平台字面量。与现状的分歧按第①步棘轮模式登记进 [knownResetDivergences]。
+ * 观察通道复用 [AdjustmentTransfer.capture] 编码后的 wire JSON 载荷；不再在测试层本地解析
+ * `@spec_default`，真实现状分歧显式登记进 [knownResetDivergences]。
  */
 class ResetScenarioTest {
     private val fixture = JSONObject(resolveSharedFixture("reset-scenarios-v1.json").readText())
 
-    /** 场景 id -> 已登记的精确 diff-key 集；未登记的分歧与「已修复仍留档」都必红，棘轮只减不增。 */
-    private val knownResetDivergences: Map<String, Set<String>> = emptyMap()
-
-    private val specFields: Map<String, JSONObject> by lazy {
-        val fields = JSONObject(resolveSharedPath("Shared/specs/adjustment-fields-v1.json").readText())
-            .getJSONArray("fields")
-        (0 until fields.length()).associate { index ->
-            fields.getJSONObject(index).getString("field_id") to fields.getJSONObject(index)
-        }
+    private data class ResetDiff(val key: String, val summary: String)
+    private data class ResetDivergence(val ledgerId: String, val fieldReasons: Map<String, String>) {
+        val expectedKeys: Set<String> get() = fieldReasons.keys
     }
 
+    /**
+     * 棘轮上限按 `(scenario, field)` 计数，只减不增；Android 基线为 0（0 scenario / 0 field divergences），严禁上调。
+     * 收口口径（P2-23 / S1）：仅 Mac 存在 4 条 SDR `detail.denoise` null 序列化分歧，Android 已与规范字面量对齐。
+     */
+    private val maxKnownFieldDivergences = 0
+
+    /** 显式例外清单（逐条精确到 `(scenario, field)`）：未登记的分歧或清单外字段差异必红；已修复仍留档也必红。 */
+    private val knownResetDivergences: Map<String, ResetDivergence> = emptyMap()
+
     @Test fun resetScenarioFixturesMatchCurrentAndroidDivergences() {
+        verifyWirePresenceContract()
+        knownResetDivergences.forEach { (id, div) ->
+            assertTrue("Reset divergence $id: non-blank ledgerId", div.ledgerId.isNotBlank())
+            assertTrue("Reset divergence $id: per-field reasons required", div.fieldReasons.isNotEmpty())
+            div.fieldReasons.forEach { (field, reason) ->
+                assertTrue("Reset divergence $id.$field: non-blank reason", reason.isNotBlank())
+            }
+        }
+        val totalFieldDivergences = knownResetDivergences.values.sumOf { it.fieldReasons.size }
+        assertTrue(
+            "Reset field divergences ($totalFieldDivergences) must not exceed monotonic ratchet cap ($maxKnownFieldDivergences)",
+            totalFieldDivergences <= maxKnownFieldDivergences,
+        )
         assertEquals(1, fixture.getInt("fixture_version"))
         val scenarios = fixture.getJSONArray("scenarios")
         assertTrue("fixture must not be empty", scenarios.length() > 0)
         val seen = HashSet<String>()
         val evaluated = HashSet<String>()
         val skipped = HashSet<String>()
+        val problems = mutableListOf<String>()
         for (index in 0 until scenarios.length()) {
             val scenario = scenarios.getJSONObject(index)
             val id = scenario.getString("id")
@@ -51,13 +67,31 @@ class ResetScenarioTest {
                 continue
             }
             evaluated.add(id)
-            try { evaluate(id, scenario) } catch (error: Exception) { fail("Scenario $id: $error") }
+            val diffs = try { evaluate(id, scenario) } catch (error: Exception) { fail("Scenario $id: $error"); emptyList() }
+            val actualKeys = diffs.map { it.key }.toSet()
+            val summary = diffs.joinToString("; ") { it.summary }
+            val known = knownResetDivergences[id]
+            when {
+                diffs.isNotEmpty() && known == null ->
+                    problems += "Scenario $id diverged: $summary"
+                diffs.isEmpty() && known != null ->
+                    problems += "Scenario $id now matches fixture; remove stale divergence (${known.ledgerId})"
+                known != null && actualKeys != known.expectedKeys ->
+                    problems += "Scenario $id divergence keys changed (expected=${known.expectedKeys.sorted()}, actual=${actualKeys.sorted()}): $summary"
+                known != null ->
+                    diffs.forEach { diff ->
+                        val reason = known.fieldReasons.getValue(diff.key)
+                        println("KNOWN DIVERGENCE [$id.${diff.key}] (${known.ledgerId} - $reason): ${diff.summary}")
+                    }
+            }
         }
         assertEquals("every scenario is evaluated or platform-skipped", scenarios.length(), evaluated.size + skipped.size)
         assertEquals("stale knownResetDivergences entries", evaluated, evaluated + knownResetDivergences.keys)
+        if (problems.isNotEmpty()) fail(problems.joinToString("\n"))
+        println("PASS: ${evaluated.size} Android reset scenarios evaluated (${skipped.size} platform-scoped skipped, ${knownResetDivergences.size} scenario / $totalFieldDivergences field divergences; ratchet cap $maxKnownFieldDivergences)")
     }
 
-    private fun evaluate(id: String, scenario: JSONObject) {
+    private fun evaluate(id: String, scenario: JSONObject): List<ResetDiff> {
         val target = scenario.getJSONObject("target")
         val kind = target.getString("kind")
         val rawTarget = kind == "sdr_raw"
@@ -88,28 +122,86 @@ class ResetScenarioTest {
         val observed = linkedSetOf<AdjustmentField>()
         expectValues.keys().forEach { observed += AdjustmentField.fromID(it) ?: error("Scenario $id: unknown field $it") }
         (0 until untouched.length()).forEach { observed += AdjustmentField.fromID(untouched.getString(it)) ?: error("Scenario $id: unknown untouched field") }
-        val diffs = linkedSetOf<String>()
+        val diffs = mutableListOf<ResetDiff>()
         val before = if (observed.isEmpty()) emptyMap() else
-            AdjustmentTransfer.capture(AdjustmentScope.Custom(observed), seeded, context).values
+            wireValues(AdjustmentTransfer.capture(AdjustmentScope.Custom(observed), seeded, context))
         when (val result = EditorAdjustmentRules.prepareReset(scope, seeded, resetContext)) {
             is EditorResetResult.Ready -> {
                 val after = if (observed.isEmpty()) emptyMap() else
-                    AdjustmentTransfer.capture(AdjustmentScope.Custom(observed), result.candidate, context).values
-                expectValues.keys().asSequence().sorted().forEach { key ->
-                    val field = AdjustmentField.fromID(key)!!
-                    if (!matchesValue(after[field], expectation(expectValues.get(key), key, kind == "hdr"))) diffs += key
+                    wireValues(AdjustmentTransfer.capture(AdjustmentScope.Custom(observed), result.candidate, context))
+                diffs += diffWireValues(before, after, expectValues, (0 until untouched.length()).map { untouched.getString(it) })
+                if (expect.getString("status") != "changed") {
+                    diffs += ResetDiff("status", "status expected=${expect.getString("status")}, actual=changed")
                 }
-                (0 until untouched.length()).forEach { index ->
-                    val field = AdjustmentField.fromID(untouched.getString(index))!!
-                    if (!matchesValue(before[field], after[field])) diffs += field.id
-                }
-                if (expect.getString("status") != "changed") diffs += "status"
             }
-            is EditorResetResult.NoChange -> if (expect.getString("status") != "unchanged") diffs += "status"
-            is EditorResetResult.Blocked -> if (expect.getString("status") != "blocked") diffs += "status"
+            is EditorResetResult.NoChange -> if (expect.getString("status") != "unchanged") {
+                diffs += ResetDiff("status", "status expected=${expect.getString("status")}, actual=unchanged")
+            }
+            is EditorResetResult.Blocked -> if (expect.getString("status") != "blocked") {
+                diffs += ResetDiff("status", "status expected=${expect.getString("status")}, actual=blocked")
+            }
         }
-        assertEquals("Scenario $id: unregistered reset divergence $diffs",
-            knownResetDivergences[id] ?: emptySet<String>(), diffs)
+        return diffs
+    }
+
+    private fun diffWireValues(
+        before: Map<String, AdjustmentValue>,
+        after: Map<String, AdjustmentValue>,
+        expectValues: JSONObject,
+        untouched: List<String>,
+    ): List<ResetDiff> {
+        val diffs = mutableListOf<ResetDiff>()
+        expectValues.keys().asSequence().sorted().forEach { key ->
+            val expected = jsonValue(expectValues.get(key))
+            val actual = after[key]
+            if (!matchesValue(actual, expected)) {
+                diffs += ResetDiff(key, "$key expected=${renderValue(expected)}, actual=${renderValue(actual)}")
+            }
+        }
+        untouched.forEach { key ->
+            val from = before[key]; val to = after[key]
+            if (!matchesValue(from, to)) {
+                diffs += ResetDiff(key, "$key untouched ${renderValue(from)} -> ${renderValue(to)}")
+            }
+        }
+        return diffs
+    }
+
+    private fun verifyWirePresenceContract() {
+        assertFalse("missing key must not equal explicit null", matchesValue(null, AdjustmentValue.Null))
+        assertFalse("explicit null must not equal missing key", matchesValue(AdjustmentValue.Null, null))
+        assertTrue("explicit null equals explicit null", matchesValue(AdjustmentValue.Null, AdjustmentValue.Null))
+        assertTrue("missing equals missing", matchesValue(null, null))
+        val diffs = diffWireValues(
+            before = mapOf("geometry.lens.profile_id" to AdjustmentValue.Null),
+            after = emptyMap(),
+            expectValues = JSONObject().put("color.white_balance.temperature_kelvin", JSONObject.NULL),
+            untouched = listOf("geometry.lens.profile_id"),
+        )
+        assertTrue(
+            "omitted expect key must fail against explicit null",
+            diffs.any { it.key == "color.white_balance.temperature_kelvin" && it.summary.contains("expected=null, actual=<missing>") },
+        )
+        assertTrue(
+            "dropped untouched null key must fail",
+            diffs.any { it.key == "geometry.lens.profile_id" && it.summary.contains("null -> <missing>") },
+        )
+    }
+
+    private fun wireValues(payload: AdjustmentPayload): Map<String, AdjustmentValue> {
+        val values = JSONObject(payload.encode()).getJSONObject("values")
+        return values.keys().asSequence().associateWith { jsonValue(values.get(it)) }
+    }
+
+    private fun renderValue(value: AdjustmentValue?): String = when (value) {
+        null -> "<missing>"
+        AdjustmentValue.Null -> "null"
+        is AdjustmentValue.Number -> value.value.toString()
+        is AdjustmentValue.Boolean -> value.value.toString()
+        is AdjustmentValue.Text -> JSONObject.quote(value.value)
+        is AdjustmentValue.Array -> value.value.joinToString(",", "[", "]") { renderValue(it) }
+        is AdjustmentValue.Object -> value.value.entries.sortedBy { it.key }
+            .joinToString(",", "{", "}") { "${JSONObject.quote(it.key)}:${renderValue(it.value)}" }
     }
 
     private fun resetScope(scope: JSONObject): EditorResetScope = when (scope.getString("kind")) {
@@ -121,37 +213,12 @@ class ResetScenarioTest {
         "group" -> EditorResetScope.Group(when (scope.getString("group")) {
             "light" -> EditorAdjustmentGroup.LIGHT
             "color" -> EditorAdjustmentGroup.COLOR
+            "detail" -> EditorAdjustmentGroup.DETAIL
             "geometry" -> EditorAdjustmentGroup.GEOMETRY
             else -> error("Unsupported reset group: ${scope.getString("group")}")
         })
         "all" -> EditorResetScope.All
         else -> error("Unsupported reset scope kind: ${scope.getString("kind")}")
-    }
-
-    private fun expectation(marker: Any, fieldId: String, hdr: Boolean): AdjustmentValue = when (marker) {
-        "@spec_default" -> specDefault(fieldId, hdr)
-        else -> jsonValue(marker)
-    }
-
-    /** @spec_default：本端 spec 行的 model.android.default 按 scale_from_protocol 反映射回协议空间。 */
-    private fun specDefault(fieldId: String, hdr: Boolean): AdjustmentValue {
-        val model = specFields.getValue(fieldId).getJSONObject("model").getJSONObject("android")
-        // Q3 裁定：supported=false 表示本端模型不建模该键（default/min/max 的 null 是「无字段」哨兵，
-        // 协议本身非空），捕获按协议占位输出 0 即合规；不得把哨兵误读成期望 null。
-        if (!model.optBoolean("supported", true)) return AdjustmentValue.Number(0.0)
-        val useHdr = hdr && model.has("hdr_default") && !model.isNull("hdr_default")
-        val value = model.get(if (useHdr) "hdr_default" else "default")
-        if (value !is Number) return jsonValue(value)
-        return when (val scale = model.getString(if (useHdr) "hdr_scale_from_protocol" else "scale_from_protocol")) {
-            "p" -> AdjustmentValue.Number(value.toDouble())
-            "p * 100" -> AdjustmentValue.Number(value.toDouble() / 100)
-            "(p - 1) * 100" -> AdjustmentValue.Number(value.toDouble() / 100 + 1)
-            "p - 1" -> AdjustmentValue.Number(value.toDouble() + 1)
-            "p / 100" -> AdjustmentValue.Number(value.toDouble() * 100)
-            "-p * 100" -> AdjustmentValue.Number(-value.toDouble() / 100)
-            "-p" -> AdjustmentValue.Number(-value.toDouble())
-            else -> error("Unsupported scale_from_protocol: $scale")
-        }
     }
 
     private fun jsonValue(value: Any): AdjustmentValue = when (value) {
@@ -161,7 +228,7 @@ class ResetScenarioTest {
         is Boolean -> AdjustmentValue.Boolean(value)
         is JSONArray -> AdjustmentValue.Array((0 until value.length()).map { jsonValue(value.get(it)) })
         is JSONObject -> AdjustmentValue.Object(value.keys().asSequence().associateWith { jsonValue(value.get(it)) })
-        else -> error("Unsupported spec default: $value")
+        else -> error("Unsupported JSON value: $value")
     }
 
     private fun matchesValue(actual: AdjustmentValue?, expected: AdjustmentValue?, tolerance: Double = 1e-6): Boolean =
