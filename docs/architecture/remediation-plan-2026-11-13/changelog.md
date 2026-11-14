@@ -124,3 +124,4 @@
 - 2026-11-14 · P2-16 交卷：**PR #313**（`5d13a780`）——Shared/PresetJSONScanner 逐条解码，坏条目 Unreadable* 原文保留（可删/占名/retired 规则对齐 Windows #251），无 unreadable 写回字节一致；Windows 外观容错留自有工单（有意差异）。碳审在途（review-mwfu4qgn，核 CI 终态+Windows 语义对读）。
 - 2026-11-14 · **hydrogen-xhigh 首单**：P2-09（Force 错误码跨路径一致，能力缺失类统一 UNSUPPORTED）交 `implement-mwfu5qwc`（agy-staff implement 角色，suffixed-id 传 xhigh，--effort xhigh 仍被包装层拒）。
 - 2026-11-14 · roadmap 去重：§5 决策表改为指针（真相归 g-product-decisions，顺带修正「12 项」计数错——实为 13 项）、§11 静态快照废止（旧计数必过期）。纯文档。
+- 2026-11-14 · #310 二轮碳审 request-changes（4 Blocking，全在数据丢失域）：B1=iOS RecentPhotoStore 是「最近打开」LRU（导入即记录+100 张/2GiB 淘汰+排除备份），仍非导出证据→改**持久导出证据登记**（相册/Files/DNG/批量成功时按原件 id 登记）；B3=iOS 锚点扫描三处非同构（connectionKey 归组/空 boundaries 遮蔽/无日期回溯）；B2=Android 检查点未按相机分组+漏未迁移 boundary；B4=runs 读取失败须 fail-closed。r3 已派 q6 crew（修前红逐条）。
