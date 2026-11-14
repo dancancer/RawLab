@@ -1,4 +1,3 @@
-using System.Threading;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows.Automation;
@@ -32,6 +31,7 @@ public partial class MainWindow
             else if (PhotoInput.IsRaw(path)) PhotoInput.ProbeCameraRaw(path, out openedHDR);
             CancelViewingInput();
             if(!ResolveTransformDraft() || !SaveEdits())return;
+            ClearTransferNoticesOnSourceChange();
             ResetAITask();CancelProcessingMigration();RestoreEdits(path); hdrSource = openedHDR;
             CancelViewingInput();view.SourceChanged();neutralResult=null;
             lastExportedPath=null;ExportRevealButton.Visibility=Visibility.Collapsed;
@@ -208,7 +208,7 @@ public partial class MainWindow
             work.Settings.IsHDREditing==settings.IsHDREditing && work.Settings.ActiveAIDenoise==settings.ActiveAIDenoise && work.Settings.X3fMode==settings.X3fMode &&
             (!work.Settings.ActiveAIDenoise || AIResultReady && work.AIIdentity==aiJob.Identity) && work.Settings.Geometry==PreviewGeometry && work.Settings.Lens==PreviewLens && work.TransformGeneration==transformGeneration && (!view.NeedsReference || work.Compare) && (current || (work.Interactive && interacting && work.Edge==RenderEdge(true))))
         {
-            if(failure!=null) { if(current){ClearPendingAllReset();exactReady=false;transformPreviewReady=false;renderFailed=true;RefreshCropDraft();RefreshRenderLabels();CancelProcessingMigration();if(!HandleAIFailure(failure))SetStatus(()=>Loc.Text("预览未更新")+" · "+failure.Message,true);} }
+            if(failure!=null) { if(current){ClearPendingAllReset();transferNoticeBanner=transferNoticeBanner.AfterRenderFailure();exactReady=false;transformPreviewReady=false;renderFailed=true;RefreshCropDraft();RefreshRenderLabels();CancelProcessingMigration();if(!HandleAIFailure(failure))SetStatus(()=>Loc.Text("预览未更新")+" · "+failure.Message,true);} }
             else if(rendered!=null && neutral!=null)
             {
                 if(work.Settings.ActiveAIDenoise) { aiNotReadyIdentity=null;aiNotReadyAttempts=0; }
@@ -244,9 +244,18 @@ public partial class MainWindow
                     if(transform.Tool==TransformTool.Geometry)GeometryEditor.SetCanvasSize(rendered.NativeWidth,rendered.NativeHeight);
                     RefreshCropDraft();
                 }
-                // Q3/Q4：把仍在等待可见的粘贴提示并入预览状态一次（持久到可见）。
-                var transferNotice=Interlocked.Exchange(ref pendingTransferNoticeStatus,null);
-                SetStatus(() => $"{(work.Interactive ? Loc.Text("交互预览") : work.Edge==0 ? Loc.Text("原尺寸") : Loc.Text("预览"))} {rendered.Image.PixelWidth} × {rendered.Image.PixelHeight} · {Path.GetFileName(work.File)}" + (transferNotice is {} notice ? "；" + notice : ""));
+                // W1（#301 收口）：仅在当前帧满足 OpenRevision/EditRevision 时绑定提示，
+                // Refine 或待执行缩放预览先保留，直到最终稳态帧消费一次并保持活跃横幅引用待清理。
+                var isSettledFrame = !WillScheduleNextPreview(work, current, failure);
+                Func<string> cleanPreviewStatus = () => $"{(work.Interactive ? Loc.Text("交互预览") : work.Edge==0 ? Loc.Text("原尺寸") : Loc.Text("预览"))} {rendered.Image.PixelWidth} × {rendered.Image.PixelHeight} · {Path.GetFileName(work.File)}";
+                var (nextBannerState, status) = transferNoticeBanner.DeliverRender(
+                    work.OpenRevision,
+                    editRevision,
+                    isSettledFrame,
+                    cleanPreviewStatus,
+                    transferNotices => () => cleanPreviewStatus() + "；" + FormatTransferNotices(transferNotices));
+                transferNoticeBanner = nextBannerState;
+                SetStatus(status);
                 if (current && openRevision != photoImportReportedRevision)
                 {
                     photoImportReportedRevision = openRevision;
@@ -259,6 +268,14 @@ public partial class MainWindow
         // A quick RAW proxy shortens the blank wait. Only its exact successor enables export.
         if(current && work.Refine && failure==null && work.File==file && !interacting)Schedule();
         UpdateBusy(); TryFinishPendingProcessingMigration(); Pump();QueuePendingReset();
+    }
+
+    private bool WillScheduleNextPreview(Work work, bool current, Exception? failure)
+    {
+        if (!current || work.Interactive) return true;
+        if (work.Refine && failure == null && work.File == file && !interacting) return true;
+        if (scheduler.Busy || previewResize.IsEnabled) return true;
+        return !syncing && !closing && !exporting && file != null && ResultCanvas.PreviewLongEdge != previewLongEdge;
     }
     private void ExposureModeChanged(object sender,SelectionChangedEventArgs e) { if(!ready || syncing || exporting || transform.Active)return;settings.ExposureMode=ExposureMode.SelectedIndex;MarkEdited();Schedule(); }
     private void X3fRenderingChanged(object sender,SelectionChangedEventArgs e)

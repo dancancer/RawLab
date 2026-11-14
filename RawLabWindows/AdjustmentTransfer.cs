@@ -32,6 +32,145 @@ public static class AdjustmentTransferNoticeExtensions
     };
 }
 
+public static class AdjustmentPasteNoticeDisplay
+{
+    public static bool ShowsInDialog(IReadOnlyList<AdjustmentTransferNotice> notices, bool hasPasteResults) =>
+        hasPasteResults && notices != null && notices.Count > 0;
+}
+
+public enum AdjustmentTransferNoticeOrigin { Dialog, QuickPreset }
+
+public readonly record struct AdjustmentTransferNoticeState(
+    IReadOnlyList<AdjustmentTransferNotice> Notices,
+    AdjustmentTransferNoticeOrigin Origin = AdjustmentTransferNoticeOrigin.QuickPreset,
+    bool AwaitsSettledRender = false,
+    long OpenRevision = 0,
+    long EditRevision = 0)
+{
+    public static readonly AdjustmentTransferNoticeState Empty = new([]);
+
+    public IReadOnlyList<AdjustmentTransferNotice> ActiveNotices => Notices ?? [];
+    public bool HasNotices => ActiveNotices.Count > 0;
+    public bool HasPendingRenderNotice => HasNotices && AwaitsSettledRender;
+
+    public static AdjustmentTransferNoticeState Prepare(
+        IReadOnlyList<AdjustmentTransferNotice> notices,
+        AdjustmentTransferNoticeOrigin origin,
+        bool appliedCurrentPhoto,
+        long openRevision,
+        long editRevision)
+    {
+        if (origin == AdjustmentTransferNoticeOrigin.Dialog || notices == null || notices.Count == 0)
+            return Empty;
+        return new(notices.ToArray(), origin, appliedCurrentPhoto, openRevision, editRevision);
+    }
+
+    public AdjustmentTransferNoticeState Invalidate() => Empty;
+    public AdjustmentTransferNoticeState DisposeDialog() =>
+        Origin == AdjustmentTransferNoticeOrigin.Dialog ? Empty : this;
+    public AdjustmentTransferNoticeState DisposeQuickPreset() =>
+        Origin == AdjustmentTransferNoticeOrigin.QuickPreset ? Empty : this;
+    public AdjustmentTransferNoticeState AfterSourceChange() => Empty;
+    public AdjustmentTransferNoticeState AfterUserEdit() => Empty;
+
+    public (AdjustmentTransferNoticeState NextState, IReadOnlyList<AdjustmentTransferNotice> ConsumedNotices) DeliverRender(
+        long frameOpenRevision,
+        long currentEditRevision,
+        bool isSettledFrame)
+    {
+        if (!HasPendingRenderNotice) return (this, []);
+        if (frameOpenRevision != OpenRevision || currentEditRevision != EditRevision) return (Empty, []);
+        if (!isSettledFrame) return (this, ActiveNotices);
+        return (Empty, ActiveNotices);
+    }
+}
+
+public readonly record struct AdjustmentTransferBannerAction(
+    AdjustmentTransferNoticeBannerState NextState,
+    Func<string>? StatusToApply,
+    bool ClearStatusToEmpty);
+
+public readonly record struct AdjustmentTransferNoticeBannerState(
+    AdjustmentTransferNoticeState Pending,
+    Func<string>? ActiveBanner,
+    AdjustmentTransferNoticeOrigin? ActiveBannerOrigin,
+    Func<string>? LastPreviewStatus)
+{
+    public static readonly AdjustmentTransferNoticeBannerState Empty = new(AdjustmentTransferNoticeState.Empty, null, null, null);
+
+    public AdjustmentTransferBannerAction Clear(Func<string>? currentLocalizedStatus)
+    {
+        var banner = ActiveBanner;
+        var next = this with { ActiveBanner = null, ActiveBannerOrigin = null };
+        if (banner == null || !ReferenceEquals(currentLocalizedStatus, banner))
+            return new(next, null, false);
+        return LastPreviewStatus != null ? new(next, LastPreviewStatus, false) : new(next, null, true);
+    }
+
+    public AdjustmentTransferBannerAction BeginPrepare(Func<string>? currentLocalizedStatus) =>
+        (this with { Pending = Pending.Invalidate() }).Clear(currentLocalizedStatus);
+
+    public AdjustmentTransferBannerAction Invalidate(Func<string>? currentLocalizedStatus) =>
+        (this with { Pending = Pending.Invalidate() }).Clear(currentLocalizedStatus);
+
+    public AdjustmentTransferBannerAction DisposeDialog(Func<string>? currentLocalizedStatus)
+    {
+        var hadDialogOrigin = ActiveBannerOrigin == AdjustmentTransferNoticeOrigin.Dialog ||
+                              Pending.Origin == AdjustmentTransferNoticeOrigin.Dialog && Pending.HasNotices;
+        var next = this with { Pending = Pending.DisposeDialog() };
+        return hadDialogOrigin ? next.Clear(currentLocalizedStatus) : new(next, null, false);
+    }
+
+    public AdjustmentTransferBannerAction DisposeQuickPreset(Func<string>? currentLocalizedStatus)
+    {
+        var hadQuickPresetOrigin = ActiveBannerOrigin == AdjustmentTransferNoticeOrigin.QuickPreset ||
+                                   Pending.Origin == AdjustmentTransferNoticeOrigin.QuickPreset && Pending.HasNotices;
+        var next = this with { Pending = Pending.DisposeQuickPreset() };
+        return hadQuickPresetOrigin ? next.Clear(currentLocalizedStatus) : new(next, null, false);
+    }
+
+    public AdjustmentTransferBannerAction AfterSourceChange() => new(Empty, null, false);
+
+    public AdjustmentTransferBannerAction AfterUserEdit(Func<string>? currentLocalizedStatus) =>
+        (this with { Pending = Pending.AfterUserEdit() }).Clear(currentLocalizedStatus);
+
+    public AdjustmentTransferNoticeBannerState AfterRenderFailure() =>
+        this with { Pending = Pending.Invalidate(), ActiveBanner = null, ActiveBannerOrigin = null };
+
+    public AdjustmentTransferBannerAction Show(
+        IReadOnlyList<AdjustmentTransferNotice>? notices,
+        AdjustmentTransferNoticeOrigin origin,
+        bool appliedCurrentPhoto,
+        long openRevision,
+        long editRevision,
+        Func<string>? currentLocalizedStatus,
+        Func<IReadOnlyList<AdjustmentTransferNotice>, Func<string>> makeBannerStatus)
+    {
+        if (origin == AdjustmentTransferNoticeOrigin.Dialog || notices == null || notices.Count == 0)
+            return Invalidate(currentLocalizedStatus);
+        var visibleNotices = notices.ToArray();
+        var nextPending = AdjustmentTransferNoticeState.Prepare(visibleNotices, origin, appliedCurrentPhoto, openRevision, editRevision);
+        var bannerStatus = makeBannerStatus(visibleNotices);
+        return new(new(nextPending, bannerStatus, origin, LastPreviewStatus), bannerStatus, false);
+    }
+
+    public (AdjustmentTransferNoticeBannerState NextState, Func<string> Status) DeliverRender(
+        long frameOpenRevision,
+        long currentEditRevision,
+        bool isSettledFrame,
+        Func<string> cleanPreviewStatus,
+        Func<IReadOnlyList<AdjustmentTransferNotice>, Func<string>> makeCombinedStatus)
+    {
+        var (nextPending, notices) = Pending.DeliverRender(frameOpenRevision, currentEditRevision, isSettledFrame);
+        if (notices.Count > 0)
+        {
+            var status = makeCombinedStatus(notices);
+            return (new(nextPending, status, Pending.Origin, cleanPreviewStatus), status);
+        }
+        return (new(nextPending, null, null, cleanPreviewStatus), cleanPreviewStatus);
+    }
+}
+
 public sealed record AdjustmentTransferContext(string Identifier,bool IsRaw,
     IReadOnlySet<string>? AvailableLookIDs=null,int DefaultExposureMode=1,bool HasUncommittedDraft=false,Action<LensSettings>? ValidateLens=null,
     (double Temperature,double Tint)? CameraWhiteBalance=null, bool IsProRAW=false, bool SupportsCameraHDR=false,

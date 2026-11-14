@@ -26,7 +26,7 @@ public partial class MainWindow
         { SetSaveNotice("调整未保存 · 重试",AdjustmentTransferPresentation.Detail(error),true);return; }
         transformSaveFailed=false;
         savedTransformCompare=compare;
-        transform.Begin(settings.Geometry,settings.Lens,tool);++transformGeneration;transformPreviewReady=false;
+        transform.Begin(settings.Geometry,settings.Lens,tool);++transformGeneration;transformPreviewReady=false;ClearTransferNoticesOnUserEdit();
         view.SetEnabled(false);NeutralCanvas.Visibility=Visibility.Collapsed;NeutralColumn.Width=new(0);ResultCanvas.ComparisonEnabled=false;
         choosingRecipes=choosingHsl=choosingGrading=choosingFilm=choosingDenoise=choosingPhotoEffects=choosingWhiteBalance=false;
         choosingGeometry=tool==TransformTool.Geometry;choosingLens=tool==TransformTool.Lens;
@@ -38,7 +38,7 @@ public partial class MainWindow
         if(!ready || syncing || exporting || !transform.Active || transform.Tool!=TransformTool.Geometry)return;
         var previous=transform.PreviewGeometry;transform.Update(value);
         RefreshCropDraft();
-        if(previous!=transform.PreviewGeometry){++transformGeneration;transformPreviewReady=false;RefreshCropDraft();interacting=dragging;Schedule();}
+        if(previous!=transform.PreviewGeometry){++transformGeneration;transformPreviewReady=false;ClearTransferNoticesOnUserEdit();RefreshCropDraft();interacting=dragging;Schedule();}
         else if(interacting && !dragging){interacting=false;Schedule();}
         if(transformPreviewReady && result!=null)GeometryEditor.SetCanvasSize(result.NativeWidth,result.NativeHeight);
         RefreshControls();
@@ -46,7 +46,7 @@ public partial class MainWindow
     private void UpdateLensDraft(LensSettings value)
     {
         if(!ready || syncing || exporting || !transform.Active || transform.Tool!=TransformTool.Lens)return;
-        transform.Update(value);++transformGeneration;transformPreviewReady=false;interacting=false;RefreshControls();Schedule();
+        transform.Update(value);++transformGeneration;transformPreviewReady=false;ClearTransferNoticesOnUserEdit();interacting=false;RefreshControls();Schedule();
     }
     private void RefreshCropDraft()=>ResultCanvas.SetCropDraft(transform.Active && transform.Tool==TransformTool.Geometry && transformPreviewReady ? transform.Geometry : null,
         GeometryEditor.AspectRatio,GeometryEditor.ShowCorrectionGrid);
@@ -71,14 +71,14 @@ public partial class MainWindow
             transformSaveFailed=true;SetSaveNotice("调整未保存 · 重试",AdjustmentTransferPresentation.Detail(error),true);return false;
         }
         // 只有候选已落盘，才能提升草稿；不再排队保存旧 committed。
-        (settings.Geometry,settings.Lens)=transform.Apply();++editRevision;editDirty=false;
+        (settings.Geometry,settings.Lens)=transform.Apply();++editRevision;editDirty=false;ClearTransferNoticesOnUserEdit();
         EndTransform();SetSaveNotice("调整已保存","",false);RefreshControls();Schedule();return true;
     }
     private void CancelTransformDraft()
     {
         if(!transform.Active)return;
         if(transformSaveFailed)SetSaveNotice("已放弃未保存的修改","",false);
-        transform.Cancel();EndTransform();RefreshControls();Schedule();
+        transform.Cancel();EndTransform();ClearTransferNoticesOnUserEdit();RefreshControls();Schedule();
     }
     private void EndTransform()
     {
