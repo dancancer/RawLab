@@ -1,0 +1,1059 @@
+{
+  "fixture_version": 1,
+  "spec_version": 1,
+  "notes": "P2-01 (S1): Shared persisted editing-record golden fixture across macOS, iOS, Android, and Windows. Unlike adjustment-transfer vectors (portable cross-photo paste payloads), this fixture pins local store/record persistence semantics: full 83-field round-trip anchored to Shared/specs/adjustment-fields-v1.json, X1 read-side unknown-field tolerance, cross-version compatibility & per-record isolation, and spec boundary validation.",
+  "roundtrip_records": [
+    {
+      "id": "full-sdr-raw-dormant-hdr",
+      "description": "RAW photo in SDR mode with v4 master recipe, custom tone/RGB curves, HSL, color grading, wavelet denoise, lens correction, dormant HDR subtree, processing v2 receipt, and local AI flag.",
+      "photo": {
+        "name": "sample-raw-01.ARW",
+        "is_raw": true
+      },
+      "metadata": {
+        "film_id": "",
+        "master_recipe_id": "hamada_daylight_v2",
+        "master_recipe_settings_version": 4,
+        "processing": {
+          "family": "rawlab",
+          "version": 2,
+          "quality": "standard"
+        },
+        "x3f_mode": "legacy",
+        "pro_raw_decode_version": 2,
+        "as_shot_wb": {
+          "temperature": 5400.0,
+          "tint": -8.0
+        },
+        "hdr_editing": false,
+        "migration_receipt": {
+          "status": "kept",
+          "original_processing_version": 2
+        }
+      },
+      "sdr_values": {
+        "looks.reference": {
+          "kind": "recipe",
+          "id": "hamada_daylight_v2"
+        },
+        "looks.strength": 0.75,
+        "light.exposure": 1.25,
+        "light.exposure_mode": "scene",
+        "light.contrast": 1.25,
+        "light.highlights": -0.375,
+        "light.shadows": 0.5,
+        "light.s_curve": 0.25,
+        "light.curve": {
+          "mode": "custom",
+          "points": [
+            [0.0, 0.0],
+            [0.25, 0.3],
+            [0.75, 0.8],
+            [1.0, 1.0]
+          ],
+          "channels": {
+            "red": {
+              "mode": "custom",
+              "points": [
+                [0.0, 0.0],
+                [0.5, 0.625],
+                [1.0, 1.0]
+              ]
+            },
+            "green": {
+              "mode": "custom",
+              "points": [
+                [0.0, 0.0],
+                [0.5, 0.525],
+                [1.0, 1.0]
+              ]
+            },
+            "blue": {
+              "mode": "custom",
+              "points": [
+                [0.0, 0.0],
+                [0.5, 0.375],
+                [1.0, 1.0]
+              ]
+            }
+          }
+        },
+        "tone.black_point": -18.0,
+        "tone.white_point": 24.0,
+        "color.vibrance": 32.0,
+        "color.grading.shadows": {
+          "hue": 215.5,
+          "saturation": 35.0
+        },
+        "color.grading.midtones": {
+          "hue": 42.25,
+          "saturation": 22.5
+        },
+        "color.grading.highlights": {
+          "hue": 14.0,
+          "saturation": 18.0
+        },
+        "color.white_balance.mode": "temperature",
+        "color.white_balance.temperature_kelvin": 6150.0,
+        "color.white_balance.tint": -12.5,
+        "color.saturation": 1.125,
+        "color.hsl.hue.red": 12.0,
+        "color.hsl.hue.orange": -8.0,
+        "color.hsl.hue.yellow": 16.0,
+        "color.hsl.hue.green": -22.0,
+        "color.hsl.hue.aqua": 9.0,
+        "color.hsl.hue.blue": -15.0,
+        "color.hsl.hue.purple": 18.0,
+        "color.hsl.hue.magenta": -6.0,
+        "color.hsl.saturation.red": 25.0,
+        "color.hsl.saturation.orange": 14.0,
+        "color.hsl.saturation.yellow": -19.0,
+        "color.hsl.saturation.green": 31.0,
+        "color.hsl.saturation.aqua": -28.0,
+        "color.hsl.saturation.blue": 40.0,
+        "color.hsl.saturation.purple": -11.0,
+        "color.hsl.saturation.magenta": 17.0,
+        "color.hsl.lightness.red": -5.0,
+        "color.hsl.lightness.orange": 7.0,
+        "color.hsl.lightness.yellow": 13.0,
+        "color.hsl.lightness.green": -16.0,
+        "color.hsl.lightness.aqua": 21.0,
+        "color.hsl.lightness.blue": -24.0,
+        "color.hsl.lightness.purple": 8.0,
+        "color.hsl.lightness.magenta": -9.0,
+        "effects.vignette.amount": -35.0,
+        "effects.vignette.midpoint": 62.0,
+        "effects.vignette.roundness": -18.0,
+        "effects.vignette.feather": 44.0,
+        "effects.vignette.highlights": 28.0,
+        "effects.grain.amount": 19.0,
+        "effects.clarity": 26.0,
+        "effects.dehaze": -14.0,
+        "effects.grain.size": 32.0,
+        "effects.grain.roughness": 58.0,
+        "detail.sharpening": 0.75,
+        "detail.denoise.raw_level": 2,
+        "detail.denoise.post_rgb": 0.0,
+        "detail.denoise.chroma_mode": 1,
+        "detail.denoise.wavelet": {
+          "enabled": true,
+          "luma": 18.0,
+          "chroma": 54.0,
+          "coarse": 62.0,
+          "preset": "custom"
+        },
+        "geometry.crop.x": 0.0625,
+        "geometry.crop.y": 0.125,
+        "geometry.crop.width": 0.75,
+        "geometry.crop.height": 0.625,
+        "geometry.quarter_turns": 1,
+        "geometry.flip_horizontal": true,
+        "geometry.flip_vertical": false,
+        "geometry.straighten_degrees": -3.5,
+        "geometry.perspective.horizontal": 0.25,
+        "geometry.perspective.vertical": -0.125,
+        "geometry.lens.distortion": true,
+        "geometry.lens.tca": true,
+        "geometry.lens.vignetting": true,
+        "geometry.lens.auto_crop": false,
+        "geometry.lens.profile_id": "Fujinon XF35mmF1.4 R"
+      },
+      "dormant_hdr_values": {
+        "light.exposure": -0.5,
+        "hdr.relative_temperature": 6200.0,
+        "hdr.relative_tint": -6.0,
+        "hdr.peak_limit_ev": 2.5,
+        "hdr.sdr_exposure_ev": -0.25,
+        "hdr.sdr_contrast": 12.0,
+        "hdr.sdr_saturation": -8.0,
+        "detail.denoise.post_rgb": 0.375
+      },
+      "local_values": {
+        "local.ai_denoise_enabled": true,
+        "local.hdr_camera_ai_enabled": false
+      }
+    },
+    {
+      "id": "full-hdr-camera-raw",
+      "description": "Camera RAW photo in active HDR mode covering all 8 HDR-only fields, full HDR sub-objects (tone, color, rendition, effects, detail, look, camera_development with camera_profile), and local.hdr_camera_ai_enabled.",
+      "photo": {
+        "name": "sample-hdr-02.DNG",
+        "is_raw": true
+      },
+      "metadata": {
+        "film_id": "",
+        "master_recipe_id": null,
+        "master_recipe_settings_version": 3,
+        "processing": {
+          "family": "rawlab",
+          "version": 3,
+          "quality": "standard"
+        },
+        "x3f_mode": "normal-v1",
+        "pro_raw_decode_version": 2,
+        "as_shot_wb": {
+          "temperature": 5200.0,
+          "tint": 2.0
+        },
+        "hdr_editing": true,
+        "hdr_camera_development_extra": {
+          "lens_distortion": true,
+          "lens_tca": true,
+          "lens_vignetting": false,
+          "lens_auto_crop": true,
+          "lens_profile": "Canon RF 24-70mm f/2.8L",
+          "camera_profile": {
+            "sha256": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+            "name": "Camera Faithful"
+          }
+        }
+      },
+      "hdr_values": {
+        "light.exposure": 0.75,
+        "light.contrast": 1.15,
+        "light.highlights": -0.25,
+        "light.shadows": 0.35,
+        "light.s_curve": 0.15,
+        "light.curve": {
+          "mode": "custom",
+          "points": [
+            [0.0, 0.0],
+            [0.375, 0.425],
+            [1.0, 1.0]
+          ],
+          "channels": {
+            "red": {
+              "mode": "custom",
+              "points": [
+                [0.0, 0.0],
+                [0.5, 0.5625],
+                [1.0, 1.0]
+              ]
+            },
+            "green": {
+              "mode": "legacy",
+              "points": []
+            },
+            "blue": {
+              "mode": "legacy",
+              "points": []
+            }
+          }
+        },
+        "tone.black_point": -12.0,
+        "tone.white_point": 16.0,
+        "color.vibrance": 18.0,
+        "color.saturation": 1.1,
+        "color.grading.shadows": {
+          "hue": 195.0,
+          "saturation": 28.0
+        },
+        "color.grading.midtones": {
+          "hue": 35.0,
+          "saturation": 14.0
+        },
+        "color.grading.highlights": {
+          "hue": 310.0,
+          "saturation": 20.0
+        },
+        "color.hsl.hue.red": 6.0,
+        "color.hsl.hue.orange": -4.0,
+        "color.hsl.hue.yellow": 8.0,
+        "color.hsl.hue.green": -10.0,
+        "color.hsl.hue.aqua": 12.0,
+        "color.hsl.hue.blue": -8.0,
+        "color.hsl.hue.purple": 10.0,
+        "color.hsl.hue.magenta": -6.0,
+        "color.hsl.saturation.red": 12.0,
+        "color.hsl.saturation.orange": 8.0,
+        "color.hsl.saturation.yellow": -10.0,
+        "color.hsl.saturation.green": 15.0,
+        "color.hsl.saturation.aqua": -14.0,
+        "color.hsl.saturation.blue": 22.0,
+        "color.hsl.saturation.purple": -9.0,
+        "color.hsl.saturation.magenta": 11.0,
+        "color.hsl.lightness.red": -3.0,
+        "color.hsl.lightness.orange": 5.0,
+        "color.hsl.lightness.yellow": 9.0,
+        "color.hsl.lightness.green": -7.0,
+        "color.hsl.lightness.aqua": 11.0,
+        "color.hsl.lightness.blue": -13.0,
+        "color.hsl.lightness.purple": 4.0,
+        "color.hsl.lightness.magenta": -6.0,
+        "hdr.relative_temperature": 5800.0,
+        "hdr.relative_tint": 14.5,
+        "hdr.peak_limit_ev": 3.5,
+        "hdr.sdr_exposure_ev": -0.5,
+        "hdr.sdr_contrast": 18.0,
+        "hdr.sdr_saturation": -12.0,
+        "hdr.look": {
+          "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "name": "Film Print 2383",
+          "strength": 0.875
+        },
+        "hdr.camera_development": {
+          "version": 1,
+          "white_balance_mode": "temperature",
+          "temperature": 5950.0,
+          "tint": 9.0,
+          "exposure_reference": "sensor",
+          "fbdd_level": 1
+        },
+        "effects.vignette.amount": -24.0,
+        "effects.vignette.midpoint": 55.0,
+        "effects.vignette.roundness": 12.0,
+        "effects.vignette.feather": 60.0,
+        "effects.vignette.highlights": 15.0,
+        "effects.grain.amount": 11.0,
+        "effects.clarity": 22.0,
+        "effects.dehaze": -9.0,
+        "effects.grain.size": 40.0,
+        "effects.grain.roughness": 48.0,
+        "detail.sharpening": 0.625,
+        "detail.denoise.post_rgb": 0.625,
+        "geometry.crop.x": 0.1,
+        "geometry.crop.y": 0.1,
+        "geometry.crop.width": 0.8,
+        "geometry.crop.height": 0.75,
+        "geometry.quarter_turns": 2,
+        "geometry.flip_horizontal": false,
+        "geometry.flip_vertical": true,
+        "geometry.straighten_degrees": 4.25,
+        "geometry.perspective.horizontal": -0.15,
+        "geometry.perspective.vertical": 0.2
+      },
+      "local_values": {
+        "local.ai_denoise_enabled": false,
+        "local.hdr_camera_ai_enabled": false
+      }
+    },
+    {
+      "id": "hdr-camera-ai-raw",
+      "description": "Camera RAW photo in active HDR mode with HDR Bayer AI enabled (requires non-ProRAW camera HDR record with fbdd_level=0 and no camera_profile).",
+      "photo": {
+        "name": "sample-hdr-ai-02b.DNG",
+        "is_raw": true
+      },
+      "metadata": {
+        "film_id": "",
+        "master_recipe_id": null,
+        "master_recipe_settings_version": 3,
+        "processing": {
+          "family": "rawlab",
+          "version": 3,
+          "quality": "standard"
+        },
+        "x3f_mode": "normal-v1",
+        "pro_raw_decode_version": null,
+        "as_shot_wb": {
+          "temperature": 5500.0,
+          "tint": 0.0
+        },
+        "hdr_editing": true
+      },
+      "hdr_values": {
+        "light.exposure": 0.25,
+        "hdr.camera_development": {
+          "version": 1,
+          "white_balance_mode": "as_shot",
+          "temperature": 0.0,
+          "tint": 0.0,
+          "exposure_reference": "metadata",
+          "fbdd_level": 0
+        }
+      },
+      "local_values": {
+        "local.ai_denoise_enabled": false,
+        "local.hdr_camera_ai_enabled": true
+      }
+    },
+    {
+      "id": "raster-sdr-neutral",
+      "description": "Raster non-RAW photo in SDR mode with neutral look, sensor exposure mode, disabled RAW/camera WB, and disabled wavelet denoise preset.",
+      "photo": {
+        "name": "sample-raster-03.JPG",
+        "is_raw": false
+      },
+      "metadata": {
+        "film_id": "",
+        "master_recipe_id": null,
+        "master_recipe_settings_version": 3,
+        "processing": {
+          "family": "rawlab",
+          "version": 3,
+          "quality": "standard"
+        },
+        "x3f_mode": "normal-v1",
+        "pro_raw_decode_version": null,
+        "as_shot_wb": null,
+        "hdr_editing": false
+      },
+      "sdr_values": {
+        "looks.reference": {
+          "kind": "neutral",
+          "id": null
+        },
+        "looks.strength": 1.0,
+        "light.exposure": -0.625,
+        "light.exposure_mode": "sensor",
+        "light.contrast": 0.875,
+        "light.highlights": 0.25,
+        "light.shadows": -0.375,
+        "light.s_curve": -0.125,
+        "light.curve": {
+          "mode": "legacy",
+          "points": []
+        },
+        "tone.black_point": 10.0,
+        "tone.white_point": -15.0,
+        "color.vibrance": -20.0,
+        "color.grading.shadows": {
+          "hue": 0.0,
+          "saturation": 0.0
+        },
+        "color.grading.midtones": {
+          "hue": 0.0,
+          "saturation": 0.0
+        },
+        "color.grading.highlights": {
+          "hue": 0.0,
+          "saturation": 0.0
+        },
+        "color.white_balance.mode": "none",
+        "color.white_balance.temperature_kelvin": null,
+        "color.white_balance.tint": null,
+        "color.saturation": 0.9,
+        "effects.clarity": -10.0,
+        "effects.dehaze": 15.0,
+        "detail.sharpening": 0.25,
+        "detail.denoise.chroma_mode": 0,
+        "detail.denoise.wavelet": {
+          "enabled": false,
+          "luma": 10.0,
+          "chroma": 72.0,
+          "coarse": 100.0,
+          "preset": "clean"
+        }
+      },
+      "local_values": {
+        "local.ai_denoise_enabled": false,
+        "local.hdr_camera_ai_enabled": false
+      }
+    },
+    {
+      "id": "spec-min-endpoints-roundtrip",
+      "description": "Minimum endpoint round-trip anchored to Shared/specs/adjustment-fields-v1.json bounds (using model lower bound -5.0 for exposure and minimal valid positive crop).",
+      "photo": {
+        "name": "sample-min-04.DNG",
+        "is_raw": true
+      },
+      "metadata": {
+        "film_id": "",
+        "master_recipe_id": null,
+        "master_recipe_settings_version": 3,
+        "processing": {
+          "family": "rawlab",
+          "version": 1,
+          "quality": "standard"
+        },
+        "x3f_mode": "legacy",
+        "pro_raw_decode_version": null,
+        "as_shot_wb": {
+          "temperature": 2000.0,
+          "tint": -150.0
+        },
+        "hdr_editing": false
+      },
+      "sdr_values": {
+        "looks.reference": {
+          "kind": "neutral",
+          "id": null
+        },
+        "looks.strength": 0.0,
+        "light.exposure": -5.0,
+        "light.exposure_mode": "preview",
+        "light.contrast": 0.0,
+        "light.highlights": -1.0,
+        "light.shadows": -1.0,
+        "light.s_curve": -1.0,
+        "light.curve": {
+          "mode": "legacy",
+          "points": []
+        },
+        "tone.black_point": -100.0,
+        "tone.white_point": -100.0,
+        "color.vibrance": -100.0,
+        "color.grading.shadows": {
+          "hue": 0.0,
+          "saturation": 0.0
+        },
+        "color.grading.midtones": {
+          "hue": 0.0,
+          "saturation": 0.0
+        },
+        "color.grading.highlights": {
+          "hue": 0.0,
+          "saturation": 0.0
+        },
+        "color.white_balance.mode": "temperature",
+        "color.white_balance.temperature_kelvin": 2000.0,
+        "color.white_balance.tint": -150.0,
+        "color.saturation": 0.0,
+        "color.hsl.hue.red": -100.0,
+        "color.hsl.hue.orange": -100.0,
+        "color.hsl.hue.yellow": -100.0,
+        "color.hsl.hue.green": -100.0,
+        "color.hsl.hue.aqua": -100.0,
+        "color.hsl.hue.blue": -100.0,
+        "color.hsl.hue.purple": -100.0,
+        "color.hsl.hue.magenta": -100.0,
+        "color.hsl.saturation.red": -100.0,
+        "color.hsl.saturation.orange": -100.0,
+        "color.hsl.saturation.yellow": -100.0,
+        "color.hsl.saturation.green": -100.0,
+        "color.hsl.saturation.aqua": -100.0,
+        "color.hsl.saturation.blue": -100.0,
+        "color.hsl.saturation.purple": -100.0,
+        "color.hsl.saturation.magenta": -100.0,
+        "color.hsl.lightness.red": -100.0,
+        "color.hsl.lightness.orange": -100.0,
+        "color.hsl.lightness.yellow": -100.0,
+        "color.hsl.lightness.green": -100.0,
+        "color.hsl.lightness.aqua": -100.0,
+        "color.hsl.lightness.blue": -100.0,
+        "color.hsl.lightness.purple": -100.0,
+        "color.hsl.lightness.magenta": -100.0,
+        "effects.vignette.amount": -100.0,
+        "effects.vignette.midpoint": 0.0,
+        "effects.vignette.roundness": -100.0,
+        "effects.vignette.feather": 0.0,
+        "effects.vignette.highlights": 0.0,
+        "effects.grain.amount": 0.0,
+        "effects.clarity": -100.0,
+        "effects.dehaze": -100.0,
+        "effects.grain.size": 0.0,
+        "effects.grain.roughness": 0.0,
+        "detail.sharpening": 0.0,
+        "detail.denoise.raw_level": 0,
+        "detail.denoise.post_rgb": 0.0,
+        "detail.denoise.chroma_mode": 0,
+        "detail.denoise.wavelet": {
+          "enabled": false,
+          "luma": 0.0,
+          "chroma": 0.0,
+          "coarse": 0.0,
+          "preset": "custom"
+        },
+        "geometry.crop.x": 0.0,
+        "geometry.crop.y": 0.0,
+        "geometry.crop.width": 0.001,
+        "geometry.crop.height": 0.001,
+        "geometry.quarter_turns": 0,
+        "geometry.flip_horizontal": false,
+        "geometry.flip_vertical": false,
+        "geometry.straighten_degrees": -45.0,
+        "geometry.perspective.horizontal": -1.0,
+        "geometry.perspective.vertical": -1.0,
+        "geometry.lens.distortion": false,
+        "geometry.lens.tca": false,
+        "geometry.lens.vignetting": false,
+        "geometry.lens.auto_crop": false,
+        "geometry.lens.profile_id": null
+      },
+      "dormant_hdr_values": {
+        "light.exposure": -4.0,
+        "hdr.relative_temperature": 2000.0,
+        "hdr.relative_tint": -150.0,
+        "hdr.peak_limit_ev": 0.0,
+        "hdr.sdr_exposure_ev": -4.0,
+        "hdr.sdr_contrast": -100.0,
+        "hdr.sdr_saturation": -100.0
+      }
+    },
+    {
+      "id": "spec-max-endpoints-roundtrip",
+      "description": "Maximum endpoint round-trip anchored to Shared/specs/adjustment-fields-v1.json bounds (using model upper bound 5.0 for exposure, 4.0 for HDR exposure, and 359.5 for open-upper-bound grading hue < 360).",
+      "photo": {
+        "name": "sample-max-05.ARW",
+        "is_raw": true
+      },
+      "metadata": {
+        "film_id": "",
+        "master_recipe_id": null,
+        "master_recipe_settings_version": 3,
+        "processing": {
+          "family": "rawlab",
+          "version": 3,
+          "quality": "standard"
+        },
+        "x3f_mode": "normal-v1",
+        "pro_raw_decode_version": 2,
+        "as_shot_wb": {
+          "temperature": 50000.0,
+          "tint": 150.0
+        },
+        "hdr_editing": false
+      },
+      "sdr_values": {
+        "looks.reference": {
+          "kind": "neutral",
+          "id": null
+        },
+        "looks.strength": 2.0,
+        "light.exposure": 5.0,
+        "light.exposure_mode": "sensor",
+        "light.contrast": 2.0,
+        "light.highlights": 1.0,
+        "light.shadows": 1.0,
+        "light.s_curve": 1.0,
+        "light.curve": {
+          "mode": "custom",
+          "points": [
+            [0.0, 0.0],
+            [1.0, 1.0]
+          ]
+        },
+        "tone.black_point": 100.0,
+        "tone.white_point": 100.0,
+        "color.vibrance": 100.0,
+        "color.grading.shadows": {
+          "hue": 359.5,
+          "saturation": 100.0
+        },
+        "color.grading.midtones": {
+          "hue": 359.5,
+          "saturation": 100.0
+        },
+        "color.grading.highlights": {
+          "hue": 359.5,
+          "saturation": 100.0
+        },
+        "color.white_balance.mode": "temperature",
+        "color.white_balance.temperature_kelvin": 50000.0,
+        "color.white_balance.tint": 150.0,
+        "color.saturation": 2.0,
+        "color.hsl.hue.red": 100.0,
+        "color.hsl.hue.orange": 100.0,
+        "color.hsl.hue.yellow": 100.0,
+        "color.hsl.hue.green": 100.0,
+        "color.hsl.hue.aqua": 100.0,
+        "color.hsl.hue.blue": 100.0,
+        "color.hsl.hue.purple": 100.0,
+        "color.hsl.hue.magenta": 100.0,
+        "color.hsl.saturation.red": 100.0,
+        "color.hsl.saturation.orange": 100.0,
+        "color.hsl.saturation.yellow": 100.0,
+        "color.hsl.saturation.green": 100.0,
+        "color.hsl.saturation.aqua": 100.0,
+        "color.hsl.saturation.blue": 100.0,
+        "color.hsl.saturation.purple": 100.0,
+        "color.hsl.saturation.magenta": 100.0,
+        "color.hsl.lightness.red": 100.0,
+        "color.hsl.lightness.orange": 100.0,
+        "color.hsl.lightness.yellow": 100.0,
+        "color.hsl.lightness.green": 100.0,
+        "color.hsl.lightness.aqua": 100.0,
+        "color.hsl.lightness.blue": 100.0,
+        "color.hsl.lightness.purple": 100.0,
+        "color.hsl.lightness.magenta": 100.0,
+        "effects.vignette.amount": 100.0,
+        "effects.vignette.midpoint": 100.0,
+        "effects.vignette.roundness": 100.0,
+        "effects.vignette.feather": 100.0,
+        "effects.vignette.highlights": 100.0,
+        "effects.grain.amount": 100.0,
+        "effects.clarity": 100.0,
+        "effects.dehaze": 100.0,
+        "effects.grain.size": 100.0,
+        "effects.grain.roughness": 100.0,
+        "detail.sharpening": 2.0,
+        "detail.denoise.raw_level": 2,
+        "detail.denoise.post_rgb": 0.0,
+        "detail.denoise.chroma_mode": 2,
+        "detail.denoise.wavelet": {
+          "enabled": true,
+          "luma": 100.0,
+          "chroma": 100.0,
+          "coarse": 100.0,
+          "preset": "custom"
+        },
+        "geometry.crop.x": 0.25,
+        "geometry.crop.y": 0.25,
+        "geometry.crop.width": 0.75,
+        "geometry.crop.height": 0.75,
+        "geometry.quarter_turns": 3,
+        "geometry.flip_horizontal": true,
+        "geometry.flip_vertical": true,
+        "geometry.straighten_degrees": 45.0,
+        "geometry.perspective.horizontal": 1.0,
+        "geometry.perspective.vertical": 1.0,
+        "geometry.lens.distortion": true,
+        "geometry.lens.tca": true,
+        "geometry.lens.vignetting": true,
+        "geometry.lens.auto_crop": true,
+        "geometry.lens.profile_id": "Sigma 35mm F1.4 DG DN Art"
+      },
+      "dormant_hdr_values": {
+        "light.exposure": 4.0,
+        "hdr.relative_temperature": 50000.0,
+        "hdr.relative_tint": 150.0,
+        "hdr.peak_limit_ev": 6.0,
+        "hdr.sdr_exposure_ev": 4.0,
+        "hdr.sdr_contrast": 100.0,
+        "hdr.sdr_saturation": 100.0
+      }
+    }
+  ],
+  "unknown_field_scenarios": [
+    {
+      "id": "x1-store-root-unknown-field",
+      "description": "X1 read-side: extra unknown metadata property at top-level store envelope must be tolerated without failing healthy record reads.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "target_scope": "store_root",
+      "inject_key": "future_store_metadata",
+      "inject_value": { "schema_revision": 2, "tag": "future-client" },
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-store-sibling-unknown-entry",
+      "description": "X1 read-side: unknown future extension key on a sibling/record entry in store must not break reading target record.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "target_scope": "store_sibling_entry",
+      "inject_key": "future_extension",
+      "inject_value": "vnext-payload",
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-record-root-unknown-field",
+      "description": "X1 read-side: extra unknown key on persisted record wrapper object must be tolerated.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "target_scope": "record_root",
+      "inject_key": "future_record_field",
+      "inject_value": "ignore-safely",
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-settings-root-unknown-field",
+      "description": "X1 read-side: extra unknown key inside persisted SDR settings object must be tolerated.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "target_scope": "settings_root",
+      "inject_key": "future_adjustment_slider",
+      "inject_value": 42.5,
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-processing-unknown-field",
+      "description": "X1 read-side: extra unknown key inside ProcessingIdentity must be tolerated for compatible processing versions.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "target_scope": "processing",
+      "inject_key": "future_pipeline_flag",
+      "inject_value": true,
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-tone-controls-unknown-field",
+      "description": "X1 read-side: extra unknown key inside toneControls/tone object must be tolerated.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "target_scope": "tone_controls",
+      "inject_key": "future_tone_knob",
+      "inject_value": 10.0,
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-atmosphere-unknown-field",
+      "description": "X1 read-side: extra unknown key inside atmosphere object must be tolerated.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "target_scope": "atmosphere",
+      "inject_key": "future_texture",
+      "inject_value": 15.0,
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-color-grading-unknown-field",
+      "description": "X1 read-side: extra unknown key inside colorGrading object must be tolerated.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "target_scope": "color_grading",
+      "inject_key": "balance",
+      "inject_value": 0.25,
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-color-grading-zone-unknown-field",
+      "description": "X1 read-side: extra unknown key inside colorGrading shadows wheel must be tolerated.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "target_scope": "color_grading_zone",
+      "inject_key": "luminance",
+      "inject_value": 5.0,
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-tone-curve-unknown-field",
+      "description": "X1 read-side: extra unknown key inside curve object must be tolerated.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "target_scope": "tone_curve",
+      "inject_key": "future_curve_space",
+      "inject_value": "perceptual",
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-tone-curve-channels-unknown-field",
+      "description": "X1 read-side: extra unknown channel key inside curve.channels must be tolerated.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "target_scope": "tone_curve_channels",
+      "inject_key": "luma",
+      "inject_value": { "mode": "legacy", "points": [] },
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-geometry-unknown-field",
+      "description": "X1 read-side: extra unknown key inside geometry object must be tolerated.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "target_scope": "geometry",
+      "inject_key": "future_keystone_rotate",
+      "inject_value": 1.5,
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-lens-unknown-field",
+      "description": "X1 read-side: extra unknown key inside lens object (or flat snapshot where unnested) must be tolerated.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "target_scope": "lens",
+      "inject_key": "future_lens_ca_strength",
+      "inject_value": 0.5,
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-denoise-unknown-field",
+      "description": "X1 read-side: extra unknown key inside SDR denoise/wavelet object must be tolerated.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "target_scope": "denoise",
+      "inject_key": "future_edge_preserve",
+      "inject_value": 0.4,
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-effects-unknown-field",
+      "description": "X1 read-side: extra unknown key inside photoEffects object must be tolerated.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "target_scope": "effects",
+      "inject_key": "future_halation",
+      "inject_value": 12.0,
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-hdr-root-unknown-field",
+      "description": "X1 read-side: extra unknown key inside hdr object must be tolerated.",
+      "base_record_id": "full-hdr-camera-raw",
+      "target_scope": "hdr",
+      "inject_key": "future_hdr_extension",
+      "inject_value": "vnext",
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-hdr-tone-unknown-field",
+      "description": "X1 read-side: extra unknown key inside hdr.tone must be tolerated.",
+      "base_record_id": "full-hdr-camera-raw",
+      "target_scope": "hdr_tone",
+      "inject_key": "future_hdr_knee",
+      "inject_value": 0.5,
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-hdr-color-unknown-field",
+      "description": "X1 read-side: extra unknown key inside hdr.color must be tolerated.",
+      "base_record_id": "full-hdr-camera-raw",
+      "target_scope": "hdr_color",
+      "inject_key": "future_gamut_map",
+      "inject_value": true,
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-hdr-rendition-unknown-field",
+      "description": "X1 read-side: extra unknown key inside hdr.rendition must be tolerated.",
+      "base_record_id": "full-hdr-camera-raw",
+      "target_scope": "hdr_rendition",
+      "inject_key": "future_headroom_knee",
+      "inject_value": 0.8,
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-hdr-effects-unknown-field",
+      "description": "X1 read-side: extra unknown key inside hdr.effects must be tolerated.",
+      "base_record_id": "full-hdr-camera-raw",
+      "target_scope": "hdr_effects",
+      "inject_key": "future_hdr_halation",
+      "inject_value": 5.0,
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-hdr-detail-unknown-field",
+      "description": "X1 read-side: extra unknown key inside hdr.detail must be tolerated.",
+      "base_record_id": "full-hdr-camera-raw",
+      "target_scope": "hdr_detail",
+      "inject_key": "future_hdr_microcontrast",
+      "inject_value": 0.3,
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-hdr-look-unknown-field",
+      "description": "X1 read-side: extra unknown key inside hdr.look must be tolerated.",
+      "base_record_id": "full-hdr-camera-raw",
+      "target_scope": "hdr_look",
+      "inject_key": "future_lut_space",
+      "inject_value": "pq2020",
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-hdr-camera-development-unknown-field",
+      "description": "X1 read-side: extra unknown key inside hdr.camera_development must be tolerated.",
+      "base_record_id": "full-hdr-camera-raw",
+      "target_scope": "hdr_camera_development",
+      "inject_key": "future_raw_highlight_recovery",
+      "inject_value": true,
+      "expect": "load_preserving_values"
+    },
+    {
+      "id": "x1-hdr-camera-profile-unknown-field",
+      "description": "X1 read-side: extra unknown key inside hdr.camera_development.camera_profile must be tolerated.",
+      "base_record_id": "full-hdr-camera-raw",
+      "target_scope": "hdr_camera_profile",
+      "inject_key": "future_profile_rev",
+      "inject_value": 2,
+      "expect": "load_preserving_values"
+    }
+  ],
+  "compatibility_scenarios": [
+    {
+      "id": "compat-legacy-omitted-extensions",
+      "description": "Legacy persisted SDR record omitting processing, x3fMode, masterRecipeSettingsVersion, and optional extension sub-objects must decode cleanly with legacy v1 defaults.",
+      "base_record_id": "raster-sdr-neutral",
+      "kind": "legacy_omitted_extensions",
+      "omit_scopes": ["processing", "x3f_mode", "master_recipe_settings_version", "tone_controls", "atmosphere", "color_grading", "tone_curve", "hdr", "hdr_camera_ai", "pro_raw_decode_version"],
+      "expect": {
+        "status": "load_with_legacy_defaults",
+        "processing_version": 1,
+        "x3f_mode": "legacy"
+      }
+    },
+    {
+      "id": "compat-dormant-hdr-and-proraw-preserved-across-sdr-reset",
+      "description": "SDR full reset and save/reopen must preserve dormant HDR subtree, proRAWDecodeVersion, processing version (v2), and x3fMode (legacy).",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "kind": "sdr_reset_preserves_dormant_hdr",
+      "expect": {
+        "status": "preserve_dormant_hdr_and_versions",
+        "processing_version": 2,
+        "x3f_mode": "legacy",
+        "pro_raw_decode_version": 2
+      }
+    },
+    {
+      "id": "compat-future-processing-version-isolates-and-preserves",
+      "description": "Record with unsupported future processing.version=99 must fail per-record read as unusable without crashing store, breaking sibling record, or losing raw bytes when sibling saves.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "sibling_record_id": "raster-sdr-neutral",
+      "kind": "future_processing_version",
+      "processing_version": 99,
+      "expect": {
+        "target_status": "reject_record_unusable",
+        "sibling_status": "readable",
+        "preserve_unreadable_bytes_on_sibling_save": true
+      }
+    },
+    {
+      "id": "compat-corrupt-entry-isolates-and-preserves",
+      "description": "Corrupt JSON/value on one record must isolate cleanly to that entry while keeping healthy siblings readable and preserving raw store entry across sibling writes.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "sibling_record_id": "raster-sdr-neutral",
+      "kind": "corrupt_entry",
+      "expect": {
+        "target_status": "reject_record_unusable",
+        "sibling_status": "readable",
+        "preserve_unreadable_bytes_on_sibling_save": true
+      }
+    },
+    {
+      "id": "compat-negative-zero-canonicalized",
+      "description": "Negative zero (-0.0) in persisted numeric fields must load cleanly and compare equal to canonical +0.0.",
+      "base_record_id": "raster-sdr-neutral",
+      "kind": "negative_zero",
+      "expect": {
+        "status": "load_canonical_zero"
+      }
+    }
+  ],
+  "boundary_scenarios": [
+    {
+      "id": "boundary-reject-exposure-out-of-range",
+      "description": "SDR exposure 99.0 (outside model [-5, 5] and spec [-20, 20]) must be rejected on record read without corrupting healthy sibling.",
+      "base_record_id": "raster-sdr-neutral",
+      "sibling_record_id": "full-sdr-raw-dormant-hdr",
+      "mutation": { "kind": "out_of_range", "field": "light.exposure", "value": 99.0 },
+      "expect": "reject_record"
+    },
+    {
+      "id": "boundary-reject-temperature-out-of-range",
+      "description": "White balance temperature 90000.0 (outside [2000, 50000]) must be rejected on record read.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "sibling_record_id": "raster-sdr-neutral",
+      "mutation": { "kind": "out_of_range", "field": "color.white_balance.temperature_kelvin", "value": 90000.0 },
+      "expect": "reject_record"
+    },
+    {
+      "id": "boundary-reject-effects-out-of-range",
+      "description": "Effects vignetteAmount 150.0 (outside [-100, 100]) must be rejected on record read rather than silently clamped or accepted.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "sibling_record_id": "raster-sdr-neutral",
+      "mutation": { "kind": "out_of_range", "field": "effects.vignette.amount", "value": 150.0 },
+      "expect": "reject_record"
+    },
+    {
+      "id": "boundary-reject-hsl-out-of-range",
+      "description": "HSL channel value 150.0 (outside [-100, 100]) must be rejected on record read.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "sibling_record_id": "raster-sdr-neutral",
+      "mutation": { "kind": "out_of_range", "field": "color.hsl.hue.red", "value": 150.0 },
+      "expect": "reject_record"
+    },
+    {
+      "id": "boundary-reject-grading-hue-360",
+      "description": "Color grading shadows wheel hue 360.0 (half-open upper bound < 360) must be rejected on record read.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "sibling_record_id": "raster-sdr-neutral",
+      "mutation": { "kind": "out_of_range", "field": "color.grading.shadows.hue", "value": 360.0 },
+      "expect": "reject_record"
+    },
+    {
+      "id": "boundary-reject-crop-overflow",
+      "description": "Geometry cropX=0.6 with cropWidth=0.6 (sum > 1.0) must be rejected on record read.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "sibling_record_id": "raster-sdr-neutral",
+      "mutation": { "kind": "crop_overflow", "cropX": 0.6, "cropWidth": 0.6 },
+      "expect": "reject_record"
+    },
+    {
+      "id": "boundary-reject-hdr-peak-limit-out-of-range",
+      "description": "HDR peak_limit_ev 10.0 (outside [0, 6]) must be rejected on record read.",
+      "base_record_id": "full-hdr-camera-raw",
+      "sibling_record_id": "raster-sdr-neutral",
+      "mutation": { "kind": "out_of_range", "field": "hdr.peak_limit_ev", "value": 10.0 },
+      "expect": "reject_record"
+    },
+    {
+      "id": "boundary-reject-invalid-exposure-mode",
+      "description": "Unknown/invalid exposureMode enum value must be rejected on record read.",
+      "base_record_id": "raster-sdr-neutral",
+      "sibling_record_id": "full-sdr-raw-dormant-hdr",
+      "mutation": { "kind": "invalid_exposure_mode" },
+      "expect": "reject_record"
+    },
+    {
+      "id": "boundary-reject-non-monotonic-curve",
+      "description": "Non-monotonic custom tone curve points must be rejected on record read.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "sibling_record_id": "raster-sdr-neutral",
+      "mutation": { "kind": "non_monotonic_curve" },
+      "expect": "reject_record"
+    }
+  ]
+}

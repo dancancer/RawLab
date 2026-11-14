@@ -42,9 +42,11 @@ if (args.Contains("--camera-raw-hdr")) {
     CameraRawHDRChecks.Run();
     return;
 }
+if (args.Contains("--edit-records-only")) { EditRecordFixtureChecks.Run(); return; }
 if (args.Contains("--history-only")) {
     AdjustmentTransferChecks.Run();
     ResetScenarioChecks.Run();
+    EditRecordFixtureChecks.Run();
     X3fModeResetChecks.Run();
     AdjustmentHistoryChecks.Run();
     AdjustmentPresetChecks.Run();
@@ -80,6 +82,7 @@ if (JsonSerializer.SerializeToNode(gradingRestored.Capture())!["ColorGrading"] =
     throw new Exception("Pending grading hue must survive snapshot restore");
 AdjustmentTransferChecks.Run();
 ResetScenarioChecks.Run();
+EditRecordFixtureChecks.Run();
 AdjustmentHistoryChecks.Run();
 AdjustmentPresetChecks.Run();
 LookLibraryToleranceChecks.Run();

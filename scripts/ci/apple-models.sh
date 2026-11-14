@@ -43,6 +43,7 @@ case "${1:-}" in
             RawLabMac/tests/horizontal-picker.sh RawLabMac/tests/mac-viewing.sh
             RawLabMac/tests/control-groups.sh RawLabMac/tests/adjustment-transfer.sh
             RawLabMac/tests/reset-scenarios.sh
+            RawLabMac/tests/edit-records.sh
             RawLabMac/tests/adjustment-transfer-session.sh Shared/tests/adjustment-presets.sh Shared/tests/adjustment-summary.sh
             RawLabMac/tests/adjustment-preset-application.sh Shared/tests/usage-analytics.sh
             Shared/tests/usage-transport.sh RawLabMac/tests/rum-configuration.sh
@@ -55,7 +56,7 @@ case "${1:-}" in
             RawLab/tests/camera-protocol.sh RawLab/tests/camera-originals.sh RawLab/tests/retention.sh RawLab/tests/editor-tool-drafts.sh
             RawLab/tests/ios-reset-entry-ui.sh
             RawLab/tests/recent-photos.sh RawLab/tests/presentation.sh RawLab/tests/adjustment-scale.sh RawLab/tests/edit-memory.sh
-            RawLab/tests/adjustment-transfer.sh RawLab/tests/reset-scenarios.sh RawLab/tests/adjustment-persistence.sh
+            RawLab/tests/adjustment-transfer.sh RawLab/tests/reset-scenarios.sh RawLab/tests/edit-records.sh RawLab/tests/adjustment-persistence.sh
             RawLab/tests/adjustment-transfer-session.sh RawLab/tests/batch-export.sh
             Shared/tests/adjustment-presets.sh Shared/tests/adjustment-summary.sh)
         ;;
