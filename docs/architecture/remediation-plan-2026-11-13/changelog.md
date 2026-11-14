@@ -189,3 +189,4 @@
 - 2026-11-14 (19) 碳审三连 request-changes 全接住：#334 r1（Windows CMake UTF-8 必挂 High、EGL §3.7.3 依赖方向写反 Medium；macOS models 红裁定=artifact 上传 ECONNRESET 抖动可 rerun）→codex-lut2；#326 r4（touchPrecededByDrag 跨手势残留吞双击 High）→codex-q5 r5；#335 r1（stat 指纹在 publish 前采集，真机首次冷启动仍全量哈希 High——JVM FileMedia 假绿面；P1-14 建议按票面改单 AtomicReference 快照）→p1-android 续跑。#330 r4 codex-fixtures 在途。
 - 2026-11-14 (20) 用户定**返工执行者阶梯**（长期规则）：首次返工原 crew 续跑；第二次返工改派 codex；第三次返工改派 carbon 执行。合并门禁仍为 carbon-high 评审不变。
 - 2026-11-14 (21) #330 r4 碳审首作业网络死（TLS 超时）→fresh 重派 review-mwgkilfw。#334 r2 碳审=打回：r1 三项全修妥，新 high=语义合并断编（基线落后 26，合并树 metal_lut_init_retry_tests 漏链 DENOISE_LIBRARIES，评审真实树实证 ld 挂）→r3 按阶梯进 **carbon 执行档**（implement-mwgkkke2：merge+补链+双配置 ctest+CI）。
+- 2026-11-14 (22) **P1-14+P1-25 合入=第 89 个 PR（#335）**。碳审 r2 approve（3 low 不阻塞：并发压力测试缺读线程就绪栅栏；恢复/去重两分支缺独立 0-digest 锚；标题已改原子快照措辞后合入）。真机 1000 条冷启动实测保留手动门禁（k173）。两条测试加固低项转 Android 批次顺带做。
