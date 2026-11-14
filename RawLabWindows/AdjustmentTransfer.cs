@@ -60,7 +60,8 @@ public readonly record struct AdjustmentTransferNoticeState(
         long openRevision,
         long editRevision)
     {
-        if (notices == null || notices.Count == 0) return Empty;
+        if (origin == AdjustmentTransferNoticeOrigin.Dialog || notices == null || notices.Count == 0)
+            return Empty;
         return new(notices.ToArray(), origin, appliedCurrentPhoto, openRevision, editRevision);
     }
 
@@ -114,20 +115,18 @@ public readonly record struct AdjustmentTransferNoticeBannerState(
 
     public AdjustmentTransferBannerAction DisposeDialog(Func<string>? currentLocalizedStatus)
     {
-        var hadDialogOrigin = Pending.Origin == AdjustmentTransferNoticeOrigin.Dialog && Pending.HasNotices;
+        var hadDialogOrigin = ActiveBannerOrigin == AdjustmentTransferNoticeOrigin.Dialog ||
+                              Pending.Origin == AdjustmentTransferNoticeOrigin.Dialog && Pending.HasNotices;
         var next = this with { Pending = Pending.DisposeDialog() };
-        return hadDialogOrigin || (ActiveBanner != null && ReferenceEquals(currentLocalizedStatus, ActiveBanner))
-            ? next.Clear(currentLocalizedStatus)
-            : new(next, null, false);
+        return hadDialogOrigin ? next.Clear(currentLocalizedStatus) : new(next, null, false);
     }
 
     public AdjustmentTransferBannerAction DisposeQuickPreset(Func<string>? currentLocalizedStatus)
     {
-        var hadQuickPresetOrigin = Pending.Origin == AdjustmentTransferNoticeOrigin.QuickPreset && Pending.HasNotices;
+        var hadQuickPresetOrigin = ActiveBannerOrigin == AdjustmentTransferNoticeOrigin.QuickPreset ||
+                                   Pending.Origin == AdjustmentTransferNoticeOrigin.QuickPreset && Pending.HasNotices;
         var next = this with { Pending = Pending.DisposeQuickPreset() };
-        return hadQuickPresetOrigin || (ActiveBanner != null && ReferenceEquals(currentLocalizedStatus, ActiveBanner))
-            ? next.Clear(currentLocalizedStatus)
-            : new(next, null, false);
+        return hadQuickPresetOrigin ? next.Clear(currentLocalizedStatus) : new(next, null, false);
     }
 
     public AdjustmentTransferBannerAction AfterSourceChange() => new(Empty, null, false);
@@ -147,10 +146,11 @@ public readonly record struct AdjustmentTransferNoticeBannerState(
         Func<string>? currentLocalizedStatus,
         Func<IReadOnlyList<AdjustmentTransferNotice>, Func<string>> makeBannerStatus)
     {
-        if (notices == null || notices.Count == 0)
+        if (origin == AdjustmentTransferNoticeOrigin.Dialog || notices == null || notices.Count == 0)
             return Invalidate(currentLocalizedStatus);
-        var nextPending = AdjustmentTransferNoticeState.Prepare(notices, origin, appliedCurrentPhoto, openRevision, editRevision);
-        var bannerStatus = makeBannerStatus(nextPending.ActiveNotices);
+        var visibleNotices = notices.ToArray();
+        var nextPending = AdjustmentTransferNoticeState.Prepare(visibleNotices, origin, appliedCurrentPhoto, openRevision, editRevision);
+        var bannerStatus = makeBannerStatus(visibleNotices);
         return new(new(nextPending, bannerStatus, origin, LastPreviewStatus), bannerStatus, false);
     }
 
@@ -162,9 +162,12 @@ public readonly record struct AdjustmentTransferNoticeBannerState(
         Func<IReadOnlyList<AdjustmentTransferNotice>, Func<string>> makeCombinedStatus)
     {
         var (nextPending, notices) = Pending.DeliverRender(frameOpenRevision, currentEditRevision, isSettledFrame);
-        Func<string> status = notices.Count > 0 ? makeCombinedStatus(notices) : cleanPreviewStatus;
-        var nextBanner = notices.Count > 0 && nextPending.HasPendingRenderNotice ? status : null;
-        return (new(nextPending, nextBanner, nextBanner != null ? Pending.Origin : null, cleanPreviewStatus), status);
+        if (notices.Count > 0)
+        {
+            var status = makeCombinedStatus(notices);
+            return (new(nextPending, status, Pending.Origin, cleanPreviewStatus), status);
+        }
+        return (new(nextPending, null, null, cleanPreviewStatus), cleanPreviewStatus);
     }
 }
 

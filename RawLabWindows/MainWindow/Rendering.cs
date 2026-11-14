@@ -208,7 +208,7 @@ public partial class MainWindow
             work.Settings.IsHDREditing==settings.IsHDREditing && work.Settings.ActiveAIDenoise==settings.ActiveAIDenoise && work.Settings.X3fMode==settings.X3fMode &&
             (!work.Settings.ActiveAIDenoise || AIResultReady && work.AIIdentity==aiJob.Identity) && work.Settings.Geometry==PreviewGeometry && work.Settings.Lens==PreviewLens && work.TransformGeneration==transformGeneration && (!view.NeedsReference || work.Compare) && (current || (work.Interactive && interacting && work.Edge==RenderEdge(true))))
         {
-            if(failure!=null) { if(current){ClearPendingAllReset();pendingTransferNoticeState=pendingTransferNoticeState.Invalidate();activeTransferNoticeStatus=null;exactReady=false;transformPreviewReady=false;renderFailed=true;RefreshCropDraft();RefreshRenderLabels();CancelProcessingMigration();if(!HandleAIFailure(failure))SetStatus(()=>Loc.Text("预览未更新")+" · "+failure.Message,true);} }
+            if(failure!=null) { if(current){ClearPendingAllReset();transferNoticeBanner=transferNoticeBanner.AfterRenderFailure();exactReady=false;transformPreviewReady=false;renderFailed=true;RefreshCropDraft();RefreshRenderLabels();CancelProcessingMigration();if(!HandleAIFailure(failure))SetStatus(()=>Loc.Text("预览未更新")+" · "+failure.Message,true);} }
             else if(rendered!=null && neutral!=null)
             {
                 if(work.Settings.ActiveAIDenoise) { aiNotReadyIdentity=null;aiNotReadyAttempts=0; }
@@ -245,16 +245,16 @@ public partial class MainWindow
                     RefreshCropDraft();
                 }
                 // W1（#301 收口）：仅在当前帧满足 OpenRevision/EditRevision 时绑定提示，
-                // Refine 或待执行缩放预览先保留，直到最终稳态帧消费一次并清零。
+                // Refine 或待执行缩放预览先保留，直到最终稳态帧消费一次并保持活跃横幅引用待清理。
                 var isSettledFrame = !WillScheduleNextPreview(work, current, failure);
-                var (nextNoticeState, transferNotices) = pendingTransferNoticeState.DeliverRender(work.OpenRevision, editRevision, isSettledFrame);
-                pendingTransferNoticeState = nextNoticeState;
                 Func<string> cleanPreviewStatus = () => $"{(work.Interactive ? Loc.Text("交互预览") : work.Edge==0 ? Loc.Text("原尺寸") : Loc.Text("预览"))} {rendered.Image.PixelWidth} × {rendered.Image.PixelHeight} · {Path.GetFileName(work.File)}";
-                lastPreviewStatus = cleanPreviewStatus;
-                Func<string> status = transferNotices.Count > 0
-                    ? () => cleanPreviewStatus() + "；" + FormatTransferNotices(transferNotices)
-                    : cleanPreviewStatus;
-                activeTransferNoticeStatus = transferNotices.Count > 0 && nextNoticeState.HasPendingRenderNotice ? status : null;
+                var (nextBannerState, status) = transferNoticeBanner.DeliverRender(
+                    work.OpenRevision,
+                    editRevision,
+                    isSettledFrame,
+                    cleanPreviewStatus,
+                    transferNotices => () => cleanPreviewStatus() + "；" + FormatTransferNotices(transferNotices));
+                transferNoticeBanner = nextBannerState;
                 SetStatus(status);
                 if (current && openRevision != photoImportReportedRevision)
                 {

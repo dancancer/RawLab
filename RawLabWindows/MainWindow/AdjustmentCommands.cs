@@ -128,12 +128,10 @@ public partial class MainWindow
             dialog.ShowDialog();
         }catch(Exception error){ShowAdjustmentError(error);}
     }
-    // W1（#301 收口）：按生命周期统一收口粘贴提示：
-    // prepare/invalidate/dispose/换图/用户编辑时主动清理；非当前图与 Unchanged 不挂起渲染状态，
-    // 仅当前图实际采纳时挂起并跳过 Refine / 缩放到稳态帧后消费一次。
-    private AdjustmentTransferNoticeState pendingTransferNoticeState = AdjustmentTransferNoticeState.Empty;
-    private Func<string>? activeTransferNoticeStatus;
-    private Func<string>? lastPreviewStatus;
+    // W1（#301 收口）：按生命周期统一收口粘贴提示，并将横幅状态机放在纯模型 AdjustmentTransferNoticeBannerState：
+    // 弹窗提示仅显示在结果弹窗内，快速预设提示在 prepare/invalidate/dispose/换图/用户编辑时主动清理；
+    // 稳态帧交付后继续保持活跃横幅引用，直到关面板或后续编辑/渲染清除。
+    private AdjustmentTransferNoticeBannerState transferNoticeBanner = AdjustmentTransferNoticeBannerState.Empty;
 
     private static string FormatTransferNotices(IReadOnlyList<AdjustmentTransferNotice> notices) =>
         string.Join("；", notices.Select(notice => Loc.Text(notice.PromptKey())));
@@ -143,72 +141,38 @@ public partial class MainWindow
             outcome.Status == AdjustmentStatus.Applied && outcome.Error == null &&
             outcome.Saved is { } saved && StringComparer.OrdinalIgnoreCase.Equals(saved.Identity.Path, file));
 
-    private void ClearVisibleTransferNoticeBanner()
+    private void ApplyTransferBannerAction(AdjustmentTransferBannerAction action)
     {
-        var banner = activeTransferNoticeStatus;
-        activeTransferNoticeStatus = null;
-        if (banner == null || !ReferenceEquals(localizedStatus, banner)) return;
-        if (lastPreviewStatus != null) SetStatus(lastPreviewStatus);
-        else SetStatus("");
+        transferNoticeBanner = action.NextState;
+        if (action.StatusToApply is { } status) SetStatus(status);
+        else if (action.ClearStatusToEmpty) SetStatus("");
     }
 
-    private void BeginTransferPrepare()
-    {
-        pendingTransferNoticeState = pendingTransferNoticeState.Invalidate();
-        ClearVisibleTransferNoticeBanner();
-    }
+    private void BeginTransferPrepare() =>
+        ApplyTransferBannerAction(transferNoticeBanner.BeginPrepare(localizedStatus));
 
-    private void InvalidateDialogTransferNotices()
-    {
-        pendingTransferNoticeState = pendingTransferNoticeState.Invalidate();
-        ClearVisibleTransferNoticeBanner();
-    }
+    private void InvalidateDialogTransferNotices() =>
+        ApplyTransferBannerAction(transferNoticeBanner.Invalidate(localizedStatus));
 
-    private void DisposeDialogTransferNotices()
-    {
-        var hadDialogOrigin = pendingTransferNoticeState.Origin == AdjustmentTransferNoticeOrigin.Dialog &&
-                              pendingTransferNoticeState.HasNotices;
-        pendingTransferNoticeState = pendingTransferNoticeState.DisposeDialog();
-        if (hadDialogOrigin || ReferenceEquals(localizedStatus, activeTransferNoticeStatus))
-            ClearVisibleTransferNoticeBanner();
-    }
+    private void DisposeDialogTransferNotices() =>
+        ApplyTransferBannerAction(transferNoticeBanner.DisposeDialog(localizedStatus));
 
-    private void DisposeQuickPresetTransferNotices()
-    {
-        var hadQuickPresetOrigin = pendingTransferNoticeState.Origin == AdjustmentTransferNoticeOrigin.QuickPreset &&
-                                   pendingTransferNoticeState.HasNotices;
-        pendingTransferNoticeState = pendingTransferNoticeState.DisposeQuickPreset();
-        if (hadQuickPresetOrigin || ReferenceEquals(localizedStatus, activeTransferNoticeStatus))
-            ClearVisibleTransferNoticeBanner();
-    }
+    private void DisposeQuickPresetTransferNotices() =>
+        ApplyTransferBannerAction(transferNoticeBanner.DisposeQuickPreset(localizedStatus));
 
-    private void ClearTransferNoticesOnSourceChange()
-    {
-        pendingTransferNoticeState = pendingTransferNoticeState.AfterSourceChange();
-        activeTransferNoticeStatus = null;
-        lastPreviewStatus = null;
-    }
+    private void ClearTransferNoticesOnSourceChange() =>
+        ApplyTransferBannerAction(transferNoticeBanner.AfterSourceChange());
 
-    private void ClearTransferNoticesOnUserEdit()
-    {
-        pendingTransferNoticeState = pendingTransferNoticeState.AfterUserEdit();
-        ClearVisibleTransferNoticeBanner();
-    }
+    private void ClearTransferNoticesOnUserEdit() =>
+        ApplyTransferBannerAction(transferNoticeBanner.AfterUserEdit(localizedStatus));
 
     private void ShowAdjustmentTransferNotices(PreparedAdjustmentTransfer operation,IReadOnlyList<AdjustmentOutcome>? outcomes,
         AdjustmentTransferNoticeOrigin origin,bool appliedCurrentPhoto){
         var notices=outcomes==null
             ? operation.Targets.Where(target=>target.Error==null).SelectMany(target=>target.Notices??[]).Distinct().ToArray()
             : operation.EffectiveNotices(outcomes);
-        if(notices.Count==0){
-            pendingTransferNoticeState=pendingTransferNoticeState.Invalidate();
-            ClearVisibleTransferNoticeBanner();
-            return;
-        }
-        pendingTransferNoticeState=AdjustmentTransferNoticeState.Prepare(notices,origin,appliedCurrentPhoto,openRevision,editRevision);
-        Func<string> status=()=>FormatTransferNotices(notices);
-        activeTransferNoticeStatus=status;
-        SetStatus(status);
+        ApplyTransferBannerAction(transferNoticeBanner.Show(notices,origin,appliedCurrentPhoto,openRevision,editRevision,localizedStatus,
+            visibleNotices=>()=>FormatTransferNotices(visibleNotices)));
     }
     private IReadOnlyList<AdjustmentOutcome> AdoptAdjustmentOutcomes(IReadOnlyList<AdjustmentOutcome> outcomes,Dictionary<string,Exception?> adopted)
     {

@@ -26,7 +26,7 @@ public partial class MainWindow
         { SetSaveNotice("调整未保存 · 重试",AdjustmentTransferPresentation.Detail(error),true);return; }
         transformSaveFailed=false;
         savedTransformCompare=compare;
-        transform.Begin(settings.Geometry,settings.Lens,tool);++transformGeneration;transformPreviewReady=false;
+        transform.Begin(settings.Geometry,settings.Lens,tool);++transformGeneration;transformPreviewReady=false;ClearTransferNoticesOnUserEdit();
         view.SetEnabled(false);NeutralCanvas.Visibility=Visibility.Collapsed;NeutralColumn.Width=new(0);ResultCanvas.ComparisonEnabled=false;
         choosingRecipes=choosingHsl=choosingGrading=choosingFilm=choosingDenoise=choosingPhotoEffects=choosingWhiteBalance=false;
         choosingGeometry=tool==TransformTool.Geometry;choosingLens=tool==TransformTool.Lens;
@@ -78,7 +78,7 @@ public partial class MainWindow
     {
         if(!transform.Active)return;
         if(transformSaveFailed)SetSaveNotice("已放弃未保存的修改","",false);
-        transform.Cancel();EndTransform();RefreshControls();Schedule();
+        transform.Cancel();EndTransform();ClearTransferNoticesOnUserEdit();RefreshControls();Schedule();
     }
     private void EndTransform()
     {

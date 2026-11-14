@@ -74,7 +74,7 @@ public sealed class UpdateStore(string directory)
             if (pending.Phase is UpdatePhase.Installing or UpdatePhase.PendingRestart ||
                 pending.Failure is { Stage: UpdatePhase.Installing or UpdatePhase.PendingRestart } ||
                 pending.BackupPath != null || pending.PreviousVersion != null || pending.PreviousBuild != null ||
-                HasDiskBackupOrRecoveryEvidence())
+                readState == null && HasDiskBackupOrRecoveryEvidence(value.RecoveryReceipt))
                 throw new InvalidDataException("Unsupported update state");
             value.PendingUpdate = new UpdateTaskState();
         }
@@ -105,6 +105,7 @@ public sealed class UpdateStore(string directory)
     {
         RequireOrdinary(DirectoryPath); RequireOrdinary(StatePath); var data = File.ReadAllBytes(StatePath);
         var knownNonInstallation = false;
+        string? verifiedRecovery = null;
         JsonDocument? document = null;
         try { document = JsonDocument.Parse(data); } catch (JsonException) { }
         using (document)
@@ -116,7 +117,9 @@ public sealed class UpdateStore(string directory)
                     throw new InvalidDataException("Unsupported update state cannot be rebuilt");
                 if (root.TryGetProperty("RecoveryReceipt", out var recovery) && recovery.ValueKind != JsonValueKind.Null) {
                     if (recovery.ValueKind != JsonValueKind.String) throw new InvalidDataException("Invalid recovery receipt");
-                    new UpdateDataBackup(Path.GetDirectoryName(DirectoryPath)!, DirectoryPath).VerifyCompletedRecovery(recovery.GetString()!);
+                    var receiptPath = recovery.GetString()!;
+                    new UpdateDataBackup(Path.GetDirectoryName(DirectoryPath)!, DirectoryPath).VerifyCompletedRecovery(receiptPath);
+                    verifiedRecovery = NormalizeDirectoryPath(receiptPath);
                 }
                 if (root.TryGetProperty("PendingUpdate", out var pending))
                 {
@@ -150,36 +153,61 @@ public sealed class UpdateStore(string directory)
         }
         var readable = false; try { Load(false); readable = true; } catch { }
         if (readable) throw new InvalidDataException("Update state is readable; reopen the app");
-        foreach (var name in new[] { "Backups", "Recoveries" })
+        foreach (var (_, _, entryName) in EnumerateUnresolvedDiskEntries(verifiedRecovery))
         {
-            var path = Path.Combine(DirectoryPath, name);
-            if (!Path.Exists(path)) continue;
-            RequireOrdinary(path);
-            var entries = Directory.GetFileSystemEntries(path);
-            if (entries.Length != 0) {
-                if (!knownNonInstallation) throw new InvalidDataException("Installation or data recovery status is unknown");
-                foreach (var entry in entries) {
-                    var entryName = Path.GetFileName(entry);
-                    if (!Guid.TryParse(entryName, out _) && !(name == "Backups" && entryName.StartsWith(".staging-", StringComparison.Ordinal) && Guid.TryParse(entryName[9..], out _)))
-                        throw new InvalidDataException("Unknown backup entry");
-                    RequireOrdinary(entry);
-                }
-            }
+            if (!knownNonInstallation) throw new InvalidDataException("Installation or data recovery status is unknown");
+            if (!Guid.TryParse(entryName, out _)) throw new InvalidDataException("Unknown backup entry");
         }
         if (Path.Exists(Path.Combine(DirectoryPath, "recovery-in-progress.json"))) throw new InvalidDataException("Data recovery is unfinished");
         return data;
     }
 
-    private bool HasDiskBackupOrRecoveryEvidence()
+    private static string NormalizeDirectoryPath(string path) =>
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+
+    private static bool IsStagingBackupEntry(string entryName) =>
+        entryName.StartsWith(".staging-", StringComparison.Ordinal) && Guid.TryParse(entryName[9..], out _);
+
+    private string? TryVerifiedCompletedRecoveryPath(string? recoveryReceipt)
+    {
+        if (string.IsNullOrWhiteSpace(recoveryReceipt)) return null;
+        try
+        {
+            new UpdateDataBackup(Path.GetDirectoryName(DirectoryPath)!, DirectoryPath).VerifyCompletedRecovery(recoveryReceipt);
+            return NormalizeDirectoryPath(recoveryReceipt);
+        }
+        catch (Exception error) when (error is InvalidDataException or IOException or JsonException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return null;
+        }
+    }
+
+    private IEnumerable<(string DirectoryKind, string EntryPath, string EntryName)> EnumerateUnresolvedDiskEntries(string? verifiedRecovery)
     {
         foreach (var name in new[] { "Backups", "Recoveries" })
         {
             var path = Path.Combine(DirectoryPath, name);
             if (!Path.Exists(path)) continue;
             RequireOrdinary(path);
-            if (Directory.GetFileSystemEntries(path).Length != 0) return true;
+            foreach (var entry in Directory.GetFileSystemEntries(path))
+            {
+                RequireOrdinary(entry);
+                var entryName = Path.GetFileName(entry);
+                if (name == "Backups" && IsStagingBackupEntry(entryName))
+                    continue;
+                if (name == "Recoveries" && verifiedRecovery != null &&
+                    StringComparer.OrdinalIgnoreCase.Equals(NormalizeDirectoryPath(entry), verifiedRecovery))
+                    continue;
+                yield return (name, entry, entryName);
+            }
         }
-        return Path.Exists(Path.Combine(DirectoryPath, "recovery-in-progress.json"));
+    }
+
+    private bool HasDiskBackupOrRecoveryEvidence(string? recoveryReceipt)
+    {
+        var verifiedRecovery = TryVerifiedCompletedRecoveryPath(recoveryReceipt);
+        return EnumerateUnresolvedDiskEntries(verifiedRecovery).Any() ||
+               Path.Exists(Path.Combine(DirectoryPath, "recovery-in-progress.json"));
     }
     public UpdatePreferences RepairState(byte[] expected)
     {
