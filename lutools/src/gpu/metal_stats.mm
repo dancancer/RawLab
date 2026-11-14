@@ -1,4 +1,5 @@
 #include "gpu/image_stats.h"
+#include "core/processing_cancellation.h"
 
 #import <Metal/Metal.h>
 
@@ -237,7 +238,22 @@ bool runKernel(MetalContext& context, const ImageLayout& layout,
         std::memcpy(candidate.clipping.data(), clipping.contents, layout.maskBytes);
         result = std::move(candidate);
         return true;
+    } catch (const sony2fuji::ProcessingCancelled&) {
+        // Cancellation is not a stats failure: rethrow it unchanged (the #329
+        // semantics). Forward-looking defence: the only FFI caller today,
+        // sony2fuji_analyze_image, is FORCE-only and installs no cancellation
+        // scope, so a stray cancellation maps to PROCESSING_ERROR there; what the
+        // rethrow prevents is this fallback turning a cancelled run into a plain
+        // `false` and inviting an AUTO caller to redo the whole image on CPU.
+        throw;
     } catch (const std::exception&) {
+        return false;
+    } catch (...) {
+        // Restore the catch-all fallback: computeImageStatsMetal has a no-throw
+        // promise, and a throw object that does not derive from std::exception
+        // escaped it toward direct C++ callers and the internal-API tests (G-N5).
+        // The sony2fuji_analyze_image boundary happens to map such a throw to
+        // PROCESSING_ERROR anyway; the promise belongs to this function.
         return false;
     }
 }

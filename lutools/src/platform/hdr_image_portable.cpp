@@ -161,10 +161,26 @@ public:
         const auto destination=std::filesystem::u8path(target);
         auto parent=destination.parent_path(); if (parent.empty()) parent=".";
 #ifdef _WIN32
-        wchar_t path[MAX_PATH]{};
-        if (!GetTempFileNameW(parent.c_str(),L"rlh",0,path))
+        // Mirror of the POSIX branch below: CREATE_NEW with a bounded retry and the
+        // shared `.rawlab-hdr-*` staging name. GetTempFileNameW could return an
+        // already-existing name and write()'s trunc open would rewrite a foreign
+        // file; a name we did not create is never deleted here. NTFS permissions
+        // follow the target directory's ACL inheritance (no destination-mode copy).
+        std::wstring candidate;
+        HANDLE created = INVALID_HANDLE_VALUE;
+        for (int attempt=0;attempt<64 && created==INVALID_HANDLE_VALUE;++attempt) {
+            const std::string suffix=stagingSuffix();
+            candidate=(parent/(L".rawlab-hdr-"+std::wstring(suffix.begin(),suffix.end())+L".tmp")).wstring();
+            created=CreateFileW(candidate.c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
+            if (created==INVALID_HANDLE_VALUE) {
+                if (GetLastError()!=ERROR_FILE_EXISTS) break;
+                candidate.clear(); // the name belongs to someone else; never delete it
+            }
+        }
+        if (created==INVALID_HANDLE_VALUE)
             fail(SONY2FUJI_STATUS_OUTPUT_IO_ERROR,SONY2FUJI_HDR_REASON_OUTPUT_IO,"Cannot create HDR output transaction");
-        path_=path;
+        CloseHandle(created); // write() reopens the reserved name.
+        path_=candidate;
 #else
         int fd=-1;
         std::filesystem::path candidate;

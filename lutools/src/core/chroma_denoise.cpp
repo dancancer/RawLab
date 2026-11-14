@@ -2,6 +2,7 @@
 #include "gpu/denoise.h"
 
 #if defined(SONY2FUJI_ENABLE_CHROMA_DENOISE)
+#include "processing_cancellation.h"
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/ximgproc/edge_filter.hpp>
@@ -173,6 +174,9 @@ cv::Mat guided(const cv::Mat& lab, const cv::Mat& source, int radius, double eps
     cv::Mat result(source.size(),source.type());
     constexpr int tile = 768, halo = 32;
     for (int y = 0; y < source.rows; y += tile) for (int x = 0; x < source.cols; x += tile) {
+        // tile 之间互不相交（各写各的 result 矩形）且循环在调用线程上，tile 顶就是安全边界；
+        // 公开入口在 filter 完整结束后才把 Lab 转回 RGB，取消中途图像保持原像素。
+        sony2fuji::checkProcessingCancellation();
         const cv::Rect center(x,y,std::min(tile,source.cols-x),std::min(tile,source.rows-y));
         const int left = std::max(0,x-halo), top = std::max(0,y-halo);
         const cv::Rect bounds(left,top,std::min(source.cols,x+tile+halo)-left,std::min(source.rows,y+tile+halo)-top);
@@ -373,6 +377,9 @@ ErrorCode applyChromaDenoiseWorking(ImageData& image, int mode, ChromaDenoiseDia
         int previousFirst = 0, previousEnd = 0;
         bool gpuUsed = false;
         for (int y = 0; y < pixels.rows; y += rowsPerBand) {
+            // 工作图入口逐带写回图像，带顶是调用方「失败即丢弃」契约认可的安全边界；
+            // 带内部的耗时大头（guided）另有 tile 级检查点，取消在下一带或下一 tile 返回。
+            sony2fuji::checkProcessingCancellation();
             const int end = std::min(pixels.rows, y + rowsPerBand);
             const int top = std::max(0, y - halo), bottom = std::min(pixels.rows, end + halo);
             cv::Mat band = pixels.rowRange(top, bottom).clone();

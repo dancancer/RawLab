@@ -2,6 +2,7 @@
 #include "gpu/d3d11_photo_shader.h"
 #include "core/photo_lut.h"
 #include "core/chroma_denoise.h"
+#include "core/processing_cancellation.h"
 #include "gpu/denoise.h"
 #include <d3d11.h>
 #include <d3dcompiler.h>
@@ -116,6 +117,9 @@ struct D3D11PhotoRenderer::Impl {
     }
     void dispatch(Buffer& input, Buffer& output, Parameters params, uint32_t stage,
         uint32_t sw, uint32_t sh, uint32_t dw, uint32_t dh) {
+        // 阶段边界即安全边界（对齐 gles_photo）：每次 GPU 提交前轮询一次，取消时上一阶段的
+        // 结果仍在临时缓冲，output 直到末尾 read 才发布，重抛不会留下半成品。
+        checkProcessingCancellation();
         allocate(output,static_cast<size_t>(dw)*dh,true);
         params.dimensions[0]=sw; params.dimensions[1]=sh; params.dimensions[2]=dw; params.dimensions[3]=dh;
         params.control[0]=stage;
@@ -132,6 +136,8 @@ struct D3D11PhotoRenderer::Impl {
         checked(device->GetDeviceRemovedReason());
     }
     void read(Buffer& buffer, ImageData& output) {
+        // 读回同样是阶段边界：取消时不启动这次 CPU 拷贝，output 保持未发布。
+        checkProcessingCancellation();
         if (stagingBytes != buffer.bytes) {
             staging.Reset(); stagingBytes=0;
             D3D11_BUFFER_DESC desc{};desc.ByteWidth=static_cast<UINT>(buffer.bytes);
@@ -228,6 +234,10 @@ bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
         if (pw!=width || ph!=height) { c.dispatch(*final,c.resized,p,1,pw,ph,width,height);final=&c.resized; }
         ImageData result(static_cast<int>(width),static_cast<int>(height));c.read(*final,result);
         output=std::move(result);return true;
+    } catch (const ProcessingCancelled&) {
+        // 取消不是渲染失败：在通用 catch 之前重抛（P1-13 备注要求），保留 impl_（设备仍健康），
+        // 否则这里会像对普通异常那样 OutputDebugStringA 并 reset 设备，且 Auto 会误判为 GPU 失败。
+        throw;
     } catch (const std::exception& error) {
         OutputDebugStringA(error.what());impl_.reset();return false;
     }

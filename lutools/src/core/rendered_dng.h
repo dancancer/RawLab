@@ -28,6 +28,10 @@ bool exceedsRenderedDngCapacity(uint32_t width, uint32_t height,
  * to the same [0, 1] range used by the PNG encoder, inverse sRGB decoded, and
  * quantized to uncompressed 16-bit unsigned LinearRaw samples.
  * Embedded sRGB JPEG previews provide the rendered appearance to viewers.
+ *
+ * Cancellation semantics match ImageEncoder::saveImage (raw_processor.h): with a
+ * cancellation scope installed, a cancelled save rethrows ProcessingCancelled and
+ * never comes back as a generic ErrorCode.
  */
 ErrorCode saveRenderedDNG(const ImageData& image, const std::string& filepath);
 

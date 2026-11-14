@@ -1,6 +1,6 @@
 #include "photo_color_grading.h"
+#include "parallel_pixels.h"
 #include "photo_color.h"
-#include "processing_cancellation.h"
 #include <algorithm>
 #include <cmath>
 
@@ -83,9 +83,10 @@ RGB applyColorGrading(const RGB& pixel, const ColorGradingOptions& options) {
 void applyColorGrading(ImageData& image, const ColorGradingOptions& options) {
     if (!options.active()) return;
     const auto coefficients=colorGradingCoefficients(options);
-    for (size_t i = 0; i < image.pixels.size(); ++i) {
-        if (i % 4096 == 0) checkProcessingCancellation();
-        image.pixels[i] = applyCoefficients(image.pixels[i], coefficients);
-    }
+    parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i) {
+            image.pixels[i] = applyCoefficients(image.pixels[i], coefficients);
+        }
+    });
 }
 } // namespace sony2fuji

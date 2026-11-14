@@ -1,7 +1,7 @@
 #include "platform/hdr_image.h"
 #include "core/hdr_jpeg.h"
 #include "core/output_file_mode.h"
-#include "core/processing_cancellation.h"
+#include "core/parallel_pixels.h"
 #import <Foundation/Foundation.h>
 #import <CoreImage/CoreImage.h>
 #import <ImageIO/ImageIO.h>
@@ -429,15 +429,17 @@ CGImageRef sdrImage(const ImageData& image,bool sixteenBit) {
         v=std::clamp(v,0.0f,1.0f);
         return uint16_t(std::lround((sixteenBit ? 65535 : 255)*(v<=.0031308f ? 12.92f*v : 1.055f*std::pow(v,1/2.4f)-.055f)));
     };
-    for (size_t i=0;i<image.pixels.size();++i) {
-        const float values[]={image.pixels[i].r,image.pixels[i].g,image.pixels[i].b};
-        for (size_t channel=0;channel<3;++channel) {
-            const uint16_t value=encode(values[channel]);
-            const size_t index=(i*3+channel)*componentBytes;
-            if (sixteenBit) std::memcpy(bytes->data()+index,&value,sizeof(value));
-            else (*bytes)[index]=uint8_t(value);
+    parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i) {
+            const float values[] = {image.pixels[i].r, image.pixels[i].g, image.pixels[i].b};
+            for (size_t channel = 0; channel < 3; ++channel) {
+                const uint16_t value = encode(values[channel]);
+                const size_t index = (i * 3 + channel) * componentBytes;
+                if (sixteenBit) std::memcpy(bytes->data() + index, &value, sizeof(value));
+                else (*bytes)[index] = uint8_t(value);
+            }
         }
-    }
+    });
     auto release=[](void* context,const void*,size_t) { delete static_cast<std::vector<uint8_t>*>(context); };
     auto* owner=bytes.get();
     CGDataProviderRef provider=CGDataProviderCreateWithData(owner,owner->data(),owner->size(),release);
@@ -573,13 +575,22 @@ static CIImage* heifLinearImage(const ImageData& plane, CGColorSpaceRef color, b
     auto* pixels = static_cast<float*>(data.mutableBytes);
     // 以正通道峰值标记 HDR 输入，低于参考白的编辑仍可带增益图。
     float headroom = hdr ? 1.001f : 1;
-    for (int y = 0; y < plane.height; ++y) {
-        checkProcessingCancellation();
-        for (int x = 0; x < plane.width; ++x) {
-            const auto& p = plane.pixels[size_t(y) * plane.width + x];
-            *pixels++ = p.r; *pixels++ = p.g; *pixels++ = p.b; *pixels++ = 1;
-            if (hdr) headroom = std::max({headroom,p.r,p.g,p.b});
+    std::vector<float> rowHeadroom(plane.height > 0 ? size_t(plane.height) : 0, headroom);
+    parallelRowRanges(plane.height, plane.width, [&](int firstRow, int lastRow) {
+        for (int y = firstRow; y < lastRow; ++y) {
+            float* dst = pixels + size_t(y) * plane.width * 4;
+            float rowMax = headroom;
+            for (int x = 0; x < plane.width; ++x) {
+                const auto& p = plane.pixels[size_t(y) * plane.width + x];
+                dst[0] = p.r; dst[1] = p.g; dst[2] = p.b; dst[3] = 1;
+                dst += 4;
+                if (hdr) rowMax = std::max({rowMax, p.r, p.g, p.b});
+            }
+            rowHeadroom[size_t(y)] = rowMax;
         }
+    });
+    if (hdr) {
+        for (float value : rowHeadroom) headroom = std::max(headroom, value);
     }
     auto provider = CGDataProviderCreateWithCFData((__bridge CFDataRef)data);
     if (!provider) throw std::bad_alloc();

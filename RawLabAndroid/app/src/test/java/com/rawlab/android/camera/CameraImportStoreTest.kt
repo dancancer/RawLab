@@ -2,10 +2,12 @@ package com.rawlab.android.camera
 
 import com.rawlab.android.photo.MediaPhoto
 import com.rawlab.android.photo.MediaPhotoAccess
+import com.rawlab.android.photo.MediaPhotoStat
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import org.json.JSONObject
 import java.nio.file.Files
 import java.security.MessageDigest
@@ -510,6 +512,71 @@ class CameraImportStoreTest {
         assertEquals("external change", fixture.media.file(uri).readText())
     }
 
+    @Test fun reloadTrustsStatFingerprintAndDigestsNothingUntilStatChanges() = withStore { fixture, store ->
+        var job = store.create("camera", listOf(photo("1"), photo("2"), photo("3")), CameraImportDestination())
+        val contents = listOf(raw, raw.copyOf().apply { this[5] = 77 }, raw.copyOf().apply { this[7] = -77 })
+        for ((index, content) in contents.withIndex()) {
+            val part = store.partial(job.id); part.writeBytes(content)
+            job = store.publish(job, index, part, hash(content), CameraTransferPermit())
+        }
+        assertEquals(3, job.savedCount)
+        fixture.media.opens = 0
+        val reloaded = fixture.store().load().single()
+        assertEquals(3, reloaded.savedCount)
+        assertEquals("reload must trust the size+mtime fingerprint: zero whole-file digests on a cold start",
+            0, fixture.media.opens)
+        val changed = fixture.media.file(reloaded.items.first().saved!!.uri)
+        assertTrue(changed.setLastModified(changed.lastModified() + 5_000))
+        fixture.media.opens = 0
+        val touched = fixture.store().load().single()
+        assertEquals(3, touched.savedCount)
+        assertEquals("only the item whose stat fingerprint changed may be re-digested", 1, fixture.media.opens)
+    }
+
+    @Test fun legacyJournalWithoutFingerprintsDigestsEachItemOnceThenTrustsStat() = withStore { fixture, store ->
+        val job = save(store)
+        val uri = job.items.single().saved!!.uri
+        // 模拟旧版本的历史日志：指纹缺失，首次加载回落整文件摘要。
+        store.save(job.copy(items = listOf(job.items.single().copy(savedStat = null))))
+        fixture.media.opens = 0
+        val warmed = fixture.store().load().single()
+        assertNotNull(warmed.items.single().saved)
+        assertEquals("a fingerprint-less item must be digested exactly once on the first load", 1, fixture.media.opens)
+        fixture.media.opens = 0
+        val steady = fixture.store().load().single()
+        assertEquals(uri, steady.items.single().saved!!.uri)
+        assertEquals("the recorded fingerprint must keep later loads free of whole-file digests", 0, fixture.media.opens)
+    }
+
+    @Test fun strongVerificationFailureClearsFingerprintSoNextLoadFlipsToChanged() = withStore { fixture, store ->
+        val job = save(store)
+        val file = fixture.media.file(job.items.single().saved!!.uri)
+        val mtime = file.lastModified()
+        // 同 stat 改写：内容变化但 size 与 mtime 复原，stat 指纹抓不到（评审 finding 3 场景）。
+        file.writeBytes(ByteArray(raw.size) { ((it * 7 + 3) % 251).toByte() })
+        assertTrue(file.setLastModified(mtime))
+        val trusted = fixture.store().load().single()
+        assertNotNull("load keeps trusting the unchanged fingerprint", trusted.items.single().saved)
+        // 用户点打开：savedUris 整文件强校验拦截，同时必须清掉该条指纹并落盘（自愈前提）。
+        assertThrows(CameraLocalSourceChanged::class.java) { store.savedUris(trusted) }
+        val healed = fixture.store().load().single()
+        assertNull("after strong verification failed the entry must self-heal away from saved", healed.items.single().saved)
+        assertEquals(CameraMediaProblem.CHANGED, healed.items.single().problem)
+    }
+
+    @Test fun statTrustRequiresFingerprintSizeToMatchExpectedSize() = withStore { fixture, store ->
+        val job = save(store)
+        val item = job.items.single()
+        val recorded = checkNotNull(item.savedStat)
+        // 篡改场景：指纹与当前 stat 一致，但预期校验 size 不同（输出尺寸记录漂移）。
+        store.save(job.copy(items = listOf(item.copy(outputSize = recorded.substringBefore(':').toLong() - 1))))
+        fixture.media.opens = 0
+        val reloaded = fixture.store().load().single()
+        assertEquals("a fingerprint whose size differs from the expected size must not be trusted",
+            CameraMediaProblem.CHANGED, reloaded.items.single().problem)
+        assertEquals(1, fixture.media.opens)
+    }
+
     @Test fun adjustedJpegReuseRequiresTheSameSourceAndFrozenOptions() = withStore { fixture, _ ->
         val processor: (File, File, CameraJPEGOptions) -> CameraProcessedFile = { _, destination, options ->
             val bytes = ("adjusted-${options.longEdge}-${options.quality}").toByteArray()
@@ -677,6 +744,8 @@ class CameraImportStoreTest {
         val rows = linkedMapOf<String, MediaPhoto>()
         var failBeforePublish = false
         var failAfterPublish = false
+        // 计数探针：JVM 里 load 路径的整文件 digest 恰好等于一次 open+全量读，用它数 digest 次数。
+        var opens = 0
         private var next = 0
         fun file(uri: String) = File(root, uri.substringAfterLast('/'))
         override fun createPending(name: String, relativePath: String, mime: String, token: String): MediaPhoto {
@@ -693,7 +762,11 @@ class CameraImportStoreTest {
             return photo
         }
         override fun inspect(uri: String): MediaPhoto? = rows[uri]?.takeIf { file(uri).isFile }
-        override fun open(uri: String) = file(uri).inputStream()
+        override fun open(uri: String): InputStream { opens++; return file(uri).inputStream() }
+        // 模拟真机 MediaProvider：IS_PENDING=1 期间 SIZE/DATE_MODIFIED 未定稿，publish（IS_PENDING=0）后才可 stat。
+        override fun stat(uri: String): MediaPhotoStat? =
+            rows[uri]?.takeIf { !it.pending }?.let { file(uri) }?.takeIf { it.isFile }
+                ?.let { MediaPhotoStat(it.length(), it.lastModified()) }
         override fun remember(uri: String, size: Long, digest: String) = Unit
         override fun deletePending(uri: String) { if (rows[uri]?.pending == true) { file(uri).delete(); rows.remove(uri) } }
         override fun cleanupOrphans(referenced: Set<String>) {

@@ -6,7 +6,7 @@
 #include "white_balance.h"
 #include "file_path.h"
 #include "output_file_mode.h"
-#include "processing_cancellation.h"
+#include "parallel_pixels.h"
 #include <libraw/libraw.h>
 #include "x3f_processor.h"
 #include <algorithm>
@@ -39,6 +39,9 @@
 #undef RGB
 #undef near
 #undef far
+#include <fcntl.h>
+#include <io.h>
+#include <sys/stat.h>
 #else
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -54,12 +57,6 @@
 #endif
 #include "stb_image_write.h"
 #include "rendered_dng.h"
-
-#ifdef _OPENMP
-namespace {
-constexpr int kParallelThreshold = 1 << 16;
-}
-#endif
 
 namespace sony2fuji {
 
@@ -469,40 +466,41 @@ public:
             (options.outputAces ? ColorSpace::ACES2065_1 : ColorSpace::sRGB);
         const auto matrix = ColorConverter::getConversionMatrix(ColorSpace::sRGB, target);
         outputSpace_ = options.outputLinear ? target : ColorSpace::sRGB;
-        const auto cancellation = processingCancellation;
-#ifdef _OPENMP
-#pragma omp parallel for if (static_cast<int64_t>(output.width)*output.height >= kParallelThreshold)
-#endif
-        for (int y=0;y<output.height;++y) {
-            if (cancellation.cancelled()) continue;
+        struct ImageGuard {
+            LibRaw* raw;
+            ~ImageGuard() { raw->free_image(); }
+        } imageGuard{rawProcessor_.get()};
+        parallelRowRanges(output.height, output.width, [&](int firstRow, int lastRow) {
             std::vector<float> coordinates;
             if (correction.hasGeometry()) {
                 coordinates.resize(static_cast<size_t>(output.width)*6);
-                if (flip & 4) correction.map((flip & 1) ? width-1-y : y, 0, 1, height, coordinates.data());
-                else correction.map(0, (flip & 2) ? height-1-y : y, width, 1, coordinates.data());
             }
-            for (int x=0;x<output.width;++x) {
-                int row=y, col=x;
-                if (flip & 4) std::swap(row,col);
-                if (flip & 2) row=height-1-row;
-                if (flip & 1) col=width-1-col;
-                const int mappedIndex = (flip & 4) ? row : col;
-                auto rgb=sampledRGB(row,col,coordinates.empty() ? nullptr : coordinates.data()+mappedIndex*6);
-                rgb=RGB(rgb.r*gain,rgb.g*gain,rgb.b*gain);
-                RGB pixel = ColorConverter::applyMatrix(rgb,matrix);
-                if (!options.outputLinear) {
-                    pixel = RGB(neutralDisplay(rgb.r),neutralDisplay(rgb.g),neutralDisplay(rgb.b));
-                    if (options.outputBitsPerSample == 8) {
-                        pixel.r=std::round(pixel.r*255)/255;
-                        pixel.g=std::round(pixel.g*255)/255;
-                        pixel.b=std::round(pixel.b*255)/255;
-                    }
+            for (int y = firstRow; y < lastRow; ++y) {
+                if (correction.hasGeometry()) {
+                    if (flip & 4) correction.map((flip & 1) ? width-1-y : y, 0, 1, height, coordinates.data());
+                    else correction.map(0, (flip & 2) ? height-1-y : y, width, 1, coordinates.data());
                 }
-                output.at(x,y)=pixel;
+                for (int x=0;x<output.width;++x) {
+                    int row=y, col=x;
+                    if (flip & 4) std::swap(row,col);
+                    if (flip & 2) row=height-1-row;
+                    if (flip & 1) col=width-1-col;
+                    const int mappedIndex = (flip & 4) ? row : col;
+                    auto rgb=sampledRGB(row,col,coordinates.empty() ? nullptr : coordinates.data()+mappedIndex*6);
+                    rgb=RGB(rgb.r*gain,rgb.g*gain,rgb.b*gain);
+                    RGB pixel = ColorConverter::applyMatrix(rgb,matrix);
+                    if (!options.outputLinear) {
+                        pixel = RGB(neutralDisplay(rgb.r),neutralDisplay(rgb.g),neutralDisplay(rgb.b));
+                        if (options.outputBitsPerSample == 8) {
+                            pixel.r=std::round(pixel.r*255)/255;
+                            pixel.g=std::round(pixel.g*255)/255;
+                            pixel.b=std::round(pixel.b*255)/255;
+                        }
+                    }
+                    output.at(x,y)=pixel;
+                }
             }
-        }
-        rawProcessor_->free_image();
-        cancellation.check();
+        });
         return ErrorCode::Success;
     }
 
@@ -1000,25 +998,45 @@ public:
 
     bool create(const std::filesystem::path& destination) {
 #ifdef _WIN32
-        wchar_t temporaryName[MAX_PATH] = {};
+        // Mirror of the POSIX branch below: CREATE_NEW (_wopen O_EXCL) with a bounded
+        // retry. A collided name is never opened or deleted by us (foreign-name
+        // protection); GetTempFileNameW could return an already-existing name and
+        // the CRT "wb" open would truncate it. NTFS permissions follow the target
+        // directory's ACL inheritance, so this platform has no destination-mode copy.
+        std::wstring temporaryName;
+        int createdFd = -1;
         try {
             std::filesystem::path parent = destination.parent_path();
             if (parent.empty()) parent = L".";
-            const std::wstring parentString = parent.wstring();
-            const wchar_t* prefix = kind_ == Kind::Jpeg ? L"rlj" : L"rlp";
-            if (GetTempFileNameW(parentString.c_str(), prefix, 0, temporaryName) == 0) {
-                return false;
+            const std::wstring base = kind_ == Kind::Jpeg ? L".rawlab-jpeg" : L".rawlab-png";
+            for (int attempt = 0; attempt < 64 && createdFd < 0; ++attempt) {
+                const std::string suffix = stagingSuffix();
+                temporaryName = (parent / (base + L"-" + std::wstring(suffix.begin(), suffix.end()) + L".tmp")).wstring();
+                createdFd = ::_wopen(
+                    temporaryName.c_str(),
+                    _O_CREAT | _O_EXCL | _O_WRONLY | _O_BINARY | _O_NOINHERIT,
+                    _S_IREAD | _S_IWRITE);
+                if (createdFd < 0) {
+                    if (errno != EEXIST) return false;
+                    temporaryName.clear(); // the name belongs to someone else; never delete it
+                }
             }
+            if (createdFd < 0) return false;
+
             path_ = std::filesystem::path(temporaryName);
-            file_ = ::_wfopen(temporaryName, L"wb");
+            file_ = ::_fdopen(createdFd, "wb");
             if (!file_) {
+                (void)::_close(createdFd);
+                createdFd = -1;
                 cleanup();
                 return false;
             }
+            createdFd = -1; // file_ owns the descriptor after _fdopen succeeds.
             return true;
         } catch (...) {
+            if (createdFd >= 0) (void)::_close(createdFd);
             cleanup();
-            if (temporaryName[0] != L'\0') DeleteFileW(temporaryName);
+            if (!temporaryName.empty()) DeleteFileW(temporaryName.c_str());
             throw;
         }
 #else
@@ -1203,38 +1221,17 @@ ErrorCode ImageEncoder::saveJPEG(
     }
 
     try {
-        const auto cancellation = processingCancellation;
-        cancellation.check();
-
         const size_t pixelCount =
             static_cast<size_t>(image.width) * static_cast<size_t>(image.height);
         std::vector<uint8_t> data(pixelCount * 3);
 
-        constexpr size_t kQuantizeBlock = 16384;
-        const ptrdiff_t blockCount =
-            static_cast<ptrdiff_t>((pixelCount + kQuantizeBlock - 1) / kQuantizeBlock);
-        std::atomic<bool> quantizeCancelled{false};
-#ifdef _OPENMP
-#pragma omp parallel for if (pixelCount >= static_cast<size_t>(kParallelThreshold))
-#endif
-        for (ptrdiff_t block = 0; block < blockCount; ++block) {
-            if (quantizeCancelled.load(std::memory_order_acquire)) continue;
-            if (cancellation.cancelled()) {
-                quantizeCancelled.store(true, std::memory_order_release);
-                continue;
-            }
-            const size_t first = static_cast<size_t>(block) * kQuantizeBlock;
-            const size_t last = std::min(pixelCount, first + kQuantizeBlock);
+        parallelPixelRanges(pixelCount, [&](size_t first, size_t last) {
             for (size_t index = first; index < last; ++index) {
                 data[index * 3 + 0] = floatToUint8(image.pixels[index].r);
                 data[index * 3 + 1] = floatToUint8(image.pixels[index].g);
                 data[index * 3 + 2] = floatToUint8(image.pixels[index].b);
             }
-        }
-        if (quantizeCancelled.load(std::memory_order_acquire)) {
-            throw ProcessingCancelled();
-        }
-        cancellation.check();
+        });
 
         EncodedStagingFile staging(EncodedStagingFile::Kind::Jpeg);
         if (!staging.create(destination)) {

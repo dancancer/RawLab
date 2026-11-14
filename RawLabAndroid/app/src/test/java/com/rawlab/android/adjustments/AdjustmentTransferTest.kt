@@ -356,8 +356,25 @@ class AdjustmentTransferTest {
         error("Missing baseline all-scope scenario in adjustment-transfer-scenarios-v1.json")
     }
 
-    @Test fun sharedScenarioFixtures() {
-        val root = JSONObject(resolveSharedFixture("adjustment-transfer-scenarios-v1.json").readText())
+    @Test fun sharedScenarioFixtures() = runScenarioFixture("adjustment-transfer-scenarios-v1.json")
+
+    @Test fun decimalVectorFixtures() {
+        runScenarioFixture("adjustment-transfer-decimals-v1.json", checkKnownDivergences = false)
+        val root = JSONObject(resolveSharedFixture("adjustment-transfer-decimals-v1.json").readText())
+        val rejectedPayloads = root.getJSONArray("rejected_payloads")
+        assertTrue("Decimal rejected payloads must not be empty", rejectedPayloads.length() > 0)
+        for (index in 0 until rejectedPayloads.length()) {
+            val item = rejectedPayloads.getJSONObject(index)
+            val id = item.getString("id")
+            val reason = item.getString("reason")
+            val payloadJson = item.getJSONObject("payload").toString()
+            val error = assertThrows(AdjustmentTransferException::class.java) { AdjustmentPayload.decode(payloadJson) }
+            assertEquals("Decimal rejected payload $id: expected $reason", reason, errorReason(error))
+        }
+    }
+
+    private fun runScenarioFixture(fixtureName: String, checkKnownDivergences: Boolean = true) {
+        val root = JSONObject(resolveSharedFixture(fixtureName).readText())
         assertEquals("Scenario fixture version is 1", 1, root.getInt("fixture_version"))
         val scenarios = root.getJSONArray("scenarios")
         assertTrue("Scenario fixture must not be empty", scenarios.length() > 0)
@@ -384,7 +401,7 @@ class AdjustmentTransferTest {
             val diffs = evaluateScenario(id, scenario, recipeTints)
             val actualKeys = diffs.map { it.key }.toSet()
             val summary = diffs.joinToString("; ") { it.summary }
-            val known = knownScenarioDivergences[id]
+            val known = if (checkKnownDivergences) knownScenarioDivergences[id] else null
             when {
                 diffs.isNotEmpty() && known == null ->
                     problems.add("Scenario $id diverged: $summary")
@@ -399,8 +416,10 @@ class AdjustmentTransferTest {
 
         assertEquals(scenarios.length(), seenIDs.size)
         assertEquals(scenarios.length(), evaluatedIDs.size + skippedIDs.size)
-        val unknownRegistered = knownScenarioDivergences.keys - evaluatedIDs
-        assertTrue("Registered divergences do not match evaluated scenarios: $unknownRegistered", unknownRegistered.isEmpty())
+        if (checkKnownDivergences) {
+            val unknownRegistered = knownScenarioDivergences.keys - evaluatedIDs
+            assertTrue("Registered divergences do not match evaluated scenarios: $unknownRegistered", unknownRegistered.isEmpty())
+        }
         if (problems.isNotEmpty()) fail(problems.joinToString("\n"))
     }
 
@@ -533,6 +552,7 @@ class AdjustmentTransferTest {
     }
 
     private fun errorReason(error: AdjustmentTransferException): String = when (error.reason) {
+        AdjustmentFailure.INVALID_PAYLOAD -> "invalid_payload"
         AdjustmentFailure.INCOMPATIBLE -> "incompatible"
         AdjustmentFailure.UNREPRESENTABLE -> "unrepresentable"
         AdjustmentFailure.MISSING_LOOK -> "missing_look"

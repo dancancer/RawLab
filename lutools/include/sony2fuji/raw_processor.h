@@ -188,6 +188,10 @@ public:
      * @param format 输出格式
      * @param quality JPEG 质量 (1-100, 仅用于 JPEG)
      * @return 错误码
+     * @note 取消语义：装了取消回调（processing_cancellation.h 的 scope/会话回调）时，
+     *       取消以重抛 ProcessingCancelled 结束本次保存——ErrorCode 没有 Cancelled
+     *       取值，取消不会退化成通用错误码；直接链本库的调用方必须捕获
+     *       ProcessingCancelled。FFI 层把它映射为 SONY2FUJI_STATUS_CANCELLED。
      */
     static ErrorCode saveImage(
         const ImageData& image,
@@ -198,6 +202,7 @@ public:
 
     /**
      * @brief 保存为 JPEG
+     * @note 取消语义同 saveImage：取消重抛 ProcessingCancelled，不退化成错误码。
      */
     static ErrorCode saveJPEG(
         const ImageData& image,
@@ -207,6 +212,7 @@ public:
 
     /**
      * @brief 保存为 PNG
+     * @note 取消语义同 saveImage：取消重抛 ProcessingCancelled，不退化成错误码。
      */
     static ErrorCode savePNG(
         const ImageData& image,

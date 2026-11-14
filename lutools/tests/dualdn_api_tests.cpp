@@ -89,6 +89,35 @@ int main(int argc, char** argv) {
                     "model preparation neither cancelled nor rejected missing GPU hardware");
             if (!gpuAvailable) std::cout << "PASS unavailable GPU rejected; hardware inference NOT REACHED\n";
             require(!std::filesystem::exists(argv[3]), "cancelled inference wrote a partial cache");
+            // r3/①：保存期取消——progress 只在 Saving 的 1/1（Phase 枚举 Saving=4）返回 0，
+            // 等价 camera_raw_hdr_tests 的 `phase != 4 || done == 0` 提交点回归：最终
+            // .scenecache/.rgbcache 必须尚未 rename 发布（Bayer 第一阶段 .rawcache 可保留）。
+            auto cancelOnSaved = [](void*,int32_t phase,uint64_t completed,uint64_t) -> int32_t {
+                return !(phase == 4 && completed >= 1);
+            };
+            const auto savingStatus = sony2fuji_session_prepare_ai(session,&request,cancelOnSaved,nullptr);
+            if (gpuAvailable) {
+                require(savingStatus == SONY2FUJI_STATUS_CANCELLED,
+                        "Saving-phase cancellation did not stop AI preparation");
+                const std::filesystem::path cacheDirectory = std::filesystem::u8path(argv[3]);
+                std::error_code present;
+                bool finalCachePublished = false;
+                if (std::filesystem::is_directory(cacheDirectory, present))
+                    for (const auto& entry : std::filesystem::directory_iterator(cacheDirectory)) {
+                        const auto name = entry.path().filename().string();
+                        const auto tail = [&](const char* suffix) {
+                            const size_t length = std::string(suffix).size();
+                            return name.size() >= length && name.compare(name.size() - length, length, suffix) == 0;
+                        };
+                        if (tail(".rgbcache") || tail(".scenecache")) finalCachePublished = true;
+                    }
+                require(!finalCachePublished, "Saving-phase cancellation published the final AI cache before returning CANCELLED");
+                std::filesystem::remove_all(cacheDirectory);
+                std::cout << "PASS Saving-phase cancellation publishes no final AI cache\n";
+            } else {
+                require(savingStatus == SONY2FUJI_STATUS_PROCESSING_ERROR,
+                        "Saving-phase prepare without GPU hardware did not fail as model rejection");
+            }
             const auto missingModel = std::string(argv[2])+"-missing";
             config.model_directory = missingModel.c_str();
             require(sony2fuji_session_set_ai_denoise(session,&config) == SONY2FUJI_STATUS_OK, "missing package configuration");

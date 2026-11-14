@@ -127,7 +127,7 @@ struct PhotoEffectsSettings: Codable, Equatable {
 
     private static func clamped(_ value: Double, to range: ClosedRange<Double>) -> Double {
         guard value.isFinite else { return range.lowerBound <= 0 && range.upperBound >= 0 ? 0 : range.lowerBound }
-        return min(range.upperBound, max(range.lowerBound, value.rounded()))
+        return min(range.upperBound, max(range.lowerBound, value))
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -220,8 +220,12 @@ extension RawSettings {
     }
 
     mutating func setEditingEffect(_ parameter: PhotoEffectParameter, to value: Double) {
+        setExactEditingEffect(parameter, to: value.rounded())
+    }
+
+    mutating func setExactEditingEffect(_ parameter: PhotoEffectParameter, to value: Double) {
         guard value.isFinite else { return }
-        let amount = min(parameter.range.upperBound, max(parameter.range.lowerBound, value.rounded()))
+        let amount = min(parameter.range.upperBound, max(parameter.range.lowerBound, value))
         if isHDREditing { hdr?.effectsSettings[keyPath: parameter.hdrKeyPath] = amount }
         else { photoEffects[keyPath: parameter.keyPath] = amount }
     }

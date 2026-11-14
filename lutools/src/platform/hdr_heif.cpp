@@ -1,4 +1,5 @@
 #include "platform/hdr_heif.h"
+#include "core/parallel_pixels.h"
 #include "platform/hdr_metadata.h"
 #include "platform/hdr_heif_color.h"
 #include <libheif/heif.h>
@@ -369,17 +370,18 @@ DecodedImage decodeHEIF(const void* data,size_t size,uint32_t edge) {
     if (!transform) unsupported(SONY2FUJI_HDR_REASON_UNSUPPORTED_COLOR,"Cannot convert HEIF ICC profile");
     const auto cleanup=std::unique_ptr<std::remove_pointer_t<cmsHTRANSFORM>,decltype(&cmsDeleteTransform)>(transform,cmsDeleteTransform);
     const float maximum=float((1u<<bits)-1);
-#if defined(_OPENMP)
-    #pragma omp parallel for schedule(static)
-#endif
-    for (int y=0;y<height;++y) {
-        for (int x=0;x<width;++x) {
-            const auto* p=pixels+size_t(y)*stride+size_t(x)*6;
-            output.pixels.sdr.at(x,y)={float(uint16_t(p[0])|uint16_t(p[1])<<8)/maximum,
-                float(uint16_t(p[2])|uint16_t(p[3])<<8)/maximum,float(uint16_t(p[4])|uint16_t(p[5])<<8)/maximum};
+    parallelRowRanges(height, width, [&](int firstRow, int lastRow) {
+        for (int y = firstRow; y < lastRow; ++y) {
+            for (int x = 0; x < width; ++x) {
+                const auto* p = pixels + size_t(y) * stride + size_t(x) * 6;
+                output.pixels.sdr.at(x, y) = {
+                    float(uint16_t(p[0]) | uint16_t(p[1]) << 8) / maximum,
+                    float(uint16_t(p[2]) | uint16_t(p[3]) << 8) / maximum,
+                    float(uint16_t(p[4]) | uint16_t(p[5]) << 8) / maximum};
+            }
+            cmsDoTransform(transform, &output.pixels.sdr.at(0, y), &output.pixels.sdr.at(0, y), width);
         }
-        cmsDoTransform(transform,&output.pixels.sdr.at(0,y),&output.pixels.sdr.at(0,y),width);
-    }
+    });
     output.pixels.hdr=ImageData(width,height);
     std::unique_ptr<ultrahdr::GainLUT> lookup;
     ultrahdr::ColorTransformFn toApplication=nullptr,toCanonical=nullptr;
@@ -401,26 +403,34 @@ DecodedImage decodeHEIF(const void* data,size_t size,uint32_t edge) {
         return inverse709[gain[size_t(y)*mapStride+x]];
     };
     std::atomic<bool> invalidPixels{false};
-#if defined(_OPENMP)
-    #pragma omp parallel for schedule(static)
-#endif
-    for (int y=0;y<height;++y) for (int x=0;x<width;++x) {
-        const float sx=width>1 ? float(x)*(mapWidth-1)/(width-1) : (mapWidth-1)*.5f;
-        const float sy=height>1 ? float(y)*(mapHeight-1)/(height-1) : (mapHeight-1)*.5f;
-        const int x0=int(sx),y0=int(sy),x1=std::min(x0+1,mapWidth-1),y1=std::min(y0+1,mapHeight-1);
-        const float fx=sx-x0,fy=sy-y0;
-        auto interpolate=[&](int channel) { const float a=sample(x0,y0,channel),b=sample(x1,y0,channel),c=sample(x0,y1,channel),d=sample(x1,y1,channel); return (a+(b-a)*fx)*(1-fy)+(c+(d-c)*fx)*fy; };
-        const auto p=output.pixels.sdr.at(x,y);
-        if (file.iso) {
-            const auto result=toCanonical(ultrahdr::applyGainLUT(toApplication({p.r,p.g,p.b}),
-                ultrahdr::Color{interpolate(0),interpolate(1),interpolate(2)},*lookup,file.iso.get()));
-            if (!std::isfinite(result.r) || !std::isfinite(result.g) || !std::isfinite(result.b))invalidPixels.store(true,std::memory_order_relaxed);
-            output.pixels.hdr.at(x,y)={result.r,result.g,result.b}; continue;
+    parallelRowRanges(height, width, [&](int firstRow, int lastRow) {
+        for (int y = firstRow; y < lastRow; ++y) {
+            for (int x = 0; x < width; ++x) {
+                const float sx = width > 1 ? float(x) * (mapWidth - 1) / (width - 1) : (mapWidth - 1) * .5f;
+                const float sy = height > 1 ? float(y) * (mapHeight - 1) / (height - 1) : (mapHeight - 1) * .5f;
+                const int x0 = int(sx), y0 = int(sy), x1 = std::min(x0 + 1, mapWidth - 1), y1 = std::min(y0 + 1, mapHeight - 1);
+                const float fx = sx - x0, fy = sy - y0;
+                auto interpolate = [&](int channel) {
+                    const float a = sample(x0, y0, channel), b = sample(x1, y0, channel),
+                                c = sample(x0, y1, channel), d = sample(x1, y1, channel);
+                    return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy;
+                };
+                const auto p = output.pixels.sdr.at(x, y);
+                if (file.iso) {
+                    const auto result = toCanonical(ultrahdr::applyGainLUT(toApplication({p.r, p.g, p.b}),
+                        ultrahdr::Color{interpolate(0), interpolate(1), interpolate(2)}, *lookup, file.iso.get()));
+                    if (!std::isfinite(result.r) || !std::isfinite(result.g) || !std::isfinite(result.b))
+                        invalidPixels.store(true, std::memory_order_relaxed);
+                    output.pixels.hdr.at(x, y) = {result.r, result.g, result.b};
+                    continue;
+                }
+                const float boost = 1 + (file.info.content_headroom - 1) * interpolate(0);
+                if (!std::isfinite(p.r) || !std::isfinite(p.g) || !std::isfinite(p.b) || !std::isfinite(boost))
+                    invalidPixels.store(true, std::memory_order_relaxed);
+                output.pixels.hdr.at(x, y) = {p.r * boost, p.g * boost, p.b * boost};
+            }
         }
-        const float boost=1+(file.info.content_headroom-1)*interpolate(0);
-        if (!std::isfinite(p.r) || !std::isfinite(p.g) || !std::isfinite(p.b) || !std::isfinite(boost))invalidPixels.store(true,std::memory_order_relaxed);
-        output.pixels.hdr.at(x,y)={p.r*boost,p.g*boost,p.b*boost};
-    }
+    });
     if(invalidPixels.load())invalid("HEIF contains nonfinite samples");
     return output;
 }

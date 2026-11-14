@@ -127,6 +127,9 @@ Analysis analyze(const cv::Mat& rgb, const NoiseModel& model, const std::vector<
     for (auto& band:measurements) for (int i=0;i<count;++i) band.emplace_back(64,64,CV_32FC3);
     // 固定顺序累加全局能量；只保存校准样块，不保存整图系数。
     for (const auto& center:centers(rgb.size(),tileSize)) {
+        // tile 顶即安全边界：analyze 是调用线程上的顺序循环，检查点只允许出现在 tile 之间
+        // （stages 内部用 cv::parallel_for_ 跑行，OpenCV 工作线程不继承 thread_local 取消上下文）。
+        sony2fuji::checkProcessingCancellation();
         stages(rgb,model,result.guideSigma,center,[&](int scale,const cv::Mat& detail) {
             const auto sum=cv::sum(detail.mul(detail));
             for (int c=0;c<3;++c) result.energy[scale][c]+=sum[c];
@@ -169,6 +172,9 @@ cv::Mat filter(const cv::Mat& rgb, const NoiseModel& model, const Analysis& anal
     }
     cv::Mat output(rgb.size(),rgb.type());
     for (const auto& center:centers(rgb.size(),tileSize)) {
+        // 输出按 tile 写入互不相交的矩形，tile 顶就是安全边界；取消时调用方丢弃整个 output，
+        // 不会留下半成品（C5 路径只在 filter 完整返回后才 copyTo 替换输入）。
+        sony2fuji::checkProcessingCancellation();
         const auto restoredRegion=expanded(center,restoreBorder,rgb.size());
         cv::Mat filtered=cv::Mat::zeros(restoredRegion.size(),CV_32FC3);
         const auto coarse=stages(rgb,model,analysis.guideSigma,restoredRegion,[&](int scale,const cv::Mat& detail) {

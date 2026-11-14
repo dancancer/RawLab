@@ -9,8 +9,11 @@
 #include <string>
 
 #ifndef _WIN32
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#else
+#include <process.h>
 #endif
 
 namespace sony2fuji {
@@ -21,19 +24,36 @@ namespace sony2fuji {
 // staging file with 0666 and copy the destination's mode when they replace an
 // existing file, so an export to a shared directory stays readable and a private
 // file does not become world-readable.
+//
+// The mode is read through an O_NOFOLLOW descriptor plus fstat instead of stat():
+// a symbolic-link destination (ELOOP) gets the default umask mode instead of one
+// copied through the link, and the S_ISREG check and the mode read share one
+// descriptor, removing the check/use race at sampling time. The mode is a
+// create-time snapshot applied to this process's private O_EXCL staging
+// descriptor, so fchmod never touches a file someone else owns.
 inline void preserveDestinationMode(int fd, const std::filesystem::path& destination) noexcept {
+    // O_NONBLOCK keeps a FIFO destination from blocking the export open.
+    const int destinationFd =
+        ::open(destination.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+    if (destinationFd < 0) return; // missing, not a regular file, or a symlink
     struct stat existing{};
-    if (::stat(destination.c_str(), &existing) == 0 && S_ISREG(existing.st_mode))
-        (void)::fchmod(fd, existing.st_mode & 0777);
+    const bool copyMode = ::fstat(destinationFd, &existing) == 0 && S_ISREG(existing.st_mode);
+    (void)::close(destinationFd);
+    if (copyMode) (void)::fchmod(fd, existing.st_mode & 0777);
 }
+#endif
 
 // Unique enough for a same-directory staging file: pid plus a process-wide counter.
-// Callers retry with O_EXCL, so a collision is impossible to publish by accident.
+// Callers retry with O_EXCL (CREATE_NEW on Windows), so a collision is impossible
+// to publish by accident.
 inline std::string stagingSuffix() {
     static std::atomic<uint64_t> counter{0};
     const auto uniq = counter.fetch_add(1, std::memory_order_relaxed);
+#ifdef _WIN32
+    return std::to_string(static_cast<long>(::_getpid())) + "-" + std::to_string(uniq);
+#else
     return std::to_string(static_cast<long>(::getpid())) + "-" + std::to_string(uniq);
-}
 #endif
+}
 
 } // namespace sony2fuji

@@ -113,7 +113,7 @@ extension EditorToolSelection {
                 else { result.noiseReduction = value.noiseReduction; result.denoise = value.denoise; result.displayChromaDenoise = value.displayChromaDenoise }
             case .vignette, .grain:
                 for parameter in PhotoEffectParameter.allCases where parameter.isVignette == (kind == .vignette) {
-                    result.setEditingEffect(parameter, to: value.editingEffectValue(parameter))
+                    result.setExactEditingEffect(parameter, to: value.editingEffectValue(parameter))
                 }
             default:
                 kind.setValue(kind.value(from: value), in: &result)

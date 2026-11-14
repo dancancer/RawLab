@@ -276,6 +276,7 @@ import Foundation
 
     static func main() throws {
         try scenarioFixtures()
+        try decimalFixtures()
         try neutralRawRequestsOnRaster()
         try fullNeutralRecipeOnRaster()
         try builtinRawRecipesOnRaster()
@@ -644,9 +645,10 @@ import Foundation
         rejects("Merged crop must fit the canvas") {
             _ = try IOSAdjustmentTransfer.prepare(payload: payload(["geometry.crop.width": .number(0.9)]), target: state(target), context: raw)
         }
-        rejects("Fractional effect cannot be silently rounded by the iOS model") {
-            _ = try IOSAdjustmentTransfer.prepare(payload: payload(["effects.grain.amount": .number(2.5)]), target: state(), context: raw)
-        }
+        let fractionalEffect = try IOSAdjustmentTransfer.prepare(payload: payload(["effects.grain.amount": .number(2.5)]), target: state(), context: raw)
+        check(fractionalEffect.settings.photoEffects.grainAmount == 2.5, "Fractional effect preserves exact decimal without silent rounding")
+        let persistedEffect = try JSONDecoder().decode(PhotoEditState.self, from: JSONEncoder().encode(fractionalEffect))
+        check(persistedEffect.settings.photoEffects.grainAmount == 2.5, "Fractional effect decimal survives persistence round trip")
         var rasterContext = raw; rasterContext.isRaw = false
         let selectedProfile = try IOSAdjustmentTransfer.prepare(payload: payload([
             "geometry.lens.profile_id": .string("fixture-profile")]), target: state(), context: rasterContext)
@@ -706,6 +708,7 @@ import Foundation
 
     private static func errorReason(_ error: Error) -> String {
         switch error as? AdjustmentTransferError {
+        case .invalidPayload: return "invalid_payload"
         case .incompatible: return "incompatible"
         case .unrepresentable: return "unrepresentable"
         case .missingLook: return "missing_look"
@@ -749,8 +752,8 @@ import Foundation
             "Detaching RAW recipe with non-recipe raster paste preserves effective target WB instead of resetting to camera")
     }
 
-    static func scenarioFixtures() throws {
-        let url = URL(fileURLWithPath: "Shared/fixtures/adjustment-transfer-scenarios-v1.json")
+    static func scenarioFixtures(at path: String = "Shared/fixtures/adjustment-transfer-scenarios-v1.json") throws {
+        let url = URL(fileURLWithPath: path)
         let root = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
         check(root["fixture_version"] as? Int == 1, "Scenario fixture version is 1")
         let scenarios = root["scenarios"] as! [[String: Any]]
@@ -828,6 +831,23 @@ import Foundation
                     let field = AdjustmentTransferField(rawValue: key)!
                     check(abs(actualEffective[field]! - effectiveObj[key]!.doubleValue) <= 1e-6, "Scenario \(id): effective \(key)")
                 }
+            }
+        }
+    }
+
+    static func decimalFixtures() throws {
+        let path = "Shared/fixtures/adjustment-transfer-decimals-v1.json"
+        try scenarioFixtures(at: path)
+        let root = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: path))) as! [String: Any]
+        for rejected in root["rejected_payloads"] as! [[String: Any]] {
+            let id = rejected["id"] as! String
+            let reason = rejected["reason"] as! String
+            let data = try JSONSerialization.data(withJSONObject: rejected["payload"]!)
+            do {
+                _ = try JSONDecoder().decode(AdjustmentTransferPayload.self, from: data)
+                fatalError("Decimal rejected payload \(id): expected \(reason)")
+            } catch {
+                check(errorReason(error) == reason, "Decimal rejected payload \(id): \(reason)")
             }
         }
     }
