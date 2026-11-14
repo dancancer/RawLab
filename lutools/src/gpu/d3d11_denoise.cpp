@@ -61,6 +61,11 @@ class Device final : public FilterDevice {
         checked(device->CreateUnorderedAccessView(buffer->data.Get(), nullptr, &buffer->uav));
         return buffer;
     }
+    struct TrimContext final : FilterContext {
+        FilterBufferPool* pool = nullptr;
+        explicit TrimContext(FilterBufferPool* p) : pool(p) {}
+        ~TrimContext() override { if (pool) pool->trimIdleToBudget(); }
+    };
 public:
     void initialize() {
         if (GetEnvironmentVariableW(L"RAWLAB_DISABLE_D3D11", nullptr, 0) > 0) throw std::runtime_error("D3D11 filters disabled");
@@ -93,7 +98,8 @@ public:
         desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER; checked(device->CreateBuffer(&desc, nullptr, &constants));
         dummy = createBuffer(1, nullptr);
     }
-    std::unique_ptr<FilterContext> activate() override { return {}; }
+    std::unique_ptr<FilterContext> activate() override { return std::make_unique<TrimContext>(&pool); }
+    void trimPool() override { pool.trimIdleToBudget(); }
     FilterBufferPtr allocate(size_t count, const float* input = nullptr) override {
         if (!count || count > UINT32_MAX / sizeof(float)) throw std::runtime_error("D3D11 filter buffer too large");
         return pool.acquire(count, input,

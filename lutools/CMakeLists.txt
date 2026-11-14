@@ -1003,6 +1003,7 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
             target_compile_options(gles_photo_pixel_tests PRIVATE -Wall -Wextra -UNDEBUG -USONY2FUJI_ENABLE_METAL -USONY2FUJI_ENABLE_D3D11)
         endif()
         add_test(NAME gpu_gles_photo_pixel COMMAND gles_photo_pixel_tests)
+        # 未接真实硬件适配器前的占位探针：所有平台统一返回 77 SKIP，避免空壳绿灯。
         add_test(NAME gpu_gles_hw_photo COMMAND gles_photo_pixel_tests --hardware-gles)
         add_test(NAME gpu_d3d11_hw_photo COMMAND gles_photo_pixel_tests --hardware-d3d11)
         set_tests_properties(gpu_gles_hw_photo gpu_d3d11_hw_photo PROPERTIES SKIP_RETURN_CODE 77)

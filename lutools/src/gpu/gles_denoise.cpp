@@ -22,14 +22,19 @@ struct Binding final : FilterContext {
     EGLSurface previousRead = eglGetCurrentSurface(EGL_READ), previousDraw = eglGetCurrentSurface(EGL_DRAW);
     EGLenum previousApi = eglQueryAPI();
     EGLDisplay display;
-    Binding(EGLDisplay d, EGLSurface surface, EGLContext context) : display(d) {
+    void (*onUnbind)(void*) = nullptr;
+    void* unbindArg = nullptr;
+    Binding(EGLDisplay d, EGLSurface surface, EGLContext context,
+            void (*trim)(void*) = nullptr, void* arg = nullptr)
+        : display(d), onUnbind(trim), unbindArg(arg) {
         if (!eglBindAPI(EGL_OPENGL_ES_API) || !eglMakeCurrent(d, surface, surface, context)) {
             if (previousApi != EGL_NONE) eglBindAPI(previousApi);
             throw std::runtime_error("GLES filter context unavailable");
         }
     }
     ~Binding() override {
-        // EGL_NO_CONTEXT 按当前 API 解绑：先释放 ES，再恢复调用方 API 和非空 context。
+        // 先在 GLES 上下文仍绑定时裁剪超额空闲缓冲，再解绑并恢复调用方上下文。
+        if (onUnbind) onUnbind(unbindArg);
         eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         if (previousApi != EGL_NONE) eglBindAPI(previousApi);
         if (previousContext != EGL_NO_CONTEXT) eglMakeCurrent(previousDisplay, previousDraw, previousRead, previousContext);
@@ -142,8 +147,12 @@ public:
     }
     std::unique_ptr<FilterContext> activate() override {
         if (surface == EGL_NO_SURFACE || context == EGL_NO_CONTEXT) throw std::runtime_error("GLES filter initialization failed");
-        return std::make_unique<Binding>(display, surface, context);
+        return std::make_unique<Binding>(
+            display, surface, context,
+            [](void* ctx) { static_cast<FilterBufferPool*>(ctx)->trimIdleToBudget(); },
+            &pool);
     }
+    void trimPool() override { pool.trimIdleToBudget(); }
     FilterBufferPtr allocate(size_t count, const float* input = nullptr) override {
         if (!count || count > blockLimit / sizeof(float)) throw std::runtime_error("GLES filter buffer exceeds device limit");
         return pool.acquire(count, input,

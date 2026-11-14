@@ -566,20 +566,12 @@ void testChromaDenoiseUsesWorkingBands() {
 
 int main(int argc, char** argv) {
     if (argc > 1 && std::string(argv[1]) == "--hardware-gles") {
-#if defined(__ANDROID__)
-        return 0;
-#else
-        std::cout << "SKIP hardware GLES probe: host platform has no Android EGL/GLES 3.1 driver\n";
+        std::cout << "SKIP hardware GLES probe: test target uses FAKE_EGL_GLES stub and is not wired to a real EGL/GLES 3.1 driver\n";
         return 77;
-#endif
     }
     if (argc > 1 && std::string(argv[1]) == "--hardware-d3d11") {
-#if defined(_WIN32)
-        return 0;
-#else
-        std::cout << "SKIP hardware D3D11 probe: non-Windows host has no D3D11 runtime\n";
+        std::cout << "SKIP hardware D3D11 probe: test target disables D3D11 and is not wired to a real D3D11 adapter\n";
         return 77;
-#endif
     }
 
     testPixelAndTextureContract();

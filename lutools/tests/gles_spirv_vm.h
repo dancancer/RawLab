@@ -23,6 +23,11 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace rawlabtest {
 
@@ -37,6 +42,8 @@ struct GlesVmStats {
     size_t deleteBufferCalls = 0;
     size_t bufferDataCalls = 0;
     size_t bufferSubDataCalls = 0;
+    size_t ssboBufferSubDataCalls = 0;
+    size_t deleteBuffersWithoutContextCalls = 0;
     size_t totalBufferDataBytes = 0;
     size_t maxBufferDataBytes = 0;
     size_t totalBufferSubDataBytes = 0;
@@ -57,6 +64,8 @@ struct GlesVmStats {
         deleteBufferCalls = 0;
         bufferDataCalls = 0;
         bufferSubDataCalls = 0;
+        ssboBufferSubDataCalls = 0;
+        deleteBuffersWithoutContextCalls = 0;
         totalBufferDataBytes = 0;
         maxBufferDataBytes = 0;
         totalBufferSubDataBytes = 0;
@@ -77,6 +86,7 @@ struct GlesVmStats {
 GlesVmConfig& glesVmConfig();
 GlesVmStats& glesVmStats();
 void resetGlesVmState();
+size_t glesVmLiveBufferBytes();
 
 namespace spv_vm {
 
@@ -1211,7 +1221,13 @@ inline const spv_vm::Module& compileGlslToSpv(const std::string& source, std::st
 #else
     static std::atomic<uint64_t> seq{0};
     const std::string compiler = RAWLAB_GLSLANG_PATH;
-    const auto uniqueTag = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "_" +
+#ifdef _WIN32
+    const auto pid = static_cast<unsigned long>(_getpid());
+#else
+    const auto pid = static_cast<unsigned long>(getpid());
+#endif
+    const auto uniqueTag = std::to_string(pid) + "_" +
+                           std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "_" +
                            std::to_string(reinterpret_cast<uintptr_t>(&cache)) + "_" +
                            std::to_string(seq.fetch_add(1, std::memory_order_relaxed));
     const auto tmpDir = std::filesystem::temp_directory_path() / ("rawlab_gles_vm_tmp_" + uniqueTag);
@@ -1289,6 +1305,14 @@ inline void resetGlesVmState() {
     s.buffers.clear();
     s.textures.clear();
     s.lastError = GL_NO_ERROR;
+}
+
+inline size_t glesVmLiveBufferBytes() {
+    size_t total = 0;
+    for (const auto& kv : detail::state().buffers) {
+        total += kv.second.bytes.size();
+    }
+    return total;
 }
 
 extern "C" {
@@ -1614,6 +1638,7 @@ void glBufferData(GLenum target, GLsizeiptr size, const void* data, GLenum) {
 void glBufferSubData(GLenum target, GLintptr offset, GLsizeiptr size, const void* data) {
     auto& s = detail::state();
     ++s.stats.bufferSubDataCalls;
+    if (target == GL_SHADER_STORAGE_BUFFER) ++s.stats.ssboBufferSubDataCalls;
     s.stats.totalBufferSubDataBytes += static_cast<size_t>(std::max<GLsizeiptr>(0, size));
     const GLuint id = detail::boundBufferFor(target);
     auto& b = s.buffers[id];
@@ -1644,6 +1669,7 @@ void glDeleteBuffers(GLsizei n, const GLuint* buffers) {
     auto& s = detail::state();
     for (GLsizei i = 0; i < n; ++i) {
         if (buffers[i]) {
+            if (s.currentContext == EGL_NO_CONTEXT) ++s.stats.deleteBuffersWithoutContextCalls;
             ++s.stats.deleteBufferCalls;
             s.buffers.erase(buffers[i]);
         }

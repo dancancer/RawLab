@@ -29,10 +29,11 @@ public:
             auto& entry = entries_[bestIndex];
             if (input) write(*entry->backing, count, input);
             entry->inUse = true;
+            trimIdleToBudget();
             return std::make_unique<Lease>(entry);
         }
 
-        evictIdleIfOverBudget(count);
+        trimIdleToBudget(count);
         auto entry = std::make_shared<Entry>();
         entry->backing = create(count, input);
         entry->capacity = count;
@@ -40,6 +41,27 @@ public:
         entries_.push_back(entry);
         return std::make_unique<Lease>(entry);
     }
+
+    void trimIdleToBudget(size_t incomingFloats = 0) {
+        size_t idle = idleFloats();
+        if (idle + incomingFloats <= maxIdleFloats_) return;
+        for (size_t i = entries_.size(); i > 0 && idle + incomingFloats > maxIdleFloats_; --i) {
+            if (!entries_[i - 1]->inUse) {
+                idle -= entries_[i - 1]->capacity;
+                entries_.erase(entries_.begin() + static_cast<ptrdiff_t>(i - 1));
+            }
+        }
+    }
+
+    size_t idleFloats() const {
+        size_t total = 0;
+        for (const auto& entry : entries_) {
+            if (!entry->inUse) total += entry->capacity;
+        }
+        return total;
+    }
+
+    size_t entryCount() const { return entries_.size(); }
 
     void clear() { entries_.clear(); }
 
@@ -62,20 +84,6 @@ private:
     private:
         std::shared_ptr<Entry> entry_;
     };
-
-    void evictIdleIfOverBudget(size_t incomingFloats) {
-        size_t idleFloats = 0;
-        for (const auto& entry : entries_) {
-            if (!entry->inUse) idleFloats += entry->capacity;
-        }
-        if (idleFloats + incomingFloats <= maxIdleFloats_) return;
-        for (size_t i = entries_.size(); i > 0 && idleFloats + incomingFloats > maxIdleFloats_; --i) {
-            if (!entries_[i - 1]->inUse) {
-                idleFloats -= entries_[i - 1]->capacity;
-                entries_.erase(entries_.begin() + static_cast<ptrdiff_t>(i - 1));
-            }
-        }
-    }
 
     size_t maxIdleFloats_;
     std::vector<std::shared_ptr<Entry>> entries_;

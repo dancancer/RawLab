@@ -43,7 +43,9 @@ bool compute(Operation operation) {
             if (!device) device = createD3D11FilterDevice();
 #endif
             auto scope = device->activate();
-            return operation(*device);
+            const bool ok = operation(*device);
+            device->trimPool();
+            return ok;
         } catch (...) { device.reset(); throw; }
     } catch (const std::exception& error) {
 #if defined(SONY2FUJI_ENABLE_GLES)

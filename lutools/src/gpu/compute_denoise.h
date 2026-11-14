@@ -42,6 +42,7 @@ public:
     virtual void dispatch(FilterParams params, FilterBuffer& source, FilterBuffer* other,
                           FilterBuffer& output, FilterBuffer* secondOutput = nullptr) = 0;
     virtual void read(FilterBuffer& buffer, size_t count, float* output) = 0;
+    virtual void trimPool() {}
 };
 
 std::unique_ptr<FilterDevice> createGlesFilterDevice();

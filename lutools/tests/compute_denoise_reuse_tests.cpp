@@ -2,6 +2,7 @@
 #include "gles_spirv_vm.h"
 
 #include "gpu/compute_denoise.h"
+#include "gpu/filter_buffer_pool.h"
 
 #include <algorithm>
 #include <cassert>
@@ -276,7 +277,7 @@ void testGlesDenoiseBufferPooling() {
               "computeWaveletFilter repeat tile 32x32 succeeds");
     }
 
-    const auto& stats = rawlabtest::glesVmStats();
+    const auto stats = rawlabtest::glesVmStats();
     check(stats.genBufferCalls == 0,
           "gles_denoise reuses pooled SSBOs without glGenBuffers (got " +
           std::to_string(stats.genBufferCalls) + ")");
@@ -286,12 +287,104 @@ void testGlesDenoiseBufferPooling() {
     check(stats.deleteBufferCalls == 0,
           "gles_denoise retains pooled SSBOs without glDeleteBuffers churn (got " +
           std::to_string(stats.deleteBufferCalls) + ")");
-    check(stats.bufferSubDataCalls >= 5,
-          "gles_denoise uploads new data into pooled SSBOs via glBufferSubData");
+    check(stats.ssboBufferSubDataCalls == 5,
+          "gles_denoise uploads new data into pooled SSBOs via GL_SHADER_STORAGE_BUFFER glBufferSubData (got " +
+          std::to_string(stats.ssboBufferSubDataCalls) + ")");
     check(out1 == out2 && wavOut1 == wavOut2,
           "pooled SSBO execution is bit-identical to unpooled warmup results");
+
+    auto refDevice = sony2fuji::createGlesFilterDevice();
+    std::vector<float> outEdgeRef(64 * 48 * 2, 0.f);
+    {
+        auto scope = refDevice->activate();
+        check(sony2fuji::computeGuidedFilter(*refDevice, guideEdge.data(), srcEdge.data(), 64, 48, 2, 0.01f, outEdgeRef.data()),
+              "unpooled fresh device computes 64x48 guided filter reference");
+    }
     bool edgeFinite = std::all_of(outEdge.begin(), outEdge.end(), [](float v) { return std::isfinite(v); });
-    check(edgeFinite, "trailing 64x48 band produces finite values when reusing 64x64 buffers");
+    check(edgeFinite && outEdge == outEdgeRef,
+          "trailing 64x48 band produces exact unpooled output when reusing 64x64 buffers");
+#endif
+}
+
+void testFilterBufferPoolBudgetAndGlesContextTrim() {
+    constexpr size_t kNineMiBFloats = 9 * 1024 * 1024 / sizeof(float); // 2,359,296 floats = 9 MiB
+    constexpr size_t kBudgetFloats = 16 * 1024 * 1024;                  // 64 MiB
+    {
+        sony2fuji::FilterBufferPool pool(kBudgetFloats);
+        size_t created = 0;
+        std::vector<sony2fuji::FilterBufferPtr> peak;
+        peak.reserve(24);
+        for (int i = 0; i < 24; ++i) {
+            peak.push_back(pool.acquire(kNineMiBFloats, nullptr,
+                [&](size_t n, const float*) {
+                    ++created;
+                    auto b = std::make_unique<MockBuffer>();
+                    b->data.resize(n, 0.f);
+                    return b;
+                },
+                [](sony2fuji::FilterBuffer&, size_t, const float*) {}));
+        }
+        check(created == 24 && pool.idleFloats() == 0,
+              "FilterBufferPool holds 24x9 MiB active buffers during wavelet peak without premature eviction");
+        peak.clear();
+        check(pool.idleFloats() == 24 * kNineMiBFloats,
+              "dropping peak leases turns 216 MiB into idle pool entries before trim");
+        {
+            // Pool-hit branch for a subsequent small 512x512 request must trim excess idle buffers too.
+            auto small = pool.acquire(512 * 512, nullptr,
+                [&](size_t n, const float*) {
+                    ++created;
+                    auto b = std::make_unique<MockBuffer>();
+                    b->data.resize(n, 0.f);
+                    return b;
+                },
+                [](sony2fuji::FilterBuffer&, size_t, const float*) {});
+            check(created == 24 && pool.idleFloats() <= kBudgetFloats,
+                  "FilterBufferPool acquire() hit trims idle pool entries to <= 64 MiB");
+        }
+        pool.trimIdleToBudget();
+        check(pool.idleFloats() <= kBudgetFloats && pool.entryCount() <= 7,
+              "FilterBufferPool trimIdleToBudget() caps idle memory at <= 64 MiB after peak");
+    }
+
+#ifdef RAWLAB_GLSLANG_PATH
+    rawlabtest::resetGlesVmState();
+    auto device = sony2fuji::createGlesFilterDevice();
+    check(device != nullptr, "createGlesFilterDevice succeeds for budget trim probe");
+    if (!device) return;
+    {
+        auto scope = device->activate();
+        std::vector<sony2fuji::FilterBufferPtr> peak;
+        peak.reserve(24);
+        for (int i = 0; i < 24; ++i) {
+            peak.push_back(device->allocate(kNineMiBFloats));
+        }
+        check(rawlabtest::glesVmLiveBufferBytes() >= 216ULL * 1024 * 1024,
+              "GLES VM tracks 24x9 MiB = 216 MiB peak SSBO allocations");
+        peak.clear();
+        {
+            auto small = device->allocate(512 * 512);
+            check(rawlabtest::glesVmLiveBufferBytes() <= 72ULL * 1024 * 1024 + 4096,
+                  "GLES pool-hit acquire(512x512) trims excess idle SSBOs while context is bound");
+        }
+        device->trimPool();
+        check(rawlabtest::glesVmLiveBufferBytes() <= 64ULL * 1024 * 1024 + 4096,
+              "GLES device->trimPool() caps idle SSBO memory at <= 64 MiB (got " +
+              std::to_string(rawlabtest::glesVmLiveBufferBytes()) + " bytes)");
+    }
+    {
+        auto scope = device->activate();
+        std::vector<sony2fuji::FilterBufferPtr> peak;
+        peak.reserve(24);
+        for (int i = 0; i < 24; ++i) {
+            peak.push_back(device->allocate(kNineMiBFloats));
+        }
+        peak.clear();
+    }
+    check(rawlabtest::glesVmLiveBufferBytes() <= 64ULL * 1024 * 1024 + 4096,
+          "GLES FilterContext Binding destructor trims idle SSBOs to <= 64 MiB on exit");
+    check(rawlabtest::glesVmStats().deleteBuffersWithoutContextCalls == 0,
+          "GLES pool glDeleteBuffers only runs while EGL context is active");
 #endif
 }
 
@@ -301,6 +394,7 @@ int main() {
     testImageFilterBandAndScratchReuse();
     testDetailFilterCopiesAndAtomicity();
     testGlesDenoiseBufferPooling();
+    testFilterBufferPoolBudgetAndGlesContextTrim();
     if (gFailures != 0) {
         std::cerr << gFailures << " check(s) failed\n";
         return 1;
