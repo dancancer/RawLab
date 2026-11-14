@@ -214,9 +214,14 @@ void photoTests(const fs::path& root) {
     config.mode = SONY2FUJI_GPU_FORCE; sony2fuji_session_set_gpu_config(session, &config);
     sony2fuji_buffer output{};
     const auto forced = sony2fuji_process(session, &request, &output);
+#ifdef SONY2FUJI_ENABLE_METAL
     check(forced == SONY2FUJI_STATUS_PROCESSING_ERROR ||
           (forced == SONY2FUJI_STATUS_OK && sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_METAL),
           "PHOTO Force either uses Metal or fails explicitly");
+#else
+    check(forced == SONY2FUJI_STATUS_UNSUPPORTED,
+          "PHOTO Force returns UNSUPPORTED without a Metal DCP backend");
+#endif
     sony2fuji_release_buffer(&output);
     config.mode = SONY2FUJI_GPU_OFF; sony2fuji_session_set_gpu_config(session, &config);
     request.exposure_ev = 1;
@@ -246,7 +251,11 @@ void photoTests(const fs::path& root) {
     render("PHOTO Auto handles FP32 overflow via precise CPU", automatic);
     check(sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_CPU, "nonfinite Metal stage cannot report success");
     config.mode = SONY2FUJI_GPU_FORCE; sony2fuji_session_set_gpu_config(session, &config);
+#ifdef SONY2FUJI_ENABLE_METAL
     check(sony2fuji_process(session, &request, &output) == SONY2FUJI_STATUS_PROCESSING_ERROR, "Force rejects nonfinite Metal stage");
+#else
+    check(sony2fuji_process(session, &request, &output) == SONY2FUJI_STATUS_UNSUPPORTED, "Force returns UNSUPPORTED for rlook without Metal");
+#endif
     sony2fuji_release_buffer(&output);
     request.lut_path = path.c_str();
     config.mode = SONY2FUJI_GPU_AUTO; sony2fuji_session_set_gpu_config(session, &config);

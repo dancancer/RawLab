@@ -85,11 +85,16 @@ ErrorCode applyLUTWithConfig(
         return ErrorCode::ProcessingError;
     }
     if (lut->requiresCPU()) {
-        if (config.mode == GpuMode::Force) return ErrorCode::ProcessingError;
+        if (config.mode == GpuMode::Force) return ErrorCode::Unsupported;
         return applyLutCpu(lut,image);
     }
 
     if (config.mode != GpuMode::Off) {
+#if !defined(SONY2FUJI_ENABLE_METAL) && !defined(SONY2FUJI_ENABLE_GLES)
+        if (config.mode == GpuMode::Force) {
+            return ErrorCode::Unsupported;
+        }
+#endif
         ImageData staged = image;
         const auto low = lut->domainMin();
         const auto high = lut->domainMax();

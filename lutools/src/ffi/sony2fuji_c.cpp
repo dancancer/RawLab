@@ -474,6 +474,7 @@ sony2fuji_status mapError(sony2fuji::ErrorCode code) {
             return SONY2FUJI_STATUS_OUTPUT_IO_ERROR;
         case sony2fuji::ErrorCode::ParseError:
         case sony2fuji::ErrorCode::InvalidFormat:
+        case sony2fuji::ErrorCode::Unsupported:
             return SONY2FUJI_STATUS_UNSUPPORTED;
         case sony2fuji::ErrorCode::OutOfMemory:
             return SONY2FUJI_STATUS_OUT_OF_MEMORY;
@@ -2883,7 +2884,7 @@ static sony2fuji_status processImpl(
             dcp = sony2fuji::DcpLook::loadCached(local.lut_path);
             if (!dcp) return SONY2FUJI_STATUS_UNSUPPORTED;
 #if !defined(SONY2FUJI_ENABLE_METAL)
-            if (session->gpu_config.mode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_PROCESSING_ERROR;
+            if (session->gpu_config.mode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_UNSUPPORTED;
 #endif
         } else {
             status = loadLUT(local.lut_path, &lut);

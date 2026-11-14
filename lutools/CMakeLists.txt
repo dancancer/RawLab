@@ -923,6 +923,18 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     endif()
     add_test(NAME gpu_gles_lut_binding COMMAND gles_lut_binding_tests)
     add_test(NAME gpu_gles_lut_init_failure_binding COMMAND gles_lut_binding_tests --init-failure)
+    add_executable(lut_gpu_no_backend_tests tests/lut_gpu_no_backend_tests.cpp
+        src/gpu/lut_gpu.cpp src/core/lut_applicator.cpp src/core/lut_parser.cpp)
+    target_link_libraries(lut_gpu_no_backend_tests Threads::Threads)
+    if(MSVC)
+        target_compile_options(lut_gpu_no_backend_tests PRIVATE /W4 /utf-8 /UNDEBUG
+            /USONY2FUJI_ENABLE_METAL /USONY2FUJI_ENABLE_GLES /USONY2FUJI_ENABLE_D3D11)
+        target_compile_definitions(lut_gpu_no_backend_tests PRIVATE NOMINMAX)
+    else()
+        target_compile_options(lut_gpu_no_backend_tests PRIVATE -Wall -Wextra -UNDEBUG
+            -USONY2FUJI_ENABLE_METAL -USONY2FUJI_ENABLE_GLES -USONY2FUJI_ENABLE_D3D11)
+    endif()
+    add_test(NAME lut_gpu_no_backend COMMAND lut_gpu_no_backend_tests)
     if(SONY2FUJI_ENABLE_GPU AND (APPLE OR WIN32))
         add_executable(gpu_photo_tests tests/gpu_photo_tests.cpp)
         target_link_libraries(gpu_photo_tests sony2fuji_core)

@@ -1,4 +1,6 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include "sony2fuji/gpu/lut_gpu.h"
+#include "sony2fuji/lut_parser.h"
 #include "core/photo_rendering.h"
 #include "nlohmann/json.hpp"
 #include <array>
@@ -132,6 +134,51 @@ int main() {
         }
         sony2fuji_release_blob(&info);sony2fuji_release_blob(&prepared);
     }
+    if (auto cpuLut = sony2fuji::LUTParser::loadLUT(vlt.u8string())) {
+        std::shared_ptr<sony2fuji::LUT3D> sharedLut(std::move(cpuLut));
+        sony2fuji::ImageData forceImg;
+        forceImg.width = 1;
+        forceImg.height = 1;
+        forceImg.pixels = {{0.2f, 0.4f, 0.6f}};
+        const auto untouched = forceImg.pixels;
+        check(sony2fuji::applyLUTWithConfig(sharedLut, forceImg, {sony2fuji::GpuMode::Force}) ==
+                  sony2fuji::ErrorCode::Unsupported &&
+              forceImg.pixels.size() == untouched.size() &&
+              forceImg.pixels[0].r == untouched[0].r &&
+              forceImg.pixels[0].g == untouched[0].g &&
+              forceImg.pixels[0].b == untouched[0].b,
+              "applyLUTWithConfig returns UNSUPPORTED on CPU-only LUT under Force without modifying pixels");
+        check(sony2fuji::applyLUTWithConfig(sharedLut, forceImg, {sony2fuji::GpuMode::Auto}) ==
+                  sony2fuji::ErrorCode::Success,
+              "applyLUTWithConfig retains Auto CPU fallback for CPU-only LUT");
+    } else {
+        check(false, "Load temporary VLT fixture for applyLUTWithConfig check");
+    }
+#if !defined(SONY2FUJI_ENABLE_METAL) && !defined(SONY2FUJI_ENABLE_GLES) && !defined(SONY2FUJI_ENABLE_D3D11)
+    {
+        const auto legacy = dir / "legacy.cube";
+        {
+            std::ofstream file(legacy);
+            file << "#Gamma: FLog2toDisplay\n#Gamut: FGamuttoITURBT709\nLUT_3D_SIZE 2\n";
+            for (int b = 0; b < 2; ++b)
+                for (int g = 0; g < 2; ++g)
+                    for (int ri = 0; ri < 2; ++ri)
+                        file << ri << ' ' << g << ' ' << b << '\n';
+        }
+        const auto legacyName = legacy.u8string();
+        r.lut_path = legacyName.c_str();
+        r.input_type = SONY2FUJI_INPUT_BUFFER;
+        r.input_is_linear = 1;
+        sony2fuji_status legacyStatus = SONY2FUJI_STATUS_OK;
+        render(session, r, SONY2FUJI_GPU_FORCE, &legacyStatus);
+        check(legacyStatus == SONY2FUJI_STATUS_UNSUPPORTED,
+              "Legacy LUT under Force without a GPU backend returns UNSUPPORTED through C ABI");
+        sony2fuji_status autoStatus = SONY2FUJI_STATUS_PROCESSING_ERROR;
+        check(!render(session, r, SONY2FUJI_GPU_AUTO, &autoStatus).empty() &&
+              autoStatus == SONY2FUJI_STATUS_OK,
+              "Legacy LUT retains Auto CPU fallback through C ABI without a GPU backend");
+    }
+#endif
     sony2fuji_session_destroy(session);std::filesystem::remove_all(dir);
     std::cout<<"LUT contract render failures: "<<failures<<'\n';return failures?1:0;
 }
