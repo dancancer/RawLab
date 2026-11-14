@@ -80,6 +80,51 @@ try
     var callsBeforeUnwritableCheck = calls;
     await unwritable.CheckAsync(false);
     Check(calls == callsBeforeUnwritableCheck && !unwritable.Checking, "automatic check requires persisted throttle");
+
+    // P1-08: UpdateChecker must use unique temp paths rather than colliding on fixed settingsPath + ".tmp"
+    var collisionPath = Path.Combine(directory, "collision-updates.json");
+    Directory.CreateDirectory(collisionPath + ".tmp");
+    var nonColliding = new UpdateChecker("0.4.0", collisionPath, client);
+    nonColliding.Automatic = false;
+    Check(!nonColliding.Automatic && nonColliding.StorageWarning == "" &&
+        !new UpdateChecker("0.4.0", collisionPath, client).Automatic,
+        "P1-08 UpdateChecker uses unique temp filename instead of colliding on fixed .tmp path");
+
+    // P1-08: UpdateChecker retries transient Win32 sharing violations (0x80070020) via shared AtomicFileWrite
+    var retryDir = Path.Combine(directory, "retry-checker");
+    Directory.CreateDirectory(retryDir);
+    var retryPath = Path.Combine(retryDir, "updates.json");
+    var retryElapsed = TimeSpan.Zero;
+    var retryDelays = new List<int>();
+    var retryMoves = 0;
+    var retryingChecker = new UpdateChecker("0.4.0", retryPath, client,
+        (src, dst) =>
+        {
+            if (++retryMoves <= 2) throw new IOException("Sharing violation", unchecked((int)0x80070020));
+            File.Move(src, dst, true);
+        },
+        delay => { retryDelays.Add((int)delay.TotalMilliseconds); retryElapsed += delay; },
+        () => retryElapsed);
+    retryingChecker.Automatic = false;
+    Check(!retryingChecker.Automatic && retryingChecker.StorageWarning == "" &&
+        retryMoves == 3 && retryDelays.SequenceEqual(new[] { 10, 50 }) &&
+        !new UpdateChecker("0.4.0", retryPath, client).Automatic &&
+        Directory.GetFiles(retryDir).Length == 1,
+        "P1-08 UpdateChecker retries sharing violation 0x80070020 and cleans temporary files");
+
+    // P1-08: Exhausted sharing violations in UpdateChecker preserve existing settings and surface warning without leaking temp files
+    var initialBytes = File.ReadAllBytes(retryPath);
+    var exhaustMoves = 0;
+    var exhaustingChecker = new UpdateChecker("0.4.0", retryPath, client,
+        (_, _) => { exhaustMoves++; throw new IOException("Sharing violation", unchecked((int)0x80070020)); },
+        delay => { retryElapsed += delay; },
+        () => retryElapsed);
+    retryElapsed = TimeSpan.Zero;
+    exhaustingChecker.Automatic = true;
+    Check(!exhaustingChecker.Automatic && exhaustingChecker.StorageWarning.Length > 0 &&
+        exhaustMoves == 4 && File.ReadAllBytes(retryPath).SequenceEqual(initialBytes) &&
+        Directory.GetFiles(retryDir).Length == 1,
+        "P1-08 UpdateChecker exhausted sharing retries preserve existing settings without temp leak");
     Console.WriteLine("PASS: opt-out, persistence, cache, HTTP failure, corruption and concurrent checks");
 }
 finally { Directory.Delete(directory, true); }

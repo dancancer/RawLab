@@ -388,19 +388,14 @@ internal sealed class UsageInstallId(string path)
 internal static class UsageFiles
 {
     // 先写临时文件再整体替换，写到一半失败不会留下半截内容
-    public static bool WriteAtomically(string path, string text)
+    public static bool WriteAtomically(string path, string text, Action<string, string>? moveFile = null, Action<TimeSpan>? sleep = null, Func<TimeSpan>? elapsed = null)
     {
-        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
-            var directory = Path.GetDirectoryName(path);
-            if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
-            File.WriteAllText(temporary, text);
-            File.Move(temporary, path, true);
+            AtomicFileWrite.WriteText(path, text, moveFile, sleep, elapsed);
             return true;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return false; }
-        finally { TryDelete(temporary); }
     }
 
     public static void TryDelete(string path)

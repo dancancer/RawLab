@@ -20,6 +20,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     private readonly string currentVersion, currentBuild;
     private CancellationTokenSource? operation;
     private bool automaticDownload;
+    private bool needsDeferredQuitRevalidation;
     private readonly bool recoveryStartup;
     private bool startupStorageBlocked;
     private byte[]? repairSnapshot;
@@ -67,9 +68,16 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         recoveryStartup = RequiresStartupHealthCheck || RequiresRecovery;
         if (StorageError == null && !RequiresStartupHealthCheck)
         {
-            var next = preferences.Copy(); next.PendingUpdate.RestoreAfterLaunch(currentVersion, currentBuild, false);
-            if (next.PendingUpdate.Phase != State.Phase) Save(next);
+            var next = preferences.Copy();
+            var previousPhase = next.PendingUpdate.Phase;
+            next.PendingUpdate.RestoreAfterLaunch(currentVersion, currentBuild, false);
+            if (next.PendingUpdate.Phase != State.Phase)
+            {
+                if (previousPhase != UpdatePhase.Checking) RecordRetryableFailure(next, "interrupted");
+                Save(next);
+            }
         }
+        needsDeferredQuitRevalidation = StorageError == null && State.Phase == UpdatePhase.Available && DeferredQuitChoice;
         if (StorageError == null && !RequiresStartupHealthCheck && !RequiresRecovery && File.Exists(store.StatePath)) {
             try { backup.DiscardUnreferencedBackups(State.BackupPath, preferences.RecoveryReceipt); } catch { }
         }
@@ -173,7 +181,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     private bool ShouldSkipAutomaticCheck(DateTimeOffset current)
     {
         if (!preferences.AutomaticCheck ||
-            State.Phase == UpdatePhase.Failed && State.Failure?.Stage != UpdatePhase.Checking && State.Failure?.Code != "trust_temporary" ||
+            State.Phase == UpdatePhase.Failed && !UpdatePresentation.IsRetryableFailure(State.Failure) ||
             preferences.RemindAfter > current) return true;
         if (preferences.CheckFailure != null) return IsCheckBackoffActive(current);
         return preferences.LastCheck is { } last && last <= current && current - last < DailyCheckInterval;
@@ -188,7 +196,8 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         if (!CanCheck) return;
         if (!manual && ShouldSkipAutomaticCheck(now())) return;
         var next = preferences.Copy(); var attempt = next.PendingUpdate.BeginCheck();
-        if (!Save(next)) return;
+        if (!Save(next, preserveDeferredChoiceOnFailure: true)) return;
+        needsDeferredQuitRevalidation = false;
         var cancellation = BeginOperation(); automaticDownload = !manual && preferences.AutomaticInstall;
         try
         {
@@ -224,7 +233,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             if (automaticDownload && preferences.AutomaticInstall && next.PendingUpdate.Choice == UpdateInstallChoice.None) next.PendingUpdate.Choose(UpdateInstallChoice.AutomaticOnQuit);
             Save(next);
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception error) { if (State.Phase == UpdatePhase.Verifying) FailVerification(error, attempt.Value); else Fail(error, attempt.Value); }
         finally { EndOperation(cancellation); }
     }
@@ -260,10 +269,15 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     {
         if (State.Phase == UpdatePhase.Available && DeferredQuitChoice && CanCheck)
         {
-            if (!IsCheckBackoffActive(now())) await CheckAsync(true);
+            if (needsDeferredQuitRevalidation)
+            {
+                if (!IsCheckBackoffActive(now())) await CheckAsync(true);
+                return;
+            }
+            if (!IsCheckBackoffActive(now())) await CheckAsync(false);
             return;
         }
-        if (State.Phase == UpdatePhase.Failed && (State.Failure?.Stage == UpdatePhase.Checking || State.Failure?.Code == "trust_temporary") ||
+        if (State.Phase == UpdatePhase.Failed && UpdatePresentation.IsRetryableFailure(State.Failure) ||
             State.Phase == UpdatePhase.Idle && CheckFailure != null) { await CheckAsync(false); return; }
         if (!CanChooseInstall || State.Choice == UpdateInstallChoice.None) return;
         var reasons = gate.Blockers();
@@ -346,11 +360,20 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         if (ReferenceEquals(operation, value)) operation = null;
         value.Dispose(); Notify();
     }
+    private void RecordRetryableFailure(UpdatePreferences next, string code, string detail = "")
+    {
+        if (!UpdatePresentation.IsRetryableFailure(next.PendingUpdate.Failure)) return;
+        var count = (preferences.CheckFailure?.ConsecutiveFailures ?? 0) + 1;
+        next.CheckFailure = new(now(), code, Math.Max(1, count), detail);
+    }
     private void FailVerification(Exception error, Guid attempt)
     {
         var next = preferences.Copy();
-        if (next.PendingUpdate.Fail(UpdatePhase.Verifying, VerificationFailureCode(error), error.Message ?? "", attempt))
-            Save(next);
+        var code = VerificationFailureCode(error);
+        var detail = error.Message ?? "";
+        if (!next.PendingUpdate.Fail(UpdatePhase.Verifying, code, detail, attempt)) return;
+        RecordRetryableFailure(next, code, detail);
+        Save(next);
     }
     private static string VerificationFailureCode(Exception error) => error switch
     {
@@ -372,11 +395,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         var detail = error.Message ?? "";
         var next = preferences.Copy();
         if (!next.PendingUpdate.Fail(stage, code, detail, attempt)) return;
-        if (stage == UpdatePhase.Checking)
-        {
-            var count = (preferences.CheckFailure?.ConsecutiveFailures ?? 0) + 1;
-            next.CheckFailure = new(now(), code, Math.Max(1, count), detail);
-        }
+        RecordRetryableFailure(next, code, detail);
         if (!Save(next, keepNextOnFailure: persistedDispatch) && optimisticRollback)
         {
             // 双故障边界：失败记录也没写进去时磁盘仍停在 Installing/PendingRestart 并绑定备份，
@@ -385,7 +404,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             if (diskRecord!.PendingUpdate.Fail(diskPhase, code, detail, attempt)) { preferences = diskRecord; Notify(); }
         }
     }
-    private bool Save(UpdatePreferences next, bool discardObsoleteBackup = true, bool keepNextOnFailure = false)
+    private bool Save(UpdatePreferences next, bool discardObsoleteBackup = true, bool keepNextOnFailure = false, bool preserveDeferredChoiceOnFailure = false)
     {
         if (startupStorageBlocked) return false;
         try {
@@ -398,7 +417,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         {
             StorageError = error.Message;
             if (keepNextOnFailure) preferences = next;
-            else preferences.PendingUpdate.Cancel();
+            else preferences.PendingUpdate.Cancel(preservingChoice: preserveDeferredChoiceOnFailure && DeferredQuitChoice);
             operation?.Cancel(); Notify(); return false;
         }
     }

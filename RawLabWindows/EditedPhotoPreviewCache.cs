@@ -47,7 +47,8 @@ internal static class EditedPhotoPreviewKey
     private static string Digest(byte[] data) => Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant();
 }
 
-internal sealed class EditedPhotoPreviewCache(string directory, int maximumEntries = 256, long maximumBytes = 64 * 1024 * 1024)
+internal sealed class EditedPhotoPreviewCache(string directory, int maximumEntries = 256, long maximumBytes = 64 * 1024 * 1024,
+    Action<string, string>? moveFile = null, Action<TimeSpan>? sleep = null, Func<TimeSpan>? elapsed = null)
 {
     private readonly object gate = new();
     internal byte[]? Read(string key)
@@ -61,14 +62,8 @@ internal sealed class EditedPhotoPreviewCache(string directory, int maximumEntri
     {
         if (data.LongLength > maximumBytes) return;
         lock (gate) {
-            Directory.CreateDirectory(directory);
-            var path = Location(key); var temporary = path + "." + Guid.NewGuid() + ".tmp";
-            try {
-                using (var stream = new FileStream(temporary,FileMode.CreateNew,FileAccess.Write,FileShare.None)) {
-                    stream.Write(data);stream.Flush(flushToDisk:true);
-                }
-                File.Move(temporary,path,true);
-            } finally { if (File.Exists(temporary)) File.Delete(temporary); }
+            var path = Location(key);
+            AtomicFileWrite.Write(path, data, moveFile, sleep, elapsed);
             var entries = new DirectoryInfo(directory).EnumerateFiles("*.preview")
                 .OrderBy(file => file.FullName == path ? 1 : 0).ThenBy(file => file.LastWriteTimeUtc).ToArray();
             var remaining = entries.Length; var bytes = entries.Sum(file => file.Length);

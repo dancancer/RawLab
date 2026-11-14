@@ -174,6 +174,41 @@ internal static class UsageLifecycleTests
         sendHold.SetResult();
         await pending.WaitAsync(TimeSpan.FromSeconds(5));
         await WaitUntil(() => stuck.StopCalls == 1);
+
+        RunAtomicWriteChecks(root);
+    }
+
+    internal static void RunAtomicWriteChecks(string root)
+    {
+        var atomicDir = Path.Combine(root, "usage-atomic-p108");
+        Directory.CreateDirectory(atomicDir);
+        var target = Path.Combine(atomicDir, "usage.json");
+        var elapsed = TimeSpan.Zero;
+        var delays = new List<int>();
+        var moves = 0;
+        var wrote = UsageFiles.WriteAtomically(target, "{\"Enabled\":true}",
+            (src, dst) =>
+            {
+                if (++moves <= 2) throw new IOException("Sharing violation", unchecked((int)0x80070020));
+                File.Move(src, dst, true);
+            },
+            delay => { delays.Add((int)delay.TotalMilliseconds); elapsed += delay; },
+            () => elapsed);
+        Check(wrote && moves == 3 && delays.SequenceEqual(new[] { 10, 50 }) &&
+            File.ReadAllText(target) == "{\"Enabled\":true}" &&
+            Directory.GetFiles(atomicDir, "*.tmp").Length == 0,
+            "P1-08 UsageFiles.WriteAtomically retries sharing violation 0x80070020 and removes temp files");
+
+        elapsed = TimeSpan.Zero;
+        var exhaustedMoves = 0;
+        var exhausted = UsageFiles.WriteAtomically(target, "{\"Enabled\":false}",
+            (_, _) => { exhaustedMoves++; throw new IOException("Sharing violation", unchecked((int)0x80070020)); },
+            delay => { elapsed += delay; },
+            () => elapsed);
+        Check(!exhausted && exhaustedMoves == 4 &&
+            File.ReadAllText(target) == "{\"Enabled\":true}" &&
+            Directory.GetFiles(atomicDir, "*.tmp").Length == 0,
+            "P1-08 UsageFiles.WriteAtomically exhaustion preserves prior file and cleans up temp files");
     }
 
     private static bool IsV4(string text) => Guid.TryParseExact(text, "D", out _) && text[14] == '4';

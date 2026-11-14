@@ -10,6 +10,11 @@ var root = Path.Combine(Path.GetTempPath(), "RawLabUsageTests-" + Guid.NewGuid()
 Directory.CreateDirectory(root);
 try
 {
+    if (args is ["--atomic-write"])
+    {
+        UsageLifecycleTests.RunAtomicWriteChecks(root);
+        return;
+    }
     RumConfigurationTests.Run();
     await UsageLifecycleTests.Run(root);
     await TempCleanupTests.Run(root);
