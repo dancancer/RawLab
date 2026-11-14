@@ -16,5 +16,5 @@ if [ "${RAWLAB_RELEASE:-0}" = 1 ]; then
         if [ "${RAWLAB_DUALDN:-0}" != 0 ]; then echo 'Intel release builds do not include AI denoise.' >&2; exit 2; fi
         export RAWLAB_DUALDN=0
     fi
-    python3 "$ROOT/scripts/release/macos_config.py" validate "$ARCH"
+    "${PYTHON_EXECUTABLE:-python3}" "$ROOT/scripts/release/macos_config.py" validate "$ARCH"
 fi
