@@ -857,12 +857,20 @@ struct Harness {
                     let (store, dir, file) = try makeStore(tempRoot: tempRoot, name: "c-\(id)")
                     let url = try touchPhoto(tempRoot, name: "c-nz-\(id).JPG")
                     try store.save(url, state: built)
-                    var txt = String(data: try Data(contentsOf: file), encoding: .utf8)!
-                    txt = txt.replacingOccurrences(of: "\"exposure\":0,", with: "\"exposure\":-0.0,")
-                    try check(txt.contains("\"exposure\":-0.0,"), "\(id): test setup failed to inject -0.0")
+                    var registry = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+                    var records = registry["records"] as! [String: Any]
+                    let tk = try PhotoIdentity.fallback(for: url).key
+                    var state = records[tk] as! [String: Any]
+                    var settings = state["settings"] as! [String: Any]
+                    settings["exposure"] = "__NEG_ZERO_SENTINEL__"
+                    state["settings"] = settings; records[tk] = state; registry["records"] = records
+                    var txt = String(data: try JSONSerialization.data(withJSONObject: registry), encoding: .utf8)!
+                    txt = txt.replacingOccurrences(of: "\"__NEG_ZERO_SENTINEL__\"", with: "-0.0")
+                    try check(txt.contains("-0.0") && !txt.contains("__NEG_ZERO_SENTINEL__"), "\(id): test setup failed to inject -0.0")
                     try Data(txt.utf8).write(to: file)
                     let loaded = try EditPersistence(directory: dir).state(for: url)!
-                    try check(loaded.settings.exposure == 0.0 && loaded.settings.exposure.sign == .plus, "\(id): -0.0 canonicalized/loaded cleanly")
+                    try check(loaded.settings.exposure == 0.0 && loaded.settings.exposure.sign == .plus,
+                              "\(id): -0.0 must canonicalize to +0.0 (got \(loaded.settings.exposure), sign=\(loaded.settings.exposure.sign))")
                 default:
                     throw Failure.message("Unhandled compat kind: \(kind)")
                 }
