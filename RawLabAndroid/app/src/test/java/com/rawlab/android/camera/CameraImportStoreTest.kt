@@ -548,6 +548,35 @@ class CameraImportStoreTest {
         assertEquals("the recorded fingerprint must keep later loads free of whole-file digests", 0, fixture.media.opens)
     }
 
+    @Test fun strongVerificationFailureClearsFingerprintSoNextLoadFlipsToChanged() = withStore { fixture, store ->
+        val job = save(store)
+        val file = fixture.media.file(job.items.single().saved!!.uri)
+        val mtime = file.lastModified()
+        // 同 stat 改写：内容变化但 size 与 mtime 复原，stat 指纹抓不到（评审 finding 3 场景）。
+        file.writeBytes(ByteArray(raw.size) { ((it * 7 + 3) % 251).toByte() })
+        assertTrue(file.setLastModified(mtime))
+        val trusted = fixture.store().load().single()
+        assertNotNull("load keeps trusting the unchanged fingerprint", trusted.items.single().saved)
+        // 用户点打开：savedUris 整文件强校验拦截，同时必须清掉该条指纹并落盘（自愈前提）。
+        assertThrows(CameraLocalSourceChanged::class.java) { store.savedUris(trusted) }
+        val healed = fixture.store().load().single()
+        assertNull("after strong verification failed the entry must self-heal away from saved", healed.items.single().saved)
+        assertEquals(CameraMediaProblem.CHANGED, healed.items.single().problem)
+    }
+
+    @Test fun statTrustRequiresFingerprintSizeToMatchExpectedSize() = withStore { fixture, store ->
+        val job = save(store)
+        val item = job.items.single()
+        val recorded = checkNotNull(item.savedStat)
+        // 篡改场景：指纹与当前 stat 一致，但预期校验 size 不同（输出尺寸记录漂移）。
+        store.save(job.copy(items = listOf(item.copy(outputSize = recorded.substringBefore(':').toLong() - 1))))
+        fixture.media.opens = 0
+        val reloaded = fixture.store().load().single()
+        assertEquals("a fingerprint whose size differs from the expected size must not be trusted",
+            CameraMediaProblem.CHANGED, reloaded.items.single().problem)
+        assertEquals(1, fixture.media.opens)
+    }
+
     @Test fun adjustedJpegReuseRequiresTheSameSourceAndFrozenOptions() = withStore { fixture, _ ->
         val processor: (File, File, CameraJPEGOptions) -> CameraProcessedFile = { _, destination, options ->
             val bytes = ("adjusted-${options.longEdge}-${options.quality}").toByteArray()
@@ -734,8 +763,10 @@ class CameraImportStoreTest {
         }
         override fun inspect(uri: String): MediaPhoto? = rows[uri]?.takeIf { file(uri).isFile }
         override fun open(uri: String): InputStream { opens++; return file(uri).inputStream() }
+        // 模拟真机 MediaProvider：IS_PENDING=1 期间 SIZE/DATE_MODIFIED 未定稿，publish（IS_PENDING=0）后才可 stat。
         override fun stat(uri: String): MediaPhotoStat? =
-            file(uri).takeIf { it.isFile }?.let { MediaPhotoStat(it.length(), it.lastModified()) }
+            rows[uri]?.takeIf { !it.pending }?.let { file(uri) }?.takeIf { it.isFile }
+                ?.let { MediaPhotoStat(it.length(), it.lastModified()) }
         override fun remember(uri: String, size: Long, digest: String) = Unit
         override fun deletePending(uri: String) { if (rows[uri]?.pending == true) { file(uri).delete(); rows.remove(uri) } }
         override fun cleanupOrphans(referenced: Set<String>) {

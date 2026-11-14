@@ -3,6 +3,7 @@ package com.rawlab.android.camera
 import com.rawlab.android.camera.protocol.SonyMobileSession
 import com.rawlab.android.photo.MediaPhoto
 import com.rawlab.android.photo.MediaPhotoAccess
+import com.rawlab.android.photo.MediaPhotoStat
 import com.rawlab.android.photo.SystemPhotoStore
 import org.json.JSONArray
 import org.json.JSONObject
@@ -211,26 +212,27 @@ internal class CameraImportStore(private val directory: File, private val tempor
                     item.copy(saved = null, unavailable = item.saved, problem = CameraMediaProblem.MISSING, savedStat = null)
                 } else {
                     // stat 指纹（size＋mtime）优先；首次、指纹缺失或变化才做整文件内容摘要（A1）。
-                    val fingerprint = statFingerprint(current.uri)
-                    if (fingerprint != null && fingerprint == item.savedStat && validDigest(expectedDigest)) {
+                    // 信任前提：指纹与记录值一致且指纹 size 等于预期校验 size，防止 size 漂移时误信旧 digest。
+                    val stat = mediaStat(current.uri)
+                    if (stat != null && stat.size == expectedSize && stat.fingerprint() == item.savedStat && validDigest(expectedDigest)) {
                         media.remember(current.uri, expectedSize, checkNotNull(expectedDigest))
                         item.copy(saved = current, problem = null)
                     } else if (!validContent(current.uri, expectedSize, expectedDigest)) {
                         item.copy(saved = null, unavailable = current, problem = CameraMediaProblem.CHANGED, savedStat = null)
                     } else {
                         media.remember(current.uri, expectedSize, checkNotNull(expectedDigest))
-                        item.copy(saved = current, problem = null, savedStat = fingerprint)
+                        item.copy(saved = current, problem = null, savedStat = stat?.fingerprint())
                     }
                 }
             } else if (item.prepared != null) {
                 val expectedSize = item.outputSize ?: item.photo.size
                 val expectedDigest = item.outputDigest ?: item.digest
                 val candidate = media.inspect(item.prepared.uri)
-                val fingerprint = candidate?.let { statFingerprint(it.uri) }
                 if (candidate != null && validContent(candidate.uri, expectedSize, expectedDigest)) {
                     media.remember(candidate.uri, expectedSize, checkNotNull(expectedDigest))
                     val saved = if (candidate.pending) media.publish(candidate.uri) else candidate
-                    item.copy(saved = saved, prepared = null, problem = null, savedStat = fingerprint)
+                    // MediaProvider 到 publish（IS_PENDING=0）才扫描定稿元数据，指纹只能在发布后采集。
+                    item.copy(saved = saved, prepared = null, problem = null, savedStat = publishedFingerprint(saved.uri, expectedSize))
                 } else {
                     // 外部已经发布/修改的文件不属于待清理数据。
                     if (candidate?.pending == true) media.deletePending(candidate.uri)
@@ -282,8 +284,8 @@ internal class CameraImportStore(private val directory: File, private val tempor
                 saved = photo
                 outputDigest = source.outputDigest ?: digest
                 outputSize = source.outputSize ?: item.photo.size
-                // 刚通过 validContent 复检的复用媒体，可沿用其指纹；为空时下次加载回落一次内容摘要。
-                savedStat = source.savedStat
+                // 复用媒体刚通过 validContent 复检且已发布：采集当前指纹，避免沿用空或过期的来源指纹。
+                savedStat = publishedFingerprint(photo.uri, outputSize)
                 media.remember(saved.uri, outputSize, outputDigest)
             } else {
                 if (jpegOptions != null) {
@@ -300,11 +302,12 @@ internal class CameraImportStore(private val directory: File, private val tempor
                 save(job.replacing(index, item.copy(prepared = pending, digest = digest, outputDigest = outputDigest,
                     outputSize = outputSize, captureDay = capture?.day)))
                 media.write(pending.uri, outputPart)
-                // 指纹先于内容摘要采集：校验后若又被改写，旧指纹只会让下次加载多哈希一次，不会漏检。
-                savedStat = statFingerprint(pending.uri)
                 if (!validContent(pending.uri, outputSize, outputDigest)) throw IOException("Stored camera photo differs")
                 media.remember(pending.uri, outputSize, outputDigest)
                 saved = media.publish(pending.uri)
+                // MediaProvider 到 publish（IS_PENDING=0）才扫描定稿 SIZE/DATE_MODIFIED，指纹只能在发布后采集；
+                // 元数据 size 与预期校验大小不符即弃用，下次加载回落整文件摘要。
+                savedStat = publishedFingerprint(pending.uri, outputSize)
             }
             val updated = job.replacing(index, item.copy(saved = saved, prepared = null, digest = digest,
                 outputDigest = outputDigest, outputSize = outputSize, captureDay = capture?.day,
@@ -319,15 +322,24 @@ internal class CameraImportStore(private val directory: File, private val tempor
         }
     }
 
-    fun savedUris(job: CameraImportJob): List<String> = job.items.mapNotNull { item ->
-        item.saved?.let { saved ->
-            val current = media.inspect(saved.uri) ?: throw IOException("Camera original is unavailable")
-            if (current.pending) throw IOException("Camera original is not published")
-            if (!validContent(current.uri, item.outputSize ?: item.photo.size, item.outputDigest ?: item.digest))
-                throw CameraLocalSourceChanged()
-            current.uri
+    fun savedUris(job: CameraImportJob): List<String> {
+        val items = job.items.toMutableList()
+        val uris = job.items.mapIndexedNotNull { index, item ->
+            item.saved?.let { saved ->
+                val current = media.inspect(saved.uri) ?: throw IOException("Camera original is unavailable")
+                if (current.pending) throw IOException("Camera original is not published")
+                if (!validContent(current.uri, item.outputSize ?: item.photo.size, item.outputDigest ?: item.digest)) {
+                    // 强校验抓到同指纹改写（stat 抓不到的篡改）：清掉该条指纹并落盘，
+                    // 下一次 load 走整文件校验，条目得以自愈翻转为 CHANGED（openSaved 的刷新依赖此语义）。
+                    items[index] = item.copy(savedStat = null)
+                    save(job.copy(items = items.toList()))
+                    throw CameraLocalSourceChanged()
+                }
+                current.uri
+            }
         }
-    }.distinct()
+        return uris.distinct()
+    }
 
     @Synchronized fun save(job: CameraImportJob) {
         require(validId(job.id))
@@ -404,10 +416,14 @@ internal class CameraImportStore(private val directory: File, private val tempor
         validDigest(digest) && media.open(uri).use { contentDigest(it, size) } == digest
     }.getOrDefault(false)
 
-    /** stat 指纹字符串（"$size:$modifiedAt"）；媒体库给不出元数据时为 null，调用方回落内容摘要。 */
-    private fun statFingerprint(uri: String): String? = runCatching {
-        media.stat(uri)?.let { "${it.size}:${it.modifiedAt}" }.takeIf { it != "0:0" }
+    /** 媒体库元数据 stat（size/mtime 均有效才可用）；MediaStore 未定稿或给不出元数据时为 null，调用方回落内容摘要。 */
+    private fun mediaStat(uri: String): MediaPhotoStat? = runCatching {
+        media.stat(uri)?.takeIf { it.size > 0 && it.modifiedAt > 0 }
     }.getOrNull()
+
+    /** 已发布（IS_PENDING=0）媒体的当前指纹；size 与预期校验大小不符即不可信，返回 null 回落整文件摘要。 */
+    private fun publishedFingerprint(uri: String, expectedSize: Long): String? =
+        mediaStat(uri)?.takeIf { it.size == expectedSize }?.fingerprint()
 
     private fun contentDigest(input: InputStream, expected: Long, check: () -> Unit = {}): String {
         val digest = MessageDigest.getInstance("SHA-256")

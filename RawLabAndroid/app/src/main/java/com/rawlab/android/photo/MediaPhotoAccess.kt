@@ -6,7 +6,10 @@ import java.io.InputStream
 internal data class MediaPhoto(val uri: String, val displayName: String, val relativePath: String, val pending: Boolean)
 
 /** 低代价 stat 指纹（大小＋修改时间），来自媒体库元数据列，不读文件内容；读不出时为 null。 */
-internal data class MediaPhotoStat(val size: Long, val modifiedAt: Long)
+internal data class MediaPhotoStat(val size: Long, val modifiedAt: Long) {
+    /** 与日志中持久化指纹的等值比对串；仅 publish（IS_PENDING=0）后的元数据可定稿采集。 */
+    fun fingerprint(): String = "$size:$modifiedAt"
+}
 
 /** 相机任务只依赖发布事务；Android adapter 负责系统权限、媒体索引和 URI。 */
 internal interface MediaPhotoAccess {

@@ -106,8 +106,10 @@ class CameraImportAuditTest {
             rows.getValue(uri).copy(pending = false).also { rows[uri] = it }
         override fun inspect(uri: String): MediaPhoto? = rows[uri]?.takeIf { file(uri).isFile }
         override fun open(uri: String) = file(uri).inputStream()
+        // 真机语义：publish（IS_PENDING=0）前 MediaStore 元数据未定稿，stat 不可用。
         override fun stat(uri: String): MediaPhotoStat? =
-            file(uri).takeIf { it.isFile }?.let { MediaPhotoStat(it.length(), it.lastModified()) }
+            rows[uri]?.takeIf { !it.pending }?.let { file(uri) }?.takeIf { it.isFile }
+                ?.let { MediaPhotoStat(it.length(), it.lastModified()) }
         override fun remember(uri: String, size: Long, digest: String) = Unit
         override fun deletePending(uri: String) {
             if (rows[uri]?.pending == true) {
