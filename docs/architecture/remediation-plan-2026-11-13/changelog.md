@@ -147,3 +147,4 @@
 - 2026-11-14 · V 系列氢单交卷三张：**#320** V-WIN（备份保留+notice 生命周期）、**#321** V-SPEC（假绿对账修复）、**#322** V-RESET（wire 级断言+.hdrRendition 场景），CI 均 0 fail。碳审 ×2 在途（320 单独；321/322 合并审含文件互踩检查）。V 系列 7 票全部进入 PR 状态（#316/#318 返工中）。
 - 2026-11-14 · #318 三轮交卷（`00829234`）：FAIL/SKIP 同位殿后（30 PASS 先行可见）、契约顺序锁 stash 实证、白名单加严「恰 1 行+孪生」。三轮碳审在途（review-mwg0b3k5，三轮标准=仅剩 Nit 可过）。
 - 2026-11-14 · #313 三修交卷（`7871baaa` 含基线合并）：大小写折叠三处+只认普通文件，红锚 6 项，look-library 92、JVM 703、CI 7/7。三轮收敛审在途（review-mwg0hwfi）。**新登记上游既有红 ×2**（纯 development @3cd47eac 复现，非 PR 引入，不在 models 门禁）：①catalog-terms de 词条「Aufnahme läuft」漂移；②mac-geometry-draft 离屏窗原生输入断言确定性红（298 PASS 中 1 红）——待派归属。
+- 2026-11-14 · 复审波：#316 方案 A 交卷（CI 绿）二轮碳审在途；**#320 打回**（高1中2：Pump 稳态帧清提示路径、备份证据判定含已完结 receipt/staging、WPF 编译面）氢线程续；**#321 打回 6B**（Layer3 拿 Layer2/错函数/错控件冒充 UI 真锚，病根=锚层造假未清干净）氢线程续；**#322 打回 2B**（Windows 缺键≈null 的 wire 洞+棘轮计数口径）氢线程续。geom-input crew 已派（上游红②归因）。
