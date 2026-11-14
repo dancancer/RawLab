@@ -20,6 +20,9 @@ import kotlin.concurrent.withLock
 enum class PresetFailure { EMPTY_NAME, DUPLICATE_NAME, CHANGED, CORRUPT_LIBRARY, UNSUPPORTED_VERSION, IDENTITY_COLLISION }
 class AdjustmentPresetException(val reason: PresetFailure, val existing: AdjustmentPreset? = null) : IOException(reason.name)
 
+// 读不懂的条目：只隔离自己，身份尽力保留，原文逐字节留到可以删除为止（P2-16）。
+data class UnreadablePreset(val id: String?, val name: String?, val raw: String)
+
 data class AdjustmentPreset(val id: String, val name: String, val createdAt: Long, val updatedAt: Long,
     val payload: AdjustmentPayload) {
     fun validate() {
@@ -41,11 +44,13 @@ class AdjustmentPresetStore(val directory: File,
     private val makeID: () -> String = { UUID.randomUUID().toString() },
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
-    private data class Registry(val presets: List<AdjustmentPreset> = emptyList(), val retiredIDs: List<String> = emptyList())
+    private data class Registry(val presets: List<AdjustmentPreset> = emptyList(), val retiredIDs: List<String> = emptyList(),
+        val unreadable: List<UnreadablePreset> = emptyList())
     private val file = File(directory, "presets.json")
     private val processLock = locks.getOrPut(directory.canonicalPath) { ReentrantLock() }
 
     fun list(): List<AdjustmentPreset> = read().presets
+    fun listUnreadable(): List<UnreadablePreset> = read().unreadable
 
     fun create(name: String, payload: AdjustmentPayload): AdjustmentPreset {
         val normalized = validatedName(name)
@@ -54,7 +59,8 @@ class AdjustmentPresetStore(val directory: File,
             val current = read()
             requireAvailableName(normalized, current)
             val id = (0 until 8).asSequence().map { makeID() }.firstOrNull { candidate ->
-                canonicalID(candidate) && candidate !in current.retiredIDs && current.presets.none { it.id == candidate }
+                canonicalID(candidate) && candidate !in current.retiredIDs &&
+                    current.presets.none { it.id == candidate } && current.unreadable.none { it.id == candidate }
             } ?: throw AdjustmentPresetException(PresetFailure.IDENTITY_COLLISION)
             val now = clock().coerceAtLeast(0)
             val created = AdjustmentPreset(id, normalized, now, now, independentPayload(payload, id))
@@ -69,8 +75,21 @@ class AdjustmentPresetStore(val directory: File,
     fun delete(expected: AdjustmentPreset) = withWriteLock {
         val current = read()
         val index = matchingIndex(expected, current)
-        write(current.copy(presets = current.presets.filterIndexed { position, _ -> position != index },
-            retiredIDs = current.retiredIDs + expected.id))
+        // 坏条目仍占用的 ID 不登记 retired：retired ∩ 条目 ID 会让整库下次读取失效。
+        val retire = if (current.unreadable.any { it.id == expected.id }) current.retiredIDs else current.retiredIDs + expected.id
+        write(current.copy(presets = current.presets.filterIndexed { position, _ -> position != index }, retiredIDs = retire))
+    }
+
+    // 删除读不懂的条目：按 ID + 原文精确匹配，防止误删同名或同 ID 的另一条。
+    fun delete(expected: UnreadablePreset) = withWriteLock {
+        val current = read()
+        val index = current.unreadable.indexOfFirst { it.id == expected.id && it.raw == expected.raw }
+        if (index < 0) throw AdjustmentPresetException(PresetFailure.CHANGED)
+        val removed = current.unreadable[index]
+        val remaining = current.unreadable.filterIndexed { position, _ -> position != index }
+        val stillUsed = current.presets.any { it.id == removed.id } || remaining.any { it.id == removed.id }
+        val retire = if (removed.id != null && canonicalID(removed.id) && !stillUsed) current.retiredIDs + removed.id else current.retiredIDs
+        write(current.copy(unreadable = remaining, retiredIDs = retire))
     }
 
     private fun update(expected: AdjustmentPreset, name: String, payload: AdjustmentPayload): AdjustmentPreset {
@@ -103,49 +122,70 @@ class AdjustmentPresetStore(val directory: File,
         registry.presets.firstOrNull { it.id != excluding && it.name == name }?.let {
             throw AdjustmentPresetException(PresetFailure.DUPLICATE_NAME, it)
         }
+        // 坏条目的名字保留：宁可提示重名，也不悄悄造出两条同名预设。
+        if (registry.unreadable.any { it.name == name }) throw AdjustmentPresetException(PresetFailure.DUPLICATE_NAME)
     }
 
     private fun read(): Registry {
         if (!file.exists()) return Registry()
         val text = file.readText(Charsets.UTF_8)
-        try {
-            validatePresetJSON(text)
-            val root = JSONObject(text)
-            requireKeys(root, setOf("registry_version", "presets"), setOf("retired_ids"))
-            if (root.getLong("registry_version") != 1L) throw AdjustmentPresetException(PresetFailure.UNSUPPORTED_VERSION)
-            val entries = root.getJSONArray("presets")
-            val presets = (0 until entries.length()).map { index ->
-                val item = entries.getJSONObject(index)
-                requireKeys(item, setOf("id", "name", "created_at", "updated_at", "payload"))
-                val id = item.get("id")
-                val name = item.get("name")
-                requirePreset(id is String && name is String)
-                AdjustmentPreset(id as String, name as String, item.getLong("created_at"), item.getLong("updated_at"),
-                    AdjustmentPayload.decode(item.getJSONObject("payload").toString())).also { it.validate() }
-            }
-            val retired = if (root.has("retired_ids")) root.getJSONArray("retired_ids") else JSONArray()
-            val retiredIDs = (0 until retired.length()).map { index ->
-                val id = retired.get(index); requirePreset(id is String && canonicalID(id)); id as String
-            }
-            requirePreset(presets.map { it.id }.toSet().size == presets.size && presets.map { it.name }.toSet().size == presets.size &&
-                retiredIDs.toSet().size == retiredIDs.size && presets.none { it.id in retiredIDs })
-            return Registry(presets, retiredIDs)
-        } catch (error: AdjustmentPresetException) { throw error }
-          catch (error: AdjustmentTransferException) {
-            throw AdjustmentPresetException(if (error.reason == AdjustmentFailure.UNSUPPORTED_VERSION)
-                PresetFailure.UNSUPPORTED_VERSION else PresetFailure.CORRUPT_LIBRARY)
-        } catch (_: Exception) { throw AdjustmentPresetException(PresetFailure.CORRUPT_LIBRARY) }
+        val scanned = try { scanPresetJSON(text) }
+            catch (_: PresetScanException) { throw AdjustmentPresetException(PresetFailure.CORRUPT_LIBRARY) }
+        // 文件级失败（语法、根结构、版本、retired_ids、有效条目身份冲突）仍让整库不可用。
+        val root = scanned as? JSONScan.Obj ?: throw AdjustmentPresetException(PresetFailure.CORRUPT_LIBRARY)
+        val keys = root.members.map { it.first }.toSet()
+        if (root.ownDuplicate || !keys.containsAll(setOf("registry_version", "presets")) ||
+            !setOf("registry_version", "presets", "retired_ids").containsAll(keys)) {
+            throw AdjustmentPresetException(PresetFailure.CORRUPT_LIBRARY)
+        }
+        val version = root.members.first { it.first == "registry_version" }.second as? JSONScan.Num
+            ?: throw AdjustmentPresetException(PresetFailure.CORRUPT_LIBRARY)
+        if (!isIntegerLiteral(version.literal)) throw AdjustmentPresetException(PresetFailure.CORRUPT_LIBRARY)
+        val versionValue = version.literal.toLongOrNull() ?: throw AdjustmentPresetException(PresetFailure.CORRUPT_LIBRARY)
+        if (versionValue != 1L) throw AdjustmentPresetException(PresetFailure.UNSUPPORTED_VERSION)
+        val elements = (root.members.first { it.first == "presets" }.second as? JSONScan.Arr
+            ?: throw AdjustmentPresetException(PresetFailure.CORRUPT_LIBRARY)).items
+        val presets = mutableListOf<AdjustmentPreset>()
+        val unreadable = mutableListOf<UnreadablePreset>()
+        for (element in elements) {
+            val raw = text.substring(element.start, element.end)
+            val entry = decodeEntry(element, raw)
+            if (entry == null) unreadable += UnreadablePreset(directString(element, "id"), directString(element, "name"), raw)
+            else presets += entry
+        }
+        val retired = (root.members.firstOrNull { it.first == "retired_ids" }?.second as? JSONScan.Arr)?.items ?: emptyList()
+        val retiredIDs = retired.map { id ->
+            requirePreset(id is JSONScan.Str && canonicalID(id.value)); (id as JSONScan.Str).value
+        }
+        requirePreset(presets.map { it.id }.toSet().size == presets.size && presets.map { it.name }.toSet().size == presets.size &&
+            retiredIDs.toSet().size == retiredIDs.size && presets.none { it.id in retiredIDs })
+        return Registry(presets, retiredIDs, unreadable)
+    }
+
+    // 单条目损坏只降级这一条：任何解析失败都返回 null，由调用方保留原文。
+    private fun decodeEntry(element: JSONScan, raw: String): AdjustmentPreset? {
+        if (element !is JSONScan.Obj || element.subtreeDuplicate || !timestampsAreIntegers(element)) return null
+        return try {
+            val item = JSONObject(raw)
+            requireKeys(item, setOf("id", "name", "created_at", "updated_at", "payload"))
+            val id = item.get("id")
+            val name = item.get("name")
+            requirePreset(id is String && name is String)
+            AdjustmentPreset(id as String, name as String, item.getLong("created_at"), item.getLong("updated_at"),
+                AdjustmentPayload.decode(item.getJSONObject("payload").toString())).also { it.validate() }
+        } catch (_: Exception) { null }
     }
 
     private fun write(registry: Registry) {
-        val entries = JSONArray()
-        registry.presets.forEach { preset ->
+        // 有效条目按现行格式编码；坏条目以原文拼接在末尾，键序与空白逐字节保留。
+        val pieces = registry.presets.map { preset ->
             preset.validate()
-            entries.put(JSONObject().put("id", preset.id).put("name", preset.name).put("created_at", preset.createdAt)
-                .put("updated_at", preset.updatedAt).put("payload", JSONObject(preset.payload.encode())))
-        }
-        val bytes = JSONObject().put("registry_version", 1).put("presets", entries)
-            .put("retired_ids", JSONArray(registry.retiredIDs)).toString().toByteArray(Charsets.UTF_8)
+            JSONObject().put("id", preset.id).put("name", preset.name).put("created_at", preset.createdAt)
+                .put("updated_at", preset.updatedAt).put("payload", JSONObject(preset.payload.encode())).toString()
+        } + registry.unreadable.map { it.raw }
+        val retired = JSONArray(registry.retiredIDs).toString().removeSurrounding("[", "]")
+        val bytes = ("{\"registry_version\":1,\"presets\":[" + pieces.joinToString(",") +
+            "],\"retired_ids\":[" + retired + "]}").toByteArray(Charsets.UTF_8)
         val temporary = File(directory, ".presets-${UUID.randomUUID()}.tmp")
         try {
             FileOutputStream(temporary).use { it.write(bytes); it.fd.sync() }

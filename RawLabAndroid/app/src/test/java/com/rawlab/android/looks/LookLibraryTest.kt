@@ -328,6 +328,41 @@ class LookLibraryTest {
     }
 
     @Test
+    fun oneBadRegistryItemDegradesOnlyItselfAndCanBeRemoved() {
+        val root = Files.createTempDirectory("rawlab-look-mixed").toFile()
+        val sourceA = File(root.parentFile, "mixed-a.cube").apply { writeText("valid") }
+        val sourceB = File(root.parentFile, "mixed-b.cube").apply { writeText("valid") }
+        try {
+            val library = LookLibrary(root, validator)
+            val goodA = library.importLook(sourceA)
+            val goodB = library.importLook(sourceB)
+            val registry = root.resolve("registry.properties")
+            val properties = Properties().apply { registry.inputStream().use { load(it) } }
+            val badID = "00000000-0000-0000-0000-000000000002"
+            properties.setProperty("count", "3")
+            properties.setProperty("item.2.id", badID)
+            properties.setProperty("item.2.name", "Broken")
+            properties.setProperty("item.2.originalName", "broken.cube")
+            properties.setProperty("item.2.format", "cube")
+            properties.setProperty("item.2.version", "0")
+            properties.setProperty("item.2.path", "mismatch.cube")
+            registry.outputStream().use { properties.store(it, null) }
+            val reloaded = LookLibrary(root, validator)
+            assertEquals(listOf(goodA.id, goodB.id), reloaded.list().map { it.id })
+            val unreadable = reloaded.listUnreadable()
+            assertEquals(1, unreadable.size)
+            assertEquals(badID, unreadable[0].id); assertEquals("Broken", unreadable[0].name)
+            reloaded.rename(goodA.id, "Renamed")
+            assertTrue(registry.readText().contains("item.2.id=$badID"))
+            assertTrue(registry.readText().contains("item.2.path=mismatch.cube"))
+            reloaded.removeUnreadable(unreadable[0])
+            assertFalse(registry.readText().contains(badID))
+            assertEquals(listOf("Renamed", "mixed-b.cube"), reloaded.list().map { it.name })
+            assertThrows(NoSuchElementException::class.java) { reloaded.removeUnreadable(unreadable[0]) }
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test
     fun missingManagedFileRemainsRemovableAndIsMarkedUnavailable() {
         val root = Files.createTempDirectory("rawlab-looks").toFile()
         val source = File(root.parentFile, "missing.cube").apply { writeText("valid") }

@@ -174,6 +174,35 @@ struct LookLibraryTests {
         rejects("corrupt registry is reported rather than replaced with empty state") { _ = try LookLibrary(directory: brokenDirectory) }
         check(try Data(contentsOf: brokenRegistry) == brokenBytes, "corrupt registry remains available for recovery")
 
+        // P2-16 “1 坏 + 2 好”：单条目损坏只降级这一条，原文保留并可精确删除。
+        let mixedDirectory = root.appendingPathComponent("mixed-looks", isDirectory: true)
+        try manager.createDirectory(at: mixedDirectory, withIntermediateDirectories: true)
+        let mixed = try LookLibrary(directory: mixedDirectory)
+        let keepNative = try mixed.importLook(from: native)
+        let mixedCube = root.appendingPathComponent("mixed-a.cube")
+        try cube(at: mixedCube)
+        let keepCube = try mixed.importLook(from: mixedCube)
+        let mixedRegistry = mixedDirectory.appendingPathComponent("registry.json")
+        let badEntry = #"{"color_state":null,"file_name":"mismatch.cube","format":"cube","format_version":0,"id":"7C9E1B12-45A5-4E2F-9C3D-1B2A3C4D5E6F","name":"Bad look","source_name":"bad.cube"}"#
+        try String(contentsOf: mixedRegistry, encoding: .utf8)
+            .replacingOccurrences(of: "\"looks\" : [\n", with: "\"looks\" : [\n    " + badEntry + ",\n")
+            .write(to: mixedRegistry, atomically: true, encoding: .utf8)
+        let reloadedMixed = try LookLibrary(directory: mixedDirectory)
+        check(reloadedMixed.looks.map(\.id) == [keepNative.id, keepCube.id], "one bad look never blocks the readable looks")
+        check(reloadedMixed.unreadableLooks.count == 1
+              && reloadedMixed.unreadableLooks[0].id == "7C9E1B12-45A5-4E2F-9C3D-1B2A3C4D5E6F"
+              && reloadedMixed.unreadableLooks[0].fileName == "mismatch.cube",
+              "bad look is kept as an unreadable record with identity")
+        try reloadedMixed.rename(id: keepNative.id, to: "Renamed survivor")
+        check(try String(contentsOf: mixedRegistry, encoding: .utf8).contains(badEntry), "rename passes the unreadable look record through unchanged")
+        let badRecord = reloadedMixed.unreadableLooks[0]
+        try reloadedMixed.remove(badRecord)
+        let afterRemoval = try String(contentsOf: mixedRegistry, encoding: .utf8)
+        let survivorIDs = try LookLibrary(directory: mixedDirectory).looks.map(\.id)
+        check(!afterRemoval.contains(badEntry) && survivorIDs == [keepNative.id, keepCube.id],
+              "bad look can be removed and the library keeps the readable looks")
+        rejects("already removed bad look needs a fresh confirmation") { try reloadedMixed.remove(badRecord) }
+
         let recoveryDirectory = root.appendingPathComponent("recovery", isDirectory: true)
         let recovering = try LookLibrary(directory: recoveryDirectory)
         let interrupted = try recovering.importLook(from: native)

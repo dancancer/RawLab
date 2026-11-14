@@ -75,7 +75,7 @@ TARGET="$(uname -m)-apple-ios18.0-simulator"
 SOURCES=(
     "$ROOT/Shared/Localization.swift"
     "$ROOT/Shared/DCPCompiler.swift"
-    "$ROOT/Shared/LookLibrary.swift"
+    "$ROOT/Shared/LookLibrary.swift" "$ROOT/Shared/PresetJSONScanner.swift"
     "$ROOT/RawLab/RawLab/Core/Looks/LookImportCoordinator.swift"
     "$ROOT/RawLabMac/tests/DCPTestFixtures.swift"
     "$ROOT/RawLab/tests/LookImportTests.swift"

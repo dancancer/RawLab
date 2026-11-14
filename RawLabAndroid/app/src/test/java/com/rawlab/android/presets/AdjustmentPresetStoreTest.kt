@@ -124,6 +124,11 @@ class AdjustmentPresetStoreTest {
         val directory = temporary.newFolder("vectors")
         val store = AdjustmentPresetStore(directory); val file = File(directory, "presets.json")
         val fixtures = JSONArray(File("../../Shared/fixtures/adjustment-presets-v1.json").readText())
+        val registryFailures = setOf("future-registry", "unknown-registry-field", "duplicate-id", "duplicate-name",
+            "invalid-retired-id", "overlapping-retired-id", "duplicate-retired-id", "registry-decimal", "registry-exponent",
+            "registry-rounded-fraction", "registry-boolean", "registry-string", "registry-null", "json-unquoted-metadata-key",
+            "json-single-quoted-key", "json-trailing-document", "json-trailing-comma", "json-comment",
+            "duplicate-root-key", "duplicate-escaped-root-key")
         assertEquals(55, fixtures.length())
         for (index in 0 until fixtures.length()) {
             val fixture = fixtures.getJSONObject(index); val id = fixture.getString("id")
@@ -132,12 +137,67 @@ class AdjustmentPresetStoreTest {
             if (fixture.getBoolean("valid")) {
                 val loaded = store.list()
                 assertEquals(id, 1, loaded.size); assertEquals(1.25, loaded[0].payload[AdjustmentField.EXPOSURE]?.number)
-            } else {
+            } else if (id in registryFailures) {
                 assertThrows(id, AdjustmentPresetException::class.java) { store.list() }
                 assertThrows(id, AdjustmentPresetException::class.java) { store.create("Blocked", payload()) }
                 assertArrayEquals(id, bytes, file.readBytes())
+            } else {
+                // P2-16：单条目损坏只降级这一条，坏条目原文保留并可透传写回。
+                try {
+                    assertTrue(id, store.list().isEmpty())
+                    val unreadable = store.listUnreadable()
+                    assertEquals(id, 1, unreadable.size)
+                    if (!fixture.has("registry_json")) assertEquals(id,
+                        fixture.getJSONObject("registry").getJSONArray("presets").getJSONObject(0).toString(), unreadable[0].raw)
+                    store.create("Pass Through", payload())
+                    assertTrue(id, file.readText().contains(unreadable[0].raw))
+                } catch (error: Exception) { throw AssertionError("$id: $error") }
             }
         }
+    }
+
+    @Test fun oneBadEntryDegradesOnlyItselfAndKeepsIdentityReserved() {
+        val directory = temporary.newFolder("mixed")
+        val store = AdjustmentPresetStore(directory, clock = { 1000 })
+        val alpha = store.create("Alpha", payload())
+        val beta = store.create("Beta", payload(2.0))
+        val file = File(directory, "presets.json")
+        val badID = "7c9e1b12-45a5-4e2f-9c3d-1b2a3c4d5e6f"
+        val bad = "{\"id\":\"$badID\",\"name\":\"Broken\",\"created_at\":1000,\"updated_at\":1000,\"payload_version\":9}"
+        file.writeText(file.readText().replaceFirst("\"presets\":[", "\"presets\":[$bad,"))
+        val reloaded = AdjustmentPresetStore(directory, clock = { 2000 })
+        assertEquals(listOf(alpha, beta), reloaded.list())
+        val unreadable = reloaded.listUnreadable()
+        assertEquals(1, unreadable.size)
+        assertEquals(badID, unreadable[0].id); assertEquals("Broken", unreadable[0].name); assertEquals(bad, unreadable[0].raw)
+        assertEquals(PresetFailure.DUPLICATE_NAME,
+            assertThrows(AdjustmentPresetException::class.java) { reloaded.create("Broken", payload(3.0)) }.reason)
+        val colliding = AdjustmentPresetStore(directory, makeID = { badID })
+        assertEquals(PresetFailure.IDENTITY_COLLISION,
+            assertThrows(AdjustmentPresetException::class.java) { colliding.create("Gamma", payload()) }.reason)
+        reloaded.rename(alpha, "Alpha Two")
+        assertTrue(file.readText().contains(bad))
+        reloaded.delete(unreadable[0])
+        assertFalse(file.readText().contains(bad))
+        assertEquals(listOf("Alpha Two", "Beta"), reloaded.list().map { it.name })
+        assertEquals(PresetFailure.CHANGED,
+            assertThrows(AdjustmentPresetException::class.java) { reloaded.delete(unreadable[0]) }.reason)
+    }
+
+    @Test fun unreadableTwinKeepsTheSharedIDRetiredOnlyWhenBothGone() {
+        val directory = temporary.newFolder("twin")
+        val store = AdjustmentPresetStore(directory, clock = { 1000 })
+        val twin = store.create("Twin", payload())
+        val file = File(directory, "presets.json")
+        val ghost = "{\"id\":\"${twin.id}\",\"name\":\"Ghost\",\"created_at\":1,\"updated_at\":1,\"payload_version\":9}"
+        file.writeText(file.readText().replaceFirst("\"presets\":[", "\"presets\":[$ghost,"))
+        val reloaded = AdjustmentPresetStore(directory, clock = { 2000 })
+        assertEquals(listOf(twin), reloaded.list()); assertEquals(1, reloaded.listUnreadable().size)
+        reloaded.delete(twin)
+        assertTrue(file.readText().contains(ghost)); assertFalse(file.readText().contains("\"retired_ids\":[\"${twin.id}\"]"))
+        reloaded.delete(reloaded.listUnreadable()[0])
+        assertTrue(file.readText().contains("\"retired_ids\":[\"${twin.id}\"]"))
+        assertTrue(reloaded.list().isEmpty()); assertTrue(reloaded.listUnreadable().isEmpty())
     }
 
     @Test fun malformedLibraryAndDuplicateRenameNeverReplaceSavedData() {

@@ -9,7 +9,7 @@ OUT="$(mktemp -d /tmp/rawlab-look-library.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
 SOURCES=("$ROOT/RawLabMac/tests/LookLibraryTests.swift" "$ROOT/RawLabMac/tests/DCPTestFixtures.swift" "$ROOT/Shared/DCPCompiler.swift")
 if [ -f "$ROOT/Shared/LookLibrary.swift" ]; then
-    SOURCES+=("$ROOT/Shared/LookLibrary.swift")
+    SOURCES+=("$ROOT/Shared/LookLibrary.swift" "$ROOT/Shared/PresetJSONScanner.swift")
 fi
 swiftc "$ROOT/Shared/Localization.swift" -parse-as-library -swift-version 5 -O -sdk "$SDK" \
     -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-15.0}" \

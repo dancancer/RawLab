@@ -4384,14 +4384,6 @@
       "ja": "{0}（破損）",
       "es": "{0} (dañado)"
     },
-    "损坏的预设": {
-      "zh-Hans": "损坏的预设",
-      "en": "Damaged preset",
-      "de": "Beschädigte Vorgabe",
-      "fr": "Préréglage endommagé",
-      "ja": "破損したプリセット",
-      "es": "Preajuste dañado"
-    },
     "此预设无法读取，可能已损坏或来自不兼容版本。": {
       "zh-Hans": "此预设无法读取，可能已损坏或来自不兼容版本。",
       "en": "This preset cannot be read. It may be damaged or from an incompatible version.",

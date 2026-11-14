@@ -445,6 +445,7 @@
 "按每张照片" = "Por foto";
 "按每张调整导出" = "Exportar con los ajustes de cada foto";
 "按每张调整导出…" = "Exportar con los ajustes de cada foto…";
+"损坏的预设" = "Preajuste dañado";
 "授权核对相册中的保存结果" = "Autorizar para verificar los resultados guardados en Fotos";
 "排列顺序不代表准确度。未识别的颜色空间、范围和基础图像仍属于假设。" = "El orden no indica precisión. Los espacios de color, rangos y bases de imagen no identificados siguen siendo hipótesis.";
 "控制点 %d" = "Punto %d";
@@ -521,6 +522,7 @@
 "无法读取已保存的调整，原有记录未被覆盖。" = "No se pueden leer los ajustes guardados; no se sobrescribió el registro existente.";
 "无法读取或写入文件，请检查路径和访问权限。" = "No se puede leer ni escribir el archivo. Verifique la ruta y los permisos de acceso.";
 "无法读取最近打开的照片，原有记录未被覆盖。" = "No se pudieron leer las fotos recientes. No se han sobrescrito los registros existentes.";
+"无法读取此条目，原文已保留" = "Esta entrada no se pudo leer; el texto original se conserva.";
 "无法读取照片，请检查文件和访问权限。" = "No se puede leer la foto. Comprueba el archivo y los permisos de acceso.";
 "无法读取相机 Wi-Fi 信息，请手动连接。" = "No se puede leer la información Wi-Fi de la cámara. Conéctate manualmente.";
 "无法读取统计设置，已保持关闭。" = "No se pudo leer el ajuste de análisis; el análisis permanece desactivado.";

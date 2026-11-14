@@ -22,7 +22,7 @@ for name in Localization BatchSelectionSession GeometrySettings AtmosphereSettin
 done
 TRANSFER_SOURCES=(
   "$ROOT/Shared/AdjustmentTransfer.swift" "$ROOT/Shared/HDRAdjustmentTransfer.swift"
-  "$ROOT/Shared/AdjustmentPresetStore.swift"
+  "$ROOT/Shared/AdjustmentPresetStore.swift" "$ROOT/Shared/PresetJSONScanner.swift"
   "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift"
   "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift"
   "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferWB.swift"

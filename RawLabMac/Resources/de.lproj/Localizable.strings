@@ -453,6 +453,7 @@
 "按实际生效值应用，已包含配方强度。" = "Anwendung mit wirksamen Werten einschließlich Rezeptstärke.";
 "按已确认条件比较缩小后的 sRGB 像素；差异越小表示越接近此参考，效果仍未验证。" = "Vergleicht verkleinerte sRGB-Pixel unter den bestätigten Bedingungen. Eine kleinere Abweichung bedeutet größere Nähe zu dieser Referenz; der Look bleibt ungeprüft.";
 "按每张照片" = "Pro Foto";
+"损坏的预设" = "Beschädigte Vorgabe";
 "排列顺序不代表准确度。未识别的颜色空间、范围和基础图像仍属于假设。" = "Die Reihenfolge sagt nichts über die Genauigkeit aus. Nicht erkannte Farbräume, Wertebereiche und Basisbilder bleiben Annahmen.";
 "控制点 %d" = "Punkt %d";
 "插值方式" = "Interpolation";
@@ -531,6 +532,7 @@
 "无法读取外观文件。" = "Die Look-Datei konnte nicht gelesen werden.";
 "无法读取已保存的外观库，原有记录未被覆盖。" = "Die gespeicherte Look-Bibliothek kann nicht gelesen werden; die ursprünglichen Einträge wurden nicht überschrieben.";
 "无法读取或写入文件，请检查路径和访问权限。" = "Die Datei kann nicht gelesen oder geschrieben werden. Bitte überprüfen Sie den Pfad und die Zugriffsberechtigungen.";
+"无法读取此条目，原文已保留" = "Dieser Eintrag konnte nicht gelesen werden; der Originaltext bleibt erhalten.";
 "无法读取照片，请检查文件和访问权限。" = "Das Foto kann nicht gelesen werden. Prüfen Sie die Datei und Zugriffsrechte.";
 "无法读取统计设置，已保持关闭。" = "Die Analyseeinstellung konnte nicht gelesen werden. Die Analyse bleibt deaktiviert.";
 "无法读取调整记录：%@" = "Anpassungsdatensatz konnte nicht gelesen werden: %@";

@@ -211,6 +211,13 @@ final class LookLibrary {
         let looks: [UserLook]
     }
 
+    // 读不懂的外观条目：只隔离自己，身份尽力保留，原文逐字节留到可以删除为止（P2-16）。
+    struct UnreadableLook: Equatable {
+        let id: String?
+        let fileName: String?
+        let json: String
+    }
+
     static var defaultDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("RawLab/Looks", isDirectory: true)
@@ -220,35 +227,60 @@ final class LookLibrary {
     private let manager = FileManager.default
     private var registryURL: URL { directory.appendingPathComponent("registry.json") }
     private(set) var looks: [UserLook] = []
+    private(set) var unreadableLooks: [UnreadableLook] = []
 
     init(directory: URL = LookLibrary.defaultDirectory) throws {
         self.directory = directory
         guard manager.fileExists(atPath: registryURL.path) else { return }
-        looks = try Self.readLooks(at: registryURL)
+        do {
+            let state = try Self.readRegistry(at: registryURL)
+            looks = state.looks
+            unreadableLooks = state.unreadable
+        } catch { throw LookLibraryError.invalidRegistry }
         do { try recoverRemovals() } catch { throw LookLibraryError.invalidRegistry }
     }
 
     var isReadable: Bool {
         guard manager.fileExists(atPath: registryURL.path) else { return true }
-        return (try? Self.readLooks(at: registryURL)) != nil
+        return (try? Self.readRegistry(at: registryURL)) != nil
     }
 
-    private static func readLooks(at url: URL) throws -> [UserLook] {
-        do {
-            let registry = try JSONDecoder().decode(Registry.self, from: Data(contentsOf: url))
-            guard registry.version == 1,
-                  Set(registry.looks.map(\.id)).count == registry.looks.count,
-                  registry.looks.allSatisfy({ look in
-                      UUID(uuidString: look.id) != nil &&
-                      look.fileName == "\(look.id).\(look.format)" &&
-                      ((look.format == "cube" && look.formatVersion == 0) ||
-                       (look.format == "vlt" && look.formatVersion == 1) ||
-                       (look.format == "rlook" && (1...2).contains(look.formatVersion)))
-                  }) else { throw LookLibraryError.invalidRegistry }
-            return registry.looks
-        } catch {
-            throw LookLibraryError.invalidRegistry
+    private static func readRegistry(at url: URL) throws -> (looks: [UserLook], unreadable: [UnreadableLook]) {
+        let bytes = Array(try Data(contentsOf: url))
+        // 文件级失败（语法、版本、有效条目重名 ID）仍让整库不可用；单条目损坏只降级这一条。
+        guard let root = try? PresetJSONScanner.scan(bytes),
+              case let .object(members, _) = root.value,
+              case let .number(versionLiteral)? = members.first(where: { $0.key == "version" })?.value.value,
+              PresetJSONScanner.isIntegerLiteral(versionLiteral), Int(versionLiteral) == 1,
+              case let .array(elements)? = members.first(where: { $0.key == "looks" })?.value.value
+        else { throw LookLibraryError.invalidRegistry }
+        var looks: [UserLook] = []
+        var unreadable: [UnreadableLook] = []
+        for element in elements {
+            if case .object = element.value,
+               let look = try? JSONDecoder().decode(UserLook.self, from: Data(bytes[element.range])),
+               Self.isValid(look) {
+                looks.append(look)
+            } else {
+                var id: String?, fileName: String?
+                if case let .object(lookMembers, _) = element.value {
+                    if case let .string(value)? = lookMembers.first(where: { $0.key == "id" })?.value.value { id = value }
+                    if case let .string(value)? = lookMembers.first(where: { $0.key == "file_name" })?.value.value { fileName = value }
+                }
+                unreadable.append(UnreadableLook(id: id, fileName: fileName,
+                    json: String(decoding: bytes[element.range], as: UTF8.self)))
+            }
         }
+        guard Set(looks.map(\.id)).count == looks.count else { throw LookLibraryError.invalidRegistry }
+        return (looks, unreadable)
+    }
+
+    private static func isValid(_ look: UserLook) -> Bool {
+        UUID(uuidString: look.id) != nil &&
+        look.fileName == "\(look.id).\(look.format)" &&
+        ((look.format == "cube" && look.formatVersion == 0) ||
+         (look.format == "vlt" && look.formatVersion == 1) ||
+         (look.format == "rlook" && (1...2).contains(look.formatVersion)))
     }
 
     func url(for look: UserLook) -> URL { directory.appendingPathComponent(look.fileName) }
@@ -342,8 +374,31 @@ final class LookLibrary {
         if exists { try? manager.removeItem(at: staging) }
     }
 
+    // 坏条目按原文精确删除；文件名可靠时顺带清理实体文件。
+    func remove(_ look: UnreadableLook) throws {
+        guard let index = unreadableLooks.firstIndex(of: look) else { throw LookLibraryError.missingLook }
+        var file: URL?
+        if let name = look.fileName, !name.contains("/"),
+           ["cube", "vlt", "rlook"].contains((name as NSString).pathExtension.lowercased()) {
+            file = directory.appendingPathComponent(name)
+        }
+        let staging = file.map { directory.appendingPathComponent(".remove-\($0.lastPathComponent)") }
+        let exists = file.map { manager.fileExists(atPath: $0.path) } ?? false
+        if exists, let file, let staging { try manager.moveItem(at: file, to: staging) }
+        var changed = unreadableLooks
+        changed.remove(at: index)
+        do {
+            try persist(looks, unreadable: changed)
+        } catch {
+            if exists, let file, let staging { try? manager.moveItem(at: staging, to: file) }
+            throw error
+        }
+        unreadableLooks = changed
+        if exists, let staging { try? manager.removeItem(at: staging) }
+    }
+
     private func recoverRemovals() throws {
-        let activeFiles = Set(looks.map(\.fileName))
+        let activeFiles = Set(looks.map(\.fileName) + unreadableLooks.compactMap(\.fileName))
         let prefix = ".remove-"
         for staged in try manager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
             let name = staged.lastPathComponent
@@ -362,9 +417,36 @@ final class LookLibrary {
         }
     }
 
-    private func persist(_ values: [UserLook]) throws {
+    private func persist(_ values: [UserLook], unreadable: [UnreadableLook]? = nil) throws {
+        let bad = unreadable ?? unreadableLooks
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(Registry(version: 1, looks: values)).write(to: registryURL, options: .atomic)
+        guard !bad.isEmpty else {
+            try encoder.encode(Registry(version: 1, looks: values)).write(to: registryURL, options: .atomic)
+            return
+        }
+        // 坏条目原文拼接写回；有效条目单独 pretty 编码后按数组缩进并入，保持现行版式。
+        var blocks: [Data] = []
+        for look in values { blocks.append(Self.reindent(try encoder.encode(look))) }
+        for entry in bad { blocks.append(Data(entry.json.utf8)) }
+        var out = Data("{\n  \"looks\" : [\n".utf8)
+        for (index, block) in blocks.enumerated() {
+            out.append(contentsOf: "    ".utf8)
+            out.append(block)
+            if index < blocks.count - 1 { out.append(UInt8(0x2C)) }
+            out.append(UInt8(0x0A))
+        }
+        out.append(contentsOf: "  ],\n  \"version\" : 1\n}".utf8)
+        try out.write(to: registryURL, options: .atomic)
+    }
+
+    // 单条目 pretty 编码从顶层缩进挪到数组元素层级：除首行外每行补四个空格。
+    private static func reindent(_ data: Data) -> Data {
+        var out = Data()
+        for (index, byte) in data.enumerated() {
+            out.append(byte)
+            if byte == 0x0A, index < data.count - 1 { out.append(contentsOf: "    ".utf8) }
+        }
+        return out
     }
 }

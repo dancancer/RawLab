@@ -10,6 +10,7 @@ swiftc -whole-module-optimization -swift-version 5 -sdk "$SDK" -target "$(uname 
     "$ROOT/Shared/Localization.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" \
     "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HDRSettings.swift" "$ROOT/Shared/HSLSettings.swift" \
     "$ROOT/Shared/AdjustmentTransfer.swift" "$ROOT/Shared/AdjustmentPresetStore.swift" \
+    "$ROOT/Shared/PresetJSONScanner.swift" \
     "$ROOT/Shared/tests/AdjustmentPresetStoreTests.swift" \
     -framework Foundation -o "$OUT/test"
 "$OUT/test" "$ROOT/Shared/fixtures/adjustment-presets-v1.json"

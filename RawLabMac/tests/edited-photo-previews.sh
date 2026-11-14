@@ -8,7 +8,7 @@ SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
 OUT="$(mktemp -d /tmp/rawlab-edited-preview.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
 SOURCES=(
-    "$ROOT/Shared/AdjustmentPresetStore.swift"
+    "$ROOT/Shared/AdjustmentPresetStore.swift" "$ROOT/Shared/PresetJSONScanner.swift"
     "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift"
     "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift"
     "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferWB.swift"

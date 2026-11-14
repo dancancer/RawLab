@@ -44,6 +44,7 @@ internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = fal
     val editor by model.state.collectAsStateWithLifecycle()
     val focus = LocalFocusManager.current
     var presets by remember { mutableStateOf(emptyList<AdjustmentPreset>()) }
+    var unreadable by remember { mutableStateOf(emptyList<UnreadablePreset>()) }
     var loaded by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var creating by remember { mutableStateOf(saving) }
@@ -52,11 +53,12 @@ internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = fal
     DisposableEffect(model) { onDispose { captureGeneration++ } }
     var rename by remember { mutableStateOf<AdjustmentPreset?>(null) }
     var deleting by remember { mutableStateOf<AdjustmentPreset?>(null) }
+    var deletingUnreadable by remember { mutableStateOf<UnreadablePreset?>(null) }
     var overwrite by remember { mutableStateOf<Pair<AdjustmentPreset, AdjustmentPayload>?>(null) }
     var name by remember { mutableStateOf(if (saving) AppStrings.text(R.string.preset_new_name) else "") }
     fun reload() {
-        try { presets = model.presetStore.list(); loaded = true; error = null }
-        catch (failure: Exception) { loaded = false; error = presetErrorMessage(failure) }
+        try { presets = model.presetStore.list(); unreadable = model.presetStore.listUnreadable(); loaded = true; error = null }
+        catch (failure: Exception) { loaded = false; unreadable = emptyList(); error = presetErrorMessage(failure) }
     }
     fun finish() { creating = false; rename = null; name = ""; reload() }
     fun operation(action: () -> Unit) {
@@ -109,7 +111,7 @@ internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = fal
                 } else {
                     Button(onClick = { onRequest(AdjustmentPresetAction.Save) }, enabled = loaded && editor.controlsEnabled,
                         modifier = Modifier.testTag("preset-create")) { Text(stringResource(R.string.preset_create)) }
-                    if (loaded && presets.isEmpty()) {
+                    if (loaded && presets.isEmpty() && unreadable.isEmpty()) {
                         Text(stringResource(R.string.preset_empty), style = MaterialTheme.typography.titleMedium)
                         Text(stringResource(R.string.preset_empty_hint))
                     }
@@ -142,6 +144,20 @@ internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = fal
                             }
                         }
                     }
+                    for (entry in unreadable) key("unreadable-${entry.raw.hashCode()}") {
+                        OutlinedCard(Modifier.fillMaxWidth().testTag("preset-row-unreadable")) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(entry.name ?: stringResource(R.string.preset_unreadable_name), Modifier.weight(1f),
+                                        style = MaterialTheme.typography.titleMedium)
+                                    TextButton(onClick = { deletingUnreadable = entry },
+                                        modifier = Modifier.testTag("preset-delete-unreadable")) { Text(stringResource(R.string.preset_delete)) }
+                                }
+                                Text(stringResource(R.string.preset_unreadable_note), style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -156,6 +172,13 @@ internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = fal
                     modifier = Modifier.testTag("preset-save-as")) { Text(stringResource(R.string.preset_save_as)) }
                 TextButton(onClick = { overwrite = null }) { Text(stringResource(R.string.cancel)) }
             } })
+    }
+    deletingUnreadable?.let { entry ->
+        AlertDialog(onDismissRequest = { deletingUnreadable = null }, title = { Text(stringResource(R.string.preset_delete_confirm)) },
+            text = { Text(entry.name ?: AppStrings.text(R.string.preset_unreadable_name)) }, confirmButton = {
+                TextButton(onClick = { deletingUnreadable = null; operation { model.presetStore.delete(entry) } },
+                    modifier = Modifier.testTag("preset-delete-unreadable-confirm")) { Text(stringResource(R.string.preset_delete)) }
+            }, dismissButton = { TextButton(onClick = { deletingUnreadable = null }) { Text(stringResource(R.string.cancel)) } })
     }
     deleting?.let { expected ->
         AlertDialog(onDismissRequest = { deleting = null }, title = { Text(stringResource(R.string.preset_delete_confirm)) },

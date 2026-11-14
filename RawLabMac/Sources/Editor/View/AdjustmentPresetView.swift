@@ -6,6 +6,7 @@ struct AdjustmentPresetView: View {
     let onApplyCurrent: (AdjustmentPreset) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var presets: [AdjustmentPreset] = []
+    @State private var unreadable: [UnreadablePreset] = []
     @State private var libraryError: String?
     @State private var message: String?
     @State private var editing = false
@@ -18,12 +19,18 @@ struct AdjustmentPresetView: View {
     @FocusState private var nameFocused: Bool
 
     private enum Confirmation {
-        case overwrite(AdjustmentPreset, AdjustmentTransferPayload), delete(AdjustmentPreset)
-        var preset: AdjustmentPreset {
-            switch self { case .overwrite(let value, _), .delete(let value): return value }
+        case overwrite(AdjustmentPreset, AdjustmentTransferPayload), delete(AdjustmentPreset), deleteUnreadable(UnreadablePreset)
+        var nameText: String {
+            switch self {
+            case .overwrite(let value, _), .delete(let value): return value.name
+            case .deleteUnreadable(let value): return value.name ?? L10n.text("损坏的预设")
+            }
         }
         var title: String {
-            switch self { case .overwrite: return "覆盖预设？"; case .delete: return "删除预设？" }
+            switch self {
+            case .overwrite: return "覆盖预设？"
+            case .delete, .deleteUnreadable: return "删除预设？"
+            }
         }
     }
     private var title: String { editing ? renaming == nil ? "保存预设" : "重命名预设" : "我的预设" }
@@ -70,9 +77,12 @@ struct AdjustmentPresetView: View {
                     Button(L10n.text("另存")) { message = L10n.text("请输入不同的预设名称。"); nameFocused = true }
                 case .delete(let existing):
                     Button(L10n.text("删除"), role: .destructive) { perform { try model.presetStore.delete(existing) } }
+                case .deleteUnreadable(let entry):
+                    Button(L10n.text("删除"), role: .destructive) { perform { try model.presetStore.delete(entry) } }
+                        .accessibilityIdentifier("preset.deleteUnreadable.confirm")
                 }
                 Button(L10n.text("取消"), role: .cancel) {}
-            } message: { pending in Text(pending.preset.name).fixedSize(horizontal: false, vertical: true) }
+            } message: { pending in Text(pending.nameText).fixedSize(horizontal: false, vertical: true) }
     }
 
     private var libraryContent: some View {
@@ -86,7 +96,7 @@ struct AdjustmentPresetView: View {
                     .accessibilityIdentifier("preset.libraryError")
                 Button(L10n.text("重新载入"), action: reload).accessibilityIdentifier("preset.reload")
                 Spacer(minLength: 0)
-            } else if presets.isEmpty {
+            } else if presets.isEmpty && unreadable.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(L10n.text("尚无用户预设")).font(.headline)
                     Text(L10n.text("保存所选调整，之后可应用到其他照片。")).foregroundStyle(.secondary)
@@ -122,6 +132,17 @@ struct AdjustmentPresetView: View {
                             }.padding(.vertical, 12).accessibilityIdentifier("preset.row.\(preset.id)")
                             Divider()
                         }
+                        ForEach(unreadable, id: \.json) { entry in
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(entry.name ?? L10n.text("损坏的预设")).font(.headline).lineLimit(2)
+                                    Text(L10n.text("无法读取此条目，原文已保留")).font(.caption).foregroundStyle(.secondary)
+                                }.frame(maxWidth: .infinity, alignment: .leading)
+                                Button(L10n.text("删除"), role: .destructive) { confirmation = .deleteUnreadable(entry) }
+                                    .accessibilityIdentifier("preset.deleteUnreadable")
+                            }.padding(.vertical, 12).accessibilityIdentifier("preset.rowUnreadable")
+                            Divider()
+                        }
                     }
                 }.frame(minHeight: 220, maxHeight: 460)
             }
@@ -146,7 +167,10 @@ struct AdjustmentPresetView: View {
         do {
             let payload = try model.capturePresetAdjustments(scope: selectedScope)
             do { _ = try model.presetStore.create(name: name, payload: payload); saved() }
-            catch AdjustmentPresetError.duplicateName(let existing) { confirmation = .overwrite(existing, payload) }
+            catch AdjustmentPresetError.duplicateName(let existing) {
+                if let existing { confirmation = .overwrite(existing, payload) }
+                else { message = model.presetErrorMessage(AdjustmentPresetError.duplicateName(nil)) }
+            }
         } catch { message = model.presetErrorMessage(error) }
     }
     private func startEditor() {
@@ -163,7 +187,11 @@ struct AdjustmentPresetView: View {
     }
     private func saved() { editing = false; renaming = nil; message = nil; reload() }
     private func reload() {
-        do { presets = try model.presetStore.list(); libraryError = nil }
-        catch { presets = []; libraryError = model.presetErrorMessage(error) }
+        do {
+            presets = try model.presetStore.list()
+            unreadable = try model.presetStore.listUnreadable()
+            libraryError = nil
+        }
+        catch { presets = []; unreadable = []; libraryError = model.presetErrorMessage(error) }
     }
 }

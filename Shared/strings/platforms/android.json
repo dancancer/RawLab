@@ -6813,6 +6813,18 @@
       "formats": [],
       "source": "处理版本与来源不同，已沿用当前照片的处理版本",
       "types": []
+    },
+    "preset_unreadable_name": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "损坏的预设",
+      "types": []
+    },
+    "preset_unreadable_note": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "无法读取此条目，原文已保留",
+      "types": []
     }
   },
   "overrides": {

@@ -445,6 +445,7 @@
 "按每张照片" = "Per Photo";
 "按每张调整导出" = "Export with each photo’s adjustments";
 "按每张调整导出…" = "Export with each photo’s adjustments…";
+"损坏的预设" = "Damaged preset";
 "授权核对相册中的保存结果" = "Authorize Access to Verify Saved Results in Photos";
 "排列顺序不代表准确度。未识别的颜色空间、范围和基础图像仍属于假设。" = "Order does not indicate accuracy. Unidentified color spaces, ranges, and base images remain hypotheses.";
 "控制点 %d" = "Point %d";
@@ -521,6 +522,7 @@
 "无法读取已保存的调整，原有记录未被覆盖。" = "Unable to Read Saved Adjustments; Existing Record Was Not Overwritten.";
 "无法读取或写入文件，请检查路径和访问权限。" = "Unable to read or write the file. Check the path and access permissions.";
 "无法读取最近打开的照片，原有记录未被覆盖。" = "Recently opened photos could not be read. Existing records have not been overwritten.";
+"无法读取此条目，原文已保留" = "This entry could not be read; the original text is preserved.";
 "无法读取照片，请检查文件和访问权限。" = "Unable to read the photo. Check the file and access permissions.";
 "无法读取相机 Wi-Fi 信息，请手动连接。" = "Unable to read the camera’s Wi-Fi information. Connect manually.";
 "无法读取统计设置，已保持关闭。" = "The analytics setting could not be read, so analytics stays off.";

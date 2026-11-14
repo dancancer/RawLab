@@ -453,6 +453,7 @@
 "按实际生效值应用，已包含配方强度。" = "Applied at effective values, including recipe strength.";
 "按已确认条件比较缩小后的 sRGB 像素；差异越小表示越接近此参考，效果仍未验证。" = "Compares downscaled sRGB pixels under the confirmed conditions; a smaller difference means closer to this reference, but the appearance remains unverified.";
 "按每张照片" = "Per Photo";
+"损坏的预设" = "Damaged preset";
 "排列顺序不代表准确度。未识别的颜色空间、范围和基础图像仍属于假设。" = "Order does not indicate accuracy. Unidentified color spaces, ranges, and base images remain hypotheses.";
 "控制点 %d" = "Point %d";
 "插值方式" = "Interpolation";
@@ -531,6 +532,7 @@
 "无法读取外观文件。" = "Unable to read the look file.";
 "无法读取已保存的外观库，原有记录未被覆盖。" = "The saved look library cannot be read; the original records were not overwritten.";
 "无法读取或写入文件，请检查路径和访问权限。" = "Unable to read or write the file. Check the path and access permissions.";
+"无法读取此条目，原文已保留" = "This entry could not be read; the original text is preserved.";
 "无法读取照片，请检查文件和访问权限。" = "Unable to read the photo. Check the file and access permissions.";
 "无法读取统计设置，已保持关闭。" = "The analytics setting could not be read, so analytics stays off.";
 "无法读取调整记录：%@" = "Unable to read adjustment record: %@";

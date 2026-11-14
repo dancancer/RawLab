@@ -8,7 +8,7 @@ BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 OUT="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-usage-model.XXXXXX")"
 trap 'rm -r "$OUT"' EXIT
 TRANSFER_SOURCES=(
-  "$ROOT/Shared/AdjustmentPresetStore.swift"
+  "$ROOT/Shared/AdjustmentPresetStore.swift" "$ROOT/Shared/PresetJSONScanner.swift"
   "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift"
   "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift"
   "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferWB.swift"

@@ -8718,5 +8718,21 @@
     "es": "La versión de procesamiento difiere de la fuente; se conserva la versión de procesamiento de la foto actual",
     "ja": "処理バージョンがソースと異なるため、現在の写真の処理バージョンを維持しました",
     "zh-Hans": "处理版本与来源不同，已沿用当前照片的处理版本"
+  },
+  "损坏的预设": {
+    "zh-Hans": "损坏的预设",
+    "en": "Damaged preset",
+    "de": "Beschädigte Vorgabe",
+    "fr": "Préréglage endommagé",
+    "ja": "破損したプリセット",
+    "es": "Preajuste dañado"
+  },
+  "无法读取此条目，原文已保留": {
+    "en": "This entry could not be read; the original text is preserved.",
+    "de": "Dieser Eintrag konnte nicht gelesen werden; der Originaltext bleibt erhalten.",
+    "fr": "Cette entrée n'a pas pu être lue ; le texte d'origine est conservé.",
+    "es": "Esta entrada no se pudo leer; el texto original se conserva.",
+    "ja": "この項目は読み込めませんでしたが、原文は保持されています。",
+    "zh-Hans": "无法读取此条目，原文已保留"
   }
 }

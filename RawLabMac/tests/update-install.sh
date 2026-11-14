@@ -19,7 +19,7 @@ swiftc -whole-module-optimization -swift-version 5 -sdk "$SDK" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "$ROOT/Shared/Localization.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" \
     "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HDRSettings.swift" "$ROOT/Shared/HSLSettings.swift" \
-    "$ROOT/Shared/AdjustmentTransfer.swift" "$ROOT/Shared/AdjustmentPresetStore.swift" \
+    "$ROOT/Shared/AdjustmentTransfer.swift" "$ROOT/Shared/AdjustmentPresetStore.swift" "$ROOT/Shared/PresetJSONScanner.swift" \
     "$ROOT/Shared/DCPCompiler.swift" "$ROOT/Shared/LookLibrary.swift" \
     "$ROOT/RawLabMac/Sources/System/UpdateRelease.swift" "$ROOT/RawLabMac/Sources/System/UpdateChecker.swift" \
     "$ROOT/RawLabMac/Sources/System/Updates/UpdateState.swift" \
