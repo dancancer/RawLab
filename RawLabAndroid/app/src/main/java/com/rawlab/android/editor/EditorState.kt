@@ -106,6 +106,10 @@ internal object EditorStateReducer {
         rendering = false,
     )
 
+    // Q12: 已过提交点的导出遇迟到取消按「已完成」收尾——文件保留并发布，即使结果 revision
+    // 已过期（cancelExport 已 renderFinished），提示也告知完成而非取消成功；只覆盖完成文案。
+    fun lateExportCompleted(current: EditorState, done: String): EditorState = current.copy(message = done)
+
     fun looksLoaded(current: EditorState, loaded: List<LookChoice>): EditorState {
         val loadedIds = loaded.mapTo(mutableSetOf()) { it.id }
         val pending = current.looks.filter { it.managed && it.id !in loadedIds }

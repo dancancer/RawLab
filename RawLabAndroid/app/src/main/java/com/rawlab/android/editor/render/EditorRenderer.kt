@@ -162,8 +162,8 @@ internal class EditorRenderer(
                 native.setGpuMode(work.gpuMode)
                 native.export(work.photo.file, storage.lookPath(work.edits), work.edits, output,
                     work.format, work.longEdge, work.photo.inputKind, generation)
-                if (generation >= 0 && native.cancellationGeneration() != generation)
-                    throw java.util.concurrent.CancellationException()
+                // Q12: native.export 正常返回即已过提交点（提交点前的取消在 export 内抛 CANCELLED）。
+                // 提交点之后迟到的取消不删已渲染文件，继续入库/写文档并按「已完成」收尾。
                 if (work.destination == null) storage.saveAlbum(output, work.format)
                 else storage.saveDocument(output, work.destination, work.photo.uri)
             } finally { output.delete() }
@@ -373,7 +373,7 @@ internal class EditorRenderer(
             try {
                 native.exportProRAW(work.photo.file, info, work.edits, output,
                     work.format == ExportFormat.HDR_JPEG, work.longEdge ?: 0, generation, storage.hdrLookDirectory)
-                if (generation >= 0 && native.cancellationGeneration() != generation) throw java.util.concurrent.CancellationException()
+                // Q12: exportProRAW 返回 ⇒ 输出文件已过提交点；迟到的取消不删文件，按「已完成」收尾。
                 if (work.destination == null) storage.saveAlbum(output, work.format)
                 else storage.saveDocument(output, work.destination, work.photo.uri)
             } finally { output.delete() }
@@ -392,7 +392,7 @@ internal class EditorRenderer(
             if (work.format == ExportFormat.HDR_JPEG)
                 NativeHDRBridge.exportJpeg(rendered, metadataSource, output)
             else NativeHDRBridge.exportSdr(rendered, metadataSource, output, work.format.nativeValue)
-            if (generation >= 0 && native.cancellationGeneration() != generation) throw java.util.concurrent.CancellationException()
+            // Q12: 输出文件写盘即已过提交点；迟到的取消不删文件，按「已完成」收尾。
             if (work.destination == null) storage.saveAlbum(output, work.format)
             else storage.saveDocument(output, work.destination, work.photo.uri)
         } finally {
