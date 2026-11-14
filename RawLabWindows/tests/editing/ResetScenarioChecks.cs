@@ -9,14 +9,32 @@ internal static class ResetScenarioChecks
 {
     private static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
     private sealed record ResetDiff(string Key, string Summary);
-    private sealed record ResetDivergence(string LedgerId, string Reason, IReadOnlySet<string> ExpectedKeys);
+    private sealed record ResetDivergence(string LedgerId, IReadOnlyDictionary<string, string> FieldReasons)
+    {
+        internal IReadOnlySet<string> ExpectedKeys => FieldReasons.Keys.ToHashSet(StringComparer.Ordinal);
+    }
 
-    // 显式例外清单：未登记的分歧（或清单外字段差异）必红；已修复项仍留档也必红（棘轮只减不增）。
+    // 棘轮上限按 `(scenario, field)` 计数，只减不增；新增任何分歧、空理由、未对齐条目的留档或突破上限均必红。
+    // 收口口径（P2-23 / S1）：Windows 基线为 0（0 scenario / 0 field divergences），严禁上调；Mac 基线 4 随 SDR nil->default 收口从 4 -> 0。
+    private const int MaxKnownFieldDivergences = 0;
+
     private static readonly IReadOnlyDictionary<string, ResetDivergence> KnownResetDivergences =
         new Dictionary<string, ResetDivergence>();
 
     internal static void Run()
     {
+        VerifyWirePresenceContract();
+        foreach (var (id, div) in KnownResetDivergences)
+        {
+            Check(!string.IsNullOrWhiteSpace(div.LedgerId), $"Reset divergence {id}: non-blank LedgerId");
+            Check(div.FieldReasons.Count > 0, $"Reset divergence {id}: per-field reasons required");
+            foreach (var (field, reason) in div.FieldReasons)
+                Check(!string.IsNullOrWhiteSpace(reason), $"Reset divergence {id}.{field}: non-blank reason");
+        }
+        var totalFieldDivergences = KnownResetDivergences.Values.Sum(entry => entry.FieldReasons.Count);
+        Check(totalFieldDivergences <= MaxKnownFieldDivergences,
+            $"Reset field divergences ({totalFieldDivergences}) must not exceed monotonic ratchet cap ({MaxKnownFieldDivergences})");
+
         using var document = JsonDocument.Parse(File.ReadAllText(ResolveFixturePath("Shared/fixtures/reset-scenarios-v1.json")));
         var root = document.RootElement;
         Check(root.GetProperty("fixture_version").GetInt32() == 1, "Reset fixture version must be 1");
@@ -41,16 +59,20 @@ internal static class ResetScenarioChecks
             var summary = string.Join("; ", diffs.Select(d => d.Summary));
             var hasKnown = KnownResetDivergences.TryGetValue(id, out var known);
             if (diffs.Count > 0 && !hasKnown) problems.Add($"Scenario {id} diverged: {summary}");
-            else if (diffs.Count == 0 && hasKnown) problems.Add($"Scenario {id} now matches fixture; remove stale divergence ({known!.LedgerId}: {known.Reason})");
+            else if (diffs.Count == 0 && hasKnown) problems.Add($"Scenario {id} now matches fixture; remove stale divergence ({known!.LedgerId})");
             else if (hasKnown && !actualKeys.SetEquals(known!.ExpectedKeys))
                 problems.Add($"Scenario {id} divergence keys changed (expected=[{string.Join(", ", known.ExpectedKeys.Order(StringComparer.Ordinal))}], actual=[{string.Join(", ", actualKeys.Order(StringComparer.Ordinal))}]): {summary}");
-            else if (hasKnown) Console.WriteLine($"KNOWN DIVERGENCE [{id}] ({known!.LedgerId} - {known.Reason}): {summary}");
+            else if (hasKnown)
+            {
+                foreach (var diff in diffs)
+                    Console.WriteLine($"KNOWN DIVERGENCE [{id}.{diff.Key}] ({known!.LedgerId} - {known.FieldReasons[diff.Key]}): {diff.Summary}");
+            }
         }
         Check(seenIDs.Count == scenarios.GetArrayLength(), "All reset scenario IDs visited");
         var unknownRegistered = KnownResetDivergences.Keys.Except(evaluatedIDs).ToArray();
         Check(unknownRegistered.Length == 0, "Registered reset divergences do not match evaluated scenarios: " + string.Join(", ", unknownRegistered));
         if (problems.Count > 0) throw new Exception(string.Join(Environment.NewLine, problems));
-        Console.WriteLine($"PASS: {evaluatedIDs.Count} Windows reset scenarios evaluated ({skippedIDs.Count} platform-scoped skipped, {KnownResetDivergences.Count} registered divergences)");
+        Console.WriteLine($"PASS: {evaluatedIDs.Count} Windows reset scenarios evaluated ({skippedIDs.Count} platform-scoped skipped, {KnownResetDivergences.Count} scenario / {totalFieldDivergences} field divergences; ratchet cap {MaxKnownFieldDivergences})");
     }
 
     private static string ResolveFixturePath(string relativePath)
@@ -114,27 +136,59 @@ internal static class ResetScenarioChecks
             var candidate = result.Candidate!;
             var after = observed.Count == 0 ? new Dictionary<string, JsonElement>() :
                 WireValues(AdjustmentTransfer.Capture(AdjustmentScope.Custom(observed.ToArray()), candidate, scenarioContext));
-            foreach (var pair in expectValues.EnumerateObject().OrderBy(p => p.Name, StringComparer.Ordinal))
-            {
-                JsonElement? actual = after.TryGetValue(pair.Name, out var found) ? found : null;
-                if (!Same(actual, pair.Value)) diffs.Add(new(pair.Name, $"{pair.Name} expected={Render(pair.Value)}, actual={Render(actual)}"));
-            }
-            foreach (var name in untouched)
-            {
-                JsonElement? from = before.TryGetValue(name, out var beforeValue) ? beforeValue : null;
-                JsonElement? to = after.TryGetValue(name, out var afterValue) ? afterValue : null;
-                if (!Same(from, to)) diffs.Add(new(name, $"{name} untouched {Render(from)} -> {Render(to)}"));
-            }
+            diffs.AddRange(DiffWireValues(before, after, expectValues, untouched));
         }
         return diffs;
+    }
+
+    private static IEnumerable<ResetDiff> DiffWireValues(
+        IReadOnlyDictionary<string, JsonElement> before,
+        IReadOnlyDictionary<string, JsonElement> after,
+        JsonElement expectValues,
+        IEnumerable<string> untouched)
+    {
+        foreach (var pair in expectValues.EnumerateObject().OrderBy(p => p.Name, StringComparer.Ordinal))
+        {
+            JsonElement? actual = after.TryGetValue(pair.Name, out var found) ? found : null;
+            if (!Same(actual, pair.Value)) yield return new(pair.Name, $"{pair.Name} expected={Render(pair.Value)}, actual={Render(actual)}");
+        }
+        foreach (var name in untouched)
+        {
+            JsonElement? from = before.TryGetValue(name, out var beforeValue) ? beforeValue : null;
+            JsonElement? to = after.TryGetValue(name, out var afterValue) ? afterValue : null;
+            if (!Same(from, to)) yield return new(name, $"{name} untouched {Render(from)} -> {Render(to)}");
+        }
+    }
+
+    private static void VerifyWirePresenceContract()
+    {
+        using var vectorDoc = JsonDocument.Parse(
+            "{\"before_values\":{\"geometry.lens.profile_id\":null},\"after_values\":{},\"expect_values\":{\"color.white_balance.temperature_kelvin\":null},\"untouched\":[\"geometry.lens.profile_id\"]}");
+        var root = vectorDoc.RootElement;
+        var jsonNull = root.GetProperty("before_values").GetProperty("geometry.lens.profile_id");
+        Check(!Same(null, jsonNull), "Wire presence contract: missing key must not equal explicit null");
+        Check(!Same(jsonNull, null), "Wire presence contract: explicit null must not equal missing key");
+        Check(Same(jsonNull, jsonNull), "Wire presence contract: explicit null equals explicit null");
+        Check(Same(null, null), "Wire presence contract: missing equals missing");
+        var diffs = DiffWireValues(
+            ReadWireValues(root.GetProperty("before_values")),
+            ReadWireValues(root.GetProperty("after_values")),
+            root.GetProperty("expect_values"),
+            root.GetProperty("untouched").EnumerateArray().Select(x => x.GetString()!)).ToArray();
+        Check(diffs.Any(d => d.Key == "color.white_balance.temperature_kelvin" && d.Summary.Contains("expected=null, actual=<missing>", StringComparison.Ordinal)),
+            "Wire presence contract: omitted expect key must fail against explicit null");
+        Check(diffs.Any(d => d.Key == "geometry.lens.profile_id" && d.Summary.Contains("null -> <missing>", StringComparison.Ordinal)),
+            "Wire presence contract: dropped untouched null key must fail");
     }
 
     private static Dictionary<string, JsonElement> WireValues(AdjustmentPayload payload)
     {
         using var document = JsonDocument.Parse(payload.ToJson());
-        return document.RootElement.GetProperty("values").EnumerateObject()
-            .ToDictionary(p => p.Name, p => p.Value.Clone());
+        return ReadWireValues(document.RootElement.GetProperty("values"));
     }
+
+    private static Dictionary<string, JsonElement> ReadWireValues(JsonElement valuesElement) =>
+        valuesElement.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.Clone());
 
     private static EditorResetScope ResetScope(JsonElement scope) => scope.GetProperty("kind").GetString() switch
     {
@@ -160,7 +214,7 @@ internal static class ResetScenarioChecks
 
     private static bool Same(JsonElement? a, JsonElement? b)
     {
-        if (a == null || b == null) return (a == null || a.Value.ValueKind == JsonValueKind.Null) && (b == null || b.Value.ValueKind == JsonValueKind.Null);
+        if (a == null || b == null) return a == null && b == null;
         if (a.Value.ValueKind != b.Value.ValueKind) return false;
         return a.Value.ValueKind switch
         {

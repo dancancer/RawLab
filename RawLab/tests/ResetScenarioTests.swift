@@ -14,8 +14,8 @@ struct IOSResetScenarioTests {
 
     struct ResetDivergence {
         let ledgerId: String
-        let reason: String
-        let expectedKeys: Set<String>
+        let fieldReasons: [String: String]
+        var expectedKeys: Set<String> { Set(fieldReasons.keys) }
     }
 
     static func check(_ condition: Bool, _ message: String) {
@@ -27,7 +27,11 @@ struct IOSResetScenarioTests {
         .init(settings: settings, updatedAt: Date(timeIntervalSince1970: 100))
     }
 
-    /// 显式例外清单：未登记的分歧或清单外字段差异必红；已修复仍留档也必红（棘轮只减不增）。
+    /// 棘轮上限按 `(scenario, field)` 计数，只减不增；iOS 基线为 0（0 scenario / 0 field divergences），严禁上调。
+    /// 收口口径（P2-23 / S1）：仅 Mac 存在 4 条 SDR `detail.denoise` null 序列化分歧，iOS 已与规范字面量对齐。
+    static let maxKnownFieldDivergences = 0
+
+    /// 显式例外清单（逐条精确到 `(scenario, field)`）：未登记的分歧或清单外字段差异必红；已修复仍留档也必红。
     static let knownResetDivergences: [String: ResetDivergence] = [:]
 
     static func main() throws {
@@ -35,6 +39,18 @@ struct IOSResetScenarioTests {
     }
 
     static func resetScenarioFixtures() throws {
+        try verifyWirePresenceContract()
+        for (id, div) in knownResetDivergences {
+            check(!div.ledgerId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "Reset divergence \(id): non-blank ledgerId")
+            check(!div.fieldReasons.isEmpty, "Reset divergence \(id): per-field reasons required")
+            for (field, reason) in div.fieldReasons {
+                check(!reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "Reset divergence \(id).\(field): non-blank reason")
+            }
+        }
+        let totalFieldDivergences = knownResetDivergences.values.reduce(0) { $0 + $1.fieldReasons.count }
+        check(totalFieldDivergences <= maxKnownFieldDivergences,
+              "Reset field divergences (\(totalFieldDivergences)) must not exceed monotonic ratchet cap (\(maxKnownFieldDivergences))")
+
         let url = URL(fileURLWithPath: "Shared/fixtures/reset-scenarios-v1.json")
         let root = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
         check(root["fixture_version"] as? Int == 1, "Reset fixture version is 1")
@@ -53,11 +69,14 @@ struct IOSResetScenarioTests {
             let summary = diffs.map(\.summary).joined(separator: "; ")
             if let known = knownResetDivergences[id] {
                 if diffs.isEmpty {
-                    problems.append("Scenario \(id) now matches fixture; remove stale divergence (\(known.ledgerId): \(known.reason))")
+                    problems.append("Scenario \(id) now matches fixture; remove stale divergence (\(known.ledgerId))")
                 } else if actualKeys != known.expectedKeys {
                     problems.append("Scenario \(id) divergence keys changed (expected=\(known.expectedKeys.sorted()), actual=\(actualKeys.sorted())): \(summary)")
                 } else {
-                    print("KNOWN DIVERGENCE [\(id)] (\(known.ledgerId) - \(known.reason)): \(summary)")
+                    for diff in diffs {
+                        let reason = known.fieldReasons[diff.key]!
+                        print("KNOWN DIVERGENCE [\(id).\(diff.key)] (\(known.ledgerId) - \(reason)): \(diff.summary)")
+                    }
                 }
             } else if !diffs.isEmpty {
                 problems.append("Scenario \(id) diverged: \(summary)")
@@ -66,7 +85,7 @@ struct IOSResetScenarioTests {
         check(evaluated.count + skipped.count == scenarios.count, "every scenario is evaluated or platform-skipped")
         check(Set(knownResetDivergences.keys).isSubset(of: evaluated), "no stale knownResetDivergences entries")
         if !problems.isEmpty { fatalError(problems.joined(separator: "\n")) }
-        print("PASS: \(evaluated.count) iOS reset scenarios evaluated (\(skipped.count) platform-scoped skipped, \(knownResetDivergences.count) registered divergences)")
+        print("PASS: \(evaluated.count) iOS reset scenarios evaluated (\(skipped.count) platform-scoped skipped, \(knownResetDivergences.count) scenario / \(totalFieldDivergences) field divergences; ratchet cap \(maxKnownFieldDivergences))")
     }
 
     static func evaluate(_ id: String, _ scenario: [String: Any]) throws -> [ResetDiff] {
@@ -114,16 +133,7 @@ struct IOSResetScenarioTests {
         switch EditorAdjustmentRules.prepareReset(scope, snapshot: seeded, context: resetContext) {
         case .candidate(let candidate, _):
             let after = observed.isEmpty ? [:] : try wireValues(IOSAdjustmentTransfer.capture(scope: .custom(observed), snapshot: candidate, context: context))
-            for key in expectValues.keys.sorted() {
-                let expected = expectValues[key]!
-                let actual = after[key]
-                if !matchesValue(actual, expected) {
-                    diffs.append(.init(key: key, summary: "\(key) expected=\(renderValue(expected)), actual=\(renderValue(actual))"))
-                }
-            }
-            for key in untouched where !matchesValue(before[key], after[key]) {
-                diffs.append(.init(key: key, summary: "\(key) untouched \(renderValue(before[key])) -> \(renderValue(after[key]))"))
-            }
+            diffs.append(contentsOf: diffWireValues(before: before, after: after, expectValues: expectValues, untouched: untouched))
             if (expect["status"] as? String) != "changed" {
                 diffs.append(.init(key: "status", summary: "status expected=\(expect["status"] as? String ?? "<missing>"), actual=changed"))
             }
@@ -137,6 +147,43 @@ struct IOSResetScenarioTests {
             }
         }
         return diffs
+    }
+
+    static func diffWireValues(
+        before: [String: AdjustmentTransferValue],
+        after: [String: AdjustmentTransferValue],
+        expectValues: [String: AdjustmentTransferValue],
+        untouched: [String]
+    ) -> [ResetDiff] {
+        var diffs = [ResetDiff]()
+        for key in expectValues.keys.sorted() {
+            let expected = expectValues[key]!
+            let actual = after[key]
+            if !matchesValue(actual, expected) {
+                diffs.append(.init(key: key, summary: "\(key) expected=\(renderValue(expected)), actual=\(renderValue(actual))"))
+            }
+        }
+        for key in untouched where !matchesValue(before[key], after[key]) {
+            diffs.append(.init(key: key, summary: "\(key) untouched \(renderValue(before[key])) -> \(renderValue(after[key]))"))
+        }
+        return diffs
+    }
+
+    static func verifyWirePresenceContract() throws {
+        check(!matchesValue(nil, .null), "Wire presence contract: missing key must not equal explicit null")
+        check(!matchesValue(.null, nil), "Wire presence contract: explicit null must not equal missing key")
+        check(matchesValue(.null, .null), "Wire presence contract: explicit null equals explicit null")
+        check(matchesValue(nil, nil), "Wire presence contract: missing equals missing")
+        let diffs = diffWireValues(
+            before: ["geometry.lens.profile_id": .null],
+            after: [:],
+            expectValues: ["color.white_balance.temperature_kelvin": .null],
+            untouched: ["geometry.lens.profile_id"]
+        )
+        check(diffs.contains { $0.key == "color.white_balance.temperature_kelvin" && $0.summary.contains("expected=null, actual=<missing>") },
+              "Wire presence contract: omitted expect key must fail against explicit null")
+        check(diffs.contains { $0.key == "geometry.lens.profile_id" && $0.summary.contains("null -> <missing>") },
+              "Wire presence contract: dropped untouched null key must fail")
     }
 
     static func wireValues(_ payload: AdjustmentTransferPayload) throws -> [String: AdjustmentTransferValue] {

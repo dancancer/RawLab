@@ -2,8 +2,9 @@
   "fixture_version": 1,
   "notes": [
     "V-RESET wire contract: seed via adjustment-transfer prepare, reset via the platform production reset entry, and observe serialized wire JSON via transfer capture (no local @spec_default resolution).",
-    "expect.values holds canonical wire JSON literals. WB temp/tint use null in camera mode across all four capture channels.",
-    "expect.untouched compares against pre-reset wire capture; per-platform serialization divergences (such as Mac null vs 0/object for detail.denoise.chroma_mode and detail.denoise.wavelet) must be explicitly registered in that platform knownResetDivergences ledger."
+    "expect.values holds canonical wire JSON literals. WB temp/tint use null in camera mode across all four capture channels, and missing wire keys are never equivalent to explicit JSON null.",
+    "expect.untouched compares against pre-reset wire capture; per-(scenario, field) serialization divergences must be registered in that platform knownResetDivergences ledger under a monotonically non-increasing ratchet cap.",
+    "P2-23 / S1 closure plan: macOS registers 4 (scenario, field) divergences (all-reset-raw and group-reset-detail-raw on detail.denoise.chroma_mode and detail.denoise.wavelet, cap 4 -> 0 once Mac SDR stops serializing nil/null); iOS, Android, and Windows remain capped at 0."
   ],
   "scenarios": [
     {
