@@ -371,6 +371,17 @@ jobs:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
           lookup-only: ${{ needs.changes.outputs.cold == 'true' }}
+      - name: Run requested D3D11 software adapter regressions
+        if: github.event_name == 'workflow_dispatch' && inputs.platform == 'windows' && inputs.checks == 'models'
+        shell: pwsh
+        run: |
+          git rev-parse HEAD
+          cmake -S RawLabWindows/tests/native/d3d11 -B build/d3d11-warp -A x64
+          if ($LASTEXITCODE -ne 0) { throw 'D3D11 test configure failed.' }
+          cmake --build build/d3d11-warp --config Release --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'D3D11 test build failed.' }
+          ctest --test-dir build/d3d11-warp -C Release --output-on-failure --no-tests=error
+          if ($LASTEXITCODE -ne 0) { throw 'D3D11 WARP regressions failed.' }
       - name: Run standalone Windows models and runner checks
         if: needs.changes.outputs.models == 'true'
         shell: pwsh
@@ -386,17 +397,6 @@ jobs:
             & ./RawLabWindows/tests/BuildScriptChecks.ps1
           }
           finally { Stop-Transcript }
-      - name: Run requested D3D11 software adapter regressions
-        if: github.event_name == 'workflow_dispatch' && inputs.platform == 'windows' && inputs.checks == 'models'
-        shell: pwsh
-        run: |
-          git rev-parse HEAD
-          cmake -S RawLabWindows/tests/native/d3d11 -B build/d3d11-warp -A x64
-          if ($LASTEXITCODE -ne 0) { throw 'D3D11 test configure failed.' }
-          cmake --build build/d3d11-warp --config Release --parallel 2
-          if ($LASTEXITCODE -ne 0) { throw 'D3D11 test build failed.' }
-          ctest --test-dir build/d3d11-warp -C Release --output-on-failure --no-tests=error
-          if ($LASTEXITCODE -ne 0) { throw 'D3D11 WARP regressions failed.' }
       - name: Prepare GPU AI inputs for full checks
         if: needs.changes.outputs.checks == 'full'
         shell: pwsh

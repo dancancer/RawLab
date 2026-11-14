@@ -109,6 +109,9 @@ struct D3D11PhotoRenderer::Impl {
         desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | (writable ? D3D11_BIND_UNORDERED_ACCESS : 0);
         desc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED; desc.StructureByteStride = sizeof(RGB);
         checked(device->CreateBuffer(&desc, nullptr, &buffer.data));
+#if defined(RAWLAB_D3D11_TESTING)
+        d3d11_test::largestPhotoBuffer = std::max(d3d11_test::largestPhotoBuffer, bytes);
+#endif
         checked(device->CreateShaderResourceView(buffer.data.Get(), nullptr, &buffer.srv));
         if (writable) checked(device->CreateUnorderedAccessView(buffer.data.Get(), nullptr, &buffer.uav));
         buffer.bytes = bytes;
