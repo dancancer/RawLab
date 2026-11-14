@@ -19,6 +19,7 @@ SPEC = ROOT / "Shared" / "specs" / "adjustment-fields-v1.json"
 APPLE_MODELS = ROOT / "scripts" / "ci" / "apple-models.sh"
 WINDOWS_MODELS = ROOT / "scripts" / "ci" / "windows-models.ps1"
 WINDOWS_PROGRAM = ROOT / "RawLabWindows" / "tests" / "editing" / "Program.cs"
+CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 
 RUNNERS = {
     "macos": ROOT / "RawLabMac" / "tests" / "EditRecordFixtureTests.swift",
@@ -27,10 +28,22 @@ RUNNERS = {
     "windows": ROOT / "RawLabWindows" / "tests" / "editing" / "EditRecordFixtureChecks.cs",
 }
 KNOWN_DIVERGENCE_CEILINGS = {
-    "macos": 14,
-    "ios": 14,
-    "android": 24,
-    "windows": 17,
+    "macos": 1,
+    "ios": 12,
+    "android": 10,
+    "windows": 2,
+}
+TIER1_X1_SCOPES = {
+    "store_root",
+    "store_sibling_entry",
+    "record_root",
+    "settings_root",
+    "tone_controls",
+    "atmosphere",
+    "geometry",
+    "lens",
+    "denoise",
+    "effects",
 }
 REQUIRED_X1_SCOPES = {
     "store_root",
@@ -140,10 +153,12 @@ def parse_runner_divergences(platform: str, raw_source: str) -> tuple[int, dict[
             call_block = _extract_balanced(block, item.end() - 1, "(", ")")
             led_m = re.search(r'ledgerId\s*:\s*"((?:\\.|[^"\\])*)"', call_block)
             rsn_m = re.search(r'reason\s*:\s*"((?:\\.|[^"\\])*)"', call_block)
+            sub_m = re.search(r'expectedObservedSubstring\s*:\s*"((?:\\.|[^"\\])*)"', call_block)
             assert led_m and rsn_m, f"{platform} {sid}: EditRecordDivergence must specify ledgerId and reason"
             parsed[sid] = {
                 "ledger_id": json.loads(f'"{led_m.group(1)}"'),
                 "reason": json.loads(f'"{rsn_m.group(1)}"'),
+                "expected_observed_substring": json.loads(f'"{sub_m.group(1)}"') if sub_m else "",
             }
         return int(cap_m.group(1)), parsed
 
@@ -162,10 +177,12 @@ def parse_runner_divergences(platform: str, raw_source: str) -> tuple[int, dict[
             call_block = _extract_balanced(block, item.end() - 1, "(", ")")
             led_m = re.search(r'ledgerId\s*=\s*"((?:\\.|[^"\\])*)"', call_block)
             rsn_m = re.search(r'reason\s*=\s*"((?:\\.|[^"\\])*)"', call_block)
+            sub_m = re.search(r'expectedObservedSubstring\s*=\s*"((?:\\.|[^"\\])*)"', call_block)
             assert led_m and rsn_m, f"android {sid}: EditRecordDivergence must specify ledgerId and reason"
             parsed[sid] = {
                 "ledger_id": json.loads(f'"{led_m.group(1)}"'),
                 "reason": json.loads(f'"{rsn_m.group(1)}"'),
+                "expected_observed_substring": json.loads(f'"{sub_m.group(1)}"') if sub_m else "",
             }
         return int(cap_m.group(1)), parsed
 
@@ -182,11 +199,16 @@ def parse_runner_divergences(platform: str, raw_source: str) -> tuple[int, dict[
         for item in re.finditer(r'\[\s*"([^"]+)"\s*\]\s*=\s*new(?:\s+EditRecordDivergence)?\s*\(', block):
             sid = item.group(1)
             call_block = _extract_balanced(block, item.end() - 1, "(", ")")
-            pair_m = re.search(r'^\(\s*"((?:\\.|[^"\\])*)"\s*,\s*"((?:\\.|[^"\\])*)"\s*\)$', call_block, re.DOTALL)
-            assert pair_m, f"windows {sid}: expected new(\"ledgerId\", \"reason\")"
+            pair_m = re.search(
+                r'^\(\s*"((?:\\.|[^"\\])*)"\s*,\s*"((?:\\.|[^"\\])*)"(?:\s*,\s*ExpectedObservedSubstring\s*:\s*"((?:\\.|[^"\\])*)")?\s*\)$',
+                call_block,
+                re.DOTALL,
+            )
+            assert pair_m, f"windows {sid}: expected new(\"ledgerId\", \"reason\"[, ExpectedObservedSubstring: \"...\"])"
             parsed[sid] = {
                 "ledger_id": json.loads(f'"{pair_m.group(1)}"'),
                 "reason": json.loads(f'"{pair_m.group(2)}"'),
+                "expected_observed_substring": json.loads(f'"{pair_m.group(3)}"') if pair_m.group(3) else "",
             }
         return int(cap_m.group(1)), parsed
 
@@ -208,6 +230,9 @@ def validate_runner_divergences(
             assert sid in scenario_ids, f"{platform}: unknown scenario id {sid} in divergence registry"
             assert entry["ledger_id"].strip(), f"{platform} {sid}: ledgerId must not be blank"
             assert entry["reason"].strip(), f"{platform} {sid}: divergence reason must not be blank"
+            assert entry["expected_observed_substring"].strip(), (
+                f"{platform} {sid}: expectedObservedSubstring must not be blank"
+            )
         assert len(entries) <= declared_cap, (
             f"{platform}: registered divergence count {len(entries)} exceeds runner cap {declared_cap}"
         )
@@ -287,8 +312,72 @@ class EditRecordFixtureContracts(unittest.TestCase):
                 if "sibling_record_id" in sc:
                     self.assertIn(sc["sibling_record_id"], by_id, f"{sc['id']}: missing sibling_record_id")
 
+    def test_x1_two_tier_policy_and_compat_wire_samples(self):
+        tier1_seen = set()
+        tier2_seen = set()
+        for sc in self.document["unknown_field_scenarios"]:
+            tier = sc["policy_tier"]
+            scope = sc["target_scope"]
+            if tier == "outer_container_or_extension":
+                self.assertEqual(sc["expect"], "load_preserving_values", sc["id"])
+                tier1_seen.add(scope)
+            elif tier == "version_bound_render_block":
+                self.assertEqual(sc["expect"], "reject_isolating_record", sc["id"])
+                self.assertTrue(sc.get("preserve_raw_disk_entry"), f"{sc['id']}: Tier 2 must preserve raw disk entry")
+                tier2_seen.add(scope)
+            else:
+                self.fail(f"{sc['id']}: invalid policy_tier {tier}")
+        self.assertEqual(tier1_seen, TIER1_X1_SCOPES)
+        self.assertEqual(tier2_seen, REQUIRED_X1_SCOPES - TIER1_X1_SCOPES)
+
+        compat_by_kind = {s["kind"]: s for s in self.document["compatibility_scenarios"]}
+        legacy = compat_by_kind["legacy_omitted_extensions"]
+        wire = legacy["legacy_wire_samples"]
+        self.assertEqual(set(wire), {"macos_json", "ios_json", "android_properties", "windows_json"})
+
+        reset = compat_by_kind["sdr_reset_preserves_dormant_hdr"]
+        by_id = {r["id"]: r for r in self.document["roundtrip_records"]}
+        self.assertEqual(reset["camera_ai_base_record_id"], "hdr-camera-ai-raw")
+        self.assertIn(reset["camera_ai_base_record_id"], by_id)
+
+        neg_zero = compat_by_kind["negative_zero"]
+        self.assertIs(neg_zero["expect"]["assert_sign_bit_positive"], False)
+
+    def test_runners_enforce_narrow_catch_full_verification_and_orphan_checks(self):
+        for platform, path in RUNNERS.items():
+            raw = path.read_text(encoding="utf-8")
+            stripped = _strip_comments(raw)
+            if platform in ("macos", "ios"):
+                self.assertIn("enum ExpectationMismatch", stripped, platform)
+                self.assertIn("expectationOrPersistenceRejection", stripped, platform)
+                self.assertIn("orphanKeys", stripped, platform)
+                self.assertIn("toneSettings.curveStrength", stripped, platform)
+                self.assertIn("colorSettings.vibrance", stripped, platform)
+                self.assertIn("detailSettings.clarity", stripped, platform)
+                self.assertIn("cameraDevelopmentSettings.lensProfile", stripped, platform)
+            elif platform == "android":
+                self.assertIn("class ExpectationMismatchException", stripped)
+                self.assertIn("EvalCatchScope.EXPECTATION_OR_PERSISTENCE_REJECTION", stripped)
+                self.assertIn("orphanKeys", stripped)
+                self.assertIn("hdr.toneSettings.curveStrength", stripped)
+                self.assertIn("hdr.colorSettings.vibrance", stripped)
+                self.assertIn("hdr.detailSettings.clarity", stripped)
+                self.assertIn("dev.lensProfile", stripped)
+                self.assertNotIn("catch (e: Exception)", stripped)
+                self.assertNotIn("catch (e: Throwable)", stripped)
+            elif platform == "windows":
+                self.assertIn("class ExpectationMismatchException", stripped)
+                self.assertIn("class HarnessSetupException", stripped)
+                self.assertIn("EvalCatchScope.ExpectationOrPersistenceRejection", stripped)
+                self.assertIn("unregistered.Length == 0", stripped)
+                self.assertIn("hdr.ToneSettings.CurveStrength", stripped)
+                self.assertIn("hdr.ColorSettings.Vibrance", stripped)
+                self.assertIn("hdr.DetailSettings.Clarity", stripped)
+                self.assertIn("hdr.CameraSettings.LensProfile", stripped)
+                self.assertNotIn('var sdrValues = record.GetProperty("sdr_values")', stripped)
+
     def test_runner_divergence_ratchet_and_ledger_entries(self):
-        self.assertEqual(KNOWN_DIVERGENCE_CEILINGS, {"macos": 14, "ios": 14, "android": 24, "windows": 17})
+        self.assertEqual(KNOWN_DIVERGENCE_CEILINGS, {"macos": 1, "ios": 12, "android": 10, "windows": 2})
         sources = {p: path.read_text(encoding="utf-8") for p, path in RUNNERS.items()}
         validate_runner_divergences(sources, self.scenario_ids, KNOWN_DIVERGENCE_CEILINGS)
 
@@ -296,17 +385,19 @@ class EditRecordFixtureContracts(unittest.TestCase):
         sources = {p: path.read_text(encoding="utf-8") for p, path in RUNNERS.items()}
 
         inflated = dict(sources)
-        inflated["macos"] = sources["macos"].replace(
-            "private let maxKnownEditRecordDivergences = 14",
-            "private let maxKnownEditRecordDivergences = 15",
+        inflated["macos"] = re.sub(
+            r"private\s+let\s+maxKnownEditRecordDivergences\s*=\s*\d+",
+            "private let maxKnownEditRecordDivergences = 2",
+            sources["macos"],
+            count=1,
         )
-        with self.assertRaisesRegex(AssertionError, r"macos: declared ratchet cap 15"):
+        with self.assertRaisesRegex(AssertionError, r"macos: declared ratchet cap 2"):
             validate_runner_divergences(inflated, self.scenario_ids)
 
         blank_win = dict(sources)
         blank_win["windows"] = re.sub(
-            r'new\("P2-01-WIN-X1-01",\s*"[^"]+"\)',
-            'new("P2-01-WIN-X1-01", "   ")',
+            r'new\(\s*"EDIT-DIV-WIN-X1-01",\s*"[^"]+"',
+            'new("EDIT-DIV-WIN-X1-01", "   "',
             sources["windows"],
             count=1,
         )
@@ -325,7 +416,7 @@ class EditRecordFixtureContracts(unittest.TestCase):
 
         unknown_id = dict(sources)
         unknown_id["ios"] = sources["ios"].replace(
-            '"x1-processing-unknown-field"',
+            '"x1-hdr-camera-profile-unknown-field"',
             '"non-existent-edit-record-scenario"',
             1,
         )
@@ -345,6 +436,13 @@ class EditRecordFixtureContracts(unittest.TestCase):
         self.assertIn("EditRecordFixtureChecks.Run();", win_prog)
         win_ps1 = WINDOWS_MODELS.read_text(encoding="utf-8")
         self.assertIn("editing/EditWorkflow.Tests.csproj", win_ps1)
+
+        ci_yml = CI_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("python -m unittest discover -s scripts/ci -p 'test_*.py' -v", ci_yml)
+        self.assertIn("bash scripts/ci/apple-models.sh macos", ci_yml)
+        self.assertIn("bash scripts/ci/apple-models.sh ios", ci_yml)
+        self.assertIn("& ./scripts/ci/windows-models.ps1", ci_yml)
+        self.assertIn("./gradlew :app:testDebugUnitTest", ci_yml)
 
 
 if __name__ == "__main__":

@@ -78,9 +78,9 @@
             }
           }
         },
-        "tone.black_point": -18.0,
-        "tone.white_point": 24.0,
-        "color.vibrance": 32.0,
+        "tone.black_point": -18.25,
+        "tone.white_point": 24.5,
+        "color.vibrance": 32.75,
         "color.grading.shadows": {
           "hue": 215.5,
           "saturation": 35.0
@@ -97,40 +97,40 @@
         "color.white_balance.temperature_kelvin": 6150.0,
         "color.white_balance.tint": -12.5,
         "color.saturation": 1.125,
-        "color.hsl.hue.red": 12.0,
-        "color.hsl.hue.orange": -8.0,
-        "color.hsl.hue.yellow": 16.0,
-        "color.hsl.hue.green": -22.0,
-        "color.hsl.hue.aqua": 9.0,
-        "color.hsl.hue.blue": -15.0,
-        "color.hsl.hue.purple": 18.0,
-        "color.hsl.hue.magenta": -6.0,
-        "color.hsl.saturation.red": 25.0,
-        "color.hsl.saturation.orange": 14.0,
-        "color.hsl.saturation.yellow": -19.0,
-        "color.hsl.saturation.green": 31.0,
-        "color.hsl.saturation.aqua": -28.0,
-        "color.hsl.saturation.blue": 40.0,
-        "color.hsl.saturation.purple": -11.0,
-        "color.hsl.saturation.magenta": 17.0,
-        "color.hsl.lightness.red": -5.0,
-        "color.hsl.lightness.orange": 7.0,
-        "color.hsl.lightness.yellow": 13.0,
-        "color.hsl.lightness.green": -16.0,
-        "color.hsl.lightness.aqua": 21.0,
-        "color.hsl.lightness.blue": -24.0,
-        "color.hsl.lightness.purple": 8.0,
-        "color.hsl.lightness.magenta": -9.0,
-        "effects.vignette.amount": -35.0,
-        "effects.vignette.midpoint": 62.0,
-        "effects.vignette.roundness": -18.0,
-        "effects.vignette.feather": 44.0,
-        "effects.vignette.highlights": 28.0,
-        "effects.grain.amount": 19.0,
-        "effects.clarity": 26.0,
-        "effects.dehaze": -14.0,
-        "effects.grain.size": 32.0,
-        "effects.grain.roughness": 58.0,
+        "color.hsl.hue.red": 12.5,
+        "color.hsl.hue.orange": -8.25,
+        "color.hsl.hue.yellow": 16.5,
+        "color.hsl.hue.green": -22.25,
+        "color.hsl.hue.aqua": 9.5,
+        "color.hsl.hue.blue": -15.25,
+        "color.hsl.hue.purple": 18.5,
+        "color.hsl.hue.magenta": -6.25,
+        "color.hsl.saturation.red": 25.5,
+        "color.hsl.saturation.orange": 14.25,
+        "color.hsl.saturation.yellow": -19.5,
+        "color.hsl.saturation.green": 31.25,
+        "color.hsl.saturation.aqua": -28.5,
+        "color.hsl.saturation.blue": 40.25,
+        "color.hsl.saturation.purple": -11.5,
+        "color.hsl.saturation.magenta": 17.25,
+        "color.hsl.lightness.red": -5.5,
+        "color.hsl.lightness.orange": 7.25,
+        "color.hsl.lightness.yellow": 13.5,
+        "color.hsl.lightness.green": -16.25,
+        "color.hsl.lightness.aqua": 21.5,
+        "color.hsl.lightness.blue": -24.25,
+        "color.hsl.lightness.purple": 8.5,
+        "color.hsl.lightness.magenta": -9.25,
+        "effects.vignette.amount": -35.5,
+        "effects.vignette.midpoint": 62.25,
+        "effects.vignette.roundness": -18.5,
+        "effects.vignette.feather": 44.75,
+        "effects.vignette.highlights": 28.5,
+        "effects.grain.amount": 19.25,
+        "effects.clarity": 26.5,
+        "effects.dehaze": -14.25,
+        "effects.grain.size": 32.5,
+        "effects.grain.roughness": 58.25,
         "detail.sharpening": 0.75,
         "detail.denoise.raw_level": 2,
         "detail.denoise.post_rgb": 0.0,
@@ -240,46 +240,46 @@
             }
           }
         },
-        "tone.black_point": -12.0,
-        "tone.white_point": 16.0,
-        "color.vibrance": 18.0,
+        "tone.black_point": -12.25,
+        "tone.white_point": 16.5,
+        "color.vibrance": 18.75,
         "color.saturation": 1.1,
         "color.grading.shadows": {
-          "hue": 195.0,
-          "saturation": 28.0
+          "hue": 195.5,
+          "saturation": 28.25
         },
         "color.grading.midtones": {
-          "hue": 35.0,
-          "saturation": 14.0
+          "hue": 35.25,
+          "saturation": 14.5
         },
         "color.grading.highlights": {
-          "hue": 310.0,
-          "saturation": 20.0
+          "hue": 310.75,
+          "saturation": 20.5
         },
-        "color.hsl.hue.red": 6.0,
-        "color.hsl.hue.orange": -4.0,
-        "color.hsl.hue.yellow": 8.0,
-        "color.hsl.hue.green": -10.0,
-        "color.hsl.hue.aqua": 12.0,
-        "color.hsl.hue.blue": -8.0,
-        "color.hsl.hue.purple": 10.0,
-        "color.hsl.hue.magenta": -6.0,
-        "color.hsl.saturation.red": 12.0,
-        "color.hsl.saturation.orange": 8.0,
-        "color.hsl.saturation.yellow": -10.0,
-        "color.hsl.saturation.green": 15.0,
-        "color.hsl.saturation.aqua": -14.0,
-        "color.hsl.saturation.blue": 22.0,
-        "color.hsl.saturation.purple": -9.0,
-        "color.hsl.saturation.magenta": 11.0,
-        "color.hsl.lightness.red": -3.0,
-        "color.hsl.lightness.orange": 5.0,
-        "color.hsl.lightness.yellow": 9.0,
-        "color.hsl.lightness.green": -7.0,
-        "color.hsl.lightness.aqua": 11.0,
-        "color.hsl.lightness.blue": -13.0,
-        "color.hsl.lightness.purple": 4.0,
-        "color.hsl.lightness.magenta": -6.0,
+        "color.hsl.hue.red": 6.5,
+        "color.hsl.hue.orange": -4.25,
+        "color.hsl.hue.yellow": 8.5,
+        "color.hsl.hue.green": -10.25,
+        "color.hsl.hue.aqua": 12.5,
+        "color.hsl.hue.blue": -8.25,
+        "color.hsl.hue.purple": 10.5,
+        "color.hsl.hue.magenta": -6.25,
+        "color.hsl.saturation.red": 12.5,
+        "color.hsl.saturation.orange": 8.25,
+        "color.hsl.saturation.yellow": -10.5,
+        "color.hsl.saturation.green": 15.25,
+        "color.hsl.saturation.aqua": -14.5,
+        "color.hsl.saturation.blue": 22.25,
+        "color.hsl.saturation.purple": -9.5,
+        "color.hsl.saturation.magenta": 11.25,
+        "color.hsl.lightness.red": -3.5,
+        "color.hsl.lightness.orange": 5.25,
+        "color.hsl.lightness.yellow": 9.5,
+        "color.hsl.lightness.green": -7.25,
+        "color.hsl.lightness.aqua": 11.5,
+        "color.hsl.lightness.blue": -13.25,
+        "color.hsl.lightness.purple": 4.5,
+        "color.hsl.lightness.magenta": -6.25,
         "hdr.relative_temperature": 5800.0,
         "hdr.relative_tint": 14.5,
         "hdr.peak_limit_ev": 3.5,
@@ -299,16 +299,16 @@
           "exposure_reference": "sensor",
           "fbdd_level": 1
         },
-        "effects.vignette.amount": -24.0,
-        "effects.vignette.midpoint": 55.0,
-        "effects.vignette.roundness": 12.0,
-        "effects.vignette.feather": 60.0,
-        "effects.vignette.highlights": 15.0,
-        "effects.grain.amount": 11.0,
-        "effects.clarity": 22.0,
-        "effects.dehaze": -9.0,
-        "effects.grain.size": 40.0,
-        "effects.grain.roughness": 48.0,
+        "effects.vignette.amount": -24.5,
+        "effects.vignette.midpoint": 55.25,
+        "effects.vignette.roundness": 12.5,
+        "effects.vignette.feather": 60.75,
+        "effects.vignette.highlights": 15.5,
+        "effects.grain.amount": 11.25,
+        "effects.clarity": 22.5,
+        "effects.dehaze": -9.25,
+        "effects.grain.size": 40.5,
+        "effects.grain.roughness": 48.25,
         "detail.sharpening": 0.625,
         "detail.denoise.post_rgb": 0.625,
         "geometry.crop.x": 0.1,
@@ -448,7 +448,7 @@
         "is_raw": true
       },
       "metadata": {
-        "film_id": "",
+        "film_id": "builtin:provia",
         "master_recipe_id": null,
         "master_recipe_settings_version": 3,
         "processing": {
@@ -466,8 +466,8 @@
       },
       "sdr_values": {
         "looks.reference": {
-          "kind": "neutral",
-          "id": null
+          "kind": "builtin",
+          "id": "provia"
         },
         "looks.strength": 0.0,
         "light.exposure": -5.0,
@@ -578,7 +578,7 @@
         "is_raw": true
       },
       "metadata": {
-        "film_id": "",
+        "film_id": "custom_velvia_v1",
         "master_recipe_id": null,
         "master_recipe_settings_version": 3,
         "processing": {
@@ -596,8 +596,8 @@
       },
       "sdr_values": {
         "looks.reference": {
-          "kind": "neutral",
-          "id": null
+          "kind": "managed",
+          "id": "custom_velvia_v1"
         },
         "looks.strength": 2.0,
         "light.exposure": 5.0,
@@ -707,228 +707,342 @@
   "unknown_field_scenarios": [
     {
       "id": "x1-store-root-unknown-field",
-      "description": "X1 read-side: extra unknown metadata property at top-level store envelope must be tolerated without failing healthy record reads.",
+      "description": "X1 read-side Tier 1 (outer container/extension): extra unknown metadata property at top-level store envelope must be tolerated without failing healthy record reads.",
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "target_scope": "store_root",
+      "policy_tier": "outer_container_or_extension",
       "inject_key": "future_store_metadata",
       "inject_value": { "schema_revision": 2, "tag": "future-client" },
       "expect": "load_preserving_values"
     },
     {
       "id": "x1-store-sibling-unknown-entry",
-      "description": "X1 read-side: unknown future extension key on a sibling/record entry in store must not break reading target record.",
+      "description": "X1 read-side Tier 1 (outer container/extension): unknown future extension key on a sibling/record entry in store must not break reading target record and must preserve the unknown disk entry across sibling saves.",
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "target_scope": "store_sibling_entry",
+      "policy_tier": "outer_container_or_extension",
       "inject_key": "future_extension",
       "inject_value": "vnext-payload",
+      "preserve_raw_disk_entry": true,
       "expect": "load_preserving_values"
     },
     {
       "id": "x1-record-root-unknown-field",
-      "description": "X1 read-side: extra unknown key on persisted record wrapper object must be tolerated.",
+      "description": "X1 read-side Tier 1 (outer container/extension): extra unknown key on persisted record wrapper object must be tolerated.",
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "target_scope": "record_root",
+      "policy_tier": "outer_container_or_extension",
       "inject_key": "future_record_field",
       "inject_value": "ignore-safely",
       "expect": "load_preserving_values"
     },
     {
       "id": "x1-settings-root-unknown-field",
-      "description": "X1 read-side: extra unknown key inside persisted SDR settings object must be tolerated.",
+      "description": "X1 read-side Tier 1 (outer container/extension): extra unknown key inside persisted SDR settings object must be tolerated.",
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "target_scope": "settings_root",
+      "policy_tier": "outer_container_or_extension",
       "inject_key": "future_adjustment_slider",
       "inject_value": 42.5,
       "expect": "load_preserving_values"
     },
     {
       "id": "x1-processing-unknown-field",
-      "description": "X1 read-side: extra unknown key inside ProcessingIdentity must be tolerated for compatible processing versions.",
+      "description": "X1 read-side Tier 2 (version-bound render block): extra unknown key inside ProcessingIdentity must reject and isolate only that record while keeping healthy siblings readable and preserving raw disk bytes across sibling saves.",
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "target_scope": "processing",
+      "policy_tier": "version_bound_render_block",
       "inject_key": "future_pipeline_flag",
       "inject_value": true,
-      "expect": "load_preserving_values"
+      "preserve_raw_disk_entry": true,
+      "expect": "reject_isolating_record"
     },
     {
       "id": "x1-tone-controls-unknown-field",
-      "description": "X1 read-side: extra unknown key inside toneControls/tone object must be tolerated.",
+      "description": "X1 read-side Tier 1 (outer container/extension): extra unknown key inside toneControls/tone object must be tolerated.",
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "target_scope": "tone_controls",
+      "policy_tier": "outer_container_or_extension",
       "inject_key": "future_tone_knob",
       "inject_value": 10.0,
       "expect": "load_preserving_values"
     },
     {
       "id": "x1-atmosphere-unknown-field",
-      "description": "X1 read-side: extra unknown key inside atmosphere object must be tolerated.",
+      "description": "X1 read-side Tier 1 (outer container/extension): extra unknown key inside atmosphere object must be tolerated.",
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "target_scope": "atmosphere",
+      "policy_tier": "outer_container_or_extension",
       "inject_key": "future_texture",
       "inject_value": 15.0,
       "expect": "load_preserving_values"
     },
     {
       "id": "x1-color-grading-unknown-field",
-      "description": "X1 read-side: extra unknown key inside colorGrading object must be tolerated.",
+      "description": "X1 read-side Tier 2 (version-bound render block): extra unknown key inside closed colorGrading object must reject and isolate only that record while keeping healthy siblings readable and preserving raw disk bytes across sibling saves.",
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "target_scope": "color_grading",
+      "policy_tier": "version_bound_render_block",
       "inject_key": "balance",
       "inject_value": 0.25,
-      "expect": "load_preserving_values"
+      "preserve_raw_disk_entry": true,
+      "expect": "reject_isolating_record"
     },
     {
       "id": "x1-color-grading-zone-unknown-field",
-      "description": "X1 read-side: extra unknown key inside colorGrading shadows wheel must be tolerated.",
+      "description": "X1 read-side Tier 2 (version-bound render block): extra unknown key inside closed colorGrading shadows wheel must reject and isolate only that record while keeping healthy siblings readable and preserving raw disk bytes across sibling saves.",
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "target_scope": "color_grading_zone",
+      "policy_tier": "version_bound_render_block",
       "inject_key": "luminance",
       "inject_value": 5.0,
-      "expect": "load_preserving_values"
+      "preserve_raw_disk_entry": true,
+      "expect": "reject_isolating_record"
     },
     {
       "id": "x1-tone-curve-unknown-field",
-      "description": "X1 read-side: extra unknown key inside curve object must be tolerated.",
+      "description": "X1 read-side Tier 2 (version-bound render block): extra unknown key inside closed curve object must reject and isolate only that record while keeping healthy siblings readable and preserving raw disk bytes across sibling saves.",
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "target_scope": "tone_curve",
+      "policy_tier": "version_bound_render_block",
       "inject_key": "future_curve_space",
       "inject_value": "perceptual",
-      "expect": "load_preserving_values"
+      "preserve_raw_disk_entry": true,
+      "expect": "reject_isolating_record"
     },
     {
       "id": "x1-tone-curve-channels-unknown-field",
-      "description": "X1 read-side: extra unknown channel key inside curve.channels must be tolerated.",
+      "description": "X1 read-side Tier 2 (version-bound render block): extra unknown channel key inside closed curve.channels must reject and isolate only that record while keeping healthy siblings readable and preserving raw disk bytes across sibling saves.",
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "target_scope": "tone_curve_channels",
+      "policy_tier": "version_bound_render_block",
       "inject_key": "luma",
       "inject_value": { "mode": "legacy", "points": [] },
-      "expect": "load_preserving_values"
+      "preserve_raw_disk_entry": true,
+      "expect": "reject_isolating_record"
     },
     {
       "id": "x1-geometry-unknown-field",
-      "description": "X1 read-side: extra unknown key inside geometry object must be tolerated.",
+      "description": "X1 read-side Tier 1 (outer container/extension): extra unknown key inside geometry object must be tolerated.",
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "target_scope": "geometry",
+      "policy_tier": "outer_container_or_extension",
       "inject_key": "future_keystone_rotate",
       "inject_value": 1.5,
       "expect": "load_preserving_values"
     },
     {
       "id": "x1-lens-unknown-field",
-      "description": "X1 read-side: extra unknown key inside lens object (or flat snapshot where unnested) must be tolerated.",
+      "description": "X1 read-side Tier 1 (outer container/extension): extra unknown key inside lens object (or flat snapshot where unnested) must be tolerated.",
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "target_scope": "lens",
+      "policy_tier": "outer_container_or_extension",
       "inject_key": "future_lens_ca_strength",
       "inject_value": 0.5,
       "expect": "load_preserving_values"
     },
     {
       "id": "x1-denoise-unknown-field",
-      "description": "X1 read-side: extra unknown key inside SDR denoise/wavelet object must be tolerated.",
+      "description": "X1 read-side Tier 1 (outer container/extension): extra unknown key inside SDR denoise/wavelet object must be tolerated.",
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "target_scope": "denoise",
+      "policy_tier": "outer_container_or_extension",
       "inject_key": "future_edge_preserve",
       "inject_value": 0.4,
       "expect": "load_preserving_values"
     },
     {
       "id": "x1-effects-unknown-field",
-      "description": "X1 read-side: extra unknown key inside photoEffects object must be tolerated.",
+      "description": "X1 read-side Tier 1 (outer container/extension): extra unknown key inside photoEffects object must be tolerated.",
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "target_scope": "effects",
+      "policy_tier": "outer_container_or_extension",
       "inject_key": "future_halation",
       "inject_value": 12.0,
       "expect": "load_preserving_values"
     },
     {
       "id": "x1-hdr-root-unknown-field",
-      "description": "X1 read-side: extra unknown key inside hdr object must be tolerated.",
+      "description": "X1 read-side Tier 2 (version-bound render block): extra unknown key inside version-bound hdr object must reject and isolate only that record while keeping healthy siblings readable and preserving raw disk bytes across sibling saves.",
       "base_record_id": "full-hdr-camera-raw",
       "target_scope": "hdr",
+      "policy_tier": "version_bound_render_block",
       "inject_key": "future_hdr_extension",
       "inject_value": "vnext",
-      "expect": "load_preserving_values"
+      "preserve_raw_disk_entry": true,
+      "expect": "reject_isolating_record"
     },
     {
       "id": "x1-hdr-tone-unknown-field",
-      "description": "X1 read-side: extra unknown key inside hdr.tone must be tolerated.",
+      "description": "X1 read-side Tier 2 (version-bound render block): extra unknown key inside version-bound hdr.tone must reject and isolate only that record while keeping healthy siblings readable and preserving raw disk bytes across sibling saves.",
       "base_record_id": "full-hdr-camera-raw",
       "target_scope": "hdr_tone",
+      "policy_tier": "version_bound_render_block",
       "inject_key": "future_hdr_knee",
       "inject_value": 0.5,
-      "expect": "load_preserving_values"
+      "preserve_raw_disk_entry": true,
+      "expect": "reject_isolating_record"
     },
     {
       "id": "x1-hdr-color-unknown-field",
-      "description": "X1 read-side: extra unknown key inside hdr.color must be tolerated.",
+      "description": "X1 read-side Tier 2 (version-bound render block): extra unknown key inside version-bound hdr.color must reject and isolate only that record while keeping healthy siblings readable and preserving raw disk bytes across sibling saves.",
       "base_record_id": "full-hdr-camera-raw",
       "target_scope": "hdr_color",
+      "policy_tier": "version_bound_render_block",
       "inject_key": "future_gamut_map",
       "inject_value": true,
-      "expect": "load_preserving_values"
+      "preserve_raw_disk_entry": true,
+      "expect": "reject_isolating_record"
     },
     {
       "id": "x1-hdr-rendition-unknown-field",
-      "description": "X1 read-side: extra unknown key inside hdr.rendition must be tolerated.",
+      "description": "X1 read-side Tier 2 (version-bound render block): extra unknown key inside version-bound hdr.rendition must reject and isolate only that record while keeping healthy siblings readable and preserving raw disk bytes across sibling saves.",
       "base_record_id": "full-hdr-camera-raw",
       "target_scope": "hdr_rendition",
+      "policy_tier": "version_bound_render_block",
       "inject_key": "future_headroom_knee",
       "inject_value": 0.8,
-      "expect": "load_preserving_values"
+      "preserve_raw_disk_entry": true,
+      "expect": "reject_isolating_record"
     },
     {
       "id": "x1-hdr-effects-unknown-field",
-      "description": "X1 read-side: extra unknown key inside hdr.effects must be tolerated.",
+      "description": "X1 read-side Tier 2 (version-bound render block): extra unknown key inside version-bound hdr.effects must reject and isolate only that record while keeping healthy siblings readable and preserving raw disk bytes across sibling saves.",
       "base_record_id": "full-hdr-camera-raw",
       "target_scope": "hdr_effects",
+      "policy_tier": "version_bound_render_block",
       "inject_key": "future_hdr_halation",
       "inject_value": 5.0,
-      "expect": "load_preserving_values"
+      "preserve_raw_disk_entry": true,
+      "expect": "reject_isolating_record"
     },
     {
       "id": "x1-hdr-detail-unknown-field",
-      "description": "X1 read-side: extra unknown key inside hdr.detail must be tolerated.",
+      "description": "X1 read-side Tier 2 (version-bound render block): extra unknown key inside version-bound hdr.detail must reject and isolate only that record while keeping healthy siblings readable and preserving raw disk bytes across sibling saves.",
       "base_record_id": "full-hdr-camera-raw",
       "target_scope": "hdr_detail",
+      "policy_tier": "version_bound_render_block",
       "inject_key": "future_hdr_microcontrast",
       "inject_value": 0.3,
-      "expect": "load_preserving_values"
+      "preserve_raw_disk_entry": true,
+      "expect": "reject_isolating_record"
     },
     {
       "id": "x1-hdr-look-unknown-field",
-      "description": "X1 read-side: extra unknown key inside hdr.look must be tolerated.",
+      "description": "X1 read-side Tier 2 (version-bound render block): extra unknown key inside version-bound hdr.look must reject and isolate only that record while keeping healthy siblings readable and preserving raw disk bytes across sibling saves.",
       "base_record_id": "full-hdr-camera-raw",
       "target_scope": "hdr_look",
+      "policy_tier": "version_bound_render_block",
       "inject_key": "future_lut_space",
       "inject_value": "pq2020",
-      "expect": "load_preserving_values"
+      "preserve_raw_disk_entry": true,
+      "expect": "reject_isolating_record"
     },
     {
       "id": "x1-hdr-camera-development-unknown-field",
-      "description": "X1 read-side: extra unknown key inside hdr.camera_development must be tolerated.",
+      "description": "X1 read-side Tier 2 (version-bound render block): extra unknown key inside version-bound hdr.camera_development must reject and isolate only that record while keeping healthy siblings readable and preserving raw disk bytes across sibling saves.",
       "base_record_id": "full-hdr-camera-raw",
       "target_scope": "hdr_camera_development",
+      "policy_tier": "version_bound_render_block",
       "inject_key": "future_raw_highlight_recovery",
       "inject_value": true,
-      "expect": "load_preserving_values"
+      "preserve_raw_disk_entry": true,
+      "expect": "reject_isolating_record"
     },
     {
       "id": "x1-hdr-camera-profile-unknown-field",
-      "description": "X1 read-side: extra unknown key inside hdr.camera_development.camera_profile must be tolerated.",
+      "description": "X1 read-side Tier 2 (version-bound render block): extra unknown key inside version-bound hdr.camera_development.camera_profile must reject and isolate only that record while keeping healthy siblings readable and preserving raw disk bytes across sibling saves.",
       "base_record_id": "full-hdr-camera-raw",
       "target_scope": "hdr_camera_profile",
+      "policy_tier": "version_bound_render_block",
       "inject_key": "future_profile_rev",
       "inject_value": 2,
-      "expect": "load_preserving_values"
+      "preserve_raw_disk_entry": true,
+      "expect": "reject_isolating_record"
     }
   ],
   "compatibility_scenarios": [
     {
       "id": "compat-legacy-omitted-extensions",
-      "description": "Legacy persisted SDR record omitting processing, x3fMode, masterRecipeSettingsVersion, and optional extension sub-objects must decode cleanly with legacy v1 defaults.",
+      "description": "Frozen historical persisted SDR wire payloads (macOS JSON, iOS content JSON, Android legacy CSV .properties, Windows JSON) omitting processing, x3fMode, and optional extension sub-objects must decode cleanly with legacy v1 defaults straight from disk without store.save.",
       "base_record_id": "raster-sdr-neutral",
       "kind": "legacy_omitted_extensions",
       "omit_scopes": ["processing", "x3f_mode", "master_recipe_settings_version", "tone_controls", "atmosphere", "color_grading", "tone_curve", "hdr", "hdr_camera_ai", "pro_raw_decode_version"],
+      "legacy_wire_samples": {
+        "macos_json": {
+          "photo_name": "legacy-mac.JPG",
+          "store_json": "{\"version\":1,\"records\":{\"__PHOTO_PATH__\":{\"identity\":{\"path\":\"__PHOTO_PATH__\",\"size\":__SIZE__,\"modified\":__MODIFIED__,\"fileNumber\":__FILE_NUMBER__},\"state\":{\"filmID\":\"provia-legacy\",\"settings\":{\"exposure\":0.35,\"temperature\":5800,\"tint\":4.5,\"strength\":0.9,\"contrast\":12.5,\"highlights\":-18,\"shadows\":22,\"saturation\":8.5,\"sharpening\":25}}}}}",
+          "expect_decoded": {
+            "film_id": "provia-legacy",
+            "exposure": 0.35,
+            "temperature": 5800.0,
+            "tint": 4.5,
+            "strength": 0.9,
+            "contrast": 12.5,
+            "highlights": -18.0,
+            "shadows": 22.0,
+            "saturation": 8.5,
+            "sharpening": 25.0,
+            "processing_version": 1,
+            "x3f_mode": "legacy"
+          }
+        },
+        "ios_json": {
+          "photo_bytes_utf8": "rawlab-ios-legacy-wire-v1\n",
+          "store_json": "{\"records\":{\"content:81bc9e60bca98dfe6f1b74034566c785ac064f42faf42d74f28035818b66fc93\":{\"filmID\":\"provia-legacy\",\"updatedAt\":0,\"settings\":{\"exposure\":0.35,\"contrast\":1.15,\"saturation\":1.08,\"temperature\":5800,\"tint\":4.5,\"highlights\":-0.18,\"shadows\":0.22,\"sharpening\":0.25}}}}",
+          "expect_decoded": {
+            "film_id": "provia-legacy",
+            "exposure": 0.35,
+            "contrast": 1.15,
+            "saturation": 1.08,
+            "temperature": 5800.0,
+            "tint": 4.5,
+            "highlights": -0.18,
+            "shadows": 0.22,
+            "sharpening": 0.25,
+            "processing_version": 1,
+            "x3f_mode": "legacy"
+          }
+        },
+        "android_properties": {
+          "photo_id": "legacy-sample-1",
+          "properties_text": "record.bGVnYWN5LXNhbXBsZS0x.values=0.9,0.35,-0.18,0.22,0.125,0.0,0.085,1.0,5800.0,4.5,0.25,0.0,0.0,0.0,0.0,0.0,0.0,50.0,0.0,50.0,0.0,0.0,25.0,50.0\n",
+          "expect_decoded": {
+            "film_id": "neutral",
+            "strength": 0.9,
+            "exposure": 0.35,
+            "highlights": -0.18,
+            "shadows": 0.22,
+            "contrast": 0.125,
+            "tone_curve": 0.0,
+            "saturation": 0.085,
+            "custom_wb": true,
+            "temperature": 5800.0,
+            "tint": 4.5,
+            "sharpening": 0.25,
+            "processing_version": 1,
+            "x3f_mode": "legacy"
+          }
+        },
+        "windows_json": {
+          "photo_name": "legacy-win.JPG",
+          "store_json": "{\"Version\":1,\"Records\":{\"__PHOTO_PATH__\":{\"Identity\":__IDENTITY_JSON__,\"Settings\":{\"Values\":[90,0.35,5800,4.5,12.5,-18,22,0,8.5,25],\"ExposureMode\":1,\"CameraWhiteBalance\":false,\"AsShotTemperature\":6500,\"AsShotTint\":0},\"Look\":\"provia-legacy\"}}}",
+          "expect_decoded": {
+            "look": "provia-legacy",
+            "strength": 90.0,
+            "exposure": 0.35,
+            "temperature": 5800.0,
+            "tint": 4.5,
+            "contrast": 12.5,
+            "highlights": -18.0,
+            "shadows": 22.0,
+            "saturation": 8.5,
+            "sharpening": 25.0,
+            "processing_version": 1,
+            "x3f_mode": "legacy"
+          }
+        }
+      },
       "expect": {
         "status": "load_with_legacy_defaults",
         "processing_version": 1,
@@ -937,14 +1051,16 @@
     },
     {
       "id": "compat-dormant-hdr-and-proraw-preserved-across-sdr-reset",
-      "description": "SDR full reset and save/reopen must preserve dormant HDR subtree, proRAWDecodeVersion, processing version (v2), and x3fMode (legacy).",
+      "description": "SDR full reset and save/reopen must preserve dormant HDR subtree, proRAWDecodeVersion (v2), dormant local.hdr_camera_ai_enabled (true on camera-AI RAW record), processing version, and x3fMode.",
       "base_record_id": "full-sdr-raw-dormant-hdr",
+      "camera_ai_base_record_id": "hdr-camera-ai-raw",
       "kind": "sdr_reset_preserves_dormant_hdr",
       "expect": {
         "status": "preserve_dormant_hdr_and_versions",
         "processing_version": 2,
         "x3f_mode": "legacy",
-        "pro_raw_decode_version": 2
+        "pro_raw_decode_version": 2,
+        "hdr_camera_ai_preserved": true
       }
     },
     {
@@ -974,11 +1090,12 @@
     },
     {
       "id": "compat-negative-zero-canonicalized",
-      "description": "Negative zero (-0.0) in persisted numeric fields must load cleanly and compare equal to canonical +0.0.",
+      "description": "Negative zero (-0.0) in persisted numeric fields must load cleanly and compare equal to canonical +0.0 (preserving numeric zero equivalence across Swift/C#/Kotlin without forcing IEEE sign-bit erasure on Double).",
       "base_record_id": "raster-sdr-neutral",
       "kind": "negative_zero",
       "expect": {
-        "status": "load_canonical_zero"
+        "status": "load_numeric_zero_equivalent",
+        "assert_sign_bit_positive": false
       }
     }
   ],

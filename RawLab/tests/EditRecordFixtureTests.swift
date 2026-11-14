@@ -5,17 +5,34 @@ import Foundation
 struct EditRecordDivergence {
     let ledgerId: String
     let reason: String
+    let expectedObservedSubstring: String?
 }
 
-private enum Failure: Error, CustomStringConvertible {
-    case message(String)
+private enum HarnessError: Error, CustomStringConvertible {
+    case setup(String)
     var description: String {
-        switch self { case .message(let m): return m }
+        switch self { case .setup(let m): return "HARNESS/SETUP: \(m)" }
     }
 }
 
+private enum ExpectationMismatch: Error, CustomStringConvertible {
+    case mismatch(String)
+    var description: String {
+        switch self { case .mismatch(let m): return m }
+    }
+}
+
+enum EvalCatchScope {
+    case expectationOnly
+    case expectationOrPersistenceRejection
+}
+
 private func check(_ condition: @autoclosure () throws -> Bool, _ message: String) throws {
-    if !(try condition()) { throw Failure.message(message) }
+    if !(try condition()) { throw ExpectationMismatch.mismatch(message) }
+}
+
+private func checkSetup(_ condition: @autoclosure () throws -> Bool, _ message: String) throws {
+    if !(try condition()) { throw HarnessError.setup(message) }
 }
 
 private func approx(_ a: Double, _ b: Double, tol: Double = 1e-4) -> Bool {
@@ -23,66 +40,70 @@ private func approx(_ a: Double, _ b: Double, tol: Double = 1e-4) -> Bool {
 }
 
 // ---------------------------------------------------------------------------
-// Divergence ledger (empty initially to capture genuine red anchors)
+// Divergence ledger (populated ONLY from observed red anchors)
 // ---------------------------------------------------------------------------
-private let maxKnownEditRecordDivergences = 14
+private let maxKnownEditRecordDivergences = 12
 
 private let knownEditRecordDivergences: [String: EditRecordDivergence] = [
-    "x1-processing-unknown-field": EditRecordDivergence(
-        ledgerId: "P2-01-IOS-X1-01",
-        reason: "ProcessingIdentity.init(from:) enforces closed key set instead of ignoring unknown future keys"
+    "roundtrip:full-sdr-raw-dormant-hdr": EditRecordDivergence(
+        ledgerId: "EDIT-DIV-IOS-MODEL-01",
+        reason: "iOS SDR PhotoEffectsSettings rounds all 8 vignette/grain properties via .rounded() in init() (RawSettings.swift:130) instead of preserving exact fractional decimals (.25/.5/.75).",
+        expectedObservedSubstring: "mismatched=8 [effects.vignette.amount(exp=-35.5,got=-36.0)"
     ),
-    "x1-color-grading-unknown-field": EditRecordDivergence(
-        ledgerId: "P2-01-IOS-X1-02",
-        reason: "ColorGradingSettings.init(from:) uses GradingCodingKey.require closed-key check"
+    "x1-store-root-unknown-field": EditRecordDivergence(
+        ledgerId: "EDIT-DIV-IOS-MODEL-02",
+        reason: "Tier 1 store-root unknown-field tolerance/sibling preservation passes, but verifying reloaded full-sdr-raw-dormant-hdr target hits iOS SDR PhotoEffectsSettings.rounded() precision loss.",
+        expectedObservedSubstring: "mismatched=8 [effects.vignette.amount(exp=-35.5,got=-36.0)"
     ),
-    "x1-color-grading-zone-unknown-field": EditRecordDivergence(
-        ledgerId: "P2-01-IOS-X1-03",
-        reason: "ColorGradingWheel.init(from:) uses GradingCodingKey.require closed-key check"
+    "x1-store-sibling-unknown-entry": EditRecordDivergence(
+        ledgerId: "EDIT-DIV-IOS-MODEL-03",
+        reason: "Tier 1 store sibling entry preservation passes, but verifying reloaded full-sdr-raw-dormant-hdr target hits iOS SDR PhotoEffectsSettings.rounded() precision loss.",
+        expectedObservedSubstring: "mismatched=8 [effects.vignette.amount(exp=-35.5,got=-36.0)"
     ),
-    "x1-tone-curve-unknown-field": EditRecordDivergence(
-        ledgerId: "P2-01-IOS-X1-04",
-        reason: "ToneCurveSettings.init(from:) rejects unknown keys via Set(allKeys) equality"
+    "x1-record-root-unknown-field": EditRecordDivergence(
+        ledgerId: "EDIT-DIV-IOS-MODEL-04",
+        reason: "Tier 1 record-root unknown-field tolerance passes, but verifying reloaded full-sdr-raw-dormant-hdr target hits iOS SDR PhotoEffectsSettings.rounded() precision loss.",
+        expectedObservedSubstring: "mismatched=8 [effects.vignette.amount(exp=-35.5,got=-36.0)"
     ),
-    "x1-tone-curve-channels-unknown-field": EditRecordDivergence(
-        ledgerId: "P2-01-IOS-X1-05",
-        reason: "ToneCurveChannels.init(from:) rejects unknown keys via Set(allKeys) equality"
+    "x1-settings-root-unknown-field": EditRecordDivergence(
+        ledgerId: "EDIT-DIV-IOS-MODEL-05",
+        reason: "Tier 1 settings-root unknown-field tolerance passes, but verifying reloaded full-sdr-raw-dormant-hdr target hits iOS SDR PhotoEffectsSettings.rounded() precision loss.",
+        expectedObservedSubstring: "mismatched=8 [effects.vignette.amount(exp=-35.5,got=-36.0)"
     ),
-    "x1-hdr-root-unknown-field": EditRecordDivergence(
-        ledgerId: "P2-01-IOS-X1-06",
-        reason: "HDRSettings.init(from:) validates closed top-level HDRSettingsField set"
+    "x1-tone-controls-unknown-field": EditRecordDivergence(
+        ledgerId: "EDIT-DIV-IOS-MODEL-06",
+        reason: "Tier 1 toneControls unknown-field tolerance passes, but verifying reloaded full-sdr-raw-dormant-hdr target hits iOS SDR PhotoEffectsSettings.rounded() precision loss.",
+        expectedObservedSubstring: "mismatched=8 [effects.vignette.amount(exp=-35.5,got=-36.0)"
     ),
-    "x1-hdr-tone-unknown-field": EditRecordDivergence(
-        ledgerId: "P2-01-IOS-X1-07",
-        reason: "HDRToneSettings.init(from:) rejects unknown keys via Set(fields) equality"
+    "x1-atmosphere-unknown-field": EditRecordDivergence(
+        ledgerId: "EDIT-DIV-IOS-MODEL-07",
+        reason: "Tier 1 atmosphere unknown-field tolerance passes, but verifying reloaded full-sdr-raw-dormant-hdr target hits iOS SDR PhotoEffectsSettings.rounded() precision loss.",
+        expectedObservedSubstring: "mismatched=8 [effects.vignette.amount(exp=-35.5,got=-36.0)"
     ),
-    "x1-hdr-color-unknown-field": EditRecordDivergence(
-        ledgerId: "P2-01-IOS-X1-08",
-        reason: "HDRColorSettings.init(from:) rejects unknown keys via Set(fields) equality"
+    "x1-geometry-unknown-field": EditRecordDivergence(
+        ledgerId: "EDIT-DIV-IOS-MODEL-08",
+        reason: "Tier 1 geometry unknown-field tolerance passes, but verifying reloaded full-sdr-raw-dormant-hdr target hits iOS SDR PhotoEffectsSettings.rounded() precision loss.",
+        expectedObservedSubstring: "mismatched=8 [effects.vignette.amount(exp=-35.5,got=-36.0)"
     ),
-    "x1-hdr-rendition-unknown-field": EditRecordDivergence(
-        ledgerId: "P2-01-IOS-X1-09",
-        reason: "HDRRenditionSettings.init(from:) rejects unknown keys via Set(fields) equality"
+    "x1-lens-unknown-field": EditRecordDivergence(
+        ledgerId: "EDIT-DIV-IOS-MODEL-09",
+        reason: "Tier 1 lensCorrection unknown-field tolerance passes, but verifying reloaded full-sdr-raw-dormant-hdr target hits iOS SDR PhotoEffectsSettings.rounded() precision loss.",
+        expectedObservedSubstring: "mismatched=8 [effects.vignette.amount(exp=-35.5,got=-36.0)"
     ),
-    "x1-hdr-effects-unknown-field": EditRecordDivergence(
-        ledgerId: "P2-01-IOS-X1-10",
-        reason: "HDRPhotoEffectsSettings.init(from:) rejects unknown keys via Set(fields) equality"
+    "x1-denoise-unknown-field": EditRecordDivergence(
+        ledgerId: "EDIT-DIV-IOS-MODEL-10",
+        reason: "Tier 1 denoise unknown-field tolerance passes, but verifying reloaded full-sdr-raw-dormant-hdr target hits iOS SDR PhotoEffectsSettings.rounded() precision loss.",
+        expectedObservedSubstring: "mismatched=8 [effects.vignette.amount(exp=-35.5,got=-36.0)"
     ),
-    "x1-hdr-detail-unknown-field": EditRecordDivergence(
-        ledgerId: "P2-01-IOS-X1-11",
-        reason: "HDRDetailSettings.init(from:) rejects unknown keys via Set(fields) equality"
+    "x1-effects-unknown-field": EditRecordDivergence(
+        ledgerId: "EDIT-DIV-IOS-MODEL-11",
+        reason: "Tier 1 photoEffects unknown-field tolerance passes, but verifying reloaded full-sdr-raw-dormant-hdr target hits iOS SDR PhotoEffectsSettings.rounded() precision loss.",
+        expectedObservedSubstring: "mismatched=8 [effects.vignette.amount(exp=-35.5,got=-36.0)"
     ),
-    "x1-hdr-look-unknown-field": EditRecordDivergence(
-        ledgerId: "P2-01-IOS-X1-12",
-        reason: "HDRLookSettings.init(from:) rejects unknown keys via Set(fields) equality"
-    ),
-    "x1-hdr-camera-development-unknown-field": EditRecordDivergence(
-        ledgerId: "P2-01-IOS-X1-13",
-        reason: "HDRCameraDevelopmentSettings.init(from:) rejects unknown keys via supported key subset check"
-    ),
-    "compat-negative-zero-canonicalized": EditRecordDivergence(
-        ledgerId: "P2-01-IOS-COMPAT-01",
-        reason: "Swift JSONDecoder preserves IEEE -0.0 (.sign == .minus) rather than canonicalizing to +0.0 on read"
+    "x1-hdr-camera-profile-unknown-field": EditRecordDivergence(
+        ledgerId: "EDIT-DIV-IOS-X1-01",
+        reason: "Shared/HDRSettings.swift HDRCameraProfile uses synthesized Codable without closed-key checks, so an unknown key inside hdr.camera_development.camera_profile silently loads instead of failing as a version-bound Tier 2 render block.",
+        expectedObservedSubstring: "Tier 2 unknown field in 'hdr_camera_profile' must throw UnusableEditRecordError"
     ),
 ]
 
@@ -103,10 +124,10 @@ struct Harness {
     static func loadFixture() throws -> [String: Any] {
         let data = try Data(contentsOf: fixtureURL)
         guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw Failure.message("Invalid JSON root in \(fixtureURL.path)")
+            throw HarnessError.setup("Invalid JSON root in \(fixtureURL.path)")
         }
-        try check((obj["fixture_version"] as? Int) == 1, "fixture_version must be 1")
-        try check((obj["spec_version"] as? Int) == 1, "spec_version must be 1")
+        try checkSetup((obj["fixture_version"] as? Int) == 1, "fixture_version must be 1")
+        try checkSetup((obj["spec_version"] as? Int) == 1, "spec_version must be 1")
         return obj
     }
 
@@ -399,35 +420,6 @@ struct Harness {
         return (state, isRaw, metadata)
     }
 
-    static func verifyCurve(_ expected: [String: Any], _ actual: ToneCurveSettings, _ label: String) throws {
-        let expMode = expected["mode"] as? String ?? "legacy"
-        try check((actual.mode == .custom ? "custom" : "legacy") == expMode, "\(label): curve.mode")
-        let expPts = expected["points"] as? [[Any]] ?? []
-        try check(actual.points.count == expPts.count, "\(label): curve.points count")
-        for (idx, p) in expPts.enumerated() {
-            try check(approx(actual.points[idx].x, num(p[0])!) && approx(actual.points[idx].y, num(p[1])!), "\(label): curve.points[\(idx)]")
-        }
-        if let ch = expected["channels"] as? [String: Any] {
-            for (name, actualShape) in [("red", actual.channels.red), ("green", actual.channels.green), ("blue", actual.channels.blue)] {
-                if let eShape = ch[name] as? [String: Any] {
-                    let eMode = eShape["mode"] as? String ?? "legacy"
-                    try check((actualShape.mode == .custom ? "custom" : "legacy") == eMode, "\(label): curve.channels.\(name).mode")
-                    let ePts = eShape["points"] as? [[Any]] ?? []
-                    try check(actualShape.points.count == ePts.count, "\(label): curve.channels.\(name).points.count")
-                }
-            }
-        }
-    }
-
-    static func verifyHSL(_ values: [String: Any], _ actual: HSLSettings, _ label: String) throws {
-        let channelKeys = ["red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta"]
-        for (i, ch) in channelKeys.enumerated() {
-            if let e = num(values["color.hsl.hue.\(ch)"]) { try check(approx(actual.value(.hue, channel: i), e), "\(label).hue.\(ch)") }
-            if let e = num(values["color.hsl.saturation.\(ch)"]) { try check(approx(actual.value(.saturation, channel: i), e), "\(label).sat.\(ch)") }
-            if let e = num(values["color.hsl.lightness.\(ch)"]) { try check(approx(actual.value(.lightness, channel: i), e), "\(label).luma.\(ch)") }
-        }
-    }
-
     static func verifyState(_ actual: PhotoEditState, matches record: [String: Any]) throws {
         let id = record["id"] as! String
         let photo = record["photo"] as? [String: Any] ?? [:]
@@ -439,129 +431,211 @@ struct Harness {
         let hdrEditing = metadata["hdr_editing"] as? Bool ?? false
         let s = actual.settings
 
-        let expFilmRaw = metadata["film_id"] as? String ?? ""
-        let expFilm: String? = expFilmRaw.isEmpty ? nil : expFilmRaw
-        try check(actual.filmID == expFilm, "\(id): filmID mismatch")
-        try check(s.masterRecipeID == (metadata["master_recipe_id"] as? String), "\(id): masterRecipeID mismatch")
-        if let proc = metadata["processing"] as? [String: Any], let v = proc["version"] as? Int {
-            try check(s.processing.version == v, "\(id): processing.version mismatch")
+        var mismatches: [String] = []
+        func verify(_ ok: Bool, _ detail: String) {
+            if !ok { mismatches.append(detail) }
         }
-        if let x3f = metadata["x3f_mode"] as? String {
-            try check(s.x3fMode.rawValue == x3f, "\(id): x3fMode mismatch")
-        }
-        if let mv = intVal(metadata["master_recipe_settings_version"]) {
-            try check(s.masterRecipeSettingsVersion == mv, "\(id): masterRecipeSettingsVersion mismatch")
-        }
-        if metadata.keys.contains("pro_raw_decode_version") {
-            try check(s.proRAWDecodeVersion == intVal(metadata["pro_raw_decode_version"]), "\(id): proRAWDecodeVersion mismatch")
-        }
-        try check(s.isHDREditing == hdrEditing, "\(id): isHDREditing mismatch")
-
-        if let v = num(sdrValues["looks.strength"]) { try check(approx(s.lutStrength, v), "\(id): looks.strength") }
-        if let v = num(sdrValues["light.exposure"]) { try check(approx(s.exposure, v), "\(id): light.exposure") }
-        if let em = sdrValues["light.exposure_mode"] as? String {
-            let actualEm = s.exposureMode == .scene ? "scene" : s.exposureMode == .preview ? "preview" : "sensor"
-            try check(actualEm == em, "\(id): exposure_mode")
-        }
-        if let v = num(sdrValues["light.contrast"]) { try check(approx(s.contrast, v), "\(id): contrast") }
-        if let v = num(sdrValues["light.highlights"]) { try check(approx(s.highlights, v), "\(id): highlights") }
-        if let v = num(sdrValues["light.shadows"]) { try check(approx(s.shadows, v), "\(id): shadows") }
-        if let v = num(sdrValues["light.s_curve"]) { try check(approx(s.toneCurve, v), "\(id): s_curve") }
-        if let cObj = sdrValues["light.curve"] as? [String: Any] { try verifyCurve(cObj, s.curveSettings, "\(id).sdr") }
-        if let v = num(sdrValues["tone.black_point"]) { try check(approx(s.blackPoint, v), "\(id): blackPoint") }
-        if let v = num(sdrValues["tone.white_point"]) { try check(approx(s.whitePoint, v), "\(id): whitePoint") }
-        if let v = num(sdrValues["color.vibrance"]) { try check(approx(s.vibrance, v), "\(id): vibrance") }
-        if let gSh = sdrValues["color.grading.shadows"] as? [String: Any] {
-            try check(approx(s.gradingSettings.shadows.hue, num(gSh["hue"])!), "\(id): grading.shadows.hue")
-            try check(approx(s.gradingSettings.shadows.saturation, num(gSh["saturation"])!), "\(id): grading.shadows.sat")
-        }
-        if let wb = sdrValues["color.white_balance.mode"] as? String {
-            let actualWB = isRaw ? (s.whiteBalanceMode == .custom ? "temperature" : "camera") : "none"
-            try check(actualWB == wb, "\(id): wb.mode")
-        }
-        if let v = num(sdrValues["color.white_balance.temperature_kelvin"]) { try check(approx(s.temperature, v), "\(id): temp") }
-        if let v = num(sdrValues["color.white_balance.tint"]) { try check(approx(s.tint, v), "\(id): tint") }
-        if let v = num(sdrValues["color.saturation"]) { try check(approx(s.saturation, v), "\(id): saturation") }
-        try verifyHSL(sdrValues, s.hsl, "\(id).sdr")
-
-        if let v = num(sdrValues["effects.vignette.amount"]) { try check(approx(s.photoEffects.vignetteAmount, v), "\(id): v.amount") }
-        if let v = num(sdrValues["effects.vignette.midpoint"]) { try check(approx(s.photoEffects.vignetteMidpoint, v), "\(id): v.mid") }
-        if let v = num(sdrValues["effects.vignette.roundness"]) { try check(approx(s.photoEffects.vignetteRoundness, v), "\(id): v.round") }
-        if let v = num(sdrValues["effects.vignette.feather"]) { try check(approx(s.photoEffects.vignetteFeather, v), "\(id): v.feather") }
-        if let v = num(sdrValues["effects.vignette.highlights"]) { try check(approx(s.photoEffects.vignetteHighlights, v), "\(id): v.hi") }
-        if let v = num(sdrValues["effects.grain.amount"]) { try check(approx(s.photoEffects.grainAmount, v), "\(id): g.amount") }
-        if let v = num(sdrValues["effects.grain.size"]) { try check(approx(s.photoEffects.grainSize, v), "\(id): g.size") }
-        if let v = num(sdrValues["effects.grain.roughness"]) { try check(approx(s.photoEffects.grainRoughness, v), "\(id): g.rough") }
-        if let v = num(sdrValues["effects.clarity"]) { try check(approx(s.clarity, v), "\(id): clarity") }
-        if let v = num(sdrValues["effects.dehaze"]) { try check(approx(s.dehaze, v), "\(id): dehaze") }
-        if let v = num(sdrValues["detail.sharpening"]) { try check(approx(s.sharpening, v), "\(id): sharpening") }
-        if let v = num(sdrValues["detail.denoise.post_rgb"]) { try check(approx(s.noiseReduction, v), "\(id): post_rgb") }
-        if let v = intVal(sdrValues["detail.denoise.chroma_mode"]) { try check(s.displayChromaDenoise == v, "\(id): chroma_mode") }
-        if let w = sdrValues["detail.denoise.wavelet"] as? [String: Any] {
-            try check(s.denoise.enabled == (w["enabled"] as? Bool ?? false), "\(id): wavelet.enabled")
-            try check(approx(s.denoise.luma, num(w["luma"])!), "\(id): wavelet.luma")
-            try check(approx(s.denoise.chroma, num(w["chroma"])!), "\(id): wavelet.chroma")
-            try check(approx(s.denoise.coarse, num(w["coarse"])!), "\(id): wavelet.coarse")
-        }
-
-        if let v = num(sdrValues["geometry.crop.x"]) { try check(approx(s.geometry.cropX, v), "\(id): cropX") }
-        if let v = num(sdrValues["geometry.crop.y"]) { try check(approx(s.geometry.cropY, v), "\(id): cropY") }
-        if let v = num(sdrValues["geometry.crop.width"]) { try check(approx(s.geometry.cropWidth, v), "\(id): cropW") }
-        if let v = num(sdrValues["geometry.crop.height"]) { try check(approx(s.geometry.cropHeight, v), "\(id): cropH") }
-        if let v = intVal(sdrValues["geometry.quarter_turns"]) { try check(s.geometry.quarterTurns == v, "\(id): turns") }
-        if let b = sdrValues["geometry.flip_horizontal"] as? Bool { try check(s.geometry.flipHorizontal == b, "\(id): flipH") }
-        if let b = sdrValues["geometry.flip_vertical"] as? Bool { try check(s.geometry.flipVertical == b, "\(id): flipV") }
-        if let v = num(sdrValues["geometry.straighten_degrees"]) { try check(approx(s.geometry.straightenDegrees, v), "\(id): straighten") }
-        if let v = num(sdrValues["geometry.perspective.horizontal"]) { try check(approx(s.geometry.perspectiveHorizontal, v), "\(id): perspH") }
-        if let v = num(sdrValues["geometry.perspective.vertical"]) { try check(approx(s.geometry.perspectiveVertical, v), "\(id): perspV") }
-        if sdrValues.keys.contains("geometry.lens.distortion") {
-            let l = s.lensSettings
-            try check(l.distortion == (sdrValues["geometry.lens.distortion"] as? Bool ?? false), "\(id): lens.dist")
-            try check(l.tca == (sdrValues["geometry.lens.tca"] as? Bool ?? false), "\(id): lens.tca")
-            try check(l.vignetting == (sdrValues["geometry.lens.vignetting"] as? Bool ?? false), "\(id): lens.vig")
-            try check(l.autoCrop == (sdrValues["geometry.lens.auto_crop"] as? Bool ?? true), "\(id): lens.autoCrop")
-            try check(l.profileID == (sdrValues["geometry.lens.profile_id"] as? String), "\(id): lens.profileID")
-        }
-
-        if let hdrCheck = hdrEditing ? hdrValues : dormantHDR {
-            guard let hdr = s.hdr else { throw Failure.message("\(id): expected hdr settings to be preserved") }
-            if let v = num(hdrCheck["light.exposure"]) { try check(approx(hdr.exposure, v), "\(id): hdr.exposure") }
-            if let v = num(hdrCheck["hdr.relative_temperature"]) { try check(approx(hdr.temperature, v), "\(id): hdr.temp") }
-            if let v = num(hdrCheck["hdr.relative_tint"]) { try check(approx(hdr.tint, v), "\(id): hdr.tint") }
-            if let v = num(hdrCheck["light.contrast"]) { try check(approx(1 + hdr.contrast / 100, v), "\(id): hdr.contrast") }
-            if let v = num(hdrCheck["light.highlights"]) { try check(approx(-hdr.highlights / 100, v), "\(id): hdr.highlights") }
-            if let v = num(hdrCheck["light.shadows"]) { try check(approx(hdr.shadows / 100, v), "\(id): hdr.shadows") }
-            if let v = num(hdrCheck["color.saturation"]) { try check(approx(1 + hdr.saturation / 100, v), "\(id): hdr.saturation") }
-            if let v = num(hdrCheck["tone.black_point"]) { try check(approx(hdr.toneSettings.blackPoint, v), "\(id): hdr.blackPoint") }
-            if let v = num(hdrCheck["tone.white_point"]) { try check(approx(hdr.toneSettings.whitePoint, v), "\(id): hdr.whitePoint") }
-            if let v = num(hdrCheck["light.s_curve"]) { try check(approx(hdr.toneSettings.curveStrength / 100, v), "\(id): hdr.sCurve") }
-            if let cObj = hdrCheck["light.curve"] as? [String: Any] { try verifyCurve(cObj, hdr.toneSettings.curve, "\(id).hdr") }
-            if let v = num(hdrCheck["color.vibrance"]) { try check(approx(hdr.colorSettings.vibrance, v), "\(id): hdr.vibrance") }
-            try verifyHSL(hdrCheck, hdr.colorSettings.hsl, "\(id).hdr")
-            if let v = num(hdrCheck["hdr.peak_limit_ev"]) { try check(approx(hdr.renditionSettings.peakLimitEV, v), "\(id): hdr.peakLimit") }
-            if let v = num(hdrCheck["hdr.sdr_exposure_ev"]) { try check(approx(hdr.renditionSettings.sdrExposureEV, v), "\(id): hdr.sdrExp") }
-            if let v = num(hdrCheck["hdr.sdr_contrast"]) { try check(approx(hdr.renditionSettings.sdrContrast, v), "\(id): hdr.sdrCon") }
-            if let v = num(hdrCheck["hdr.sdr_saturation"]) { try check(approx(hdr.renditionSettings.sdrSaturation, v), "\(id): hdr.sdrSat") }
-            if let v = num(hdrCheck["effects.clarity"]) { try check(approx(hdr.detailSettings.clarity * 100, v), "\(id): hdr.clarity") }
-            if let v = num(hdrCheck["effects.dehaze"]) { try check(approx(hdr.detailSettings.dehaze * 100, v), "\(id): hdr.dehaze") }
-            if let v = num(hdrCheck["detail.denoise.post_rgb"]) { try check(approx(hdr.detailSettings.denoise, v), "\(id): hdr.denoise") }
-            if let lk = hdrCheck["hdr.look"] as? [String: Any] {
-                try check(hdr.lookSettings.sha256 == (lk["sha256"] as? String), "\(id): hdr.look.sha")
-                try check(approx(hdr.lookSettings.strength, num(lk["strength"])!), "\(id): hdr.look.strength")
+        func verifyCurveInto(_ expected: [String: Any], _ actualCurve: ToneCurveSettings, _ label: String) {
+            let expMode = expected["mode"] as? String ?? "legacy"
+            verify((actualCurve.mode == .custom ? "custom" : "legacy") == expMode, "\(label).curve.mode")
+            let expPts = expected["points"] as? [[Any]] ?? []
+            verify(actualCurve.points.count == expPts.count, "\(label).curve.points.count")
+            if actualCurve.points.count == expPts.count {
+                for (idx, p) in expPts.enumerated() {
+                    verify(approx(actualCurve.points[idx].x, num(p[0]) ?? -999) &&
+                           approx(actualCurve.points[idx].y, num(p[1]) ?? -999), "\(label).curve.points[\(idx)]")
+                }
             }
-            if let cam = hdrCheck["hdr.camera_development"] as? [String: Any] {
-                try check(hdr.cameraDevelopmentSettings.whiteBalance.rawValue == (cam["white_balance_mode"] as? String), "\(id): hdr.cam.wb")
-                try check(approx(hdr.cameraDevelopmentSettings.temperature, num(cam["temperature"]) ?? -1), "\(id): hdr.cam.temp")
-                try check(approx(hdr.cameraDevelopmentSettings.tint, num(cam["tint"]) ?? -999), "\(id): hdr.cam.tint")
-                try check(hdr.cameraDevelopmentSettings.exposureReference.rawValue == (cam["exposure_reference"] as? String), "\(id): hdr.cam.expRef")
-                try check(hdr.cameraDevelopmentSettings.fbddLevel == (intVal(cam["fbdd_level"]) ?? -1), "\(id): hdr.cam.fbdd")
-                if let extra = metadata["hdr_camera_development_extra"] as? [String: Any] {
-                    try check(hdr.cameraDevelopmentSettings.lensProfile == (extra["lens_profile"] as? String), "\(id): hdr.cam.lensProfile")
-                    if let cp = extra["camera_profile"] as? [String: Any] {
-                        try check(hdr.cameraDevelopmentSettings.cameraProfile?.sha256 == (cp["sha256"] as? String), "\(id): hdr.cam.camProfile")
+            if let ch = expected["channels"] as? [String: Any] {
+                for (name, actualShape) in [("red", actualCurve.channels.red), ("green", actualCurve.channels.green), ("blue", actualCurve.channels.blue)] {
+                    if let eShape = ch[name] as? [String: Any] {
+                        let eMode = eShape["mode"] as? String ?? "legacy"
+                        verify((actualShape.mode == .custom ? "custom" : "legacy") == eMode, "\(label).curve.\(name).mode")
+                        let ePts = eShape["points"] as? [[Any]] ?? []
+                        verify(actualShape.points.count == ePts.count, "\(label).curve.\(name).count")
+                        if actualShape.points.count == ePts.count {
+                            for (idx, p) in ePts.enumerated() {
+                                verify(approx(actualShape.points[idx].x, num(p[0]) ?? -999) &&
+                                       approx(actualShape.points[idx].y, num(p[1]) ?? -999), "\(label).curve.\(name)[\(idx)]")
+                            }
+                        }
                     }
                 }
             }
+        }
+        func verifyHSLInto(_ values: [String: Any], _ actualHSL: HSLSettings, _ label: String) {
+            let channelKeys = ["red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta"]
+            for (i, ch) in channelKeys.enumerated() {
+                if let e = num(values["color.hsl.hue.\(ch)"]) { verify(approx(actualHSL.value(.hue, channel: i), e), "\(label).hsl.hue.\(ch)") }
+                if let e = num(values["color.hsl.saturation.\(ch)"]) { verify(approx(actualHSL.value(.saturation, channel: i), e), "\(label).hsl.sat.\(ch)") }
+                if let e = num(values["color.hsl.lightness.\(ch)"]) { verify(approx(actualHSL.value(.lightness, channel: i), e), "\(label).hsl.lit.\(ch)") }
+            }
+        }
+        func verifyGradingInto(_ values: [String: Any], _ actualGrading: ColorGradingSettings, _ label: String) {
+            for (zoneName, zone) in [("shadows", ColorGradingZone.shadows), ("midtones", .midtones), ("highlights", .highlights)] {
+                if let g = values["color.grading.\(zoneName)"] as? [String: Any] {
+                    verify(approx(actualGrading[zone].hue, num(g["hue"]) ?? -1) &&
+                           approx(actualGrading[zone].saturation, num(g["saturation"]) ?? -1), "\(label).grading.\(zoneName)")
+                }
+            }
+        }
+        func verifyGeomInto(_ values: [String: Any], _ actualGeom: GeometrySettings, _ label: String) {
+            if let v = num(values["geometry.crop.x"]) { verify(approx(actualGeom.cropX, v), "\(label).cropX") }
+            if let v = num(values["geometry.crop.y"]) { verify(approx(actualGeom.cropY, v), "\(label).cropY") }
+            if let v = num(values["geometry.crop.width"]) { verify(approx(actualGeom.cropWidth, v), "\(label).cropW") }
+            if let v = num(values["geometry.crop.height"]) { verify(approx(actualGeom.cropHeight, v), "\(label).cropH") }
+            if let v = intVal(values["geometry.quarter_turns"]) { verify(actualGeom.quarterTurns == v, "\(label).turns") }
+            if let b = values["geometry.flip_horizontal"] as? Bool { verify(actualGeom.flipHorizontal == b, "\(label).flipH") }
+            if let b = values["geometry.flip_vertical"] as? Bool { verify(actualGeom.flipVertical == b, "\(label).flipV") }
+            if let v = num(values["geometry.straighten_degrees"]) { verify(approx(actualGeom.straightenDegrees, v), "\(label).straighten") }
+            if let v = num(values["geometry.perspective.horizontal"]) { verify(approx(actualGeom.perspectiveHorizontal, v), "\(label).perspH") }
+            if let v = num(values["geometry.perspective.vertical"]) { verify(approx(actualGeom.perspectiveVertical, v), "\(label).perspV") }
+        }
+
+        let expFilmRaw = metadata["film_id"] as? String ?? ""
+        let expFilm: String? = expFilmRaw.isEmpty ? nil : expFilmRaw
+        verify(actual.filmID == expFilm, "filmID")
+        verify(s.masterRecipeID == (metadata["master_recipe_id"] as? String), "masterRecipeID")
+        if let lookRef = sdrValues["looks.reference"] as? [String: Any], let kind = lookRef["kind"] as? String {
+            switch kind {
+            case "recipe": verify(s.masterRecipeID == (lookRef["id"] as? String), "looks.reference.recipe")
+            case "builtin", "managed": verify(actual.filmID == expFilm && !(actual.filmID?.isEmpty ?? true), "looks.reference.\(kind)")
+            case "neutral": verify(actual.filmID == nil && s.masterRecipeID == nil, "looks.reference.neutral")
+            default: break
+            }
+        }
+        if let proc = metadata["processing"] as? [String: Any], let v = proc["version"] as? Int {
+            verify(s.processing.version == v, "processing.version")
+        }
+        if let x3f = metadata["x3f_mode"] as? String {
+            verify(s.x3fMode.rawValue == x3f, "x3fMode")
+        }
+        if let mv = intVal(metadata["master_recipe_settings_version"]) {
+            verify(s.masterRecipeSettingsVersion == mv, "masterRecipeSettingsVersion")
+        }
+        if metadata.keys.contains("pro_raw_decode_version") {
+            verify(s.proRAWDecodeVersion == intVal(metadata["pro_raw_decode_version"]), "proRAWDecodeVersion")
+        }
+        verify(s.isHDREditing == hdrEditing, "isHDREditing")
+
+        if let v = num(sdrValues["looks.strength"]) { verify(approx(s.lutStrength, v), "looks.strength") }
+        if let v = num(sdrValues["light.exposure"]) { verify(approx(s.exposure, v), "light.exposure") }
+        if let em = sdrValues["light.exposure_mode"] as? String {
+            let actualEm = s.exposureMode == .scene ? "scene" : s.exposureMode == .preview ? "preview" : "sensor"
+            verify(actualEm == em, "light.exposure_mode")
+        }
+        if let v = num(sdrValues["light.contrast"]) { verify(approx(s.contrast, v), "light.contrast") }
+        if let v = num(sdrValues["light.highlights"]) { verify(approx(s.highlights, v), "light.highlights") }
+        if let v = num(sdrValues["light.shadows"]) { verify(approx(s.shadows, v), "light.shadows") }
+        if let v = num(sdrValues["light.s_curve"]) { verify(approx(s.toneCurve, v), "light.s_curve") }
+        if let cObj = sdrValues["light.curve"] as? [String: Any] { verifyCurveInto(cObj, s.curveSettings, "sdr") }
+        if let v = num(sdrValues["tone.black_point"]) { verify(approx(s.blackPoint, v), "tone.black_point") }
+        if let v = num(sdrValues["tone.white_point"]) { verify(approx(s.whitePoint, v), "tone.white_point") }
+        if let v = num(sdrValues["color.vibrance"]) { verify(approx(s.vibrance, v), "color.vibrance") }
+        verifyGradingInto(sdrValues, s.gradingSettings, "sdr")
+        if let wb = sdrValues["color.white_balance.mode"] as? String {
+            let actualWB = isRaw ? (s.whiteBalanceMode == .custom ? "temperature" : "camera") : "none"
+            verify(actualWB == wb, "wb.mode")
+        }
+        if let v = num(sdrValues["color.white_balance.temperature_kelvin"]) { verify(approx(s.temperature, v), "wb.temp") }
+        if let v = num(sdrValues["color.white_balance.tint"]) { verify(approx(s.tint, v), "wb.tint") }
+        if let v = num(sdrValues["color.saturation"]) { verify(approx(s.saturation, v), "color.saturation") }
+        verifyHSLInto(sdrValues, s.hsl, "sdr")
+
+        if let v = num(sdrValues["effects.vignette.amount"]) { verify(approx(s.photoEffects.vignetteAmount, v), "effects.vignette.amount(exp=\(v),got=\(s.photoEffects.vignetteAmount))") }
+        if let v = num(sdrValues["effects.vignette.midpoint"]) { verify(approx(s.photoEffects.vignetteMidpoint, v), "effects.vignette.midpoint(exp=\(v),got=\(s.photoEffects.vignetteMidpoint))") }
+        if let v = num(sdrValues["effects.vignette.roundness"]) { verify(approx(s.photoEffects.vignetteRoundness, v), "effects.vignette.roundness(exp=\(v),got=\(s.photoEffects.vignetteRoundness))") }
+        if let v = num(sdrValues["effects.vignette.feather"]) { verify(approx(s.photoEffects.vignetteFeather, v), "effects.vignette.feather(exp=\(v),got=\(s.photoEffects.vignetteFeather))") }
+        if let v = num(sdrValues["effects.vignette.highlights"]) { verify(approx(s.photoEffects.vignetteHighlights, v), "effects.vignette.highlights(exp=\(v),got=\(s.photoEffects.vignetteHighlights))") }
+        if let v = num(sdrValues["effects.grain.amount"]) { verify(approx(s.photoEffects.grainAmount, v), "effects.grain.amount(exp=\(v),got=\(s.photoEffects.grainAmount))") }
+        if let v = num(sdrValues["effects.grain.size"]) { verify(approx(s.photoEffects.grainSize, v), "effects.grain.size(exp=\(v),got=\(s.photoEffects.grainSize))") }
+        if let v = num(sdrValues["effects.grain.roughness"]) { verify(approx(s.photoEffects.grainRoughness, v), "effects.grain.roughness(exp=\(v),got=\(s.photoEffects.grainRoughness))") }
+        if let v = num(sdrValues["effects.clarity"]) { verify(approx(s.clarity, v), "effects.clarity") }
+        if let v = num(sdrValues["effects.dehaze"]) { verify(approx(s.dehaze, v), "effects.dehaze") }
+        if let v = num(sdrValues["detail.sharpening"]) { verify(approx(s.sharpening, v), "detail.sharpening") }
+        if let v = num(sdrValues["detail.denoise.post_rgb"]) { verify(approx(s.noiseReduction, v), "detail.denoise.post_rgb") }
+        if let v = intVal(sdrValues["detail.denoise.chroma_mode"]) { verify(s.displayChromaDenoise == v, "detail.denoise.chroma_mode") }
+        if let w = sdrValues["detail.denoise.wavelet"] as? [String: Any] {
+            verify(s.denoise.enabled == (w["enabled"] as? Bool ?? false), "wavelet.enabled")
+            verify(approx(s.denoise.luma, num(w["luma"]) ?? -1), "wavelet.luma")
+            verify(approx(s.denoise.chroma, num(w["chroma"]) ?? -1), "wavelet.chroma")
+            verify(approx(s.denoise.coarse, num(w["coarse"]) ?? -1), "wavelet.coarse")
+        }
+
+        verifyGeomInto(sdrValues, s.geometry, "sdr")
+        if sdrValues.keys.contains("geometry.lens.distortion") {
+            let l = s.lensSettings
+            verify(l.distortion == (sdrValues["geometry.lens.distortion"] as? Bool ?? false), "lens.dist")
+            verify(l.tca == (sdrValues["geometry.lens.tca"] as? Bool ?? false), "lens.tca")
+            verify(l.vignetting == (sdrValues["geometry.lens.vignetting"] as? Bool ?? false), "lens.vig")
+            verify(l.autoCrop == (sdrValues["geometry.lens.auto_crop"] as? Bool ?? true), "lens.autoCrop")
+            verify(l.profileID == (sdrValues["geometry.lens.profile_id"] as? String), "lens.profileID")
+        }
+
+        if let hdrCheck = hdrEditing ? hdrValues : dormantHDR {
+            guard let hdr = s.hdr else { throw ExpectationMismatch.mismatch("\(id): expected hdr settings to be preserved") }
+            verify((hdr.mode == .hdr) == hdrEditing, "hdr.mode")
+            if let v = num(hdrCheck["light.exposure"]) { verify(approx(hdr.exposure, v), "hdr.exposure") }
+            if let v = num(hdrCheck["hdr.relative_temperature"]) { verify(approx(hdr.temperature, v), "hdr.temp") }
+            if let v = num(hdrCheck["hdr.relative_tint"]) { verify(approx(hdr.tint, v), "hdr.tint") }
+            if let v = num(hdrCheck["light.contrast"]) { verify(approx(1 + hdr.contrast / 100, v), "hdr.contrast") }
+            if let v = num(hdrCheck["light.highlights"]) { verify(approx(-hdr.highlights / 100, v), "hdr.highlights") }
+            if let v = num(hdrCheck["light.shadows"]) { verify(approx(hdr.shadows / 100, v), "hdr.shadows") }
+            if let v = num(hdrCheck["color.saturation"]) { verify(approx(1 + hdr.saturation / 100, v), "hdr.saturation") }
+            if let v = num(hdrCheck["tone.black_point"]) { verify(approx(hdr.toneSettings.blackPoint, v), "hdr.blackPoint") }
+            if let v = num(hdrCheck["tone.white_point"]) { verify(approx(hdr.toneSettings.whitePoint, v), "hdr.whitePoint") }
+            if let v = num(hdrCheck["light.s_curve"]) { verify(approx(hdr.toneSettings.curveStrength / 100, v), "hdr.sCurve") }
+            if let cObj = hdrCheck["light.curve"] as? [String: Any] { verifyCurveInto(cObj, hdr.toneSettings.curve, "hdr") }
+            if let v = num(hdrCheck["color.vibrance"]) { verify(approx(hdr.colorSettings.vibrance, v), "hdr.vibrance") }
+            verifyHSLInto(hdrCheck, hdr.colorSettings.hsl, "hdr")
+            verifyGradingInto(hdrCheck, hdr.colorSettings.grading, "hdr")
+            if let v = num(hdrCheck["hdr.peak_limit_ev"]) { verify(approx(hdr.renditionSettings.peakLimitEV, v), "hdr.peakLimit") }
+            if let v = num(hdrCheck["hdr.sdr_exposure_ev"]) { verify(approx(hdr.renditionSettings.sdrExposureEV, v), "hdr.sdrExp") }
+            if let v = num(hdrCheck["hdr.sdr_contrast"]) { verify(approx(hdr.renditionSettings.sdrContrast, v), "hdr.sdrCon") }
+            if let v = num(hdrCheck["hdr.sdr_saturation"]) { verify(approx(hdr.renditionSettings.sdrSaturation, v), "hdr.sdrSat") }
+            for (fid, kp) in [
+                ("effects.vignette.amount", \HDRPhotoEffectsSettings.vignetteAmount),
+                ("effects.vignette.midpoint", \HDRPhotoEffectsSettings.vignetteMidpoint),
+                ("effects.vignette.roundness", \HDRPhotoEffectsSettings.vignetteRoundness),
+                ("effects.vignette.feather", \HDRPhotoEffectsSettings.vignetteFeather),
+                ("effects.vignette.highlights", \HDRPhotoEffectsSettings.vignetteHighlights),
+                ("effects.grain.amount", \HDRPhotoEffectsSettings.grainAmount),
+                ("effects.grain.size", \HDRPhotoEffectsSettings.grainSize),
+                ("effects.grain.roughness", \HDRPhotoEffectsSettings.grainRoughness)
+            ] as [(String, KeyPath<HDRPhotoEffectsSettings, Double>)] {
+                if let v = num(hdrCheck[fid]) { verify(approx(hdr.effectsSettings[keyPath: kp], v), "hdr.\(fid)") }
+            }
+            if let v = num(hdrCheck["detail.sharpening"]) { verify(approx(hdr.detailSettings.sharpening, v), "hdr.detail.sharpening") }
+            if let v = num(hdrCheck["effects.clarity"]) { verify(approx(hdr.detailSettings.clarity * 100, v), "hdr.clarity") }
+            if let v = num(hdrCheck["effects.dehaze"]) { verify(approx(hdr.detailSettings.dehaze * 100, v), "hdr.dehaze") }
+            if let v = num(hdrCheck["detail.denoise.post_rgb"]) { verify(approx(hdr.detailSettings.denoise, v), "hdr.denoise") }
+            if let lk = hdrCheck["hdr.look"] as? [String: Any] {
+                verify(hdr.lookSettings.sha256 == (lk["sha256"] as? String) &&
+                       hdr.lookSettings.name == (lk["name"] as? String) &&
+                       approx(hdr.lookSettings.strength, num(lk["strength"]) ?? -1), "hdr.look")
+            }
+            if let cam = hdrCheck["hdr.camera_development"] as? [String: Any] {
+                verify(hdr.cameraDevelopmentSettings.whiteBalance.rawValue == (cam["white_balance_mode"] as? String), "hdr.cam.wb")
+                verify(approx(hdr.cameraDevelopmentSettings.temperature, num(cam["temperature"]) ?? -1), "hdr.cam.temp")
+                verify(approx(hdr.cameraDevelopmentSettings.tint, num(cam["tint"]) ?? -999), "hdr.cam.tint")
+                verify(hdr.cameraDevelopmentSettings.exposureReference.rawValue == (cam["exposure_reference"] as? String), "hdr.cam.expRef")
+                verify(hdr.cameraDevelopmentSettings.fbddLevel == (intVal(cam["fbdd_level"]) ?? -1), "hdr.cam.fbdd")
+                if let extra = metadata["hdr_camera_development_extra"] as? [String: Any] {
+                    if let b = extra["lens_distortion"] as? Bool { verify(hdr.cameraDevelopmentSettings.lensDistortion == b, "hdr.cam.lensDistortion") }
+                    if let b = extra["lens_tca"] as? Bool { verify(hdr.cameraDevelopmentSettings.lensTCA == b, "hdr.cam.lensTCA") }
+                    if let b = extra["lens_vignetting"] as? Bool { verify(hdr.cameraDevelopmentSettings.lensVignetting == b, "hdr.cam.lensVignetting") }
+                    if let b = extra["lens_auto_crop"] as? Bool { verify(hdr.cameraDevelopmentSettings.lensAutoCrop == b, "hdr.cam.lensAutoCrop") }
+                    verify(hdr.cameraDevelopmentSettings.lensProfile == (extra["lens_profile"] as? String), "hdr.cam.lensProfile")
+                    if let cp = extra["camera_profile"] as? [String: Any] {
+                        verify(hdr.cameraDevelopmentSettings.cameraProfile?.sha256 == (cp["sha256"] as? String) &&
+                               hdr.cameraDevelopmentSettings.cameraProfile?.name == (cp["name"] as? String), "hdr.cam.camProfile")
+                    }
+                }
+            }
+            verifyGeomInto(hdrCheck, hdr.geometry, "hdr")
+        }
+        if !mismatches.isEmpty {
+            throw ExpectationMismatch.mismatch("\(id): mismatched=\(mismatches.count) [" + mismatches.joined(separator: "; ") + "]")
         }
     }
 
@@ -581,21 +655,43 @@ struct Harness {
         return url
     }
 
-    static func evaluateScenario(id: String, body: () throws -> Void) throws {
+    static func evaluateScenario(id: String, scope: EvalCatchScope, evaluatedIDs: inout Set<String>, body: () throws -> Void) throws {
+        evaluatedIDs.insert(id)
+        var bodyError: Error?
         do {
             try body()
+        } catch {
+            bodyError = error
+        }
+        guard let err = bodyError else {
             if let reg = knownEditRecordDivergences[id] {
-                throw Failure.message("Stale divergence ledger entry '\(id)' (\(reg.ledgerId)): scenario now passed")
+                throw HarnessError.setup("Stale divergence ledger entry '\(id)' (\(reg.ledgerId)): scenario now passed")
             }
             print("PASS: \(id)")
-        } catch {
-            if let reg = knownEditRecordDivergences[id] {
-                try check(!reg.ledgerId.trimmingCharacters(in: .whitespaces).isEmpty, "Blank ledgerId for \(id)")
-                try check(!reg.reason.trimmingCharacters(in: .whitespaces).isEmpty, "Blank reason for \(id)")
-                print("KNOWN DIVERGENCE [\(id)] (\(reg.ledgerId)): \(reg.reason) | observed: \(error)")
-            } else {
-                throw Failure.message("RED ANCHOR [\(id)]: \(error)")
+            return
+        }
+        let isExpectationOrAllowedRejection: Bool
+        switch err {
+        case is ExpectationMismatch:
+            isExpectationOrAllowedRejection = true
+        case is UnusableEditRecordError:
+            isExpectationOrAllowedRejection = (scope == .expectationOrPersistenceRejection)
+        default:
+            isExpectationOrAllowedRejection = false
+        }
+        guard isExpectationOrAllowedRejection else {
+            throw err
+        }
+        if let reg = knownEditRecordDivergences[id] {
+            try checkSetup(!reg.ledgerId.trimmingCharacters(in: .whitespaces).isEmpty, "Blank ledgerId for \(id)")
+            try checkSetup(!reg.reason.trimmingCharacters(in: .whitespaces).isEmpty, "Blank reason for \(id)")
+            if let expectedSub = reg.expectedObservedSubstring {
+                try checkSetup("\(err)".contains(expectedSub),
+                               "Divergence [\(id)] (\(reg.ledgerId)) observed '\(err)' missing expected substring '\(expectedSub)'")
             }
+            print("KNOWN DIVERGENCE [\(id)] (\(reg.ledgerId)): \(reg.reason) | observed: \(err)")
+        } else {
+            throw ExpectationMismatch.mismatch("RED ANCHOR [\(id)]: \(err)")
         }
     }
 
@@ -666,7 +762,7 @@ struct Harness {
             var hdr = settings["hdr"] as! [String: Any]; var cd = hdr["camera_development"] as! [String: Any]
             var cp = cd["camera_profile"] as! [String: Any]; inject(&cp); cd["camera_profile"] = cp; hdr["camera_development"] = cd; settings["hdr"] = hdr
         default:
-            throw Failure.message("Unhandled unknown_field target_scope: \(scope)")
+            throw HarnessError.setup("Unhandled unknown_field target_scope: \(scope)")
         }
         state["settings"] = settings
         records[targetKey] = state
@@ -674,51 +770,57 @@ struct Harness {
     }
 
     static func runAll() throws {
-        try check(knownEditRecordDivergences.count <= maxKnownEditRecordDivergences,
-                  "Divergence count \(knownEditRecordDivergences.count) exceeds cap \(maxKnownEditRecordDivergences)")
-
         let fixture = try loadFixture()
         let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-ios-edit-fixture-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempRoot) }
 
+        let roundtrip = fixture["roundtrip_records"] as! [[String: Any]]
         var byID: [String: [String: Any]] = [:]
-        var failures: [String] = []
+        for rec in roundtrip { byID[rec["id"] as! String] = rec }
 
-        func collect(_ id: String, body: () throws -> Void) {
-            do { try evaluateScenario(id: id, body: body) }
-            catch {
+        var failures: [String] = []
+        var evaluatedIDs: Set<String> = []
+        func eval(_ id: String, scope: EvalCatchScope = .expectationOnly, body: () throws -> Void) {
+            do {
+                try evaluateScenario(id: id, scope: scope, evaluatedIDs: &evaluatedIDs, body: body)
+            } catch {
                 fputs("FAIL: \(error)\n", stderr)
                 failures.append("\(error)")
             }
         }
 
         // 1. Roundtrip records
-        let roundtrip = fixture["roundtrip_records"] as! [[String: Any]]
         for rec in roundtrip {
             let id = rec["id"] as! String
-            byID[id] = rec
-            collect("roundtrip:\(id)") {
+            let scenarioID = "roundtrip:\(id)"
+            do {
                 let (built, _, metadata) = try buildState(from: rec)
                 let (store, dir, _) = try makeStore(tempRoot: tempRoot, name: "rt-\(id)")
                 let photoURL = try touchPhoto(tempRoot, name: (rec["photo"] as! [String: Any])["name"] as! String)
                 try store.save(photoURL, state: built)
                 let pid = try PhotoIdentity.fallback(for: photoURL)
-                if let receipt = metadata["migration_receipt"] as? [String: Any], (receipt["status"] as? String) == "kept" {
+                let keepReceipt = (metadata["migration_receipt"] as? [String: Any])?["status"] as? String == "kept"
+                if keepReceipt {
                     let quality = ProcessingMigrationQuality(rgbRMSE: 0.01, p99Error: 0.02, worstTileRMSE: 0.02, detailRMSE: 0.01, evaluations: 10)
                     _ = try store.commitProcessingMigration(expected: try store.readState(for: pid), candidate: nil, quality: quality)
                 }
-                let reopened = try EditPersistence(directory: dir)
-                let reloaded = try reopened.state(for: photoURL)
-                try check(reloaded != nil, "\(id): reloaded state must not be nil")
-                try verifyState(reloaded!, matches: rec)
-                if let receipt = metadata["migration_receipt"] as? [String: Any], (receipt["status"] as? String) == "kept" {
-                    try check(try reopened.processingMigration(for: pid)?.status == .kept, "\(id): migration receipt kept")
+                eval(scenarioID) {
+                    let reopened = try EditPersistence(directory: dir)
+                    let reloaded = try reopened.state(for: photoURL)
+                    try check(reloaded != nil, "\(id): reloaded state must not be nil")
+                    try verifyState(reloaded!, matches: rec)
+                    if keepReceipt {
+                        try check(try reopened.processingMigration(for: pid)?.status == .kept, "\(id): migration receipt kept")
+                    }
                 }
+            } catch {
+                fputs("FAIL SETUP[\(scenarioID)]: \(error)\n", stderr)
+                failures.append("SETUP[\(scenarioID)]: \(error)")
             }
         }
 
-        // 2. X1 Unknown field scenarios
+        // 2. X1 Unknown field scenarios (Two-Tier)
         let unknownList = fixture["unknown_field_scenarios"] as! [[String: Any]]
         for sc in unknownList {
             let id = sc["id"] as! String
@@ -727,7 +829,9 @@ struct Harness {
             let scope = sc["target_scope"] as! String
             let key = sc["inject_key"] as! String
             let val = sc["inject_value"]!
-            collect(id) {
+            let expectPolicy = sc["expect"] as! String
+            let preserveRawDiskEntry = sc["preserve_raw_disk_entry"] as? Bool ?? false
+            do {
                 let (built, _, _) = try buildState(from: baseRec)
                 let (siblingBuilt, _, _) = try buildState(from: byID["raster-sdr-neutral"]!)
                 let (store, dir, file) = try makeStore(tempRoot: tempRoot, name: "x1-\(id)")
@@ -742,12 +846,46 @@ struct Harness {
                 try mutateJSONScope(registry: &registry, targetKey: targetKey, scope: scope, key: key, value: val)
                 try JSONSerialization.data(withJSONObject: registry, options: [.sortedKeys]).write(to: file)
 
-                let reopened = try EditPersistence(directory: dir)
-                let loadedTarget = try reopened.state(for: targetURL)
-                try check(loadedTarget != nil, "\(id): target record must remain readable with unknown key in \(scope)")
-                try verifyState(loadedTarget!, matches: baseRec)
-                let loadedSibling = try reopened.state(for: siblingURL)
-                try check(loadedSibling != nil, "\(id): sibling record must remain readable")
+                if expectPolicy == "load_preserving_values" {
+                    eval(id, scope: .expectationOrPersistenceRejection) {
+                        let reopened = try EditPersistence(directory: dir)
+                        let loadedTarget = try reopened.state(for: targetURL)
+                        try check(loadedTarget != nil, "\(id): target record must remain readable with unknown key in \(scope)")
+                        let loadedSibling = try reopened.state(for: siblingURL)
+                        try check(loadedSibling != nil, "\(id): sibling record must remain readable")
+                        if preserveRawDiskEntry {
+                            let updatedSib = siblingBuilt.replacing(settings: { var s = siblingBuilt.settings; s.exposure = 1.25; return s }(), preservingFilmID: siblingBuilt.filmID)
+                            try reopened.save(siblingURL, state: updatedSib)
+                            let diskAfter = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+                            let diskRecs = diskAfter["records"] as! [String: Any]
+                            try check(diskRecs["content:future_sibling_entry"] != nil,
+                                      "\(id): unknown sibling entry must remain preserved on disk across sibling save")
+                        }
+                        try verifyState(loadedTarget!, matches: baseRec)
+                    }
+                } else if expectPolicy == "reject_isolating_record" {
+                    eval(id, scope: .expectationOnly) {
+                        let reopened = try EditPersistence(directory: dir)
+                        var threw = false
+                        do { _ = try reopened.state(for: targetURL) } catch is UnusableEditRecordError { threw = true }
+                        try check(threw, "\(id): Tier 2 unknown field in '\(scope)' must throw UnusableEditRecordError (not silently ignore)")
+                        let loadedSibling = try reopened.state(for: siblingURL)
+                        try check(loadedSibling != nil, "\(id): healthy sibling record must remain readable")
+                        if preserveRawDiskEntry {
+                            let updatedSib = siblingBuilt.replacing(settings: { var s = siblingBuilt.settings; s.exposure = 1.25; return s }(), preservingFilmID: siblingBuilt.filmID)
+                            try reopened.save(siblingURL, state: updatedSib)
+                            let diskAfter = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+                            let diskRecs = diskAfter["records"] as! [String: Any]
+                            try check(diskRecs[targetKey] != nil,
+                                      "\(id): rejected Tier 2 record raw disk entry must remain preserved across sibling save")
+                        }
+                    }
+                } else {
+                    throw HarnessError.setup("Unknown X1 expect policy '\(expectPolicy)' for \(id)")
+                }
+            } catch {
+                fputs("FAIL SETUP[\(id)]: \(error)\n", stderr)
+                failures.append("SETUP[\(id)]: \(error)")
             }
         }
 
@@ -757,7 +895,7 @@ struct Harness {
             let id = sc["id"] as! String
             let kind = sc["kind"] as! String
             let baseRec = byID[sc["base_record_id"] as! String]!
-            collect(id) {
+            do {
                 switch kind {
                 case "legacy_omitted_extensions":
                     let (built, _, _) = try buildState(from: baseRec)
@@ -776,25 +914,56 @@ struct Harness {
                     state["settings"] = settings; records[key] = state; registry["records"] = records
                     try JSONSerialization.data(withJSONObject: registry).write(to: file)
 
-                    let loaded = try EditPersistence(directory: dir).state(for: url)!
-                    try check(loaded.settings.processing == .legacy, "\(id): processing defaults to legacy v1")
-                    try check(loaded.settings.x3fMode == .legacy, "\(id): x3fMode defaults to legacy")
+                    let samples = sc["legacy_wire_samples"] as! [String: Any]
+                    let iosSample = samples["ios_json"] as! [String: Any]
+                    let wireDir = tempRoot.appendingPathComponent("c-wire-\(id)")
+                    try FileManager.default.createDirectory(at: wireDir, withIntermediateDirectories: true)
+                    let wirePhotoURL = wireDir.appendingPathComponent("legacy-ios.JPG")
+                    try Data((iosSample["photo_bytes_utf8"] as! String).utf8).write(to: wirePhotoURL)
+                    let wireFile = wireDir.appendingPathComponent("edits.json")
+                    try Data((iosSample["store_json"] as! String).utf8).write(to: wireFile)
+                    let wireExpect = iosSample["expect_decoded"] as! [String: Any]
+
+                    eval(id) {
+                        let loaded = try EditPersistence(directory: dir).state(for: url)!
+                        try check(loaded.settings.processing == .legacy, "\(id): processing defaults to legacy v1")
+                        try check(loaded.settings.x3fMode == .legacy, "\(id): x3fMode defaults to legacy")
+
+                        let wireStore = try EditPersistence(directory: wireDir)
+                        let wireLoaded = try wireStore.state(for: wirePhotoURL)
+                        try check(wireLoaded != nil, "\(id): frozen ios_json legacy wire sample must decode")
+                        if let w = wireLoaded {
+                            try check(w.filmID == (wireExpect["film_id"] as? String), "\(id): wire filmID")
+                            try check(approx(w.settings.exposure, num(wireExpect["exposure"])!), "\(id): wire exposure")
+                            try check(approx(w.settings.contrast, num(wireExpect["contrast"])!), "\(id): wire contrast")
+                            try check(approx(w.settings.saturation, num(wireExpect["saturation"])!), "\(id): wire saturation")
+                            try check(approx(w.settings.temperature, num(wireExpect["temperature"])!), "\(id): wire temperature")
+                            try check(approx(w.settings.tint, num(wireExpect["tint"])!), "\(id): wire tint")
+                            try check(approx(w.settings.highlights, num(wireExpect["highlights"])!), "\(id): wire highlights")
+                            try check(approx(w.settings.shadows, num(wireExpect["shadows"])!), "\(id): wire shadows")
+                            try check(approx(w.settings.sharpening, num(wireExpect["sharpening"])!), "\(id): wire sharpening")
+                            try check(w.settings.processing.version == (intVal(wireExpect["processing_version"]) ?? -1), "\(id): wire processing_version")
+                            try check(w.settings.x3fMode.rawValue == (wireExpect["x3f_mode"] as! String), "\(id): wire x3f_mode")
+                        }
+                    }
                 case "sdr_reset_preserves_dormant_hdr":
                     let (built, _, _) = try buildState(from: baseRec)
                     let (store, dir, _) = try makeStore(tempRoot: tempRoot, name: "c-\(id)")
                     let url = try touchPhoto(tempRoot, name: "c-rst-\(id).ARW")
                     try store.save(url, state: built)
-                    let ctx = EditorAdjustmentContext(isRaw: true, defaultExposureMode: .preview, cameraTemperature: 5400, cameraTint: -4)
-                    let resetRes = EditorAdjustmentRules.prepareReset(.all, snapshot: built, context: ctx)
-                    guard case .candidate(let resetState, _) = resetRes else {
-                        throw Failure.message("\(id): expected .candidate from prepareReset(.all)")
+                    eval(id) {
+                        let ctx = EditorAdjustmentContext(isRaw: true, defaultExposureMode: .preview, cameraTemperature: 5400, cameraTint: -4)
+                        let resetRes = EditorAdjustmentRules.prepareReset(.all, snapshot: built, context: ctx)
+                        guard case .candidate(let resetState, _) = resetRes else {
+                            throw ExpectationMismatch.mismatch("\(id): expected .candidate from prepareReset(.all)")
+                        }
+                        try EditPersistence(directory: dir).save(url, state: resetState)
+                        let reloaded = try EditPersistence(directory: dir).state(for: url)!
+                        try check(approx(reloaded.settings.hdr?.exposure ?? -99, -0.5) && reloaded.settings.hdr?.mode == .sdr, "\(id): dormant HDR preserved")
+                        try check(reloaded.settings.proRAWDecodeVersion == 2, "\(id): proRAWDecodeVersion preserved")
+                        try check(reloaded.settings.processing.version == 2, "\(id): processing version preserved")
+                        try check(reloaded.settings.x3fMode == .legacy, "\(id): x3fMode preserved")
                     }
-                    try store.save(url, state: resetState)
-                    let reloaded = try EditPersistence(directory: dir).state(for: url)!
-                    try check(reloaded.settings.hdr?.exposure == -0.5 && reloaded.settings.hdr?.mode == .sdr, "\(id): dormant HDR preserved")
-                    try check(reloaded.settings.proRAWDecodeVersion == 2, "\(id): proRAWDecodeVersion preserved")
-                    try check(reloaded.settings.processing.version == 2, "\(id): processing version preserved")
-                    try check(reloaded.settings.x3fMode == .legacy, "\(id): x3fMode preserved")
                 case "future_processing_version":
                     let sibRec = byID[sc["sibling_record_id"] as! String]!
                     let (built, _, _) = try buildState(from: baseRec)
@@ -813,16 +982,18 @@ struct Harness {
                     state["settings"] = settings; records[tk] = state; registry["records"] = records
                     try JSONSerialization.data(withJSONObject: registry).write(to: file)
 
-                    let reopened = try EditPersistence(directory: dir)
-                    var threw = false
-                    do { _ = try reopened.state(for: targetURL) } catch is UnusableEditRecordError { threw = true }
-                    try check(threw, "\(id): processing.version=99 must throw UnusableEditRecordError")
-                    try check(try reopened.state(for: sibURL) != nil, "\(id): healthy sibling must remain readable")
-                    let updatedSib = sibBuilt.replacing(settings: { var s = sibBuilt.settings; s.exposure = 1.5; return s }(), preservingFilmID: sibBuilt.filmID)
-                    try reopened.save(sibURL, state: updatedSib)
-                    let diskAfter = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
-                    let diskRecs = diskAfter["records"] as! [String: Any]
-                    try check(diskRecs[tk] != nil, "\(id): unreadable future record preserved on disk across sibling save")
+                    eval(id) {
+                        let reopened = try EditPersistence(directory: dir)
+                        var threw = false
+                        do { _ = try reopened.state(for: targetURL) } catch is UnusableEditRecordError { threw = true }
+                        try check(threw, "\(id): processing.version=99 must throw UnusableEditRecordError")
+                        try check(try reopened.state(for: sibURL) != nil, "\(id): healthy sibling must remain readable")
+                        let updatedSib = sibBuilt.replacing(settings: { var s = sibBuilt.settings; s.exposure = 1.5; return s }(), preservingFilmID: sibBuilt.filmID)
+                        try reopened.save(sibURL, state: updatedSib)
+                        let diskAfter = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+                        let diskRecs = diskAfter["records"] as! [String: Any]
+                        try check(diskRecs[tk] != nil, "\(id): unreadable future record preserved on disk across sibling save")
+                    }
                 case "corrupt_entry":
                     let sibRec = byID[sc["sibling_record_id"] as! String]!
                     let (built, _, _) = try buildState(from: baseRec)
@@ -839,15 +1010,17 @@ struct Harness {
                     registry["records"] = records
                     try JSONSerialization.data(withJSONObject: registry).write(to: file)
 
-                    let reopened = try EditPersistence(directory: dir)
-                    var threw = false
-                    do { _ = try reopened.state(for: targetURL) } catch is UnusableEditRecordError { threw = true }
-                    try check(threw, "\(id): corrupt entry must throw UnusableEditRecordError")
-                    try check(try reopened.state(for: sibURL) != nil, "\(id): healthy sibling readable")
-                    let updatedSib = sibBuilt.replacing(settings: { var s = sibBuilt.settings; s.exposure = 1.1; return s }(), preservingFilmID: sibBuilt.filmID)
-                    try reopened.save(sibURL, state: updatedSib)
-                    let diskAfter = String(data: try Data(contentsOf: file), encoding: .utf8)!
-                    try check(diskAfter.contains("corrupt-entry-payload"), "\(id): corrupt entry bytes preserved across sibling save")
+                    eval(id) {
+                        let reopened = try EditPersistence(directory: dir)
+                        var threw = false
+                        do { _ = try reopened.state(for: targetURL) } catch is UnusableEditRecordError { threw = true }
+                        try check(threw, "\(id): corrupt entry must throw UnusableEditRecordError")
+                        try check(try reopened.state(for: sibURL) != nil, "\(id): healthy sibling readable")
+                        let updatedSib = sibBuilt.replacing(settings: { var s = sibBuilt.settings; s.exposure = 1.1; return s }(), preservingFilmID: sibBuilt.filmID)
+                        try reopened.save(sibURL, state: updatedSib)
+                        let diskAfter = String(data: try Data(contentsOf: file), encoding: .utf8)!
+                        try check(diskAfter.contains("corrupt-entry-payload"), "\(id): corrupt entry bytes preserved across sibling save")
+                    }
                 case "negative_zero":
                     var recCopy = baseRec
                     var sdrCopy = recCopy["sdr_values"] as! [String: Any]
@@ -866,14 +1039,25 @@ struct Harness {
                     state["settings"] = settings; records[tk] = state; registry["records"] = records
                     var txt = String(data: try JSONSerialization.data(withJSONObject: registry), encoding: .utf8)!
                     txt = txt.replacingOccurrences(of: "\"__NEG_ZERO_SENTINEL__\"", with: "-0.0")
-                    try check(txt.contains("-0.0") && !txt.contains("__NEG_ZERO_SENTINEL__"), "\(id): test setup failed to inject -0.0")
+                    try checkSetup(txt.contains("-0.0") && !txt.contains("__NEG_ZERO_SENTINEL__"), "\(id): test setup failed to inject -0.0")
                     try Data(txt.utf8).write(to: file)
-                    let loaded = try EditPersistence(directory: dir).state(for: url)!
-                    try check(loaded.settings.exposure == 0.0 && loaded.settings.exposure.sign == .plus,
-                              "\(id): -0.0 must canonicalize to +0.0 (got \(loaded.settings.exposure), sign=\(loaded.settings.exposure.sign))")
+                    let expectObj = sc["expect"] as! [String: Any]
+                    let assertSignBit = expectObj["assert_sign_bit_positive"] as? Bool ?? false
+
+                    eval(id) {
+                        let loaded = try EditPersistence(directory: dir).state(for: url)!
+                        try check(loaded.settings.exposure == 0.0, "\(id): -0.0 must compare equal to 0.0 (got \(loaded.settings.exposure))")
+                        if assertSignBit {
+                            try check(loaded.settings.exposure.sign == .plus,
+                                      "\(id): -0.0 sign bit must canonicalize to .plus (got \(loaded.settings.exposure.sign))")
+                        }
+                    }
                 default:
-                    throw Failure.message("Unhandled compat kind: \(kind)")
+                    throw HarnessError.setup("Unhandled compat kind: \(kind)")
                 }
+            } catch {
+                fputs("FAIL SETUP[\(id)]: \(error)\n", stderr)
+                failures.append("SETUP[\(id)]: \(error)")
             }
         }
 
@@ -885,7 +1069,7 @@ struct Harness {
             let sibRec = byID[sc["sibling_record_id"] as! String]!
             let mutation = sc["mutation"] as! [String: Any]
             let mKind = mutation["kind"] as! String
-            collect(id) {
+            do {
                 let (built, _, _) = try buildState(from: baseRec)
                 let (sibBuilt, _, _) = try buildState(from: sibRec)
                 let (store, dir, file) = try makeStore(tempRoot: tempRoot, name: "b-\(id)")
@@ -918,7 +1102,7 @@ struct Harness {
                     case "hdr.peak_limit_ev":
                         var hdr = settings["hdr"] as! [String: Any]
                         var r = hdr["rendition"] as! [String: Any]; r["peak_limit_ev"] = val; hdr["rendition"] = r; settings["hdr"] = hdr
-                    default: throw Failure.message("Unhandled out_of_range field: \(field)")
+                    default: throw HarnessError.setup("Unhandled out_of_range field: \(field)")
                     }
                 case "crop_overflow":
                     var g = settings["geometry"] as! [String: Any]
@@ -933,21 +1117,30 @@ struct Harness {
                         "points": [[0.0, 0.0], [0.6, 0.5], [0.4, 0.8], [1.0, 1.0]]
                     ]
                 default:
-                    throw Failure.message("Unhandled boundary mutation: \(mKind)")
+                    throw HarnessError.setup("Unhandled boundary mutation: \(mKind)")
                 }
 
                 state["settings"] = settings; records[tk] = state; registry["records"] = records
                 try JSONSerialization.data(withJSONObject: registry).write(to: file)
 
-                let reopened = try EditPersistence(directory: dir)
-                var threw = false
-                do { _ = try reopened.state(for: targetURL) } catch is UnusableEditRecordError { threw = true }
-                try check(threw, "\(id): invalid boundary value must throw UnusableEditRecordError on read (not silently accept or clamp)")
-                try check(try reopened.state(for: sibURL) != nil, "\(id): sibling must remain readable")
+                eval(id) {
+                    let reopened = try EditPersistence(directory: dir)
+                    var threw = false
+                    do { _ = try reopened.state(for: targetURL) } catch is UnusableEditRecordError { threw = true }
+                    try check(threw, "\(id): invalid boundary value must throw UnusableEditRecordError on read (not silently accept or clamp)")
+                    try check(try reopened.state(for: sibURL) != nil, "\(id): sibling must remain readable")
+                }
+            } catch {
+                fputs("FAIL SETUP[\(id)]: \(error)\n", stderr)
+                failures.append("SETUP[\(id)]: \(error)")
             }
         }
 
-        try check(failures.isEmpty, "\(failures.count) iOS edit-record scenario(s) failed")
-        print("PASS: iOS edit-record fixture suite finished with \(knownEditRecordDivergences.count) registered divergences (cap \(maxKnownEditRecordDivergences))")
+        let orphanKeys = Set(knownEditRecordDivergences.keys).subtracting(evaluatedIDs)
+        try checkSetup(orphanKeys.isEmpty, "Orphan divergence ledger keys not evaluated: \(orphanKeys.sorted())")
+        try checkSetup(knownEditRecordDivergences.count <= maxKnownEditRecordDivergences,
+                       "Divergence count \(knownEditRecordDivergences.count) exceeds cap \(maxKnownEditRecordDivergences)")
+        try checkSetup(failures.isEmpty, "\(failures.count) iOS edit-record scenario(s) failed")
+        print("PASS: iOS edit-record fixture suite finished with \(knownEditRecordDivergences.count) registered divergences (cap \(maxKnownEditRecordDivergences), evaluated \(evaluatedIDs.count))")
     }
 }

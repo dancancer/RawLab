@@ -6,52 +6,39 @@ using System.Text.Json.Nodes;
 // 登记当前真行为差异前以代码实况逐条核验；不静默修改实现或压低 fixture 期望以迎合现实现状。
 internal static class EditRecordFixtureChecks
 {
-    private sealed record EditRecordDivergence(string LedgerId, string Reason);
+    private sealed record EditRecordDivergence(string LedgerId, string Reason, string? ExpectedObservedSubstring = null);
+    private sealed class ExpectationMismatchException(string message) : Exception(message);
+    private sealed class HarnessSetupException(string message) : Exception(message);
+    private enum EvalCatchScope { ExpectationOnly, ExpectationOrPersistenceRejection }
 
-    // 棘轮上限只减不增；新增任何分歧、空理由、陈旧条目或突破上限均必红。
-    // 16 条 X1 闭集拒读 + 1 条 IEEE -0.0 读侧保留负号分歧 = 17。
-    private const int MaxKnownEditRecordDivergences = 17;
+    // 棘轮上限只减不增；新增任何分歧、空理由、陈旧条目、观测摘要漂移或突破上限均必红。
+    // 仅 2 条 Tier-1 X1 扩展块闭集拒读（ToneControlsSettings / AtmosphereSettings 应用 Disallow）；
+    // Tier-2 渲染块 14 条与 roundtrip/compat/boundary 全数通过。
+    private const int MaxKnownEditRecordDivergences = 2;
 
     private static readonly IReadOnlyDictionary<string, EditRecordDivergence> KnownEditRecordDivergences =
         new Dictionary<string, EditRecordDivergence>(StringComparer.Ordinal)
         {
-            ["x1-processing-unknown-field"] = new("P2-01-WIN-X1-01",
-                "ProcessingIdentity applies [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)] instead of tolerating unknown future keys"),
-            ["x1-tone-controls-unknown-field"] = new("P2-01-WIN-X1-02",
-                "ToneControlsSettings applies [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)] instead of tolerating unknown future keys"),
-            ["x1-atmosphere-unknown-field"] = new("P2-01-WIN-X1-03",
-                "AtmosphereSettings applies [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)] instead of tolerating unknown future keys"),
-            ["x1-color-grading-unknown-field"] = new("P2-01-WIN-X1-04",
-                "ColorGradingSettings applies [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)] instead of tolerating unknown future keys"),
-            ["x1-color-grading-zone-unknown-field"] = new("P2-01-WIN-X1-05",
-                "ColorGradingWheel applies [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)] instead of tolerating unknown future keys"),
-            ["x1-tone-curve-unknown-field"] = new("P2-01-WIN-X1-06",
-                "ToneCurveShape.Parse enforces closed key set {mode, points[, channels]} instead of tolerating unknown future keys"),
-            ["x1-tone-curve-channels-unknown-field"] = new("P2-01-WIN-X1-07",
-                "ToneCurveSettings.Parse rejects unknown channel names outside {red, green, blue}"),
-            ["x1-hdr-root-unknown-field"] = new("P2-01-WIN-X1-08",
-                "HDRSettingsJsonConverter.Read enforces closed top-level HDR key set instead of tolerating unknown future keys"),
-            ["x1-hdr-tone-unknown-field"] = new("P2-01-WIN-X1-09",
-                "HDRSettingsJsonConverter.ReadTone enforces closed key set {black_point, curve, curve_strength, white_point}"),
-            ["x1-hdr-color-unknown-field"] = new("P2-01-WIN-X1-10",
-                "HDRSettingsJsonConverter.ReadColor enforces closed key set {grading, hsl, vibrance}"),
-            ["x1-hdr-rendition-unknown-field"] = new("P2-01-WIN-X1-11",
-                "HDRSettingsJsonConverter.ReadRendition enforces closed key set {peak_limit_ev, sdr_contrast, sdr_exposure_ev, sdr_saturation}"),
-            ["x1-hdr-effects-unknown-field"] = new("P2-01-WIN-X1-12",
-                "HDRSettingsJsonConverter.ReadEffects enforces closed EffectsKeys sequence equality"),
-            ["x1-hdr-detail-unknown-field"] = new("P2-01-WIN-X1-13",
-                "HDRSettingsJsonConverter.ReadDetail enforces closed key set {clarity, dehaze, denoise, sharpening}"),
-            ["x1-hdr-look-unknown-field"] = new("P2-01-WIN-X1-14",
-                "HDRSettingsJsonConverter.ReadLook enforces closed key set {name, sha256, strength}"),
-            ["x1-hdr-camera-development-unknown-field"] = new("P2-01-WIN-X1-15",
-                "HDRSettingsJsonConverter.ReadCameraDevelopment enforces closed camera_development key set"),
-            ["x1-hdr-camera-profile-unknown-field"] = new("P2-01-WIN-X1-16",
-                "HDRSettingsJsonConverter.ReadCameraDevelopment enforces closed camera_profile key set {name, sha256}"),
-            ["compat-negative-zero-canonicalized"] = new("P2-01-WIN-COMPAT-01",
-                "System.Text.Json preserves IEEE -0.0 (double.IsNegative == true) rather than canonicalizing to +0.0 on read"),
+            ["x1-tone-controls-unknown-field"] = new(
+                "EDIT-DIV-WIN-X1-01",
+                "Tier-1 outer_container_or_extension: ToneControlsSettings applies [JsonUnmappedMemberHandling(Disallow)] instead of tolerating unknown extension keys",
+                ExpectedObservedSubstring: "UnusableEditRecordException"),
+            ["x1-atmosphere-unknown-field"] = new(
+                "EDIT-DIV-WIN-X1-02",
+                "Tier-1 outer_container_or_extension: AtmosphereSettings applies [JsonUnmappedMemberHandling(Disallow)] instead of tolerating unknown extension keys",
+                ExpectedObservedSubstring: "UnusableEditRecordException"),
         };
 
-    private static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
+    private static void Check(bool condition, string message)
+    {
+        if (!condition) throw new ExpectationMismatchException(message);
+    }
+
+    private static void CheckSetup(bool condition, string message)
+    {
+        if (!condition) throw new HarnessSetupException(message);
+    }
+
     private static bool Approx(double a, double b, double tol = 1e-4) => Math.Abs(a - b) <= tol;
 
     private static readonly string[] HslChannels = ["red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta"];
@@ -60,20 +47,20 @@ internal static class EditRecordFixtureChecks
     {
         foreach (var (id, div) in KnownEditRecordDivergences)
         {
-            Check(!string.IsNullOrWhiteSpace(div.LedgerId), $"EditRecord divergence {id}: non-blank LedgerId required");
-            Check(!string.IsNullOrWhiteSpace(div.Reason), $"EditRecord divergence {id}: non-blank Reason required");
+            CheckSetup(!string.IsNullOrWhiteSpace(div.LedgerId), $"EditRecord divergence {id}: non-blank LedgerId required");
+            CheckSetup(!string.IsNullOrWhiteSpace(div.Reason), $"EditRecord divergence {id}: non-blank Reason required");
         }
-        Check(KnownEditRecordDivergences.Count <= MaxKnownEditRecordDivergences,
+        CheckSetup(KnownEditRecordDivergences.Count <= MaxKnownEditRecordDivergences,
             $"EditRecord divergences ({KnownEditRecordDivergences.Count}) must not exceed monotonic ratchet cap ({MaxKnownEditRecordDivergences})");
 
         using var doc = JsonDocument.Parse(File.ReadAllText(ResolveFixturePath("Shared/fixtures/edit-records-v1.json")));
         var root = doc.RootElement;
-        Check(root.GetProperty("fixture_version").GetInt32() == 1, "fixture_version must be 1");
-        Check(root.GetProperty("spec_version").GetInt32() == 1, "spec_version must be 1");
+        CheckSetup(root.GetProperty("fixture_version").GetInt32() == 1, "fixture_version must be 1");
+        CheckSetup(root.GetProperty("spec_version").GetInt32() == 1, "spec_version must be 1");
 
         var roundtripList = root.GetProperty("roundtrip_records").EnumerateArray().ToArray();
         var byId = roundtripList.ToDictionary(r => r.GetProperty("id").GetString()!, r => r.Clone(), StringComparer.Ordinal);
-        Check(roundtripList.Length == byId.Count, "Duplicate roundtrip_records ID");
+        CheckSetup(roundtripList.Length == byId.Count, "Duplicate roundtrip_records ID");
 
         var tempRoot = Path.Combine(Path.GetTempPath(), "rawlab-win-edit-fixture-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
@@ -82,56 +69,70 @@ internal static class EditRecordFixtureChecks
             var failures = new List<string>();
             var evaluatedIds = new HashSet<string>(StringComparer.Ordinal);
 
-            void Collect(string scenarioId, Action body)
+            void Evaluate(string scenarioId, EvalCatchScope catchScope, Action body)
             {
-                Check(evaluatedIds.Add(scenarioId), "Duplicate evaluated scenario ID: " + scenarioId);
+                CheckSetup(evaluatedIds.Add(scenarioId), "Duplicate evaluated scenario ID: " + scenarioId);
                 try
                 {
                     body();
                     if (KnownEditRecordDivergences.TryGetValue(scenarioId, out var stale))
-                        throw new Exception($"Stale divergence ledger entry '{scenarioId}' ({stale.LedgerId}): scenario now passes");
+                        throw new HarnessSetupException($"Stale divergence ledger entry '{scenarioId}' ({stale.LedgerId}): scenario now passes");
                     Console.WriteLine($"PASS: {scenarioId}");
                 }
-                catch (Exception error)
+                catch (Exception error) when (
+                    error is ExpectationMismatchException ||
+                    (catchScope == EvalCatchScope.ExpectationOrPersistenceRejection && error is UnusableEditRecordException))
                 {
+                    var observed = $"{error.GetType().Name}: {error.Message}";
                     if (KnownEditRecordDivergences.TryGetValue(scenarioId, out var reg))
                     {
-                        Console.WriteLine($"KNOWN DIVERGENCE [{scenarioId}] ({reg.LedgerId}): {reg.Reason} | observed: {error.Message}");
+                        if (!string.IsNullOrEmpty(reg.ExpectedObservedSubstring) &&
+                            !observed.Contains(reg.ExpectedObservedSubstring, StringComparison.Ordinal))
+                        {
+                            var drift = $"DIVERGENCE DRIFT [{scenarioId}] ({reg.LedgerId}): expected substring '{reg.ExpectedObservedSubstring}', got '{observed}'";
+                            failures.Add(drift);
+                            Console.WriteLine("FAIL: " + drift);
+                        }
+                        else
+                        {
+                            Console.WriteLine($"KNOWN DIVERGENCE [{scenarioId}] ({reg.LedgerId}): {reg.Reason} | observed: {observed}");
+                        }
                     }
                     else
                     {
-                        var line = $"RED ANCHOR [{scenarioId}]: {error.Message}";
+                        var line = $"RED ANCHOR [{scenarioId}]: {observed}";
                         failures.Add(line);
                         Console.WriteLine("FAIL: " + line);
                     }
                 }
             }
 
-            // 1. Roundtrip records
+            // 1. Roundtrip records (setup/save before eval; reload/verify inside eval)
             foreach (var rec in roundtripList)
             {
                 var id = rec.GetProperty("id").GetString()!;
-                Collect("roundtrip:" + id, () =>
+                var photoName = rec.GetProperty("photo").GetProperty("name").GetString()!;
+                var (built, metadata) = BuildSnapshot(rec);
+                var dir = Path.Combine(tempRoot, "rt-" + id);
+                Directory.CreateDirectory(dir);
+                var photoPath = TouchPhoto(tempRoot, photoName);
+                var store = new EditStore(dir);
+                store.Save(photoPath, built.Settings, built.Look);
+                var hasKeptReceipt = metadata.TryGetProperty("migration_receipt", out var receipt) &&
+                    receipt.TryGetProperty("status", out var st) && st.GetString() == ProcessingMigrationReceipt.Kept;
+                if (hasKeptReceipt)
                 {
-                    var photoName = rec.GetProperty("photo").GetProperty("name").GetString()!;
-                    var (built, metadata) = BuildSnapshot(rec);
-                    var dir = Path.Combine(tempRoot, "rt-" + id);
-                    Directory.CreateDirectory(dir);
-                    var photoPath = TouchPhoto(tempRoot, photoName);
-                    var store = new EditStore(dir);
-                    store.Save(photoPath, built.Settings, built.Look);
-                    if (metadata.TryGetProperty("migration_receipt", out var receipt) &&
-                        receipt.TryGetProperty("status", out var st) && st.GetString() == ProcessingMigrationReceipt.Kept)
-                    {
-                        var beforeEdit = store.Find(photoPath) ?? throw new Exception($"{id}: expected saved edit before migration receipt");
-                        var identity = OriginalIdentity.Read(photoPath);
-                        _ = store.CommitProcessingMigration(identity, beforeEdit.Copy(), beforeEdit.Copy(), ProcessingMigrationReceipt.Kept);
-                    }
+                    var beforeEdit = store.Find(photoPath) ?? throw new HarnessSetupException($"{id}: expected saved edit before migration receipt");
+                    var identity = OriginalIdentity.Read(photoPath);
+                    _ = store.CommitProcessingMigration(identity, beforeEdit.Copy(), beforeEdit.Copy(), ProcessingMigrationReceipt.Kept);
+                }
+
+                Evaluate("roundtrip:" + id, EvalCatchScope.ExpectationOnly, () =>
+                {
                     var reopened = new EditStore(dir);
-                    var reloaded = reopened.Find(photoPath) ?? throw new Exception($"{id}: reloaded edit must not be null");
+                    var reloaded = reopened.Find(photoPath) ?? throw new ExpectationMismatchException($"{id}: reloaded edit must not be null");
                     VerifyEdit(reloaded, rec);
-                    if (metadata.TryGetProperty("migration_receipt", out var receipt2) &&
-                        receipt2.TryGetProperty("status", out var st2) && st2.GetString() == ProcessingMigrationReceipt.Kept)
+                    if (hasKeptReceipt)
                     {
                         Check(reopened.ReadProcessingMigration(photoPath)?.Status == ProcessingMigrationReceipt.Kept,
                             $"{id}: kept migration receipt must reload");
@@ -139,7 +140,7 @@ internal static class EditRecordFixtureChecks
                 });
             }
 
-            // 2. X1 read-side unknown field scenarios
+            // 2. X1 read-side Two-Tier unknown field scenarios
             foreach (var sc in root.GetProperty("unknown_field_scenarios").EnumerateArray())
             {
                 var id = sc.GetProperty("id").GetString()!;
@@ -148,29 +149,79 @@ internal static class EditRecordFixtureChecks
                 var scope = sc.GetProperty("target_scope").GetString()!;
                 var key = sc.GetProperty("inject_key").GetString()!;
                 var val = sc.GetProperty("inject_value").Clone();
-                Collect(id, () =>
+                var expectMode = sc.GetProperty("expect").GetString()!;
+                var preserveRawDisk = sc.TryGetProperty("preserve_raw_disk_entry", out var prde) && prde.GetBoolean();
+
+                var (built, _) = BuildSnapshot(baseRec);
+                var (sibBuilt, _) = BuildSnapshot(byId["raster-sdr-neutral"]);
+                var dir = Path.Combine(tempRoot, "x1-" + id);
+                Directory.CreateDirectory(dir);
+                var editsFile = Path.Combine(dir, "edits.json");
+                var targetPath = TouchPhoto(tempRoot, $"target-{id}.DNG");
+                var sibPath = TouchPhoto(tempRoot, $"sibling-{id}.JPG");
+                var store = new EditStore(dir);
+                store.Save(targetPath, built.Settings, built.Look);
+                store.Save(sibPath, sibBuilt.Settings, sibBuilt.Look);
+
+                var registry = JsonNode.Parse(File.ReadAllText(editsFile))!.AsObject();
+                var tk = OriginalIdentity.Read(targetPath).Path;
+                MutateJsonScope(registry, tk, scope, key, val);
+                File.WriteAllText(editsFile, registry.ToJsonString());
+
+                var catchScope = expectMode switch
                 {
-                    var (built, _) = BuildSnapshot(baseRec);
-                    var (sibBuilt, _) = BuildSnapshot(byId["raster-sdr-neutral"]);
-                    var dir = Path.Combine(tempRoot, "x1-" + id);
-                    Directory.CreateDirectory(dir);
-                    var editsFile = Path.Combine(dir, "edits.json");
-                    var targetPath = TouchPhoto(tempRoot, $"target-{id}.DNG");
-                    var sibPath = TouchPhoto(tempRoot, $"sibling-{id}.JPG");
-                    var store = new EditStore(dir);
-                    store.Save(targetPath, built.Settings, built.Look);
-                    store.Save(sibPath, sibBuilt.Settings, sibBuilt.Look);
+                    "load_preserving_values" => EvalCatchScope.ExpectationOrPersistenceRejection,
+                    "reject_isolating_record" => EvalCatchScope.ExpectationOnly,
+                    _ => throw new HarnessSetupException("Unhandled X1 expect mode: " + expectMode)
+                };
 
-                    var registry = JsonNode.Parse(File.ReadAllText(editsFile))!.AsObject();
-                    var tk = OriginalIdentity.Read(targetPath).Path;
-                    MutateJsonScope(registry, tk, scope, key, val);
-                    File.WriteAllText(editsFile, registry.ToJsonString());
-
+                Evaluate(id, catchScope, () =>
+                {
                     var reopened = new EditStore(dir);
-                    var loadedTarget = reopened.Find(targetPath) ?? throw new Exception($"{id}: target record must remain readable");
-                    VerifyEdit(loadedTarget, baseRec);
-                    var loadedSibling = reopened.Find(sibPath);
-                    Check(loadedSibling != null, $"{id}: sibling record must remain readable");
+                    if (expectMode == "load_preserving_values")
+                    {
+                        var loadedTarget = reopened.Find(targetPath) ?? throw new ExpectationMismatchException($"{id}: Tier-1 target record must remain readable");
+                        VerifyEdit(loadedTarget, baseRec);
+                        var loadedSibling = reopened.Find(sibPath);
+                        Check(loadedSibling != null, $"{id}: Tier-1 sibling record must remain readable");
+                        if (preserveRawDisk)
+                        {
+                            var updatedSib = sibBuilt.Settings.Copy();
+                            updatedSib.Values[(int)Parameter.Exposure] = 1.25;
+                            reopened.Save(sibPath, updatedSib, sibBuilt.Look);
+
+                            var diskAfter = JsonNode.Parse(File.ReadAllText(editsFile))!.AsObject();
+                            var recordsAfter = diskAfter["Records"]!.AsObject();
+                            if (scope == "store_sibling_entry")
+                            {
+                                const string extraKey = @"C:\tmp\__future_sibling_photo__.ARW";
+                                Check(recordsAfter.ContainsKey(extraKey) && recordsAfter[extraKey]![key] != null,
+                                    $"{id}: unknown sibling store entry must stay on disk across sibling save");
+                            }
+                            else
+                            {
+                                Check(recordsAfter.ContainsKey(tk), $"{id}: target raw disk entry must stay on disk across sibling save");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        var threw = false;
+                        try { _ = reopened.ReadState(targetPath); }
+                        catch (UnusableEditRecordException) { threw = true; }
+                        Check(threw, $"{id}: Tier-2 unknown key in '{scope}' must reject record with UnusableEditRecordException");
+                        Check(reopened.Find(sibPath) != null, $"{id}: healthy sibling must remain readable");
+                        if (preserveRawDisk)
+                        {
+                            var updatedSib = sibBuilt.Settings.Copy();
+                            updatedSib.Values[(int)Parameter.Exposure] = 1.25;
+                            reopened.Save(sibPath, updatedSib, sibBuilt.Look);
+
+                            var diskAfter = JsonNode.Parse(File.ReadAllText(editsFile))!.AsObject();
+                            Check(diskAfter["Records"]!.AsObject().ContainsKey(tk),
+                                $"{id}: rejected Tier-2 record bytes must stay on disk across sibling save");
+                        }
+                    }
                 });
             }
 
@@ -180,81 +231,159 @@ internal static class EditRecordFixtureChecks
                 var id = sc.GetProperty("id").GetString()!;
                 var kind = sc.GetProperty("kind").GetString()!;
                 var baseRec = byId[sc.GetProperty("base_record_id").GetString()!];
-                Collect(id, () =>
+
+                switch (kind)
                 {
-                    switch (kind)
+                    case "legacy_omitted_extensions":
                     {
-                        case "legacy_omitted_extensions":
+                        var (built, _) = BuildSnapshot(baseRec);
+                        var dir = Path.Combine(tempRoot, "c-" + id);
+                        Directory.CreateDirectory(dir);
+                        var editsFile = Path.Combine(dir, "edits.json");
+                        var url = TouchPhoto(tempRoot, $"c-{id}.JPG");
+                        new EditStore(dir).Save(url, built.Settings, built.Look);
+
+                        var registry = JsonNode.Parse(File.ReadAllText(editsFile))!.AsObject();
+                        var tk = OriginalIdentity.Read(url).Path;
+                        var settingsObj = registry["Records"]!.AsObject()[tk]!.AsObject()["Settings"]!.AsObject();
+                        foreach (var drop in new[] {
+                            "Processing", "X3fMode", "MasterRecipeSettingsVersion", "ToneControls",
+                            "Atmosphere", "ColorGrading", "Curve", "HDR", "hdrCameraAI", "ProRAWDecodeVersion" })
+                            settingsObj.Remove(drop);
+                        File.WriteAllText(editsFile, registry.ToJsonString());
+
+                        var hasWire = sc.TryGetProperty("legacy_wire_samples", out var lws) &&
+                                      lws.TryGetProperty("windows_json", out var wjson);
+                        var wireDir = Path.Combine(tempRoot, "c-wire-" + id);
+                        string? wirePath = null;
+                        JsonElement expDecoded = default;
+                        if (hasWire)
                         {
-                            var (built, _) = BuildSnapshot(baseRec);
-                            var dir = Path.Combine(tempRoot, "c-" + id);
-                            Directory.CreateDirectory(dir);
-                            var editsFile = Path.Combine(dir, "edits.json");
-                            var url = TouchPhoto(tempRoot, $"c-{id}.JPG");
-                            new EditStore(dir).Save(url, built.Settings, built.Look);
+                            Directory.CreateDirectory(wireDir);
+                            wirePath = TouchPhoto(tempRoot, wjson.GetProperty("photo_name").GetString()!);
+                            var wireId = OriginalIdentity.Read(wirePath);
+                            var wireJson = wjson.GetProperty("store_json").GetString()!
+                                .Replace("\"__PHOTO_PATH__\"", JsonSerializer.Serialize(wireId.Path), StringComparison.Ordinal)
+                                .Replace("__IDENTITY_JSON__", JsonSerializer.Serialize(wireId), StringComparison.Ordinal);
+                            CheckSetup(!wireJson.Contains("__PHOTO_PATH__", StringComparison.Ordinal) &&
+                                       !wireJson.Contains("__IDENTITY_JSON__", StringComparison.Ordinal),
+                                $"{id}: failed to substitute windows_json placeholders");
+                            File.WriteAllText(Path.Combine(wireDir, "edits.json"), wireJson);
+                            expDecoded = wjson.GetProperty("expect_decoded").Clone();
+                        }
 
-                            var registry = JsonNode.Parse(File.ReadAllText(editsFile))!.AsObject();
-                            var tk = OriginalIdentity.Read(url).Path;
-                            var settingsObj = registry["Records"]!.AsObject()[tk]!.AsObject()["Settings"]!.AsObject();
-                            foreach (var drop in new[] {
-                                "Processing", "X3fMode", "MasterRecipeSettingsVersion", "ToneControls",
-                                "Atmosphere", "ColorGrading", "Curve", "HDR", "hdrCameraAI", "ProRAWDecodeVersion" })
-                                settingsObj.Remove(drop);
-                            File.WriteAllText(editsFile, registry.ToJsonString());
-
-                            var loaded = new EditStore(dir).Find(url) ?? throw new Exception($"{id}: legacy record must load");
+                        Evaluate(id, EvalCatchScope.ExpectationOrPersistenceRejection, () =>
+                        {
+                            var loaded = new EditStore(dir).Find(url) ?? throw new ExpectationMismatchException($"{id}: legacy record must load");
                             Check(loaded.Settings.Processing.Version == 1, $"{id}: omitted Processing must default to v1");
                             Check(loaded.Settings.X3fMode == X3fMode.Legacy, $"{id}: omitted X3fMode must default to Legacy");
                             Check(loaded.Settings.HDR == null, $"{id}: omitted HDR must default to null");
-                            break;
-                        }
-                        case "sdr_reset_preserves_dormant_hdr":
+                            if (hasWire && wirePath != null)
+                            {
+                                var wireLoaded = new EditStore(wireDir).Find(wirePath) ?? throw new ExpectationMismatchException($"{id}: legacy windows_json wire sample must load");
+                                Check(wireLoaded.Look == expDecoded.GetProperty("look").GetString(), $"{id}: wire Look mismatch");
+                                Check(wireLoaded.Settings.Processing.Version == expDecoded.GetProperty("processing_version").GetInt32(), $"{id}: wire Processing.Version");
+                                Check((wireLoaded.Settings.X3fMode == X3fMode.Legacy ? "legacy" : "normal-v1") == expDecoded.GetProperty("x3f_mode").GetString(), $"{id}: wire X3fMode");
+                                Check(wireLoaded.Settings.HDR == null, $"{id}: wire HDR must default null");
+                                Check(!wireLoaded.Settings.CameraWhiteBalance, $"{id}: wire CameraWhiteBalance=false");
+                                Check(Approx(wireLoaded.Settings.AsShotTemperature ?? -1, 6500.0), $"{id}: wire AsShotTemperature");
+                                Check(Approx(wireLoaded.Settings.AsShotTint ?? -999, 0.0), $"{id}: wire AsShotTint");
+                                Check(Approx(wireLoaded.Settings.Values[(int)Parameter.Strength], expDecoded.GetProperty("strength").GetDouble()), $"{id}: wire strength");
+                                Check(Approx(wireLoaded.Settings.Values[(int)Parameter.Exposure], expDecoded.GetProperty("exposure").GetDouble()), $"{id}: wire exposure");
+                                Check(Approx(wireLoaded.Settings.Values[(int)Parameter.Temperature], expDecoded.GetProperty("temperature").GetDouble()), $"{id}: wire temperature");
+                                Check(Approx(wireLoaded.Settings.Values[(int)Parameter.Tint], expDecoded.GetProperty("tint").GetDouble()), $"{id}: wire tint");
+                                Check(Approx(wireLoaded.Settings.Values[(int)Parameter.Contrast], expDecoded.GetProperty("contrast").GetDouble()), $"{id}: wire contrast");
+                                Check(Approx(wireLoaded.Settings.Values[(int)Parameter.Highlights], expDecoded.GetProperty("highlights").GetDouble()), $"{id}: wire highlights");
+                                Check(Approx(wireLoaded.Settings.Values[(int)Parameter.Shadows], expDecoded.GetProperty("shadows").GetDouble()), $"{id}: wire shadows");
+                                Check(Approx(wireLoaded.Settings.Values[(int)Parameter.Saturation], expDecoded.GetProperty("saturation").GetDouble()), $"{id}: wire saturation");
+                                Check(Approx(wireLoaded.Settings.Values[(int)Parameter.Sharpening], expDecoded.GetProperty("sharpening").GetDouble()), $"{id}: wire sharpening");
+                            }
+                        });
+                        break;
+                    }
+                    case "sdr_reset_preserves_dormant_hdr":
+                    {
+                        var (built, _) = BuildSnapshot(baseRec);
+                        var dir = Path.Combine(tempRoot, "c-" + id);
+                        Directory.CreateDirectory(dir);
+                        var url = TouchPhoto(tempRoot, $"c-{id}.ARW");
+                        new EditStore(dir).Save(url, built.Settings, built.Look);
+
+                        var aiBaseId = sc.GetProperty("camera_ai_base_record_id").GetString()!;
+                        var (builtAi, _) = BuildSnapshot(byId[aiBaseId]);
+                        CheckSetup(builtAi.Settings.HDR != null && builtAi.Settings.HDRCameraAIEnabled,
+                            $"{id}: camera_ai_base_record_id '{aiBaseId}' must carry HDR subtree and HDRCameraAIEnabled=true");
+                        var aiValues = (double[])builtAi.Settings.Values.Clone();
+                        aiValues[(int)Parameter.Exposure] = 0.75;
+                        var dormantAiSettings = builtAi.Settings with
                         {
-                            var (built, _) = BuildSnapshot(baseRec);
-                            var dir = Path.Combine(tempRoot, "c-" + id);
-                            Directory.CreateDirectory(dir);
-                            var url = TouchPhoto(tempRoot, $"c-{id}.ARW");
-                            var store = new EditStore(dir);
-                            store.Save(url, built.Settings, built.Look);
+                            Values = aiValues,
+                            HDR = builtAi.Settings.HDR! with { Mode = HDRMode.Sdr }
+                        };
+                        var aiDir = Path.Combine(tempRoot, "c-ai-" + id);
+                        Directory.CreateDirectory(aiDir);
+                        var aiUrl = TouchPhoto(tempRoot, $"c-ai-{id}.DNG");
+                        new EditStore(aiDir).Save(aiUrl, dormantAiSettings, builtAi.Look);
+
+                        var expectHdrCamAi = sc.GetProperty("expect").GetProperty("hdr_camera_ai_preserved").GetBoolean();
+
+                        Evaluate(id, EvalCatchScope.ExpectationOnly, () =>
+                        {
                             var loadedBefore = new EditStore(dir).ReadState(url);
                             Check(loadedBefore.Edit != null, $"{id}: expected seeded edit");
                             var res = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), loadedBefore.Edit!);
                             Check(res.Status == EditorResetStatus.Ready && res.Candidate != null, $"{id}: expected Ready reset candidate");
                             _ = new EditStore(dir).SaveState(res.Candidate!.Identity, res.Candidate);
 
-                            var after = new EditStore(dir).Find(url) ?? throw new Exception($"{id}: reset record must remain readable");
+                            var after = new EditStore(dir).Find(url) ?? throw new ExpectationMismatchException($"{id}: reset record must remain readable");
                             Check(after.Settings.Processing.Version == 2, $"{id}: Processing v2 preserved");
                             Check(after.Settings.X3fMode == X3fMode.Legacy, $"{id}: X3fMode legacy preserved");
                             Check(after.Settings.ProRAWDecodeVersion == 2, $"{id}: ProRAWDecodeVersion 2 preserved");
                             Check(after.Settings.HDR?.Mode == HDRMode.Sdr, $"{id}: dormant HDR mode stays Sdr");
                             Check(Approx(after.Settings.HDR?.Exposure ?? -99, -0.5), $"{id}: dormant HDR exposure preserved");
-                            break;
-                        }
-                        case "future_processing_version":
+
+                            var loadedAiBefore = new EditStore(aiDir).ReadState(aiUrl);
+                            Check(loadedAiBefore.Edit != null, $"{id}: expected seeded camera-AI edit");
+                            var resAi = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), loadedAiBefore.Edit!);
+                            Check(resAi.Status == EditorResetStatus.Ready && resAi.Candidate != null,
+                                $"{id}: expected Ready camera-AI reset candidate (got {resAi.Status}: {resAi.Reason})");
+                            _ = new EditStore(aiDir).SaveState(resAi.Candidate!.Identity, resAi.Candidate);
+
+                            var afterAi = new EditStore(aiDir).Find(aiUrl) ?? throw new ExpectationMismatchException($"{id}: camera-AI reset record must remain readable");
+                            Check(afterAi.Settings.HDRCameraAIEnabled == expectHdrCamAi, $"{id}: HDRCameraAIEnabled preserved across SDR reset");
+                            Check(afterAi.Settings.HDR?.Mode == HDRMode.Sdr, $"{id}: camera-AI dormant HDR mode stays Sdr");
+                            Check(Approx(afterAi.Settings.HDR?.Exposure ?? -99, 0.25), $"{id}: camera-AI dormant HDR exposure preserved");
+                            Check(Approx(afterAi.Settings.Values[(int)Parameter.Exposure], 0.0), $"{id}: camera-AI SDR exposure reset to 0");
+                        });
+                        break;
+                    }
+                    case "future_processing_version":
+                    {
+                        var sibRec = byId[sc.GetProperty("sibling_record_id").GetString()!];
+                        var (built, _) = BuildSnapshot(baseRec);
+                        var (sibBuilt, _) = BuildSnapshot(sibRec);
+                        var dir = Path.Combine(tempRoot, "c-" + id);
+                        Directory.CreateDirectory(dir);
+                        var editsFile = Path.Combine(dir, "edits.json");
+                        var targetPath = TouchPhoto(tempRoot, $"c-fut-{id}.ARW");
+                        var sibPath = TouchPhoto(tempRoot, $"c-sib-{id}.JPG");
+                        var store = new EditStore(dir);
+                        store.Save(targetPath, built.Settings, built.Look);
+                        store.Save(sibPath, sibBuilt.Settings, sibBuilt.Look);
+
+                        var registry = JsonNode.Parse(File.ReadAllText(editsFile))!.AsObject();
+                        var tk = OriginalIdentity.Read(targetPath).Path;
+                        var settingsObj = registry["Records"]!.AsObject()[tk]!.AsObject()["Settings"]!.AsObject();
+                        settingsObj["Processing"] = new JsonObject
                         {
-                            var sibRec = byId[sc.GetProperty("sibling_record_id").GetString()!];
-                            var (built, _) = BuildSnapshot(baseRec);
-                            var (sibBuilt, _) = BuildSnapshot(sibRec);
-                            var dir = Path.Combine(tempRoot, "c-" + id);
-                            Directory.CreateDirectory(dir);
-                            var editsFile = Path.Combine(dir, "edits.json");
-                            var targetPath = TouchPhoto(tempRoot, $"c-fut-{id}.ARW");
-                            var sibPath = TouchPhoto(tempRoot, $"c-sib-{id}.JPG");
-                            var store = new EditStore(dir);
-                            store.Save(targetPath, built.Settings, built.Look);
-                            store.Save(sibPath, sibBuilt.Settings, sibBuilt.Look);
+                            ["family"] = "rawlab",
+                            ["version"] = sc.GetProperty("processing_version").GetInt32(),
+                            ["quality"] = "standard"
+                        };
+                        File.WriteAllText(editsFile, registry.ToJsonString());
 
-                            var registry = JsonNode.Parse(File.ReadAllText(editsFile))!.AsObject();
-                            var tk = OriginalIdentity.Read(targetPath).Path;
-                            var settingsObj = registry["Records"]!.AsObject()[tk]!.AsObject()["Settings"]!.AsObject();
-                            settingsObj["Processing"] = new JsonObject
-                            {
-                                ["family"] = "rawlab",
-                                ["version"] = sc.GetProperty("processing_version").GetInt32(),
-                                ["quality"] = "standard"
-                            };
-                            File.WriteAllText(editsFile, registry.ToJsonString());
-
+                        Evaluate(id, EvalCatchScope.ExpectationOnly, () =>
+                        {
                             var reopened = new EditStore(dir);
                             var threw = false;
                             try { _ = reopened.ReadState(targetPath); }
@@ -269,27 +398,30 @@ internal static class EditRecordFixtureChecks
                             var diskAfter = JsonNode.Parse(File.ReadAllText(editsFile))!.AsObject();
                             Check(diskAfter["Records"]!.AsObject().ContainsKey(tk),
                                 $"{id}: unreadable future record preserved on disk across sibling save");
-                            break;
-                        }
-                        case "corrupt_entry":
+                        });
+                        break;
+                    }
+                    case "corrupt_entry":
+                    {
+                        var sibRec = byId[sc.GetProperty("sibling_record_id").GetString()!];
+                        var (built, _) = BuildSnapshot(baseRec);
+                        var (sibBuilt, _) = BuildSnapshot(sibRec);
+                        var dir = Path.Combine(tempRoot, "c-" + id);
+                        Directory.CreateDirectory(dir);
+                        var editsFile = Path.Combine(dir, "edits.json");
+                        var targetPath = TouchPhoto(tempRoot, $"c-bad-{id}.ARW");
+                        var sibPath = TouchPhoto(tempRoot, $"c-sib2-{id}.JPG");
+                        var store = new EditStore(dir);
+                        store.Save(targetPath, built.Settings, built.Look);
+                        store.Save(sibPath, sibBuilt.Settings, sibBuilt.Look);
+
+                        var registry = JsonNode.Parse(File.ReadAllText(editsFile))!.AsObject();
+                        var tk = OriginalIdentity.Read(targetPath).Path;
+                        registry["Records"]!.AsObject()[tk] = "corrupt-entry-payload";
+                        File.WriteAllText(editsFile, registry.ToJsonString());
+
+                        Evaluate(id, EvalCatchScope.ExpectationOnly, () =>
                         {
-                            var sibRec = byId[sc.GetProperty("sibling_record_id").GetString()!];
-                            var (built, _) = BuildSnapshot(baseRec);
-                            var (sibBuilt, _) = BuildSnapshot(sibRec);
-                            var dir = Path.Combine(tempRoot, "c-" + id);
-                            Directory.CreateDirectory(dir);
-                            var editsFile = Path.Combine(dir, "edits.json");
-                            var targetPath = TouchPhoto(tempRoot, $"c-bad-{id}.ARW");
-                            var sibPath = TouchPhoto(tempRoot, $"c-sib2-{id}.JPG");
-                            var store = new EditStore(dir);
-                            store.Save(targetPath, built.Settings, built.Look);
-                            store.Save(sibPath, sibBuilt.Settings, sibBuilt.Look);
-
-                            var registry = JsonNode.Parse(File.ReadAllText(editsFile))!.AsObject();
-                            var tk = OriginalIdentity.Read(targetPath).Path;
-                            registry["Records"]!.AsObject()[tk] = "corrupt-entry-payload";
-                            File.WriteAllText(editsFile, registry.ToJsonString());
-
                             var reopened = new EditStore(dir);
                             var threw = false;
                             try { _ = reopened.ReadState(targetPath); }
@@ -304,37 +436,46 @@ internal static class EditRecordFixtureChecks
                             var diskText = File.ReadAllText(editsFile);
                             Check(diskText.Contains("corrupt-entry-payload", StringComparison.Ordinal),
                                 $"{id}: corrupt entry bytes preserved across sibling save");
-                            break;
-                        }
-                        case "negative_zero":
-                        {
-                            var (built, _) = BuildSnapshot(baseRec);
-                            var snap = built.Settings.Copy();
-                            snap.Values[(int)Parameter.Exposure] = 0.0;
-                            var dir = Path.Combine(tempRoot, "c-" + id);
-                            Directory.CreateDirectory(dir);
-                            var editsFile = Path.Combine(dir, "edits.json");
-                            var url = TouchPhoto(tempRoot, $"c-nz-{id}.JPG");
-                            new EditStore(dir).Save(url, snap, built.Look);
-
-                            var registry = JsonNode.Parse(File.ReadAllText(editsFile))!.AsObject();
-                            var tk = OriginalIdentity.Read(url).Path;
-                            var valuesArr = registry["Records"]!.AsObject()[tk]!.AsObject()["Settings"]!.AsObject()["Values"]!.AsArray();
-                            valuesArr[(int)Parameter.Exposure] = "__NEG_ZERO_SENTINEL__";
-                            var mutated = registry.ToJsonString().Replace("\"__NEG_ZERO_SENTINEL__\"", "-0.0", StringComparison.Ordinal);
-                            Check(mutated.Contains("-0.0", StringComparison.Ordinal), $"{id}: test setup failed to inject -0.0");
-                            File.WriteAllText(editsFile, mutated);
-
-                            var loaded = new EditStore(dir).Find(url) ?? throw new Exception($"{id}: negative zero record failed to load");
-                            var exposure = loaded.Settings.Values[(int)Parameter.Exposure];
-                            Check(exposure == 0.0 && !double.IsNegative(exposure),
-                                $"{id}: -0.0 must canonicalize to +0.0 (got {exposure}, IsNegative={double.IsNegative(exposure)})");
-                            break;
-                        }
-                        default:
-                            throw new Exception("Unhandled compat kind: " + kind);
+                        });
+                        break;
                     }
-                });
+                    case "negative_zero":
+                    {
+                        var (built, _) = BuildSnapshot(baseRec);
+                        var snap = built.Settings.Copy();
+                        snap.Values[(int)Parameter.Exposure] = 0.0;
+                        var dir = Path.Combine(tempRoot, "c-" + id);
+                        Directory.CreateDirectory(dir);
+                        var editsFile = Path.Combine(dir, "edits.json");
+                        var url = TouchPhoto(tempRoot, $"c-nz-{id}.JPG");
+                        new EditStore(dir).Save(url, snap, built.Look);
+
+                        var registry = JsonNode.Parse(File.ReadAllText(editsFile))!.AsObject();
+                        var tk = OriginalIdentity.Read(url).Path;
+                        var valuesArr = registry["Records"]!.AsObject()[tk]!.AsObject()["Settings"]!.AsObject()["Values"]!.AsArray();
+                        valuesArr[(int)Parameter.Exposure] = "__NEG_ZERO_SENTINEL__";
+                        var mutated = registry.ToJsonString().Replace("\"__NEG_ZERO_SENTINEL__\"", "-0.0", StringComparison.Ordinal);
+                        CheckSetup(mutated.Contains("-0.0", StringComparison.Ordinal), $"{id}: test setup failed to inject -0.0");
+                        File.WriteAllText(editsFile, mutated);
+
+                        var assertSignBitPositive = sc.GetProperty("expect").TryGetProperty("assert_sign_bit_positive", out var asbp) && asbp.GetBoolean();
+
+                        Evaluate(id, EvalCatchScope.ExpectationOrPersistenceRejection, () =>
+                        {
+                            var loaded = new EditStore(dir).Find(url) ?? throw new ExpectationMismatchException($"{id}: negative zero record failed to load");
+                            var exposure = loaded.Settings.Values[(int)Parameter.Exposure];
+                            Check(exposure == 0.0, $"{id}: -0.0 must load numerically equal to 0.0 (got {exposure})");
+                            if (assertSignBitPositive)
+                            {
+                                Check(!double.IsNegative(exposure),
+                                    $"{id}: -0.0 must canonicalize to +0.0 (got {exposure}, IsNegative={double.IsNegative(exposure)})");
+                            }
+                        });
+                        break;
+                    }
+                    default:
+                        throw new HarnessSetupException("Unhandled compat kind: " + kind);
+                }
             }
 
             // 4. Boundary rejection scenarios
@@ -345,78 +486,79 @@ internal static class EditRecordFixtureChecks
                 var sibRec = byId[sc.GetProperty("sibling_record_id").GetString()!];
                 var mutation = sc.GetProperty("mutation");
                 var mKind = mutation.GetProperty("kind").GetString()!;
-                Collect(id, () =>
+
+                var (built, _) = BuildSnapshot(baseRec);
+                var (sibBuilt, _) = BuildSnapshot(sibRec);
+                var dir = Path.Combine(tempRoot, "b-" + id);
+                Directory.CreateDirectory(dir);
+                var editsFile = Path.Combine(dir, "edits.json");
+                var targetPath = TouchPhoto(tempRoot, $"b-t-{id}.DNG");
+                var sibPath = TouchPhoto(tempRoot, $"b-s-{id}.JPG");
+                var store = new EditStore(dir);
+                store.Save(targetPath, built.Settings, built.Look);
+                store.Save(sibPath, sibBuilt.Settings, sibBuilt.Look);
+
+                var registry = JsonNode.Parse(File.ReadAllText(editsFile))!.AsObject();
+                var tk = OriginalIdentity.Read(targetPath).Path;
+                var settingsObj = registry["Records"]!.AsObject()[tk]!.AsObject()["Settings"]!.AsObject();
+
+                switch (mKind)
                 {
-                    var (built, _) = BuildSnapshot(baseRec);
-                    var (sibBuilt, _) = BuildSnapshot(sibRec);
-                    var dir = Path.Combine(tempRoot, "b-" + id);
-                    Directory.CreateDirectory(dir);
-                    var editsFile = Path.Combine(dir, "edits.json");
-                    var targetPath = TouchPhoto(tempRoot, $"b-t-{id}.DNG");
-                    var sibPath = TouchPhoto(tempRoot, $"b-s-{id}.JPG");
-                    var store = new EditStore(dir);
-                    store.Save(targetPath, built.Settings, built.Look);
-                    store.Save(sibPath, sibBuilt.Settings, sibBuilt.Look);
-
-                    var registry = JsonNode.Parse(File.ReadAllText(editsFile))!.AsObject();
-                    var tk = OriginalIdentity.Read(targetPath).Path;
-                    var settingsObj = registry["Records"]!.AsObject()[tk]!.AsObject()["Settings"]!.AsObject();
-
-                    switch (mKind)
+                    case "out_of_range":
                     {
-                        case "out_of_range":
+                        var field = mutation.GetProperty("field").GetString()!;
+                        var val = mutation.GetProperty("value").GetDouble();
+                        switch (field)
                         {
-                            var field = mutation.GetProperty("field").GetString()!;
-                            var val = mutation.GetProperty("value").GetDouble();
-                            switch (field)
-                            {
-                                case "light.exposure":
-                                    settingsObj["Values"]!.AsArray()[(int)Parameter.Exposure] = val;
-                                    break;
-                                case "color.white_balance.temperature_kelvin":
-                                    settingsObj["Values"]!.AsArray()[(int)Parameter.Temperature] = val;
-                                    break;
-                                case "effects.vignette.amount":
-                                    settingsObj["Effects"]!.AsObject()["VignetteAmount"] = val;
-                                    break;
-                                case "color.hsl.hue.red":
-                                    settingsObj["Hsl"]!.AsObject()["Values"]!.AsArray()[0] = val;
-                                    break;
-                                case "color.grading.shadows.hue":
-                                    settingsObj["ColorGrading"]!.AsObject()["Shadows"]!.AsObject()["Hue"] = val;
-                                    break;
-                                case "hdr.peak_limit_ev":
-                                    settingsObj["HDR"]!.AsObject()["rendition"]!.AsObject()["peak_limit_ev"] = val;
-                                    break;
-                                default:
-                                    throw new Exception("Unhandled out_of_range field: " + field);
-                            }
-                            break;
+                            case "light.exposure":
+                                settingsObj["Values"]!.AsArray()[(int)Parameter.Exposure] = val;
+                                break;
+                            case "color.white_balance.temperature_kelvin":
+                                settingsObj["Values"]!.AsArray()[(int)Parameter.Temperature] = val;
+                                break;
+                            case "effects.vignette.amount":
+                                settingsObj["Effects"]!.AsObject()["VignetteAmount"] = val;
+                                break;
+                            case "color.hsl.hue.red":
+                                settingsObj["Hsl"]!.AsObject()["Values"]!.AsArray()[0] = val;
+                                break;
+                            case "color.grading.shadows.hue":
+                                settingsObj["ColorGrading"]!.AsObject()["Shadows"]!.AsObject()["Hue"] = val;
+                                break;
+                            case "hdr.peak_limit_ev":
+                                settingsObj["HDR"]!.AsObject()["rendition"]!.AsObject()["peak_limit_ev"] = val;
+                                break;
+                            default:
+                                throw new HarnessSetupException("Unhandled out_of_range field: " + field);
                         }
-                        case "crop_overflow":
-                            settingsObj["Geometry"]!.AsObject()["CropX"] = mutation.GetProperty("cropX").GetDouble();
-                            settingsObj["Geometry"]!.AsObject()["CropWidth"] = mutation.GetProperty("cropWidth").GetDouble();
-                            break;
-                        case "invalid_exposure_mode":
-                            settingsObj["ExposureMode"] = "future_unknown_mode";
-                            break;
-                        case "non_monotonic_curve":
-                            settingsObj["Curve"] = new JsonObject
-                            {
-                                ["mode"] = "custom",
-                                ["points"] = new JsonArray(
-                                    new JsonArray(0.0, 0.0),
-                                    new JsonArray(0.6, 0.5),
-                                    new JsonArray(0.4, 0.8),
-                                    new JsonArray(1.0, 1.0))
-                            };
-                            break;
-                        default:
-                            throw new Exception("Unhandled boundary mutation: " + mKind);
+                        break;
                     }
+                    case "crop_overflow":
+                        settingsObj["Geometry"]!.AsObject()["CropX"] = mutation.GetProperty("cropX").GetDouble();
+                        settingsObj["Geometry"]!.AsObject()["CropWidth"] = mutation.GetProperty("cropWidth").GetDouble();
+                        break;
+                    case "invalid_exposure_mode":
+                        settingsObj["ExposureMode"] = "future_unknown_mode";
+                        break;
+                    case "non_monotonic_curve":
+                        settingsObj["Curve"] = new JsonObject
+                        {
+                            ["mode"] = "custom",
+                            ["points"] = new JsonArray(
+                                new JsonArray(0.0, 0.0),
+                                new JsonArray(0.6, 0.5),
+                                new JsonArray(0.4, 0.8),
+                                new JsonArray(1.0, 1.0))
+                        };
+                        break;
+                    default:
+                        throw new HarnessSetupException("Unhandled boundary mutation: " + mKind);
+                }
 
-                    File.WriteAllText(editsFile, registry.ToJsonString());
+                File.WriteAllText(editsFile, registry.ToJsonString());
 
+                Evaluate(id, EvalCatchScope.ExpectationOnly, () =>
+                {
                     var reopened = new EditStore(dir);
                     var threw = false;
                     try { _ = reopened.ReadState(targetPath); }
@@ -427,9 +569,11 @@ internal static class EditRecordFixtureChecks
             }
 
             var unregistered = KnownEditRecordDivergences.Keys.Except(evaluatedIds, StringComparer.Ordinal).ToArray();
-            Check(unregistered.Length == 0, "Unmatched registered edit-record divergences: " + string.Join(", ", unregistered));
-            Check(failures.Count == 0, $"{failures.Count} Windows edit-record scenario(s) failed:\n" + string.Join(Environment.NewLine, failures));
-            Console.WriteLine($"PASS: Windows edit-record fixture suite finished with {KnownEditRecordDivergences.Count} registered divergences (cap {MaxKnownEditRecordDivergences})");
+            CheckSetup(unregistered.Length == 0, "Unmatched registered edit-record divergences (orphan ledger entries): " + string.Join(", ", unregistered));
+            CheckSetup(KnownEditRecordDivergences.Count <= MaxKnownEditRecordDivergences,
+                $"EditRecord divergences ({KnownEditRecordDivergences.Count}) exceed ceiling ({MaxKnownEditRecordDivergences})");
+            CheckSetup(failures.Count == 0, $"{failures.Count} Windows edit-record scenario(s) failed:\n" + string.Join(Environment.NewLine, failures));
+            Console.WriteLine($"PASS: Windows edit-record fixture suite finished with {KnownEditRecordDivergences.Count} registered divergences (cap {MaxKnownEditRecordDivergences}, evaluated {evaluatedIds.Count})");
         }
         finally
         {
@@ -597,7 +741,7 @@ internal static class EditRecordFixtureChecks
     private static ((AdjustmentSnapshot Settings, string? Look) Built, JsonElement Metadata) BuildSnapshot(JsonElement record)
     {
         var metadata = record.GetProperty("metadata");
-        var sdrValues = record.GetProperty("sdr_values");
+        var hasSdr = record.TryGetProperty("sdr_values", out var sdrValues) && sdrValues.ValueKind == JsonValueKind.Object;
         var hasHdrValues = record.TryGetProperty("hdr_values", out var hdrValues) && hdrValues.ValueKind == JsonValueKind.Object;
         var hasDormant = record.TryGetProperty("dormant_hdr_values", out var dormantHdr) && dormantHdr.ValueKind == JsonValueKind.Object;
         var hasLocal = record.TryGetProperty("local_values", out var localValues) && localValues.ValueKind == JsonValueKind.Object;
@@ -607,9 +751,12 @@ internal static class EditRecordFixtureChecks
         values[(int)Parameter.Strength] = 100.0;
         values[(int)Parameter.Temperature] = 6500.0;
 
-        var procVer = metadata.GetProperty("processing").GetProperty("version").GetInt32();
+        var procVer = metadata.TryGetProperty("processing", out var procObj) && procObj.ValueKind == JsonValueKind.Object &&
+                      procObj.TryGetProperty("version", out var procVerEl) ? procVerEl.GetInt32() : 1;
         var processing = procVer == 1 ? ProcessingIdentity.Legacy : procVer == 2 ? ProcessingIdentity.C5 : ProcessingIdentity.Current;
-        var x3fMode = metadata.GetProperty("x3f_mode").GetString() == "legacy" ? X3fMode.Legacy : X3fMode.Normal;
+        var x3fStr = metadata.TryGetProperty("x3f_mode", out var x3fEl) && x3fEl.ValueKind == JsonValueKind.String
+            ? x3fEl.GetString() : "legacy";
+        var x3fMode = x3fStr == "normal-v1" ? X3fMode.Normal : X3fMode.Legacy;
         int? proRawDecodeVersion = metadata.TryGetProperty("pro_raw_decode_version", out var prd) && prd.ValueKind == JsonValueKind.Number
             ? prd.GetInt32() : null;
 
@@ -623,37 +770,140 @@ internal static class EditRecordFixtureChecks
 
         string? masterRecipeId = metadata.TryGetProperty("master_recipe_id", out var mri) && mri.ValueKind == JsonValueKind.String
             ? mri.GetString() : null;
-        if (sdrValues.TryGetProperty("looks.reference", out var lookRef) && lookRef.ValueKind == JsonValueKind.Object &&
-            lookRef.TryGetProperty("kind", out var lkKind) && lkKind.GetString() == "recipe" &&
-            lookRef.TryGetProperty("id", out var lkId) && lkId.ValueKind == JsonValueKind.String)
+        string? look = masterRecipeId != null ? "recipe:" + masterRecipeId : null;
+        if (hasSdr && sdrValues.TryGetProperty("looks.reference", out var lookRef) && lookRef.ValueKind == JsonValueKind.Object)
         {
-            masterRecipeId = lkId.GetString();
+            var lkKind = lookRef.TryGetProperty("kind", out var kEl) && kEl.ValueKind == JsonValueKind.String ? kEl.GetString() : null;
+            var lkId = lookRef.TryGetProperty("id", out var iEl) && iEl.ValueKind == JsonValueKind.String ? iEl.GetString() : null;
+            switch (lkKind)
+            {
+                case "recipe" when !string.IsNullOrEmpty(lkId):
+                    masterRecipeId = lkId;
+                    look = "recipe:" + lkId;
+                    break;
+                case "builtin" when !string.IsNullOrEmpty(lkId):
+                    look = "builtin:" + lkId;
+                    break;
+                case "managed" when !string.IsNullOrEmpty(lkId):
+                    look = lkId;
+                    break;
+                case "neutral":
+                    look = null;
+                    break;
+            }
         }
+        else if (look == null && metadata.TryGetProperty("film_id", out var filmEl) &&
+                 filmEl.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(filmEl.GetString()))
+        {
+            look = filmEl.GetString();
+        }
+
         var masterRecipeSettingsVersion = metadata.TryGetProperty("master_recipe_settings_version", out var mrv) && mrv.ValueKind == JsonValueKind.Number
             ? mrv.GetInt32() : 3;
 
-        if (sdrValues.TryGetProperty("looks.strength", out var ls)) values[(int)Parameter.Strength] = ls.GetDouble() * 100.0;
-        if (sdrValues.TryGetProperty("light.exposure", out var le)) values[(int)Parameter.Exposure] = le.GetDouble();
         var exposureMode = 1;
-        if (sdrValues.TryGetProperty("light.exposure_mode", out var em))
-        {
-            exposureMode = em.GetString() switch { "scene" => 0, "preview" => 1, "sensor" => 2, _ => 1 };
-        }
-        if (sdrValues.TryGetProperty("light.contrast", out var lc)) values[(int)Parameter.Contrast] = (lc.GetDouble() - 1.0) * 100.0;
-        if (sdrValues.TryGetProperty("light.highlights", out var lhi)) values[(int)Parameter.Highlights] = -lhi.GetDouble() * 100.0;
-        if (sdrValues.TryGetProperty("light.shadows", out var lsh)) values[(int)Parameter.Shadows] = lsh.GetDouble() * 100.0;
-        if (sdrValues.TryGetProperty("light.s_curve", out var lsc)) values[(int)Parameter.ToneCurve] = lsc.GetDouble() * 100.0;
-        if (sdrValues.TryGetProperty("color.saturation", out var csa)) values[(int)Parameter.Saturation] = (csa.GetDouble() - 1.0) * 100.0;
-        if (sdrValues.TryGetProperty("detail.sharpening", out var dsh)) values[(int)Parameter.Sharpening] = dsh.GetDouble() * 100.0;
-
         var cameraWhiteBalance = true;
-        if (sdrValues.TryGetProperty("color.white_balance.mode", out var wbm) && wbm.GetString() == "temperature")
+        ToneCurveSettings? curve = null;
+        var toneControls = new ToneControlsSettings();
+        var grading = new ColorGradingSettings();
+        var hsl = new HslSettings();
+        var fx = new PhotoEffectsSettings();
+        var atm = new AtmosphereSettings();
+        var chromaMode = 0;
+        var denoise = new DenoiseSettings();
+        var geom = new GeometrySettings();
+        var lens = new LensSettings();
+
+        if (hasSdr)
         {
-            cameraWhiteBalance = false;
-            if (sdrValues.TryGetProperty("color.white_balance.temperature_kelvin", out var kt) && kt.ValueKind == JsonValueKind.Number)
-                values[(int)Parameter.Temperature] = kt.GetDouble();
-            if (sdrValues.TryGetProperty("color.white_balance.tint", out var ktn) && ktn.ValueKind == JsonValueKind.Number)
-                values[(int)Parameter.Tint] = ktn.GetDouble();
+            if (sdrValues.TryGetProperty("looks.strength", out var ls)) values[(int)Parameter.Strength] = ls.GetDouble() * 100.0;
+            if (sdrValues.TryGetProperty("light.exposure", out var le)) values[(int)Parameter.Exposure] = le.GetDouble();
+            if (sdrValues.TryGetProperty("light.exposure_mode", out var em))
+            {
+                exposureMode = em.GetString() switch { "scene" => 0, "preview" => 1, "sensor" => 2, _ => 1 };
+            }
+            if (sdrValues.TryGetProperty("light.contrast", out var lc)) values[(int)Parameter.Contrast] = (lc.GetDouble() - 1.0) * 100.0;
+            if (sdrValues.TryGetProperty("light.highlights", out var lhi)) values[(int)Parameter.Highlights] = -lhi.GetDouble() * 100.0;
+            if (sdrValues.TryGetProperty("light.shadows", out var lsh)) values[(int)Parameter.Shadows] = lsh.GetDouble() * 100.0;
+            if (sdrValues.TryGetProperty("light.s_curve", out var lsc)) values[(int)Parameter.ToneCurve] = lsc.GetDouble() * 100.0;
+            if (sdrValues.TryGetProperty("color.saturation", out var csa)) values[(int)Parameter.Saturation] = (csa.GetDouble() - 1.0) * 100.0;
+            if (sdrValues.TryGetProperty("detail.sharpening", out var dsh)) values[(int)Parameter.Sharpening] = dsh.GetDouble() * 100.0;
+
+            if (sdrValues.TryGetProperty("color.white_balance.mode", out var wbm) && wbm.GetString() == "temperature")
+            {
+                cameraWhiteBalance = false;
+                if (sdrValues.TryGetProperty("color.white_balance.temperature_kelvin", out var kt) && kt.ValueKind == JsonValueKind.Number)
+                    values[(int)Parameter.Temperature] = kt.GetDouble();
+                if (sdrValues.TryGetProperty("color.white_balance.tint", out var ktn) && ktn.ValueKind == JsonValueKind.Number)
+                    values[(int)Parameter.Tint] = ktn.GetDouble();
+            }
+            else if (asShotTemp is { } t && asShotTint is { } tn)
+            {
+                values[(int)Parameter.Temperature] = t;
+                values[(int)Parameter.Tint] = masterRecipeId == null ? tn : 0.0;
+            }
+
+            if (sdrValues.TryGetProperty("light.curve", out var cvObj) && cvObj.ValueKind == JsonValueKind.Object)
+            {
+                var parsed = ParseCurve(cvObj);
+                curve = parsed.IsDefault ? null : parsed;
+            }
+
+            if (sdrValues.TryGetProperty("tone.black_point", out var bp)) toneControls = toneControls with { BlackPoint = bp.GetDouble() };
+            if (sdrValues.TryGetProperty("tone.white_point", out var wp)) toneControls = toneControls with { WhitePoint = wp.GetDouble() };
+            if (sdrValues.TryGetProperty("color.vibrance", out var vib)) toneControls = toneControls with { Vibrance = vib.GetDouble() };
+
+            if (sdrValues.TryGetProperty("color.grading.shadows", out var cgs)) grading = grading with { Shadows = ParseWheel(cgs) };
+            if (sdrValues.TryGetProperty("color.grading.midtones", out var cgm)) grading = grading with { Midtones = ParseWheel(cgm) };
+            if (sdrValues.TryGetProperty("color.grading.highlights", out var cgh)) grading = grading with { Highlights = ParseWheel(cgh) };
+
+            for (var idx = 0; idx < HslChannels.Length; idx++)
+            {
+                var ch = HslChannels[idx];
+                if (sdrValues.TryGetProperty("color.hsl.hue." + ch, out var v0)) hsl = hsl.WithValue(0, idx, v0.GetDouble());
+                if (sdrValues.TryGetProperty("color.hsl.saturation." + ch, out var v1)) hsl = hsl.WithValue(1, idx, v1.GetDouble());
+                if (sdrValues.TryGetProperty("color.hsl.lightness." + ch, out var v2)) hsl = hsl.WithValue(2, idx, v2.GetDouble());
+            }
+
+            if (sdrValues.TryGetProperty("effects.vignette.amount", out var va)) fx = fx with { VignetteAmount = va.GetDouble() };
+            if (sdrValues.TryGetProperty("effects.vignette.midpoint", out var vm)) fx = fx with { VignetteMidpoint = vm.GetDouble() };
+            if (sdrValues.TryGetProperty("effects.vignette.roundness", out var vr)) fx = fx with { VignetteRoundness = vr.GetDouble() };
+            if (sdrValues.TryGetProperty("effects.vignette.feather", out var vf)) fx = fx with { VignetteFeather = vf.GetDouble() };
+            if (sdrValues.TryGetProperty("effects.vignette.highlights", out var vh)) fx = fx with { VignetteHighlights = vh.GetDouble() };
+            if (sdrValues.TryGetProperty("effects.grain.amount", out var ga)) fx = fx with { GrainAmount = ga.GetDouble() };
+            if (sdrValues.TryGetProperty("effects.grain.size", out var gs)) fx = fx with { GrainSize = gs.GetDouble() };
+            if (sdrValues.TryGetProperty("effects.grain.roughness", out var gr)) fx = fx with { GrainRoughness = gr.GetDouble() };
+
+            if (sdrValues.TryGetProperty("effects.clarity", out var cl)) atm = atm with { Clarity = cl.GetDouble() };
+            if (sdrValues.TryGetProperty("effects.dehaze", out var dh)) atm = atm with { Dehaze = dh.GetDouble() };
+
+            if (sdrValues.TryGetProperty("detail.denoise.chroma_mode", out var cm)) chromaMode = cm.GetInt32();
+            if (sdrValues.TryGetProperty("detail.denoise.wavelet", out var wdObj) && wdObj.ValueKind == JsonValueKind.Object)
+            {
+                denoise = new DenoiseSettings(
+                    wdObj.GetProperty("enabled").GetBoolean(),
+                    wdObj.GetProperty("luma").GetDouble(),
+                    wdObj.GetProperty("chroma").GetDouble(),
+                    wdObj.GetProperty("coarse").GetDouble());
+            }
+
+            if (sdrValues.TryGetProperty("geometry.crop.x", out var gx)) geom = geom with { CropX = gx.GetDouble() };
+            if (sdrValues.TryGetProperty("geometry.crop.y", out var gy)) geom = geom with { CropY = gy.GetDouble() };
+            if (sdrValues.TryGetProperty("geometry.crop.width", out var gw)) geom = geom with { CropWidth = gw.GetDouble() };
+            if (sdrValues.TryGetProperty("geometry.crop.height", out var gh)) geom = geom with { CropHeight = gh.GetDouble() };
+            if (sdrValues.TryGetProperty("geometry.quarter_turns", out var qt)) geom = geom with { QuarterTurns = qt.GetInt32() };
+            if (sdrValues.TryGetProperty("geometry.flip_horizontal", out var fh)) geom = geom with { FlipHorizontal = fh.GetBoolean() };
+            if (sdrValues.TryGetProperty("geometry.flip_vertical", out var fv)) geom = geom with { FlipVertical = fv.GetBoolean() };
+            if (sdrValues.TryGetProperty("geometry.straighten_degrees", out var stg)) geom = geom with { StraightenDegrees = stg.GetDouble() };
+            if (sdrValues.TryGetProperty("geometry.perspective.horizontal", out var ph)) geom = geom with { PerspectiveHorizontal = ph.GetDouble() };
+            if (sdrValues.TryGetProperty("geometry.perspective.vertical", out var pv)) geom = geom with { PerspectiveVertical = pv.GetDouble() };
+
+            if (sdrValues.TryGetProperty("geometry.lens.distortion", out var ld)) lens = lens with { Distortion = ld.GetBoolean() };
+            if (sdrValues.TryGetProperty("geometry.lens.tca", out var lt)) lens = lens with { Tca = lt.GetBoolean() };
+            if (sdrValues.TryGetProperty("geometry.lens.vignetting", out var lv)) lens = lens with { Vignetting = lv.GetBoolean() };
+            if (sdrValues.TryGetProperty("geometry.lens.auto_crop", out var lac)) lens = lens with { AutoCrop = lac.GetBoolean() };
+            if (sdrValues.TryGetProperty("geometry.lens.profile_id", out var lpid) && lpid.ValueKind == JsonValueKind.String)
+                lens = lens with { Manual = true, ProfileId = lpid.GetString() };
         }
         else if (asShotTemp is { } t && asShotTint is { } tn)
         {
@@ -661,76 +911,13 @@ internal static class EditRecordFixtureChecks
             values[(int)Parameter.Tint] = masterRecipeId == null ? tn : 0.0;
         }
 
-        ToneCurveSettings? curve = null;
-        if (sdrValues.TryGetProperty("light.curve", out var cvObj) && cvObj.ValueKind == JsonValueKind.Object)
+        if (metadata.TryGetProperty("lens_extra", out var lensExtra) && lensExtra.ValueKind == JsonValueKind.Object)
         {
-            var parsed = ParseCurve(cvObj);
-            curve = parsed.IsDefault ? null : parsed;
+            if (lensExtra.TryGetProperty("focal_length", out var fl) && fl.ValueKind == JsonValueKind.Number)
+                lens = lens with { FocalLength = fl.GetDouble() };
+            if (lensExtra.TryGetProperty("crop_factor", out var cf) && cf.ValueKind == JsonValueKind.Number)
+                lens = lens with { CropFactor = cf.GetDouble() };
         }
-
-        var toneControls = new ToneControlsSettings();
-        if (sdrValues.TryGetProperty("tone.black_point", out var bp)) toneControls = toneControls with { BlackPoint = bp.GetDouble() };
-        if (sdrValues.TryGetProperty("tone.white_point", out var wp)) toneControls = toneControls with { WhitePoint = wp.GetDouble() };
-        if (sdrValues.TryGetProperty("color.vibrance", out var vib)) toneControls = toneControls with { Vibrance = vib.GetDouble() };
-
-        var grading = new ColorGradingSettings();
-        if (sdrValues.TryGetProperty("color.grading.shadows", out var cgs)) grading = grading with { Shadows = ParseWheel(cgs) };
-        if (sdrValues.TryGetProperty("color.grading.midtones", out var cgm)) grading = grading with { Midtones = ParseWheel(cgm) };
-        if (sdrValues.TryGetProperty("color.grading.highlights", out var cgh)) grading = grading with { Highlights = ParseWheel(cgh) };
-
-        var hsl = new HslSettings();
-        for (var idx = 0; idx < HslChannels.Length; idx++)
-        {
-            var ch = HslChannels[idx];
-            if (sdrValues.TryGetProperty("color.hsl.hue." + ch, out var v0)) hsl = hsl.WithValue(0, idx, v0.GetDouble());
-            if (sdrValues.TryGetProperty("color.hsl.saturation." + ch, out var v1)) hsl = hsl.WithValue(1, idx, v1.GetDouble());
-            if (sdrValues.TryGetProperty("color.hsl.lightness." + ch, out var v2)) hsl = hsl.WithValue(2, idx, v2.GetDouble());
-        }
-
-        var fx = new PhotoEffectsSettings();
-        if (sdrValues.TryGetProperty("effects.vignette.amount", out var va)) fx = fx with { VignetteAmount = va.GetDouble() };
-        if (sdrValues.TryGetProperty("effects.vignette.midpoint", out var vm)) fx = fx with { VignetteMidpoint = vm.GetDouble() };
-        if (sdrValues.TryGetProperty("effects.vignette.roundness", out var vr)) fx = fx with { VignetteRoundness = vr.GetDouble() };
-        if (sdrValues.TryGetProperty("effects.vignette.feather", out var vf)) fx = fx with { VignetteFeather = vf.GetDouble() };
-        if (sdrValues.TryGetProperty("effects.vignette.highlights", out var vh)) fx = fx with { VignetteHighlights = vh.GetDouble() };
-        if (sdrValues.TryGetProperty("effects.grain.amount", out var ga)) fx = fx with { GrainAmount = ga.GetDouble() };
-        if (sdrValues.TryGetProperty("effects.grain.size", out var gs)) fx = fx with { GrainSize = gs.GetDouble() };
-        if (sdrValues.TryGetProperty("effects.grain.roughness", out var gr)) fx = fx with { GrainRoughness = gr.GetDouble() };
-
-        var atm = new AtmosphereSettings();
-        if (sdrValues.TryGetProperty("effects.clarity", out var cl)) atm = atm with { Clarity = cl.GetDouble() };
-        if (sdrValues.TryGetProperty("effects.dehaze", out var dh)) atm = atm with { Dehaze = dh.GetDouble() };
-
-        var chromaMode = sdrValues.TryGetProperty("detail.denoise.chroma_mode", out var cm) ? cm.GetInt32() : 0;
-        var denoise = new DenoiseSettings();
-        if (sdrValues.TryGetProperty("detail.denoise.wavelet", out var wdObj) && wdObj.ValueKind == JsonValueKind.Object)
-        {
-            denoise = new DenoiseSettings(
-                wdObj.GetProperty("enabled").GetBoolean(),
-                wdObj.GetProperty("luma").GetDouble(),
-                wdObj.GetProperty("chroma").GetDouble(),
-                wdObj.GetProperty("coarse").GetDouble());
-        }
-
-        var geom = new GeometrySettings();
-        if (sdrValues.TryGetProperty("geometry.crop.x", out var gx)) geom = geom with { CropX = gx.GetDouble() };
-        if (sdrValues.TryGetProperty("geometry.crop.y", out var gy)) geom = geom with { CropY = gy.GetDouble() };
-        if (sdrValues.TryGetProperty("geometry.crop.width", out var gw)) geom = geom with { CropWidth = gw.GetDouble() };
-        if (sdrValues.TryGetProperty("geometry.crop.height", out var gh)) geom = geom with { CropHeight = gh.GetDouble() };
-        if (sdrValues.TryGetProperty("geometry.quarter_turns", out var qt)) geom = geom with { QuarterTurns = qt.GetInt32() };
-        if (sdrValues.TryGetProperty("geometry.flip_horizontal", out var fh)) geom = geom with { FlipHorizontal = fh.GetBoolean() };
-        if (sdrValues.TryGetProperty("geometry.flip_vertical", out var fv)) geom = geom with { FlipVertical = fv.GetBoolean() };
-        if (sdrValues.TryGetProperty("geometry.straighten_degrees", out var stg)) geom = geom with { StraightenDegrees = stg.GetDouble() };
-        if (sdrValues.TryGetProperty("geometry.perspective.horizontal", out var ph)) geom = geom with { PerspectiveHorizontal = ph.GetDouble() };
-        if (sdrValues.TryGetProperty("geometry.perspective.vertical", out var pv)) geom = geom with { PerspectiveVertical = pv.GetDouble() };
-
-        var lens = new LensSettings();
-        if (sdrValues.TryGetProperty("geometry.lens.distortion", out var ld)) lens = lens with { Distortion = ld.GetBoolean() };
-        if (sdrValues.TryGetProperty("geometry.lens.tca", out var lt)) lens = lens with { Tca = lt.GetBoolean() };
-        if (sdrValues.TryGetProperty("geometry.lens.vignetting", out var lv)) lens = lens with { Vignetting = lv.GetBoolean() };
-        if (sdrValues.TryGetProperty("geometry.lens.auto_crop", out var lac)) lens = lens with { AutoCrop = lac.GetBoolean() };
-        if (sdrValues.TryGetProperty("geometry.lens.profile_id", out var lpid) && lpid.ValueKind == JsonValueKind.String)
-            lens = lens with { Manual = true, ProfileId = lpid.GetString() };
 
         HDRSettings? hdr = null;
         if (hdrEditing && hasHdrValues) hdr = BuildHDRSettings(hdrValues, metadata, activeMode: true);
@@ -755,35 +942,48 @@ internal static class EditRecordFixtureChecks
             ProRAWDecodeVersion = proRawDecodeVersion
         };
         _ = snapshot.Restore();
-        var look = masterRecipeId != null ? "recipe:" + masterRecipeId : null;
         return ((snapshot, look), metadata);
     }
 
-    private static void VerifyCurve(JsonElement expected, ToneCurveSettings actual, string label)
+    private static void VerifyCurve(JsonElement expected, ToneCurveSettings actual, string label, List<string> mismatches)
     {
         var expMode = expected.GetProperty("mode").GetString() ?? "legacy";
-        Check((actual.Mode == ToneCurveMode.Custom ? "custom" : "legacy") == expMode, $"{label}: curve mode mismatch");
+        if ((actual.Mode == ToneCurveMode.Custom ? "custom" : "legacy") != expMode)
+            mismatches.Add($"{label}: curve mode mismatch");
         var expPts = expected.GetProperty("points").EnumerateArray().ToArray();
-        Check(actual.Points.Count == expPts.Length, $"{label}: curve point count mismatch");
-        for (var i = 0; i < expPts.Length; i++)
+        if (actual.Points.Count != expPts.Length)
         {
-            Check(Approx(actual.Points[i].X, expPts[i][0].GetDouble()) && Approx(actual.Points[i].Y, expPts[i][1].GetDouble()),
-                $"{label}: curve point {i} mismatch");
+            mismatches.Add($"{label}: curve point count mismatch (expected={expPts.Length}, actual={actual.Points.Count})");
         }
-        if (expected.TryGetProperty("channels", out var chObj))
+        else
+        {
+            for (var i = 0; i < expPts.Length; i++)
+            {
+                if (!Approx(actual.Points[i].X, expPts[i][0].GetDouble()) || !Approx(actual.Points[i].Y, expPts[i][1].GetDouble()))
+                    mismatches.Add($"{label}: curve point {i} mismatch");
+            }
+        }
+        if (expected.TryGetProperty("channels", out var chObj) && chObj.ValueKind == JsonValueKind.Object)
         {
             foreach (var (cname, shape) in new[] {
                 ("red", actual.Channels.Red), ("green", actual.Channels.Green), ("blue", actual.Channels.Blue) })
             {
                 if (!chObj.TryGetProperty(cname, out var expShape)) continue;
                 var em = expShape.GetProperty("mode").GetString() ?? "legacy";
-                Check((shape.Mode == ToneCurveMode.Custom ? "custom" : "legacy") == em, $"{label}: curve channel {cname} mode");
+                if ((shape.Mode == ToneCurveMode.Custom ? "custom" : "legacy") != em)
+                    mismatches.Add($"{label}: curve channel {cname} mode");
                 var epts = expShape.GetProperty("points").EnumerateArray().ToArray();
-                Check(shape.Points.Count == epts.Length, $"{label}: curve channel {cname} count");
-                for (var i = 0; i < epts.Length; i++)
+                if (shape.Points.Count != epts.Length)
                 {
-                    Check(Approx(shape.Points[i].X, epts[i][0].GetDouble()) && Approx(shape.Points[i].Y, epts[i][1].GetDouble()),
-                        $"{label}: curve channel {cname}[{i}]");
+                    mismatches.Add($"{label}: curve channel {cname} count (expected={epts.Length}, actual={shape.Points.Count})");
+                }
+                else
+                {
+                    for (var i = 0; i < epts.Length; i++)
+                    {
+                        if (!Approx(shape.Points[i].X, epts[i][0].GetDouble()) || !Approx(shape.Points[i].Y, epts[i][1].GetDouble()))
+                            mismatches.Add($"{label}: curve channel {cname}[{i}]");
+                    }
                 }
             }
         }
@@ -793,169 +993,309 @@ internal static class EditRecordFixtureChecks
     {
         var id = record.GetProperty("id").GetString()!;
         var metadata = record.GetProperty("metadata");
-        var sdrValues = record.GetProperty("sdr_values");
+        var hasSdr = record.TryGetProperty("sdr_values", out var sdrValues) && sdrValues.ValueKind == JsonValueKind.Object;
         var hasHdr = record.TryGetProperty("hdr_values", out var hdrValues) && hdrValues.ValueKind == JsonValueKind.Object;
         var hasDormant = record.TryGetProperty("dormant_hdr_values", out var dormant) && dormant.ValueKind == JsonValueKind.Object;
         var hasLocal = record.TryGetProperty("local_values", out var localValues) && localValues.ValueKind == JsonValueKind.Object;
         var hdrEditing = metadata.TryGetProperty("hdr_editing", out var he) && he.GetBoolean();
         var s = actual.Settings;
+        var mismatches = new List<string>();
+        void Expect(bool cond, string message) { if (!cond) mismatches.Add(message); }
 
         string? expRecipe = metadata.TryGetProperty("master_recipe_id", out var mri) && mri.ValueKind == JsonValueKind.String
             ? mri.GetString() : null;
-        Check(s.MasterRecipeID == expRecipe, $"{id}: MasterRecipeID mismatch");
-        Check(actual.Look == (expRecipe != null ? "recipe:" + expRecipe : null), $"{id}: SavedEdit.Look mismatch");
-        Check(s.Processing.Version == metadata.GetProperty("processing").GetProperty("version").GetInt32(), $"{id}: Processing.Version");
-        Check((s.X3fMode == X3fMode.Legacy ? "legacy" : "normal-v1") == metadata.GetProperty("x3f_mode").GetString(), $"{id}: X3fMode");
+        if (hasSdr && sdrValues.TryGetProperty("looks.reference", out var lrCheck) && lrCheck.ValueKind == JsonValueKind.Object &&
+            lrCheck.TryGetProperty("kind", out var lrKind) && lrKind.GetString() == "recipe" &&
+            lrCheck.TryGetProperty("id", out var lrId) && lrId.ValueKind == JsonValueKind.String)
+        {
+            expRecipe = lrId.GetString();
+        }
+        Expect(s.MasterRecipeID == expRecipe, $"MasterRecipeID (expected={expRecipe ?? "<null>"}, actual={s.MasterRecipeID ?? "<null>"})");
+
+        string? expectedLook = expRecipe != null ? "recipe:" + expRecipe : null;
+        if (hasSdr && sdrValues.TryGetProperty("looks.reference", out var expLookRef) && expLookRef.ValueKind == JsonValueKind.Object)
+        {
+            var lkKind = expLookRef.TryGetProperty("kind", out var kEl) && kEl.ValueKind == JsonValueKind.String ? kEl.GetString() : null;
+            var lkId = expLookRef.TryGetProperty("id", out var iEl) && iEl.ValueKind == JsonValueKind.String ? iEl.GetString() : null;
+            expectedLook = lkKind switch
+            {
+                "recipe" => !string.IsNullOrEmpty(lkId) ? "recipe:" + lkId : null,
+                "builtin" => !string.IsNullOrEmpty(lkId) ? "builtin:" + lkId : null,
+                "managed" => !string.IsNullOrEmpty(lkId) ? lkId : null,
+                "neutral" => null,
+                _ => expectedLook
+            };
+        }
+        else if (expectedLook == null && metadata.TryGetProperty("film_id", out var expFid) &&
+                 expFid.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(expFid.GetString()))
+        {
+            expectedLook = expFid.GetString();
+        }
+        Expect(actual.Look == expectedLook, $"SavedEdit.Look (expected={expectedLook ?? "<null>"}, actual={actual.Look ?? "<null>"})");
+
+        if (metadata.TryGetProperty("processing", out var proc) && proc.ValueKind == JsonValueKind.Object)
+        {
+            Expect(s.Processing.Family == proc.GetProperty("family").GetString(), "Processing.Family");
+            Expect(s.Processing.Version == proc.GetProperty("version").GetInt32(), "Processing.Version");
+            Expect(s.Processing.Quality == proc.GetProperty("quality").GetString(), "Processing.Quality");
+        }
+        if (metadata.TryGetProperty("x3f_mode", out var x3f) && x3f.ValueKind == JsonValueKind.String)
+            Expect((s.X3fMode == X3fMode.Legacy ? "legacy" : "normal-v1") == x3f.GetString(), "X3fMode");
         if (metadata.TryGetProperty("master_recipe_settings_version", out var mrv) && mrv.ValueKind == JsonValueKind.Number)
-            Check(s.MasterRecipeSettingsVersion == mrv.GetInt32(), $"{id}: MasterRecipeSettingsVersion");
+            Expect(s.MasterRecipeSettingsVersion == mrv.GetInt32(), "MasterRecipeSettingsVersion");
         if (metadata.TryGetProperty("pro_raw_decode_version", out var prd))
         {
             int? expPrd = prd.ValueKind == JsonValueKind.Number ? prd.GetInt32() : null;
-            Check(s.ProRAWDecodeVersion == expPrd, $"{id}: ProRAWDecodeVersion");
+            Expect(s.ProRAWDecodeVersion == expPrd, "ProRAWDecodeVersion");
         }
         if (metadata.TryGetProperty("as_shot_wb", out var wb) && wb.ValueKind == JsonValueKind.Object)
         {
-            Check(Approx(s.AsShotTemperature ?? -1, wb.GetProperty("temperature").GetDouble()) &&
-                  Approx(s.AsShotTint ?? -999, wb.GetProperty("tint").GetDouble()), $"{id}: AsShot WB");
+            Expect(Approx(s.AsShotTemperature ?? -1, wb.GetProperty("temperature").GetDouble()) &&
+                   Approx(s.AsShotTint ?? -999, wb.GetProperty("tint").GetDouble()), "AsShot WB");
         }
-        Check((s.HDR?.Mode == HDRMode.Hdr) == hdrEditing, $"{id}: IsHDREditing mismatch");
+        Expect((s.HDR?.Mode == HDRMode.Hdr) == hdrEditing, "IsHDREditing mismatch");
 
-        if (sdrValues.TryGetProperty("looks.strength", out var ls)) Check(Approx(s.Values[(int)Parameter.Strength] / 100.0, ls.GetDouble()), $"{id}: looks.strength");
-        if (sdrValues.TryGetProperty("light.exposure", out var le)) Check(Approx(s.Values[(int)Parameter.Exposure], le.GetDouble()), $"{id}: exposure");
-        if (sdrValues.TryGetProperty("light.exposure_mode", out var em))
+        if (hasSdr)
         {
-            var actualEm = s.ExposureMode == 0 ? "scene" : s.ExposureMode == 1 ? "preview" : "sensor";
-            Check(actualEm == em.GetString(), $"{id}: exposure_mode");
+            if (sdrValues.TryGetProperty("looks.strength", out var ls)) Expect(Approx(s.Values[(int)Parameter.Strength] / 100.0, ls.GetDouble()), "looks.strength");
+            if (sdrValues.TryGetProperty("light.exposure", out var le)) Expect(Approx(s.Values[(int)Parameter.Exposure], le.GetDouble()), "exposure");
+            if (sdrValues.TryGetProperty("light.exposure_mode", out var em))
+            {
+                var actualEm = s.ExposureMode == 0 ? "scene" : s.ExposureMode == 1 ? "preview" : "sensor";
+                Expect(actualEm == em.GetString(), "exposure_mode");
+            }
+            if (sdrValues.TryGetProperty("light.contrast", out var lc)) Expect(Approx(1.0 + s.Values[(int)Parameter.Contrast] / 100.0, lc.GetDouble()), "contrast");
+            if (sdrValues.TryGetProperty("light.highlights", out var lhi)) Expect(Approx(-s.Values[(int)Parameter.Highlights] / 100.0, lhi.GetDouble()), "highlights");
+            if (sdrValues.TryGetProperty("light.shadows", out var lsh)) Expect(Approx(s.Values[(int)Parameter.Shadows] / 100.0, lsh.GetDouble()), "shadows");
+            if (sdrValues.TryGetProperty("light.s_curve", out var lsc)) Expect(Approx(s.Values[(int)Parameter.ToneCurve] / 100.0, lsc.GetDouble()), "s_curve");
+            if (sdrValues.TryGetProperty("light.curve", out var cv)) VerifyCurve(cv, s.Curve ?? new ToneCurveSettings(), id + ".sdr", mismatches);
+
+            var toneControls = s.ToneControls ?? new ToneControlsSettings();
+            if (sdrValues.TryGetProperty("tone.black_point", out var bp)) Expect(Approx(toneControls.BlackPoint, bp.GetDouble()), "black_point");
+            if (sdrValues.TryGetProperty("tone.white_point", out var wp)) Expect(Approx(toneControls.WhitePoint, wp.GetDouble()), "white_point");
+            if (sdrValues.TryGetProperty("color.vibrance", out var vib)) Expect(Approx(toneControls.Vibrance, vib.GetDouble()), "vibrance");
+
+            var grading = s.ColorGrading ?? new ColorGradingSettings();
+            if (sdrValues.TryGetProperty("color.grading.shadows", out var cgs))
+                Expect(Approx(grading.Shadows.Hue, cgs.GetProperty("hue").GetDouble()) && Approx(grading.Shadows.Saturation, cgs.GetProperty("saturation").GetDouble()), "grading.shadows");
+            if (sdrValues.TryGetProperty("color.grading.midtones", out var cgm))
+                Expect(Approx(grading.Midtones.Hue, cgm.GetProperty("hue").GetDouble()) && Approx(grading.Midtones.Saturation, cgm.GetProperty("saturation").GetDouble()), "grading.midtones");
+            if (sdrValues.TryGetProperty("color.grading.highlights", out var cgh))
+                Expect(Approx(grading.Highlights.Hue, cgh.GetProperty("hue").GetDouble()) && Approx(grading.Highlights.Saturation, cgh.GetProperty("saturation").GetDouble()), "grading.highlights");
+
+            if (sdrValues.TryGetProperty("color.white_balance.mode", out var wbm))
+            {
+                var modeStr = wbm.GetString();
+                if (modeStr == "temperature")
+                {
+                    Expect(!s.CameraWhiteBalance, "wb mode custom");
+                    if (sdrValues.TryGetProperty("color.white_balance.temperature_kelvin", out var kt) && kt.ValueKind == JsonValueKind.Number)
+                        Expect(Approx(s.Values[(int)Parameter.Temperature], kt.GetDouble()), "wb temp");
+                    if (sdrValues.TryGetProperty("color.white_balance.tint", out var ktn) && ktn.ValueKind == JsonValueKind.Number)
+                        Expect(Approx(s.Values[(int)Parameter.Tint], ktn.GetDouble()), "wb tint");
+                }
+                else if (modeStr == "as_shot")
+                {
+                    Expect(s.CameraWhiteBalance, "wb mode as_shot");
+                }
+            }
+            if (sdrValues.TryGetProperty("color.saturation", out var csa)) Expect(Approx(1.0 + s.Values[(int)Parameter.Saturation] / 100.0, csa.GetDouble()), "saturation");
+
+            var hsl = s.Hsl ?? new HslSettings();
+            for (var idx = 0; idx < HslChannels.Length; idx++)
+            {
+                var ch = HslChannels[idx];
+                if (sdrValues.TryGetProperty("color.hsl.hue." + ch, out var v0)) Expect(Approx(hsl.Value(0, idx), v0.GetDouble()), $"hsl.hue.{ch}");
+                if (sdrValues.TryGetProperty("color.hsl.saturation." + ch, out var v1)) Expect(Approx(hsl.Value(1, idx), v1.GetDouble()), $"hsl.sat.{ch}");
+                if (sdrValues.TryGetProperty("color.hsl.lightness." + ch, out var v2)) Expect(Approx(hsl.Value(2, idx), v2.GetDouble()), $"hsl.lit.{ch}");
+            }
+
+            var fx = s.Effects ?? new PhotoEffectsSettings();
+            if (sdrValues.TryGetProperty("effects.vignette.amount", out var va)) Expect(Approx(fx.VignetteAmount, va.GetDouble()), "vignette.amount");
+            if (sdrValues.TryGetProperty("effects.vignette.midpoint", out var vm)) Expect(Approx(fx.VignetteMidpoint, vm.GetDouble()), "vignette.midpoint");
+            if (sdrValues.TryGetProperty("effects.vignette.roundness", out var vr)) Expect(Approx(fx.VignetteRoundness, vr.GetDouble()), "vignette.roundness");
+            if (sdrValues.TryGetProperty("effects.vignette.feather", out var vf)) Expect(Approx(fx.VignetteFeather, vf.GetDouble()), "vignette.feather");
+            if (sdrValues.TryGetProperty("effects.vignette.highlights", out var vh)) Expect(Approx(fx.VignetteHighlights, vh.GetDouble()), "vignette.highlights");
+            if (sdrValues.TryGetProperty("effects.grain.amount", out var ga)) Expect(Approx(fx.GrainAmount, ga.GetDouble()), "grain.amount");
+            if (sdrValues.TryGetProperty("effects.grain.size", out var gs)) Expect(Approx(fx.GrainSize, gs.GetDouble()), "grain.size");
+            if (sdrValues.TryGetProperty("effects.grain.roughness", out var gr)) Expect(Approx(fx.GrainRoughness, gr.GetDouble()), "grain.roughness");
+
+            var atm = s.Atmosphere ?? new AtmosphereSettings();
+            if (sdrValues.TryGetProperty("effects.clarity", out var cl)) Expect(Approx(atm.Clarity, cl.GetDouble()), "clarity");
+            if (sdrValues.TryGetProperty("effects.dehaze", out var dh)) Expect(Approx(atm.Dehaze, dh.GetDouble()), "dehaze");
+            if (sdrValues.TryGetProperty("detail.sharpening", out var dsh)) Expect(Approx(s.Values[(int)Parameter.Sharpening] / 100.0, dsh.GetDouble()), "sharpening");
+            if (sdrValues.TryGetProperty("detail.denoise.chroma_mode", out var cm)) Expect(s.DisplayChromaDenoise == cm.GetInt32(), "chroma_mode");
+            if (sdrValues.TryGetProperty("detail.denoise.wavelet", out var wdObj) && wdObj.ValueKind == JsonValueKind.Object)
+            {
+                if (s.Denoise is not { } dn)
+                {
+                    mismatches.Add("expected Denoise non-null");
+                }
+                else
+                {
+                    Expect(dn.Enabled == wdObj.GetProperty("enabled").GetBoolean(), "wavelet.enabled");
+                    Expect(Approx(dn.Luma, wdObj.GetProperty("luma").GetDouble()), "wavelet.luma");
+                    Expect(Approx(dn.Chroma, wdObj.GetProperty("chroma").GetDouble()), "wavelet.chroma");
+                    Expect(Approx(dn.Coarse, wdObj.GetProperty("coarse").GetDouble()), "wavelet.coarse");
+                    if (wdObj.TryGetProperty("preset", out var presetEl) && presetEl.ValueKind == JsonValueKind.String)
+                    {
+                        var actualPreset = dn.Preset switch { 0 => "detail", 1 => "clean", _ => "custom" };
+                        Expect(actualPreset == presetEl.GetString(), $"wavelet.preset (expected={presetEl.GetString()}, actual={actualPreset})");
+                    }
+                }
+            }
+
+            var geom = s.Geometry ?? new GeometrySettings();
+            if (sdrValues.TryGetProperty("geometry.crop.x", out var gx)) Expect(Approx(geom.CropX, gx.GetDouble()), "cropX");
+            if (sdrValues.TryGetProperty("geometry.crop.y", out var gy)) Expect(Approx(geom.CropY, gy.GetDouble()), "cropY");
+            if (sdrValues.TryGetProperty("geometry.crop.width", out var gw)) Expect(Approx(geom.CropWidth, gw.GetDouble()), "cropW");
+            if (sdrValues.TryGetProperty("geometry.crop.height", out var gh)) Expect(Approx(geom.CropHeight, gh.GetDouble()), "cropH");
+            if (sdrValues.TryGetProperty("geometry.quarter_turns", out var qt)) Expect(geom.QuarterTurns == qt.GetInt32(), "quarterTurns");
+            if (sdrValues.TryGetProperty("geometry.flip_horizontal", out var fh)) Expect(geom.FlipHorizontal == fh.GetBoolean(), "flipH");
+            if (sdrValues.TryGetProperty("geometry.flip_vertical", out var fv)) Expect(geom.FlipVertical == fv.GetBoolean(), "flipV");
+            if (sdrValues.TryGetProperty("geometry.straighten_degrees", out var stg)) Expect(Approx(geom.StraightenDegrees, stg.GetDouble()), "straighten");
+            if (sdrValues.TryGetProperty("geometry.perspective.horizontal", out var ph)) Expect(Approx(geom.PerspectiveHorizontal, ph.GetDouble()), "perspH");
+            if (sdrValues.TryGetProperty("geometry.perspective.vertical", out var pv)) Expect(Approx(geom.PerspectiveVertical, pv.GetDouble()), "perspV");
+
+            var lens = s.Lens ?? new LensSettings();
+            if (sdrValues.TryGetProperty("geometry.lens.distortion", out var ld)) Expect(lens.Distortion == ld.GetBoolean(), "lens.distortion");
+            if (sdrValues.TryGetProperty("geometry.lens.tca", out var lt)) Expect(lens.Tca == lt.GetBoolean(), "lens.tca");
+            if (sdrValues.TryGetProperty("geometry.lens.vignetting", out var lv)) Expect(lens.Vignetting == lv.GetBoolean(), "lens.vignetting");
+            if (sdrValues.TryGetProperty("geometry.lens.auto_crop", out var lac)) Expect(lens.AutoCrop == lac.GetBoolean(), "lens.autoCrop");
+            if (sdrValues.TryGetProperty("geometry.lens.profile_id", out var lpid))
+            {
+                string? expPid = lpid.ValueKind == JsonValueKind.String ? lpid.GetString() : null;
+                Expect(lens.ProfileId == expPid, "lens.profileID");
+            }
         }
-        if (sdrValues.TryGetProperty("light.contrast", out var lc)) Check(Approx(1.0 + s.Values[(int)Parameter.Contrast] / 100.0, lc.GetDouble()), $"{id}: contrast");
-        if (sdrValues.TryGetProperty("light.highlights", out var lhi)) Check(Approx(-s.Values[(int)Parameter.Highlights] / 100.0, lhi.GetDouble()), $"{id}: highlights");
-        if (sdrValues.TryGetProperty("light.shadows", out var lsh)) Check(Approx(s.Values[(int)Parameter.Shadows] / 100.0, lsh.GetDouble()), $"{id}: shadows");
-        if (sdrValues.TryGetProperty("light.s_curve", out var lsc)) Check(Approx(s.Values[(int)Parameter.ToneCurve] / 100.0, lsc.GetDouble()), $"{id}: s_curve");
-        if (sdrValues.TryGetProperty("light.curve", out var cv)) VerifyCurve(cv, s.Curve ?? new ToneCurveSettings(), id + ".sdr");
 
-        var toneControls = s.ToneControls ?? new ToneControlsSettings();
-        if (sdrValues.TryGetProperty("tone.black_point", out var bp)) Check(Approx(toneControls.BlackPoint, bp.GetDouble()), $"{id}: black_point");
-        if (sdrValues.TryGetProperty("tone.white_point", out var wp)) Check(Approx(toneControls.WhitePoint, wp.GetDouble()), $"{id}: white_point");
-        if (sdrValues.TryGetProperty("color.vibrance", out var vib)) Check(Approx(toneControls.Vibrance, vib.GetDouble()), $"{id}: vibrance");
-
-        var grading = s.ColorGrading ?? new ColorGradingSettings();
-        if (sdrValues.TryGetProperty("color.grading.shadows", out var cgs))
-            Check(Approx(grading.Shadows.Hue, cgs.GetProperty("hue").GetDouble()) && Approx(grading.Shadows.Saturation, cgs.GetProperty("saturation").GetDouble()), $"{id}: grading.shadows");
-        if (sdrValues.TryGetProperty("color.grading.midtones", out var cgm))
-            Check(Approx(grading.Midtones.Hue, cgm.GetProperty("hue").GetDouble()) && Approx(grading.Midtones.Saturation, cgm.GetProperty("saturation").GetDouble()), $"{id}: grading.midtones");
-        if (sdrValues.TryGetProperty("color.grading.highlights", out var cgh))
-            Check(Approx(grading.Highlights.Hue, cgh.GetProperty("hue").GetDouble()) && Approx(grading.Highlights.Saturation, cgh.GetProperty("saturation").GetDouble()), $"{id}: grading.highlights");
-
-        if (sdrValues.TryGetProperty("color.white_balance.mode", out var wbm) && wbm.GetString() == "temperature")
-        {
-            Check(!s.CameraWhiteBalance, $"{id}: wb mode custom");
-            if (sdrValues.TryGetProperty("color.white_balance.temperature_kelvin", out var kt)) Check(Approx(s.Values[(int)Parameter.Temperature], kt.GetDouble()), $"{id}: wb temp");
-            if (sdrValues.TryGetProperty("color.white_balance.tint", out var ktn)) Check(Approx(s.Values[(int)Parameter.Tint], ktn.GetDouble()), $"{id}: wb tint");
-        }
-        if (sdrValues.TryGetProperty("color.saturation", out var csa)) Check(Approx(1.0 + s.Values[(int)Parameter.Saturation] / 100.0, csa.GetDouble()), $"{id}: saturation");
-
-        var hsl = s.Hsl ?? new HslSettings();
-        for (var idx = 0; idx < HslChannels.Length; idx++)
-        {
-            var ch = HslChannels[idx];
-            if (sdrValues.TryGetProperty("color.hsl.hue." + ch, out var v0)) Check(Approx(hsl.Value(0, idx), v0.GetDouble()), $"{id}: hsl.hue.{ch}");
-            if (sdrValues.TryGetProperty("color.hsl.saturation." + ch, out var v1)) Check(Approx(hsl.Value(1, idx), v1.GetDouble()), $"{id}: hsl.sat.{ch}");
-            if (sdrValues.TryGetProperty("color.hsl.lightness." + ch, out var v2)) Check(Approx(hsl.Value(2, idx), v2.GetDouble()), $"{id}: hsl.lit.{ch}");
-        }
-
-        var fx = s.Effects ?? new PhotoEffectsSettings();
-        if (sdrValues.TryGetProperty("effects.vignette.amount", out var va)) Check(Approx(fx.VignetteAmount, va.GetDouble()), $"{id}: vignette.amount");
-        if (sdrValues.TryGetProperty("effects.vignette.midpoint", out var vm)) Check(Approx(fx.VignetteMidpoint, vm.GetDouble()), $"{id}: vignette.midpoint");
-        if (sdrValues.TryGetProperty("effects.vignette.roundness", out var vr)) Check(Approx(fx.VignetteRoundness, vr.GetDouble()), $"{id}: vignette.roundness");
-        if (sdrValues.TryGetProperty("effects.vignette.feather", out var vf)) Check(Approx(fx.VignetteFeather, vf.GetDouble()), $"{id}: vignette.feather");
-        if (sdrValues.TryGetProperty("effects.vignette.highlights", out var vh)) Check(Approx(fx.VignetteHighlights, vh.GetDouble()), $"{id}: vignette.highlights");
-        if (sdrValues.TryGetProperty("effects.grain.amount", out var ga)) Check(Approx(fx.GrainAmount, ga.GetDouble()), $"{id}: grain.amount");
-        if (sdrValues.TryGetProperty("effects.grain.size", out var gs)) Check(Approx(fx.GrainSize, gs.GetDouble()), $"{id}: grain.size");
-        if (sdrValues.TryGetProperty("effects.grain.roughness", out var gr)) Check(Approx(fx.GrainRoughness, gr.GetDouble()), $"{id}: grain.roughness");
-
-        var atm = s.Atmosphere ?? new AtmosphereSettings();
-        if (sdrValues.TryGetProperty("effects.clarity", out var cl)) Check(Approx(atm.Clarity, cl.GetDouble()), $"{id}: clarity");
-        if (sdrValues.TryGetProperty("effects.dehaze", out var dh)) Check(Approx(atm.Dehaze, dh.GetDouble()), $"{id}: dehaze");
-        if (sdrValues.TryGetProperty("detail.sharpening", out var dsh)) Check(Approx(s.Values[(int)Parameter.Sharpening] / 100.0, dsh.GetDouble()), $"{id}: sharpening");
-        if (sdrValues.TryGetProperty("detail.denoise.chroma_mode", out var cm)) Check(s.DisplayChromaDenoise == cm.GetInt32(), $"{id}: chroma_mode");
-        if (sdrValues.TryGetProperty("detail.denoise.wavelet", out var wdObj) && wdObj.ValueKind == JsonValueKind.Object)
-        {
-            var dn = s.Denoise ?? throw new Exception($"{id}: expected Denoise non-null");
-            Check(dn.Enabled == wdObj.GetProperty("enabled").GetBoolean(), $"{id}: wavelet.enabled");
-            Check(Approx(dn.Luma, wdObj.GetProperty("luma").GetDouble()) &&
-                  Approx(dn.Chroma, wdObj.GetProperty("chroma").GetDouble()) &&
-                  Approx(dn.Coarse, wdObj.GetProperty("coarse").GetDouble()), $"{id}: wavelet values");
-        }
-
-        var geom = s.Geometry ?? new GeometrySettings();
-        if (sdrValues.TryGetProperty("geometry.crop.x", out var gx)) Check(Approx(geom.CropX, gx.GetDouble()), $"{id}: cropX");
-        if (sdrValues.TryGetProperty("geometry.crop.y", out var gy)) Check(Approx(geom.CropY, gy.GetDouble()), $"{id}: cropY");
-        if (sdrValues.TryGetProperty("geometry.crop.width", out var gw)) Check(Approx(geom.CropWidth, gw.GetDouble()), $"{id}: cropW");
-        if (sdrValues.TryGetProperty("geometry.crop.height", out var gh)) Check(Approx(geom.CropHeight, gh.GetDouble()), $"{id}: cropH");
-        if (sdrValues.TryGetProperty("geometry.quarter_turns", out var qt)) Check(geom.QuarterTurns == qt.GetInt32(), $"{id}: quarterTurns");
-        if (sdrValues.TryGetProperty("geometry.flip_horizontal", out var fh)) Check(geom.FlipHorizontal == fh.GetBoolean(), $"{id}: flipH");
-        if (sdrValues.TryGetProperty("geometry.flip_vertical", out var fv)) Check(geom.FlipVertical == fv.GetBoolean(), $"{id}: flipV");
-        if (sdrValues.TryGetProperty("geometry.straighten_degrees", out var stg)) Check(Approx(geom.StraightenDegrees, stg.GetDouble()), $"{id}: straighten");
-        if (sdrValues.TryGetProperty("geometry.perspective.horizontal", out var ph)) Check(Approx(geom.PerspectiveHorizontal, ph.GetDouble()), $"{id}: perspH");
-        if (sdrValues.TryGetProperty("geometry.perspective.vertical", out var pv)) Check(Approx(geom.PerspectiveVertical, pv.GetDouble()), $"{id}: perspV");
-
-        if (sdrValues.TryGetProperty("geometry.lens.distortion", out var ld))
+        if (metadata.TryGetProperty("lens_extra", out var lensExtra) && lensExtra.ValueKind == JsonValueKind.Object)
         {
             var lens = s.Lens ?? new LensSettings();
-            Check(lens.Distortion == ld.GetBoolean(), $"{id}: lens.distortion");
-            Check(lens.Tca == sdrValues.GetProperty("geometry.lens.tca").GetBoolean(), $"{id}: lens.tca");
-            Check(lens.Vignetting == sdrValues.GetProperty("geometry.lens.vignetting").GetBoolean(), $"{id}: lens.vignetting");
-            Check(lens.AutoCrop == sdrValues.GetProperty("geometry.lens.auto_crop").GetBoolean(), $"{id}: lens.autoCrop");
-            string? expPid = sdrValues.TryGetProperty("geometry.lens.profile_id", out var lpid) && lpid.ValueKind == JsonValueKind.String
-                ? lpid.GetString() : null;
-            Check(lens.ProfileId == expPid, $"{id}: lens.profileID");
+            if (lensExtra.TryGetProperty("focal_length", out var fl) && fl.ValueKind == JsonValueKind.Number)
+                Expect(Approx(lens.FocalLength ?? -1, fl.GetDouble()), "lens.focalLength");
+            if (lensExtra.TryGetProperty("crop_factor", out var cf) && cf.ValueKind == JsonValueKind.Number)
+                Expect(Approx(lens.CropFactor ?? -1, cf.GetDouble()), "lens.cropFactor");
         }
 
         if (hdrEditing ? hasHdr : hasDormant)
         {
             var hdrCheck = hdrEditing ? hdrValues : dormant;
-            var hdr = s.HDR ?? throw new Exception($"{id}: expected HDR subtree to be preserved");
-            Check((hdr.Mode == HDRMode.Hdr) == hdrEditing, $"{id}: HDR.Mode mismatch");
-            if (hdrCheck.TryGetProperty("light.exposure", out var hev)) Check(Approx(hdr.Exposure, hev.GetDouble()), $"{id}: hdr.exposure");
-            if (hdrCheck.TryGetProperty("light.contrast", out var hct)) Check(Approx(1.0 + hdr.Contrast / 100.0, hct.GetDouble()), $"{id}: hdr.contrast");
-            if (hdrCheck.TryGetProperty("light.highlights", out var hhi)) Check(Approx(-hdr.Highlights / 100.0, hhi.GetDouble()), $"{id}: hdr.highlights");
-            if (hdrCheck.TryGetProperty("light.shadows", out var hsh)) Check(Approx(hdr.Shadows / 100.0, hsh.GetDouble()), $"{id}: hdr.shadows");
-            if (hdrCheck.TryGetProperty("color.saturation", out var hsat)) Check(Approx(1.0 + hdr.Saturation / 100.0, hsat.GetDouble()), $"{id}: hdr.saturation");
-            if (hdrCheck.TryGetProperty("hdr.relative_temperature", out var hrt)) Check(Approx(hdr.Temperature, hrt.GetDouble()), $"{id}: hdr.temp");
-            if (hdrCheck.TryGetProperty("hdr.relative_tint", out var hrtn)) Check(Approx(hdr.Tint, hrtn.GetDouble()), $"{id}: hdr.tint");
-            if (hdrCheck.TryGetProperty("hdr.peak_limit_ev", out var hpk)) Check(Approx(hdr.RenditionSettings.PeakLimitEV, hpk.GetDouble()), $"{id}: hdr.peakLimit");
-            if (hdrCheck.TryGetProperty("hdr.sdr_exposure_ev", out var hse)) Check(Approx(hdr.RenditionSettings.SdrExposureEV, hse.GetDouble()), $"{id}: hdr.sdrExp");
-            if (hdrCheck.TryGetProperty("hdr.sdr_contrast", out var hsct)) Check(Approx(hdr.RenditionSettings.SdrContrast, hsct.GetDouble()), $"{id}: hdr.sdrContrast");
-            if (hdrCheck.TryGetProperty("hdr.sdr_saturation", out var hssat)) Check(Approx(hdr.RenditionSettings.SdrSaturation, hssat.GetDouble()), $"{id}: hdr.sdrSat");
-            if (hdrCheck.TryGetProperty("detail.denoise.post_rgb", out var hpr)) Check(Approx(hdr.DetailSettings.Denoise, hpr.GetDouble()), $"{id}: hdr.denoise");
-            if (hdrCheck.TryGetProperty("light.curve", out var hcv)) VerifyCurve(hcv, hdr.ToneSettings.Curve, id + ".hdr");
-            if (hdrCheck.TryGetProperty("hdr.look", out var hlk) && hlk.ValueKind == JsonValueKind.Object)
+            if (s.HDR is not { } hdr)
             {
-                Check(hdr.LookSettings.Sha256 == hlk.GetProperty("sha256").GetString() &&
-                      hdr.LookSettings.Name == hlk.GetProperty("name").GetString() &&
-                      Approx(hdr.LookSettings.Strength, hlk.GetProperty("strength").GetDouble()), $"{id}: hdr.look");
+                mismatches.Add("expected HDR subtree to be preserved");
             }
-            if (hdrCheck.TryGetProperty("hdr.camera_development", out var hcam) && hcam.ValueKind == JsonValueKind.Object)
+            else
             {
-                Check((hdr.CameraSettings.CustomWhiteBalance ? "temperature" : "as_shot") == hcam.GetProperty("white_balance_mode").GetString(), $"{id}: hdr.cam.wb");
-                Check(Approx(hdr.CameraSettings.Temperature, hcam.GetProperty("temperature").GetDouble()), $"{id}: hdr.cam.temp");
-                Check(Approx(hdr.CameraSettings.Tint, hcam.GetProperty("tint").GetDouble()), $"{id}: hdr.cam.tint");
-                Check((hdr.CameraSettings.SensorExposure ? "sensor" : "metadata") == hcam.GetProperty("exposure_reference").GetString(), $"{id}: hdr.cam.expRef");
-                Check(hdr.CameraSettings.FbddLevel == hcam.GetProperty("fbdd_level").GetInt32(), $"{id}: hdr.cam.fbdd");
-                if (metadata.TryGetProperty("hdr_camera_development_extra", out var hextra) && hextra.ValueKind == JsonValueKind.Object)
+                Expect((hdr.Mode == HDRMode.Hdr) == hdrEditing, "HDR.Mode mismatch");
+                if (hdrCheck.TryGetProperty("light.exposure", out var hev)) Expect(Approx(hdr.Exposure, hev.GetDouble()), "hdr.exposure");
+                if (hdrCheck.TryGetProperty("light.contrast", out var hct)) Expect(Approx(1.0 + hdr.Contrast / 100.0, hct.GetDouble()), "hdr.contrast");
+                if (hdrCheck.TryGetProperty("light.highlights", out var hhi)) Expect(Approx(-hdr.Highlights / 100.0, hhi.GetDouble()), "hdr.highlights");
+                if (hdrCheck.TryGetProperty("light.shadows", out var hsh)) Expect(Approx(hdr.Shadows / 100.0, hsh.GetDouble()), "hdr.shadows");
+                if (hdrCheck.TryGetProperty("color.saturation", out var hsat)) Expect(Approx(1.0 + hdr.Saturation / 100.0, hsat.GetDouble()), "hdr.saturation");
+                if (hdrCheck.TryGetProperty("hdr.relative_temperature", out var hrt)) Expect(Approx(hdr.Temperature, hrt.GetDouble()), "hdr.temp");
+                if (hdrCheck.TryGetProperty("hdr.relative_tint", out var hrtn)) Expect(Approx(hdr.Tint, hrtn.GetDouble()), "hdr.tint");
+
+                // HDR Tone block
+                if (hdrCheck.TryGetProperty("light.s_curve", out var hsc)) Expect(Approx(hdr.ToneSettings.CurveStrength / 100.0, hsc.GetDouble()), "hdr.s_curve");
+                if (hdrCheck.TryGetProperty("tone.black_point", out var hbp)) Expect(Approx(hdr.ToneSettings.BlackPoint, hbp.GetDouble()), "hdr.black_point");
+                if (hdrCheck.TryGetProperty("tone.white_point", out var hwp)) Expect(Approx(hdr.ToneSettings.WhitePoint, hwp.GetDouble()), "hdr.white_point");
+                if (hdrCheck.TryGetProperty("light.curve", out var hcv)) VerifyCurve(hcv, hdr.ToneSettings.Curve, id + ".hdr", mismatches);
+
+                // HDR Color block
+                if (hdrCheck.TryGetProperty("color.vibrance", out var hvib)) Expect(Approx(hdr.ColorSettings.Vibrance, hvib.GetDouble()), "hdr.vibrance");
+                for (var idx = 0; idx < HslChannels.Length; idx++)
                 {
-                    if (hextra.TryGetProperty("lens_profile", out var hlp) && hlp.ValueKind == JsonValueKind.String)
-                        Check(hdr.CameraSettings.LensProfile == hlp.GetString(), $"{id}: hdr.cam.lensProfile");
-                    if (hextra.TryGetProperty("camera_profile", out var hcp) && hcp.ValueKind == JsonValueKind.Object)
-                        Check(hdr.CameraSettings.CameraProfile?.Sha256 == hcp.GetProperty("sha256").GetString(), $"{id}: hdr.cam.camProfile");
+                    var ch = HslChannels[idx];
+                    if (hdrCheck.TryGetProperty("color.hsl.hue." + ch, out var hv0)) Expect(Approx(hdr.ColorSettings.Hsl.Value(0, idx), hv0.GetDouble()), $"hdr.hsl.hue.{ch}");
+                    if (hdrCheck.TryGetProperty("color.hsl.saturation." + ch, out var hv1)) Expect(Approx(hdr.ColorSettings.Hsl.Value(1, idx), hv1.GetDouble()), $"hdr.hsl.sat.{ch}");
+                    if (hdrCheck.TryGetProperty("color.hsl.lightness." + ch, out var hv2)) Expect(Approx(hdr.ColorSettings.Hsl.Value(2, idx), hv2.GetDouble()), $"hdr.hsl.lit.{ch}");
                 }
+                if (hdrCheck.TryGetProperty("color.grading.shadows", out var hcgs))
+                    Expect(Approx(hdr.ColorSettings.Grading.Shadows.Hue, hcgs.GetProperty("hue").GetDouble()) &&
+                           Approx(hdr.ColorSettings.Grading.Shadows.Saturation, hcgs.GetProperty("saturation").GetDouble()), "hdr.grading.shadows");
+                if (hdrCheck.TryGetProperty("color.grading.midtones", out var hcgm))
+                    Expect(Approx(hdr.ColorSettings.Grading.Midtones.Hue, hcgm.GetProperty("hue").GetDouble()) &&
+                           Approx(hdr.ColorSettings.Grading.Midtones.Saturation, hcgm.GetProperty("saturation").GetDouble()), "hdr.grading.midtones");
+                if (hdrCheck.TryGetProperty("color.grading.highlights", out var hcgh))
+                    Expect(Approx(hdr.ColorSettings.Grading.Highlights.Hue, hcgh.GetProperty("hue").GetDouble()) &&
+                           Approx(hdr.ColorSettings.Grading.Highlights.Saturation, hcgh.GetProperty("saturation").GetDouble()), "hdr.grading.highlights");
+
+                // HDR Rendition block
+                if (hdrCheck.TryGetProperty("hdr.peak_limit_ev", out var hpk)) Expect(Approx(hdr.RenditionSettings.PeakLimitEV, hpk.GetDouble()), "hdr.peakLimit");
+                if (hdrCheck.TryGetProperty("hdr.sdr_exposure_ev", out var hse)) Expect(Approx(hdr.RenditionSettings.SdrExposureEV, hse.GetDouble()), "hdr.sdrExp");
+                if (hdrCheck.TryGetProperty("hdr.sdr_contrast", out var hsct)) Expect(Approx(hdr.RenditionSettings.SdrContrast, hsct.GetDouble()), "hdr.sdrContrast");
+                if (hdrCheck.TryGetProperty("hdr.sdr_saturation", out var hssat)) Expect(Approx(hdr.RenditionSettings.SdrSaturation, hssat.GetDouble()), "hdr.sdrSat");
+
+                // HDR Effects block
+                if (hdrCheck.TryGetProperty("effects.vignette.amount", out var hva)) Expect(Approx(hdr.EffectSettings.VignetteAmount, hva.GetDouble()), "hdr.vignette.amount");
+                if (hdrCheck.TryGetProperty("effects.vignette.midpoint", out var hvm)) Expect(Approx(hdr.EffectSettings.VignetteMidpoint, hvm.GetDouble()), "hdr.vignette.midpoint");
+                if (hdrCheck.TryGetProperty("effects.vignette.roundness", out var hvr)) Expect(Approx(hdr.EffectSettings.VignetteRoundness, hvr.GetDouble()), "hdr.vignette.roundness");
+                if (hdrCheck.TryGetProperty("effects.vignette.feather", out var hvf)) Expect(Approx(hdr.EffectSettings.VignetteFeather, hvf.GetDouble()), "hdr.vignette.feather");
+                if (hdrCheck.TryGetProperty("effects.vignette.highlights", out var hvh)) Expect(Approx(hdr.EffectSettings.VignetteHighlights, hvh.GetDouble()), "hdr.vignette.highlights");
+                if (hdrCheck.TryGetProperty("effects.grain.amount", out var hga)) Expect(Approx(hdr.EffectSettings.GrainAmount, hga.GetDouble()), "hdr.grain.amount");
+                if (hdrCheck.TryGetProperty("effects.grain.size", out var hgs)) Expect(Approx(hdr.EffectSettings.GrainSize, hgs.GetDouble()), "hdr.grain.size");
+                if (hdrCheck.TryGetProperty("effects.grain.roughness", out var hgr)) Expect(Approx(hdr.EffectSettings.GrainRoughness, hgr.GetDouble()), "hdr.grain.roughness");
+
+                // HDR Detail block
+                if (hdrCheck.TryGetProperty("effects.clarity", out var hcl)) Expect(Approx(hdr.DetailSettings.Clarity * 100.0, hcl.GetDouble()), "hdr.clarity");
+                if (hdrCheck.TryGetProperty("effects.dehaze", out var hdh)) Expect(Approx(hdr.DetailSettings.Dehaze * 100.0, hdh.GetDouble()), "hdr.dehaze");
+                if (hdrCheck.TryGetProperty("detail.sharpening", out var hdsh)) Expect(Approx(hdr.DetailSettings.Sharpening, hdsh.GetDouble()), "hdr.sharpening");
+                if (hdrCheck.TryGetProperty("detail.denoise.post_rgb", out var hpr)) Expect(Approx(hdr.DetailSettings.Denoise, hpr.GetDouble()), "hdr.denoise");
+
+                // HDR Look block
+                if (hdrCheck.TryGetProperty("hdr.look", out var hlk) && hlk.ValueKind == JsonValueKind.Object)
+                {
+                    Expect(hdr.LookSettings.Sha256 == hlk.GetProperty("sha256").GetString() &&
+                           hdr.LookSettings.Name == hlk.GetProperty("name").GetString() &&
+                           Approx(hdr.LookSettings.Strength, hlk.GetProperty("strength").GetDouble()), "hdr.look");
+                }
+
+                // HDR CameraDevelopment block
+                if (hdrCheck.TryGetProperty("hdr.camera_development", out var hcam) && hcam.ValueKind == JsonValueKind.Object)
+                {
+                    Expect((hdr.CameraSettings.CustomWhiteBalance ? "temperature" : "as_shot") == hcam.GetProperty("white_balance_mode").GetString(), "hdr.cam.wb");
+                    Expect(Approx(hdr.CameraSettings.Temperature, hcam.GetProperty("temperature").GetDouble()), "hdr.cam.temp");
+                    Expect(Approx(hdr.CameraSettings.Tint, hcam.GetProperty("tint").GetDouble()), "hdr.cam.tint");
+                    Expect((hdr.CameraSettings.SensorExposure ? "sensor" : "metadata") == hcam.GetProperty("exposure_reference").GetString(), "hdr.cam.expRef");
+                    Expect(hdr.CameraSettings.FbddLevel == hcam.GetProperty("fbdd_level").GetInt32(), "hdr.cam.fbdd");
+                    if (metadata.TryGetProperty("hdr_camera_development_extra", out var hextra) && hextra.ValueKind == JsonValueKind.Object)
+                    {
+                        if (hextra.TryGetProperty("lens_distortion", out var hld)) Expect(hdr.CameraSettings.LensDistortion == hld.GetBoolean(), "hdr.cam.lensDistortion");
+                        if (hextra.TryGetProperty("lens_tca", out var hlt)) Expect(hdr.CameraSettings.LensTca == hlt.GetBoolean(), "hdr.cam.lensTca");
+                        if (hextra.TryGetProperty("lens_vignetting", out var hlv)) Expect(hdr.CameraSettings.LensVignetting == hlv.GetBoolean(), "hdr.cam.lensVignetting");
+                        if (hextra.TryGetProperty("lens_auto_crop", out var hlac)) Expect(hdr.CameraSettings.LensAutoCrop == hlac.GetBoolean(), "hdr.cam.lensAutoCrop");
+                        if (hextra.TryGetProperty("lens_profile", out var hlp) && hlp.ValueKind == JsonValueKind.String)
+                            Expect(hdr.CameraSettings.LensProfile == hlp.GetString(), "hdr.cam.lensProfile");
+                        if (hextra.TryGetProperty("camera_profile", out var hcp) && hcp.ValueKind == JsonValueKind.Object)
+                        {
+                            Expect(hdr.CameraSettings.CameraProfile?.Sha256 == hcp.GetProperty("sha256").GetString(), "hdr.cam.camProfile.sha256");
+                            Expect(hdr.CameraSettings.CameraProfile?.Name == hcp.GetProperty("name").GetString(), "hdr.cam.camProfile.name");
+                        }
+                    }
+                }
+
+                // HDR Geometry block
+                if (hdrCheck.TryGetProperty("geometry.crop.x", out var hgx)) Expect(Approx(hdr.Geometry.CropX, hgx.GetDouble()), "hdr.cropX");
+                if (hdrCheck.TryGetProperty("geometry.crop.y", out var hgy)) Expect(Approx(hdr.Geometry.CropY, hgy.GetDouble()), "hdr.cropY");
+                if (hdrCheck.TryGetProperty("geometry.crop.width", out var hgw)) Expect(Approx(hdr.Geometry.CropWidth, hgw.GetDouble()), "hdr.cropW");
+                if (hdrCheck.TryGetProperty("geometry.crop.height", out var hgh)) Expect(Approx(hdr.Geometry.CropHeight, hgh.GetDouble()), "hdr.cropH");
+                if (hdrCheck.TryGetProperty("geometry.quarter_turns", out var hqt)) Expect(hdr.Geometry.QuarterTurns == hqt.GetInt32(), "hdr.quarterTurns");
+                if (hdrCheck.TryGetProperty("geometry.flip_horizontal", out var hfh)) Expect(hdr.Geometry.FlipHorizontal == hfh.GetBoolean(), "hdr.flipH");
+                if (hdrCheck.TryGetProperty("geometry.flip_vertical", out var hfv)) Expect(hdr.Geometry.FlipVertical == hfv.GetBoolean(), "hdr.flipV");
+                if (hdrCheck.TryGetProperty("geometry.straighten_degrees", out var hstg)) Expect(Approx(hdr.Geometry.StraightenDegrees, hstg.GetDouble()), "hdr.straighten");
+                if (hdrCheck.TryGetProperty("geometry.perspective.horizontal", out var hph)) Expect(Approx(hdr.Geometry.PerspectiveHorizontal, hph.GetDouble()), "hdr.perspH");
+                if (hdrCheck.TryGetProperty("geometry.perspective.vertical", out var hpv)) Expect(Approx(hdr.Geometry.PerspectiveVertical, hpv.GetDouble()), "hdr.perspV");
             }
         }
 
         if (hasLocal && localValues.TryGetProperty("local.ai_denoise_enabled", out var ai))
-            Check(s.AIDenoiseEnabled == ai.GetBoolean(), $"{id}: AIDenoiseEnabled");
+            Expect(s.AIDenoiseEnabled == ai.GetBoolean(), "AIDenoiseEnabled");
         if (hasLocal && localValues.TryGetProperty("local.hdr_camera_ai_enabled", out var hai))
-            Check(s.HDRCameraAIEnabled == hai.GetBoolean(), $"{id}: HDRCameraAIEnabled");
+            Expect(s.HDRCameraAIEnabled == hai.GetBoolean(), "HDRCameraAIEnabled");
+
+        if (mismatches.Count > 0)
+            throw new ExpectationMismatchException($"{id}: {mismatches.Count} field mismatch(es): {string.Join("; ", mismatches)}");
     }
 
     private static void MutateJsonScope(JsonObject registry, string targetKey, string scope, string key, JsonElement value)
