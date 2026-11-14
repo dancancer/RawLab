@@ -3,6 +3,81 @@ import Foundation
 import Darwin
 import UniformTypeIdentifiers
 
+struct FileStatFingerprint: Hashable {
+    let device: dev_t
+    let inode: ino_t
+    let size: off_t
+    let mtimeSec: Int
+    let mtimeNsec: Int
+    let ctimeSec: Int
+    let ctimeNsec: Int
+
+    init?(path: String) {
+        var st = Darwin.stat()
+        guard stat(path, &st) == 0,
+              (st.st_mode & S_IFMT) == S_IFREG else {
+            return nil
+        }
+        device = st.st_dev
+        inode = st.st_ino
+        size = st.st_size
+        mtimeSec = st.st_mtimespec.tv_sec
+        mtimeNsec = st.st_mtimespec.tv_nsec
+        ctimeSec = st.st_ctimespec.tv_sec
+        ctimeNsec = st.st_ctimespec.tv_nsec
+    }
+}
+
+final class BoundedLRUCache<Key: Hashable, Value> {
+    let maximumEntries: Int
+    private var entries: [Key: Value] = [:]
+    private var order: [Key] = []
+
+    init(maximumEntries: Int) {
+        self.maximumEntries = max(1, maximumEntries)
+    }
+
+    var count: Int { entries.count }
+
+    func peek(_ key: Key) -> Value? { entries[key] }
+
+    func get(_ key: Key) -> Value? {
+        guard let value = entries[key] else { return nil }
+        touch(key)
+        return value
+    }
+
+    func set(_ value: Value, for key: Key) {
+        if entries[key] != nil {
+            entries[key] = value
+            touch(key)
+            return
+        }
+        while entries.count >= maximumEntries, let oldest = order.first {
+            order.removeFirst()
+            entries.removeValue(forKey: oldest)
+        }
+        entries[key] = value
+        order.append(key)
+    }
+
+    func removeValue(for key: Key) {
+        guard entries.removeValue(forKey: key) != nil else { return }
+        order.removeAll { $0 == key }
+    }
+
+    private func touch(_ key: Key) {
+        if let idx = order.firstIndex(of: key) {
+            if idx != order.count - 1 {
+                order.remove(at: idx)
+                order.append(key)
+            }
+        } else {
+            order.append(key)
+        }
+    }
+}
+
 struct OriginalFileIdentity: Codable, Equatable {
     let path: String
     let size: UInt64
@@ -73,9 +148,106 @@ final class EditPersistence {
             .appendingPathComponent("RawLab/Edits", isDirectory: true)
     }
 
+    static let registryCacheCapacity = 32
+
+    private final class RegistryCache {
+        private struct Entry {
+            let fingerprint: FileStatFingerprint
+            let registry: Registry
+        }
+
+        private let stateLock = NSLock()
+        private let stripeLocks = (0..<16).map { _ in NSLock() }
+        private var cache: BoundedLRUCache<String, Entry>
+        private var invalidationEpoch: UInt64 = 0
+
+        init(maximumEntries: Int) {
+            cache = BoundedLRUCache(maximumEntries: maximumEntries)
+        }
+
+        private func stripeLock(for path: String) -> NSLock {
+            let hash = UInt(bitPattern: path.hashValue)
+            return stripeLocks[Int(hash % UInt(stripeLocks.count))]
+        }
+
+        func invalidate(path: String) {
+            stateLock.lock()
+            invalidationEpoch &+= 1
+            cache.removeValue(for: path)
+            stateLock.unlock()
+        }
+
+        func load(path: String, loader: () throws -> Registry) throws -> Registry {
+            let stripe = stripeLock(for: path)
+            stripe.lock()
+            defer { stripe.unlock() }
+
+            stateLock.lock()
+            let epochBefore = invalidationEpoch
+            let s1 = FileStatFingerprint(path: path)
+            if let s1, let hit = cache.peek(path), hit.fingerprint == s1 {
+                _ = cache.get(path)
+                stateLock.unlock()
+                return hit.registry
+            }
+            cache.removeValue(for: path)
+            stateLock.unlock()
+
+            let registry: Registry
+            do {
+                registry = try loader()
+            } catch {
+                invalidate(path: path)
+                throw error
+            }
+            let s2 = FileStatFingerprint(path: path)
+            if let s1, s2 == s1 {
+                stateLock.lock()
+                if invalidationEpoch == epochBefore, FileStatFingerprint(path: path) == s1 {
+                    cache.set(Entry(fingerprint: s1, registry: registry), for: path)
+                }
+                stateLock.unlock()
+            } else {
+                invalidate(path: path)
+            }
+            return registry
+        }
+    }
+
     private let directory: URL
     private let writeData: (Data, URL) throws -> Void
     private var file: URL { directory.appendingPathComponent("edits.json") }
+
+    private static let statsLock = NSLock()
+    private static var _registryDiskReadCount = 0
+    private static var _registryDiskReadCountsByPath: [String: Int] = [:]
+    private static let registryCache = RegistryCache(maximumEntries: registryCacheCapacity)
+
+    static var registryDiskReadCount: Int {
+        statsLock.lock()
+        defer { statsLock.unlock() }
+        return _registryDiskReadCount
+    }
+
+    static func registryDiskReadCount(forDirectory directory: URL) -> Int {
+        let path = Self.resolvedRegistryFileURL(forDirectory: directory).path
+        statsLock.lock()
+        defer { statsLock.unlock() }
+        return _registryDiskReadCountsByPath[path, default: 0]
+    }
+
+    private static func resolvedRegistryFileURL(forDirectory directory: URL) -> URL {
+        directory.resolvingSymlinksInPath().standardizedFileURL
+            .appendingPathComponent("edits.json")
+            .resolvingSymlinksInPath().standardizedFileURL
+    }
+
+    private static func recordRegistryDiskRead(forFilePath path: String) {
+        statsLock.lock()
+        _registryDiskReadCount += 1
+        _registryDiskReadCountsByPath[path, default: 0] += 1
+        statsLock.unlock()
+    }
 
     init(directory: URL = EditPersistence.defaultDirectory,
          writeData: @escaping (Data, URL) throws -> Void = { try $0.write(to: $1, options: .atomic) }) throws {
@@ -84,9 +256,29 @@ final class EditPersistence {
         _ = try readRegistry()
     }
 
-    private func readRegistry() throws -> Registry {
-        guard FileManager.default.fileExists(atPath: file.path) else { return Registry() }
-        let data = try Data(contentsOf: file)
+    private func readRegistry(allowCache: Bool = true) throws -> Registry {
+        let resolvedFile = Self.resolvedRegistryFileURL(forDirectory: directory)
+        let resolvedPath = resolvedFile.path
+        guard FileManager.default.fileExists(atPath: resolvedPath) else {
+            Self.registryCache.invalidate(path: resolvedPath)
+            return Registry()
+        }
+        if allowCache {
+            return try Self.registryCache.load(path: resolvedPath) {
+                try parseRegistryFromDisk(fileURL: resolvedFile, resolvedPath: resolvedPath)
+            }
+        }
+        do {
+            return try parseRegistryFromDisk(fileURL: resolvedFile, resolvedPath: resolvedPath)
+        } catch {
+            Self.registryCache.invalidate(path: resolvedPath)
+            throw error
+        }
+    }
+
+    private func parseRegistryFromDisk(fileURL: URL, resolvedPath: String) throws -> Registry {
+        Self.recordRegistryDiskRead(forFilePath: resolvedPath)
+        let data = try Data(contentsOf: fileURL)
         guard (try JSONSerialization.jsonObject(with: data)) is [String: Any] else {
             throw CocoaError(.fileReadCorruptFile)
         }
@@ -104,6 +296,21 @@ final class EditPersistence {
             migrations = nil
         }
         return Registry(records: records, processingMigrations: migrations)
+    }
+
+    private func writeRegistry(_ updated: Registry) throws {
+        let preWritePath = Self.resolvedRegistryFileURL(forDirectory: directory).path
+        let invalidateAffectedPaths = {
+            Self.registryCache.invalidate(path: preWritePath)
+            let postWritePath = Self.resolvedRegistryFileURL(forDirectory: self.directory).path
+            if postWritePath != preWritePath {
+                Self.registryCache.invalidate(path: postWritePath)
+            }
+        }
+        let data = try Self.encodeRegistry(updated)
+        Self.registryCache.invalidate(path: preWritePath)
+        defer { invalidateAffectedPaths() }
+        try writeData(data, file)
     }
 
     private static func isVersionOne(_ slice: Data) -> Bool {
@@ -363,7 +570,7 @@ final class EditPersistence {
     func commitProcessingMigration(expected: PhotoEditRecord, candidate: PhotoEditState?,
                                    quality: ProcessingMigrationQuality) throws -> PhotoEditRecord {
         let result = try withWriteLock {
-            var updated = try readRegistry()
+            var updated = try readRegistry(allowCache: false)
             try expected.identity.requireCurrent()
             guard try snapshot(identity: expected.identity, registry: updated) == expected,
                   let original = expected.state, original.settings.processing.version < 3,
@@ -382,7 +589,7 @@ final class EditPersistence {
             var migrations = updated.processingMigrations ?? [:]
             migrations[expected.identity.path] = try JSONEncoder().encode(StoredMigration(identity: expected.identity, receipt: receipt))
             updated.processingMigrations = migrations
-            try writeData(Self.encodeRegistry(updated), file)
+            try writeRegistry(updated)
             return try snapshot(identity: expected.identity, registry: updated)
         }
         if let candidate, expected.state != candidate {
@@ -393,7 +600,7 @@ final class EditPersistence {
 
     func rollbackProcessingMigration(expected: PhotoEditRecord) throws -> PhotoEditRecord {
         let result = try withWriteLock {
-            var updated = try readRegistry()
+            var updated = try readRegistry(allowCache: false)
             try expected.identity.requireCurrent()
             guard try snapshot(identity: expected.identity, registry: updated) == expected,
                   var stored = Self.tryParseMigration(updated.processingMigrations?[expected.identity.path], identity: expected.identity),
@@ -404,7 +611,7 @@ final class EditPersistence {
             updated.records[expected.identity.path] = try JSONEncoder().encode(Record(identity: expected.identity, state: stored.receipt.original))
             stored.receipt.status = .rolledBack
             updated.processingMigrations?[expected.identity.path] = try JSONEncoder().encode(stored)
-            try writeData(Self.encodeRegistry(updated), file)
+            try writeRegistry(updated)
             return try snapshot(identity: expected.identity, registry: updated)
         }
         if expected.state != result.state {
@@ -429,14 +636,14 @@ final class EditPersistence {
         var changedPaths: [String: PhotoEditRecord] = [:]
         try withWriteLock {
             try Self.validateState(state)
-            var updated = try readRegistry()
+            var updated = try readRegistry(allowCache: false)
             for url in urls {
                 let identity = try OriginalFileIdentity(url)
                 if try snapshot(identity: identity, registry: updated).state == state { continue }
                 updated.records[identity.path] = try JSONEncoder().encode(Record(identity: identity, state: state))
                 changedPaths[identity.path] = PhotoEditRecord(identity: identity, state: state)
             }
-            if !changedPaths.isEmpty { try writeData(Self.encodeRegistry(updated), file) }
+            if !changedPaths.isEmpty { try writeRegistry(updated) }
         }
         postRecordsChanged(changedPaths)
     }
@@ -446,7 +653,7 @@ final class EditPersistence {
         var stateChanged = false
         let result = try withWriteLock {
             if let state { try Self.validateState(state) }
-            var updated = try readRegistry()
+            var updated = try readRegistry(allowCache: false)
             try identity.requireCurrent()
             let current = try snapshot(identity: identity, registry: updated)
             stateChanged = current.state != state
@@ -458,7 +665,7 @@ final class EditPersistence {
                 updated.processingMigrations?.removeValue(forKey: identity.path)
                 if updated.processingMigrations?.isEmpty == true { updated.processingMigrations = nil }
             }
-            try writeData(Self.encodeRegistry(updated), file)
+            try writeRegistry(updated)
             return PhotoEditRecord(identity: identity, state: state)
         }
         if stateChanged {
@@ -470,13 +677,13 @@ final class EditPersistence {
     @discardableResult func resetToUnmodified(_ url: URL) throws -> PhotoEditRecord {
         var clearedPath: String?
         let result = try withWriteLock {
-            var updated = try readRegistry()
+            var updated = try readRegistry(allowCache: false)
             let identity = try OriginalFileIdentity(url)
             let hadRecord = updated.records.removeValue(forKey: identity.path) != nil
             let hadMigration = updated.processingMigrations?.removeValue(forKey: identity.path) != nil
             if updated.processingMigrations?.isEmpty == true { updated.processingMigrations = nil }
             if hadRecord || hadMigration {
-                try writeData(Self.encodeRegistry(updated), file)
+                try writeRegistry(updated)
             }
             if hadRecord { clearedPath = identity.path }
             return PhotoEditRecord(identity: identity, state: nil)

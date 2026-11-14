@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import Foundation
 import ImageIO
 
@@ -112,6 +113,8 @@ struct ThumbnailCacheTests {
         try await verifyResetIdempotentSingleInvalidation(in: root)
         try await verifyLookRemovalAndRenderFailureClearStaleTile(in: root)
         try await verifyFolderRefreshInvalidation(in: root)
+        try await verifyLUTResourceDigestCacheAndInvalidation(in: root)
+        try await verifyCommitEditPersistenceReadBudget(in: root)
 
         print("PASS: thumbnail cache hit without re-decode, edited/unedited key isolation, byte-cost eviction, and edit/reset/refresh invalidation")
     }
@@ -802,5 +805,430 @@ struct ThumbnailCacheTests {
               "Post-refresh caller gets and caches fresh thumbnail even if invalidateDirectory fired mid-decode")
 
         PhotoThumbnails.shared.invalidateDirectory(root)
+    }
+
+    @MainActor
+    private static func verifyCommitEditPersistenceReadBudget(in root: URL) async throws {
+        RenderEngine.resetCounts()
+        let dir = root.appendingPathComponent("commit-read-budget", isDirectory: true)
+        let editsDir = dir.appendingPathComponent("edits", isDirectory: true)
+        let diskCacheDir = dir.appendingPathComponent("disk-cache", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let visibleCount = 5
+        var photos: [URL] = []
+        for idx in 0..<visibleCount {
+            let file = dir.appendingPathComponent("tile-\(idx).png")
+            try writePNG(to: file, red: CGFloat(idx + 1) / 10.0)
+            photos.append(file)
+        }
+
+        let store = try EditPersistence(directory: editsDir)
+        let session = AdjustmentTransferSession(store: store)
+        let thumbnails = PhotoThumbnails()
+        let previews = MacEditedPhotoPreviews(editDirectory: editsDir, cacheDirectory: diskCacheDir, thumbnails: thumbnails)
+
+        // Seed edits.json before the measured commit so reads traverse an existing registry file.
+        let seedRecord = try await previews.record(for: photos[visibleCount - 1])
+        var seedSettings = Adjustments(); seedSettings.exposureMode = .sensor; seedSettings.exposure = 0.25
+        let seedOutcome = session.commitEdit(expected: seedRecord, state: PhotoEditState(settings: seedSettings, filmID: ""))
+        check(seedOutcome.status == .applied, "Seed edit applied")
+
+        var tiles = Array(repeating: WorkspacePhotoTileState(), count: visibleCount)
+        for idx in 0..<visibleCount {
+            await tiles[idx].refresh(url: photos[idx], previews: previews)
+        }
+
+        // Measure total readRegistry disk parses caused by one commit plus refreshing all N visible tiles.
+        let targetBefore = try await previews.record(for: photos[0])
+        let readsBeforeCommit = EditPersistence.registryDiskReadCount(forDirectory: editsDir)
+        var editSettings = Adjustments(); editSettings.exposureMode = .sensor; editSettings.exposure = 1.1
+        let outcome = session.commitEdit(expected: targetBefore, state: PhotoEditState(settings: editSettings, filmID: ""))
+        check(outcome.status == .applied, "Target commit applied")
+
+        for idx in 0..<visibleCount {
+            await tiles[idx].refresh(url: photos[idx], previews: previews)
+        }
+        // Re-check cached thumbnail lookup (simulates SwiftUI tile rebuild checking isCurrent).
+        if let updatedRecord = outcome.saved {
+            let hit = await previews.cachedImage(for: updatedRecord)
+            check(hit === tiles[0].thumbnail, "Cached thumbnail returned for edited tile")
+        }
+        let readsDelta = EditPersistence.registryDiskReadCount(forDirectory: editsDir) - readsBeforeCommit
+        check(readsDelta <= visibleCount + 1,
+              "Single commit plus refreshing \(visibleCount) visible tiles performed \(readsDelta) readRegistry disk parses (limit \(visibleCount + 1))")
+
+        // Cross-instance consistency and external edits.json overwrite/corruption invalidation.
+        let reopened = try EditPersistence(directory: editsDir)
+        let reopenedState = try reopened.state(for: photos[0])
+        check(reopenedState?.settings.exposure == 1.1, "Separate EditPersistence instance observes committed state")
+
+        let editsFile = editsDir.appendingPathComponent("edits.json")
+        var externalSettings = Adjustments(); externalSettings.exposureMode = .sensor; externalSettings.exposure = 1.75
+        try store.save(photos[1], state: PhotoEditState(settings: externalSettings, filmID: ""))
+        let siblingState = try reopened.state(for: photos[1])
+        check(siblingState?.settings.exposure == 1.75,
+              "Second EditPersistence instance reflects state written by sibling instance")
+
+        let externalDir = dir.appendingPathComponent("external-edits", isDirectory: true)
+        let externalStore = try EditPersistence(directory: externalDir)
+        var overwrittenSettings = Adjustments(); overwrittenSettings.exposureMode = .sensor; overwrittenSettings.exposure = 2.5
+        try externalStore.save(photos[0], state: PhotoEditState(settings: overwrittenSettings, filmID: ""))
+        let externalBytes = try Data(contentsOf: externalDir.appendingPathComponent("edits.json"))
+        try externalBytes.write(to: editsFile)
+        let overwrittenState = try reopened.state(for: photos[0])
+        check(overwrittenState?.settings.exposure == 2.5,
+              "Direct on-disk edits.json replacement invalidates registry cache")
+
+        try Data("{\"version\":1,\"records\":{".utf8).write(to: editsFile)
+        var threwCorrupt = false
+        do {
+            _ = try EditPersistence(directory: editsDir)
+        } catch is CocoaError {
+            threwCorrupt = true
+        }
+        check(threwCorrupt, "On-disk edits.json corruption invalidates cache and throws CocoaError")
+
+        // External deletion of edits.json on an already-warmed instance must invalidate cache.
+        let deleteDir = dir.appendingPathComponent("external-delete", isDirectory: true)
+        let deleteStore = try EditPersistence(directory: deleteDir)
+        try deleteStore.save(photos[0], state: PhotoEditState(settings: externalSettings, filmID: ""))
+        let deleteWarm = try deleteStore.state(for: photos[0])
+        check(deleteWarm?.settings.exposure == 1.75,
+              "Warmed instance returns saved state before external deletion")
+        let deleteReadsBeforeHit = EditPersistence.registryDiskReadCount(forDirectory: deleteDir)
+        _ = try deleteStore.state(for: photos[0])
+        check(EditPersistence.registryDiskReadCount(forDirectory: deleteDir) == deleteReadsBeforeHit,
+              "Second read before external deletion hits cache")
+        try FileManager.default.removeItem(at: deleteDir.appendingPathComponent("edits.json"))
+        let afterDelete = try deleteStore.state(for: photos[0])
+        check(afterDelete == nil,
+              "External edits.json deletion invalidates already-warmed instance")
+
+        // Corrupt edits.json throwing in RegistryCache.load must invalidate & evict rather than promote/occupy an LRU slot.
+        let corruptLruRoot = dir.appendingPathComponent("corrupt-lru", isDirectory: true)
+        let capCount = EditPersistence.registryCacheCapacity
+        let corruptDir = corruptLruRoot.appendingPathComponent("corrupt-slot", isDirectory: true)
+        let corruptStore = try EditPersistence(directory: corruptDir)
+        try corruptStore.save(photos[0], state: PhotoEditState(settings: externalSettings, filmID: ""))
+        _ = try corruptStore.state(for: photos[0])
+        var healthyDirs: [URL] = []
+        var healthyStores: [EditPersistence] = []
+        for idx in 0..<(capCount - 1) {
+            let hDir = corruptLruRoot.appendingPathComponent("healthy-\(idx)", isDirectory: true)
+            let hStore = try EditPersistence(directory: hDir)
+            try hStore.save(photos[0], state: PhotoEditState(settings: externalSettings, filmID: ""))
+            _ = try hStore.state(for: photos[0])
+            healthyDirs.append(hDir)
+            healthyStores.append(hStore)
+        }
+        // Corrupt corruptDir (oldest slot); must remove from cache without touching/promoting it.
+        try Data("{\"version\":1,\"records\":{".utf8).write(to: corruptDir.appendingPathComponent("edits.json"))
+        _ = try? corruptStore.state(for: photos[0])
+        let extraHealthyDir = corruptLruRoot.appendingPathComponent("healthy-extra", isDirectory: true)
+        let extraHealthyStore = try EditPersistence(directory: extraHealthyDir)
+        try extraHealthyStore.save(photos[0], state: PhotoEditState(settings: externalSettings, filmID: ""))
+        _ = try extraHealthyStore.state(for: photos[0])
+        let oldestHealthyReadsBefore = EditPersistence.registryDiskReadCount(forDirectory: healthyDirs[0])
+        _ = try healthyStores[0].state(for: photos[0])
+        let oldestHealthyReadsDelta = EditPersistence.registryDiskReadCount(forDirectory: healthyDirs[0]) - oldestHealthyReadsBefore
+        check(oldestHealthyReadsDelta == 0,
+              "Throwing on corrupt registry must evict corrupt entry instead of occupying/promoting LRU slot (healthy-0 disk reads delta=\(oldestHealthyReadsDelta))")
+
+        // Symlink switching (dirA <-> dirB) when both targets exist and remain unchanged.
+        let symRoot = dir.appendingPathComponent("symlink-switch", isDirectory: true)
+        let symDirA = symRoot.appendingPathComponent("dirA", isDirectory: true)
+        let symDirB = symRoot.appendingPathComponent("dirB", isDirectory: true)
+        let symLink = symRoot.appendingPathComponent("current-edits", isDirectory: true)
+        let storeA = try EditPersistence(directory: symDirA)
+        let storeB = try EditPersistence(directory: symDirB)
+        var settingsA = Adjustments(); settingsA.exposureMode = .sensor; settingsA.exposure = 1.2
+        var settingsB = Adjustments(); settingsB.exposureMode = .sensor; settingsB.exposure = 2.4
+        try storeA.save(photos[0], state: PhotoEditState(settings: settingsA, filmID: ""))
+        try storeB.save(photos[0], state: PhotoEditState(settings: settingsB, filmID: ""))
+        try FileManager.default.createSymbolicLink(at: symLink, withDestinationURL: symDirA)
+
+        let symStore = try EditPersistence(directory: symLink)
+        let symInitial = try symStore.state(for: photos[0])
+        check(symInitial?.settings.exposure == 1.2,
+              "Warmed symlink store initially observes dirA state")
+        try FileManager.default.removeItem(at: symLink)
+        try FileManager.default.createSymbolicLink(at: symLink, withDestinationURL: symDirB)
+        let symAfterSwitchB = try symStore.state(for: photos[0])
+        check(symAfterSwitchB?.settings.exposure == 2.4,
+              "Symlink switch dirA -> dirB observes dirB without stale dirA cache hit (got \(String(describing: symAfterSwitchB?.settings.exposure)))")
+        try FileManager.default.removeItem(at: symLink)
+        try FileManager.default.createSymbolicLink(at: symLink, withDestinationURL: symDirA)
+        let symAfterSwitchA = try symStore.state(for: photos[0])
+        check(symAfterSwitchA?.settings.exposure == 1.2,
+              "Symlink switch dirB -> dirA observes dirA without stale dirB cache hit")
+
+        // Atomic write replacing an edits.json symlink must invalidate both old and new resolved paths.
+        let atomicTargetDir = symRoot.appendingPathComponent("atomic-target", isDirectory: true)
+        let atomicLinkDir = symRoot.appendingPathComponent("atomic-link", isDirectory: true)
+        try FileManager.default.createDirectory(at: atomicLinkDir, withIntermediateDirectories: true)
+        let atomicTargetStore = try EditPersistence(directory: atomicTargetDir)
+        var atomicInitial = Adjustments(); atomicInitial.exposureMode = .sensor; atomicInitial.exposure = 1.3
+        try atomicTargetStore.save(photos[0], state: PhotoEditState(settings: atomicInitial, filmID: ""))
+        let atomicTargetFile = atomicTargetDir.appendingPathComponent("edits.json")
+        let atomicLinkFile = atomicLinkDir.appendingPathComponent("edits.json")
+        try FileManager.default.createSymbolicLink(at: atomicLinkFile, withDestinationURL: atomicTargetFile)
+        let atomicLinkStore = try EditPersistence(directory: atomicLinkDir)
+        let atomicWarm = try atomicLinkStore.state(for: photos[0])
+        check(atomicWarm?.settings.exposure == 1.3,
+              "Warmed symlink edits.json store reads target state")
+        var atomicUpdated = Adjustments(); atomicUpdated.exposureMode = .sensor; atomicUpdated.exposure = 2.8
+        try atomicLinkStore.save(photos[0], state: PhotoEditState(settings: atomicUpdated, filmID: ""))
+        let atomicPostSave = try atomicLinkStore.state(for: photos[0])
+        check(atomicPostSave?.settings.exposure == 2.8,
+              "Store observes post-atomic-write state after edits.json symlink replacement")
+        let atomicTargetAfter = try atomicTargetStore.state(for: photos[0])
+        check(atomicTargetAfter?.settings.exposure == 1.3,
+              "Old symlink target retains its own uncorrupted state")
+
+        // Bounded LRU eviction for EditPersistence registry cache (capacity == 32).
+        let cap = EditPersistence.registryCacheCapacity
+        check(cap == 32, "EditPersistence registry cache cap is bounded (\(cap))")
+        let lruDirsRoot = dir.appendingPathComponent("registry-lru", isDirectory: true)
+        var lruStores: [EditPersistence] = []
+        var lruDirs: [URL] = []
+        for idx in 0...cap {
+            let subDir = lruDirsRoot.appendingPathComponent("store-\(idx)", isDirectory: true)
+            let subStore = try EditPersistence(directory: subDir)
+            try subStore.save(photos[0], state: PhotoEditState(settings: externalSettings, filmID: ""))
+            _ = try subStore.state(for: photos[0])
+            lruDirs.append(subDir)
+            lruStores.append(subStore)
+        }
+        let latestReadsBefore = EditPersistence.registryDiskReadCount(forDirectory: lruDirs[cap])
+        _ = try lruStores[cap].state(for: photos[0])
+        check(EditPersistence.registryDiskReadCount(forDirectory: lruDirs[cap]) == latestReadsBefore,
+              "Most recently used directory stays cached inside EditPersistence LRU")
+        let oldestReadsBefore = EditPersistence.registryDiskReadCount(forDirectory: lruDirs[0])
+        _ = try lruStores[0].state(for: photos[0])
+        check(EditPersistence.registryDiskReadCount(forDirectory: lruDirs[0]) == oldestReadsBefore + 1,
+              "Oldest directory was evicted once EditPersistence registry cache reached capacity \(cap)")
+
+        // isEditorBusy coalescing: settled previews trigger 0 refreshes; deferred busy refresh triggers 1.
+        let busyRevBefore = previews.revision
+        previews.isEditorBusy = true
+        previews.isEditorBusy = false
+        check(previews.revision == busyRevBefore,
+              "Settled workspace does not refresh unnecessarily when isEditorBusy toggles")
+
+        let deferredDir = dir.appendingPathComponent("busy-deferred", isDirectory: true)
+        try FileManager.default.createDirectory(at: deferredDir, withIntermediateDirectories: true)
+        let deferredPhoto = deferredDir.appendingPathComponent("busy.png")
+        try writePNG(to: deferredPhoto, red: 0.7)
+        let deferredEdits = deferredDir.appendingPathComponent("edits", isDirectory: true)
+        let deferredStore = try EditPersistence(directory: deferredEdits)
+        try deferredStore.save(deferredPhoto, state: PhotoEditState(settings: externalSettings, filmID: ""))
+        let busyPreviews = MacEditedPhotoPreviews(editDirectory: deferredEdits, cacheDirectory: diskCacheDir, thumbnails: PhotoThumbnails())
+        var busyTile = WorkspacePhotoTileState()
+        busyPreviews.isEditorBusy = true
+        let busyStartRev = busyPreviews.revision
+        await busyTile.refresh(url: deferredPhoto, previews: busyPreviews)
+        check(!busyTile.adjustedThumbnail, "Edited tile skips render while editor is busy")
+        busyPreviews.isEditorBusy = false
+        check(busyPreviews.revision == busyStartRev + 1,
+              "Clearing isEditorBusy triggers one refresh for deferred edited tile")
+        await busyTile.refresh(url: deferredPhoto, previews: busyPreviews)
+        check(busyTile.adjustedThumbnail, "Deferred edited tile renders after editor becomes idle")
+
+        PhotoThumbnails.shared.invalidateDirectory(root)
+    }
+
+    @MainActor
+    private static func verifyLUTResourceDigestCacheAndInvalidation(in root: URL) async throws {
+        RenderEngine.resetCounts()
+        let dir = root.appendingPathComponent("lut-digest-cache", isDirectory: true)
+        let editsDir = dir.appendingPathComponent("edits", isDirectory: true)
+        let diskCacheDir = dir.appendingPathComponent("disk-cache", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let photo = dir.appendingPathComponent("shot.png")
+        try writePNG(to: photo, red: 0.4)
+        let lut = dir.appendingPathComponent("look-a.cube")
+        try Data("#LUT v1\n0.0 0.0 0.0\n1.0 1.0 1.0\n".utf8).write(to: lut)
+        let film = Film(name: "LookA", url: lut, managedID: "look-a")
+
+        let store = try EditPersistence(directory: editsDir)
+        let session = AdjustmentTransferSession(store: store)
+        let thumbnails = PhotoThumbnails()
+        let previews = MacEditedPhotoPreviews(editDirectory: editsDir, cacheDirectory: diskCacheDir, thumbnails: thumbnails)
+        previews.films = [film]
+
+        let initialRecord = try await previews.record(for: photo)
+        let state = PhotoEditState(settings: Adjustments(), filmID: film.id)
+        let outcome = session.commitEdit(expected: initialRecord, state: state)
+        check(outcome.status == .applied, "LUT edit committed")
+        let editedRecord = outcome.saved!
+
+        // Warm once for the initial LUT file state.
+        let plan1 = try MacPhotoPreviewPlan(record: editedRecord, films: [film])
+        let hashesAfterWarm = MacPhotoPreviewPlan.resourceHashCount
+
+        // Stat fingerprint hit must trigger 0 SHA256 calls across plan, isCurrent, record, cachedImage, and image.
+        let plan2 = try MacPhotoPreviewPlan(record: editedRecord, films: [film])
+        check(plan2.key == plan1.key, "Repeated preview plan produces identical key")
+        let planCurrent = try plan2.isCurrent(in: store, films: [film])
+        check(planCurrent, "Plan remains current")
+        _ = try await previews.record(for: photo)
+        _ = try await previews.image(for: editedRecord)
+        _ = await previews.cachedImage(for: editedRecord)
+        let hashesOnHit = MacPhotoPreviewPlan.resourceHashCount - hashesAfterWarm
+        check(hashesOnHit == 0, "Stat fingerprint hit performed \(hashesOnHit) LUT SHA256 hashes (expected 0)")
+
+        // Modifying LUT mtime only must invalidate and re-hash once.
+        let futureDate = Date().addingTimeInterval(12)
+        try FileManager.default.setAttributes([.modificationDate: futureDate], ofItemAtPath: lut.path)
+        let hashesBeforeMtime = MacPhotoPreviewPlan.resourceHashCount
+        let planAfterMtime = try MacPhotoPreviewPlan(record: editedRecord, films: [film])
+        let hashesOnMtime = MacPhotoPreviewPlan.resourceHashCount - hashesBeforeMtime
+        check(hashesOnMtime == 1 && planAfterMtime.key != plan1.key,
+              "LUT mtime change re-hashes once (\(hashesOnMtime)) and updates plan key")
+        let hashesBeforeMtimeHit = MacPhotoPreviewPlan.resourceHashCount
+        _ = try MacPhotoPreviewPlan(record: editedRecord, films: [film])
+        check(MacPhotoPreviewPlan.resourceHashCount - hashesBeforeMtimeHit == 0,
+              "Subsequent plan after mtime update hits cache with 0 SHA256 calls")
+
+        // Replacing LUT with same byte length must invalidate and re-hash once.
+        let sameLenA = Data("LUT_CONTENT_0001\n".utf8)
+        let sameLenB = Data("LUT_CONTENT_0002\n".utf8)
+        try sameLenA.write(to: lut)
+        let planSameLenA = try MacPhotoPreviewPlan(record: editedRecord, films: [film])
+        try sameLenB.write(to: lut)
+        let hashesBeforeSameLen = MacPhotoPreviewPlan.resourceHashCount
+        let planSameLenB = try MacPhotoPreviewPlan(record: editedRecord, films: [film])
+        check(MacPhotoPreviewPlan.resourceHashCount - hashesBeforeSameLen == 1 && planSameLenB.key != planSameLenA.key,
+              "Same-size LUT content replacement invalidates cache and updates plan key")
+
+        // Modifying LUT size must invalidate and re-hash once.
+        try Data("LUT_CONTENT_LONGER_0003\n".utf8).write(to: lut)
+        let hashesBeforeSize = MacPhotoPreviewPlan.resourceHashCount
+        let planAfterSize = try MacPhotoPreviewPlan(record: editedRecord, films: [film])
+        check(MacPhotoPreviewPlan.resourceHashCount - hashesBeforeSize == 1 && planAfterSize.key != planSameLenB.key,
+              "LUT size change re-hashes once and updates plan key")
+
+        // Deleting LUT invalidates and throws; recreating re-hashes cleanly.
+        try FileManager.default.removeItem(at: lut)
+        var missingThrew = false
+        do { _ = try MacPhotoPreviewPlan(record: editedRecord, films: [film]) }
+        catch { missingThrew = true }
+        check(missingThrew, "Deleted LUT invalidates cached fingerprint and throws")
+        try sameLenA.write(to: lut)
+        let hashesBeforeRecreate = MacPhotoPreviewPlan.resourceHashCount
+        _ = try MacPhotoPreviewPlan(record: editedRecord, films: [film])
+        check(MacPhotoPreviewPlan.resourceHashCount - hashesBeforeRecreate == 1,
+              "Recreated LUT re-hashes once")
+
+        // Symlink swap to different target with identical byte count invalidates and re-hashes.
+        let targetA = dir.appendingPathComponent("sym-a.cube")
+        let targetB = dir.appendingPathComponent("sym-b.cube")
+        let symlink = dir.appendingPathComponent("sym-link.cube")
+        try Data("SYM_CONTENT_A01\n".utf8).write(to: targetA)
+        try Data("SYM_CONTENT_B02\n".utf8).write(to: targetB)
+        try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: targetA)
+        let symFilm = Film(name: "Sym", url: symlink, managedID: "sym-look")
+        let symRecord = PhotoEditRecord(identity: editedRecord.identity, state: PhotoEditState(settings: Adjustments(), filmID: symFilm.id))
+        let symPlanA = try MacPhotoPreviewPlan(record: symRecord, films: [symFilm])
+        try FileManager.default.removeItem(at: symlink)
+        try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: targetB)
+        let hashesBeforeSymSwap = MacPhotoPreviewPlan.resourceHashCount
+        let symPlanB = try MacPhotoPreviewPlan(record: symRecord, films: [symFilm])
+        check(MacPhotoPreviewPlan.resourceHashCount - hashesBeforeSymSwap == 1 && symPlanB.key != symPlanA.key,
+              "Symlink target swap invalidates cache and changes plan key")
+
+        // HDR look .cube verification + fingerprint share one hash miss and 0 hits afterward.
+        let hdrLooksDir = dir.appendingPathComponent("hdr-looks", isDirectory: true)
+        try FileManager.default.createDirectory(at: hdrLooksDir, withIntermediateDirectories: true)
+        let hdrLUTData = Data("#HDR LUT\n0 0 0\n1 1 1\n".utf8)
+        let hdrHex = SHA256.hash(data: hdrLUTData).map { String(format: "%02x", $0) }.joined()
+        let hdrLUT = hdrLooksDir.appendingPathComponent("\(hdrHex).cube")
+        try hdrLUTData.write(to: hdrLUT)
+        var hdrAdjustments = Adjustments()
+        var hdrSettings = HDRSettings()
+        hdrSettings.mode = .hdr
+        hdrSettings.lookSettings = HDRLookSettings(sha256: hdrHex, name: "HDRTest", strength: 1.0)
+        hdrAdjustments.hdr = hdrSettings
+        let hdrRecord = PhotoEditRecord(identity: editedRecord.identity, state: PhotoEditState(settings: hdrAdjustments, filmID: ""))
+        let hdrHashBefore = MacPhotoPreviewPlan.resourceHashCount
+        let hdrPlan1 = try MacPhotoPreviewPlan(record: hdrRecord, films: [], hdrLookDirectory: hdrLooksDir)
+        check(MacPhotoPreviewPlan.resourceHashCount - hdrHashBefore == 1,
+              "Cold HDR preview plan hashes HDR look .cube once (not twice)")
+        let hdrHashHitBefore = MacPhotoPreviewPlan.resourceHashCount
+        let hdrPlan2 = try MacPhotoPreviewPlan(record: hdrRecord, films: [], hdrLookDirectory: hdrLooksDir)
+        check(MacPhotoPreviewPlan.resourceHashCount == hdrHashHitBefore && hdrPlan2.key == hdrPlan1.key,
+              "Warm HDR preview plan hits cache with 0 SHA256 calls")
+        try Data("#HDR TAMPERED\n".utf8).write(to: hdrLUT)
+        var hdrTamperRejected = false
+        do { _ = try MacPhotoPreviewPlan(record: hdrRecord, films: [], hdrLookDirectory: hdrLooksDir) }
+        catch { hdrTamperRejected = true }
+        check(hdrTamperRejected, "Modified HDR look .cube invalidates cache and rejects mismatched hash")
+
+        // Bounded LRU eviction test (small unit instance with cap == 2).
+        let smallCache = MacResourceDigestCache(maximumEntries: 2)
+        let lru1 = dir.appendingPathComponent("lru-1.cube")
+        let lru2 = dir.appendingPathComponent("lru-2.cube")
+        let lru3 = dir.appendingPathComponent("lru-3.cube")
+        try Data("LUT-1".utf8).write(to: lru1)
+        try Data("LUT-2".utf8).write(to: lru2)
+        try Data("LUT-3".utf8).write(to: lru3)
+        _ = try smallCache.fingerprintDigest(for: lru1)
+        _ = try smallCache.fingerprintDigest(for: lru2)
+        _ = try smallCache.fingerprintDigest(for: lru1) // lru1 becomes MRU, lru2 becomes LRU
+        _ = try smallCache.fingerprintDigest(for: lru3) // evicts lru2
+        check(smallCache.entryCount == 2 && smallCache.sha256Count == 3, "Bounded LRU stays capped at maximumEntries == 2")
+        _ = try smallCache.fingerprintDigest(for: lru1)
+        check(smallCache.sha256Count == 3, "Recently used entry hits without re-hashing")
+        _ = try smallCache.fingerprintDigest(for: lru2)
+        check(smallCache.sha256Count == 4, "Evicted LRU entry re-hashes on next access")
+
+        // #335 stat guard: concurrent modification during read must never cache stale bytes under old/mismatched stat.
+        let unstableCache = MacResourceDigestCache(maximumEntries: 4)
+        let racingLUT = dir.appendingPathComponent("racing.cube")
+        try Data("V1_INITIAL".utf8).write(to: racingLUT)
+        var simulatedAttempts = 0
+        let settled = try unstableCache.fingerprintDigest(for: racingLUT, readData: { url in
+            simulatedAttempts += 1
+            let stale = try Data(contentsOf: url)
+            if simulatedAttempts == 1 {
+                try Data("V2_FINAL_FINISHED_WRITE".utf8).write(to: url)
+            }
+            return stale
+        })
+        check(simulatedAttempts == 2, "Stat mismatch after mid-read mutation triggers clean retry (\(simulatedAttempts))")
+        check(settled.digest == Data(SHA256.hash(data: Data("V2_FINAL_FINISHED_WRITE".utf8))),
+              "Retry computes digest of finished write instead of caching unfinished bytes")
+        let shaBeforeStableHit = unstableCache.sha256Count
+        _ = try unstableCache.fingerprintDigest(for: racingLUT)
+        check(unstableCache.sha256Count == shaBeforeStableHit, "Only settled post-write digest is cached")
+
+        let alwaysMutatingCache = MacResourceDigestCache(maximumEntries: 4)
+        let noisyLUT = dir.appendingPathComponent("noisy.cube")
+        var noiseStep = 0
+        try Data("NOISE_0".utf8).write(to: noisyLUT)
+        _ = try alwaysMutatingCache.fingerprintDigest(for: noisyLUT, readData: { url in
+            let data = try Data(contentsOf: url)
+            noiseStep += 1
+            try Data("NOISE_\(noiseStep)_\(String(repeating: "x", count: noiseStep))".utf8).write(to: url)
+            return data
+        })
+        check(alwaysMutatingCache.entryCount == 0, "Continuously mutating file is never cached with mismatched stat")
+
+        // Production singleton capacity bound check (cap == 128).
+        let sharedCap = MacResourceDigestCache.shared.maximumEntries
+        check(sharedCap == 128, "Production resource digest cache has finite cap (\(sharedCap))")
+        let capDir = dir.appendingPathComponent("shared-cap", isDirectory: true)
+        try FileManager.default.createDirectory(at: capDir, withIntermediateDirectories: true)
+        for idx in 0..<(sharedCap + 4) {
+            let extraLUT = capDir.appendingPathComponent("extra-\(idx).cube")
+            try Data("SHARED_LUT_\(idx)".utf8).write(to: extraLUT)
+            let extraFilm = Film(name: "Extra\(idx)", url: extraLUT, managedID: "extra-\(idx)")
+            let extraRecord = PhotoEditRecord(identity: editedRecord.identity, state: PhotoEditState(settings: Adjustments(), filmID: extraFilm.id))
+            _ = try MacPhotoPreviewPlan(record: extraRecord, films: [extraFilm])
+        }
+        check(MacResourceDigestCache.shared.entryCount <= sharedCap,
+              "Shared resource digest cache remains bounded at \(MacResourceDigestCache.shared.entryCount) <= \(sharedCap)")
     }
 }

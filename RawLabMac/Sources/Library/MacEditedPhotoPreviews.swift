@@ -5,8 +5,165 @@ import CryptoKit
 import ImageIO
 import UniformTypeIdentifiers
 
+final class MacResourceDigestCache {
+    static let defaultMaximumEntries = 128
+    static let shared = MacResourceDigestCache()
+
+    struct Result {
+        let identity: OriginalFileIdentity
+        let digest: Data
+    }
+
+    private struct Entry {
+        let fingerprint: FileStatFingerprint
+        let identity: OriginalFileIdentity
+        let digest: Data
+    }
+
+    private let stateLock = NSLock()
+    private let stripeLocks = (0..<16).map { _ in NSLock() }
+    private var cache: BoundedLRUCache<String, Entry>
+    private var invalidationEpoch: UInt64 = 0
+    private var _sha256Count = 0
+
+    let maximumEntries: Int
+
+    init(maximumEntries: Int = MacResourceDigestCache.defaultMaximumEntries) {
+        self.maximumEntries = max(1, maximumEntries)
+        self.cache = BoundedLRUCache(maximumEntries: self.maximumEntries)
+    }
+
+    var entryCount: Int {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return cache.count
+    }
+
+    var sha256Count: Int {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return _sha256Count
+    }
+
+    private func stripeLock(for path: String) -> NSLock {
+        let hash = UInt(bitPattern: path.hashValue)
+        return stripeLocks[Int(hash % UInt(stripeLocks.count))]
+    }
+
+    func invalidate(url: URL) {
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        invalidate(path: path)
+    }
+
+    private func invalidate(path: String) {
+        stateLock.lock()
+        invalidationEpoch &+= 1
+        cache.removeValue(for: path)
+        stateLock.unlock()
+    }
+
+    func fingerprintDigest(
+        for url: URL,
+        maxBytes: Int? = nil,
+        onHash: (() -> Void)? = nil,
+        readData: ((URL) throws -> Data)? = nil
+    ) throws -> Result {
+        let resolvedURL = url.resolvingSymlinksInPath().standardizedFileURL
+        let path = resolvedURL.path
+
+        if let cached = lookup(path: path) {
+            if let maxBytes, !(1...maxBytes).contains(Int(cached.fingerprint.size)) {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            return Result(identity: cached.identity, digest: cached.digest)
+        }
+
+        let stripe = stripeLock(for: path)
+        stripe.lock()
+        defer { stripe.unlock() }
+
+        if let cached = lookup(path: path) {
+            if let maxBytes, !(1...maxBytes).contains(Int(cached.fingerprint.size)) {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            return Result(identity: cached.identity, digest: cached.digest)
+        }
+
+        for attempt in 0..<3 {
+            stateLock.lock()
+            let epochBefore = invalidationEpoch
+            stateLock.unlock()
+
+            guard let statBefore = FileStatFingerprint(path: path) else {
+                invalidate(path: path)
+                _ = try OriginalFileIdentity(url)
+                throw CocoaError(.fileReadNoSuchFile)
+            }
+            if let maxBytes, !(1...maxBytes).contains(Int(statBefore.size)) {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+
+            let identity = try OriginalFileIdentity(resolvedURL)
+            let data = try (readData?(resolvedURL) ?? Data(contentsOf: resolvedURL))
+            if let maxBytes, data.isEmpty || data.count > maxBytes {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+
+            stateLock.lock()
+            _sha256Count += 1
+            stateLock.unlock()
+            onHash?()
+            let digest = Data(SHA256.hash(data: data))
+
+            let statAfter = FileStatFingerprint(path: path)
+            if statAfter == statBefore,
+               Int64(data.count) == statBefore.size,
+               identity.size == UInt64(statBefore.size) {
+                stateLock.lock()
+                if invalidationEpoch == epochBefore, FileStatFingerprint(path: path) == statBefore {
+                    cache.set(Entry(fingerprint: statBefore, identity: identity, digest: digest), for: path)
+                }
+                stateLock.unlock()
+                return Result(identity: identity, digest: digest)
+            }
+
+            invalidate(path: path)
+            if attempt == 2 {
+                return Result(identity: identity, digest: digest)
+            }
+        }
+        throw CocoaError(.fileReadUnknown)
+    }
+
+    private func lookup(path: String) -> Entry? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard let statNow = FileStatFingerprint(path: path) else {
+            cache.removeValue(for: path)
+            return nil
+        }
+        guard let hit = cache.get(path), hit.fingerprint == statNow else {
+            cache.removeValue(for: path)
+            return nil
+        }
+        return hit
+    }
+}
+
 struct MacPhotoPreviewPlan {
     static let edge = 256
+    private static let resourceHashLock = NSLock()
+    private static var _resourceHashCount = 0
+    static var resourceHashCount: Int {
+        resourceHashLock.lock()
+        defer { resourceHashLock.unlock() }
+        return _resourceHashCount
+    }
+    private static func recordResourceHash() {
+        resourceHashLock.lock()
+        _resourceHashCount += 1
+        resourceHashLock.unlock()
+    }
     let record: PhotoEditRecord
     let look: URL?
     let key: PhotoPreviewCacheKey
@@ -34,7 +191,9 @@ struct MacPhotoPreviewPlan {
         return PhotoThumbnails.EditedRevision(identity: record.identity.thumbnailFileIdentity, revision: revision)
     }
 
-    init(record: PhotoEditRecord, films: [Film]) throws {
+    init(record: PhotoEditRecord, films: [Film],
+         hdrLookDirectory: URL = HDRLookSettings.directory,
+         resourceDigestCache: MacResourceDigestCache = .shared) throws {
         self.record = record
         guard let state = record.state else { throw AdjustmentCommitError.expired }
         if state.settings.isHDREditing { look = nil }
@@ -48,10 +207,22 @@ struct MacPhotoPreviewPlan {
             look = film.url
         } else { look = nil }
         var resources = [URL]()
+        var precomputedHDRLook: (url: URL, result: MacResourceDigestCache.Result)? = nil
         if let look { resources.append(look) }
         if state.settings.isHDREditing, let hdr = state.settings.hdr {
-            guard hdr.lookSettings.assetIsAvailable() else { throw CocoaError(.fileNoSuchFile) }
-            if let asset = hdr.lookSettings.asset() { resources.append(asset) }
+            guard hdr.lookSettings.isValid else { throw CocoaError(.fileNoSuchFile) }
+            if let asset = hdr.lookSettings.asset(in: hdrLookDirectory) {
+                guard asset.isFileURL,
+                      let cached = try? resourceDigestCache.fingerprintDigest(
+                          for: asset, maxBytes: 32 * 1024 * 1024, onHash: Self.recordResourceHash),
+                      cached.digest.map({ String(format: "%02x", $0) }).joined() == hdr.lookSettings.sha256 else {
+                    throw CocoaError(.fileNoSuchFile)
+                }
+                resources.append(asset)
+                precomputedHDRLook = (asset, cached)
+            } else {
+                guard hdr.lookSettings.isDefault else { throw CocoaError(.fileNoSuchFile) }
+            }
             if let profile = hdr.cameraDevelopmentSettings.cameraProfile {
                 resources.append(try HDRCameraProfileAssetStore.url(for: profile))
             }
@@ -64,16 +235,25 @@ struct MacPhotoPreviewPlan {
         let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
         // 包含资源内容，导入同名 LUT 或替换其内容时不能复用旧图。
         let fingerprints = try resources.map { url in
-            let identity = try encoder.encode(OriginalFileIdentity(url))
-            return identity + Data(SHA256.hash(data: try Data(contentsOf: url)))
+            let cached: MacResourceDigestCache.Result
+            if let precomputedHDRLook, precomputedHDRLook.url == url {
+                cached = precomputedHDRLook.result
+            } else {
+                cached = try resourceDigestCache.fingerprintDigest(for: url, onHash: Self.recordResourceHash)
+            }
+            let identity = try encoder.encode(cached.identity)
+            return identity + cached.digest
         }
         key = PhotoPreviewCacheKey(identity: try encoder.encode(record.identity),
             adjustments: try encoder.encode(state), resources: try encoder.encode(fingerprints), edge: Self.edge)
     }
 
-    func isCurrent(in store: EditPersistence, films: [Film]) throws -> Bool {
+    func isCurrent(in store: EditPersistence, films: [Film],
+                   hdrLookDirectory: URL = HDRLookSettings.directory,
+                   resourceDigestCache: MacResourceDigestCache = .shared) throws -> Bool {
         guard try store.readState(for: url) == record else { return false }
-        return try MacPhotoPreviewPlan(record: record, films: films).key == key
+        return try MacPhotoPreviewPlan(record: record, films: films,
+            hdrLookDirectory: hdrLookDirectory, resourceDigestCache: resourceDigestCache).key == key
     }
 
     static func thumbnailData(_ image: CGImage, edge: Int = Self.edge) throws -> Data {
@@ -129,7 +309,14 @@ private struct MacAcceptedPhotoPreview {
     }
 
     @Published private(set) var revision = 0
-    @Published var isEditorBusy = false
+    @Published var isEditorBusy = false {
+        didSet {
+            guard oldValue, !isEditorBusy, hasDeferredEditedRefresh else { return }
+            hasDeferredEditedRefresh = false
+            refresh()
+        }
+    }
+    private var hasDeferredEditedRefresh = false
     private let worker: MacPhotoPreviewWorker
     private let editDirectory: URL
     private let canonicalEditDirectoryPath: String
@@ -161,6 +348,10 @@ private struct MacAcceptedPhotoPreview {
     }
 
     func refresh() { revision &+= 1 }
+
+    func noteDeferredEditedRefresh() {
+        if isEditorBusy { hasDeferredEditedRefresh = true }
+    }
 
     func cachedThumbnail(for url: URL) -> CachedThumbnail? {
         let path = PhotoThumbnailCacheKey.canonicalPath(for: url)
