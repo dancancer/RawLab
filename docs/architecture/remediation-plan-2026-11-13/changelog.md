@@ -113,3 +113,4 @@
 - 2026-11-14 · Q6 交卷：**PR #310**（`6429af54`）——双端新增保留回收器挂既有启动时机（无后台框架）：批量双条件先到先清、联机 90 天（ACTIVE 不删、Android 落地因 iOS 为 manifest 单记录形态）、相机原件零自动删+每端一个手动入口（复用既有页面）；Android 13 项+iOS 148 项测试，本地化 30 catalogs 无漂移；crew 未等 CI（评审补核）。碳审在途（review-mwfqamc4）。
 - 2026-11-14 · 台账再开两包：**`ci-require-ax`**（CI 阶段2②：三 AX 门控脚本 RAWLAB_REQUIRE_AX=1 静默 return→显式 FAIL+契约防漂移+ci.md 一句）与 **`p1-10-hdr-paste`**（第①步遗留 HDR 强度粘贴场景向量，复用 #307 hdr_default 解析）。
 - 2026-11-14 · CI 阶段2② 交卷：**PR #311**（`7d3f05e3`）——共享前置门 ax-gate.sh（AX 探针三态：真跑/REQUIRE=1 FAIL/SKIP+warning），三脚本调用一致；附带归因收获：color-grading 与 system-menu 的「环境红」实为无 AX 假因，转 SKIP 后 B3/C 挂账回归桌面复核。碳审在途（review-mwfqr6p4）。
+- 2026-11-14 · P1-10 交卷：**PR #312**——transfer 夹具 +4 HDR 场景（强度反映射/组直通/混合/SDR 目标整体 incompatible），fixture_version 不变、复用 #307 解析无第二套实现；四端本地绿+双端红锚。碳审在途（review-mwfqvu3t，核 CI 终态）。至此 P1 遗留清零。
