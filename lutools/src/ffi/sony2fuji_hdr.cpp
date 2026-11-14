@@ -254,7 +254,14 @@ std::shared_ptr<const HDRLook> loadLook(const char* file, std::string_view expec
     }
 }
 
-HDRRenderOptions renderOptions(const sony2fuji_hdr_request_v1* request, sony2fuji_session* session,
+void requireSession(sony2fuji_session* handle, SessionLease& lease, bool allowNull = false) {
+    if (!SessionLease::acquire(handle, lease, allowNull)) {
+        fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_SESSION,
+            handle ? "Invalid or busy HDR session" : "Missing HDR session");
+    }
+}
+
+HDRRenderOptions renderOptions(const sony2fuji_hdr_request_v1* request, const SessionLease& session,
     std::string* lookPath = nullptr) {
     validateRequestVersion(request);
     if (request->flip_horizontal > 1 || request->flip_vertical > 1)
@@ -552,13 +559,14 @@ sony2fuji_status sony2fuji_hdr_geometry_size(uint32_t nativeWidth, uint32_t nati
     });
 }
 
-sony2fuji_status sony2fuji_hdr_render(sony2fuji_session* session, const sony2fuji_hdr_image_pair_v1* source,
+sony2fuji_status sony2fuji_hdr_render(sony2fuji_session* sessionHandle, const sony2fuji_hdr_image_pair_v1* source,
     const sony2fuji_hdr_request_v1* request, sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic) {
     return boundary(diagnostic, [&] {
         if (sourceAliases(source,result,sizeof(*result)) || requestAliases(request,result,sizeof(*result)))
             fail(SONY2FUJI_HDR_REASON_INVALID_BUFFER, SONY2FUJI_HDR_FIELD_RESULT, "HDR result aliases input");
         prepareOutput(result);
-        if (!session) fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_SESSION, "Missing HDR session");
+        SessionLease session;
+        requireSession(sessionHandle, session);
         validateRequestVersion(request);
         if (hdrSessionForcesGPU(session))
             fail(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU, SONY2FUJI_HDR_FIELD_SESSION, "HDR computation is CPU only",
@@ -598,14 +606,15 @@ sony2fuji_status sony2fuji_hdr_render(sony2fuji_session* session, const sony2fuj
     });
 }
 
-sony2fuji_status sony2fuji_hdr_create_hsl_probe(sony2fuji_session* session, const sony2fuji_hdr_image_pair_v1* source,
+sony2fuji_status sony2fuji_hdr_create_hsl_probe(sony2fuji_session* sessionHandle, const sony2fuji_hdr_image_pair_v1* source,
     const sony2fuji_hdr_request_v1* request, uint64_t sourceRevision, uint64_t requestRevision,
     sony2fuji_hsl_probe** outProbe, sony2fuji_hdr_diagnostic_v1* diagnostic) {
     return boundary(diagnostic, [&] {
         if (!outProbe || sourceAliases(source, outProbe, sizeof(*outProbe)) || requestAliases(request, outProbe, sizeof(*outProbe)))
             fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_RESULT, "Invalid HDR probe output");
         *outProbe = nullptr;
-        if (!session) fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_SESSION, "Missing HDR session");
+        SessionLease session;
+        requireSession(sessionHandle, session);
         if (hdrSessionForcesGPU(session))
             fail(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU, SONY2FUJI_HDR_FIELD_SESSION, "HDR computation is CPU only",
                 SONY2FUJI_STATUS_UNSUPPORTED);
@@ -706,9 +715,11 @@ sony2fuji_status sony2fuji_hdr_decode_camera_raw(sony2fuji_session* session, con
     return sony2fuji_hdr_decode_camera_raw_with_development(session,file,options,nullptr,result,diagnostic);
 }
 
-sony2fuji_status sony2fuji_hdr_prepare_camera_raw_ai(sony2fuji_session* session, const char* file,
+sony2fuji_status sony2fuji_hdr_prepare_camera_raw_ai(sony2fuji_session* sessionHandle, const char* file,
     sony2fuji_ai_progress_callback progress, void* context, sony2fuji_hdr_diagnostic_v1* diagnostic) {
     return boundary(diagnostic, [&] {
+        SessionLease session;
+        requireSession(sessionHandle, session, true);
         path(file);
         if (hdrSessionForcesGPU(session))
             fail(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU, SONY2FUJI_HDR_FIELD_SESSION, "Camera RAW HDR development is CPU only",
@@ -720,13 +731,15 @@ sony2fuji_status sony2fuji_hdr_prepare_camera_raw_ai(sony2fuji_session* session,
     });
 }
 
-sony2fuji_status sony2fuji_hdr_camera_ai_key(sony2fuji_session* session, const char* file,
+sony2fuji_status sony2fuji_hdr_camera_ai_key(sony2fuji_session* sessionHandle, const char* file,
     char* key, uint32_t capacity, sony2fuji_hdr_diagnostic_v1* diagnostic) {
     return boundary(diagnostic, [&] {
         if (!key || capacity < 65)
             fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_RESULT, "Truncated HDR camera AI key buffer");
         key[0] = '\0';
         path(file);
+        SessionLease session;
+        requireSession(sessionHandle, session, true);
         const ProcessingCancellationScope cancellation(hdrSessionCancellation(session));
         checkProcessingCancellation();
         cameraRawStamp(std::filesystem::u8path(file));
@@ -735,11 +748,14 @@ sony2fuji_status sony2fuji_hdr_camera_ai_key(sony2fuji_session* session, const c
     });
 }
 
-static sony2fuji_status decodeCameraRaw(sony2fuji_session* session, const char* file,
+static sony2fuji_status decodeCameraRaw(sony2fuji_session* sessionHandle, const char* file,
     const sony2fuji_hdr_decode_options_v1* options, const sony2fuji_hdr_camera_development_v1* development,
     bool ai, sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic) {
     return boundary(diagnostic, [&] {
-        prepareOutput(result); header(options, SONY2FUJI_HDR_FIELD_REQUEST); path(file);
+        prepareOutput(result);
+        SessionLease session;
+        requireSession(sessionHandle, session, true);
+        header(options, SONY2FUJI_HDR_FIELD_REQUEST); path(file);
         const bool preview = options->intent == SONY2FUJI_INTENT_PREVIEW;
         if (options->intent > 1 || (preview ? !options->long_edge || options->long_edge > 65535 : options->long_edge != 0))
             fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_REQUEST, "Invalid camera RAW HDR decode size");
@@ -937,11 +953,14 @@ sony2fuji_status sony2fuji_hdr_probe_proraw(const char* file, sony2fuji_hdr_sour
         auto value = hdr::probeProRAW(file); value.struct_size = info->struct_size; *info = value;
     });
 }
-sony2fuji_status sony2fuji_hdr_decode_proraw(sony2fuji_session* session, const char* file,
+sony2fuji_status sony2fuji_hdr_decode_proraw(sony2fuji_session* sessionHandle, const char* file,
     const sony2fuji_hdr_decode_options_v1* options, const char* temporaryRoot,
     sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic) {
     return boundary(diagnostic, [&] {
-        prepareOutput(result); header(options, SONY2FUJI_HDR_FIELD_REQUEST); path(file); path(temporaryRoot);
+        prepareOutput(result);
+        SessionLease session;
+        requireSession(sessionHandle, session, true);
+        header(options, SONY2FUJI_HDR_FIELD_REQUEST); path(file); path(temporaryRoot);
         if (hdrSessionForcesGPU(session))
             fail(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU, SONY2FUJI_HDR_FIELD_SESSION, "ProRAW development is CPU only",
                 SONY2FUJI_STATUS_UNSUPPORTED);
@@ -955,7 +974,7 @@ sony2fuji_status sony2fuji_hdr_decode_proraw(sony2fuji_session* session, const c
         if (session) hdrSessionDidRenderCPU(session);
     });
 }
-sony2fuji_status sony2fuji_hdr_export_proraw(sony2fuji_session* session, const char* sourceFile,
+sony2fuji_status sony2fuji_hdr_export_proraw(sony2fuji_session* sessionHandle, const char* sourceFile,
     const sony2fuji_hdr_request_v1* request, const sony2fuji_hdr_export_config_v1* config,
     uint32_t keepHDR, const char* temporaryRoot, const char* file,
     sony2fuji_hdr_stream_result_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic) {
@@ -964,7 +983,8 @@ sony2fuji_status sony2fuji_hdr_export_proraw(sony2fuji_session* session, const c
         if (overlaps(config, sizeof(*config), result, sizeof(*result)) || requestAliases(request,result,sizeof(*result)))
             fail(SONY2FUJI_HDR_REASON_INVALID_BUFFER, SONY2FUJI_HDR_FIELD_RESULT, "ProRAW result aliases input");
         clearOutput(result); path(sourceFile); path(file); path(temporaryRoot); path(config->metadata_source_path);
-        if (!session) fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_SESSION, "Missing HDR session");
+        SessionLease session;
+        requireSession(sessionHandle, session);
         if (hdrSessionForcesGPU(session))
             fail(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU, SONY2FUJI_HDR_FIELD_SESSION, "ProRAW development is CPU only",
                 SONY2FUJI_STATUS_UNSUPPORTED);
@@ -1050,7 +1070,7 @@ sony2fuji_status sony2fuji_hdr_export_sdr(const sony2fuji_hdr_image_pair_v1* ima
     });
 }
 
-sony2fuji_status sony2fuji_hdr_export_stream(sony2fuji_session* session,
+sony2fuji_status sony2fuji_hdr_export_stream(sony2fuji_session* sessionHandle,
     const sony2fuji_hdr_stream_source_v1* source, const sony2fuji_hdr_request_v1* request,
     const sony2fuji_hdr_export_config_v1* config, uint32_t keepHDR, const char* temporaryRoot,
     const char* file, sony2fuji_hdr_stream_result_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic) {
@@ -1062,7 +1082,8 @@ sony2fuji_status sony2fuji_hdr_export_stream(sony2fuji_session* session,
             fail(SONY2FUJI_HDR_REASON_INVALID_BUFFER, SONY2FUJI_HDR_FIELD_RESULT, "Stream result aliases input");
         clearOutput(result);
         path(file); path(temporaryRoot); path(config->metadata_source_path);
-        if (!session) fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_SESSION, "Missing HDR session");
+        SessionLease session;
+        requireSession(sessionHandle, session);
         if (hdrSessionForcesGPU(session))
             fail(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU, SONY2FUJI_HDR_FIELD_SESSION, "Streamed HDR processing is CPU only",
                 SONY2FUJI_STATUS_UNSUPPORTED);

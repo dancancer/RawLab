@@ -42,6 +42,8 @@ class LensCorrectionDatabase {
 public:
     static bool available();
     static std::shared_ptr<LensCorrectionDatabase> load(const std::string& path = {});
+    /// Total number of underlying Lensfun database loads performed in this process.
+    static uint64_t parseCount();
     ~LensCorrectionDatabase();
     std::vector<LensProfile> profiles(const LensMetadata& metadata) const;
     LensCorrectionReport inspect(const LensMetadata& metadata, const LensCorrectionOptions& options) const;
