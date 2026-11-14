@@ -75,6 +75,19 @@ void filterRecovery() {
     require(d3d11_test::filterInitializations == 2, "filter failure count did not survive device teardown");
     d3d11_test::now += std::chrono::milliseconds(100);
     require(gpuDetailFilter(input, .2f, 0), "shared filter did not recover");
+    // GetDeviceRemovedReason 的失败码也包含 INVALID_CALL，不能只认四个设备错误码。
+    for (const auto reason : {DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET, DXGI_ERROR_DEVICE_HUNG,
+                              DXGI_ERROR_DRIVER_INTERNAL_ERROR, DXGI_ERROR_INVALID_CALL}) {
+        const int before = d3d11_test::filterInitializations;
+        d3d11_test::deviceStatus = reason;
+        require(!gpuDetailFilter(input, .2f, 0), "removed filter device must fail");
+        d3d11_test::deviceStatus = S_OK;
+        require(!gpuDetailFilter(input, .2f, 0), "C7: removed filter device skipped recovery cooldown");
+        require(d3d11_test::filterInitializations == before, "removed filter device rebuilt immediately");
+        d3d11_test::now += std::chrono::milliseconds(100);
+        require(gpuDetailFilter(input, .2f, 0), "removed filter device did not recover at its deadline");
+        require(d3d11_test::filterInitializations == before + 1, "removed filter device was not recreated");
+    }
 }
 }
 int main(int argc, char** argv) {
