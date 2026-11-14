@@ -29,22 +29,23 @@ public partial class MainWindow
             !ProcessingMigration.ShouldAttempt(before,processingMigrationReceipt,gpu) || !LookAvailable)
             return;
         var source=before.Identity;
-        try { if (!source.SameFile(OriginalIdentity.Read(path))) return; }
-        catch (IOException) { return; }
+        if (CurrentViewSource is { } cachedSource && !source.SameFile(cachedSource)) return;
         var snapshot=settings.Clone();
         var expectedSettings=snapshot.Capture();
         var opened=openRevision;var revision=editRevision;var expectedLook=lut;
-        OriginalIdentity? lookIdentity;
-        try { lookIdentity=expectedLook == null ? null : OriginalIdentity.Read(expectedLook); }
-        catch (IOException) { return; }
         var cancellation=new CancellationTokenSource();processingMigrationCancellation=cancellation;processingMigrationBusy=true;
         RefreshProcessingMigrationControls();
         _=Task.Run(() =>
         {
             try
             {
+                if (!source.SameFile(OriginalIdentity.Read(path))) return;
+                var lookIdentity = expectedLook == null ? null : OriginalIdentity.Read(expectedLook);
                 using var worker=new RenderEngine(gpuMode:gpu);
                 var result=worker.MigrateProcessing(path,snapshot,expectedLook,cancellation.Token);
+                if (!source.SameFile(OriginalIdentity.Read(path)) ||
+                    (lookIdentity != null && !lookIdentity.SameFile(OriginalIdentity.Read(expectedLook!))))
+                    return;
                 Dispatcher.BeginInvoke(new Action(() => FinishProcessingMigration(path,source,before,expectedSettings,expectedLook,lookIdentity,opened,revision,result,cancellation)));
             }
             catch (OperationCanceledException)
@@ -74,9 +75,7 @@ public partial class MainWindow
             if (!currentSettings.SameAs(expectedSettings)) return false;
         }
         catch (InvalidDataException) { return false; }
-        try { return source.SameFile(OriginalIdentity.Read(path)) &&
-            (lookIdentity == null || lookIdentity.SameFile(OriginalIdentity.Read(lookIdentity.Path))); }
-        catch (IOException) { return false; }
+        return CurrentViewSource is { } currentSource && source.SameFile(currentSource);
     }
 
     private void FinishProcessingMigration(string path,OriginalIdentity source,SavedEdit before,AdjustmentSnapshot expectedSettings,string? expectedLook,OriginalIdentity? lookIdentity,

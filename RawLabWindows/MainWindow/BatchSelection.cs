@@ -11,7 +11,12 @@ public partial class MainWindow
     internal bool CollectionBusy=>closing || exporting || transferPreparing || UpdateInstallationActive;
     internal bool CollectionHasExport=>CurrentBatch!=null;
     internal string? CollectionSourceID {
-        get {try{return file==null ? null : OriginalIdentity.Read(file).StableKey;}catch{return null;}}
+        get {
+            if (file == null) return null;
+            if (CurrentViewSource is { } cached) return cached.StableKey;
+            try { return OriginalIdentity.Read(file).StableKey; }
+            catch { return null; }
+        }
     }
     private bool CommitCollectionInputs()
     {

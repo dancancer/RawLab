@@ -21,7 +21,7 @@ public partial class MainWindow
     private readonly BatchJournal batchJournal = new(BatchJournal.DefaultDirectory);
     private BatchJob? previousBatch;
     private BatchExportWindow? batchWindow;
-    private bool LookAvailable => settings.IsHDREditing || lut == null || File.Exists(lut);
+    private bool LookAvailable => lookAvailability.IsAvailable(settings.IsHDREditing, lut);
     private BatchJob? CurrentBatch => batchWindow?.Job ?? previousBatch;
 
     private void InitializeEditWorkflow()
@@ -86,7 +86,7 @@ public partial class MainWindow
     private AdjustmentOutcome CommitResetEdit(AdjustmentSnapshot snapshot)
     {
         if(file==null)throw new InvalidOperationException("No photo is open.");
-        var candidate=new SavedEdit(OriginalIdentity.Read(file),snapshot,CurrentLookIdentity());
+        var candidate=new SavedEdit(CurrentOrReadViewSource(),snapshot,CurrentLookIdentity());
         var before=currentEditRecord ?? new PhotoEditState(candidate.Identity,null);
         SavedEdit? defaultEdit=null;
         if(before.Edit==null) {
@@ -102,7 +102,7 @@ public partial class MainWindow
         return result;
     }
 
-    private SavedEdit CaptureCurrentEdit() => new(OriginalIdentity.Read(file ?? throw new InvalidOperationException()),
+    private SavedEdit CaptureCurrentEdit() => new(CurrentOrReadViewSource(),
         settings.Capture(),CurrentLookIdentity());
     private EditorResetContext CurrentResetContext() => new(lut,transformGeneration,
         transform.Active ? new(transform.Tool,transform.Geometry,transform.Lens) : null,
@@ -263,11 +263,15 @@ public partial class MainWindow
     private void RetrySaveClicked(object sender, RoutedEventArgs e)
     {
         try {
-            if(file!=null && currentEditRecord is {} record && !OriginalIdentity.Read(file).SameFile(record.Identity)) {
-                if(MessageBox.Show(this,Loc.Text("原始文件已被替换。是否放弃未保存的调整并重新打开照片？"),
-                    "RawLab",MessageBoxButton.YesNo,MessageBoxImage.Question,MessageBoxResult.No)==MessageBoxResult.Yes)
-                    ReloadCurrentAdjustments();
-                return;
+            if(file!=null && currentEditRecord is {} record) {
+                var diskIdentity=OriginalIdentity.Read(file);
+                viewSourceState.ApplyProbeResult(file,openRevision,diskIdentity);
+                if(!diskIdentity.SameFile(record.Identity)) {
+                    if(MessageBox.Show(this,Loc.Text("原始文件已被替换。是否放弃未保存的调整并重新打开照片？"),
+                        "RawLab",MessageBoxButton.YesNo,MessageBoxImage.Question,MessageBoxResult.No)==MessageBoxResult.Yes)
+                        ReloadCurrentAdjustments();
+                    return;
+                }
             }
         }catch(Exception error){ShowAdjustmentError(error);return;}
         if(transformSaveFailed && transform.Active) { ApplyTransformDraft(); return; }
