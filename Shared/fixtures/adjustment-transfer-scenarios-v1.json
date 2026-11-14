@@ -1681,6 +1681,227 @@
           "retained_target_processing_version"
         ]
       }
+    },
+    {
+      "id": "hdr-common-scalar-intensity-paste-on-hdr-target",
+      "target": {
+        "kind": "hdr",
+        "lens_valid": false,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 2,
+        "scope_version": 2,
+        "source": {
+          "identifier": "hdr-source.HIF",
+          "is_raw": false,
+          "processing_version": 3,
+          "hdr_processing_version": 6
+        },
+        "values": {
+          "color.saturation": 1.25,
+          "hdr.relative_temperature": 6200,
+          "hdr.relative_tint": 12,
+          "light.contrast": 1.4,
+          "light.exposure": 0.75,
+          "light.highlights": -0.3,
+          "light.shadows": 0.5
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "color.saturation": 1.25,
+          "hdr.relative_temperature": 6200,
+          "hdr.relative_tint": 12,
+          "light.contrast": 1.4,
+          "light.exposure": 0.75,
+          "light.highlights": -0.3,
+          "light.shadows": 0.5
+        }
+      }
+    },
+    {
+      "id": "hdr-rendition-group-paste-on-hdr-target",
+      "target": {
+        "kind": "hdr",
+        "lens_valid": false,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 2,
+        "scope_version": 2,
+        "source": {
+          "identifier": "hdr-source.HIF",
+          "is_raw": false,
+          "processing_version": 3,
+          "hdr_processing_version": 6
+        },
+        "values": {
+          "hdr.peak_limit_ev": 3.5,
+          "hdr.sdr_contrast": 40,
+          "hdr.sdr_exposure_ev": -1.25,
+          "hdr.sdr_saturation": -20
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "hdr.peak_limit_ev": 3.5,
+          "hdr.sdr_contrast": 40,
+          "hdr.sdr_exposure_ev": -1.25,
+          "hdr.sdr_saturation": -20
+        }
+      }
+    },
+    {
+      "id": "hdr-mixed-common-and-rendition-paste-on-hdr-target",
+      "target": {
+        "kind": "hdr",
+        "lens_valid": false,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 2,
+        "scope_version": 2,
+        "source": {
+          "identifier": "hdr-source.HIF",
+          "is_raw": false,
+          "processing_version": 3,
+          "hdr_processing_version": 6
+        },
+        "values": {
+          "hdr.peak_limit_ev": 2.5,
+          "hdr.sdr_exposure_ev": 1.5,
+          "light.contrast": 1.3,
+          "light.exposure": 0.5
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "hdr.peak_limit_ev": 2.5,
+          "hdr.sdr_exposure_ev": 1.5,
+          "light.contrast": 1.3,
+          "light.exposure": 0.5
+        }
+      }
+    },
+    {
+      "id": "hdr-rendition-group-rejected-on-sdr-target",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": true,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 2,
+        "scope_version": 2,
+        "source": {
+          "identifier": "hdr-source.HIF",
+          "is_raw": false,
+          "processing_version": 3,
+          "hdr_processing_version": 6
+        },
+        "values": {
+          "hdr.peak_limit_ev": 2.5,
+          "hdr.sdr_contrast": 30,
+          "light.exposure": 0.5
+        }
+      },
+      "expect": {
+        "status": "rejected",
+        "reason": "incompatible"
+      }
+    },
+    {
+      "id": "sdr-recipe-strength-scalars-paste-on-hdr-target",
+      "target": {
+        "kind": "hdr",
+        "lens_valid": false,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "ordinary-photo.HEIC",
+          "is_raw": false,
+          "processing_version": 2,
+          "recipe": {
+            "id": "hamada_daylight_v2",
+            "settings_version": 4,
+            "strength": 0.5
+          }
+        },
+        "values": {
+          "color.saturation": 0.8,
+          "light.contrast": 1.4,
+          "light.exposure": 1.2,
+          "light.highlights": -0.6,
+          "light.shadows": 0.6
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "color.saturation": 0.9,
+          "light.contrast": 1.2,
+          "light.exposure": 0.6,
+          "light.highlights": -0.3,
+          "light.shadows": 0.3
+        }
+      }
+    },
+    {
+      "id": "sdr-plain-scalars-paste-on-hdr-target-unscaled",
+      "target": {
+        "kind": "hdr",
+        "lens_valid": false,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "ordinary-photo.HEIC",
+          "is_raw": false,
+          "processing_version": 2
+        },
+        "values": {
+          "color.saturation": 0.8,
+          "light.contrast": 1.4,
+          "light.exposure": 1.2,
+          "light.highlights": -0.6,
+          "light.shadows": 0.6
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "color.saturation": 0.8,
+          "light.contrast": 1.4,
+          "light.exposure": 1.2,
+          "light.highlights": -0.6,
+          "light.shadows": 0.6
+        }
+      }
     }
   ]
 }
