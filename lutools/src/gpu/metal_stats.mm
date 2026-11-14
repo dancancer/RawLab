@@ -1,4 +1,5 @@
 #include "gpu/image_stats.h"
+#include "core/processing_cancellation.h"
 
 #import <Metal/Metal.h>
 
@@ -237,7 +238,17 @@ bool runKernel(MetalContext& context, const ImageLayout& layout,
         std::memcpy(candidate.clipping.data(), clipping.contents, layout.maskBytes);
         result = std::move(candidate);
         return true;
+    } catch (const sony2fuji::ProcessingCancelled&) {
+        // Cancellation is not a stats failure: rethrow it unchanged (the #329
+        // semantics) so the FFI boundary maps it to CANCELLED instead of this
+        // fallback disguising a cancelled run as "GPU unavailable, use CPU".
+        throw;
     } catch (const std::exception&) {
+        return false;
+    } catch (...) {
+        // Restore the catch-all fallback: a throw object that does not derive from
+        // std::exception must not escape computeImageStatsMetal into the C ABI.
+        // Narrowing this catch to std::exception& had left that window open (G-N5).
         return false;
     }
 }
