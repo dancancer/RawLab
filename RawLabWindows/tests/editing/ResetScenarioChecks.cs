@@ -175,7 +175,8 @@ internal static class ResetScenarioChecks
             // 捕获输出协议占位 0 即合规，不得把哨兵误读成期望 null。
             if (model.TryGetProperty("supported", out var supported) && supported.ValueKind == JsonValueKind.False)
                 return JsonDocument.Parse("0").RootElement.Clone();
-            var useHdr = hdr && model.TryGetProperty("hdr_default", out var hdrDefault) && hdrDefault.ValueKind != JsonValueKind.Null;
+            JsonElement hdrDefault = default;
+            var useHdr = hdr && model.TryGetProperty("hdr_default", out hdrDefault) && hdrDefault.ValueKind != JsonValueKind.Null;
             var def = useHdr ? hdrDefault : model.GetProperty("default");
             if (def.ValueKind != JsonValueKind.Number) return def.Clone();
             var value = def.GetDouble();
