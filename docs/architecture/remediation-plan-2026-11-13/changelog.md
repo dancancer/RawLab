@@ -220,3 +220,9 @@
 - PR #344（fix/win-uiob → development）合入 @ `e856d0d0`。27 文件全在 RawLabWindows/；红 134×2+变异×5（含碳审独立 3 枪）。
 - 三轮链（r1 修复自引入新缺陷模式的第 3 次连发）：首审 9 项（3H：NTFS 同时间片覆写骗缓存=真机 CI 实锤红+PR body 虚称 CI 过违例；work.Source 比对被丢破坏 #342 契约；look 写回竞态+RetryButton 死路）→ r1 交付再引入 StatReliable 缺失（瞬态句柄失败折叠 Exists=false→EditStore 写路径可抹整库，隔离复现 WIPED）→ r2 approve 0/0/0。
 - 教训入库（AGENTS 口径级）：①存在性判断新增探测通道时瞬态失败不得折叠进"确认不存在"（强语义）；②macOS 开发机纳秒 mtime 会掩盖 NTFS 15.6ms 时间片问题，Windows 缓存正确性必须以 Hosted 真机 CI 为准；③跨轮契约（#342 DegradeSourceUnavailable）返工时必须显式列给 reviewer 对账。
+
+### (43) Mac 批量队列拆分+预检取消=第 103 个 PR（#347，P1-17）
+
+- PR #347（fix/mac-batch → development）合入 @ `1b576af7`。codex 半成品由 hydrogen finisher 救活（rebase 干净+补 drain 隔离+全套验证），碳审 approve 0 阻塞——"codex 直出需 finisher"模式第二次验证。
+- 碳审纠偏留档：crew 报的 batch-render.sh"预存红"实为 worktree 本地 CMakeCache 未开 Wavelet 降噪所致（链主仓开 Wavelet 核心 4/4 全绿），并非上游缺陷；`test_native_isolation.py` 3 文件红确系预存（804167c2/4a013f96）。教训：**跨 worktree 跑原生脚本先核对 build-*/CMakeCache 开关与主仓一致**，否则把本地配置差异误报成上游红。
+- 后续项：batch-cancellation.sh 未入 ci.yml macos model 分片→k163；@State preflight 重绘空分配可改 @StateObject→k161。
