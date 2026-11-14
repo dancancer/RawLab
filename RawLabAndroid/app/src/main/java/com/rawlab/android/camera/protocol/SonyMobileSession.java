@@ -20,7 +20,7 @@ public final class SonyMobileSession implements CameraMediaSession {
             this.operation = operation;
             this.code = code;
         }
-        @Override public boolean isSessionFailure() { return code == 0x2003 || code == 0x2004; }
+        @Override public CameraMediaSession.FailureKind getKind() { return CameraMediaSession.responseFailureKind(operation, code); }
     }
     private final Socket command, event;
     private final Reporter report;
@@ -137,6 +137,19 @@ public final class SonyMobileSession implements CameraMediaSession {
         return false;
     }
 
+    @Override public byte[] readRange(Device device, Asset asset, long offset, int length) throws IOException {
+        if (asset == null || asset.owner != this || !device.operations.contains(0x923d)
+            || length <= 0 || length > (64 << 10) || offset < 0 || offset > asset.size - length)
+            throw new CameraMediaSession.PhotoTransferException("Invalid camera sample range");
+        byte[] bytes = operation(0x923d, new int[]{asset.content, (1 << 24) | asset.file,
+            (int)offset, (int)(offset >>> 32), length}, true, length);
+        if (bytes.length != length) throw new CameraMediaSession.PhotoTransferException("Camera sample length mismatch");
+        if (offset == 0) validateHeader(asset.name, bytes);
+        if (offset + length == asset.size && !hasAsset(device, asset))
+            throw new CameraMediaSession.PhotoTransferException(CameraMediaSession.FailureKind.SOURCE_CHANGED, "Camera photo metadata changed during sampling");
+        return bytes;
+    }
+
     public String download(Device device, Asset asset, OutputStream destination) throws IOException {
         return download(device, asset, destination, null);
     }
@@ -160,7 +173,7 @@ public final class SonyMobileSession implements CameraMediaSession {
             report.report("photo_bytes " + offset + "/" + asset.size);
         }
         destination.flush();
-        if (!hasAsset(device, asset)) throw new CameraMediaSession.PhotoTransferException("Camera photo metadata changed during transfer");
+        if (!hasAsset(device, asset)) throw new CameraMediaSession.PhotoTransferException(CameraMediaSession.FailureKind.SOURCE_CHANGED, "Camera photo metadata changed during transfer");
         StringBuilder hash = new StringBuilder(); for (byte b : digest.digest()) hash.append(String.format(Locale.ROOT, "%02x", b & 255));
         return hash.toString();
     }

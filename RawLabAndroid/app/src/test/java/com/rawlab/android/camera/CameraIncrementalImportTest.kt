@@ -165,7 +165,7 @@ class CameraIncrementalImportTest {
         val connected = CameraImportState(photos = listOf(old.copy(key = "new-locator")), connected = true,
             cameraId = "camera", importMode = CameraImportMode.INCREMENTAL, incrementalOwner = "reconnected")
         assertNull(connected.copy(jobs = listOf(history, blocked)).resumableIncrementalJob)
-        assertNull(connected.copy(jobs = listOf(job)).resumableIncrementalJob)
+        assertEquals(job, connected.copy(jobs = listOf(job)).resumableIncrementalJob)
         val verified = job.copy(items = listOf(job.items.single().copy(digest = digest)))
         assertEquals(verified, connected.copy(jobs = listOf(verified)).resumableIncrementalJob)
     }

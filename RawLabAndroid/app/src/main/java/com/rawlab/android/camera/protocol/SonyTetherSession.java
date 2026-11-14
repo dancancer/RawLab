@@ -34,7 +34,7 @@ public final class SonyTetherSession implements Closeable {
     public static final class RemoteResponseException extends CameraMediaSession.PhotoTransferException {
         public final int operation, code;
         public RemoteResponseException(int operation,int code) { super(String.format(Locale.ROOT,"PTP op 0x%04x response 0x%04x",operation,code));this.operation=operation;this.code=code; }
-        @Override public boolean isSessionFailure() { return code == 0x2003 || code == 0x2004; }
+        @Override public CameraMediaSession.FailureKind getKind() { return CameraMediaSession.responseFailureKind(operation, code); }
     }
 
     public SonyTetherSession(SocketFactory factory, InetAddress address, UUID guid, Reporter reporter) throws IOException {
@@ -253,7 +253,7 @@ public final class SonyTetherSession implements Closeable {
 
     public synchronized String downloadLegacy(LegacyObject object,OutputStream destination) throws IOException {
         if(object==null || object.owner!=this || !object.isPhoto() || !knownLegacyObjects.contains(object.key()) || !operations.contains(0x101b)) throw new IOException("Unknown or unsupported legacy original");
-        if(!object.key().equals(legacyObject(object.handle).key())) throw new CameraMediaSession.PhotoTransferException("Legacy original changed before transfer");
+        if(!object.key().equals(legacyObject(object.handle).key())) throw new CameraMediaSession.PhotoTransferException(CameraMediaSession.FailureKind.SOURCE_CHANGED, "Legacy original changed before transfer");
         MessageDigest digest;try { digest=MessageDigest.getInstance("SHA-256"); } catch(NoSuchAlgorithmException error) { throw new IOException(error); }
         for(long offset=0;offset<object.size;) {
             int count=(int)Math.min(3<<20,object.size-offset);
@@ -267,15 +267,15 @@ public final class SonyTetherSession implements Closeable {
             destination.write(bytes);digest.update(bytes);offset+=bytes.length;
         }
         destination.flush();
-        if(!object.key().equals(legacyObject(object.handle).key())) throw new CameraMediaSession.PhotoTransferException("Legacy original changed during transfer");
+        if(!object.key().equals(legacyObject(object.handle).key())) throw new CameraMediaSession.PhotoTransferException(CameraMediaSession.FailureKind.SOURCE_CHANGED, "Legacy original changed during transfer");
         StringBuilder hash=new StringBuilder();for(byte b:digest.digest()) hash.append(String.format(Locale.ROOT,"%02x",b&255));return hash.toString();
     }
 
     public synchronized String downloadLegacyWhole(LegacyObject object,OutputStream destination) throws IOException {
         if(closed || object==null || object.owner!=this || !object.isPhoto() || !knownLegacyObjects.contains(object.key()) || !operations.contains(0x1009)) throw new IOException("Unknown or unsupported legacy original");
-        if(!object.key().equals(legacyObject(object.handle).key())) throw new CameraMediaSession.PhotoTransferException("Legacy original changed before transfer");
+        if(!object.key().equals(legacyObject(object.handle).key())) throw new CameraMediaSession.PhotoTransferException(CameraMediaSession.FailureKind.SOURCE_CHANGED, "Legacy original changed before transfer");
         String hash=downloadLegacyBytes(object,destination);
-        if(!object.key().equals(legacyObject(object.handle).key())) throw new CameraMediaSession.PhotoTransferException("Legacy original changed during transfer");
+        if(!object.key().equals(legacyObject(object.handle).key())) throw new CameraMediaSession.PhotoTransferException(CameraMediaSession.FailureKind.SOURCE_CHANGED, "Legacy original changed during transfer");
         return hash;
     }
 
@@ -550,7 +550,7 @@ public final class SonyTetherSession implements Closeable {
             destination.write(bytes); digest.update(bytes); offset+=bytes.length;
         }
         destination.flush();
-        if (!hasRemoteAsset(asset)) throw new CameraMediaSession.PhotoTransferException("Remote card object changed during transfer");
+        if (!hasRemoteAsset(asset)) throw new CameraMediaSession.PhotoTransferException(CameraMediaSession.FailureKind.SOURCE_CHANGED, "Remote card object changed during transfer");
         StringBuilder hash=new StringBuilder(); for (byte b:digest.digest()) hash.append(String.format(Locale.ROOT,"%02x",b&255));
         return hash.toString();
     }
@@ -571,9 +571,15 @@ public final class SonyTetherSession implements Closeable {
                     throw new IOException("Unsupported camera parameter write");
             } else throw new IOException("Unsupported remote write operation");
         }
-        try { return exchange(op,params,outgoing,limit,required); }
-        catch (RemoteResponseException rejected) { throw rejected; }
-        catch (IOException fatal) { close(); throw fatal; }
+        for (int attempt = 0; ; attempt++) {
+            try { return exchange(op,params,outgoing,limit,required); }
+            catch (RemoteResponseException rejected) {
+                if (outgoing != null || rejected.getKind() != CameraMediaSession.FailureKind.TRANSIENT_READ
+                    || attempt >= 2 || closed || stopRequested) throw rejected;
+                pause(100L * (attempt + 1));
+            }
+            catch (IOException fatal) { close(); throw fatal; }
+        }
     }
 
     private byte[] exchange(int op,int[] params,byte[] outgoing,int limit,boolean required) throws IOException {

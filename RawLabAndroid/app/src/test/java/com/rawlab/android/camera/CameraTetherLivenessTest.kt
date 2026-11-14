@@ -197,6 +197,16 @@ class CameraTetherLivenessTest {
         val objectInfo1008Calls = AtomicInteger()
         val downloadCalls = AtomicInteger()
         val shutterCaptures = AtomicInteger()
+        val sessionOpenCalls = AtomicInteger()
+        val deliveredRejections = AtomicInteger()
+        val rangeRequests = CopyOnWriteArrayList<List<Long>>()
+        private val rejections = ConcurrentHashMap<Int, java.util.concurrent.ConcurrentLinkedQueue<Int>>()
+        @Volatile var removeOriginalAfterDownload = false
+        @Volatile var disconnectOnDownloadNumber = 0
+
+        fun rejectNext(operation: Int, vararg codes: Int) {
+            rejections.computeIfAbsent(operation) { java.util.concurrent.ConcurrentLinkedQueue() }.addAll(codes.toList())
+        }
 
         @Volatile var onShutterTriggered: (() -> Unit)? = null
 
@@ -318,6 +328,13 @@ class CameraTetherLivenessTest {
         }
 
         private fun respond(command: Socket, op: Int, tid: Int, params: IntArray, outgoing: ByteArray?) {
+            if (op == 0x1002) sessionOpenCalls.incrementAndGet()
+            val rejection = rejections[op]?.poll()
+            if (rejection != null) {
+                deliveredRejections.incrementAndGet()
+                writePtpPacket(command, 7, u16(rejection) + u32(tid))
+                return
+            }
             var data: ByteArray? = null
             var code = 0x2001
             when (op) {
@@ -389,12 +406,17 @@ class CameraTetherLivenessTest {
                     data = out.toByteArray()
                 }
                 0x923d -> {
-                    downloadCalls.incrementAndGet()
+                    if (downloadCalls.incrementAndGet() == disconnectOnDownloadNumber) {
+                        command.close()
+                        return
+                    }
                     val content = params[0]
                     val file = params[1] and 0xffff
                     val offset = (params[2].toLong() and 0xffffffffL) or ((params[3].toLong() and 0xffffffffL) shl 32)
                     val count = params[4]
+                    rangeRequests += listOf(content.toLong(), file.toLong(), offset, count.toLong())
                     val match = entriesBySlot[slotKey(content, file)]
+                    if (removeOriginalAfterDownload) entries.removeIf { it.content == content && it.file == file }
                     if (match == null) {
                         code = 0x2009
                     } else {
@@ -496,6 +518,205 @@ class CameraTetherLivenessTest {
             runBlocking { block(root, store, journal, lock) }
         } finally {
             root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun initialBusyAndTransientReadResponsesKeepTheSameSession() = withWorkspace { _, store, journal, lock ->
+        val shot = FakeCardEntry(1, 1, "DSC00001.ARW", 1_730_000_001_000L, rawPayload(1))
+        FakeTetherCameraServer().use { camera ->
+            // Initial observation used to bypass the main-loop retry and tear down the session.
+            camera.rejectNext(0x923c, 0x2019, 0x2005)
+            val clock = VirtualLoopClock(camera)
+            val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val controller = CameraTetherController(controllerScope, store, journal, lock, {}, clock::now, clock::pause)
+            try {
+                controller.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID(),
+                    SonyCameraModel.A7CII, "BLE:sony", CameraImportDestination(), false, false)
+                clock.awaitParked(controller)
+                assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
+                assertEquals(2, camera.deliveredRejections.get())
+                assertEquals(1, camera.sessionOpenCalls.get())
+                // A busy download is a complete response too: retry only that read, without reopening PTP.
+                camera.rejectNext(0x923d, 0x2019)
+                camera.onShutterTriggered = { camera.addEntry(shot) }
+                controller.capture()
+                repeat(12) { assertTrue(clock.stepParkedTick(controller)) }
+                assertEquals(1, controller.state.value.saved.size)
+                assertEquals(1, camera.sessionOpenCalls.get())
+                assertEquals(1, camera.shutterCaptures.get())
+                assertEquals(3, camera.deliveredRejections.get())
+                assertEquals(1, camera.downloadCalls.get())
+                assertNull(controller.state.value.failure)
+            } finally {
+                controller.stop(); controller.join(); clock.close(); controllerScope.cancel()
+            }
+        }
+    }
+
+    @Test
+    fun metadataChangeDuringDownloadIsSourceFailure() = withWorkspace { _, store, journal, lock ->
+        val shot = FakeCardEntry(1, 1, "DSC00001.ARW", 1_730_000_001_000L, rawPayload(1))
+        FakeTetherCameraServer().use { camera ->
+            val clock = VirtualLoopClock(camera)
+            val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val controller = CameraTetherController(controllerScope, store, journal, lock, {}, clock::now, clock::pause)
+            try {
+                controller.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID(),
+                    SonyCameraModel.A7CII, "BLE:sony", CameraImportDestination(), false, false)
+                clock.awaitParked(controller)
+                camera.addEntry(shot)
+                camera.removeOriginalAfterDownload = true
+                var parked = true
+                repeat(12) { if (parked) parked = clock.stepParkedTick(controller) }
+                assertFalse(parked)
+                controller.join()
+                assertEquals(CameraTetherFailure.SOURCE, controller.state.value.failure)
+                assertTrue(controller.state.value.saved.isEmpty())
+                assertEquals(1, camera.sessionOpenCalls.get())
+            } finally {
+                controller.stop(); controller.join(); clock.close(); controllerScope.cancel()
+            }
+        }
+    }
+
+    @Test
+    fun unsupportedDownloadIsNotRetriedAsTransientRead() = withWorkspace { _, store, journal, lock ->
+        val shot = FakeCardEntry(1, 1, "DSC00001.ARW", 1_730_000_001_000L, rawPayload(1))
+        FakeTetherCameraServer().use { camera ->
+            val clock = VirtualLoopClock(camera)
+            val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val controller = CameraTetherController(controllerScope, store, journal, lock, {}, clock::now, clock::pause)
+            try {
+                controller.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID(),
+                    SonyCameraModel.A7CII, "BLE:sony", CameraImportDestination(), false, false)
+                clock.awaitParked(controller)
+                camera.addEntry(shot)
+                camera.rejectNext(0x923d, 0x2005)
+                var parked = true
+                repeat(12) { if (parked) parked = clock.stepParkedTick(controller) }
+                assertFalse(parked)
+                controller.join()
+                assertEquals(CameraTetherFailure.CONNECTION, controller.state.value.failure)
+                assertEquals(1, camera.deliveredRejections.get())
+                assertEquals(0, camera.downloadCalls.get())
+                assertEquals(1, camera.sessionOpenCalls.get())
+                assertTrue(controller.state.value.saved.isEmpty())
+            } finally {
+                controller.stop(); controller.join(); clock.close(); controllerScope.cancel()
+            }
+        }
+    }
+
+    @Test
+    fun initialTransientReadRetriesAreBounded() = withWorkspace { _, store, journal, lock ->
+        FakeTetherCameraServer().use { camera ->
+            camera.rejectNext(0x923c, 0x2019, 0x2019, 0x2019, 0x2019)
+            val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val controller = CameraTetherController(controllerScope, store, journal, lock, {})
+            try {
+                controller.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID(),
+                    SonyCameraModel.A7CII, "BLE:sony", CameraImportDestination(), false, false)
+                withTimeout(10_000) { controller.join() }
+                assertEquals(CameraTetherPhase.PAUSED, controller.state.value.phase)
+                assertEquals(CameraTetherFailure.CONNECTION, controller.state.value.failure)
+                assertEquals(3, camera.deliveredRejections.get())
+                assertEquals(1, camera.sessionOpenCalls.get())
+            } finally {
+                controller.stop(); controller.join(); controllerScope.cancel()
+            }
+        }
+    }
+
+    @Test
+    fun registeredTetherBatchResumesUntouchedTailAfterDisconnect() = withWorkspace { _, store, journal, lock ->
+        FakeTetherCameraServer().use { camera ->
+            val clock = VirtualLoopClock(camera)
+            val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val controller = CameraTetherController(controllerScope, store, journal, lock, {}, clock::now, clock::pause)
+            val resumedClock = VirtualLoopClock(camera)
+            val resumed = CameraTetherController(controllerScope, store, journal, lock, {}, resumedClock::now, resumedClock::pause)
+            try {
+                controller.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID(),
+                    SonyCameraModel.A7CII, "BLE:sony", CameraImportDestination(), false, false)
+                clock.awaitParked(controller)
+                camera.addEntry(FakeCardEntry(1, 1, "DSC00001.ARW", 1_730_000_001_000L, rawPayload(1)))
+                camera.addEntry(FakeCardEntry(2, 1, "DSC00002.ARW", 1_730_000_002_000L, rawPayload(2)))
+                camera.disconnectOnDownloadNumber = 2
+                var parked = true
+                repeat(12) { if (parked) parked = clock.stepParkedTick(controller) }
+                assertFalse(parked)
+                controller.join()
+                assertEquals(1, controller.state.value.saved.size)
+                val savedUri = controller.state.value.saved.single().uri
+                val jobId = controller.state.value.jobs.single().id
+                assertNull(controller.state.value.jobs.single().items.last().digest)
+                assertTrue("Registered untouched tail must remain resumable", controller.state.value.canResume)
+                camera.disconnectOnDownloadNumber = 0
+                camera.resetCounters()
+                resumed.restore(journal.load(), store.load())
+                resumed.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID(),
+                    SonyCameraModel.A7CII, "BLE:sony", CameraImportDestination(), true, false)
+                resumedClock.awaitParked(resumed)
+                assertEquals(CameraTetherPhase.READY, resumed.state.value.phase)
+                assertEquals(2, resumed.state.value.saved.size)
+                assertTrue(resumed.state.value.saved.any { it.uri == savedUri })
+                assertEquals(jobId, resumed.state.value.jobs.single().id)
+                assertEquals(CameraJobStatus.COMPLETE, resumed.state.value.jobs.single().status)
+                // One source revalidation for the saved item, then exactly the unfinished item.
+                assertEquals(2, camera.downloadCalls.get())
+                assertNull(resumed.state.value.failure)
+            } finally {
+                controller.stop(); controller.join(); resumed.stop(); resumed.join()
+                clock.close(); resumedClock.close(); controllerScope.cancel()
+            }
+        }
+    }
+
+    @Test
+    fun sourceChangeDuringTetherResumeIsSourceFailure() = withWorkspace { _, store, journal, lock ->
+        FakeTetherCameraServer().use { camera ->
+            val clock = VirtualLoopClock(camera)
+            val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val controller = CameraTetherController(controllerScope, store, journal, lock, {}, clock::now, clock::pause)
+            val resumed = CameraTetherController(controllerScope, store, journal, lock, {})
+            try {
+                controller.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID(),
+                    SonyCameraModel.A7CII, "BLE:sony", CameraImportDestination(), false, false)
+                clock.awaitParked(controller)
+                camera.addEntry(FakeCardEntry(1, 1, "DSC00001.ARW", 1_730_000_001_000L, rawPayload(1)))
+                repeat(12) { assertTrue(clock.stepParkedTick(controller)) }
+                assertEquals(1, controller.state.value.saved.size)
+                controller.stop(); controller.join()
+                resumed.restore(journal.load(), store.load())
+                camera.removeOriginalAfterDownload = true
+                resumed.start(camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID(),
+                    SonyCameraModel.A7CII, "BLE:sony", CameraImportDestination(), true, false)
+                withTimeout(10_000) { resumed.join() }
+                assertEquals(CameraTetherFailure.SOURCE, resumed.state.value.failure)
+            } finally {
+                controller.stop(); controller.join(); resumed.stop(); resumed.join(); clock.close(); controllerScope.cancel()
+            }
+        }
+    }
+
+    @Test
+    fun mobileSamplingReadsExactRangesOnCurrentLocator() {
+        val bytes = rawPayload(7) + ByteArray(400_000) { (it % 251).toByte() }
+        val entry = FakeCardEntry(42, 1, "DSC00007.ARW", 1_730_000_001_000L, bytes)
+        FakeTetherCameraServer(initialEntries = listOf(entry)).use { camera ->
+            com.rawlab.android.camera.protocol.SonyMobileSession(camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID()) {}.use { session ->
+                val device = session.deviceInfo()
+                session.openSession()
+                val asset = session.listPhotos(device).single()
+                val offsets = listOf(0L, (bytes.size - 65_536L) / 2, bytes.size - 65_536L)
+                for (offset in offsets) {
+                    assertTrue(bytes.copyOfRange(offset.toInt(), offset.toInt() + 65_536)
+                        .contentEquals(session.readRange(device, asset, offset, 65_536)))
+                }
+                assertEquals(offsets.map { listOf(42L, 1L, it, 65_536L) }, camera.rangeRequests.toList())
+                assertEquals(1, camera.sessionOpenCalls.get())
+            }
         }
     }
 
