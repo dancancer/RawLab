@@ -177,3 +177,4 @@
 - 2026-11-14 · D-05 开工（decimal-vectors 氢单）：小数值传输向量+四端行为按 Q3 裁定对齐字段规格表（iOS unrepresentable 误拒 12.5 为复核实锤）；指令锁「不自造规则，歧义标待产品确认」+与 P2-01 fixture 文件避让。P2-01 现场：2 commit，四端 EditRecordFixture* 已铺，未碰 IOSAdjustmentTransfer，同域无碰撞。
 - 2026-11-14 · **P2-01 交卷 PR #330**（Shared/fixtures/edit-records-v1.json 四端消费；红锚策略=不改实现只登记 divergence，碳审重点「fixture 是裁定基线还是现状快照」）。#331 打回 2B 全在 Windows staging（_wopen 缺 _O_NOINHERIT；hdr_image_portable.cpp 第 3 处漏改），p3-batch 续修。#326 r3 交卷（a7b3ded5）三轮复审在途。
 - 2026-11-14 · #331 r2 交卷（`dba844e8`）：_O_NOINHERIT/_O_BINARY+第 3 处 staging 补齐；亮点是**常驻跨平台 foreign-name 测试**（stagingSuffix 确定性→哨兵占位→必须跳名发布），把 Windows 才撞的共享冲突逻辑变成 POSIX 可回归的常驻锚。二轮碳审在途（review-mwgbwz9i）。
+- 2026-11-14 · P3 收尾两项开工（lut-ctx crew）：P3-04 LUT 上下文失败永久缓存（瞬时失败变永久降级）、P3-05 EGL RAII 恢复顺序；指令要求按 #327 合入后现码重新登记漂移行号。至此 b-task-table P2/P3 全部要么入闸要么在途。
