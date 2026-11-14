@@ -95,16 +95,32 @@ ErrorCode applyLUTWithConfig(
 
     if (config.mode != GpuMode::Off) {
 #if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES)
-        ImageData staged = image;
         const auto low = lut->domainMin();
         const auto high = lut->domainMax();
-        for (auto& p : staged.pixels) {
-            p.r = std::clamp((p.r-low.r)/(high.r-low.r), 0.0f, 1.0f);
-            p.g = std::clamp((p.g-low.g)/(high.g-low.g), 0.0f, 1.0f);
-            p.b = std::clamp((p.b-low.b)/(high.b-low.b), 0.0f, 1.0f);
+        const bool unitDomain = low.r == 0.0f && low.g == 0.0f && low.b == 0.0f &&
+            high.r == 1.0f && high.g == 1.0f && high.b == 1.0f;
+        // 单位域 [0,1] 的钳制是着色器与 CPU 回退各自都会做的同值钳制；原地钳制即可，
+        // 不再为输入域归一化保留一份整幅暂存拷贝。
+        ImageData staged;
+        ImageData* working = &image;
+        if (unitDomain) {
+            for (auto& p : image.pixels) {
+                p.r = std::clamp(p.r, 0.0f, 1.0f);
+                p.g = std::clamp(p.g, 0.0f, 1.0f);
+                p.b = std::clamp(p.b, 0.0f, 1.0f);
+            }
+        } else {
+            // 自定义域归一化有损，CPU 回退必须看到原始像素，保持旧行为。
+            staged = image;
+            for (auto& p : staged.pixels) {
+                p.r = std::clamp((p.r-low.r)/(high.r-low.r), 0.0f, 1.0f);
+                p.g = std::clamp((p.g-low.g)/(high.g-low.g), 0.0f, 1.0f);
+                p.b = std::clamp((p.b-low.b)/(high.b-low.b), 0.0f, 1.0f);
+            }
+            working = &staged;
         }
-        if (tryMetal(*lut, staged) || tryGles(*lut, staged)) {
-            image = std::move(staged);
+        if (tryMetal(*lut, *working) || tryGles(*lut, *working)) {
+            if (working != &image) image = std::move(staged);
             return ErrorCode::Success;
         }
         if (config.mode == GpuMode::Force) {

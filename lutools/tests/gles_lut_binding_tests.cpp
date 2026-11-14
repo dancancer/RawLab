@@ -542,8 +542,8 @@ struct CallerEglScope {
     }
 };
 
-std::shared_ptr<LUT3D> makeTestLut(int size) {
-    std::string cube = "LUT_3D_SIZE " + std::to_string(size) + "\n";
+std::shared_ptr<LUT3D> makeTestLut(int size, const std::string& header = "") {
+    std::string cube = header + "LUT_3D_SIZE " + std::to_string(size) + "\n";
     for (int b = 0; b < size; ++b) {
         for (int g = 0; g < size; ++g) {
             for (int r = 0; r < size; ++r) {
@@ -643,6 +643,19 @@ int main(int argc, char** argv) {
         const auto after = captureEglState();
         require(after.context == EGL_NO_CONTEXT, "eglGetCurrentContext restored to EGL_NO_CONTEXT");
         requireSameState(before, after, "unbound thread EGL display/surfaces/API restored");
+    }
+
+    // 1a. 自定义输入域：归一化仍走暂存拷贝（CPU 回退可见原始像素），输出与 CPU 参考一致。
+    {
+        auto domainLut = makeTestLut(3, "DOMAIN_MIN 0.15 0.2 0.1\nDOMAIN_MAX 0.85 0.8 0.9\n");
+        ImageData domainForced = source;
+        require(applyLUTWithConfig(domainLut, domainForced, {GpuMode::Force}) == ErrorCode::Success,
+                "Custom-domain LUT renders through GLES");
+        ImageData domainCpu = source;
+        require(applyLUTWithConfig(domainLut, domainCpu, {GpuMode::Off}) == ErrorCode::Success,
+                "Custom-domain LUT CPU reference renders");
+        requireImagesClose(domainCpu, domainForced, 2e-5f,
+                           "Custom-domain GLES output matches CPU reference");
     }
 
     // 2. 调用线程已有独立 draw/read surface 的 EGLContext：正常路径与提前失败路径都恢复原上下文。

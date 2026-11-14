@@ -96,15 +96,8 @@ id<MTLTexture> createLutTexture(MetalContext& context, const sony2fuji::LUT3D& l
     return texture;
 }
 
-id<MTLBuffer> wrapPixelBuffer(MetalContext& context, sony2fuji::ImageData& image) {
-    const size_t length = image.pixels.size() * sizeof(sony2fuji::RGB);
-    if (length == 0) {
-        return nil;
-    }
-    return [context.device newBufferWithBytes:image.pixels.data()
-                                             length:length
-                                            options:MTLResourceStorageModeShared];
-}
+// 与 GLES 路径一致的瓦片大小：GPU 暂存缓冲上限固定，不随整幅尺寸膨胀。
+constexpr size_t kLutTileBytes = 16ull * 1024 * 1024;
 
 id<MTLBuffer> createParamsBuffer(MetalContext& context, uint32_t pixel_count, uint32_t lut_size) {
     struct Params {
@@ -165,7 +158,7 @@ bool applyLutMetal(const LUT3D& lut, ImageData& image) {
                 if (!context) {
                     return false;
                 }
-                const uint32_t pixel_count = static_cast<uint32_t>(image.pixels.size());
+                const size_t pixel_count = image.pixels.size();
                 if (pixel_count == 0) {
                     return false;
                 }
@@ -173,13 +166,23 @@ bool applyLutMetal(const LUT3D& lut, ImageData& image) {
                 if (!lut_texture) {
                     return false;
                 }
-                id<MTLBuffer> pixel_buffer = wrapPixelBuffer(*context, image);
+                // 按 16 MiB 瓦片复用同一块共享缓冲：上传/回写仍是两次整幅 memcpy，
+                // 但 GPU 暂存峰值从整幅（可达数百 MiB）降到固定瓦片，与 GLES 平齐。
+                const size_t tile_pixels = std::min(pixel_count, kLutTileBytes / sizeof(RGB));
+                id<MTLBuffer> pixel_buffer = [context->device newBufferWithLength:tile_pixels * sizeof(RGB)
+                                                                          options:MTLResourceStorageModeShared];
                 if (!pixel_buffer || !pixel_buffer.contents) {
                     return false;
                 }
-                if (!runCompute(*context, pixel_buffer, lut_texture, pixel_count,
-                                static_cast<uint32_t>(lut.getSize()))) return false;
-                std::memcpy(image.pixels.data(), pixel_buffer.contents, image.pixels.size() * sizeof(RGB));
+                auto* staging = static_cast<float*>(pixel_buffer.contents);
+                for (size_t offset = 0; offset < pixel_count; offset += tile_pixels) {
+                    const size_t count = std::min(tile_pixels, pixel_count - offset);
+                    const size_t bytes = count * sizeof(RGB);
+                    std::memcpy(staging, image.pixels.data() + offset, bytes);
+                    if (!runCompute(*context, pixel_buffer, lut_texture, static_cast<uint32_t>(count),
+                                    static_cast<uint32_t>(lut.getSize()))) return false;
+                    std::memcpy(image.pixels.data() + offset, staging, bytes);
+                }
                 return true;
             } catch (const std::exception&) {
                 return false;

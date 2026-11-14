@@ -1428,12 +1428,24 @@ sony2fuji_status applyPhotoLook(sony2fuji::ImageData& image,
         contract = std::make_unique<sony2fuji::ContractLUTEvaluator>(lut);
         if (!contract->supportsInput(displayInput)) return SONY2FUJI_STATUS_UNSUPPORTED;
     }
+    const bool srgbLookInput = lut && !dcp && !contract &&
+        lut->inputTransfer() == sony2fuji::LUTTransfer::SRGB;
     auto render = [&](sony2fuji::ImageData& working) {
         sony2fuji::checkProcessingCancellation();
-        auto base = working;
-        for (size_t i = 0; i < base.pixels.size(); ++i) {
-            if (i % 4096 == 0) sony2fuji::checkProcessingCancellation();
-            auto& p = base.pixels[i]; p = sony2fuji::RGB(encode(p.r), encode(p.g), encode(p.b));
+        auto encodeInPlace = [&](std::vector<sony2fuji::RGB>& pixels) {
+            for (size_t i = 0; i < pixels.size(); ++i) {
+                if (i % 4096 == 0) sony2fuji::checkProcessingCancellation();
+                auto& p = pixels[i]; p = sony2fuji::RGB(encode(p.r), encode(p.g), encode(p.b));
+            }
+        };
+        sony2fuji::ImageData base;
+        if (srgbLookInput) {
+            // sRGB 输入 LUT 直接编码工作像素，编码后再取混合基准，省一次整幅回拷。
+            encodeInPlace(working.pixels);
+            base = working;
+        } else {
+            base = working;
+            encodeInPlace(base.pixels);
         }
         if (dcp) {
             const size_t count = working.pixels.size();
@@ -1456,12 +1468,13 @@ sony2fuji_status applyPhotoLook(sony2fuji::ImageData& image,
                     return SONY2FUJI_STATUS_PROCESSING_ERROR;
             }
         } else {
-            if (lut->inputTransfer() == sony2fuji::LUTTransfer::SRGB) working = base;
-            else if (lut->inputTransfer() != sony2fuji::LUTTransfer::FLog2)
-                sony2fuji::encodePhotoLUTInput(working, lut->inputTransfer());
-            else {
-                sony2fuji::ColorConverter().convertImage(working, sony2fuji::ColorSpace::sRGB, sony2fuji::ColorSpace::FujiFilm_FGamut);
-                applyFLog2Encoding(working, false, diagnosticBlocks ? &diagnostics : nullptr);
+            if (!srgbLookInput) {
+                if (lut->inputTransfer() == sony2fuji::LUTTransfer::FLog2) {
+                    sony2fuji::ColorConverter().convertImage(working, sony2fuji::ColorSpace::sRGB, sony2fuji::ColorSpace::FujiFilm_FGamut);
+                    applyFLog2Encoding(working, false, diagnosticBlocks ? &diagnostics : nullptr);
+                } else {
+                    sony2fuji::encodePhotoLUTInput(working, lut->inputTransfer());
+                }
             }
             const auto result = sony2fuji::applyLUTWithConfig(lut, working, config);
             sony2fuji::checkProcessingCancellation();
@@ -1475,7 +1488,13 @@ sony2fuji_status applyPhotoLook(sony2fuji::ImageData& image,
         return SONY2FUJI_STATUS_OK;
     };
     // 独立 LUT GPU 仍以整次调用为事务；CPU 混合只保留两块各 3 MiB 的工作区。
-    if (config.mode != sony2fuji::GpuMode::Off) return render(image);
+    bool gpuLookTransaction = false;
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES)
+    // 只有 LUT 确实可能进独立 LUT GPU 时才走整图分支；DCP、contract、VLT 是纯 CPU 阶段，
+    // 没有独立 LUT GPU 后端的构建也不该因 GPU 未关闭而按整幅分配工作区。
+    gpuLookTransaction = config.mode != sony2fuji::GpuMode::Off && lut && !dcp && !lut->requiresCPU();
+#endif
+    if (gpuLookTransaction) return render(image);
     constexpr size_t blockPixels = 1u << 18;
     sony2fuji::ImageData block;
     block.height = 1;
