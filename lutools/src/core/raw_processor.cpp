@@ -1018,7 +1018,9 @@ public:
                 const std::string suffix = stagingSuffix();
                 temporaryName = (parent / (base + L"-" + std::wstring(suffix.begin(), suffix.end()) + L".tmp")).wstring();
                 createdFd = ::_wopen(
-                    temporaryName.c_str(), _O_CREAT | _O_EXCL | _O_WRONLY, _S_IREAD | _S_IWRITE);
+                    temporaryName.c_str(),
+                    _O_CREAT | _O_EXCL | _O_WRONLY | _O_BINARY | _O_NOINHERIT,
+                    _S_IREAD | _S_IWRITE);
                 if (createdFd < 0) {
                     if (errno != EEXIST) return false;
                     temporaryName.clear(); // the name belongs to someone else; never delete it

@@ -1,5 +1,6 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "sony2fuji/raw_processor.h"
+#include "core/output_file_mode.h"
 #include "core/processing_cancellation.h"
 #include "core/photo_color.h"
 #include "core/photo_color_grading.h"
@@ -390,6 +391,83 @@ int main() {
             std::filesystem::remove(linked, cleanupError);
             std::filesystem::remove(anchor, cleanupError);
 #endif
+        }
+        // Foreign-name protection (P3-02): stagingSuffix() is deterministic
+        // ("<pid>-<counter>"), so the test can pre-create exactly the names the next
+        // create() will try. The encoder must retry past every collision and must never
+        // truncate or delete a file it did not create. The same assertions hold on the
+        // Windows gate, where CREATE_NEW replaces the O_EXCL loop.
+        {
+            const std::string pidPart = [] {
+                const std::string probe = sony2fuji::stagingSuffix();
+                return probe.substr(0, probe.find('-'));
+            }();
+            const auto foreign = std::vector<unsigned char>{'F', 'O', 'R', 'E', 'I', 'G', 'N'};
+            struct ForeignCase {
+                sony2fuji_output_format ffiFormat;
+                const char* directory;
+                const char* targetName;
+                const char* label;
+            };
+            for (const auto& foreignCase : {ForeignCase{SONY2FUJI_OUTPUT_JPEG, "foreign-jpeg", "foreign-out.jpg", "JPEG"},
+                                            ForeignCase{SONY2FUJI_OUTPUT_PNG, "foreign-png", "foreign-out.png", "PNG"},
+                                            ForeignCase{SONY2FUJI_OUTPUT_DNG, "foreign-dng", "foreign-out.dng", "DNG"}}) {
+                const auto dir = root / foreignCase.directory;
+                std::filesystem::create_directories(dir, cleanupError);
+                const auto target = dir / foreignCase.targetName;
+                const std::string targetPath = target.u8string();
+                exportRequest.output_format = foreignCase.ffiFormat;
+                exportRequest.output_path = targetPath.c_str();
+                sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr);
+                auto plantForeign = [&]() {
+                    // Consume one suffix with the probe, then plant the next three names.
+                    const std::string probe = sony2fuji::stagingSuffix();
+                    const long next = std::stol(probe.substr(probe.find('-') + 1)) + 1;
+                    const std::string base = foreignCase.ffiFormat == SONY2FUJI_OUTPUT_DNG ?
+                        std::string(foreignCase.targetName) + ".rawlab-rendered-dng-" :
+                        foreignCase.ffiFormat == SONY2FUJI_OUTPUT_JPEG ? ".rawlab-jpeg-" : ".rawlab-png-";
+                    std::vector<std::filesystem::path> planted;
+                    for (int i = 0; i < 3; ++i) {
+                        const auto path = dir / (base + pidPart + "-" + std::to_string(next + i) + ".tmp");
+                        writeFile(path, foreign);
+                        planted.push_back(path);
+                    }
+                    return planted;
+                };
+                auto foreignIntact = [&](const std::vector<std::filesystem::path>& planted) {
+                    for (const auto& path : planted) {
+                        if (!std::filesystem::exists(path) || readFile(path) != foreign) return false;
+                    }
+                    return true;
+                };
+                // 1) Success path: three collisions, the fourth candidate is created, and
+                // the published file is ours while the foreign trio keeps its bytes.
+                auto planted = plantForeign();
+                writeFile(target, existing);
+                sony2fuji_buffer exportedOk{};
+                const auto okStatus = sony2fuji_process(session, &exportRequest, &exportedOk);
+                sony2fuji_release_buffer(&exportedOk);
+                check(okStatus == SONY2FUJI_STATUS_OK && foreignIntact(planted) &&
+                          stagingResidue(dir) == 3,
+                      (std::string("Export retries past planted foreign staging names (") + foreignCase.label + ")").c_str());
+                // 2) Cancelled export: the staging file it did create is removed, while the
+                // foreign trio is left completely untouched.
+                planted = plantForeign();
+                writeFile(target, existing);
+                sony2fuji_session_set_cancellation_callback(session,
+                    +[](void*) -> int32_t { return 1; }, nullptr);
+                sony2fuji_buffer exportedCancelled{};
+                const auto cancelledStatus = sony2fuji_process(session, &exportRequest, &exportedCancelled);
+                sony2fuji_release_buffer(&exportedCancelled);
+                sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr);
+                check(cancelledStatus == SONY2FUJI_STATUS_CANCELLED && readFile(target) == existing &&
+                          foreignIntact(planted) &&
+                          // Both planted generations (success + cancelled round) remain,
+                          // and the export's own staging file is gone.
+                          stagingResidue(dir) == 6,
+                    (std::string("Cancelled export removes only its own staging file among foreign names (") + foreignCase.label + ")").c_str());
+                std::filesystem::remove_all(dir, cleanupError);
+            }
         }
         // Large (>= 30 MP) FINAL PNG and JPEG exports must check cancellation inside the encoding
         // loop so mid-encode cancellation returns CANCELLED promptly without publishing any output.
