@@ -226,3 +226,10 @@
 - PR #347（fix/mac-batch → development）合入 @ `1b576af7`。codex 半成品由 hydrogen finisher 救活（rebase 干净+补 drain 隔离+全套验证），碳审 approve 0 阻塞——"codex 直出需 finisher"模式第二次验证。
 - 碳审纠偏留档：crew 报的 batch-render.sh"预存红"实为 worktree 本地 CMakeCache 未开 Wavelet 降噪所致（链主仓开 Wavelet 核心 4/4 全绿），并非上游缺陷；`test_native_isolation.py` 3 文件红确系预存（804167c2/4a013f96）。教训：**跨 worktree 跑原生脚本先核对 build-*/CMakeCache 开关与主仓一致**，否则把本地配置差异误报成上游红。
 - 后续项：batch-cancellation.sh 未入 ci.yml macos model 分片→k163；@State preflight 重绘空分配可改 @StateObject→k161。
+
+### (44) Shared spec 收口+Win 清单双向对账=第 104 个 PR（#346 两轮，P2-23/24 合票）
+
+- PR #346（fix/shared-spec → development）合入 @ `56c815ab`（23 文件；r1 增量 7 文件 +120/−13）。首审抓到 **P1 功能回归**（Mac 降噪 wire 折叠 nil/Some(默认) 致 legacy FBDD 粘贴静默失效——carbon 双分支独立复现 legacyLevel 2.0→0.0），r1 四处组合修复（模型归一+粘贴清残留+早退判等），复审 approve 0 阻塞。
+- 对账口径最终版：selected=ai_off(136)∪ai_on(139)=**140**，KNOWN 不适用=**41**，140+41=**181** CTest；反向 stale 断言+幽灵注入+`-E` 旁路三枪自证。ci.yml 补 BuildScriptChecks、`ctest --hdr-look-import`、`-E '^dualdn_onnx(_skip)?$'`、**Android models 强制成功**。scripts/ci 门禁 226→**230**。
+- 碳审纠偏存档：PR body 顶部 r0 Summary 旧数字（141/40）与 r1 段新口径并存，合并 message 采用新口径；`PASS in src` 收紧 regex 已匹配 #344 合入版 `Console.WriteLine("PASS: ...")`。
+- 教训：**wire 折叠两种存储态时必须同时给"早退/一致性守卫"补存储态判等**，否则折叠相等会让预检与 prepare 把非规范态误判为 no-op（本轮 P1 的根因句式）。
