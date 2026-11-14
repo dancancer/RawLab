@@ -174,3 +174,4 @@
 - 2026-11-14 · **#329 打回 4 条**（medium：prepare_ai 取消接线零覆盖+Skipped 误报全跑；low×3：文档/ABI 注释同步、与 HDR 口径对齐、阶段间取消覆盖）denoise-cancel 续修；**#326 r3**（轨道双击被原生手势抢——双击≠恢复默认而是跳到点击点）氢线程续。
 - 2026-11-14 · P3 批次交卷 **PR #331**（4 独立 commit 全带红绿锚；P3-01 红锚=旧码把 0600 抄进发布件；P3-02 stub-check+手动门禁如实；P3-03 拒绝加死枚举改契约定型；P3-06 变异 throw 42 证旧结构 SIGABRT）。碳审在途（review-mwgabo6g，核 O_NOFOLLOW 对既有 symlink 的行为语义+C 边界取消区分）。
 - 2026-11-14 · #329 r2 交卷（`01300d97`）：ai_device_abi 真行为用例当场揪出**真 FFI bug**（prepare_ai 入口预检在 try 外，取消异常可逃过 C ABI）；beforePublish 发布前取消+HDR 同款 hook 零 API 扩展；口径改 Passed/Skipped 分列、未注册直说。二轮碳审在途（review-mwgaz6lw）。
+- 2026-11-14 · D-05 开工（decimal-vectors 氢单）：小数值传输向量+四端行为按 Q3 裁定对齐字段规格表（iOS unrepresentable 误拒 12.5 为复核实锤）；指令锁「不自造规则，歧义标待产品确认」+与 P2-01 fixture 文件避让。P2-01 现场：2 commit，四端 EditRecordFixture* 已铺，未碰 IOSAdjustmentTransfer，同域无碰撞。
