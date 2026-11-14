@@ -650,8 +650,8 @@ internal static class HDRChecks
         }
 
         var groupReset = EditorAdjustmentRules.PrepareReset(groupScope, editedSnapshot);
-        Check(groupReset.Status == EditorResetStatus.Ready && !groupReset.RequiresConfirmation,
-            "HdrRendition group reset is Ready without confirmation");
+        Check(groupReset.Status == EditorResetStatus.Ready && groupReset.RequiresConfirmation,
+            "HdrRendition group reset is Ready and requires confirmation");
         Check(groupReset.Candidate!.Settings.HDR!.RenditionSettings.IsDefault &&
               groupReset.Candidate.Settings.HDR.ProcessingVersion == 4 &&
               groupReset.Candidate.Settings.HDR.Exposure == 1.5 &&
@@ -677,12 +677,44 @@ internal static class HDRChecks
               sdrAll.Settings.HDR.Mode != HDRMode.Hdr &&
               sdrAll.Settings.Values[(int)Parameter.Exposure] == 0,
             "SDR ResetAll preserves dormant HDR rendition and camera development");
-        var hdrAll = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), editedSnapshot).Candidate!;
+        var hdrAllCandidate = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), editedSnapshot);
+        Check(hdrAllCandidate.Status == EditorResetStatus.Ready && hdrAllCandidate.RequiresConfirmation,
+            "HDR ResetAll requires confirmation");
+        var hdrAll = hdrAllCandidate.Candidate!;
         Check(hdrAll.Settings.HDR is { Mode: HDRMode.Hdr } hdrAfterReset &&
               hdrAfterReset.RenditionSettings.IsDefault &&
               hdrAfterReset.IsIdentity &&
               hdrAll.Settings.Values[(int)Parameter.Exposure] == sdrBase.Capture().Values[(int)Parameter.Exposure] &&
               hdrAll.Look == "dormant-look",
             "HDR ResetAll resets HDR rendition while preserving dormant SDR");
+
+        Check(sdrBase.EditingHDRRenditionValue(HDRRenditionParameter.PeakLimitEV) == 0 &&
+              dormantSdr.EditingHDRRenditionValue(HDRRenditionParameter.SdrExposureEV) == 0,
+            "EditingHDRRenditionValue returns 0 when HDR editing is inactive");
+        sdrBase.SetHDRRendition(HDRRenditionParameter.SdrExposureEV, 1.5);
+        dormantSdr.SetHDRRendition(HDRRenditionParameter.SdrExposureEV, 1.5);
+        Check(sdrBase.HDR == null && dormantSdr.HDR!.RenditionSettings == fullRendition,
+            "SetHDRRendition is a no-op when HDR editing is inactive");
+
+        var editor = renditionHdr.Clone();
+        editor.SetHDRRendition(HDRRenditionParameter.PeakLimitEV, 2.44);
+        Check(editor.EditingHDRRenditionValue(HDRRenditionParameter.PeakLimitEV) == 2.4,
+            "SetHDRRendition rounds 0.1 EV fields to grid");
+        editor.SetHDRRendition(HDRRenditionParameter.PeakLimitEV, 9.9);
+        editor.SetHDRRendition(HDRRenditionParameter.SdrExposureEV, -9.9);
+        editor.SetHDRRendition(HDRRenditionParameter.SdrContrast, 12.6);
+        editor.SetHDRRendition(HDRRenditionParameter.SdrSaturation, -12.6);
+        Check(editor.EditingHDRRenditionValue(HDRRenditionParameter.PeakLimitEV) == 6.0 &&
+              editor.EditingHDRRenditionValue(HDRRenditionParameter.SdrExposureEV) == -4.0 &&
+              editor.EditingHDRRenditionValue(HDRRenditionParameter.SdrContrast) == 13.0 &&
+              editor.EditingHDRRenditionValue(HDRRenditionParameter.SdrSaturation) == -13.0,
+            "SetHDRRendition clamps to range and rounds percent fields to integers");
+        foreach (var bad in new[] { double.NaN, double.PositiveInfinity })
+        {
+            var rejected = false;
+            try { editor.SetHDRRendition(HDRRenditionParameter.SdrExposureEV, bad); }
+            catch (ArgumentOutOfRangeException) { rejected = true; }
+            Check(rejected, "SetHDRRendition rejects non-finite value " + bad);
+        }
     }
 }

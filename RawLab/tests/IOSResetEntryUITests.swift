@@ -280,6 +280,29 @@ private struct ResetControlHostView: View {
         try check(hdrOverview.isEnabled && !hdrItems[0].isEnabled && hdrItems[1].isEnabled,
                   "HDR rendition-only edits keep Level 1 Reset All enabled when group reset has no changes")
 
+        hostModel.selectedGroup = .hdrRendition
+        try await settle(host)
+        let hdrRenditionOverview = try requirePresentation(hostModel.presentation, "Missing Level 1 HDR rendition group reset presentation")
+        let hdrRenditionItems = try menuItems(of: hdrRenditionOverview)
+        try check(hdrRenditionOverview.isEnabled &&
+                  hdrRenditionItems.count == 2 &&
+                  hdrRenditionItems[0].id == "editor.reset.group" &&
+                  hdrRenditionItems[0].scope == .group(.hdrRendition) &&
+                  hdrRenditionItems[0].isEnabled &&
+                  hdrRenditionItems[1].id == "editor.reset.all" &&
+                  hdrRenditionItems[1].scope == .all &&
+                  hdrRenditionItems[1].isEnabled && hdrRenditionItems[1].isDestructive,
+                  "Level 1 overview enables both group reset and Reset All for edited HDR rendition")
+        let hdrGroupRev = UUID()
+        guard case .prepared(let preparedHDRGroup) = viewModel.prepareReset(.group(.hdrRendition), settings: hdrEdited,
+                                                                            revision: hdrGroupRev, draft: noDraft),
+              preparedHDRGroup.requiresConfirmation, !preparedHDRGroup.updatesDraft,
+              let afterHDRGroup = viewModel.commitReset(preparedHDRGroup, settings: hdrEdited,
+                                                        revision: hdrGroupRev, draft: noDraft),
+              afterHDRGroup.settings.hdr?.renditionSettings == HDRRenditionSettings() else {
+            throw Failure.assertion("HDR rendition group reset requires confirmation and resets HDR rendition settings")
+        }
+
         // 2. 工具工作区打开（草稿态）：单工具重置可用；跨分组/全部重置被阻止并返回准确的草稿提示
         var draftBase = neutral
         draftBase.exposure = 0.5

@@ -488,7 +488,8 @@ extension ContentView {
             after: preparedReset.candidate.settings)
         let wasRecipe = preparedReset.original.committed.settings.masterRecipeID != nil
         let removesRecipe = preparedReset.candidate.settings.masterRecipeID == nil
-        guard wasRecipe && removesRecipe && preparedResetScope != .all && !fields.isEmpty else { return base }
+        guard !preparedReset.original.committed.settings.isHDREditing,
+              wasRecipe && removesRecipe && preparedResetScope != .all && !fields.isEmpty else { return base }
         return [base, L10n.format("将以下项目转为独立调整，以保留其他分组的当前效果：%@",
                                 fields.map { L10n.text($0) }.joined(separator: ", "))].filter { !$0.isEmpty }.joined(separator: "\n\n")
     }

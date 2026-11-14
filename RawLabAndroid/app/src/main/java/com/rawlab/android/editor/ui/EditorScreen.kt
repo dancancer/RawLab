@@ -132,6 +132,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     }, restore = { PhotoViewOptions(it[0] as Boolean, ComparisonMode.entries[it[1] as Int], it[2] as Boolean, it[3] as Int, it[4] as Boolean) })) { mutableStateOf(PhotoViewOptions()) }
     val compare = view.comparisonEnabled && state.draft?.group != AdjustmentGroup.GEOMETRY
     var zoomMenu by remember { mutableStateOf(false) }
+    var resetMenu by remember { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(true) }
     var toolOpen by rememberSaveable(state.photo?.identity) { mutableStateOf(false) }
     var workspaceHistogram by rememberSaveable(state.photo?.identity) { mutableStateOf(false) }
@@ -431,12 +432,27 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             onImportHDRLook = onImportHDRLook, onApplyHDRSilver = onApplyHDRSilver,
             onRollbackProcessing = onRollbackProcessing, toolOpen = toolOpen, fine = fine)
     })
+    val resetPresentation = if (state.photo != null && !view.purePreview) EditorWorkspaceResetPresentation.make(
+        state = state, toolOpen = toolOpen, quickPresetsVisible = quickPresetsVisible,
+        tool = tool, channel = channel, gradingZone = gradingZone, pendingAll = pendingAll,
+    ) else null
+    LaunchedEffect(resetPresentation?.isEnabled) { if (resetPresentation?.isEnabled != true) resetMenu = false }
     @Composable fun workspaceActions(modifier: Modifier) {
         if (state.photo != null && !view.purePreview) Row(modifier.fillMaxWidth().padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically) {
             ToolIcon(Icons.Outlined.Undo, R.string.transfer_undo, (if (toolOpen) state.draft?.canUndo == true else canUndoAdjustment) && state.controlsEnabled, if (toolOpen) onUndoDraft else onUndoAdjustment)
             ToolIcon(Icons.Outlined.Redo, R.string.transfer_redo, (if (toolOpen) state.draft?.canRedo == true else canRedoAdjustment) && state.controlsEnabled, if (toolOpen) onRedoDraft else onRedoAdjustment)
-            if (toolOpen) ToolIcon(Icons.Outlined.SettingsBackupRestore, R.string.reset, state.draftReady) { requestReset(EditorResetScope.Tool(tool)) }
+            resetPresentation?.let { presentation ->
+                Box {
+                    ToolIcon(Icons.Outlined.SettingsBackupRestore, R.string.reset, presentation.isEnabled) {
+                        resetMenu = true
+                    }
+                    if (resetMenu) EditorResetMenu(presentation, onDismiss = { resetMenu = false }) { scope ->
+                        resetMenu = false
+                        requestReset(scope)
+                    }
+                }
+            }
             Spacer(Modifier.weight(1f))
             ToolIcon(Icons.Outlined.Compare, R.string.editor_compare_enable, state.draft?.group != AdjustmentGroup.GEOMETRY) {
                 view = view.toggleComparison()

@@ -152,7 +152,8 @@ enum EditorAdjustmentRules {
             guard snapshot.settings.hdr?.isValid==true else { return .blocked(.invalidInput) }
             let candidate=resettingHDR(scope,settings:snapshot.settings)
             return candidate==snapshot.settings ? .unchanged :
-                .candidate(snapshot.replacing(settings:candidate,preservingFilmID:snapshot.filmID),requiresConfirmation:false)
+                .candidate(snapshot.replacing(settings:candidate,preservingFilmID:snapshot.filmID),
+                           requiresConfirmation:requiresConfirmation(scope))
         }
         guard valid(snapshot.settings), snapshot.updatedAt.timeIntervalSince1970.isFinite else {
             return .blocked(.invalidInput)
@@ -219,15 +220,17 @@ enum EditorAdjustmentRules {
         guard valid(settings) else { return .blocked(.unrepresentable) }
         let candidate = snapshot.replacing(settings: settings, preservingFilmID: filmID)
         guard candidate != snapshot else { return .unchanged }
-        let confirmation: Bool
+        return .candidate(candidate, requiresConfirmation: requiresConfirmation(
+            scope, hasMaterializedFields: removesLook && !materializedFields(before: snapshot.settings, after: settings).isEmpty))
+    }
+
+    private static func requiresConfirmation(_ scope: EditorAdjustmentScope, hasMaterializedFields: Bool = false) -> Bool {
         switch scope {
-        case .group, .allHSL, .allGrading, .all: confirmation = true
-        case .hslChannel, .gradingZone: confirmation = false
-        case .tool(.adjustment(.hsl)), .tool(.adjustment(.colorGrading)): confirmation = true
-        case .tool:
-            confirmation = removesLook && !materializedFields(before: snapshot.settings, after: settings).isEmpty
+        case .group, .allHSL, .allGrading, .all: return true
+        case .hslChannel, .gradingZone: return false
+        case .tool(.adjustment(.hsl)), .tool(.adjustment(.colorGrading)): return true
+        case .tool: return hasMaterializedFields
         }
-        return .candidate(candidate, requiresConfirmation: confirmation)
     }
 
     static func materializedFields(before: RawSettings, after: RawSettings) -> [String] {

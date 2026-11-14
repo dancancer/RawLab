@@ -3180,6 +3180,35 @@ def _parse_ios_ui() -> dict[str, dict]:
     ios_hdr_con_m = _hdr_slider("SDR 底图对比度", "hdr.sdr_contrast")
     ios_hdr_sat_m = _hdr_slider("SDR 底图饱和度", "hdr.sdr_saturation")
 
+    _require(
+        "} else if let hdrTool = selectedHDRRenditionTool, let keyPath = hdrTool.hdrRenditionKeyPath {\n            hdrRenditionPanel(hdrTool, keyPath: keyPath)",
+        ios_panels,
+        "hdr rendition primary dispatch ios",
+        "AdjustmentPanels.swift",
+    )
+    ios_hdr_panel_blk = _extract_brace_block(ios_panels, r"func hdrRenditionPanel\b", "hdrRenditionPanel ios", "AdjustmentPanels.swift")
+    _require("let isEV = tool == .hdrPeakLimit || tool == .hdrSDRExposure", ios_hdr_panel_blk, "hdrRenditionPanel isEV ios", "AdjustmentPanels.swift")
+    ios_hdr_range_m = _need(
+        r"let range:\s*ClosedRange<Double>\s*=\s*tool\s*==\s*\.hdrPeakLimit\s*\?\s*(-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?)\s*:\s*\(isEV\s*\?\s*(-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?)\s*:\s*(-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?)\)",
+        ios_hdr_panel_blk,
+        "hdrRenditionPanel range ios",
+        "AdjustmentPanels.swift",
+    )
+    ios_hdr_step_m = _need(r"let step\s*=\s*isEV\s*\?\s*(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)", ios_hdr_panel_blk, "hdrRenditionPanel step ios", "AdjustmentPanels.swift")
+    ios_hdr_def = float(_need(r"defaultValue:\s*(-?\d+(?:\.\d+)?),", ios_hdr_panel_blk, "hdrRenditionPanel default ios", "AdjustmentPanels.swift").group(1))
+    ios_hdr_unit_m = _need(r'unit:\s*isEV\s*\?\s*"([^"]*)"\s*:\s*"([^"]*)"', ios_hdr_panel_blk, "hdrRenditionPanel unit ios", "AdjustmentPanels.swift")
+    for fid, sec_m, p_lo, p_hi, p_step, p_unit in (
+        ("hdr.peak_limit_ev", ios_hdr_peak_m, float(ios_hdr_range_m.group(1)), float(ios_hdr_range_m.group(2)), float(ios_hdr_step_m.group(1)), ios_hdr_unit_m.group(1)),
+        ("hdr.sdr_exposure_ev", ios_hdr_exp_m, float(ios_hdr_range_m.group(3)), float(ios_hdr_range_m.group(4)), float(ios_hdr_step_m.group(1)), ios_hdr_unit_m.group(1)),
+        ("hdr.sdr_contrast", ios_hdr_con_m, float(ios_hdr_range_m.group(5)), float(ios_hdr_range_m.group(6)), float(ios_hdr_step_m.group(2)), ios_hdr_unit_m.group(2)),
+        ("hdr.sdr_saturation", ios_hdr_sat_m, float(ios_hdr_range_m.group(5)), float(ios_hdr_range_m.group(6)), float(ios_hdr_step_m.group(2)), ios_hdr_unit_m.group(2)),
+    ):
+        if (p_lo, p_hi, p_step, ios_hdr_def, p_unit) != (float(sec_m.group(1)), float(sec_m.group(2)), float(sec_m.group(3)), 0.0, sec_m.group(4)):
+            raise AssertionError(
+                f"{fid} ios primary AdjustmentPanels.swift ({p_lo}..{p_hi}, step={p_step}, def={ios_hdr_def}, unit={p_unit!r}) "
+                f"!= HDRMonitoring.swift ({sec_m.groups()})"
+            )
+
     hdr_look_ctrl_blk = _extract_brace_block(hdr_mon, r"struct HDRLookControls:\s*View\b", "HDRLookControls ios", "Shared/Native/HDRMonitoring.swift")
     hdr_look_unit = _need(r'String\(format:\s*"%.0f(%%)"', hdr_look_ctrl_blk, "hdr.look ios unit", "Shared/Native/HDRMonitoring.swift").group(1).replace("%%", "%")
     hdr_mon_look_m = _need(r"Slider\(value:\s*\$settings\.lookSettings\.strength,\s*in:\s*(\d+)\.\.\.(\d+),\s*step:\s*(\d+(?:\.\d+)?)", hdr_look_ctrl_blk, "hdr.look ios ui", "Shared/Native/HDRMonitoring.swift")
@@ -3431,6 +3460,22 @@ def _parse_android_ui() -> dict[str, dict]:
     hdr_sdr_exp_lo, hdr_sdr_exp_hi, hdr_sdr_exp_unit, hdr_sdr_exp_def, hdr_sdr_exp_step = _kt_hdr_rend("hdr_sdr_exposure", "sdrExposureEV")
     hdr_sdr_con_lo, hdr_sdr_con_hi, hdr_sdr_con_unit, hdr_sdr_con_def, hdr_sdr_con_step = _kt_hdr_rend("hdr_sdr_contrast", "sdrContrast")
     hdr_sdr_sat_lo, hdr_sdr_sat_hi, hdr_sdr_sat_unit, hdr_sdr_sat_def, hdr_sdr_sat_step = _kt_hdr_rend("hdr_sdr_saturation", "sdrSaturation")
+    for fid, tool_id, r_name, prop, sec_vals in (
+        ("hdr.peak_limit_ev", 24, "hdr_peak_limit", "peakLimitEV", (hdr_peak_lo, hdr_peak_hi, hdr_peak_unit, hdr_peak_def, hdr_peak_step)),
+        ("hdr.sdr_exposure_ev", 25, "hdr_sdr_exposure", "sdrExposureEV", (hdr_sdr_exp_lo, hdr_sdr_exp_hi, hdr_sdr_exp_unit, hdr_sdr_exp_def, hdr_sdr_exp_step)),
+        ("hdr.sdr_contrast", 26, "hdr_sdr_contrast", "sdrContrast", (hdr_sdr_con_lo, hdr_sdr_con_hi, hdr_sdr_con_unit, hdr_sdr_con_def, hdr_sdr_con_step)),
+        ("hdr.sdr_saturation", 27, "hdr_sdr_saturation", "sdrSaturation", (hdr_sdr_sat_lo, hdr_sdr_sat_hi, hdr_sdr_sat_unit, hdr_sdr_sat_def, hdr_sdr_sat_step)),
+    ):
+        pm = _need(
+            rf'{tool_id}\s*->\s*if\s*\(edits\.isHDREditing\)\s*NumericControl\(R\.string\.{r_name},\s*edits\.hdr!!\.\s*renditionSettings\.{prop},\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)",\s*state\.controlsEnabled,\s*\{{[^}}]+\}},\s*\{{[^}}]*{prop}\s*=\s*(-?\d+(?:\.\d+)?)f[^}}]*\}}(?:,\s*stepOverride\s*=\s*(\.\d+|\d+(?:\.\d+)?)f)?\)',
+            kt_dock,
+            f"kt {fid} android primary dock",
+            "AdjustmentDock.kt",
+            re.S,
+        )
+        p_vals = (float(pm.group(1)), float(pm.group(2)), pm.group(3), float(pm.group(4)), float(pm.group(5)) if pm.group(5) is not None else kt_default_step)
+        if p_vals != sec_vals:
+            raise AssertionError(f"{fid} android primary AdjustmentDock.kt {p_vals} != EditorScreen.kt {sec_vals}")
     _require("NumericControl(R.string.temperature, draft.temperature", kt_screen, "hdr.camera_development temp step", "EditorScreen.kt")
 
     # Geometry controls (GeometryControls.kt: perspective horizontal + vertical parsed independently, all 4 crops, straighten)
@@ -3808,6 +3853,28 @@ def _parse_windows_ui() -> dict[str, dict]:
     cs_hdr_sdr_exp_m = _need(r'Add\("sdrExposure","SDR 底图曝光",new\((-?\d+),(-?\d+)(?:,(\d+(?:\.\d+)?))?\),[^,]*,"([^"]*)"', cs_hdr_rend_fn, "windows hdr sdr_exp ui", "MainWindow.HDR.cs")
     cs_hdr_sdr_con_m = _need(r'Add\("sdrContrast","SDR 底图对比度",new\((-?\d+),(-?\d+),(\d+(?:\.\d+)?)\),[^,]*,"([^"]*)"', cs_hdr_rend_fn, "windows hdr sdr_con ui", "MainWindow.HDR.cs")
     cs_hdr_sdr_sat_m = _need(r'Add\("sdrSaturation","SDR 底图饱和度",new\((-?\d+),(-?\d+),(\d+(?:\.\d+)?)\),[^,]*,"([^"]*)"', cs_hdr_rend_fn, "windows hdr sdr_sat ui", "MainWindow.HDR.cs")
+    cs_hdr_spec_blk = _extract_brace_block(cs_hdr_model, r"public sealed record HDRRenditionSpec\b", "HDRRenditionSpec windows ui", "HDRSettings.cs")
+    _require("HDRRenditionSpec.For(renditionParameter)", cs_tools, "windows primary hdr rendition dispatch", "MainWindow/Tools.cs")
+    _require("new NumericRange(hdrRenditionSpec.Min,hdrRenditionSpec.Max,hdrRenditionSpec.Grid)", cs_tools, "windows primary hdr rendition range", "MainWindow/Tools.cs")
+    cs_hdr_tools_def = float(_need(r"OrdinaryParameter\.Refresh\(Loc\.Text\(title\),inputRange,\s*value,hdrRenditionSpec!=null \? (-?\d+(?:\.\d+)?) :", cs_tools, "windows primary hdr_rendition default", "MainWindow/Tools.cs", re.S).group(1))
+    if cs_hdr_tools_def != cs_hdr_rend_def:
+        raise AssertionError(f"windows primary hdr_rendition default ({cs_hdr_tools_def}) != secondary ({cs_hdr_rend_def})")
+    for fid, enum_member, sec_m in (
+        ("hdr.peak_limit_ev", "PeakLimitEV", cs_hdr_peak_m),
+        ("hdr.sdr_exposure_ev", "SdrExposureEV", cs_hdr_sdr_exp_m),
+        ("hdr.sdr_contrast", "SdrContrast", cs_hdr_sdr_con_m),
+        ("hdr.sdr_saturation", "SdrSaturation", cs_hdr_sdr_sat_m),
+    ):
+        spec_m = _need(
+            rf'new\(HDRRenditionParameter\.{enum_member},\s*"[^"]+",\s*(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?),\s*(-?\.\d+|\d+(?:\.\d+)?),\s*"([^"]*)"\)',
+            cs_hdr_spec_blk,
+            f"windows primary HDRRenditionSpec.{enum_member}",
+            "HDRSettings.cs",
+        )
+        p_vals = (float(spec_m.group(1)), float(spec_m.group(2)), float(spec_m.group(3)), spec_m.group(4))
+        s_vals = (float(sec_m.group(1)), float(sec_m.group(2)), float(sec_m.group(3) or cs_default_grid), sec_m.group(4))
+        if p_vals != s_vals:
+            raise AssertionError(f"{fid} windows primary HDRRenditionSpec {p_vals} != MainWindow.HDR.cs {s_vals}")
     cs_hdr_dn_m = _need(r'HDRAmount\.Refresh\(Loc\.Text\("降噪"\),new\((-?\d+),(-?\d+)\),strength\*100,(-?\d+(?:\.\d+)?),"([^"]*)",true\);', cs_dn_panel, "windows hdr denoise ui", "DenoisePanel.xaml.cs")
 
     dn_m = _need(r"record DenoiseSettings\(bool Enabled=(false|true),double Luma=(\d+),double Chroma=(\d+),double Coarse=(\d+)\)", cs_dn, "windows wavelet ui", "DenoiseSettings.cs")
@@ -4151,6 +4218,75 @@ def validate_layer3_ui(
         raise AssertionError(f"Unused UNANCHORED_SKIPS entries for ui: {unused}")
 
 
+_HDR_RENDITION_TOOL_MAP = (
+    ("hdr.peak_limit_ev", "hdrPeakLimit", "HDR_PEAK_LIMIT", 24, "HdrPeakLimit"),
+    ("hdr.sdr_exposure_ev", "hdrSDRExposure", "HDR_SDR_EXPOSURE", 25, "HdrSdrExposure"),
+    ("hdr.sdr_contrast", "hdrSDRContrast", "HDR_SDR_CONTRAST", 26, "HdrSdrContrast"),
+    ("hdr.sdr_saturation", "hdrSDRSaturation", "HDR_SDR_SATURATION", 27, "HdrSdrSaturation"),
+)
+
+
+def parse_editor_groups_from_sources() -> dict[str, dict[str, str]]:
+    """Parse platform editor group assignments for fields using editor_group_overrides."""
+    mac_types = _strip_line_comments(_read("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift"))
+    ios_rules = _strip_line_comments(_read("RawLab/RawLab/Core/Models/EditorAdjustmentRules.swift"))
+    kt_rules = _strip_line_comments(_read("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/EditorAdjustmentRules.kt"))
+    kt_scope = _strip_line_comments(_read("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/EditorToolScope.kt"))
+    cs_rules = _strip_line_comments(_read("RawLabWindows/EditorAdjustmentRules.cs"))
+
+    _need(r"\bhdrRendition\b", _extract_brace_block(mac_types, r"enum EditorAdjustmentGroup\b", "mac EditorAdjustmentGroup", "AdjustmentTypes.swift"), "mac hdrRendition group", "AdjustmentTypes.swift")
+    mac_tools_str = _need(r"case \.hdrRendition:\s*return\s*\[([^\]]+)\]", mac_types, "mac hdrRendition tools", "AdjustmentTypes.swift").group(1)
+    mac_tools = set(re.findall(r"\.(\w+)", mac_tools_str))
+
+    ios_group_enum = _extract_brace_block(ios_rules, r"enum EditorAdjustmentGroup\b", "ios EditorAdjustmentGroup", "EditorAdjustmentRules.swift")
+    _need(r"\bhdrRendition\b", ios_group_enum, "ios hdrRendition enum", "EditorAdjustmentRules.swift")
+    ios_tools_str = _need(r"\(\.hdrRendition,\s*\[([^\]]+)\]\)", ios_rules, "ios hdrRendition tools", "EditorAdjustmentRules.swift").group(1)
+    ios_tools = set(re.findall(r"\.(\w+)", ios_tools_str))
+
+    _need(r'HDR_RENDITION\("hdrRendition"\)', kt_rules, "android HDR_RENDITION enum", "EditorAdjustmentRules.kt")
+    kt_tools_str = _need(r"EditorAdjustmentGroup\.HDR_RENDITION\s+to\s+listOf\(([^)]+)\)", kt_rules, "android HDR_RENDITION tools", "EditorAdjustmentRules.kt").group(1)
+    kt_tool_ids = {int(x) for x in re.findall(r"\d+", kt_tools_str)}
+    kt_scope_enum = _extract_brace_block(kt_scope, r"enum class AdjustmentGroup\b", "android AdjustmentGroup", "EditorToolScope.kt")
+
+    _need(r'enum EditorAdjustmentGroup\s*\{[^}]*\bHdrRendition\b', cs_rules, "windows HdrRendition enum", "EditorAdjustmentRules.cs")
+    _need(r'EditorAdjustmentGroup\.HdrRendition\s*=>\s*"hdrRendition"', cs_rules, "windows hdrRendition id", "EditorAdjustmentRules.cs")
+    cs_group_tools_m = _need(r"GroupTools\s*=\s*\[(.*?)\];", cs_rules, "windows GroupTools", "EditorAdjustmentRules.cs", re.S).group(1)
+    cs_tool_arrays = re.findall(r"Array\.AsReadOnly\(new\[\]\s*\{\s*([^}]+)\s*\}\)", cs_group_tools_m)
+    if len(cs_tool_arrays) <= 6:
+        raise AssertionError(f"Expected 7 editor groups in Windows GroupTools, found {len(cs_tool_arrays)}")
+    cs_tools = set(re.findall(r"EditorAdjustmentTool\.(\w+)", cs_tool_arrays[6]))
+
+    parsed: dict[str, dict[str, str]] = {}
+    for fid, swift_tool, kt_enum, kt_id, cs_tool in _HDR_RENDITION_TOOL_MAP:
+        _need(rf"{kt_enum}\({kt_id}\)", kt_scope_enum, f"android {kt_enum} id", "EditorToolScope.kt")
+        entries: dict[str, str] = {}
+        if swift_tool in mac_tools:
+            entries["macos"] = "hdr_rendition"
+        if swift_tool in ios_tools:
+            entries["ios"] = "hdr_rendition"
+        if kt_id in kt_tool_ids:
+            entries["android"] = "hdr_rendition"
+        if cs_tool in cs_tools:
+            entries["windows"] = "hdr_rendition"
+        parsed[fid] = entries
+    return parsed
+
+
+def validate_editor_group_overrides(document: dict, parsed_editor_groups: dict[str, dict[str, str]]) -> None:
+    spec_by_id = {f["field_id"]: f for f in document["fields"]}
+    for fid, expected_map in parsed_editor_groups.items():
+        if fid not in spec_by_id:
+            raise AssertionError(f"Missing spec entry for editor-group field {fid}")
+        decl = spec_by_id[fid].get("editor_group_overrides", {})
+        if decl != expected_map:
+            raise AssertionError(
+                f"editor_group_overrides drift on {fid}:\n  spec   = {decl}\n  source = {expected_map}"
+            )
+    for fid, entry in spec_by_id.items():
+        if "editor_group_overrides" in entry and fid not in parsed_editor_groups:
+            raise AssertionError(f"Unvalidated editor_group_overrides declared on {fid}: {entry['editor_group_overrides']}")
+
+
 class AdjustmentFieldsSpecTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -4320,6 +4456,28 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
     def test_layer3_ui_four_end_parity(self):
         validate_layer3_ui(self.document, self.parsed_ui)
 
+    def test_editor_group_overrides_match_four_platforms(self):
+        parsed_groups = parse_editor_groups_from_sources()
+        validate_editor_group_overrides(self.document, parsed_groups)
+        bad_doc = copy.deepcopy(self.document)
+        hdr_peak = next(f for f in bad_doc["fields"] if f["field_id"] == "hdr.peak_limit_ev")
+        hdr_peak["editor_group_overrides"].pop("android")
+        with self.assertRaisesRegex(AssertionError, r"editor_group_overrides drift on hdr\.peak_limit_ev"):
+            validate_editor_group_overrides(bad_doc, parsed_groups)
+
+        from unittest import mock
+        orig_read = _read
+
+        def _drop_android_group(path: str) -> str:
+            txt = orig_read(path)
+            if path.endswith("EditorAdjustmentRules.kt"):
+                return txt.replace("EditorAdjustmentGroup.HDR_RENDITION to listOf(24, 25, 26, 27)", "EditorAdjustmentGroup.HDR_RENDITION to listOf(25, 26, 27)")
+            return txt
+
+        with mock.patch(f"{__name__}._read", side_effect=_drop_android_group):
+            with self.assertRaisesRegex(AssertionError, r"editor_group_overrides drift on hdr\.peak_limit_ev"):
+                validate_editor_group_overrides(self.document, parse_editor_groups_from_sources())
+
     def test_mutation_anchors_detect_protocol_model_and_ui_drift(self):
         # 1. Mutating a protocol range bound must fail Layer 1
         bad_proto = copy.deepcopy(self.document)
@@ -4467,9 +4625,27 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
             ),
             (
                 "Shared/Native/HDRMonitoring.swift",
-                'slider("SDR 底图曝光", value: $settings.sdrExposureEV, range: -4...4, step: 0.1, id: "sdrExposure", unit: "EV")',
-                'slider("SDR 底图曝光", value: $settings.sdrExposureEV, range: -4...4, step: 0.2, id: "sdrExposure", unit: "EV")',
-                r"hdr\.sdr_exposure_ev\.macos",
+                'slider("SDR 底图曝光", value: $settings.sdrExposureEV, range: -4...4, step: 0.1, id: "sdrExposure",\n                       unit: "EV", keyPath: \\.sdrExposureEV)',
+                'slider("SDR 底图曝光", value: $settings.sdrExposureEV, range: -4...4, step: 0.2, id: "sdrExposure",\n                       unit: "EV", keyPath: \\.sdrExposureEV)',
+                r"hdr\.sdr_exposure_ev(\.macos| ios primary AdjustmentPanels\.swift)",
+            ),
+            (
+                "RawLab/RawLab/UI/Panels/AdjustmentPanels.swift",
+                "let step = isEV ? 0.1 : 1.0",
+                "let step = isEV ? 0.2 : 1.0",
+                r"hdr\.peak_limit_ev ios primary AdjustmentPanels\.swift",
+            ),
+            (
+                "RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/AdjustmentDock.kt",
+                "{ onEdit(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrExposureEV = 0f))), false) }, stepOverride = .1f)",
+                "{ onEdit(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrExposureEV = 0f))), false) }, stepOverride = .2f)",
+                r"hdr\.sdr_exposure_ev android primary AdjustmentDock\.kt",
+            ),
+            (
+                "RawLabWindows/MainWindow/Tools.cs",
+                "value,hdrRenditionSpec!=null ? 0 : extensionControl ? 0 : settings.Default(selectedParameter),unit,",
+                "value,hdrRenditionSpec!=null ? 1 : extensionControl ? 0 : settings.Default(selectedParameter),unit,",
+                r"windows primary hdr_rendition default",
             ),
             (
                 "RawLabWindows/GeometryPanel.xaml.cs",
@@ -4481,7 +4657,7 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
                 "RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/EditorScreen.kt",
                 "{ change(settings.copy(sdrExposureEV = 0f), false) }, stepOverride = .1f)",
                 "{ change(settings.copy(sdrExposureEV = 0f), false) }, stepOverride = .2f)",
-                r"hdr\.sdr_exposure_ev\.android",
+                r"hdr\.sdr_exposure_ev(\.android| android primary AdjustmentDock\.kt)",
             ),
             (
                 "RawLabAndroid/app/src/main/java/com/rawlab/android/editor/geometry/GeometryControls.kt",

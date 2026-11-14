@@ -133,7 +133,6 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     var deleteLookId by remember { mutableStateOf<String?>(null) }
     var renameText by remember { mutableStateOf("") }
     var allTools by rememberSaveable { mutableStateOf(false) }
-    var reset by rememberSaveable { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
     var processingContext by remember { mutableStateOf(false) }
     var confirmProcessingRollback by remember { mutableStateOf(false) }
@@ -150,21 +149,6 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     else recipes.firstOrNull { it.id == edits.recipeID }?.localizedName
         ?: if (edits.film == "neutral") stringResource(R.string.neutral_look)
         else state.looks.firstOrNull { it.id == edits.film }?.name ?: edits.film
-    @Composable fun dockActions() {
-        Box {
-            ToolIcon(Icons.Outlined.SettingsBackupRestore, R.string.reset, state.controlsEnabled && navigationEnabled) { reset = true }
-            if (reset) EditorResetMenu(state, tool, channel, gradingZone, onDismiss = { reset = false }) { reset = false; onResetScope(it) }
-        }
-        Box {
-            ToolIcon(Icons.Outlined.MoreHoriz, R.string.more, navigationEnabled) { more = true }
-            DropdownMenu(more, { more = false }) {
-                DropdownMenuItem(text = { Text(stringResource(R.string.photo_processing_settings)) }, onClick = { more = false; processingContext = true })
-                DropdownMenuItem(text = { Text(stringResource(R.string.all_tools)) }, onClick = { more = false; allTools = true })
-                DropdownMenuItem(text = { Text(stringResource(if (expanded) R.string.collapse_adjustments else R.string.expand_adjustments)) },
-                    onClick = { more = false; toggleExpanded() })
-            }
-        }
-    }
     @Composable fun toolStrip(modifier: Modifier = Modifier) {
         EditorToolStrip(state, if (quickPresetsVisible) -2 else tool, EditorAdjustmentRules.tools(if (quickPresetsVisible) EditorAdjustmentGroup.LOOKS else EditorAdjustmentRules.groupFor(tool) ?: EditorAdjustmentGroup.LOOKS),
             toolList, navigationEnabled, true, modifier, perspective = perspective,

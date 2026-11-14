@@ -175,9 +175,11 @@ import Foundation
             (.hdrSDRContrast, \.sdrContrast),
             (.hdrSDRSaturation, \.sdrSaturation),
         ] {
-            guard case .candidate(let singleReset, _) = EditorAdjustmentRules.prepareReset(.tool(tool), snapshot: renditionSnapshot, context: context) else {
+            guard case .candidate(let singleReset, let singleRequiresConfirmation) =
+                    EditorAdjustmentRules.prepareReset(.tool(tool), snapshot: renditionSnapshot, context: context) else {
                 fatalError("Single HDR rendition tool reset was not prepared for \(tool)")
             }
+            check(!singleRequiresConfirmation, "Single HDR rendition tool reset for \(tool) skips confirmation")
             var expectedRendition = fullRendition
             expectedRendition[keyPath: keyPath] = 0
             check(singleReset.settings.hdr?.renditionSettings == expectedRendition,
@@ -191,9 +193,11 @@ import Foundation
                   "Single HDR rendition reset touched other HDR groups, camera development, or dormant SDR")
         }
 
-        guard case .candidate(let groupReset, _) = EditorAdjustmentRules.prepareReset(.group(.hdrRendition), snapshot: renditionSnapshot, context: context) else {
+        guard case .candidate(let groupReset, let groupRequiresConfirmation) =
+                EditorAdjustmentRules.prepareReset(.group(.hdrRendition), snapshot: renditionSnapshot, context: context) else {
             fatalError("HDR rendition group reset was not prepared")
         }
+        check(groupRequiresConfirmation, "HDR rendition group reset requires confirmation aligned with Mac")
         check(groupReset.settings.hdr?.renditionSettings == HDRRenditionSettings() &&
               groupReset.settings.hdr?.renditionSettings.isDefault == true &&
               groupReset.settings.hdr?.processingVersion == 4,
@@ -226,9 +230,11 @@ import Foundation
               sdrResetAll.settings.hdr?.cameraDevelopmentSettings.fbddLevel == 2 &&
               !sdrResetAll.settings.isHDREditing && sdrResetAll.settings.exposure == 0,
               "Ordinary SDR reset-all mutated dormant HDR rendition or camera development")
-        guard case .candidate(let hdrResetAll, _) = EditorAdjustmentRules.prepareReset(.all, snapshot: renditionSnapshot, context: context) else {
+        guard case .candidate(let hdrResetAll, let allRequiresConfirmation) =
+                EditorAdjustmentRules.prepareReset(.all, snapshot: renditionSnapshot, context: context) else {
             fatalError("HDR reset-all with rendition edits was not prepared")
         }
+        check(allRequiresConfirmation, "HDR reset-all requires confirmation aligned with Mac")
         check(hdrResetAll.settings.isHDREditing &&
               hdrResetAll.settings.hdr?.renditionSettings.isDefault == true &&
               hdrResetAll.settings.hdr?.isIdentity == true &&

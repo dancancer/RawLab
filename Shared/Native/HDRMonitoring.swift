@@ -1,3 +1,6 @@
+#if os(macOS)
+import AppKit
+#endif
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -54,36 +57,94 @@ struct HDRRenditionResetControl: View {
     }
 }
 
+private struct HDRRenditionDoubleTapResetModifier: ViewModifier {
+    let enabled: Bool
+    let action: () -> Void
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if enabled { content.onTapGesture(count: 2, perform: action) }
+        else { content }
+    }
+}
+
 struct HDRRenditionControls: View {
     @Binding var settings: HDRRenditionSettings
     let onEditingChanged: (Bool) -> Void
     let onCancelled: () -> Void
+    var voiceOverOverride: Bool? = nil
+    #if !os(macOS)
+    @Environment(\.accessibilityVoiceOverEnabled) private var accessibilityVoiceOverEnabled
+    #endif
+    @State private var expanded: Bool
     @State private var editing = false
+
+    init(settings: Binding<HDRRenditionSettings>,
+         onEditingChanged: @escaping (Bool) -> Void,
+         onCancelled: @escaping () -> Void,
+         initiallyExpanded: Bool = false,
+         voiceOverOverride: Bool? = nil) {
+        self._settings = settings
+        self.onEditingChanged = onEditingChanged
+        self.onCancelled = onCancelled
+        self._expanded = State(initialValue: initiallyExpanded)
+        self.voiceOverOverride = voiceOverOverride
+    }
+
+    private var isVoiceOverEnabled: Bool {
+        if let voiceOverOverride { return voiceOverOverride }
+        #if os(macOS)
+        return NSWorkspace.shared.isVoiceOverEnabled
+        #else
+        return accessibilityVoiceOverEnabled
+        #endif
+    }
+
+    private var allowsDoubleTapReset: Bool {
+        Self.allowsDoubleTapReset(voiceOverEnabled: isVoiceOverEnabled)
+    }
 
     var resetPresentation: HDRRenditionResetPresentation {
         HDRRenditionResetPresentation.make(settings: settings)
+    }
+
+    static func allowsDoubleTapReset(voiceOverEnabled: Bool) -> Bool {
+        !voiceOverEnabled
+    }
+
+    @discardableResult
+    static func applySingleReset(_ keyPath: WritableKeyPath<HDRRenditionSettings, Double>,
+                                 to settings: inout HDRRenditionSettings,
+                                 isEditing: Bool) -> Bool {
+        guard !isEditing else { return false }
+        let baseline = HDRRenditionSettings()[keyPath: keyPath]
+        guard settings[keyPath: keyPath] != baseline else { return false }
+        settings[keyPath: keyPath] = baseline
+        return true
     }
 
     func reset() {
         settings = HDRRenditionSettings()
     }
 
-    func reset(_ keyPath: WritableKeyPath<HDRRenditionSettings, Double>) {
-        let baseline = HDRRenditionSettings()[keyPath: keyPath]
-        guard settings[keyPath: keyPath] != baseline else { return }
+    @discardableResult
+    func reset(_ keyPath: WritableKeyPath<HDRRenditionSettings, Double>, isEditing: Bool? = nil) -> Bool {
         var next = settings
-        next[keyPath: keyPath] = baseline
+        guard Self.applySingleReset(keyPath, to: &next, isEditing: isEditing ?? editing) else { return false }
         settings = next
+        return true
     }
 
     var body: some View {
-        DisclosureGroup {
+        DisclosureGroup(isExpanded: $expanded) {
             VStack(alignment: .leading, spacing: 8) {
                 slider("HDR 亮度上限", value: $settings.peakLimitEV, range: 0...6, step: 0.1, id: "peakLimit",
-                       unit: "EV", unlimitedAtZero: true)
-                slider("SDR 底图曝光", value: $settings.sdrExposureEV, range: -4...4, step: 0.1, id: "sdrExposure", unit: "EV")
-                slider("SDR 底图对比度", value: $settings.sdrContrast, range: -100...100, step: 1, id: "sdrContrast", unit: "%")
-                slider("SDR 底图饱和度", value: $settings.sdrSaturation, range: -100...100, step: 1, id: "sdrSaturation", unit: "%")
+                       unit: "EV", keyPath: \.peakLimitEV, unlimitedAtZero: true)
+                slider("SDR 底图曝光", value: $settings.sdrExposureEV, range: -4...4, step: 0.1, id: "sdrExposure",
+                       unit: "EV", keyPath: \.sdrExposureEV)
+                slider("SDR 底图对比度", value: $settings.sdrContrast, range: -100...100, step: 1, id: "sdrContrast",
+                       unit: "%", keyPath: \.sdrContrast)
+                slider("SDR 底图饱和度", value: $settings.sdrSaturation, range: -100...100, step: 1, id: "sdrSaturation",
+                       unit: "%", keyPath: \.sdrSaturation)
             }.padding(.top, 6)
                 .onDisappear { if editing { editing = false; onCancelled() } }
         } label: {
@@ -97,14 +158,13 @@ struct HDRRenditionControls: View {
     }
 
     private func slider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double,
-                        id: String, unit: String, unlimitedAtZero: Bool = false) -> some View {
+                        id: String, unit: String, keyPath: WritableKeyPath<HDRRenditionSettings, Double>,
+                        unlimitedAtZero: Bool = false) -> some View {
         let current = value.wrappedValue
-        let resetSingle: () -> Void = {
-            guard !editing, value.wrappedValue != 0 else { return }
-            value.wrappedValue = 0
-        }
         let text = unlimitedAtZero && current == 0 ? L10n.text("不限") :
             String(format: unit == "EV" ? "%+.1f %@" : "%+.0f%@", locale: L10n.locale, current, unit)
+        let doubleTapEnabled = allowsDoubleTapReset
+        let resetField: () -> Void = { _ = reset(keyPath) }
         return VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Text(L10n.text(title))
@@ -113,16 +173,16 @@ struct HDRRenditionControls: View {
             }
             .font(.caption)
             .contentShape(Rectangle())
-            .onTapGesture(count: 2, perform: resetSingle)
+            .modifier(HDRRenditionDoubleTapResetModifier(enabled: doubleTapEnabled, action: resetField))
             Slider(value: value, in: range, step: step, onEditingChanged: { active in
                 editing = active
                 onEditingChanged(active)
             })
-            .onTapGesture(count: 2, perform: resetSingle)
+            .modifier(HDRRenditionDoubleTapResetModifier(enabled: doubleTapEnabled, action: resetField))
             .accessibilityLabel(L10n.text(title))
             .accessibilityValue(text)
-            .accessibilityAction(named: L10n.text("重置"), resetSingle)
-            .accessibilityHint(L10n.text("双击名称或轨道恢复默认值。"))
+            .accessibilityAction(named: L10n.text("重置"), resetField)
+            .accessibilityHint(doubleTapEnabled ? L10n.text("双击名称或轨道恢复默认值。") : "")
             .accessibilityIdentifier("hdr.rendition.\(id)")
         }
     }

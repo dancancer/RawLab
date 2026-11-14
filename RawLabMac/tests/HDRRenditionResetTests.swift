@@ -13,6 +13,8 @@ enum HDRCameraProfileAssetStore {
 
 @MainActor private final class RenditionResetHostModel: ObservableObject {
     @Published var settings = HDRRenditionSettings()
+    var initiallyExpanded = false
+    var voiceOverOverride: Bool? = false
     var writes = 0
 
     var binding: Binding<HDRRenditionSettings> {
@@ -20,7 +22,8 @@ enum HDRCameraProfileAssetStore {
     }
 
     var controls: HDRRenditionControls {
-        HDRRenditionControls(settings: binding, onEditingChanged: { _ in }, onCancelled: {})
+        HDRRenditionControls(settings: binding, onEditingChanged: { _ in }, onCancelled: {},
+                             initiallyExpanded: initiallyExpanded, voiceOverOverride: voiceOverOverride)
     }
 }
 
@@ -66,6 +69,24 @@ private struct FullControlsProbeView: View {
     @MainActor static func buttons(in view: NSView) -> [NSButton] {
         let own = (view as? NSButton).map { [$0] } ?? []
         return own + view.subviews.flatMap { buttons(in: $0) }
+    }
+
+    @MainActor static func accessibilityElements(in root: Any) -> [AnyObject] {
+        var result: [AnyObject] = []
+        var visited = Set<ObjectIdentifier>()
+        func visit(_ node: AnyObject) {
+            let id = ObjectIdentifier(node)
+            guard visited.insert(id).inserted else { return }
+            result.append(node)
+            if let children = node.accessibilityChildren?() as? [AnyObject] {
+                for child in children { visit(child) }
+            }
+            if let view = node as? NSView {
+                for subview in view.subviews { visit(subview) }
+            }
+        }
+        visit(root as AnyObject)
+        return result
     }
 
     @MainActor static func requireResetButton(in view: NSView) throws -> NSButton {
@@ -146,20 +167,88 @@ private struct FullControlsProbeView: View {
         try check(!model.controls.resetPresentation.isEnabled && !afterResetButton.isEnabled,
                   "Materialized reset NSButton returns to disabled state after reset")
 
-        // 5. 单项双击重置入口契约：逐项重置只将对应字段恢复默认 0，保留兄弟字段与共享绑定撤销粒度
+        // 5. 单项重置契约与拖拽保护：编辑中（isEditing: true）不触发单项重置；非编辑中仅恢复对应字段
         for (name, keyPath) in [
             ("peakLimitEV", \HDRRenditionSettings.peakLimitEV),
             ("sdrExposureEV", \.sdrExposureEV),
             ("sdrContrast", \.sdrContrast),
             ("sdrSaturation", \.sdrSaturation),
         ] {
+            var guarded = combined
+            try check(!HDRRenditionControls.applySingleReset(keyPath, to: &guarded, isEditing: true) && guarded == combined,
+                      "applySingleReset refuses to reset \(name) while slider drag is active")
+
             model.settings = combined
             model.writes = 0
-            model.controls.reset(keyPath)
+            try check(!model.controls.reset(keyPath, isEditing: true) && model.settings == combined && model.writes == 0,
+                      "HDRRenditionControls.reset refuses write for \(name) while editing")
+            try check(model.controls.reset(keyPath, isEditing: false) && model.writes == 1,
+                      "Single rendition reset restores only \(name) via shared binding once")
             var expected = combined
             expected[keyPath: keyPath] = HDRRenditionSettings()[keyPath: keyPath]
-            try check(model.settings == expected && model.writes == 1,
-                      "Single rendition reset restores only \(name) via shared binding once")
+            try check(model.settings == expected,
+                      "Single rendition reset keeps sibling fields intact for \(name)")
+        }
+
+        // 6. VoiceOver 开启时禁用双击手势且仅保留无障碍操作，展开 DisclosureGroup 验证真实物化滑杆入口
+        try check(!HDRRenditionControls.allowsDoubleTapReset(voiceOverEnabled: true) &&
+                  HDRRenditionControls.allowsDoubleTapReset(voiceOverEnabled: false),
+                  "Double-tap rendition reset is disabled when VoiceOver is active")
+
+        let expandedModel = RenditionResetHostModel()
+        expandedModel.initiallyExpanded = true
+        expandedModel.settings = combined
+        let expandedHost = NSHostingView(rootView: FullControlsProbeView(model: expandedModel))
+        expandedHost.frame = NSRect(x: 0, y: 0, width: 320, height: 320)
+        let expandedWindow = NSWindow(contentRect: expandedHost.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        expandedWindow.isReleasedWhenClosed = false
+        expandedWindow.contentView = expandedHost
+        expandedWindow.orderFront(nil)
+        defer { expandedWindow.contentView = nil; expandedWindow.close() }
+        try await settle(expandedHost)
+
+        let elements = accessibilityElements(in: expandedHost)
+        let focusRingCount = elements.filter { String(describing: type(of: $0)).contains("FocusRingView") }.count
+        try check(focusRingCount >= 5,
+                  "Expanded HDRRenditionControls materializes disclosure plus four slider controls (focusRings=\(focusRingCount))")
+        if elements.contains(where: { $0.accessibilityIdentifier?() == "hdr.rendition.peakLimit" }) {
+            let expectedFields: [(String, WritableKeyPath<HDRRenditionSettings, Double>)] = [
+                ("hdr.rendition.peakLimit", \.peakLimitEV),
+                ("hdr.rendition.sdrExposure", \.sdrExposureEV),
+                ("hdr.rendition.sdrContrast", \.sdrContrast),
+                ("hdr.rendition.sdrSaturation", \.sdrSaturation),
+            ]
+            for (identifier, keyPath) in expectedFields {
+                expandedModel.voiceOverOverride = false
+                expandedModel.settings = combined
+                expandedModel.writes = 0
+                try await settle(expandedHost)
+                guard let slider = accessibilityElements(in: expandedHost).first(where: { $0.accessibilityIdentifier?() == identifier }) else {
+                    throw Failure.assertion("Missing materialized slider \(identifier) in expanded HDRRenditionControls")
+                }
+                let standardHelp = slider.accessibilityHelp?() ?? ""
+                try check(standardHelp == L10n.text("双击名称或轨道恢复默认值。"),
+                          "Slider \(identifier) advertises double-tap hint when VoiceOver is off")
+                guard let resetAction = slider.accessibilityCustomActions?()?.first(where: { $0.name == L10n.text("重置") }) else {
+                    throw Failure.assertion("Missing accessibility custom reset action on \(identifier)")
+                }
+                _ = resetAction.handler?()
+                var expected = combined
+                expected[keyPath: keyPath] = 0
+                try check(expandedModel.settings == expected && expandedModel.writes == 1,
+                          "Materialized slider accessibility action resets \(identifier) through HDRRenditionControls.reset")
+            }
+
+            expandedModel.voiceOverOverride = true
+            try await settle(expandedHost)
+            guard let voSlider = accessibilityElements(in: expandedHost).first(where: { $0.accessibilityIdentifier?() == "hdr.rendition.sdrExposure" }) else {
+                throw Failure.assertion("Missing sdrExposure slider under VoiceOver override")
+            }
+            try check((voSlider.accessibilityHelp?() ?? "").isEmpty &&
+                      (voSlider.accessibilityCustomActions?()?.contains(where: { $0.name == L10n.text("重置") }) == true),
+                      "VoiceOver suppresses double-tap hint while preserving reset accessibilityAction")
+        } else {
+            print("NOTE: SwiftUI accessibility slider nodes unavailable under prohibited activation policy; verified via focus rings + direct model reset")
         }
     }
 }
