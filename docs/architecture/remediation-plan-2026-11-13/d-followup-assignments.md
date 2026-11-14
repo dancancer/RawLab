@@ -71,6 +71,6 @@
 | V-SPEC 🚧在途 | #286 Layer2/3 假绿：_snap4 返回值丢弃 20+、单端常量冒充四端、_ANCHORS:317 指错；验收=复现两条变异（RawSettings.swift:57 vignetteMidpointRange、AdjustmentKind.swift:109 highlights 步长）必须变红 | scripts/ci | 氢单 |
 | V-RESET | #307 @spec_default 掩盖 wire 分歧（chroma_mode null vs 0 等）、场景仅 9、缺 .hdrRendition；决策=wire 级期望或显式 divergence 登记 | Shared fixtures | 待派 |
 | V-AXUI 🚧在途 | #311 漏网 iOS：ios-reset-entry-ui.sh 三处 AX 断言在 REQUIRE_AX=1 下仍静默 exit 0 无 SKIP 行；套 #311 ax-gate 同款三态 | RawLab/tests | 待派 |
-| V-UIIOS | #301 iOS transferResultNotices 生命周期（prepare/invalidate/onDisappear+!isEmpty 判空）、#291 collapsedEditorTool/choosingMasterRecipe 换图不清、P1-05 hdrResourceNotice 早退不重置 | iOS Editor UI | 待派 |
+| V-UIIOS 🚧PR #317 评审中 | #301 iOS transferResultNotices 生命周期（prepare/invalidate/onDisappear+!isEmpty 判空）、#291 collapsedEditorTool/choosingMasterRecipe 换图不清、P1-05 hdrResourceNotice 早退不重置 | iOS Editor UI | 待派 |
 | V-WIN | #301 Windows pendingTransferNoticeStatus 残留/被 Refine 冲掉；#297 UpdateStore.Load 与磁盘备份判定不对称（回滚场景静默删有效备份，需先红） | RawLabWindows | 氢单 |
 | V-EXP 🚧在途 | #309 D-07：单张导出代次失效吞 BatchPublicationUncertain（RenderQueue.kt:56-61）；NativeProcessor cancellationSignal 死参数移除 | Android | 待派 |
