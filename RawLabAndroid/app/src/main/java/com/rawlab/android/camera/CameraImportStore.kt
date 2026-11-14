@@ -326,7 +326,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
     fun copySampledOriginal(job: CameraImportJob, photo: CameraPhoto, output: FileOutputStream,
         permit: CameraTransferPermit, readRange: (Long, Int) -> ByteArray?): String? {
         val chunk = 64 shl 10
-        if (photo.size < chunk * 3L || photo.captureDateMillis == null || job.incremental == null ||
+        if (photo.size < chunk * 3L || photo.captureDateMillis == null ||
             job.jpegOptions(CameraImportItem(photo)) != null) return null
         val candidates = readJobs().filter { it.matchesCamera(job.cameraId, job.hardwareIdentity) }
             .flatMap { previous -> previous.items.filter { item ->

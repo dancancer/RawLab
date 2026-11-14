@@ -21,7 +21,7 @@ public interface CameraMediaSession extends Closeable {
         if (code == 0x2003 || code == 0x2004) return FailureKind.SESSION;
         boolean read = operation == 0x1001 || operation == 0x1004 || operation == 0x1007
             || operation == 0x1008 || operation == 0x100a || operation == 0x101b
-            || operation == 0x9202 || operation == 0x9209 || operation == 0x923c || operation == 0x923d;
+            || operation == 0x9202 || operation == 0x9209 || operation == 0x923c || operation == 0x923d || operation == 0x923e;
         // Sony 机身操作期间可能暂时以 OperationNotSupported 拒绝 923C；其它操作不作此推断。
         if (read && (code == 0x2019 || operation == 0x923c && code == 0x2005)) return FailureKind.TRANSIENT_READ;
         return FailureKind.ITEM;

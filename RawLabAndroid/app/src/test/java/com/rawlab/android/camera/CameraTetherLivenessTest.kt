@@ -3,6 +3,8 @@ package com.rawlab.android.camera
 import com.rawlab.android.photo.MediaPhoto
 import com.rawlab.android.photo.MediaPhotoAccess
 import com.rawlab.android.photo.MediaPhotoStat
+import com.rawlab.android.camera.protocol.CameraMediaSession
+import com.rawlab.android.camera.protocol.SonyMobileSession
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.sync.Mutex
@@ -520,6 +522,61 @@ class CameraTetherLivenessTest {
             root.deleteRecursively()
         }
     }
+
+    @Test
+    fun mobileImportRetriesTransientReadsOnTheSameSession() {
+        for (incremental in listOf(false, true)) for (operation in listOf(0x923d, 0x923c)) {
+            assertMobileTransientRead(incremental, operation, exhausted = false)
+        }
+    }
+
+    @Test
+    fun mobileImportIsolatesExhaustedTransientReadsAndDownloadsTheThirdPhoto() {
+        for (incremental in listOf(false, true)) for (operation in listOf(0x923d, 0x923c)) {
+            assertMobileTransientRead(incremental, operation, exhausted = true)
+        }
+    }
+
+    private fun assertMobileTransientRead(incremental: Boolean, operation: Int, exhausted: Boolean) =
+        withWorkspace { _, store, _, _ ->
+            val entries = (1..3).map { FakeCardEntry(1, it, "DSC%05d.ARW".format(it),
+                1_730_000_000_000L + it * 1_000, rawPayload(it)) }
+            FakeTetherCameraServer(initialEntries = entries).use { camera ->
+                SonyMobileSession(camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID()) {}.use { session ->
+                    val device = session.deviceInfo()
+                    session.openSession()
+                    val listed = session.listPhotos(device).associateBy { it.key() }
+                    val job = store.create("BLE:sony", entries.map { entry ->
+                        listed.values.single { it.name == entry.name }.photo()
+                    }, CameraImportDestination(),
+                        incremental = CameraIncrementalPlan(CameraImportFormat.RAW, sessionOwner = "owner").takeIf { incremental },
+                        hardwareIdentity = CameraHardwareIdentity.read(device), listingOwner = "owner")
+                    var injected = false
+                    val code = if (operation == 0x923c) 0x2005 else 0x2019
+                    val result = executeCameraSessionQueue(store, session, device, job, listed, "owner", CameraTransferPermit(),
+                        onJob = { current ->
+                            if (!injected && current.savedCount == 1) {
+                                injected = true
+                                camera.rejectNext(operation, *IntArray(if (exhausted) 3 else 1) { code })
+                            }
+                        })
+                    assertNull(result.failure)
+                    assertFalse(result.shouldDisconnect)
+                    assertTrue(session.isOpen)
+                    assertEquals(1, camera.sessionOpenCalls.get())
+                    assertEquals(if (exhausted) 3 else 1, camera.deliveredRejections.get())
+                    assertEquals(if (exhausted) 2 else 3, result.job.savedCount)
+                    assertEquals(if (exhausted) 1 else 0, result.job.failedCount)
+                    assertNotNull(result.job.items[2].saved)
+                    if (exhausted) {
+                        assertNotNull(result.job.items[1].error)
+                        assertNull(result.job.items[1].saved)
+                        assertEquals(CameraJobStatus.PAUSED, result.job.status)
+                    } else assertEquals(CameraJobStatus.COMPLETE, result.job.status)
+                    assertEquals(result.job.items.map { it.saved }, store.load().single().items.map { it.saved })
+                }
+            }
+        }
 
     @Test
     fun initialBusyAndTransientReadResponsesKeepTheSameSession() = withWorkspace { _, store, journal, lock ->

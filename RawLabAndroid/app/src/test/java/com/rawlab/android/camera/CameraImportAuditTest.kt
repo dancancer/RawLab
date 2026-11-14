@@ -206,6 +206,43 @@ class CameraImportAuditTest {
     }
 
     @Test
+    fun sourceChangedResumeRefreshesIncrementalScanAfterCameraDeletion() =
+        assertResumeRefreshesScan(missingSelectedPhoto = true)
+
+    @Test
+    fun completedManualResumeRefreshesIncrementalScanAfterCameraDeletion() =
+        assertResumeRefreshesScan(missingSelectedPhoto = false)
+
+    private fun assertResumeRefreshesScan(missingSelectedPhoto: Boolean) = withTempRoot { root ->
+        val media = TestMedia(File(root, "media").apply { mkdirs() })
+        val store = CameraImportStore(File(root, "jobs"), File(root, "partial"), media) { null }
+        val device = mobileDevice()
+        val session = FakeImportSession(device) { _, _, output, _ -> output.write(rawBytes); sha256(rawBytes) }
+        val original = (1..3).map { session.asset(it) }
+        val selected = original[if (missingSelectedPhoto) 2 else 0]
+        val job = store.create("BLE:sony", listOf(selected.photo()), CameraImportDestination(),
+            hardwareIdentity = CameraHardwareIdentity.read(device), listingOwner = "owner")
+        var state = CameraImportState(importMode = CameraImportMode.INCREMENTAL, jobs = listOf(job))
+            .withConnectedListing("BLE:sony", session, device, CameraPhotoListing(original), "owner")
+            .copy(incrementalCutoffMillis = 0)
+        state = state.copy(incrementalScan = computeCameraIncrementalScan(state, "BLE:sony"))
+        assertEquals(3, state.incrementalScan!!.assets.size)
+        session.listed = original.take(2)
+        val result = runBlocking { executeCameraSessionQueue(store, session, device, job,
+            original.associateBy { it.key() }, "owner", CameraTransferPermit(), resuming = true,
+            onListed = { current, limit -> state = state.withQueueListing(current, limit) }) }
+        assertEquals(missingSelectedPhoto, result.sourceChanged)
+        assertFalse(result.shouldDisconnect)
+        assertTrue(session.isOpen)
+        assertEquals(listOf("DSC00002.ARW", "DSC00001.ARW"), state.photos.map { it.name })
+        assertEquals(listOf("DSC00001.ARW", "DSC00002.ARW"), state.incrementalScan!!.assets.map { it.name })
+        state = state.withQueueResult(result, "owner")
+        assertEquals(listOf("DSC00001.ARW", "DSC00002.ARW"), state.incrementalScan!!.assets.map { it.name })
+        assertEquals(if (missingSelectedPhoto) CameraJobStatus.PAUSED else CameraJobStatus.COMPLETE, state.job!!.status)
+        assertEquals(0L, state.incrementalCutoffMillis)
+    }
+
+    @Test
     fun reconnectReusesOriginalOnlyAfterThreeMatchingRanges() = withTempRoot { root ->
         val media = TestMedia(File(root, "media").apply { mkdirs() })
         val store = CameraImportStore(File(root, "jobs"), File(root, "partial"), media) { null }
@@ -234,6 +271,37 @@ class CameraImportAuditTest {
         assertEquals(saved.items.single().saved!!.uri, result.job.items.single().saved!!.uri)
         assertEquals(sha256(bytes), result.job.items.single().digest)
         assertEquals(1, media.rows.size)
+    }
+
+    @Test
+    fun manualReconnectReusesOriginalOnlyAfterThreeMatchingRanges() = withTempRoot { root ->
+        val media = TestMedia(File(root, "media").apply { mkdirs() })
+        val store = CameraImportStore(File(root, "jobs"), File(root, "partial"), media) { null }
+        val device = mobileDevice()
+        val bytes = rawBytes + ByteArray(400_000) { (it % 251).toByte() }
+        val first = FakeImportSession(device) { _, _, output, _ -> output.write(bytes); sha256(bytes) }
+        val oldAsset = first.asset(7, size = bytes.size.toLong(), created = baseCaptureMillis)
+        val original = store.create("BLE:sony", listOf(oldAsset.photo()), CameraImportDestination(),
+            hardwareIdentity = CameraHardwareIdentity.read(device), listingOwner = "morning")
+        val saved = runBlocking { executeCameraSessionQueue(store, first, device, original,
+            mapOf(oldAsset.key() to oldAsset), "morning", CameraTransferPermit()) }.job
+        first.close()
+        val next = FakeImportSession(device) { _, _, output, _ -> output.write(bytes); sha256(bytes) }
+        next.sampleBytesByName = mapOf(oldAsset.name to bytes)
+        next.listed = listOf(next.asset(42, name = oldAsset.name, size = bytes.size.toLong(), created = baseCaptureMillis))
+        val job = store.create("BLE:sony", listOf(oldAsset.photo()), CameraImportDestination(),
+            hardwareIdentity = CameraHardwareIdentity.read(device), listingOwner = "morning")
+        assertNull(job.incremental)
+        val result = runBlocking { executeCameraSessionQueue(store, next, device, job,
+            emptyMap(), "afternoon", CameraTransferPermit(), resuming = true) }
+        assertNull(result.failure)
+        assertEquals(listOf(0L to 65_536, 167_284L to 65_536, 334_568L to 65_536), next.rangeRequests)
+        assertEquals(CameraJobStatus.COMPLETE, result.job.status)
+        assertEquals(saved.items.single().saved!!.uri, result.job.items.single().saved!!.uri)
+        assertEquals(sha256(bytes), result.job.items.single().digest)
+        assertEquals(1, media.rows.size)
+        assertTrue(next.downloadedNames.isEmpty())
+        assertTrue(next.isOpen)
     }
 
     @Test

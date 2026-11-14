@@ -189,7 +189,10 @@ internal fun skipFailedCameraItems(store: CameraImportStore, job: CameraImportJo
 }
 
 internal fun isPerPhotoImportFailure(error: IOException, isSessionAlive: () -> Boolean): Boolean = when (error) {
-    is CameraMediaSession.PhotoTransferException -> error.kind == CameraMediaSession.FailureKind.ITEM && isSessionAlive()
+    is CameraMediaSession.PhotoTransferException -> when (error.kind) {
+        CameraMediaSession.FailureKind.ITEM, CameraMediaSession.FailureKind.TRANSIENT_READ -> isSessionAlive()
+        else -> false
+    }
     is CameraPhotoImportException -> isSessionAlive()
     else -> false
 }

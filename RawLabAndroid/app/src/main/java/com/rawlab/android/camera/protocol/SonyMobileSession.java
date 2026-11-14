@@ -243,14 +243,22 @@ public final class SonyMobileSession implements CameraMediaSession {
     synchronized byte[] operation(int op, int[] parameters, boolean requireData, int limit) throws IOException {
         if (!ALLOWED.contains(op) || parameters.length > 5 || limit < 0 || limit > LIMIT) throw new IOException("Operation outside mobile experiment allowlist");
         if (closed) throw new IOException("Camera session is closed");
-        try {
-            return exchange(op, parameters, requireData, limit);
-        } catch (ResponseException response) {
-            throw response;
-        } catch (IOException failure) {
-            // 读取中断或报文错误后，流中可能仍有旧事务数据，不能再复用任一通道。
-            close();
-            throw failure;
+        for (int attempt = 0; ; attempt++) {
+            try {
+                return exchange(op, parameters, requireData, limit);
+            } catch (ResponseException response) {
+                if (response.getKind() != CameraMediaSession.FailureKind.TRANSIENT_READ || attempt >= 2 || closed) throw response;
+                try { Thread.sleep(100L * (attempt + 1)); }
+                catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    close();
+                    throw new IOException("Camera read interrupted", interrupted);
+                }
+            } catch (IOException failure) {
+                // 读取中断或报文错误后，流中可能仍有旧事务数据，不能再复用任一通道。
+                close();
+                throw failure;
+            }
         }
     }
 
