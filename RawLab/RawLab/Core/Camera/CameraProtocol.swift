@@ -1,14 +1,17 @@
 import Foundation
 
 enum CameraProtocolError: Error, LocalizedError {
-    case invalid(String), unsupported(String), response(UInt16, UInt16)
+    case invalid(String), invalidOriginalHeader, transientTransfer(String), unsupported(String), response(UInt16, UInt16)
     case disconnected, cancelled, timeout, jpegProcessing, jpegGainMapAdjustment, importRecoveryRequired
     case captureNotSent(String), captureUnknown, tetherRecoveryRequired
     case photoLimitExceeded, itemFailed(String, String)
 
     var errorDescription: String? {
         switch self {
-        case .invalid(let detail), .unsupported(let detail), .captureNotSent(let detail): return detail
+        case .invalid(let detail), .transientTransfer(let detail), .unsupported(let detail), .captureNotSent(let detail):
+            return detail
+        case .invalidOriginalHeader:
+            return "Original RAW/JPEG header does not match its name"
         case .response(let operation, let code): return String(format: "PTP 0x%04X → 0x%04X", operation, code)
         case .disconnected: return "Camera connection closed"
         case .cancelled: return "Camera operation cancelled"
@@ -165,7 +168,7 @@ enum CameraWire {
         let tiff = data.starts(with: [0x49, 0x49, 0x2a, 0]) || data.starts(with: [0x4d, 0x4d, 0, 0x2a])
         let jpeg = data.starts(with: [0xff, 0xd8, 0xff])
         guard name.lowercased().hasSuffix(".arw") ? tiff : photoName(name) && jpeg else {
-            throw CameraProtocolError.invalid("Original RAW/JPEG header does not match its name")
+            throw CameraProtocolError.invalidOriginalHeader
         }
     }
     static func mobilePage(_ bytes: Data, owner: UUID) throws -> (count: Int, cursor: UInt64, assets: [CameraRemoteAsset]) {

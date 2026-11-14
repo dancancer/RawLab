@@ -3,6 +3,24 @@ import CryptoKit
 import Darwin
 
 enum CameraTransferPhase: String, Codable { case queued, downloading, prepared, saved, interrupted, failed }
+enum CameraTransferFailureKind: String, Codable {
+    case transient
+    case headerInvalid
+    case ptpObjectError
+    case jpegProcessing
+    case jpegGainMapAdjustment
+    case importRecoveryRequired
+    case other
+
+    var requiresNewImport: Bool {
+        switch self {
+        case .jpegProcessing, .jpegGainMapAdjustment, .importRecoveryRequired:
+            return true
+        case .transient, .headerInvalid, .ptpObjectError, .other:
+            return false
+        }
+    }
+}
 enum CameraOriginalAvailability: String, Codable { case prepared, available, missing, changed, unavailable }
 struct CameraTransferItem: Codable, Identifiable {
     let id: UUID
@@ -12,6 +30,7 @@ struct CameraTransferItem: Codable, Identifiable {
     var digest: String?
     var sourceDigest: String?
     var failure: String?
+    var failureKind: CameraTransferFailureKind?
     var reused: Bool?
 }
 struct CameraTransferJob: Codable, Identifiable {
@@ -50,6 +69,21 @@ struct CameraTransferJob: Codable, Identifiable {
             return (item, asset)
         }
     }
+
+    func requiresNewImport(connected: Bool, assets: [CameraRemoteAsset]) -> Bool {
+        let bound = connected ? bindToListing(assets) : [:]
+        return pendingItems.contains { item in
+            if connected ? bound[item.id] == nil : item.sourceDigest == nil {
+                return true
+            }
+            if let kind = item.failureKind {
+                return kind.requiresNewImport
+            }
+            return item.failure == CameraProtocolError.jpegProcessing.errorDescription ||
+                item.failure == CameraProtocolError.jpegGainMapAdjustment.errorDescription ||
+                item.failure == CameraProtocolError.importRecoveryRequired.errorDescription
+        }
+    }
 }
 struct CameraStoredOriginal: Codable, Identifiable {
     let id: UUID
@@ -81,7 +115,18 @@ struct CameraOriginalManifest: Codable {
     var jobs: [CameraTransferJob] = []
     var originals: [CameraStoredOriginal] = []
     var tether: CameraTetherRecord?
+    var skippedAssets: [String: [CameraAssetSnapshot]]?
     var canResumeTether: Bool { tetherRecoveryInputs != nil }
+
+    static func cameraBucket(device: CameraDeviceIdentity, connectionKey: String) -> String {
+        let serial = device.serial.trimmingCharacters(in: .whitespacesAndNewlines)
+        let verifiedSerial = !serial.isEmpty && serial.contains { $0 != "0" }
+        return device.stableKey + (verifiedSerial ? "" : "|" + connectionKey)
+    }
+
+    func skippedAssets(for device: CameraDeviceIdentity, connectionKey: String) -> [CameraAssetSnapshot] {
+        skippedAssets?[Self.cameraBucket(device: device, connectionKey: connectionKey)] ?? []
+    }
 
     // 首页和恢复使用同一份本地证据。卡内清单及原件字节仍须重连后核对。
     fileprivate var tetherRecoveryInputs: (record: CameraTetherRecord, jobs: [CameraTransferJob], digests: [UUID: String])? {
@@ -169,15 +214,19 @@ final class CameraOriginalStore {
     private let originalsDirectory: URL, partialDirectory: URL, manifestURL: URL
     private let directoryLock: FileHandle
     private let lock = NSRecursiveLock()
+    private let onManifestWrite: (() -> Void)?
     private var state: CameraOriginalManifest
+    private var batchDepth = 0
+    private var batchDirty = false
     var snapshot: CameraOriginalManifest { locked { state } }
 
     static func applicationDirectory() throws -> URL {
         try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
             appropriateFor: nil, create: true).appendingPathComponent("RawLab/CameraOriginals", isDirectory: true)
     }
-    init(directory: URL) throws {
+    init(directory: URL, onManifestWrite: (() -> Void)? = nil) throws {
         self.directory = directory
+        self.onManifestWrite = onManifestWrite
         originalsDirectory = directory.appendingPathComponent("originals", isDirectory: true)
         partialDirectory = directory.appendingPathComponent("partial", isDirectory: true)
         manifestURL = directory.appendingPathComponent("manifest.json")
@@ -198,7 +247,11 @@ final class CameraOriginalStore {
                   state.originals.allSatisfy({ CameraWire.validName($0.name) && CameraWire.photoName($0.name) && $0.size > 0 && $0.size <= 1 << 30 && Self.validDigest($0.digest) }),
                   state.jobs.allSatisfy({ $0.items.count <= $0.itemLimit && $0.incremental?.jpeg.isValid != false &&
                     Set($0.items.map(\.id)).count == $0.items.count &&
-                    $0.items.allSatisfy { CameraWire.validName($0.asset.name) && CameraWire.photoName($0.asset.name) && $0.asset.transferable } }) else {
+                    $0.items.allSatisfy { CameraWire.validName($0.asset.name) && CameraWire.photoName($0.asset.name) && $0.asset.transferable } }),
+                  (state.skippedAssets?.values.allSatisfy { list in
+                      list.count <= CameraIncrementalScan.maximumAssets &&
+                      list.allSatisfy { CameraWire.validName($0.name) && CameraWire.photoName($0.name) && $0.transferable }
+                  } ?? true) else {
                 throw CameraProtocolError.invalid("Invalid camera storage manifest")
             }
         } else { state = CameraOriginalManifest() }
@@ -212,11 +265,46 @@ final class CameraOriginalStore {
     fileprivate static func validDigest(_ digest: String) -> Bool {
         digest.count == 64 && digest.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
     }
+    /// Coalesces multiple manifest state transitions in an import/tether batch into one durable write at exit.
+    func performBatch<T>(_ body: () throws -> T) throws -> T {
+        try locked {
+            batchDepth += 1
+            do {
+                let result = try body()
+                batchDepth -= 1
+                if batchDepth == 0, batchDirty {
+                    try persist()
+                    batchDirty = false
+                }
+                return result
+            } catch {
+                batchDepth -= 1
+                if batchDepth == 0, batchDirty {
+                    do {
+                        try persist()
+                        batchDirty = false
+                    } catch { }
+                }
+                throw error
+            }
+        }
+    }
+
     private func change<T>(_ body: () throws -> T) throws -> T {
         try locked {
             let previous = state
-            do { let result = try body(); try persist(); return result }
-            catch { state = previous; throw error }
+            do {
+                let result = try body()
+                if batchDepth > 0 {
+                    batchDirty = true
+                } else {
+                    try persist()
+                }
+                return result
+            } catch {
+                state = previous
+                throw error
+            }
         }
     }
     private func persist() throws {
@@ -230,6 +318,7 @@ final class CameraOriginalStore {
         catch { try? handle.close(); throw error }
         guard rename(temporary.path, manifestURL.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         syncDirectory(directory)
+        onManifestWrite?()
     }
     private func syncDirectory(_ url: URL) {
         let descriptor = open(url.path, O_RDONLY)
@@ -297,6 +386,25 @@ final class CameraOriginalStore {
             state.jobs[index].dismissed = true
         }
     }
+    func skipFailedIncrementalItems(_ id: UUID) throws {
+        try change {
+            guard let index = state.jobs.firstIndex(where: { $0.id == id && $0.incremental != nil && !$0.complete })
+            else { throw CameraProtocolError.invalid("Pending incremental import is missing") }
+            let job = state.jobs[index]
+            let failed = job.failedItems
+            if !failed.isEmpty {
+                let bucket = CameraOriginalManifest.cameraBucket(device: job.camera, connectionKey: job.connectionKey)
+                var list = state.skippedAssets?[bucket] ?? []
+                for item in failed where !list.contains(where: { $0 == item.asset || $0.withoutLocator == item.asset.withoutLocator }) {
+                    list.append(item.asset)
+                }
+                var all = state.skippedAssets ?? [:]
+                all[bucket] = list
+                state.skippedAssets = all
+            }
+            state.jobs[index].dismissed = true
+        }
+    }
     // Q6：相机原件不自动删，这里是唯一的手动清理入口。「已导出」以真实外部出口在场为准：
     // exportedContentIdentifiers 传入 ExportEvidenceStore 账本内容（保存图库 / Files 另存 /
     // 渲染 DNG / 批量导出成功后登记的源内容标识；「在编辑器打开过」不算证据——RecentPhotoStore
@@ -321,9 +429,7 @@ final class CameraOriginalStore {
             var seenBuckets = Set<String>()
             for job in state.jobs.reversed() where job.complete {
                 guard let plan = job.incremental else { continue }
-                let serial = job.camera.serial.trimmingCharacters(in: .whitespacesAndNewlines)
-                let verifiedSerial = !serial.isEmpty && serial.contains { $0 != "0" }
-                let bucket = job.camera.stableKey + (verifiedSerial ? "" : "|" + job.connectionKey)
+                let bucket = CameraOriginalManifest.cameraBucket(device: job.camera, connectionKey: job.connectionKey)
                 let kinds: Set<String>
                 if let boundaries = plan.boundaries {
                     kinds = Set(boundaries.keys)
@@ -395,7 +501,11 @@ final class CameraOriginalStore {
             try? FileManager.default.removeItem(at: url)
             guard FileManager.default.createFile(atPath: url.path, contents: Data()) else { throw CameraProtocolError.invalid("Cannot create camera partial file") }
             do {
-                try change { state.jobs[j].items[i].phase = .downloading; state.jobs[j].items[i].failure = nil }
+                try change {
+                    state.jobs[j].items[i].phase = .downloading
+                    state.jobs[j].items[i].failure = nil
+                    state.jobs[j].items[i].failureKind = nil
+                }
                 return (url, try FileHandle(forWritingTo: url))
             } catch { try? FileManager.default.removeItem(at: url); throw error }
         }
@@ -427,6 +537,8 @@ final class CameraOriginalStore {
                 try change {
                     state.jobs[j].items[i].sourceID = existing.id
                     state.jobs[j].items[i].digest = existing.digest
+                    state.jobs[j].items[i].failure = nil
+                    state.jobs[j].items[i].failureKind = nil
                     state.jobs[j].items[i].phase = .saved
                     state.jobs[j].items[i].reused = true
                 }
@@ -456,6 +568,8 @@ final class CameraOriginalStore {
             syncDirectory(originalsDirectory)
             try change {
                 state.originals[state.originals.count - 1].availability = .available
+                state.jobs[j].items[i].failure = nil
+                state.jobs[j].items[i].failureKind = nil
                 state.jobs[j].items[i].phase = .saved
             }
             if staged != partial { try? FileManager.default.removeItem(at: partial) }
@@ -528,49 +642,58 @@ final class CameraOriginalStore {
                 state.jobs[j].items[i].sourceID = existing.id
                 state.jobs[j].items[i].digest = existing.digest
                 state.jobs[j].items[i].failure = nil
+                state.jobs[j].items[i].failureKind = nil
                 state.jobs[j].items[i].phase = .saved
                 state.jobs[j].items[i].reused = true
             }
             return state.originals[sourceIndex]
         }
     }
-    func interrupt(job: UUID, item: UUID, error: String?, cancelled: Bool) throws {
+    func interrupt(job: UUID, item: UUID, error: String?, cancelled: Bool, failureKind: CameraTransferFailureKind? = nil) throws {
         try locked {
             let (j, i) = try indices(job: job, item: item)
             guard state.jobs[j].items[i].phase != .saved, state.jobs[j].items[i].phase != .prepared else { return }
             try change {
                 state.jobs[j].items[i].phase = cancelled ? .interrupted : .failed
                 state.jobs[j].items[i].failure = error
+                state.jobs[j].items[i].failureKind = failureKind
             }
             try? FileManager.default.removeItem(at: partialURL(item))
         }
     }
     func recover() throws {
-        try change {
-            var discardSources: Set<UUID> = []
-            for j in state.jobs.indices {
-                for i in state.jobs[j].items.indices {
-                    let item = state.jobs[j].items[i]
-                    if item.phase == .prepared, let id = item.sourceID,
-                       let source = state.originals.firstIndex(where: { $0.id == id }) {
-                        if item.sourceDigest == nil {
-                            let original = state.originals[source]
-                            state.jobs[j].items[i].sourceDigest = original.jpegSource?.digest ?? original.digest
+        try locked {
+            let needsStateRecovery = state.jobs.contains { job in
+                job.items.contains { $0.phase == .prepared || $0.phase == .downloading }
+            }
+            if needsStateRecovery {
+                try change {
+                    var discardSources: Set<UUID> = []
+                    for j in state.jobs.indices {
+                        for i in state.jobs[j].items.indices {
+                            let item = state.jobs[j].items[i]
+                            if item.phase == .prepared, let id = item.sourceID,
+                               let source = state.originals.firstIndex(where: { $0.id == id }) {
+                                if item.sourceDigest == nil {
+                                    let original = state.originals[source]
+                                    state.jobs[j].items[i].sourceDigest = original.jpegSource?.digest ?? original.digest
+                                }
+                                let status = availability(state.originals[source])
+                                if status == .available {
+                                    state.originals[source].availability = .available; state.jobs[j].items[i].phase = .saved
+                                } else if status == .missing {
+                                    discardSources.insert(id); state.jobs[j].items[i].phase = .interrupted
+                                    state.jobs[j].items[i].sourceID = nil
+                                } else {
+                                    state.originals[source].availability = status; state.jobs[j].items[i].phase = .failed
+                                    state.jobs[j].items[i].failure = "Saved original checksum changed"
+                                }
+                            } else if item.phase == .downloading { state.jobs[j].items[i].phase = .interrupted }
                         }
-                        let status = availability(state.originals[source])
-                        if status == .available {
-                            state.originals[source].availability = .available; state.jobs[j].items[i].phase = .saved
-                        } else if status == .missing {
-                            discardSources.insert(id); state.jobs[j].items[i].phase = .interrupted
-                            state.jobs[j].items[i].sourceID = nil
-                        } else {
-                            state.originals[source].availability = status; state.jobs[j].items[i].phase = .failed
-                            state.jobs[j].items[i].failure = "Saved original checksum changed"
-                        }
-                    } else if item.phase == .downloading { state.jobs[j].items[i].phase = .interrupted }
+                    }
+                    state.originals.removeAll { discardSources.contains($0.id) }
                 }
             }
-            state.originals.removeAll { discardSources.contains($0.id) }
             // 仅清理该 Store 命名的未发布文件；最终原件及未知文件不属于垃圾。
             for file in try FileManager.default.contentsOfDirectory(at: partialDirectory, includingPropertiesForKeys: nil) {
                 if ["partial", "jpeg-partial"].contains(file.pathExtension),

@@ -190,13 +190,7 @@ struct IOSCameraIncrementalImport: View {
         }
     }
     private func requiresNewImport(_ job: CameraTransferJob) -> Bool {
-        let bound = model.connected ? job.bindToListing(model.assets) : [:]
-        return job.pendingItems.contains {
-            (model.connected ? bound[$0.id] == nil : $0.sourceDigest == nil) ||
-                $0.failure == CameraProtocolError.jpegProcessing.errorDescription ||
-                $0.failure == CameraProtocolError.jpegGainMapAdjustment.errorDescription ||
-                $0.failure == CameraProtocolError.importRecoveryRequired.errorDescription
-        }
+        job.requiresNewImport(connected: model.connected, assets: model.assets)
     }
     private func completion(_ job: CameraTransferJob) -> some View {
         let reused = job.items.filter { $0.reused == true }.count

@@ -133,6 +133,7 @@ struct IOSCameraImportPreferences: Codable {
 
     func connect(endpoint: IOSCameraEndpoint, mode: IOSCameraMode, cardConfirmed: Bool, resume: Bool) {
         manualImportRequired = false; listingLimitExceeded = false
+        skippedCameraKey = nil; skippedAssets = []
         self.endpoint = endpoint; self.mode = mode; sessionStartedAt = Date()
         scanning = false; incrementalJobID = nil; contentsFamily = nil
         customCutoff = nil; includeUndated = false
@@ -158,11 +159,8 @@ struct IOSCameraImportPreferences: Codable {
             phase = value
             if value == .browsing || value == .ready { pendingThumbnails = [] }
         case .device(let value, let family):
-            if skippedCameraKey != value.stableKey {
-                skippedCameraKey = value.stableKey
-                skippedAssets = []
-            }
             device = value; contentsFamily = family; originalBrowsingAvailable = family != nil
+            syncSkippedAssets()
             if mode == .importing {
                 let saved = importPreferencesKey.flatMap { UserDefaults.standard.data(forKey: $0) }
                 importPreferences = saved.flatMap { try? JSONDecoder().decode(IOSCameraImportPreferences.self, from: $0) }
@@ -178,6 +176,7 @@ struct IOSCameraImportPreferences: Codable {
         case .manifest(let value):
             let wasComplete = incrementalJobID.flatMap { id in manifest.jobs.first { $0.id == id }?.complete } == true
             manifest = value
+            syncSkippedAssets()
             if !wasComplete, incrementalJobID.flatMap({ id in value.jobs.first { $0.id == id }?.complete }) == true {
                 customCutoff = nil; includeUndated = false
             }
@@ -207,6 +206,9 @@ struct IOSCameraImportPreferences: Codable {
             else { manualImportRequired = false }
             if case CameraProtocolError.photoLimitExceeded = error { listingLimitExceeded = true }
             notice = message(error)
+        case .listingLimitCleared:
+            listingLimitExceeded = false
+            if notice == message(CameraProtocolError.photoLimitExceeded) { notice = nil }
         case .notice(let detail):
             parameterBusy = false
             switch detail {
@@ -232,7 +234,9 @@ struct IOSCameraImportPreferences: Codable {
         backend.loadHistory { [weak self] result in
             Task { @MainActor in
                 switch result {
-                case .success(let snapshot): self?.manifest = snapshot
+                case .success(let snapshot):
+                    self?.manifest = snapshot
+                    self?.syncSkippedAssets()
                 case .failure: self?.notice = L10n.text("无法保存导入记录或原件。请检查可用空间后重试。")
                 }
             }
@@ -247,22 +251,25 @@ struct IOSCameraImportPreferences: Codable {
         guard let run, mode == .importing, phase == .browsing, !scanning else { return }
         phase = .receiving; notice = nil; backend.resumeImport(jobID: job.id, run: run)
     }
+    private func syncSkippedAssets() {
+        guard let device, let endpoint else { return }
+        let bucket = CameraOriginalManifest.cameraBucket(device: device, connectionKey: endpoint.connectionKey)
+        skippedCameraKey = bucket
+        skippedAssets = manifest.skippedAssets(for: device, connectionKey: endpoint.connectionKey)
+    }
     func skipFailedIncrementalItems(_ job: CameraTransferJob) {
         guard !busy, !job.failedItems.isEmpty else { return }
-        if skippedCameraKey != job.camera.stableKey {
-            skippedCameraKey = job.camera.stableKey
-            skippedAssets = []
-        }
-        for item in job.failedItems where !skippedAssets.contains(item.asset) {
-            skippedAssets.append(item.asset)
-        }
-        dismissIncrementalJob(job)
+        applyIncrementalManifestAction(jobID: job.id) { done in backend.skipFailedIncrementalItems(job.id, result: done) }
     }
     func dismissIncrementalJob(_ job: CameraTransferJob) {
         guard !busy else { return }
+        applyIncrementalManifestAction(jobID: job.id) { done in backend.dismissIncrementalJob(job.id, result: done) }
+    }
+    private func applyIncrementalManifestAction(jobID: UUID,
+                                                _ execute: (@escaping (Result<CameraOriginalManifest, Error>) -> Void) -> Void) {
         let owner = callbackOwner
         scanning = true
-        backend.dismissIncrementalJob(job.id) { [weak self] result in
+        execute { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
                 guard self.callbackOwner == owner else { self.reloadHistory(); return }
@@ -270,7 +277,8 @@ struct IOSCameraImportPreferences: Codable {
                 switch result {
                 case .success(let snapshot):
                     self.manifest = snapshot
-                    if self.incrementalJobID == job.id { self.incrementalJobID = nil }
+                    self.syncSkippedAssets()
+                    if self.incrementalJobID == jobID { self.incrementalJobID = nil }
                     self.notice = nil
                 case .failure:
                     self.notice = L10n.text("无法保存导入记录或原件。请检查可用空间后重试。")
@@ -479,7 +487,11 @@ struct IOSCameraImportPreferences: Codable {
         case CameraProtocolError.importRecoveryRequired: return L10n.text("无法确认上次导入的原始文件，请重新选择照片。")
         case CameraProtocolError.photoLimitExceeded: return L10n.format("%@ · %@", L10n.text("照片"), L10n.text("已到上限"))
         case CameraProtocolError.itemFailed(let name, _): return L10n.format("保存 %@ 失败。", name)
-        case CameraProtocolError.invalid: return L10n.text("相机数据或原件校验未通过，已暂停。")
+        case CameraProtocolError.invalid,
+             CameraProtocolError.transientTransfer,
+             CameraProtocolError.invalidOriginalHeader,
+             CameraProtocolError.response(_, 0x2019):
+            return L10n.text("相机数据或原件校验未通过，已暂停。")
         default: return L10n.text("相机连接已断开。已保存的照片仍可查看。")
         }
     }

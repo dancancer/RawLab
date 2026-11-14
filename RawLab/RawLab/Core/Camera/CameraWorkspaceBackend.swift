@@ -17,6 +17,7 @@ enum IOSCameraEvent {
     case frame(Data, Date, UUID)
     case saved(CameraStoredOriginal)
     case failure(Error)
+    case listingLimitCleared
     case notice(String)
 }
 
@@ -38,6 +39,9 @@ final class IOSCameraRun {
     var nextCardCheck: Date = .distantPast
     var lastHostHint: Int64 = 0
     var receiving = false
+    var listingLimitExceeded = false
+    var needsTetherBaseline = false
+    var needsTetherResume = false
     init(endpoint: IOSCameraEndpoint, mode: IOSCameraMode, cardConfirmed: Bool, emit: @escaping (IOSCameraEvent) -> Void) {
         self.endpoint = endpoint; self.mode = mode; self.cardConfirmed = cardConfirmed; self.emit = emit
     }
@@ -127,6 +131,15 @@ final class CameraWorkspaceBackend {
             })
         }
     }
+    func skipFailedIncrementalItems(_ id: UUID, result: @escaping (Result<CameraOriginalManifest, Error>) -> Void) {
+        queue.async {
+            result(Result {
+                let store = try self.store()
+                try store.skipFailedIncrementalItems(id)
+                return store.snapshot
+            })
+        }
+    }
     // Q6：手动清理已导出的相机原件（无自动回收）；回传清理结果与最新快照。
     func pruneExportedOriginals(exportedContentIdentifiers: @escaping () -> Set<String>,
                                 _ result: @escaping (Result<(originals: Int, freedBytes: UInt64, manifest: CameraOriginalManifest), Error>) -> Void) {
@@ -153,10 +166,18 @@ final class CameraWorkspaceBackend {
                 switch error {
                 case CameraProtocolError.importRecoveryRequired, CameraProtocolError.jpegGainMapAdjustment:
                     run.emit(.phase(.browsing)); run.emit(.failure(error))
+                case CameraProtocolError.transientTransfer where run.mode == .importing,
+                     CameraProtocolError.response(_, 0x2019) where run.mode == .importing:
+                    run.emit(.phase(.browsing)); run.emit(.failure(error))
                 case CameraProtocolError.photoLimitExceeded where run.mode == .importing:
                     run.knownAssets = []
                     run.emit(.assets([]))
                     run.emit(.phase(.browsing))
+                    run.emit(.failure(error))
+                case CameraProtocolError.photoLimitExceeded where run.mode == .tethering:
+                    run.listingLimitExceeded = true
+                    run.knownAssets = []
+                    run.emit(.phase(.ready))
                     run.emit(.failure(error))
                 default: self.failure(error, run: run)
                 }
@@ -193,35 +214,52 @@ final class CameraWorkspaceBackend {
             }
             guard !resumeTether || session.family != nil else { throw CameraProtocolError.tetherRecoveryRequired }
             if session.family != nil {
-                let assets = try self.readCard(run)
-                session = try run.currentSession()
-                run.knownAssets = assets
-                if resumeTether {
-                    run.emit(.phase(.receiving))
-                    try store.resumeTether(device: session.device, connectionKey: run.endpoint.connectionKey, assets: assets,
-                        verifySaved: { bound in
-                            do {
-                                return try session.originalDigest(bound.asset) {
-                                    run.emit(.progress(bound.item.id, $0, bound.item.asset.size))
-                                }
-                            } catch CameraProtocolError.invalid {
-                                throw CameraProtocolError.tetherRecoveryRequired
-                            }
-                        }, receivePending: { id, pending in
-                            try self.receive(jobID: id, pending: pending, run: run)
-                        }, checkCurrent: {
-                            guard self.owns(run) else { throw CameraProtocolError.cancelled }
-                        })
-                    run.emit(.notice("Resumed registered transfers; import offline photos manually"))
-                } else {
-                    try store.beginTether(device: session.device, connectionKey: run.endpoint.connectionKey, baseline: assets)
+                do {
+                    let assets = try self.readCard(run)
+                    session = try run.currentSession()
+                    run.knownAssets = assets
+                    if resumeTether {
+                        try self.finishTetherResume(run: run, store: store, session: session, assets: assets)
+                    } else {
+                        try store.beginTether(device: session.device, connectionKey: run.endpoint.connectionKey, baseline: assets)
+                    }
+                    session = try self.remoteSession(run)
+                } catch CameraProtocolError.photoLimitExceeded {
+                    run.listingLimitExceeded = true
+                    run.knownAssets = []
+                    run.needsTetherResume = resumeTether
+                    run.needsTetherBaseline = !resumeTether
+                    session = try self.remoteSession(run)
+                    self.publishManifest(run)
+                    try self.startRemoteDisplay(run, session: session)
+                    run.emit(.failure(CameraProtocolError.photoLimitExceeded))
+                    self.schedulePoll(run)
+                    return
                 }
-                session = try self.remoteSession(run)
             }
             self.publishManifest(run)
             try self.startRemoteDisplay(run, session: session)
             self.schedulePoll(run)
         }
+    }
+    private func finishTetherResume(run: IOSCameraRun, store: CameraOriginalStore,
+                                    session: SonyCameraSession, assets: [CameraRemoteAsset]) throws {
+        run.emit(.phase(.receiving))
+        try store.resumeTether(device: session.device, connectionKey: run.endpoint.connectionKey, assets: assets,
+            verifySaved: { bound in
+                do {
+                    return try session.originalDigest(bound.asset) {
+                        run.emit(.progress(bound.item.id, $0, bound.item.asset.size))
+                    }
+                } catch CameraProtocolError.invalid, CameraProtocolError.invalidOriginalHeader {
+                    throw CameraProtocolError.tetherRecoveryRequired
+                }
+            }, receivePending: { id, pending in
+                try self.receive(jobID: id, pending: pending, run: run)
+            }, checkCurrent: {
+                guard self.owns(run) else { throw CameraProtocolError.cancelled }
+            })
+        run.emit(.notice("Resumed registered transfers; import offline photos manually"))
     }
     func stop(_ run: IOSCameraRun?, completion: @escaping () -> Void = {}) {
         guard let run else { queue.async(execute: completion); return }
@@ -262,8 +300,9 @@ final class CameraWorkspaceBackend {
     }
     private func publishProperties(_ run: IOSCameraRun, values: [UInt16: CameraProperty], session: SonyCameraSession) {
         let pending = storage?.snapshot.tether?.shutterRequestedAt != nil
+        let blocked = pending || run.receiving || run.listingLimitExceeded || run.needsTetherBaseline || run.needsTetherResume
         run.emit(.properties(values, writable: session.canWriteParameters,
-            shutter: session.captureReady(values, cardConfirmed: run.cardConfirmed) && !pending && !run.receiving))
+            shutter: session.captureReady(values, cardConfirmed: run.cardConfirmed) && !blocked))
     }
     private func startLive(_ run: IOSCameraRun, url: URL) {
         let token = run.beginLive()
@@ -319,28 +358,62 @@ final class CameraWorkspaceBackend {
             let wasLegacy = session.family == .legacy
             run.receiving = true
             defer { run.receiving = false }
-            let assets = try readCard(run)
-            try receivePendingTether(run, assets: assets)
-            run.knownAssets = assets
-            let baseline = store.snapshot.tether?.baseline ?? []
-            let newAssets = assets.filter { !baseline.contains($0.snapshot.key) }
-            if !newAssets.isEmpty {
-                var batch: [CameraAssetSnapshot] = [], bytes: UInt64 = 0
-                for asset in newAssets {
-                    guard asset.snapshot.transferable else { throw CameraProtocolError.unsupported("A new camera original exceeds the transfer budget") }
-                    if batch.count == CameraTetherRecord.maximumFilesPerTransfer ||
-                        bytes + asset.snapshot.size > CameraTetherRecord.maximumBytesPerTransfer { break }
-                    batch.append(asset.snapshot); bytes += asset.snapshot.size
+            do {
+                let assets = try readCard(run)
+                let sessionNow = try run.currentSession()
+                if run.listingLimitExceeded {
+                    run.listingLimitExceeded = false
+                    run.emit(.listingLimitCleared)
                 }
-                let job = try store.registerTetherAssets(batch, listingOwner: run.currentSession().id)
+                if run.needsTetherResume {
+                    try finishTetherResume(run: run, store: store, session: sessionNow, assets: assets)
+                    run.needsTetherResume = false
+                    run.knownAssets = assets
+                } else if run.needsTetherBaseline {
+                    try store.beginTether(device: sessionNow.device, connectionKey: run.endpoint.connectionKey, baseline: assets)
+                    run.needsTetherBaseline = false
+                    run.knownAssets = assets
+                } else {
+                    try store.performBatch {
+                        try receivePendingTether(run, assets: assets)
+                        run.knownAssets = assets
+                        let baseline = store.snapshot.tether?.baseline ?? []
+                        let newAssets = assets.filter { !baseline.contains($0.snapshot.key) }
+                        if !newAssets.isEmpty {
+                            var batch: [CameraAssetSnapshot] = [], bytes: UInt64 = 0
+                            for asset in newAssets {
+                                guard asset.snapshot.transferable else { throw CameraProtocolError.unsupported("A new camera original exceeds the transfer budget") }
+                                if batch.count == CameraTetherRecord.maximumFilesPerTransfer ||
+                                    bytes + asset.snapshot.size > CameraTetherRecord.maximumBytesPerTransfer { break }
+                                batch.append(asset.snapshot); bytes += asset.snapshot.size
+                            }
+                            let job = try store.registerTetherAssets(batch, listingOwner: sessionNow.id)
+                            publishManifest(run)
+                            try receive(job, assets: assets, run: run)
+                        }
+                        try store.finishConfirmedShutter(owner: run.id)
+                    }
+                }
+                run.receiving = false
                 publishManifest(run)
-                try receive(job, assets: assets, run: run)
+                if wasLegacy { try startRemoteDisplay(run, session: remoteSession(run)) }
+                else {
+                    publishProperties(run, values: properties, session: sessionNow)
+                    run.emit(.phase(store.snapshot.tether?.shutterRequestedAt == nil ? .ready : .waiting))
+                }
+                run.nextCardCheck = Date().addingTimeInterval(wasLegacy ? 120 : 1.5)
+            } catch CameraProtocolError.photoLimitExceeded {
+                run.listingLimitExceeded = true
+                run.knownAssets = []
+                run.receiving = false
+                if wasLegacy { try startRemoteDisplay(run, session: remoteSession(run)) }
+                else {
+                    publishProperties(run, values: properties, session: session)
+                    run.emit(.phase(pending ? .waiting : .ready))
+                }
+                run.emit(.failure(CameraProtocolError.photoLimitExceeded))
+                run.nextCardCheck = Date().addingTimeInterval(wasLegacy ? 120 : 1.5)
             }
-            try store.finishConfirmedShutter(owner: run.id)
-            publishManifest(run)
-            if wasLegacy { try startRemoteDisplay(run, session: remoteSession(run)) }
-            else { run.emit(.phase(store.snapshot.tether?.shutterRequestedAt == nil ? .ready : .waiting)) }
-            run.nextCardCheck = Date().addingTimeInterval(wasLegacy ? 120 : 1.5)
         }
         if let record = store.snapshot.tether, record.shutterOwner == run.id, let requested = record.shutterRequestedAt,
            Date().timeIntervalSince(requested) > 35 { throw CameraProtocolError.captureUnknown }
@@ -364,16 +437,36 @@ final class CameraWorkspaceBackend {
         switch error {
         case CameraProtocolError.jpegProcessing,
              CameraProtocolError.jpegGainMapAdjustment,
-             CameraProtocolError.importRecoveryRequired:
+             CameraProtocolError.importRecoveryRequired,
+             CameraProtocolError.invalidOriginalHeader:
             return true
         case CameraProtocolError.response(let op, let code):
-            return [UInt16(0x1008), 0x1009, 0x923d].contains(op) && !Self.sessionFailureCodes.contains(code)
-        case CameraProtocolError.invalid(let detail):
-            return detail != "Camera task history exceeds storage budget" &&
-                detail != "Cannot create camera partial file" &&
-                detail != "Camera original exceeds budget"
+            return [UInt16(0x1008), 0x1009, 0x923d].contains(op) &&
+                !Self.sessionFailureCodes.contains(code) &&
+                code != 0x2019
         default:
             return false
+        }
+    }
+    private func transferFailureKind(_ error: Error) -> CameraTransferFailureKind {
+        switch error {
+        case CameraProtocolError.transientTransfer,
+             CameraProtocolError.disconnected,
+             CameraProtocolError.cancelled,
+             CameraProtocolError.timeout:
+            return .transient
+        case CameraProtocolError.invalidOriginalHeader:
+            return .headerInvalid
+        case CameraProtocolError.jpegProcessing:
+            return .jpegProcessing
+        case CameraProtocolError.jpegGainMapAdjustment:
+            return .jpegGainMapAdjustment
+        case CameraProtocolError.importRecoveryRequired:
+            return .importRecoveryRequired
+        case CameraProtocolError.response(_, let code):
+            return (Self.sessionFailureCodes.contains(code) || code == 0x2019) ? .transient : .ptpObjectError
+        default:
+            return .other
         }
     }
     private func itemNoticeError(_ error: Error, asset: CameraRemoteAsset) -> Error {
@@ -390,34 +483,38 @@ final class CameraWorkspaceBackend {
         let store = try store(), session = try run.currentSession()
         run.emit(.phase(.receiving))
         var firstItemError: Error?
-        for (item, asset) in pending {
-            guard owns(run) else { throw CameraProtocolError.cancelled }
-            if let reused = try reuseByMobileSampling(jobID: jobID, item: item, asset: asset,
-                                                      store: store, session: session, run: run) {
-                publishManifest(run); run.emit(.saved(reused))
-                continue
-            }
-            let target = try store.begin(job: jobID, item: item.id)
-            do {
-                let digest = try session.download(asset, to: target.handle) { bytes in
-                    run.emit(.progress(item.id, bytes, item.asset.size))
-                }
-                try target.handle.close()
-                let original = try store.complete(job: jobID, item: item.id, digest: digest)
-                publishManifest(run); run.emit(.saved(original))
-            } catch {
-                try? target.handle.close()
-                let itemFailed = isItemFailure(error, session: session, run: run)
-                try? store.interrupt(job: jobID, item: item.id, error: error.localizedDescription, cancelled: !itemFailed)
-                publishManifest(run)
-                if itemFailed {
-                    if firstItemError == nil { firstItemError = itemNoticeError(error, asset: asset) }
+        try store.performBatch {
+            for (item, asset) in pending {
+                guard owns(run) else { throw CameraProtocolError.cancelled }
+                if let reused = try reuseByMobileSampling(jobID: jobID, item: item, asset: asset,
+                                                          store: store, session: session, run: run) {
+                    publishManifest(run); run.emit(.saved(reused))
                     continue
                 }
-                if run.mode == .tethering, case CameraProtocolError.importRecoveryRequired = error {
-                    throw CameraProtocolError.tetherRecoveryRequired
+                let target = try store.begin(job: jobID, item: item.id)
+                do {
+                    let digest = try session.download(asset, to: target.handle) { bytes in
+                        run.emit(.progress(item.id, bytes, item.asset.size))
+                    }
+                    try target.handle.close()
+                    let original = try store.complete(job: jobID, item: item.id, digest: digest)
+                    publishManifest(run); run.emit(.saved(original))
+                } catch {
+                    try? target.handle.close()
+                    let itemFailed = isItemFailure(error, session: session, run: run)
+                    let kind = transferFailureKind(error)
+                    try? store.interrupt(job: jobID, item: item.id, error: error.localizedDescription,
+                                         cancelled: !itemFailed, failureKind: kind)
+                    publishManifest(run)
+                    if itemFailed {
+                        if firstItemError == nil { firstItemError = itemNoticeError(error, asset: asset) }
+                        continue
+                    }
+                    if run.mode == .tethering, case CameraProtocolError.importRecoveryRequired = error {
+                        throw CameraProtocolError.tetherRecoveryRequired
+                    }
+                    throw error
                 }
-                throw error
             }
         }
         if let firstItemError {
@@ -464,11 +561,14 @@ final class CameraWorkspaceBackend {
             run.receiving = true; defer { run.receiving = false }
             let session = try run.currentSession()
             guard assets.allSatisfy({ $0.owner == session.id }) else { throw CameraProtocolError.invalid("Camera selection belongs to an old session") }
-            let job = try self.store().enqueue(device: session.device, connectionKey: run.endpoint.connectionKey,
-                                              assets: assets.map(\.snapshot), listingOwner: session.id, incremental: incremental)
-            self.publishManifest(run)
-            if incremental != nil { run.emit(.incrementalJob(job.id)) }
-            try self.receive(job, assets: run.knownAssets, run: run)
+            let store = try self.store()
+            try store.performBatch {
+                let job = try store.enqueue(device: session.device, connectionKey: run.endpoint.connectionKey,
+                                            assets: assets.map(\.snapshot), listingOwner: session.id, incremental: incremental)
+                self.publishManifest(run)
+                if incremental != nil { run.emit(.incrementalJob(job.id)) }
+                try self.receive(job, assets: run.knownAssets, run: run)
+            }
             run.emit(.phase(.browsing))
         }
     }
@@ -477,19 +577,21 @@ final class CameraWorkspaceBackend {
             guard run.mode == .importing, !run.receiving else { return }
             run.receiving = true; defer { run.receiving = false }
             let store = try self.store()
-            try store.recover()
-            self.publishManifest(run)
-            guard let job = store.snapshot.jobs.first(where: { $0.id == jobID }) else {
-                throw CameraProtocolError.invalid("Camera transfer job is missing")
+            try store.performBatch {
+                try store.recover()
+                self.publishManifest(run)
+                guard let job = store.snapshot.jobs.first(where: { $0.id == jobID }) else {
+                    throw CameraProtocolError.invalid("Camera transfer job is missing")
+                }
+                if job.incremental != nil { run.emit(.incrementalJob(job.id)) }
+                guard !job.pendingItems.isEmpty else {
+                    run.emit(.phase(.browsing))
+                    return
+                }
+                let assets = try run.currentSession().listAssets()
+                run.knownAssets = assets; run.emit(.assets(assets))
+                try self.receive(job, assets: assets, run: run)
             }
-            if job.incremental != nil { run.emit(.incrementalJob(job.id)) }
-            guard !job.pendingItems.isEmpty else {
-                run.emit(.phase(.browsing))
-                return
-            }
-            let assets = try run.currentSession().listAssets()
-            run.knownAssets = assets; run.emit(.assets(assets))
-            try self.receive(job, assets: assets, run: run)
             run.emit(.phase(.browsing))
         }
     }
