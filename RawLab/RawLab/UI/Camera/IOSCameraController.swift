@@ -85,8 +85,16 @@ struct IOSCameraImportPreferences: Codable {
     @Published private(set) var incrementalJobID: UUID?
     @Published var customCutoff: Date?
     @Published var includeUndated = false
-    @Published var notice: String?
+    @Published var notice: String? {
+        didSet {
+            if !updatingListingLimitNotice {
+                showingListingLimitNotice = false
+            }
+        }
+    }
     @Published var selection: Set<String> = []
+    private var showingListingLimitNotice = false
+    private var updatingListingLimitNotice = false
     private var unavailableThumbnails: Set<String> = []
     private var pendingThumbnails: Set<String> = []
     private var thumbnailOrder: [String] = []
@@ -204,11 +212,21 @@ struct IOSCameraImportPreferences: Codable {
             parameterBusy = false; previewLoading = false; shutterReady = false; scanning = false; progress = nil
             if case CameraProtocolError.tetherRecoveryRequired = error { manualImportRequired = true }
             else { manualImportRequired = false }
-            if case CameraProtocolError.photoLimitExceeded = error { listingLimitExceeded = true }
-            notice = message(error)
+            if case CameraProtocolError.photoLimitExceeded = error {
+                listingLimitExceeded = true
+                updatingListingLimitNotice = true
+                showingListingLimitNotice = true
+                notice = message(error)
+                updatingListingLimitNotice = false
+            } else {
+                notice = message(error)
+            }
         case .listingLimitCleared:
             listingLimitExceeded = false
-            if notice == message(CameraProtocolError.photoLimitExceeded) { notice = nil }
+            if showingListingLimitNotice {
+                showingListingLimitNotice = false
+                notice = nil
+            }
         case .notice(let detail):
             parameterBusy = false
             switch detail {

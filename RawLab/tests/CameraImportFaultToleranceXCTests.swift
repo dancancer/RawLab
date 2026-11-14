@@ -17,8 +17,23 @@ final class CameraImportFaultToleranceXCTests: XCTestCase {
     }
 
     @MainActor
+    func testP119_IN4_SkippedAssetsFIFOOverMaximumLimitSurvivesRestart() async throws {
+        try await CameraSkipAndLimitTests.testIN4SkippedAssetsFIFOOverMaximumLimitSurvivesRestart()
+    }
+
+    @MainActor
+    func testP119_IN6_TetheringResumeLimitAndExactBoundary10000To10001AndLanguageSwitch() async throws {
+        try await CameraSkipAndLimitTests.testIN6TetheringResumeLimitAndExactBoundary10000To10001AndLanguageSwitch()
+    }
+
+    @MainActor
     func testP222_CoalescedBatchManifestWrites() async throws {
         try await CameraSkipAndLimitTests.testP222ManifestWritesCoalescedToOneBatchWrite()
+    }
+
+    @MainActor
+    func testP222_PerformBatchPersistFailureRollbackAndRecovery() async throws {
+        try await CameraSkipAndLimitTests.testP222PerformBatchPersistFailureRollbackAndRecovery()
     }
 
     @MainActor

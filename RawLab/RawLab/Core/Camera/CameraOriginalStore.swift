@@ -79,6 +79,7 @@ struct CameraTransferJob: Codable, Identifiable {
             if let kind = item.failureKind {
                 return kind.requiresNewImport
             }
+            // Legacy persisted-manifest fallback when failureKind is absent on pre-I-N5 jobs.
             return item.failure == CameraProtocolError.jpegProcessing.errorDescription ||
                 item.failure == CameraProtocolError.jpegGainMapAdjustment.errorDescription ||
                 item.failure == CameraProtocolError.importRecoveryRequired.errorDescription
@@ -218,6 +219,7 @@ final class CameraOriginalStore {
     private var state: CameraOriginalManifest
     private var batchDepth = 0
     private var batchDirty = false
+    private var batchRollbackState: CameraOriginalManifest?
     var snapshot: CameraOriginalManifest { locked { state } }
 
     static func applicationDirectory() throws -> URL {
@@ -268,25 +270,40 @@ final class CameraOriginalStore {
     /// Coalesces multiple manifest state transitions in an import/tether batch into one durable write at exit.
     func performBatch<T>(_ body: () throws -> T) throws -> T {
         try locked {
+            let outermost = batchDepth == 0
+            if outermost {
+                batchRollbackState = state
+            }
             batchDepth += 1
-            do {
-                let result = try body()
+            defer {
                 batchDepth -= 1
-                if batchDepth == 0, batchDirty {
+                if batchDepth == 0 {
+                    batchRollbackState = nil
+                }
+            }
+            var bodyError: Error?
+            var result: T?
+            do {
+                result = try body()
+            } catch {
+                bodyError = error
+            }
+            if outermost, batchDirty {
+                do {
                     try persist()
                     batchDirty = false
+                } catch {
+                    if let rollback = batchRollbackState {
+                        state = rollback
+                    }
+                    batchDirty = false
+                    throw error
                 }
-                return result
-            } catch {
-                batchDepth -= 1
-                if batchDepth == 0, batchDirty {
-                    do {
-                        try persist()
-                        batchDirty = false
-                    } catch { }
-                }
-                throw error
             }
+            if let bodyError {
+                throw bodyError
+            }
+            return result!
         }
     }
 
@@ -395,8 +412,13 @@ final class CameraOriginalStore {
             if !failed.isEmpty {
                 let bucket = CameraOriginalManifest.cameraBucket(device: job.camera, connectionKey: job.connectionKey)
                 var list = state.skippedAssets?[bucket] ?? []
-                for item in failed where !list.contains(where: { $0 == item.asset || $0.withoutLocator == item.asset.withoutLocator }) {
+                var seen = Set(list.map(\.withoutLocator))
+                for item in failed where seen.insert(item.asset.withoutLocator).inserted {
                     list.append(item.asset)
+                }
+                // Evict oldest skipped entries (FIFO) rather than rejecting new skips so the per-bucket cap in init() never trips.
+                if list.count > CameraIncrementalScan.maximumAssets {
+                    list.removeFirst(list.count - CameraIncrementalScan.maximumAssets)
                 }
                 var all = state.skippedAssets ?? [:]
                 all[bucket] = list

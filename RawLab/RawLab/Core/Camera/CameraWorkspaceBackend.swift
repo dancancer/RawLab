@@ -99,11 +99,13 @@ final class CameraWorkspaceBackend {
     private let ownerLock = NSLock()
     private var active: IOSCameraRun?
     private let clientID: UUID
+    private let shutterTimeout: TimeInterval
     private let sessionOpener: ((IOSCameraRun, CameraSessionPurpose, UUID) throws -> SonyCameraSession)?
 
-    init(storage: CameraOriginalStore? = nil, clientID: UUID? = nil,
+    init(storage: CameraOriginalStore? = nil, clientID: UUID? = nil, shutterTimeout: TimeInterval = 35,
          openSession: ((IOSCameraRun, CameraSessionPurpose, UUID) throws -> SonyCameraSession)? = nil) {
         self.storage = storage
+        self.shutterTimeout = shutterTimeout
         self.sessionOpener = openSession
         if let clientID {
             self.clientID = clientID
@@ -173,11 +175,6 @@ final class CameraWorkspaceBackend {
                     run.knownAssets = []
                     run.emit(.assets([]))
                     run.emit(.phase(.browsing))
-                    run.emit(.failure(error))
-                case CameraProtocolError.photoLimitExceeded where run.mode == .tethering:
-                    run.listingLimitExceeded = true
-                    run.knownAssets = []
-                    run.emit(.phase(.ready))
                     run.emit(.failure(error))
                 default: self.failure(error, run: run)
                 }
@@ -294,7 +291,8 @@ final class CameraWorkspaceBackend {
             let url = try CameraWire.liveURL(raw, camera: run.endpoint.host)
             startLive(run, url: url)
         } else { run.emit(.notice("Camera live view is unavailable")) }
-        let pending = try store().snapshot.tether?.shutterRequestedAt != nil
+        let shutterRequested = try store().snapshot.tether?.shutterRequestedAt != nil
+        let pending = !run.listingLimitExceeded && shutterRequested
         run.emit(.phase(session.family == nil || !pending ? .ready : .waiting))
         run.nextCardCheck = Date().addingTimeInterval(session.family == .legacy ? 120 : 1.5)
     }
@@ -330,8 +328,8 @@ final class CameraWorkspaceBackend {
     }
 
     private func schedulePoll(_ run: IOSCameraRun) {
-        queue.asyncAfter(deadline: .now() + 1.5) {
-            guard self.owns(run) else { return }
+        queue.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self, self.owns(run) else { return }
             do { try self.poll(run); self.schedulePoll(run) }
             catch CameraProtocolError.response(let op, let code) where op == 0x923c && code == 0x2005 {
                 // 完整远端忙响应已对齐；只重读卡，不重发快门。
@@ -409,14 +407,15 @@ final class CameraWorkspaceBackend {
                 if wasLegacy { try startRemoteDisplay(run, session: remoteSession(run)) }
                 else {
                     publishProperties(run, values: properties, session: session)
-                    run.emit(.phase(pending ? .waiting : .ready))
+                    run.emit(.phase(.ready))
                 }
                 run.emit(.failure(CameraProtocolError.photoLimitExceeded))
                 run.nextCardCheck = Date().addingTimeInterval(wasLegacy ? 120 : 1.5)
             }
         }
-        if let record = store.snapshot.tether, record.shutterOwner == run.id, let requested = record.shutterRequestedAt,
-           Date().timeIntervalSince(requested) > 35 { throw CameraProtocolError.captureUnknown }
+        if !run.listingLimitExceeded,
+           let record = store.snapshot.tether, record.shutterOwner == run.id, let requested = record.shutterRequestedAt,
+           Date().timeIntervalSince(requested) > shutterTimeout { throw CameraProtocolError.captureUnknown }
     }
 
     private func receivePendingTether(_ run: IOSCameraRun, assets: [CameraRemoteAsset]) throws {
@@ -625,6 +624,10 @@ final class CameraWorkspaceBackend {
     func capture(_ run: IOSCameraRun) {
         perform(run) {
             guard !run.receiving, run.mode == .tethering else { return }
+            if run.listingLimitExceeded || run.needsTetherBaseline || run.needsTetherResume {
+                run.emit(.phase(.ready))
+                return
+            }
             let store = try self.store(), session = try run.currentSession()
             guard store.snapshot.tether?.shutterRequestedAt == nil else { throw CameraProtocolError.captureUnknown }
             run.emit(.phase(.capturing))

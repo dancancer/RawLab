@@ -211,7 +211,7 @@ xcrun xcresulttool get test-results summary --path "$OUT/CameraImportFaultTolera
 python3 - "$OUT/summary.json" <<'PY'
 import json, sys
 summary = json.load(open(sys.argv[1]))
-if summary.get("passedTests", 0) < 5 or summary.get("failedTests", 1) != 0 or summary.get("skippedTests", 1) != 0:
+if summary.get("passedTests", 0) < 8 or summary.get("failedTests", 1) != 0 or summary.get("skippedTests", 1) != 0:
     raise SystemExit(f"FAIL: unexpected xcresult summary: {summary}")
 print(f"PASS: xcodebuild test-without-building passed {summary['passedTests']} XCTests on iOS Simulator")
 PY
