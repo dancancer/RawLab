@@ -55,10 +55,14 @@ internal sealed class AdjustmentResultDialog : Window
 {
     private readonly StackPanel rows=new();
     private readonly TextBlock summary=AdjustmentDialogLayout.Text("");
+    private readonly TextBlock noticeText=AdjustmentDialogLayout.Text("");
     private readonly Button apply;
     private readonly Button undo;
     private readonly Button redo;
     private readonly Func<IReadOnlyList<AdjustmentHistoryPart>> historyParts;
+    private readonly Func<IReadOnlyList<AdjustmentOutcome>,IReadOnlyList<AdjustmentTransferNotice>> resolveNotices;
+    private readonly Action? onInvalidateNotices;
+    private readonly Action? onDisposeNotices;
     private readonly HashSet<string> skipping=new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<AdjustmentOutcome> outcomes;
     private bool preview;
@@ -68,20 +72,30 @@ internal sealed class AdjustmentResultDialog : Window
     internal AdjustmentResultDialog(Window owner,string title,IReadOnlyList<AdjustmentOutcome> initial,bool preview,
         Func<IReadOnlySet<string>,IReadOnlyList<AdjustmentOutcome>> run,string? sourceSummary=null,
         Func<IReadOnlyList<AdjustmentHistoryPart>>? historyParts=null,Action<bool>? changeHistory=null,
-        AdjustmentPayload? payload=null,Func<string,string,string?>? lookName=null)
+        AdjustmentPayload? payload=null,Func<string,string,string?>? lookName=null,
+        Func<IReadOnlyList<AdjustmentOutcome>,IReadOnlyList<AdjustmentTransferNotice>>? resolveNotices=null,
+        Action? onInvalidateNotices=null,Action? onDisposeNotices=null)
     {
         this.preview=preview;outcomes=initial;this.sourceSummary=sourceSummary;this.payload=payload;this.lookName=lookName;
         this.historyParts=historyParts ?? (()=>[]);
+        this.resolveNotices=resolveNotices ?? (_=>[]);
+        this.onInvalidateNotices=onInvalidateNotices;
+        this.onDisposeNotices=onDisposeNotices;
         var root=AdjustmentDialogLayout.Configure(this,owner,title,"adjustment.results");root.Children.Add(summary);
         AutomationProperties.SetAutomationId(summary,"adjustment.results.summary");
+        AutomationProperties.SetAutomationId(noticeText,"adjustment.results.notices");
+        noticeText.Opacity=0.85;
         var scroll=new ScrollViewer{Content=rows,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};Grid.SetRow(scroll,1);root.Children.Add(scroll);
         var actions=new WrapPanel{HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,16,0,0)};
-        undo=AdjustmentDialogLayout.Button("撤销","adjustment.results.undo",()=>{changeHistory?.Invoke(true);Refresh();});actions.Children.Add(undo);
-        redo=AdjustmentDialogLayout.Button("重做","adjustment.results.redo",()=>{changeHistory?.Invoke(false);Refresh();});actions.Children.Add(redo);
+        undo=AdjustmentDialogLayout.Button("撤销","adjustment.results.undo",()=>{this.onInvalidateNotices?.Invoke();changeHistory?.Invoke(true);Refresh();});actions.Children.Add(undo);
+        redo=AdjustmentDialogLayout.Button("重做","adjustment.results.redo",()=>{this.onInvalidateNotices?.Invoke();changeHistory?.Invoke(false);Refresh();});actions.Children.Add(redo);
         var close=AdjustmentDialogLayout.Button("关闭","adjustment.results.close",()=>Close());close.IsCancel=true;actions.Children.Add(close);
         apply=AdjustmentDialogLayout.Button(preview ? "应用调整" : "重试","adjustment.results.apply",()=>{
+            this.onInvalidateNotices?.Invoke();
             outcomes=run(skipping);this.preview=false;Refresh();
-        });apply.IsDefault=true;actions.Children.Add(apply);Grid.SetRow(actions,2);root.Children.Add(actions);Refresh();
+        });apply.IsDefault=true;actions.Children.Add(apply);Grid.SetRow(actions,2);root.Children.Add(actions);
+        Closed+=(_,_)=>this.onDisposeNotices?.Invoke();
+        Refresh();
     }
     private void Refresh()
     {
@@ -101,6 +115,12 @@ internal sealed class AdjustmentResultDialog : Window
                 outcomes.Count(WasUndone),
                 outcomes.Count(o=>o.Status is AdjustmentStatus.Blocked or AdjustmentStatus.Conflict or AdjustmentStatus.Failed));
         if(sourceSummary!=null)summary.Text=sourceSummary+"\n"+summary.Text;
+        var activeOutcomes=outcomes.Where(o=>!WasUndone(o)).ToArray();
+        var notices=!preview && activeOutcomes.Length>0 ? resolveNotices(activeOutcomes) : [];
+        if(AdjustmentPasteNoticeDisplay.ShowsInDialog(notices,!preview && activeOutcomes.Length>0)) {
+            noticeText.Text=string.Join("；",notices.Select(notice=>Loc.Text(notice.PromptKey())));
+            rows.Children.Add(noticeText);
+        }
         foreach(var outcome in outcomes) {
             var row=new StackPanel{Margin=new Thickness(0,10,0,12)};rows.Children.Add(row);
             var heading=AdjustmentDialogLayout.Text(Path.GetFileName(outcome.TargetID));heading.FontWeight=FontWeights.SemiBold;heading.ToolTip=outcome.TargetID;row.Children.Add(heading);

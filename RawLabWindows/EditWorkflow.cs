@@ -52,6 +52,7 @@ public partial class MainWindow
         if (quickPreset.Phase == QuickPresetPhase.Preparing) CancelQuickPreset();
         ++editRevision;
         if (!ready || syncing || file == null) return;
+        ClearTransferNoticesOnUserEdit();
         editDirty = true;
         if (clearMigrationReceipt) pendingMigrationReceiptClear = true;
         if (RetrySave.Visibility != Visibility.Visible) {SaveState.Text = "";saveNoticeKey=null;}

@@ -115,6 +115,7 @@ public partial class MainWindow
             CurrentTransferContext().SupportsHDRCameraDevelopment);
         if(scope.ShowDialog()!=true || payload==null)return;
         try {
+            BeginTransferPrepare();
             var expected=targets.ToDictionary(photo=>photo.Path,StringComparer.OrdinalIgnoreCase);
             var operation=await PrepareAdjustmentTargets(payload,targets.Select(photo=>photo.Path),AdjustmentHistoryAction.Synchronize,source,expected);
             if(!owner.IsVisible)return;
@@ -123,15 +124,16 @@ public partial class MainWindow
                 target.Unchanged ? AdjustmentStatus.Unchanged : AdjustmentStatus.Blocked,
                 Error:target.Error,RequiresHistoryDecision:target.Error!=null)).ToArray();
             if(initial.Length==0)return;
-            var adopted=new Dictionary<string,Exception?>();var session=TransferSession;AdjustmentResultDialog? dialog=null;
+            var adopted=new Dictionary<string,Exception?>(StringComparer.OrdinalIgnoreCase);var session=TransferSession;AdjustmentResultDialog? dialog=null;
             dialog=new(owner,"同步调整",initial,true,skipping=>{
                 var results=AdoptAdjustmentOutcomes(session.Apply(operation,skipping),adopted);
                 Collection.RecordSynchronization(operation.ID,results.Any(result=>result.Status==AdjustmentStatus.Applied));
-                ShowAdjustmentTransferNotices(operation,results);
+                ShowAdjustmentTransferNotices(operation,results,AdjustmentTransferNoticeOrigin.Dialog,CurrentAdoptedSuccessfully(results));
                 return results;
             },sourceSummary:Loc.Format("来源：{0} · {1} 项调整",Path.GetFileName(source.Path),payload.Fields.Count),
                 historyParts:()=>session.Transactions.FirstOrDefault(transaction=>transaction.ID==operation.ID)?.Parts ?? [],
-                changeHistory:undo=>RunAdjustmentHistory(operation.ID,null,undo,dialog!),payload:payload,lookName:AdjustmentSummaryLookName);
+                changeHistory:undo=>RunAdjustmentHistory(operation.ID,null,undo,dialog!),payload:payload,lookName:AdjustmentSummaryLookName,
+                resolveNotices:operation.EffectiveNotices,onInvalidateNotices:InvalidateDialogTransferNotices,onDisposeNotices:DisposeDialogTransferNotices);
             dialog.ShowDialog();
         }catch(Exception error){if(owner.IsVisible)MessageBox.Show(owner,error.Message,Loc.Text("调整未应用"),MessageBoxButton.OK,MessageBoxImage.Information);}
         finally{collectionWindow?.Refresh();}

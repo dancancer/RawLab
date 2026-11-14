@@ -40,7 +40,7 @@ public partial class MainWindow
         var aiEnabled=settings.ActiveAIDenoise;
         var aiChanged=aiEnabled!=gesture.Before.Settings.ActiveAIDenoise;
         settings=gesture.Before.Settings.Restore();settings.ActiveAIDenoise=aiEnabled;lut=ResolveLook(gesture.Before);
-        editDirty=gesture.WasDirty || aiChanged;++editRevision;RefreshControls();Schedule();
+        editDirty=gesture.WasDirty || aiChanged;++editRevision;ClearTransferNoticesOnUserEdit();RefreshControls();Schedule();
         if(aiChanged && !closing)SaveEdits();
     }
     private AdjustmentOutcome CommitCurrentEdit(AdjustmentSnapshot snapshot)

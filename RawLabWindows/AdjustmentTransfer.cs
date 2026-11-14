@@ -35,7 +35,7 @@ public static class AdjustmentTransferNoticeExtensions
 public static class AdjustmentPasteNoticeDisplay
 {
     public static bool ShowsInDialog(IReadOnlyList<AdjustmentTransferNotice> notices, bool hasPasteResults) =>
-        notices != null && notices.Count > 0;
+        hasPasteResults && notices != null && notices.Count > 0;
 }
 
 public enum AdjustmentTransferNoticeOrigin { Dialog, QuickPreset }
@@ -61,20 +61,27 @@ public readonly record struct AdjustmentTransferNoticeState(
         long editRevision)
     {
         if (notices == null || notices.Count == 0) return Empty;
-        return new(notices.ToArray(), origin, AwaitsSettledRender: true, openRevision, editRevision);
+        return new(notices.ToArray(), origin, appliedCurrentPhoto, openRevision, editRevision);
     }
 
-    public AdjustmentTransferNoticeState Invalidate() => this;
-    public AdjustmentTransferNoticeState DisposeDialog() => this;
-    public AdjustmentTransferNoticeState DisposeQuickPreset() => this;
-    public AdjustmentTransferNoticeState AfterSourceChange() => this;
-    public AdjustmentTransferNoticeState AfterUserEdit() => this;
+    public AdjustmentTransferNoticeState Invalidate() => Empty;
+    public AdjustmentTransferNoticeState DisposeDialog() =>
+        Origin == AdjustmentTransferNoticeOrigin.Dialog ? Empty : this;
+    public AdjustmentTransferNoticeState DisposeQuickPreset() =>
+        Origin == AdjustmentTransferNoticeOrigin.QuickPreset ? Empty : this;
+    public AdjustmentTransferNoticeState AfterSourceChange() => Empty;
+    public AdjustmentTransferNoticeState AfterUserEdit() => Empty;
 
     public (AdjustmentTransferNoticeState NextState, IReadOnlyList<AdjustmentTransferNotice> ConsumedNotices) DeliverRender(
         long frameOpenRevision,
         long currentEditRevision,
-        bool isSettledFrame) =>
-        HasPendingRenderNotice ? (Empty, ActiveNotices) : (Empty, []);
+        bool isSettledFrame)
+    {
+        if (!HasPendingRenderNotice) return (this, []);
+        if (frameOpenRevision != OpenRevision || currentEditRevision != EditRevision) return (Empty, []);
+        if (!isSettledFrame) return (this, []);
+        return (Empty, ActiveNotices);
+    }
 }
 
 public sealed record AdjustmentTransferContext(string Identifier,bool IsRaw,
