@@ -60,6 +60,8 @@ import com.rawlab.android.editor.controls.NumericControl
 import com.rawlab.android.editor.controls.editorUsesSideDock
 import com.rawlab.android.editor.controls.editorDockLayout
 import com.rawlab.android.geometry.GeometryRatio
+import com.rawlab.android.camera.CameraOriginalsRetention
+import com.rawlab.android.camera.CameraOriginalsSummary
 import com.rawlab.android.photo.PhotoInfo
 import com.rawlab.android.photo.PhotoInfoReader
 import com.rawlab.android.photo.RetainedCopiesSummary
@@ -336,6 +338,10 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             SystemPhotoStorageSection(
                 enabled = state.operation == Operation.NONE && systemPhotoRequest == null,
                 directory = remember(context) { File(context.filesDir, "system-photos") },
+            )
+            CameraOriginalsStorageSection(
+                enabled = state.operation == Operation.NONE && systemPhotoRequest == null,
+                directory = remember(context) { File(context.filesDir, "camera-media-imports") },
             )
         } }, confirmButton = { TextButton(onClick = { settings = false }) { Text(stringResource(R.string.confirm)) } })
     val liveTarget by rememberUpdatedState(hslTarget)
@@ -800,6 +806,118 @@ private fun SystemPhotoStorageSection(enabled: Boolean, directory: File) {
                     onClick = { confirmTarget = null },
                     enabled = !clearing,
                     modifier = Modifier.testTag("settings-clear-system-photos-cancel"),
+                ) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+}
+
+// Q6：相机原件不自动删，这里是设置区里的手动清理入口（列目录 + 删除已导出原件的记录）。
+@Composable
+private fun CameraOriginalsStorageSection(enabled: Boolean, directory: File) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var summary by remember(directory) { mutableStateOf<CameraOriginalsSummary?>(null) }
+    var loading by remember(directory) { mutableStateOf(true) }
+    var clearing by remember(directory) { mutableStateOf(false) }
+    var confirmTarget by remember(directory) { mutableStateOf<CameraOriginalsSummary?>(null) }
+    var feedback by remember(directory) { mutableStateOf<StorageCleanupFeedback?>(null) }
+    LaunchedEffect(directory) {
+        loading = true
+        summary = withContext(Dispatchers.IO) { runCatching { CameraOriginalsRetention.inspect(directory) }.getOrNull() }
+        if (summary == null) feedback = StorageCleanupFeedback.Failed
+        loading = false
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        summary?.let { current ->
+            Text(
+                stringResource(
+                    R.string.storage_camera_originals_summary,
+                    current.fileCount,
+                    Formatter.formatShortFileSize(context, current.totalBytes),
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("settings-camera-originals-summary"),
+            )
+        }
+        OutlinedButton(
+            onClick = {
+                scope.launch {
+                    loading = true
+                    feedback = null
+                    val latest = withContext(Dispatchers.IO) { runCatching { CameraOriginalsRetention.inspect(directory) }.getOrNull() }
+                    summary = latest
+                    confirmTarget = latest
+                    if (latest == null) feedback = StorageCleanupFeedback.Failed
+                    loading = false
+                }
+            },
+            enabled = enabled && !loading && !clearing,
+            modifier = Modifier.testTag("settings-clear-camera-originals"),
+        ) {
+            Text(stringResource(R.string.storage_clear_camera_originals))
+        }
+        when (val currentFeedback = feedback) {
+            is StorageCleanupFeedback.Cleared -> Text(
+                stringResource(
+                    R.string.storage_clear_camera_originals_done,
+                    currentFeedback.fileCount,
+                    Formatter.formatShortFileSize(context, currentFeedback.totalBytes),
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("settings-camera-originals-feedback"),
+            )
+            StorageCleanupFeedback.Failed -> Text(
+                stringResource(R.string.storage_clear_camera_originals_failed),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag("settings-camera-originals-feedback"),
+            )
+            null -> Unit
+        }
+    }
+    confirmTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { if (!clearing) confirmTarget = null },
+            title = { Text(stringResource(R.string.storage_clear_camera_originals)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.storage_clear_camera_originals_confirm,
+                        target.fileCount,
+                        Formatter.formatShortFileSize(context, target.totalBytes),
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            clearing = true
+                            val cleared = withContext(Dispatchers.IO) { runCatching { CameraOriginalsRetention.pruneExported(directory) }.getOrNull() }
+                            val refreshed = withContext(Dispatchers.IO) { runCatching { CameraOriginalsRetention.inspect(directory) }.getOrNull() }
+                            if (refreshed != null) summary = refreshed
+                            feedback = if (cleared == null) StorageCleanupFeedback.Failed
+                                else StorageCleanupFeedback.Cleared(cleared.fileCount, cleared.totalBytes)
+                            clearing = false
+                            confirmTarget = null
+                        }
+                    },
+                    enabled = !clearing,
+                    modifier = Modifier.testTag("settings-clear-camera-originals-confirm"),
+                ) {
+                    Text(stringResource(R.string.storage_clear_confirm_action))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { confirmTarget = null },
+                    enabled = !clearing,
+                    modifier = Modifier.testTag("settings-clear-camera-originals-cancel"),
                 ) {
                     Text(stringResource(R.string.cancel))
                 }

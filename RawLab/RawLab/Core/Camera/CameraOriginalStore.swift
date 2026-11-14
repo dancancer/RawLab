@@ -297,6 +297,44 @@ final class CameraOriginalStore {
             state.jobs[index].dismissed = true
         }
     }
+    // Q6：相机原件不自动删，这里是唯一的手动清理入口。可删除任务 = 全部条目已保存落盘，
+    // 且不被任何在用状态引用：最新任务保留（历史与重复导入检测锚点）；联机记录
+    // （tether.jobIDs / shutterJobs）引用的任务保留（断点恢复证据）；每个增量导入 owner
+    // 最近一条完整任务保留（savedIncrementalKeys 去重键与 incrementalBoundaries 检查点锚点）。
+    // 原件文件仅在其余任务不再以 sourceID 引用时删除（跨任务共享的原件保留）。
+    // 最近打开的照片由 RecentPhotoStore 另存副本，清理不影响其继续打开。
+    func pruneExportedOriginals() throws -> (originals: Int, freedBytes: UInt64) {
+        try change {
+            guard let newestJob = state.jobs.max(by: { $0.createdAt < $1.createdAt })?.id else { return (0, 0) }
+            var tetherReferenced = Set(state.tether?.jobIDs ?? [])
+            tetherReferenced.formUnion(state.tether?.shutterJobs ?? [])
+            var newestOwnerComplete: [UUID: (id: UUID, at: Date)] = [:]
+            for job in state.jobs where job.complete && job.incremental != nil {
+                guard let owner = job.originalListingOwner, newestOwnerComplete[owner]?.at ?? .distantPast < job.createdAt
+                else { continue }
+                newestOwnerComplete[owner] = (job.id, job.createdAt)
+            }
+            let prunable = state.jobs.filter { job in
+                job.complete && job.id != newestJob && !tetherReferenced.contains(job.id) &&
+                    (job.originalListingOwner.map { newestOwnerComplete[$0]?.id != job.id } ?? true)
+            }
+            guard !prunable.isEmpty else { return (0, 0) }
+            let prunableIDs = Set(prunable.map(\.id))
+            let remainingSourceIDs = Set(state.jobs.filter { !prunableIDs.contains($0.id) }
+                .flatMap { $0.items.compactMap(\.sourceID) })
+            let prunedSourceIDs = Set(prunable.flatMap { $0.items.compactMap(\.sourceID) })
+            let orphans = state.originals.filter { prunedSourceIDs.contains($0.id) && !remainingSourceIDs.contains($0.id) }
+            for original in orphans {
+                let file = originalURL(original)
+                try? FileManager.default.removeItem(at: file)
+                try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
+            }
+            let orphanIDs = Set(orphans.map(\.id))
+            state.jobs.removeAll { prunableIDs.contains($0.id) }
+            state.originals.removeAll { orphanIDs.contains($0.id) }
+            return (orphans.count, orphans.reduce(UInt64(0)) { $0 + $1.size })
+        }
+    }
     private func appendJob(device: CameraDeviceIdentity, connectionKey: String, assets: [CameraAssetSnapshot],
                            listingOwner: UUID?, incremental: CameraIncrementalPlan? = nil) throws -> CameraTransferJob {
         let limit = incremental == nil ? 64 : CameraIncrementalScan.maximumAssets

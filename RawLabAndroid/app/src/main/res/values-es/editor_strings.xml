@@ -390,6 +390,11 @@
     <string name="reset_all_title">"¿Restablecer todos los ajustes?"</string>
     <string name="reset_effect">"Restablecer %1$s"</string>
     <string name="select_photo">"Elegir foto"</string>
+    <string name="storage_camera_originals_summary">"%1$d archivos · %2$s"</string>
+    <string name="storage_clear_camera_originals">"Limpiar originales exportados de la cámara"</string>
+    <string name="storage_clear_camera_originals_confirm">"Elimina los registros de importación de los originales exportados (%1$d archivos, %2$s); las fotos de la galería no se ven afectadas."</string>
+    <string name="storage_clear_camera_originals_done">"Se limpiaron %1$d archivos y se liberaron %2$s."</string>
+    <string name="storage_clear_camera_originals_failed">"No se pudieron limpiar los originales exportados de la cámara. Inténtalo de nuevo."</string>
     <string name="storage_clear_confirm_action">"Limpiar"</string>
     <string name="storage_clear_system_photo_copies">"Limpiar copias de la galería del sistema"</string>
     <string name="storage_clear_system_photo_copies_confirm">"Se eliminarán las copias de fotos guardadas en la aplicación (%1$d archivos, %2$s). Esta acción no se puede deshacer.\n\nLas fotos originales que sigan en la galería del sistema no se verán afectadas; tras eliminar las copias, la foto se volverá a copiar la próxima vez que la abras."</string>
