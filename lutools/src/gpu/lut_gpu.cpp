@@ -44,6 +44,7 @@ bool applyLutMetal(const LUT3D& lut, ImageData& image);
 bool applyLutGles(const LUT3D& lut, ImageData& image);
 #endif
 
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES)
 namespace {
 bool tryMetal(const LUT3D& lut, ImageData& image) {
 #if defined(SONY2FUJI_ENABLE_METAL)
@@ -64,7 +65,10 @@ bool tryGles(const LUT3D& lut, ImageData& image) {
     return false;
 #endif
 }
+}
+#endif
 
+namespace {
 ErrorCode applyLutCpu(const std::shared_ptr<LUT3D>& lut, ImageData& image) {
     LUTApplicator applicator(lut);
     return applicator.applyToImage(image);
@@ -85,11 +89,12 @@ ErrorCode applyLUTWithConfig(
         return ErrorCode::ProcessingError;
     }
     if (lut->requiresCPU()) {
-        if (config.mode == GpuMode::Force) return ErrorCode::ProcessingError;
+        if (config.mode == GpuMode::Force) return ErrorCode::Unsupported;
         return applyLutCpu(lut,image);
     }
 
     if (config.mode != GpuMode::Off) {
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES)
         ImageData staged = image;
         const auto low = lut->domainMin();
         const auto high = lut->domainMax();
@@ -105,6 +110,11 @@ ErrorCode applyLUTWithConfig(
         if (config.mode == GpuMode::Force) {
             return ErrorCode::ProcessingError;
         }
+#else
+        if (config.mode == GpuMode::Force) {
+            return ErrorCode::Unsupported;
+        }
+#endif
     }
 
     return applyLutCpu(lut, image);

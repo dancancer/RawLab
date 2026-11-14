@@ -19,6 +19,16 @@ enum EditorToolSelection: Hashable, Codable {
     case film, recipe, lens, geometry
 }
 
+/// 换图时编辑器工具表示状态的重置契约（Q14 表示层断言，V-UIIOS #291）：
+/// 收起的子工具与配方选择态属于上一张照片，切图后展开面板不得被旧子工具劫持。
+struct EditorToolSourceState: Equatable {
+    var collapsedEditorTool: EditorToolSelection?
+    var choosingMasterRecipe = false
+
+    /// 新源就绪后的工具状态（ContentView 的 sourceRevision onChange 以此收口）。
+    var afterSourceChange: EditorToolSourceState { EditorToolSourceState() }
+}
+
 enum EditorAdjustmentGroup: String, CaseIterable {
     case looks, light, color, effects, detail, geometry
 }

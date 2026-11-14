@@ -1,6 +1,5 @@
 package com.rawlab.android.engine
 
-import android.os.CancellationSignal
 import android.os.SystemClock
 import androidx.test.platform.app.InstrumentationRegistry
 import com.rawlab.android.format.ExportFormat
@@ -89,35 +88,36 @@ class NativePreviewCancellationTest {
                 assertEquals(NativeProcessingException.CANCELLED, staleError.status)
                 assertFalse(placeholder.exists())
 
-                // 2. Pre-cancelled CancellationSignal rejects immediately without creating output.
-                val cancelledSignalOutput = File(root, "signal-cancelled.jpg")
-                val preCancelledSignal = CancellationSignal().apply { cancel() }
-                val signalError = assertThrows(NativeProcessingException::class.java) {
-                    processor.export(source, null, EditSettings(), cancelledSignalOutput, ExportFormat.JPEG, 300,
-                        cancellationSignal = preCancelledSignal)
+                // 2. Pre-cancelled generation rejects immediately without creating output.
+                val cancelledGenerationOutput = File(root, "generation-cancelled.jpg")
+                val staleBeforeSecondExport = processor.cancellationGeneration()
+                processor.cancelPreview()
+                val generationError = assertThrows(NativeProcessingException::class.java) {
+                    processor.export(source, null, EditSettings(), cancelledGenerationOutput, ExportFormat.JPEG, 300,
+                        cancellationGeneration = staleBeforeSecondExport)
                 }
-                assertEquals(NativeProcessingException.CANCELLED, signalError.status)
-                assertFalse(cancelledSignalOutput.exists())
+                assertEquals(NativeProcessingException.CANCELLED, generationError.status)
+                assertFalse(cancelledGenerationOutput.exists())
 
-                // 3. Concurrent cancellation via CancellationSignal stops export, cleans staging, and keeps processor reusable.
+                // 3. Concurrent cancellation via generation bump stops export, cleans staging, and keeps processor reusable.
                 val inFlightOutput = File(root, "inflight.png")
-                val inFlightSignal = CancellationSignal()
+                val exportGeneration = processor.cancellationGeneration()
                 val entered = CountDownLatch(1)
                 val future = worker.submit<Int> {
                     entered.countDown()
                     processor.export(source, null, EditSettings(exposure = .5f), inFlightOutput, ExportFormat.PNG,
-                        cancellationSignal = inFlightSignal)
+                        cancellationGeneration = exportGeneration)
                 }
                 assertTrue(entered.await(5, TimeUnit.SECONDS))
                 SystemClock.sleep(10)
                 val started = SystemClock.elapsedRealtime()
-                inFlightSignal.cancel()
+                processor.cancelPreview()
                 val signalMs = SystemClock.elapsedRealtime() - started
                 val execError = assertThrows(java.util.concurrent.ExecutionException::class.java) {
                     future.get(30, TimeUnit.SECONDS)
                 }
                 assertEquals(NativeProcessingException.CANCELLED, (execError.cause as NativeProcessingException).status)
-                assertTrue("Export cancellation signal must not block on render monitor", signalMs < 100)
+                assertTrue("Export cancellation must not block on render monitor", signalMs < 100)
                 assertFalse("Cancelled export must not leave partial output", inFlightOutput.exists())
                 assertEquals("No staging files may remain", listOf(source), root.listFiles()!!.toList())
 

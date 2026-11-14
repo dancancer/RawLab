@@ -392,6 +392,11 @@
     <string name="reset_all_title">"Reset all adjustments?"</string>
     <string name="reset_effect">"Reset %1$s"</string>
     <string name="select_photo">"Choose photo"</string>
+    <string name="storage_camera_originals_summary">"%1$d files · %2$s"</string>
+    <string name="storage_clear_camera_originals">"Clear exported camera originals"</string>
+    <string name="storage_clear_camera_originals_confirm">"Removes the import records of exported originals (%1$d files, %2$s). Photos in the gallery are unaffected."</string>
+    <string name="storage_clear_camera_originals_done">"Cleared %1$d files and freed %2$s."</string>
+    <string name="storage_clear_camera_originals_failed">"Couldn’t clear exported camera originals. Please try again."</string>
     <string name="storage_clear_confirm_action">"Clear"</string>
     <string name="storage_clear_system_photo_copies">"Clear system gallery copies"</string>
     <string name="storage_clear_system_photo_copies_confirm">"This will delete the photo copies saved in the app (%1$d files, %2$s). This action cannot be undone.\n\nOriginal photos still in the system gallery are not affected; after copies are deleted, opening the photo again will make a new copy."</string>

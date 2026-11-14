@@ -392,6 +392,11 @@
     <string name="reset_all_title">"Alle Anpassungen zurücksetzen?"</string>
     <string name="reset_effect">"%1$s zurücksetzen"</string>
     <string name="select_photo">"Foto auswählen"</string>
+    <string name="storage_camera_originals_summary">"%1$d Dateien · %2$s"</string>
+    <string name="storage_clear_camera_originals">"Exportierte Kamera-Originale bereinigen"</string>
+    <string name="storage_clear_camera_originals_confirm">"Entfernt die Importdatensätze exportierter Originale (%1$d Dateien, %2$s). Fotos in der Galerie bleiben erhalten."</string>
+    <string name="storage_clear_camera_originals_done">"%1$d Dateien bereinigt, %2$s freigegeben."</string>
+    <string name="storage_clear_camera_originals_failed">"Bereinigen der exportierten Kamera-Originale fehlgeschlagen. Bitte erneut versuchen."</string>
     <string name="storage_clear_confirm_action">"Bereinigen"</string>
     <string name="storage_clear_system_photo_copies">"Kopien aus der Systemgalerie bereinigen"</string>
     <string name="storage_clear_system_photo_copies_confirm">"Dadurch werden die in der App gespeicherten Fotokopien gelöscht (%1$d Dateien, %2$s). Dieser Vorgang kann nicht rückgängig gemacht werden.\n\nOriginalfotos, die sich noch in der Systemgalerie befinden, sind nicht betroffen; nach dem Löschen der Kopien wird das Foto beim nächsten Öffnen erneut kopiert."</string>

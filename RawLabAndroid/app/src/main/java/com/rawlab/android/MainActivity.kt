@@ -262,6 +262,9 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
         }
         Box(Modifier.weight(1f)) {
         EditorScreen(state, onAlbum = { model.setEditorActive(false); albumFromCamera = false; albumPhotoFocus = emptyList(); album = true }, onFile = { openFile.launch(arrayOf("*/*")) },
+            cameraOriginalsInspect = camera::inspectOriginals,
+            cameraOriginalsPending = camera::pendingOriginalsCleanup,
+            cameraOriginalsPrune = camera::pruneOriginals,
             onRollbackProcessing = model::rollbackProcessingMigration,
             onCamera = { model.setEditorActive(false); cameraTaskRequested = false; cameraOpen = true },
             systemPhotoRequest = systemPhotoRequests.firstOrNull()?.takeUnless { collection.busy },

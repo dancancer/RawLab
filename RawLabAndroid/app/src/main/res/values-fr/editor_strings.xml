@@ -392,6 +392,11 @@
     <string name="reset_all_title">"Réinitialiser tous les réglages ?"</string>
     <string name="reset_effect">"Réinitialiser %1$s"</string>
     <string name="select_photo">"Choisir une photo"</string>
+    <string name="storage_camera_originals_summary">"%1$d fichiers · %2$s"</string>
+    <string name="storage_clear_camera_originals">"Nettoyer les originaux exportés de l’appareil photo"</string>
+    <string name="storage_clear_camera_originals_confirm">"Supprime les enregistrements d’importation des originaux exportés (%1$d fichiers, %2$s). Les photos de la galerie ne sont pas affectées."</string>
+    <string name="storage_clear_camera_originals_done">"%1$d fichiers nettoyés, %2$s libérés."</string>
+    <string name="storage_clear_camera_originals_failed">"Échec du nettoyage des originaux exportés de l’appareil photo. Réessayez."</string>
     <string name="storage_clear_confirm_action">"Nettoyer"</string>
     <string name="storage_clear_system_photo_copies">"Nettoyer les copies de la galerie système"</string>
     <string name="storage_clear_system_photo_copies_confirm">"Cela supprimera les copies de photos enregistrées dans l’application (%1$d fichiers, %2$s). Cette action est irréversible.\n\nLes photos d’origine toujours présentes dans la galerie système ne sont pas affectées ; une fois les copies supprimées, la photo sera de nouveau copiée lors de sa prochaine ouverture."</string>

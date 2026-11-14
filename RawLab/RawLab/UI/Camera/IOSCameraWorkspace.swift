@@ -11,6 +11,7 @@ struct IOSCameraWorkspace: View {
     @State private var resumeTether = false
     @State private var pendingImport: CameraTransferJob?
     @State private var newTetherConfirmation = false
+    @State private var confirmClearOriginals = false
     private var previousCamera: CameraDeviceIdentity? { model.device ?? model.manifest.tether?.camera ?? model.manifest.jobs.last?.camera }
     private var cameraName: String { previousCamera?.model == "ILCE-7CM2" ? "α7C II" : previousCamera?.model ?? L10n.text("相机") }
     let onOpenOriginal: (URL) -> Void
@@ -191,12 +192,36 @@ struct IOSCameraWorkspace: View {
                 Label(L10n.text("RawLab 内的相机原件"), systemImage: "folder")
                 Text(L10n.text("完整原件保存在 RawLab 的持久存储中，结束联机或清理编辑缓存不会删除它们。"))
                     .font(.callout).foregroundStyle(.secondary)
+                // Q6：相机原件不自动删；这里提供列目录与手动清理入口。
+                Text(L10n.format("共 %d 个相机原件，占用 %@。", model.storedOriginalsCount,
+                                 ByteCountFormatter.string(fromByteCount: Int64(model.storedOriginalsBytes), countStyle: .file)))
+                    .font(.callout).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("camera.originals.summary")
+                Button(L10n.text("清理已导出的相机原件")) { confirmClearOriginals = true }
+                    .disabled(model.busy || model.cleaningOriginals)
+                    .accessibilityIdentifier("camera.originals.clear")
+                if let cleaned = model.lastOriginalsCleanup {
+                    Text(L10n.format("已清理 %d 个文件，释放 %@。", cleaned.originals,
+                                     ByteCountFormatter.string(fromByteCount: Int64(cleaned.freedBytes), countStyle: .file)))
+                        .font(.callout).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("camera.originals.feedback")
+                } else if model.originalsCleanupFailed {
+                    Text(L10n.text("清理已导出的相机原件失败，请重试。"))
+                        .font(.callout).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("camera.originals.feedback")
+                }
             }
             Section {
                 Text(L10n.text("从导入记录打开原件进行编辑；原始照片不会被调整覆盖。")).font(.callout)
                 Button(L10n.text("导入记录")) { path.append(.history) }
             }
         }.navigationTitle(L10n.text("相机照片保存位置")).navigationBarTitleDisplayMode(.inline)
+            .confirmationDialog(L10n.text("确认清理已导出的相机原件？清理后这些原件无法在应用内打开，已导出的照片不受影响。"),
+                                isPresented: $confirmClearOriginals, titleVisibility: .visible) {
+                Button(L10n.text("清理原件"), role: .destructive) { model.pruneExportedOriginals() }
+                    .accessibilityIdentifier("camera.originals.confirm")
+                Button(L10n.text("取消"), role: .cancel) {}
+            }
     }
     private func choose(_ value: IOSCameraMode, resume: Bool) {
         connection.stop(); model.stop()

@@ -392,6 +392,11 @@
     <string name="reset_all_title">"すべての調整をリセットしますか？"</string>
     <string name="reset_effect">"%1$sをリセット"</string>
     <string name="select_photo">"写真を選択"</string>
+    <string name="storage_camera_originals_summary">"%1$d 件のファイル · %2$s"</string>
+    <string name="storage_clear_camera_originals">"書き出したカメラ原本をクリーンアップ"</string>
+    <string name="storage_clear_camera_originals_confirm">"書き出したカメラ原本の取り込み記録（%1$d 個のファイル、%2$s）を削除します。ギャラリーの写真は影響を受けません。"</string>
+    <string name="storage_clear_camera_originals_done">"%1$d 件のファイルを整理し、%2$s を解放しました。"</string>
+    <string name="storage_clear_camera_originals_failed">"書き出したカメラ原本をクリーンアップできませんでした。もう一度お試しください。"</string>
     <string name="storage_clear_confirm_action">"整理"</string>
     <string name="storage_clear_system_photo_copies">"システムギャラリーのコピーを整理"</string>
     <string name="storage_clear_system_photo_copies_confirm">"アプリ内に保存された写真のコピー（合計 %1$d 件、%2$s）を削除します。この操作は元に戻せません。\n\n元の写真がシステムギャラリーに残っている場合は影響ありません。コピーの削除後、次回その写真を開くと再度コピーされます。"</string>

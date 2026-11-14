@@ -380,7 +380,10 @@
                 </DockPanel>
                 <Button x:Name="LookImport" Content="{DynamicResource '导入外观'}" Click="ImportClicked" HorizontalAlignment="Left" Style="{StaticResource ToolButton}" AutomationProperties.AutomationId="looks.import"/>
               </StackPanel>
-              <UniformGrid x:Name="FilmStrip" Grid.Row="1" Columns="3" VerticalAlignment="Top"/>
+              <StackPanel Grid.Row="1">
+                <UniformGrid x:Name="FilmStrip" Columns="3" VerticalAlignment="Top"/>
+                <StackPanel x:Name="UnreadableLooksPanel" Visibility="Collapsed" Margin="0,10,0,0" AutomationProperties.AutomationId="looks.unreadable"/>
+              </StackPanel>
               <StackPanel x:Name="LookEmpty" Grid.Row="1" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" AutomationProperties.AutomationId="looks.empty">
                 <TextBlock Text="{DynamicResource '没有匹配的外观'}" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" TextAlignment="Center"/>
                 <Button x:Name="LookEmptyAction" Click="ClearLookSearch" Margin="0,6"/>

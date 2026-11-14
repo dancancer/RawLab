@@ -14,5 +14,6 @@
     <Compile Include="../../DcpCompiler.cs" Link="DcpCompiler.cs" />
     <Compile Include="../../LookLibrary.cs" Link="LookLibrary.cs" />
     <Compile Include="../../LUTCompatibility.cs" Link="LUTCompatibility.cs" />
+    <Compile Include="../editing/LookLibraryToleranceChecks.cs" Link="LookLibraryToleranceChecks.cs" />
   </ItemGroup>
 </Project>

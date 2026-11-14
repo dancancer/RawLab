@@ -176,6 +176,7 @@
 "全部日期" = "Todas las fechas";
 "全部调整" = "Todos los ajustes";
 "八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。" = "El tono, la saturación y la luminosidad de los ocho colores volverán a 0. Los demás ajustes no cambiarán.";
+"共 %d 个相机原件，占用 %@。" = "%d originales de la cámara ocupan %@";
 "关闭" = "Cerrar";
 "关闭对比" = "Desactivar comparación";
 "其他" = "Otros";
@@ -363,6 +364,7 @@
 "已显影的照片（JPEG 等）" = "Foto revelada (JPEG, etc.)";
 "已校正%@" = "Corregido: %@";
 "已根据文件中的颜色线索预填部分配置，请核对。" = "Se han rellenado algunos ajustes con la información de color del archivo. Revísalos.";
+"已清理 %d 个文件，释放 %@。" = "Se limpiaron %d archivos y se liberaron %@.";
 "已生成 %@ 个渲染型 DNG" = "Archivos DNG revelados creados: %@";
 "已生成 %@ 个渲染型 DNG，未另存到所选位置" = "Archivos DNG revelados creados: %@ (no se guardaron en la ubicación elegida)";
 "已生成渲染型 DNG，未另存到所选位置。" = "Se creó el DNG revelado, pero no se guardó en la ubicación elegida.";
@@ -686,6 +688,9 @@
 "添加控制点" = "Añadir punto";
 "添加照片" = "Añadir fotos";
 "清晰度" = "Claridad";
+"清理原件" = "Limpiar originales";
+"清理已导出的相机原件" = "Limpiar originales exportados de la cámara";
+"清理已导出的相机原件失败，请重试。" = "No se pudieron limpiar los originales exportados de la cámara. Inténtalo de nuevo.";
 "清空选择" = "Borrar selección";
 "清除搜索" = "Borrar búsqueda";
 "清除相机配置" = "Quitar perfil de cámara";
@@ -745,6 +750,7 @@
 "确定" = "Aceptar";
 "确认兼容导入" = "Importar con estos ajustes";
 "确认并冻结任务" = "Confirmar y fijar tarea";
+"确认清理已导出的相机原件？清理后这些原件无法在应用内打开，已导出的照片不受影响。" = "¿Limpiar los originales exportados de la cámara? Después, estos originales ya no podrán abrirse en la app; las fotos exportadas no se ven afectadas.";
 "移除" = "Quitar";
 "移除 %@" = "Eliminar %@";
 "移除“%@”？" = "¿Eliminar \"%@\"?";

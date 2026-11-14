@@ -53,6 +53,10 @@
 - **最小可行路线**：P0 + P1 + P2 的 S1/版本表，约 2.5 轮。
 - **理想路线**：P0–P4，约 4.5–5 轮。
 - **止损点**：P1 结束若 Android/Windows 接入仍未绿 → 停止扩规格只保留向量；代码生成永不主动启动；渲染对拍若 CI 跑不了 WARP/GLES → 只留发布门禁。
+- **P1 语义地基复核状态（2026-11-14，`bcdc7c64`）**：
+  - **P1-① 传输场景接入**（#283 / #285 / #312 @ `916ecadd`）：**✅ 复核通过**——四端消费 `adjustment-transfer-scenarios-v1.json`，Android/Windows 例外棘轮归零且 HDR 配方强度换算（A17）已补齐；但 #301 新增的 Q3 降噪向量未覆盖栅格/非 Bayer/AI 目标（见 D-02）与小数精度（见 D-05）。
+  - **P1-② 字段表 + 四端 parity**（#286 @ `9230b1e8`）：**复核：部分成立**——Layer 1（83 字段闭环、别名、棘轮 71 条）成立；但 `scripts/ci/test_adjustment_fields_spec.py` 的 Layer 2/3 有 20+ 处调用 `_snap4(...)` 未接返回值、多组字段直接拿单端常量（如 Windows `PhotoEffectsSettings.cs`、Android `EditSettings.kt`）冒充四端或写死 `-100..100`、以及 `_ANCHORS` 指错函数（如 `:317` 小波色度指向 `RawDenoiseSettings`），本轮改坏 `Shared/Models/RawSettings.swift:57`（`vignetteMidpointRange`）与 `AdjustmentKind.swift:109`（`highlights` 步长）后仍假绿通过。
+  - **P1-③ 重置场景向量**（#307 @ `3afff0b8`）：**复核：部分成立**——四端已接入真实生产重置入口并进入模型门禁；但 `@spec_default` 按各端本地默认值展开，掩盖了真实跨端 wire 载荷分歧（例如 `all-reset-raw` 在 Mac 输出 `chroma_mode=null, wavelet=null`、其余三端输出 `0` 与对象，夹具却记 `divergences: []`），且仅 9 个场景、未覆盖 Q5 `.hdrRendition` 分组及非字段表状态（胶片颗粒开关、曲线点、局部蒙版等）。
 
 ### 双轨期间的插队准入（四条同时满足）
 

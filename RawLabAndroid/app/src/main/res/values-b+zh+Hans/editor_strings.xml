@@ -392,6 +392,11 @@
     <string name="reset_all_title">"重置所有调整？"</string>
     <string name="reset_effect">"重置%1$s"</string>
     <string name="select_photo">"选择照片"</string>
+    <string name="storage_camera_originals_summary">"共 %1$d 个文件 · %2$s"</string>
+    <string name="storage_clear_camera_originals">"清理已导出的相机原件"</string>
+    <string name="storage_clear_camera_originals_confirm">"将移除已导出原件的导入记录（共 %1$d 个文件，占用 %2$s），相册中的照片不受影响。"</string>
+    <string name="storage_clear_camera_originals_done">"已清理 %1$d 个文件，释放 %2$s。"</string>
+    <string name="storage_clear_camera_originals_failed">"清理已导出的相机原件失败，请重试。"</string>
     <string name="storage_clear_confirm_action">"清理"</string>
     <string name="storage_clear_system_photo_copies">"清理系统相册副本"</string>
     <string name="storage_clear_system_photo_copies_confirm">"将删除应用内保存的照片副本（共 %1$d 个文件，占用 %2$s），此操作不可撤销。\n\n原照片仍在系统相册时不受影响；副本删除后，下次打开该照片会重新复制。"</string>

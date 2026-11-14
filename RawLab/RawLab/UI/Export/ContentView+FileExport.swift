@@ -12,6 +12,9 @@ struct FileExportRequest: Identifiable {
     let successMessage: String?
     let cancelMessage: String?
     var recordsPhotoExport = true
+    // Q6（B1）：另存成功后要登记的导出证据（源照片内容标识，如相机原件 digest）；
+    // 空数组表示该导出与相机原件账本无关（如错误日志）。
+    var evidenceIdentifiers: [String] = []
 }
 
 extension ContentView {

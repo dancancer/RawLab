@@ -321,7 +321,6 @@ public partial class MainWindow
     {
         FilmStrip.Children.Clear(); filmButtons.Clear(); importLookButton=LookImport;
         var visible=VisibleBrowserFilms();
-        LookEmpty.Visibility=visible.Count==0 ? Visibility.Visible : Visibility.Collapsed;
         LookEmptyAction.Content=Loc.Text(string.IsNullOrWhiteSpace(lookQuery) ? "全部外观" : "清除搜索");
         LookSearchClear.Visibility=string.IsNullOrWhiteSpace(lookQuery) ? Visibility.Collapsed : Visibility.Visible;
         var ordered = lookCategory == LookBrowserCategory.Recent ? visible :
@@ -363,7 +362,54 @@ public partial class MainWindow
             };
             FilmStrip.Children.Add(button); filmButtons[film.Path ?? ""]=button;
         }
+        BuildUnreadableLooks();
+        LookEmpty.Visibility=visible.Count==0 && UnreadableLooksPanel.Visibility!=Visibility.Visible ? Visibility.Visible : Visibility.Collapsed;
+    }
 
+    private void BuildUnreadableLooks()
+    {
+        UnreadableLooksPanel.Children.Clear();
+        var unreadable=lookLibrary?.ListUnreadable() ?? Array.Empty<UnreadableLook>();
+        var show=unreadable.Count>0 && (lookCategory is LookBrowserCategory.All or LookBrowserCategory.Custom) && string.IsNullOrWhiteSpace(lookQuery);
+        UnreadableLooksPanel.Visibility=show ? Visibility.Visible : Visibility.Collapsed;
+        if(!show) return;
+        var index=0;
+        var rowIds=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach(var bad in unreadable)
+        {
+            index++;
+            var rowId=bad.Id is { Length: > 0 } badId && Guid.TryParseExact(badId,"D",out _) && rowIds.Add(badId) ? badId : "unreadable."+index;
+            var displayName=!string.IsNullOrWhiteSpace(bad.Name) ? Loc.Format("{0}（损坏）",bad.Name) : Loc.Text("损坏的预设");
+            var row=new Border{Padding=new Thickness(0,6,0,6),Opacity=0.75};
+            AutomationProperties.SetAutomationId(row,"looks.unreadable.row."+rowId);
+            var dock=new DockPanel();
+            var delete=new Button{
+                Content=Loc.Text("删除"),
+                Style=(Style)FindResource("ToolButton"),
+                VerticalAlignment=VerticalAlignment.Center,
+                Margin=new Thickness(8,0,0,0),
+                IsEnabled=!exporting && !transform.Active
+            };
+            AutomationProperties.SetAutomationId(delete,"looks.unreadable.delete."+rowId);
+            AutomationProperties.SetName(delete,Loc.Text("删除"));
+            delete.Click+=(_,_)=>RemoveUnreadableLook(bad);
+            DockPanel.SetDock(delete,Dock.Right);
+            dock.Children.Add(delete);
+            var labels=new StackPanel{VerticalAlignment=VerticalAlignment.Center};
+            var title=new TextBlock{Text=displayName,FontWeight=FontWeights.SemiBold,TextWrapping=TextWrapping.Wrap};
+            title.SetResourceReference(TextBlock.ForegroundProperty,"Muted");
+            labels.Children.Add(title);
+            var warning=new TextBlock{Text=Loc.Text("本地记录损坏。"),TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,2,0,0)};
+            warning.SetResourceReference(TextBlock.ForegroundProperty,"Muted");
+            warning.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");
+            labels.Children.Add(warning);
+            dock.Children.Add(labels);
+            var stack=new StackPanel();
+            stack.Children.Add(new Separator{Margin=new Thickness(0,0,0,6)});
+            stack.Children.Add(dock);
+            row.Child=stack;
+            UnreadableLooksPanel.Children.Add(row);
+        }
     }
     private void RefreshControls()
     {
@@ -467,6 +513,7 @@ public partial class MainWindow
             FilmCategory.IsEnabled=!hdrEditing && !exporting;
             FilmCategoryRing.Selected=choosingFilm;FilmCategoryRing.InvalidateVisual();
             if(importLookButton!=null)importLookButton.IsEnabled=!exporting;
+            UnreadableLooksPanel.IsEnabled=!exporting && !transform.Active;
             if(presetLibraryButton!=null)presetLibraryButton.IsEnabled=!exporting && !transferPreparing;
             foreach(var (tool,controls) in effectToolButtons)
             {
