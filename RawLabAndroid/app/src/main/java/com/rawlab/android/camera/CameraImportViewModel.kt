@@ -131,12 +131,14 @@ internal fun SonyMobileSession.Asset.photo() = CameraPhoto(key(), name, size, cr
 internal class CameraImportViewModel(application: Application) : AndroidViewModel(application), SonyCameraConnection.Listener {
     private val mutable = MutableStateFlow(CameraImportState(preparing = true))
     val state = mutable.asStateFlow()
-    private val store = CameraImportStore(File(application.filesDir, "camera-media-imports"),
+    private val importsDirectory = File(application.filesDir, "camera-media-imports")
+    private val tetherRunsDirectory = File(application.filesDir, "camera-tether-runs")
+    private val store = CameraImportStore(importsDirectory,
         File(application.cacheDir, "camera-media-partials"), MediaPhotoLibrary(application), CameraCaptureDateReader::read)
     private val connection = SonyCameraConnection(application, this)
     private val sessionLock = Mutex()
     private val storeLock = Mutex()
-    private val tetherJournal = CameraTetherJournal(File(application.filesDir, "camera-tether-runs"))
+    private val tetherJournal = CameraTetherJournal(tetherRunsDirectory)
     val tether = CameraTetherController(viewModelScope, store, tetherJournal, storeLock, ::updateJob)
     @Volatile private var session: CameraMediaSession? = null
     private var device: SonyMobileSession.Device? = null
@@ -662,6 +664,33 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
             mutable.update { it.copy(preparing = false) }
             if (current == generation && foreground) result.onSuccess(onReady)
                 .onFailure { mutable.update { it.copy(message = R.string.camera_source_missing) } }
+        }
+    }
+    // Q6 相机原件手动清理：与传输/恢复共用 storeLock；清理后重新加载 jobs 刷新 state，
+    // 否则相机页继续显示已删除的任务（内存与磁盘失同步）。
+    suspend fun inspectOriginals(): CameraOriginalsSummary? = withContext(Dispatchers.IO) {
+        storeLock.withLock { runCatching { CameraOriginalsRetention.inspect(importsDirectory) }.getOrNull() }
+    }
+
+    suspend fun pendingOriginalsCleanup(): CameraOriginalsSummary? = withContext(Dispatchers.IO) {
+        storeLock.withLock {
+            runCatching { CameraOriginalsRetention.pendingExported(importsDirectory, tetherRunsDirectory) }.getOrNull()
+        }
+    }
+
+    suspend fun pruneOriginals(): CameraOriginalsSummary? = withContext(Dispatchers.IO) {
+        storeLock.withLock {
+            runCatching {
+                val freed = CameraOriginalsRetention.pruneExported(importsDirectory, tetherRunsDirectory)
+                val jobs = store.load()
+                tether.refreshJobs(jobs)
+                mutable.update { current ->
+                    val pending = jobs.firstOrNull { it.status != CameraJobStatus.COMPLETE }
+                    val job = jobs.firstOrNull { it.id == current.job?.id } ?: pending ?: jobs.firstOrNull()
+                    current.copy(jobs = jobs, job = job, unreadableLogs = store.unreadableJobIds.sorted())
+                }
+                freed
+            }.getOrNull()
         }
     }
     override fun onCleared() {

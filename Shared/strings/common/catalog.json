@@ -8718,5 +8718,29 @@
     "es": "La versión de procesamiento difiere de la fuente; se conserva la versión de procesamiento de la foto actual",
     "ja": "処理バージョンがソースと異なるため、現在の写真の処理バージョンを維持しました",
     "zh-Hans": "处理版本与来源不同，已沿用当前照片的处理版本"
+  },
+  "清理已导出的相机原件": {
+    "de": "Exportierte Kamera-Originale bereinigen",
+    "en": "Clear exported camera originals",
+    "es": "Limpiar originales exportados de la cámara",
+    "fr": "Nettoyer les originaux exportés de l’appareil photo",
+    "ja": "書き出したカメラ原本をクリーンアップ",
+    "zh-Hans": "清理已导出的相机原件"
+  },
+  "清理已导出的相机原件失败，请重试。": {
+    "de": "Bereinigen der exportierten Kamera-Originale fehlgeschlagen. Bitte erneut versuchen.",
+    "en": "Couldn’t clear exported camera originals. Please try again.",
+    "es": "No se pudieron limpiar los originales exportados de la cámara. Inténtalo de nuevo.",
+    "fr": "Échec du nettoyage des originaux exportés de l’appareil photo. Réessayez.",
+    "ja": "書き出したカメラ原本をクリーンアップできませんでした。もう一度お試しください。",
+    "zh-Hans": "清理已导出的相机原件失败，请重试。"
+  },
+  "已清理 {0} 个文件，释放 {1}。": {
+    "zh-Hans": "已清理 {0} 个文件，释放 {1}。",
+    "en": "Cleared {0} files and freed {1}.",
+    "de": "{0} Dateien bereinigt, {1} freigegeben.",
+    "fr": "{0} fichiers nettoyés, {1} libérés.",
+    "es": "Se limpiaron {0} archivos y se liberaron {1}.",
+    "ja": "{0} 件のファイルを整理し、{1} を解放しました。"
   }
 }

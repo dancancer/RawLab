@@ -297,6 +297,77 @@ final class CameraOriginalStore {
             state.jobs[index].dismissed = true
         }
     }
+    // Q6：相机原件不自动删，这里是唯一的手动清理入口。「已导出」以真实外部出口在场为准：
+    // exportedContentIdentifiers 传入 ExportEvidenceStore 账本内容（保存图库 / Files 另存 /
+    // 渲染 DNG / 批量导出成功后登记的源内容标识；「在编辑器打开过」不算证据——RecentPhotoStore
+    // 是有界 LRU，副本随时可能被淘汰或移除）。没有登记证据的完整任务宁漏删不误删。
+    // 其余保护（全部与运行时读取方逐行同构）：最新任务保留；联机记录（tether.jobIDs /
+    // shutterJobs）引用的任务保留；每个匹配分组内保留——①每台相机每个增量格式首次供给
+    // 检查点的任务（incrementalBoundaries 逆序扫描）、②分组内最近的增量任务（读取方
+    // savedIncrementalKeys 在当前活跃会话仍会查询它，空 boundaries 也不例外）。
+    // 原件文件仅在其余任务不再以 sourceID 引用时删除（跨任务共享的原件保留）；
+    // 最近打开的照片由 RecentPhotoStore 另存副本，清理不影响其继续打开。
+    func pruneExportedOriginals(exportedContentIdentifiers: Set<String> = []) throws
+        -> (originals: Int, freedBytes: UInt64) {
+        try change {
+            guard let newestJob = state.jobs.max(by: { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) })?.id
+            else { return (0, 0) }
+            var tetherReferenced = Set(state.tether?.jobIDs ?? [])
+            tetherReferenced.formUnion(state.tether?.shutterJobs ?? [])
+            // 与 incrementalBoundaries 同构的逆序扫描。分组键复刻 matches(camera:connectionKey:)：
+            // 有效序列号时跨连接匹配（stableKey），无有效序列号时按 connectionKey 隔离。
+            var anchorIDs = Set<UUID>()
+            var coveredKinds: [String: Set<String>] = [:]
+            var seenBuckets = Set<String>()
+            for job in state.jobs.reversed() where job.complete {
+                guard let plan = job.incremental else { continue }
+                let serial = job.camera.serial.trimmingCharacters(in: .whitespacesAndNewlines)
+                let verifiedSerial = !serial.isEmpty && serial.contains { $0 != "0" }
+                let bucket = job.camera.stableKey + (verifiedSerial ? "" : "|" + job.connectionKey)
+                let kinds: Set<String>
+                if let boundaries = plan.boundaries {
+                    kinds = Set(boundaries.keys)
+                } else if plan.boundary != nil {
+                    // 旧版读取方 CameraImportBoundary.latest 对无 captureDate 的条目返回 nil 并继续向
+                    // 旧任务回溯；清理方不得提前遮蔽，只把带拍摄日期的已保存条目算作供给格式。
+                    kinds = Set(job.items.filter { $0.phase == .saved && $0.sourceID != nil && $0.asset.captureDate != nil }
+                        .map(\.asset.kind))
+                } else { kinds = [] }
+                var covered = coveredKinds[bucket] ?? []
+                if !seenBuckets.contains(bucket) || !kinds.isSubset(of: covered) { anchorIDs.insert(job.id) }
+                seenBuckets.insert(bucket)
+                covered.formUnion(kinds)
+                coveredKinds[bucket] = covered
+            }
+            let digestByID = Dictionary(state.originals.map { ($0.id, $0.digest) }, uniquingKeysWith: { first, _ in first })
+            func fullyExported(_ job: CameraTransferJob) -> Bool {
+                job.items.allSatisfy { item in
+                    guard let source = item.sourceID else { return true }
+                    guard let digest = digestByID[source] else { return false }  // 原件条目缺失：拿不准→不删
+                    return exportedContentIdentifiers.contains(digest)
+                }
+            }
+            let prunable = state.jobs.filter { job in
+                job.complete && job.id != newestJob && !tetherReferenced.contains(job.id) &&
+                    !anchorIDs.contains(job.id) && fullyExported(job)
+            }
+            guard !prunable.isEmpty else { return (0, 0) }
+            let prunableIDs = Set(prunable.map(\.id))
+            let remainingSourceIDs = Set(state.jobs.filter { !prunableIDs.contains($0.id) }
+                .flatMap { $0.items.compactMap(\.sourceID) })
+            let prunedSourceIDs = Set(prunable.flatMap { $0.items.compactMap(\.sourceID) })
+            let orphans = state.originals.filter { prunedSourceIDs.contains($0.id) && !remainingSourceIDs.contains($0.id) }
+            for original in orphans {
+                let file = originalURL(original)
+                try? FileManager.default.removeItem(at: file)
+                try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
+            }
+            let orphanIDs = Set(orphans.map(\.id))
+            state.jobs.removeAll { prunableIDs.contains($0.id) }
+            state.originals.removeAll { orphanIDs.contains($0.id) }
+            return (orphans.count, orphans.reduce(UInt64(0)) { $0 + $1.size })
+        }
+    }
     private func appendJob(device: CameraDeviceIdentity, connectionKey: String, assets: [CameraAssetSnapshot],
                            listingOwner: UUID?, incremental: CameraIncrementalPlan? = nil) throws -> CameraTransferJob {
         let limit = incremental == nil ? 64 : CameraIncrementalScan.maximumAssets

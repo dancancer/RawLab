@@ -4295,6 +4295,36 @@
     "处理版本与来源不同，已沿用当前照片的处理版本": {
       "formats": [],
       "source": "处理版本与来源不同，已沿用当前照片的处理版本"
+    },
+    "清理已导出的相机原件": {
+      "formats": [],
+      "source": "清理已导出的相机原件"
+    },
+    "清理已导出的相机原件失败，请重试。": {
+      "formats": [],
+      "source": "清理已导出的相机原件失败，请重试。"
+    },
+    "已清理 %d 个文件，释放 %@。": {
+      "formats": [
+        "%d",
+        "%@"
+      ],
+      "source": "已清理 {0} 个文件，释放 {1}。"
+    },
+    "共 %d 个相机原件，占用 %@。": {
+      "formats": [
+        "%d",
+        "%@"
+      ],
+      "source": "共 {0} 个相机原件，占用 {1}。"
+    },
+    "确认清理已导出的相机原件？清理后这些原件无法在应用内打开，已导出的照片不受影响。": {
+      "formats": [],
+      "source": "确认清理已导出的相机原件？清理后这些原件无法在应用内打开，已导出的照片不受影响。"
+    },
+    "清理原件": {
+      "formats": [],
+      "source": "清理原件"
     }
   },
   "overrides": {
@@ -5510,6 +5540,30 @@
       "fr": "Impossible de restaurer le brouillon de modification ; les réglages appliqués ont été conservés.",
       "ja": "編集の下書きを復元できません。適用済みの調整は保持されています。",
       "zh-Hans": "无法恢复编辑草稿，已保留已应用的调整。"
+    },
+    "共 {0} 个相机原件，占用 {1}。": {
+      "de": "{0} Kamera-Originale belegen {1}",
+      "en": "{0} camera originals using {1}",
+      "es": "{0} originales de la cámara ocupan {1}",
+      "fr": "{0} originaux de l’appareil photo occupant {1}",
+      "ja": "カメラ原本 {0} 件、容量 {1}",
+      "zh-Hans": "共 {0} 个相机原件，占用 {1}。"
+    },
+    "确认清理已导出的相机原件？清理后这些原件无法在应用内打开，已导出的照片不受影响。": {
+      "de": "Exportierte Kamera-Originale bereinigen? Danach lassen sich diese Originale nicht mehr in der App öffnen. Exportierte Fotos bleiben erhalten.",
+      "en": "Clear exported camera originals? Afterwards these originals can no longer be opened in the app; exported photos are unaffected.",
+      "es": "¿Limpiar los originales exportados de la cámara? Después, estos originales ya no podrán abrirse en la app; las fotos exportadas no se ven afectadas.",
+      "fr": "Nettoyer les originaux exportés de l’appareil photo ? Après le nettoyage, ces originaux ne pourront plus être ouverts dans l’app ; les photos exportées ne sont pas affectées.",
+      "ja": "書き出したカメラ原本をクリーンアップしますか？クリーンアップ後、これらの原本はアプリ内で開けなくなります。書き出した写真には影響しません。",
+      "zh-Hans": "确认清理已导出的相机原件？清理后这些原件无法在应用内打开，已导出的照片不受影响。"
+    },
+    "清理原件": {
+      "de": "Originale bereinigen",
+      "en": "Clear originals",
+      "es": "Limpiar originales",
+      "fr": "Nettoyer les originaux",
+      "ja": "原本をクリーンアップ",
+      "zh-Hans": "清理原件"
     }
   }
 }

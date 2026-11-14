@@ -31,7 +31,7 @@ case "${1:-}" in
     ios)
         pre_checks=()
         suites=(Shared/tests/edited-photo-preview-cache.sh Shared/tests/hdr-settings.sh Shared/tests/hdr-transfer.sh Shared/tests/hdr-native-request.sh Shared/tests/hdr-display.sh RawLab/tests/hdr-model.sh RawLab/tests/hdr-resource-notice.sh
-            RawLab/tests/camera-protocol.sh RawLab/tests/camera-originals.sh RawLab/tests/editor-tool-drafts.sh
+            RawLab/tests/camera-protocol.sh RawLab/tests/camera-originals.sh RawLab/tests/retention.sh RawLab/tests/editor-tool-drafts.sh
             RawLab/tests/ios-reset-entry-ui.sh
             RawLab/tests/recent-photos.sh RawLab/tests/presentation.sh RawLab/tests/adjustment-scale.sh RawLab/tests/edit-memory.sh
             RawLab/tests/adjustment-transfer.sh RawLab/tests/reset-scenarios.sh RawLab/tests/adjustment-persistence.sh

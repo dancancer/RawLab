@@ -278,6 +278,38 @@ struct IOSCameraImportPreferences: Codable {
             }
         }
     }
+    // Q6：相机保存位置页的手动清理入口，回传被清理的原件数与释放字节。
+    @Published private(set) var cleaningOriginals = false
+    @Published private(set) var lastOriginalsCleanup: (originals: Int, freedBytes: UInt64)?
+    @Published private(set) var originalsCleanupFailed = false
+    var storedOriginalsCount: Int { manifest.originals.count }
+    var storedOriginalsBytes: UInt64 { manifest.originals.reduce(0) { $0 + $1.size } }
+    // 证据采集（ExportEvidenceStore 持久账本读取）由 App 启动时注入 provider，在 backend 队列
+    // 上执行；「已导出」= 保存图库 / Files 另存 / 渲染 DNG / 批量导出成功后登记的内容标识
+    // （打开过编辑器不算——RecentPhotoStore 是会被淘汰的 LRU）。模型测试不注入 = 无证据。
+    static var exportedContentIdentifiersProvider: () -> Set<String> = { [] }
+    func pruneExportedOriginals() {
+        guard !cleaningOriginals else { return }
+        let owner = callbackOwner
+        cleaningOriginals = true
+        lastOriginalsCleanup = nil
+        originalsCleanupFailed = false
+        backend.pruneExportedOriginals(exportedContentIdentifiers: Self.exportedContentIdentifiersProvider) { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+                guard self.callbackOwner == owner else { self.reloadHistory(); return }
+                self.cleaningOriginals = false
+                switch result {
+                case .success(let pruned):
+                    self.manifest = pruned.manifest
+                    self.lastOriginalsCleanup = (pruned.originals, pruned.freedBytes)
+                case .failure:
+                    self.originalsCleanupFailed = true
+                    self.notice = L10n.text("清理已导出的相机原件失败，请重试。")
+                }
+            }
+        }
+    }
     private var importPreferencesKey: String? {
         guard let device, let endpoint else { return nil }
         let cameraKey = device.serial.isEmpty ? device.stableKey + "|" + endpoint.connectionKey : device.stableKey

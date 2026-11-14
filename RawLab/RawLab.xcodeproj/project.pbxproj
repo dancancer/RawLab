@@ -13,6 +13,7 @@
 		48A79A4AFAD8F440EB66F59D /* RecentPhotosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC5C34A8A7921C28815B456C /* RecentPhotosView.swift */; };
 		A507CACF596001C4E19E65F9 /* IOSPhotoPreviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD3505B3ADF23CAE93A7CB1B /* IOSPhotoPreviews.swift */; };
 		38C0B29D936E3C4F3692FF74 /* RecentPhotoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F05A8C0CCFD988FA348FFD20 /* RecentPhotoStore.swift */; };
+		EE71000200000000000000E2 /* ExportEvidenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE71000100000000000000E1 /* ExportEvidenceStore.swift */; };
 		F55BD7137E2B31FD55BA8602 /* EditedPhotoPreviewCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A3F3ADB7B6DBFA56BA48282 /* EditedPhotoPreviewCache.swift */; };
         70225C4235E6456CAD81B158 /* LookBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25DC94959DC146C68231286E; };
         B020A0000000000000000001 /* IOSQuickPresetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B020A0000000000000000002 /* IOSQuickPresetView.swift */; };
@@ -250,6 +251,7 @@
 		DCB09DB35FA91EB64D2731A3 /* RawEditorViewModel+ProcessingMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CA9FA3A0CD1617F35B39A4E; };
 		C36B2ADB84D11D5FD0554281 /* CameraNetwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD5145FB279D152EA89CD80D /* CameraNetwork.swift */; };
 		9A367BE919FBC80E921A8A14 /* CameraOriginalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53627A6503E7BB06434FD338 /* CameraOriginalStore.swift */; };
+		D00100000000000000000033 /* RetentionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000032 /* RetentionPolicy.swift */; };
 		FC3E1C413D8FDDFD08580028 /* CameraPTPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6014BEE4F866B5BA78F1E06E /* CameraPTPClient.swift */; };
 		B44A9E6604A3A18F80319647 /* CameraProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A50FBFBD3F02F6FD4228523 /* CameraProtocol.swift */; };
 		6208FA71281BCB63523F125B /* CameraWorkspaceBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 136F78F134845242CCB6AFB6 /* CameraWorkspaceBackend.swift */; };
@@ -271,6 +273,7 @@
 		BC5C34A8A7921C28815B456C /* RecentPhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Library/RecentPhotosView.swift"; sourceTree = SOURCE_ROOT; };
 		DD3505B3ADF23CAE93A7CB1B /* IOSPhotoPreviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Persistence/IOSPhotoPreviews.swift"; sourceTree = SOURCE_ROOT; };
 		F05A8C0CCFD988FA348FFD20 /* RecentPhotoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Persistence/RecentPhotoStore.swift"; sourceTree = SOURCE_ROOT; };
+		EE71000100000000000000E1 /* ExportEvidenceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Persistence/ExportEvidenceStore.swift"; sourceTree = SOURCE_ROOT; };
 		7A3F3ADB7B6DBFA56BA48282 /* EditedPhotoPreviewCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/EditedPhotoPreviewCache.swift"; sourceTree = SOURCE_ROOT; };
         25DC94959DC146C68231286E /* LookBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/LookBrowser.swift"; sourceTree = SOURCE_ROOT; };
         B020A0000000000000000002 /* IOSQuickPresetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Editor/IOSQuickPresetView.swift"; sourceTree = "<group>"; };
@@ -651,6 +654,7 @@
 		8CA9FA3A0CD1617F35B39A4E /* RawEditorViewModel+ProcessingMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "RawEditorViewModel+ProcessingMigration.swift"; path = "RawLab/Core/ViewModel/RawEditorViewModel+ProcessingMigration.swift"; sourceTree = SOURCE_ROOT; };
 		AD5145FB279D152EA89CD80D /* CameraNetwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraNetwork.swift"; sourceTree = "<group>"; };
 		53627A6503E7BB06434FD338 /* CameraOriginalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraOriginalStore.swift"; sourceTree = "<group>"; };
+		D00100000000000000000032 /* RetentionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RetentionPolicy.swift"; sourceTree = "<group>"; };
 		6014BEE4F866B5BA78F1E06E /* CameraPTPClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraPTPClient.swift"; sourceTree = "<group>"; };
 		0A50FBFBD3F02F6FD4228523 /* CameraProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraProtocol.swift"; sourceTree = "<group>"; };
 		136F78F134845242CCB6AFB6 /* CameraWorkspaceBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraWorkspaceBackend.swift"; sourceTree = "<group>"; };
@@ -699,6 +703,7 @@
 				967181A1C76B4194B0C0185F /* Models */,
 				D00100000000000000000021 /* Persistence */,
 				D00100000000000000000022 /* Batch */,
+				D00100000000000000000031 /* Storage */,
 				AB390000000000000000000B /* Usage */,
 				8F3A1B2C3D4E5F6789012347 /* RawProcessing */,
 				234ED6798A8A4780851F1B79 /* ViewModel */,
@@ -715,6 +720,14 @@
 				AB390000000000000000000A /* SerialUsageTransport.swift */,
 			);
 			path = Usage;
+			sourceTree = "<group>";
+		};
+		D00100000000000000000031 /* Storage */ = {
+			isa = PBXGroup;
+			children = (
+				D00100000000000000000032 /* RetentionPolicy.swift */,
+			);
+			path = Storage;
 			sourceTree = "<group>";
 		};
 		D00100000000000000000021 /* Persistence */ = {
@@ -859,6 +872,7 @@
 				BC5C34A8A7921C28815B456C /* RecentPhotosView.swift */,
 				DD3505B3ADF23CAE93A7CB1B /* IOSPhotoPreviews.swift */,
 				F05A8C0CCFD988FA348FFD20 /* RecentPhotoStore.swift */,
+				EE71000100000000000000E1 /* ExportEvidenceStore.swift */,
 				7A3F3ADB7B6DBFA56BA48282 /* EditedPhotoPreviewCache.swift */,
 				A8D1A6000000000000000002 /* ErrorDiagnostics.swift */,
 				A8CACE000000000000000004 /* ContentView+AutoExposure.swift */,
@@ -1323,6 +1337,7 @@
 				B44A9E6604A3A18F80319647 /* CameraProtocol.swift in Sources */,
 				FC3E1C413D8FDDFD08580028 /* CameraPTPClient.swift in Sources */,
 				9A367BE919FBC80E921A8A14 /* CameraOriginalStore.swift in Sources */,
+				D00100000000000000000033 /* RetentionPolicy.swift in Sources */,
 				D941E65A54F645C882ABF673 /* CameraIncrementalImport.swift in Sources */,
 				D941E65A54F645C882ABF675 /* CameraJPEGProcessing.swift in Sources */,
 				C36B2ADB84D11D5FD0554281 /* CameraNetwork.swift in Sources */,
@@ -1348,6 +1363,7 @@
 				48A79A4AFAD8F440EB66F59D /* RecentPhotosView.swift in Sources */,
 				A507CACF596001C4E19E65F9 /* IOSPhotoPreviews.swift in Sources */,
 				38C0B29D936E3C4F3692FF74 /* RecentPhotoStore.swift in Sources */,
+				EE71000200000000000000E2 /* ExportEvidenceStore.swift in Sources */,
 				F55BD7137E2B31FD55BA8602 /* EditedPhotoPreviewCache.swift in Sources */,
 				A8D1A6000000000000000001 /* ErrorDiagnostics.swift in Sources */,
 				A8CACE000000000000000003 /* ContentView+AutoExposure.swift in Sources */,

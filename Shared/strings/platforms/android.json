@@ -6813,6 +6813,54 @@
       "formats": [],
       "source": "处理版本与来源不同，已沿用当前照片的处理版本",
       "types": []
+    },
+    "storage_camera_originals_summary": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$d",
+        "%2$s"
+      ],
+      "source": "共 {0} 个文件 · {1}",
+      "types": [
+        "d",
+        "s"
+      ]
+    },
+    "storage_clear_camera_originals": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "清理已导出的相机原件",
+      "types": []
+    },
+    "storage_clear_camera_originals_confirm": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$d",
+        "%2$s"
+      ],
+      "source": "将移除已导出原件的导入记录（共 {0} 个文件，占用 {1}），相册中的照片不受影响。",
+      "types": [
+        "d",
+        "s"
+      ]
+    },
+    "storage_clear_camera_originals_done": {
+      "file": "editor_strings.xml",
+      "formats": [
+        "%1$d",
+        "%2$s"
+      ],
+      "source": "已清理 {0} 个文件，释放 {1}。",
+      "types": [
+        "d",
+        "s"
+      ]
+    },
+    "storage_clear_camera_originals_failed": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "清理已导出的相机原件失败，请重试。",
+      "types": []
     }
   },
   "overrides": {
@@ -8331,14 +8379,6 @@
       "es": "Limpiar",
       "ja": "整理"
     },
-    "已清理 {0} 个文件，释放 {1}。": {
-      "zh-Hans": "已清理 {0} 个文件，释放 {1}。",
-      "en": "Cleared {0} files and freed {1}.",
-      "de": "{0} Dateien bereinigt, {1} freigegeben.",
-      "fr": "{0} fichiers nettoyés, {1} libérés.",
-      "es": "Se limpiaron {0} archivos y se liberaron {1}.",
-      "ja": "{0} 件のファイルを整理し、{1} を解放しました。"
-    },
     "清理系统相册副本失败，请重试。": {
       "zh-Hans": "清理系统相册副本失败，请重试。",
       "en": "Couldn’t clear system gallery copies. Try again.",
@@ -8386,6 +8426,14 @@
       "fr": "Abandonner",
       "ja": "破棄",
       "zh-Hans": "放弃"
+    },
+    "将移除已导出原件的导入记录（共 {0} 个文件，占用 {1}），相册中的照片不受影响。": {
+      "de": "Entfernt die Importdatensätze exportierter Originale ({0} Dateien, {1}). Fotos in der Galerie bleiben erhalten.",
+      "en": "Removes the import records of exported originals ({0} files, {1}). Photos in the gallery are unaffected.",
+      "es": "Elimina los registros de importación de los originales exportados ({0} archivos, {1}); las fotos de la galería no se ven afectadas.",
+      "fr": "Supprime les enregistrements d’importation des originaux exportés ({0} fichiers, {1}). Les photos de la galerie ne sont pas affectées.",
+      "ja": "書き出したカメラ原本の取り込み記録（{0} 個のファイル、{1}）を削除します。ギャラリーの写真は影響を受けません。",
+      "zh-Hans": "将移除已导出原件的导入记录（共 {0} 个文件，占用 {1}），相册中的照片不受影响。"
     }
   }
 }
