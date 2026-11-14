@@ -24,6 +24,17 @@ internal static class BatchSelectionUiChecks
             window.AddCollectionPhotos([source,target,target]);window.MenuCollection.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             var collection=app.Windows.OfType<BatchSelectionWindow>().Single();collection.UpdateLayout();
             check(window.Collection.Photos.Count==2 && window.Collection.Selected.Count==2,"Collection keeps two stable selected photos after duplicate input");
+            var inspectedId = window.Collection.Photos[1].ID;
+            var editBeforeRefresh = Find<Button>(collection, "collection.edit." + inspectedId);
+            var selectBeforeRefresh = Find<CheckBox>(collection, "collection.select." + inspectedId);
+            collection.Refresh();
+            Find<Button>(collection, "collection.select-none").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Find<Button>(collection, "collection.select-all").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            collection.UpdateLayout();
+            check(ReferenceEquals(editBeforeRefresh, Find<Button>(collection, "collection.edit." + inspectedId)) &&
+                  ReferenceEquals(selectBeforeRefresh, Find<CheckBox>(collection, "collection.select." + inspectedId)) &&
+                  selectBeforeRefresh.IsChecked == true,
+                "BatchSelectionWindow reuses existing row controls across refresh and selection toggles");
             var timer=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(50)};Exception? failure=null;var stage=0;
             timer.Tick+=(_,_)=>{
                 try {

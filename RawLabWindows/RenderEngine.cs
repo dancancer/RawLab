@@ -611,8 +611,9 @@ internal sealed partial class RenderEngine : IDisposable
     public static BitmapSource? Thumbnail(string path)=>ReadEmbeddedPreview(path,180).Image;
     public static EmbeddedPreview ReadEmbeddedPreview(string path,int edge=1600)
     {
+        if (edge <= 0) return new(null, 0, 0);
         Native.Buffer buffer = default;
-        try
+        return ReadEmbeddedPreviewCore(() =>
         {
             if (PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path, out _) == HDRProbeState.Supported)
             {
@@ -622,7 +623,7 @@ internal sealed partial class RenderEngine : IDisposable
             }
             if(LibraryEntry.IsRaster(path))
             {
-                if(edge<=0 || Native.rawlab_display_preview(path,(uint)edge,ref buffer,out var sourceWidth,out var sourceHeight)!=0)return new(null,0,0);
+                if(Native.rawlab_display_preview(path,(uint)edge,ref buffer,out var sourceWidth,out var sourceHeight)!=0)return new(null,0,0);
                 return new(Bitmap(buffer),checked((int)sourceWidth),checked((int)sourceHeight));
             }
             if (Native.rawlab_preview(path,out buffer,out var kind,out var flip,out var width,out var height) != 0) return new(null,width,height);
@@ -645,8 +646,17 @@ internal sealed partial class RenderEngine : IDisposable
             image=new FormatConvertedBitmap(image,PixelFormats.Pbgra32,null,0);
             image=new CachedBitmap(image,BitmapCreateOptions.None,BitmapCacheOption.OnLoad);
             image.Freeze(); return new(image,width,height);
+        }, path, () => Native.sony2fuji_release_buffer(ref buffer));
+    }
+    internal static EmbeddedPreview ReadEmbeddedPreviewCore(Func<EmbeddedPreview> decode, string path, Action? release = null)
+    {
+        try
+        {
+            return PreviewFallback.ExecuteEmbedded(
+                decode,
+                new EmbeddedPreview(null, 0, 0),
+                ex => System.Diagnostics.Trace.WriteLine($"Embedded preview fallback for {path}: {ex.Message}"));
         }
-        catch (Exception ex) when (ex is IOException or NotSupportedException or ArgumentException) { return new(null,0,0); }
-        finally { Native.sony2fuji_release_buffer(ref buffer); }
+        finally { release?.Invoke(); }
     }
 }

@@ -5,6 +5,8 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using RawLab.Windows;
 
@@ -121,11 +123,79 @@ internal static class UnhandledExceptionWindowChecks
                 check(observedExitCode == null, "PumpEmbedded FormatException does not crash the application");
                 check(typeof(MainWindow).GetField("openingPreview", PrivateInstance)!.GetValue(window) == null,
                     "Embedded preview degrades to no preview state upon FormatException");
+
+                // 3b. ReadEmbeddedPreviewCore & PumpEmbedded OverflowException fallback:
+                var embeddedOverflowFallback = RenderEngine.ReadEmbeddedPreviewCore(
+                    () => throw new OverflowException("Simulated integer overflow in embedded buffer size"),
+                    dummyPhoto);
+                check(embeddedOverflowFallback.Image == null && embeddedOverflowFallback.Width == 0 && embeddedOverflowFallback.Height == 0,
+                    "RenderEngine.ReadEmbeddedPreviewCore degrades OverflowException without propagating to caller");
+
+                // 3c. Main preview RenderPreviewHook OverflowException fallback:
+                //     - With prior rendered frame: preserves pixels (no blank screen), shows error & RetryButton, recovers cleanly.
+                //     - On initial open with embedded placeholder: keeps embedded fallback, does not crash or allow export.
+                var validResultBitmap = BitmapSource.Create(16, 16, 96, 96, PixelFormats.Pbgra32, null, new byte[16 * 16 * 4], 16 * 4);
+                validResultBitmap.Freeze();
+                var dummyBins = new uint[768];
+                var okFrame = new PreviewFrame(
+                    new RenderedImage(validResultBitmap, null, dummyBins, 0, 0, 0, null, 0, NativeWidth: 16, NativeHeight: 16),
+                    new RenderedImage(validResultBitmap, null, dummyBins, 0, 0, 0, null, 0, NativeWidth: 16, NativeHeight: 16));
+                window.ReadEmbeddedPreviewHook = _ => new EmbeddedPreview(null, 0, 0);
+                window.RenderPreviewHook = (_, _, _, _, _, _, _) => okFrame;
+                var renderPhoto = Path.Combine(root, "main-preview-fallback.ARW");
+                File.WriteAllBytes(renderPhoto, [1, 2, 3, 4]);
+                window.OpenFile(renderPhoto);
+                PumpUntil(app.Dispatcher, () => window.ExportPng.IsEnabled, "Timed out waiting for initial hooked render");
+
+                window.RenderPreviewHook = (_, _, _, _, _, _, _) => throw new OverflowException("Simulated overflow in main preview render");
+                typeof(MainWindow).GetMethod("Schedule", PrivateInstance)!.Invoke(window, [false, false]);
+                var scheduler = typeof(MainWindow).GetField("scheduler", PrivateInstance)!.GetValue(window)!;
+                PumpUntil(app.Dispatcher, () =>
+                    (bool)typeof(MainWindow).GetField("renderFailed", PrivateInstance)!.GetValue(window)! &&
+                    !(bool)scheduler.GetType().GetProperty("Busy")!.GetValue(scheduler)!,
+                    "Timed out waiting for main preview OverflowException fallback");
+
+                var canvasImageField = typeof(PhotoCanvas).GetField("image", PrivateInstance)!;
+                check(observedExitCode == null &&
+                      !app.Windows.OfType<Window>().Any(w => w.IsVisible && AutomationProperties.GetAutomationId(w) == "app.unhandledException"),
+                    "Main preview OverflowException does not show exit modal dialog");
+                check(ReferenceEquals(canvasImageField.GetValue(window.ResultCanvas), validResultBitmap),
+                    "Main preview OverflowException preserves previous rendered frame without blanking out");
+                check(window.RetryButton.Visibility == Visibility.Visible && !window.ExportPng.IsEnabled &&
+                      window.Status.Text.Contains("Simulated overflow in main preview render", StringComparison.Ordinal),
+                    "Main preview OverflowException shows visible error, locks export, and leaves retry available");
+
+                window.RenderPreviewHook = (_, _, _, _, _, _, _) => okFrame;
+                window.RetryButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                PumpUntil(app.Dispatcher, () => window.ExportPng.IsEnabled, "Timed out waiting for Retry recovery");
+                check(!(bool)typeof(MainWindow).GetField("renderFailed", PrivateInstance)!.GetValue(window)! &&
+                      window.RetryButton.Visibility != Visibility.Visible,
+                    "Clicking Retry recovers main preview cleanly after OverflowException");
+
+                // Initial open: embedded preview arrives, then main preview throws OverflowException -> degrades cleanly without blank screen.
+                var embeddedPlaceholder = BitmapSource.Create(16, 16, 96, 96, PixelFormats.Pbgra32, null, new byte[16 * 16 * 4], 16 * 4);
+                embeddedPlaceholder.Freeze();
+                window.ReadEmbeddedPreviewHook = _ => new EmbeddedPreview(embeddedPlaceholder, 16, 16);
+                window.RenderPreviewHook = (_, _, _, _, _, _, _) => throw new OverflowException("Initial open main preview overflow");
+                var initialOverflowPhoto = Path.Combine(root, "initial-overflow.ARW");
+                File.WriteAllBytes(initialOverflowPhoto, [5, 6, 7, 8]);
+                window.OpenFile(initialOverflowPhoto, embeddedPlaceholder);
+                PumpUntil(app.Dispatcher, () =>
+                    (bool)typeof(MainWindow).GetField("renderFailed", PrivateInstance)!.GetValue(window)! &&
+                    !(bool)scheduler.GetType().GetProperty("Busy")!.GetValue(scheduler)!,
+                    "Timed out waiting for initial-open OverflowException fallback");
+                check(observedExitCode == null &&
+                      ReferenceEquals(canvasImageField.GetValue(window.ResultCanvas), embeddedPlaceholder) &&
+                      canvasImageField.GetValue(window.NeutralCanvas) == null &&
+                      window.RetryButton.Visibility == Visibility.Visible && !window.ExportPng.IsEnabled &&
+                      window.Status.Text.Contains("Initial open main preview overflow", StringComparison.Ordinal),
+                    "Initial open OverflowException keeps embedded fallback on ResultCanvas without crashing or allowing export");
             }
             finally
             {
                 Trace.Listeners.Remove(traceListener);
                 window.ReadEmbeddedPreviewHook = path => RenderEngine.ReadEmbeddedPreview(path);
+                window.RenderPreviewHook = null;
             }
 
             // 4. Early startup unhandled exception (startupCompleted == false, no MainWindow):

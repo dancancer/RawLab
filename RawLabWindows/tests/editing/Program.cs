@@ -4,6 +4,8 @@ using System.Text.Json.Nodes;
 
 if (args.Contains("--edited-previews")) { EditedPhotoPreviewChecks.Run(); return; }
 if (args.Contains("--unhandled-only")) { UnhandledExceptionChecks.Run(); return; }
+if (args.Contains("--preview-fallback-only")) { PreviewFallbackChecks.Run(); return; }
+if (args.Contains("--batch-coordinator-only")) { BatchSelectionCoordinatorChecks.Run(); return; }
 if (args.Contains("--durability-only")) { EditDurabilityChecks.Run(); ProcessingMigrationChecks.Run(); return; }
 
 if (args.Contains("--abi-layout")) {
@@ -75,6 +77,8 @@ if (args.Contains("--master-recipes")) {
 HslTargetChecks.Run();
 BatchFrozenChecks.Run();
 BatchSelectionChecks.Run();
+PreviewFallbackChecks.Run();
+BatchSelectionCoordinatorChecks.Run();
 var pendingGrading = JsonSerializer.SerializeToNode(new Adjustments().Capture())!;
 pendingGrading["ColorGrading"] = JsonNode.Parse("""{"Shadows":{"Hue":231.25,"Saturation":0},"Midtones":{"Hue":0,"Saturation":0},"Highlights":{"Hue":0,"Saturation":0}}""");
 var gradingRestored = pendingGrading.Deserialize<AdjustmentSnapshot>()!.Restore();

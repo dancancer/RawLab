@@ -65,6 +65,25 @@ public sealed class BatchSelectionSession
     {
         foreach(var photo in photos)try{photo.Validate();failures.Remove(photo.ID);}catch(Exception error){failures[photo.ID]=AdjustmentTransferPresentation.Detail(error);}
     }
+    internal bool ApplyFailureUpdates(IReadOnlyList<(string ID, OriginalIdentity Identity, string? Error)> updates)
+    {
+        var changed = false;
+        foreach (var (id, identity, error) in updates)
+        {
+            var current = photos.FirstOrDefault(photo => photo.ID == id);
+            if (current == null || current.Identity != identity) continue;
+            if (error == null)
+            {
+                if (failures.Remove(id)) changed = true;
+            }
+            else if (!failures.TryGetValue(id, out var existing) || !string.Equals(existing, error, StringComparison.Ordinal))
+            {
+                failures[id] = error;
+                changed = true;
+            }
+        }
+        return changed;
+    }
 }
 
 public sealed record CollectionExportRow(CollectionPhoto Photo,PhotoEditState? Record=null,
