@@ -575,6 +575,10 @@ sony2fuji_status sony2fuji_session_set_interactive_preview(sony2fuji_session* se
 // Disabled by default; the request layout and existing preview mode are unchanged.
 sony2fuji_status sony2fuji_session_set_viewport_preview(sony2fuji_session* session, int32_t enabled);
 sony2fuji_render_backend sony2fuji_session_get_last_backend(const sony2fuji_session* session);
+// RAW decodes stored into this session's cache, including half-size proxy and exposure-anchor decodes.
+// A render that reuses the decoded cache does not increment it, so repeated previews and the export
+// that follows can be checked for re-decoding.
+uint64_t sony2fuji_session_get_raw_decode_count(const sony2fuji_session* session);
 
 // Exact 256-bin channel-major RGB counts and an optional packed RGBA8 clipping mask.
 // Auto prefers CPU for CPU-resident bytes to avoid upload/readback overhead.

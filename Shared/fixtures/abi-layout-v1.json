@@ -829,6 +829,12 @@
       "symbol": "sony2fuji_session_get_last_backend"
     },
     {
+      "name": "sony2fuji_session_get_raw_decode_count",
+      "return_type": "uint64_t",
+      "params": ["const sony2fuji_session*"],
+      "symbol": "sony2fuji_session_get_raw_decode_count"
+    },
+    {
       "name": "sony2fuji_analyze_image",
       "return_type": "sony2fuji_status",
       "params": ["const sony2fuji_buffer*", "sony2fuji_gpu_mode", "uint32_t*", "uint32_t*", "uint32_t*", "sony2fuji_buffer*"],
