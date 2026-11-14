@@ -218,8 +218,38 @@ class QueuePassTests(unittest.TestCase):
         fork = {**run(run_id=1, event="pull_request", repo=FOREIGN, created="2026-11-13T00:00:00Z"),
                 "status": "in_progress"}
         push = run(run_id=2, created="2026-11-13T00:01:00Z")
-        api = FakeAPI(jobs_by_run={1: jobs(), 2: jobs()})
-        self.assertIsNone(jit.next_dispatch([fork, push], api.jobs))
+        fetched = []
+
+        def jobs_of(run_id):
+            fetched.append(run_id)
+            return jobs()
+
+        self.assertIsNone(jit.next_dispatch([fork, push], jobs_of))
+        self.assertEqual(fetched, [], "in_progress untrusted barrier must consume zero /jobs calls")
+
+    def test_next_dispatch_materializes_iterator_runs_for_both_trust_and_dispatch(self):
+        old_push = run(run_id=10, created="2026-11-14T04:22:19Z")
+        newer_fork = run(run_id=20, event="pull_request", repo=FOREIGN, created="2026-11-14T04:22:21Z")
+        fetched = []
+
+        def jobs_of(run_id):
+            fetched.append(run_id)
+            return jobs(labels=["self-hosted", "rawlab-android"]) if run_id == 1 else jobs()
+
+        # Generator with older push + newer fork must still fail closed on Loop 1 without /jobs.
+        self.assertIsNone(jit.next_dispatch((r for r in (old_push, newer_fork)), jobs_of))
+        self.assertEqual(fetched, [])
+
+        # Missing created_at and head_repository=None must still block trusted pushes without /jobs.
+        malformed_pr = {"id": 99, "event": "pull_request", "head_repository": None}
+        self.assertIsNone(jit.next_dispatch((r for r in (old_push, malformed_pr)), jobs_of))
+        self.assertEqual(fetched, [])
+
+        # Trusted-only generator must not be exhausted by Loop 1 before Loop 2 dispatches.
+        android_push = run(run_id=1, created="2026-11-14T04:22:00Z")
+        candidate = jit.next_dispatch((r for r in (android_push, old_push)), jobs_of)
+        self.assertEqual(candidate["id"], 10)
+        self.assertEqual(fetched, [1, 10])
 
     def test_trusted_mismatch_then_untrusted_barrier_blocks_later_push(self):
         android_push = run(run_id=1, created="2026-11-13T00:00:00Z")
@@ -496,6 +526,45 @@ class ApiWiringTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "pages"):
             api.jobs(5)
 
+    def test_two_pass_recovery_via_actions_api_records_exact_http_sequence(self):
+        push_run = run(run_id=10, created="2026-11-14T04:22:19Z")
+        for poison_status in ("queued", "in_progress"):
+            with self.subTest(poison_status=poison_status):
+                fork_run = {**run(run_id=20, event="pull_request", repo=FOREIGN,
+                                  created="2026-11-14T04:22:21Z"), "status": poison_status}
+                calls = []
+                poisoned = True
+
+                def fake_request(method, path, payload):
+                    calls.append((method, path, payload))
+                    if path.endswith("/actions/runs?status=queued&per_page=100"):
+                        runs = [push_run, fork_run] if poisoned and poison_status == "queued" else [push_run]
+                        return {"workflow_runs": runs}
+                    if path.endswith("/actions/runs?status=in_progress&per_page=100"):
+                        return {"workflow_runs": [fork_run] if poisoned and poison_status == "in_progress" else []}
+                    if path.endswith("/actions/runs/10/jobs?per_page=100"):
+                        return {"jobs": jobs()}
+                    raise AssertionError(f"unexpected REST call: {method} {path}")
+
+                api = jit.ActionsAPI("tok", repo=OWN, root="https://api.example", request=fake_request)
+                # Pass 1: untrusted run newer than push_run freezes dispatch with zero /jobs calls.
+                self.assertIsNone(jit.next_dispatch(api.queued_runs(), api.jobs))
+                self.assertEqual(calls, [
+                    ("GET", "/repos/dancancer/RawLab/actions/runs?status=queued&per_page=100", None),
+                    ("GET", "/repos/dancancer/RawLab/actions/runs?status=in_progress&per_page=100", None),
+                ])
+
+                # Pass 2: untrusted run completes (leaves queued/in_progress) -> push_run recovers.
+                calls.clear()
+                poisoned = False
+                candidate = jit.next_dispatch(api.queued_runs(), api.jobs)
+                self.assertEqual(candidate["id"], 10)
+                self.assertEqual(calls, [
+                    ("GET", "/repos/dancancer/RawLab/actions/runs?status=queued&per_page=100", None),
+                    ("GET", "/repos/dancancer/RawLab/actions/runs?status=in_progress&per_page=100", None),
+                    ("GET", "/repos/dancancer/RawLab/actions/runs/10/jobs?per_page=100", None),
+                ])
+
 
 class MainTests(unittest.TestCase):
     """--once must actually dispatch (the ci.md attack-verification checklist depends on it)."""
@@ -524,6 +593,75 @@ class MainTests(unittest.TestCase):
             code = jit.main(["--once"])
         self.assertEqual(code, 2)
         self.assertIn("Administration", err.getvalue())
+
+    def test_main_recovers_and_dispatches_after_poison_run_completes(self):
+        class StopPolling(BaseException):
+            pass
+
+        push_run = run(run_id=10, created="2026-11-14T04:22:19Z")
+        fork_run = {**run(run_id=20, event="pull_request", repo=FOREIGN, created="2026-11-14T04:22:21Z"),
+                    "status": "in_progress"}
+        calls, pass1_calls, seen = [], [], {}
+        state = {"poisoned": True, "sleeps": 0}
+
+        def fake_request(method, path, payload):
+            calls.append((method, path, payload))
+            if path.endswith("/actions/runs?status=queued&per_page=100"):
+                return {"workflow_runs": [push_run]}
+            if path.endswith("/actions/runs?status=in_progress&per_page=100"):
+                return {"workflow_runs": [fork_run] if state["poisoned"] else []}
+            if path.endswith("/actions/runs/10/jobs?per_page=100"):
+                return {"jobs": jobs()}
+            if path.endswith("/actions/runners/generate-jitconfig"):
+                return {"runner": {"id": 25}, "encoded_jit_config": "cfg-recovered"}
+            raise AssertionError(f"unexpected REST call: {method} {path}")
+
+        def fake_sleep(_seconds):
+            state["sleeps"] += 1
+            if state["sleeps"] == 1:
+                pass1_calls.extend(calls)
+                state["poisoned"] = False
+                return
+            raise StopPolling()
+
+        def fake_popen(argv, cwd=None, env=None, start_new_session=False):
+            seen.update(argv=argv, cwd=cwd, env=env, start_new_session=start_new_session)
+            return FakeProcess()
+
+        real_api = jit.ActionsAPI
+
+        with tempfile.TemporaryDirectory() as runner_dir:
+            script = Path(runner_dir) / "run.sh"
+            script.write_text("#!/bin/sh\nexit 0\n")
+            script.chmod(0o755)
+            with contextlib.redirect_stdout(io.StringIO()) as out, \
+                    unittest.mock.patch.dict(os.environ, {"RAWLAB_JIT_TOKEN": "tok"}), \
+                    unittest.mock.patch.object(jit, "ActionsAPI",
+                                               lambda token, repo=None: real_api(token, repo=repo, request=fake_request)), \
+                    unittest.mock.patch.object(jit.time, "sleep", fake_sleep), \
+                    unittest.mock.patch.object(jit.subprocess, "Popen", fake_popen):
+                with self.assertRaises(StopPolling):
+                    jit.main(["--runner-dir", runner_dir])
+
+        expected_poll = [
+            ("GET", "/repos/dancancer/RawLab/actions/runs?status=queued&per_page=100", None),
+            ("GET", "/repos/dancancer/RawLab/actions/runs?status=in_progress&per_page=100", None),
+        ]
+        self.assertEqual(pass1_calls, expected_poll, "Pass 1 must issue zero /jobs and zero generate-jitconfig calls")
+        self.assertEqual(calls[len(pass1_calls):], expected_poll + [
+            ("GET", "/repos/dancancer/RawLab/actions/runs/10/jobs?per_page=100", None),
+            ("GET", "/repos/dancancer/RawLab/actions/runs/10/jobs?per_page=100", None),
+            ("POST", "/repos/dancancer/RawLab/actions/runners/generate-jitconfig", {
+                "name": calls[-1][2]["name"],
+                "runner_group_id": jit.DEFAULT_RUNNER_GROUP_ID,
+                "labels": list(jit.DEFAULT_RUNNER_LABELS.split(",")),
+            }),
+        ])
+        output = out.getvalue()
+        self.assertIn("run 20 [pull_request] development head=contributor/RawLab: skip (untrusted", output)
+        self.assertIn("run 10 [push] development head=dancancer/RawLab: claim (trusted push on this repository)", output)
+        self.assertIn("runner for run 10 exited with 0", output)
+        self.assertNotIn("RAWLAB_JIT_TOKEN", seen["env"])
 
 
 class LaunchdExampleTests(unittest.TestCase):
