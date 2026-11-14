@@ -8,13 +8,17 @@
 #include "core/photo_effects.h"
 #include "core/photo_geometry.h"
 #include "core/photo_lut.h"
+#include "core/chroma_denoise.h"
+#include "core/wavelet_denoise.h"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <random>
 #include <string>
 #include <vector>
 #ifdef _WIN32
@@ -195,6 +199,89 @@ int main() {
         sony2fuji::GammaConverter::FLog2Options options;
         sony2fuji::GammaConverter::applyFLog2ToImage(image, options);
     });
+#if defined(SONY2FUJI_ENABLE_WAVELET_DENOISE) || defined(SONY2FUJI_ENABLE_CHROMA_DENOISE)
+    // Denoise tile loops honour the callback at the next tile boundary and never
+    // publish a half-denoised image. Flat fixtures would exit early (LowNoise or
+    // confidence==0), so these use the same noisy-synth recipes as the denoise tests.
+    std::mt19937 denoiseRng(20261114u);
+    auto countdown = +[](void* context) -> int32_t {
+        return static_cast<std::atomic<int>*>(context)->fetch_sub(1) <= 1;
+    };
+    auto unchanged = [](const sony2fuji::ImageData& image, const std::vector<sony2fuji::RGB>& pristine) {
+        return std::memcmp(image.pixels.data(), pristine.data(), pristine.size() * sizeof(sony2fuji::RGB)) == 0;
+    };
+#endif
+#if defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
+    {
+        // The C5 path analyses and filters in 512px tiles on the calling thread;
+        // polling must stop the run mid-image (3rd tile) instead of after it.
+        sony2fuji::ImageData image(800, 600);
+        std::normal_distribution<float> noise(0.f, .014f);
+        for (auto& p : image.pixels) p = {.18f + noise(denoiseRng), .18f + noise(denoiseRng), .18f + noise(denoiseRng)};
+        const auto pristine = image.pixels;
+        std::atomic<int> remaining{3};
+        bool interrupted = false;
+        {
+            sony2fuji::ProcessingCancellationScope cancellation({countdown, &remaining});
+            try {
+                const sony2fuji::WaveletDenoiseOptions options{true, 40, 46, 50};
+                sony2fuji::applyWaveletDenoise(image, options);
+            }
+            catch (const sony2fuji::ProcessingCancelled&) { interrupted = true; }
+        }
+        check(interrupted, "Wavelet denoise stops inside its tile loop");
+        check(unchanged(image, pristine), "Cancelled wavelet denoise publishes no partial pixels");
+        // The Legacy path filters through cv::parallel_for_ tiles; workers must exit
+        // at their next tile and only the calling thread may throw.
+        sony2fuji::ImageData legacy(1280, 720);
+        for (auto& p : legacy.pixels) p = {.18f + noise(denoiseRng), .18f + noise(denoiseRng), .18f + noise(denoiseRng)};
+        const auto legacyPristine = legacy.pixels;
+        std::atomic<int> legacyRemaining{3};
+        interrupted = false;
+        {
+            sony2fuji::ProcessingCancellationScope cancellation({countdown, &legacyRemaining});
+            try {
+                sony2fuji::WaveletDenoiseOptions options{true, 10, 72, 100};
+                options.processingVersion = sony2fuji::ProcessingVersion::Legacy;
+                sony2fuji::applyWaveletDenoise(legacy, options);
+            }
+            catch (const sony2fuji::ProcessingCancelled&) { interrupted = true; }
+        }
+        check(interrupted, "Legacy wavelet denoise stops inside its parallel tile loop");
+        check(unchanged(legacy, legacyPristine), "Cancelled legacy wavelet denoise publishes no partial pixels");
+    }
+#endif
+#if defined(SONY2FUJI_ENABLE_CHROMA_DENOISE)
+    {
+        // Guided chroma runs in independent 768px tiles; cancelling on the third
+        // tile must throw before the Lab image is converted back to the RGB view.
+        sony2fuji::ImageData image(1600, 800);
+        std::normal_distribution<float> noise(0.f, .025f);
+        for (auto& p : image.pixels) p = {.45f + noise(denoiseRng), .45f + noise(denoiseRng), .45f + noise(denoiseRng)};
+        const auto pristine = image.pixels;
+        std::atomic<int> remaining{3};
+        bool interrupted = false;
+        {
+            sony2fuji::ProcessingCancellationScope cancellation({countdown, &remaining});
+            try { sony2fuji::applyChromaDenoise(image, 1); }
+            catch (const sony2fuji::ProcessingCancelled&) { interrupted = true; }
+        }
+        check(interrupted, "Chroma denoise stops inside its guided tile loop");
+        check(unchanged(image, pristine), "Cancelled chroma denoise publishes no partial pixels");
+        // The working-graph entry (Metal band pipeline) keeps its partial bands;
+        // the contract there is that the caller discards the image on failure.
+        sony2fuji::ImageData working(1600, 800);
+        working.pixels = pristine;
+        std::atomic<int> workingRemaining{3};
+        interrupted = false;
+        {
+            sony2fuji::ProcessingCancellationScope cancellation({countdown, &workingRemaining});
+            try { sony2fuji::applyChromaDenoiseWorking(working, 1); }
+            catch (const sony2fuji::ProcessingCancelled&) { interrupted = true; }
+        }
+        check(interrupted, "Working chroma denoise stops at a band boundary for the caller to discard");
+    }
+#endif
     // FINAL exports honour the callback and never publish a partial file. The destination is
     // pre-populated so "cancelled" can be distinguished from "wrote a fresh file".
     {

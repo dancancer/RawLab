@@ -186,12 +186,14 @@ PrepareReport AISession::prepare(const std::string& path, const RAWProcessOption
     notify(progress, Phase::Loading, 0, 1);
     ensurePackage();
     const AIExecution execution{selectedDevice_ ? &*selectedDevice_ : nullptr,&diagnostics_};
-    const auto rawKey = rawCacheKey(path, runtimeDigest_, static_cast<int>(backend_), options.legacySonyCrop);
+    // 与 HDR prepare 同口径：身份哈希传入取消检查点，长文件哈希过程中也能取消。
+    const auto rawKey = rawCacheKeyFromIdentity(sourceIdentityKey(path, checkProcessingCancellation), runtimeDigest_, static_cast<int>(backend_), options.legacySonyCrop);
     const auto rgbKey = rgbCacheKey(rawKey, options);
     const auto sceneKey = sceneRGBCacheKey(rawKey,options);
     const auto modelStamp = stamp_;
     auto validateSource = [&] {
-        if (rawCacheKey(path, runtimeDigest_, static_cast<int>(backend_), options.legacySonyCrop) != rawKey || packageStamp() != modelStamp)
+        const auto currentKey = rawCacheKeyFromIdentity(sourceIdentityKey(path, checkProcessingCancellation), runtimeDigest_, static_cast<int>(backend_), options.legacySonyCrop);
+        if (currentKey != rawKey || packageStamp() != modelStamp)
             throw std::runtime_error("RAW or model changed during AI processing; please retry");
     };
     RAWProcessor processor(options.legacySonyCrop);
@@ -221,6 +223,7 @@ PrepareReport AISession::prepare(const std::string& path, const RAWProcessOption
         if (package_->blindRGBPath.empty()) throw std::runtime_error("Scene RGB AI model is not installed");
         if (cache.load(sceneKey,CacheKind::SceneRGB,0,0,{},&report.rgb.backend)) {
             report.rgbCacheHit = true; notify(progress,Phase::RGB,1,1);
+            validateSource(); notify(progress,Phase::Saving,1,1);
         } else {
             auto decode = options;
             decode.halfSize = false; decode.rawNoiseReduction = 0; decode.bayerOverride = nullptr;
@@ -234,10 +237,12 @@ PrepareReport AISession::prepare(const std::string& path, const RAWProcessOption
                 *package_,backend_,report.rgb,[&](size_t done,size_t total) { return !progress || progress(Phase::RGB,done,total); },execution);
             scene = {};
             validateSource(); notify(progress,Phase::Saving,0,1);
+            // 对齐 prepareHDRBayer：notify(Saving,1,1)、validateSource 与取消检查全部在
+            // beforePublish 内、rename 提交点之前执行；发布之后不再轮询取消。
             cache.store(sceneKey,CacheKind::SceneRGB,correction.width,correction.height,
-                correction.values.data(),correction.values.size(),{},report.rgb.backend);
+                correction.values.data(),correction.values.size(),{},report.rgb.backend,[&] {
+                    notify(progress,Phase::Saving,1,1); validateSource(); checkProcessingCancellation(); });
         }
-        validateSource(); notify(progress,Phase::Saving,1,1);
         try { cache.prune(uint64_t(8)*1024*1024*1024,{sceneKey}); }
         catch (const std::filesystem::filesystem_error&) {}
         loadedKey_.clear(); loaded_ = {}; lastError.clear(); lastBackend = "SceneRGB=" + report.rgb.backend;
@@ -254,22 +259,25 @@ PrepareReport AISession::prepare(const std::string& path, const RAWProcessOption
             [&](size_t done, size_t total) { return !progress || progress(Phase::Raw, done, total); },execution);
         validateSource();
         notify(progress, Phase::Saving, 0, 1);
+        // 第一阶段 RAW 缓存按阶段语义保留（可复用 .rawcache），只保留会话通道检查点。
         cache.store(rawKey, CacheKind::Raw, source.width, source.height, denoised.normalizedMosaic.data(),
-                    denoised.normalizedMosaic.size(), {}, report.raw.backend);
+                    denoised.normalizedMosaic.size(), {}, report.raw.backend,[&] { checkProcessingCancellation(); });
     }
     const auto rawPayload = sha256Bytes(denoised.normalizedMosaic.data(), denoised.normalizedMosaic.size() * sizeof(float));
     if (cache.load(rgbKey, CacheKind::RGB, source.width, source.height, rawPayload, &report.rgb.backend)) {
         report.rgbCacheHit = true;
         notify(progress, Phase::RGB, 1, 1);
+        validateSource(); notify(progress, Phase::Saving, 1, 1);
     } else {
         const auto correction = denoiseRgb(source, denoised, *package_, noise, backend_, RGBOutput::CameraCorrection, report.rgb,
             [&](size_t done, size_t total) { return !progress || progress(Phase::RGB, done, total); },execution);
         validateSource();
         notify(progress, Phase::Saving, 0, 1);
-        cache.store(rgbKey, CacheKind::RGB, source.width, source.height, correction.values.data(), correction.values.size(), rawPayload, report.rgb.backend);
+        // 对齐 prepareHDRBayer：最终 RGB 缓存在 rename 提交点前完成 notify、校验与取消检查；
+        // 发布之后不再轮询取消，迟到的取消不撤销已完整保存的结果。
+        cache.store(rgbKey, CacheKind::RGB, source.width, source.height, correction.values.data(), correction.values.size(), rawPayload, report.rgb.backend,[&] {
+            notify(progress,Phase::Saving,1,1); validateSource(); checkProcessingCancellation(); });
     }
-    validateSource();
-    notify(progress, Phase::Saving, 1, 1);
     // 只清理本功能命名的可重建缓存；当前照片两阶段结果始终保留。
     try { cache.prune(uint64_t(8) * 1024 * 1024 * 1024, {rawKey, rgbKey}); }
     catch (const std::filesystem::filesystem_error&) { /* 并发缓存清理失败不撤销已完整保存的结果。 */ }

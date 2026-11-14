@@ -2466,6 +2466,9 @@ sony2fuji_status sony2fuji_session_prepare_ai(sony2fuji_session* session, const 
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
     if (!session->ai) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    // AI 降噪只在硬件后端运行、不回退 CPU，但取消语义走公共 ProcessingCancellationScope 链：
+    // 会话级回调在此安装，tile/阶段边界经锁存短路（对齐 HDR 路径 hdrSessionPrepareCameraAI 的口径）。
+    sony2fuji::ProcessingCancellationScope cancellation({session->cancellation_callback, session->cancellation_context});
     auto local = *request;
     local.output_target = SONY2FUJI_TARGET_BUFFER;
     local.output_format = SONY2FUJI_OUTPUT_RGB8;
@@ -2478,12 +2481,18 @@ sony2fuji_status sony2fuji_session_prepare_ai(sony2fuji_session* session, const 
         return status;
     };
     try {
+        // 入口预检（对齐 sony2fuji_hdr.cpp 安装 scope 后立即 check 的口径）：已取消则不再解析镜头库。
+        sony2fuji::processingCancellation.check();
         if (session->lens_correction.active()) ensureLensDatabase(session);
         session->ai->prepare(local.input_path, rawWhiteBalanceOptions(session, local),
             [&](sony2fuji::ai::Phase phase, size_t done, size_t total) {
-                return !progress || progress(context, static_cast<int32_t>(phase), done, total) != 0;
+                return !sony2fuji::processingCancellation.cancelled() &&
+                    (!progress || progress(context, static_cast<int32_t>(phase), done, total) != 0);
             });
         return SONY2FUJI_STATUS_OK;
+    } catch (const sony2fuji::ProcessingCancelled&) {
+        // 取消不是处理失败：在通用 catch 之前放行，语义与 ai::Cancelled 相同。
+        return SONY2FUJI_STATUS_CANCELLED;
     } catch (const sony2fuji::ai::Cancelled& error) {
         session->ai->lastError = error.what(); return SONY2FUJI_STATUS_CANCELLED;
     } catch (const sony2fuji::ai::DecodeError& error) {
