@@ -150,3 +150,5 @@
 - 2026-11-14 · 复审波：#316 方案 A 交卷（CI 绿）二轮碳审在途；**#320 打回**（高1中2：Pump 稳态帧清提示路径、备份证据判定含已完结 receipt/staging、WPF 编译面）氢线程续；**#321 打回 6B**（Layer3 拿 Layer2/错函数/错控件冒充 UI 真锚，病根=锚层造假未清干净）氢线程续；**#322 打回 2B**（Windows 缺键≈null 的 wire 洞+棘轮计数口径）氢线程续。geom-input crew 已派（上游红②归因）。
 - 2026-11-14 · 上游红②结案成 **PR #323**（`18fb6f77`）：geom-input crew 归因=macOS 14+ 后台会话无抢焦点保证（探针排除时序假说），修法=前台保留原断言/后台显式 SKIP+currentEditor 链路承担所有权证明。碳审在途（review-mwg16pkz，核 SKIP 是否遮羞+不变量 7 交互）。上游红①（de 词条）仍压至 #313 合流。
 - 2026-11-14 · CI 阶段2 小票开工：build-python crew 派——build.sh 透传 Python3_EXECUTABLE（edit_recipe_schema 在 mac native 门禁被 Homebrew Python 拖成静默 Skip 一族），Windows build.ps1 先例对照。
+- 2026-11-14 · **合入波（总 78 PR）**：**#313**（P2-16 预设/外观容错四端，三轮收敛 approve）、**#318**（V-AXUI 三态闸三轮 approve，Q14×不变量7 相撞案入库）、**#323**（上游红②环境耦合归因）；三 worktree/分支已清。
+- 2026-11-14 · 复审/新单波：**#316** 二审判「实现无缺陷、纯测试覆盖缺口」氢线程补测试；**#324**（build.sh Python 透传，Skipped→Passed 实证+同类三项核查）碳审在途；**#320/#321/#322** r2 交卷 CI 绿，碳审 ×2 在途；上游红①（de 词条）de-term crew 已派（#313 合流后 JSON 空出）。
