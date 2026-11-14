@@ -31,7 +31,7 @@ public partial class MainWindow
     }
     private OriginalIdentity? CurrentViewSource
     {
-        get {if(file==null)return null;try{return OriginalIdentity.Read(file);}catch(IOException){return null;}catch(UnauthorizedAccessException){return null;}}
+        get {if(file==null)return null;try{return OriginalIdentity.Read(file);}catch(Exception ex) when(PreviewFallback.IsFileIdentityFailure(ex)){return null;}}
     }
     private bool ReferenceCurrent=>neutralResult!=null && neutralRevision==openRevision && acceptedAfter==acceptedReference &&
         NeutralReference.Matches(acceptedReference,CurrentViewSource,settings.Processing,settings.Geometry,settings.Lens,RenderEdge(interacting),settings.IsHDREditing,settings.X3fMode,NeutralReference.HDRCameraSettings(settings.IsHDREditing ? settings.HDR : null));
@@ -73,10 +73,10 @@ public partial class MainWindow
     private void RefreshViewingFrames()
     {
         PrepareHDRFrames();
-        // 占位图只属于当前打开过程，不能充当显影结果或对比参考。
-        if(result!=null || file==null || closing || renderFailed)openingPreview=null;
+        // 占位图只属于当前打开过程，不能充当显影结果或对比参考；主预览失败且无已成片时可作为降级画面保留。
+        if(PreviewFallback.ShouldClearOpeningPreview(result!=null,file!=null,closing))openingPreview=null;
         var reference=ReferenceCurrent ? neutralResult : null;
-        NeutralCanvas.SetImage(HDRPresentationBitmap(reference) ?? openingPreview,reference?.Clipping);
+        NeutralCanvas.SetImage(HDRPresentationBitmap(reference) ?? (PreviewFallback.ShouldShowOpeningPlaceholderOnNeutral(renderFailed) ? openingPreview : null),reference?.Clipping);
         if (clippingOverlay is { } overlay && !ReferenceEquals(overlay.Source, result?.Image)) clippingOverlay = null;
         ResultCanvas.SetImage(HDRPresentationBitmap(result) ?? openingPreview,clippingOverlay?.Mask);
         ResultCanvas.SetComparison(HDRPresentationBitmap(reference),reference?.Clipping);

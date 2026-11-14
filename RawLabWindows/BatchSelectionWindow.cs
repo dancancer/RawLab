@@ -3,24 +3,71 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 
 namespace RawLab.Windows;
 
 internal sealed class BatchSelectionWindow : Window
 {
+    private sealed class PhotoRow(
+        string photoId,
+        StackPanel root,
+        CheckBox selection,
+        Button edit,
+        Image thumbnail,
+        TextBlock name,
+        TextBlock errorLabel)
+    {
+        public string PhotoID { get; } = photoId;
+        public StackPanel Root { get; } = root;
+        public CheckBox Selection { get; } = selection;
+        public Button Edit { get; } = edit;
+        public Image Thumbnail { get; } = thumbnail;
+        public TextBlock Name { get; } = name;
+        public TextBlock ErrorLabel { get; } = errorLabel;
+        public bool SyncingSelection { get; set; }
+    }
+
     private readonly MainWindow editor;
     private readonly StackPanel rows=new();
     private readonly ScrollViewer scroll;
     private readonly TextBlock summary=AdjustmentDialogLayout.Text("");
     private readonly TextBlock source=AdjustmentDialogLayout.Text("");
+    private readonly TextBlock emptyHint=AdjustmentDialogLayout.Text(Loc.Text("添加照片后，可同步调整、逐张微调并导出。"));
     private readonly Button sync,export,history,task;
+    private readonly BatchSelectionCoordinator<PhotoRow,BitmapSource> coordinator;
     private double offset;
-    private bool preparing,pendingReturn;
+    private bool preparing,pendingReturn,closed;
     private readonly WrapPanel selectionActions=new();
     internal BatchSelectionWindow(MainWindow editor)
     {
         this.editor=editor;
+        coordinator=new BatchSelectionCoordinator<PhotoRow,BitmapSource>(new BatchSelectionCoordinatorHooks<PhotoRow,BitmapSource>(
+            CreateRow: CreateRow,
+            InsertRow: (index, row) => rows.Children.Insert(index, row.Root),
+            RemoveRow: row => rows.Children.Remove(row.Root),
+            MoveRow: (from, to, row) => { rows.Children.RemoveAt(from); rows.Children.Insert(to, row.Root); },
+            UpdateSelection: (row, isSelected) => {
+                row.SyncingSelection=true;
+                try { row.Selection.IsChecked=isSelected; }
+                finally { row.SyncingSelection=false; }
+            },
+            UpdateFailure: ApplyRowFailure,
+            UpdatePath: (row, path) => { row.Name.Text=Path.GetFileName(path); row.Name.ToolTip=path; },
+            UpdateThumbnail: (row, image) => row.Thumbnail.Source=image,
+            DecodeThumbnailAsync: (path, token) => Task.Run(() => {
+                token.ThrowIfCancellationRequested();
+                return RenderEngine.Thumbnail(path);
+            }, token),
+            ValidatePhoto: photo => {
+                try { photo.Validate(); return null; }
+                catch (Exception error) { return AdjustmentTransferPresentation.Detail(error); }
+            },
+            PostToUi: action => {
+                if (!closed && !Dispatcher.HasShutdownStarted) Dispatcher.BeginInvoke(action);
+            },
+            OnFailuresChanged: RefreshButtons));
         var root=AdjustmentDialogLayout.Configure(this,editor,"批量编辑","collection.window");Width=880;Height=760;
         var header=new StackPanel();root.Children.Add(header);
         var actions=selectionActions;header.Children.Add(actions);
@@ -44,40 +91,51 @@ internal sealed class BatchSelectionWindow : Window
         export=AdjustmentDialogLayout.Button("逐张导出","collection.export",()=>{new CollectionExportDialog(this,editor).ShowDialog();Refresh();});buttons.Children.Add(export);
         buttons.Children.Add(AdjustmentDialogLayout.Button("关闭","collection.close",Close));
         Activated+=(_,_)=>{if(!preparing)Refresh();};
-        Closing+=(_,_)=>{if(preparing)editor.CancelCollectionOperation();};
+        Closing+=(_,_)=>{if(preparing)editor.CancelCollectionOperation();coordinator.CancelPending();};
+        Closed+=(_,_)=>{closed=true;coordinator.Dispose();};
     }
     internal void Refresh(bool restorePosition=false)
     {
+        if(closed)return;
         pendingReturn|=restorePosition;
-        editor.Collection.RefreshFailures();var position=offset;rows.Children.Clear();
-        if(editor.Collection.Photos.Count==0)rows.Children.Add(AdjustmentDialogLayout.Text(Loc.Text("添加照片后，可同步调整、逐张微调并导出。")));
-        foreach(var photo in editor.Collection.Photos) {
-            var panel=new StackPanel{Margin=new Thickness(0,8,0,12)};rows.Children.Add(panel);
-            var row=new DockPanel();panel.Children.Add(row);
-            var selection=new CheckBox{IsChecked=editor.Collection.Selected.Contains(photo.ID),Margin=new Thickness(0,0,12,0),VerticalAlignment=VerticalAlignment.Center};
-            AutomationProperties.SetAutomationId(selection,"collection.select."+photo.ID);
-            selection.Checked+=(_,_)=>{editor.Collection.Select(photo.ID,true);RefreshButtons();};
-            selection.Unchecked+=(_,_)=>{editor.Collection.Select(photo.ID,false);RefreshButtons();};row.Children.Add(selection);
-            var edit=AdjustmentDialogLayout.Button("编辑","collection.edit."+photo.ID,()=>{offset=scroll.VerticalOffset;editor.EditCollectionPhoto(photo.ID);});
-            DockPanel.SetDock(edit,Dock.Right);row.Children.Add(edit);
-            var remove=AdjustmentDialogLayout.Button("移除","collection.remove."+photo.ID,()=>{editor.Collection.Remove(photo.ID);Refresh();});
-            DockPanel.SetDock(remove,Dock.Right);row.Children.Add(remove);
-            var image=new Image{Width=64,Height=52,Stretch=Stretch.Uniform,Margin=new Thickness(0,0,12,0)};row.Children.Add(image);
-            var name=AdjustmentDialogLayout.Text(Path.GetFileName(photo.Path));name.ToolTip=photo.Path;name.VerticalAlignment=VerticalAlignment.Center;row.Children.Add(name);
-            if(editor.Collection.Failures.TryGetValue(photo.ID,out var failure)) {
-                edit.IsEnabled=false;var error=AdjustmentDialogLayout.Text(failure);error.SetResourceReference(TextBlock.ForegroundProperty,"ErrorForeground");panel.Children.Add(error);
-            }else _=LoadThumbnail(photo.Path,image);
-        }
+        var position=offset;
+        var hasPhotos=editor.Collection.Photos.Count>0;
+        if(hasPhotos)rows.Children.Remove(emptyHint);
+        coordinator.Refresh(editor.Collection);
+        if(!hasPhotos && !rows.Children.Contains(emptyHint))rows.Children.Add(emptyHint);
         scroll.ScrollToVerticalOffset(position);RefreshButtons();
         if(pendingReturn)Dispatcher.BeginInvoke(new Action(()=>{
-            if(!IsVisible || editor.Collection.Photos.Count==0)return;
+            if(closed || !IsVisible || editor.Collection.Photos.Count==0)return;
             var index=Math.Clamp(editor.Collection.ReturnPosition,0,editor.Collection.Photos.Count-1);
-            if(rows.Children[index] is FrameworkElement row){row.BringIntoView();pendingReturn=false;}
+            if(index<rows.Children.Count && rows.Children[index] is FrameworkElement row){row.BringIntoView();pendingReturn=false;}
         }),System.Windows.Threading.DispatcherPriority.Loaded);
     }
-    private async Task LoadThumbnail(string path,Image image)
+    private PhotoRow CreateRow(CollectionPhoto photo, bool isSelected, string? failure)
     {
-        try{var thumbnail=await Task.Run(()=>RenderEngine.Thumbnail(path));if(IsVisible)image.Source=thumbnail;}catch(Exception){}
+        var panel=new StackPanel{Margin=new Thickness(0,8,0,12)};
+        var rowPanel=new DockPanel();panel.Children.Add(rowPanel);
+        var selection=new CheckBox{IsChecked=isSelected,Margin=new Thickness(0,0,12,0),VerticalAlignment=VerticalAlignment.Center};
+        AutomationProperties.SetAutomationId(selection,"collection.select."+photo.ID);
+        rowPanel.Children.Add(selection);
+        var edit=AdjustmentDialogLayout.Button("编辑","collection.edit."+photo.ID,()=>{offset=scroll.VerticalOffset;editor.EditCollectionPhoto(photo.ID);});
+        DockPanel.SetDock(edit,Dock.Right);rowPanel.Children.Add(edit);
+        var remove=AdjustmentDialogLayout.Button("移除","collection.remove."+photo.ID,()=>{editor.Collection.Remove(photo.ID);Refresh();});
+        DockPanel.SetDock(remove,Dock.Right);rowPanel.Children.Add(remove);
+        var image=new Image{Width=64,Height=52,Stretch=Stretch.Uniform,Margin=new Thickness(0,0,12,0)};rowPanel.Children.Add(image);
+        var name=AdjustmentDialogLayout.Text(Path.GetFileName(photo.Path));name.ToolTip=photo.Path;name.VerticalAlignment=VerticalAlignment.Center;rowPanel.Children.Add(name);
+        var errorLabel=AdjustmentDialogLayout.Text("");errorLabel.SetResourceReference(TextBlock.ForegroundProperty,"ErrorForeground");
+        errorLabel.Visibility=Visibility.Collapsed;panel.Children.Add(errorLabel);
+        var row=new PhotoRow(photo.ID,panel,selection,edit,image,name,errorLabel);
+        selection.Checked+=(_,_)=>{if(!row.SyncingSelection){editor.Collection.Select(row.PhotoID,true);RefreshButtons();}};
+        selection.Unchecked+=(_,_)=>{if(!row.SyncingSelection){editor.Collection.Select(row.PhotoID,false);RefreshButtons();}};
+        ApplyRowFailure(row,failure);
+        return row;
+    }
+    private static void ApplyRowFailure(PhotoRow row, string? failure)
+    {
+        row.Edit.IsEnabled=failure==null;
+        if(failure!=null){row.ErrorLabel.Text=failure;row.ErrorLabel.Visibility=Visibility.Visible;}
+        else{row.ErrorLabel.Text="";row.ErrorLabel.Visibility=Visibility.Collapsed;}
     }
     private void RefreshButtons()
     {

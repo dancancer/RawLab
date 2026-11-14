@@ -30,14 +30,13 @@ public partial class MainWindow
     }
     private void ShowCollection()
     {
-        Collection.RefreshFailures();
         if(collectionWindow==null) {
             collectionWindow=new(this){IsEnabled=!UpdateInstallationActive};
             collectionWindow.Closed+=(_,_)=>{collectionWindow=null;};
         }
         collectionWindow.Refresh(restorePosition:true);collectionWindow.Show();collectionWindow.Activate();RefreshControls();
     }
-    internal void AddCollectionPhotos(IEnumerable<string> paths) {Collection.Add(paths,file);Collection.RefreshFailures();}
+    internal void AddCollectionPhotos(IEnumerable<string> paths) => Collection.Add(paths,file);
     // 用户拒绝导航时消费请求；只有暂时阻塞或保存失败才交给定时器重试。
     internal bool TryOpenSystemPhotos(IEnumerable<string> paths)
     {

@@ -33,15 +33,51 @@ public sealed class BatchSelectionSession
         CollectionPhoto? current=null;
         if(currentPath!=null)try{current=CollectionPhoto.Read(currentPath);}catch(IOException){}catch(UnauthorizedAccessException){}
         foreach(var path in paths) {
+            var full=System.IO.Path.GetFullPath(path);
+            var fallbackId=full.ToUpperInvariant();
             CollectionPhoto photo;
             try {
                 photo=CollectionPhoto.Read(path);
                 if(current?.ID==photo.ID)photo=current;
             }catch(Exception error) {
-                var full=System.IO.Path.GetFullPath(path);var id=full.ToUpperInvariant();
-                photo=new(id,full,new(full,0,0,0));failures[id]=AdjustmentTransferPresentation.Detail(error);
+                var detail=AdjustmentTransferPresentation.Detail(error);
+                var existingIndex=photos.FindIndex(existing=>existing.ID==fallbackId || StringComparer.OrdinalIgnoreCase.Equals(existing.Path,full));
+                if(existingIndex>=0) {
+                    failures[photos[existingIndex].ID]=detail;
+                    continue;
+                }
+                photo=new(fallbackId,full,new(full,0,0,0));
+                failures[fallbackId]=detail;
+                photos.Add(photo);
+                selected.Add(photo.ID);
+                continue;
             }
-            if(photos.Any(existing=>existing.ID==photo.ID))continue;
+            var indexById=photos.FindIndex(existing=>existing.ID==photo.ID);
+            if(indexById>=0) {
+                var existing=photos[indexById];
+                if(existing.Identity.Modified==0 && existing.Identity.Created==0) {
+                    photos[indexById]=photo;
+                    failures.Remove(existing.ID);
+                }
+                else if(existing.Identity.SameContent(photo.Identity)) {
+                    failures.Remove(existing.ID);
+                }
+                else {
+                    failures[existing.ID]=AdjustmentTransferPresentation.Detail(new PhotoChangedException());
+                }
+                continue;
+            }
+            var sentinelIndex=photos.FindIndex(existing=>
+                existing.Identity.Modified==0 && existing.Identity.Created==0 &&
+                (existing.ID==fallbackId || StringComparer.OrdinalIgnoreCase.Equals(existing.Path,photo.Path)));
+            if(sentinelIndex>=0) {
+                var sentinel=photos[sentinelIndex];
+                photos[sentinelIndex]=photo;
+                if(selected.Remove(sentinel.ID)) selected.Add(photo.ID);
+                failures.Remove(sentinel.ID);
+                failures.Remove(photo.ID);
+                continue;
+            }
             photos.Add(photo);selected.Add(photo.ID);
         }
     }
@@ -64,6 +100,25 @@ public sealed class BatchSelectionSession
     public void RefreshFailures()
     {
         foreach(var photo in photos)try{photo.Validate();failures.Remove(photo.ID);}catch(Exception error){failures[photo.ID]=AdjustmentTransferPresentation.Detail(error);}
+    }
+    internal bool ApplyFailureUpdates(IReadOnlyList<(string ID, OriginalIdentity Identity, string? Error)> updates)
+    {
+        var changed = false;
+        foreach (var (id, identity, error) in updates)
+        {
+            var current = photos.FirstOrDefault(photo => photo.ID == id);
+            if (current == null || current.Identity != identity) continue;
+            if (error == null)
+            {
+                if (failures.Remove(id)) changed = true;
+            }
+            else if (!failures.TryGetValue(id, out var existing) || !string.Equals(existing, error, StringComparison.Ordinal))
+            {
+                failures[id] = error;
+                changed = true;
+            }
+        }
+        return changed;
     }
 }
 

@@ -48,6 +48,8 @@
     <Compile Include="../../EditPersistence.cs" Link="EditPersistence.cs" Condition="Exists('../../EditPersistence.cs')" />
     <Compile Include="../../ProcessingMigration.cs" Link="ProcessingMigration.cs" />
     <Compile Include="../../BatchSelection.cs" />
+    <Compile Include="../../BatchSelectionCoordinator.cs" />
+    <Compile Include="../../PreviewFallback.cs" />
     <Compile Include="../../BatchExport.cs" Link="BatchExport.cs" Condition="Exists('../../BatchExport.cs')" />
     <Compile Include="../../HDRSettings.cs" Link="HDRSettings.cs" />
     <Compile Include="../../HDRSourceInfo.cs" Link="HDRSourceInfo.cs" />
