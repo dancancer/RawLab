@@ -219,7 +219,7 @@ bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
         if (chromaDenoise != 0) {
             ImageData toned(static_cast<int>(pw), static_cast<int>(ph));
             c.read(c.processing[current], toned);
-            if (applyChromaDenoise(toned, chromaDenoise, nullptr, GpuMode::Force) != ErrorCode::Success) return false;
+            if (applyChromaDenoiseWorking(toned, chromaDenoise, nullptr, GpuMode::Force) != ErrorCode::Success) return false;
             c.context->UpdateSubresource(c.processing[current].data.Get(), 0, nullptr, toned.pixels.data(), 0, 0);
         }
         if (request.noise_reduction>0) { c.dispatch(c.processing[current],c.processing[1-current],p,2,pw,ph,pw,ph);current=1-current; }

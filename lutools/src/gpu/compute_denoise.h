@@ -24,7 +24,11 @@ struct FilterParams {
 static_assert(sizeof(FilterParams) == 96 && offsetof(FilterParams, firmThreshold) == 60,
               "Native compute parameter layout");
 
-struct FilterBuffer { virtual ~FilterBuffer() = default; };
+struct FilterBuffer {
+    virtual ~FilterBuffer() = default;
+    virtual FilterBuffer& underlying() { return *this; }
+    virtual const FilterBuffer& underlying() const { return *this; }
+};
 struct FilterContext { virtual ~FilterContext() = default; };
 using FilterBufferPtr = std::unique_ptr<FilterBuffer>;
 
@@ -34,6 +38,7 @@ public:
     virtual ~FilterDevice() = default;
     virtual std::unique_ptr<FilterContext> activate() = 0;
     virtual FilterBufferPtr allocate(size_t count, const float* input = nullptr) = 0;
+    virtual void write(FilterBuffer& buffer, size_t count, const float* input) = 0;
     virtual void dispatch(FilterParams params, FilterBuffer& source, FilterBuffer* other,
                           FilterBuffer& output, FilterBuffer* secondOutput = nullptr) = 0;
     virtual void read(FilterBuffer& buffer, size_t count, float* output) = 0;

@@ -67,9 +67,11 @@ std::vector<unsigned char> render(sony2fuji_session* session, const sony2fuji_re
 
 void checkGPU(sony2fuji_session* session, const sony2fuji_request& r,
               const std::vector<unsigned char>& expected, const std::string& label) {
-#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_D3D11)
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_D3D11) || defined(SONY2FUJI_ENABLE_GLES)
 #if defined(SONY2FUJI_ENABLE_D3D11)
     constexpr auto backend = SONY2FUJI_BACKEND_D3D11;
+#elif defined(SONY2FUJI_ENABLE_GLES)
+    constexpr auto backend = SONY2FUJI_BACKEND_GLES;
 #else
     constexpr auto backend = SONY2FUJI_BACKEND_METAL;
 #endif

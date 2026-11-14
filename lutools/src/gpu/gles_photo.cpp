@@ -1,4 +1,5 @@
 #include "gpu/gles_photo.h"
+#include "gpu/gles_pixel_contract.h"
 #include "core/processing_cancellation.h"
 #include "gpu/gles_photo_shader.h"
 #include "gpu/lut_gpu_internal.h"
@@ -19,8 +20,8 @@ namespace sony2fuji {
 namespace {
 constexpr size_t kTileBytes = 16 * 1024 * 1024;
 constexpr size_t kCacheBytes = 64 * 1024 * 1024;
-constexpr GLuint kWorkgroup = 128;
-static_assert(sizeof(RGB) == 3 * sizeof(float));
+constexpr GLuint kWorkgroup = GlesPhotoPixelContract::kWorkgroupSize;
+static_assert(sizeof(RGB) == GlesPhotoPixelContract::kSsboPixelBytes);
 
 EGLDisplay sharedDisplay() {
     // Android's display is shared with HWUI. Keep one process-level initialization;
@@ -211,12 +212,17 @@ struct GlesPhotoRenderer::Impl {
             glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
             const auto data = buildLutTextureDataRGBA(*lut);
             const int size = lut->getSize();
+            if (!validGlesLut3DContract(*lut, textureLimit, data.size())) {
+                throw std::runtime_error("LUT texture contract invalid");
+            }
+            glPixelStorei(GL_UNPACK_ALIGNMENT, GlesPhotoPixelContract::kLutUnpackAlignment);
             glTexImage3D(GL_TEXTURE_3D, 0, GL_RGBA32F, size, size, size, 0, GL_RGBA, GL_FLOAT, data.data());
             checkGL(); cachedLut = lut;
         }
         glBindTexture(GL_TEXTURE_3D, texture);
         glUniform1i(uniform("useLut"), lut ? 1 : 0);
         if (lut) {
+            glUniform1i(uniform("inputIsSRGB"), lut->inputTransfer() == LUTTransfer::SRGB);
             glUniform1i(uniform("inputIsFLog"), lut->inputTransfer() == LUTTransfer::FLog);
             glUniform1i(uniform("outputIsLog"), lut->outputTransfer() != LUTTransfer::Display);
             glUniform1i(uniform("outputIsFLog"), lut->outputTransfer() == LUTTransfer::FLog);
@@ -266,7 +272,7 @@ bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
     const RGB& relativeWB, uint32_t width, uint32_t height, uint64_t revision, ImageData& output,
     const PhotoEffectsOptions& effects, int chromaDenoise, bool preserveSourceResolution, const HslOptions& hsl, const ToneControlsOptions& toneControls,
     const ColorGradingOptions& colorGrading, const ToneCurve& customCurve) {
-    if (lut && (lut->requiresCPU() || lut->inputTransfer() == LUTTransfer::SRGB)) return false;
+    if (lut && lut->requiresCPU()) return false;
     if (input.width <= 0 || input.height <= 0 || width == 0 || height == 0 ||
         width > INT32_MAX || height > INT32_MAX || uint64_t(width) * height > INT32_MAX ||
         input.pixels.size() != size_t(input.width) * input.height ||
@@ -302,7 +308,7 @@ bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
             context.cachedRevision = 0;
             ImageData native(input.width, input.height);
             context.bands(input, input.width, input.height, 2, &native);
-            if (applyChromaDenoise(native, chromaDenoise, nullptr, GpuMode::Force) != ErrorCode::Success ||
+            if (applyChromaDenoiseWorking(native, chromaDenoise, nullptr, GpuMode::Force) != ErrorCode::Success ||
                 ((request.noise_reduction > 0 || request.sharpening > 0) &&
                  !gpuDetailFilter(native, request.noise_reduction, request.sharpening)) ||
                 (effects.active() && !gpuPhotoEffects(native, effects))) return false;

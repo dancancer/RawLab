@@ -16,6 +16,7 @@ typedef int32_t GLsizei;
 typedef int64_t GLint64;
 typedef intptr_t GLintptr;
 typedef intptr_t GLsizeiptr;
+typedef unsigned char GLubyte;
 typedef char GLchar;
 typedef float GLfloat;
 
@@ -28,6 +29,8 @@ typedef float GLfloat;
 #define GL_UNPACK_ALIGNMENT 0x0CF5
 #define GL_RGBA 0x1908
 #define GL_FLOAT 0x1406
+#define GL_RENDERER 0x1F01
+#define GL_VERSION 0x1F02
 #define GL_NEAREST 0x2600
 #define GL_TEXTURE_MAG_FILTER 0x2800
 #define GL_TEXTURE_MIN_FILTER 0x2801
@@ -42,6 +45,8 @@ typedef float GLfloat;
 #define GL_TEXTURE0 0x84C0
 #define GL_RGBA32F 0x8814
 #define GL_DYNAMIC_DRAW 0x88E8
+#define GL_DYNAMIC_COPY 0x88EA
+#define GL_UNIFORM_BUFFER 0x8A11
 #define GL_COMPILE_STATUS 0x8B81
 #define GL_LINK_STATUS 0x8B82
 #define GL_MAP_READ_BIT 0x0001
@@ -49,6 +54,7 @@ typedef float GLfloat;
 #define GL_SHADER_STORAGE_BARRIER_BIT 0x00002000
 #define GL_SHADER_STORAGE_BUFFER 0x90D2
 #define GL_MAX_SHADER_STORAGE_BLOCK_SIZE 0x90DE
+#define GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS 0x90DC
 #define GL_MAX_COMPUTE_WORK_GROUP_INVOCATIONS 0x90EB
 #define GL_COMPUTE_SHADER 0x91B9
 #define GL_MAX_COMPUTE_WORK_GROUP_COUNT 0x91BE
@@ -58,6 +64,7 @@ GLuint glCreateShader(GLenum type);
 void glShaderSource(GLuint shader, GLsizei count, const GLchar* const* string, const GLint* length);
 void glCompileShader(GLuint shader);
 void glGetShaderiv(GLuint shader, GLenum pname, GLint* params);
+void glGetShaderInfoLog(GLuint shader, GLsizei bufSize, GLsizei* length, GLchar* infoLog);
 void glDeleteShader(GLuint shader);
 
 GLuint glCreateProgram(void);
@@ -68,7 +75,16 @@ void glDeleteProgram(GLuint program);
 void glUseProgram(GLuint program);
 GLint glGetUniformLocation(GLuint program, const GLchar* name);
 void glUniform1i(GLint location, GLint v0);
+void glUniform1ui(GLint location, GLuint v0);
+void glUniform2ui(GLint location, GLuint v0, GLuint v1);
+void glUniform1f(GLint location, GLfloat v0);
+void glUniform3f(GLint location, GLfloat v0, GLfloat v1, GLfloat v2);
+void glUniform4f(GLint location, GLfloat v0, GLfloat v1, GLfloat v2, GLfloat v3);
+void glUniform3fv(GLint location, GLsizei count, const GLfloat* value);
+void glUniform4fv(GLint location, GLsizei count, const GLfloat* value);
+void glUniformMatrix3fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat* value);
 
+const GLubyte* glGetString(GLenum name);
 void glGetIntegerv(GLenum pname, GLint* data);
 void glGetIntegeri_v(GLenum target, GLuint index, GLint* data);
 void glGetInteger64v(GLenum pname, GLint64* data);

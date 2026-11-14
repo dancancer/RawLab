@@ -3149,16 +3149,6 @@ static sony2fuji_status processImpl(
         if (session->gpu_config.mode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_UNSUPPORTED;
         gpuPipeline = false;
     }
-#if defined(SONY2FUJI_ENABLE_GLES)
-    // GLES 着色器未实现 sRGB 输入 .cube LUT；仅对非显示参考流强制回退并拒绝 Force。
-    const bool glesUnsupportedLut = !displayInput && lut && lut->inputTransfer() == sony2fuji::LUTTransfer::SRGB;
-    if (glesUnsupportedLut) {
-        if (session->gpu_config.mode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_UNSUPPORTED;
-        gpuPipeline = false;
-    }
-#else
-    const bool glesUnsupportedLut = false;
-#endif
     sony2fuji::checkProcessingCancellation();
 
     sony2fuji::ImageData image;
@@ -3406,7 +3396,7 @@ static sony2fuji_status processImpl(
     }
 
     auto lookConfig = session->gpu_config;
-    if (contractCPU || glesUnsupportedLut || gpuPipeline || neighborhoodActive || basicControlsActive || hslActive || toneControlsActive || colorGradingActive || chromaMode != 0 || waveletActive || effectsActive)
+    if (contractCPU || gpuPipeline || neighborhoodActive || basicControlsActive || hslActive || toneControlsActive || colorGradingActive || chromaMode != 0 || waveletActive || effectsActive)
         lookConfig.mode = sony2fuji::GpuMode::Off;
     status = applyPhotoLook(image, lut, dcp, local.lut_strength, displayInput, lookConfig);
     if (status != SONY2FUJI_STATUS_OK) return status;

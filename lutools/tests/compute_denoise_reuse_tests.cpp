@@ -1,0 +1,309 @@
+#define SONY2FUJI_GLES_VM_IMPLEMENT
+#include "gles_spirv_vm.h"
+
+#include "gpu/compute_denoise.h"
+
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
+#include <limits>
+#include <memory>
+#include <new>
+#include <vector>
+
+namespace {
+
+thread_local struct {
+    bool active = false;
+    size_t minBytes = 0;
+    size_t count = 0;
+    size_t maxBytes = 0;
+} gAllocProbe;
+
+struct ScopedAllocProbe {
+    explicit ScopedAllocProbe(size_t threshold) {
+        gAllocProbe = {true, threshold, 0, 0};
+    }
+    ~ScopedAllocProbe() { gAllocProbe.active = false; }
+    size_t count() const { return gAllocProbe.count; }
+    size_t maxBytes() const { return gAllocProbe.maxBytes; }
+};
+
+} // namespace
+
+void* operator new(std::size_t size) {
+    if (gAllocProbe.active && size >= gAllocProbe.minBytes) {
+        ++gAllocProbe.count;
+        gAllocProbe.maxBytes = std::max(gAllocProbe.maxBytes, size);
+    }
+    void* ptr = std::malloc(size ? size : 1);
+    if (!ptr) throw std::bad_alloc();
+    return ptr;
+}
+
+void* operator new[](std::size_t size) { return ::operator new(size); }
+void operator delete(void* ptr) noexcept { std::free(ptr); }
+void operator delete(void* ptr, std::size_t) noexcept { std::free(ptr); }
+void operator delete[](void* ptr) noexcept { std::free(ptr); }
+void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); }
+
+namespace {
+
+int gFailures = 0;
+
+void check(bool ok, const std::string& label) {
+    std::cout << (ok ? "PASS " : "FAIL ") << label << '\n';
+    if (!ok) ++gFailures;
+}
+
+struct MockBuffer : sony2fuji::FilterBuffer {
+    std::vector<float> data;
+};
+
+struct MockContext : sony2fuji::FilterContext {};
+
+class MockFilterDevice : public sony2fuji::FilterDevice {
+public:
+    size_t allocateCalls = 0;
+    size_t writeCalls = 0;
+    size_t dispatchCalls = 0;
+    size_t readCalls = 0;
+    bool injectNaNOnSecondDirection = false;
+
+    std::unique_ptr<sony2fuji::FilterContext> activate() {
+        return std::make_unique<MockContext>();
+    }
+
+    sony2fuji::FilterBufferPtr allocate(size_t count, const float* input = nullptr) {
+        const bool wasProbing = gAllocProbe.active;
+        gAllocProbe.active = false;
+        ++allocateCalls;
+        auto buf = std::make_unique<MockBuffer>();
+        buf->data.assign(count, 0.f);
+        if (input && count > 0) std::memcpy(buf->data.data(), input, count * sizeof(float));
+        gAllocProbe.active = wasProbing;
+        return buf;
+    }
+
+    void write(sony2fuji::FilterBuffer& buffer, size_t count, const float* input) {
+        ++writeCalls;
+        auto& dst = static_cast<MockBuffer&>(buffer);
+        assert(count <= dst.data.size());
+        if (input && count > 0) std::memcpy(dst.data.data(), input, count * sizeof(float));
+    }
+
+    void dispatch(sony2fuji::FilterParams params, sony2fuji::FilterBuffer& source, sony2fuji::FilterBuffer*,
+                  sony2fuji::FilterBuffer& output, sony2fuji::FilterBuffer*) {
+        ++dispatchCalls;
+        auto& src = static_cast<MockBuffer&>(source);
+        auto& dst = static_cast<MockBuffer&>(output);
+        const size_t srcOffset = size_t(params.outputRow - params.sourceRow) * params.width * 3;
+        const size_t n = size_t(params.count) * 3;
+        assert(srcOffset + n <= src.data.size());
+        assert(n <= dst.data.size());
+        const float bias = params.stage == static_cast<uint32_t>(sony2fuji::FilterStage::Detail)
+            ? (params.direction == 0 ? 0.01f : 0.02f)
+            : 0.005f;
+        for (size_t i = 0; i < n; ++i) {
+            dst.data[i] = src.data[srcOffset + i] + bias;
+        }
+        if (injectNaNOnSecondDirection && params.direction == 1 && n > 0) {
+            dst.data[0] = std::numeric_limits<float>::quiet_NaN();
+        }
+    }
+
+    void read(sony2fuji::FilterBuffer& buffer, size_t count, float* output) {
+        ++readCalls;
+        const auto& src = static_cast<MockBuffer&>(buffer);
+        assert(count <= src.data.size());
+        if (count > 0) std::memcpy(output, src.data.data(), count * sizeof(float));
+    }
+};
+
+void testImageFilterBandAndScratchReuse() {
+    // width=4096 -> maxRows = 8 MiB / (4096*12) = 170, band rows = 168 -> 510 rows yields 4 bands.
+    sony2fuji::ImageData image(4096, 510);
+    for (size_t i = 0; i < image.pixels.size(); ++i) {
+        image.pixels[i] = {0.2f, 0.35f, 0.5f};
+    }
+
+    sony2fuji::PhotoEffectsOptions fx;
+    fx.vignetteAmount = -25.f;
+
+    MockFilterDevice dev;
+    size_t largeAllocs = 0;
+    bool ok = false;
+    {
+        // Each ImageData(4096,510) is 25.07 MB; each of the first 3 band readbacks is ~8.26 MB (>4 MB).
+        ScopedAllocProbe probe(4 * 1024 * 1024);
+        ok = sony2fuji::computePhotoEffects(dev, image, fx);
+        largeAllocs = probe.count();
+    }
+    check(ok, "computePhotoEffects multi-band succeeds");
+    check(dev.allocateCalls == 2,
+          "imageFilter allocates input/output SSBO once outside band loop (got " +
+          std::to_string(dev.allocateCalls) + ")");
+    check(dev.writeCalls == 4,
+          "imageFilter reuploads each band into reused buffer via write() (got " +
+          std::to_string(dev.writeCalls) + ")");
+    check(dev.dispatchCalls == 4 && dev.readCalls == 4, "imageFilter dispatches and reads all 4 bands");
+    check(largeAllocs <= 2,
+          "imageFilter + finiteOutput reuse host scratch across multi-band readback (got " +
+          std::to_string(largeAllocs) + " allocs >= 4 MiB)");
+    check(std::fabs(image.pixels.front().r - 0.205f) < 1e-6f &&
+          std::fabs(image.pixels.back().b - 0.505f) < 1e-6f,
+          "imageFilter preserves pixel exactness across reused bands");
+}
+
+void testDetailFilterCopiesAndAtomicity() {
+    // 4096 x 200: image = 9,830,400 B (~9.38 MiB); max band = 168*4096*12 = 8,257,536 B (< 9 MB).
+    constexpr size_t kFullImageThreshold = 9000000;
+    sony2fuji::ImageData base(4096, 200);
+    for (size_t i = 0; i < base.pixels.size(); ++i) {
+        base.pixels[i] = {0.3f, 0.4f, 0.6f};
+    }
+
+    {
+        sony2fuji::ImageData zero = base;
+        MockFilterDevice dev;
+        size_t fullCopies = 0;
+        bool ok = false;
+        {
+            ScopedAllocProbe probe(kFullImageThreshold);
+            ok = sony2fuji::computeDetailFilter(dev, zero, 0.f, 0.f);
+            fullCopies = probe.count();
+        }
+        check(ok && dev.allocateCalls == 0, "computeDetailFilter 0/0 performs no GPU work");
+        check(fullCopies == 0,
+              "computeDetailFilter 0/0 performs zero full-image allocations (got " +
+              std::to_string(fullCopies) + ")");
+    }
+
+    {
+        sony2fuji::ImageData onePass = base;
+        MockFilterDevice dev;
+        size_t fullCopies = 0;
+        bool ok = false;
+        {
+            ScopedAllocProbe probe(kFullImageThreshold);
+            ok = sony2fuji::computeDetailFilter(dev, onePass, 0.5f, 0.f);
+            fullCopies = probe.count();
+        }
+        check(ok && dev.allocateCalls == 2 && dev.writeCalls == 2,
+              "computeDetailFilter 1-pass reuses band SSBOs across halo bands");
+        check(fullCopies == 1,
+              "computeDetailFilter 1-pass allocates only 1 full result buffer instead of 2 (got " +
+              std::to_string(fullCopies) + ")");
+        check(std::fabs(onePass.pixels.front().r - 0.31f) < 1e-6f,
+              "computeDetailFilter 1-pass output is accurate");
+    }
+
+    {
+        sony2fuji::ImageData twoPassFail = base;
+        MockFilterDevice dev;
+        dev.injectNaNOnSecondDirection = true;
+        const bool ok = sony2fuji::computeDetailFilter(dev, twoPassFail, 0.5f, 0.6f);
+        check(!ok, "computeDetailFilter 2-pass rejects non-finite pass 2 output");
+        check(twoPassFail.pixels[0].r == base.pixels[0].r &&
+              twoPassFail.pixels.back().b == base.pixels.back().b,
+              "computeDetailFilter 2-pass failure preserves caller image atomically");
+    }
+}
+
+void testGlesDenoiseBufferPooling() {
+#ifndef RAWLAB_GLSLANG_PATH
+    std::cout << "SKIP gles_denoise pooling (glslangValidator unavailable)\n";
+#else
+    rawlabtest::resetGlesVmState();
+    auto device = sony2fuji::createGlesFilterDevice();
+    check(device != nullptr, "createGlesFilterDevice returns non-null");
+    if (!device) return;
+
+    auto makePattern = [](int w, int h) {
+        std::vector<float> guide(size_t(w) * h * 3);
+        std::vector<float> src(size_t(w) * h * 2);
+        for (int y = 0; y < h; ++y) {
+            for (int x = 0; x < w; ++x) {
+                const size_t i = size_t(y) * w + x;
+                guide[i * 3 + 0] = 50.f + 0.1f * float(x % 16);
+                guide[i * 3 + 1] = 0.05f * std::sin(float(x) * 0.2f);
+                guide[i * 3 + 2] = -0.05f * std::cos(float(y) * 0.2f);
+                src[i * 2 + 0] = 2.f * std::sin(float(x + y) * 0.3f);
+                src[i * 2 + 1] = -2.f * std::cos(float(x - y) * 0.3f);
+            }
+        }
+        return std::make_pair(guide, src);
+    };
+
+    auto [guide64, src64] = makePattern(64, 64);
+    std::vector<float> out1(64 * 64 * 2, 0.f);
+    std::vector<float> out2(64 * 64 * 2, 0.f);
+    std::vector<float> outEdge(64 * 48 * 2, 0.f);
+    {
+        auto scope = device->activate();
+        check(sony2fuji::computeGuidedFilter(*device, guide64.data(), src64.data(), 64, 64, 2, 0.01f, out1.data()),
+              "computeGuidedFilter warmup 64x64 succeeds on GLES SPIR-V VM");
+    }
+
+    // Also warm up a 32x32 depth-4 wavelet tile (24 buffers per tile).
+    sony2fuji::WaveletFilterSettings wav;
+    wav.depth = 4;
+    for (int s = 0; s < 4; ++s) wav.thresholdScale[s] = 1.f;
+    for (int i = 0; i < 12; ++i) wav.sigma[i] = 0.02f;
+    std::vector<float> wavIn(32 * 32, 0.3f);
+    for (size_t i = 0; i < wavIn.size(); ++i) wavIn[i] += 0.02f * std::sin(float(i));
+    std::vector<float> wavOut1(32 * 32, 0.f);
+    std::vector<float> wavOut2(32 * 32, 0.f);
+    {
+        auto scope = device->activate();
+        check(sony2fuji::computeWaveletFilter(*device, wavIn.data(), 32, 32, wav, wavOut1.data()),
+              "computeWaveletFilter warmup 32x32 succeeds on GLES SPIR-V VM");
+    }
+
+    // Reset GL counters after warmup; repeat identical & smaller edge-band calls must reuse pooled SSBOs.
+    rawlabtest::glesVmStats().resetCounters();
+    auto [guideEdge, srcEdge] = makePattern(64, 48);
+    {
+        auto scope = device->activate();
+        check(sony2fuji::computeGuidedFilter(*device, guide64.data(), src64.data(), 64, 64, 2, 0.01f, out2.data()),
+              "computeGuidedFilter repeat 64x64 succeeds");
+        check(sony2fuji::computeGuidedFilter(*device, guideEdge.data(), srcEdge.data(), 64, 48, 2, 0.01f, outEdge.data()),
+              "computeGuidedFilter trailing band 64x48 succeeds");
+        check(sony2fuji::computeWaveletFilter(*device, wavIn.data(), 32, 32, wav, wavOut2.data()),
+              "computeWaveletFilter repeat tile 32x32 succeeds");
+    }
+
+    const auto& stats = rawlabtest::glesVmStats();
+    check(stats.genBufferCalls == 0,
+          "gles_denoise reuses pooled SSBOs without glGenBuffers (got " +
+          std::to_string(stats.genBufferCalls) + ")");
+    check(stats.bufferDataCalls == 0,
+          "gles_denoise reuses pooled SSBOs without glBufferData reallocation (got " +
+          std::to_string(stats.bufferDataCalls) + ")");
+    check(stats.deleteBufferCalls == 0,
+          "gles_denoise retains pooled SSBOs without glDeleteBuffers churn (got " +
+          std::to_string(stats.deleteBufferCalls) + ")");
+    check(stats.bufferSubDataCalls >= 5,
+          "gles_denoise uploads new data into pooled SSBOs via glBufferSubData");
+    check(out1 == out2 && wavOut1 == wavOut2,
+          "pooled SSBO execution is bit-identical to unpooled warmup results");
+    bool edgeFinite = std::all_of(outEdge.begin(), outEdge.end(), [](float v) { return std::isfinite(v); });
+    check(edgeFinite, "trailing 64x48 band produces finite values when reusing 64x64 buffers");
+#endif
+}
+
+} // namespace
+
+int main() {
+    testImageFilterBandAndScratchReuse();
+    testDetailFilterCopiesAndAtomicity();
+    testGlesDenoiseBufferPooling();
+    if (gFailures != 0) {
+        std::cerr << gFailures << " check(s) failed\n";
+        return 1;
+    }
+    return 0;
+}
