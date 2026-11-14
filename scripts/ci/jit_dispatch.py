@@ -58,6 +58,11 @@ POLL_STATUSES = ("queued", "in_progress")
 OPEN_JOB_STATUSES = ("queued", "pending", "requested")
 # Hard backstop for one runner process; the workflow's own (180m) job timeout fires first.
 DEFAULT_RUNNER_TIMEOUT = 6 * 3600
+# Page size and upper page bound for Actions REST pagination (1,000 items max per query).
+DEFAULT_PAGE_SIZE = 100
+MAX_PAGES = 10
+# Dispatcher credentials stripped from runner child environments before launching ./run.sh.
+STRIPPED_ENV_VARS = ("RAWLAB_JIT_TOKEN", "GITHUB_TOKEN")
 
 Decision = namedtuple("Decision", ("dispatch", "reason"))
 
@@ -91,22 +96,30 @@ def open_runner_jobs(jobs, runner_label, runner_labels=DEFAULT_RUNNER_LABELS.spl
             and {str(label).lower() for label in (job.get("labels") or [])} <= registered]
 
 
-def dispatch_decision(run, jobs, *, repo=DEFAULT_REPO, runner_label=DEFAULT_RUNNER_LABEL,
-                      runner_labels=DEFAULT_RUNNER_LABELS.split(","), allowlist=frozenset()):
-    """Hard-check server metadata and decide whether this machine may claim the run.
+def trusted_run(run, *, repo=DEFAULT_REPO, allowlist=frozenset()):
+    """Hard-check server metadata for run trust without consulting job payloads.
 
     Trust comes only from GitHub: a push on this repository's own branches, or an explicit
     allowlist entry. Nothing read from the run's YAML (jobs, steps, if-conditions) is consulted,
     because a fork PR ships its own YAML."""
+    entry = allowlist_match(run, allowlist)
+    if entry:
+        return Decision(True, f"allowlisted ({entry})")
+    head_repo = (run.get("head_repository") or {}).get("full_name") or ""
+    event = run.get("event") or "none"
+    if run.get("event") == "push" and head_repo.lower() == repo.lower():
+        return Decision(True, "trusted push on this repository")
+    return Decision(False, f"untrusted (event={event}, head={head_repo or 'none'})")
+
+
+def dispatch_decision(run, jobs, *, repo=DEFAULT_REPO, runner_label=DEFAULT_RUNNER_LABEL,
+                      runner_labels=DEFAULT_RUNNER_LABELS.split(","), allowlist=frozenset()):
+    """Combine server-side run trust with open-job label matching."""
+    trust = trusted_run(run, repo=repo, allowlist=allowlist)
+    if not trust.dispatch:
+        return trust
     if open_runner_jobs(jobs, runner_label, runner_labels):
-        entry = allowlist_match(run, allowlist)
-        if entry:
-            return Decision(True, f"allowlisted ({entry})")
-        head_repo = (run.get("head_repository") or {}).get("full_name") or ""
-        event = run.get("event") or "none"
-        if run.get("event") == "push" and head_repo.lower() == repo.lower():
-            return Decision(True, "trusted push on this repository")
-        return Decision(False, f"untrusted (event={event}, head={head_repo or 'none'})")
+        return trust
     if jobs:
         return Decision(False, f"labels-mismatch (no open job asks for {runner_label})")
     return Decision(False, "await-planning (jobs not visible yet)")
@@ -114,13 +127,18 @@ def dispatch_decision(run, jobs, *, repo=DEFAULT_REPO, runner_label=DEFAULT_RUNN
 
 def next_dispatch(runs, jobs_of, *, repo=DEFAULT_REPO, runner_label=DEFAULT_RUNNER_LABEL,
                   runner_labels=DEFAULT_RUNNER_LABELS.split(","), allowlist=frozenset(), log=None):
-    """Oldest-first queue pass; return the first run this machine may claim.
+    """Oldest-first queue pass; treat an untrusted run as a FIFO queue barrier.
 
-    Untrusted runs are skipped over, not treated as a head barrier: a queued job GitHub has
-    already accepted may still be picked first by an ephemeral runner started for a trusted run
-    (the JIT service assigns by label FIFO, not by run), and docs/process/ci.md records that
-    caveat instead of pretending the API can pin a job."""
+    GitHub's generate-jitconfig assigns runners to queued jobs by label FIFO rather than pinning a
+    job id, so an untrusted run ahead of a trusted run could steal a newly launched ephemeral
+    runner. Stop immediately on the first untrusted run without fetching /jobs or dispatching any
+    newer run behind it."""
     for run in sorted(runs, key=lambda run: (run.get("created_at") or "", run.get("id") or 0)):
+        trust = trusted_run(run, repo=repo, allowlist=allowlist)
+        if not trust.dispatch:
+            if log:
+                log(run, trust)
+            return None
         decision = dispatch_decision(run, jobs_of(run["id"]), repo=repo, runner_label=runner_label,
                                      runner_labels=runner_labels, allowlist=allowlist)
         if log:
@@ -135,11 +153,13 @@ def launch_runner(config, runner_dir=".", argv=None, timeout=DEFAULT_RUNNER_TIME
     ``./runsvc.sh`` exists only after ``svc.sh install``, while ``run.sh`` ships in the archive
     root and forwards to ``Runner.Listener run``. The configuration travels only through
     ACTIONS_RUNNER_INPUT_JITCONFIG (never argv, so a long job does not expose it in `ps`);
+    dispatcher PAT variables are stripped so job steps never inherit them;
     GITHUB_ACTIONS_SERVICE_EXIT_AFTER_N_FAILURES=1 guards the runsvc.sh override mode against
     retry loops. The process leads its own group so the timeout backstop can SIGTERM the whole
     tree (run.sh traps TERM into a graceful listener stop) instead of orphaning the listener."""
-    env = {**os.environ, "ACTIONS_RUNNER_INPUT_JITCONFIG": config,
-           "GITHUB_ACTIONS_SERVICE_EXIT_AFTER_N_FAILURES": "1"}
+    env = {key: value for key, value in os.environ.items() if key not in STRIPPED_ENV_VARS}
+    env["ACTIONS_RUNNER_INPUT_JITCONFIG"] = config
+    env["GITHUB_ACTIONS_SERVICE_EXIT_AFTER_N_FAILURES"] = "1"
     parts = [part.replace("{config}", config) for part in (shlex.split(argv) if argv else ["./run.sh"])]
     process = subprocess.Popen(parts, cwd=runner_dir, env=env, start_new_session=True)
     try:
@@ -167,17 +187,31 @@ class ActionsAPI:
             body = response.read()  # DELETE answers 204 with an empty body (drill 2026-11-14)
             return json.loads(body) if body else {}
 
+    def _get_paginated(self, path, params, key, *, per_page=DEFAULT_PAGE_SIZE, max_pages=MAX_PAGES):
+        """Fetch every page up to ``max_pages``; fail closed rather than truncating older entries."""
+        items = []
+        for page in range(1, max_pages + 1):
+            page_params = dict(params, per_page=per_page)
+            if page > 1:
+                page_params["page"] = page
+            query = urllib.parse.urlencode(page_params)
+            batch = self._request("GET", f"{path}?{query}", None)[key]
+            items.extend(batch)
+            if len(batch) < per_page:
+                return items
+        raise RuntimeError(
+            f"{path} exceeded {max_pages} pages ({max_pages * per_page} items); refusing truncated queue")
+
     def queued_runs(self, statuses=POLL_STATUSES):
-        """Every run that could wait for this machine (one page each; this repo never fills one)."""
+        """Every run that could wait for this machine, paginated per status up to MAX_PAGES."""
         runs = []
         for status in statuses:
-            query = urllib.parse.urlencode({"status": status, "per_page": 100})
-            runs += self._request("GET", f"/repos/{self.repo}/actions/runs?{query}", None)["workflow_runs"]
+            runs += self._get_paginated(f"/repos/{self.repo}/actions/runs", {"status": status}, "workflow_runs")
         return runs
 
     def jobs(self, run_id):
-        query = urllib.parse.urlencode({"per_page": 100})
-        return self._request("GET", f"/repos/{self.repo}/actions/runs/{run_id}/jobs?{query}", None)["jobs"]
+        """Every job in ``run_id``, paginated up to MAX_PAGES."""
+        return self._get_paginated(f"/repos/{self.repo}/actions/runs/{run_id}/jobs", {}, "jobs")
 
     def delete_runner(self, runner_id):
         self._request("DELETE", f"/repos/{self.repo}/actions/runners/{runner_id}", None)
@@ -225,7 +259,7 @@ def dispatch(run, api, *, runner_label=DEFAULT_RUNNER_LABEL, runner_labels=DEFAU
             return
         try:
             api.delete_runner(runner_id)
-        except (OSError, ValueError) as error:
+        except (OSError, ValueError, http.client.HTTPException) as error:
             log(f"could not delete leaked runner '{name}' ({runner_id}): {error}; remove it under Settings → runners")
 
     if not config:
@@ -234,10 +268,13 @@ def dispatch(run, api, *, runner_label=DEFAULT_RUNNER_LABEL, runner_labels=DEFAU
     log(f"run {run['id']}: launching ephemeral runner {name} for job {job_id}")
     process = run_process or launch_runner
     try:
-        return process(config, runner_dir, launch_argv, runner_timeout)
-    except (OSError, subprocess.SubprocessError):
+        code = process(config, runner_dir, launch_argv, runner_timeout)
+    except BaseException:
         cleanup()
         raise
+    if code != 0:
+        cleanup()
+    return code
 
 
 def main(argv=None):
