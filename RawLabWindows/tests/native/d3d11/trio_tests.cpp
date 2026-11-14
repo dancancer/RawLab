@@ -1,7 +1,8 @@
-#include "d3d11_test_hooks.h"
 #include "gpu/d3d11_photo.h"
 #include "gpu/compute_denoise.h"
 #include "core/processing_cancellation.h"
+#include "d3d11_test_hooks.h"
+#undef RGB
 #include <dxgi.h>
 #include <cmath>
 #include <iostream>

@@ -9,7 +9,7 @@ add_executable(d3d11_trio_tests trio_tests.cpp
     "${core}/src/gpu/d3d11_photo.cpp" "${core}/src/gpu/d3d11_denoise.cpp"
     "${core}/src/gpu/denoise.cpp" "${core}/src/gpu/compute_denoise.cpp"
     "${core}/src/core/chroma_denoise.cpp" "${core}/src/core/color_converter.cpp"
-    "${core}/src/core/lut_parser.cpp" "${core}/src/core/photo_color.cpp"
+    "${core}/src/core/lut_parser.cpp" "${core}/src/core/lut_compatibility.cpp" "${core}/src/core/photo_color.cpp"
     "${core}/src/core/photo_effects.cpp" "${core}/src/core/photo_tone_controls.cpp"
     "${core}/src/core/photo_color_grading.cpp" "${core}/src/core/photo_tone_curve.cpp")
 target_compile_features(d3d11_trio_tests PRIVATE cxx_std_17)
