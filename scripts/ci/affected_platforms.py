@@ -20,9 +20,10 @@ DOC_FILES = {"README.md", "CHANGELOG.md", "DESIGN.md", "PRODUCT.md", ".gitignore
 DOC_NAMES = {"AGENTS.md", "CLAUDE.md"}
 # Every client packages this notice even though it lives under docs/.
 PACKAGED_DOCS = {"docs/reference/licensing.md"}
-# Mac artwork, recipes and licenses are packaged by every client; iOS compiles one Mac test fixture.
+# Mac artwork, recipes and licenses are packaged by every client; iOS compiles one Mac test fixture
+# and sources the shared AX gate (RawLab/tests/ios-reset-entry-ui.sh) from a Mac path.
 SHARED_MAC_PREFIXES = ("RawLabMac/Resources/",)
-MAC_AND_IOS_FILES = {"RawLabMac/tests/DCPTestFixtures.swift"}
+MAC_AND_IOS_FILES = {"RawLabMac/tests/DCPTestFixtures.swift", "RawLabMac/tests/ax-gate.sh"}
 CLIENT_DIRECTORIES = {"RawLab/": "ios", "RawLabMac/": "macos",
                       "RawLabWindows/": "windows", "RawLabAndroid/": "android"}
 

@@ -1,6 +1,11 @@
 #!/bin/bash
+# 本地/发布前手工 UI 检查（依赖 macOS 辅助功能 AXUIElement 授权，CI 不执行）。
+# 三态闸与 Mac UI 套件共用 ax-gate.sh（契约见 docs/process/ci.md 与 PR #311）：
+# AX 在场真跑；无 AX 且设 RAWLAB_REQUIRE_AX 则 FAIL exit 1；无 AX 未设档 SKIP exit 0。
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/RawLabMac/tests/ax-gate.sh"
+rawlab_ax_gate
 OUT="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-ios-reset-entry-ui.XXXXXX")"
 trap 'rm -rf "$OUT"' EXIT
 export DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
