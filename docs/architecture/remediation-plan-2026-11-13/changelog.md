@@ -149,3 +149,4 @@
 - 2026-11-14 · #313 三修交卷（`7871baaa` 含基线合并）：大小写折叠三处+只认普通文件，红锚 6 项，look-library 92、JVM 703、CI 7/7。三轮收敛审在途（review-mwg0hwfi）。**新登记上游既有红 ×2**（纯 development @3cd47eac 复现，非 PR 引入，不在 models 门禁）：①catalog-terms de 词条「Aufnahme läuft」漂移；②mac-geometry-draft 离屏窗原生输入断言确定性红（298 PASS 中 1 红）——待派归属。
 - 2026-11-14 · 复审波：#316 方案 A 交卷（CI 绿）二轮碳审在途；**#320 打回**（高1中2：Pump 稳态帧清提示路径、备份证据判定含已完结 receipt/staging、WPF 编译面）氢线程续；**#321 打回 6B**（Layer3 拿 Layer2/错函数/错控件冒充 UI 真锚，病根=锚层造假未清干净）氢线程续；**#322 打回 2B**（Windows 缺键≈null 的 wire 洞+棘轮计数口径）氢线程续。geom-input crew 已派（上游红②归因）。
 - 2026-11-14 · 上游红②结案成 **PR #323**（`18fb6f77`）：geom-input crew 归因=macOS 14+ 后台会话无抢焦点保证（探针排除时序假说），修法=前台保留原断言/后台显式 SKIP+currentEditor 链路承担所有权证明。碳审在途（review-mwg16pkz，核 SKIP 是否遮羞+不变量 7 交互）。上游红①（de 词条）仍压至 #313 合流。
+- 2026-11-14 · CI 阶段2 小票开工：build-python crew 派——build.sh 透传 Python3_EXECUTABLE（edit_recipe_schema 在 mac native 门禁被 Homebrew Python 拖成静默 Skip 一族），Windows build.ps1 先例对照。
