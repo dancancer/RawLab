@@ -2420,6 +2420,7 @@ def _parse_mac_ui(mac_fine: dict[str, float]) -> dict[str, dict]:
     mac_tx = _strip_line_comments(_read("RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift"))
     mac_tv = _strip_line_comments(_read("RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift"))
     mac_dock = _strip_line_comments(_read("RawLabMac/Sources/Editor/View/AdjustmentDock.swift"))
+    mac_curve_ctrl = _strip_line_comments(_read("RawLabMac/Sources/Controls/MacToneCurveControls.swift"))
     mac_hsl_prec = _strip_line_comments(_read("RawLabMac/Sources/Controls/MacHSLPrecision.swift"))
     mac_hsl_ctrl = _strip_line_comments(_read("RawLabMac/Sources/Controls/MacHSLMixer.swift"))
     mac_grad_ctrl = _strip_line_comments(_read("RawLabMac/Sources/Controls/MacColorGradingControls.swift"))
@@ -2570,9 +2571,26 @@ def _parse_mac_ui(mac_fine: dict[str, float]) -> dict[str, dict]:
     unsigned_range = (float(signed_m.group(3)), float(signed_m.group(4)))
     _need(r"ForEach\(parameters\)\s*\{\s*parameter\s+in\s+ParameterRow\(.*?range:\s*parameter\.range,\s*defaultValue:\s*parameter\.defaultValue", mac_fx_ctrl, "effects mac ParameterRow", "PhotoEffectsControls.swift", re.S)
 
-    # Denoise UI (DenoiseControls + AdjustmentTypes + Adjustments)
-    _need(r"if model\.settings\.isHDREditing \{\s*VStack\(spacing:\s*8\) \{\s*parameterRow\(\.denoiseMode\)", mac_dock, "detail.denoise.post_rgb mac dispatch", "AdjustmentDock.swift", re.S)
-    _require('accessibilityIdentifier("chromaNoiseReduction.mode")', mac_dn, "detail.denoise.chroma_mode mac picker", "DenoiseControls.swift")
+    # Legacy S-curve UI (AdjustmentDock.swift -> MacToneCurveControls.swift, NOT unused AdjustmentParameter.toneCurve.spec)
+    _need(r"if tool == \.toneCurve \{.*?MacToneCurveControls\(", mac_dock, "light.s_curve mac dispatch", "AdjustmentDock.swift", re.S)
+    mac_scurve_blk = _extract_brace_block(mac_curve_ctrl, r"legacy:\s*\{", "light.s_curve mac legacy block", "MacToneCurveControls.swift")
+    _require('L10n.text("S 曲线")', mac_scurve_blk, "light.s_curve mac label", "MacToneCurveControls.swift")
+    _require("value: $legacy", mac_scurve_blk, "light.s_curve mac binding", "MacToneCurveControls.swift")
+    _require('identifier: "value.toneCurve"', mac_scurve_blk, "light.s_curve mac id", "MacToneCurveControls.swift")
+    mac_scurve_lo, mac_scurve_hi = (float(x) for x in _need(r"range:\s*(-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?)", mac_scurve_blk, "light.s_curve mac range", "MacToneCurveControls.swift").groups())
+    mac_scurve_def = float(_need(r"defaultValue:\s*(-?\d+(?:\.\d+)?)", mac_scurve_blk, "light.s_curve mac default", "MacToneCurveControls.swift").group(1))
+    mac_scurve_unit = _need(r'unit:\s*"([^"]*)"', mac_scurve_blk, "light.s_curve mac unit", "MacToneCurveControls.swift").group(1)
+    mac_scurve_prec_m = re.search(r"precision:\s*\.(\w+)", mac_scurve_blk)
+    mac_scurve_prec = mac_scurve_prec_m.group(1) if mac_scurve_prec_m else row_default_prec
+
+    # Denoise UI (AdjustmentDock -> DenoiseControls + AdjustmentTypes + Adjustments SDR paths)
+    _need(
+        r"if model\.settings\.isHDREditing \{\s*VStack\(spacing:\s*8\) \{\s*parameterRow\(\.denoiseMode\).*?\} else \{\s*DenoiseControls\(model:\s*model",
+        mac_dock,
+        "denoise mac dispatch",
+        "AdjustmentDock.swift",
+        re.S,
+    )
     mac_dn_blk = _extract_brace_block(mac_types, r"struct WaveletDenoiseSettings\b", "wavelet mac defaults", "AdjustmentTypes.swift")
     mac_dn_param_blk = _extract_brace_block(mac_types, r"enum DenoiseParameter\b", "DenoiseParameter mac", "AdjustmentTypes.swift")
     _require("var defaultValue: Double { WaveletDenoiseSettings()[keyPath: keyPath] }", mac_dn_param_blk, "DenoiseParameter defaultValue mac", "AdjustmentTypes.swift")
@@ -2584,10 +2602,56 @@ def _parse_mac_ui(mac_fine: dict[str, float]) -> dict[str, dict]:
         "preset": _need(r"var preset(?:\s*:\s*DenoisePreset)?\s*=\s*(?:DenoisePreset)?\.(\w+)", mac_dn_blk, "wavelet preset mac", "AdjustmentTypes.swift").group(1),
     }
     dn_ui_range = tuple(float(x) for x in _need(r"private func parameterRow\(_ parameter: DenoiseParameter\).*?ParameterRow\(title:.*?,\s*range:\s*(-?\d+)\.\.\.(-?\d+),\s*defaultValue:\s*parameter\.defaultValue", mac_dn, "wavelet mac ui range", "DenoiseControls.swift", re.S).groups())
-    chroma_blk = _extract_brace_block(mac_types, r"enum ChromaNoiseReductionMode\b", "chroma mac enum", "AdjustmentTypes.swift")
-    chroma_ui_vals = [float(x) for x in re.findall(r"\b\w+\s*=\s*(-?\d+(?:\.\d+)?)", chroma_blk.split("var ")[0])]
-    chroma_ui_lo, chroma_ui_hi = min(chroma_ui_vals), max(chroma_ui_vals)
-    chroma_ui_def = mac_specs["denoiseMode"][2]
+
+    def _enum_picker_bounds(enum_name: str, field_name: str) -> tuple[float, float, float]:
+        blk = _extract_brace_block(mac_types, rf"enum {enum_name}\b", f"{field_name} mac enum", "AdjustmentTypes.swift")
+        vals = sorted(float(x) for x in re.findall(r"\b\w+\s*=\s*(-?\d+(?:\.\d+)?)", blk.split("var ")[0]))
+        if len(vals) < 2:
+            raise AssertionError(f"Expected >=2 cases for {enum_name} in AdjustmentTypes.swift")
+        diffs = {round(b - a, 6) for a, b in zip(vals, vals[1:])}
+        if len(diffs) != 1 or next(iter(diffs)) <= 0:
+            raise AssertionError(f"Non-contiguous case tags for {enum_name} ({field_name}) in AdjustmentTypes.swift: {vals}")
+        return vals[0], vals[-1], next(iter(diffs))
+
+    mac_legacy_dn_blk = _extract_brace_block(mac_dn, r"private var legacyControls:\s*some View", "legacyControls mac", "DenoiseControls.swift")
+    _need(
+        r"Picker\([^\n]+selection:\s*\$model\.settings\.rawNoiseReduction\)\s*\{\s*"
+        r"ForEach\(RawNoiseReductionLevel\.allCases\)\s*\{\s*Text\(\$0\.title\)\.tag\(\$0\.rawValue\)\s*\}",
+        mac_legacy_dn_blk,
+        "detail.denoise.raw_level mac picker",
+        "DenoiseControls.swift",
+        re.S,
+    )
+    raw_ui_unit = ""
+    raw_ui_lo, raw_ui_hi, raw_ui_step = _enum_picker_bounds("RawNoiseReductionLevel", "detail.denoise.raw_level")
+    _need(
+        r"Picker\([^\n]+selection:\s*\$model\.settings\.denoiseMode\)\s*\{\s*"
+        r"ForEach\(ChromaNoiseReductionMode\.allCases\)\s*\{\s*Text\(\$0\.title\)\.tag\(\$0\.rawValue\)\s*\}.*?"
+        r'\.accessibilityIdentifier\("chromaNoiseReduction\.mode"\)',
+        mac_legacy_dn_blk,
+        "detail.denoise.chroma_mode mac picker",
+        "DenoiseControls.swift",
+        re.S,
+    )
+    chroma_ui_lo, chroma_ui_hi, chroma_ui_step = _enum_picker_bounds("ChromaNoiseReductionMode", "detail.denoise.chroma_mode")
+    raw_ui_def = float(_need(r"var rawNoiseReduction(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", mac_adj, "detail.denoise.raw_level default mac", "Adjustments.swift").group(1))
+    _need(r"var chromaNoiseReduction:\s*Double\?(?!\s*=)", mac_adj, "chromaNoiseReduction nil default mac", "Adjustments.swift")
+    dm_get_m = _need(
+        r"var denoiseMode:\s*Double\s*\{\s*get\s*\{\s*chromaNoiseReduction\s*\?\?\s*\(rawNoiseReduction > 0 \? (-?\d+(?:\.\d+)?) : (-?\d+(?:\.\d+)?)\)\s*\}",
+        mac_adj,
+        "denoiseMode getter mac",
+        "Adjustments.swift",
+        re.S,
+    )
+    chroma_ui_def = float(dm_get_m.group(1)) if raw_ui_def > 0 else float(dm_get_m.group(2))
+    _need(
+        r"case \.denoise:\s*result\.settings\.aiDenoiseEnabled = false\s*"
+        r"result\.settings\.rawNoiseReduction = 0;\s*result\.settings\.chromaNoiseReduction = nil;",
+        mac_adj,
+        "denoise reset mac",
+        "Adjustments.swift",
+        re.S,
+    )
     _require('accessibilityIdentifier("denoise.ai.enabled")', mac_dn, "local.ai_denoise mac toggle", "DenoiseControls.swift")
     mac_ai_def = _need(r"var aiDenoiseEnabled\s*=\s*(true|false)", mac_adj, "local.ai_denoise_enabled mac", "Adjustments.swift").group(1) == "true"
     _require("private var hdrCameraAI: Bool?", mac_adj, "local.hdr_camera_ai_enabled backing mac", "Adjustments.swift")
@@ -2666,7 +2730,6 @@ def _parse_mac_ui(mac_fine: dict[str, float]) -> dict[str, dict]:
         ("light.contrast", "contrast"),
         ("light.highlights", "highlights"),
         ("light.shadows", "shadows"),
-        ("light.s_curve", "toneCurve"),
         ("tone.black_point", "blackPoint"),
         ("tone.white_point", "whitePoint"),
         ("color.vibrance", "vibrance"),
@@ -2682,6 +2745,13 @@ def _parse_mac_ui(mac_fine: dict[str, float]) -> dict[str, dict]:
             default=dflt * mult,
             step=mac_fine[mac_row_prec.get(k, row_prec_default)],
         )
+    ui["light.s_curve"] = _ui_entry(
+        unit=mac_scurve_unit,
+        min_val=mac_scurve_lo,
+        max_val=mac_scurve_hi,
+        default=mac_scurve_def,
+        step=mac_fine[mac_scurve_prec],
+    )
     ui["light.curve"] = _ui_curve_entry("macos", mac_fine)
 
     grad_hue_def = float(mac_grad_hue_m.group(3))
@@ -2774,8 +2844,7 @@ def _parse_mac_ui(mac_fine: dict[str, float]) -> dict[str, dict]:
         default=sh_def * sh_mult,
         step=mac_fine[mac_row_prec.get("sharpening", row_prec_default)],
     )
-    raw_lo, raw_hi, raw_def, raw_unit, raw_mult = mac_specs["rawNoiseReduction"]
-    ui["detail.denoise.raw_level"] = _ui_entry(modes=("sdr",), unit=raw_unit, min_val=raw_lo * raw_mult, max_val=raw_hi * raw_mult, default=raw_def * raw_mult, step=1.0)
+    ui["detail.denoise.raw_level"] = _ui_entry(modes=("sdr",), unit=raw_ui_unit, min_val=raw_ui_lo, max_val=raw_ui_hi, default=raw_ui_def, step=raw_ui_step)
     hdr_dn_lo, hdr_dn_hi, hdr_dn_def = float(hdr_dn_m.group(1)), float(hdr_dn_m.group(2)), float(hdr_dn_m.group(3))
     hdr_dn_unit, hdr_dn_mult = hdr_dn_m.group(5), float(hdr_dn_m.group(6))
     ui["detail.denoise.post_rgb"] = _ui_entry(
@@ -2786,7 +2855,7 @@ def _parse_mac_ui(mac_fine: dict[str, float]) -> dict[str, dict]:
         default=hdr_dn_def * hdr_dn_mult,
         step=mac_fine[mac_row_prec.get("denoiseMode", row_prec_default)],
     )
-    ui["detail.denoise.chroma_mode"] = _ui_entry(exposed=True, modes=("sdr",), min_val=chroma_ui_lo, max_val=chroma_ui_hi, default=chroma_ui_def, step=1.0)
+    ui["detail.denoise.chroma_mode"] = _ui_entry(exposed=True, modes=("sdr",), min_val=chroma_ui_lo, max_val=chroma_ui_hi, default=chroma_ui_def, step=chroma_ui_step)
     ui["detail.denoise.wavelet"] = _ui_entry(
         modes=("sdr",),
         unit=row_default_unit,
@@ -4426,19 +4495,45 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
                 '}), range: 0...360, defaultValue: 1, unit: "°"',
                 r"color\.grading\.shadows\.macos",
             ),
+            (
+                "RawLabMac/Sources/Controls/MacToneCurveControls.swift",
+                'range: -100...100, defaultValue: 0,\n                    unit: "%", identifier: "value.toneCurve"',
+                'range: -50...50, defaultValue: 25,\n                    unit: "EV", identifier: "value.toneCurve", precision: .exposure',
+                r"light\.s_curve\.macos",
+            ),
+            (
+                "RawLabMac/Sources/Adjustments/AdjustmentTypes.swift",
+                "case off = 0, light = 1, full = 2",
+                "case off = 0, light = 1, full = 5",
+                r"Non-contiguous case tags for RawNoiseReductionLevel",
+            ),
+            (
+                "RawLabMac/Sources/Controls/DenoiseControls.swift",
+                "ForEach(RawNoiseReductionLevel.allCases) { Text($0.title).tag($0.rawValue) }",
+                "ForEach([RawNoiseReductionLevel.off]) { Text($0.title).tag($0.rawValue) }",
+                r"detail\.denoise\.raw_level mac picker",
+            ),
+            (
+                "RawLabMac/Sources/Adjustments/Adjustments.swift",
+                "var rawNoiseReduction = 0.0",
+                "var rawNoiseReduction = 1.0",
+                r"detail\.denoise\.raw_level\.macos",
+            ),
         ]
         for rel_path, old, new, expected_re in ui_mutations:
             with mock.patch(f"{__name__}._read", side_effect=_mutated_reader(rel_path, old, new)):
-                mut_ui = parse_ui_from_sources()
-                if rel_path.endswith("AdjustmentPanels.swift"):
-                    self.assertEqual(mut_ui["hdr.relative_tint"]["ios"]["step"], 2.0)
-                if rel_path.endswith("HDRMonitoring.swift"):
-                    self.assertEqual(mut_ui["hdr.sdr_exposure_ev"]["ios"]["step"], 0.2)
-                if rel_path.endswith("GeometryPanel.xaml.cs"):
-                    self.assertEqual(mut_ui["geometry.perspective.horizontal"]["windows"]["min"], -1.0)
-                if rel_path.endswith("GeometryControls.kt"):
-                    self.assertEqual(mut_ui["geometry.perspective.horizontal"]["android"]["min"], -100.0)
                 with self.assertRaisesRegex(AssertionError, expected_re):
+                    mut_ui = parse_ui_from_sources()
+                    if rel_path.endswith("AdjustmentPanels.swift"):
+                        self.assertEqual(mut_ui["hdr.relative_tint"]["ios"]["step"], 2.0)
+                    if rel_path.endswith("HDRMonitoring.swift"):
+                        self.assertEqual(mut_ui["hdr.sdr_exposure_ev"]["ios"]["step"], 0.2)
+                    if rel_path.endswith("GeometryPanel.xaml.cs"):
+                        self.assertEqual(mut_ui["geometry.perspective.horizontal"]["windows"]["min"], -1.0)
+                    if rel_path.endswith("GeometryControls.kt"):
+                        self.assertEqual(mut_ui["geometry.perspective.horizontal"]["android"]["min"], -100.0)
+                    if rel_path.endswith("Adjustments.swift"):
+                        self.assertEqual(mut_ui["detail.denoise.chroma_mode"]["macos"]["default"], 3.0)
                     validate_layer3_ui(self.document, mut_ui)
 
 
