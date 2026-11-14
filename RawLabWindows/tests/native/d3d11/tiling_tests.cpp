@@ -15,13 +15,13 @@ RGB mix(RGB a, RGB b, float t) {
     return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t};
 }
 RGB tone(RGB p) { return {neutralDisplay(p.r), neutralDisplay(p.g), neutralDisplay(p.b)}; }
-RGB sample(const ImageData& input, int x, int y, int width, int height, bool final) {
+RGB sample(const ImageData& input, int x, int y, int width, int height, bool final, bool display = false) {
     const float sx = width == 1 ? 0 : float(x) * (float(input.width - 1) / float(width - 1));
     const float sy = height == 1 ? 0 : float(y) * (float(input.height - 1) / float(height - 1));
     const int x0 = int(sx), y0 = int(sy), x1 = std::min(x0 + 1, input.width - 1), y1 = std::min(y0 + 1, input.height - 1);
-    auto read = [&](int px, int py) { return final ? tone(input.at(px, py)) : input.at(px, py); };
+    auto read = [&](int px, int py) { return final && !display ? tone(input.at(px, py)) : input.at(px, py); };
     auto result = mix(mix(read(x0, y0), read(x1, y0), sx - x0), mix(read(x0, y1), read(x1, y1), sx - x0), sy - y0);
-    return final ? result : tone(result);
+    return final || display ? result : tone(result);
 }
 void check(const ImageData& input, int width, int height, bool final, bool preserve = false) {
     sony2fuji_request request{};
@@ -62,7 +62,7 @@ ImageData detail(const ImageData& input, float strength, bool sharpen) {
     }
     return output;
 }
-void nativeFilters() {
+void nativeFilters(bool resize) {
     ImageData input(65, 49), expected(65, 49);
     for (size_t i = 0; i < input.pixels.size(); ++i) {
         input.pixels[i] = {.03f + .3f * float(i % 13) / 12, .11f, .31f};
@@ -78,16 +78,48 @@ void nativeFilters() {
     applyPhotoEffects(expected, effects);
     D3D11PhotoRenderer renderer;
     ImageData output;
-    require(renderer.render(input, ColorSpace::sRGB, request, {}, {1, 1, 1}, 65, 49, 0, output, effects),
+    const int width = resize ? 33 : 65, height = resize ? 25 : 49;
+    require(renderer.render(input, ColorSpace::sRGB, request, {}, {1, 1, 1}, width, height, 0, output, effects),
         "C6: source-resolution shared filter chain failed");
     float maximum = 0;
-    for (size_t i = 0; i < output.pixels.size(); ++i) {
-        const auto a = output.pixels[i], b = expected.pixels[i];
+    for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {
+        const auto a = output.at(x, y), b = sample(expected, x, y, width, height, false, true);
         require(std::isfinite(a.r) && std::isfinite(a.g) && std::isfinite(a.b), "nonfinite filtered pixel");
         maximum = std::max({maximum, std::abs(a.r-b.r), std::abs(a.g-b.g), std::abs(a.b-b.b)});
     }
     std::cout << "native shared filters maxDiff=" << maximum << '\n';
     require(maximum <= 2e-4f, "C6: shared noise/sharpen/effects chain differs from CPU");
+}
+void cacheTransitions() {
+    ImageData input(65, 49), output;
+    for (int y = 0; y < 49; ++y) for (int x = 0; x < 65; ++x)
+        input.at(x, y) = {.01f + .3f * float(y) / 48, .1f + .2f * float(x) / 64, .3f};
+    sony2fuji_request request{};
+    request.brightness = request.contrast = request.saturation = 1;
+    request.intent = SONY2FUJI_INTENT_PREVIEW;
+    D3D11PhotoRenderer renderer;
+    auto run = [&](int width, int height, uint64_t revision) {
+        require(renderer.render(input, ColorSpace::sRGB, request, {}, {1, 1, 1}, width, height, revision, output),
+            "C6: revision-cache transition failed");
+    };
+    auto verify = [&](float gain) {
+        require(output.width == input.width && output.height == input.height && output.pixels.size() == input.pixels.size(),
+            "C6: cache transition published incorrect dimensions");
+        for (size_t i = 0; i < input.pixels.size(); ++i) {
+            const auto p = input.pixels[i], a = output.pixels[i];
+            const auto b = tone({p.r * gain, p.g * gain, p.b * gain});
+            require(std::max({std::abs(a.r-b.r), std::abs(a.g-b.g), std::abs(a.b-b.b)}) < 2e-4f,
+                "C6: revision cache retained a tiled prefix or a stale source");
+        }
+    };
+    run(65, 49, 41); verify(1);
+    request.exposure_ev = 1;
+    run(65, 49, 41); verify(2);
+    request.exposure_ev = 0;
+    run(1024, 1367, 41); // 超过分带阈值，最后两行只上传原图末尾的少数行。
+    run(65, 49, 41); verify(1);
+    for (auto& p : input.pixels) p = {.13f, .27f, .41f};
+    run(65, 49, 42); verify(1);
 }
 }
 int main() {
@@ -102,7 +134,9 @@ int main() {
         check(input, 193, 137, false, true);
         check(input, 1, 19, false);
         check(input, 113, 1, true);
-        nativeFilters();
+        nativeFilters(false);
+        nativeFilters(true);
+        cacheTransitions();
         std::cout << "PASS: D3D11 bounded tiling (WARP software adapter)\n";
         return 0;
     } catch (const std::exception& error) {
