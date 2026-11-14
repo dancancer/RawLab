@@ -140,3 +140,4 @@
 - 2026-11-14 · **#318 CI 红=预留风险实锤**：`ios-reset-entry-ui.sh logged SKIP (forbidden by CI invariant 7)`——首个进 models 清单的 AX-gated 脚本与「SKIP=失败」首次相撞（此前三个闸脚本均在手动域）。lead 裁定：闸固定文案+warning 在场的诚实 SKIP 入最小白名单，白名单外 SKIP=失败不变，REQUIRE_AX=1→FAIL 三态不破；contracts 锁语义。#318 补修在途，碳审按新 head 收口。V-RESET（氢单，wire 级期望+divergences 登记）、V-WIN（氢单，W2 备份误删优先）同窗派出——**二次复核 7 票全部开工**。
 - 2026-11-14 · **Q6 合入（#310 @ `81f9f3e2`，总 71 PR，四轮碳审、累计 9 条 Blocking 全消）**：导出证据账本+四端同构判据入库；worktree/分支已清。
 - 2026-11-14 · 判决波处理：**#313 r2 仅剩 B3 大小写不敏感 FS 误删**（S5 补锚）原生 crew 续修；**#317 唯 P1-05 漏 updatePreview 早退分支**续修；**#318 白名单获认可但 B2 闸位打穿 30 条模型断言（Q14 违背）复跑**；V-JIT 成 **PR #316**（屏障语义含 in_progress 取舍留评审裁）；V-SPEC 疑似中断，氢线程续完（滞留 diff 自审+变异验收+补 PR）。碳审 ×3 在途（314r2/315r2/316r1）。
+- 2026-11-14 · #317 二轮交卷（`cfcafaa8`）：P1-05 收口为统一入口 afterUndeliveredFrame，接 importImage+Rendering 四早退点，18 PASS 含去重共存断言；Should（showingBatchSelection 根横幅）留后续。二轮碳审在途（review-mwfz46rr，核四点读码+statusMessage 差集漏网+renderHDR catch 取舍裁定）。
