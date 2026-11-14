@@ -149,6 +149,8 @@ class LookLibrary(
 
     // 删除读不懂的条目：按 key 组只删单条；实体文件须文件名安全（无分隔符与 ..、扩展名白名单、
     // 前缀为 UUID）且不被任何存活条目引用才清理，防止误删有效外观文件或 registry 自身。
+    // 大小写不敏感/casefold 卷上归属判重必须折叠大小写（Windows #314 同用 OrdinalIgnoreCase），
+    // `<id>.CUBE` 与 `<id>.cube` 是同一个实体文件。
     fun removeUnreadable(look: UnreadableLook) = locked {
         val state = readRegistry()
         val index = state.unreadable.indexOfFirst { it.keys == look.keys }
@@ -158,8 +160,8 @@ class LookLibrary(
             !candidate.contains('/') && !candidate.contains('\\') && !candidate.contains("..") &&
                 candidate.substringAfterLast('.', "").lowercase() in setOf("cube", "vlt", "rlook") &&
                 isSafeId(candidate.substringBeforeLast('.')) &&
-                state.looks.none { it.relativePath == candidate } &&
-                remaining.none { it.path == candidate }
+                state.looks.none { it.relativePath.equals(candidate, ignoreCase = true) } &&
+                remaining.none { it.path?.equals(candidate, ignoreCase = true) == true }
         }
         val file = name?.let { File(root, it) }
         writeRegistry(state.looks, remaining)

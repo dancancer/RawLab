@@ -376,6 +376,9 @@ final class LookLibrary {
 
     // 坏条目按原文精确删除；仅当文件名安全（无路径分隔与扩展名白名单）、前缀是 UUID
     // 且不被任何存活条目引用时才清理实体文件，防止误删有效外观的文件。
+    // APFS 默认大小写不敏感：归属判重必须折叠大小写（Windows #314 同用 OrdinalIgnoreCase），
+    // `X.CUBE` 与 `x.cube` 是同一个实体文件；且只清理普通文件，同名目录不得整树搬走
+    //（对齐 Android isFile / Windows File.Exists）。
     func remove(_ look: UnreadableLook) throws {
         guard let index = unreadableLooks.firstIndex(of: look) else { throw LookLibraryError.missingLook }
         var changed = unreadableLooks
@@ -384,12 +387,12 @@ final class LookLibrary {
         if let name = look.fileName, !name.contains("/"), !name.contains("\\"), !name.contains(".."),
            ["cube", "vlt", "rlook"].contains((name as NSString).pathExtension.lowercased()),
            UUID(uuidString: (name as NSString).deletingPathExtension) != nil,
-           !looks.contains(where: { $0.fileName == name }),
-           !changed.contains(where: { $0.fileName == name }) {
+           !looks.contains(where: { $0.fileName.caseInsensitiveCompare(name) == .orderedSame }),
+           !changed.contains(where: { $0.fileName.map { $0.caseInsensitiveCompare(name) == .orderedSame } ?? false }) {
             file = directory.appendingPathComponent(name)
         }
         let staging = file.map { directory.appendingPathComponent(".remove-\($0.lastPathComponent)") }
-        let exists = file.map { manager.fileExists(atPath: $0.path) } ?? false
+        let exists = file.map { isRegularFile(at: $0) } ?? false
         if exists, let file, let staging { try manager.moveItem(at: file, to: staging) }
         do {
             try persist(looks, unreadable: changed)
@@ -401,19 +404,28 @@ final class LookLibrary {
         if exists, let staging { try? manager.removeItem(at: staging) }
     }
 
+    // 大小写不敏感卷上文件属性查询失败按「不可动」处理：只认真正的普通文件。
+    private func isRegularFile(at url: URL) -> Bool {
+        guard let type = (try? manager.attributesOfItem(atPath: url.path))?[.type] as? FileAttributeType else { return false }
+        return type == .typeRegular
+    }
+
     private func recoverRemovals() throws {
-        let activeFiles = Set(looks.map(\.fileName) + unreadableLooks.compactMap(\.fileName))
+        // 归属判重与扩展名白名单同 remove(_:)：大小写不敏感卷上必须折叠大小写，
+        // 否则 `.remove-<小写id>.cube` 会被判「无主」直接删掉，而它属于存活条目 `<大写id>.cube`。
+        let activeFiles = Set((looks.map(\.fileName) + unreadableLooks.compactMap(\.fileName)).map { $0.lowercased() })
         let prefix = ".remove-"
         for staged in try manager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
             let name = staged.lastPathComponent
             guard name.hasPrefix(prefix) else { continue }
             let fileName = String(name.dropFirst(prefix.count))
             let file = URL(fileURLWithPath: fileName)
-            guard ["cube", "vlt", "rlook"].contains(file.pathExtension),
-                  UUID(uuidString: file.deletingPathExtension().lastPathComponent) != nil else { continue }
+            guard ["cube", "vlt", "rlook"].contains(file.pathExtension.lowercased()),
+                  UUID(uuidString: file.deletingPathExtension().lastPathComponent) != nil,
+                  isRegularFile(at: staged) else { continue }
             let original = directory.appendingPathComponent(fileName)
             // registry 的原子写入是提交点：提交前恢复文件，提交后完成清理。
-            if activeFiles.contains(fileName) {
+            if activeFiles.contains(fileName.lowercased()) {
                 if !manager.fileExists(atPath: original.path) { try manager.moveItem(at: staged, to: original) }
             } else {
                 try manager.removeItem(at: staged)

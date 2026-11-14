@@ -431,6 +431,51 @@ class LookLibraryTest {
         } finally { root.deleteRecursively() }
     }
 
+    // r2 红锚点 B3/S5：大小写不敏感卷上坏条目 path `<id>.CUBE` 与存活条目 `<id>.cube` 是同一
+    // 实体文件，归属判重必须 ignoreCase；共享文件只在最后一条引用删除后清理；非 UUID 遗留名不删。
+    @Test
+    fun removingUnreadableKeepsCaseVariantAndUnmanagedFiles() {
+        val root = Files.createTempDirectory("rawlab-look-casefold").toFile()
+        val sourceA = File(root.parentFile, "casefold-a.cube").apply { writeText("valid") }
+        try {
+            val library = LookLibrary(root, validator)
+            val owned = library.importLook(sourceA)
+            val sharedName = "9f1e2d3c-4b5a-4678-9abc-def012345678.cube"
+            root.resolve(sharedName).writeText("valid")
+            root.resolve("legacy.cube").writeText("valid")
+            val registry = root.resolve("registry.properties")
+            val properties = Properties().apply { registry.inputStream().use { load(it) } }
+            fun ghost(index: Int, id: String, path: String, name: String) {
+                val prefix = "item.$index."
+                properties.setProperty(prefix + "id", id)
+                properties.setProperty(prefix + "name", name)
+                properties.setProperty(prefix + "originalName", "$name.cube")
+                properties.setProperty(prefix + "format", "cube")
+                properties.setProperty(prefix + "version", "0")
+                properties.setProperty(prefix + "path", path)
+            }
+            properties.setProperty("count", "5")
+            ghost(1, "00000000-0000-0000-0000-000000000011", "${owned.id}.CUBE", "UpperExt")
+            ghost(2, "00000000-0000-0000-0000-000000000012", sharedName, "TwinA")
+            ghost(3, "00000000-0000-0000-0000-000000000013", sharedName, "TwinB")
+            ghost(4, "00000000-0000-0000-0000-000000000014", "legacy.cube", "Legacy")
+            registry.outputStream().use { properties.store(it, null) }
+            val reloaded = LookLibrary(root, validator)
+            assertEquals(listOf(owned.id), reloaded.list().map { it.id })
+            assertEquals(4, reloaded.listUnreadable().size)
+            reloaded.removeUnreadable(reloaded.listUnreadable().first { it.name == "UpperExt" })
+            assertTrue("case-variant ghost must not delete the live managed file", owned.file(root).isFile)
+            reloaded.removeUnreadable(reloaded.listUnreadable().first { it.name == "TwinA" })
+            assertTrue("shared file stays while the twin ghost still references it", root.resolve(sharedName).isFile)
+            reloaded.removeUnreadable(reloaded.listUnreadable().first { it.name == "TwinB" })
+            assertFalse("the last ghost referencing the shared file cleans it", root.resolve(sharedName).exists())
+            reloaded.removeUnreadable(reloaded.listUnreadable().first { it.name == "Legacy" })
+            assertTrue("non-UUID managed-style file is left to the user", root.resolve("legacy.cube").isFile)
+            assertTrue(reloaded.listUnreadable().isEmpty())
+            assertTrue(owned.file(root).isFile)
+        } finally { root.deleteRecursively(); sourceA.delete() }
+    }
+
     @Test
     fun missingManagedFileRemainsRemovableAndIsMarkedUnavailable() {
         val root = Files.createTempDirectory("rawlab-looks").toFile()
