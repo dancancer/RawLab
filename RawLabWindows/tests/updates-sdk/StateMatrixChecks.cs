@@ -14,13 +14,14 @@ internal static class StateMatrixChecks
         public Exception? VerifyError { get; set; }
         public Exception? PreDispatchInstallError { get; set; }
         public Exception? InstallError { get; set; }
+        public Exception? ValidateTrustError { get; set; }
         public Action<ReleaseAdapterState>? OnCheck { get; set; }
         public Action? OnInstall { get; set; }
         public int Checks { get; private set; }
         public int Downloads { get; private set; }
         public int Installs { get; private set; }
 
-        public Task ValidateHostTrustAsync() => Task.CompletedTask;
+        public Task ValidateHostTrustAsync() => ValidateTrustError != null ? Task.FromException(ValidateTrustError) : Task.CompletedTask;
 
         public Task<UpdateDescriptor?> CheckAsync(CancellationToken cancellationToken)
         {
@@ -210,13 +211,13 @@ internal static class StateMatrixChecks
             new(UpdatePhase.ReadyToInstall, null, null, "0.8.2", "14", false,
                 UpdatePhase.Failed, UpdatePhase.ReadyToInstall, "interrupted", false, false, false, true),
             new(UpdatePhase.Installing, null, null, "0.9.1", "19", true,
-                UpdatePhase.Complete, null, null, false, false, false, false),
+                UpdatePhase.Complete, null, null, true, false, false, false),
             new(UpdatePhase.Installing, null, null, "0.8.2", "14", false,
-                UpdatePhase.Failed, UpdatePhase.Installing, "interrupted", false, true, false, false),
+                UpdatePhase.Failed, UpdatePhase.Installing, "interrupted", true, true, false, false),
             new(UpdatePhase.PendingRestart, null, null, "0.9.1", "19", true,
-                UpdatePhase.Complete, null, null, false, false, false, false),
+                UpdatePhase.Complete, null, null, true, false, false, false),
             new(UpdatePhase.PendingRestart, null, null, "0.9.1", "19", false,
-                UpdatePhase.Failed, UpdatePhase.PendingRestart, "interrupted", false, true, false, false),
+                UpdatePhase.Failed, UpdatePhase.PendingRestart, "interrupted", true, true, false, false),
             new(UpdatePhase.Complete, null, null, "0.9.1", "19", true,
                 UpdatePhase.Complete, null, null, false, false, false, false),
             new(UpdatePhase.Failed, "network", UpdatePhase.Checking, "0.8.2", "14", false,
@@ -229,10 +230,16 @@ internal static class StateMatrixChecks
                 UpdatePhase.Failed, UpdatePhase.Verifying, "interrupted", false, false, false, true),
             new(UpdatePhase.Failed, "signature", UpdatePhase.Verifying, "0.8.2", "14", false,
                 UpdatePhase.Failed, UpdatePhase.Verifying, "signature", false, false, true, false),
+            new(UpdatePhase.Failed, "operation", UpdatePhase.PackageReady, "0.8.2", "14", false,
+                UpdatePhase.Failed, UpdatePhase.PackageReady, "operation", false, false, false, true),
+            new(UpdatePhase.Failed, "operation", UpdatePhase.WaitingForTasks, "0.8.2", "14", false,
+                UpdatePhase.Failed, UpdatePhase.WaitingForTasks, "operation", false, false, false, true),
             new(UpdatePhase.Failed, "operation", UpdatePhase.ReadyToInstall, "0.8.2", "14", false,
                 UpdatePhase.Failed, UpdatePhase.ReadyToInstall, "operation", false, false, false, true),
             new(UpdatePhase.Failed, "operation", UpdatePhase.Installing, "0.8.2", "14", false,
                 UpdatePhase.Failed, UpdatePhase.Installing, "operation", false, true, false, false),
+            new(UpdatePhase.Failed, "interrupted", UpdatePhase.PendingRestart, "0.9.1", "19", false,
+                UpdatePhase.Failed, UpdatePhase.PendingRestart, "interrupted", false, true, false, false),
         };
 
         var root = Path.Combine(Path.GetTempPath(), "rawlab-matrix-" + Guid.NewGuid().ToString("N"));
@@ -243,11 +250,11 @@ internal static class StateMatrixChecks
                 var label = $"P1-24 matrix [{row.InitialPhase}/{row.InitialFailureStage}/{row.InitialFailureCode}@{row.LaunchVersion}]";
                 var prefs = BuildStateInPhase(row.InitialPhase, row.InitialFailureStage, row.InitialFailureCode);
                 var state = prefs.PendingUpdate;
+                var startupHealth = state.Phase is UpdatePhase.Installing or UpdatePhase.PendingRestart;
                 state.RestoreAfterLaunch(row.LaunchVersion, row.LaunchBuild, row.Trusted);
 
                 var rejected = state.Failure != null && UpdatePresentation.IsRejected(state.Failure);
                 var recovery = state.Failure?.Stage is UpdatePhase.Installing or UpdatePhase.PendingRestart;
-                var startupHealth = state.Phase is UpdatePhase.Installing or UpdatePhase.PendingRestart;
                 var failureHeading = state.Failure != null ? UpdatePresentation.FailureHeading(state.Failure, recovery) : null;
                 var notice = UpdatePresentation.MainWindowNotice(prefs, null, null);
                 var expectedNoticeVisible = row.ExpectedPhase is UpdatePhase.Available or UpdatePhase.Failed ||
@@ -268,51 +275,56 @@ internal static class StateMatrixChecks
 
                 // Verify persisted controller restart & auto-retry cell
                 var cellDir = Path.Combine(root, Guid.NewGuid().ToString("N"));
-                var store = new UpdateStore(cellDir);
+                var store = new UpdateStore(Path.Combine(cellDir, "Updates"));
                 var now = new DateTimeOffset(2026, 11, 14, 12, 0, 0, TimeSpan.Zero);
                 var initial = BuildStateInPhase(row.InitialPhase, row.InitialFailureStage, row.InitialFailureCode);
+                var needsBackup = row.InitialPhase is UpdatePhase.Installing or UpdatePhase.PendingRestart ||
+                    row.InitialPhase == UpdatePhase.Failed && row.InitialFailureStage is UpdatePhase.Installing or UpdatePhase.PendingRestart;
+                if (needsBackup)
+                {
+                    Directory.CreateDirectory(cellDir);
+                    var backupDir = new UpdateDataBackup(cellDir, store.DirectoryPath).Create("0.8.2", "0.9.1", "14");
+                    initial.PendingUpdate.BackupPath = backupDir;
+                    initial.PendingUpdate.PreviousVersion = "0.8.2";
+                    initial.PendingUpdate.PreviousBuild = "14";
+                }
                 if (row.InitialPhase is not (UpdatePhase.Installing or UpdatePhase.PendingRestart or UpdatePhase.Complete))
                 {
-                    if (row.InitialFailureStage == UpdatePhase.Checking || row.ExpectedPhase == UpdatePhase.Failed)
-                        prefs.LastCheck = now;
                     initial.LastCheck = now;
                     if (row.ExpectedFailureCode is not null and not "interrupted" && row.ExpectedAutoRetry)
                         initial.CheckFailure = new(now, row.ExpectedFailureCode, 1, "seeded");
                 }
-                else if (row.InitialPhase is UpdatePhase.Installing or UpdatePhase.PendingRestart)
-                {
-                    var backupDir = new UpdateDataBackup(cellDir, store.DirectoryPath).Create("0.8.2", "0.9.1", "14");
-                    initial.PendingUpdate.BackupPath = backupDir;
-                    initial.PendingUpdate.PreviousVersion = "0.8.2";
-                    initial.PendingUpdate.PreviousBuild = "14";
-                }
-                else if (row.InitialPhase == UpdatePhase.Failed && row.InitialFailureStage == UpdatePhase.Installing)
-                {
-                    var backupDir = new UpdateDataBackup(cellDir, store.DirectoryPath).Create("0.8.2", "0.9.1", "14");
-                    initial.PendingUpdate.BackupPath = backupDir;
-                    initial.PendingUpdate.PreviousVersion = "0.8.2";
-                    initial.PendingUpdate.PreviousBuild = "14";
-                }
                 store.Save(initial);
 
-                if (row.InitialPhase is not (UpdatePhase.Installing or UpdatePhase.PendingRestart))
+                var adapter = new MatrixAdapter
                 {
-                    var adapter = new MatrixAdapter();
-                    var controller = new DesktopUpdateController(adapter, new(), store, row.LaunchVersion, row.LaunchBuild, true, () => now);
-                    check(controller.State.Phase == row.ExpectedPhase &&
-                        controller.State.Failure?.Stage == row.ExpectedFailureStage &&
-                        controller.State.Failure?.Code == row.ExpectedFailureCode &&
-                        controller.BlocksEditing == row.ExpectedRecovery &&
-                        controller.RequiresRecovery == row.ExpectedRecovery,
-                        label + " controller reload");
+                    ValidateTrustError = row.InitialPhase is UpdatePhase.Installing or UpdatePhase.PendingRestart && !row.Trusted
+                        ? new CryptographicException("Untrusted update host")
+                        : null
+                };
+                var controller = new DesktopUpdateController(adapter, new(), store, row.LaunchVersion, row.LaunchBuild, true, () => now);
+                check(controller.RequiresStartupHealthCheck == row.ExpectedStartupHealthCheck &&
+                    (!row.ExpectedStartupHealthCheck || controller.BlocksEditing && !controller.CanRestorePreviousData),
+                    label + " startup health gate");
+                if (controller.RequiresStartupHealthCheck)
+                    await controller.FinishStartupHealthCheckAsync(row.Trusted);
 
-                    // Advance past backoff + daily window to confirm retry vs hold policy
-                    now = now.AddDays(1).AddMinutes(1);
-                    await controller.RefreshGateAsync();
-                    var didRetry = adapter.Checks > 0;
-                    check(didRetry == row.ExpectedAutoRetry,
-                        label + $" auto-retry={didRetry} (expected {row.ExpectedAutoRetry})");
-                }
+                check(controller.State.Phase == row.ExpectedPhase &&
+                    controller.State.Failure?.Stage == row.ExpectedFailureStage &&
+                    controller.State.Failure?.Code == row.ExpectedFailureCode &&
+                    !controller.RequiresStartupHealthCheck &&
+                    controller.BlocksEditing == row.ExpectedRecovery &&
+                    controller.RequiresRecovery == row.ExpectedRecovery &&
+                    (!needsBackup || row.ExpectedPhase == UpdatePhase.Complete || controller.State.BackupPath != null) &&
+                    controller.CanRestorePreviousData == (row.ExpectedRecovery && row.LaunchVersion == "0.8.2"),
+                    label + " controller reload");
+
+                // Advance past backoff + daily window to confirm retry vs hold policy
+                now = now.AddDays(1).AddMinutes(1);
+                await controller.RefreshGateAsync();
+                var didRetry = adapter.Checks > 0;
+                check(didRetry == row.ExpectedAutoRetry,
+                    label + $" auto-retry={didRetry} (expected {row.ExpectedAutoRetry})");
             }
 
             // Explicit stale-token guard check across every failable phase
@@ -429,7 +441,32 @@ internal static class StateMatrixChecks
             check(trustAdapter.Checks == 2 && trustController.State.Phase == UpdatePhase.Available,
                 "P1-06 trust_temporary recovers automatically after 15m backoff");
 
-            // 5. MainWindow notice surfaces EVERY Failed stage plus Idle+CheckFailure (never silently collapsed)
+            // 5. Non-user-cancelled download timeout (TaskCanceledException while cancellation token not signaled)
+            // must transition to Failed + record backoff + stay non-blocking + auto-heal via RefreshGateAsync.
+            var timeoutStore = new UpdateStore(Path.Combine(root, "download-timeout"));
+            var timeoutAdapter = new MatrixAdapter { DownloadError = new TaskCanceledException("HttpClient 20m timeout") };
+            var timeoutController = new DesktopUpdateController(timeoutAdapter, new(), timeoutStore, "0.8.2", "14", true, () => now);
+            await timeoutController.CheckAsync(true);
+            await timeoutController.DownloadAsync();
+            check(timeoutController.State.Phase == UpdatePhase.Failed &&
+                timeoutController.State.Failure is { Stage: UpdatePhase.Downloading, Code: "operation" } &&
+                timeoutController.CheckFailure != null &&
+                !timeoutController.CanCancel && timeoutController.CanCheck &&
+                !timeoutController.BlocksEditing && !timeoutController.RequiresRecovery &&
+                UpdatePresentation.MainWindowNotice(timeoutController.Preferences, null, null) is { Visible: true, HasFailure: true },
+                $"P1-06 Download timeout transitions to Failed + records backoff (Phase={timeoutController.State.Phase})");
+            now = now.AddMinutes(14).AddSeconds(59);
+            await timeoutController.RefreshGateAsync();
+            check(timeoutAdapter.Checks == 1, "P1-06 Download timeout respects 15m backoff before auto-retry");
+            timeoutAdapter.DownloadError = null;
+            now = now.AddSeconds(1);
+            await timeoutController.RefreshGateAsync();
+            check(timeoutAdapter.Checks == 2 && timeoutController.State.Phase == UpdatePhase.Available &&
+                timeoutController.CheckFailure == null,
+                "P1-06 Download timeout auto-heals after backoff on RefreshGateAsync");
+
+            // 6. MainWindow notice surfaces EVERY Failed stage plus Idle+CheckFailure (never silently collapsed),
+            // and never leaks desktopUpdates Failed/Available banners when unavailableReason != null.
             foreach (var stage in new[] {
                 UpdatePhase.Checking, UpdatePhase.Downloading, UpdatePhase.Verifying,
                 UpdatePhase.PackageReady, UpdatePhase.WaitingForTasks, UpdatePhase.ReadyToInstall,
@@ -447,6 +484,22 @@ internal static class StateMatrixChecks
             var cleanIdleBanner = UpdatePresentation.MainWindowNotice(new UpdatePreferences(), null, null);
             check(!cleanIdleBanner.Visible && !cleanIdleBanner.HasFailure,
                 "P1-06 MainWindow notice stays collapsed when Idle without CheckFailure");
+
+            var unavailableNoticeCases = new (string Label, UpdatePreferences Prefs, string UnavailableReason, string? FallbackVersion, UpdateBannerNotice Expected)[]
+            {
+                ("Failed/Downloading portable w/o fallback", BuildStateInPhase(UpdatePhase.Failed, UpdatePhase.Downloading, "operation"), "portable", null, new(false, null)),
+                ("Failed/Checking portable w/ fallback", BuildStateInPhase(UpdatePhase.Failed, UpdatePhase.Checking, "network"), "portable", "0.9.2", new(false, "0.9.2")),
+                ("Idle+CheckFailure storage w/o fallback", new UpdatePreferences { CheckFailure = new(now, "network", 1, "offline") }, "storage", null, new(false, null)),
+                ("Idle+CheckFailure storage w/ fallback", new UpdatePreferences { CheckFailure = new(now, "network", 1, "offline") }, "storage", "0.9.2", new(false, "0.9.2")),
+                ("Available portable w/o fallback", BuildStateInPhase(UpdatePhase.Available), "portable", null, new(false, null)),
+                ("Available portable w/ fallback", BuildStateInPhase(UpdatePhase.Available), "portable", "0.9.2", new(false, "0.9.2")),
+            };
+            foreach (var c in unavailableNoticeCases)
+            {
+                var actual = UpdatePresentation.MainWindowNotice(c.Prefs, c.UnavailableReason, c.FallbackVersion);
+                check(actual == c.Expected,
+                    $"P1-06 MainWindowNotice unavailable [{c.Label}] expected={c.Expected} actual={actual}");
+            }
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
@@ -486,17 +539,80 @@ internal static class StateMatrixChecks
             check(sameAdapter.Checks <= 1,
                 $"P1-07 Same-session 60x1s RefreshGateAsync ticks must throttle (actual Checks={sameAdapter.Checks})");
 
-            // Scenario B: Reopened session with Available + OnQuit where download is cancelled/reverted back to Available:
-            // advancing 60 ticks of 1s must invoke adapter CheckAsync at most once total.
-            var reopenAdapter = new MatrixAdapter { DownloadError = new OperationCanceledException() };
+            // Scenario B: Reopened session with Available + OnQuit returns via blocked PrepareForQuitAsync back to
+            // Available + OnQuit: must perform 1 initial revalidation and stay Available + OnQuit across 60x1s ticks.
+            var reopenAdapter = new MatrixAdapter();
             var reopened = new DesktopUpdateController(reopenAdapter, sameGate, sameSessionStore, "0.8.2", "14", true, () => now);
+            now = now.AddSeconds(1);
+            await reopened.RefreshGateAsync();
+            check(reopenAdapter.Checks == 1 &&
+                await reopened.PrepareForQuitAsync() &&
+                reopened.State.Phase == UpdatePhase.Available &&
+                reopened.State.Choice == UpdateInstallChoice.OnQuit &&
+                reopenAdapter.Checks == 1,
+                $"P1-07 Scenario B pre-loop: Available={reopened.State.Phase}, Choice={reopened.State.Choice}, Checks={reopenAdapter.Checks}");
+
             for (var s = 1; s <= 60; s++)
             {
                 now = now.AddSeconds(1);
                 await reopened.RefreshGateAsync();
             }
-            check(reopenAdapter.Checks <= 1,
-                $"P1-07 Reopened 60x1s RefreshGateAsync ticks with Available must call CheckAsync at most once (actual Checks={reopenAdapter.Checks})");
+            check(reopenAdapter.Checks == 1 &&
+                reopened.State.Phase == UpdatePhase.Available &&
+                reopened.State.Choice == UpdateInstallChoice.OnQuit,
+                $"P1-07 Scenario B post-loop: Available={reopened.State.Phase}, Choice={reopened.State.Choice}, Checks={reopenAdapter.Checks}");
+
+            // Scenario C: Transient UpdateStore.Save failure during first reopened CheckAsync must not clear
+            // needsDeferredQuitRevalidation or Choice before BeginCheck saves.
+            var files = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+            Func<Exception?>? moveFault = null;
+            var failStore = new UpdateStore(
+                Path.Combine(root, "save-fail", "Updates"),
+                (temporary, bytes) => files[temporary] = bytes.ToArray(),
+                (source, destination) =>
+                {
+                    if (moveFault?.Invoke() is { } fault) throw fault;
+                    files[destination] = files[source];
+                    files.Remove(source);
+                },
+                _ => { },
+                () => TimeSpan.Zero,
+                path => files.TryGetValue(path, out var bytes) ? bytes.ToArray() : null,
+                path => { files.Remove(path); return true; });
+            var seedAdapter = new MatrixAdapter();
+            var seedController = new DesktopUpdateController(seedAdapter, sameGate, failStore, "0.8.2", "14", true, () => now);
+            await seedController.CheckAsync(true);
+            await seedController.DownloadAsync();
+            await seedController.ChooseAsync(UpdateInstallChoice.OnQuit);
+            check(await seedController.PrepareForQuitAsync() &&
+                seedController.State.Phase == UpdatePhase.Available &&
+                seedController.State.Choice == UpdateInstallChoice.OnQuit,
+                "P1-07 Scenario C seed persisted Available + OnQuit");
+
+            now = now.AddMinutes(5);
+            moveFault = () => new UnauthorizedAccessException("Injected transient lock");
+            var recoverAdapter = new MatrixAdapter();
+            var recovering = new DesktopUpdateController(recoverAdapter, sameGate, failStore, "0.8.2", "14", true, () => now);
+            await recovering.RefreshGateAsync();
+            check(recoverAdapter.Checks == 0 && recovering.StorageError != null,
+                "P1-07 Scenario C: failed BeginCheck Save surfaces StorageError without invoking adapter");
+
+            moveFault = null;
+            now = now.AddSeconds(1);
+            await recovering.RefreshGateAsync();
+            check(recoverAdapter.Checks == 1 && recovering.StorageError == null &&
+                await recovering.PrepareForQuitAsync() &&
+                recovering.State.Phase == UpdatePhase.Available &&
+                recovering.State.Choice == UpdateInstallChoice.OnQuit,
+                $"P1-07 Scenario C: restored writable storage preserves reopened revalidation (Checks={recoverAdapter.Checks})");
+
+            for (var s = 1; s <= 10; s++)
+            {
+                now = now.AddSeconds(1);
+                await recovering.RefreshGateAsync();
+            }
+            check(recoverAdapter.Checks == 1,
+                $"P1-07 Scenario C: post-recovery ticks stay throttled (Checks={recoverAdapter.Checks})");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }

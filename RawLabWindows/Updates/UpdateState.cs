@@ -147,11 +147,11 @@ internal static class UpdatePresentation
 {
     public static UpdateBannerNotice MainWindowNotice(UpdatePreferences preferences, string? unavailableReason, string? fallbackVersion)
     {
+        if (unavailableReason != null)
+            return fallbackVersion != null ? new(false, fallbackVersion) : new(false, null);
         var state = preferences.PendingUpdate;
         if (state.Phase == UpdatePhase.Available && state.Release?.Version is { } available)
             return new(false, available);
-        if (unavailableReason != null && fallbackVersion != null)
-            return new(false, fallbackVersion);
         if (state.Phase == UpdatePhase.Failed || state.Phase == UpdatePhase.Idle && preferences.CheckFailure != null)
             return new(true, null);
         return new(false, null);

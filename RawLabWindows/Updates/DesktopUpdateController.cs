@@ -195,9 +195,9 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     {
         if (!CanCheck) return;
         if (!manual && ShouldSkipAutomaticCheck(now())) return;
-        needsDeferredQuitRevalidation = false;
         var next = preferences.Copy(); var attempt = next.PendingUpdate.BeginCheck();
-        if (!Save(next)) return;
+        if (!Save(next, preserveDeferredChoiceOnFailure: true)) return;
+        needsDeferredQuitRevalidation = false;
         var cancellation = BeginOperation(); automaticDownload = !manual && preferences.AutomaticInstall;
         try
         {
@@ -233,7 +233,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             if (automaticDownload && preferences.AutomaticInstall && next.PendingUpdate.Choice == UpdateInstallChoice.None) next.PendingUpdate.Choose(UpdateInstallChoice.AutomaticOnQuit);
             Save(next);
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception error) { if (State.Phase == UpdatePhase.Verifying) FailVerification(error, attempt.Value); else Fail(error, attempt.Value); }
         finally { EndOperation(cancellation); }
     }
@@ -271,11 +271,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         {
             if (needsDeferredQuitRevalidation)
             {
-                if (!IsCheckBackoffActive(now()))
-                {
-                    needsDeferredQuitRevalidation = false;
-                    await CheckAsync(true);
-                }
+                if (!IsCheckBackoffActive(now())) await CheckAsync(true);
                 return;
             }
             if (!IsCheckBackoffActive(now())) await CheckAsync(false);
@@ -408,7 +404,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
             if (diskRecord!.PendingUpdate.Fail(diskPhase, code, detail, attempt)) { preferences = diskRecord; Notify(); }
         }
     }
-    private bool Save(UpdatePreferences next, bool discardObsoleteBackup = true, bool keepNextOnFailure = false)
+    private bool Save(UpdatePreferences next, bool discardObsoleteBackup = true, bool keepNextOnFailure = false, bool preserveDeferredChoiceOnFailure = false)
     {
         if (startupStorageBlocked) return false;
         try {
@@ -421,7 +417,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         {
             StorageError = error.Message;
             if (keepNextOnFailure) preferences = next;
-            else preferences.PendingUpdate.Cancel();
+            else preferences.PendingUpdate.Cancel(preservingChoice: preserveDeferredChoiceOnFailure && DeferredQuitChoice);
             operation?.Cancel(); Notify(); return false;
         }
     }
