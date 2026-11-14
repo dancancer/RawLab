@@ -31,8 +31,10 @@ internal data class EditSaveResult(val state: EditSaveState, val error: Throwabl
 }
 
 internal class EditorEditStore(private val directory: File, private val createStore: (File) -> EditStore = { EditStore(it) }) {
-    private var store: EditStore? = null
-    var adjustmentSession: AdjustmentTransferSession? = null
+    // 跨线程读写（A-N1）：两字段由 reopen/save/reset 成对重建，先写 store 再写 adjustmentSession。
+    // @Volatile 保证重建后的引用对其他线程可见；读方经 start/join 或后续 reopen 同步点交接。
+    @Volatile private var store: EditStore? = null
+    @Volatile var adjustmentSession: AdjustmentTransferSession? = null
         private set
     val initialResult = reopen()
     val available get() = store != null
