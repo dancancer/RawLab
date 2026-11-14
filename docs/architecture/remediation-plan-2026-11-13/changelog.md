@@ -144,3 +144,4 @@
 - 2026-11-14 · #318 二轮交卷（`f4725bc0`）：闸下沉 Swift 二层守卫（30 模型断言无条件跑、SKIP 严格殿后、FAIL 只罩 AX 段，顺带关掉 Should-1 探针穿透），壳层闸删除+契约双形态 pin+ci.md 三处同步；CI 该段现真 PASS 序列。二轮碳审在途（review-mwfz7gq5，核闸 FAIL 会否吞真失败）。
 - 2026-11-14 · **合入波（总 75 PR）**：**#314**（P2-16-W Windows 外观容错，二轮 approve）、**#315**（P2-09 Force 错误码对齐，二轮 approve）、**#317**（V-UIIOS 状态三连，二轮 approve）、**#319**（V-EXP Uncertain 上屏+死参数，初审 approve）；四 worktree/分支已清。
 - 2026-11-14 · 两红处置：**#316** B1=created_at 排序≠真 FIFO（DAG 延迟+Re-run 两条已复现绕过），lead 裁方案 A「有不可信活跃 run 即不派发」最严屏障，氢线程续修；**#318** r2 新伤=REQUIRE_AX 守卫置于模型断言前，FAIL 抢跑掩盖真失败+契约缺顺序断言，crew 复跑。
+- 2026-11-14 · V 系列氢单交卷三张：**#320** V-WIN（备份保留+notice 生命周期）、**#321** V-SPEC（假绿对账修复）、**#322** V-RESET（wire 级断言+.hdrRendition 场景），CI 均 0 fail。碳审 ×2 在途（320 单独；321/322 合并审含文件互踩检查）。V 系列 7 票全部进入 PR 状态（#316/#318 返工中）。
