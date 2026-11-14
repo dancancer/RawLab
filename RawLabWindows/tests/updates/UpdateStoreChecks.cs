@@ -304,6 +304,59 @@ internal static class UpdateStoreChecks
                 try { gate.RepairableState(); } catch (InvalidDataException error) { rejected = error.Message.Contains("status is unknown", StringComparison.Ordinal); }
                 check(rejected, "Unknown " + slot + " is not treated as known-non-installation when backups exist");
             }
+
+            // — W2（#297 残留）：Load 与 RepairableState 对磁盘备份/恢复证据必须对称 —
+            // 结构完整且含未知枚举（但新版本省去或改名 JSON 备份字段）+ 盘上存在 Backups/Recoveries/recovery-in-progress.json 时，
+            // Load 不得降级为 Idle（否则启动后 DiscardUnreferencedBackups(null) 静默删备份）。
+            foreach (var slot in new[] { "Phase", "Choice", "FailureStage" })
+            {
+                var dataRoot = Path.Combine(root, "disk-backup-" + slot);
+                var diskStore = new UpdateStore(Path.Combine(dataRoot, "Updates")); Directory.CreateDirectory(diskStore.DirectoryPath);
+                var edits = Path.Combine(dataRoot, "Edits"); Directory.CreateDirectory(edits);
+                File.WriteAllText(Path.Combine(edits, "photo.json"), "committed");
+                var createdBackup = new UpdateDataBackup(dataRoot, diskStore.DirectoryPath).Create("0.8.2", "0.9.1", "14");
+                var sourcePrefs = slot == "FailureStage" ? failed : Prepared();
+                var node = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(sourcePrefs))!.AsObject();
+                var pending = node["PendingUpdate"]!.AsObject();
+                pending["BackupPath"] = null; pending["PreviousVersion"] = null; pending["PreviousBuild"] = null;
+                if (slot == "Phase") pending["Phase"] = 99;
+                else if (slot == "Choice") pending["Choice"] = 99;
+                else pending["Failure"]!["Stage"] = 99;
+                File.WriteAllText(diskStore.StatePath, node.ToJsonString());
+                check(Rejected(() => diskStore.Load(false)) && Directory.Exists(createdBackup) && File.Exists(Path.Combine(createdBackup, "manifest.json")),
+                    "Unknown " + slot + " rejects rollback downgrade when disk backup evidence exists");
+                var rebuildBlocked = false;
+                try { diskStore.RepairableState(); } catch (InvalidDataException error) { rebuildBlocked = error.Message.Contains("status is unknown", StringComparison.Ordinal); }
+                check(rebuildBlocked, "Unknown " + slot + " also blocks RepairableState when disk backup evidence exists");
+            }
+            {
+                var recoveryRoot = Path.Combine(root, "disk-recovery-enum");
+                var recoveryStore = new UpdateStore(Path.Combine(recoveryRoot, "Updates")); Directory.CreateDirectory(recoveryStore.DirectoryPath);
+                var recoveryEntry = Path.Combine(recoveryStore.DirectoryPath, "Recoveries", Guid.NewGuid().ToString("N"), "original", "Edits");
+                Directory.CreateDirectory(recoveryEntry);
+                File.WriteAllText(Path.Combine(recoveryEntry, "newer.json"), "newer edit");
+                var node = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(Prepared()))!.AsObject();
+                node["PendingUpdate"]!["Phase"] = 99;
+                File.WriteAllText(recoveryStore.StatePath, node.ToJsonString());
+                check(Rejected(() => recoveryStore.Load(false)) && File.Exists(Path.Combine(recoveryEntry, "newer.json")),
+                    "Unknown Phase rejects rollback downgrade when Recoveries directory is non-empty");
+                Directory.Delete(Path.Combine(recoveryStore.DirectoryPath, "Recoveries"), true);
+                File.WriteAllText(Path.Combine(recoveryStore.DirectoryPath, "recovery-in-progress.json"), "journal");
+                check(Rejected(() => recoveryStore.Load(false)) && Rejected(() => recoveryStore.RepairableState()),
+                    "Unknown Phase rejects rollback downgrade when recovery-in-progress journal exists");
+            }
+            {
+                var choiceGate = new UpdateStore(Path.Combine(root, "gate-Choice")); Directory.CreateDirectory(choiceGate.DirectoryPath);
+                var orphan = Path.Combine(choiceGate.DirectoryPath, "Backups", Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(orphan); File.WriteAllText(Path.Combine(orphan, "part.json"), "orphan copy");
+                var node = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(Prepared()))!.AsObject();
+                node["AutomaticCheck"] = "broken"; node["PendingUpdate"]!["Choice"] = 99;
+                File.WriteAllText(choiceGate.StatePath, node.ToJsonString());
+                rejected = false;
+                try { choiceGate.RepairableState(); } catch (InvalidDataException error) { rejected = error.Message.Contains("status is unknown", StringComparison.Ordinal); }
+                check(rejected, "Unknown Choice is not treated as known-non-installation when backups exist");
+            }
+            Console.WriteLine("PASS: UpdateStore.Load and RepairableState symmetrically block downgrade/rebuild when disk backup or recovery evidence exists");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }

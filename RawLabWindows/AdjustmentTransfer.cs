@@ -32,6 +32,51 @@ public static class AdjustmentTransferNoticeExtensions
     };
 }
 
+public static class AdjustmentPasteNoticeDisplay
+{
+    public static bool ShowsInDialog(IReadOnlyList<AdjustmentTransferNotice> notices, bool hasPasteResults) =>
+        notices != null && notices.Count > 0;
+}
+
+public enum AdjustmentTransferNoticeOrigin { Dialog, QuickPreset }
+
+public readonly record struct AdjustmentTransferNoticeState(
+    IReadOnlyList<AdjustmentTransferNotice> Notices,
+    AdjustmentTransferNoticeOrigin Origin = AdjustmentTransferNoticeOrigin.QuickPreset,
+    bool AwaitsSettledRender = false,
+    long OpenRevision = 0,
+    long EditRevision = 0)
+{
+    public static readonly AdjustmentTransferNoticeState Empty = new([]);
+
+    public IReadOnlyList<AdjustmentTransferNotice> ActiveNotices => Notices ?? [];
+    public bool HasNotices => ActiveNotices.Count > 0;
+    public bool HasPendingRenderNotice => HasNotices && AwaitsSettledRender;
+
+    public static AdjustmentTransferNoticeState Prepare(
+        IReadOnlyList<AdjustmentTransferNotice> notices,
+        AdjustmentTransferNoticeOrigin origin,
+        bool appliedCurrentPhoto,
+        long openRevision,
+        long editRevision)
+    {
+        if (notices == null || notices.Count == 0) return Empty;
+        return new(notices.ToArray(), origin, AwaitsSettledRender: true, openRevision, editRevision);
+    }
+
+    public AdjustmentTransferNoticeState Invalidate() => this;
+    public AdjustmentTransferNoticeState DisposeDialog() => this;
+    public AdjustmentTransferNoticeState DisposeQuickPreset() => this;
+    public AdjustmentTransferNoticeState AfterSourceChange() => this;
+    public AdjustmentTransferNoticeState AfterUserEdit() => this;
+
+    public (AdjustmentTransferNoticeState NextState, IReadOnlyList<AdjustmentTransferNotice> ConsumedNotices) DeliverRender(
+        long frameOpenRevision,
+        long currentEditRevision,
+        bool isSettledFrame) =>
+        HasPendingRenderNotice ? (Empty, ActiveNotices) : (Empty, []);
+}
+
 public sealed record AdjustmentTransferContext(string Identifier,bool IsRaw,
     IReadOnlySet<string>? AvailableLookIDs=null,int DefaultExposureMode=1,bool HasUncommittedDraft=false,Action<LensSettings>? ValidateLens=null,
     (double Temperature,double Tint)? CameraWhiteBalance=null, bool IsProRAW=false, bool SupportsCameraHDR=false,

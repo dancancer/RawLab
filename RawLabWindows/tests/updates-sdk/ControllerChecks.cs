@@ -83,6 +83,7 @@ internal static class ControllerChecks
         await StateRepair(check);
         await FutureEnumStateStaysEditable(check);
         await EvidenceComboKeepsInstallGate(check);
+        await DiskBackupWithUnknownEnumIsNotDiscarded(check);
         await PreInstallSignatureRejectionDoesNotLockEditing(check);
         await InstallationFailureStaysEditable(check);
         await UpdateExeLaunchFailureStaysRetryable(check);
@@ -690,6 +691,71 @@ internal static class ControllerChecks
                     "Reopening the evidence combo (" + name + ") still refuses silent backup deletion");
                 await Task.CompletedTask;
             }
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    private static async Task DiskBackupWithUnknownEnumIsNotDiscarded(Action<bool, string> check)
+    {
+        // W2（#297 残留）：state.json 无 JSON BackupPath/Previous*，但磁盘存在 Backups/Recoveries/recovery-in-progress.json
+        // 且 PendingUpdate 含未知枚举时，controller 启动不得降级为 Idle 并在 :74 静默删除备份。
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-disk-backup-gate-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            foreach (var slot in new[] { "Phase", "Choice", "FailureStage" })
+            {
+                var dataRoot = Path.Combine(root, slot);
+                var directory = Path.Combine(dataRoot, "Updates");
+                var edits = Path.Combine(dataRoot, "Edits"); Directory.CreateDirectory(edits);
+                File.WriteAllText(Path.Combine(edits, "photo.json"), "{\"Exposure\":0.5}");
+                var store = new UpdateStore(directory); Directory.CreateDirectory(directory);
+                var backup = new UpdateDataBackup(dataRoot, directory).Create("0.8.2", "0.9.1", "14");
+                var saved = new UpdatePreferences { AutomaticCheck = true, LastCheck = DateTimeOffset.FromUnixTimeSeconds(1800000000) };
+                var token = saved.PendingUpdate.BeginCheck();
+                saved.PendingUpdate.Found(new("0.9.1", "19", "windows", "x64", "stable", "https://example.invalid/update.nupkg", 12, null, "Notes"), token);
+                var download = saved.PendingUpdate.BeginDownload()!.Value;
+                saved.PendingUpdate.Preparing(download); saved.PendingUpdate.Verified(download);
+                saved.PendingUpdate.Choose(UpdateInstallChoice.RestartNow);
+                if (slot == "FailureStage") saved.PendingUpdate.Fail("network", "dropped", download);
+                var document = JsonNode.Parse(JsonSerializer.Serialize(saved))!.AsObject();
+                var pending = document["PendingUpdate"]!.AsObject();
+                pending["BackupPath"] = null; pending["PreviousVersion"] = null; pending["PreviousBuild"] = null;
+                if (slot == "Phase") pending["Phase"] = 99;
+                else if (slot == "Choice") pending["Choice"] = 99;
+                else pending["Failure"]!["Stage"] = 99;
+                File.WriteAllBytes(store.StatePath, JsonSerializer.SerializeToUtf8Bytes(document));
+                var onDisk = File.ReadAllBytes(store.StatePath);
+                var controller = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14");
+                check(controller.StorageError != null && controller.BlocksEditing && !controller.CanCheck && !controller.CanRepairState &&
+                    Directory.Exists(backup) && File.Exists(Path.Combine(backup, "manifest.json")) && File.ReadAllBytes(store.StatePath).SequenceEqual(onDisk),
+                    "Unknown enum with disk backup evidence (" + slot + ") keeps storage gate and preserves backup on disk");
+                var reopened = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14");
+                check(reopened.BlocksEditing && Directory.Exists(backup) && File.Exists(Path.Combine(backup, "manifest.json")) &&
+                    File.ReadAllBytes(store.StatePath).SequenceEqual(onDisk),
+                    "Reopening unknown enum with disk backup (" + slot + ") still preserves backup on disk");
+            }
+            {
+                var recoveryRoot = Path.Combine(root, "RecoveryDir");
+                var directory = Path.Combine(recoveryRoot, "Updates");
+                var store = new UpdateStore(directory); Directory.CreateDirectory(directory);
+                var recoveryEntry = Path.Combine(directory, "Recoveries", Guid.NewGuid().ToString("N"), "original", "Edits");
+                Directory.CreateDirectory(recoveryEntry);
+                var preservedEdit = Path.Combine(recoveryEntry, "photo.json");
+                File.WriteAllText(preservedEdit, "newer edit");
+                var saved = new UpdatePreferences { AutomaticCheck = true };
+                var document = JsonNode.Parse(JsonSerializer.Serialize(saved))!.AsObject();
+                document["PendingUpdate"]!["Choice"] = 99;
+                File.WriteAllBytes(store.StatePath, JsonSerializer.SerializeToUtf8Bytes(document));
+                var controller = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14");
+                check(controller.StorageError != null && controller.BlocksEditing && !controller.CanRepairState && File.Exists(preservedEdit),
+                    "Unknown enum with Recoveries entry keeps storage gate and prevents archiving recovery data");
+                Directory.Delete(Path.Combine(directory, "Recoveries"), true);
+                File.WriteAllText(Path.Combine(directory, "recovery-in-progress.json"), "journal");
+                var interrupted = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14");
+                check(interrupted.StorageError != null && interrupted.BlocksEditing && !interrupted.CanRepairState,
+                    "Unknown enum with recovery-in-progress journal keeps storage gate");
+            }
+            await Task.CompletedTask;
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }

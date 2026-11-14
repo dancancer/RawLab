@@ -25,7 +25,7 @@ internal static class AdjustmentTransferChecks
         if (candidate.Settings.Restore()[Parameter.Exposure] != 1.25 || candidate.Settings.Processing != ProcessingIdentity.Legacy)
             throw new Exception("Frozen logical values preserve target processing");
         Console.WriteLine("PASS: Windows selective payload capture, frozen JSON and processing provenance");
-        Vectors(); Scenarios(); AdapterChecks();
+        Vectors(); Scenarios(); AdapterChecks(); TransferNoticeLifecycleChecks();
     }
     private static void Check(bool condition,string message) {if(!condition)throw new Exception(message);}
     private static void Reject(Action action,string message)
@@ -551,5 +551,89 @@ internal static class AdjustmentTransferChecks
         Reject(()=>Prepare(Payload((F.ChromaDenoise,1)),ai),"ordinary denoise target AI blocked");
         Check(Prepare(Payload((F.Exposure,1)),ai).Settings.AIDenoiseEnabled,"other fields preserve AI");
         Console.WriteLine("PASS: Windows recipe, partial fields, WB, lens, denoise and AI transfer boundaries");
+    }
+
+    private static void TransferNoticeLifecycleChecks()
+    {
+        var notices = new[] { AdjustmentTransferNotice.IgnoredRawDenoise };
+        var dualNotices = new[] { AdjustmentTransferNotice.IgnoredRawDenoise, AdjustmentTransferNotice.RetainedTargetProcessingVersion };
+        var prepared = new PreparedAdjustmentTransfer(
+            Guid.NewGuid(),
+            AdjustmentTransfer.Capture(AdjustmentScope.Custom([F.Exposure]),
+                new SavedEdit(new("source.dng", 1, 2, 3), new Adjustments().Capture(), null),
+                new("source.dng", true)),
+            [
+                new("target-a.jpg", "target-a.jpg", null, null, false, null, null, 0, [AdjustmentTransferNotice.IgnoredRawDenoise]),
+                new("target-b.jpg", "target-b.jpg", null, null, true, null, null, 0, [AdjustmentTransferNotice.RetainedTargetProcessingVersion]),
+                new("target-err.jpg", "target-err.jpg", null, null, false, null, new InvalidOperationException("blocked"), 0, [AdjustmentTransferNotice.IgnoredPostRGBDenoise])
+            ]);
+        Check(prepared.EffectiveNotices([]).Count == 0,
+            "Prepared notices stay empty before apply outcomes exist");
+        Check(prepared.EffectiveNotices([
+                new("target-a.jpg", AdjustmentStatus.Skipped),
+                new("target-b.jpg", AdjustmentStatus.Failed, Error: new IOException("disk")),
+                new("target-err.jpg", AdjustmentStatus.Applied)
+            ]).Count == 0,
+            "Skipped, failed or errored targets suppress effective transfer notices");
+        var effective = prepared.EffectiveNotices([
+            new("target-a.jpg", AdjustmentStatus.Applied),
+            new("target-b.jpg", AdjustmentStatus.Unchanged),
+            new("target-err.jpg", AdjustmentStatus.Blocked)
+        ]);
+        Check(effective.SequenceEqual(dualNotices),
+            "EffectiveNotices collects distinct notices only from valid applied and unchanged targets");
+
+        // W1（#301 残留）对位 #317 IOSAdjustmentPasteNoticeDisplay.showsInSheet：
+        // 弹窗在重开或新一轮预检产生结果前，即使存在旧提示也不得展示。
+        Check(!AdjustmentPasteNoticeDisplay.ShowsInDialog(notices, hasPasteResults: false),
+            "Dialog hides stale notices before the current batch produces paste results");
+        Check(AdjustmentPasteNoticeDisplay.ShowsInDialog(notices, hasPasteResults: true),
+            "Dialog shows effective notices alongside current paste results");
+        Check(!AdjustmentPasteNoticeDisplay.ShowsInDialog([], hasPasteResults: true),
+            "Dialog keeps notice row hidden when current batch has no notices");
+
+        // 非当前图批量粘贴 / Unchanged 粘贴不挂起后续渲染提示，避免污染切图或滑杆拖拽。
+        var nonCurrentBatch = AdjustmentTransferNoticeState.Prepare(notices, AdjustmentTransferNoticeOrigin.Dialog, appliedCurrentPhoto: false, openRevision: 10, editRevision: 20);
+        Check(!nonCurrentBatch.HasPendingRenderNotice,
+            "Non-current batch paste does not arm a pending render notice");
+        var (afterOtherPhotoRender, leakedOtherPhoto) = nonCurrentBatch.DeliverRender(frameOpenRevision: 11, currentEditRevision: 21, isSettledFrame: true);
+        Check(leakedOtherPhoto.Count == 0 && !afterOtherPhotoRender.HasPendingRenderNotice,
+            "Non-current batch paste never leaks onto a subsequent photo switch render");
+
+        var unchangedPaste = AdjustmentTransferNoticeState.Prepare(notices, AdjustmentTransferNoticeOrigin.QuickPreset, appliedCurrentPhoto: false, openRevision: 10, editRevision: 20);
+        Check(!unchangedPaste.HasPendingRenderNotice,
+            "Unchanged quick preset does not arm a pending render notice");
+        var (afterSliderDrag, leakedSlider) = unchangedPaste.DeliverRender(frameOpenRevision: 10, currentEditRevision: 21, isSettledFrame: true);
+        Check(leakedSlider.Count == 0 && !afterSliderDrag.HasPendingRenderNotice,
+            "Unchanged paste never pollutes subsequent slider drag renders");
+
+        // 当前 RAW 粘贴：瞬态 Refine / 缩放防抖帧仅保留读取、不提前消费，确保 ~200ms 后的最终帧不丢失提示。
+        var currentRaw = AdjustmentTransferNoticeState.Prepare(notices, AdjustmentTransferNoticeOrigin.QuickPreset, appliedCurrentPhoto: true, openRevision: 10, editRevision: 20);
+        Check(currentRaw.HasPendingRenderNotice,
+            "Current RAW apply arms pending transfer notice for its settled render");
+        var (afterRefine, duringRefine) = currentRaw.DeliverRender(frameOpenRevision: 10, currentEditRevision: 20, isSettledFrame: false);
+        Check(duringRefine.SequenceEqual(notices) && afterRefine.HasPendingRenderNotice,
+            "Transient Refine or resize frame preserves pending notice instead of dropping the settled RAW notice");
+        var (afterSettled, onSettled) = afterRefine.DeliverRender(frameOpenRevision: 10, currentEditRevision: 20, isSettledFrame: true);
+        Check(onSettled.SequenceEqual(notices) && !afterSettled.HasPendingRenderNotice && !afterSettled.HasNotices,
+            "Settled RAW render consumes the preserved transfer notice once and clears pending state");
+
+        // prepare / invalidate / dispose（关面板/关弹窗）/ 换图 / 手动编辑清理契约。
+        var armedDialog = AdjustmentTransferNoticeState.Prepare(notices, AdjustmentTransferNoticeOrigin.Dialog, appliedCurrentPhoto: true, openRevision: 10, editRevision: 20);
+        Check(!armedDialog.Invalidate().HasNotices && !armedDialog.Invalidate().HasPendingRenderNotice,
+            "Prepare invalidation clears lingering transfer notices");
+        Check(!armedDialog.DisposeDialog().HasNotices && !armedDialog.DisposeDialog().HasPendingRenderNotice,
+            "Closing the result dialog clears lingering dialog transfer notices");
+        Check(!currentRaw.DisposeQuickPreset().HasNotices && !currentRaw.DisposeQuickPreset().HasPendingRenderNotice,
+            "Closing the quick preset panel clears lingering quick preset notices");
+        Check(!currentRaw.AfterSourceChange().HasNotices && !currentRaw.AfterSourceChange().HasPendingRenderNotice,
+            "Source switch clears lingering transfer notices before the next photo opens");
+        Check(!currentRaw.AfterUserEdit().HasNotices && !currentRaw.AfterUserEdit().HasPendingRenderNotice,
+            "User slider edit invalidates pending transfer notices before render completion");
+        var (reopenedPhotoState, leakedReopen) = currentRaw.AfterSourceChange().DeliverRender(frameOpenRevision: 11, currentEditRevision: 21, isSettledFrame: true);
+        Check(!reopenedPhotoState.HasNotices && leakedReopen.Count == 0,
+            "Cleared source-switch notice never surfaces on the next photo render");
+
+        Console.WriteLine("PASS: AdjustmentTransferChecks notice display, effective filter, Refine preservation and prepare/dispose/source-switch cleanup");
     }
 }

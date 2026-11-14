@@ -8,7 +8,18 @@ public enum AdjustmentStatus { Applied, Unchanged, Skipped, Blocked, Conflict, F
 public sealed record AdjustmentOutcome(string TargetID,AdjustmentStatus Status,PhotoEditState? Saved=null,Exception? Error=null,bool RequiresHistoryDecision=false);
 public sealed record PreparedAdjustmentTransfer(Guid ID,AdjustmentPayload Payload,IReadOnlyList<PreparedAdjustmentTarget> Targets,
     AdjustmentHistoryAction Action = AdjustmentHistoryAction.Paste, OriginalIdentity? FrozenSource = null,
-    IReadOnlyList<AdjustmentTransferNotice>? Notices = null);
+    IReadOnlyList<AdjustmentTransferNotice>? Notices = null)
+{
+    public IReadOnlyList<AdjustmentTransferNotice> EffectiveNotices(IReadOnlyList<AdjustmentOutcome> outcomes)
+    {
+        ArgumentNullException.ThrowIfNull(outcomes);
+        if (outcomes.Count == 0) return [];
+        var effective = Targets.Where(target => target.Error == null && outcomes.Any(outcome =>
+            StringComparer.OrdinalIgnoreCase.Equals(outcome.TargetID, target.ID) &&
+            outcome.Status is AdjustmentStatus.Applied or AdjustmentStatus.Unchanged));
+        return effective.SelectMany(target => target.Notices ?? []).Distinct().ToArray();
+    }
+}
 public sealed record PreparedAdjustmentTarget(string ID,string DisplayName,PhotoEditState? Original,SavedEdit? Candidate,bool Unchanged,Func<bool>? IsCurrent,Exception? Error,long EditGeneration=0,
     IReadOnlyList<AdjustmentTransferNotice>? Notices=null);
 public enum AdjustmentHistoryAction { Paste, Edit, Preset, Synchronize }
