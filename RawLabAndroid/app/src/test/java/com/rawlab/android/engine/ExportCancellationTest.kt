@@ -90,25 +90,24 @@ class ExportCancellationTest {
             assertFalse("Cancelled export must not create partial output", freshOutput.exists())
             assertTrue("Staging file must be deleted", root.listFiles().orEmpty().isEmpty())
 
-            // Post-native race: native finishes writing bytes right as cancellation flips true.
+            // Q12: 提交点之后迟到的取消——native 已正常返回完整字节（staged write 已原子发布），
+            // 不再删已渲染文件；导出继续发布并按「已完成」收尾，新渲染内容替换旧目标。
             cancelled.set(false)
             val existing = File(root, "existing.jpg").apply { writeText("committed-v1") }
-            val raced = assertThrows(NativeProcessingException::class.java) {
-                executeExport(
-                    output = existing,
-                    suffix = ".jpg",
-                    isCancelled = cancelled::get,
-                    renderToStaging = { staging ->
-                        staging.writeText("partial-or-unverified-bytes")
-                        cancelled.set(true)
-                        2
-                    },
-                    preserveMetadata = { metadataCalls++ },
-                )
-            }
-            assertEquals(NativeProcessingException.CANCELLED, raced.status)
-            assertEquals(0, metadataCalls)
-            assertEquals("Existing non-empty destination must not be clobbered", "committed-v1", existing.readText())
+            val raced = executeExport(
+                output = existing,
+                suffix = ".jpg",
+                isCancelled = cancelled::get,
+                renderToStaging = { staging ->
+                    staging.writeText("rendered-bytes")
+                    cancelled.set(true)
+                    2
+                },
+                preserveMetadata = { metadataCalls++ },
+            )
+            assertEquals(2, raced)
+            assertEquals(1, metadataCalls)
+            assertEquals("Late cancel after commit must keep and publish the rendered file", "rendered-bytes", existing.readText())
             assertEquals(listOf(existing), root.listFiles()!!.toList())
 
             // Subsequent uncancelled retry publishes atomically and preserves metadata.
@@ -127,36 +126,114 @@ class ExportCancellationTest {
                 },
             )
             assertEquals(2, backend)
-            assertEquals(1, metadataCalls)
+            assertEquals(2, metadataCalls)
             assertEquals("rendered-pixels+exif", freshOutput.readText())
             assertEquals(setOf(existing, freshOutput), root.listFiles()!!.toSet())
         } finally { root.deleteRecursively() }
     }
 
-    @Test fun cancelledDuringMetadataPreservationDeletesStagingWithoutPublishing() {
+    @Test fun lateCancelDuringMetadataPreservationKeepsRenderedFileAndPublishes() {
         val root = Files.createTempDirectory("rawlab-export-exif-cancel").toFile()
         try {
             val output = File(root, "out.jpg")
             val cancelled = AtomicBoolean(false)
-            val error = assertThrows(NativeProcessingException::class.java) {
+            // Q12: 元数据阶段已位于提交点之后（staged write 已发布）——迟到的取消不再中断/删除，
+            // 导出继续发布并返回成功，按「已完成」收尾。
+            val backend = executeExport(
+                output = output,
+                suffix = ".jpg",
+                isCancelled = cancelled::get,
+                renderToStaging = { staging ->
+                    staging.writeText("encoded-jpeg")
+                    0
+                },
+                preserveMetadata = { staging ->
+                    staging.appendText("-partial-exif")
+                    cancelled.set(true)
+                },
+            )
+            assertEquals(0, backend)
+            assertTrue("Late cancel after commit must keep the published output", output.exists())
+            assertEquals("encoded-jpeg-partial-exif", output.readText())
+            assertEquals(listOf(output), root.listFiles()!!.toList())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun cancelBeforeCommitDeletesStagingAndLateCancelAfterCommitKeepsFile() {
+        // Q12 两分支锚点：提交点之前的取消删除暂存且无输出；提交点之后迟到的取消保留已渲染文件。
+        val root = Files.createTempDirectory("rawlab-export-commit").toFile()
+        try {
+            // 分支 1：提交点之前取消——native 在发布前的检查点报 CANCELLED。
+            val preCancelOutput = File(root, "pre.jpg")
+            val pre = assertThrows(NativeProcessingException::class.java) {
                 executeExport(
-                    output = output,
+                    output = preCancelOutput,
                     suffix = ".jpg",
-                    isCancelled = cancelled::get,
+                    isCancelled = { false },
                     renderToStaging = { staging ->
-                        staging.writeText("encoded-jpeg")
-                        0
-                    },
-                    preserveMetadata = { staging ->
-                        staging.appendText("-partial-exif")
-                        cancelled.set(true)
+                        staging.writeText("half-written")
+                        throw NativeProcessingException(NativeProcessingException.CANCELLED, "cancelled at core checkpoint")
                     },
                 )
             }
-            assertEquals(NativeProcessingException.CANCELLED, error.status)
-            assertFalse(output.exists())
+            assertEquals(NativeProcessingException.CANCELLED, pre.status)
+            assertFalse("Pre-commit cancel must delete staging without leaving output", preCancelOutput.exists())
             assertTrue(root.listFiles().orEmpty().isEmpty())
+
+            // 分支 2：提交点之后迟到的取消——native 已按 OK 原子发布文件，返回不再被改成 CANCELLED。
+            val lateOutput = File(root, "late.jpg")
+            val lateCancelled = AtomicBoolean(false)
+            val backend = executeExport(
+                output = lateOutput,
+                suffix = ".jpg",
+                isCancelled = lateCancelled::get,
+                renderToStaging = { staging ->
+                    staging.writeText("fully-rendered")
+                    lateCancelled.set(true)
+                    2
+                },
+            )
+            assertEquals(2, backend)
+            assertTrue("Late cancel after commit must keep the rendered file", lateOutput.exists())
+            assertEquals("fully-rendered", lateOutput.readText())
+            assertEquals(listOf(lateOutput), root.listFiles()!!.toList())
         } finally { root.deleteRecursively() }
+    }
+
+    @Test fun lateCompletedExportAfterCancelIsDiscardedButStillReportsDone() {
+        // Q12 状态文案：cancelExport 使 revision 失效后，已过提交点完成的导出仍走 discard 路径，
+        // ViewModel 据此提示「已完成」（export_done）而非「取消成功」。
+        val started = CountDownLatch(1)
+        val cancelledSignal = CountDownLatch(1)
+        val drained = CountDownLatch(1)
+        val discarded = java.util.Collections.synchronizedList(mutableListOf<WorkResult>())
+        val published = java.util.Collections.synchronizedList(mutableListOf<Result<WorkResult>>())
+        val queue = RenderQueue<Int, WorkResult>(
+            { _, _ ->
+                started.countDown()
+                assertTrue(cancelledSignal.await(5, TimeUnit.SECONDS))
+                WorkResult.Export
+            },
+            { _, result -> published += result },
+            {},
+            { result -> discarded += result; drained.countDown() },
+        )
+        try {
+            queue.submit(1)
+            assertTrue(started.await(5, TimeUnit.SECONDS))
+            queue.invalidate()
+            cancelledSignal.countDown()
+            assertTrue(drained.await(5, TimeUnit.SECONDS))
+            assertTrue("Invalidated export must not publish through accept()", published.isEmpty())
+            assertSame(WorkResult.Export, discarded.single())
+
+            // 完成提示：cancelExport 已 renderFinished，随后 discard 的完成结果覆盖 message 为完成文案。
+            val cancelledState = EditorStateReducer.renderFinished(EditorState(operation = Operation.EXPORT))
+            val done = EditorStateReducer.lateExportCompleted(cancelledState, "Photo saved")
+            assertEquals("Photo saved", done.message)
+            assertEquals(Operation.NONE, done.operation)
+            assertNull(done.error)
+        } finally { queue.close() }
     }
 
     @Test fun renderQueueInvalidationPropagatesToExportCleansTempAndRestoresEditorState() {
@@ -227,7 +304,7 @@ class ExportCancellationTest {
         } finally { root.deleteRecursively() }
     }
 
-    @Test fun batchRunnerTreatsNativeExportCancellationAsCancelledAndCleansTemporaryOutput() {
+    @Test fun batchRunnerKeepsRowRenderedBeforeCancelAndCancelsRemainingRows() {
         val root = Files.createTempDirectory("rawlab-batch-export-cancel").toFile()
         try {
             val sourceFile = File(root, "source.arw").apply { writeText("raw") }
@@ -274,13 +351,15 @@ class ExportCancellationTest {
                 dispose = File::delete,
             )
 
+            // Q12: 第 2 行的取消在 render 返回（提交点）之后才到达——已渲染文件保留、正常发布并按成功收尾；
+            // 未开始的第 3 行才标记 CANCELLED。
             assertEquals(
-                listOf(BatchRowStatus.SUCCESS, BatchRowStatus.CANCELLED, BatchRowStatus.CANCELLED),
+                listOf(BatchRowStatus.SUCCESS, BatchRowStatus.SUCCESS, BatchRowStatus.CANCELLED),
                 finished.rows.map { it.status },
             )
             assertNull(finished.rows[1].error)
             assertNull(finished.rows[2].error)
-            assertEquals(listOf("1.jpg"), outputDir.listFiles()!!.map { it.name })
+            assertEquals(listOf("1.jpg", "2.jpg"), outputDir.listFiles()!!.map { it.name }.sorted())
             assertTrue("All temporary and partial batch files must be deleted", tempDir.listFiles().orEmpty().isEmpty())
         } finally { root.deleteRecursively() }
     }

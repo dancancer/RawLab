@@ -54,6 +54,16 @@
 | **4. 编码中** | 内存输出逐行检查（`writeOutputBuffer`，`sony2fuji_c.cpp:1357`）；JPEG 量化分块与每写出 16 KiB `longjmp` 中断（`raw_processor.cpp:1084-1121,1166-1211`）；PNG 每满 65536 像素扫描线检查（`raw_processor.cpp:1305-1312`）；Rendered DNG 预览与 16-bit 扫描线每满 65536 像素检查（`rendered_dng.cpp:453-460,574,608-615,635`）；HDR JPEG 扫描线检查（`hdr_jpeg.cpp:402,476`） | 未提交内存由 RAII 释放，`out_buffer` 保持 `{nullptr, 0}`；文件编码仅写入目标同目录 staging 临时文件（`.rawlab-*`／`rl*.tmp`），中断时析构函数关闭并删除 staging 文件，目标路径不创建或与取消前逐字节一致。 |
 | **5. 提交点与提交点之后** | 提交点：编码及 flush 完成后、原子替换前的最后一次 `checkProcessingCancellation()`（`raw_processor.cpp:1221,1338`、`rendered_dng.cpp:644`、`hdr_image_apple.mm:405`、`hdr_image_portable.cpp:279,296`）；提交操作：`rename`／`MoveFileExW`（`raw_processor.cpp:1032-1047`） | **提交点前**取消仍删除 staging、保留原目标文件并返回 `CANCELLED`。**一旦原子替换成功（提交点之后）**，不再执行任何取消检查（`finishOutput` 直接更新 `geometry_width/height` 并返回 `SONY2FUJI_STATUS_OK`，`sony2fuji_c.cpp:1413-1418`）：迟到的取消信号**绝不删除已发布文件，也绝不把返回状态改成 `CANCELLED`**。 |
 
+### 平台侧消费方规则（Q12 裁定）
+
+第 5 行的提交点语义同样约束平台导出包装层：平台不得在核心已返回 `SONY2FUJI_STATUS_OK` 之后再用自己的取消标志把结果删掉或改判，否则会重新引入「提交点之后迟到的取消删掉已渲染文件、用户白等」的问题。
+
+- **判据**：对文件目标，`status == OK` 当且仅当提交点（原子替换）已成功且文件已发布；`status == CANCELLED` 当且仅当取消到达在提交点之前的检查点。平台侧「完成时取消到达」= `OK` + 平台自身取消世代（generation）已失配。
+- **后果**：该情形平台不得删除已发布文件，不得把结果改写成取消；导出继续发布到最终目的地（系统相册／SAF、批量输出等）并提示完成。提交点之前的取消维持删除暂存、返回取消的既有语义（#289/#293）。
+- **Android 落地**：`rawlab_jni.cpp` 仅在 `status == CANCELLED` 时清理目标路径；`NativeProcessor.executeExport`、`EditorRenderer` 普通／HDR 导出分支与 `BatchRunner` 行循环把提交点之后的取消观察统一按完成收尾；编辑器 `cancelExport()` 使结果 revision 失效时，由 `EditorStateReducer.lateExportCompleted` 在 discard 路径提示完成（文案 `export_done`）而非取消成功。
+
+BUFFER（预览）路径没有已发布文件，不受本规则约束：迟到取消仍按取消处理。
+
 ## 5. 多个会话是否真并行
 
 不同 `sony2fuji_session` 在解码与像素缓冲上相互独立（内建 LibRaw 补丁与 `qDNGThreadSafe=1` 支持多线程独立实例解码，由 `lutools/tests/raw_thread_safety_tests.cpp` 验证），但跨会话并发仍受以下**进程级全局锁与共享线程池**约束，并非完全无共享并行：

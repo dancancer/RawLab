@@ -498,13 +498,17 @@ internal fun executeExport(
     fun throwIfCancelled() {
         if (isCancelled()) throw NativeProcessingException(NativeProcessingException.CANCELLED, "Processing cancelled")
     }
+    // Q12 裁定（g-product-decisions）：提交点 = 核心 staged write 的原子替换发布。
+    // renderToStaging 正常返回即已过提交点（nativeProcess 仅在核心提交点前的检查点取消时抛 CANCELLED）；
+    // 提交点之后迟到的取消不删已渲染文件，导出继续发布并按「已完成」收尾。
+    // 提交点之前的取消维持 #289/#293 语义：抛 CANCELLED、删除暂存、空占位符复位。
+    var committed = false
     var completed = false
     try {
         throwIfCancelled()
         val backend = renderToStaging(staging)
-        throwIfCancelled()
+        committed = true
         preserveMetadata(staging)
-        throwIfCancelled()
         try {
             Files.move(staging.toPath(), output.toPath(), StandardCopyOption.REPLACE_EXISTING)
         } catch (error: IOException) {
@@ -517,7 +521,7 @@ internal fun executeExport(
         return backend
     } catch (error: Throwable) {
         val cancelled = (error is NativeProcessingException && error.status == NativeProcessingException.CANCELLED) ||
-            error is CancellationException || isCancelled()
+            error is CancellationException || (!committed && isCancelled())
         if (cancelled && emptyPlaceholder && output.exists() && output.length() == 0L) {
             output.delete()
         }

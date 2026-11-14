@@ -264,9 +264,9 @@ class EditorViewModel @JvmOverloads constructor(
         // 结果持有临时输入；即使 ViewModel scope 已取消，也要在主线程完成移交或释放。
         renderDelivery.post {
             if (!disposed && revision == currentRevision) accept(result)
-            else result.getOrNull()?.discardOwnedInput()
+            else result.getOrNull()?.let { lateExportCompleted(it) }
         }
-    }, { renderer.close(); releaseStorage() }, { it.discardOwnedInput() }, { work ->
+    }, { renderer.close(); releaseStorage() }, ::lateExportCompleted, { work ->
         work.discardPendingWork(exportDestinationCleanup)
     })
     private val lookQueue = RenderQueue<LookWork, LookResult>({ runLookWork(storage, it) }, { revision, result ->
@@ -532,6 +532,20 @@ class EditorViewModel @JvmOverloads constructor(
         })
         collections.releaseDeferred()
         updatePreviewSize(requestedPreviewLongEdge)
+    }
+
+    // Q12: A late cancel after the commit point still completes the export and keeps the rendered file.
+    // The result revision has already been invalidated by cancelExport, so release its owned input and,
+    // for a completed export, tell the user it finished (export_done) rather than that the cancel succeeded.
+    private fun lateExportCompleted(result: WorkResult) {
+        result.discardOwnedInput()
+        if (result is WorkResult.Export && !disposed) {
+            renderDelivery.post {
+                if (disposed) return@post
+                mutable.value = EditorStateReducer.lateExportCompleted(mutable.value, text(R.string.export_done))
+                usage.record(UsageEvent.ExportCompleted)
+            }
+        }
     }
 
     private fun acceptLook(result: Result<LookResult>) {

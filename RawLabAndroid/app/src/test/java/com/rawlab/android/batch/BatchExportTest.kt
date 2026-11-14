@@ -22,20 +22,34 @@ import com.rawlab.android.settings.SettingsCodec
 import com.rawlab.android.settings.X3fMode
 
 class BatchExportTest {
-    @Test fun cancellationAfterRenderingDisposesOutputWithoutPublishing() {
+    @Test fun cancelBeforeRowCommitCancelsRowAndLateCancelAfterRenderingPublishesRenderedRow() {
         val root = java.nio.file.Files.createTempDirectory("batch-cancel").toFile()
         try {
             val input = File(root, "input.raw").apply { writeText("source") }
             val target = BatchTarget(PhotoIdentity("target"), input, input.name)
             val job = BatchJob(BatchSourceSnapshot(PhotoIdentity("source"), input, EditSettings()), listOf(target))
+            fun runJob(render: (BatchTarget, EditSettings) -> String, shouldCancel: () -> Boolean): Triple<Boolean, Boolean, BatchRowStatus> {
+                var published = false
+                var disposed = false
+                val result = BatchRunner.run(job, render, { _, _, _ -> published = true }, shouldCancel,
+                    dispose = { disposed = true })
+                return Triple(published, disposed, result.rows.single().status)
+            }
+            // 提交点之前取消：native 导出在发布前检查点抛 CANCELLED → 本行 CANCELLED、不发布。
+            val (earlyPublished, earlyDisposed, earlyStatus) = runJob(
+                { _, _ -> throw com.rawlab.android.engine.NativeProcessingException(
+                    com.rawlab.android.engine.NativeProcessingException.CANCELLED, "cancelled in native") },
+                { false },
+            )
+            assertFalse(earlyPublished)
+            assertFalse(earlyDisposed)
+            assertEquals(BatchRowStatus.CANCELLED, earlyStatus)
+            // Q12：render 正常返回 ⇒ 本行已过提交点；迟到的取消不删已渲染文件，继续发布并释放临时载荷。
             var cancelled = false
-            var published = false
-            var disposed = false
-            val result = BatchRunner.run(job, { _, _ -> cancelled = true; "output" },
-                { _, _, _ -> published = true }, { cancelled }, dispose = { disposed = true })
-            assertFalse(published)
+            val (published, disposed, status) = runJob({ _, _ -> cancelled = true; "output" }, { cancelled })
+            assertTrue(published)
             assertTrue(disposed)
-            assertEquals(BatchRowStatus.CANCELLED, result.rows.single().status)
+            assertEquals(BatchRowStatus.SUCCESS, status)
         } finally { root.deleteRecursively() }
     }
     @Test fun perTargetJournalKeepsDifferencesThroughCancelResumeAndFailedOnlyRetry() {
@@ -58,13 +72,15 @@ class BatchExportTest {
             val restored = journal.load(job.id)!!
             assertEquals(BatchSettingsMode.PER_TARGET_FROZEN, restored.settingsMode)
             assertEquals(listOf(.5f), exposures)
-            assertTrue(restored.rows.all { it.status == BatchRowStatus.CANCELLED })
+            // Q12：第 0 行 render 正常返回（已过提交点）后取消才翻转 → 该行发布并按成功收尾；剩余行 CANCELLED。
+            assertEquals(listOf(BatchRowStatus.SUCCESS, BatchRowStatus.CANCELLED, BatchRowStatus.CANCELLED),
+                restored.rows.map { it.status })
             assertEquals(3, restored.rows.map { it.outputName }.distinct().size)
             val failed = BatchRunner.run(restored, render = { target, settings ->
                 exposures += settings.exposure
                 if (target.id == "1") error("Retry me")
             }, write = { _, _, _ -> }, journal = journal)
-            assertEquals(listOf(.5f, .5f, 1f, 1.5f), exposures)
+            assertEquals(listOf(.5f, 1f, 1.5f), exposures)
             // 一个取消项不能混入“只重试失败”调度。
             val retry = failed.withRows(failed.rows.map { if (it.id == "2") it.copy(status = BatchRowStatus.CANCELLED) else it })
             val pending = failed.withRows(failed.rows.map { if (it.id == "2") it.copy(status = BatchRowStatus.PENDING) else it })
@@ -72,7 +88,7 @@ class BatchExportTest {
             assertEquals(BatchRowStatus.PENDING, cancelledRetry.rows[2].status)
             val done = BatchRunner.retryFailed(retry, render = { _, settings -> exposures += settings.exposure },
                 write = { _, _, _ -> }, journal = journal)
-            assertEquals(listOf(.5f, .5f, 1f, 1.5f, 1f), exposures)
+            assertEquals(listOf(.5f, 1f, 1.5f, 1f), exposures)
             assertEquals(BatchRowStatus.CANCELLED, done.rows[2].status)
             assertThrows(IllegalArgumentException::class.java) { journal.save(job.copy(outputLongEdge = 2048)) }
             assertThrows(IllegalArgumentException::class.java) {

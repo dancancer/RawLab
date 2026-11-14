@@ -48,7 +48,9 @@ object BatchRunner {
                 if (current.settingsMode == BatchSettingsMode.PER_TARGET_FROZEN) row.target.frozen!!.verifyFiles(row.target.sourceFile)
                 val payload = render(row.target, current.settingsFor(row.target, resolveX3fMode))
                 try {
-                    if (shouldCancel()) throw java.util.concurrent.CancellationException()
+                    // Q12: render 正常返回 ⇒ 该行渲染已过提交点（提交点前的取消会在 render 内抛 CANCELLED）。
+                    // 提交点之后迟到的取消不删已渲染文件：本行继续发布并按成功收尾，
+                    // 剩余行由循环顶部的 shouldCancel() 标记为 CANCELLED。
                     current = current.withRows(current.rows.mapIndexed { i, item -> if (i == index) item.copy(status = BatchRowStatus.PUBLISHING) else item })
                     commit(index)
                     if (publish == null) write(payload, row.outputName, row.target)

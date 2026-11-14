@@ -1550,10 +1550,14 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
         check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
         Buffer buffer;
         const auto status = sony2fuji_process(session, &request, &buffer.value);
-        if (out.chars && (status == SONY2FUJI_STATUS_CANCELLED || cancellation.isCancelled()))
+        // Q12: 核心状态就是提交点判据——CANCELLED 只可能来自提交点之前的检查点（staged 临时文件已由核心
+        // 自行删除）；状态 OK 表示 staged write 已原子替换发布，提交点之后迟到的取消不删已渲染文件，
+        // 导出按「已完成」收尾。仅缓冲区（预览）路径没有已发布文件，迟到取消仍按取消处理。
+        if (out.chars && status == SONY2FUJI_STATUS_CANCELLED)
             std::remove(out.chars);
         check(status, session);
-        check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
+        if (!out.chars)
+            check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
         if (backendOut) {
             const auto backend = static_cast<jint>(sony2fuji_session_get_last_backend(session));
             env->SetIntArrayRegion(backendOut, 0, 1, &backend);
