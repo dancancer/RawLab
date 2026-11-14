@@ -12,11 +12,20 @@ struct IOSPhotoPreviewSource {
 
 struct IOSPhotoPreviewPlan {
     static let edge = 320
+    private struct ResourceRequirement {
+        let url: URL
+        let expectedDigest: String
+        let maximumBytes: Int?
+        let missingFileOnFailure: Bool
+    }
+
     let source: IOSPhotoPreviewSource
     let record: PhotoEditRecord
     let look: URL?
     let key: PhotoPreviewCacheKey
     let settings: RawSettings
+    private let sourceDigest: String
+    private let resourceRequirements: [ResourceRequirement]
 
     static func isEdited(_ record: PhotoEditRecord, isRaw: Bool) -> Bool {
         guard let state = record.state else { return false }
@@ -24,35 +33,75 @@ struct IOSPhotoPreviewPlan {
             context: .init(isRaw: isRaw, defaultExposureMode: isRaw ? RawSettings.default.exposureMode : .sensor))
     }
 
-    init(source: IOSPhotoPreviewSource, record: PhotoEditRecord, look: URL?) throws {
+    init(source: IOSPhotoPreviewSource, record: PhotoEditRecord, look: URL?,
+         digestCache: FileDigestCache = .shared) throws {
         self.source = source; self.record = record; self.look = look
         let state = try record.state ?? source.file.withReadAccess {
             PhotoEditState(settings: try Sony2FujiProcessor().defaultSettings(for: $0, isRaw: source.isRaw), updatedAt: Date(timeIntervalSince1970: 0))
         }
         settings = state.settings
         guard !state.settings.hasLook || state.settings.isHDREditing || look != nil else { throw CocoaError(.fileNoSuchFile) }
-        let measured = try source.file.withReadAccess { try PhotoIdentity.fallback(for: $0).contentIdentifier }
+        let measured = try source.file.withReadAccess { try digestCache.digest(for: $0) }
         guard source.identity.contentIdentifier == nil || measured == source.identity.contentIdentifier else {
             throw RecentPhotoError.originalChanged
         }
+        sourceDigest = measured
         let stable = PhotoIdentity(resourceIdentifier: source.identity.resourceIdentifier, contentIdentifier: measured)
-        var resources = [URL]()
-        if let look { resources.append(look) }
-        if state.settings.isHDREditing, let hdr = state.settings.hdr {
-            guard hdr.lookSettings.assetIsAvailable() else { throw CocoaError(.fileNoSuchFile) }
-            if let asset = hdr.lookSettings.asset() { resources.append(asset) }
-            if let profile = hdr.cameraDevelopmentSettings.cameraProfile { resources.append(try HDRCameraProfileAssetStore.url(for: profile)) }
+        var requirements = [ResourceRequirement]()
+        var fingerprints = [String]()
+        if let look {
+            let digest = try digestCache.digest(for: look)
+            fingerprints.append(digest)
+            requirements.append(.init(url: look, expectedDigest: digest, maximumBytes: nil, missingFileOnFailure: false))
         }
-        let fingerprints = try resources.map { try PhotoIdentity.fallback(for: $0).contentIdentifier! }
+        if state.settings.isHDREditing, let hdr = state.settings.hdr {
+            guard hdr.lookSettings.isValid else { throw CocoaError(.fileNoSuchFile) }
+            if let asset = hdr.lookSettings.asset() {
+                let digest: String
+                do {
+                    digest = try digestCache.digest(for: asset, maximumBytes: 32 * 1024 * 1024)
+                } catch {
+                    throw CocoaError(.fileNoSuchFile)
+                }
+                guard digest == hdr.lookSettings.sha256 else { throw CocoaError(.fileNoSuchFile) }
+                fingerprints.append(digest)
+                requirements.append(.init(url: asset, expectedDigest: digest, maximumBytes: 32 * 1024 * 1024, missingFileOnFailure: true))
+            }
+            if let profile = hdr.cameraDevelopmentSettings.cameraProfile {
+                let profileURL = try HDRCameraProfileAssetStore.url(for: profile)
+                let digest = try digestCache.digest(for: profileURL)
+                fingerprints.append(digest)
+                requirements.append(.init(url: profileURL, expectedDigest: digest, maximumBytes: nil, missingFileOnFailure: false))
+            }
+        }
+        resourceRequirements = requirements
         let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
         key = PhotoPreviewCacheKey(identity: try encoder.encode(stable),
             adjustments: try encoder.encode(state.withUpdatedAt(Date(timeIntervalSince1970: 0))),
             resources: try encoder.encode(fingerprints), edge: Self.edge)
     }
 
-    func isCurrent(in store: EditPersistence) throws -> Bool {
+    func isCurrent(in store: EditPersistence, digestCache: FileDigestCache = .shared) throws -> Bool {
         guard record.hasSameAdjustments(as: try store.readState(for: record.identity)) else { return false }
-        return try IOSPhotoPreviewPlan(source: source, record: record, look: look).key == key
+        let measured = try source.file.withReadAccess { try digestCache.digest(for: $0) }
+        guard source.identity.contentIdentifier == nil || measured == source.identity.contentIdentifier else {
+            throw RecentPhotoError.originalChanged
+        }
+        guard measured == sourceDigest else { return false }
+        for requirement in resourceRequirements {
+            let digest: String
+            do {
+                digest = try digestCache.digest(for: requirement.url, maximumBytes: requirement.maximumBytes)
+            } catch {
+                if requirement.missingFileOnFailure { throw CocoaError(.fileNoSuchFile) }
+                throw error
+            }
+            guard digest == requirement.expectedDigest else {
+                if requirement.missingFileOnFailure { throw CocoaError(.fileNoSuchFile) }
+                return false
+            }
+        }
+        return true
     }
 
     static func thumbnailData(_ image: UIImage) throws -> Data {
@@ -76,13 +125,17 @@ struct IOSPhotoPreviewPlan {
     let recentStore: RecentPhotoStore?
     private let worker: IOSPhotoPreviewWorker
 
-    init(recentStore: RecentPhotoStore? = nil, cacheDirectory: URL? = nil) {
+    init(recentStore: RecentPhotoStore? = nil,
+         cacheDirectory: URL? = nil,
+         digestCache: FileDigestCache = .shared) {
         var store = recentStore
         do { if store == nil { store = try RecentPhotoStore.appStore() } }
         catch { self.error = error.localizedDescription }
         self.recentStore = store
-        worker = IOSPhotoPreviewWorker(cacheDirectory: cacheDirectory ??
-            FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("RawLab/EditedPhotoPreviews"))
+        worker = IOSPhotoPreviewWorker(
+            cacheDirectory: cacheDirectory ??
+                FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("RawLab/EditedPhotoPreviews"),
+            digestCache: digestCache)
     }
 
     func reload(editDirectory: URL?) async {
@@ -142,7 +195,11 @@ struct IOSPhotoPreviewPlan {
 
 private actor IOSPhotoPreviewWorker {
     private let cache: EditedPhotoPreviewCache
-    init(cacheDirectory: URL) { cache = EditedPhotoPreviewCache(directory: cacheDirectory) }
+    private let digestCache: FileDigestCache
+    init(cacheDirectory: URL, digestCache: FileDigestCache = .shared) {
+        cache = EditedPhotoPreviewCache(directory: cacheDirectory)
+        self.digestCache = digestCache
+    }
 
     func recentStates(store: RecentPhotoStore, editDirectory: URL?) throws -> ([RecentPhoto], [String: Bool], String?) {
         let photos = try store.records()
@@ -151,12 +208,20 @@ private actor IOSPhotoPreviewWorker {
         }
         do {
             let edits = try EditPersistence(directory: editDirectory)
+            let states = try edits.readStates(for: photos.map(\.identity))
             var flags = [String: Bool]()
             for photo in photos {
                 try Task.checkCancellation()
-                do {
-                    flags[photo.id] = IOSPhotoPreviewPlan.isEdited(try edits.readState(for: photo.identity), isRaw: photo.isRaw)
-                } catch is UnusableEditRecordError { }
+                switch states[photo.identity] {
+                case .success(let record):
+                    flags[photo.id] = IOSPhotoPreviewPlan.isEdited(record, isRaw: photo.isRaw)
+                case .failure(let error) where error is UnusableEditRecordError:
+                    break
+                case .failure(let error):
+                    throw error
+                case nil:
+                    break
+                }
             }
             return (photos, flags, nil)
         } catch is CancellationError { throw CancellationError() }
@@ -197,11 +262,11 @@ private actor IOSPhotoPreviewWorker {
                recentStore: RecentPhotoStore?) throws -> Data {
         try Task.checkCancellation()
         let edits = try EditPersistence(directory: editDirectory)
-        let plan = try IOSPhotoPreviewPlan(source: source, record: record, look: look)
-        guard try plan.isCurrent(in: edits) else { throw AdjustmentCommitError.expired }
+        let plan = try IOSPhotoPreviewPlan(source: source, record: record, look: look, digestCache: digestCache)
+        guard try plan.isCurrent(in: edits, digestCache: digestCache) else { throw AdjustmentCommitError.expired }
         if let data = try? cache.read(plan.key), UIImage(data: data) != nil {
             try Task.checkCancellation()
-            guard try plan.isCurrent(in: edits) else { throw AdjustmentCommitError.expired }
+            guard try plan.isCurrent(in: edits, digestCache: digestCache) else { throw AdjustmentCommitError.expired }
             return data
         }
         let processor = Sony2FujiProcessor()
@@ -227,22 +292,22 @@ private actor IOSPhotoPreviewWorker {
             return image
         }
         try Task.checkCancellation()
-        guard try plan.isCurrent(in: edits) else { throw AdjustmentCommitError.expired }
+        guard try plan.isCurrent(in: edits, digestCache: digestCache) else { throw AdjustmentCommitError.expired }
         let data = try IOSPhotoPreviewPlan.thumbnailData(image)
         try Task.checkCancellation()
-        guard try plan.isCurrent(in: edits) else { throw AdjustmentCommitError.expired }
+        guard try plan.isCurrent(in: edits, digestCache: digestCache) else { throw AdjustmentCommitError.expired }
         try? cache.write(data, for: plan.key)
         try? recentStore?.savePreview(data, key: plan.key, for: source.identity)
         return data
     }
     func accept(_ source: IOSPhotoPreviewSource, record: PhotoEditRecord, image: UIImage, look: URL?, editDirectory: URL,
                 recentStore: RecentPhotoStore?) throws {
-        let plan = try IOSPhotoPreviewPlan(source: source, record: record, look: look)
+        let plan = try IOSPhotoPreviewPlan(source: source, record: record, look: look, digestCache: digestCache)
         let edits = try EditPersistence(directory: editDirectory)
-        guard try plan.isCurrent(in: edits) else { throw AdjustmentCommitError.expired }
+        guard try plan.isCurrent(in: edits, digestCache: digestCache) else { throw AdjustmentCommitError.expired }
         let data = try IOSPhotoPreviewPlan.thumbnailData(image)
         try Task.checkCancellation()
-        guard try plan.isCurrent(in: edits) else { throw AdjustmentCommitError.expired }
+        guard try plan.isCurrent(in: edits, digestCache: digestCache) else { throw AdjustmentCommitError.expired }
         try cache.write(data, for: plan.key)
         try? recentStore?.savePreview(data, key: plan.key, for: source.identity)
     }

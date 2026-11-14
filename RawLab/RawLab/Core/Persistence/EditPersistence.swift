@@ -53,6 +53,323 @@ struct PhotoIdentity: Codable, Equatable, Hashable, Sendable {
         return PhotoIdentity(resourceIdentifier: resourceIdentifier,
                              contentIdentifier: hasher.finalize().map { String(format: "%02x", $0) }.joined())
     }
+
+    /// Computes or returns a cached content identity validated by the resolved file's stat fingerprint.
+    static func cachedFallback(for url: URL,
+                               resourceIdentifier: String? = nil,
+                               digestCache: FileDigestCache = .shared) throws -> PhotoIdentity {
+        PhotoIdentity(resourceIdentifier: resourceIdentifier,
+                      contentIdentifier: try digestCache.digest(for: url))
+    }
+}
+
+private typealias POSIXStat = Darwin.stat
+
+private struct FileStatFingerprint: Equatable {
+    let device: dev_t
+    let inode: UInt64
+    let size: Int64
+    let mode: mode_t
+    let modifiedSeconds: Int
+    let modifiedNanoseconds: Int
+    let changedSeconds: Int
+    let changedNanoseconds: Int
+
+    var isRegularFile: Bool { (mode & S_IFMT) == S_IFREG }
+
+    init(statBuffer st: POSIXStat) {
+        self.device = st.st_dev
+        self.inode = UInt64(st.st_ino)
+        self.size = Int64(st.st_size)
+        self.mode = st.st_mode
+        self.modifiedSeconds = st.st_mtimespec.tv_sec
+        self.modifiedNanoseconds = st.st_mtimespec.tv_nsec
+        self.changedSeconds = st.st_ctimespec.tv_sec
+        self.changedNanoseconds = st.st_ctimespec.tv_nsec
+    }
+
+    init?(resolvedPath: String) {
+        var st = POSIXStat()
+        guard stat(resolvedPath, &st) == 0 else { return nil }
+        self.init(statBuffer: st)
+    }
+
+    static func fileDescriptor(_ fd: Int32) -> FileStatFingerprint? {
+        var st = POSIXStat()
+        guard fstat(fd, &st) == 0 else { return nil }
+        return FileStatFingerprint(statBuffer: st)
+    }
+}
+
+private struct BoundedLRUCache<Key: Hashable, Value> {
+    let maximumEntries: Int
+    private var entries: [Key: Value] = [:]
+    private var order: [Key] = []
+
+    init(maximumEntries: Int) {
+        self.maximumEntries = max(0, maximumEntries)
+    }
+
+    var count: Int { entries.count }
+
+    mutating func value(forKey key: Key) -> Value? {
+        guard let value = entries[key] else { return nil }
+        touch(key)
+        return value
+    }
+
+    mutating func setValue(_ value: Value, forKey key: Key) {
+        guard maximumEntries > 0 else { return }
+        if entries[key] != nil {
+            entries[key] = value
+            touch(key)
+            return
+        }
+        entries[key] = value
+        order.append(key)
+        while order.count > maximumEntries {
+            let evicted = order.removeFirst()
+            entries.removeValue(forKey: evicted)
+        }
+    }
+
+    mutating func removeValue(forKey key: Key) {
+        guard entries.removeValue(forKey: key) != nil else { return }
+        if let idx = order.firstIndex(of: key) { order.remove(at: idx) }
+    }
+
+    mutating func removeAll() {
+        entries.removeAll()
+        order.removeAll()
+    }
+
+    private mutating func touch(_ key: Key) {
+        guard let idx = order.firstIndex(of: key) else { return }
+        if idx != order.count - 1 {
+            order.remove(at: idx)
+            order.append(key)
+        }
+    }
+}
+
+/// Bounded LRU SHA-256 cache validated against canonical path + POSIX stat fingerprint + pre/post stability.
+final class FileDigestCache: @unchecked Sendable {
+    static let defaultMaximumEntries = 128
+    static let shared = FileDigestCache()
+
+    private struct Entry {
+        let fingerprint: FileStatFingerprint
+        let digest: String
+    }
+
+    let maximumEntries: Int
+    private let cacheLock = NSLock()
+    private let metricsLock = NSLock()
+    private let stripeLocks: [NSLock] = (0..<16).map { _ in NSLock() }
+    private var cache: BoundedLRUCache<String, Entry>
+    private var invalidationEpochs: [String: UInt64] = [:]
+    private var _digestComputeCount = 0
+    private var _digestComputeCountsByPath: [String: Int] = [:]
+    private let readObserver: ((URL, Int) -> Void)?
+
+    init(maximumEntries: Int = FileDigestCache.defaultMaximumEntries,
+         readObserver: ((URL, Int) -> Void)? = nil) {
+        let bounded = max(0, maximumEntries)
+        self.maximumEntries = bounded
+        self.cache = BoundedLRUCache(maximumEntries: bounded)
+        self.readObserver = readObserver
+    }
+
+    var digestComputeCount: Int {
+        metricsLock.lock(); defer { metricsLock.unlock() }
+        return _digestComputeCount
+    }
+
+    func digestComputeCount(for url: URL) -> Int {
+        let resolved = Self.canonicalPath(for: url)
+        metricsLock.lock(); defer { metricsLock.unlock() }
+        return _digestComputeCountsByPath[resolved, default: 0]
+    }
+
+    var entryCount: Int {
+        cacheLock.lock(); defer { cacheLock.unlock() }
+        return cache.count
+    }
+
+    func invalidate(for url: URL) {
+        let resolved = Self.canonicalPath(for: url)
+        let raw = url.standardizedFileURL.path
+        cacheLock.lock(); defer { cacheLock.unlock() }
+        invalidationEpochs[resolved, default: 0] &+= 1
+        cache.removeValue(forKey: resolved)
+        if raw != resolved {
+            invalidationEpochs[raw, default: 0] &+= 1
+            cache.removeValue(forKey: raw)
+        }
+    }
+
+    func invalidateAll() {
+        cacheLock.lock(); defer { cacheLock.unlock() }
+        for key in invalidationEpochs.keys {
+            invalidationEpochs[key, default: 0] &+= 1
+        }
+        cache.removeAll()
+    }
+
+    /// Returns the hex SHA-256 digest for a regular file, reusing a cached digest when stat metadata is unchanged.
+    func digest(for url: URL, maximumBytes: Int? = nil) throws -> String {
+        guard url.isFileURL else { throw CocoaError(.fileReadCorruptFile) }
+        let initialPath = Self.canonicalPath(for: url)
+        let initialFingerprint: FileStatFingerprint
+        do {
+            initialFingerprint = try Self.statOrThrow(resolvedPath: initialPath)
+        } catch {
+            invalidate(for: url)
+            throw error
+        }
+        guard initialFingerprint.isRegularFile else { throw CocoaError(.fileReadCorruptFile) }
+        if let maximumBytes {
+            guard initialFingerprint.size > 0 && initialFingerprint.size <= Int64(maximumBytes) else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+        }
+        if let hit = cachedDigest(forPath: initialPath, fingerprint: initialFingerprint) {
+            return hit
+        }
+
+        let stripe = stripeLocks[Self.stripeIndex(for: initialPath)]
+        stripe.lock(); defer { stripe.unlock() }
+
+        for attempt in 0..<3 {
+            let resolvedPath = Self.canonicalPath(for: url)
+            let before: FileStatFingerprint
+            do {
+                before = try Self.statOrThrow(resolvedPath: resolvedPath)
+            } catch {
+                invalidate(for: url)
+                throw error
+            }
+            guard before.isRegularFile else { throw CocoaError(.fileReadCorruptFile) }
+            if let maximumBytes {
+                guard before.size > 0 && before.size <= Int64(maximumBytes) else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+            }
+            if let hit = cachedDigest(forPath: resolvedPath, fingerprint: before) {
+                return hit
+            }
+            let startEpoch = epoch(for: resolvedPath)
+            let fd = Darwin.open(resolvedPath, O_RDONLY)
+            if fd < 0 {
+                let code = errno
+                if code == ENOENT { invalidate(for: url) }
+                throw Self.posixOrCocoaError(for: code)
+            }
+            defer { Darwin.close(fd) }
+            guard let fdBefore = FileStatFingerprint.fileDescriptor(fd), fdBefore.isRegularFile else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            if fdBefore != before { continue }
+
+            recordCompute(forPath: resolvedPath)
+            readObserver?(url, attempt)
+            let (digest, totalBytes) = try Self.hashFileDescriptor(fd, maximumBytes: maximumBytes)
+            guard let fdAfter = FileStatFingerprint.fileDescriptor(fd) else {
+                continue
+            }
+            let afterPath = Self.canonicalPath(for: url)
+            let afterStat = FileStatFingerprint(resolvedPath: afterPath)
+            if fdAfter == fdBefore && afterPath == resolvedPath && afterStat == fdBefore {
+                if let maximumBytes, totalBytes == 0 || totalBytes > maximumBytes {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                store(Entry(fingerprint: fdBefore, digest: digest), forPath: resolvedPath, expectedEpoch: startEpoch)
+                return digest
+            }
+        }
+        throw CocoaError(.fileReadUnknown)
+    }
+
+    fileprivate static func canonicalURL(for url: URL) -> URL {
+        url.resolvingSymlinksInPath().standardizedFileURL
+    }
+
+    fileprivate static func canonicalPath(for url: URL) -> String {
+        canonicalURL(for: url).path
+    }
+
+    private static func stripeIndex(for key: String) -> Int {
+        var hash: UInt64 = 14695981039346656037
+        for byte in key.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1099511628211
+        }
+        return Int(hash % 16)
+    }
+
+    private func cachedDigest(forPath path: String, fingerprint: FileStatFingerprint) -> String? {
+        cacheLock.lock(); defer { cacheLock.unlock() }
+        guard let entry = cache.value(forKey: path), entry.fingerprint == fingerprint else { return nil }
+        return entry.digest
+    }
+
+    private func epoch(for path: String) -> UInt64 {
+        cacheLock.lock(); defer { cacheLock.unlock() }
+        return invalidationEpochs[path, default: 0]
+    }
+
+    private func store(_ entry: Entry, forPath path: String, expectedEpoch: UInt64) {
+        guard maximumEntries > 0 else { return }
+        cacheLock.lock(); defer { cacheLock.unlock() }
+        guard invalidationEpochs[path, default: 0] == expectedEpoch else { return }
+        cache.setValue(entry, forKey: path)
+    }
+
+    private func recordCompute(forPath path: String) {
+        metricsLock.lock(); defer { metricsLock.unlock() }
+        _digestComputeCount += 1
+        _digestComputeCountsByPath[path, default: 0] += 1
+    }
+
+    private static func hashFileDescriptor(_ fd: Int32, maximumBytes: Int?) throws -> (String, Int) {
+        var hasher = SHA256()
+        let chunkSize = 1024 * 1024
+        var buffer = [UInt8](repeating: 0, count: chunkSize)
+        var total = 0
+        while true {
+            let count = buffer.withUnsafeMutableBytes { ptr in
+                Darwin.read(fd, ptr.baseAddress, chunkSize)
+            }
+            if count < 0 {
+                if errno == EINTR { continue }
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+            if count == 0 { break }
+            total += count
+            if let maximumBytes, total > maximumBytes {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            hasher.update(data: buffer.prefix(count))
+        }
+        if maximumBytes != nil && total == 0 {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        return (hasher.finalize().map { String(format: "%02x", $0) }.joined(), total)
+    }
+
+    private static func statOrThrow(resolvedPath: String) throws -> FileStatFingerprint {
+        var st = POSIXStat()
+        guard stat(resolvedPath, &st) == 0 else {
+            throw posixOrCocoaError(for: errno)
+        }
+        return FileStatFingerprint(statBuffer: st)
+    }
+
+    private static func posixOrCocoaError(for code: Int32) -> Error {
+        if code == ENOENT { return CocoaError(.fileNoSuchFile) }
+        if code == EACCES || code == EPERM { return CocoaError(.fileReadNoPermission) }
+        return POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+    }
 }
 
 struct PhotoEditState: Codable, Equatable {
@@ -149,6 +466,89 @@ final class EditPersistence {
         var processingMigrations: [String: Data]?
     }
 
+    private final class RegistryCache: @unchecked Sendable {
+        static let shared = RegistryCache(maximumEntries: 32)
+        static let maximumEntriesDefault = 32
+
+        private struct Entry {
+            let fingerprint: FileStatFingerprint
+            let store: StoreFile
+        }
+
+        private let lock = NSLock()
+        private let stripeLocks: [NSLock] = (0..<16).map { _ in NSLock() }
+        private var cache: BoundedLRUCache<String, Entry>
+        private var invalidationEpochs: [String: UInt64] = [:]
+
+        init(maximumEntries: Int = RegistryCache.maximumEntriesDefault) {
+            self.cache = BoundedLRUCache(maximumEntries: max(0, maximumEntries))
+        }
+
+        func stripeLock(for resolvedPath: String) -> NSLock {
+            stripeLocks[Self.stripeIndex(for: resolvedPath)]
+        }
+
+        func cachedStore(forPath path: String, fingerprint: FileStatFingerprint) -> StoreFile? {
+            lock.lock(); defer { lock.unlock() }
+            guard let entry = cache.value(forKey: path), entry.fingerprint == fingerprint else { return nil }
+            return entry.store
+        }
+
+        func epoch(for path: String) -> UInt64 {
+            lock.lock(); defer { lock.unlock() }
+            return invalidationEpochs[path, default: 0]
+        }
+
+        func store(_ store: StoreFile, fingerprint: FileStatFingerprint, forPath path: String, expectedEpoch: UInt64) {
+            lock.lock(); defer { lock.unlock() }
+            guard invalidationEpochs[path, default: 0] == expectedEpoch else { return }
+            cache.setValue(Entry(fingerprint: fingerprint, store: store), forKey: path)
+        }
+
+        func invalidate(fileURL: URL) {
+            let resolved = FileDigestCache.canonicalPath(for: fileURL)
+            let raw = fileURL.standardizedFileURL.path
+            lock.lock(); defer { lock.unlock() }
+            invalidationEpochs[resolved, default: 0] &+= 1
+            cache.removeValue(forKey: resolved)
+            if raw != resolved {
+                invalidationEpochs[raw, default: 0] &+= 1
+                cache.removeValue(forKey: raw)
+            }
+        }
+
+        private static func stripeIndex(for key: String) -> Int {
+            var hash: UInt64 = 14695981039346656037
+            for byte in key.utf8 {
+                hash ^= UInt64(byte)
+                hash &*= 1099511628211
+            }
+            return Int(hash % 16)
+        }
+    }
+
+    private static let registryMetricsLock = NSLock()
+    private static var _registryDiskReadCount = 0
+    private static var _registryDiskReadCountsByPath: [String: Int] = [:]
+
+    static var registryDiskReadCount: Int {
+        registryMetricsLock.lock(); defer { registryMetricsLock.unlock() }
+        return _registryDiskReadCount
+    }
+
+    static func registryDiskReadCount(forDirectory directory: URL) -> Int {
+        let path = FileDigestCache.canonicalPath(for: directory)
+        registryMetricsLock.lock(); defer { registryMetricsLock.unlock() }
+        return _registryDiskReadCountsByPath[path, default: 0]
+    }
+
+    private static func recordRegistryDiskRead(forDirectory directory: URL) {
+        let path = FileDigestCache.canonicalPath(for: directory)
+        registryMetricsLock.lock(); defer { registryMetricsLock.unlock() }
+        _registryDiskReadCount += 1
+        _registryDiskReadCountsByPath[path, default: 0] += 1
+    }
+
     let directory: URL
     private let fileURL: URL
     private let lock = NSLock()
@@ -238,6 +638,26 @@ final class EditPersistence {
             throw EditPersistenceError.legacyAssetEditNeedsDecision
         }
         return try record(identity, from: store)
+    }
+
+    /// Evaluates a batch of identities against a single store snapshot, isolating per-record errors.
+    func readStates(for identities: [PhotoIdentity],
+                    requiringLegacyDecision: Bool = false) throws -> [PhotoIdentity: Result<PhotoEditRecord, Error>] {
+        let store = try readStore()
+        var results = [PhotoIdentity: Result<PhotoEditRecord, Error>](minimumCapacity: identities.count)
+        for identity in identities where results[identity] == nil {
+            do {
+                try validate(identity)
+                if requiringLegacyDecision, try unverifiedAssetEdit(for: identity, from: store) != nil {
+                    results[identity] = .failure(EditPersistenceError.legacyAssetEditNeedsDecision)
+                } else {
+                    results[identity] = .success(try record(identity, from: store))
+                }
+            } catch {
+                results[identity] = .failure(error)
+            }
+        }
+        return results
     }
 
     func unverifiedAssetEdit(for identity: PhotoIdentity) throws -> PhotoEditState? {
@@ -395,52 +815,110 @@ final class EditPersistence {
     private func readStore() throws -> StoreFile {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            RegistryCache.shared.invalidate(fileURL: fileURL)
             throw CocoaError(.fileReadNoSuchFile)
         }
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            RegistryCache.shared.invalidate(fileURL: fileURL)
             let empty = StoreFile(records: [:])
             remember(empty)
             return empty
         }
-        let data = try Data(contentsOf: fileURL)
-        do {
-            guard (try JSONSerialization.jsonObject(with: data)) is [String: Any] else {
+        let initialPath = FileDigestCache.canonicalPath(for: fileURL)
+        if let initialFingerprint = FileStatFingerprint(resolvedPath: initialPath),
+           let cached = RegistryCache.shared.cachedStore(forPath: initialPath, fingerprint: initialFingerprint) {
+            remember(cached)
+            return cached
+        }
+
+        let stripe = RegistryCache.shared.stripeLock(for: initialPath)
+        stripe.lock(); defer { stripe.unlock() }
+
+        for attempt in 0..<3 {
+            guard FileManager.default.fileExists(atPath: fileURL.path) else {
+                RegistryCache.shared.invalidate(fileURL: fileURL)
+                let empty = StoreFile(records: [:])
+                remember(empty)
+                return empty
+            }
+            let beforePath = FileDigestCache.canonicalPath(for: fileURL)
+            let before = FileStatFingerprint(resolvedPath: beforePath)
+            if let before, let cached = RegistryCache.shared.cachedStore(forPath: beforePath, fingerprint: before) {
+                remember(cached)
+                return cached
+            }
+            let startEpoch = RegistryCache.shared.epoch(for: beforePath)
+            Self.recordRegistryDiskRead(forDirectory: directory)
+            let data: Data
+            do {
+                data = try Data(contentsOf: fileURL)
+            } catch {
+                RegistryCache.shared.invalidate(fileURL: fileURL)
+                throw error
+            }
+            let normalized: StoreFile
+            do {
+                normalized = try Self.decodeStoreFile(from: data)
+            } catch {
+                let afterPath = FileDigestCache.canonicalPath(for: fileURL)
+                let after = FileStatFingerprint(resolvedPath: afterPath)
+                if attempt < 2, (after != before || afterPath != beforePath) {
+                    continue
+                }
+                RegistryCache.shared.invalidate(fileURL: fileURL)
                 throw EditPersistenceError.corruptStore
             }
-            let root = try Self.scanJSONObjectSlices(data)
-            let version: Int?
-            if let versionSlice = root["version"], String(data: versionSlice, encoding: .utf8) != "null" {
-                guard Self.isVersionOne(versionSlice) else { throw EditPersistenceError.corruptStore }
-                version = 1
-            } else {
-                version = nil
+            let afterPath = FileDigestCache.canonicalPath(for: fileURL)
+            let after = FileStatFingerprint(resolvedPath: afterPath)
+            let endEpoch = RegistryCache.shared.epoch(for: beforePath)
+            if let before, afterPath == beforePath, after == before, endEpoch == startEpoch {
+                RegistryCache.shared.store(normalized, fingerprint: before, forPath: beforePath, expectedEpoch: startEpoch)
+                remember(normalized)
+                return normalized
             }
-            guard let recordsSlice = root["records"] else { throw EditPersistenceError.corruptStore }
-            let records = try Self.scanJSONObjectSlices(recordsSlice)
-            var deleted: Set<String>?
-            if let deletedSlice = root["deleted"], String(data: deletedSlice, encoding: .utf8) != "null" {
-                deleted = Set(try JSONDecoder().decode([String].self, from: deletedSlice))
+            if attempt == 2 {
+                remember(normalized)
+                return normalized
             }
-            if let revisionsSlice = root["revisions"], String(data: revisionsSlice, encoding: .utf8) != "null" {
-                _ = try Self.scanJSONObjectSlices(revisionsSlice)
-                let revisions = try JSONDecoder().decode([String: String].self, from: revisionsSlice)
-                guard revisions.values.allSatisfy({ !$0.isEmpty }) else { throw EditPersistenceError.corruptStore }
-                let tombstones = Set(revisions.keys.filter { records[$0] == nil })
-                deleted = (deleted ?? []).union(tombstones)
-            }
-            let migrations: [String: Data]?
-            if let migrationsSlice = root["processingMigrations"],
-               String(data: migrationsSlice, encoding: .utf8) != "null" {
-                migrations = try Self.scanJSONObjectSlices(migrationsSlice)
-            } else {
-                migrations = nil
-            }
-            let normalized = StoreFile(version: version, records: records,
-                                       deleted: deleted?.isEmpty == true ? nil : deleted,
-                                       processingMigrations: migrations)
-            remember(normalized)
-            return normalized
-        } catch { throw EditPersistenceError.corruptStore }
+        }
+        throw CocoaError(.fileReadUnknown)
+    }
+
+    private static func decodeStoreFile(from data: Data) throws -> StoreFile {
+        guard (try JSONSerialization.jsonObject(with: data)) is [String: Any] else {
+            throw EditPersistenceError.corruptStore
+        }
+        let root = try Self.scanJSONObjectSlices(data)
+        let version: Int?
+        if let versionSlice = root["version"], String(data: versionSlice, encoding: .utf8) != "null" {
+            guard Self.isVersionOne(versionSlice) else { throw EditPersistenceError.corruptStore }
+            version = 1
+        } else {
+            version = nil
+        }
+        guard let recordsSlice = root["records"] else { throw EditPersistenceError.corruptStore }
+        let records = try Self.scanJSONObjectSlices(recordsSlice)
+        var deleted: Set<String>?
+        if let deletedSlice = root["deleted"], String(data: deletedSlice, encoding: .utf8) != "null" {
+            deleted = Set(try JSONDecoder().decode([String].self, from: deletedSlice))
+        }
+        if let revisionsSlice = root["revisions"], String(data: revisionsSlice, encoding: .utf8) != "null" {
+            _ = try Self.scanJSONObjectSlices(revisionsSlice)
+            let revisions = try JSONDecoder().decode([String: String].self, from: revisionsSlice)
+            guard revisions.values.allSatisfy({ !$0.isEmpty }) else { throw EditPersistenceError.corruptStore }
+            let tombstones = Set(revisions.keys.filter { records[$0] == nil })
+            deleted = (deleted ?? []).union(tombstones)
+        }
+        let migrations: [String: Data]?
+        if let migrationsSlice = root["processingMigrations"],
+           String(data: migrationsSlice, encoding: .utf8) != "null" {
+            migrations = try Self.scanJSONObjectSlices(migrationsSlice)
+        } else {
+            migrations = nil
+        }
+        return StoreFile(version: version, records: records,
+                         deleted: deleted?.isEmpty == true ? nil : deleted,
+                         processingMigrations: migrations)
     }
 
     private static func isVersionOne(_ slice: Data) -> Bool {
@@ -711,7 +1189,14 @@ final class EditPersistence {
         try Self.appendRawMap(store.records, encoder: encoder, to: &out)
         appendComma()
         out.append(contentsOf: "\"version\":1}".utf8)
-        try writeData(out, fileURL)
+        RegistryCache.shared.invalidate(fileURL: fileURL)
+        do {
+            try writeData(out, fileURL)
+        } catch {
+            RegistryCache.shared.invalidate(fileURL: fileURL)
+            throw error
+        }
+        RegistryCache.shared.invalidate(fileURL: fileURL)
         remember(store)
     }
 
