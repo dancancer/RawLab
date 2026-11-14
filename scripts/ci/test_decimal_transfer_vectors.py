@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+import re
 import unittest
 
 
@@ -98,7 +99,15 @@ class DecimalTransferVectorContracts(unittest.TestCase):
             fracs = {round(abs(v - int(v)), 4) for v in nums if abs(v - int(v)) > 0}
             self.assertIn(0.5, fracs, f"{fid} should exercise .5 decimals")
             self.assertTrue(0.25 in fracs or 0.75 in fracs, f"{fid} should exercise .25/.75 decimals")
+            self.assertTrue(
+                bool(fracs & {0.1, 0.2, 0.3, 0.4, 0.6, 0.7, 0.8, 0.9}),
+                f"{fid} must exercise non-binary 0.1-step desktop decimals (e.g. .1/.3/.7/.9)",
+            )
         self.assertIn("decimal-hdr-12-5-and-negatives-roundtrip", scenarios)
+        self.assertIn("decimal-tenth-step-nonbinary-roundtrip", scenarios)
+        self.assertIn("decimal-tenth-step-idempotent-hdr-roundtrip", scenarios)
+        idempotent_hdr = scenarios["decimal-tenth-step-idempotent-hdr-roundtrip"]
+        self.assertEqual(idempotent_hdr["expect"]["status"], "unchanged")
 
     def test_integer_protocol_fields_reject_fractional_values(self):
         integer_fields = {
@@ -106,19 +115,65 @@ class DecimalTransferVectorContracts(unittest.TestCase):
             if entry["protocol"]["transferable"] and entry["protocol"]["value_type"] == "integer"
         }
         rejected_fields = set()
+        hdr_cam_keys_with_fraction = set()
         for item in self.document["rejected_payloads"]:
             if item["reason"] == "invalid_payload":
-                rejected_fields |= set(item["payload"]["values"])
+                values = item["payload"]["values"]
+                rejected_fields |= set(values)
+                cam = values.get("hdr.camera_development")
+                if isinstance(cam, dict):
+                    for k, v in cam.items():
+                        if isinstance(v, float) and v != int(v):
+                            hdr_cam_keys_with_fraction.add(k)
         self.assertTrue(integer_fields.issubset(rejected_fields),
                         f"Missing fractional rejection vectors for integer fields: {sorted(integer_fields - rejected_fields)}")
         self.assertIn("hdr.camera_development", rejected_fields)
+        self.assertTrue({"fbdd_level", "version"}.issubset(hdr_cam_keys_with_fraction),
+                        f"hdr.camera_development must test fractional rejections for both fbdd_level and version, got {sorted(hdr_cam_keys_with_fraction)}")
+
+    @staticmethod
+    def _strip_comments(source: str) -> str:
+        # Remove // line comments and /* ... */ block comments without touching string literals.
+        pattern = re.compile(r'"(?:\\.|[^"\\])*"|//[^\n]*|/\*.*?\*/', re.S)
+        return pattern.sub(lambda m: m.group(0) if m.group(0).startswith('"') else "", source)
 
     def test_all_four_platforms_consume_decimal_fixture(self):
-        for consumer in PLATFORM_CONSUMERS:
+        fixture_name = "adjustment-transfer-decimals-v1.json"
+        active_checks = {
+            PLATFORM_CONSUMERS[0]: [  # iOS
+                r"try\s+decimalFixtures\(\)",
+                r"static\s+func\s+decimalFixtures\s*\([^)]*\).*?adjustment-transfer-decimals-v1\.json",
+                r"try\s+scenarioFixtures\s*\(\s*at:\s*path\s*\)",
+                r'root\["rejected_payloads"\].*?JSONDecoder\(\)\.decode\(\s*AdjustmentTransferPayload\.self',
+            ],
+            PLATFORM_CONSUMERS[1]: [  # macOS
+                r"try\s+decimalFixtures\(\)",
+                r"static\s+func\s+decimalFixtures\s*\([^)]*\).*?adjustment-transfer-decimals-v1\.json",
+                r"try\s+sharedScenarioFixtures\s*\(\s*at:\s*path\s*\)",
+                r'root\["rejected_payloads"\].*?JSONDecoder\(\)\.decode\(\s*AdjustmentTransferPayload\.self',
+            ],
+            PLATFORM_CONSUMERS[2]: [  # Android
+                r"@Test\s+fun\s+decimalVectorFixtures\s*\(\)",
+                r'runScenarioFixture\(\s*"adjustment-transfer-decimals-v1\.json"',
+                r'root\.getJSONArray\(\s*"rejected_payloads"\s*\).*?AdjustmentPayload\.decode\(',
+            ],
+            PLATFORM_CONSUMERS[3]: [  # Windows
+                r"\bDecimalVectors\(\)\s*;",
+                r"private\s+static\s+void\s+DecimalVectors\s*\(\).*?adjustment-transfer-decimals-v1\.json",
+                r"\bScenarios\(\s*path\b",
+                r'GetProperty\(\s*"rejected_payloads"\s*\).*?AdjustmentPayload\.Parse\(',
+            ],
+        }
+        for consumer, patterns in active_checks.items():
             self.assertTrue(consumer.is_file(), f"Missing consumer: {consumer}")
-            text = consumer.read_text(encoding="utf-8")
-            self.assertIn("adjustment-transfer-decimals-v1.json", text)
-            self.assertIn("rejected_payloads", text)
+            active_code = self._strip_comments(consumer.read_text(encoding="utf-8"))
+            self.assertIn(fixture_name, active_code, f"{consumer} lacks active reference to {fixture_name}")
+            for pat in patterns:
+                self.assertRegex(
+                    active_code,
+                    re.compile(pat, re.S),
+                    f"{consumer} missing active non-commented call matching {pat!r}",
+                )
 
 
 if __name__ == "__main__":

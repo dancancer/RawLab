@@ -7348,7 +7348,7 @@
           "max": 100.0,
           "default": 0.0,
           "scale_from_protocol": "p",
-          "quantization": "round_1"
+          "quantization": "continuous"
         }
       },
       "ui": {
@@ -7406,7 +7406,6 @@
         "report_d5d62af7_listed": true,
         "categories": [
           "step",
-          "range",
           "default_unit"
         ],
         "ledger_ids": [
@@ -7485,7 +7484,7 @@
           "max": 100.0,
           "default": 50.0,
           "scale_from_protocol": "p",
-          "quantization": "round_1"
+          "quantization": "continuous"
         }
       },
       "ui": {
@@ -7543,7 +7542,6 @@
         "report_d5d62af7_listed": true,
         "categories": [
           "step",
-          "range",
           "default_unit"
         ],
         "ledger_ids": [
@@ -7622,7 +7620,7 @@
           "max": 100.0,
           "default": 0.0,
           "scale_from_protocol": "p",
-          "quantization": "round_1"
+          "quantization": "continuous"
         }
       },
       "ui": {
@@ -7680,7 +7678,6 @@
         "report_d5d62af7_listed": true,
         "categories": [
           "step",
-          "range",
           "default_unit"
         ],
         "ledger_ids": [
@@ -7759,7 +7756,7 @@
           "max": 100.0,
           "default": 50.0,
           "scale_from_protocol": "p",
-          "quantization": "round_1"
+          "quantization": "continuous"
         }
       },
       "ui": {
@@ -7817,7 +7814,6 @@
         "report_d5d62af7_listed": true,
         "categories": [
           "step",
-          "range",
           "default_unit"
         ],
         "ledger_ids": [
@@ -7896,7 +7892,7 @@
           "max": 100.0,
           "default": 0.0,
           "scale_from_protocol": "p",
-          "quantization": "round_1"
+          "quantization": "continuous"
         }
       },
       "ui": {
@@ -7954,7 +7950,6 @@
         "report_d5d62af7_listed": true,
         "categories": [
           "step",
-          "range",
           "default_unit"
         ],
         "ledger_ids": [
@@ -8033,7 +8028,7 @@
           "max": 100.0,
           "default": 0.0,
           "scale_from_protocol": "p",
-          "quantization": "round_1"
+          "quantization": "continuous"
         }
       },
       "ui": {
@@ -8091,7 +8086,6 @@
         "report_d5d62af7_listed": true,
         "categories": [
           "step",
-          "range",
           "default_unit"
         ],
         "ledger_ids": [
@@ -8470,7 +8464,7 @@
           "max": 100.0,
           "default": 25.0,
           "scale_from_protocol": "p",
-          "quantization": "round_1"
+          "quantization": "continuous"
         }
       },
       "ui": {
@@ -8528,7 +8522,6 @@
         "report_d5d62af7_listed": true,
         "categories": [
           "step",
-          "range",
           "default_unit"
         ],
         "ledger_ids": [
@@ -8607,7 +8600,7 @@
           "max": 100.0,
           "default": 50.0,
           "scale_from_protocol": "p",
-          "quantization": "round_1"
+          "quantization": "continuous"
         }
       },
       "ui": {
@@ -8665,7 +8658,6 @@
         "report_d5d62af7_listed": true,
         "categories": [
           "step",
-          "range",
           "default_unit"
         ],
         "ledger_ids": [

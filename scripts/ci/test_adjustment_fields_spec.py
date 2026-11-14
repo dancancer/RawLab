@@ -1747,6 +1747,7 @@ def _parse_ios_model(shared: dict) -> dict[str, dict]:
     ios_rules = _strip_line_comments(_read("RawLab/RawLab/Core/Models/EditorAdjustmentRules.swift"))
     ios_tr = _strip_line_comments(_read("RawLab/RawLab/Core/Models/IOSAdjustmentTransfer.swift"))
     ios_tv = _strip_line_comments(_read("RawLab/RawLab/Core/Models/IOSAdjustmentTransferValues.swift"))
+    ios_draft = _strip_line_comments(_read("RawLab/RawLab/Core/Models/EditorToolDraft.swift"))
 
     _require("context.transferNotices?(.retainedTargetProcessingVersion)", ios_tr, "processing version ios", "IOSAdjustmentTransfer.swift")
     _require("if let raw = payload[.rawDenoise]?.number, raw != 0 { context.transferNotices?(.ignoredRawDenoise) }", ios_tv, "detail.denoise.raw_level ios ignored with notice", "IOSAdjustmentTransferValues.swift")
@@ -1814,6 +1815,13 @@ def _parse_ios_model(shared: dict) -> dict[str, dict]:
         raise AssertionError("PhotoEffectsSettings.clamped in RawSettings.swift must preserve exact decimals")
     fx_ui_blk = _extract_brace_block(ios_raw, r"mutating func setEditingEffect\b", "effects ios UI rounding", "RawSettings.swift")
     _require("value.rounded()", fx_ui_blk, "effects ios UI rounding", "RawSettings.swift")
+    fx_exact_blk = _extract_brace_block(ios_raw, r"mutating func setExactEditingEffect\b", "effects ios exact model setter", "RawSettings.swift")
+    if "rounded(" in fx_exact_blk:
+        raise AssertionError("RawSettings.setExactEditingEffect in RawSettings.swift must preserve exact decimals")
+    fx_draft_blk = _need(r"case \.vignette, \.grain:(.*?)\n\s*default:", ios_draft, "effects ios draft projection", "EditorToolDraft.swift", re.S).group(1)
+    _require("result.setExactEditingEffect(", fx_draft_blk, "effects ios draft preserves decimals", "EditorToolDraft.swift")
+    if "setEditingEffect(" in fx_draft_blk:
+        raise AssertionError("EditorToolDraft.swift .vignette/.grain projection must use setExactEditingEffect, not UI-rounding setEditingEffect")
     fx_tr_blk = _extract_brace_block(ios_tr, r"for \(field, key\) in effectKeys\b", "effects ios transfer loop", "IOSAdjustmentTransfer.swift")
     _require("result.photoEffects[keyPath: key] = value", fx_tr_blk, "effects ios transfer apply", "IOSAdjustmentTransfer.swift")
     if "rounded(" in fx_tr_blk:
@@ -2152,6 +2160,10 @@ def _parse_windows_model() -> dict[str, dict]:
     _require("context.OnTransferNotice?.Invoke(", cs_tv, "detail.denoise cs sdr ignored with notice", "AdjustmentTransferValues.cs")
     _require("foreach(var field in new[]{F.RawDenoise,F.PostRGBDenoise})", cs_tv, "detail.denoise windows sdr unsupported", "AdjustmentTransferValues.cs")
     _require("Math.Round(value, 1, MidpointRounding.AwayFromZero)", cs_adj, "effects windows quantization", "Adjustments.cs")
+    cs_fx_model = cs_fx[cs_fx.index("public sealed record PhotoEffectsSettings") :]
+    cs_fx_transfer = _need(r'if\(p\.Fields\.Any\(f=>f\.Group\(\)=="effects"\)\)\s*\{([^}]*)\}', cs_tv, "effects windows transfer apply", "AdjustmentTransferValues.cs", re.S).group(1)
+    if "Math.Round(" in cs_fx_model or "Round(" in cs_fx_transfer:
+        raise AssertionError("Windows PhotoEffectsSettings model record and AdjustmentTransferValues must preserve continuous double without Math.Round")
     _require("F.Contrast or F.Saturation=>(value-1)*100", cs_tv, "contrast/saturation scale windows", "AdjustmentTransferValues.cs")
     _require("F.Highlights=>-value*100", cs_tv, "highlights scale windows", "AdjustmentTransferValues.cs")
     _require("_=>value*100", cs_tv, "default scale windows", "AdjustmentTransferValues.cs")
@@ -2331,7 +2343,7 @@ def _parse_windows_model() -> dict[str, dict]:
     )
     for fid, cs_name in fx_map:
         lo, hi, dflt = _need_key(cs_fx_defs, cs_name, fid, "PhotoEffectsSettings.cs")
-        m[fid] = _model_entry("double", min_val=lo, max_val=hi, default=dflt, quantization="round_1")
+        m[fid] = _model_entry("double", min_val=lo, max_val=hi, default=dflt)
 
     m["effects.clarity"] = _model_entry("double", min_val=atmos_range[0], max_val=atmos_range[1], hdr_min=cs_hdr_clarity[0], hdr_max=cs_hdr_clarity[1], default=atmos_cl_def, hdr_default=0.0, scale_from_protocol="p", hdr_scale_from_protocol="p / 100")
     m["effects.dehaze"] = _model_entry("double", min_val=atmos_range[0], max_val=atmos_range[1], hdr_min=cs_hdr_dehaze[0], hdr_max=cs_hdr_dehaze[1], default=atmos_dh_def, hdr_default=0.0, scale_from_protocol="p", hdr_scale_from_protocol="p / 100")

@@ -396,6 +396,144 @@
           ]
         }
       }
+    },
+    {
+      "id": "decimal-tenth-step-nonbinary-roundtrip",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "desktop-tenth-step.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "effects.vignette.amount": -12.3,
+          "effects.vignette.midpoint": 37.7,
+          "effects.vignette.roundness": -12.7,
+          "effects.vignette.feather": 50.3,
+          "effects.vignette.highlights": 12.1,
+          "effects.grain.amount": 14.3,
+          "effects.grain.size": 25.9,
+          "effects.grain.roughness": 15.7,
+          "effects.clarity": -11.4,
+          "effects.dehaze": 13.6,
+          "tone.black_point": -0.3,
+          "tone.white_point": 0.7,
+          "color.vibrance": -12.3,
+          "color.hsl.hue.red": -12.3,
+          "color.hsl.saturation.orange": 12.1,
+          "detail.denoise.wavelet": {
+            "enabled": true,
+            "luma": 14.1,
+            "chroma": 11.8,
+            "coarse": 25.9,
+            "preset": "custom"
+          },
+          "color.grading.shadows": {
+            "hue": 14.3,
+            "saturation": 12.1
+          }
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "effects.vignette.amount": -12.3,
+          "effects.vignette.midpoint": 37.7,
+          "effects.vignette.roundness": -12.7,
+          "effects.vignette.feather": 50.3,
+          "effects.vignette.highlights": 12.1,
+          "effects.grain.amount": 14.3,
+          "effects.grain.size": 25.9,
+          "effects.grain.roughness": 15.7,
+          "effects.clarity": -11.4,
+          "effects.dehaze": 13.6,
+          "tone.black_point": -0.3,
+          "tone.white_point": 0.7,
+          "color.vibrance": -12.3,
+          "color.hsl.hue.red": -12.3,
+          "color.hsl.saturation.orange": 12.1,
+          "detail.denoise.wavelet": {
+            "enabled": true,
+            "luma": 14.1,
+            "chroma": 11.8,
+            "coarse": 25.9,
+            "preset": "custom"
+          },
+          "color.grading.shadows": {
+            "hue": 14.3,
+            "saturation": 12.1
+          }
+        }
+      }
+    },
+    {
+      "id": "decimal-tenth-step-idempotent-hdr-roundtrip",
+      "target": {
+        "kind": "hdr",
+        "lens_valid": true,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": {
+          "payload_version": 2,
+          "scope_version": 2,
+          "source": {
+            "identifier": "seed-hdr-tenth.HIF",
+            "is_raw": false,
+            "processing_version": 3,
+            "hdr_processing_version": 7
+          },
+          "values": {
+            "effects.vignette.amount": -12.3,
+            "effects.vignette.highlights": 12.1,
+            "effects.grain.amount": 14.3,
+            "effects.grain.roughness": 15.7,
+            "hdr.sdr_contrast": -12.3,
+            "hdr.sdr_saturation": 12.1
+          }
+        }
+      },
+      "payload": {
+        "payload_version": 2,
+        "scope_version": 2,
+        "source": {
+          "identifier": "repeat-hdr-tenth.HIF",
+          "is_raw": false,
+          "processing_version": 3,
+          "hdr_processing_version": 7
+        },
+        "values": {
+          "effects.vignette.amount": -12.3,
+          "effects.vignette.highlights": 12.1,
+          "effects.grain.amount": 14.3,
+          "effects.grain.roughness": 15.7,
+          "hdr.sdr_contrast": -12.3,
+          "hdr.sdr_saturation": 12.1
+        }
+      },
+      "expect": {
+        "status": "unchanged",
+        "values": {
+          "effects.vignette.amount": -12.3,
+          "effects.vignette.highlights": 12.1,
+          "effects.grain.amount": 14.3,
+          "effects.grain.roughness": 15.7,
+          "hdr.sdr_contrast": -12.3,
+          "hdr.sdr_saturation": 12.1
+        }
+      }
     }
   ],
   "rejected_payloads": [
@@ -499,6 +637,30 @@
             "tint": 0,
             "exposure_reference": "metadata",
             "fbdd_level": 1.5
+          }
+        }
+      }
+    },
+    {
+      "id": "fractional-hdr-camera-version-rejected",
+      "reason": "invalid_payload",
+      "payload": {
+        "payload_version": 2,
+        "scope_version": 2,
+        "source": {
+          "identifier": "bad-hdr-version.HIF",
+          "is_raw": false,
+          "processing_version": 3,
+          "hdr_processing_version": 7
+        },
+        "values": {
+          "hdr.camera_development": {
+            "version": 1.5,
+            "white_balance_mode": "as_shot",
+            "temperature": 0,
+            "tint": 0,
+            "exposure_reference": "metadata",
+            "fbdd_level": 0
           }
         }
       }

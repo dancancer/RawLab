@@ -220,8 +220,12 @@ extension RawSettings {
     }
 
     mutating func setEditingEffect(_ parameter: PhotoEffectParameter, to value: Double) {
+        setExactEditingEffect(parameter, to: value.rounded())
+    }
+
+    mutating func setExactEditingEffect(_ parameter: PhotoEffectParameter, to value: Double) {
         guard value.isFinite else { return }
-        let amount = min(parameter.range.upperBound, max(parameter.range.lowerBound, value.rounded()))
+        let amount = min(parameter.range.upperBound, max(parameter.range.lowerBound, value))
         if isHDREditing { hdr?.effectsSettings[keyPath: parameter.hdrKeyPath] = amount }
         else { photoEffects[keyPath: parameter.keyPath] = amount }
     }
