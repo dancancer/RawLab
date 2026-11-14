@@ -152,3 +152,4 @@
 - 2026-11-14 · CI 阶段2 小票开工：build-python crew 派——build.sh 透传 Python3_EXECUTABLE（edit_recipe_schema 在 mac native 门禁被 Homebrew Python 拖成静默 Skip 一族），Windows build.ps1 先例对照。
 - 2026-11-14 · **合入波（总 78 PR）**：**#313**（P2-16 预设/外观容错四端，三轮收敛 approve）、**#318**（V-AXUI 三态闸三轮 approve，Q14×不变量7 相撞案入库）、**#323**（上游红②环境耦合归因）；三 worktree/分支已清。
 - 2026-11-14 · 复审/新单波：**#316** 二审判「实现无缺陷、纯测试覆盖缺口」氢线程补测试；**#324**（build.sh Python 透传，Skipped→Passed 实证+同类三项核查）碳审在途；**#320/#321/#322** r2 交卷 CI 绿，碳审 ×2 在途；上游红①（de 词条）de-term crew 已派（#313 合流后 JSON 空出）。
+- 2026-11-14 · 上游红①结案成 **PR #325**（`5936d639`，3 文件 3 行）：git log -L 双侧取证判「目录新增即违规」（契约方 10-18 定稿未动，违例词条 11-10 随 #203 引入且同提交另两词条合规）；走生成链改共享源 de 定稿为 Wird 型。碳审在途（review-mwg2731b，唯一分歧点=Wird 型规则一致性 vs 母语自然度，要求明确裁定）。
