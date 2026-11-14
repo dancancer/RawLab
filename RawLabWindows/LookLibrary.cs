@@ -88,6 +88,9 @@ internal sealed class LookLibrary
     private readonly Func<string, LookValidation> validateLook;
     private readonly Func<string, LUTCompatibility, byte[]> prepareCompatibility;
     private readonly Func<string> makeId;
+    private readonly Action<string, string>? moveFile;
+    private readonly Action<TimeSpan>? sleep;
+    private readonly Func<TimeSpan>? elapsed;
     private readonly object writeGate = new();
     private ImmutableArray<ManagedLook> looks = [];
     private ImmutableArray<UnreadableLook> unreadableLooks = [];
@@ -115,7 +118,10 @@ internal sealed class LookLibrary
         Func<string, LookValidation>? validateLook = null,
         Func<string, LUTCompatibility, byte[]>? prepareCompatibility = null,
         Func<string, DcpImportOptions?, byte[]>? compileDcpWithOptions = null,
-        Func<string>? makeId = null)
+        Func<string>? makeId = null,
+        Action<string, string>? moveFile = null,
+        Action<TimeSpan>? sleep = null,
+        Func<TimeSpan>? elapsed = null)
     {
         this.directory = Path.GetFullPath(directory ?? DefaultDirectory);
         registryPath = Path.Combine(this.directory, "registry.json");
@@ -125,6 +131,9 @@ internal sealed class LookLibrary
         this.validateLook = validateLook ?? ValidateNative;
         this.prepareCompatibility = prepareCompatibility ?? ((path, draft) => draft.Prepare(path));
         this.makeId = makeId ?? (() => Guid.NewGuid().ToString("D"));
+        this.moveFile = moveFile;
+        this.sleep = sleep;
+        this.elapsed = elapsed;
         Load();
     }
 
@@ -587,12 +596,10 @@ internal sealed class LookLibrary
     private void Persist(List<ManagedLook> values, ImmutableArray<UnreadableLook> unreadable, ImmutableDictionary<string,string>? aliases = null)
     {
         var options = new JsonSerializerOptions { WriteIndented = true };
-        var temporary = registryPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         var aliasMap = (aliases ?? externalNames).ToDictionary(p => p.Key, p => p.Value);
-        try
+        AtomicFileWrite.WriteWithTemporary(registryPath, temporary =>
         {
-            Directory.CreateDirectory(directory);
-            using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            AtomicFileWrite.WriteTemporaryStream(temporary, stream =>
             {
                 if (unreadable.Length == 0)
                 {
@@ -603,14 +610,8 @@ internal sealed class LookLibrary
                     var items = values.Cast<object>().Concat(unreadable.Select(item => (object)new RawEntry(item.Json))).ToArray();
                     JsonSerializer.Serialize(stream, new PersistRegistry(1, items, aliasMap), options);
                 }
-                stream.Flush(flushToDisk: true);
-            }
-            File.Move(temporary, registryPath, overwrite: true);
-        }
-        finally
-        {
-            TryDelete(temporary);
-        }
+            });
+        }, moveFile, sleep, elapsed);
     }
 
     // JsonElement 写回会重新转义字符串；读不懂的条目必须按原文写出。

@@ -35,6 +35,7 @@
     <Compile Include="../../DcpCompiler.cs" Link="DcpCompiler.cs" />
     <Compile Include="../../LUTCompatibility.cs" Link="LUTCompatibility.cs" />
     <Compile Include="../../LookLibrary.cs" Link="LookLibrary.cs" />
+    <Compile Include="../../AtomicFileWrite.cs" Link="AtomicFileWrite.cs" />
     <Compile Include="../../AIDenoiseNative.cs" Link="AIDenoiseNative.cs" />
     <Compile Include="../../ExportSize.cs" Link="ExportSize.cs" />
     <Compile Include="../../ExportFormat.cs" Link="ExportFormat.cs" />

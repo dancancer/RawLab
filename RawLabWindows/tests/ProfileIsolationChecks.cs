@@ -65,6 +65,19 @@ internal static class ProfileIsolationChecks
             }
         }
         finally{window.Close();app.Shutdown();}
+        var folderRoot=Path.Combine(root,"folders-p108");
+        var foldersPath=Path.Combine(folderRoot,"folders.json");
+        var folderMoves=0;
+        var folderElapsed=TimeSpan.Zero;
+        var folderDelays=new List<int>();
+        var library=new Library(foldersPath,
+            (src,dst)=>{ if(++folderMoves<=2)throw new System.IO.IOException("Sharing violation",unchecked((int)0x80070020)); File.Move(src,dst,true); },
+            delay=>{ folderDelays.Add((int)delay.TotalMilliseconds); folderElapsed+=delay; },
+            ()=>folderElapsed);
+        library.Add(root);
+        check(folderMoves==3 && folderDelays.SequenceEqual(new[]{10,50}) &&
+            File.Exists(foldersPath) && Directory.GetFiles(folderRoot,"*.tmp").Length==0,
+            "P1-08 FileLibrary.Library atomic write retries sharing violation 0x80070020 and cleans temp files");
     }
     private static string? Stamp(string path)=>File.Exists(path) ? Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)))+"/"+File.GetLastWriteTimeUtc(path).Ticks : null;
     private sealed class Requests:HttpMessageHandler

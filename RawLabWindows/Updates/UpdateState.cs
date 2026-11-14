@@ -138,9 +138,24 @@ public sealed class UpdatePreferences
 }
 
 public sealed record UpdateStateRepairReceipt(Guid Id, string Sha256);
+internal sealed record UpdateBannerNotice(bool HasFailure, string? ReleaseVersion)
+{
+    public bool Visible => HasFailure || ReleaseVersion != null;
+}
 
 internal static class UpdatePresentation
 {
+    public static UpdateBannerNotice MainWindowNotice(UpdatePreferences preferences, string? unavailableReason, string? fallbackVersion)
+    {
+        var state = preferences.PendingUpdate;
+        if (state.Phase == UpdatePhase.Available && state.Release?.Version is { } available)
+            return new(false, available);
+        if (unavailableReason != null && fallbackVersion != null)
+            return new(false, fallbackVersion);
+        if (state.Phase == UpdatePhase.Failed || state.Phase == UpdatePhase.Idle && preferences.CheckFailure != null)
+            return new(true, null);
+        return new(false, null);
+    }
     public static string Status(UpdatePreferences preferences)
     {
         var state = preferences.PendingUpdate;
@@ -170,7 +185,15 @@ internal static class UpdatePresentation
         return string.IsNullOrEmpty(checkFailure.Detail) ? header : header + "\n" + checkFailure.Detail;
     }
     public static bool IsRejected(UpdateFailure failure) =>
-        failure.Stage == UpdatePhase.Verifying && failure.Code != "trust_temporary";
+        failure.Stage == UpdatePhase.Verifying && failure.Code is not ("trust_temporary" or "interrupted");
+    public static bool IsRetryableFailure(UpdateFailure? failure) => failure != null && failure.Stage switch
+    {
+        UpdatePhase.Checking => true,
+        UpdatePhase.Downloading => true,
+        UpdatePhase.Verifying => !IsRejected(failure),
+        UpdatePhase.PackageReady or UpdatePhase.WaitingForTasks or UpdatePhase.ReadyToInstall => true,
+        _ => false
+    };
     public static string? FailureHeading(UpdateFailure failure, bool requiresRecovery) =>
         requiresRecovery ? "更新未完成，请查看恢复说明" :
         IsRejected(failure) ? "更新包未通过验证，已拒绝" : null;

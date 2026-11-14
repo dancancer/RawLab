@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Velopack" Version="1.2.161" />
+    <Compile Include="../../AtomicFileWrite.cs" Link="AtomicFileWrite.cs" />
     <Compile Include="../../Updates/UpdateState.cs" Link="UpdateState.cs" />
     <Compile Include="../../Updates/UpdateTrust.cs" Link="UpdateTrust.cs" />
     <Compile Include="../../Updates/SignedUpdateSource.cs" Link="SignedUpdateSource.cs" />

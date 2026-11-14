@@ -996,6 +996,47 @@ try
     journal.Discard(draft);
     Check(journal.Load() == null && !File.Exists(draft.Look), "discard removes journal and owned look but no source");
     Check(File.Exists(look) && File.Exists(a), "discard preserves original resources");
+
+    // P1-08: EditedPhotoPreviewCache & LookLibrary retry Win32 sharing violations (0x80070020) via shared AtomicFileWrite
+    var cacheDir = Path.Combine(root, "preview-cache-p108");
+    var cacheElapsed = TimeSpan.Zero;
+    var cacheDelays = new List<int>();
+    var cacheMoves = 0;
+    var previewKey = new string('a', 64);
+    var previewCache = new EditedPhotoPreviewCache(cacheDir, 8, 1024 * 1024,
+        (src, dst) =>
+        {
+            if (++cacheMoves <= 2) throw new IOException("Sharing violation", unchecked((int)0x80070020));
+            File.Move(src, dst, true);
+        },
+        delay => { cacheDelays.Add((int)delay.TotalMilliseconds); cacheElapsed += delay; },
+        () => cacheElapsed);
+    previewCache.Write(previewKey, "preview-v1"u8.ToArray());
+    Check(cacheMoves == 3 && cacheDelays.SequenceEqual(new[] { 10, 50 }) &&
+        previewCache.Read(previewKey)!.SequenceEqual("preview-v1"u8.ToArray()) &&
+        Directory.GetFiles(cacheDir, "*.tmp").Length == 0,
+        "P1-08 EditedPhotoPreviewCache retries sharing violation 0x80070020 and cleans temporary files");
+
+    var lookDir = Path.Combine(root, "looks-p108");
+    var lookElapsed = TimeSpan.Zero;
+    var lookDelays = new List<int>();
+    var lookMoves = 0;
+    var lookSource = Path.Combine(root, "LookSource.cube");
+    File.WriteAllText(lookSource, "LUT_3D_SIZE 2");
+    var atomicLooks = new LookLibrary(lookDir,
+        validateLook: _ => new LookValidation(LookFormat.Cube, 0),
+        moveFile: (src, dst) =>
+        {
+            if (++lookMoves <= 2) throw new IOException("Sharing violation", unchecked((int)0x80070020));
+            File.Move(src, dst, true);
+        },
+        sleep: delay => { lookDelays.Add((int)delay.TotalMilliseconds); lookElapsed += delay; },
+        elapsed: () => lookElapsed);
+    var importedLook = atomicLooks.ImportLook(lookSource);
+    Check(lookMoves == 3 && lookDelays.SequenceEqual(new[] { 10, 50 }) &&
+        atomicLooks.Looks.Single().Id == importedLook.Id &&
+        Directory.GetFiles(lookDir, "*.tmp").Length == 0,
+        "P1-08 LookLibrary registry atomic write retries sharing violation 0x80070020 without leaving temp files");
     Console.WriteLine("PASS: Windows edit persistence, identity, WB, reset, snapshot, collision, failures, retry and recovery");
 }
 finally { Directory.Delete(root, true); }

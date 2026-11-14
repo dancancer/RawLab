@@ -17,6 +17,9 @@ public sealed class UpdateChecker : INotifyPropertyChanged
     private readonly string settingsPath;
     private readonly HttpClient client;
     private readonly Preferences preferences;
+    private readonly Action<string, string>? moveFile;
+    private readonly Action<TimeSpan>? sleep;
+    private readonly Func<TimeSpan>? elapsed;
     public event PropertyChangedEventHandler? PropertyChanged;
     public string CurrentVersion { get; }
     public bool Checking { get; private set; }
@@ -42,10 +45,17 @@ public sealed class UpdateChecker : INotifyPropertyChanged
     }
 
     public UpdateChecker(string currentVersion, string? settingsPath = null, HttpClient? client = null)
+        : this(currentVersion, settingsPath, client, null) { }
+
+    internal UpdateChecker(string currentVersion, string? settingsPath, HttpClient? client,
+        Action<string, string>? moveFile, Action<TimeSpan>? sleep = null, Func<TimeSpan>? elapsed = null)
     {
         CurrentVersion = currentVersion;
         this.settingsPath = settingsPath ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "updates.json");
         this.client = client ?? DefaultClient;
+        this.moveFile = moveFile;
+        this.sleep = sleep;
+        this.elapsed = elapsed;
         try { preferences = JsonSerializer.Deserialize<Preferences>(File.ReadAllText(this.settingsPath)) ?? new(); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { preferences = new(); }
         if (preferences.CachedRelease is { } cached)
@@ -95,9 +105,7 @@ public sealed class UpdateChecker : INotifyPropertyChanged
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
-            File.WriteAllText(settingsPath + ".tmp", JsonSerializer.Serialize(preferences));
-            File.Move(settingsPath + ".tmp", settingsPath, true);
+            AtomicFileWrite.WriteText(settingsPath, JsonSerializer.Serialize(preferences), moveFile, sleep, elapsed);
             storageWarningKey = "";
             return true;
         }

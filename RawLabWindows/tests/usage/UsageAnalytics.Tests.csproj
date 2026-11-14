@@ -13,6 +13,7 @@
     <Compile Include="UsageLifecycleTests.cs" />
     <Compile Include="TempCleanupTests.cs" />
     <Compile Include="../../TempCleanup.cs" Link="TempCleanup.cs" />
+    <Compile Include="../../AtomicFileWrite.cs" Link="AtomicFileWrite.cs" />
     <Compile Include="../../UsageAnalytics.cs" Link="UsageAnalytics.cs" />
     <Compile Include="../../RumConfiguration.cs" Link="RumConfiguration.cs" />
     <Compile Include="../../RumUsageAnalyticsTransport.cs" Link="RumUsageAnalyticsTransport.cs" />

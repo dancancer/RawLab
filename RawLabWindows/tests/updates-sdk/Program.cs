@@ -6,6 +6,7 @@ using Velopack.Logging;
 
 static void Check(bool value, string message) { if (!value) throw new Exception(message); Console.WriteLine("PASS " + message); }
 static bool Reject(Action work) { try { work(); return false; } catch { return true; } }
+if (args is ["--only", var ticket]) { await StateMatrixChecks.RunOnly(ticket, Check); return; }
 using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
 using var wrong = ECDsa.Create(ECCurve.NamedCurves.nistP256);
 var trust = new UpdateTrustConfiguration("https://updates.example.invalid/stable.json", Convert.ToBase64String(key.ExportSubjectPublicKeyInfo()), new string('a', 64));
@@ -58,6 +59,7 @@ try
 finally { if (File.Exists(path)) File.Delete(path); }
 await RedirectChecks.Run(trust, payload, now, value => Signed(value), bytes, Check);
 await ControllerChecks.Run(Check);
+await StateMatrixChecks.Run(Check);
 Check(Reject(() => AuthenticodeTrust.Verify(Environment.ProcessPath!, trust.PublisherKeySha256)), "Unsigned test executable cannot pass production Authenticode admission");
 if(args is ["--offline",var directory])await OfflineManagerChecks.Run(directory,Check);
 

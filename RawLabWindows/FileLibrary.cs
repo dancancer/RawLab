@@ -163,14 +163,20 @@ public sealed class LibraryEntry : INotifyPropertyChanged
 }
 internal sealed class Library
 {
-    private readonly string settingsPath=System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RawLab","folders.json");
+    private readonly string settingsPath;
+    private readonly Action<string, string>? moveFile;
+    private readonly Action<TimeSpan>? sleep;
+    private readonly Func<TimeSpan>? elapsed;
     public ObservableCollection<LibraryEntry> Roots { get; }=[];
-    public Library()
+    public Library() : this(null) { }
+    internal Library(string? settingsPath, Action<string, string>? moveFile = null, Action<TimeSpan>? sleep = null, Func<TimeSpan>? elapsed = null)
     {
-        try { foreach(var path in JsonSerializer.Deserialize<string[]>(File.ReadAllText(settingsPath)) ?? [])Roots.Add(new(path,true)); }
+        this.settingsPath = settingsPath ?? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RawLab","folders.json");
+        this.moveFile = moveFile; this.sleep = sleep; this.elapsed = elapsed;
+        try { foreach(var path in JsonSerializer.Deserialize<string[]>(File.ReadAllText(this.settingsPath)) ?? [])Roots.Add(new(path,true)); }
         catch(Exception ex) when(ex is IOException or UnauthorizedAccessException or JsonException) { }
     }
     public void Add(string path) { path=System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(path)); if(!Roots.Any(r=>System.IO.Path.TrimEndingDirectorySeparator(r.Path).Equals(path,StringComparison.OrdinalIgnoreCase)))Roots.Add(new(path,true)); Save(); }
     public void Remove(LibraryEntry entry) { Roots.Remove(entry); Save(); }
-    private void Save() { Directory.CreateDirectory(System.IO.Path.GetDirectoryName(settingsPath)!); var temp=settingsPath+".tmp"; File.WriteAllText(temp,JsonSerializer.Serialize(Roots.Select(r=>r.Path))); File.Move(temp,settingsPath,true); }
+    private void Save() => AtomicFileWrite.WriteText(settingsPath,JsonSerializer.Serialize(Roots.Select(r=>r.Path)),moveFile,sleep,elapsed);
 }
