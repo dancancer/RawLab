@@ -1,5 +1,43 @@
 import Foundation
 
+// 每个请求独占粘性取消标记；旧任务排空后才开始下一轮，完成回调也按请求身份验收。
+final class AdjustmentTransferPreflight {
+    private final class Cancellation {
+        private let lock = NSLock()
+        private var value = false
+        var cancelled: Bool { lock.lock(); defer { lock.unlock() }; return value }
+        func cancel() { lock.lock(); value = true; lock.unlock() }
+    }
+    private let queue: DispatchQueue
+    private var active: Cancellation?
+
+    init(queue: DispatchQueue = DispatchQueue(label: "rawlab.adjustment-preflight", qos: .userInitiated)) {
+        self.queue = queue
+    }
+
+    deinit { active?.cancel() }
+
+    func cancel() { active?.cancel(); active = nil }
+
+    func start(_ operation: @escaping (@escaping () -> Bool) throws -> PreparedAdjustmentTransfer,
+               completed: @escaping (Result<PreparedAdjustmentTransfer, Error>) -> Void) {
+        cancel()
+        let cancellation = Cancellation()
+        active = cancellation
+        queue.async { [weak self] in
+            let result = Result {
+                if cancellation.cancelled { throw CancellationError() }
+                return try operation { cancellation.cancelled }
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.active === cancellation, !cancellation.cancelled else { return }
+                self.active = nil
+                completed(result)
+            }
+        }
+    }
+}
+
 struct AdjustmentTransferTarget {
     let url: URL
     let defaultState: PhotoEditState
@@ -116,11 +154,14 @@ final class AdjustmentTransferSession {
     }
 
     func prepare(payload: AdjustmentTransferPayload, targets: [AdjustmentTransferTarget],
-                 action: AdjustmentHistoryTransaction.Action = .paste) throws -> PreparedAdjustmentTransfer {
+                 action: AdjustmentHistoryTransaction.Action = .paste,
+                 shouldCancel: () -> Bool = { false }) throws -> PreparedAdjustmentTransfer {
+        if shouldCancel() { throw CancellationError() }
         try payload.validate()
         var seen = Set<String>()
         var prepared = [PreparedAdjustmentTransfer.Target]()
         for target in targets {
+            if shouldCancel() { throw CancellationError() }
             let id = target.url.resolvingSymlinksInPath().standardizedFileURL.path
             guard seen.insert(id).inserted else { continue }
             do {
@@ -141,6 +182,7 @@ final class AdjustmentTransferSession {
                     isCurrent: target.isCurrent, error: error))
             }
         }
+        if shouldCancel() { throw CancellationError() }
         var mergedNotices = [AdjustmentTransferNotice]()
         for notice in prepared.flatMap(\.notices) where !mergedNotices.contains(notice) { mergedNotices.append(notice) }
         return PreparedAdjustmentTransfer(id: UUID(), payload: payload, targets: prepared, action: action, notices: mergedNotices)

@@ -62,11 +62,20 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
             let targetsReady = DispatchSemaphore(value: 0)
             var preparedTargets: [AdjustmentTransferTarget] = []
             DispatchQueue.global(qos: .userInitiated).async {
-                preparedTargets = deferredTargets()
+                preparedTargets = deferredTargets({ false })
                 targetsReady.signal()
             }
             while targetsReady.wait(timeout: .now()) != .success { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
             try check(probedOnMain == false, "Deferred paste/sync RAW probing runs off the main thread")
+            var cancelled = false, probes = 0
+            let cancellableTargets = model.adjustmentTransferTargetPreparation([second, third],
+                payload: try MacAdjustmentTransfer.capture(scope: .custom([.exposure]),
+                    snapshot: PhotoEditState(settings: Adjustments(), filmID: ""),
+                    context: MacAdjustmentTransferContext(identifier: first.path, isRaw: false)),
+                probeRAW: { _ in probes += 1; cancelled = true; return nil })
+            let partial = cancellableTargets({ cancelled })
+            try check(probes == 1 && partial.count == 1,
+                "Cancelled paste/sync target probing stops after its active target (probes=\(probes), expected=1)")
             try check(preparedTargets.first?.isCurrent?() == true, "Prepared targets accept the captured source revision")
             model.sourceRevision = UUID()
             try check(preparedTargets.first?.isCurrent?() == false, "Changing source revision invalidates prepared targets")

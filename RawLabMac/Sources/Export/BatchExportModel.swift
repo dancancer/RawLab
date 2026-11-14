@@ -89,9 +89,12 @@ final class BatchExportModel: ObservableObject {
     var onQuarantineOnDiscard: (String) -> Void = { _ in }
     private let journal: BatchJournal
     private let queue = DispatchQueue(label: "rawlab.batch", qos: .userInitiated)
+    private let validationQueue = DispatchQueue(label: "rawlab.batch-validation", qos: .userInitiated)
     private var engine: RenderEngine?
     private var cancellation = BatchCancellation()
+    private var previewCancellation = BatchCancellation()
     private var previewRevision = UUID()
+    private let prepareAIOperation: (RenderEngine, URL, Adjustments, AIPreparation) throws -> Void
     private let onUsage: (UsageEvent) -> Void
     private let hdrPreparation: MacHDRBatchPreparation?
     private let probeHDRSource: HDRSourceInfo.Probe
@@ -101,6 +104,9 @@ final class BatchExportModel: ObservableObject {
     init(job: BatchExportJob, journal: BatchJournal,hdrPreparation: MacHDRBatchPreparation? = nil,
          probeHDRSource: @escaping HDRSourceInfo.Probe = { try HDRSourceInfo.probe($0, onSDRFallback: $1) },
          resolveX3fMode: @escaping BatchExportJob.X3fModeResolver = BatchExportJob.resolveX3fMode(for:),
+         prepareAI: @escaping (RenderEngine, URL, Adjustments, AIPreparation) throws -> Void = {
+             try $0.prepareAI($1, settings: $2, progress: $3)
+         },
          onUsage: @escaping (UsageEvent) -> Void = { _ in }) {
         self.job = job
         self.journal = journal
@@ -108,6 +114,7 @@ final class BatchExportModel: ObservableObject {
         self.hdrPreparation=hdrPreparation
         self.probeHDRSource = probeHDRSource
         self.resolveX3fMode = resolveX3fMode
+        self.prepareAIOperation = prepareAI
         error = job.failure
     }
 
@@ -180,7 +187,8 @@ final class BatchExportModel: ObservableObject {
         validating = true
         let candidates = added
         let validationJob = job
-        queue.async { [self] in
+        validationQueue.async { [self] in
+            var engine: RenderEngine?
             for item in candidates {
                 var failure: String?
                 var sdrFallback = false
@@ -295,6 +303,8 @@ final class BatchExportModel: ObservableObject {
         }
         guard job.selectedCount > 0 else { error = L10n.text("尚未选择照片"); return false }
         guard job.outputDirectory != nil else { error = L10n.text("选择输出文件夹"); return false }
+        // 渲染队列先排空已取消的预览，避免同一引擎并发使用或 AI 预览挡住导出。
+        closePreview()
         let cancellation = BatchCancellation()
         self.cancellation = cancellation
         error = nil; running = true; stopping = false
@@ -329,7 +339,7 @@ final class BatchExportModel: ObservableObject {
                             cancellation.attach(nil)
                             DispatchQueue.main.async { self.aiProgress = nil }
                         }
-                        try self.engine!.prepareAI(input, settings: settings, progress: progress)
+                        try self.prepareAIOperation(self.engine!, input, settings, progress)
                     }
                     if cancellation.cancelled { throw RenderError.aiCancelled }
                     _ = try self.engine!.render(input, settings: settings, lut: look, edge: 32)
@@ -394,6 +404,7 @@ final class BatchExportModel: ObservableObject {
     }
 
     func cancel() {
+        closePreview()
         guard running else { return }
         stopping = true; cancellation.cancel()
     }
@@ -426,10 +437,14 @@ final class BatchExportModel: ObservableObject {
 
     func inspect(_ item: BatchExportItem) {
         guard !running else { return }
+        closePreview()
+        let cancellation = BatchCancellation()
+        previewCancellation = cancellation
         let revision = UUID()
         previewRevision = revision; previewFile = item.input; preview = nil; previewing = true; error = nil
         let frozenJob = job
         queue.async { [self] in
+            guard !cancellation.cancelled else { return }
             let result = Result { () -> RenderedImage? in
                 try frozenJob.validate()
                 guard try OriginalFileIdentity(item.input) == item.identity else { throw BatchExportFailure.changedInput }
@@ -443,14 +458,19 @@ final class BatchExportModel: ObservableObject {
                 if frozenJob.mode == .perTargetFrozen {
                     try snapshot.verifyLook()
                 }
+                if cancellation.cancelled { throw RenderError.aiCancelled }
                 if engine == nil { engine = try RenderEngine() }
                 if snapshot.settings.activeAIDenoise {
-                    try engine!.prepareAI(item.input, settings: snapshot.settings, progress: AIPreparation { _, _, _ in })
+                    let progress = AIPreparation { _, _, _ in }
+                    cancellation.attach(progress)
+                    defer { cancellation.attach(nil) }
+                    try prepareAIOperation(engine!, item.input, snapshot.settings, progress)
                 }
+                if cancellation.cancelled { throw RenderError.aiCancelled }
                 return try engine!.render(item.input, settings: snapshot.settings, lut: snapshot.look, edge: 1600)
             }
             DispatchQueue.main.async {
-                guard self.previewRevision == revision else { return }
+                guard self.previewRevision == revision, !cancellation.cancelled else { return }
                 self.previewing = false
                 switch result {
                 case .success(let image): self.preview = image
@@ -461,6 +481,7 @@ final class BatchExportModel: ObservableObject {
     }
 
     func closePreview() {
+        previewCancellation.cancel()
         previewRevision=UUID(); previewing=false; preview=nil; previewFile=nil
     }
 
