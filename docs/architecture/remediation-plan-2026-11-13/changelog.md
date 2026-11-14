@@ -105,3 +105,4 @@
 - 2026-11-14 · **P1③ 交卷**：**PR #307**（`84a602c3`）——reset-scenarios-v1.json 9 场景（@spec_default 引用、WB null+mode=camera 约定）、四端生产入口棘轮、契约 12 项（73 字段钉满+陈旧登记必红）；分歧 3 条如实登记（denoise.raw_level 0 占位 vs null ×2 + Windows 静态 1）。碳审在途（review-mwfmsbin）。
 - 2026-11-14 · CLT 护栏交卷：**PR #308**（`b46b67d3`）——护栏抽成 build-env.sh `rawlab_mac_sdk_path()` 三组合等价+单测；18 脚本 CLT 逐个实测，同因红 3 个加护栏、14 绿未动、proraw-stream 不同因未动（不预防铺开）；两路验证（CLT 红→绿、Xcode 默认 50 checks 不回归）。碳审在途（review-mwfmzuai）。
 - 2026-11-14 · **PR #308 合入**（总 65；Should 留账：`rawlab_mac_sdk_path()` helper 尚未入自动化单测，CI 预装环境也测不到 CLT 分支——CI 阶段2 顺带补）。#307 request-changes：B1 双端 reset 脚本未注册 apple-models.sh（CI 空转，违反不变量 2/7）；B2 denoise.raw_level 三条登记失实——实为适配层把 spec supported:false 哨兵解析成 null，按 Q3 消解后应零分歧。二轮续修在途。
+- 2026-11-14 · #307 二轮交卷（head `08001d18`）：B1 注册 apple-models.sh 且 run 43534762104 双端 PASS 行在场；B2 四端解析器先判 supported=false→协议占位 0（按 Q3），三条分歧消解为**四端台账全空**，WB 占位契约反向钉死；Windows CS0165 由 CI 首跑暴露修复（注册生效旁证）。二轮复审在途（review-mwfoezbf）。
