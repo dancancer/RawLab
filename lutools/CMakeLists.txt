@@ -970,6 +970,9 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         target_compile_options(metal_lut_init_retry_tests PRIVATE -UNDEBUG
             "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>")
         target_link_libraries(metal_lut_init_retry_tests Threads::Threads "-framework Metal" "-framework Foundation")
+        if(SONY2FUJI_DENOISE_LIBRARIES)
+            target_link_libraries(metal_lut_init_retry_tests ${SONY2FUJI_DENOISE_LIBRARIES})
+        endif()
         add_test(NAME gpu_metal_lut_init_retry COMMAND metal_lut_init_retry_tests)
     endif()
     add_executable(lut_gpu_no_backend_tests tests/lut_gpu_no_backend_tests.cpp
