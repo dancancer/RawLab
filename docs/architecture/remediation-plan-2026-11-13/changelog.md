@@ -172,3 +172,4 @@
 - 2026-11-14 · P3 轻修批次开工（p3-batch crew）：P3-01 TOCTOU/symlink、P3-02 Windows staging 残留、P3-03 取消异常经 ImageEncoder 退化、P3-06 metal_stats 兜底不吞取消；P3-04/05 压后（gles_lut/metal_lut 与 #327 同文件）。D-05 复核未过确认待修（iOS 对 12.5 小数抛 unrepresentable vs Android 分派），压至 P2-01 交卷防同文件碰撞。
 - 2026-11-14 · **性能双票合入（总 85 PR）**：**#327**（P2-12，二轮水位语义获通过，RSS −534MiB 入册）、**#328**（P2-13，悬垂判为测试侧+双 CTest 三态入册）；P2-14 解锁即开工（cpu-parallel 氢单，令用 #329 parallel_for 惯用法+#327 FNV 校验和先例，确定性红线=输出逐位不变）。
 - 2026-11-14 · **#329 打回 4 条**（medium：prepare_ai 取消接线零覆盖+Skipped 误报全跑；low×3：文档/ABI 注释同步、与 HDR 口径对齐、阶段间取消覆盖）denoise-cancel 续修；**#326 r3**（轨道双击被原生手势抢——双击≠恢复默认而是跳到点击点）氢线程续。
+- 2026-11-14 · P3 批次交卷 **PR #331**（4 独立 commit 全带红绿锚；P3-01 红锚=旧码把 0600 抄进发布件；P3-02 stub-check+手动门禁如实；P3-03 拒绝加死枚举改契约定型；P3-06 变异 throw 42 证旧结构 SIGABRT）。碳审在途（review-mwgabo6g，核 O_NOFOLLOW 对既有 symlink 的行为语义+C 边界取消区分）。
