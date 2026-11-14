@@ -156,6 +156,42 @@ int main() {
     }
 #if !defined(SONY2FUJI_ENABLE_METAL) && !defined(SONY2FUJI_ENABLE_GLES) && !defined(SONY2FUJI_ENABLE_D3D11)
     {
+        r.lut_path = nullptr;
+        r.lut_strength = 0;
+        r.input_type = SONY2FUJI_INPUT_BUFFER;
+        r.input_is_linear = 1;
+        sony2fuji_status neutralForceStatus = SONY2FUJI_STATUS_OK;
+        check(render(session, r, SONY2FUJI_GPU_FORCE, &neutralForceStatus).empty() &&
+                  neutralForceStatus == SONY2FUJI_STATUS_UNSUPPORTED,
+              "Neutral request under Force without a GPU backend returns UNSUPPORTED");
+        sony2fuji_status neutralAutoStatus = SONY2FUJI_STATUS_PROCESSING_ERROR;
+        check(render(session, r, SONY2FUJI_GPU_AUTO, &neutralAutoStatus) == neutral &&
+                  neutralAutoStatus == SONY2FUJI_STATUS_OK &&
+                  sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_CPU,
+              "Neutral request retains Auto CPU fallback without a GPU backend");
+
+        r.exposure_ev = 0.5f;
+        const auto offExposed = render(session, r, SONY2FUJI_GPU_OFF);
+        sony2fuji_status exposedForceStatus = SONY2FUJI_STATUS_OK;
+        check(render(session, r, SONY2FUJI_GPU_FORCE, &exposedForceStatus).empty() &&
+                  exposedForceStatus == SONY2FUJI_STATUS_UNSUPPORTED,
+              "Exposure-only request under Force without a GPU backend returns UNSUPPORTED");
+        sony2fuji_status exposedAutoStatus = SONY2FUJI_STATUS_PROCESSING_ERROR;
+        check(render(session, r, SONY2FUJI_GPU_AUTO, &exposedAutoStatus) == offExposed &&
+                  exposedAutoStatus == SONY2FUJI_STATUS_OK &&
+                  sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_CPU,
+              "Exposure-only request retains Auto CPU fallback without a GPU backend");
+        r.exposure_ev = 0;
+
+        r.lut_path = nullptr;
+        r.lut_strength = 0;
+        r.input_width = 0;
+        sony2fuji_status invalidStatus = SONY2FUJI_STATUS_OK;
+        render(session, r, SONY2FUJI_GPU_FORCE, &invalidStatus);
+        check(invalidStatus == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+              "Invalid request still returns INVALID_ARGUMENT under Force without a GPU backend");
+        r.input_width = 4;
+
         const auto legacy = dir / "legacy.cube";
         {
             std::ofstream file(legacy);
@@ -175,10 +211,36 @@ int main() {
               "Legacy LUT under Force without a GPU backend returns UNSUPPORTED through C ABI");
         sony2fuji_status autoStatus = SONY2FUJI_STATUS_PROCESSING_ERROR;
         check(!render(session, r, SONY2FUJI_GPU_AUTO, &autoStatus).empty() &&
-              autoStatus == SONY2FUJI_STATUS_OK,
+                  autoStatus == SONY2FUJI_STATUS_OK,
               "Legacy LUT retains Auto CPU fallback through C ABI without a GPU backend");
     }
 #endif
+    {
+        sony2fuji_session* c5Session = nullptr;
+        check(sony2fuji_session_create(&c5Session) == SONY2FUJI_STATUS_OK && c5Session != nullptr,
+              "Create session for BasicV3 C5 Force check");
+        if (c5Session) {
+            check(sony2fuji_session_set_processing_version(c5Session, SONY2FUJI_PROCESSING_BASIC_V3) == SONY2FUJI_STATUS_OK,
+                  "Configure BASIC_V3 processing version");
+            sony2fuji_wavelet_denoise_config wavelet{SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION, sizeof(wavelet), 1, 40, 46, 50};
+            check(sony2fuji_session_set_wavelet_denoise(c5Session, &wavelet) == SONY2FUJI_STATUS_OK,
+                  "Enable C5 wavelet denoise");
+            auto c5Req = r;
+            c5Req.lut_path = nullptr;
+            c5Req.lut_strength = 0;
+            c5Req.input_type = SONY2FUJI_INPUT_BUFFER;
+            c5Req.input_is_linear = 1;
+            sony2fuji_status c5ForceStatus = SONY2FUJI_STATUS_OK;
+            check(render(c5Session, c5Req, SONY2FUJI_GPU_FORCE, &c5ForceStatus).empty() &&
+                      c5ForceStatus == SONY2FUJI_STATUS_UNSUPPORTED,
+                  "BasicV3 C5 wavelet under Force returns UNSUPPORTED across GPU=ON and GPU=OFF");
+            sony2fuji_status c5AutoStatus = SONY2FUJI_STATUS_PROCESSING_ERROR;
+            check(!render(c5Session, c5Req, SONY2FUJI_GPU_AUTO, &c5AutoStatus).empty() &&
+                      c5AutoStatus == SONY2FUJI_STATUS_OK,
+                  "BasicV3 C5 wavelet retains Auto rendering");
+            sony2fuji_session_destroy(c5Session);
+        }
+    }
     sony2fuji_session_destroy(session);std::filesystem::remove_all(dir);
     std::cout<<"LUT contract render failures: "<<failures<<'\n';return failures?1:0;
 }

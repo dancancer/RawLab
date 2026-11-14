@@ -2829,9 +2829,10 @@ static sony2fuji_status processImpl(
 #else
     const bool cpuOnlyStages = neighborhoodActive || basicControlsActive || channelCurvesActive || session->tone_curve.active() || colorGradingActive || toneControlsActive || hslActive || effectsActive || waveletActive || chromaMode != 0;
 #endif
+    const bool c5Wavelet = waveletActive && sony2fuji::usesC5Denoise(session->wavelet_denoise.processingVersion);
     const bool fastWavelet = !neighborhoodActive && !geometryActive && waveletActive && !effectsActive && chromaMode == 0 && session->interactive_preview &&
         local.intent == SONY2FUJI_INTENT_PREVIEW && local.output_target == SONY2FUJI_TARGET_BUFFER;
-    if (cpuOnlyStages && session->gpu_config.mode == sony2fuji::GpuMode::Force)
+    if ((cpuOnlyStages || c5Wavelet) && session->gpu_config.mode == sony2fuji::GpuMode::Force)
         return SONY2FUJI_STATUS_UNSUPPORTED;
     if (needsSourceSizePreflight(local)) {
         uint32_t source_width = local.input_width;
@@ -2898,6 +2899,7 @@ static sony2fuji_status processImpl(
     bool gpuPipeline = !cpuOnlyStages && !dcp && session->gpu_config.mode != sony2fuji::GpuMode::Off;
 #else
     bool gpuPipeline = false;
+    if (session->gpu_config.mode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_UNSUPPORTED;
 #endif
     // Reuse the reference stages; scene-view GPU shaders retain their existing
     // contract. Auto explicitly falls back for display-referred input.
@@ -2907,6 +2909,16 @@ static sony2fuji_status processImpl(
         if (session->gpu_config.mode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_UNSUPPORTED;
         gpuPipeline = false;
     }
+#if defined(SONY2FUJI_ENABLE_GLES)
+    // GLES 着色器未实现 sRGB 输入 .cube LUT；仅对非显示参考流强制回退并拒绝 Force。
+    const bool glesUnsupportedLut = !displayInput && lut && lut->inputTransfer() == sony2fuji::LUTTransfer::SRGB;
+    if (glesUnsupportedLut) {
+        if (session->gpu_config.mode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_UNSUPPORTED;
+        gpuPipeline = false;
+    }
+#else
+    const bool glesUnsupportedLut = false;
+#endif
     sony2fuji::checkProcessingCancellation();
 
     sony2fuji::ImageData image;
@@ -3153,7 +3165,7 @@ static sony2fuji_status processImpl(
     }
 
     auto lookConfig = session->gpu_config;
-    if (contractCPU || gpuPipeline || neighborhoodActive || basicControlsActive || hslActive || toneControlsActive || colorGradingActive || chromaMode != 0 || waveletActive || effectsActive)
+    if (contractCPU || glesUnsupportedLut || gpuPipeline || neighborhoodActive || basicControlsActive || hslActive || toneControlsActive || colorGradingActive || chromaMode != 0 || waveletActive || effectsActive)
         lookConfig.mode = sony2fuji::GpuMode::Off;
     status = applyPhotoLook(image, lut, dcp, local.lut_strength, displayInput, lookConfig);
     if (status != SONY2FUJI_STATUS_OK) return status;
@@ -3529,16 +3541,18 @@ sony2fuji_status sony2fuji_analyze_image(
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     try {
         sony2fuji::ImageStats stats;
-        bool complete = false;
 #if defined(SONY2FUJI_ENABLE_METAL)
         // These pixels already live on the CPU. Upload/readback costs more than
         // the optimized counting loop on measured Apple Silicon workloads.
-        if (mode == SONY2FUJI_GPU_FORCE) complete = sony2fuji::computeImageStatsMetal(*image, stats);
-#endif
+        const bool complete = mode == SONY2FUJI_GPU_FORCE && sony2fuji::computeImageStatsMetal(*image, stats);
         if (!complete) {
             if (mode == SONY2FUJI_GPU_FORCE) return SONY2FUJI_STATUS_PROCESSING_ERROR;
             if (!sony2fuji::computeImageStatsCPU(*image, stats, clipping_mask != nullptr)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
         }
+#else
+        if (mode == SONY2FUJI_GPU_FORCE) return SONY2FUJI_STATUS_UNSUPPORTED;
+        if (!sony2fuji::computeImageStatsCPU(*image, stats, clipping_mask != nullptr)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+#endif
         if (clipping_mask) {
             void* data = std::malloc(stats.clipping.size());
             if (!data) return SONY2FUJI_STATUS_OUT_OF_MEMORY;

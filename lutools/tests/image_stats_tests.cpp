@@ -311,8 +311,13 @@ void testPublicCAPI() {
             sony2fuji_release_buffer(&forceMask);
         }
     } else {
+#ifdef SONY2FUJI_ENABLE_METAL
         check(forceStatus == SONY2FUJI_STATUS_PROCESSING_ERROR,
               "public C API Force rejects unavailable Metal");
+#else
+        check(forceStatus == SONY2FUJI_STATUS_UNSUPPORTED,
+              "public C API Force returns UNSUPPORTED without a Metal backend");
+#endif
         check(forceMask.data == nullptr && forceMask.size_bytes == 0 &&
               forceShadows == 0x2468ace0u && forceHighlights == 0xdeadbeefu &&
               forceBins[0] == 0x13579bdfu && forceBins[767] == 0x13579bdfu,
