@@ -160,3 +160,4 @@
 - 2026-11-14 · **合入波（总 83 PR，二次复核 V 系列 7/7 收官）**：**#321**（V-SPEC 四轮：mac Layer3 假锚清零+同型自查）、**#324**（build.sh Python 透传二轮，Skipped→Passed+校验桩双态锚）；V 表七格全 ✅；worktree/分支已清。
 - 2026-11-14 · Q5 后续开工（HDR 渲染分组+双击重置 Android/Windows 化，iOS 自查）：氢单 implement-mwg3mcjj，Q14 模型层先红+CI 纳入行新规矩入指令。
 - 2026-11-14 · Q5 后续交卷 **PR #326**（`7a26cfaf`，CI 0 fail）：三端先红锚齐全（含 Windows 用真 CI run 红做先红——纳入行新规矩执行到位）。碳审在途（review-mwg5lz37，专项=三端分组清单与 Mac #280 逐成员对读）。P2-12 lut-copy 重核定性仍在跑（核心编译量大属正常）。
+- 2026-11-14 · **P2-12 交卷 PR #327**（`a082b9ba`）：重核定性=成立（仅 DISPLAY_BUFFER/X3F 路由受害）；gate+原地 clamp+Metal 瓦片复用——RSS −534MiB、整幅分配 3→2、输出校验和逐位不变、两态 ctest 全绿、#315 Force 锚不回归。碳审在途（review-mwg5t61p，核 in-place 语义+gate×Force 矩阵对读+瓦片风险等价性）。性能线首票从开工到入闸单轮完成。
