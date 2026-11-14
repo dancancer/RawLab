@@ -17,12 +17,12 @@ internal static class WorkspaceGroupChecks
         var groupIds=new[]{"looks","light","color","effects","detail","geometry"};
         var defaults=new[]{EditorAdjustmentTool.Film,EditorAdjustmentTool.Exposure,EditorAdjustmentTool.WhiteBalance,
             EditorAdjustmentTool.Clarity,EditorAdjustmentTool.Denoise,EditorAdjustmentTool.Geometry};
-        check(window.Groups.Children.OfType<Button>().Select(AutomationProperties.GetAutomationId).SequenceEqual(groupIds.Select(id=>"editor.group."+id)),
+        check(window.Groups.Children.OfType<Button>().Where(button=>button.Visibility==Visibility.Visible).Select(AutomationProperties.GetAutomationId).SequenceEqual(groupIds.Select(id=>"editor.group."+id)),
             "Six persistent groups have stable ordered IDs");
         Invoke(window,"SelectTool",EditorAdjustmentTool.Exposure);
         var snapshot=Get<Adjustments>(window,"settings").Capture();var revision=Get<long>(window,"editRevision");
         window.HslEditor.SelectChannel(6);
-        foreach(var (group,index) in Enum.GetValues<EditorAdjustmentGroup>().Select((group,index)=>(group,index))) {
+        foreach(var (group,index) in EditorAdjustmentRules.VisibleGroups(false).Select((group,index)=>(group,index))) {
             // Repeated group clicks collapse; the next click selects the descriptor default.
             Invoke(window,"SelectTool",defaults[index]);Invoke(window,"SelectGroup",group);window.UpdateLayout();
             check(window.ToolsScroller.Visibility==Visibility.Collapsed && window.Groups.IsVisible,"Repeated click collapses content but retains group navigation: "+group);
@@ -76,8 +76,8 @@ internal static class WorkspaceGroupChecks
                         $"Tool content preserves the photo/inspector boundary: {language}/{size}/{tool}");
                 }
                 Invoke(window,"SelectTool",EditorAdjustmentTool.Hsl);window.UpdateLayout();
-                check(window.Groups.Children.OfType<Button>().Select(AutomationProperties.GetName)
-                    .SequenceEqual(Enum.GetValues<EditorAdjustmentGroup>().Select(group=>Loc.Text(EditorAdjustmentRules.Title(group)))),
+                check(window.Groups.Children.OfType<Button>().Where(button=>button.Visibility==Visibility.Visible).Select(AutomationProperties.GetName)
+                    .SequenceEqual(EditorAdjustmentRules.VisibleGroups(false).Select(group=>Loc.Text(EditorAdjustmentRules.Title(group)))),
                     "All group captions/accessibility names use the selected language: "+language);
                 check(window.HslEditor.SelectedChannel==6,"Language and layout retain session HSL channel: "+language);
                 var reset=PhotoFeatureChecks.Descendants<Button>(window.HslEditor).Single(button=>Equals(button.Content,Loc.Text("重置 HSL")));

@@ -32,6 +32,18 @@ internal sealed record HDRColorSettings
     internal bool IsValid => Vibrance is >= -100 and <= 100 && Grading.IsValid;
 }
 
+public enum HDRRenditionParameter { PeakLimitEV, SdrExposureEV, SdrContrast, SdrSaturation }
+public sealed record HDRRenditionSpec(HDRRenditionParameter Id, string Title, double Min, double Max, double Grid, string Unit)
+{
+    public static readonly HDRRenditionSpec[] All = [
+        new(HDRRenditionParameter.PeakLimitEV, "HDR 亮度上限", 0, 6, .1, "EV"),
+        new(HDRRenditionParameter.SdrExposureEV, "SDR 底图曝光", -4, 4, .1, "EV"),
+        new(HDRRenditionParameter.SdrContrast, "SDR 底图对比度", -100, 100, 1, "%"),
+        new(HDRRenditionParameter.SdrSaturation, "SDR 底图饱和度", -100, 100, 1, "%")
+    ];
+    public static HDRRenditionSpec For(HDRRenditionParameter id) => All[(int)id];
+}
+
 internal sealed record HDRRenditionSettings
 {
     internal double PeakLimitEV { get; init; }
@@ -41,6 +53,20 @@ internal sealed record HDRRenditionSettings
     internal bool IsDefault => PeakLimitEV == 0 && SdrExposureEV == 0 && SdrContrast == 0 && SdrSaturation == 0;
     internal bool IsValid => PeakLimitEV is >= 0 and <= 6 && SdrExposureEV is >= -4 and <= 4 &&
         SdrContrast is >= -100 and <= 100 && SdrSaturation is >= -100 and <= 100;
+    internal double this[HDRRenditionParameter id] => id switch {
+        HDRRenditionParameter.PeakLimitEV => PeakLimitEV,
+        HDRRenditionParameter.SdrExposureEV => SdrExposureEV,
+        HDRRenditionParameter.SdrContrast => SdrContrast,
+        HDRRenditionParameter.SdrSaturation => SdrSaturation,
+        _ => throw new ArgumentOutOfRangeException(nameof(id))
+    };
+    internal HDRRenditionSettings With(HDRRenditionParameter id, double value) => id switch {
+        HDRRenditionParameter.PeakLimitEV => this with { PeakLimitEV = value },
+        HDRRenditionParameter.SdrExposureEV => this with { SdrExposureEV = value },
+        HDRRenditionParameter.SdrContrast => this with { SdrContrast = value },
+        HDRRenditionParameter.SdrSaturation => this with { SdrSaturation = value },
+        _ => throw new ArgumentOutOfRangeException(nameof(id))
+    };
 }
 
 internal sealed record HDRDetailSettings(double Sharpening = 0, double Clarity = 0, double Dehaze = 0, double Denoise = 0)

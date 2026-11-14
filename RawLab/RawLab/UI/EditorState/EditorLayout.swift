@@ -2,7 +2,10 @@ import SwiftUI
 import UIKit
 
 extension ContentView {
-    var mobileEditorGroups: [EditorAdjustmentGroup] { [.looks, .light, .color, .detail, .geometry, .effects] }
+    var mobileEditorGroups: [EditorAdjustmentGroup] {
+        let base: [EditorAdjustmentGroup] = [.looks, .light, .color, .detail, .geometry, .effects]
+        return settings.isHDREditing ? base + [.hdrRendition] : base
+    }
     var mobileEditorTools: [EditorToolSelection] {
         switch selectedGroup {
         case .looks: return [.film, .recipe]

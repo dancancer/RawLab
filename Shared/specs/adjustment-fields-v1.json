@@ -3134,7 +3134,10 @@
       "field_id": "hdr.peak_limit_ev",
       "group": "light",
       "editor_group_overrides": {
-        "macos": "hdr_rendition"
+        "macos": "hdr_rendition",
+        "ios": "hdr_rendition",
+        "android": "hdr_rendition",
+        "windows": "hdr_rendition"
       },
       "protocol": {
         "transferable": true,
@@ -3258,14 +3261,17 @@
           "P1-02",
           "P2-23"
         ],
-        "notes": "Post-#280 (83381e8e): Mac primary dock hdrRenditionRow uses fineStep 0.01 EV in editor group 'hdr_rendition', while Mac secondary HDRRenditionControls and iOS/Android/Windows use 0.1 EV."
+        "notes": "All four platforms place this field in editor group 'hdr_rendition' (transfer protocol group remains 'light'). Mac primary dock hdrRenditionRow uses fineStep 0.01 EV, while Mac secondary HDRRenditionControls and iOS/Android/Windows use 0.1 EV."
       }
     },
     {
       "field_id": "hdr.sdr_exposure_ev",
       "group": "light",
       "editor_group_overrides": {
-        "macos": "hdr_rendition"
+        "macos": "hdr_rendition",
+        "ios": "hdr_rendition",
+        "android": "hdr_rendition",
+        "windows": "hdr_rendition"
       },
       "protocol": {
         "transferable": true,
@@ -3389,14 +3395,17 @@
           "P1-02",
           "P2-23"
         ],
-        "notes": "Post-#280 (83381e8e): Mac primary dock hdrRenditionRow uses fineStep 0.01 EV in editor group 'hdr_rendition', while Mac secondary HDRRenditionControls and iOS/Android/Windows use 0.1 EV."
+        "notes": "All four platforms place this field in editor group 'hdr_rendition' (transfer protocol group remains 'light'). Mac primary dock hdrRenditionRow uses fineStep 0.01 EV, while Mac secondary HDRRenditionControls and iOS/Android/Windows use 0.1 EV."
       }
     },
     {
       "field_id": "hdr.sdr_contrast",
       "group": "light",
       "editor_group_overrides": {
-        "macos": "hdr_rendition"
+        "macos": "hdr_rendition",
+        "ios": "hdr_rendition",
+        "android": "hdr_rendition",
+        "windows": "hdr_rendition"
       },
       "protocol": {
         "transferable": true,
@@ -3520,14 +3529,17 @@
           "P1-02",
           "P2-23"
         ],
-        "notes": "Post-#280 (83381e8e): Mac primary dock hdrRenditionRow uses fineStep 0.1 % in editor group 'hdr_rendition', while Mac secondary HDRRenditionControls and iOS/Android/Windows use 1.0 %."
+        "notes": "All four platforms place this field in editor group 'hdr_rendition' (transfer protocol group remains 'light'). Mac primary dock hdrRenditionRow uses fineStep 0.1 %, while Mac secondary HDRRenditionControls and iOS/Android/Windows use 1.0 %."
       }
     },
     {
       "field_id": "hdr.sdr_saturation",
       "group": "light",
       "editor_group_overrides": {
-        "macos": "hdr_rendition"
+        "macos": "hdr_rendition",
+        "ios": "hdr_rendition",
+        "android": "hdr_rendition",
+        "windows": "hdr_rendition"
       },
       "protocol": {
         "transferable": true,
@@ -3651,7 +3663,7 @@
           "P1-02",
           "P2-23"
         ],
-        "notes": "Post-#280 (83381e8e): Mac primary dock hdrRenditionRow uses fineStep 0.1 % in editor group 'hdr_rendition', while Mac secondary HDRRenditionControls and iOS/Android/Windows use 1.0 %."
+        "notes": "All four platforms place this field in editor group 'hdr_rendition' (transfer protocol group remains 'light'). Mac primary dock hdrRenditionRow uses fineStep 0.1 %, while Mac secondary HDRRenditionControls and iOS/Android/Windows use 1.0 %."
       }
     },
     {

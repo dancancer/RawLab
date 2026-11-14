@@ -136,8 +136,8 @@ internal static class Program
                 Check(Application.Current.Resources["暗角"]?.ToString() == Loc.Text("暗角"), $"Dynamic catalog resource {language}");
 
                 var groups=(Panel)window.FindName("Groups");
-                Check(groups.Children.OfType<Button>().Select(AutomationProperties.GetName).SequenceEqual(
-                    Enum.GetValues<EditorAdjustmentGroup>().Select(group=>Loc.Text(EditorAdjustmentRules.Title(group)))), $"Six group captions and accessibility names {language}");
+                Check(groups.Children.OfType<Button>().Where(button=>button.Visibility==Visibility.Visible).Select(AutomationProperties.GetName).SequenceEqual(
+                    EditorAdjustmentRules.VisibleGroups(false).Select(group=>Loc.Text(EditorAdjustmentRules.Title(group)))), $"Six group captions and accessibility names {language}");
                 var tools = (Panel?)window.FindName("Tools");
                 var vignette = tools?.Children.OfType<Button>()
                     .FirstOrDefault(button => AutomationProperties.GetAutomationId(button) == "Vignette");

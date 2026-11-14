@@ -119,6 +119,10 @@ extension EditorToolSelection {
                 kind.setValue(kind.value(from: value), in: &result)
                 if kind == .exposure { result.exposureMode = value.exposureMode }
             }
+        case .hdrPeakLimit, .hdrSDRExposure, .hdrSDRContrast, .hdrSDRSaturation:
+            if result.isHDREditing, let keyPath = hdrRenditionKeyPath {
+                result.hdr?.renditionSettings[keyPath: keyPath] = value.hdr?.renditionSettings[keyPath: keyPath] ?? 0
+            }
         }
         return result
     }

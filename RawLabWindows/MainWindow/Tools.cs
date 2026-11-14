@@ -19,6 +19,7 @@ public partial class MainWindow
     private Button? presetLibraryButton;
     private readonly Dictionary<ToneControlParameter,(Button Button,AdjustmentRing Ring)> toneToolButtons = [];
     private readonly Dictionary<AtmosphereParameter,(Button Button,AdjustmentRing Ring)> atmosphereToolButtons = [];
+    private readonly Dictionary<HDRRenditionParameter,(Button Button,AdjustmentRing Ring)> hdrRenditionToolButtons = [];
 
     private void AboutClicked(object sender, RoutedEventArgs e)
     {
@@ -32,7 +33,7 @@ public partial class MainWindow
     }
     private void BuildTools()
     {
-        Tools.Children.Clear();toolButtons.Clear();effectToolButtons.Clear();toneToolButtons.Clear();atmosphereToolButtons.Clear();
+        Tools.Children.Clear();toolButtons.Clear();effectToolButtons.Clear();toneToolButtons.Clear();atmosphereToolButtons.Clear();hdrRenditionToolButtons.Clear();
         Tools.Children.Add(FilmCategory);Tools.Children.Add(MasterRecipeCategory);
         foreach(var id in new[]{Parameter.Strength,Parameter.Exposure,Parameter.Highlights,Parameter.Shadows,Parameter.Contrast,
             Parameter.ToneCurve,Parameter.Saturation,Parameter.Sharpening})
@@ -91,6 +92,17 @@ public partial class MainWindow
             button.Click+=(_,_)=>SelectTool(EditorAdjustmentRules.ToolFor(spec.Id));
             atmosphereToolButtons[spec.Id]=(button,ring);
         }
+        foreach(var spec in HDRRenditionSpec.All) {
+            var ring=new AdjustmentRing{Width=18,Height=18,Compact=true};
+            var grid=new Grid();grid.Children.Add(ring);grid.Children.Add(new EditorIcon{Kind=EditorAdjustmentRules.ToolFor(spec.Id).ToString(),Width=16,Height=16});
+            var caption=new TextBlock{Text=Loc.Text(spec.Title),TextWrapping=TextWrapping.NoWrap,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(6,0,0,0)};
+            caption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");
+            var stack=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};stack.Children.Add(grid);stack.Children.Add(caption);
+            var button=new Button{Content=stack,Style=(Style)FindResource("ToolButton"),ToolTip=Loc.Text(spec.Title)};
+            AutomationProperties.SetName(button,Loc.Text(spec.Title));
+            button.Click+=(_,_)=>SelectTool(EditorAdjustmentRules.ToolFor(spec.Id));
+            hdrRenditionToolButtons[spec.Id]=(button,ring);
+        }
         Tools.Children.Add(GeometryCategory);Tools.Children.Add(LensCategory);BuildWorkspaceNavigation();
     }
     private void FilmCategoryClicked(object sender,RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.Film);
@@ -109,7 +121,7 @@ public partial class MainWindow
     private EditorAdjustmentTool CurrentTool => choosingFilm ? EditorAdjustmentTool.Film : choosingRecipes ? EditorAdjustmentTool.MasterRecipe :
         choosingGrading ? EditorAdjustmentTool.ColorGrading : choosingHsl ? EditorAdjustmentTool.Hsl : choosingWhiteBalance ? EditorAdjustmentTool.WhiteBalance : choosingDenoise ? EditorAdjustmentTool.Denoise :
         choosingGeometry ? EditorAdjustmentTool.Geometry : choosingLens ? EditorAdjustmentTool.Lens :
-        choosingPhotoEffects ? selectedEffect==PhotoEffectTool.Vignette ? EditorAdjustmentTool.Vignette : EditorAdjustmentTool.Grain : selectedAtmosphereParameter is {} atmosphere ? EditorAdjustmentRules.ToolFor(atmosphere) : selectedToneParameter is {} tone ? EditorAdjustmentRules.ToolFor(tone) : ToolFor(selectedParameter);
+        choosingPhotoEffects ? selectedEffect==PhotoEffectTool.Vignette ? EditorAdjustmentTool.Vignette : EditorAdjustmentTool.Grain : selectedHdrRenditionParameter is {} hdrRendition ? EditorAdjustmentRules.ToolFor(hdrRendition) : selectedAtmosphereParameter is {} atmosphere ? EditorAdjustmentRules.ToolFor(atmosphere) : selectedToneParameter is {} tone ? EditorAdjustmentRules.ToolFor(tone) : ToolFor(selectedParameter);
     private static EditorAdjustmentTool ToolFor(Parameter parameter) => parameter switch {
         Parameter.Temperature or Parameter.Tint => EditorAdjustmentTool.WhiteBalance,
         _ => Enum.GetValues<EditorAdjustmentTool>().First(tool => (tool is EditorAdjustmentTool.Strength or EditorAdjustmentTool.Exposure or
@@ -136,6 +148,7 @@ public partial class MainWindow
         foreach(var (parameter,controls) in toolButtons)workspaceTools[ToolFor(parameter)]=controls;
         foreach(var (parameter,controls) in toneToolButtons)workspaceTools[EditorAdjustmentRules.ToolFor(parameter)]=controls;
         foreach(var (parameter,controls) in atmosphereToolButtons)workspaceTools[EditorAdjustmentRules.ToolFor(parameter)]=controls;
+        foreach(var (parameter,controls) in hdrRenditionToolButtons)workspaceTools[EditorAdjustmentRules.ToolFor(parameter)]=controls;
         foreach(var (tool,controls) in effectToolButtons)workspaceTools[tool==PhotoEffectTool.Vignette ? EditorAdjustmentTool.Vignette : EditorAdjustmentTool.Grain]=controls;
         foreach (var (tool, controls) in workspaceTools)
         {
@@ -176,7 +189,7 @@ public partial class MainWindow
 
     private void SelectGroup(EditorAdjustmentGroup group)
     {
-        if(file==null || exporting || pendingAllReset!=null)return;
+        if(file==null || exporting || pendingAllReset!=null || !EditorAdjustmentRules.IsGroupVisible(group, settings.IsHDREditing))return;
         var wasQuick = quickPresetsVisible;
         if (group == EditorAdjustmentGroup.Looks && settings.IsHDREditing && !wasQuick) { ShowQuickPresets(); return; }
         if (wasQuick) CloseQuickPresets();
@@ -190,6 +203,7 @@ public partial class MainWindow
     private void SelectTool(EditorAdjustmentTool tool)
     {
         if(file==null || exporting || pendingAllReset!=null)return;
+        tool = EditorAdjustmentRules.NormalizeTool(tool, settings.IsHDREditing);
         if (quickPresetsVisible) CloseQuickPresets();
         if(tool!=EditorAdjustmentTool.Hsl)SetHslTargetMode(false,hslTargetAxis);
         CancelParameterInputs();
@@ -203,10 +217,11 @@ public partial class MainWindow
             choosingHsl=tool==EditorAdjustmentTool.Hsl;choosingWhiteBalance=tool==EditorAdjustmentTool.WhiteBalance;
             choosingDenoise=tool==EditorAdjustmentTool.Denoise;choosingPhotoEffects=tool is EditorAdjustmentTool.Vignette or EditorAdjustmentTool.Grain;
             choosingGeometry=choosingLens=false;
+            selectedHdrRenditionParameter=EditorAdjustmentRules.HdrRenditionParameterFor(tool);
             selectedToneParameter=EditorAdjustmentRules.ToneParameterFor(tool);
             selectedAtmosphereParameter=EditorAdjustmentRules.AtmosphereParameterFor(tool);
             if(choosingPhotoEffects)selectedEffect=tool==EditorAdjustmentTool.Vignette ? PhotoEffectTool.Vignette : PhotoEffectTool.Grain;
-            else if(selectedToneParameter==null && selectedAtmosphereParameter==null && !choosingFilm && !choosingRecipes && !choosingHsl && !choosingGrading && !choosingWhiteBalance && !choosingDenoise)selectedParameter=EditorAdjustmentRules.ParameterFor(tool);
+            else if(selectedHdrRenditionParameter==null && selectedToneParameter==null && selectedAtmosphereParameter==null && !choosingFilm && !choosingRecipes && !choosingHsl && !choosingGrading && !choosingWhiteBalance && !choosingDenoise)selectedParameter=EditorAdjustmentRules.ParameterFor(tool);
         }
         expandedGroup=EditorAdjustmentRules.GroupFor(tool);
         suspendedTransform = null;
@@ -251,7 +266,10 @@ public partial class MainWindow
     {
         var edit=WorkspaceEdit();
         bool Modified(EditorResetScope scope) {try{return edit!=null && EditorAdjustmentRules.IsModified(scope,edit);}catch(ArgumentException){return false;}catch(InvalidDataException){return false;}}
+        if (!settings.IsHDREditing && expandedGroup == EditorAdjustmentGroup.HdrRendition)
+            expandedGroup = EditorAdjustmentGroup.Light;
         foreach(var (group,button) in groupButtons) {
+            button.Visibility = EditorAdjustmentRules.IsGroupVisible(group, settings.IsHDREditing) ? Visibility.Visible : Visibility.Collapsed;
             var modified=Modified(new(EditorResetKind.Group,group));var selected=expandedGroup==group;
             ((TextBlock)button.Content).Text=Loc.Text(EditorAdjustmentRules.Title(group))+(modified ? " •" : "");button.Tag=selected ? "selected" : null;
             AutomationProperties.SetName(button,Loc.Text(EditorAdjustmentRules.Title(group)));
@@ -262,7 +280,7 @@ public partial class MainWindow
             controls.Button.Visibility=tool!=EditorAdjustmentTool.Strength && expandedGroup==EditorAdjustmentRules.GroupFor(tool) ? Visibility.Visible : Visibility.Collapsed;
             // 导航刷新沿用镜头面板的输入约束，避免重新启用普通图片的 RAW 工具。
             controls.Button.IsEnabled=file!=null && !exporting && (tool!=EditorAdjustmentTool.Lens || LensEditor.IsEnabled) &&
-                (!settings.IsHDREditing || tool is EditorAdjustmentTool.Exposure or EditorAdjustmentTool.Highlights or EditorAdjustmentTool.Shadows or
+                (!settings.IsHDREditing || EditorAdjustmentRules.HdrRenditionParameterFor(tool) != null || tool is EditorAdjustmentTool.Exposure or EditorAdjustmentTool.Highlights or EditorAdjustmentTool.Shadows or
                     EditorAdjustmentTool.Contrast or EditorAdjustmentTool.BlackPoint or EditorAdjustmentTool.WhitePoint or EditorAdjustmentTool.ToneCurve or
                     EditorAdjustmentTool.Saturation or EditorAdjustmentTool.WhiteBalance or EditorAdjustmentTool.Geometry or
                     EditorAdjustmentTool.Vibrance or EditorAdjustmentTool.Hsl or EditorAdjustmentTool.ColorGrading or
@@ -421,6 +439,13 @@ public partial class MainWindow
             foreach(var row in ParameterRows(AdjustmentPanel))row.SourceIdentity=(file,openRevision);
             var raster=file!=null && LibraryEntry.IsRaster(file);
             var hdrEditing=settings.IsHDREditing;
+            if (!hdrEditing) {
+                if (expandedGroup == EditorAdjustmentGroup.HdrRendition) expandedGroup = EditorAdjustmentGroup.Light;
+                if (selectedHdrRenditionParameter != null) {
+                    selectedHdrRenditionParameter = null;
+                    selectedParameter = Parameter.Exposure;
+                }
+            }
             if(raster)settings=RenderEngine.PrepareInputSettings(file!,settings);
             if(raster)
             {
@@ -430,22 +455,28 @@ public partial class MainWindow
             else if(rasterPreviousGpuMode is {} previousMode)
             {rasterPreviousGpuMode=null;GpuMode.SelectedIndex=previousMode;}
             var spec=ParameterSpec.All[(int)selectedParameter];
+            var hdrRenditionSpec=selectedHdrRenditionParameter is {} renditionParameter ? HDRRenditionSpec.For(renditionParameter) : null;
             var toneSpec=selectedToneParameter is {} toneParameter ? ToneControlSpec.For(toneParameter) : null;
             var atmosphereSpec=selectedAtmosphereParameter is {} atmosphereParameter ? AtmosphereSpec.For(atmosphereParameter) : null;
             var extensionControl=toneSpec!=null || atmosphereSpec!=null;
-            var hdrParameter=atmosphereSpec!=null || (toneSpec!=null ? HDRSettings.Supports(toneSpec.Id) : HDRSettings.Supports(selectedParameter));
+            var hdrParameter=hdrRenditionSpec!=null || atmosphereSpec!=null || (toneSpec!=null ? HDRSettings.Supports(toneSpec.Id) : HDRSettings.Supports(selectedParameter));
             var title=atmosphereSpec?.Title ?? toneSpec?.Title ?? spec.Title;var unit=extensionControl ? "%" : spec.Unit;
             var value=atmosphereSpec!=null ? settings.EditingAtmosphereValue(atmosphereSpec.Id) : toneSpec!=null ? settings.EditingToneValue(toneSpec.Id) : settings[selectedParameter];
             var inputRange=extensionControl ? new NumericRange(-100,100) : NumericRange.For(spec);
             if(settings.IsHDREditing && selectedParameter==Parameter.Exposure)
                 inputRange=inputRange with { Min=-4, Max=4 };
+            if(hdrRenditionSpec!=null) {
+                title=hdrRenditionSpec.Title;unit=hdrRenditionSpec.Unit;
+                value=settings.EditingHDRRenditionValue(hdrRenditionSpec.Id);
+                inputRange=new NumericRange(hdrRenditionSpec.Min,hdrRenditionSpec.Max,hdrRenditionSpec.Grid);
+            }
             OrdinaryParameter.Refresh(Loc.Text(title),inputRange,
-                value,extensionControl ? 0 : settings.Default(selectedParameter),unit,
-                inputScope:(object?)selectedAtmosphereParameter ?? (object?)selectedToneParameter ?? selectedParameter);
+                value,hdrRenditionSpec!=null ? 0 : extensionControl ? 0 : settings.Default(selectedParameter),unit,
+                inputScope:(object?)selectedHdrRenditionParameter ?? (object?)selectedAtmosphereParameter ?? (object?)selectedToneParameter ?? selectedParameter);
             AutomationProperties.SetName(ValueSlider,Loc.Text(title));
             AutomationProperties.SetName(ValueText,Loc.Format("{0}数值（{1}）",Loc.Text(title),unit));
             var canAdjust=file!=null && !exporting && !choosingFilm && !choosingPhotoEffects && (!hdrEditing || hdrParameter) &&
-                (extensionControl || (selectedParameter!=Parameter.Strength || lut!=null) && (selectedParameter is not(Parameter.Temperature or Parameter.Tint) || settings.AsShot!=null));
+                (hdrRenditionSpec!=null || extensionControl || (selectedParameter!=Parameter.Strength || lut!=null) && (selectedParameter is not(Parameter.Temperature or Parameter.Tint) || settings.AsShot!=null));
             ValueSlider.IsEnabled=ValueText.IsEnabled=canAdjust;
             FilmPanel.Visibility=choosingFilm ? Visibility.Visible : Visibility.Collapsed;
             MasterRecipePanel.Visibility=choosingRecipes ? Visibility.Visible : Visibility.Collapsed;
@@ -497,7 +528,7 @@ public partial class MainWindow
             var tintProgress=tintOffset==0 ? 0 : tintOffset/(tintOffset<0 ? tintOrigin : 1-tintOrigin);
             WhiteBalanceCategoryRing.Progress=Math.Abs(temperatureProgress)>=Math.Abs(tintProgress) ? temperatureProgress : tintProgress;
             WhiteBalanceCategoryRing.InvalidateVisual();
-            AutoExposureButton.Visibility=selectedToneParameter==null && selectedAtmosphereParameter==null && selectedParameter==Parameter.Exposure ? Visibility.Visible : Visibility.Collapsed;
+            AutoExposureButton.Visibility=selectedHdrRenditionParameter==null && selectedToneParameter==null && selectedAtmosphereParameter==null && selectedParameter==Parameter.Exposure ? Visibility.Visible : Visibility.Collapsed;
             AutoExposureButton.IsEnabled=CanAutoExpose;
             DenoiseEditor.Visibility=choosingDenoise ? Visibility.Visible : Visibility.Collapsed;
             DenoiseSurface.Visibility=DenoiseEditor.Visibility;
@@ -541,7 +572,7 @@ public partial class MainWindow
             foreach(var (id,controls) in toolButtons)
             {
                 controls.Button.IsEnabled=file!=null && !exporting && (!hdrEditing || HDRSettings.Supports(id));
-                var selected=!choosingRecipes && !choosingHsl && !choosingGrading && !choosingFilm && !choosingDenoise && !choosingPhotoEffects && !choosingWhiteBalance && !choosingLens && !choosingGeometry && selectedToneParameter==null && selectedAtmosphereParameter==null && id==selectedParameter;
+                var selected=!choosingRecipes && !choosingHsl && !choosingGrading && !choosingFilm && !choosingDenoise && !choosingPhotoEffects && !choosingWhiteBalance && !choosingLens && !choosingGeometry && selectedHdrRenditionParameter==null && selectedToneParameter==null && selectedAtmosphereParameter==null && id==selectedParameter;
                 controls.Button.Tag=selected ? "selected" : null;
                 controls.Ring.Selected=selected;
                 var p=ParameterSpec.All[(int)id]; var origin=p.Position(settings.Default(id)); var offset=p.Position(settings[id])-origin;
@@ -558,6 +589,14 @@ public partial class MainWindow
                 controls.Button.IsEnabled=file!=null && !exporting;
                 controls.Button.Tag=selected ? "selected" : null;controls.Ring.Selected=selected;
                 controls.Ring.Progress=settings.EditingAtmosphereValue(id)/100;controls.Ring.InvalidateVisual();
+            }
+            foreach(var (id,controls) in hdrRenditionToolButtons) {
+                var selected=CurrentTool==EditorAdjustmentRules.ToolFor(id);
+                var renditionSpec=HDRRenditionSpec.For(id);
+                controls.Button.IsEnabled=file!=null && !exporting && hdrEditing;
+                controls.Button.Tag=selected ? "selected" : null;controls.Ring.Selected=selected;
+                var val=settings.EditingHDRRenditionValue(id);
+                controls.Ring.Progress=val/renditionSpec.Max;controls.Ring.InvalidateVisual();
             }
             foreach(var pair in filmButtons) {
                 var selected=pair.Key==(lut ?? "");pair.Value.Tag=selected ? "selected" : null;

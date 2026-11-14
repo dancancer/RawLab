@@ -557,9 +557,6 @@
     },
     {
       "id": "group-hdr-rendition-hdr",
-      "platforms": [
-        "macos"
-      ],
       "target": {
         "kind": "hdr",
         "as_shot_wb": null,
@@ -613,9 +610,6 @@
     },
     {
       "id": "single-reset-hdr-peak-limit-hdr",
-      "platforms": [
-        "macos"
-      ],
       "target": {
         "kind": "hdr",
         "as_shot_wb": null,
@@ -661,9 +655,6 @@
     },
     {
       "id": "group-hdr-rendition-unchanged-hdr",
-      "platforms": [
-        "macos"
-      ],
       "target": {
         "kind": "hdr",
         "as_shot_wb": null,

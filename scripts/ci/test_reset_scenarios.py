@@ -336,14 +336,13 @@ class ResetScenarioContracts(unittest.TestCase):
             with self.subTest(scenario=scenario["id"]):
                 self.assertLessEqual(set(scenario.get("platforms", PLATFORMS)), PLATFORMS)
 
-    def test_hdr_rendition_scopes_are_macos_only_for_now(self):
-        # iOS/Android/Windows 尚无 hdr_rendition 组/单项重置入口；相关场景必须显式声明仅 macos。
+    def test_hdr_rendition_scopes_cover_all_platforms(self):
+        # 四端均已落地 hdr_rendition 分组与单项重置入口，相关重置场景必须覆盖全部四个平台。
         for scenario in self.scenarios:
             scope = scenario["scope"]
             if scope.get("group") == "hdr_rendition" or scope.get("field") in HDR_RENDITION_TOOLS:
-                self.assertIn("platforms", scenario, f"{scenario['id']}: must declare platforms when excluding ends lacking hdrRendition")
-                self.assertLessEqual(set(scenario["platforms"]), {"macos"},
-                                     f"{scenario['id']}: hdrRendition scenario must stay macos-only until other ends ship it")
+                self.assertEqual(set(scenario.get("platforms", PLATFORMS)), PLATFORMS,
+                                 f"{scenario['id']}: hdrRendition scenario must cover all four platforms")
 
     def test_hdr_rendition_and_detail_coverage(self):
         rendition = [

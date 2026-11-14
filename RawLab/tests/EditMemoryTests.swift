@@ -351,10 +351,14 @@ extension EditMemoryTests {
             (.color, [.adjustment(.temperature), .adjustment(.saturation), .adjustment(.vibrance), .adjustment(.hsl), .adjustment(.colorGrading)]),
             (.effects, [.adjustment(.clarity), .adjustment(.dehaze), .adjustment(.vignette), .adjustment(.grain)]),
             (.detail, [.adjustment(.noiseReduction), .adjustment(.sharpening)]),
-            (.geometry, [.geometry, .lens])
+            (.geometry, [.geometry, .lens]),
+            (.hdrRendition, [.hdrPeakLimit, .hdrSDRExposure, .hdrSDRContrast, .hdrSDRSaturation])
         ]
         check(toolOrder.map { $0.0 } == EditorAdjustmentGroup.allCases,
-              "stable groups follow looks light color effects detail geometry order")
+              "stable groups follow looks light color effects detail geometry hdrRendition order")
+        check(EditorAdjustmentGroup.visibleGroups(isHDREditing: false) == [.looks, .light, .color, .effects, .detail, .geometry] &&
+              EditorAdjustmentGroup.visibleGroups(isHDREditing: true) == EditorAdjustmentGroup.allCases,
+              "SDR mode exposes six visible groups and HDR exposes all seven")
         var visibleTools = [EditorToolSelection]()
         for (group, expectedTools) in toolOrder {
             let tools = EditorAdjustmentRules.tools(group)
@@ -363,9 +367,11 @@ extension EditMemoryTests {
                   "visible tools map back to their owning group \(group)")
             visibleTools += tools
         }
-        let expectedVisible = Set(AdjustmentKind.toolCases.map(EditorToolSelection.adjustment) + [.film, .recipe, .geometry, .lens])
+        let expectedVisible = Set(AdjustmentKind.toolCases.map(EditorToolSelection.adjustment) + [
+            EditorToolSelection.film, .recipe, .geometry, .lens, .hdrPeakLimit, .hdrSDRExposure, .hdrSDRContrast, .hdrSDRSaturation
+        ])
         check(visibleTools.count == Set(visibleTools).count && Set(visibleTools) == expectedVisible,
-              "all visible tools appear exactly once across the six groups")
+              "all visible tools appear exactly once across the seven groups")
         check(EditorAdjustmentRules.groupFor(.adjustment(.tint)) == .color &&
               !visibleTools.contains(.adjustment(.tint)),
               "legacy tint maps to color without becoming a second visible WB tool")
@@ -441,9 +447,11 @@ extension EditMemoryTests {
         settings.geometry.quarterTurns = 1
         settings.lensCorrection = LensCorrectionSettings(mode: .manual, profileID: "stored-disabled-profile")
         let original = state(settings)
-        for group in EditorAdjustmentGroup.allCases {
+        for group in EditorAdjustmentGroup.visibleGroups(isHDREditing: false) {
             check(EditorAdjustmentRules.isModified(.group(group), snapshot: original, context: context), "stored changes mark \(group)")
         }
+        check(!EditorAdjustmentRules.isModified(.group(.hdrRendition), snapshot: original, context: context),
+              "SDR snapshot does not mark hidden hdrRendition group")
         let toolExpectations: [(EditorToolSelection, (inout RawSettings) -> Void)] = [
             (.adjustment(.exposure), { $0.exposure = 0; $0.exposureMode = .preview }),
             (.adjustment(.highlights), { $0.highlights = 0 }),

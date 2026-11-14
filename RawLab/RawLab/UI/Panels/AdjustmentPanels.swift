@@ -65,6 +65,8 @@ extension ContentView {
                 resetEnabled: resetModified(.tool(currentEditorTool)))
                 .padding(.horizontal, 16)
                 .disabled(!viewModel.hasImage || editingLocked)
+        } else if let hdrTool = selectedHDRRenditionTool, let keyPath = hdrTool.hdrRenditionKeyPath {
+            hdrRenditionPanel(hdrTool, keyPath: keyPath)
         } else if let adjustment = selectedAdjustment {
             if adjustment == .temperature || adjustment == .tint {
                 whiteBalancePanel
@@ -130,6 +132,36 @@ extension ContentView {
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
         .disabled(!viewModel.hasImage || editingLocked || (adjustment == .strength && !workingSettings.hasLook))
+    }
+
+    func hdrRenditionPanel(_ tool: EditorToolSelection, keyPath: WritableKeyPath<HDRRenditionSettings, Double>) -> some View {
+        let isEV = tool == .hdrPeakLimit || tool == .hdrSDRExposure
+        let range: ClosedRange<Double> = tool == .hdrPeakLimit ? 0...6 : (isEV ? -4...4 : -100...100)
+        let step = isEV ? 0.1 : 1.0
+        let formatter: (Double) -> String = { value in
+            let number = value == 0 ? 0 : value
+            return String(format: (number != 0 ? "%+" : "%") + (isEV ? ".1f" : ".0f"), locale: L10n.locale, number)
+        }
+        return VStack(alignment: .leading, spacing: 8) {
+            AdjustmentControl(title: tool.title,
+                              value: Binding(
+                                get: { workingSettings.hdr?.renditionSettings[keyPath: keyPath] ?? 0 },
+                                set: { newValue in
+                                    guard workingSettings.isHDREditing, var state = workingSettings.hdr, newValue.isFinite else { return }
+                                    state.renditionSettings[keyPath: keyPath] = newValue
+                                    guard state.isValid else { return }
+                                    workingSettings.hdr = state
+                                }
+                              ),
+                              range: range, step: step, defaultValue: 0,
+                              unit: isEV ? "EV" : "%", formatter: formatter,
+                              reciprocal: false, displayScale: 1,
+                              identifier: "adjustment", onEditingChanged: setSliderEditing)
+                .id(tool.stableID)
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
+        .disabled(!viewModel.hasImage || editingLocked || !workingSettings.isHDREditing)
     }
 
     private var exposureActions: some View {

@@ -1,7 +1,7 @@
 namespace RawLab.Windows;
 
-public enum EditorAdjustmentGroup { Looks, Light, Color, Effects, Detail, Geometry }
-public enum EditorAdjustmentTool { Film, MasterRecipe, Strength, Exposure, Highlights, Shadows, Contrast, ToneCurve, WhiteBalance, Saturation, Hsl, Vignette, Grain, Denoise, Sharpening, Geometry, Lens, BlackPoint, WhitePoint, Vibrance, ColorGrading, Clarity, Dehaze }
+public enum EditorAdjustmentGroup { Looks, Light, Color, Effects, Detail, Geometry, HdrRendition }
+public enum EditorAdjustmentTool { Film, MasterRecipe, Strength, Exposure, Highlights, Shadows, Contrast, ToneCurve, WhiteBalance, Saturation, Hsl, Vignette, Grain, Denoise, Sharpening, Geometry, Lens, BlackPoint, WhitePoint, Vibrance, ColorGrading, Clarity, Dehaze, HdrPeakLimit, HdrSdrExposure, HdrSdrContrast, HdrSdrSaturation }
 public enum EditorResetKind { Group, HslChannel, AllHsl, All, Tool, GradingZone, AllGrading }
 public sealed record EditorResetScope(EditorResetKind Kind, EditorAdjustmentGroup Group = EditorAdjustmentGroup.Looks, int Channel = 0, EditorAdjustmentTool Tool = EditorAdjustmentTool.Film, ColorGradingZone Zone = ColorGradingZone.Shadows);
 public enum EditorResetStatus { Ready, NoChange, Invalid, Blocked }
@@ -17,8 +17,15 @@ public static class EditorAdjustmentRules
         Array.AsReadOnly(new[] { EditorAdjustmentTool.WhiteBalance, EditorAdjustmentTool.Saturation, EditorAdjustmentTool.Vibrance, EditorAdjustmentTool.Hsl, EditorAdjustmentTool.ColorGrading }),
         Array.AsReadOnly(new[] { EditorAdjustmentTool.Clarity, EditorAdjustmentTool.Dehaze, EditorAdjustmentTool.Vignette, EditorAdjustmentTool.Grain }),
         Array.AsReadOnly(new[] { EditorAdjustmentTool.Denoise, EditorAdjustmentTool.Sharpening }),
-        Array.AsReadOnly(new[] { EditorAdjustmentTool.Geometry, EditorAdjustmentTool.Lens })
+        Array.AsReadOnly(new[] { EditorAdjustmentTool.Geometry, EditorAdjustmentTool.Lens }),
+        Array.AsReadOnly(new[] { EditorAdjustmentTool.HdrPeakLimit, EditorAdjustmentTool.HdrSdrExposure, EditorAdjustmentTool.HdrSdrContrast, EditorAdjustmentTool.HdrSdrSaturation })
     ];
+    public static bool IsGroupVisible(EditorAdjustmentGroup group, bool isHDREditing) =>
+        group != EditorAdjustmentGroup.HdrRendition || isHDREditing;
+    public static IReadOnlyList<EditorAdjustmentGroup> VisibleGroups(bool isHDREditing) =>
+        Enum.GetValues<EditorAdjustmentGroup>().Where(group => IsGroupVisible(group, isHDREditing)).ToArray();
+    public static EditorAdjustmentTool NormalizeTool(EditorAdjustmentTool tool, bool isHDREditing) =>
+        !isHDREditing && GroupFor(tool) == EditorAdjustmentGroup.HdrRendition ? EditorAdjustmentTool.Exposure : tool;
     public static IReadOnlyList<EditorAdjustmentTool> Tools(EditorAdjustmentGroup group) =>
         Enum.IsDefined(group) ? GroupTools[(int)group] : throw new ArgumentOutOfRangeException(nameof(group));
     public static EditorAdjustmentGroup GroupFor(EditorAdjustmentTool tool)
@@ -31,6 +38,7 @@ public static class EditorAdjustmentRules
         EditorAdjustmentGroup.Looks => "looks", EditorAdjustmentGroup.Light => "light",
         EditorAdjustmentGroup.Color => "color", EditorAdjustmentGroup.Effects => "effects",
         EditorAdjustmentGroup.Detail => "detail", EditorAdjustmentGroup.Geometry => "geometry",
+        EditorAdjustmentGroup.HdrRendition => "hdrRendition",
         _ => throw new ArgumentOutOfRangeException(nameof(group))
     };
     public static EditorAdjustmentTool DefaultTool(EditorAdjustmentGroup group) => Tools(group)[0];
@@ -38,6 +46,7 @@ public static class EditorAdjustmentRules
         EditorAdjustmentGroup.Looks => "外观", EditorAdjustmentGroup.Light => "光线",
         EditorAdjustmentGroup.Color => "颜色", EditorAdjustmentGroup.Effects => "效果",
         EditorAdjustmentGroup.Detail => "细节", EditorAdjustmentGroup.Geometry => "几何与镜头",
+        EditorAdjustmentGroup.HdrRendition => "HDR 输出与 SDR 底图",
         _ => throw new ArgumentOutOfRangeException(nameof(group))
     };
     public static string Title(EditorAdjustmentTool tool) => tool switch {
@@ -49,7 +58,23 @@ public static class EditorAdjustmentRules
         EditorAdjustmentTool.Vignette => "暗角", EditorAdjustmentTool.Grain => "颗粒",
         EditorAdjustmentTool.Denoise => "降噪", EditorAdjustmentTool.Geometry => "几何",
         EditorAdjustmentTool.BlackPoint => "黑场", EditorAdjustmentTool.WhitePoint => "白场", EditorAdjustmentTool.Vibrance => "鲜艳度",
+        EditorAdjustmentTool.HdrPeakLimit => "HDR 亮度上限", EditorAdjustmentTool.HdrSdrExposure => "SDR 底图曝光",
+        EditorAdjustmentTool.HdrSdrContrast => "SDR 底图对比度", EditorAdjustmentTool.HdrSdrSaturation => "SDR 底图饱和度",
         EditorAdjustmentTool.Lens => "镜头", _ => ParameterSpec.All[(int)ParameterFor(tool)].Title
+    };
+    public static HDRRenditionParameter? HdrRenditionParameterFor(EditorAdjustmentTool tool) => tool switch {
+        EditorAdjustmentTool.HdrPeakLimit => HDRRenditionParameter.PeakLimitEV,
+        EditorAdjustmentTool.HdrSdrExposure => HDRRenditionParameter.SdrExposureEV,
+        EditorAdjustmentTool.HdrSdrContrast => HDRRenditionParameter.SdrContrast,
+        EditorAdjustmentTool.HdrSdrSaturation => HDRRenditionParameter.SdrSaturation,
+        _ => null
+    };
+    public static EditorAdjustmentTool ToolFor(HDRRenditionParameter parameter) => parameter switch {
+        HDRRenditionParameter.PeakLimitEV => EditorAdjustmentTool.HdrPeakLimit,
+        HDRRenditionParameter.SdrExposureEV => EditorAdjustmentTool.HdrSdrExposure,
+        HDRRenditionParameter.SdrContrast => EditorAdjustmentTool.HdrSdrContrast,
+        HDRRenditionParameter.SdrSaturation => EditorAdjustmentTool.HdrSdrSaturation,
+        _ => throw new ArgumentOutOfRangeException(nameof(parameter))
     };
     public static AtmosphereParameter? AtmosphereParameterFor(EditorAdjustmentTool tool) => tool switch {
         EditorAdjustmentTool.Clarity => AtmosphereParameter.Clarity, EditorAdjustmentTool.Dehaze => AtmosphereParameter.Dehaze, _ => null
@@ -82,6 +107,10 @@ public static class EditorAdjustmentRules
         if (edit.Settings.HDR is { Mode: HDRMode.Hdr }) return ResetHDR(scope, edit.Settings) != edit.Settings;
         return !SameScope(scope, edit, Defaults(edit));
     }
+    private static bool RequiresConfirmationFor(EditorResetScope scope, int materializedCount = 0) =>
+        scope.Kind is EditorResetKind.All or EditorResetKind.AllHsl or EditorResetKind.AllGrading or EditorResetKind.Group ||
+        scope.Kind == EditorResetKind.Tool && scope.Tool is (EditorAdjustmentTool.Hsl or EditorAdjustmentTool.ColorGrading) ||
+        materializedCount > 0;
     public static EditorResetCandidate PrepareReset(EditorResetScope scope, SavedEdit edit)
     {
         try { Validate(scope, edit); }
@@ -93,7 +122,7 @@ public static class EditorAdjustmentRules
             var reset = ResetHDR(scope, edit.Settings);
             if (reset == edit.Settings) return new(EditorResetStatus.NoChange);
             return new(EditorResetStatus.Ready, new SavedEdit(edit.Identity, reset.Copy(), edit.Look),
-                RequiresConfirmation: false);
+                RequiresConfirmationFor(scope));
         }
         if (edit.Settings.MasterRecipeID is {} recipe && MasterRecipe.Find(recipe) == null)
             return new(EditorResetStatus.Blocked, Reason: "Unknown master recipe.");
@@ -153,8 +182,7 @@ public static class EditorAdjustmentRules
             if ((source.ColorGrading ?? new()) != (candidate.ColorGrading ?? new())) materialized.Add("颜色分级");
         }
         return new(EditorResetStatus.Ready, result,
-            scope.Kind is EditorResetKind.All or EditorResetKind.AllHsl or EditorResetKind.AllGrading or EditorResetKind.Group ||
-            scope.Kind == EditorResetKind.Tool && scope.Tool is (EditorAdjustmentTool.Hsl or EditorAdjustmentTool.ColorGrading) || materialized.Count > 0,
+            RequiresConfirmationFor(scope, materialized.Count),
             detached ? "Recipe values and white balance are materialized as independent adjustments." : null, materialized);
     }
     private static readonly Parameter[] LightParameters = [Parameter.Exposure, Parameter.Contrast, Parameter.Highlights, Parameter.Shadows, Parameter.ToneCurve];
@@ -194,6 +222,7 @@ public static class EditorAdjustmentRules
     }
     private static AdjustmentSnapshot ResetTool(EditorAdjustmentTool tool, AdjustmentSnapshot value, AdjustmentSnapshot defaults)
     {
+        if (HdrRenditionParameterFor(tool) != null) return value;
         if (AtmosphereParameterFor(tool) is {} atmosphereParameter)
             return value with { Atmosphere = (value.Atmosphere ?? new()).With(atmosphereParameter, 0) };
         if (ToneParameterFor(tool) is {} toneParameter)
@@ -288,6 +317,7 @@ public static class EditorAdjustmentRules
                     .WithDetail(value.DetailSettings with { Clarity = 0, Dehaze = 0 }),
                 EditorAdjustmentGroup.Detail => value.WithDetail(value.DetailSettings with { Sharpening = 0, Denoise = 0 }),
                 EditorAdjustmentGroup.Geometry => value with { Geometry = new() },
+                EditorAdjustmentGroup.HdrRendition => value.WithRendition(new()),
                 _ => value
             };
         }
@@ -328,6 +358,8 @@ public static class EditorAdjustmentRules
             EditorAdjustmentTool.Denoise => value.WithDetail(value.DetailSettings with { Denoise = 0 }),
             EditorAdjustmentTool.WhiteBalance => value with { Temperature = 6500, Tint = 0 },
             EditorAdjustmentTool.Geometry => value with { Geometry = new() },
+            _ when HdrRenditionParameterFor(scope.Tool) is { } rendition =>
+                value.WithRendition(value.RenditionSettings.With(rendition, 0)),
             _ => value
         };
     }

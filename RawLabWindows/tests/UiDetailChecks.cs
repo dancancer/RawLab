@@ -324,7 +324,7 @@ internal static class UiDetailChecks
         var expanded=typeof(MainWindow).GetField("expandedGroup",PrivateInstance)!;
         var previous=expanded.GetValue(window);var checkedTools=new HashSet<string>();
         try {
-            foreach(var group in Enum.GetValues<EditorAdjustmentGroup>()) {
+            foreach(var group in EditorAdjustmentRules.VisibleGroups(false)) {
                 // 无 RAW 的布局检查只建立组会话；真实导航与草稿守卫由 WorkspaceGroupChecks 覆盖。
                 expanded.SetValue(window,group);Refresh(window);
                 window.AdjustmentPanel.Visibility=Visibility.Visible;window.InspectorColumn.Width=new GridLength(280);window.UpdateLayout();
@@ -343,7 +343,7 @@ internal static class UiDetailChecks
                 var tops=buttons.SelectMany(button=>Descendants(button).OfType<EditorIcon>().Take(1)).Select(icon=>icon.TranslatePoint(new Point(),window.Tools).X).ToList();
                 check(tops.Count>0 && tops.Max()-tops.Min()<.5,$"Inspector tools align their icons in one column ({language}/{group})");
             }
-            check(checkedTools.SetEquals(Enum.GetValues<EditorAdjustmentTool>().Where(tool=>tool!=EditorAdjustmentTool.Strength).Select(tool=>tool.ToString()).Append("Perspective").Append("preset.quick.open")),
+            check(checkedTools.SetEquals(EditorAdjustmentRules.VisibleGroups(false).SelectMany(EditorAdjustmentRules.Tools).Where(tool=>tool!=EditorAdjustmentTool.Strength).Select(tool=>tool.ToString()).Append("Perspective").Append("preset.quick.open")),
                 "Caption alignment covers all adjustment tools and Perspective navigation: "+language);
         } finally {expanded.SetValue(window,previous);Refresh(window);}
     }

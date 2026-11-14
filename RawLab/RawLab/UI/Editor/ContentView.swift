@@ -73,6 +73,7 @@ struct ContentView: View {
         }
     }
     @State var selectedAdjustment: AdjustmentKind? = nil
+    @State var selectedHDRRenditionTool: EditorToolSelection? = nil
     @State var lensSelected = false
     @State var geometrySelected = false
     @State var choosingMasterRecipe = false
@@ -296,7 +297,7 @@ struct ContentView: View {
                     viewModel.statusMessage = nil
                     recover { restored in
                         settings = restored
-                        if restored.isHDREditing { selectedGroup = .light; selectedAdjustment = .exposure }
+                        if restored.isHDREditing { selectedGroup = .light; selectedAdjustment = .exposure; selectedHDRRenditionTool = nil }
                     }
                 }
                 .accessibilityIdentifier("edits.resetUnusable")
@@ -325,6 +326,7 @@ struct ContentView: View {
     private func applyEditorDataObservers<Content: View>(to content: Content) -> some View {
         content
         .onChange(of: settings) { _, newValue in
+            normalizeHDRNavigation(isHDREditing: newValue.isHDREditing)
             settingsRevision = UUID()
             viewModel.committedPreviewSettings = newValue
             if viewModel.consumeRestoredSettings(newValue) { return }
@@ -334,7 +336,8 @@ struct ContentView: View {
         .onChange(of: viewModel.adjustmentRestoredSettings) { _, restored in
             guard let restored else { return }
             settings = restored
-            if restored.isHDREditing && !viewModel.quickPresetsVisible { selectedGroup = .light; selectedAdjustment = .exposure }
+            if restored.isHDREditing && !viewModel.quickPresetsVisible { selectedGroup = .light; selectedAdjustment = .exposure; selectedHDRRenditionTool = nil }
+            else { normalizeHDRNavigation(isHDREditing: restored.isHDREditing) }
             viewModel.adjustmentRestoredSettings = nil
             viewModel.updatePreview(settings: restored, includeHistogram: true, quality: .final)
         }
@@ -446,6 +449,11 @@ struct ContentView: View {
             if active { photoViewing.sourceChanged() }
         }
         .onChange(of: selectedAdjustment) { _, _ in
+            cancelHSLTarget(); hslTargetEnabled = false
+            if isAdjustingSlider { cancelSliderInteraction() }
+            cancelRulerFocus()
+        }
+        .onChange(of: selectedHDRRenditionTool) { _, _ in
             cancelHSLTarget(); hslTargetEnabled = false
             if isAdjustingSlider { cancelSliderInteraction() }
             cancelRulerFocus()
