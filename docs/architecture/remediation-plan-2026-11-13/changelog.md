@@ -240,3 +240,4 @@
 - 流程教训：**宿主并发测试必须自带超时看门狗**——本轮 RED 二进制在旧锁下合法挂 25 分钟（非死锁），无人放行会烧光 worker 预算；夹具应默认 `alarm()`/`std::future::wait_for` 兜底。
 - 移交（批 C 卫生票打包）：①`host_jni/android/bitmap.h` 的 `ALLOCATION_FAILED` 应为 -3（现 -2 与真 NDK 的 JNI_EXCEPTION 撞值，未来 mock 锁定位图会误判 bad_alloc）；②`jni-session-lock.sh`+修 stub 后的 `recipe_probe_stages_test.cpp`（efb7d12d 复数化改名漏更）并入 ci.yml Android 主机检查；③`jni_session_lock_test.cpp` 的 `set_cancellation_callback` mock 补 `SessionCallScope`。
 - 真机签收挂 k173：双 GPU_AUTO 会话并发 eglMakeCurrent、跨线程销毁 EGLContext、批量导出+预览双路解码原生内存峰值、check-native.sh 全量 .so 链接。
+- 台账流程自纠：发现 6 个已合入行的列位错乱（状态误写进来源列、PR 证据挤占状态列，源头是 sed 式替换未锚定列号），已按 P1-08 golden 行版式全部修复——**ledger 编辑规则固化为：状态列=第 7 列，PR 证据并入第 8 列锚点，来源列（第 5 列）不可覆盖**。
