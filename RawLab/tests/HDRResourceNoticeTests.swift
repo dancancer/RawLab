@@ -77,7 +77,7 @@ final class StatusProbe {
         // V-UIIOS P1-05 seam：SDR 照片在出帧前因缺外观或解码错误早退时，重置只挂在成功
         // 交付站点就够不到该路径；源切换边界必须退役旧照片的警告缓存，否则相同警告被 .keep 压制。
         let staleHDR = HDRResourceNotice.delivered(isHDREditing: true, missingMessage: profile)
-        let afterFailedSwitch = staleHDR.afterSourceChange
+        let afterFailedSwitch = staleHDR.afterUndeliveredFrame
         check(afterFailedSwitch.message == nil,
               "A failed SDR source switch drops the stale HDR missing-resource cache")
         let rebound = StatusProbe()
@@ -91,5 +91,23 @@ final class StatusProbe {
         sameSource.deliverFrame(missingResource: profile)
         sameSource.deliverFrame(missingResource: profile)
         check(sameSource.writes == 1, "Frames of the same source still dedup the warning")
+
+        // V-UIIOS P1-05 碳审补充：同图 HDR→SDR 不经 importImage，updatePreview 出帧前
+        // 缺外观早退（Rendering.swift :117-124）或解码/渲染报错同样必须退役警告缓存，
+        // 否则切回 HDR 时相同警告被 change() 的 `.keep` 吞掉（b-task-table.md:17 台账场景）。
+        let aborted = HDRResourceNotice.delivered(isHDREditing: true, missingMessage: profile)
+        let afterAbort = aborted.afterUndeliveredFrame
+        check(afterAbort.message == nil,
+              "An aborted SDR preview attempt drops the HDR missing-resource cache")
+        let backToHDR = StatusProbe()
+        backToHDR.notice = afterAbort
+        backToHDR.status = "所选外观不可用，请重新选择外观。"
+        backToHDR.writes = 0
+        backToHDR.deliverFrame(missingResource: profile)
+        check(backToHDR.status == profile && backToHDR.writes == 1,
+              "Switching the same photo back to HDR re-shows the warning after an early SDR abort")
+        backToHDR.deliverFrame(missingResource: profile)
+        check(backToHDR.status == profile && backToHDR.writes == 1,
+              "The re-shown warning still dedups later frames of the same source")
     }
 }

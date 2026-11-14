@@ -119,6 +119,9 @@ extension RawEditorViewModel {
             previewRendering = false
             previewFailed = true
             isBusy = false
+            // V-UIIOS P1-05：SDR 帧未出即早退，上一帧的缺资源警告必须经统一入口退役，
+            // 否则同图切回 HDR 时相同警告被 change() 的 `.keep` 吞掉（b-task-table.md:17）。
+            hdrResourceNotice = hdrResourceNotice.afterUndeliveredFrame
             statusMessage = L10n.text("所选外观不可用，请重新选择外观。")
             return
         }
@@ -266,6 +269,7 @@ extension RawEditorViewModel {
                                 return
                             }
                             self.previewFailed = true
+                            self.hdrResourceNotice = self.hdrResourceNotice.afterUndeliveredFrame
                             self.reportError(error, operation: .preview, stage: "renderRAW",
                                              attemptID: renderID, context: diagnosticContext)
                         }
@@ -287,6 +291,7 @@ extension RawEditorViewModel {
                     self.resultDelivery {
                         guard self.sourceRevision==sourceRevision,self.isLatestRenderID(renderID) else { return }
                         self.previewFailed = true
+                        self.hdrResourceNotice = self.hdrResourceNotice.afterUndeliveredFrame
                         self.reportError(error, operation: .preview, stage: "decodeRaster",
                                          attemptID: renderID, context: diagnosticContext)
                     }
@@ -321,6 +326,7 @@ extension RawEditorViewModel {
                         return
                     }
                     self.previewFailed = true
+                    self.hdrResourceNotice = self.hdrResourceNotice.afterUndeliveredFrame
                     self.reportError(error, operation: .preview, stage: "renderRaster",
                                      attemptID: renderID, context: diagnosticContext)
                 }
