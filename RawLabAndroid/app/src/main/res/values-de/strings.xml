@@ -477,7 +477,7 @@
     <string name="strength">"Intensität"</string>
     <string name="temperature">"Temperatur"</string>
     <string name="tether_backlog_error">"Es warten zu viele Fotos auf den Empfang. Die Aufnahme wurde pausiert. Verbinden Sie sich erneut, um den Empfang fortzusetzen."</string>
-    <string name="tether_capturing">"Aufnahme läuft"</string>
+    <string name="tether_capturing">"Wird aufgenommen"</string>
     <string name="tether_card_confirm">"Ich habe bestätigt, dass die Kamera Originale auch auf der Speicherkarte speichert."</string>
     <string name="tether_card_hint">"Wählen Sie Einzelaufnahme und speichern Sie Originale auch auf der Speicherkarte. Livebilder und Miniaturbilder bestätigen nicht, dass Originale gespeichert wurden."</string>
     <string name="tether_confirm_continue">"Ergebnis bestätigen und fortfahren"</string>
