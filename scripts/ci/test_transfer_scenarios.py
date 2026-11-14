@@ -107,6 +107,30 @@ class TransferScenarioContracts(unittest.TestCase):
         self.assertEqual(rejected["payload"]["payload_version"], 2)
         self.assertEqual(rejected["expect"], {"status": "rejected", "reason": "incompatible"})
 
+    def test_sdr_recipe_strength_paste_on_hdr_declares_nonidentity_conversion(self):
+        # A17/P1-10：v1 带配方源粘到 HDR 目标必须按来源强度对五共享标量做非恒等换算。
+        by_id = {scenario["id"]: scenario for scenario in self.scenarios}
+        scaled = by_id["sdr-recipe-strength-scalars-paste-on-hdr-target"]
+        payload = scaled["payload"]
+        self.assertEqual(scaled["target"]["kind"], "hdr")
+        self.assertEqual(payload["payload_version"], 1)
+        recipe = payload["source"].get("recipe")
+        self.assertIsNotNone(recipe, "A17 vector must carry source.recipe")
+        self.assertEqual(recipe["strength"], 0.5)
+        self.assertEqual(scaled["expect"]["status"], "applied")
+        values, expect = payload["values"], scaled["expect"]["values"]
+        self.assertEqual(set(values), set(expect))
+        self.assertNotEqual(values, expect, "recipe-strength conversion must be non-identity")
+        for key, value in values.items():
+            identity = 1.0 if key in ("light.contrast", "color.saturation") else 0.0
+            self.assertAlmostEqual(expect[key], identity + (value - identity) * recipe["strength"],
+                                   places=9, msg=key)
+        plain = by_id["sdr-plain-scalars-paste-on-hdr-target-unscaled"]
+        self.assertEqual(plain["target"]["kind"], "hdr")
+        self.assertIsNone(plain["payload"]["source"].get("recipe"))
+        self.assertEqual(plain["expect"]["status"], "applied")
+        self.assertEqual(plain["expect"]["values"], plain["payload"]["values"])
+
     def test_seed_payloads_are_full_payloads(self):
         for scenario in self.scenarios:
             seed = scenario["target"].get("seed_payload")

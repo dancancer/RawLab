@@ -126,17 +126,25 @@ WB 的模式、Kelvin 和 tint 可独立选择。只选固定 Kelvin/tint 时，
 ### HDR 字段在粘贴协议中的强度与降级语义
 
 HDR 来源 payload（`payload_version=2`/`scope_version=2`，`source.hdr_processing_version`）的 `values`
-仍是逻辑协议值（字段目录单位）；各端 HDR 原生模型按 spec 表 `Shared/specs/adjustment-fields-v1.json` 的
-`hdr_default` 与 `hdr_scale_from_protocol` 在协议值与模型值之间换算（如 `light.contrast`/`color.saturation`
+仍是逻辑协议值（字段目录单位）；协议值与 HDR 原生模型的换算登记在 spec 表
+`Shared/specs/adjustment-fields-v1.json`：iOS/Android 显式给出 `hdr_default`/`hdr_scale_from_protocol`，
+Mac/Windows 的 `light.contrast`/`light.highlights`/`light.shadows`/`color.saturation` 因 SDR 模型已是
+百分比偏移而缺省回退到同一公式的 `default`/`scale_from_protocol`（如 `light.contrast`/`color.saturation`
 为 `(p - 1) * 100`、`light.highlights` 为 `-p * 100`、`effects.clarity`/`effects.dehaze` 为 `p / 100`、
-`detail.sharpening` 为 `p`，`hdr_default` 均为 0.0），不在端上另行定义强度；
-`hdr.relative_temperature`/`hdr.relative_tint` 与 `hdr_rendition` 组（`hdr.peak_limit_ev`、
-`hdr.sdr_exposure_ev`、`hdr.sdr_contrast`、`hdr.sdr_saturation`）直接写入并原样回读。粘贴时目标处于
-HDR 模式则应用 HDR 组并以协议值回读；SDR（非 HDR）目标收到 HDR 专属组（相对白平衡、tone、color、
-`hdr_rendition`、`hdr.effects`、`hdr.detail`、`hdr.look`、`hdr.camera_development`）时整体按
-`incompatible` 显式拒绝，共享标量字段不半应用；HDR payload 的共享标量与几何经 v1 转换照常落到
-SDR 目标。四端跨端粘贴验收向量位于 `Shared/fixtures/adjustment-transfer-scenarios-v1.json`
-（`hdr-*` 场景），沿用既有 `payload_version`/`scope_version`，不改动序列化语义。
+`detail.sharpening` 为 `p`，HDR 偏移默认值均为 0.0），端上代码与 `#286` 契约各自以字面量实现/校验
+同一公式，场景运行器不读 spec 表；`hdr.relative_temperature`/`hdr.relative_tint` 与 `hdr_rendition` 组
+（`hdr.peak_limit_ev`、`hdr.sdr_exposure_ev`、`hdr.sdr_contrast`、`hdr.sdr_saturation`）直接写入并原样
+回读。粘贴时目标处于 HDR 模式则应用 HDR 组并以协议值回读；SDR（非 HDR）目标收到 HDR 专属键及跨族
+禁穿组（相对白平衡、tone、color、`hdr_rendition`、`hdr.effects`、`hdr.detail`、`hdr.look`、
+`hdr.camera_development`——协议键名本身是共享字段 ID，但两类处理族的曲线/色彩/效果/细节语义不跨族
+互通）时整体按 `incompatible` 显式拒绝，共享标量字段不半应用；HDR payload 的共享标量与几何经 v1
+转换照常落到 SDR 目标。反向（非 HDR 来源粘向 HDR 目标）还须换算来源配方强度：payload 携带
+`source.recipe` 时，接收端把五共享标量按来源强度换算为实际贡献——`light.contrast`/`color.saturation`
+以 1.0 为中性点取 `1 + (p - 1) * strength`，`light.exposure`/`light.highlights`/`light.shadows` 取
+`p * strength`；无配方则原值应用。四端跨端粘贴验收向量位于
+`Shared/fixtures/adjustment-transfer-scenarios-v1.json`（`hdr-*` 与 `sdr-*-paste-on-hdr-target` 场景，
+其中 `sdr-recipe-strength-scalars-paste-on-hdr-target` 以非恒等换算锁定 A17/P1-10 的 Android
+`prepareHDR` 强度公式），沿用既有 `payload_version`/`scope_version`，不改动序列化语义。
 
 ## Capture 与 prepare
 

@@ -161,6 +161,21 @@ class AdjustmentTransferTest {
         assertEquals(result, prepare(values, result))
     }
 
+    // A17/P1-10：带配方的普通来源粘到 HDR 目标时，来源强度必须恰好应用一次并写入 HDR 原生模型
+    // （percent 偏移），与 Mac `recipeSourceOnHDR`、Windows `RecipeSourceScalesOnHDRTarget` 的锚点对齐。
+    @Test fun recipeSourceStrengthAppliesOnceOnHDR() {
+        val hdrTarget = EditSettings().withHDRMode(true, true)
+        val hdrContext = context.copy(isRaw = false, defaultExposureMode = 2)
+        for (strength in listOf(0.5f, 1.0f)) {
+            val source = EditSettings(recipeID = "r", strength = strength, exposure = 1f, contrast = 0.4f)
+            val values = capture(source, F.EXPOSURE, F.CONTRAST)
+            val applied = prepare(values, hdrTarget, hdrContext).hdr
+            requireNotNull(applied) { "strength $strength: HDR target must retain HDR settings" }
+            assertEquals(strength, applied.exposure, 1e-6f)
+            assertEquals(strength * 40f, applied.contrast, 1e-4f)
+        }
+    }
+
     @Test fun selectingStrengthProtectsUnselectedContributionsAndBlocksZeroScaleLoss() {
         val target = EditSettings(recipeID = "r", strength = .5f, exposure = 1f, saturation = .4f,
             hsl = HslSettings().withValue(0, 2, 20f))

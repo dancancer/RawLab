@@ -240,11 +240,21 @@ object AdjustmentTransfer {
         var result = target.synchronizeHDR()
         var hdr = result.hdr ?: throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.target")
         fun number(field: AdjustmentField): Double? = payload[field]?.number
-        number(AdjustmentField.EXPOSURE)?.let { result = result.copy(exposure = it.toFloat()); hdr = hdr.copy(exposure = it.toFloat()) }
-        number(AdjustmentField.CONTRAST)?.let { result = result.copy(contrast = (it - 1).toFloat()); hdr = hdr.copy(contrast = ((it - 1) * 100).toFloat()) }
-        number(AdjustmentField.HIGHLIGHTS)?.let { result = result.copy(highlights = (-it).toFloat()); hdr = hdr.copy(highlights = (-it * 100).toFloat()) }
-        number(AdjustmentField.SHADOWS)?.let { result = result.copy(shadows = it.toFloat()); hdr = hdr.copy(shadows = (it * 100).toFloat()) }
-        number(AdjustmentField.SATURATION)?.let { result = result.copy(saturation = (it - 1).toFloat()); hdr = hdr.copy(saturation = ((it - 1) * 100).toFloat()) }
+        // A17/P1-10：带配方的普通来源复制的是配方逻辑值；与 Shared/HDRAdjustmentTransfer 和 Windows 一致，
+        // 接收端按来源配方强度把五共享标量换算为实际贡献（contrast/saturation 以 1.0 为中性点）。
+        val recipeStrength = payload.source.recipe?.strength
+        fun scaled(field: AdjustmentField): Double? = number(field)?.let { raw ->
+            if (recipeStrength != null && recipeStrength != 1.0 && field in AdjustmentTransferValues.scaled) {
+                if (field == AdjustmentField.CONTRAST || field == AdjustmentField.SATURATION)
+                    1.0 + (raw - 1.0) * recipeStrength
+                else raw * recipeStrength
+            } else raw
+        }
+        scaled(AdjustmentField.EXPOSURE)?.let { result = result.copy(exposure = it.toFloat()); hdr = hdr.copy(exposure = it.toFloat()) }
+        scaled(AdjustmentField.CONTRAST)?.let { result = result.copy(contrast = (it - 1).toFloat()); hdr = hdr.copy(contrast = ((it - 1) * 100).toFloat()) }
+        scaled(AdjustmentField.HIGHLIGHTS)?.let { result = result.copy(highlights = (-it).toFloat()); hdr = hdr.copy(highlights = (-it * 100).toFloat()) }
+        scaled(AdjustmentField.SHADOWS)?.let { result = result.copy(shadows = it.toFloat()); hdr = hdr.copy(shadows = (it * 100).toFloat()) }
+        scaled(AdjustmentField.SATURATION)?.let { result = result.copy(saturation = (it - 1).toFloat()); hdr = hdr.copy(saturation = ((it - 1) * 100).toFloat()) }
         number(AdjustmentField.HDR_TEMPERATURE)?.let { result = result.copy(temperature = it.toFloat()); hdr = hdr.copy(temperature = it.toFloat()) }
         number(AdjustmentField.HDR_TINT)?.let { result = result.copy(tint = it.toFloat()); hdr = hdr.copy(tint = it.toFloat()) }
         var geometry = result.geometry
