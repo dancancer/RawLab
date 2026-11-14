@@ -378,24 +378,29 @@ public partial class MainWindow
         var panel = new StackPanel { Margin=new Thickness(24) };
         var rows = new List<ParameterRow>();
         var resetRows = new List<Action>();
-        void Add(string id, string title, NumericRange range, double value, string unit, Action<double> update)
+        foreach (var spec in HDRRenditionSpec.All)
         {
-            var localized = Loc.Text(title);
+            var id = spec.Id switch {
+                HDRRenditionParameter.PeakLimitEV => "peakLimit",
+                HDRRenditionParameter.SdrExposureEV => "sdrExposure",
+                HDRRenditionParameter.SdrContrast => "sdrContrast",
+                HDRRenditionParameter.SdrSaturation => "sdrSaturation",
+                _ => throw new ArgumentOutOfRangeException(nameof(spec.Id))
+            };
+            var localized = Loc.Text(spec.Title);
+            var range = new NumericRange(spec.Min, spec.Max, spec.Grid);
             var row = new ParameterRow { SourceIdentity=opened, Margin=new Thickness(0,3,0,3), KeepInvalidInput=true };
-            void RefreshRow(double current) => row.Refresh(localized,range,current,0,unit);
-            RefreshRow(value);
+            void RefreshRow(double current) => row.Refresh(localized,range,current,0,spec.Unit);
+            RefreshRow(draft[spec.Id]);
             AutomationProperties.SetAutomationId(row.Slider,"hdr.rendition."+id);
             AutomationProperties.SetAutomationId(row.Number,"hdr.rendition."+id+".value");
-            row.Changed += (next,_) => update(next);
+            row.Changed += (next,_) => draft = draft.With(spec.Id, next);
             rows.Add(row);
             resetRows.Add(() => { row.CancelInput(); RefreshRow(0); });
             panel.Children.Add(row);
+            if (spec.Id == HDRRenditionParameter.PeakLimitEV)
+                panel.Children.Add(new TextBlock { Text="0 EV · " + Loc.Text("不限"), Margin=new Thickness(0,0,0,6) });
         }
-        Add("peakLimit","HDR 亮度上限",new(0,6),draft.PeakLimitEV,"EV",value => draft=draft with { PeakLimitEV=value });
-        panel.Children.Add(new TextBlock { Text="0 EV · " + Loc.Text("不限"), Margin=new Thickness(0,0,0,6) });
-        Add("sdrExposure","SDR 底图曝光",new(-4,4),draft.SdrExposureEV,"EV",value => draft=draft with { SdrExposureEV=value });
-        Add("sdrContrast","SDR 底图对比度",new(-100,100,1),draft.SdrContrast,"%",value => draft=draft with { SdrContrast=value });
-        Add("sdrSaturation","SDR 底图饱和度",new(-100,100,1),draft.SdrSaturation,"%",value => draft=draft with { SdrSaturation=value });
         var actions = new WrapPanel { HorizontalAlignment=HorizontalAlignment.Right, Margin=new Thickness(0,12,0,0) };
         var reset = new Button { Content=Loc.Text("重置") };
         AutomationProperties.SetAutomationId(reset,"hdr.rendition.reset");

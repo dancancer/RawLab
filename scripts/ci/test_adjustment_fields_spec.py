@@ -3848,33 +3848,33 @@ def _parse_windows_ui() -> dict[str, dict]:
     cs_hdr_cam_tint_step = float(cs_hdr_cam_tint_m.group(3))
     cs_hdr_look_m = _need(r'strength\.Refresh\(Loc\.Text\("外观强度"\),new\((-?\d+),(-?\d+),(\d+)\),[^,]+,(\d+),"([^"]*)"', cs_hdr, "windows hdr look ui", "MainWindow.HDR.cs")
     cs_hdr_rend_fn = _extract_brace_block(cs_hdr, r"private void HDRRenditionClicked\b", "windows hdr rendition dialog", "MainWindow.HDR.cs")
-    cs_hdr_rend_def = float(_need(r"void RefreshRow\(double current\)\s*=>\s*row\.Refresh\(localized,range,current,(-?\d+(?:\.\d+)?),unit\);", cs_hdr_rend_fn, "windows hdr rendition reset default", "MainWindow.HDR.cs").group(1))
-    cs_hdr_peak_m = _need(r'Add\("peakLimit","HDR 亮度上限",new\((-?\d+),(-?\d+)(?:,(\d+(?:\.\d+)?))?\),[^,]*,"([^"]*)"', cs_hdr_rend_fn, "windows hdr peak ui", "MainWindow.HDR.cs")
-    cs_hdr_sdr_exp_m = _need(r'Add\("sdrExposure","SDR 底图曝光",new\((-?\d+),(-?\d+)(?:,(\d+(?:\.\d+)?))?\),[^,]*,"([^"]*)"', cs_hdr_rend_fn, "windows hdr sdr_exp ui", "MainWindow.HDR.cs")
-    cs_hdr_sdr_con_m = _need(r'Add\("sdrContrast","SDR 底图对比度",new\((-?\d+),(-?\d+),(\d+(?:\.\d+)?)\),[^,]*,"([^"]*)"', cs_hdr_rend_fn, "windows hdr sdr_con ui", "MainWindow.HDR.cs")
-    cs_hdr_sdr_sat_m = _need(r'Add\("sdrSaturation","SDR 底图饱和度",new\((-?\d+),(-?\d+),(\d+(?:\.\d+)?)\),[^,]*,"([^"]*)"', cs_hdr_rend_fn, "windows hdr sdr_sat ui", "MainWindow.HDR.cs")
+    cs_hdr_rend_def = float(_need(r"void RefreshRow\(double current\)\s*=>\s*row\.Refresh\(localized,range,current,(-?\d+(?:\.\d+)?),spec\.Unit\);", cs_hdr_rend_fn, "windows hdr rendition reset default", "MainWindow.HDR.cs").group(1))
+    _require("foreach (var spec in HDRRenditionSpec.All)", cs_hdr_rend_fn, "windows hdr rendition loop", "MainWindow.HDR.cs")
+    _require("new NumericRange(spec.Min, spec.Max, spec.Grid)", cs_hdr_rend_fn, "windows hdr rendition range", "MainWindow.HDR.cs")
+    _require("draft = draft.With(spec.Id, next)", cs_hdr_rend_fn, "windows hdr rendition draft write", "MainWindow.HDR.cs")
+    _require('AutomationProperties.SetAutomationId(row.Slider,"hdr.rendition."+id)', cs_hdr_rend_fn, "windows hdr rendition slider automation id", "MainWindow.HDR.cs")
+    _require('AutomationProperties.SetAutomationId(row.Number,"hdr.rendition."+id+".value")', cs_hdr_rend_fn, "windows hdr rendition number automation id", "MainWindow.HDR.cs")
     cs_hdr_spec_blk = _extract_brace_block(cs_hdr_model, r"public sealed record HDRRenditionSpec\b", "HDRRenditionSpec windows ui", "HDRSettings.cs")
     _require("HDRRenditionSpec.For(renditionParameter)", cs_tools, "windows primary hdr rendition dispatch", "MainWindow/Tools.cs")
     _require("new NumericRange(hdrRenditionSpec.Min,hdrRenditionSpec.Max,hdrRenditionSpec.Grid)", cs_tools, "windows primary hdr rendition range", "MainWindow/Tools.cs")
     cs_hdr_tools_def = float(_need(r"OrdinaryParameter\.Refresh\(Loc\.Text\(title\),inputRange,\s*value,hdrRenditionSpec!=null \? (-?\d+(?:\.\d+)?) :", cs_tools, "windows primary hdr_rendition default", "MainWindow/Tools.cs", re.S).group(1))
     if cs_hdr_tools_def != cs_hdr_rend_def:
         raise AssertionError(f"windows primary hdr_rendition default ({cs_hdr_tools_def}) != secondary ({cs_hdr_rend_def})")
-    for fid, enum_member, sec_m in (
-        ("hdr.peak_limit_ev", "PeakLimitEV", cs_hdr_peak_m),
-        ("hdr.sdr_exposure_ev", "SdrExposureEV", cs_hdr_sdr_exp_m),
-        ("hdr.sdr_contrast", "SdrContrast", cs_hdr_sdr_con_m),
-        ("hdr.sdr_saturation", "SdrSaturation", cs_hdr_sdr_sat_m),
+    cs_hdr_rend_rows: dict[str, tuple[float, float, float, str]] = {}
+    for fid, enum_member, auto_key in (
+        ("hdr.peak_limit_ev", "PeakLimitEV", "peakLimit"),
+        ("hdr.sdr_exposure_ev", "SdrExposureEV", "sdrExposure"),
+        ("hdr.sdr_contrast", "SdrContrast", "sdrContrast"),
+        ("hdr.sdr_saturation", "SdrSaturation", "sdrSaturation"),
     ):
+        _need(rf'HDRRenditionParameter\.{enum_member}\s*=>\s*"{auto_key}"', cs_hdr_rend_fn, f"windows hdr rendition {auto_key} id", "MainWindow.HDR.cs")
         spec_m = _need(
             rf'new\(HDRRenditionParameter\.{enum_member},\s*"[^"]+",\s*(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?),\s*(-?\.\d+|\d+(?:\.\d+)?),\s*"([^"]*)"\)',
             cs_hdr_spec_blk,
             f"windows primary HDRRenditionSpec.{enum_member}",
             "HDRSettings.cs",
         )
-        p_vals = (float(spec_m.group(1)), float(spec_m.group(2)), float(spec_m.group(3)), spec_m.group(4))
-        s_vals = (float(sec_m.group(1)), float(sec_m.group(2)), float(sec_m.group(3) or cs_default_grid), sec_m.group(4))
-        if p_vals != s_vals:
-            raise AssertionError(f"{fid} windows primary HDRRenditionSpec {p_vals} != MainWindow.HDR.cs {s_vals}")
+        cs_hdr_rend_rows[fid] = (float(spec_m.group(1)), float(spec_m.group(2)), float(spec_m.group(3)), spec_m.group(4))
     cs_hdr_dn_m = _need(r'HDRAmount\.Refresh\(Loc\.Text\("降噪"\),new\((-?\d+),(-?\d+)\),strength\*100,(-?\d+(?:\.\d+)?),"([^"]*)",true\);', cs_dn_panel, "windows hdr denoise ui", "DenoisePanel.xaml.cs")
 
     dn_m = _need(r"record DenoiseSettings\(bool Enabled=(false|true),double Luma=(\d+),double Chroma=(\d+),double Coarse=(\d+)\)", cs_dn, "windows wavelet ui", "DenoiseSettings.cs")
@@ -3939,10 +3939,9 @@ def _parse_windows_ui() -> dict[str, dict]:
 
     ui["hdr.relative_temperature"] = _ui_entry(modes=("hdr",), unit=cs_param_steps["Temperature"][3], min_val=cs_param_steps["Temperature"][0], max_val=cs_param_steps["Temperature"][1], default=cs_hdr_wb_temp_def, step=cs_param_steps["Temperature"][2])
     ui["hdr.relative_tint"] = _ui_entry(modes=("hdr",), unit=cs_param_steps["Tint"][3], min_val=cs_param_steps["Tint"][0], max_val=cs_param_steps["Tint"][1], default=cs_hdr_wb_tint_def, step=cs_param_steps["Tint"][2])
-    ui["hdr.peak_limit_ev"] = _ui_entry(modes=("hdr",), unit=cs_hdr_peak_m.group(4), min_val=float(cs_hdr_peak_m.group(1)), max_val=float(cs_hdr_peak_m.group(2)), default=cs_hdr_rend_def, step=float(cs_hdr_peak_m.group(3) or cs_default_grid))
-    ui["hdr.sdr_exposure_ev"] = _ui_entry(modes=("hdr",), unit=cs_hdr_sdr_exp_m.group(4), min_val=float(cs_hdr_sdr_exp_m.group(1)), max_val=float(cs_hdr_sdr_exp_m.group(2)), default=cs_hdr_rend_def, step=float(cs_hdr_sdr_exp_m.group(3) or cs_default_grid))
-    ui["hdr.sdr_contrast"] = _ui_entry(modes=("hdr",), unit=cs_hdr_sdr_con_m.group(4), min_val=float(cs_hdr_sdr_con_m.group(1)), max_val=float(cs_hdr_sdr_con_m.group(2)), default=cs_hdr_rend_def, step=float(cs_hdr_sdr_con_m.group(3)))
-    ui["hdr.sdr_saturation"] = _ui_entry(modes=("hdr",), unit=cs_hdr_sdr_sat_m.group(4), min_val=float(cs_hdr_sdr_sat_m.group(1)), max_val=float(cs_hdr_sdr_sat_m.group(2)), default=cs_hdr_rend_def, step=float(cs_hdr_sdr_sat_m.group(3)))
+    for fid in ("hdr.peak_limit_ev", "hdr.sdr_exposure_ev", "hdr.sdr_contrast", "hdr.sdr_saturation"):
+        lo, hi, step, unit = cs_hdr_rend_rows[fid]
+        ui[fid] = _ui_entry(modes=("hdr",), unit=unit, min_val=lo, max_val=hi, default=cs_hdr_rend_def, step=step)
     ui["hdr.look"] = _ui_entry(modes=("hdr",), unit=cs_hdr_look_m.group(5), min_val=float(cs_hdr_look_m.group(1)), max_val=float(cs_hdr_look_m.group(2)), default=float(cs_hdr_look_m.group(4)), step={"strength": float(cs_hdr_look_m.group(3))})
     ui["hdr.camera_development"] = _ui_entry(
         modes=("hdr",),
@@ -4645,6 +4644,12 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
                 "RawLabWindows/MainWindow/Tools.cs",
                 "value,hdrRenditionSpec!=null ? 0 : extensionControl ? 0 : settings.Default(selectedParameter),unit,",
                 "value,hdrRenditionSpec!=null ? 1 : extensionControl ? 0 : settings.Default(selectedParameter),unit,",
+                r"windows primary hdr_rendition default",
+            ),
+            (
+                "RawLabWindows/MainWindow.HDR.cs",
+                "void RefreshRow(double current) => row.Refresh(localized,range,current,0,spec.Unit);",
+                "void RefreshRow(double current) => row.Refresh(localized,range,current,1,spec.Unit);",
                 r"windows primary hdr_rendition default",
             ),
             (

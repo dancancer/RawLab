@@ -107,6 +107,10 @@ public static class EditorAdjustmentRules
         if (edit.Settings.HDR is { Mode: HDRMode.Hdr }) return ResetHDR(scope, edit.Settings) != edit.Settings;
         return !SameScope(scope, edit, Defaults(edit));
     }
+    private static bool RequiresConfirmationFor(EditorResetScope scope, int materializedCount = 0) =>
+        scope.Kind is EditorResetKind.All or EditorResetKind.AllHsl or EditorResetKind.AllGrading or EditorResetKind.Group ||
+        scope.Kind == EditorResetKind.Tool && scope.Tool is (EditorAdjustmentTool.Hsl or EditorAdjustmentTool.ColorGrading) ||
+        materializedCount > 0;
     public static EditorResetCandidate PrepareReset(EditorResetScope scope, SavedEdit edit)
     {
         try { Validate(scope, edit); }
@@ -118,7 +122,7 @@ public static class EditorAdjustmentRules
             var reset = ResetHDR(scope, edit.Settings);
             if (reset == edit.Settings) return new(EditorResetStatus.NoChange);
             return new(EditorResetStatus.Ready, new SavedEdit(edit.Identity, reset.Copy(), edit.Look),
-                RequiresConfirmation: false);
+                RequiresConfirmationFor(scope));
         }
         if (edit.Settings.MasterRecipeID is {} recipe && MasterRecipe.Find(recipe) == null)
             return new(EditorResetStatus.Blocked, Reason: "Unknown master recipe.");
@@ -178,8 +182,7 @@ public static class EditorAdjustmentRules
             if ((source.ColorGrading ?? new()) != (candidate.ColorGrading ?? new())) materialized.Add("颜色分级");
         }
         return new(EditorResetStatus.Ready, result,
-            scope.Kind is EditorResetKind.All or EditorResetKind.AllHsl or EditorResetKind.AllGrading or EditorResetKind.Group ||
-            scope.Kind == EditorResetKind.Tool && scope.Tool is (EditorAdjustmentTool.Hsl or EditorAdjustmentTool.ColorGrading) || materialized.Count > 0,
+            RequiresConfirmationFor(scope, materialized.Count),
             detached ? "Recipe values and white balance are materialized as independent adjustments." : null, materialized);
     }
     private static readonly Parameter[] LightParameters = [Parameter.Exposure, Parameter.Contrast, Parameter.Highlights, Parameter.Shadows, Parameter.ToneCurve];
