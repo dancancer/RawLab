@@ -1822,8 +1822,8 @@
         }
       },
       "expect": {
-        "reason": "incompatible",
-        "status": "rejected"
+        "status": "rejected",
+        "reason": "incompatible"
       }
     }
   ]
