@@ -62,3 +62,15 @@
 - **A 簇修后新挂（11-14，PR #303 交卷时发现）**：①`compact-controls-presentation` 快照期望过时需要整体重基线（a74a6baf 重设计未重基线：`editor-minimum expected 1 numeric fields; found 6`，改期望后又败于可达性断言）**PR #306 已合入 `e4d88137` · ✅ 复核通过**（矩阵级重基线、6 字段 `expectedIdentifiers` 集合防凑数、滚动可达性 headless 全绿，仅余真实鼠标/滚轮/VoiceOver 交互桌面复核）；②`photo-effects-presentation` 与本会话锁屏下的 `mac-geometry-draft` 末位激活检查同属「无显示/锁屏会话」环境红，待有显示器会话复核即关。
 - **既有红新登记（11-14，#300 native run 顺带发现）**：`tools/mcp` `mcp-cli-parity` 契约漂移——`test_missing_output_parent_is_mcp_policy_vs_native_parity` 期望 `processing_error(4)` 实得 `output_io_error(6)`，双套件一致复现，判定=测试期望未更（2aa25048 staged write 迁移+edit-json.md L124-125 明文 status 6），**PR #305 已合入 `96b0de02` · ✅ 复核通过**（本机链真实 `sony2fuji_cli` 跑 `tools/mcp/tests` 57/57 全绿）。
 - **既有 flaky 登记（11-14，Q12 包顺带发现）**：Android `SonyLegacyImportSessionTest`（5 项）本机 loopback 假传输超时、失败数波动 3↔5、纯基线复现——疑本机环境/时序敏感，待核 CI Android job 稳定性；与本包零交集。
+
+## 二次复核跟进票（V 系列，11-14，源 review-evidence.md 第二轮 @ a6773ea5）
+
+| 票 | 内容 | 域 | 路由 |
+|---|---|---|---|
+| V-JIT | jit_dispatch 安全包：①launch_runner 剥 RAWLAB_JIT_TOKEN（Admin:write 不得泄给 Runner.Worker/作业 step）②FIFO 毒队列屏障（不可信 queued 视为屏障而非跳过）③/jobs 拉取移到 trusted 判定后+分页④run.sh 非零退出仍 cleanup⑤allowlist 锁 head_sha；生产切换（mac 常驻 runner 切包装、Windows 同类、approval-policy 网页实态核实——h 表与 changelog 记载矛盾待现场核）①-⑤代码侧，生产切换=用户侧 | scripts/ci + runner | 氢单 |
+| V-SPEC | #286 Layer2/3 假绿：_snap4 返回值丢弃 20+、单端常量冒充四端、_ANCHORS:317 指错；验收=复现两条变异（RawSettings.swift:57 vignetteMidpointRange、AdjustmentKind.swift:109 highlights 步长）必须变红 | scripts/ci | 氢单 |
+| V-RESET | #307 @spec_default 掩盖 wire 分歧（chroma_mode null vs 0 等）、场景仅 9、缺 .hdrRendition；决策=wire 级期望或显式 divergence 登记 | Shared fixtures | 待派 |
+| V-AXUI | #311 漏网 iOS：ios-reset-entry-ui.sh 三处 AX 断言在 REQUIRE_AX=1 下仍静默 exit 0 无 SKIP 行；套 #311 ax-gate 同款三态 | RawLab/tests | 待派 |
+| V-UIIOS | #301 iOS transferResultNotices 生命周期（prepare/invalidate/onDisappear+!isEmpty 判空）、#291 collapsedEditorTool/choosingMasterRecipe 换图不清、P1-05 hdrResourceNotice 早退不重置 | iOS Editor UI | 待派 |
+| V-WIN | #301 Windows pendingTransferNoticeStatus 残留/被 Refine 冲掉；#297 UpdateStore.Load 与磁盘备份判定不对称（回滚场景静默删有效备份，需先红） | RawLabWindows | 氢单 |
+| V-EXP | #309 D-07：单张导出代次失效吞 BatchPublicationUncertain（RenderQueue.kt:56-61）；NativeProcessor cancellationSignal 死参数移除 | Android | 待派 |
