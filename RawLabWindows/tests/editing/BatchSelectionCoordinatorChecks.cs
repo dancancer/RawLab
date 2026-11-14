@@ -42,6 +42,10 @@ static class BatchSelectionCoordinatorChecks
         Run300PhotoIncrementalAndFocusSwitchTest().WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
         RunConcurrencyAndCancellationTest().WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
         RunIdentityChangeAndNullCacheTest().WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+        RunEnqueuedDecodeAfterFailureDoesNotPublishTest().WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+        RunEnqueuedHealthyCancelDoesNotPublishTest().WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+        RunIdentityFlipABAStaleCallbackTest().WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+        RunEnqueuedValidationAfterCancelPendingDoesNotMutateSessionTest().WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
         Console.WriteLine("PASS: P2-20 batch selection incremental rows, cached thumbnails, cancellation and off-UI validation");
     }
 
@@ -377,6 +381,251 @@ static class BatchSelectionCoordinatorChecks
             coordinator.SyncSnapshot(fakeSessionPhotos, session.Selected, session.Failures);
             await coordinator.WaitForPendingAsync(ui.Drain).WaitAsync(TimeSpan.FromSeconds(5));
             Check(decodes == 2, $"Changed file identity invalidates cached null thumbnail and decodes once (decodes={decodes})");
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    // REPRO-A: Decode finishes on background thread and queues UI callback; row becomes Failure before Drain.
+    private static async Task RunEnqueuedDecodeAfterFailureDoesNotPublishTest()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-repro-a-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var path = Path.Combine(root, "a.arw");
+            File.WriteAllText(path, "v1");
+            var session = new BatchSelectionSession();
+            session.Add([path]);
+            var photoId = session.Photos[0].ID;
+
+            var ui = new UiPump();
+            var rows = new List<FakeRow>();
+            var thumbUpdatesAfterFailure = 0;
+            var trackAfterFailure = false;
+            var decodeDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            using var coordinator = new BatchSelectionCoordinator<FakeRow, string>(
+                new BatchSelectionCoordinatorHooks<FakeRow, string>(
+                    CreateRow: (p, s, f) => new FakeRow(p.ID, p.Path, s, f),
+                    InsertRow: (i, r) => rows.Insert(i, r),
+                    RemoveRow: r => rows.Remove(r),
+                    MoveRow: (_, _, _) => { },
+                    UpdateSelection: (r, s) => r.Selected = s,
+                    UpdateFailure: (r, f) => r.Failure = f,
+                    UpdatePath: (r, p) => r.Path = p,
+                    UpdateThumbnail: (r, t) =>
+                    {
+                        if (trackAfterFailure) Interlocked.Increment(ref thumbUpdatesAfterFailure);
+                        r.Thumbnail = t;
+                    },
+                    DecodeThumbnailAsync: (_, _) =>
+                    {
+                        decodeDone.TrySetResult();
+                        return Task.FromResult<string?>("decoded-thumb");
+                    },
+                    ValidatePhoto: _ => null,
+                    PostToUi: ui.Post));
+
+            coordinator.Refresh(session);
+            await decodeDone.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            // Wait until background finally completes WITHOUT draining the queued UI callback.
+            await coordinator.WaitForPendingAsync(() => 0).WaitAsync(TimeSpan.FromSeconds(5));
+
+            coordinator.SyncSnapshot(
+                session.Photos,
+                session.Selected,
+                new Dictionary<string, string> { [photoId] = "Corrupt or missing" });
+            trackAfterFailure = true;
+            ui.Drain();
+
+            Check(rows.Single().Failure == "Corrupt or missing",
+                $"Row retains Failure marker after drain (failure={rows.Single().Failure})");
+            Check(rows.Single().Thumbnail == null && thumbUpdatesAfterFailure == 0,
+                $"Enqueued decode must not publish thumbnail after row marked Failure (thumb={rows.Single().Thumbnail}, updates={thumbUpdatesAfterFailure})");
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    // Healthy row with decode callback queued before CancelPending() (e.g. Closing) must not publish after Drain.
+    private static async Task RunEnqueuedHealthyCancelDoesNotPublishTest()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-repro-healthy-cancel-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var path = Path.Combine(root, "h.arw");
+            File.WriteAllText(path, "h");
+            var session = new BatchSelectionSession();
+            session.Add([path]);
+
+            var ui = new UiPump();
+            var rows = new List<FakeRow>();
+            var thumbUpdates = 0;
+            var decodeDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            using var coordinator = new BatchSelectionCoordinator<FakeRow, string>(
+                new BatchSelectionCoordinatorHooks<FakeRow, string>(
+                    CreateRow: (p, s, f) => new FakeRow(p.ID, p.Path, s, f),
+                    InsertRow: (i, r) => rows.Insert(i, r),
+                    RemoveRow: r => rows.Remove(r),
+                    MoveRow: (_, _, _) => { },
+                    UpdateSelection: (r, s) => r.Selected = s,
+                    UpdateFailure: (r, f) => r.Failure = f,
+                    UpdatePath: (r, p) => r.Path = p,
+                    UpdateThumbnail: (r, t) =>
+                    {
+                        thumbUpdates++;
+                        r.Thumbnail = t;
+                    },
+                    DecodeThumbnailAsync: (_, _) =>
+                    {
+                        decodeDone.TrySetResult();
+                        return Task.FromResult<string?>("stale-after-cancel");
+                    },
+                    ValidatePhoto: _ => null,
+                    PostToUi: ui.Post));
+
+            coordinator.Refresh(session);
+            await decodeDone.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await coordinator.WaitForPendingAsync(() => 0).WaitAsync(TimeSpan.FromSeconds(5));
+
+            coordinator.CancelPending();
+            ui.Drain();
+
+            Check(thumbUpdates == 0 && rows.Single().Thumbnail == null,
+                $"Queued decode callback must not publish after CancelPending() (updates={thumbUpdates}, thumb={rows.Single().Thumbnail})");
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    // Identity flip A -> B -> A while first A decode callback is queued must not clobber second A's live CTS or publish A1.
+    private static async Task RunIdentityFlipABAStaleCallbackTest()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-aba-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var path = Path.Combine(root, "flip.arw");
+            File.WriteAllText(path, "v1");
+            var session = new BatchSelectionSession();
+            session.Add([path]);
+            var photoA = session.Photos[0];
+            var identityA = photoA.Identity;
+            var identityB = identityA with { Length = identityA.Length + 5 };
+            var photoB = photoA with { Identity = identityB };
+
+            var ui = new UiPump();
+            var rows = new List<FakeRow>();
+            var attempt = 0;
+            var secondDecodeGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var secondDecodeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var secondDecodeToken = CancellationToken.None;
+
+            using var coordinator = new BatchSelectionCoordinator<FakeRow, string>(
+                new BatchSelectionCoordinatorHooks<FakeRow, string>(
+                    CreateRow: (p, s, f) => new FakeRow(p.ID, p.Path, s, f),
+                    InsertRow: (i, r) => rows.Insert(i, r),
+                    RemoveRow: r => rows.Remove(r),
+                    MoveRow: (_, _, _) => { },
+                    UpdateSelection: (r, s) => r.Selected = s,
+                    UpdateFailure: (r, f) => r.Failure = f,
+                    UpdatePath: (r, p) => r.Path = p,
+                    UpdateThumbnail: (r, t) => r.Thumbnail = t,
+                    DecodeThumbnailAsync: async (_, ct) =>
+                    {
+                        var current = Interlocked.Increment(ref attempt);
+                        if (current == 1) return "thumb-A1";
+                        if (current == 2)
+                        {
+                            // Wait for B cancellation if reached.
+                            var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+                            using var reg = ct.Register(() => tcs.TrySetCanceled(ct));
+                            return await tcs.Task.ConfigureAwait(false);
+                        }
+                        secondDecodeToken = ct;
+                        secondDecodeStarted.TrySetResult();
+                        return await secondDecodeGate.Task.ConfigureAwait(false);
+                    },
+                    ValidatePhoto: _ => null,
+                    PostToUi: ui.Post));
+
+            // Start A (#1) and let it finish background decode without draining UI.
+            coordinator.SyncSnapshot([photoA], session.Selected, session.Failures);
+            await coordinator.WaitForPendingAsync(() => 0).WaitAsync(TimeSpan.FromSeconds(5));
+
+            // Flip A -> B -> A before draining queued A (#1) callback.
+            coordinator.SyncSnapshot([photoB], session.Selected, session.Failures);
+            coordinator.SyncSnapshot([photoA], session.Selected, session.Failures);
+            await secondDecodeStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            // Drain stale A1 callback while A (#3) is still in-flight: must NOT publish thumb-A1 or clear live CTS!
+            ui.Drain();
+            Check(rows.Single().Thumbnail == null,
+                $"Stale A1 callback must not publish after A->B->A flip (thumb={rows.Single().Thumbnail})");
+
+            // Prove A (#3)'s CTS was NOT cleared by stale A1 callback by marking Failure and cancelling A (#3).
+            coordinator.SyncSnapshot([photoA], session.Selected, new Dictionary<string, string> { [photoA.ID] = "Late error" });
+            Check(secondDecodeToken.IsCancellationRequested,
+                "Second A decode token remains linked and cancellable after stale A1 callback drained");
+            secondDecodeGate.TrySetResult("thumb-A2");
+            await coordinator.WaitForPendingAsync(ui.Drain).WaitAsync(TimeSpan.FromSeconds(5));
+            Check(rows.Single().Thumbnail == null, "Canceled second A decode never publishes after failure");
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    // REPRO-B: Validation completes and enqueues UI callback; CancelPending() called before Drain must block session write-through.
+    private static async Task RunEnqueuedValidationAfterCancelPendingDoesNotMutateSessionTest()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-repro-b-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var path = Path.Combine(root, "b.arw");
+            File.WriteAllText(path, "v1");
+            var session = new BatchSelectionSession();
+            session.Add([path]);
+
+            var ui = new UiPump();
+            var rows = new List<FakeRow>();
+            var failuresChanged = 0;
+
+            using var coordinator = new BatchSelectionCoordinator<FakeRow, string>(
+                new BatchSelectionCoordinatorHooks<FakeRow, string>(
+                    CreateRow: (p, s, f) => new FakeRow(p.ID, p.Path, s, f),
+                    InsertRow: (i, r) => rows.Insert(i, r),
+                    RemoveRow: r => rows.Remove(r),
+                    MoveRow: (_, _, _) => { },
+                    UpdateSelection: (r, s) => r.Selected = s,
+                    UpdateFailure: (r, f) => r.Failure = f,
+                    UpdatePath: (r, p) => r.Path = p,
+                    UpdateThumbnail: (r, t) => r.Thumbnail = t,
+                    DecodeThumbnailAsync: (_, _) => Task.FromResult<string?>("thumb"),
+                    ValidatePhoto: _ => "Missing on disk",
+                    PostToUi: ui.Post,
+                    OnFailuresChanged: () => failuresChanged++));
+
+            coordinator.Refresh(session);
+            // Wait for background validation & decode to enqueue UI callbacks and exit finally WITHOUT draining UI.
+            await coordinator.WaitForPendingAsync(() => 0).WaitAsync(TimeSpan.FromSeconds(5));
+
+            coordinator.CancelPending();
+            ui.Drain();
+
+            Check(session.Failures.Count == 0 && failuresChanged == 0 && rows.Single().Failure == null,
+                $"CancelPending before Drain must prevent queued validation mutating session (failures={session.Failures.Count}, changed={failuresChanged})");
         }
         finally
         {

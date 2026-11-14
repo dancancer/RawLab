@@ -99,6 +99,44 @@ static class BatchSelectionChecks
             var unavailable=new BatchSelectionExport(store,journal,edit=>edit.Look,_=>throw new InvalidOperationException("GPU unavailable"),transfer.EditGeneration);
             Check(!unavailable.Prepare(selection,[targetKey],ExportFormat.Png,512,output,_=>null).Ready,"Collection preflight reports unavailable AI capability");
             File.Delete(target);selection.RefreshFailures();Check(selection.Failures.ContainsKey(targetKey),"Missing input remains marked per photo");
+
+            // P2-20 Low-Med: Re-adding an existing photo reconciles only its own failure status in place
+            // without running a full O(N) RefreshFailures() sweep across unrelated collection items.
+            var extraA=Path.Combine(root,"extra-a.raw");var extraB=Path.Combine(root,"extra-b.raw");
+            var extraBackup=Path.Combine(root,"extra-a.bak");
+            var initiallyMissing=Path.Combine(root,"missing-first.raw");
+            File.WriteAllText(extraA,"extra-a");File.WriteAllText(extraB,"extra-b");
+            var scoped=new BatchSelectionSession();
+            scoped.Add([extraA,extraB,initiallyMissing]);
+            var keyA=scoped.Photos[0].ID;var keyB=scoped.Photos[1].ID;var keyMissing=scoped.Photos[2].ID;
+            Check(scoped.Failures.ContainsKey(keyMissing),"Missing incoming photo records failure");
+
+            // 1) Delete B quietly, delete A via move-aside, then Add([extraA]):
+            //    A is marked failed in place with no duplicate row; B stays untouched (no full RefreshFailures).
+            File.Delete(extraB);
+            File.Move(extraA,extraBackup);
+            scoped.Add([extraA]);
+            Check(scoped.Photos.Count==3 && scoped.Failures.ContainsKey(keyA) && !scoped.Failures.ContainsKey(keyB),
+                "Add reconciles missing existing photo in place without full collection scan or duplicate rows");
+
+            // 2) Move exact same file back to extraA, then Add([extraA]): clears failure for keyA in place.
+            File.Move(extraBackup,extraA);
+            scoped.Add([extraA]);
+            Check(scoped.Photos.Count==3 && !scoped.Failures.ContainsKey(keyA),
+                "Add clears recovered failure for existing photo in place");
+
+            // 3) Overwrite extraA in place with changed size, then Add([extraA]): marks PhotoChangedException failure.
+            File.WriteAllText(extraA,"extra-a-modified-longer-payload");
+            scoped.Add([extraA]);
+            Check(scoped.Photos.Count==3 && scoped.Failures.ContainsKey(keyA),
+                "Add marks content-replaced existing photo as failed in place");
+
+            // 4) Recreate initially-missing photo and re-add: upgrades sentinel row in place and clears failure.
+            File.WriteAllText(initiallyMissing,"now-present");
+            scoped.Add([initiallyMissing]);
+            var upgraded=scoped.Photos.Single(p=>StringComparer.OrdinalIgnoreCase.Equals(p.Path,Path.GetFullPath(initiallyMissing)));
+            Check(scoped.Photos.Count==3 && !scoped.Failures.ContainsKey(keyMissing) && !scoped.Failures.ContainsKey(upgraded.ID),
+                "Add upgrades previously-missing sentinel entry in place and clears failure");
         }finally{Directory.Delete(root,true);}
         Console.WriteLine("PASS: collection identity, navigation, in-memory generation guards and frozen export");
     }

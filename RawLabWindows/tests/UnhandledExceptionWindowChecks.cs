@@ -190,6 +190,49 @@ internal static class UnhandledExceptionWindowChecks
                       window.RetryButton.Visibility == Visibility.Visible && !window.ExportPng.IsEnabled &&
                       window.Status.Text.Contains("Initial open main preview overflow", StringComparison.Ordinal),
                     "Initial open OverflowException keeps embedded fallback on ResultCanvas without crashing or allowing export");
+
+                // 3d. File disappears / CurrentViewSource becomes null while main preview is in-flight:
+                //     - With Win32Exception failure: still calls ApplyMainPreviewFailure instead of hanging on "正在显影…".
+                //     - With failure == null (stale finished render after file deleted): transitions out of "正在显影…" to "预览未更新".
+                var vanishPhoto = Path.Combine(root, "vanish-during-render.ARW");
+                File.WriteAllBytes(vanishPhoto, [9, 8, 7, 6]);
+                window.ReadEmbeddedPreviewHook = _ => new EmbeddedPreview(null, 0, 0);
+                window.RenderPreviewHook = (_, _, _, _, _, _, _) => okFrame;
+                window.OpenFile(vanishPhoto);
+                PumpUntil(app.Dispatcher, () => window.ExportPng.IsEnabled, "Timed out waiting for initial vanishPhoto render");
+
+                window.RenderPreviewHook = (_, _, _, _, _, _, _) =>
+                {
+                    File.Delete(vanishPhoto);
+                    throw new System.ComponentModel.Win32Exception(5, "Access denied during render");
+                };
+                typeof(MainWindow).GetMethod("Schedule", PrivateInstance)!.Invoke(window, [false, false]);
+                PumpUntil(app.Dispatcher, () =>
+                    (bool)typeof(MainWindow).GetField("renderFailed", PrivateInstance)!.GetValue(window)! &&
+                    !(bool)scheduler.GetType().GetProperty("Busy")!.GetValue(scheduler)!,
+                    "Timed out waiting for Win32Exception with vanished CurrentViewSource to degrade");
+                check(window.RetryButton.Visibility == Visibility.Visible && !window.ExportPng.IsEnabled &&
+                      window.Status.Text.Contains("Access denied during render", StringComparison.Ordinal),
+                    "Render failure with null CurrentViewSource still surfaces error and RetryButton");
+
+                File.WriteAllBytes(vanishPhoto, [9, 8, 7, 6]);
+                window.RenderPreviewHook = (_, _, _, _, _, _, _) => okFrame;
+                window.RetryButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                PumpUntil(app.Dispatcher, () => window.ExportPng.IsEnabled, "Timed out waiting for vanishPhoto recovery");
+
+                window.RenderPreviewHook = (_, _, _, _, _, _, _) =>
+                {
+                    File.Delete(vanishPhoto);
+                    return okFrame;
+                };
+                typeof(MainWindow).GetMethod("Schedule", PrivateInstance)!.Invoke(window, [false, false]);
+                PumpUntil(app.Dispatcher, () =>
+                    (bool)typeof(MainWindow).GetField("renderFailed", PrivateInstance)!.GetValue(window)! &&
+                    !(bool)scheduler.GetType().GetProperty("Busy")!.GetValue(scheduler)!,
+                    "Timed out waiting for null CurrentViewSource after clean render to degrade");
+                check(window.RetryButton.Visibility == Visibility.Visible && !window.ExportPng.IsEnabled &&
+                      window.Status.Text.Contains(Loc.Text("预览未更新"), StringComparison.Ordinal),
+                    "Clean render finishing after file deleted transitions out of Developing to unupdated failure state");
             }
             finally
             {

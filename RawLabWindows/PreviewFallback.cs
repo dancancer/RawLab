@@ -3,6 +3,14 @@ using System.IO;
 
 namespace RawLab.Windows;
 
+internal enum MainPreviewDisposition
+{
+    Ignore,
+    DegradeWithError,
+    DegradeSourceUnavailable,
+    PublishFrame
+}
+
 internal readonly record struct PreviewRenderOutcome(
     bool RenderFailed,
     bool ExactReady,
@@ -48,5 +56,43 @@ internal static class PreviewFallback
             StatusError: string.IsNullOrWhiteSpace(error.Message)
                 ? error.GetType().Name
                 : error.Message);
+    }
+
+    internal static PreviewRenderOutcome DegradeUnavailableSource(bool hasPreviousResult, bool hasOpeningPreview) =>
+        new(
+            RenderFailed: true,
+            ExactReady: false,
+            TransformPreviewReady: false,
+            KeepExistingFrame: hasPreviousResult || hasOpeningPreview,
+            StatusError: null);
+
+    internal static MainPreviewDisposition ResolveMainPreviewDisposition(
+        bool current,
+        bool sameOpenFile,
+        bool sameRenderInputs,
+        bool sameSource,
+        bool previewDeferred,
+        bool aiRunning,
+        bool alreadyFailed,
+        bool hasFailure)
+    {
+        if (hasFailure)
+        {
+            return current && sameOpenFile && !previewDeferred && !aiRunning && !alreadyFailed
+                ? MainPreviewDisposition.DegradeWithError
+                : MainPreviewDisposition.Ignore;
+        }
+
+        if (sameOpenFile && sameSource && sameRenderInputs)
+        {
+            return MainPreviewDisposition.PublishFrame;
+        }
+
+        if (current && sameOpenFile && !sameSource && !previewDeferred && !aiRunning && !alreadyFailed)
+        {
+            return MainPreviewDisposition.DegradeSourceUnavailable;
+        }
+
+        return MainPreviewDisposition.Ignore;
     }
 }

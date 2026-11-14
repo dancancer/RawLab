@@ -181,6 +181,7 @@ internal sealed class BatchSelectionCoordinator<TRow, TThumbnail> : IDisposable 
     {
         var token = cts.Token;
         var acquired = false;
+        var postedToUi = false;
         try
         {
             await decodeGate.WaitAsync(token).ConfigureAwait(false);
@@ -188,46 +189,72 @@ internal sealed class BatchSelectionCoordinator<TRow, TThumbnail> : IDisposable 
             token.ThrowIfCancellationRequested();
             var thumbnail = await hooks.DecodeThumbnailAsync(path, token).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
-            PostIfNotDisposed(() =>
+            postedToUi = PostIfNotDisposed(() =>
             {
-                if (disposed || token.IsCancellationRequested ||
-                    !rowsById.TryGetValue(photoId, out var current) ||
-                    !ReferenceEquals(current, state) ||
-                    current.ThumbnailIdentity != identity)
-                    return;
-                current.ThumbnailCts = null;
-                current.ThumbnailLoaded = true;
-                current.Thumbnail = thumbnail;
-                thumbnailCache[photoId] = (identity, thumbnail);
-                hooks.UpdateThumbnail(current.Row, thumbnail);
+                try
+                {
+                    if (disposed || token.IsCancellationRequested ||
+                        !rowsById.TryGetValue(photoId, out var current) ||
+                        !ReferenceEquals(current, state) ||
+                        !ReferenceEquals(current.ThumbnailCts, cts) ||
+                        current.Failure != null ||
+                        current.ThumbnailIdentity != identity)
+                        return;
+                    current.ThumbnailCts = null;
+                    current.ThumbnailLoaded = true;
+                    current.Thumbnail = thumbnail;
+                    thumbnailCache[photoId] = (identity, thumbnail);
+                    hooks.UpdateThumbnail(current.Row, thumbnail);
+                }
+                finally
+                {
+                    cts.Dispose();
+                }
             });
         }
         catch (OperationCanceledException)
         {
-            PostIfNotDisposed(() =>
+            postedToUi = PostIfNotDisposed(() =>
             {
-                if (ReferenceEquals(state.ThumbnailCts, cts)) state.ThumbnailCts = null;
+                try
+                {
+                    if (ReferenceEquals(state.ThumbnailCts, cts)) state.ThumbnailCts = null;
+                }
+                finally
+                {
+                    cts.Dispose();
+                }
             });
         }
         catch (Exception ex) when (PreviewFallback.ShouldDegrade(ex))
         {
             Trace.WriteLine($"Batch thumbnail fallback for {path}: {ex.Message}");
-            PostIfNotDisposed(() =>
+            postedToUi = PostIfNotDisposed(() =>
             {
-                if (disposed || !ReferenceEquals(state.ThumbnailCts, cts) ||
-                    !rowsById.TryGetValue(photoId, out var current) ||
-                    current.ThumbnailIdentity != identity)
-                    return;
-                current.ThumbnailCts = null;
-                current.ThumbnailLoaded = true;
-                current.Thumbnail = default;
-                thumbnailCache[photoId] = (identity, default);
+                try
+                {
+                    if (disposed || token.IsCancellationRequested ||
+                        !rowsById.TryGetValue(photoId, out var current) ||
+                        !ReferenceEquals(current, state) ||
+                        !ReferenceEquals(current.ThumbnailCts, cts) ||
+                        current.Failure != null ||
+                        current.ThumbnailIdentity != identity)
+                        return;
+                    current.ThumbnailCts = null;
+                    current.ThumbnailLoaded = true;
+                    current.Thumbnail = default;
+                    thumbnailCache[photoId] = (identity, default);
+                }
+                finally
+                {
+                    cts.Dispose();
+                }
             });
         }
         finally
         {
             if (acquired) decodeGate.Release();
-            cts.Dispose();
+            if (!postedToUi) cts.Dispose();
             lock (gate) activeBackgroundTasks.Remove(taskId);
         }
     }
@@ -254,6 +281,7 @@ internal sealed class BatchSelectionCoordinator<TRow, TThumbnail> : IDisposable 
         {
             var task = Task.Run(() =>
             {
+                var postedToUi = false;
                 try
                 {
                     var updates = new List<(string ID, OriginalIdentity Identity, string? Error)>(snapshot.Length);
@@ -263,7 +291,7 @@ internal sealed class BatchSelectionCoordinator<TRow, TThumbnail> : IDisposable 
                         updates.Add((photo.ID, photo.Identity, hooks.ValidatePhoto(photo)));
                     }
                     if (token.IsCancellationRequested || disposed) return;
-                    PostIfNotDisposed(() =>
+                    postedToUi = PostIfNotDisposed(() =>
                     {
                         try
                         {
@@ -276,6 +304,7 @@ internal sealed class BatchSelectionCoordinator<TRow, TThumbnail> : IDisposable 
                         }
                         finally
                         {
+                            cts.Dispose();
                             hooks.OnBackgroundValidationCompleted?.Invoke();
                         }
                     });
@@ -287,7 +316,7 @@ internal sealed class BatchSelectionCoordinator<TRow, TThumbnail> : IDisposable 
                 }
                 finally
                 {
-                    cts.Dispose();
+                    if (!postedToUi) cts.Dispose();
                     lock (gate) activeBackgroundTasks.Remove(taskId);
                 }
             }, CancellationToken.None);
@@ -295,15 +324,16 @@ internal sealed class BatchSelectionCoordinator<TRow, TThumbnail> : IDisposable 
         }
     }
 
-    private void PostIfNotDisposed(Action action)
+    private bool PostIfNotDisposed(Action action)
     {
-        if (disposed) return;
-        try { hooks.PostToUi(action); }
-        catch (OperationCanceledException) { }
+        if (disposed) return false;
+        try { hooks.PostToUi(action); return true; }
+        catch (OperationCanceledException) { return false; }
     }
 
     private void CancelValidation()
     {
+        ++validationGeneration;
         var cts = validationCts;
         validationCts = null;
         if (cts == null) return;

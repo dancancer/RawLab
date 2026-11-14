@@ -101,6 +101,52 @@ static class PreviewFallbackChecks
               PreviewFallback.ShouldShowOpeningPlaceholderOnNeutral(renderFailed: false),
             "Failed render does not expose opening placeholder on comparison neutral canvas");
 
+        // P2-18 (Med #2): Current render ticket failure must still degrade cleanly when
+        // CurrentViewSource becomes null (deleted / Win32Exception) or replaced (!SameFile) mid-render.
+        Check(PreviewFallback.ResolveMainPreviewDisposition(
+                current: true, sameOpenFile: true, sameRenderInputs: false, sameSource: false,
+                previewDeferred: false, aiRunning: false, alreadyFailed: false, hasFailure: true) ==
+              MainPreviewDisposition.DegradeWithError,
+            "Current ticket error with missing/replaced source must still degrade instead of stalling in Developing");
+
+        // When render returns without failure but CurrentViewSource disappeared or changed (!SameFile),
+        // Pump must not publish stale pixels AND must transition out of Developing into failed/unupdated state.
+        Check(PreviewFallback.ResolveMainPreviewDisposition(
+                current: true, sameOpenFile: true, sameRenderInputs: false, sameSource: false,
+                previewDeferred: false, aiRunning: false, alreadyFailed: false, hasFailure: false) ==
+              MainPreviewDisposition.DegradeSourceUnavailable,
+            "Current ticket succeeding after source disappeared/changed must degrade to unupdated failure state");
+
+        Check(PreviewFallback.ResolveMainPreviewDisposition(
+                current: true, sameOpenFile: true, sameRenderInputs: true, sameSource: true,
+                previewDeferred: false, aiRunning: false, alreadyFailed: false, hasFailure: false) ==
+              MainPreviewDisposition.PublishFrame,
+            "Matching current source and settings publish rendered frame");
+
+        Check(PreviewFallback.ResolveMainPreviewDisposition(
+                current: false, sameOpenFile: true, sameRenderInputs: false, sameSource: false,
+                previewDeferred: false, aiRunning: false, alreadyFailed: false, hasFailure: true) ==
+              MainPreviewDisposition.Ignore,
+            "Superseded ticket error does not overwrite active render progress");
+
+        Check(PreviewFallback.ResolveMainPreviewDisposition(
+                current: true, sameOpenFile: true, sameRenderInputs: false, sameSource: false,
+                previewDeferred: false, aiRunning: true, alreadyFailed: false, hasFailure: true) ==
+              MainPreviewDisposition.Ignore,
+            "Active AI job wait suppresses unrelated error transition");
+
+        Check(PreviewFallback.ResolveMainPreviewDisposition(
+                current: true, sameOpenFile: true, sameRenderInputs: false, sameSource: false,
+                previewDeferred: true, aiRunning: false, alreadyFailed: false, hasFailure: false) ==
+              MainPreviewDisposition.Ignore,
+            "Deferred preview during export does not emit spurious failure");
+
+        Check(PreviewFallback.ResolveMainPreviewDisposition(
+                current: true, sameOpenFile: true, sameRenderInputs: false, sameSource: false,
+                previewDeferred: false, aiRunning: false, alreadyFailed: true, hasFailure: true) ==
+              MainPreviewDisposition.Ignore,
+            "Existing error state is preserved without overwriting by an in-flight ticket");
+
         Console.WriteLine("PASS: P2-18 preview fallback catches OverflowException/non-fatal faults and preserves recoverability");
     }
 }

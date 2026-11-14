@@ -221,13 +221,34 @@ public partial class MainWindow
         }
         try
         {
-            // A current-file proxy may publish while dragging; stale exact work never publishes.
-            if(CurrentViewSource is {} currentSource && work.Source.SameFile(currentSource) && work.OpenRevision==openRevision && work.File==file && work.Lut==lut &&
-                work.Settings.IsHDREditing==settings.IsHDREditing && work.Settings.ActiveAIDenoise==settings.ActiveAIDenoise && work.Settings.X3fMode==settings.X3fMode &&
-                (!work.Settings.ActiveAIDenoise || AIResultReady && work.AIIdentity==aiJob.Identity) && work.Settings.Geometry==PreviewGeometry && work.Settings.Lens==PreviewLens && work.TransformGeneration==transformGeneration && (!view.NeedsReference || work.Compare) && (current || (work.Interactive && interacting && work.Edge==RenderEdge(true))))
+            var currentSource = CurrentViewSource;
+            var sameSource = currentSource != null && work.Source.SameFile(currentSource);
+            var sameOpenFile = work.OpenRevision == openRevision && work.File == file;
+            var sameRenderInputs = work.Lut == lut &&
+                work.Settings.IsHDREditing == settings.IsHDREditing &&
+                work.Settings.ActiveAIDenoise == settings.ActiveAIDenoise &&
+                work.Settings.X3fMode == settings.X3fMode &&
+                (!work.Settings.ActiveAIDenoise || AIResultReady && work.AIIdentity == aiJob.Identity) &&
+                work.Settings.Geometry == PreviewGeometry &&
+                work.Settings.Lens == PreviewLens &&
+                work.TransformGeneration == transformGeneration &&
+                (!view.NeedsReference || work.Compare) &&
+                (current || (work.Interactive && interacting && work.Edge == RenderEdge(true)));
+            var aiRunning = settings.ActiveAIDenoise && aiJob.State.IsRunning;
+            var disposition = PreviewFallback.ResolveMainPreviewDisposition(
+                current, sameOpenFile, sameRenderInputs, sameSource, previewDeferred, aiRunning, renderFailed, failure != null);
+
+            if (disposition == MainPreviewDisposition.DegradeWithError)
             {
-                if(failure!=null) { if(current)ApplyMainPreviewFailure(failure); }
-                else if(rendered!=null && neutral!=null)
+                ApplyMainPreviewFailure(failure!);
+            }
+            else if (disposition == MainPreviewDisposition.DegradeSourceUnavailable)
+            {
+                ApplyMainPreviewFailure(null);
+            }
+            else if (disposition == MainPreviewDisposition.PublishFrame)
+            {
+                if(rendered!=null && neutral!=null)
                 {
                     if(work.Settings.ActiveAIDenoise) { aiNotReadyIdentity=null;aiNotReadyAttempts=0; }
                     var previousResult = result;
@@ -307,9 +328,13 @@ public partial class MainWindow
                     RefreshControls();
                     UpdatePreviewSize(ResultCanvas.PreviewLongEdge);
                 }
+                else if (current && !previewDeferred && !aiRunning && !renderFailed)
+                {
+                    ApplyMainPreviewFailure(null);
+                }
             }
             // A quick RAW proxy shortens the blank wait. Only its exact successor enables export.
-            if(current && work.Refine && failure==null && work.File==file && !interacting)Schedule();
+            if(current && work.Refine && failure==null && !renderFailed && work.File==file && !interacting)Schedule();
         }
         catch(Exception ex) when(PreviewFallback.ShouldDegrade(ex))
         {
@@ -319,10 +344,12 @@ public partial class MainWindow
         UpdateBusy(); TryFinishPendingProcessingMigration(); Pump();QueuePendingReset();
     }
 
-    private void ApplyMainPreviewFailure(Exception failure)
+    private void ApplyMainPreviewFailure(Exception? failure)
     {
-        Trace.WriteLine($"Main preview fallback for {file}: {failure.Message}");
-        var outcome = PreviewFallback.DegradeMainPreview(failure, result != null, openingPreview != null);
+        Trace.WriteLine($"Main preview fallback for {file}: {failure?.Message ?? "Source unavailable"}");
+        var outcome = failure != null
+            ? PreviewFallback.DegradeMainPreview(failure, result != null, openingPreview != null)
+            : PreviewFallback.DegradeUnavailableSource(result != null, openingPreview != null);
         ClearPendingAllReset();
         transferNoticeBanner = transferNoticeBanner.AfterRenderFailure();
         exactReady = outcome.ExactReady;
@@ -331,6 +358,11 @@ public partial class MainWindow
         RefreshCropDraft();
         RefreshRenderLabels();
         CancelProcessingMigration();
+        if (failure == null)
+        {
+            SetStatus(() => Loc.Text("预览未更新"), true);
+            return;
+        }
         if (!HandleAIFailure(failure))
             SetStatus(() => Loc.Text("预览未更新") + " · " + outcome.StatusError, true);
     }
