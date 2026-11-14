@@ -64,6 +64,18 @@ struct MockBuffer : sony2fuji::FilterBuffer {
     std::vector<float> data;
 };
 
+sony2fuji::FilterBufferPtr createMockBuffer(size_t n, const float* input) {
+    auto b = std::make_unique<MockBuffer>();
+    b->data.resize(n, 0.f);
+    if (input) std::memcpy(b->data.data(), input, n * sizeof(float));
+    return b;
+}
+
+void writeMockBuffer(sony2fuji::FilterBuffer& buf, size_t n, const float* input) {
+    auto& mock = static_cast<MockBuffer&>(buf);
+    if (input) std::memcpy(mock.data.data(), input, n * sizeof(float));
+}
+
 struct MockContext : sony2fuji::FilterContext {};
 
 class MockFilterDevice : public sony2fuji::FilterDevice {
@@ -347,6 +359,75 @@ void testFilterBufferPoolBudgetAndGlesContextTrim() {
               "FilterBufferPool trimIdleToBudget() caps idle memory at <= 64 MiB after peak");
     }
 
+    {
+        // Regression Case (a): mixed-size hit where bestIndex > 0 has > 64 MiB idle buffers ahead of it
+        // and an active inUse buffer right behind it; vector erase during trim must not alias inUse.
+        constexpr size_t kOneMiBFloats = 1024 * 1024 / sizeof(float);
+        sony2fuji::FilterBufferPool pool(kBudgetFloats);
+
+        std::vector<sony2fuji::FilterBufferPtr> prefixLarge;
+        prefixLarge.reserve(8);
+        for (int i = 0; i < 8; ++i) {
+            prefixLarge.push_back(pool.acquire(kNineMiBFloats, nullptr, createMockBuffer, writeMockBuffer)); // 8 * 9 MiB = 72 MiB > 64 MiB
+        }
+        std::vector<float> midInit(kOneMiBFloats, 1.25f);
+        auto midSmall = pool.acquire(kOneMiBFloats, midInit.data(), createMockBuffer, writeMockBuffer);
+        const sony2fuji::FilterBuffer* midRaw = &midSmall->underlying();
+
+        std::vector<float> tailInit(kNineMiBFloats, 7.5f);
+        auto inFlight = pool.acquire(kNineMiBFloats, tailInit.data(), createMockBuffer, writeMockBuffer);
+        const sony2fuji::FilterBuffer* inFlightRaw = &inFlight->underlying();
+
+        prefixLarge.clear();
+        midSmall.reset();
+
+        std::vector<float> reusedWrite(kOneMiBFloats, 3.75f);
+        auto reused = pool.acquire(kOneMiBFloats, reusedWrite.data(), createMockBuffer, writeMockBuffer);
+        const bool distinctFromInFlight = (&reused->underlying() == midRaw) &&
+                                          (&reused->underlying() != inFlightRaw);
+        auto& reusedMock = static_cast<MockBuffer&>(reused->underlying());
+        auto& inFlightMock = static_cast<MockBuffer&>(inFlight->underlying());
+        const bool readsMatch = reusedMock.data.size() == kOneMiBFloats &&
+                                reusedMock.data[0] == 3.75f &&
+                                inFlightMock.data.size() == kNineMiBFloats &&
+                                inFlightMock.data[0] == 7.5f;
+        // Write through reused Lease after acquire() and ensure dropping reused leaves inFlight intact.
+        reusedMock.data[123] = 9.25f;
+        reused.reset();
+        pool.trimIdleToBudget();
+        const bool writeIsolated = inFlightMock.data[123] == 7.5f && reusedMock.data[123] == 9.25f;
+        check(distinctFromInFlight && readsMatch && writeIsolated,
+              "FilterBufferPool mixed-size hit (bestIndex > 0 before inUse tail) avoids aliasing in-flight buffer");
+    }
+
+    {
+        // Regression Case (b): mixed-size hit where bestIndex is at the tail after > 64 MiB idle buffers;
+        // vector erase during trim shifts the tail slot left and must not leave Lease pointing past end.
+        constexpr size_t kOneMiBFloats = 1024 * 1024 / sizeof(float);
+        sony2fuji::FilterBufferPool pool(kBudgetFloats);
+
+        std::vector<sony2fuji::FilterBufferPtr> prefixLarge;
+        prefixLarge.reserve(8);
+        for (int i = 0; i < 8; ++i) {
+            prefixLarge.push_back(pool.acquire(kNineMiBFloats, nullptr, createMockBuffer, writeMockBuffer)); // 72 MiB > 64 MiB
+        }
+        auto tailSmall = pool.acquire(kOneMiBFloats, nullptr, createMockBuffer, writeMockBuffer);
+        const sony2fuji::FilterBuffer* tailRaw = &tailSmall->underlying();
+        prefixLarge.clear();
+        tailSmall.reset();
+
+        std::vector<float> tailData(kOneMiBFloats, 4.5f);
+        auto hit = pool.acquire(kOneMiBFloats, tailData.data(), createMockBuffer, writeMockBuffer);
+        auto& hitMock = static_cast<MockBuffer&>(hit->underlying());
+        const bool hitValid = (&hit->underlying() == tailRaw) && hitMock.data.size() == kOneMiBFloats &&
+                              hitMock.data[0] == 4.5f && hitMock.data[kOneMiBFloats - 1] == 4.5f;
+        const size_t idleWhileHeld = pool.idleFloats();
+        hit.reset();
+        const bool leaseReleased = pool.idleFloats() == idleWhileHeld + kOneMiBFloats;
+        check(hitValid && leaseReleased,
+              "FilterBufferPool mixed-size hit at tail slot preserves valid Lease across trim");
+    }
+
 #ifdef RAWLAB_GLSLANG_PATH
     rawlabtest::resetGlesVmState();
     auto device = sony2fuji::createGlesFilterDevice();
@@ -385,6 +466,30 @@ void testFilterBufferPoolBudgetAndGlesContextTrim() {
           "GLES FilterContext Binding destructor trims idle SSBOs to <= 64 MiB on exit");
     check(rawlabtest::glesVmStats().deleteBuffersWithoutContextCalls == 0,
           "GLES pool glDeleteBuffers only runs while EGL context is active");
+    {
+        // Mixed-size tail hit on real GLES FilterDevice within single activate() scope.
+        constexpr size_t kOneMiBFloats = 1024 * 1024 / sizeof(float);
+        auto mixedDevice = sony2fuji::createGlesFilterDevice();
+        check(mixedDevice != nullptr, "createGlesFilterDevice succeeds for mixed-size tail probe");
+        if (mixedDevice) {
+            auto scope = mixedDevice->activate();
+            std::vector<sony2fuji::FilterBufferPtr> prefixLarge;
+            prefixLarge.reserve(8);
+            for (int i = 0; i < 8; ++i) {
+                prefixLarge.push_back(mixedDevice->allocate(kNineMiBFloats));
+            }
+            auto tailSmall = mixedDevice->allocate(kOneMiBFloats);
+            prefixLarge.clear();
+            tailSmall.reset();
+            std::vector<float> pattern(kOneMiBFloats, 6.25f);
+            std::vector<float> readback(kOneMiBFloats, 0.f);
+            auto hit = mixedDevice->allocate(kOneMiBFloats);
+            mixedDevice->write(*hit, kOneMiBFloats, pattern.data());
+            mixedDevice->read(*hit, kOneMiBFloats, readback.data());
+            check(readback == pattern,
+                  "GLES mixed-size tail allocate/write/read succeeds after prefix trim");
+        }
+    }
 #endif
 }
 

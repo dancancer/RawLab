@@ -26,11 +26,12 @@ public:
             }
         }
         if (bestIndex < entries_.size()) {
-            auto& entry = entries_[bestIndex];
+            // 值拷贝 shared_ptr，避免 trimIdleToBudget() erase 前置空闲项使 entries_[bestIndex] 引用悬垂或串用。
+            auto entry = entries_[bestIndex];
             if (input) write(*entry->backing, count, input);
             entry->inUse = true;
             trimIdleToBudget();
-            return std::make_unique<Lease>(entry);
+            return std::make_unique<Lease>(std::move(entry));
         }
 
         trimIdleToBudget(count);
@@ -43,9 +44,10 @@ public:
     }
 
     void trimIdleToBudget(size_t incomingFloats = 0) {
+        const size_t keep = incomingFloats >= maxIdleFloats_ ? 0 : maxIdleFloats_ - incomingFloats;
         size_t idle = idleFloats();
-        if (idle + incomingFloats <= maxIdleFloats_) return;
-        for (size_t i = entries_.size(); i > 0 && idle + incomingFloats > maxIdleFloats_; --i) {
+        if (idle <= keep) return;
+        for (size_t i = entries_.size(); i > 0 && idle > keep; --i) {
             if (!entries_[i - 1]->inUse) {
                 idle -= entries_[i - 1]->capacity;
                 entries_.erase(entries_.begin() + static_cast<ptrdiff_t>(i - 1));
