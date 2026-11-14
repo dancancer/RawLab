@@ -413,7 +413,12 @@ with an explicit reason instead of returning 0 with a `SKIP` for checks that did
   `ios-reset-entry-ui.sh`, are presentation-layer model assertions, not XCUITest.
   A `SKIP` reason in a CI suite log counts as a failed gate, never as a pass;
   the gate matches a line-leading `SKIP` marker, so paths, identifiers and
-  `PASS:` wording that merely contain "SKIP" stay green. This is distinct from
+  `PASS:` wording that merely contain "SKIP" stay green. The one exception: an
+  AX-gated model suite registered in `scripts/ci/apple-models.sh` (currently
+  `ios-reset-entry-ui.sh`) may pass through the shared gate's fixed
+  `SKIP: accessibility ...` line only when its `::warning::` annotation is logged
+  alongside it; every other `SKIP` stays red, and `RAWLAB_REQUIRE_AX=1` keeps the
+  gate on its FAIL exit with no skip at all. This is distinct from
   CTest `SKIP_RETURN_CODE 77`, which registers an explicit visible skip for
   optional external models or private samples (such as `dualdn_skip` and
   `dualdn_onnx_skip`); the `full` gate still hard-fails a missing AI model
