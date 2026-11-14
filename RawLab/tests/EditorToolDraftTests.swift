@@ -50,5 +50,100 @@ import Foundation
             "A new photo never stays inside the old master recipe picker")
         try check(EditorToolSourceState().afterSourceChange == EditorToolSourceState(),
             "The overview tool state survives a source change unchanged")
+
+        // D-05 UI draft layer regression: editing one vignette/grain slider or saving/reloading a draft
+        // must preserve exact decimals on untouched sibling parameters in both SDR and HDR modes.
+        let sdrFx = PhotoEffectsSettings(vignetteAmount: -12.5, vignetteMidpoint: 62.5,
+            vignetteRoundness: -12.5, vignetteFeather: 50.5, vignetteHighlights: 12.5,
+            grainAmount: 12.25, grainSize: 37.75, grainRoughness: 50.5)
+        var sdrDecimalBase = RawSettings.default
+        sdrDecimalBase.photoEffects = sdrFx
+        try check(!EditorToolDraft(tool: .adjustment(.vignette), original: sdrDecimalBase).changed,
+            "Opening a vignette draft with decimals does not mark it changed")
+        try check(!EditorToolDraft(tool: .adjustment(.grain), original: sdrDecimalBase).changed,
+            "Opening a grain draft with decimals does not mark it changed")
+
+        var vigDraft = EditorToolDraft(tool: .adjustment(.vignette), original: sdrDecimalBase)
+        var vigEdit = vigDraft.value
+        vigEdit.setEditingEffect(.vignetteAmount, to: -10.3)
+        vigDraft.update(vigEdit)
+        let vigIdentity = PhotoIdentity(resourceIdentifier: "vig-decimal", contentIdentifier: "vig-bytes")
+        try store.save(identity: vigIdentity, draft: vigDraft)
+        let loadedVig = try checkPresent(try store.load(identity: vigIdentity, committed: sdrDecimalBase),
+            "Vignette decimal draft reloads from store")
+        let projectedVig = loadedVig.projecting(on: sdrDecimalBase)
+        try check(projectedVig.photoEffects.vignetteAmount == -10.0,
+            "Edited vignette UI slider narrows to integer UI step (-10.0)")
+        try check(projectedVig.photoEffects.vignetteMidpoint == 62.5
+            && projectedVig.photoEffects.vignetteRoundness == -12.5
+            && projectedVig.photoEffects.vignetteFeather == 50.5
+            && projectedVig.photoEffects.vignetteHighlights == 12.5,
+            "Untouched SDR vignette draft siblings preserve decimals after store reload")
+        try check(projectedVig.photoEffects.grainAmount == 12.25
+            && projectedVig.photoEffects.grainSize == 37.75
+            && projectedVig.photoEffects.grainRoughness == 50.5,
+            "Vignette draft projection preserves SDR grain decimals")
+
+        var grainDraft = EditorToolDraft(tool: .adjustment(.grain), original: sdrDecimalBase)
+        var grainEdit = grainDraft.value
+        grainEdit.setEditingEffect(.grainAmount, to: 15.0)
+        grainDraft.update(grainEdit)
+        let grainIdentity = PhotoIdentity(resourceIdentifier: "grain-decimal", contentIdentifier: "grain-bytes")
+        try store.save(identity: grainIdentity, draft: grainDraft)
+        let loadedGrain = try checkPresent(try store.load(identity: grainIdentity, committed: sdrDecimalBase),
+            "Grain decimal draft reloads from store")
+        let projectedGrain = loadedGrain.projecting(on: sdrDecimalBase)
+        try check(projectedGrain.photoEffects.grainAmount == 15.0,
+            "Edited grain UI slider updates to 15.0")
+        try check(projectedGrain.photoEffects.grainSize == 37.75
+            && projectedGrain.photoEffects.grainRoughness == 50.5,
+            "Untouched SDR grain draft siblings preserve decimals after store reload")
+
+        var hdrDecimalBase = try RawSettings.default.withHDRMode(true, sourceIsHDR: true)
+        hdrDecimalBase.hdr?.effectsSettings = HDRPhotoEffectsSettings(
+            vignetteAmount: -12.5, vignetteMidpoint: 62.5,
+            vignetteRoundness: -12.5, vignetteFeather: 50.5, vignetteHighlights: 12.5,
+            grainAmount: 12.25, grainSize: 37.75, grainRoughness: 50.5)
+        try check(!EditorToolDraft(tool: .adjustment(.vignette), original: hdrDecimalBase).changed,
+            "Opening an HDR vignette draft with decimals does not mark it changed")
+        var hdrVigDraft = EditorToolDraft(tool: .adjustment(.vignette), original: hdrDecimalBase)
+        var hdrVigEdit = hdrVigDraft.value
+        hdrVigEdit.setEditingEffect(.vignetteAmount, to: -10.3)
+        hdrVigDraft.update(hdrVigEdit)
+        let hdrVigIdentity = PhotoIdentity(resourceIdentifier: "hdr-vig-decimal", contentIdentifier: "hdr-vig-bytes")
+        try store.save(identity: hdrVigIdentity, draft: hdrVigDraft)
+        let loadedHdrVig = try checkPresent(try store.load(identity: hdrVigIdentity, committed: hdrDecimalBase),
+            "HDR vignette decimal draft reloads from store")
+        let projectedHdrVig = loadedHdrVig.projecting(on: hdrDecimalBase)
+        try check(projectedHdrVig.hdr?.effectsSettings.vignetteAmount == -10.0,
+            "Edited HDR vignette UI slider narrows to integer UI step (-10.0)")
+        try check(projectedHdrVig.hdr?.effectsSettings.vignetteMidpoint == 62.5
+            && projectedHdrVig.hdr?.effectsSettings.vignetteRoundness == -12.5
+            && projectedHdrVig.hdr?.effectsSettings.vignetteFeather == 50.5
+            && projectedHdrVig.hdr?.effectsSettings.vignetteHighlights == 12.5
+            && projectedHdrVig.hdr?.effectsSettings.grainAmount == 12.25
+            && projectedHdrVig.hdr?.effectsSettings.grainSize == 37.75
+            && projectedHdrVig.hdr?.effectsSettings.grainRoughness == 50.5,
+            "Untouched HDR effects preserve exact decimals after draft store reload")
+
+        var hdrGrainDraft = EditorToolDraft(tool: .adjustment(.grain), original: hdrDecimalBase)
+        var hdrGrainEdit = hdrGrainDraft.value
+        hdrGrainEdit.setEditingEffect(.grainAmount, to: 15.0)
+        hdrGrainDraft.update(hdrGrainEdit)
+        let hdrGrainIdentity = PhotoIdentity(resourceIdentifier: "hdr-grain-decimal", contentIdentifier: "hdr-grain-bytes")
+        try store.save(identity: hdrGrainIdentity, draft: hdrGrainDraft)
+        let loadedHdrGrain = try checkPresent(try store.load(identity: hdrGrainIdentity, committed: hdrDecimalBase),
+            "HDR grain decimal draft reloads from store")
+        let projectedHdrGrain = loadedHdrGrain.projecting(on: hdrDecimalBase)
+        try check(projectedHdrGrain.hdr?.effectsSettings.grainAmount == 15.0
+            && projectedHdrGrain.hdr?.effectsSettings.grainSize == 37.75
+            && projectedHdrGrain.hdr?.effectsSettings.grainRoughness == 50.5,
+            "Untouched HDR grain draft siblings preserve exact decimals after store reload")
+    }
+
+    static func checkPresent<T>(_ value: T?, _ message: String) throws -> T {
+        guard let value else { throw NSError(domain: message, code: 1) }
+        print("PASS: \(message)")
+        return value
     }
 }

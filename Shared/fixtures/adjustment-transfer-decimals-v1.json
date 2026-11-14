@@ -1,0 +1,701 @@
+{
+  "fixture_version": 1,
+  "scenarios": [
+    {
+      "id": "decimal-effects-12-5-and-negative-on-sdr-raw",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "desktop-effects-12-5.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "effects.vignette.amount": -12.5,
+          "effects.vignette.midpoint": 12.5,
+          "effects.vignette.roundness": -12.5,
+          "effects.vignette.feather": 12.5,
+          "effects.vignette.highlights": 12.5,
+          "effects.grain.amount": 12.5,
+          "effects.grain.size": 12.5,
+          "effects.grain.roughness": 12.5
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "effects.vignette.amount": -12.5,
+          "effects.vignette.midpoint": 12.5,
+          "effects.vignette.roundness": -12.5,
+          "effects.vignette.feather": 12.5,
+          "effects.vignette.highlights": 12.5,
+          "effects.grain.amount": 12.5,
+          "effects.grain.size": 12.5,
+          "effects.grain.roughness": 12.5
+        }
+      }
+    },
+    {
+      "id": "decimal-overprecision-12-25-on-ui-narrowed-fields-sdr-raster",
+      "target": {
+        "kind": "sdr_raster",
+        "lens_valid": true,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "desktop-effects-12-25.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "effects.vignette.amount": -12.25,
+          "effects.vignette.midpoint": 62.25,
+          "effects.vignette.roundness": 12.25,
+          "effects.vignette.feather": 37.75,
+          "effects.vignette.highlights": 12.25,
+          "effects.grain.amount": 12.25,
+          "effects.grain.size": 25.5,
+          "effects.grain.roughness": 50.25,
+          "effects.clarity": -12.25,
+          "effects.dehaze": 12.25,
+          "tone.black_point": -12.25,
+          "tone.white_point": 12.25,
+          "color.vibrance": -12.25,
+          "color.hsl.hue.red": -12.25,
+          "color.hsl.saturation.orange": 12.25,
+          "color.hsl.lightness.blue": -0.25,
+          "detail.denoise.wavelet": {
+            "enabled": true,
+            "luma": 12.25,
+            "chroma": 46.25,
+            "coarse": 50.5,
+            "preset": "custom"
+          },
+          "color.grading.shadows": {
+            "hue": 12.5,
+            "saturation": 12.25
+          }
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "effects.vignette.amount": -12.25,
+          "effects.vignette.midpoint": 62.25,
+          "effects.vignette.roundness": 12.25,
+          "effects.vignette.feather": 37.75,
+          "effects.vignette.highlights": 12.25,
+          "effects.grain.amount": 12.25,
+          "effects.grain.size": 25.5,
+          "effects.grain.roughness": 50.25,
+          "effects.clarity": -12.25,
+          "effects.dehaze": 12.25,
+          "tone.black_point": -12.25,
+          "tone.white_point": 12.25,
+          "color.vibrance": -12.25,
+          "color.hsl.hue.red": -12.25,
+          "color.hsl.saturation.orange": 12.25,
+          "color.hsl.lightness.blue": -0.25,
+          "detail.denoise.wavelet": {
+            "enabled": true,
+            "luma": 12.25,
+            "chroma": 46.25,
+            "coarse": 50.5,
+            "preset": "custom"
+          },
+          "color.grading.shadows": {
+            "hue": 12.5,
+            "saturation": 12.25
+          }
+        }
+      }
+    },
+    {
+      "id": "decimal-negative-and-continuous-scalars-geometry-wb-sdr-raw",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "desktop-scalars.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "looks.strength": 1.25,
+          "light.exposure": -1.25,
+          "light.contrast": 1.125,
+          "light.highlights": -0.25,
+          "light.shadows": -0.375,
+          "light.s_curve": -0.25,
+          "light.curve": {
+            "mode": "custom",
+            "points": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                0.25,
+                0.3125
+              ],
+              [
+                1.0,
+                1.0
+              ]
+            ]
+          },
+          "color.white_balance.mode": "temperature",
+          "color.white_balance.temperature_kelvin": 5250.5,
+          "color.white_balance.tint": -12.5,
+          "color.saturation": 1.25,
+          "detail.sharpening": 1.25,
+          "geometry.crop.x": 0.125,
+          "geometry.crop.y": 0.0625,
+          "geometry.crop.width": 0.75,
+          "geometry.crop.height": 0.875,
+          "geometry.straighten_degrees": -12.25,
+          "geometry.perspective.horizontal": -0.25,
+          "geometry.perspective.vertical": 0.125
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "looks.strength": 1.25,
+          "light.exposure": -1.25,
+          "light.contrast": 1.125,
+          "light.highlights": -0.25,
+          "light.shadows": -0.375,
+          "light.s_curve": -0.25,
+          "light.curve": {
+            "mode": "custom",
+            "points": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                0.25,
+                0.3125
+              ],
+              [
+                1.0,
+                1.0
+              ]
+            ]
+          },
+          "color.white_balance.mode": "temperature",
+          "color.white_balance.temperature_kelvin": 5250.5,
+          "color.white_balance.tint": -12.5,
+          "color.saturation": 1.25,
+          "detail.sharpening": 1.25,
+          "geometry.crop.x": 0.125,
+          "geometry.crop.y": 0.0625,
+          "geometry.crop.width": 0.75,
+          "geometry.crop.height": 0.875,
+          "geometry.straighten_degrees": -12.25,
+          "geometry.perspective.horizontal": -0.25,
+          "geometry.perspective.vertical": 0.125
+        }
+      }
+    },
+    {
+      "id": "decimal-hdr-12-5-and-negatives-roundtrip",
+      "target": {
+        "kind": "hdr",
+        "lens_valid": false,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 2,
+        "scope_version": 2,
+        "source": {
+          "identifier": "hdr-decimal.HIF",
+          "is_raw": false,
+          "processing_version": 3,
+          "hdr_processing_version": 6
+        },
+        "values": {
+          "effects.vignette.amount": -12.5,
+          "effects.vignette.roundness": -12.25,
+          "effects.grain.amount": 12.5,
+          "effects.grain.size": 12.25,
+          "effects.clarity": -12.5,
+          "effects.dehaze": 12.5,
+          "light.exposure": -1.25,
+          "light.contrast": 1.125,
+          "light.highlights": -0.25,
+          "light.shadows": -0.375,
+          "tone.black_point": -12.5,
+          "color.vibrance": -12.5,
+          "color.hsl.hue.red": -12.375,
+          "detail.sharpening": 1.25,
+          "detail.denoise.post_rgb": 0.25,
+          "hdr.relative_temperature": 6250.5,
+          "hdr.relative_tint": -12.5,
+          "hdr.peak_limit_ev": 2.25,
+          "hdr.sdr_exposure_ev": -0.5,
+          "hdr.sdr_contrast": -12.5,
+          "hdr.sdr_saturation": 12.5
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "effects.vignette.amount": -12.5,
+          "effects.vignette.roundness": -12.25,
+          "effects.grain.amount": 12.5,
+          "effects.grain.size": 12.25,
+          "effects.clarity": -12.5,
+          "effects.dehaze": 12.5,
+          "light.exposure": -1.25,
+          "light.contrast": 1.125,
+          "light.highlights": -0.25,
+          "light.shadows": -0.375,
+          "tone.black_point": -12.5,
+          "color.vibrance": -12.5,
+          "color.hsl.hue.red": -12.375,
+          "detail.sharpening": 1.25,
+          "detail.denoise.post_rgb": 0.25,
+          "hdr.relative_temperature": 6250.5,
+          "hdr.relative_tint": -12.5,
+          "hdr.peak_limit_ev": 2.25,
+          "hdr.sdr_exposure_ev": -0.5,
+          "hdr.sdr_contrast": -12.5,
+          "hdr.sdr_saturation": 12.5
+        }
+      }
+    },
+    {
+      "id": "decimal-effects-idempotent-12-5-roundtrip",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": {
+          "payload_version": 1,
+          "scope_version": 1,
+          "source": {
+            "identifier": "seed-effects.ARW",
+            "is_raw": true,
+            "processing_version": 3
+          },
+          "values": {
+            "effects.vignette.amount": -12.5,
+            "effects.vignette.feather": 12.25,
+            "effects.grain.amount": 12.5
+          }
+        }
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "repeat-effects.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "effects.vignette.amount": -12.5,
+          "effects.vignette.feather": 12.25,
+          "effects.grain.amount": 12.5
+        }
+      },
+      "expect": {
+        "status": "unchanged",
+        "values": {
+          "effects.vignette.amount": -12.5,
+          "effects.vignette.feather": 12.25,
+          "effects.grain.amount": 12.5
+        }
+      }
+    },
+    {
+      "id": "decimal-effects-12-5-with-q3-unsupported-denoise-notice",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": true,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "mixed-q3-decimal.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "effects.vignette.amount": 12.5,
+          "effects.grain.amount": 12.25,
+          "detail.denoise.raw_level": 1,
+          "detail.denoise.post_rgb": 0.25
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "effects.vignette.amount": 12.5,
+          "effects.grain.amount": 12.25
+        },
+        "notices_by_platform": {
+          "macos": [
+            "ignored_post_rgb_denoise"
+          ],
+          "ios": [
+            "ignored_raw_denoise"
+          ],
+          "android": [
+            "ignored_raw_denoise",
+            "ignored_post_rgb_denoise"
+          ],
+          "windows": [
+            "ignored_raw_denoise",
+            "ignored_post_rgb_denoise"
+          ]
+        }
+      }
+    },
+    {
+      "id": "decimal-tenth-step-nonbinary-roundtrip",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "desktop-tenth-step.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "effects.vignette.amount": -12.3,
+          "effects.vignette.midpoint": 37.7,
+          "effects.vignette.roundness": -12.7,
+          "effects.vignette.feather": 50.3,
+          "effects.vignette.highlights": 12.1,
+          "effects.grain.amount": 14.3,
+          "effects.grain.size": 25.9,
+          "effects.grain.roughness": 15.7,
+          "effects.clarity": -11.4,
+          "effects.dehaze": 13.6,
+          "tone.black_point": -0.3,
+          "tone.white_point": 0.7,
+          "color.vibrance": -12.3,
+          "color.hsl.hue.red": -12.3,
+          "color.hsl.saturation.orange": 12.1,
+          "detail.denoise.wavelet": {
+            "enabled": true,
+            "luma": 14.1,
+            "chroma": 11.8,
+            "coarse": 25.9,
+            "preset": "custom"
+          },
+          "color.grading.shadows": {
+            "hue": 14.3,
+            "saturation": 12.1
+          }
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "effects.vignette.amount": -12.3,
+          "effects.vignette.midpoint": 37.7,
+          "effects.vignette.roundness": -12.7,
+          "effects.vignette.feather": 50.3,
+          "effects.vignette.highlights": 12.1,
+          "effects.grain.amount": 14.3,
+          "effects.grain.size": 25.9,
+          "effects.grain.roughness": 15.7,
+          "effects.clarity": -11.4,
+          "effects.dehaze": 13.6,
+          "tone.black_point": -0.3,
+          "tone.white_point": 0.7,
+          "color.vibrance": -12.3,
+          "color.hsl.hue.red": -12.3,
+          "color.hsl.saturation.orange": 12.1,
+          "detail.denoise.wavelet": {
+            "enabled": true,
+            "luma": 14.1,
+            "chroma": 11.8,
+            "coarse": 25.9,
+            "preset": "custom"
+          },
+          "color.grading.shadows": {
+            "hue": 14.3,
+            "saturation": 12.1
+          }
+        }
+      }
+    },
+    {
+      "id": "decimal-tenth-step-idempotent-hdr-roundtrip",
+      "target": {
+        "kind": "hdr",
+        "lens_valid": true,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": {
+          "payload_version": 2,
+          "scope_version": 2,
+          "source": {
+            "identifier": "seed-hdr-tenth.HIF",
+            "is_raw": false,
+            "processing_version": 3,
+            "hdr_processing_version": 7
+          },
+          "values": {
+            "effects.vignette.amount": -12.3,
+            "effects.vignette.highlights": 12.1,
+            "effects.grain.amount": 14.3,
+            "effects.grain.roughness": 15.7,
+            "hdr.sdr_contrast": -12.3,
+            "hdr.sdr_saturation": 12.1
+          }
+        }
+      },
+      "payload": {
+        "payload_version": 2,
+        "scope_version": 2,
+        "source": {
+          "identifier": "repeat-hdr-tenth.HIF",
+          "is_raw": false,
+          "processing_version": 3,
+          "hdr_processing_version": 7
+        },
+        "values": {
+          "effects.vignette.amount": -12.3,
+          "effects.vignette.highlights": 12.1,
+          "effects.grain.amount": 14.3,
+          "effects.grain.roughness": 15.7,
+          "hdr.sdr_contrast": -12.3,
+          "hdr.sdr_saturation": 12.1
+        }
+      },
+      "expect": {
+        "status": "unchanged",
+        "values": {
+          "effects.vignette.amount": -12.3,
+          "effects.vignette.highlights": 12.1,
+          "effects.grain.amount": 14.3,
+          "effects.grain.roughness": 15.7,
+          "hdr.sdr_contrast": -12.3,
+          "hdr.sdr_saturation": 12.1
+        }
+      }
+    }
+  ],
+  "rejected_payloads": [
+    {
+      "id": "fractional-raw-denoise-on-raw-rejected",
+      "reason": "invalid_payload",
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "bad-raw-level.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "detail.denoise.raw_level": 1.5
+        }
+      }
+    },
+    {
+      "id": "fractional-raw-denoise-on-raster-rejected",
+      "reason": "invalid_payload",
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "bad-raw-level-raster.jpg",
+          "is_raw": false,
+          "processing_version": 3
+        },
+        "values": {
+          "detail.denoise.raw_level": 1.5
+        }
+      }
+    },
+    {
+      "id": "fractional-chroma-mode-rejected",
+      "reason": "invalid_payload",
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "bad-chroma.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "detail.denoise.chroma_mode": 1.5
+        }
+      }
+    },
+    {
+      "id": "fractional-quarter-turns-1-5-rejected",
+      "reason": "invalid_payload",
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "bad-turns.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "geometry.quarter_turns": 1.5
+        }
+      }
+    },
+    {
+      "id": "negative-quarter-turns-decimal-rejected",
+      "reason": "invalid_payload",
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "bad-turns-neg.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "geometry.quarter_turns": -0.5
+        }
+      }
+    },
+    {
+      "id": "fractional-hdr-fbdd-level-rejected",
+      "reason": "invalid_payload",
+      "payload": {
+        "payload_version": 2,
+        "scope_version": 2,
+        "source": {
+          "identifier": "bad-hdr-fbdd.HIF",
+          "is_raw": false,
+          "processing_version": 3,
+          "hdr_processing_version": 7
+        },
+        "values": {
+          "hdr.camera_development": {
+            "version": 1,
+            "white_balance_mode": "as_shot",
+            "temperature": 0,
+            "tint": 0,
+            "exposure_reference": "metadata",
+            "fbdd_level": 1.5
+          }
+        }
+      }
+    },
+    {
+      "id": "fractional-hdr-camera-version-rejected",
+      "reason": "invalid_payload",
+      "payload": {
+        "payload_version": 2,
+        "scope_version": 2,
+        "source": {
+          "identifier": "bad-hdr-version.HIF",
+          "is_raw": false,
+          "processing_version": 3,
+          "hdr_processing_version": 7
+        },
+        "values": {
+          "hdr.camera_development": {
+            "version": 1.5,
+            "white_balance_mode": "as_shot",
+            "temperature": 0,
+            "tint": 0,
+            "exposure_reference": "metadata",
+            "fbdd_level": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "decimal-vignette-amount-out-of-range-rejected",
+      "reason": "invalid_payload",
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "out-of-range-vignette.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "effects.vignette.amount": -100.5
+        }
+      }
+    },
+    {
+      "id": "decimal-grain-amount-negative-out-of-range-rejected",
+      "reason": "invalid_payload",
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "negative-grain.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "effects.grain.amount": -0.25
+        }
+      }
+    }
+  ]
+}
