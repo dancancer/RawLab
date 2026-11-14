@@ -11,6 +11,7 @@ import Foundation
     }
     static func main() throws {
         try Self.effectiveNoticesFilter()
+        try Self.sheetNoticeDisplay()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try EditPersistence(directory: root), session = IOSAdjustmentTransferSession(store: store)
@@ -389,5 +390,16 @@ import Foundation
         try check(prepared.effectiveNotices(outcomes) == [.ignoredRawDenoise],
             "Paste notices surface only for targets that actually applied")
         try check(prepared.effectiveNotices([]).isEmpty, "Prepared notices stay hidden until apply outcomes exist")
+    }
+
+    // V-UIIOS #301 seam：Sheet 内提示行只随当前粘贴批次的结果展示。提示属性留在共享
+    // ViewModel 上，重开面板或重新检查后 pasteResults 已清空，旧提示不得抢先显示。
+    static func sheetNoticeDisplay() throws {
+        try check(!IOSAdjustmentPasteNoticeDisplay.showsInSheet(notices: ["降噪已忽略"], hasPasteResults: false),
+            "Sheet hides stale notices before the new batch produces paste results")
+        try check(IOSAdjustmentPasteNoticeDisplay.showsInSheet(notices: ["降噪已忽略"], hasPasteResults: true),
+            "Sheet shows delivered notices next to the current paste results")
+        try check(!IOSAdjustmentPasteNoticeDisplay.showsInSheet(notices: [], hasPasteResults: true),
+            "No notices keep the sheet notice row closed")
     }
 }

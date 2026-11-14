@@ -402,6 +402,12 @@ struct ContentView: View {
             resetConfirmationPresented = false
             draftExitPresented = false
             cancelRulerFocus()
+            // V-UIIOS #291：收起的子工具与配方选择态属于上一张照片；换图不清会在展开面板时
+            // 把新照片劫持进旧子工具（含切到禁用镜头的 HDR 照片）。重置契约收口在模型套件。
+            let clearedTool = EditorToolSourceState(collapsedEditorTool: collapsedEditorTool,
+                                                    choosingMasterRecipe: choosingMasterRecipe).afterSourceChange
+            collapsedEditorTool = clearedTool.collapsedEditorTool
+            choosingMasterRecipe = clearedTool.choosingMasterRecipe
         }
         .onChange(of: viewModel.isBusy) { _, busy in
             if !busy, let current = viewModel.batchSelection.selection.current, current != viewModel.sourceIdentity?.key {

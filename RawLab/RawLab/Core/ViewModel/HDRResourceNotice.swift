@@ -16,6 +16,10 @@ struct HDRResourceNotice {
         isHDREditing ? HDRResourceNotice(message: missingMessage) : HDRResourceNotice()
     }
 
+    /// 源切换边界（导入开始）的通知缓存处置（V-UIIOS P1-05）：新源尚未出帧时，上一张
+    /// 照片的缺资源警告不得继续参与去重，否则报错早退后再遇相同警告会被 `.keep` 压制。
+    var afterSourceChange: HDRResourceNotice { HDRResourceNotice() }
+
     mutating func change(to message: String?, status: String?) -> Change {
         guard message != self.message else { return .keep }
         let previous = self.message

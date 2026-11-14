@@ -133,6 +133,9 @@ extension RawEditorViewModel {
         adjustmentInteraction = nil
         adjustmentInteractionRejected = false
         statusMessage = nil
+        // V-UIIOS P1-05：源切换先退役上一张照片的缺资源警告缓存。成功交付站点仍会记录本帧警告；
+        // 出帧前因缺外观或解码错误早退时缓存已作废，下一张照片的相同警告不再被 `.keep` 压制。
+        hdrResourceNotice = hdrResourceNotice.afterSourceChange
         isBusy = true
         let importRevision = UUID()
         if activeImportRevision==nil { importPreviousRevision=sourceRevision }

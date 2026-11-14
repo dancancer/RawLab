@@ -73,5 +73,23 @@ final class StatusProbe {
         reEnabled.deliverFrame(missingResource: look)
         check(reEnabled.status == look && reEnabled.writes == 1,
               "Switching the same photo back to HDR editing after an SDR delivery shows the missing-resource warning again")
+
+        // V-UIIOS P1-05 seam：SDR 照片在出帧前因缺外观或解码错误早退时，重置只挂在成功
+        // 交付站点就够不到该路径；源切换边界必须退役旧照片的警告缓存，否则相同警告被 .keep 压制。
+        let staleHDR = HDRResourceNotice.delivered(isHDREditing: true, missingMessage: profile)
+        let afterFailedSwitch = staleHDR.afterSourceChange
+        check(afterFailedSwitch.message == nil,
+              "A failed SDR source switch drops the stale HDR missing-resource cache")
+        let rebound = StatusProbe()
+        rebound.notice = afterFailedSwitch
+        rebound.writes = 0
+        rebound.deliverFrame(missingResource: profile)
+        check(rebound.status == profile && rebound.writes == 1,
+              "The identical warning is shown again after switching back to the HDR photo")
+        let sameSource = StatusProbe()
+        sameSource.writes = 0
+        sameSource.deliverFrame(missingResource: profile)
+        sameSource.deliverFrame(missingResource: profile)
+        check(sameSource.writes == 1, "Frames of the same source still dedup the warning")
     }
 }
