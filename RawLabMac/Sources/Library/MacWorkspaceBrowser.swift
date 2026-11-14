@@ -406,12 +406,16 @@ struct WorkspacePhotoTileState {
                 withOriginal.thumbnail = original
                 set(withOriginal)
             }
-            if isEdited, !previews.isEditorBusy {
-                let result = try await previews.image(for: record)
-                try Task.checkCancellation()
-                var rendered = get()
-                rendered.thumbnail = result; rendered.adjustedThumbnail = true; rendered.notice = nil
-                set(rendered)
+            if isEdited {
+                if previews.isEditorBusy {
+                    previews.noteDeferredEditedRefresh()
+                } else {
+                    let result = try await previews.image(for: record)
+                    try Task.checkCancellation()
+                    var rendered = get()
+                    rendered.thumbnail = result; rendered.adjustedThumbnail = true; rendered.notice = nil
+                    set(rendered)
+                }
             }
         } catch is CancellationError { }
         catch {
@@ -500,7 +504,7 @@ private struct WorkspacePhotoTile: View {
                 previews.watch(url)
             }
             .onDisappear { previews.unwatch(url) }
-            .task(id: "\(url.path):\(previews.revision):\(previews.isEditorBusy)", priority: .utility) {
+            .task(id: "\(url.path):\(previews.revision)", priority: .utility) {
                 await WorkspacePhotoTileState.refresh(url: url, previews: previews, get: { state }, set: { state = $0 })
             }
     }

@@ -175,18 +175,17 @@ struct EditorView: View {
         editorContent
         .environmentObject(photoPreviews)
         .onChange(of: model.films, initial: true) { _, films in
+            guard photoPreviews.films != films else { return }
             photoPreviews.films = films
             photoPreviews.refresh()
         }
         .onChange(of: model.busy || model.importing || model.exporting || model.aiState.isRunning, initial: true) { _, busy in photoPreviews.isEditorBusy = busy }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in photoPreviews.refresh() }
-        .onChange(of: model.adjustmentHistoryRevision) { _, _ in photoPreviews.refresh() }
         .onReceive(model.$completedEditPreview) { preview in
             guard let preview else { return }
             photoPreviews.accept(record: preview.record, image: preview.image)
         }
         .onChange(of: model.sourceRevision) { _, _ in
-            photoPreviews.refresh()
             queuedQuickPreset = nil
             viewing.sourceChanged()
             fit()
