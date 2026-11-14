@@ -10,6 +10,7 @@ namespace sony2fuji::d3d11_test {
 inline int photoInitializations = 0;
 inline int filterInitializations = 0;
 inline int initializationFailures = 0;
+inline int allocationFailures = 0;
 inline HRESULT deviceStatus = S_OK;
 inline size_t largestPhotoBuffer = 0;
 inline size_t filterAllocations = 0;

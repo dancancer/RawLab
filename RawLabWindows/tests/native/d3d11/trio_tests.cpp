@@ -89,6 +89,23 @@ void filterRecovery() {
         require(d3d11_test::filterInitializations == before + 1, "removed filter device was not recreated");
     }
 }
+void firstRenderError() {
+    D3D11PhotoRenderer renderer;
+    ImageData input(17, 19), output;
+    require(!renderer.render(input, ColorSpace::SonyNative, request(), {}, {1, 1, 1}, 17, 19, 0, output),
+        "first render must reject implicit camera-native conversion");
+    require(d3d11_test::photoInitializations == 1, "test did not initialize a device");
+    require(render(renderer, output), "C7: first non-device render error entered cooldown");
+    require(d3d11_test::photoInitializations == 1, "first render error discarded a healthy device");
+}
+void firstFilterError() {
+    ImageData input(17, 19);
+    d3d11_test::allocationFailures = 1;
+    require(!gpuDetailFilter(input, .2f, 0), "first filter allocation must fail");
+    require(d3d11_test::filterInitializations == 1, "test did not initialize a filter device");
+    require(gpuDetailFilter(input, .2f, 0), "C7: first non-device filter error entered cooldown");
+    require(d3d11_test::filterInitializations == 1, "first filter error discarded a healthy device");
+}
 }
 int main(int argc, char** argv) {
     try {
@@ -96,6 +113,8 @@ int main(int argc, char** argv) {
         const std::string name = argv[1];
         if (name == "recovery") recovery();
         else if (name == "filter-recovery") filterRecovery();
+        else if (name == "first-render-error") firstRenderError();
+        else if (name == "first-filter-error") firstFilterError();
         else require(false, "unknown test case");
         std::cout << "PASS: D3D11 " << argv[1] << " (WARP software adapter; no hardware GPU claim)\n";
         return 0;

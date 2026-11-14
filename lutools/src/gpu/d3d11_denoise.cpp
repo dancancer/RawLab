@@ -55,6 +55,12 @@ class Device final : public FilterDevice {
     FilterBufferPool pool;
     FilterBufferPtr createBuffer(size_t count, const float* input) {
         if (!count || count > UINT32_MAX / sizeof(float)) throw std::runtime_error("D3D11 filter buffer too large");
+#if defined(RAWLAB_D3D11_TESTING)
+        if (count > 1 && d3d11_test::allocationFailures > 0) {
+            --d3d11_test::allocationFailures;
+            throw std::runtime_error("Injected filter allocation failure");
+        }
+#endif
         auto buffer = std::make_unique<Buffer>();
         D3D11_BUFFER_DESC desc{}; desc.ByteWidth = static_cast<UINT>(count * sizeof(float)); desc.Usage = D3D11_USAGE_DEFAULT;
         desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
