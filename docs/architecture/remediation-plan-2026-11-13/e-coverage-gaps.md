@@ -39,3 +39,11 @@
 - C-N3 在 Linux 和 Android 上没有实测，“不会清标志”是按 libc 语义推断的。
 - R16 在合入 #265 之后“macOS 也会变红”是按 `verify()` 代码推演的，没有用 fork 事件实际触发。
 - 状态为“未修”且依据写“沿用主评审”的行（多为 P3 性能项），本次只确认了相关文件之后没有对应 PR，没有逐行重读。
+
+### E.5 2026-11-14 复核回填（`bcdc7c64`）
+
+- **E.1 `AbiLayoutChecks.cs` 内部已核实**：`RawLabWindows/tests/editing/AbiLayoutChecks.cs:768-844` 仅对账 `structs` 大小与偏移，尚未对账 `callbacks`、`functions`、`enums` 与 C# `delegate`/`DllImport`（见 P1-22）。
+- **E.2#1（AX 静默跳过）**：Mac 端已由 #280/#292/#311 收口（`hdr-rendition-reset.sh` 进 CI、Mac 三支 AX 脚本支持 `RAWLAB_REQUIRE_AX`、`apple-models.sh` 拦截日志 `SKIP`），但 **#311 漏改 `RawLab/tests/IOSResetEntryUITests.swift:177,193,305`**，iOS `ios-reset-entry-ui.sh` 在 CI 中仍无日志静默跳过 AX 且返回 `exit 0`（D 项 **复核：未通过**）。
+- **E.2#5（`TempCleanupTests` 是否进 CI）**：已核实进入 CI——`scripts/ci/windows-models.ps1:25` 执行 `[usage]` 套件，GitHub Actions Run `43464214720` 实跑通过（完成-05 **✅ 复核通过**）。
+- **E.2#6（四端重置入口）**：已由 #307 @ `3afff0b8` 建立 `Shared/fixtures/reset-scenarios-v1.json` 并在四端实跑，但 `@spec_default` 掩盖了跨端 wire 载荷分歧（P1-③ **复核：部分成立**）。
+- **E.2#8（#260 Android 联机逐行审）**：已结合 #296 @ `f72b1e8a`（WP-10）逐行复核：A13/A16 **✅ 复核通过**；A14 冷启动恢复 `PAUSED` 落 `CameraRoute.HOME` 缺确认继续按钮（完成-07 **复核：部分成立**）。
