@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
@@ -17,6 +18,7 @@ internal static class HotPathIoAndRefreshChecks
         S3PhotoProbeCacheChecks();
         W6ViewSourceStateChecks();
         W6LookAvailabilityAndHDRPresentationChecks();
+        M4AIDenoiseCachedIdentityChecks();
         W16InspectorModificationAndSubEditorChecks();
         W16ParameterRowLayoutCacheChecks();
         Console.WriteLine("PASS: P2-19/P2-21/S3 Windows UI hot-path sync I/O elimination and caching checks");
@@ -97,11 +99,73 @@ internal static class HotPathIoAndRefreshChecks
             var afterDelete = storeB.ReadState(photoA);
             Check(afterDelete.Edit == null,
                 "Deleting edits.json invalidates cached registry and returns unmodified state");
+
+            // External same-length rename-onto with spoofed identical timestamps invalidates RegistryCache on Windows (FileID/USN).
+            var modifiedAgain = new Adjustments();
+            modifiedAgain.Set(Parameter.Exposure, 0.5);
+            storeA.SaveState(initialA.Identity, new SavedEdit(initialA.Identity, modifiedAgain.Capture(), null));
+            Check(storeB.ReadState(photoA).Edit?.Settings.Values[(int)Parameter.Exposure] == 0.5,
+                "Warm sibling RegistryCache before same-length rename-onto check");
+            var stampBeforeRename = PathStatStamp.Capture(registryPath);
+            var jsonBeforeRename = File.ReadAllText(registryPath);
+            var jsonAfterRename = jsonBeforeRename.Replace("0.5", "0.6");
+            Check(jsonAfterRename.Length == jsonBeforeRename.Length && jsonAfterRename != jsonBeforeRename,
+                "External registry fixture preserves byte length");
+            var stagedRegistry = registryPath + ".staged";
+            File.WriteAllText(stagedRegistry, jsonAfterRename);
+            if (OperatingSystem.IsWindows())
+            {
+                File.SetCreationTimeUtc(stagedRegistry, new DateTime(stampBeforeRename.CreatedTicks, DateTimeKind.Utc));
+                File.SetLastWriteTimeUtc(stagedRegistry, new DateTime(stampBeforeRename.ModifiedTicks, DateTimeKind.Utc));
+            }
+            File.Move(stagedRegistry, registryPath, overwrite: true);
+            Check(storeB.ReadState(photoA).Edit?.Settings.Values[(int)Parameter.Exposure] == 0.6,
+                "Same-length rename-onto invalidates RegistryCache");
+
+            // NTFS 15s tunneling / FileID change with identical timestamps & length must invalidate RegistryCache.
+            var tunneledDir = Path.Combine(root, "tunneled-edits");
+            var tunneledPhoto = Path.Combine(root, "photo-tunneled.arw");
+            File.WriteAllBytes(tunneledPhoto, [11, 22, 33, 44]);
+            var seedStore = new EditStore(tunneledDir);
+            var tunneledState = seedStore.ReadState(tunneledPhoto);
+            var tunneledEdit1 = new Adjustments();
+            tunneledEdit1.Set(Parameter.Exposure, 0.25);
+            seedStore.SaveState(tunneledState.Identity, new SavedEdit(tunneledState.Identity, tunneledEdit1.Capture(), null));
+            var tunneledRegistryPath = Path.Combine(tunneledDir, "edits.json");
+            var currentFileId = "abcd-0001-0001";
+            OriginalIdentity ReadTunneledId(string p)
+            {
+                var info = new FileInfo(p);
+                return new OriginalIdentity(info.FullName, info.Length, 1000, 1000) { FileID = currentFileId };
+            }
+            var idStore = new EditStore(tunneledDir, null, ReadTunneledId);
+            Check(idStore.ReadState(tunneledPhoto).Edit?.Settings.Values[(int)Parameter.Exposure] == 0.25,
+                "EditStore reads initial identity-tracked registry");
+            var tunneledStamp = PathStatStamp.Capture(tunneledRegistryPath);
+            var rawTunneledJson = File.ReadAllText(tunneledRegistryPath);
+            var swappedJson = rawTunneledJson.Replace("0.25", "0.75");
+            Check(swappedJson.Length == rawTunneledJson.Length, "Tunneled edits.json preserves length");
+            File.WriteAllText(tunneledRegistryPath, swappedJson);
+            File.SetCreationTimeUtc(tunneledRegistryPath, new DateTime(tunneledStamp.CreatedTicks, DateTimeKind.Utc));
+            File.SetLastWriteTimeUtc(tunneledRegistryPath, new DateTime(tunneledStamp.ModifiedTicks, DateTimeKind.Utc));
+            currentFileId = "abcd-0001-0002";
+            Check(idStore.ReadState(tunneledPhoto).Edit?.Settings.Values[(int)Parameter.Exposure] == 0.75,
+                "WindowsFileId change with identical length/timestamps invalidates EditStore.RegistryCache");
         }
         finally
         {
             Directory.Delete(root, true);
         }
+    }
+
+    private static string BuildLargeCube(string seedLine, int minBytes = 68 * 1024)
+    {
+        var sb = new StringBuilder(minBytes + 128);
+        sb.AppendLine("LUT_3D_SIZE 2");
+        sb.AppendLine(seedLine);
+        while (sb.Length < minBytes)
+            sb.AppendLine("# padding comment line to model production 3D LUT asset size");
+        return sb.ToString();
     }
 
     private static void S3ResourceDigestCacheChecks()
@@ -111,7 +175,7 @@ internal static class HotPathIoAndRefreshChecks
         try
         {
             var lut = Path.Combine(root, "film.cube");
-            File.WriteAllText(lut, "LUT_3D_SIZE 2\n0 0 0\n");
+            File.WriteAllText(lut, BuildLargeCube("0 0 0"));
             var snapshot = new Adjustments().Capture();
 
             var hashesBefore = EditedPhotoPreviewKey.ResourceHashCount;
@@ -123,13 +187,13 @@ internal static class HotPathIoAndRefreshChecks
             }
             var hashes = EditedPhotoPreviewKey.ResourceHashCount - hashesBefore;
             Check(hashes <= 1,
-                $"Unchanged resource file must be hashed at most once (expected <= 1, observed {hashes})");
+                $"Unchanged large LUT resource file must be hashed at most once (expected <= 1, observed {hashes})");
 
-            // Dedicated cache verifies content changes, CreationTime-only replacement, symlinks, and HDR look sharing.
+            // Dedicated cache verifies content changes, CreationTime-only replacement, symlinks, rename-onto, and HDR look sharing.
             var digestCache = new FileDigestCache(capacity: 32);
             var hdrDir = Path.Combine(root, "hdr-looks");
             Directory.CreateDirectory(hdrDir);
-            var cubeBytes = Encoding.UTF8.GetBytes("LUT_3D_SIZE 2\n0.1 0.2 0.3\n");
+            var cubeBytes = Encoding.UTF8.GetBytes(BuildLargeCube("0.1 0.2 0.3"));
             var expectedSha = Convert.ToHexString(SHA256.HashData(cubeBytes)).ToLowerInvariant();
             var cubePath = Path.Combine(hdrDir, expectedSha + ".cube");
             File.WriteAllBytes(cubePath, cubeBytes);
@@ -138,13 +202,13 @@ internal static class HotPathIoAndRefreshChecks
             for (var i = 0; i < 8; i++)
                 Check(hdrLook.AssetIsAvailable(hdrDir, digestCache), "HDR look asset validates as available");
             Check(digestCache.ComputeCount == 1,
-                $"HDRLookSettings.AssetIsAvailable must hash unchanged .cube once (observed {digestCache.ComputeCount})");
+                $"HDRLookSettings.AssetIsAvailable must hash unchanged large .cube once (observed {digestCache.ComputeCount})");
             Check(digestCache.HitCount == 7,
                 $"HDRLookSettings.AssetIsAvailable must record 7 cache hits (observed {digestCache.HitCount})");
 
             // CreationTime-only change with identical Length + LastWriteTimeUtc must invalidate digest cache.
             var stampBefore = PathStatStamp.Capture(cubePath);
-            var tampered = Encoding.UTF8.GetBytes("LUT_3D_SIZE 2\n9.9 9.9 9.9\n");
+            var tampered = Encoding.UTF8.GetBytes(BuildLargeCube("9.9 9.9 9.9"));
             Check(tampered.Length == cubeBytes.Length, "Fixture byte length matches");
             File.WriteAllBytes(cubePath, tampered);
             File.SetLastWriteTimeUtc(cubePath, new DateTime(stampBefore.ModifiedTicks, DateTimeKind.Utc));
@@ -155,8 +219,8 @@ internal static class HotPathIoAndRefreshChecks
             // Symlink target swap must invalidate FileDigestCache.
             var targetA = Path.Combine(root, "target-a.cube");
             var targetB = Path.Combine(root, "target-b.cube");
-            File.WriteAllBytes(targetA, Encoding.UTF8.GetBytes("LUT_A\n0 0 0\n"));
-            File.WriteAllBytes(targetB, Encoding.UTF8.GetBytes("LUT_B_REPLACED\n1 1 1\n"));
+            File.WriteAllBytes(targetA, Encoding.UTF8.GetBytes(BuildLargeCube("0 0 0")));
+            File.WriteAllBytes(targetB, Encoding.UTF8.GetBytes(BuildLargeCube("1 1 1", minBytes: 70 * 1024)));
             var linkPath = Path.Combine(root, "active-link.cube");
             File.CreateSymbolicLink(linkPath, targetA);
             var fpA = digestCache.GetDigest(linkPath);
@@ -168,6 +232,44 @@ internal static class HotPathIoAndRefreshChecks
             var fpB = digestCache.GetDigest(linkPath);
             Check(fpB.Sha256Hex != fpA.Sha256Hex,
                 "Retargeting a symlink invalidates FileDigestCache");
+
+            // Small-file same-length in-place overwrite with identical Length/LastWrite/Creation ticks
+            // (reproducing NTFS same-tick overwrite in EditedPhotoPreviewChecks.cs:41) must never stale-hit.
+            var smallLut = Path.Combine(root, "small-overwrite.cube");
+            File.WriteAllText(smallLut, "first");
+            var firstStamp = PathStatStamp.Capture(smallLut);
+            var firstSmallDigest = digestCache.GetDigest(smallLut);
+            File.WriteAllText(smallLut, "other");
+            File.SetCreationTimeUtc(smallLut, new DateTime(firstStamp.CreatedTicks, DateTimeKind.Utc));
+            File.SetLastWriteTimeUtc(smallLut, new DateTime(firstStamp.ModifiedTicks, DateTimeKind.Utc));
+            var secondSmallDigest = digestCache.GetDigest(smallLut);
+            Check(secondSmallDigest.Sha256Hex != firstSmallDigest.Sha256Hex,
+                "Small-file same-length same-tick overwrite invalidates FileDigestCache");
+
+            // Large-file rename-onto and WindowsFileId change with spoofed timestamps invalidate FileDigestCache.
+            var fileIdForLarge = "large-id-1";
+            OriginalIdentity ReadLargeId(string p)
+            {
+                var info = new FileInfo(p);
+                return new OriginalIdentity(info.FullName, info.Length, 2000, 2000) { FileID = fileIdForLarge };
+            }
+            var idDigestCache = new FileDigestCache(capacity: 32, readIdentity: ReadLargeId);
+            var largeTarget = Path.Combine(root, "large-rename.cube");
+            File.WriteAllText(largeTarget, BuildLargeCube("0.2 0.2 0.2"));
+            var largeDigest1 = idDigestCache.GetDigest(largeTarget);
+            var largeDigest1Hit = idDigestCache.GetDigest(largeTarget);
+            Check(largeDigest1.Sha256Hex == largeDigest1Hit.Sha256Hex && idDigestCache.HitCount == 1,
+                "Unchanged FileID-tracked large LUT hits FileDigestCache");
+            var largeStampBefore = PathStatStamp.Capture(largeTarget);
+            var stagedLarge = largeTarget + ".tmp";
+            File.WriteAllText(stagedLarge, BuildLargeCube("0.8 0.8 0.8"));
+            File.SetCreationTimeUtc(stagedLarge, new DateTime(largeStampBefore.CreatedTicks, DateTimeKind.Utc));
+            File.SetLastWriteTimeUtc(stagedLarge, new DateTime(largeStampBefore.ModifiedTicks, DateTimeKind.Utc));
+            File.Move(stagedLarge, largeTarget, overwrite: true);
+            fileIdForLarge = "large-id-2";
+            var largeDigest2 = idDigestCache.GetDigest(largeTarget);
+            Check(largeDigest2.Sha256Hex != largeDigest1.Sha256Hex,
+                "WindowsFileId / rename-onto invalidates large FileDigestCache even with identical timestamps");
         }
         finally
         {
@@ -216,6 +318,38 @@ internal static class HotPathIoAndRefreshChecks
             probeCache.GetOrProbe(rawPath, cameraRaw: true, processingVersion: 3, FakeProbe, out _);
             Check(invoked == 3, "CreationTime change invalidates PhotoProbeCache");
 
+            // Delete + recreate invalidates PhotoProbeCache; FileID mismatch (NTFS tunneling) invalidates even with identical timestamps.
+            File.Delete(rawPath);
+            File.WriteAllBytes(rawPath, new byte[64]);
+            File.SetLastWriteTimeUtc(rawPath, new DateTime(stamp.ModifiedTicks, DateTimeKind.Utc).AddSeconds(7));
+            probeCache.GetOrProbe(rawPath, cameraRaw: true, processingVersion: 3, FakeProbe, out _);
+            Check(invoked == 4, "Delete + recreate invalidates PhotoProbeCache");
+
+            var tunneledRaw = Path.Combine(root, "tunneled.arw");
+            File.WriteAllBytes(tunneledRaw, new byte[64]);
+            var rawFileId = "vol-0001-0001";
+            OriginalIdentity ReadRawId(string p)
+            {
+                var info = new FileInfo(p);
+                return new OriginalIdentity(info.FullName, info.Length, 3000, 3000) { FileID = rawFileId };
+            }
+            var idProbeCache = new PhotoProbeCache(capacity: 32, readIdentity: ReadRawId);
+            idProbeCache.GetOrProbe(tunneledRaw, cameraRaw: true, processingVersion: 3, FakeProbe, out _);
+            var invokedBeforeIdHit = invoked;
+            idProbeCache.GetOrProbe(tunneledRaw, cameraRaw: true, processingVersion: 3, FakeProbe, out _);
+            Check(invoked == invokedBeforeIdHit, "Unchanged FileID hits PhotoProbeCache");
+            var tunneledStampBefore = PathStatStamp.Capture(tunneledRaw);
+            var stagedRaw = tunneledRaw + ".tmp";
+            File.WriteAllBytes(stagedRaw, new byte[64]);
+            File.SetCreationTimeUtc(stagedRaw, new DateTime(tunneledStampBefore.CreatedTicks, DateTimeKind.Utc));
+            File.SetLastWriteTimeUtc(stagedRaw, new DateTime(tunneledStampBefore.ModifiedTicks, DateTimeKind.Utc));
+            File.Move(stagedRaw, tunneledRaw, overwrite: true);
+            rawFileId = "vol-0001-0002";
+            idProbeCache.GetOrProbe(tunneledRaw, cameraRaw: true, processingVersion: 3, FakeProbe, out _);
+            Check(invoked == invokedBeforeIdHit + 1,
+                "WindowsFileId / rename-onto change with identical timestamps invalidates PhotoProbeCache");
+            var baseInvokesAfterTunneling = invoked;
+
             // Symlink target swap invalidates probe cache.
             var rawAlt = Path.Combine(root, "sample-alt.arw");
             File.WriteAllBytes(rawAlt, new byte[128]);
@@ -226,7 +360,8 @@ internal static class HotPathIoAndRefreshChecks
             File.Delete(linkRaw);
             File.CreateSymbolicLink(linkRaw, rawAlt);
             probeCache.GetOrProbe(linkRaw, cameraRaw: true, processingVersion: 3, FakeProbe, out _);
-            Check(invoked == invokesAtLinkA + 1, "Symlink retarget invalidates PhotoProbeCache");
+            Check(invoked == invokesAtLinkA + 1 && invokesAtLinkA > baseInvokesAfterTunneling,
+                "Symlink retarget invalidates PhotoProbeCache");
 
             // Probe exception must never be cached.
             var badPath = Path.Combine(root, "corrupt.jpg");
@@ -304,6 +439,28 @@ internal static class HotPathIoAndRefreshChecks
             // Missing file in TryReadIdentity returns null without throwing.
             Check(ViewSourceState.TryReadIdentity(Path.Combine(root, "missing.arw")) == null,
                 "TryReadIdentity swallows file identity failures gracefully");
+
+            // Queued source replacement (V1 -> V2) must fail ResolveWorkerFrameSource (DegradeSourceUnavailable).
+            Check(ViewSourceState.ResolveWorkerFrameSource(idA, idReplaced, idReplaced, idReplaced, sameOpenFile: true) == null,
+                "Queued file replacement (work.Source != afterRender) must not publish V2 under V1");
+            // Recovery after vanish (work.Source == null) publishes consistent restored source.
+            Check(ViewSourceState.ResolveWorkerFrameSource(null, idReplaced, idReplaced, idReplaced, sameOpenFile: true)?.SameFile(idReplaced) == true,
+                "Retry after vanish (work.Source == null) publishes restored source");
+            // Out-of-order watcher probes and stale worker snapshots cannot overwrite newer generation.
+            state.SetOpenPhoto(photoA, revision: 9, idA);
+            var workerGen = state.Generation;
+            var watchSeq1 = state.BeginWatcherProbe(photoA, revision: 9);
+            var watchSeq2 = state.BeginWatcherProbe(photoA, revision: 9);
+            Check(watchSeq1 != null && watchSeq2 != null && watchSeq2 > watchSeq1,
+                "Concurrent watcher probes get strictly increasing sequence numbers");
+            Check(state.ApplyProbeResult(photoA, revision: 9, idReplaced, watchSeq2) == ViewSourceProbeOutcome.Replaced,
+                "Newer watcher probe applies normally");
+            Check(state.ApplyProbeResult(photoA, revision: 9, idA, watchSeq1) == ViewSourceProbeOutcome.Stale,
+                "Older out-of-order watcher probe is rejected as Stale");
+            Check(state.ApplyProbeResult(photoA, revision: 9, idA, workerGen) == ViewSourceProbeOutcome.Stale,
+                "Stale worker probe cannot revert newer ViewSourceState");
+            Check(state.Current(photoA, revision: 9)?.SameFile(idReplaced) == true && !state.NeedsBackgroundProbe(photoA, revision: 9),
+                "ViewSourceState preserves newest identity and clean probe state");
         }
         finally
         {
@@ -340,6 +497,36 @@ internal static class HotPathIoAndRefreshChecks
         Check(!tracker.IsAvailable(isHdrEditing: false, "/tmp/missing.cube", Probe) && probeCalls == 2,
             "ApplyWorkerCheck updates availability with zero UI probe");
 
+        // Pre-render LookGeneration cannot overwrite an Invalidate that fired mid-render.
+        tracker.Invalidate();
+        Check(tracker.IsAvailable(isHdrEditing: false, "/tmp/present.cube", Probe) && probeCalls == 3,
+            "Re-arm cached look before render-race check");
+        var renderLookGen = tracker.Generation;
+        tracker.Invalidate("/tmp/present.cube");
+        Check(!tracker.ApplyWorkerCheck("/tmp/present.cube", true, renderLookGen),
+            "Stale ApplyWorkerCheck cannot overwrite mid-render watcher Invalidate");
+        Check(tracker.IsAvailable(isHdrEditing: false, "/tmp/present.cube", Probe) && probeCalls == 4,
+            "Next read re-probes because watcher Invalidate was preserved");
+
+        // RetryButton parent-dir watch recovery: missing directory -> not watching -> created -> Watch attaches.
+        var missingWatchRoot = Path.Combine(Path.GetTempPath(), "rawlab-look-watch-" + Guid.NewGuid());
+        try
+        {
+            var missingLookFile = Path.Combine(missingWatchRoot, "sub", "look.cube");
+            using var lookWatch = new PhotoPreviewResourceWatch(() => { });
+            lookWatch.Watch([missingLookFile]);
+            Check(!lookWatch.IsWatchingDirectory(missingLookFile),
+                "Missing parent directory initially leaves watch unattached");
+            Directory.CreateDirectory(Path.GetDirectoryName(missingLookFile)!);
+            lookWatch.Watch([missingLookFile]);
+            Check(lookWatch.IsWatchingDirectory(missingLookFile),
+                "Retrying Watch after parent directory appears attaches FileSystemWatcher");
+        }
+        finally
+        {
+            if (Directory.Exists(missingWatchRoot)) Directory.Delete(missingWatchRoot, true);
+        }
+
         // HDRPresentationCoordinator skips idle SDR LayoutUpdated floods.
         var coordinator = new HDRPresentationCoordinator();
         for (var i = 0; i < 200; i++)
@@ -373,6 +560,20 @@ internal static class HotPathIoAndRefreshChecks
         Check(coordinator.PresentationExecutedCount == runsBefore &&
               coordinator.LayoutSkippedCount - skipsBefore == 100,
             "After hiding HDR surfaces, subsequent LayoutUpdated ticks are skipped");
+    }
+
+    private static void M4AIDenoiseCachedIdentityChecks()
+    {
+        var cachedSource = new OriginalIdentity(Path.Combine(Path.GetTempPath(), "nonexistent-cached.arw"), 1234, 5678, 5678)
+        {
+            FileID = "0001-0002-0003"
+        };
+        var settings = new Adjustments { AIDenoiseEnabled = true };
+        var id = AIDenoiseIdentity.Read(cachedSource.Path, settings, backend: 3, deviceID: "gpu-0", sourceIdentity: cachedSource);
+        Check(id.Source == cachedSource && id.Backend == 3 && id.DeviceID == "gpu-0",
+            "AIDenoiseIdentity.Read uses cached OriginalIdentity with zero disk I/O");
+        Check(PreviewFallback.IsFileIdentityFailure(new Win32Exception(5)),
+            "Win32Exception is treated as a file identity failure in AI/view guards");
     }
 
     private static void W16InspectorModificationAndSubEditorChecks()
@@ -444,11 +645,12 @@ internal static class HotPathIoAndRefreshChecks
     private static void W16ParameterRowLayoutCacheChecks()
     {
         var layoutCache = new ParameterRowLayoutCache();
+        var range = new NumericRange(-5.0, 5.0, 0.01, Wheel: 0.1, FineWheel: 0.01, FixedDecimals: 2);
         var baseSig = new ParameterRowLayoutSignature(
-            13.0, "Segoe UI", "Normal", "Normal", "Normal", "zh-Hans",
-            -5.0, 5.0, 0.01, "EV", 320.0, 1.0, Compact: false);
+            13.0, 13.0, "Segoe UI", "Normal", "Normal", "Normal", "zh-Hans",
+            range, "EV", 320.0, 1.0, Compact: false);
         var baseMeta = new ParameterRowMetadataSignature(
-            "曝光", -5.0, 5.0, 0.01, 0.0, "EV", "zh-Hans");
+            "曝光", range, 0.0, "EV", "zh-Hans");
 
         Check(layoutCache.NeedsLayoutMeasure(baseSig) && layoutCache.NeedsMetadataRefresh(baseMeta),
             "Initial ParameterRow bind requires measure and metadata refresh");
@@ -465,11 +667,16 @@ internal static class HotPathIoAndRefreshChecks
               layoutCache.MeasureCount == 1 && layoutCache.MeasureSkippedCount == 100,
             $"Unchanged ParameterRow drag ticks must perform 0 layout remeasures (measured={remeasuresDuringDrag}, skipped={layoutCache.MeasureSkippedCount})");
 
-        // Width, font size, language, range, suffix, compact, and DPI changes trigger remeasure.
+        // Width, font size, Number.FontSize, full NumericRange fields, language, compact changes trigger remeasure/refresh.
         Check(layoutCache.NeedsLayoutMeasure(baseSig with { ActualWidth = 280.0 }), "Width change remeasures");
         Check(layoutCache.NeedsLayoutMeasure(baseSig with { ActualWidth = 280.0, FontSize = 20.0 }), "FontSize change remeasures");
-        Check(layoutCache.NeedsLayoutMeasure(baseSig with { ActualWidth = 280.0, FontSize = 20.0, Language = "en" }), "Language change remeasures");
-        Check(layoutCache.NeedsLayoutMeasure(baseSig with { ActualWidth = 280.0, FontSize = 20.0, Language = "en", Compact = true }), "Compact change remeasures");
+        Check(layoutCache.NeedsLayoutMeasure(baseSig with { ActualWidth = 280.0, FontSize = 20.0, NumberFontSize = 15.0 }), "Number.FontSize change remeasures");
+        Check(layoutCache.NeedsLayoutMeasure(baseSig with { ActualWidth = 280.0, FontSize = 20.0, NumberFontSize = 15.0, Range = range with { FixedDecimals = 0 } }),
+            "NumericRange.FixedDecimals change remeasures");
+        Check(layoutCache.NeedsLayoutMeasure(baseSig with { ActualWidth = 280.0, FontSize = 20.0, NumberFontSize = 15.0, Range = range with { FixedDecimals = 0 }, Language = "en" }), "Language change remeasures");
+        Check(layoutCache.NeedsLayoutMeasure(baseSig with { ActualWidth = 280.0, FontSize = 20.0, NumberFontSize = 15.0, Range = range with { FixedDecimals = 0 }, Language = "en", Compact = true }), "Compact change remeasures");
         Check(layoutCache.NeedsMetadataRefresh(baseMeta with { Language = "en" }), "Language change refreshes metadata");
+        Check(layoutCache.NeedsMetadataRefresh(baseMeta with { Language = "en", Range = range with { CompactPercent = true } }), "CompactPercent change refreshes metadata");
+        Check(layoutCache.NeedsMetadataRefresh(baseMeta with { Language = "en", Range = range with { CompactPercent = true, Wheel = 1.0 } }), "Wheel change refreshes metadata");
     }
 }

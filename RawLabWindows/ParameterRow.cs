@@ -96,18 +96,18 @@ public sealed class ParameterRow : Grid
     private void LayoutRow()
     {
         var fontSize = TextElement.GetFontSize(this);
+        var numberFontSize = Number.FontSize;
         var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         var language = Loc.Language;
         var layoutSignature = new ParameterRowLayoutSignature(
             fontSize,
+            numberFontSize,
             Number.FontFamily.Source,
             Number.FontStyle.ToString(),
             Number.FontWeight.ToString(),
             Number.FontStretch.ToString(),
             language,
-            range.Min,
-            range.Max,
-            range.Grid,
+            range,
             suffix,
             ActualWidth,
             dpi,
@@ -145,7 +145,7 @@ public sealed class ParameterRow : Grid
         var rebound=input.Bind(source,scope,limits,current);
         IsEnabled=enabled;
         var metadataSignature = new ParameterRowMetadataSignature(
-            title, limits.Min, limits.Max, limits.Grid, reset, suffix, Loc.Language);
+            title, limits, reset, suffix, Loc.Language);
         if (layoutCache.NeedsMetadataRefresh(metadataSignature))
         {
             unit.Text=suffix;

@@ -7,6 +7,14 @@ namespace RawLab.Windows;
 
 internal readonly record struct WindowsFileId(uint VolumeSerialNumber, uint FileIndexHigh, uint FileIndexLow);
 
+internal readonly record struct WindowsStatSnapshot(
+    long Length,
+    long ModifiedTicks,
+    long CreatedTicks,
+    long ChangeTicks,
+    long Usn,
+    string FileId);
+
 internal static class WindowsFileIdentity
 {
     [StructLayout(LayoutKind.Sequential)]
@@ -24,10 +32,40 @@ internal static class WindowsFileIdentity
         public uint FileIndexLow;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FileBasicInfo
+    {
+        public long CreationTime;
+        public long LastAccessTime;
+        public long LastWriteTime;
+        public long ChangeTime;
+        public uint FileAttributes;
+    }
+
+    private const int FileBasicInfoClass = 0;
+    private const uint FsctlReadFileUsnData = 0x000900eb;
+
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetFileInformationByHandle(
         SafeFileHandle file, out NativeFileInformation information);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetFileInformationByHandleEx(
+        SafeFileHandle file, int fileInformationClass, out FileBasicInfo fileInformation, uint bufferSize);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DeviceIoControl(
+        SafeFileHandle hDevice,
+        uint dwIoControlCode,
+        IntPtr lpInBuffer,
+        uint nInBufferSize,
+        [Out] byte[] lpOutBuffer,
+        uint nOutBufferSize,
+        out uint lpBytesReturned,
+        IntPtr lpOverlapped);
 
     // Keep this handle open through rendering and publication. Omitting
     // FileShare.Delete prevents a rename or replacement through another name.
@@ -45,15 +83,75 @@ internal static class WindowsFileIdentity
     internal static OriginalIdentity ReadIdentity(string path)
     {
         using var stream=OpenReadLock(path);
+        return ReadIdentityFromStream(path, stream);
+    }
+
+    internal static OriginalIdentity ReadCacheIdentity(string path)
+    {
+        using var stream = new FileStream(
+            path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1, FileOptions.None);
+        return ReadIdentityFromStream(path, stream);
+    }
+
+    internal static bool TryReadStat(string path, out WindowsStatSnapshot snapshot)
+    {
+        try
+        {
+            using var stream = new FileStream(
+                path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1, FileOptions.None);
+            if (!GetFileInformationByHandle(stream.SafeFileHandle, out var information))
+            {
+                snapshot = default;
+                return false;
+            }
+
+            long changeTicks = 0;
+            if (GetFileInformationByHandleEx(
+                stream.SafeFileHandle, FileBasicInfoClass, out var basic, (uint)Marshal.SizeOf<FileBasicInfo>()))
+            {
+                changeTicks = basic.ChangeTime > 0 ? DateTime.FromFileTimeUtc(basic.ChangeTime).Ticks : 0;
+            }
+
+            long usn = 0;
+            var usnBuffer = new byte[1024];
+            if (DeviceIoControl(stream.SafeFileHandle, FsctlReadFileUsnData, IntPtr.Zero, 0,
+                usnBuffer, (uint)usnBuffer.Length, out var returned, IntPtr.Zero) && returned >= 32)
+            {
+                var major = BitConverter.ToUInt16(usnBuffer, 4);
+                if (major == 2) usn = BitConverter.ToInt64(usnBuffer, 24);
+                else if (major == 3 && returned >= 48) usn = BitConverter.ToInt64(usnBuffer, 40);
+            }
+
+            var length = ((long)information.FileSizeHigh << 32) | information.FileSizeLow;
+            var fileId = $"{information.VolumeSerialNumber:x8}-{information.FileIndexHigh:x8}-{information.FileIndexLow:x8}";
+            snapshot = new(
+                length,
+                FileTimeTicks(information.LastWriteTime),
+                FileTimeTicks(information.CreationTime),
+                changeTicks,
+                usn,
+                fileId);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)
+        {
+            snapshot = default;
+            return false;
+        }
+    }
+
+    private static OriginalIdentity ReadIdentityFromStream(string path, FileStream stream)
+    {
         if(!GetFileInformationByHandle(stream.SafeFileHandle,out var information))
             throw new Win32Exception(Marshal.GetLastWin32Error(),Loc.Text("无法读取文件身份。"));
-        static long Ticks(System.Runtime.InteropServices.ComTypes.FILETIME value)=>
-            DateTime.FromFileTimeUtc(((long)(uint)value.dwHighDateTime<<32)|(uint)value.dwLowDateTime).Ticks;
         return new OriginalIdentity(Path.GetFullPath(path),((long)information.FileSizeHigh<<32)|information.FileSizeLow,
-            Ticks(information.LastWriteTime),Ticks(information.CreationTime)) {
+            FileTimeTicks(information.LastWriteTime),FileTimeTicks(information.CreationTime)) {
             FileID=$"{information.VolumeSerialNumber:x8}-{information.FileIndexHigh:x8}-{information.FileIndexLow:x8}"
         };
     }
+
+    private static long FileTimeTicks(System.Runtime.InteropServices.ComTypes.FILETIME value) =>
+        DateTime.FromFileTimeUtc(((long)(uint)value.dwHighDateTime << 32) | (uint)value.dwLowDateTime).Ticks;
 
     private static WindowsFileId Read(FileStream stream)
     {

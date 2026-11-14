@@ -75,7 +75,9 @@ public partial class MainWindow
             if (!currentSettings.SameAs(expectedSettings)) return false;
         }
         catch (InvalidDataException) { return false; }
-        return CurrentViewSource is { } currentSource && source.SameFile(currentSource);
+        if (CurrentViewSource is not { } currentSource || !source.SameFile(currentSource)) return false;
+        return lookIdentity == null ||
+            (LookAvailable && ViewSourceState.TryReadIdentity(lookIdentity.Path) is { } currentLook && lookIdentity.SameFile(currentLook));
     }
 
     private void FinishProcessingMigration(string path,OriginalIdentity source,SavedEdit before,AdjustmentSnapshot expectedSettings,string? expectedLook,OriginalIdentity? lookIdentity,

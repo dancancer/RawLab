@@ -45,35 +45,52 @@ public partial class MainWindow
         watch.Watch([path]);
         viewSourceWatch = watch;
     }
-    private void RefreshOpenViewSourceAsync(string path, long revision)
+    private void RefreshOpenViewSourceAsync(string path, long revision, bool scheduleOnRecovery = false)
     {
         if (closing || openRevision != revision || !ViewSourceState.PathsEqual(file, path)) return;
-        viewSourceState.MarkDirty(path, revision);
+        if (viewSourceState.BeginWatcherProbe(path, revision) is not { } probeSeq) return;
         _ = Task.Run(() => ViewSourceState.TryReadIdentity(path)).ContinueWith(task => Dispatcher.BeginInvoke(() => {
             if (closing || openRevision != revision || !ViewSourceState.PathsEqual(file, path)) return;
             var probed = task.IsCompletedSuccessfully ? task.Result : null;
-            var outcome = viewSourceState.ApplyProbeResult(path, revision, probed);
+            var outcome = viewSourceState.ApplyProbeResult(path, revision, probed, probeSeq);
             if (outcome is ViewSourceProbeOutcome.Replaced or ViewSourceProbeOutcome.BecameUnavailable)
             {
                 neutralResult = null;
                 acceptedReference = null;
                 RefreshViewingFrames();
             }
+            if (scheduleOnRecovery && outcome is ViewSourceProbeOutcome.Initialized or ViewSourceProbeOutcome.Replaced)
+                Schedule();
         }), TaskScheduler.Default);
     }
     private void EnsureLookWatch(string? lookPath)
     {
         var canonical = lookPath == null ? null : Path.GetFullPath(lookPath);
-        if (ViewSourceState.PathsEqual(watchedLookPath, canonical)) return;
+        if (ViewSourceState.PathsEqual(watchedLookPath, canonical))
+        {
+            if (canonical != null && (!lookAvailability.LastKnownAvailable ||
+                lookAvailabilityWatch == null || !lookAvailabilityWatch.IsWatchingDirectory(canonical)))
+            {
+                lookAvailabilityWatch ??= CreateLookWatch(canonical);
+                lookAvailabilityWatch.Watch([canonical]);
+                lookAvailability.Invalidate(canonical);
+            }
+            return;
+        }
         watchedLookPath = canonical;
         lookAvailability.Invalidate();
         lookAvailabilityWatch?.Dispose();
         lookAvailabilityWatch = null;
         if (canonical == null) return;
-        var watch = new PhotoPreviewResourceWatch(() => Dispatcher.BeginInvoke(() => lookAvailability.Invalidate(canonical)));
+        var watch = CreateLookWatch(canonical);
         watch.Watch([canonical]);
         lookAvailabilityWatch = watch;
     }
+    private PhotoPreviewResourceWatch CreateLookWatch(string canonical) => new(() => Dispatcher.BeginInvoke(() => {
+        if (closing || !ViewSourceState.PathsEqual(watchedLookPath, canonical)) return;
+        lookAvailability.Invalidate(canonical);
+        RefreshControls();
+    }));
     private void DisposeSourceWatches()
     {
         viewSourceWatch?.Dispose();

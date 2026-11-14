@@ -60,7 +60,7 @@ public partial class MainWindow
     private void CacheCurrentPhotoPreview(string resources)
     {
         if(!exactReady || result==null || currentEditRecord?.Edit is not {} edit || hslAcceptedSettings==null ||
-            hslAcceptedWork?.Source.SameFile(edit.Identity)!=true || !edit.Settings.SameAs(hslAcceptedSettings) || edit.Look!=CurrentLookIdentity() || PhotoPreviews() is not {} previews)return;
+            hslAcceptedWork?.Source?.SameFile(edit.Identity)!=true || !edit.Settings.SameAs(hslAcceptedSettings) || edit.Look!=CurrentLookIdentity() || PhotoPreviews() is not {} previews)return;
         _=Cache();
         async Task Cache() {
             try {await previews.AcceptAsync(currentEditRecord.Copy(),result.Image,lut,resources,RequestedAIBackend,aiPreference.DeviceID);}

@@ -115,6 +115,12 @@ internal sealed class PhotoPreviewResourceWatch(Action changed) : IDisposable
     {
         lock(gate) {if(!disposed && files.Contains(path))changed();}
     }
+    internal bool IsWatchingDirectory(string path)
+    {
+        var directory = Path.GetDirectoryName(Path.GetFullPath(path));
+        if (directory == null) return false;
+        lock (gate) return !disposed && directories.ContainsKey(directory);
+    }
     public void Dispose()
     {
         FileSystemWatcher[] watchers;

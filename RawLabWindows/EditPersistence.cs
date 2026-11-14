@@ -171,12 +171,13 @@ public sealed class EditStore
     private sealed record Registry(int Version, Dictionary<string, JsonElement> Records,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         Dictionary<string, JsonElement>? MigrationReceipts = null);
-    private sealed record CachedRegistry(PathStatStamp Stamp, long Epoch, Registry Registry);
+    private sealed record CachedRegistry(PathStatStamp Stamp, long Epoch, OriginalIdentity Identity, Registry Registry);
     private static readonly ConcurrentDictionary<string, long> PathEpochs = new(StringComparer.OrdinalIgnoreCase);
     public static string DefaultDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "Edits");
     private readonly string path;
     private readonly string canonicalPath;
     private readonly Action<string,object> write;
+    private readonly Func<string, OriginalIdentity>? customReadIdentity;
     private readonly object cacheGate = new();
     private CachedRegistry? cachedRegistry;
     private long diskReadCount;
@@ -192,11 +193,31 @@ public sealed class EditStore
     }
 
     public EditStore(string directory,Action<string,object>? write = null)
+        : this(directory, write, null) { }
+
+    internal EditStore(string directory, Action<string, object>? write, Func<string, OriginalIdentity>? readRegistryIdentity)
     {
         path = Path.Combine(directory, "edits.json");
         canonicalPath = Path.GetFullPath(path);
         this.write=write ?? AtomicJson.Write;
+        customReadIdentity = readRegistryIdentity;
         _=ReadRegistry();
+    }
+
+    private OriginalIdentity? TryReadRegistryIdentity(string canonical)
+    {
+        try
+        {
+            if (customReadIdentity != null)
+                return customReadIdentity(canonical);
+            return OperatingSystem.IsWindows()
+                ? WindowsFileIdentity.ReadCacheIdentity(canonical)
+                : OriginalIdentity.Read(canonical);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        {
+            return null;
+        }
     }
 
     private static long CurrentPathEpoch(string canonical) => PathEpochs.GetValueOrDefault(canonical);
@@ -211,7 +232,8 @@ public sealed class EditStore
 
     private void WriteAndCacheRegistry(Registry next)
     {
-        var beforeStamp = PathStatStamp.Capture(canonicalPath);
+        var beforeStamp = PathStatStamp.Capture(canonicalPath, customReadIdentity);
+        var beforeIdentity = beforeStamp.Exists ? TryReadRegistryIdentity(canonicalPath) : null;
         try
         {
             write(path, next);
@@ -224,10 +246,12 @@ public sealed class EditStore
         }
 
         var nextEpoch = BumpPathEpoch(canonicalPath);
-        var afterStamp = PathStatStamp.Capture(canonicalPath);
-        if (afterStamp.Exists && afterStamp != beforeStamp)
+        var afterStamp = PathStatStamp.Capture(canonicalPath, customReadIdentity);
+        var afterIdentity = afterStamp.Exists ? TryReadRegistryIdentity(canonicalPath) : null;
+        if (afterStamp.Exists && afterIdentity != null &&
+            (afterStamp != beforeStamp || beforeIdentity == null || !afterIdentity.SameFile(beforeIdentity)))
         {
-            lock (cacheGate) cachedRegistry = new(afterStamp, nextEpoch, next);
+            lock (cacheGate) cachedRegistry = new(afterStamp, nextEpoch, afterIdentity, next);
         }
         else
         {
@@ -237,19 +261,23 @@ public sealed class EditStore
 
     private Registry ReadRegistry(bool forceDisk = false)
     {
-        var currentStamp = PathStatStamp.Capture(canonicalPath);
+        var currentStamp = PathStatStamp.Capture(canonicalPath, customReadIdentity);
         if (!currentStamp.Exists)
         {
             InvalidateCache();
             return new(1,new(StringComparer.OrdinalIgnoreCase));
         }
 
+        var currentIdentity = TryReadRegistryIdentity(canonicalPath);
         var epoch = CurrentPathEpoch(canonicalPath);
-        if (!forceDisk)
+        if (!forceDisk && currentIdentity != null)
         {
             lock (cacheGate)
             {
-                if (cachedRegistry is {} cached && cached.Stamp == currentStamp && cached.Epoch == epoch)
+                if (cachedRegistry is {} cached &&
+                    cached.Stamp == currentStamp &&
+                    cached.Epoch == epoch &&
+                    cached.Identity.SameFile(currentIdentity))
                     return cached.Registry;
             }
         }
@@ -266,11 +294,13 @@ public sealed class EditStore
             throw;
         }
 
-        var afterStamp = PathStatStamp.Capture(canonicalPath);
+        var afterStamp = PathStatStamp.Capture(canonicalPath, customReadIdentity);
         var afterEpoch = CurrentPathEpoch(canonicalPath);
-        if (afterStamp.Exists && afterStamp == currentStamp && afterEpoch == epoch)
+        var afterIdentity = afterStamp.Exists ? TryReadRegistryIdentity(canonicalPath) : null;
+        if (afterStamp.Exists && afterStamp == currentStamp && afterEpoch == epoch &&
+            currentIdentity != null && afterIdentity != null && afterIdentity.SameFile(currentIdentity))
         {
-            lock (cacheGate) cachedRegistry = new(currentStamp, epoch, parsed);
+            lock (cacheGate) cachedRegistry = new(currentStamp, epoch, currentIdentity, parsed);
         }
         else
         {

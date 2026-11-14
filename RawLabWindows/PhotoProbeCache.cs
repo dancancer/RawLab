@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.IO;
 
 namespace RawLab.Windows;
@@ -22,7 +23,7 @@ internal sealed class PhotoProbeCache
             obj.ProcessingVersion);
     }
 
-    private readonly record struct Entry(PathStatStamp Stat, HDRProbeState State, HDRSourceInfo? Info);
+    private readonly record struct Entry(PathStatStamp Stat, OriginalIdentity Identity, HDRProbeState State, HDRSourceInfo? Info);
 
     internal static PhotoProbeCache Shared { get; } = new();
 
@@ -30,12 +31,14 @@ internal sealed class PhotoProbeCache
     private readonly Dictionary<Key, Entry> entries = new(KeyComparer.Instance);
     private readonly Queue<Key> evictionOrder = new();
     private readonly int capacity;
+    private readonly Func<string, OriginalIdentity>? customReadIdentity;
     private long missCount;
     private long hitCount;
 
-    internal PhotoProbeCache(int capacity = 256)
+    internal PhotoProbeCache(int capacity = 256, Func<string, OriginalIdentity>? readIdentity = null)
     {
         this.capacity = Math.Max(16, capacity);
+        customReadIdentity = readIdentity;
     }
 
     internal long MissCount => Interlocked.Read(ref missCount);
@@ -49,14 +52,17 @@ internal sealed class PhotoProbeCache
         out HDRSourceInfo? info)
     {
         var canonical = Path.GetFullPath(path);
-        var stat = PathStatStamp.Capture(canonical);
+        var stat = PathStatStamp.Capture(canonical, customReadIdentity);
+        var identity = TryReadIdentity(canonical);
         var key = new Key(canonical, cameraRaw, processingVersion);
 
-        if (stat.Exists)
+        if (stat.Exists && identity != null)
         {
             lock (gate)
             {
-                if (entries.TryGetValue(key, out var cached) && cached.Stat == stat)
+                if (entries.TryGetValue(key, out var cached) &&
+                    cached.Stat == stat &&
+                    cached.Identity.SameFile(identity))
                 {
                     Interlocked.Increment(ref hitCount);
                     info = cached.Info;
@@ -77,8 +83,9 @@ internal sealed class PhotoProbeCache
             throw;
         }
 
-        var afterStat = PathStatStamp.Capture(canonical);
-        if (afterStat.Exists && afterStat == stat)
+        var afterStat = PathStatStamp.Capture(canonical, customReadIdentity);
+        var afterIdentity = TryReadIdentity(canonical);
+        if (identity != null && afterStat.Exists && afterStat == stat && afterIdentity != null && afterIdentity.SameFile(identity))
         {
             lock (gate)
             {
@@ -88,7 +95,7 @@ internal sealed class PhotoProbeCache
                         entries.Remove(oldest);
                     evictionOrder.Enqueue(key);
                 }
-                entries[key] = new(stat, state, info);
+                entries[key] = new(stat, identity, state, info);
             }
         }
         else
@@ -97,6 +104,22 @@ internal sealed class PhotoProbeCache
         }
 
         return state;
+    }
+
+    private OriginalIdentity? TryReadIdentity(string canonical)
+    {
+        try
+        {
+            if (customReadIdentity != null)
+                return customReadIdentity(canonical);
+            return OperatingSystem.IsWindows()
+                ? WindowsFileIdentity.ReadCacheIdentity(canonical)
+                : OriginalIdentity.Read(canonical);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)
+        {
+            return null;
+        }
     }
 
     internal void Clear()

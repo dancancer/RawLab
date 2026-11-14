@@ -39,8 +39,14 @@ public partial class MainWindow
     }
     private void CancelEditGesture()
     {
-        if(editGesture is not {} gesture)return;
-        editGesture=null;interacting=false;editSaveTimer.Stop();
+        var wasInteracting = interacting;
+        interacting = false;
+        if (editGesture is not {} gesture)
+        {
+            if (wasInteracting) RefreshControls();
+            return;
+        }
+        editGesture = null; editSaveTimer.Stop();
         if(file!=gesture.Path || openRevision!=gesture.OpenRevision)return;
         var aiEnabled=settings.ActiveAIDenoise;
         var aiChanged=aiEnabled!=gesture.Before.Settings.ActiveAIDenoise;

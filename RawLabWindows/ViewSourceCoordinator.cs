@@ -18,9 +18,13 @@ internal sealed class ViewSourceState
     private long openRevision;
     private OriginalIdentity? cachedIdentity;
     private bool dirty;
+    private long generation;
+
+    internal long Generation => generation;
 
     internal void Reset()
     {
+        ++generation;
         currentPath = null;
         openRevision = 0;
         cachedIdentity = null;
@@ -29,6 +33,7 @@ internal sealed class ViewSourceState
 
     internal void SetOpenPhoto(string? path, long revision, OriginalIdentity? identity)
     {
+        ++generation;
         currentPath = path == null ? null : Path.GetFullPath(path);
         openRevision = revision;
         cachedIdentity = identity;
@@ -45,40 +50,80 @@ internal sealed class ViewSourceState
     internal void MarkDirty(string? path, long revision)
     {
         if (path != null && openRevision == revision && PathsEqual(currentPath, path))
+        {
+            ++generation;
             dirty = true;
+        }
+    }
+
+    internal long? BeginWatcherProbe(string path, long revision)
+    {
+        if (openRevision != revision || !PathsEqual(currentPath, path))
+            return null;
+        dirty = true;
+        return ++generation;
     }
 
     internal bool NeedsBackgroundProbe(string? path, long revision) =>
         path != null && openRevision == revision && PathsEqual(currentPath, path) && (dirty || cachedIdentity == null);
 
-    internal ViewSourceProbeOutcome ApplyProbeResult(string path, long revision, OriginalIdentity? probed)
+    internal ViewSourceProbeOutcome ApplyProbeResult(
+        string path, long revision, OriginalIdentity? probed, long? expectedGeneration = null)
     {
         if (openRevision != revision || !PathsEqual(currentPath, path))
+            return ViewSourceProbeOutcome.Stale;
+        if (expectedGeneration is { } expected && expected != generation)
             return ViewSourceProbeOutcome.Stale;
 
         dirty = false;
         var previous = cachedIdentity;
         if (probed == null)
         {
+            if (previous != null)
+            {
+                ++generation;
+                cachedIdentity = null;
+                return ViewSourceProbeOutcome.BecameUnavailable;
+            }
+            if (expectedGeneration != null)
+                ++generation;
             cachedIdentity = null;
-            return previous != null
-                ? ViewSourceProbeOutcome.BecameUnavailable
-                : ViewSourceProbeOutcome.UnchangedUnavailable;
+            return ViewSourceProbeOutcome.UnchangedUnavailable;
         }
 
         if (previous == null)
         {
+            ++generation;
             cachedIdentity = probed;
             return ViewSourceProbeOutcome.Initialized;
         }
 
         if (!previous.SameFile(probed))
         {
+            ++generation;
             cachedIdentity = probed;
             return ViewSourceProbeOutcome.Replaced;
         }
 
+        if (expectedGeneration != null)
+            ++generation;
         return ViewSourceProbeOutcome.Unchanged;
+    }
+
+    internal static OriginalIdentity? ResolveWorkerFrameSource(
+        OriginalIdentity? workSource,
+        OriginalIdentity? beforeRender,
+        OriginalIdentity? afterRender,
+        OriginalIdentity? latestViewSource,
+        bool sameOpenFile)
+    {
+        if (!sameOpenFile || beforeRender == null || afterRender == null || !beforeRender.SameFile(afterRender))
+            return null;
+        if (workSource != null && !workSource.SameFile(afterRender))
+            return null;
+        if (latestViewSource == null || !latestViewSource.SameFile(afterRender))
+            return null;
+        return latestViewSource;
     }
 
     internal static OriginalIdentity? TryReadIdentity(string path, Func<string, OriginalIdentity>? read = null)
@@ -105,12 +150,16 @@ internal sealed class LookAvailabilityTracker
     private string? trackedPath;
     private bool available;
     private bool initialized;
+    private long generation;
     private long probeCount;
 
+    internal long Generation => generation;
+    internal bool LastKnownAvailable => !initialized || available;
     internal long ProbeCount => Interlocked.Read(ref probeCount);
 
     internal void Reset()
     {
+        ++generation;
         trackedPath = null;
         available = true;
         initialized = false;
@@ -118,18 +167,24 @@ internal sealed class LookAvailabilityTracker
 
     internal void Invalidate(string? path = null)
     {
-        if (path == null || (trackedPath != null && ViewSourceState.PathsEqual(trackedPath, path)))
+        if (path == null || trackedPath == null || ViewSourceState.PathsEqual(trackedPath, path))
+        {
+            ++generation;
             initialized = false;
+        }
     }
 
     internal static bool ProbeExists(bool isHdrEditing, string? path) =>
         isHdrEditing || path == null || File.Exists(path);
 
-    internal void ApplyWorkerCheck(string? path, bool isAvailable)
+    internal bool ApplyWorkerCheck(string? path, bool isAvailable, long? expectedGeneration = null)
     {
+        if (expectedGeneration is { } expected && expected != generation)
+            return false;
         trackedPath = path == null ? null : Path.GetFullPath(path);
         available = isAvailable;
         initialized = true;
+        return true;
     }
 
     internal bool IsAvailable(bool isHdrEditing, string? path, Func<string, bool>? exists = null)

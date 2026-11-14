@@ -799,7 +799,11 @@ public partial class MainWindow
         BaselineLabel.Text=result.HDR != null ? Loc.Text("SDR 兼容预览") : raster ? Loc.Text("显示图像") : Loc.Format("基础偏移 {0:+0.00;-0.00;0.00} EV", result.Baseline);
         AsShotButton.ToolTip=raster ? Loc.Text("不适用") : result.WhiteBalance==null ? Loc.Text("此 RAW 缺少有效校准，使用相机原始白平衡") : Loc.Format("拍摄时：{0} K / {1}", result.WhiteBalance.Value.Temperature.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo(Loc.Language)), result.WhiteBalance.Value.Tint.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo(Loc.Language)));
     }
-    private void RetryClicked(object sender,RoutedEventArgs e)=>Schedule();
+    private void RetryClicked(object sender,RoutedEventArgs e)
+    {
+        lookAvailability.Invalidate();
+        Schedule();
+    }
     private void Report(Exception error)=>SetStatus(error is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException
         ? Loc.Text("无法加载显影组件。请通过 build.ps1 构建，并保留程序目录内的 DLL。") : error.Message,true);
 }

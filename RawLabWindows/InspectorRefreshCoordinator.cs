@@ -10,14 +10,13 @@ internal enum InspectorRefreshScope
 
 internal readonly record struct ParameterRowLayoutSignature(
     double FontSize,
+    double NumberFontSize,
     string FontFamilyName,
     string FontStyle,
     string FontWeight,
     string FontStretch,
     string Language,
-    double RangeMin,
-    double RangeMax,
-    double RangeGrid,
+    NumericRange Range,
     string Suffix,
     double ActualWidth,
     double PixelsPerDip,
@@ -25,9 +24,7 @@ internal readonly record struct ParameterRowLayoutSignature(
 
 internal readonly record struct ParameterRowMetadataSignature(
     string Title,
-    double RangeMin,
-    double RangeMax,
-    double RangeGrid,
+    NumericRange Range,
     double DefaultValue,
     string Suffix,
     string Language);

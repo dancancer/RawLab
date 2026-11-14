@@ -161,20 +161,25 @@ public partial class MainWindow
         if(!ready || file==null || closing)return;
         if(exporting){previewDeferred=true;return;}
         ReconcileAI();
-        if(settings.ActiveAIDenoise && !AIResultReady) { exactReady=false;UpdateBusy();return; }
+        if(settings.ActiveAIDenoise && !AIResultReady) {
+            if(CurrentViewSource==null && !aiJob.State.IsRunning) RefreshOpenViewSourceAsync(file,openRevision,scheduleOnRecovery:true);
+            exactReady=false;UpdateBusy();return;
+        }
         previewDeferred=false;
         if(transform.Active){transformPreviewReady=false;RefreshCropDraft();}
         if(!settings.Denoise.Enabled && previewResize.IsEnabled){previewResize.Stop();previewLongEdge=requestedPreviewLongEdge;}
         EnsureLookWatch(settings.IsHDREditing ? null : lut);
         if(!LookAvailable){exactReady=false;renderFailed=true;RefreshRenderLabels();SetStatus(() => Loc.Text("上次使用的外观不可用，请重新选择或导入外观。"),true);UpdateBusy();return;}
+        var lookGeneration = lookAvailability.Generation;
         renderFailed=false;
         var proxy=interacting || initialPreview;
         var previewSettings=settings.Clone();previewSettings.Geometry=PreviewGeometry;previewSettings.Lens=PreviewLens;
         var source = CurrentViewSource;
+        var sourceGeneration = viewSourceState.Generation;
         var referenceKey = source == null ? null : new NeutralReferenceKey(source,PhotoInput.IsRaster(file),previewSettings.Processing,previewSettings.Geometry,previewSettings.Lens,RenderEdge(proxy),previewSettings.IsHDREditing,previewSettings.X3fMode,NeutralReference.HDRCameraSettings(previewSettings.IsHDREditing ? previewSettings.HDR : null));
         if(referenceKey == null ? acceptedReference != null : acceptedReference!=referenceKey){neutralResult=null;acceptedReference=null;RefreshViewingFrames();}
         var quiet=viewportOnly && exactReady && !scheduler.Busy && !proxy && !transform.Active;
-        scheduler.Submit(new(file,previewSettings,lut,RenderEdge(proxy),proxy,RequestedGpuMode,view.NeedsReference,initialPreview,transformGeneration,openRevision,source,settings.ActiveAIDenoise ? aiJob.Identity : null));
+        scheduler.Submit(new(file,previewSettings,lut,RenderEdge(proxy),proxy,RequestedGpuMode,view.NeedsReference,initialPreview,transformGeneration,openRevision,source,settings.ActiveAIDenoise ? aiJob.Identity : null,SourceGeneration:sourceGeneration,LookGeneration:lookGeneration));
         quietViewportRevision=quiet ? scheduler.Revision : -1;
         exactReady=false;
         if(!quiet)SetStatus(() => interacting ? Loc.Text("正在生成交互预览…") : Loc.Text("正在显影…"));
@@ -236,15 +241,17 @@ public partial class MainWindow
         try
         {
             var sameOpenFile = work.OpenRevision == openRevision && work.File == file;
-            if (sameOpenFile && !work.Settings.IsHDREditing)
-                lookAvailability.ApplyWorkerCheck(work.Lut, workerLookAvailable);
-            var workerConsistentSource = beforeRenderSource != null && afterRenderSource != null && beforeRenderSource.SameFile(afterRenderSource);
-            var effectiveSource = sameOpenFile ? (workerConsistentSource ? afterRenderSource : null) : CurrentViewSource;
             if (sameOpenFile)
-                viewSourceState.ApplyProbeResult(work.File, work.OpenRevision, afterRenderSource);
+            {
+                if (!work.Settings.IsHDREditing && work.Lut == lut)
+                    lookAvailability.ApplyWorkerCheck(work.Lut, workerLookAvailable, work.LookGeneration);
+                viewSourceState.ApplyProbeResult(work.File, work.OpenRevision, afterRenderSource, work.SourceGeneration);
+            }
             if (sameOpenFile && !work.Settings.IsHDREditing && !workerLookAvailable && work.Lut == lut && failure == null)
                 failure = new FileNotFoundException(Loc.Text("上次使用的外观不可用，请重新选择或导入外观。"), work.Lut);
-            var sameSource = workerConsistentSource && effectiveSource != null;
+            var effectiveSource = ViewSourceState.ResolveWorkerFrameSource(
+                work.Source, beforeRenderSource, afterRenderSource, sameOpenFile ? CurrentViewSource : null, sameOpenFile);
+            var sameSource = effectiveSource != null;
             var sameRenderInputs = work.Lut == lut &&
                 work.Settings.IsHDREditing == settings.IsHDREditing &&
                 work.Settings.ActiveAIDenoise == settings.ActiveAIDenoise &&
