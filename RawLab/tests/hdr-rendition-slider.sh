@@ -124,6 +124,8 @@ swiftc -swift-version 5 -sdk "$SDK" -target "$TARGET" -module-cache-path "$OUT/m
     -I "$PLAT/Developer/usr/lib" -I "$SDK/System/Library/Frameworks" \
     -F "$PLAT/Developer/Library/Frameworks" -F "$PLAT/Developer/Library/PrivateFrameworks" \
     -L "$PLAT/Developer/usr/lib" -framework XCTest \
+    -framework XCUIAutomation \
+    -import-objc-header "$ROOT/RawLab/tests/HDRRenditionSliderSyntheticEvents.h" \
     -lXCTestSwiftSupport -Xlinker -rpath -Xlinker @executable_path/Frameworks -Xlinker -rpath -Xlinker @loader_path/Frameworks \
     "$ROOT/RawLab/tests/HDRRenditionSliderUITests.swift" -o "$BUNDLE/HDRRenditionSliderUITests"
 mkdir -p "$RUNNER/Frameworks"

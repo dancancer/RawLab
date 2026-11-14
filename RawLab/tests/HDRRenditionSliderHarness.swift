@@ -25,8 +25,18 @@ private func makeProbeSettings(peak: Double) -> HDRRenditionSettings {
     return value
 }
 
+private func sliders(in view: UIView) -> [UISlider] {
+    var result: [UISlider] = []
+    if let slider = view as? UISlider { result.append(slider) }
+    for subview in view.subviews {
+        result.append(contentsOf: sliders(in: subview))
+    }
+    return result
+}
+
 @MainActor
 private final class SliderHarnessState: ObservableObject {
+    weak var window: UIWindow?
     @Published var settings = makeProbeSettings(peak: 2.5)
     @Published var writes = 0
     @Published var editingLog: [Int] = []
@@ -80,10 +90,13 @@ private struct SliderHarnessRoot: View {
                         .disabled(state.controlsDisabled)
                     }
                     Text(statusText).accessibilityIdentifier("probe.status")
-                    Button("VOIncrementPeak") {
-                        state.writes += 0
+                    Button("SendValueChanged") {
+                        guard let window = state.window,
+                              let slider = sliders(in: window).first(where: { $0.accessibilityIdentifier == "hdr.rendition.peakLimit" }) else { return }
+                        slider.setValue(3.4, animated: false)
+                        slider.sendActions(for: .valueChanged)
                     }
-                    .accessibilityIdentifier("probe.noop")
+                    .accessibilityIdentifier("probe.valueChanged")
                 }
             }
         }
@@ -106,15 +119,6 @@ private final class SliderMethodProbe {
 
     private func settle() async {
         try? await Task.sleep(nanoseconds: 150_000_000)
-    }
-
-    private func sliders(in view: UIView) -> [UISlider] {
-        var result: [UISlider] = []
-        if let slider = view as? UISlider { result.append(slider) }
-        for subview in view.subviews {
-            result.append(contentsOf: sliders(in: subview))
-        }
-        return result
     }
 
     @MainActor
@@ -269,6 +273,7 @@ final class HDRRenditionSliderSceneDelegate: NSObject, UIWindowSceneDelegate {
         let state = SliderHarnessState()
         state.configureFromEnvironment()
         let window = UIWindow(windowScene: windowScene)
+        state.window = window
         window.rootViewController = UIHostingController(rootView: SliderHarnessRoot(state: state))
         window.makeKeyAndVisible()
         self.window = window

@@ -556,7 +556,7 @@ private struct HDRRenditionSlider: UIViewRepresentable {
         }
 
         @objc func touchFinished(_ slider: HDRRenditionUIKitSlider) {
-            guard !slider.suppressingFinishCallback else { return }
+            guard !slider.suppressingFinishCallback, !slider.isTracking, !slider.hasActiveDragGesture else { return }
             if slider.isActivelyDragging {
                 let snapped = HDRRenditionSliderMath.snap(Double(slider.value), to: parent.range, step: parent.step)
                 if parent.value != snapped {
@@ -608,13 +608,11 @@ private final class HDRRenditionUIKitSlider: UISlider {
     private var didMoveBeyondThreshold = false
     private var editingActive = false
     var committedDragOnCurrentTouch = false
-    private var lastCompletedTouchCommittedDrag = false
-    private var touchPrecededByDrag = false
     var suppressingFinishCallback = false
 
     var isTrackingInteraction: Bool { editingActive }
 
-    private var hasActiveDragGesture: Bool {
+    var hasActiveDragGesture: Bool {
         gestureRecognizers?.contains { recognizer in
             guard recognizer !== doubleTapRecognizer else { return false }
             return recognizer.state == .began || recognizer.state == .changed
@@ -667,7 +665,6 @@ private final class HDRRenditionUIKitSlider: UISlider {
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        touchPrecededByDrag = lastCompletedTouchCommittedDrag
         hasActiveTouch = true
         committedDragOnCurrentTouch = !allowsDoubleTap
         if let touch = touches.first {
@@ -742,11 +739,14 @@ private final class HDRRenditionUIKitSlider: UISlider {
     }
 
     func finishTrackingInteraction() {
-        let didFinishTouch = hasActiveTouch || downPoint != nil || editingActive
-        let committedDrag = committedDragOnCurrentTouch
+        // UIKit 可能在底层 tracking 结束前先派发 touchesEnded 或 touchCancel。
+        guard !isTracking, !hasActiveDragGesture else { return }
+        let finishedDrag = didMoveBeyondThreshold || committedDragOnCurrentTouch
         resetTouchState()
-        if didFinishTouch {
-            lastCompletedTouchCommittedDrag = committedDrag
+        if finishedDrag && allowsDoubleTap {
+            // 拖拽结束即清除点击配对，下一次完整双击从新的第一击开始。
+            doubleTapRecognizer.isEnabled = false
+            syncGestureConfiguration()
         }
         if editingActive {
             editingActive = false
@@ -756,16 +756,11 @@ private final class HDRRenditionUIKitSlider: UISlider {
 
     @objc private func handleDoubleTap(_ recognizer: UITapGestureRecognizer) {
         guard isEnabled, allowsDoubleTap, recognizer.state == .ended else { return }
-        if touchPrecededByDrag {
-            return
-        }
         let wasEditing = editingActive
         suppressingFinishCallback = true
         super.cancelTracking(with: nil)
         resetTouchState()
         suppressingFinishCallback = false
-        lastCompletedTouchCommittedDrag = false
-        touchPrecededByDrag = false
         if wasEditing {
             editingActive = false
             onCancelled()
