@@ -16,6 +16,9 @@
 #include <stdexcept>
 #include <cstddef>
 #include <vector>
+#if defined(RAWLAB_D3D11_TESTING)
+#include "d3d11_test_hooks.h"
+#endif
 
 namespace sony2fuji {
 namespace {
@@ -57,6 +60,9 @@ struct D3D11PhotoRenderer::Impl {
     std::shared_ptr<LUT3D> cachedLut;
 
     void initialize() {
+#if defined(RAWLAB_D3D11_TESTING)
+        d3d11_test::createDevice(device, context, false);
+#else
         ComPtr<IDXGIFactory1> factory;
         checked(CreateDXGIFactory1(IID_PPV_ARGS(factory.GetAddressOf())));
         std::vector<ComPtr<IDXGIAdapter1>> adapters;
@@ -78,6 +84,7 @@ struct D3D11PhotoRenderer::Impl {
                 levels, 1, D3D11_SDK_VERSION, &device, nullptr, &context))) break;
         }
         if (!device) throw std::runtime_error("No Direct3D 11 hardware adapter");
+#endif
         ComPtr<ID3DBlob> code, errors;
         const auto compiled = D3DCompile(kD3DPhotoShader.data(), kD3DPhotoShader.size(), "RawLab photo shader",
             nullptr, nullptr, "main", "cs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3 | D3DCOMPILE_IEEE_STRICTNESS, 0, &code, &errors);

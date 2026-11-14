@@ -11,6 +11,9 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#if defined(RAWLAB_D3D11_TESTING)
+#include "d3d11_test_hooks.h"
+#endif
 
 namespace sony2fuji {
 namespace {
@@ -69,6 +72,9 @@ class Device final : public FilterDevice {
 public:
     void initialize() {
         if (GetEnvironmentVariableW(L"RAWLAB_DISABLE_D3D11", nullptr, 0) > 0) throw std::runtime_error("D3D11 filters disabled");
+#if defined(RAWLAB_D3D11_TESTING)
+        d3d11_test::createDevice(device, context, true);
+#else
         ComPtr<IDXGIFactory1> factory; checked(CreateDXGIFactory1(IID_PPV_ARGS(factory.GetAddressOf())));
         std::vector<ComPtr<IDXGIAdapter1>> adapters;
         for (UINT i = 0;; ++i) {
@@ -87,6 +93,7 @@ public:
         for (const auto& adapter : adapters) if (SUCCEEDED(D3D11CreateDevice(adapter.Get(), D3D_DRIVER_TYPE_UNKNOWN,
             nullptr, 0, &level, 1, D3D11_SDK_VERSION, &device, nullptr, &context))) break;
         if (!device) throw std::runtime_error("No D3D11 hardware filter adapter");
+#endif
         const std::string source = std::string(prefix) + kFilterShaderBody +
             "\n[numthreads(128,1,1)] void main(uint3 id : SV_DispatchThreadID) { filterPixel(baseIndex + id.x); }\n";
         ComPtr<ID3DBlob> code, errors;
