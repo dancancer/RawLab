@@ -132,8 +132,10 @@ final class AdjustmentPresetStore {
             guard let index = registry.unreadable.firstIndex(where: { $0.id == expected.id && $0.json == expected.json })
             else { throw AdjustmentPresetError.changed }
             let removed = registry.unreadable.remove(at: index)
+            // 与 Windows 同守：ID 仍被占用或已在 retired_ids 中都不再追加，重复退休 ID 会废掉整库。
             let stillUsed = registry.presets.contains { $0.id == removed.id } || registry.unreadable.contains { $0.id == removed.id }
-            if let id = removed.id, UUID(uuidString: id)?.uuidString.lowercased() == id, !stillUsed { registry.retiredIDs.append(id) }
+            if let id = removed.id, UUID(uuidString: id)?.uuidString.lowercased() == id,
+               !stillUsed, !registry.retiredIDs.contains(id) { registry.retiredIDs.append(id) }
             try write(registry)
         }
     }

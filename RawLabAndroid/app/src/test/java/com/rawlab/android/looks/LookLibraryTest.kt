@@ -362,6 +362,75 @@ class LookLibraryTest {
         } finally { root.deleteRecursively() }
     }
 
+    // 红锚点 B3：删除坏外观条目先校验文件归属与安全路径——不得因路径恰好撞上而删掉存活外观文件或 registry.properties 自身。
+    @Test
+    fun removingUnreadableKeepsForeignAndRegistryFiles() {
+        val root = Files.createTempDirectory("rawlab-look-ownership").toFile()
+        val sourceA = File(root.parentFile, "owned-a.cube").apply { writeText("valid") }
+        try {
+            val library = LookLibrary(root, validator)
+            val owned = library.importLook(sourceA)
+            val orphanName = "11111111-2222-3333-4444-555555555555.cube"
+            root.resolve(orphanName).writeText("valid")
+            val registry = root.resolve("registry.properties")
+            val properties = Properties().apply { registry.inputStream().use { load(it) } }
+            fun ghost(index: Int, id: String, path: String, name: String) {
+                val prefix = "item.$index."
+                properties.setProperty(prefix + "id", id)
+                properties.setProperty(prefix + "name", name)
+                properties.setProperty(prefix + "originalName", "$name.cube")
+                properties.setProperty(prefix + "format", "cube")
+                properties.setProperty(prefix + "version", "0")
+                properties.setProperty(prefix + "path", path)
+            }
+            properties.setProperty("count", "4")
+            ghost(1, "00000000-0000-0000-0000-000000000001", owned.relativePath, "Shadow")
+            ghost(2, "00000000-0000-0000-0000-000000000002", orphanName, "Orphan")
+            ghost(3, "00000000-0000-0000-0000-000000000003", "registry.properties", "Selfish")
+            registry.outputStream().use { properties.store(it, null) }
+            val reloaded = LookLibrary(root, validator)
+            assertEquals(listOf(owned.id), reloaded.list().map { it.id })
+            assertEquals(3, reloaded.listUnreadable().size)
+            reloaded.removeUnreadable(reloaded.listUnreadable().first { it.name == "Shadow" })
+            assertTrue("live look file must survive", owned.file(root).isFile)
+            reloaded.removeUnreadable(reloaded.listUnreadable().first { it.name == "Selfish" })
+            assertTrue("registry.properties must not delete itself", registry.isFile)
+            reloaded.removeUnreadable(reloaded.listUnreadable().first { it.name == "Orphan" })
+            assertFalse("orphan UUID file is cleaned with its own entry", root.resolve(orphanName).exists())
+            assertTrue(reloaded.listUnreadable().isEmpty())
+            assertTrue(owned.file(root).isFile)
+            assertEquals(listOf(owned.id), reloaded.list().map { it.id })
+        } finally { root.deleteRecursively(); sourceA.delete() }
+    }
+
+    // 红锚点 B3：两条同键坏条目只删被点名的那一条，不得按键组一次删光。
+    @Test
+    fun removingUnreadableDeletesOnlyOneOfIdenticalKeyEntries() {
+        val root = Files.createTempDirectory("rawlab-look-twins").toFile()
+        try {
+            val registry = root.resolve("registry.properties")
+            val properties = Properties().apply {
+                setProperty("version", "1")
+                setProperty("count", "2")
+            }
+            for (index in 0..1) {
+                val prefix = "item.$index."
+                properties.setProperty(prefix + "id", "00000000-0000-0000-0000-000000000009")
+                properties.setProperty(prefix + "name", "Twin")
+                properties.setProperty(prefix + "originalName", "twin.cube")
+                properties.setProperty(prefix + "format", "cube")
+                properties.setProperty(prefix + "version", "0")
+                properties.setProperty(prefix + "path", "twin.cube")
+            }
+            registry.outputStream().use { properties.store(it, null) }
+            val library = LookLibrary(root, validator)
+            assertEquals(2, library.listUnreadable().size)
+            library.removeUnreadable(library.listUnreadable()[0])
+            assertEquals(1, library.listUnreadable().size)
+            assertEquals(1, LookLibrary(root, validator).listUnreadable().size)
+        } finally { root.deleteRecursively() }
+    }
+
     @Test
     fun missingManagedFileRemainsRemovableAndIsMarkedUnavailable() {
         val root = Files.createTempDirectory("rawlab-looks").toFile()

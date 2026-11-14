@@ -135,6 +135,7 @@ import Foundation
 
         try unreadableEntryScenario()
         try unreadableIdentityOverlaps()
+        try unreadableRetiredIdentityDelete()
         print("PASS \(checks) adjustment preset store checks")
     }
 
@@ -199,6 +200,29 @@ import Foundation
         check(try store.listUnreadable().map(\.json) == [alpha] && afterBeta.contains(alpha) && !afterBeta.contains(beta),
               "Deleting the second duplicate-ID corrupt preset removes it, not its same-ID sibling")
         rejects("Already deleted corrupt preset needs a fresh confirmation") { try store.delete(betaEntry) }
+    }
+
+    // 红锚点 B2：删除 ID 已退休的坏条目时不得把同一 UUID 重复写进 retired_ids，
+    // 重复退休 ID 会让下次读取整库 corruptLibrary（Windows 以 !RetiredIDs.Contains 同守）。
+    static func unreadableRetiredIdentityDelete() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("RawLabPresetRetiredGhost-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = AdjustmentPresetStore(directory: directory, clock: { 1000 })
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appendingPathComponent("presets.json")
+        let id = "2f8f1e0a-0b0c-4d5e-8f90-112233445566"
+        let raw = "{ \"id\": \"\(id)\", \"name\": \"Ghost\", \"created_at\": 1, \"updated_at\": 1, \"payload\": { \"payload_version\": 9 }, \"future_field\": \"keep\" }"
+        try "{\"registry_version\":1,\"presets\":[\(raw)],\"retired_ids\":[\"\(id)\"]}"
+            .write(to: file, atomically: true, encoding: .utf8)
+        check(try store.list().isEmpty && store.listUnreadable().count == 1,
+              "Retired corrupt entry loads as unreadable, not a whole-library failure")
+        let entry = required(try store.listUnreadable().first)
+        try store.delete(entry)
+        let written = String(decoding: try Data(contentsOf: file), as: UTF8.self)
+        check(!written.contains(raw) && written.components(separatedBy: id).count == 2,
+              "Deleting a retired corrupt entry never duplicates the retired id")
+        check(try store.list().isEmpty && store.listUnreadable().isEmpty,
+              "Library still reads back after deleting a retired corrupt entry")
     }
 
     private static func required<T>(_ value: T?) -> T { guard let value else { fatalError("Missing expected unreadable entry") }; return value }

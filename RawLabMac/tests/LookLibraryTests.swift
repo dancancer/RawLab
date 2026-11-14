@@ -203,6 +203,36 @@ struct LookLibraryTests {
               "bad look can be removed and the library keeps the readable looks")
         rejects("already removed bad look needs a fresh confirmation") { try reloadedMixed.remove(badRecord) }
 
+        // 红锚点 B3：坏条目的 file_name 可能恰好指向存活文件——删除前须校验安全路径与文件归属。
+        let ownershipDirectory = root.appendingPathComponent("ownership-looks", isDirectory: true)
+        try manager.createDirectory(at: ownershipDirectory, withIntermediateDirectories: true)
+        let ownership = try LookLibrary(directory: ownershipDirectory)
+        let ownedSource = root.appendingPathComponent("owned.cube")
+        try cube(at: ownedSource)
+        let owned = try ownership.importLook(from: ownedSource)
+        let orphanName = "11111111-2222-3333-4444-555555555555.cube"
+        try Data("orphan".utf8).write(to: ownershipDirectory.appendingPathComponent(orphanName))
+        let ownedRegistry = ownershipDirectory.appendingPathComponent("registry.json")
+        let shadowEntry = #"{"file_name":"\#(owned.fileName)","format":"cube","format_version":0,"id":"7C9E1B12-45A5-4E2F-9C3D-1B2A3C4D5E6F","name":"Shadow","source_name":"shadow.cube"}"#
+        let orphanEntry = #"{"file_name":"\#(orphanName)","format":"cube","format_version":0,"id":"8D9F2C23-56B7-4F8A-9E10-213243546576","name":"Orphan","source_name":"orphan.cube"}"#
+        try String(contentsOf: ownedRegistry, encoding: .utf8)
+            .replacingOccurrences(of: "\"looks\" : [\n", with: "\"looks\" : [\n    " + shadowEntry + ",\n    " + orphanEntry + ",\n")
+            .write(to: ownedRegistry, atomically: true, encoding: .utf8)
+        let ownedLibrary = try LookLibrary(directory: ownershipDirectory)
+        if let shadow = ownedLibrary.unreadableLooks.first(where: { $0.fileName == owned.fileName }),
+           let orphan = ownedLibrary.unreadableLooks.first(where: { $0.fileName == orphanName }) {
+            try ownedLibrary.remove(shadow)
+            check(manager.fileExists(atPath: ownedLibrary.url(for: owned).path),
+                  "removing a bad entry whose file_name shadows a live look keeps the managed file")
+            try ownedLibrary.remove(orphan)
+            check(!manager.fileExists(atPath: ownershipDirectory.appendingPathComponent(orphanName).path),
+                  "removing a bad entry with its own UUID file still cleans that file")
+            check(ownedLibrary.looks.map(\.id) == [owned.id] && ownedLibrary.unreadableLooks.isEmpty,
+                  "ownership ghosts delete independently and keep the library readable")
+        } else {
+            check(false, "ownership scenario exposes both bad entries")
+        }
+
         let recoveryDirectory = root.appendingPathComponent("recovery", isDirectory: true)
         let recovering = try LookLibrary(directory: recoveryDirectory)
         let interrupted = try recovering.importLook(from: native)

@@ -374,19 +374,23 @@ final class LookLibrary {
         if exists { try? manager.removeItem(at: staging) }
     }
 
-    // 坏条目按原文精确删除；文件名可靠时顺带清理实体文件。
+    // 坏条目按原文精确删除；仅当文件名安全（无路径分隔与扩展名白名单）、前缀是 UUID
+    // 且不被任何存活条目引用时才清理实体文件，防止误删有效外观的文件。
     func remove(_ look: UnreadableLook) throws {
         guard let index = unreadableLooks.firstIndex(of: look) else { throw LookLibraryError.missingLook }
+        var changed = unreadableLooks
+        changed.remove(at: index)
         var file: URL?
-        if let name = look.fileName, !name.contains("/"),
-           ["cube", "vlt", "rlook"].contains((name as NSString).pathExtension.lowercased()) {
+        if let name = look.fileName, !name.contains("/"), !name.contains("\\"), !name.contains(".."),
+           ["cube", "vlt", "rlook"].contains((name as NSString).pathExtension.lowercased()),
+           UUID(uuidString: (name as NSString).deletingPathExtension) != nil,
+           !looks.contains(where: { $0.fileName == name }),
+           !changed.contains(where: { $0.fileName == name }) {
             file = directory.appendingPathComponent(name)
         }
         let staging = file.map { directory.appendingPathComponent(".remove-\($0.lastPathComponent)") }
         let exists = file.map { manager.fileExists(atPath: $0.path) } ?? false
         if exists, let file, let staging { try manager.moveItem(at: file, to: staging) }
-        var changed = unreadableLooks
-        changed.remove(at: index)
         do {
             try persist(looks, unreadable: changed)
         } catch {

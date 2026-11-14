@@ -200,6 +200,42 @@ class AdjustmentPresetStoreTest {
         assertTrue(reloaded.list().isEmpty()); assertTrue(reloaded.listUnreadable().isEmpty())
     }
 
+    // 红锚点 B2：删除 ID 已退休的坏条目不得在 retired_ids 里写出重复 UUID（与 Windows !Contains 同守）。
+    @Test fun deletingRetiredUnreadableNeverDuplicatesRetiredIDs() {
+        val directory = temporary.newFolder("retired-ghost")
+        val file = File(directory, "presets.json")
+        val ghostID = "7c9e1b12-45a5-4e2f-9c3d-1b2a3c4d5e6f"
+        val ghost = "{\"id\":\"$ghostID\",\"name\":\"Ghost\",\"created_at\":1,\"updated_at\":1,\"payload_version\":9}"
+        file.writeText("{\"registry_version\":1,\"presets\":[$ghost],\"retired_ids\":[\"$ghostID\"]}")
+        val store = AdjustmentPresetStore(directory)
+        assertTrue(store.list().isEmpty())
+        val unreadable = store.listUnreadable()
+        assertEquals(1, unreadable.size)
+        store.delete(unreadable[0])
+        val after = file.readText()
+        assertFalse(ghost, after.contains(ghost))
+        assertTrue("retired_ids must stay duplicate-free: $after", after.contains("\"retired_ids\":[\"$ghostID\"]"))
+        val reloaded = AdjustmentPresetStore(directory)
+        assertTrue(reloaded.list().isEmpty()); assertTrue(reloaded.listUnreadable().isEmpty())
+    }
+
+    // 红锚点 B4：非数组 retired_ids 属文件级损坏，整库拒绝（Windows/Swift 同语义），不得静默吞成空列表。
+    @Test fun nonArrayRetiredIDsRejectTheWholeLibrary() {
+        val directory = temporary.newFolder("retired-shape")
+        val store = AdjustmentPresetStore(directory)
+        val file = File(directory, "presets.json")
+        for (value in listOf("null", "123", "{}", "\"bad\"")) {
+            val json = "{\"registry_version\":1,\"presets\":[],\"retired_ids\":$value}"
+            file.writeText(json)
+            val bytes = file.readBytes()
+            assertEquals(value, PresetFailure.CORRUPT_LIBRARY,
+                assertThrows(value, AdjustmentPresetException::class.java) { store.list() }.reason)
+            assertEquals(value, PresetFailure.CORRUPT_LIBRARY,
+                assertThrows(value, AdjustmentPresetException::class.java) { store.create("Blocked", payload()) }.reason)
+            assertArrayEquals(value, bytes, file.readBytes())
+        }
+    }
+
     @Test fun malformedLibraryAndDuplicateRenameNeverReplaceSavedData() {
         val directory = temporary.newFolder("bad")
         val store = AdjustmentPresetStore(directory)

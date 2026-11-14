@@ -88,7 +88,9 @@ class AdjustmentPresetStore(val directory: File,
         val removed = current.unreadable[index]
         val remaining = current.unreadable.filterIndexed { position, _ -> position != index }
         val stillUsed = current.presets.any { it.id == removed.id } || remaining.any { it.id == removed.id }
-        val retire = if (removed.id != null && canonicalID(removed.id) && !stillUsed) current.retiredIDs + removed.id else current.retiredIDs
+        // 与 Windows 同守：ID 仍被占用或已在 retired_ids 中都不再追加，重复退休 ID 会废掉整库。
+        val retire = if (removed.id != null && canonicalID(removed.id) && !stillUsed && removed.id !in current.retiredIDs)
+            current.retiredIDs + removed.id else current.retiredIDs
         write(current.copy(unreadable = remaining, retiredIDs = retire))
     }
 
@@ -153,7 +155,10 @@ class AdjustmentPresetStore(val directory: File,
             if (entry == null) unreadable += UnreadablePreset(directString(element, "id"), directString(element, "name"), raw)
             else presets += entry
         }
-        val retired = (root.members.firstOrNull { it.first == "retired_ids" }?.second as? JSONScan.Arr)?.items ?: emptyList()
+        // retired_ids 存在但非数组属文件级损坏，整库拒绝（Windows/Swift 同语义），不得静默当空列表。
+        val retiredNode = root.members.firstOrNull { it.first == "retired_ids" }?.second
+        requirePreset(retiredNode == null || retiredNode is JSONScan.Arr)
+        val retired = (retiredNode as? JSONScan.Arr)?.items ?: emptyList()
         val retiredIDs = retired.map { id ->
             requirePreset(id is JSONScan.Str && canonicalID(id.value)); (id as JSONScan.Str).value
         }

@@ -147,13 +147,26 @@ class LookLibrary(
 
     fun listUnreadable(): List<UnreadableLook> = locked { readRegistry().unreadable }
 
-    // 删除读不懂的条目：按 key 组精确匹配；文件名可靠时顺带清理实体文件。
+    // 删除读不懂的条目：按 key 组只删单条；实体文件须文件名安全（无分隔符与 ..、扩展名白名单、
+    // 前缀为 UUID）且不被任何存活条目引用才清理，防止误删有效外观文件或 registry 自身。
     fun removeUnreadable(look: UnreadableLook) = locked {
         val state = readRegistry()
-        if (state.unreadable.none { it.keys == look.keys }) throw NoSuchElementException("Unknown unreadable look")
-        writeRegistry(state.looks, state.unreadable.filterNot { it.keys == look.keys })
-        val file = look.path?.takeIf { !it.contains('/') && !it.contains('\'') }?.let { File(root, it) }
-        if (file != null && file.isFile && !file.delete() && file.exists()) throw IOException("Cannot remove unreadable look file")
+        val index = state.unreadable.indexOfFirst { it.keys == look.keys }
+        if (index < 0) throw NoSuchElementException("Unknown unreadable look")
+        val remaining = state.unreadable.filterIndexed { position, _ -> position != index }
+        val name = look.path?.takeIf { candidate ->
+            !candidate.contains('/') && !candidate.contains('\\') && !candidate.contains("..") &&
+                candidate.substringAfterLast('.', "").lowercase() in setOf("cube", "vlt", "rlook") &&
+                isSafeId(candidate.substringBeforeLast('.')) &&
+                state.looks.none { it.relativePath == candidate } &&
+                remaining.none { it.path == candidate }
+        }
+        val file = name?.let { File(root, it) }
+        writeRegistry(state.looks, remaining)
+        if (file != null && file.isFile && !file.delete() && file.exists()) {
+            runCatching { writeRegistry(state.looks, state.unreadable) }
+            throw IOException("Cannot remove unreadable look file")
+        }
     }
 
     fun fileFor(id: String): File? = locked {
