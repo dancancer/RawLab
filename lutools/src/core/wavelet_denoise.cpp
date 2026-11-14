@@ -12,6 +12,7 @@
 
 #if defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
 #include "wavelet_tile.h"
+#include "processing_cancellation.h"
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <wavelib.h>
@@ -471,8 +472,13 @@ cv::Mat filter(const cv::Mat& transformed,const NoiseModel& model,const sony2fuj
     // 大图的六层 SWT 每个 tile 需要约 400 MiB；移动端避免并发叠加。
     if (coarse && transformed.total()>4*1024*1024) stripes=1;
 #endif
+    // OpenCV 工作线程看不到调用线程的 thread_local 取消上下文，照 parallel_pixels.h 显式捕获副本：
+    // worker 只在 tile 边界早退、不跨线程抛异常，取消异常由调用线程在 parallel_for_ 收敛后抛出。
+    // tile 之间互不相交（各写各的 output 矩形），tile 顶就是安全边界；单 tile 的 SWT 有界，取消在下一 tile 返回。
+    const auto cancellation = sony2fuji::processingCancellation;
     cv::parallel_for_(cv::Range(0,columns*rows),[&](const cv::Range& range) {
         for (int index=range.start;index<range.end;++index) {
+            if (cancellation.cancelled()) return;
             const int x=index%columns*centerSize,y=index/columns*centerSize;
             const int w=std::min(centerSize,width-x),h=std::min(centerSize,height-y);
             for (int c=0;c<3;++c) {
@@ -485,6 +491,7 @@ cv::Mat filter(const cv::Mat& transformed,const NoiseModel& model,const sony2fuj
             }
         }
     },stripes);
+    cancellation.check();
     return output;
 }
 
@@ -497,6 +504,8 @@ void filterWorking(cv::Mat& transformed,const sony2fuji::ImageData& source,sony2
     const int centerSize=coarse ? 1024 : tileSize;
     const int margin=coarse ? coarseHalo : halo,alignment=1<<(coarse ? coarseLevels : levels);
     for (int y=0;y<transformed.rows;y+=centerSize) for (int x=0;x<transformed.cols;x+=centerSize) {
+        // 顺序 tile 循环运行于调用线程，tile 顶即安全边界；调用方（reloadable 工作副本）在异常时整体丢弃 image。
+        sony2fuji::checkProcessingCancellation();
         const int w=std::min(centerSize,transformed.cols-x),h=std::min(centerSize,transformed.rows-y);
         // 从不可变 RAW 重建当前 tile，避免保留跨越整图宽度的原始行带。
         // 反射与对齐均按整张源图计算，与 waveletTilePlane 的边界完全一致。
@@ -539,28 +548,35 @@ void restore(cv::Mat& rgb,cv::Mat filtered,const NoiseModel& model,
     cv::subtract(difference,normalized,difference);
     cv::multiply(difference,difference,difference);
     cv::GaussianBlur(difference,difference,{},3);
+    // 同 filter：worker 只在行边界早退不抛异常，调用线程收敛后统一抛出。rgb 此时已被上一步整体替换，
+    // 早退留下的部分恢复行与 ProcessingFailure 同义——调用方异常路径不发布结果。
+    const auto cancellation = sony2fuji::processingCancellation;
     cv::parallel_for_(cv::Range(0,rgb.rows),[&](const cv::Range& range) {
-        for (int y=range.start;y<range.end;++y) for (int x=0;x<rgb.cols;++x) for (int c=0;c<3;++c) {
-            const float a=std::max(model.a[c],1e-12f), b=std::max(model.b[c],1e-12f)+.375f*a*a;
-            const float value=normalized.at<cv::Vec3f>(y,x)[c];
-            if (version==sony2fuji::ProcessingVersion::Legacy) {
-                const float positive=std::max(value,0.f);
-                rgb.at<cv::Vec3f>(y,x)[c]=std::sqrt(b)*value+.25f*a*positive*positive+
-                    (value>0 ? .25f*a*difference.at<cv::Vec3f>(y,x)[c] : 0.f);
-                continue;
-            }
-            const float variance=std::max(difference.at<cv::Vec3f>(y,x)[c],0.f), radius=std::sqrt(variance);
-            const float linear=std::sqrt(b)*value;
-            auto& restored=rgb.at<cv::Vec3f>(y,x)[c];
-            // 对称扰动的逆变换均值在零点附近连续，避免舍入误差触发整项方差补偿。
-            if (value>=radius) restored=linear+.25f*a*value*value+.25f*a*variance;
-            else if (value<=-radius) restored=linear;
-            else {
-                const float positive=value+radius;
-                restored=linear+.125f*a*positive*positive;
+        for (int y=range.start;y<range.end;++y) {
+            if (cancellation.cancelled()) return;
+            for (int x=0;x<rgb.cols;++x) for (int c=0;c<3;++c) {
+                const float a=std::max(model.a[c],1e-12f), b=std::max(model.b[c],1e-12f)+.375f*a*a;
+                const float value=normalized.at<cv::Vec3f>(y,x)[c];
+                if (version==sony2fuji::ProcessingVersion::Legacy) {
+                    const float positive=std::max(value,0.f);
+                    rgb.at<cv::Vec3f>(y,x)[c]=std::sqrt(b)*value+.25f*a*positive*positive+
+                        (value>0 ? .25f*a*difference.at<cv::Vec3f>(y,x)[c] : 0.f);
+                    continue;
+                }
+                const float variance=std::max(difference.at<cv::Vec3f>(y,x)[c],0.f), radius=std::sqrt(variance);
+                const float linear=std::sqrt(b)*value;
+                auto& restored=rgb.at<cv::Vec3f>(y,x)[c];
+                // 对称扰动的逆变换均值在零点附近连续，避免舍入误差触发整项方差补偿。
+                if (value>=radius) restored=linear+.25f*a*value*value+.25f*a*variance;
+                else if (value<=-radius) restored=linear;
+                else {
+                    const float positive=value+radius;
+                    restored=linear+.125f*a*positive*positive;
+                }
             }
         }
     });
+    cancellation.check();
 }
 
 void restoreWorking(cv::Mat& filtered,const sony2fuji::ImageData& source,sony2fuji::ColorSpace space,
@@ -791,6 +807,10 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
             diagnostics->gpuUsed=gpuUsed.load(std::memory_order_relaxed);
         }
         return finish(WaveletDenoiseOutcome::Applied, ErrorCode::Success);
+    } catch (const ProcessingCancelled&) {
+        // 取消不是处理失败：在 bad_alloc/cv/std::exception 通用捕获之前单独放行，
+        // 让上层的 ProcessingCancelled→CANCELLED 链路原样生效（含 Legacy 之外的所有版本）。
+        throw;
     } catch (const std::bad_alloc&) {
         if (options.processingVersion==ProcessingVersion::Legacy) throw;
         return finish(WaveletDenoiseOutcome::ProcessingFailure, ErrorCode::OutOfMemory);

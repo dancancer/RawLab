@@ -6,6 +6,7 @@
 #include "gpu/metal_effects_shader.h"
 #include "core/photo_lut.h"
 #include "core/chroma_denoise.h"
+#include "core/processing_cancellation.h"
 
 #include <algorithm>
 #include <array>
@@ -1074,6 +1075,9 @@ bool renderPhotoMetalImpl(
         id<MTLBuffer> final = makeBuffer(context.device, std::min(budget, size_t(dstHeight) * dstRowBytes));
         if (!uploaded || !a || !b || !final) return false;
         for (uint32_t row = 0; row < dstHeight;) {
+            // 每带在 waitUntilCompleted 后已同步写回 destination，带顶是安全边界：取消时后续带不再写入，
+            // ProcessingCancelled 由 renderPhotoMetal 外层重抛（不吞成 false），调用方丢弃整个输出。
+            sony2fuji::checkProcessingCancellation();
             @autoreleasepool {
                 uint32_t rows = std::min<size_t>(dstHeight - row, budget / dstRowBytes);
                 auto work = range(row, rows, workHeight, dstHeight, halo);
@@ -1216,6 +1220,10 @@ bool renderPhotoMetal(
                     input, inputSpace, request, lut, relativeWB,
                     targetWidth, targetHeight, output, dcp, effects, chromaDenoise, preserveSourceResolution, hsl, toneControls, colorGrading, customCurve
                 );
+            } catch (const ProcessingCancelled&) {
+                // 取消不是渲染失败：在 catch(...) 之前原样重抛（对齐 gles_photo 的先例），
+                // 否则 Auto 会把它当成 GPU 失败静默回退 CPU 重跑整张图。
+                throw;
             } catch (...) {
                 result = false;
             }

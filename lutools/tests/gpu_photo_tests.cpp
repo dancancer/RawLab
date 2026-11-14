@@ -2,6 +2,7 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "sony2fuji/lut_parser.h"
 #include "gpu/photo_gpu.h"
+#include "core/processing_cancellation.h"
 #include "hsl_gpu_boundary.h"
 #include "tone_gpu_boundary.h"
 #include "grading_gpu_boundary.h"
@@ -12,6 +13,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -294,6 +296,33 @@ int main() {
         14, 52, 103, 156, 201, 240, 11, 88, 177, 219, 231, 17
     };
     const auto baseline = baseRequest(pixels, 4, 2);
+
+    {
+        // C10/P2-15：带/阶段边界的取消必须以 ProcessingCancelled 逃出 GPU 后端，
+        // 不能被通用 catch 吞成 false（否则 Auto 静默回退 CPU 重跑、Force 误报 GPU 失败）。
+        auto cancelRequest = baseline;
+        cancelRequest.noise_reduction = 0.4f;
+        const auto input = toLinearImage(pixels, 4, 2);
+        sony2fuji::ImageData gpu;
+        bool interrupted = false;
+        {
+            std::atomic<int> remaining{1};
+            sony2fuji::ProcessingCancellationScope cancellation({+[](void* context) -> int32_t {
+                return static_cast<std::atomic<int>*>(context)->fetch_sub(1) <= 1;
+            }, &remaining});
+            try {
+#ifdef SONY2FUJI_ENABLE_D3D11
+                static sony2fuji::D3D11PhotoRenderer cancelRenderer;
+                cancelRenderer.render(input, sony2fuji::ColorSpace::sRGB, cancelRequest, nullptr,
+                    sony2fuji::RGB(1.0f, 1.0f, 1.0f), 4, 2, 0, gpu);
+#else
+                sony2fuji::renderPhotoMetal(input, sony2fuji::ColorSpace::sRGB, cancelRequest, nullptr,
+                    sony2fuji::RGB(1.0f, 1.0f, 1.0f), 4, 2, gpu);
+#endif
+            } catch (const sony2fuji::ProcessingCancelled&) { interrupted = true; }
+        }
+        check(interrupted, "cancelled photo render escapes the GPU backend instead of reporting a GPU failure");
+    }
 
     const float strengths[] = {0.0f, 0.5f, 1.0f, 2.0f};
     for (float strength : strengths) {
