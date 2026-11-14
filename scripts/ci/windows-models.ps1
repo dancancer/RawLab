@@ -9,6 +9,7 @@ $summary=@()
 [IO.File]::WriteAllText((Join-Path $results 'summary.json'),'[]')
 $projects=[ordered]@{
     editing='editing/EditWorkflow.Tests.csproj'
+    looks='looks/LookGrouping.Tests.csproj'
     denoise='denoise/DenoiseSettingsTests.csproj'
     localization='localization/LocalizationChecks.csproj'
     updates='updates/UpdateChecks.csproj'

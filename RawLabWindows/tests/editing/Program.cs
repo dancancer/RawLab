@@ -48,6 +48,7 @@ if (args.Contains("--history-only")) {
     X3fModeResetChecks.Run();
     AdjustmentHistoryChecks.Run();
     AdjustmentPresetChecks.Run();
+    LookLibraryToleranceChecks.Run();
     BatchSelectionChecks.Run();
     return;
 }
@@ -81,6 +82,7 @@ AdjustmentTransferChecks.Run();
 ResetScenarioChecks.Run();
 AdjustmentHistoryChecks.Run();
 AdjustmentPresetChecks.Run();
+LookLibraryToleranceChecks.Run();
 HDRChecks.Run();
 AbiLayoutChecks.Run();
 CameraRawHDRChecks.Run();

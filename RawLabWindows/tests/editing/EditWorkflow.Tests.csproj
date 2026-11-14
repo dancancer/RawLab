@@ -31,6 +31,10 @@
     <Compile Include="../../ToneCurveSettings.cs" />
     <Compile Include="../../PhotoEffectsSettings.cs" Link="PhotoEffectsSettings.cs" />
     <Compile Include="../../Native.cs" Link="Native.cs" />
+    <Compile Include="../../PInvokeNative.cs" Link="PInvokeNative.cs" />
+    <Compile Include="../../DcpCompiler.cs" Link="DcpCompiler.cs" />
+    <Compile Include="../../LUTCompatibility.cs" Link="LUTCompatibility.cs" />
+    <Compile Include="../../LookLibrary.cs" Link="LookLibrary.cs" />
     <Compile Include="../../AIDenoiseNative.cs" Link="AIDenoiseNative.cs" />
     <Compile Include="../../ExportSize.cs" Link="ExportSize.cs" />
     <Compile Include="../../ExportFormat.cs" Link="ExportFormat.cs" />
