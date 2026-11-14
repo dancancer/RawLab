@@ -73,12 +73,15 @@ static void tiledChecks() {
         require(cv::norm(filtered,cv::Mat(expected.height,expected.width,CV_32FC3,
             const_cast<RGB*>(expected.pixels.data())),cv::NORM_INF)<2e-6,"tile size does not change C5 pixels");
     }
-    auto forced=source;
+    auto forced=source, automatic=source;
     WaveletDenoiseDiagnostics diagnostics;
-    require(applyWaveletDenoise(forced,options,&diagnostics,GpuMode::Force)==ErrorCode::ProcessingError,
+    require(applyWaveletDenoise(forced,options,&diagnostics,GpuMode::Force)==ErrorCode::Unsupported,
             "C5 Force must reject unsupported GPU");
     require(difference(forced,source)==0 && diagnostics.outcome==WaveletDenoiseOutcome::GpuFailure,
             "Force failure is atomic");
+    require(applyWaveletDenoise(automatic,options,&diagnostics,GpuMode::Auto)==ErrorCode::Success &&
+            difference(automatic,expected)<2e-6,
+            "C5 Auto retains CPU fallback");
     auto zero=source;
     require(applyWaveletDenoise(zero,{true,0,0,100})==ErrorCode::Success && difference(zero,source)==0,
             "zero strengths preserve exact input");

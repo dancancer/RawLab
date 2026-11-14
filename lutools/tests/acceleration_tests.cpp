@@ -100,7 +100,7 @@ int main(int argc, char** argv) {
     if (nativeCpuOnly) {
         Session forced(SONY2FUJI_GPU_FORCE);
         sony2fuji_buffer buffer{};
-        check(sony2fuji_process(forced.value, &request, &buffer) == SONY2FUJI_STATUS_PROCESSING_ERROR,
+        check(sony2fuji_process(forced.value, &request, &buffer) == SONY2FUJI_STATUS_UNSUPPORTED,
               "CPU-only look explicitly rejects forced GPU");
         sony2fuji_release_buffer(&buffer);
     }

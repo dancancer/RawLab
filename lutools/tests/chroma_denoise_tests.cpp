@@ -134,7 +134,13 @@ int main(int argc, char** argv) {
         assert(sony2fuji_process(session,&request,&rejected) == SONY2FUJI_STATUS_OK);
         assert(sony2fuji_session_get_last_backend(session) == rawlabtest::nativeBackend);
         sony2fuji_release_buffer(&rejected);
-    } else assert(sony2fuji_process(session,&request,&rejected) == SONY2FUJI_STATUS_PROCESSING_ERROR);
+    } else if (rawlabtest::nativeBackend != SONY2FUJI_BACKEND_CPU) {
+        assert(sony2fuji_process(session,&request,&rejected) == SONY2FUJI_STATUS_PROCESSING_ERROR);
+        assert(!rejected.data && rejected.size_bytes == 0);
+    } else {
+        assert(sony2fuji_process(session,&request,&rejected) == SONY2FUJI_STATUS_UNSUPPORTED);
+        assert(!rejected.data && rejected.size_bytes == 0);
+    }
     sony2fuji_session_destroy(session);
     std::cout << "PASS: chroma defaults, validation, denoising, preview/final parity and explicit GPU fallback\n";
 }
