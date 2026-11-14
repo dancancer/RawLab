@@ -28,6 +28,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("continue-on-error", step)
         self.assertIn("--no-tests=error", step["run"])
         self.assertEqual(step["run"].count("$LASTEXITCODE -ne 0"), 3)
+        self.assertIn("RawLabWindows/tests/native/d3d11/check-mutations.ps1", step["run"])
 
     def setUp(self):
         self.assertTrue(WORKFLOW.is_file(), "Hosted CI workflow is missing")

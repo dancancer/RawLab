@@ -46,6 +46,9 @@ CI_MODEL_PS1S = {
 CI_NATIVE_PS1S = {
     "run-v08.ps1",
 }
+CI_MANUAL_WARP_PS1S = {
+    "native/d3d11/check-mutations.ps1",
+}
 HELPER_OR_EXCLUDED_PS1S = {
     "CheckProcess.ps1": "dot_sourced_process_runner_helper",
     "run-comparison-native.ps1": "interactive_desktop_uia_harness",
@@ -430,13 +433,13 @@ class WindowsInventoryTests(unittest.TestCase):
         actual_ps1s = {
             p.relative_to(WIN_TESTS).as_posix() for p in WIN_TESTS.rglob("*.ps1")
         }
-        accounted_ps1s = CI_MODEL_PS1S | CI_NATIVE_PS1S | set(HELPER_OR_EXCLUDED_PS1S)
+        accounted_ps1s = CI_MODEL_PS1S | CI_NATIVE_PS1S | CI_MANUAL_WARP_PS1S | set(HELPER_OR_EXCLUDED_PS1S)
         self.assertEqual(actual_ps1s - accounted_ps1s, set(),
                          "Uncategorized RawLabWindows/tests .ps1 scripts exist on disk")
         self.assertEqual(accounted_ps1s - actual_ps1s, set(),
                          "Listed RawLabWindows/tests .ps1 scripts do not exist on disk")
 
-        for script in sorted(CI_MODEL_PS1S | CI_NATIVE_PS1S):
+        for script in sorted(CI_MODEL_PS1S | CI_NATIVE_PS1S | CI_MANUAL_WARP_PS1S):
             self.assertIn(f"RawLabWindows/tests/{script}", self.windows_steps,
                           f"Headless Windows script RawLabWindows/tests/{script} is not invoked in ci.yml")
 
