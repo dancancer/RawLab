@@ -191,3 +191,4 @@
 - 2026-11-14 (21) #330 r4 碳审首作业网络死（TLS 超时）→fresh 重派 review-mwgkilfw。#334 r2 碳审=打回：r1 三项全修妥，新 high=语义合并断编（基线落后 26，合并树 metal_lut_init_retry_tests 漏链 DENOISE_LIBRARIES，评审真实树实证 ld 挂）→r3 按阶梯进 **carbon 执行档**（implement-mwgkkke2：merge+补链+双配置 ctest+CI）。
 - 2026-11-14 (22) **P1-14+P1-25 合入=第 89 个 PR（#335）**。碳审 r2 approve（3 low 不阻塞：并发压力测试缺读线程就绪栅栏；恢复/去重两分支缺独立 0-digest 锚；标题已改原子快照措辞后合入）。真机 1000 条冷启动实测保留手动门禁（k173）。两条测试加固低项转 Android 批次顺带做。
 - 2026-11-14 (23) 手动门禁 k171 关闭：SonyLegacyImportSessionTest 在 development@abb13b17 三连跑全绿（XML 稳定 7/0/0/0），历史 3↔5 项抖动未复现。Mac 批交付 #336（P1-15/16，碳审中）。
+- 2026-11-14 (24) **P2-01 S1 编辑记录 golden fixture 合入=第 90 个 PR（#330）**。碳审三度上机（前两次网络死）终 approve 零阻断：merge-tree 净变更 10 文件生产码 0、四端数字全对账（44/1、44/1、36/10、43/2，字段 83 项逐端核对）、/tmp 独立编译 iOS 夹具二进制+篡改变异精准红、CI attempt2 同 sha 7/7。iOS 12→1 确认为 #332 上游修复后淘汰陈旧账本非凑绿。遗留 low：Mac harness 死函数 verifyCurve（转 k163 卫生）、PR 文字 45/1 口径（已过时不追改）。Windows S6 交付 #337 碳审中。
