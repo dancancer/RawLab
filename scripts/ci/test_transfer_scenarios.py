@@ -84,6 +84,29 @@ class TransferScenarioContracts(unittest.TestCase):
         retained = by_id["sdr-source-v1-pasted-retains-target-version"]["expect"]["notices"]
         self.assertEqual(retained, ["retained_target_processing_version"])
 
+    def test_hdr_intensity_scenarios_declare_protocol_expectations(self):
+        # P1① 补票：HDR 强度粘贴向量必须以 v2 payload 消费，并登记跨端 HDR 降级语义。
+        by_id = {scenario["id"]: scenario for scenario in self.scenarios}
+        for scenario_id in ("hdr-common-scalar-intensity-paste-on-hdr-target",
+                            "hdr-rendition-group-paste-on-hdr-target",
+                            "hdr-mixed-common-and-rendition-paste-on-hdr-target"):
+            scenario = by_id[scenario_id]
+            with self.subTest(scenario=scenario_id):
+                self.assertEqual(scenario["target"]["kind"], "hdr")
+                payload = scenario["payload"]
+                self.assertEqual((payload["payload_version"], payload["scope_version"]), (2, 2))
+                self.assertIsNotNone(payload["source"].get("hdr_processing_version"))
+                self.assertTrue(any(key.startswith("hdr.") for key in payload["values"]),
+                                "HDR scenario must carry at least one hdr.* field")
+                self.assertEqual(scenario["expect"]["status"], "applied")
+                self.assertTrue(set(payload["values"]) <= set(scenario["expect"]["values"]),
+                                "expected protocol values must cover the pasted HDR fields")
+        rejected = by_id["hdr-rendition-group-rejected-on-sdr-target"]
+        self.assertNotEqual(rejected["target"]["kind"], "hdr")
+        self.assertTrue(any(key.startswith("hdr.") for key in rejected["payload"]["values"]))
+        self.assertEqual(rejected["payload"]["payload_version"], 2)
+        self.assertEqual(rejected["expect"], {"status": "rejected", "reason": "incompatible"})
+
     def test_seed_payloads_are_full_payloads(self):
         for scenario in self.scenarios:
             seed = scenario["target"].get("seed_payload")
