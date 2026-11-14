@@ -252,8 +252,9 @@ internal static class EditRecordFixtureChecks
                             settingsObj.Remove(drop);
                         File.WriteAllText(editsFile, registry.ToJsonString());
 
+                        JsonElement wjson = default;
                         var hasWire = sc.TryGetProperty("legacy_wire_samples", out var lws) &&
-                                      lws.TryGetProperty("windows_json", out var wjson);
+                                      lws.TryGetProperty("windows_json", out wjson);
                         var wireDir = Path.Combine(tempRoot, "c-wire-" + id);
                         string? wirePath = null;
                         JsonElement expDecoded = default;
