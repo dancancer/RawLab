@@ -12,6 +12,8 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#else
+#include <process.h>
 #endif
 
 namespace sony2fuji {
@@ -37,14 +39,19 @@ inline void preserveDestinationMode(int fd, const std::filesystem::path& destina
     (void)::close(destinationFd);
     if (copyMode) (void)::fchmod(fd, existing.st_mode & 0777);
 }
+#endif
 
 // Unique enough for a same-directory staging file: pid plus a process-wide counter.
-// Callers retry with O_EXCL, so a collision is impossible to publish by accident.
+// Callers retry with O_EXCL (CREATE_NEW on Windows), so a collision is impossible
+// to publish by accident.
 inline std::string stagingSuffix() {
     static std::atomic<uint64_t> counter{0};
     const auto uniq = counter.fetch_add(1, std::memory_order_relaxed);
+#ifdef _WIN32
+    return std::to_string(static_cast<long>(::_getpid())) + "-" + std::to_string(uniq);
+#else
     return std::to_string(static_cast<long>(::getpid())) + "-" + std::to_string(uniq);
-}
 #endif
+}
 
 } // namespace sony2fuji
