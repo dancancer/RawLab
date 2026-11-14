@@ -39,6 +39,9 @@
 #undef RGB
 #undef near
 #undef far
+#include <fcntl.h>
+#include <io.h>
+#include <sys/stat.h>
 #else
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -1000,25 +1003,45 @@ public:
 
     bool create(const std::filesystem::path& destination) {
 #ifdef _WIN32
-        wchar_t temporaryName[MAX_PATH] = {};
+        // Mirror of the POSIX branch below: CREATE_NEW (_wopen O_EXCL) with a bounded
+        // retry. A collided name is never opened or deleted by us (foreign-name
+        // protection); GetTempFileNameW could return an already-existing name and
+        // the CRT "wb" open would truncate it. NTFS permissions follow the target
+        // directory's ACL inheritance, so this platform has no destination-mode copy.
+        std::wstring temporaryName;
+        int createdFd = -1;
         try {
             std::filesystem::path parent = destination.parent_path();
             if (parent.empty()) parent = L".";
-            const std::wstring parentString = parent.wstring();
-            const wchar_t* prefix = kind_ == Kind::Jpeg ? L"rlj" : L"rlp";
-            if (GetTempFileNameW(parentString.c_str(), prefix, 0, temporaryName) == 0) {
-                return false;
+            const std::wstring base = kind_ == Kind::Jpeg ? L".rawlab-jpeg" : L".rawlab-png";
+            for (int attempt = 0; attempt < 64 && createdFd < 0; ++attempt) {
+                const std::string suffix = stagingSuffix();
+                temporaryName = (parent / (base + L"-" + std::wstring(suffix.begin(), suffix.end()) + L".tmp")).wstring();
+                createdFd = ::_wopen(
+                    temporaryName.c_str(),
+                    _O_CREAT | _O_EXCL | _O_WRONLY | _O_BINARY | _O_NOINHERIT,
+                    _S_IREAD | _S_IWRITE);
+                if (createdFd < 0) {
+                    if (errno != EEXIST) return false;
+                    temporaryName.clear(); // the name belongs to someone else; never delete it
+                }
             }
+            if (createdFd < 0) return false;
+
             path_ = std::filesystem::path(temporaryName);
-            file_ = ::_wfopen(temporaryName, L"wb");
+            file_ = ::_fdopen(createdFd, "wb");
             if (!file_) {
+                (void)::_close(createdFd);
+                createdFd = -1;
                 cleanup();
                 return false;
             }
+            createdFd = -1; // file_ owns the descriptor after _fdopen succeeds.
             return true;
         } catch (...) {
+            if (createdFd >= 0) (void)::_close(createdFd);
             cleanup();
-            if (temporaryName[0] != L'\0') DeleteFileW(temporaryName);
+            if (!temporaryName.empty()) DeleteFileW(temporaryName.c_str());
             throw;
         }
 #else

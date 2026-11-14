@@ -1,5 +1,6 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "sony2fuji/raw_processor.h"
+#include "core/output_file_mode.h"
 #include "core/processing_cancellation.h"
 #include "core/photo_color.h"
 #include "core/photo_color_grading.h"
@@ -362,7 +363,146 @@ int main() {
                 "A new export honours umask like a plain write");
             exportRequest.output_path = targetPath.c_str();
             std::filesystem::remove(fresh);
+            // The mode copy must not read through a destination symbolic link: the published
+            // regular file receives the default `0666 & ~umask` mode, and the linked file
+            // keeps its own permissions and contents.
+            const auto anchor = root / (std::string("link-anchor-") + exportCase.name);
+            writeFile(anchor, existing);
+            check(::chmod(anchor.c_str(), 0600) == 0, "Cannot set symlink anchor permissions");
+            const auto linked = root / (std::string("linked-") + exportCase.name);
+            std::filesystem::remove(linked, cleanupError);
+            std::filesystem::create_symlink(anchor, linked);
+            const std::string linkedPath = linked.u8string();
+            exportRequest.output_path = linkedPath.c_str();
+            const auto symlinkUmask = ::umask(022);
+            sony2fuji_buffer symlinkOut{};
+            const auto symlinkStatus = sony2fuji_process(session, &exportRequest, &symlinkOut);
+            ::umask(symlinkUmask);
+            sony2fuji_release_buffer(&symlinkOut);
+            exportRequest.output_path = targetPath.c_str();
+            const std::string symlinkLabel = std::string("Export onto a symlink destination replaces the link ") +
+                "without copying the link target's mode (" + exportCase.label + ")";
+            check(symlinkStatus == SONY2FUJI_STATUS_OK &&
+                  !std::filesystem::is_symlink(linked) && std::filesystem::is_regular_file(linked) &&
+                  fileMode(linked) == 0644u,
+                symlinkLabel.c_str());
+            check(fileMode(anchor) == 0600u && readFile(anchor) == existing,
+                "Exporting through a symlink destination leaves the linked file's permissions and contents untouched");
+            std::filesystem::remove(linked, cleanupError);
+            std::filesystem::remove(anchor, cleanupError);
 #endif
+        }
+        // Foreign-name protection (P3-02): stagingSuffix() is deterministic
+        // ("<pid>-<counter>"), so the test can pre-create exactly the names the next
+        // create() will try. The encoder must retry past every collision and must never
+        // truncate or delete a file it did not create. The same assertions hold on the
+        // Windows gate, where CREATE_NEW replaces the O_EXCL loop.
+        {
+            const std::string pidPart = [] {
+                const std::string probe = sony2fuji::stagingSuffix();
+                return probe.substr(0, probe.find('-'));
+            }();
+            const auto foreign = std::vector<unsigned char>{'F', 'O', 'R', 'E', 'I', 'G', 'N'};
+            struct ForeignCase {
+                sony2fuji_output_format ffiFormat;
+                const char* directory;
+                const char* targetName;
+                const char* label;
+            };
+            for (const auto& foreignCase : {ForeignCase{SONY2FUJI_OUTPUT_JPEG, "foreign-jpeg", "foreign-out.jpg", "JPEG"},
+                                            ForeignCase{SONY2FUJI_OUTPUT_PNG, "foreign-png", "foreign-out.png", "PNG"},
+                                            ForeignCase{SONY2FUJI_OUTPUT_DNG, "foreign-dng", "foreign-out.dng", "DNG"}}) {
+                const auto dir = root / foreignCase.directory;
+                std::filesystem::create_directories(dir, cleanupError);
+                const auto target = dir / foreignCase.targetName;
+                const std::string targetPath = target.u8string();
+                exportRequest.output_format = foreignCase.ffiFormat;
+                exportRequest.output_path = targetPath.c_str();
+                sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr);
+                long plantedNext = 0;
+                auto plantForeign = [&]() {
+                    // Consume one suffix with the probe, then plant the next three names.
+                    const std::string probe = sony2fuji::stagingSuffix();
+                    const long next = std::stol(probe.substr(probe.find('-') + 1)) + 1;
+                    plantedNext = next;
+                    const std::string base = foreignCase.ffiFormat == SONY2FUJI_OUTPUT_DNG ?
+                        std::string(foreignCase.targetName) + ".rawlab-rendered-dng-" :
+                        foreignCase.ffiFormat == SONY2FUJI_OUTPUT_JPEG ? ".rawlab-jpeg-" : ".rawlab-png-";
+                    std::vector<std::filesystem::path> planted;
+                    for (int i = 0; i < 3; ++i) {
+                        const auto path = dir / (base + pidPart + "-" + std::to_string(next + i) + ".tmp");
+                        writeFile(path, foreign);
+                        planted.push_back(path);
+                    }
+                    return planted;
+                };
+                auto foreignIntact = [&](const std::vector<std::filesystem::path>& planted) {
+                    for (const auto& path : planted) {
+                        if (!std::filesystem::exists(path) || readFile(path) != foreign) return false;
+                    }
+                    return true;
+                };
+                // 1) Success path: three collisions, the fourth candidate is created, and
+                // the published file is ours while the foreign trio keeps its bytes.
+                auto planted = plantForeign();
+                writeFile(target, existing);
+                sony2fuji_buffer exportedOk{};
+                const auto okStatus = sony2fuji_process(session, &exportRequest, &exportedOk);
+                sony2fuji_release_buffer(&exportedOk);
+                // The publish is real (not a vacuous green): create() consumed exactly
+                // four suffixes — three planted collisions plus its own name — so the
+                // counter advanced from `plantedNext` by 4. A probe now reports the next
+                // available number, which must be plantedNext + 4.
+                const long afterOk = [] {
+                    const std::string probe = sony2fuji::stagingSuffix();
+                    return std::stol(probe.substr(probe.find('-') + 1));
+                }();
+                check(okStatus == SONY2FUJI_STATUS_OK && foreignIntact(planted) &&
+                          stagingResidue(dir) == 3 && afterOk == plantedNext + 4,
+                      (std::string("Export retries past planted foreign staging names (") + foreignCase.label + ")").c_str());
+                // 2) Cancelled export: the staging file it did create is removed, while the
+                // foreign trio is left completely untouched. Cancellation must fire only
+                // after create() has retried past the planted trio and built its OWN
+                // staging file, otherwise this anchor is vacuous — a poll that returns 1
+                // from the first checkpoint would cancel before the encoder ever stages,
+                // so there would be nothing of its own to remove (fake green).
+                planted = plantForeign();
+                writeFile(target, existing);
+                // With both planted generations present the directory holds exactly this
+                // many staging-pattern foreign files; the export's own staging is number
+                // baseline + 1 and is what makes the watch fire.
+                struct StagingWatch {
+                    std::filesystem::path directory;
+                    int baseline;
+                    std::atomic<bool> stagedOwn{false};
+                } watch{dir, stagingResidue(dir), {false}};
+                sony2fuji_session_set_cancellation_callback(session, +[](void* context) -> int32_t {
+                    auto& watch = *static_cast<StagingWatch*>(context);
+                    int staged = 0;
+                    std::error_code error;
+                    for (std::filesystem::directory_iterator it(watch.directory, error), last;
+                         !error && it != last; it.increment(error)) {
+                        if (isStagingFile(it->path())) ++staged;
+                    }
+                    if (staged > watch.baseline) {
+                        watch.stagedOwn.store(true, std::memory_order_release);
+                        return 1; // cancel at the commit point, with the own staging present
+                    }
+                    return 0;
+                }, &watch);
+                sony2fuji_buffer exportedCancelled{};
+                const auto cancelledStatus = sony2fuji_process(session, &exportRequest, &exportedCancelled);
+                sony2fuji_release_buffer(&exportedCancelled);
+                sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr);
+                check(cancelledStatus == SONY2FUJI_STATUS_CANCELLED &&
+                          watch.stagedOwn.load(std::memory_order_acquire) &&
+                          readFile(target) == existing && foreignIntact(planted) &&
+                          // Both planted generations remain and the export's own staging
+                          // file is gone: residue is back to the pre-export baseline.
+                          stagingResidue(dir) == watch.baseline,
+                    (std::string("Cancelled export removes only its own staging file among foreign names (") + foreignCase.label + ")").c_str());
+                std::filesystem::remove_all(dir, cleanupError);
+            }
         }
         // Large (>= 30 MP) FINAL PNG and JPEG exports must check cancellation inside the encoding
         // loop so mid-encode cancellation returns CANCELLED promptly without publishing any output.
@@ -565,6 +705,32 @@ int main() {
                 const std::string directLatchLabel = std::string("One-shot non-sticky cancellation latches at every ") +
                     fmt.label + " encoder checkpoint and leaves no output file";
                 check(allDirectLatched, directLatchLabel.c_str());
+
+                // The return-value encoder API has no Cancelled value, so cancellation must
+                // leave through the ProcessingCancelled type itself: a direct C++ caller
+                // observes the cancellation semantics unchanged, never a generic
+                // ErrorCode (P3-03, C-N10).
+                {
+                    const auto typeTarget = root / fmt.filename;
+                    const std::string typePath = typeTarget.u8string();
+                    std::filesystem::remove(typeTarget, cleanupError);
+                    sony2fuji::ProcessingCancellationScope alwaysCancelled(
+                        {+[](void*) -> int32_t { return 1; }, nullptr});
+                    bool cancelledTypePreserved = false;
+                    bool returnedWithoutCancellation = false;
+                    try {
+                        (void)sony2fuji::ImageEncoder::saveImage(latchImage, typePath, fmt.coreFormat, 98);
+                        returnedWithoutCancellation = true; // cancellation came back as a code
+                    } catch (const sony2fuji::ProcessingCancelled&) {
+                        cancelledTypePreserved = true;
+                    } catch (const std::exception&) {
+                        returnedWithoutCancellation = true; // a wrapped exception loses the type too
+                    }
+                    check(cancelledTypePreserved && !returnedWithoutCancellation &&
+                              !std::filesystem::exists(typeTarget) && stagingResidue(root) == 0,
+                          (std::string("Cancelled ImageEncoder::saveImage preserves the ProcessingCancelled type (") + fmt.label + ")").c_str());
+                    std::filesystem::remove(typeTarget, cleanupError);
+                }
 
                 // 2) C ABI sony2fuji_process: fire one non-zero pulse at every poll 1..total,
                 // including the pre-encoder parallel pixel stages.

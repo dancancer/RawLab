@@ -136,22 +136,31 @@ public:
 
     bool create(const std::filesystem::path& destination) {
 #ifdef _WIN32
-        wchar_t temporaryName[MAX_PATH] = {};
+        // Mirror of the POSIX branch below: CREATE_NEW with a bounded retry instead
+        // of GetTempFileNameW. A collided name is never opened or deleted by us
+        // (foreign-name protection); GetTempFileNameW could return an
+        // already-existing name that libtiff would then rewrite.
+        std::wstring temporaryName;
         try {
             std::filesystem::path parent = destination.parent_path();
             if (parent.empty()) parent = L".";
-            const std::wstring parentString = parent.wstring();
-            if (GetTempFileNameW(parentString.c_str(), L"rld", 0, temporaryName) == 0)
-                return false;
+            std::wstring basename = destination.filename().wstring();
+            if (basename.empty()) basename = L"rendered";
+            for (int attempt = 0; attempt < 64 && handle_ == INVALID_HANDLE_VALUE; ++attempt) {
+                const std::string suffix = stagingSuffix();
+                temporaryName = (parent / (basename + L".rawlab-rendered-dng-" +
+                                           std::wstring(suffix.begin(), suffix.end()) + L".tmp")).wstring();
+                handle_ = ::CreateFileW(
+                    temporaryName.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
+                    CREATE_NEW, FILE_ATTRIBUTE_TEMPORARY, nullptr);
+                if (handle_ == INVALID_HANDLE_VALUE) {
+                    if (GetLastError() != ERROR_FILE_EXISTS) return false;
+                    temporaryName.clear(); // the name belongs to someone else; never delete it
+                }
+            }
+            if (handle_ == INVALID_HANDLE_VALUE) return false;
 
             path_ = std::filesystem::path(temporaryName);
-            handle_ = CreateFileW(
-                path_.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
-                FILE_ATTRIBUTE_TEMPORARY, nullptr);
-            if (handle_ == INVALID_HANDLE_VALUE) {
-                DeleteFileW(temporaryName);
-                return false;
-            }
 
             // Win32 libtiff expects the native HANDLE's significant 32 bits,
             // not a CRT descriptor produced by _open_osfhandle.
@@ -162,7 +171,7 @@ public:
             return true;
         } catch (...) {
             cleanup();
-            if (temporaryName[0] != L'\0') DeleteFileW(temporaryName);
+            if (!temporaryName.empty()) DeleteFileW(temporaryName.c_str());
             throw;
         }
 #else
