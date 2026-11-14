@@ -27,8 +27,10 @@ namespace sony2fuji {
 //
 // The mode is read through an O_NOFOLLOW descriptor plus fstat instead of stat():
 // a symbolic-link destination (ELOOP) gets the default umask mode instead of one
-// copied through the link, and the type check cannot be raced by a destination
-// that is swapped between stat() and the publish rename.
+// copied through the link, and the S_ISREG check and the mode read share one
+// descriptor, removing the check/use race at sampling time. The mode is a
+// create-time snapshot applied to this process's private O_EXCL staging
+// descriptor, so fchmod never touches a file someone else owns.
 inline void preserveDestinationMode(int fd, const std::filesystem::path& destination) noexcept {
     // O_NONBLOCK keeps a FIFO destination from blocking the export open.
     const int destinationFd =

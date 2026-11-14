@@ -240,15 +240,20 @@ bool runKernel(MetalContext& context, const ImageLayout& layout,
         return true;
     } catch (const sony2fuji::ProcessingCancelled&) {
         // Cancellation is not a stats failure: rethrow it unchanged (the #329
-        // semantics) so the FFI boundary maps it to CANCELLED instead of this
-        // fallback disguising a cancelled run as "GPU unavailable, use CPU".
+        // semantics). Forward-looking defence: the only FFI caller today,
+        // sony2fuji_analyze_image, is FORCE-only and installs no cancellation
+        // scope, so a stray cancellation maps to PROCESSING_ERROR there; what the
+        // rethrow prevents is this fallback turning a cancelled run into a plain
+        // `false` and inviting an AUTO caller to redo the whole image on CPU.
         throw;
     } catch (const std::exception&) {
         return false;
     } catch (...) {
-        // Restore the catch-all fallback: a throw object that does not derive from
-        // std::exception must not escape computeImageStatsMetal into the C ABI.
-        // Narrowing this catch to std::exception& had left that window open (G-N5).
+        // Restore the catch-all fallback: computeImageStatsMetal has a no-throw
+        // promise, and a throw object that does not derive from std::exception
+        // escaped it toward direct C++ callers and the internal-API tests (G-N5).
+        // The sony2fuji_analyze_image boundary happens to map such a throw to
+        // PROCESSING_ERROR anyway; the promise belongs to this function.
         return false;
     }
 }
