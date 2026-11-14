@@ -70,7 +70,7 @@ import Foundation
         var ids = [UUID]()
         for index in 0..<101 {
             ids.append(UUID())
-            try fixture.journalRecord(age: TimeInterval(101 - index), now: now, id: ids[index])
+            _ = try fixture.journalRecord(age: TimeInterval(101 - index), now: now, id: ids[index])
         }
         var reclaimed = BatchArtifactRetention.reclaim(exportsRoot: fixture.exports, journalRoot: fixture.journals, now: now)
         let remainingAfterCap = try fixture.fileCount(fixture.journals)
