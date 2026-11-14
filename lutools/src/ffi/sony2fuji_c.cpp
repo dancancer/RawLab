@@ -111,6 +111,7 @@ struct sony2fuji_session {
     bool interactive_preview = false;
     bool viewport_preview = false;
     sony2fuji_render_backend last_backend = SONY2FUJI_BACKEND_CPU;
+    uint64_t raw_decode_count = 0;
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
     std::unique_ptr<sony2fuji::ai::AISession> ai;
 #endif
@@ -1682,6 +1683,7 @@ sony2fuji_status loadRawImage(
             session->probed_header_height = static_cast<uint32_t>(session->raw_native_size.second);
         }
         session->raw_cache = std::move(decoded);
+        ++session->raw_decode_count;
         session->raw_display_referred = processor.isDisplayReferred();
         session->raw_lens_report = processor.getLensCorrectionReport();
 #if defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
@@ -2204,6 +2206,10 @@ sony2fuji_status sony2fuji_session_set_viewport_preview(sony2fuji_session* sessi
 
 sony2fuji_render_backend sony2fuji_session_get_last_backend(const sony2fuji_session* session) {
     return session ? session->last_backend : SONY2FUJI_BACKEND_CPU;
+}
+
+uint64_t sony2fuji_session_get_raw_decode_count(const sony2fuji_session* session) {
+    return session ? session->raw_decode_count : 0;
 }
 
 sony2fuji_status sony2fuji_session_set_gpu_config(
@@ -2820,8 +2826,11 @@ static sony2fuji_status processImpl(
     const bool geometryActive = session->geometry.active();
     if (geometryActive && session->gpu_config.mode == sony2fuji::GpuMode::Force)
         return SONY2FUJI_STATUS_UNSUPPORTED;
-    bool viewportPreview = session->viewport_preview && local.intent == SONY2FUJI_INTENT_PREVIEW &&
+    // 预览到缓冲（含未开启视口标志的预览）必须保留大图 RAW 缓存供下一次渲染复用；
+    // 只有导出才把工作图移走缓存来省一次整幅拷贝。
+    const bool previewToBuffer = local.intent == SONY2FUJI_INTENT_PREVIEW &&
         local.output_target == SONY2FUJI_TARGET_BUFFER;
+    bool viewportPreview = session->viewport_preview && previewToBuffer;
     const bool channelCurvesActive = std::any_of(session->channel_curves.begin(), session->channel_curves.end(),
         [](const auto& curve) { return curve.active(); });
 #if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
@@ -2947,7 +2956,7 @@ static sony2fuji_status processImpl(
             // C5 失败不会破坏工作图；Legacy 的 GPU 重试仍需要原始 RAW。
             const bool reloadableWavelet = waveletActive &&
                 !sony2fuji::usesC5Denoise(session->wavelet_denoise.processingVersion);
-            if (large && !reloadableWavelet && !pre_hsl) image = std::move(session->raw_cache);
+            if (large && !previewToBuffer && !reloadableWavelet && !pre_hsl) image = std::move(session->raw_cache);
             else image = session->raw_cache;
         }
     } else {
@@ -3070,8 +3079,8 @@ static sony2fuji_status processImpl(
             if (entry && !fallback)
                 session->wavelet_cache.store(*entry, image, session->wavelet_denoise, session->gpu_config.mode);
         }
-        // 小波及其重试已完成；viewport 仍需缓存 RAW 供下一次滑杆调整复用。
-        if (!viewportPreview && !pre_hsl &&
+        // 小波及其重试已完成；视口与预览工作缓冲仍需缓存 RAW 供下一次滑杆调整复用，导出才释放。
+        if (!viewportPreview && !previewToBuffer && !pre_hsl &&
             session->raw_cache.pixels.size() * sizeof(sony2fuji::RGB) > sony2fuji::WaveletRenderCache::defaultPreviewBudget)
             session->raw_cache = {};
         color_space = SONY2FUJI_COLOR_SRGB;
@@ -3093,7 +3102,8 @@ static sony2fuji_status processImpl(
         }
         if (session->gpu_config.mode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_PROCESSING_ERROR;
         if (local.input_type == SONY2FUJI_INPUT_RAW && !waveletActive && !viewportPreview) {
-            if (session->raw_cache.pixels.size() * sizeof(sony2fuji::RGB) > sony2fuji::WaveletRenderCache::defaultPreviewBudget)
+            if (session->raw_cache.pixels.size() * sizeof(sony2fuji::RGB) > sony2fuji::WaveletRenderCache::defaultPreviewBudget
+                && !previewToBuffer)
                 image = std::move(session->raw_cache);
             else image = session->raw_cache;
         }
