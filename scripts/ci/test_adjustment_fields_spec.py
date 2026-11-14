@@ -60,10 +60,25 @@ def _eval_scale(formula: str, p: float) -> float:
 # Hard-fail parse helpers + explicit unanchored-skip registry
 # ---------------------------------------------------------------------------
 
+_UNANCHORED = object()
+
 # Explicit registry for any (layer, field_id, platform, attribute) whose value
 # genuinely lacks a static source anchor on that platform. Never silently skip
 # an attribute without registering it here with a documented reason.
-UNANCHORED_SKIPS: dict[tuple[str, str, str, str], str] = {}
+UNANCHORED_SKIPS: dict[tuple[str, str, str, str], str] = {
+    (
+        "ui",
+        "hdr.look",
+        "macos",
+        "default",
+    ): "Shared/Native/HDRMonitoring.swift:HDRLookControls binds Slider(value: $settings.lookSettings.strength, in: 0...2, step: 0.01) while '中性' clears to HDRLookSettings(); spec ui.default=100.0 comes from HDRLookAssetStore.install asset-import preset rather than a UI slider anchor.",
+    (
+        "ui",
+        "hdr.look",
+        "ios",
+        "default",
+    ): "RawLab/RawLab/UI/Editor/ContentView+Panels.swift embeds Shared/Native/HDRMonitoring.swift:HDRLookControls Slider(in: 0...2, step: 0.01) with '中性' clearing to HDRLookSettings(); spec ui.default=100.0 comes from HDRLookAssetStore.install asset-import preset rather than a UI slider anchor.",
+}
 
 
 def _need(pattern, src, field, where, flags=0):
@@ -2402,6 +2417,7 @@ def _parse_mac_ui(mac_fine: dict[str, float]) -> dict[str, dict]:
     """Parse macOS UI metadata solely from RawLabMac/ and Shared/."""
     mac_types = _strip_line_comments(_read("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift"))
     mac_adj = _strip_line_comments(_read("RawLabMac/Sources/Adjustments/Adjustments.swift"))
+    mac_tx = _strip_line_comments(_read("RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift"))
     mac_tv = _strip_line_comments(_read("RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift"))
     mac_dock = _strip_line_comments(_read("RawLabMac/Sources/Editor/View/AdjustmentDock.swift"))
     mac_hsl_prec = _strip_line_comments(_read("RawLabMac/Sources/Controls/MacHSLPrecision.swift"))
@@ -2414,69 +2430,152 @@ def _parse_mac_ui(mac_fine: dict[str, float]) -> dict[str, dict]:
     mac_lens = _strip_line_comments(_read("RawLabMac/Sources/Lens/LensControls.swift"))
     hdr_mon = _strip_line_comments(_read("Shared/Native/HDRMonitoring.swift"))
     hdr_swift = _strip_line_comments(_read("Shared/HDRSettings.swift"))
-    tone_swift = _strip_line_comments(_read("Shared/ToneControlsSettings.swift"))
-    atmos_swift = _strip_line_comments(_read("Shared/AtmosphereSettings.swift"))
-    hsl_swift = _strip_line_comments(_read("Shared/HSLSettings.swift"))
     geom_swift = _strip_line_comments(_read("Shared/GeometrySettings.swift"))
 
-    mac_hsl_step = round(1.0 / float(_need(r"\*\s*(\d+)\)\.rounded\(\)\s*/\s*\1", mac_hsl_prec, "color.hsl mac step", "MacHSLPrecision.swift").group(1)), 6)
-    mac_crop_min_pct = round(float(_need(r"case \.cropWidth:\s*return min\((0\.\d+),", mac_types, "geometry.crop min mac", "AdjustmentTypes.swift").group(1)) * 100.0, 6)
-    mac_persp_unit = _need(r'case \.perspectiveHorizontal,\s*\.perspectiveVertical:\s*return "([^"]*)"', mac_types, "geometry.perspective mac unit", "AdjustmentTypes.swift").group(1)
-    mac_lens_options = _need(r"private var correctionOptions.*?\}", mac_lens, "geometry.lens.vignetting mac sdr scope", "LensControls.swift", re.S).group(0)
-    _require_absent("vignetting", mac_lens_options, "geometry.lens.vignetting mac sdr", "LensControls.swift")
-    _require('accessibilityIdentifier("chromaNoiseReduction.mode")', mac_dn, "detail.denoise.chroma_mode mac picker", "DenoiseControls.swift")
-    _require("precision: isEV ? .exposure : .standard", mac_dock, "hdr UI precision steps", "AdjustmentDock.swift")
+    # ParameterRow defaults & AdjustmentRow routing (AdjustmentRow.swift + AdjustmentDock.swift)
+    mac_row_blk = _extract_brace_block(mac_adj_row, r"struct ParameterRow\b", "ParameterRow", "AdjustmentRow.swift")
+    row_default_unit = _need(r'var unit\s*=\s*"([^"]*)"', mac_row_blk, "ParameterRow default unit", "AdjustmentRow.swift").group(1)
+    row_default_prec = _need(r"var precision\s*=\s*ParameterPrecision\.(\w+)", mac_row_blk, "ParameterRow default precision", "AdjustmentRow.swift").group(1)
+    mac_adj_row_blk = _extract_brace_block(mac_adj_row, r"struct AdjustmentRow\b", "AdjustmentRow", "AdjustmentRow.swift")
+    mac_adj_prec_blk = _extract_brace_block(mac_adj_row_blk, r"private var precision:\s*ParameterPrecision", "AdjustmentRow.precision", "AdjustmentRow.swift")
+    row_prec_default = _need(r"default:\s*return \.(\w+)", mac_adj_prec_blk, "AdjustmentRow default precision", "AdjustmentRow.swift").group(1)
+    mac_row_prec: dict[str, str] = {}
+    for cases_str, prec_name in re.findall(r"case ([^:]+):\s*return \.(\w+)", mac_adj_prec_blk):
+        for c in cases_str.split(","):
+            mac_row_prec[c.strip().lstrip(".")] = prec_name
+    _require("specOverride ?? parameter.spec", mac_adj_row_blk, "AdjustmentRow specOverride", "AdjustmentRow.swift")
+    _require("defaultValue: spec.defaultValue * spec.multiplier, unit: spec.unit", mac_adj_row_blk, "AdjustmentRow scaling/unit", "AdjustmentRow.swift")
+    _require("specOverride: parameter.spec(for: model.settings)", mac_dock, "AdjustmentDock parameterRow specOverride", "AdjustmentDock.swift")
+
+    # AdjustmentSpec + AdjustmentParameter.spec + spec(for:)
+    mac_spec_struct_blk = _extract_brace_block(mac_types, r"struct AdjustmentSpec\b", "AdjustmentSpec", "AdjustmentTypes.swift")
+    spec_default_mult = float(_need(r"var multiplier\s*=\s*(-?\d+(?:\.\d+)?)", mac_spec_struct_blk, "AdjustmentSpec default multiplier", "AdjustmentTypes.swift").group(1))
+    mac_param_blk = _extract_brace_block(mac_types, r"enum AdjustmentParameter\b", "AdjustmentParameter", "AdjustmentTypes.swift")
+    mac_spec_blk = _extract_brace_block(mac_param_blk, r"var spec:\s*AdjustmentSpec", "AdjustmentParameter.spec", "AdjustmentTypes.swift")
+    mac_specs: dict[str, tuple[float, float, float, str, float]] = {}
+    for m in re.finditer(
+        r'case \.(\w+):\s*return AdjustmentSpec\([^\n]*?'
+        r'range:\s*(-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?),\s*'
+        r'defaultValue:\s*(-?\d+(?:\.\d+)?),\s*'
+        r'step:\s*(-?\d+(?:\.\d+)?),\s*'
+        r'unit:\s*"([^"]*)"'
+        r'(?:,\s*multiplier:\s*(-?\d+(?:\.\d+)?))?',
+        mac_spec_blk,
+    ):
+        mult = float(m.group(7)) if m.group(7) is not None else spec_default_mult
+        mac_specs[m.group(1)] = (float(m.group(2)), float(m.group(3)), float(m.group(4)), m.group(6), mult)
+
+    mac_spec_for_blk = _extract_brace_block(mac_param_blk, r"func spec\(for settings:\s*Adjustments\)\s*->\s*AdjustmentSpec", "AdjustmentParameter.spec(for:)", "AdjustmentTypes.swift")
+    _require("var value = spec", mac_spec_for_blk, "spec(for:) base spec", "AdjustmentTypes.swift")
+    hdr_dn_m = _need(
+        r'if settings\.isHDREditing && self == \.denoiseMode \{\s*'
+        r'return AdjustmentSpec\([^)]*?range:\s*(-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?),\s*'
+        r'defaultValue:\s*(-?\d+(?:\.\d+)?),\s*step:\s*(-?\d+(?:\.\d+)?),\s*unit:\s*"([^"]*)",\s*multiplier:\s*(-?\d+(?:\.\d+)?)',
+        mac_spec_for_blk,
+        "detail.denoise.post_rgb mac spec(for:)",
+        "AdjustmentTypes.swift",
+        re.S,
+    )
+    hdr_exp_m = _need(
+        r"if settings\.isHDREditing && self == \.exposure \{\s*"
+        r"return AdjustmentSpec\([^)]*?range:\s*(-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?),\s*"
+        r"defaultValue:\s*(-?\d+(?:\.\d+)?),\s*step:\s*value\.step,\s*unit:\s*value\.unit",
+        mac_spec_for_blk,
+        "hdr.exposure mac spec(for:)",
+        "AdjustmentTypes.swift",
+        re.S,
+    )
+    hdr_exp_range = (float(hdr_exp_m.group(1)), float(hdr_exp_m.group(2)))
+    _require("if settings.isHDREditing { return value }", mac_spec_for_blk, "hdr white balance passthrough mac", "AdjustmentTypes.swift")
+    _need(r"if self == \.temperature \{ value\.defaultValue = settings\.asShotWhiteBalance\?\.temperature \?\? (\d+(?:\.\d+)?) \}", mac_spec_for_blk, "wb.temperature fallback mac", "AdjustmentTypes.swift")
+    _need(r"if self == \.tint \{ value\.defaultValue = settings\.masterRecipe != nil \? 0 : \(settings\.asShotWhiteBalance\?\.tint \?\? (\d+(?:\.\d+)?)\) \}", mac_spec_for_blk, "wb.tint fallback mac", "AdjustmentTypes.swift")
+
+    # Primary UI HDR rendition row + secondary inspector step (AdjustmentDock.swift + HDRMonitoring.swift)
+    _require("else if let keyPath = tool.hdrRenditionKeyPath {\n            hdrRenditionRow(tool, keyPath: keyPath)", mac_dock, "hdr rendition dispatch mac", "AdjustmentDock.swift")
+    mac_hdr_rend_blk = _extract_brace_block(mac_dock, r"private func hdrRenditionRow\b", "hdrRenditionRow mac", "AdjustmentDock.swift")
+    _require("let isEV = tool == .hdrPeakLimit || tool == .hdrSDRExposure", mac_hdr_rend_blk, "hdrRenditionRow isEV mac", "AdjustmentDock.swift")
+    hdr_rend_range_m = _need(
+        r"let range:\s*ClosedRange<Double>\s*=\s*tool == \.hdrPeakLimit \? (-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?) : \(isEV \? (-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?) : (-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?)\)",
+        mac_hdr_rend_blk,
+        "hdrRenditionRow range mac",
+        "AdjustmentDock.swift",
+    )
+    hdr_peak_range = (float(hdr_rend_range_m.group(1)), float(hdr_rend_range_m.group(2)))
+    hdr_sdr_exp_range = (float(hdr_rend_range_m.group(3)), float(hdr_rend_range_m.group(4)))
+    hdr_sdr_tone_range = (float(hdr_rend_range_m.group(5)), float(hdr_rend_range_m.group(6)))
+    hdr_rend_def = float(_need(r"defaultValue:\s*(-?\d+(?:\.\d+)?)", mac_hdr_rend_blk, "hdrRenditionRow default mac", "AdjustmentDock.swift").group(1))
+    hdr_rend_unit_m = _need(r'unit:\s*isEV \? "([^"]*)" : "([^"]*)"', mac_hdr_rend_blk, "hdrRenditionRow unit mac", "AdjustmentDock.swift")
+    hdr_rend_prec_m = _need(r"precision:\s*isEV \? \.(\w+) : \.(\w+)", mac_hdr_rend_blk, "hdrRenditionRow precision mac", "AdjustmentDock.swift")
 
     hdr_mon_peak_step = float(_need(r'slider\("HDR 亮度上限".*?step:\s*(\d+(?:\.\d+)?)', hdr_mon, "hdr.peak sec step", "Shared/Native/HDRMonitoring.swift").group(1))
     hdr_mon_sdr_exp_step = float(_need(r'slider\("SDR 底图曝光".*?step:\s*(\d+(?:\.\d+)?)', hdr_mon, "hdr.sdr_exp sec step", "Shared/Native/HDRMonitoring.swift").group(1))
     hdr_mon_sdr_con_step = float(_need(r'slider\("SDR 底图对比度".*?step:\s*(\d+(?:\.\d+)?)', hdr_mon, "hdr.sdr_con sec step", "Shared/Native/HDRMonitoring.swift").group(1))
     hdr_mon_sdr_sat_step = float(_need(r'slider\("SDR 底图饱和度".*?step:\s*(\d+(?:\.\d+)?)', hdr_mon, "hdr.sdr_sat sec step", "Shared/Native/HDRMonitoring.swift").group(1))
-    hdr_mon_look_m = _need(r"Slider\(value:\s*\$settings\.lookSettings\.strength,\s*in:\s*(\d+)\.\.\.(\d+),\s*step:\s*(\d+(?:\.\d+)?)", hdr_mon, "hdr.look mac ui", "Shared/Native/HDRMonitoring.swift")
+    hdr_look_ctrl_blk = _extract_brace_block(hdr_mon, r"struct HDRLookControls:\s*View\b", "hdr.look mac ctrl", "Shared/Native/HDRMonitoring.swift")
+    hdr_look_unit = _need(r'String\(format:\s*"%.0f(%%)"', hdr_look_ctrl_blk, "hdr.look mac unit", "Shared/Native/HDRMonitoring.swift").group(1).replace("%%", "%")
+    hdr_mon_look_m = _need(r"Slider\(value:\s*\$settings\.lookSettings\.strength,\s*in:\s*(\d+)\.\.\.(\d+),\s*step:\s*(\d+(?:\.\d+)?)", hdr_look_ctrl_blk, "hdr.look mac ui", "Shared/Native/HDRMonitoring.swift")
     hdr_look_lo = float(hdr_mon_look_m.group(1)) * 100.0
     hdr_look_hi = float(hdr_mon_look_m.group(2)) * 100.0
     hdr_mon_look_step = round(float(hdr_mon_look_m.group(3)) * 100.0, 6)
-    hdr_mon_cam_temp_step = float(_need(r'cameraSlider\("色温".*?step:\s*(\d+(?:\.\d+)?)', hdr_mon, "hdr.cam temp step", "Shared/Native/HDRMonitoring.swift").group(1))
-    hdr_mon_cam_tint_step = float(_need(r'cameraSlider\("色调".*?step:\s*(\d+(?:\.\d+)?)', hdr_mon, "hdr.cam tint step", "Shared/Native/HDRMonitoring.swift").group(1))
 
-    mac_specs: dict[str, tuple[float, float, float, str]] = {}
-    for m in re.finditer(
-        r'case \.(\w+):\s*return AdjustmentSpec\(.*?range:\s*(-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?),\s*defaultValue:\s*(-?\d+(?:\.\d+)?)(?:,\s*unit:\s*"([^"]*)")?',
-        mac_types,
-    ):
-        mac_specs[m.group(1)] = (float(m.group(2)), float(m.group(3)), float(m.group(4)), m.group(5) or "")
+    hdr_cam_ctrl_blk = _extract_brace_block(hdr_mon, r"struct HDRCameraDevelopmentControls:\s*View\b", "hdr.camera_development mac ctrl", "Shared/Native/HDRMonitoring.swift")
+    _require('Button(L10n.text("重置")) { draft = HDRCameraDevelopmentSettings() }', hdr_cam_ctrl_blk, "hdr.camera_development mac reset", "Shared/Native/HDRMonitoring.swift")
+    hdr_mon_cam_temp_step = float(_need(r'cameraSlider\("色温".*?step:\s*(\d+(?:\.\d+)?)', hdr_cam_ctrl_blk, "hdr.cam temp step", "Shared/Native/HDRMonitoring.swift").group(1))
+    hdr_mon_cam_tint_step = float(_need(r'cameraSlider\("色调".*?step:\s*(\d+(?:\.\d+)?)', hdr_cam_ctrl_blk, "hdr.cam tint step", "Shared/Native/HDRMonitoring.swift").group(1))
+    hdr_cam_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRCameraDevelopmentSettings\b", "hdr cam mac ui", "Shared/HDRSettings.swift")
 
-    hdr_exp_range = tuple(float(x) for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(exposure\)", hdr_swift, "hdr.exposure bounds", "Shared/HDRSettings.swift").groups())
-    hdr_peak_range = tuple(float(x) for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(peakLimitEV\)", hdr_swift, "hdr.peak bounds", "Shared/HDRSettings.swift").groups())
-    hdr_sdr_exp_range = tuple(float(x) for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(sdrExposureEV\)", hdr_swift, "hdr.sdr_exp bounds", "Shared/HDRSettings.swift").groups())
-    hdr_sdr_con_range = tuple(float(x) for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(sdrContrast\)", hdr_swift, "hdr.sdr_con bounds", "Shared/HDRSettings.swift").groups())
-    hdr_sdr_sat_range = tuple(float(x) for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(sdrSaturation\)", hdr_swift, "hdr.sdr_sat bounds", "Shared/HDRSettings.swift").groups())
-    hdr_temp_range = tuple(float(x) for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(temperature\)", hdr_swift, "hdr.temp bounds", "Shared/HDRSettings.swift").groups())
-    hdr_tint_range = tuple(float(x) for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(tint\)", hdr_swift, "hdr.tint bounds", "Shared/HDRSettings.swift").groups())
-    hdr_denoise_range = tuple(float(x) for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(denoise\)", hdr_swift, "hdr.denoise bounds", "Shared/HDRSettings.swift").groups())
-
-    _require('PhotoEditState(settings: defaults, filmID: "")', _strip_line_comments(_read("RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift")), "looks.reference mac", "MacAdjustmentTransfer.swift")
-    _require('look = ["kind": .string("neutral"), "id": .null]', mac_tv, "looks.reference mac wire", "MacAdjustmentTransferValues.swift")
+    _require('PhotoEditState(settings: defaults, filmID: "")', mac_tx, "looks.reference mac", "MacAdjustmentTransfer.swift")
+    mac_look_neutral = _need(r'look\s*=\s*\["kind":\s*\.string\("(\w+)"\),\s*"id":\s*\.null\]', mac_tv, "looks.reference mac wire", "MacAdjustmentTransferValues.swift").group(1)
     exp_mode_def = _need(r"var exposureMode(?:\s*:\s*ExposureMode)?\s*=\s*(?:ExposureMode)?\.(\w+)", mac_adj, "light.exposure_mode mac", "Adjustments.swift").group(1)
     wb_mode_var = _need(r"var whiteBalanceMode(?:\s*:\s*WhiteBalanceMode)?\s*=\s*(?:WhiteBalanceMode)?\.(\w+)", mac_adj, "wb.mode mac", "Adjustments.swift").group(1)
     _need(rf"whiteBalanceMode\s*==\s*\.{re.escape(wb_mode_var)}", mac_adj, "wb.mode usesAsShot mac", "Adjustments.swift")
     wb_mode_wire = _need(r'let camera = !isRaw \|\| settings\.usesAsShotWhiteBalance.*?camera \? "([^"]+)"', mac_tv, "wb.mode mac wire", "MacAdjustmentTransferValues.swift", re.S).group(1)
 
-    tone_range = tuple(float(x) for x in _need(r"(-?\d+)\.\.\.(-?\d+)", tone_swift, "tone range mac ui", "Shared/ToneControlsSettings.swift").groups())
-    atmos_range = tuple(float(x) for x in _need(r"(-?\d+)\.\.\.(-?\d+)", atmos_swift, "atmos range mac ui", "Shared/AtmosphereSettings.swift").groups())
-    hsl_range = tuple(float(x) for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(\$0\)", hsl_swift, "hsl range mac ui", "Shared/HSLSettings.swift").groups())
-    _ = mac_hsl_ctrl
-    _require("0...360", mac_grad_ctrl, "color.grading mac hue range", "MacColorGradingControls.swift")
+    # HSL UI (MacHSLMixer + MacHSLPrecision + ParameterRow default unit)
+    mac_hsl_step = round(1.0 / float(_need(r"\*\s*(\d+)\)\.rounded\(\)\s*/\s*\1", mac_hsl_prec, "color.hsl mac step", "MacHSLPrecision.swift").group(1)), 6)
+    mac_hsl_row_m = _need(
+        r"ParameterRow\(title:\s*axis\.title.*?range:\s*(-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?),\s*defaultValue:\s*(-?\d+(?:\.\d+)?)",
+        mac_hsl_ctrl,
+        "color.hsl mac row",
+        "MacHSLMixer.swift",
+        re.S,
+    )
+    mac_hsl_range = (float(mac_hsl_row_m.group(1)), float(mac_hsl_row_m.group(2)))
+    mac_hsl_def = float(mac_hsl_row_m.group(3))
 
+    # Color grading UI (MacColorGradingControls)
+    mac_grad_rows_blk = _extract_brace_block(mac_grad_ctrl, r"private var rows:\s*some View", "color.grading mac rows", "MacColorGradingControls.swift")
+    mac_grad_hue_m = _need(
+        r'L10n\.text\("色相"\).*?range:\s*(-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?),\s*defaultValue:\s*(-?\d+(?:\.\d+)?),\s*unit:\s*"([^"]*)"',
+        mac_grad_rows_blk,
+        "color.grading mac hue",
+        "MacColorGradingControls.swift",
+        re.S,
+    )
+    mac_grad_sat_m = _need(
+        r'L10n\.text\("饱和度"\).*?range:\s*(-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?),\s*defaultValue:\s*(-?\d+(?:\.\d+)?),\s*unit:\s*"([^"]*)"',
+        mac_grad_rows_blk,
+        "color.grading mac sat",
+        "MacColorGradingControls.swift",
+        re.S,
+    )
+    _require("0...360", mac_grad_rows_blk, "color.grading mac hue range", "MacColorGradingControls.swift")
+    _require("0...100", mac_grad_rows_blk, "color.grading mac sat range", "MacColorGradingControls.swift")
+
+    # Photo effects UI (PhotoEffectsControls + AdjustmentTypes)
     mac_fx_blk = _extract_brace_block(mac_types, r"struct PhotoEffectsSettings\b", "effects mac defaults", "AdjustmentTypes.swift")
     mac_fx_range_blk = _extract_brace_block(mac_types, r"enum PhotoEffectParameter\b", "effects mac ranges", "AdjustmentTypes.swift")
     signed_m = _need(r"self == \.vignetteAmount \|\| self == \.vignetteRoundness \? (-?\d+)\.\.\.(-?\d+) : (-?\d+)\.\.\.(-?\d+)", mac_fx_range_blk, "effects mac range", "AdjustmentTypes.swift")
     signed_range = (float(signed_m.group(1)), float(signed_m.group(2)))
     unsigned_range = (float(signed_m.group(3)), float(signed_m.group(4)))
-    _require("ParameterRow(", mac_fx_ctrl, "effects mac ParameterRow", "PhotoEffectsControls.swift")
-    mac_row_blk = _extract_brace_block(mac_adj_row, r"struct ParameterRow\b", "ParameterRow", "AdjustmentRow.swift")
-    fx_precision = _need(r"var precision\s*=\s*ParameterPrecision\.(\w+)", mac_row_blk, "effects mac step default", "AdjustmentRow.swift").group(1)
+    _need(r"ForEach\(parameters\)\s*\{\s*parameter\s+in\s+ParameterRow\(.*?range:\s*parameter\.range,\s*defaultValue:\s*parameter\.defaultValue", mac_fx_ctrl, "effects mac ParameterRow", "PhotoEffectsControls.swift", re.S)
 
+    # Denoise UI (DenoiseControls + AdjustmentTypes + Adjustments)
+    _need(r"if model\.settings\.isHDREditing \{\s*VStack\(spacing:\s*8\) \{\s*parameterRow\(\.denoiseMode\)", mac_dock, "detail.denoise.post_rgb mac dispatch", "AdjustmentDock.swift", re.S)
+    _require('accessibilityIdentifier("chromaNoiseReduction.mode")', mac_dn, "detail.denoise.chroma_mode mac picker", "DenoiseControls.swift")
     mac_dn_blk = _extract_brace_block(mac_types, r"struct WaveletDenoiseSettings\b", "wavelet mac defaults", "AdjustmentTypes.swift")
+    mac_dn_param_blk = _extract_brace_block(mac_types, r"enum DenoiseParameter\b", "DenoiseParameter mac", "AdjustmentTypes.swift")
+    _require("var defaultValue: Double { WaveletDenoiseSettings()[keyPath: keyPath] }", mac_dn_param_blk, "DenoiseParameter defaultValue mac", "AdjustmentTypes.swift")
     mac_wavelet_def = {
         "enabled": _need(r"var enabled(?:\s*:\s*Bool)?\s*=\s*(true|false)", mac_dn_blk, "wavelet enabled mac", "AdjustmentTypes.swift").group(1) == "true",
         "luma": float(_need(r"var luma(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", mac_dn_blk, "wavelet luma mac", "AdjustmentTypes.swift").group(1)),
@@ -2484,56 +2583,158 @@ def _parse_mac_ui(mac_fine: dict[str, float]) -> dict[str, dict]:
         "coarse": float(_need(r"var coarse(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", mac_dn_blk, "wavelet coarse mac", "AdjustmentTypes.swift").group(1)),
         "preset": _need(r"var preset(?:\s*:\s*DenoisePreset)?\s*=\s*(?:DenoisePreset)?\.(\w+)", mac_dn_blk, "wavelet preset mac", "AdjustmentTypes.swift").group(1),
     }
-    dn_ui_range = tuple(float(x) for x in _need(r"range:\s*(-?\d+)\.\.\.(-?\d+)", mac_dn, "wavelet mac ui range", "DenoiseControls.swift").groups())
-
+    dn_ui_range = tuple(float(x) for x in _need(r"private func parameterRow\(_ parameter: DenoiseParameter\).*?ParameterRow\(title:.*?,\s*range:\s*(-?\d+)\.\.\.(-?\d+),\s*defaultValue:\s*parameter\.defaultValue", mac_dn, "wavelet mac ui range", "DenoiseControls.swift", re.S).groups())
     chroma_blk = _extract_brace_block(mac_types, r"enum ChromaNoiseReductionMode\b", "chroma mac enum", "AdjustmentTypes.swift")
     chroma_ui_vals = [float(x) for x in re.findall(r"\b\w+\s*=\s*(-?\d+(?:\.\d+)?)", chroma_blk.split("var ")[0])]
     chroma_ui_lo, chroma_ui_hi = min(chroma_ui_vals), max(chroma_ui_vals)
-    chroma_ui_def = float(_need(r"case \.denoiseMode: return AdjustmentSpec\(.*?defaultValue:\s*(-?\d+(?:\.\d+)?)", mac_types, "chroma mac ui default", "AdjustmentTypes.swift").group(1))
+    chroma_ui_def = mac_specs["denoiseMode"][2]
+    _require('accessibilityIdentifier("denoise.ai.enabled")', mac_dn, "local.ai_denoise mac toggle", "DenoiseControls.swift")
+    mac_ai_def = _need(r"var aiDenoiseEnabled\s*=\s*(true|false)", mac_adj, "local.ai_denoise_enabled mac", "Adjustments.swift").group(1) == "true"
+    _require("private var hdrCameraAI: Bool?", mac_adj, "local.hdr_camera_ai_enabled backing mac", "Adjustments.swift")
+    mac_hdr_ai_blk = _extract_brace_block(mac_adj, r"var hdrCameraAIEnabled:\s*Bool", "local.hdr_camera_ai_enabled mac", "Adjustments.swift")
+    mac_hdr_ai_def = _need(r"get \{\s*hdrCameraAI == (true|false)\s*\}", mac_hdr_ai_blk, "local.hdr_camera_ai_enabled getter mac", "Adjustments.swift").group(1) != "true"
 
-    qt_range = tuple(int(x) for x in _need(r"\((\d+)\.\.\.(\d+)\)\.contains\(quarterTurns\)", geom_swift, "qt range mac ui", "Shared/GeometrySettings.swift").groups())
-    qt_def = int(_need(r"var quarterTurns:\s*Int\s*=\s*(\d+)", geom_swift, "qt def mac ui", "Shared/GeometrySettings.swift").group(1))
-    flip_h_def = _need(r"var flipHorizontal:\s*Bool\s*=\s*(true|false)", geom_swift, "flipH def mac ui", "Shared/GeometrySettings.swift").group(1) == "true"
-    flip_v_def = _need(r"var flipVertical:\s*Bool\s*=\s*(true|false)", geom_swift, "flipV def mac ui", "Shared/GeometrySettings.swift").group(1) == "true"
-    straight_range = tuple(float(x) for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(straightenDegrees\)", geom_swift, "straighten range mac ui", "Shared/GeometrySettings.swift").groups())
+    # Geometry UI (AdjustmentTypes.GeometryParameter + GeometryControls + Shared/GeometrySettings defaults)
     mac_geom_enum_blk = _extract_brace_block(mac_types, r"enum GeometryParameter\b", "GeometryParameter mac ui", "AdjustmentTypes.swift")
-    persp_mult = float(_need(r"var multiplier:\s*Double\s*\{\s*self == \.straightenDegrees \? (\d+) : (\d+)\s*\}", mac_geom_enum_blk, "geometry persp multiplier mac", "AdjustmentTypes.swift").group(2))
-    persp_h_range = tuple(float(x) * persp_mult for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(perspectiveHorizontal\)", geom_swift, "persp h mac ui", "Shared/GeometrySettings.swift").groups())
-    persp_v_range = tuple(float(x) * persp_mult for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(perspectiveVertical\)", geom_swift, "persp v mac ui", "Shared/GeometrySettings.swift").groups())
-    _require("GeometryParameter", mac_geom_ctrl, "geometry controls mac", "GeometryControls.swift")
+    _require("var defaultValue: Double { GeometrySettings()[keyPath: keyPath] }", mac_geom_enum_blk, "GeometryParameter defaultValue mac", "AdjustmentTypes.swift")
+    geom_mult_m = _need(r"var multiplier:\s*Double\s*\{\s*self == \.straightenDegrees \? (\d+(?:\.\d+)?) : (\d+(?:\.\d+)?)\s*\}", mac_geom_enum_blk, "geometry multiplier mac", "AdjustmentTypes.swift")
+    straight_mult = float(geom_mult_m.group(1))
+    persp_mult = float(geom_mult_m.group(2))
+    straight_unit = _need(r'case \.straightenDegrees:\s*return "([^"]*)"', mac_geom_enum_blk, "geometry.straighten mac unit", "AdjustmentTypes.swift").group(1)
+    mac_persp_unit = _need(r'case \.perspectiveHorizontal,\s*\.perspectiveVertical:\s*return "([^"]*)"', mac_geom_enum_blk, "geometry.perspective mac unit", "AdjustmentTypes.swift").group(1)
+    mac_geom_range_blk = _extract_brace_block(mac_geom_enum_blk, r"func range\(for state:\s*GeometrySettings\)\s*->\s*ClosedRange<Double>", "GeometryParameter.range mac", "AdjustmentTypes.swift")
+    crop_min_width = float(_need(r"case \.cropWidth:\s*return min\((0\.\d+),", mac_geom_range_blk, "geometry.crop.width min mac", "AdjustmentTypes.swift").group(1))
+    crop_min_height = float(_need(r"case \.cropHeight:\s*return min\((0\.\d+),", mac_geom_range_blk, "geometry.crop.height min mac", "AdjustmentTypes.swift").group(1))
+    crop_x_lo = float(_need(r"case \.cropX:\s*return (-?\d+(?:\.\d+)?)\.\.\.max\(0,\s*1 - state\.cropWidth\)", mac_geom_range_blk, "geometry.crop.x range mac", "AdjustmentTypes.swift").group(1))
+    crop_y_lo = float(_need(r"case \.cropY:\s*return (-?\d+(?:\.\d+)?)\.\.\.max\(0,\s*1 - state\.cropHeight\)", mac_geom_range_blk, "geometry.crop.y range mac", "AdjustmentTypes.swift").group(1))
+    straight_raw_range = tuple(float(x) for x in _need(r"case \.straightenDegrees:\s*return (-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?)", mac_geom_range_blk, "geometry.straighten range mac", "AdjustmentTypes.swift").groups())
+    persp_raw_range = tuple(float(x) for x in _need(r"case \.perspectiveHorizontal,\s*\.perspectiveVertical:\s*return (-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?)", mac_geom_range_blk, "geometry.perspective range mac", "AdjustmentTypes.swift").groups())
+
+    _need(r"return ParameterRow\(title:\s*parameter\.title,\s*value:\s*value\(parameter\),\s*range:\s*\(range\.lowerBound \* parameter\.multiplier\)\.\.\.\(range\.upperBound \* parameter\.multiplier\),\s*defaultValue:\s*parameter\.defaultValue \* parameter\.multiplier,\s*unit:\s*parameter\.unit", mac_geom_ctrl, "geometry ParameterRow mac", "GeometryControls.swift", re.S)
+    crop_dim_blk = _extract_brace_block(mac_geom_ctrl, r"private struct CropDimensionField:\s*View\b", "CropDimensionField mac", "GeometryControls.swift")
+    crop_mult = float(_need(r"settings\[keyPath:\s*parameter\.keyPath\] \* (\d+(?:\.\d+)?)", crop_dim_blk, "crop mult mac", "GeometryControls.swift").group(1))
+    crop_field_m = _need(r'ParameterValueField\(.*?precision:\s*\.(\w+),.*?unit:\s*"([^"]*)",.*?defaultValue:\s*parameter\.defaultValue \* (\d+(?:\.\d+)?)', crop_dim_blk, "crop field mac", "GeometryControls.swift", re.S)
+    crop_prec = crop_field_m.group(1)
+    crop_unit = crop_field_m.group(2)
+    qt_mod = int(_need(r"\.quarterTurns\s*=\s*\(\$0\.quarterTurns \+ \(clockwise \? 1 : 3\)\) % (\d+)", mac_geom_ctrl, "qt mod mac ui", "GeometryControls.swift").group(1))
+
+    geom_struct_blk = _extract_brace_block(geom_swift, r"(?:public\s+)?struct GeometrySettings\b", "GeometrySettings defaults mac", "Shared/GeometrySettings.swift")
+    qt_def = int(_need(r"var quarterTurns:\s*Int\s*=\s*(\d+)", geom_struct_blk, "qt def mac ui", "Shared/GeometrySettings.swift").group(1))
+    flip_h_def = _need(r"var flipHorizontal:\s*Bool\s*=\s*(true|false)", geom_struct_blk, "flipH def mac ui", "Shared/GeometrySettings.swift").group(1) == "true"
+    flip_v_def = _need(r"var flipVertical:\s*Bool\s*=\s*(true|false)", geom_struct_blk, "flipV def mac ui", "Shared/GeometrySettings.swift").group(1) == "true"
+    crop_x_def = float(_need(r"var cropX(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_struct_blk, "cropX def mac ui", "Shared/GeometrySettings.swift").group(1)) * crop_mult
+    crop_y_def = float(_need(r"var cropY(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_struct_blk, "cropY def mac ui", "Shared/GeometrySettings.swift").group(1)) * crop_mult
+    crop_w_def = float(_need(r"var cropWidth(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_struct_blk, "cropW def mac ui", "Shared/GeometrySettings.swift").group(1)) * crop_mult
+    crop_h_def = float(_need(r"var cropHeight(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_struct_blk, "cropH def mac ui", "Shared/GeometrySettings.swift").group(1)) * crop_mult
+    straight_def = float(_need(r"var straightenDegrees(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_struct_blk, "straight def mac ui", "Shared/GeometrySettings.swift").group(1)) * straight_mult
+    persp_h_def = float(_need(r"var perspectiveHorizontal(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_struct_blk, "perspH def mac ui", "Shared/GeometrySettings.swift").group(1)) * persp_mult
+    persp_v_def = float(_need(r"var perspectiveVertical(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_struct_blk, "perspV def mac ui", "Shared/GeometrySettings.swift").group(1)) * persp_mult
+
+    mac_lens_options = _need(r"private var correctionOptions.*?\}", mac_lens, "geometry.lens.vignetting mac sdr scope", "LensControls.swift", re.S).group(0)
+    _require_absent("vignetting", mac_lens_options, "geometry.lens.vignetting mac sdr", "LensControls.swift")
     mac_lens_blk = _extract_brace_block(mac_types, r"struct LensCorrectionSettings\b", "geometry.lens mac ui", "AdjustmentTypes.swift")
     mac_lens_dist = _need(r"var distortion(?:\s*:\s*Bool)?\s*=\s*(true|false)", mac_lens_blk, "lens.distortion mac ui", "AdjustmentTypes.swift").group(1) == "true"
     mac_lens_tca = _need(r"var tca(?:\s*:\s*Bool)?\s*=\s*(true|false)", mac_lens_blk, "lens.tca mac ui", "AdjustmentTypes.swift").group(1) == "true"
     mac_lens_vig = _need(r"var vignetting(?:\s*:\s*Bool)?\s*=\s*(true|false)", mac_lens_blk, "lens.vignetting mac ui", "AdjustmentTypes.swift").group(1) == "true"
     mac_lens_auto = _need(r"var autoCrop(?:\s*:\s*Bool)?\s*=\s*(true|false)", mac_lens_blk, "lens.auto_crop mac ui", "AdjustmentTypes.swift").group(1) == "true"
+    _require("profileID: String? = nil", mac_lens_blk, "lens.profile_id mac ui", "AdjustmentTypes.swift")
 
     ui: dict[str, dict] = {}
-    ui["looks.reference"] = _ui_entry(modes=("sdr",), default={"kind": "neutral", "id": None})
-    ui["looks.strength"] = _ui_entry(modes=("sdr",), unit="%", min_val=mac_specs["strength"][0] * 100.0, max_val=mac_specs["strength"][1] * 100.0, default=mac_specs["strength"][2] * 100.0, step=mac_fine["standard"])
-    ui["light.exposure"] = _ui_entry(unit="EV", min_val=mac_specs["exposure"][0], max_val=mac_specs["exposure"][1], hdr_min=hdr_exp_range[0], hdr_max=hdr_exp_range[1], default=mac_specs["exposure"][2], step=mac_fine["exposure"])
+    ui["looks.reference"] = _ui_entry(modes=("sdr",), default={"kind": mac_look_neutral, "id": None})
+    s_lo, s_hi, s_def, s_unit, s_mult = mac_specs["strength"]
+    ui["looks.strength"] = _ui_entry(
+        modes=("sdr",),
+        unit=s_unit,
+        min_val=s_lo * s_mult,
+        max_val=s_hi * s_mult,
+        default=s_def * s_mult,
+        step=mac_fine[mac_row_prec.get("strength", row_prec_default)],
+    )
+    e_lo, e_hi, e_def, e_unit, e_mult = mac_specs["exposure"]
+    ui["light.exposure"] = _ui_entry(
+        unit=e_unit,
+        min_val=e_lo * e_mult,
+        max_val=e_hi * e_mult,
+        hdr_min=hdr_exp_range[0],
+        hdr_max=hdr_exp_range[1],
+        default=e_def * e_mult,
+        step=mac_fine[mac_row_prec.get("exposure", row_prec_default)],
+    )
     ui["light.exposure_mode"] = _ui_entry(modes=("sdr",), default=exp_mode_def)
 
-    for fid, k in (("light.contrast", "contrast"), ("light.highlights", "highlights"), ("light.shadows", "shadows"), ("light.s_curve", "toneCurve"), ("color.saturation", "saturation")):
-        ui[fid] = _ui_entry(unit="%", min_val=mac_specs[k][0], max_val=mac_specs[k][1], default=mac_specs[k][2], step=mac_fine["standard"])
+    for fid, k in (
+        ("light.contrast", "contrast"),
+        ("light.highlights", "highlights"),
+        ("light.shadows", "shadows"),
+        ("light.s_curve", "toneCurve"),
+        ("tone.black_point", "blackPoint"),
+        ("tone.white_point", "whitePoint"),
+        ("color.vibrance", "vibrance"),
+        ("color.saturation", "saturation"),
+        ("effects.clarity", "clarity"),
+        ("effects.dehaze", "dehaze"),
+    ):
+        lo, hi, dflt, u, mult = mac_specs[k]
+        ui[fid] = _ui_entry(
+            unit=u,
+            min_val=lo * mult,
+            max_val=hi * mult,
+            default=dflt * mult,
+            step=mac_fine[mac_row_prec.get(k, row_prec_default)],
+        )
     ui["light.curve"] = _ui_curve_entry("macos", mac_fine)
 
-    for fid in ("tone.black_point", "tone.white_point", "color.vibrance"):
-        ui[fid] = _ui_entry(unit="%", min_val=tone_range[0], max_val=tone_range[1], default=0.0, step=mac_fine["standard"])
+    grad_hue_def = float(mac_grad_hue_m.group(3))
+    grad_sat_def = float(mac_grad_sat_m.group(3))
     for zone in ("shadows", "midtones", "highlights"):
-        ui[f"color.grading.{zone}"] = _ui_entry(default={"hue": 0.0, "saturation": 0.0}, step={"hue": mac_fine["standard"], "saturation": mac_fine["standard"]})
+        ui[f"color.grading.{zone}"] = _ui_entry(
+            default={"hue": grad_hue_def, "saturation": grad_sat_def},
+            step={"hue": mac_fine[row_default_prec], "saturation": mac_fine[row_default_prec]},
+        )
 
     ui["color.white_balance.mode"] = _ui_entry(modes=("sdr",), default=wb_mode_wire)
-    ui["color.white_balance.temperature_kelvin"] = _ui_entry(modes=("sdr",), unit="K", min_val=mac_specs["temperature"][0], max_val=mac_specs["temperature"][1], default=mac_specs["temperature"][2], step=mac_fine["temperature"])
-    ui["color.white_balance.tint"] = _ui_entry(modes=("sdr",), unit="", min_val=mac_specs["tint"][0], max_val=mac_specs["tint"][1], default=mac_specs["tint"][2], step=mac_fine["standard"])
+    t_lo, t_hi, t_def, t_unit, t_mult = mac_specs["temperature"]
+    ui["color.white_balance.temperature_kelvin"] = _ui_entry(
+        modes=("sdr",),
+        unit=t_unit,
+        min_val=t_lo * t_mult,
+        max_val=t_hi * t_mult,
+        default=t_def * t_mult,
+        step=mac_fine[mac_row_prec.get("temperature", row_prec_default)],
+    )
+    ti_lo, ti_hi, ti_def, ti_unit, ti_mult = mac_specs["tint"]
+    ui["color.white_balance.tint"] = _ui_entry(
+        modes=("sdr",),
+        unit=ti_unit,
+        min_val=ti_lo * ti_mult,
+        max_val=ti_hi * ti_mult,
+        default=ti_def * ti_mult,
+        step=mac_fine[mac_row_prec.get("tint", row_prec_default)],
+    )
 
-    ui["hdr.relative_temperature"] = _ui_entry(modes=("hdr",), unit="K", min_val=hdr_temp_range[0], max_val=hdr_temp_range[1], default=6500.0, step=mac_fine["temperature"])
-    ui["hdr.relative_tint"] = _ui_entry(modes=("hdr",), unit="", min_val=hdr_tint_range[0], max_val=hdr_tint_range[1], default=0.0, step=mac_fine["standard"])
-    ui["hdr.peak_limit_ev"] = _ui_entry(modes=("hdr",), unit="EV", min_val=hdr_peak_range[0], max_val=hdr_peak_range[1], default=0.0, step=mac_fine["exposure"], secondary_inspector_step=hdr_mon_peak_step)
-    ui["hdr.sdr_exposure_ev"] = _ui_entry(modes=("hdr",), unit="EV", min_val=hdr_sdr_exp_range[0], max_val=hdr_sdr_exp_range[1], default=0.0, step=mac_fine["exposure"], secondary_inspector_step=hdr_mon_sdr_exp_step)
-    ui["hdr.sdr_contrast"] = _ui_entry(modes=("hdr",), unit="%", min_val=hdr_sdr_con_range[0], max_val=hdr_sdr_con_range[1], default=0.0, step=mac_fine["standard"], secondary_inspector_step=hdr_mon_sdr_con_step)
-    ui["hdr.sdr_saturation"] = _ui_entry(modes=("hdr",), unit="%", min_val=hdr_sdr_sat_range[0], max_val=hdr_sdr_sat_range[1], default=0.0, step=mac_fine["standard"], secondary_inspector_step=hdr_mon_sdr_sat_step)
-    ui["hdr.look"] = _ui_entry(modes=("hdr",), unit="%", min_val=hdr_look_lo, max_val=hdr_look_hi, default=100.0, step={"strength": hdr_mon_look_step})
-    hdr_cam_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRCameraDevelopmentSettings\b", "hdr cam mac ui", "Shared/HDRSettings.swift")
+    ui["hdr.relative_temperature"] = _ui_entry(
+        modes=("hdr",),
+        unit=t_unit,
+        min_val=t_lo * t_mult,
+        max_val=t_hi * t_mult,
+        default=t_def * t_mult,
+        step=mac_fine[mac_row_prec.get("temperature", row_prec_default)],
+    )
+    ui["hdr.relative_tint"] = _ui_entry(
+        modes=("hdr",),
+        unit=ti_unit,
+        min_val=ti_lo * ti_mult,
+        max_val=ti_hi * ti_mult,
+        default=ti_def * ti_mult,
+        step=mac_fine[mac_row_prec.get("tint", row_prec_default)],
+    )
+    ev_unit, pct_unit = hdr_rend_unit_m.group(1), hdr_rend_unit_m.group(2)
+    ev_prec, pct_prec = hdr_rend_prec_m.group(1), hdr_rend_prec_m.group(2)
+    ui["hdr.peak_limit_ev"] = _ui_entry(modes=("hdr",), unit=ev_unit, min_val=hdr_peak_range[0], max_val=hdr_peak_range[1], default=hdr_rend_def, step=mac_fine[ev_prec], secondary_inspector_step=hdr_mon_peak_step)
+    ui["hdr.sdr_exposure_ev"] = _ui_entry(modes=("hdr",), unit=ev_unit, min_val=hdr_sdr_exp_range[0], max_val=hdr_sdr_exp_range[1], default=hdr_rend_def, step=mac_fine[ev_prec], secondary_inspector_step=hdr_mon_sdr_exp_step)
+    ui["hdr.sdr_contrast"] = _ui_entry(modes=("hdr",), unit=pct_unit, min_val=hdr_sdr_tone_range[0], max_val=hdr_sdr_tone_range[1], default=hdr_rend_def, step=mac_fine[pct_prec], secondary_inspector_step=hdr_mon_sdr_con_step)
+    ui["hdr.sdr_saturation"] = _ui_entry(modes=("hdr",), unit=pct_unit, min_val=hdr_sdr_tone_range[0], max_val=hdr_sdr_tone_range[1], default=hdr_rend_def, step=mac_fine[pct_prec], secondary_inspector_step=hdr_mon_sdr_sat_step)
+    ui["hdr.look"] = _ui_entry(modes=("hdr",), unit=hdr_look_unit, min_val=hdr_look_lo, max_val=hdr_look_hi, default=_UNANCHORED, step={"strength": hdr_mon_look_step})
     ui["hdr.camera_development"] = _ui_entry(
         modes=("hdr",),
         default={
@@ -2549,7 +2750,7 @@ def _parse_mac_ui(mac_fine: dict[str, float]) -> dict[str, dict]:
 
     for axis in HSL_AXES:
         for ch in HSL_CHANNELS:
-            ui[f"color.hsl.{axis}.{ch}"] = _ui_entry(unit="", min_val=hsl_range[0], max_val=hsl_range[1], default=0.0, step=mac_hsl_step)
+            ui[f"color.hsl.{axis}.{ch}"] = _ui_entry(unit=row_default_unit, min_val=mac_hsl_range[0], max_val=mac_hsl_range[1], default=mac_hsl_def, step=mac_hsl_step)
 
     for fid, prop, is_signed in (
         ("effects.vignette.amount", "vignetteAmount", True),
@@ -2563,33 +2764,72 @@ def _parse_mac_ui(mac_fine: dict[str, float]) -> dict[str, dict]:
     ):
         dflt = float(_need(rf"var {prop}(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", mac_fx_blk, f"{fid} mac ui default", "AdjustmentTypes.swift").group(1))
         lo, hi = signed_range if is_signed else unsigned_range
-        ui[fid] = _ui_entry(unit="", min_val=lo, max_val=hi, default=dflt, step=mac_fine[fx_precision])
+        ui[fid] = _ui_entry(unit=row_default_unit, min_val=lo, max_val=hi, default=dflt, step=mac_fine[row_default_prec])
 
-    ui["effects.clarity"] = _ui_entry(unit="%", min_val=atmos_range[0], max_val=atmos_range[1], default=0.0, step=mac_fine["standard"])
-    ui["effects.dehaze"] = _ui_entry(unit="%", min_val=atmos_range[0], max_val=atmos_range[1], default=0.0, step=mac_fine["standard"])
-
-    ui["detail.sharpening"] = _ui_entry(unit="%", min_val=mac_specs["sharpening"][0], max_val=mac_specs["sharpening"][1], default=mac_specs["sharpening"][2], step=mac_fine["standard"])
-    ui["detail.denoise.raw_level"] = _ui_entry(modes=("sdr",), unit="", min_val=mac_specs["rawNoiseReduction"][0], max_val=mac_specs["rawNoiseReduction"][1], default=mac_specs["rawNoiseReduction"][2], step=1.0)
-    ui["detail.denoise.post_rgb"] = _ui_entry(modes=("hdr",), unit="%", min_val=hdr_denoise_range[0] * 100.0, max_val=hdr_denoise_range[1] * 100.0, default=0.0, step=mac_fine["standard"])
+    sh_lo, sh_hi, sh_def, sh_unit, sh_mult = mac_specs["sharpening"]
+    ui["detail.sharpening"] = _ui_entry(
+        unit=sh_unit,
+        min_val=sh_lo * sh_mult,
+        max_val=sh_hi * sh_mult,
+        default=sh_def * sh_mult,
+        step=mac_fine[mac_row_prec.get("sharpening", row_prec_default)],
+    )
+    raw_lo, raw_hi, raw_def, raw_unit, raw_mult = mac_specs["rawNoiseReduction"]
+    ui["detail.denoise.raw_level"] = _ui_entry(modes=("sdr",), unit=raw_unit, min_val=raw_lo * raw_mult, max_val=raw_hi * raw_mult, default=raw_def * raw_mult, step=1.0)
+    hdr_dn_lo, hdr_dn_hi, hdr_dn_def = float(hdr_dn_m.group(1)), float(hdr_dn_m.group(2)), float(hdr_dn_m.group(3))
+    hdr_dn_unit, hdr_dn_mult = hdr_dn_m.group(5), float(hdr_dn_m.group(6))
+    ui["detail.denoise.post_rgb"] = _ui_entry(
+        modes=("hdr",),
+        unit=hdr_dn_unit,
+        min_val=hdr_dn_lo * hdr_dn_mult,
+        max_val=hdr_dn_hi * hdr_dn_mult,
+        default=hdr_dn_def * hdr_dn_mult,
+        step=mac_fine[mac_row_prec.get("denoiseMode", row_prec_default)],
+    )
     ui["detail.denoise.chroma_mode"] = _ui_entry(exposed=True, modes=("sdr",), min_val=chroma_ui_lo, max_val=chroma_ui_hi, default=chroma_ui_def, step=1.0)
-    ui["detail.denoise.wavelet"] = _ui_entry(modes=("sdr",), unit="", min_val=dn_ui_range[0], max_val=dn_ui_range[1], default=mac_wavelet_def, step={"luma": mac_fine["standard"], "chroma": mac_fine["standard"], "coarse": mac_fine["standard"]})
+    ui["detail.denoise.wavelet"] = _ui_entry(
+        modes=("sdr",),
+        unit=row_default_unit,
+        min_val=dn_ui_range[0],
+        max_val=dn_ui_range[1],
+        default=mac_wavelet_def,
+        step={"luma": mac_fine[row_default_prec], "chroma": mac_fine[row_default_prec], "coarse": mac_fine[row_default_prec]},
+    )
 
-    for fid in ("geometry.crop.x", "geometry.crop.y"):
-        ui[fid] = _ui_entry(unit="%", min_val=0.0, max_val=100.0, default=0.0, step=mac_fine["cropPercent"])
-    for fid in ("geometry.crop.width", "geometry.crop.height"):
-        ui[fid] = _ui_entry(unit="%", min_val=mac_crop_min_pct, max_val=100.0, default=100.0, step=mac_fine["cropPercent"])
-    ui["geometry.quarter_turns"] = _ui_entry(min_val=qt_range[0], max_val=qt_range[1], default=qt_def, step=1)
+    ui["geometry.crop.x"] = _ui_entry(unit=crop_unit, min_val=crop_x_lo * crop_mult, max_val=crop_mult, default=crop_x_def, step=mac_fine[crop_prec])
+    ui["geometry.crop.y"] = _ui_entry(unit=crop_unit, min_val=crop_y_lo * crop_mult, max_val=crop_mult, default=crop_y_def, step=mac_fine[crop_prec])
+    ui["geometry.crop.width"] = _ui_entry(unit=crop_unit, min_val=round(crop_min_width * crop_mult, 6), max_val=crop_mult, default=crop_w_def, step=mac_fine[crop_prec])
+    ui["geometry.crop.height"] = _ui_entry(unit=crop_unit, min_val=round(crop_min_height * crop_mult, 6), max_val=crop_mult, default=crop_h_def, step=mac_fine[crop_prec])
+    ui["geometry.quarter_turns"] = _ui_entry(min_val=0, max_val=qt_mod - 1, default=qt_def, step=1)
     ui["geometry.flip_horizontal"] = _ui_entry(default=flip_h_def)
     ui["geometry.flip_vertical"] = _ui_entry(default=flip_v_def)
-    ui["geometry.straighten_degrees"] = _ui_entry(unit="°", min_val=straight_range[0], max_val=straight_range[1], default=0.0, step=mac_fine["standard"])
-    ui["geometry.perspective.horizontal"] = _ui_entry(unit=mac_persp_unit, min_val=persp_h_range[0], max_val=persp_h_range[1], default=0.0, step=mac_fine["standard"])
-    ui["geometry.perspective.vertical"] = _ui_entry(unit=mac_persp_unit, min_val=persp_v_range[0], max_val=persp_v_range[1], default=0.0, step=mac_fine["standard"])
+    ui["geometry.straighten_degrees"] = _ui_entry(
+        unit=straight_unit,
+        min_val=straight_raw_range[0] * straight_mult,
+        max_val=straight_raw_range[1] * straight_mult,
+        default=straight_def,
+        step=mac_fine[row_default_prec],
+    )
+    ui["geometry.perspective.horizontal"] = _ui_entry(
+        unit=mac_persp_unit,
+        min_val=persp_raw_range[0] * persp_mult,
+        max_val=persp_raw_range[1] * persp_mult,
+        default=persp_h_def,
+        step=mac_fine[row_default_prec],
+    )
+    ui["geometry.perspective.vertical"] = _ui_entry(
+        unit=mac_persp_unit,
+        min_val=persp_raw_range[0] * persp_mult,
+        max_val=persp_raw_range[1] * persp_mult,
+        default=persp_v_def,
+        step=mac_fine[row_default_prec],
+    )
     for fid, dflt in (("geometry.lens.distortion", mac_lens_dist), ("geometry.lens.tca", mac_lens_tca), ("geometry.lens.auto_crop", mac_lens_auto)):
         ui[fid] = _ui_entry(modes=("sdr", "hdr"), default=dflt)
     ui["geometry.lens.vignetting"] = _ui_entry(exposed=True, modes=("hdr",), default=mac_lens_vig)
     ui["geometry.lens.profile_id"] = _ui_entry(modes=("sdr",), default=None)
-    ui["local.ai_denoise_enabled"] = _ui_entry(modes=("sdr",), default=False)
-    ui["local.hdr_camera_ai_enabled"] = _ui_entry(modes=("hdr",), default=False)
+    ui["local.ai_denoise_enabled"] = _ui_entry(modes=("sdr",), default=mac_ai_def)
+    ui["local.hdr_camera_ai_enabled"] = _ui_entry(modes=("hdr",), default=mac_hdr_ai_def)
     return ui
 
 
@@ -2599,6 +2839,8 @@ def _parse_ios_ui() -> dict[str, dict]:
     ios_raw = _strip_line_comments(_read("RawLab/RawLab/Core/Models/RawSettings.swift"))
     ios_tv = _strip_line_comments(_read("RawLab/RawLab/Core/Models/IOSAdjustmentTransferValues.swift"))
     ios_panels = _strip_line_comments(_read("RawLab/RawLab/UI/Panels/AdjustmentPanels.swift"))
+    ios_ctrl = _strip_line_comments(_read("RawLab/RawLab/UI/Adjustments/AdjustmentControl.swift"))
+    ios_content = _strip_line_comments(_read("RawLab/RawLab/UI/Editor/ContentView+Panels.swift"))
     ios_curve = _strip_line_comments(_read("RawLab/RawLab/UI/Panels/ToneCurveControls.swift"))
     ios_grad = _strip_line_comments(_read("RawLab/RawLab/UI/Panels/ColorGradingControls.swift"))
     ios_fx = _strip_line_comments(_read("RawLab/RawLab/UI/Panels/PhotoEffectPanels.swift"))
@@ -2607,6 +2849,19 @@ def _parse_ios_ui() -> dict[str, dict]:
     hdr_mon = _strip_line_comments(_read("Shared/Native/HDRMonitoring.swift"))
     hdr_swift = _strip_line_comments(_read("Shared/HDRSettings.swift"))
     geom_swift = _strip_line_comments(_read("Shared/GeometrySettings.swift"))
+    tone_swift = _strip_line_comments(_read("Shared/ToneControlsSettings.swift"))
+    atmos_swift = _strip_line_comments(_read("Shared/AtmosphereSettings.swift"))
+
+    # AdjustmentControl default params (step = 1, unit = "")
+    ctrl_init_m = _need(
+        r'init\(title:\s*String,\s*value:\s*Binding<Double>,\s*range:\s*ClosedRange<Double>,\s*step:\s*Double\s*=\s*(\d+(?:\.\d+)?),\s*defaultValue:\s*Double,\s*unit:\s*String\s*=\s*"([^"]*)"',
+        ios_ctrl,
+        "AdjustmentControl init defaults ios",
+        "AdjustmentControl.swift",
+        re.S,
+    )
+    ctrl_default_step = float(ctrl_init_m.group(1))
+    ctrl_default_unit = ctrl_init_m.group(2)
 
     fx_blk = _extract_brace_block(ios_raw, r"struct PhotoEffectsSettings\b", "effects ios ui", "RawSettings.swift")
     fx_init_blk = _need(r"init\((.*?)\)", fx_blk, "effects ios init", "RawSettings.swift", re.S).group(1)
@@ -2643,40 +2898,182 @@ def _parse_ios_ui() -> dict[str, dict]:
         for k in ios_steps:
             ios_units.setdefault(k, def_u)
 
-    _require("selectedAdjustment == .noiseReduction && !workingSettings.isHDREditing", ios_panels, "detail.denoise.post_rgb ios sdr", "AdjustmentPanels.swift")
-    exp_hdr_m = _need(r"workingSettings\.isHDREditing && adjustment == \.exposure \? (-?\d+)\.\.\.(-?\d+) : adjustment\.range", ios_panels, "hdr.exposure ios ui range", "AdjustmentPanels.swift")
+    # Scalar adjustments + RawSettings.default + AdjustmentKind.value(from: .default)
+    scalar_blk = _extract_brace_block(ios_panels, r"func scalarAdjustmentPanel\b", "scalarAdjustmentPanel ios", "AdjustmentPanels.swift")
+    _require("defaultValue: adjustment.value(from: .default)", scalar_blk, "scalar defaultValue ios", "AdjustmentPanels.swift")
+    exp_hdr_m = _need(r"workingSettings\.isHDREditing && adjustment == \.exposure \? (-?\d+)\.\.\.(-?\d+) : adjustment\.range", scalar_blk, "hdr.exposure ios ui range", "AdjustmentPanels.swift")
     ios_exp_hdr_range = (float(exp_hdr_m.group(1)), float(exp_hdr_m.group(2)))
-    scale_m = _need(r"displayScale:\s*adjustment == \.strength \|\| hdrDenoise \? (\d+(?:\.\d+)?) : (\d+(?:\.\d+)?)", ios_panels, "ios displayScale", "AdjustmentPanels.swift")
+    scale_m = _need(r"displayScale:\s*adjustment == \.strength \|\| hdrDenoise \? (\d+(?:\.\d+)?) : (\d+(?:\.\d+)?)", scalar_blk, "ios displayScale", "AdjustmentPanels.swift")
     strength_scale = float(scale_m.group(1))
-    ios_hdr_denoise_unit = _need(r'unit:\s*hdrDenoise \? "([^"]*)" : adjustment\.unit', ios_panels, "ios hdrDenoise unit", "AdjustmentPanels.swift").group(1)
-    wb_temp_m = _need(r'RawSettings\.temperatureRange,\s*step:\s*(\d+(?:\.\d+)?)', ios_panels, "wb temp step ios", "AdjustmentPanels.swift")
-    wb_temp_step = float(wb_temp_m.group(1))
+    unit_scale = float(scale_m.group(2))
+    ios_hdr_denoise_unit = _need(r'unit:\s*hdrDenoise \? "([^"]*)" : adjustment\.unit', scalar_blk, "ios hdrDenoise unit", "AdjustmentPanels.swift").group(1)
+    _require("selectedAdjustment == .noiseReduction && !workingSettings.isHDREditing", ios_panels, "detail.denoise.post_rgb ios sdr", "AdjustmentPanels.swift")
 
-    ios_scurve_ui_step = float(_need(r'AdjustmentControl\(title:\s*L10n\.text\("S 曲线"\).*?range:\s*(-?\d+)\.\.\.(-?\d+),\s*step:\s*(\d+(?:\.\d+)?)', ios_curve, "light.s_curve ios step", "ToneCurveControls.swift", re.S).group(3))
-    ios_grad_step = float(_need(r"range:\s*0\.\.\.360,\s*step:\s*(\d+(?:\.\d+)?)", ios_grad, "color.grading ios step", "ColorGradingControls.swift").group(1))
-    ios_fx_step = float(_need(r"struct IOSPhotoEffectsControls.*?range:\s*parameter\.range,\s*step:\s*(\d+(?:\.\d+)?)", ios_fx, "effects ios step", "PhotoEffectPanels.swift", re.S).group(1))
-    ios_wavelet_m = _need(r"struct IOSDenoiseControls.*?range:\s*(-?\d+)\.\.\.(-?\d+),\s*step:\s*(\d+(?:\.\d+)?)", ios_fx, "wavelet ios ui", "PhotoEffectPanels.swift", re.S)
+    raw_def_blk = _need(r"static let `default` = RawSettings\((.*?)\)\s*(?:\n\s*init|\Z)", ios_raw, "RawSettings.default ios ui", "RawSettings.swift", re.S).group(1)
+    raw_def_nums: dict[str, float] = {}
+    for prop in ("exposure", "contrast", "saturation", "temperature", "tint", "highlights", "shadows", "toneCurve", "noiseReduction", "sharpening", "lutStrength"):
+        raw_def_nums[prop] = float(_need(rf"\b{prop}:\s*(-?\d+(?:\.\d+)?)", raw_def_blk, f"RawSettings.default.{prop} ios", "RawSettings.swift").group(1))
+    tone_blk = _extract_brace_block(tone_swift, r"(?:public\s+)?struct ToneControlsSettings\b", "ToneControlsSettings ios", "Shared/ToneControlsSettings.swift")
+    atmos_blk = _extract_brace_block(atmos_swift, r"(?:public\s+)?struct AtmosphereSettings\b", "AtmosphereSettings ios", "Shared/AtmosphereSettings.swift")
+    val_from_blk = _extract_brace_block(ios_kind, r"func value\(from settings:\s*RawSettings\)\s*->\s*Double", "AdjustmentKind.value(from:)", "AdjustmentKind.swift")
+    _require("case .contrast:\n            return (settings.contrast - 1) * 100", val_from_blk, "contrast value(from:)", "AdjustmentKind.swift")
+    _require("case .highlights:\n            return -settings.highlights * 100", val_from_blk, "highlights value(from:)", "AdjustmentKind.swift")
+    _require("case .shadows:\n            return settings.shadows * 100", val_from_blk, "shadows value(from:)", "AdjustmentKind.swift")
+    _require("case .toneCurve:\n            return settings.toneCurve * 100", val_from_blk, "toneCurve value(from:)", "AdjustmentKind.swift")
+    _require("case .saturation:\n            return (settings.saturation - 1) * 100", val_from_blk, "saturation value(from:)", "AdjustmentKind.swift")
+    _require("case .sharpening:\n            return settings.sharpening * 100", val_from_blk, "sharpening value(from:)", "AdjustmentKind.swift")
+    _require("case .noiseReduction:\n            return settings.denoise.enabled ? 1 : 0", val_from_blk, "noiseReduction value(from:)", "AdjustmentKind.swift")
+    _require("case .strength:\n            return settings.lutStrength", val_from_blk, "strength value(from:)", "AdjustmentKind.swift")
+
+    # White balance & HDR relative WB routed through whiteBalancePanel (NOT unused AdjustmentKind.step/.unit)
+    ios_wb_blk = _extract_brace_block(ios_panels, r"var whiteBalancePanel:\s*some View", "whiteBalancePanel ios", "AdjustmentPanels.swift")
+    _require('if workingSettings.isHDREditing { Text(L10n.text("相对白平衡"))', ios_wb_blk, "hdr white balance panel ios", "AdjustmentPanels.swift")
+    wb_temp_ctrl = _need(
+        r'AdjustmentControl\(title:\s*L10n\.text\("色温"\),\s*value:\s*whiteBalanceTemperatureBinding,\s*'
+        r'range:\s*RawSettings\.temperatureRange,\s*step:\s*(\d+(?:\.\d+)?),\s*'
+        r'defaultValue:\s*whiteBalanceTemperatureDefault,\s*unit:\s*"([^"]*)"',
+        ios_wb_blk,
+        "wb temp control ios",
+        "AdjustmentPanels.swift",
+        re.S,
+    )
+    wb_temp_step = float(wb_temp_ctrl.group(1))
+    wb_temp_unit = wb_temp_ctrl.group(2)
+    _require("viewModel.rawWhiteBalance?.temperature ?? RawSettings.default.temperature", _extract_brace_block(ios_panels, r"private var whiteBalanceTemperatureDefault:\s*Double", "whiteBalanceTemperatureDefault ios", "AdjustmentPanels.swift"), "whiteBalanceTemperatureDefault ios", "AdjustmentPanels.swift")
+    wb_temp_def = raw_def_nums["temperature"]
+
+    wb_tint_ctrl = _need(
+        r'AdjustmentControl\(title:\s*L10n\.text\([^\n]+\),\s*value:\s*whiteBalanceTintBinding,\s*'
+        r'range:\s*RawSettings\.tintRange,\s*step:\s*(\d+(?:\.\d+)?),\s*'
+        r'defaultValue:\s*whiteBalanceTintDefault,\s*(?!unit:)formatter:',
+        ios_wb_blk,
+        "wb tint control ios",
+        "AdjustmentPanels.swift",
+        re.S,
+    )
+    wb_tint_step = float(wb_tint_ctrl.group(1))
+    wb_tint_unit = ctrl_default_unit
+    wb_tint_def_blk = _extract_brace_block(ios_panels, r"private var whiteBalanceTintDefault:\s*Double", "whiteBalanceTintDefault ios", "AdjustmentPanels.swift")
+    wb_tint_def = float(_need(r"guard let whiteBalance = viewModel\.rawWhiteBalance else \{ return (-?\d+(?:\.\d+)?) \}", wb_tint_def_blk, "whiteBalanceTintDefault fallback ios", "AdjustmentPanels.swift").group(1))
+
+    # Tone curve / grading / effects / wavelet / HSL
+    ios_scurve_m = _need(
+        r'AdjustmentControl\(title:\s*L10n\.text\("S 曲线"\).*?range:\s*(-?\d+)\.\.\.(-?\d+),\s*step:\s*(\d+(?:\.\d+)?),\s*defaultValue:\s*(-?\d+(?:\.\d+)?),\s*unit:\s*"([^"]*)"',
+        ios_curve,
+        "light.s_curve ios ui",
+        "ToneCurveControls.swift",
+        re.S,
+    )
+    ios_scurve_range = (float(ios_scurve_m.group(1)), float(ios_scurve_m.group(2)))
+    ios_scurve_ui_step = float(ios_scurve_m.group(3))
+    ios_scurve_def = float(ios_scurve_m.group(4))
+    ios_scurve_unit = ios_scurve_m.group(5)
+
+    ios_grad_rows_blk = _extract_brace_block(ios_grad, r"private var rows:\s*some View", "color.grading ios rows", "ColorGradingControls.swift")
+    ios_grad_hue_m = _need(
+        r'L10n\.text\("色相"\).*?range:\s*(-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?),\s*step:\s*(\d+(?:\.\d+)?),\s*defaultValue:\s*(-?\d+(?:\.\d+)?),\s*unit:\s*"([^"]*)"',
+        ios_grad_rows_blk,
+        "color.grading ios hue",
+        "ColorGradingControls.swift",
+        re.S,
+    )
+    ios_grad_sat_m = _need(
+        r'L10n\.text\("饱和度"\).*?range:\s*(-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?),\s*step:\s*(\d+(?:\.\d+)?),\s*defaultValue:\s*(-?\d+(?:\.\d+)?),\s*unit:\s*"([^"]*)"',
+        ios_grad_rows_blk,
+        "color.grading ios sat",
+        "ColorGradingControls.swift",
+        re.S,
+    )
+    ios_grad_hue_step = float(ios_grad_hue_m.group(3))
+    ios_grad_hue_def = float(ios_grad_hue_m.group(4))
+    ios_grad_sat_step = float(ios_grad_sat_m.group(3))
+    ios_grad_sat_def = float(ios_grad_sat_m.group(4))
+
+    ios_fx_m = _need(
+        r"struct IOSPhotoEffectsControls.*?range:\s*parameter\.range,\s*step:\s*(\d+(?:\.\d+)?),\s*defaultValue:\s*parameter\.defaultValue,\s*(?!unit:)formatter:",
+        ios_fx,
+        "effects ios step",
+        "PhotoEffectPanels.swift",
+        re.S,
+    )
+    ios_fx_step = float(ios_fx_m.group(1))
+    ios_dn_view_blk = _extract_brace_block(ios_fx, r"struct IOSDenoiseControls:\s*View\b", "wavelet ios view", "PhotoEffectPanels.swift")
+    ios_dn_params = {
+        k: float(v)
+        for k, v in re.findall(r'\\\.(\w+),\s*(-?\d+(?:\.\d+)?)\)', ios_dn_view_blk)
+    }
+    ios_wavelet_m = _need(
+        r"AdjustmentControl\(title:\s*parameter\.0,\s*value:\s*value\(for:\s*parameter\.1\),\s*range:\s*(-?\d+)\.\.\.(-?\d+),\s*step:\s*(\d+(?:\.\d+)?),\s*defaultValue:\s*parameter\.2,\s*(?!unit:)formatter:",
+        ios_dn_view_blk,
+        "wavelet ios ui",
+        "PhotoEffectPanels.swift",
+        re.S,
+    )
     ios_wavelet_range = (float(ios_wavelet_m.group(1)), float(ios_wavelet_m.group(2)))
     ios_wavelet_step = float(ios_wavelet_m.group(3))
-    ios_hsl_m = _need(r"struct IOSHSLMixer.*?range:\s*(-?\d+)\.\.\.(-?\d+),\s*step:\s*(\d+(?:\.\d+)?)", ios_fx, "hsl ios ui", "PhotoEffectPanels.swift", re.S)
+
+    ios_hsl_m = _need(
+        r"struct IOSHSLMixer.*?range:\s*(-?\d+)\.\.\.(-?\d+),\s*step:\s*(\d+(?:\.\d+)?),\s*defaultValue:\s*(-?\d+(?:\.\d+)?),\s*(?!unit:)formatter:",
+        ios_fx,
+        "hsl ios ui",
+        "PhotoEffectPanels.swift",
+        re.S,
+    )
     ios_hsl_range = (float(ios_hsl_m.group(1)), float(ios_hsl_m.group(2)))
     ios_hsl_step = float(ios_hsl_m.group(3))
+    ios_hsl_def = float(ios_hsl_m.group(4))
 
-    ios_crop_min_pct = float(_need(r"let minimum = key == .*?cropWidth.*? \? (\d+(?:\.\d+)?) : 0", ios_geom, "crop min ios ui", "GeometryControls.swift").group(1))
-    ios_crop_step = float(_need(r"func cropControl.*?step:\s*(\d+(?:\.\d+)?)", ios_geom, "crop step ios ui", "GeometryControls.swift", re.S).group(1))
-    ios_straighten_m = _need(r'AdjustmentControl\(title:\s*L10n\.text\("拉直"\).*?range:\s*(-?\d+)\.\.\.(-?\d+),\s*step:\s*(\d+(?:\.\d+)?)', ios_geom, "straighten ios ui", "GeometryControls.swift", re.S)
+    # Geometry UI (RawLab/RawLab/UI/Controls/GeometryControls.swift + Shared/GeometrySettings defaults for flip/quarterTurns)
+    for call_id in ("geometry.perspectiveHorizontal", "geometry.perspectiveVertical"):
+        _require(call_id, ios_geom, f"{call_id} ios ui call", "GeometryControls.swift")
+    for call_id in ("geometry.cropX", "geometry.cropY", "geometry.cropWidth", "geometry.cropHeight"):
+        _require(call_id, ios_geom, f"{call_id} ios ui call", "GeometryControls.swift")
+    ios_crop_ctrl_blk = _extract_brace_block(ios_geom, r"private func cropControl\b", "cropControl ios ui", "GeometryControls.swift")
+    ios_crop_def_m = _need(
+        r"step:\s*(\d+(?:\.\d+)?),\s*defaultValue:\s*dimension \? (-?\d+(?:\.\d+)?) : (-?\d+(?:\.\d+)?),\s*unit:\s*\"([^\"]*)\"",
+        ios_crop_ctrl_blk,
+        "crop params ios ui",
+        "GeometryControls.swift",
+        re.S,
+    )
+    ios_crop_step = float(ios_crop_def_m.group(1))
+    ios_crop_dim_def = float(ios_crop_def_m.group(2))
+    ios_crop_pos_def = float(ios_crop_def_m.group(3))
+    ios_crop_unit = ios_crop_def_m.group(4)
+    ios_crop_range_blk = _extract_brace_block(ios_geom, r"private func cropRange\b", "cropRange ios ui", "GeometryControls.swift")
+    ios_crop_scale = float(_need(r"let upper = min\(1,\s*max\(0,\s*maximum\)\) \* (\d+(?:\.\d+)?)", ios_crop_range_blk, "crop upper ios ui", "GeometryControls.swift").group(1))
+    ios_crop_min_pct = float(_need(r"let minimum = key == .*?cropWidth.*? \? (\d+(?:\.\d+)?) : (\d+(?:\.\d+)?)", ios_crop_range_blk, "crop min ios ui", "GeometryControls.swift").group(1))
+
+    ios_straighten_m = _need(
+        r'AdjustmentControl\(title:\s*L10n\.text\("拉直"\).*?range:\s*(-?\d+)\.\.\.(-?\d+),\s*step:\s*(\d+(?:\.\d+)?),\s*defaultValue:\s*(-?\d+(?:\.\d+)?),\s*unit:\s*"([^"]*)"',
+        ios_geom,
+        "straighten ios ui",
+        "GeometryControls.swift",
+        re.S,
+    )
     ios_straighten_range = (float(ios_straighten_m.group(1)), float(ios_straighten_m.group(2)))
     ios_straighten_step = float(ios_straighten_m.group(3))
-    ios_persp_m = _need(r"func perspectiveControl.*?range:\s*(-?\d+)\.\.\.(-?\d+),\s*step:\s*(\d+(?:\.\d+)?)", ios_geom, "persp ios ui", "GeometryControls.swift", re.S)
+    ios_straighten_def = float(ios_straighten_m.group(4))
+    ios_straighten_unit = ios_straighten_m.group(5)
+
+    ios_persp_m = _need(
+        r"private func perspectiveControl\b.*?range:\s*(-?\d+)\.\.\.(-?\d+),\s*step:\s*(\d+(?:\.\d+)?),\s*defaultValue:\s*(-?\d+(?:\.\d+)?),\s*(?!unit:)formatter:",
+        ios_geom,
+        "persp ios ui",
+        "GeometryControls.swift",
+        re.S,
+    )
     ios_persp_range = (float(ios_persp_m.group(1)), float(ios_persp_m.group(2)))
     ios_persp_step = float(ios_persp_m.group(3))
+    ios_persp_def = float(ios_persp_m.group(4))
+    ios_qt_mod = int(_need(r"settings\.quarterTurns\s*=\s*\(settings\.quarterTurns \+ \(clockwise \? 1 : 3\)\) % (\d+)", ios_geom, "qt mod ios ui", "GeometryControls.swift").group(1))
     _require('accessibilityIdentifier("lens.vignetting")', ios_lens, "geometry.lens.vignetting ios sdr", "LensControls.swift")
 
     dn_blk = _extract_brace_block(ios_raw, r"struct RawDenoiseSettings\b", "wavelet ios ui", "RawSettings.swift")
     ios_w_enabled = _need(r"var enabled(?:\s*:\s*Bool)?\s*=\s*(true|false)", dn_blk, "wavelet enabled ios", "RawSettings.swift").group(1) == "true"
-    ios_w_luma = float(_need(r"var luma(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", dn_blk, "wavelet luma ios", "RawSettings.swift").group(1))
-    ios_w_chroma = float(_need(r"var chroma(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", dn_blk, "wavelet chroma ios", "RawSettings.swift").group(1))
-    ios_w_coarse = float(_need(r"var coarse(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", dn_blk, "wavelet coarse ios", "RawSettings.swift").group(1))
+    ios_w_luma = _need_key(ios_dn_params, "luma", "detail.denoise.wavelet.luma ios", "PhotoEffectPanels.swift")
+    ios_w_chroma = _need_key(ios_dn_params, "chroma", "detail.denoise.wavelet.chroma ios", "PhotoEffectPanels.swift")
+    ios_w_coarse = _need_key(ios_dn_params, "coarse", "detail.denoise.wavelet.coarse ios", "PhotoEffectPanels.swift")
     dn_preset_blk = _extract_brace_block(dn_blk, r"var preset:\s*RawDenoisePreset\b", "wavelet preset ios", "RawSettings.swift")
     _fmt_num = lambda v: str(int(v)) if v.is_integer() else str(v)
     ios_w_preset = _need(
@@ -2693,40 +3090,73 @@ def _parse_ios_ui() -> dict[str, dict]:
         "preset": ios_w_preset,
     }
 
-    hdr_mon_peak_step = float(_need(r'slider\("HDR 亮度上限".*?step:\s*(\d+(?:\.\d+)?)', hdr_mon, "hdr.peak ios step", "Shared/Native/HDRMonitoring.swift").group(1))
-    hdr_mon_sdr_exp_step = float(_need(r'slider\("SDR 底图曝光".*?step:\s*(\d+(?:\.\d+)?)', hdr_mon, "hdr.sdr_exp ios step", "Shared/Native/HDRMonitoring.swift").group(1))
-    hdr_mon_sdr_con_step = float(_need(r'slider\("SDR 底图对比度".*?step:\s*(\d+(?:\.\d+)?)', hdr_mon, "hdr.sdr_con ios step", "Shared/Native/HDRMonitoring.swift").group(1))
-    hdr_mon_sdr_sat_step = float(_need(r'slider\("SDR 底图饱和度".*?step:\s*(\d+(?:\.\d+)?)', hdr_mon, "hdr.sdr_sat ios step", "Shared/Native/HDRMonitoring.swift").group(1))
-    hdr_mon_look_m = _need(r"Slider\(value:\s*\$settings\.lookSettings\.strength,\s*in:\s*(\d+)\.\.\.(\d+),\s*step:\s*(\d+(?:\.\d+)?)", hdr_mon, "hdr.look ios ui", "Shared/Native/HDRMonitoring.swift")
-    hdr_mon_look_step = round(float(hdr_mon_look_m.group(3)) * 100.0, 6)
-    hdr_mon_cam_temp_step = float(_need(r'cameraSlider\("色温".*?step:\s*(\d+(?:\.\d+)?)', hdr_mon, "hdr.cam temp ios", "Shared/Native/HDRMonitoring.swift").group(1))
-    hdr_mon_cam_tint_step = float(_need(r'cameraSlider\("色调".*?step:\s*(\d+(?:\.\d+)?)', hdr_mon, "hdr.cam tint ios", "Shared/Native/HDRMonitoring.swift").group(1))
+    # HDR UI rendered via Shared/Native/HDRMonitoring.swift (embedded by ContentView+Panels.swift)
+    _require("HDRRenditionControls(", ios_content, "HDRRenditionControls embedded on ios", "ContentView+Panels.swift")
+    _require("HDRLookControls(", ios_content, "HDRLookControls embedded on ios", "ContentView+Panels.swift")
+    _require("HDRCameraDevelopmentControls(", ios_content, "HDRCameraDevelopmentControls embedded on ios", "ContentView+Panels.swift")
+    hdr_rend_ctrl_blk = _extract_brace_block(hdr_mon, r"struct HDRRenditionControls:\s*View\b", "HDRRenditionControls ios", "Shared/Native/HDRMonitoring.swift")
+    _require("func reset() {\n        settings = HDRRenditionSettings()\n    }", hdr_rend_ctrl_blk, "HDRRenditionControls reset ios", "Shared/Native/HDRMonitoring.swift")
+    hdr_rend_defs_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRRenditionSettings\b", "HDRRenditionSettings defaults ios", "Shared/HDRSettings.swift")
 
-    hdr_peak_range = tuple(float(x) for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(peakLimitEV\)", hdr_swift, "hdr.peak bounds", "Shared/HDRSettings.swift").groups())
-    hdr_sdr_exp_range = tuple(float(x) for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(sdrExposureEV\)", hdr_swift, "hdr.sdr_exp bounds", "Shared/HDRSettings.swift").groups())
-    hdr_sdr_con_range = tuple(float(x) for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(sdrContrast\)", hdr_swift, "hdr.sdr_con bounds", "Shared/HDRSettings.swift").groups())
-    hdr_sdr_sat_range = tuple(float(x) for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(sdrSaturation\)", hdr_swift, "hdr.sdr_sat bounds", "Shared/HDRSettings.swift").groups())
+    def _hdr_slider(title: str, field: str):
+        return _need(
+            rf'slider\("{title}",\s*value:\s*\$settings\.[^,]+,\s*range:\s*(-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?),\s*step:\s*(\d+(?:\.\d+)?),\s*id:\s*"[^"]+",\s*unit:\s*"([^"]*)"',
+            hdr_rend_ctrl_blk,
+            f"{field} ios slider",
+            "Shared/Native/HDRMonitoring.swift",
+        )
+
+    ios_hdr_peak_m = _hdr_slider("HDR 亮度上限", "hdr.peak_limit_ev")
+    ios_hdr_exp_m = _hdr_slider("SDR 底图曝光", "hdr.sdr_exposure_ev")
+    ios_hdr_con_m = _hdr_slider("SDR 底图对比度", "hdr.sdr_contrast")
+    ios_hdr_sat_m = _hdr_slider("SDR 底图饱和度", "hdr.sdr_saturation")
+
+    hdr_look_ctrl_blk = _extract_brace_block(hdr_mon, r"struct HDRLookControls:\s*View\b", "HDRLookControls ios", "Shared/Native/HDRMonitoring.swift")
+    hdr_look_unit = _need(r'String\(format:\s*"%.0f(%%)"', hdr_look_ctrl_blk, "hdr.look ios unit", "Shared/Native/HDRMonitoring.swift").group(1).replace("%%", "%")
+    hdr_mon_look_m = _need(r"Slider\(value:\s*\$settings\.lookSettings\.strength,\s*in:\s*(\d+)\.\.\.(\d+),\s*step:\s*(\d+(?:\.\d+)?)", hdr_look_ctrl_blk, "hdr.look ios ui", "Shared/Native/HDRMonitoring.swift")
+    hdr_mon_look_step = round(float(hdr_mon_look_m.group(3)) * 100.0, 6)
+
+    hdr_cam_ctrl_blk = _extract_brace_block(hdr_mon, r"struct HDRCameraDevelopmentControls:\s*View\b", "HDRCameraDevelopmentControls ios", "Shared/Native/HDRMonitoring.swift")
+    _require('Button(L10n.text("重置")) { draft = HDRCameraDevelopmentSettings() }', hdr_cam_ctrl_blk, "hdr.camera_development ios reset", "Shared/Native/HDRMonitoring.swift")
+    hdr_mon_cam_temp_step = float(_need(r'cameraSlider\("色温".*?step:\s*(\d+(?:\.\d+)?)', hdr_cam_ctrl_blk, "hdr.cam temp ios", "Shared/Native/HDRMonitoring.swift").group(1))
+    hdr_mon_cam_tint_step = float(_need(r'cameraSlider\("色调".*?step:\s*(\d+(?:\.\d+)?)', hdr_cam_ctrl_blk, "hdr.cam tint ios", "Shared/Native/HDRMonitoring.swift").group(1))
     hdr_cam_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRCameraDevelopmentSettings\b", "hdr cam ios ui", "Shared/HDRSettings.swift")
 
-    _require('look = ["kind": .string("neutral"), "id": .null]', ios_tv, "looks.reference ios", "IOSAdjustmentTransferValues.swift")
-    _require('result[Field.look.rawValue] = .object(look)', ios_tv, "looks.reference ios wire", "IOSAdjustmentTransferValues.swift")
+    ios_look_neutral = _need(r'look\s*=\s*\["kind":\s*\.string\("(\w+)"\),\s*"id":\s*\.null\]', ios_tv, "looks.reference ios wire", "IOSAdjustmentTransferValues.swift").group(1)
     ios_raw_struct = _extract_brace_block(ios_raw, r"struct RawSettings\b", "RawSettings ios ui", "RawSettings.swift")
+    _require("lutID: nil", raw_def_blk, "looks.reference ios default", "RawSettings.swift")
     exp_mode_def = _need(r"var exposureMode\s*=\s*RawExposureMode\.(\w+)", ios_raw_struct, "light.exposure_mode ios ui", "RawSettings.swift").group(1)
-    wb_mode_var = _need(r"whiteBalanceMode:\s*\.(\w+)", ios_raw_struct, "wb.mode ios ui", "RawSettings.swift").group(1)
+    wb_mode_var = _need(r"whiteBalanceMode:\s*\.(\w+)", raw_def_blk, "wb.mode ios ui", "RawSettings.swift").group(1)
     _need(rf"whiteBalanceMode\s*==\s*\.{re.escape(wb_mode_var)}", ios_tv, "wb.mode ios tv", "IOSAdjustmentTransferValues.swift")
     wb_mode_wire = _need(r'let camera = !context\.isRaw \|\| settings\.whiteBalanceMode == \.camera.*?camera \? "([^"]+)"', ios_tv, "wb.mode ios wire", "IOSAdjustmentTransferValues.swift", re.S).group(1)
 
+    scalar_defaults = {
+        "strength": raw_def_nums["lutStrength"] * strength_scale,
+        "exposure": raw_def_nums["exposure"],
+        "contrast": (raw_def_nums["contrast"] - 1.0) * 100.0,
+        "highlights": -raw_def_nums["highlights"] * 100.0,
+        "shadows": raw_def_nums["shadows"] * 100.0,
+        "blackPoint": float(_need(r"var blackPoint(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", tone_blk, "blackPoint default ios", "Shared/ToneControlsSettings.swift").group(1)),
+        "whitePoint": float(_need(r"var whitePoint(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", tone_blk, "whitePoint default ios", "Shared/ToneControlsSettings.swift").group(1)),
+        "vibrance": float(_need(r"var vibrance(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", tone_blk, "vibrance default ios", "Shared/ToneControlsSettings.swift").group(1)),
+        "saturation": (raw_def_nums["saturation"] - 1.0) * 100.0,
+        "clarity": float(_need(r"var clarity(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", atmos_blk, "clarity default ios", "Shared/AtmosphereSettings.swift").group(1)),
+        "dehaze": float(_need(r"var dehaze(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", atmos_blk, "dehaze default ios", "Shared/AtmosphereSettings.swift").group(1)),
+        "sharpening": raw_def_nums["sharpening"] * 100.0,
+        "noiseReduction": (1.0 if ios_w_enabled else 0.0) * strength_scale,
+    }
+
     ui: dict[str, dict] = {}
-    ui["looks.reference"] = _ui_entry(modes=("sdr",), default={"kind": "neutral", "id": None})
+    ui["looks.reference"] = _ui_entry(modes=("sdr",), default={"kind": ios_look_neutral, "id": None})
     ui["looks.strength"] = _ui_entry(
         modes=("sdr",),
-        unit="%",
+        unit=ios_units["strength"],
         min_val=ios_ranges["strength"][0] * strength_scale,
         max_val=ios_ranges["strength"][1] * strength_scale,
-        default=100.0,
+        default=scalar_defaults["strength"],
         step=round(ios_steps["strength"] * strength_scale, 6),
     )
-    ui["light.exposure"] = _ui_entry(unit=ios_units["exposure"], min_val=ios_ranges["exposure"][0], max_val=ios_ranges["exposure"][1], hdr_min=ios_exp_hdr_range[0], hdr_max=ios_exp_hdr_range[1], default=0.0, step=ios_steps["exposure"])
+    ui["light.exposure"] = _ui_entry(unit=ios_units["exposure"], min_val=ios_ranges["exposure"][0], max_val=ios_ranges["exposure"][1], hdr_min=ios_exp_hdr_range[0], hdr_max=ios_exp_hdr_range[1], default=scalar_defaults["exposure"], step=ios_steps["exposure"])
     ui["light.exposure_mode"] = _ui_entry(modes=("sdr",), default=exp_mode_def)
 
     for fid, k in (
@@ -2740,24 +3170,52 @@ def _parse_ios_ui() -> dict[str, dict]:
         ("effects.clarity", "clarity"),
         ("effects.dehaze", "dehaze"),
     ):
-        ui[fid] = _ui_entry(unit=ios_units[k], min_val=ios_ranges[k][0], max_val=ios_ranges[k][1], default=0.0, step=ios_steps[k])
-    ui["light.s_curve"] = _ui_entry(unit=ios_units["toneCurve"], min_val=ios_ranges["toneCurve"][0], max_val=ios_ranges["toneCurve"][1], default=0.0, step=ios_scurve_ui_step)
+        ui[fid] = _ui_entry(unit=ios_units[k], min_val=ios_ranges[k][0] * unit_scale, max_val=ios_ranges[k][1] * unit_scale, default=scalar_defaults[k], step=ios_steps[k])
+    ui["light.s_curve"] = _ui_entry(unit=ios_scurve_unit, min_val=ios_scurve_range[0], max_val=ios_scurve_range[1], default=ios_scurve_def, step=ios_scurve_ui_step)
     ui["light.curve"] = _ui_curve_entry("ios")
 
     for zone in ("shadows", "midtones", "highlights"):
-        ui[f"color.grading.{zone}"] = _ui_entry(default={"hue": 0.0, "saturation": 0.0}, step={"hue": ios_grad_step, "saturation": ios_grad_step})
+        ui[f"color.grading.{zone}"] = _ui_entry(default={"hue": ios_grad_hue_def, "saturation": ios_grad_sat_def}, step={"hue": ios_grad_hue_step, "saturation": ios_grad_sat_step})
 
     ui["color.white_balance.mode"] = _ui_entry(modes=("sdr",), default=wb_mode_wire)
-    ui["color.white_balance.temperature_kelvin"] = _ui_entry(modes=("sdr",), unit=ios_units["temperature"], min_val=ios_ranges["temperature"][0], max_val=ios_ranges["temperature"][1], default=6500.0, step=wb_temp_step)
-    ui["color.white_balance.tint"] = _ui_entry(modes=("sdr",), unit=ios_units["tint"], min_val=ios_ranges["tint"][0], max_val=ios_ranges["tint"][1], default=0.0, step=ios_steps["tint"])
+    ui["color.white_balance.temperature_kelvin"] = _ui_entry(modes=("sdr",), unit=wb_temp_unit, min_val=ios_ranges["temperature"][0], max_val=ios_ranges["temperature"][1], default=wb_temp_def, step=wb_temp_step)
+    ui["color.white_balance.tint"] = _ui_entry(modes=("sdr",), unit=wb_tint_unit, min_val=ios_ranges["tint"][0], max_val=ios_ranges["tint"][1], default=wb_tint_def, step=wb_tint_step)
 
-    ui["hdr.relative_temperature"] = _ui_entry(modes=("hdr",), unit=ios_units["temperature"], min_val=ios_ranges["temperature"][0], max_val=ios_ranges["temperature"][1], default=6500.0, step=ios_steps["temperature"])
-    ui["hdr.relative_tint"] = _ui_entry(modes=("hdr",), unit=ios_units["tint"], min_val=ios_ranges["tint"][0], max_val=ios_ranges["tint"][1], default=0.0, step=ios_steps["tint"])
-    ui["hdr.peak_limit_ev"] = _ui_entry(modes=("hdr",), unit="EV", min_val=hdr_peak_range[0], max_val=hdr_peak_range[1], default=0.0, step=hdr_mon_peak_step)
-    ui["hdr.sdr_exposure_ev"] = _ui_entry(modes=("hdr",), unit="EV", min_val=hdr_sdr_exp_range[0], max_val=hdr_sdr_exp_range[1], default=0.0, step=hdr_mon_sdr_exp_step)
-    ui["hdr.sdr_contrast"] = _ui_entry(modes=("hdr",), unit="%", min_val=hdr_sdr_con_range[0], max_val=hdr_sdr_con_range[1], default=0.0, step=hdr_mon_sdr_con_step)
-    ui["hdr.sdr_saturation"] = _ui_entry(modes=("hdr",), unit="%", min_val=hdr_sdr_sat_range[0], max_val=hdr_sdr_sat_range[1], default=0.0, step=hdr_mon_sdr_sat_step)
-    ui["hdr.look"] = _ui_entry(modes=("hdr",), unit="%", min_val=float(hdr_mon_look_m.group(1)) * 100.0, max_val=float(hdr_mon_look_m.group(2)) * 100.0, default=100.0, step={"strength": hdr_mon_look_step})
+    ui["hdr.relative_temperature"] = _ui_entry(modes=("hdr",), unit=wb_temp_unit, min_val=ios_ranges["temperature"][0], max_val=ios_ranges["temperature"][1], default=wb_temp_def, step=wb_temp_step)
+    ui["hdr.relative_tint"] = _ui_entry(modes=("hdr",), unit=wb_tint_unit, min_val=ios_ranges["tint"][0], max_val=ios_ranges["tint"][1], default=wb_tint_def, step=wb_tint_step)
+    ui["hdr.peak_limit_ev"] = _ui_entry(
+        modes=("hdr",),
+        unit=ios_hdr_peak_m.group(4),
+        min_val=float(ios_hdr_peak_m.group(1)),
+        max_val=float(ios_hdr_peak_m.group(2)),
+        default=float(_need(r"var peakLimitEV\s*=\s*(-?\d+(?:\.\d+)?)", hdr_rend_defs_blk, "hdr.peak def ios", "Shared/HDRSettings.swift").group(1)),
+        step=float(ios_hdr_peak_m.group(3)),
+    )
+    ui["hdr.sdr_exposure_ev"] = _ui_entry(
+        modes=("hdr",),
+        unit=ios_hdr_exp_m.group(4),
+        min_val=float(ios_hdr_exp_m.group(1)),
+        max_val=float(ios_hdr_exp_m.group(2)),
+        default=float(_need(r"var sdrExposureEV\s*=\s*(-?\d+(?:\.\d+)?)", hdr_rend_defs_blk, "hdr.sdr_exp def ios", "Shared/HDRSettings.swift").group(1)),
+        step=float(ios_hdr_exp_m.group(3)),
+    )
+    ui["hdr.sdr_contrast"] = _ui_entry(
+        modes=("hdr",),
+        unit=ios_hdr_con_m.group(4),
+        min_val=float(ios_hdr_con_m.group(1)),
+        max_val=float(ios_hdr_con_m.group(2)),
+        default=float(_need(r"var sdrContrast\s*=\s*(-?\d+(?:\.\d+)?)", hdr_rend_defs_blk, "hdr.sdr_con def ios", "Shared/HDRSettings.swift").group(1)),
+        step=float(ios_hdr_con_m.group(3)),
+    )
+    ui["hdr.sdr_saturation"] = _ui_entry(
+        modes=("hdr",),
+        unit=ios_hdr_sat_m.group(4),
+        min_val=float(ios_hdr_sat_m.group(1)),
+        max_val=float(ios_hdr_sat_m.group(2)),
+        default=float(_need(r"var sdrSaturation\s*=\s*(-?\d+(?:\.\d+)?)", hdr_rend_defs_blk, "hdr.sdr_sat def ios", "Shared/HDRSettings.swift").group(1)),
+        step=float(ios_hdr_sat_m.group(3)),
+    )
+    ui["hdr.look"] = _ui_entry(modes=("hdr",), unit=hdr_look_unit, min_val=float(hdr_mon_look_m.group(1)) * 100.0, max_val=float(hdr_mon_look_m.group(2)) * 100.0, default=_UNANCHORED, step={"strength": hdr_mon_look_step})
     ui["hdr.camera_development"] = _ui_entry(
         modes=("hdr",),
         default={
@@ -2773,7 +3231,7 @@ def _parse_ios_ui() -> dict[str, dict]:
 
     for axis in HSL_AXES:
         for ch in HSL_CHANNELS:
-            ui[f"color.hsl.{axis}.{ch}"] = _ui_entry(unit="", min_val=ios_hsl_range[0], max_val=ios_hsl_range[1], default=0.0, step=ios_hsl_step)
+            ui[f"color.hsl.{axis}.{ch}"] = _ui_entry(unit=ctrl_default_unit, min_val=ios_hsl_range[0], max_val=ios_hsl_range[1], default=ios_hsl_def, step=ios_hsl_step)
 
     for fid, prop in (
         ("effects.vignette.amount", "vignetteAmount"),
@@ -2787,22 +3245,22 @@ def _parse_ios_ui() -> dict[str, dict]:
     ):
         r_m = _need(rf"static let {prop}Range:\s*ClosedRange<Double>\s*=\s*(-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?)", fx_blk, f"{fid} ios ui range", "RawSettings.swift")
         d_m = _need(rf"{prop}:\s*Double\s*=\s*(-?\d+(?:\.\d+)?)", fx_init_blk, f"{fid} ios ui default", "RawSettings.swift")
-        ui[fid] = _ui_entry(unit="", min_val=float(r_m.group(1)), max_val=float(r_m.group(2)), default=float(d_m.group(1)), step=ios_fx_step)
+        ui[fid] = _ui_entry(unit=ctrl_default_unit, min_val=float(r_m.group(1)), max_val=float(r_m.group(2)), default=float(d_m.group(1)), step=ios_fx_step)
 
-    ui["detail.sharpening"] = _ui_entry(unit=ios_units["sharpening"], min_val=ios_ranges["sharpening"][0], max_val=ios_ranges["sharpening"][1], default=0.0, step=ios_steps["sharpening"])
+    ui["detail.sharpening"] = _ui_entry(unit=ios_units["sharpening"], min_val=ios_ranges["sharpening"][0], max_val=ios_ranges["sharpening"][1], default=scalar_defaults["sharpening"], step=ios_steps["sharpening"])
     ui["detail.denoise.raw_level"] = _ui_entry(exposed=False, modes=())
-    ui["detail.denoise.post_rgb"] = _ui_entry(modes=("hdr",), unit=ios_hdr_denoise_unit, min_val=ios_ranges["noiseReduction"][0] * strength_scale, max_val=ios_ranges["noiseReduction"][1] * strength_scale, default=0.0, step=round(ios_steps["noiseReduction"] * strength_scale, 6))
+    ui["detail.denoise.post_rgb"] = _ui_entry(modes=("hdr",), unit=ios_hdr_denoise_unit, min_val=ios_ranges["noiseReduction"][0] * strength_scale, max_val=ios_ranges["noiseReduction"][1] * strength_scale, default=scalar_defaults["noiseReduction"], step=round(ios_steps["noiseReduction"] * strength_scale, 6))
     ui["detail.denoise.chroma_mode"] = _ui_entry(exposed=False, modes=())
-    ui["detail.denoise.wavelet"] = _ui_entry(modes=("sdr",), unit="", min_val=ios_wavelet_range[0], max_val=ios_wavelet_range[1], default=ios_wavelet_def, step={"luma": ios_wavelet_step, "chroma": ios_wavelet_step, "coarse": ios_wavelet_step})
+    ui["detail.denoise.wavelet"] = _ui_entry(modes=("sdr",), unit=ctrl_default_unit, min_val=ios_wavelet_range[0], max_val=ios_wavelet_range[1], default=ios_wavelet_def, step={"luma": ios_wavelet_step, "chroma": ios_wavelet_step, "coarse": ios_wavelet_step})
 
     for fid in ("geometry.crop.x", "geometry.crop.y"):
-        ui[fid] = _ui_entry(unit="%", min_val=0.0, max_val=100.0, default=0.0, step=ios_crop_step)
+        ui[fid] = _ui_entry(unit=ios_crop_unit, min_val=0.0, max_val=ios_crop_scale, default=ios_crop_pos_def, step=ios_crop_step)
     for fid in ("geometry.crop.width", "geometry.crop.height"):
-        ui[fid] = _ui_entry(unit="%", min_val=ios_crop_min_pct, max_val=100.0, default=100.0, step=ios_crop_step)
-    ios_qt_range = tuple(int(x) for x in _need(r"\((\d+)\.\.\.(\d+)\)\.contains\(quarterTurns\)", geom_swift, "qt range ios ui", "Shared/GeometrySettings.swift").groups())
-    ios_qt_def = int(_need(r"var quarterTurns:\s*Int\s*=\s*(\d+)", geom_swift, "qt def ios ui", "Shared/GeometrySettings.swift").group(1))
-    ios_flip_h = _need(r"var flipHorizontal:\s*Bool\s*=\s*(true|false)", geom_swift, "flipH def ios ui", "Shared/GeometrySettings.swift").group(1) == "true"
-    ios_flip_v = _need(r"var flipVertical:\s*Bool\s*=\s*(true|false)", geom_swift, "flipV def ios ui", "Shared/GeometrySettings.swift").group(1) == "true"
+        ui[fid] = _ui_entry(unit=ios_crop_unit, min_val=ios_crop_min_pct, max_val=ios_crop_scale, default=ios_crop_dim_def, step=ios_crop_step)
+    geom_struct_blk = _extract_brace_block(geom_swift, r"(?:public\s+)?struct GeometrySettings\b", "GeometrySettings defaults ios", "Shared/GeometrySettings.swift")
+    ios_qt_def = int(_need(r"var quarterTurns:\s*Int\s*=\s*(\d+)", geom_struct_blk, "qt def ios ui", "Shared/GeometrySettings.swift").group(1))
+    ios_flip_h = _need(r"var flipHorizontal:\s*Bool\s*=\s*(true|false)", geom_struct_blk, "flipH def ios ui", "Shared/GeometrySettings.swift").group(1) == "true"
+    ios_flip_v = _need(r"var flipVertical:\s*Bool\s*=\s*(true|false)", geom_struct_blk, "flipV def ios ui", "Shared/GeometrySettings.swift").group(1) == "true"
     ios_lens_blk = _extract_brace_block(ios_raw, r"struct LensCorrectionSettings\b", "geometry.lens ios ui", "RawSettings.swift")
     ios_lens_defs = {
         "distortion": _need(r"var distortion(?:\s*:\s*Bool)?\s*=\s*(true|false)", ios_lens_blk, "lens.distortion ios ui", "RawSettings.swift").group(1) == "true",
@@ -2810,12 +3268,13 @@ def _parse_ios_ui() -> dict[str, dict]:
         "vignetting": _need(r"var vignetting(?:\s*:\s*Bool)?\s*=\s*(true|false)", ios_lens_blk, "lens.vignetting ios ui", "RawSettings.swift").group(1) == "true",
         "auto_crop": _need(r"var autoCrop(?:\s*:\s*Bool)?\s*=\s*(true|false)", ios_lens_blk, "lens.auto_crop ios ui", "RawSettings.swift").group(1) == "true",
     }
-    ui["geometry.quarter_turns"] = _ui_entry(min_val=ios_qt_range[0], max_val=ios_qt_range[1], default=ios_qt_def, step=1)
+    _require("profileID: String? = nil", ios_lens_blk, "lens.profile_id ios ui", "RawSettings.swift")
+    ui["geometry.quarter_turns"] = _ui_entry(min_val=0, max_val=ios_qt_mod - 1, default=ios_qt_def, step=1)
     ui["geometry.flip_horizontal"] = _ui_entry(default=ios_flip_h)
     ui["geometry.flip_vertical"] = _ui_entry(default=ios_flip_v)
-    ui["geometry.straighten_degrees"] = _ui_entry(unit="°", min_val=ios_straighten_range[0], max_val=ios_straighten_range[1], default=0.0, step=ios_straighten_step)
-    ui["geometry.perspective.horizontal"] = _ui_entry(unit="", min_val=ios_persp_range[0], max_val=ios_persp_range[1], default=0.0, step=ios_persp_step)
-    ui["geometry.perspective.vertical"] = _ui_entry(unit="", min_val=ios_persp_range[0], max_val=ios_persp_range[1], default=0.0, step=ios_persp_step)
+    ui["geometry.straighten_degrees"] = _ui_entry(unit=ios_straighten_unit, min_val=ios_straighten_range[0], max_val=ios_straighten_range[1], default=ios_straighten_def, step=ios_straighten_step)
+    ui["geometry.perspective.horizontal"] = _ui_entry(unit=ctrl_default_unit, min_val=ios_persp_range[0], max_val=ios_persp_range[1], default=ios_persp_def, step=ios_persp_step)
+    ui["geometry.perspective.vertical"] = _ui_entry(unit=ctrl_default_unit, min_val=ios_persp_range[0], max_val=ios_persp_range[1], default=ios_persp_def, step=ios_persp_step)
     for fid, key in (("geometry.lens.distortion", "distortion"), ("geometry.lens.tca", "tca"), ("geometry.lens.vignetting", "vignetting"), ("geometry.lens.auto_crop", "auto_crop")):
         ui[fid] = _ui_entry(modes=("sdr", "hdr"), default=ios_lens_defs[key])
     ui["geometry.lens.profile_id"] = _ui_entry(modes=("sdr",), default=None)
@@ -2842,42 +3301,199 @@ def _parse_android_ui() -> dict[str, dict]:
     kt_tv = _strip_line_comments(_read("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentTransferValues.kt"))
     kt_hdr_tx = _strip_line_comments(_read("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentTransfer.kt"))
 
+    # NumericControl defaultValue / baseline / step arms (AdjustmentControls.kt)
+    kt_nc_sig_def = float(_need(r"defaultValue:\s*Float\s*=\s*(-?\d+(?:\.\d+)?)f", kt_ctrl, "NumericControl defaultValue", "AdjustmentControls.kt").group(1))
+    kt_baseline_blk = _extract_brace_block(kt_ctrl, r"val baseline = when \(label\)", "android baselines", "AdjustmentControls.kt")
+    kt_strength_base = float(_need(r"R\.string\.strength\s*->\s*(-?\d+(?:\.\d+)?)f", kt_baseline_blk, "kt strength baseline", "AdjustmentControls.kt").group(1))
     kt_step_block = _extract_brace_block(kt_ctrl, r"val step = stepOverride \?: when \(label\)", "android steps", "AdjustmentControls.kt")
     kt_exp_step = float(_need(r"R\.string\.exposure\s*->\s*(\.\d+|\d+(?:\.\d+)?)f", kt_step_block, "kt exp step", "AdjustmentControls.kt").group(1))
     kt_temp_step = float(_need(r"R\.string\.temperature\s*->\s*(\.\d+|\d+(?:\.\d+)?)f", kt_step_block, "kt temp step", "AdjustmentControls.kt").group(1))
     kt_straight_step = float(_need(r"R\.string\.geometry_straighten\s*->\s*(\.\d+|\d+(?:\.\d+)?)f", kt_step_block, "kt straighten step", "AdjustmentControls.kt").group(1))
-    kt_crop_step = float(_need(r"R\.string\.geometry_crop_height\s*->\s*(\.\d+|\d+(?:\.\d+)?)f", kt_step_block, "kt crop step", "AdjustmentControls.kt").group(1))
+    kt_crop_step = float(_need(
+        r"R\.string\.geometry_crop_x,\s*R\.string\.geometry_crop_y,\s*R\.string\.geometry_crop_width,\s*R\.string\.geometry_crop_height\s*->\s*(\.\d+|\d+(?:\.\d+)?)f",
+        kt_step_block,
+        "kt crop step",
+        "AdjustmentControls.kt",
+    ).group(1))
     kt_default_step = float(_need(r"else\s*->\s*(\.\d+|\d+(?:\.\d+)?)f", kt_step_block, "kt default step", "AdjustmentControls.kt").group(1))
 
-    kt_grad_m = _need(r"R\.string\.hsl_hue.*?(-?\d+)f\.\.(-?\d+)f.*?stepOverride\s*=\s*(\.\d+|\d+(?:\.\d+)?)f", kt_grad, "kt grading ui", "ColorGradingControls.kt", re.S)
-    kt_grad_step = float(kt_grad_m.group(3))
-    kt_hdr_look_m = _need(r"R\.string\.transfer_field_strength,\s*look\.strength \* 100f?,\s*(-?\d+)f\.\.(-?\d+)f,\s*\"([^\"]*)\".*?stepOverride\s*=\s*(\.\d+|\d+(?:\.\d+)?)f", kt_dock, "kt hdr look ui", "AdjustmentDock.kt", re.S)
-    kt_hdr_look_step = float(kt_hdr_look_m.group(4))
-    kt_hdr_peak_m = _need(r"R\.string\.hdr_peak_limit.*?(-?\d+)f\.\.(-?\d+)f,\s*\"([^\"]*)\".*?stepOverride\s*=\s*(\.\d+|\d+(?:\.\d+)?)f", kt_screen, "kt hdr peak ui", "EditorScreen.kt", re.S)
-    kt_hdr_peak_step = float(kt_hdr_peak_m.group(4))
+    # Color grading rows (ColorGradingControls.kt)
+    kt_grad_hue_m = _need(
+        r'NumericControl\(R\.string\.hsl_hue,\s*value\.hue,\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)",\s*enabled,\s*\{[^\n]+\},\s*\{[^\n]+\},\s*compactNumber\s*=\s*false,\s*stepOverride\s*=\s*(\.\d+|\d+(?:\.\d+)?)f\)',
+        kt_grad,
+        "kt grading hue ui",
+        "ColorGradingControls.kt",
+        re.S,
+    )
+    kt_grad_sat_m = _need(
+        r'NumericControl\(R\.string\.saturation,\s*value\.saturation,\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)",\s*enabled,\s*\{[^\n]+\},\s*\{[^\n]+\},\s*compactNumber\s*=\s*false,\s*stepOverride\s*=\s*(\.\d+|\d+(?:\.\d+)?)f\)',
+        kt_grad,
+        "kt grading sat ui",
+        "ColorGradingControls.kt",
+        re.S,
+    )
+    kt_grad_hue_step = float(kt_grad_hue_m.group(4))
+    kt_grad_sat_step = float(kt_grad_sat_m.group(4))
+
+    # HDR Look + HDR Rendition rows (AdjustmentDock.kt + EditorScreen.kt)
+    kt_hdr_look_m = _need(
+        r'NumericControl\(R\.string\.transfer_field_strength,\s*look\.strength \* 100f?,\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)"[^;]*?strength\s*=\s*(\d+(?:\.\d+)?)f[^;]*?defaultValue\s*=\s*(-?\d+(?:\.\d+)?)f,\s*stepOverride\s*=\s*(\.\d+|\d+(?:\.\d+)?)f\)',
+        kt_dock,
+        "kt hdr look ui",
+        "AdjustmentDock.kt",
+        re.S,
+    )
+    kt_hdr_look_def = float(kt_hdr_look_m.group(5))
+    kt_hdr_look_step = float(kt_hdr_look_m.group(6))
+
+    kt_hdr_rend_blk = _extract_brace_block(kt_screen, r"private fun HDRRenditionRows\b", "HDRRenditionRows android", "EditorScreen.kt")
+
+    def _kt_hdr_rend(r_name: str, prop: str) -> tuple[float, float, str, float, float]:
+        m = _need(
+            rf'NumericControl\(R\.string\.{r_name},\s*settings\.{prop},\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)",\s*enabled,\s*\{{[^}}]+\}},\s*\{{[^}}]*{prop}\s*=\s*(-?\d+(?:\.\d+)?)f[^}}]*\}}(?:,\s*stepOverride\s*=\s*(\.\d+|\d+(?:\.\d+)?)f)?\)',
+            kt_hdr_rend_blk,
+            f"kt {r_name} ui",
+            "EditorScreen.kt",
+            re.S,
+        )
+        return float(m.group(1)), float(m.group(2)), m.group(3), float(m.group(4)), float(m.group(5)) if m.group(5) is not None else kt_default_step
+
+    hdr_peak_lo, hdr_peak_hi, hdr_peak_unit, hdr_peak_def, hdr_peak_step = _kt_hdr_rend("hdr_peak_limit", "peakLimitEV")
+    hdr_sdr_exp_lo, hdr_sdr_exp_hi, hdr_sdr_exp_unit, hdr_sdr_exp_def, hdr_sdr_exp_step = _kt_hdr_rend("hdr_sdr_exposure", "sdrExposureEV")
+    hdr_sdr_con_lo, hdr_sdr_con_hi, hdr_sdr_con_unit, hdr_sdr_con_def, hdr_sdr_con_step = _kt_hdr_rend("hdr_sdr_contrast", "sdrContrast")
+    hdr_sdr_sat_lo, hdr_sdr_sat_hi, hdr_sdr_sat_unit, hdr_sdr_sat_def, hdr_sdr_sat_step = _kt_hdr_rend("hdr_sdr_saturation", "sdrSaturation")
     _require("NumericControl(R.string.temperature, draft.temperature", kt_screen, "hdr.camera_development temp step", "EditorScreen.kt")
 
-    kt_crop_min_pct = float(_need(r"R\.string\.geometry_crop_width.*?minOf\((\.\d+|\d+(?:\.\d+)?)f,", kt_geom, "kt crop min", "GeometryControls.kt").group(1))
-    kt_persp_m = _need(r'R\.string\.geometry_perspective_horizontal,\s*value\.perspectiveHorizontal \* 100f,\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)"', kt_geom, "kt persp ui", "GeometryControls.kt")
-    kt_persp_range = (float(kt_persp_m.group(1)), float(kt_persp_m.group(2)))
-    kt_persp_unit = kt_persp_m.group(3)
-    kt_straight_m = _need(r'R\.string\.geometry_straighten,\s*value\.straightenDegrees,\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)"', kt_geom, "kt straighten ui", "GeometryControls.kt")
+    # Geometry controls (GeometryControls.kt: perspective horizontal + vertical parsed independently, all 4 crops, straighten)
+    kt_persp_h_m = _need(
+        r'NumericControl\(R\.string\.geometry_perspective_horizontal,\s*value\.perspectiveHorizontal \* (\d+)f,\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)",[^;]*?perspectiveHorizontal\s*=\s*(-?\d+(?:\.\d+)?)f',
+        kt_geom,
+        "kt persp H ui",
+        "GeometryControls.kt",
+        re.S,
+    )
+    kt_persp_v_m = _need(
+        r'NumericControl\(R\.string\.geometry_perspective_vertical,\s*value\.perspectiveVertical \* (\d+)f,\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)",[^;]*?perspectiveVertical\s*=\s*(-?\d+(?:\.\d+)?)f',
+        kt_geom,
+        "kt persp V ui",
+        "GeometryControls.kt",
+        re.S,
+    )
+    kt_straight_m = _need(
+        r'NumericControl\(R\.string\.geometry_straighten,\s*value\.straightenDegrees,\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)",[^;]*?straightenDegrees\s*=\s*(-?\d+(?:\.\d+)?)f',
+        kt_geom,
+        "kt straighten ui",
+        "GeometryControls.kt",
+        re.S,
+    )
+    kt_crop_x_m = _need(
+        r'NumericControl\(R\.string\.geometry_crop_x,\s*value\.cropX \* (\d+)f,\s*(-?\d+(?:\.\d+)?)f\.\.\(\(1f - value\.cropWidth\) \* (\d+)f\)[^,]*,\s*"([^"]*)",[^;]*?cropX\s*=\s*(-?\d+(?:\.\d+)?)f',
+        kt_geom,
+        "kt crop x ui",
+        "GeometryControls.kt",
+        re.S,
+    )
+    kt_crop_y_m = _need(
+        r'NumericControl\(R\.string\.geometry_crop_y,\s*value\.cropY \* (\d+)f,\s*(-?\d+(?:\.\d+)?)f\.\.\(\(1f - value\.cropHeight\) \* (\d+)f\)[^,]*,\s*"([^"]*)",[^;]*?cropY\s*=\s*(-?\d+(?:\.\d+)?)f',
+        kt_geom,
+        "kt crop y ui",
+        "GeometryControls.kt",
+        re.S,
+    )
+    kt_crop_w_m = _need(
+        r'NumericControl\(R\.string\.geometry_crop_width,\s*value\.cropWidth \* (\d+)f,\s*minOf\((\.\d+|\d+(?:\.\d+)?)f,\s*maximumWidth \* (\d+)f\)\.\.maximumWidth \* \3f,\s*"([^"]*)",[^;]*?defaultValue\s*=\s*(-?\d+(?:\.\d+)?)f',
+        kt_geom,
+        "kt crop width ui",
+        "GeometryControls.kt",
+        re.S,
+    )
+    kt_crop_h_m = _need(
+        r'NumericControl\(R\.string\.geometry_crop_height,\s*value\.cropHeight \* (\d+)f,\s*minOf\((\.\d+|\d+(?:\.\d+)?)f,\s*maximumHeight \* (\d+)f\)\.\.maximumHeight \* \3f,\s*"([^"]*)",[^;]*?defaultValue\s*=\s*(-?\d+(?:\.\d+)?)f',
+        kt_geom,
+        "kt crop height ui",
+        "GeometryControls.kt",
+        re.S,
+    )
     _require('"lens.vignetting"', kt_lens, "geometry.lens.vignetting android sdr", "LensControls.kt")
 
-    strength_m = _need(r'R\.string\.strength,\s*edits\.strength \* 100f?,\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)"', kt_dock, "kt strength ui", "AdjustmentDock.kt")
-    exp_m = _need(r'R\.string\.exposure,\s*edits\.exposure,\s*if \(edits\.isHDREditing\) (-?\d+(?:\.\d+)?)f\.\.(-?\d+(?:\.\d+)?)f else (-?\d+(?:\.\d+)?)f\.\.(-?\d+(?:\.\d+)?)f,\s*"([^"]*)"', kt_dock, "kt exp ui", "AdjustmentDock.kt")
-    temp_m = _need(r'R\.string\.temperature,.*?(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)"', kt_dock, "kt temp ui", "AdjustmentDock.kt", re.S)
-    tint_m = _need(r'R\.string\.tint,.*?(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)"', kt_dock, "kt tint ui", "AdjustmentDock.kt", re.S)
-    sharp_m = _need(r'R\.string\.sharpening,.*?(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)"', kt_dock, "kt sharp ui", "AdjustmentDock.kt", re.S)
-    dn_hdr_m = _need(r'R\.string\.denoise,.*?(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)"', kt_dock, "kt hdr denoise ui", "AdjustmentDock.kt", re.S)
-    _require("-100f..100f", kt_curve, "kt s_curve ui", "ToneCurveControls.kt")
+    # Neutral look reference & WB fallbacks (AdjustmentDock.kt + EditSettings.kt + AdjustmentTransferValues.kt)
+    kt_edit_blk = _extract_kt_class_block(kt_edit, r"data class EditSettings\b", "EditSettings android ui", "EditSettings.kt")
+    kt_film_def = _need(r'val film:\s*String\s*=\s*"(\w+)"', kt_edit_blk, "looks.reference film android", "EditSettings.kt").group(1)
+    kt_look_kind = _need(r's\.film == "' + re.escape(kt_film_def) + r'"\s*->\s*\{\s*kind\s*=\s*"(\w+)";\s*id\s*=\s*null', kt_tv, "looks.reference wire android", "AdjustmentTransferValues.kt").group(1)
+    kt_neutral_temp_m = _need(
+        r"val neutralTemperature = if \(edits\.isHDREditing\) (-?\d+(?:\.\d+)?)f else state\.preview\?\.temperature\?\.takeIf \{ it\.isFinite\(\) \} \?: (-?\d+(?:\.\d+)?)f",
+        kt_dock,
+        "neutralTemperature android",
+        "AdjustmentDock.kt",
+    )
+    kt_neutral_tint_m = _need(
+        r"val neutralTint = if \(edits\.isHDREditing\) (-?\d+(?:\.\d+)?)f else state\.preview\?\.tint\?\.takeIf \{ it\.isFinite\(\) \} \?: (-?\d+(?:\.\d+)?)f",
+        kt_dock,
+        "neutralTint android",
+        "AdjustmentDock.kt",
+    )
 
-    dn_ui_m = _need(r'(-?\d+)f\.\.(-?\d+)f,\s*""', kt_dn, "kt wavelet ui", "DenoiseControls.kt")
+    strength_m = _need(
+        r'NumericControl\(R\.string\.strength,\s*edits\.strength \* (\d+)f?,\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)",.*?defaultValue\s*=\s*(-?\d+(?:\.\d+)?)f',
+        kt_dock,
+        "kt strength ui",
+        "AdjustmentDock.kt",
+        re.S,
+    )
+    exp_m = _need(
+        r'NumericControl\(R\.string\.exposure,\s*edits\.exposure,\s*if \(edits\.isHDREditing\) (-?\d+(?:\.\d+)?)f\.\.(-?\d+(?:\.\d+)?)f else (-?\d+(?:\.\d+)?)f\.\.(-?\d+(?:\.\d+)?)f,\s*"([^"]*)",[^;]*?exposure\s*=\s*(-?\d+(?:\.\d+)?)f',
+        kt_dock,
+        "kt exp ui",
+        "AdjustmentDock.kt",
+        re.S,
+    )
+    temp_m = _need(
+        r'NumericControl\(R\.string\.temperature,\s*edits\.temperature,\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)",.*?defaultValue\s*=\s*neutralTemperature\)',
+        kt_dock,
+        "kt temp ui",
+        "AdjustmentDock.kt",
+        re.S,
+    )
+    tint_m = _need(
+        r'NumericControl\(R\.string\.tint,\s*edits\.tint,\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)",.*?defaultValue\s*=\s*if \(edits\.recipeID == null\) neutralTint else 0f\)',
+        kt_dock,
+        "kt tint ui",
+        "AdjustmentDock.kt",
+        re.S,
+    )
+    sharp_m = _need(
+        r'NumericControl\(R\.string\.sharpening,\s*edits\.editingSharpening \* \d+,\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)",.*?withEditingSharpening\((-?\d+(?:\.\d+)?)f\)',
+        kt_dock,
+        "kt sharp ui",
+        "AdjustmentDock.kt",
+        re.S,
+    )
+    dn_hdr_m = _need(
+        r'NumericControl\(R\.string\.denoise,\s*requireNotNull\(edits\.hdr\)\.detailSettings\.denoise \* \d+,\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)"',
+        kt_dock,
+        "kt hdr denoise ui",
+        "AdjustmentDock.kt",
+        re.S,
+    )
+    _require("onResetScope(EditorResetScope.Tool(11))", kt_dock, "kt hdr denoise reset", "AdjustmentDock.kt")
+    kt_hdr_denoise_def = float(_need(r"val denoise:\s*Float\s*=\s*(-?\d+(?:\.\d+)?)f", _extract_kt_class_block(kt_hdr, r"data class HDRDetailSettings\b", "kt hdr denoise default", "HDRSettings.kt"), "kt hdr denoise default", "HDRSettings.kt").group(1))
+    scurve_m = _need(
+        r'NumericControl\(R\.string\.tone_curve,\s*legacy \* \d+,\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)",\s*enabled,\s*\{[^\n]+?\},\s*\{\s*onLegacyEdit\((-?\d+(?:\.\d+)?)f',
+        kt_curve,
+        "kt s_curve ui",
+        "ToneCurveControls.kt",
+        re.S,
+    )
+
+    # Wavelet denoise UI (DenoiseControls.kt + EditSettings.kt + AdjustmentControls baseline)
+    dn_luma_m = _need(r'NumericControl\(R\.string\.denoise_luma,\s*value\.luma,\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)",\s*active,\s*\{[^\n]+\},\s*\{[^}]*luma\s*=\s*(-?\d+(?:\.\d+)?)f', kt_dn, "kt wavelet luma ui", "DenoiseControls.kt", re.S)
+    dn_chroma_m = _need(r'NumericControl\(R\.string\.denoise_chroma,\s*value\.chroma,\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)",\s*active,\s*\{[^\n]+\},\s*\{[^}]*chroma\s*=\s*(-?\d+(?:\.\d+)?)f', kt_dn, "kt wavelet chroma ui", "DenoiseControls.kt", re.S)
+    dn_coarse_m = _need(r'NumericControl\(R\.string\.denoise_coarse,\s*value\.coarse,\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)",\s*active,\s*\{[^\n]+\},\s*\{[^}]*coarse\s*=\s*(-?\d+(?:\.\d+)?)f', kt_dn, "kt wavelet coarse ui", "DenoiseControls.kt", re.S)
     dn_blk = _extract_kt_class_block(kt_edit, r"data class DenoiseSettings\b", "kt wavelet defaults", "EditSettings.kt")
     kt_w_en = _need(r"val enabled:\s*Boolean\s*=\s*(true|false)", dn_blk, "kt wavelet enabled", "EditSettings.kt").group(1) == "true"
-    kt_w_luma = float(_need(r"val luma:\s*Float\s*=\s*(-?\d+(?:\.\d+)?)f", dn_blk, "kt wavelet luma", "EditSettings.kt").group(1))
-    kt_w_chroma = float(_need(r"val chroma:\s*Float\s*=\s*(-?\d+(?:\.\d+)?)f", dn_blk, "kt wavelet chroma", "EditSettings.kt").group(1))
-    kt_w_coarse = float(_need(r"val coarse:\s*Float\s*=\s*(-?\d+(?:\.\d+)?)f", dn_blk, "kt wavelet coarse", "EditSettings.kt").group(1))
+    kt_w_luma = float(dn_luma_m.group(4))
+    kt_w_chroma = float(dn_chroma_m.group(4))
+    kt_w_coarse = float(dn_coarse_m.group(4))
     _fmt_kt = lambda v: f"{int(v)}f" if v.is_integer() else f"{v}f"
     kt_w_preset = _need(
         rf"luma == {_fmt_kt(kt_w_luma)} && chroma == {_fmt_kt(kt_w_chroma)} && coarse == {_fmt_kt(kt_w_coarse)} -> DenoisePreset\.(\w+)",
@@ -2892,8 +3508,14 @@ def _parse_android_ui() -> dict[str, dict]:
         "coarse": kt_w_coarse,
         "preset": kt_w_preset,
     }
-    hsl_ui_m = _need(r'(-?\d+)f\.\.(-?\d+)f,\s*""', kt_hsl, "kt hsl ui", "HslControls.kt")
-    _require("parameter.range", kt_fx, "kt effects range", "PhotoEffectsControls.kt")
+    hsl_ui_m = _need(
+        r'NumericControl\(label,\s*settings\.value\(axis,\s*channel\),\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)",\s*enabled,\s*\{[^\n]+\},\s*\{[^}]*withValue\(axis,\s*channel,\s*(-?\d+(?:\.\d+)?)f\)',
+        kt_hsl,
+        "kt hsl ui",
+        "HslControls.kt",
+        re.S,
+    )
+    kt_fx_unit = _need(r'NumericControl\(\s*label\s*=\s*parameter\.label,\s*value\s*=\s*value\.value\(parameter\),\s*range\s*=\s*parameter\.range,\s*unit\s*=\s*"([^"]*)"', kt_fx, "kt effects unit", "PhotoEffectsControls.kt").group(1)
     _require("parameter.defaultValue", kt_fx, "kt effects default", "PhotoEffectsControls.kt")
     fx_enum_blk = _extract_brace_block(kt_edit, r"enum class PhotoEffectParameter\b", "kt effects enum", "EditSettings.kt")
     kt_hdr_cam_blk = _extract_kt_class_block(kt_hdr, r"data class HDRCameraDevelopmentSettings\b", "kt hdr cam ui", "HDRSettings.kt")
@@ -2903,10 +3525,10 @@ def _parse_android_ui() -> dict[str, dict]:
     kt_hdr_wb_pair = _need(r'if \(camera\.customWhiteBalance\) "([^"]+)" else "([^"]+)"', kt_hdr_cam_tx, "kt hdr cam wb wire", "AdjustmentTransfer.kt")
     kt_hdr_ref_pair = _need(r'if \(camera\.sensorExposure\) "([^"]+)" else "([^"]+)"', kt_hdr_cam_tx, "kt hdr cam ref wire", "AdjustmentTransfer.kt")
 
-    kt_exp_mode_idx = int(_need(r"val exposureMode:\s*Int\s*=\s*(\d+)", kt_edit, "kt exp mode def", "EditSettings.kt").group(1))
+    kt_exp_mode_idx = int(_need(r"val exposureMode:\s*Int\s*=\s*(\d+)", kt_edit_blk, "kt exp mode def", "EditSettings.kt").group(1))
     kt_exp_mode_list = _parse_quoted_list(_need(r"EXPOSURE_MODE[^\n]*listOf\(([^)]+)\)", kt_tv, "kt exp mode list", "AdjustmentTransferValues.kt").group(1))
     kt_exp_mode_def = kt_exp_mode_list[kt_exp_mode_idx]
-    kt_custom_wb_def = _need(r"val customWb:\s*Boolean\s*=\s*(true|false)", kt_edit, "kt customWb def", "EditSettings.kt").group(1) == "true"
+    kt_custom_wb_def = _need(r"val customWb:\s*Boolean\s*=\s*(true|false)", kt_edit_blk, "kt customWb def", "EditSettings.kt").group(1) == "true"
     _require("val camera = !context.isRaw || !s.customWb", kt_tv, "kt wb camera def", "AdjustmentTransferValues.kt")
     kt_wb_pair = _need(r'WHITE_BALANCE_MODE[^\n]*if \(camera\) "([^"]+)" else "([^"]+)"', kt_tv, "kt wb mode wire", "AdjustmentTransferValues.kt")
     kt_wb_mode_def = kt_wb_pair.group(1) if not kt_custom_wb_def else kt_wb_pair.group(2)
@@ -2922,47 +3544,55 @@ def _parse_android_ui() -> dict[str, dict]:
         "vignetting": _need(r"val vignetting:\s*Boolean\s*=\s*(true|false)", kt_lens_blk, "kt lens vig", "EditSettings.kt").group(1) == "true",
         "auto_crop": _need(r"val autoCrop:\s*Boolean\s*=\s*(true|false)", kt_lens_blk, "kt lens autoCrop", "EditSettings.kt").group(1) == "true",
     }
+    _require("val profileId: String? = null", kt_lens_blk, "kt lens profileId", "EditSettings.kt")
 
     ui: dict[str, dict] = {}
-    ui["looks.reference"] = _ui_entry(modes=("sdr",), default={"kind": "neutral", "id": None})
-    ui["looks.strength"] = _ui_entry(modes=("sdr",), unit=strength_m.group(3), min_val=float(strength_m.group(1)), max_val=float(strength_m.group(2)), default=100.0, step=kt_default_step)
-    ui["light.exposure"] = _ui_entry(unit=exp_m.group(5), min_val=float(exp_m.group(3)), max_val=float(exp_m.group(4)), hdr_min=float(exp_m.group(1)), hdr_max=float(exp_m.group(2)), default=0.0, step=kt_exp_step)
+    ui["looks.reference"] = _ui_entry(modes=("sdr",), default={"kind": kt_look_kind, "id": None})
+    ui["looks.strength"] = _ui_entry(
+        modes=("sdr",),
+        unit=strength_m.group(4),
+        min_val=float(strength_m.group(2)),
+        max_val=float(strength_m.group(3)),
+        default=float(strength_m.group(5)) if kt_strength_base == float(strength_m.group(5)) else kt_strength_base,
+        step=kt_default_step,
+    )
+    ui["light.exposure"] = _ui_entry(unit=exp_m.group(5), min_val=float(exp_m.group(3)), max_val=float(exp_m.group(4)), hdr_min=float(exp_m.group(1)), hdr_max=float(exp_m.group(2)), default=float(exp_m.group(6)), step=kt_exp_step)
     ui["light.exposure_mode"] = _ui_entry(modes=("sdr",), default=kt_exp_mode_def)
 
-    for fid, r_name in (
-        ("light.contrast", "contrast"),
-        ("light.highlights", "highlights"),
-        ("light.shadows", "shadows"),
-        ("tone.black_point", "black_point"),
-        ("tone.white_point", "white_point"),
-        ("color.vibrance", "vibrance"),
-        ("color.saturation", "saturation"),
-        ("effects.clarity", "clarity"),
-        ("effects.dehaze", "dehaze"),
+    for fid, r_name, rst_fn in (
+        ("light.contrast", "contrast", r"contrast\s*=\s*(-?\d+(?:\.\d+)?)f"),
+        ("light.highlights", "highlights", r"highlights\s*=\s*(-?\d+(?:\.\d+)?)f"),
+        ("light.shadows", "shadows", r"shadows\s*=\s*(-?\d+(?:\.\d+)?)f"),
+        ("tone.black_point", "black_point", r"withEditingBlackPoint\((-?\d+(?:\.\d+)?)f\)"),
+        ("tone.white_point", "white_point", r"withEditingWhitePoint\((-?\d+(?:\.\d+)?)f\)"),
+        ("color.vibrance", "vibrance", r"withEditingVibrance\((-?\d+(?:\.\d+)?)f\)"),
+        ("color.saturation", "saturation", r"saturation\s*=\s*(-?\d+(?:\.\d+)?)f"),
+        ("effects.clarity", "clarity", r"withEditingClarity\((-?\d+(?:\.\d+)?)f\)"),
+        ("effects.dehaze", "dehaze", r"withEditingDehaze\((-?\d+(?:\.\d+)?)f\)"),
     ):
-        m_nc = _need(rf'R\.string\.{r_name},[^\n]*?(-?\d+(?:\.\d+)?)f\.\.(-?\d+(?:\.\d+)?)f,\s*"([^"]*)"', kt_dock, f"kt {fid} ui", "AdjustmentDock.kt")
-        ui[fid] = _ui_entry(unit=m_nc.group(3), min_val=float(m_nc.group(1)), max_val=float(m_nc.group(2)), default=0.0, step=kt_default_step)
-    scurve_m = _need(r'R\.string\.tone_curve.*?(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)"', kt_curve, "kt s_curve bounds", "ToneCurveControls.kt", re.S)
-    ui["light.s_curve"] = _ui_entry(unit=scurve_m.group(3), min_val=float(scurve_m.group(1)), max_val=float(scurve_m.group(2)), default=0.0, step=kt_default_step)
+        m_nc = _need(rf'R\.string\.{r_name},[^\n]*?(-?\d+(?:\.\d+)?)f\.\.(-?\d+(?:\.\d+)?)f,\s*"([^"]*)"[^\n]*\n[^\n]*{rst_fn}', kt_dock, f"kt {fid} ui", "AdjustmentDock.kt")
+        ui[fid] = _ui_entry(unit=m_nc.group(3), min_val=float(m_nc.group(1)), max_val=float(m_nc.group(2)), default=float(m_nc.group(4)) if kt_nc_sig_def == float(m_nc.group(4)) else kt_nc_sig_def, step=kt_default_step)
+    ui["light.s_curve"] = _ui_entry(unit=scurve_m.group(3), min_val=float(scurve_m.group(1)), max_val=float(scurve_m.group(2)), default=float(scurve_m.group(4)), step=kt_default_step)
     ui["light.curve"] = _ui_curve_entry("android")
 
     for zone in ("shadows", "midtones", "highlights"):
-        ui[f"color.grading.{zone}"] = _ui_entry(default={"hue": 0.0, "saturation": 0.0}, step={"hue": kt_grad_step, "saturation": kt_grad_step})
+        ui[f"color.grading.{zone}"] = _ui_entry(default={"hue": kt_nc_sig_def, "saturation": kt_nc_sig_def}, step={"hue": kt_grad_hue_step, "saturation": kt_grad_sat_step})
 
     ui["color.white_balance.mode"] = _ui_entry(modes=("sdr",), default=kt_wb_mode_def)
-    ui["color.white_balance.temperature_kelvin"] = _ui_entry(modes=("sdr",), unit=temp_m.group(3), min_val=float(temp_m.group(1)), max_val=float(temp_m.group(2)), default=6500.0, step=kt_temp_step)
-    ui["color.white_balance.tint"] = _ui_entry(modes=("sdr",), unit=tint_m.group(3), min_val=float(tint_m.group(1)), max_val=float(tint_m.group(2)), default=0.0, step=kt_default_step)
+    sdr_temp_def = float(kt_neutral_temp_m.group(2))
+    hdr_temp_def = float(kt_neutral_temp_m.group(1))
+    sdr_tint_def = float(kt_neutral_tint_m.group(2))
+    hdr_tint_def = float(kt_neutral_tint_m.group(1))
+    ui["color.white_balance.temperature_kelvin"] = _ui_entry(modes=("sdr",), unit=temp_m.group(3), min_val=float(temp_m.group(1)), max_val=float(temp_m.group(2)), default=sdr_temp_def, step=kt_temp_step)
+    ui["color.white_balance.tint"] = _ui_entry(modes=("sdr",), unit=tint_m.group(3), min_val=float(tint_m.group(1)), max_val=float(tint_m.group(2)), default=sdr_tint_def, step=kt_default_step)
 
-    ui["hdr.relative_temperature"] = _ui_entry(modes=("hdr",), unit=temp_m.group(3), min_val=float(temp_m.group(1)), max_val=float(temp_m.group(2)), default=6500.0, step=kt_temp_step)
-    ui["hdr.relative_tint"] = _ui_entry(modes=("hdr",), unit=tint_m.group(3), min_val=float(tint_m.group(1)), max_val=float(tint_m.group(2)), default=0.0, step=kt_default_step)
-    ui["hdr.peak_limit_ev"] = _ui_entry(modes=("hdr",), unit=kt_hdr_peak_m.group(3), min_val=float(kt_hdr_peak_m.group(1)), max_val=float(kt_hdr_peak_m.group(2)), default=0.0, step=kt_hdr_peak_step)
-    sdr_exp_m = _need(r'R\.string\.hdr_sdr_exposure.*?(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)"', kt_screen, "kt hdr sdr_exposure ui", "EditorScreen.kt", re.S)
-    sdr_con_m = _need(r'R\.string\.hdr_sdr_contrast.*?(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)"', kt_screen, "kt hdr sdr_contrast ui", "EditorScreen.kt", re.S)
-    sdr_sat_m = _need(r'R\.string\.hdr_sdr_saturation.*?(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)"', kt_screen, "kt hdr sdr_saturation ui", "EditorScreen.kt", re.S)
-    ui["hdr.sdr_exposure_ev"] = _ui_entry(modes=("hdr",), unit=sdr_exp_m.group(3), min_val=float(sdr_exp_m.group(1)), max_val=float(sdr_exp_m.group(2)), default=0.0, step=kt_hdr_peak_step)
-    ui["hdr.sdr_contrast"] = _ui_entry(modes=("hdr",), unit=sdr_con_m.group(3), min_val=float(sdr_con_m.group(1)), max_val=float(sdr_con_m.group(2)), default=0.0, step=kt_default_step)
-    ui["hdr.sdr_saturation"] = _ui_entry(modes=("hdr",), unit=sdr_sat_m.group(3), min_val=float(sdr_sat_m.group(1)), max_val=float(sdr_sat_m.group(2)), default=0.0, step=kt_default_step)
-    ui["hdr.look"] = _ui_entry(modes=("hdr",), unit=kt_hdr_look_m.group(3), min_val=float(kt_hdr_look_m.group(1)), max_val=float(kt_hdr_look_m.group(2)), default=100.0, step={"strength": kt_hdr_look_step})
+    ui["hdr.relative_temperature"] = _ui_entry(modes=("hdr",), unit=temp_m.group(3), min_val=float(temp_m.group(1)), max_val=float(temp_m.group(2)), default=hdr_temp_def, step=kt_temp_step)
+    ui["hdr.relative_tint"] = _ui_entry(modes=("hdr",), unit=tint_m.group(3), min_val=float(tint_m.group(1)), max_val=float(tint_m.group(2)), default=hdr_tint_def, step=kt_default_step)
+    ui["hdr.peak_limit_ev"] = _ui_entry(modes=("hdr",), unit=hdr_peak_unit, min_val=hdr_peak_lo, max_val=hdr_peak_hi, default=hdr_peak_def, step=hdr_peak_step)
+    ui["hdr.sdr_exposure_ev"] = _ui_entry(modes=("hdr",), unit=hdr_sdr_exp_unit, min_val=hdr_sdr_exp_lo, max_val=hdr_sdr_exp_hi, default=hdr_sdr_exp_def, step=hdr_sdr_exp_step)
+    ui["hdr.sdr_contrast"] = _ui_entry(modes=("hdr",), unit=hdr_sdr_con_unit, min_val=hdr_sdr_con_lo, max_val=hdr_sdr_con_hi, default=hdr_sdr_con_def, step=hdr_sdr_con_step)
+    ui["hdr.sdr_saturation"] = _ui_entry(modes=("hdr",), unit=hdr_sdr_sat_unit, min_val=hdr_sdr_sat_lo, max_val=hdr_sdr_sat_hi, default=hdr_sdr_sat_def, step=hdr_sdr_sat_step)
+    ui["hdr.look"] = _ui_entry(modes=("hdr",), unit=kt_hdr_look_m.group(3), min_val=float(kt_hdr_look_m.group(1)), max_val=float(kt_hdr_look_m.group(2)), default=kt_hdr_look_def, step={"strength": kt_hdr_look_step})
     ui["hdr.camera_development"] = _ui_entry(
         modes=("hdr",),
         default={
@@ -2976,31 +3606,32 @@ def _parse_android_ui() -> dict[str, dict]:
         step={"temperature": kt_temp_step, "tint": kt_default_step},
     )
 
+    hsl_def = float(hsl_ui_m.group(4))
     for axis in HSL_AXES:
         for ch in HSL_CHANNELS:
-            ui[f"color.hsl.{axis}.{ch}"] = _ui_entry(unit="", min_val=float(hsl_ui_m.group(1)), max_val=float(hsl_ui_m.group(2)), default=0.0, step=kt_default_step)
+            ui[f"color.hsl.{axis}.{ch}"] = _ui_entry(unit=hsl_ui_m.group(3), min_val=float(hsl_ui_m.group(1)), max_val=float(hsl_ui_m.group(2)), default=hsl_def, step=kt_default_step)
 
     for m_fx in re.finditer(r"(\w+)\((?:true|false),\s*(-?\d+(?:\.\d+)?)f\.\.(-?\d+(?:\.\d+)?)f,\s*(-?\d+(?:\.\d+)?)f\)", fx_enum_blk):
         enum_id, lo_s, hi_s, dflt_s = m_fx.groups()
         parts = enum_id.lower().split("_", 1)
-        ui[f"effects.{parts[0]}.{parts[1]}"] = _ui_entry(unit="", min_val=float(lo_s), max_val=float(hi_s), default=float(dflt_s), step=kt_default_step)
+        ui[f"effects.{parts[0]}.{parts[1]}"] = _ui_entry(unit=kt_fx_unit, min_val=float(lo_s), max_val=float(hi_s), default=float(dflt_s), step=kt_default_step)
 
-    ui["detail.sharpening"] = _ui_entry(unit=sharp_m.group(3), min_val=float(sharp_m.group(1)), max_val=float(sharp_m.group(2)), default=0.0, step=kt_default_step)
+    ui["detail.sharpening"] = _ui_entry(unit=sharp_m.group(3), min_val=float(sharp_m.group(1)), max_val=float(sharp_m.group(2)), default=float(sharp_m.group(4)), step=kt_default_step)
     ui["detail.denoise.raw_level"] = _ui_entry(exposed=False, modes=())
-    ui["detail.denoise.post_rgb"] = _ui_entry(modes=("hdr",), unit=dn_hdr_m.group(3), min_val=float(dn_hdr_m.group(1)), max_val=float(dn_hdr_m.group(2)), default=0.0, step=kt_default_step)
+    ui["detail.denoise.post_rgb"] = _ui_entry(modes=("hdr",), unit=dn_hdr_m.group(3), min_val=float(dn_hdr_m.group(1)), max_val=float(dn_hdr_m.group(2)), default=kt_hdr_denoise_def, step=kt_default_step)
     ui["detail.denoise.chroma_mode"] = _ui_entry(exposed=False, modes=())
-    ui["detail.denoise.wavelet"] = _ui_entry(modes=("sdr",), unit="", min_val=float(dn_ui_m.group(1)), max_val=float(dn_ui_m.group(2)), default=kt_wavelet_def, step={"luma": kt_default_step, "chroma": kt_default_step, "coarse": kt_default_step})
+    ui["detail.denoise.wavelet"] = _ui_entry(modes=("sdr",), unit=dn_luma_m.group(3), min_val=float(dn_luma_m.group(1)), max_val=float(dn_luma_m.group(2)), default=kt_wavelet_def, step={"luma": kt_default_step, "chroma": kt_default_step, "coarse": kt_default_step})
 
-    for fid in ("geometry.crop.x", "geometry.crop.y"):
-        ui[fid] = _ui_entry(unit="%", min_val=0.0, max_val=100.0, default=0.0, step=kt_crop_step)
-    for fid in ("geometry.crop.width", "geometry.crop.height"):
-        ui[fid] = _ui_entry(unit="%", min_val=kt_crop_min_pct, max_val=100.0, default=100.0, step=kt_crop_step)
+    ui["geometry.crop.x"] = _ui_entry(unit=kt_crop_x_m.group(4), min_val=float(kt_crop_x_m.group(2)), max_val=float(kt_crop_x_m.group(3)), default=float(kt_crop_x_m.group(5)), step=kt_crop_step)
+    ui["geometry.crop.y"] = _ui_entry(unit=kt_crop_y_m.group(4), min_val=float(kt_crop_y_m.group(2)), max_val=float(kt_crop_y_m.group(3)), default=float(kt_crop_y_m.group(5)), step=kt_crop_step)
+    ui["geometry.crop.width"] = _ui_entry(unit=kt_crop_w_m.group(4), min_val=float(kt_crop_w_m.group(2)), max_val=float(kt_crop_w_m.group(3)), default=float(kt_crop_w_m.group(5)), step=kt_crop_step)
+    ui["geometry.crop.height"] = _ui_entry(unit=kt_crop_h_m.group(4), min_val=float(kt_crop_h_m.group(2)), max_val=float(kt_crop_h_m.group(3)), default=float(kt_crop_h_m.group(5)), step=kt_crop_step)
     ui["geometry.quarter_turns"] = _ui_entry(min_val=kt_qt_range[0], max_val=kt_qt_range[1], default=kt_qt_def, step=1)
     ui["geometry.flip_horizontal"] = _ui_entry(default=kt_flip_h_def)
     ui["geometry.flip_vertical"] = _ui_entry(default=kt_flip_v_def)
-    ui["geometry.straighten_degrees"] = _ui_entry(unit=kt_straight_m.group(3), min_val=float(kt_straight_m.group(1)), max_val=float(kt_straight_m.group(2)), default=0.0, step=kt_straight_step)
-    ui["geometry.perspective.horizontal"] = _ui_entry(unit=kt_persp_unit, min_val=kt_persp_range[0], max_val=kt_persp_range[1], default=0.0, step=kt_default_step)
-    ui["geometry.perspective.vertical"] = _ui_entry(unit=kt_persp_unit, min_val=kt_persp_range[0], max_val=kt_persp_range[1], default=0.0, step=kt_default_step)
+    ui["geometry.straighten_degrees"] = _ui_entry(unit=kt_straight_m.group(3), min_val=float(kt_straight_m.group(1)), max_val=float(kt_straight_m.group(2)), default=float(kt_straight_m.group(4)), step=kt_straight_step)
+    ui["geometry.perspective.horizontal"] = _ui_entry(unit=kt_persp_h_m.group(4), min_val=float(kt_persp_h_m.group(2)), max_val=float(kt_persp_h_m.group(3)), default=float(kt_persp_h_m.group(5)), step=kt_default_step)
+    ui["geometry.perspective.vertical"] = _ui_entry(unit=kt_persp_v_m.group(4), min_val=float(kt_persp_v_m.group(2)), max_val=float(kt_persp_v_m.group(3)), default=float(kt_persp_v_m.group(5)), step=kt_default_step)
     for fid, key in (("geometry.lens.distortion", "distortion"), ("geometry.lens.tca", "tca"), ("geometry.lens.vignetting", "vignetting"), ("geometry.lens.auto_crop", "auto_crop")):
         ui[fid] = _ui_entry(modes=("sdr", "hdr"), default=kt_lens_defs[key])
     ui["geometry.lens.profile_id"] = _ui_entry(modes=("sdr",), default=None)
@@ -3012,11 +3643,14 @@ def _parse_android_ui() -> dict[str, dict]:
 def _parse_windows_ui() -> dict[str, dict]:
     """Parse Windows UI metadata solely from RawLabWindows C# / XAML sources."""
     cs_inter = _strip_line_comments(_read("RawLabWindows/ParameterInteraction.cs"))
+    cs_row = _strip_line_comments(_read("RawLabWindows/ParameterRow.cs"))
     cs_adj = _strip_line_comments(_read("RawLabWindows/Adjustments.cs"))
     cs_fx = _strip_line_comments(_read("RawLabWindows/PhotoEffectsSettings.cs"))
     cs_fx_panel = _strip_line_comments(_read("RawLabWindows/PhotoEffectsPanel.xaml.cs"))
+    cs_fx_win_unit = _fx_windows_unit()
     cs_dn = _strip_line_comments(_read("RawLabWindows/DenoiseSettings.cs"))
     cs_dn_panel = _strip_line_comments(_read("RawLabWindows/DenoisePanel.xaml.cs"))
+    cs_wb_panel = _strip_line_comments(_read("RawLabWindows/WhiteBalancePanel.cs"))
     cs_hsl_panel = _strip_line_comments(_read("RawLabWindows/HslPanel.cs"))
     cs_grad_panel = _strip_line_comments(_read("RawLabWindows/ColorGradingPanel.cs"))
     cs_curve_panel = _strip_line_comments(_read("RawLabWindows/ToneCurvePanel.cs"))
@@ -3026,10 +3660,12 @@ def _parse_windows_ui() -> dict[str, dict]:
     cs_geom_model = _strip_line_comments(_read("RawLabWindows/GeometrySettings.cs"))
     cs_lens_xaml = _read("RawLabWindows/LensPanel.xaml")
     cs_tools = _strip_line_comments(_read("RawLabWindows/MainWindow/Tools.cs"))
+    cs_ai = _strip_line_comments(_read("RawLabWindows/MainWindow/AIDenoise.cs"))
     cs_tv = _strip_line_comments(_read("RawLabWindows/AdjustmentTransferValues.cs"))
     cs_hdr_tx = _strip_line_comments(_read("RawLabWindows/HDRAdjustmentTransfer.cs"))
 
     cs_default_grid = float(_need(r"record NumericRange\(double Min,\s*double Max,\s*double Grid\s*=\s*(\.\d+|\d+(?:\.\d+)?)", cs_inter, "windows default grid", "ParameterInteraction.cs").group(1))
+    cs_row_default_suffix = _need(r'public void Refresh\(string title,NumericRange limits,double current,double reset,string suffix="([^"]*)"', cs_row, "windows ParameterRow default suffix", "ParameterRow.cs").group(1)
     cs_param_steps: dict[str, tuple[float, float, float, str]] = {}
     for m in re.finditer(
         r'new\(Parameter\.(\w+),"[^"]*","[^"]*",(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?),(-?\.\d+|\d+(?:\.\d+)?),"([^"]*)"',
@@ -3041,6 +3677,17 @@ def _parse_windows_ui() -> dict[str, dict]:
     cs_param_order = re.findall(r"[A-Za-z]\w*", _need(r"public enum Parameter \{([^}]*)\}", cs_adj, "windows Parameter order", "Adjustments.cs", re.S).group(1))
     cs_defaults = dict(zip(cs_param_order, cs_defaults_arr))
 
+    # White balance & Default(Parameter) resets (WhiteBalancePanel.cs + Adjustments.cs)
+    _require("settings.Default(Parameter.Temperature)", cs_wb_panel, "windows wb temp reset", "WhiteBalancePanel.cs")
+    _require("settings.Default(Parameter.Tint)", cs_wb_panel, "windows wb tint reset", "WhiteBalancePanel.cs")
+    cs_def_fn = _need(r"public double Default\(Parameter id\)\s*=>\s*([^\n]+(?:\n[^\n]+)?);", cs_adj, "windows Adjustments.Default", "Adjustments.cs").group(1)
+    cs_def_hdr_m = _need(r"IsHDREditing && \(id is Parameter\.Temperature or Parameter\.Tint\) \? id == Parameter\.Temperature \? (-?\d+(?:\.\d+)?) : (-?\d+(?:\.\d+)?)", cs_def_fn, "windows Default HDR WB", "Adjustments.cs")
+    cs_hdr_wb_temp_def = float(cs_def_hdr_m.group(1))
+    cs_hdr_wb_tint_def = float(cs_def_hdr_m.group(2))
+    cs_sdr_wb_temp_def = float(_need(r"id == Parameter\.Temperature \? AsShot\?\.Temperature \?\? (\d+(?:\.\d+)?)", cs_def_fn, "windows Default SDR temp", "Adjustments.cs").group(1))
+    cs_sdr_wb_tint_def = float(_need(r"id == Parameter\.Tint \? \(MasterRecipeID == null \? AsShot\?\.Tint \?\? (-?\d+(?:\.\d+)?) : (-?\d+(?:\.\d+)?)\)", cs_def_fn, "windows Default SDR tint", "Adjustments.cs").group(1))
+
+    cs_look_neutral = _need(r'else if\(edit\.Look==null\)\s*\{\s*kind="(\w+)";id=null;', cs_tv, "looks.reference windows wire", "AdjustmentTransferValues.cs").group(1)
     cs_exp_mode_idx = int(_need(r"public int ExposureMode \{ get; set; \} = (\d+);", cs_adj, "windows exp mode def", "Adjustments.cs").group(1))
     cs_exp_mode_list = _parse_quoted_list(_need(r"Put\(F\.ExposureMode,[^\n]*new\[\]\{([^}]+)\}", cs_tv, "windows exp mode list", "AdjustmentTransferValues.cs").group(1))
     cs_exp_mode_def = cs_exp_mode_list[cs_exp_mode_idx]
@@ -3051,12 +3698,21 @@ def _parse_windows_ui() -> dict[str, dict]:
 
     cs_ext_unit_m = _need(r'var unit=extensionControl \? "([^"]*)" : spec\.Unit;', cs_tools, "windows tone/atmos unit", "MainWindow/Tools.cs")
     cs_ext_range_m = _need(r"extensionControl \? new NumericRange\((-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\) : NumericRange\.For\(spec\)", cs_tools, "windows tone/atmos range", "MainWindow/Tools.cs")
+    cs_ext_def = float(_need(r"extensionControl \? (-?\d+(?:\.\d+)?) : settings\.Default\(selectedParameter\)", cs_tools, "windows tone/atmos default", "MainWindow/Tools.cs").group(1))
     cs_hdr_exp_m = _need(r"if\(settings\.IsHDREditing && selectedParameter==Parameter\.Exposure\)\s*\n?\s*inputRange=inputRange with \{ Min=(-?\d+(?:\.\d+)?),\s*Max=(-?\d+(?:\.\d+)?) \};", cs_tools, "windows hdr exposure bounds", "MainWindow/Tools.cs")
     scurve_m = _need(r'legacy\.Refresh\(Loc\.Text\("S 曲线"\),\s*new\((-?\d+),\s*(-?\d+)\),\s*scalar,\s*(-?\d+(?:\.\d+)?),\s*"([^"]*)"\)', cs_curve_panel, "windows s_curve ui", "ToneCurvePanel.cs")
 
-    cs_straight_m = _need(r'angle\.Refresh\(Loc\.Text\("拉直"\),new\((-?\d+),(-?\d+),(\.\d+),', cs_geom, "windows straighten ui", "GeometryPanel.xaml.cs")
-    cs_persp_m = _need(r'horizontal\.Refresh\(Loc\.Text\("水平透视"\),new\((-?\d+),(-?\d+),(\.\d+)', cs_geom, "windows persp ui", "GeometryPanel.xaml.cs")
-    cs_crop_m = _need(r"new\(i<2 \? 0 : (\.\d+),maxima\[i\]\*100,(\.\d+),", cs_geom, "windows crop ui", "GeometryPanel.xaml.cs")
+    # GeometryPanel.xaml.cs: parse horizontal & vertical perspective independently + straighten + crop
+    cs_straight_m = _need(r'angle\.Refresh\(Loc\.Text\("拉直"\),new\((-?\d+),(-?\d+),(\.\d+),[^;]+,value\.StraightenDegrees,(-?\d+(?:\.\d+)?),"([^"]*)"\);', cs_geom, "windows straighten ui", "GeometryPanel.xaml.cs")
+    cs_persp_h_m = _need(r'horizontal\.Refresh\(Loc\.Text\("水平透视"\),new\((-?\d+),(-?\d+),(\.\d+),[^\)]*\),value\.PerspectiveHorizontal,(-?\d+(?:\.\d+)?)\);', cs_geom, "windows persp H ui", "GeometryPanel.xaml.cs")
+    cs_persp_v_m = _need(r'vertical\.Refresh\(Loc\.Text\("垂直透视"\),new\((-?\d+),(-?\d+),(\.\d+),[^\)]*\),value\.PerspectiveVertical,(-?\d+(?:\.\d+)?)\);', cs_geom, "windows persp V ui", "GeometryPanel.xaml.cs")
+    cs_crop_m = _need(
+        r"crops\[i\]\.Refresh\(Loc\.Text\(names\[i\]\),\s*\n?\s*new\(i<2 \? (-?\d+(?:\.\d+)?) : (\.\d+),maxima\[i\]\*(\d+(?:\.\d+)?),(\.\d+),[^;]+,numbers\[i\]\*(\d+(?:\.\d+)?),i<2 \? (-?\d+(?:\.\d+)?) : (-?\d+(?:\.\d+)?),\"([^\"]*)\"\);",
+        cs_geom,
+        "windows crop ui",
+        "GeometryPanel.xaml.cs",
+        re.S,
+    )
     cs_qt_range = tuple(int(x) for x in _need(r"QuarterTurns is < (\d+) or > (\d+)", cs_geom_model, "windows qt bounds", "GeometrySettings.cs").groups())
     cs_qt_def = int(_need(r"int QuarterTurns = (\d+)", cs_geom_model, "windows qt def", "GeometrySettings.cs").group(1))
     cs_flip_h_def = _need(r"bool FlipHorizontal = (true|false)", cs_geom_model, "windows flipH def", "GeometrySettings.cs").group(1) == "true"
@@ -3068,6 +3724,7 @@ def _parse_windows_ui() -> dict[str, dict]:
         "vignetting": _need(r"bool Vignetting = (true|false)", cs_lens_hdr, "windows lens vig", "Adjustments.cs").group(1) == "true",
         "auto_crop": _need(r"bool AutoCrop = (true|false)", cs_lens_hdr, "windows lens autoCrop", "Adjustments.cs").group(1) == "true",
     }
+    _require("string? ProfileId = null", cs_lens_hdr, "windows lens profileId", "Adjustments.cs")
     _require_absent('x:Name="Vignetting"', cs_lens_xaml, "geometry.lens.vignetting windows sdr", "LensPanel.xaml")
     _require('LensToggle("暗角校正",draft.LensVignetting', cs_hdr, "geometry.lens.vignetting windows hdr toggle", "MainWindow.HDR.cs")
 
@@ -3076,28 +3733,43 @@ def _parse_windows_ui() -> dict[str, dict]:
     cs_hdr_cam_temp_step = float(cs_hdr_cam_temp_m.group(3))
     cs_hdr_cam_tint_step = float(cs_hdr_cam_tint_m.group(3))
     cs_hdr_look_m = _need(r'strength\.Refresh\(Loc\.Text\("外观强度"\),new\((-?\d+),(-?\d+),(\d+)\),[^,]+,(\d+),"([^"]*)"', cs_hdr, "windows hdr look ui", "MainWindow.HDR.cs")
-    cs_hdr_peak_m = _need(r'Add\("peakLimit","HDR 亮度上限",new\((-?\d+),(-?\d+)(?:,(\d+(?:\.\d+)?))?\),[^,]*,"([^"]*)"', cs_hdr, "windows hdr peak ui", "MainWindow.HDR.cs")
-    cs_hdr_sdr_exp_m = _need(r'Add\("sdrExposure","SDR 底图曝光",new\((-?\d+),(-?\d+)(?:,(\d+(?:\.\d+)?))?\),[^,]*,"([^"]*)"', cs_hdr, "windows hdr sdr_exp ui", "MainWindow.HDR.cs")
-    cs_hdr_sdr_con_m = _need(r'Add\("sdrContrast","SDR 底图对比度",new\((-?\d+),(-?\d+),(\d+(?:\.\d+)?)\),[^,]*,"([^"]*)"', cs_hdr, "windows hdr sdr_con ui", "MainWindow.HDR.cs")
-    cs_hdr_sdr_sat_m = _need(r'Add\("sdrSaturation","SDR 底图饱和度",new\((-?\d+),(-?\d+),(\d+(?:\.\d+)?)\),[^,]*,"([^"]*)"', cs_hdr, "windows hdr sdr_sat ui", "MainWindow.HDR.cs")
-    cs_hdr_dn_m = _need(r'HDRAmount\.Refresh\(Loc\.Text\("降噪"\),new\((-?\d+),(-?\d+)\),strength\*100,0,"([^"]*)"', cs_dn_panel, "windows hdr denoise ui", "DenoisePanel.xaml.cs")
-    cs_hdr_rel_temp_def = float(_need(r"public double Temperature \{ get; init; \} = (-?\d+(?:\.\d+)?);", cs_hdr_model, "windows hdr temp def", "HDRSettings.cs").group(1))
+    cs_hdr_rend_fn = _extract_brace_block(cs_hdr, r"private void HDRRenditionClicked\b", "windows hdr rendition dialog", "MainWindow.HDR.cs")
+    cs_hdr_rend_def = float(_need(r"void RefreshRow\(double current\)\s*=>\s*row\.Refresh\(localized,range,current,(-?\d+(?:\.\d+)?),unit\);", cs_hdr_rend_fn, "windows hdr rendition reset default", "MainWindow.HDR.cs").group(1))
+    cs_hdr_peak_m = _need(r'Add\("peakLimit","HDR 亮度上限",new\((-?\d+),(-?\d+)(?:,(\d+(?:\.\d+)?))?\),[^,]*,"([^"]*)"', cs_hdr_rend_fn, "windows hdr peak ui", "MainWindow.HDR.cs")
+    cs_hdr_sdr_exp_m = _need(r'Add\("sdrExposure","SDR 底图曝光",new\((-?\d+),(-?\d+)(?:,(\d+(?:\.\d+)?))?\),[^,]*,"([^"]*)"', cs_hdr_rend_fn, "windows hdr sdr_exp ui", "MainWindow.HDR.cs")
+    cs_hdr_sdr_con_m = _need(r'Add\("sdrContrast","SDR 底图对比度",new\((-?\d+),(-?\d+),(\d+(?:\.\d+)?)\),[^,]*,"([^"]*)"', cs_hdr_rend_fn, "windows hdr sdr_con ui", "MainWindow.HDR.cs")
+    cs_hdr_sdr_sat_m = _need(r'Add\("sdrSaturation","SDR 底图饱和度",new\((-?\d+),(-?\d+),(\d+(?:\.\d+)?)\),[^,]*,"([^"]*)"', cs_hdr_rend_fn, "windows hdr sdr_sat ui", "MainWindow.HDR.cs")
+    cs_hdr_dn_m = _need(r'HDRAmount\.Refresh\(Loc\.Text\("降噪"\),new\((-?\d+),(-?\d+)\),strength\*100,(-?\d+(?:\.\d+)?),"([^"]*)",true\);', cs_dn_panel, "windows hdr denoise ui", "DenoisePanel.xaml.cs")
 
     dn_m = _need(r"record DenoiseSettings\(bool Enabled=(false|true),double Luma=(\d+),double Chroma=(\d+),double Coarse=(\d+)\)", cs_dn, "windows wavelet ui", "DenoiseSettings.cs")
     _require("public static DenoiseSettings Detail => new(true);", cs_dn, "windows wavelet Detail preset", "DenoiseSettings.cs")
     cs_preset_zero = _need(r"int Preset => \(this with \{Enabled=true\}\)==(\w+) \? 0", cs_dn, "windows wavelet preset zero", "DenoiseSettings.cs").group(1).lower()
-    cs_wavelet_def = {"enabled": dn_m.group(1) == "true", "luma": float(dn_m.group(2)), "chroma": float(dn_m.group(3)), "coarse": float(dn_m.group(4)), "preset": cs_preset_zero}
-    cs_dn_range_m = _need(r"rows\[i\]\.Refresh\([^;]+,new\((-?\d+),(-?\d+)\)", cs_dn_panel, "windows wavelet range", "DenoisePanel.xaml.cs")
-    _cs_denoise_unit = _cs_denoise_percent_unit()
+    cs_dn_defs_m = _need(r"var defaults=new\[\]\{(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\};", cs_dn_panel, "windows wavelet panel defaults", "DenoisePanel.xaml.cs")
+    cs_wavelet_def = {
+        "enabled": dn_m.group(1) == "true",
+        "luma": float(cs_dn_defs_m.group(1)),
+        "chroma": float(cs_dn_defs_m.group(2)),
+        "coarse": float(cs_dn_defs_m.group(3)),
+        "preset": cs_preset_zero,
+    }
+    cs_dn_row_m = _need(r'rows\[i\]\.Refresh\([^;]+,new\((-?\d+),(-?\d+)\),numbers\[i\],defaults\[i\],"([^"]*)",value\.Enabled\);', cs_dn_panel, "windows wavelet range/unit", "DenoisePanel.xaml.cs")
 
-    cs_hsl_m = _need(r"rows\[axis\]\.Refresh\([^,]+,new\((-?\d+),(-?\d+)\)", cs_hsl_panel, "windows hsl ui", "HslPanel.cs")
-    _require("0,360", cs_grad_panel.replace(" ", ""), "windows grading hue", "ColorGradingPanel.cs")
+    cs_hsl_m = _need(r"rows\[axis\]\.Refresh\(Loc\.Text\(axisKeys\[axis\]\),new\((-?\d+),(-?\d+)\),value\.Value\(axis,channel\),(-?\d+(?:\.\d+)?),inputScope:", cs_hsl_panel, "windows hsl ui", "HslPanel.cs")
+    cs_grad_hue_m = _need(r'hue\.Refresh\(Loc\.Text\("色相"\),\s*new\((-?\d+),\s*(-?\d+)\),\s*selected\.Hue,\s*(-?\d+(?:\.\d+)?),\s*"([^"]*)"', cs_grad_panel, "windows grading hue", "ColorGradingPanel.cs")
+    cs_grad_sat_m = _need(r'saturation\.Refresh\(Loc\.Text\("饱和度"\),\s*new\((-?\d+),\s*(-?\d+)\),\s*selected\.Saturation,\s*(-?\d+(?:\.\d+)?),\s*"([^"]*)"', cs_grad_panel, "windows grading sat", "ColorGradingPanel.cs")
 
-    _fx_win_unit = _fx_windows_unit()
     cs_fx_defs: dict[str, tuple[float, float, float]] = {}
     for m in re.finditer(r"new\(PhotoEffectParameter\.(\w+),\s*Loc\.Text\([^\)]+\),\s*(?:true|false),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\)", cs_fx):
         cs_fx_defs[m.group(1)] = (float(m.group(2)), float(m.group(3)), float(m.group(4)))
     _require("rows[spec.Id].Refresh(Loc.Text(key.Title),new(spec.Min,spec.Max),value[spec.Id],spec.DefaultValue,", cs_fx_panel, "windows effects panel", "PhotoEffectsPanel.xaml.cs")
+
+    # AI denoise toggles (Adjustments.cs defaults + MainWindow/AIDenoise.cs UI disable handler)
+    _require("settings.ActiveAIDenoise=false", cs_ai, "local.ai_denoise disable windows", "MainWindow/AIDenoise.cs")
+    _require("public bool AIDenoiseEnabled { get; set; }", cs_adj, "local.ai_denoise_enabled field windows", "Adjustments.cs")
+    _require("internal bool HDRCameraAIEnabled { get; set; }", cs_adj, "local.hdr_camera_ai_enabled field windows", "Adjustments.cs")
+    _require("AIDenoiseEnabled = HDRCameraAIEnabled = false;", cs_adj, "windows AI denoise ResetAll false", "Adjustments.cs")
+    cs_ai_denoise_def = False
+    cs_hdr_cam_ai_def = False
 
     cs_hdr_cam_params = _need(r"internal sealed record HDRCameraDevelopmentSettings\(([^)]+)\)", cs_hdr_model, "hdr cam win ui", "HDRSettings.cs").group(1)
     cs_hdr_cam_tx = _need(r"private static JsonElement CameraValue\([^)]*\)\s*=>\s*Value\(new \{(.*?)\}\);", cs_hdr_tx, "hdr cam win wire", "HDRAdjustmentTransfer.cs", re.S).group(1)
@@ -3107,7 +3779,7 @@ def _parse_windows_ui() -> dict[str, dict]:
     cs_hdr_ref_pair = _need(r'camera\.SensorExposure \? "([^"]+)" : "([^"]+)"', cs_hdr_cam_tx, "hdr cam win ref wire", "HDRAdjustmentTransfer.cs")
 
     ui: dict[str, dict] = {}
-    ui["looks.reference"] = _ui_entry(modes=("sdr",), default={"kind": "neutral", "id": None})
+    ui["looks.reference"] = _ui_entry(modes=("sdr",), default={"kind": cs_look_neutral, "id": None})
     ui["looks.strength"] = _ui_entry(modes=("sdr",), unit=cs_param_steps["Strength"][3], min_val=cs_param_steps["Strength"][0], max_val=cs_param_steps["Strength"][1], default=cs_defaults["Strength"], step=cs_param_steps["Strength"][2])
     ui["light.exposure"] = _ui_entry(unit=cs_param_steps["Exposure"][3], min_val=cs_param_steps["Exposure"][0], max_val=cs_param_steps["Exposure"][1], hdr_min=float(cs_hdr_exp_m.group(1)), hdr_max=float(cs_hdr_exp_m.group(2)), default=cs_defaults["Exposure"], step=cs_param_steps["Exposure"][2])
     ui["light.exposure_mode"] = _ui_entry(modes=("sdr",), default=cs_exp_mode_def)
@@ -3115,23 +3787,26 @@ def _parse_windows_ui() -> dict[str, dict]:
     for fid, k in (("light.contrast", "Contrast"), ("light.highlights", "Highlights"), ("light.shadows", "Shadows"), ("color.saturation", "Saturation")):
         ui[fid] = _ui_entry(unit=cs_param_steps[k][3], min_val=cs_param_steps[k][0], max_val=cs_param_steps[k][1], default=cs_defaults[k], step=cs_default_grid)
     for fid in ("tone.black_point", "tone.white_point", "color.vibrance", "effects.clarity", "effects.dehaze"):
-        ui[fid] = _ui_entry(unit=cs_ext_unit_m.group(1), min_val=float(cs_ext_range_m.group(1)), max_val=float(cs_ext_range_m.group(2)), default=0.0, step=cs_default_grid)
+        ui[fid] = _ui_entry(unit=cs_ext_unit_m.group(1), min_val=float(cs_ext_range_m.group(1)), max_val=float(cs_ext_range_m.group(2)), default=cs_ext_def, step=cs_default_grid)
     ui["light.s_curve"] = _ui_entry(unit=scurve_m.group(4), min_val=float(scurve_m.group(1)), max_val=float(scurve_m.group(2)), default=float(scurve_m.group(3)), step=cs_default_grid)
     ui["light.curve"] = _ui_curve_entry("windows")
 
     for zone in ("shadows", "midtones", "highlights"):
-        ui[f"color.grading.{zone}"] = _ui_entry(default={"hue": 0.0, "saturation": 0.0}, step={"hue": cs_default_grid, "saturation": cs_default_grid})
+        ui[f"color.grading.{zone}"] = _ui_entry(
+            default={"hue": float(cs_grad_hue_m.group(3)), "saturation": float(cs_grad_sat_m.group(3))},
+            step={"hue": cs_default_grid, "saturation": cs_default_grid},
+        )
 
     ui["color.white_balance.mode"] = _ui_entry(modes=("sdr",), default=cs_wb_mode_def)
-    ui["color.white_balance.temperature_kelvin"] = _ui_entry(modes=("sdr",), unit=cs_param_steps["Temperature"][3], min_val=cs_param_steps["Temperature"][0], max_val=cs_param_steps["Temperature"][1], default=cs_defaults["Temperature"], step=cs_param_steps["Temperature"][2])
-    ui["color.white_balance.tint"] = _ui_entry(modes=("sdr",), unit=cs_param_steps["Tint"][3], min_val=cs_param_steps["Tint"][0], max_val=cs_param_steps["Tint"][1], default=cs_defaults["Tint"], step=cs_param_steps["Tint"][2])
+    ui["color.white_balance.temperature_kelvin"] = _ui_entry(modes=("sdr",), unit=cs_param_steps["Temperature"][3], min_val=cs_param_steps["Temperature"][0], max_val=cs_param_steps["Temperature"][1], default=cs_sdr_wb_temp_def, step=cs_param_steps["Temperature"][2])
+    ui["color.white_balance.tint"] = _ui_entry(modes=("sdr",), unit=cs_param_steps["Tint"][3], min_val=cs_param_steps["Tint"][0], max_val=cs_param_steps["Tint"][1], default=cs_sdr_wb_tint_def, step=cs_param_steps["Tint"][2])
 
-    ui["hdr.relative_temperature"] = _ui_entry(modes=("hdr",), unit=cs_param_steps["Temperature"][3], min_val=cs_param_steps["Temperature"][0], max_val=cs_param_steps["Temperature"][1], default=cs_hdr_rel_temp_def, step=cs_param_steps["Temperature"][2])
-    ui["hdr.relative_tint"] = _ui_entry(modes=("hdr",), unit=cs_param_steps["Tint"][3], min_val=cs_param_steps["Tint"][0], max_val=cs_param_steps["Tint"][1], default=0.0, step=cs_param_steps["Tint"][2])
-    ui["hdr.peak_limit_ev"] = _ui_entry(modes=("hdr",), unit=cs_hdr_peak_m.group(4), min_val=float(cs_hdr_peak_m.group(1)), max_val=float(cs_hdr_peak_m.group(2)), default=0.0, step=float(cs_hdr_peak_m.group(3) or cs_default_grid))
-    ui["hdr.sdr_exposure_ev"] = _ui_entry(modes=("hdr",), unit=cs_hdr_sdr_exp_m.group(4), min_val=float(cs_hdr_sdr_exp_m.group(1)), max_val=float(cs_hdr_sdr_exp_m.group(2)), default=0.0, step=float(cs_hdr_sdr_exp_m.group(3) or cs_default_grid))
-    ui["hdr.sdr_contrast"] = _ui_entry(modes=("hdr",), unit=cs_hdr_sdr_con_m.group(4), min_val=float(cs_hdr_sdr_con_m.group(1)), max_val=float(cs_hdr_sdr_con_m.group(2)), default=0.0, step=float(cs_hdr_sdr_con_m.group(3)))
-    ui["hdr.sdr_saturation"] = _ui_entry(modes=("hdr",), unit=cs_hdr_sdr_sat_m.group(4), min_val=float(cs_hdr_sdr_sat_m.group(1)), max_val=float(cs_hdr_sdr_sat_m.group(2)), default=0.0, step=float(cs_hdr_sdr_sat_m.group(3)))
+    ui["hdr.relative_temperature"] = _ui_entry(modes=("hdr",), unit=cs_param_steps["Temperature"][3], min_val=cs_param_steps["Temperature"][0], max_val=cs_param_steps["Temperature"][1], default=cs_hdr_wb_temp_def, step=cs_param_steps["Temperature"][2])
+    ui["hdr.relative_tint"] = _ui_entry(modes=("hdr",), unit=cs_param_steps["Tint"][3], min_val=cs_param_steps["Tint"][0], max_val=cs_param_steps["Tint"][1], default=cs_hdr_wb_tint_def, step=cs_param_steps["Tint"][2])
+    ui["hdr.peak_limit_ev"] = _ui_entry(modes=("hdr",), unit=cs_hdr_peak_m.group(4), min_val=float(cs_hdr_peak_m.group(1)), max_val=float(cs_hdr_peak_m.group(2)), default=cs_hdr_rend_def, step=float(cs_hdr_peak_m.group(3) or cs_default_grid))
+    ui["hdr.sdr_exposure_ev"] = _ui_entry(modes=("hdr",), unit=cs_hdr_sdr_exp_m.group(4), min_val=float(cs_hdr_sdr_exp_m.group(1)), max_val=float(cs_hdr_sdr_exp_m.group(2)), default=cs_hdr_rend_def, step=float(cs_hdr_sdr_exp_m.group(3) or cs_default_grid))
+    ui["hdr.sdr_contrast"] = _ui_entry(modes=("hdr",), unit=cs_hdr_sdr_con_m.group(4), min_val=float(cs_hdr_sdr_con_m.group(1)), max_val=float(cs_hdr_sdr_con_m.group(2)), default=cs_hdr_rend_def, step=float(cs_hdr_sdr_con_m.group(3)))
+    ui["hdr.sdr_saturation"] = _ui_entry(modes=("hdr",), unit=cs_hdr_sdr_sat_m.group(4), min_val=float(cs_hdr_sdr_sat_m.group(1)), max_val=float(cs_hdr_sdr_sat_m.group(2)), default=cs_hdr_rend_def, step=float(cs_hdr_sdr_sat_m.group(3)))
     ui["hdr.look"] = _ui_entry(modes=("hdr",), unit=cs_hdr_look_m.group(5), min_val=float(cs_hdr_look_m.group(1)), max_val=float(cs_hdr_look_m.group(2)), default=float(cs_hdr_look_m.group(4)), step={"strength": float(cs_hdr_look_m.group(3))})
     ui["hdr.camera_development"] = _ui_entry(
         modes=("hdr",),
@@ -3146,9 +3821,10 @@ def _parse_windows_ui() -> dict[str, dict]:
         step={"temperature": cs_hdr_cam_temp_step, "tint": cs_hdr_cam_tint_step},
     )
 
+    hsl_def = float(cs_hsl_m.group(3))
     for axis in HSL_AXES:
         for ch in HSL_CHANNELS:
-            ui[f"color.hsl.{axis}.{ch}"] = _ui_entry(unit="", min_val=float(cs_hsl_m.group(1)), max_val=float(cs_hsl_m.group(2)), default=0.0, step=cs_default_grid)
+            ui[f"color.hsl.{axis}.{ch}"] = _ui_entry(unit=cs_row_default_suffix, min_val=float(cs_hsl_m.group(1)), max_val=float(cs_hsl_m.group(2)), default=hsl_def, step=cs_default_grid)
 
     fx_map = (
         ("effects.vignette.amount", "VignetteAmount"),
@@ -3162,30 +3838,30 @@ def _parse_windows_ui() -> dict[str, dict]:
     )
     for fid, cs_name in fx_map:
         lo, hi, dflt = _need_key(cs_fx_defs, cs_name, fid, "PhotoEffectsSettings.cs")
-        ui[fid] = _ui_entry(unit=_fx_win_unit, min_val=lo, max_val=hi, default=dflt, step=cs_default_grid)
+        ui[fid] = _ui_entry(unit=cs_fx_win_unit, min_val=lo, max_val=hi, default=dflt, step=cs_default_grid)
 
     ui["detail.sharpening"] = _ui_entry(unit=cs_param_steps["Sharpening"][3], min_val=cs_param_steps["Sharpening"][0], max_val=cs_param_steps["Sharpening"][1], default=cs_defaults["Sharpening"], step=cs_param_steps["Sharpening"][2])
     ui["detail.denoise.raw_level"] = _ui_entry(exposed=False, modes=())
-    ui["detail.denoise.post_rgb"] = _ui_entry(modes=("hdr",), unit=cs_hdr_dn_m.group(3), min_val=float(cs_hdr_dn_m.group(1)), max_val=float(cs_hdr_dn_m.group(2)), default=0.0, step=cs_default_grid)
+    ui["detail.denoise.post_rgb"] = _ui_entry(modes=("hdr",), unit=cs_hdr_dn_m.group(4), min_val=float(cs_hdr_dn_m.group(1)), max_val=float(cs_hdr_dn_m.group(2)), default=float(cs_hdr_dn_m.group(3)), step=cs_default_grid)
     ui["detail.denoise.chroma_mode"] = _ui_entry(exposed=False, modes=())
-    ui["detail.denoise.wavelet"] = _ui_entry(modes=("sdr",), unit=_cs_denoise_unit, min_val=float(cs_dn_range_m.group(1)), max_val=float(cs_dn_range_m.group(2)), default=cs_wavelet_def, step={"luma": cs_default_grid, "chroma": cs_default_grid, "coarse": cs_default_grid})
+    ui["detail.denoise.wavelet"] = _ui_entry(modes=("sdr",), unit=cs_dn_row_m.group(3), min_val=float(cs_dn_row_m.group(1)), max_val=float(cs_dn_row_m.group(2)), default=cs_wavelet_def, step={"luma": cs_default_grid, "chroma": cs_default_grid, "coarse": cs_default_grid})
 
     for fid in ("geometry.crop.x", "geometry.crop.y"):
-        ui[fid] = _ui_entry(unit="%", min_val=0.0, max_val=100.0, default=0.0, step=float(cs_crop_m.group(2)))
+        ui[fid] = _ui_entry(unit=cs_crop_m.group(8), min_val=float(cs_crop_m.group(1)), max_val=float(cs_crop_m.group(3)), default=float(cs_crop_m.group(6)), step=float(cs_crop_m.group(4)))
     for fid in ("geometry.crop.width", "geometry.crop.height"):
-        ui[fid] = _ui_entry(unit="%", min_val=float(cs_crop_m.group(1)), max_val=100.0, default=100.0, step=float(cs_crop_m.group(2)))
+        ui[fid] = _ui_entry(unit=cs_crop_m.group(8), min_val=float(cs_crop_m.group(2)), max_val=float(cs_crop_m.group(3)), default=float(cs_crop_m.group(7)), step=float(cs_crop_m.group(4)))
     ui["geometry.quarter_turns"] = _ui_entry(min_val=cs_qt_range[0], max_val=cs_qt_range[1], default=cs_qt_def, step=1)
     ui["geometry.flip_horizontal"] = _ui_entry(default=cs_flip_h_def)
     ui["geometry.flip_vertical"] = _ui_entry(default=cs_flip_v_def)
-    ui["geometry.straighten_degrees"] = _ui_entry(unit="°", min_val=float(cs_straight_m.group(1)), max_val=float(cs_straight_m.group(2)), default=0.0, step=float(cs_straight_m.group(3)))
-    for fid in ("geometry.perspective.horizontal", "geometry.perspective.vertical"):
-        ui[fid] = _ui_entry(unit="", min_val=float(cs_persp_m.group(1)), max_val=float(cs_persp_m.group(2)), default=0.0, step=float(cs_persp_m.group(3)))
+    ui["geometry.straighten_degrees"] = _ui_entry(unit=cs_straight_m.group(5), min_val=float(cs_straight_m.group(1)), max_val=float(cs_straight_m.group(2)), default=float(cs_straight_m.group(4)), step=float(cs_straight_m.group(3)))
+    ui["geometry.perspective.horizontal"] = _ui_entry(unit=cs_row_default_suffix, min_val=float(cs_persp_h_m.group(1)), max_val=float(cs_persp_h_m.group(2)), default=float(cs_persp_h_m.group(4)), step=float(cs_persp_h_m.group(3)))
+    ui["geometry.perspective.vertical"] = _ui_entry(unit=cs_row_default_suffix, min_val=float(cs_persp_v_m.group(1)), max_val=float(cs_persp_v_m.group(2)), default=float(cs_persp_v_m.group(4)), step=float(cs_persp_v_m.group(3)))
     for fid, key in (("geometry.lens.distortion", "distortion"), ("geometry.lens.tca", "tca"), ("geometry.lens.auto_crop", "auto_crop")):
         ui[fid] = _ui_entry(modes=("sdr", "hdr"), default=cs_lens_defs[key])
     ui["geometry.lens.vignetting"] = _ui_entry(exposed=True, modes=("hdr",), default=cs_lens_defs["vignetting"])
     ui["geometry.lens.profile_id"] = _ui_entry(modes=("sdr",), default=None)
-    ui["local.ai_denoise_enabled"] = _ui_entry(modes=("sdr",), default=False)
-    ui["local.hdr_camera_ai_enabled"] = _ui_entry(modes=("hdr",), default=False)
+    ui["local.ai_denoise_enabled"] = _ui_entry(modes=("sdr",), default=cs_ai_denoise_def)
+    ui["local.hdr_camera_ai_enabled"] = _ui_entry(modes=("hdr",), default=cs_hdr_cam_ai_def)
     return ui
 
 
@@ -3215,11 +3891,44 @@ def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
 # ---------------------------------------------------------------------------
 
 
+def _assert_layer_entry_matches(
+    layer: str,
+    fid: str,
+    platform: str,
+    spec_entry: dict,
+    source_entry: dict,
+    unanchored_skips: dict[tuple[str, str, str, str], str],
+    used_skips: set[tuple[str, str, str, str]],
+    label: str,
+) -> None:
+    for attr, src_val in source_entry.items():
+        key = (layer, fid, platform, attr)
+        if src_val is _UNANCHORED:
+            if key not in unanchored_skips:
+                raise AssertionError(
+                    f"Unregistered _UNANCHORED attribute {key}: register it in UNANCHORED_SKIPS or anchor it"
+                )
+            if attr not in spec_entry:
+                raise AssertionError(f"Spec missing attribute {attr!r} on {label}")
+            used_skips.add(key)
+        elif key in unanchored_skips:
+            raise AssertionError(
+                f"Stale UNANCHORED_SKIPS entry {key}: source parser produced {src_val!r}, not _UNANCHORED"
+            )
+    filtered_spec = {k: v for k, v in spec_entry.items() if (layer, fid, platform, k) not in unanchored_skips}
+    filtered_source = {k: v for k, v in source_entry.items() if (layer, fid, platform, k) not in unanchored_skips}
+    if filtered_spec != filtered_source:
+        raise AssertionError(
+            f"{label}:\n  spec   = {spec_entry}\n  source = {source_entry}"
+        )
+
+
 def validate_layer1_protocol(
     document: dict,
     apple_parsed: tuple[list[str], dict[str, dict], dict[str, str]],
     android_parsed: tuple[list[str], dict[str, dict], dict[str, str]],
     windows_parsed: tuple[list[str], dict[str, dict], dict[str, str]],
+    unanchored_skips: dict[tuple[str, str, str, str], str] = UNANCHORED_SKIPS,
 ) -> None:
     apple_order, apple_proto, apple_groups = apple_parsed
     android_order, android_proto, android_groups = android_parsed
@@ -3258,6 +3967,7 @@ def validate_layer1_protocol(
             if fid in pmap:
                 raise AssertionError(f"Local-only field {fid} unexpectedly found in {platform} wire protocol")
 
+    used_skips: set[tuple[str, str, str, str]] = set()
     for entry in transfer_entries:
         fid = entry["field_id"]
         spec_proto = {k: v for k, v in entry["protocol"].items() if k != "protocol_group_divergences"}
@@ -3276,32 +3986,52 @@ def validate_layer1_protocol(
                 raise AssertionError(
                     f"Protocol 4-end hard parity broken on {fid} ({platform} vs macos): {actual} != {ref}"
                 )
-            if actual != spec_proto:
-                raise AssertionError(
-                    f"Spec protocol drift on {fid} ({platform}): spec={spec_proto} != source={actual}"
-                )
+            _assert_layer_entry_matches(
+                "proto",
+                fid,
+                platform,
+                spec_proto,
+                actual,
+                unanchored_skips,
+                used_skips,
+                f"Spec protocol drift on {fid} ({platform})",
+            )
             expected_group = group_overrides.get(platform, entry["group"])
             actual_group = platform_groups[platform][fid]
             if actual_group != expected_group:
                 raise AssertionError(
                     f"Protocol group drift on {fid} ({platform}): expected {expected_group!r}, got {actual_group!r}"
                 )
+    unused = sorted(k for k in unanchored_skips if k[0] == "proto" and k not in used_skips)
+    if unused:
+        raise AssertionError(f"Unused UNANCHORED_SKIPS entries for proto: {unused}")
 
 
-def validate_layer2_model(document: dict, parsed_models: dict[str, dict[str, dict]]) -> None:
+def validate_layer2_model(
+    document: dict,
+    parsed_models: dict[str, dict[str, dict]],
+    unanchored_skips: dict[tuple[str, str, str, str], str] = UNANCHORED_SKIPS,
+) -> None:
     spec_by_id = {f["field_id"]: f for f in document["fields"]}
     if set(spec_by_id) != set(parsed_models):
         raise AssertionError(f"Model parser field set mismatch: {set(spec_by_id) ^ set(parsed_models)}")
 
+    used_skips: set[tuple[str, str, str, str]] = set()
     for fid, entry in spec_by_id.items():
         proto = entry["protocol"]
         for platform in PLATFORMS:
             expected = parsed_models[fid][platform]
             actual = entry["model"][platform]
-            if actual != expected:
-                raise AssertionError(
-                    f"Model parity drift on {fid}.{platform}:\n  spec   = {actual}\n  source = {expected}"
-                )
+            _assert_layer_entry_matches(
+                "model",
+                fid,
+                platform,
+                actual,
+                expected,
+                unanchored_skips,
+                used_skips,
+                f"Model parity drift on {fid}.{platform}",
+            )
             # Verify declared conversion formula maps protocol bounds/neutral to model bounds
             if (
                 actual["supported"]
@@ -3318,21 +4048,38 @@ def validate_layer2_model(document: dict, parsed_models: dict[str, dict[str, dic
                         f"[{p_lo}, {p_hi}] -> {m_vals}, expected [{actual['min']}, {actual['max']}]"
                     )
             _check_hdr_endpoints(fid, platform, proto, actual)
+    unused = sorted(k for k in unanchored_skips if k[0] == "model" and k not in used_skips)
+    if unused:
+        raise AssertionError(f"Unused UNANCHORED_SKIPS entries for model: {unused}")
 
 
-def validate_layer3_ui(document: dict, parsed_ui: dict[str, dict[str, dict]]) -> None:
+def validate_layer3_ui(
+    document: dict,
+    parsed_ui: dict[str, dict[str, dict]],
+    unanchored_skips: dict[tuple[str, str, str, str], str] = UNANCHORED_SKIPS,
+) -> None:
     spec_by_id = {f["field_id"]: f for f in document["fields"]}
     if set(spec_by_id) != set(parsed_ui):
         raise AssertionError(f"UI parser field set mismatch: {set(spec_by_id) ^ set(parsed_ui)}")
 
+    used_skips: set[tuple[str, str, str, str]] = set()
     for fid, entry in spec_by_id.items():
         for platform in PLATFORMS:
             expected = parsed_ui[fid][platform]
             actual = entry["ui"][platform]
-            if actual != expected:
-                raise AssertionError(
-                    f"UI parity drift on {fid}.{platform}:\n  spec   = {actual}\n  source = {expected}"
-                )
+            _assert_layer_entry_matches(
+                "ui",
+                fid,
+                platform,
+                actual,
+                expected,
+                unanchored_skips,
+                used_skips,
+                f"UI parity drift on {fid}.{platform}",
+            )
+    unused = sorted(k for k in unanchored_skips if k[0] == "ui" and k not in used_skips)
+    if unused:
+        raise AssertionError(f"Unused UNANCHORED_SKIPS entries for ui: {unused}")
 
 
 class AdjustmentFieldsSpecTests(unittest.TestCase):
@@ -3461,17 +4208,34 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
         src = Path(__file__).read_text(encoding="utf-8")
         self.assertNotIn("_snap" + "4", src)
         self.assertNotIn("SNAPSHOT_" + "REGISTRATIONS", src)
+        spec_by_id = {f["field_id"]: f for f in self.document["fields"]}
         for key, reason in UNANCHORED_SKIPS.items():
             self.assertEqual(len(key), 4)
             layer, fid, plat, attr = key
             self.assertIn(layer, ("proto", "model", "ui"))
+            self.assertIn(fid, spec_by_id)
             self.assertIn(plat, PLATFORMS)
+            layer_doc = spec_by_id[fid]["protocol"] if layer == "proto" else spec_by_id[fid][layer][plat]
+            self.assertIn(attr, layer_doc)
             self.assertTrue(isinstance(reason, str) and reason.strip(), f"Empty skip reason for {key}")
+        expected_skips = {
+            ("ui", "hdr.look", "macos", "default"),
+            ("ui", "hdr.look", "ios", "default"),
+        }
         self.assertEqual(
-            UNANCHORED_SKIPS,
-            {},
+            set(UNANCHORED_SKIPS),
+            expected_skips,
             f"Unexpected unanchored skips registered: {UNANCHORED_SKIPS}",
         )
+        # Verify validators reject unregistered _UNANCHORED and stale skip keys
+        with self.assertRaisesRegex(AssertionError, r"Unregistered _UNANCHORED"):
+            validate_layer3_ui(self.document, self.parsed_ui, unanchored_skips={})
+        with self.assertRaisesRegex(AssertionError, r"Stale UNANCHORED_SKIPS"):
+            validate_layer3_ui(
+                self.document,
+                self.parsed_ui,
+                unanchored_skips={**UNANCHORED_SKIPS, ("ui", "light.contrast", "macos", "default"): "stale"},
+            )
 
     def test_layer1_protocol_four_end_hard_parity(self):
         validate_layer1_protocol(
@@ -3605,6 +4369,77 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
                 validate_layer2_model(self.document, mut_models)
             with self.assertRaisesRegex(AssertionError, r"effects\.vignette\.midpoint\.windows"):
                 validate_layer3_ui(self.document, mut_ui)
+
+        # 7e..7j: Real UI-only source mutations (Blocking #321-1 .. #321-6)
+        ui_mutations = [
+            (
+                "RawLabMac/Sources/Adjustments/AdjustmentTypes.swift",
+                'case .blackPoint: return AdjustmentSpec(title: L10n.text("黑场"), keyPath: \\.blackPoint, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)',
+                'case .blackPoint: return AdjustmentSpec(title: L10n.text("黑场"), keyPath: \\.blackPoint, range: -100...100, defaultValue: 0, step: 0.1, unit: "", decimals: 1)',
+                r"tone\.black_point\.macos",
+            ),
+            (
+                "RawLabMac/Sources/Editor/View/AdjustmentDock.swift",
+                "let range: ClosedRange<Double> = tool == .hdrPeakLimit ? 0...6 : (isEV ? -4...4 : -100...100)",
+                "let range: ClosedRange<Double> = tool == .hdrPeakLimit ? 0...8 : (isEV ? -4...4 : -100...100)",
+                r"hdr\.peak_limit_ev\.macos",
+            ),
+            (
+                "RawLabMac/Sources/Adjustments/AdjustmentTypes.swift",
+                "if settings.isHDREditing && self == .denoiseMode {\n            return AdjustmentSpec(title: value.title, keyPath: value.keyPath, range: 0...1,",
+                "if settings.isHDREditing && self == .denoiseMode {\n            return AdjustmentSpec(title: value.title, keyPath: value.keyPath, range: 0...2,",
+                r"detail\.denoise\.post_rgb\.macos",
+            ),
+            (
+                "RawLab/RawLab/UI/Panels/AdjustmentPanels.swift",
+                "range: RawSettings.tintRange, step: 1,",
+                "range: RawSettings.tintRange, step: 2,",
+                r"color\.white_balance\.tint\.ios",
+            ),
+            (
+                "Shared/Native/HDRMonitoring.swift",
+                'slider("SDR 底图曝光", value: $settings.sdrExposureEV, range: -4...4, step: 0.1, id: "sdrExposure", unit: "EV")',
+                'slider("SDR 底图曝光", value: $settings.sdrExposureEV, range: -4...4, step: 0.2, id: "sdrExposure", unit: "EV")',
+                r"hdr\.sdr_exposure_ev\.macos",
+            ),
+            (
+                "RawLabWindows/GeometryPanel.xaml.cs",
+                'vertical.Refresh(Loc.Text("垂直透视"),new(-1,1,.001,.01,.001),value.PerspectiveVertical,0);',
+                'vertical.Refresh(Loc.Text("垂直透视"),new(-2,2,.001,.01,.001),value.PerspectiveVertical,0);',
+                r"geometry\.perspective\.vertical\.windows",
+            ),
+            (
+                "RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/EditorScreen.kt",
+                "{ change(settings.copy(sdrExposureEV = 0f), false) }, stepOverride = .1f)",
+                "{ change(settings.copy(sdrExposureEV = 0f), false) }, stepOverride = .2f)",
+                r"hdr\.sdr_exposure_ev\.android",
+            ),
+            (
+                "RawLabAndroid/app/src/main/java/com/rawlab/android/editor/geometry/GeometryControls.kt",
+                "NumericControl(R.string.geometry_perspective_vertical, value.perspectiveVertical * 100f, -100f..100f",
+                "NumericControl(R.string.geometry_perspective_vertical, value.perspectiveVertical * 100f, -50f..50f",
+                r"geometry\.perspective\.vertical\.android",
+            ),
+            (
+                "RawLabMac/Sources/Controls/MacColorGradingControls.swift",
+                '}), range: 0...360, defaultValue: 0, unit: "°"',
+                '}), range: 0...360, defaultValue: 1, unit: "°"',
+                r"color\.grading\.shadows\.macos",
+            ),
+        ]
+        for rel_path, old, new, expected_re in ui_mutations:
+            with mock.patch(f"{__name__}._read", side_effect=_mutated_reader(rel_path, old, new)):
+                mut_ui = parse_ui_from_sources()
+                if rel_path.endswith("AdjustmentPanels.swift"):
+                    self.assertEqual(mut_ui["hdr.relative_tint"]["ios"]["step"], 2.0)
+                if rel_path.endswith("HDRMonitoring.swift"):
+                    self.assertEqual(mut_ui["hdr.sdr_exposure_ev"]["ios"]["step"], 0.2)
+                if rel_path.endswith("GeometryPanel.xaml.cs"):
+                    self.assertEqual(mut_ui["geometry.perspective.horizontal"]["windows"]["min"], -1.0)
+                if rel_path.endswith("GeometryControls.kt"):
+                    self.assertEqual(mut_ui["geometry.perspective.horizontal"]["android"]["min"], -100.0)
+                with self.assertRaisesRegex(AssertionError, expected_re):
+                    validate_layer3_ui(self.document, mut_ui)
 
 
 if __name__ == "__main__":
