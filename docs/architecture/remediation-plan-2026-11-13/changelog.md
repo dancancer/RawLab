@@ -169,3 +169,4 @@
 - 2026-11-14 · 107 轮：#326 r2 交卷（98e87bf3）二轮碳审在途；**P2-01 开工**（编辑记录共享 golden fixture+X1 读侧，氢单，指令含「先查与 transfer 向量关系防重复建框」）。在途：碳审 ×4（326r2/327r2/328/329）、氢单 ×1（P2-01）。
 - 2026-11-14 · #328 打回一条 medium：守卫/ABI 获认可，raw_cache_preview 测试卫生三连（坏路径静默 0、缺 RAWLAB_TEST_RAW 回退、无素材应 77 而记 Passed——评审实测抓出一条假绿口径，正撞刚立的「行为红/三态」纪律）。raw-cache crew 续修。
 - 2026-11-14 · #328 r2 交卷（`51f1a7b6`）：测试卫生三连修+三态实测，意外揪出 makeRequest 按值 string 悬垂（旧码靠已释放内存残留侥幸绿）；全量口径改如实 170/0/26。二轮碳审在途（review-mwg8mzxm，悬垂属测试侧还是生产 UB 待裁）。
+- 2026-11-14 · P3 轻修批次开工（p3-batch crew）：P3-01 TOCTOU/symlink、P3-02 Windows staging 残留、P3-03 取消异常经 ImageEncoder 退化、P3-06 metal_stats 兜底不吞取消；P3-04/05 压后（gles_lut/metal_lut 与 #327 同文件）。D-05 复核未过确认待修（iOS 对 12.5 小数抛 unrepresentable vs Android 分派），压至 P2-01 交卷防同文件碰撞。
