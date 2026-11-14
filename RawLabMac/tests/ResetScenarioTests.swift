@@ -31,25 +31,10 @@ struct ResetScenarioTests {
     /// 1) 去除 `@spec_default` 后按实线基线为 macOS 4 条字段级表示分歧（2 场景 × 2 字段，见下文 `P2-23`）；
     /// 2) 收口计划（`P2-23` / `S1`）：Mac SDR `Adjustments` 消解 `chromaNoiseReduction` / `waveletNoiseReduction`
     ///    置 nil 序列化（改为显式默认 `0` 与关闭对象）后，按 `4 -> 2 -> 0` 或 `4 -> 0` 下降；禁止上调上限或留存已修复项。
-    static let maxKnownFieldDivergences = 4
+    static let maxKnownFieldDivergences = 0
 
     /// 显式例外清单（逐条精确到 `(scenario, field)`）：未登记的分歧或清单外字段差异必红；已修复仍留档也必红。
-    static let knownResetDivergences: [String: ResetDivergence] = [
-        "all-reset-raw": ResetDivergence(
-            ledgerId: "P2-23",
-            fieldReasons: [
-                "detail.denoise.chroma_mode": "Mac SDR Adjustments resets chromaNoiseReduction to nil (wire null) rather than explicit 0; close via P2-23/S1 SDR chroma default serialization.",
-                "detail.denoise.wavelet": "Mac SDR Adjustments resets waveletNoiseReduction to nil (wire null) rather than disabled wavelet object; close via P2-23/S1 SDR wavelet default serialization."
-            ]
-        ),
-        "group-reset-detail-raw": ResetDivergence(
-            ledgerId: "P2-23",
-            fieldReasons: [
-                "detail.denoise.chroma_mode": "Mac detail-group reset clears chromaNoiseReduction to nil (wire null) rather than explicit 0; close via P2-23/S1 SDR chroma default serialization.",
-                "detail.denoise.wavelet": "Mac detail-group reset clears waveletNoiseReduction to nil (wire null) rather than disabled wavelet object; close via P2-23/S1 SDR wavelet default serialization."
-            ]
-        ),
-    ]
+    static let knownResetDivergences: [String: ResetDivergence] = [:]
 
     static func main() throws {
         try resetScenarioFixtures()

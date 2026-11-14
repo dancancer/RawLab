@@ -11,7 +11,6 @@ public sealed record AtmosphereSpec(AtmosphereParameter Id, string Title)
     public static AtmosphereSpec For(AtmosphereParameter id) => All[(int)id];
 }
 
-[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record AtmosphereSettings(double Clarity = 0, double Dehaze = 0)
 {
     [JsonIgnore] public bool IsIdentity => Clarity == 0 && Dehaze == 0;

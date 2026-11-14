@@ -19,7 +19,7 @@ internal sealed class AdjustmentSummary
     }
 
     internal IReadOnlyList<Group> Groups => new[] { "looks", "light", "color", "effects", "detail", "geometry" }
-        .Select(id => new Group(id, fieldOrder.Where(field => (field.IsHDRRelative() ? "color" : field.Group()) == id && payload.Fields.Contains(field)).ToArray()))
+        .Select(id => new Group(id, fieldOrder.Where(field => field.Group() == id && payload.Fields.Contains(field)).ToArray()))
         .Where(group => group.Fields.Count > 0).ToArray();
     internal int Count => payload.Fields.Count;
     internal bool IncludesGeometry => payload.Fields.Any(field => field.Group() == "geometry");

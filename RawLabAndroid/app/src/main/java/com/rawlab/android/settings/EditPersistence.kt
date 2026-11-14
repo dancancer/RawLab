@@ -220,9 +220,13 @@ class EditStore(private val directory: File,
                 val encodedSettings = properties.getProperty("record.$encoded.values")
                 require(encodedSettings != null) { "Missing edit record values" }
                 require(!encodedSettings.startsWith("v2:") || entries.all { it.second == "values" }) { "Conflicting structured edit fields" }
-                val storedFilm = properties.getProperty("record.$encoded.film", "neutral")
-                val film = runCatching { String(Base64.getUrlDecoder().decode(storedFilm), StandardCharsets.UTF_8) }
-                    .getOrDefault(storedFilm)
+                val storedFilm = properties.getProperty("record.$encoded.film")
+                val film = if (storedFilm == null) {
+                    "neutral"
+                } else {
+                    runCatching { String(Base64.getUrlDecoder().decode(storedFilm), StandardCharsets.UTF_8) }
+                        .getOrDefault(storedFilm)
+                }
                 records[identity] = (if (encodedSettings.startsWith("v2:")) StructuredSettingsCodec.decode(encodedSettings, "photo_edit")
                 else decode(encodedSettings, film).copy(
                     recipeID = properties.getProperty("record.$encoded.recipe"),

@@ -160,6 +160,7 @@ public static class AdjustmentFields
     public static string Group(this AdjustmentField field) => field switch {
         AdjustmentField.HdrLook => "looks", AdjustmentField.HdrCameraDevelopment => "detail",
         AdjustmentField.BlackPoint or AdjustmentField.WhitePoint => "light",
+        _ when field.IsHDRRelative() => "color",
         _ when field.IsHDRRendition() => "light",
         _ => field.ID().Split('.')[0]
     };

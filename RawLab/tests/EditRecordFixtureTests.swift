@@ -42,15 +42,9 @@ private func approx(_ a: Double, _ b: Double, tol: Double = 1e-4) -> Bool {
 // ---------------------------------------------------------------------------
 // Divergence ledger (populated ONLY from observed red anchors)
 // ---------------------------------------------------------------------------
-private let maxKnownEditRecordDivergences = 1
+private let maxKnownEditRecordDivergences = 0
 
-private let knownEditRecordDivergences: [String: EditRecordDivergence] = [
-    "x1-hdr-camera-profile-unknown-field": EditRecordDivergence(
-        ledgerId: "EDIT-DIV-IOS-X1-01",
-        reason: "Shared/HDRSettings.swift HDRCameraProfile uses synthesized Codable without closed-key checks, so an unknown key inside hdr.camera_development.camera_profile silently loads instead of failing as a version-bound Tier 2 render block.",
-        expectedObservedSubstring: "Tier 2 unknown field in 'hdr_camera_profile' must throw UnusableEditRecordError"
-    ),
-]
+private let knownEditRecordDivergences: [String: EditRecordDivergence] = [:]
 
 @main
 struct Harness {

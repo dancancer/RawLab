@@ -4341,8 +4341,8 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
         self.assertEqual(summary["divergent_fields"], len(all_div))
         self.assertEqual(summary["identical_fields"], len(ident))
         self.assertEqual(len(all_div) + len(ident), 83)
-        self.assertEqual(summary["divergent_fields"], 66)
-        self.assertEqual(summary["identical_fields"], 17)
+        self.assertEqual(summary["divergent_fields"], 65)
+        self.assertEqual(summary["identical_fields"], 18)
 
         for entry in fields:
             fid = entry["field_id"]

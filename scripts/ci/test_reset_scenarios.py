@@ -31,8 +31,8 @@ RUNNERS = {
     "windows": ROOT / "RawLabWindows" / "tests" / "editing" / "ResetScenarioChecks.cs",
 }
 # Monotonic-decrease ceilings in `(scenario, field)` entries.
-# Closure plan (P2-23 / S1): macos 4 -> 0 when SDR chromaNoiseReduction/waveletNoiseReduction stop emitting wire null.
-KNOWN_FIELD_CEILINGS = {"macos": 4, "ios": 0, "android": 0, "windows": 0}
+# Closure plan (P2-23 / S1): macos closed 4 -> 0 alongside ios, android, and windows.
+KNOWN_FIELD_CEILINGS = {"macos": 0, "ios": 0, "android": 0, "windows": 0}
 PLATFORMS = {"macos", "ios", "android", "windows"}
 TARGET_KINDS = {"sdr_raw", "hdr"}
 SCOPE_KINDS = {"tool", "group", "all"}
@@ -397,7 +397,7 @@ class ResetScenarioContracts(unittest.TestCase):
     def test_runner_divergence_ratchet_and_per_field_reasons(self):
         self.assertEqual(
             KNOWN_FIELD_CEILINGS,
-            {"macos": 4, "ios": 0, "android": 0, "windows": 0},
+            {"macos": 0, "ios": 0, "android": 0, "windows": 0},
             "Monotonic ceiling must not silently expand without explicit ledger update",
         )
         sources = {platform: path.read_text(encoding="utf-8") for platform, path in RUNNERS.items()}
@@ -408,10 +408,10 @@ class ResetScenarioContracts(unittest.TestCase):
 
     def test_ratchet_and_wire_presence_contracts_detect_regressions(self):
         sources = {platform: path.read_text(encoding="utf-8") for platform, path in RUNNERS.items()}
-        # 1. Increasing macOS ceiling above 4 (upward inflation) must fail.
+        # 1. Increasing macOS ceiling above 0 (upward inflation) must fail.
         bad_mac = dict(sources)
-        bad_mac["macos"] = sources["macos"].replace("static let maxKnownFieldDivergences = 4", "static let maxKnownFieldDivergences = 5")
-        with self.assertRaisesRegex(AssertionError, r"macos: declared ratchet cap 5"):
+        bad_mac["macos"] = sources["macos"].replace("static let maxKnownFieldDivergences = 0", "static let maxKnownFieldDivergences = 1")
+        with self.assertRaisesRegex(AssertionError, r"macos: declared ratchet cap 1"):
             validate_runner_divergences(bad_mac, self.scenarios, KNOWN_FIELD_CEILINGS)
 
         # 2. Registering any new Windows/iOS/Android divergence (> 0) must fail.
@@ -423,13 +423,11 @@ class ResetScenarioContracts(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, r"windows: registered field divergence count 1"):
             validate_runner_divergences(bad_win, self.scenarios, KNOWN_FIELD_CEILINGS)
 
-        # 3. Reverting macOS entry to blank reason must fail.
+        # 3. Injecting a macOS divergence with blank reason must fail.
         blank_mac = dict(sources)
-        blank_mac["macos"] = re.sub(
-            r'("detail\.denoise\.chroma_mode"\s*:\s*")[^"]+(")',
-            r'\1   \2',
-            sources["macos"],
-            count=1,
+        blank_mac["macos"] = sources["macos"].replace(
+            "static let knownResetDivergences: [String: ResetDivergence] = [:]",
+            'static let knownResetDivergences: [String: ResetDivergence] = ["all-reset-raw": ResetDivergence(ledgerId: "P2-23", fieldReasons: ["detail.denoise.chroma_mode": "   "])]',
         )
         with self.assertRaisesRegex(AssertionError, r"reason must not be blank"):
             validate_runner_divergences(blank_mac, self.scenarios, KNOWN_FIELD_CEILINGS)
