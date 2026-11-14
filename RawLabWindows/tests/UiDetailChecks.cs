@@ -41,6 +41,7 @@ internal static class UiDetailChecks
         try
         {
             NoRawImport(output,check);
+            UnreadableLooksUi(output,check);
             EditDurabilityWindowChecks.RunCore(Path.Combine(output,"edit-durability"),check);
             foreach(var language in new[]{"zh-Hans","en","de","fr","ja","es"})
             {
@@ -185,6 +186,60 @@ internal static class UiDetailChecks
                 "DCP import selects a durable look without opening a RAW photo");
             check(typeof(MainWindow).GetField("engine",PrivateInstance)!.GetValue(appWindow)==null,
                 "DCP import does not create a renderer when no RAW photo is open");
+        }
+        finally
+        {
+            appWindow.Close();
+            try { Directory.Delete(root,recursive:true); } catch { }
+        }
+    }
+    private static void UnreadableLooksUi(string output,Action<bool,string> check)
+    {
+        var root=Path.Combine(Path.GetTempPath(),"rawlab-ui-unreadable-looks-"+Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var lookRoot=Path.Combine(root,"looks");
+        Directory.CreateDirectory(lookRoot);
+        var source=Path.Combine(root,"valid.cube");File.WriteAllText(source,"LUT_3D_SIZE 2");
+        var seeded=new LookLibrary(lookRoot,validateLook:_=>new LookValidation(LookFormat.Cube,0));
+        var valid=seeded.ImportLook(source);
+        var registryPath=Path.Combine(lookRoot,"registry.json");
+        var namedId=Guid.NewGuid().ToString("D");
+        var namedBad="{\"Id\":\""+namedId+"\",\"Name\":\"BrokenLook\",\"FileName\":\"missing.cube\",\"SourceName\":\"missing.cube\",\"Format\":99,\"FormatVersion\":0}";
+        var unnamedBad="{\"Id\":\"0\",\"Name\":\"\",\"FileName\":\"unnamed.cube\",\"SourceName\":\"unnamed.cube\",\"Format\":99,\"FormatVersion\":0}";
+        var raw=File.ReadAllText(registryPath);
+        var insertAt=raw.IndexOf("\"Looks\": [",StringComparison.Ordinal)+"\"Looks\": [".Length;
+        File.WriteAllText(registryPath,raw.Insert(insertAt,"\n    "+namedBad+",\n    "+unnamedBad+","));
+        var appWindow=new MainWindow(lookRoot);
+        TestWindowState.Isolate(appWindow,output);appWindow.Show();appWindow.UpdateLayout();
+        try
+        {
+            var library=(LookLibrary)typeof(MainWindow).GetField("lookLibrary",PrivateInstance)!.GetValue(appWindow)!;
+            check(library.Looks.Count==1 && library.ListUnreadable().Count==2,
+                "MainWindow loads valid and unreadable looks side by side");
+            var texts=Descendants(appWindow.UnreadableLooksPanel).OfType<TextBlock>().Select(item=>item.Text).ToArray();
+            check(appWindow.UnreadableLooksPanel.Visibility==Visibility.Visible &&
+                  appWindow.UnreadableLooksPanel.Children.Count==2 &&
+                  texts.Contains(Loc.Format("{0}（损坏）","BrokenLook")) &&
+                  texts.Contains(Loc.Text("损坏的预设")) &&
+                  texts.Contains(Loc.Text("本地记录损坏。")),
+                "Look management panel surfaces named and unnamed unreadable entries with shared labels");
+            appWindow.LookSearch.Text="no matching look";appWindow.UpdateLayout();
+            check(appWindow.UnreadableLooksPanel.Visibility==Visibility.Collapsed && appWindow.LookEmpty.Visibility==Visibility.Visible,
+                "Search empty state hides unreadable look rows");
+            appWindow.LookSearch.Text="";appWindow.UpdateLayout();
+            var deleteButton=Descendants(appWindow.UnreadableLooksPanel).OfType<Button>()
+                .Single(button=>Equals(AutomationProperties.GetAutomationId(button),"looks.unreadable.delete."+namedId));
+            var foregroundBusyField=typeof(MainWindow).GetField("foregroundBusy",PrivateInstance)!;
+            Click(deleteButton);
+            Pump(()=>library.ListUnreadable().Count==1 &&
+                   appWindow.UnreadableLooksPanel.Children.Count==1 &&
+                   !(bool)foregroundBusyField.GetValue(appWindow)!,
+                TimeSpan.FromSeconds(5));
+            check(library.Looks.Single().Id==valid.Id &&
+                  library.ListUnreadable().Single().Json==unnamedBad &&
+                  appWindow.UnreadableLooksPanel.Children.Count==1 &&
+                  !File.ReadAllText(registryPath).Contains(namedBad,StringComparison.Ordinal),
+                "Clicking delete on an unreadable look removes only that entry from disk and UI");
         }
         finally
         {

@@ -4,7 +4,6 @@ import com.rawlab.android.settings.requireProRAWDecoder
 import com.rawlab.android.settings.ToneCurveSettings
 
 import android.graphics.Bitmap
-import android.os.CancellationSignal
 import java.io.IOException
 import java.io.File
 import java.nio.ByteBuffer
@@ -185,26 +184,14 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     @Synchronized
     fun export(input: File, lut: File?, settings: EditSettings, output: File, format: ExportFormat, longEdge: Int? = null,
         inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW,
-        cancellationGeneration: Long = -1L, cancellationSignal: CancellationSignal? = null): Int {
+        cancellationGeneration: Long = -1L): Int {
         check(handle != 0L) { "Processor is closed" }
         require(format != ExportFormat.HDR_JPEG) { "HDR JPEG requires HDR editing" }
         require(input.canonicalPath != output.canonicalPath)
         require(ExportSize.isValid(longEdge)) { "Invalid output long edge" }
-        val generation = when {
-            cancellationGeneration >= 0L -> cancellationGeneration
-            cancellationSignal != null -> cancellationGeneration()
-            else -> -1L
-        }
-        if (cancellationSignal != null) {
-            cancellationSignal.setOnCancelListener { cancelPreview() }
-            if (cancellationSignal.isCanceled) cancelPreview()
-        }
-        val cancelled = {
-            (cancellationSignal?.isCanceled == true) ||
-                (generation >= 0L && cancellationGeneration() != generation)
-        }
-        try {
-            return executeExport(
+        val generation = if (cancellationGeneration >= 0L) cancellationGeneration else -1L
+        val cancelled = { generation >= 0L && cancellationGeneration() != generation }
+        return executeExport(
                 output = output,
                 suffix = format.suffix,
                 isCancelled = cancelled,
@@ -242,10 +229,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
                         ExportMetadata.preserve(input, staging, allowUnreadableSource = PhotoFiles.isX3f(input))
                     }
                 },
-            )
-        } finally {
-            cancellationSignal?.setOnCancelListener(null)
-        }
+        )
     }
 
     @Synchronized

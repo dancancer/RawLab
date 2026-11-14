@@ -216,3 +216,11 @@ enum IOSAdjustmentTransfer {
         }
     }
 }
+
+/// 粘贴结果提示在 Sheet 内的展示契约（Q14 表示层断言，V-UIIOS #301）：
+/// 提示只属于当前粘贴批次——重备或重开面板后结果尚未产生时，上一批旧提示不得再现。
+enum IOSAdjustmentPasteNoticeDisplay {
+    static func showsInSheet(notices: [String], hasPasteResults: Bool) -> Bool {
+        !notices.isEmpty && hasPasteResults
+    }
+}

@@ -8,9 +8,13 @@ internal class RenderQueue<T, R>(
     private val release: () -> Unit,
     private val discard: (R) -> Unit = {},
     private val discardPending: (T) -> Unit = {},
+    /** 「取消类」判据：代次失效时仅这类结果可吞；其余失败（如 BatchPublicationUncertain）仍须上抛。 */
+    private val isCancellation: (Throwable) -> Boolean = { isExportCancellation(it) },
 ) : AutoCloseable {
     constructor(render: (T) -> R, publish: (Long, Result<R>) -> Unit, release: () -> Unit,
-        discard: (R) -> Unit = {}, discardPending: (T) -> Unit = {}) : this({ value, _ -> render(value) }, publish, release, discard, discardPending)
+        discard: (R) -> Unit = {}, discardPending: (T) -> Unit = {},
+        isCancellation: (Throwable) -> Boolean = { isExportCancellation(it) }) :
+        this({ value, _ -> render(value) }, publish, release, discard, discardPending, isCancellation)
 
     private val worker = Executors.newSingleThreadExecutor { Thread(it, "rawlab-render") }
     private val lock = Any()
@@ -58,7 +62,10 @@ internal class RenderQueue<T, R>(
                 active = null
                 if (!closed && task.revision == revision) { publish(task.revision, result); true } else false
             }
-            if (!accepted) result.getOrNull()?.let(discard)
+            // Q12（不确定≠取消）：代次失效只吞「取消类」结果；取消类之外的失败（如发布结果不确定，
+            // 文件可能已落盘）仍以旧代次上抛，由消费方上屏并保留清理入口。close 路径消费者正在拆除，维持吞弃。
+            if (!accepted) result.fold({ discard(it) },
+                { error -> if (!closed && !isCancellation(error)) publish(task.revision, result) })
         }
     }
 

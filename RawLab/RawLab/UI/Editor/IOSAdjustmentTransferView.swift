@@ -95,6 +95,8 @@ struct IOSAdjustmentTransferView: View {
             model.cancelAdjustmentPreparation()
             model.adjustmentHistoryRequest = nil
             model.adjustmentHistoryResults = []
+            // V-UIIOS #301：Sheet 内已展示过本批提示，关面板必须同时清掉共享属性，避免根视图再弹 4 秒重复横幅。
+            model.transferResultNotices = []
         }
     }
 
@@ -140,7 +142,9 @@ struct IOSAdjustmentTransferView: View {
             }
             Section {
                 // Q3/Q4：提示随实际生效的粘贴结果展示在 Sheet 内，模态层级不会吞掉它。
-                if !model.transferResultNotices.isEmpty {
+                // V-UIIOS #301：提示属于当前批次，重新检查或重开后结果未产生前不得显示上一批旧提示。
+                if IOSAdjustmentPasteNoticeDisplay.showsInSheet(notices: model.transferResultNotices,
+                                                                hasPasteResults: !pasteResults.isEmpty) {
                     Text(model.transferResultNotices.joined(separator: "；"))
                         .font(.caption).foregroundStyle(.secondary)
                         .accessibilityIdentifier("adjustment.paste.notices")
@@ -260,6 +264,8 @@ struct IOSAdjustmentTransferView: View {
     private func invalidatePreparation() {
         model.cancelAdjustmentPreparation()
         prepared = nil; pasteResults = []; skipped = []; message = nil; model.adjustmentHistoryResults = []
+        // V-UIIOS #301：重备即作废上一批提示，共享属性不得带进新一轮检查。
+        model.transferResultNotices = []
     }
     private func prepare() {
         guard let payload, !photos.isEmpty else { return }

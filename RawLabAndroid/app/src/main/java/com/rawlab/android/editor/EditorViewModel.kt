@@ -264,7 +264,12 @@ class EditorViewModel @JvmOverloads constructor(
         // 结果持有临时输入；即使 ViewModel scope 已取消，也要在主线程完成移交或释放。
         renderDelivery.post {
             if (!disposed && revision == currentRevision) accept(result)
-            else result.getOrNull()?.let { lateExportCompleted(it) }
+            else result.fold({ lateExportCompleted(it) }, { error ->
+                // Q12（不确定≠取消）：cancelExport 已使代次失效，但发布不确定的结果仍以旧代次到达——
+                // 不得按取消吞掉，须上屏告知文件可能已落盘（如照片图库需核对/清理）。
+                if (!disposed && !isExportCancellation(error))
+                    mutable.value = mutable.value.copy(error = failure(error))
+            })
         }
     }, { renderer.close(); releaseStorage() }, ::lateExportCompleted, { work ->
         work.discardPendingWork(exportDestinationCleanup)

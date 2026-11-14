@@ -74,7 +74,13 @@ static void checkVersion(sony2fuji_processing_version version) {
         assert(sony2fuji_process(session,&request,&rejected)==SONY2FUJI_STATUS_OK);
         assert(sony2fuji_session_get_last_backend(session)==rawlabtest::nativeBackend);
         sony2fuji_release_buffer(&rejected);
-    } else assert(sony2fuji_process(session,&request,&rejected)==SONY2FUJI_STATUS_PROCESSING_ERROR);
+    } else if (rawlabtest::nativeBackend != SONY2FUJI_BACKEND_CPU && !nativeGpu && version == SONY2FUJI_PROCESSING_LEGACY) {
+        assert(sony2fuji_process(session,&request,&rejected)==SONY2FUJI_STATUS_PROCESSING_ERROR);
+        assert(!rejected.data && rejected.size_bytes==0);
+    } else {
+        assert(sony2fuji_process(session,&request,&rejected)==SONY2FUJI_STATUS_UNSUPPORTED);
+        assert(!rejected.data && rejected.size_bytes==0);
+    }
     gpu.mode=SONY2FUJI_GPU_OFF;
     assert(sony2fuji_session_set_gpu_config(session,&gpu)==SONY2FUJI_STATUS_OK);
     options.enabled=0;

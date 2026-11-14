@@ -20,6 +20,7 @@ Check(ordered.Select(item => item.Value).ToHashSet().SetEquals(input), "Grouping
 Check(FilmGrouping.Arrange(input.Take(1), item => item.Neutral, item => item.Group).All(item => !item.StartsGroup), "A single group has no leading separator");
 Check(FilmGrouping.Arrange(input.Take(0), item => item.Neutral, item => item.Group).Count == 0, "Empty lists have no phantom separators");
 LookImportChecks.Run();
+LookLibraryToleranceChecks.Run();
 var browserItems = new[] {
     new LookBrowserItem("builtin:a", "Été", FilmGroup.Fuji, false),
     new LookBrowserItem("managed:b", "Été custom", FilmGroup.Other, true),

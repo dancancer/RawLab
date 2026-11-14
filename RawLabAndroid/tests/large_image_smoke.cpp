@@ -173,7 +173,7 @@ int main(int argc, char** argv) {
         }
         session.mode(SONY2FUJI_GPU_FORCE);
         sony2fuji_buffer output{};
-        require(sony2fuji_process(session.value, &request, &output) == SONY2FUJI_STATUS_PROCESSING_ERROR &&
+        require(sony2fuji_process(session.value, &request, &output) == SONY2FUJI_STATUS_UNSUPPORTED &&
             output.data == nullptr && output.size_bytes == 0, "Force rejects unsupported RAW look without output");
         return parityPassed ? 0 : 1;
     }

@@ -16,6 +16,11 @@ struct HDRResourceNotice {
         isHDREditing ? HDRResourceNotice(message: missingMessage) : HDRResourceNotice()
     }
 
+    /// 帧未交付边界的统一入口（V-UIIOS P1-05）：导入开始、SDR 预览出帧前缺外观早退与
+    /// 解码/渲染报错均须经此处置——上一帧的缺资源警告退役，下一帧的相同警告不再被
+    /// `.keep` 压制；同图成功出帧的逐帧去重（`change(to:status:)`）不受影响。
+    var afterUndeliveredFrame: HDRResourceNotice { HDRResourceNotice() }
+
     mutating func change(to message: String?, status: String?) -> Change {
         guard message != self.message else { return .keep }
         let previous = self.message

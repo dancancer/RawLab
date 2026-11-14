@@ -75,7 +75,8 @@ enum class ErrorCode {
     InvalidFormat,
     ProcessingError,
     OutOfMemory,
-    IOError
+    IOError,
+    Unsupported
 };
 
 } // namespace sony2fuji

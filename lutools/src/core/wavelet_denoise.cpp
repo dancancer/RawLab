@@ -718,7 +718,7 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
         if (usesC5Denoise(options.processingVersion)) {
             // C5 暂无 GPU 滤波后端，Force 不能把 CPU 结果当作 GPU 成功。
             if (gpuMode == GpuMode::Force)
-                return finish(WaveletDenoiseOutcome::GpuFailure, ErrorCode::ProcessingError);
+                return finish(WaveletDenoiseOutcome::GpuFailure, ErrorCode::Unsupported);
             const float strengthScale=eaw::noiseScale(model);
             if (strengthScale==0) {
                 state->ready=true;
