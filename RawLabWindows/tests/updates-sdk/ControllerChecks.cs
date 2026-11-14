@@ -767,6 +767,7 @@ internal static class ControllerChecks
                 File.WriteAllText(Path.Combine(edits, "photo.json"), "{\"Exposure\":0.9}");
                 var receipt = backupMgr.Restore(backupDir);
                 backupMgr.FinishRecovery(receipt);
+                backupMgr.Discard(backupDir);
                 var expiredStaging = Path.Combine(directory, "Backups", ".staging-" + Guid.NewGuid().ToString("N"));
                 var freshStaging = Path.Combine(directory, "Backups", ".staging-" + Guid.NewGuid().ToString("N"));
                 Directory.CreateDirectory(expiredStaging); Directory.CreateDirectory(freshStaging);
