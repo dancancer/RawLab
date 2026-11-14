@@ -136,3 +136,4 @@
 - 2026-11-14 · V 系列开工过半：V-JIT/V-SPEC（氢单 xhigh）在途，V-AXUI（ax-uios crew）、V-EXP（export-uncertain crew）今日派出；剩 V-RESET（wire 表示决策 lead 已定方向：期望按 wire 级字面量+divergences 登记）、V-WIN（等氢单窗口）。#310 四审在途。
 - 2026-11-14 · V-UIIOS 交卷：**PR #317**（`6b800786`）——三缺陷收口到模型契约（showsInSheet/afterSourceChange×2）各带先红用例，SwiftUI 接线留手工三场景（真机目检项）。碳审在途（review-mwfx519n，「接线正确性靠读」为核）。d 表 V-UIIOS 在途标注。
 - 2026-11-14 · V-AXUI 交卷：**PR #318**（`817b651b`）——iOS 接三态闸（置于编译前）+AX_SUITES 3→4+affected_platforms 连带登记（守卫逼出的正当扩面）；本机三态亲验含 PATH-shim 跑态。碳审在途（review-mwfxffd6，关键风险=CI「SKIP=失败」机制与本票 SKIP 行的相互作用，用 #311 合入后实况说话）。
+- 2026-11-14 · V-EXP 交卷：**PR #319**（`e65bcde5`）——RenderQueue 失效分支取消吞/Uncertain 上屏（isCancellation 注入判据，close 路径维持吞）、cancellationSignal 死参数删除+AndroidTest 迁移；JVM 669/0。碳审在途（review-mwfxx2u2，重点=与 Q12 消费方规则对读+close 竞态 Uncertain 去向）。V 系列 7 票全部开工（V-WIN/V-RESET 待发氢窗口）。
