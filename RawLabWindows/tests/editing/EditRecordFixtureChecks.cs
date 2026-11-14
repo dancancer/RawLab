@@ -994,6 +994,9 @@ internal static class EditRecordFixtureChecks
     {
         var id = record.GetProperty("id").GetString()!;
         var metadata = record.GetProperty("metadata");
+        var isRaw = !record.TryGetProperty("photo", out var photoEl) ||
+                    !photoEl.TryGetProperty("is_raw", out var isRawEl) ||
+                    isRawEl.GetBoolean();
         var hasSdr = record.TryGetProperty("sdr_values", out var sdrValues) && sdrValues.ValueKind == JsonValueKind.Object;
         var hasHdr = record.TryGetProperty("hdr_values", out var hdrValues) && hdrValues.ValueKind == JsonValueKind.Object;
         var hasDormant = record.TryGetProperty("dormant_hdr_values", out var dormant) && dormant.ValueKind == JsonValueKind.Object;
@@ -1084,20 +1087,18 @@ internal static class EditRecordFixtureChecks
             if (sdrValues.TryGetProperty("color.grading.highlights", out var cgh))
                 Expect(Approx(grading.Highlights.Hue, cgh.GetProperty("hue").GetDouble()) && Approx(grading.Highlights.Saturation, cgh.GetProperty("saturation").GetDouble()), "grading.highlights");
 
-            if (sdrValues.TryGetProperty("color.white_balance.mode", out var wbm))
+            if (sdrValues.TryGetProperty("color.white_balance.mode", out var wbm) && wbm.GetString() is { } modeStr)
             {
-                var modeStr = wbm.GetString();
+                var actualMode = !isRaw
+                    ? (s.CameraWhiteBalance ? "none" : "temperature")
+                    : (s.CameraWhiteBalance ? "camera" : "temperature");
+                Expect(actualMode == modeStr, $"wb mode (expected={modeStr}, actual={actualMode})");
                 if (modeStr == "temperature")
                 {
-                    Expect(!s.CameraWhiteBalance, "wb mode custom");
                     if (sdrValues.TryGetProperty("color.white_balance.temperature_kelvin", out var kt) && kt.ValueKind == JsonValueKind.Number)
                         Expect(Approx(s.Values[(int)Parameter.Temperature], kt.GetDouble()), "wb temp");
                     if (sdrValues.TryGetProperty("color.white_balance.tint", out var ktn) && ktn.ValueKind == JsonValueKind.Number)
                         Expect(Approx(s.Values[(int)Parameter.Tint], ktn.GetDouble()), "wb tint");
-                }
-                else if (modeStr == "as_shot")
-                {
-                    Expect(s.CameraWhiteBalance, "wb mode as_shot");
                 }
             }
             if (sdrValues.TryGetProperty("color.saturation", out var csa)) Expect(Approx(1.0 + s.Values[(int)Parameter.Saturation] / 100.0, csa.GetDouble()), "saturation");

@@ -355,6 +355,12 @@ class EditRecordFixtureContracts(unittest.TestCase):
                 self.assertIn("colorSettings.vibrance", stripped, platform)
                 self.assertIn("detailSettings.clarity", stripped, platform)
                 self.assertIn("cameraDevelopmentSettings.lensProfile", stripped, platform)
+            if platform == "ios":
+                self.assertIn("s.denoise.preset", stripped)
+                self.assertIn('.camera ? "none" : "temperature"', stripped)
+            elif platform == "macos":
+                self.assertIn('.asShot ? "none" : "temperature"', stripped)
+                self.assertIn('"camera"', stripped)
             elif platform == "android":
                 self.assertIn("class ExpectationMismatchException", stripped)
                 self.assertIn("EvalCatchScope.EXPECTATION_OR_PERSISTENCE_REJECTION", stripped)
@@ -363,6 +369,7 @@ class EditRecordFixtureContracts(unittest.TestCase):
                 self.assertIn("hdr.colorSettings.vibrance", stripped)
                 self.assertIn("hdr.detailSettings.clarity", stripped)
                 self.assertIn("dev.lensProfile", stripped)
+                self.assertIn('if (!s.customWb) "none" else "temperature"', stripped)
                 self.assertNotIn("catch (e: Exception)", stripped)
                 self.assertNotIn("catch (e: Throwable)", stripped)
             elif platform == "windows":
@@ -374,7 +381,33 @@ class EditRecordFixtureContracts(unittest.TestCase):
                 self.assertIn("hdr.ColorSettings.Vibrance", stripped)
                 self.assertIn("hdr.DetailSettings.Clarity", stripped)
                 self.assertIn("hdr.CameraSettings.LensProfile", stripped)
+                self.assertIn('? "camera" : "temperature"', stripped)
+                self.assertIn('? "none" : "temperature"', stripped)
+                self.assertNotIn('modeStr == "as_shot"', stripped)
                 self.assertNotIn('var sdrValues = record.GetProperty("sdr_values")', stripped)
+
+    def test_wavelet_preset_wb_mode_and_sdr_post_rgb_coverage(self):
+        wb_modes = {
+            r["sdr_values"].get("color.white_balance.mode")
+            for r in self.document["roundtrip_records"]
+            if r.get("sdr_values")
+        }
+        self.assertEqual(wb_modes, {"camera", "temperature", "none"})
+
+        wavelet_presets = {
+            (r["sdr_values"].get("detail.denoise.wavelet") or {}).get("preset")
+            for r in self.document["roundtrip_records"]
+            if isinstance((r.get("sdr_values") or {}).get("detail.denoise.wavelet"), dict)
+        }
+        self.assertGreaterEqual(wavelet_presets, {"detail", "clean", "custom"})
+
+        sdr_post_rgb = [
+            float(r["sdr_values"]["detail.denoise.post_rgb"])
+            for r in self.document["roundtrip_records"]
+            if r.get("sdr_values") and "detail.denoise.post_rgb" in r["sdr_values"]
+        ]
+        self.assertIn(1.0, sdr_post_rgb)
+        self.assertTrue(any(0.0 < v < 1.0 for v in sdr_post_rgb))
 
     def test_runner_divergence_ratchet_and_ledger_entries(self):
         self.assertEqual(KNOWN_DIVERGENCE_CEILINGS, {"macos": 1, "ios": 12, "android": 10, "windows": 2})

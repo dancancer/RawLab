@@ -92,7 +92,7 @@ class EditRecordFixtureTest {
         ),
         "compat-legacy-omitted-extensions" to EditRecordDivergence(
             ledgerId = "EDIT-DIV-AND-COMPAT-01",
-            reason = "EditPersistence.kt:223-225 Base64-decodes the default string 'neutral' when record.<id>.film is omitted in legacy .properties, and StructuredSettingsCodec rejects stripped v2 JSON without processing/tone keys.",
+            reason = "EditPersistence.kt:223-225 Base64-decodes the default string 'neutral' instead of leaving it unencoded when record.<id>.film is omitted in legacy .properties.",
             expectedObservedSubstring = "wire film_id",
         ),
     )
@@ -563,7 +563,11 @@ class EditRecordFixtureTest {
         num(sdrValues.opt("color.vibrance"))?.let { verify(approx(s.vibrance.toDouble(), it), "color.vibrance") }
         verifyGradingInto(sdrValues, s.colorGrading, "sdr")
         sdrValues.optString("color.white_balance.mode", "").takeIf { it.isNotEmpty() }?.let { wb ->
-            val actualWb = if (!isRaw) "none" else if (s.customWb) "temperature" else "camera"
+            val actualWb = if (!isRaw) {
+                if (!s.customWb) "none" else "temperature"
+            } else {
+                if (s.customWb) "temperature" else "camera"
+            }
             verify(actualWb == wb, "wb.mode")
         }
         num(sdrValues.opt("color.white_balance.temperature_kelvin"))?.let { verify(approx(s.temperature.toDouble(), it), "wb.temp") }
@@ -884,6 +888,45 @@ class EditRecordFixtureTest {
                 }
             }
 
+            // 独立验证 v2 可选键缺省，不混入历史扁平 properties 的兼容差异。
+            run {
+                val id = "compat-android-v2-omitted-optionals"
+                val dir = File(tempRoot, "c-$id").apply { mkdirs() }
+                val pid = PhotoIdentity("content://test/$id")
+                val built = buildSettings(byId.getValue("full-sdr-raw-dormant-hdr")).copy(
+                    x3fMode = X3fMode.NORMAL,
+                    sdrSnapshot = StructuredSettingsCodec.encode(EditSettings(), "photo_edit"),
+                )
+                checkSetup(built.masterRecipeSettingsVersion != 3, "$id: non-default recipe version required")
+                checkSetup(built.clarity != 0f && built.dehaze != 0f, "$id: non-default atmosphere required")
+                checkSetup(built.colorGrading != ColorGradingSettings(), "$id: non-default grading required")
+                checkSetup(built.curve != ToneCurveSettings(), "$id: non-default curve required")
+                EditStore(dir).save(pid, built)
+                mutateV2Record(File(dir, "edits.properties"), pid) { _, s ->
+                    listOf("x3fMode", "masterRecipeSettingsVersion", "atmosphere", "colorGrading",
+                        "curve", "hdr", "sdrSnapshot", "proRAWDecodeVersion").forEach { key ->
+                        checkSetup(s.has(key) && !s.isNull(key), "$id: optional key $key must exist before removal")
+                        s.remove(key)
+                    }
+                }
+                evaluate(id, EvalCatchScope.EXPECTATION_OR_PERSISTENCE_REJECTION) {
+                    val loaded = openStoreChecked(dir).readState(pid).settings
+                        ?: throw ExpectationMismatchException("$id: stripped-optional v2 record decoded null")
+                    val expected = built.copy(
+                        x3fMode = X3fMode.LEGACY,
+                        masterRecipeSettingsVersion = 3,
+                        clarity = 0f,
+                        dehaze = 0f,
+                        colorGrading = ColorGradingSettings(),
+                        curve = ToneCurveSettings(),
+                        hdr = null,
+                        sdrSnapshot = null,
+                        proRAWDecodeVersion = null,
+                    )
+                    check(loaded == expected, "$id: optional defaults or preserved required values differ: $loaded")
+                }
+            }
+
             val compats = fixture.getJSONArray("compatibility_scenarios")
             for (i in 0 until compats.length()) {
                 val sc = compats.getJSONObject(i)
@@ -892,14 +935,6 @@ class EditRecordFixtureTest {
                 val baseRec = byId.getValue(sc.getString("base_record_id"))
                 when (kind) {
                     "legacy_omitted_extensions" -> {
-                        val dir = File(tempRoot, "c-$id").apply { mkdirs() }
-                        val pid = PhotoIdentity("content://test/leg-$id")
-                        EditStore(dir).save(pid, buildSettings(baseRec))
-                        mutateV2Record(File(dir, "edits.properties"), pid) { _, s ->
-                            listOf("processing", "x3fMode", "masterRecipeSettingsVersion", "tone", "toneControls",
-                                "atmosphere", "colorGrading", "curve", "hdr", "proRAWDecodeVersion").forEach { s.remove(it) }
-                        }
-
                         val samples = sc.getJSONObject("legacy_wire_samples")
                         val andSample = samples.getJSONObject("android_properties")
                         val wirePhotoId = PhotoIdentity(andSample.getString("photo_id"))
@@ -925,10 +960,6 @@ class EditRecordFixtureTest {
                             check(approx(wireLoaded.sharpening.toDouble(), wireExpect.getDouble("sharpening")), "$id: wire sharpening")
                             check(wireLoaded.processing.version == wireExpect.getInt("processing_version"), "$id: wire processing.version")
                             check(wireLoaded.x3fMode.id == wireExpect.getString("x3f_mode"), "$id: wire x3fMode")
-
-                            val loaded = openStoreChecked(dir).readState(pid).settings!!
-                            check(loaded.processing == ProcessingIdentity.LEGACY, "$id: expected legacy processing")
-                            check(loaded.x3fMode == X3fMode.LEGACY, "$id: expected legacy x3fMode")
                         }
                     }
                     "sdr_reset_preserves_dormant_hdr" -> {

@@ -441,6 +441,84 @@
       }
     },
     {
+      "id": "sdr-raw-camera-wb",
+      "description": "SDR RAW photo using camera white balance, detail wavelet denoise preset (0/46/50), and non-zero fractional SDR post_rgb denoise.",
+      "photo": {
+        "name": "sample-raw-camera-wb.DNG",
+        "is_raw": true
+      },
+      "metadata": {
+        "film_id": "",
+        "master_recipe_id": null,
+        "master_recipe_settings_version": 3,
+        "processing": {
+          "family": "rawlab",
+          "version": 3,
+          "quality": "standard"
+        },
+        "x3f_mode": "normal-v1",
+        "pro_raw_decode_version": null,
+        "as_shot_wb": {
+          "temperature": 5500.0,
+          "tint": 0.0
+        },
+        "hdr_editing": false
+      },
+      "sdr_values": {
+        "looks.reference": {
+          "kind": "neutral",
+          "id": null
+        },
+        "looks.strength": 1.0,
+        "light.exposure": 0.25,
+        "light.exposure_mode": "scene",
+        "light.contrast": 1.0,
+        "light.highlights": 0.0,
+        "light.shadows": 0.0,
+        "light.s_curve": 0.0,
+        "light.curve": {
+          "mode": "legacy",
+          "points": []
+        },
+        "tone.black_point": 0.0,
+        "tone.white_point": 0.0,
+        "color.vibrance": 0.0,
+        "color.grading.shadows": {
+          "hue": 0.0,
+          "saturation": 0.0
+        },
+        "color.grading.midtones": {
+          "hue": 0.0,
+          "saturation": 0.0
+        },
+        "color.grading.highlights": {
+          "hue": 0.0,
+          "saturation": 0.0
+        },
+        "color.white_balance.mode": "camera",
+        "color.white_balance.temperature_kelvin": null,
+        "color.white_balance.tint": null,
+        "color.saturation": 1.0,
+        "effects.clarity": 0.0,
+        "effects.dehaze": 0.0,
+        "detail.sharpening": 0.25,
+        "detail.denoise.raw_level": 1,
+        "detail.denoise.post_rgb": 0.375,
+        "detail.denoise.chroma_mode": 0,
+        "detail.denoise.wavelet": {
+          "enabled": true,
+          "luma": 0.0,
+          "chroma": 46.0,
+          "coarse": 50.0,
+          "preset": "detail"
+        }
+      },
+      "local_values": {
+        "local.ai_denoise_enabled": false,
+        "local.hdr_camera_ai_enabled": false
+      }
+    },
+    {
       "id": "spec-min-endpoints-roundtrip",
       "description": "Minimum endpoint round-trip anchored to Shared/specs/adjustment-fields-v1.json bounds (using model lower bound -5.0 for exposure and minimal valid positive crop).",
       "photo": {
@@ -668,7 +746,7 @@
         "effects.grain.roughness": 100.0,
         "detail.sharpening": 2.0,
         "detail.denoise.raw_level": 2,
-        "detail.denoise.post_rgb": 0.0,
+        "detail.denoise.post_rgb": 1.0,
         "detail.denoise.chroma_mode": 2,
         "detail.denoise.wavelet": {
           "enabled": true,

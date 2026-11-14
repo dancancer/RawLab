@@ -396,6 +396,8 @@ struct Harness {
 
     static func verifyState(_ actual: PhotoEditState, matches record: [String: Any]) throws {
         let id = record["id"] as? String ?? "unknown"
+        let photo = record["photo"] as? [String: Any] ?? [:]
+        let isRaw = photo["is_raw"] as? Bool ?? true
         let metadata = record["metadata"] as? [String: Any] ?? [:]
         let sdrValues = record["sdr_values"] as? [String: Any] ?? [:]
         let hdrValues = record["hdr_values"] as? [String: Any] ?? [:]
@@ -513,8 +515,11 @@ struct Harness {
         if let v = num(sdrValues["color.vibrance"]) { verify(approx(s.vibrance, v), "color.vibrance") }
         verifyGrading(sdrValues, s.gradingSettings, "sdr")
         if let wbm = sdrValues["color.white_balance.mode"] as? String {
+            let actualWbm = isRaw
+                ? (s.whiteBalanceMode == .custom ? "temperature" : "camera")
+                : (s.whiteBalanceMode == .asShot ? "none" : "temperature")
+            verify(actualWbm == wbm, "wb.mode(exp=\(wbm),got=\(actualWbm))")
             if wbm == "temperature" {
-                verify(s.whiteBalanceMode == .custom, "wb.mode")
                 if let t = num(sdrValues["color.white_balance.temperature_kelvin"]) { verify(approx(s.temperature, t), "wb.temp") }
                 if let tn = num(sdrValues["color.white_balance.tint"]) { verify(approx(s.tint, tn), "wb.tint") }
             }

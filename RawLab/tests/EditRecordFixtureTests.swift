@@ -534,7 +534,9 @@ struct Harness {
         if let v = num(sdrValues["color.vibrance"]) { verify(approx(s.vibrance, v), "color.vibrance") }
         verifyGradingInto(sdrValues, s.gradingSettings, "sdr")
         if let wb = sdrValues["color.white_balance.mode"] as? String {
-            let actualWB = isRaw ? (s.whiteBalanceMode == .custom ? "temperature" : "camera") : "none"
+            let actualWB = isRaw
+                ? (s.whiteBalanceMode == .custom ? "temperature" : "camera")
+                : (s.whiteBalanceMode == .camera ? "none" : "temperature")
             verify(actualWB == wb, "wb.mode")
         }
         if let v = num(sdrValues["color.white_balance.temperature_kelvin"]) { verify(approx(s.temperature, v), "wb.temp") }
@@ -560,6 +562,10 @@ struct Harness {
             verify(approx(s.denoise.luma, num(w["luma"]) ?? -1), "wavelet.luma")
             verify(approx(s.denoise.chroma, num(w["chroma"]) ?? -1), "wavelet.chroma")
             verify(approx(s.denoise.coarse, num(w["coarse"]) ?? -1), "wavelet.coarse")
+            if let expPreset = w["preset"] as? String {
+                let actualPreset = s.denoise.preset == .detail ? "detail" : s.denoise.preset == .clean ? "clean" : "custom"
+                verify(actualPreset == expPreset, "wavelet.preset(exp=\(expPreset),got=\(actualPreset))")
+            }
         }
 
         verifyGeomInto(sdrValues, s.geometry, "sdr")
