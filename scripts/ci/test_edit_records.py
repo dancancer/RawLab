@@ -29,7 +29,7 @@ RUNNERS = {
 }
 KNOWN_DIVERGENCE_CEILINGS = {
     "macos": 1,
-    "ios": 12,
+    "ios": 1,
     "android": 10,
     "windows": 2,
 }
@@ -410,7 +410,7 @@ class EditRecordFixtureContracts(unittest.TestCase):
         self.assertTrue(any(0.0 < v < 1.0 for v in sdr_post_rgb))
 
     def test_runner_divergence_ratchet_and_ledger_entries(self):
-        self.assertEqual(KNOWN_DIVERGENCE_CEILINGS, {"macos": 1, "ios": 12, "android": 10, "windows": 2})
+        self.assertEqual(KNOWN_DIVERGENCE_CEILINGS, {"macos": 1, "ios": 1, "android": 10, "windows": 2})
         sources = {p: path.read_text(encoding="utf-8") for p, path in RUNNERS.items()}
         validate_runner_divergences(sources, self.scenario_ids, KNOWN_DIVERGENCE_CEILINGS)
 

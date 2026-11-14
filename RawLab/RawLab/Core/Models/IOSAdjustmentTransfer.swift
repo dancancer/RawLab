@@ -144,7 +144,6 @@ enum IOSAdjustmentTransfer {
         }
         for (field, key) in effectKeys {
             if let value = payload[field]?.number {
-                guard value.rounded() == value else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
                 result.photoEffects[keyPath: key] = value
             }
         }

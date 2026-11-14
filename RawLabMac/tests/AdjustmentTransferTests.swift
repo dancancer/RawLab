@@ -251,6 +251,7 @@ struct AdjustmentTransferTests {
 
     static func main() throws {
         try sharedScenarioFixtures()
+        try decimalFixtures()
         try neutralRawRequestsOnRaster()
         try fullNeutralRecipeOnRaster()
         try builtinRawRecipesOnRaster()
@@ -852,6 +853,7 @@ struct AdjustmentTransferTests {
 
     private static func errorReason(_ error: Error) -> String {
         switch error as? AdjustmentTransferError {
+        case .invalidPayload: return "invalid_payload"
         case .incompatible: return "incompatible"
         case .unrepresentable: return "unrepresentable"
         case .missingLook: return "missing_look"
@@ -894,8 +896,8 @@ struct AdjustmentTransferTests {
             "Detaching RAW recipe with non-recipe raster paste preserves effective target WB instead of resetting to camera")
     }
 
-    static func sharedScenarioFixtures() throws {
-        let url = URL(fileURLWithPath: "Shared/fixtures/adjustment-transfer-scenarios-v1.json")
+    static func sharedScenarioFixtures(at path: String = "Shared/fixtures/adjustment-transfer-scenarios-v1.json") throws {
+        let url = URL(fileURLWithPath: path)
         let root = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
         check(root["fixture_version"] as? Int == 1, "Scenario fixture version is 1")
         let scenarios = root["scenarios"] as! [[String: Any]]
@@ -970,6 +972,23 @@ struct AdjustmentTransferTests {
                     let field = AdjustmentTransferField(rawValue: key)!
                     check(abs(actualEffective[field]! - effectiveObj[key]!.doubleValue) <= 1e-6, "Scenario \(id): effective \(key)")
                 }
+            }
+        }
+    }
+
+    static func decimalFixtures() throws {
+        let path = "Shared/fixtures/adjustment-transfer-decimals-v1.json"
+        try sharedScenarioFixtures(at: path)
+        let root = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: path))) as! [String: Any]
+        for rejected in root["rejected_payloads"] as! [[String: Any]] {
+            let id = rejected["id"] as! String
+            let reason = rejected["reason"] as! String
+            let data = try JSONSerialization.data(withJSONObject: rejected["payload"]!)
+            do {
+                _ = try JSONDecoder().decode(AdjustmentTransferPayload.self, from: data)
+                fatalError("Decimal rejected payload \(id): expected \(reason)")
+            } catch {
+                check(errorReason(error) == reason, "Decimal rejected payload \(id): \(reason)")
             }
         }
     }

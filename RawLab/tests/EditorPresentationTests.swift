@@ -144,10 +144,15 @@ struct EditorPresentationTests {
         check(effects.vignetteAmount == 100 && effects.vignetteRoundness == -100 &&
               effects.vignetteMidpoint == 100 && effects.grainSize == 0 && effects.grainRoughness == 100,
               "Photo effect controls clamp each parameter to its canonical range")
-        effects.vignetteAmount = 0.5
-        effects.vignetteRoundness = -0.5
-        check(effects.vignetteAmount == 1 && effects.vignetteRoundness == -1,
-              "Photo effect values use the shared nearest-integer rounding contract")
+        effects.vignetteAmount = 12.5
+        effects.vignetteRoundness = -12.25
+        check(effects.vignetteAmount == 12.5 && effects.vignetteRoundness == -12.25,
+              "Photo effects model preserves decimal precision for transfer and persistence")
+        var uiRounded = RawSettings.default
+        uiRounded.setEditingEffect(.vignetteAmount, to: 0.5)
+        uiRounded.setEditingEffect(.vignetteRoundness, to: -0.5)
+        check(uiRounded.photoEffects.vignetteAmount == 1 && uiRounded.photoEffects.vignetteRoundness == -1,
+              "Photo effect UI setters use the shared nearest-integer rounding contract")
         effects.vignetteAmount = 0
         effects.vignetteMidpoint = 62
         settings.photoEffects = effects

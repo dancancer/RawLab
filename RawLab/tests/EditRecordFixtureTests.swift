@@ -42,64 +42,9 @@ private func approx(_ a: Double, _ b: Double, tol: Double = 1e-4) -> Bool {
 // ---------------------------------------------------------------------------
 // Divergence ledger (populated ONLY from observed red anchors)
 // ---------------------------------------------------------------------------
-private let maxKnownEditRecordDivergences = 12
+private let maxKnownEditRecordDivergences = 1
 
 private let knownEditRecordDivergences: [String: EditRecordDivergence] = [
-    "roundtrip:full-sdr-raw-dormant-hdr": EditRecordDivergence(
-        ledgerId: "EDIT-DIV-IOS-MODEL-01",
-        reason: "iOS SDR PhotoEffectsSettings rounds all 8 vignette/grain properties via .rounded() in init() (RawSettings.swift:130) instead of preserving exact fractional decimals (.25/.5/.75).",
-        expectedObservedSubstring: "mismatched=8 [effects.vignette.amount(exp=-35.5,got=-36.0)"
-    ),
-    "x1-store-root-unknown-field": EditRecordDivergence(
-        ledgerId: "EDIT-DIV-IOS-MODEL-02",
-        reason: "Tier 1 store-root unknown-field tolerance/sibling preservation passes, but verifying reloaded full-sdr-raw-dormant-hdr target hits iOS SDR PhotoEffectsSettings.rounded() precision loss.",
-        expectedObservedSubstring: "mismatched=8 [effects.vignette.amount(exp=-35.5,got=-36.0)"
-    ),
-    "x1-store-sibling-unknown-entry": EditRecordDivergence(
-        ledgerId: "EDIT-DIV-IOS-MODEL-03",
-        reason: "Tier 1 store sibling entry preservation passes, but verifying reloaded full-sdr-raw-dormant-hdr target hits iOS SDR PhotoEffectsSettings.rounded() precision loss.",
-        expectedObservedSubstring: "mismatched=8 [effects.vignette.amount(exp=-35.5,got=-36.0)"
-    ),
-    "x1-record-root-unknown-field": EditRecordDivergence(
-        ledgerId: "EDIT-DIV-IOS-MODEL-04",
-        reason: "Tier 1 record-root unknown-field tolerance passes, but verifying reloaded full-sdr-raw-dormant-hdr target hits iOS SDR PhotoEffectsSettings.rounded() precision loss.",
-        expectedObservedSubstring: "mismatched=8 [effects.vignette.amount(exp=-35.5,got=-36.0)"
-    ),
-    "x1-settings-root-unknown-field": EditRecordDivergence(
-        ledgerId: "EDIT-DIV-IOS-MODEL-05",
-        reason: "Tier 1 settings-root unknown-field tolerance passes, but verifying reloaded full-sdr-raw-dormant-hdr target hits iOS SDR PhotoEffectsSettings.rounded() precision loss.",
-        expectedObservedSubstring: "mismatched=8 [effects.vignette.amount(exp=-35.5,got=-36.0)"
-    ),
-    "x1-tone-controls-unknown-field": EditRecordDivergence(
-        ledgerId: "EDIT-DIV-IOS-MODEL-06",
-        reason: "Tier 1 toneControls unknown-field tolerance passes, but verifying reloaded full-sdr-raw-dormant-hdr target hits iOS SDR PhotoEffectsSettings.rounded() precision loss.",
-        expectedObservedSubstring: "mismatched=8 [effects.vignette.amount(exp=-35.5,got=-36.0)"
-    ),
-    "x1-atmosphere-unknown-field": EditRecordDivergence(
-        ledgerId: "EDIT-DIV-IOS-MODEL-07",
-        reason: "Tier 1 atmosphere unknown-field tolerance passes, but verifying reloaded full-sdr-raw-dormant-hdr target hits iOS SDR PhotoEffectsSettings.rounded() precision loss.",
-        expectedObservedSubstring: "mismatched=8 [effects.vignette.amount(exp=-35.5,got=-36.0)"
-    ),
-    "x1-geometry-unknown-field": EditRecordDivergence(
-        ledgerId: "EDIT-DIV-IOS-MODEL-08",
-        reason: "Tier 1 geometry unknown-field tolerance passes, but verifying reloaded full-sdr-raw-dormant-hdr target hits iOS SDR PhotoEffectsSettings.rounded() precision loss.",
-        expectedObservedSubstring: "mismatched=8 [effects.vignette.amount(exp=-35.5,got=-36.0)"
-    ),
-    "x1-lens-unknown-field": EditRecordDivergence(
-        ledgerId: "EDIT-DIV-IOS-MODEL-09",
-        reason: "Tier 1 lensCorrection unknown-field tolerance passes, but verifying reloaded full-sdr-raw-dormant-hdr target hits iOS SDR PhotoEffectsSettings.rounded() precision loss.",
-        expectedObservedSubstring: "mismatched=8 [effects.vignette.amount(exp=-35.5,got=-36.0)"
-    ),
-    "x1-denoise-unknown-field": EditRecordDivergence(
-        ledgerId: "EDIT-DIV-IOS-MODEL-10",
-        reason: "Tier 1 denoise unknown-field tolerance passes, but verifying reloaded full-sdr-raw-dormant-hdr target hits iOS SDR PhotoEffectsSettings.rounded() precision loss.",
-        expectedObservedSubstring: "mismatched=8 [effects.vignette.amount(exp=-35.5,got=-36.0)"
-    ),
-    "x1-effects-unknown-field": EditRecordDivergence(
-        ledgerId: "EDIT-DIV-IOS-MODEL-11",
-        reason: "Tier 1 photoEffects unknown-field tolerance passes, but verifying reloaded full-sdr-raw-dormant-hdr target hits iOS SDR PhotoEffectsSettings.rounded() precision loss.",
-        expectedObservedSubstring: "mismatched=8 [effects.vignette.amount(exp=-35.5,got=-36.0)"
-    ),
     "x1-hdr-camera-profile-unknown-field": EditRecordDivergence(
         ledgerId: "EDIT-DIV-IOS-X1-01",
         reason: "Shared/HDRSettings.swift HDRCameraProfile uses synthesized Codable without closed-key checks, so an unknown key inside hdr.camera_development.camera_profile silently loads instead of failing as a version-bound Tier 2 render block.",
