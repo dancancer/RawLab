@@ -79,7 +79,8 @@ class ResetScenarioTest {
             AdjustmentPayload.decode(target.getJSONObject("seed_payload").toString()), base,
             context.copy(validateLens = { _ -> }))
         val scope = resetScope(scenario.getJSONObject("scope"))
-        val resetContext = EditorResetContext(input = PhotoInputKind.RAW, defaults = EditSettings(),
+        val resetContext = EditorResetContext(input = if (rawTarget) PhotoInputKind.RAW else PhotoInputKind.RASTER,
+            defaults = EditSettings(),
             asShot = asShot?.let { AsShotWhiteBalance(it.getDouble(0).toFloat(), it.getDouble(1).toFloat()) })
         val expect = scenario.getJSONObject("expect")
         val expectValues = expect.getJSONObject("values")

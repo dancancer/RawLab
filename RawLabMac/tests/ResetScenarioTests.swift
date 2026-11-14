@@ -75,8 +75,8 @@ struct ResetScenarioTests {
 
         let scopeObj = scenario["scope"] as! [String: Any]
         let scope = try resetScope(scopeObj)
-        let resetContext = EditorAdjustmentContext(isRaw: kind == "sdr_raw", defaultExposureMode: .preview,
-            neutralFilmID: "")
+        let resetContext = EditorAdjustmentContext(isRaw: kind == "sdr_raw",
+            defaultExposureMode: kind == "sdr_raw" ? .preview : .sensor, neutralFilmID: "")
         let expect = scenario["expect"] as! [String: Any]
         let expectValues = expect["values"] as! [String: Any]
         let untouched = expect["untouched"] as! [String]
