@@ -245,72 +245,93 @@ import CoreGraphics
     }
 
     // Q6：相机原件不自动删，手动清理只删「已导出且不再被引用」的任务与原件。
+    // Q6：相机原件不自动删，只提供手动清理。「已导出」必须有真实外部出口证据
+    // （最近打开的私有副本内容标识）；覆盖评审给出的三条失效序列。
     private static func manualOriginalsCleanup() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-prune-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }
         let device = CameraDeviceIdentity(manufacturer: "Sony", model: "Fixture", firmware: "1.00", serial: "prune", operations: [])
         let jpegA = Data([0xff, 0xd8, 0xff, 1, 2, 3, 4]), jpegB = Data([0xff, 0xd8, 0xff, 5, 6, 7, 8])
+        let jpegC = Data([0xff, 0xd8, 0xff, 9, 1, 1, 1]), jpegD = Data([0xff, 0xd8, 0xff, 7, 7, 7, 7])
+        let jpegE = Data([0xff, 0xd8, 0xff, 2, 2, 2, 2])
         let tiff = Data([0x49, 0x49, 0x2a, 0, 1, 2, 3]), tiff2 = Data([0x49, 0x49, 0x2a, 0, 9, 8, 7])
+        func digestOf(_ payload: Data) -> String { SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined() }
         func snapshot(_ file: UInt32, _ ext: String) -> CameraAssetSnapshot {
             CameraAssetSnapshot(content: file, file: file, storage: 0, format: 0, name: "DSC000\(file).\(ext)",
                 size: 7, created: "1700000000000", modified: "")
         }
-        var store: CameraOriginalStore? = try CameraOriginalStore(directory: root)
+        let store: CameraOriginalStore? = try CameraOriginalStore(directory: root)
         func saved(_ job: CameraTransferJob, _ payload: Data) throws -> CameraStoredOriginal {
             try write(payload, item: job.items[0], job: job, store: store!)
         }
-        let jobOld = try store!.enqueue(device: device, connectionKey: "prune", assets: [snapshot(11, "JPG")])
-        let oldOriginal = try saved(jobOld, jpegA)
-        let jobNew = try store!.enqueue(device: device, connectionKey: "prune", assets: [snapshot(12, "JPG")])
-        let recentOriginal = try saved(jobNew, jpegB)
+        // 序列 1（评审主案）：导入 2 张未打开、未导出 → 再来一个新任务 → 点清理必须释放 0。
+        let jobOld = try store!.enqueue(device: device, connectionKey: "prune", assets: [snapshot(11, "JPG"), snapshot(12, "JPG")])
+        let oldOne = try saved(jobOld, jpegA)
+        let oldTwo = try write(jpegB, item: jobOld.items[1], job: jobOld, store: store!)
+        let jobNew = try store!.enqueue(device: device, connectionKey: "prune", assets: [snapshot(13, "JPG")])
+        let recentOriginal = try saved(jobNew, jpegC)
         var pruned = try store!.pruneExportedOriginals()
-        try check(pruned.originals == 1 && pruned.freedBytes == UInt64(jpegA.count),
-                  "Manual cleanup deletes one fully saved job's original and reports the freed bytes")
-        try check(store!.snapshot.jobs.map(\.id) == [jobNew.id] && store!.snapshot.originals.map(\.id) == [recentOriginal.id],
-                  "The newest job and its original anchor stay")
-        try check(!FileManager.default.fileExists(atPath: store!.originalURL(oldOriginal).path),
-                  "The pruned original file leaves persistent storage")
+        try check(pruned.originals == 0 && store!.snapshot.jobs.count == 2 &&
+                      FileManager.default.fileExists(atPath: store!.originalURL(oldOne).path),
+                  "Never-exported jobs are kept: cleanup without export evidence frees nothing (红→绿核心)")
+        pruned = try store!.pruneExportedOriginals(exportedContentIdentifiers: [digestOf(jpegA), digestOf(jpegB)])
+        try check(pruned.originals == 2 && pruned.freedBytes == UInt64(jpegA.count + jpegB.count),
+                  "Evidence of external copies unlocks the two originals")
+        try check(store!.snapshot.jobs.map(\.id) == [jobNew.id] && store!.snapshot.originals.map(\.id) == [recentOriginal.id] &&
+                      !FileManager.default.fileExists(atPath: store!.originalURL(oldOne).path) &&
+                      !FileManager.default.fileExists(atPath: store!.originalURL(oldTwo).path),
+                  "The exported job's records and files leave storage while the newest anchor stays")
         pruned = try store!.pruneExportedOriginals()
         try check(pruned.originals == 0 && store!.snapshot.jobs.count == 1, "Repeated cleanup is idempotent and never deletes the newest job")
-        let jobShared = try store!.enqueue(device: device, connectionKey: "prune", assets: [snapshot(13, "JPG")])
-        let sharedOriginal = try saved(jobShared, jpegB)
+        // 共享原件：后任务复用同一内容，删旧任务不删共享文件。
+        let jobShared = try store!.enqueue(device: device, connectionKey: "prune", assets: [snapshot(14, "JPG")])
+        let sharedOriginal = try saved(jobShared, jpegC)
         try check(sharedOriginal.id == recentOriginal.id, "The re-imported original reuses the saved source identity")
-        pruned = try store!.pruneExportedOriginals()
+        pruned = try store!.pruneExportedOriginals(exportedContentIdentifiers: [digestOf(jpegC)])
         try check(pruned.originals == 0 && store!.snapshot.jobs.map(\.id) == [jobShared.id] &&
                       FileManager.default.fileExists(atPath: store!.originalURL(recentOriginal).path),
                   "An original shared with the newest job survives cleanup of its earlier job")
-        let tethered = CameraRemoteAsset(owner: UUID(), snapshot: snapshot(14, "JPG"))
+        // 联机任务保护：tether 引用优先于任何清理。
+        let tethered = CameraRemoteAsset(owner: UUID(), snapshot: snapshot(15, "JPG"))
         try store!.beginTether(device: device, connectionKey: "prune", baseline: [tethered])
         let jobTether = try store!.registerTetherAssets([tethered.snapshot], listingOwner: UUID())
         let tetherOriginal = try saved(jobTether, jpegA)
-        let jobLatest = try store!.enqueue(device: device, connectionKey: "prune", assets: [snapshot(15, "JPG")])
+        let jobLatest = try store!.enqueue(device: device, connectionKey: "prune", assets: [snapshot(16, "JPG")])
         _ = try saved(jobLatest, jpegB)
-        pruned = try store!.pruneExportedOriginals()
+        pruned = try store!.pruneExportedOriginals(exportedContentIdentifiers: [digestOf(jpegA), digestOf(jpegB), digestOf(jpegC)])
         try check(store!.snapshot.jobs.map(\.id) == [jobTether.id, jobLatest.id] &&
                       FileManager.default.fileExists(atPath: store!.originalURL(tetherOriginal).path),
-                  "A tether-referenced saved job is never removed by manual cleanup")
-        let owner = UUID()
-        let plan1 = CameraIncrementalPlan(format: .rawAndJPEG, jpeg: CameraJPEGOptions(), boundary: nil, owner: owner, boundaries: [:])
-        let plan2 = CameraIncrementalPlan(format: .rawAndJPEG, jpeg: CameraJPEGOptions(), boundary: nil, owner: owner, boundaries: [:])
-        let jobInc1 = try store!.enqueue(device: device, connectionKey: "prune", assets: [snapshot(16, "ARW")], incremental: plan1)
+                  "A tether-referenced saved job is never removed even with export evidence")
+        // 序列 2+3：跨连接与同连接的增量检查点锚点——每台相机每个格式保留最近一条完整增量任务。
+        let owner1 = UUID()
+        let boundary = CameraImportBoundary(date: Date(timeIntervalSince1970: 1_699_999_000), storage: [], keys: [], anchors: [], owner: owner1)
+        let jobInc1 = try store!.enqueue(device: device, connectionKey: "k1", assets: [snapshot(17, "ARW")],
+            incremental: CameraIncrementalPlan(format: .raw, jpeg: CameraJPEGOptions(), boundary: nil, owner: owner1, boundaries: ["RAW": boundary]))
         let inc1Original = try saved(jobInc1, tiff)
-        let jobPlain = try store!.enqueue(device: device, connectionKey: "prune", assets: [snapshot(17, "JPG")])
-        _ = try saved(jobPlain, jpegB)
-        pruned = try store!.pruneExportedOriginals()
-        try check(pruned.originals == 0 && store!.snapshot.jobs.contains { $0.id == jobInc1.id },
-                  "The incremental owner's newest complete job is retained even when it is not the latest job")
-        let jobInc2 = try store!.enqueue(device: device, connectionKey: "prune", assets: [snapshot(18, "ARW")], incremental: plan2)
-        _ = try saved(jobInc2, tiff2)
-        pruned = try store!.pruneExportedOriginals()
-        try check(pruned.originals == 2 && !store!.snapshot.jobs.contains { $0.id == jobInc1.id }
-                      && store!.snapshot.jobs.contains { $0.id == jobInc2.id }
-                      && !FileManager.default.fileExists(atPath: store!.originalURL(inc1Original).path)
-                      && FileManager.default.fileExists(atPath: store!.originalURL(tetherOriginal).path),
-                  "A superseded incremental job is cleaned once a newer complete job anchors its owner")
-        try check(store!.snapshot.savedIncrementalKeys(owner: owner, jpeg: CameraJPEGOptions()).contains(jobInc2.items[0].asset.key),
-                  "Dedup keys survive through the retained newest incremental job")
+        let jobInc2 = try store!.enqueue(device: device, connectionKey: "k2", assets: [snapshot(18, "JPG")],
+            incremental: CameraIncrementalPlan(format: .jpeg, jpeg: CameraJPEGOptions(), boundary: nil, owner: UUID(), boundaries: ["JPEG": boundary]))
+        let inc2Original = try saved(jobInc2, jpegD)
+        pruned = try store!.pruneExportedOriginals(exportedContentIdentifiers: [digestOf(tiff), digestOf(jpegD)])
+        try check(pruned.originals == 0 && store!.snapshot.jobs.contains { $0.id == jobInc1.id } &&
+                      store!.snapshot.jobs.contains { $0.id == jobInc2.id },
+                  "The latest complete job per format keeps the boundary chain across connections")
+        let jobInc3 = try store!.enqueue(device: device, connectionKey: "k3", assets: [snapshot(19, "ARW"), snapshot(20, "JPG")],
+            incremental: CameraIncrementalPlan(format: .rawAndJPEG, jpeg: CameraJPEGOptions(), boundary: nil, owner: owner1,
+                boundaries: ["RAW": boundary, "JPEG": boundary]))
+        _ = try write(tiff2, item: jobInc3.items[0], job: jobInc3, store: store!)
+        _ = try write(jpegE, item: jobInc3.items[1], job: jobInc3, store: store!)
+        pruned = try store!.pruneExportedOriginals(exportedContentIdentifiers: [digestOf(tiff), digestOf(jpegD)])
+        try check(pruned.originals == 2 && !store!.snapshot.jobs.contains { $0.id == jobInc1.id } &&
+                      !store!.snapshot.jobs.contains { $0.id == jobInc2.id } &&
+                      store!.snapshot.jobs.contains { $0.id == jobInc3.id } &&
+                      !FileManager.default.fileExists(atPath: store!.originalURL(inc1Original).path) &&
+                      !FileManager.default.fileExists(atPath: store!.originalURL(inc2Original).path) &&
+                      store!.snapshot.jobs.map(\.id).contains(jobTether.id) &&
+                      FileManager.default.fileExists(atPath: store!.originalURL(tetherOriginal).path),
+                  "A newer complete job covering every format unlocks the cross-connection history")
+        try check(store!.snapshot.savedIncrementalKeys(owner: owner1, jpeg: CameraJPEGOptions()).contains(jobInc3.items[0].asset.key),
+                  "Dedup keys survive through the retained covering job")
     }
-
     private static func incrementalRecovery() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-incremental-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }

@@ -297,26 +297,50 @@ final class CameraOriginalStore {
             state.jobs[index].dismissed = true
         }
     }
-    // Q6：相机原件不自动删，这里是唯一的手动清理入口。可删除任务 = 全部条目已保存落盘，
-    // 且不被任何在用状态引用：最新任务保留（历史与重复导入检测锚点）；联机记录
-    // （tether.jobIDs / shutterJobs）引用的任务保留（断点恢复证据）；每个增量导入 owner
-    // 最近一条完整任务保留（savedIncrementalKeys 去重键与 incrementalBoundaries 检查点锚点）。
-    // 原件文件仅在其余任务不再以 sourceID 引用时删除（跨任务共享的原件保留）。
+    // Q6：相机原件不自动删，这里是唯一的手动清理入口。「已导出」以真实外部出口在场为准：
+    // exportedContentIdentifiers 传入最近打开记录的私有副本内容标识（RecentPhotoStore 会在
+    // 用户打开原件时把 RAW 完整副本存进自己的目录，打开是导出到相册/Files 的必经步骤）；
+    // 没有该证据的完整任务宁漏删不误删，绝不动用户尚未导出的原件。
+    // 其余保护：最新任务保留（历史与重复导入检测锚点）；联机记录（tether.jobIDs /
+    // shutterJobs）引用的任务保留（断点恢复证据）；每台相机每个增量格式保留最近一条完整
+    // 增量任务（incrementalBoundaries 按机身+连接回溯检查点，savedIncrementalKeys 的旧
+    // owner 去重键被检查点边界门控，跨连接后旧 owner 不再命中）。
+    // 原件文件仅在其余任务不再以 sourceID 引用时删除（跨任务共享的原件保留）；
     // 最近打开的照片由 RecentPhotoStore 另存副本，清理不影响其继续打开。
-    func pruneExportedOriginals() throws -> (originals: Int, freedBytes: UInt64) {
+    func pruneExportedOriginals(exportedContentIdentifiers: Set<String> = []) throws
+        -> (originals: Int, freedBytes: UInt64) {
         try change {
-            guard let newestJob = state.jobs.max(by: { $0.createdAt < $1.createdAt })?.id else { return (0, 0) }
+            guard let newestJob = state.jobs.max(by: { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) })?.id
+            else { return (0, 0) }
             var tetherReferenced = Set(state.tether?.jobIDs ?? [])
             tetherReferenced.formUnion(state.tether?.shutterJobs ?? [])
-            var newestOwnerComplete: [UUID: (id: UUID, at: Date)] = [:]
-            for job in state.jobs where job.complete && job.incremental != nil {
-                guard let owner = job.originalListingOwner, newestOwnerComplete[owner]?.at ?? .distantPast < job.createdAt
-                else { continue }
-                newestOwnerComplete[owner] = (job.id, job.createdAt)
+            // 与 incrementalBoundaries 同构的逆序扫描：每台相机首次供给某格式的完整任务
+            // 是该格式的检查点锚点。锚点按机身归组比按连接更保守——多保留、不误删。
+            var anchorIDs = Set<UUID>()
+            var coveredKinds: [String: Set<String>] = [:]
+            for job in state.jobs.reversed() where job.complete {
+                guard let plan = job.incremental else { continue }
+                let kinds: Set<String>
+                if let boundaries = plan.boundaries { kinds = Set(boundaries.keys) }
+                else if plan.boundary != nil {
+                    kinds = Set(job.items.filter { $0.phase == .saved && $0.sourceID != nil }.map(\.asset.kind))
+                } else { kinds = [] }
+                var covered = coveredKinds[job.camera.stableKey] ?? []
+                if !kinds.isSubset(of: covered) { anchorIDs.insert(job.id) }
+                covered.formUnion(kinds)
+                coveredKinds[job.camera.stableKey] = covered
+            }
+            let digestByID = Dictionary(state.originals.map { ($0.id, $0.digest) }, uniquingKeysWith: { first, _ in first })
+            func fullyExported(_ job: CameraTransferJob) -> Bool {
+                job.items.allSatisfy { item in
+                    guard let source = item.sourceID else { return true }
+                    guard let digest = digestByID[source] else { return false }  // 原件条目缺失：拿不准→不删
+                    return exportedContentIdentifiers.contains(digest)
+                }
             }
             let prunable = state.jobs.filter { job in
                 job.complete && job.id != newestJob && !tetherReferenced.contains(job.id) &&
-                    (job.originalListingOwner.map { newestOwnerComplete[$0]?.id != job.id } ?? true)
+                    !anchorIDs.contains(job.id) && fullyExported(job)
             }
             guard !prunable.isEmpty else { return (0, 0) }
             let prunableIDs = Set(prunable.map(\.id))

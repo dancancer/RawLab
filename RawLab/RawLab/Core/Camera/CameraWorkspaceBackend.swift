@@ -128,11 +128,13 @@ final class CameraWorkspaceBackend {
         }
     }
     // Q6：手动清理已导出的相机原件（无自动回收）；回传清理结果与最新快照。
-    func pruneExportedOriginals(_ result: @escaping (Result<(originals: Int, freedBytes: UInt64, manifest: CameraOriginalManifest), Error>) -> Void) {
+    func pruneExportedOriginals(exportedContentIdentifiers: @escaping () -> Set<String>,
+                                _ result: @escaping (Result<(originals: Int, freedBytes: UInt64, manifest: CameraOriginalManifest), Error>) -> Void) {
         queue.async {
+            let identifiers = exportedContentIdentifiers()
             result(Result {
                 let store = try self.store()
-                let pruned = try store.pruneExportedOriginals()
+                let pruned = try store.pruneExportedOriginals(exportedContentIdentifiers: identifiers)
                 return (pruned.originals, pruned.freedBytes, store.snapshot)
             })
         }

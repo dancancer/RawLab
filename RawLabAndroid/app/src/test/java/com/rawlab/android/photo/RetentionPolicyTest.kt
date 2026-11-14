@@ -86,6 +86,8 @@ class RetentionPolicyTest {
         File(root, "${UUID.randomUUID()}.json").apply {
             writeText(body ?: JSONObject().put("version", 1).put("camera", "c").put("profile", "p")
                 .put("time", createdAt).put("status", status).put("baseline", JSONArray()).put("batches", JSONArray()).toString())
+            // 真实文件的 mtime ≈ 最后一次状态写入；测试与 createdAt 对齐以便通过主线程预筛。
+            setLastModified(createdAt)
         }
 
     @Test fun tetherRecordsReclaimAfterNinetyDaysAndKeepNinety() {
@@ -120,6 +122,30 @@ class RetentionPolicyTest {
             assertEquals(1, RetentionPolicy.reclaimTetherRecords(root, now))
             assertFalse(noTime.exists())
             assertTrue(broken.exists())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun recentlyRewrittenOldRunSurvivesMainThreadPrefilter() {
+        val root = Files.createTempDirectory("rawlab-tether-prefilter").toFile()
+        try {
+            // Should 4：mtime 预筛在主线程跳过「刚写过」的文件——超过 90 天才 ENDED 的长会话
+            // 宁可晚 90 天再清，也不在 onCreate 解析大 JSON、更不误删。
+            val justEnded = tetherRun(root, now - RetentionPolicy.days(100), "ENDED")
+            justEnded.setLastModified(now - day)
+            assertEquals(0, RetentionPolicy.reclaimTetherRecords(root, now))
+            assertTrue(justEnded.exists())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun nonUuidRunFilesAreNeverSwept() {
+        val root = Files.createTempDirectory("rawlab-tether-strays").toFile()
+        try {
+            val stray = File(root, "manifest.json").apply {
+                writeText(JSONObject().put("time", now - RetentionPolicy.days(120)).put("status", "ENDED").toString())
+                setLastModified(now - RetentionPolicy.days(120))
+            }
+            assertEquals(0, RetentionPolicy.reclaimTetherRecords(root, now))
+            assertTrue(stray.exists())
         } finally { root.deleteRecursively() }
     }
 }

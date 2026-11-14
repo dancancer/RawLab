@@ -24,18 +24,22 @@ internal object RetentionPolicy {
 
     private val UUID_HEX = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
     private val SNAPSHOT_PATTERN = Regex("^$UUID_HEX\\.properties$")
+    private val RUN_PATTERN = Regex("^$UUID_HEX\\.json$")
+    // 与 CameraTetherJournal 的写入预算一致；更大的文件异常，进程入口不解析（宁漏删）。
+    private const val RUN_MAX_BYTES = 8L * 1024 * 1024
     private const val DAY_MILLIS = 24L * 60 * 60 * 1000
 
     /**
      * 批量产物 = 批量任务落在 journal 根目录的整套条目（快照 `.properties`、行日志 `.rows`
      * 与输入目录 `<id>/`）。双条件先到先清：距快照最后写入超过 30 天，或按写入时间排序
-     * 已超出最近 100 条。返回被清退条目的 id 列表。
+     * 已超出最近 100 条。同毫秒时按 id 倒序，保证边界条目的选取可复现。
+     * 返回被清退条目的 id 列表。
      */
     @Synchronized
     fun reclaimBatchArtifacts(journalRoot: File, nowMillis: Long = System.currentTimeMillis(),
         maxAgeMillis: Long = BATCH_ARTIFACT_MAX_AGE_MILLIS, maxCount: Int = BATCH_ARTIFACT_MAX_COUNT): List<String> {
         val ordered = journalRoot.listFiles()?.filter { it.isFile && SNAPSHOT_PATTERN.matches(it.name) }
-            .orEmpty().sortedByDescending { it.lastModified() }
+            .orEmpty().sortedWith(compareByDescending<File> { it.lastModified() }.thenByDescending { it.name })
         val reclaimed = mutableListOf<String>()
         ordered.forEachIndexed { index, snapshot ->
             if (nowMillis - snapshot.lastModified() <= maxAgeMillis && index < maxCount) return@forEachIndexed
@@ -52,6 +56,10 @@ internal object RetentionPolicy {
      * 联机记录 = `camera-tether-runs` 里的运行日志。超过 90 天（按登记时间 `time` 字段，
      * 缺失时退回文件修改时间）的清退；状态 ACTIVE 的进行中运行不删（A2 验收）。
      * 读不出的半截文件原样保留，交给 [com.rawlab.android.camera.CameraTetherJournal] 的加载隔离。
+     * 进程入口在主线程执行（Should 4 评估：正常运行文件数量少且已在 90 天窗口内清退，
+     * 全量解析为亚秒级；仍先做名字/时间/体积三重预筛，只有老文件才解析）：
+     * 文件名不是 UUID 或 mtime 距今不超过 maxAge 的一律跳过——刚写过的运行（例如超过
+     * 90 天才 ENDED 的长会话）宁漏删不误删；超过写入预算的异常文件不解析、保留。
      * 返回被清退的记录数。
      */
     @Synchronized
@@ -59,7 +67,9 @@ internal object RetentionPolicy {
         maxAgeMillis: Long = TETHER_RECORD_MAX_AGE_MILLIS): Int {
         var reclaimed = 0
         for (file in runsDirectory.listFiles().orEmpty()) {
-            if (!file.isFile || file.extension != "json") continue
+            if (!file.isFile || !RUN_PATTERN.matches(file.name)) continue
+            if (nowMillis - file.lastModified() <= maxAgeMillis) continue
+            if (file.length() > RUN_MAX_BYTES) continue
             val created: Long
             val active: Boolean
             try {

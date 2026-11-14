@@ -60,7 +60,6 @@ import com.rawlab.android.editor.controls.NumericControl
 import com.rawlab.android.editor.controls.editorUsesSideDock
 import com.rawlab.android.editor.controls.editorDockLayout
 import com.rawlab.android.geometry.GeometryRatio
-import com.rawlab.android.camera.CameraOriginalsRetention
 import com.rawlab.android.camera.CameraOriginalsSummary
 import com.rawlab.android.photo.PhotoInfo
 import com.rawlab.android.photo.PhotoInfoReader
@@ -92,6 +91,9 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onHDRCameraDraftChange: (HDRCameraDevelopmentSettings) -> Unit = {},
     onSaveRetry: () -> Unit = {},
     onCancelAdjustment: () -> Unit = {},
+    cameraOriginalsInspect: suspend () -> CameraOriginalsSummary? = { null },
+    cameraOriginalsPending: suspend () -> CameraOriginalsSummary? = { null },
+    cameraOriginalsPrune: suspend () -> CameraOriginalsSummary? = { null },
     canUndoAdjustment: Boolean = false, canRedoAdjustment: Boolean = false, canPasteAdjustment: Boolean = false,
     onCopyAdjustments: () -> Unit = {}, onPasteAdjustments: () -> Unit = {}, onAdjustmentHistory: () -> Unit = {},
     onPresets: () -> Unit = {}, onClosePresets: () -> Unit = {}, quickPresetsVisible: Boolean = false,
@@ -341,7 +343,9 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             )
             CameraOriginalsStorageSection(
                 enabled = state.operation == Operation.NONE && systemPhotoRequest == null,
-                directory = remember(context) { File(context.filesDir, "camera-media-imports") },
+                inspect = cameraOriginalsInspect,
+                pending = cameraOriginalsPending,
+                prune = cameraOriginalsPrune,
             )
         } }, confirmButton = { TextButton(onClick = { settings = false }) { Text(stringResource(R.string.confirm)) } })
     val liveTarget by rememberUpdatedState(hslTarget)
@@ -814,19 +818,25 @@ private fun SystemPhotoStorageSection(enabled: Boolean, directory: File) {
     }
 }
 
-// Q6：相机原件不自动删，这里是设置区里的手动清理入口（列目录 + 删除已导出原件的记录）。
+// Q6：相机原件不自动删，这里是设置区里的手动清理入口。入口经 CameraImportViewModel 走
+// storeLock 与传输互斥，清理后重新加载 jobs，相机页与磁盘记录保持同步（B2.4）；
+// 确认框按「将要删除」的待清理条目计数（Should 5），摘要行仍显示目录总量。
 @Composable
-private fun CameraOriginalsStorageSection(enabled: Boolean, directory: File) {
+private fun CameraOriginalsStorageSection(enabled: Boolean,
+    inspect: suspend () -> CameraOriginalsSummary?,
+    pending: suspend () -> CameraOriginalsSummary?,
+    prune: suspend () -> CameraOriginalsSummary?,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var summary by remember(directory) { mutableStateOf<CameraOriginalsSummary?>(null) }
-    var loading by remember(directory) { mutableStateOf(true) }
-    var clearing by remember(directory) { mutableStateOf(false) }
-    var confirmTarget by remember(directory) { mutableStateOf<CameraOriginalsSummary?>(null) }
-    var feedback by remember(directory) { mutableStateOf<StorageCleanupFeedback?>(null) }
-    LaunchedEffect(directory) {
+    var summary by remember { mutableStateOf<CameraOriginalsSummary?>(null) }
+    var loading by remember { mutableStateOf(true) }
+    var clearing by remember { mutableStateOf(false) }
+    var confirmTarget by remember { mutableStateOf<CameraOriginalsSummary?>(null) }
+    var feedback by remember { mutableStateOf<StorageCleanupFeedback?>(null) }
+    LaunchedEffect(Unit) {
         loading = true
-        summary = withContext(Dispatchers.IO) { runCatching { CameraOriginalsRetention.inspect(directory) }.getOrNull() }
+        summary = inspect()
         if (summary == null) feedback = StorageCleanupFeedback.Failed
         loading = false
     }
@@ -848,10 +858,12 @@ private fun CameraOriginalsStorageSection(enabled: Boolean, directory: File) {
                 scope.launch {
                     loading = true
                     feedback = null
-                    val latest = withContext(Dispatchers.IO) { runCatching { CameraOriginalsRetention.inspect(directory) }.getOrNull() }
+                    // 确认框统计将删除的待清理条目，摘要行保留目录总量。
+                    val latest = inspect()
+                    val target = pending()
                     summary = latest
-                    confirmTarget = latest
-                    if (latest == null) feedback = StorageCleanupFeedback.Failed
+                    confirmTarget = if (latest == null || target == null) null else target
+                    if (latest == null || target == null) feedback = StorageCleanupFeedback.Failed
                     loading = false
                 }
             },
@@ -898,8 +910,8 @@ private fun CameraOriginalsStorageSection(enabled: Boolean, directory: File) {
                     onClick = {
                         scope.launch {
                             clearing = true
-                            val cleared = withContext(Dispatchers.IO) { runCatching { CameraOriginalsRetention.pruneExported(directory) }.getOrNull() }
-                            val refreshed = withContext(Dispatchers.IO) { runCatching { CameraOriginalsRetention.inspect(directory) }.getOrNull() }
+                            val cleared = prune()
+                            val refreshed = inspect()
                             if (refreshed != null) summary = refreshed
                             feedback = if (cleared == null) StorageCleanupFeedback.Failed
                                 else StorageCleanupFeedback.Cleared(cleared.fileCount, cleared.totalBytes)

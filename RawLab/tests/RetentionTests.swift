@@ -110,8 +110,8 @@ import Foundation
     private static func batchArtifactBothConditions() throws {
         let fixture = try Fixture("both")
         let now = Date(timeIntervalSince1970: 1_700_000_000)
-        for index in 0..<95 { try fixture.exportDirectory(age: TimeInterval(index), now: now) }
-        for _ in 0..<10 { try fixture.exportDirectory(age: 35 * day, now: now) }
+        for index in 0..<95 { _ = try fixture.exportDirectory(age: TimeInterval(index), now: now) }
+        for _ in 0..<10 { _ = try fixture.exportDirectory(age: 35 * day, now: now) }
         let reclaimed = BatchArtifactRetention.reclaim(exportsRoot: fixture.exports, journalRoot: fixture.journals, now: now)
         let remainingFresh = try fixture.fileCount(fixture.exports)
         try check(reclaimed == 10 && remainingFresh == 95,

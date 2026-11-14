@@ -41,11 +41,11 @@ enum BatchArtifactRetention {
                         maxAge: TimeInterval = RetentionPolicy.batchArtifactMaxAge,
                         maxCount: Int = RetentionPolicy.batchArtifactMaxCount) -> Int {
         // 以任务 id 归组：一个条目的产物目录与 journal 记录（含输入副本目录）同进同退。
-        var groups: [String: (date: Date, parts: [(url: URL, companion: URL?)])] = [:]
+        var groups: [String: (key: String, date: Date, parts: [(url: URL, companion: URL?)])] = [:]
         func add(_ id: UUID, _ date: Date, url: URL, companion: URL?) {
             let key = id.uuidString
             let existing = groups[key]
-            groups[key] = (max(existing?.date ?? date, date), (existing?.parts ?? []) + [(url, companion)])
+            groups[key] = (key, max(existing?.date ?? date, date), (existing?.parts ?? []) + [(url, companion)])
         }
         for url in (try? fileManager.contentsOfDirectory(at: exportsRoot,
                 includingPropertiesForKeys: [.creationDateKey, .contentModificationDateKey, .isDirectoryKey],
@@ -63,8 +63,9 @@ enum BatchArtifactRetention {
             else { continue }
             add(id, date, url: url, companion: journalRoot.appendingPathComponent(id.uuidString, isDirectory: true))
         }
+        // 同日期时按 id 倒序，保证 100 条边界上的清退选取可复现。
         var reclaimed = 0
-        for (index, group) in groups.values.sorted(by: { $0.date > $1.date }).enumerated() {
+        for (index, group) in groups.values.sorted(by: { $0.date != $1.date ? $0.date > $1.date : $0.key > $1.key }).enumerated() {
             if now.timeIntervalSince(group.date) <= maxAge && index < maxCount { continue }
             var removed = false
             for part in group.parts {

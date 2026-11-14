@@ -284,13 +284,17 @@ struct IOSCameraImportPreferences: Codable {
     @Published private(set) var originalsCleanupFailed = false
     var storedOriginalsCount: Int { manifest.originals.count }
     var storedOriginalsBytes: UInt64 { manifest.originals.reduce(0) { $0 + $1.size } }
+    // 证据采集（RecentPhotoStore 索引读取）由 App 启动时注入 provider，在 backend 队列上执行；
+    // 「已导出」= 最近打开记录的私有副本内容标识（打开是导出到相册/Files 的必经步骤，
+    // 副本在场则删除私有原件不丢数据；拿不准时宁漏删）。模型测试不注入 = 无证据。
+    static var exportedContentIdentifiersProvider: () -> Set<String> = { [] }
     func pruneExportedOriginals() {
         guard !cleaningOriginals else { return }
         let owner = callbackOwner
         cleaningOriginals = true
         lastOriginalsCleanup = nil
         originalsCleanupFailed = false
-        backend.pruneExportedOriginals { [weak self] result in
+        backend.pruneExportedOriginals(exportedContentIdentifiers: Self.exportedContentIdentifiersProvider) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
                 guard self.callbackOwner == owner else { self.reloadHistory(); return }
