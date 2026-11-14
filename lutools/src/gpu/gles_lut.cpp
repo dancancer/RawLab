@@ -213,13 +213,26 @@ bool initContext(GlesContext& context) {
     context.lut_loc = glGetUniformLocation(context.program, "lut");
     context.ready = context.pixel_count_loc >= 0 && context.lut_size_loc >= 0 && context.lut_loc >= 0 &&
         glGetError() == GL_NO_ERROR;
+    if (!context.ready) {
+        glDeleteProgram(context.program);
+        context.program = 0;
+    }
     return context.ready;
 }
 
 GlesContext* getGlesContext() {
     static GlesContext context;
-    static std::once_flag once;
-    std::call_once(once, [&]() { context.ready = initContext(context); });
+    // 调用方持有 gles_mutex。失败不缓存比 TTL 少一套计时状态，下一次调用即可重试；
+    // 释放失败尝试的资源，避免连续失败耗尽 EGL 资源后无法恢复。
+    if (!context.ready && !initContext(context)) {
+        if (context.context != EGL_NO_CONTEXT) {
+            eglDestroyContext(context.display, context.context);
+        }
+        if (context.surface != EGL_NO_SURFACE) {
+            eglDestroySurface(context.display, context.surface);
+        }
+        context = GlesContext{};
+    }
     return context.ready ? &context : nullptr;
 }
 

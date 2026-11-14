@@ -923,6 +923,15 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     endif()
     add_test(NAME gpu_gles_lut_binding COMMAND gles_lut_binding_tests)
     add_test(NAME gpu_gles_lut_init_failure_binding COMMAND gles_lut_binding_tests --init-failure)
+    add_test(NAME gpu_gles_lut_init_retry COMMAND gles_lut_binding_tests --init-retry)
+    if(APPLE)
+        add_executable(metal_lut_init_retry_tests tests/metal_lut_init_retry_tests.mm
+            src/gpu/lut_gpu.cpp src/core/lut_applicator.cpp src/core/lut_parser.cpp)
+        target_compile_options(metal_lut_init_retry_tests PRIVATE -UNDEBUG
+            "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>")
+        target_link_libraries(metal_lut_init_retry_tests Threads::Threads "-framework Metal" "-framework Foundation")
+        add_test(NAME gpu_metal_lut_init_retry COMMAND metal_lut_init_retry_tests)
+    endif()
     add_executable(lut_gpu_no_backend_tests tests/lut_gpu_no_backend_tests.cpp
         src/gpu/lut_gpu.cpp src/core/lut_applicator.cpp src/core/lut_parser.cpp)
     target_link_libraries(lut_gpu_no_backend_tests Threads::Threads)
