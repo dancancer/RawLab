@@ -127,18 +127,23 @@ def dispatch_decision(run, jobs, *, repo=DEFAULT_REPO, runner_label=DEFAULT_RUNN
 
 def next_dispatch(runs, jobs_of, *, repo=DEFAULT_REPO, runner_label=DEFAULT_RUNNER_LABEL,
                   runner_labels=DEFAULT_RUNNER_LABELS.split(","), allowlist=frozenset(), log=None):
-    """Oldest-first queue pass; treat an untrusted run as a FIFO queue barrier.
+    """Oldest-first queue pass; fail closed whenever any active run is untrusted (Option A).
 
     GitHub's generate-jitconfig assigns runners to queued jobs by label FIFO rather than pinning a
-    job id, so an untrusted run ahead of a trusted run could steal a newly launched ephemeral
-    runner. Stop immediately on the first untrusted run without fetching /jobs or dispatching any
-    newer run behind it."""
-    for run in sorted(runs, key=lambda run: (run.get("created_at") or "", run.get("id") or 0)):
+    job id, and run.created_at does not order job entry (``needs: changes`` DAG delays or re-runs
+    of older pushes can queue trusted jobs behind an untrusted run). Pre-scan every active run
+    (queued/in_progress) with ``trusted_run()`` before any ``/jobs`` call: if any active run is
+    untrusted, log it and return ``None`` with zero ``/jobs`` requests. Tradeoff: trusted dispatches
+    wait while an untrusted run remains active (acceptable on this low-fork-traffic repo, with
+    GitHub's 24h queued-run expiration as the automatic backstop)."""
+    ordered = sorted(runs, key=lambda run: (run.get("created_at") or "", run.get("id") or 0))
+    for run in ordered:
         trust = trusted_run(run, repo=repo, allowlist=allowlist)
         if not trust.dispatch:
             if log:
                 log(run, trust)
             return None
+    for run in ordered:
         decision = dispatch_decision(run, jobs_of(run["id"]), repo=repo, runner_label=runner_label,
                                      runner_labels=runner_labels, allowlist=allowlist)
         if log:

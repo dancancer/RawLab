@@ -164,11 +164,48 @@ class QueuePassTests(unittest.TestCase):
         self.assertEqual(reasons, ["untrusted (event=pull_request, head=contributor/RawLab)"])
         self.assertEqual(api.generated, [])
 
-    def test_trusted_run_ahead_of_untrusted_run_is_claimed(self):
-        fork = run(run_id=1, event="pull_request", repo=FOREIGN, created="2026-11-13T00:00:00Z")
-        old_push = run(run_id=3, created="2026-11-12T23:59:00Z")
-        api = FakeAPI(jobs_by_run={1: jobs(), 3: jobs()})
-        candidate = jit.next_dispatch([fork, old_push], api.jobs)
+    def test_newer_untrusted_run_blocks_older_push_with_dag_delayed_job(self):
+        # B1 bypass 1: push created_at precedes fork, but needs:changes delays push job queuing.
+        push_run = {**run(run_id=43556316863, created="2026-11-14T04:22:19Z"),
+                    "run_started_at": "2026-11-14T04:22:22Z"}
+        fork_run = run(run_id=43556320001, event="pull_request", repo=FOREIGN, created="2026-11-14T04:22:21Z")
+        fetched, logged = [], []
+
+        def jobs_of(run_id):
+            fetched.append(run_id)
+            ts = "2026-11-14T04:22:35Z" if run_id == 43556316863 else "2026-11-14T04:22:22Z"
+            return [{"id": run_id + 1000, "status": "queued", "labels": REGISTRATION, "created_at": ts}]
+
+        self.assertIsNone(jit.next_dispatch([fork_run, push_run], jobs_of,
+                                            log=lambda r, d: logged.append((r["id"], d.reason))))
+        self.assertEqual(fetched, [])
+        self.assertEqual(logged, [(43556320001, "untrusted (event=pull_request, head=contributor/RawLab)")])
+
+    def test_untrusted_run_blocks_rerun_of_older_historical_push(self):
+        # B1 bypass 2: re-running an older push preserves run.created_at while queuing new jobs behind fork.
+        rerun_push = {**run(run_id=10, created="2026-11-14T03:00:00Z"),
+                      "run_started_at": "2026-11-14T05:00:00Z"}
+        fork_run = run(run_id=20, event="pull_request", repo=FOREIGN, created="2026-11-14T04:00:00Z")
+        fetched = []
+
+        def jobs_of(run_id):
+            fetched.append(run_id)
+            ts = "2026-11-14T05:00:15Z" if run_id == 10 else "2026-11-14T04:00:05Z"
+            return [{"id": run_id + 900, "status": "queued", "labels": REGISTRATION, "created_at": ts}]
+
+        self.assertIsNone(jit.next_dispatch([fork_run, rerun_push], jobs_of))
+        self.assertEqual(fetched, [])
+
+    def test_trusted_only_queue_dispatches_oldest_matching_run(self):
+        android_push = run(run_id=1, created="2026-11-13T00:00:00Z")
+        newer_push = run(run_id=2, created="2026-11-13T00:02:00Z")
+        older_push = run(run_id=3, created="2026-11-13T00:01:00Z")
+        api = FakeAPI(jobs_by_run={
+            1: jobs(labels=["self-hosted", "rawlab-android"]),
+            2: jobs(),
+            3: jobs(),
+        })
+        candidate = jit.next_dispatch([android_push, newer_push, older_push], api.jobs)
         self.assertEqual(candidate["id"], 3)
 
     def test_untrusted_head_run_blocks_newer_trusted_runs(self):
@@ -195,7 +232,7 @@ class QueuePassTests(unittest.TestCase):
             return jobs(labels=["self-hosted", "rawlab-android"]) if run_id == 1 else jobs()
 
         self.assertIsNone(jit.next_dispatch([android_push, fork, apple_push], jobs_of))
-        self.assertEqual(fetched, [1], "must not spend /jobs calls on untrusted runs or anything behind the barrier")
+        self.assertEqual(fetched, [], "must pre-scan all runs for trust before spending any /jobs quota")
 
     def test_untrusted_run_never_fetches_jobs(self):
         fork = run(run_id=1, event="pull_request", repo=FOREIGN, created="2026-11-13T00:00:00Z")
