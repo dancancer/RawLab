@@ -320,16 +320,19 @@ internal sealed class LookLibrary
             string? targetPath = null;
             string? staging = null;
             var exists = false;
-            if (removed.FileName is { Length: > 0 } fileName &&
-                Path.GetFileName(fileName) == fileName &&
-                Path.GetExtension(fileName).ToLowerInvariant() is ".cube" or ".vlt" or ".rlook" &&
+            if (IsManagedLookFileName(removed.FileName) &&
+                removed.FileName is { } fileName &&
                 looks.All(item => !StringComparer.OrdinalIgnoreCase.Equals(item.FileName, fileName)) &&
                 changed.All(item => !StringComparer.OrdinalIgnoreCase.Equals(item.FileName, fileName)))
             {
-                targetPath = Path.Combine(directory, fileName);
-                staging = Path.Combine(directory, $".remove-{fileName}");
-                exists = File.Exists(targetPath);
-                if (exists) File.Move(targetPath, staging);
+                var candidatePath = Path.GetFullPath(Path.Combine(directory, fileName));
+                if (StringComparer.OrdinalIgnoreCase.Equals(Path.GetDirectoryName(candidatePath), directory))
+                {
+                    targetPath = candidatePath;
+                    staging = Path.Combine(directory, $".remove-{fileName}");
+                    exists = File.Exists(targetPath);
+                    if (exists) File.Move(targetPath, staging);
+                }
             }
             var committed = false;
             try
@@ -355,19 +358,20 @@ internal sealed class LookLibrary
 
     private void Load()
     {
-        if (!File.Exists(registryPath))
-        {
-            RecoverRemovals();
-            return;
-        }
         try
         {
+            if (!File.Exists(registryPath))
+            {
+                RecoverRemovals();
+                return;
+            }
             using var document = JsonDocument.Parse(File.ReadAllText(registryPath));
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object) throw new InvalidDataException();
             var rootNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var property in root.EnumerateObject())
-                if (!rootNames.Add(property.Name)) throw new InvalidDataException();
+                if (!rootNames.Add(property.Name) || property.Name is not ("Version" or "Looks" or "ExternalNames"))
+                    throw new InvalidDataException();
             if (!root.TryGetProperty("Version", out var versionElement) ||
                 !TryGetInt32Literal(versionElement, out var version) || version != 1 ||
                 !root.TryGetProperty("Looks", out var looksElement) ||
@@ -408,7 +412,7 @@ internal sealed class LookLibrary
             externalNames = aliases.ToImmutableDictionary(StringComparer.OrdinalIgnoreCase);
             RecoverRemovals();
         }
-        catch (Exception error) when (error is JsonException or InvalidDataException or IOException or UnauthorizedAccessException)
+        catch (Exception error) when (error is JsonException or InvalidDataException or InvalidOperationException or IOException or UnauthorizedAccessException)
         {
             throw new LookLibraryException(LookLibraryError.InvalidRegistry, error);
         }
@@ -420,44 +424,63 @@ internal sealed class LookLibrary
         "AppearanceUnverified", "CompatibilityMode"
     ];
 
-    // 单条外观读不懂只隔离这一条；注册表本身（语法、版本、重复身份、外部别名）出错仍让整个库失败。
+    // 单条外观读不懂只隔离这一条；注册表本身（语法、版本、未知根键、重复身份、外部别名）出错仍让整个库失败。
     private static ManagedLook? DecodeItem(JsonElement item)
     {
         if (item.ValueKind != JsonValueKind.Object) return null;
-        var keys = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var property in item.EnumerateObject())
-            if (!keys.Add(property.Name) || !ItemAllowedKeys.Contains(property.Name))
+        try
+        {
+            var keys = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var property in item.EnumerateObject())
+                if (!keys.Add(property.Name) || !ItemAllowedKeys.Contains(property.Name))
+                    return null;
+            if (!item.TryGetProperty("Id", out var idEl) || idEl.ValueKind != JsonValueKind.String || idEl.GetString() is not { } id ||
+                !item.TryGetProperty("Name", out var nameEl) || nameEl.ValueKind != JsonValueKind.String || nameEl.GetString() is not { } name ||
+                !item.TryGetProperty("FileName", out var fileNameEl) || fileNameEl.ValueKind != JsonValueKind.String || fileNameEl.GetString() is not { } fileName ||
+                !item.TryGetProperty("SourceName", out var sourceNameEl) || sourceNameEl.ValueKind != JsonValueKind.String || sourceNameEl.GetString() is not { } sourceName ||
+                !item.TryGetProperty("Format", out var formatEl) || !TryGetInt32Literal(formatEl, out var formatValue) ||
+                !item.TryGetProperty("FormatVersion", out var versionEl) || !TryGetUInt32Literal(versionEl, out var formatVersion))
                 return null;
-        if (!item.TryGetProperty("Id", out var idEl) || idEl.ValueKind != JsonValueKind.String || idEl.GetString() is not { } id ||
-            !item.TryGetProperty("Name", out var nameEl) || nameEl.ValueKind != JsonValueKind.String || nameEl.GetString() is not { } name ||
-            !item.TryGetProperty("FileName", out var fileNameEl) || fileNameEl.ValueKind != JsonValueKind.String || fileNameEl.GetString() is not { } fileName ||
-            !item.TryGetProperty("SourceName", out var sourceNameEl) || sourceNameEl.ValueKind != JsonValueKind.String || sourceNameEl.GetString() is not { } sourceName ||
-            !item.TryGetProperty("Format", out var formatEl) || !TryGetInt32Literal(formatEl, out var formatValue) ||
-            !item.TryGetProperty("FormatVersion", out var versionEl) || !TryGetUInt32Literal(versionEl, out var formatVersion))
+
+            var appearanceUnverified = false;
+            if (item.TryGetProperty("AppearanceUnverified", out var unverifiedEl))
+            {
+                if (unverifiedEl.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return null;
+                appearanceUnverified = unverifiedEl.GetBoolean();
+            }
+            var compatibilityMode = 0;
+            if (item.TryGetProperty("CompatibilityMode", out var compatEl))
+            {
+                if (!TryGetInt32Literal(compatEl, out compatibilityMode)) return null;
+            }
+
+            var candidate = new ManagedLook(id, name, fileName, sourceName, (LookFormat)formatValue, formatVersion)
+            {
+                AppearanceUnverified = appearanceUnverified,
+                CompatibilityMode = compatibilityMode
+            };
+            return Valid(candidate) ? candidate : null;
+        }
+        catch (InvalidOperationException)
+        {
             return null;
-
-        var appearanceUnverified = false;
-        if (item.TryGetProperty("AppearanceUnverified", out var unverifiedEl))
-        {
-            if (unverifiedEl.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return null;
-            appearanceUnverified = unverifiedEl.GetBoolean();
         }
-        var compatibilityMode = 0;
-        if (item.TryGetProperty("CompatibilityMode", out var compatEl))
-        {
-            if (!TryGetInt32Literal(compatEl, out compatibilityMode)) return null;
-        }
-
-        var candidate = new ManagedLook(id, name, fileName, sourceName, (LookFormat)formatValue, formatVersion)
-        {
-            AppearanceUnverified = appearanceUnverified,
-            CompatibilityMode = compatibilityMode
-        };
-        return Valid(candidate) ? candidate : null;
     }
 
-    private static string? OptionalText(JsonElement item, string key) => item.ValueKind == JsonValueKind.Object &&
-        item.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+    private static string? OptionalText(JsonElement item, string key)
+    {
+        if (item.ValueKind != JsonValueKind.Object) return null;
+        try
+        {
+            return item.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : null;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
 
     private static bool TryGetInt32Literal(JsonElement value, out int result)
     {
@@ -526,6 +549,19 @@ internal sealed class LookLibrary
         output.Flush(flushToDisk: true);
     }
 
+    private static bool IsManagedLookFileName(string? fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName) || Path.GetFileName(fileName) != fileName ||
+            fileName.Contains(':') || fileName.Contains('/') || fileName.Contains('\\'))
+            return false;
+        var extension = Path.GetExtension(fileName).ToLowerInvariant();
+        if (extension is not (".cube" or ".vlt" or ".rlook")) return false;
+        var stem = Path.GetFileNameWithoutExtension(fileName);
+        return Guid.TryParse(stem, out var parsed) &&
+               (string.Equals(stem, parsed.ToString("D"), StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(stem, parsed.ToString("N"), StringComparison.OrdinalIgnoreCase));
+    }
+
     private void RecoverRemovals()
     {
         if (!Directory.Exists(directory)) return;
@@ -536,8 +572,7 @@ internal sealed class LookLibrary
         foreach (var staged in Directory.EnumerateFiles(directory, ".remove-*", SearchOption.TopDirectoryOnly))
         {
             var fileName = Path.GetFileName(staged)[".remove-".Length..];
-            var extension = Path.GetExtension(fileName).ToLowerInvariant();
-            if (extension is not (".cube" or ".vlt" or ".rlook") || !Guid.TryParse(Path.GetFileNameWithoutExtension(fileName), out _))
+            if (!IsManagedLookFileName(fileName))
                 continue;
             var original = Path.Combine(directory, fileName);
             if (activeFiles.Contains(fileName))

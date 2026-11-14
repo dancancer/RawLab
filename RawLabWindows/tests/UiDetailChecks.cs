@@ -229,8 +229,12 @@ internal static class UiDetailChecks
             appWindow.LookSearch.Text="";appWindow.UpdateLayout();
             var deleteButton=Descendants(appWindow.UnreadableLooksPanel).OfType<Button>()
                 .Single(button=>Equals(AutomationProperties.GetAutomationId(button),"looks.unreadable.delete."+namedId));
+            var foregroundBusyField=typeof(MainWindow).GetField("foregroundBusy",PrivateInstance)!;
             Click(deleteButton);
-            Pump(()=>library.ListUnreadable().Count==1,TimeSpan.FromSeconds(5));
+            Pump(()=>library.ListUnreadable().Count==1 &&
+                   appWindow.UnreadableLooksPanel.Children.Count==1 &&
+                   !(bool)foregroundBusyField.GetValue(appWindow)!,
+                TimeSpan.FromSeconds(5));
             check(library.Looks.Single().Id==valid.Id &&
                   library.ListUnreadable().Single().Json==unnamedBad &&
                   appWindow.UnreadableLooksPanel.Children.Count==1 &&

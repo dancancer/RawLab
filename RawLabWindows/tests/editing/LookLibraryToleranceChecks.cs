@@ -34,6 +34,7 @@ internal static class LookLibraryToleranceChecks
         {
             MixedOneBadAndManyGood(Path.Combine(root, "mixed"));
             IdentityOverlapsAndPreciseDelete(Path.Combine(root, "overlaps"));
+            PathSafetyAndSurrogates(Path.Combine(root, "safety-surrogates"));
             FileLevelFailuresPreserveBytes(Path.Combine(root, "file-failures"));
             Console.WriteLine($"PASS: {checks} look library tolerance checks");
         }
@@ -141,10 +142,14 @@ internal static class LookLibraryToleranceChecks
         var valid = library.ImportLook(source);
         var registryPath = Path.Combine(directory, "registry.json");
 
-        // 同 ID 坏条目、两个重复非法 ID 坏条目、以及非对象坏条目共存。
+        // 同 ID 坏条目、两个共用真实磁盘 <guid>.cube 的重复非法 ID 坏条目、以及非对象坏条目共存。
+        var sharedBadId = Guid.NewGuid().ToString("D");
+        var sharedBadFileName = sharedBadId + ".cube";
+        var sharedBadPath = Path.Combine(directory, sharedBadFileName);
+        File.WriteAllText(sharedBadPath, "shared-unreadable-cube");
         var twin = "{\"Id\":\"" + valid.Id + "\",\"Name\":\"Twin\",\"FileName\":\"" + valid.FileName + "\",\"SourceName\":\"twin.cube\",\"Format\":99,\"FormatVersion\":0}";
-        var alpha = "{\"Id\":\"0\",\"Name\":\"Alpha\",\"FileName\":\"0.cube\",\"SourceName\":\"alpha.cube\",\"Format\":99,\"FormatVersion\":0}";
-        var beta = "{\"Id\":\"0\",\"Name\":\"Beta\",\"FileName\":\"0.cube\",\"SourceName\":\"beta.cube\",\"Format\":99,\"FormatVersion\":0}";
+        var alpha = "{\"Id\":\"0\",\"Name\":\"Alpha\",\"FileName\":\"" + sharedBadFileName + "\",\"SourceName\":\"alpha.cube\",\"Format\":99,\"FormatVersion\":0}";
+        var beta = "{\"Id\":\"0\",\"Name\":\"Beta\",\"FileName\":\"" + sharedBadFileName + "\",\"SourceName\":\"beta.cube\",\"Format\":99,\"FormatVersion\":0}";
         var scalar = "123";
         var text = File.ReadAllText(registryPath);
         var idx = text.IndexOf("\"Looks\": [", StringComparison.Ordinal) + "\"Looks\": [".Length;
@@ -163,11 +168,79 @@ internal static class LookLibraryToleranceChecks
         reloaded.RemoveUnreadable(betaEntry);
         Check(reloaded.ListUnreadable().Select(item => item.Json).SequenceEqual([alpha, scalar]) &&
               File.ReadAllText(registryPath).Contains(alpha, StringComparison.Ordinal) &&
-              !File.ReadAllText(registryPath).Contains(beta, StringComparison.Ordinal),
-            "deleting second duplicate-ID unreadable entry removes only itself");
+              !File.ReadAllText(registryPath).Contains(beta, StringComparison.Ordinal) &&
+              File.Exists(sharedBadPath),
+            "deleting second duplicate-ID unreadable entry removes only itself and preserves shared guid cube on disk");
+
+        var alphaEntry = reloaded.ListUnreadable().Single(item => item.Json == alpha);
+        reloaded.RemoveUnreadable(alphaEntry);
+        Check(!File.Exists(sharedBadPath) && reloaded.ListUnreadable().Select(item => item.Json).SequenceEqual([scalar]),
+            "deleting last unreadable reference removes the orphaned guid cube on disk");
     }
 
-    // 分支 2：文件级整体损坏（语法、根结构、版本、重复根键、有效条目重复 ID、非法外部别名）仍整库报错且保留原字节。
+    // 路径越界、非 GUID 同目录外部 LUT、ADS 语法、非规范大括号 GUID 与单条孤立 UTF-16 代理转义（\uD800）。
+    private static void PathSafetyAndSurrogates(string directory)
+    {
+        Directory.CreateDirectory(directory);
+        var source = Path.Combine(directory, "valid.cube");
+        File.WriteAllText(source, "valid-cube");
+        var library = new LookLibrary(directory, validateLook: _ => new LookValidation(LookFormat.Cube, 0));
+        var valid = library.ImportLook(source);
+        var registryPath = Path.Combine(directory, "registry.json");
+
+        var parentOutside = Path.Combine(Path.GetDirectoryName(directory)!, "outside.cube");
+        var unmanagedInside = Path.Combine(directory, "external-unmanaged.cube");
+        var bracedGuidFile = Path.Combine(directory, "{00000000-0000-0000-0000-000000000001}.cube");
+        File.WriteAllText(parentOutside, "outside-user-lut");
+        File.WriteAllText(unmanagedInside, "unmanaged-user-lut");
+        File.WriteAllText(bracedGuidFile, "braced-guid-lut");
+
+        var surrogateId = Guid.NewGuid().ToString("D");
+        var badEntries = new[]
+        {
+            "{\"Id\":\"1\",\"Name\":\"ParentSlash\",\"FileName\":\"../outside.cube\",\"SourceName\":\"outside.cube\",\"Format\":99,\"FormatVersion\":0}",
+            "{\"Id\":\"2\",\"Name\":\"ParentBackslash\",\"FileName\":\"..\\\\outside.cube\",\"SourceName\":\"outside.cube\",\"Format\":99,\"FormatVersion\":0}",
+            "{\"Id\":\"3\",\"Name\":\"AbsoluteOutside\",\"FileName\":\"" + JsonEncodedText.Encode(parentOutside).ToString() + "\",\"SourceName\":\"outside.cube\",\"Format\":99,\"FormatVersion\":0}",
+            "{\"Id\":\"4\",\"Name\":\"RegistrySelf\",\"FileName\":\"registry.json\",\"SourceName\":\"registry.json\",\"Format\":99,\"FormatVersion\":0}",
+            "{\"Id\":\"5\",\"Name\":\"AdsStream\",\"FileName\":\"registry.json:stream.cube\",\"SourceName\":\"stream.cube\",\"Format\":99,\"FormatVersion\":0}",
+            "{\"Id\":\"6\",\"Name\":\"UnmanagedExternal\",\"FileName\":\"external-unmanaged.cube\",\"SourceName\":\"external-unmanaged.cube\",\"Format\":99,\"FormatVersion\":0}",
+            "{\"Id\":\"7\",\"Name\":\"BracedGuid\",\"FileName\":\"{00000000-0000-0000-0000-000000000001}.cube\",\"SourceName\":\"braced.cube\",\"Format\":99,\"FormatVersion\":0}",
+            "{\"Id\":\"" + surrogateId + "\",\"Name\":\"Bad\\uD800\",\"FileName\":\"" + surrogateId + ".cube\",\"SourceName\":\"bad.cube\",\"Format\":1,\"FormatVersion\":0}",
+            "{\"\\uD800\":1}"
+        };
+
+        var raw = File.ReadAllText(registryPath);
+        var idx = raw.IndexOf("\"Looks\": [", StringComparison.Ordinal) + "\"Looks\": [".Length;
+        File.WriteAllText(registryPath, raw.Insert(idx, "\n    " + string.Join(",\n    ", badEntries) + ","));
+
+        var reloaded = new LookLibrary(directory);
+        Check(reloaded.Looks.Single().Id == valid.Id && reloaded.ListUnreadable().Count == badEntries.Length,
+            "path-unsafe and lone-surrogate items isolate without failing valid looks");
+        var surrogateNameEntry = reloaded.ListUnreadable().Single(item => item.Id == surrogateId);
+        var surrogateKeyEntry = reloaded.ListUnreadable().Single(item => item.Json == "{\"\\uD800\":1}");
+        Check(surrogateNameEntry.Name == null && surrogateKeyEntry.Id == null && surrogateKeyEntry.Name == null,
+            "lone surrogate escapes clear undecodable string fields while retaining raw JSON");
+
+        reloaded.RenamePath(valid.Path, "Valid Renamed");
+        var persisted = File.ReadAllText(registryPath);
+        Check(persisted.Contains(surrogateNameEntry.Json, StringComparison.Ordinal) &&
+              persisted.Contains(surrogateKeyEntry.Json, StringComparison.Ordinal),
+            "lone-surrogate entries pass through Persist byte-for-byte");
+
+        foreach (var bad in reloaded.ListUnreadable().ToArray())
+            reloaded.RemoveUnreadable(bad);
+
+        Check(File.ReadAllText(parentOutside) == "outside-user-lut" &&
+              File.ReadAllText(unmanagedInside) == "unmanaged-user-lut" &&
+              File.ReadAllText(bracedGuidFile) == "braced-guid-lut" &&
+              File.Exists(registryPath) &&
+              File.Exists(valid.Path) &&
+              reloaded.Looks.Single().Name == "Valid Renamed" &&
+              reloaded.ListUnreadable().Count == 0,
+            "removing path-unsafe and non-GUID unreadable entries never deletes external files or registry.json");
+    }
+
+    // 分支 2：文件级整体损坏（语法、根结构、未知/重复根键、版本、有效条目重复 ID、非法外部别名、根级孤立代理对）仍整库报错且保留原字节。
     private static void FileLevelFailuresPreserveBytes(string directory)
     {
         Directory.CreateDirectory(directory);
@@ -184,11 +257,15 @@ internal static class LookLibraryToleranceChecks
             ("future-version", "{\"Version\":2,\"Looks\":[]}"),
             ("decimal-version", "{\"Version\":1.5,\"Looks\":[]}"),
             ("duplicate-root-key", "{\"Version\":1,\"Version\":1,\"Looks\":[]}"),
+            ("unknown-root-key", "{\"Version\":1,\"Looks\":[],\"FutureRoot\":true}"),
             ("missing-looks", "{\"Version\":1}"),
             ("null-looks", "{\"Version\":1,\"Looks\":null}"),
             ("duplicate-valid-id", "{\"Version\":1,\"Looks\":[" + validEntry + "," + validEntryDup + "]}"),
             ("relative-external-name", "{\"Version\":1,\"Looks\":[],\"ExternalNames\":{\"relative.cube\":\"Rel\"}}"),
-            ("control-char-external-name", "{\"Version\":1,\"Looks\":[],\"ExternalNames\":{\"" + JsonEncodedText.Encode(Path.Combine(directory, "ext.cube")).ToString() + "\":\"Bad\\nName\"}}")
+            ("control-char-external-name", "{\"Version\":1,\"Looks\":[],\"ExternalNames\":{\"" + JsonEncodedText.Encode(Path.Combine(directory, "ext.cube")).ToString() + "\":\"Bad\\nName\"}}"),
+            ("surrogate-root-key", "{\"\\uD800\":1,\"Version\":1,\"Looks\":[]}"),
+            ("surrogate-external-key", "{\"Version\":1,\"Looks\":[],\"ExternalNames\":{\"\\uD800\":\"Alias\"}}"),
+            ("surrogate-external-value", "{\"Version\":1,\"Looks\":[],\"ExternalNames\":{\"" + JsonEncodedText.Encode(Path.Combine(directory, "ext.cube")).ToString() + "\":\"Bad\\uD800\"}}")
         };
 
         foreach (var (label, json) in invalidRegistries)

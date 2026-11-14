@@ -378,7 +378,7 @@ public partial class MainWindow
         foreach(var bad in unreadable)
         {
             index++;
-            var rowId=bad.Id is { Length: > 0 } badId && Guid.TryParse(badId,out _) && rowIds.Add(badId) ? badId : "unreadable."+index;
+            var rowId=bad.Id is { Length: > 0 } badId && Guid.TryParseExact(badId,"D",out _) && rowIds.Add(badId) ? badId : "unreadable."+index;
             var displayName=!string.IsNullOrWhiteSpace(bad.Name) ? Loc.Format("{0}（损坏）",bad.Name) : Loc.Text("损坏的预设");
             var row=new Border{Padding=new Thickness(0,6,0,6),Opacity=0.75};
             AutomationProperties.SetAutomationId(row,"looks.unreadable.row."+rowId);
