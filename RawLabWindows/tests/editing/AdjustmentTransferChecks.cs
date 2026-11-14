@@ -25,7 +25,7 @@ internal static class AdjustmentTransferChecks
         if (candidate.Settings.Restore()[Parameter.Exposure] != 1.25 || candidate.Settings.Processing != ProcessingIdentity.Legacy)
             throw new Exception("Frozen logical values preserve target processing");
         Console.WriteLine("PASS: Windows selective payload capture, frozen JSON and processing provenance");
-        Vectors(); Scenarios(); AdapterChecks(); TransferNoticeLifecycleChecks();
+        Vectors(); Scenarios(); DecimalVectors(); AdapterChecks(); TransferNoticeLifecycleChecks();
     }
     private static void Check(bool condition,string message) {if(!condition)throw new Exception(message);}
     private static void Reject(Action action,string message)
@@ -93,9 +93,36 @@ internal static class AdjustmentTransferChecks
     // 显式例外清单：未登记的分歧（或同一场景出现清单外的字段差异）必红；已修复项仍留在此表也必红（棘轮只减不增）。
     private static readonly IReadOnlyDictionary<string, ScenarioDivergence> KnownScenarioDivergences =
         new Dictionary<string, ScenarioDivergence>();
-    private static void Scenarios()
+    private static void Scenarios() => Scenarios("Shared/fixtures/adjustment-transfer-scenarios-v1.json", checkKnownDivergences: true);
+
+    private static void DecimalVectors()
     {
-        using var document = JsonDocument.Parse(File.ReadAllText(ResolveFixturePath("Shared/fixtures/adjustment-transfer-scenarios-v1.json")));
+        const string path = "Shared/fixtures/adjustment-transfer-decimals-v1.json";
+        Scenarios(path, checkKnownDivergences: false);
+        using var document = JsonDocument.Parse(File.ReadAllText(ResolveFixturePath(path)));
+        var rejectedPayloads = document.RootElement.GetProperty("rejected_payloads");
+        Check(rejectedPayloads.GetArrayLength() > 0, "Decimal rejected payloads must not be empty");
+        foreach (var item in rejectedPayloads.EnumerateArray())
+        {
+            var id = item.GetProperty("id").GetString() ?? throw new Exception("Rejected payload missing id");
+            var reason = item.GetProperty("reason").GetString() ?? throw new Exception("Rejected payload missing reason");
+            var rawJson = item.GetProperty("payload").GetRawText();
+            try
+            {
+                _ = AdjustmentPayload.Parse(rawJson);
+                throw new Exception($"Decimal rejected payload {id}: expected {reason}");
+            }
+            catch (AdjustmentTransferException error)
+            {
+                Check(ErrorReason(error) == reason, $"Decimal rejected payload {id}: expected {reason}, got {ErrorReason(error)}");
+            }
+        }
+        Console.WriteLine($"PASS: Windows decimal transfer vectors and {rejectedPayloads.GetArrayLength()} integer-narrowing rejections");
+    }
+
+    private static void Scenarios(string fixturePath, bool checkKnownDivergences)
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(ResolveFixturePath(fixturePath)));
         var root = document.RootElement;
         Check(root.GetProperty("fixture_version").GetInt32() == 1, "Scenario fixture version must be 1");
         var scenarios = root.GetProperty("scenarios");
@@ -122,7 +149,8 @@ internal static class AdjustmentTransferChecks
             var diffs = EvaluateScenario(id, scenario);
             var actualKeys = diffs.Select(d => d.Key).ToHashSet();
             var summary = string.Join("; ", diffs.Select(d => d.Summary));
-            var hasKnown = KnownScenarioDivergences.TryGetValue(id, out var known);
+            ScenarioDivergence? known = null;
+            var hasKnown = checkKnownDivergences && KnownScenarioDivergences.TryGetValue(id, out known);
             if (diffs.Count > 0 && !hasKnown)
                 problems.Add($"Scenario {id} diverged: {summary}");
             else if (diffs.Count == 0 && hasKnown)
@@ -135,10 +163,13 @@ internal static class AdjustmentTransferChecks
 
         Check(seenIDs.Count == scenarios.GetArrayLength(), "All scenario IDs visited");
         Check(evaluatedIDs.Count + skippedIDs.Count == scenarios.GetArrayLength(), "All scenarios accounted for");
-        var unknownRegistered = KnownScenarioDivergences.Keys.Except(evaluatedIDs).ToArray();
-        Check(unknownRegistered.Length == 0, "Registered divergences do not match evaluated scenarios: " + string.Join(", ", unknownRegistered));
+        if (checkKnownDivergences)
+        {
+            var unknownRegistered = KnownScenarioDivergences.Keys.Except(evaluatedIDs).ToArray();
+            Check(unknownRegistered.Length == 0, "Registered divergences do not match evaluated scenarios: " + string.Join(", ", unknownRegistered));
+        }
         if (problems.Count > 0) throw new Exception(string.Join(Environment.NewLine, problems));
-        Console.WriteLine($"PASS: {evaluatedIDs.Count} Windows transfer scenarios evaluated ({skippedIDs.Count} platform-scoped skipped, {KnownScenarioDivergences.Count} registered divergences)");
+        Console.WriteLine($"PASS: {evaluatedIDs.Count} Windows transfer scenarios evaluated ({skippedIDs.Count} platform-scoped skipped, {(checkKnownDivergences ? KnownScenarioDivergences.Count : 0)} registered divergences)");
     }
     private static List<ScenarioDiff> EvaluateScenario(string id, JsonElement scenario)
     {
@@ -285,6 +316,7 @@ internal static class AdjustmentTransferChecks
     }
     private static string ErrorReason(AdjustmentTransferException error) => error.Failure switch
     {
+        AdjustmentFailure.InvalidPayload => "invalid_payload",
         AdjustmentFailure.Incompatible => "incompatible",
         AdjustmentFailure.Unrepresentable => "unrepresentable",
         AdjustmentFailure.MissingLook => "missing_look",

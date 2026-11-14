@@ -127,7 +127,7 @@ struct PhotoEffectsSettings: Codable, Equatable {
 
     private static func clamped(_ value: Double, to range: ClosedRange<Double>) -> Double {
         guard value.isFinite else { return range.lowerBound <= 0 && range.upperBound >= 0 ? 0 : range.lowerBound }
-        return min(range.upperBound, max(range.lowerBound, value.rounded()))
+        return min(range.upperBound, max(range.lowerBound, value))
     }
 
     private enum CodingKeys: String, CodingKey {

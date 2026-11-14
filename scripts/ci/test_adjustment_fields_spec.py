@@ -1809,8 +1809,15 @@ def _parse_ios_model(shared: dict) -> dict[str, dict]:
 
     # effects.* directly from PhotoEffectsSettings in RawSettings.swift
     fx_blk = _extract_brace_block(ios_raw, r"struct PhotoEffectsSettings\b", "effects.* ios", "RawSettings.swift")
-    _need(r"private static func clamped[\s\S]*?value\.rounded\(\)", fx_blk, "effects ios quantization", "RawSettings.swift", re.S)
-    _require("guard value.rounded() == value else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }", ios_tr, "effects ios transfer rejects fractional", "IOSAdjustmentTransfer.swift")
+    fx_clamp_m = _need(r"private static func clamped\b[^{]*\{([^}]*)\}", fx_blk, "effects ios clamp", "RawSettings.swift", re.S)
+    if "rounded(" in fx_clamp_m.group(1):
+        raise AssertionError("PhotoEffectsSettings.clamped in RawSettings.swift must preserve exact decimals")
+    fx_ui_blk = _extract_brace_block(ios_raw, r"mutating func setEditingEffect\b", "effects ios UI rounding", "RawSettings.swift")
+    _require("value.rounded()", fx_ui_blk, "effects ios UI rounding", "RawSettings.swift")
+    fx_tr_blk = _extract_brace_block(ios_tr, r"for \(field, key\) in effectKeys\b", "effects ios transfer loop", "IOSAdjustmentTransfer.swift")
+    _require("result.photoEffects[keyPath: key] = value", fx_tr_blk, "effects ios transfer apply", "IOSAdjustmentTransfer.swift")
+    if "rounded(" in fx_tr_blk:
+        raise AssertionError("IOSAdjustmentTransfer.swift effectKeys transfer loop must preserve exact decimals")
     fx_init_blk = _need(r"init\((.*?)\)", fx_blk, "effects.* ios init", "RawSettings.swift", re.S).group(1)
 
     # lens defaults from RawSettings.swift (or LensCorrectionSettings if defined there)
@@ -1880,8 +1887,6 @@ def _parse_ios_model(shared: dict) -> dict[str, dict]:
             min_val=float(r_m.group(1)),
             max_val=float(r_m.group(2)),
             default=float(d_m.group(1)),
-            quantization="round_int",
-            transfer_rejects_fractional=True,
         )
 
     m["effects.clarity"] = _model_entry("double", min_val=shared["atmos_range"][0], max_val=shared["atmos_range"][1], hdr_min=shared["hdr_clarity_range"][0], hdr_max=shared["hdr_clarity_range"][1], default=shared["atmos_cl_def"], hdr_default=shared["hdr_clarity_def"], scale_from_protocol="p", hdr_scale_from_protocol="p / 100")
@@ -4246,10 +4251,9 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
                 if fid.startswith("effects.") and fid not in ("effects.clarity", "effects.dehaze"):
                     self.assertEqual(
                         div.get("notes"),
-                        "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via"
-                        " rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as"
-                        " unrepresentable (while HDRPhotoEffectsSettings preserves decimals).",
-                        f"{fid} notes must state iOS-SDR-only integer quantization with HDR keeping decimals",
+                        "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to"
+                        " integer while SDR/HDR model and transfer preserve exact decimals).",
+                        f"{fid} notes must state UI step rounding vs continuous model/transfer decimals",
                     )
 
     def test_apple_shared_protocol_source_is_linked_by_macos_and_ios(self):

@@ -7320,8 +7320,7 @@
           "max": 100.0,
           "default": 0.0,
           "scale_from_protocol": "p",
-          "quantization": "round_int",
-          "transfer_rejects_fractional": true
+          "quantization": "continuous"
         },
         "android": {
           "supported": true,
@@ -7414,7 +7413,7 @@
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
+        "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
     {
@@ -7458,8 +7457,7 @@
           "max": 100.0,
           "default": 50.0,
           "scale_from_protocol": "p",
-          "quantization": "round_int",
-          "transfer_rejects_fractional": true
+          "quantization": "continuous"
         },
         "android": {
           "supported": true,
@@ -7552,7 +7550,7 @@
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
+        "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
     {
@@ -7596,8 +7594,7 @@
           "max": 100.0,
           "default": 0.0,
           "scale_from_protocol": "p",
-          "quantization": "round_int",
-          "transfer_rejects_fractional": true
+          "quantization": "continuous"
         },
         "android": {
           "supported": true,
@@ -7690,7 +7687,7 @@
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
+        "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
     {
@@ -7734,8 +7731,7 @@
           "max": 100.0,
           "default": 50.0,
           "scale_from_protocol": "p",
-          "quantization": "round_int",
-          "transfer_rejects_fractional": true
+          "quantization": "continuous"
         },
         "android": {
           "supported": true,
@@ -7828,7 +7824,7 @@
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
+        "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
     {
@@ -7872,8 +7868,7 @@
           "max": 100.0,
           "default": 0.0,
           "scale_from_protocol": "p",
-          "quantization": "round_int",
-          "transfer_rejects_fractional": true
+          "quantization": "continuous"
         },
         "android": {
           "supported": true,
@@ -7966,7 +7961,7 @@
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
+        "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
     {
@@ -8010,8 +8005,7 @@
           "max": 100.0,
           "default": 0.0,
           "scale_from_protocol": "p",
-          "quantization": "round_int",
-          "transfer_rejects_fractional": true
+          "quantization": "continuous"
         },
         "android": {
           "supported": true,
@@ -8104,7 +8098,7 @@
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
+        "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
     {
@@ -8448,8 +8442,7 @@
           "max": 100.0,
           "default": 25.0,
           "scale_from_protocol": "p",
-          "quantization": "round_int",
-          "transfer_rejects_fractional": true
+          "quantization": "continuous"
         },
         "android": {
           "supported": true,
@@ -8542,7 +8535,7 @@
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
+        "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
     {
@@ -8586,8 +8579,7 @@
           "max": 100.0,
           "default": 50.0,
           "scale_from_protocol": "p",
-          "quantization": "round_int",
-          "transfer_rejects_fractional": true
+          "quantization": "continuous"
         },
         "android": {
           "supported": true,
@@ -8680,7 +8672,7 @@
           "D-05",
           "P2-23"
         ],
-        "notes": "Desktop UI step 0.1 vs mobile 1; iOS SDR PhotoEffectsSettings clamps via rounded() and IOSAdjustmentTransfer.prepare rejects fractional values as unrepresentable (while HDRPhotoEffectsSettings preserves decimals)."
+        "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
     {
