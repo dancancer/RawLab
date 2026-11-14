@@ -102,8 +102,8 @@ KNOWN_INAPPLICABLE_WINDOWS_CTESTS = {
     "gpu_gles_lut_init_failure_binding": "gles_or_android_shader_suite",
     "gpu_gles_lut_init_retry": "gles_or_android_shader_suite",
     "gpu_gles_photo_pixel": "gles_or_android_shader_suite",
-    # Excluded explicitly via `-E '^dualdn_onnx$'` in ci.yml (CI full runs DualDN package tests).
-    "dualdn_onnx": "excluded_by_ci_e_flag",
+    # Excluded explicitly via `-E '^dualdn_onnx(_skip)?$'` in ci.yml (CI full runs DualDN package tests; empty model registers `dualdn_onnx_skip`).
+    "dualdn_onnx_skip": "excluded_by_ci_e_flag",
 }
 
 
@@ -314,6 +314,16 @@ def _run_block(sub_lines: list[str], env: dict[str, object], found: set[str]) ->
             cond = _eval_cmake_condition(m_if.group(1), env) if parent_active else False
             if_stack.append([parent_active, cond, cond])
             continue
+        m_elif = re.match(r"^elseif\s*\((.*)\)$", stmt)
+        if m_elif and if_stack:
+            parent_active, _, taken = if_stack[-1]
+            cond = (
+                _eval_cmake_condition(m_elif.group(1), env)
+                if (parent_active and not taken)
+                else False
+            )
+            if_stack[-1] = [parent_active, cond, bool(taken) or cond]
+            continue
         if re.match(r"^else\s*\(\)$", stmt) and if_stack:
             parent_active, _, taken = if_stack[-1]
             if_stack[-1] = [parent_active, bool(parent_active) and not bool(taken), True]
@@ -465,8 +475,9 @@ class WindowsInventoryTests(unittest.TestCase):
         for name, path in sorted(check_files.items()):
             with self.subTest(check=name):
                 src = path.read_text(encoding="utf-8")
-                self.assertTrue(
-                    "PASS" in src,
+                self.assertRegex(
+                    src,
+                    r'Console\.WriteLine\s*\(\s*\$?"PASS\b',
                     f"{name} ({path.relative_to(ROOT)}) does not emit a PASS banner/assertion message",
                 )
                 if name in NATIVE_ONLY_EDIT_CHECKS:
@@ -546,6 +557,12 @@ class WindowsInventoryTests(unittest.TestCase):
         ctests_no_ai = windows_cmake_ctests(ai_denoise=False)
         ctests_ai = windows_cmake_ctests(ai_denoise=True)
         all_windows_ctests = ctests_no_ai | ctests_ai
+
+        stale_inapplicable = sorted(set(KNOWN_INAPPLICABLE_WINDOWS_CTESTS) - all_windows_ctests)
+        self.assertEqual(
+            stale_inapplicable, [],
+            f"KNOWN_INAPPLICABLE_WINDOWS_CTESTS contains CTests that do not exist in Windows CMake: {stale_inapplicable}",
+        )
 
         # 1) "selected but does not exist": every branch of `$tests` must match >= 1 Windows CTest.
         unmatched_branches = [

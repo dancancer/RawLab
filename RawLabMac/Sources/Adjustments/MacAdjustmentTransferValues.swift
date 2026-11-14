@@ -120,11 +120,15 @@ extension MacAdjustmentTransfer {
                 throw AdjustmentTransferError.incompatible(Field.rawDenoise.rawValue)
             }
             settings.rawNoiseReduction = raw
+            if raw != 0, settings.waveletNoiseReduction?.enabled == false {
+                settings.waveletNoiseReduction = nil
+            }
         }
         if let value = payload[.chromaDenoise] {
             let chroma = value.number ?? 0
-            if chroma != (settings.chromaNoiseReduction ?? 0) {
-                settings.chromaNoiseReduction = chroma == 0 ? nil : chroma
+            settings.chromaNoiseReduction = chroma == 0 ? nil : chroma
+            if chroma != 0, settings.waveletNoiseReduction?.enabled == false {
+                settings.waveletNoiseReduction = nil
             }
         }
         if let value = payload[.waveletDenoise] {
@@ -132,9 +136,7 @@ extension MacAdjustmentTransfer {
                 let decoded = WaveletDenoiseSettings(enabled: wavelet["enabled"]!.boolean!,
                     luma: wavelet["luma"]!.number!, chroma: wavelet["chroma"]!.number!, coarse: wavelet["coarse"]!.number!,
                     preset: DenoisePreset(rawValue: wavelet["preset"]!.string!)!)
-                if decoded != settings.waveletSettings {
-                    settings.waveletNoiseReduction = decoded == WaveletDenoiseSettings() ? nil : decoded
-                }
+                settings.waveletNoiseReduction = decoded == WaveletDenoiseSettings() ? nil : decoded
             } else { settings.waveletNoiseReduction = nil }
         }
         if payload.fields.contains(where: { $0.group == "geometry" && !Field.lensFields.contains($0) }) {
