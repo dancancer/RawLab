@@ -2824,7 +2824,7 @@ static sony2fuji_status processImpl(
     const bool channelCurvesActive = std::any_of(session->channel_curves.begin(), session->channel_curves.end(),
         [](const auto& curve) { return curve.active(); });
 #if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
-    const bool cpuOnlyStages = true; // MUTATION-B1
+    const bool cpuOnlyStages = neighborhoodActive || basicControlsActive || channelCurvesActive || !session->tone_curve.gpuSupported();
 #else
     const bool cpuOnlyStages = neighborhoodActive || basicControlsActive || channelCurvesActive || session->tone_curve.active() || colorGradingActive || toneControlsActive || hslActive || effectsActive || waveletActive || chromaMode != 0;
 #endif
