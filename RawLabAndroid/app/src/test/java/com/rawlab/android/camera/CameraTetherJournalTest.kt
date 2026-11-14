@@ -54,6 +54,15 @@ class CameraTetherJournalTest {
         assertThrows(IOException::class.java) { journal.reserve(run, listOf(photo(1), photo(1).copy(name = "other.ARW"))) }
     }
 
+    @Test fun conflictingListingMetadataIsTypedSourceFailureWithoutPartialDiscovery() = withJournal { root, journal ->
+        val run = journal.create("camera", "sony-test", emptyList(), CameraImportDestination())
+        val observed = listOf(photo(1), photo(1).copy(name = "other.ARW"))
+        assertThrows(CameraTetherSourceException::class.java) { journal.reserve(run, observed) }
+        assertThrows(CameraTetherSourceException::class.java) { journal.rebase(run, observed) }
+        assertTrue(CameraTetherJournal(root).load().single().batches.isEmpty())
+        assertTrue(CameraTetherJournal(root).load().single().baseline.isEmpty())
+    }
+
     @Test fun sameTimestampDoesNotHideNewObjectsAndEndedRunCannotResumeDiscovery() = withJournal { _, journal ->
         val initial = journal.create("camera", "sony-test", listOf(photo(1)), CameraImportDestination())
         val run = journal.reserve(initial, listOf(photo(1), photo(2))).first

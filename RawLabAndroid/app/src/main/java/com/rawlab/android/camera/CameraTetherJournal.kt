@@ -122,7 +122,7 @@ internal class CameraTetherJournal(private val directory: File) {
         observed.forEach { photo ->
             validatePhoto(photo)
             val previous = current.putIfAbsent(photo.key, photo)
-            if (previous != null && previous != photo) throw IOException("Camera object metadata changed")
+            if (previous != null && previous != photo) throw CameraTetherSourceException()
             if (current.size > MAX_PHOTOS) throw CameraMediaSession.PhotoLimitExceededException("Too many camera objects")
         }
         return current

@@ -87,8 +87,12 @@ internal fun CameraTetherRun.recoveryJobs(jobs: List<CameraImportJob>): List<Cam
     val byId = jobs.associateBy { it.id }
     val registered = batches.map { batch ->
         val job = byId[batch.id] ?: return null
+        // 已保存项保留摘要门禁；尚未传到的队尾允许用完整稳定元数据重新定位。
         if (job.cameraId != cameraId || job.destination != destination || job.items.size != batch.photos.size ||
-            batch.photos.zip(job.items).any { (photo, item) -> item.digest == null || !photo.matchesSnapshot(item.photo) })
+            batch.photos.zip(job.items).any { (photo, item) ->
+                !photo.matchesSnapshot(item.photo) || item.digest == null &&
+                    (item.saved != null || photo.storageToken == null || photo.captureDateMillis == null)
+            })
             return null
         job
     }

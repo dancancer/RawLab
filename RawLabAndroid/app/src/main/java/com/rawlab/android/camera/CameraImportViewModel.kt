@@ -84,6 +84,36 @@ internal data class CameraImportState(
             }
         }
 
+    fun withQueueListing(current: Map<String, SonyMobileSession.Asset>, limitExceeded: Boolean): CameraImportState {
+        val next = copy(
+            photos = sortedCameraPhotos(current.values),
+            selected = selected.intersect(current.keys),
+            failure = CameraImportFailure.PHOTO_LIMIT_EXCEEDED.takeIf { limitExceeded } ?: failure,
+            message = R.string.camera_incremental_oversized.takeIf { limitExceeded } ?: message,
+        )
+        return if (next.connected && next.importMode == CameraImportMode.INCREMENTAL && next.cameraId != null)
+            next.copy(incrementalScan = computeCameraIncrementalScan(next, next.cameraId)) else next
+    }
+
+    fun withQueueResult(result: CameraSessionQueueResult, owner: String): CameraImportState {
+        val sameConnection = connected && incrementalOwner == owner
+        val latest = result.job
+        var next = copy(
+            job = latest,
+            jobs = (jobs.filterNot { it.id == latest.id } + latest).sortedByDescending { it.createdAt },
+            verifiedImports = if (sameConnection) verifiedImports + result.verifiedImports else verifiedImports,
+        )
+        if (!result.shouldDisconnect && sameConnection) {
+            if (result.failure == null && latest.incremental != null && latest.status == CameraJobStatus.COMPLETE) {
+                next = next.copy(incrementalCutoffMillis = null, incrementalIncludeUndated = false)
+            }
+            if (next.importMode == CameraImportMode.INCREMENTAL && next.cameraId != null) {
+                next = next.copy(incrementalScan = computeCameraIncrementalScan(next, next.cameraId))
+            }
+        }
+        return next
+    }
+
     fun withConnectedListing(
         cameraId: String,
         opened: CameraMediaSession,
@@ -549,14 +579,7 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
                                     allowed.check()
                                     assets = current
                                     previews.evictAll()
-                                    mutable.update {
-                                        it.copy(
-                                            photos = sortedCameraPhotos(current.values),
-                                            selected = it.selected.intersect(current.keys),
-                                            failure = CameraImportFailure.PHOTO_LIMIT_EXCEEDED.takeIf { limitExceeded } ?: it.failure,
-                                            message = R.string.camera_incremental_oversized.takeIf { limitExceeded } ?: it.message,
-                                        )
-                                    }
+                                    mutable.update { it.withQueueListing(current, limitExceeded) }
                                 }
                             },
                             onProgress = { key, bytes -> mutable.update { it.copy(currentKey = key, currentBytes = bytes) } },
@@ -565,22 +588,7 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
                     }
                 }
             }
-            if (result.verifiedImports.isNotEmpty()) {
-                mutable.update { state ->
-                    if (state.connected && state.incrementalOwner == snapshot.incrementalOwner)
-                        state.copy(verifiedImports = state.verifiedImports + result.verifiedImports)
-                    else state
-                }
-            }
-            val latest = result.job
-            updateJob(latest)
-            if (result.failure == null && latest.incremental != null &&
-                mutable.value.connected && mutable.value.incrementalOwner == snapshot.incrementalOwner) {
-                if (latest.status == CameraJobStatus.COMPLETE) {
-                    mutable.update { it.copy(incrementalCutoffMillis = null, incrementalIncludeUndated = false) }
-                }
-                recomputeIncrementalScan()
-            }
+            mutable.update { it.withQueueResult(result, snapshot.incrementalOwner) }
             permit = null
             mutable.update {
                 it.copy(

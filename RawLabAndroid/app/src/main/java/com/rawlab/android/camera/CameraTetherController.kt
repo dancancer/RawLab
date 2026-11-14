@@ -185,7 +185,7 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                                 observe(current, cameraId, model, destination, host)
                                 busy = 0
                             } catch (error: SonyTetherSession.RemoteResponseException) {
-                                if (current.transport.usesLegacyContents || error.code !in setOf(0x2005, 0x2019) || ++busy > 10) throw error
+                                if (current.transport.usesLegacyContents || error.kind != CameraMediaSession.FailureKind.TRANSIENT_READ || ++busy > 10) throw error
                             }
                             current.permit.check()
                             if (current.transport.usesLegacyContents) openLive(current, current.transport.activateRemote(), this)
@@ -204,7 +204,8 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                     android.util.Log.w("RawLabCamera", "Tether ${error.javaClass.simpleName}$response at ${error.stackTrace.firstOrNull()}")
                 }
                 if (!current.stopped) failure = when {
-                    error is CameraTetherSourceException -> CameraTetherFailure.SOURCE
+                    error is CameraTetherSourceException || error is CameraMediaSession.PhotoTransferException &&
+                        error.kind == CameraMediaSession.FailureKind.SOURCE_CHANGED -> CameraTetherFailure.SOURCE
                     error is CameraMediaSession.PhotoLimitExceededException -> CameraTetherFailure.PHOTO_LIMIT
                     current.run?.shutterRequestedAt != null -> CameraTetherFailure.UNKNOWN_SHOT
                     error is CameraTetherLiveException || current.liveFailure -> CameraTetherFailure.LIVE
@@ -341,7 +342,7 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                 snapshot.commit()
                 current.initialObservation = false
             } catch (error: IOException) {
-                if (error.message?.contains("metadata changed") == true || error.message?.contains("baseline changed") == true)
+                if (error is CameraMediaSession.PhotoTransferException && error.kind == CameraMediaSession.FailureKind.SOURCE_CHANGED)
                     throw CameraTetherSourceException()
                 throw error
             }

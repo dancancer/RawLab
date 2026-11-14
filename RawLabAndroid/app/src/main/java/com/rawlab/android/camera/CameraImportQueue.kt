@@ -72,7 +72,8 @@ internal data class CameraSessionQueueResult(
     val verifiedImports: Map<String, CameraVerifiedImport>,
     val failure: Throwable? = null,
 ) {
-    val sourceChanged: Boolean get() = failure is CameraImportSourceChanged
+    val sourceChanged: Boolean get() = failure is CameraImportSourceChanged ||
+        failure is CameraMediaSession.PhotoTransferException && failure.kind == CameraMediaSession.FailureKind.SOURCE_CHANGED
     val shouldDisconnect: Boolean get() = failure != null && !sourceChanged
 }
 
@@ -141,8 +142,22 @@ internal suspend fun executeCameraSessionQueue(
         latest = receiveCameraJob(store, latest, allowed, { photo, output ->
             val asset = fresh.getValue(matches.getValue(photo.key).key)
             onProgress(photo.key, 0)
-            opened.download(info, asset, output) { bytes, _ ->
-                allowed.check(); onProgress(photo.key, bytes)
+            val reused = try {
+                store.copySampledOriginal(latest, photo, output, allowed) { offset, length ->
+                    opened.readRange(info, asset, offset, length)
+                }
+            } catch (error: IOException) {
+                allowed.check()
+                if (!opened.isOpen || error is CameraMediaSession.PhotoTransferException &&
+                    error.kind in setOf(CameraMediaSession.FailureKind.SESSION, CameraMediaSession.FailureKind.SOURCE_CHANGED)) throw error
+                null
+            }
+            reused ?: run {
+                // 本地候选读取中途失败也可回落，不能把候选的半份内容混到相机原件前面。
+                output.channel.truncate(0); output.channel.position(0)
+                opened.download(info, asset, output) { bytes, _ ->
+                    allowed.check(); onProgress(photo.key, bytes)
+                }
             }
         }, onJob, isSessionAlive = opened::isOpen)
         verified = latest.items.filter { it.saved != null && it.photo.key in pendingKeys }
@@ -174,7 +189,10 @@ internal fun skipFailedCameraItems(store: CameraImportStore, job: CameraImportJo
 }
 
 internal fun isPerPhotoImportFailure(error: IOException, isSessionAlive: () -> Boolean): Boolean = when (error) {
-    is CameraMediaSession.PhotoTransferException -> !error.isSessionFailure && isSessionAlive()
+    is CameraMediaSession.PhotoTransferException -> when (error.kind) {
+        CameraMediaSession.FailureKind.ITEM, CameraMediaSession.FailureKind.TRANSIENT_READ -> isSessionAlive()
+        else -> false
+    }
     is CameraPhotoImportException -> isSessionAlive()
     else -> false
 }

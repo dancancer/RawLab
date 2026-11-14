@@ -322,6 +322,56 @@ internal class CameraImportStore(private val directory: File, private val tempor
         }
     }
 
+    /** 三段抽样只用于跳过无线重复下载；本地完整 SHA-256 与 publish 的完整性校验仍然保留。 */
+    fun copySampledOriginal(job: CameraImportJob, photo: CameraPhoto, output: FileOutputStream,
+        permit: CameraTransferPermit, readRange: (Long, Int) -> ByteArray?): String? {
+        val chunk = 64 shl 10
+        if (photo.size < chunk * 3L || photo.captureDateMillis == null ||
+            job.jpegOptions(CameraImportItem(photo)) != null) return null
+        val candidates = readJobs().filter { it.matchesCamera(job.cameraId, job.hardwareIdentity) }
+            .flatMap { previous -> previous.items.filter { item ->
+                item.saved != null && validDigest(item.digest) && previous.jpegOptions(item) == null &&
+                    item.photo.matchesResumeMetadata(photo) && (item.outputSize ?: item.photo.size) == photo.size &&
+                    (item.outputDigest ?: item.digest) == item.digest
+            } }
+            .filter { item ->
+                val saved = checkNotNull(item.saved)
+                runCatching { media.inspect(saved.uri)?.pending == false &&
+                    validContent(saved.uri, photo.size, item.digest) }.getOrDefault(false)
+            }
+        // 同一稳定身份有不同内容时无法证明该复用哪份，必须重新下载。
+        if (candidates.map { it.digest }.distinct().size != 1) return null
+        val source = candidates.last()
+        val uri = checkNotNull(source.saved).uri
+        for (offset in listOf(0L, (photo.size - chunk) / 2, photo.size - chunk)) {
+            permit.check()
+            val remote = readRange(offset, chunk) ?: return null
+            if (remote.size != chunk) return null
+            val local = ByteArray(chunk)
+            media.open(uri).use { input ->
+                var remaining = offset
+                while (remaining > 0) {
+                    permit.check()
+                    val skipped = input.skip(remaining)
+                    if (skipped > 0) remaining -= skipped
+                    else if (input.read() < 0) return null else remaining--
+                }
+                java.io.DataInputStream(input).readFully(local)
+            }
+            if (!remote.contentEquals(local)) return null
+        }
+        media.open(uri).use { input ->
+            val buffer = ByteArray(64 shl 10)
+            while (true) {
+                permit.check()
+                val count = input.read(buffer)
+                if (count < 0) break
+                output.write(buffer, 0, count)
+            }
+        }
+        return source.digest
+    }
+
     fun savedUris(job: CameraImportJob): List<String> {
         val items = job.items.toMutableList()
         val uris = job.items.mapIndexedNotNull { index, item ->

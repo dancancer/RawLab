@@ -51,6 +51,55 @@ public final class SonyMobileSessionTest {
     }
 
     @Test
+    public void previewRetriesBusyResponsesOnTheSameChannels() throws Exception {
+        byte[] expected = new byte[]{1, 2, 3};
+        try (FakeServer server = new FakeServer(command -> {
+            int previous = -1;
+            for (int attempt = 0; attempt < 3; attempt++) {
+                Request request = readRequest(command);
+                assertEquals(0x923e, request.operation);
+                assertTrue(request.transaction > previous);
+                previous = request.transaction;
+                if (attempt < 2) SonyMobileSession.writePacket(command, 7,
+                        concat(SonyMobileSession.u16(0x2019), SonyMobileSession.u32(request.transaction)));
+                else sendData(command, request.transaction, expected, expected.length);
+            }
+            // A write/control response must surface immediately, without replaying OpenSession.
+            Request open = readRequest(command);
+            assertEquals(0x1002, open.operation);
+            SonyMobileSession.writePacket(command, 7,
+                    concat(SonyMobileSession.u16(0x2019), SonyMobileSession.u32(open.transaction)));
+            Request next = readRequest(command);
+            assertEquals(0x923e, next.operation);
+            sendData(command, next.transaction, expected, expected.length);
+        })) {
+            try (SonyMobileSession session = new SonyMobileSession(server.factory(),
+                    InetAddress.getLoopbackAddress(), UUID.randomUUID(), message -> {})) {
+                SonyMobileSession.Asset asset = new SonyMobileSession.Asset(session, CONTENT, FILE, "DSC00001.ARW", 100, 123);
+                assertArrayEquals(expected, session.preview(asset, false));
+                try { session.openSession(); fail("expected busy control response"); }
+                catch (SonyMobileSession.ResponseException error) { assertEquals(CameraMediaSession.FailureKind.ITEM, error.getKind()); }
+                assertTrue(session.isOpen());
+                assertArrayEquals(expected, session.preview(asset, false));
+            }
+            server.finish();
+        }
+    }
+
+    @Test
+    public void responseKindsCoverUsedPartialAndThumbnailReadsWithoutReplayingControls() {
+        for (int op : new int[]{0x1001, 0x1004, 0x1007, 0x1008, 0x100a, 0x101b, 0x9202, 0x9209, 0x923c, 0x923d, 0x923e}) {
+            assertEquals(Integer.toHexString(op), CameraMediaSession.FailureKind.TRANSIENT_READ,
+                    CameraMediaSession.responseFailureKind(op, 0x2019));
+            assertEquals(Integer.toHexString(op), op == 0x923c ? CameraMediaSession.FailureKind.TRANSIENT_READ : CameraMediaSession.FailureKind.ITEM,
+                    CameraMediaSession.responseFailureKind(op, 0x2005));
+        }
+        for (int op : new int[]{0x1002, 0x1003, 0x9201, 0x9205, 0x9207, 0x9212, 0x923f}) {
+            assertEquals(CameraMediaSession.FailureKind.ITEM, CameraMediaSession.responseFailureKind(op, 0x2019));
+        }
+    }
+
+    @Test
     public void previewUsesSmallSelectorForThumbnail() throws Exception {
         byte[] expected = new byte[]{0x01, 0x02, 0x03};
         try (FakeServer server = new FakeServer(command -> {

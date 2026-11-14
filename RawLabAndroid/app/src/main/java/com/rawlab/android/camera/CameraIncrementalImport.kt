@@ -135,7 +135,11 @@ internal fun resumeLocatorMap(job: CameraImportJob, current: List<CameraPhoto>, 
             val item = items.singleOrNull() ?: continue
             if (sameSession) {
                 if (!item.photo.matchesSnapshot(photo)) continue
-            } else if (item.digest == null || !item.photo.matchesResumeMetadata(photo)) continue
+            } else {
+                if (!item.photo.matchesResumeMetadata(photo)) continue
+                // 尚无摘要的队尾只用完整的稳定元数据定位；旧日志缺字段时仍需来源凭据。
+                if (item.digest == null && (item.photo.storageToken == null || item.photo.captureDateMillis == null)) continue
+            }
             put(item.photo.key, photo)
         }
     }
