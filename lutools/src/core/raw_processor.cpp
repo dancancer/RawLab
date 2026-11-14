@@ -195,6 +195,15 @@ public:
         return ErrorCode::Success;
     }
 
+    ErrorCode inspectFile(const std::string& filepath) {
+        const auto status = loadFile(filepath, X3fMode::Legacy, true);
+        if (status != ErrorCode::Success) return status;
+        // Align getWidth/getHeight with unpacked active inset crop without decoding mosaic pixels.
+        rawProcessor_->adjust_to_raw_inset_crop(3);
+        snapshotCalibration();
+        return ErrorCode::Success;
+    }
+
     ErrorCode inspectCameraHDR(const std::string& filepath, int& width, int& height, uint64_t& sensorPixels) {
         const auto status = loadFile(filepath, X3fMode::Legacy, true);
         if (status != ErrorCode::Success) return status;
@@ -797,7 +806,7 @@ ErrorCode RAWProcessor::loadFile(const std::string& filepath, X3fMode mode) {
 }
 
 ErrorCode RAWProcessor::inspectFile(const std::string& filepath) {
-    return pImpl_->loadFile(filepath, X3fMode::Legacy, true);
+    return pImpl_->inspectFile(filepath);
 }
 
 ProbeSizeResult RAWProcessor::probeOutputSize(const std::string& filepath, bool legacySonyCrop,

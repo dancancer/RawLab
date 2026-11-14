@@ -202,6 +202,11 @@ void syntheticSavedCrop() {
     file.close();
     require(bool(file), "Write synthetic Sony crop fixture");
     const auto input = path.u8string();
+    sony2fuji::RAWProcessor inspected;
+    require(inspected.inspectFile(input) == sony2fuji::ErrorCode::Success,
+            "inspectFile must accept synthetic Sony crop fixture");
+    require(inspected.getWidth() == 900 && inspected.getHeight() == 600,
+            "inspectFile must apply Sony active-area inset crop without pixel unpack");
     savedCrop(input.c_str(), 400, 450, 600);
     savedHdrCrop(input.c_str(), 800, 900, 600);
 }
@@ -241,6 +246,10 @@ void sonyPhoto(const char* path) {
     require(hdr.unpackInspectedCameraHDR() == ErrorCode::Success, "Inspected HDR source must unpack");
     require(hdr.getWidth() == width && hdr.getHeight() == height,
             "Deferred HDR unpack must preserve the inspected active area");
+    RAWProcessor inspected;
+    require(inspected.inspectFile(path) == ErrorCode::Success &&
+            inspected.getWidth() == 7008 && inspected.getHeight() == 4672,
+            "inspectFile must match loadFile active RAW area");
     savedCrop(path, 3112, 3504, 4672);
     savedHdrCrop(path, 6224, 7008, 4672);
 }
