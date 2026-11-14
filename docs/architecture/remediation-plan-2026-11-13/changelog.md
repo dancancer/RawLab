@@ -109,3 +109,4 @@
 - 2026-11-14 · #304 续修交卷（head `58d38c5b`）：B1 期望改 strength 静态决定（GPU 面 Auto+Force 无条件 METAL），变异双向坐实旧自适应版假绿（exit 0 且 forced parity 0 次执行）；S1 逐配方 neutral+LUT forced parity 钉回 14 .cube。双 fixture 609 PASS。**环境事件**：crew 变异行曾被并发 docs 提交扫进 development，`d29dec80` 直推回退（lead 亲验核心与 6c404ba0 逐字节一致；教训=变异实验期间主工作区勿提交 docs）。二轮复审在途（review-mwfokgvu）。
 - 2026-11-14 · Q 字头实施票开闸：**`q12-late-cancel`**（提交点后迟到取消不删文件+提示完成，Android 导出+核心，优先复用 #293 latch）与 **`q6-retention`**（批量产物 30d/100 条、联机记录 90d、相机原件零自动删+手动入口，iOS/Android 存储层）并行开工。
 - 2026-11-14 · **双合入（总 67）**：**#304**（r2 approve 0B/0S/0N——strength 静态期望+14 .cube forced parity 钉回，master-recipe-render 既有红闭环）；**#307**（r2 approve——P1③ 重置场景向量合入，**四端分歧台账全空**，双端 CI 注册根治空转）。Mac 摸底 16 新红仅剩桌面复核族挂账。
+- 2026-11-14 · Q12 交卷：**PR #309**（`7febbf10`）——提交点判据=核心状态本身（OK⇔已发布，最后取消检查在 rename 前），Android 平台层删提交点后三处 revision 抛错+committed 标志，ViewModel discard 仍提示「已完成」；核心/C ABI 零改动，iOS 无同类耦合仅报告。碳审在途（review-mwfq8fxh）；顺带发现 SonyLegacyImportSessionTest 本机 flaky 已挂账。
