@@ -408,7 +408,7 @@ internal sealed class LookLibrary
             externalNames = aliases.ToImmutableDictionary(StringComparer.OrdinalIgnoreCase);
             RecoverRemovals();
         }
-        catch (Exception error) when (error is JsonException or IOException or UnauthorizedAccessException)
+        catch (Exception error) when (error is JsonException or InvalidDataException or IOException or UnauthorizedAccessException)
         {
             throw new LookLibraryException(LookLibraryError.InvalidRegistry, error);
         }
@@ -531,7 +531,7 @@ internal sealed class LookLibrary
         if (!Directory.Exists(directory)) return;
         var activeFiles = new HashSet<string>(
             looks.Select(item => item.FileName)
-                .Concat(unreadableLooks.Select(item => item.FileName).Where(name => !string.IsNullOrEmpty(name))!),
+                .Concat(unreadableLooks.Select(item => item.FileName).OfType<string>().Where(name => name.Length > 0)),
             StringComparer.OrdinalIgnoreCase);
         foreach (var staged in Directory.EnumerateFiles(directory, ".remove-*", SearchOption.TopDirectoryOnly))
         {

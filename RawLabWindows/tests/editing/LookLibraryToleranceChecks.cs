@@ -195,6 +195,7 @@ internal static class LookLibraryToleranceChecks
         {
             File.WriteAllText(registryPath, json);
             var bytes = File.ReadAllBytes(registryPath);
+            Reject(() => new LookLibrary(directory), label + " direct load", LookLibraryError.InvalidRegistry);
             var loaded = LookLibrary.TryLoad(directory, out var unavailable, out var loadError);
             Check(!loaded && unavailable == null &&
                   loadError is LookLibraryException { Error: LookLibraryError.InvalidRegistry } &&
