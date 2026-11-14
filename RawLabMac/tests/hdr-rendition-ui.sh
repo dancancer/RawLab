@@ -3,6 +3,8 @@
 # CI 模型门禁改由不依赖辅助功能权限的 RawLabMac/tests/hdr-rendition-reset.sh 覆盖）。
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/RawLabMac/tests/ax-gate.sh"
+rawlab_ax_gate
 source "$ROOT/RawLabMac/build-env.sh"
 OUT="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-hdr-rendition-ui.XXXXXX")"
 trap 'rm -rf "$OUT"' EXIT

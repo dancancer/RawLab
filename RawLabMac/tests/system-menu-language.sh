@@ -5,6 +5,9 @@
 #  需要桌面会话和辅助功能权限；副本换包标识、用临时主目录，不碰日常 RawLab 的设置
 # ============================================================================
 set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/RawLabMac/tests/ax-gate.sh"
+rawlab_ax_gate
 SOURCE_APP="${1:?Pass the built RawLab Mac.app}"
 OUT="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/rawlab-menu-language.XXXXXX")" && pwd -P)"
 ID="dev.rawlab.agent.menu-language.$$"
