@@ -755,6 +755,33 @@ internal static class ControllerChecks
                 check(interrupted.StorageError != null && interrupted.BlocksEditing && !interrupted.CanRepairState,
                     "Unknown enum with recovery-in-progress journal keeps storage gate");
             }
+            {
+                // W2 复核 Finding 2 红测：已完成恢复的历史用户在非安装未知枚举下不得被永久锁死，过期 .staging-* 应按生命周期被回收。
+                var histRoot = Path.Combine(root, "HistoricalRecovery");
+                var directory = Path.Combine(histRoot, "Updates");
+                var edits = Path.Combine(histRoot, "Edits"); Directory.CreateDirectory(edits);
+                File.WriteAllText(Path.Combine(edits, "photo.json"), "{\"Exposure\":0.2}");
+                var store = new UpdateStore(directory); Directory.CreateDirectory(directory);
+                var backupMgr = new UpdateDataBackup(histRoot, directory);
+                var backupDir = backupMgr.Create("0.8.2", "0.9.1", "14");
+                File.WriteAllText(Path.Combine(edits, "photo.json"), "{\"Exposure\":0.9}");
+                var receipt = backupMgr.Restore(backupDir);
+                backupMgr.FinishRecovery(receipt);
+                var expiredStaging = Path.Combine(directory, "Backups", ".staging-" + Guid.NewGuid().ToString("N"));
+                var freshStaging = Path.Combine(directory, "Backups", ".staging-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(expiredStaging); Directory.CreateDirectory(freshStaging);
+                File.WriteAllText(Path.Combine(expiredStaging, "part.json"), "stale");
+                File.WriteAllText(Path.Combine(freshStaging, "part.json"), "fresh");
+                Directory.SetLastWriteTimeUtc(expiredStaging, DateTime.UtcNow.AddDays(-2));
+                var saved = new UpdatePreferences { AutomaticCheck = true, RecoveryReceipt = receipt };
+                var document = JsonNode.Parse(JsonSerializer.Serialize(saved))!.AsObject();
+                document["PendingUpdate"]!["Choice"] = 99;
+                File.WriteAllBytes(store.StatePath, JsonSerializer.SerializeToUtf8Bytes(document));
+                var controller = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14");
+                check(controller.StorageError == null && !controller.BlocksEditing && controller.CanCheck &&
+                    Directory.Exists(receipt) && !Directory.Exists(expiredStaging) && Directory.Exists(freshStaging),
+                    "Historical completed RecoveryReceipt and expired staging directory do not lock editing on non-installation unknown enum");
+            }
             await Task.CompletedTask;
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }

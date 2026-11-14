@@ -634,6 +634,58 @@ internal static class AdjustmentTransferChecks
         Check(!reopenedPhotoState.HasNotices && leakedReopen.Count == 0,
             "Cleared source-switch notice never surfaces on the next photo render");
 
+        // W1 复核 Finding 1/4 红测：稳态帧后的横幅引用保持与弹窗/早退编辑生命周期
+        Func<string> cleanPreview = () => "预览 1200 × 800 · photo.ARW";
+        Func<IReadOnlyList<AdjustmentTransferNotice>, Func<string>> makeBanner =
+            list => () => string.Join("；", list.Select(n => n.PromptKey()));
+        Func<Func<string>, IReadOnlyList<AdjustmentTransferNotice>, Func<string>> makeCombined =
+            (preview, list) => () => preview() + "；" + string.Join("；", list.Select(n => n.PromptKey()));
+
+        // 1) 稳态帧落地后关闭 QuickPresets：ActiveBanner 不得被 Pump 清空，CloseQuickPresets 必须恢复干净预览文案。
+        var quickShow = AdjustmentTransferNoticeBannerState.Empty with { LastPreviewStatus = cleanPreview };
+        var showResult = quickShow.Show(notices, AdjustmentTransferNoticeOrigin.QuickPreset, appliedCurrentPhoto: true,
+            openRevision: 10, editRevision: 20, currentLocalizedStatus: cleanPreview, makeBannerStatus: makeBanner);
+        var (afterTransient, transientStatus) = showResult.NextState.DeliverRender(
+            frameOpenRevision: 10, currentEditRevision: 20, isSettledFrame: false,
+            cleanPreviewStatus: cleanPreview, makeCombinedStatus: list => makeCombined(cleanPreview, list));
+        var (afterSettledBanner, settledStatus) = afterTransient.DeliverRender(
+            frameOpenRevision: 10, currentEditRevision: 20, isSettledFrame: true,
+            cleanPreviewStatus: cleanPreview, makeCombinedStatus: list => makeCombined(cleanPreview, list));
+        Check(afterSettledBanner.ActiveBanner != null && ReferenceEquals(afterSettledBanner.ActiveBanner, settledStatus),
+            "Settled RAW render preserves active banner handle until panel close or edit clears it");
+        var disposeAfterSettled = afterSettledBanner.DisposeQuickPreset(currentLocalizedStatus: settledStatus);
+        Check(disposeAfterSettled.NextState.ActiveBanner == null && ReferenceEquals(disposeAfterSettled.StatusToApply, cleanPreview),
+            "Closing quick presets after a settled RAW render restores clean preview status");
+
+        // 2) 稳态帧落地后触发早退编辑（如 AIResultReady==false 或 Transform 切换）未重写 SetStatus 时：AfterUserEdit 必须恢复干净预览文案。
+        var earlyExitEdit = afterSettledBanner.AfterUserEdit(currentLocalizedStatus: settledStatus);
+        Check(earlyExitEdit.NextState.ActiveBanner == null && ReferenceEquals(earlyExitEdit.StatusToApply, cleanPreview),
+            "Early-exit user edit after a settled RAW render clears the status banner back to clean preview status");
+
+        // 3) 对齐 #317 ContentView.swift:468：Dialog 来源由 AdjustmentResultDialog 承载，主窗状态栏不得重复写横幅或挂起渲染交付。
+        var dialogBase = AdjustmentTransferNoticeBannerState.Empty with { LastPreviewStatus = cleanPreview };
+        var dialogShow = dialogBase.Show(notices, AdjustmentTransferNoticeOrigin.Dialog, appliedCurrentPhoto: true,
+            openRevision: 10, editRevision: 20, currentLocalizedStatus: cleanPreview, makeBannerStatus: makeBanner);
+        Check(dialogShow.StatusToApply == null && !dialogShow.NextState.Pending.HasPendingRenderNotice && dialogShow.NextState.ActiveBanner == null,
+            "Dialog origin keeps notices inside the dialog instead of writing MainWindow status or arming pending render");
+        var (afterDialogSettled, dialogSettledStatus) = dialogShow.NextState.DeliverRender(
+            frameOpenRevision: 10, currentEditRevision: 20, isSettledFrame: true,
+            cleanPreviewStatus: cleanPreview, makeCombinedStatus: list => makeCombined(cleanPreview, list));
+        Check(ReferenceEquals(dialogSettledStatus, cleanPreview) && afterDialogSettled.ActiveBanner == null,
+            "Settled RAW render after dialog paste publishes clean preview status without leaking dialog notices");
+        var afterDialogClose = afterDialogSettled.DisposeDialog(currentLocalizedStatus: dialogSettledStatus);
+        Check(afterDialogClose.NextState.ActiveBanner == null && afterDialogClose.StatusToApply == null,
+            "Closing result dialog leaves MainWindow preview status clean");
+
+        // 4) 进入/取消几何镜头草稿前（editRevision 未变化）触发 AfterUserEdit：待交付提示必须立即清零。
+        var pendingBeforeTransform = showResult.NextState.AfterUserEdit(currentLocalizedStatus: showResult.StatusToApply);
+        var (afterTransformRender, transformStatus) = pendingBeforeTransform.NextState.DeliverRender(
+            frameOpenRevision: 10, currentEditRevision: 20, isSettledFrame: true,
+            cleanPreviewStatus: cleanPreview, makeCombinedStatus: list => makeCombined(cleanPreview, list));
+        Check(ReferenceEquals(pendingBeforeTransform.StatusToApply, cleanPreview) &&
+              ReferenceEquals(transformStatus, cleanPreview) && !afterTransformRender.Pending.HasPendingRenderNotice,
+            "Transform start or cancel edit clears pending transfer notices even before editRevision advances");
+
         Console.WriteLine("PASS: AdjustmentTransferChecks notice display, effective filter, Refine preservation and prepare/dispose/source-switch cleanup");
     }
 }

@@ -357,6 +357,80 @@ internal static class UpdateStoreChecks
                 try { choiceGate.RepairableState(); } catch (InvalidDataException error) { rejected = error.Message.Contains("status is unknown", StringComparison.Ordinal); }
                 check(rejected, "Unknown Choice is not treated as known-non-installation when backups exist");
             }
+            {
+                // W2 复核 Finding 2 红测：已完成恢复的 RecoveryReceipt 与未发布 .staging-* 临时目录不得在非安装未知枚举下误锁编辑或阻断状态修复。
+                var histRoot = Path.Combine(root, "completed-recovery-enum");
+                var histStore = new UpdateStore(Path.Combine(histRoot, "Updates")); Directory.CreateDirectory(histStore.DirectoryPath);
+                var histEdits = Path.Combine(histRoot, "Edits"); Directory.CreateDirectory(histEdits);
+                File.WriteAllText(Path.Combine(histEdits, "photo.json"), "restored edit");
+                var histBackupMgr = new UpdateDataBackup(histRoot, histStore.DirectoryPath);
+                var histBackup = histBackupMgr.Create("0.8.2", "0.9.1", "14");
+                File.WriteAllText(Path.Combine(histEdits, "photo.json"), "newer format");
+                var histReceipt = histBackupMgr.Restore(histBackup);
+                histBackupMgr.FinishRecovery(histReceipt);
+                histBackupMgr.DiscardUnreferencedBackups(null, histReceipt);
+
+                var recoveredPrefs = new UpdatePreferences { AutomaticCheck = true, RecoveryReceipt = histReceipt };
+                var recoveredNode = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(recoveredPrefs))!.AsObject();
+                recoveredNode["PendingUpdate"]!["Choice"] = 99;
+                File.WriteAllText(histStore.StatePath, recoveredNode.ToJsonString());
+                UpdatePreferences? downgradedRecovered = null;
+                try { downgradedRecovered = histStore.Load(false); } catch { }
+                check(downgradedRecovered != null && downgradedRecovered.PendingUpdate.Phase == UpdatePhase.Idle &&
+                    downgradedRecovered.RecoveryReceipt == histReceipt && Directory.Exists(histReceipt),
+                    "Verified completed RecoveryReceipt allows non-installation unknown enum downgrade and preserves receipt data");
+
+                var corruptRecovered = recoveredNode.DeepClone();
+                corruptRecovered["AutomaticCheck"] = "broken";
+                File.WriteAllText(histStore.StatePath, corruptRecovered.ToJsonString());
+                byte[]? repairableRecovered = null;
+                try { repairableRecovered = histStore.RepairableState(); } catch { }
+                check(repairableRecovered != null && repairableRecovered.Length > 0 &&
+                    histStore.RepairState(repairableRecovered).RecoveryReceipt == histReceipt && Directory.Exists(histReceipt),
+                    "Verified completed RecoveryReceipt allows preference repair on unknown enum without losing receipt link");
+
+                // 负向边界：未引用的另一 Recoveries 目录或失效 receipt 仍必须拒绝降级并阻断重建。
+                File.WriteAllText(histStore.StatePath, recoveredNode.ToJsonString());
+                var unreferencedRecovery = Path.Combine(histStore.DirectoryPath, "Recoveries", Guid.NewGuid().ToString("N"), "original", "Edits");
+                Directory.CreateDirectory(unreferencedRecovery);
+                File.WriteAllText(Path.Combine(unreferencedRecovery, "unreferenced.json"), "keep safe");
+                check(Rejected(() => histStore.Load(false)) && File.Exists(Path.Combine(unreferencedRecovery, "unreferenced.json")),
+                    "Extra unreferenced Recoveries directory still blocks unknown enum downgrade alongside RecoveryReceipt");
+                File.WriteAllText(histStore.StatePath, corruptRecovered.ToJsonString());
+                check(Rejected(() => histStore.RepairableState()),
+                    "Extra unreferenced Recoveries directory still blocks RepairableState alongside RecoveryReceipt");
+            }
+            {
+                var stagingRoot = Path.Combine(root, "staging-only-enum");
+                var stagingStore = new UpdateStore(Path.Combine(stagingRoot, "Updates")); Directory.CreateDirectory(stagingStore.DirectoryPath);
+                var oldStaging = Path.Combine(stagingStore.DirectoryPath, "Backups", ".staging-" + Guid.NewGuid().ToString("N"));
+                var freshStaging = Path.Combine(stagingStore.DirectoryPath, "Backups", ".staging-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(oldStaging); Directory.CreateDirectory(freshStaging);
+                File.WriteAllText(Path.Combine(oldStaging, "part.json"), "abandoned");
+                File.WriteAllText(Path.Combine(freshStaging, "part.json"), "active");
+                Directory.SetLastWriteTimeUtc(oldStaging, DateTime.UtcNow.AddDays(-2));
+                var stagingNode = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(new UpdatePreferences { AutomaticCheck = true }))!.AsObject();
+                stagingNode["PendingUpdate"]!["Phase"] = 99;
+                File.WriteAllText(stagingStore.StatePath, stagingNode.ToJsonString());
+                UpdatePreferences? downgradedStaging = null;
+                try { downgradedStaging = stagingStore.Load(false); } catch { }
+                check(downgradedStaging != null && downgradedStaging.PendingUpdate.Phase == UpdatePhase.Idle,
+                    "Unpublished staging backup directories do not block non-installation unknown enum downgrade");
+
+                var corruptStaging = stagingNode.DeepClone();
+                corruptStaging["AutomaticCheck"] = "broken";
+                File.WriteAllText(stagingStore.StatePath, corruptStaging.ToJsonString());
+                byte[]? repairableStaging = null;
+                try { repairableStaging = stagingStore.RepairableState(); } catch { }
+                check(repairableStaging != null && repairableStaging.Length > 0,
+                    "Unpublished staging backup directories do not block RepairableState on unknown enum");
+
+                // 负向边界：若同目录出现未知文件 Backups/prior，仍拒绝。
+                Directory.CreateDirectory(Path.Combine(stagingStore.DirectoryPath, "Backups", "prior"));
+                File.WriteAllText(stagingStore.StatePath, stagingNode.ToJsonString());
+                check(Rejected(() => stagingStore.Load(false)),
+                    "Unknown entry in Backups alongside staging still blocks downgrade");
+            }
             Console.WriteLine("PASS: UpdateStore.Load and RepairableState symmetrically block downgrade/rebuild when disk backup or recovery evidence exists");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
