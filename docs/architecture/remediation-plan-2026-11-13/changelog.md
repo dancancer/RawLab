@@ -187,3 +187,4 @@
 - 2026-11-14 (18) **#332 合入（第 88 个）**：D-05 小数值传输共享向量 + 四端对齐（含 EditorToolDraft 草稿层修复，r2 碳审 approve）。
 - 2026-11-14 (18) **p1-android 交付 #335**（P1-14 @Volatile 可见性合同锚 + P1-25 stat 指纹免整盘哈希，JVM 708/0，digest 3→0 计数锚）；碳审已派（成对原子性/DATE_MODIFIED 失效面/legacy 迁移三问）。codex 接手 #330 r4（r3 未 push 教训：评审 High）。看板全量同步：25 Todo / 1 在途 / 3 评审 / 20 Done（碳盘点单 research-mwghmhrf：94 条未完票归组 16 批次 + 6 手动门禁 + 3 用户侧）。
 - 2026-11-14 (19) 碳审三连 request-changes 全接住：#334 r1（Windows CMake UTF-8 必挂 High、EGL §3.7.3 依赖方向写反 Medium；macOS models 红裁定=artifact 上传 ECONNRESET 抖动可 rerun）→codex-lut2；#326 r4（touchPrecededByDrag 跨手势残留吞双击 High）→codex-q5 r5；#335 r1（stat 指纹在 publish 前采集，真机首次冷启动仍全量哈希 High——JVM FileMedia 假绿面；P1-14 建议按票面改单 AtomicReference 快照）→p1-android 续跑。#330 r4 codex-fixtures 在途。
+- 2026-11-14 (20) 用户定**返工执行者阶梯**（长期规则）：首次返工原 crew 续跑；第二次返工改派 codex；第三次返工改派 carbon 执行。合并门禁仍为 carbon-high 评审不变。
