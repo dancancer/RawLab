@@ -116,3 +116,4 @@
 - 2026-11-14 · P1-10 交卷：**PR #312**——transfer 夹具 +4 HDR 场景（强度反映射/组直通/混合/SDR 目标整体 incompatible），fixture_version 不变、复用 #307 解析无第二套实现；四端本地绿+双端红锚。碳审在途（review-mwfqvu3t，核 CI 终态）。至此 P1 遗留清零。
 - 2026-11-14 · **P2 批次开闸**：`p2-16-preset-tolerance`（预设/外观库一条坏≠整库废，三端逐条容错+1坏N好夹具）先行；P2 其余按依赖与审核队列节奏滚动。
 - 2026-11-14 · **双合入（总 69）**：**#309**（Q12 Android 迟到取消，approve）；**#311**（REQUIRE_AX 强制档，approve 0B，CI 阶段2② 闭环）。回炉：**#310**（B1 Critical=iOS 原件从不进系统相册致「已导出」判据错误→未导出 ARW 有永久删风险，宁漏删不误删+触发序列测试；B3=retention.sh 又没注册 apple-models.sh，#307 同型病）；**#312**（Blocking=A17 本体场景「SDR 带配方 strength 粘 HDR 目标」脱靶，Android 生产分歧因漏测保持空棘轮假象——修或登记，不许静默）。
+- 2026-11-14 · #312 二轮交卷（`164138be`）：A17 本体场景补上，Android 分歧**选择修生产**（prepareHDR 配方强度换算按台账对齐 Apple/Windows），CI 7/7 绿。二轮碳审在途（review-mwfscwtx）。
