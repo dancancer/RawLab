@@ -53,10 +53,10 @@
 | P2-09 | G-N1 | Force 模式的错误码在不同路径上不一致：会话路径返回 UNSUPPORTED，独立 LUT 和 rlook 返回 PROCESSING_ERROR | 中 | 复 §3.2 G-N1 | 核心，以及四端提示 | 未修 | `lut_gpu.cpp:88`（Force 返回 ProcessingError）；#254 只改了 photo_color、photo_effects 两组测试的期望 | Core·主 | 检查四端怎么处理 UNSUPPORTED | 独立 LUT 在 Force 且没有后端时返回 UNSUPPORTED；四端都弹“强制 GPU 不可用” |
 | P2-10 | C29 | GLES 着色器缺“sRGB 输入 LUT”分支，Android 上这类 LUT 永远走 CPU | 低到中 | 主 §14.2.1 C29；主 §14.9 写的是“#254 可能部分” | 核心（Android） | 未修 | `gles_photo.cpp:261`（`inputTransfer()==SRGB` 直接 return false）；#254 只改了测试期望 | Core·主 | Android 真机（没有 GLES 像素测试，见 C26） | 真机上用 sRGB 输入 LUT 比较 GPU 和 CPU 像素；Force 不再返回处理错误 |
 | P2-11 | C26 | GLES 照片管线在核心 ctest 里没有像素级测试 | 中 | 主 §14.1.1 C26 | 核心 | 未修 | 沿用主评审（真机 GLES 测试返回 77 跳过，复审 §4.1 C4 行） | Core·主 | Android 真机或 SwiftShader 类软件 GLES | CI 上能跑的 GLES 像素比对用例，删掉任一着色器分支会变红 |
-| P2-12 | C5 | GPU 非关闭时，独立 LUT 分支整图处理，多 2 到 3 份整幅浮点拷贝 | 中到高 | 主 §4 C5 | 核心 | 未修 | 沿用主评审（未逐行重核） | Core·主 | 无 | 分块处理；峰值内存测量写进 PR |
-| P2-13 | C8 | CPU 非视口预览会移走大图的 RAW 缓存，下一次渲染整幅重解码 | 中 | 主 §4 C8 | 核心 | 未修 | 沿用主评审（未重核） | Core·主 | 无 | 预览后的导出不再重解码（解码计数探针） |
+| P2-12 | C5 | GPU 非关闭时，独立 LUT 分支整图处理，多 2 到 3 份整幅浮点拷贝 | 中到高 | 主 §4 C5 | 核心 | ✅ #327 @ 700eeb40 | 沿用主评审（未逐行重核） | Core·主 | 无 | 分块处理；峰值内存测量写进 PR |
+| P2-13 | C8 | CPU 非视口预览会移走大图的 RAW 缓存，下一次渲染整幅重解码 | 中 | 主 §4 C8 | 核心 | ✅ #328 @ 51f1a7b6 | 沿用主评审（未重核） | Core·主 | 无 | 预览后的导出不再重解码（解码计数探针） |
 | P2-14 | C9 | CPU 管线里好几个整图阶段实际是单线程 | 中 | 主 §4 C9 | 核心 | 未修 | 沿用主评审（未重核） | Core·主 | 先测基线 | 改成 parallel_for 后结果逐位一致，耗时写进 PR |
-| P2-15 | C10 | 降噪和两个 GPU 后端内部没有取消检查点 | 中 | 主 §4 C10；主 §14.0 说仍存在 | 核心 | 未修 | 沿用主评审 | Core·主 | 与 C-N5 一起（S5） | 长降噪过程中取消，在 1 秒内返回 CANCELLED |
+| P2-15 | C10 | 降噪和两个 GPU 后端内部没有取消检查点 | 中 | 主 §4 C10；主 §14.0 说仍存在 | 核心 | ✅ #329 @ 01300d97 | 沿用主评审 | Core·主 | 与 C-N5 一起（S5） | 长降噪过程中取消，在 1 秒内返回 CANCELLED |
 | P2-16 | 预设库与外观库逐条容错（Mac、iOS、Android） | 预设库或外观库有一条读不懂，整个库都不可用 | 低到中 | 主 §14.6.1g、§14.4.2 X1 补充、§14.8 行9；M9 整改方向里的“根本做法” | Mac、iOS、Android | 未修 | `Shared/AdjustmentPresetStore.swift:170-180`（整份严格解码）；`Shared/LookLibrary.swift:236`（readLooks 整份校验）；`RawLabAndroid/…/presets/AdjustmentPresetStore.kt:108-130`；Windows 已由 #251 改好（`AdjustmentPresetChecks.cs:177`） | Apple·主＋And·主 | 参照 Windows 的 `ListUnreadable` 语义 | 用共享 fixture 里一条坏预设：列表只少这一条，坏条目原样保留，并且可以删除 |
 | P2-17 | A-N2 | Android 导出持有全局 `sessionsMutex`，批量导出期间编辑器预览被阻塞 | 中 | 复 §3.5 A-N2 | Android | 未修 | `rawlab_jni.cpp:1469-1470`、`NativeProcessor.kt:476-482`（沿用复审行号） | And·主 | 无 | 批量导出时预览的等待时间有上限（锁改成按会话粒度）；测试里两个会话的调用可以并发 |
 | P2-18 | W-N3 | Windows 预览失败的白名单两层都没接住时，走模态兜底，默认退出 | 低到中 | 复 §3.6 W-N3 | Windows | 部分修复 | `MainWindow/Rendering.cs:90-101` 的内嵌预览 `PumpEmbedded` 已由 **PR #288 @ a3b23e11** 放宽为捕获全部非致命 `Exception`；主预览 `RenderEngine.cs` 异常白名单仍未改 | Win·主 | 无 | 预览路径抛 OverflowException 时只降级显示，不弹退出对话框 |
