@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+JDK="${JAVA_HOME:-}"
+if [ -z "$JDK" ] && command -v /usr/libexec/java_home >/dev/null 2>&1; then
+  JDK="$(/usr/libexec/java_home -v 17 2>/dev/null || /usr/libexec/java_home)"
+fi
+if [ -z "$JDK" ] && command -v javac >/dev/null 2>&1; then
+  JDK="$(cd "$(dirname "$(command -v javac)")/.." && pwd)"
+fi
+: "${JDK:?Set JAVA_HOME to a JDK installation containing jni.h}"
+
+case "$(uname -s)" in
+  Darwin) JNI_MD="darwin" ;;
+  Linux) JNI_MD="linux" ;;
+  *) printf 'Unsupported host OS: %s\n' "$(uname -s)" >&2; exit 1 ;;
+esac
+
+TMP="$(mktemp -d /tmp/rawlab-jni-session-lock.XXXXXX)"
+cleanup() {
+  rm -rf "$TMP"
+}
+trap cleanup EXIT
+
+CXX="${CXX:-clang++}"
+"$CXX" -std=c++17 -O2 -pthread -Wall -Wextra \
+  -I"$ROOT/RawLabAndroid/tests/host_jni" \
+  -I"$ROOT/RawLabAndroid/app/src/main/cpp" \
+  -I"$ROOT/lutools/include" \
+  -I"$JDK/include" \
+  -I"$JDK/include/$JNI_MD" \
+  "$ROOT/RawLabAndroid/tests/jni_session_lock_test.cpp" \
+  -o "$TMP/jni_session_lock_test"
+
+"$TMP/jni_session_lock_test"

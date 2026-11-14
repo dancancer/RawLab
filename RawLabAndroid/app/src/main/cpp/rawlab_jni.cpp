@@ -43,6 +43,8 @@ struct DisplayLensMetadata {
     }
 };
 struct Session {
+    std::mutex mutex;
+    bool closed = false;
     DisplayLensMetadata displayLens;
     std::unique_ptr<sony2fuji_session, SessionDeleter> value;
     rawlab::RecipeProbeStages stages;
@@ -51,15 +53,22 @@ struct Session {
     explicit Session(sony2fuji_session* pointer) : value(pointer) {}
     sony2fuji_session* get() const { return value.get(); }
 };
+struct HdrPairOwner {
+    sony2fuji_hdr_image_pair_v1 value;
+    explicit HdrPairOwner(sony2fuji_hdr_image_pair_v1 v) : value(v) {}
+    ~HdrPairOwner() { sony2fuji_hdr_release_pair(&value); }
+    HdrPairOwner(const HdrPairOwner&) = delete;
+    HdrPairOwner& operator=(const HdrPairOwner&) = delete;
+};
 // Opaque IDs keep stale Java handles from becoming native pointers.
 std::mutex sessionsMutex;
-std::unordered_map<jlong, Session> sessions;
+std::unordered_map<jlong, std::shared_ptr<Session>> sessions;
 jlong nextId = 1;
 // 取消信号不能等待覆盖整次处理的 sessionsMutex。
 std::mutex cancellationMutex;
 std::unordered_map<jlong, std::shared_ptr<std::atomic<jlong>>> cancellationStates;
 std::mutex hdrPairsMutex;
-std::unordered_map<jlong, sony2fuji_hdr_image_pair_v1> hdrPairs;
+std::unordered_map<jlong, std::shared_ptr<const HdrPairOwner>> hdrPairs;
 jlong nextHdrPairId = 1;
 
 struct CancellationScope {
@@ -125,24 +134,36 @@ void throwNativeStatus(JNIEnv* env, const NativeStatusError& error) {
     if (exception) env->Throw(static_cast<jthrowable>(exception));
 }
 
-sony2fuji_hdr_image_pair_v1& hdrPairFor(jlong id) {
+std::shared_ptr<const HdrPairOwner> acquireHdrPair(jlong id) {
+    std::lock_guard<std::mutex> lock(hdrPairsMutex);
     const auto found = hdrPairs.find(id);
     if (found == hdrPairs.end()) throw std::invalid_argument("HDR pair is closed");
     return found->second;
 }
 
 jlong retainHdrPair(sony2fuji_hdr_image_pair_v1 value) {
+    std::shared_ptr<HdrPairOwner> owner;
+    try {
+        owner = std::make_shared<HdrPairOwner>(value);
+    } catch (...) {
+        sony2fuji_hdr_release_pair(&value);
+        throw;
+    }
+    std::lock_guard<std::mutex> lock(hdrPairsMutex);
     const jlong id = nextHdrPairId++;
-    try { hdrPairs.emplace(id, value); }
-    catch (...) { sony2fuji_hdr_release_pair(&value); throw; }
+    hdrPairs.emplace(id, std::move(owner));
     return id;
 }
 
 void releaseHdrPair(jlong id) {
-    const auto found = hdrPairs.find(id);
-    if (found != hdrPairs.end()) {
-        sony2fuji_hdr_release_pair(&found->second);
-        hdrPairs.erase(found);
+    std::shared_ptr<const HdrPairOwner> removed;
+    {
+        std::lock_guard<std::mutex> lock(hdrPairsMutex);
+        const auto found = hdrPairs.find(id);
+        if (found != hdrPairs.end()) {
+            removed = std::move(found->second);
+            hdrPairs.erase(found);
+        }
     }
 }
 
@@ -408,11 +429,22 @@ void prepareRecipeWb(Session& owner, const char* input, bool active, float stren
 }
 
 namespace {
-sony2fuji_session* sessionFor(jlong id) {
+std::shared_ptr<Session> acquireSession(jlong id) {
+    std::lock_guard<std::mutex> lock(sessionsMutex);
     const auto found = sessions.find(id);
     if (found == sessions.end()) throw std::invalid_argument("Processor is closed");
-    return found->second.get();
+    return found->second;
 }
+
+struct SessionGuard {
+    std::shared_ptr<Session> owner;
+    std::unique_lock<std::mutex> lock;
+    explicit SessionGuard(jlong id) : owner(acquireSession(id)), lock(owner->mutex) {
+        if (owner->closed || !owner->get()) throw std::invalid_argument("Processor is closed");
+    }
+    Session& session() { return *owner; }
+    sony2fuji_session* get() const { return owner->get(); }
+};
 jobjectArray strings(JNIEnv* env, const std::vector<std::string>& values) {
     auto type = env->FindClass("java/lang/String");
     if (!type) return nullptr;
@@ -477,9 +509,9 @@ Java_com_rawlab_android_raster_NativePng16_nativeRelease(JNIEnv* env, jobject, j
 extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeSetLensDatabase(JNIEnv* env, jobject, jlong id, jstring path) {
     try {
-        std::lock_guard<std::mutex> lock(sessionsMutex);
+        SessionGuard guard(id);
         UtfChars directory(env, path);
-        check(sony2fuji_session_set_lens_database(sessionFor(id), directory.chars));
+        check(sony2fuji_session_set_lens_database(guard.get(), directory.chars));
     } catch (const std::exception& error) { throwJava(env, "java/io/IOException", error.what()); }
 }
 
@@ -487,9 +519,9 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeSetDisplayLensMetadata(JNIEnv* env, jobject, jlong id,
     jobjectArray names, jfloatArray numbers, jint orientation) {
     try {
-        std::lock_guard<std::mutex> lock(sessionsMutex);
-        auto* session = sessionFor(id);
-        auto& owner = sessions.at(id);
+        SessionGuard guard(id);
+        auto* session = guard.get();
+        auto& owner = guard.session();
         if (!names) {
             check(sony2fuji_session_set_display_lens_metadata(session, nullptr));
             owner.displayLens = DisplayLensMetadata();
@@ -517,14 +549,14 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeSetLensCorrection(JNIEnv* env, jobject, jlong id,
     jboolean distortion, jboolean tca, jboolean crop, jboolean vignetting, jbyteArray profile) {
     try {
-        std::lock_guard<std::mutex> lock(sessionsMutex);
+        SessionGuard guard(id);
         if (!profile) throw std::invalid_argument("Missing lens profile ID");
         std::string value(static_cast<size_t>(env->GetArrayLength(profile)), '\0');
         env->GetByteArrayRegion(profile, 0, static_cast<jsize>(value.size()), reinterpret_cast<jbyte*>(value.data()));
         if (env->ExceptionCheck()) return;
         sony2fuji_lens_correction_config_v2 config{{SONY2FUJI_LENS_CORRECTION_CONFIG_V2_VERSION,
             sizeof(config), distortion ? 1 : 0, tca ? 1 : 0, crop ? 1 : 0, value.c_str()}, vignetting ? 1 : 0};
-        check(sony2fuji_session_set_lens_correction_v2(sessionFor(id), &config));
+        check(sony2fuji_session_set_lens_correction_v2(guard.get(), &config));
     } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
 }
 
@@ -536,9 +568,9 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeSetToneCurves(JNIEnv* env, 
         const sony2fuji_tone_curve_set_config config{SONY2FUJI_TONE_CURVE_SET_CONFIG_VERSION, sizeof(config),
             {curveConfig(env, mode, points), curveConfig(env, redMode, redPoints),
              curveConfig(env, greenMode, greenPoints), curveConfig(env, blueMode, bluePoints)}};
-        std::lock_guard<std::mutex> lock(sessionsMutex);
-        check(sony2fuji_session_set_tone_curves(sessionFor(id), &config));
-        auto& stages = sessions.at(id).stages;
+        SessionGuard guard(id);
+        check(sony2fuji_session_set_tone_curves(guard.get(), &config));
+        auto& stages = guard.session().stages;
         stages.curve = config.curves[0];
         std::copy_n(config.curves + 1, 3, stages.channels);
     } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
@@ -563,11 +595,11 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeSetColorGrading(JNIEnv* env
     jfloat shadowsHue, jfloat shadowsSaturation, jfloat midtonesHue, jfloat midtonesSaturation,
     jfloat highlightsHue, jfloat highlightsSaturation) {
     try {
-        std::lock_guard<std::mutex> lock(sessionsMutex);
+        SessionGuard guard(id);
         sony2fuji_color_grading_config config{SONY2FUJI_COLOR_GRADING_CONFIG_VERSION, sizeof(config),
             shadowsHue, shadowsSaturation, midtonesHue, midtonesSaturation, highlightsHue, highlightsSaturation};
-        check(sony2fuji_session_set_color_grading(sessionFor(id), &config));
-        sessions.at(id).stages.grading = config;
+        check(sony2fuji_session_set_color_grading(guard.get(), &config));
+        guard.session().stages.grading = config;
     } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
 }
 
@@ -575,11 +607,11 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeSetToneControls(JNIEnv* env, jobject, jlong id,
     jfloat blackPoint, jfloat whitePoint, jfloat vibrance) {
     try {
-        std::lock_guard<std::mutex> lock(sessionsMutex);
+        SessionGuard guard(id);
         sony2fuji_tone_controls_config config{SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION, sizeof(config),
             blackPoint, whitePoint, vibrance};
-        check(sony2fuji_session_set_tone_controls(sessionFor(id), &config));
-        sessions.at(id).stages.tone = config;
+        check(sony2fuji_session_set_tone_controls(guard.get(), &config));
+        guard.session().stages.tone = config;
     } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
 }
 
@@ -587,11 +619,11 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeSetAtmosphere(JNIEnv* env, jobject, jlong id,
     jfloat clarity, jfloat dehaze) {
     try {
-        std::lock_guard<std::mutex> lock(sessionsMutex);
+        SessionGuard guard(id);
         sony2fuji_atmosphere_config config{SONY2FUJI_ATMOSPHERE_CONFIG_VERSION, sizeof(config),
             clarity, dehaze};
-        check(sony2fuji_session_set_atmosphere(sessionFor(id), &config));
-        sessions.at(id).stages.atmosphere = config;
+        check(sony2fuji_session_set_atmosphere(guard.get(), &config));
+        guard.session().stages.atmosphere = config;
     } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
 }
 
@@ -601,10 +633,10 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeSetGeometry(JNIEnv* env, jo
     jboolean horizontal, jboolean vertical, jfloat straighten,
     jfloat perspectiveHorizontal, jfloat perspectiveVertical) {
     try {
-        std::lock_guard<std::mutex> lock(sessionsMutex);
+        SessionGuard guard(id);
         sony2fuji_geometry_config config{SONY2FUJI_GEOMETRY_CONFIG_VERSION, sizeof(config),
             x, y, width, height, turns, horizontal ? 1 : 0, vertical ? 1 : 0, straighten};
-        auto* session = sessionFor(id);
+        auto* session = guard.get();
         check(sony2fuji_session_set_geometry(session, &config));
         sony2fuji_perspective_config perspective{SONY2FUJI_PERSPECTIVE_CONFIG_VERSION, sizeof(perspective),
             perspectiveHorizontal, perspectiveVertical};
@@ -615,9 +647,9 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeSetGeometry(JNIEnv* env, jo
 extern "C" JNIEXPORT jintArray JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeGeometrySize(JNIEnv* env, jobject, jlong id) {
     try {
-        std::lock_guard<std::mutex> lock(sessionsMutex);
+        SessionGuard guard(id);
         uint32_t width = 0, height = 0;
-        check(sony2fuji_session_get_geometry_size(sessionFor(id), &width, &height));
+        check(sony2fuji_session_get_geometry_size(guard.get(), &width, &height));
         if (!width || !height || width > INT32_MAX || height > INT32_MAX)
             throw std::runtime_error("Invalid geometry dimensions");
         auto result = env->NewIntArray(2);
@@ -632,12 +664,12 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeGeometrySize(JNIEnv* env, j
 extern "C" JNIEXPORT jobjectArray JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeLensProfiles(JNIEnv* env, jobject, jlong id, jstring input) {
     try {
-        std::lock_guard<std::mutex> lock(sessionsMutex);
-        auto* session = sessionFor(id);
+        SessionGuard guard(id);
+        auto* session = guard.get();
         UtfChars path(env, input);
         sony2fuji_lens_report_v2 report{};
         uint32_t count = 0;
-        const auto& display = sessions.at(id).displayLens;
+        const auto& display = guard.session().displayLens;
         const auto metadata = display.value();
         auto inspect = [&](sony2fuji_lens_profile_v2* profiles, uint32_t capacity) {
             if (input) return sony2fuji_session_inspect_lens_v2(session, path.chars, &report, profiles, capacity, &count);
@@ -661,9 +693,9 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeLensProfiles(JNIEnv* env, j
 extern "C" JNIEXPORT jobjectArray JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeLensReport(JNIEnv* env, jobject, jlong id) {
     try {
-        std::lock_guard<std::mutex> lock(sessionsMutex);
+        SessionGuard guard(id);
         sony2fuji_lens_report_v2 report{};
-        check(sony2fuji_session_get_lens_report_v2(sessionFor(id), &report));
+        check(sony2fuji_session_get_lens_report_v2(guard.get(), &report));
         return strings(env, {std::to_string(report.base.state), report.base.lens_model, report.base.profile.model,
             report.base.applied_distortion ? "1" : "0", report.base.applied_tca ? "1" : "0", std::to_string(report.base.crop_scale), report.applied_vignetting ? "1" : "0"});
     } catch (const std::exception& error) { throwJava(env, "java/io/IOException", error.what()); }
@@ -795,20 +827,25 @@ Java_com_rawlab_android_engine_NativeDcpBridge_compile(JNIEnv* env, jclass, jbyt
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(JNIEnv* env, jobject, jint mode) {
     try {
-        std::lock_guard<std::mutex> lock(sessionsMutex);
         if (mode < SONY2FUJI_GPU_OFF || mode > SONY2FUJI_GPU_FORCE) throw std::invalid_argument("Invalid GPU mode");
         sony2fuji_session* pointer = nullptr;
         check(sony2fuji_session_create(&pointer));
-        Session session(pointer);
+        std::unique_ptr<sony2fuji_session, SessionDeleter> owned(pointer);
         sony2fuji_gpu_config config{SONY2FUJI_GPU_CONFIG_VERSION, sizeof(sony2fuji_gpu_config), static_cast<sony2fuji_gpu_mode>(mode)};
-        check(sony2fuji_session_set_gpu_config(pointer, &config));
+        check(sony2fuji_session_set_gpu_config(owned.get(), &config));
+        auto session = std::make_shared<Session>(nullptr);
+        session->value = std::move(owned);
+        std::lock_guard<std::mutex> lock(sessionsMutex);
         const jlong id = nextId++;
-        sessions.emplace(id, std::move(session));
-        try {
+        {
             std::lock_guard<std::mutex> signalLock(cancellationMutex);
-            cancellationStates.emplace(id, sessions.at(id).generation);
+            cancellationStates.emplace(id, session->generation);
+        }
+        try {
+            sessions.emplace(id, std::move(session));
         } catch (...) {
-            sessions.erase(id);
+            std::lock_guard<std::mutex> signalLock(cancellationMutex);
+            cancellationStates.erase(id);
             throw;
         }
         return id;
@@ -823,12 +860,24 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(JNIEnv* env, jobject
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeDestroy(JNIEnv*, jobject, jlong id) {
-    std::lock_guard<std::mutex> lock(sessionsMutex);
+    std::shared_ptr<Session> removed;
     {
-        std::lock_guard<std::mutex> signalLock(cancellationMutex);
-        cancellationStates.erase(id);
+        std::lock_guard<std::mutex> lock(sessionsMutex);
+        {
+            std::lock_guard<std::mutex> signalLock(cancellationMutex);
+            cancellationStates.erase(id);
+        }
+        const auto found = sessions.find(id);
+        if (found != sessions.end()) {
+            removed = std::move(found->second);
+            sessions.erase(found);
+        }
     }
-    sessions.erase(id);
+    if (removed) {
+        std::lock_guard<std::mutex> sessionLock(removed->mutex);
+        removed->closed = true;
+        removed->value.reset();
+    }
 }
 
 extern "C" JNIEXPORT jlong JNICALL
@@ -848,11 +897,10 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeCancelPreview(JNIEnv*, jobj
 extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeSetGpuMode(JNIEnv* env, jobject, jlong id, jint mode) {
     try {
-        std::lock_guard<std::mutex> lock(sessionsMutex);
-        const auto found = sessions.find(id);
-        if (found == sessions.end() || mode < 0 || mode > 2) throw std::invalid_argument("Invalid processor or GPU mode");
+        SessionGuard guard(id);
+        if (mode < 0 || mode > 2) throw std::invalid_argument("Invalid processor or GPU mode");
         sony2fuji_gpu_config config{SONY2FUJI_GPU_CONFIG_VERSION, sizeof(config), static_cast<sony2fuji_gpu_mode>(mode)};
-        check(sony2fuji_session_set_gpu_config(found->second.get(), &config));
+        check(sony2fuji_session_set_gpu_config(guard.get(), &config));
     } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
 }
 
@@ -966,7 +1014,6 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(JNIEnv* env, jclass,
             sony2fuji_hdr_release_pair(&result);
             throw HDRStatusError(status,diagnostic);
         }
-        std::lock_guard<std::mutex> lock(hdrPairsMutex);
         return retainHdrPair(result);
     } catch (const std::bad_alloc&) {
         throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory for HDR decode");
@@ -988,12 +1035,10 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecodeCameraRaw(JNIEnv* env
         UtfChars resource(env, profilePath), digest(env, profileDigest);
         if (!source.chars || !*source.chars || longEdge < 0 || longEdge > 65535)
             throw std::invalid_argument("Invalid camera RAW HDR preview request");
-        std::lock_guard<std::mutex> sessionLock(sessionsMutex);
-        const auto session = sessions.find(sessionId);
-        if (session == sessions.end()) throw std::invalid_argument("Processor is closed");
-        CancellationScope cancellation(session->second, cancellationGeneration);
+        SessionGuard guard(sessionId);
+        CancellationScope cancellation(guard.session(), cancellationGeneration);
         if (cancellation.isCancelled()) throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
-        if (!proRAW) check(sony2fuji_session_set_processing_version(session->second.get(),
+        if (!proRAW) check(sony2fuji_session_set_processing_version(guard.get(),
             static_cast<sony2fuji_processing_version>(processingVersion)));
         sony2fuji_hdr_decode_options_v1 options{};
         options.version = SONY2FUJI_HDR_VERSION;
@@ -1020,8 +1065,8 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecodeCameraRaw(JNIEnv* env
             settings = &profiled.base;
         }
         const auto status = proRAW
-            ? sony2fuji_hdr_decode_proraw(session->second.get(), source.chars, &options, temporary.chars, &result, &diagnostic)
-            : sony2fuji_hdr_decode_camera_raw_with_development(session->second.get(), source.chars, &options, settings, &result, &diagnostic);
+            ? sony2fuji_hdr_decode_proraw(guard.get(), source.chars, &options, temporary.chars, &result, &diagnostic)
+            : sony2fuji_hdr_decode_camera_raw_with_development(guard.get(), source.chars, &options, settings, &result, &diagnostic);
         if (cancellation.isCancelled()) {
             sony2fuji_hdr_release_pair(&result);
             throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
@@ -1031,7 +1076,6 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecodeCameraRaw(JNIEnv* env
             if (status == SONY2FUJI_STATUS_CANCELLED) throw NativeStatusError(status);
             throw HDRStatusError(status, diagnostic);
         }
-        std::lock_guard<std::mutex> lock(hdrPairsMutex);
         return retainHdrPair(result);
     } catch (const std::bad_alloc&) {
         throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory for camera RAW HDR decode");
@@ -1056,10 +1100,8 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportProRAW(JNIEnv* env, j
         auto& base = request.base.base.base.base.base.base.base;
         base.intent = SONY2FUJI_INTENT_FINAL;
         UtfChars source(env, path), temporary(env, temporaryRoot), output(env, outputPath);
-        std::lock_guard<std::mutex> sessionLock(sessionsMutex);
-        const auto session = sessions.find(sessionId);
-        if (session == sessions.end()) throw std::invalid_argument("Processor is closed");
-        CancellationScope cancellation(session->second, cancellationGeneration);
+        SessionGuard guard(sessionId);
+        CancellationScope cancellation(guard.session(), cancellationGeneration);
         if (cancellation.isCancelled()) throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
         sony2fuji_hdr_export_config_v1 config{};
         config.version = SONY2FUJI_HDR_VERSION; config.struct_size = sizeof(config);
@@ -1069,7 +1111,7 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportProRAW(JNIEnv* env, j
         if (env->ExceptionCheck()) return;
         sony2fuji_hdr_stream_result_v1 result{SONY2FUJI_HDR_VERSION, sizeof(result)};
         sony2fuji_hdr_diagnostic_v1 diagnostic{SONY2FUJI_HDR_VERSION, sizeof(diagnostic)};
-        const auto status = sony2fuji_hdr_export_proraw(session->second.get(), source.chars, &base, &config,
+        const auto status = sony2fuji_hdr_export_proraw(guard.get(), source.chars, &base, &config,
             keepHDR ? 1 : 0, temporary.chars, output.chars, &result, &diagnostic);
         if (status == SONY2FUJI_STATUS_CANCELLED) throw NativeStatusError(status);
         if (status != SONY2FUJI_STATUS_OK) throw HDRStatusError(status, diagnostic);
@@ -1106,13 +1148,11 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(JNIEnv* env, jclass,
         UtfChars look(env, lookPath), sha(env, lookSha256);
         auto request = hdrRenderRequest(env, values, curveMode, curvePoints, channelModes, channelPoints, longEdge, look.chars, sha.chars);
         auto& base = request.base.base.base.base.base.base.base;
-        std::lock_guard<std::mutex> sessionLock(sessionsMutex);
-        const auto session = sessions.find(sessionId);
-        if (session == sessions.end()) throw std::invalid_argument("Processor is closed");
-        CancellationScope cancellation(session->second, cancellationGeneration);
+        SessionGuard guard(sessionId);
+        CancellationScope cancellation(guard.session(), cancellationGeneration);
         if (cancellation.isCancelled()) throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
-        std::lock_guard<std::mutex> pairLock(hdrPairsMutex);
-        auto& source = hdrPairFor(sourceId);
+        const auto sourceOwner = acquireHdrPair(sourceId);
+        const auto& source = sourceOwner->value;
         base.intent = source.source_intent;
         sony2fuji_hdr_image_pair_v1 result{};
         result.version = SONY2FUJI_HDR_VERSION;
@@ -1120,7 +1160,7 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(JNIEnv* env, jclass,
         sony2fuji_hdr_diagnostic_v1 diagnostic{};
         diagnostic.version = SONY2FUJI_HDR_VERSION;
         diagnostic.struct_size = sizeof(diagnostic);
-        const auto status = sony2fuji_hdr_render(session->second.get(), &source, &base, &result, &diagnostic);
+        const auto status = sony2fuji_hdr_render(guard.get(), &source, &base, &result, &diagnostic);
         if (cancellation.isCancelled()) {
             sony2fuji_hdr_release_pair(&result);
             throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
@@ -1152,16 +1192,14 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeSampleHsl(JNIEnv* env, jcla
         auto request = hdrRenderRequest(env, values, curveMode, curvePoints, channelModes, channelPoints, longEdge, look.chars, sha.chars);
         auto& base = request.base.base.base.base.base.base.base;
         base.intent = SONY2FUJI_INTENT_PREVIEW;
-        std::lock_guard<std::mutex> sessionLock(sessionsMutex);
-        const auto session = sessions.find(sessionId);
-        if (session == sessions.end()) throw std::invalid_argument("Processor is closed");
-        CancellationScope cancellation(session->second, cancellationGeneration);
+        SessionGuard guard(sessionId);
+        CancellationScope cancellation(guard.session(), cancellationGeneration);
         if (cancellation.isCancelled()) throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
-        std::lock_guard<std::mutex> pairLock(hdrPairsMutex);
-        const auto& source = hdrPairFor(sourceId);
+        const auto sourceOwner = acquireHdrPair(sourceId);
+        const auto& source = sourceOwner->value;
         sony2fuji_hsl_probe* probe = nullptr;
         sony2fuji_hdr_diagnostic_v1 diagnostic{SONY2FUJI_HDR_VERSION, sizeof(diagnostic)};
-        const auto status = sony2fuji_hdr_create_hsl_probe(session->second.get(), &source, &base,
+        const auto status = sony2fuji_hdr_create_hsl_probe(guard.get(), &source, &base,
             static_cast<uint64_t>(sourceRevision), static_cast<uint64_t>(requestRevision), &probe, &diagnostic);
         const std::unique_ptr<sony2fuji_hsl_probe, decltype(&sony2fuji_hsl_probe_destroy)> owner(probe, sony2fuji_hsl_probe_destroy);
         if (status == SONY2FUJI_STATUS_CANCELLED || cancellation.isCancelled())
@@ -1202,13 +1240,11 @@ extern "C" JNIEXPORT jfloat JNICALL
 Java_com_rawlab_android_engine_NativeHDRBridge_nativeEstimateAutoExposure(JNIEnv* env, jclass, jlong sessionId,
     jlong sourceId, jfloat temperature, jfloat tint, jlong cancellationGeneration) {
     try {
-        std::lock_guard<std::mutex> sessionLock(sessionsMutex);
-        const auto session = sessions.find(sessionId);
-        if (session == sessions.end()) throw std::invalid_argument("Processor is closed");
-        CancellationScope cancellation(session->second, cancellationGeneration);
+        SessionGuard guard(sessionId);
+        CancellationScope cancellation(guard.session(), cancellationGeneration);
         if (cancellation.isCancelled()) throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
-        std::lock_guard<std::mutex> pairLock(hdrPairsMutex);
-        const auto& source = hdrPairFor(sourceId);
+        const auto sourceOwner = acquireHdrPair(sourceId);
+        const auto& source = sourceOwner->value;
         sony2fuji_hdr_diagnostic_v1 diagnostic{};
         diagnostic.version = SONY2FUJI_HDR_VERSION;
         diagnostic.struct_size = sizeof(diagnostic);
@@ -1230,8 +1266,8 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeEstimateAutoExposure(JNIEnv
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_rawlab_android_engine_NativeHDRBridge_nativeMetadata(JNIEnv* env, jclass, jlong pairId) {
     try {
-        std::lock_guard<std::mutex> lock(hdrPairsMutex);
-        const auto& pair = hdrPairFor(pairId);
+        const auto pairOwner = acquireHdrPair(pairId);
+        const auto& pair = pairOwner->value;
         const float metadata[] = {static_cast<float>(pair.hdr.width), static_cast<float>(pair.hdr.height),
             static_cast<float>(pair.native_width), static_cast<float>(pair.native_height),
             static_cast<float>(pair.output_native_width), static_cast<float>(pair.output_native_height),
@@ -1249,8 +1285,8 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeMetadata(JNIEnv* env, jclas
 extern "C" JNIEXPORT jbyteArray JNICALL
 Java_com_rawlab_android_engine_NativeHDRBridge_nativeFingerprint(JNIEnv* env, jclass, jlong pairId) {
     try {
-        std::lock_guard<std::mutex> lock(hdrPairsMutex);
-        const auto& pair = hdrPairFor(pairId);
+        const auto pairOwner = acquireHdrPair(pairId);
+        const auto& pair = pairOwner->value;
         auto result = env->NewByteArray(32);
         if (!result) return nullptr;
         env->SetByteArrayRegion(result, 0, 32, reinterpret_cast<const jbyte*>(pair.source_sha256));
@@ -1264,8 +1300,8 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeFingerprint(JNIEnv* env, jc
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_rawlab_android_engine_NativeHDRBridge_nativePlane(JNIEnv* env, jclass, jlong pairId, jboolean hdr) {
     try {
-        std::lock_guard<std::mutex> lock(hdrPairsMutex);
-        const auto& pair = hdrPairFor(pairId);
+        const auto pairOwner = acquireHdrPair(pairId);
+        const auto& pair = pairOwner->value;
         const auto& buffer = hdr ? pair.hdr : pair.sdr;
         if (!buffer.data || buffer.width == 0 || buffer.height == 0 || buffer.pixel_format != SONY2FUJI_HDR_RGB32F_LINEAR ||
             buffer.stride_bytes < static_cast<uint64_t>(buffer.width) * 3 * sizeof(float))
@@ -1292,8 +1328,8 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativePlane(JNIEnv* env, jclass, 
 extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_engine_NativeHDRBridge_nativeSdrBitmap(JNIEnv* env, jclass, jlong pairId, jobject bitmap) {
     try {
-        std::lock_guard<std::mutex> lock(hdrPairsMutex);
-        const auto& buffer = hdrPairFor(pairId).sdr;
+        const auto pairOwner = acquireHdrPair(pairId);
+        const auto& buffer = pairOwner->value.sdr;
         if (!buffer.data || buffer.width == 0 || buffer.height == 0 || buffer.pixel_format != SONY2FUJI_HDR_RGB32F_LINEAR ||
             buffer.stride_bytes < static_cast<uint64_t>(buffer.width) * 3 * sizeof(float))
             throw std::runtime_error("Invalid SDR float plane");
@@ -1320,7 +1356,6 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeSdrBitmap(JNIEnv* env, jcla
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_engine_NativeHDRBridge_nativeRelease(JNIEnv*, jclass, jlong pairId) {
-    std::lock_guard<std::mutex> lock(hdrPairsMutex);
     releaseHdrPair(pairId);
 }
 
@@ -1331,8 +1366,8 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportJpeg(JNIEnv* env, jcl
         UtfChars source(env, sourcePath), output(env, outputPath);
         if (!output.chars || !*output.chars || baseColor < SONY2FUJI_HDR_COLOR_SRGB || baseColor > SONY2FUJI_HDR_COLOR_BT2020)
             throw std::invalid_argument("Invalid HDR JPEG export request");
-        std::lock_guard<std::mutex> lock(hdrPairsMutex);
-        auto& pair = hdrPairFor(pairId);
+        const auto pairOwner = acquireHdrPair(pairId);
+        const auto& pair = pairOwner->value;
         sony2fuji_hdr_export_config_v1 config{};
         config.version = SONY2FUJI_HDR_VERSION; config.struct_size = sizeof(config);
         config.jpeg_quality = 95; config.base_color = static_cast<uint32_t>(baseColor);
@@ -1353,8 +1388,8 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportSdr(JNIEnv* env, jcla
         if (!output.chars || !*output.chars ||
             (format != SONY2FUJI_OUTPUT_JPEG && format != SONY2FUJI_OUTPUT_PNG && format != SONY2FUJI_OUTPUT_DNG))
             throw std::invalid_argument("Invalid SDR export request");
-        std::lock_guard<std::mutex> lock(hdrPairsMutex);
-        auto& pair = hdrPairFor(pairId);
+        const auto pairOwner = acquireHdrPair(pairId);
+        const auto& pair = pairOwner->value;
         sony2fuji_hdr_sdr_export_config_v1 config{};
         config.version = SONY2FUJI_HDR_VERSION; config.struct_size = sizeof(config);
         config.output_format = static_cast<uint32_t>(format); config.quality = 95;
@@ -1370,10 +1405,8 @@ extern "C" JNIEXPORT jobject JNICALL
 Java_com_rawlab_android_engine_NativeProcessor_nativeCompatibilityPreview(JNIEnv* env,jobject,jlong id,
     jstring input,jobject bitmap,jint width,jint height,jint pixelFormat,jstring lut,jstring configuration) {
     try {
-        std::lock_guard<std::mutex> lock(sessionsMutex);
-        const auto found=sessions.find(id);
-        if(found==sessions.end()) throw std::invalid_argument("Processor is closed");
-        auto* session=found->second.get();
+        SessionGuard guard(id);
+        auto* session=guard.get();
         UtfChars source(env,input),look(env,lut),contract(env,configuration);
         BitmapPixels pixels(env,bitmap,width,height,pixelFormat);
         check(sony2fuji_session_set_processing_version(session,SONY2FUJI_PROCESSING_C5_V2));
@@ -1464,12 +1497,10 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
     jint exposureMode, jfloatArray hslValues, jboolean recipeActive, jint processingVersion, jint x3fMode, jintArray backendOut,
     jlong sourceRevision, jlong requestRevision, jfloatArray hslProbe, jlong cancellationGeneration, jfloatArray migrationValues) {
     try {
-        std::lock_guard<std::mutex> lock(sessionsMutex);
-        const auto found = sessions.find(id);
-        if (found == sessions.end()) throw std::invalid_argument("Processor is closed");
-        CancellationScope cancellation(found->second, cancellationGeneration);
+        SessionGuard guard(id);
+        CancellationScope cancellation(guard.session(), cancellationGeneration);
         check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
-        auto* session = found->second.get();
+        auto* session = guard.get();
         check(sony2fuji_session_set_processing_version(session, static_cast<sony2fuji_processing_version>(processingVersion)));
         check(sony2fuji_session_set_x3f_mode(session, static_cast<sony2fuji_x3f_mode>(x3fMode)));
         if (backendOut && env->GetArrayLength(backendOut) != 1) throw std::invalid_argument("Invalid backend output");
@@ -1480,7 +1511,7 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
 
         bool effectiveCustom = customWb;
         if (!displayInput)
-            prepareRecipeWb(found->second, in.chars, recipeActive, strength, effectiveCustom, temperature, tint,
+            prepareRecipeWb(guard.session(), in.chars, recipeActive, strength, effectiveCustom, temperature, tint,
                             processingVersion, x3fMode, exposureMode);
         if (!hslValues || env->GetArrayLength(hslValues) != 24) throw std::invalid_argument("Invalid HSL values");
         float hslData[24];
@@ -1626,19 +1657,18 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeAutoExposure(JNIEnv* env, j
     jstring input, jobject inputPixels, jint inputWidth, jint inputHeight, jint inputPixelFormat,
     jboolean customWb, jfloat temperature, jfloat tint, jint exposureMode, jboolean recipeActive, jfloat strength, jint processingVersion, jint x3fMode) {
     try {
-        std::lock_guard<std::mutex> lock(sessionsMutex);
-        const auto found = sessions.find(id);
-        if (found == sessions.end()) throw std::invalid_argument("Processor is closed");
+        SessionGuard guard(id);
+        auto* session = guard.get();
         UtfChars in(env, input);
         BitmapPixels inputBytes(env, inputPixels, inputWidth, inputHeight, inputPixelFormat);
         const bool displayInput = inputPixels != nullptr;
 
-        check(sony2fuji_session_set_processing_version(found->second.get(), static_cast<sony2fuji_processing_version>(processingVersion)));
-        check(sony2fuji_session_set_x3f_mode(found->second.get(), static_cast<sony2fuji_x3f_mode>(x3fMode)));
-        check(sony2fuji_session_set_raw_exposure_mode(found->second.get(), static_cast<sony2fuji_raw_exposure_mode>(exposureMode)));
+        check(sony2fuji_session_set_processing_version(session, static_cast<sony2fuji_processing_version>(processingVersion)));
+        check(sony2fuji_session_set_x3f_mode(session, static_cast<sony2fuji_x3f_mode>(x3fMode)));
+        check(sony2fuji_session_set_raw_exposure_mode(session, static_cast<sony2fuji_raw_exposure_mode>(exposureMode)));
         bool effectiveCustom = customWb;
         if (!displayInput)
-            prepareRecipeWb(found->second, in.chars, recipeActive, strength, effectiveCustom, temperature, tint,
+            prepareRecipeWb(guard.session(), in.chars, recipeActive, strength, effectiveCustom, temperature, tint,
                             processingVersion, x3fMode, exposureMode);
         auto request = displayInput
             ? rawlab::makeDisplayRequest(in.chars, inputBytes.bytes, static_cast<uint32_t>(inputWidth),
@@ -1647,11 +1677,11 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeAutoExposure(JNIEnv* env, j
                 0, 0, 0, 0, 0, 0, 1, rawlab::ExportFormat::JPEG)
             : rawlab::makeRequest(in.chars, nullptr, nullptr, 0, 0, effectiveCustom,
                 temperature, tint, 0, 0, 0, 0, 0, 0, 1, rawlab::ExportFormat::JPEG);
-        check(sony2fuji_session_set_raw_exposure_mode(found->second.get(), static_cast<sony2fuji_raw_exposure_mode>(exposureMode)));
+        check(sony2fuji_session_set_raw_exposure_mode(session, static_cast<sony2fuji_raw_exposure_mode>(exposureMode)));
         float ev = 0;
-        const auto status = sony2fuji_session_estimate_auto_exposure(found->second.get(), &request, &ev);
+        const auto status = sony2fuji_session_estimate_auto_exposure(session, &request, &ev);
         if (status == SONY2FUJI_STATUS_OUT_OF_MEMORY) throw std::bad_alloc();
-        check(status, found->second.get());
+        check(status, session);
         return ev;
     } catch (const NativeStatusError& error) { throwNativeStatus(env, error); }
     catch (const std::bad_alloc&) { throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory to meter this RAW"); }
