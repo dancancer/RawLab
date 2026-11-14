@@ -40,5 +40,15 @@ import Foundation
         try check(try store.load(identity: identity, committed: committed) == nil, "Changed committed settings invalidate recovery")
         try store.clear(identity: identity)
         try check(try store.load(identity: identity, committed: original) == nil, "Cancel removes the matching draft")
+        // V-UIIOS #291 seam：换图（sourceRevision 变化）必须清掉上一张照片留下的子工具状态，
+        // 否则收起面板再展开会被旧照片的镜头/配方子工具劫持（ContentView :380-405/:428）。
+        let staleLens = EditorToolSourceState(collapsedEditorTool: .lens)
+        try check(staleLens.afterSourceChange.collapsedEditorTool == nil,
+            "A new photo never inherits the collapsed editor tool of the old one")
+        let staleRecipe = EditorToolSourceState(choosingMasterRecipe: true)
+        try check(!staleRecipe.afterSourceChange.choosingMasterRecipe,
+            "A new photo never stays inside the old master recipe picker")
+        try check(EditorToolSourceState().afterSourceChange == EditorToolSourceState(),
+            "The overview tool state survives a source change unchanged")
     }
 }
