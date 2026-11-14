@@ -419,10 +419,12 @@ int main() {
                 exportRequest.output_format = foreignCase.ffiFormat;
                 exportRequest.output_path = targetPath.c_str();
                 sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr);
+                long plantedNext = 0;
                 auto plantForeign = [&]() {
                     // Consume one suffix with the probe, then plant the next three names.
                     const std::string probe = sony2fuji::stagingSuffix();
                     const long next = std::stol(probe.substr(probe.find('-') + 1)) + 1;
+                    plantedNext = next;
                     const std::string base = foreignCase.ffiFormat == SONY2FUJI_OUTPUT_DNG ?
                         std::string(foreignCase.targetName) + ".rawlab-rendered-dng-" :
                         foreignCase.ffiFormat == SONY2FUJI_OUTPUT_JPEG ? ".rawlab-jpeg-" : ".rawlab-png-";
@@ -447,24 +449,57 @@ int main() {
                 sony2fuji_buffer exportedOk{};
                 const auto okStatus = sony2fuji_process(session, &exportRequest, &exportedOk);
                 sony2fuji_release_buffer(&exportedOk);
+                // The publish is real (not a vacuous green): create() consumed exactly
+                // four suffixes — three planted collisions plus its own name — so the
+                // counter advanced from `plantedNext` by 4. A probe now reports the next
+                // available number, which must be plantedNext + 4.
+                const long afterOk = [] {
+                    const std::string probe = sony2fuji::stagingSuffix();
+                    return std::stol(probe.substr(probe.find('-') + 1));
+                }();
                 check(okStatus == SONY2FUJI_STATUS_OK && foreignIntact(planted) &&
-                          stagingResidue(dir) == 3,
+                          stagingResidue(dir) == 3 && afterOk == plantedNext + 4,
                       (std::string("Export retries past planted foreign staging names (") + foreignCase.label + ")").c_str());
                 // 2) Cancelled export: the staging file it did create is removed, while the
-                // foreign trio is left completely untouched.
+                // foreign trio is left completely untouched. Cancellation must fire only
+                // after create() has retried past the planted trio and built its OWN
+                // staging file, otherwise this anchor is vacuous — a poll that returns 1
+                // from the first checkpoint would cancel before the encoder ever stages,
+                // so there would be nothing of its own to remove (fake green).
                 planted = plantForeign();
                 writeFile(target, existing);
-                sony2fuji_session_set_cancellation_callback(session,
-                    +[](void*) -> int32_t { return 1; }, nullptr);
+                // With both planted generations present the directory holds exactly this
+                // many staging-pattern foreign files; the export's own staging is number
+                // baseline + 1 and is what makes the watch fire.
+                struct StagingWatch {
+                    std::filesystem::path directory;
+                    int baseline;
+                    std::atomic<bool> stagedOwn{false};
+                } watch{dir, stagingResidue(dir), {false}};
+                sony2fuji_session_set_cancellation_callback(session, +[](void* context) -> int32_t {
+                    auto& watch = *static_cast<StagingWatch*>(context);
+                    int staged = 0;
+                    std::error_code error;
+                    for (std::filesystem::directory_iterator it(watch.directory, error), last;
+                         !error && it != last; it.increment(error)) {
+                        if (isStagingFile(it->path())) ++staged;
+                    }
+                    if (staged > watch.baseline) {
+                        watch.stagedOwn.store(true, std::memory_order_release);
+                        return 1; // cancel at the commit point, with the own staging present
+                    }
+                    return 0;
+                }, &watch);
                 sony2fuji_buffer exportedCancelled{};
                 const auto cancelledStatus = sony2fuji_process(session, &exportRequest, &exportedCancelled);
                 sony2fuji_release_buffer(&exportedCancelled);
                 sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr);
-                check(cancelledStatus == SONY2FUJI_STATUS_CANCELLED && readFile(target) == existing &&
-                          foreignIntact(planted) &&
-                          // Both planted generations (success + cancelled round) remain,
-                          // and the export's own staging file is gone.
-                          stagingResidue(dir) == 6,
+                check(cancelledStatus == SONY2FUJI_STATUS_CANCELLED &&
+                          watch.stagedOwn.load(std::memory_order_acquire) &&
+                          readFile(target) == existing && foreignIntact(planted) &&
+                          // Both planted generations remain and the export's own staging
+                          // file is gone: residue is back to the pre-export baseline.
+                          stagingResidue(dir) == watch.baseline,
                     (std::string("Cancelled export removes only its own staging file among foreign names (") + foreignCase.label + ")").c_str());
                 std::filesystem::remove_all(dir, cleanupError);
             }
