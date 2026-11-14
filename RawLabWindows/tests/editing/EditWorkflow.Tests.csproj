@@ -49,6 +49,10 @@
     <Compile Include="../../ProcessingMigration.cs" Link="ProcessingMigration.cs" />
     <Compile Include="../../BatchSelection.cs" />
     <Compile Include="../../BatchSelectionCoordinator.cs" />
+    <Compile Include="../../FileDigestCache.cs" />
+    <Compile Include="../../PhotoProbeCache.cs" />
+    <Compile Include="../../ViewSourceCoordinator.cs" />
+    <Compile Include="../../InspectorRefreshCoordinator.cs" />
     <Compile Include="../../PreviewFallback.cs" />
     <Compile Include="../../BatchExport.cs" Link="BatchExport.cs" Condition="Exists('../../BatchExport.cs')" />
     <Compile Include="../../HDRSettings.cs" Link="HDRSettings.cs" />

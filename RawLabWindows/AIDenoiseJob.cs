@@ -2,9 +2,14 @@ namespace RawLab.Windows;
 
 internal sealed record AIDenoiseIdentity(OriginalIdentity Source,ProcessingIdentity Processing,int WhiteBalance,float Temperature,float Tint,int Backend,LensSettings Lens,string DeviceID="",bool HDRCamera=false)
 {
-    internal static AIDenoiseIdentity Read(string path,Adjustments settings,int backend,string deviceID="")
+    internal static AIDenoiseIdentity Read(
+        string path,
+        Adjustments settings,
+        int backend,
+        string deviceID = "",
+        OriginalIdentity? sourceIdentity = null)
     {
-        var source = OriginalIdentity.Read(path);
+        var source = sourceIdentity ?? OriginalIdentity.Read(path);
         // HDR 推理只准备 Bayer 像素，白平衡和镜头校正在后续显影中应用。
         if (settings.IsHDREditing) return new(source,ProcessingIdentity.Legacy,0,0,0,backend,new(),deviceID,HDRCamera:true);
         var request=settings.Request(path,null,0,null);

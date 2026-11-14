@@ -20,12 +20,20 @@ internal static class PhotoInput
     internal static HDRProbeState ProbeHDR(string path, out HDRSourceInfo? info)
     {
         if (!IsHDRContainer(path)) { info = null; return HDRProbeState.NotHDR; }
-        return HDRNative.Probe(path, out info);
+        return PhotoProbeCache.Shared.GetOrProbe(path, cameraRaw: false, processingVersion: 0,
+            static (string resolved, out HDRSourceInfo? probed, int _) => HDRNative.Probe(resolved, out probed),
+            out info);
     }
 
     internal static HDRProbeState ProbeCameraRaw(string path, out HDRSourceInfo? info, int processingVersion = 3)
     {
         if (!IsRaw(path)) { info = null; return HDRProbeState.NotHDR; }
+        return PhotoProbeCache.Shared.GetOrProbe(path, cameraRaw: true, processingVersion,
+            ProbeCameraRawUncached, out info);
+    }
+
+    private static HDRProbeState ProbeCameraRawUncached(string path, out HDRSourceInfo? info, int processingVersion)
+    {
         // DNG may be Apple ProRAW or an ordinary Bayer/linear RAW. Probe the
         // strict ProRAW identity first; a normal DNG then follows the existing
         // camera-RAW HDR path without being promoted by its extension.

@@ -48,7 +48,7 @@ public partial class MainWindow
         if(!hslTargetEnabled || !ResultCanvas.HslTargetEnabled || file==null || closing || exporting || scheduler.Busy ||
             previewResize.IsEnabled || renderFailed || transform.Active || hslAcceptedWork is not {} work || hslAcceptedRevision is not {} revision ||
             hslAcceptedSettings?.SameAs(settings.Capture())!=true || work.OpenRevision!=openRevision || work.File!=file || work.Lut!=lut ||
-            CurrentViewSource is not {} source || !work.Source.SameFile(source))
+            CurrentViewSource is not {} source || work.Source?.SameFile(source) != true)
         {hslTargetNotice=HslTargetAvailability.Stale;RefreshHslTarget();return;}
         var before=settings.Capture();
         var token=hslTarget.Begin(settings.EditingHsl,hslTargetAxis,revision);hslTargetPoint=point;
@@ -60,7 +60,7 @@ public partial class MainWindow
     {
         if(work.Probe is not {} probe || !hslTarget.Matches(probe.Token))return;
         if(!current || !hslTargetEnabled || probe.Axis!=hslTargetAxis || hslAcceptedRevision!=probe.Revision ||
-            file!=work.File || openRevision!=work.OpenRevision || CurrentViewSource is not {} source || !work.Source.SameFile(source) ||
+            file!=work.File || openRevision!=work.OpenRevision || CurrentViewSource is not {} source || work.Source?.SameFile(source) != true ||
             lut!=work.Lut || transform.Active || !probe.Before.SameAs(settings.Capture()))
         {CancelHslTarget();hslTargetNotice=HslTargetAvailability.Stale;RefreshHslTarget();return;}
         var next=hslTarget.Accept(sample,probe.Token,hslAcceptedRevision);
@@ -86,7 +86,7 @@ public partial class MainWindow
         hslTarget.End();
         if(hslHistoryActive) {
             hslHistoryActive=false;interacting=false;
-            try { MarkEdited();Schedule(); }
+            try { MarkEdited();RefreshControls();Schedule(); }
             finally { editGesture=null; }
         }
         RefreshHslTarget();

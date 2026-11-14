@@ -86,15 +86,14 @@ internal sealed record HDRLookSettings(string? Sha256 = null, string? Name = nul
         Encoding.UTF8.GetByteCount(Name) <= 512 && !Name.Any(char.IsControl) && Strength is >= 0 and <= 2;
     internal string? AssetPath(string? directory = null) => IsFingerprint(Sha256) ? Path.Combine(directory ?? Directory, Sha256 + ".cube") : null;
 
-    internal bool AssetIsAvailable(string? directory = null)
+    internal bool AssetIsAvailable(string? directory = null) =>
+        AssetIsAvailable(directory, FileDigestCache.Shared);
+
+    internal bool AssetIsAvailable(string? directory, FileDigestCache digestCache)
     {
         if (IsDefault) return true;
         if (!IsValid || AssetPath(directory) is not { } path) return false;
-        try {
-            using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            return stream.Length is > 0 and <= MaximumBytes &&
-                Convert.ToHexString(SHA256.HashData(stream)).Equals(Sha256, StringComparison.OrdinalIgnoreCase);
-        } catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return false; }
+        return digestCache.MatchesSha256(path, Sha256!, MaximumBytes);
     }
 }
 

@@ -22,9 +22,11 @@ public partial class MainWindow
     {
         get {
             if(!settings.ActiveAIDenoise)return true;
-            try { return file!=null && aiJob.State.Status==AIDenoiseStatus.Ready &&
-                aiJob.Identity==AIDenoiseIdentity.Read(file,AIWorkSettings,RequestedAIBackend,aiPreference.DeviceID); }
-            catch(Exception error) when(error is IOException or UnauthorizedAccessException) { return false; }
+            try {
+                return file!=null && CurrentViewSource is { } source && aiJob.State.Status==AIDenoiseStatus.Ready &&
+                    aiJob.Identity==AIDenoiseIdentity.Read(file,AIWorkSettings,RequestedAIBackend,aiPreference.DeviceID,source);
+            }
+            catch(Exception error) when(PreviewFallback.IsFileIdentityFailure(error)) { return false; }
         }
     }
     private bool AIBlocksOutput=>aiJob.State.IsRunning || !AIResultReady;
@@ -63,18 +65,26 @@ public partial class MainWindow
         }
         if(file==null || closing)return;
         try {
-            var identity=AIDenoiseIdentity.Read(file,AIWorkSettings,RequestedAIBackend,aiPreference.DeviceID);
+            if(CurrentViewSource is not { } source) return;
+            var identity=AIDenoiseIdentity.Read(file,AIWorkSettings,RequestedAIBackend,aiPreference.DeviceID,source);
             if(identity!=aiJob.Identity)RequestAI(false);
-        } catch(Exception error) when(error is IOException or UnauthorizedAccessException) { Report(error); }
+        } catch(Exception error) when(PreviewFallback.IsFileIdentityFailure(error)) { Report(error); }
     }
     private async void RequestAI(bool explicitRequest)
     {
         if(file==null || closing || exporting)return;
         if(explicitRequest && !CanStartAI)return;
         try {
+            var path=file;var revision=openRevision;
+            var source=CurrentViewSource;
+            if(source==null) {
+                if(!explicitRequest)return;
+                source=await Task.Run(()=>OriginalIdentity.Read(path));
+                if(closing || file!=path || openRevision!=revision)return;
+                viewSourceState.ApplyProbeResult(path,revision,source);
+            }
             var snapshot=AIWorkSettings;
-            var identity=AIDenoiseIdentity.Read(file,snapshot,RequestedAIBackend,aiPreference.DeviceID);
-            var revision=openRevision;
+            var identity=AIDenoiseIdentity.Read(path,snapshot,RequestedAIBackend,aiPreference.DeviceID,source);
             if(!explicitRequest && identity==aiJob.Identity)return;
             if(explicitRequest)aiManuallyRequested=true;
             if(explicitRequest || aiNotReadyIdentity!=identity) { aiNotReadyIdentity=identity;aiNotReadyAttempts=0; }
@@ -88,9 +98,11 @@ public partial class MainWindow
                 if(!settings.ActiveAIDenoise)Schedule();
                 return;
             }
+            var latestSource=CurrentViewSource;
             if(!completed || revision!=openRevision || file!=identity.Source.Path ||
                 aiJob.Identity!=identity || aiJob.State.Status!=AIDenoiseStatus.Ready ||
-                AIDenoiseIdentity.Read(file,AIWorkSettings,RequestedAIBackend,aiPreference.DeviceID)!=identity)return;
+                latestSource==null ||
+                AIDenoiseIdentity.Read(path,AIWorkSettings,RequestedAIBackend,aiPreference.DeviceID,latestSource)!=identity)return;
             aiManuallyRequested=false;
             if(!settings.ActiveAIDenoise) {
                 settings.ActiveAIDenoise=true;MarkEdited();
