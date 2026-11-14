@@ -603,7 +603,7 @@ internal static class HDRChecks
         sdrBase.Set(Parameter.Exposure, -.5);
         sdrBase.Set(Parameter.Contrast, 25);
         var renditionHdr = sdrBase.Clone();
-        renditionHdr.SetHDRMode(true, sourceIsHDR: false, cameraRaw: true);
+        renditionHdr.SetHDRMode(true, sourceIsHDR: true, cameraRaw: true);
         renditionHdr.Set(Parameter.Exposure, 1.5);
         renditionHdr.HDR = renditionHdr.HDR!.WithCameraDevelopment(new HDRCameraDevelopmentSettings(FbddLevel: 2));
         var untouched = new SavedEdit(identity, renditionHdr.Capture(), "dormant-look");
@@ -664,7 +664,7 @@ internal static class HDRChecks
             "HdrRendition group reset is idempotent");
 
         var dormantSdr = editedHdr.Clone();
-        dormantSdr.SetHDRMode(false, sourceIsHDR: false, cameraRaw: true);
+        dormantSdr.SetHDRMode(false, sourceIsHDR: true, cameraRaw: true);
         var dormantSnapshot = new SavedEdit(identity, dormantSdr.Capture(), "dormant-look");
         Check(!EditorAdjustmentRules.IsModified(groupScope, dormantSnapshot) &&
               EditorAdjustmentRules.PrepareReset(groupScope, dormantSnapshot).Status == EditorResetStatus.NoChange &&
