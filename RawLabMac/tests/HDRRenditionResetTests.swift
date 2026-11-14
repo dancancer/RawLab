@@ -363,5 +363,39 @@ private struct FullControlsProbeView: View {
         try await Task.sleep(for: .milliseconds(settleMs))
         try check(expandedModel.settings.peakLimitEV > 3.5 && expandedModel.writes == 1 && expandedModel.editingLog == [true, false],
                   "Single-clicking peakLimit slider track seeks to clicked coordinate after doubleClickInterval")
+
+        // 8. 查找 micro-drag 空窗：第 1 击 3pt 微滑 + 第 2 击不得拆两条历史记录（只写 1 次并回 0）；真实 >= 8pt 拖拽后紧接点击不得误重置
+        expandedModel.settings = combined
+        expandedModel.writes = 0
+        expandedModel.editingLog = []
+        try await settle(expandedHost)
+        let microBase = ProcessInfo.processInfo.systemUptime
+        let microSlide = NSPoint(x: peakTrackPoint.x + 3, y: peakTrackPoint.y)
+        sendMouse(type: .leftMouseDown, location: peakTrackPoint, clickCount: 1, eventNumber: 30, timestamp: microBase, to: expandedWindow)
+        sendMouse(type: .leftMouseDragged, location: microSlide, clickCount: 1, eventNumber: 31, timestamp: microBase + 0.01, to: expandedWindow)
+        sendMouse(type: .leftMouseUp, location: microSlide, clickCount: 1, eventNumber: 32, timestamp: microBase + 0.02, to: expandedWindow)
+        try await Task.sleep(for: .milliseconds(30))
+        sendMouse(type: .leftMouseDown, location: microSlide, clickCount: 2, eventNumber: 33, timestamp: microBase + 0.05, to: expandedWindow)
+        sendMouse(type: .leftMouseUp, location: microSlide, clickCount: 2, eventNumber: 34, timestamp: microBase + 0.06, to: expandedWindow)
+        try await Task.sleep(for: .milliseconds(settleMs))
+        try check(expandedModel.settings == afterPeakTrackReset && expandedModel.writes == 1 && expandedModel.editingLog.isEmpty,
+                  "Double-clicking with 3pt micro-slide merges cleanly into single reset write (actual=\(expandedModel.settings.peakLimitEV), writes=\(expandedModel.writes), editing=\(expandedModel.editingLog))")
+
+        expandedModel.settings = combined
+        expandedModel.writes = 0
+        expandedModel.editingLog = []
+        try await settle(expandedHost)
+        let dragBase = ProcessInfo.processInfo.systemUptime
+        let dragEnd = NSPoint(x: peakRect.minX + peakRect.width * 0.20, y: peakRect.midY)
+        let dragStart = NSPoint(x: dragEnd.x - 12, y: peakRect.midY)
+        sendMouse(type: .leftMouseDown, location: dragStart, clickCount: 1, eventNumber: 40, timestamp: dragBase, to: expandedWindow)
+        sendMouse(type: .leftMouseDragged, location: dragEnd, clickCount: 1, eventNumber: 41, timestamp: dragBase + 0.02, to: expandedWindow)
+        sendMouse(type: .leftMouseUp, location: dragEnd, clickCount: 1, eventNumber: 42, timestamp: dragBase + 0.03, to: expandedWindow)
+        try await Task.sleep(for: .milliseconds(30))
+        sendMouse(type: .leftMouseDown, location: dragEnd, clickCount: 2, eventNumber: 43, timestamp: dragBase + 0.06, to: expandedWindow)
+        sendMouse(type: .leftMouseUp, location: dragEnd, clickCount: 2, eventNumber: 44, timestamp: dragBase + 0.07, to: expandedWindow)
+        try await Task.sleep(for: .milliseconds(settleMs))
+        try check(expandedModel.settings.peakLimitEV > 0.5 && expandedModel.editingLog == [true, false, true, false],
+                  "Intentional drag followed quickly by click-2 does not falsely trigger double-click reset (actual=\(expandedModel.settings.peakLimitEV), editing=\(expandedModel.editingLog))")
     }
 }

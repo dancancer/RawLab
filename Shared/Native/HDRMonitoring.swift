@@ -190,6 +190,10 @@ struct HDRRenditionControls: View {
                     editing = active
                     onEditingChanged(active)
                 },
+                onCancelled: {
+                    editing = false
+                    onCancelled()
+                },
                 onDoubleTapReset: resetField
             )
             .accessibilityLabel(L10n.text(title))
@@ -238,6 +242,7 @@ private struct HDRRenditionSlider: NSViewRepresentable {
     let accessibilityIdentifierText: String
     let resetLabel: String
     let onEditingChanged: (Bool) -> Void
+    let onCancelled: () -> Void
     let onDoubleTapReset: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -260,6 +265,7 @@ private struct HDRRenditionSlider: NSViewRepresentable {
         slider.maxValue = range.upperBound
         slider.onEditingChanged = { active in context.coordinator.parent.onEditingChanged(active) }
         slider.onCommitValue = { next in context.coordinator.commit(next) }
+        slider.onCancelled = { context.coordinator.parent.onCancelled() }
         slider.onDoubleTapReset = { context.coordinator.parent.onDoubleTapReset() }
         slider.onStepDirection = { direction, fine in context.coordinator.stepBy(direction, fine: fine) }
         if !slider.isTrackingInteraction {
@@ -309,11 +315,14 @@ private struct HDRRenditionSlider: NSViewRepresentable {
 
 /// Custom `NSSlider` subclass that swallows single-click track jumps on double-click and delegates resets directly.
 private final class HDRRenditionAppKitSlider: NSSlider {
+    private static let dragThreshold: CGFloat = 5
+
     var range: ClosedRange<Double> = 0...1
     var step: Double = 0.1
     var allowsDoubleTap = true
     var onEditingChanged: (Bool) -> Void = { _ in }
     var onCommitValue: (Double) -> Void = { _ in }
+    var onCancelled: () -> Void = {}
     var onDoubleTapReset: () -> Void = {}
     var onStepDirection: (Int, Bool) -> Void = { _, _ in }
 
@@ -377,8 +386,8 @@ private final class HDRRenditionAppKitSlider: NSSlider {
         }
 
         let isPairedSecondClick = pendingClickWork != nil
-            && lastClickPoint.map { hypot(pt.x - $0.x, pt.y - $0.y) <= 8 } == true
-        if event.clickCount >= 2 || isPairedSecondClick {
+            && lastClickPoint.map { hypot(pt.x - $0.x, pt.y - $0.y) < Self.dragThreshold } == true
+        if isPairedSecondClick {
             cancelPendingInteraction()
             onDoubleTapReset()
             return
@@ -396,7 +405,7 @@ private final class HDRRenditionAppKitSlider: NSSlider {
         guard isEnabled, trackingPointer else { return }
         let pt = convert(event.locationInWindow, from: nil)
         if !draggedDuringClick {
-            guard hypot(pt.x - downPoint.x, pt.y - downPoint.y) >= 2 else { return }
+            guard hypot(pt.x - downPoint.x, pt.y - downPoint.y) >= Self.dragThreshold else { return }
             draggedDuringClick = true
             editingActive = true
             onEditingChanged(true)
@@ -468,6 +477,7 @@ private struct HDRRenditionSlider: UIViewRepresentable {
     let accessibilityIdentifierText: String
     let resetLabel: String
     let onEditingChanged: (Bool) -> Void
+    let onCancelled: () -> Void
     let onDoubleTapReset: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -488,7 +498,9 @@ private struct HDRRenditionSlider: UIViewRepresentable {
         slider.minimumValue = Float(range.lowerBound)
         slider.maximumValue = Float(range.upperBound)
         slider.onEditingChanged = { active in context.coordinator.parent.onEditingChanged(active) }
+        slider.onCancelled = { context.coordinator.parent.onCancelled() }
         slider.onDoubleTapReset = { context.coordinator.parent.onDoubleTapReset() }
+        slider.onStepDirection = { direction in context.coordinator.stepBy(direction, slider: slider) }
         if !slider.isTrackingInteraction {
             slider.value = Float(value)
         }
@@ -508,7 +520,26 @@ private struct HDRRenditionSlider: UIViewRepresentable {
         var parent: HDRRenditionSlider
         init(_ parent: HDRRenditionSlider) { self.parent = parent }
 
+        func stepBy(_ direction: Int, slider: HDRRenditionUIKitSlider) {
+            let next = HDRRenditionSliderMath.snap(parent.value + Double(direction) * parent.step, to: parent.range, step: parent.step)
+            slider.value = Float(next)
+            guard next != parent.value else { return }
+            parent.onEditingChanged(true)
+            parent.value = next
+            parent.onEditingChanged(false)
+        }
+
         @objc func valueChanged(_ slider: HDRRenditionUIKitSlider) {
+            guard !slider.suppressingFinishCallback else { return }
+            if !slider.hasActivePointerInteraction {
+                let snapped = HDRRenditionSliderMath.snap(Double(slider.value), to: parent.range, step: parent.step)
+                slider.value = Float(snapped)
+                guard snapped != parent.value else { return }
+                parent.onEditingChanged(true)
+                parent.value = snapped
+                parent.onEditingChanged(false)
+                return
+            }
             if slider.allowsDoubleTap && !slider.isActivelyDragging {
                 return
             }
@@ -517,6 +548,7 @@ private struct HDRRenditionSlider: UIViewRepresentable {
 
         func commitCurrentSliderValue(_ slider: HDRRenditionUIKitSlider) {
             slider.beginEditingIfNeeded()
+            slider.committedDragOnCurrentTouch = true
             let snapped = HDRRenditionSliderMath.snap(Double(slider.value), to: parent.range, step: parent.step)
             if parent.value != snapped {
                 parent.value = snapped
@@ -524,11 +556,13 @@ private struct HDRRenditionSlider: UIViewRepresentable {
         }
 
         @objc func touchFinished(_ slider: HDRRenditionUIKitSlider) {
+            guard !slider.suppressingFinishCallback else { return }
             if slider.isActivelyDragging {
                 let snapped = HDRRenditionSliderMath.snap(Double(slider.value), to: parent.range, step: parent.step)
                 if parent.value != snapped {
                     parent.value = snapped
                 }
+                slider.committedDragOnCurrentTouch = true
             } else {
                 slider.value = Float(parent.value)
             }
@@ -546,15 +580,19 @@ private final class HDRRenditionDoubleTapDelegate: NSObject, UIGestureRecognizer
     }
 }
 
-/// Custom `UISlider` subclass that prioritizes double-tap reset and suppresses stationary tap-1 jitter.
+/// Custom `UISlider` subclass that prioritizes double-tap reset, suppresses stationary/micro-wobble tap-1 jitter, and closes non-touch `.valueChanged` / VoiceOver `.adjustable` edits cleanly.
 private final class HDRRenditionUIKitSlider: UISlider {
+    private static let dragThreshold: CGFloat = 10
+
     var range: ClosedRange<Double> = 0...1
     var step: Double = 0.1
     var allowsDoubleTap = true {
         didSet { syncGestureConfiguration() }
     }
     var onEditingChanged: (Bool) -> Void = { _ in }
+    var onCancelled: () -> Void = {}
     var onDoubleTapReset: () -> Void = {}
+    var onStepDirection: (Int) -> Void = { _ in }
 
     private let doubleTapDelegate = HDRRenditionDoubleTapDelegate()
     private lazy var doubleTapRecognizer: UITapGestureRecognizer = {
@@ -566,10 +604,26 @@ private final class HDRRenditionUIKitSlider: UISlider {
     }()
 
     private var downPoint: CGPoint?
+    private var hasActiveTouch = false
     private var didMoveBeyondThreshold = false
     private var editingActive = false
+    var committedDragOnCurrentTouch = false
+    private var lastCompletedTouchCommittedDrag = false
+    private var touchPrecededByDrag = false
+    var suppressingFinishCallback = false
 
     var isTrackingInteraction: Bool { editingActive }
+
+    private var hasActiveDragGesture: Bool {
+        gestureRecognizers?.contains { recognizer in
+            guard recognizer !== doubleTapRecognizer else { return false }
+            return recognizer.state == .began || recognizer.state == .changed
+        } ?? false
+    }
+
+    var hasActivePointerInteraction: Bool {
+        isTracking || hasActiveTouch || downPoint != nil || hasActiveDragGesture
+    }
 
     var isActivelyDragging: Bool {
         if didMoveBeyondThreshold { return true }
@@ -577,7 +631,7 @@ private final class HDRRenditionUIKitSlider: UISlider {
             guard let pan = recognizer as? UIPanGestureRecognizer,
                   pan.state == .began || pan.state == .changed else { return false }
             let delta = pan.translation(in: self)
-            return hypot(delta.x, delta.y) >= 3
+            return hypot(delta.x, delta.y) >= Self.dragThreshold
         } ?? false
     }
 
@@ -596,13 +650,26 @@ private final class HDRRenditionUIKitSlider: UISlider {
     override func didMoveToWindow() {
         super.didMoveToWindow()
         syncGestureConfiguration()
+        if window == nil {
+            resetTouchState()
+        }
     }
 
     private func syncGestureConfiguration() {
         doubleTapRecognizer.isEnabled = allowsDoubleTap
     }
 
+    private func resetTouchState() {
+        downPoint = nil
+        hasActiveTouch = false
+        didMoveBeyondThreshold = false
+        committedDragOnCurrentTouch = false
+    }
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        touchPrecededByDrag = lastCompletedTouchCommittedDrag
+        hasActiveTouch = true
+        committedDragOnCurrentTouch = !allowsDoubleTap
         if let touch = touches.first {
             downPoint = touch.location(in: self)
         }
@@ -627,7 +694,9 @@ private final class HDRRenditionUIKitSlider: UISlider {
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesCancelled(touches, with: event)
-        finishTrackingInteraction()
+        if !hasActiveDragGesture {
+            finishTrackingInteraction()
+        }
     }
 
     override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
@@ -638,7 +707,7 @@ private final class HDRRenditionUIKitSlider: UISlider {
     private func markDraggedIfMoved(_ touch: UITouch) {
         guard let start = downPoint, !didMoveBeyondThreshold else { return }
         let current = touch.location(in: self)
-        if hypot(current.x - start.x, current.y - start.y) >= 3 {
+        if hypot(current.x - start.x, current.y - start.y) >= Self.dragThreshold {
             didMoveBeyondThreshold = true
             beginEditingIfNeeded()
         }
@@ -651,7 +720,19 @@ private final class HDRRenditionUIKitSlider: UISlider {
 
     override func cancelTracking(with event: UIEvent?) {
         super.cancelTracking(with: event)
-        finishTrackingInteraction()
+        if !suppressingFinishCallback {
+            finishTrackingInteraction()
+        }
+    }
+
+    override func accessibilityIncrement() {
+        guard isEnabled else { return }
+        onStepDirection(1)
+    }
+
+    override func accessibilityDecrement() {
+        guard isEnabled else { return }
+        onStepDirection(-1)
     }
 
     func beginEditingIfNeeded() {
@@ -661,8 +742,12 @@ private final class HDRRenditionUIKitSlider: UISlider {
     }
 
     func finishTrackingInteraction() {
-        downPoint = nil
-        didMoveBeyondThreshold = false
+        let didFinishTouch = hasActiveTouch || downPoint != nil || editingActive
+        let committedDrag = committedDragOnCurrentTouch
+        resetTouchState()
+        if didFinishTouch {
+            lastCompletedTouchCommittedDrag = committedDrag
+        }
         if editingActive {
             editingActive = false
             onEditingChanged(false)
@@ -671,8 +756,20 @@ private final class HDRRenditionUIKitSlider: UISlider {
 
     @objc private func handleDoubleTap(_ recognizer: UITapGestureRecognizer) {
         guard isEnabled, allowsDoubleTap, recognizer.state == .ended else { return }
-        cancelTracking(with: nil)
-        finishTrackingInteraction()
+        if touchPrecededByDrag {
+            return
+        }
+        let wasEditing = editingActive
+        suppressingFinishCallback = true
+        super.cancelTracking(with: nil)
+        resetTouchState()
+        suppressingFinishCallback = false
+        lastCompletedTouchCommittedDrag = false
+        touchPrecededByDrag = false
+        if wasEditing {
+            editingActive = false
+            onCancelled()
+        }
         onDoubleTapReset()
     }
 
