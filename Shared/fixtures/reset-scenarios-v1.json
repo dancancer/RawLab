@@ -507,7 +507,9 @@
           "hdr.sdr_contrast": "@spec_default",
           "hdr.sdr_saturation": "@spec_default",
           "hdr.relative_temperature": "@spec_default",
-          "hdr.relative_tint": "@spec_default"
+          "hdr.relative_tint": "@spec_default",
+          "light.exposure": "@spec_default",
+          "color.saturation": "@spec_default"
         },
         "untouched": []
       }

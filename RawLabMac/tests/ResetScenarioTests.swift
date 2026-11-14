@@ -90,14 +90,14 @@ struct ResetScenarioTests {
         case .candidate(let candidate):
             let after = observed.isEmpty ? [:] : try MacAdjustmentTransfer.capture(scope: .custom(observed), snapshot: candidate, context: context).values
             for key in expectValues.keys.sorted() {
-                let expected = try expectation(expectValues[key]!, fieldID: key, specFields: specFields)
+                let expected = try expectation(expectValues[key]!, fieldID: key, hdr: kind == "hdr", specFields: specFields)
                 if !matchesValue(after[key], expected) { diffs.insert(key) }
             }
             for key in untouched where !matchesValue(before[key], after[key]) { diffs.insert(key) }
             if (expect["status"] as? String) != "changed" { diffs.insert("status") }
             if ProcessInfo.processInfo.environment["RAWLAB_RESET_DEBUG"] != nil, !diffs.isEmpty {
                 for key in diffs.sorted() {
-                    let line = "DEBUG \(id) \(key): before=\(String(describing: before[key])) after=\(String(describing: after[key])) expected=\(String(describing: (try? expectation((expect["values"] as! [String: Any])[key]!, fieldID: key, specFields: specFields))))\n"
+                    let line = "DEBUG \(id) \(key): before=\(String(describing: before[key])) after=\(String(describing: after[key])) expected=\(String(describing: (try? expectation((expect["values"] as! [String: Any])[key]!, fieldID: key, hdr: kind == "hdr", specFields: specFields))))\n"
                     FileHandle.standardError.write(Data(line.utf8))
                 }
             }
@@ -130,26 +130,33 @@ struct ResetScenarioTests {
         }
     }
 
-    /// @spec_default：spec 表本端默认值按 scale_from_protocol 反映射回协议空间。
-    static func expectation(_ marker: Any, fieldID: String, specFields: [String: Any]) throws -> AdjustmentTransferValue {
+    /// @spec_default：spec 表本端默认值按 scale_from_protocol 反映射回协议空间；
+    /// HDR 目标优先取 hdr_default/hdr_scale_from_protocol；supported=false 键按 Q3 输出协议占位 0。
+    static func expectation(_ marker: Any, fieldID: String, hdr: Bool, specFields: [String: Any]) throws -> AdjustmentTransferValue {
         if let text = marker as? String, text == "@spec_default" {
             let model = ((specFields[fieldID] as! [String: Any])["model"] as! [String: Any])["macos"] as! [String: Any]
-            if model["default"] is NSNull { return .null }
-            if let number = model["default"] as? NSNumber {
+            // Q3 裁定：supported=false 表示本端不建模该键（null 是「无字段」哨兵，协议非空），
+            // 捕获输出协议占位 0 即合规，不得把哨兵误读成期望 null。
+            if (model["supported"] as? Bool) == false { return .number(0) }
+            let useHdr = hdr && (model["hdr_default"] as? NSNull) == nil && model["hdr_default"] != nil
+            let def = useHdr ? model["hdr_default"]! : model["default"]!
+            if def is NSNull { return .null }
+            if let number = def as? NSNumber {
                 if CFGetTypeID(number) == CFBooleanGetTypeID() { return .boolean(number.boolValue) }
                 let value = number.doubleValue
-                switch model["scale_from_protocol"] as! String {
+                switch model[useHdr ? "hdr_scale_from_protocol" : "scale_from_protocol"] as! String {
                 case "p": return .number(value)
                 case "p * 100": return .number(value / 100)
                 case "(p - 1) * 100": return .number(value / 100 + 1)
                 case "p - 1": return .number(value + 1)
+                case "p / 100": return .number(value * 100)
                 case "-p * 100": return .number(-value / 100)
                 case "-p": return .number(-value)
                 default: fatalError("Unsupported scale_from_protocol for \(fieldID)")
                 }
             }
             return try JSONDecoder().decode(AdjustmentTransferValue.self,
-                from: JSONSerialization.data(withJSONObject: model["default"]!, options: [.fragmentsAllowed]))
+                from: JSONSerialization.data(withJSONObject: def, options: [.fragmentsAllowed]))
         }
         if marker is NSNull { return .null }
         return try JSONDecoder().decode(AdjustmentTransferValue.self,

@@ -4,7 +4,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
-SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
+SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
 OUT="$(mktemp -d /tmp/rawlab-reset-scenarios.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
 swiftc -whole-module-optimization -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \

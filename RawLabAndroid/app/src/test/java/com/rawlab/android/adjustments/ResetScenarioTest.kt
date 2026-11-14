@@ -24,11 +24,7 @@ class ResetScenarioTest {
     private val fixture = JSONObject(resolveSharedFixture("reset-scenarios-v1.json").readText())
 
     /** 场景 id -> 已登记的精确 diff-key 集；未登记的分歧与「已修复仍留档」都必红，棘轮只减不增。 */
-    private val knownResetDivergences: Map<String, Set<String>> = mapOf(
-        // 现状：Android SDR 捕获把 raw_level 固定输出为 0 占位（Q3：管线不建模该键），
-        // 而 spec android 默认为 null；all 重置后仍输出 0。
-        "all-reset-raw" to setOf("detail.denoise.raw_level"),
-    )
+    private val knownResetDivergences: Map<String, Set<String>> = emptyMap()
 
     private val specFields: Map<String, JSONObject> by lazy {
         val fields = JSONObject(resolveSharedPath("Shared/specs/adjustment-fields-v1.json").readText())
@@ -44,16 +40,20 @@ class ResetScenarioTest {
         assertTrue("fixture must not be empty", scenarios.length() > 0)
         val seen = HashSet<String>()
         val evaluated = HashSet<String>()
+        val skipped = HashSet<String>()
         for (index in 0 until scenarios.length()) {
             val scenario = scenarios.getJSONObject(index)
             val id = scenario.getString("id")
             assertTrue("duplicate scenario id: $id", seen.add(id))
             val platforms = scenario.optJSONArray("platforms")
-            if (platforms != null && (0 until platforms.length()).none { platforms.getString(it) == "android" }) continue
+            if (platforms != null && (0 until platforms.length()).none { platforms.getString(it) == "android" }) {
+                skipped.add(id)
+                continue
+            }
             evaluated.add(id)
             try { evaluate(id, scenario) } catch (error: Exception) { fail("Scenario $id: $error") }
         }
-        assertTrue("android must evaluate the cross-platform scenarios", evaluated.size >= 7)
+        assertEquals("every scenario is evaluated or platform-skipped", scenarios.length(), evaluated.size + skipped.size)
         assertEquals("stale knownResetDivergences entries", evaluated, evaluated + knownResetDivergences.keys)
     }
 
@@ -96,7 +96,7 @@ class ResetScenarioTest {
                     AdjustmentTransfer.capture(AdjustmentScope.Custom(observed), result.candidate, context).values
                 expectValues.keys().asSequence().sorted().forEach { key ->
                     val field = AdjustmentField.fromID(key)!!
-                    if (!matchesValue(after[field], expectation(expectValues.get(key), asShot, key))) diffs += key
+                    if (!matchesValue(after[field], expectation(expectValues.get(key), key, kind == "hdr"))) diffs += key
                 }
                 (0 until untouched.length()).forEach { index ->
                     val field = AdjustmentField.fromID(untouched.getString(index))!!
@@ -127,24 +127,26 @@ class ResetScenarioTest {
         else -> error("Unsupported reset scope kind: ${scope.getString("kind")}")
     }
 
-    private fun expectation(marker: Any, asShot: JSONArray?, fieldId: String): AdjustmentValue = when (marker) {
-        "@spec_default" -> specDefault(fieldId)
-        "@as_shot_temperature" -> AdjustmentValue.Number(asShot!!.getDouble(0))
-        "@as_shot_tint" -> AdjustmentValue.Number(asShot!!.getDouble(1))
+    private fun expectation(marker: Any, fieldId: String, hdr: Boolean): AdjustmentValue = when (marker) {
+        "@spec_default" -> specDefault(fieldId, hdr)
         else -> jsonValue(marker)
     }
 
     /** @spec_default：本端 spec 行的 model.android.default 按 scale_from_protocol 反映射回协议空间。 */
-    private fun specDefault(fieldId: String): AdjustmentValue {
+    private fun specDefault(fieldId: String, hdr: Boolean): AdjustmentValue {
         val model = specFields.getValue(fieldId).getJSONObject("model").getJSONObject("android")
-        if (model.isNull("default")) return AdjustmentValue.Null
-        val value = model.get("default")
+        // Q3 裁定：supported=false 表示本端模型不建模该键（default/min/max 的 null 是「无字段」哨兵，
+        // 协议本身非空），捕获按协议占位输出 0 即合规；不得把哨兵误读成期望 null。
+        if (!model.optBoolean("supported", true)) return AdjustmentValue.Number(0.0)
+        val useHdr = hdr && model.has("hdr_default") && !model.isNull("hdr_default")
+        val value = model.get(if (useHdr) "hdr_default" else "default")
         if (value !is Number) return jsonValue(value)
-        return when (val scale = model.getString("scale_from_protocol")) {
+        return when (val scale = model.getString(if (useHdr) "hdr_scale_from_protocol" else "scale_from_protocol")) {
             "p" -> AdjustmentValue.Number(value.toDouble())
             "p * 100" -> AdjustmentValue.Number(value.toDouble() / 100)
             "(p - 1) * 100" -> AdjustmentValue.Number(value.toDouble() / 100 + 1)
             "p - 1" -> AdjustmentValue.Number(value.toDouble() + 1)
+            "p / 100" -> AdjustmentValue.Number(value.toDouble() * 100)
             "-p * 100" -> AdjustmentValue.Number(-value.toDouble() / 100)
             "-p" -> AdjustmentValue.Number(-value.toDouble())
             else -> error("Unsupported scale_from_protocol: $scale")

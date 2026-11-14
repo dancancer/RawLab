@@ -18,11 +18,7 @@ struct IOSResetScenarioTests {
     }
 
     /// 场景 id -> 已登记的精确 diff-key 集；未登记的分歧与「已修复仍留档」都必红，棘轮只减不增。
-    static let knownResetDivergences: [String: Set<String>] = [
-        // 现状：iOS 捕获把 raw_level 固定输出为 0 占位（SDR 管线不建模该键），
-        // 而 spec iOS 默认为 null；all 重置后仍输出 0。
-        "all-reset-raw": ["detail.denoise.raw_level"],
-    ]
+    static let knownResetDivergences: [String: Set<String>] = [:]
 
     static func main() throws {
         try resetScenarioFixtures()
@@ -38,16 +34,17 @@ struct IOSResetScenarioTests {
         let scenarios = root["scenarios"] as! [[String: Any]]
         var ids = Set<String>()
         var evaluated = Set<String>()
+        var skipped = Set<String>()
         for scenario in scenarios {
             let id = scenario["id"] as! String
             check(ids.insert(id).inserted, "Unique scenario ID: \(id)")
-            if let platforms = scenario["platforms"] as? [String], !platforms.contains("ios") { continue }
+            if let platforms = scenario["platforms"] as? [String], !platforms.contains("ios") { skipped.insert(id); continue }
             evaluated.insert(id)
             let diffs = try evaluate(id, scenario, specFields: specFields)
             let registered = knownResetDivergences[id] ?? []
             check(diffs == registered, "Scenario \(id): divergences \(diffs.sorted()) registered \(registered.sorted())")
         }
-        check(evaluated.count >= 8, "iOS evaluates the cross-platform scenarios")
+        check(evaluated.count + skipped.count == scenarios.count, "every scenario is evaluated or platform-skipped")
         check(Set(knownResetDivergences.keys).isSubset(of: evaluated), "no stale knownResetDivergences entries")
     }
 
@@ -95,14 +92,14 @@ struct IOSResetScenarioTests {
         case .candidate(let candidate, _):
             let after = observed.isEmpty ? [:] : try IOSAdjustmentTransfer.capture(scope: .custom(observed), snapshot: candidate, context: context).values
             for key in expectValues.keys.sorted() {
-                let expected = try expectation(expectValues[key]!, fieldID: key, specFields: specFields)
+                let expected = try expectation(expectValues[key]!, fieldID: key, hdr: kind == "hdr", specFields: specFields)
                 if !matchesValue(after[key], expected) { diffs.insert(key) }
             }
             for key in untouched where !matchesValue(before[key], after[key]) { diffs.insert(key) }
             if (expect["status"] as? String) != "changed" { diffs.insert("status") }
             if ProcessInfo.processInfo.environment["RAWLAB_RESET_DEBUG"] != nil, !diffs.isEmpty {
                 for key in diffs.sorted() {
-                    let line = "DEBUG \(id) \(key): before=\(String(describing: before[key])) after=\(String(describing: after[key])) expected=\(String(describing: (try? expectation((expect["values"] as! [String: Any])[key]!, fieldID: key, specFields: specFields))))\n"
+                    let line = "DEBUG \(id) \(key): before=\(String(describing: before[key])) after=\(String(describing: after[key])) expected=\(String(describing: (try? expectation((expect["values"] as! [String: Any])[key]!, fieldID: key, hdr: kind == "hdr", specFields: specFields))))\n"
                     FileHandle.standardError.write(Data(line.utf8))
                 }
             }
@@ -134,26 +131,33 @@ struct IOSResetScenarioTests {
         }
     }
 
-    /// @spec_default：spec 表本端默认值按 scale_from_protocol 反映射回协议空间。
-    static func expectation(_ marker: Any, fieldID: String, specFields: [String: Any]) throws -> AdjustmentTransferValue {
+    /// @spec_default：spec 表本端默认值按 scale_from_protocol 反映射回协议空间；
+    /// HDR 目标优先取 hdr_default/hdr_scale_from_protocol；supported=false 键按 Q3 输出协议占位 0。
+    static func expectation(_ marker: Any, fieldID: String, hdr: Bool, specFields: [String: Any]) throws -> AdjustmentTransferValue {
         if let text = marker as? String, text == "@spec_default" {
             let model = ((specFields[fieldID] as! [String: Any])["model"] as! [String: Any])["ios"] as! [String: Any]
-            if model["default"] is NSNull { return .null }
-            if let number = model["default"] as? NSNumber {
+            // Q3 裁定：supported=false 表示本端不建模该键（null 是「无字段」哨兵，协议非空），
+            // 捕获输出协议占位 0 即合规，不得把哨兵误读成期望 null。
+            if (model["supported"] as? Bool) == false { return .number(0) }
+            let useHdr = hdr && (model["hdr_default"] as? NSNull) == nil && model["hdr_default"] != nil
+            let def = useHdr ? model["hdr_default"]! : model["default"]!
+            if def is NSNull { return .null }
+            if let number = def as? NSNumber {
                 if CFGetTypeID(number) == CFBooleanGetTypeID() { return .boolean(number.boolValue) }
                 let value = number.doubleValue
-                switch model["scale_from_protocol"] as! String {
+                switch model[useHdr ? "hdr_scale_from_protocol" : "scale_from_protocol"] as! String {
                 case "p": return .number(value)
                 case "p * 100": return .number(value / 100)
                 case "(p - 1) * 100": return .number(value / 100 + 1)
                 case "p - 1": return .number(value + 1)
+                case "p / 100": return .number(value * 100)
                 case "-p * 100": return .number(-value / 100)
                 case "-p": return .number(-value)
                 default: fatalError("Unsupported scale_from_protocol for \(fieldID)")
                 }
             }
             return try JSONDecoder().decode(AdjustmentTransferValue.self,
-                from: JSONSerialization.data(withJSONObject: model["default"]!, options: [.fragmentsAllowed]))
+                from: JSONSerialization.data(withJSONObject: def, options: [.fragmentsAllowed]))
         }
         if marker is NSNull { return .null }
         return try JSONDecoder().decode(AdjustmentTransferValue.self,

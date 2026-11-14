@@ -14,15 +14,10 @@ internal static class ResetScenarioChecks
     private sealed record ResetDivergence(string LedgerId, string Reason, IReadOnlySet<string> ExpectedKeys);
 
     // 显式例外清单：未登记的分歧（或清单外字段差异）必红；已修复项仍留档也必红（棘轮只减不增）。
-    // 现状：Windows 捕获把 RawDenoise 固定输出为 0 占位（AdjustmentTransferValues.Values 的
-    // Put(F.RawDenoise,0)，SDR 管线不建模该键），而 spec windows 默认为 null。
+    // 碳审 B2：detail.denoise.raw_level 的 0 vs null 系适配层误读 supported=false 哨兵，
+    // 已按 Q3 裁定（不支持端捕获输出协议占位 0 即合规）在 Expectation 内消解，登记清零。
     private static readonly IReadOnlyDictionary<string, ResetDivergence> KnownResetDivergences =
-        new Dictionary<string, ResetDivergence>
-        {
-            ["all-reset-raw"] = new("windows-raw-denoise-placeholder",
-                "capture emits 0 placeholder for raw_level while spec default is null",
-                new HashSet<string> { "detail.denoise.raw_level" }),
-        };
+        new Dictionary<string, ResetDivergence>();
 
     internal static void Run()
     {
@@ -134,7 +129,7 @@ internal static class ResetScenarioChecks
             foreach (var pair in expectValues.EnumerateObject().OrderBy(p => p.Name, StringComparer.Ordinal))
             {
                 var field = ParseField(pair.Name);
-                var expected = Expectation(pair.Value, pair.Name, specFields);
+                var expected = Expectation(pair.Value, pair.Name, kind == "hdr", specFields);
                 after.TryGetValue(field, out var actual);
                 if (!Same(actual, expected)) diffs.Add(new(pair.Name, $"{pair.Name} expected={Render(expected)}, actual={Render(actual)}"));
             }
@@ -167,23 +162,30 @@ internal static class ResetScenarioChecks
         var kind => throw new Exception($"Unsupported reset scope kind: {kind}")
     };
 
-    private static F ParseField(string id) => Enum.GetValues<F>().FirstOrDefault(field => field.ID() == id);
+    private static F ParseField(string id) => AdjustmentFields.Parse(id);
 
-    /// @spec_default：spec 表本端默认值按 scale_from_protocol 反映射回协议空间。
-    private static JsonElement Expectation(JsonElement marker, string fieldID, Dictionary<string, JsonElement> specFields)
+    /// @spec_default：spec 表本端默认值按 scale_from_protocol 反映射回协议空间；
+    /// HDR 目标优先取 hdr_default/hdr_scale_from_protocol；supported=false 键按 Q3 输出协议占位 0。
+    private static JsonElement Expectation(JsonElement marker, string fieldID, bool hdr, Dictionary<string, JsonElement> specFields)
     {
         if (marker.ValueKind == JsonValueKind.String && marker.GetString() == "@spec_default")
         {
             var model = specFields[fieldID].GetProperty("model").GetProperty("windows");
-            var def = model.GetProperty("default");
-            if (def.ValueKind is JsonValueKind.Null or JsonValueKind.True or JsonValueKind.False || def.ValueKind != JsonValueKind.Number) return def.Clone();
+            // Q3 裁定：supported=false 表示本端不建模该键（null 是「无字段」哨兵，协议非空），
+            // 捕获输出协议占位 0 即合规，不得把哨兵误读成期望 null。
+            if (model.TryGetProperty("supported", out var supported) && supported.ValueKind == JsonValueKind.False)
+                return JsonDocument.Parse("0").RootElement.Clone();
+            var useHdr = hdr && model.TryGetProperty("hdr_default", out var hdrDefault) && hdrDefault.ValueKind != JsonValueKind.Null;
+            var def = useHdr ? hdrDefault : model.GetProperty("default");
+            if (def.ValueKind != JsonValueKind.Number) return def.Clone();
             var value = def.GetDouble();
-            var mapped = model.GetProperty("scale_from_protocol").GetString() switch
+            var mapped = model.GetProperty(useHdr ? "hdr_scale_from_protocol" : "scale_from_protocol").GetString() switch
             {
                 "p" => value,
                 "p * 100" => value / 100,
                 "(p - 1) * 100" => value / 100 + 1,
                 "p - 1" => value + 1,
+                "p / 100" => value * 100,
                 "-p * 100" => -value / 100,
                 "-p" => -value,
                 var scale => throw new Exception($"Unsupported scale_from_protocol for {fieldID}: {scale}")

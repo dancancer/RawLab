@@ -19,7 +19,6 @@ SCOPE_KINDS = {"tool", "group", "all"}
 TOOL_FIELDS = {"light.contrast", "detail.sharpening"}
 GROUPS = {"light", "color", "geometry", "hdr_rendition"}
 STATUSES = {"changed", "unchanged", "blocked"}
-MARKERS = {"@spec_default"}
 
 
 class ResetScenarioContracts(unittest.TestCase):
@@ -55,9 +54,11 @@ class ResetScenarioContracts(unittest.TestCase):
     def test_targets_use_reset_target_kinds(self):
         for scenario in self.scenarios:
             with self.subTest(scenario=scenario["id"]):
-                self.assertIn(scenario["target"]["kind"], TARGET_KINDS)
-                for key in ("lens_valid",):
-                    self.assertIsInstance(scenario["target"][key], bool)
+                target = scenario["target"]
+                self.assertIn(target["kind"], TARGET_KINDS)
+                for key in ("lens_valid", "supports_raw_denoise"):
+                    self.assertIsInstance(target[key], bool, f"target.{key} must be a bool")
+                self.assertIsInstance(target["available_looks"], list, "target.available_looks must be a list")
 
     def test_expected_status_uses_reset_vocabulary(self):
         for scenario in self.scenarios:
@@ -75,12 +76,17 @@ class ResetScenarioContracts(unittest.TestCase):
                 self.assertLessEqual(set(values), self.transferable)
                 self.assertEqual(set(values) & set(untouched), set(), "expect values and untouched overlap")
 
-    def test_expectation_markers_are_declared_references(self):
+    def test_expectations_are_references_except_pinned_wb_placeholders(self):
+        # 「零硬编码重置值」契约：期望只能是 @spec_default 引用；唯一例外是 WB temp/tint，
+        # 四端 camera 模式捕获输出协议占位 null，与 as-shot 数值无关。
+        wb_literals = {"color.white_balance.temperature_kelvin", "color.white_balance.tint"}
         for scenario in self.scenarios:
             with self.subTest(scenario=scenario["id"]):
                 for key, marker in scenario["expect"].get("values", {}).items():
-                    if isinstance(marker, str) and marker.startswith("@"):
-                        self.assertIn(marker, MARKERS, f"unknown marker for {key}")
+                    if marker == "@spec_default":
+                        continue
+                    self.assertIn(key, wb_literals, f"{key}: hardcoded literal expectation breaks the spec-ref contract")
+                    self.assertIsNone(marker, f"{key}: WB placeholder must be null")
 
     def test_hdr_only_fields_only_reset_on_hdr_targets(self):
         for scenario in self.scenarios:
