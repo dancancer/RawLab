@@ -141,3 +141,4 @@
 - 2026-11-14 · **Q6 合入（#310 @ `81f9f3e2`，总 71 PR，四轮碳审、累计 9 条 Blocking 全消）**：导出证据账本+四端同构判据入库；worktree/分支已清。
 - 2026-11-14 · 判决波处理：**#313 r2 仅剩 B3 大小写不敏感 FS 误删**（S5 补锚）原生 crew 续修；**#317 唯 P1-05 漏 updatePreview 早退分支**续修；**#318 白名单获认可但 B2 闸位打穿 30 条模型断言（Q14 违背）复跑**；V-JIT 成 **PR #316**（屏障语义含 in_progress 取舍留评审裁）；V-SPEC 疑似中断，氢线程续完（滞留 diff 自审+变异验收+补 PR）。碳审 ×3 在途（314r2/315r2/316r1）。
 - 2026-11-14 · #317 二轮交卷（`cfcafaa8`）：P1-05 收口为统一入口 afterUndeliveredFrame，接 importImage+Rendering 四早退点，18 PASS 含去重共存断言；Should（showingBatchSelection 根横幅）留后续。二轮碳审在途（review-mwfz46rr，核四点读码+statusMessage 差集漏网+renderHDR catch 取舍裁定）。
+- 2026-11-14 · #318 二轮交卷（`f4725bc0`）：闸下沉 Swift 二层守卫（30 模型断言无条件跑、SKIP 严格殿后、FAIL 只罩 AX 段，顺带关掉 Should-1 探针穿透），壳层闸删除+契约双形态 pin+ci.md 三处同步；CI 该段现真 PASS 序列。二轮碳审在途（review-mwfz7gq5，核闸 FAIL 会否吞真失败）。
