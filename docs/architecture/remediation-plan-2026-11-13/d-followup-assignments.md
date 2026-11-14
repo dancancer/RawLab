@@ -70,7 +70,7 @@
 | V-JIT 🚧在途 | jit_dispatch 安全包：①launch_runner 剥 RAWLAB_JIT_TOKEN（Admin:write 不得泄给 Runner.Worker/作业 step）②FIFO 毒队列屏障（不可信 queued 视为屏障而非跳过）③/jobs 拉取移到 trusted 判定后+分页④run.sh 非零退出仍 cleanup⑤allowlist 锁 head_sha；生产切换（mac 常驻 runner 切包装、Windows 同类、approval-policy 网页实态核实——h 表与 changelog 记载矛盾待现场核）①-⑤代码侧，生产切换=用户侧 | scripts/ci + runner | 氢单 |
 | V-SPEC 🚧在途 | #286 Layer2/3 假绿：_snap4 返回值丢弃 20+、单端常量冒充四端、_ANCHORS:317 指错；验收=复现两条变异（RawSettings.swift:57 vignetteMidpointRange、AdjustmentKind.swift:109 highlights 步长）必须变红 | scripts/ci | 氢单 |
 | V-RESET | #307 @spec_default 掩盖 wire 分歧（chroma_mode null vs 0 等）、场景仅 9、缺 .hdrRendition；决策=wire 级期望或显式 divergence 登记 | Shared fixtures | 待派 |
-| V-AXUI 🚧在途 | #311 漏网 iOS：ios-reset-entry-ui.sh 三处 AX 断言在 REQUIRE_AX=1 下仍静默 exit 0 无 SKIP 行；套 #311 ax-gate 同款三态 | RawLab/tests | 待派 |
+| V-AXUI 🚧PR #318 评审中 | #311 漏网 iOS：ios-reset-entry-ui.sh 三处 AX 断言在 REQUIRE_AX=1 下仍静默 exit 0 无 SKIP 行；套 #311 ax-gate 同款三态 | RawLab/tests | 待派 |
 | V-UIIOS 🚧PR #317 评审中 | #301 iOS transferResultNotices 生命周期（prepare/invalidate/onDisappear+!isEmpty 判空）、#291 collapsedEditorTool/choosingMasterRecipe 换图不清、P1-05 hdrResourceNotice 早退不重置 | iOS Editor UI | 待派 |
 | V-WIN | #301 Windows pendingTransferNoticeStatus 残留/被 Refine 冲掉；#297 UpdateStore.Load 与磁盘备份判定不对称（回滚场景静默删有效备份，需先红） | RawLabWindows | 氢单 |
 | V-EXP 🚧在途 | #309 D-07：单张导出代次失效吞 BatchPublicationUncertain（RenderQueue.kt:56-61）；NativeProcessor cancellationSignal 死参数移除 | Android | 待派 |
