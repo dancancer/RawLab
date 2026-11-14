@@ -45,6 +45,50 @@ void check(const ImageData& input, int width, int height, bool final, bool prese
               << " maxDiff=" << maximum << " largestBuffer=" << d3d11_test::largestPhotoBuffer << '\n';
     require(maximum <= 2e-4f, "C6: tiled/CPU pixels differ at a band boundary or resize");
 }
+ImageData detail(const ImageData& input, float strength, bool sharpen) {
+    ImageData output(input.width, input.height);
+    for (int y = 0; y < input.height; ++y) for (int x = 0; x < input.width; ++x) {
+        RGB sum{};
+        for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) {
+            const auto p = input.at(std::clamp(x + dx, 0, input.width - 1), std::clamp(y + dy, 0, input.height - 1));
+            sum.r += p.r; sum.g += p.g; sum.b += p.b;
+        }
+        const auto p = input.at(x, y);
+        const auto channel = [&](float value, float total) {
+            return sharpen ? std::clamp(value + strength * (value - total / 9), 0.f, 1.f)
+                : value + (total / 9 - value) * strength * .4f;
+        };
+        output.at(x, y) = {channel(p.r, sum.r), channel(p.g, sum.g), channel(p.b, sum.b)};
+    }
+    return output;
+}
+void nativeFilters() {
+    ImageData input(65, 49), expected(65, 49);
+    for (size_t i = 0; i < input.pixels.size(); ++i) {
+        input.pixels[i] = {.03f + .3f * float(i % 13) / 12, .11f, .31f};
+        expected.pixels[i] = tone(input.pixels[i]);
+    }
+    sony2fuji_request request{};
+    request.brightness = request.contrast = request.saturation = 1;
+    request.intent = SONY2FUJI_INTENT_PREVIEW;
+    request.noise_reduction = .35f; request.sharpening = .6f;
+    PhotoEffectsOptions effects;
+    effects.vignetteAmount = -30; effects.grainAmount = 15;
+    expected = detail(detail(expected, .35f, false), .6f, true);
+    applyPhotoEffects(expected, effects);
+    D3D11PhotoRenderer renderer;
+    ImageData output;
+    require(renderer.render(input, ColorSpace::sRGB, request, {}, {1, 1, 1}, 65, 49, 0, output, effects),
+        "C6: source-resolution shared filter chain failed");
+    float maximum = 0;
+    for (size_t i = 0; i < output.pixels.size(); ++i) {
+        const auto a = output.pixels[i], b = expected.pixels[i];
+        require(std::isfinite(a.r) && std::isfinite(a.g) && std::isfinite(a.b), "nonfinite filtered pixel");
+        maximum = std::max({maximum, std::abs(a.r-b.r), std::abs(a.g-b.g), std::abs(a.b-b.b)});
+    }
+    std::cout << "native shared filters maxDiff=" << maximum << '\n';
+    require(maximum <= 2e-4f, "C6: shared noise/sharpen/effects chain differs from CPU");
+}
 }
 int main() {
     try {
@@ -58,6 +102,7 @@ int main() {
         check(input, 193, 137, false, true);
         check(input, 1, 19, false);
         check(input, 113, 1, true);
+        nativeFilters();
         std::cout << "PASS: D3D11 bounded tiling (WARP software adapter)\n";
         return 0;
     } catch (const std::exception& error) {
