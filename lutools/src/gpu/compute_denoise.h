@@ -43,6 +43,7 @@ public:
                           FilterBuffer& output, FilterBuffer* secondOutput = nullptr) = 0;
     virtual void read(FilterBuffer& buffer, size_t count, float* output) = 0;
     virtual void trimPool() {}
+    virtual bool deviceLost() const { return false; }
 };
 
 std::unique_ptr<FilterDevice> createGlesFilterDevice();

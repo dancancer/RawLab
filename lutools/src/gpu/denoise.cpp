@@ -41,13 +41,14 @@ bool compute(Operation operation) {
 #if defined(SONY2FUJI_ENABLE_D3D11)
         if (GetEnvironmentVariableW(L"RAWLAB_DISABLE_D3D11", nullptr, 0) > 0) return false;
         if (!device && !context.retry.ready(d3d11RetryNow())) return false;
-        const bool initializing = !device;
+        bool initializing = !device;
 #endif
         try {
 #if defined(SONY2FUJI_ENABLE_GLES)
             if (!device) device = createGlesFilterDevice();
 #else
             if (!device) device = createD3D11FilterDevice();
+            initializing = false;
 #endif
             auto scope = device->activate();
             const bool ok = operation(*device);
@@ -60,7 +61,7 @@ bool compute(Operation operation) {
             throw;
         } catch (const std::exception& error) {
 #if defined(SONY2FUJI_ENABLE_D3D11)
-            if (initializing || d3d11LostDevice(error)) {
+            if (initializing || d3d11LostDevice(error) || (device && device->deviceLost())) {
                 context.retry.failed(d3d11RetryNow());
                 device.reset();
             }

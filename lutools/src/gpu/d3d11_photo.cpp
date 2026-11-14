@@ -219,9 +219,10 @@ bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
     // Diagnostic switch also exercises Auto fallback and Force failure in regression tests.
     if (GetEnvironmentVariableW(L"RAWLAB_DISABLE_D3D11",nullptr,0)>0) return false;
     if (!impl_ && !retry_.ready(d3d11RetryNow())) return false;
-    const bool initializing = !impl_;
+    bool initializing = !impl_;
     try {
         if (!impl_) { impl_=std::make_unique<Impl>();impl_->initialize(); }
+        initializing = false;
         auto& c=*impl_;
         Parameters p{};
         const auto toSrgb=ColorConverter::getConversionMatrix(inputSpace,ColorSpace::sRGB);

@@ -123,6 +123,7 @@ public:
         dummy = createBuffer(1, nullptr);
     }
     std::unique_ptr<FilterContext> activate() override { return std::make_unique<TrimContext>(&pool); }
+    bool deviceLost() const override { return device.Get() && FAILED(d3d11DeviceStatus(*device.Get())); }
     void trimPool() override { pool.trimIdleToBudget(); }
     FilterBufferPtr allocate(size_t count, const float* input = nullptr) override {
         if (!count || count > UINT32_MAX / sizeof(float)) throw std::runtime_error("D3D11 filter buffer too large");
