@@ -44,6 +44,7 @@ if (args.Contains("--camera-raw-hdr")) {
 }
 if (args.Contains("--history-only")) {
     AdjustmentTransferChecks.Run();
+    ResetScenarioChecks.Run();
     X3fModeResetChecks.Run();
     AdjustmentHistoryChecks.Run();
     AdjustmentPresetChecks.Run();
@@ -77,6 +78,7 @@ var gradingRestored = pendingGrading.Deserialize<AdjustmentSnapshot>()!.Restore(
 if (JsonSerializer.SerializeToNode(gradingRestored.Capture())!["ColorGrading"] == null)
     throw new Exception("Pending grading hue must survive snapshot restore");
 AdjustmentTransferChecks.Run();
+ResetScenarioChecks.Run();
 AdjustmentHistoryChecks.Run();
 AdjustmentPresetChecks.Run();
 HDRChecks.Run();
