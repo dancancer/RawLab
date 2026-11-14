@@ -1,17 +1,128 @@
 #include "sony2fuji/lens_correction.h"
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <filesystem>
 #include <iomanip>
+#include <list>
+#include <mutex>
 #include <sstream>
+#include <unordered_map>
+#include <vector>
 #ifdef SONY2FUJI_ENABLE_LENSFUN
 #include <lensfun.h>
 #endif
 
 namespace sony2fuji {
+namespace {
+std::atomic<uint64_t> g_lensDatabaseParseCount{0};
+
+#ifdef SONY2FUJI_ENABLE_LENSFUN
+struct FileStamp {
+    std::string path;
+    uintmax_t size = 0;
+    int64_t mtimeNs = 0;
+
+    bool operator==(const FileStamp& other) const {
+        return path == other.path && size == other.size && mtimeNs == other.mtimeNs;
+    }
+};
+
+struct SourceDescriptor {
+    std::string cacheKey;
+    bool isSystem = false;
+    bool isDirectory = false;
+    std::vector<std::filesystem::path> loadPaths;
+    std::vector<FileStamp> stamps;
+};
+
+int64_t toTimestampNs(std::filesystem::file_time_type t) {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(t.time_since_epoch()).count();
+}
+
+std::string normalizedPathString(const std::filesystem::path& path) {
+    std::error_code error;
+    const auto canonical = std::filesystem::canonical(path, error);
+    return (!error ? canonical : path.lexically_normal()).u8string();
+}
+
+bool describeSource(const std::string& path, SourceDescriptor& out) {
+    if (path.empty()) {
+        out.cacheKey = "system:";
+        out.isSystem = true;
+        return true;
+    }
+    std::error_code error;
+    const auto source = std::filesystem::u8path(path);
+    if (std::filesystem::is_directory(source, error)) {
+        std::vector<std::filesystem::path> files;
+        for (std::filesystem::directory_iterator it(source, error), end; !error && it != end; it.increment(error)) {
+            if (it->path().extension() == ".xml") files.push_back(it->path());
+        }
+        if (error || files.empty()) return false;
+        std::sort(files.begin(), files.end());
+        out.isDirectory = true;
+        out.cacheKey = "dir:" + normalizedPathString(source);
+        out.loadPaths.reserve(files.size());
+        out.stamps.reserve(files.size());
+        for (const auto& file : files) {
+            std::error_code statError;
+            const auto size = std::filesystem::file_size(file, statError);
+            if (statError) return false;
+            const auto mtime = std::filesystem::last_write_time(file, statError);
+            if (statError) return false;
+            out.loadPaths.push_back(file);
+            out.stamps.push_back({normalizedPathString(file), size, toTimestampNs(mtime)});
+        }
+        return true;
+    }
+    if (error || !std::filesystem::is_regular_file(source, error) || error) return false;
+    std::error_code statError;
+    const auto size = std::filesystem::file_size(source, statError);
+    if (statError) return false;
+    const auto mtime = std::filesystem::last_write_time(source, statError);
+    if (statError) return false;
+    const auto canon = normalizedPathString(source);
+    out.cacheKey = "file:" + canon;
+    out.loadPaths.push_back(source);
+    out.stamps.push_back({canon, size, toTimestampNs(mtime)});
+    return true;
+}
+
+struct InFlightLoad {
+    std::vector<FileStamp> stamps;
+    std::condition_variable cv;
+    bool done = false;
+    std::shared_ptr<LensCorrectionDatabase> database;
+};
+
+struct CacheEntry {
+    std::vector<FileStamp> stamps;
+    std::shared_ptr<LensCorrectionDatabase> database;
+    std::list<std::string>::iterator lruIt;
+};
+
+struct LensDatabaseCache {
+    static constexpr size_t kMaxEntries = 32;
+    std::mutex mutex;
+    std::list<std::string> lruOrder;
+    std::unordered_map<std::string, CacheEntry> entries;
+    std::unordered_map<std::string, std::shared_ptr<InFlightLoad>> inFlight;
+};
+
+LensDatabaseCache& lensDatabaseCache() {
+    // Process-lifetime cache intentionally outlives static locals used by caller threads.
+    static auto* instance = new LensDatabaseCache();
+    return *instance;
+}
+#endif
+}
 
 struct LensCorrectionDatabase::Impl {
 #ifdef SONY2FUJI_ENABLE_LENSFUN
+    mutable std::mutex lookupMutex;
     lfDatabase database;
 
     const lfCamera* camera(const LensMetadata& metadata) const {
@@ -88,8 +199,70 @@ bool LensCorrectionDatabase::available() {
 #endif
 }
 
+uint64_t LensCorrectionDatabase::parseCount() {
+    return g_lensDatabaseParseCount.load(std::memory_order_acquire);
+}
+
 std::shared_ptr<LensCorrectionDatabase> LensCorrectionDatabase::load(const std::string& path) {
 #ifdef SONY2FUJI_ENABLE_LENSFUN
+    SourceDescriptor source;
+    if (!describeSource(path, source)) return nullptr;
+
+    auto& cache = lensDatabaseCache();
+    std::shared_ptr<InFlightLoad> leaderLoad;
+    {
+        std::unique_lock<std::mutex> lock(cache.mutex);
+        while (true) {
+            const auto cachedIt = cache.entries.find(source.cacheKey);
+            if (cachedIt != cache.entries.end() && cachedIt->second.stamps == source.stamps) {
+                cache.lruOrder.splice(cache.lruOrder.begin(), cache.lruOrder, cachedIt->second.lruIt);
+                return cachedIt->second.database;
+            }
+            const auto activeIt = cache.inFlight.find(source.cacheKey);
+            if (activeIt != cache.inFlight.end()) {
+                auto waitingFor = activeIt->second;
+                const bool sameStamp = (waitingFor->stamps == source.stamps);
+                waitingFor->cv.wait(lock, [&] { return waitingFor->done; });
+                if (sameStamp) return waitingFor->database;
+                continue;
+            }
+            leaderLoad = std::make_shared<InFlightLoad>();
+            leaderLoad->stamps = source.stamps;
+            cache.inFlight.emplace(source.cacheKey, leaderLoad);
+            break;
+        }
+    }
+
+    struct InFlightGuard {
+        LensDatabaseCache& cache;
+        const std::string& key;
+        const std::shared_ptr<InFlightLoad>& load;
+        std::shared_ptr<LensCorrectionDatabase> result;
+        bool cacheResult = false;
+        ~InFlightGuard() {
+            std::lock_guard<std::mutex> lock(cache.mutex);
+            cache.inFlight.erase(key);
+            if (cacheResult) {
+                auto it = cache.entries.find(key);
+                if (it != cache.entries.end()) {
+                    cache.lruOrder.splice(cache.lruOrder.begin(), cache.lruOrder, it->second.lruIt);
+                    it->second.stamps = load->stamps;
+                    it->second.database = result;
+                } else {
+                    while (cache.entries.size() >= LensDatabaseCache::kMaxEntries && !cache.lruOrder.empty()) {
+                        cache.entries.erase(cache.lruOrder.back());
+                        cache.lruOrder.pop_back();
+                    }
+                    cache.lruOrder.push_front(key);
+                    cache.entries.emplace(key, CacheEntry{load->stamps, result, cache.lruOrder.begin()});
+                }
+            }
+            load->database = result;
+            load->done = true;
+            load->cv.notify_all();
+        }
+    } guard{cache, source.cacheKey, leaderLoad, nullptr, false};
+
     auto result = std::shared_ptr<LensCorrectionDatabase>(new LensCorrectionDatabase());
     auto finish = [&]() {
         const auto& database = result->impl_->database;
@@ -103,20 +276,21 @@ std::shared_ptr<LensCorrectionDatabase> LensCorrectionDatabase::load(const std::
         result->cacheIdentity_ = "lensfun-xml-v1:" + std::to_string(bytes) + ":" + std::to_string(hash);
         return result;
     };
-    if (path.empty()) return result->impl_->database.Load() == LF_NO_ERROR ? finish() : nullptr;
-    std::error_code error;
-    const auto source = std::filesystem::u8path(path);
-    if (std::filesystem::is_directory(source, error)) {
-        std::vector<std::filesystem::path> files;
-        for (std::filesystem::directory_iterator it(source, error), end; !error && it != end; it.increment(error))
-            if (it->path().extension() == ".xml") files.push_back(it->path());
-        if (error || files.empty()) return nullptr;
-        std::sort(files.begin(), files.end());
-        for (const auto& file : files)
-            if (result->impl_->database.Load(file.u8string().c_str()) != LF_NO_ERROR) return nullptr;
-        return finish();
+
+    if (source.isSystem) {
+        g_lensDatabaseParseCount.fetch_add(1, std::memory_order_acq_rel);
+        guard.result = result->impl_->database.Load() == LF_NO_ERROR ? finish() : nullptr;
+        guard.cacheResult = true;
+        return guard.result;
     }
-    return result->impl_->database.Load(path.c_str()) == LF_NO_ERROR ? finish() : nullptr;
+
+    g_lensDatabaseParseCount.fetch_add(1, std::memory_order_acq_rel);
+    for (const auto& file : source.loadPaths) {
+        if (result->impl_->database.Load(file.u8string().c_str()) != LF_NO_ERROR) return nullptr;
+    }
+    guard.result = finish();
+    guard.cacheResult = (guard.result != nullptr);
+    return guard.result;
 #else
     (void)path;
     return nullptr;
@@ -126,14 +300,17 @@ std::shared_ptr<LensCorrectionDatabase> LensCorrectionDatabase::load(const std::
 std::vector<LensProfile> LensCorrectionDatabase::profiles(const LensMetadata& metadata) const {
     std::vector<LensProfile> result;
 #ifdef SONY2FUJI_ENABLE_LENSFUN
-    const auto* body = impl_->camera(metadata);
-    const auto matched = impl_->matches(metadata, body);
-    const lfLens** compatible = body ? impl_->database.FindLenses(body, nullptr, nullptr) : nullptr;
-    const lfLens* const* lenses = body ? compatible : impl_->database.GetLenses();
-    if (lenses) for (int i = 0; lenses[i]; ++i)
-        result.push_back(Impl::profile(lenses[i], metadata.focalLength, metadata.aperture,
-            std::find(matched.begin(), matched.end(), lenses[i]) != matched.end()));
-    lf_free(compatible);
+    {
+        std::lock_guard<std::mutex> lock(impl_->lookupMutex);
+        const auto* body = impl_->camera(metadata);
+        const auto matched = impl_->matches(metadata, body);
+        const lfLens** compatible = body ? impl_->database.FindLenses(body, nullptr, nullptr) : nullptr;
+        const lfLens* const* lenses = body ? compatible : impl_->database.GetLenses();
+        if (lenses) for (int i = 0; lenses[i]; ++i)
+            result.push_back(Impl::profile(lenses[i], metadata.focalLength, metadata.aperture,
+                std::find(matched.begin(), matched.end(), lenses[i]) != matched.end()));
+        lf_free(compatible);
+    }
     std::sort(result.begin(), result.end(), [](const LensProfile& a, const LensProfile& b) {
         if (a.isMatch != b.isMatch) return a.isMatch > b.isMatch;
         return a.maker == b.maker ? a.model < b.model : a.maker < b.maker;
@@ -154,6 +331,7 @@ LensCorrectionReport LensCorrectionDatabase::inspect(const LensMetadata& metadat
         report.state = LensCorrectionState::MissingFocalLength;
         return report;
     }
+    std::lock_guard<std::mutex> lock(impl_->lookupMutex);
     if (impl_->resolve(metadata, options, report) &&
         !(options.distortion && report.profile.hasDistortion) && !(options.tca && report.profile.hasTCA) &&
         !(options.vignetting && report.profile.hasVignetting))
@@ -216,10 +394,13 @@ LensCorrectionTransform::LensCorrectionTransform(std::shared_ptr<const LensCorre
         report.state = LensCorrectionState::UnsupportedInput; return;
     }
 #ifdef SONY2FUJI_ENABLE_LENSFUN
-    impl_->lens = impl_->database->impl_->resolve(metadata, options, report);
-    if (!impl_->lens) return;
-    const auto* body = impl_->database->impl_->camera(metadata);
-    impl_->crop = body ? body->CropFactor : metadata.cropFactor;
+    {
+        std::lock_guard<std::mutex> lock(impl_->database->impl_->lookupMutex);
+        impl_->lens = impl_->database->impl_->resolve(metadata, options, report);
+        if (!impl_->lens) return;
+        const auto* body = impl_->database->impl_->camera(metadata);
+        impl_->crop = body ? body->CropFactor : metadata.cropFactor;
+    }
     impl_->focal = metadata.focalLength; impl_->aperture = metadata.aperture;
     impl_->flags = (options.distortion ? LF_MODIFY_DISTORTION : 0) |
         (options.tca && channels == 3 ? LF_MODIFY_TCA : 0) |

@@ -50,7 +50,9 @@
 #include <cctype>
 #include <memory>
 #include <limits>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include <filesystem>
 #include <fstream>
@@ -127,22 +129,73 @@ struct sony2fuji_session {
 #endif
 };
 
-bool hdrSessionForcesGPU(const sony2fuji_session* session) {
-    return session && session->gpu_config.mode == sony2fuji::GpuMode::Force;
+struct sony2fuji_session_slot {
+    bool alive = true;
+    bool in_use = false;
+    std::unique_ptr<sony2fuji_session> session;
+};
+
+namespace {
+struct SessionRegistry {
+    std::mutex mutex;
+    uint64_t next_token = 1;
+    std::unordered_map<uintptr_t, std::shared_ptr<sony2fuji_session_slot>> slots;
+};
+
+SessionRegistry& sessionRegistry() {
+    // 进程生命周期内常驻，避免与宿主线程析构顺序竞争。
+    static auto* instance = new SessionRegistry();
+    return *instance;
 }
 
-bool hdrSessionUsesLegacySonyCrop(const sony2fuji_session* session) {
+bool usesLegacySonyCropSession(const sony2fuji_session* session) {
     const auto version = session ? session->processing_version : sony2fuji::ProcessingVersion::Legacy;
     return sony2fuji::usesLegacySonyCrop(version);
 }
+} // namespace
 
-void hdrSessionDidRenderCPU(sony2fuji_session* session) {
-    session->last_backend = SONY2FUJI_BACKEND_CPU;
+bool SessionLease::acquire(const sony2fuji_session* handle, SessionLease& out, bool allowNull) {
+    if (!handle) {
+        out.session_ = nullptr;
+        out.slot_.reset();
+        return allowNull;
+    }
+    auto& registry = sessionRegistry();
+    std::lock_guard<std::mutex> lock(registry.mutex);
+    const auto it = registry.slots.find(reinterpret_cast<uintptr_t>(handle));
+    if (it == registry.slots.end()) return false;
+    const auto& slot = it->second;
+    if (!slot || !slot->alive || slot->in_use || !slot->session) return false;
+    slot->in_use = true;
+    out.slot_ = slot;
+    out.session_ = slot->session.get();
+    return true;
 }
 
-sony2fuji::ProcessingCancellation hdrSessionCancellation(const sony2fuji_session* session) {
-    if (!session) return {};
-    return {session->cancellation_callback, session->cancellation_context};
+SessionLease::~SessionLease() {
+    if (slot_) {
+        std::lock_guard<std::mutex> lock(sessionRegistry().mutex);
+        slot_->in_use = false;
+    }
+}
+
+bool hdrSessionForcesGPU(const SessionLease& session) {
+    const auto* raw = session.constRaw();
+    return raw && raw->gpu_config.mode == sony2fuji::GpuMode::Force;
+}
+
+bool hdrSessionUsesLegacySonyCrop(const SessionLease& session) {
+    return usesLegacySonyCropSession(session.constRaw());
+}
+
+void hdrSessionDidRenderCPU(const SessionLease& session) {
+    if (auto* raw = session.raw()) raw->last_backend = SONY2FUJI_BACKEND_CPU;
+}
+
+sony2fuji::ProcessingCancellation hdrSessionCancellation(const SessionLease& session) {
+    const auto* raw = session.constRaw();
+    if (!raw) return {};
+    return {raw->cancellation_callback, raw->cancellation_context};
 }
 
 struct sony2fuji_hsl_probe {
@@ -158,8 +211,10 @@ sony2fuji_hsl_probe* makeHDRHslProbe(sony2fuji::ImageData image, uint64_t source
 }
 
 namespace sony2fuji {
-WaveletCacheDiagnostics waveletCacheDiagnostics(const sony2fuji_session* session) {
-    if (!session) return {};
+WaveletCacheDiagnostics waveletCacheDiagnostics(const sony2fuji_session* handle) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease)) return {};
+    const auto* session = lease.constRaw();
     auto result = session->wavelet_cache.diagnostics;
     result.previewBytes = session->wavelet_cache.previewBytes();
     return result;
@@ -1915,7 +1970,8 @@ sony2fuji_status finishOutput(
 
 } // namespace
 
-std::shared_ptr<const sony2fuji::LensCorrectionDatabase> hdrSessionLensDatabase(sony2fuji_session* session) {
+std::shared_ptr<const sony2fuji::LensCorrectionDatabase> hdrSessionLensDatabase(const SessionLease& lease) {
+    auto* session = lease.raw();
     if (!session) return sony2fuji::LensCorrectionDatabase::load();
     ensureLensDatabase(session);
     return session->lens_database;
@@ -1968,10 +2024,10 @@ template<class Job> decltype(auto) withHDRCameraAI(sony2fuji_session* session, J
 #endif
 }
 
-void hdrSessionPrepareCameraAI(sony2fuji_session* session, const char* path, uint64_t fileBytes,
+void hdrSessionPrepareCameraAI(const SessionLease& lease, const char* path, uint64_t fileBytes,
     sony2fuji_ai_progress_callback progress, void* context) {
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
-    withHDRCameraAI(session, [&](sony2fuji::ai::AISession& state) {
+    withHDRCameraAI(lease.raw(), [&](sony2fuji::ai::AISession& state) {
         using namespace sony2fuji;
         const ai::JobProgress report = [&](ai::Phase phase, size_t done, size_t total) {
             return !processingCancellation.cancelled() &&
@@ -1979,7 +2035,7 @@ void hdrSessionPrepareCameraAI(sony2fuji_session* session, const char* path, uin
         };
         if (!report(ai::Phase::Loading, 0, 1)) throw ProcessingCancelled();
         const auto identity = ai::sourceIdentityKey(path, checkProcessingCancellation);
-        const bool legacySonyCrop = hdrSessionUsesLegacySonyCrop(session);
+        const bool legacySonyCrop = usesLegacySonyCropSession(lease.constRaw());
         RAWBayerSource source;
         {
             RAWProcessor processor(legacySonyCrop);
@@ -1998,28 +2054,28 @@ void hdrSessionPrepareCameraAI(sony2fuji_session* session, const char* path, uin
         state.prepareHDRBayer(path, identity, source, legacySonyCrop, report);
     });
 #else
-    (void)session; (void)path; (void)fileBytes; (void)progress; (void)context;
+    (void)lease; (void)path; (void)fileBytes; (void)progress; (void)context;
     unavailableHDRCameraAI();
 #endif
 }
 
-std::string hdrSessionCameraAIKey(sony2fuji_session* session, const char* path) {
+std::string hdrSessionCameraAIKey(const SessionLease& lease, const char* path) {
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
-    return withHDRCameraAI(session, [&](sony2fuji::ai::AISession& ai) {
-        return ai.hdrBayerKey(path, hdrSessionUsesLegacySonyCrop(session));
+    return withHDRCameraAI(lease.raw(), [&](sony2fuji::ai::AISession& ai) {
+        return ai.hdrBayerKey(path, usesLegacySonyCropSession(lease.constRaw()));
     });
 #else
-    (void)session; (void)path;
+    (void)lease; (void)path;
     unavailableHDRCameraAI();
 #endif
 }
 
-sony2fuji::RAWBayerOverride hdrSessionLoadCameraAI(sony2fuji_session* session, const std::string& key,
+sony2fuji::RAWBayerOverride hdrSessionLoadCameraAI(const SessionLease& lease, const std::string& key,
     const sony2fuji::RAWBayerSource& metadata) {
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
-    return withHDRCameraAI(session, [&](sony2fuji::ai::AISession& ai) { return ai.loadHDRBayer(key, metadata); });
+    return withHDRCameraAI(lease.raw(), [&](sony2fuji::ai::AISession& ai) { return ai.loadHDRBayer(key, metadata); });
 #else
-    (void)session; (void)key; (void)metadata;
+    (void)lease; (void)key; (void)metadata;
     unavailableHDRCameraAI();
 #endif
 }
@@ -2087,7 +2143,17 @@ sony2fuji_status sony2fuji_session_create(sony2fuji_session** out_session) {
     try {
         auto session = std::make_unique<sony2fuji_session>();
         session->gpu_config = sony2fuji::defaultGpuConfig();
-        *out_session = session.release();
+        auto slot = std::make_shared<sony2fuji_session_slot>();
+        slot->session = std::move(session);
+
+        auto& registry = sessionRegistry();
+        std::lock_guard<std::mutex> lock(registry.mutex);
+        uintptr_t handleValue = 0;
+        do {
+            handleValue = (static_cast<uintptr_t>(registry.next_token++) << 4) + 0x100000ULL;
+        } while (handleValue == 0 || registry.slots.count(handleValue) != 0);
+        registry.slots.emplace(handleValue, std::move(slot));
+        *out_session = reinterpret_cast<sony2fuji_session*>(handleValue);
         return SONY2FUJI_STATUS_OK;
     } catch (const std::bad_alloc&) {
         *out_session = nullptr;
@@ -2098,13 +2164,27 @@ sony2fuji_status sony2fuji_session_create(sony2fuji_session** out_session) {
     }
 }
 
-sony2fuji_status sony2fuji_session_destroy(sony2fuji_session* session) {
-    delete session;
+sony2fuji_status sony2fuji_session_destroy(sony2fuji_session* handle) {
+    if (!handle) return SONY2FUJI_STATUS_OK;
+    std::shared_ptr<sony2fuji_session_slot> removed;
+    {
+        auto& registry = sessionRegistry();
+        std::lock_guard<std::mutex> lock(registry.mutex);
+        const auto it = registry.slots.find(reinterpret_cast<uintptr_t>(handle));
+        if (it == registry.slots.end()) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+        const auto& slot = it->second;
+        if (!slot || !slot->alive || slot->in_use) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+        slot->alive = false;
+        removed = std::move(it->second);
+        registry.slots.erase(it);
+    }
     return SONY2FUJI_STATUS_OK;
 }
 
-sony2fuji_status sony2fuji_session_set_lens_database(sony2fuji_session* session, const char* path) {
-    if (!session) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+sony2fuji_status sony2fuji_session_set_lens_database(sony2fuji_session* handle, const char* path) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    auto* session = lease.raw();
     if (!sony2fuji::LensCorrectionDatabase::available()) return SONY2FUJI_STATUS_UNSUPPORTED;
     try {
         auto database = sony2fuji::LensCorrectionDatabase::load(path ? path : "");
@@ -2118,7 +2198,8 @@ sony2fuji_status sony2fuji_session_set_lens_database(sony2fuji_session* session,
     catch (...) { return SONY2FUJI_STATUS_IO_ERROR; }
 }
 
-sony2fuji_status sony2fuji_session_set_lens_correction(sony2fuji_session* session, const sony2fuji_lens_correction_config* config) {
+namespace {
+sony2fuji_status setLensCorrection(sony2fuji_session* session, const sony2fuji_lens_correction_config* config) {
     if (!session || !config || config->version != SONY2FUJI_LENS_CORRECTION_CONFIG_VERSION || config->struct_size != sizeof(*config) ||
         (config->distortion != 0 && config->distortion != 1) || (config->tca != 0 && config->tca != 1) ||
         (config->auto_crop != 0 && config->auto_crop != 1)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
@@ -2131,56 +2212,73 @@ sony2fuji_status sony2fuji_session_set_lens_correction(sony2fuji_session* sessio
     } catch (const std::bad_alloc&) { return SONY2FUJI_STATUS_OUT_OF_MEMORY; }
     catch (...) { return SONY2FUJI_STATUS_PROCESSING_ERROR; }
 }
+} // namespace
 
-sony2fuji_status sony2fuji_session_set_lens_correction_v2(sony2fuji_session* session, const sony2fuji_lens_correction_config_v2* config) {
-    if (!session || !config || config->base.version != SONY2FUJI_LENS_CORRECTION_CONFIG_V2_VERSION ||
+sony2fuji_status sony2fuji_session_set_lens_correction(sony2fuji_session* handle, const sony2fuji_lens_correction_config* config) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    return setLensCorrection(lease.raw(), config);
+}
+
+sony2fuji_status sony2fuji_session_set_lens_correction_v2(sony2fuji_session* handle, const sony2fuji_lens_correction_config_v2* config) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !config || config->base.version != SONY2FUJI_LENS_CORRECTION_CONFIG_V2_VERSION ||
         config->base.struct_size != sizeof(*config) || (config->vignetting != 0 && config->vignetting != 1))
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    auto* session = lease.raw();
     if (config->vignetting && !sony2fuji::LensCorrectionDatabase::available()) return SONY2FUJI_STATUS_UNSUPPORTED;
     auto base = config->base;
     base.version = SONY2FUJI_LENS_CORRECTION_CONFIG_VERSION; base.struct_size = sizeof(base);
-    const auto status = sony2fuji_session_set_lens_correction(session, &base);
+    const auto status = setLensCorrection(session, &base);
     if (status == SONY2FUJI_STATUS_OK) session->lens_correction.vignetting = config->vignetting != 0;
     return status;
 }
 
-sony2fuji_status sony2fuji_session_get_lens_report_v2(sony2fuji_session* session, sony2fuji_lens_report_v2* report) {
-    if (!session || !report) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+sony2fuji_status sony2fuji_session_get_lens_report_v2(sony2fuji_session* handle, sony2fuji_lens_report_v2* report) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !report) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    auto* session = lease.raw();
     report->base = lensReport(session->lens_report);
     report->has_vignetting = session->lens_report.profile.hasVignetting;
     report->applied_vignetting = session->lens_report.appliedVignetting;
     return SONY2FUJI_STATUS_OK;
 }
 
-sony2fuji_status sony2fuji_session_inspect_lens(sony2fuji_session* session, const char* input_path,
+sony2fuji_status sony2fuji_session_inspect_lens(sony2fuji_session* handle, const char* input_path,
     sony2fuji_lens_report* report, sony2fuji_lens_profile* profiles, uint32_t capacity, uint32_t* count) {
-    if (!session || isEmptyString(input_path) || !report || !count || (!profiles && capacity != 0)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || isEmptyString(input_path) || !report || !count || (!profiles && capacity != 0))
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     *count = 0; *report = {};
     try {
         sony2fuji::LensMetadata metadata;
         const auto status = sony2fuji::RAWProcessor::readLensMetadata(input_path, metadata);
         if (status != sony2fuji::ErrorCode::Success) return mapError(status);
-        return inspectLensMetadata(session, metadata, report, profiles, capacity, count);
+        return inspectLensMetadata(lease.raw(), metadata, report, profiles, capacity, count);
     } catch (const std::bad_alloc&) { return SONY2FUJI_STATUS_OUT_OF_MEMORY; }
     catch (...) { return SONY2FUJI_STATUS_PROCESSING_ERROR; }
 }
 
-sony2fuji_status sony2fuji_session_inspect_lens_v2(sony2fuji_session* session, const char* input_path,
+sony2fuji_status sony2fuji_session_inspect_lens_v2(sony2fuji_session* handle, const char* input_path,
     sony2fuji_lens_report_v2* report, sony2fuji_lens_profile_v2* profiles, uint32_t capacity, uint32_t* count) {
-    if (!session || isEmptyString(input_path) || !report || !count || (!profiles && capacity != 0)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || isEmptyString(input_path) || !report || !count || (!profiles && capacity != 0))
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     *count = 0; *report = {};
     try {
         sony2fuji::LensMetadata metadata;
         const auto status = sony2fuji::RAWProcessor::readLensMetadata(input_path, metadata);
         if (status != sony2fuji::ErrorCode::Success) return mapError(status);
-        return inspectLensMetadata(session, metadata, report, profiles, capacity, count);
+        return inspectLensMetadata(lease.raw(), metadata, report, profiles, capacity, count);
     } catch (const std::bad_alloc&) { return SONY2FUJI_STATUS_OUT_OF_MEMORY; }
     catch (...) { return SONY2FUJI_STATUS_PROCESSING_ERROR; }
 }
 
-sony2fuji_status sony2fuji_session_set_display_lens_metadata(sony2fuji_session* session,
+sony2fuji_status sony2fuji_session_set_display_lens_metadata(sony2fuji_session* handle,
     const sony2fuji_lens_metadata* metadata) {
-    if (!session) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    auto* session = lease.raw();
     if (!metadata) {
         session->has_display_lens_metadata = false;
         session->display_lens_metadata = {};
@@ -2198,65 +2296,78 @@ sony2fuji_status sony2fuji_session_set_display_lens_metadata(sony2fuji_session* 
     catch (...) { return SONY2FUJI_STATUS_PROCESSING_ERROR; }
 }
 
-sony2fuji_status sony2fuji_session_inspect_lens_metadata(sony2fuji_session* session,
+sony2fuji_status sony2fuji_session_inspect_lens_metadata(sony2fuji_session* handle,
     const sony2fuji_lens_metadata* metadata, sony2fuji_lens_report* report,
     sony2fuji_lens_profile* profiles, uint32_t capacity, uint32_t* count) {
-    if (!session || !report || !count || (!profiles && capacity != 0)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !report || !count || (!profiles && capacity != 0))
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     *count = 0; *report = {};
     try {
         sony2fuji::LensMetadata copied;
         if (!readDisplayLensMetadata(metadata, copied)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-        return inspectLensMetadata(session, copied, report, profiles, capacity, count);
+        return inspectLensMetadata(lease.raw(), copied, report, profiles, capacity, count);
     } catch (const std::bad_alloc&) { return SONY2FUJI_STATUS_OUT_OF_MEMORY; }
     catch (...) { return SONY2FUJI_STATUS_PROCESSING_ERROR; }
 }
 
-sony2fuji_status sony2fuji_session_inspect_lens_metadata_v2(sony2fuji_session* session,
+sony2fuji_status sony2fuji_session_inspect_lens_metadata_v2(sony2fuji_session* handle,
     const sony2fuji_lens_metadata* metadata, sony2fuji_lens_report_v2* report,
     sony2fuji_lens_profile_v2* profiles, uint32_t capacity, uint32_t* count) {
-    if (!session || !report || !count || (!profiles && capacity != 0)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !report || !count || (!profiles && capacity != 0))
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     *count = 0; *report = {};
     try {
         sony2fuji::LensMetadata copied;
         if (!readDisplayLensMetadata(metadata, copied)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-        return inspectLensMetadata(session, copied, report, profiles, capacity, count);
+        return inspectLensMetadata(lease.raw(), copied, report, profiles, capacity, count);
     } catch (const std::bad_alloc&) { return SONY2FUJI_STATUS_OUT_OF_MEMORY; }
     catch (...) { return SONY2FUJI_STATUS_PROCESSING_ERROR; }
 }
 
-sony2fuji_status sony2fuji_session_get_lens_report(sony2fuji_session* session, sony2fuji_lens_report* report) {
-    if (!session || !report) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-    *report = lensReport(session->lens_report);
+sony2fuji_status sony2fuji_session_get_lens_report(sony2fuji_session* handle, sony2fuji_lens_report* report) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !report) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    *report = lensReport(lease.raw()->lens_report);
     return SONY2FUJI_STATUS_OK;
 }
 
-sony2fuji_status sony2fuji_session_set_interactive_preview(sony2fuji_session* session, int32_t enabled) {
-    if (!session || (enabled != 0 && enabled != 1)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-    session->interactive_preview = enabled != 0;
+sony2fuji_status sony2fuji_session_set_interactive_preview(sony2fuji_session* handle, int32_t enabled) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || (enabled != 0 && enabled != 1)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    lease.raw()->interactive_preview = enabled != 0;
     return SONY2FUJI_STATUS_OK;
 }
 
-sony2fuji_status sony2fuji_session_set_viewport_preview(sony2fuji_session* session, int32_t enabled) {
-    if (!session || (enabled != 0 && enabled != 1)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-    session->viewport_preview = enabled != 0;
+sony2fuji_status sony2fuji_session_set_viewport_preview(sony2fuji_session* handle, int32_t enabled) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || (enabled != 0 && enabled != 1)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    lease.raw()->viewport_preview = enabled != 0;
     return SONY2FUJI_STATUS_OK;
 }
 
-sony2fuji_render_backend sony2fuji_session_get_last_backend(const sony2fuji_session* session) {
-    return session ? session->last_backend : SONY2FUJI_BACKEND_CPU;
+sony2fuji_render_backend sony2fuji_session_get_last_backend(const sony2fuji_session* handle) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease)) return SONY2FUJI_BACKEND_CPU;
+    return lease.constRaw()->last_backend;
 }
 
-uint64_t sony2fuji_session_get_raw_decode_count(const sony2fuji_session* session) {
-    return session ? session->raw_decode_count : 0;
+uint64_t sony2fuji_session_get_raw_decode_count(const sony2fuji_session* handle) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease)) return 0;
+    return lease.constRaw()->raw_decode_count;
 }
 
 sony2fuji_status sony2fuji_session_set_gpu_config(
-    sony2fuji_session* session,
+    sony2fuji_session* handle,
     const sony2fuji_gpu_config* config
 ) {
-    if (!session) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease)) {
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     }
+    auto* session = lease.raw();
     sony2fuji_status status = validateGpuConfig(config);
     if (status != SONY2FUJI_STATUS_OK) {
         return status;
@@ -2278,10 +2389,13 @@ sony2fuji_status sony2fuji_session_set_gpu_config(
 }
 
 sony2fuji_status sony2fuji_session_set_processing_version(
-    sony2fuji_session* session, sony2fuji_processing_version version
+    sony2fuji_session* handle, sony2fuji_processing_version version
 ) {
     const auto processing = static_cast<sony2fuji::ProcessingVersion>(version);
-    if (!session || !sony2fuji::validProcessingVersion(processing)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !sony2fuji::validProcessingVersion(processing))
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    auto* session = lease.raw();
     if (session->processing_version != processing) session->dehaze_analysis = {};
     session->processing_version = processing;
     session->wavelet_denoise.processingVersion = processing;
@@ -2324,30 +2438,42 @@ sony2fuji_status sony2fuji_x3f_default_mode(const char* input_path, sony2fuji_x3
     }
 }
 
-sony2fuji_status sony2fuji_session_set_x3f_mode(sony2fuji_session* session, sony2fuji_x3f_mode mode) {
-    if (!session || (mode != SONY2FUJI_X3F_LEGACY && mode != SONY2FUJI_X3F_NORMAL))
+sony2fuji_status sony2fuji_session_set_x3f_mode(sony2fuji_session* handle, sony2fuji_x3f_mode mode) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || (mode != SONY2FUJI_X3F_LEGACY && mode != SONY2FUJI_X3F_NORMAL))
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    auto* session = lease.raw();
     session->x3f_mode = mode;
     session->x3f_error.clear();
     return SONY2FUJI_STATUS_OK;
 }
 
-const char* sony2fuji_session_x3f_error(const sony2fuji_session* session) {
-    return session ? session->x3f_error.c_str() : "Invalid session";
+const char* sony2fuji_session_x3f_error(const sony2fuji_session* handle) {
+    thread_local std::string snapshot;
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease)) return "Invalid session";
+    try {
+        snapshot = lease.constRaw()->x3f_error;
+        return snapshot.c_str();
+    } catch (...) {
+        return "Invalid session";
+    }
 }
 
 sony2fuji_status sony2fuji_session_set_raw_exposure_mode(
-    sony2fuji_session* session, sony2fuji_raw_exposure_mode mode
+    sony2fuji_session* handle, sony2fuji_raw_exposure_mode mode
 ) {
-    if (!session || mode < SONY2FUJI_EXPOSURE_SCENE || mode > SONY2FUJI_EXPOSURE_SENSOR)
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || mode < SONY2FUJI_EXPOSURE_SCENE || mode > SONY2FUJI_EXPOSURE_SENSOR)
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-    session->raw_exposure_mode = mode;
+    lease.raw()->raw_exposure_mode = mode;
     return SONY2FUJI_STATUS_OK;
 }
 
-sony2fuji_status sony2fuji_session_set_raw_noise_reduction(sony2fuji_session* session, int32_t level) {
-    if (!session || level < 0 || level > 2) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-    session->raw_noise_reduction = level;
+sony2fuji_status sony2fuji_session_set_raw_noise_reduction(sony2fuji_session* handle, int32_t level) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || level < 0 || level > 2) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    lease.raw()->raw_noise_reduction = level;
     return SONY2FUJI_STATUS_OK;
 }
 
@@ -2381,8 +2507,10 @@ const char* sony2fuji_ai_get_devices(void) {
 #endif
 }
 
-sony2fuji_status sony2fuji_session_set_ai_device(sony2fuji_session* session, const char* device_id) {
-    if (!session) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+sony2fuji_status sony2fuji_session_set_ai_device(sony2fuji_session* handle, const char* device_id) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    auto* session = lease.raw();
     const auto* id = device_id ? device_id : "";
     if (std::strlen(id) > 256) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
@@ -2395,25 +2523,35 @@ sony2fuji_status sony2fuji_session_set_ai_device(sony2fuji_session* session, con
     } catch (const std::bad_alloc&) { return SONY2FUJI_STATUS_OUT_OF_MEMORY; }
     catch (...) { return SONY2FUJI_STATUS_INVALID_ARGUMENT; }
 #else
+    (void)session;
     return *id ? SONY2FUJI_STATUS_UNSUPPORTED : SONY2FUJI_STATUS_OK;
 #endif
 }
 
-const char* sony2fuji_session_get_ai_diagnostics(const sony2fuji_session* session) {
+const char* sony2fuji_session_get_ai_diagnostics(const sony2fuji_session* handle) {
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
-    try { if (session && session->ai) return session->ai->diagnosticsJSON(); }
-    catch (...) { return "{\"version\":1,\"error\":\"Diagnostic snapshot unavailable\"}"; }
+    thread_local std::string snapshot;
+    SessionLease lease;
+    try {
+        if (SessionLease::acquire(handle, lease) && lease.constRaw()->ai) {
+            snapshot = lease.constRaw()->ai->diagnosticsJSON();
+            return snapshot.c_str();
+        }
+    } catch (...) { return "{\"version\":1,\"error\":\"Diagnostic snapshot unavailable\"}"; }
 #else
-    (void)session;
+    SessionLease lease;
+    (void)SessionLease::acquire(handle, lease);
 #endif
     return "{\"version\":1,\"logs\":[]}";
 }
 
-sony2fuji_status sony2fuji_session_set_ai_denoise(sony2fuji_session* session, const sony2fuji_ai_denoise_config* config) {
-    if (!session || !config || config->version != SONY2FUJI_AI_DENOISE_CONFIG_VERSION || config->struct_size < sizeof(*config) ||
+sony2fuji_status sony2fuji_session_set_ai_denoise(sony2fuji_session* handle, const sony2fuji_ai_denoise_config* config) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !config || config->version != SONY2FUJI_AI_DENOISE_CONFIG_VERSION || config->struct_size < sizeof(*config) ||
         (config->enabled != 0 && config->enabled != 1) || config->backend < SONY2FUJI_AI_CPU || config->backend > SONY2FUJI_AI_DIRECTML ||
         (config->enabled && (isEmptyString(config->model_directory) || isEmptyString(config->cache_directory))))
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    auto* session = lease.raw();
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
     if (config->enabled && config->backend == SONY2FUJI_AI_CPU) return SONY2FUJI_STATUS_UNSUPPORTED;
     const bool hadAI = session->ai != nullptr;
@@ -2437,34 +2575,53 @@ sony2fuji_status sony2fuji_session_set_ai_denoise(sony2fuji_session* session, co
         return SONY2FUJI_STATUS_PROCESSING_ERROR;
     }
 #else
+    (void)session;
     return config->enabled ? SONY2FUJI_STATUS_UNSUPPORTED : SONY2FUJI_STATUS_OK;
 #endif
 }
 
-const char* sony2fuji_session_get_ai_error(const sony2fuji_session* session) {
+const char* sony2fuji_session_get_ai_error(const sony2fuji_session* handle) {
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
-    if (session && session->ai) return session->ai->lastError.c_str();
+    thread_local std::string snapshot;
+    SessionLease lease;
+    try {
+        if (SessionLease::acquire(handle, lease) && lease.constRaw()->ai) {
+            snapshot = lease.constRaw()->ai->lastError;
+            return snapshot.c_str();
+        }
+    } catch (...) { return ""; }
 #else
-    (void)session;
+    SessionLease lease;
+    (void)SessionLease::acquire(handle, lease);
 #endif
     return "";
 }
 
-const char* sony2fuji_session_get_ai_backend(const sony2fuji_session* session) {
+const char* sony2fuji_session_get_ai_backend(const sony2fuji_session* handle) {
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
-    if (session && session->ai) return session->ai->lastBackend.c_str();
+    thread_local std::string snapshot;
+    SessionLease lease;
+    try {
+        if (SessionLease::acquire(handle, lease) && lease.constRaw()->ai) {
+            snapshot = lease.constRaw()->ai->lastBackend;
+            return snapshot.c_str();
+        }
+    } catch (...) { return ""; }
 #else
-    (void)session;
+    SessionLease lease;
+    (void)SessionLease::acquire(handle, lease);
 #endif
     return "";
 }
 
-sony2fuji_status sony2fuji_session_prepare_ai(sony2fuji_session* session, const sony2fuji_request* request,
+sony2fuji_status sony2fuji_session_prepare_ai(sony2fuji_session* handle, const sony2fuji_request* request,
     sony2fuji_ai_progress_callback progress, void* context) {
-    if (!session || !request || request->version != SONY2FUJI_REQUEST_VERSION || request->struct_size < sizeof(*request) ||
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !request || request->version != SONY2FUJI_REQUEST_VERSION || request->struct_size < sizeof(*request) ||
         request->input_type != SONY2FUJI_INPUT_RAW || request->wb_mode < SONY2FUJI_WB_CAMERA || request->wb_mode > SONY2FUJI_WB_TEMPERATURE)
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
+    auto* session = lease.raw();
     if (!session->ai) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     // AI 降噪只在硬件后端运行、不回退 CPU，但取消语义走公共 ProcessingCancellationScope 链：
     // 会话级回调在此安装，tile/阶段边界经锁存短路（对齐 HDR 路径 hdrSessionPrepareCameraAI 的口径）。
@@ -2513,19 +2670,22 @@ sony2fuji_status sony2fuji_session_prepare_ai(sony2fuji_session* session, const 
 #endif
 }
 
-sony2fuji_status sony2fuji_session_set_chroma_denoise(sony2fuji_session* session, int32_t mode) {
-    if (!session || mode < 0 || mode > 2) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+sony2fuji_status sony2fuji_session_set_chroma_denoise(sony2fuji_session* handle, int32_t mode) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || mode < 0 || mode > 2) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     if (mode != 0 && !sony2fuji::chromaDenoiseAvailable()) return SONY2FUJI_STATUS_UNSUPPORTED;
-    session->chroma_denoise = mode;
+    lease.raw()->chroma_denoise = mode;
     return SONY2FUJI_STATUS_OK;
 }
 
 sony2fuji_status sony2fuji_session_set_wavelet_denoise(
-    sony2fuji_session* session, const sony2fuji_wavelet_denoise_config* config
+    sony2fuji_session* handle, const sony2fuji_wavelet_denoise_config* config
 ) {
-    if (!session || !config || config->version != SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION ||
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !config || config->version != SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION ||
         config->struct_size < sizeof(*config) || (config->enabled != 0 && config->enabled != 1))
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    auto* session = lease.raw();
     const sony2fuji::WaveletDenoiseOptions options{config->enabled != 0,config->luma,config->chroma,config->coarse,
         session->processing_version};
     if (!sony2fuji::validWaveletDenoiseOptions(options)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
@@ -2535,104 +2695,117 @@ sony2fuji_status sony2fuji_session_set_wavelet_denoise(
 }
 
 sony2fuji_status sony2fuji_session_get_raw_noise_reduction_support(
-    const sony2fuji_session* session, int32_t* supported
+    const sony2fuji_session* handle, int32_t* supported
 ) {
-    if (!session || !supported || session->raw_key.empty())
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !supported || lease.constRaw()->raw_key.empty())
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-    *supported = session->raw_noise_reduction_supported ? 1 : 0;
+    *supported = lease.constRaw()->raw_noise_reduction_supported ? 1 : 0;
     return SONY2FUJI_STATUS_OK;
 }
 
 sony2fuji_status sony2fuji_session_get_raw_exposure(
-    const sony2fuji_session* session, float* baseline_ev, float* metadata_ev
+    const sony2fuji_session* handle, float* baseline_ev, float* metadata_ev
 ) {
-    if (!session || !baseline_ev || !metadata_ev || session->raw_key.empty())
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !baseline_ev || !metadata_ev || lease.constRaw()->raw_key.empty())
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    const auto* session = lease.constRaw();
     *baseline_ev = session->baseline_ev;
     *metadata_ev = session->metadata_ev;
     return SONY2FUJI_STATUS_OK;
 }
 
 sony2fuji_status sony2fuji_session_get_raw_white_balance(
-    const sony2fuji_session* session, float* temperature, float* tint
+    const sony2fuji_session* handle, float* temperature, float* tint
 ) {
-    if (!session || !temperature || !tint || session->raw_key.empty())
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !temperature || !tint || lease.constRaw()->raw_key.empty())
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    const auto* session = lease.constRaw();
     if (!session->calibrated_wb) return SONY2FUJI_STATUS_UNSUPPORTED;
     *temperature=session->as_shot_temperature; *tint=session->as_shot_tint;
     return SONY2FUJI_STATUS_OK;
 }
 
 sony2fuji_status sony2fuji_session_set_photo_effects(
-    sony2fuji_session* session, const sony2fuji_photo_effects_config* config
+    sony2fuji_session* handle, const sony2fuji_photo_effects_config* config
 ) {
-    if (!session || !config || config->version != SONY2FUJI_PHOTO_EFFECTS_CONFIG_VERSION ||
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !config || config->version != SONY2FUJI_PHOTO_EFFECTS_CONFIG_VERSION ||
         config->struct_size != sizeof(*config)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     sony2fuji::PhotoEffectsOptions options{config->vignette_amount, config->vignette_midpoint,
         config->vignette_roundness, config->vignette_feather, config->vignette_highlights,
         config->grain_amount, config->grain_size, config->grain_roughness};
     if (!options.valid()) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-    session->photo_effects = options;
+    lease.raw()->photo_effects = options;
     return SONY2FUJI_STATUS_OK;
 }
 
 sony2fuji_status sony2fuji_session_set_hsl(
-    sony2fuji_session* session, const sony2fuji_hsl_config* config
+    sony2fuji_session* handle, const sony2fuji_hsl_config* config
 ) {
-    if (!session || !config || config->version != SONY2FUJI_HSL_CONFIG_VERSION ||
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !config || config->version != SONY2FUJI_HSL_CONFIG_VERSION ||
         config->struct_size != sizeof(*config)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     sony2fuji::HslOptions options;
     std::copy(std::begin(config->hue), std::end(config->hue), options.hue.begin());
     std::copy(std::begin(config->saturation), std::end(config->saturation), options.saturation.begin());
     std::copy(std::begin(config->lightness), std::end(config->lightness), options.lightness.begin());
     if (!options.valid()) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-    session->hsl = options;
+    lease.raw()->hsl = options;
     return SONY2FUJI_STATUS_OK;
 }
 
 sony2fuji_status sony2fuji_session_set_tone_controls(
-    sony2fuji_session* session, const sony2fuji_tone_controls_config* config
+    sony2fuji_session* handle, const sony2fuji_tone_controls_config* config
 ) {
-    if (!session || !config || config->version != SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION ||
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !config || config->version != SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION ||
         config->struct_size != sizeof(*config)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     const sony2fuji::ToneControlsOptions options{config->black_point,config->white_point,config->vibrance};
     if (!options.valid()) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-    session->tone_controls = options;
+    lease.raw()->tone_controls = options;
     return SONY2FUJI_STATUS_OK;
 }
 
 sony2fuji_status sony2fuji_session_set_atmosphere(
-    sony2fuji_session* session, const sony2fuji_atmosphere_config* config
+    sony2fuji_session* handle, const sony2fuji_atmosphere_config* config
 ) {
     static_assert(sizeof(sony2fuji_atmosphere_config)==16,"Atmosphere C ABI layout");
-    if (!session || !config || config->version!=SONY2FUJI_ATMOSPHERE_CONFIG_VERSION ||
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !config || config->version!=SONY2FUJI_ATMOSPHERE_CONFIG_VERSION ||
         config->struct_size!=sizeof(*config)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     const sony2fuji::AtmosphereOptions options{config->clarity,config->dehaze};
     if (!options.valid()) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-    session->atmosphere=options;
+    lease.raw()->atmosphere=options;
     return SONY2FUJI_STATUS_OK;
 }
 
 sony2fuji_status sony2fuji_session_set_color_grading(
-    sony2fuji_session* session, const sony2fuji_color_grading_config* config
+    sony2fuji_session* handle, const sony2fuji_color_grading_config* config
 ) {
     static_assert(sizeof(sony2fuji_color_grading_config)==32,"Color grading C ABI layout");
-    if (!session || !config || config->version!=SONY2FUJI_COLOR_GRADING_CONFIG_VERSION ||
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !config || config->version!=SONY2FUJI_COLOR_GRADING_CONFIG_VERSION ||
         config->struct_size!=sizeof(*config)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     sony2fuji::ColorGradingOptions options;
     options.wheels={sony2fuji::ColorGradingWheel{config->shadows_hue,config->shadows_saturation},
         sony2fuji::ColorGradingWheel{config->midtones_hue,config->midtones_saturation},
         sony2fuji::ColorGradingWheel{config->highlights_hue,config->highlights_saturation}};
     if (!options.valid()) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-    session->color_grading=options;
+    lease.raw()->color_grading=options;
     return SONY2FUJI_STATUS_OK;
 }
 
 sony2fuji_status sony2fuji_session_set_tone_curve(
-    sony2fuji_session* session, const sony2fuji_tone_curve_config* config
+    sony2fuji_session* handle, const sony2fuji_tone_curve_config* config
 ) {
     static_assert(sizeof(sony2fuji_tone_curve_config) == 544, "Tone curve C ABI layout");
-    if (!session || !config || !sony2fuji::validToneCurve(*config)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !config || !sony2fuji::validToneCurve(*config))
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    auto* session = lease.raw();
     try {
         sony2fuji::ToneCurve curve(*config);
         session->tone_curve = std::move(curve);
@@ -2646,11 +2819,13 @@ sony2fuji_status sony2fuji_session_set_tone_curve(
 }
 
 sony2fuji_status sony2fuji_session_set_tone_curves(
-    sony2fuji_session* session, const sony2fuji_tone_curve_set_config* config) {
-    if (!session || !config || config->version != SONY2FUJI_TONE_CURVE_SET_CONFIG_VERSION ||
+    sony2fuji_session* handle, const sony2fuji_tone_curve_set_config* config) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !config || config->version != SONY2FUJI_TONE_CURVE_SET_CONFIG_VERSION ||
         config->struct_size != sizeof(*config) ||
         !std::all_of(std::begin(config->curves), std::end(config->curves), sony2fuji::validToneCurve))
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    auto* session = lease.raw();
     try {
         sony2fuji::ToneCurve master(config->curves[0]);
         std::array<sony2fuji::ToneCurve, 3> channels = {
@@ -2682,13 +2857,15 @@ sony2fuji_status sony2fuji_sample_tone_curve(const sony2fuji_tone_curve_config* 
 }
 
 sony2fuji_status sony2fuji_session_set_geometry(
-    sony2fuji_session* session, const sony2fuji_geometry_config* config
+    sony2fuji_session* handle, const sony2fuji_geometry_config* config
 ) {
     static_assert(sizeof(sony2fuji_geometry_config) == 40, "Geometry C ABI layout");
-    if (!session || !config || config->version != SONY2FUJI_GEOMETRY_CONFIG_VERSION ||
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !config || config->version != SONY2FUJI_GEOMETRY_CONFIG_VERSION ||
         config->struct_size != sizeof(*config) || config->flip_horizontal < 0 ||
         config->flip_horizontal > 1 || config->flip_vertical < 0 || config->flip_vertical > 1)
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    auto* session = lease.raw();
     auto options = session->geometry;
     options.crop_x = config->crop_x; options.crop_y = config->crop_y;
     options.crop_width = config->crop_width; options.crop_height = config->crop_height;
@@ -2705,11 +2882,13 @@ sony2fuji_status sony2fuji_session_set_geometry(
 }
 
 sony2fuji_status sony2fuji_session_set_perspective(
-    sony2fuji_session* session, const sony2fuji_perspective_config* config
+    sony2fuji_session* handle, const sony2fuji_perspective_config* config
 ) {
     static_assert(sizeof(sony2fuji_perspective_config) == 16, "Perspective C ABI layout");
-    if (!session || !config || config->version != SONY2FUJI_PERSPECTIVE_CONFIG_VERSION ||
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !config || config->version != SONY2FUJI_PERSPECTIVE_CONFIG_VERSION ||
         config->struct_size != sizeof(*config)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    auto* session = lease.raw();
     auto options = session->geometry;
     options.perspective_horizontal = config->horizontal;
     options.perspective_vertical = config->vertical;
@@ -2720,11 +2899,13 @@ sony2fuji_status sony2fuji_session_set_perspective(
 }
 
 sony2fuji_status sony2fuji_session_get_geometry_size(
-    const sony2fuji_session* session, uint32_t* width, uint32_t* height
+    const sony2fuji_session* handle, uint32_t* width, uint32_t* height
 ) {
     if (width) *width = 0;
     if (height) *height = 0;
-    if (!session || !width || !height) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !width || !height) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    const auto* session = lease.constRaw();
     if (session->geometry_width == 0 || session->geometry_height == 0)
         return SONY2FUJI_STATUS_UNSUPPORTED;
     *width = session->geometry_width; *height = session->geometry_height;
@@ -2744,10 +2925,13 @@ static sony2fuji_status recordAIError(sony2fuji_session* session, sony2fuji_stat
 }
 
 sony2fuji_status sony2fuji_session_estimate_auto_exposure(
-    sony2fuji_session* session, const sony2fuji_request* request, float* exposure_ev
+    sony2fuji_session* handle, const sony2fuji_request* request, float* exposure_ev
 ) {
-    if (session) session->x3f_error.clear();
-    if (!session || !request || !exposure_ev) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    auto* session = lease.raw();
+    session->x3f_error.clear();
+    if (!request || !exposure_ev) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     if (request->version != SONY2FUJI_REQUEST_VERSION || request->struct_size < sizeof(*request))
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     if (request->wb_mode < SONY2FUJI_WB_CAMERA || request->wb_mode > SONY2FUJI_WB_TEMPERATURE ||
@@ -3252,11 +3436,13 @@ static sony2fuji_status processImpl(
     return finishOutput(session, local, image, out_buffer, native_width, native_height, migration_frame);
 }
 
-sony2fuji_status sony2fuji_session_migrate_processing(const sony2fuji_session* source,
+sony2fuji_status sony2fuji_session_migrate_processing(const sony2fuji_session* handle,
     const sony2fuji_request* request, sony2fuji_processing_migration_result* result) {
     if (result) *result = {};
-    if (!source || !request || !result || request->version != SONY2FUJI_REQUEST_VERSION ||
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !request || !result || request->version != SONY2FUJI_REQUEST_VERSION ||
         request->struct_size < sizeof(*request)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    const auto* source = lease.constRaw();
     if (source->gpu_config.mode == sony2fuji::GpuMode::Force || aiEnabled(source))
         return SONY2FUJI_STATUS_UNSUPPORTED;
     const sony2fuji::MigrationParameters initial{request->exposure_ev, request->contrast,
@@ -3368,23 +3554,28 @@ sony2fuji_status sony2fuji_session_migrate_processing(const sony2fuji_session* s
     catch (...) { return SONY2FUJI_STATUS_PROCESSING_ERROR; }
 }
 
-sony2fuji_status sony2fuji_session_set_cancellation_callback(sony2fuji_session* session,
+sony2fuji_status sony2fuji_session_set_cancellation_callback(sony2fuji_session* handle,
     sony2fuji_cancel_callback callback, void* context) {
-    if (!session) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    auto* session = lease.raw();
     session->cancellation_callback = callback;
     session->cancellation_context = callback ? context : nullptr;
     return SONY2FUJI_STATUS_OK;
 }
 
-sony2fuji_status sony2fuji_process(sony2fuji_session* session,
+sony2fuji_status sony2fuji_process(sony2fuji_session* handle,
     const sony2fuji_request* request, sony2fuji_buffer* buffer) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    auto* session = lease.raw();
     try {
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
-        if (session && aiEnabled(session)) session->ai->beginOperation("render");
+        if (aiEnabled(session)) session->ai->beginOperation("render");
 #endif
         // 取消对预览到缓冲区、以及 FINAL 导出（文件或缓冲区）都生效。编码器在替换目标文件
         // 之前还有一次提交点检查，所以 FINAL 取消既不会留下半成品，也不会覆盖已有目标。
-        const bool cancellable = session && request &&
+        const bool cancellable = request &&
             (request->output_target == SONY2FUJI_TARGET_BUFFER || request->intent == SONY2FUJI_INTENT_FINAL);
         sony2fuji::ProcessingCancellationScope cancellation(cancellable ?
             sony2fuji::ProcessingCancellation{session->cancellation_callback, session->cancellation_context} :
@@ -3407,29 +3598,32 @@ sony2fuji_status sony2fuji_process(sony2fuji_session* session,
     }
 }
 
-sony2fuji_status sony2fuji_preview_lut_compatibility(sony2fuji_session* session,
+sony2fuji_status sony2fuji_preview_lut_compatibility(sony2fuji_session* handle,
     const sony2fuji_request* request,const char* configuration,sony2fuji_buffer* buffer) {
     if(!buffer) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     sony2fuji_release_buffer(buffer);
-    if(!session || !request || !configuration || !*configuration || isEmptyString(request->lut_path) ||
+    SessionLease lease;
+    if(!SessionLease::acquire(handle, lease) || !request || !configuration || !*configuration || isEmptyString(request->lut_path) ||
         request->intent!=SONY2FUJI_INTENT_PREVIEW || request->output_target!=SONY2FUJI_TARGET_BUFFER ||
         request->preview_long_edge<1 || request->preview_long_edge>1024)
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     try {
         auto lut=sony2fuji::loadLUTCompatibilityPreview(request->lut_path,configuration);
-        return processImpl(session,request,buffer,nullptr,std::move(lut));
+        return processImpl(lease.raw(),request,buffer,nullptr,std::move(lut));
     } catch(const std::bad_alloc&) {return SONY2FUJI_STATUS_OUT_OF_MEMORY;
     } catch(const std::filesystem::filesystem_error&) {return SONY2FUJI_STATUS_IO_ERROR;
     } catch(const std::exception&) {return SONY2FUJI_STATUS_UNSUPPORTED;
     } catch(...) {return SONY2FUJI_STATUS_PROCESSING_ERROR;}
 }
 
-sony2fuji_status sony2fuji_session_create_hsl_probe(sony2fuji_session* session,
+sony2fuji_status sony2fuji_session_create_hsl_probe(sony2fuji_session* handle,
     const sony2fuji_request* request, uint64_t source_revision, uint64_t request_revision,
     sony2fuji_hsl_probe** out_probe) {
     if (out_probe) *out_probe = nullptr;
-    if (!session || !request || !out_probe || request->output_target != SONY2FUJI_TARGET_BUFFER)
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !request || !out_probe || request->output_target != SONY2FUJI_TARGET_BUFFER)
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    auto* session = lease.raw();
     // 分析明确使用 CPU；临时策略和已发布渲染的元信息不能泄漏到后续调用。
     struct Restore {
         sony2fuji_session& session;
