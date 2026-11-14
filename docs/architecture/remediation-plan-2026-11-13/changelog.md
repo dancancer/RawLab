@@ -233,3 +233,10 @@
 - 对账口径最终版：selected=ai_off(136)∪ai_on(139)=**140**，KNOWN 不适用=**41**，140+41=**181** CTest；反向 stale 断言+幽灵注入+`-E` 旁路三枪自证。ci.yml 补 BuildScriptChecks、`ctest --hdr-look-import`、`-E '^dualdn_onnx(_skip)?$'`、**Android models 强制成功**。scripts/ci 门禁 226→**230**。
 - 碳审纠偏存档：PR body 顶部 r0 Summary 旧数字（141/40）与 r1 段新口径并存，合并 message 采用新口径；`PASS in src` 收紧 regex 已匹配 #344 合入版 `Console.WriteLine("PASS: ...")`。
 - 教训：**wire 折叠两种存储态时必须同时给"早退/一致性守卫"补存储态判等**，否则折叠相等会让预检与 prepare 把非规范态误判为 no-op（本轮 P1 的根因句式）。
+
+### (45) Android JNI 锁粒度解耦=第 105 个 PR（#348，P2-17；P2 层级至此除残票外收口）
+
+- PR #348（fix/android-render → development）合入 @ `4aa4d399`。RED 夹具在旧锁下跨会话串行 25 分钟+（maxConcurrent=1）本身就是缺陷现场证据；新锁 6/6 绿+TSan/ASan/UBSan 0 报，碳审独立变异击杀+三交错窗口闭合审计+锁序 DAG 无环，approve 0 阻塞。
+- 流程教训：**宿主并发测试必须自带超时看门狗**——本轮 RED 二进制在旧锁下合法挂 25 分钟（非死锁），无人放行会烧光 worker 预算；夹具应默认 `alarm()`/`std::future::wait_for` 兜底。
+- 移交（批 C 卫生票打包）：①`host_jni/android/bitmap.h` 的 `ALLOCATION_FAILED` 应为 -3（现 -2 与真 NDK 的 JNI_EXCEPTION 撞值，未来 mock 锁定位图会误判 bad_alloc）；②`jni-session-lock.sh`+修 stub 后的 `recipe_probe_stages_test.cpp`（efb7d12d 复数化改名漏更）并入 ci.yml Android 主机检查；③`jni_session_lock_test.cpp` 的 `set_cancellation_callback` mock 补 `SessionCallScope`。
+- 真机签收挂 k173：双 GPU_AUTO 会话并发 eglMakeCurrent、跨线程销毁 EGLContext、批量导出+预览双路解码原生内存峰值、check-native.sh 全量 .so 链接。
