@@ -257,7 +257,7 @@ struct Adjustments: Equatable, Codable {
     mutating func setDenoiseEnabled(_ enabled: Bool) {
         var state = waveletSettings
         state.enabled = enabled
-        waveletNoiseReduction = state
+        waveletNoiseReduction = state == WaveletDenoiseSettings() ? nil : state
         rawNoiseReduction = 0
         chromaNoiseReduction = nil
     }

@@ -285,6 +285,26 @@ struct HDRCameraProfile: Codable, Hashable {
     let sha256: String
     let name: String
 
+    private enum CodingKeys: String, CodingKey, CaseIterable { case sha256, name }
+
+    init(sha256: String, name: String) {
+        self.sha256 = sha256
+        self.name = name
+    }
+
+    init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: HDRSettingsField.self).allKeys.map(\.stringValue)
+        guard Set(fields) == Set(CodingKeys.allCases.map(\.rawValue)) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unsupported HDR camera profile field"))
+        }
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        sha256 = try values.decode(String.self, forKey: .sha256)
+        name = try values.decode(String.self, forKey: .name)
+        guard isValid else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Invalid HDR camera profile settings"))
+        }
+    }
+
     var isValid: Bool {
         HDRLookSettings.isFingerprint(sha256) && (1...512).contains(name.utf8.count) &&
             !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })

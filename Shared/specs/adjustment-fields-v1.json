@@ -12,11 +12,11 @@
     "total_fields": 83,
     "transfer_fields": 81,
     "local_only_fields": 2,
-    "divergent_fields": 66,
+    "divergent_fields": 65,
     "report_d5d62af7_divergent_fields": 59,
     "post_280_hdr_rendition_divergent_fields": 4,
-    "errata_newly_uncovered_divergent_fields": 3,
-    "identical_fields": 17
+    "errata_newly_uncovered_divergent_fields": 2,
+    "identical_fields": 18
   },
   "fields": [
     {
@@ -2885,10 +2885,7 @@
         "exclusive_min": false,
         "allowed_values": null,
         "object_keys": null,
-        "hdr_only": true,
-        "protocol_group_divergences": {
-          "windows": "hdr"
-        }
+        "hdr_only": true
       },
       "model": {
         "macos": {
@@ -2991,13 +2988,10 @@
         }
       },
       "divergence": {
-        "has_divergence": true,
+        "has_divergence": false,
         "report_d5d62af7_listed": false,
-        "categories": [
-          "protocol_metadata"
-        ],
-        "ledger_ids": [],
-        "notes": "Range/default/step identical across 4 ends; Windows AdjustmentFields.Group() returns 'hdr' instead of 'color' (dead Null branch in Android/Windows Valid after scalarRange)."
+        "categories": [],
+        "ledger_ids": []
       }
     },
     {
@@ -3012,10 +3006,7 @@
         "exclusive_min": false,
         "allowed_values": null,
         "object_keys": null,
-        "hdr_only": true,
-        "protocol_group_divergences": {
-          "windows": "hdr"
-        }
+        "hdr_only": true
       },
       "model": {
         "macos": {
@@ -3121,13 +3112,12 @@
         "has_divergence": true,
         "report_d5d62af7_listed": true,
         "categories": [
-          "step",
-          "protocol_metadata"
+          "step"
         ],
         "ledger_ids": [
           "P2-23"
         ],
-        "notes": "Desktop UI fine step 0.1 vs mobile 1; Windows AdjustmentFields.Group() returns 'hdr' instead of 'color'."
+        "notes": "Desktop UI fine step 0.1 vs mobile 1."
       }
     },
     {

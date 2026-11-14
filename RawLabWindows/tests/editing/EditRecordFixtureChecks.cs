@@ -12,22 +12,11 @@ internal static class EditRecordFixtureChecks
     private enum EvalCatchScope { ExpectationOnly, ExpectationOrPersistenceRejection }
 
     // 棘轮上限只减不增；新增任何分歧、空理由、陈旧条目、观测摘要漂移或突破上限均必红。
-    // 仅 2 条 Tier-1 X1 扩展块闭集拒读（ToneControlsSettings / AtmosphereSettings 应用 Disallow）；
-    // Tier-2 渲染块 14 条与 roundtrip/compat/boundary 全数通过。
-    private const int MaxKnownEditRecordDivergences = 2;
+    // 全量 roundtrip/X1/compat/boundary 已收口一致，未知扩展分歧为 0。
+    private const int MaxKnownEditRecordDivergences = 0;
 
     private static readonly IReadOnlyDictionary<string, EditRecordDivergence> KnownEditRecordDivergences =
-        new Dictionary<string, EditRecordDivergence>(StringComparer.Ordinal)
-        {
-            ["x1-tone-controls-unknown-field"] = new(
-                "EDIT-DIV-WIN-X1-01",
-                "Tier-1 outer_container_or_extension: ToneControlsSettings applies [JsonUnmappedMemberHandling(Disallow)] instead of tolerating unknown extension keys",
-                ExpectedObservedSubstring: "UnusableEditRecordException"),
-            ["x1-atmosphere-unknown-field"] = new(
-                "EDIT-DIV-WIN-X1-02",
-                "Tier-1 outer_container_or_extension: AtmosphereSettings applies [JsonUnmappedMemberHandling(Disallow)] instead of tolerating unknown extension keys",
-                ExpectedObservedSubstring: "UnusableEditRecordException"),
-        };
+        new Dictionary<string, EditRecordDivergence>(StringComparer.Ordinal);
 
     private static void Check(bool condition, string message)
     {

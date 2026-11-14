@@ -280,6 +280,7 @@ struct AdjustmentTransferTests {
         try manualLensSelectionTransport()
         try x3fModeReset()
         try rasterPlaceholdersOnRaw()
+        try legacyDenoiseOverToggledTarget()
         try sharedFixtures()
     }
 
@@ -1065,6 +1066,89 @@ struct AdjustmentTransferTests {
             _ = try MacAdjustmentTransfer.prepare(payload: enabled, target: state(), context: permissive)
         }
         check(!validated, "Missing manual profile rejects before target validation")
+    }
+
+    static func legacyDenoiseOverToggledTarget() throws {
+        var fbddSource = Adjustments()
+        fbddSource.resolveRawNoiseReductionSupport(true)
+        fbddSource.rawNoiseReduction = 2
+
+        var chromaSource = Adjustments()
+        chromaSource.resolveRawNoiseReductionSupport(true)
+        chromaSource.chromaNoiseReduction = 1
+
+        func toggledOffTarget() -> Adjustments {
+            var target = Adjustments()
+            target.resolveRawNoiseReductionSupport(true)
+            target.setDenoiseEnabled(true)
+            target.setDenoiseEnabled(false)
+            return target
+        }
+
+        func persistedOffTarget() -> Adjustments {
+            var target = Adjustments()
+            target.resolveRawNoiseReductionSupport(true)
+            target.waveletNoiseReduction = WaveletDenoiseSettings()
+            return target
+        }
+
+        let scopes: [AdjustmentTransferScope] = [
+            .all,
+            .custom(AdjustmentTransferField.denoiseFields),
+            .modified
+        ]
+
+        for (label, target) in [("toggled-off", toggledOffTarget()), ("persisted-off", persistedOffTarget())] {
+            for scope in scopes + [.custom([.rawDenoise])] {
+                let payload = try MacAdjustmentTransfer.capture(scope: scope, snapshot: state(fbddSource), context: raw)
+                let pasted = try MacAdjustmentTransfer.prepare(payload: payload, target: state(target), context: raw)
+                check(pasted.settings.waveletNoiseReduction == nil &&
+                      pasted.settings.rawNoiseReduction == 2 &&
+                      pasted.settings.chromaNoiseReduction == nil &&
+                      pasted.settings.hasLegacyDenoise &&
+                      pasted.settings.isDenoiseEnabled &&
+                      pasted.settings.denoiseSummary == L10n.text("旧版 FBDD"),
+                      "Legacy FBDD paste activates on \(label) target (\(scope))")
+            }
+            for scope in scopes + [.custom([.chromaDenoise])] {
+                let payload = try MacAdjustmentTransfer.capture(scope: scope, snapshot: state(chromaSource), context: raw)
+                let pasted = try MacAdjustmentTransfer.prepare(payload: payload, target: state(target), context: raw)
+                check(pasted.settings.waveletNoiseReduction == nil &&
+                      pasted.settings.chromaNoiseReduction == 1 &&
+                      pasted.settings.rawNoiseReduction == 0 &&
+                      pasted.settings.hasLegacyDenoise &&
+                      pasted.settings.isDenoiseEnabled,
+                      "Legacy chroma paste activates on \(label) target (\(scope))")
+            }
+        }
+
+        // Uncanonicalized target with matching wire values must not slip past previewCapture or prepare early-exit.
+        var staleTarget = Adjustments()
+        staleTarget.resolveRawNoiseReductionSupport(true)
+        staleTarget.rawNoiseReduction = 2
+        staleTarget.chromaNoiseReduction = 0
+        staleTarget.waveletNoiseReduction = WaveletDenoiseSettings()
+
+        let stalePreview = Result {
+            try MacAdjustmentTransfer.previewCapture(scope: .all, snapshot: state(staleTarget),
+                committed: state(fbddSource), context: raw)
+        }
+        if case .failure(let error) = stalePreview {
+            check(error as? AdjustmentTransferError == .draftRequiresPreflight,
+                  "previewCapture treats stored denoise nil-vs-default mismatch as uncommitted state")
+        } else {
+            check(false, "previewCapture must not accept uncanonicalized denoise storage mismatch")
+        }
+
+        let canonicalPayload = try MacAdjustmentTransfer.capture(scope: .all, snapshot: state(fbddSource), context: raw)
+        let repaired = try MacAdjustmentTransfer.prepare(payload: canonicalPayload, target: state(staleTarget), context: raw)
+        check(repaired.settings.waveletNoiseReduction == nil &&
+              repaired.settings.chromaNoiseReduction == nil &&
+              repaired.settings.rawNoiseReduction == 2 &&
+              repaired.settings.hasLegacyDenoise &&
+              repaired.settings.isDenoiseEnabled &&
+              MacAdjustmentTransfer.values(repaired, isRaw: true) == MacAdjustmentTransfer.values(state(fbddSource), isRaw: true),
+              "prepare does not early-return stale non-nil default denoise storage")
     }
 
     static func x3fModeReset() throws {

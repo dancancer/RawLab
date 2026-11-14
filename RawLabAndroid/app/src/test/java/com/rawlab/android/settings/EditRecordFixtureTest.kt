@@ -42,7 +42,7 @@ class EditRecordFixtureTest {
     // -----------------------------------------------------------------------
     // Divergence ledger (populated ONLY from observed red anchors)
     // -----------------------------------------------------------------------
-    private val maxKnownEditRecordDivergences = 10
+    private val maxKnownEditRecordDivergences = 9
 
     private val knownEditRecordDivergences: Map<String, EditRecordDivergence> = mapOf(
         "x1-store-root-unknown-field" to EditRecordDivergence(
@@ -89,11 +89,6 @@ class EditRecordFixtureTest {
             ledgerId = "EDIT-DIV-AND-X1-09",
             reason = "StructuredSettingsCodec enforces closed keys on effects extension object.",
             expectedObservedSubstring = "Unknown or missing settings field",
-        ),
-        "compat-legacy-omitted-extensions" to EditRecordDivergence(
-            ledgerId = "EDIT-DIV-AND-COMPAT-01",
-            reason = "EditPersistence.kt:223-225 Base64-decodes the default string 'neutral' instead of leaving it unencoded when record.<id>.film is omitted in legacy .properties.",
-            expectedObservedSubstring = "wire film_id",
         ),
     )
 

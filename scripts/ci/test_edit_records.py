@@ -28,10 +28,10 @@ RUNNERS = {
     "windows": ROOT / "RawLabWindows" / "tests" / "editing" / "EditRecordFixtureChecks.cs",
 }
 KNOWN_DIVERGENCE_CEILINGS = {
-    "macos": 1,
-    "ios": 1,
-    "android": 10,
-    "windows": 2,
+    "macos": 0,
+    "ios": 0,
+    "android": 9,
+    "windows": 0,
 }
 TIER1_X1_SCOPES = {
     "store_root",
@@ -189,10 +189,16 @@ def parse_runner_divergences(platform: str, raw_source: str) -> tuple[int, dict[
     if platform == "windows":
         cap_m = re.search(r"private\s+const\s+int\s+MaxKnownEditRecordDivergences\s*=\s*(\d+)\s*;", source)
         assert cap_m, "windows: missing `private const int MaxKnownEditRecordDivergences = <int>;`"
+        empty_m = re.search(
+            r"KnownEditRecordDivergences\s*=\s*new\s+Dictionary<string,\s*EditRecordDivergence>\s*(?:\(\s*StringComparer\.Ordinal\s*\))?\s*;",
+            source,
+        )
         decl_m = re.search(
             r"KnownEditRecordDivergences\s*=\s*new\s+Dictionary<string,\s*EditRecordDivergence>\s*(?:\(\s*StringComparer\.Ordinal\s*\))?\s*\{",
             source,
         )
+        if empty_m and (decl_m is None or empty_m.start() < decl_m.start()):
+            return int(cap_m.group(1)), {}
         assert decl_m, "windows: missing KnownEditRecordDivergences"
         block = _extract_balanced(source, decl_m.end() - 1, "{", "}")
         parsed = {}
@@ -410,7 +416,7 @@ class EditRecordFixtureContracts(unittest.TestCase):
         self.assertTrue(any(0.0 < v < 1.0 for v in sdr_post_rgb))
 
     def test_runner_divergence_ratchet_and_ledger_entries(self):
-        self.assertEqual(KNOWN_DIVERGENCE_CEILINGS, {"macos": 1, "ios": 1, "android": 10, "windows": 2})
+        self.assertEqual(KNOWN_DIVERGENCE_CEILINGS, {"macos": 0, "ios": 0, "android": 9, "windows": 0})
         sources = {p: path.read_text(encoding="utf-8") for p, path in RUNNERS.items()}
         validate_runner_divergences(sources, self.scenario_ids, KNOWN_DIVERGENCE_CEILINGS)
 
@@ -428,11 +434,10 @@ class EditRecordFixtureContracts(unittest.TestCase):
             validate_runner_divergences(inflated, self.scenario_ids)
 
         blank_win = dict(sources)
-        blank_win["windows"] = re.sub(
-            r'new\(\s*"EDIT-DIV-WIN-X1-01",\s*"[^"]+"',
-            'new("EDIT-DIV-WIN-X1-01", "   "',
-            sources["windows"],
-            count=1,
+        blank_win["windows"] = sources["windows"].replace(
+            "new Dictionary<string, EditRecordDivergence>(StringComparer.Ordinal);",
+            'new Dictionary<string, EditRecordDivergence>(StringComparer.Ordinal) { ["x1-tone-controls-unknown-field"] = new("EDIT-DIV-WIN-X1-01", "   ", ExpectedObservedSubstring: "Unusable") };',
+            1,
         )
         with self.assertRaisesRegex(AssertionError, r"divergence reason must not be blank"):
             validate_runner_divergences(blank_win, self.scenario_ids)
@@ -449,8 +454,8 @@ class EditRecordFixtureContracts(unittest.TestCase):
 
         unknown_id = dict(sources)
         unknown_id["ios"] = sources["ios"].replace(
-            '"x1-hdr-camera-profile-unknown-field"',
-            '"non-existent-edit-record-scenario"',
+            "private let knownEditRecordDivergences: [String: EditRecordDivergence] = [:]",
+            'private let knownEditRecordDivergences: [String: EditRecordDivergence] = ["non-existent-edit-record-scenario": EditRecordDivergence(ledgerId: "TEST", reason: "test", expectedObservedSubstring: "x")]',
             1,
         )
         with self.assertRaisesRegex(AssertionError, r"unknown scenario id non-existent-edit-record-scenario"):

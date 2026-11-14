@@ -14,7 +14,6 @@ public sealed record ToneControlSpec(ToneControlParameter Id, string Title, stri
     public static ToneControlSpec For(ToneControlParameter id) => All[(int)id];
 }
 
-[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ToneControlsSettings(double BlackPoint = 0, double WhitePoint = 0, double Vibrance = 0)
 {
     [JsonIgnore] public bool IsIdentity => BlackPoint == 0 && WhitePoint == 0 && Vibrance == 0;

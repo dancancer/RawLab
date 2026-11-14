@@ -29,6 +29,8 @@ enum MacAdjustmentTransfer {
               snapshot.settings.processing == saved.settings.processing,
               snapshot.settings.aiDenoiseEnabled == saved.settings.aiDenoiseEnabled,
               snapshot.settings.recipeSettingsVersion == saved.settings.recipeSettingsVersion,
+              snapshot.settings.waveletNoiseReduction == saved.settings.waveletNoiseReduction,
+              snapshot.settings.chromaNoiseReduction == saved.settings.chromaNoiseReduction,
               values(snapshot, isRaw: context.isRaw) == values(saved, isRaw: context.isRaw) else {
             throw AdjustmentTransferError.draftRequiresPreflight
         }
@@ -194,7 +196,9 @@ enum MacAdjustmentTransfer {
         }
         // processing、原图 metadata 和未选择对象均沿用 target；入口返回完整候选而不保存。
         if values(result, isRaw: context.isRaw) == values(target, isRaw: context.isRaw)
-            && result.settings.recipeSettingsVersion == target.settings.recipeSettingsVersion {
+            && result.settings.recipeSettingsVersion == target.settings.recipeSettingsVersion
+            && result.settings.waveletNoiseReduction == target.settings.waveletNoiseReduction
+            && result.settings.chromaNoiseReduction == target.settings.chromaNoiseReduction {
             return target
         }
         return result

@@ -86,14 +86,15 @@ extension MacAdjustmentTransfer {
             }
         }
         for (field, key) in effectKeys { result[field.rawValue] = .number(settings.effectSettings[keyPath: key]) }
-        let wavelet: Value = settings.waveletNoiseReduction.map { .object([
-            "enabled": .boolean($0.enabled), "luma": .number($0.luma), "chroma": .number($0.chroma),
-            "coarse": .number($0.coarse), "preset": .string($0.preset.rawValue)
-        ]) } ?? .null
+        let wavelet = settings.waveletSettings
+        let waveletValue: Value = .object([
+            "enabled": .boolean(wavelet.enabled), "luma": .number(wavelet.luma), "chroma": .number(wavelet.chroma),
+            "coarse": .number(wavelet.coarse), "preset": .string(wavelet.preset.rawValue)
+        ])
         result[Field.rawDenoise.rawValue] = .number(isRaw ? settings.rawNoiseReduction : 0)
         result[Field.postRGBDenoise.rawValue] = .number(0)
-        result[Field.chromaDenoise.rawValue] = settings.chromaNoiseReduction.map(Value.number) ?? .null
-        result[Field.waveletDenoise.rawValue] = wavelet
+        result[Field.chromaDenoise.rawValue] = .number(settings.chromaNoiseReduction ?? 0)
+        result[Field.waveletDenoise.rawValue] = waveletValue
         let geometry = settings.geometrySettings
         result[Field.quarterTurns.rawValue] = .number(Double(geometry.quarterTurns))
         result[Field.flipHorizontal.rawValue] = .boolean(geometry.flipHorizontal)
@@ -119,13 +120,23 @@ extension MacAdjustmentTransfer {
                 throw AdjustmentTransferError.incompatible(Field.rawDenoise.rawValue)
             }
             settings.rawNoiseReduction = raw
+            if raw != 0, settings.waveletNoiseReduction?.enabled == false {
+                settings.waveletNoiseReduction = nil
+            }
         }
-        if let value = payload[.chromaDenoise] { settings.chromaNoiseReduction = value.number }
+        if let value = payload[.chromaDenoise] {
+            let chroma = value.number ?? 0
+            settings.chromaNoiseReduction = chroma == 0 ? nil : chroma
+            if chroma != 0, settings.waveletNoiseReduction?.enabled == false {
+                settings.waveletNoiseReduction = nil
+            }
+        }
         if let value = payload[.waveletDenoise] {
             if let wavelet = value.object {
-                settings.waveletNoiseReduction = WaveletDenoiseSettings(enabled: wavelet["enabled"]!.boolean!,
+                let decoded = WaveletDenoiseSettings(enabled: wavelet["enabled"]!.boolean!,
                     luma: wavelet["luma"]!.number!, chroma: wavelet["chroma"]!.number!, coarse: wavelet["coarse"]!.number!,
                     preset: DenoisePreset(rawValue: wavelet["preset"]!.string!)!)
+                settings.waveletNoiseReduction = decoded == WaveletDenoiseSettings() ? nil : decoded
             } else { settings.waveletNoiseReduction = nil }
         }
         if payload.fields.contains(where: { $0.group == "geometry" && !Field.lensFields.contains($0) }) {
