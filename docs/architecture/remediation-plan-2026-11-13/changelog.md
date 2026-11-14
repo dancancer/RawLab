@@ -167,3 +167,4 @@
 - 2026-11-14 · #327 r2 交卷（`700eeb40`）：回退路径改「提交水位+Auto 只补未提交尾部」（双套 LUT 病根根治），GLES 对齐 staged 隔离契约（unmap 失败零写回），Metal 瓦片受 maxBufferLength 约束；两红锚翻绿+校验和逐位不变+性能结论保。二轮碳审在途（review-mwg80my1，核水位与异步持久化窗口）。
 - 2026-11-14 · **P2-15 交卷 PR #329**（`a2a28109`）：重核改写工单定性——AI 循环真缺口=prepare_ai 缺会话回调（非无检查点）；实修=小波/C5/chroma/Metal/D3D11 检查点+3 处泛型 catch 吞取消，取消语义唯一对齐 processing_cancellation.h。碳审在途（review-mwg89w5g，核 parallel_for 异常穿越+catch 全量清点）。性能线三票（327/328/329）全入闸。
 - 2026-11-14 · 107 轮：#326 r2 交卷（98e87bf3）二轮碳审在途；**P2-01 开工**（编辑记录共享 golden fixture+X1 读侧，氢单，指令含「先查与 transfer 向量关系防重复建框」）。在途：碳审 ×4（326r2/327r2/328/329）、氢单 ×1（P2-01）。
+- 2026-11-14 · #328 打回一条 medium：守卫/ABI 获认可，raw_cache_preview 测试卫生三连（坏路径静默 0、缺 RAWLAB_TEST_RAW 回退、无素材应 77 而记 Passed——评审实测抓出一条假绿口径，正撞刚立的「行为红/三态」纪律）。raw-cache crew 续修。
