@@ -59,7 +59,7 @@ extension ContentView {
         cancelSliderInteraction()
         pendingAdjustmentAction = action
         if isEditorDraftChanged { draftExitPresented = true; return }
-        if isEditorDraftActive { activateEditorTool(.adjustment(.exposure)) }
+        if isEditorDraftActive { finishEditorTool() }
         continueAdjustmentAction()
     }
 

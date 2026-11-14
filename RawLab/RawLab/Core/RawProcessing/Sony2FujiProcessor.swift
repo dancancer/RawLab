@@ -330,9 +330,10 @@ struct Sony2FujiProcessor {
         let inputType: sony2fuji_input_type
         let width: UInt32, height: UInt32
         if let url {
+            // 仅确认源文件可读，原生尺寸由单次解包的 sony2fuji_process 自行读取。
+            _ = try url.checkResourceIsReachable()
             inputType = SONY2FUJI_INPUT_RAW
-            let metadata = try loadMetadata(from: url)
-            width = metadata.width; height = metadata.height
+            width = 0; height = 0
         } else if let buffer {
             inputType = semanticInputType(for: buffer)
             width = UInt32(buffer.width); height = UInt32(buffer.height)
@@ -423,17 +424,8 @@ struct Sony2FujiProcessor {
         guard ExportSize.isValid(exportLongEdge) else {
             throw ProcessorError.invalidExportSize
         }
-        let metadata = try loadMetadata(from: url)
-        let targetWidth: UInt32
-        let targetHeight: UInt32
-        if previewLongEdge == nil {
-            let rawDimensions = url.path.withCString { rawlab_get_raw_dimensions($0) }
-            targetWidth = rawDimensions.width > 0 ? rawDimensions.width : metadata.width
-            targetHeight = rawDimensions.height > 0 ? rawDimensions.height : metadata.height
-        } else {
-            targetWidth = metadata.width
-            targetHeight = metadata.height
-        }
+        // 原生/缩放尺寸由 sony2fuji_process 在同一次 session 解包中确定，避免导出前二次读头/解包。
+        _ = try url.checkResourceIsReachable()
         return try withRawSession(reuse: previewLongEdge != nil && exportLongEdge == nil) { session in
             let settings = try prepareRecipe(settings, session: session, url: url)
             try configureSession(session, settings: settings,
@@ -442,7 +434,7 @@ struct Sony2FujiProcessor {
 
             var request = makeBaseRequest(settings: settings, inputType: SONY2FUJI_INPUT_RAW)
             request.input_type = SONY2FUJI_INPUT_RAW
-            applySize(&request, width: targetWidth, height: targetHeight,
+            applySize(&request, width: 0, height: 0,
                       previewLongEdge: previewLongEdge, exportLongEdge: exportLongEdge)
             let lutStrength = lutURL == nil ? 0 : settings.clampedLUTStrength
             request.lut_strength = lutStrength
@@ -540,17 +532,15 @@ struct Sony2FujiProcessor {
         guard ExportSize.isValid(exportLongEdge) else {
             throw ProcessorError.invalidExportSize
         }
-        let metadata = try loadMetadata(from: url)
-        let rawDimensions = url.path.withCString { rawlab_get_raw_dimensions($0) }
-        let width = rawDimensions.width > 0 ? rawDimensions.width : metadata.width
-        let height = rawDimensions.height > 0 ? rawDimensions.height : metadata.height
+        // DNG 导出尺寸由 sony2fuji_process 单次解包直接计算，不再预读取 rawlab_get_raw_dimensions。
+        _ = try url.checkResourceIsReachable()
         try withRawSession(reuse: false) { session in
             let settings = try prepareRecipe(settings, session: session, url: url)
             try configureSession(session, settings: settings, interactive: false)
 
             var request = makeBaseRequest(settings: settings, inputType: SONY2FUJI_INPUT_RAW)
             request.input_type = SONY2FUJI_INPUT_RAW
-            applySize(&request, width: width, height: height, previewLongEdge: nil, exportLongEdge: exportLongEdge)
+            applySize(&request, width: 0, height: 0, previewLongEdge: nil, exportLongEdge: exportLongEdge)
             request.lut_strength = lutURL == nil ? 0 : settings.clampedLUTStrength
             configureDNGFile(&request)
             let status = processRawToFile(session: session, request: &request,
