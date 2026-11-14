@@ -96,15 +96,8 @@ id<MTLTexture> createLutTexture(MetalContext& context, const sony2fuji::LUT3D& l
     return texture;
 }
 
-id<MTLBuffer> wrapPixelBuffer(MetalContext& context, sony2fuji::ImageData& image) {
-    const size_t length = image.pixels.size() * sizeof(sony2fuji::RGB);
-    if (length == 0) {
-        return nil;
-    }
-    return [context.device newBufferWithBytes:image.pixels.data()
-                                             length:length
-                                            options:MTLResourceStorageModeShared];
-}
+// 与 GLES 路径一致的瓦片大小：GPU 暂存缓冲上限固定，不随整幅尺寸膨胀。
+constexpr size_t kLutTileBytes = 16ull * 1024 * 1024;
 
 id<MTLBuffer> createParamsBuffer(MetalContext& context, uint32_t pixel_count, uint32_t lut_size) {
     struct Params {
@@ -157,7 +150,11 @@ bool runCompute(
 
 namespace sony2fuji {
 
-bool applyLutMetal(const LUT3D& lut, ImageData& image) {
+bool applyLutMetal(const LUT3D& lut, ImageData& image, size_t* completedPixels) {
+    if (completedPixels) {
+        *completedPixels = 0;
+    }
+    size_t completed = 0;
     @autoreleasepool {
         @try {
             try {
@@ -165,7 +162,7 @@ bool applyLutMetal(const LUT3D& lut, ImageData& image) {
                 if (!context) {
                     return false;
                 }
-                const uint32_t pixel_count = static_cast<uint32_t>(image.pixels.size());
+                const size_t pixel_count = image.pixels.size();
                 if (pixel_count == 0) {
                     return false;
                 }
@@ -173,18 +170,48 @@ bool applyLutMetal(const LUT3D& lut, ImageData& image) {
                 if (!lut_texture) {
                     return false;
                 }
-                id<MTLBuffer> pixel_buffer = wrapPixelBuffer(*context, image);
+                // 与 GLES 路径一致的瓦片大小（并受设备 maxBufferLength 约束）：上传/回写
+                // 仍是两次整幅 memcpy，但 GPU 暂存峰值从整幅（可达数百 MiB）降到固定瓦片。
+                // 每个瓦片只有在计算成功后才回写；completedPixels 报告已完整提交的像素数，
+                // 供 Auto 回退只补未提交尾部，失败调用方也不会对未提交像素读到半截结果。
+                const size_t tile_pixels = std::min({
+                    pixel_count,
+                    kLutTileBytes / sizeof(RGB),
+                    static_cast<size_t>(context->device.maxBufferLength) / sizeof(RGB)});
+                id<MTLBuffer> pixel_buffer = [context->device newBufferWithLength:tile_pixels * sizeof(RGB)
+                                                                          options:MTLResourceStorageModeShared];
                 if (!pixel_buffer || !pixel_buffer.contents) {
                     return false;
                 }
-                if (!runCompute(*context, pixel_buffer, lut_texture, pixel_count,
-                                static_cast<uint32_t>(lut.getSize()))) return false;
-                std::memcpy(image.pixels.data(), pixel_buffer.contents, image.pixels.size() * sizeof(RGB));
+                auto* staging = static_cast<float*>(pixel_buffer.contents);
+                for (size_t offset = 0; offset < pixel_count; offset += tile_pixels) {
+                    const size_t count = std::min(tile_pixels, pixel_count - offset);
+                    const size_t bytes = count * sizeof(RGB);
+                    std::memcpy(staging, image.pixels.data() + offset, bytes);
+                    if (!runCompute(*context, pixel_buffer, lut_texture, static_cast<uint32_t>(count),
+                                    static_cast<uint32_t>(lut.getSize()))) {
+                        if (completedPixels) {
+                            *completedPixels = completed;
+                        }
+                        return false;
+                    }
+                    std::memcpy(image.pixels.data() + offset, staging, bytes);
+                    completed = offset + count;
+                }
+                if (completedPixels) {
+                    *completedPixels = pixel_count;
+                }
                 return true;
             } catch (const std::exception&) {
+                if (completedPixels) {
+                    *completedPixels = completed;
+                }
                 return false;
             }
         } @catch (NSException*) {
+            if (completedPixels) {
+                *completedPixels = completed;
+            }
             return false;
         }
     }
