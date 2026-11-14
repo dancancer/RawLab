@@ -1,10 +1,9 @@
-"""Contract for the shared reset-scenario fixture (P1 step 3).
+"""Contract for the shared reset-scenario fixture (V-RESET wire contract).
 
-The fixture pins what "reset" must mean on one shared scenario vector: a seeded
-target state, the production reset scope, and the expected post-reset values in
-protocol space. Expectations are expressed as ``@spec_default`` references into
-``Shared/specs/adjustment-fields-v1.json`` so no platform test hardcodes its own
-reset numbers. Four platforms read it, so the shape must stay stable.
+The fixture pins what "reset" must produce on one shared scenario vector: a seeded
+target state, the production reset scope, and the explicit canonical wire JSON
+post-reset values. No runner may locally resolve ``@spec_default``; true platform
+serialization differences must be registered in that platform's divergence ledger.
 """
 import json
 from pathlib import Path
@@ -16,9 +15,20 @@ SPEC = Path(__file__).parents[2] / "Shared" / "specs" / "adjustment-fields-v1.js
 PLATFORMS = {"macos", "ios", "android", "windows"}
 TARGET_KINDS = {"sdr_raw", "hdr"}
 SCOPE_KINDS = {"tool", "group", "all"}
-TOOL_FIELDS = {"light.contrast", "detail.sharpening"}
-GROUPS = {"light", "color", "geometry", "hdr_rendition"}
+HDR_RENDITION_TOOLS = {"hdr.peak_limit_ev", "hdr.sdr_exposure_ev", "hdr.sdr_contrast", "hdr.sdr_saturation"}
+TOOL_FIELDS = {"light.contrast", "detail.sharpening"} | HDR_RENDITION_TOOLS
+GROUPS = {"light", "color", "geometry", "detail", "hdr_rendition"}
 STATUSES = {"changed", "unchanged", "blocked"}
+
+
+def _contains_at_ref(value) -> bool:
+    if isinstance(value, str):
+        return value.startswith("@")
+    if isinstance(value, list):
+        return any(_contains_at_ref(item) for item in value)
+    if isinstance(value, dict):
+        return any(_contains_at_ref(item) for item in value.values())
+    return False
 
 
 class ResetScenarioContracts(unittest.TestCase):
@@ -27,6 +37,7 @@ class ResetScenarioContracts(unittest.TestCase):
         cls.document = json.loads(FIXTURE.read_text(encoding="utf-8"))
         cls.scenarios = cls.document["scenarios"]
         spec = json.loads(SPEC.read_text(encoding="utf-8"))
+        cls.fields = {row["field_id"]: row for row in spec["fields"]}
         cls.transferable = {row["field_id"] for row in spec["fields"] if row["protocol"]["transferable"]}
         cls.hdr_only = {row["field_id"] for row in spec["fields"]
                         if row["protocol"]["transferable"] and row["protocol"].get("hdr_only")}
@@ -76,17 +87,34 @@ class ResetScenarioContracts(unittest.TestCase):
                 self.assertLessEqual(set(values), self.transferable)
                 self.assertEqual(set(values) & set(untouched), set(), "expect values and untouched overlap")
 
-    def test_expectations_are_references_except_pinned_wb_placeholders(self):
-        # 「零硬编码重置值」契约：期望只能是 @spec_default 引用；唯一例外是 WB temp/tint，
-        # 四端 camera 模式捕获输出协议占位 null，与 as-shot 数值无关。
-        wb_literals = {"color.white_balance.temperature_kelvin", "color.white_balance.tint"}
+    def test_expectations_are_explicit_wire_values(self):
+        # 期望值必须是显式 wire 级 JSON 字面量；禁止 @spec_default 等本地展开标记。
+        self.assertNotIn("default_source", self.document, "fixture must not declare local spec default_source resolution")
+        self.assertFalse(_contains_at_ref(self.document), "fixture must not contain @spec_default or @ references")
         for scenario in self.scenarios:
             with self.subTest(scenario=scenario["id"]):
-                for key, marker in scenario["expect"].get("values", {}).items():
-                    if marker == "@spec_default":
+                for key, value in scenario["expect"].get("values", {}).items():
+                    proto = self.fields[key]["protocol"]
+                    if value is None:
+                        self.assertTrue(proto["nullable"], f"{key}: null expectation requires nullable protocol field")
+                        self.assertNotIn(key, {"detail.denoise.chroma_mode", "detail.denoise.wavelet"},
+                                         f"{key}: canonical wire expectation must not mask Mac null divergence")
                         continue
-                    self.assertIn(key, wb_literals, f"{key}: hardcoded literal expectation breaks the spec-ref contract")
-                    self.assertIsNone(marker, f"{key}: WB placeholder must be null")
+                    vtype = proto["value_type"]
+                    if vtype == "boolean":
+                        self.assertIsInstance(value, bool, f"{key}: expected bool")
+                    elif vtype == "string":
+                        self.assertIsInstance(value, str, f"{key}: expected str")
+                        if proto.get("allowed_values"):
+                            self.assertIn(value, proto["allowed_values"], f"{key}: value not in allowed_values")
+                    elif vtype == "integer":
+                        self.assertTrue(isinstance(value, int) and not isinstance(value, bool), f"{key}: expected int")
+                    elif vtype == "number":
+                        self.assertTrue(isinstance(value, (int, float)) and not isinstance(value, bool), f"{key}: expected number")
+                    elif vtype == "object":
+                        self.assertIsInstance(value, dict, f"{key}: expected object")
+                        if proto.get("object_keys"):
+                            self.assertEqual(set(value), set(proto["object_keys"]), f"{key}: object keys mismatch")
 
     def test_hdr_only_fields_only_reset_on_hdr_targets(self):
         for scenario in self.scenarios:
@@ -101,12 +129,39 @@ class ResetScenarioContracts(unittest.TestCase):
             with self.subTest(scenario=scenario["id"]):
                 self.assertLessEqual(set(scenario.get("platforms", PLATFORMS)), PLATFORMS)
 
-    def test_hdr_rendition_group_is_macos_only_for_now(self):
-        # iOS/Android/Windows 尚无 hdr_rendition 重置组；该场景只能登记 macos。
+    def test_hdr_rendition_scopes_are_macos_only_for_now(self):
+        # iOS/Android/Windows 尚无 hdr_rendition 组/单项重置入口；相关场景必须显式声明仅 macos。
         for scenario in self.scenarios:
-            if scenario["scope"].get("group") == "hdr_rendition":
-                self.assertLessEqual(set(scenario.get("platforms", PLATFORMS)), {"macos"},
-                                     "hdr_rendition scenario must stay macos-only until other ends ship the group")
+            scope = scenario["scope"]
+            if scope.get("group") == "hdr_rendition" or scope.get("field") in HDR_RENDITION_TOOLS:
+                self.assertIn("platforms", scenario, f"{scenario['id']}: must declare platforms when excluding ends lacking hdrRendition")
+                self.assertLessEqual(set(scenario["platforms"]), {"macos"},
+                                     f"{scenario['id']}: hdrRendition scenario must stay macos-only until other ends ship it")
+
+    def test_hdr_rendition_and_detail_coverage(self):
+        rendition = [
+            s for s in self.scenarios
+            if s["scope"].get("group") == "hdr_rendition" or s["scope"].get("field") in HDR_RENDITION_TOOLS
+        ]
+        self.assertGreaterEqual(len(rendition), 2, "must cover at least 2 .hdrRendition reset scenarios")
+        self.assertEqual({s["expect"]["status"] for s in rendition} & {"changed", "unchanged"},
+                         {"changed", "unchanged"}, ".hdrRendition must cover both changed and unchanged")
+        self.assertEqual({s["scope"]["kind"] for s in rendition}, {"group", "tool"},
+                         ".hdrRendition must cover both group and tool reset")
+        self.assertTrue(
+            any("detail.denoise.post_rgb" in s["expect"]["untouched"]
+                and s["target"]["seed_payload"]["source"].get("hdr_processing_version", 0) >= 6
+                for s in rendition),
+            "must cover HDR v6+ detail.denoise.post_rgb preserved across .hdrRendition reset",
+        )
+        by_id = {s["id"]: s for s in self.scenarios}
+        detail_group = by_id["group-reset-detail-raw"]
+        self.assertEqual(detail_group["scope"], {"kind": "group", "group": "detail"})
+        self.assertEqual(detail_group["expect"]["values"]["detail.denoise.chroma_mode"], 0)
+        self.assertEqual(
+            detail_group["expect"]["values"]["detail.denoise.wavelet"],
+            {"enabled": False, "luma": 0, "chroma": 46, "coarse": 50, "preset": "detail"},
+        )
 
     def test_reset_vector_covers_single_group_and_all_scopes(self):
         kinds = {scenario["scope"]["kind"] for scenario in self.scenarios}

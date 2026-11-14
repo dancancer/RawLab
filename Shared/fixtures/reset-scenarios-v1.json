@@ -1,10 +1,9 @@
 {
   "fixture_version": 1,
-  "default_source": "Shared/specs/adjustment-fields-v1.json",
   "notes": [
-    "P1 step 3: cross-platform reset contract. Tests seed via adjustment-transfer prepare, run the platform reset entry, and observe via the platform transfer capture channel.",
-    "expect.values markers: @spec_default resolves to this platform's model.<platform>.default from the spec (mapped to protocol via scale_from_protocol). WB temp/tint use null: the four capture channels emit null placeholders in camera mode, so the as-shot target is pinned by color.white_balance.mode=camera alone.",
-    "expect.untouched compares against the pre-reset capture; divergences from current behaviour are ratcheted per platform in test code (knownResetDivergences), never silently absorbed here."
+    "V-RESET wire contract: seed via adjustment-transfer prepare, reset via the platform production reset entry, and observe serialized wire JSON via transfer capture (no local @spec_default resolution).",
+    "expect.values holds canonical wire JSON literals. WB temp/tint use null in camera mode across all four capture channels.",
+    "expect.untouched compares against pre-reset wire capture; per-platform serialization divergences (such as Mac null vs 0/object for detail.denoise.chroma_mode and detail.denoise.wavelet) must be explicitly registered in that platform knownResetDivergences ledger."
   ],
   "scenarios": [
     {
@@ -41,7 +40,7 @@
       "expect": {
         "status": "changed",
         "values": {
-          "light.contrast": "@spec_default"
+          "light.contrast": 1
         },
         "untouched": [
           "light.exposure",
@@ -118,7 +117,7 @@
       "expect": {
         "status": "changed",
         "values": {
-          "detail.sharpening": "@spec_default"
+          "detail.sharpening": 0
         },
         "untouched": [
           "effects.clarity",
@@ -171,15 +170,18 @@
       "expect": {
         "status": "changed",
         "values": {
-          "light.exposure": "@spec_default",
-          "light.exposure_mode": "@spec_default",
-          "light.highlights": "@spec_default",
-          "light.shadows": "@spec_default",
-          "light.contrast": "@spec_default",
-          "light.s_curve": "@spec_default",
-          "light.curve": "@spec_default",
-          "tone.black_point": "@spec_default",
-          "tone.white_point": "@spec_default"
+          "light.exposure": 0,
+          "light.exposure_mode": "preview",
+          "light.highlights": 0,
+          "light.shadows": 0,
+          "light.contrast": 1,
+          "light.s_curve": 0,
+          "light.curve": {
+            "mode": "legacy",
+            "points": []
+          },
+          "tone.black_point": 0,
+          "tone.white_point": 0
         },
         "untouched": [
           "color.saturation",
@@ -234,38 +236,47 @@
       "expect": {
         "status": "changed",
         "values": {
-          "color.white_balance.mode": "@spec_default",
+          "color.white_balance.mode": "camera",
           "color.white_balance.temperature_kelvin": null,
           "color.white_balance.tint": null,
-          "color.saturation": "@spec_default",
-          "color.hsl.hue.red": "@spec_default",
-          "color.hsl.hue.orange": "@spec_default",
-          "color.hsl.hue.yellow": "@spec_default",
-          "color.hsl.hue.green": "@spec_default",
-          "color.hsl.hue.aqua": "@spec_default",
-          "color.hsl.hue.blue": "@spec_default",
-          "color.hsl.hue.purple": "@spec_default",
-          "color.hsl.hue.magenta": "@spec_default",
-          "color.hsl.saturation.red": "@spec_default",
-          "color.hsl.saturation.orange": "@spec_default",
-          "color.hsl.saturation.yellow": "@spec_default",
-          "color.hsl.saturation.green": "@spec_default",
-          "color.hsl.saturation.aqua": "@spec_default",
-          "color.hsl.saturation.blue": "@spec_default",
-          "color.hsl.saturation.purple": "@spec_default",
-          "color.hsl.saturation.magenta": "@spec_default",
-          "color.hsl.lightness.red": "@spec_default",
-          "color.hsl.lightness.orange": "@spec_default",
-          "color.hsl.lightness.yellow": "@spec_default",
-          "color.hsl.lightness.green": "@spec_default",
-          "color.hsl.lightness.aqua": "@spec_default",
-          "color.hsl.lightness.blue": "@spec_default",
-          "color.hsl.lightness.purple": "@spec_default",
-          "color.hsl.lightness.magenta": "@spec_default",
-          "color.grading.shadows": "@spec_default",
-          "color.grading.midtones": "@spec_default",
-          "color.grading.highlights": "@spec_default",
-          "color.vibrance": "@spec_default"
+          "color.saturation": 1,
+          "color.hsl.hue.red": 0,
+          "color.hsl.hue.orange": 0,
+          "color.hsl.hue.yellow": 0,
+          "color.hsl.hue.green": 0,
+          "color.hsl.hue.aqua": 0,
+          "color.hsl.hue.blue": 0,
+          "color.hsl.hue.purple": 0,
+          "color.hsl.hue.magenta": 0,
+          "color.hsl.saturation.red": 0,
+          "color.hsl.saturation.orange": 0,
+          "color.hsl.saturation.yellow": 0,
+          "color.hsl.saturation.green": 0,
+          "color.hsl.saturation.aqua": 0,
+          "color.hsl.saturation.blue": 0,
+          "color.hsl.saturation.purple": 0,
+          "color.hsl.saturation.magenta": 0,
+          "color.hsl.lightness.red": 0,
+          "color.hsl.lightness.orange": 0,
+          "color.hsl.lightness.yellow": 0,
+          "color.hsl.lightness.green": 0,
+          "color.hsl.lightness.aqua": 0,
+          "color.hsl.lightness.blue": 0,
+          "color.hsl.lightness.purple": 0,
+          "color.hsl.lightness.magenta": 0,
+          "color.grading.shadows": {
+            "hue": 0.0,
+            "saturation": 0.0
+          },
+          "color.grading.midtones": {
+            "hue": 0.0,
+            "saturation": 0.0
+          },
+          "color.grading.highlights": {
+            "hue": 0.0,
+            "saturation": 0.0
+          },
+          "color.vibrance": 0
         },
         "untouched": [
           "light.exposure",
@@ -313,21 +324,21 @@
       "expect": {
         "status": "changed",
         "values": {
-          "geometry.crop.x": "@spec_default",
-          "geometry.crop.y": "@spec_default",
-          "geometry.crop.width": "@spec_default",
-          "geometry.crop.height": "@spec_default",
-          "geometry.quarter_turns": "@spec_default",
-          "geometry.flip_horizontal": "@spec_default",
-          "geometry.flip_vertical": "@spec_default",
-          "geometry.straighten_degrees": "@spec_default",
-          "geometry.perspective.horizontal": "@spec_default",
-          "geometry.perspective.vertical": "@spec_default",
-          "geometry.lens.distortion": "@spec_default",
-          "geometry.lens.tca": "@spec_default",
-          "geometry.lens.vignetting": "@spec_default",
-          "geometry.lens.auto_crop": "@spec_default",
-          "geometry.lens.profile_id": "@spec_default"
+          "geometry.crop.x": 0,
+          "geometry.crop.y": 0,
+          "geometry.crop.width": 1,
+          "geometry.crop.height": 1,
+          "geometry.quarter_turns": 0,
+          "geometry.flip_horizontal": false,
+          "geometry.flip_vertical": false,
+          "geometry.straighten_degrees": 0,
+          "geometry.perspective.horizontal": 0,
+          "geometry.perspective.vertical": 0,
+          "geometry.lens.distortion": false,
+          "geometry.lens.tca": false,
+          "geometry.lens.vignetting": false,
+          "geometry.lens.auto_crop": true,
+          "geometry.lens.profile_id": null
         },
         "untouched": [
           "light.exposure",
@@ -380,7 +391,15 @@
             "detail.denoise.post_rgb": 0.3,
             "light.s_curve": 0.1,
             "tone.black_point": 5,
-            "tone.white_point": -5
+            "tone.white_point": -5,
+            "detail.denoise.chroma_mode": 1,
+            "detail.denoise.wavelet": {
+              "enabled": true,
+              "luma": 12,
+              "chroma": 52,
+              "coarse": 48,
+              "preset": "custom"
+            }
           }
         }
       },
@@ -390,79 +409,100 @@
       "expect": {
         "status": "changed",
         "values": {
-          "looks.reference": "@spec_default",
-          "looks.strength": "@spec_default",
-          "light.exposure": "@spec_default",
-          "light.exposure_mode": "@spec_default",
-          "light.contrast": "@spec_default",
-          "light.highlights": "@spec_default",
-          "light.shadows": "@spec_default",
-          "light.s_curve": "@spec_default",
-          "light.curve": "@spec_default",
-          "tone.black_point": "@spec_default",
-          "tone.white_point": "@spec_default",
-          "color.vibrance": "@spec_default",
-          "color.grading.shadows": "@spec_default",
-          "color.grading.midtones": "@spec_default",
-          "color.grading.highlights": "@spec_default",
-          "color.white_balance.mode": "@spec_default",
+          "looks.reference": {
+            "kind": "neutral",
+            "id": null
+          },
+          "looks.strength": 1,
+          "light.exposure": 0,
+          "light.exposure_mode": "preview",
+          "light.contrast": 1,
+          "light.highlights": 0,
+          "light.shadows": 0,
+          "light.s_curve": 0,
+          "light.curve": {
+            "mode": "legacy",
+            "points": []
+          },
+          "tone.black_point": 0,
+          "tone.white_point": 0,
+          "color.vibrance": 0,
+          "color.grading.shadows": {
+            "hue": 0.0,
+            "saturation": 0.0
+          },
+          "color.grading.midtones": {
+            "hue": 0.0,
+            "saturation": 0.0
+          },
+          "color.grading.highlights": {
+            "hue": 0.0,
+            "saturation": 0.0
+          },
+          "color.white_balance.mode": "camera",
           "color.white_balance.temperature_kelvin": null,
           "color.white_balance.tint": null,
-          "color.saturation": "@spec_default",
-          "color.hsl.hue.red": "@spec_default",
-          "color.hsl.hue.orange": "@spec_default",
-          "color.hsl.hue.yellow": "@spec_default",
-          "color.hsl.hue.green": "@spec_default",
-          "color.hsl.hue.aqua": "@spec_default",
-          "color.hsl.hue.blue": "@spec_default",
-          "color.hsl.hue.purple": "@spec_default",
-          "color.hsl.hue.magenta": "@spec_default",
-          "color.hsl.saturation.red": "@spec_default",
-          "color.hsl.saturation.orange": "@spec_default",
-          "color.hsl.saturation.yellow": "@spec_default",
-          "color.hsl.saturation.green": "@spec_default",
-          "color.hsl.saturation.aqua": "@spec_default",
-          "color.hsl.saturation.blue": "@spec_default",
-          "color.hsl.saturation.purple": "@spec_default",
-          "color.hsl.saturation.magenta": "@spec_default",
-          "color.hsl.lightness.red": "@spec_default",
-          "color.hsl.lightness.orange": "@spec_default",
-          "color.hsl.lightness.yellow": "@spec_default",
-          "color.hsl.lightness.green": "@spec_default",
-          "color.hsl.lightness.aqua": "@spec_default",
-          "color.hsl.lightness.blue": "@spec_default",
-          "color.hsl.lightness.purple": "@spec_default",
-          "color.hsl.lightness.magenta": "@spec_default",
-          "effects.vignette.amount": "@spec_default",
-          "effects.vignette.midpoint": "@spec_default",
-          "effects.vignette.roundness": "@spec_default",
-          "effects.vignette.feather": "@spec_default",
-          "effects.vignette.highlights": "@spec_default",
-          "effects.grain.amount": "@spec_default",
-          "effects.clarity": "@spec_default",
-          "effects.dehaze": "@spec_default",
-          "effects.grain.size": "@spec_default",
-          "effects.grain.roughness": "@spec_default",
-          "detail.sharpening": "@spec_default",
-          "detail.denoise.raw_level": "@spec_default",
-          "detail.denoise.post_rgb": "@spec_default",
-          "detail.denoise.chroma_mode": "@spec_default",
-          "detail.denoise.wavelet": "@spec_default",
-          "geometry.crop.x": "@spec_default",
-          "geometry.crop.y": "@spec_default",
-          "geometry.crop.width": "@spec_default",
-          "geometry.crop.height": "@spec_default",
-          "geometry.quarter_turns": "@spec_default",
-          "geometry.flip_horizontal": "@spec_default",
-          "geometry.flip_vertical": "@spec_default",
-          "geometry.straighten_degrees": "@spec_default",
-          "geometry.perspective.horizontal": "@spec_default",
-          "geometry.perspective.vertical": "@spec_default",
-          "geometry.lens.distortion": "@spec_default",
-          "geometry.lens.tca": "@spec_default",
-          "geometry.lens.vignetting": "@spec_default",
-          "geometry.lens.auto_crop": "@spec_default",
-          "geometry.lens.profile_id": "@spec_default"
+          "color.saturation": 1,
+          "color.hsl.hue.red": 0,
+          "color.hsl.hue.orange": 0,
+          "color.hsl.hue.yellow": 0,
+          "color.hsl.hue.green": 0,
+          "color.hsl.hue.aqua": 0,
+          "color.hsl.hue.blue": 0,
+          "color.hsl.hue.purple": 0,
+          "color.hsl.hue.magenta": 0,
+          "color.hsl.saturation.red": 0,
+          "color.hsl.saturation.orange": 0,
+          "color.hsl.saturation.yellow": 0,
+          "color.hsl.saturation.green": 0,
+          "color.hsl.saturation.aqua": 0,
+          "color.hsl.saturation.blue": 0,
+          "color.hsl.saturation.purple": 0,
+          "color.hsl.saturation.magenta": 0,
+          "color.hsl.lightness.red": 0,
+          "color.hsl.lightness.orange": 0,
+          "color.hsl.lightness.yellow": 0,
+          "color.hsl.lightness.green": 0,
+          "color.hsl.lightness.aqua": 0,
+          "color.hsl.lightness.blue": 0,
+          "color.hsl.lightness.purple": 0,
+          "color.hsl.lightness.magenta": 0,
+          "effects.vignette.amount": 0,
+          "effects.vignette.midpoint": 50,
+          "effects.vignette.roundness": 0,
+          "effects.vignette.feather": 50,
+          "effects.vignette.highlights": 0,
+          "effects.grain.amount": 0,
+          "effects.clarity": 0,
+          "effects.dehaze": 0,
+          "effects.grain.size": 25,
+          "effects.grain.roughness": 50,
+          "detail.sharpening": 0,
+          "detail.denoise.raw_level": 0,
+          "detail.denoise.post_rgb": 0,
+          "detail.denoise.chroma_mode": 0,
+          "detail.denoise.wavelet": {
+            "enabled": false,
+            "luma": 0,
+            "chroma": 46,
+            "coarse": 50,
+            "preset": "detail"
+          },
+          "geometry.crop.x": 0,
+          "geometry.crop.y": 0,
+          "geometry.crop.width": 1,
+          "geometry.crop.height": 1,
+          "geometry.quarter_turns": 0,
+          "geometry.flip_horizontal": false,
+          "geometry.flip_vertical": false,
+          "geometry.straighten_degrees": 0,
+          "geometry.perspective.horizontal": 0,
+          "geometry.perspective.vertical": 0,
+          "geometry.lens.distortion": false,
+          "geometry.lens.tca": false,
+          "geometry.lens.vignetting": false,
+          "geometry.lens.auto_crop": true,
+          "geometry.lens.profile_id": null
         },
         "untouched": []
       }
@@ -502,14 +542,14 @@
       "expect": {
         "status": "changed",
         "values": {
-          "hdr.peak_limit_ev": "@spec_default",
-          "hdr.sdr_exposure_ev": "@spec_default",
-          "hdr.sdr_contrast": "@spec_default",
-          "hdr.sdr_saturation": "@spec_default",
-          "hdr.relative_temperature": "@spec_default",
-          "hdr.relative_tint": "@spec_default",
-          "light.exposure": "@spec_default",
-          "color.saturation": "@spec_default"
+          "hdr.peak_limit_ev": 0,
+          "hdr.sdr_exposure_ev": 0,
+          "hdr.sdr_contrast": 0,
+          "hdr.sdr_saturation": 0,
+          "hdr.relative_temperature": 6500,
+          "hdr.relative_tint": 0,
+          "light.exposure": 0,
+          "color.saturation": 1
         },
         "untouched": []
       }
@@ -532,7 +572,7 @@
             "identifier": "seed.HIF",
             "is_raw": false,
             "processing_version": 3,
-            "hdr_processing_version": 4
+            "hdr_processing_version": 6
           },
           "values": {
             "hdr.peak_limit_ev": 4.5,
@@ -542,7 +582,9 @@
             "hdr.relative_temperature": 5500,
             "hdr.relative_tint": 12,
             "light.exposure": 1.0,
-            "color.saturation": 1.25
+            "color.saturation": 1.25,
+            "detail.sharpening": 0.5,
+            "detail.denoise.post_rgb": 0.4
           }
         }
       },
@@ -553,16 +595,162 @@
       "expect": {
         "status": "changed",
         "values": {
-          "hdr.peak_limit_ev": "@spec_default",
-          "hdr.sdr_exposure_ev": "@spec_default",
-          "hdr.sdr_contrast": "@spec_default",
-          "hdr.sdr_saturation": "@spec_default"
+          "hdr.peak_limit_ev": 0,
+          "hdr.sdr_exposure_ev": 0,
+          "hdr.sdr_contrast": 0,
+          "hdr.sdr_saturation": 0
         },
         "untouched": [
           "hdr.relative_temperature",
           "hdr.relative_tint",
           "light.exposure",
-          "color.saturation"
+          "color.saturation",
+          "detail.sharpening",
+          "detail.denoise.post_rgb"
+        ]
+      }
+    },
+    {
+      "id": "single-reset-hdr-peak-limit-hdr",
+      "platforms": [
+        "macos"
+      ],
+      "target": {
+        "kind": "hdr",
+        "as_shot_wb": null,
+        "lens_valid": false,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": {
+          "payload_version": 2,
+          "scope_version": 2,
+          "source": {
+            "identifier": "seed.HIF",
+            "is_raw": false,
+            "processing_version": 3,
+            "hdr_processing_version": 6
+          },
+          "values": {
+            "hdr.peak_limit_ev": 4.5,
+            "hdr.sdr_exposure_ev": 1.25,
+            "hdr.sdr_contrast": 25,
+            "hdr.sdr_saturation": -15,
+            "light.exposure": 1.0,
+            "detail.denoise.post_rgb": 0.4
+          }
+        }
+      },
+      "scope": {
+        "kind": "tool",
+        "field": "hdr.peak_limit_ev"
+      },
+      "expect": {
+        "status": "changed",
+        "values": {
+          "hdr.peak_limit_ev": 0
+        },
+        "untouched": [
+          "hdr.sdr_exposure_ev",
+          "hdr.sdr_contrast",
+          "hdr.sdr_saturation",
+          "light.exposure",
+          "detail.denoise.post_rgb"
+        ]
+      }
+    },
+    {
+      "id": "group-hdr-rendition-unchanged-hdr",
+      "platforms": [
+        "macos"
+      ],
+      "target": {
+        "kind": "hdr",
+        "as_shot_wb": null,
+        "lens_valid": false,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": {
+          "payload_version": 2,
+          "scope_version": 2,
+          "source": {
+            "identifier": "seed.HIF",
+            "is_raw": false,
+            "processing_version": 3,
+            "hdr_processing_version": 6
+          },
+          "values": {
+            "light.exposure": 1.0,
+            "detail.sharpening": 0.5,
+            "detail.denoise.post_rgb": 0.4
+          }
+        }
+      },
+      "scope": {
+        "kind": "group",
+        "group": "hdr_rendition"
+      },
+      "expect": {
+        "status": "unchanged",
+        "values": {},
+        "untouched": []
+      }
+    },
+    {
+      "id": "group-reset-detail-raw",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": {
+          "payload_version": 1,
+          "scope_version": 1,
+          "source": {
+            "identifier": "seed.ARW",
+            "is_raw": true,
+            "processing_version": 3
+          },
+          "values": {
+            "detail.sharpening": 0.5,
+            "detail.denoise.chroma_mode": 1,
+            "detail.denoise.wavelet": {
+              "enabled": true,
+              "luma": 12,
+              "chroma": 52,
+              "coarse": 48,
+              "preset": "custom"
+            },
+            "light.exposure": 1.0,
+            "effects.clarity": 20
+          }
+        }
+      },
+      "scope": {
+        "kind": "group",
+        "group": "detail"
+      },
+      "expect": {
+        "status": "changed",
+        "values": {
+          "detail.sharpening": 0,
+          "detail.denoise.raw_level": 0,
+          "detail.denoise.post_rgb": 0,
+          "detail.denoise.chroma_mode": 0,
+          "detail.denoise.wavelet": {
+            "enabled": false,
+            "luma": 0,
+            "chroma": 46,
+            "coarse": 50,
+            "preset": "detail"
+          }
+        },
+        "untouched": [
+          "light.exposure",
+          "effects.clarity"
         ]
       }
     }
