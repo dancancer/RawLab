@@ -63,7 +63,7 @@ final class RecentPhotoStore: @unchecked Sendable {
                                          isRaw: Bool, now: Date = Date()) throws -> RecentPhoto {
         try withWriteLock {
             var index = try readIndex()
-            let measured = try PhotoIdentity.fallback(for: url, resourceIdentifier: identity.resourceIdentifier)
+            let measured = try PhotoIdentity.cachedFallback(for: url, resourceIdentifier: identity.resourceIdentifier)
             if let expected = identity.contentIdentifier, measured.contentIdentifier != expected { throw RecentPhotoError.originalChanged }
             let stable = PhotoIdentity(resourceIdentifier: identity.resourceIdentifier,
                 contentIdentifier: measured.contentIdentifier, legacyContentIdentifier: identity.legacyContentIdentifier)
@@ -73,7 +73,7 @@ final class RecentPhotoStore: @unchecked Sendable {
             let filename = previous?.originalFile ?? UUID().uuidString + "." + safeExtension
             let destination = originals.appendingPathComponent(filename)
             var copied = false
-            if (try? PhotoIdentity.fallback(for: destination).contentIdentifier) != measured.contentIdentifier {
+            if (try? PhotoIdentity.cachedFallback(for: destination).contentIdentifier) != measured.contentIdentifier {
                 let temporary = originals.appendingPathComponent(UUID().uuidString + ".pending")
                 defer { try? FileManager.default.removeItem(at: temporary) }
                 try FileManager.default.copyItem(at: url, to: temporary)
@@ -110,7 +110,7 @@ final class RecentPhotoStore: @unchecked Sendable {
         }
         let url = originals.appendingPathComponent(stored.originalFile)
         guard FileManager.default.isReadableFile(atPath: url.path) else { throw RecentPhotoError.unavailable }
-        guard try PhotoIdentity.fallback(for: url).contentIdentifier == photo.identity.contentIdentifier else {
+        guard try PhotoIdentity.cachedFallback(for: url).contentIdentifier == photo.identity.contentIdentifier else {
             throw RecentPhotoError.originalChanged
         }
         return url

@@ -192,7 +192,9 @@ struct ContentView: View {
             .onChange(of: viewModel.hslFrameRevision) { _, _ in cacheCurrentPhotoPreview() }
             .onChange(of: viewModel.adjustmentHistoryRevision) { _, _ in
                 cacheCurrentPhotoPreview()
-                Task { await photoPreviews.reload(editDirectory: viewModel.editPersistence?.directory) }
+                if showingRecentPhotos {
+                    Task { await photoPreviews.reload(editDirectory: viewModel.editPersistence?.directory) }
+                }
             }
             .onChange(of: editorBusy || viewModel.previewRendering || viewModel.previewResizePending || viewModel.matchingProcessing, initial: true) { _, busy in photoPreviews.isEditorBusy = busy }
             .onOpenURL { requestSystemPhotoImport([$0]) }
