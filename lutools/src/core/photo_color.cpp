@@ -1,5 +1,5 @@
 #include "photo_color.h"
-#include "processing_cancellation.h"
+#include "parallel_pixels.h"
 #include "sony2fuji/color_converter.h"
 #include <algorithm>
 #include <cmath>
@@ -94,10 +94,11 @@ RGB applyHsl(const RGB& pixel, const HslOptions& options) {
 
 void applyHsl(ImageData& image, const HslOptions& options) {
     if (!options.active()) return;
-    for (size_t i = 0; i < image.pixels.size(); ++i) {
-        if (i % 4096 == 0) checkProcessingCancellation();
-        image.pixels[i] = applyHsl(image.pixels[i], options);
-    }
+    parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i) {
+            image.pixels[i] = applyHsl(image.pixels[i], options);
+        }
+    });
 }
 
 bool estimateAutoExposure(const ImageData& image, ColorSpace space, const RGB& whiteBalance, float& ev,

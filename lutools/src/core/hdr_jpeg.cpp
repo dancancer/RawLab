@@ -1,7 +1,7 @@
 #include "core/hdr_jpeg.h"
 #include "core/hdr_half.h"
 #include "core/hdr_resample.h"
-#include "core/processing_cancellation.h"
+#include "core/parallel_pixels.h"
 #include "platform/hdr_image.h"
 #include "platform/hdr_metadata.h"
 #include <ultrahdr_api.h>
@@ -269,15 +269,23 @@ ImageData decodeAppleJPEG(const void* data,size_t size,float headroom,uint32_t l
     ImageData gains(encoded.image.w,encoded.image.h);const auto* bytes=static_cast<const uint8_t*>(encoded.image.planes[0]);
     std::array<float,256> inverse709{};
     for(size_t i=0;i<inverse709.size();++i){const float v=float(i)/255;inverse709[i]=v<.081f ? v/4.5f : std::pow((v+.099f)/1.099f,1/.45f);}
-    for(unsigned y=0;y<encoded.image.h;++y)for(unsigned x=0;x<encoded.image.w;++x) {
-        const float linear=inverse709[bytes[size_t(y)*encoded.image.stride[0]+x]];
-        gains.at(x,y)={linear,linear,linear};
-    }
-    auto output=decodeSDRJPEG(data,size,longEdge,declaredColor);
-    if(gains.width!=output.width || gains.height!=output.height)gains=resample(gains,output.width,output.height);
-    for(size_t i=0;i<output.pixels.size();++i) {
-        const float boost=1+(headroom-1)*gains.pixels[i].r;auto& p=output.pixels[i];p={p.r*boost,p.g*boost,p.b*boost};
-    }
+    parallelRowRanges(int(encoded.image.h), int(encoded.image.w), [&](int firstRow, int lastRow) {
+        for (int y = firstRow; y < lastRow; ++y) {
+            for (unsigned x = 0; x < encoded.image.w; ++x) {
+                const float linear = inverse709[bytes[size_t(y) * encoded.image.stride[0] + x]];
+                gains.at(int(x), y) = {linear, linear, linear};
+            }
+        }
+    });
+    auto output = decodeSDRJPEG(data, size, longEdge, declaredColor);
+    if (gains.width != output.width || gains.height != output.height) gains = resample(gains, output.width, output.height);
+    parallelPixelRanges(output.pixels.size(), [&](size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i) {
+            const float boost = 1 + (headroom - 1) * gains.pixels[i].r;
+            auto& p = output.pixels[i];
+            p = {p.r * boost, p.g * boost, p.b * boost};
+        }
+    });
     return output;
 }
 
@@ -299,10 +307,14 @@ ImageData decodeJPEG(const void* data,size_t size,uint32_t longEdge) {
         throw std::runtime_error("Invalid Ultra HDR decoded storage");
     ImageData output(image->w,image->h);
     const auto* pixels=static_cast<const uint16_t*>(image->planes[0]);
-    for (unsigned y=0;y<image->h;++y) for (unsigned x=0;x<image->w;++x) {
-        const auto* p=pixels+(y*image->stride[0]+x)*4;
-        output.at(x,y)=toSRGB({halfToFloat(p[0]),halfToFloat(p[1]),halfToFloat(p[2])},image->cg);
-    }
+    parallelRowRanges(int(image->h), int(image->w), [&](int firstRow, int lastRow) {
+        for (int y = firstRow; y < lastRow; ++y) {
+            for (unsigned x = 0; x < image->w; ++x) {
+                const auto* p = pixels + (size_t(y) * image->stride[0] + x) * 4;
+                output.at(int(x), y) = toSRGB({halfToFloat(p[0]), halfToFloat(p[1]), halfToFloat(p[2])}, image->cg);
+            }
+        }
+    });
     return output;
 }
 
@@ -319,13 +331,14 @@ ImageData decodeSDRJPEG(const void* data,size_t size,uint32_t longEdge,uint32_t 
     for(size_t i=0;i<linear.size();++i){const float v=float(i)/255;linear[i]=v<=.04045f ? v/12.92f : std::pow((v+.055f)/1.055f,2.4f);}
     ImageData output(image->w,image->h);
     const auto* pixels=static_cast<const uint8_t*>(image->planes[0]);
-#if defined(_OPENMP)
-    #pragma omp parallel for schedule(static)
-#endif
-    for (int y=0;y<int(image->h);++y) for (unsigned x=0;x<image->w;++x) {
-        const auto* p=pixels+(y*image->stride[0]+x)*3;
-        output.at(x,y)=toSRGB({linear[p[0]],linear[p[1]],linear[p[2]]},gamut);
-    }
+    parallelRowRanges(int(image->h), int(image->w), [&](int firstRow, int lastRow) {
+        for (int y = firstRow; y < lastRow; ++y) {
+            for (unsigned x = 0; x < image->w; ++x) {
+                const auto* p = pixels + (size_t(y) * image->stride[0] + x) * 3;
+                output.at(int(x), y) = toSRGB({linear[p[0]], linear[p[1]], linear[p[2]]}, gamut);
+            }
+        }
+    });
     const auto [width,height]=targetSize(w,h,longEdge);
     return width==uint32_t(output.width) && height==uint32_t(output.height) ? std::move(output) : resample(output,width,height);
 }
