@@ -142,7 +142,7 @@ EGLSurface eglCreatePbufferSurface(EGLDisplay dpy, EGLConfig config, const EGLin
 }
 
 EGLContext eglCreateContext(EGLDisplay dpy, EGLConfig config, EGLContext, const EGLint*) {
-    if (dpy == EGL_NO_DISPLAY || !config) return EGL_NO_CONTEXT;
+    if (dpy == EGL_NO_DISPLAY || !config || tls().api != EGL_OPENGL_ES_API) return EGL_NO_CONTEXT;
     auto& drv = driver();
     std::lock_guard<std::mutex> lock(drv.mutex);
     EGLContext ctx = reinterpret_cast<EGLContext>(drv.nextHandle++);
@@ -606,6 +606,7 @@ int main(int argc, char** argv) {
     const ImageData source = makeTestImage(64, 8);
     ImageData cpuRef = source;
     require(applyLUTWithConfig(lut3, cpuRef, {GpuMode::Off}) == ErrorCode::Success, "CPU reference render");
+    require(eglBindAPI(EGL_OPENGL_API) == EGL_TRUE, "start initialization with desktop GL API selected");
 
     if (initFailureMode) {
 #ifdef SONY2FUJI_FAKE_EGL_GLES

@@ -125,16 +125,15 @@ struct Binding {
     Binding& operator=(const Binding&) = delete;
 
     ~Binding() {
-        // 先恢复 client API，才能在对应 API 下恢复调用方 context。
+        // EGL_NO_CONTEXT 按当前 API 解绑：先释放 ES，再恢复调用方 API 和非空 context。
+        if (bound) {
+            eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        }
         if (previousApi != EGL_NONE) {
             eglBindAPI(previousApi);
         }
-        if (bound) {
-            if (previousContext != EGL_NO_CONTEXT) {
-                eglMakeCurrent(previousDisplay, previousDraw, previousRead, previousContext);
-            } else {
-                eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-            }
+        if (bound && previousContext != EGL_NO_CONTEXT) {
+            eglMakeCurrent(previousDisplay, previousDraw, previousRead, previousContext);
         }
     }
 };
@@ -175,7 +174,11 @@ bool initContext(GlesContext& context) {
         EGL_CONTEXT_CLIENT_VERSION, 3,
         EGL_NONE
     };
-    context.context = eglCreateContext(context.display, config, EGL_NO_CONTEXT, context_attribs);
+    const auto previousApi = eglQueryAPI();
+    if (eglBindAPI(EGL_OPENGL_ES_API)) {
+        context.context = eglCreateContext(context.display, config, EGL_NO_CONTEXT, context_attribs);
+    }
+    if (previousApi != EGL_NONE) eglBindAPI(previousApi);
     if (context.context == EGL_NO_CONTEXT) {
         return false;
     }
