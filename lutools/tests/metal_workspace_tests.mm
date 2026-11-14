@@ -12,6 +12,10 @@
 #include <limits>
 #include <unistd.h>
 
+namespace sony2fuji {
+bool applyLutMetal(const LUT3D& lut, ImageData& image, size_t* completedPixels = nullptr);
+}
+
 namespace {
 using BufferMethod = id<MTLBuffer> (*)(id, SEL, NSUInteger, MTLResourceOptions);
 using BytesBufferMethod = id<MTLBuffer> (*)(id, SEL, const void*, NSUInteger, MTLResourceOptions);
@@ -111,6 +115,92 @@ int main() {
             output.pixels[0].r == -7 && output.pixels[0].g == -8 && output.pixels[0].b == -9;
         std::cout << (atomic ? "PASS" : "FAIL") << " mid-band failure preserves output\n";
         passed &= atomic;
+        // 独立 LUT 瓦片失败语义（budget 512 KiB → 每瓦片 512 KiB/12 B = 43690 px）：
+        // 瓦片仅在计算成功后回写；Auto 回退只补未提交尾部，Force 失败不得原地改动源像素。
+        {
+            const size_t tilePixels = (512 * 1024) / sizeof(RGB);
+            const auto rampPath = std::filesystem::temp_directory_path() /
+                ("rawlab-metal-lut-ramp-" + std::to_string(::getpid()) + ".cube");
+            {
+                std::ofstream rampFile(rampPath, std::ios::binary);
+                rampFile << "LUT_3D_SIZE 2\n"
+                            "0.1 0.05 0.9\n0.85 0.1 0.15\n0.2 0.9 0.1\n0.75 0.8 0.2\n"
+                            "0.15 0.2 0.8\n0.9 0.25 0.05\n0.3 0.7 0.25\n0.8 0.6 0.35\n";
+            }
+            auto ramp = std::make_shared<LUT3D>();
+            bool rampOk = ramp->loadFromFile(rampPath.u8string()) == ErrorCode::Success;
+            ImageData tiles(2, 1);
+            tiles.width = static_cast<int>(tilePixels + 5);  // 不可整除的尾块
+            tiles.pixels.resize(tilePixels + 5);
+            for (size_t i = 0; i < tiles.pixels.size(); ++i) {
+                const float a = float((i * 71 + 13) % 100) / 100;
+                tiles.pixels[i] = RGB(i == 0 ? 1.7f : a, i == 1 ? -0.4f : 1 - a, a * .5f);
+            }
+            ImageData tileRef = tiles;
+            rampOk = rampOk && applyLUTWithConfig(ramp, tileRef, {GpuMode::Off}) == ErrorCode::Success;
+            // Auto + 第 2 块失败：已提交头部 + CPU 补齐尾部，整图仍与 CPU 参考一致。
+            // 容差 8e-3（≈2DN）：已提交头部是 Metal 硬件线性采样结果，与 CPU 显式三线性
+            // 存在既有 ≤2DN 差异（srgb_look 同源容差），双套 LUT 的偏差（≥0.04）必超此界。
+            completions = 0; failCompletion = 2;
+            ImageData tileAuto = tiles;
+            const bool tileAutoRan = rampOk &&
+                applyLUTWithConfig(ramp, tileAuto, {GpuMode::Auto}) == ErrorCode::Success;
+            float tileAutoMax = 0;
+            if (tileAutoRan) {
+                for (size_t i = 0; i < tileAuto.pixels.size(); ++i) {
+                    const auto a = tileAuto.pixels[i], b = tileRef.pixels[i];
+                    tileAutoMax = std::max({tileAutoMax, std::abs(a.r-b.r), std::abs(a.g-b.g), std::abs(a.b-b.b)});
+                }
+            }
+            const bool tileAutoOk = tileAutoRan && tileAutoMax <= 8e-3f;
+            std::cout << (tileAutoOk ? "PASS" : "FAIL")
+                      << " Metal LUT Auto fallback recomputes only the uncommitted tail (max="
+                      << tileAutoMax << ")\n";
+            passed &= tileAutoOk;
+            // Force + 第 2 块失败：未提交的尾部必须原样。
+            completions = 0; failCompletion = 2;
+            ImageData tileForced = tiles;
+            const bool tileForceRejected = rampOk &&
+                applyLUTWithConfig(ramp, tileForced, {GpuMode::Force}) == ErrorCode::ProcessingError;
+            bool tileTailIntact = tileForceRejected;
+            for (size_t i = tilePixels; i < tileForced.pixels.size() && tileTailIntact; ++i) {
+                tileTailIntact = tileForced.pixels[i].r == tiles.pixels[i].r &&
+                    tileForced.pixels[i].g == tiles.pixels[i].g &&
+                    tileForced.pixels[i].b == tiles.pixels[i].b;
+            }
+            std::cout << (tileTailIntact ? "PASS" : "FAIL")
+                      << " Metal LUT Force failure leaves uncommitted tail untouched\n";
+            passed &= tileTailIntact;
+            // Force + 第 1 块失败：没有任何瓦片提交，整图（含越界像素）逐位原样。
+            completions = 0; failCompletion = 1;
+            ImageData tileEarly = tiles;
+            const bool tileEarlyRejected = rampOk &&
+                applyLUTWithConfig(ramp, tileEarly, {GpuMode::Force}) == ErrorCode::ProcessingError;
+            bool tileEarlyIntact = tileEarlyRejected &&
+                tileEarly.pixels[0].r == 1.7f && tileEarly.pixels[1].g == -0.4f;
+            for (size_t i = 0; i < tileEarly.pixels.size() && tileEarlyIntact; ++i) {
+                tileEarlyIntact = tileEarly.pixels[i].r == tiles.pixels[i].r &&
+                    tileEarly.pixels[i].g == tiles.pixels[i].g &&
+                    tileEarly.pixels[i].b == tiles.pixels[i].b;
+            }
+            std::cout << (tileEarlyIntact ? "PASS" : "FAIL")
+                      << " Metal LUT Force failure before first commit leaves source untouched\n";
+            passed &= tileEarlyIntact;
+            // 提交水位契约：第 2 块失败后 completedPixels 恰为首块整块像素数。
+            completions = 0; failCompletion = 2;
+            ImageData tileMarked = tiles;
+            size_t metalCompleted = 12345;
+            const bool metalFailed = !applyLutMetal(*ramp, tileMarked, &metalCompleted);
+            const bool watermarkOk = metalFailed && metalCompleted == tilePixels;
+            std::cout << (watermarkOk ? "PASS" : "FAIL")
+                      << " applyLutMetal reports committed watermark on mid-tile failure"
+                      << " (completed=" << metalCompleted << " expected=" << tilePixels << ")\n";
+            passed &= watermarkOk;
+            budget = std::numeric_limits<size_t>::max();
+            failCompletion = 0;
+            std::error_code rampRemoveError;
+            std::filesystem::remove(rampPath, rampRemoveError);
+        }
         method_setImplementation(bufferMethod, reinterpret_cast<IMP>(originalBuffer));
         method_setImplementation(limitMethod, reinterpret_cast<IMP>(originalLimit));
         method_setImplementation(statusMethod, reinterpret_cast<IMP>(originalStatus));

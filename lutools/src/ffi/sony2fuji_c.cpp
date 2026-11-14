@@ -1421,7 +1421,13 @@ sony2fuji_status applyPhotoLook(sony2fuji::ImageData& image,
     sony2fuji::GammaConverter::FLog2Diagnostics diagnostics;
     diagnostics.min_linear = std::numeric_limits<float>::max();
     diagnostics.max_linear = std::numeric_limits<float>::lowest();
-    const bool diagnosticBlocks = config.mode == sony2fuji::GpuMode::Off && lut &&
+    // 只有 LUT 确实可能进独立 LUT GPU 时才按整图事务处理；DCP、contract、VLT 是纯 CPU 阶段，
+    // 没有独立 LUT GPU 后端的构建也不该因 GPU 未关闭而按整幅分配工作区。
+    bool gpuLookTransaction = false;
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES)
+    gpuLookTransaction = config.mode != sony2fuji::GpuMode::Off && lut && !dcp && !lut->requiresCPU();
+#endif
+    const bool diagnosticBlocks = !gpuLookTransaction && lut &&
         lut->inputTransfer() == sony2fuji::LUTTransfer::FLog2 && isLutDiagnosticsEnabled();
     std::unique_ptr<sony2fuji::ContractLUTEvaluator> contract;
     if (lut && lut->hasColorContract()) {
@@ -1488,12 +1494,6 @@ sony2fuji_status applyPhotoLook(sony2fuji::ImageData& image,
         return SONY2FUJI_STATUS_OK;
     };
     // 独立 LUT GPU 仍以整次调用为事务；CPU 混合只保留两块各 3 MiB 的工作区。
-    bool gpuLookTransaction = false;
-#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES)
-    // 只有 LUT 确实可能进独立 LUT GPU 时才走整图分支；DCP、contract、VLT 是纯 CPU 阶段，
-    // 没有独立 LUT GPU 后端的构建也不该因 GPU 未关闭而按整幅分配工作区。
-    gpuLookTransaction = config.mode != sony2fuji::GpuMode::Off && lut && !dcp && !lut->requiresCPU();
-#endif
     if (gpuLookTransaction) return render(image);
     constexpr size_t blockPixels = 1u << 18;
     sony2fuji::ImageData block;

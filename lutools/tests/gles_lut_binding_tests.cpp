@@ -19,7 +19,7 @@
 #include <vector>
 
 namespace sony2fuji {
-bool applyLutGles(const LUT3D& lut, ImageData& image);
+bool applyLutGles(const LUT3D& lut, ImageData& image, size_t* completedPixels = nullptr);
 }
 
 namespace {
@@ -75,6 +75,8 @@ struct FakeEglDriver {
     bool failTexImage3D = false;
     bool failUnmap = false;
     size_t dispatchCount = 0;
+    // 非零时让第 N 次派发返回 GL 错误，用于瓦片级失败注入。
+    size_t failDispatchAfter = 0;
     EGLContext lastDeletedResourceContext = EGL_NO_CONTEXT;
 };
 
@@ -403,6 +405,10 @@ void glDispatchCompute(GLuint, GLuint, GLuint) {
     auto* ctx = activeContext();
     if (!ctx) return;
     ++driver().dispatchCount;
+    if (driver().failDispatchAfter != 0 && driver().dispatchCount == driver().failDispatchAfter) {
+        ctx->error = GL_INVALID_OPERATION;
+        return;
+    }
     auto bufIt = ctx->buffers.find(ctx->ssboBinding0);
     auto texIt = ctx->textures.find(ctx->boundTexture);
     if (bufIt == ctx->buffers.end() || texIt == ctx->textures.end() || ctx->lutSize <= 1) {
@@ -656,6 +662,81 @@ int main(int argc, char** argv) {
                 "Custom-domain LUT CPU reference renders");
         requireImagesClose(domainCpu, domainForced, 2e-5f,
                            "Custom-domain GLES output matches CPU reference");
+    }
+
+    // 1b. 单位域多瓦片失败语义：瓦片只有在完整成功后才提交回写；Auto 回退只补未提交
+    // 尾部（不二次套 LUT），未提交任何瓦片的 Force 失败不留痕（含越界源像素）。
+    // fake 上限：1024 组 × 256 线程 = 262144 px/瓦片。
+    {
+        constexpr size_t kTilePixels = 262144;
+        ImageData multi(static_cast<int>(kTilePixels + 5), 1);  // 不可整除的尾块
+        for (size_t i = 0; i < multi.pixels.size(); ++i) {
+            const float a = float((i * 37 + 11) % 100) / 100;
+            multi.pixels[i] = RGB(i == 0 ? 1.7f : a, i == 1 ? -0.3f : 1 - a, a * 0.5f);
+        }
+        auto unitLut = makeTestLut(3);
+        ImageData multiRef = multi;
+        require(applyLUTWithConfig(unitLut, multiRef, {GpuMode::Off}) == ErrorCode::Success,
+                "Unit-domain multi-tile CPU reference renders");
+
+        // Force：第 2 块派发失败——首块已提交，尾部必须原样未写。
+        driver().dispatchCount = 0;
+        driver().failDispatchAfter = 2;
+        ImageData multiForced = multi;
+        require(applyLUTWithConfig(unitLut, multiForced, {GpuMode::Force}) == ErrorCode::ProcessingError,
+                "Unit-domain Force rejects second-tile failure");
+        driver().failDispatchAfter = 0;
+        bool tailIntact = true;
+        for (size_t i = kTilePixels; i < multiForced.pixels.size() && tailIntact; ++i) {
+            tailIntact = multiForced.pixels[i].r == multi.pixels[i].r &&
+                multiForced.pixels[i].g == multi.pixels[i].g &&
+                multiForced.pixels[i].b == multi.pixels[i].b;
+        }
+        require(tailIntact, "Unit-domain Force failure leaves uncommitted tail untouched");
+        bool headCommitted = true;
+        for (size_t i = 0; i < kTilePixels && headCommitted; ++i) {
+            headCommitted = std::abs(multiForced.pixels[i].r - multiRef.pixels[i].r) <= 2e-5f &&
+                std::abs(multiForced.pixels[i].g - multiRef.pixels[i].g) <= 2e-5f &&
+                std::abs(multiForced.pixels[i].b - multiRef.pixels[i].b) <= 2e-5f;
+        }
+        require(headCommitted, "Committed first tile matches CPU reference");
+
+        // Auto：同一故障——已提交头部 + CPU 补齐尾部，整图仍等于 CPU 参考（无二次 LUT）。
+        driver().dispatchCount = 0;
+        driver().failDispatchAfter = 2;
+        ImageData multiAuto = multi;
+        require(applyLUTWithConfig(unitLut, multiAuto, {GpuMode::Auto}) == ErrorCode::Success,
+                "Unit-domain Auto falls back after second-tile failure");
+        driver().failDispatchAfter = 0;
+        requireImagesClose(multiRef, multiAuto, 2e-5f,
+                           "Unit-domain Auto fallback recomputes only the uncommitted tail");
+
+        // Force：unmap 失败发生在提交之前——整图逐位原样，越界像素未被原地钳制。
+        ImageData unmapped = multi;
+        require(applyLUTWithConfig(unitLut, unmapped, {GpuMode::Force}) == ErrorCode::Success,
+                "Unit-domain Force succeeds without faults");
+        ImageData unmapFail = multi;
+        driver().failUnmap = true;
+        const auto unmapStatus = applyLUTWithConfig(unitLut, unmapFail, {GpuMode::Force});
+        driver().failUnmap = false;
+        require(unmapStatus == ErrorCode::ProcessingError, "Unit-domain Force rejects unmap failure");
+        bool unmapUntouched = unmapFail.pixels[0].r == 1.7f && unmapFail.pixels[1].g == -0.3f;
+        for (size_t i = 0; i < unmapFail.pixels.size() && unmapUntouched; ++i) {
+            unmapUntouched = unmapFail.pixels[i].r == multi.pixels[i].r &&
+                unmapFail.pixels[i].g == multi.pixels[i].g &&
+                unmapFail.pixels[i].b == multi.pixels[i].b;
+        }
+        require(unmapUntouched, "Force failure before first commit leaves source pixels untouched");
+
+        // 提交水位契约：第 2 块失败后 completedPixels 恰为首块整块像素数。
+        ImageData marked = multi;
+        driver().dispatchCount = 0;
+        driver().failDispatchAfter = 2;
+        size_t glesCompleted = 0;
+        const bool glesFailed = !applyLutGles(*unitLut, marked, &glesCompleted);
+        driver().failDispatchAfter = 0;
+        require(glesFailed && glesCompleted == kTilePixels,
+                "applyLutGles reports the committed watermark on mid-tile failure");
     }
 
     // 2. 调用线程已有独立 draw/read surface 的 EGLContext：正常路径与提前失败路径都恢复原上下文。

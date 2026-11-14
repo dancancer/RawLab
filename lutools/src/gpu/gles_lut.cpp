@@ -262,7 +262,7 @@ bool dispatchCompute(
     GLuint lut_texture,
     uint32_t pixel_count,
     int lut_size,
-    sony2fuji::RGB* pixels
+    sony2fuji::RGB* readback
 ) {
     glUseProgram(context.program);
     glUniform1i(context.pixel_count_loc, static_cast<GLint>(pixel_count));
@@ -293,7 +293,7 @@ bool dispatchCompute(
         if (mapped) glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
         return false;
     }
-    std::memcpy(pixels, mapped, static_cast<size_t>(bytes));
+    std::memcpy(readback, mapped, static_cast<size_t>(bytes));
     const auto unmapped = glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
     return glGetError() == GL_NO_ERROR && unmapped == GL_TRUE;
 }
@@ -302,7 +302,11 @@ bool dispatchCompute(
 
 namespace sony2fuji {
 
-bool applyLutGles(const LUT3D& lut, ImageData& image) {
+bool applyLutGles(const LUT3D& lut, ImageData& image, size_t* completedPixels) {
+    if (completedPixels) {
+        *completedPixels = 0;
+    }
+    size_t completed = 0;
     std::lock_guard<std::mutex> lock(gles_mutex);
     GlesContext* context = getGlesContext();
     if (!context) {
@@ -330,6 +334,9 @@ bool applyLutGles(const LUT3D& lut, ImageData& image) {
                  nullptr,
                  GL_DYNAMIC_DRAW);
 
+    // 瓦片只有完整成功（计算 + 读回 + unmap 全部通过）才提交回写；host 侧复用一块
+    // 瓦片大小的回读暂存，失败的瓦片连同之后的尾部留给调用方（Auto 回退只补尾部）。
+    std::vector<sony2fuji::RGB> readback(tile_pixels);
     bool ok = glGetError() == GL_NO_ERROR && ssbo != 0;
     for (size_t offset = 0; ok && offset < pixel_count; offset += tile_pixels) {
         const auto count = static_cast<uint32_t>(std::min(tile_pixels, pixel_count - offset));
@@ -338,9 +345,16 @@ bool applyLutGles(const LUT3D& lut, ImageData& image) {
         glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0,
             static_cast<GLsizeiptr>(count * sizeof(sony2fuji::RGB)), pixels);
         ok = glGetError() == GL_NO_ERROR &&
-            dispatchCompute(*context, ssbo, lut_texture, count, lut.getSize(), pixels);
+            dispatchCompute(*context, ssbo, lut_texture, count, lut.getSize(), readback.data());
+        if (ok) {
+            std::memcpy(pixels, readback.data(), static_cast<size_t>(count) * sizeof(sony2fuji::RGB));
+            completed = offset + count;
+        }
     }
 
+    if (completedPixels) {
+        *completedPixels = ok ? pixel_count : completed;
+    }
     glDeleteTextures(1, &lut_texture);
     glDeleteBuffers(1, &ssbo);
     return ok;

@@ -150,7 +150,11 @@ bool runCompute(
 
 namespace sony2fuji {
 
-bool applyLutMetal(const LUT3D& lut, ImageData& image) {
+bool applyLutMetal(const LUT3D& lut, ImageData& image, size_t* completedPixels) {
+    if (completedPixels) {
+        *completedPixels = 0;
+    }
+    size_t completed = 0;
     @autoreleasepool {
         @try {
             try {
@@ -166,9 +170,14 @@ bool applyLutMetal(const LUT3D& lut, ImageData& image) {
                 if (!lut_texture) {
                     return false;
                 }
-                // 按 16 MiB 瓦片复用同一块共享缓冲：上传/回写仍是两次整幅 memcpy，
-                // 但 GPU 暂存峰值从整幅（可达数百 MiB）降到固定瓦片，与 GLES 平齐。
-                const size_t tile_pixels = std::min(pixel_count, kLutTileBytes / sizeof(RGB));
+                // 与 GLES 路径一致的瓦片大小（并受设备 maxBufferLength 约束）：上传/回写
+                // 仍是两次整幅 memcpy，但 GPU 暂存峰值从整幅（可达数百 MiB）降到固定瓦片。
+                // 每个瓦片只有在计算成功后才回写；completedPixels 报告已完整提交的像素数，
+                // 供 Auto 回退只补未提交尾部，失败调用方也不会对未提交像素读到半截结果。
+                const size_t tile_pixels = std::min({
+                    pixel_count,
+                    kLutTileBytes / sizeof(RGB),
+                    static_cast<size_t>(context->device.maxBufferLength) / sizeof(RGB)});
                 id<MTLBuffer> pixel_buffer = [context->device newBufferWithLength:tile_pixels * sizeof(RGB)
                                                                           options:MTLResourceStorageModeShared];
                 if (!pixel_buffer || !pixel_buffer.contents) {
@@ -180,14 +189,29 @@ bool applyLutMetal(const LUT3D& lut, ImageData& image) {
                     const size_t bytes = count * sizeof(RGB);
                     std::memcpy(staging, image.pixels.data() + offset, bytes);
                     if (!runCompute(*context, pixel_buffer, lut_texture, static_cast<uint32_t>(count),
-                                    static_cast<uint32_t>(lut.getSize()))) return false;
+                                    static_cast<uint32_t>(lut.getSize()))) {
+                        if (completedPixels) {
+                            *completedPixels = completed;
+                        }
+                        return false;
+                    }
                     std::memcpy(image.pixels.data() + offset, staging, bytes);
+                    completed = offset + count;
+                }
+                if (completedPixels) {
+                    *completedPixels = pixel_count;
                 }
                 return true;
             } catch (const std::exception&) {
+                if (completedPixels) {
+                    *completedPixels = completed;
+                }
                 return false;
             }
         } @catch (NSException*) {
+            if (completedPixels) {
+                *completedPixels = completed;
+            }
             return false;
         }
     }
