@@ -55,6 +55,19 @@ rawlab_macos_version_at_most() {
     return 0
 }
 
+# Resolve the macOS SDK for swiftc. The CLT 27 SDK exposes SwiftUI macros
+# without shipping their compiler plugin ("plugin for module 'SwiftUIMacros'
+# not found"); when the CLT 26.5 SDK is installed, prefer it, mirroring the
+# RawLabMac/build.sh guardrail. An explicit SDKROOT always wins.
+rawlab_mac_sdk_path() {
+    local sdk
+    sdk="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
+    if [ -z "${SDKROOT:-}" ] && [ -d /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk ]; then
+        sdk=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk
+    fi
+    printf '%s\n' "$sdk"
+}
+
 rawlab_fetch() {
     local archive="$1" checksum="$2" url="$3" directory="$4"
     local cached="$RAWLAB_SOURCE_CACHE/$archive" temporary

@@ -131,11 +131,7 @@ mkdir -p "$APP/Contents/Resources/Licenses/dng-sdk"
 cp "$CHROMA_PREFIX/share/licenses/rawlab-dng-sdk/"*.txt "$APP/Contents/Resources/Licenses/dng-sdk/"
 cp -R "$BUILD/licenses/libultrahdr" "$APP/Contents/Resources/Licenses/"
 cp -R "$BUILD/licenses/libjpeg-turbo" "$APP/Contents/Resources/Licenses/"
-SDK="${SDKROOT:-$(xcrun --show-sdk-path)}"
-# The CLT 27 SDK exposes SwiftUI macros without shipping their compiler plugin.
-if [ -z "${SDKROOT:-}" ] && [ -d /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk ]; then
-    SDK=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk
-fi
+SDK="$(rawlab_mac_sdk_path)"
 RAW_LIB="$(pkg-config --variable=libdir libraw_r)"
 APP_SOURCES=()
 while IFS= read -r -d '' source; do APP_SOURCES+=("$source"); done < <(find "$ROOT/RawLabMac/Sources" -name '*.swift' -print0)

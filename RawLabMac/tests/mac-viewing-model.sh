@@ -5,7 +5,7 @@ source "$ROOT/RawLabMac/tests/native-env.sh"
 BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 OUT="${RAWLAB_VIEWING_OUTPUT_DIR:-$(mktemp -d /tmp/rawlab-mac-viewing-model.XXXXXX)}"
 if [ -z "${RAWLAB_VIEWING_OUTPUT_DIR:-}" ]; then trap 'rm -rf "$OUT"' EXIT; fi
-SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
+SDK="$(rawlab_mac_sdk_path)"
 mkdir -p "$OUT"
 SOURCES=()
 while IFS= read -r -d '' source; do
