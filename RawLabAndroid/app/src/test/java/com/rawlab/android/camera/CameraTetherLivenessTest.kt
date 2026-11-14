@@ -2,6 +2,7 @@ package com.rawlab.android.camera
 
 import com.rawlab.android.photo.MediaPhoto
 import com.rawlab.android.photo.MediaPhotoAccess
+import com.rawlab.android.photo.MediaPhotoStat
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.sync.Mutex
@@ -61,6 +62,10 @@ class CameraTetherLivenessTest {
         override fun inspect(uri: String): MediaPhoto? = rows[uri]?.takeIf { file(uri).isFile }
 
         override fun open(uri: String) = file(uri).inputStream()
+        // 真机语义：publish（IS_PENDING=0）前 MediaStore 元数据未定稿，stat 不可用。
+        override fun stat(uri: String): MediaPhotoStat? =
+            rows[uri]?.takeIf { !it.pending }?.let { file(uri) }?.takeIf { it.isFile }
+                ?.let { MediaPhotoStat(it.length(), it.lastModified()) }
         override fun remember(uri: String, size: Long, digest: String) = Unit
 
         @Synchronized
