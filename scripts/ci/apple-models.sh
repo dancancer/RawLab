@@ -7,9 +7,10 @@ SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
 export SDKROOT
 # 不变量 7：套件日志出现行首 SKIP 标记即视为能力未演练，即使退出码为 0 也判败。
 # 锚定行首是为了不误伤路径段、编译器诊断、标识符或 PASS 文案里的合法 "SKIP" 字样。
-# 唯一例外（docs/process/ci.md）：models 清单内的 AX 闸脚本（ax-gate.sh 三态闸）在无
-# 辅助功能授权且未设 RAWLAB_REQUIRE_AX 时打印固定的两行诚实 SKIP；仅当脚本在白名单内
-# 且固定 SKIP 文案与 ::warning:: 注解同场时放行，白名单外的 SKIP 一律照旧判败；
+# 唯一例外（docs/process/ci.md）：models 清单内的混合 AX 套件（其 Swift 二层闸与
+# ax-gate.sh 三态文案同源）在无辅助功能授权且未设 RAWLAB_REQUIRE_AX 时，30 条不依赖
+# AX 的模型断言照常真跑，仅 AX 分支打固定两行诚实 SKIP；仅当脚本在白名单内且固定
+# SKIP 文案与 ::warning:: 注解同场时放行，白名单外的 SKIP 一律照旧判败；
 # 设了 RAWLAB_REQUIRE_AX 时闸以 FAIL exit 1 出场，不产生 SKIP，三态不破。
 AX_HONEST_SKIP_SUITES=(RawLab/tests/ios-reset-entry-ui.sh)
 AX_GATE_SKIP_LINE="SKIP: accessibility is not trusted here; the AX checks did not run"
