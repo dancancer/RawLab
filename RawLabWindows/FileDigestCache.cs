@@ -14,7 +14,8 @@ internal readonly record struct PathStatStamp(
     long CreatedTicks,
     long ChangeTicks = 0,
     long Usn = 0,
-    string? FileId = null)
+    string? FileId = null,
+    bool StatReliable = true)
 {
     internal static PathStatStamp Capture(string path, Func<string, OriginalIdentity>? readIdentity = null)
     {
@@ -31,7 +32,7 @@ internal readonly record struct PathStatStamp(
             {
                 var target = File.ResolveLinkTarget(canonical, returnFinalTarget: true);
                 if (target is not FileInfo targetFile || !targetFile.Exists)
-                    return new(false, canonical, target?.FullName ?? canonical, linkTarget, -1, 0, 0);
+                    return new(false, canonical, target?.FullName ?? canonical, linkTarget, -1, 0, 0, StatReliable: true);
                 resolvedPath = targetFile.FullName;
                 length = targetFile.Length;
                 modifiedTicks = targetFile.LastWriteTimeUtc.Ticks;
@@ -40,7 +41,7 @@ internal readonly record struct PathStatStamp(
             else
             {
                 if (!info.Exists)
-                    return new(false, canonical, canonical, null, -1, 0, 0);
+                    return new(false, canonical, canonical, null, -1, 0, 0, StatReliable: true);
                 resolvedPath = canonical;
                 length = info.Length;
                 modifiedTicks = info.LastWriteTimeUtc.Ticks;
@@ -53,7 +54,7 @@ internal readonly record struct PathStatStamp(
             if (OperatingSystem.IsWindows())
             {
                 if (!WindowsFileIdentity.TryReadStat(resolvedPath, out var winStat))
-                    return new(false, canonical, resolvedPath, linkTarget, -1, 0, 0);
+                    return new(true, canonical, resolvedPath, linkTarget, length, modifiedTicks, createdTicks, StatReliable: false);
                 length = winStat.Length;
                 modifiedTicks = winStat.ModifiedTicks;
                 createdTicks = winStat.CreatedTicks;
@@ -65,11 +66,11 @@ internal readonly record struct PathStatStamp(
             if (readIdentity != null)
                 fileId = readIdentity(canonical).FileID ?? fileId;
 
-            return new(true, canonical, resolvedPath, linkTarget, length, modifiedTicks, createdTicks, changeTicks, usn, fileId);
+            return new(true, canonical, resolvedPath, linkTarget, length, modifiedTicks, createdTicks, changeTicks, usn, fileId, StatReliable: true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception or System.Security.SecurityException)
         {
-            return new(false, canonical, canonical, null, -1, 0, 0);
+            return new(false, canonical, canonical, null, -1, 0, 0, StatReliable: false);
         }
     }
 }
@@ -91,6 +92,7 @@ internal sealed class FileDigestCache
     private readonly int capacity;
     private readonly Func<string, string> computeSha256Hex;
     private readonly Func<string, OriginalIdentity> readIdentity;
+    private readonly Func<string, PathStatStamp> captureStamp;
     private readonly long smallFileDirectHashBytes;
     private long computeCount;
     private long hitCount;
@@ -99,11 +101,13 @@ internal sealed class FileDigestCache
         int capacity = 512,
         Func<string, string>? computeSha256Hex = null,
         Func<string, OriginalIdentity>? readIdentity = null,
-        long smallFileDirectHashBytes = SmallFileDirectHashBytes)
+        long smallFileDirectHashBytes = SmallFileDirectHashBytes,
+        Func<string, PathStatStamp>? captureStamp = null)
     {
         this.capacity = Math.Max(16, capacity);
         this.computeSha256Hex = computeSha256Hex ?? HashFileHex;
         this.readIdentity = readIdentity ?? OriginalIdentity.Read;
+        this.captureStamp = captureStamp ?? (p => PathStatStamp.Capture(p, this.readIdentity == OriginalIdentity.Read ? null : this.readIdentity));
         this.smallFileDirectHashBytes = Math.Max(0, smallFileDirectHashBytes);
     }
 
@@ -113,15 +117,20 @@ internal sealed class FileDigestCache
     internal (OriginalIdentity Identity, string Sha256Hex) GetDigest(string path)
     {
         var fullPath = Path.GetFullPath(path);
-        var stat = PathStatStamp.Capture(fullPath, readIdentity == OriginalIdentity.Read ? null : readIdentity);
-        if (!stat.Exists)
+        var stat = captureStamp(fullPath);
+        return GetDigestCore(fullPath, path, stat);
+    }
+
+    private (OriginalIdentity Identity, string Sha256Hex) GetDigestCore(string fullPath, string originalPath, PathStatStamp stat)
+    {
+        if (stat.StatReliable && !stat.Exists)
         {
             Invalidate(fullPath);
-            throw new FileNotFoundException(Loc.Text("无法访问原始照片。"), path);
+            throw new FileNotFoundException(Loc.Text("无法访问原始照片。"), originalPath);
         }
 
         var identity = readIdentity(fullPath);
-        if (stat.Length <= smallFileDirectHashBytes)
+        if (!stat.StatReliable || stat.Length <= smallFileDirectHashBytes)
         {
             var directHex = computeSha256Hex(fullPath);
             Interlocked.Increment(ref computeCount);
@@ -143,15 +152,15 @@ internal sealed class FileDigestCache
         var hex = computeSha256Hex(fullPath);
         Interlocked.Increment(ref computeCount);
 
-        var afterStat = PathStatStamp.Capture(fullPath, readIdentity == OriginalIdentity.Read ? null : readIdentity);
+        var afterStat = captureStamp(fullPath);
         OriginalIdentity? afterIdentity = null;
-        if (afterStat.Exists)
+        if (afterStat.StatReliable && afterStat.Exists)
         {
             try { afterIdentity = readIdentity(fullPath); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception) { afterIdentity = null; }
         }
 
-        if (afterStat == stat && afterIdentity != null && afterIdentity.SameFile(identity))
+        if (afterStat.StatReliable && afterStat == stat && afterIdentity != null && afterIdentity.SameFile(identity))
         {
             lock (gate)
             {
@@ -175,8 +184,8 @@ internal sealed class FileDigestCache
     internal bool MatchesSha256(string path, string expectedSha256Hex, long maximumBytes)
     {
         var fullPath = Path.GetFullPath(path);
-        var stat = PathStatStamp.Capture(fullPath, readIdentity == OriginalIdentity.Read ? null : readIdentity);
-        if (!stat.Exists || stat.Length <= 0 || stat.Length > maximumBytes)
+        var stat = captureStamp(fullPath);
+        if (stat.StatReliable && (!stat.Exists || stat.Length <= 0 || stat.Length > maximumBytes))
         {
             Invalidate(fullPath);
             return false;
@@ -184,7 +193,9 @@ internal sealed class FileDigestCache
 
         try
         {
-            var (_, sha256) = GetDigest(fullPath);
+            var (identity, sha256) = GetDigestCore(fullPath, path, stat);
+            if (identity.Length <= 0 || identity.Length > maximumBytes)
+                return false;
             return sha256.Equals(expectedSha256Hex, StringComparison.OrdinalIgnoreCase);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)

@@ -151,6 +151,76 @@ internal static class HotPathIoAndRefreshChecks
             currentFileId = "abcd-0001-0002";
             Check(idStore.ReadState(tunneledPhoto).Edit?.Settings.Values[(int)Parameter.Exposure] == 0.75,
                 "WindowsFileId change with identical length/timestamps invalidates EditStore.RegistryCache");
+
+            // Transient stat probe failure must never spoof Exists=false (must not return null ReadState or wipe edits.json on Save).
+            var transientDir = Path.Combine(root, "transient-edits");
+            var tPhotoA = Path.Combine(root, "transient-a.arw");
+            var tPhotoB = Path.Combine(root, "transient-b.arw");
+            File.WriteAllBytes(tPhotoA, [1, 2, 3, 4]);
+            File.WriteAllBytes(tPhotoB, [5, 6, 7, 8]);
+            var failTransientStat = false;
+            OriginalIdentity ReadTransientId(string p)
+            {
+                if (failTransientStat)
+                    throw new UnauthorizedAccessException("Simulated transient stat sharing/ACL failure");
+                var info = new FileInfo(p);
+                return new OriginalIdentity(info.FullName, info.Length, info.LastWriteTimeUtc.Ticks, info.CreationTimeUtc.Ticks);
+            }
+            var transientStore = new EditStore(transientDir, null, ReadTransientId);
+            var idAState = transientStore.ReadState(tPhotoA).Identity;
+            var idBState = transientStore.ReadState(tPhotoB).Identity;
+            var settingsA = new Adjustments();
+            settingsA.Set(Parameter.Exposure, 1.25);
+            transientStore.SaveState(idAState, new SavedEdit(idAState, settingsA.Capture(), null));
+            failTransientStat = true;
+            var transientRead = transientStore.ReadState(tPhotoA);
+            Check(transientRead.Edit?.Settings.Values[(int)Parameter.Exposure] == 1.25,
+                "Transient stat probe error on existing edits.json must not spoof empty ReadState");
+            var settingsB = new Adjustments();
+            settingsB.Set(Parameter.Contrast, 15.0);
+            transientStore.SaveState(idBState, new SavedEdit(idBState, settingsB.Capture(), null));
+            failTransientStat = false;
+            var persistedA = transientStore.ReadState(tPhotoA);
+            var persistedB = transientStore.ReadState(tPhotoB);
+            Check(persistedA.Edit?.Settings.Values[(int)Parameter.Exposure] == 1.25 &&
+                  persistedB.Edit?.Settings.Values[(int)Parameter.Contrast] == 15.0,
+                "Transient stat probe error during SaveState must never wipe existing photo records in edits.json");
+
+            // Explicit StatReliable=false (e.g. Windows GetFileInformationByHandle returning false on sharing violation)
+            // must read from disk without writing cachedRegistry and must preserve existing edits on SaveState.
+            var unreliableMode = 0; // 0=reliable, 1=(Exists=false,StatReliable=false), 2=(Exists=true,StatReliable=false)
+            PathStatStamp CaptureWithUnreliableMode(string p) => unreliableMode switch
+            {
+                1 => new(false, p, p, null, -1, 0, 0, StatReliable: false),
+                2 => new(true, p, p, null, new FileInfo(p).Length, 1000, 1000, StatReliable: false),
+                _ => PathStatStamp.Capture(p)
+            };
+            var reliableDir = Path.Combine(root, "unreliable-stat-edits");
+            var reliableStore = new EditStore(reliableDir, null, null, CaptureWithUnreliableMode);
+            var uIdA = reliableStore.ReadState(tPhotoA).Identity;
+            var uIdB = reliableStore.ReadState(tPhotoB).Identity;
+            reliableStore.SaveState(uIdA, new SavedEdit(uIdA, settingsA.Capture(), null));
+            // Populate reliable cache first.
+            _ = reliableStore.ReadState(tPhotoA);
+
+            foreach (var mode in new[] { 1, 2 })
+            {
+                unreliableMode = mode;
+                var diskBefore = reliableStore.DiskReadCount;
+                var firstRead = reliableStore.ReadState(tPhotoA);
+                var secondRead = reliableStore.ReadState(tPhotoA);
+                Check(firstRead.Edit?.Settings.Values[(int)Parameter.Exposure] == 1.25 &&
+                      secondRead.Edit?.Settings.Values[(int)Parameter.Exposure] == 1.25 &&
+                      reliableStore.DiskReadCount == diskBefore + 2,
+                    $"Unreliable stat mode {mode} reads edits.json from disk without serving/populating cachedRegistry");
+            }
+
+            unreliableMode = 1;
+            reliableStore.SaveState(uIdB, new SavedEdit(uIdB, settingsB.Capture(), null));
+            unreliableMode = 0;
+            Check(reliableStore.ReadState(tPhotoA).Edit?.Settings.Values[(int)Parameter.Exposure] == 1.25 &&
+                  reliableStore.ReadState(tPhotoB).Edit?.Settings.Values[(int)Parameter.Contrast] == 15.0,
+                "SaveState while StatReliable=false preserves all existing photo records");
         }
         finally
         {
@@ -270,6 +340,73 @@ internal static class HotPathIoAndRefreshChecks
             var largeDigest2 = idDigestCache.GetDigest(largeTarget);
             Check(largeDigest2.Sha256Hex != largeDigest1.Sha256Hex,
                 "WindowsFileId / rename-onto invalidates large FileDigestCache even with identical timestamps");
+
+            // Transient stat probe error on MatchesSha256 must fall back conservatively instead of returning fake false.
+            var remainingStatFaults = 0;
+            OriginalIdentity ReadMatchId(string p)
+            {
+                if (remainingStatFaults > 0)
+                {
+                    remainingStatFaults--;
+                    throw new UnauthorizedAccessException("Simulated transient stat error");
+                }
+                var info = new FileInfo(p);
+                return new OriginalIdentity(info.FullName, info.Length, 2000, 2000);
+            }
+            var matchDigestCache = new FileDigestCache(capacity: 32, readIdentity: ReadMatchId);
+            var matchTarget = Path.Combine(root, "match-transient.cube");
+            File.WriteAllText(matchTarget, BuildLargeCube("0.4 0.4 0.4"));
+            var expectedMatchHex = matchDigestCache.GetDigest(matchTarget).Sha256Hex;
+            remainingStatFaults = 1;
+            Check(matchDigestCache.MatchesSha256(matchTarget, expectedMatchHex, 256 * 1024),
+                "Transient stat probe error in MatchesSha256 must not spoof false negative");
+
+            // Persistent StatReliable=false must hash directly (no fake FileNotFoundException, no stale cache, respects maximumBytes).
+            var unreliableDigestMode = 0; // 0=reliable, 1=(Exists=false,StatReliable=false), 2=(Exists=true,StatReliable=false)
+            PathStatStamp CaptureDigestUnreliable(string p) => unreliableDigestMode switch
+            {
+                1 => new(false, p, p, null, -1, 0, 0, StatReliable: false),
+                2 => new(true, p, p, null, new FileInfo(p).Length, 1000, 1000, StatReliable: false),
+                _ => PathStatStamp.Capture(p)
+            };
+            var uDigestCache = new FileDigestCache(capacity: 32, captureStamp: CaptureDigestUnreliable);
+            var uLarge = Path.Combine(root, "unreliable-large.cube");
+            File.WriteAllText(uLarge, BuildLargeCube("0.1 0.1 0.1"));
+            var reliableDigest = uDigestCache.GetDigest(uLarge);
+            _ = uDigestCache.GetDigest(uLarge);
+            Check(uDigestCache.HitCount == 1, "Baseline reliable digest cache hits");
+
+            unreliableDigestMode = 1;
+            var computesBeforeUnreliable = uDigestCache.ComputeCount;
+            var hitsBeforeUnreliable = uDigestCache.HitCount;
+            var uDigest1 = uDigestCache.GetDigest(uLarge);
+            Check(uDigest1.Sha256Hex == reliableDigest.Sha256Hex &&
+                  uDigestCache.ComputeCount == computesBeforeUnreliable + 1 &&
+                  uDigestCache.HitCount == hitsBeforeUnreliable,
+                "StatReliable=false GetDigest hashes directly without false FileNotFoundException or cache hit");
+            Check(uDigestCache.MatchesSha256(uLarge, reliableDigest.Sha256Hex, 256 * 1024),
+                "StatReliable=false MatchesSha256 validates real file content when within size limit");
+            Check(!uDigestCache.MatchesSha256(uLarge, reliableDigest.Sha256Hex, 64),
+                "StatReliable=false MatchesSha256 still enforces real identity.Length <= maximumBytes");
+
+            // Same-length in-place overwrite while StatReliable=false must compute new hash (not serve stale cache).
+            unreliableDigestMode = 2;
+            File.WriteAllText(uLarge, BuildLargeCube("0.9 0.9 0.9"));
+            var uDigest2 = uDigestCache.GetDigest(uLarge);
+            Check(uDigest2.Sha256Hex != reliableDigest.Sha256Hex,
+                "StatReliable=false overwrite yields updated hash without serving stale cache");
+            Check(!uDigestCache.MatchesSha256(uLarge, reliableDigest.Sha256Hex, 256 * 1024) &&
+                  uDigestCache.MatchesSha256(uLarge, uDigest2.Sha256Hex, 256 * 1024),
+                "StatReliable=false MatchesSha256 tracks updated file digest conservatively");
+
+            // Confirmed missing file (StatReliable=true, Exists=false) still throws FileNotFoundException & returns false.
+            unreliableDigestMode = 0;
+            var missingDigestPath = Path.Combine(root, "definitely-missing.cube");
+            var missingThrew = false;
+            try { _ = uDigestCache.GetDigest(missingDigestPath); }
+            catch (FileNotFoundException) { missingThrew = true; }
+            Check(missingThrew && !uDigestCache.MatchesSha256(missingDigestPath, reliableDigest.Sha256Hex, 256 * 1024),
+                "Confirmed missing file still throws FileNotFoundException and returns false");
         }
         finally
         {
@@ -383,6 +520,18 @@ internal static class HotPathIoAndRefreshChecks
                 Check(threw, "Probe exception propagates cleanly");
             }
             Check(failCount == 2, "Failed probes are never cached");
+
+            // Unreliable stat skips cache lookup and cache store in PhotoProbeCache.
+            var probeUnreliable = new PhotoProbeCache(
+                capacity: 32,
+                captureStamp: p => new(false, p, p, null, -1, 0, 0, StatReliable: false));
+            var unreliableMissesBefore = invoked;
+            for (var i = 0; i < 2; i++)
+            {
+                probeUnreliable.GetOrProbe(rawPath, cameraRaw: true, processingVersion: 3, FakeProbe, out _);
+            }
+            Check(invoked == unreliableMissesBefore + 2 && probeUnreliable.HitCount == 0 && probeUnreliable.MissCount == 2,
+                "StatReliable=false skips PhotoProbeCache lookup and store");
         }
         finally
         {
@@ -461,6 +610,18 @@ internal static class HotPathIoAndRefreshChecks
                 "Stale worker probe cannot revert newer ViewSourceState");
             Check(state.Current(photoA, revision: 9)?.SameFile(idReplaced) == true && !state.NeedsBackgroundProbe(photoA, revision: 9),
                 "ViewSourceState preserves newest identity and clean probe state");
+
+            // UnchangedUnavailable must not increment generation so a concurrent Retry worker is not marked Stale.
+            state.SetOpenPhoto(photoA, revision: 10, null);
+            var genBeforeUnavailable = state.Generation;
+            Check(state.ApplyProbeResult(photoA, revision: 10, null, genBeforeUnavailable) == ViewSourceProbeOutcome.UnchangedUnavailable,
+                "Null probe on already unavailable source reports UnchangedUnavailable");
+            Check(state.Generation == genBeforeUnavailable,
+                "UnchangedUnavailable must not advance ViewSourceState generation");
+            Check(state.ApplyProbeResult(photoA, revision: 10, idA, genBeforeUnavailable) == ViewSourceProbeOutcome.Initialized,
+                "Concurrent Retry worker with pre-UnchangedUnavailable generation recovers to Initialized");
+            Check(ViewSourceState.ResolveWorkerFrameSource(idA, state.Current(photoA, 10), state.Current(photoA, 10), idA, sameOpenFile: true)?.SameFile(idA) == true,
+                "Recovered ViewSourceState publishes worker frame cleanly without false Stale degrade");
         }
         finally
         {

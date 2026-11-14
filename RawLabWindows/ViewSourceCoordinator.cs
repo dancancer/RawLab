@@ -85,8 +85,6 @@ internal sealed class ViewSourceState
                 cachedIdentity = null;
                 return ViewSourceProbeOutcome.BecameUnavailable;
             }
-            if (expectedGeneration != null)
-                ++generation;
             cachedIdentity = null;
             return ViewSourceProbeOutcome.UnchangedUnavailable;
         }

@@ -178,6 +178,7 @@ public sealed class EditStore
     private readonly string canonicalPath;
     private readonly Action<string,object> write;
     private readonly Func<string, OriginalIdentity>? customReadIdentity;
+    private readonly Func<string, PathStatStamp> captureStamp;
     private readonly object cacheGate = new();
     private CachedRegistry? cachedRegistry;
     private long diskReadCount;
@@ -193,14 +194,19 @@ public sealed class EditStore
     }
 
     public EditStore(string directory,Action<string,object>? write = null)
-        : this(directory, write, null) { }
+        : this(directory, write, null, null) { }
 
-    internal EditStore(string directory, Action<string, object>? write, Func<string, OriginalIdentity>? readRegistryIdentity)
+    internal EditStore(
+        string directory,
+        Action<string, object>? write,
+        Func<string, OriginalIdentity>? readRegistryIdentity,
+        Func<string, PathStatStamp>? captureStamp = null)
     {
         path = Path.Combine(directory, "edits.json");
         canonicalPath = Path.GetFullPath(path);
         this.write=write ?? AtomicJson.Write;
         customReadIdentity = readRegistryIdentity;
+        this.captureStamp = captureStamp ?? (canonical => PathStatStamp.Capture(canonical, customReadIdentity));
         _=ReadRegistry();
     }
 
@@ -232,8 +238,8 @@ public sealed class EditStore
 
     private void WriteAndCacheRegistry(Registry next)
     {
-        var beforeStamp = PathStatStamp.Capture(canonicalPath, customReadIdentity);
-        var beforeIdentity = beforeStamp.Exists ? TryReadRegistryIdentity(canonicalPath) : null;
+        var beforeStamp = captureStamp(canonicalPath);
+        var beforeIdentity = beforeStamp.StatReliable && beforeStamp.Exists ? TryReadRegistryIdentity(canonicalPath) : null;
         try
         {
             write(path, next);
@@ -246,9 +252,12 @@ public sealed class EditStore
         }
 
         var nextEpoch = BumpPathEpoch(canonicalPath);
-        var afterStamp = PathStatStamp.Capture(canonicalPath, customReadIdentity);
-        var afterIdentity = afterStamp.Exists ? TryReadRegistryIdentity(canonicalPath) : null;
-        if (afterStamp.Exists && afterIdentity != null &&
+        var afterStamp = captureStamp(canonicalPath);
+        var afterIdentity = afterStamp.StatReliable && afterStamp.Exists ? TryReadRegistryIdentity(canonicalPath) : null;
+        if (beforeStamp.StatReliable &&
+            afterStamp.StatReliable &&
+            afterStamp.Exists &&
+            afterIdentity != null &&
             (afterStamp != beforeStamp || beforeIdentity == null || !afterIdentity.SameFile(beforeIdentity)))
         {
             lock (cacheGate) cachedRegistry = new(afterStamp, nextEpoch, afterIdentity, next);
@@ -261,16 +270,16 @@ public sealed class EditStore
 
     private Registry ReadRegistry(bool forceDisk = false)
     {
-        var currentStamp = PathStatStamp.Capture(canonicalPath, customReadIdentity);
-        if (!currentStamp.Exists)
+        var currentStamp = captureStamp(canonicalPath);
+        if (currentStamp.StatReliable && !currentStamp.Exists)
         {
             InvalidateCache();
             return new(1,new(StringComparer.OrdinalIgnoreCase));
         }
 
-        var currentIdentity = TryReadRegistryIdentity(canonicalPath);
+        var currentIdentity = currentStamp.StatReliable ? TryReadRegistryIdentity(canonicalPath) : null;
         var epoch = CurrentPathEpoch(canonicalPath);
-        if (!forceDisk && currentIdentity != null)
+        if (!forceDisk && currentStamp.StatReliable && currentIdentity != null)
         {
             lock (cacheGate)
             {
@@ -294,11 +303,17 @@ public sealed class EditStore
             throw;
         }
 
-        var afterStamp = PathStatStamp.Capture(canonicalPath, customReadIdentity);
+        var afterStamp = captureStamp(canonicalPath);
         var afterEpoch = CurrentPathEpoch(canonicalPath);
-        var afterIdentity = afterStamp.Exists ? TryReadRegistryIdentity(canonicalPath) : null;
-        if (afterStamp.Exists && afterStamp == currentStamp && afterEpoch == epoch &&
-            currentIdentity != null && afterIdentity != null && afterIdentity.SameFile(currentIdentity))
+        var afterIdentity = afterStamp.StatReliable && afterStamp.Exists ? TryReadRegistryIdentity(canonicalPath) : null;
+        if (currentStamp.StatReliable &&
+            afterStamp.StatReliable &&
+            afterStamp.Exists &&
+            afterStamp == currentStamp &&
+            afterEpoch == epoch &&
+            currentIdentity != null &&
+            afterIdentity != null &&
+            afterIdentity.SameFile(currentIdentity))
         {
             lock (cacheGate) cachedRegistry = new(currentStamp, epoch, currentIdentity, parsed);
         }

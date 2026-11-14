@@ -32,13 +32,18 @@ internal sealed class PhotoProbeCache
     private readonly Queue<Key> evictionOrder = new();
     private readonly int capacity;
     private readonly Func<string, OriginalIdentity>? customReadIdentity;
+    private readonly Func<string, PathStatStamp> captureStamp;
     private long missCount;
     private long hitCount;
 
-    internal PhotoProbeCache(int capacity = 256, Func<string, OriginalIdentity>? readIdentity = null)
+    internal PhotoProbeCache(
+        int capacity = 256,
+        Func<string, OriginalIdentity>? readIdentity = null,
+        Func<string, PathStatStamp>? captureStamp = null)
     {
         this.capacity = Math.Max(16, capacity);
         customReadIdentity = readIdentity;
+        this.captureStamp = captureStamp ?? (canonical => PathStatStamp.Capture(canonical, customReadIdentity));
     }
 
     internal long MissCount => Interlocked.Read(ref missCount);
@@ -52,11 +57,11 @@ internal sealed class PhotoProbeCache
         out HDRSourceInfo? info)
     {
         var canonical = Path.GetFullPath(path);
-        var stat = PathStatStamp.Capture(canonical, customReadIdentity);
+        var stat = captureStamp(canonical);
         var identity = TryReadIdentity(canonical);
         var key = new Key(canonical, cameraRaw, processingVersion);
 
-        if (stat.Exists && identity != null)
+        if (stat.StatReliable && stat.Exists && identity != null)
         {
             lock (gate)
             {
@@ -83,9 +88,10 @@ internal sealed class PhotoProbeCache
             throw;
         }
 
-        var afterStat = PathStatStamp.Capture(canonical, customReadIdentity);
+        var afterStat = captureStamp(canonical);
         var afterIdentity = TryReadIdentity(canonical);
-        if (identity != null && afterStat.Exists && afterStat == stat && afterIdentity != null && afterIdentity.SameFile(identity))
+        if (stat.StatReliable && afterStat.StatReliable && afterStat.Exists &&
+            identity != null && afterStat == stat && afterIdentity != null && afterIdentity.SameFile(identity))
         {
             lock (gate)
             {

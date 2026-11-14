@@ -59,7 +59,8 @@ public partial class MainWindow
                 acceptedReference = null;
                 RefreshViewingFrames();
             }
-            if (scheduleOnRecovery && outcome is ViewSourceProbeOutcome.Initialized or ViewSourceProbeOutcome.Replaced)
+            if ((scheduleOnRecovery || renderFailed) &&
+                outcome is ViewSourceProbeOutcome.Initialized or ViewSourceProbeOutcome.Replaced)
                 Schedule();
         }), TaskScheduler.Default);
     }
