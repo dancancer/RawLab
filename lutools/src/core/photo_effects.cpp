@@ -1,5 +1,5 @@
 #include "photo_effects.h"
-#include "processing_cancellation.h"
+#include "parallel_pixels.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -141,15 +141,13 @@ RGB PhotoEffectSampler::applyExtendedLinear(RGB pixel, int x, int y, double peak
 void applyPhotoEffects(ImageData& image, const PhotoEffectsOptions& options) {
     if (!options.active() || image.width <= 0 || image.height <= 0) return;
     const PhotoEffectSampler sampler(options, image.width, image.height);
-    const auto cancellation = processingCancellation;
-#ifdef _OPENMP
-#pragma omp parallel for if (image.pixels.size() >= (1u << 16))
-#endif
-    for (int y = 0; y < image.height; ++y) {
-        if (cancellation.cancelled()) continue;
-        for (int x = 0; x < image.width; ++x) image.at(x, y) = sampler.applySRGB(image.at(x, y), x, y);
-    }
-    cancellation.check();
+    parallelRowRanges(image.height, image.width, [&](int firstRow, int lastRow) {
+        for (int y = firstRow; y < lastRow; ++y) {
+            for (int x = 0; x < image.width; ++x) {
+                image.at(x, y) = sampler.applySRGB(image.at(x, y), x, y);
+            }
+        }
+    });
 }
 
 } // namespace sony2fuji

@@ -1,5 +1,5 @@
 #include "display_lens_correction.h"
-#include "processing_cancellation.h"
+#include "parallel_pixels.h"
 #include <algorithm>
 #include <cmath>
 #include <utility>
@@ -44,25 +44,25 @@ LensCorrectionReport applyDisplayLensCorrection(ImageData& image,
     const int height = sourceOrientation >= 5 ? image.width : image.height;
     LensCorrectionTransform transform(std::move(database), metadata, options, width, height, 3);
     if (!transform.active()) return transform.report();
-    checkProcessingCancellation();
     std::vector<RGB> output(image.pixels.size());
-    std::vector<float> coordinates(static_cast<size_t>(width) * 6);
-    for (int y = 0; y < height; ++y) {
-        checkProcessingCancellation();
-        transform.map(0, y, width, 1, coordinates.data());
-        for (int x = 0; x < width; ++x) {
-            const auto destination = orientedPoint(float(x), float(y), width, height, sourceOrientation);
-            float channels[3];
-            for (int channel = 0; channel < 3; ++channel) {
-                const size_t offset = static_cast<size_t>(x) * 6 + channel * 2;
-                const auto source = orientedPoint(coordinates[offset], coordinates[offset + 1], width, height, sourceOrientation);
-                channels[channel] = sample(image, channel, source.first, source.second) *
-                    transform.gainAt(coordinates[offset], coordinates[offset + 1]);
+    parallelRowRanges(height, width, [&](int firstRow, int lastRow) {
+        std::vector<float> coordinates(static_cast<size_t>(width) * 6);
+        for (int y = firstRow; y < lastRow; ++y) {
+            transform.map(0, y, width, 1, coordinates.data());
+            for (int x = 0; x < width; ++x) {
+                const auto destination = orientedPoint(float(x), float(y), width, height, sourceOrientation);
+                float channels[3];
+                for (int channel = 0; channel < 3; ++channel) {
+                    const size_t offset = static_cast<size_t>(x) * 6 + channel * 2;
+                    const auto source = orientedPoint(coordinates[offset], coordinates[offset + 1], width, height, sourceOrientation);
+                    channels[channel] = sample(image, channel, source.first, source.second) *
+                        transform.gainAt(coordinates[offset], coordinates[offset + 1]);
+                }
+                output[static_cast<size_t>(destination.second) * image.width + static_cast<size_t>(destination.first)] =
+                    RGB(channels[0], channels[1], channels[2]);
             }
-            output[static_cast<size_t>(destination.second) * image.width + static_cast<size_t>(destination.first)] =
-                RGB(channels[0], channels[1], channels[2]);
         }
-    }
+    });
     image.pixels.swap(output);
     return transform.report();
 }

@@ -1,4 +1,5 @@
 #include "scene_rgb_adapter.h"
+#include "core/parallel_pixels.h"
 #include "core/photo_rendering.h"
 #include <algorithm>
 #include <cmath>
@@ -81,11 +82,14 @@ void applySceneRGBCorrection(ImageData& image, const Tensor& correction, ColorSp
         throw std::invalid_argument("scene RGB cache does not match the decoded canvas");
     const auto matrix = ColorConverter::getConversionMatrix(ColorSpace::sRGB,space);
     const size_t plane = image.pixels.size();
-    for (size_t i = 0; i < plane; ++i) {
-        const auto delta = ColorConverter::applyMatrix(RGB(correction.values[i],correction.values[plane+i],correction.values[2*plane+i]),matrix);
-        image.pixels[i].r += gain*delta.r;
-        image.pixels[i].g += gain*delta.g;
-        image.pixels[i].b += gain*delta.b;
-    }
+    parallelPixelRanges(plane, [&](size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i) {
+            const auto delta = ColorConverter::applyMatrix(
+                RGB(correction.values[i], correction.values[plane + i], correction.values[2 * plane + i]), matrix);
+            image.pixels[i].r += gain * delta.r;
+            image.pixels[i].g += gain * delta.g;
+            image.pixels[i].b += gain * delta.b;
+        }
+    });
 }
 } // namespace sony2fuji::ai

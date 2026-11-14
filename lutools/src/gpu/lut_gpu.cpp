@@ -1,5 +1,6 @@
 #include "sony2fuji/gpu/lut_gpu.h"
 
+#include "../core/parallel_pixels.h"
 #include "gpu/lut_gpu_internal.h"
 #include "sony2fuji/lut_applicator.h"
 #include <algorithm>
@@ -79,9 +80,11 @@ ErrorCode applyLutCpu(const std::shared_ptr<LUT3D>& lut, ImageData& image, size_
     if (begin >= image.pixels.size()) {
         return ErrorCode::Success;
     }
-    for (size_t i = begin; i < image.pixels.size(); ++i) {
-        image.pixels[i] = applicator.apply(image.pixels[i]);
-    }
+    parallelPixelRanges(image.pixels.size() - begin, [&](size_t first, size_t last) {
+        for (size_t i = begin + first; i < begin + last; ++i) {
+            image.pixels[i] = applicator.apply(image.pixels[i]);
+        }
+    });
     return ErrorCode::Success;
 }
 
@@ -117,11 +120,14 @@ ErrorCode applyLUTWithConfig(
         if (!unitDomain) {
             // 自定义域归一化有损，CPU 回退必须看到原始像素，保持旧行为。
             staged = image;
-            for (auto& p : staged.pixels) {
-                p.r = std::clamp((p.r-low.r)/(high.r-low.r), 0.0f, 1.0f);
-                p.g = std::clamp((p.g-low.g)/(high.g-low.g), 0.0f, 1.0f);
-                p.b = std::clamp((p.b-low.b)/(high.b-low.b), 0.0f, 1.0f);
-            }
+            parallelPixelRanges(staged.pixels.size(), [&](size_t first, size_t last) {
+                for (size_t i = first; i < last; ++i) {
+                    auto& p = staged.pixels[i];
+                    p.r = std::clamp((p.r - low.r) / (high.r - low.r), 0.0f, 1.0f);
+                    p.g = std::clamp((p.g - low.g) / (high.g - low.g), 0.0f, 1.0f);
+                    p.b = std::clamp((p.b - low.b) / (high.b - low.b), 0.0f, 1.0f);
+                }
+            });
             working = &staged;
         }
         size_t completedPixels = 0;

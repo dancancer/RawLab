@@ -3,6 +3,7 @@
 
 #include "sony2fuji/sony2fuji.h"
 #include "sony2fuji/dcp_look.h"
+#include "core/parallel_pixels.h"
 #include "core/photo_rendering.h"
 #include "core/hdr_rendering.h"
 #include "core/x3f_processor.h"
@@ -1255,14 +1256,16 @@ sony2fuji::ImageData resizeBilinear(
         ? 0.0
         : static_cast<double>(source.height - 1) / static_cast<double>(target_height - 1);
 
-    for (uint32_t y = 0; y < target_height; ++y) {
-        sony2fuji::checkProcessingCancellation();
-        const double src_y = static_cast<double>(y) * scale_y;
-        for (uint32_t x = 0; x < target_width; ++x) {
-            const double src_x = static_cast<double>(x) * scale_x;
-            output.pixels[static_cast<size_t>(y) * target_width + x] = sampleBilinear(source, src_x, src_y);
-        }
-    }
+    sony2fuji::parallelRowRanges(static_cast<int>(target_height), static_cast<int>(target_width),
+        [&](int firstRow, int lastRow) {
+            for (int y = firstRow; y < lastRow; ++y) {
+                const double src_y = static_cast<double>(y) * scale_y;
+                for (uint32_t x = 0; x < target_width; ++x) {
+                    const double src_x = static_cast<double>(x) * scale_x;
+                    output.pixels[static_cast<size_t>(y) * target_width + x] = sampleBilinear(source, src_x, src_y);
+                }
+            }
+        });
 
     return output;
 }
@@ -1440,10 +1443,12 @@ sony2fuji_status applyPhotoLook(sony2fuji::ImageData& image,
     auto render = [&](sony2fuji::ImageData& working) {
         sony2fuji::checkProcessingCancellation();
         auto encodeInPlace = [&](std::vector<sony2fuji::RGB>& pixels) {
-            for (size_t i = 0; i < pixels.size(); ++i) {
-                if (i % 4096 == 0) sony2fuji::checkProcessingCancellation();
-                auto& p = pixels[i]; p = sony2fuji::RGB(encode(p.r), encode(p.g), encode(p.b));
-            }
+            sony2fuji::parallelPixelRanges(pixels.size(), [&](size_t first, size_t last) {
+                for (size_t i = first; i < last; ++i) {
+                    auto& p = pixels[i];
+                    p = sony2fuji::RGB(encode(p.r), encode(p.g), encode(p.b));
+                }
+            });
         };
         sony2fuji::ImageData base;
         if (srgbLookInput) {
@@ -1455,25 +1460,25 @@ sony2fuji_status applyPhotoLook(sony2fuji::ImageData& image,
             encodeInPlace(base.pixels);
         }
         if (dcp) {
-            const size_t count = working.pixels.size();
-            const auto cancellation = sony2fuji::processingCancellation;
-#ifdef _OPENMP
-#pragma omp parallel for if (count >= (1u << 16))
-#endif
-            for (size_t first = 0; first < count; first += 4096) {
-                if (cancellation.cancelled()) continue;
-                for (size_t i = first; i < std::min(count, first + 4096); ++i)
+            sony2fuji::parallelPixelRanges(working.pixels.size(), [&](size_t first, size_t last) {
+                for (size_t i = first; i < last; ++i) {
                     working.pixels[i] = dcp->apply(working.pixels[i]);
-            }
-            cancellation.check();
+                }
+            });
         } else if (contract) {
-            for (size_t i = 0; i < working.pixels.size(); ++i) {
-                if (i % 4096 == 0) sony2fuji::checkProcessingCancellation();
-                auto& pixel = working.pixels[i];
-                pixel = contract->apply(pixel);
-                if (!std::isfinite(pixel.r) || !std::isfinite(pixel.g) || !std::isfinite(pixel.b))
-                    return SONY2FUJI_STATUS_PROCESSING_ERROR;
-            }
+            std::atomic<bool> nonFinite{false};
+            sony2fuji::parallelPixelRanges(working.pixels.size(), [&](size_t first, size_t last) {
+                if (nonFinite.load(std::memory_order_acquire)) return;
+                for (size_t i = first; i < last; ++i) {
+                    auto& pixel = working.pixels[i];
+                    pixel = contract->apply(pixel);
+                    if (!std::isfinite(pixel.r) || !std::isfinite(pixel.g) || !std::isfinite(pixel.b)) {
+                        nonFinite.store(true, std::memory_order_release);
+                        return;
+                    }
+                }
+            });
+            if (nonFinite.load(std::memory_order_acquire)) return SONY2FUJI_STATUS_PROCESSING_ERROR;
         } else {
             if (!srgbLookInput) {
                 if (lut->inputTransfer() == sony2fuji::LUTTransfer::FLog2) {
@@ -1488,10 +1493,11 @@ sony2fuji_status applyPhotoLook(sony2fuji::ImageData& image,
             if (result != sony2fuji::ErrorCode::Success) return mapError(result);
             sony2fuji::renderPhotoLUTOutput(working, lut->outputTransfer());
         }
-        for (size_t i = 0; i < working.pixels.size(); ++i) {
-            if (i % 4096 == 0) sony2fuji::checkProcessingCancellation();
-            working.pixels[i] = lerpRGB(base.pixels[i], working.pixels[i], strength);
-        }
+        sony2fuji::parallelPixelRanges(working.pixels.size(), [&](size_t first, size_t last) {
+            for (size_t i = first; i < last; ++i) {
+                working.pixels[i] = lerpRGB(base.pixels[i], working.pixels[i], strength);
+            }
+        });
         return SONY2FUJI_STATUS_OK;
     };
     // 独立 LUT GPU 仍以整次调用为事务；CPU 混合只保留两块各 3 MiB 的工作区。
@@ -1525,13 +1531,14 @@ sony2fuji_status ensureLinear(
         return SONY2FUJI_STATUS_UNSUPPORTED;
     }
 
-    for (size_t i = 0; i < image.pixels.size(); ++i) {
-        if (i % 4096 == 0) sony2fuji::checkProcessingCancellation();
-        auto& pixel = image.pixels[i];
-        pixel.r = sony2fuji::GammaConverter::removeSRGBGamma(pixel.r);
-        pixel.g = sony2fuji::GammaConverter::removeSRGBGamma(pixel.g);
-        pixel.b = sony2fuji::GammaConverter::removeSRGBGamma(pixel.b);
-    }
+    sony2fuji::parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i) {
+            auto& pixel = image.pixels[i];
+            pixel.r = sony2fuji::GammaConverter::removeSRGBGamma(pixel.r);
+            pixel.g = sony2fuji::GammaConverter::removeSRGBGamma(pixel.g);
+            pixel.b = sony2fuji::GammaConverter::removeSRGBGamma(pixel.b);
+        }
+    });
 
     *is_linear = true;
     return SONY2FUJI_STATUS_OK;
@@ -1757,17 +1764,28 @@ sony2fuji_status loadBufferImage(
     const size_t pixelBytes = rgba16 ? 8 : request.input_pixel_format == SONY2FUJI_PIXEL_RGBA8 ? 4 : 3;
     const auto read16 = [](const uint8_t* p) { return (p[0] | (p[1] << 8)) / 65535.0f; };
 
-    for (size_t i = 0; i < image.pixels.size(); ++i) {
-        if (i % 4096 == 0) sony2fuji::checkProcessingCancellation();
-        const auto* pixel = data + i * pixelBytes;
-        if (rgba16) {
-            if (pixel[6] != 255 || pixel[7] != 255) return SONY2FUJI_STATUS_UNSUPPORTED;
-            image.pixels[i] = {read16(pixel), read16(pixel + 2), read16(pixel + 4)};
-        } else {
-            if (request.input_type == SONY2FUJI_INPUT_DISPLAY_BUFFER && pixelBytes == 4 && pixel[3] != 255)
-                return SONY2FUJI_STATUS_UNSUPPORTED;
-            image.pixels[i] = {pixel[0] / 255.0f, pixel[1] / 255.0f, pixel[2] / 255.0f};
+    std::atomic<bool> unsupported{false};
+    sony2fuji::parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
+        if (unsupported.load(std::memory_order_acquire)) return;
+        for (size_t i = first; i < last; ++i) {
+            const auto* pixel = data + i * pixelBytes;
+            if (rgba16) {
+                if (pixel[6] != 255 || pixel[7] != 255) {
+                    unsupported.store(true, std::memory_order_release);
+                    return;
+                }
+                image.pixels[i] = {read16(pixel), read16(pixel + 2), read16(pixel + 4)};
+            } else {
+                if (request.input_type == SONY2FUJI_INPUT_DISPLAY_BUFFER && pixelBytes == 4 && pixel[3] != 255) {
+                    unsupported.store(true, std::memory_order_release);
+                    return;
+                }
+                image.pixels[i] = {pixel[0] / 255.0f, pixel[1] / 255.0f, pixel[2] / 255.0f};
+            }
         }
+    });
+    if (unsupported.load(std::memory_order_acquire)) {
+        return SONY2FUJI_STATUS_UNSUPPORTED;
     }
 
     if (space) {
@@ -1829,19 +1847,20 @@ sony2fuji_status writeOutputBuffer(
     }
 
     uint8_t* dst = static_cast<uint8_t*>(buffer.get());
-    for (int y = 0; y < image.height; ++y) {
-        sony2fuji::checkProcessingCancellation();
-        for (int x = 0; x < image.width; ++x) {
-            const sony2fuji::RGB& pixel = image.at(x, y);
-            size_t offset = static_cast<size_t>(y) * stride + static_cast<size_t>(x) * channels;
-            dst[offset] = static_cast<uint8_t>(clampFloat(pixel.r, 0.0f, 1.0f) * 255.0f + 0.5f);
-            dst[offset + 1] = static_cast<uint8_t>(clampFloat(pixel.g, 0.0f, 1.0f) * 255.0f + 0.5f);
-            dst[offset + 2] = static_cast<uint8_t>(clampFloat(pixel.b, 0.0f, 1.0f) * 255.0f + 0.5f);
-            if (channels == 4) {
-                dst[offset + 3] = 255;
+    sony2fuji::parallelRowRanges(image.height, image.width, [&](int firstRow, int lastRow) {
+        for (int y = firstRow; y < lastRow; ++y) {
+            for (int x = 0; x < image.width; ++x) {
+                const sony2fuji::RGB& pixel = image.at(x, y);
+                size_t offset = static_cast<size_t>(y) * stride + static_cast<size_t>(x) * channels;
+                dst[offset] = static_cast<uint8_t>(clampFloat(pixel.r, 0.0f, 1.0f) * 255.0f + 0.5f);
+                dst[offset + 1] = static_cast<uint8_t>(clampFloat(pixel.g, 0.0f, 1.0f) * 255.0f + 0.5f);
+                dst[offset + 2] = static_cast<uint8_t>(clampFloat(pixel.b, 0.0f, 1.0f) * 255.0f + 0.5f);
+                if (channels == 4) {
+                    dst[offset + 3] = 255;
+                }
             }
         }
-    }
+    });
 
     out_buffer->data = buffer.release();
     out_buffer->size_bytes = total;

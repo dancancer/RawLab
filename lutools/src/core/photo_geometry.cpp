@@ -1,5 +1,5 @@
 #include "core/photo_geometry.h"
-#include "core/processing_cancellation.h"
+#include "core/parallel_pixels.h"
 
 #include <algorithm>
 #include <array>
@@ -138,23 +138,24 @@ void copyInteger(const ImageData& image, ImageData& result, const Canvas& canvas
 
 void resample(const ImageData& image, ImageData& result, const Canvas& canvas,
     const GeometryOptions& options) {
-    std::array<Point, 256> points;
-    for (int y = 0; y < result.height; ++y) {
-        checkProcessingCancellation();
-        auto* target = result.pixels.data() + size_t(y) * result.width;
-        for (int begin = 0; begin < result.width;) {
-            const int count = std::min(int(points.size()), result.width - begin);
-            // 分批计算坐标，让独立除法流水执行。
-            for (int i = 0; i < count; ++i) {
-                points[i] = transformedPoint(begin + i, y, canvas, options);
+    parallelRowRanges(result.height, result.width, [&](int firstRow, int lastRow) {
+        std::array<Point, 256> points;
+        for (int y = firstRow; y < lastRow; ++y) {
+            auto* target = result.pixels.data() + size_t(y) * result.width;
+            for (int begin = 0; begin < result.width;) {
+                const int count = std::min(int(points.size()), result.width - begin);
+                // 分批计算坐标，让独立除法流水执行。
+                for (int i = 0; i < count; ++i) {
+                    points[i] = transformedPoint(begin + i, y, canvas, options);
+                }
+                for (int i = 0; i < count; ++i)
+                    target[begin + i] = sampleBilinear(image.width, image.height,
+                        [&](int x, int y) { return image.at(x, y); },
+                        sourcePoint(points[i], canvas, options, image.width, image.height));
+                begin += count;
             }
-            for (int i = 0; i < count; ++i)
-                target[begin + i] = sampleBilinear(image.width, image.height,
-                    [&](int x, int y) { return image.at(x, y); },
-                    sourcePoint(points[i], canvas, options, image.width, image.height));
-            begin += count;
         }
-    }
+    });
 }
 
 } // namespace
