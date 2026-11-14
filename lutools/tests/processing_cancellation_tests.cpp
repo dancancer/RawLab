@@ -593,6 +593,32 @@ int main() {
                     fmt.label + " encoder checkpoint and leaves no output file";
                 check(allDirectLatched, directLatchLabel.c_str());
 
+                // The return-value encoder API has no Cancelled value, so cancellation must
+                // leave through the ProcessingCancelled type itself: a direct C++ caller
+                // observes the cancellation semantics unchanged, never a generic
+                // ErrorCode (P3-03, C-N10).
+                {
+                    const auto typeTarget = root / fmt.filename;
+                    const std::string typePath = typeTarget.u8string();
+                    std::filesystem::remove(typeTarget, cleanupError);
+                    sony2fuji::ProcessingCancellationScope alwaysCancelled(
+                        {+[](void*) -> int32_t { return 1; }, nullptr});
+                    bool cancelledTypePreserved = false;
+                    bool returnedWithoutCancellation = false;
+                    try {
+                        (void)sony2fuji::ImageEncoder::saveImage(latchImage, typePath, fmt.coreFormat, 98);
+                        returnedWithoutCancellation = true; // cancellation came back as a code
+                    } catch (const sony2fuji::ProcessingCancelled&) {
+                        cancelledTypePreserved = true;
+                    } catch (const std::exception&) {
+                        returnedWithoutCancellation = true; // a wrapped exception loses the type too
+                    }
+                    check(cancelledTypePreserved && !returnedWithoutCancellation &&
+                              !std::filesystem::exists(typeTarget) && stagingResidue(root) == 0,
+                          (std::string("Cancelled ImageEncoder::saveImage preserves the ProcessingCancelled type (") + fmt.label + ")").c_str());
+                    std::filesystem::remove(typeTarget, cleanupError);
+                }
+
                 // 2) C ABI sony2fuji_process: fire one non-zero pulse at every poll 1..total,
                 // including the pre-encoder parallel pixel stages.
                 struct TracePolls {
