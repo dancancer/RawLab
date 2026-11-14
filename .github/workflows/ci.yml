@@ -382,6 +382,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'D3D11 test build failed.' }
           ctest --test-dir build/d3d11-warp -C Release --output-on-failure --no-tests=error
           if ($LASTEXITCODE -ne 0) { throw 'D3D11 WARP regressions failed.' }
+          & ./RawLabWindows/tests/native/d3d11/check-mutations.ps1
       - name: Run standalone Windows models and runner checks
         if: needs.changes.outputs.models == 'true'
         shell: pwsh

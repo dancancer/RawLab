@@ -3,6 +3,7 @@
 #include <d3d11.h>
 #include <wrl/client.h>
 #include <chrono>
+#include <cstddef>
 #include <stdexcept>
 
 namespace sony2fuji::d3d11_test {
@@ -12,6 +13,7 @@ inline int initializationFailures = 0;
 inline HRESULT deviceStatus = S_OK;
 inline size_t largestPhotoBuffer = 0;
 inline size_t filterAllocations = 0;
+inline size_t idleFilterFloats = 0;
 inline std::chrono::steady_clock::time_point now{};
 
 inline void createDevice(Microsoft::WRL::ComPtr<ID3D11Device>& device,

@@ -68,6 +68,10 @@ hosted Windows. This narrow native exception exercises production renderer/filte
 sources with a compile-time test device factory and software adapter. Ordinary
 PR model checks retain their existing scope. WARP does not establish hardware GPU
 behavior; production builds continue to reject software adapters.
+The same run checks test sensitivity by removing buffer reuse and idle trimming
+in generated test-only source copies. Each mutation must fail at its corresponding
+resource assertion; compile errors or unrelated test failures are rejected. The
+normal backend is restored and the reuse test must pass again before the step ends.
 
 ## Execution Procedure
 

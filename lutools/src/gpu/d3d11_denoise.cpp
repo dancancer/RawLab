@@ -61,6 +61,9 @@ class Device final : public FilterDevice {
         desc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED; desc.StructureByteStride = sizeof(float);
         D3D11_SUBRESOURCE_DATA data{}; data.pSysMem = input;
         checked(device->CreateBuffer(&desc, input ? &data : nullptr, &buffer->data));
+#if defined(RAWLAB_D3D11_TESTING)
+        ++d3d11_test::filterAllocations;
+#endif
         checked(device->CreateShaderResourceView(buffer->data.Get(), nullptr, &buffer->srv));
         checked(device->CreateUnorderedAccessView(buffer->data.Get(), nullptr, &buffer->uav));
         return buffer;
@@ -68,7 +71,14 @@ class Device final : public FilterDevice {
     struct TrimContext final : FilterContext {
         FilterBufferPool* pool = nullptr;
         explicit TrimContext(FilterBufferPool* p) : pool(p) {}
-        ~TrimContext() override { if (pool) pool->trimIdleToBudget(); }
+        ~TrimContext() override {
+            if (pool) {
+                pool->trimIdleToBudget();
+#if defined(RAWLAB_D3D11_TESTING)
+                d3d11_test::idleFilterFloats = pool->idleFloats();
+#endif
+            }
+        }
     };
 public:
     void initialize() {
