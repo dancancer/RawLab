@@ -20,7 +20,7 @@
 | WP-08 | Windows 启动清扫防崩、内嵌预览兜底、坏预设展示（完成-05、完成-23、E） | 1 | PR #288 **已合入**（`a3b23e11`，CI 7/7）；**✅ 复核通过**（2026-11-14）：`TempCleanup` 异常全隔离（CI `[usage]` 实跑）、`PumpEmbedded` 非致命异常兜底、`AdjustmentPresetDialogs` 坏/未来预设展示与删除全部闭环 |
 | WP-09 | Windows 更新器启动失败回退（完成-27，并入 S6 更新器矩阵） | 2 | PR #294 **已合入**（`4ce99b5f`）；**✅ 复核通过**（2026-11-14）：`!dispatched` 启动失败回退 `ReadyToInstall` 并解锁编辑、清理备份，回退落盘失败时保守保留 `Installing` 门禁 |
 | WP-10 | Android 相机三合包（完成-07/15/16）；与 P1-23/P1-25 共用 `CameraImportStore.kt`，按集成规范排 owner | 2 | PR #296 **已合入**（`f72b1e8a`）；**复核：部分成立**（2026-11-14）：完成-15（联机 10k 截窗保持 `READY`）与完成-16（坏日志弹窗与丢弃）**✅ 复核通过**；完成-07 冷启动恢复 `PAUSED` 落 `CameraRoute.HOME` 无 `tether-confirm-continue` 入口且新开联机不关旧 journal |
-| WP-11 | 核心 GLES 先绑后建与跨 API 恢复（F/P3-05，并入 P3 GPU 批次） | 3 | todo |
+| WP-11 | 核心 GLES 先绑后建与跨 API 恢复（F/P3-05，并入 P3 GPU 批次） | 3 | ✅ #334（92nd，含 P3-04 Metal/GLES 退避重试） |
 
 - **完成-06 契约注记落盘**：随 P1-23(A12/Q7)/P3-47(L4) 一并写入（条件接受的前置；截至 `bcdc7c64` 尚未落盘，B 表完成-06 维持未通过）。
 - **完成-37 Mac 单文件预读**：条件接受（100 条/30 天 Q6 上限 + P3-12 兜底）。

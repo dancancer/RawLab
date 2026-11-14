@@ -71,8 +71,8 @@
 | P3-01 | C-N6 | preserveDestinationMode 是 stat 加 fchmod 的 TOCTOU，而且跟随 symlink | 低 | 复 §3.1 C-N6 | 核心 |  ✅ #331 @ 86 波已合  | `src/core/output_file_mode.h:23-27`（沿用复审） | Core·轻 | 无 | 改用 fstat 加 fchmod（对 fd 操作）；目标是 symlink 时不改链接目标的权限 |
 | P3-02 | C-N8 （X4 的 Windows 残留） | Windows staging 分支没跟 POSIX 一起改 | 低 | 复 §3.1 C-N8 | 核心（Windows） |  ✅ #331 @ 86 波已合  | `raw_processor.cpp:965-969`（`GetTempFileNameW`＋`_wfopen`） | Core·主 | Windows 环境 | Windows 上 O_EXCL 语义等价（`CREATE_NEW` 加重试）；foreign-name 保护测试在 Windows 上通过 |
 | P3-03 | C-N10 | ProcessingCancelled 经 ImageEncoder 的返回值漏到 C++ 调用方 | 低 | 复 §3.1 C-N10 | 核心 |  ✅ #331 @ 86 波已合  | 沿用复审 `raw_processor.cpp:1176-1177,1282-1283` | Core·轻 | 无 | ErrorCode 增加 Cancelled，或在编码器边界转换；grep 确认没有绕过 FFI 直接调编码器的地方 |
-| P3-04 | G-N3 | Metal 和 GLES 独立 LUT 上下文初始化失败后被永久缓存 | 低 | 复 §3.2 G-N3 | 核心 |  🚧 #334 评审中  | 沿用复审 `metal_lut.mm:39-67`、`gles_lut.cpp:219-223` | Core·轻 | 无 | 瞬时失败后可以按退避重试 |
-| P3-05 | G-N4 | 三处 EGL Binding RAII 的恢复顺序有问题 | 低 | 复 §3.2 G-N4 | 核心（Android） |  🚧 #334 评审中  | `gles_lut.cpp:110`（Binding 结构）等三处 | Core·轻 | 无 | 先恢复 API 再恢复 context；stub 测试覆盖“当前线程是另一种 client API”的分支 |
+| P3-04 | G-N3 | Metal 和 GLES 独立 LUT 上下文初始化失败后被永久缓存 | 低 | 复 §3.2 G-N3 | 核心 | ✅ #334（第 92 个合入，退避重试） | 沿用复审 `metal_lut.mm:39-67`、`gles_lut.cpp:219-223` | Core·轻 | 无 | 瞬时失败后可以按退避重试 |
+| P3-05 | G-N4 | 三处 EGL Binding RAII 的恢复顺序有问题 | 低 | 复 §3.2 G-N4 | 核心（Android） | ✅ #334（第 92 个合入，先 API 后 ctx+stub） | `gles_lut.cpp:110`（Binding 结构）等三处 | Core·轻 | 无 | 先恢复 API 再恢复 context；stub 测试覆盖“当前线程是另一种 client API”的分支 |
 | P3-06 | G-N5 | metal_stats 的 catch 收窄后留下逃逸窗口 | 低 | 复 §3.2 G-N5 | 核心（Apple） |  ✅ #331 @ 86 波已合  | 沿用复审 `metal_stats.mm:240-262` | Core·轻 | 无 | 恢复 catch(...) 兜底 |
 | P3-07 | G-N9 | `applyLutMetal` 用 uint32 记像素数，超过 4G 像素时截断 | 低 | 复 §3.2 G-N9 | 核心 | 未修 | 沿用复审 `metal_lut.mm:168` | Core·轻 | 无 | 内部入口在超过 UINT32_MAX 时拒绝 |
 | P3-08 | G-N10 | X3F bridge 的 panic 载荷被丢弃 | 低 | 复 §3.2 G-N10 | 核心 | 未修 | 沿用复审 `x3f-bridge/src/lib.rs:220-222` | Core·轻 | 无 | panic 信息透传到错误文本 |
