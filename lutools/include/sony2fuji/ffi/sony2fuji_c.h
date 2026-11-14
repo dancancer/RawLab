@@ -616,7 +616,10 @@ sony2fuji_status sony2fuji_session_set_ai_denoise(sony2fuji_session* session, co
 // Missing/corrupt results make process/export return AI_NOT_READY; process never starts inference or silently disables AI.
 // Cancellation: the AI progress callback returning 0 and the session cancellation callback
 // (sony2fuji_session_set_cancellation_callback) are equivalent channels; with progress==nullptr the session
-// callback is the only one. A cancelled prepare returns CANCELLED and publishes no new AI cache file.
+// callback is the only one. A cancelled prepare returns CANCELLED without publishing the final renderable
+// AI cache (.scenecache/.rgbcache stay unpublished, so process/export still return AI_NOT_READY); the
+// reusable Bayer first-stage .rawcache may remain on disk. Every publish-time check runs in beforePublish,
+// strictly before the rename commit point.
 sony2fuji_status sony2fuji_session_prepare_ai(sony2fuji_session* session, const sony2fuji_request* request,
     sony2fuji_ai_progress_callback progress, void* context);
 // Valid until the next AI operation on this session. Always returns a non-null string.

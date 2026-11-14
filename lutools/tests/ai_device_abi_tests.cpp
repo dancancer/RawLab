@@ -1,5 +1,6 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include <nlohmann/json.hpp>
+#include <atomic>
 #include <cstddef>
 #include <iostream>
 #include <stdexcept>
@@ -42,13 +43,24 @@ int main() {
                     diag.at("native_status") == SONY2FUJI_STATUS_PROCESSING_ERROR,
                     "Foreign exception in sony2fuji_session_prepare_ai progress callback escaped or lost diagnostics");
 
-            // P2-15/C10：progress==nullptr 时，仅会话取消回调也必须能进入 AI prepare 的
-            // 公共取消链（Loading notify 的桥接是第一道 tile 前检查点）。
+            // P2-15/C10 场景 1：常驻返回 1 + progress==nullptr——第 1 次轮询即入口预检抛
+            // ProcessingCancelled，覆盖 scope 安装、入口预检与 ProcessingCancelled→CANCELLED
+            // 映射（不覆盖 progress 桥接，见场景 2）。
             sony2fuji_session_set_cancellation_callback(session,
                 [](void*) -> int32_t { return 1; }, nullptr);
             const auto cancelledStatus = sony2fuji_session_prepare_ai(session, &req, nullptr, nullptr);
             require(cancelledStatus == SONY2FUJI_STATUS_CANCELLED,
                     "Session cancellation callback did not cancel sony2fuji_session_prepare_ai");
+            // 场景 2：倒计时 2——第 1 次轮询放过入口预检，第 2 次在 ensurePackage 之前的
+            // Loading notify 命中 !processingCancellation.cancelled() 桥接，经 notify 抛
+            // ai::Cancelled → CANCELLED（polls 归零证明桥接确实被轮询，而非只打了预检）。
+            std::atomic<int> polls{2};
+            sony2fuji_session_set_cancellation_callback(session, [](void* context) -> int32_t {
+                return static_cast<std::atomic<int>*>(context)->fetch_sub(1) <= 1;
+            }, &polls);
+            const auto loadingStatus = sony2fuji_session_prepare_ai(session, &req, nullptr, nullptr);
+            require(loadingStatus == SONY2FUJI_STATUS_CANCELLED && polls.load() == 0,
+                    "Countdown cancellation never reached the AI prepare Loading progress bridge");
             // 反向契约：空闲回调不得把 AI prepare 误报成取消（与未接线时的基线行为一致）。
             sony2fuji_session_set_cancellation_callback(session,
                 [](void*) -> int32_t { return 0; }, nullptr);
