@@ -132,3 +132,4 @@
 - 2026-11-14 · 审批策略网页实锤（用户核实）：**first-time contributors 档**，非建议的 all external contributors——首次贡献者一次获批后其后续 PR 永久自动跑，「审一次定终身」，对外部贡献者的恶意化场景门槛失效。h 表 WP-01 口径冲突已了结（改记实锤）；拨档动作仍开放（5 秒网页操作），V-JIT 生产切换演练时一并做。
 - 2026-11-14 · #313 二轮交卷（`f516f038`）：5B 全修先红后绿（漏源仅 hdr-transfer.sh 一处；B5 的 CI 覆盖表述已按 #314 教训改准确），presets 205/look 82/JVM 674、CI 全绿。二轮碳审在途（review-mwfwhfeh，独立复核「仅一处漏源」论断）。
 - 2026-11-14 · #310 三轮碳审 request-changes（4B→2B 收敛中）：iOS 锚点同构与账本设计已过；剩 B1=批量 .renderedDNG 在 picker 成功前记账（取消另存→原片+产物双灭失，Critical）、B2=Android legacy boundary 回落与 migrateLegacyBoundary 条件不同构。r4 已派 q6 crew（两条窄修+先红）。评审「未真正成功即登记」正是上轮审核词预留的 Blocking 级判据，命中。
+- 2026-11-14 · #310 四轮交卷（`c48f668c`）：批量 renderedDNG 记账挪至 picker 成功（纯函数 renderedDNGEvidenceIdentifiers 可测）；Android legacy boundary 只保自身不污染 seen（宁多留）。CI 7/7、retention 19 PASS。四轮碳审在途（review-mwfx1cx9，放行标准=仅剩保守残余）。
