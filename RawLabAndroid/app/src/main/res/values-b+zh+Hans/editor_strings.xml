@@ -378,6 +378,8 @@
     <string name="preset_save">"保存预设"</string>
     <string name="preset_save_as">"另存"</string>
     <string name="preset_scope">"调整范围"</string>
+    <string name="preset_unreadable_name">"损坏的预设"</string>
+    <string name="preset_unreadable_note">"无法读取此条目，原文已保留"</string>
     <string name="processing_migration_completed">"已自动升级，原设置已保留。"</string>
     <string name="processing_migration_kept">"画面差异较大，已保留旧版本。"</string>
     <string name="processing_migration_matching">"正在匹配原画面…"</string>

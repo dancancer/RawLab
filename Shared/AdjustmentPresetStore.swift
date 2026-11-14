@@ -3,7 +3,15 @@ import Darwin
 
 enum AdjustmentPresetError: Error, Equatable {
     case emptyName, corruptLibrary, unsupportedVersion, changed, identityCollision
-    case duplicateName(AdjustmentPreset)
+    // 同名预设可能只是读不懂的坏条目（拿不到可覆盖对象），因此允许 nil。
+    case duplicateName(AdjustmentPreset?)
+}
+
+// 读不懂的条目：只隔离自己，身份尽力保留，原文逐字节留到可以删除为止。
+struct UnreadablePreset: Equatable {
+    let id: String?
+    let name: String?
+    let json: String
 }
 
 struct AdjustmentPreset: Codable, Equatable, Identifiable {
@@ -47,25 +55,11 @@ struct AdjustmentPreset: Codable, Equatable, Identifiable {
 }
 
 final class AdjustmentPresetStore {
-    private struct Registry: Codable {
-        var version = 1
+    private struct Registry {
         var presets: [AdjustmentPreset] = []
         var retiredIDs: [String] = []
-        enum CodingKeys: String, CodingKey { case version = "registry_version", presets; case retiredIDs = "retired_ids" }
+        var unreadable: [UnreadablePreset] = []
         init() {}
-        init(from decoder: Decoder) throws {
-            try PresetCodingKey.requireKeys(decoder, ["registry_version", "presets"], optional: ["retired_ids"])
-            let values = try decoder.container(keyedBy: CodingKeys.self)
-            version = try values.decode(Int.self, forKey: .version)
-            guard version == 1 else { throw AdjustmentPresetError.unsupportedVersion }
-            presets = try values.decode([AdjustmentPreset].self, forKey: .presets)
-            retiredIDs = values.contains(.retiredIDs) ? try values.decode([String].self, forKey: .retiredIDs) : []
-            guard Set(presets.map(\.id)).count == presets.count,
-                  Set(presets.map(\.name)).count == presets.count,
-                  Set(retiredIDs).count == retiredIDs.count,
-                  retiredIDs.allSatisfy({ UUID(uuidString: $0)?.uuidString.lowercased() == $0 }),
-                  Set(retiredIDs).isDisjoint(with: presets.map(\.id)) else { throw AdjustmentPresetError.corruptLibrary }
-        }
     }
 
     static var defaultDirectory: URL {
@@ -86,6 +80,7 @@ final class AdjustmentPresetStore {
     }
 
     func list() throws -> [AdjustmentPreset] { try read().presets }
+    func listUnreadable() throws -> [UnreadablePreset] { try read().unreadable }
 
     func create(name: String, payload: AdjustmentTransferPayload) throws -> AdjustmentPreset {
         let name = try validatedName(name)
@@ -98,7 +93,8 @@ final class AdjustmentPresetStore {
                 let candidate = makeID()
                 if UUID(uuidString: candidate)?.uuidString.lowercased() == candidate,
                    !registry.retiredIDs.contains(candidate),
-                   !registry.presets.contains(where: { $0.id == candidate }) { id = candidate; break }
+                   !registry.presets.contains(where: { $0.id == candidate }),
+                   !registry.unreadable.contains(where: { $0.id == candidate }) { id = candidate; break }
             }
             guard let id else { throw AdjustmentPresetError.identityCollision }
             let now = max(0, clock())
@@ -123,7 +119,23 @@ final class AdjustmentPresetStore {
             var registry = try read()
             let index = try matchingIndex(expected, in: registry)
             registry.presets.remove(at: index)
-            registry.retiredIDs.append(expected.id)
+            // 坏条目仍占用的 ID 不登记 retired：retired ∩ 条目 ID 会让整库下次读取失效。
+            if !registry.unreadable.contains(where: { $0.id == expected.id }) { registry.retiredIDs.append(expected.id) }
+            try write(registry)
+        }
+    }
+
+    // 删除读不懂的条目：按 ID + 原文精确匹配，防止误删同名或同 ID 的另一条。
+    func delete(_ expected: UnreadablePreset) throws {
+        try withWriteLock {
+            var registry = try read()
+            guard let index = registry.unreadable.firstIndex(where: { $0.id == expected.id && $0.json == expected.json })
+            else { throw AdjustmentPresetError.changed }
+            let removed = registry.unreadable.remove(at: index)
+            // 与 Windows 同守：ID 仍被占用或已在 retired_ids 中都不再追加，重复退休 ID 会废掉整库。
+            let stillUsed = registry.presets.contains { $0.id == removed.id } || registry.unreadable.contains { $0.id == removed.id }
+            if let id = removed.id, UUID(uuidString: id)?.uuidString.lowercased() == id,
+               !stillUsed, !registry.retiredIDs.contains(id) { registry.retiredIDs.append(id) }
             try write(registry)
         }
     }
@@ -166,22 +178,91 @@ final class AdjustmentPresetStore {
         if let existing = registry.presets.first(where: { $0.id != id && $0.name == name }) {
             throw AdjustmentPresetError.duplicateName(existing)
         }
+        // 坏条目的名字保留：宁可提示重名，也不悄悄造出两条同名预设。
+        if registry.unreadable.contains(where: { $0.name == name }) { throw AdjustmentPresetError.duplicateName(nil) }
     }
     private func read() throws -> Registry {
         guard FileManager.default.fileExists(atPath: file.path) else { return Registry() }
-        let data = try Data(contentsOf: file)
-        do {
-            try PresetCodingKey.requireIntegerMetadata(data)
-            return try JSONDecoder().decode(Registry.self, from: data)
-        }
+        let bytes = Array(try Data(contentsOf: file))
+        let root: PresetJSONNode
+        do { root = try PresetJSONScanner.scan(bytes) }
         catch let error as AdjustmentPresetError { throw error }
-        catch AdjustmentTransferError.unsupportedVersion { throw AdjustmentPresetError.unsupportedVersion }
         catch { throw AdjustmentPresetError.corruptLibrary }
+        // 文件级失败（语法、根结构、版本、retired_ids、有效条目身份冲突）仍让整库不可用。
+        guard case let .object(members, ownDuplicate) = root.value, !ownDuplicate else { throw AdjustmentPresetError.corruptLibrary }
+        let keys = Set(members.map(\.key))
+        guard keys.isSuperset(of: ["registry_version", "presets"]),
+              keys.isSubset(of: ["registry_version", "presets", "retired_ids"]) else { throw AdjustmentPresetError.corruptLibrary }
+        guard case let .number(versionLiteral)? = members.first(where: { $0.key == "registry_version" })?.value.value,
+              PresetJSONScanner.isIntegerLiteral(versionLiteral) else { throw AdjustmentPresetError.corruptLibrary }
+        guard Int64(versionLiteral) != nil else { throw AdjustmentPresetError.corruptLibrary }
+        guard Int64(versionLiteral) == 1 else { throw AdjustmentPresetError.unsupportedVersion }
+        guard case let .array(elements)? = members.first(where: { $0.key == "presets" })?.value.value else { throw AdjustmentPresetError.corruptLibrary }
+        var registry = Registry()
+        if let retiredNode = members.first(where: { $0.key == "retired_ids" }) {
+            guard case let .array(items) = retiredNode.value.value else { throw AdjustmentPresetError.corruptLibrary }
+            var ids: [String] = []
+            for item in items {
+                guard case let .string(value) = item.value, UUID(uuidString: value)?.uuidString.lowercased() == value else { throw AdjustmentPresetError.corruptLibrary }
+                ids.append(value)
+            }
+            guard Set(ids).count == ids.count else { throw AdjustmentPresetError.corruptLibrary }
+            registry.retiredIDs = ids
+        }
+        // 单条目损坏只降级这一条：跳过并计入 unreadable，其余照常可用。
+        for element in elements {
+            switch decodeEntry(element, bytes) {
+            case let .valid(preset): registry.presets.append(preset)
+            case let .unreadable(bad): registry.unreadable.append(bad)
+            }
+        }
+        guard Set(registry.presets.map(\.id)).count == registry.presets.count,
+              Set(registry.presets.map(\.name)).count == registry.presets.count,
+              !registry.presets.contains(where: { registry.retiredIDs.contains($0.id) }) else { throw AdjustmentPresetError.corruptLibrary }
+        return registry
+    }
+    private enum EntryOutcome { case valid(AdjustmentPreset), unreadable(UnreadablePreset) }
+    private func decodeEntry(_ element: PresetJSONNode, _ bytes: [UInt8]) -> EntryOutcome {
+        var id: String?, name: String?
+        if case let .object(members, _) = element.value {
+            if case let .string(value)? = members.first(where: { $0.key == "id" })?.value.value { id = value }
+            if case let .string(value)? = members.first(where: { $0.key == "name" })?.value.value { name = value }
+        }
+        if case .object = element.value, !element.hasDuplicateKey, timestampsAreIntegers(element),
+           let preset = try? JSONDecoder().decode(AdjustmentPreset.self, from: Data(bytes[element.range])) {
+            return .valid(preset)
+        }
+        return .unreadable(UnreadablePreset(id: id, name: name, json: String(decoding: bytes[element.range], as: UTF8.self)))
+    }
+    // JSONDecoder 会把高精度小数舍入为 Int64；条目时间只接受整数字面量（Windows 同语义）。
+    private func timestampsAreIntegers(_ node: PresetJSONNode) -> Bool {
+        switch node.value {
+        case let .object(members, _):
+            for member in members {
+                if member.key == "created_at" || member.key == "updated_at" {
+                    guard case let .number(literal) = member.value.value, PresetJSONScanner.isIntegerLiteral(literal) else { return false }
+                }
+                guard timestampsAreIntegers(member.value) else { return false }
+            }
+        case let .array(items):
+            for item in items { guard timestampsAreIntegers(item) else { return false } }
+        case .string, .number, .boolean, .null: break
+        }
+        return true
     }
     private func write(_ registry: Registry) throws {
         for preset in registry.presets { try preset.validate() }
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
-        try writeData(encoder.encode(registry), file)
+        // 有效条目按现行紧凑格式编码；坏条目以原文拼接在末尾，键序与空白逐字节保留。
+        var pieces: [Data] = []
+        for preset in registry.presets { pieces.append(try encoder.encode(preset)) }
+        for bad in registry.unreadable { pieces.append(Data(bad.json.utf8)) }
+        var out = Data("{\"presets\":[".utf8)
+        for (index, piece) in pieces.enumerated() { if index > 0 { out.append(UInt8(0x2C)) }; out.append(piece) }
+        out.append(Data("],\"registry_version\":1,\"retired_ids\":".utf8))
+        out.append(try encoder.encode(registry.retiredIDs))
+        out.append(UInt8(0x7D))
+        try writeData(out, file)
     }
     private func withWriteLock<T>(_ body: () throws -> T) throws -> T {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -203,48 +284,5 @@ private struct PresetCodingKey: CodingKey {
         let values = try decoder.container(keyedBy: Self.self)
         let keys = Set(values.allKeys.map(\.stringValue))
         guard keys.isSuperset(of: required), keys.isSubset(of: required.union(optional)) else { throw AdjustmentPresetError.corruptLibrary }
-    }
-
-    static func requireIntegerMetadata(_ data: Data) throws {
-        // JSONDecoder 会把部分高精度小数舍入为 Int64；时间和版本只接受整数字面量。
-        let bytes = Array(data), keys: Set<String> = ["registry_version", "created_at", "updated_at"]
-        let whitespace: Set<UInt8> = [9, 10, 13, 32]
-        let delimiters = whitespace.union([44, 93, 125])
-        var index = 0
-        var objectKeys: [Set<String>] = []
-        while index < bytes.count {
-            // Foundation 也接受尾逗号；持久化合同只接受标准 JSON。
-            if bytes[index] == 44 {
-                var next = index + 1
-                while next < bytes.count && whitespace.contains(bytes[next]) { next += 1 }
-                guard next < bytes.count, bytes[next] != 93, bytes[next] != 125 else { throw AdjustmentPresetError.corruptLibrary }
-            }
-            if bytes[index] == 123 { objectKeys.append([]) }
-            if bytes[index] == 125, !objectKeys.isEmpty { objectKeys.removeLast() }
-            guard bytes[index] == 34 else { index += 1; continue }
-            let start = index
-            index += 1
-            while index < bytes.count && bytes[index] != 34 {
-                index += bytes[index] == 92 ? 2 : 1
-            }
-            guard index < bytes.count else { throw AdjustmentPresetError.corruptLibrary }
-            index += 1
-            let end = index
-            while index < bytes.count && whitespace.contains(bytes[index]) { index += 1 }
-            guard index < bytes.count && bytes[index] == 58 else { continue }
-            let key = try JSONDecoder().decode(String.self, from: Data(bytes[start..<end]))
-            guard !objectKeys.isEmpty, objectKeys[objectKeys.count - 1].insert(key).inserted else {
-                throw AdjustmentPresetError.corruptLibrary
-            }
-            guard keys.contains(key) else { continue }
-            index += 1
-            while index < bytes.count && whitespace.contains(bytes[index]) { index += 1 }
-            let valueStart = index
-            while index < bytes.count && !delimiters.contains(bytes[index]) { index += 1 }
-            let token = bytes[valueStart..<index]
-            let digits = token.first == 45 ? token.dropFirst() : token[...]
-            guard !digits.isEmpty, digits.allSatisfy({ (48...57).contains($0) }),
-                  Int64(String(decoding: token, as: UTF8.self)) != nil else { throw AdjustmentPresetError.corruptLibrary }
-        }
     }
 }

@@ -378,6 +378,8 @@
     <string name="preset_save">"プリセットを保存"</string>
     <string name="preset_save_as">"別名で保存"</string>
     <string name="preset_scope">"調整範囲"</string>
+    <string name="preset_unreadable_name">"破損したプリセット"</string>
+    <string name="preset_unreadable_note">"この項目は読み込めませんでしたが、原文は保持されています。"</string>
     <string name="processing_migration_completed">"自動更新しました。元の設定は保存されています。"</string>
     <string name="processing_migration_kept">"見た目の差が大きいため、以前のバージョンを維持しています。"</string>
     <string name="processing_migration_matching">"元の見た目に合わせています…"</string>

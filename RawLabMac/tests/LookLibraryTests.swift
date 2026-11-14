@@ -174,6 +174,118 @@ struct LookLibraryTests {
         rejects("corrupt registry is reported rather than replaced with empty state") { _ = try LookLibrary(directory: brokenDirectory) }
         check(try Data(contentsOf: brokenRegistry) == brokenBytes, "corrupt registry remains available for recovery")
 
+        // P2-16 “1 坏 + 2 好”：单条目损坏只降级这一条，原文保留并可精确删除。
+        let mixedDirectory = root.appendingPathComponent("mixed-looks", isDirectory: true)
+        try manager.createDirectory(at: mixedDirectory, withIntermediateDirectories: true)
+        let mixed = try LookLibrary(directory: mixedDirectory)
+        let keepNative = try mixed.importLook(from: native)
+        let mixedCube = root.appendingPathComponent("mixed-a.cube")
+        try cube(at: mixedCube)
+        let keepCube = try mixed.importLook(from: mixedCube)
+        let mixedRegistry = mixedDirectory.appendingPathComponent("registry.json")
+        let badEntry = #"{"color_state":null,"file_name":"mismatch.cube","format":"cube","format_version":0,"id":"7C9E1B12-45A5-4E2F-9C3D-1B2A3C4D5E6F","name":"Bad look","source_name":"bad.cube"}"#
+        try String(contentsOf: mixedRegistry, encoding: .utf8)
+            .replacingOccurrences(of: "\"looks\" : [\n", with: "\"looks\" : [\n    " + badEntry + ",\n")
+            .write(to: mixedRegistry, atomically: true, encoding: .utf8)
+        let reloadedMixed = try LookLibrary(directory: mixedDirectory)
+        check(reloadedMixed.looks.map(\.id) == [keepNative.id, keepCube.id], "one bad look never blocks the readable looks")
+        check(reloadedMixed.unreadableLooks.count == 1
+              && reloadedMixed.unreadableLooks[0].id == "7C9E1B12-45A5-4E2F-9C3D-1B2A3C4D5E6F"
+              && reloadedMixed.unreadableLooks[0].fileName == "mismatch.cube",
+              "bad look is kept as an unreadable record with identity")
+        try reloadedMixed.rename(id: keepNative.id, to: "Renamed survivor")
+        check(try String(contentsOf: mixedRegistry, encoding: .utf8).contains(badEntry), "rename passes the unreadable look record through unchanged")
+        let badRecord = reloadedMixed.unreadableLooks[0]
+        try reloadedMixed.remove(badRecord)
+        let afterRemoval = try String(contentsOf: mixedRegistry, encoding: .utf8)
+        let survivorIDs = try LookLibrary(directory: mixedDirectory).looks.map(\.id)
+        check(!afterRemoval.contains(badEntry) && survivorIDs == [keepNative.id, keepCube.id],
+              "bad look can be removed and the library keeps the readable looks")
+        rejects("already removed bad look needs a fresh confirmation") { try reloadedMixed.remove(badRecord) }
+
+        // 红锚点 B3：坏条目的 file_name 可能恰好指向存活文件——删除前须校验安全路径与文件归属。
+        let ownershipDirectory = root.appendingPathComponent("ownership-looks", isDirectory: true)
+        try manager.createDirectory(at: ownershipDirectory, withIntermediateDirectories: true)
+        let ownership = try LookLibrary(directory: ownershipDirectory)
+        let ownedSource = root.appendingPathComponent("owned.cube")
+        try cube(at: ownedSource)
+        let owned = try ownership.importLook(from: ownedSource)
+        let orphanName = "11111111-2222-3333-4444-555555555555.cube"
+        try Data("orphan".utf8).write(to: ownershipDirectory.appendingPathComponent(orphanName))
+        // r2 红锚点 B3/S5：APFS 默认大小写不敏感——坏条目 file_name 的大小写变体指向同一实体
+        // 文件，归属判重必须折叠大小写（Windows #314 同用 OrdinalIgnoreCase）；共享文件只在
+        // 最后一条引用删除后清理；非 UUID 遗留名、同名目录与 registry 自身不得被顺带删除。
+        let sharedName = "9f1e2d3c-4b5a-4678-9abc-def012345678.cube"
+        let dirName = "5a4b3c2d-1e6f-4789-abcd-ef0123456789.cube"
+        try Data("shared".utf8).write(to: ownershipDirectory.appendingPathComponent(sharedName))
+        try Data("legacy".utf8).write(to: ownershipDirectory.appendingPathComponent("legacy.cube"))
+        try manager.createDirectory(at: ownershipDirectory.appendingPathComponent(dirName), withIntermediateDirectories: true)
+        let ownedRegistry = ownershipDirectory.appendingPathComponent("registry.json")
+        func ghostEntry(_ fileName: String, _ id: String, _ name: String) -> String {
+            #"{"file_name":"\#(fileName)","format":"cube","format_version":0,"id":"\#(id)","name":"\#(name)","source_name":"\#(name).cube"}"#
+        }
+        let ghostBlock = [
+            ghostEntry(owned.fileName, "7C9E1B12-45A5-4E2F-9C3D-1B2A3C4D5E6F", "Shadow"),
+            ghostEntry(orphanName, "8D9F2C23-56B7-4F8A-9E10-213243546576", "Orphan"),
+            ghostEntry("\(owned.id).CUBE", "7E0A3D34-67C8-409B-8F21-324354657687", "UpperExt"),
+            ghostEntry("\(owned.id.lowercased()).cube", "6D1B4E45-78D9-4A0C-9032-435465768798", "LowerUUID"),
+            ghostEntry(sharedName, "5C2C5F56-89EA-4B1D-8143-546576879809", "TwinA"),
+            ghostEntry(sharedName, "4B3D6067-9AFB-4C2E-9254-657687980910", "TwinB"),
+            ghostEntry("legacy.cube", "3A4E7178-AB0C-4D3F-8365-768798091021", "Legacy"),
+            ghostEntry(dirName, "295F8289-BC1D-4E40-9476-879809102132", "DirGhost"),
+            ghostEntry("registry.json", "1860939A-CD2E-4F51-8587-980910213243", "Registryish"),
+            ghostEntry("../owned.cube", "0771A4AB-DE3F-4052-9698-091021324354", "Escape"),
+        ].map { "    " + $0 + ",\n" }.joined()
+        try String(contentsOf: ownedRegistry, encoding: .utf8)
+            .replacingOccurrences(of: "\"looks\" : [\n", with: "\"looks\" : [\n" + ghostBlock)
+            .write(to: ownedRegistry, atomically: true, encoding: .utf8)
+        let ownedLibrary = try LookLibrary(directory: ownershipDirectory)
+        func ghost(_ name: String) -> LookLibrary.UnreadableLook? {
+            ownedLibrary.unreadableLooks.first { $0.json.contains("\"name\":\"\(name)\"") }
+        }
+        if let shadow = ghost("Shadow"), let orphan = ghost("Orphan"), let upperExt = ghost("UpperExt"),
+           let lowerUUID = ghost("LowerUUID"), let twinA = ghost("TwinA"), let twinB = ghost("TwinB"),
+           let legacy = ghost("Legacy"), let dirGhost = ghost("DirGhost"),
+           let registryish = ghost("Registryish"), let escape = ghost("Escape") {
+            check(ownedLibrary.looks.map(\.id) == [owned.id] && ownedLibrary.unreadableLooks.count == 10,
+                  "ownership scenario keeps the valid look and all ten ghosts")
+            try ownedLibrary.remove(shadow)
+            check(manager.fileExists(atPath: ownedLibrary.url(for: owned).path),
+                  "removing a bad entry whose file_name shadows a live look keeps the managed file")
+            try ownedLibrary.remove(upperExt)
+            check(manager.fileExists(atPath: ownedLibrary.url(for: owned).path),
+                  "removing a ghost whose file_name only differs in extension case keeps the managed file")
+            try ownedLibrary.remove(lowerUUID)
+            check(manager.fileExists(atPath: ownedLibrary.url(for: owned).path),
+                  "removing a ghost whose file_name only differs in UUID case keeps the managed file")
+            try ownedLibrary.remove(twinA)
+            check(manager.fileExists(atPath: ownershipDirectory.appendingPathComponent(sharedName).path),
+                  "removing the first ghost sharing a managed name keeps the file for the twin")
+            try ownedLibrary.remove(twinB)
+            check(!manager.fileExists(atPath: ownershipDirectory.appendingPathComponent(sharedName).path),
+                  "the last ghost sharing a managed name cleans the orphaned file")
+            try ownedLibrary.remove(legacy)
+            check(manager.fileExists(atPath: ownershipDirectory.appendingPathComponent("legacy.cube").path),
+                  "a real non-UUID managed-style file is left to the user")
+            try ownedLibrary.remove(dirGhost)
+            check(manager.fileExists(atPath: ownershipDirectory.appendingPathComponent(dirName).path),
+                  "a directory wearing a managed file name is never moved or deleted")
+            try ownedLibrary.remove(registryish)
+            check(manager.fileExists(atPath: ownedRegistry.path), "removing a ghost never deletes the registry itself")
+            try ownedLibrary.remove(escape)
+            check(ownedLibrary.looks.map(\.id) == [owned.id] && ownedLibrary.unreadableLooks.count == 1
+                  && manager.fileExists(atPath: ownedSource.path),
+                  "a traversing file_name is dropped from the registry and touches no file")
+            try ownedLibrary.remove(orphan)
+            check(!manager.fileExists(atPath: ownershipDirectory.appendingPathComponent(orphanName).path),
+                  "removing a bad entry with its own UUID file still cleans that file")
+            check(ownedLibrary.looks.map(\.id) == [owned.id] && ownedLibrary.unreadableLooks.isEmpty
+                  && manager.fileExists(atPath: ownedLibrary.url(for: owned).path),
+                  "ownership ghosts delete independently and keep the library readable")
+        } else {
+            check(false, "ownership scenario exposes every ghost")
+        }
+
         let recoveryDirectory = root.appendingPathComponent("recovery", isDirectory: true)
         let recovering = try LookLibrary(directory: recoveryDirectory)
         let interrupted = try recovering.importLook(from: native)
@@ -194,6 +306,18 @@ struct LookLibraryTests {
         let afterCommit = try LookLibrary(directory: recoveryDirectory)
         check(afterCommit.looks.isEmpty && !manager.fileExists(atPath: stagedRemoval.path), "restart finishes a removal whose registry commit already succeeded")
         check(manager.fileExists(atPath: unrelated.path), "removal recovery ignores files without a managed UUID")
+
+        // r2 红锚点 B3：大小写不敏感卷上 `.remove-<小写id>.cube` 属于存活条目 `<大写id>.cube`，
+        // 重启必须恢复而非按「无主」删除。
+        let caseDirectory = root.appendingPathComponent("recovery-case", isDirectory: true)
+        let caseRecovering = try LookLibrary(directory: caseDirectory)
+        let caseLook = try caseRecovering.importLook(from: native)
+        try manager.moveItem(at: caseRecovering.url(for: caseLook),
+                             to: caseDirectory.appendingPathComponent(".remove-\(caseLook.fileName.lowercased())"))
+        let caseRestored = try LookLibrary(directory: caseDirectory)
+        check(caseRestored.looks.map(\.id) == [caseLook.id]
+              && manager.fileExists(atPath: caseRestored.url(for: caseLook).path),
+              "restart restores a staged removal whose name differs in case from the live entry")
 
         let dcpSource = root.appendingPathComponent("My camera look.DCP")
         let dcpBytes = DCPTestFixtures.make()

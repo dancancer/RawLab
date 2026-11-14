@@ -378,6 +378,8 @@
     <string name="preset_save">"Vorgabe speichern"</string>
     <string name="preset_save_as">"Speichern unter"</string>
     <string name="preset_scope">"Anpassungsumfang"</string>
+    <string name="preset_unreadable_name">"Beschädigte Vorgabe"</string>
+    <string name="preset_unreadable_note">"Dieser Eintrag konnte nicht gelesen werden; der Originaltext bleibt erhalten."</string>
     <string name="processing_migration_completed">"Automatisch aktualisiert. Ursprüngliche Einstellungen sind gespeichert."</string>
     <string name="processing_migration_kept">"Die Bildabweichung ist zu groß. Die bisherige Version bleibt erhalten."</string>
     <string name="processing_migration_matching">"Ursprüngliches Bild wird angeglichen…"</string>
