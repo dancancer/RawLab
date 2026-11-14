@@ -223,8 +223,9 @@ int main() {
             check(sony2fuji_session_set_processing_version(c5Session, SONY2FUJI_PROCESSING_BASIC_V3) == SONY2FUJI_STATUS_OK,
                   "Configure BASIC_V3 processing version");
             sony2fuji_wavelet_denoise_config wavelet{SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION, sizeof(wavelet), 1, 40, 46, 50};
-            check(sony2fuji_session_set_wavelet_denoise(c5Session, &wavelet) == SONY2FUJI_STATUS_OK,
-                  "Enable C5 wavelet denoise");
+            const auto waveletStatus = sony2fuji_session_set_wavelet_denoise(c5Session, &wavelet);
+#ifdef SONY2FUJI_ENABLE_WAVELET_DENOISE
+            check(waveletStatus == SONY2FUJI_STATUS_OK, "Enable C5 wavelet denoise");
             auto c5Req = r;
             c5Req.lut_path = nullptr;
             c5Req.lut_strength = 0;
@@ -238,6 +239,10 @@ int main() {
             check(!render(c5Session, c5Req, SONY2FUJI_GPU_AUTO, &c5AutoStatus).empty() &&
                       c5AutoStatus == SONY2FUJI_STATUS_OK,
                   "BasicV3 C5 wavelet retains Auto rendering");
+#else
+            check(waveletStatus == SONY2FUJI_STATUS_UNSUPPORTED,
+                  "Disabled wavelet backend rejects C5 configuration as UNSUPPORTED");
+#endif
             sony2fuji_session_destroy(c5Session);
         }
     }

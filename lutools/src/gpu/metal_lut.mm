@@ -36,34 +36,45 @@ static NSString* kShaderSource =
      "    pixels[gid] = packed_float3(out);\n"
      "}\n";
 
+bool initContext(MetalContext& context) {
+    @autoreleasepool {
+        context.device = MTLCreateSystemDefaultDevice();
+        if (!context.device) {
+            return false;
+        }
+        context.queue = [context.device newCommandQueue];
+        if (!context.queue) {
+            return false;
+        }
+        id<MTLLibrary> library = [context.device newLibraryWithSource:kShaderSource
+                                                              options:nil
+                                                                error:nil];
+        if (!library) {
+            return false;
+        }
+        id<MTLFunction> function = [library newFunctionWithName:@"apply_lut"];
+        if (!function) {
+            return false;
+        }
+        context.pipeline = [context.device newComputePipelineStateWithFunction:function error:nil];
+        context.ready = context.pipeline != nil;
+    }
+    return context.ready;
+}
+
 MetalContext* getMetalContext() {
     static MetalContext context;
-    static std::once_flag once;
-    std::call_once(once, []() {
-        @autoreleasepool {
-            context.device = MTLCreateSystemDefaultDevice();
-            if (!context.device) {
-                return;
-            }
-            context.queue = [context.device newCommandQueue];
-            if (!context.queue) {
-                return;
-            }
-            id<MTLLibrary> library = [context.device newLibraryWithSource:kShaderSource
-                                                                  options:nil
-                                                                    error:nil];
-            if (!library) {
-                return;
-            }
-            id<MTLFunction> function = [library newFunctionWithName:@"apply_lut"];
-            if (!function) {
-                return;
-            }
-            context.pipeline = [context.device newComputePipelineStateWithFunction:function error:nil];
-            context.ready = context.pipeline != nil;
+    static std::mutex mutex;
+    std::lock_guard<std::mutex> lock(mutex);
+    // 失败不缓存比 TTL 少一套计时状态；只发布完整上下文，失败的 ARC 资源随候选对象释放。
+    if (!context.ready) {
+        MetalContext candidate;
+        if (!initContext(candidate)) {
+            return nullptr;
         }
-    });
-    return context.ready ? &context : nullptr;
+        context = candidate;
+    }
+    return &context;
 }
 
 id<MTLTexture> createLutTexture(MetalContext& context, const sony2fuji::LUT3D& lut) {

@@ -142,7 +142,7 @@ EGLSurface eglCreatePbufferSurface(EGLDisplay dpy, EGLConfig config, const EGLin
 }
 
 EGLContext eglCreateContext(EGLDisplay dpy, EGLConfig config, EGLContext, const EGLint*) {
-    if (dpy == EGL_NO_DISPLAY || !config) return EGL_NO_CONTEXT;
+    if (dpy == EGL_NO_DISPLAY || !config || tls().api != EGL_OPENGL_ES_API) return EGL_NO_CONTEXT;
     auto& drv = driver();
     std::lock_guard<std::mutex> lock(drv.mutex);
     EGLContext ctx = reinterpret_cast<EGLContext>(drv.nextHandle++);
@@ -599,11 +599,14 @@ int main(int argc, char** argv) {
     using namespace sony2fuji;
     const bool initFailureMode = argc >= 2 && std::string(argv[1]) == "--init-failure";
 
+    const bool initRetryMode = argc >= 2 && std::string(argv[1]) == "--init-retry";
+
     auto lut3 = makeTestLut(3);
     auto lut5 = makeTestLut(5);
     const ImageData source = makeTestImage(64, 8);
     ImageData cpuRef = source;
     require(applyLUTWithConfig(lut3, cpuRef, {GpuMode::Off}) == ErrorCode::Success, "CPU reference render");
+    require(eglBindAPI(EGL_OPENGL_API) == EGL_TRUE, "start initialization with desktop GL API selected");
 
     if (initFailureMode) {
 #ifdef SONY2FUJI_FAKE_EGL_GLES
@@ -628,6 +631,39 @@ int main(int argc, char** argv) {
         return 0;
 #else
         std::cout << "SKIP: --init-failure requires fake EGL fault injection\n";
+        return 0;
+#endif
+    }
+
+    if (initRetryMode) {
+#ifdef SONY2FUJI_FAKE_EGL_GLES
+        // G-N3：瞬时初始化失败不得被永久缓存——故障窗口过后的下一次调用必须重试初始化。
+        driver().minorVersion = 0;
+        ImageData first = source;
+        require(applyLUTWithConfig(lut3, first, {GpuMode::Force}) == ErrorCode::ProcessingError,
+                "Force fails while transient init fault is active");
+        requireImagesClose(source, first, 0.0f, "first failed Force leaves the image untouched");
+
+        ImageData automatic = source;
+        require(applyLUTWithConfig(lut3, automatic, {GpuMode::Auto}) == ErrorCode::Success,
+                "Auto falls back to CPU while the fault window is active");
+        requireImagesClose(cpuRef, automatic, 1e-6f, "Auto CPU fallback during fault matches reference");
+
+        const auto failedContexts = driver().contexts.size();
+        driver().minorVersion = 1;  // 故障窗口过去
+        ImageData second = source;
+        require(applyLUTWithConfig(lut3, second, {GpuMode::Force}) == ErrorCode::Success,
+                "second Force retries init instead of returning the cached failure");
+        requireImagesClose(cpuRef, second, 2e-5f, "retried init renders GLES output matching CPU reference");
+        require(failedContexts == 0, "failed GLES initialization releases contexts before retry");
+        const auto nextHandle = driver().nextHandle;
+        ImageData cached = source;
+        require(applyLUTWithConfig(lut3, cached, {GpuMode::Force}) == ErrorCode::Success,
+                "successful GLES initialization remains cached");
+        require(driver().nextHandle == nextHandle, "cached GLES context is reused without new EGL handles");
+        return 0;
+#else
+        std::cout << "SKIP: --init-retry requires fake EGL fault injection\n";
         return 0;
 #endif
     }

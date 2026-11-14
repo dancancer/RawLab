@@ -125,15 +125,15 @@ struct Binding {
     Binding& operator=(const Binding&) = delete;
 
     ~Binding() {
+        // EGL_NO_CONTEXT 按当前 API 解绑：先释放 ES，再恢复调用方 API 和非空 context。
         if (bound) {
-            if (previousContext != EGL_NO_CONTEXT) {
-                eglMakeCurrent(previousDisplay, previousDraw, previousRead, previousContext);
-            } else {
-                eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-            }
+            eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         }
         if (previousApi != EGL_NONE) {
             eglBindAPI(previousApi);
+        }
+        if (bound && previousContext != EGL_NO_CONTEXT) {
+            eglMakeCurrent(previousDisplay, previousDraw, previousRead, previousContext);
         }
     }
 };
@@ -174,7 +174,11 @@ bool initContext(GlesContext& context) {
         EGL_CONTEXT_CLIENT_VERSION, 3,
         EGL_NONE
     };
-    context.context = eglCreateContext(context.display, config, EGL_NO_CONTEXT, context_attribs);
+    const auto previousApi = eglQueryAPI();
+    if (eglBindAPI(EGL_OPENGL_ES_API)) {
+        context.context = eglCreateContext(context.display, config, EGL_NO_CONTEXT, context_attribs);
+    }
+    if (previousApi != EGL_NONE) eglBindAPI(previousApi);
     if (context.context == EGL_NO_CONTEXT) {
         return false;
     }
@@ -213,13 +217,26 @@ bool initContext(GlesContext& context) {
     context.lut_loc = glGetUniformLocation(context.program, "lut");
     context.ready = context.pixel_count_loc >= 0 && context.lut_size_loc >= 0 && context.lut_loc >= 0 &&
         glGetError() == GL_NO_ERROR;
+    if (!context.ready) {
+        glDeleteProgram(context.program);
+        context.program = 0;
+    }
     return context.ready;
 }
 
 GlesContext* getGlesContext() {
     static GlesContext context;
-    static std::once_flag once;
-    std::call_once(once, [&]() { context.ready = initContext(context); });
+    // 调用方持有 gles_mutex。失败不缓存比 TTL 少一套计时状态，下一次调用即可重试；
+    // 释放失败尝试的资源，避免连续失败耗尽 EGL 资源后无法恢复。
+    if (!context.ready && !initContext(context)) {
+        if (context.context != EGL_NO_CONTEXT) {
+            eglDestroyContext(context.display, context.context);
+        }
+        if (context.surface != EGL_NO_SURFACE) {
+            eglDestroySurface(context.display, context.surface);
+        }
+        context = GlesContext{};
+    }
     return context.ready ? &context : nullptr;
 }
 

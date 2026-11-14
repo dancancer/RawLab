@@ -23,14 +23,15 @@ struct Binding final : FilterContext {
     EGLDisplay display;
     Binding(EGLDisplay d, EGLSurface surface, EGLContext context) : display(d) {
         if (!eglBindAPI(EGL_OPENGL_ES_API) || !eglMakeCurrent(d, surface, surface, context)) {
-            eglBindAPI(previousApi);
+            if (previousApi != EGL_NONE) eglBindAPI(previousApi);
             throw std::runtime_error("GLES filter context unavailable");
         }
     }
     ~Binding() override {
+        // EGL_NO_CONTEXT 按当前 API 解绑：先释放 ES，再恢复调用方 API 和非空 context。
+        eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        if (previousApi != EGL_NONE) eglBindAPI(previousApi);
         if (previousContext != EGL_NO_CONTEXT) eglMakeCurrent(previousDisplay, previousDraw, previousRead, previousContext);
-        else eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-        eglBindAPI(previousApi);
     }
 };
 struct Buffer final : FilterBuffer {
@@ -93,9 +94,10 @@ public:
         surface = eglCreatePbufferSurface(display, config, surfaceAttributes);
         const EGLint contextAttributes[] = {EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE};
         const auto previousApi = eglQueryAPI();
-        eglBindAPI(EGL_OPENGL_ES_API);
-        context = eglCreateContext(display, config, EGL_NO_CONTEXT, contextAttributes);
-        eglBindAPI(previousApi);
+        if (eglBindAPI(EGL_OPENGL_ES_API)) {
+            context = eglCreateContext(display, config, EGL_NO_CONTEXT, contextAttributes);
+        }
+        if (previousApi != EGL_NONE) eglBindAPI(previousApi);
         auto scope = activate();
         GLint major = 0, minor = 0, invocations = 0, size = 0, groups = 0, blocks = 0;
         GLint64 bytes = 0;
