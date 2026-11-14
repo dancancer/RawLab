@@ -346,8 +346,9 @@ When running the UI suites pre-release, carry `RAWLAB_REQUIRE_AX=1` so the acces
 scripts (`hdr-rendition-ui.sh`, `color-grading-input-ui.sh`, `system-menu-language.sh`) fail
 with an explicit reason instead of returning 0 with a `SKIP` for checks that did not run. The
 mixed suite `ios-reset-entry-ui.sh` is different: its 30 AX-free presentation/model assertions
-always run (in CI and locally), and `RAWLAB_REQUIRE_AX=1` there fails only the two `axTrusted`
-AX branches (via the Swift second-layer guard) if accessibility is missing.
+always run (in CI and locally), and after they finish the suite's trailing gate check fails the
+run (FAIL, no skip) when accessibility is missing with `RAWLAB_REQUIRE_AX=1`, or logs the
+gate's honest skip pair otherwise.
 
 - Apple fast models: `bash scripts/ci/apple-models.sh macos` or `ios`; no prebuilt
   C++ core or simulator is required.

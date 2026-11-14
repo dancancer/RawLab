@@ -81,7 +81,14 @@ class AxGateTests(unittest.TestCase):
                       "the iOS honest-skip line must match the gate and the models allow-list")
         self.assertIn('"::warning::" + notice', swift,
                       "the skip must keep the ::warning:: twin apple-models.sh matches on")
-        self.assertLess(swift.rindex('print("PASS: '), swift.index(SKIP_NOTICE),
+        # Ordering is the whole contract (round-2 review: assertIn alone let the
+        # pre-model FAIL slip through): the trailing gate verdict - FAIL when
+        # RAWLAB_REQUIRE_AX is set, SKIP otherwise - must sit after the last model
+        # assertion, counting both literal PASS prints and the check() helper calls.
+        last_model = max(swift.rindex('print("PASS: '), swift.rindex("try check("))
+        self.assertLess(last_model, swift.index(FAIL_REASON),
+                        "the gate FAIL must not outrun the model assertions; it would mask real failures")
+        self.assertLess(last_model, swift.index(SKIP_NOTICE),
                         "the model assertions must run before the trailing AX skip is logged")
 
 

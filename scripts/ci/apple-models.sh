@@ -18,6 +18,9 @@ ax_honest_skip_allowed() {
     local suite="$1" log="$2" known
     for known in ${AX_HONEST_SKIP_SUITES[@]+"${AX_HONEST_SKIP_SUITES[@]}"}; do
         [ "$suite" = "$known" ] || continue
+        # 只放行闸自己的两行：行首 SKIP 标记必须恰有一行且就是固定文案，::warning:: 孪生行
+        # 同场；夹带的任何其他行首 SKIP（计数>1，或固定文案缺席）仍按不变量 7 判败。
+        [ "$(grep -c -E '^[[:space:]]*SKIP([[:space:]:]|$)' "$log")" = 1 ] || return 1
         grep -qxF "$AX_GATE_SKIP_LINE" "$log" || return 1
         grep -qxF "::warning::$AX_GATE_SKIP_LINE" "$log" || return 1
         return 0

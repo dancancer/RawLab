@@ -157,6 +157,16 @@ exit 0
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertIn("logged SKIP (forbidden by CI invariant 7)", result.stderr)
 
+    def test_allowlisted_suite_still_fails_on_a_smuggled_second_skip(self):
+        # The allow-list exempts exactly the gate's own pair; a smuggled leading-SKIP
+        # line in the same log keeps the suite red (round-2 review Should-fix 2).
+        root, runner, tools = self._skip_probe_root()
+        smuggled = AX_GATE_SKIP_PAIR + "\nSKIP: simulated skipped capability"
+        result = self._run_skip_probe(root, runner, tools, "ios", smuggled,
+                                      only_for="RawLab/tests/ios-reset-entry-ui.sh")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("logged SKIP (forbidden by CI invariant 7)", result.stderr)
+
     def test_benign_skip_like_output_stays_green(self):
         root, runner, tools = self._skip_probe_root()
         benign = "\n".join((
