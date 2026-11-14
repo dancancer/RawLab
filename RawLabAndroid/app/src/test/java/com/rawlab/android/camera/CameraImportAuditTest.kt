@@ -5,6 +5,7 @@ import com.rawlab.android.camera.protocol.CameraMediaSession
 import com.rawlab.android.camera.protocol.SonyMobileSession
 import com.rawlab.android.photo.MediaPhoto
 import com.rawlab.android.photo.MediaPhotoAccess
+import com.rawlab.android.photo.MediaPhotoStat
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -105,6 +106,8 @@ class CameraImportAuditTest {
             rows.getValue(uri).copy(pending = false).also { rows[uri] = it }
         override fun inspect(uri: String): MediaPhoto? = rows[uri]?.takeIf { file(uri).isFile }
         override fun open(uri: String) = file(uri).inputStream()
+        override fun stat(uri: String): MediaPhotoStat? =
+            file(uri).takeIf { it.isFile }?.let { MediaPhotoStat(it.length(), it.lastModified()) }
         override fun remember(uri: String, size: Long, digest: String) = Unit
         override fun deletePending(uri: String) {
             if (rows[uri]?.pending == true) {

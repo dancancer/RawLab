@@ -69,6 +69,20 @@ internal class MediaPhotoLibrary(private val context: Context) : MediaPhotoAcces
     override fun open(uri: String): InputStream = resolver.openInputStream(checkedUri(uri))
         ?: throw IOException("Camera original is unavailable")
 
+    // SIZE 与 DATE_MODIFIED 是媒体库元数据列，查询不触碰文件内容；DATE_MODIFIED 为秒级精度。
+    override fun stat(uri: String): MediaPhotoStat? {
+        if (Build.VERSION.SDK_INT < 29) return null
+        @Suppress("DEPRECATION")
+        val pendingAware = MediaStore.setIncludePending(checkedUri(uri))
+        return runCatching {
+            resolver.query(pendingAware, arrayOf(MediaStore.Images.Media.SIZE, MediaStore.Images.Media.DATE_MODIFIED),
+                null, null, null)?.use { cursor ->
+                if (!cursor.moveToFirst() || cursor.isNull(0) || cursor.isNull(1)) null
+                else MediaPhotoStat(cursor.getLong(0), cursor.getLong(1))
+            }
+        }.getOrNull()
+    }
+
     override fun remember(uri: String, size: Long, digest: String) {
         checkedUri(uri)
         require(size in 1..SystemPhotoStore.MAX_BYTES && digest.matches(Regex("[0-9a-f]{64}")))
