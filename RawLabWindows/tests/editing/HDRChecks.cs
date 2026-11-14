@@ -643,7 +643,7 @@ internal static class HDRChecks
             Check(single.Candidate.Settings.HDR.Exposure == 1.5 &&
                   single.Candidate.Settings.HDR.CameraSettings.FbddLevel == 2 &&
                   single.Candidate.Settings.Values[(int)Parameter.Exposure] == sdrBase.Capture().Values[(int)Parameter.Exposure] &&
-                  single.Look == "dormant-look",
+                  single.Candidate.Look == "dormant-look",
                 "Single rendition reset isolates other HDR groups, camera dev and dormant SDR");
             Check(EditorAdjustmentRules.PrepareReset(new(EditorResetKind.Tool, Tool: tool), single.Candidate!).Status == EditorResetStatus.NoChange,
                 "Single rendition reset is idempotent: " + tool);
@@ -674,13 +674,13 @@ internal static class HDRChecks
         var sdrAll = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), dormantSnapshot).Candidate!;
         Check(sdrAll.Settings.HDR!.RenditionSettings == fullRendition &&
               sdrAll.Settings.HDR.CameraSettings.FbddLevel == 2 &&
-              !sdrAll.Settings.IsHDREditing &&
+              sdrAll.Settings.HDR.Mode != HDRMode.Hdr &&
               sdrAll.Settings.Values[(int)Parameter.Exposure] == 0,
             "SDR ResetAll preserves dormant HDR rendition and camera development");
         var hdrAll = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), editedSnapshot).Candidate!;
-        Check(hdrAll.Settings.IsHDREditing &&
-              hdrAll.Settings.HDR!.RenditionSettings.IsDefault &&
-              hdrAll.Settings.HDR.IsIdentity &&
+        Check(hdrAll.Settings.HDR is { Mode: HDRMode.Hdr } hdrAfterReset &&
+              hdrAfterReset.RenditionSettings.IsDefault &&
+              hdrAfterReset.IsIdentity &&
               hdrAll.Settings.Values[(int)Parameter.Exposure] == sdrBase.Capture().Values[(int)Parameter.Exposure] &&
               hdrAll.Look == "dormant-look",
             "HDR ResetAll resets HDR rendition while preserving dormant SDR");
