@@ -889,6 +889,103 @@ struct ThumbnailCacheTests {
         }
         check(threwCorrupt, "On-disk edits.json corruption invalidates cache and throws CocoaError")
 
+        // External deletion of edits.json on an already-warmed instance must invalidate cache.
+        let deleteDir = dir.appendingPathComponent("external-delete", isDirectory: true)
+        let deleteStore = try EditPersistence(directory: deleteDir)
+        try deleteStore.save(photos[0], state: PhotoEditState(settings: externalSettings, filmID: ""))
+        let deleteWarm = try deleteStore.state(for: photos[0])
+        check(deleteWarm?.settings.exposure == 1.75,
+              "Warmed instance returns saved state before external deletion")
+        let deleteReadsBeforeHit = EditPersistence.registryDiskReadCount(forDirectory: deleteDir)
+        _ = try deleteStore.state(for: photos[0])
+        check(EditPersistence.registryDiskReadCount(forDirectory: deleteDir) == deleteReadsBeforeHit,
+              "Second read before external deletion hits cache")
+        try FileManager.default.removeItem(at: deleteDir.appendingPathComponent("edits.json"))
+        let afterDelete = try deleteStore.state(for: photos[0])
+        check(afterDelete == nil,
+              "External edits.json deletion invalidates already-warmed instance")
+
+        // Corrupt edits.json throwing in RegistryCache.load must invalidate & evict rather than promote/occupy an LRU slot.
+        let corruptLruRoot = dir.appendingPathComponent("corrupt-lru", isDirectory: true)
+        let capCount = EditPersistence.registryCacheCapacity
+        let corruptDir = corruptLruRoot.appendingPathComponent("corrupt-slot", isDirectory: true)
+        let corruptStore = try EditPersistence(directory: corruptDir)
+        try corruptStore.save(photos[0], state: PhotoEditState(settings: externalSettings, filmID: ""))
+        _ = try corruptStore.state(for: photos[0])
+        var healthyDirs: [URL] = []
+        var healthyStores: [EditPersistence] = []
+        for idx in 0..<(capCount - 1) {
+            let hDir = corruptLruRoot.appendingPathComponent("healthy-\(idx)", isDirectory: true)
+            let hStore = try EditPersistence(directory: hDir)
+            try hStore.save(photos[0], state: PhotoEditState(settings: externalSettings, filmID: ""))
+            _ = try hStore.state(for: photos[0])
+            healthyDirs.append(hDir)
+            healthyStores.append(hStore)
+        }
+        // Corrupt corruptDir (oldest slot); must remove from cache without touching/promoting it.
+        try Data("{\"version\":1,\"records\":{".utf8).write(to: corruptDir.appendingPathComponent("edits.json"))
+        _ = try? corruptStore.state(for: photos[0])
+        let extraHealthyDir = corruptLruRoot.appendingPathComponent("healthy-extra", isDirectory: true)
+        let extraHealthyStore = try EditPersistence(directory: extraHealthyDir)
+        try extraHealthyStore.save(photos[0], state: PhotoEditState(settings: externalSettings, filmID: ""))
+        _ = try extraHealthyStore.state(for: photos[0])
+        let oldestHealthyReadsBefore = EditPersistence.registryDiskReadCount(forDirectory: healthyDirs[0])
+        _ = try healthyStores[0].state(for: photos[0])
+        let oldestHealthyReadsDelta = EditPersistence.registryDiskReadCount(forDirectory: healthyDirs[0]) - oldestHealthyReadsBefore
+        check(oldestHealthyReadsDelta == 0,
+              "Throwing on corrupt registry must evict corrupt entry instead of occupying/promoting LRU slot (healthy-0 disk reads delta=\(oldestHealthyReadsDelta))")
+
+        // Symlink switching (dirA <-> dirB) when both targets exist and remain unchanged.
+        let symRoot = dir.appendingPathComponent("symlink-switch", isDirectory: true)
+        let symDirA = symRoot.appendingPathComponent("dirA", isDirectory: true)
+        let symDirB = symRoot.appendingPathComponent("dirB", isDirectory: true)
+        let symLink = symRoot.appendingPathComponent("current-edits", isDirectory: true)
+        let storeA = try EditPersistence(directory: symDirA)
+        let storeB = try EditPersistence(directory: symDirB)
+        var settingsA = Adjustments(); settingsA.exposureMode = .sensor; settingsA.exposure = 1.2
+        var settingsB = Adjustments(); settingsB.exposureMode = .sensor; settingsB.exposure = 2.4
+        try storeA.save(photos[0], state: PhotoEditState(settings: settingsA, filmID: ""))
+        try storeB.save(photos[0], state: PhotoEditState(settings: settingsB, filmID: ""))
+        try FileManager.default.createSymbolicLink(at: symLink, withDestinationURL: symDirA)
+
+        let symStore = try EditPersistence(directory: symLink)
+        let symInitial = try symStore.state(for: photos[0])
+        check(symInitial?.settings.exposure == 1.2,
+              "Warmed symlink store initially observes dirA state")
+        try FileManager.default.removeItem(at: symLink)
+        try FileManager.default.createSymbolicLink(at: symLink, withDestinationURL: symDirB)
+        let symAfterSwitchB = try symStore.state(for: photos[0])
+        check(symAfterSwitchB?.settings.exposure == 2.4,
+              "Symlink switch dirA -> dirB observes dirB without stale dirA cache hit (got \(String(describing: symAfterSwitchB?.settings.exposure)))")
+        try FileManager.default.removeItem(at: symLink)
+        try FileManager.default.createSymbolicLink(at: symLink, withDestinationURL: symDirA)
+        let symAfterSwitchA = try symStore.state(for: photos[0])
+        check(symAfterSwitchA?.settings.exposure == 1.2,
+              "Symlink switch dirB -> dirA observes dirA without stale dirB cache hit")
+
+        // Atomic write replacing an edits.json symlink must invalidate both old and new resolved paths.
+        let atomicTargetDir = symRoot.appendingPathComponent("atomic-target", isDirectory: true)
+        let atomicLinkDir = symRoot.appendingPathComponent("atomic-link", isDirectory: true)
+        try FileManager.default.createDirectory(at: atomicLinkDir, withIntermediateDirectories: true)
+        let atomicTargetStore = try EditPersistence(directory: atomicTargetDir)
+        var atomicInitial = Adjustments(); atomicInitial.exposureMode = .sensor; atomicInitial.exposure = 1.3
+        try atomicTargetStore.save(photos[0], state: PhotoEditState(settings: atomicInitial, filmID: ""))
+        let atomicTargetFile = atomicTargetDir.appendingPathComponent("edits.json")
+        let atomicLinkFile = atomicLinkDir.appendingPathComponent("edits.json")
+        try FileManager.default.createSymbolicLink(at: atomicLinkFile, withDestinationURL: atomicTargetFile)
+        let atomicLinkStore = try EditPersistence(directory: atomicLinkDir)
+        let atomicWarm = try atomicLinkStore.state(for: photos[0])
+        check(atomicWarm?.settings.exposure == 1.3,
+              "Warmed symlink edits.json store reads target state")
+        var atomicUpdated = Adjustments(); atomicUpdated.exposureMode = .sensor; atomicUpdated.exposure = 2.8
+        try atomicLinkStore.save(photos[0], state: PhotoEditState(settings: atomicUpdated, filmID: ""))
+        let atomicPostSave = try atomicLinkStore.state(for: photos[0])
+        check(atomicPostSave?.settings.exposure == 2.8,
+              "Store observes post-atomic-write state after edits.json symlink replacement")
+        let atomicTargetAfter = try atomicTargetStore.state(for: photos[0])
+        check(atomicTargetAfter?.settings.exposure == 1.3,
+              "Old symlink target retains its own uncorrupted state")
+
         // Bounded LRU eviction for EditPersistence registry cache (capacity == 32).
         let cap = EditPersistence.registryCacheCapacity
         check(cap == 32, "EditPersistence registry cache cap is bounded (\(cap))")

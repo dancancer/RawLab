@@ -39,6 +39,8 @@ final class BoundedLRUCache<Key: Hashable, Value> {
 
     var count: Int { entries.count }
 
+    func peek(_ key: Key) -> Value? { entries[key] }
+
     func get(_ key: Key) -> Value? {
         guard let value = entries[key] else { return nil }
         touch(key)
@@ -183,13 +185,21 @@ final class EditPersistence {
             stateLock.lock()
             let epochBefore = invalidationEpoch
             let s1 = FileStatFingerprint(path: path)
-            if let s1, let hit = cache.get(path), hit.fingerprint == s1 {
+            if let s1, let hit = cache.peek(path), hit.fingerprint == s1 {
+                _ = cache.get(path)
                 stateLock.unlock()
                 return hit.registry
             }
+            cache.removeValue(for: path)
             stateLock.unlock()
 
-            let registry = try loader()
+            let registry: Registry
+            do {
+                registry = try loader()
+            } catch {
+                invalidate(path: path)
+                throw error
+            }
             let s2 = FileStatFingerprint(path: path)
             if let s1, s2 == s1 {
                 stateLock.lock()
@@ -205,7 +215,6 @@ final class EditPersistence {
     }
 
     private let directory: URL
-    private let canonicalFilePath: String
     private let writeData: (Data, URL) throws -> Void
     private var file: URL { directory.appendingPathComponent("edits.json") }
 
@@ -221,16 +230,16 @@ final class EditPersistence {
     }
 
     static func registryDiskReadCount(forDirectory directory: URL) -> Int {
-        let path = Self.canonicalRegistryFilePath(forDirectory: directory)
+        let path = Self.resolvedRegistryFileURL(forDirectory: directory).path
         statsLock.lock()
         defer { statsLock.unlock() }
         return _registryDiskReadCountsByPath[path, default: 0]
     }
 
-    private static func canonicalRegistryFilePath(forDirectory directory: URL) -> String {
+    private static func resolvedRegistryFileURL(forDirectory directory: URL) -> URL {
         directory.resolvingSymlinksInPath().standardizedFileURL
             .appendingPathComponent("edits.json")
-            .resolvingSymlinksInPath().standardizedFileURL.path
+            .resolvingSymlinksInPath().standardizedFileURL
     }
 
     private static func recordRegistryDiskRead(forFilePath path: String) {
@@ -243,27 +252,33 @@ final class EditPersistence {
     init(directory: URL = EditPersistence.defaultDirectory,
          writeData: @escaping (Data, URL) throws -> Void = { try $0.write(to: $1, options: .atomic) }) throws {
         self.directory = directory
-        self.canonicalFilePath = Self.canonicalRegistryFilePath(forDirectory: directory)
         self.writeData = writeData
         _ = try readRegistry()
     }
 
     private func readRegistry(allowCache: Bool = true) throws -> Registry {
-        guard FileManager.default.fileExists(atPath: file.path) else {
-            Self.registryCache.invalidate(path: canonicalFilePath)
+        let resolvedFile = Self.resolvedRegistryFileURL(forDirectory: directory)
+        let resolvedPath = resolvedFile.path
+        guard FileManager.default.fileExists(atPath: resolvedPath) else {
+            Self.registryCache.invalidate(path: resolvedPath)
             return Registry()
         }
         if allowCache {
-            return try Self.registryCache.load(path: canonicalFilePath) {
-                try parseRegistryFromDisk()
+            return try Self.registryCache.load(path: resolvedPath) {
+                try parseRegistryFromDisk(fileURL: resolvedFile, resolvedPath: resolvedPath)
             }
         }
-        return try parseRegistryFromDisk()
+        do {
+            return try parseRegistryFromDisk(fileURL: resolvedFile, resolvedPath: resolvedPath)
+        } catch {
+            Self.registryCache.invalidate(path: resolvedPath)
+            throw error
+        }
     }
 
-    private func parseRegistryFromDisk() throws -> Registry {
-        Self.recordRegistryDiskRead(forFilePath: canonicalFilePath)
-        let data = try Data(contentsOf: file)
+    private func parseRegistryFromDisk(fileURL: URL, resolvedPath: String) throws -> Registry {
+        Self.recordRegistryDiskRead(forFilePath: resolvedPath)
+        let data = try Data(contentsOf: fileURL)
         guard (try JSONSerialization.jsonObject(with: data)) is [String: Any] else {
             throw CocoaError(.fileReadCorruptFile)
         }
@@ -284,15 +299,18 @@ final class EditPersistence {
     }
 
     private func writeRegistry(_ updated: Registry) throws {
-        let data = try Self.encodeRegistry(updated)
-        Self.registryCache.invalidate(path: canonicalFilePath)
-        do {
-            try writeData(data, file)
-        } catch {
-            Self.registryCache.invalidate(path: canonicalFilePath)
-            throw error
+        let preWritePath = Self.resolvedRegistryFileURL(forDirectory: directory).path
+        let invalidateAffectedPaths = {
+            Self.registryCache.invalidate(path: preWritePath)
+            let postWritePath = Self.resolvedRegistryFileURL(forDirectory: self.directory).path
+            if postWritePath != preWritePath {
+                Self.registryCache.invalidate(path: postWritePath)
+            }
         }
-        Self.registryCache.invalidate(path: canonicalFilePath)
+        let data = try Self.encodeRegistry(updated)
+        Self.registryCache.invalidate(path: preWritePath)
+        defer { invalidateAffectedPaths() }
+        try writeData(data, file)
     }
 
     private static func isVersionOne(_ slice: Data) -> Bool {
