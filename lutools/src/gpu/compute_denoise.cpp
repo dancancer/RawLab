@@ -7,12 +7,18 @@
 
 namespace sony2fuji {
 namespace {
-bool finiteOutput(FilterDevice& device, FilterBuffer& buffer, size_t count, float* output) {
-    std::vector<float> result(count);
-    device.read(buffer, count, result.data());
-    if (!std::all_of(result.begin(), result.end(), [](float value) { return std::isfinite(value); })) return false;
-    std::memcpy(output, result.data(), count * sizeof(float));
+bool finiteOutput(FilterDevice& device, FilterBuffer& buffer, size_t count, float* output,
+                  std::vector<float>& scratch) {
+    scratch.resize(count);
+    device.read(buffer, count, scratch.data());
+    if (!std::all_of(scratch.begin(), scratch.end(), [](float value) { return std::isfinite(value); })) return false;
+    std::memcpy(output, scratch.data(), count * sizeof(float));
     return true;
+}
+
+bool finiteOutput(FilterDevice& device, FilterBuffer& buffer, size_t count, float* output) {
+    std::vector<float> scratch;
+    return finiteOutput(device, buffer, count, output, scratch);
 }
 
 void dispatch(FilterDevice& device, FilterParams& params, FilterStage stage,
@@ -21,30 +27,40 @@ void dispatch(FilterDevice& device, FilterParams& params, FilterStage stage,
     device.dispatch(params, input, other, output, second);
 }
 
-bool imageFilter(FilterDevice& device, ImageData& image, FilterParams params) {
-    if (image.width <= 0 || image.height <= 0 || image.pixels.size() != size_t(image.width) * image.height) return false;
-    ImageData result(image.width, image.height);
-    params.width = image.width; params.height = image.height;
-    const size_t rowFloats = size_t(image.width) * 3;
+bool imageFilter(FilterDevice& device, const ImageData& source, FilterParams params, ImageData* destination) {
+    if (source.width <= 0 || source.height <= 0 ||
+        source.pixels.size() != size_t(source.width) * source.height) return false;
+    ImageData result(source.width, source.height);
+    params.width = source.width; params.height = source.height;
+    const size_t rowFloats = size_t(source.width) * 3;
     // Independent effects need no halo; a detail pass needs one source row each side.
     const bool detail = params.stage == static_cast<uint32_t>(FilterStage::Detail);
     const size_t maxRows = 8 * 1024 * 1024 / (rowFloats * sizeof(float));
     if (maxRows <= 2) return false;
+    const size_t bandRows = std::min<size_t>(maxRows - 2, params.height);
+    const size_t maxInputRows = std::min<size_t>(params.height, bandRows + (detail ? 2 : 0));
+    auto input = device.allocate(rowFloats * maxInputRows);
+    auto output = device.allocate(rowFloats * bandRows);
+    std::vector<float> scratch;
+    scratch.reserve(rowFloats * bandRows);
     for (uint32_t row = 0; row < params.height;) {
-        const auto rows = static_cast<uint32_t>(std::min<size_t>(maxRows - 2, params.height - row));
+        const auto rows = static_cast<uint32_t>(std::min<size_t>(bandRows, params.height - row));
         const auto first = detail && row > 0 ? row - 1 : row;
         const auto last = std::min(params.height, row + rows + (detail ? 1u : 0u));
-        auto input = device.allocate(rowFloats * (last - first),
-            reinterpret_cast<const float*>(image.pixels.data() + size_t(first) * image.width));
-        auto output = device.allocate(rowFloats * rows);
+        device.write(*input, rowFloats * (last - first),
+            reinterpret_cast<const float*>(source.pixels.data() + size_t(first) * source.width));
         params.sourceRow = first; params.outputRow = row; params.count = rows * params.width;
         device.dispatch(params, *input, nullptr, *output);
         if (!finiteOutput(device, *output, rowFloats * rows,
-            reinterpret_cast<float*>(result.pixels.data() + size_t(row) * image.width))) return false;
+            reinterpret_cast<float*>(result.pixels.data() + size_t(row) * source.width), scratch)) return false;
         row += rows;
     }
-    image = std::move(result);
+    *destination = std::move(result);
     return true;
+}
+
+bool imageFilter(FilterDevice& device, ImageData& image, FilterParams params) {
+    return imageFilter(device, image, params, &image);
 }
 } // namespace
 
@@ -134,15 +150,27 @@ bool computePhotoEffects(FilterDevice& device, ImageData& image, const PhotoEffe
 
 bool computeDetailFilter(FilterDevice& device, ImageData& image, float noiseReduction, float sharpening) {
     if (!std::isfinite(noiseReduction) || !std::isfinite(sharpening)) return false;
-    ImageData result = image;
-    for (uint32_t direction = 0; direction < 2; ++direction) {
-        const float amount = std::clamp(direction == 0 ? noiseReduction : sharpening, 0.f, direction == 0 ? 1.f : 2.f);
-        if (amount == 0) continue;
+    const float amounts[2] = {
+        std::clamp(noiseReduction, 0.f, 1.f),
+        std::clamp(sharpening, 0.f, 2.f),
+    };
+    const bool active[2] = {amounts[0] != 0.f, amounts[1] != 0.f};
+    if (!active[0] && !active[1]) return true;
+    auto makeParams = [&](uint32_t direction) {
         FilterParams p;
-        p.stage = static_cast<uint32_t>(FilterStage::Detail); p.direction = direction; p.strength = amount;
-        if (!imageFilter(device, result, p)) return false;
+        p.stage = static_cast<uint32_t>(FilterStage::Detail);
+        p.direction = direction;
+        p.strength = amounts[direction];
+        return p;
+    };
+    if (!active[0] || !active[1]) {
+        const uint32_t dir = active[0] ? 0u : 1u;
+        return imageFilter(device, image, makeParams(dir));
     }
-    image = std::move(result);
+    ImageData working;
+    if (!imageFilter(device, image, makeParams(0), &working)) return false;
+    if (!imageFilter(device, working, makeParams(1))) return false;
+    image = std::move(working);
     return true;
 }
 } // namespace sony2fuji

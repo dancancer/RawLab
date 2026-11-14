@@ -20,6 +20,7 @@ uniform uint pixelCount;
 uniform uint outputOffset;
 uniform int stage;
 uniform bool useLut;
+uniform bool inputIsSRGB;
 uniform bool inputIsFLog;
 uniform bool outputIsLog;
 uniform bool outputIsFLog;
@@ -142,8 +143,12 @@ vec3 evaluate(vec3 inputColor) {
     vec3 linear = (toSrgb * inputColor) * exposureWB;
     vec3 pixel = vec3(neutral(linear.r), neutral(linear.g), neutral(linear.b));
     if (useLut) {
-        vec3 fgamut = toFGamut * linear;
-        vec3 look = lookup(vec3(encodeLog(fgamut.r), encodeLog(fgamut.g), encodeLog(fgamut.b)));
+        vec3 lookInput = pixel;
+        if (!inputIsSRGB) {
+            vec3 fgamut = toFGamut * linear;
+            lookInput = vec3(encodeLog(fgamut.r), encodeLog(fgamut.g), encodeLog(fgamut.b));
+        }
+        vec3 look = lookup(lookInput);
         if (outputIsLog) look = vec3(neutral(decodeLog(look.r)), neutral(decodeLog(look.g)), neutral(decodeLog(look.b)));
         pixel = mix(pixel, look, strength);
     }
