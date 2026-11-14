@@ -308,6 +308,7 @@ internal static class UpdateStoreChecks
             // — W2（#297 残留）：Load 与 RepairableState 对磁盘备份/恢复证据必须对称 —
             // 结构完整且含未知枚举（但新版本省去或改名 JSON 备份字段）+ 盘上存在 Backups/Recoveries/recovery-in-progress.json 时，
             // Load 不得降级为 Idle（否则启动后 DiscardUnreferencedBackups(null) 静默删备份）。
+            static bool Rejected(Action action) { try { action(); return false; } catch (InvalidDataException) { return true; } }
             foreach (var slot in new[] { "Phase", "Choice", "FailureStage" })
             {
                 var dataRoot = Path.Combine(root, "disk-backup-" + slot);
