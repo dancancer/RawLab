@@ -178,3 +178,4 @@
 - 2026-11-14 · **P2-01 交卷 PR #330**（Shared/fixtures/edit-records-v1.json 四端消费；红锚策略=不改实现只登记 divergence，碳审重点「fixture 是裁定基线还是现状快照」）。#331 打回 2B 全在 Windows staging（_wopen 缺 _O_NOINHERIT；hdr_image_portable.cpp 第 3 处漏改），p3-batch 续修。#326 r3 交卷（a7b3ded5）三轮复审在途。
 - 2026-11-14 · #331 r2 交卷（`dba844e8`）：_O_NOINHERIT/_O_BINARY+第 3 处 staging 补齐；亮点是**常驻跨平台 foreign-name 测试**（stagingSuffix 确定性→哨兵占位→必须跳名发布），把 Windows 才撞的共享冲突逻辑变成 POSIX 可回归的常驻锚。二轮碳审在途（review-mwgbwz9i）。
 - 2026-11-14 · P3 收尾两项开工（lut-ctx crew）：P3-04 LUT 上下文失败永久缓存（瞬时失败变永久降级）、P3-05 EGL RAII 恢复顺序；指令要求按 #327 合入后现码重新登记漂移行号。至此 b-task-table P2/P3 全部要么入闸要么在途。
+- 2026-11-14 · 四审全打回（假绿猎杀日）：**#330** 3 高（Windows 无脑读 sdr_values 会红 CI、宽 catch 把测试崩溃伪装成已知分歧、83 字段 round-trip 虚报——verify 大面积漏断）；**#329** 保存期取消先发布后报告+常驻回调没走到声称分支；**#326** r3 新引入 UIKit 滑杆包装在 VoiceOver 路径 editing 卡死+测试没 git add；**#331** 新常驻测试「取消只删自建」空跑假绿（生产码全 PASS）。D-05 交卷 **#332** 入闸；P2-14 线程中途断（数字已拿到：WarmRAW 3.65×），氢线程续收尾。
