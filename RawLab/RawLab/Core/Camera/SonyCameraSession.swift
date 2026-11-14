@@ -193,7 +193,7 @@ final class SonyCameraSession {
             asset.snapshot.content, 1 << 24 | asset.snapshot.file,
             UInt32(truncatingIfNeeded: offset), UInt32(offset >> 32), UInt32(length)
         ], requiresData: true, limit: length)
-        guard bytes.count == length else { throw CameraProtocolError.invalid("Original chunk size changed") }
+        guard bytes.count == length else { throw CameraProtocolError.transientTransfer("Original chunk size changed") }
         return bytes
     }
 
@@ -213,14 +213,14 @@ final class SonyCameraSession {
                 let count = min(UInt64(3 << 20), asset.snapshot.size - received)
                 let bytes = try client.operation(0x923d, parameters: [asset.snapshot.content, 1 << 24 | asset.snapshot.file,
                     UInt32(truncatingIfNeeded: received), UInt32(received >> 32), UInt32(count)], requiresData: true, limit: Int(count))
-                guard bytes.count == count else { throw CameraProtocolError.invalid("Original chunk size changed") }
+                guard bytes.count == count else { throw CameraProtocolError.transientTransfer("Original chunk size changed") }
                 try receive(bytes)
             }
-            guard try listAssets().contains(where: { $0.snapshot == asset.snapshot }) else { throw CameraProtocolError.invalid("Original metadata changed during transfer") }
+            guard try listAssets().contains(where: { $0.snapshot == asset.snapshot }) else { throw CameraProtocolError.transientTransfer("Original metadata changed during transfer") }
         } else {
-            guard contentsEntered, try legacyAsset(asset.snapshot.content).snapshot == asset.snapshot else { throw CameraProtocolError.invalid("Original metadata changed before transfer") }
+            guard contentsEntered, try legacyAsset(asset.snapshot.content).snapshot == asset.snapshot else { throw CameraProtocolError.transientTransfer("Original metadata changed before transfer") }
             try client.streamObject(handle: asset.snapshot.content, size: asset.snapshot.size, sink: receive)
-            guard try legacyAsset(asset.snapshot.content).snapshot == asset.snapshot else { throw CameraProtocolError.invalid("Original metadata changed during transfer") }
+            guard try legacyAsset(asset.snapshot.content).snapshot == asset.snapshot else { throw CameraProtocolError.transientTransfer("Original metadata changed during transfer") }
         }
         guard received == asset.snapshot.size else { throw CameraProtocolError.invalid("Original size mismatch") }
         try CameraWire.validateHeader(name: asset.snapshot.name, data: prefix)

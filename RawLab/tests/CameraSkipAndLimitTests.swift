@@ -34,11 +34,12 @@ final class FakeSonyCameraEntry {
     let legacyCreated: String
     var bytes: Data
     var downloadResponseCode: UInt16?
+    var shortChunkCount = 0
     var dropConnectionOnDownload = false
 
     init(content: UInt32, file: UInt32 = 1, name: String, createdMillis: UInt64, bytes: Data,
          legacyCreated: String = "20261113T100000",
-         downloadResponseCode: UInt16? = nil, dropConnectionOnDownload: Bool = false) {
+         downloadResponseCode: UInt16? = nil, shortChunkCount: Int = 0, dropConnectionOnDownload: Bool = false) {
         self.content = content
         self.file = file
         self.name = name
@@ -46,6 +47,7 @@ final class FakeSonyCameraEntry {
         self.legacyCreated = legacyCreated
         self.bytes = bytes
         self.downloadResponseCode = downloadResponseCode
+        self.shortChunkCount = shortChunkCount
         self.dropConnectionOnDownload = dropConnectionOnDownload
     }
 }
@@ -56,6 +58,7 @@ final class FakeSonyCameraChannel: CameraByteChannel {
     private var buffered = Data()
     private(set) var closed = false
     let mode: Mode
+    let supportsTethering: Bool
     var entries: [FakeSonyCameraEntry]
     var legacyHandleCountOverride: Int?
     private(set) var downloadAttempts: [String: Int] = [:]
@@ -63,11 +66,21 @@ final class FakeSonyCameraChannel: CameraByteChannel {
     private(set) var legacyFullReads: [String: Int] = [:]
     private(set) var bytesReadByName: [String: Int] = [:]
     private(set) var objectInfoCalls = 0
+    private(set) var shutterCommands = 0
+    var onShutter: (() -> Void)?
+    private var pendingOutgoing: [UInt32: (op: UInt16, param: UInt32)] = [:]
     private var dropNextRead = false
 
-    init(mode: Mode = .mobile, entries: [FakeSonyCameraEntry]) {
+    init(mode: Mode = .mobile, supportsTethering: Bool = false, entries: [FakeSonyCameraEntry]) {
         self.mode = mode
+        self.supportsTethering = supportsTethering
         self.entries = entries
+    }
+
+    func updateEntries(_ body: (inout [FakeSonyCameraEntry]) -> Void) {
+        lock.lock()
+        body(&entries)
+        lock.unlock()
     }
 
     func resetTransferStats() {
@@ -105,13 +118,28 @@ final class FakeSonyCameraChannel: CameraByteChannel {
         let length = Int(try reader.u32())
         let packetType = try reader.u32()
         guard length == data.count else { throw CameraProtocolError.invalid("Invalid test packet length") }
-        if packetType == 14 { return }
+        if packetType == 14 || packetType == 9 { return }
+        if packetType == 12 {
+            let tid = try reader.u32()
+            let val = reader.remaining >= 2 ? try reader.u16() : 0
+            if let pending = pendingOutgoing.removeValue(forKey: tid),
+               pending.op == 0x9207, pending.param == 0xd2c2, val == 2 {
+                onShutter?()
+            }
+            appendResponse(tid)
+            return
+        }
         guard packetType == 6 else { throw CameraProtocolError.invalid("Unexpected test request packet \(packetType)") }
-        _ = try reader.u32()
+        let dataPhase = try reader.u32()
         let op = try reader.u16()
         let tid = try reader.u32()
         var params: [UInt32] = []
         while reader.remaining >= 4 { params.append(try reader.u32()) }
+        if dataPhase == 2 {
+            if op == 0x9207 { shutterCommands += 1 }
+            pendingOutgoing[tid] = (op, params.first ?? 0)
+            return
+        }
         try respond(op: op, tid: tid, params: params)
     }
 
@@ -142,9 +170,14 @@ final class FakeSonyCameraChannel: CameraByteChannel {
         var device = Data()
         device.appendLE(UInt16(100)); device.appendLE(UInt32(17)); device.appendLE(UInt16(100))
         device.append(Self.ptpString("Sony")); device.appendLE(UInt16(0))
-        let operations: [UInt16] = mode == .mobile
+        var operations: [UInt16] = mode == .mobile
             ? [0x1001, 0x1002, 0x923c, 0x923d]
             : [0x1001, 0x1002, 0x9201, 0x9202, 0x9209, 0x9212, 0x1004, 0x1007, 0x1008, 0x1009]
+        if supportsTethering {
+            for op: UInt16 in [0x9201, 0x9202, 0x9205, 0x9207, 0x9209] where !operations.contains(op) {
+                operations.append(op)
+            }
+        }
         device.appendLE(UInt32(operations.count))
         operations.forEach { device.appendLE($0) }
         for _ in 0..<4 { device.appendLE(UInt32(0)) }
@@ -205,10 +238,30 @@ final class FakeSonyCameraChannel: CameraByteChannel {
             var descriptor = Data()
             descriptor.appendLE(UInt16(0x12c))
             descriptor.appendLE(UInt32(1)); descriptor.appendLE(UInt16(0x5013))
-            descriptor.appendLE(UInt32(0))
+            if supportsTethering {
+                descriptor.appendLE(UInt32(2))
+                descriptor.appendLE(UInt16(0xd2c1))
+                descriptor.appendLE(UInt16(0xd2c2))
+            } else {
+                descriptor.appendLE(UInt32(0))
+            }
             appendResponse(tid, data: descriptor)
         case 0x9209:
-            var props = Data(); props.appendLE(UInt64(0))
+            var props = Data()
+            if supportsTethering {
+                props.appendLE(UInt64(2))
+                for (code, value): (UInt16, UInt16) in [(0x5013, 1), (0xd222, 0x10)] {
+                    props.appendLE(code)
+                    props.appendLE(UInt16(4))
+                    props.append(0)
+                    props.append(1)
+                    props.appendLE(value)
+                    props.appendLE(value)
+                    props.append(0)
+                }
+            } else {
+                props.appendLE(UInt64(0))
+            }
             appendResponse(tid, data: props)
         case 0x1004:
             var storages = Data(); storages.appendLE(UInt32(1)); storages.appendLE(UInt32(0x10001))
@@ -253,7 +306,14 @@ final class FakeSonyCameraChannel: CameraByteChannel {
             if op == 0x923d {
                 let offset = Int(UInt64(params[2]) | (UInt64(params[3]) << 32))
                 let length = Int(params[4])
-                let end = min(entry.bytes.count, offset + length)
+                let maxEnd = min(entry.bytes.count, offset + length)
+                let end: Int
+                if entry.shortChunkCount > 0 {
+                    entry.shortChunkCount -= 1
+                    end = maxEnd > offset ? maxEnd - 1 : offset
+                } else {
+                    end = maxEnd
+                }
                 let slice = entry.bytes.subdata(in: offset..<end)
                 mobileRangeReads[entry.name, default: []].append(offset..<end)
                 bytesReadByName[entry.name, default: 0] += slice.count
@@ -269,7 +329,10 @@ final class FakeSonyCameraChannel: CameraByteChannel {
     }
 }
 
-@main struct CameraSkipAndLimitTests {
+#if !RAWLAB_XCTEST
+@main
+#endif
+struct CameraSkipAndLimitTests {
     static let fakeCameraPrefsKey = "camera.incremental.preferences.Sony Corporation|ILCE-6700|FAKE-SERIAL-01"
 
     static func check(_ condition: Bool, _ message: String, line: Int = #line) throws {
@@ -381,13 +444,35 @@ final class FakeSonyCameraChannel: CameraByteChannel {
     @MainActor static func runAll() async throws {
         UserDefaults.standard.set("zh-Hans", forKey: L10n.preferenceKey)
         defer { UserDefaults.standard.removeObject(forKey: fakeCameraPrefsKey) }
-        try await testI13BadHeaderContinuesAndSkipsWithoutAdvancingCheckpointPastBadItem()
-        try await testI13PerObjectPTPErrorContinuesWhileConnectionErrorsAbort()
-        try await testI15PhotoLimitExceededOnMobileAndLegacyKeepsConnectionUsable()
-        try await testI14ReconnectDefaultCutoffAndOneTapSamplingSkipsFullDownload()
-        try await testI14SamplingNegativeSafetyMiddleAndTailSingleByteTamperFallsBack()
-        try await testI14SamplingFallbackWhenMissingChangedAdjustedJPEGOrLegacy()
-        try await testI14SameSessionRAWToRAWIncrementalBehaviorUnchanged()
+        let suite: [(String, () async throws -> Void)] = [
+            ("testI13BadHeaderContinuesAndSkipsWithoutAdvancingCheckpointPastBadItem", testI13BadHeaderContinuesAndSkipsWithoutAdvancingCheckpointPastBadItem),
+            ("testI13PerObjectPTPErrorContinuesWhileConnectionErrorsAbort", testI13PerObjectPTPErrorContinuesWhileConnectionErrorsAbort),
+            ("testI15PhotoLimitExceededOnMobileAndLegacyKeepsConnectionUsable", testI15PhotoLimitExceededOnMobileAndLegacyKeepsConnectionUsable),
+            ("testI14ReconnectDefaultCutoffAndOneTapSamplingSkipsFullDownload", testI14ReconnectDefaultCutoffAndOneTapSamplingSkipsFullDownload),
+            ("testI14SamplingNegativeSafetyMiddleAndTailSingleByteTamperFallsBack", testI14SamplingNegativeSafetyMiddleAndTailSingleByteTamperFallsBack),
+            ("testI14SamplingFallbackWhenMissingChangedAdjustedJPEGOrLegacy", testI14SamplingFallbackWhenMissingChangedAdjustedJPEGOrLegacy),
+            ("testI14SameSessionRAWToRAWIncrementalBehaviorUnchanged", testI14SameSessionRAWToRAWIncrementalBehaviorUnchanged),
+            ("testIN4SkippedFailedItemsPersistAcrossRestart", testIN4SkippedFailedItemsPersistAcrossRestart),
+            ("testIN4SkippedAssetsFIFOOverMaximumLimitSurvivesRestart", testIN4SkippedAssetsFIFOOverMaximumLimitSurvivesRestart),
+            ("testIN5TransientTransferAndBusyErrorsDoNotMarkItemFailed", testIN5TransientTransferAndBusyErrorsDoNotMarkItemFailed),
+            ("testIN6TetheringPhotoLimitExceededKeepsSessionAliveAndRecovers", testIN6TetheringPhotoLimitExceededKeepsSessionAliveAndRecovers),
+            ("testIN6TetheringResumeLimitAndExactBoundary10000To10001AndLanguageSwitch", testIN6TetheringResumeLimitAndExactBoundary10000To10001AndLanguageSwitch),
+            ("testP222ManifestWritesCoalescedToOneBatchWrite", testP222ManifestWritesCoalescedToOneBatchWrite),
+            ("testP222PerformBatchPersistFailureRollbackAndRecovery", testP222PerformBatchPersistFailureRollbackAndRecovery)
+        ]
+        var failures: [(String, String)] = []
+        for (name, testCase) in suite {
+            do {
+                try await testCase()
+            } catch {
+                fputs("FAIL [\(name)]: \(error.localizedDescription)\n", stderr)
+                failures.append((name, error.localizedDescription))
+            }
+        }
+        if !failures.isEmpty {
+            let summary = failures.map { "\($0.0): \($0.1)" }.joined(separator: "; ")
+            throw CameraProtocolError.invalid("\(failures.count) test group(s) failed: \(summary)")
+        }
     }
 
     @MainActor static func testI13BadHeaderContinuesAndSkipsWithoutAdvancingCheckpointPastBadItem() async throws {
@@ -1051,5 +1136,735 @@ final class FakeSonyCameraChannel: CameraByteChannel {
         try check(!scan3.needsCutoffConfirmation && scan3.assets.isEmpty,
                   "I14 (5): Subsequent scan in same session reports no new photos")
         controller.stop()
+    }
+
+    @MainActor static func drainBackend(_ backend: CameraWorkspaceBackend) async {
+        await withCheckedContinuation { continuation in
+            backend.loadHistory { _ in continuation.resume() }
+        }
+    }
+
+    @MainActor static func testIN4SkippedFailedItemsPersistAcrossRestart() async throws {
+        defer { UserDefaults.standard.removeObject(forKey: fakeCameraPrefsKey) }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-in4-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let endpoint = IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:I-N4", label: "Fake")
+        let baseMillis = UInt64(Date().timeIntervalSince1970 * 1000) + 10_000
+
+        @MainActor func runInitialSessionAndSkip() async throws {
+            let store = try CameraOriginalStore(directory: root)
+            let channel = FakeSonyCameraChannel(entries: [
+                FakeSonyCameraEntry(content: 1, name: "DSC00001.ARW", createdMillis: baseMillis + 1_000, bytes: validRAWBytes(1)),
+                FakeSonyCameraEntry(content: 2, name: "DSC00002.ARW", createdMillis: baseMillis + 2_000, bytes: invalidRAWBytes()),
+                FakeSonyCameraEntry(content: 3, name: "DSC00003.ARW", createdMillis: baseMillis + 3_000, bytes: validRAWBytes(3))
+            ])
+            let backend = CameraWorkspaceBackend(storage: store, clientID: UUID()) { _, purpose, _ in
+                try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+            }
+            let controller = IOSCameraController(backend: backend)
+            controller.connect(endpoint: endpoint, mode: .importing, cardConfirmed: false, resume: false)
+            try await waitUntil { controller.phase == .browsing && controller.assets.count == 3 }
+            let cutoff = Date(timeIntervalSince1970: Double(baseMillis) / 1000)
+            let scan1 = controller.incrementalScan(customCutoff: cutoff, includeUndated: false)
+            controller.startIncremental(scan1)
+            try await waitUntil { controller.phase == .browsing && store.snapshot.originals.count == 2 }
+            let job = try store.snapshot.jobs.first ?? { throw CameraProtocolError.invalid("Missing I-N4 initial job") }()
+            controller.skipFailedIncrementalItems(job)
+            try await waitUntil { !controller.scanning && controller.displayedIncrementalJob == nil }
+            await withCheckedContinuation { continuation in
+                controller.stop { continuation.resume() }
+            }
+            await drainBackend(backend)
+        }
+
+        try await runInitialSessionAndSkip()
+
+        // Simulate app restart with fresh CameraOriginalStore + CameraWorkspaceBackend + IOSCameraController
+        // and reassigned PTP handles (content 101..104) plus a newly shot 4th file.
+        let restartedStore = try CameraOriginalStore(directory: root)
+        let restartedChannel = FakeSonyCameraChannel(entries: [
+            FakeSonyCameraEntry(content: 101, name: "DSC00001.ARW", createdMillis: baseMillis + 1_000, bytes: validRAWBytes(1)),
+            FakeSonyCameraEntry(content: 102, name: "DSC00002.ARW", createdMillis: baseMillis + 2_000, bytes: invalidRAWBytes()),
+            FakeSonyCameraEntry(content: 103, name: "DSC00003.ARW", createdMillis: baseMillis + 3_000, bytes: validRAWBytes(3)),
+            FakeSonyCameraEntry(content: 104, name: "DSC00004.ARW", createdMillis: baseMillis + 4_000, bytes: validRAWBytes(4))
+        ])
+        var restartedSession: SonyCameraSession?
+        let restartedBackend = CameraWorkspaceBackend(storage: restartedStore, clientID: UUID()) { _, purpose, _ in
+            let s = try SonyCameraSession(client: CameraPTPClient(command: restartedChannel, event: nil), purpose: purpose)
+            restartedSession = s
+            return s
+        }
+        let restartedController = IOSCameraController(backend: restartedBackend)
+        restartedController.connect(endpoint: endpoint, mode: .importing, cardConfirmed: false, resume: false)
+        try await waitUntil { restartedController.phase == .browsing && restartedController.assets.count == 4 }
+
+        try check(restartedController.skippedAssets.map(\.name) == ["DSC00002.ARW"],
+                  "I-N4: Skipped bad file remains in skippedAssets after app/controller restart")
+
+        restartedController.confirmSuggestedCutoff()
+        let scanAfterRestart = restartedController.incrementalScan(customCutoff: restartedController.customCutoff, includeUndated: false)
+        let scannedNames = scanAfterRestart.assets.map(\.snapshot.name)
+        try check(!scannedNames.contains("DSC00002.ARW") && scannedNames.contains("DSC00004.ARW"),
+                  "I-N4: Restarted incremental scan excludes previously skipped bad file even with reassigned handles")
+
+        restartedController.startIncremental(scanAfterRestart)
+        try await waitUntil { restartedController.phase == .browsing && restartedStore.snapshot.originals.count == 3 }
+        try check((restartedChannel.downloadAttempts["DSC00002.ARW"] ?? 0) == 0 &&
+                  restartedStore.snapshot.originals.map(\.name).sorted() == ["DSC00001.ARW", "DSC00003.ARW", "DSC00004.ARW"],
+                  "I-N4: Skipped bad file incurs 0 download attempts after restart while new photo saves")
+        let boundaries = restartedStore.snapshot.incrementalBoundaries(device: try restartedSession?.device ?? { throw CameraProtocolError.invalid("Missing session") }(),
+                                                                      connectionKey: endpoint.connectionKey)
+        let expectedCheckpoint = Date(timeIntervalSince1970: Double(baseMillis + 1_000) / 1000)
+        try check(boundaries["RAW"]?.date == expectedCheckpoint,
+                  "I-N4: Checkpoint remains before skipped item 2 across restart")
+        restartedController.stop()
+    }
+
+    @MainActor static func testIN5TransientTransferAndBusyErrorsDoNotMarkItemFailed() async throws {
+        defer { UserDefaults.standard.removeObject(forKey: fakeCameraPrefsKey) }
+        let endpoint = IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:I-N5", label: "Fake")
+        let now = UInt64(Date().timeIntervalSince1970 * 1000) + 1_000
+
+        // 1) Transient short chunk ("Original chunk size changed") -> must NOT mark item .failed; item stays .interrupted and retries.
+        do {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-in5-chunk-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let store = try CameraOriginalStore(directory: root)
+            let channel = FakeSonyCameraChannel(entries: [
+                FakeSonyCameraEntry(content: 1, name: "DSC05001.ARW", createdMillis: now + 1_000, bytes: validRAWBytes(51)),
+                FakeSonyCameraEntry(content: 2, name: "DSC05002.ARW", createdMillis: now + 2_000, bytes: makeLargeRAW(size: 4096, seed: 52), shortChunkCount: 1),
+                FakeSonyCameraEntry(content: 3, name: "DSC05003.ARW", createdMillis: now + 3_000, bytes: validRAWBytes(53))
+            ])
+            let backend = CameraWorkspaceBackend(storage: store, clientID: UUID()) { _, purpose, _ in
+                try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+            }
+            let controller = IOSCameraController(backend: backend)
+            controller.connect(endpoint: endpoint, mode: .importing, cardConfirmed: false, resume: false)
+            try await waitUntil { controller.phase == .browsing && controller.assets.count == 3 }
+            controller.startIncremental(controller.incrementalScan(customCutoff: Date(timeIntervalSince1970: Double(now) / 1000), includeUndated: false))
+            try await waitUntil {
+                controller.phase == .browsing &&
+                    store.snapshot.jobs.last?.items[1].phase == .interrupted &&
+                    controller.notice != nil
+            }
+            let job = try store.snapshot.jobs.first ?? { throw CameraProtocolError.invalid("Missing I-N5 chunk job") }()
+            try check(controller.connected && job.failedItems.isEmpty &&
+                      job.items[1].phase == .interrupted && job.items[1].failureKind == .transient &&
+                      job.items[2].phase == .queued && job.pendingItems.count == 2 &&
+                      !job.requiresNewImport(connected: true, assets: controller.assets),
+                      "I-N5: Transient 'Original chunk size changed' marks item interrupted (not failed) and leaves remaining items retryable")
+
+            // Resume on the same open session: item 2 now transfers cleanly with full bytes.
+            controller.resumeImport(job)
+            try await waitUntil { controller.phase == .browsing && store.snapshot.originals.count == 3 }
+            try check(store.snapshot.jobs[0].complete && store.snapshot.originals.count == 3,
+                      "I-N5: Resuming after transient chunk size error saves the interrupted item and remaining queue")
+            await withCheckedContinuation { continuation in
+                controller.stop { continuation.resume() }
+            }
+            await drainBackend(backend)
+        }
+
+        // 2) Per-object PTP DeviceBusy (0x2019) -> transient, must NOT mark item .failed!
+        do {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-in5-busy-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let store = try CameraOriginalStore(directory: root)
+            let busyEntry = FakeSonyCameraEntry(content: 2, name: "DSC05012.ARW", createdMillis: now + 2_000, bytes: validRAWBytes(62), downloadResponseCode: 0x2019)
+            let channel = FakeSonyCameraChannel(entries: [
+                FakeSonyCameraEntry(content: 1, name: "DSC05011.ARW", createdMillis: now + 1_000, bytes: validRAWBytes(61)),
+                busyEntry,
+                FakeSonyCameraEntry(content: 3, name: "DSC05013.ARW", createdMillis: now + 3_000, bytes: validRAWBytes(63))
+            ])
+            let backend = CameraWorkspaceBackend(storage: store, clientID: UUID()) { _, purpose, _ in
+                try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+            }
+            let controller = IOSCameraController(backend: backend)
+            controller.connect(endpoint: endpoint, mode: .importing, cardConfirmed: false, resume: false)
+            try await waitUntil { controller.phase == .browsing && controller.assets.count == 3 }
+            controller.selection = Set(controller.assets.map(\.id))
+            controller.importSelected()
+            try await waitUntil {
+                controller.phase == .browsing &&
+                    store.snapshot.jobs.last?.items[1].phase == .interrupted &&
+                    controller.notice != nil
+            }
+            let job = try store.snapshot.jobs.first ?? { throw CameraProtocolError.invalid("Missing I-N5 busy job") }()
+            try check(controller.connected && job.failedItems.isEmpty &&
+                      job.items[1].phase == .interrupted && job.items[1].failureKind == .transient &&
+                      job.items[2].phase == .queued,
+                      "I-N5: DeviceBusy (0x2019) is treated as transient interrupted rather than permanent item failure")
+            busyEntry.downloadResponseCode = nil
+            controller.resumeImport(job)
+            try await waitUntil { controller.phase == .browsing && store.snapshot.originals.count == 3 }
+            try check(store.snapshot.jobs[0].complete && store.snapshot.originals.count == 3,
+                      "I-N5: Resuming after DeviceBusy (0x2019) completes the queue on the same connection")
+
+            // 3) Typed failureKind drives requiresNewImport without relying on English errorDescription strings.
+            let owner = controller.assets.first?.owner ?? UUID()
+            let device = CameraDeviceIdentity(manufacturer: "Sony", model: "ILCE-6700", firmware: "2.00", serial: "FAKE-SERIAL-01", operations: [])
+            let typedNonResumable = CameraTransferJob(
+                id: UUID(), camera: device, connectionKey: endpoint.connectionKey, createdAt: Date(),
+                items: [CameraTransferItem(id: UUID(), asset: controller.assets[0].snapshot, phase: .interrupted,
+                                           failure: "Localized message", failureKind: .jpegGainMapAdjustment)],
+                incremental: nil, listingOwner: owner
+            )
+            let typedResumable = CameraTransferJob(
+                id: UUID(), camera: device, connectionKey: endpoint.connectionKey, createdAt: Date(),
+                items: [CameraTransferItem(id: UUID(), asset: controller.assets[0].snapshot, phase: .interrupted,
+                                           failure: CameraProtocolError.jpegGainMapAdjustment.errorDescription, failureKind: .transient)],
+                incremental: nil, listingOwner: owner
+            )
+            try check(typedNonResumable.requiresNewImport(connected: true, assets: controller.assets) &&
+                      !typedResumable.requiresNewImport(connected: true, assets: controller.assets),
+                      "I-N5: requiresNewImport uses typed failureKind instead of matching English error text")
+            await withCheckedContinuation { continuation in
+                controller.stop { continuation.resume() }
+            }
+            await drainBackend(backend)
+        }
+    }
+
+    @MainActor static func testIN6TetheringPhotoLimitExceededKeepsSessionAliveAndRecovers() async throws {
+        defer { UserDefaults.standard.removeObject(forKey: fakeCameraPrefsKey) }
+        let endpoint = IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:I-N6", label: "Fake")
+        let baseMillis: UInt64 = 1_700_000_000_000
+        let sampleBytes = validRAWBytes(77)
+        let twelveThousand = (1...12_000).map { index in
+            FakeSonyCameraEntry(content: UInt32(index), name: String(format: "DSC%05d.ARW", index),
+                                createdMillis: baseMillis + UInt64(index), bytes: sampleBytes)
+        }
+
+        // 1) Mid-session tethering crossing > 10,000 card items during poll: keeps session & controller alive, then recovers!
+        do {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-in6-mid-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let store = try CameraOriginalStore(directory: root)
+            let channel = FakeSonyCameraChannel(mode: .mobile, supportsTethering: true, entries: [twelveThousand[0]])
+            var openedSession: SonyCameraSession?
+            let backend = CameraWorkspaceBackend(storage: store, clientID: UUID()) { _, purpose, _ in
+                let s = try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+                openedSession = s
+                return s
+            }
+            let controller = IOSCameraController(backend: backend)
+            UserDefaults.standard.set("zh-Hans", forKey: L10n.preferenceKey)
+            controller.connect(endpoint: endpoint, mode: .tethering, cardConfirmed: true, resume: false)
+            try await waitUntil { controller.phase == .ready && controller.shutterReady }
+
+            channel.updateEntries { $0 = twelveThousand }
+            try await waitUntil(timeout: 5) {
+                (controller.listingLimitExceeded || controller.phase == .paused) && controller.notice == "照片 · 已到上限"
+            }
+            try check(openedSession?.stopped == false && !channel.closed &&
+                      controller.connected && controller.phase == .ready &&
+                      controller.listingLimitExceeded && !controller.shutterReady &&
+                      controller.notice == "照片 · 已到上限",
+                      "I-N6 (mid-tether): 12,000 items keeps tether session open, blocks shutter, and surfaces photo-limit notice")
+
+            // Drop back <= 10,000 with 1 newly shot photo on the SAME open connection -> auto-recovers and imports new shot.
+            let newShot = FakeSonyCameraEntry(content: 20_001, name: "DSC20001.ARW",
+                                              createdMillis: baseMillis + 50_000, bytes: validRAWBytes(88))
+            channel.updateEntries { $0 = [twelveThousand[0], newShot] }
+            try await waitUntil(timeout: 6) {
+                !controller.listingLimitExceeded &&
+                    controller.phase == .ready &&
+                    controller.shutterReady &&
+                    store.snapshot.originals.count == 1
+            }
+            try check(controller.connected && controller.phase == .ready && controller.shutterReady &&
+                      controller.notice == nil && store.snapshot.originals.map(\.name) == ["DSC20001.ARW"],
+                      "I-N6 (mid-tether): Dropping back <= 10,000 on same open tether session recovers and downloads new shot")
+            await withCheckedContinuation { continuation in
+                controller.stop { continuation.resume() }
+            }
+            await drainBackend(backend)
+        }
+
+        // 2) Connecting in .tethering when card ALREADY exceeds 10,000 photos: stays connected & establishes baseline once trimmed.
+        do {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-in6-init-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let store = try CameraOriginalStore(directory: root)
+            let channel = FakeSonyCameraChannel(mode: .mobile, supportsTethering: true, entries: twelveThousand)
+            var openedSession: SonyCameraSession?
+            let backend = CameraWorkspaceBackend(storage: store, clientID: UUID()) { _, purpose, _ in
+                let s = try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+                openedSession = s
+                return s
+            }
+            let controller = IOSCameraController(backend: backend)
+            controller.connect(endpoint: endpoint, mode: .tethering, cardConfirmed: true, resume: false)
+            try await waitUntil {
+                (controller.phase == .ready || controller.phase == .paused) && controller.notice != nil
+            }
+            try check(openedSession?.stopped == false && !channel.closed &&
+                      controller.connected && controller.phase == .ready &&
+                      controller.listingLimitExceeded && !controller.shutterReady &&
+                      controller.notice == "照片 · 已到上限",
+                      "I-N6 (initial-tether): Connecting with 12,000 card items stays connected in tether ready state with limit notice")
+
+            // Trim back to baseline [DSC00001.ARW]: must establish baseline without downloading DSC00001.ARW.
+            channel.updateEntries { $0 = [twelveThousand[0]] }
+            try await waitUntil(timeout: 6) { !controller.listingLimitExceeded && controller.shutterReady }
+            try check(store.snapshot.originals.isEmpty && (channel.downloadAttempts["DSC00001.ARW"] ?? 0) == 0,
+                      "I-N6 (initial-tether): Recovering card establishes baseline without importing pre-existing photos")
+
+            let shotAfterRecover = FakeSonyCameraEntry(content: 20_002, name: "DSC20002.ARW",
+                                                       createdMillis: baseMillis + 60_000, bytes: validRAWBytes(89))
+            channel.updateEntries { $0.append(shotAfterRecover) }
+            try await waitUntil(timeout: 6) { store.snapshot.originals.count == 1 }
+            try check(store.snapshot.originals.map(\.name) == ["DSC20002.ARW"],
+                      "I-N6 (initial-tether): Subsequent shot after baseline recovery downloads automatically")
+            await withCheckedContinuation { continuation in
+                controller.stop { continuation.resume() }
+            }
+            await drainBackend(backend)
+        }
+    }
+
+    @MainActor static func testP222ManifestWritesCoalescedToOneBatchWrite() async throws {
+        defer { UserDefaults.standard.removeObject(forKey: fakeCameraPrefsKey) }
+        let endpoint = IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:P2-22", label: "Fake")
+        let baseMillis = UInt64(Date().timeIntervalSince1970 * 1000) + 10_000
+
+        // 1) Importing N = 5 new photos must coalesce enqueue + begin/sourceDigest/prepared/saved into 1 batch manifest write.
+        do {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-p222-ok-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let counterLock = NSLock()
+            var writeCount = 0
+            func resetWrites() { counterLock.lock(); writeCount = 0; counterLock.unlock() }
+            func readWrites() -> Int { counterLock.lock(); defer { counterLock.unlock() }; return writeCount }
+
+            let store = try CameraOriginalStore(directory: root) {
+                counterLock.lock()
+                writeCount += 1
+                counterLock.unlock()
+            }
+            let entries = (1...5).map { index in
+                FakeSonyCameraEntry(content: UInt32(index), name: String(format: "DSC080%02d.ARW", index),
+                                    createdMillis: baseMillis + UInt64(index * 1_000), bytes: validRAWBytes(UInt8(80 + index)))
+            }
+            let channel = FakeSonyCameraChannel(entries: entries)
+            let backend = CameraWorkspaceBackend(storage: store, clientID: UUID()) { _, purpose, _ in
+                try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+            }
+            let controller = IOSCameraController(backend: backend)
+            controller.connect(endpoint: endpoint, mode: .importing, cardConfirmed: false, resume: false)
+            try await waitUntil { controller.phase == .browsing && controller.assets.count == 5 }
+
+            resetWrites()
+            let scan = controller.incrementalScan(customCutoff: Date(timeIntervalSince1970: Double(baseMillis) / 1000), includeUndated: false)
+            controller.startIncremental(scan)
+            try await waitUntil { controller.phase == .browsing && store.snapshot.originals.count == 5 }
+            let writesForFivePhotos = readWrites()
+            try check(writesForFivePhotos == 1,
+                      "P2-22: Batch import of N=5 photos writes manifest.json 1 time (actual: \(writesForFivePhotos))")
+            for original in store.snapshot.originals {
+                _ = try store.verifiedURL(original.id)
+            }
+            await withCheckedContinuation { continuation in
+                controller.stop { continuation.resume() }
+            }
+            await drainBackend(backend)
+        }
+
+        // Verify the coalesced manifest on disk reloads cleanly with all 5 saved originals intact.
+        // 2) Mixed failure batch (N = 4 photos, item 2 bad header -> failed, items 1/3/4 saved) ALSO coalesces into 1 batch write.
+        do {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-p222-mixed-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let counterLock = NSLock()
+            var writeCount = 0
+            func resetWrites() { counterLock.lock(); writeCount = 0; counterLock.unlock() }
+            func readWrites() -> Int { counterLock.lock(); defer { counterLock.unlock() }; return writeCount }
+
+            @MainActor func runMixedBatch() async throws {
+                let store = try CameraOriginalStore(directory: root) {
+                    counterLock.lock()
+                    writeCount += 1
+                    counterLock.unlock()
+                }
+                let channel = FakeSonyCameraChannel(entries: [
+                    FakeSonyCameraEntry(content: 1, name: "DSC08101.ARW", createdMillis: baseMillis + 1_000, bytes: validRAWBytes(91)),
+                    FakeSonyCameraEntry(content: 2, name: "DSC08102.ARW", createdMillis: baseMillis + 2_000, bytes: invalidRAWBytes()),
+                    FakeSonyCameraEntry(content: 3, name: "DSC08103.ARW", createdMillis: baseMillis + 3_000, bytes: validRAWBytes(93)),
+                    FakeSonyCameraEntry(content: 4, name: "DSC08104.ARW", createdMillis: baseMillis + 4_000, bytes: validRAWBytes(94))
+                ])
+                let backend = CameraWorkspaceBackend(storage: store, clientID: UUID()) { _, purpose, _ in
+                    try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+                }
+                let controller = IOSCameraController(backend: backend)
+                controller.connect(endpoint: endpoint, mode: .importing, cardConfirmed: false, resume: false)
+                try await waitUntil { controller.phase == .browsing && controller.assets.count == 4 }
+
+                resetWrites()
+                controller.startIncremental(controller.incrementalScan(customCutoff: Date(timeIntervalSince1970: Double(baseMillis) / 1000), includeUndated: false))
+                try await waitUntil { controller.phase == .browsing && store.snapshot.originals.count == 3 }
+                let writes = readWrites()
+                try check(writes == 1 && store.snapshot.jobs[0].failedItems.count == 1,
+                          "P2-22: Mixed batch (3 saved + 1 failed) coalesces into 1 manifest write (actual: \(writes))")
+                await withCheckedContinuation { continuation in
+                    controller.stop { continuation.resume() }
+                }
+                await drainBackend(backend)
+            }
+            try await runMixedBatch()
+
+            // Reopen from disk to prove the single coalesced write durably saved all state and published files.
+            let reopened = try CameraOriginalStore(directory: root)
+            try check(reopened.snapshot.originals.count == 3 &&
+                      reopened.snapshot.originals.allSatisfy { $0.availability == .available } &&
+                      reopened.snapshot.jobs[0].savedCount == 3 &&
+                      reopened.snapshot.jobs[0].failedItems.count == 1,
+                      "P2-22: Reopening persisted manifest preserves all published originals and failed item status")
+            for original in reopened.snapshot.originals {
+                _ = try reopened.verifiedURL(original.id)
+            }
+        }
+
+        // 3) Transient interruption mid-batch (N = 3 photos, item 2 shortChunkCount: 1) STILL coalesces into 1 write.
+        do {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-p222-int-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let counterLock = NSLock()
+            var writeCount = 0
+            func resetWrites() { counterLock.lock(); writeCount = 0; counterLock.unlock() }
+            func readWrites() -> Int { counterLock.lock(); defer { counterLock.unlock() }; return writeCount }
+
+            let store = try CameraOriginalStore(directory: root) {
+                counterLock.lock()
+                writeCount += 1
+                counterLock.unlock()
+            }
+            let channel = FakeSonyCameraChannel(entries: [
+                FakeSonyCameraEntry(content: 1, name: "DSC08201.ARW", createdMillis: baseMillis + 1_000, bytes: validRAWBytes(95)),
+                FakeSonyCameraEntry(content: 2, name: "DSC08202.ARW", createdMillis: baseMillis + 2_000, bytes: makeLargeRAW(size: 4096, seed: 96), shortChunkCount: 1),
+                FakeSonyCameraEntry(content: 3, name: "DSC08203.ARW", createdMillis: baseMillis + 3_000, bytes: validRAWBytes(97))
+            ])
+            let backend = CameraWorkspaceBackend(storage: store, clientID: UUID()) { _, purpose, _ in
+                try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+            }
+            let controller = IOSCameraController(backend: backend)
+            controller.connect(endpoint: endpoint, mode: .importing, cardConfirmed: false, resume: false)
+            try await waitUntil { controller.phase == .browsing && controller.assets.count == 3 }
+
+            resetWrites()
+            controller.startIncremental(controller.incrementalScan(customCutoff: Date(timeIntervalSince1970: Double(baseMillis) / 1000), includeUndated: false))
+            try await waitUntil {
+                controller.phase == .browsing && store.snapshot.jobs.last?.items[1].phase == .interrupted
+            }
+            let writesForInterruptedBatch = readWrites()
+            try check(writesForInterruptedBatch == 1 && store.snapshot.originals.count == 1 &&
+                      store.snapshot.jobs[0].items[0].phase == .saved &&
+                      store.snapshot.jobs[0].items[1].phase == .interrupted &&
+                      store.snapshot.jobs[0].items[2].phase == .queued,
+                      "P2-22: Interrupted batch flushes saved + interrupted state in 1 coalesced write (actual: \(writesForInterruptedBatch))")
+            await withCheckedContinuation { continuation in
+                controller.stop { continuation.resume() }
+            }
+            await drainBackend(backend)
+        }
+    }
+
+    @MainActor static func testIN4SkippedAssetsFIFOOverMaximumLimitSurvivesRestart() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-in4-cap-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let endpoint = IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:I-N4-CAP", label: "Fake")
+        let device = CameraDeviceIdentity(manufacturer: "Sony", model: "ILCE-6700", firmware: "2.00", serial: "FAKE-SERIAL-01", operations: [])
+        let baseMillis: UInt64 = 1_700_000_000_000
+
+        func snapshot(_ index: Int) -> CameraAssetSnapshot {
+            CameraAssetSnapshot(content: UInt32(index), file: 1, storage: 0, format: 0x3800,
+                                name: String(format: "DSC%05d.ARW", index), size: 4096,
+                                created: "\(baseMillis + UInt64(index))", modified: "")
+        }
+
+        func populateAndReopenCheck() async throws {
+            let store = try CameraOriginalStore(directory: root)
+            // Save 1 valid historical original to verify all originals survive restart after >10,000 skips.
+            let channel = FakeSonyCameraChannel(entries: [
+                FakeSonyCameraEntry(content: 90_001, name: "DSC90001.ARW", createdMillis: baseMillis, bytes: validRAWBytes(71))
+            ])
+            let backend = CameraWorkspaceBackend(storage: store, clientID: UUID()) { _, purpose, _ in
+                try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+            }
+            let controller = IOSCameraController(backend: backend)
+            controller.connect(endpoint: endpoint, mode: .importing, cardConfirmed: false, resume: false)
+            try await waitUntil { controller.phase == .browsing && controller.assets.count == 1 }
+            controller.startIncremental(controller.incrementalScan(customCutoff: Date(timeIntervalSince1970: Double(baseMillis) / 1000 - 1), includeUndated: false))
+            try await waitUntil { controller.phase == .browsing && store.snapshot.originals.count == 1 }
+            await withCheckedContinuation { continuation in
+                controller.stop { continuation.resume() }
+            }
+            await drainBackend(backend)
+
+            // Skip 6,000 items then 4,001 items (cumulative 10,001 > maximumAssets 10,000).
+            let batch1 = (1...6_000).map(snapshot)
+            let job1 = try store.enqueue(device: device, connectionKey: endpoint.connectionKey,
+                                         assets: batch1, listingOwner: UUID(),
+                                         incremental: CameraIncrementalPlan(format: .raw, jpeg: CameraJPEGOptions(), boundary: nil, owner: nil, boundaries: nil))
+            try store.performBatch {
+                for item in job1.items {
+                    try store.interrupt(job: job1.id, item: item.id, error: "bad header", cancelled: false, failureKind: .headerInvalid)
+                }
+            }
+            try store.skipFailedIncrementalItems(job1.id)
+
+            let batch2 = (6_001...10_001).map(snapshot)
+            let job2 = try store.enqueue(device: device, connectionKey: endpoint.connectionKey,
+                                         assets: batch2, listingOwner: UUID(),
+                                         incremental: CameraIncrementalPlan(format: .raw, jpeg: CameraJPEGOptions(), boundary: nil, owner: nil, boundaries: nil))
+            try store.performBatch {
+                for item in job2.items {
+                    try store.interrupt(job: job2.id, item: item.id, error: "bad header", cancelled: false, failureKind: .headerInvalid)
+                }
+            }
+            try store.skipFailedIncrementalItems(job2.id)
+        }
+
+        try await populateAndReopenCheck()
+
+        // Reopen store from disk: must not throw "Invalid camera storage manifest" and must preserve originals + newest 10,000 skipped items.
+        let reopened = try CameraOriginalStore(directory: root)
+        let skipped = reopened.snapshot.skippedAssets(for: device, connectionKey: endpoint.connectionKey)
+        try check(reopened.snapshot.originals.count == 1,
+                  "I-N4 FIFO cap: Reopening after 6,000 + 4,001 skipped items preserves historical originals")
+        _ = try reopened.verifiedURL(reopened.snapshot.originals[0].id)
+        try check(skipped.count == CameraIncrementalScan.maximumAssets &&
+                  skipped.first?.name == "DSC00002.ARW" &&
+                  skipped.last?.name == "DSC10001.ARW",
+                  "I-N4 FIFO cap: Evicts oldest entry (DSC00001.ARW) and keeps newest 10,000 skipped items")
+    }
+
+    @MainActor static func testIN6TetheringResumeLimitAndExactBoundary10000To10001AndLanguageSwitch() async throws {
+        let previousLang = UserDefaults.standard.string(forKey: L10n.preferenceKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: fakeCameraPrefsKey)
+            if let previousLang {
+                UserDefaults.standard.set(previousLang, forKey: L10n.preferenceKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: L10n.preferenceKey)
+            }
+        }
+        let endpoint = IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:I-N6-EDGE", label: "Fake")
+        let baseMillis: UInt64 = 1_700_000_000_000
+        let sampleBytes = validRAWBytes(77)
+        let exact10000 = (1...10_000).map { index in
+            FakeSonyCameraEntry(content: UInt32(index), name: String(format: "DSC%05d.ARW", index),
+                                createdMillis: baseMillis + UInt64(index), bytes: sampleBytes)
+        }
+
+        // Part A: 10,000 -> legal shutter -> 10,001 -> .ready + listingLimitExceeded keep-alive past shutterTimeout -> backend.capture guard -> language switch cleanup -> recovery.
+        do {
+            UserDefaults.standard.set("zh-Hans", forKey: L10n.preferenceKey)
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-in6-10000-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let store = try CameraOriginalStore(directory: root)
+            let channel = FakeSonyCameraChannel(mode: .mobile, supportsTethering: true, entries: exact10000)
+            let shot10001 = FakeSonyCameraEntry(content: 10_001, name: "DSC10001.ARW",
+                                                createdMillis: baseMillis + 50_000, bytes: validRAWBytes(92))
+            channel.onShutter = { [weak channel] in
+                // Caller already holds channel lock during write().
+                channel?.entries.append(shot10001)
+            }
+            var openedSession: SonyCameraSession?
+            var capturedRun: IOSCameraRun?
+            let backend = CameraWorkspaceBackend(storage: store, clientID: UUID(), shutterTimeout: 3.5) { run, purpose, _ in
+                capturedRun = run
+                let s = try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+                openedSession = s
+                return s
+            }
+            let controller = IOSCameraController(backend: backend)
+            controller.connect(endpoint: endpoint, mode: .tethering, cardConfirmed: true, resume: false)
+            try await waitUntil { controller.phase == .ready && controller.shutterReady }
+            try check(!controller.listingLimitExceeded,
+                      "I-N6 boundary: Exactly 10,000 card items succeeds without triggering photoLimitExceeded")
+
+            controller.capture()
+            try await waitUntil(timeout: 6) {
+                controller.listingLimitExceeded && controller.notice == "照片 · 已到上限"
+            }
+            try check(controller.connected && controller.phase == .ready && !controller.shutterReady &&
+                      openedSession?.stopped == false && !channel.closed,
+                      "I-N6 boundary: 10,000 -> legal shutter -> 10,001 settles to .ready + listingLimitExceeded instead of .waiting or .paused")
+
+            // Wait past shutterTimeout (3.5s) across at least one more poll: captureUnknown 35s timeout must be exempted under limit.
+            try await Task.sleep(nanoseconds: 2_000_000_000)
+            try check(controller.connected && controller.phase == .ready && controller.listingLimitExceeded &&
+                      openedSession?.stopped == false && !channel.closed && controller.hasUnknownShot,
+                      "I-N6 boundary: Poll elapsed past shutterTimeout exempts captureUnknown disconnect while listingLimitExceeded holds")
+
+            // Direct backend.capture guard during async window / listingLimitExceeded must not fire shutter.
+            let shuttersBefore = channel.shutterCommands
+            if let run = capturedRun { backend.capture(run) }
+            try await Task.sleep(nanoseconds: 200_000_000)
+            try check(channel.shutterCommands == shuttersBefore && controller.phase == .ready,
+                      "I-N6 guard: backend.capture drops shutter while listingLimitExceeded is active and stays .ready")
+
+            // Finding 5: Switching UI language while over limit must still clear the limit notice upon recovery.
+            UserDefaults.standard.set("en", forKey: L10n.preferenceKey)
+            channel.updateEntries { $0 = [exact10000[0], exact10000[1], shot10001] }
+            try await waitUntil(timeout: 6) {
+                !controller.listingLimitExceeded &&
+                    controller.phase == .ready &&
+                    controller.shutterReady &&
+                    store.snapshot.originals.count == 1
+            }
+            try check(controller.notice == nil && !controller.hasUnknownShot &&
+                      store.snapshot.originals.map(\.name) == ["DSC10001.ARW"],
+                      "I-N6 & L10n: Recovery clears limit notice regardless of mid-limit language switch and downloads shot 10,001")
+            await withCheckedContinuation { continuation in
+                controller.stop { continuation.resume() }
+            }
+            await drainBackend(backend)
+        }
+
+        // Part B: resume: true when card exceeds 10,000 keeps tether alive, blocks backend.capture, and triggers finishTetherResume upon recovery.
+        do {
+            UserDefaults.standard.set("zh-Hans", forKey: L10n.preferenceKey)
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-in6-resume-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let shot = FakeSonyCameraEntry(content: 20_001, name: "DSC20001.ARW",
+                                           createdMillis: baseMillis + 60_000, bytes: validRAWBytes(83))
+            @MainActor func recordTetherSession() async throws {
+                let store1 = try CameraOriginalStore(directory: root)
+                let ch1 = FakeSonyCameraChannel(mode: .mobile, supportsTethering: true, entries: [])
+                let backend1 = CameraWorkspaceBackend(storage: store1, clientID: UUID()) { _, purpose, _ in
+                    try SonyCameraSession(client: CameraPTPClient(command: ch1, event: nil), purpose: purpose)
+                }
+                let ctrl1 = IOSCameraController(backend: backend1)
+                ctrl1.connect(endpoint: endpoint, mode: .tethering, cardConfirmed: true, resume: false)
+                try await waitUntil { ctrl1.phase == .ready && ctrl1.shutterReady }
+                ch1.updateEntries { $0.append(shot) }
+                try await waitUntil(timeout: 6) { store1.snapshot.originals.count == 1 && store1.snapshot.canResumeTether }
+                await withCheckedContinuation { continuation in
+                    ctrl1.stop { continuation.resume() }
+                }
+                await drainBackend(backend1)
+            }
+            try await recordTetherSession()
+
+            let over10001 = [shot] + exact10000
+            let store2 = try CameraOriginalStore(directory: root)
+            let ch2 = FakeSonyCameraChannel(mode: .mobile, supportsTethering: true, entries: over10001)
+            var run2: IOSCameraRun?
+            let backend2 = CameraWorkspaceBackend(storage: store2, clientID: UUID()) { run, purpose, _ in
+                run2 = run
+                return try SonyCameraSession(client: CameraPTPClient(command: ch2, event: nil), purpose: purpose)
+            }
+            let ctrl2 = IOSCameraController(backend: backend2)
+            ctrl2.connect(endpoint: endpoint, mode: .tethering, cardConfirmed: true, resume: true)
+            try await waitUntil(timeout: 5) { ctrl2.listingLimitExceeded && ctrl2.notice == "照片 · 已到上限" }
+            try check(ctrl2.connected && ctrl2.phase == .ready && !ctrl2.shutterReady && !ch2.closed,
+                      "I-N6 (resume:true): Reconnecting over 10,000 stays connected in .ready with limit notice")
+
+            if let run2 { backend2.capture(run2) }
+            try await Task.sleep(nanoseconds: 200_000_000)
+            try check(ch2.shutterCommands == 0 && ctrl2.phase == .ready,
+                      "I-N6 (resume:true): backend.capture blocks shutter while needsTetherResume + limit holds")
+
+            ch2.updateEntries { $0 = [shot] }
+            try await waitUntil(timeout: 6) {
+                !ctrl2.listingLimitExceeded && ctrl2.phase == .ready && ctrl2.shutterReady
+            }
+            try check(ctrl2.notice == "已恢复已登记的接收任务。断线期间拍摄的照片请从相机手动导入。",
+                      "I-N6 (resume:true): Dropping back <= 10,000 triggers finishTetherResume and unlocks shutter")
+            await withCheckedContinuation { continuation in
+                ctrl2.stop { continuation.resume() }
+            }
+            await drainBackend(backend2)
+        }
+    }
+
+    @MainActor static func testP222PerformBatchPersistFailureRollbackAndRecovery() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-p222-fail-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: root.path)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let endpoint = IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:P2-22-FAIL", label: "Fake")
+        let device = CameraDeviceIdentity(manufacturer: "Sony", model: "ILCE-6700", firmware: "2.00", serial: "FAKE-SERIAL-01", operations: [])
+        let baseMillis: UInt64 = 1_700_000_000_000
+        let counterLock = NSLock()
+        var writeCount = 0
+        func resetWrites() { counterLock.lock(); writeCount = 0; counterLock.unlock() }
+        func readWrites() -> Int { counterLock.lock(); defer { counterLock.unlock() }; return writeCount }
+
+        func asset(_ index: Int) -> CameraAssetSnapshot {
+            CameraAssetSnapshot(content: UInt32(index), file: 1, storage: 0, format: 0x3800,
+                                name: String(format: "DSC09%03d.ARW", index), size: 1024,
+                                created: "\(baseMillis + UInt64(index))", modified: "")
+        }
+
+        func runCheck() async throws {
+            let store = try CameraOriginalStore(directory: root) {
+                counterLock.lock(); writeCount += 1; counterLock.unlock()
+            }
+            _ = try store.enqueue(device: device, connectionKey: endpoint.connectionKey, assets: [asset(0)])
+            try check(store.snapshot.jobs.count == 1, "P2-22 persist failure: Seed job written")
+            resetWrites()
+
+            // 1) Normal batch exit where persist() fails: must throw, roll back memory to 1 seed job, and keep batchDepth == 0 so next batch still coalesces.
+            try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: root.path)
+            var normalExitThrew = false
+            do {
+                try store.performBatch {
+                    _ = try store.enqueue(device: device, connectionKey: endpoint.connectionKey, assets: [asset(1)])
+                    _ = try store.enqueue(device: device, connectionKey: endpoint.connectionKey, assets: [asset(2)])
+                    _ = try store.enqueue(device: device, connectionKey: endpoint.connectionKey, assets: [asset(3)])
+                }
+            } catch {
+                normalExitThrew = true
+            }
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: root.path)
+            try check(normalExitThrew && store.snapshot.jobs.count == 1 && readWrites() == 0,
+                      "P2-22 persist failure: Rolls back memory state cleanly on exit persist failure (jobs: \(store.snapshot.jobs.count), writes: \(readWrites()))")
+
+            try store.performBatch {
+                _ = try store.enqueue(device: device, connectionKey: endpoint.connectionKey, assets: [asset(11)])
+                _ = try store.enqueue(device: device, connectionKey: endpoint.connectionKey, assets: [asset(12)])
+                _ = try store.enqueue(device: device, connectionKey: endpoint.connectionKey, assets: [asset(13)])
+            }
+            let writesAfterNormalRecovery = readWrites()
+            try check(writesAfterNormalRecovery == 1 && store.snapshot.jobs.count == 4,
+                      "P2-22 persist failure recovery: Next performBatch with 3 changes still coalesces to 1 write (actual: \(writesAfterNormalRecovery))")
+
+            // 2) Exception batch exit where persist() also fails: must surface persist failure (not swallow), roll back, and recover batchDepth.
+            resetWrites()
+            try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: root.path)
+            var exceptionExitError: Error?
+            do {
+                try store.performBatch {
+                    _ = try store.enqueue(device: device, connectionKey: endpoint.connectionKey, assets: [asset(21)])
+                    _ = try store.enqueue(device: device, connectionKey: endpoint.connectionKey, assets: [asset(22)])
+                    throw CameraProtocolError.cancelled
+                }
+            } catch {
+                exceptionExitError = error
+            }
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: root.path)
+            let isCancelledOnly = (exceptionExitError as? CameraProtocolError).map {
+                if case .cancelled = $0 { return true }; return false
+            } ?? false
+            try check(exceptionExitError != nil && !isCancelledOnly && store.snapshot.jobs.count == 4 && readWrites() == 0,
+                      "P2-22 catch persist failure: Surfaces storage persist failure and rolls back pre-batch state")
+
+            try store.performBatch {
+                _ = try store.enqueue(device: device, connectionKey: endpoint.connectionKey, assets: [asset(31)])
+                _ = try store.enqueue(device: device, connectionKey: endpoint.connectionKey, assets: [asset(32)])
+                _ = try store.enqueue(device: device, connectionKey: endpoint.connectionKey, assets: [asset(33)])
+            }
+            let writesAfterCatchRecovery = readWrites()
+            try check(writesAfterCatchRecovery == 1 && store.snapshot.jobs.count == 7,
+                      "P2-22 catch persist failure recovery: Next performBatch with 3 changes still coalesces to 1 write (actual: \(writesAfterCatchRecovery))")
+        }
+
+        try await runCheck()
+        let reopened = try CameraOriginalStore(directory: root)
+        try check(reopened.snapshot.jobs.count == 7,
+                  "P2-22 persist failure recovery: On-disk manifest matches 7 committed jobs with zero split-brain")
     }
 }
