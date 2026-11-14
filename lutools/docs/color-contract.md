@@ -856,8 +856,9 @@ renders release large RAW pixel caches, while previews retain one RAW source
 for repeated adjustments. Large RAW decoder storage is released after its metadata
 is captured. CPU export may take ownership of the evicted RAW image, while preview
 renders copy instead so the next preview or the export that follows reuses the
-decode; `sony2fuji_session_get_raw_decode_count` counts full decodes and detects
-re-decoding. GPU retains an immutable source until successful completion or CPU
+decode; `sony2fuji_session_get_raw_decode_count` counts cache-filling RAW decodes
+(half-size proxy and exposure-anchor decodes included) and detects re-decoding.
+GPU retains an immutable source until successful completion or CPU
 fallback. Metadata remains
 available after pixel eviction. This bounds duplicate images, but RAW decoding,
 transactional GPU staging and full-resolution output still require host memory.

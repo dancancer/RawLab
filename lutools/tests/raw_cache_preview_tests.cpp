@@ -1,6 +1,8 @@
 // C8 回归：CPU 非视口预览不得移走大图 RAW 缓存；预览后的导出不得整幅重解码。
-// 解码次数由 sony2fuji_session_get_raw_decode_count 探针给出；大图段需要外部素材，
-// 用法：raw_cache_preview_tests [LARGE_RAW]。小于 128 MiB 解码缓存的素材只跑通用保留段。
+// 解码次数由 sony2fuji_session_get_raw_decode_count 探针给出。内置小图段常跑；
+// 大图段按 *_raw 三态惯例（同 wavelet_exposure_cache）：raw_cache_preview_raw 传
+// SONY2FUJI_TEST_RAW 或 RAWLAB_TEST_RAW，无素材/≤128 MiB 退出 77（ctest Skipped），
+// 显式传入不存在的路径退出 1。
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include <chrono>
 #include <cstdint>
@@ -43,12 +45,13 @@ Session makeSession(int viewport, bool wavelet) {
 }
 
 // exposure_ev 不参与 RAW 缓存键，调整它模拟滑杆的后续帧。
-sony2fuji_request makeRequest(const std::string& path, bool exportFrame, uint32_t long_edge) {
+// 指针语义：input_path 只引用调用方保活的 C 字符串，request 不得比它活得更久。
+sony2fuji_request makeRequest(const char* path, bool exportFrame, uint32_t long_edge) {
     sony2fuji_request request{};
     request.version = SONY2FUJI_REQUEST_VERSION;
     request.struct_size = sizeof(request);
     request.input_type = SONY2FUJI_INPUT_RAW;
-    request.input_path = path.c_str();
+    request.input_path = path;
     request.temperature = 6500;
     request.brightness = request.contrast = request.saturation = 1;
     request.wb_mode = SONY2FUJI_WB_CAMERA;
@@ -81,11 +84,11 @@ void expect(const Sample& sample, uint64_t decodes, const std::string& name, std
 // 通用保留段：小图缓存本就走拷贝分支，预览与导出都必须复用同一次解码。
 void retentionChecks(const std::string& path, std::vector<std::string>& failures) {
     auto session = makeSession(0, false);
-    auto preview = makeRequest(path, false, 0);
+    auto preview = makeRequest(path.c_str(), false, 0);
     expect(render(session.get(), preview), 1, "retention first preview", failures);
     preview.exposure_ev = 0.25f;
     expect(render(session.get(), preview), 0, "retention adjusted preview", failures);
-    auto exportFrame = makeRequest(path, true, 0);
+    auto exportFrame = makeRequest(path.c_str(), true, 0);
     expect(render(session.get(), exportFrame), 0, "retention export", failures);
     expect(render(session.get(), exportFrame), 0, "retention export again", failures);
 }
@@ -95,22 +98,22 @@ void retentionChecks(const std::string& path, std::vector<std::string>& failures
 // 小波非视口预览同样保留大图缓存。
 void largeRawChecks(const std::string& path, std::vector<std::string>& failures) {
     auto session = makeSession(0, false);
-    auto preview = makeRequest(path, false, 0);
+    auto preview = makeRequest(path.c_str(), false, 0);
     expect(render(session.get(), preview), 1, "large first preview", failures);
     preview.exposure_ev = 0.25f;
     expect(render(session.get(), preview), 0, "large adjusted preview", failures);
-    auto exportFrame = makeRequest(path, true, 0);
+    auto exportFrame = makeRequest(path.c_str(), true, 0);
     expect(render(session.get(), exportFrame), 0, "large export after preview", failures);
     expect(render(session.get(), exportFrame), 1, "large export after release", failures);
 
     auto viewport = makeSession(1, false);
-    auto viewportPreview = makeRequest(path, false, 2000);
+    auto viewportPreview = makeRequest(path.c_str(), false, 2000);
     expect(render(viewport.get(), viewportPreview), 1, "viewport preview", failures);
     viewportPreview.exposure_ev = -0.25f;
     expect(render(viewport.get(), viewportPreview), 0, "viewport adjusted preview", failures);
 
     auto wavelet = makeSession(0, true);
-    auto waveletPreview = makeRequest(path, false, 0);
+    auto waveletPreview = makeRequest(path.c_str(), false, 0);
     expect(render(wavelet.get(), waveletPreview), 1, "wavelet preview", failures);
     waveletPreview.exposure_ev = 0.5f;
     expect(render(wavelet.get(), waveletPreview), 0, "wavelet adjusted preview", failures);
@@ -119,34 +122,47 @@ void largeRawChecks(const std::string& path, std::vector<std::string>& failures)
 } // namespace
 
 int main(int argc, char** argv) {
-    const std::string photo = argc > 1 ? argv[1] : "";
     try {
         std::vector<std::string> failures;
         retentionChecks(std::string(TEST_FIXTURE_DIR) + "/bayer-demosaic.dng", failures);
-        if (photo.empty() || !std::filesystem::exists(std::filesystem::u8path(photo))) {
-            std::cout << "no external large RAW supplied; large checks not exercised\n";
-        } else {
-            sony2fuji_session* probe = nullptr;
-            require(sony2fuji_session_create(&probe) == SONY2FUJI_STATUS_OK, "probe session");
-            auto probeRequest = makeRequest(photo, false, 0);
-            sony2fuji_buffer buffer{};
-            require(sony2fuji_process(probe, &probeRequest, &buffer) == SONY2FUJI_STATUS_OK, "probe render");
-            const uint64_t cacheBytes = static_cast<uint64_t>(buffer.width) * buffer.height * kRGBFloatBytes;
-            const uint32_t width = buffer.width, height = buffer.height;
-            sony2fuji_release_buffer(&buffer);
-            sony2fuji_session_destroy(probe);
-            if (cacheBytes <= kRawCacheBudgetBytes) {
-                std::cout << photo << " decodes to " << (cacheBytes / (1024 * 1024))
-                          << " MiB (<= 128 MiB budget); large checks not exercised\n";
-            } else {
-                std::cout << photo << " " << width << "x" << height << " decodes to "
-                          << (cacheBytes / (1024 * 1024)) << " MiB (> 128 MiB budget)\n";
-                largeRawChecks(photo, failures);
-            }
-        }
         for (const auto& failure : failures) std::cerr << "FAIL: " << failure << '\n';
         if (!failures.empty()) return 1;
-        std::cout << "raw cache preview retention checks passed\n";
+        if (argc < 2) {
+            std::cout << "PASS: raw cache retention; large RAW checks need an external fixture\n";
+            return 0;
+        }
+        const char* argRaw = *argv[1] ? argv[1] : nullptr;
+        const char* envRaw = std::getenv("RAWLAB_TEST_RAW");
+        if (envRaw && !*envRaw) envRaw = nullptr;
+        const char* rawPath = argRaw ? argRaw : envRaw;
+        if (!rawPath) {
+            std::cout << "SKIP raw_cache_preview_raw: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
+            return 77;
+        }
+        if (!std::filesystem::is_regular_file(std::filesystem::u8path(rawPath))) {
+            std::cerr << "FAIL raw_cache_preview_raw: RAW sample does not exist: " << rawPath << '\n';
+            return 1;
+        }
+        sony2fuji_session* probe = nullptr;
+        require(sony2fuji_session_create(&probe) == SONY2FUJI_STATUS_OK, "probe session");
+        auto probeRequest = makeRequest(rawPath, false, 0);
+        sony2fuji_buffer buffer{};
+        require(sony2fuji_process(probe, &probeRequest, &buffer) == SONY2FUJI_STATUS_OK, "probe render");
+        const uint64_t cacheBytes = static_cast<uint64_t>(buffer.width) * buffer.height * kRGBFloatBytes;
+        const uint32_t width = buffer.width, height = buffer.height;
+        sony2fuji_release_buffer(&buffer);
+        sony2fuji_session_destroy(probe);
+        if (cacheBytes <= kRawCacheBudgetBytes) {
+            std::cout << "SKIP raw_cache_preview_raw: " << rawPath << " decodes to "
+                      << (cacheBytes / (1024 * 1024)) << " MiB (<= 128 MiB budget)\n";
+            return 77;
+        }
+        std::cout << rawPath << " " << width << "x" << height << " decodes to "
+                  << (cacheBytes / (1024 * 1024)) << " MiB (> 128 MiB budget)\n";
+        largeRawChecks(rawPath, failures);
+        for (const auto& failure : failures) std::cerr << "FAIL: " << failure << '\n';
+        if (!failures.empty()) return 1;
+        std::cout << "raw cache preview checks passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
