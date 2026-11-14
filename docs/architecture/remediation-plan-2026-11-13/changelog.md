@@ -170,3 +170,5 @@
 - 2026-11-14 · #328 打回一条 medium：守卫/ABI 获认可，raw_cache_preview 测试卫生三连（坏路径静默 0、缺 RAWLAB_TEST_RAW 回退、无素材应 77 而记 Passed——评审实测抓出一条假绿口径，正撞刚立的「行为红/三态」纪律）。raw-cache crew 续修。
 - 2026-11-14 · #328 r2 交卷（`51f1a7b6`）：测试卫生三连修+三态实测，意外揪出 makeRequest 按值 string 悬垂（旧码靠已释放内存残留侥幸绿）；全量口径改如实 170/0/26。二轮碳审在途（review-mwg8mzxm，悬垂属测试侧还是生产 UB 待裁）。
 - 2026-11-14 · P3 轻修批次开工（p3-batch crew）：P3-01 TOCTOU/symlink、P3-02 Windows staging 残留、P3-03 取消异常经 ImageEncoder 退化、P3-06 metal_stats 兜底不吞取消；P3-04/05 压后（gles_lut/metal_lut 与 #327 同文件）。D-05 复核未过确认待修（iOS 对 12.5 小数抛 unrepresentable vs Android 分派），压至 P2-01 交卷防同文件碰撞。
+- 2026-11-14 · **性能双票合入（总 85 PR）**：**#327**（P2-12，二轮水位语义获通过，RSS −534MiB 入册）、**#328**（P2-13，悬垂判为测试侧+双 CTest 三态入册）；P2-14 解锁即开工（cpu-parallel 氢单，令用 #329 parallel_for 惯用法+#327 FNV 校验和先例，确定性红线=输出逐位不变）。
+- 2026-11-14 · **#329 打回 4 条**（medium：prepare_ai 取消接线零覆盖+Skipped 误报全跑；low×3：文档/ABI 注释同步、与 HDR 口径对齐、阶段间取消覆盖）denoise-cancel 续修；**#326 r3**（轨道双击被原生手势抢——双击≠恢复默认而是跳到点击点）氢线程续。
