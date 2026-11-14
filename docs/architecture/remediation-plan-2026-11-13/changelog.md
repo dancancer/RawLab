@@ -108,3 +108,4 @@
 - 2026-11-14 · #307 二轮交卷（head `08001d18`）：B1 注册 apple-models.sh 且 run 43534762104 双端 PASS 行在场；B2 四端解析器先判 supported=false→协议占位 0（按 Q3），三条分歧消解为**四端台账全空**，WB 占位契约反向钉死；Windows CS0165 由 CI 首跑暴露修复（注册生效旁证）。二轮复审在途（review-mwfoezbf）。
 - 2026-11-14 · #304 续修交卷（head `58d38c5b`）：B1 期望改 strength 静态决定（GPU 面 Auto+Force 无条件 METAL），变异双向坐实旧自适应版假绿（exit 0 且 forced parity 0 次执行）；S1 逐配方 neutral+LUT forced parity 钉回 14 .cube。双 fixture 609 PASS。**环境事件**：crew 变异行曾被并发 docs 提交扫进 development，`d29dec80` 直推回退（lead 亲验核心与 6c404ba0 逐字节一致；教训=变异实验期间主工作区勿提交 docs）。二轮复审在途（review-mwfokgvu）。
 - 2026-11-14 · Q 字头实施票开闸：**`q12-late-cancel`**（提交点后迟到取消不删文件+提示完成，Android 导出+核心，优先复用 #293 latch）与 **`q6-retention`**（批量产物 30d/100 条、联机记录 90d、相机原件零自动删+手动入口，iOS/Android 存储层）并行开工。
+- 2026-11-14 · **双合入（总 67）**：**#304**（r2 approve 0B/0S/0N——strength 静态期望+14 .cube forced parity 钉回，master-recipe-render 既有红闭环）；**#307**（r2 approve——P1③ 重置场景向量合入，**四端分歧台账全空**，双端 CI 注册根治空转）。Mac 摸底 16 新红仅剩桌面复核族挂账。
