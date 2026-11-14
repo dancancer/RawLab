@@ -497,6 +497,9 @@ final class BatchExportModel: ObservableObject {
 
 
     private func saveJournal() {
+        // Q6（B1）：批量导出成功逐条登记进导出证据账本（幂等，succeeded 才登记）。
+        ExportEvidenceStore.shared.record(contentIdentifiers: job.targets
+            .filter { $0.status == .succeeded }.compactMap(\.identity.contentIdentifier))
         guard let journalStore else { return }
         do { try journalStore.save(job) }
         catch { validationMessage = L10n.format("任务未保存：%@", String(describing: error.localizedDescription)) }

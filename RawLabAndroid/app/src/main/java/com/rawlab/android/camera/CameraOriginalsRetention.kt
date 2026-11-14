@@ -11,12 +11,13 @@ import org.json.JSONObject
 //  「已导出」（COMPLETE 且 committed，相册字节已发布）任务的记录；照片不受影响。
 //  保护规则与运行时读取方逐字对齐，保证宁漏删不误删：
 //  · 最新的任务记录始终保留（历史与重复导入检测的锚点）；
-//  · 每个增量格式保留最近一条含该格式检查点的已导出记录，与
-//    committedIncrementalCheckpoints「按时间倒序、每格式取首个」的取值顺序一致
-//    （listingOwner 每次连接都是新 UUID，按 owner 保护在生产是空转，必须按格式）；
+//  · 按相机分桶（镜像 matchesCamera：hardwareIdentity 在场按机身、缺席按连接），桶内按
+//    时间倒序每格式首个含检查点（checkpoints，真实字段）的已导出记录是锚点；未迁移的
+//    incremental.boundary 回落为全格式检查点；桶内最近的增量任务保留（读取方当前会话
+//    仍会查询它的去重键）。listingOwner 每次连接都是新 UUID，按 owner 保护是空转；
 //  · 联机运行（camera-tether-runs/*.json）batches[].id 引用的记录保留：
 //    CameraTetherQueue.load 恢复会话时会回读这些批文件，删了会静默丢批次；
-//    任一运行文件解析失败时不清理（引用集未知，宁漏删）；
+//    目录读不出、运行文件或 batches 结构损坏 → 引用集未知，本轮一条不删（B4 fail-closed）；
 //  · 未导出（非 COMPLETE 或未 committed）的任务记录一律保留供断点续传。
 //  读不出的任务文件不计入、不删除，交给 CameraImportStore.load 的隔离逻辑；
 //  目录整体不可读视为失败抛出，让 UI 能区分「没得清」与「清不了」。
@@ -31,6 +32,8 @@ internal object CameraOriginalsRetention {
     private val RUN_PATTERN = Regex("^$UUID_HEX\\.json$")
     // 与 CameraTetherJournal 的写入预算一致；异常大的运行文件按解析失败处理。
     private const val RUN_MAX_BYTES = 8L * 1024 * 1024
+    // 未迁移旧检查点（incremental.boundary）按 migrateLegacyBoundary 语义视为覆盖全部格式。
+    private val LEGACY_KINDS = listOf("RAW", "JPEG")
 
     /** 列目录：目录内直属任务记录文件的数量与占用字节，供设置页显示。 */
     fun inspect(directory: File): CameraOriginalsSummary {
@@ -66,13 +69,27 @@ internal object CameraOriginalsRetention {
         // 时间相同按文件名倒序，保证「最新一条」与格式检查点锚点的选取可复现。
         val sorted = entries.sortedWith(compareByDescending<Entry> { it.time }.thenByDescending { it.id })
         val newestID = sorted.first().id
-        // committedIncrementalCheckpoints 的镜像：按时间倒序，每个格式首个含检查点的已导出记录是该格式的锚点。
+        // committedIncrementalCheckpoints + matchesCamera 的镜像（B2）：按相机分桶——
+        // hardwareIdentity 在场按机身匹配，缺席按 cameraId(连接)隔离；桶内按时间倒序，
+        // 每个格式首个含检查点的已导出记录是该格式的锚点。未迁移的 incremental.boundary
+        // 按 migrateLegacyBoundary 语义回落成全格式检查点；桶内最近的增量任务保留——
+        // 读取方在当前会话仍会查询它的去重键。listingOwner 每连接新 UUID，不作保护依据。
         val checkpointAnchors = mutableSetOf<String>()
-        val seenKinds = mutableSetOf<String>()
+        val seenKinds = HashMap<String, MutableSet<String>>()
+        val seenBuckets = mutableSetOf<String>()
         for (entry in sorted) {
             if (!isExported(entry.json)) continue
-            val checkpoints = entry.json.optJSONObject("incremental")?.optJSONObject("checkpoints") ?: continue
-            for (kind in checkpoints.keys()) if (seenKinds.add(kind)) checkpointAnchors.add(entry.id)
+            val incremental = entry.json.optJSONObject("incremental") ?: continue
+            val checkpoints = incremental.optJSONObject("checkpoints")
+            val kinds = mutableListOf<String>()
+            if (checkpoints != null) {
+                for (kind in checkpoints.keys()) kinds.add(kind)
+            }
+            if (kinds.isEmpty() && incremental.optJSONObject("boundary") != null) kinds += LEGACY_KINDS
+            val bucket = cameraBucket(entry.json)
+            val seen = seenKinds.getOrPut(bucket) { mutableSetOf() }
+            if (seenBuckets.add(bucket) || kinds.any { it !in seen }) checkpointAnchors.add(entry.id)
+            seen += kinds
         }
         val pruned = entries.filter { entry ->
             isExported(entry.json) && entry.id != newestID && entry.id !in batchIDs &&
@@ -81,16 +98,27 @@ internal object CameraOriginalsRetention {
         return Plan(pruned)
     }
 
-    /** 联机运行引用的批次 id；null 表示存在解析不了的运行文件（引用集未知）。 */
+    private fun cameraBucket(json: JSONObject): String {
+        // 与 CameraImportJob.matchesCamera 同构：hardwareIdentity==null 按 connectionId，否则按机身。
+        val hardware = json.optJSONObject("hardwareIdentity")
+        return if (hardware != null) "hw:" + hardware.optString("model") + "|" + hardware.optString("serial")
+        else "cam:" + json.optString("camera")
+    }
+
+    /** 联机运行引用的批次 id；null 表示引用集未知（目录读不出、运行文件或 batches 结构损坏）。 */
     private fun tetherBatchIDs(runsDirectory: File): Set<String>? {
-        val runs = runsDirectory.listFiles().orEmpty().filter { it.isFile && RUN_PATTERN.matches(it.name) }
+        if (!runsDirectory.exists()) return emptySet()  // 无运行历史 = 已知空引用集
+        val runs = runsDirectory.listFiles()?.filter { it.isFile && RUN_PATTERN.matches(it.name) }
+            ?: return null                               // 目录不可读/是文件 = 引用未知，B4 fail-closed
         val ids = mutableSetOf<String>()
         for (run in runs) {
             if (run.length() > RUN_MAX_BYTES) return null
             val json = try { JSONObject(run.readText()) } catch (_: Exception) { return null }
-            val batches = json.optJSONArray("batches") ?: continue
+            if (!json.has("batches")) continue
+            val batches = json.optJSONArray("batches") ?: return null   // 半截结构：宁可不删
             for (index in 0 until batches.length()) {
-                batches.optJSONObject(index)?.optString("id")?.takeIf { it.isNotEmpty() }?.let(ids::add)
+                val id = batches.optJSONObject(index)?.optString("id")?.takeIf { it.isNotEmpty() } ?: return null
+                ids.add(id)
             }
         }
         return ids

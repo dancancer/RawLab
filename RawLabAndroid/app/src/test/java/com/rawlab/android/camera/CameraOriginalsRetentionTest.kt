@@ -19,15 +19,19 @@ class CameraOriginalsRetentionTest {
 
     private fun job(dir: File, ageMillis: Long, status: String = "COMPLETE", committed: Boolean? = true,
                     listingOwner: String? = null, sessionOwner: String? = null,
-                    checkpoints: Set<String> = emptySet()): File {
-        val json = JSONObject().put("version", 2).put("camera", "c").put("time", now - ageMillis)
+                    checkpoints: Set<String> = emptySet(), camera: String = "c",
+                    hardware: Pair<String, String>? = null, legacyBoundary: Boolean = false): File {
+        val json = JSONObject().put("version", 2).put("camera", camera).put("time", now - ageMillis)
             .put("status", status).put("items", JSONArray()).put("directory", "Download").put("grouping", "DAY")
         if (committed != null) json.put("committed", committed)
         if (listingOwner != null) json.put("listingOwner", listingOwner)
-        if (sessionOwner != null || checkpoints.isNotEmpty()) {
-            // 真实 CameraIncrementalPlan.json() 字段名是 sessionOwner；检查点在 checkpoints 对象里。
+        if (hardware != null) json.put("hardwareIdentity", JSONObject().put("model", hardware.first).put("serial", hardware.second))
+        if (sessionOwner != null || checkpoints.isNotEmpty() || legacyBoundary) {
+            // 真实 CameraIncrementalPlan.json() 字段名是 sessionOwner；检查点在 checkpoints 对象里，
+            // 未迁移的旧任务带单个 boundary 对象。
             val plan = JSONObject()
             if (sessionOwner != null) plan.put("sessionOwner", sessionOwner)
+            if (legacyBoundary) plan.put("boundary", JSONObject().put("captureMillis", now - ageMillis))
             if (checkpoints.isNotEmpty()) {
                 val anchors = JSONObject()
                 for (kind in checkpoints) anchors.put(kind, JSONObject().put("date", now - ageMillis))
@@ -129,6 +133,82 @@ class CameraOriginalsRetentionTest {
             assertFalse(raw.exists())
             assertTrue(jpeg.exists() && cover.exists() && newest.exists())
         } finally { dir.deleteRecursively(); runs.deleteRecursively() }
+    }
+
+    @Test fun checkpointsAreBucketedPerCameraNotGlobally() {
+        // B2(a)：两台未报备序列号的机身（hardwareIdentity 缺席，按 cameraId 隔离）。
+        // 机身 B 的新检查点不得抢走机身 A 的锚点（红：全局 seenKinds 时 A 被删）。
+        val dir = Files.createTempDirectory("rawlab-originals-buckets").toFile()
+        val runs = runDirWith(emptyList())
+        try {
+            val bodyA = job(dir, 30 * day, camera = "camA", checkpoints = setOf("RAW"))
+            val bodyB = job(dir, 2 * day, camera = "camB", checkpoints = setOf("RAW"))
+            val newest = job(dir, day)
+            assertEquals(0, CameraOriginalsRetention.pruneExported(dir, runs).fileCount)
+            assertTrue(bodyA.exists() && bodyB.exists() && newest.exists())
+        } finally { dir.deleteRecursively(); runs.deleteRecursively() }
+    }
+
+    @Test fun hardwareIdentityBucketsByBodyAndStillUnlocksCoveredHistory() {
+        // 同一报备机身内新检查点可解锁旧记录；另一报备机身的记录互不影响。
+        val dir = Files.createTempDirectory("rawlab-originals-hw").toFile()
+        val runs = runDirWith(emptyList())
+        try {
+            val bodyA = Pair("A7C2", "S001")
+            val oldA = job(dir, 40 * day, camera = "connA1", hardware = bodyA, checkpoints = setOf("RAW"))
+            val coverA = job(dir, 10 * day, camera = "connA2", hardware = bodyA, checkpoints = setOf("RAW"))
+            val bodyB = job(dir, 30 * day, camera = "connB1", hardware = Pair("A7C2", "S002"), checkpoints = setOf("RAW"))
+            val newest = job(dir, day)
+            val pruned = CameraOriginalsRetention.pruneExported(dir, runs)
+            assertEquals(1, pruned.fileCount)
+            assertFalse(oldA.exists())
+            assertTrue(coverA.exists() && bodyB.exists() && newest.exists())
+        } finally { dir.deleteRecursively(); runs.deleteRecursively() }
+    }
+
+    @Test fun unmigratedLegacyBoundaryRecordIsAnchored() {
+        // B2(b)：未迁移的 incremental.boundary（migrateLegacyBoundary 语义）要出保护。
+        // 放在比它新的 checkpoints{JPEG} 之后：桶内最新增量已被占，旧 checkpoint 任务
+        // 也不会给它保底，只有 boundary 回落规则能保住它（红：旧实现直接删除）。
+        val dir = Files.createTempDirectory("rawlab-originals-legacy").toFile()
+        val runs = runDirWith(emptyList())
+        try {
+            val legacy = job(dir, 40 * day, legacyBoundary = true)
+            val jpegLater = job(dir, 10 * day, checkpoints = setOf("JPEG"))
+            val newest = job(dir, day)
+            assertEquals(0, CameraOriginalsRetention.pruneExported(dir, runs).fileCount)
+            assertTrue(legacy.exists() && jpegLater.exists() && newest.exists())
+        } finally { dir.deleteRecursively(); runs.deleteRecursively() }
+    }
+
+    @Test fun runDirectoryThatIsAFileFailsClosed() {
+        // B4：runs「目录」不可枚举（这里是一个文件）→ 引用集未知 → 一条不删。
+        val dir = Files.createTempDirectory("rawlab-originals-runsfile").toFile()
+        val runs = File(dir.parentFile, "${dir.name}-runs").apply { writeText("not a directory") }
+        try {
+            val exportedOld = job(dir, 30 * day)
+            job(dir, day)
+            assertEquals(0, CameraOriginalsRetention.pruneExported(dir, runs).fileCount)
+            assertEquals(0, CameraOriginalsRetention.pendingExported(dir, runs).fileCount)
+            assertTrue(exportedOld.exists())
+        } finally { dir.deleteRecursively(); runs.delete() }
+    }
+
+    @Test fun malformedBatchesStructureFailsClosed() {
+        // B4：batches 不是数组、或元素缺 id → 半截运行文件 → 一条不删。
+        val dir = Files.createTempDirectory("rawlab-originals-batches").toFile()
+        try {
+            val exportedOld = job(dir, 30 * day)
+            job(dir, day)
+            for (broken in listOf("""{"version":1,"batches":{"id":"x"}}""", """{"version":1,"batches":[{"status":"ok"}]}""")) {
+                val runs = Files.createTempDirectory("rawlab-originals-batches-runs").toFile()
+                try {
+                    File(runs, "${UUID.randomUUID()}.json").writeText(broken)
+                    assertEquals(0, CameraOriginalsRetention.pruneExported(dir, runs).fileCount)
+                    assertTrue(exportedOld.exists())
+                } finally { runs.deleteRecursively() }
+            }
+        } finally { dir.deleteRecursively() }
     }
 
     @Test fun tetherBatchReferencesProtectJobRecordsUntilTheRunFileGoes() {

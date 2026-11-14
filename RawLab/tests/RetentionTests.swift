@@ -13,6 +13,40 @@ import Foundation
         try batchArtifactCountBoundary()
         try batchArtifactGroupedEntry()
         try batchArtifactBothConditions()
+        try exportEvidenceRegistry()
+    }
+
+    // Q6（B1）：导出证据账本——只有真实外部出口成功后登记；持久、幂等；
+    // 「打开过」（不登记）不构成证据；账本读不出来时返回空集（宁漏删）。
+    private static func exportEvidenceRegistry() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-evidence-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("nested/ExportEvidence.json")
+        let store = ExportEvidenceStore(url: file)
+        try check(store.exportedContentIdentifiers().isEmpty,
+                  "Opening photos in the editor registers nothing: an empty ledger exports nothing")
+        store.record(contentIdentifier: String(repeating: "a", count: 64))
+        store.record(contentIdentifier: nil)
+        store.record(contentIdentifier: "")
+        try check(store.exportedContentIdentifiers() == [String(repeating: "a", count: 64)],
+                  "A successful external export registers its content identifier once")
+        let reopened = ExportEvidenceStore(url: file)
+        try check(reopened.exportedContentIdentifiers() == [String(repeating: "a", count: 64)],
+                  "Export evidence survives app restarts (persisted outside any LRU)")
+        reopened.record(contentIdentifiers: [String(repeating: "b", count: 64), String(repeating: "a", count: 64)])
+        try check(ExportEvidenceStore(url: file).exportedContentIdentifiers()
+                      == [String(repeating: "a", count: 64), String(repeating: "b", count: 64)],
+                  "Later exports append without dropping or duplicating earlier evidence")
+        // 账本目录不可建：登记留在内存（宁漏登记），下一次成功落盘继续携带。
+        let blockedParent = root.appendingPathComponent("blocked")
+        try Data("x".utf8).write(to: blockedParent)
+        let blocked = ExportEvidenceStore(url: blockedParent.appendingPathComponent("ExportEvidence.json"))
+        blocked.record(contentIdentifier: String(repeating: "c", count: 64))
+        try check(blocked.exportedContentIdentifiers() == [String(repeating: "c", count: 64)],
+                  "A failed ledger write keeps the evidence in memory instead of losing it")
+        try Data("{ hal".utf8).write(to: file, options: .atomic)
+        try check(ExportEvidenceStore(url: file).exportedContentIdentifiers().isEmpty,
+                  "An unreadable ledger yields no evidence, so cleanup only under-deletes")
     }
 
     private static let day: TimeInterval = 24 * 60 * 60

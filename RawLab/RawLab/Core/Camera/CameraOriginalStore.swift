@@ -298,13 +298,13 @@ final class CameraOriginalStore {
         }
     }
     // Q6：相机原件不自动删，这里是唯一的手动清理入口。「已导出」以真实外部出口在场为准：
-    // exportedContentIdentifiers 传入最近打开记录的私有副本内容标识（RecentPhotoStore 会在
-    // 用户打开原件时把 RAW 完整副本存进自己的目录，打开是导出到相册/Files 的必经步骤）；
-    // 没有该证据的完整任务宁漏删不误删，绝不动用户尚未导出的原件。
-    // 其余保护：最新任务保留（历史与重复导入检测锚点）；联机记录（tether.jobIDs /
-    // shutterJobs）引用的任务保留（断点恢复证据）；每台相机每个增量格式保留最近一条完整
-    // 增量任务（incrementalBoundaries 按机身+连接回溯检查点，savedIncrementalKeys 的旧
-    // owner 去重键被检查点边界门控，跨连接后旧 owner 不再命中）。
+    // exportedContentIdentifiers 传入 ExportEvidenceStore 账本内容（保存图库 / Files 另存 /
+    // 渲染 DNG / 批量导出成功后登记的源内容标识；「在编辑器打开过」不算证据——RecentPhotoStore
+    // 是有界 LRU，副本随时可能被淘汰或移除）。没有登记证据的完整任务宁漏删不误删。
+    // 其余保护（全部与运行时读取方逐行同构）：最新任务保留；联机记录（tether.jobIDs /
+    // shutterJobs）引用的任务保留；每个匹配分组内保留——①每台相机每个增量格式首次供给
+    // 检查点的任务（incrementalBoundaries 逆序扫描）、②分组内最近的增量任务（读取方
+    // savedIncrementalKeys 在当前活跃会话仍会查询它，空 boundaries 也不例外）。
     // 原件文件仅在其余任务不再以 sourceID 引用时删除（跨任务共享的原件保留）；
     // 最近打开的照片由 RecentPhotoStore 另存副本，清理不影响其继续打开。
     func pruneExportedOriginals(exportedContentIdentifiers: Set<String> = []) throws
@@ -314,21 +314,30 @@ final class CameraOriginalStore {
             else { return (0, 0) }
             var tetherReferenced = Set(state.tether?.jobIDs ?? [])
             tetherReferenced.formUnion(state.tether?.shutterJobs ?? [])
-            // 与 incrementalBoundaries 同构的逆序扫描：每台相机首次供给某格式的完整任务
-            // 是该格式的检查点锚点。锚点按机身归组比按连接更保守——多保留、不误删。
+            // 与 incrementalBoundaries 同构的逆序扫描。分组键复刻 matches(camera:connectionKey:)：
+            // 有效序列号时跨连接匹配（stableKey），无有效序列号时按 connectionKey 隔离。
             var anchorIDs = Set<UUID>()
             var coveredKinds: [String: Set<String>] = [:]
+            var seenBuckets = Set<String>()
             for job in state.jobs.reversed() where job.complete {
                 guard let plan = job.incremental else { continue }
+                let serial = job.camera.serial.trimmingCharacters(in: .whitespacesAndNewlines)
+                let verifiedSerial = !serial.isEmpty && serial.contains { $0 != "0" }
+                let bucket = job.camera.stableKey + (verifiedSerial ? "" : "|" + job.connectionKey)
                 let kinds: Set<String>
-                if let boundaries = plan.boundaries { kinds = Set(boundaries.keys) }
-                else if plan.boundary != nil {
-                    kinds = Set(job.items.filter { $0.phase == .saved && $0.sourceID != nil }.map(\.asset.kind))
+                if let boundaries = plan.boundaries {
+                    kinds = Set(boundaries.keys)
+                } else if plan.boundary != nil {
+                    // 旧版读取方 CameraImportBoundary.latest 对无 captureDate 的条目返回 nil 并继续向
+                    // 旧任务回溯；清理方不得提前遮蔽，只把带拍摄日期的已保存条目算作供给格式。
+                    kinds = Set(job.items.filter { $0.phase == .saved && $0.sourceID != nil && $0.asset.captureDate != nil }
+                        .map(\.asset.kind))
                 } else { kinds = [] }
-                var covered = coveredKinds[job.camera.stableKey] ?? []
-                if !kinds.isSubset(of: covered) { anchorIDs.insert(job.id) }
+                var covered = coveredKinds[bucket] ?? []
+                if !seenBuckets.contains(bucket) || !kinds.isSubset(of: covered) { anchorIDs.insert(job.id) }
+                seenBuckets.insert(bucket)
                 covered.formUnion(kinds)
-                coveredKinds[job.camera.stableKey] = covered
+                coveredKinds[bucket] = covered
             }
             let digestByID = Dictionary(state.originals.map { ($0.id, $0.digest) }, uniquingKeysWith: { first, _ in first })
             func fullyExported(_ job: CameraTransferJob) -> Bool {

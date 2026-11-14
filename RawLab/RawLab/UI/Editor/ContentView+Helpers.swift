@@ -162,7 +162,8 @@ extension ContentView {
                     urls: [url],
                     removeAfterExport: true,
                     successMessage: L10n.text("已导出渲染型 DNG。"),
-                    cancelMessage: L10n.text("已生成渲染型 DNG，未另存到所选位置。")
+                    cancelMessage: L10n.text("已生成渲染型 DNG，未另存到所选位置。"),
+                    evidenceIdentifiers: [viewModel.sourceIdentity?.contentIdentifier].compactMap { $0 }
                 )
             case .failure(let error):
                 isSaving = false
@@ -704,6 +705,8 @@ extension ContentView {
                         viewModel.reportError(error, operation: .photoExport, stage: "savePhotoLibrary")
                     } else if success {
                         UsageAnalytics.shared.record(.exportCompleted)
+                        // Q6（B1）：保存照片图库成功 = 真实外部出口，登记源照片内容标识。
+                        ExportEvidenceStore.shared.record(contentIdentifier: viewModel.sourceIdentity?.contentIdentifier)
                         viewModel.statusMessage = L10n.text("已保存到照片。")
                     } else {
                         viewModel.reportError(NSError(domain: "RawLab.PhotoLibrary", code: -1),

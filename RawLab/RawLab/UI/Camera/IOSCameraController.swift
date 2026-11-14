@@ -284,9 +284,9 @@ struct IOSCameraImportPreferences: Codable {
     @Published private(set) var originalsCleanupFailed = false
     var storedOriginalsCount: Int { manifest.originals.count }
     var storedOriginalsBytes: UInt64 { manifest.originals.reduce(0) { $0 + $1.size } }
-    // 证据采集（RecentPhotoStore 索引读取）由 App 启动时注入 provider，在 backend 队列上执行；
-    // 「已导出」= 最近打开记录的私有副本内容标识（打开是导出到相册/Files 的必经步骤，
-    // 副本在场则删除私有原件不丢数据；拿不准时宁漏删）。模型测试不注入 = 无证据。
+    // 证据采集（ExportEvidenceStore 持久账本读取）由 App 启动时注入 provider，在 backend 队列
+    // 上执行；「已导出」= 保存图库 / Files 另存 / 渲染 DNG / 批量导出成功后登记的内容标识
+    // （打开过编辑器不算——RecentPhotoStore 是会被淘汰的 LRU）。模型测试不注入 = 无证据。
     static var exportedContentIdentifiersProvider: () -> Set<String> = { [] }
     func pruneExportedOriginals() {
         guard !cleaningOriginals else { return }

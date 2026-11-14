@@ -331,6 +331,57 @@ import CoreGraphics
                   "A newer complete job covering every format unlocks the cross-connection history")
         try check(store!.snapshot.savedIncrementalKeys(owner: owner1, jpeg: CameraJPEGOptions()).contains(jobInc3.items[0].asset.key),
                   "Dedup keys survive through the retained covering job")
+        // 序列 4（B3a）：全零序列号机身按 connectionKey 隔离——连接 B 的新任务
+        // 不得抢走连接 A 的检查点锚点（红：按 stableKey 粗归组会删掉 A 锚点）。
+        let tiff3 = Data([0x49, 0x49, 0x2a, 0, 1, 1, 1]), tiff4 = Data([0x49, 0x49, 0x2a, 0, 1, 1, 2])
+        let tiff5 = Data([0x49, 0x49, 0x2a, 0, 1, 1, 3]), tiff6 = Data([0x49, 0x49, 0x2a, 0, 1, 1, 4])
+        let jpegF = Data([0xff, 0xd8, 0xff, 3, 3, 3, 3]), jpegG = Data([0xff, 0xd8, 0xff, 4, 4, 4, 4])
+        let jpegI = Data([0xff, 0xd8, 0xff, 5, 5, 5, 5]), jpegJ = Data([0xff, 0xd8, 0xff, 6, 6, 6, 6])
+        let twinDevice = CameraDeviceIdentity(manufacturer: "Sony", model: "Twin", firmware: "1.0", serial: "0000000", operations: [])
+        let jobTwinA = try store!.enqueue(device: twinDevice, connectionKey: "camA", assets: [snapshot(21, "ARW")],
+            incremental: CameraIncrementalPlan(format: .raw, jpeg: CameraJPEGOptions(), boundary: nil, owner: UUID(), boundaries: ["RAW": boundary]))
+        _ = try write(tiff3, item: jobTwinA.items[0], job: jobTwinA, store: store!)
+        let jobTwinB = try store!.enqueue(device: twinDevice, connectionKey: "camB", assets: [snapshot(22, "ARW")],
+            incremental: CameraIncrementalPlan(format: .raw, jpeg: CameraJPEGOptions(), boundary: nil, owner: UUID(), boundaries: ["RAW": boundary]))
+        _ = try write(tiff4, item: jobTwinB.items[0], job: jobTwinB, store: store!)
+        let jobAfterTwin = try store!.enqueue(device: device, connectionKey: "prune", assets: [snapshot(23, "JPG")])
+        _ = try saved(jobAfterTwin, jpegF)
+        pruned = try store!.pruneExportedOriginals(exportedContentIdentifiers: [digestOf(tiff3), digestOf(tiff4), digestOf(jpegF)])
+        try check(store!.snapshot.jobs.contains { $0.id == jobTwinA.id } && store!.snapshot.jobs.contains { $0.id == jobTwinB.id } &&
+                      store!.snapshot.jobs.contains { $0.id == jobInc3.id },
+                  "An unverified-serial camera isolates checkpoints per connection: a new connection never unlocks the other anchor")
+        // 序列 5（B3b）：旧 plan.boundary 的无拍摄日期条目不得遮蔽更早的检查点——
+        // 读取方 CameraImportBoundary.latest 返回 nil 并继续回溯（红：无日期新任务遮蔽并删旧任务）。
+        let legacyDevice = CameraDeviceIdentity(manufacturer: "Sony", model: "Legacy", firmware: "1.0", serial: "legacy1", operations: [])
+        let legacyOwner = UUID()
+        let legacyStart = CameraImportBoundary(date: Date(timeIntervalSince1970: 1_700_000_000), storage: [], keys: [], anchors: [], owner: legacyOwner)
+        let legacyDated = CameraAssetSnapshot(content: 24, file: 24, storage: 0x10001, format: 0x3801, name: "DSC00024.ARW", size: 7, created: "20231114T221320", modified: "")
+        let legacyUndated = CameraAssetSnapshot(content: 25, file: 25, storage: 0x10001, format: 0x3801, name: "DSC00025.ARW", size: 7, created: "garbage", modified: "")
+        let jobLegacyDated = try store!.enqueue(device: legacyDevice, connectionKey: "lk", assets: [legacyDated],
+            incremental: CameraIncrementalPlan(format: .raw, jpeg: CameraJPEGOptions(), boundary: legacyStart, owner: legacyOwner, boundaries: nil))
+        _ = try write(tiff5, item: jobLegacyDated.items[0], job: jobLegacyDated, store: store!)
+        let jobLegacyUndated = try store!.enqueue(device: legacyDevice, connectionKey: "lk", assets: [legacyUndated],
+            incremental: CameraIncrementalPlan(format: .raw, jpeg: CameraJPEGOptions(), boundary: legacyStart, owner: legacyOwner, boundaries: nil))
+        _ = try write(tiff6, item: jobLegacyUndated.items[0], job: jobLegacyUndated, store: store!)
+        let jobTail = try store!.enqueue(device: device, connectionKey: "prune", assets: [snapshot(26, "JPG")])
+        _ = try saved(jobTail, jpegG)
+        pruned = try store!.pruneExportedOriginals(exportedContentIdentifiers: [digestOf(tiff3), digestOf(tiff4), digestOf(tiff5),
+                                                                                digestOf(tiff6), digestOf(jpegF), digestOf(jpegG)])
+        try check(store!.snapshot.jobs.contains { $0.id == jobLegacyDated.id } && store!.snapshot.jobs.contains { $0.id == jobLegacyUndated.id } &&
+                      store!.snapshot.jobs.contains { $0.id == jobTwinA.id } && store!.snapshot.jobs.contains { $0.id == jobTwinB.id },
+                  "A legacy boundary without capture dates does not shadow the dated checkpoint below it")
+        // 序列 6（B3c）：boundaries 空字典的增量任务也要保护——当前会话活跃时
+        // savedIncrementalKeys 仍会查询它（红：Set([]) 不入锚点，去重键丢失）。
+        let emptyDevice = CameraDeviceIdentity(manufacturer: "Sony", model: "EmptyB", firmware: "1.0", serial: "empty1", operations: [])
+        let jobEmptyPlan = try store!.enqueue(device: emptyDevice, connectionKey: "ek", assets: [snapshot(27, "JPG")],
+            incremental: CameraIncrementalPlan(format: .jpeg, jpeg: CameraJPEGOptions(), boundary: nil, owner: legacyOwner, boundaries: [:]))
+        _ = try saved(jobEmptyPlan, jpegI)
+        let jobFinal = try store!.enqueue(device: device, connectionKey: "prune", assets: [snapshot(28, "JPG")])
+        _ = try saved(jobFinal, jpegJ)
+        pruned = try store!.pruneExportedOriginals(exportedContentIdentifiers: [digestOf(jpegI), digestOf(jpegJ)])
+        try check(store!.snapshot.jobs.contains { $0.id == jobEmptyPlan.id } &&
+                      store!.snapshot.savedIncrementalKeys(owner: legacyOwner, jpeg: CameraJPEGOptions()).contains(jobEmptyPlan.items[0].asset.key),
+                  "The newest incremental job per bucket is protected even when its boundaries dictionary is empty")
     }
     private static func incrementalRecovery() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-incremental-\(UUID())")

@@ -668,13 +668,15 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     }
     // Q6 相机原件手动清理：与传输/恢复共用 storeLock；清理后重新加载 jobs 刷新 state，
     // 否则相机页继续显示已删除的任务（内存与磁盘失同步）。
-    suspend fun inspectOriginals(): CameraOriginalsSummary? =
-        withContext(Dispatchers.IO) { runCatching { CameraOriginalsRetention.inspect(importsDirectory) }.getOrNull() }
+    suspend fun inspectOriginals(): CameraOriginalsSummary? = withContext(Dispatchers.IO) {
+        storeLock.withLock { runCatching { CameraOriginalsRetention.inspect(importsDirectory) }.getOrNull() }
+    }
 
-    suspend fun pendingOriginalsCleanup(): CameraOriginalsSummary? =
-        withContext(Dispatchers.IO) {
+    suspend fun pendingOriginalsCleanup(): CameraOriginalsSummary? = withContext(Dispatchers.IO) {
+        storeLock.withLock {
             runCatching { CameraOriginalsRetention.pendingExported(importsDirectory, tetherRunsDirectory) }.getOrNull()
         }
+    }
 
     suspend fun pruneOriginals(): CameraOriginalsSummary? = withContext(Dispatchers.IO) {
         storeLock.withLock {

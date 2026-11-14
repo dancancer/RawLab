@@ -519,7 +519,11 @@ struct ContentView: View {
         .sheet(item: $fileExportRequest) { request in
             FileExportPicker(urls: request.urls) { exported in
                 fileExportRequest = nil
-                if exported && request.recordsPhotoExport { UsageAnalytics.shared.record(.exportCompleted) }
+                if exported && request.recordsPhotoExport {
+                    UsageAnalytics.shared.record(.exportCompleted)
+                    // Q6（B1）：Files 另存成功 = 真实外部出口，登记源照片内容标识。
+                    ExportEvidenceStore.shared.record(contentIdentifiers: request.evidenceIdentifiers)
+                }
                 if request.removeAfterExport {
                     for url in request.urls { try? FileManager.default.removeItem(at: url) }
                 }

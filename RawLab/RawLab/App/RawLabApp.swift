@@ -12,16 +12,11 @@ struct RawLabApp: App {
         // iOS 联机记录为 manifest 单条，无 90 天集合回收。
         _ = BatchArtifactRetention.reclaim(exportsRoot: BatchFileOutputStore.root(),
                                            journalRoot: BatchArtifactRetention.defaultJournalRoot)
-        // Q6：相机手动清理的「已导出」证据 = 最近打开索引中的私有副本内容标识；
-        // 采集在 backend 队列执行，这里只注入闭包，UI 层不直接依赖 RecentPhotoStore。
+        // Q6（B1 判据）：相机手动清理的「已导出」证据 = 外部出口成功后写入的持久账本
+        // （保存图库 / Files 另存 / 渲染 DNG / 批量导出）。读取在 backend 队列执行，
+        // RecentPhotoStore 的 LRU 副本不再充当判据——打开 ≠ 导出。
         IOSCameraController.exportedContentIdentifiersProvider = {
-            guard let store = try? RecentPhotoStore.appStore(), let records = try? store.records() else { return [] }
-            var identifiers: Set<String> = []
-            for record in records {
-                if let content = record.identity.contentIdentifier { identifiers.insert(content) }
-                if let legacy = record.identity.legacyContentIdentifier { identifiers.insert(legacy) }
-            }
-            return identifiers
+            ExportEvidenceStore.shared.exportedContentIdentifiers()
         }
     }
 
