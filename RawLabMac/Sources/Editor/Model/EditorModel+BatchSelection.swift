@@ -158,6 +158,7 @@ extension EditorModel {
     }
 
     func startCollectionExport(skipping: Set<String>, format: ExportFormat, longEdge: Int?, directory: URL, adaptiveJPEG: Bool = false,
+                               observeFreezeStage: ((String, Bool) -> Void)? = nil,
                                completed: @escaping (UUID) -> Void = { _ in }) {
         guard !collectionExportPreparing, !exporting else { return }
         cancelCollectionExportPreparation()
@@ -166,31 +167,64 @@ extension EditorModel {
                                                        adaptiveJPEG: adaptiveJPEG)
             let generation = collectionExportGeneration, source = sourceRevision, revision = editRevision
             let prepare = prepareCollectionExportOperation
+            let session = try requireAdjustmentSession(), journal = batchJournal
             collectionExportPreparing = true
             collectionExportQueue.async { [weak self] in
-                let result = Result { try prepare(input) }
+                let result: Result<(MacCollectionExportReview, MacFrozenCollectionExport?), Error> = Result { try prepare(input) }.flatMap { review in
+                    guard review.ready else { return .success((review, nil)) }
+                    // 冻结（前后双遍全集重验 + 每目标 look 副本拷贝）留在后台队列，主线程只接收结果。
+                    return Result { try MacCollectionExportFreeze(session: session, drafts: input.drafts,
+                        activeFile: input.activeFile, activeRevision: input.activeRevision, journal: journal,
+                        observeStage: observeFreezeStage).freeze(review) }.map { (review, Optional($0)) }
+                }
                 DispatchQueue.main.async {
-                    guard let self, self.collectionExportGeneration == generation else { return }
+                    guard let self, self.collectionExportGeneration == generation else {
+                        Self.releaseFrozenLooks(result)   // 取消后的迟到冻结不 attach，look 副本当场释放，日志保持未写。
+                        return
+                    }
                     self.collectionExportPreparing = false
                     guard self.sourceRevision == source, self.editRevision == revision,
                           self.batchSelection.targets() == input.selection else {
+                        Self.releaseFrozenLooks(result)
+                        self.collectionExportReview = nil
                         self.collectionExportError = self.adjustmentErrorMessage(AdjustmentCommitError.expired)
                         return
                     }
-                    do {
-                        let review = try result.get()
-                        self.collectionExportReview = review
-                        guard review.ready else { return }
-                        let job = try self.freezeCollectionExport(review)
-                        _ = self.batch?.start()
-                        completed(job.id)
-                    } catch {
+                    switch result {
+                    case .failure(let error):
                         self.collectionExportReview = nil
                         self.collectionExportError = self.adjustmentErrorMessage(error)
+                    case .success((let review, nil)):
+                        self.collectionExportReview = review   // 未就绪：只呈现确认表，不冻结。
+                    case .success((let review, let frozen?)):
+                        self.collectionExportReview = review
+                        do {
+                            // 与 UI 状态原子的复核保留在主线程：会话代次、实时草稿与批次占用随 attach 一次判定。
+                            guard review.snapshots.allSatisfy({ !self.collectionHasDraft($0.photo.id)
+                                    && session.editGeneration(for: $0.photo.url) == $0.editGeneration }) else { throw AdjustmentCommitError.expired }
+                            guard !self.collectionExportBlockedByTask else {
+                                throw RenderError.failed(L10n.text("请先完成或关闭现有批量任务。"))
+                            }
+                            let job = try self.attachFrozenCollectionExport(frozen)
+                            self.collectionExportReview = nil
+                            self.collectionExportError = nil
+                            _ = self.batch?.start()
+                            completed(job.id)
+                        } catch {
+                            Self.releaseFrozenLooks(.success((review, frozen)))
+                            self.collectionExportReview = nil
+                            self.collectionExportError = self.adjustmentErrorMessage(error)
+                        }
                     }
                 }
             }
         } catch { collectionExportError = adjustmentErrorMessage(error) }
+    }
+
+    private static func releaseFrozenLooks(_ result: Result<(MacCollectionExportReview, MacFrozenCollectionExport?), Error>) {
+        if case .success((_, let frozen?)) = result {
+            for look in frozen.ownedLooks { try? FileManager.default.removeItem(at: look) }
+        }
     }
 
     var collectionExportBlockedByTask: Bool {
@@ -199,57 +233,34 @@ extension EditorModel {
             batch.job.succeededCount != batch.job.selectedCount
     }
 
+    // 主线程同步冻结（模型测试与直接调用方使用）：与异步路径共用冻结核心，语义一致——
+    // 前后双遍全集重验、look 副本拷贝、日志落盘、隔离提示、上一任务释放与 attach。
     func freezeCollectionExport(_ review: MacCollectionExportReview) throws -> BatchExportJob {
         guard review.ready, !exporting, batchSelection.targets() == review.selection else { throw AdjustmentCommitError.expired }
         if collectionExportBlockedByTask {
             throw RenderError.failed(L10n.text("请先完成或关闭现有批量任务。"))
         }
         let session = try requireAdjustmentSession()
-        func validateReview() throws {
-            for snapshot in review.snapshots {
-                try snapshot.photo.validate()
-                guard !collectionHasDraft(snapshot.photo.id),
-                      session.editGeneration(for: snapshot.photo.url) == snapshot.editGeneration,
-                      snapshot.editorRevision == nil || (file == snapshot.photo.url && editRevision == snapshot.editorRevision) else {
-                    throw AdjustmentCommitError.expired
-                }
-                guard try snapshot.look.map(BatchFrozenSettings.checksum) == snapshot.lookSHA256 else { throw BatchExportFailure.missingLook }
-            }
-        }
-        try validateReview()
-        let first = review.snapshots[0]
-        var job = BatchExportJob(source: first.photo.url, settings: first.settings, look: nil, lookName: first.lookName)
-        job.settingsMode = .perTargetFrozen; job.version = 3
-        job.format = review.adaptiveJPEG ? .jpeg : review.format; job.longEdge = review.longEdge; job.outputDirectory = review.directory
-        var ownedLooks = [URL]()
+        let frozen = try MacCollectionExportFreeze(session: session,
+            drafts: Set(review.snapshots.map(\.photo.id).filter { collectionHasDraft($0) }),
+            activeFile: file, activeRevision: editRevision, journal: batchJournal).freeze(review)
+        return try attachFrozenCollectionExport(frozen)
+    }
+
+    // 日志落盘、隔离提示、上一任务释放与 attach 在主线程一次完成，与 UI 切换保持原子。
+    private func attachFrozenCollectionExport(_ frozen: MacFrozenCollectionExport) throws -> BatchExportJob {
         do {
-            for (ordinal, snapshot) in review.snapshots.enumerated() {
-                var item = try BatchExportItem(url: snapshot.photo.url)
-                guard item.identity == snapshot.record.identity, item.resourceIdentifier == snapshot.photo.id else {
-                    throw BatchExportFailure.changedInput
-                }
-                let look = try batchJournal.snapshotLook(snapshot.look, for: item.id)
-                if let look { ownedLooks.append(look) }
-                item.selected = true
-                item.noticeKey = snapshot.noticeKey
-                item.frozen = BatchFrozenSettings(ordinal: ordinal, settings: snapshot.settings, look: look,
-                    lookSHA256: snapshot.lookSHA256, lookName: snapshot.lookName,
-                    outputFormat: review.adaptiveJPEG ? (snapshot.settings.isHDREditing ? .hdrJPEG : .jpeg) : review.format,
-                    longEdge: review.longEdge)
-                try item.frozen!.verifyLook(); job.items.append(item)
-            }
-            try validateReview()
-            try batchJournal.save(job)
+            try batchJournal.save(frozen.job)
         } catch {
             _ = batchJournal.consumeQuarantinedError()
-            for look in ownedLooks { try? FileManager.default.removeItem(at: look) }
+            for look in frozen.ownedLooks { try? FileManager.default.removeItem(at: look) }
             throw error
         }
         if let quarantined = batchJournal.consumeQuarantinedError() {
             self.error = L10n.format("无法读取上次批量任务：%@", String(describing: quarantined.localizedDescription))
         }
         if let prior = batch?.job { batchJournal.releaseResources(prior) }
-        attachBatch(job)
-        return job
+        attachBatch(frozen.job)
+        return frozen.job
     }
 }
