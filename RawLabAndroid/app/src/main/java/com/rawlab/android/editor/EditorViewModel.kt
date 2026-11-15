@@ -295,6 +295,10 @@ class EditorViewModel @JvmOverloads constructor(
     private var editorActive = true
     private var deferredMigrationPreview = false
 
+    // 提交期单槽契约（k161 定性，勿改为"completed 后再解锁"或计数队列）：
+    // ①入口 committingAdjustments 即单槽门控——work 完成时 adjustmentQueue 必已排空，不存在"回 IDLE 时队列未 drain 被旧 revision 快照吞掉/重复应用"的路径；
+    // ②默认先置 committingAdjustments=false 再调 completed，依赖 viewModelScope(Main.immediate) 同帧不可抢占，并有意放行 completed 内的同步链式重入（importPhoto/retrySave/editCollectionPhoto）；
+    // ③后台跨代隔离由 EditorAdjustmentHistory.sourceToken 与 AdjustmentTransferSession.editGenerations 承担，主线程 UI 的 sourceRevision/editRevision 与其分工，不在此处兜底。
     private fun <T> commitAdjustments(work: () -> T, publishBeforeUnlock: Boolean = false, completed: (Result<T>) -> Unit) {
         if (disposed || mutable.value.committingAdjustments) {
             completed(Result.failure(AdjustmentTransferException(AdjustmentFailure.DRAFT))); return
