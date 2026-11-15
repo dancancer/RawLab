@@ -254,6 +254,11 @@ final class BatchJournal {
     private(set) var lastQuarantinedURL: URL?
     private var quarantinedError: Error?
     private var url: URL { directory.appendingPathComponent("job.json") }
+    private struct FileFingerprint: Equatable { let size: Int; let modified: Date }
+    /// 本进程上次写出的账本文件 (size,mtime) 指纹；稳态写入据此跳过整读回。
+    private var writtenFingerprint: FileFingerprint?
+    /// save() 实际执行整读盘校验的次数（测试锚点：跳过逻辑必须真的跳过）。
+    private(set) var diskReloads = 0
 
     init(directory: URL = BatchJournal.defaultDirectory) { self.directory = directory }
 
@@ -265,9 +270,16 @@ final class BatchJournal {
     func save(_ job: BatchExportJob) throws {
         quarantinedError = nil
         try job.validate()
-        _ = try readJob()
+        // 仅当磁盘文件不是本进程上次写出的那份（首次写、或外部改动）才整读回并重校验，
+        // 只为防「运行途中外部写入未来版本文件」；启动 load() 已全量校验，原子替换保证旧文件完整。
+        let fingerprint = Self.fingerprint(atPath: url.path)
+        if writtenFingerprint == nil || writtenFingerprint != fingerprint {
+            diskReloads += 1
+            _ = try readJob()
+        }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try JSONEncoder().encode(job).write(to: url, options: .atomic)
+        writtenFingerprint = Self.fingerprint(atPath: url.path)
     }
 
     func snapshotLook(_ original: URL?, for id: UUID) throws -> URL? {
@@ -324,6 +336,13 @@ final class BatchJournal {
         return String(format: "%04d%02d%02d-%02d%02d%02d",
                       parts.year ?? 0, parts.month ?? 0, parts.day ?? 0,
                       parts.hour ?? 0, parts.minute ?? 0, parts.second ?? 0)
+    }
+
+    private static func fingerprint(atPath path: String) -> FileFingerprint? {
+        guard let values = try? FileManager.default.attributesOfItem(atPath: path),
+              let size = values[.size] as? Int,
+              let modified = values[.modificationDate] as? Date else { return nil }
+        return FileFingerprint(size: size, modified: modified)
     }
 
     private static func itemType(atPath path: String) throws -> FileAttributeType? {
@@ -511,7 +530,8 @@ enum BatchExportRunner {
                 guard item.selected, item.status != .succeeded,
                       scope != .failed || item.status == .failed else { continue }
                 if shouldCancel() { job.cancelled = true; break }
-                try verifyDestination(directory)
+                // 每张照片不再建删探针文件；目录存在性与可写位检查足以在渲染前拦截被弹出/只读的输出盘。
+                guard FileManager.default.isWritableFile(atPath: directory.path) else { throw BatchExportFailure.destination }
                 job.items[index].status = .running
                 job.items[index].error = nil
                 try save(job, to: journal, onQuarantine: onQuarantine)
