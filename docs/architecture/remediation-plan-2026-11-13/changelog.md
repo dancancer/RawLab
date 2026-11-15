@@ -393,3 +393,30 @@
 - **Windows native 下载 flake 治理**：DNG SDK/rustup 下载连挂 4 次（schannel/GOAWAY/tls eof，run 43726623136 三连败）；#388 换仓内 `rawlab_download_archive` 3 重试+SHA256 校验（氢实测 `DOWNLOAD_RETRIES` 非 FetchContent 合法关键字）碳 APPROVE，分支 native 端到端实测在跑。**教训**：连挂≥2 次即升碳/codex 接手，氢不再盲重试。
 - **在途**：#387 LUT 哈希平台加速（CC_SHA256/CNG；64³ SHA 28.2→2.6ms 达标；碳 r1 拦 Windows `RGB` 宏击穿/provider 析构序/MinGW 链接三阻断，codex r2 已修，碳 r3+Windows native 门禁收口）。
 - **登记**：k159 双简注（viewport_preview==0+邻域微差异、geom 封顶已随 #384 落）；k163（DNG 重试已票面化 #388）；k161（commitAdjustments 解锁序/revision 快照下沉；controlsEnabled 静默丢编辑的普通用户路径确认票）；AVD-B（rawlab-api35-b）本轮新增为并行设备泳道，波尾拆除。
+
+---
+
+### (66) 过度防御大扫除波（142–158）：十七单；SHA-256 全仓审计 41 点 + 非哈希重处理 15 组；对抗式评审成为默认
+
+- **起点=两次全仓审计（carbon-high）**：①**SHA-256 审计 41 个运行时调用点**（17 必要-保留 / 19 必要-可降载 / 5 过度防御-可去），最重为"同一张 25–75MB ProRAW 流式导出被全量哈希 7 次""Android 批量单张 RAW 10 次""HDR 滑杆每帧扫整张 20–80MB RAW 但摘要无人消费""AI 降噪 96–720MB 浮点张量背靠背双算"；②**非哈希过度防御 15 组**，最重为批量账本 `O(N²)` 写放大（每张 3–4 次写、每次写前整读回+解码+全量校验，500 张≈3–6GB JSON 吞吐）、HDR 滑杆 4 层逐像素 `isfinite` 扫描栈、主线程同步清扫/冻结、16-bit PNG 为 2KB EXIF 重解码重压缩、可再生缩略图缓存用 `WriteThrough+fsync` 且每写全目录 stat（≈3.3 万次）。
+- **合入清单（142–158）**：
+  - **#388（142nd）** DNG SDK/rustup 下载改走 `rawlab_download_archive`（3 重试+SHA256）；**#404（158th）** 同法收编 opencv/opencv_contrib（pin 实算），Windows native 的 schannel 抖动不再卡门禁。
+  - **#390（143rd）** k161 `controlsEnabled` 静默丢弃七入口结构化日志（零行为变更，观察真实命中率再决定是否上单槽合并队列）；**#392（145th）** k161 `commitAdjustments` 单槽契约注释（碳定性=顺序自洽非竞态）。
+  - **#387（144th）** LUT 哈希平台加速（CC_SHA256/CNG，64³ 28.2→2.6ms，三平台字节一致；codex r2 修 Windows 宏击穿/BCrypt 析构序/MinGW 链接）。
+  - **#389（146th）** k163 批 B：CMake 优先 `Python3_EXECUTABLE`、Mac 死代码清理、`batch-cancellation.sh` 接入 CI `in_suite model` 分片；**#395（147th）** k163 iOS 三脚本分类（`ios-photo-previews.sh` 20.8s、`raw-unpack-export.sh` 26 checks、`subtool-menu-draft.sh` 123 checks 均实跑，落 native-gate 模拟器路线/手动门）。
+  - **#391（148th）** Mac UI harness 隔离（三 harness 注入目录）——碳 r1 打回 B1：`seeded` 哨兵留在持久夹具而 `editDirectory` 改随机临时目录→同 root 二次启动丢编辑仍跳过播种；返工改 `root/rawlab-iso-state` 确定性路径并去掉退出自删，增量复位 APPROVE。
+  - **#399（149th）** 安卓批量日志：长连接流 + `recordRow(sync:)` 只在 URI 登记后与终态 fsync（每张 ≤2 次），codex 独立审确认撕裂尾行 replay 容错真实存在、URI checkpoint 不会恢复成假成功项。
+  - **#398（150th）** 编辑账本写后原地更新缓存（iOS）+ Android `(lastModified,length)` 短路；Android 因 java.io 面只有两维、`fileKey` 规范允许 null 而修订既有契约用例——原生独立审**裁决修订成立**（`Os.stat` 的 st_ino/st_ctim 可零窗口但代价=秒粒度合成+host JVM 不可用），并登记"同毫秒跨进程 lost-update 窗口"。
+  - **#397（151st）** 缩略图缓存去 fsync/WriteThrough + **进程内共享实例**（修 AlbumScreen/EditorViewModel 双实例索引失步）+ **JPEG SOI/EOI 校验**（AOSP `BitmapFactory` 把 `kIncompleteInput` 当成功）；碳两阻断，返工后独立复审确认真闭环（含 130-filler 逐出脑洞的边界核）。
+  - **#394（152nd）** 三端批量检查/回退接既有 stat 校验缓存；codex 审出 **Windows P1**：`WindowsFileIdentity` 在 FAT/exFAT 无故 ChangeTime/USN 时仍报 `StatReliable=true` → 脏摘要复用致冻结反复失败；修复=两标记都不可用即走全量哈希（回归含"大文件+标记不可用+同尺寸同 mtime 覆写"，旧判定实跑红）。
+  - **#396（153rd）** 启动清扫离首屏——**三轮**：codex 实跑复现 P1（Q6 reclaim 与同 ID 任务恢复的旧快照删除）→ 修复又引入反向 P1（`modificationDate` 比 `creationDate` 使非空导出目录**永不回收**）→ 终版=每 part 记自身快照 mtime 比较、夹具改"建目录后写子文件"真实形态。
+  - **#401（154th）** LUT 兼容性向导四端免整片拷贝（引用原路径，content:// 流与安全作用域仍落盘）；碳阻断=androidTest 仍断言旧拷贝契约，返工后仪器化 3/3 实跑绿 + 增量审确认只多 1 行只读 getter。
+  - **#400（155th）** Windows 导出尾趟：ExifTool `-stay_open` 常驻管道（整批省 N−1 次 Perl 冷启动）+ `CopySDROnly`（6 处 SDR-only 省整幅 HDR float LOH 克隆，42MP 成片峰值额外分配 ~1.0GB→~0.5GB）。
+  - **#402（156th）** AI 摘要簇：T1 cache.load/store 透传张量摘要（96–240MB 不再背靠背双算）+ T4 非 USN 卷退路按 stat 身份复用（有界 LRU 128、canonicalPath、before/after 双读复验）——碳拦并发 TOCTOU 污染与测试假绿（注入点在 `sourceMetadata` 之后测不到 `sequence==null`），返工 + 测试自比假绿再修（filler 逐出制造真实污染窗口）。
+  - **#403（157th）** 相机 iOS 落盘去重（`complete()` 零重算/采样复用/`verifiedURL` 接缓存；顺带把 `FileDigestCache` 拆独立编译单元让相机 harness 免拖编辑持久化依赖，pbxproj+16 脚本同步）；codex 判 a/b 红锚**假绿**（钩子只覆盖新包装）→ 计数下沉到真实 `hash()` 入口并撤除 seam，codex 亲自变异 `mutation_exit=133` 实证。
+- **方法论沉淀**：
+  - **对抗式评审成默认**：`异步化/顺序放宽`类改动单审会漏并发窗口（#396 的 Q6 竞态、#394 的 Windows 脏摘要都是二审才抓到），此类票一律叠二审（carbon 或 codex），并优先用"实跑变异"而非推演。
+  - **假绿三形态**：断言未覆盖真实入口（#403）、受污染值自比（#402）、夹具形态失真（#396 空目录 ctime==mtime）——交付必须"撤修复实跑变红"。
+  - **返工的反向 bug**：为堵竞态加的"过保守"判据同样致命（#396 回收 100% 失效），修复后要验证"该删的还能删"。
+  - **执行方分配纪律**：过度防御/降载类减法票**不派 codex**（风格偏加法）；凡派 codex 前置"最小充分改动+禁止净增防御层"纪律；agy 网关反复 `loadCodeAssist` EOF 时改派原生 subagent，agy 并发上限 **4**。
+- **在途**：#405（Mac 缩略图缓存去 fsync+LRU 索引、Android statvfs 风暴）、#406（批量账本写放大 Mac/Win）、#407（相机 Android 半边）、#393 r3（stat 短路→内容寻址零 I/O+摘要键 parse 缓存，等 Windows native 重跑）。
