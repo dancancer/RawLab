@@ -52,7 +52,9 @@ struct SourceMetadata {
     bool cacheable = true;
     std::string stamp() const { return digestJson({identity, changed, sequence}); }
 };
+std::atomic<bool> metadataFallbackForced{false};
 SourceMetadata sourceMetadata(const std::filesystem::path& path, bool model = false) {
+    const bool forced = model && metadataFallbackForced.load(std::memory_order_relaxed);
 #ifdef _WIN32
     // 允许其他程序同时打开写句柄；变更租约与摘要前后校验负责检测实际修改。
     const HANDLE file = CreateFileW(path.c_str(), GENERIC_READ,
@@ -62,7 +64,7 @@ SourceMetadata sourceMetadata(const std::filesystem::path& path, bool model = fa
     FILE_BASIC_INFO basic{};
     const bool valid = GetFileInformationByHandle(file, &info) != 0 &&
         GetFileInformationByHandleEx(file, FileBasicInfo, &basic, sizeof(basic)) != 0;
-    const auto generation = valid ? fileChangeGeneration(path, model) : std::nullopt;
+    const auto generation = valid && !forced ? fileChangeGeneration(path, model) : std::nullopt;
     CloseHandle(file);
     if (!valid) throw std::runtime_error("Cannot identify AI source file");
     return {{{"file", path.u8string()}, {"volume", info.dwVolumeSerialNumber},
@@ -80,7 +82,7 @@ SourceMetadata sourceMetadata(const std::filesystem::path& path, bool model = fa
 #endif
     return {{{"file", path.u8string()}, {"device", info.st_dev}, {"index", info.st_ino},
         {"modified", {modified.tv_sec, modified.tv_nsec}}, {"bytes", info.st_size}},
-        {changed.tv_sec, changed.tv_nsec}};
+        {changed.tv_sec, changed.tv_nsec}, Json(), !forced};
 #endif
 }
 }
@@ -93,7 +95,6 @@ struct MetadataFallbackEntry { std::string stamp, key; uint64_t used; };
 std::mutex metadataFallbackMutex;
 std::map<std::string, MetadataFallbackEntry> metadataFallback;
 uint64_t metadataFallbackAccess = 0;
-std::atomic<bool> metadataFallbackForced{false};
 }
 
 void forceMetadataFallbackForTests(bool enabled) {
@@ -103,23 +104,28 @@ void forceMetadataFallbackForTests(bool enabled) {
 std::string sourceMetadataKey(const std::string& path) {
     const auto file = std::filesystem::canonical(std::filesystem::u8path(path));
     const auto metadata = sourceMetadata(file, true);
-    const auto stamp = metadata.stamp();
-    // 不支持变更通知的文件系统不能安全复用元数据；只在该退路读取内容。
-    if (metadata.cacheable && !metadataFallbackForced.load(std::memory_order_relaxed)) return stamp;
+    // 可建立变更租约（或 POSIX 正常 stat）时直接复用元数据快照；无通知卷退路仅用于只读模型文件，
+    // 在整文件哈希前后 stat 一致时按 stat 身份缓存摘要（无 ChangeTime 卷同秒同尺寸保 mtime 改写不在检测范围内）。
+    if (metadata.cacheable) return metadata.stamp();
     const auto canonicalPath = file.u8string();
     std::lock_guard<std::mutex> lock(metadataFallbackMutex);
+    const auto before = sourceMetadata(file, true);
+    const auto stamp = before.stamp();
     const auto found = metadataFallback.find(canonicalPath);
     if (found != metadataFallback.end() && found->second.stamp == stamp) {
         found->second.used = ++metadataFallbackAccess;
         return found->second.key;
     }
-    const auto key = digestJson({stamp, sha256File(path)});
-    if (found == metadataFallback.end() && metadataFallback.size() >= 128) {
-        const auto oldest = std::min_element(metadataFallback.begin(), metadataFallback.end(),
-            [](const auto& left, const auto& right) { return left.second.used < right.second.used; });
-        metadataFallback.erase(oldest);
+    const auto key = digestJson({stamp, sha256File(canonicalPath)});
+    const auto after = sourceMetadata(file, true);
+    if (after.identity == before.identity && after.changed == before.changed) {
+        if (found == metadataFallback.end() && metadataFallback.size() >= 128) {
+            const auto oldest = std::min_element(metadataFallback.begin(), metadataFallback.end(),
+                [](const auto& left, const auto& right) { return left.second.used < right.second.used; });
+            metadataFallback.erase(oldest);
+        }
+        metadataFallback[canonicalPath] = {stamp, key, ++metadataFallbackAccess};
     }
-    metadataFallback[canonicalPath] = {stamp, key, ++metadataFallbackAccess};
     return key;
 }
 
