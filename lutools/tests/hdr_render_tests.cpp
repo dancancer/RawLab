@@ -53,6 +53,72 @@ template<class Function> void rejects(Function function, const char* message) {
     check(rejected, message);
 }
 
+// V-01 融合红锚：撤掉融合（或放宽 inert 判据、改变 max 口径）时本用例必红；NaN/Inf 分支锁定逐位语义不变。
+void headroomFusion() {
+    const auto reference = [](const ImageData& image) {
+        float peak = 1;
+        for (const auto& pixel : image.pixels) peak = std::max(peak, luminance(pixel));
+        return peak;
+    };
+    auto source = fixture();
+    source.hdr.pixels[0] = {-1.5f, 2.25f, -0.75f};
+    source.hdr.pixels[1] = {std::numeric_limits<float>::denorm_min(), 0, 0};
+    source.hdr.pixels[2] = {std::numeric_limits<float>::max(), 0, 0};
+    source.sdr.pixels[0] = {-0.25f, 0, 1.0f};
+    HDRRenderOptions slider;
+    slider.saturation = -50;
+    const auto fused = renderHDRPair(source, slider);
+    check(fused.editedHeadroom == reference(fused.hdr) && fused.editedSdrHeadroom == reference(fused.sdr),
+        "fused single-pass headroom drifted from the independent full-image scan");
+    check(fused.editedSdrHeadroom >= 1, "inert render did not measure the SDR content peak");
+
+    HDRImagePair big;
+    big.hdr = ImageData(512, 258); big.sdr = ImageData(512, 258);
+    for (size_t i = 0; i < big.hdr.pixels.size(); ++i) {
+        const float v = (float(i % 4097) - 2048.f) * 1e-6f;
+        big.hdr.pixels[i] = {v, (i % 7) ? v * 2.f : -1e-7f, float(i % 3) * .5f};
+        big.sdr.pixels[i] = {v * .5f, float(i % 5) * .25f, (i % 9) ? 1.0f : -2.f};
+    }
+    big.nativeWidth = 512; big.nativeHeight = 258;
+    const auto fusedBig = renderHDRPair(big, slider);
+    check(fusedBig.editedHeadroom == reference(fusedBig.hdr) && fusedBig.editedSdrHeadroom == reference(fusedBig.sdr),
+        "parallel-range headroom reduction changed bits across threads");
+
+    HDRRenderOptions cropped = slider;
+    cropped.geometry.crop_width = .9f;
+    const auto fallback = renderHDRPair(source, cropped);
+    check(fallback.editedSdrHeadroom == 0, "active geometry published a fused SDR peak it did not measure");
+    check(fallback.editedHeadroom == reference(fallback.hdr), "fallback headroom scan changed");
+
+    HDRRenderOptions renditionOnly;
+    renditionOnly.processingVersion = SONY2FUJI_HDR_PROCESSING_RENDITION_VERSION;
+    renditionOnly.rendition.peakLimitEV = 1;
+    const auto hdrOnly = renderHDRPair(source, renditionOnly);
+    check(hdrOnly.editedSdrHeadroom == 0, "inactive SDR pass must not report a measured peak");
+    check(hdrOnly.editedHeadroom == reference(hdrOnly.hdr), "rendition fused headroom drifted");
+
+    auto corrupted = fixture();
+    corrupted.hdr.pixels[5] = {std::numeric_limits<float>::quiet_NaN(), 1, 1};
+    rejects([&] { renderHDRPair(corrupted, slider); }, "NaN pixel survived HDR input validation");
+    corrupted.hdr.pixels[5] = {std::numeric_limits<float>::infinity(), 1, 1};
+    rejects([&] { renderHDRPair(corrupted, slider); }, "Infinite pixel survived HDR input validation");
+
+    auto saturated = fixture();
+    saturated.hdr.pixels[3] = {std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), 0};
+    saturated.hdr.pixels[4] = {std::numeric_limits<float>::max(), .75f * std::numeric_limits<float>::max(), 0};
+    const auto boundary = renderHDRPair(saturated, {});
+    check(boundary.editedHeadroom == reference(boundary.hdr) && boundary.editedSdrHeadroom == 0,
+        "scan-only render must match the fallback headroom bit-for-bit and leave the SDR peak unmeasured");
+
+    auto doubled = fixture();
+    doubled.hdr.pixels[3] = {std::numeric_limits<float>::max(), 0, 0};
+    HDRRenderOptions boost;
+    boost.exposureEV = 1;
+    bool editThrew = false;
+    try { renderHDRPair(doubled, boost); } catch (const std::overflow_error&) { editThrew = true; }
+    check(editThrew, "exposure overflow must still throw from the edit pass with a fused max tracked");
+}
+
 void identity() {
     auto source = fixture();
     const auto result = renderHDRPair(source, {});
@@ -611,6 +677,7 @@ int main(int argc, char* argv[]) {
     try {
         const std::string name = argc >= 2 ? argv[1] : "";
         if (name == "identity") identity();
+        else if (name == "headroom_fusion") headroomFusion();
         else if (name == "tone") tone();
         else if (name == "color") color();
         else if (name == "rendition") rendition();

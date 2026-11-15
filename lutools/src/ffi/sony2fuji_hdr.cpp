@@ -36,6 +36,8 @@ using sony2fuji::hdr::Error;
 
 struct Owner {
     HDRImagePair pixels;
+    // publish 用的内容亮度峰值缓存：渲染尾段已对最终像素测量时直接复用（≥1），0 表示未测量、view 自行扫描。
+    float hdrContentHeadroom = 0, sdrContentHeadroom = 0;
     std::array<uint8_t, 32> sha{};
     uint32_t sourceHeadroomKind = SONY2FUJI_HDR_HEADROOM_UNKNOWN;
     sony2fuji_hdr_image_pair_v1 published{};
@@ -186,20 +188,24 @@ std::shared_ptr<Owner> readPair(const sony2fuji_hdr_image_pair_v1* p) {
     return result;
 }
 
-sony2fuji_hdr_buffer_v1 view(ImageData& image) {
+sony2fuji_hdr_buffer_v1 view(ImageData& image, float measuredContentHeadroom) {
     static_assert(sizeof(RGB) == 12);
     auto result = initialized<sony2fuji_hdr_buffer_v1>();
     result.data = image.pixels.data(); result.width = image.width; result.height = image.height;
     result.stride_bytes = uint64_t(image.width) * 12; result.size_bytes = image.pixels.size() * sizeof(RGB);
     result.pixel_format = SONY2FUJI_HDR_RGB32F_LINEAR; result.color_encoding = SONY2FUJI_HDR_LINEAR_SRGB;
-    result.content_headroom = 1; result.headroom_kind = SONY2FUJI_HDR_HEADROOM_MEASURED;
-    for (const auto& pixel : image.pixels)
-        result.content_headroom = std::max(result.content_headroom, .2126f * pixel.r + .7152f * pixel.g + .0722f * pixel.b);
+    result.headroom_kind = SONY2FUJI_HDR_HEADROOM_MEASURED;
+    // 峰值测量对同一批像素逐位一致；已测得时不再重复整图扫描。
+    result.content_headroom = measuredContentHeadroom >= 1 ? measuredContentHeadroom : 1;
+    if (measuredContentHeadroom < 1)
+        for (const auto& pixel : image.pixels)
+            result.content_headroom = std::max(result.content_headroom, .2126f * pixel.r + .7152f * pixel.g + .0722f * pixel.b);
     return result;
 }
 void publish(std::shared_ptr<Owner> owner, sony2fuji_hdr_image_pair_v1* result) {
     auto value = initialized<sony2fuji_hdr_image_pair_v1>(); value.struct_size = result->struct_size;
-    value.hdr = view(owner->pixels.hdr); value.sdr = view(owner->pixels.sdr);
+    value.hdr = view(owner->pixels.hdr, owner->hdrContentHeadroom);
+    value.sdr = view(owner->pixels.sdr, owner->sdrContentHeadroom);
     value.native_width = owner->pixels.nativeWidth; value.native_height = owner->pixels.nativeHeight;
     value.output_native_width = owner->pixels.outputNativeWidth ? owner->pixels.outputNativeWidth : value.native_width;
     value.output_native_height = owner->pixels.outputNativeHeight ? owner->pixels.outputNativeHeight : value.native_height;
@@ -603,6 +609,9 @@ sony2fuji_status sony2fuji_hdr_render(sony2fuji_session* sessionHandle, const so
         auto output = std::make_shared<Owner>();
         output->pixels = source->owner_token ? renderHDRPair(input->pixels, o) :
             renderHDRPair(std::move(input->pixels), o);
+        // 渲染返回前已对最终像素测得双平面内容峰值（融合或回退扫描），publish 直接复用。
+        output->hdrContentHeadroom = output->pixels.editedHeadroom;
+        output->sdrContentHeadroom = output->pixels.editedSdrHeadroom;
         output->sha = input->sha; output->sourceHeadroomKind = input->sourceHeadroomKind;
         output->sourcePath = input->sourcePath;
         output->cameraProfilePath = input->cameraProfilePath;
