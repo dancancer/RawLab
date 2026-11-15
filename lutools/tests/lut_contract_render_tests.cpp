@@ -262,6 +262,48 @@ int main() {
             sony2fuji_session_destroy(c5Session);
         }
     }
+    {
+        sony2fuji_session* smallSession = nullptr;
+        check(sony2fuji_session_create(&smallSession) == SONY2FUJI_STATUS_OK && smallSession != nullptr,
+              "Create session for small raster neighborhood preview check");
+        if (smallSession) {
+            check(sony2fuji_session_set_processing_version(smallSession, SONY2FUJI_PROCESSING_BASIC_V3) == SONY2FUJI_STATUS_OK,
+                  "Configure BASIC_V3 for small raster neighborhood preview");
+            check(sony2fuji_session_set_viewport_preview(smallSession, 1) == SONY2FUJI_STATUS_OK,
+                  "Enable viewport preview for small raster");
+            sony2fuji_atmosphere_config atmo{SONY2FUJI_ATMOSPHERE_CONFIG_VERSION, sizeof(atmo), 0.3f, 0.2f};
+            check(sony2fuji_session_set_atmosphere(smallSession, &atmo) == SONY2FUJI_STATUS_OK,
+                  "Enable atmosphere for small raster");
+            std::vector<unsigned char> smallPixels(19 * 13 * 3);
+            for (size_t i = 0; i < smallPixels.size(); ++i) smallPixels[i] = static_cast<unsigned char>((i * 37) % 256);
+            sony2fuji_request smallReq{};
+            smallReq.version = SONY2FUJI_REQUEST_VERSION;
+            smallReq.struct_size = sizeof(smallReq);
+            smallReq.input_type = SONY2FUJI_INPUT_DISPLAY_BUFFER;
+            smallReq.input_pixels = smallPixels.data();
+            smallReq.input_width = 19;
+            smallReq.input_height = 13;
+            smallReq.input_pixel_format = SONY2FUJI_PIXEL_RGB8;
+            smallReq.input_color_space = SONY2FUJI_COLOR_SRGB;
+            smallReq.wb_mode = SONY2FUJI_WB_CAMERA;
+            smallReq.temperature = 6500;
+            smallReq.brightness = smallReq.contrast = smallReq.saturation = 1;
+            smallReq.highlights = -0.3f;
+            smallReq.shadows = 0.3f;
+            smallReq.size_mode = SONY2FUJI_SIZE_NATIVE;
+            smallReq.output_target = SONY2FUJI_TARGET_BUFFER;
+            smallReq.output_format = SONY2FUJI_OUTPUT_RGB8;
+            smallReq.intent = SONY2FUJI_INTENT_PREVIEW;
+            smallReq.preview_long_edge = 1600;
+            sony2fuji_buffer outBuf{};
+            const auto smallStatus = sony2fuji_process(smallSession, &smallReq, &outBuf);
+            check(smallStatus == SONY2FUJI_STATUS_OK && outBuf.width == 19 && outBuf.height == 13 &&
+                      outBuf.size_bytes == 19u * 13u * 3u,
+                  "Small raster preview with neighborhood active clamps preview_long_edge to native 19x13 without upscaling");
+            sony2fuji_release_buffer(&outBuf);
+            sony2fuji_session_destroy(smallSession);
+        }
+    }
     sony2fuji_session_destroy(session);std::filesystem::remove_all(dir);
     std::cout<<"LUT contract render failures: "<<failures<<'\n';return failures?1:0;
 }

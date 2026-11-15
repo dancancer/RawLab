@@ -129,7 +129,7 @@ int main(int argc,char** argv) {
                 const auto finalLarge=render(session,enlarged);enlarged.intent=SONY2FUJI_INTENT_PREVIEW;
                 require(render(session,enlarged)==finalLarge,"enlarging viewport retains FINAL dimensions and bytes");
                 enlarged.size_mode=SONY2FUJI_SIZE_NATIVE;enlarged.preview_long_edge=width*2;
-                require(render(session,enlarged)==finalLarge,"legacy preview edge above native retains output bytes");
+                require(render(session,enlarged)==active,"legacy preview edge above native clamps to native dimensions without upscaling");
             }
             gpu.mode=SONY2FUJI_GPU_AUTO;
             require(sony2fuji_session_set_gpu_config(session,&gpu)==SONY2FUJI_STATUS_OK,"Auto mode");
