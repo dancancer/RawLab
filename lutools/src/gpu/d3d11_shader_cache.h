@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -9,6 +10,12 @@
 #include <string_view>
 #include <unordered_map>
 #include <vector>
+
+#if defined(_WIN32)
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -225,15 +232,29 @@ private:
         std::error_code ec;
         std::filesystem::create_directories(diskDirectory_, ec);
         if (ec) return;
+        static std::atomic<uint64_t> tempSequence{0};
+#if defined(_WIN32)
+        const unsigned long pid = static_cast<unsigned long>(_getpid());
+#else
+        const unsigned long pid = static_cast<unsigned long>(getpid());
+#endif
+        const uint64_t seq = tempSequence.fetch_add(1, std::memory_order_relaxed);
         const auto target = blobPath(key);
-        const auto temp = diskDirectory_ / (key.id + ".tmp." + std::to_string(reinterpret_cast<uintptr_t>(this)));
+        const auto temp = diskDirectory_ / (key.id + ".tmp." + std::to_string(pid) + "." + std::to_string(seq));
         const auto serialized = serializeShaderBlob(key, bytecode, version);
         {
             std::ofstream out(temp, std::ios::binary | std::ios::trunc);
             if (!out) return;
             out.write(reinterpret_cast<const char*>(serialized.data()),
                       static_cast<std::streamsize>(serialized.size()));
+            out.flush();
             if (!out) {
+                out.close();
+                std::filesystem::remove(temp, ec);
+                return;
+            }
+            out.close();
+            if (out.fail()) {
                 std::filesystem::remove(temp, ec);
                 return;
             }

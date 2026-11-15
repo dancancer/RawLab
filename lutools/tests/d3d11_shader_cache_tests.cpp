@@ -1,5 +1,6 @@
 #include "gpu/d3d11_shader_cache.h"
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -7,6 +8,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace sony2fuji;
@@ -121,12 +123,57 @@ void keyAndVersionInvalidationAndCorruptionRecovery() {
     }
 }
 
+void concurrentWritersAndReadersNeverObserveBrokenBlob() {
+    TempDir dir;
+    const std::string source = "void main() { /* concurrent */ }";
+    std::vector<uint8_t> expected(4096);
+    for (size_t i = 0; i < expected.size(); ++i) expected[i] = static_cast<uint8_t>((i * 131 + 7) & 0xFF);
+
+    constexpr int kRounds = 80;
+    std::vector<ShaderCacheKey> roundKeys;
+    roundKeys.reserve(kRounds);
+    for (int round = 0; round < kRounds; ++round) {
+        roundKeys.push_back(makeD3D11ShaderCacheKey(
+            "RawLab concurrent", source + std::to_string(round), "main", "cs_5_0", 0x8001));
+    }
+
+    std::atomic<int> brokenAtomicReads{0};
+    std::atomic<bool> start{false};
+
+    auto writerFn = [&]() {
+        while (!start.load(std::memory_order_acquire)) {}
+        for (int round = 0; round < kRounds; ++round) {
+            ShaderBytecodeCache writer(dir.path);
+            const auto blob = writer.getOrCompile(roundKeys[static_cast<size_t>(round)], [&]() { return expected; });
+            if (blob != expected) brokenAtomicReads.fetch_add(1, std::memory_order_relaxed);
+        }
+    };
+
+    auto readerFn = [&]() {
+        while (!start.load(std::memory_order_acquire)) {}
+        for (int round = 0; round < kRounds; ++round) {
+            ShaderBytecodeCache reader(dir.path);
+            const auto blob = reader.getOrCompile(roundKeys[static_cast<size_t>(round)], [&]() { return expected; });
+            if (blob != expected) brokenAtomicReads.fetch_add(1, std::memory_order_relaxed);
+        }
+    };
+
+    std::thread w1(writerFn), w2(writerFn), w3(writerFn), r1(readerFn);
+    start.store(true, std::memory_order_release);
+    w1.join();
+    w2.join();
+    w3.join();
+    r1.join();
+    require(brokenAtomicReads.load() == 0, "concurrent 3-writer/1-reader stress observed broken atomic read");
+}
+
 } // namespace
 
 int main() {
     try {
         inProcessAndCrossProcessCacheHits();
         keyAndVersionInvalidationAndCorruptionRecovery();
+        concurrentWritersAndReadersNeverObserveBrokenBlob();
         std::cout << "PASS: d3d11_shader_cache\n";
         return 0;
     } catch (const std::exception& error) {
