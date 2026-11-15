@@ -286,6 +286,28 @@ enum SubtoolDraftProbe {
         check(view.viewModel.adjustmentTargetIsCurrent(sourceKey),
               "resolveCollectionDraft(apply: true) on modified geometry draft leaves batch sync target check button enabled")
 
+        // 4. showQuickPresets must cleanly commit/close an active draft before opening quick presets.
+        await resetToCleanEditor()
+        view.selectEditorTool(.adjustment(.contrast))
+        await yieldFrames(6)
+        view.showQuickPresets()
+        await yieldFrames(8)
+        check(view.viewModel.quickPresetsVisible && !view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.viewModel.hasAdjustmentDraft,
+              "showQuickPresets closes unchanged subtool draft and clears hasAdjustmentDraft")
+
+        await resetToCleanEditor()
+        view.selectEditorTool(.adjustment(.contrast))
+        await yieldFrames(6)
+        let targetContrast: Double = view.settings.contrast > 1.2 ? 0.85 : 1.3
+        view.workingSettings.contrast = targetContrast
+        await yieldFrames(4)
+        view.showQuickPresets()
+        await yieldFrames(8)
+        check(view.viewModel.quickPresetsVisible && !view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.viewModel.hasAdjustmentDraft,
+              "showQuickPresets commits modified subtool draft and clears hasAdjustmentDraft")
+        check(abs(view.settings.contrast - targetContrast) < 0.001,
+              "showQuickPresets preserves committed contrast value")
+
         writeResult(passed: true)
         print("PASS: subtool menu draft suite (\(checks) checks)")
     }
