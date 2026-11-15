@@ -4,10 +4,19 @@ import SwiftUI
 @main struct QuickPresetUIHarness: App {
     @StateObject private var model: EditorModel
     private let fixture: URL
+    private let stateDirectory: URL
 
     init() {
         fixture = URL(fileURLWithPath: CommandLine.arguments[1])
-        let editor = EditorModel()
+        let stateDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("rawlab-quick-preset-ui-\(UUID().uuidString)", isDirectory: true)
+        self.stateDirectory = stateDirectory
+        let editor = EditorModel(
+            lookDirectory: stateDirectory.appendingPathComponent("looks", isDirectory: true),
+            editDirectory: stateDirectory.appendingPathComponent("edits", isDirectory: true),
+            batchDirectory: stateDirectory.appendingPathComponent("batch", isDirectory: true),
+            presetDirectory: stateDirectory.appendingPathComponent("presets", isDirectory: true)
+        )
         let payload = try! AdjustmentTransferPayload(source: .init(identifier: "quick-ui-fixture",
             isRaw: !RenderEngine.isRasterInput(fixture), processingVersion: 2, recipe: nil), values: ["light.exposure": .number(0.7)])
         if (try? editor.presetStore.list().isEmpty) == true {
@@ -26,11 +35,15 @@ import SwiftUI
 
     var body: some Scene {
         WindowGroup {
-            EditorView(model: model).onAppear {
-                if model.file == nil && ProcessInfo.processInfo.environment["RAWLAB_QUICK_TEST_START_EMPTY"] != "1" {
-                    model.open(fixture); model.showQuickPresets()
+            EditorView(model: model)
+                .onAppear {
+                    if model.file == nil && ProcessInfo.processInfo.environment["RAWLAB_QUICK_TEST_START_EMPTY"] != "1" {
+                        model.open(fixture); model.showQuickPresets()
+                    }
                 }
-            }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                    try? FileManager.default.removeItem(at: stateDirectory)
+                }
         }.defaultSize(width: 950, height: 620)
     }
 }

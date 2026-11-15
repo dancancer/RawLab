@@ -7,6 +7,8 @@ import SwiftUI
     private let first: URL
     init() {
         let root = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
+        let stateDirectory = root.appendingPathComponent("rawlab-iso-state", isDirectory: true)
+        let editDirectory = stateDirectory.appendingPathComponent("edits", isDirectory: true)
         let photos = root.appendingPathComponent("Photos", isDirectory: true)
         try! FileManager.default.createDirectory(at: photos, withIntermediateDirectories: true)
         first = photos.appendingPathComponent("01 Edited.png")
@@ -25,18 +27,24 @@ import SwiftUI
         }
         UserDefaults.standard.set([photos.path], forKey: "photoFolders")
         UserDefaults.standard.set("zh-Hans", forKey: L10n.preferenceKey)
-        let store = try! EditPersistence()
+        let store = try! EditPersistence(directory: editDirectory)
         let seeded = root.appendingPathComponent("seeded")
         if !FileManager.default.fileExists(atPath: seeded.path) {
             var edits = Adjustments(); edits.exposureMode = .sensor; edits.exposure = 1.2
             try! store.save(first, state: .init(settings: edits, filmID: ""))
             try! Data().write(to: seeded)
         }
-        _model = StateObject(wrappedValue: EditorModel())
+        _model = StateObject(wrappedValue: EditorModel(
+            lookDirectory: stateDirectory.appendingPathComponent("looks", isDirectory: true),
+            editDirectory: editDirectory,
+            batchDirectory: stateDirectory.appendingPathComponent("batch", isDirectory: true),
+            presetDirectory: stateDirectory.appendingPathComponent("presets", isDirectory: true)
+        ))
     }
     var body: some Scene {
         WindowGroup {
-            EditorView(model: model).onAppear { if model.file == nil { model.open(first) } }
+            EditorView(model: model)
+                .onAppear { if model.file == nil { model.open(first) } }
         }.defaultSize(width: 1380, height: 900)
     }
 }
