@@ -551,6 +551,9 @@ final class PhotoThumbnails: @unchecked Sendable {
             if keys.isEmpty { keysByPath.removeValue(forKey: path) }
             else { keysByPath[path] = keys }
         }
+        if inFlight.keys.contains(where: { $0.key.path == path && $0.key.fileIdentity != fileIdentity }) {
+            removedFile = true
+        }
         if expectedEditGeneration == nil || editGenerations[path, default: 0] == expectedEditGeneration {
             if let stateRevision {
                 let target = EditedRevision(identity: fileIdentity, revision: stateRevision)
@@ -615,12 +618,16 @@ final class PhotoThumbnails: @unchecked Sendable {
                 let cost = result.map(Self.imageCost) ?? 0
                 lock.lock()
                 _decodeCount += 1
-                if let result, fileGenerations[key.path, default: 0] == fileGen {
-                    insertLocked(result, for: key, cost: cost)
+                // 编辑通知或首次渲染可能先于目录监听追踪新身份，只丢弃旧身份的解码。
+                let trackedIdentity = trackedEditStates[key.path]?.identity
+                let identityMatches = trackedIdentity == nil || trackedIdentity == key.fileIdentity
+                let delivered = fileGenerations[key.path, default: 0] == fileGen && identityMatches ? result : nil
+                if let delivered {
+                    insertLocked(delivered, for: key, cost: cost)
                 }
                 let waiters = inFlight.removeValue(forKey: flightKey) ?? []
                 lock.unlock()
-                for waiter in waiters { waiter.resume(returning: result) }
+                for waiter in waiters { waiter.resume(returning: delivered) }
             }
         }
     }

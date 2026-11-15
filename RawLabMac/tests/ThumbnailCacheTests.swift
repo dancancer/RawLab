@@ -110,6 +110,7 @@ struct ThumbnailCacheTests {
         try await verifyKeyIsolationAndCostLimit(in: root)
         try await verifyEditedPreviewHitAndInvalidation(in: root)
         try await verifyFirstEditRacesInFlightOriginalDecode(in: root)
+        try await verifyUnwatchedReplacementRejectsInFlightOriginal(in: root)
         try await verifyResetIdempotentSingleInvalidation(in: root)
         try await verifyLookRemovalAndRenderFailureClearStaleTile(in: root)
         try await verifyFolderRefreshInvalidation(in: root)
@@ -613,6 +614,82 @@ struct ThumbnailCacheTests {
               "Tile displays idC edited thumbnail rather than in-flight originalImage(idC)")
         check(previews.editedInvalidationCount == previewInvBeforeC + 1,
               "Tile refresh after the replacement does not count a second edited invalidation")
+    }
+
+    @MainActor
+    private static func verifyUnwatchedReplacementRejectsInFlightOriginal(in root: URL) async throws {
+        var failures: [String] = []
+        for usesNotification in [true, false] {
+            let route = usesNotification ? "records-notification" : "render-seed"
+            let dir = root.appendingPathComponent("unwatched-replacement-\(route)", isDirectory: true)
+            let editsDir = dir.appendingPathComponent("edits", isDirectory: true)
+            let diskCacheDir = dir.appendingPathComponent("disk-cache", isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let photo = dir.appendingPathComponent("same-name.png")
+            try writePNG(to: photo, width: 360, height: 240, red: 0.25)
+            let keyB = PhotoThumbnailCacheKey(uneditedFileAt: photo)!
+            let store = try EditPersistence(directory: editsDir)
+            let idB = try store.readState(for: photo).identity
+
+            let (entered, onEnter) = AsyncStream<Void>.makeStream()
+            let release = DispatchSemaphore(value: 0)
+            defer { release.signal(); onEnter.finish() }
+            let thumbnails = PhotoThumbnails(observesEditPersistence: usesNotification) { url, maxPixelSize in
+                // 先解码 idB 的实际像素，再阻塞交付，确保同名替换发生在解码完成之后。
+                let source = CGImageSourceCreateWithURL(url as CFURL, nil)
+                let cgImage = source.flatMap { CGImageSourceCreateThumbnailAtIndex($0, 0, [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+                    kCGImageSourceShouldCacheImmediately: true
+                ] as CFDictionary) }
+                let image = cgImage.map { NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height)) }
+                check(image != nil, "CASE_E_MN9 \(route): idB pixels decoded before replacement")
+                onEnter.yield()
+                _ = release.wait(timeout: .now() + 10)
+                return image
+            }
+            let observingPreviews = usesNotification ? MacEditedPhotoPreviews(
+                editDirectory: editsDir, cacheDirectory: diskCacheDir, thumbnails: thumbnails
+            ) : nil
+            let inFlightOriginalB = Task { await thumbnails.image(for: photo) }
+            var iterator = entered.makeAsyncIterator()
+            _ = await iterator.next()
+
+            // 不调用 record(for:) 或 invalidate(for:)，让通知或首次渲染先追踪新身份。
+            try writePNG(to: photo, width: 480, height: 320, red: 0.75)
+            let idC = try store.readState(for: photo).identity
+            check(idC != idB, "CASE_E_MN9 \(route): same-name replacement changes file identity")
+            var settings = Adjustments(); settings.exposureMode = .sensor; settings.exposure = 1.4
+            try store.save(photo, state: PhotoEditState(settings: settings, filmID: ""))
+            let savedC = try store.readState(for: photo)
+            // render-seed 在保存之后才创建预览服务，确保它没有收到持久化通知。
+            let previews = observingPreviews ?? MacEditedPhotoPreviews(
+                editDirectory: editsDir, cacheDirectory: diskCacheDir, thumbnails: thumbnails
+            )
+            let expectedBeforeRender = usesNotification ? 1 : 0
+            check(thumbnails.editGeneration(forPath: keyB.path) == UInt64(expectedBeforeRender) &&
+                  previews.editedInvalidationCount == expectedBeforeRender,
+                  "CASE_E_MN9 \(route): tracking occurs at the intended entry point before render")
+            let editedC = try await previews.image(for: savedC)
+            check(previews.cachedThumbnail(for: photo)?.image === editedC,
+                  "CASE_E_MN9 \(route): idC edited preview is active before idB completes")
+
+            release.signal()
+            let deliveredB = await inFlightOriginalB.value
+            let cachedB = thumbnails.cachedImage(for: keyB)
+            let current = try await previews.record(for: photo)
+            let active = previews.cachedThumbnail(for: photo)
+            print("CASE_E_MN9 \(route): deliveredBNil=\(deliveredB == nil) cachedBNil=\(cachedB == nil) activeAfterRecordNil=\(active == nil) invDelta=\(previews.editedInvalidationCount) thumbInvDelta=\(thumbnails.editedInvalidationCount)")
+            if deliveredB != nil { failures.append("\(route): old idB pixels delivered") }
+            if cachedB != nil { failures.append("\(route): old idB pixels cached") }
+            if current != savedC || active?.image !== editedC || active?.identity != idC || active?.isEdited != true {
+                failures.append("\(route): idC edited preview lost after record refresh")
+            }
+            if previews.editedInvalidationCount != 1 || thumbnails.editedInvalidationCount != 1 {
+                failures.append("\(route): replacement counted more than one invalidation")
+            }
+        }
+        check(failures.isEmpty, "CASE_E_MN9: \(failures.joined(separator: "; "))")
     }
 
     @MainActor
@@ -1230,5 +1307,94 @@ struct ThumbnailCacheTests {
         }
         check(MacResourceDigestCache.shared.entryCount <= sharedCap,
               "Shared resource digest cache remains bounded at \(MacResourceDigestCache.shared.entryCount) <= \(sharedCap)")
+
+        // M-N9: In-flight file generation change must discard stale decoded image for waiters too.
+        final class DecodeGate: @unchecked Sendable {
+            private let lock = NSLock()
+            private var callCount = 0
+            private var firstDecoded = false
+            private let allowFinish = DispatchSemaphore(value: 0)
+
+            func waitAfterDecodeIfFirst() {
+                lock.lock()
+                callCount += 1
+                let isFirst = callCount == 1
+                if isFirst { firstDecoded = true }
+                lock.unlock()
+                if isFirst { allowFinish.wait() }
+            }
+
+            func hasFirstDecoded() -> Bool {
+                lock.lock(); defer { lock.unlock() }
+                return firstDecoded
+            }
+
+            func releaseFirst() {
+                allowFinish.signal()
+            }
+        }
+        func srgbRedChannel(_ image: NSImage) -> CGFloat? {
+            guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+            return NSBitmapImageRep(cgImage: cg).colorAt(x: 0, y: 0)?.usingColorSpace(.sRGB)?.redComponent
+        }
+
+        let racingFile = dir.appendingPathComponent("mn9-racing.png")
+        try writePNG(to: racingFile, width: 120, height: 80, red: 0.1)
+        let gate = DecodeGate()
+        let racingThumbnails = PhotoThumbnails(decodeThumbnail: { url, _ in
+            let decoded = NSImage(contentsOf: url)
+            gate.waitAfterDecodeIfFirst()
+            return decoded
+        })
+        let inFlightTask = Task { await racingThumbnails.image(for: racingFile) }
+        while !gate.hasFirstDecoded() {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        try writePNG(to: racingFile, width: 120, height: 80, red: 0.9)
+        racingThumbnails.invalidate(for: racingFile)
+        gate.releaseFirst()
+        let staleResult = await inFlightTask.value
+        check(staleResult == nil, "M-N9: in-flight decode invalidated mid-flight returns nil to waiters instead of stale bytes")
+        let freshResult = await racingThumbnails.image(for: racingFile)
+        let freshRed = freshResult.flatMap(srgbRedChannel)
+        check(freshResult != nil && racingThumbnails.decodeCount == 2 && freshRed.map { abs($0 - 0.9) < 0.05 } == true,
+              "M-N9: subsequent request after invalidation decodes fresh file bytes (red=\(String(describing: freshRed)))")
+
+        // M-N9 (B1): invalidateStaleEntries must also advance fileGenerations when only inFlight holds the old identity.
+        let staleFile = dir.appendingPathComponent("mn9-stale-inflight.png")
+        try writePNG(to: staleFile, width: 120, height: 80, red: 0.1)
+        let oldKey = PhotoThumbnailCacheKey(uneditedFileAt: staleFile)!
+        let staleGate = DecodeGate()
+        let staleThumbnails = PhotoThumbnails(decodeThumbnail: { url, _ in
+            let decoded = NSImage(contentsOf: url)
+            staleGate.waitAfterDecodeIfFirst()
+            return decoded
+        })
+        let staleInFlightTask = Task { await staleThumbnails.image(for: staleFile) }
+        while !staleGate.hasFirstDecoded() {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        try writePNG(to: staleFile, width: 120, height: 80, red: 0.9)
+        let newAttrs = try FileManager.default.attributesOfItem(atPath: oldKey.path)
+        let newSize = (newAttrs[.size] as? NSNumber)?.uint64Value ?? 0
+        let newMod = (newAttrs[.modificationDate] as? Date) ?? Date()
+        let newInode = (newAttrs[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0
+        let invalidated = staleThumbnails.invalidateStaleEntries(
+            atPath: oldKey.path,
+            fileSize: newSize,
+            modified: newMod,
+            fileNumber: newInode,
+            editedRevision: nil
+        )
+        check(invalidated, "M-N9: invalidateStaleEntries returns true when in-flight decode holds stale identity")
+        staleGate.releaseFirst()
+        let staleInFlightResult = await staleInFlightTask.value
+        check(staleInFlightResult == nil, "M-N9: invalidateStaleEntries discards stale in-flight result for waiters")
+        check(staleThumbnails.cachedImage(for: oldKey) == nil, "M-N9: invalidateStaleEntries prevents stale in-flight result from entering cache")
+        let freshAfterStale = await staleThumbnails.image(for: staleFile)
+        let freshAfterStaleRed = freshAfterStale.flatMap(srgbRedChannel)
+        check(freshAfterStale != nil && staleThumbnails.decodeCount == 2 &&
+              freshAfterStaleRed.map { abs($0 - 0.9) < 0.05 } == true,
+              "M-N9: request after invalidateStaleEntries decodes new file bytes (red=\(String(describing: freshAfterStaleRed)))")
     }
 }
