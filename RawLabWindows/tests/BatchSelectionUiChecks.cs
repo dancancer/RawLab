@@ -113,12 +113,28 @@ internal static class BatchSelectionUiChecks
             var cancelled=window.PrepareCollectionExportAsync([],ExportFormat.Png,256,root);window.CancelCollectionOperation();
             InteractionChecks.PumpUntil(()=>cancelled.IsCompleted);
             check(cancelled.Result==null && !window.CollectionHasExport,"Cancelled preflight cannot hand off a task");
+            // 冻结期取消锚点：生产入口 FreezeCollectionExportAsync 派发后台后、续体运行前取消 → 任务拒绝，
+            // journal 从未落盘、look 副本清空、任务窗口未弹出。撤修复（冻结同步落盘不让出 UI 线程）时任务已完成 → IsFaulted 必红。
+            var cancelJournal=Get<BatchJournal>(window,"batchJournal");
+            var cancelReview=window.PrepareCollectionExport([],ExportFormat.Png,256,root);
+            var freezingCancel=window.FreezeCollectionExportAsync(cancelReview,autoStart:true);window.CancelCollectionOperation();
+            InteractionChecks.PumpUntil(()=>freezingCancel.IsCompleted);
+            var cancelRejected=false;try{freezingCancel.GetAwaiter().GetResult();}catch{cancelRejected=true;}
+            check(cancelRejected && cancelJournal.Load()==null && !app.Windows.OfType<BatchExportWindow>().Any()
+                    && (!Directory.Exists(cancelJournal.DirectoryPath) || Directory.GetFiles(cancelJournal.DirectoryPath).Length==0),
+                "A freeze cancelled during the wait never saves the journal or leaves look copies behind");
             var dialog=new CollectionExportDialog(collection,window);Set(dialog,"directory",root);
             Get<TextBox>(dialog,"edge").Text="256";
             Get<ComboBox>(dialog,"formats").SelectedItem=ExportFormat.Png;
+            // 生产入口线程锚点：对话框 Confirm 驱动的冻结（前后双遍重验 + copy）必须整体在池线程执行；
+            // 撤修复（Freeze 在 UI 线程内联）时 IsThreadPoolThread 记 false，必红；RequestedAIBackend 漏快照也在此以跨线程异常暴露。
+            var freezeStages=new System.Collections.Concurrent.ConcurrentQueue<(string,bool)>();
+            dialog.freezeStage=stage=>freezeStages.Enqueue((stage,Thread.CurrentThread.IsThreadPoolThread));
             var start=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(50)};
             start.Tick+=(_,_)=>{start.Stop();dialog.UpdateLayout();Find<Button>(dialog,"collection.export-confirm").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));};
             start.Start();check(dialog.ShowDialog()==true,"One final action closes the export configuration and hands off the frozen task");
+            check(freezeStages.Count(entry=>entry.Item1=="revalidate")==2 && freezeStages.Any(entry=>entry.Item1=="copy") &&
+                freezeStages.All(entry=>entry.Item2),"Dialog freeze revalidates twice and copies looks off the UI thread through the production entry");
             var batch=app.Windows.OfType<BatchExportWindow>().Single();batch.UpdateLayout();
             InteractionChecks.PumpUntil(()=>!batch.Running);
             var job=batch.Job;

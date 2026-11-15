@@ -170,7 +170,7 @@ public partial class MainWindow
                 photos.Select(photo=>photo.ID).SequenceEqual(Collection.SelectedPhotos.Select(photo=>photo.ID)) ? result : null;
         }finally{if(generation==transferGeneration)transferPreparing=false;}
     }
-    internal async Task<BatchJob> FreezeCollectionExportAsync(CollectionExportReview review,bool autoStart=false)
+    internal async Task<BatchJob> FreezeCollectionExportAsync(CollectionExportReview review,bool autoStart=false,Action? beforeShowBatch=null,Action<string>? observeStage=null)
     {
         if(CollectionBusy)throw new InvalidOperationException(Loc.Text("请等待当前操作完成。"));
         if(CurrentBatch is {} running && running.SelectedCount>running.SucceededCount)
@@ -181,6 +181,8 @@ public partial class MainWindow
         var failures=review.Rows.ToDictionary(row=>row.Photo.ID,row=>CollectionDraftFailure(row.Photo.ID));
         var generation=++transferGeneration;var opened=openRevision;var revision=editRevision;var current=file;
         var device=aiPreference.DeviceID;
+        // RequestedAIBackend 读 WPF GpuMode：在 UI 线程快照，后台派发闭包不得再触碰 DispatcherObject（同 Rendering.cs 惯例）。
+        var aiBackend=RequestedAIBackend;
         var exporter=new BatchSelectionExport(editStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,device),TransferSession.EditGeneration);
         var persisted=batchJournal.Load();
         if(persisted!=null && persisted.SelectedCount>persisted.SucceededCount)
@@ -188,7 +190,7 @@ public partial class MainWindow
         transferPreparing=true;
         try {
             // 冻结（前后双遍全集重验 + 每目标 look 副本拷贝）经 Task.Run 留在后台线程，UI 线程只接收结果。
-            var frozen=await Task.Run(()=>exporter.FreezeCore(review,selectionIDs,id=>failures.GetValueOrDefault(id),RequestedAIBackend,device));
+            var frozen=await Task.Run(()=>exporter.FreezeCore(review,selectionIDs,id=>failures.GetValueOrDefault(id),aiBackend,device,observeStage));
             try {
                 // 与 UI 原子的复核保留在 UI 线程：编辑窗口状态、选择与实时草稿随任务挂载一次判定。
                 if(closing||exporting||UpdateInstallationActive||generation!=transferGeneration||opened!=openRevision||revision!=editRevision||file!=current||
@@ -201,7 +203,10 @@ public partial class MainWindow
                 throw;
             }
             if(persisted!=null)try{batchJournal.ReleaseResources(persisted);}catch(IOException){}catch(UnauthorizedAccessException){}
-            previousBatch=frozen.Job;ShowBatch(frozen.Job,autoStart);return frozen.Job;
+            previousBatch=frozen.Job;
+            // 任务窗口 Show() 会同步触发对话框 Deactivated；解除取消门禁的回调必须在 ShowBatch 激活新窗口之前执行。
+            beforeShowBatch?.Invoke();
+            ShowBatch(frozen.Job,autoStart);return frozen.Job;
         }finally{if(generation==transferGeneration)transferPreparing=false;}
     }
     internal void ViewCollectionExport()=>ShowBatchClicked(this,new());

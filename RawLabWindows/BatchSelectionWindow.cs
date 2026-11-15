@@ -165,6 +165,8 @@ internal sealed class CollectionExportDialog : Window
     private bool checking,closed;
     private int generation;
     private CollectionExportReview? review;
+    // 测试缝：经生产入口记录冻结阶段（revalidate/copy）所在线程，不改变生产路径。
+    internal Action<string>? freezeStage;
     private ExportFormat format=ExportFormat.Jpeg;
     private readonly ComboBox formats=new(){MinWidth=150};
     private readonly TextBox edge=new(){MinWidth=100};
@@ -245,10 +247,16 @@ internal sealed class CollectionExportDialog : Window
             message.Text=Loc.Text("正在检查照片…");
             var prepared=await editor.PrepareCollectionExportAsync(skipping,format,longEdge,directory ?? "");
             if(closed || request!=generation)return;
-            checking=false;
-            if(prepared==null){Invalidate();return;}
+            if(prepared==null){checking=false;Invalidate();return;}
             review=prepared;RefreshRows();
-            if(review.Ready){await editor.FreezeCollectionExportAsync(review,autoStart:true);DialogResult=true;return;}
+            if(review.Ready) {
+                // 冻结等待期保持取消门禁：取消/关窗/失焦照常走 CancelCheck；journal 落盘与实时复核通过后、
+                // 任务窗口激活前才解除门禁，避免 ShowBatch 的 Deactivated 把正常挂载误判为取消。
+                await editor.FreezeCollectionExportAsync(review,autoStart:true,beforeShowBatch:()=>{++generation;checking=false;},observeStage:freezeStage);
+                if(closed)return;
+                DialogResult=true;return;
+            }
+            checking=false;
             message.Text=review.Rows.Count==0 ? Loc.Text("没有可导出的照片，请取消跳过或重新选择。") : Loc.Format("实际导出 {0} 张",review.Rows.Count);
         }catch(Exception error){if(!closed && request==generation){Invalidate();message.Text=AdjustmentTransferPresentation.Detail(error);}}
         finally{if(request==generation){checking=false;configuration.IsEnabled=rows.IsEnabled=true;confirm.IsEnabled=editor.Collection.SelectedPhotos.Any(photo=>!skipping.Contains(photo.ID));}}
