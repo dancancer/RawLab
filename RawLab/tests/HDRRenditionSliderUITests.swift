@@ -111,6 +111,14 @@ final class HDRRenditionSliderUITests: XCTestCase {
         print("TAP_THEN_FAST_SLIDE: \(status)")
         XCTAssertFalse(status.contains("peak=0.0"),
                        "Expected fast slide after stationary tap not to trigger double-tap reset, got \(status)")
+        let peakText = try XCTUnwrap(status.components(separatedBy: "peak=").last?.split(separator: " ").first)
+        let peak = try XCTUnwrap(Double(peakText))
+        XCTAssertGreaterThan(peak, 2.5,
+                             "Expected +36pt fast slide after stationary tap to advance peak beyond 2.5, got \(status)")
+        let writesText = try XCTUnwrap(status.components(separatedBy: "writes=").last?.split(separator: " ").first)
+        let writes = try XCTUnwrap(Int(writesText))
+        XCTAssertGreaterThanOrEqual(writes, 1,
+                                    "Expected +36pt fast slide after stationary tap to commit writes, got \(status)")
         XCTAssertTrue(status.contains("editing=1,0 cancelled=0"),
                       "Expected one closed drag session without cancel, got \(status)")
     }

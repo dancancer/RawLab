@@ -514,6 +514,8 @@ private struct HDRRenditionSlider: UIViewRepresentable {
         slider.accessibilityIdentifier = accessibilityIdentifierText
         slider.accessibilityCustomActions = [
             UIAccessibilityCustomAction(name: resetLabel) { _ in
+                context.coordinator.flushPendingInertia()
+                slider.lastDragEndUptime = nil
                 context.coordinator.parent.onDoubleTapReset()
                 return true
             }
@@ -548,6 +550,7 @@ private struct HDRRenditionSlider: UIViewRepresentable {
 
         func stepBy(_ direction: Int, slider: HDRRenditionUIKitSlider) {
             flushPendingInertia()
+            slider.lastDragEndUptime = nil
             let next = HDRRenditionSliderMath.snap(parent.value + Double(direction) * parent.step, to: parent.range, step: parent.step)
             slider.value = Float(next)
             guard next != parent.value else { return }
@@ -586,6 +589,10 @@ private struct HDRRenditionSlider: UIViewRepresentable {
             if slider.allowsDoubleTap && !slider.isActivelyDragging {
                 return
             }
+            if !slider.isSynthesizingManualDrag,
+               abs(Double(slider.value) - Double(slider.dragStartValue)) > 1e-6 {
+                slider.hasInternalValueChangeMovedSlider = true
+            }
             commitCurrentSliderValue(slider)
         }
 
@@ -619,7 +626,8 @@ private final class HDRRenditionDoubleTapDelegate: NSObject, UIGestureRecognizer
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-        otherGestureRecognizer.view === slider
+        guard let slider else { return false }
+        return otherGestureRecognizer.view === slider || (otherGestureRecognizer.view?.isDescendant(of: slider) ?? false)
     }
 }
 
@@ -705,12 +713,15 @@ private final class HDRRenditionUIKitSlider: UISlider {
     }()
 
     private var downPoint: CGPoint?
+    private(set) var dragStartValue: Float = 0
     private var hasActiveTouch = false
     private var didMoveBeyondThreshold = false
     private var editingActive = false
     var lastDragEndUptime: TimeInterval?
     var committedDragOnCurrentTouch = false
     var suppressingFinishCallback = false
+    var hasInternalValueChangeMovedSlider = false
+    var isSynthesizingManualDrag = false
 
     var isTrackingInteraction: Bool { editingActive }
 
@@ -752,6 +763,7 @@ private final class HDRRenditionUIKitSlider: UISlider {
         syncGestureConfiguration()
         if window == nil {
             onBeforeNewInteraction()
+            lastDragEndUptime = nil
             resetTouchState()
         }
     }
@@ -765,13 +777,13 @@ private final class HDRRenditionUIKitSlider: UISlider {
         hasActiveTouch = false
         didMoveBeyondThreshold = false
         committedDragOnCurrentTouch = false
+        hasInternalValueChangeMovedSlider = false
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        onBeforeNewInteraction()
-        lastDragEndUptime = nil
         hasActiveTouch = true
         committedDragOnCurrentTouch = !allowsDoubleTap
+        dragStartValue = value
         if let touch = touches.first {
             downPoint = touch.location(in: self)
         }
@@ -787,6 +799,23 @@ private final class HDRRenditionUIKitSlider: UISlider {
             markDraggedIfMoved(touch)
         }
         super.touchesMoved(touches, with: event)
+        if didMoveBeyondThreshold,
+           !hasInternalValueChangeMovedSlider,
+           let start = downPoint,
+           let touch = touches.first {
+            let track = trackRect(forBounds: bounds)
+            let thumb = thumbRect(forBounds: bounds, trackRect: track, value: minimumValue)
+            let travelWidth = max(track.width - thumb.width, 1)
+            let deltaFraction = (touch.location(in: self).x - start.x) / travelWidth
+            let raw = Double(dragStartValue) + Double(deltaFraction) * (range.upperBound - range.lowerBound)
+            let nextValue = Float(HDRRenditionSliderMath.snap(raw, to: range, step: step))
+            if value != nextValue {
+                value = nextValue
+                isSynthesizingManualDrag = true
+                sendActions(for: .valueChanged)
+                isSynthesizingManualDrag = false
+            }
+        }
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -839,6 +868,8 @@ private final class HDRRenditionUIKitSlider: UISlider {
 
     func beginEditingIfNeeded() {
         guard !editingActive else { return }
+        onBeforeNewInteraction()
+        lastDragEndUptime = nil
         editingActive = true
         onEditingChanged(true)
     }
