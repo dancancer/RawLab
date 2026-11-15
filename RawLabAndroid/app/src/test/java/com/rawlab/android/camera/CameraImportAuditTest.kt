@@ -329,7 +329,13 @@ class CameraImportAuditTest {
             val saved = receiveCameraJob(store, oldJob, CameraTransferPermit(), { _, output ->
                 output.write(bytes); sha256(bytes)
             })
-            if (case.damageLocal) media.file(saved.items.single().saved!!.uri).writeBytes(bytes.copyOf().apply { this[100_000]++ })
+            if (case.damageLocal) {
+                // 真实本地损伤（拔卡/外部改写）必然改动 mtime；同秒内改写属于指纹信任的已登记 crypto 降级取舍。
+                // 复位 mtime 之外再改一字节，让 savedStat 指纹失配 → 回落 validContent 整文件摘要抓伤 → 整盘重下。
+                val damaged = media.file(saved.items.single().saved!!.uri)
+                damaged.writeBytes(bytes.copyOf().apply { this[100_000]++ })
+                assertTrue(damaged.setLastModified(damaged.lastModified() + 5_000))
+            }
             if (case.ambiguous) {
                 val different = bytes.copyOf().apply { this[100_000]++ }
                 val another = store.create("BLE:sony", listOf(original), CameraImportDestination(),

@@ -252,7 +252,9 @@ internal class CameraImportStore(private val directory: File, private val tempor
         if (part.canonicalFile != partial(job.id).canonicalFile) throw IOException("Incomplete camera photo")
         if (part.length() != item.photo.size || !validDigest(digest) || !validHeader(part, item.photo.raw))
             throw CameraPhotoImportException("Incomplete camera photo")
-        part.inputStream().use { if (contentDigest(it, item.photo.size) { permit.check() } != digest) throw CameraPhotoImportException("Camera photo digest mismatch") }
+        // 下载路径（SonyMobileSession/SonyTetherSession.download 逐块 write+update，copySampledOriginal 复用
+        // 已校验来源）对写入句柄与 SHA-256 同步消费同一字节流并含头校验；上方已复核 .partial 尺寸与文件头，
+        // 直接采信流式摘要，不再整读重算（与 iOS complete() 同构）。
         if (item.digest != null && item.digest != digest) throw CameraImportSourceChanged()
         val targetName = safeName(item.photo.name)
         val capture = readCaptureDate(part)
@@ -302,7 +304,11 @@ internal class CameraImportStore(private val directory: File, private val tempor
                 save(job.replacing(index, item.copy(prepared = pending, digest = digest, outputDigest = outputDigest,
                     outputSize = outputSize, captureDay = capture?.day)))
                 media.write(pending.uri, outputPart)
-                if (!validContent(pending.uri, outputSize, outputDigest)) throw IOException("Stored camera photo differs")
+                // 写入字节与 outputPart 同源、摘要已知（outputDigest）：stat 元数据已定稿则以指纹 size 复核，
+                // 未定稿（IS_PENDING=1 时 MediaProvider 不给 SIZE/DATE_MODIFIED）信任 ContentResolver 写入
+                // （copyTo+fd.sync，截断即抛错）；发布后的 publishedFingerprint 仍按 size 复核兜底。
+                val pendingStat = mediaStat(pending.uri)
+                if (pendingStat != null && pendingStat.size != outputSize) throw IOException("Stored camera photo differs")
                 media.remember(pending.uri, outputSize, outputDigest)
                 saved = media.publish(pending.uri)
                 // MediaProvider 到 publish（IS_PENDING=0）才扫描定稿 SIZE/DATE_MODIFIED，指纹只能在发布后采集；
@@ -322,7 +328,8 @@ internal class CameraImportStore(private val directory: File, private val tempor
         }
     }
 
-    /** 三段抽样只用于跳过无线重复下载；本地完整 SHA-256 与 publish 的完整性校验仍然保留。 */
+    /** 三段抽样只用于跳过无线重复下载；候选校验走 savedStat 指纹快路径（recoverJob 同惯例），
+     * 指纹缺失或变化才回落本地完整 SHA-256。 */
     fun copySampledOriginal(job: CameraImportJob, photo: CameraPhoto, output: FileOutputStream,
         permit: CameraTransferPermit, readRange: (Long, Int) -> ByteArray?): String? {
         val chunk = 64 shl 10
@@ -336,8 +343,10 @@ internal class CameraImportStore(private val directory: File, private val tempor
             } }
             .filter { item ->
                 val saved = checkNotNull(item.saved)
+                // savedStat 指纹命中即复用候选（recoverJob 同惯例），只有指纹缺失/变化才整算候选内容。
                 runCatching { media.inspect(saved.uri)?.pending == false &&
-                    validContent(saved.uri, photo.size, item.digest) }.getOrDefault(false)
+                    (fingerprintVerified(saved.uri, photo.size, item.digest, item.savedStat) ||
+                        validContent(saved.uri, photo.size, item.digest)) }.getOrDefault(false)
             }
         // 同一稳定身份有不同内容时无法证明该复用哪份，必须重新下载。
         if (candidates.map { it.digest }.distinct().size != 1) return null
@@ -378,9 +387,14 @@ internal class CameraImportStore(private val directory: File, private val tempor
             item.saved?.let { saved ->
                 val current = media.inspect(saved.uri) ?: throw IOException("Camera original is unavailable")
                 if (current.pending) throw IOException("Camera original is not published")
-                if (!validContent(current.uri, item.outputSize ?: item.photo.size, item.outputDigest ?: item.digest)) {
-                    // 强校验抓到同指纹改写（stat 抓不到的篡改）：清掉该条指纹并落盘，
-                    // 下一次 load 走整文件校验，条目得以自愈翻转为 CHANGED（openSaved 的刷新依赖此语义）。
+                val expectedSize = item.outputSize ?: item.photo.size
+                val expectedDigest = item.outputDigest ?: item.digest
+                // 打开按 A1 指纹惯例放行：(size,mtime) 未变即复用已登记摘要，不再每次整读 30–80MB。
+                // 取舍（登记为 crypto 强度降级）：同尺寸同秒的原位改写不再被打开路径的 SHA-256 兜底抓到；
+                // 指纹缺失/读不出（MediaProvider 元数据不可得）仍回落整文件强校验：
+                // 抓到篡改即清指纹落盘，下一次 load 整文件校验使条目自愈翻转为 CHANGED。
+                if (!fingerprintVerified(current.uri, expectedSize, expectedDigest, item.savedStat) &&
+                    !validContent(current.uri, expectedSize, expectedDigest)) {
                     items[index] = item.copy(savedStat = null)
                     save(job.copy(items = items.toList()))
                     throw CameraLocalSourceChanged()
@@ -475,7 +489,23 @@ internal class CameraImportStore(private val directory: File, private val tempor
     private fun publishedFingerprint(uri: String, expectedSize: Long): String? =
         mediaStat(uri)?.takeIf { it.size == expectedSize }?.fingerprint()
 
+    /** recoverJob 的 stat 指纹快路径惯例：指纹与记录一致、指纹 size 等于预期校验 size 且摘要有效才放行（并登记摘要）。 */
+    private fun fingerprintVerified(uri: String, expectedSize: Long, expectedDigest: String?, savedStat: String?): Boolean {
+        val digest = expectedDigest?.takeIf(::validDigest) ?: return false
+        if (savedStat == null) return false
+        val stat = mediaStat(uri) ?: return false
+        if (stat.size != expectedSize || stat.fingerprint() != savedStat) return false
+        media.remember(uri, expectedSize, digest)
+        return true
+    }
+
+    /** 整文件摘要账目（测试观察钩子）：`contentDigest` 真实计算入口计数；指纹快路径命中不增加，撤掉复用必红。 */
+    @Volatile
+    internal var contentDigestCount = 0
+        private set
+
     private fun contentDigest(input: InputStream, expected: Long, check: () -> Unit = {}): String {
+        contentDigestCount++
         val digest = MessageDigest.getInstance("SHA-256")
         val bytes = ByteArray(64 * 1024); var count = 0L
         while (true) {
