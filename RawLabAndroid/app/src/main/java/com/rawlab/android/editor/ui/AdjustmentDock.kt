@@ -285,7 +285,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                     }
                 }
                 }
-                UnreadableLookRows(state.unreadableLooks, state.operation == Operation.NONE && !state.committingAdjustments && state.draft == null,
+                UnreadableLookRows(state.unreadableLooks, state.operation == Operation.NONE && !state.committingAdjustments &&
+                    (state.draft == null || state.draft.group == AdjustmentGroup.LOOK),
                     onDeleteUnreadableLook)
             }
             1 -> NumericControl(R.string.strength, edits.strength * 100, 0f..200f, "%", state.controlsEnabled && (edits.film != "neutral" || edits.recipeID != null),
