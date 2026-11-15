@@ -573,10 +573,13 @@ class EditorViewModel @JvmOverloads constructor(
     private fun acceptLookValue(result: LookResult) {
         when (result) {
             is LookResult.Loaded -> {
-                mutable.value = EditorStateReducer.looksLoaded(mutable.value, result.looks)
+                mutable.value = EditorStateReducer.looksLoaded(mutable.value, result.entries)
                 recentLooks.ids.filter { it.startsWith("recipe-lut:") }.forEach { includeIndependentRecipeLook(EditSettings(film = it)) }
                 includeIndependentRecipeLook(mutable.value.edits)
                 updateRecentLooks()
+            }
+            is LookResult.UnreadableDeleted -> {
+                mutable.value = EditorStateReducer.looksLoaded(mutable.value, result.entries).copy(operation = Operation.NONE)
             }
             is LookResult.Imported -> {
                 val mutation = result.imported.lastOrNull()?.takeIf { lookImportSelectionContext == (sourceRevision to draftRevision) }
@@ -839,6 +842,12 @@ class EditorViewModel @JvmOverloads constructor(
         if (mutable.value.committingAdjustments || mutable.value.operation != Operation.NONE || mutable.value.draft != null) return
         mutable.value = mutable.value.copy(operation = Operation.IMPORT_LOOK, error = null)
         lookRevision = lookQueue.submit(LookWork.Delete(id))
+    }
+
+    fun deleteUnreadableLook(entry: com.rawlab.android.looks.UnreadableLook) {
+        if (mutable.value.committingAdjustments || mutable.value.operation != Operation.NONE || mutable.value.draft != null) return
+        mutable.value = mutable.value.copy(operation = Operation.IMPORT_LOOK, error = null)
+        lookRevision = lookQueue.submit(LookWork.DeleteUnreadable(entry))
     }
 
     fun selectFilm(id: String): Boolean {

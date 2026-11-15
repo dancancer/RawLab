@@ -23,6 +23,38 @@ import com.rawlab.android.settings.LookChoice
 
 class LookLibraryTest {
     @Test
+    fun unreadableRowsReachEditorStateAndDeletionSurvivesRestart() {
+        val root = Files.createTempDirectory("rawlab-look-ui").toFile()
+        try {
+            val library = LookLibrary(root, validator)
+            val good = library.importLook("valid".byteInputStream(), "Good.cube")
+            val registry = File(root, "registry.properties")
+            val properties = Properties().apply { registry.inputStream().use { load(it) } }
+            val badId = UUID.randomUUID().toString()
+            val badFile = File(root, "$badId.rlook").apply { writeText("future") }
+            properties.setProperty("count", "3")
+            properties.setProperty("item.1.id", badId)
+            properties.setProperty("item.1.name", "Future look")
+            properties.setProperty("item.1.path", badFile.name)
+            properties.setProperty("item.1.version", "99")
+            properties.setProperty("item.2.id", "invalid")
+            registry.outputStream().use { properties.store(it, null) }
+            val loaded = LookLibraryEntries.load(library)
+            val state = com.rawlab.android.editor.EditorStateReducer.looksLoaded(com.rawlab.android.editor.EditorState(), loaded)
+            assertEquals(listOf(good.id), state.looks.filter { it.managed }.map { it.id })
+            assertEquals(listOf("Future look", null), state.unreadableLooks.map { it.name })
+            val remaining = LookLibraryEntries.removeUnreadable(library, state.unreadableLooks.first())
+            val refreshed = com.rawlab.android.editor.EditorStateReducer.looksLoaded(state, remaining)
+            assertEquals(1, refreshed.unreadableLooks.size)
+            assertFalse(badFile.exists())
+            val restart = LookLibraryEntries.load(LookLibrary(root, validator))
+            assertEquals(refreshed.unreadableLooks, restart.unreadable)
+            assertEquals(listOf(good.id), restart.looks.map { it.id })
+            assertTrue(LookLibraryEntries.removeUnreadable(library, refreshed.unreadableLooks.single()).unreadable.isEmpty())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test
     fun compatibilityBadgeSurvivesRestart() {
         val root = Files.createTempDirectory("rawlab-compatible-library").toFile()
         val validate = LookValidator { LookValidation(LookFormat.CUBE, 0, 8) }

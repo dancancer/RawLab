@@ -341,6 +341,9 @@
     <string name="look_name">"外观名称"</string>
     <string name="look_storage_error">"外观库读取失败，请稍后重试或删除损坏的外观记录。"</string>
     <string name="look_unavailable">"此外观文件不可用，请删除后重新导入。"</string>
+    <string name="look_unreadable_name">"损坏的外观"</string>
+    <string name="look_unreadable_reason">"此外观无法读取，可能已损坏或来自不兼容版本。"</string>
+    <string name="look_unreadable_title">"不可读外观"</string>
     <string name="master_recipes">"大师配方"</string>
     <string name="memory_error">"内存不足，无法处理这张照片。"</string>
     <string name="message_adjustment_source">"调整来源"</string>

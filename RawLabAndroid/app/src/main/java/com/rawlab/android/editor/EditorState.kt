@@ -61,6 +61,7 @@ data class EditorState(
     val photo: ImportedPhoto? = null,
     val edits: EditSettings = EditSettings(),
     val looks: List<LookChoice> = LookChoice.builtIns,
+    val unreadableLooks: List<com.rawlab.android.looks.UnreadableLook> = emptyList(),
     val recentLookIds: List<String> = emptyList(),
     val preview: PreviewPair? = null,
     val operation: Operation = Operation.NONE,
@@ -109,6 +110,9 @@ internal object EditorStateReducer {
     // Q12: 已过提交点的导出遇迟到取消按「已完成」收尾——文件保留并发布，即使结果 revision
     // 已过期（cancelExport 已 renderFinished），提示也告知完成而非取消成功；只覆盖完成文案。
     fun lateExportCompleted(current: EditorState, done: String): EditorState = current.copy(message = done)
+
+    fun looksLoaded(current: EditorState, loaded: com.rawlab.android.looks.LookLibraryEntries): EditorState =
+        looksLoaded(current, loaded.looks).copy(unreadableLooks = loaded.unreadable)
 
     fun looksLoaded(current: EditorState, loaded: List<LookChoice>): EditorState {
         val loadedIds = loaded.mapTo(mutableSetOf()) { it.id }
