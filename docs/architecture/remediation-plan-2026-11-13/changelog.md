@@ -420,3 +420,21 @@
   - **返工的反向 bug**：为堵竞态加的"过保守"判据同样致命（#396 回收 100% 失效），修复后要验证"该删的还能删"。
   - **执行方分配纪律**：过度防御/降载类减法票**不派 codex**（风格偏加法）；凡派 codex 前置"最小充分改动+禁止净增防御层"纪律；agy 网关反复 `loadCodeAssist` EOF 时改派原生 subagent，agy 并发上限 **4**。
 - **在途**：#405（Mac 缩略图缓存去 fsync+LRU 索引、Android statvfs 风暴）、#406（批量账本写放大 Mac/Win）、#407（相机 Android 半边）、#393 r3（stat 短路→内容寻址零 I/O+摘要键 parse 缓存，等 Windows native 重跑）。
+
+---
+
+### (67) 过度防御大扫除波二（159–171）：审计清单全部落地；冲突规则与"假绿三形态"再次被实证
+
+- **#393（159th `62e463d5`）SHA 降载票①（C++ 核心）**：T1 相机 RAW 解码末尾无人消费摘要（前后已有 `cameraRawStamp` 夹逼）→ 不读盘；T2 ProRAW develop/finish 双算→单算、openPROW 复用准入摘要；T3 portable HDR 边界双验→单验；**T4/T5 三轮返工**——先把 #360 的内容防线退回 stat 短路（碳审：NTFS 粗时钟重开原发故障 + `expectedHash` 失配卡死 + 假绿测试），终版=**内容寻址零 I/O**（`Looks/HDR/<sha256>.cube` 文件名即摘要，直接比名）+ 摘要键 parse 缓存 + 三套样板合一；Windows native 重跑绿（首跑败于 opencv 下载 flake）。
+- **#404（158th）/#408（160th）** opencv/opencv_contrib 收编 `rawlab_download_archive`（重试+SHA256 pin，终结 schannel 抖动卡 native 门禁）；changelog (66) 入库。
+- **#406（161st）+ #409（164th）批量账本写放大（Mac/Win/iOS）**：`save()` 改为"首写或磁盘指纹≠本进程上次写出"才整读回+校验；探针文件任务级化；**保留 publishing/checkpoint/succeeded 三崩溃锚**（评估后不合并，合并会弱化恢复语义）；IO 账：500 张整文件重读 1500+→1、探针 6000+→1500 stat。**Windows 指纹被碳审打回并 CI 实红**（`(Length,LastWriteTime)` 在 NTFS 15.6ms 粗时钟下等长覆写漏检 → 静默覆盖未来版本 job.json）→ 终版=USN>0 + 六字段全匹配才跳过，否则回退全读；iOS 用 APFS 全纳秒 stat（`dev+ino+size+mtime_ns+ctime_ns`，`.atomic` 换 inode 反而成为检出依据）。
+- **#407（162nd）相机 Android 半边**：publish 采信流式摘要、pending 尺寸复核、采样 savedStat 快路径；**d1/d2 打开路径被碳审整段否决并撤回**（MediaStore `(SIZE,DATE_MODIFIED)` 整秒精度非 iOS 纳秒语义，同秒等长覆写会静默错图+编辑串图+账本不自愈），仅保留 a/b/c；仪器化 `CameraMediaLibraryTest` 6/6 实跑。
+- **#405（163rd）缩略图缓存三端**：去 fsync/WriteThrough + 共享实例（修 Album/Editor 双实例索引失步）+ **容器完整性校验**（Android JPEG SOI/EOI；Mac/iOS PNG IEND、JPEG EOI——ImageIO 对截断图返回非空残图已被实测钉死），坏条目删除+剔索引自愈；Mac 删掉 `NSImage(data:)` 的 0×0 伪装成功兜底。
+- **#411（165th）基线断裂修复**：`BatchPublicationTests` 的 `preview.cgImage`→`preview.image.cgImage`（生产从未有该访问器；回加才是为一条断言净增 API），并把 `hdr-batch.sh` 模拟器不适用登记入 ci.md。
+- **#413（166th）Mac 16-bit PNG 导出尾趟**：为 2KB EXIF 整图重解码重压缩 → **`eXIf` chunk 流式注入 + IDAT 原样平移**；61MP 实测 preserve 尾趟 **8.92s→0.45s**、峰值 RSS **+910MB→+9MB**、像素解码/编码 **1+1→0+0**，成片像素 SHA256 与 EXIF 读回逐项一致。
+- **#412（167th）HDR 滑杆扫描融合**：4 层整图扫描里可融合的两层并入 edit 写趟（**每帧整图扫描 7→4**），FFI/核心校验因错误契约不同不硬合；碳审 TSan 抓出并行归约对非原子 `fusedMax` 的无锁读（UB）→ 一行修（初值 `-inf`），TSan 前后对比 2 race→0。
+- **#414（168th）Android 相机账本**：进程内增量账本 + 行级 WAL + 任务级快照替代每张全量重写（单张：全目录枚举 1→0、重写 2→0、fsync 4→2–3）；碳审两阻断=设备门禁测试直读 json `prepared` 必红（hosted CI 只编不跑=假绿）+ **WAL 缺单调序号**（`Files.move` 与 `wal.delete()` 间崩溃会把旧 WAL 重放到新快照上，复活被清零的 `savedStat` 绕过篡改自愈）→ 加 `seq` 判据与 `recoverJob` 清 `prepared`，仪器 6/6 真绿。
+- **#410（169th）Freeze 离主线程（Mac/Win）**：双遍全集重验 + look 拷贝搬后台；碳审三阻断=后台读 WPF `GpuMode.SelectedIndex` **100% 崩**、`checking` 提前清导致**冻结期取消失效仍落盘**、Windows 红锚自写 `Task.Run` 绕过生产入口（且 PR 误称 WPF 已编译）→ 修后手动 Windows `build` 门禁真编 WPF，锚点③变异实证（撤修复两次独立 run 精准红、恢复 3 连绿 32 checks）。
+- **#415（170th）Mac 编辑账本缓存**：写后重取指纹原地更新（写+读配对磁盘读 2N→N），补齐 H-03 的 Mac 半边。
+- **（在途）#416**：同一 look 在任务目录内 N 份 → 1 份内容寻址副本（4 处 per-target 复制）。
+- **方法论再确认**：①**冲突/竞态类必须二审**（本轮 5 张票的阻断全是"单审会漏"的时序或平台契约）；②**假绿三形态全部再次出现**（未覆盖真实入口、自比值、夹具失真）；③**"减法票写成加法票"的具体形态**=用元数据短路顶替内容凭证（#393 T4/T5）与"按实例私有缓存"（#397）；④**平台语义不可类推**：MediaStore 整秒 ≠ VFS 纳秒、NTFS 粗时钟/FAT 无 ChangeTime、ImageIO 对截断图返回非空——三处都靠实跑或实测钉死。
