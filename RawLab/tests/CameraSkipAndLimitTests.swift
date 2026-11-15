@@ -1714,34 +1714,83 @@ struct CameraSkipAndLimitTests {
         let device = CameraDeviceIdentity(manufacturer: "Sony", model: "ILCE-6700", firmware: "2.00", serial: "FAKE-SERIAL-01", operations: [])
         let baseMillis = UInt64(Date().timeIntervalSince1970 * 1000) + 10_000
 
-        // 1) Pure unreferenced orphan in originals/ with empty manifest.originals -> recover() deletes to 0 residuals & 0 UI ghosts.
+        // 1) Cross-version upgrade migration (#339 whole-batch crash before manifest write -> upgraded recover()):
+        // Complete original on disk + empty manifest -> re-adopted as .available (never deleted), counted in UI & bytes,
+        // idempotent on subsequent restarts (0 extra writes), and reclaimable via pruneExportedOriginals once exported.
+        // Junk orphans (empty dir / .downloading-only dir) are deleted to 0 residuals.
         do {
-            let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-p222-orphan-zero-\(UUID().uuidString)")
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-p222-upgrade-adopt-\(UUID().uuidString)")
             defer { try? FileManager.default.removeItem(at: root) }
             do { _ = try CameraOriginalStore(directory: root) }
-            let orphanDir = root.appendingPathComponent("originals", isDirectory: true)
-                .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
-            try FileManager.default.createDirectory(at: orphanDir, withIntermediateDirectories: true)
-            try makeLargeRAW(size: 8192, seed: 0x41).write(to: orphanDir.appendingPathComponent("DSC_GHOST.ARW"))
 
-            let restartedStore = try CameraOriginalStore(directory: root)
-            let channel = FakeSonyCameraChannel(entries: [])
-            let backend = CameraWorkspaceBackend(storage: restartedStore, clientID: UUID()) { _, purpose, _ in
-                try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+            let originalsRoot = root.appendingPathComponent("originals", isDirectory: true)
+            let upgradeID = UUID()
+            let upgradeDir = originalsRoot.appendingPathComponent(upgradeID.uuidString.lowercased(), isDirectory: true)
+            try FileManager.default.createDirectory(at: upgradeDir, withIntermediateDirectories: true)
+            let upgradeBytes = makeLargeRAW(size: 8192, seed: 0x41)
+            let upgradeFile = upgradeDir.appendingPathComponent("DSC_UPGRADE.ARW")
+            try upgradeBytes.write(to: upgradeFile)
+            let expectedMtime = Date(timeIntervalSince1970: 1_700_000_234)
+            try FileManager.default.setAttributes([.modificationDate: expectedMtime], ofItemAtPath: upgradeFile.path)
+
+            let emptyJunkDir = originalsRoot.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+            try FileManager.default.createDirectory(at: emptyJunkDir, withIntermediateDirectories: true)
+            let dlJunkDir = originalsRoot.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+            try FileManager.default.createDirectory(at: dlJunkDir, withIntermediateDirectories: true)
+            try Data([0x49, 0x49, 0x2a, 0]).write(to: dlJunkDir.appendingPathComponent("DSC_TMP.ARW.downloading"))
+
+            var firstRecoverWrites = 0
+            @MainActor func verifyFirstUpgradeBoot() async throws {
+                let restartedStore = try CameraOriginalStore(directory: root) { firstRecoverWrites += 1 }
+                let channel = FakeSonyCameraChannel(entries: [])
+                let backend = CameraWorkspaceBackend(storage: restartedStore, clientID: UUID()) { _, purpose, _ in
+                    try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+                }
+                let controller = IOSCameraController(backend: backend)
+                try await waitUntil { controller.originals.count == 1 }
+                let remainingDirs = try FileManager.default.contentsOfDirectory(atPath: originalsRoot.path)
+                let adoptedData = try Data(contentsOf: restartedStore.verifiedURL(upgradeID))
+                let adoptedOriginal = controller.originals.first
+                try check(firstRecoverWrites == 1 &&
+                          remainingDirs == [upgradeID.uuidString.lowercased()] &&
+                          !FileManager.default.fileExists(atPath: emptyJunkDir.path) &&
+                          !FileManager.default.fileExists(atPath: dlJunkDir.path) &&
+                          restartedStore.snapshot.originals.count == 1 &&
+                          adoptedOriginal?.id == upgradeID &&
+                          adoptedOriginal?.name == "DSC_UPGRADE.ARW" &&
+                          adoptedOriginal?.size == UInt64(upgradeBytes.count) &&
+                          adoptedOriginal?.digest == sha256Hex(upgradeBytes) &&
+                          adoptedOriginal?.availability == .available &&
+                          abs((adoptedOriginal?.savedAt.timeIntervalSince1970 ?? 0) - expectedMtime.timeIntervalSince1970) < 2 &&
+                          controller.storedOriginalsBytes == UInt64(upgradeBytes.count) &&
+                          adoptedData == upgradeBytes,
+                          "P2-22 cross-version migration: Re-adopts complete orphan into history & byte count with 1 write and sweeps junk orphans")
+                await drainBackend(backend)
             }
-            let controller = IOSCameraController(backend: backend)
-            await drainBackend(backend)
-            try await Task.sleep(nanoseconds: 50_000_000)
-            let remainingEntries = try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("originals").path)
-            try check(remainingEntries.isEmpty &&
-                      restartedStore.snapshot.originals.isEmpty &&
-                      controller.originals.isEmpty &&
-                      controller.storedOriginalsBytes == 0,
-                      "P2-22 orphan sweep: Unreferenced originals/<uuid>/ directory is deleted to 0 residuals and 0 ghost bytes")
-            await drainBackend(backend)
+            try await verifyFirstUpgradeBoot()
+            await Task.yield()
+
+            // Idempotency: reopening after re-adoption performs 0 manifest writes and preserves the entry.
+            var secondRecoverWrites = 0
+            let reopenedStore = try CameraOriginalStore(directory: root) { secondRecoverWrites += 1 }
+            try check(secondRecoverWrites == 0 &&
+                      reopenedStore.snapshot.originals.map(\.id) == [upgradeID],
+                      "P2-22 cross-version migration: Second recover() is idempotent with 0 manifest writes")
+
+            // Prune protection & reclaimability: unexported kept; exported reclaimed cleanly.
+            let unexportedPrune = try reopenedStore.pruneExportedOriginals()
+            let exportedPrune = try reopenedStore.pruneExportedOriginals(exportedContentIdentifiers: [sha256Hex(upgradeBytes)])
+            let postPruneDirs = try FileManager.default.contentsOfDirectory(atPath: originalsRoot.path)
+            try check(unexportedPrune.originals == 0 &&
+                      exportedPrune.originals == 1 &&
+                      exportedPrune.freedBytes == UInt64(upgradeBytes.count) &&
+                      postPruneDirs.isEmpty &&
+                      reopenedStore.snapshot.originals.isEmpty,
+                      "P2-22 cross-version migration: Re-adopted original resists auto-delete before export and prunes once exported")
         }
 
-        // 2) Mixed recovery: keeps .available and valid .prepared, deletes unreferenced orphan + missing .prepared dir, keeps non-UUID marker.
+        // 2) Mixed recovery: coalesces .prepared promotion/discard and complete orphan re-adoption into 1 manifest write,
+        // keeps .available, promoted .prepared, re-adopted complete orphan, and non-UUID marker; sweeps .downloading/empty/missing .prepared dirs.
         do {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-p222-orphan-mix-\(UUID().uuidString)")
             defer { try? FileManager.default.removeItem(at: root) }
@@ -1775,33 +1824,74 @@ struct CameraSkipAndLimitTests {
             manifest.jobs[0].items[2].phase = .prepared
             manifest.originals[2].availability = .prepared
             try FileManager.default.removeItem(at: store!.originalURL(preparedMissing))
-            let orphanDir = root.appendingPathComponent("originals", isDirectory: true)
-                .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
-            try FileManager.default.createDirectory(at: orphanDir, withIntermediateDirectories: true)
-            try Data([0x49, 0x49, 0x2a, 0]).write(to: orphanDir.appendingPathComponent("DSC_ORPHAN.ARW"))
-            let nonUUIDMarker = root.appendingPathComponent("originals", isDirectory: true).appendingPathComponent(".keep")
+
+            let originalsRoot = root.appendingPathComponent("originals", isDirectory: true)
+            let orphanCompleteID = UUID()
+            let orphanCompleteDir = originalsRoot.appendingPathComponent(orphanCompleteID.uuidString.lowercased(), isDirectory: true)
+            try FileManager.default.createDirectory(at: orphanCompleteDir, withIntermediateDirectories: true)
+            let orphanBytes = makeLargeRAW(size: 5120, seed: 0x45)
+            try orphanBytes.write(to: orphanCompleteDir.appendingPathComponent("DSC_ORPHAN.ARW"))
+
+            let orphanDownloadingDir = originalsRoot.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+            try FileManager.default.createDirectory(at: orphanDownloadingDir, withIntermediateDirectories: true)
+            try Data([0x49, 0x49, 0x2a, 0]).write(to: orphanDownloadingDir.appendingPathComponent("DSC_DL.ARW.downloading"))
+
+            let nonUUIDMarker = originalsRoot.appendingPathComponent(".keep")
             try Data([1]).write(to: nonUUIDMarker)
             store = nil
             try JSONEncoder().encode(manifest).write(to: root.appendingPathComponent("manifest.json"), options: .atomic)
 
-            let restartedStore = try CameraOriginalStore(directory: root)
+            var mixRecoverWrites = 0
+            let restartedStore = try CameraOriginalStore(directory: root) { mixRecoverWrites += 1 }
             let channel = FakeSonyCameraChannel(entries: [])
             let backend = CameraWorkspaceBackend(storage: restartedStore, clientID: UUID()) { _, purpose, _ in
                 try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
             }
             let controller = IOSCameraController(backend: backend)
-            try await waitUntil { controller.originals.count == 2 }
-            try check(!FileManager.default.fileExists(atPath: orphanDir.path) &&
+            try await waitUntil { controller.originals.count == 3 }
+            try check(mixRecoverWrites == 1 &&
+                      !FileManager.default.fileExists(atPath: orphanDownloadingDir.path) &&
+                      FileManager.default.fileExists(atPath: orphanCompleteDir.path) &&
                       FileManager.default.fileExists(atPath: nonUUIDMarker.path) &&
-                      restartedStore.snapshot.originals.map(\.id) == [kept.id, preparedValid.id] &&
-                      controller.storedOriginalsBytes == UInt64(bytes1.count + bytes2.count) &&
+                      restartedStore.snapshot.originals.map(\.id) == [kept.id, preparedValid.id, orphanCompleteID] &&
+                      controller.storedOriginalsBytes == UInt64(bytes1.count + bytes2.count + orphanBytes.count) &&
                       restartedStore.snapshot.jobs[0].items[1].phase == .saved &&
                       restartedStore.snapshot.jobs[0].items[2].phase == .interrupted,
-                      "P2-22 mixed recovery: Sweeps unreferenced orphan & missing .prepared while keeping .available, promoted .prepared, and non-UUID marker")
+                      "P2-22 mixed recovery: Coalesces into 1 write, re-adopts complete orphan, sweeps junk/.prepared-missing, and keeps .available/.prepared/non-UUID marker")
             let keptData = try Data(contentsOf: restartedStore.verifiedURL(kept.id))
             let preparedData = try Data(contentsOf: restartedStore.verifiedURL(preparedValid.id))
-            try check(keptData == bytes1 && preparedData == bytes2,
-                      "P2-22 mixed recovery: Verified file bytes remain intact for referenced originals")
+            let adoptedData = try Data(contentsOf: restartedStore.verifiedURL(orphanCompleteID))
+            try check(keptData == bytes1 && preparedData == bytes2 && adoptedData == orphanBytes,
+                      "P2-22 mixed recovery: Verified file bytes remain intact for referenced and re-adopted originals")
+            await drainBackend(backend)
+        }
+
+        // 3) Clean store with only junk UUID dirs performs 0 manifest writes and leaves 0 disk residuals / 0 UI ghosts.
+        do {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-p222-junk-zero-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            do { _ = try CameraOriginalStore(directory: root) }
+            let originalsRoot = root.appendingPathComponent("originals", isDirectory: true)
+            let junkDir = originalsRoot.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+            try FileManager.default.createDirectory(at: junkDir, withIntermediateDirectories: true)
+            try Data([0x49, 0x49, 0x2a, 0]).write(to: junkDir.appendingPathComponent("DSC_TMP.ARW.downloading"))
+
+            var junkRecoverWrites = 0
+            let restartedStore = try CameraOriginalStore(directory: root) { junkRecoverWrites += 1 }
+            let channel = FakeSonyCameraChannel(entries: [])
+            let backend = CameraWorkspaceBackend(storage: restartedStore, clientID: UUID()) { _, purpose, _ in
+                try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+            }
+            let controller = IOSCameraController(backend: backend)
+            await drainBackend(backend)
+            try await Task.sleep(nanoseconds: 50_000_000)
+            let remainingEntries = try FileManager.default.contentsOfDirectory(atPath: originalsRoot.path)
+            try check(junkRecoverWrites == 0 &&
+                      remainingEntries.isEmpty &&
+                      restartedStore.snapshot.originals.isEmpty &&
+                      controller.originals.isEmpty &&
+                      controller.storedOriginalsBytes == 0,
+                      "P2-22 junk-only sweep: Removes .downloading orphan with 0 manifest writes, 0 residuals, and 0 UI ghosts")
             await drainBackend(backend)
         }
     }
@@ -1866,10 +1956,17 @@ struct CameraSkipAndLimitTests {
     private static func runP222OrphanCrashChild(rootPath: String) async throws {
         let root = URL(fileURLWithPath: rootPath, isDirectory: true)
         _ = try CameraOriginalStore(directory: root)
-        let orphanDir = root.appendingPathComponent("originals", isDirectory: true)
-            .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
-        try FileManager.default.createDirectory(at: orphanDir, withIntermediateDirectories: true)
-        try makeLargeRAW(size: 8192, seed: 0x71).write(to: orphanDir.appendingPathComponent("DSC_ORPHAN.ARW"))
+        let originalsRoot = root.appendingPathComponent("originals", isDirectory: true)
+        let completeDir = originalsRoot.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: completeDir, withIntermediateDirectories: true)
+        try makeLargeRAW(size: 8192, seed: 0x71).write(to: completeDir.appendingPathComponent("DSC_ORPHAN.ARW"))
+
+        let downloadingJunkDir = originalsRoot.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: downloadingJunkDir, withIntermediateDirectories: true)
+        try Data([0x49, 0x49, 0x2a, 0]).write(to: downloadingJunkDir.appendingPathComponent("DSC_TMP.ARW.downloading"))
+
+        let emptyJunkDir = originalsRoot.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: emptyJunkDir, withIntermediateDirectories: true)
         Darwin._exit(42)
     }
 
@@ -1965,30 +2062,44 @@ struct CameraSkipAndLimitTests {
             await drainBackend(backend)
         }
 
-        // Part B: Hard-exit child leaves an unreferenced originals/<uuid>/ directory (e.g. crash before persist).
-        // Parent restarts store + backend + controller and verifies orphan sweep removes it to 0 disk residuals and 0 ghosts.
+        // Part B: Hard-exit child leaves unreferenced originals/<uuid>/ dirs: 1 complete photo (cross-version #339 crash)
+        // plus 2 junk dirs (.downloading + empty). Parent restarts store + backend + controller and verifies graded disposition:
+        // complete orphan -> re-adopted (0 loss, counted in bytes, visible in UI, prunable after export); junk orphans -> deleted (0 residuals).
         do {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-p222-exit-b-\(UUID().uuidString)")
             defer { try? FileManager.default.removeItem(at: root) }
             let exitStatus = try runSubprocess(flag: "--p222-orphan-crash-child", root: root)
-            let preRestartOriginals = try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("originals").path)
-            try check(exitStatus == 42 && preRestartOriginals.count == 1,
-                      "P2-22 _exit(42) Part B: Child exited 42 leaving 1 unreferenced orphan directory before restart")
+            let originalsRoot = root.appendingPathComponent("originals", isDirectory: true)
+            let preRestartOriginals = try FileManager.default.contentsOfDirectory(atPath: originalsRoot.path)
+            try check(exitStatus == 42 && preRestartOriginals.count == 3,
+                      "P2-22 _exit(42) Part B: Child exited 42 leaving 1 complete + 2 junk orphan directories before restart")
 
+            let orphanBytes = makeLargeRAW(size: 8192, seed: 0x71)
             let restartedStore = try CameraOriginalStore(directory: root)
             let channel = FakeSonyCameraChannel(entries: [])
             let backend = CameraWorkspaceBackend(storage: restartedStore, clientID: UUID()) { _, purpose, _ in
                 try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
             }
             let controller = IOSCameraController(backend: backend)
-            await drainBackend(backend)
-            try await Task.sleep(nanoseconds: 50_000_000)
-            let postRestartOriginals = try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("originals").path)
-            try check(postRestartOriginals.isEmpty &&
-                      restartedStore.snapshot.originals.isEmpty &&
-                      controller.originals.isEmpty &&
-                      controller.storedOriginalsBytes == 0,
-                      "P2-22 _exit(42) Part B: Restart orphan sweep removes unreferenced originals/<uuid>/ to 0 disk residuals and 0 ghosts")
+            try await waitUntil { controller.originals.count == 1 }
+            let postRestartOriginals = try FileManager.default.contentsOfDirectory(atPath: originalsRoot.path)
+            let adopted = try restartedStore.snapshot.originals.first ?? {
+                throw CameraProtocolError.invalid("Complete orphan was not re-adopted in Part B")
+            }()
+            let adoptedData = try Data(contentsOf: restartedStore.verifiedURL(adopted.id))
+            try check(postRestartOriginals == [adopted.id.uuidString.lowercased()] &&
+                      restartedStore.snapshot.originals.count == 1 &&
+                      adopted.name == "DSC_ORPHAN.ARW" &&
+                      adopted.availability == .available &&
+                      controller.originals.map(\.id) == [adopted.id] &&
+                      controller.storedOriginalsBytes == UInt64(orphanBytes.count) &&
+                      adoptedData == orphanBytes,
+                      "P2-22 _exit(42) Part B: Complete orphan re-adopted (0 loss) while junk/.downloading orphans removed (0 residuals)")
+
+            let pruned = try restartedStore.pruneExportedOriginals(exportedContentIdentifiers: [sha256Hex(orphanBytes)])
+            let postPruneOriginals = try FileManager.default.contentsOfDirectory(atPath: originalsRoot.path)
+            try check(pruned.originals == 1 && pruned.freedBytes == UInt64(orphanBytes.count) && postPruneOriginals.isEmpty,
+                      "P2-22 _exit(42) Part B: Re-adopted orphan reclaims cleanly via pruneExportedOriginals once exported")
             await drainBackend(backend)
         }
     }

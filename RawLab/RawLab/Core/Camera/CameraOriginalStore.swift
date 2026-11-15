@@ -440,8 +440,7 @@ final class CameraOriginalStore {
     func pruneExportedOriginals(exportedContentIdentifiers: Set<String> = []) throws
         -> (originals: Int, freedBytes: UInt64) {
         try change {
-            guard let newestJob = state.jobs.max(by: { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) })?.id
-            else { return (0, 0) }
+            let newestJob = state.jobs.max(by: { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) })?.id
             var tetherReferenced = Set(state.tether?.jobIDs ?? [])
             tetherReferenced.formUnion(state.tether?.shutterJobs ?? [])
             // 与 incrementalBoundaries 同构的逆序扫描。分组键复刻 matches(camera:connectionKey:)：
@@ -479,12 +478,16 @@ final class CameraOriginalStore {
                 job.complete && job.id != newestJob && !tetherReferenced.contains(job.id) &&
                     !anchorIDs.contains(job.id) && fullyExported(job)
             }
-            guard !prunable.isEmpty else { return (0, 0) }
             let prunableIDs = Set(prunable.map(\.id))
+            let allJobSourceIDs = Set(state.jobs.flatMap { $0.items.compactMap(\.sourceID) })
             let remainingSourceIDs = Set(state.jobs.filter { !prunableIDs.contains($0.id) }
                 .flatMap { $0.items.compactMap(\.sourceID) })
             let prunedSourceIDs = Set(prunable.flatMap { $0.items.compactMap(\.sourceID) })
-            let orphans = state.originals.filter { prunedSourceIDs.contains($0.id) && !remainingSourceIDs.contains($0.id) }
+            let orphans = state.originals.filter { original in
+                (prunedSourceIDs.contains(original.id) && !remainingSourceIDs.contains(original.id)) ||
+                    (!allJobSourceIDs.contains(original.id) && exportedContentIdentifiers.contains(original.digest))
+            }
+            guard !prunable.isEmpty || !orphans.isEmpty else { return (0, 0) }
             for original in orphans {
                 let file = originalURL(original)
                 try? FileManager.default.removeItem(at: file)
@@ -683,8 +686,37 @@ final class CameraOriginalStore {
             try? FileManager.default.removeItem(at: partialURL(item))
         }
     }
+    private func reAdoptOrphanOriginal(in directory: URL, id: UUID) throws -> CameraStoredOriginal? {
+        let children = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey]
+        ).sorted { $0.lastPathComponent < $1.lastPathComponent }
+        for file in children {
+            let name = file.lastPathComponent
+            guard !name.lowercased().hasSuffix(".downloading"),
+                  CameraWire.validName(name), CameraWire.photoName(name) else { continue }
+            let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey])
+            guard values.isRegularFile == true, values.isSymbolicLink != true,
+                  let reader = try? FileHandle(forReadingFrom: file) else { continue }
+            let prefix = (try? reader.read(upToCount: 4)) ?? Data()
+            try? reader.close()
+            guard (try? CameraWire.validateHeader(name: name, data: prefix)) != nil,
+                  let hashed = try? Self.hash(file),
+                  hashed.size > 0, hashed.size <= 1 << 30, Self.validDigest(hashed.digest) else { continue }
+            return CameraStoredOriginal(
+                id: id,
+                name: name,
+                size: hashed.size,
+                digest: hashed.digest,
+                savedAt: values.contentModificationDate ?? Date(),
+                availability: .available,
+                jpegSource: nil
+            )
+        }
+        return nil
+    }
     func recover() throws {
-        try locked {
+        try performBatch {
             let needsStateRecovery = state.jobs.contains { job in
                 job.items.contains { $0.phase == .prepared || $0.phase == .downloading }
             }
@@ -723,19 +755,32 @@ final class CameraOriginalStore {
                     try FileManager.default.removeItem(at: file)
                 }
             }
-            // 清扫未被 manifest state.originals 引用的孤儿 UUID 目录（与上方 .prepared 恢复协同，避免误删已引用目录）。
+            // referencedIDs 判定保持在上方 .prepared 提升/discard 之后；未引用 UUID 目录分级处置：
+            // 含完整非 .downloading 原件文件 -> re-adopt 回 state.originals；空目录/仅 .downloading/无合法原件 -> 删除。
             let referencedIDs = Set(state.originals.map(\.id))
+            var reAdopted: [CameraStoredOriginal] = []
             var removedOrphans = false
-            for entry in try FileManager.default.contentsOfDirectory(
+            let entries = try FileManager.default.contentsOfDirectory(
                 at: originalsDirectory,
                 includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]
-            ) {
+            ).sorted { $0.lastPathComponent < $1.lastPathComponent }
+            for entry in entries {
                 let values = try entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-                guard values.isDirectory == true, values.isSymbolicLink != true,
+                guard values.isSymbolicLink != true, values.isDirectory == true,
                       let entryID = UUID(uuidString: entry.lastPathComponent),
                       !referencedIDs.contains(entryID) else { continue }
-                try FileManager.default.removeItem(at: entry)
-                removedOrphans = true
+                if let adopted = try reAdoptOrphanOriginal(in: entry, id: entryID) {
+                    reAdopted.append(adopted)
+                } else {
+                    try FileManager.default.removeItem(at: entry)
+                    removedOrphans = true
+                }
+            }
+            if !reAdopted.isEmpty {
+                reAdopted.sort { ($0.savedAt, $0.id.uuidString) < ($1.savedAt, $1.id.uuidString) }
+                try change {
+                    state.originals.append(contentsOf: reAdopted)
+                }
             }
             if removedOrphans {
                 syncDirectory(originalsDirectory)
