@@ -19,6 +19,17 @@ PLATFORM_JOBS = ("macos", "windows", "android", "ios")
 
 
 class WorkflowContractTests(unittest.TestCase):
+    def test_warp_regressions_require_an_explicit_windows_request(self):
+        workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+        step = next(step for step in workflow["jobs"]["windows"]["steps"]
+                    if step.get("name") == "Run requested D3D11 software adapter regressions")
+        self.assertEqual(step["if"], "github.event_name == 'workflow_dispatch' && "
+                         "inputs.platform == 'windows' && inputs.checks == 'models'")
+        self.assertNotIn("continue-on-error", step)
+        self.assertIn("--no-tests=error", step["run"])
+        self.assertEqual(step["run"].count("$LASTEXITCODE -ne 0"), 3)
+        self.assertIn("RawLabWindows/tests/native/d3d11/check-mutations.ps1", step["run"])
+
     def setUp(self):
         self.assertTrue(WORKFLOW.is_file(), "Hosted CI workflow is missing")
         self.text = WORKFLOW.read_text()

@@ -19,6 +19,7 @@ cbuffer Params : register(b0) {
     float4 toneControls;
     float4 colorGrading[3];
     float4 curveRanges[32], curveTangents[32];
+    uint4 band; // source row, destination row, output rows, reserved
 };
 StructuredBuffer<float3> source : register(t0);
 StructuredBuffer<float3> film : register(t1);
@@ -136,26 +137,31 @@ float3 evaluate(float3 inputColor) {
     }
     return cgApply(applyHsl(tcVibrance(pixel,toneControls.z)),colorGrading[0].xyz,colorGrading[1].xyz,colorGrading[2].xyz);
 }
-float3 readPixel(uint2 p) { return source[p.y*dimensions.x+p.x]; }
+float3 readPixel(uint2 p) { return source[(p.y-band.x)*dimensions.x+p.x]; }
 float3 resize(uint2 xy) {
     float2 scale=float2(dimensions.z==1 ? 0 : float(dimensions.x-1)/float(dimensions.z-1),
         dimensions.w==1 ? 0 : float(dimensions.y-1)/float(dimensions.w-1));
     float2 p=min(xy*scale,float2(dimensions.xy-1));uint2 low=(uint2)floor(p),high=min(low+1,dimensions.xy-1);float2 t=p-low;
-    return lerp(lerp(readPixel(low),readPixel(uint2(high.x,low.y)),t.x),lerp(readPixel(uint2(low.x,high.y)),readPixel(high),t.x),t.y);
+    float3 a=readPixel(low), b=readPixel(uint2(high.x,low.y)), c=readPixel(uint2(low.x,high.y)), d=readPixel(high);
+    // FINAL 对显示输出缩放；PREVIEW 先缩放线性输入，保持既有处理顺序。
+    if(control.x==4) { a=evaluate(a);b=evaluate(b);c=evaluate(c);d=evaluate(d); }
+    return lerp(lerp(a,b,t.x),lerp(c,d,t.x),t.y);
 }
 [numthreads(16,16,1)]
 void main(uint3 id : SV_DispatchThreadID) {
-    if(id.x>=dimensions.z || id.y>=dimensions.w)return;
+    if(id.x>=dimensions.z || id.y>=band.z)return;
+    uint2 xy=uint2(id.x,id.y+band.y);
     float3 pixel;
-    if(control.x==0)pixel=evaluate(all(dimensions.xy==dimensions.zw) ? readPixel(id.xy) : resize(id.xy));
-    else if(control.x==1)pixel=resize(id.xy);
+    if(control.x==0)pixel=evaluate(all(dimensions.xy==dimensions.zw) ? readPixel(xy) : resize(xy));
+    else if(control.x==1)pixel=resize(xy);
+    else if(control.x==4)pixel=all(dimensions.xy==dimensions.zw) ? evaluate(readPixel(xy)) : resize(xy);
     else {
         float3 sum=0; float weight=0;
         [unroll] for(int y=-1;y<=1;y++) [unroll] for(int x=-1;x<=1;x++) {
-            uint2 p=(uint2)clamp(int2(id.xy)+int2(x,y),int2(0,0),int2(dimensions.xy)-1);
+            uint2 p=(uint2)clamp(int2(xy)+int2(x,y),int2(0,0),int2(dimensions.xy)-1);
             sum+=readPixel(p);weight+=1;
         }
-        pixel=readPixel(id.xy);float3 blurred=sum/weight;
+        pixel=readPixel(xy);float3 blurred=sum/weight;
         pixel=control.x==2 ? lerp(pixel,blurred,saturate(detail.y)*.4) : saturate(pixel+clamp(detail.z,0,2)*(pixel-blurred));
     }
     destination[id.y*dimensions.z+id.x]=pixel;

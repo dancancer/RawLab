@@ -62,6 +62,19 @@ For example, choose `windows` + `models` for an edit-state regression, `macos` +
 A build prerequisite is retained when a selected test needs its native artifacts;
 this is not reuse of an unverified product binary.
 
+An explicitly requested `platform=windows`, `checks=models` run also builds and
+runs the isolated WARP regressions under `RawLabWindows/tests/native/d3d11` on
+hosted Windows. This narrow native exception exercises production renderer/filter
+sources with a compile-time test device factory and software adapter. Ordinary
+PR model checks retain their existing scope. WARP does not establish hardware GPU
+behavior; production builds continue to reject software adapters.
+The same run uses `RawLabWindows/tests/native/d3d11/check-mutations.ps1`
+(tracked in the manual WARP script inventory) to check test sensitivity by removing
+buffer reuse and idle trimming
+in generated test-only source copies. Each mutation must fail at its corresponding
+resource assertion; compile errors or unrelated test failures are rejected. The
+normal backend is restored and the reuse test must pass again before the step ends.
+
 ## Execution Procedure
 
 1. Before commit, identify the affected behavior and run its local regressions.

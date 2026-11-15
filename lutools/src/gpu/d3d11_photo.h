@@ -1,5 +1,6 @@
 #pragma once
 #include "gpu/photo_gpu.h"
+#include "gpu/device_retry.h"
 
 namespace sony2fuji {
 // Session-owned device/context and immutable linear RAW upload cache.
@@ -20,5 +21,6 @@ public:
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
+    DeviceRetry retry_;
 };
 }

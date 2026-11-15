@@ -2,6 +2,7 @@
 #include "gles_spirv_vm.h"
 
 #include "gpu/compute_denoise.h"
+#include "gpu/device_retry.h"
 #include "gpu/filter_buffer_pool.h"
 
 #include <algorithm>
@@ -496,6 +497,21 @@ void testFilterBufferPoolBudgetAndGlesContextTrim() {
 } // namespace
 
 int main() {
+    {
+        sony2fuji::DeviceRetry retry;
+        sony2fuji::DeviceRetry::Clock::time_point now{};
+        check(retry.ready(now), "A new device may initialize immediately");
+        for (int delay : {100, 200, 400, 800, 1600, 3200, 6400, 6400}) {
+            retry.failed(now);
+            now += std::chrono::milliseconds(delay - 1);
+            check(!retry.ready(now), "Failed device stays in exponential cooldown");
+            now += std::chrono::milliseconds(1);
+            check(retry.ready(now), "Failed device retries at its deadline");
+        }
+        retry.succeeded();
+        retry.failed(now);
+        check(retry.ready(now + std::chrono::milliseconds(100)), "Successful work resets the failure streak");
+    }
     testImageFilterBandAndScratchReuse();
     testDetailFilterCopiesAndAtomicity();
     testGlesDenoiseBufferPooling();

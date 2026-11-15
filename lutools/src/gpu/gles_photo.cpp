@@ -6,6 +6,7 @@
 #include "core/photo_lut.h"
 #include "core/chroma_denoise.h"
 #include "gpu/denoise.h"
+#include "gpu/photo_bands.h"
 #include <EGL/egl.h>
 #include <GLES3/gl31.h>
 #include <android/log.h>
@@ -18,7 +19,6 @@
 
 namespace sony2fuji {
 namespace {
-constexpr size_t kTileBytes = 16 * 1024 * 1024;
 constexpr size_t kCacheBytes = 64 * 1024 * 1024;
 constexpr GLuint kWorkgroup = GlesPhotoPixelContract::kWorkgroupSize;
 static_assert(sizeof(RGB) == GlesPhotoPixelContract::kSsboPixelBytes);
@@ -234,26 +234,14 @@ struct GlesPhotoRenderer::Impl {
     }
 
     void bands(const ImageData& input, uint32_t width, uint32_t height, int stage, ImageData* output) {
-        const size_t limit = std::min(kTileBytes, blockLimit);
+        const PhotoBands plan(input.width, input.height, width, height, std::min(kPhotoTileBytes, blockLimit), dispatchLimit);
         const size_t sourceRowBytes = static_cast<size_t>(input.width) * sizeof(RGB);
         const size_t outputRowBytes = static_cast<size_t>(width) * sizeof(RGB);
-        if (sourceRowBytes * 2 > limit || outputRowBytes > limit || width > dispatchLimit)
-            throw std::runtime_error("Image row exceeds compute limits");
-        const float scale = height == 1 ? 0.f : float(input.height - 1) / float(height - 1);
-        const uint32_t maxRows = static_cast<uint32_t>(std::min(limit / outputRowBytes, dispatchLimit / width));
         sizeUniform("sourceSize", input.width, input.height);
         sizeUniform("destinationSize", width, height);
         for (uint32_t row = 0; row < height;) {
-            uint32_t rows = std::min(maxRows, height - row);
-            // One extra row on each side covers GPU/CPU float rounding at boundaries.
-            const uint32_t first = uint32_t(float(row) * scale) > 0 ? uint32_t(float(row) * scale) - 1 : 0;
-            auto lastRow = [&](uint32_t n) {
-                return std::min<uint32_t>(input.height - 1, uint32_t(float(row + n - 1) * scale) + 2);
-            };
-            while (rows > 1 && size_t(lastRow(rows) - first + 1) * sourceRowBytes > limit) rows = (rows + 1) / 2;
-            const auto last = lastRow(rows);
-            if (size_t(last - first + 1) * sourceRowBytes > limit)
-                throw std::runtime_error("Source halo exceeds the bounded upload budget");
+            const auto band = plan.at(row);
+            const auto rows = band.rows, first = band.first, last = band.last;
             upload(input.pixels.data() + size_t(first) * input.width, size_t(last - first + 1) * sourceRowBytes);
             const auto bytes = size_t(rows) * outputRowBytes;
             if (output) allocate(2, bytes);
