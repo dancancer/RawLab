@@ -323,6 +323,58 @@ private func journalIsolation(root: URL, inputs: [URL], output: URL) throws {
     print("PASS: batch journal isolation, quarantine notice lifecycle and semantic validation")
 }
 
+private func journalWriteAmplification(root: URL, inputs: [URL], output: URL) throws {
+    let dir = root.appendingPathComponent("journal-amplify")
+    let journal = BatchJournal(directory: dir)
+    let url = dir.appendingPathComponent("job.json")
+    func job(_ name: String) throws -> BatchExportJob {
+        var value = BatchExportJob(source: inputs[0], settings: Adjustments(), look: nil, lookName: name)
+        value.outputDirectory = output
+        value.items = [try BatchExportItem(url: inputs[0])]
+        value.items[0].selected = true
+        return value
+    }
+
+    // 稳态写入：每任务至多首写整读一次，之后靠本进程 (size,mtime) 指纹跳过重读（撤跳过逻辑必红）。
+    try journal.save(job("A"))
+    try journal.save(job("B"))
+    try journal.save(job("C"))
+    try check(journal.diskReloads == 1, "steady-state saves reload the journal once, not once per write")
+    try check(try journal.load()?.lookName == "C", "skipped re-reads still persist the newest job")
+
+    // 外部改动检测：未来版本文件必须被重读并 fail-closed，而不是被静默覆盖（去掉重读必红）。
+    var futureObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(job("D"))) as! [String: Any]
+    futureObject["version"] = 999
+    let futureBytes = try JSONSerialization.data(withJSONObject: futureObject)
+    try futureBytes.write(to: url)
+    var rejected = false
+    do { try journal.save(job("E")) } catch { rejected = true }
+    try check(rejected && (try Data(contentsOf: url)) == futureBytes && journal.diskReloads == 2,
+              "an externally replaced future-version journal triggers exactly one reload and fails closed")
+
+    // 外部损坏（截断写入被杀留下的旧坏文件）：下一次 save 重读并隔离，然后正常写出。
+    try Data("{corrupt-amplify".utf8).write(to: url)
+    try journal.save(job("F"))
+    try check(journal.lastQuarantinedURL != nil && journal.diskReloads == 3 && (try journal.load()?.lookName) == "F",
+              "an externally corrupted journal is quarantined on the next save instead of being skipped")
+
+    // 回归：写入中途被杀留下完整旧文件与游离 tmp → 启动 load 仍恢复 running→waiting 且不误判损坏。
+    var crashed = try job("G")
+    crashed.started = true
+    crashed.items[0].status = .running
+    try journal.save(crashed)
+    try Data("stray".utf8).write(to: dir.appendingPathComponent("job.json.tmp-stray"))
+    let reopened = BatchJournal(directory: dir)
+    guard let recovered = try reopened.load() else {
+        throw Failure(message: "mid-write kill must leave the previous complete journal loadable")
+    }
+    try check(recovered.items[0].status == .waiting && recovered.interrupted,
+              "restart derives the interrupted running item back to waiting without false quarantine")
+    try reopened.save(recovered)
+    try check(reopened.diskReloads == 1 && (try reopened.load()?.lookName) == "G",
+              "a reopened journal runs one full validation on its first save and recovers the job")
+}
+
 @main struct BatchExportTests {
     static func main() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -334,6 +386,7 @@ private func journalIsolation(root: URL, inputs: [URL], output: URL) throws {
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         try perTargetSnapshots(root: root, inputs: inputs, output: output)
         try journalIsolation(root: root, inputs: inputs, output: output)
+        try journalWriteAmplification(root: root, inputs: inputs, output: output)
         let existing = output.appendingPathComponent("one-Velvia.jpg")
         try Data("existing".utf8).write(to: existing)
         var settings = Adjustments(); settings.exposure = 0.75
