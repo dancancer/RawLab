@@ -4451,6 +4451,18 @@
     "已忽略目标不支持的普通降噪设置": {
       "formats": [],
       "source": "已忽略目标不支持的普通降噪设置"
+    },
+    "不可读外观": {
+      "source": "不可读外观",
+      "formats": []
+    },
+    "损坏的外观": {
+      "source": "损坏的外观",
+      "formats": []
+    },
+    "此外观无法读取，可能已损坏或来自不兼容版本。": {
+      "source": "此外观无法读取，可能已损坏或来自不兼容版本。",
+      "formats": []
     }
   },
   "overrides": {},
@@ -5790,6 +5802,30 @@
       "es": "Editar esta foto en HDR requiere macOS 15. Se exportará en SDR.",
       "ja": "この写真を HDR で編集するには macOS 15 が必要です。SDR で書き出します。",
       "zh-Hans": "此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。"
+    },
+    "不可读外观": {
+      "en": "Unreadable looks",
+      "de": "Nicht lesbare Looks",
+      "fr": "Looks illisibles",
+      "ja": "読み込めないルック",
+      "es": "Looks ilegibles",
+      "zh-Hans": "不可读外观"
+    },
+    "损坏的外观": {
+      "en": "Damaged look",
+      "de": "Beschädigter Look",
+      "fr": "Look endommagé",
+      "ja": "破損したルック",
+      "es": "Look dañado",
+      "zh-Hans": "损坏的外观"
+    },
+    "此外观无法读取，可能已损坏或来自不兼容版本。": {
+      "en": "This look cannot be read. It may be damaged or from an incompatible version.",
+      "de": "Dieser Look kann nicht gelesen werden. Er ist möglicherweise beschädigt oder stammt aus einer inkompatiblen Version.",
+      "fr": "Ce look ne peut pas être lu. Il est peut-être endommagé ou provient d’une version incompatible.",
+      "ja": "このルックは読み込めません。破損しているか、互換性のないバージョンで作成された可能性があります。",
+      "es": "No se puede leer este look. Puede estar dañado o proceder de una versión incompatible.",
+      "zh-Hans": "此外观无法读取，可能已损坏或来自不兼容版本。"
     }
   }
 }

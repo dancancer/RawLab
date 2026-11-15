@@ -216,6 +216,15 @@ final class LookLibrary {
         let id: String?
         let fileName: String?
         let json: String
+
+        var displayName: String {
+            let object = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any]
+            if let name = object?["name"] as? String, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return name }
+            if let fileName, !fileName.isEmpty { return fileName }
+            return L10n.text("损坏的外观")
+        }
+
+        var reason: String { L10n.text("此外观无法读取，可能已损坏或来自不兼容版本。") }
     }
 
     static var defaultDirectory: URL {

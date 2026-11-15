@@ -1,4 +1,6 @@
 import AppKit
+import SwiftUI
+import Vision
 import Foundation
 import ImageIO
 
@@ -18,7 +20,11 @@ struct LookImportModelTests {
     }
 
     static func main() throws {
-        _ = NSApplication.shared
+        let app = NSApplication.shared
+        if ProcessInfo.processInfo.environment["RAWLAB_LOOK_UI_OUTPUT"] != nil {
+            app.setActivationPolicy(.accessory)
+            app.finishLaunching()
+        }
         let manager = FileManager.default
         let root = manager.temporaryDirectory.appendingPathComponent("rawlab-look-model-\(UUID().uuidString)")
         try manager.createDirectory(at: root, withIntermediateDirectories: true)
@@ -87,6 +93,55 @@ struct LookImportModelTests {
               "successful batch clears old errors without overwriting same-name imports")
         let reloadedBatch = EditorModel(lookDirectory: directory, editDirectory: edits, batchDirectory: jobs)
         check(reloadedBatch.films.filter { $0.managedID != nil }.count == 4, "all batch imports survive restart")
+
+        let registry = directory.appendingPathComponent("registry.json")
+        let badID = UUID().uuidString
+        let badFile = directory.appendingPathComponent("\(badID).rlook")
+        try Data("future look".utf8).write(to: badFile)
+        let raw = "{\"id\":\"\(badID)\",\"name\":\"Future look\",\"file_name\":\"\(badID).rlook\",\"format\":\"rlook\",\"formatVersion\":99}"
+        var json = try JSONSerialization.jsonObject(with: Data(contentsOf: registry)) as! [String: Any]
+        var entries = json["looks"] as! [Any]
+        entries.append(try JSONSerialization.jsonObject(with: Data(raw.utf8)))
+        entries.append(NSNull())
+        json["looks"] = entries
+        try JSONSerialization.data(withJSONObject: json).write(to: registry)
+        let damaged = EditorModel(lookDirectory: directory, editDirectory: edits, batchDirectory: jobs)
+        check(damaged.films.filter { $0.managedID != nil }.count == 4 && damaged.unreadableLooks.count == 2,
+              "UI model exposes unreadable rows alongside all valid looks")
+        check(damaged.unreadableLooks[0].displayName == "Future look" && !damaged.unreadableLooks[0].reason.isEmpty,
+              "unreadable UI row has its saved name and a reason")
+        check(!damaged.unreadableLooks[1].displayName.isEmpty, "nameless unreadable row has a display fallback")
+        if ProcessInfo.processInfo.environment["RAWLAB_LOOK_UI_OUTPUT"] != nil {
+            let host = NSHostingView(rootView: FilmDock(model: damaged).padding(12).background(Color(nsColor: .windowBackgroundColor)))
+            host.frame = NSRect(x: 0, y: 0, width: 320, height: 600)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false; window.contentView = host
+            window.orderFront(nil)
+            RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+            host.layoutSubtreeIfNeeded()
+            guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
+                check(false, "actual FilmDock creates a native bitmap"); return
+            }
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            if let output = ProcessInfo.processInfo.environment["RAWLAB_LOOK_UI_OUTPUT"] {
+                try bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: output))
+            }
+            let textRequest = VNRecognizeTextRequest()
+            textRequest.recognitionLanguages = ["en-US", "zh-Hans"]
+            try VNImageRequestHandler(cgImage: bitmap.cgImage!, options: [:]).perform([textRequest])
+            let renderedText = (textRequest.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+            check(renderedText.contains("Future look"), "actual FilmDock renders the unreadable look name")
+            window.contentView = nil; window.close()
+        }
+        let sibling = damaged.unreadableLooks[1]
+        damaged.removeUnreadableLook(damaged.unreadableLooks[0]); settle(damaged)
+        check(damaged.unreadableLooks == [sibling] && !manager.fileExists(atPath: badFile.path),
+              "UI deletion refreshes rows and removes the owned corrupt file")
+        let damagedRestart = EditorModel(lookDirectory: directory, editDirectory: edits, batchDirectory: jobs)
+        check(damagedRestart.unreadableLooks == [sibling] && damagedRestart.films.filter { $0.managedID != nil }.count == 4,
+              "UI deletion survives restart and preserves valid and other bad rows")
+        damagedRestart.removeUnreadableLook(sibling); settle(damagedRestart)
+        check(damagedRestart.unreadableLooks.isEmpty, "only-corrupt UI rows can all be removed")
 
         let dcp = root.appendingPathComponent("Camera look.dcp")
         let unsupportedDCP = root.appendingPathComponent("No curve.dcp")
