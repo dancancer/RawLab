@@ -5,13 +5,10 @@ import SwiftUI
 @main struct EditedPhotoUIHarness: App {
     @StateObject private var model: EditorModel
     private let first: URL
-    private let stateDirectory: URL
     init() {
-        let stateDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-            .appendingPathComponent("rawlab-edited-photo-ui-\(UUID().uuidString)", isDirectory: true)
-        self.stateDirectory = stateDirectory
-        let editDirectory = stateDirectory.appendingPathComponent("edits", isDirectory: true)
         let root = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
+        let stateDirectory = root.appendingPathComponent("rawlab-iso-state", isDirectory: true)
+        let editDirectory = stateDirectory.appendingPathComponent("edits", isDirectory: true)
         let photos = root.appendingPathComponent("Photos", isDirectory: true)
         try! FileManager.default.createDirectory(at: photos, withIntermediateDirectories: true)
         first = photos.appendingPathComponent("01 Edited.png")
@@ -48,9 +45,6 @@ import SwiftUI
         WindowGroup {
             EditorView(model: model)
                 .onAppear { if model.file == nil { model.open(first) } }
-                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
-                    try? FileManager.default.removeItem(at: stateDirectory)
-                }
         }.defaultSize(width: 1380, height: 900)
     }
 }
