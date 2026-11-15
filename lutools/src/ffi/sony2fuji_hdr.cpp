@@ -7,6 +7,7 @@
 #include "core/photo_color.h"
 #include "core/photo_rendering.h"
 #include "core/sha256.h"
+#include "core/resource_file_stamp.h"
 #include "core/hdr_stream.h"
 #include "core/hdr_storage.h"
 #include "core/hdr_look.h"
@@ -24,6 +25,7 @@
 #include <fstream>
 #include <limits>
 #include <memory>
+#include <list>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
@@ -351,29 +353,52 @@ CameraProfileResource loadCameraProfile(const char* file, std::string_view expec
     if (!file || !*file)
         fail(SONY2FUJI_HDR_REASON_CAMERA_PROFILE, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT, "Missing HDR camera profile");
     const auto profilePath = std::filesystem::u8path(file);
-    std::error_code error;
-    if (!std::filesystem::is_regular_file(profilePath, error))
-        fail(SONY2FUJI_HDR_REASON_CAMERA_PROFILE, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT, "HDR camera profile is unavailable");
-    std::ifstream stream(profilePath, std::ios::binary | std::ios::ate);
-    const auto length = stream.tellg();
-    if (length <= 0 || length > std::streamoff(maxDcpSourceBytes))
-        fail(SONY2FUJI_HDR_REASON_CAMERA_PROFILE, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT, "Invalid HDR camera profile size");
-    hdr::admitMemory(static_cast<uint64_t>(length));
-    std::vector<uint8_t> bytes(static_cast<size_t>(length));
-    stream.seekg(0);
     checkProcessingCancellation();
+    const auto stamp = resourceFileStamp(profilePath);
+    if (!stamp)
+        fail(SONY2FUJI_HDR_REASON_CAMERA_PROFILE, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT, "HDR camera profile is unavailable");
+    if (!stamp->size || stamp->size > maxDcpSourceBytes)
+        fail(SONY2FUJI_HDR_REASON_CAMERA_PROFILE, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT, "Invalid HDR camera profile size");
+    struct Entry {
+        std::string path;
+        ResourceFileStamp stamp;
+        CameraProfileResource resource;
+    };
+    static std::mutex mutex;
+    static std::list<Entry> cache;
+    std::lock_guard<std::mutex> lock(mutex);
+    const auto found = std::find_if(cache.begin(), cache.end(), [&](const Entry& entry) { return entry.path == file; });
+    auto reuse = [&] {
+        if (!expected.empty() && expected != found->resource.digest)
+            fail(SONY2FUJI_HDR_REASON_CAMERA_PROFILE, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT, "HDR camera profile fingerprint changed");
+        cache.splice(cache.begin(), cache, found);
+        return cache.front().resource;
+    };
+    if (found != cache.end() && found->stamp == *stamp) return reuse();
+    hdr::admitMemory(stamp->size);
+    std::vector<uint8_t> bytes(static_cast<size_t>(stamp->size));
+    std::ifstream stream(profilePath, std::ios::binary);
     if (!stream.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size())) ||
-        stream.peek() != std::char_traits<char>::eof() || stream.bad())
+        stream.peek() != std::char_traits<char>::eof() || stream.bad() || !(resourceFileStamp(profilePath) == stamp))
         fail(SONY2FUJI_HDR_REASON_CAMERA_PROFILE, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT, "HDR camera profile changed during reading");
     auto digest = hash::sha256Bytes(bytes.data(), bytes.size());
     if (!expected.empty() && expected != digest)
         fail(SONY2FUJI_HDR_REASON_CAMERA_PROFILE, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT, "HDR camera profile fingerprint changed");
+    checkProcessingCancellation();
+    if (found != cache.end() && found->resource.digest == digest) {
+        found->stamp = *stamp;
+        return reuse();
+    }
     auto profile = readHDRCameraProfile(bytes.data(), bytes.size());
     checkProcessingCancellation();
     if (!profile)
         fail(SONY2FUJI_HDR_REASON_CAMERA_PROFILE, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT,
             "Unsupported HDR camera calibration", SONY2FUJI_STATUS_UNSUPPORTED);
-    return {std::move(*profile), std::move(digest)};
+    CameraProfileResource resource{std::move(*profile), std::move(digest)};
+    if (found != cache.end()) cache.erase(found);
+    cache.push_front({file, *stamp, resource});
+    if (cache.size() > 8) cache.pop_back();
+    return resource;
 }
 
 void cameraRawStatus(ErrorCode code) {
