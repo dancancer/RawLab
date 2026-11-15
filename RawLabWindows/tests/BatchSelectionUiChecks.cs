@@ -137,7 +137,7 @@ internal static class BatchSelectionUiChecks
                 if(inCopy.IsSet){dialogStart.Stop();Find<Button>(cancelDialog,"collection.export-cancel").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));resume.Set();}
             };
             dialogStart.Start();
-            check(cancelDialog.ShowDialog()==false && cancelJournal.Load()==null && !app.Windows.OfType<BatchExportWindow>().Any(),
+            check(cancelDialog.ShowDialog()!=true && cancelJournal.Load()==null && !app.Windows.OfType<BatchExportWindow>().Any(),
                 "Cancelling while the dialog freeze is in flight discards the export before any journal write");
             var dialog=new CollectionExportDialog(collection,window);Set(dialog,"directory",root);
             Get<TextBox>(dialog,"edge").Text="256";
