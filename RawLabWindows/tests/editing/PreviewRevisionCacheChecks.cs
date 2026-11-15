@@ -3,6 +3,13 @@ using RawLab.Windows;
 
 internal static class PreviewRevisionCacheChecks
 {
+    private sealed record TestRevisionKey(
+        string Path,
+        OriginalIdentity Source,
+        OriginalIdentity? Lut,
+        string RecipeFingerprint,
+        int Edge);
+
     private static void Check(bool condition, string message)
     {
         if (!condition) throw new InvalidOperationException(message);
@@ -16,12 +23,14 @@ internal static class PreviewRevisionCacheChecks
         {
             var photoA = Path.Combine(root, "photoA.dng");
             var photoB = Path.Combine(root, "photoB.dng");
+            var photoC = Path.Combine(root, "photoC.dng");
             var lutPath = Path.Combine(root, "film.cube");
             File.WriteAllBytes(photoA, new byte[64]);
             File.WriteAllBytes(photoB, new byte[96]);
+            File.WriteAllBytes(photoC, new byte[80]);
             File.WriteAllText(lutPath, "LUT_3D_SIZE 2\n");
 
-            var cache = new PreviewRevisionCache<PreviewRevisionFingerprint, byte[]>(
+            var cache = new PreviewRevisionCache<TestRevisionKey, byte[]>(
                 maximumBytes: 256,
                 bytes => bytes.Length,
                 maximumEntries: 8);
@@ -32,7 +41,7 @@ internal static class PreviewRevisionCacheChecks
                 var source = OriginalIdentity.Read(photo);
                 var lutId = lut == null ? null : OriginalIdentity.Read(lut);
                 var recipeFingerprint = JsonSerializer.Serialize(settings.Capture());
-                var key = new PreviewRevisionFingerprint(photo, source, lutId, recipeFingerprint, edge);
+                var key = new TestRevisionKey(photo, source, lutId, recipeFingerprint, edge);
                 if (cache.TryGet(key, out var hit))
                 {
                     return hit;
@@ -77,12 +86,26 @@ internal static class PreviewRevisionCacheChecks
             Check(!ReferenceEquals(firstA, modifiedFileA) && renders == 4,
                 "External file modification must invalidate preview cache via stat identity");
 
-            // 4. LRU 字节预算淘汰：超过 maximumBytes 后淘汰最久未用条目。
-            Check(cache.TotalBytes <= 256, "Preview revision cache must stay within byte budget");
+            // 4. LRU 字节预算淘汰：第 5 条插入超预算，必须淘汰最久未用的 photoB，刚命中的 photoA 保留。
+            var recipeC = new Adjustments();
+            _ = RenderOrReuse(photoC, lutPath, recipeC, 2000);
+            Check(renders == 5 && cache.TotalBytes <= 256 && cache.Count == 4,
+                "5th entry exceeding byte budget must evict LRU entry and stay within 256-byte budget");
+
+            var photoAAfterEviction = RenderOrReuse(photoA, lutPath, recipeA, 2000);
+            Check(ReferenceEquals(modifiedFileA, photoAAfterEviction) && renders == 5,
+                "Recently used photoA must remain cached after LRU eviction");
+
+            _ = RenderOrReuse(photoB, lutPath, recipeB, 2000);
+            Check(renders == 6,
+                "Least-recently-used photoB must have been evicted and re-rendered");
+            Check(cache.Hits >= 4 && cache.Misses >= 6,
+                "PreviewRevisionCache must track Hits and Misses accurately");
         }
         finally
         {
             Directory.Delete(root, recursive: true);
         }
+        Console.WriteLine("PASS: PreviewRevisionCache checks passed");
     }
 }

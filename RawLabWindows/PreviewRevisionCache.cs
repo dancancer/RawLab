@@ -2,13 +2,6 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace RawLab.Windows;
 
-internal sealed record PreviewRevisionFingerprint(
-    string Path,
-    OriginalIdentity Source,
-    OriginalIdentity? Lut,
-    string RecipeFingerprint,
-    int Edge);
-
 internal sealed class PreviewRevisionCache<TKey, TValue>(
     long maximumBytes,
     Func<TValue, long> measureBytes,
@@ -21,6 +14,8 @@ internal sealed class PreviewRevisionCache<TKey, TValue>(
     private readonly Dictionary<TKey, LinkedListNode<CacheEntry>> entries = new();
     private readonly LinkedList<CacheEntry> order = new();
     private long totalBytes;
+    private long hits;
+    private long misses;
 
     internal long TotalBytes
     {
@@ -32,8 +27,15 @@ internal sealed class PreviewRevisionCache<TKey, TValue>(
         get { lock (gate) return entries.Count; }
     }
 
-    internal long Hits { get; private set; }
-    internal long Misses { get; private set; }
+    internal long Hits
+    {
+        get { lock (gate) return hits; }
+    }
+
+    internal long Misses
+    {
+        get { lock (gate) return misses; }
+    }
 
     internal bool TryGet(TKey key, [MaybeNullWhen(false)] out TValue value)
     {
@@ -43,11 +45,11 @@ internal sealed class PreviewRevisionCache<TKey, TValue>(
             {
                 order.Remove(node);
                 order.AddLast(node);
-                Hits++;
+                hits++;
                 value = node.Value.Value;
                 return true;
             }
-            Misses++;
+            misses++;
             value = default;
             return false;
         }
