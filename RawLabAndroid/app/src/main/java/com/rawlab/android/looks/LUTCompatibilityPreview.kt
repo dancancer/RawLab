@@ -57,6 +57,8 @@ internal class LUTCompatibilityPreview(private val context: Context, private val
     private var lut: File? = null
     private var source: File? = null
     private var sourceKind = PhotoInputKind.RAW
+    // 只读观测点（与 Mac 侧 sourceURL 口径一致）：引用模式指向原片路径，仅 content:// 流落盘时才指向向导目录内。
+    internal val sourceURL: Uri? get() = source?.let { Uri.fromFile(it) }
 
     private fun copyURI(uri: Uri, name: String, limit: Long): File {
         val suffix = name.substringAfterLast('.', "").lowercase().takeIf { it.matches(Regex("[a-z0-9]{1,12}")) }.orEmpty()
