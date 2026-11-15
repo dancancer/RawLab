@@ -9,7 +9,8 @@ swiftc -whole-module-optimization -swift-version 5 -sdk "$(xcrun --sdk macosx --
     "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/HSLTargetAdjustment.swift" "$ROOT/Shared/ToneControlsSettings.swift" \
     "$ROOT/Shared/AtmosphereSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/RawLab/RawLab/Core/Models/PhotoImportTypes.swift" \
-    "$ROOT/RawLab/RawLab/Core/Persistence/EditPersistence.swift" "$ROOT/RawLab/RawLab/Core/Models/AdjustmentKind.swift" \
+    "$ROOT/RawLab/RawLab/Core/Persistence/EditPersistence.swift" "$ROOT/RawLab/RawLab/Core/Persistence/FileDigestCache.swift" \
+    "$ROOT/RawLab/RawLab/Core/Models/AdjustmentKind.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/EditorAdjustmentRules.swift" \
     "$ROOT/RawLab/tests/HDRModelTests.swift" -o "$BUILD/hdr-model"
 "$BUILD/hdr-model"
