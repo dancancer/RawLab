@@ -2,11 +2,42 @@
 #include "../src/core/wavelet_denoise.cpp"
 #include "denoise_residual_metrics.h"
 #include <cassert>
+#include <cstdint>
 #include <cstring>
 #include <iostream>
-#include <random>
 
 namespace {
+// 固定整数序列与分布映射，避免 MSVC/libc++ 的标准库分布生成不同测试输入。
+class FixtureNoise {
+public:
+    explicit FixtureNoise(uint64_t seed) : state_(seed) {}
+
+    double uniform() {
+        uint64_t value = (state_ += UINT64_C(0x9e3779b97f4a7c15));
+        value = (value ^ (value >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
+        value = (value ^ (value >> 27)) * UINT64_C(0x94d049bb133111eb);
+        value ^= value >> 31;
+        return static_cast<double>(value >> 11) * 0x1.0p-53;
+    }
+
+    float normal(float sigma = 1.f) {
+        if (hasSpare_) {
+            hasSpare_ = false;
+            return static_cast<float>(spare_ * sigma);
+        }
+        const double radius = std::sqrt(-2 * std::log(1 - uniform()));
+        const double angle = 2 * CV_PI * uniform();
+        spare_ = radius * std::sin(angle);
+        hasSpare_ = true;
+        return static_cast<float>(radius * std::cos(angle) * sigma);
+    }
+
+private:
+    uint64_t state_;
+    double spare_ = 0;
+    bool hasSpare_ = false;
+};
+
 void near(double actual, double expected, double tolerance = 1e-6) {
     if (!std::isfinite(actual) || std::abs(actual - expected) > tolerance)
         std::cerr << "actual=" << actual << " expected=" << expected << " tolerance=" << tolerance << '\n';
@@ -90,11 +121,11 @@ void robustFitWithContamination() {
 
 cv::Mat broadbandPatternFixture(bool pattern) {
     cv::Mat rgb(512, 512, CV_32FC3);
-    std::mt19937 random(7129);
-    std::normal_distribution<float> normal(0, .0005f);
+    FixtureNoise random(7129);
     for (int y = 0; y < rgb.rows; ++y) for (int x = 0; x < rgb.cols; ++x) {
         const float base = .06f + .08f * (x / 64);
-        cv::Vec3f value(base + normal(random), base + normal(random), base + normal(random));
+        const float r = random.normal(.0005f), g = random.normal(.0005f), b = random.normal(.0005f);
+        cv::Vec3f value(base + r, base + g, base + b);
         if (pattern && x / 64 == 4 && y / 64 == 4) {
             const float px = x % 64, py = y % 64;
             const float texture = std::sin(.3f * px + .03f * px * py) * std::cos(.5f * py + .01f * px * px);
@@ -134,13 +165,13 @@ void patternCannotSetItsOwnNoiseAllowance() {
 
 void constrainedFloorCannotRejectNegativeNoise() {
     cv::Mat rgb(512, 512, CV_32FC3);
-    std::mt19937 random(2094);
-    std::normal_distribution<float> normal(0, 1);
+    FixtureNoise random(2094);
     for (int y = 0; y < rgb.rows; ++y) for (int x = 0; x < rgb.cols; ++x) {
         const bool negative = x < 64 && y < 64;
         const float mean = negative ? -.01f : .1f + .1f * (x / 64);
         const float sigma = negative ? .005f : std::sqrt(.004f * (mean - .04f));
-        rgb.at<cv::Vec3f>(y, x) = {mean + sigma * normal(random), mean + sigma * normal(random), mean + sigma * normal(random)};
+        const float r = random.normal(), g = random.normal(), b = random.normal();
+        rgb.at<cv::Vec3f>(y, x) = {mean + sigma * r, mean + sigma * g, mean + sigma * b};
     }
     sony2fuji::WaveletNoiseEstimateDiagnostics info;
     const auto samples = flatSamples(rgb, info);
@@ -152,12 +183,11 @@ void constrainedFloorCannotRejectNegativeNoise() {
 void samplingKeepsNoiseControls() {
     for (int mode = 0; mode < 4; ++mode) {
         cv::Mat rgb(512, 512, CV_32FC3);
-        std::mt19937 random(8201 + mode);
-        std::normal_distribution<float> normal(0, 1);
+        FixtureNoise random(8201 + mode);
         for (int y = 0; y < rgb.rows; ++y) for (int x = 0; x < rgb.cols; ++x) {
             const float mean = mode == 2 ? .18f : mode == 3 ? 0 : .01f + .1f * (x / 64);
             const float sigma = std::sqrt(.0001f + .004f * mean);
-            const float r = normal(random), g = normal(random), b = normal(random);
+            const float r = random.normal(), g = random.normal(), b = random.normal();
             cv::Vec3f value = mode == 1 ? cv::Vec3f(r, r + .1f * g, r + .1f * b) : cv::Vec3f(r, g, b);
             value = cv::Vec3f(mean, mean, mean) + sigma * value;
             if (mode == 3) for (int c = 0; c < 3; ++c) value[c] = std::max(0.f, value[c]);
@@ -211,9 +241,7 @@ void constantModelScaleCancelsThroughCalibration() {
 void nearBlackNoiseAndTexture() {
     for (int mode = 0; mode < 4; ++mode) {
         sony2fuji::ImageData source(256, 256);
-        std::mt19937 random(5401 + mode);
-        std::normal_distribution<float> normal(0, .014f);
-        std::bernoulli_distribution tail(.02);
+        FixtureNoise random(5401 + mode);
         const double mean = mode == 0 ? 0 : .014 / std::sqrt(2 * CV_PI) * (mode == 2 ? 1.14 : 1);
         double inputError = 0, inputChroma = 0;
         cv::Vec3d inputMean{};
@@ -222,7 +250,8 @@ void nearBlackNoiseAndTexture() {
                 .012f * std::sin(1.1f * x) * std::cos(.7f * y) : 0;
             cv::Vec3f value;
             for (int c = 0; c < 3; ++c) {
-                float noise = normal(random) * (mode == 2 && tail(random) ? 8 : 1);
+                float noise = random.normal(.014f);
+                if (mode == 2 && random.uniform() < .02) noise *= 8;
                 if (mode != 0) noise = std::max(0.f, noise);
                 value[c] = noise + texture;
                 inputError += (value[c] - mean - texture) * (value[c] - mean - texture);
@@ -236,8 +265,10 @@ void nearBlackNoiseAndTexture() {
         sony2fuji::WaveletDenoiseDiagnostics info;
         assert(sony2fuji::applyWaveletDenoise(output, {true, 10, 72, 100}, &info) == sony2fuji::ErrorCode::Success);
         std::cout << "Near-black mode " << mode << " outcome=" << sony2fuji::waveletDenoiseOutcomeName(info.outcome)
-                  << " flat=" << info.flatTiles << " a=" << info.a[0] << " b=" << info.b[0] << '\n';
+                  << " flat=" << info.flatTiles << " a=" << info.a[0] << " b=" << info.b[0] << std::endl;
         if (info.outcome == sony2fuji::WaveletDenoiseOutcome::LowNoise) {
+            // 对称高斯输入必须执行降噪，不能让全部模式从低噪声分支绕过效果断言。
+            assert(mode != 0);
             assert(std::memcmp(source.pixels.data(), output.pixels.data(), source.pixels.size()*sizeof(sony2fuji::RGB))==0);
             continue;
         }
@@ -263,7 +294,7 @@ void nearBlackNoiseAndTexture() {
         }
         std::cout << "Near-black mode " << mode << " mse=" << outputError / inputError
                   << " chroma-energy=" << outputChroma / inputChroma
-                  << " texture=" << (texturePower ? projection / texturePower : 0) << '\n';
+                  << " texture=" << (texturePower ? projection / texturePower : 0) << std::endl;
         assert(outputError < inputError);
         assert(outputChroma < inputChroma * .8);
         for (int c = 0; c < 3; ++c) near(outputMean[c], inputMean[c], .0005);
@@ -292,10 +323,9 @@ void correlationControls() {
     for (const auto& lag : empty.spatial) for (const auto& value : lag) assert(!value.has_value());
 
     cv::Mat independent(256, 256, CV_32FC3), correlated(independent.size(), independent.type());
-    std::mt19937 random(7321);
-    std::normal_distribution<float> normal(0, 1);
+    FixtureNoise random(7321);
     for (int y = 0; y < independent.rows; ++y) for (int x = 0; x < independent.cols; ++x) {
-        const float r = normal(random), g = normal(random), b = normal(random);
+        const float r = random.normal(), g = random.normal(), b = random.normal();
         independent.at<cv::Vec3f>(y, x) = {r, g, b};
         correlated.at<cv::Vec3f>(y, x) = {r, r + .1f * g, r + .1f * b};
     }
