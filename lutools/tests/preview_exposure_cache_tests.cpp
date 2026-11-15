@@ -534,14 +534,20 @@ int main() {
             "returning to photo A in same session re-opened file or missed cache");
 
         // 4. Fingerprint invalidation: replace sampleA on disk with brighter embedded JPEG & bumped mtime.
+        // 切到 B 释放 A 的 LibRaw 读句柄（Windows 不允许同时截断覆写），保留同一 session 的曝光缓存。
+        renderPreview(session.get(), reqB);
+        const auto diagBeforeReplacement = sony2fuji::previewExposureDiagnostics(session.get());
+        require(diagBeforeReplacement.cacheHits == diagReturnA.cacheHits + 1 &&
+                diagBeforeReplacement.thumbnailOpens == diagReturnA.thumbnailOpens,
+            "switching away before replacement did not retain preview exposure cache");
         const auto oldStamp = std::filesystem::last_write_time(sampleA);
         writeSyntheticDngWithJpeg(sampleA, 1024, 1024, 220, 265, 92);
         std::filesystem::last_write_time(sampleA, oldStamp + std::chrono::seconds(2));
         renderPreview(session.get(), reqA);
         const auto diagInvalidated = sony2fuji::previewExposureDiagnostics(session.get());
-        require(diagInvalidated.thumbnailOpens == diagReturnA.thumbnailOpens + 1 &&
-                diagInvalidated.jpegDecodes == diagReturnA.jpegDecodes + 1 &&
-                diagInvalidated.cacheMisses == diagReturnA.cacheMisses + 1,
+        require(diagInvalidated.thumbnailOpens == diagBeforeReplacement.thumbnailOpens + 1 &&
+                diagInvalidated.jpegDecodes == diagBeforeReplacement.jpegDecodes + 1 &&
+                diagInvalidated.cacheMisses == diagBeforeReplacement.cacheMisses + 1,
             "file fingerprint change did not invalidate preview exposure cache");
         require(diagInvalidated.lastJpegDecodedPixels < diagInvalidated.lastJpegSourcePixels,
             "post-invalidation decode used full-size JPEG");
@@ -578,12 +584,24 @@ int main() {
         require(neg2.jpegDecodes == 0 && neg2.cacheHits == 1,
             "no-preview file did not hit negative cache on FBDD switch");
 
+        renderPreview(negSession.get(), reqB);
+        const auto negAfterB = sony2fuji::previewExposureDiagnostics(negSession.get());
+        renderPreview(negSession.get(), negReq);
+        const auto negReturned = sony2fuji::previewExposureDiagnostics(negSession.get());
+        require(negReturned.thumbnailOpens == negAfterB.thumbnailOpens &&
+                negReturned.jpegDecodes == negAfterB.jpegDecodes &&
+                negReturned.cacheHits == negAfterB.cacheHits + 1,
+            "returning to no-preview file after photo switch missed negative cache");
+        renderPreview(negSession.get(), reqB);
+        const auto negBeforeReplacement = sony2fuji::previewExposureDiagnostics(negSession.get());
         const auto negStamp = std::filesystem::last_write_time(noPreviewPath);
         writeSyntheticDngWithJpeg(noPreviewPath, 512, 512, 220, 265, 92);
         std::filesystem::last_write_time(noPreviewPath, negStamp + std::chrono::seconds(2));
         renderPreview(negSession.get(), negReq);
         const auto neg3 = sony2fuji::previewExposureDiagnostics(negSession.get());
-        require(neg3.thumbnailOpens == 2 && neg3.jpegDecodes == 1 && neg3.cacheMisses == 2,
+        require(neg3.thumbnailOpens == negBeforeReplacement.thumbnailOpens + 1 &&
+                neg3.jpegDecodes == negBeforeReplacement.jpegDecodes + 1 &&
+                neg3.cacheMisses == negBeforeReplacement.cacheMisses + 1,
             "in-place replacement from no-preview to JPEG DNG did not invalidate negative cache");
         float evNegAfter = 0;
         require(sony2fuji_session_get_raw_exposure(negSession.get(), &evNegAfter, &metaNeg) == SONY2FUJI_STATUS_OK &&
