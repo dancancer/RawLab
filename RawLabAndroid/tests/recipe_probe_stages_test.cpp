@@ -10,7 +10,6 @@ struct sony2fuji_session { rawlab::RecipeProbeStages active; };
 extern "C" sony2fuji_status sony2fuji_session_set_tone_controls(sony2fuji_session* s,const sony2fuji_tone_controls_config* c) { s->active.tone=*c;return SONY2FUJI_STATUS_OK; }
 extern "C" sony2fuji_status sony2fuji_session_set_atmosphere(sony2fuji_session* s,const sony2fuji_atmosphere_config* c) { s->active.atmosphere=*c;return SONY2FUJI_STATUS_OK; }
 extern "C" sony2fuji_status sony2fuji_session_set_color_grading(sony2fuji_session* s,const sony2fuji_color_grading_config* c) { s->active.grading=*c;return SONY2FUJI_STATUS_OK; }
-extern "C" sony2fuji_status sony2fuji_session_set_tone_curve(sony2fuji_session* s,const sony2fuji_tone_curve_config* c) { s->active.curve=*c;return SONY2FUJI_STATUS_OK; }
 extern "C" sony2fuji_status sony2fuji_session_set_tone_curves(sony2fuji_session* s,const sony2fuji_tone_curve_set_config* c) {
     s->active.curve=c->curves[0];
     for (int i = 0; i < 3; ++i) s->active.channels[i] = c->curves[i + 1];
@@ -79,6 +78,8 @@ int main() {
             assert(active.channels[0].mode==0 && active.channels[0].count==0);
             if(fail)throw std::runtime_error("injected probe failure");
         } catch(const std::runtime_error&) {}
+        static_assert(sizeof(rawlab::RecipeProbeStages) == 2248,
+            "Update per-stage memcmp assertions when RecipeProbeStages changes");
         assert(std::memcmp(&active.tone,&saved.tone,sizeof(saved.tone))==0);
         assert(std::memcmp(&active.atmosphere,&saved.atmosphere,sizeof(saved.atmosphere))==0);
         assert(std::memcmp(&active.grading,&saved.grading,sizeof(saved.grading))==0);
