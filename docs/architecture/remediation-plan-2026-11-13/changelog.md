@@ -300,3 +300,10 @@
 - **#357 合入**（114th `17e32f51`，纯文档免门禁）：processing-concurrency.md 全文 154 处 file:line 脚本化零漂移；阶段 3 标签归类别修正+cancelStep=4096 口径。
 - **Hydrogen medium 首航**（用户新强度口径）：三票全部一次交付、碳审 0 发现，medium 足以胜任卫生/文档/工具类票；复杂票继续 codex。
 - **在途**：#358（C23 死代码：只删 1 个真孤儿 stub、C23 点名五项全数 C ABI/测试豁免留证）碳审 mwhdjf84 在跑；碳清道夫 mwhdc9p0（worktree/分支/.cache/tmp/AGY 产物盘点）在跑。
+
+### (55) #358 合入（115th）C23 收口 + 碳清道夫 + worktree 构建口径入规
+
+- **#358 合入**（115th `34273a82`，P3-69/C23 ✅）：真孤儿仅 `hdr_image_stub.cpp`（17 行）；碳三重复核（全对象 nm 交叉/clang -Wunused 全 TU/构建脚本逐一）判 **lutools/src 内部死代码已清零**；主评审点名五项全数属 C ABI（其中四项锁在 `abi-layout-v1.json` 门禁夹具）或测试/XCFramework 导出引用，豁免成立。C23 就此关闭——"删除"的诚实答案是"几乎没有可删的"。
+- **worktree 本地 ctest 口径入规（碳 #358 根因裁定）**：worktree 手跑 lutools 全量必须 ①`source RawLabMac/build-env.sh` + `-DSONY2FUJI_ENABLE_LENSFUN=ON -DSONY2FUJI_ENABLE_DNGSDK=ON`（否则 LensFun 静默 OFF 吞 #85/#140/#141/#170 注册）②显式 `-DPython3_EXECUTABLE=<pyenv 3.11 含 jsonschema>`（否则 Homebrew py3.15 把 #82 降级 skip）。181=154+27 假降由此而来，非回归。今后 crew 报 ctest 口径差先按这两查。
+- **碳清道夫报告（用户指令）**：删已合并 worktree 15 个（12 个 ~/.codex 历史 feature worktree + decimal-vectors/read-development/wp-verify-windows）、已合并本地分支 fix/decimal-vectors、`.cache/tmp` 闭环目录 32 个（≈1.65 GB，含 rawlab-mobile-native 1.4 GB 临时 DerivedData）、AGY 终态作业文件 1486 个（64 MB，keep 25 dry-run 后 apply）；脏 worktree（release-0.9.0-gate 等 12 个含未提交改动）与 PR 正文引用的 .cache/tmp 产物全部保守保留。主仓 status 干净、HEAD=origin。
+- **在途**：#359（client-tails：#347 @StateObject + #345② nearGray 假红）Hydrogen medium mwhdpb5y 在跑。
