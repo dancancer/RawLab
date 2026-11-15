@@ -114,6 +114,27 @@ static void ForceGpuErrorMessageChecks()
     var x3f = Native.FormatErrorMessage(2, "Normal X3F error", Native.UnsupportedReason.ForceGpu);
     Check(x3f == Loc.Format("无法正常显影 X3F：{0}", "Normal X3F error"),
         "X3F session detail takes precedence over generic status mapping");
+
+    foreach (var rel in new[] { "RawLabWindows/RenderEngine.cs", "RawLabWindows/RenderEngine.AIDenoise.cs" })
+    {
+        var path = ResolveRepoPath(rel);
+        var source = File.ReadAllText(path);
+        Check(!System.Text.RegularExpressions.Regex.IsMatch(source, @"\bNative\.Check\(\s*status\s*\)"),
+            $"{rel}: every Native.Check(status, ...) consuming a session result must pass session");
+    }
+    var renderEngineSource = File.ReadAllText(ResolveRepoPath("RawLabWindows/RenderEngine.cs"));
+    Check(System.Text.RegularExpressions.Regex.Matches(renderEngineSource, @"\bNative\.Check\(\s*status\s*,\s*session\s*\)").Count >= 6,
+        "RenderEngine.cs must pass session to all session-result Native.Check(status, session) calls");
+}
+static string ResolveRepoPath(string relativePath)
+{
+    for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+    {
+        var candidate = Path.Combine(dir.FullName, relativePath);
+        if (File.Exists(candidate)) return candidate;
+    }
+    if (File.Exists(relativePath)) return relativePath;
+    throw new FileNotFoundException("Repository file not found: " + relativePath);
 }
 static JsonNode? Processing(Adjustments value) => JsonSerializer.SerializeToNode(value.Capture())!["Processing"];
 static void X3fPersistenceChecks()

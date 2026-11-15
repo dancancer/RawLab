@@ -84,6 +84,16 @@ int main() {
           "Source-display base cannot be invented from RAW/scene input and does not blame Force GPU");
     r.input_type=SONY2FUJI_INPUT_DISPLAY_BUFFER;r.input_is_linear=0;
     check(render(session,r,SONY2FUJI_GPU_OFF)==std::vector<unsigned char>(pixels.begin(),pixels.end()),"Source-display identity preserves already rendered input");
+    {
+        auto displayNoLut = r;
+        displayNoLut.lut_path = nullptr;
+        displayNoLut.lut_strength = 0;
+        sony2fuji_status displayForceStatus = SONY2FUJI_STATUS_OK;
+        check(render(session, displayNoLut, SONY2FUJI_GPU_FORCE, &displayForceStatus).empty() &&
+                  displayForceStatus == SONY2FUJI_STATUS_UNSUPPORTED &&
+                  sony2fuji_session_get_unsupported_reason(session) == SONY2FUJI_UNSUPPORTED_FORCE_GPU,
+              "Display buffer without LUT under Force returns UNSUPPORTED with Force GPU reason");
+    }
     write(path,contract("vlog-vgamut"));render(session,r,SONY2FUJI_GPU_OFF,&status);
     check(status==SONY2FUJI_STATUS_UNSUPPORTED,"Scene Log contract cannot recover scene light from a display image");
     {

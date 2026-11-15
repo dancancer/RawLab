@@ -394,7 +394,7 @@ internal sealed partial class RenderEngine : IDisposable
             var format = output == null ? (ExportFormat?)null : formatOverride ?? ExportFormatExtensions.FromPath(output);
             if (output != null && (status == 6 || status == 3 && format != ExportFormat.RenderedDng))
                 throw new OutputWriteException(Loc.Text("无法写入成片，请检查输出位置和剩余空间。"));
-            Native.Check(status);
+            Native.Check(status, session);
             if (output != null)
             {
                 if (HDRNative.Probe(path, out var currentSource) != HDRProbeState.Supported || currentSource == null ||
