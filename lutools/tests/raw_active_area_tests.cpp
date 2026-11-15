@@ -257,6 +257,11 @@ void sonyPhoto(const char* path) {
 
 int main(int argc, char** argv) {
     try {
+        if (argc < 1 || argc > 2 ||
+            (argc == 2 && (std::strcmp(argv[1], "-h") == 0 || std::strcmp(argv[1], "--help") == 0))) {
+            std::cerr << "usage: raw_active_area_tests [RAW_PATH]\n";
+            return 2;
+        }
         if (argc == 2) {
             const char* argPath = *argv[1] ? argv[1] : nullptr;
             const char* envPath = std::getenv("RAWLAB_TEST_SONY_ASPECT_RAW");
