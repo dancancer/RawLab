@@ -207,6 +207,8 @@ public:
     }
 
 private:
+    friend struct ShaderBytecodeCacheTestAccess;
+
     std::filesystem::path blobPath(const ShaderCacheKey& key) const {
         return diskDirectory_ / (key.id + ".dxbc");
     }
