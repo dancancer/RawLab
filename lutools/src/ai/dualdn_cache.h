@@ -20,10 +20,12 @@ public:
     explicit DenoiseCache(std::string directory);
     // SceneRGB 的 0,0 从校验后的缓存头读取旋转后画布尺寸。
     std::optional<Tensor> load(const std::string& key, CacheKind kind, int width, int height,
-                               const std::string& dependency = {}, std::string* producer = nullptr) const;
+                               const std::string& dependency = {}, std::string* producer = nullptr,
+                               std::string* payloadDigest = nullptr) const;
     void store(const std::string& key, CacheKind kind, int width, int height, const float* values, size_t count,
                const std::string& dependency = {}, const std::string& producer = {},
-               const std::function<void()>& beforePublish = {}) const;
+               const std::function<void()>& beforePublish = {},
+               std::string* payloadDigest = nullptr) const;
     void prune(uint64_t byteLimit, const std::set<std::string>& protectedKeys) const;
 private:
     std::string directory_;

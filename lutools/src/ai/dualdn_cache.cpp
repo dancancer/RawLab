@@ -168,8 +168,10 @@ DenoiseCache::DenoiseCache(std::string directory) : directory_(std::move(directo
 }
 
 std::optional<Tensor> DenoiseCache::load(const std::string& key, CacheKind kind, int width, int height,
-                                       const std::string& dependency, std::string* producer) const {
+                                       const std::string& dependency, std::string* producer,
+                                       std::string* payloadDigest) const {
     if (producer) producer->clear();
+    if (payloadDigest) payloadDigest->clear();
     if (!validKey(key) || (!dependency.empty() && !validKey(dependency))) throw std::invalid_argument("invalid AI cache key");
     const bool readDimensions = kind == CacheKind::SceneRGB && width == 0 && height == 0;
     if (!readDimensions) countFor(kind, width, height);
@@ -195,13 +197,15 @@ std::optional<Tensor> DenoiseCache::load(const std::string& key, CacheKind kind,
             header.value("dependency", std::string()) != dependency) return {};
         Tensor result{width, height, kind == CacheKind::Raw ? 1 : 3, std::vector<float>(count)};
         input.read(reinterpret_cast<char*>(result.values.data()), count * sizeof(float));
-        if (!input || sha256Bytes(result.values.data(), count * 4) != header.at("sha256")) return {};
+        const auto digest = sha256Bytes(result.values.data(), count * 4);
+        if (!input || digest != header.at("sha256")) return {};
         validateTensor(result);
         const auto savedProducer = header.value("producer", std::string());
         if (savedProducer.size() > 128) return {};
         std::error_code ignored;
         std::filesystem::last_write_time(file, std::filesystem::file_time_type::clock::now(), ignored);
         if (producer) *producer = savedProducer;
+        if (payloadDigest) *payloadDigest = digest;
         return result;
     } catch (const std::bad_alloc&) { throw; }
     catch (const std::exception&) { return {}; }
@@ -209,7 +213,9 @@ std::optional<Tensor> DenoiseCache::load(const std::string& key, CacheKind kind,
 
 void DenoiseCache::store(const std::string& key, CacheKind kind, int width, int height, const float* values, size_t count,
                          const std::string& dependency, const std::string& producer,
-                         const std::function<void()>& beforePublish) const {
+                         const std::function<void()>& beforePublish,
+                         std::string* payloadDigest) const {
+    if (payloadDigest) payloadDigest->clear();
     if (!validKey(key) || (!dependency.empty() && !validKey(dependency)) || !values || count != countFor(kind, width, height) ||
         producer.size() > 128 || !std::all_of(values, values + count, [](float x) { return std::isfinite(x); }))
         throw std::invalid_argument("invalid AI cache payload");
@@ -218,8 +224,9 @@ void DenoiseCache::store(const std::string& key, CacheKind kind, int width, int 
     const auto target = root / (key + suffix(kind));
     std::random_device random;
     const auto temporary = root / (key + suffix(kind) + ".part-" + std::to_string(random()) + "-" + std::to_string(random()));
+    const auto digest = sha256Bytes(values, count * 4);
     Json header = {{"format", "rawlab-dualdn-cache-v1"}, {"key", key}, {"width", width}, {"height", height},
-        {"channels", kind == CacheKind::Raw ? 1 : 3}, {"sha256", sha256Bytes(values, count * 4)},
+        {"channels", kind == CacheKind::Raw ? 1 : 3}, {"sha256", digest},
         {"dependency", dependency}, {"producer", producer}};
     header["header_sha256"] = digestJson(header);
     const auto text = header.dump(); const uint32_t length = static_cast<uint32_t>(text.size());
@@ -245,6 +252,7 @@ void DenoiseCache::store(const std::string& key, CacheKind kind, int width, int 
 #else
         std::filesystem::rename(temporary, target);
 #endif
+        if (payloadDigest) *payloadDigest = digest;
     } catch (...) {
         std::error_code ignored; std::filesystem::remove(temporary, ignored); throw;
     }
