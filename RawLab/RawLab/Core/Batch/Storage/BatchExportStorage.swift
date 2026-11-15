@@ -18,14 +18,40 @@ final class BatchJournalStore {
     }
 
     private(set) var lastQuarantinedURL: URL?
+    /// 本进程上次写出的各任务账本文件指纹（按 job id）。iOS 常驻 APFS：用 stat 的
+    /// dev+ino+size+mtime_ns+ctime_ns 全量纳秒身份——inode 轮转捕获原子替换（即便等长同 tick），
+    /// ctime 捕获 chmod 等元数据收紧（「读不了」按 I/O 原样抛出的既有契约依赖它），稳态写入据此跳过整读回。
+    private struct FileFingerprint: Equatable {
+        let device: Int; let inode: Int; let size: Int
+        let modified: Int; let modifiedNanoseconds: Int
+        let statusChanged: Int; let statusChangedNanoseconds: Int
+    }
+    private var writtenFingerprints: [UUID: FileFingerprint] = [:]
+    /// save() 实际执行整读盘校验的次数（测试锚点：跳过逻辑必须真的跳过）。
+    private(set) var diskReloads = 0
 
     func save(_ job: BatchExportJob) throws {
         try job.validate()
-        _ = try load(id: job.id)
+        let destination = directory.appendingPathComponent("\(job.id.uuidString).json")
+        // 仅当磁盘文件不是本进程上次写出的那份（首次写、或外部改动）才整读回并重校验，
+        // 只为防「运行途中外部写入未来版本文件」；启动 load/pendingJobs 已全量校验，原子替换保证旧文件完整。
+        let fingerprint = Self.fingerprint(at: destination)
+        if writtenFingerprints[job.id] == nil || writtenFingerprints[job.id] != fingerprint {
+            diskReloads += 1
+            _ = try load(id: job.id)
+        }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        let destination = directory.appendingPathComponent("\(job.id.uuidString).json")
         try encoder.encode(job).write(to: destination, options: .atomic)
+        writtenFingerprints[job.id] = Self.fingerprint(at: destination)
+    }
+
+    private static func fingerprint(at url: URL) -> FileFingerprint? {
+        var info = stat()
+        guard stat(url.path, &info) == 0 else { return nil }
+        return FileFingerprint(device: Int(info.st_dev), inode: Int(info.st_ino), size: Int(info.st_size),
+                               modified: Int(info.st_mtimespec.tv_sec), modifiedNanoseconds: Int(info.st_mtimespec.tv_nsec),
+                               statusChanged: Int(info.st_ctimespec.tv_sec), statusChangedNanoseconds: Int(info.st_ctimespec.tv_nsec))
     }
 
     func load(id: UUID) throws -> BatchExportJob? {
@@ -187,6 +213,7 @@ final class BatchJournalStore {
         let inputs = directory.appendingPathComponent(id.uuidString, isDirectory: true)
         if FileManager.default.fileExists(atPath: inputs.path) { try FileManager.default.removeItem(at: inputs) }
         if FileManager.default.fileExists(atPath: record.path) { try FileManager.default.removeItem(at: record) }
+        writtenFingerprints[id] = nil
     }
 }
 
