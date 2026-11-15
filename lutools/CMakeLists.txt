@@ -1290,7 +1290,6 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         add_executable(hsl_wavelet_cache_tests tests/hsl_wavelet_cache_tests.cpp)
         target_link_libraries(hsl_wavelet_cache_tests sony2fuji_core)
         target_compile_definitions(hsl_wavelet_cache_tests PRIVATE
-            TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
             TEST_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/examples")
         add_test(NAME hsl_wavelet_cache COMMAND hsl_wavelet_cache_tests)
         add_executable(denoise_cache_benchmark EXCLUDE_FROM_ALL tests/denoise_cache_benchmark.cpp)

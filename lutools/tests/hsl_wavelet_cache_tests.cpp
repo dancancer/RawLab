@@ -271,6 +271,11 @@ void verifySamplingPreservesWaveletCache(
             label + ": expected CPU backend for initial render");
     }
 
+    if (legacyAutoFallbackNoGpu) {
+        require(afterFirstRender.hasStoredMode && afterFirstRender.lastStoredMode == sony2fuji::GpuMode::Off,
+            label + ": Auto fallback render must store Off entry");
+    }
+
     const auto probe1 = createProbe(session.get(), request, 1);
     sony2fuji_hsl_probe_query query{SONY2FUJI_HSL_PROBE_VERSION, sizeof(query), 1, 1, 0.5f, 0.5f};
     sony2fuji_hsl_probe_result sample{};
@@ -293,17 +298,8 @@ void verifySamplingPreservesWaveletCache(
             std::to_string(afterProbe1.analysisHits));
         require(afterProbe1.outputHits == afterFirstRender.outputHits,
             label + ": Legacy GPU probe must not hit GPU wavelet output cache");
-    } else if (legacyAutoFallbackNoGpu) {
-        // Auto fallback leaves wavelet output uncached; probe runs CPU wavelet reusing entry->analysis and caches CPU Off entry.
-        require(afterProbe1.filterRuns == afterFirstRender.filterRuns + 1,
-            label + ": Auto fallback probe filterRuns mismatch");
-        require(afterProbe1.appliedRuns == afterFirstRender.appliedRuns + 1,
-            label + ": Auto fallback probe appliedRuns mismatch");
-        require(afterProbe1.analysisHits == afterFirstRender.analysisHits + 1,
-            label + ": Auto fallback probe analysisHits mismatch");
-        require(afterProbe1.outputHits == 0,
-            label + ": Auto fallback probe outputHits mismatch");
     } else {
+        // Auto fallback stored (opts, Off, cpuExecuted=true), so CPU probes hit cache directly without recomputing.
         require(afterProbe1.filterRuns == afterFirstRender.filterRuns &&
                 afterProbe1.appliedRuns == afterFirstRender.appliedRuns &&
                 afterProbe1.outputHits == afterFirstRender.outputHits + 1,
@@ -317,6 +313,8 @@ void verifySamplingPreservesWaveletCache(
     require(sony2fuji_session_get_last_backend(session.get()) == renderedBackend,
         label + ": post-sample render backend changed");
     if (legacyAutoFallbackNoGpu) {
+        // Post-sample Auto render still misses the Off fallback entry so GPU recovery can be retried,
+        // then re-stores (opts, Off, cpuExecuted=true) upon CPU fallback.
         require(afterSecondRender.filterRuns == afterProbe1.filterRuns + 2,
             label + ": Auto fallback post-sample render filterRuns mismatch");
         require(afterSecondRender.appliedRuns == afterProbe1.appliedRuns + 1,
@@ -325,6 +323,8 @@ void verifySamplingPreservesWaveletCache(
             label + ": Auto fallback post-sample render analysisHits mismatch");
         require(afterSecondRender.outputHits == afterProbe1.outputHits,
             label + ": Auto fallback post-sample render unexpectedly hit output cache");
+        require(afterSecondRender.hasStoredMode && afterSecondRender.lastStoredMode == sony2fuji::GpuMode::Off,
+            label + ": Auto fallback post-sample render must store Off entry");
     } else {
         require(afterSecondRender.filterRuns == afterProbe1.filterRuns,
             label + ": post-sample render recomputed wavelet (filterRuns " +
@@ -355,11 +355,10 @@ void verifySamplingPreservesWaveletCache(
                 afterThirdRender.outputHits == afterProbe2.outputHits + 1,
             label + ": second post-sample Legacy GPU render missed wavelet output cache");
     } else if (legacyAutoFallbackNoGpu) {
-        // probe2 hits the Off CPU probe entry stored by probe1 without altering Auto fallback behavior.
         require(afterProbe2.filterRuns == afterSecondRender.filterRuns &&
                 afterProbe2.appliedRuns == afterSecondRender.appliedRuns &&
                 afterProbe2.outputHits == afterSecondRender.outputHits + 1,
-            label + ": second Auto fallback probe missed CPU probe cache");
+            label + ": second Auto fallback probe missed CPU fallback cache");
         require(afterThirdRender.filterRuns == afterProbe2.filterRuns + 2 &&
                 afterThirdRender.appliedRuns == afterProbe2.appliedRuns + 1 &&
                 afterThirdRender.analysisHits == afterProbe2.analysisHits + 2 &&
@@ -397,6 +396,68 @@ void verifyProbeBeforeRenderReusesCpuWavelet(
         label + ": render after CPU wavelet probe missed cache");
 }
 
+void verifyForceClarityProbeDoesNotSpoofForceCache(
+    const char* rawPath, bool viewportPreview, const std::string& label
+) {
+    const bool nativeGpu = rawlabtest::nativeGpuAvailable();
+    const bool gpuCompiled = rawlabtest::nativeBackend != SONY2FUJI_BACKEND_CPU;
+
+    auto session = makeWaveletSession(SONY2FUJI_GPU_FORCE, SONY2FUJI_PROCESSING_LEGACY, viewportPreview);
+    const auto request = makeRawRequest(rawPath, viewportPreview);
+
+    sony2fuji_atmosphere_config atmo{SONY2FUJI_ATMOSPHERE_CONFIG_VERSION, sizeof(atmo), 0.25f, 0.0f};
+    require(sony2fuji_session_set_atmosphere(session.get(), &atmo) == SONY2FUJI_STATUS_OK,
+        label + ": set clarity=0.25");
+
+    const auto probe = createProbe(session.get(), request, 1);
+    const auto afterProbe = sony2fuji::waveletCacheDiagnostics(session.get());
+    require(afterProbe.filterRuns == 1 && afterProbe.appliedRuns == 1 && afterProbe.outputHits == 0,
+        label + ": initial Force+clarity probe diagnostics mismatch");
+    require(afterProbe.hasStoredMode && afterProbe.lastStoredMode == sony2fuji::GpuMode::Off,
+        label + ": Force session CPU probe must store GpuMode::Off, not Force");
+
+    atmo.clarity = 0.0f;
+    require(sony2fuji_session_set_atmosphere(session.get(), &atmo) == SONY2FUJI_STATUS_OK,
+        label + ": reset clarity=0");
+
+    sony2fuji_buffer buffer{};
+    const auto status = sony2fuji_process(session.get(), &request, &buffer);
+    const auto afterRender = sony2fuji::waveletCacheDiagnostics(session.get());
+    require(afterRender.outputHits == afterProbe.outputHits,
+        label + ": clarity=0 Force render unexpectedly hit CPU probe cache");
+
+    if (nativeGpu) {
+        require(status == SONY2FUJI_STATUS_OK && buffer.data != nullptr && buffer.size_bytes > 0,
+            label + ": Force render with native GPU failed with status " + std::to_string(status));
+        require(sony2fuji_session_get_last_backend(session.get()) == rawlabtest::nativeBackend,
+            label + ": Force render did not execute on native GPU backend");
+        require(afterRender.filterRuns == afterProbe.filterRuns + 1 &&
+                afterRender.appliedRuns == afterProbe.appliedRuns + 1 &&
+                afterRender.analysisHits == afterProbe.analysisHits + 1,
+            label + ": Force render did not recompute GPU wavelet reusing analysis");
+        require(afterRender.hasStoredMode && afterRender.lastStoredMode == sony2fuji::GpuMode::Force,
+            label + ": completed Force render did not record GpuMode::Force");
+        sony2fuji_release_buffer(&buffer);
+
+        const auto secondForce = render(session.get(), request);
+        const auto afterSecond = sony2fuji::waveletCacheDiagnostics(session.get());
+        require(!secondForce.empty() && afterSecond.outputHits == afterRender.outputHits + 1 &&
+                afterSecond.filterRuns == afterRender.filterRuns,
+            label + ": subsequent genuine Force render did not hit Force GPU cache");
+    } else if (gpuCompiled) {
+        sony2fuji_release_buffer(&buffer);
+        require(status != SONY2FUJI_STATUS_OK,
+            label + ": Force render without hardware GPU must fail instead of succeeding");
+        require(afterRender.filterRuns == afterProbe.filterRuns + 1 &&
+                afterRender.appliedRuns == afterProbe.appliedRuns,
+            label + ": Force render without hardware GPU must attempt GPU wavelet and fail cleanly");
+    } else {
+        sony2fuji_release_buffer(&buffer);
+        require(status == SONY2FUJI_STATUS_UNSUPPORTED && afterRender.filterRuns == afterProbe.filterRuns,
+            label + ": CPU-only Force render mismatch");
+    }
+}
+
 } // namespace
 
 int main() {
@@ -421,6 +482,7 @@ int main() {
             SONY2FUJI_PROCESSING_LEGACY, "Synth/ProbeFirst/Off/Legacy");
         verifyProbeBeforeRenderReusesCpuWavelet(synthPath.c_str(), false, SONY2FUJI_GPU_AUTO,
             SONY2FUJI_PROCESSING_C5_V2, "Synth/ProbeFirst/Auto/C5_V2");
+        verifyForceClarityProbeDoesNotSpoofForceCache(synthPath.c_str(), false, "Synth/Force/ClarityProbe");
 
         // Real bundled photo (3072x3072 DJI DNG) via 512px viewport preview so wavelet applied == true.
         const std::filesystem::path djiDng = std::filesystem::path(TEST_EXAMPLES_DIR) / "DJI_20250602164503_0444_D.DNG";
@@ -437,6 +499,7 @@ int main() {
             verifySamplingPreservesWaveletCache(djiPath.c_str(), true, SONY2FUJI_GPU_FORCE,
                 SONY2FUJI_PROCESSING_LEGACY, "DJI/Force/Legacy");
         }
+        verifyForceClarityProbeDoesNotSpoofForceCache(djiPath.c_str(), true, "DJI/Force/ClarityProbe");
 
         std::cout << "PASS: HSL sampling preserves wavelet output cache across Off/Auto/Force and C5_V2/Legacy with applied wavelet denoising\n";
         return 0;

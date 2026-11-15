@@ -9,6 +9,8 @@ namespace sony2fuji {
 struct WaveletCacheDiagnostics {
     uint64_t filterRuns = 0, appliedRuns = 0, outputHits = 0, analysisHits = 0;
     size_t previewBytes = 0;
+    bool hasStoredMode = false;
+    GpuMode lastStoredMode = GpuMode::Off;
 };
 
 class WaveletRenderCache {
@@ -58,6 +60,8 @@ public:
         ImageData replacement = image;
         entry.image = std::move(replacement);
         entry.options = options; entry.mode = mode; entry.cpuExecuted = cpuExecuted; entry.completed = true;
+        diagnostics.hasStoredMode = true;
+        diagnostics.lastStoredMode = mode;
         // 优先淘汰较旧的预览图像；小型分析模型和精确槽不受预览预算影响。
         while (previewBytes() > previewBudget) {
             Entry* oldest = nullptr;

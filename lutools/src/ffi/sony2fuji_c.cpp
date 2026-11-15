@@ -3293,15 +3293,15 @@ static sony2fuji_status processImpl(
                 result = filter(sony2fuji::GpuMode::Off);
             }
             if (result != sony2fuji::ErrorCode::Success) return mapError(result);
-            if (entry && !fallback && !preserveCachedOutput) {
-                const bool normalUsesCpuWavelet = !sessionGpuPipeline ||
-                    (sony2fuji::usesC5Denoise(session->wavelet_denoise.processingVersion) &&
-                     session->gpu_config.mode != sony2fuji::GpuMode::Force);
-                const auto storeMode = (!cpuAnalysis || normalUsesCpuWavelet)
+            if (entry && !preserveCachedOutput) {
+                const bool ranCpu = fallback || mode == sony2fuji::GpuMode::Off;
+                const bool normalUsesCpuWavelet = session->gpu_config.mode != sony2fuji::GpuMode::Force &&
+                    (!sessionGpuPipeline ||
+                     sony2fuji::usesC5Denoise(session->wavelet_denoise.processingVersion));
+                const auto storeMode = (!fallback && (!cpuAnalysis || normalUsesCpuWavelet))
                     ? session->gpu_config.mode
                     : sony2fuji::GpuMode::Off;
-                session->wavelet_cache.store(*entry, image, session->wavelet_denoise, storeMode,
-                    mode == sony2fuji::GpuMode::Off);
+                session->wavelet_cache.store(*entry, image, session->wavelet_denoise, storeMode, ranCpu);
             }
         }
         // 小波及其重试已完成；视口与预览工作缓冲仍需缓存 RAW 供下一次滑杆调整复用，导出才释放。
