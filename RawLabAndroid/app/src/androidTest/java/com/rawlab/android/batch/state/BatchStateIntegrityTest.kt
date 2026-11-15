@@ -31,8 +31,9 @@ class BatchStateIntegrityTest {
             val blockWorker = AtomicBoolean(true)
             val blockCancel = AtomicBoolean(true)
             var result: BatchExportState? = null
+            val workerGateStatus = if (terminal == BatchPhase.FAILED) BatchRowStatus.FAILED else BatchRowStatus.PUBLISHING
             fixture.gate(before = { next ->
-                if (next.job.rows.any { it.status == BatchRowStatus.PROCESSING } && !next.stopping && blockWorker.compareAndSet(true, false)) {
+                if (next.job.rows.any { it.status == workerGateStatus } && !next.stopping && blockWorker.compareAndSet(true, false)) {
                     workerEntered.countDown(); workerRelease.awaitBatch()
                 }
                 if (next.stopping && blockCancel.compareAndSet(true, false)) {
@@ -88,7 +89,7 @@ class BatchStateIntegrityTest {
             val armed = AtomicBoolean(true)
             val processingWrite = AtomicBoolean(false)
             fixture.gate(before = { next ->
-                if (next.job.rows.any { it.status == BatchRowStatus.PROCESSING } && armed.compareAndSet(true, false)) {
+                if (next.job.rows.any { it.status == BatchRowStatus.PUBLISHING } && armed.compareAndSet(true, false)) {
                     entered.countDown(); release.awaitBatch(); processingWrite.set(true)
                 }
             }, after = {
