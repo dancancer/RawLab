@@ -272,9 +272,9 @@ required lowercase SHA-256 fingerprint to the v1 prefix. Probe the resource
 with `sony2fuji_hdr_probe_camera_profile`. Decoding uses the same bytes it
 hashes and rejects a different fingerprint before publishing a pair. Keep the
 profile fingerprint in any cache key for the developed source. An eight-entry LRU
-reuses parsed calibration and its verified digest while path, size, high-resolution
-modification/change times and file identity match. A changed stamp refreshes the
-content digest; every decode still checks the requested profile fingerprint. Camera RAW pairs
+reuses parsed calibration when the current byte digest matches, evicting the path
+entry when a digest check fails; every decode still hashes current bytes and checks
+the requested profile fingerprint. Camera RAW pairs
 leave `source_sha256` zero and exports use a null `metadata_source_path`;
 file stamps bracket decoding and decode revisions identify the resulting pixels.
 HDR raster and ProRAW source digests retain their metadata-validation contract.
