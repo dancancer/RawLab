@@ -3218,7 +3218,10 @@ static sony2fuji_status processImpl(
         ? session->raw_native_size : std::pair{image.width, image.height};
     const auto native = sony2fuji::geometryOutputSize(canvasWidth, canvasHeight, session->geometry);
     const uint32_t native_width = native.first, native_height = native.second;
-    if (neighborhoodActive && local.intent == SONY2FUJI_INTENT_PREVIEW && local.preview_long_edge > 0) {
+    // 预览长边封顶到裁剪旋转后的 native 长边：neighborhood 与纯几何预览共用该契约，
+    // 显式 FIT_LONG_EDGE/EXACT（FINAL）不受影响。
+    if ((neighborhoodActive || geometryActive) && local.intent == SONY2FUJI_INTENT_PREVIEW &&
+        local.preview_long_edge > 0) {
         local.preview_long_edge = std::min(local.preview_long_edge, std::max(native_width, native_height));
     }
     uint32_t target_width = 0, target_height = 0;
