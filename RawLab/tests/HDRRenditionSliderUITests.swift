@@ -84,6 +84,65 @@ final class HDRRenditionSliderUITests: XCTestCase {
         XCTAssertTrue(status.contains("editing=1,0 cancelled=0"), "Expected one closed drag session, got \(status)")
     }
 
+    func testStationaryTapThenFastSlideInDoubleTapWindowDoesNotReset() throws {
+        let app = launchHarness(initialPeak: "2.5")
+        let point = app.sliders["hdr.rendition.peakLimit"]
+            .coordinate(withNormalizedOffset: CGVector(dx: 0.417, dy: 0.5)).screenPoint
+        let record = XCSynthesizedEventRecord(name: "HDR rendition tap then fast slide")
+        let tap = XCPointerEventPath(touchAt: point, offset: 0)
+        tap.liftUp(at: 0.02)
+        record.add(tap)
+
+        let slideStart = 0.10
+        let slideDuration = 0.22
+        let slide = XCPointerEventPath(touchAt: point, offset: slideStart)
+        let end = CGPoint(x: point.x + 36, y: point.y)
+        for index in 1...6 {
+            let fraction = CGFloat(index) / 6
+            slide.move(to: CGPoint(x: point.x + (end.x - point.x) * fraction,
+                                   y: point.y),
+                       at: slideStart + slideDuration * Double(fraction))
+        }
+        slide.liftUp(at: slideStart + slideDuration + 0.02)
+        record.add(slide)
+        try record.synthesize()
+
+        let status = app.staticTexts["probe.status"].label
+        print("TAP_THEN_FAST_SLIDE: \(status)")
+        XCTAssertFalse(status.contains("peak=0.0"),
+                       "Expected fast slide after stationary tap not to trigger double-tap reset, got \(status)")
+        XCTAssertTrue(status.contains("editing=1,0 cancelled=0"),
+                      "Expected one closed drag session without cancel, got \(status)")
+    }
+
+    func testExtremeFlickInertiaCoalescesEditingTransitions() throws {
+        let app = launchHarness(initialPeak: "1.0")
+        let slider = app.sliders["hdr.rendition.peakLimit"]
+        let start = slider.coordinate(withNormalizedOffset: CGVector(dx: 0.167, dy: 0.5)).screenPoint
+        let end = slider.coordinate(withNormalizedOffset: CGVector(dx: 0.90, dy: 0.5)).screenPoint
+        let record = XCSynthesizedEventRecord(name: "HDR rendition extreme flick")
+        let flick = XCPointerEventPath(touchAt: start, offset: 0)
+        for index in 1...6 {
+            let fraction = CGFloat(index) / 6
+            flick.move(to: CGPoint(x: start.x + (end.x - start.x) * fraction,
+                                   y: start.y),
+                       at: 0.02 + 0.06 * Double(fraction))
+        }
+        flick.liftUp(at: 0.085)
+        record.add(flick)
+        try record.synthesize()
+
+        Thread.sleep(forTimeInterval: 0.5)
+        let status = app.staticTexts["probe.status"].label
+        print("EXTREME_FLICK_INERTIA: \(status)")
+        XCTAssertFalse(status.contains("peak=1.0"), "Expected extreme flick to move peak off 1.0, got \(status)")
+        XCTAssertTrue(status.contains("cancelled=0"), "Expected no cancel, got \(status)")
+        let editingPart = try XCTUnwrap(status.components(separatedBy: "editing=").last?.split(separator: " ").first)
+        let transitions = editingPart.split(separator: ",").compactMap { Int($0) }
+        XCTAssertTrue(transitions == [1, 0] || transitions == [1, 0, 1, 0],
+                      "Expected drag + inertia window to coalesce into at most one inertia [1,0] pair, got \(status)")
+    }
+
     func testFirstDoubleTapAfterDragResets() {
         let app = launchHarness()
         let slider = app.sliders["hdr.rendition.peakLimit"]
