@@ -241,3 +241,10 @@
 - 移交（批 C 卫生票打包）：①`host_jni/android/bitmap.h` 的 `ALLOCATION_FAILED` 应为 -3（现 -2 与真 NDK 的 JNI_EXCEPTION 撞值，未来 mock 锁定位图会误判 bad_alloc）；②`jni-session-lock.sh`+修 stub 后的 `recipe_probe_stages_test.cpp`（efb7d12d 复数化改名漏更）并入 ci.yml Android 主机检查；③`jni_session_lock_test.cpp` 的 `set_cancellation_callback` mock 补 `SessionCallScope`。
 - 真机签收挂 k173：双 GPU_AUTO 会话并发 eglMakeCurrent、跨线程销毁 EGLContext、批量导出+预览双路解码原生内存峰值、check-native.sh 全量 .so 链接。
 - 台账流程自纠：发现 6 个已合入行的列位错乱（状态误写进来源列、PR 证据挤占状态列，源头是 sed 式替换未锚定列号），已按 P1-08 golden 行版式全部修复——**ledger 编辑规则固化为：状态列=第 7 列，PR 证据并入第 8 列锚点，来源列（第 5 列）不可覆盖**。
+
+### (46) Windows 渲染器三票=第 106 个 PR（#350，codex 分票交付）
+
+- PR #350（fix/d3d11-trio → development）合入 @ `be09ae35`。C7 `gpu/device_retry.h` 指数退避（照片渲染器=会话级、滤波 ComputeContext=进程级，互不传染；上限 6.4s 后慢速重试不归零则不清零）；C6 `gpu/photo_bands.h` GLES/D3D11 共享选带（16MiB 限额、halo 扩读、尾带 D3D11_BOX 精确写）；C21 核实 #343 已带 D3D11 池+补原生验证（WARP 7 项+双变异+shader 反射 1424B 布局硬断言）。碳审独立变异双杀（退避 ready() 恒真 8 FAIL、关选带/坏行偏移像素红）。
+- **codex 全程无事故首次**：分票 checkpoint push+WARP 自证+CI 全绿一棒交付（此前两次需 hydrogen 收尾人）。
+- 碳审 4 项非阻塞移交：①台账如实保留 C7 残段（GLES/Android 退避、D3D11 shader 字节码缓存）勿误标全平台关闭；②WARP 套件未来挂 full 发布门禁；③D3D11 大图预览 revision 缓存对齐 GLES（真机带宽实测后定）；④stage 2/3 死分支+C4456 顺手清。
+- **同轮 #349 教训预告**（待 r1 闭环补记）：新 portable ctest 必须同步 ci.yml $tests 名单——#346 inventory 门禁第一次在评审窗口外抓到活例（Contracts 红：两个新测试 neither selected nor inapplicable）。
