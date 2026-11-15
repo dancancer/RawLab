@@ -134,8 +134,18 @@ internal static class TempCleanup
         try { if (IsReparsePoint(rootInfo)) return; }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Trace.WriteLine($"TempCleanup: skipping root {tempRoot}: {error.Message}"); return; }
 
+        // 按拥有前缀的通配枚举代替全量列举：内核按前缀过滤，启动清扫不再为
+        // 三个前缀遍历整个临时根目录。HasOwnedTempPrefix 复核保留，通配仅作
+        // 预过滤（防 8.3 短名等意外匹配；名字恰等于前缀的目录仍按长度条件排除）。
         IEnumerable<DirectoryInfo> directories;
-        try { directories = enumerateDirectories != null ? enumerateDirectories(tempRoot) : rootInfo.EnumerateDirectories(); }
+        try
+        {
+            directories = enumerateDirectories != null
+                ? enumerateDirectories(tempRoot)
+                : OwnedTempDirectoryPrefixes
+                    .Select(prefix => rootInfo.EnumerateDirectories(prefix + "*"))
+                    .SelectMany(enumeration => enumeration);
+        }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Trace.WriteLine($"TempCleanup: enumeration failed for {tempRoot}: {error.Message}"); return; }
 
         using var enumerator = directories.GetEnumerator();
