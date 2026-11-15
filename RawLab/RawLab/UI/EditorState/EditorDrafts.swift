@@ -241,6 +241,15 @@ extension ContentView {
         finishEditorTool()
     }
 
+    func closeEditorDraftCleanly() -> Bool {
+        cancelSliderInteraction()
+        cancelHSLTarget()
+        if isEditorDraftChanged && !commitEditorDraft() { return false }
+        if isEditorDraftActive || toolWorkspaceOpen { finishEditorTool() }
+        viewModel.hasAdjustmentDraft = false
+        return true
+    }
+
     func discardEditorDraft() {
         cancelHSLTarget()
         clearRecoverableDraft()

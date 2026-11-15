@@ -243,6 +243,146 @@ enum SubtoolDraftProbe {
         check(view.draftExitPresented && view.adjustmentSheet == nil,
               "Modified geometry draft triggers draftExitPresented before copy sheet")
 
+        // 3. Batch-sync resolveCollectionDraft must close workspaceDraft/toolWorkspaceOpen so
+        //    the async editorDraftSnapshot observer does not re-enable hasAdjustmentDraft.
+        guard let sourceKey = view.viewModel.sourceIdentity?.key else {
+            fail("Missing sourceIdentity key for resolveCollectionDraft test")
+        }
+
+        await resetToCleanEditor()
+        view.selectEditorTool(.adjustment(.contrast))
+        await yieldFrames(6)
+        view.workingSettings.contrast = (view.settings.contrast > 1.2 ? 0.8 : 1.25)
+        await yieldFrames(4)
+        check(view.resolveCollectionDraft(sourceKey, apply: false),
+              "resolveCollectionDraft(apply: false) succeeds for modified contrast draft")
+        await yieldFrames(8)
+        check(!view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.viewModel.hasAdjustmentDraft,
+              "resolveCollectionDraft(apply: false) closes workspace and keeps hasAdjustmentDraft=false")
+        check(view.viewModel.adjustmentTargetIsCurrent(sourceKey),
+              "resolveCollectionDraft(apply: false) leaves batch sync target check button enabled")
+
+        await resetToCleanEditor()
+        view.selectEditorTool(.adjustment(.contrast))
+        await yieldFrames(6)
+        check(view.resolveCollectionDraft(sourceKey, apply: true),
+              "resolveCollectionDraft(apply: true) succeeds for unchanged contrast draft")
+        await yieldFrames(8)
+        check(!view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.viewModel.hasAdjustmentDraft,
+              "resolveCollectionDraft(apply: true) on unchanged draft closes workspace and keeps hasAdjustmentDraft=false")
+        check(view.viewModel.adjustmentTargetIsCurrent(sourceKey),
+              "resolveCollectionDraft(apply: true) on unchanged draft leaves batch sync target check button enabled")
+
+        await resetToCleanEditor()
+        view.selectEditorTool(.geometry)
+        await yieldFrames(6)
+        view.geometryDraft?.straightenDegrees = 2.0
+        await yieldFrames(4)
+        check(view.resolveCollectionDraft(sourceKey, apply: true),
+              "resolveCollectionDraft(apply: true) succeeds for modified geometry draft")
+        await yieldFrames(8)
+        check(!view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.geometrySelected && !view.viewModel.hasAdjustmentDraft,
+              "resolveCollectionDraft(apply: true) on modified geometry draft closes workspace and keeps hasAdjustmentDraft=false")
+        check(view.viewModel.adjustmentTargetIsCurrent(sourceKey),
+              "resolveCollectionDraft(apply: true) on modified geometry draft leaves batch sync target check button enabled")
+
+        // 4. showQuickPresets must cleanly commit/close an active draft before opening quick presets.
+        await resetToCleanEditor()
+        view.selectEditorTool(.adjustment(.contrast))
+        await yieldFrames(6)
+        view.showQuickPresets()
+        await yieldFrames(8)
+        check(view.viewModel.quickPresetsVisible && !view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.viewModel.hasAdjustmentDraft,
+              "showQuickPresets closes unchanged subtool draft and clears hasAdjustmentDraft")
+
+        await resetToCleanEditor()
+        view.selectEditorTool(.adjustment(.contrast))
+        await yieldFrames(6)
+        let targetContrast: Double = view.settings.contrast > 1.2 ? 0.85 : 1.3
+        view.workingSettings.contrast = targetContrast
+        await yieldFrames(4)
+        view.showQuickPresets()
+        await yieldFrames(8)
+        check(view.viewModel.quickPresetsVisible && !view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.viewModel.hasAdjustmentDraft,
+              "showQuickPresets commits modified subtool draft and clears hasAdjustmentDraft")
+        check(abs(view.settings.contrast - targetContrast) < 0.001,
+              "showQuickPresets preserves committed contrast value")
+
+        // 5. Export menu actions must cleanly commit/close an active draft before exporting.
+        await resetToCleanEditor()
+        view.selectEditorTool(.adjustment(.contrast))
+        await yieldFrames(6)
+        let exportContrast: Double = view.settings.contrast > 1.2 ? 0.9 : 1.35
+        view.workingSettings.contrast = exportContrast
+        await yieldFrames(4)
+        view.requestSingleExport(.jpeg)
+        await yieldFrames(8)
+        check(view.showingExportSize && view.singleExportFormat == .jpeg,
+              "requestSingleExport opens export size sheet with active draft")
+        check(!view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.viewModel.hasAdjustmentDraft,
+              "requestSingleExport closes workspace and clears hasAdjustmentDraft")
+        check(abs(view.settings.contrast - exportContrast) < 0.001,
+              "requestSingleExport commits modified contrast before export")
+        view.showingExportSize = false
+        _ = await waitUntil(5) { noPresentedSheet() }
+
+        await resetToCleanEditor()
+        view.selectEditorTool(.adjustment(.contrast))
+        await yieldFrames(6)
+        view.openBatchExport()
+        await yieldFrames(8)
+        check(view.showingBatchExport && view.batchModel != nil,
+              "openBatchExport opens batch export with active draft")
+        check(!view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.viewModel.hasAdjustmentDraft,
+              "openBatchExport closes workspace and clears hasAdjustmentDraft")
+        view.batchModel = nil
+        view.showingBatchExport = false
+        _ = await waitUntil(5) { noPresentedSheet() }
+
+        // 6. Collection navigation and openBatchSelection must close active draft cleanly so
+        //    onChange(of: editorDraftSnapshot) does not re-enable hasAdjustmentDraft.
+        await resetToCleanEditor()
+        view.selectEditorTool(.adjustment(.contrast))
+        await yieldFrames(6)
+        view.requestCollectionNavigation(.returnToCollection)
+        await yieldFrames(8)
+        check(view.showingBatchSelection && !view.draftExitPresented,
+              "requestCollectionNavigation(.returnToCollection) opens collection sheet for unchanged draft")
+        check(!view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.viewModel.hasAdjustmentDraft,
+              "requestCollectionNavigation(.returnToCollection) closes workspace and keeps hasAdjustmentDraft=false")
+        view.showingBatchSelection = false
+        view.pendingCollectionNavigation = nil
+        _ = await waitUntil(5) { noPresentedSheet() }
+
+        await resetToCleanEditor()
+        view.selectEditorTool(.adjustment(.contrast))
+        await yieldFrames(6)
+        view.openBatchSelection()
+        await yieldFrames(8)
+        check(view.showingBatchSelection,
+              "openBatchSelection opens collection sheet with unchanged active draft")
+        check(!view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.viewModel.hasAdjustmentDraft,
+              "openBatchSelection closes unchanged draft workspace and keeps hasAdjustmentDraft=false")
+        view.showingBatchSelection = false
+        _ = await waitUntil(5) { noPresentedSheet() }
+
+        await resetToCleanEditor()
+        view.selectEditorTool(.adjustment(.contrast))
+        await yieldFrames(6)
+        let batchContrast: Double = view.settings.contrast > 1.2 ? 0.92 : 1.4
+        view.workingSettings.contrast = batchContrast
+        await yieldFrames(4)
+        view.openBatchSelection()
+        await yieldFrames(8)
+        check(view.showingBatchSelection,
+              "openBatchSelection opens collection sheet with modified active draft")
+        check(!view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.viewModel.hasAdjustmentDraft,
+              "openBatchSelection closes modified draft workspace and keeps hasAdjustmentDraft=false")
+        check(abs(view.settings.contrast - batchContrast) < 0.001,
+              "openBatchSelection commits modified contrast before opening collection")
+        view.showingBatchSelection = false
+        _ = await waitUntil(5) { noPresentedSheet() }
+
         writeResult(passed: true)
         print("PASS: subtool menu draft suite (\(checks) checks)")
     }
