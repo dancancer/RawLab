@@ -385,6 +385,7 @@
     "当前外观不可用，不能应用设置。": "El aspecto actual no está disponible; no se pueden aplicar los ajustes.",
     "当前工具": "Herramienta actual",
     "当前构建未配置使用统计，未采集或上报。": "El análisis de uso no está configurado en esta versión; no se recopila ni se envía ningún dato.",
+    "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。": "GPU forzada no está disponible para esta foto, look o modo de procesamiento. Cambia a Auto para usar el respaldo.",
     "当前照片": "Foto actual",
     "当前照片或调整记录无效，无法安全重置。": "La foto actual o su registro de ajustes no son válidos y no se pueden restablecer de forma segura.",
     "当前通道 {0}，修改仅作用于该颜色。": "Canal actual: {0}. Los cambios solo se aplican a este color.",

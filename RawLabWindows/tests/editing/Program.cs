@@ -98,8 +98,23 @@ CameraRawHDRChecks.Run();
 ProRAWHDRChecks.Run(Check);
 AdjustmentSummaryChecks.Run();
 UpdateReleaseAssetChecks.Run();
+ForceGpuErrorMessageChecks();
 
 static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
+static void ForceGpuErrorMessageChecks()
+{
+    var forceGpu = Native.FormatErrorMessage(2, null, Native.UnsupportedReason.ForceGpu);
+    var photoUnsupported = Native.FormatErrorMessage(2, null, Native.UnsupportedReason.None);
+    Check(forceGpu == Loc.Text("当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。"),
+        "Force GPU unsupported reason produces dedicated Auto-fallback guidance");
+    Check(photoUnsupported == Loc.Text("不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。"),
+        "Generic unsupported status retains photo/look compatibility message");
+    Check(forceGpu != photoUnsupported,
+        "Force GPU unsupported message is distinct from photo/look unsupported message");
+    var x3f = Native.FormatErrorMessage(2, "Normal X3F error", Native.UnsupportedReason.ForceGpu);
+    Check(x3f == Loc.Format("无法正常显影 X3F：{0}", "Normal X3F error"),
+        "X3F session detail takes precedence over generic status mapping");
+}
 static JsonNode? Processing(Adjustments value) => JsonSerializer.SerializeToNode(value.Capture())!["Processing"];
 static void X3fPersistenceChecks()
 {

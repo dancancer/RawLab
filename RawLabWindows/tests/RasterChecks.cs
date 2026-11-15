@@ -57,7 +57,7 @@ internal static class RasterChecks
         using(var forced=new RenderEngine(2))
         {
             var unsupported=false;try{forced.Render(png,new(),null,32,statistics:false,clipping:false);}
-            catch(InvalidOperationException error) when(error.Message==Loc.Text("不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。")){unsupported=true;}
+            catch(InvalidOperationException error) when(error.Message==Loc.Text("当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。")){unsupported=true;}
             check(unsupported,"Direct Force GPU remains explicitly unsupported for raster; it never pretends CPU succeeded");
         }
         var identity=engine.Render(png,new(),null,0,statistics:false,clipping:false)!;

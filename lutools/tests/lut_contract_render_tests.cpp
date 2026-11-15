@@ -67,15 +67,21 @@ int main() {
         auto automatic=render(session,r,SONY2FUJI_GPU_AUTO);
         check(automatic==actual && sony2fuji_session_get_last_backend(session)==SONY2FUJI_BACKEND_CPU,"Auto uses the verified CPU contract");
         sony2fuji_status status;render(session,r,SONY2FUJI_GPU_FORCE,&status);
-        check(status==SONY2FUJI_STATUS_UNSUPPORTED,"Force never silently evaluates an unsupported contract on GPU");
+        check(status==SONY2FUJI_STATUS_UNSUPPORTED &&
+              sony2fuji_session_get_unsupported_reason(session)==SONY2FUJI_UNSUPPORTED_FORCE_GPU,
+              "Force never silently evaluates an unsupported contract on GPU and reports Force GPU reason");
     }
     write(path,contract("linear-srgb","linear-srgb"));
     check(render(session,r,SONY2FUJI_GPU_OFF)==neutral,"Scene-output identity receives neutral once");
+    check(sony2fuji_session_get_unsupported_reason(session)==SONY2FUJI_UNSUPPORTED_NONE,
+          "Successful render clears any previous unsupported reason");
     write(path,contract("rec709-gamma24","rec709-gamma24","display","rawlab-neutral-v1"));
     check(render(session,r,SONY2FUJI_GPU_OFF)==neutral,"Display Gamma 2.4 identity preserves the neutral reference");
     write(path,contract("srgb","srgb","display","source-display"));
     sony2fuji_status status;render(session,r,SONY2FUJI_GPU_OFF,&status);
-    check(status==SONY2FUJI_STATUS_UNSUPPORTED,"Source-display base cannot be invented from RAW/scene input");
+    check(status==SONY2FUJI_STATUS_UNSUPPORTED &&
+          sony2fuji_session_get_unsupported_reason(session)==SONY2FUJI_UNSUPPORTED_NONE,
+          "Source-display base cannot be invented from RAW/scene input and does not blame Force GPU");
     r.input_type=SONY2FUJI_INPUT_DISPLAY_BUFFER;r.input_is_linear=0;
     check(render(session,r,SONY2FUJI_GPU_OFF)==std::vector<unsigned char>(pixels.begin(),pixels.end()),"Source-display identity preserves already rendered input");
     write(path,contract("vlog-vgamut"));render(session,r,SONY2FUJI_GPU_OFF,&status);

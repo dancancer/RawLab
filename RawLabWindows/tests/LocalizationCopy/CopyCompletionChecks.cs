@@ -24,6 +24,9 @@ internal static class CopyCompletionChecks
             try { Native.Check(status);check(false,"Native error is rejected"); }
             catch(InvalidOperationException error) { check(error.Message==Loc.Text(expected),"Accurate native status message: "+language); }
         }
+        check(Native.FormatErrorMessage(2, null, Native.UnsupportedReason.ForceGpu) ==
+              Loc.Text("当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。"),
+            "Force GPU unsupported status uses its dedicated localized message: " + language);
         check(window.HistogramSurface.Visibility == Visibility.Collapsed && window.HistogramButton.ToolTip == null,
             "No result exposes no hidden-histogram action tooltip");
         var file = typeof(MainWindow).GetField("file", Instance)!;
