@@ -160,12 +160,24 @@ public sealed class BatchJournal
     public string DirectoryPath { get; }
     private string PathName => Path.Combine(DirectoryPath, "job.json");
     public string? LastQuarantinedPath { get; private set; }
+    private (long Length, DateTime Modified)? writtenFingerprint;
+    // Save() 实际执行整读盘校验的次数（测试锚点：跳过逻辑必须真的跳过）。
+    public int DiskReloads { get; private set; }
     public BatchJournal(string directory) => DirectoryPath = directory;
     public void Save(BatchJob job)
     {
-        _ = ReadJob();
+        // 仅当磁盘文件不是本进程上次写出的那份（首次写、或外部改动）才整读回并重校验，
+        // 只为防「运行途中外部写入未来版本文件」；启动 Load 已全量校验，原子替换保证旧文件完整。
+        var fingerprint = Fingerprint();
+        if (writtenFingerprint == null || writtenFingerprint.Value != fingerprint) { DiskReloads++; _ = ReadJob(); }
         Validate(job);
         AtomicJson.Write(PathName, job);
+        writtenFingerprint = Fingerprint();
+    }
+    private (long Length, DateTime Modified)? Fingerprint()
+    {
+        var info = new FileInfo(PathName);
+        return info.Exists ? (info.Length, info.LastWriteTimeUtc) : null;
     }
 
     public void FreezeLook(BatchJob job)
@@ -349,6 +361,7 @@ public static class BatchRunner
         if (job.SelectedCount == 0) throw new InvalidOperationException(Loc.Text("请至少选择一张照片。"));
         if (job.OutputDirectory == null) throw new OutputWriteException(Loc.Text("选择输出文件夹"));
         if (job.Mode == BatchJob.UniformFrozen && job.Look != null && !File.Exists(job.Look)) throw new InvalidOperationException(Loc.Text("任务使用的外观文件不可用，请重新创建任务。"));
+        VerifyDestination(job.OutputDirectory);
         job.Started = true; job.Interrupted = false; job.Cancelled = false; job.Error = null;
         journal.Save(job);
         try
@@ -359,7 +372,8 @@ public static class BatchRunner
                 if (!item.Selected || !item.CanSelect || item.AwaitingTargetSettings || item.Status == BatchStatus.Succeeded ||
                     (failuresOnly && item.Status != BatchStatus.Failed)) continue;
                 if (cancellation.IsCancellationRequested) { job.Cancelled = true; break; }
-                VerifyDestination(job.OutputDirectory);
+                // 每张照片不再建删探针文件；目录存在性检查足以在渲染前拦截被移除/弹出的输出盘。
+                if (!Directory.Exists(job.OutputDirectory)) throw new OutputWriteException(Loc.Text("无法写入输出目录，请检查访问权限和剩余空间。"));
                 job.Items[i] = item with { Status = BatchStatus.Running, Error = null };
                 journal.Save(job); changed(job.Copy(), null);
                 Export(i, job, journal, cancellation, render, resolveX3fMode);

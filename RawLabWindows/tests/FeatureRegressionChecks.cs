@@ -94,6 +94,53 @@ internal static class FeatureRegressionChecks
         {
             try { Directory.Delete(identityDirectory, recursive: true); } catch (IOException) { }
         }
+        var amplifyDirectory = Path.Combine(Path.GetTempPath(), "rawlab-journal-amplify-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(amplifyDirectory);
+            var amplifyJournal = new BatchJournal(amplifyDirectory);
+            var amplifySource = Path.Combine(amplifyDirectory, "source.arw"); File.WriteAllBytes(amplifySource, [11, 23, 47]);
+            BatchJob AmplifyJob(string look, BatchStatus status)
+            {
+                var job = BatchJob.Create(amplifySource, new Adjustments().Capture(), null, look);
+                job.Format = ExportFormat.Png; job.OutputDirectory = amplifyDirectory;
+                job.Items = [BatchItem.Create(amplifySource) with { Selected = true, Status = status }];
+                return job;
+            }
+            // 稳态写入：每任务至多首写整读一次，之后靠本进程 (size,mtime) 指纹跳过重读（撤跳过逻辑必红）。
+            amplifyJournal.Save(AmplifyJob("A", BatchStatus.Waiting));
+            amplifyJournal.Save(AmplifyJob("B", BatchStatus.Waiting));
+            amplifyJournal.Save(AmplifyJob("C", BatchStatus.Waiting));
+            check(amplifyJournal.DiskReloads == 1, "steady-state journal saves reload the disk file once, not once per write");
+            // 外部改动检测：未来版本文件必须被重读并 fail-closed，而不是被静默覆盖（去掉重读必红）。
+            var journalPath = Path.Combine(amplifyDirectory, "job.json");
+            var futureJson = new System.Text.RegularExpressions.Regex("\"[Vv]ersion\":\\s*\\d+")
+                .Replace(File.ReadAllText(journalPath), "\"Version\": 999", 1);
+            File.WriteAllText(journalPath, futureJson);
+            var amplifyRejected = false;
+            try { amplifyJournal.Save(AmplifyJob("D", BatchStatus.Waiting)); } catch (Exception) { amplifyRejected = true; }
+            check(amplifyRejected && File.ReadAllText(journalPath).Contains("999", StringComparison.Ordinal) && amplifyJournal.DiskReloads == 2,
+                "an externally replaced future-version journal triggers exactly one reload and fails closed");
+            // 外部损坏：下一次 Save 重读并隔离，然后正常写出（跳过逻辑不得吞掉外部损坏）。
+            File.WriteAllText(journalPath, "{corrupt-amplify");
+            amplifyJournal.Save(AmplifyJob("E", BatchStatus.Waiting));
+            check(amplifyJournal.LastQuarantinedPath != null && amplifyJournal.DiskReloads == 3 &&
+                  amplifyJournal.Load()?.LookName == "E",
+                "an externally corrupted journal is quarantined on the next Save instead of being skipped");
+            // 回归：写入中途被杀留下完整旧文件与游离 tmp → 启动 Load 仍恢复 Running→Waiting 且不误判损坏。
+            amplifyJournal.Save(AmplifyJob("F", BatchStatus.Running));
+            File.WriteAllText(Path.Combine(amplifyDirectory, "job.json.tmp-stray"), "stray");
+            var reopened = new BatchJournal(amplifyDirectory);
+            var recovered = reopened.Load();
+            check(recovered != null && recovered.Items[0].Status == BatchStatus.Waiting && recovered.Interrupted,
+                "mid-write kill leaves the previous journal loadable with Running derived back to Waiting without false quarantine");
+            reopened.Save(recovered);
+            check(reopened.DiskReloads == 1, "a reopened journal runs one full validation on its first Save and recovers the job");
+        }
+        finally
+        {
+            try { Directory.Delete(amplifyDirectory, recursive: true); } catch (IOException) { }
+        }
         Console.WriteLine("PASS: Windows EXIF overlay, final export sizing and batch format regressions");
     }
 }
