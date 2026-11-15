@@ -1016,7 +1016,11 @@ void testPostRenderHistogramDoesNotBlockOtherSessions() {
         jobject f2 = callNativeProcess(env.ptr(), s2, "fast-preview.dng", 64, -1);
         require(f2 != nullptr && !env.ptr()->ExceptionCheck(), "Session 2 preview failed while session 1 analyzed");
         Java_com_rawlab_android_engine_NativeProcessor_nativeDestroy(env.ptr(), nullptr, s3);
-        fastWorkDone.store(true, std::memory_order_release);
+        {
+            std::lock_guard<std::mutex> lock(gCoreMutex);
+            fastWorkDone.store(true, std::memory_order_release);
+            gCoreCv.notify_all();
+        }
     });
     ThreadJoiner j2{t2};
 
