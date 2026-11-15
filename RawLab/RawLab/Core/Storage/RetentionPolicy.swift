@@ -62,19 +62,22 @@ enum BatchArtifactRetention {
                         maxCount: Int = RetentionPolicy.batchArtifactMaxCount,
                         willReclaimGroup: ((UUID) -> Void)? = nil) -> Int {
         // 以任务 id 归组：一个条目的产物目录与 journal 记录（含输入副本目录）同进同退。
-        var groups: [String: (id: UUID, key: String, date: Date, parts: [(url: URL, companion: URL?)])] = [:]
-        func add(_ id: UUID, _ date: Date, url: URL, companion: URL?) {
+        var groups: [String: (id: UUID, key: String, date: Date, parts: [(url: URL, companion: URL?, modificationDate: Date)])] = [:]
+        func add(_ id: UUID, _ date: Date, url: URL, companion: URL?, modificationDate: Date) {
             let key = id.uuidString
             let existing = groups[key]
-            groups[key] = (id, key, max(existing?.date ?? date, date), (existing?.parts ?? []) + [(url, companion)])
+            groups[key] = (id, key, max(existing?.date ?? date, date),
+                           (existing?.parts ?? []) + [(url, companion, modificationDate)])
         }
         for url in (try? fileManager.contentsOfDirectory(at: exportsRoot,
                 includingPropertiesForKeys: [.creationDateKey, .contentModificationDateKey, .isDirectoryKey],
                 options: [.skipsHiddenFiles])) ?? [] {
             guard let id = UUID(uuidString: url.lastPathComponent),
                   (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true,
-                  let date = artifactDate(url) else { continue }
-            add(id, date, url: url, companion: nil)
+                  let date = artifactDate(url),
+                  let modificationDate = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            else { continue }
+            add(id, date, url: url, companion: nil, modificationDate: modificationDate)
         }
         for url in (try? fileManager.contentsOfDirectory(at: journalRoot,
                 includingPropertiesForKeys: [.contentModificationDateKey],
@@ -82,7 +85,8 @@ enum BatchArtifactRetention {
             guard url.pathExtension == "json", let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent),
                   let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
             else { continue }
-            add(id, date, url: url, companion: journalRoot.appendingPathComponent(id.uuidString, isDirectory: true))
+            add(id, date, url: url, companion: journalRoot.appendingPathComponent(id.uuidString, isDirectory: true),
+                modificationDate: date)
         }
         // 同日期时按 id 倒序，保证 100 条边界上的清退选取可复现。
         var reclaimed = 0
@@ -90,7 +94,7 @@ enum BatchArtifactRetention {
             if now.timeIntervalSince(group.date) <= maxAge && index < maxCount { continue }
             willReclaimGroup?(group.id)
             // 后台清扫期间首屏恢复或新写入可能复用同 id：删除前复核活跃保护与磁盘最新时间，避免误删已恢复任务。
-            if isJobProtected(group.id) || hasNewerActivityOnDisk(parts: group.parts, recordedDate: group.date) {
+            if isJobProtected(group.id) || hasNewerActivityOnDisk(parts: group.parts) {
                 continue
             }
             var removed = false
@@ -103,9 +107,9 @@ enum BatchArtifactRetention {
         return reclaimed
     }
 
-    private static func hasNewerActivityOnDisk(parts: [(url: URL, companion: URL?)], recordedDate: Date) -> Bool {
+    private static func hasNewerActivityOnDisk(parts: [(url: URL, companion: URL?, modificationDate: Date)]) -> Bool {
         for part in parts {
-            if let date = currentModificationDate(part.url), date > recordedDate {
+            if let date = currentModificationDate(part.url), date > part.modificationDate {
                 return true
             }
         }

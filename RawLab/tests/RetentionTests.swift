@@ -13,6 +13,7 @@ import Foundation
         try batchArtifactCountBoundary()
         try batchArtifactGroupedEntry()
         try batchArtifactBothConditions()
+        try batchArtifactReclaimsPopulatedStandaloneExport()
         try batchArtifactSkipsRecoveredJobDuringSweep()
         try exportEvidenceRegistry()
     }
@@ -82,8 +83,10 @@ import Foundation
         func exportDirectory(age: TimeInterval, now: Date, id: UUID = UUID()) throws -> URL {
             let url = exports.appendingPathComponent(id.uuidString, isDirectory: true)
             try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-            let date = now.addingTimeInterval(-age)
-            try FileManager.default.setAttributes([.creationDate: date, .modificationDate: date], ofItemAtPath: url.path)
+            try Data([0]).write(to: url.appendingPathComponent("rendered.dng"))
+            let createdAt = now.addingTimeInterval(-age)
+            let modifiedAt = createdAt.addingTimeInterval(1)
+            try FileManager.default.setAttributes([.creationDate: createdAt, .modificationDate: modifiedAt], ofItemAtPath: url.path)
             return url
         }
         func journalRecord(age: TimeInterval, now: Date, id: UUID = UUID()) throws -> URL {
@@ -167,6 +170,29 @@ import Foundation
         let remainingFresh = try fixture.fileCount(fixture.exports)
         try check(reclaimed == 10 && remainingFresh == 95,
                   "Ten 35-day-old artifacts are reclaimed below the count cap while fresh entries stay")
+    }
+
+    // 回归：真实渲染型 DNG 导出先建 Exports/<uuid>/（定格 creationDate），随后写入 .dng 推进目录 modificationDate > creationDate，
+    // discard 删除 journal 后仅留独立产物目录；超过 30 天后仍能被回收（撤掉按 part 快照 mtime 复核必红）。
+    private static func batchArtifactReclaimsPopulatedStandaloneExport() throws {
+        let fixture = try Fixture("populated-export")
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let exportDir = fixture.exports.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: exportDir, withIntermediateDirectories: true)
+        let createdAt = Date().addingTimeInterval(-60)
+        try FileManager.default.setAttributes([.creationDate: createdAt, .modificationDate: createdAt], ofItemAtPath: exportDir.path)
+        let renderedFile = exportDir.appendingPathComponent("IMG_0001.dng")
+        try Data([0x49, 0x49, 0x2A, 0x00]).write(to: renderedFile)
+        let values = try exportDir.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey])
+        try check((values.contentModificationDate ?? .distantPast) > (values.creationDate ?? .distantFuture),
+                  "Writing a rendered child file advances export directory modificationDate past creationDate")
+        let reclaimed = BatchArtifactRetention.reclaim(
+            exportsRoot: fixture.exports,
+            journalRoot: fixture.journals,
+            now: createdAt.addingTimeInterval(31 * day)
+        )
+        try check(reclaimed == 1 && !FileManager.default.fileExists(atPath: exportDir.path),
+                  "A populated standalone export directory with mtime > ctime is reclaimed after 30 days")
     }
 
     // 竞态回归：后台清扫尚未结束时，首屏恢复同 ID 任务（原子重写 journal + 写入 inputs，或标记为活跃保护），
