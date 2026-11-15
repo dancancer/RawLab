@@ -198,8 +198,11 @@ struct IOSCollectionExportInput {
                 var look: URL?
                 if let original = row.look {
                     let folder = try BatchInputStore.directory(for: jobID, root: journal.directory).deletingLastPathComponent()
-                    let destination = folder.appendingPathComponent("look-\(ordinal).\(original.pathExtension)")
-                    try FileManager.default.copyItem(at: original, to: destination)
+                    // 同一任务的多个目标共享同一 look 时按内容寻址只存一份（已有即复用）；任务目录整体回收。
+                    let destination = folder.appendingPathComponent("look-\(row.lookSHA256 ?? UUID().uuidString).\(original.pathExtension)")
+                    if !FileManager.default.fileExists(atPath: destination.path) {
+                        try FileManager.default.copyItem(at: original, to: destination)
+                    }
                     look = destination
                 }
                 var target = BatchTarget(identity: photo.identity, sourceURL: input, displayName: photo.displayName,
