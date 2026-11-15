@@ -5,33 +5,33 @@
 ## 1. 谁能调用核心（线程亲和性与 UI 线程）
 
 - **无主线程／UI 线程亲和性**：核心入口均在**当前调用线程同步执行**，不会隐式派发到主线程或后台队列（例如 AI 准备进度回调注释 `lutools/include/sony2fuji/ffi/sony2fuji_c.h:469` 明确只在调用线程同步触发）。
-- **能否在 UI 线程直接调**：纯内存／轻量查询（如 `sony2fuji_sample_tone_curve`、`sony2fuji_validate_look`、已在串行时机读取的缓存 getter）技术上可在任意线程调用；但 `sony2fuji_process`、`sony2fuji_session_prepare_ai`、`sony2fuji_session_create_hsl_probe`、`sony2fuji_session_migrate_processing` 及 `sony2fuji_hdr_*` 解码／渲染／导出包含同步磁盘 I/O、CPU 多线程计算和 GPU 等待，**不得在 UI 线程直接调用以免阻塞界面**，应由宿主的后台 worker 线程调用（参见 `sony2fuji_c.h:540,614`）。
+- **能否在 UI 线程直接调**：纯内存／轻量查询（如 `sony2fuji_sample_tone_curve`、`sony2fuji_validate_look`、已在串行时机读取的缓存 getter）技术上可在任意线程调用；但 `sony2fuji_process`、`sony2fuji_session_prepare_ai`、`sony2fuji_session_create_hsl_probe`、`sony2fuji_session_migrate_processing` 及 `sony2fuji_hdr_*` 解码／渲染／导出包含同步磁盘 I/O、CPU 多线程计算和 GPU 等待，**不得在 UI 线程直接调用以免阻塞界面**，应由宿主的后台 worker 线程调用（参见 `sony2fuji_c.h:540,618`）。
 - **调用线程局部状态与返回指针生命周期**：
-  - 协作式取消作用域安装在调用线程的 `thread_local ProcessingCancellation processingCancellation` 上（`lutools/src/core/processing_cancellation.h:20-29`）。
-  - Android GLES 在每次渲染期间绑定独立 `EGLContext`，退出时恢复调用线程原有的 `EGLDisplay`/`EGLSurface`/`EGLContext`（`lutools/src/gpu/gles_photo.cpp:38-57`）。
-  - 返回 `const char*` 的诊断接口不得跨并发调用持有：`sony2fuji_ai_get_devices` 使用 `thread_local std::string`（`lutools/src/ffi/sony2fuji_c.cpp:1877`），其余 session 级错误字符串（`get_ai_diagnostics`、`get_ai_error`、`get_ai_backend`、`x3f_error`）绑定所属 `session` 的生命周期与下一次调用。
+  - 协作式取消作用域安装在调用线程的 `thread_local ProcessingCancellation processingCancellation` 上（`lutools/src/core/processing_cancellation.h:33,39-50`）。
+  - Android GLES 在每次渲染期间绑定独立 `EGLContext`，退出时恢复调用线程原有的 `EGLDisplay`/`EGLSurface`/`EGLContext`（`lutools/src/gpu/gles_photo.cpp:39-61`）。
+  - 返回 `const char*` 的诊断接口不得跨并发调用持有：`sony2fuji_ai_get_devices` 使用 `thread_local std::string`（`lutools/src/ffi/sony2fuji_c.cpp:2487`），其余 session 级错误字符串（`get_ai_diagnostics`、`get_ai_error`、`get_ai_backend`、`x3f_error`）绑定所属 `session` 的生命周期与下一次调用。
 
 ## 2. 必须序列化到什么粒度
 
 - **同一 `sony2fuji_session` 必须由调用方严格串行化**：`struct sony2fuji_session`（`lutools/src/ffi/sony2fuji_c.cpp:68-132`）内部没有任何互斥锁，直接持有可变的 `raw_cache`、`preview_exposure_cache`、`raw_processor`、`x3f_processor`、`wavelet_cache`、`dehaze_analysis`、`lens_report`、`geometry_width/height`、`last_backend`、`cancellation_callback/context`、GPU 渲染器与 AI 状态。
-  - 所有传入同一 `session` 的函数——包括 setter、`sony2fuji_process`、HDR session 入口，以及签名为 `const sony2fuji_session*` 的 getter、`sony2fuji_session_create_hsl_probe`（不再改写 `session->gpu_config`，改为在 `processImpl` 中通过 `pre_hsl != nullptr` 内部触发 CPU 分析而不使 `wavelet_cache` 失效；仅临时保存并恢复 `last_backend` 与 `geometry_width/height`，仍会读写会话缓存，见 `sony2fuji_c.cpp:3613-3646`）和 `sony2fuji_session_migrate_processing`（读取 `source` 字段构造私有栈上 `worker` 会话，见 `sony2fuji_c.cpp:3432-3464`）——**均不得在同一 `session` 上并发执行**。
-  - 唯一允许跨线程并发写的是宿主自己的原子取消标志（由后台会话串行调用 `sony2fuji_session_set_cancellation_callback` 注册后，由 UI／调度线程更新其上下文中的原子量，`sony2fuji_c.h:790-795`）。
+  - 所有传入同一 `session` 的函数——包括 setter、`sony2fuji_process`、HDR session 入口，以及签名为 `const sony2fuji_session*` 的 getter、`sony2fuji_session_create_hsl_probe`（不再改写 `session->gpu_config`，改为在 `processImpl` 中通过 `pre_hsl != nullptr` 内部触发 CPU 分析而不使 `wavelet_cache` 失效；仅临时保存并恢复 `last_backend` 与 `geometry_width/height`，仍会读写会话缓存，见 `sony2fuji_c.cpp:3613-3647`）和 `sony2fuji_session_migrate_processing`（读取 `source` 字段构造私有栈上 `worker` 会话，见 `sony2fuji_c.cpp:3433-3464`）——**均不得在同一 `session` 上并发执行**。
+  - 唯一允许跨线程并发写的是宿主自己的原子取消标志（由后台会话串行调用 `sony2fuji_session_set_cancellation_callback` 注册后，由 UI／调度线程更新其上下文中的原子量，`sony2fuji_c.h:800-805`）。
 - **跨 `session` 与无状态入口无需宿主加同一把会话锁**：
-  - 不同 `sony2fuji_session*` 实例拥有各自独立的缓存与处理器，可由不同后台线程并发驱动（例如交互预览 session 与导出／迁移／兼容预览独立 worker session，`sony2fuji_c.h:614`）。
-  - 已生成的 `sony2fuji_hsl_probe*` 在销毁前只读，可脱离原 `session` 调用 `sony2fuji_hsl_probe_sample`（`sony2fuji_c.cpp:2903-2948`）；`sony2fuji_hdr_image_pair_v1` 的句柄表由内部 `ownersMutex` 保护（`lutools/src/ffi/sony2fuji_hdr.cpp:45,145,213,1123`）。
+  - 不同 `sony2fuji_session*` 实例拥有各自独立的缓存与处理器，可由不同后台线程并发驱动（例如交互预览 session 与导出／迁移／兼容预览独立 worker session，`sony2fuji_c.h:618`）。
+  - 已生成的 `sony2fuji_hsl_probe*` 在销毁前只读，可脱离原 `session` 调用 `sony2fuji_hsl_probe_sample`（`sony2fuji_c.cpp:3665-3707`）；`sony2fuji_hdr_image_pair_v1` 的句柄表由内部 `ownersMutex` 保护（`lutools/src/ffi/sony2fuji_hdr.cpp:45,145,213,1144`）。
 
 ## 3. 取消回调是否可能被多个内部线程并发调用
 
-**是。** 取消回调 `sony2fuji_cancel_callback` 在单次核心调用期间**会被多个内部工作线程并发调用**，回调实现必须无锁（如读取 `std::atomic`）或自行加锁，且不得抛异常、不得重入当前 `session`（`sony2fuji_c.h:791-795`）。
+**是。** 取消回调 `sony2fuji_cancel_callback` 在单次核心调用期间**会被多个内部工作线程并发调用**，回调实现必须无锁（如读取 `std::atomic`）或自行加锁，且不得抛异常、不得重入当前 `session`（`sony2fuji_c.h:801-805`）。
 
 主要并发调用链如下：
 
-1. **OpenCV 并行像素分块（`parallelPixelRanges`）**：
-   - 调用线程在 `lutools/src/core/parallel_pixels.h:14-16` 从 `thread_local` 拷贝 `const auto cancellation = processingCancellation;` 并先执行一次 `cancellation.check()`；
-   - 当启用色度／小波降噪且像素数 `count >= 4 * 16384`（65536）时，`parallel_pixels.h:24-28` 调用 `cv::parallel_for_` 将任务切分为 16384 像素块分发到 OpenCV 线程池；
-   - **多个 OpenCV worker 线程同时执行 `bounded`**（`parallel_pixels.h:17-21`），每 16384 像素调用一次 `!cancellation.cancelled()` → `callback(context)`（`processing_cancellation.h:16`）。工作线程内只提前跳出分块循环、不跨线程抛异常；待 `cv::parallel_for_` 汇合后，由调用线程在 `parallel_pixels.h:29` 调用 `cancellation.check()` 抛出 `ProcessingCancelled`。
-   - 该模板被基础影调、氛围、色调控制、X3F 后处理及 HDR 细节／渲染广泛调用（如 `photo_basic_controls_v3.cpp:69`、`photo_atmosphere.cpp:33`、`sony2fuji_c.cpp:815,943,2659`、`sony2fuji_hdr.cpp:413,880`）。
-2. **OpenMP 并行循环**：当 `SONY2FUJI_ENABLE_OPENMP` 开启且像素数达到 `65536` 时，`#pragma omp parallel for` 的多个 OpenMP 线程并发调用 `cancellation.cancelled()`（`lutools/src/core/color_converter.cpp:45-52,72-79`、`photo_effects.cpp:145-152`、`photo_lut.h:47-57,66-76`、`raw_processor.cpp:472-503,1176-1188`、`sony2fuji_c.cpp:972-979`）。
+1. **OpenCV 并行像素／行分块（`parallelPixelRanges` / `parallelRowRanges`）**：
+   - 调用线程在 `lutools/src/core/parallel_pixels.h:19-20` 从 `thread_local` 拷贝 `const auto cancellation = processingCancellation;` 并先执行一次 `cancellation.check()`；
+   - 当满足并行阈值时（`parallelPixelRanges` 像素数 `count >= 4 * 16384` 即 65536，`parallelRowRanges` 总像素 `>= 65536` 且 `blockCount >= 4`），`parallel_pixels.h:72-79,103-105,115-119` 调用 `cv::parallel_for_` 将任务按 16384 像素块粒度（`block` / `targetBlockPixels = 16384`）分发到 OpenCV 线程池；
+   - **多个 OpenCV worker 线程同时执行 `invokeBounded`**（`parallel_pixels.h:43-59`）：`parallelPixelRanges` 按取消轮询步长 `cancelStep = 4096` 像素（`parallel_pixels.h:35,55,104`）、`parallelRowRanges` 按每 `1` 行（`parallel_pixels.h:110-120`）调用一次 `!cancellation.cancelled()` → `callback(context)`（`processing_cancellation.h:16,21-29`）。工作线程内只提前跳出分块循环、不跨线程抛异常；待 `cv::parallel_for_` 汇合后，由调用线程在 `parallel_pixels.h:92-95` 抛出 `ProcessingCancelled` 或执行 `cancellation.check()`。
+   - 该模板被基础影调、氛围、色调控制、几何缩放、输出缓冲拷贝及 HDR 细节／渲染广泛调用（如 `photo_basic_controls_v3.cpp:69`、`photo_atmosphere.cpp:33`、`sony2fuji_c.cpp:1296,1326,1454,1890,3394`、`sony2fuji_hdr.cpp:420,896`）。
+2. **小波并行 `cv::parallel_for_` 循环**：Legacy 小波分块滤波与并行行恢复直接在 `cv::parallel_for_` 工作线程中并发调用 `cancellation.cancelled()`，并在汇合后由调用线程 `cancellation.check()` 抛出（`lutools/src/core/wavelet_denoise.cpp:478-494,553-579`）。
 3. **Normal X3F 轮询线程**：`X3fCancellation`（`lutools/src/core/x3f_processor.cpp:30-50`）在解码期间启动独立 `std::thread` 每 10 ms 调一次 `cancellation.cancelled()`，并在触发时调用 `rawlab_x3f_cancel(token)`，与调用线程并发运行。
 
 ## 4. 取消语义与生效阶段
@@ -39,20 +39,20 @@
 ### 生效入口与返回码
 
 - **生效范围**：
-  - `sony2fuji_process`：仅当 `output_target == SONY2FUJI_TARGET_BUFFER || intent == SONY2FUJI_INTENT_FINAL` 时安装会话取消回调（`sony2fuji_c.cpp:2830-2834`）；**`PREVIEW + FILE` 明确忽略取消回调**。
-  - 始终响应会话取消回调的入口：`sony2fuji_session_create_hsl_probe`（`sony2fuji_c.cpp:2894`）、`sony2fuji_session_migrate_processing`（`sony2fuji_c.cpp:2711`）、`sony2fuji_session_prepare_ai`（P2-15/C10 起安装 `ProcessingCancellationScope`，在身份哈希、tile 进度与缓存发布前轮询）、带 `session` 的 `sony2fuji_hdr_*` 解码／AI 准备／ProRAW 导出／HSL probe／流式导出（`sony2fuji_hdr.cpp:322,613,716,730,749,948,981`；其中 `sony2fuji_hdr_export_stream` 同时合并 `session` 回调与 `source->is_cancelled`，见 `:1088-1091`；`sony2fuji_hdr_render` 在启用 look／细节／效果时生效，见 `:574-575`）。
+  - `sony2fuji_process`：仅当 `output_target == SONY2FUJI_TARGET_BUFFER || intent == SONY2FUJI_INTENT_FINAL` 时安装会话取消回调（`sony2fuji_c.cpp:3572-3576`）；**`PREVIEW + FILE` 明确忽略取消回调**。
+  - 始终响应会话取消回调的入口：`sony2fuji_session_create_hsl_probe`（`sony2fuji_c.cpp:3637`）、`sony2fuji_session_migrate_processing`（`sony2fuji_c.cpp:3448`）、`sony2fuji_session_prepare_ai`（`sony2fuji_c.cpp:2613`，P2-15/C10 起安装 `ProcessingCancellationScope`，在身份哈希、tile 进度与缓存发布前轮询）、带 `session` 的 `sony2fuji_hdr_*` 解码／AI 准备／ProRAW 导出／HSL probe／流式导出（`sony2fuji_hdr.cpp:329,622,727,743,765,967,1001`；其中 `sony2fuji_hdr_export_stream` 同时合并 `session` 回调与 `source->is_cancelled`，见 `:1109-1113`；`sony2fuji_hdr_render` 在启用 look／细节／效果时生效，见 `:582-583`）。
   - 独立机制或不支持会话取消的入口：`sony2fuji_preview_lut_compatibility` 与 `sony2fuji_session_estimate_auto_exposure` 不读取 `session->cancellation_callback`。`sony2fuji_session_prepare_ai` 的专属 `sony2fuji_ai_progress_callback` 返回 `0` 取消语义保留，并与会话取消回调双通道并存：任一通道取消都返回 `SONY2FUJI_STATUS_CANCELLED`，且不发布完整可渲染的 AI 结果——最终 `.scenecache`／`.rgbcache` 不发布（`process`／导出仍返回 `AI_NOT_READY`），仅 Bayer 第一阶段的 `.rawcache` 按「可复用 RAW 输出」保留；`validateSource()`、`notify(Saving,1,1)` 与取消检查全部在 `cache.store` 的 `beforePublish` 内、`rename` 提交点之前执行，发布之后不再轮询取消。
-- **统一返回与状态保证**：内部检查点通过 `ProcessingCancelled` 异常中断管线，在 FFI 边界映射为 `SONY2FUJI_STATUS_CANCELLED`（`sony2fuji_c.cpp:2836-2837`、`sony2fuji_hdr.cpp:102`）。取消**绝不触发 GPU Auto 向 CPU 的回退**（`lutools/src/gpu/gles_photo.cpp:327`、`lutools/src/gpu/metal_photo.mm` 与 `lutools/src/gpu/d3d11_photo.cpp` 的 `ProcessingCancelled` 重抛、`sony2fuji_c.cpp:2836`），不污染已有缓存，且同一 `session` 可继续处理后续请求。
+- **统一返回与状态保证**：内部检查点通过 `ProcessingCancelled` 异常中断管线，在 FFI 边界映射为 `SONY2FUJI_STATUS_CANCELLED`（`sony2fuji_c.cpp:3578-3579`、`sony2fuji_hdr.cpp:80-81`）。取消**绝不触发 GPU Auto 向 CPU 的回退**（`lutools/src/gpu/gles_photo.cpp:329`、`lutools/src/gpu/metal_photo.mm` 与 `lutools/src/gpu/d3d11_photo.cpp` 的 `ProcessingCancelled` 重抛、`sony2fuji_c.cpp:3578`），不污染已有缓存，且同一 `session` 可继续处理后续请求。
 
 ### 五个阶段的行为
 
 | 阶段 | 代码检查点依据 | 触发取消后的行为 |
 | :--- | :--- | :--- |
-| **1. 解码前** | `processImpl` 入口及参数／路径准备处（`sony2fuji_c.cpp:2312,2422`） | 立即返回 `SONY2FUJI_STATUS_CANCELLED`；`out_buffer` 置空，`geometry_width/height` 清零，已有 `raw_cache`／`wavelet_cache` 保持不变。 |
-| **2. 解码中** | LibRaw 进度回调 `RawCancellationScope`（`raw_processor.cpp:75-87,172,254,266,806`）；X3F 10 ms 监控线程与 `rawlab_x3f_decode` 返回码 `4`（`x3f_processor.cpp:34-50,120-125`）；内存输入每 4096 像素（`sony2fuji_c.cpp:1285`）；ProRAW DNG `Sniff()`（`proraw_source.cpp:137,283-298`） | 中止解码并回收半成品解码器状态，不写入 `raw_cache`／`base_` 缓存，清理 ProRAW 临时目录，返回 `CANCELLED`。 |
-| **3. 处理中** | CPU：`parallelPixelRanges` 每 16384 像素（`parallel_pixels.h:20,35,95`）、OpenMP 分块、逐 4096 像素／逐行几何缩放循环（`photo_geometry.cpp:100,126,141,213`、`sony2fuji_c.cpp:1371,1481,1529,1546,1917,3407,3427`）；小波分析／滤波与行恢复：C5 EAW 分析与滤波每 tile 顶（`eaw_denoise_impl.h:132,177`），Legacy 分块滤波与并行行恢复由工作线程每 tile／行早退并于汇合后检查（`wavelet_denoise.cpp:478-494,553-579`），ARM64 reloadable 顺序路径每 tile 顶检查（`wavelet_denoise.cpp:508`），`applyWaveletDenoise` 单独放行 `ProcessingCancelled`（`wavelet_denoise.cpp:810-813`），以及 `sony2fuji_c.cpp` 小波入口与滤波调用后检查（`sony2fuji_c.cpp:3239,3289`）；色度降噪：`guided` 每 768×768 tile 顶与 `applyChromaDenoiseWorking` 每 128 行带顶（`chroma_denoise.cpp:179,382`、`sony2fuji_c.cpp:3423`）；GPU：GLES 分带上传／dispatch／读回边界（`gles_photo.cpp:173,179,193,199`）、Metal 分带循环顶检查与外层重抛（`metal_photo.mm:1080,1223`）、D3D11 `dispatch`／`read` 与分带循环顶检查及外层重抛（`d3d11_photo.cpp:144,164,197,298`），以及 `sony2fuji_c.cpp` GPU 管线分支前检查（`sony2fuji_c.cpp:3315,3339,3361`） | 已提交的单个 GPU dispatch 或外部单核调用跑完当前步后在下一检查点停下，跳过后续阶段，不进入 CPU fallback，不产出半成品 buffer 或 HSL probe。 |
-| **4. 编码中** | 内存输出逐行检查（`writeOutputBuffer`，`sony2fuji_c.cpp:1357`）；JPEG 量化分块与每写出 16 KiB `longjmp` 中断（`raw_processor.cpp:1084-1121,1166-1211`）；PNG 每满 65536 像素扫描线检查（`raw_processor.cpp:1305-1312`）；Rendered DNG 预览与 16-bit 扫描线每满 65536 像素检查（`rendered_dng.cpp:453-460,574,608-615,635`）；HDR JPEG 扫描线检查（`hdr_jpeg.cpp:402,476`） | 未提交内存由 RAII 释放，`out_buffer` 保持 `{nullptr, 0}`；文件编码仅写入目标同目录 staging 临时文件（`.rawlab-*`／`rl*.tmp`），中断时析构函数关闭并删除 staging 文件，目标路径不创建或与取消前逐字节一致。 |
-| **5. 提交点与提交点之后** | 提交点：编码及 flush 完成后、原子替换前的最后一次 `checkProcessingCancellation()`（`raw_processor.cpp:1221,1338`、`rendered_dng.cpp:644`、`hdr_image_apple.mm:405`、`hdr_image_portable.cpp:279,296`）；提交操作：`rename`／`MoveFileExW`（`raw_processor.cpp:1032-1047`） | **提交点前**取消仍删除 staging、保留原目标文件并返回 `CANCELLED`。**一旦原子替换成功（提交点之后）**，不再执行任何取消检查（`finishOutput` 直接更新 `geometry_width/height` 并返回 `SONY2FUJI_STATUS_OK`，`sony2fuji_c.cpp:1413-1418`）：迟到的取消信号**绝不删除已发布文件，也绝不把返回状态改成 `CANCELLED`**。 |
+| **1. 解码前** | `processImpl` 入口及参数／路径／前置修正边界（`sony2fuji_c.cpp:2989,3140,3182`） | 立即返回 `SONY2FUJI_STATUS_CANCELLED`；`out_buffer` 置空，`geometry_width/height` 清零，已有 `raw_cache`／`wavelet_cache` 保持不变。 |
+| **2. 解码中** | LibRaw 进度回调 `RawCancellationScope`（`raw_processor.cpp:74-86,171,262,266,274,834,859`）；X3F 10 ms 监控线程与 `rawlab_x3f_decode` 返回码 `4`（`x3f_processor.cpp:34-50,120-125`）；内存输入每 4096 像素（`sony2fuji_c.cpp:1808`）；ProRAW DNG `Sniff()`（`proraw_source.cpp:137,283-298`） | 中止解码并回收半成品解码器状态，不写入 `raw_cache`／`base_` 缓存，清理 ProRAW 临时目录，返回 `CANCELLED`。 |
+| **3. 处理中** | CPU：`parallelPixelRanges` 每 4096 像素（`cancelStep=4096`，16384 仅 `cv::parallel_for_` 任务切分粒度）与 `parallelRowRanges` 每 1 行（`parallel_pixels.h:20,35,55,95,104,110-120`）；几何变换与缩放：整转拷贝逐行／分块与 `resample` `parallelRowRanges` 逐行（`photo_geometry.cpp:100,126,141`）、视口候选 `% 64`（`photo_geometry.cpp:213`）、`finishGeometry` 入口（`sony2fuji_c.cpp:1917`）与 `resizeBilinear` `parallelRowRanges` 逐行（`sony2fuji_c.cpp:1296`）；细节／Look／阶段边界：`applyBlurredDetail` 逐行 3×3（`sony2fuji_c.cpp:1371`）、`applyPhotoLook` 入口／LUT 后与 262144 像素分块（`sony2fuji_c.cpp:1481,1529,1546`）、`processImpl` 阶段边界单次（`sony2fuji_c.cpp:3407,3427`）；小波分析／滤波与行恢复：C5 EAW 分析与滤波每 tile 顶（`eaw_denoise_impl.h:132,177`），Legacy 分块滤波与并行行恢复由工作线程每 tile／行早退并于汇合后检查（`wavelet_denoise.cpp:478-494,553-579`），ARM64 reloadable 顺序路径每 tile 顶检查（`wavelet_denoise.cpp:508`），`applyWaveletDenoise` 单独放行 `ProcessingCancelled`（`wavelet_denoise.cpp:810-813`），以及 `sony2fuji_c.cpp` 小波入口与滤波调用后检查（`sony2fuji_c.cpp:3239,3289`）；色度降噪：`guided` 每 768×768 tile 顶与 `applyChromaDenoiseWorking` 每 128 行带顶（`chroma_denoise.cpp:179,382`、`sony2fuji_c.cpp:3423`）；GPU：GLES 分带上传／dispatch／读回边界（`gles_photo.cpp:173,179,193,199`）、Metal 分带循环顶检查与外层重抛（`metal_photo.mm:1080,1223`）、D3D11 `dispatch`／`read` 与分带循环顶检查及外层重抛（`d3d11_photo.cpp:144,164,197,298`），以及 `sony2fuji_c.cpp` GPU 管线分支前检查（`sony2fuji_c.cpp:3315,3339,3361`） | 已提交的单个 GPU dispatch 或外部单核调用跑完当前步后在下一检查点停下，跳过后续阶段，不进入 CPU fallback，不产出半成品 buffer 或 HSL probe。 |
+| **4. 编码中** | 内存输出 `writeOutputBuffer` `parallelRowRanges` 逐行检查（`sony2fuji_c.cpp:1890`）；JPEG 量化分块与每写出 16 KiB `longjmp` 中断（`raw_processor.cpp:1155-1165,1239-1268`）；PNG 每满 65536 像素扫描线检查（`raw_processor.cpp:1365-1373`）；Rendered DNG 预览与 16-bit 扫描线每满 65536 像素检查（`rendered_dng.cpp:462-468,629-635`）；HDR JPEG 扫描线检查（`hdr_jpeg.cpp:415,489`） | 未提交内存由 RAII 释放，`out_buffer` 保持 `{nullptr, 0}`；文件编码仅写入目标同目录 staging 临时文件（`.rawlab-*`／`rl*.tmp`），中断时析构函数关闭并删除 staging 文件，目标路径不创建或与取消前逐字节一致。 |
+| **5. 提交点与提交点之后** | 提交点：编码及 flush 完成后、原子替换前的最后一次 `checkProcessingCancellation()`（`raw_processor.cpp:1278,1407`、`rendered_dng.cpp:665`、`hdr_image_apple.mm:405`、`hdr_image_portable.cpp:295,312`）；提交操作：`rename`／`MoveFileExW`（`raw_processor.cpp:1104-1107`） | **提交点前**取消仍删除 staging、保留原目标文件并返回 `CANCELLED`。**一旦原子替换成功（提交点之后）**，不再执行任何取消检查（`finishOutput` 直接更新 `geometry_width/height` 并返回 `SONY2FUJI_STATUS_OK`，`sony2fuji_c.cpp:1950-1953`）：迟到的取消信号**绝不删除已发布文件，也绝不把返回状态改成 `CANCELLED`**。 |
 
 ### 平台侧消费方规则（Q12 裁定）
 
@@ -70,7 +70,7 @@ BUFFER（预览）路径没有已发布文件，不受本规则约束：迟到�
 
 - **单槽全局 Look 缓存互斥锁**：`LUTParser::loadLUTCached`（`lutools/src/core/lut_parser.cpp:315-324`）、`loadDcpLookCached`（`lutools/src/core/dcp_look.cpp:72-80`）和 `hdr::loadLook`（`lutools/src/core/hdr_look.cpp:35-40`）各自持有一把 `static std::mutex` **横跨磁盘读取与解析全过程**，且只缓存最后 1 个路径；多会话交替加载不同 `.cube`／`.dcp` 时会串行等待并互相驱逐单槽缓存。
 - **GPU 后端全局互斥与共享队列**：
-  - 小波／导向滤波通用计算上下文 `computeContext().mutex`（`lutools/src/gpu/denoise.cpp:18,37`）在进程内串行化所有经该后端的 GPU 滤波调用；独立 GLES LUT 路径同样由全局 `gles_mutex` 串行化（`lutools/src/gpu/gles_lut.cpp:32,306`），`sharedDisplay()` 初始化带静态锁（`gles_photo.cpp:29-30`）。
-  - macOS／iOS Metal 旧版独立降噪／锐化路径持有 `ctx.work` 全局互斥锁（`lutools/src/gpu/metal_denoise.mm:21,106,146`、`metal_sharpen.mm:23,83`）；主渲染路径共用进程级单例 `MTLCommandQueue`（`metal_photo.mm:90`），且在查找／上传 LUT 与 DCP 纹理缓冲时加 `gLUTCacheMutex`／`gDcpCacheMutex`（`metal_photo.mm:113,126,675,759,782`）。
-- **AI 磁盘缓存与文件跟踪锁**：AI tile 缓存目录写入与 Windows 文件变更跟踪使用进程级静态互斥锁（`lutools/src/gpu/ai/dualdn_cache.cpp:95-99`、`lutools/src/core/windows_file_changes.h:110-114`）。
-- **共享内部 CPU 线程池**：各会话共用进程内的 OpenCV `cv::parallel_for_` 线程池与 OpenMP 线程组（含 LibRaw VNG／X-Trans 并行插值及 `hdr_heif.cpp:51` 的 libheif 多线程解码）；多会话同时跑满大图 CPU 管线时，会竞争同一组硬件线程。
+  - 小波／导向滤波通用计算上下文 `computeContext().mutex`（`lutools/src/gpu/denoise.cpp:20,40`）在进程内串行化所有经该后端的 GPU 滤波调用；独立 GLES LUT 路径同样由全局 `gles_mutex` 串行化（`lutools/src/gpu/gles_lut.cpp:32,327`），`sharedDisplay()` 初始化带静态锁（`gles_photo.cpp:29-30`）。
+  - macOS／iOS Metal 旧版独立降噪／锐化路径持有 `ctx.work` 全局互斥锁（`lutools/src/gpu/metal_denoise.mm:21,106,146`、`metal_sharpen.mm:23,83`）；主渲染路径共用进程级单例 `MTLCommandQueue`（`metal_photo.mm:91`），且在查找／上传 LUT 与 DCP 纹理缓冲时加 `gLUTCacheMutex`／`gDcpCacheMutex`（`metal_photo.mm:114,127,676,760,783`）。
+- **AI 磁盘缓存与文件跟踪锁**：AI tile 缓存目录写入与 Windows 文件变更跟踪使用进程级静态互斥锁（`lutools/src/ai/dualdn_cache.cpp:95-99`、`lutools/src/ai/windows_file_changes.h:110-114`）。
+- **共享内部 CPU 线程池**：各会话共用进程内的 OpenCV `cv::parallel_for_` 线程池与 OpenMP 线程组（含 LibRaw VNG／X-Trans 并行插值及 `hdr_heif.cpp:52` 的 libheif 多线程解码）；多会话同时跑满大图 CPU 管线时，会竞争同一组硬件线程。
