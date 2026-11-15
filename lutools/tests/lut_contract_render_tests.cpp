@@ -304,6 +304,77 @@ int main() {
             sony2fuji_session_destroy(smallSession);
         }
     }
+    {
+        // k159: 纯几何小图预览（仅裁剪/旋转，无 neighborhood）同样不得上变换。
+        sony2fuji_session* geomSession = nullptr;
+        check(sony2fuji_session_create(&geomSession) == SONY2FUJI_STATUS_OK && geomSession != nullptr,
+              "Create session for small raster pure geometry preview check");
+        if (geomSession) {
+            sony2fuji_gpu_config gpu{SONY2FUJI_GPU_CONFIG_VERSION, sizeof(gpu), SONY2FUJI_GPU_OFF};
+            check(sony2fuji_session_set_gpu_config(geomSession, &gpu) == SONY2FUJI_STATUS_OK,
+                  "Configure CPU for small raster geometry preview");
+            check(sony2fuji_session_set_viewport_preview(geomSession, 1) == SONY2FUJI_STATUS_OK,
+                  "Enable viewport preview for small raster geometry");
+            std::vector<unsigned char> smallPixels(19 * 13 * 3);
+            for (size_t i = 0; i < smallPixels.size(); ++i) smallPixels[i] = static_cast<unsigned char>((i * 37) % 256);
+            sony2fuji_request geomReq{};
+            geomReq.version = SONY2FUJI_REQUEST_VERSION;
+            geomReq.struct_size = sizeof(geomReq);
+            geomReq.input_type = SONY2FUJI_INPUT_BUFFER;
+            geomReq.input_pixels = smallPixels.data();
+            geomReq.input_width = 19;
+            geomReq.input_height = 13;
+            geomReq.input_pixel_format = SONY2FUJI_PIXEL_RGB8;
+            geomReq.input_color_space = SONY2FUJI_COLOR_SRGB;
+            geomReq.input_is_linear = 1;
+            geomReq.wb_mode = SONY2FUJI_WB_CAMERA;
+            geomReq.temperature = 6500;
+            geomReq.brightness = geomReq.contrast = geomReq.saturation = 1;
+            geomReq.size_mode = SONY2FUJI_SIZE_NATIVE;
+            geomReq.output_target = SONY2FUJI_TARGET_BUFFER;
+            geomReq.output_format = SONY2FUJI_OUTPUT_RGB8;
+            geomReq.intent = SONY2FUJI_INTENT_PREVIEW;
+            geomReq.preview_long_edge = 1600;
+            sony2fuji_geometry_config rotate{SONY2FUJI_GEOMETRY_CONFIG_VERSION, sizeof(rotate), 0, 0, 1, 1, 2, 0, 0, 0};
+            check(sony2fuji_session_set_geometry(geomSession, &rotate) == SONY2FUJI_STATUS_OK,
+                  "Enable rotate-only geometry for small raster");
+            sony2fuji_buffer rotateBuf{};
+            const auto rotateStatus = sony2fuji_process(geomSession, &geomReq, &rotateBuf);
+            check(rotateStatus == SONY2FUJI_STATUS_OK && rotateBuf.width == 19 && rotateBuf.height == 13 &&
+                      rotateBuf.size_bytes == 19u * 13u * 3u,
+                  "Small raster preview with rotate-only geometry clamps preview_long_edge to native 19x13 without upscaling");
+            sony2fuji_release_buffer(&rotateBuf);
+            // 封顶基准是裁剪旋转后的 native 长边（17x11），不是源长边。
+            sony2fuji_geometry_config cropRotate{SONY2FUJI_GEOMETRY_CONFIG_VERSION, sizeof(cropRotate),
+                0.1f, 0.1f, 0.8f, 0.8f, 2, 0, 0, 0};
+            check(sony2fuji_session_set_geometry(geomSession, &cropRotate) == SONY2FUJI_STATUS_OK,
+                  "Enable crop+rotate geometry for small raster");
+            sony2fuji_buffer cropBuf{};
+            const auto cropStatus = sony2fuji_process(geomSession, &geomReq, &cropBuf);
+            check(cropStatus == SONY2FUJI_STATUS_OK && cropBuf.width == 17 && cropBuf.height == 11 &&
+                      cropBuf.size_bytes == 17u * 11u * 3u,
+                  "Cropped small raster preview clamps to post-crop native 17x11 without upscaling");
+            sony2fuji_release_buffer(&cropBuf);
+            // 显式语义不动：FINAL 的 EXACT 与 FIT_LONG_EDGE 仍允许上变换。
+            geomReq.intent = SONY2FUJI_INTENT_FINAL;
+            geomReq.size_mode = SONY2FUJI_SIZE_EXACT;
+            geomReq.target_width = 64;
+            geomReq.target_height = 48;
+            sony2fuji_buffer exactBuf{};
+            const auto exactStatus = sony2fuji_process(geomSession, &geomReq, &exactBuf);
+            check(exactStatus == SONY2FUJI_STATUS_OK && exactBuf.width == 64 && exactBuf.height == 48,
+                  "FINAL exact 64x48 still upscales above native geometry");
+            sony2fuji_release_buffer(&exactBuf);
+            geomReq.size_mode = SONY2FUJI_SIZE_FIT_LONG_EDGE;
+            geomReq.long_edge = 1600;
+            sony2fuji_buffer fitBuf{};
+            const auto fitStatus = sony2fuji_process(geomSession, &geomReq, &fitBuf);
+            check(fitStatus == SONY2FUJI_STATUS_OK && fitBuf.width == 1600 && fitBuf.height == 1035,
+                  "FINAL explicit FIT_LONG_EDGE keeps upscale semantics");
+            sony2fuji_release_buffer(&fitBuf);
+            sony2fuji_session_destroy(geomSession);
+        }
+    }
     sony2fuji_session_destroy(session);std::filesystem::remove_all(dir);
     std::cout<<"LUT contract render failures: "<<failures<<'\n';return failures?1:0;
 }
