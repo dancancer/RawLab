@@ -10,7 +10,7 @@
 | 同上：白平衡占位（none/null 当成相机白平衡） | ✅ #270 | ✅ #270 | ✅ #285 | ✅ #255 `AdjustmentTransferWB.cs:68` | **✅ 复核通过**（四端共享向量全绿） |
 | 同上：“全部”范围时镜头五项被关掉 | ✅ #270 | ✅ #270 | ✅ #285 | ✅ #285 | **✅ 复核通过**（四端共享向量全绿） |
 | 同上：默认范围时 RAW 降噪被清零 | ✅ #270 | ✅ #270 | —（两个键恒为 0） | —（两个键恒为 0） | **✅ 复核通过** |
-| RAW 降噪的交换字段（`raw_level` 还是 `post_rgb`） | #301 RAW 目标忽略 `post_rgb`；栅格/非 Bayer/AI 目标仍抛错 | #301 RAW 目标忽略 `raw_level`；栅格目标收非 0 `post_rgb` 仍抛 `incompatible`（#317 修 UI 横幅） | #301 忽略两键并提示 | #301 忽略两键（AI 开启时抛 `ai.target_denoise`；#320 修 UI 横幅） | **复核：部分成立**（#301 + #317/#320：UI 提示回归已修复，但栅格/非 Bayer/AI 目标四端抛错分叉仍未对齐，见 D-02） |
+| RAW 降噪的交换字段（`raw_level` 还是 `post_rgb`） | #301 RAW 目标忽略 `post_rgb`；栅格/非 Bayer/AI 目标仍抛错 | #301 RAW 目标忽略 `raw_level`；栅格目标收非 0 `post_rgb` 仍抛 `incompatible`（#317 修 UI 横幅） | #301 忽略两键并提示 | #301 忽略两键（AI 开启时抛 `ai.target_denoise`；#320 修 UI 横幅） | **复核：✅通过**（#301+#317/#320 UI 回归+**#369** 栅格/非 Bayer/AI 目标「忽略并提示」四端对齐，见 D-02） |
 | 带配方的普通照片粘到 HDR 时按强度换算 | ✅ #250 `Shared/HDRAdjustmentTransfer.swift:107` | ✅（共用 Shared） | ✅ #312 `AdjustmentTransfer.kt:245` | ✅ #255 `HDRAdjustmentTransfer.cs:80` | **✅ 复核通过**（#312 @ `916ecadd` 补齐 A17） |
 | 普通模式“重置全部”保留未启用的 HDR | ✅ 参考行为 | ✅ #256 | ✅ #253 | ✅ #255（经 `Defaults(edit)`；`HDRChecks.cs:134-158`） | **✅ 复核通过**；Windows 的 `Adjustments.ResetAll()` 是死路径，见 L2 |
 | HDR 显示映射和相机显影的重置入口 | ✅ #280 `.hdrRendition` 分组+单项重置 | ✅ #326「HDR 渲染」分组+滑杆双击重置（UIKit+XCUITest） | ✅ #326「HDR 渲染」分组+滑杆双击重置 | ✅ #326「HDR 渲染」分组+滑杆双击重置 | **✅ 复核通过**（Q5 #280 @ `83381e8e` + #326 @ `e0b8a453` + #322 @ `6ec32822` 四端闭环） |

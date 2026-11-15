@@ -338,3 +338,12 @@
 - **#367/#368 一轮返工**（梯子第一轮=Hydrogen，双并行在跑）：#367 修 L277 键匹配+删除残留实体文件测试；#368 集合导航两入口收口。
 - **D-02**（降噪键跨端分叉）codex 已并行开工（现状矩阵先行，若已被 #321/#346 实际收敛则轻量交付）。
 - **用户侧**：自合 #363（update-roadmap）与 AGENTS.md 全局原则条目（第一性原理/主轴把关/诚实声明红线——与本链工作方式一致，已纳入派单口径）。
+
+### (60) #368（118th）/#369（119th）合入；D-02/P2-26 台账闭环；#367 r2 与三张返工在跑
+
+- **#368 合入**（`d7390743`）：iOS 草稿收口全链（resolveCollectionDraft/quickPresets/导出/openBatchSelection/requestCollectionNavigation），模拟器 123 项 RED→GREEN，碳 approve 附 2 条非阻断 UX 简注（批量入口 disabled 未含 previewRendering 极短窗口点击静默——已登记简注）。
+- **#369 合入**（`c0f2231e`）：D-02 收口（碳首审 approve：四端矩阵逐格源码核对+Mac/iOS/Windows/Shared 本机实跑+变异实测）。**台账已更新**：D-02→✅（b-task-table/c-four-end/f-overall/g-product-decisions 四处），P2-26→✅（#368 闭环）。codex 交付仅用 ~20 分钟（票内含现状矩阵自查），再次验证"复杂票直接 codex+先证实现状"的高效路径。
+- **#367 r2**（codex 在跑）：碳二轮发现 Android 宿主接线死锁（面板打开即 draft=LOOK 而删除按钮 enabled 写死 draft==null → 恒灰；单挂测试假绿）——放行 draft.group==LOOK+穿 EditorViewModel 宿主回归+recipe-lut 保留对齐；r2 需 rebase 含 #369 的 development 并重生成字符串。
+- **三张 codex 返工在跑**：#361 r2（A4 死锁/过期快照/单槽 lastConfirm/r1_a4 恒真，碳处方）、#362 r2（M-N9 image(for:) 身份精确判定 2 行+CASE_E_MN9 常驻）、win-native-baseline（Windows native 门基线 2 红：preview_exposure_cache 合成 DNG 覆写+wavelet_noise_model 跨标准库分布断言——#360 放行前置）。
+- **#365/#366 碳包在跑**（jit token/head_sha 闭环性+TOCTOU 裁定；#366 ABI 增量+reason 清零时序）。
+- **合入计数**：119（#368=d7390743、#369=c0f2231e）。
