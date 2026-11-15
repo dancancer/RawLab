@@ -686,34 +686,39 @@ final class CameraOriginalStore {
             try? FileManager.default.removeItem(at: partialURL(item))
         }
     }
-    private func reAdoptOrphanOriginal(in directory: URL, id: UUID) throws -> CameraStoredOriginal? {
+    private enum OrphanRecovery {
+        case original(CameraStoredOriginal)
+        case empty
+        case preserve
+    }
+    private func reAdoptOrphanOriginal(in directory: URL, id: UUID) throws -> OrphanRecovery {
         let children = try FileManager.default.contentsOfDirectory(
             at: directory,
-            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey]
-        ).sorted { $0.lastPathComponent < $1.lastPathComponent }
-        for file in children {
-            let name = file.lastPathComponent
-            guard !name.lowercased().hasSuffix(".downloading"),
-                  CameraWire.validName(name), CameraWire.photoName(name) else { continue }
-            let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey])
-            guard values.isRegularFile == true, values.isSymbolicLink != true,
-                  let reader = try? FileHandle(forReadingFrom: file) else { continue }
-            let prefix = (try? reader.read(upToCount: 4)) ?? Data()
-            try? reader.close()
-            guard (try? CameraWire.validateHeader(name: name, data: prefix)) != nil,
-                  let hashed = try? Self.hash(file),
-                  hashed.size > 0, hashed.size <= 1 << 30, Self.validDigest(hashed.digest) else { continue }
-            return CameraStoredOriginal(
-                id: id,
-                name: name,
-                size: hashed.size,
-                digest: hashed.digest,
-                savedAt: values.contentModificationDate ?? Date(),
-                availability: .available,
-                jpegSource: nil
-            )
-        }
-        return nil
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey]
+        ).filter { $0.lastPathComponent != ".DS_Store" }
+        if children.isEmpty { return .empty }
+        // 最终目录只应有同卷原子移动的一个完整文件；非空异常目录可能包含唯一原件，不能当垃圾。
+        guard children.count == 1, let file = children.first else { return .preserve }
+        let name = file.lastPathComponent
+        guard CameraWire.validName(name), CameraWire.photoName(name) else { return .preserve }
+        let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey])
+        guard values.isRegularFile == true, values.isSymbolicLink != true,
+              let size = values.fileSize, size > 0, size <= 1 << 30 else { return .preserve }
+        let reader = try FileHandle(forReadingFrom: file)
+        defer { try? reader.close() }
+        let prefix = try reader.read(upToCount: 4) ?? Data()
+        try CameraWire.validateHeader(name: name, data: prefix)
+        let hashed = try Self.hash(file)
+        guard hashed.size == UInt64(size), Self.validDigest(hashed.digest) else { return .preserve }
+        return .original(CameraStoredOriginal(
+            id: id,
+            name: name,
+            size: hashed.size,
+            digest: hashed.digest,
+            savedAt: values.contentModificationDate ?? Date(),
+            availability: .available,
+            jpegSource: nil
+        ))
     }
     func recover() throws {
         try performBatch {
@@ -755,29 +760,38 @@ final class CameraOriginalStore {
                     try FileManager.default.removeItem(at: file)
                 }
             }
-            // referencedIDs 判定保持在上方 .prepared 提升/discard 之后；未引用 UUID 目录分级处置：
-            // 含完整非 .downloading 原件文件 -> re-adopt 回 state.originals；空目录/仅 .downloading/无合法原件 -> 删除。
-            let referencedIDs = Set(state.originals.map(\.id))
+            // 在 .prepared 恢复之后接管完整孤儿；仅删空目录，其余非空条目及读取失败均保留。
+            var referencedIDs = Set(state.originals.map(\.id))
             var reAdopted: [CameraStoredOriginal] = []
             var removedOrphans = false
-            let entries = try FileManager.default.contentsOfDirectory(
+            let entries = (try? FileManager.default.contentsOfDirectory(
                 at: originalsDirectory,
                 includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]
-            ).sorted { $0.lastPathComponent < $1.lastPathComponent }
+            )) ?? []
             for entry in entries {
-                let values = try entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-                guard values.isSymbolicLink != true, values.isDirectory == true,
-                      let entryID = UUID(uuidString: entry.lastPathComponent),
-                      !referencedIDs.contains(entryID) else { continue }
-                if let adopted = try reAdoptOrphanOriginal(in: entry, id: entryID) {
-                    reAdopted.append(adopted)
-                } else {
-                    try FileManager.default.removeItem(at: entry)
-                    removedOrphans = true
+                do {
+                    let values = try entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+                    guard values.isSymbolicLink != true, values.isDirectory == true,
+                          let entryID = UUID(uuidString: entry.lastPathComponent),
+                          entry.lastPathComponent == entryID.uuidString.lowercased(),
+                          !referencedIDs.contains(entryID) else { continue }
+                    switch try reAdoptOrphanOriginal(in: entry, id: entryID) {
+                    case .original(let adopted):
+                        reAdopted.append(adopted)
+                        referencedIDs.insert(entryID)
+                    case .empty:
+                        try FileManager.default.removeItem(at: entry)
+                        removedOrphans = true
+                    case .preserve:
+                        continue
+                    }
+                } catch {
+                    // 单目录的元数据、读取、哈希或删除失败不阻断启动，保留原件下次重试。
+                    continue
                 }
             }
             if !reAdopted.isEmpty {
-                reAdopted.sort { ($0.savedAt, $0.id.uuidString) < ($1.savedAt, $1.id.uuidString) }
+                reAdopted.sort { ($0.savedAt, $0.name, $0.id.uuidString) < ($1.savedAt, $1.name, $1.id.uuidString) }
                 try change {
                     state.originals.append(contentsOf: reAdopted)
                 }
