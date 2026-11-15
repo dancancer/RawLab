@@ -363,31 +363,6 @@ struct Harness {
         return (PhotoEditState(settings: settings, filmID: filmID, masterRecipeID: masterRecipeID), isRaw, metadata)
     }
 
-    static func verifyCurve(_ expected: [String: Any], _ actual: ToneCurveSettings, _ label: String) throws {
-        let expMode = expected["mode"] as? String ?? "legacy"
-        try check((actual.mode == .custom ? "custom" : "legacy") == expMode, "\(label): curve mode mismatch")
-        let expPts = expected["points"] as? [[Any]] ?? []
-        try check(actual.points.count == expPts.count, "\(label): curve point count mismatch")
-        for (i, p) in expPts.enumerated() {
-            try check(approx(actual.points[i].x, num(p[0]) ?? -999) && approx(actual.points[i].y, num(p[1]) ?? -999),
-                      "\(label): curve point \(i) mismatch")
-        }
-        if let chObj = expected["channels"] as? [String: Any] {
-            for (cname, cval) in [("red", actual.channels.red), ("green", actual.channels.green), ("blue", actual.channels.blue)] {
-                if let expShape = chObj[cname] as? [String: Any] {
-                    let em = expShape["mode"] as? String ?? "legacy"
-                    try check((cval.mode == .custom ? "custom" : "legacy") == em, "\(label): curve channel \(cname) mode")
-                    let epts = expShape["points"] as? [[Any]] ?? []
-                    try check(cval.points.count == epts.count, "\(label): curve channel \(cname) count")
-                    for (i, p) in epts.enumerated() {
-                        try check(approx(cval.points[i].x, num(p[0]) ?? -999) && approx(cval.points[i].y, num(p[1]) ?? -999),
-                                  "\(label): curve channel \(cname)[\(i)]")
-                    }
-                }
-            }
-        }
-    }
-
     static func verifyState(_ actual: PhotoEditState, matches record: [String: Any]) throws {
         let id = record["id"] as? String ?? "unknown"
         let photo = record["photo"] as? [String: Any] ?? [:]

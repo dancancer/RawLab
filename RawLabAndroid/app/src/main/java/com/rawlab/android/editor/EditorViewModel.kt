@@ -7,6 +7,7 @@ import com.rawlab.android.settings.HslTargetAvailability
 
 import android.app.Application
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -96,6 +97,8 @@ private fun loadSystemPhotoRequestQueue(preferences: android.content.SharedPrefe
     }
     return SystemPhotoRequestQueue(pending, processed)
 }
+
+private const val TAG = "com.rawlab.EditorViewModel"
 
 class EditorViewModel @JvmOverloads constructor(
     application: Application,
@@ -292,6 +295,10 @@ class EditorViewModel @JvmOverloads constructor(
     private var editorActive = true
     private var deferredMigrationPreview = false
 
+    // 提交期单槽契约（k161 定性，勿改为"completed 后再解锁"或计数队列）：
+    // ①入口 committingAdjustments 即单槽门控——work 完成时 adjustmentQueue 必已排空，不存在"回 IDLE 时队列未 drain 被旧 revision 快照吞掉/重复应用"的路径；
+    // ②默认先置 committingAdjustments=false 再调 completed，依赖 viewModelScope(Main.immediate) 同帧不可抢占，并有意放行 completed 内的同步链式重入（importPhoto/retrySave/editCollectionPhoto）；
+    // ③后台跨代隔离由 EditorAdjustmentHistory.sourceToken 与 AdjustmentTransferSession.editGenerations 承担，主线程 UI 的 sourceRevision/editRevision 与其分工，不在此处兜底。
     private fun <T> commitAdjustments(work: () -> T, publishBeforeUnlock: Boolean = false, completed: (Result<T>) -> Unit) {
         if (disposed || mutable.value.committingAdjustments) {
             completed(Result.failure(AdjustmentTransferException(AdjustmentFailure.DRAFT))); return
@@ -858,7 +865,10 @@ class EditorViewModel @JvmOverloads constructor(
 
     fun selectFilm(id: String): Boolean {
         val current = mutable.value
-        if (!current.controlsEnabled || (current.draft != null && current.draft.group !in listOf(AdjustmentGroup.LOOK, AdjustmentGroup.RECIPE))) return false
+        if (!current.controlsEnabled || (current.draft != null && current.draft.group !in listOf(AdjustmentGroup.LOOK, AdjustmentGroup.RECIPE))) {
+            if (!current.controlsEnabled) Log.w(TAG, "edit-dropped method=selectFilm reason=controlsDisabled op=${current.operation}")
+            return false
+        }
         val candidate = try {
             current.visibleEdits.selectFilm(id, current.preview?.tint, current.preview?.temperature, current.photo!!.inputKind)
         } catch (_: IllegalArgumentException) {
@@ -874,7 +884,10 @@ class EditorViewModel @JvmOverloads constructor(
         val edits = requested.canonicalZeros().synchronizeHDR()
         cancelHslTarget()
         val current = mutable.value
-        if (!current.controlsEnabled) return
+        if (!current.controlsEnabled) {
+            Log.w(TAG, "edit-dropped method=edit reason=controlsDisabled op=${current.operation}")
+            return
+        }
         if (current.draft != null) { changeDraft(edits, interactive); return }
         if (mutableQuickPreset.value.phase == QuickPresetPhase.PREPARING) cancelQuickPreset()
         if (interactive) {
@@ -963,7 +976,10 @@ class EditorViewModel @JvmOverloads constructor(
     fun changeDraft(edits: EditSettings, interactive: Boolean = false) {
         val current = mutable.value
         val previous = current.draft ?: return
-        if (!current.controlsEnabled) return
+        if (!current.controlsEnabled) {
+            Log.w(TAG, "edit-dropped method=changeDraft reason=controlsDisabled op=${current.operation}")
+            return
+        }
         val next = previous.update(edits, interactive)
         if (next == previous && (interactive || current.exact)) return
         draftRevision += 1
@@ -1092,7 +1108,10 @@ class EditorViewModel @JvmOverloads constructor(
     fun autoExposure() {
         val current = mutable.value
         if (!current.controlsEnabled || current.preview == null || current.rendering ||
-            (current.draft != null && current.draft.group != AdjustmentGroup.EXPOSURE)) return
+            (current.draft != null && current.draft.group != AdjustmentGroup.EXPOSURE)) {
+            if (!current.controlsEnabled) Log.w(TAG, "edit-dropped method=autoExposure reason=controlsDisabled op=${current.operation}")
+            return
+        }
         mutable.value = current.copy(rendering = true, error = null)
         currentRevision = submitRender(Work.AutoExposure(current.photo!!, current.visibleEdits, gpuMode(), sourceRevision, draftRevision, editorActivationRevision))
     }
@@ -1598,7 +1617,10 @@ class EditorViewModel @JvmOverloads constructor(
     fun applyPresetToCurrentPhoto(preset: com.rawlab.android.presets.AdjustmentPreset) {
         val current = mutable.value
         val photo = current.photo ?: return
-        if (!mutableQuickPreset.value.visible || mutableQuickPreset.value.busy || !current.controlsEnabled || current.draft != null) return
+        if (!mutableQuickPreset.value.visible || mutableQuickPreset.value.busy || !current.controlsEnabled || current.draft != null) {
+            if (!current.controlsEnabled) Log.w(TAG, "edit-dropped method=applyPresetToCurrentPhoto reason=controlsDisabled op=${current.operation}")
+            return
+        }
         closeAdjustmentOperation()
         val generation = UUID.randomUUID()
         val source = sourceRevision
@@ -1650,7 +1672,10 @@ class EditorViewModel @JvmOverloads constructor(
     fun undoQuickPreset() {
         val quick = mutableQuickPreset.value
         val transaction = quick.transactionID ?: return
-        if (quick.phase !in setOf(QuickPresetPhase.SAVED, QuickPresetPhase.UNDO_FAILED) || !mutable.value.controlsEnabled || mutable.value.draft != null) return
+        if (quick.phase !in setOf(QuickPresetPhase.SAVED, QuickPresetPhase.UNDO_FAILED) || !mutable.value.controlsEnabled || mutable.value.draft != null) {
+            if (!mutable.value.controlsEnabled) Log.w(TAG, "edit-dropped method=undoQuickPreset reason=controlsDisabled op=${mutable.value.operation}")
+            return
+        }
         val generation = quickPresetGeneration
         mutableQuickPreset.value = quick.copy(phase = QuickPresetPhase.COMMITTING, message = null)
         performAdjustmentHistory(true, transactionID = transaction) { outcomes ->
