@@ -3213,6 +3213,9 @@ static sony2fuji_status processImpl(
         ? session->raw_native_size : std::pair{image.width, image.height};
     const auto native = sony2fuji::geometryOutputSize(canvasWidth, canvasHeight, session->geometry);
     const uint32_t native_width = native.first, native_height = native.second;
+    if (neighborhoodActive && local.intent == SONY2FUJI_INTENT_PREVIEW && local.preview_long_edge > 0) {
+        local.preview_long_edge = std::min(local.preview_long_edge, std::max(native_width, native_height));
+    }
     uint32_t target_width = 0, target_height = 0;
     status = computeTargetSize(local, native_width, native_height, &target_width, &target_height);
     if (status != SONY2FUJI_STATUS_OK) return status;
