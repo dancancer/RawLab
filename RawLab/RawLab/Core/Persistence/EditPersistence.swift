@@ -505,6 +505,22 @@ final class EditPersistence {
             cache.setValue(Entry(fingerprint: fingerprint, store: store), forKey: path)
         }
 
+        func updateAfterWrite(fileURL: URL, store: StoreFile) {
+            let resolved = FileDigestCache.canonicalPath(for: fileURL)
+            let raw = fileURL.standardizedFileURL.path
+            // 写盘成功后内存快照即文件内容：用新指纹原地重设条目，取代写后自废，避免下一次读取重新读盘并解析整个账本。
+            // 持 stripe 锁与 readStore 的解析-回写互斥；原子替换会换 inode，指纹必须写后重取而非沿用旧值。
+            let stripe = stripeLock(for: resolved)
+            stripe.lock(); defer { stripe.unlock() }
+            guard let fingerprint = FileStatFingerprint(resolvedPath: resolved), fingerprint.isRegularFile else {
+                invalidate(fileURL: fileURL)
+                return
+            }
+            lock.lock(); defer { lock.unlock() }
+            cache.setValue(Entry(fingerprint: fingerprint, store: store), forKey: resolved)
+            if raw != resolved { cache.removeValue(forKey: raw) }
+        }
+
         func invalidate(fileURL: URL) {
             let resolved = FileDigestCache.canonicalPath(for: fileURL)
             let raw = fileURL.standardizedFileURL.path
@@ -1196,7 +1212,8 @@ final class EditPersistence {
             RegistryCache.shared.invalidate(fileURL: fileURL)
             throw error
         }
-        RegistryCache.shared.invalidate(fileURL: fileURL)
+        // 写后不再整体失效自废：用写后新指纹原地更新缓存条目，下一次 readStore 直接命中（写失败仍走上面的失效路径）。
+        RegistryCache.shared.updateAfterWrite(fileURL: fileURL, store: store)
         remember(store)
     }
 
