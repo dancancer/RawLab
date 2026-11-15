@@ -525,6 +525,9 @@ jobs:
           cd RawLabAndroid
           ./gradlew :app:testDebugUnitTest --no-daemon --max-workers=2
           find app/build/test-results/testDebugUnitTest -name 'TEST-*.xml' -exec cp {} ../build/ci/ \;
+          cd ..
+          bash RawLabAndroid/tests/jni-session-lock.sh
+          bash RawLabAndroid/tests/recipe-probe-stages.sh
       - name: Build both ABIs, lint and instrumentation test APK
         if: needs.changes.outputs.build == 'true'
         shell: bash
