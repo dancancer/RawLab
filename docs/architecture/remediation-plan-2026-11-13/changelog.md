@@ -321,3 +321,11 @@
 - **#362 打回 2 阻断**：B1 `invalidateStaleEntries` 未像 `invalidateDirectory` 那样把 `inFlight` 路径纳入 stale 判定 → 首次解码中文件被原子替换时 `fileGenerations` 不推进，过期 idA 图像既入缓存又非 nil 交付（碳复现 `invalidated=false deliveredNonNil=true cachedStaleIdA=true`）；B2 并发测试 `DecodeGate` 在 `NSImage(contentsOf:)` **之前**阻塞（旧字节根本没读），`freshResult` 也只判非空 → 测试假覆盖。
 - **共同教训**：P3 轻票≠低风险——"后台化/异步化"类改动必须连带审"谁可能正在写被清理/被淘汰的对象"，审查口径=**保护集必须覆盖所有并发写方，而不是只覆盖重构时顺手想到的那一个**。
 - **#360 r1 交付**（44b5692f/47286390/14997f12）：P0 契约三处修复（d3d11_shader_cache→ci.yml $tests；gpu_gles_renderer_retry→KNOWN_INAPPLICABLE；C# PASS 横幅）；GLES 三注入场景红→绿+两新用例；磁盘缓存 pid+atomic 临时名（80 轮 0 破损）；LRU 第 5 条真淘汰。scripts/ci 231 绿、ctest 187 绿、Contracts 绿；碳 r2 复审 mwhipbyn 在跑。
+
+### (58) 用户第三轮复核受理+核验；六路并行开工；#361/#362 r1 待复审
+
+- **第三轮人工复核（#310–#359 全 48 PR）受理**：103 通过/9 部分成立/1 未通过（完成-01）/4 待验证；新发现派单前 lead 逐条实核（行号命中、grep 0 调用方、本机 launchctl/pgrep 佐证），并把核验交给碳脑（agy-brain carbon-high staffer-mwhj5e7o）独立复核防自证。
+- **#360 r2 打回受理**（碳 r2：1 P1 恒真并发测试+2 处 P2 假绿子断言+Windows _WIN32 零 MSVC 编译）：梯子第二轮=codex，gpu-r2 在跑（碳处方照抄：热键预热+diskHits==1 断言、lutA 序列夹具、workflow_dispatch windows native 手动门）。
+- **新票四张全部并行派出**：①win-ub-hygiene（Hydrogen：P3-60 尾 Windows file_clock ns 溢出 UB 按 lens_correction static_assert 模式修+shader_vm SKIP 77 C22+5 支 Apple 脚本进 apple-models 门禁+gles_denoise dtor 守卫）；②ios-draft-close（Hydrogen：P2-26 三处草稿收口）；③looks-ui（codex：P2-16 三端外观库坏条目 UI）；④win-force-gpu（Hydrogen：P2-09 尾 Windows「强制 GPU 不可用」文案区分）+⑤jit-hardening（Hydrogen：完成-01 工程半边——token 出 plist 明文/launch_runner 剥 GH_TOKEN/allowlist 锁 head_sha/FIFO 抢占）。生产 JIT 切换本身仍归用户侧 k179。
+- **#361 r1（33cb399c，A1 @Synchronized/A2 rootLock+protect 覆盖面/A3 空操作不毒化/A4 NonCancellable 原子段，JVM 744 全绿）与 #362 r1（0be72764，B1 inFlight 代际+B2 读旧图后 gate，双变异真红+build.sh 绿）** 交碳包 review-mwhjhth4 复审（含 #360 r2 联审）。
+- D-02（降噪键跨端分叉）排队为下一张 codex；P2-26 实证若发现路径已兜住则按碳脑裁定缩范围。
