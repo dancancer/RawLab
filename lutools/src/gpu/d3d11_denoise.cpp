@@ -2,6 +2,7 @@
 #include "compute_denoise_shader.h"
 #include "filter_buffer_pool.h"
 #include "d3d11_recovery.h"
+#include "d3d11_shader_cache.h"
 #include <d3d11.h>
 #include <d3dcompiler.h>
 #include <dxgi.h>
@@ -113,11 +114,10 @@ public:
 #endif
         const std::string source = std::string(prefix) + kFilterShaderBody +
             "\n[numthreads(128,1,1)] void main(uint3 id : SV_DispatchThreadID) { filterPixel(baseIndex + id.x); }\n";
-        ComPtr<ID3DBlob> code, errors;
-        const auto compiled = D3DCompile(source.c_str(), source.size(), "RawLab filters", nullptr, nullptr,
-            "main", "cs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3 | D3DCOMPILE_IEEE_STRICTNESS, 0, &code, &errors);
-        if (FAILED(compiled) && errors) throw std::runtime_error(std::string(static_cast<const char*>(errors->GetBufferPointer()), errors->GetBufferSize()));
-        checked(compiled); checked(device->CreateComputeShader(code->GetBufferPointer(), code->GetBufferSize(), nullptr, &shader));
+        const auto bytecode = compileD3D11Shader(
+            "RawLab filters", source, "main", "cs_5_0",
+            D3DCOMPILE_OPTIMIZATION_LEVEL3 | D3DCOMPILE_IEEE_STRICTNESS, checked);
+        checked(device->CreateComputeShader(bytecode.data(), bytecode.size(), nullptr, &shader));
         D3D11_BUFFER_DESC desc{}; desc.ByteWidth = sizeof(FilterParams); desc.Usage = D3D11_USAGE_DEFAULT;
         desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER; checked(device->CreateBuffer(&desc, nullptr, &constants));
         dummy = createBuffer(1, nullptr);

@@ -58,6 +58,7 @@ if (args.Contains("--history-only")) {
     return;
 }
 EditedPhotoPreviewChecks.Run();
+PreviewRevisionCacheChecks.Run();
 X3fPersistenceChecks();
 X3fModeResetChecks.Run();
 Check(PhotoInput.PrepareDefaultSettings("fixture.png").ExposureMode == 2,

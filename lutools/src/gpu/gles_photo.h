@@ -1,5 +1,6 @@
 #pragma once
 
+#include "gpu/device_retry.h"
 #include "gpu/photo_gpu.h"
 #include <memory>
 
@@ -24,6 +25,7 @@ public:
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
+    DeviceRetry retry_;
 };
 
 }

@@ -55,8 +55,19 @@ int main() {
     sony2fuji_session* session=nullptr;sony2fuji_session_create(&session);
     const auto neutral=render(session,r,SONY2FUJI_GPU_OFF);
     r.lut_path=filename.c_str();r.lut_strength=1;
+    std::filesystem::file_time_type linearStamp;
+    uintmax_t linearSize = 0;
     for (const auto* name : {"linear-srgb","vlog-vgamut","slog3-sgamut3","slog3-sgamut3-cine"}) {
-        write(path,contract(name));auto actual=render(session,r,SONY2FUJI_GPU_OFF);
+        write(path,contract(name));
+        if (std::string(name) == "linear-srgb") {
+            linearStamp = std::filesystem::last_write_time(path);
+            linearSize = std::filesystem::file_size(path);
+        } else if (std::string(name) == "vlog-vgamut") {
+            check(std::filesystem::file_size(path) == linearSize, "Replacement LUT has the same size");
+            std::filesystem::last_write_time(path, linearStamp);
+            check(std::filesystem::last_write_time(path) == linearStamp, "Replacement LUT has the same timestamp");
+        }
+        auto actual=render(session,r,SONY2FUJI_GPU_OFF);
         check(actual.size()==12,"Explicit contract renders on CPU");
         for(size_t i=0;i<actual.size();++i) {
             const double x=pixels[i]/255.;double expected=x;
