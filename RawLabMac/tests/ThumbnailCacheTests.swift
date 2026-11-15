@@ -1230,5 +1230,51 @@ struct ThumbnailCacheTests {
         }
         check(MacResourceDigestCache.shared.entryCount <= sharedCap,
               "Shared resource digest cache remains bounded at \(MacResourceDigestCache.shared.entryCount) <= \(sharedCap)")
+
+        // M-N9: In-flight file generation change must discard stale decoded image for waiters too.
+        final class DecodeGate: @unchecked Sendable {
+            private let lock = NSLock()
+            private var callCount = 0
+            private var firstStarted = false
+            private let allowFinish = DispatchSemaphore(value: 0)
+
+            func beginDecode() -> Bool {
+                lock.lock()
+                callCount += 1
+                let isFirst = callCount == 1
+                if isFirst { firstStarted = true }
+                lock.unlock()
+                if isFirst { allowFinish.wait() }
+                return isFirst
+            }
+
+            func hasFirstStarted() -> Bool {
+                lock.lock(); defer { lock.unlock() }
+                return firstStarted
+            }
+
+            func releaseFirst() {
+                allowFinish.signal()
+            }
+        }
+        let racingFile = dir.appendingPathComponent("mn9-racing.png")
+        try writePNG(to: racingFile, width: 120, height: 80, red: 0.1)
+        let gate = DecodeGate()
+        let racingThumbnails = PhotoThumbnails(decodeThumbnail: { url, _ in
+            _ = gate.beginDecode()
+            return NSImage(contentsOf: url)
+        })
+        let inFlightTask = Task { await racingThumbnails.image(for: racingFile) }
+        while !gate.hasFirstStarted() {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        try writePNG(to: racingFile, width: 120, height: 80, red: 0.9)
+        racingThumbnails.invalidate(for: racingFile)
+        gate.releaseFirst()
+        let staleResult = await inFlightTask.value
+        check(staleResult == nil, "M-N9: in-flight decode invalidated mid-flight returns nil to waiters instead of stale bytes")
+        let freshResult = await racingThumbnails.image(for: racingFile)
+        check(freshResult != nil && racingThumbnails.decodeCount == 2,
+              "M-N9: subsequent request after invalidation decodes fresh file bytes")
     }
 }

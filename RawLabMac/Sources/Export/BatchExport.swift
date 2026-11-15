@@ -2,6 +2,30 @@ import Foundation
 import CryptoKit
 import Darwin
 
+enum BatchJournalVersionKey: String, CaseIterable {
+    case job
+    case frozen
+    case frozenSettings
+    case processing
+    case masterRecipeSettings
+    case hdrProcessing
+    case hdrRecord
+    case hdrCameraDevelopment
+
+    var maxSupportedVersion: Int {
+        switch self {
+        case .job: return 3
+        case .frozen: return 1
+        case .frozenSettings: return 1
+        case .processing: return ProcessingIdentity.current.version
+        case .masterRecipeSettings: return 4
+        case .hdrProcessing: return 8
+        case .hdrRecord: return 9
+        case .hdrCameraDevelopment: return 1
+        }
+    }
+}
+
 enum BatchSettingsMode: String, Codable {
     case uniformFrozen = "uniform_frozen", perTargetFrozen = "per_target_frozen"
 }
@@ -37,7 +61,9 @@ struct BatchFrozenSettings: Codable {
     }
 
     func validate() throws {
-        guard version == 1, settingsVersion == 1, ordinal >= 0,
+        guard version == BatchJournalVersionKey.frozen.maxSupportedVersion,
+              settingsVersion == BatchJournalVersionKey.frozenSettings.maxSupportedVersion,
+              ordinal >= 0,
               longEdge == nil || (1...65535).contains(longEdge!),
               settings.isHDREditing || settings.masterRecipeID == nil || look != nil,
               (look == nil && lookSHA256 == nil) || (look != nil && lookSHA256?.count == 64 &&
@@ -125,7 +151,7 @@ struct BatchExportJob: Codable {
     var mode: BatchSettingsMode { settingsMode ?? .uniformFrozen }
 
     func validate() throws {
-        guard (1...3).contains(version),
+        guard (1...BatchJournalVersionKey.job.maxSupportedVersion).contains(version),
               longEdge == nil || (1...65535).contains(longEdge!) else {
             throw CocoaError(.fileReadCorruptFile)
         }
@@ -332,17 +358,23 @@ final class BatchJournal {
         guard let settings = value as? [String: Any] else { return false }
         if let processing = settings["processing"] as? [String: Any],
            processing["family"] as? String == "rawlab",
-           isIntegerAbove(processing["version"], limit: ProcessingIdentity.current.version) {
+           isIntegerAbove(processing["version"], limit: BatchJournalVersionKey.processing.maxSupportedVersion) {
             return true
         }
-        if isIntegerAbove(settings["masterRecipeSettingsVersion"], limit: 4) { return true }
+        if isIntegerAbove(settings["masterRecipeSettingsVersion"],
+                          limit: BatchJournalVersionKey.masterRecipeSettings.maxSupportedVersion) {
+            return true
+        }
         if let hdr = settings["hdr"] as? [String: Any] {
-            if isIntegerAbove(hdr["hdr_processing_version"], limit: 8) ||
-               isIntegerAbove(hdr["record_version"], limit: 9) {
+            if isIntegerAbove(hdr["hdr_processing_version"],
+                              limit: BatchJournalVersionKey.hdrProcessing.maxSupportedVersion) ||
+               isIntegerAbove(hdr["record_version"],
+                              limit: BatchJournalVersionKey.hdrRecord.maxSupportedVersion) {
                 return true
             }
             if let cameraDev = hdr["camera_development"] as? [String: Any],
-               isIntegerAbove(cameraDev["version"], limit: 1) {
+               isIntegerAbove(cameraDev["version"],
+                              limit: BatchJournalVersionKey.hdrCameraDevelopment.maxSupportedVersion) {
                 return true
             }
         }
@@ -353,14 +385,15 @@ final class BatchJournal {
         guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             return false
         }
-        if isIntegerAbove(object["version"], limit: 3) || hasFutureSettings(object["settings"]) {
+        if isIntegerAbove(object["version"], limit: BatchJournalVersionKey.job.maxSupportedVersion) ||
+           hasFutureSettings(object["settings"]) {
             return true
         }
         if let items = object["items"] as? [Any] {
             for case let item as [String: Any] in items {
                 guard let frozen = item["frozen"] as? [String: Any] else { continue }
-                if isIntegerAbove(frozen["version"], limit: 1) ||
-                   isIntegerAbove(frozen["settingsVersion"], limit: 1) ||
+                if isIntegerAbove(frozen["version"], limit: BatchJournalVersionKey.frozen.maxSupportedVersion) ||
+                   isIntegerAbove(frozen["settingsVersion"], limit: BatchJournalVersionKey.frozenSettings.maxSupportedVersion) ||
                    hasFutureSettings(frozen["settings"]) {
                     return true
                 }

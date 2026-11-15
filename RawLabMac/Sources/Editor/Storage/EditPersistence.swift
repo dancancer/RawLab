@@ -532,9 +532,7 @@ final class EditPersistence {
 
     static func editedRevision(for state: PhotoEditState?, atPath path: String) -> String? {
         guard let state else { return nil }
-        let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
-        let isRaster = UTType(filenameExtension: ext).map { $0.conforms(to: .image) && !$0.conforms(to: .rawImage) } ?? false
-        let raw = !isRaster
+        let raw = !PhotoInputClassification.isRasterInput(URL(fileURLWithPath: path))
         let context = EditorAdjustmentContext(
             isRaw: raw,
             defaultExposureMode: raw ? Adjustments().exposureMode : .sensor,

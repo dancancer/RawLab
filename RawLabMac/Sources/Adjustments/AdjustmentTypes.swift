@@ -1,4 +1,12 @@
 import Foundation
+import UniformTypeIdentifiers
+
+enum PhotoInputClassification {
+    static func isRasterInput(_ url: URL?) -> Bool {
+        guard let url, let type = UTType(filenameExtension: url.pathExtension.lowercased()) else { return false }
+        return type.conforms(to: .image) && !type.conforms(to: .rawImage)
+    }
+}
 
 enum X3fMode: String, CaseIterable, Identifiable, Codable {
     case legacy = "legacy"

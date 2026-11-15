@@ -588,6 +588,82 @@ private func journalIsolation(root: URL, inputs: [URL], output: URL) throws {
         _ = try journal.load()
         try check(!FileManager.default.fileExists(atPath: temporary.path), "recovery removes abandoned partial output")
         try BatchExportX3fTargetTests.run(root: root)
+        try verifyVersionManifestFailClosed(root: root, sampleJob: cancelled, sampleInput: inputs[0])
         print("PASS: snapshot, collisions, failure continuation, retry, cancel and durable recovery")
+    }
+
+    private static func verifyVersionManifestFailClosed(root: URL, sampleJob: BatchExportJob, sampleInput: URL) throws {
+        var maxHDR = HDRSettings()
+        maxHDR.toneSettings.curve.channels.red = ToneCurveShape(
+            points: [ToneCurvePoint(x: 0, y: 0), ToneCurvePoint(x: 0.5, y: 0.6), ToneCurvePoint(x: 1, y: 1)]
+        )
+        let expectedMax: (BatchJournalVersionKey) -> Int = { key in
+            switch key {
+            case .job: return 3
+            case .frozen: return 1
+            case .frozenSettings: return 1
+            case .processing: return ProcessingIdentity.current.version
+            case .masterRecipeSettings: return 4
+            case .hdrProcessing: return maxHDR.processingVersion
+            case .hdrRecord: return maxHDR.recordVersion
+            case .hdrCameraDevelopment: return HDRCameraDevelopmentSettings().version
+            }
+        }
+        for key in BatchJournalVersionKey.allCases {
+            try check(key.maxSupportedVersion == expectedMax(key),
+                      "BatchJournalVersionKey.\(key.rawValue) maxSupportedVersion (\(key.maxSupportedVersion)) matches model (\(expectedMax(key)))")
+        }
+
+        // Every version key above its manifest limit must fail-closed without quarantining job.json.
+        let encoded = try JSONEncoder().encode(sampleJob)
+        for key in BatchJournalVersionKey.allCases {
+            var obj = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
+            let bumped = key.maxSupportedVersion + 1
+            switch key {
+            case .job:
+                obj["version"] = bumped
+            case .frozen:
+                var item = (obj["items"] as! [[String: Any]])[0]
+                item["frozen"] = ["version": bumped, "settingsVersion": 1, "ordinal": 0]
+                obj["items"] = [item]
+            case .frozenSettings:
+                var item = (obj["items"] as! [[String: Any]])[0]
+                item["frozen"] = ["version": 1, "settingsVersion": bumped, "ordinal": 0]
+                obj["items"] = [item]
+            case .processing:
+                var s = obj["settings"] as! [String: Any]
+                s["processing"] = ["family": "rawlab", "version": bumped, "quality": "standard"]
+                obj["settings"] = s
+            case .masterRecipeSettings:
+                var s = obj["settings"] as! [String: Any]
+                s["masterRecipeSettingsVersion"] = bumped
+                obj["settings"] = s
+            case .hdrProcessing:
+                var s = obj["settings"] as! [String: Any]
+                s["hdr"] = ["hdr_processing_version": bumped, "record_version": 1]
+                obj["settings"] = s
+            case .hdrRecord:
+                var s = obj["settings"] as! [String: Any]
+                s["hdr"] = ["hdr_processing_version": 1, "record_version": bumped]
+                obj["settings"] = s
+            case .hdrCameraDevelopment:
+                var s = obj["settings"] as! [String: Any]
+                s["hdr"] = ["hdr_processing_version": 8, "record_version": 9, "camera_development": ["version": bumped]]
+                obj["settings"] = s
+            }
+            let dir = root.appendingPathComponent("manifest-\(key.rawValue)")
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let journalURL = dir.appendingPathComponent("job.json")
+            let bytes = try JSONSerialization.data(withJSONObject: obj)
+            try bytes.write(to: journalURL)
+            let journal = BatchJournal(directory: dir)
+            do {
+                _ = try journal.load()
+                throw Failure(message: "future \(key.rawValue)=\(bumped) must fail-closed on load")
+            } catch where journal.lastQuarantinedURL == nil { }
+            try check(try Data(contentsOf: journalURL) == bytes,
+                      "future \(key.rawValue)=\(bumped) journal remains intact without quarantine")
+        }
+        _ = sampleInput
     }
 }

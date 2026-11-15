@@ -615,12 +615,13 @@ final class PhotoThumbnails: @unchecked Sendable {
                 let cost = result.map(Self.imageCost) ?? 0
                 lock.lock()
                 _decodeCount += 1
-                if let result, fileGenerations[key.path, default: 0] == fileGen {
-                    insertLocked(result, for: key, cost: cost)
+                let delivered = fileGenerations[key.path, default: 0] == fileGen ? result : nil
+                if let delivered {
+                    insertLocked(delivered, for: key, cost: cost)
                 }
                 let waiters = inFlight.removeValue(forKey: flightKey) ?? []
                 lock.unlock()
-                for waiter in waiters { waiter.resume(returning: result) }
+                for waiter in waiters { waiter.resume(returning: delivered) }
             }
         }
     }
