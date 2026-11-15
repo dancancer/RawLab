@@ -112,6 +112,8 @@ class LookLibraryTest {
             assertEquals(LookFormat.RLOOK, imported.format)
             assertEquals(2, imported.version)
             assertEquals("profile.dcp", imported.originalName)
+            assertFalse(imported.appearanceUnverified)
+            assertEquals(0, imported.compatibilityMode)
             assertTrue(imported.file(root).name.endsWith(".rlook"))
             assertArrayEquals("RLOOKDCP".toByteArray(), imported.file(root).readBytes())
             assertEquals(listOf(imported.id), LookLibrary(root, validator, compiler).list().map { it.id })

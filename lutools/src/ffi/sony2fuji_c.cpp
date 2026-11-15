@@ -2111,6 +2111,11 @@ sony2fuji_status sony2fuji_validate_look(
 sony2fuji_lut_color_state sony2fuji_inspect_lut_color(const char* path) {
     if (isEmptyString(path)) return SONY2FUJI_LUT_UNREADABLE;
     try {
+        if (sony2fuji::LUTParser::detectFormat(path) == "rlook") {
+            return sony2fuji::DcpLook::loadCached(path)
+                ? SONY2FUJI_LUT_LEGACY_DECLARATION
+                : SONY2FUJI_LUT_UNREADABLE;
+        }
         const auto lut = sony2fuji::LUTParser::loadLUT(path);
         if (!lut) return SONY2FUJI_LUT_UNREADABLE;
         return static_cast<sony2fuji_lut_color_state>(lut->contractState());
