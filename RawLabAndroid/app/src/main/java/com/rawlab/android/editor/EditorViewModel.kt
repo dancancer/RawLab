@@ -134,7 +134,9 @@ class EditorViewModel @JvmOverloads constructor(
         mutable.value = mutable.value.copy(error = error)
     }
     private val collections = EditorCollections(storage, viewModelScope, File(application.filesDir, "RawLab/BatchJobs"),
-        editStore::readState, { adjustmentHistory.session?.editGeneration(it) ?: 0L }, ::captureCollectionActiveValidation, canRelease = { photo ->
+        editStore::readState, { adjustmentHistory.session?.editGeneration(it) ?: 0L }, ::captureCollectionActiveValidation,
+        awaitPendingEdits = { state.first { !it.committingAdjustments } },
+        canRelease = { photo ->
             mutable.value.photo?.file != photo.file && failedX3fImport?.retained?.file != photo.file &&
                 failedUnusableImport?.first?.retained?.file != photo.file &&
                 mutable.value.operation != Operation.IMPORT && adjustmentPreparations == 0 && !mutable.value.committingAdjustments

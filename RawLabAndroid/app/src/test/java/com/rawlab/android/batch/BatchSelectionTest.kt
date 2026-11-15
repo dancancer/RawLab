@@ -4,9 +4,14 @@ import com.rawlab.android.batch.journal.BatchJournal
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.settings.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import java.io.File
 import java.nio.file.Files
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -170,6 +175,51 @@ class BatchSelectionTest {
         assertTrue(restored.failures.isEmpty())
         assertEquals(setOf("good"), restored.selected)
         assertEquals(File("restored"), restored.photos.first().sourceFile)
+    }
+
+    @Test fun prepareCollectionReviewAwaitsInFlightEditBeforeReadingStore() = runBlocking {
+        val root = Files.createTempDirectory("collection-flush-race").toFile()
+        val releaseWrite = CountDownLatch(1)
+        try {
+            val store = EditStore(File(root, "edits"))
+            val input = File(root, "photo.png").also { it.writeText("input") }
+            val photo = BatchTarget(PhotoIdentity("photo"), input, "photo.png", inputKind = PhotoInputKind.RASTER)
+            val selection = BatchSelectionState().append(listOf(photo))
+            val exporter = BatchSelectionExport(File(root, "jobs"), store::readState, { null })
+            val writeEntered = CountDownLatch(1)
+            val committing = MutableStateFlow(true)
+            val writer = launch(Dispatchers.IO) {
+                writeEntered.countDown()
+                assertTrue(releaseWrite.await(5, TimeUnit.SECONDS))
+                store.save(photo.identity, EditSettings(exposure = .4f))
+                committing.value = false
+            }
+            assertTrue(writeEntered.await(5, TimeUnit.SECONDS))
+            val prepared = async(Dispatchers.Default) {
+                prepareCollectionReview(
+                    awaitPending = { committing.first { !it } },
+                    captureActiveValidation = {
+                        check(!committing.value) { "Validation captured before pending edit flushed" }
+                        val active: (String) -> Unit = {}
+                        active
+                    },
+                ) { validateActive ->
+                    exporter.prepare(selection, emptySet(), ExportFormat.JPEG, null, null, validateActive)
+                }
+            }
+            delay(50)
+            assertFalse("Prepare must wait for the in-flight edit flush", prepared.isCompleted)
+            releaseWrite.countDown()
+            val review = withTimeout(5_000) { prepared.await() }
+            writer.join()
+            assertTrue(review.ready)
+            assertEquals(.4f, review.rows.single().settings!!.exposure)
+            val job = exporter.freeze(selection, review) {}
+            assertEquals(.4f, job.rows.single().target.frozen!!.settings.exposure)
+        } finally {
+            releaseWrite.countDown()
+            root.deleteRecursively()
+        }
     }
 
 }

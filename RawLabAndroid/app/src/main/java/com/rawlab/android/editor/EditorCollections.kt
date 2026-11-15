@@ -21,6 +21,7 @@ internal class EditorCollections(private val storage: PhotoStorage, parentScope:
     private val journalRoot: File, readRecord: (PhotoIdentity) -> PhotoEditState,
     editGeneration: (PhotoIdentity) -> Long,
     private val captureActiveValidation: () -> (String) -> Unit,
+    private val awaitPendingEdits: suspend () -> Unit = {},
     private val canRelease: (ImportedPhoto) -> Boolean,
 ) {
     private val scope = CoroutineScope(parentScope.coroutineContext + SupervisorJob(parentScope.coroutineContext[Job]))
@@ -127,13 +128,14 @@ internal class EditorCollections(private val storage: PhotoStorage, parentScope:
         completed: (CollectionExportReview?) -> Unit) {
         if (mutable.value.busy) { completed(null); return }
         val selection = mutable.value
-        val validateActive = captureActiveValidation()
         mutable.update { it.copy(busy = true, error = null) }
         scope.launch {
             val review = try {
-                withContext(Dispatchers.IO) { synchronized(storage) {
-                    exporter.prepare(selection, skipping, format, longEdge, destination?.toString(), validateActive)
-                } }
+                prepareCollectionReview(awaitPendingEdits, captureActiveValidation) { validateActive ->
+                    withContext(Dispatchers.IO) { synchronized(storage) {
+                        exporter.prepare(selection, skipping, format, longEdge, destination?.toString(), validateActive)
+                    } }
+                }
             } catch (error: Exception) { failure(error.message); null }
             finally { mutable.update { it.copy(busy = false) } }
             completed(review)
