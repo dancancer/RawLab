@@ -131,6 +131,8 @@ class NativeSessionTest {
             val restored = LookLibrary(root).list().single()
             assertEquals(imported.id, restored.id)
             assertTrue(restored.available)
+            assertFalse(restored.appearanceUnverified)
+            assertEquals(0, restored.compatibilityMode)
             assertEquals(LookValidation(LookFormat.RLOOK, restored.version),
                 NativeProcessor.validateLook(restored.file(root)))
         } finally {
