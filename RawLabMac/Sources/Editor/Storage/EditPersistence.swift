@@ -212,6 +212,23 @@ final class EditPersistence {
             }
             return registry
         }
+
+        /// 写盘成功后内存快照即文件内容：用写后重取的新指纹原地重设条目，取代写后自废，
+        /// 下一次 readRegistry 直接命中，不再重读磁盘并解析整个账本（镜像 iOS #398）。
+        /// 持 stripe 锁与 load 的「解析-回写」互斥；`.atomic` 替换会换 inode，指纹必须写后
+        /// 重取而非沿用旧值；stat 失败（文件不在/非普通文件）时回退失效。
+        func updateAfterWrite(path: String, registry: Registry) {
+            let stripe = stripeLock(for: path)
+            stripe.lock()
+            defer { stripe.unlock() }
+            guard let fingerprint = FileStatFingerprint(path: path) else {
+                invalidate(path: path)
+                return
+            }
+            stateLock.lock()
+            cache.set(Entry(fingerprint: fingerprint, registry: registry), for: path)
+            stateLock.unlock()
+        }
     }
 
     private let directory: URL
@@ -300,17 +317,28 @@ final class EditPersistence {
 
     private func writeRegistry(_ updated: Registry) throws {
         let preWritePath = Self.resolvedRegistryFileURL(forDirectory: directory).path
-        let invalidateAffectedPaths = {
-            Self.registryCache.invalidate(path: preWritePath)
-            let postWritePath = Self.resolvedRegistryFileURL(forDirectory: self.directory).path
-            if postWritePath != preWritePath {
-                Self.registryCache.invalidate(path: postWritePath)
-            }
-        }
-        let data = try Self.encodeRegistry(updated)
+        // `.atomic` 替换窗口内读者不得再命中旧条目。
         Self.registryCache.invalidate(path: preWritePath)
-        defer { invalidateAffectedPaths() }
-        try writeData(data, file)
+        let data = try Self.encodeRegistry(updated)
+        do {
+            try writeData(data, file)
+        } catch {
+            // 写失败后磁盘状态未知（可能已生成半成品目标），仍须自废；目录解析在写前后
+            // 变化时两个路径都要失效。
+            Self.registryCache.invalidate(path: preWritePath)
+            let failedWritePath = Self.resolvedRegistryFileURL(forDirectory: directory).path
+            if failedWritePath != preWritePath {
+                Self.registryCache.invalidate(path: failedWritePath)
+            }
+            throw error
+        }
+        // 写成功后不再整体自废：用换 inode 后的新指纹原地更新缓存条目，紧接的读取直接命中
+        // （H-03，镜像 iOS #398「写后重取指纹」）。
+        let postWritePath = Self.resolvedRegistryFileURL(forDirectory: directory).path
+        Self.registryCache.updateAfterWrite(path: postWritePath, registry: updated)
+        if postWritePath != preWritePath {
+            Self.registryCache.invalidate(path: preWritePath)
+        }
     }
 
     private static func isVersionOne(_ slice: Data) -> Bool {
