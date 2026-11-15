@@ -999,7 +999,7 @@ sony2fuji_status sony2fuji_hdr_export_proraw(sony2fuji_session* sessionHandle, c
         // SDK stage 与完整源 float spool 同时存活，开始解码前按同一卷的合计峰值准入。
         hdr::storage::requireSpace(std::filesystem::u8path(temporaryRoot),
             hdr::proRAWStageBytes(uint64_t(info.width) * info.height) + streamBytes);
-        auto source = hdr::openProRAW(sourceFile, std::filesystem::u8path(temporaryRoot));
+        auto source = hdr::openProRAW(sourceFile, std::filesystem::u8path(temporaryRoot), config->source_sha256);
         auto encoded = hdr::encodeStream(source, options, keepHDR != 0, config->jpeg_quality ? config->jpeg_quality : 95,
             config->base_color, std::filesystem::u8path(temporaryRoot));
         hdr::publishStreamJPEG(std::move(encoded.jpeg), encoded.width, encoded.height, *config, keepHDR != 0, file);

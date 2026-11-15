@@ -92,6 +92,8 @@ Android/Windows 的解码配置版本为 2，区别于 Apple Core Image 的版�
 原生 `dng_image` 使用私有文件保存 stage 和显影结果，按块读写；SDK allocator 对 JPEG XL 等绕过
 图像存储的内存分配另外准入。预览返回有界双图，Android 源预览最高 1600 长边；全尺寸和缩小
 JPEG 都由 `sony2fuji_hdr_export_proraw` 重新读取完整原片，复用共享分块颜色、几何和发布流程。
+SDK 整图解码只计算一次来源 SHA-256；流式打开复用调用方已校验的摘要。文件大小、纳秒修改时间、
+变更时间和文件身份在 SDK 读取前后保持一致，修改会拒绝本次结果；导出发布前仍复核内容摘要。
 SDK stage 文件使临时空间需求高于 Apple 回调路径，原片与 codec 缓冲仍需要运行时内存准入。
 不能把磁盘分块视为任意设备都可完成 48 MP 导出。
 导出前按同一卷上的 stage 与 stream 合计预检：`112 × 原始像素数 + 20 × HDR 输出像素数 + 192 MiB`；

@@ -11,5 +11,6 @@ constexpr uint64_t proRAWStageBytes(uint64_t pixels) { return pixels * 88 + (128
 sony2fuji_hdr_source_info_v1 probeProRAW(const char* path);
 DecodedImage decodeProRAW(const char* path, const sony2fuji_hdr_decode_options_v1& options,
     const std::filesystem::path& temporaryRoot);
-HDRRowSource openProRAW(const char* path, const std::filesystem::path& temporaryRoot);
+// expectedSHA256 已由调用方在流式来源准入时校验；解码过程以文件 stamp 前后夹逼。
+HDRRowSource openProRAW(const char* path, const std::filesystem::path& temporaryRoot, const uint8_t expectedSHA256[32]);
 }
