@@ -127,6 +127,28 @@ internal class CameraImportStore(private val directory: File, private val tempor
 
     init { directory.mkdirs(); temporary.mkdirs() }
 
+    /**
+     * 写放大账目（测试观察钩子，contentDigestCount 同纪律，撤修复必红）：
+     * directoryScans = 全目录枚举+逐文件解析次数；journalRewrites = `<id>.json` 全量快照重写次数；
+     * walAppends = `<id>.wal` 行级锚追加次数（每次 1 个短行 + 1 次 fsync）。
+     * 稳态每张的 fsync 次数 = journalRewrites + walAppends（每写一处 sync 一次）+ media.write 一次；
+     * `.part` 下载尾部的 fd.sync 已移除：拷入 MediaStore 并校验前崩溃本就整张重下，`.part` 耐久性不在锚链上。
+     */
+    @Volatile internal var directoryScans = 0
+        private set
+    @Volatile internal var journalRewrites = 0
+        private set
+    @Volatile internal var walAppends = 0
+        private set
+
+    /** 进程内增量账本：目录内全部任务的最新状态（save/append 在保存锁内维护，等价此前每次重读磁盘的视野）。 */
+    private val journals = LinkedHashMap<String, CameraImportJob>()
+
+    /** 发布去重与抽样复用共用的内存视野（排序与 readJobs 一致：createdAt 降序）。 */
+    @Synchronized private fun ledgerJobs(): List<CameraImportJob> = journals.values.sortedByDescending { it.createdAt }
+
+    private fun walFile(id: String) = File(directory, "$id.wal")
+
     fun create(cameraId: String, photos: List<CameraPhoto>, destination: CameraImportDestination,
         id: String = UUID.randomUUID().toString(), incremental: CameraIncrementalPlan? = null,
         hardwareIdentity: CameraHardwareIdentity? = null, listingOwner: String? = null): CameraImportJob {
@@ -139,7 +161,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
             require(photos.all(plan.format::includes))
         }
         // 只核对本任务的日志：读不出时报错而不是覆盖，也不受其它日志影响。
-        File(directory, "$id.json").takeIf { it.isFile }?.let(::readJob)?.let { existing ->
+        File(directory, "$id.json").takeIf { it.isFile }?.let { replayWal(readJob(it)) }?.let { existing ->
             if (existing.cameraId != cameraId || existing.hardwareIdentity != hardwareIdentity ||
                 existing.destination != destination || existing.incremental != incremental ||
                 existing.listingOwner != listingOwner || existing.items.size != photos.size ||
@@ -157,8 +179,9 @@ internal class CameraImportStore(private val directory: File, private val tempor
     fun load(): List<CameraImportJob> {
         cleanupLoadArtifacts()
         val unreadable = mutableSetOf<String>()
-        val jobs = readJobs(unreadable).map(::migrateLegacyBoundary)
+        val jobs = readJobs(unreadable).map { migrateLegacyBoundary(replayWal(it)) }
         unreadableJobIds = unreadable
+        synchronized(this) { journals.clear(); jobs.forEach { journals[it.id] = it } }
         // 读不出的日志可能引用待发布媒体，存在时不能据此判定孤儿。
         if (unreadable.isEmpty()) {
             val referenced = jobs.flatMap { it.items.flatMap { item -> listOfNotNull(item.prepared?.uri, item.saved?.uri) } }.toSet()
@@ -176,6 +199,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
         if (id !in unreadableJobIds || !validId(id)) return false
         val file = File(directory, "$id.json")
         if (file.exists() && !file.delete()) return false // 删除失败保留隔离标记，可再次尝试。
+        walFile(id).delete()
         unreadableJobIds = unreadableJobIds - id
         return true
     }
@@ -188,7 +212,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
             .forEach { it.delete() }
         File(directory, "$id.tmp").delete()
         val journal = File(directory, "$id.json")
-        return if (journal.isFile) recoverJob(migrateLegacyBoundary(readJob(journal))) else null
+        return if (journal.isFile) recoverJob(migrateLegacyBoundary(replayWal(readJob(journal)))) else null
     }
 
     /** Resume-specific spelling used by the import queue. */
@@ -200,6 +224,9 @@ internal class CameraImportStore(private val directory: File, private val tempor
         temporary.listFiles().orEmpty().filter { it.isFile && it.name.endsWith(".jpeg-part") }.forEach { it.delete() }
         directory.listFiles().orEmpty().filter { it.isFile && it.extension == "tmp" && validId(it.nameWithoutExtension) }
             .forEach { it.delete() }
+        // WAL 是随快照截断的锚日志；只回收没有对应快照的孤儿 WAL（快照必在 WAL 之前存在）。
+        directory.listFiles().orEmpty().filter { it.isFile && it.extension == "wal" && validId(it.nameWithoutExtension) &&
+            !File(directory, "${it.nameWithoutExtension}.json").isFile }.forEach { it.delete() }
     }
 
     private fun recoverJob(job: CameraImportJob): CameraImportJob {
@@ -260,7 +287,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
         val capture = readCaptureDate(part)
         val jpegOptions = job.jpegOptions(item)
         return permit.publish {
-            val duplicate = readJobs().asSequence().flatMap { existingJob ->
+            val duplicate = ledgerJobs().asSequence().flatMap { existingJob ->
                 existingJob.items.asSequence().map { existingJob to it }
             }.filter { (existingJob, existing) ->
                 existing.digest == digest && existing.photo.size == item.photo.size &&
@@ -300,9 +327,11 @@ internal class CameraImportStore(private val directory: File, private val tempor
                 }
                 val pending = media.createPending(targetName, job.destination.relativePath(capture),
                     if (item.photo.raw) "image/x-sony-arw" else "image/jpeg", "${job.id}:$index")
-                // 先登记系统 URI，写入或发布途中退出时按原记录恢复，不再创建第二张。
-                save(job.replacing(index, item.copy(prepared = pending, digest = digest, outputDigest = outputDigest,
-                    outputSize = outputSize, captureDay = capture?.day)))
+                // 先登记系统 URI（WAL 行级锚，短行 fsync）：写入或发布途中退出时按原记录恢复，不再创建第二张。
+                appendWalAnchor(job.replacing(index, item.copy(prepared = pending, digest = digest, outputDigest = outputDigest,
+                    outputSize = outputSize, captureDay = capture?.day)), JSONObject().put("i", index).put("prepared", pending.json())
+                    .put("digest", digest).put("outputDigest", outputDigest).put("outputSize", outputSize)
+                    .put("captureDay", capture?.day))
                 media.write(pending.uri, outputPart)
                 // 写入字节与 outputPart 同源、摘要已知（outputDigest）：stat 元数据已定稿则以指纹 size 复核，
                 // 未定稿（IS_PENDING=1 时 MediaProvider 不给 SIZE/DATE_MODIFIED）信任 ContentResolver 写入
@@ -321,7 +350,10 @@ internal class CameraImportStore(private val directory: File, private val tempor
             val complete = updated.savedCount == updated.items.size
             val result = migrateLegacyBoundary(updated.copy(status = if (complete) CameraJobStatus.COMPLETE else CameraJobStatus.ACTIVE,
                 committed = job.committed || complete))
-            save(result)
+            // 稳态每张终态只追加一行短 WAL；整份快照只在任务完成点重写（任务结束合并一次），
+            // 暂停/暂停恢复等状态迁移仍由调用方 store.save 落快照并截断 WAL。
+            if (complete) save(result)
+            else appendWalAnchor(result, itemJson(result.items[index]).put("i", index))
             part.delete()
             if (outputPart != part) outputPart.delete()
             result
@@ -335,7 +367,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
         val chunk = 64 shl 10
         if (photo.size < chunk * 3L || photo.captureDateMillis == null ||
             job.jpegOptions(CameraImportItem(photo)) != null) return null
-        val candidates = readJobs().filter { it.matchesCamera(job.cameraId, job.hardwareIdentity) }
+        val candidates = ledgerJobs().filter { it.matchesCamera(job.cameraId, job.hardwareIdentity) }
             .flatMap { previous -> previous.items.filter { item ->
                 item.saved != null && validDigest(item.digest) && previous.jpegOptions(item) == null &&
                     item.photo.matchesResumeMetadata(photo) && (item.outputSize ?: item.photo.size) == photo.size &&
@@ -403,15 +435,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
     @Synchronized fun save(job: CameraImportJob) {
         require(validId(job.id))
         val items = JSONArray()
-        job.items.forEach { item -> items.put(JSONObject().put("key", item.photo.key).put("name", item.photo.name)
-            .put("size", item.photo.size).put("created", item.photo.created).put("storage", item.photo.storageToken)
-            .put("captureTimestamp", item.photo.captureTimestamp.takeIf { it != item.photo.created })
-            .put("resumeIdentity", item.photo.resumeIdentity)
-            .put("saved", item.saved?.json())
-            .put("prepared", item.prepared?.json()).put("digest", item.digest).put("captureDay", item.captureDay)
-            .put("duplicate", item.duplicate).put("unavailable", item.unavailable?.json()).put("problem", item.problem?.name)
-            .put("saveOriginalJpeg", item.saveOriginalJpeg.takeIf { it })
-            .put("outputDigest", item.outputDigest).put("outputSize", item.outputSize).put("savedStat", item.savedStat)) }
+        job.items.forEach { items.put(itemJson(it)) }
         val json = JSONObject().put("version", 2).put("camera", job.cameraId).put("time", job.createdAt)
             .put("status", job.status.name).put("items", items).put("directory", job.destination.directory)
             .put("grouping", job.destination.grouping.name).put("incremental", job.incremental?.json())
@@ -424,15 +448,59 @@ internal class CameraImportStore(private val directory: File, private val tempor
             try { Files.move(part.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING) }
             catch (_: AtomicMoveNotSupportedException) { Files.move(part.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING) }
         } finally { part.delete() }
+        journalRewrites++
+        journals[job.id] = job
+        // 快照严格新于锚日志：落盘成功后即截断 WAL；截断前崩溃只会重放已在快照内的锚（幂等覆盖同一条目）。
+        walFile(job.id).delete()
+    }
+
+    /** 追加单行锚到 `<id>.wal` 并对短行 fsync，同步刷新内存账本。崩溃留下的半行在重放处丢弃，其 pending 媒体由 cleanupOrphans 回收。 */
+    @Synchronized private fun appendWalAnchor(job: CameraImportJob, line: JSONObject) {
+        require(validId(job.id))
+        FileOutputStream(walFile(job.id), true).use {
+            it.write(line.toString().toByteArray())
+            it.write('\n'.code)
+            it.fd.sync()
+        }
+        walAppends++
+        journals[job.id] = job
+    }
+
+    /** 把 `<id>.wal` 的行级锚折叠进快照；首个坏行/半行即停（append-only 尾部语义），后随合法行本就晚于崩溃点。 */
+    private fun replayWal(job: CameraImportJob): CameraImportJob {
+        val wal = walFile(job.id)
+        if (!wal.isFile) return job
+        val lines = runCatching { wal.readLines() }.getOrDefault(emptyList())
+        if (lines.isEmpty()) return job
+        val items = job.items.toMutableList()
+        for (line in lines) {
+            val record = runCatching { JSONObject(line) }.getOrNull() ?: break
+            val index = record.optInt("i", -1)
+            if (index !in items.indices) break
+            val folded = runCatching {
+                if (record.has("saved")) itemFromJson(record)
+                else items[index].copy(prepared = record.getJSONObject("prepared").mediaPhoto(),
+                    digest = record.optString("digest").takeIf { it.isNotEmpty() },
+                    outputDigest = record.optString("outputDigest").takeIf { it.isNotEmpty() },
+                    outputSize = record.optLongOrNull("outputSize"),
+                    captureDay = record.optString("captureDay").takeIf { it.isNotEmpty() })
+            }
+            if (folded.isFailure) break
+            items[index] = folded.getOrThrow()
+        }
+        return job.copy(items = items)
     }
 
     /** 逐个解析；单个日志读不出时跳过并记下，不影响其它任务。 */
-    private fun readJobs(unreadable: MutableSet<String>? = null): List<CameraImportJob> = directory.listFiles().orEmpty()
+    private fun readJobs(unreadable: MutableSet<String>? = null): List<CameraImportJob> {
+        directoryScans++
+        return directory.listFiles().orEmpty()
         .filter { it.isFile && it.extension == "json" && validId(it.nameWithoutExtension) }
         .mapNotNull { file ->
             try { readJob(file) }
             catch (_: Exception) { unreadable?.add(file.nameWithoutExtension); null }
         }.sortedByDescending { it.createdAt }
+    }
 
     private fun readJob(file: File): CameraImportJob {
         if (file.length() > 8L * 1024 * 1024) throw IOException("Camera journal exceeds budget")
@@ -440,27 +508,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
         if (json.getInt("version") != 2) throw IOException("Unsupported camera journal")
         val array = json.getJSONArray("items")
         if (array.length() !in 1..10000) throw IOException("Invalid camera journal items")
-        val items = (0 until array.length()).map { index ->
-            val item = array.getJSONObject(index)
-            val created = item.getLong("created")
-            val photo = CameraPhoto(item.getString("key"), item.getString("name"), item.getLong("size"), created,
-                resumeIdentity = item.optString("resumeIdentity").takeIf { it.isNotEmpty() },
-                storageToken = item.optString("storage").takeIf { it.isNotEmpty() },
-                captureTimestamp = item.optLong("captureTimestamp", created))
-            if (photo.size !in 1..SystemPhotoStore.MAX_BYTES) throw IOException("Invalid camera photo size")
-            val saved = item.optJSONObject("saved")?.mediaPhoto()
-            val prepared = item.optJSONObject("prepared")?.mediaPhoto()
-            val digest = item.optString("digest").takeIf { it.isNotEmpty() }
-            if ((digest != null || saved != null || prepared != null) && !validDigest(digest)) throw IOException("Invalid camera digest")
-            val outputDigest = item.optString("outputDigest").takeIf { it.isNotEmpty() }
-            val outputSize = item.optLongOrNull("outputSize")
-            if (outputDigest != null && !validDigest(outputDigest)) throw IOException("Invalid camera output digest")
-            if (outputDigest != null && outputSize !in 1..SystemPhotoStore.MAX_BYTES) throw IOException("Invalid camera output size")
-            CameraImportItem(photo, saved, prepared, digest, item.optString("captureDay").takeIf { it.isNotEmpty() }, item.optBoolean("duplicate"),
-                item.optJSONObject("unavailable")?.mediaPhoto(), item.optString("problem").takeIf { it.isNotEmpty() }?.let(CameraMediaProblem::valueOf),
-                outputDigest, outputSize, saveOriginalJpeg = item.optBoolean("saveOriginalJpeg"),
-                savedStat = item.optString("savedStat").takeIf { it.isNotEmpty() })
-        }
+        val items = (0 until array.length()).map { itemFromJson(array.getJSONObject(it)) }
         val hardware = json.optJSONObject("hardwareIdentity")?.let {
             CameraHardwareIdentity(it.getString("model"), it.getString("serial"))
         }
@@ -470,6 +518,37 @@ internal class CameraImportStore(private val directory: File, private val tempor
             json.optBoolean("committed", json.getString("status") == CameraJobStatus.COMPLETE.name), hardware,
             json.optString("listingOwner").takeIf { it.isNotEmpty() })
     }
+
+    private fun itemFromJson(item: JSONObject): CameraImportItem {
+        val created = item.getLong("created")
+        val photo = CameraPhoto(item.getString("key"), item.getString("name"), item.getLong("size"), created,
+            resumeIdentity = item.optString("resumeIdentity").takeIf { it.isNotEmpty() },
+            storageToken = item.optString("storage").takeIf { it.isNotEmpty() },
+            captureTimestamp = item.optLong("captureTimestamp", created))
+        if (photo.size !in 1..SystemPhotoStore.MAX_BYTES) throw IOException("Invalid camera photo size")
+        val saved = item.optJSONObject("saved")?.mediaPhoto()
+        val prepared = item.optJSONObject("prepared")?.mediaPhoto()
+        val digest = item.optString("digest").takeIf { it.isNotEmpty() }
+        if ((digest != null || saved != null || prepared != null) && !validDigest(digest)) throw IOException("Invalid camera digest")
+        val outputDigest = item.optString("outputDigest").takeIf { it.isNotEmpty() }
+        val outputSize = item.optLongOrNull("outputSize")
+        if (outputDigest != null && !validDigest(outputDigest)) throw IOException("Invalid camera output digest")
+        if (outputDigest != null && outputSize !in 1..SystemPhotoStore.MAX_BYTES) throw IOException("Invalid camera output size")
+        return CameraImportItem(photo, saved, prepared, digest, item.optString("captureDay").takeIf { it.isNotEmpty() }, item.optBoolean("duplicate"),
+            item.optJSONObject("unavailable")?.mediaPhoto(), item.optString("problem").takeIf { it.isNotEmpty() }?.let(CameraMediaProblem::valueOf),
+            outputDigest, outputSize, saveOriginalJpeg = item.optBoolean("saveOriginalJpeg"),
+            savedStat = item.optString("savedStat").takeIf { it.isNotEmpty() })
+    }
+
+    private fun itemJson(item: CameraImportItem) = JSONObject().put("key", item.photo.key).put("name", item.photo.name)
+        .put("size", item.photo.size).put("created", item.photo.created).put("storage", item.photo.storageToken)
+        .put("captureTimestamp", item.photo.captureTimestamp.takeIf { it != item.photo.created })
+        .put("resumeIdentity", item.photo.resumeIdentity)
+        .put("saved", item.saved?.json())
+        .put("prepared", item.prepared?.json()).put("digest", item.digest).put("captureDay", item.captureDay)
+        .put("duplicate", item.duplicate).put("unavailable", item.unavailable?.json()).put("problem", item.problem?.name)
+        .put("saveOriginalJpeg", item.saveOriginalJpeg.takeIf { it })
+        .put("outputDigest", item.outputDigest).put("outputSize", item.outputSize).put("savedStat", item.savedStat)
 
     private fun validContent(uri: String, size: Long, digest: String?): Boolean = runCatching {
         validDigest(digest) && media.open(uri).use { contentDigest(it, size) } == digest
