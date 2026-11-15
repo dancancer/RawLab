@@ -116,9 +116,13 @@ internal class EditedPhotoPreviewCache(
         ensureLoaded()
         val size = index[key] ?: return null
         val bytes = fileSystem.readBytes(target)
-        if (bytes == null) {
+        if (bytes == null || !isCompleteJpeg(bytes)) {
             index.remove(key)
             totalBytes -= size
+            // 断电半写会留下"SOI 头完整、尾截断"的 JPEG，BitmapFactory 按 kIncompleteInput 当成功返回非空残图；
+            // SOI/EOI 不齐即判未命中并删除坏条目，让调用方重渲后原子覆盖，而不是残图永久驻留。
+            if (bytes != null) fileSystem.delete(target)
+            return null
         }
         return bytes
     }
@@ -151,4 +155,9 @@ internal class EditedPhotoPreviewCache(
 
     private fun isValidKey(key: String): Boolean =
         key.length == 64 && key.all { it in '0'..'9' || it in 'a'..'f' }
+
+    // 缓存载荷契约是完整 JPEG（唯一生产者 Bitmap.compress JPEG）：首 SOI、尾 EOI，缺一视为未完成写入。
+    private fun isCompleteJpeg(bytes: ByteArray): Boolean =
+        bytes.size >= 4 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() &&
+            bytes[bytes.size - 2] == 0xFF.toByte() && bytes[bytes.size - 1] == 0xD9.toByte()
 }
