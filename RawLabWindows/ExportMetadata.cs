@@ -1,18 +1,12 @@
-using System.Diagnostics;
 using System.IO;
-using System.Text;
 using System.Windows.Media.Imaging;
 
 namespace RawLab.Windows;
 
 internal static class ExportMetadata
 {
-    internal static string VerifyAvailable()
-    {
-        var executable = Path.Combine(AppContext.BaseDirectory, "ExifTool", "ExifTool.exe");
-        if (!File.Exists(executable)) throw new OutputWriteException(Loc.Text("缺少 EXIF 导出组件，请重新解压完整的 RawLab 安装包。"));
-        return executable;
-    }
+    // 进程生命周期与常驻管道细节统一收敛在 ExifToolSession。
+    internal static string VerifyAvailable() => ExifToolSession.ExecutablePath();
     // Copy capture information only. RAW layout, MakerNotes and thumbnails describe
     // the input sensor data and must not be attached to developed pixels.
     private static readonly string[] CaptureTags = [
@@ -50,34 +44,6 @@ internal static class ExportMetadata
         Run(arguments);
     }
 
-    internal static string Run(IEnumerable<string> arguments)
-    {
-        var executable=VerifyAvailable();
-        var lines=arguments.ToArray();
-        if (lines.Any(line=>line.Contains('\n') || line.Contains('\r')))
-            throw new ArgumentException(Loc.Text("EXIF 参数不能包含换行。"));
-        var start=new ProcessStartInfo(executable) {
-            UseShellExecute=false, CreateNoWindow=true, RedirectStandardInput=true,
-            RedirectStandardOutput=true, RedirectStandardError=true,
-            StandardInputEncoding=new UTF8Encoding(false), StandardOutputEncoding=Encoding.UTF8,
-            StandardErrorEncoding=Encoding.UTF8
-        };
-        // Disable user configuration and use a UTF-8 argument stream for Unicode paths.
-        foreach (var arg in new[]{"-config","","-charset","filename=utf8","-@","-"}) start.ArgumentList.Add(arg);
-        start.Environment["LC_ALL"]="C";
-        using var process=Process.Start(start) ?? throw new IOException(Loc.Text("无法启动 EXIF 导出组件。"));
-        var stdout=process.StandardOutput.ReadToEndAsync();
-        var stderr=process.StandardError.ReadToEndAsync();
-        foreach (var line in lines) process.StandardInput.WriteLine(line);
-        process.StandardInput.Close();
-        if (!process.WaitForExit(60000))
-        {
-            process.Kill(entireProcessTree:true); process.WaitForExit();
-            throw new IOException(Loc.Text("写入 EXIF 超时，未保存导出结果。"));
-        }
-        var error=stderr.GetAwaiter().GetResult();
-        var result=stdout.GetAwaiter().GetResult();
-        if (process.ExitCode!=0) throw new IOException(Loc.Text("写入 EXIF 失败：")+error.Trim());
-        return result;
-    }
+    // 整批复用常驻 ExifTool 进程；启动失败时 ExifToolSession 内部回退单次调用。
+    internal static string Run(IEnumerable<string> arguments) => ExifToolSession.Run(arguments);
 }

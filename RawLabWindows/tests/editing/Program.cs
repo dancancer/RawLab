@@ -2,6 +2,7 @@ using RawLab.Windows;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
+if (args.Contains("--exif-stub")) { ExifToolSessionChecks.StubMain(args); return; }
 if (args.Contains("--edited-previews")) { EditedPhotoPreviewChecks.Run(); return; }
 if (args.Contains("--unhandled-only")) { UnhandledExceptionChecks.Run(); return; }
 if (args.Contains("--preview-fallback-only")) { PreviewFallbackChecks.Run(); return; }
@@ -59,6 +60,7 @@ if (args.Contains("--history-only")) {
 }
 EditedPhotoPreviewChecks.Run();
 PreviewRevisionCacheChecks.Run();
+ExifToolSessionChecks.Run();
 X3fPersistenceChecks();
 X3fModeResetChecks.Run();
 Check(PhotoInput.PrepareDefaultSettings("fixture.png").ExposureMode == 2,
