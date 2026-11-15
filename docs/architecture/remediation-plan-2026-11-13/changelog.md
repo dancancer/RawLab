@@ -363,3 +363,13 @@
 - **#365 合入（120th，`59b0de8e`）**：完成-01 工程半边收口（jit.env 0600、GH_TOKEN 剥离、pr#n@sha 同仓限定+外部 fork 指路 run_id@sha、push 信任前置防队列锁死；scripts/ci 240）。iOS models 首跑红=自托管 runner 失联（重启窗口），`gh run rerun --failed` 转绿后合入。k179 剩用户侧生产切换演练。
 - **真机首轮（Pixel XL marlin，API 29/Adreno 530）**：`:app:buildCMakeDebug[arm64]` 自 **700eeb408（#334）** 起编译失败——`driver()` 仅在 `#ifdef SONY2FUJI_FAKE_EGL_GLES` 内定义，NDK 真机构建 11 处 undeclared identifier。**Android APK 仪器测试链在真机侧从未跑通**（hosted CI Android models 不构建该 cmake 测试目标=门禁盲区，k163 候选补录）。解锁票 fix/android-device-gate 在跑（1b 段出宏+真机全套 connectedDebugAndroidTest+k173 签收表随 PR）。
 - **iOS 模拟器高占用答疑**：为自动化任务临时模拟器的正常负载（碳审/测试起停），harness 重启后 booted 清空、CPU 回落，无孤儿残留。
+
+### (63) 连合五单（121–124）：#367/#371/#361/#362 全 APPROVE；#366 r2 与 #360 rebase 接力
+
+- **#367 合入（121th `dd944aff`）**：碳三枪独立变异（UI 门禁/ViewModel 门禁/recipe-lut 恢复各必红）+737 口径纠偏（dev=736+1 新增）+字符串并集 --check 全绿。
+- **#371 合入（122th `8f89f40d`）**：Windows native 整门 138 项保序 1:1 对账（2 红→0 红零删项）；preview_exposure_cache 修法核到 LibRaw `_wfopen` 共享模式根因（优于跳过：切照片释放句柄+负缓存跨照片断言）；wavelet 换 SplitMix64+Box-Muller 阈值一字未松+`/UNDEBUG` 防断言被 Release 吞。**native 门基线自此全绿**。
+- **#361 合入（123th `cefbc514`）**：A4 四阻断全闭（锁外 awaitPending/无过期快照/集合化 pending/4 线程夹具）；碳 4 枪运行时变异全红（含锁内 join 死锁还原=超时红）。
+- **#362 合入（124th `3bdacd59`）**：M-N9 持锁身份判定+CASE_E_MN9 双路由常驻；碳变异（去 identityMatches）双路由必红；跨 47 夹具联调+隔离 build.sh 绿。
+- **#366 r2（codex 在跑）**：碳拦下 RenderedDngChecks 间接取串过滤（原生门 --rendered-dng 必崩，hosted 不跑原生套件故 CI 全绿掩盖）；一行对齐 FormatErrorMessage(2,null,ForceGpu)+对账扩展；native 实跑并入 #360 复跑窗口。
+- **#360 rebase+native 复跑票（在跑）**：让位 #364 清单机制保原注册名；预期 139 项（138+新 d3d11_shader_cache）全绿后即 r3 碳终审。
+- **节奏已按用户指令调整**：并行 9 路；全量测试收缩到关键节点（碳包实跑+合入波前），小票只跑针对性脚本+hosted CI。k161 移交项拆 3 张小票并行中（滑杆容差/preflight 生命周期/中性灰假红）。
