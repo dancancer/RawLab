@@ -58,7 +58,7 @@ class Png16NativeInstrumentedTest {
             assertEquals(2, processor.previewCompatibility(input, PhotoInputKind.RASTER, null, null).width)
             processor.export(input, null, EditSettings(), output, ExportFormat.PNG, null, PhotoInputKind.RASTER)
         }
-        assertEquals(16, output.inputStream().use(RasterContainerValidator::inspect).info?.bitDepth)
+        assertEquals(16, RasterContainerValidator.inspect(output).info?.bitDepth)
         RasterImageDecoder.decode(output).use { decoded ->
             val pixels = decoded.pixels as ByteBuffer
             for (i in rgb.indices) {

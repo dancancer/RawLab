@@ -178,11 +178,13 @@ Its bounded display-preview entry point always returns RGBA8, including when
 the source needs no resizing. Windows decoding and ICC behavior require native
 Windows verification rather than inference from Mac results.
 Windows chooses JPEG/PNG/TIFF/HEIF validation from the file signature, so a misleading
-supported extension does not select the wrong metadata parser. Windows and
-Android accept a validated MPF baseline primary image with only VGA/Full HD large
-thumbnails, decoding the primary image at full resolution. Both continue to reject
-MPF gain maps, stereo/multi-angle images, unknown auxiliary types and invalid
-image ranges; this does not enable general multi-frame input.
+supported extension does not select the wrong metadata parser. The four clients
+share the SDR MPF validator. It accepts a baseline primary image with only
+VGA/Full HD thumbnails and permits the primary's representative flag to be
+unset. Bytes after the last indexed thumbnail are allowed unless they start with
+a JPEG signature. The validator rejects MPF gain maps, stereo/multi-angle images,
+unknown auxiliary types and invalid image ranges. Each client decodes the
+primary JPEG at full resolution with its platform decoder.
 Unknown non-sRGB PNG color metadata
 without a supported ICC profile is rejected instead of guessed. On Apple,
 SDR PNG8/PNG16 cICP `{1,13,0,1}` (sRGB), `{12,13,0,1}` (Display P3), and
@@ -211,7 +213,7 @@ RGBA_F16/scRGB-nl bounds description of integer-sRGB PNG16 is normalized to
 bounded sRGB before validation. Its owned native RGBA16
 buffer reaches the display-buffer C API without an 8-bit or half-float intermediate;
 untagged RGB assumes sRGB. Actual transparency remains unsupported at either depth.
-After a JPEG's EOI (or its last registered MPF thumbnail), Android ignores
+After a single JPEG's EOI, Android ignores
 non-JPEG trailing data such as Motion Photo video or SEFT, checking only the
 start of the tail for an unregistered JPEG signature. C2PA-labelled JUMBF APP11
 metadata is accepted, including matching continuations; other APP11 data such

@@ -1,4 +1,5 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include "sony2fuji/ffi/sony2fuji_hdr.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -275,6 +276,60 @@ void expectUnsupported(const std::filesystem::path& path, const std::string& lab
     check(!buffer.data && buffer.size_bytes == 0 && buffer.width == 0 && buffer.height == 0,
           label + " clears output on rejection");
     sony2fuji_release_buffer(&buffer);
+}
+
+void checkMpfJpeg(const std::filesystem::path& jpeg) {
+    std::ifstream input(jpeg, std::ios::binary);
+    const std::vector<uint8_t> primary((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    if (primary.size() < 4) return;
+    std::vector<uint8_t> segment{
+        0xff, 0xe2, 0, 88, 'M', 'P', 'F', 0, 'I', 'I', 42, 0, 8, 0, 0, 0, 3, 0,
+        0, 0xb0, 7, 0, 4, 0, 0, 0, '0', '1', '0', '0',
+        1, 0xb0, 4, 0, 1, 0, 0, 0, 2, 0, 0, 0,
+        2, 0xb0, 7, 0, 32, 0, 0, 0, 50, 0, 0, 0, 0, 0, 0, 0
+    };
+    segment.resize(90);
+    auto set = [&](size_t offset, uint32_t value) {
+        for (unsigned byte = 0; byte < 4; ++byte)
+            segment[offset + byte] = static_cast<uint8_t>(value >> (8 * byte));
+    };
+    const auto primarySize = static_cast<uint32_t>(primary.size() + segment.size());
+    set(58, 0x80030000);
+    set(62, primarySize);
+    set(70, 2);
+    set(74, 0x40010002);
+    set(78, static_cast<uint32_t>(primary.size()));
+    set(82, primarySize - 10);
+    const auto path = jpeg.parent_path() / "mpf.jpg";
+    auto write = [&] {
+        std::ofstream file(path, std::ios::binary | std::ios::trunc);
+        file.write(reinterpret_cast<const char*>(primary.data()), 2);
+        file.write(reinterpret_cast<const char*>(segment.data()), segment.size());
+        file.write(reinterpret_cast<const char*>(primary.data() + 2), primary.size() - 2);
+        file.write(reinterpret_cast<const char*>(primary.data()), primary.size());
+        file.put(0);
+        return file.good();
+    };
+    check(write(), "Generate MPF JPEG with a missing representative flag and camera trailer");
+    sony2fuji_buffer expected{}, result{};
+    const auto originalStatus = sony2fuji_load_display_image(jpeg.u8string().c_str(), &expected);
+    const auto mpfStatus = sony2fuji_load_display_image(path.u8string().c_str(), &result);
+    check(originalStatus == SONY2FUJI_STATUS_OK && mpfStatus == SONY2FUJI_STATUS_OK &&
+          expected.width == result.width && expected.height == result.height &&
+          outputBytes(expected) == outputBytes(result), "Apple MPF decode preserves the primary JPEG");
+    sony2fuji_release_buffer(&expected);
+    sony2fuji_release_buffer(&result);
+
+    sony2fuji_hdr_source_info_v1 info{};
+    info.version = 1; info.struct_size = sizeof(info);
+    sony2fuji_hdr_diagnostic_v1 diagnostic{};
+    diagnostic.version = 1; diagnostic.struct_size = sizeof(diagnostic);
+    const auto probeStatus = sony2fuji_hdr_probe(path.u8string().c_str(), &info, &diagnostic);
+    check(probeStatus == SONY2FUJI_STATUS_UNSUPPORTED && diagnostic.reason == SONY2FUJI_HDR_REASON_NOT_HDR,
+          "Apple HDR preflight lets a valid MPF thumbnail fall back to SDR");
+    set(82, UINT32_MAX);
+    check(write(), "Generate MPF JPEG with an out-of-bounds thumbnail");
+    expectUnsupported(path, "Apple MPF index with an out-of-bounds thumbnail", true);
 }
 
 void checkPngColorMetadata(const std::filesystem::path& root, CGColorSpaceRef sRGB) {
@@ -705,6 +760,7 @@ void runAppleTests() {
     check(fixture.image && properties && writeImage(png, CFSTR("public.png"), fixture.image, properties),
           "Generate oriented PNG fixture");
     if (properties) CFRelease(properties);
+    checkMpfJpeg(jpeg);
 
     for (const auto& path : {jpeg, png}) {
         sony2fuji_buffer buffer{};

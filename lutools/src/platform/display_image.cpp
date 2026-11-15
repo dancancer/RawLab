@@ -1,4 +1,5 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include "core/jpeg_mpf.h"
 
 #include <algorithm>
 #include <array>
@@ -278,7 +279,11 @@ sony2fuji_status loadDisplayImageApple(const char* path, sony2fuji_buffer* outpu
         if (status != SONY2FUJI_STATUS_OK) return status;
     }
     const size_t imageCount = CGImageSourceGetCount(source.get());
-    if (imageCount != 1 && !(imageCount == 2 && equalUTI(type, CFSTR("public.tiff"))))
+    const bool tiffPair = imageCount == 2 && equalUTI(type, CFSTR("public.tiff"));
+    const int mpfCount = equalUTI(type, CFSTR("public.jpeg")) ?
+        sony2fuji::inspectSdrJpegMpf(std::filesystem::u8path(path)) : 0;
+    if (mpfCount < 0 || (imageCount != 1 && !tiffPair &&
+        (mpfCount == 0 || imageCount != static_cast<size_t>(mpfCount))))
         return SONY2FUJI_STATUS_UNSUPPORTED;
 
     // A gain map turns an otherwise ordinary 8-bit base image into an HDR asset.
@@ -306,7 +311,7 @@ sony2fuji_status loadDisplayImageApple(const char* path, sony2fuji_buffer* outpu
     const bool tiff16 = depth == 16 && equalUTI(type, CFSTR("public.tiff"));
     const bool rgb16 = tiff16 || (depth == 16 && equalUTI(type, CFSTR("public.png")));
     if (depth != 8 && !rgb16) return SONY2FUJI_STATUS_UNSUPPORTED;
-    if (imageCount == 2 && (!tiff16 || !hasSigmaTIFFPreview(path, source.get(), properties.get(), width, height)))
+    if (tiffPair && (!tiff16 || !hasSigmaTIFFPreview(path, source.get(), properties.get(), width, height)))
         return SONY2FUJI_STATUS_UNSUPPORTED;
 
     int64_t orientation = 1;

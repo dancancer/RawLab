@@ -3,6 +3,7 @@
 #include "render_request.h"
 #include "recipe_probe_stages.h"
 #include "recipe_white_balance_cache.h"
+#include "core/jpeg_mpf.h"
 #include "sony2fuji/ffi/sony2fuji_hdr.h"
 #include <cstdio>
 #include <cstring>
@@ -479,6 +480,17 @@ Java_com_rawlab_android_raster_NativePng16_nativeDecode(JNIEnv* env, jobject, js
     } catch (const std::bad_alloc&) { throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory for PNG");
     } catch (const std::exception& error) { throwJava(env, "java/io/IOException", error.what()); }
     return nullptr;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_rawlab_android_raster_NativeMpf_nativeInspectSdrJpegMpf(JNIEnv* env, jobject, jstring path) {
+    try {
+        UtfChars source(env, path);
+        if (!source.chars) return -1;
+        return static_cast<jint>(sony2fuji::inspectSdrJpegMpf(std::filesystem::u8path(source.chars)));
+    } catch (...) {
+        return -1;
+    }
 }
 
 extern "C" JNIEXPORT void JNICALL

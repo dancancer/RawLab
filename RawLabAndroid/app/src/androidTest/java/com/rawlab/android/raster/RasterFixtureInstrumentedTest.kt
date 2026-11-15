@@ -36,7 +36,7 @@ class RasterFixtureInstrumentedTest {
         input.writeBytes(Base64.decode(PROGRESSIVE_JPEG_BASE64, Base64.DEFAULT))
         try {
             assertTrue("fixture must contain SOF2", input.readBytes().containsJpegMarker(0xC2))
-            val info = input.inputStream().use(RasterContainerValidator::inspect)
+            val info = RasterContainerValidator.inspect(input)
             assertTrue(info.error ?: "progressive JPEG was rejected", info.isValid)
             assertEquals(2, checkNotNull(info.info).width)
             assertEquals(2, checkNotNull(info.info).height)
@@ -67,7 +67,7 @@ class RasterFixtureInstrumentedTest {
                     val referenceBitmap = gradientBitmap(11, 7, colorSpace)
                     try {
                         writeBitmap(input, referenceBitmap, Bitmap.CompressFormat.PNG)
-                        val info = input.inputStream().use(RasterContainerValidator::inspect)
+                        val info = RasterContainerValidator.inspect(input)
                         assertTrue("$name must carry a valid ICC profile", info.isValid && info.info?.hasColorProfile == true)
                         val frame = processor.preview(input, null, EditSettings(), 1600, false, PhotoInputKind.RASTER)
                         val rendered = frame.bitmap()

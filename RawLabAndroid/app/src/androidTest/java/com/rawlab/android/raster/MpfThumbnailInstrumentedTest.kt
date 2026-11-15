@@ -77,6 +77,32 @@ class MpfThumbnailInstrumentedTest {
         } finally { root.deleteRecursively() }
     }
 
+    @Test fun cameraMpfWithoutRepresentativeFlagPreservesPrimaryPixels() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val root = testRoot(context, "mpf-panasonic")
+        try {
+            val primary = jpeg(48, 32, 0xff336699.toInt())
+            val cameraMpf = withThumbnail(primary, jpeg(12, 8, 0xffcc3300.toInt()))
+            val index = ByteBuffer.wrap(cameraMpf).order(ByteOrder.LITTLE_ENDIAN)
+            index.putInt(60, 0x80030000.toInt())
+            val trailer = ByteArray(401) { 0x2a }
+            byteArrayOf(0xdc.toByte(), 0xff.toByte(), 0, 0x36, 0x73).copyInto(trailer)
+            val source = File(root, "camera.jpg").apply { writeBytes(cameraMpf + trailer) }
+            RasterImageDecoder.decode(source).use { decoded ->
+                assertEquals(48, decoded.width)
+                assertEquals(32, decoded.height)
+                assertPixelClose(0xff336699.toInt(), decoded.bitmap.getPixel(24, 16), 8,
+                    "Raster import must decode the MPF primary image")
+            }
+
+            index.putInt(84, -1) // Thumbnail offset beyond the file.
+            val malformed = File(root, "bad-index.jpg").apply { writeBytes(cameraMpf + trailer) }
+            assertThrows(IOException::class.java) {
+                RasterImageDecoder.decode(malformed).close()
+            }
+        } finally { root.deleteRecursively() }
+    }
+
     private fun jpeg(width: Int, height: Int, color: Int): ByteArray {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         return try {

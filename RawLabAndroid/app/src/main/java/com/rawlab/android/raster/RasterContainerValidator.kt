@@ -1,6 +1,7 @@
 package com.rawlab.android.raster
 
 import java.io.BufferedInputStream
+import java.io.File
 import java.io.IOException
 import java.io.InputStream
 
@@ -29,10 +30,16 @@ internal object RasterContainerValidator {
     private val gainMapMarkers = listOf("gainmap", "hdrgm", "hdr-gain-map", "android:gainmap",
         "urn:iso:std:iso:ts:21496", "iso:ts:21496")
 
-    fun inspect(bytes: ByteArray): RasterValidation = inspect(bytes.inputStream())
+    fun inspect(bytes: ByteArray): RasterValidation = inspect(bytes.inputStream(), null)
 
     fun inspect(input: InputStream): RasterValidation {
-        val stream = RasterStream(BufferedInputStream(input))
+        return inspect(input, null)
+    }
+
+    fun inspect(file: File): RasterValidation = file.inputStream().use { inspect(it, file) }
+
+    private fun inspect(input: InputStream, file: File?): RasterValidation {
+        val stream = BufferedInputStream(input)
         return try {
             val prefix = ByteArray(2)
             if (!readFully(stream, prefix, 0, prefix.size)) return invalid("Truncated image")
@@ -43,7 +50,11 @@ internal object RasterContainerValidator {
                         !signatureTail.contentEquals(byteArrayOf(78, 71, 13, 10, 26, 10))) invalid("Invalid PNG signature")
                     else inspectPng(stream)
                 }
-                prefix[0] == 0xFF.toByte() && prefix[1] == 0xD8.toByte() -> inspectJpeg(stream)
+                prefix[0] == 0xFF.toByte() && prefix[1] == 0xD8.toByte() -> {
+                    val mpfCount = file?.let(NativeMpf::inspectSdrJpegMpf) ?: 0
+                    if (mpfCount < 0) invalid("Unsupported or invalid MPF images")
+                    else inspectJpeg(stream, mpfCount > 0)
+                }
                 else -> invalid("Only JPEG and PNG are supported")
             }
         } catch (_: IOException) {
@@ -128,19 +139,17 @@ internal object RasterContainerValidator {
         return RasterValidation(RasterContainerInfo("PNG", width, height, colorType == 6, hasIccProfile, depth))
     }
 
-    private fun inspectJpeg(stream: RasterStream): RasterValidation {
+    private fun inspectJpeg(stream: InputStream, hasMpf: Boolean): RasterValidation {
         var marker = nextJpegMarker(stream)
         var frame: RasterContainerInfo? = null
         var iccTotal: Int? = null
         val iccChunks = mutableMapOf<Int, ByteArray>()
         var sawScan = false
-        var mpf: List<JpegRange>? = null
         val c2pa = C2paJpegMetadata()
         while (marker != null) {
             if (marker == 0xD9) {
-                if (!sawScan || !c2pa.isComplete ||
-                    (mpf?.let { !MpfThumbnails.validateTail(stream, it) } ?: hasTrailingJpeg(stream)))
-                    return invalid("Invalid JPEG frame")
+                if (!sawScan || !c2pa.isComplete) return invalid("Invalid JPEG frame")
+                if (!hasMpf && hasTrailingJpeg(stream)) return invalid("Invalid JPEG frame")
                 if (iccTotal != null && !IccProfiles.validateJpegChunks(iccChunks, iccTotal))
                     return invalid("Invalid JPEG ICC profile")
                 return frame?.copy(hasColorProfile = iccTotal != null)?.let(::RasterValidation)
@@ -173,11 +182,6 @@ internal object RasterContainerValidator {
             } else {
                 if (!c2pa.isComplete) return invalid("Truncated JPEG metadata")
                 if (body != null && containsGainMapMarker(body)) return invalid("HDR gain maps are not supported")
-            }
-            if (marker == 0xE2 && body != null && body.size >= 4 && body.copyOfRange(0, 4).contentEquals("MPF\u0000".toByteArray())) {
-                if (mpf != null) return invalid("Multiple MPF indexes are not supported")
-                mpf = MpfThumbnails.parse(body, stream.position - body.size + 4)
-                    ?: return invalid("Unsupported or invalid MPF images")
             }
             if (marker == 0xE2 && body != null && IccProfiles.isJpegPrefix(body)) {
                 if (body.size < 14 || body[11] != 0.toByte()) return invalid("Invalid JPEG ICC profile")
