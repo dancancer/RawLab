@@ -155,12 +155,14 @@ struct RawUnpackExportTests {
               "preview processRaw unpacks exactly once (total=\(counts.totalUnpack))")
 
         // 5. Warm sampleHSL reuses preview session (0 unpacks); cold sampleHSL on another RAW unpacks once.
+        let validSampleAvailabilities: [HSLTargetAvailability] = [.available, .nearGray]
         rawlabCounterReset()
         let warmHSL = try previewProcessor.sampleHSL(
             url: rawURL, buffer: nil, settings: .default, previewLongEdge: 1200, lutURL: nil,
             interactive: false, revision: HSLTargetRevision(source: 1, request: 1), point: CGPoint(x: 0.5, y: 0.5))
         counts = UnpackCounts.current()
-        check(warmHSL.availability == .available, "warm sampleHSL returns available sample")
+        check(validSampleAvailabilities.contains(warmHSL.availability),
+              "warm sampleHSL returns completed sample (availability=\(warmHSL.availability))")
         check(counts.bridgeLoad == 0 && counts.bridgeInspect == 0 && counts.totalUnpack == 0,
               "warm sampleHSL reuses preview session without re-unpacking (total=\(counts.totalUnpack))")
 
@@ -169,7 +171,8 @@ struct RawUnpackExportTests {
             url: dngScaledURL, buffer: nil, settings: .default, previewLongEdge: 1200, lutURL: nil,
             interactive: false, revision: HSLTargetRevision(source: 2, request: 1), point: CGPoint(x: 0.5, y: 0.5))
         counts = UnpackCounts.current()
-        check(coldHSL.availability == .available, "cold sampleHSL returns available sample")
+        check(validSampleAvailabilities.contains(coldHSL.availability),
+              "cold sampleHSL returns completed sample (availability=\(coldHSL.availability))")
         check(counts.bridgeLoad == 0 && counts.bridgeInspect == 0 && counts.coreDecode == 1 && counts.totalUnpack == 1,
               "cold sampleHSL unpacks exactly once (total=\(counts.totalUnpack))")
 

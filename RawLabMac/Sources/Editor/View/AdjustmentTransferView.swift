@@ -19,7 +19,7 @@ struct AdjustmentTransferView: View {
     @State private var preparing = false
     @State private var message: String?
     @State private var operationGeneration = UUID()
-    @State private var preflight = AdjustmentTransferPreflight()
+    @StateObject private var preflight = AdjustmentTransferPreflight()
     @State private var historyID: UUID?
     @State private var historyUndo = true
     @State private var historyPhoto: URL?
