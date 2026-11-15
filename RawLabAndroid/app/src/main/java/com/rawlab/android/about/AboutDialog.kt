@@ -18,6 +18,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import com.rawlab.android.R
 import com.rawlab.android.analytics.UsageAnalyticsState
 import com.rawlab.android.i18n.AppStrings
@@ -39,7 +40,11 @@ fun AboutDialog(
         try { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
         catch (_: ActivityNotFoundException) { linkFailed = true }
     }
-    AlertDialog(onDismissRequest = onClose, title = { Text(stringResource(R.string.about_rawlab)) },
+    AlertDialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp).widthIn(max = 560.dp),
+        title = { Text(stringResource(R.string.about_rawlab)) },
         text = {
             Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(stringResource(R.string.app_version, state.version))

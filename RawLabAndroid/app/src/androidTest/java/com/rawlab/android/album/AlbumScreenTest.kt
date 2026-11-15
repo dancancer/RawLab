@@ -254,6 +254,7 @@ class AlbumScreenTest {
         val name = scrollInBucket()
         val before = compose.onNodeWithText(name).fetchSemanticsNode().boundsInRoot.top
         compose.onNodeWithContentDescription("刷新").performClick()
+        waitForAlbumQuery()
         compose.waitUntil(10_000) { compose.onAllNodesWithText(bucket).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText(bucket).assertIsSelected()
         compose.onNodeWithText(name).assertIsDisplayed()
@@ -283,6 +284,7 @@ class AlbumScreenTest {
         val before = compose.onNodeWithText(name).fetchSemanticsNode().boundsInRoot.top
         compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
         compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        waitForAlbumQuery()
         compose.waitUntil(10_000) { compose.onAllNodesWithText(bucket).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText(bucket).assertIsSelected()
         compose.onNodeWithText(name).assertIsDisplayed()
