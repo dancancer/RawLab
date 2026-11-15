@@ -407,6 +407,23 @@ internal static class HotPathIoAndRefreshChecks
             catch (FileNotFoundException) { missingThrew = true; }
             Check(missingThrew && !uDigestCache.MatchesSha256(missingDigestPath, reliableDigest.Sha256Hex, 256 * 1024),
                 "Confirmed missing file still throws FileNotFoundException and returns false");
+
+            // BatchFrozenSettings.Checksum wires to FileDigestCache.Shared, returning lowercase hex, hitting on repeat, and detecting overwrites.
+            var batchCube = Path.Combine(root, "batch-shared.cube");
+            File.WriteAllText(batchCube, BuildLargeCube("0.25 0.5 0.75"));
+            FileDigestCache.Shared.Invalidate(batchCube);
+            var sharedComputeBefore = FileDigestCache.Shared.ComputeCount;
+            var sharedHitBefore = FileDigestCache.Shared.HitCount;
+            var c1 = BatchFrozenSettings.Checksum(batchCube);
+            var c2 = BatchFrozenSettings.Checksum(batchCube);
+            Check(c1 == c2 && c1.Length == 64 && c1.All(ch => "0123456789abcdef".Contains(ch)) &&
+                  FileDigestCache.Shared.ComputeCount == sharedComputeBefore + 1 &&
+                  FileDigestCache.Shared.HitCount >= sharedHitBefore + 1,
+                "BatchFrozenSettings.Checksum hits FileDigestCache.Shared and returns lowercase SHA-256 hex");
+            File.WriteAllText(batchCube, BuildLargeCube("0.35 0.6 0.85"));
+            var c3 = BatchFrozenSettings.Checksum(batchCube);
+            Check(c3 != c1 && FileDigestCache.Shared.ComputeCount == sharedComputeBefore + 2,
+                "BatchFrozenSettings.Checksum detects replaced look via FileDigestCache.Shared");
         }
         finally
         {

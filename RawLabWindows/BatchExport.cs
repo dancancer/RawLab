@@ -21,11 +21,8 @@ public sealed record BatchFrozenSettings
     public int? LongEdge { get; init; }
 
     public BatchFrozenSettings Copy() => this with { Settings = Settings.Copy() };
-    public static string Checksum(string path)
-    {
-        using var stream = File.OpenRead(path);
-        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
-    }
+    public static string Checksum(string path) =>
+        FileDigestCache.Shared.GetDigest(path).Sha256Hex.ToLowerInvariant();
     public void Validate()
     {
         if (Version != 1 || SettingsVersion != 1 || Ordinal < 0 || !Enum.IsDefined(OutputFormat) ||

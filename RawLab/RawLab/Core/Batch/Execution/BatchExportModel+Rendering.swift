@@ -58,9 +58,9 @@ final class IOSHDRBatchPreparation {
         else if let id=settings.lutID,id.hasPrefix("recipe-lut:") { look=MasterRecipe.recipe(for:String(id.dropFirst("recipe-lut:".count)))?.lutURL() }
         else { look=settings.lutID.flatMap { looks[$0] } }
         guard !settings.hasLook || look != nil else { throw BatchExportError.target(L10n.text("目标所需的外观不可用，请先导入外观。")) }
-        let hash=try PhotoIdentity.fallback(for:target.sourceURL).contentIdentifier!
+        let hash=try PhotoIdentity.cachedFallback(for:target.sourceURL).contentIdentifier!
         return BatchFrozenSettings(ordinal:ordinal,settings:settings,inputSHA256:hash,lookURL:look,
-            lookSHA256:try look.flatMap { try PhotoIdentity.fallback(for:$0).contentIdentifier },
+            lookSHA256:try look.flatMap { try PhotoIdentity.cachedFallback(for:$0).contentIdentifier },
             lookName:settings.isHDREditing ? "HDR" : settings.masterRecipe?.name,outputFormat:format,longEdge:longEdge)
     }
 }
