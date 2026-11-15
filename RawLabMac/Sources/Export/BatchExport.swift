@@ -282,11 +282,14 @@ final class BatchJournal {
         writtenFingerprint = Self.fingerprint(atPath: url.path)
     }
 
-    func snapshotLook(_ original: URL?, for id: UUID) throws -> URL? {
+    func snapshotLook(_ original: URL?, contentIdentifier: String?) throws -> URL? {
         guard let original else { return nil }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let copy = directory.appendingPathComponent("\(id.uuidString).\(original.pathExtension)")
-        try FileManager.default.copyItem(at: original, to: copy)
+        // 同一任务共享同一 look 时按内容寻址只存一份；已有即复用，不重复写。
+        let copy = directory.appendingPathComponent("\(contentIdentifier ?? UUID().uuidString).\(original.pathExtension)")
+        if !FileManager.default.fileExists(atPath: copy.path) {
+            try FileManager.default.copyItem(at: original, to: copy)
+        }
         return copy
     }
 
@@ -449,13 +452,15 @@ final class BatchJournal {
 
     func releaseResources(_ job: BatchExportJob) {
         for item in job.items { cleanup(job, item: item) }
+        // 内容寻址副本（sha 命名）与升级前 UUID 命名的旧副本都要能回收。
+        let owned = { (stem: String, id: UUID) in stem == id.uuidString || (stem.count == 64 && stem.allSatisfy(\.isHexDigit)) }
         if let look = job.look, look.deletingLastPathComponent().standardizedFileURL.path == directory.standardizedFileURL.path,
-           look.deletingPathExtension().lastPathComponent == job.id.uuidString {
+           owned(look.deletingPathExtension().lastPathComponent, job.id) {
             try? FileManager.default.removeItem(at: look)
         }
         for item in job.items {
             if let look = item.frozen?.look, look.deletingLastPathComponent().standardizedFileURL.path == directory.standardizedFileURL.path,
-               look.deletingPathExtension().lastPathComponent == item.id.uuidString {
+               owned(look.deletingPathExtension().lastPathComponent, item.id) {
                 try? FileManager.default.removeItem(at: look)
             }
         }

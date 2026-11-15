@@ -113,7 +113,9 @@ class BatchSelectionExport(private val directory: File,
             val targets = review.rows.mapIndexed { index, row ->
                 val extension = row.target.displayName.substringAfterLast('.', "raw").replace(Regex("[^A-Za-z0-9]"), "").ifEmpty { "raw" }
                 val input = row.target.sourceFile.copyTo(File(folder, "input-$index.$extension"))
-                val look = row.look?.copyTo(File(folder, "look-$index.${row.look.extension}"))
+                val look = row.look?.let { source ->
+                    File(folder, "${row.lookSHA256}.${source.extension}").also { if (!it.exists()) source.copyTo(it) }
+                }
                 val frozen = BatchFrozenSettings(ordinal = index, settings = row.settings!!,
                     inputSHA256 = row.inputSHA256!!, lookFile = look, lookSHA256 = row.lookSHA256,
                     outputFormat = review.format, longEdge = review.longEdge)

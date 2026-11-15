@@ -236,8 +236,9 @@ final class BatchExportModel: ObservableObject {
             var frozen=prepared
             if let original=prepared.lookURL {
                 let folder=try BatchInputStore.directory(for:draft.id,root:journal.directory).deletingLastPathComponent()
-                let copy=folder.appendingPathComponent("hdr-look-\(UUID().uuidString).\(original.pathExtension)")
-                try FileManager.default.copyItem(at:original,to:copy); owned.append(copy); frozen.lookURL=copy
+                let copy=folder.appendingPathComponent("hdr-look-\(prepared.lookSHA256 ?? UUID().uuidString).\(original.pathExtension)")
+                if !FileManager.default.fileExists(atPath:copy.path){try FileManager.default.copyItem(at:original,to:copy)}
+                owned.append(copy); frozen.lookURL=copy
             }
             try frozen.verifyFiles(input:result.targets[index].sourceURL)
             result.targets[index].frozen=frozen

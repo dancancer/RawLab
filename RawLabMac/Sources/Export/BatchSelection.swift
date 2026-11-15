@@ -189,7 +189,7 @@ struct MacCollectionExportFreeze {
                 guard item.identity == snapshot.record.identity, item.resourceIdentifier == snapshot.photo.id else {
                     throw BatchExportFailure.changedInput
                 }
-                let look = try journal.snapshotLook(snapshot.look, for: item.id)
+                let look = try journal.snapshotLook(snapshot.look, contentIdentifier: snapshot.lookSHA256)
                 if let look { ownedLooks.append(look) }
                 item.selected = true
                 item.noticeKey = snapshot.noticeKey

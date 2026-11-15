@@ -25,7 +25,7 @@ class HDRBatchPreparationTest {
             BatchTarget(PhotoIdentity(name),File(root,name).apply { writeText(name) },name,
                 inputKind=if(name.endsWith(".dng"))PhotoInputKind.RAW else PhotoInputKind.RASTER)
         }
-        init {store.save(targets.last().identity,EditSettings(exposure=-1f,film="custom"))}
+        init {store.save(targets[1].identity,EditSettings(exposure=2f,film="custom"));store.save(targets.last().identity,EditSettings(exposure=-1f,film="custom"))}
         fun preparation(settings: EditSettings=sourceSettings)=BatchHDRPreparation(source.copy(settings=settings),store::readState,
             { if(it.film=="custom")look else null },{ file, _ ->
                 if(file == source.sourceFile || file.name.startsWith("hdr")) hdrInfo(1) else null
@@ -51,6 +51,9 @@ class HDRBatchPreparationTest {
         f.targets.forEach {assertEquals(before[it],f.store.readState(it.identity));assertEquals(bytes[it],it.sourceFile.readBytes().toList())}
         val frozenLook=frozen.rows.last().target.frozen!!.lookFile!!
         assertNotEquals(f.look.canonicalFile,frozenLook.canonicalFile)
+        // C-03：两个共享同一 look 的目标只共享一份内容寻址副本（撤去复用必红）。
+        assertEquals(1, File(f.directory, frozen.id).listFiles()!!.filter { it.name.startsWith("hdr-look-") }.size)
+        assertEquals(frozen.rows[1].target.frozen!!.lookFile, frozenLook)
         f.look.writeText("new look");f.store.save(f.targets.last().identity,EditSettings(exposure=4f))
         val restored=BatchJournal(f.directory).load(frozen.id)!!
         assertEquals(.5f,restored.settingsFor(restored.rows.last().target).exposure)

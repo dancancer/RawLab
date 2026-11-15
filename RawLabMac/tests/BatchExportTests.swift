@@ -103,6 +103,33 @@ private func perTargetSnapshots(root: URL, inputs: [URL], output: URL) throws {
     }
 }
 
+private func lookDeduplication(root: URL, inputs: [URL]) throws {
+    // C-03：同一 look 的多个目标在任务目录里只存一份内容寻址副本；撤掉复用/命名本用例必红。
+    let journal = BatchJournal(directory: root.appendingPathComponent("look-dedupe"))
+    let original = root.appendingPathComponent("shared-look.cube")
+    try Data("LUT 3 1 2\n0 0 0\n1 1 1\n".utf8).write(to: original)
+    let sha = try BatchFrozenSettings.checksum(original)
+    let first = try journal.snapshotLook(original, contentIdentifier: sha)
+    let second = try journal.snapshotLook(original, contentIdentifier: sha)
+    try check(first == second && first?.lastPathComponent == "\(sha).cube",
+              "targets sharing one look must reuse the single content-addressed task copy")
+    try check(try FileManager.default.contentsOfDirectory(at: journal.directory, includingPropertiesForKeys: nil)
+        .filter { $0.pathExtension == "cube" }.count == 1, "one look file per task directory")
+    var job = BatchExportJob(source: inputs[0], settings: Adjustments(), look: first, lookName: "Shared")
+    job.version = 3; job.settingsMode = .perTargetFrozen
+    job.items = try [inputs[1], inputs[2]].map { try BatchExportItem(url: $0) }
+    let legacy = journal.directory.appendingPathComponent("\(job.items[1].id.uuidString).cube")
+    try Data("LUT 3 1 2\n0 0 0\n1 1 1\n".utf8).write(to: legacy)
+    for index in job.items.indices {
+        job.items[index].frozen = BatchFrozenSettings(ordinal: index, settings: Adjustments(), look: index == 1 ? legacy : first,
+            lookSHA256: sha, lookName: "Shared", outputFormat: .jpeg, longEdge: 1024)
+    }
+    try job.validate()
+    journal.releaseResources(job)
+    try check(!FileManager.default.fileExists(atPath: first!.path) && !FileManager.default.fileExists(atPath: legacy.path),
+        "releasing a job must reclaim both content-addressed and legacy UUID-named look copies")
+}
+
 private func journalIsolation(root: URL, inputs: [URL], output: URL) throws {
     let isolationRoot = root.appendingPathComponent("journal-isolation")
     let corruptJournal = BatchJournal(directory: isolationRoot.appendingPathComponent("corrupt"))
@@ -385,6 +412,7 @@ private func journalWriteAmplification(root: URL, inputs: [URL], output: URL) th
         let output = root.appendingPathComponent("output")
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         try perTargetSnapshots(root: root, inputs: inputs, output: output)
+        try lookDeduplication(root: root, inputs: inputs)
         try journalIsolation(root: root, inputs: inputs, output: output)
         try journalWriteAmplification(root: root, inputs: inputs, output: output)
         let existing = output.appendingPathComponent("one-Velvia.jpg")

@@ -384,7 +384,7 @@ extension EditorModel {
             var job = BatchExportJob(source: file, settings: settings, look: nil, lookName: lookName)
             if settings.isHDREditing { job.format = .hdrJPEG }
             job.longEdge = exportLongEdge
-            let copiedLook = try batchJournal.snapshotLook(lookURL, for: job.id)
+            let copiedLook = try batchJournal.snapshotLook(lookURL, contentIdentifier: lookURL.map { try BatchFrozenSettings.checksum($0) })
             job.look = copiedLook
             do {
                 try batchJournal.save(job)
