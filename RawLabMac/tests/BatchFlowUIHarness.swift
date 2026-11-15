@@ -3,9 +3,18 @@ import SwiftUI
 // 使用产品页面和真实模型，只延后后台检查结果，稳定覆盖取消和失去前台的窗口。
 @main struct BatchFlowUIHarness: App {
     @StateObject private var model: EditorModel
+    private let stateDirectory: URL
 
     init() {
-        let editor = EditorModel()
+        let stateDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("rawlab-batch-flow-ui-\(UUID().uuidString)", isDirectory: true)
+        self.stateDirectory = stateDirectory
+        let editor = EditorModel(
+            lookDirectory: stateDirectory.appendingPathComponent("looks", isDirectory: true),
+            editDirectory: stateDirectory.appendingPathComponent("edits", isDirectory: true),
+            batchDirectory: stateDirectory.appendingPathComponent("batch", isDirectory: true),
+            presetDirectory: stateDirectory.appendingPathComponent("presets", isDirectory: true)
+        )
         let files = CommandLine.arguments.dropFirst().map { URL(fileURLWithPath: $0) }
         editor.addCollectionPhotos(files)
         let prepare = editor.prepareCollectionExportOperation
@@ -25,6 +34,9 @@ import SwiftUI
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in trace("resign") }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didHideNotification)) { _ in trace("hide") }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in trace("active") }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                    try? FileManager.default.removeItem(at: stateDirectory)
+                }
         }.defaultSize(width: 950, height: 620)
         Window(L10n.text("批量导出"), id: "batch-export") {
             BatchExportWindow(model: model)
