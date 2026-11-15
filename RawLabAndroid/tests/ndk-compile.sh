@@ -5,10 +5,16 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 NDK="${ANDROID_NDK_HOME:-}"
 if [[ -z "$NDK" || ! -d "$NDK" ]]; then
   SDK="${ANDROID_HOME:?Set ANDROID_NDK_HOME or ANDROID_HOME to locate the Android NDK}"
-  if [[ -d "$SDK/ndk/27.2.12479018" ]]; then
+  if [[ -f "$SDK/ndk/27.2.12479018/build/cmake/android.toolchain.cmake" ]]; then
     NDK="$SDK/ndk/27.2.12479018"
   else
-    NDK="$(ls -1d "$SDK/ndk/"* 2>/dev/null | sort -V | tail -n 1 || true)"
+    NDK="$(
+      for d in "$SDK/ndk/"*/; do
+        if [[ -f "${d}build/cmake/android.toolchain.cmake" ]]; then
+          printf '%s\n' "${d%/}"
+        fi
+      done | sort -V | tail -n 1 || true
+    )"
   fi
 fi
 if [[ -z "$NDK" || ! -f "$NDK/build/cmake/android.toolchain.cmake" ]]; then
