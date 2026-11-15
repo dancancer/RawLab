@@ -386,6 +386,7 @@
     "当前工具": "Outil actuel",
     "当前构建未配置使用统计，未采集或上报。": "L’analyse d’utilisation n’est pas configurée dans cette version. Aucune donnée n’est collectée ni transmise.",
     "当前照片": "Photo actuelle",
+    "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。": "Le mode GPU forcé n’est pas disponible pour cette photo, ce look ou ce mode de traitement. Passez en mode Auto pour revenir en repli.",
     "当前照片或调整记录无效，无法安全重置。": "La photo actuelle ou ses réglages enregistrés sont invalides et ne peuvent pas être réinitialisés en toute sécurité.",
     "当前通道 {0}，修改仅作用于该颜色。": "Canal actuel : {0}. Les modifications s’appliquent uniquement à cette couleur.",
     "当前配方不可用，无法安全重置外观。": "La recette actuelle est indisponible ; son rendu ne peut donc pas être réinitialisé en toute sécurité.",

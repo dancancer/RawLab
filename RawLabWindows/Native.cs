@@ -304,13 +304,33 @@ internal static partial class Native
         public Session() : base(true) { Check(sony2fuji_session_create(out var value)); SetHandle(value); }
         protected override bool ReleaseHandle() => sony2fuji_session_destroy(handle) == 0;
     }
+    internal enum UnsupportedReason
+    {
+        None = 0,
+        ForceGpu = 1,
+    }
+    internal static string FormatErrorMessage(int status, string? x3fDetail, UnsupportedReason unsupportedReason = UnsupportedReason.None)
+    {
+        if (status != 0 && !string.IsNullOrEmpty(x3fDetail))
+            return Loc.Format("无法正常显影 X3F：{0}", x3fDetail);
+        return status switch {
+            1 => Loc.Text("参数或输出路径无效。"),
+            2 => unsupportedReason == UnsupportedReason.ForceGpu
+                ? Loc.Text("当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。")
+                : Loc.Text("不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。"),
+            3 => Loc.Text("无法读取或写入文件，请检查路径和访问权限。"),
+            5 => Loc.Text("内存不足，请关闭其他大型应用或使用适合窗口预览。"),
+            _ => Loc.Text("照片处理失败。")
+        };
+    }
     internal static void Check(int status, Session? session = null)
     {
-        if (status != 0 && session != null && Marshal.PtrToStringUTF8(sony2fuji_session_x3f_error(session)) is { Length: > 0 } detail)
-            throw new InvalidOperationException(Loc.Format("无法正常显影 X3F：{0}", detail));
-        if (status != 0) throw new InvalidOperationException(status switch {
-            1 => Loc.Text("参数或输出路径无效。"), 2 => Loc.Text("不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。"),
-            3 => Loc.Text("无法读取或写入文件，请检查路径和访问权限。"), 5 => Loc.Text("内存不足，请关闭其他大型应用或使用适合窗口预览。"), _ => Loc.Text("照片处理失败。") });
+        if (status == 0) return;
+        var detail = session != null ? Marshal.PtrToStringUTF8(sony2fuji_session_x3f_error(session)) : null;
+        var unsupportedReason = status == 2 && session != null
+            ? (UnsupportedReason)sony2fuji_session_get_unsupported_reason(session)
+            : UnsupportedReason.None;
+        throw new InvalidOperationException(FormatErrorMessage(status, detail, unsupportedReason));
     }
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] private static extern int sony2fuji_session_create(out IntPtr session);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] private static extern int sony2fuji_session_destroy(IntPtr session);
@@ -341,6 +361,7 @@ internal static partial class Native
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_cancellation_callback(
         Session session, CancellationCallback? callback, IntPtr context);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_last_backend(Session session);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_unsupported_reason(Session session);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_interactive_preview(Session session,int enabled);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_chroma_denoise(Session session,int mode);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_viewport_preview(Session session,int enabled);
