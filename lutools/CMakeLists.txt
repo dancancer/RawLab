@@ -917,6 +917,10 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     if(RAWLAB_GLSLANG AND RAWLAB_SHADER_PYTHON)
         add_test(NAME gles_shader COMMAND "${RAWLAB_SHADER_PYTHON}"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_gles_shader.py" --validator "${RAWLAB_GLSLANG}")
+    elseif(RAWLAB_SHADER_PYTHON)
+        add_test(NAME gles_shader COMMAND "${RAWLAB_SHADER_PYTHON}" -c
+            "import sys; print('SKIP gles_shader: glslangValidator unavailable'); sys.exit(77)")
+        set_tests_properties(gles_shader PROPERTIES SKIP_RETURN_CODE 77)
     endif()
     if(UNIX)
         find_program(RAWLAB_ABI_CLANGXX NAMES clang++)
@@ -1007,6 +1011,15 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         add_test(NAME gpu_gles_hw_photo COMMAND gles_photo_pixel_tests --hardware-gles)
         add_test(NAME gpu_d3d11_hw_photo COMMAND gles_photo_pixel_tests --hardware-d3d11)
         set_tests_properties(gpu_gles_hw_photo gpu_d3d11_hw_photo PROPERTIES SKIP_RETURN_CODE 77)
+    elseif(RAWLAB_SHADER_PYTHON)
+        add_test(NAME gpu_gles_photo_pixel COMMAND "${RAWLAB_SHADER_PYTHON}" -c
+            "import sys; print('SKIP gpu_gles_photo_pixel: glslangValidator unavailable'); sys.exit(77)")
+        add_test(NAME gpu_gles_hw_photo COMMAND "${RAWLAB_SHADER_PYTHON}" -c
+            "import sys; print('SKIP gpu_gles_hw_photo: glslangValidator unavailable'); sys.exit(77)")
+        add_test(NAME gpu_d3d11_hw_photo COMMAND "${RAWLAB_SHADER_PYTHON}" -c
+            "import sys; print('SKIP gpu_d3d11_hw_photo: glslangValidator unavailable'); sys.exit(77)")
+        set_tests_properties(gpu_gles_photo_pixel gpu_gles_hw_photo gpu_d3d11_hw_photo
+            PROPERTIES SKIP_RETURN_CODE 77)
     endif()
     if(APPLE)
         add_executable(metal_lut_init_retry_tests tests/metal_lut_init_retry_tests.mm
