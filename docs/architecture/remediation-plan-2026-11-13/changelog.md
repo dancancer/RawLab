@@ -266,3 +266,12 @@
 - **#351（第 108 个，merge 83d54f81）**：host-jni-hygiene（bitmap.h 常量对齐真 NDK -3/-1/-2、recipe_probe_stages 子结构 memcmp+stub ABI、jni_session_lock TSan 干净、双脚本接 Android 强制档）。碳审 3 变异全死。
 - **GitHub workflow-scope 实操规则**：dancancer OAuth token 无 `workflow` scope——**API 建的分支提交**（update-branch）与部分 `mergePullRequest` 会被 `refusing to allow an OAuth App to create or update workflow` 拒绝；**git push 不受限**。处置：分支本地 rebase 到最新 development + force push（新 head 自动门禁重跑）→ `gh pr merge` 立即成功（#349/#351 双实证）。若再遇拒：先 rebase 重试，最后才网页合并或让用户给 token 加 scope。
 - 碳审非阻塞移交：#351 ①jni_session_lock Test2 补锁内 notify_all（省 CI 固定 1.5s 空等）②recipe_probe_stages_test 单数 stub 清理+sizeof==2248 static_assert；#349 ③processing-concurrency.md sony2fuji_session 行号差 1。
+
+### (50) 用户反馈第 3 击：#352 跨版本孤儿删除风险 → re-adopt 分级恢复（合入前拦截）
+
+- **用户主张（成立）**：#352（未合并）`recover()` 无条件删除未索引 `originals/<uuid>/`，与旧版 #339 整批写窗口（前序照片 UI 已"已保存"但清单 0 写）叠加成**跨版本升级**场景：升级首启即物理删除该完整原件唯一副本；相机卡已清+无备份=可能永久丢片。
+- **碳独立核实（review-mwha7fq2，不信任任何人）**：`development`(#339 bin) 与 `23ce7659`(#352 bin) 双二进制临时目录实跑证实删除路径——旧版 `savedCount=1 manifestWrites=0` 硬杀 → 升级 `originalsDirs=[] storedBytes=0`；半片只存在于 `partial/`，磁盘原件是 APFS 原子 rename 的完整文件；无 history/统计/prune 任何兜底（均只读 manifest 快照）。正式版 `v0.10.0` 不含相机模块=真实暴露度 0；`development`/TestFlight 含 #339 构建的合入门禁 High（违背 Q6）。
+- **碳揪出 2 个实现坑（我原派单未点透）**：① `pruneExportedOriginals` 有 `state.jobs` 空/prunable 空两处早退 + 只清 `prunedSourceIDs`，无 Job 引用的已导出 re-adopt 件**永远删不掉**（"可 prune"落空）；② re-adopt 准入必须过 `init()` 全量不变量（小写 UUID 目录名兼容大小写敏感 APFS、`validName&&photoName`、0<size≤1GiB、4 字节魔数、digest 合法），异常非空目录单条目 catch 跳过（不 throw 炸 `init`、不盲删未知文件）。附 8 条红线（含翻转 3 处旧"删空"断言、Step1→2→3 顺序锁死、幂等 0 写、迁移/幂等/prune 回归用例）。
+- **lead 处置获碳认可**：分离"逐张持久化"（保留）与"孤儿无条件删除"（改分级 re-adopt：完整件入索引 UI 恢复可见、垃圾件删、软链/非 UUID 保留），否决 quarantine（重+割裂）与纯回退删除（#339 孤儿仍拿不到）。
+- **crew 返工（mwha76tu 同线程，首次返工=Hydrogen Xhigh）**：新 head `ddc1cafa`（rebase 后仅 5 iOS 文件），8 红线全落；变异（re-adopt→无条件删）camera-originals EXIT=133 + skip-limit L1750/L2084 红；四脚本+apple-models ios 24 套件绿。碳复审 r2 `review-mwhaw0xw` 在跑（approve=第 109；打回=二次返工改派 codex）。
+- **教训（入规）**：**批式/延迟持久化改动必须审"跨版本升级首启"这一独立窗口**——旧版崩溃遗留的磁盘态由新代码首次 `recover()` 处置，删除类清扫在升级语境下默认危险（未索引≠垃圾）；对"唯一副本"存储的自动删除需与 UI"已保存"承诺 + 导出账本联合判定，缺任一即 re-adopt/保留而非删。
