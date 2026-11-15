@@ -339,6 +339,50 @@ enum SubtoolDraftProbe {
         view.showingBatchExport = false
         _ = await waitUntil(5) { noPresentedSheet() }
 
+        // 6. Collection navigation and openBatchSelection must close active draft cleanly so
+        //    onChange(of: editorDraftSnapshot) does not re-enable hasAdjustmentDraft.
+        await resetToCleanEditor()
+        view.selectEditorTool(.adjustment(.contrast))
+        await yieldFrames(6)
+        view.requestCollectionNavigation(.returnToCollection)
+        await yieldFrames(8)
+        check(view.showingBatchSelection && !view.draftExitPresented,
+              "requestCollectionNavigation(.returnToCollection) opens collection sheet for unchanged draft")
+        check(!view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.viewModel.hasAdjustmentDraft,
+              "requestCollectionNavigation(.returnToCollection) closes workspace and keeps hasAdjustmentDraft=false")
+        view.showingBatchSelection = false
+        view.pendingCollectionNavigation = nil
+        _ = await waitUntil(5) { noPresentedSheet() }
+
+        await resetToCleanEditor()
+        view.selectEditorTool(.adjustment(.contrast))
+        await yieldFrames(6)
+        view.openBatchSelection()
+        await yieldFrames(8)
+        check(view.showingBatchSelection,
+              "openBatchSelection opens collection sheet with unchanged active draft")
+        check(!view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.viewModel.hasAdjustmentDraft,
+              "openBatchSelection closes unchanged draft workspace and keeps hasAdjustmentDraft=false")
+        view.showingBatchSelection = false
+        _ = await waitUntil(5) { noPresentedSheet() }
+
+        await resetToCleanEditor()
+        view.selectEditorTool(.adjustment(.contrast))
+        await yieldFrames(6)
+        let batchContrast: Double = view.settings.contrast > 1.2 ? 0.92 : 1.4
+        view.workingSettings.contrast = batchContrast
+        await yieldFrames(4)
+        view.openBatchSelection()
+        await yieldFrames(8)
+        check(view.showingBatchSelection,
+              "openBatchSelection opens collection sheet with modified active draft")
+        check(!view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.viewModel.hasAdjustmentDraft,
+              "openBatchSelection closes modified draft workspace and keeps hasAdjustmentDraft=false")
+        check(abs(view.settings.contrast - batchContrast) < 0.001,
+              "openBatchSelection commits modified contrast before opening collection")
+        view.showingBatchSelection = false
+        _ = await waitUntil(5) { noPresentedSheet() }
+
         writeResult(passed: true)
         print("PASS: subtool menu draft suite (\(checks) checks)")
     }
