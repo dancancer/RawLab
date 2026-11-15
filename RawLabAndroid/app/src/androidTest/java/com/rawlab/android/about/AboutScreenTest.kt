@@ -15,7 +15,7 @@ class AboutScreenTest {
 
     @Test fun nestedLensLicensesAreReadable() {
         compose.onNodeWithContentDescription("更多").performClick()
-        compose.onNodeWithText(compose.activity.getString(R.string.licenses)).performClick()
+        compose.onNodeWithText(compose.activity.getString(R.string.licenses)).performScrollTo().performClick()
         compose.waitUntil(15_000) {
             compose.onAllNodes(hasText("GLib-COPYING", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
@@ -24,14 +24,14 @@ class AboutScreenTest {
 
     @Test fun aboutLinksManualCheckAndOptOutRemainReachable() {
         compose.onNodeWithContentDescription("更多").performClick()
-        compose.onNodeWithText("关于 RawLab").performClick()
+        compose.onNodeWithText("关于 RawLab").performScrollTo().performClick()
         compose.onNodeWithText("GitHub 仓库").assertIsDisplayed()
         compose.onNodeWithText("作者的小红书主页").assertIsDisplayed()
         val version = compose.activity.packageManager.getPackageInfo(compose.activity.packageName, 0).versionName
         compose.onNodeWithText("版本 $version").assertIsDisplayed()
         compose.onNodeWithText("检查更新").assertExists()
         val automatic = compose.activity.updates.state.value.automatic
-        compose.onNodeWithContentDescription("自动检查更新").performClick()
+        compose.onNodeWithContentDescription("自动检查更新").performScrollTo().performClick()
         compose.runOnIdle { check(compose.activity.updates.state.value.automatic != automatic) }
         compose.activityRule.scenario.recreate()
         compose.waitForIdle()
@@ -47,7 +47,7 @@ class AboutScreenTest {
         val preferences = compose.activity.getSharedPreferences(BuildConfig.USAGE_PREFERENCES, android.content.Context.MODE_PRIVATE)
         try {
             compose.onNodeWithContentDescription("更多").performClick()
-            compose.onNodeWithText("关于 RawLab").performClick()
+            compose.onNodeWithText("关于 RawLab").performScrollTo().performClick()
             compose.onNodeWithText("为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。")
                 .performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("当前构建未配置使用统计，未采集或上报。").performScrollTo().assertIsDisplayed()
