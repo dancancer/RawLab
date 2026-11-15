@@ -5,6 +5,7 @@
 #include "core/processing_cancellation.h"
 #include "gpu/denoise.h"
 #include "gpu/d3d11_recovery.h"
+#include "gpu/d3d11_shader_cache.h"
 #include "gpu/photo_bands.h"
 #include <d3d11.h>
 #include <d3dcompiler.h>
@@ -88,15 +89,10 @@ struct D3D11PhotoRenderer::Impl {
         }
         if (!device) throw std::runtime_error("No Direct3D 11 hardware adapter");
 #endif
-        ComPtr<ID3DBlob> code, errors;
-        const auto compiled = D3DCompile(kD3DPhotoShader.data(), kD3DPhotoShader.size(), "RawLab photo shader",
-            nullptr, nullptr, "main", "cs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3 | D3DCOMPILE_IEEE_STRICTNESS, 0, &code, &errors);
-        if (FAILED(compiled) && errors) {
-            OutputDebugStringA(static_cast<const char*>(errors->GetBufferPointer()));
-            std::cerr << static_cast<const char*>(errors->GetBufferPointer()) << '\n';
-        }
-        checked(compiled);
-        checked(device->CreateComputeShader(code->GetBufferPointer(), code->GetBufferSize(), nullptr, &shader));
+        const auto bytecode = compileD3D11Shader(
+            "RawLab photo shader", kD3DPhotoShader, "main", "cs_5_0",
+            D3DCOMPILE_OPTIMIZATION_LEVEL3 | D3DCOMPILE_IEEE_STRICTNESS, checked);
+        checked(device->CreateComputeShader(bytecode.data(), bytecode.size(), nullptr, &shader));
         D3D11_BUFFER_DESC desc{};
         desc.ByteWidth = sizeof(Parameters); desc.Usage = D3D11_USAGE_DEFAULT; desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
         checked(device->CreateBuffer(&desc, nullptr, &constants));

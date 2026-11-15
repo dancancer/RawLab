@@ -1041,6 +1041,11 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         set_tests_properties(gpu_gles_photo_pixel gpu_gles_hw_photo gpu_d3d11_hw_photo
             PROPERTIES SKIP_RETURN_CODE 77)
     endif()
+    add_executable(d3d11_shader_cache_tests tests/d3d11_shader_cache_tests.cpp)
+    target_compile_options(d3d11_shader_cache_tests PRIVATE
+        $<$<CXX_COMPILER_ID:MSVC>:/W4 /utf-8>
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra>)
+    add_test(NAME d3d11_shader_cache COMMAND d3d11_shader_cache_tests)
     if(APPLE)
         add_executable(metal_lut_init_retry_tests tests/metal_lut_init_retry_tests.mm
             src/gpu/lut_gpu.cpp src/core/lut_applicator.cpp src/core/lut_parser.cpp)
