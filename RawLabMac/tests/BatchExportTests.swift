@@ -104,32 +104,47 @@ private func perTargetSnapshots(root: URL, inputs: [URL], output: URL) throws {
 }
 
 private func lookDeduplication(root: URL, inputs: [URL]) throws {
-    // C-03：同一 look 的多个目标在任务目录里只存一份内容寻址副本；撤掉复用/命名本用例必红。
+    // C-03/B1：任务内一份内容寻址副本；跨任务由 jobID 前缀隔离，释放旧任务不得误删在用副本。
     let journal = BatchJournal(directory: root.appendingPathComponent("look-dedupe"))
     let original = root.appendingPathComponent("shared-look.cube")
-    try Data("LUT 3 1 2\n0 0 0\n1 1 1\n".utf8).write(to: original)
+    let lookBytes = Data("LUT 3 1 2\n0 0 0\n1 1 1\n".utf8)
+    try lookBytes.write(to: original)
     let sha = try BatchFrozenSettings.checksum(original)
-    let first = try journal.snapshotLook(original, contentIdentifier: sha)
-    let second = try journal.snapshotLook(original, contentIdentifier: sha)
-    try check(first == second && first?.lastPathComponent == "\(sha).cube",
+    var taskA = BatchExportJob(source: inputs[0], settings: Adjustments(), look: nil, lookName: "Shared")
+    taskA.version = 3; taskA.settingsMode = .perTargetFrozen
+    taskA.items = try [inputs[1], inputs[2]].map { try BatchExportItem(url: $0) }
+    let first = try journal.snapshotLook(original, jobID: taskA.id, contentIdentifier: sha)
+    let second = try journal.snapshotLook(original, jobID: taskA.id, contentIdentifier: sha)
+    try check(first == second && first?.lastPathComponent == "\(taskA.id.uuidString)-\(sha).cube",
               "targets sharing one look must reuse the single content-addressed task copy")
-    try check(try FileManager.default.contentsOfDirectory(at: journal.directory, includingPropertiesForKeys: nil)
-        .filter { $0.pathExtension == "cube" }.count == 1, "one look file per task directory")
-    var job = BatchExportJob(source: inputs[0], settings: Adjustments(), look: first, lookName: "Shared")
-    job.version = 3; job.settingsMode = .perTargetFrozen
-    job.items = try [inputs[1], inputs[2]].map { try BatchExportItem(url: $0) }
-    let legacy = journal.directory.appendingPathComponent("\(job.items[1].id.uuidString).cube")
-    try Data("LUT 3 1 2\n0 0 0\n1 1 1\n".utf8).write(to: legacy)
-    for index in job.items.indices {
-        job.items[index].frozen = BatchFrozenSettings(ordinal: index, settings: Adjustments(), look: index == 1 ? legacy : first,
-            lookSHA256: sha, lookName: "Shared", outputFormat: .jpeg, longEdge: 1024)
-    }
-    try job.validate()
-    journal.releaseResources(job)
+    let cubes = { try FileManager.default.contentsOfDirectory(at: journal.directory, includingPropertiesForKeys: nil)
+        .filter { $0.pathExtension == "cube" } }
+    try check(cubes().count == 1, "one look file per task directory")
+    // B1 回归：任务 A 仍 attach 时冻结同 look 的任务 B；A 释放（releaseResources(prior)）后 B 必须仍读得到。
+    var taskB = BatchExportJob(source: inputs[0], settings: Adjustments(), look: nil, lookName: "Shared")
+    taskB.version = 3; taskB.settingsMode = .perTargetFrozen
+    taskB.items = [try BatchExportItem(url: inputs[1])]
+    let live = try journal.snapshotLook(original, jobID: taskB.id, contentIdentifier: sha)
+    try check(live != first && cubes().count == 2, "each task must own a jobID-scoped copy instead of sharing one flat file")
+    taskA.look = first
+    taskB.look = live
+    let legacy = journal.directory.appendingPathComponent("\(taskA.items[1].id.uuidString).cube")
+    try lookBytes.write(to: legacy)
+    taskA.items[0].frozen = BatchFrozenSettings(ordinal: 0, settings: Adjustments(), look: first,
+        lookSHA256: sha, lookName: "Shared", outputFormat: .jpeg, longEdge: 1024)
+    taskA.items[1].frozen = BatchFrozenSettings(ordinal: 1, settings: Adjustments(), look: legacy,
+        lookSHA256: sha, lookName: "Shared", outputFormat: .jpeg, longEdge: 1024)
+    taskB.items[0].frozen = BatchFrozenSettings(ordinal: 0, settings: Adjustments(), look: live,
+        lookSHA256: sha, lookName: "Shared", outputFormat: .jpeg, longEdge: 1024)
+    try taskA.validate(); try taskB.validate()
+    journal.releaseResources(taskA)
     try check(!FileManager.default.fileExists(atPath: first!.path) && !FileManager.default.fileExists(atPath: legacy.path),
-        "releasing a job must reclaim both content-addressed and legacy UUID-named look copies")
+        "releasing a job must reclaim its own content-addressed and legacy UUID-named look copies")
+    try check(FileManager.default.fileExists(atPath: live!.path) && (try BatchFrozenSettings.checksum(live!) == sha),
+        "releasing a prior job must not delete the live job's look (BatchExportFailure.missingLook regression)")
+    journal.releaseResources(taskB)
+    try check(!FileManager.default.fileExists(atPath: live!.path), "releasing the live job reclaims its own copy")
 }
-
 private func journalIsolation(root: URL, inputs: [URL], output: URL) throws {
     let isolationRoot = root.appendingPathComponent("journal-isolation")
     let corruptJournal = BatchJournal(directory: isolationRoot.appendingPathComponent("corrupt"))

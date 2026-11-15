@@ -385,7 +385,7 @@ final class BatchExportModel: ObservableObject {
         for index in result.items.indices {
             if shouldCancel() { throw RenderError.aiCancelled }
             let prepared=try hdrPreparation.prepare(result.items[index],ordinal:index,format:draft.format,longEdge:draft.longEdge)
-            let look=try journal.snapshotLook(prepared.look,contentIdentifier:prepared.lookSHA256)
+            let look=try journal.snapshotLook(prepared.look,jobID:result.id,contentIdentifier:prepared.lookSHA256)
             if let look { owned.append(look) }
             result.items[index].frozen=BatchFrozenSettings(ordinal:index,settings:prepared.settings,look:look,
                 lookSHA256:prepared.lookSHA256,lookName:prepared.lookName,outputFormat:prepared.outputFormat,longEdge:prepared.longEdge)
