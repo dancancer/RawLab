@@ -27,32 +27,28 @@ extension ContentView {
             } else {
                 Menu {
                     Button(L10n.text("保存当前照片")) {
-                        singleExportFormat = settings.isHDREditing ? .hdrJPEG : .jpeg
-                        exportLongEdge = nil
-                        showingExportSize = true
+                        requestSingleExport(settings.isHDREditing ? .hdrJPEG : .jpeg)
                     }
-                    .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
+                    .disabled(!viewModel.hasImage || editorBusy || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
                     if settings.isHDREditing {
                         Button(L10n.text("保存 SDR JPEG")) {
-                            singleExportFormat = .jpeg; exportLongEdge=nil; showingExportSize=true
-                        }.disabled(editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
+                            requestSingleExport(.jpeg)
+                        }.disabled(editorBusy || viewModel.previewRendering || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
                         if HDRImage.heifExportAvailable {
                             Button(BatchOutputFormat.hdrHEIF.title) {
-                                singleExportFormat = .hdrHEIF; exportLongEdge = nil; showingExportSize = true
+                                requestSingleExport(.hdrHEIF)
                             }
-                            .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
+                            .disabled(!viewModel.hasImage || editorBusy || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
                         }
                     }
                     Button(L10n.text("导出渲染型 DNG…")) {
-                        singleExportFormat = .renderedDNG
-                        exportLongEdge = nil
-                        showingExportSize = true
+                        requestSingleExport(.renderedDNG)
                     }
-                    .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
+                    .disabled(!viewModel.hasImage || editorBusy || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
                     // 同时只有一个批量任务：已有任务时只给"查看"，不再并列一个同样打开旧任务的新建入口
                     if batchModel == nil {
                         Button(L10n.text("使用当前调整批量导出…"), action: openBatchExport)
-                            .disabled(!viewModel.hasImage || editorBusy || isEditorDraftActive || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
+                            .disabled(!viewModel.hasImage || editorBusy || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
                             .accessibilityIdentifier("editor.batchExport")
                     } else {
                         Button(L10n.text("查看批量任务…")) { showingBatchExport = true }
@@ -62,7 +58,7 @@ extension ContentView {
                 }
                 .accessibilityLabel(L10n.text("导出"))
                 .help(L10n.text("导出"))
-                .disabled(isEditorDraftActive || ((!viewModel.hasImage || editorBusy) && batchModel == nil))
+                .disabled((!viewModel.hasImage || editorBusy) && batchModel == nil)
                 .accessibilityIdentifier("editor.export")
                 .opacity(rulerFocusOpacity)
             }

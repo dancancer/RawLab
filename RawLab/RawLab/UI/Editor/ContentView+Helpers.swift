@@ -650,8 +650,15 @@ extension ContentView {
         return true
     }
 
+    func requestSingleExport(_ format: BatchOutputFormat) {
+        guard closeEditorDraftCleanly() else { return }
+        singleExportFormat = format
+        exportLongEdge = nil
+        showingExportSize = true
+    }
+
     func openBatchExport() {
-        guard !isEditorDraftActive else { return }
+        guard closeEditorDraftCleanly() else { return }
         if batchModel != nil { showingBatchExport = true; return }
         guard let source = viewModel.currentBatchSource(settings: settings) else {
             viewModel.statusMessage = L10n.text("请先导入一张照片。")

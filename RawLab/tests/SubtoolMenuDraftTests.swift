@@ -308,6 +308,37 @@ enum SubtoolDraftProbe {
         check(abs(view.settings.contrast - targetContrast) < 0.001,
               "showQuickPresets preserves committed contrast value")
 
+        // 5. Export menu actions must cleanly commit/close an active draft before exporting.
+        await resetToCleanEditor()
+        view.selectEditorTool(.adjustment(.contrast))
+        await yieldFrames(6)
+        let exportContrast: Double = view.settings.contrast > 1.2 ? 0.9 : 1.35
+        view.workingSettings.contrast = exportContrast
+        await yieldFrames(4)
+        view.requestSingleExport(.jpeg)
+        await yieldFrames(8)
+        check(view.showingExportSize && view.singleExportFormat == .jpeg,
+              "requestSingleExport opens export size sheet with active draft")
+        check(!view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.viewModel.hasAdjustmentDraft,
+              "requestSingleExport closes workspace and clears hasAdjustmentDraft")
+        check(abs(view.settings.contrast - exportContrast) < 0.001,
+              "requestSingleExport commits modified contrast before export")
+        view.showingExportSize = false
+        _ = await waitUntil(5) { noPresentedSheet() }
+
+        await resetToCleanEditor()
+        view.selectEditorTool(.adjustment(.contrast))
+        await yieldFrames(6)
+        view.openBatchExport()
+        await yieldFrames(8)
+        check(view.showingBatchExport && view.batchModel != nil,
+              "openBatchExport opens batch export with active draft")
+        check(!view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.viewModel.hasAdjustmentDraft,
+              "openBatchExport closes workspace and clears hasAdjustmentDraft")
+        view.batchModel = nil
+        view.showingBatchExport = false
+        _ = await waitUntil(5) { noPresentedSheet() }
+
         writeResult(passed: true)
         print("PASS: subtool menu draft suite (\(checks) checks)")
     }
