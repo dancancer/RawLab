@@ -79,6 +79,45 @@ class EditedPhotoPreviewTest {
             assertNotNull(cache.read(keyC))
         } finally { root.deleteRecursively() }
     }
+    @Test fun sharedCacheKeepsOneIndexAndEvictionBudgetPerDirectory() {
+        val root = Files.createTempDirectory("rawlab-preview-shared").toFile()
+        try {
+            var listCalls = 0
+            var readCalls = 0
+            val storage = HashMap<String, ByteArray>()
+            val fakeFs = object : PreviewCacheFileSystem {
+                override fun listEntries(directory: File): List<PreviewCacheEntry> {
+                    listCalls++
+                    return storage.entries.map { PreviewCacheEntry(it.key.removeSuffix(".preview"), it.value.size.toLong(), 0) }
+                }
+                override fun readBytes(file: File): ByteArray? {
+                    readCalls++
+                    return storage[file.name]
+                }
+                override fun writeAtomic(directory: File, target: File, data: ByteArray) {
+                    storage[target.name] = data
+                }
+                override fun delete(file: File): Boolean = storage.remove(file.name) != null
+            }
+            val settings = EditSettings(exposure = .5f)
+            val keyA = EditedPhotoPreviewKey.create("source-a", settings, "look-a")
+            val keyB = EditedPhotoPreviewKey.create("source-b", settings, "look-a")
+            val keyC = EditedPhotoPreviewKey.create("source-c", settings, "look-a")
+            val editor = EditedPhotoPreviewCache.shared(root, maximumEntries = 2, maximumBytes = 1024, fileSystem = fakeFs)
+            val album = EditedPhotoPreviewCache.shared(root, maximumEntries = 2, maximumBytes = 1024, fileSystem = fakeFs)
+            assertSame(editor, album)
+            album.read(keyC) // 界面实例先建立索引（此刻目录为空）；编辑器实例之后的写入不能对其永久失明
+            assertEquals(1, listCalls)
+            editor.write(keyA, jpegBytes(1))
+            assertArrayEquals(jpegBytes(1), album.read(keyA)) // A 写 B 读命中，只读盘一次，不触发重渲
+            assertEquals(1, readCalls)
+            editor.write(keyB, jpegBytes(2))
+            album.write(keyC, jpegBytes(3)) // 共享索引执行预算：3 条只留 2 条，不会各实例一套上限（磁盘文件不翻倍）
+            assertEquals(2, storage.size)
+            assertNull(album.read(keyA))
+            assertNotNull(editor.read(keyC))
+        } finally { root.deleteRecursively() }
+    }
     @Test fun successfulSaveAndResetNotifyAllStoreInstances() = runBlocking {
         val root = Files.createTempDirectory("rawlab-preview-events").toFile()
         try {
@@ -94,4 +133,6 @@ class EditedPhotoPreviewTest {
             assertNull(result[1].state.settings)
         } finally { root.deleteRecursively() }
     }
+    private fun jpegBytes(body: Int): ByteArray =
+        byteArrayOf(0xFF.toByte(), 0xD8.toByte(), body.toByte(), 0xFF.toByte(), 0xD9.toByte())
 }

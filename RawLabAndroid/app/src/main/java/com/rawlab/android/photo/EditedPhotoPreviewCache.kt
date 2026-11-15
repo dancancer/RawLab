@@ -97,6 +97,20 @@ internal class EditedPhotoPreviewCache(
         loaded = true
     }
 
+    companion object {
+        private val shared = HashMap<Pair<String, Int>, EditedPhotoPreviewCache>()
+
+        // 生产默认缓存目录会被同进程的多个 EditedPhotoPreviews 实例共用（EditorViewModel 常驻实例 + AlbumScreen remember 实例），
+        // 索引与淘汰预算必须进程内唯一，否则跨实例写入假未命中（重复重渲 RAW）且容量上限翻倍；锁共享表本身而非各实例。
+        // 单测继续用直接构造（自定义 directory/fileSystem）保持相互隔离。
+        @Synchronized
+        fun shared(directory: File, maximumEntries: Int = 256, maximumBytes: Long = 64 * 1024 * 1024,
+                   fileSystem: PreviewCacheFileSystem = PreviewCacheFileSystem.Default): EditedPhotoPreviewCache =
+            shared.getOrPut(directory.canonicalPath to System.identityHashCode(fileSystem)) {
+                EditedPhotoPreviewCache(directory, maximumEntries, maximumBytes, fileSystem)
+            }
+    }
+
     @Synchronized fun read(key: String): ByteArray? {
         val target = location(key)
         ensureLoaded()
