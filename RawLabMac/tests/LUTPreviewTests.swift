@@ -36,6 +36,19 @@ struct LUTPreviewTests {
         catch { }
         worker = nil
         precondition(!FileManager.default.fileExists(atPath: owned.path))
+        // 本地常规文件：向导打开后原片未被复制——直接引用原路径，临时目录只含 look 副本。
+        let localSource = LUTPreviewSource(name: source.lastPathComponent, localURL: source) {
+            destination in try FileManager.default.copyItem(at: source, to: destination)
+        }
+        var referencing: LUTPreviewWorker? = try LUTPreviewWorker(lut: lut, source: localSource)
+        precondition(referencing!.sourceURL == source, "Local photo must be referenced in place")
+        let tempListing = try FileManager.default.contentsOfDirectory(atPath: referencing!.directory.path)
+        precondition(tempListing == ["look.cube"], "Wizard copied the original photo into its temporary directory")
+        _ = try referencing!.render(nil)
+        let referenced = referencing!.directory
+        referencing = nil
+        precondition(FileManager.default.fileExists(atPath: source.path) && !FileManager.default.fileExists(atPath: referenced.path),
+                     "Releasing the referencing worker must keep the original photo")
         let model = LUTCompatibilityPreviewModel()
         model.load(lut: lut, source: LUTPreviewSource(url: source), draft: draft)
         wait { !model.isLoading }
@@ -53,7 +66,7 @@ struct LUTPreviewTests {
         wait { !model.isLoading }
         precondition(model.reference == nil && model.referenceName == nil, "Old reference task published after source change")
         model.close()
-        print("PASS: isolated preview, comparison gating, source-change reference invalidation and owned-file cleanup")
+        print("PASS: isolated preview, in-place local photo reference, comparison gating, source-change reference invalidation and owned-file cleanup")
         for path in CommandLine.arguments.dropFirst() {
             try hdrSourcePreview(URL(fileURLWithPath: path), lut: lut, draft: draft, candidate: candidate)
         }

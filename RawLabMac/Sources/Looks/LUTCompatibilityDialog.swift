@@ -38,7 +38,7 @@ private struct MacLUTCompatibilityView: View {
             chooseLibraryPhoto: { completion in selectedPhoto = completion; choosingPhoto = true }, finish: finish)
             .sheet(isPresented: $choosingPhoto) {
                 LUTPhotoLibraryPicker { photo in
-                    if let photo { selectedPhoto?(LUTPreviewSource(url: photo)) }
+                    if let photo { selectedPhoto?(LUTPreviewSource(localURL: photo)) }
                     selectedPhoto = nil; choosingPhoto = false
                 }
             }
