@@ -138,11 +138,24 @@ int main(int argc, char** argv) {
             std::error_code linkError;
             fs::create_symlink(targetA, link, linkError);
             if (!linkError) {
+                // 退路槽以 canonical 路径为键：先取 targetA 的干净基准摘要（此时槽未受污染），再用满 LRU filler
+                // 逐出该槽，link 查询才会重新整文件哈希，切链钩子获得真实的哈希中途污染窗口。
+                const auto readsBeforeLink = fileReads;
+                const auto clean = sourceMetadataKey(targetA.string());
+                if (fileReads != readsBeforeLink + 1)
+                    throw std::runtime_error("symlink fixture must hash the clean target exactly once");
+                for (int i = 0; i < 130; ++i) {
+                    const auto filler = fs::path(argv[1]) / ("link-evict-" + std::to_string(i));
+                    { std::ofstream(filler) << i; }
+                    sourceMetadataKey(filler.string());
+                }
                 onSha256File = [&] { onSha256File = {}; fs::remove(link); fs::create_symlink(targetB, link); };
                 const auto viaLink = sourceMetadataKey(link.string());
                 const auto readsAfterLink = fileReads;
-                if (sourceMetadataKey(targetA.string()) != viaLink || fileReads != readsAfterLink ||
-                    sourceMetadataKey(link.string()) == viaLink)
+                if (viaLink != clean)
+                    throw std::runtime_error("link hashing must follow the canonical target, not the live link path");
+                if (sourceMetadataKey(targetA.string()) != clean || fileReads != readsAfterLink ||
+                    sourceMetadataKey(link.string()) == clean)
                     throw std::runtime_error("symlink target switch poisoned canonical metadata fallback slot");
             }
             const auto oldest = fs::path(argv[1]) / "fallback-oldest", torn = fs::path(argv[1]) / "fallback-torn";
