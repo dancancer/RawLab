@@ -75,6 +75,12 @@ internal static class AtomicFileWrite
     internal static void WriteTemporaryFile(string temporary, byte[] data) =>
         WriteTemporaryStream(temporary, stream => stream.Write(data));
 
+    internal static void WriteBufferedTemporaryFile(string temporary, byte[] data)
+    {
+        using var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.None);
+        file.Write(data);
+    }
+
     internal static void ReplaceFile(string source, string destination) => File.Move(source, destination, true);
 
     internal static bool TryDeleteTemporary(string path)
