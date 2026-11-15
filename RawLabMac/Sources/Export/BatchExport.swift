@@ -42,7 +42,8 @@ struct BatchFrozenSettings: Codable {
     let longEdge: Int?
 
     static func checksum(_ url: URL) throws -> String {
-        SHA256.hash(data: try Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
+        try MacResourceDigestCache.shared.fingerprintDigest(for: url).digest
+            .map { String(format: "%02x", $0) }.joined()
     }
 
     fileprivate static func validateSettings(_ settings: Adjustments) throws {

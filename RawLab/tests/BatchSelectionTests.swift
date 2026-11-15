@@ -179,4 +179,45 @@ private func checkCollectionHDRJPEG(_ root: URL) throws {
                                 job.targets[0].frozen?.outputFormat == .hdrJPEG &&
                                 job.targets[0].frozen?.settings.isHDREditing == true,
                                 "Skipping SDR photos freezes HDR JPEG without downgrading the saved HDR mode")
+
+    // Verify batch digest cache reuse across shared look + repeated validation, and invalidation on replacement.
+    let cacheRoot = root.appendingPathComponent("digest-cache-batch")
+    try FileManager.default.createDirectory(at: cacheRoot, withIntermediateDirectories: true)
+    let sharedCube = cacheRoot.appendingPathComponent("shared.cube")
+    let cubeData = Data("LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n".utf8)
+    try cubeData.write(to: sharedCube)
+    FileDigestCache.shared.invalidateAll()
+    let cachedStore = try EditPersistence(directory: cacheRoot.appendingPathComponent("edits"))
+    let cachedJournal = try BatchJournalStore(directory: cacheRoot.appendingPathComponent("jobs"))
+    let cachedCollection = IOSBatchSelection()
+    for idx in 0..<3 {
+        let img = cacheRoot.appendingPathComponent("p-\(idx).png")
+        try Data([UInt8(idx + 10), 20, 30]).write(to: img)
+        let id = PhotoIdentity(resourceIdentifier: "cache-p-\(idx)")
+        var settings = RawSettings.default
+        settings.lutID = "shared-cube"
+        try cachedStore.save(id, state: PhotoEditState(settings: settings))
+        cachedCollection.append(IOSAdjustmentPhoto(identity: id, displayName: "p-\(idx).png",
+            file: .externallyManaged(img), isRaw: false))
+    }
+    let lookBefore = FileDigestCache.shared.digestComputeCount(for: sharedCube)
+    let cachedReview = cachedCollection.prepareExport(store: cachedStore, skipping: [], format: .jpeg, longEdge: nil,
+        x3fDefaultMode: { _ in .legacy }, probeHDR: { _ in false }, validateActive: { _ in },
+        resolveLook: { _ in (sharedCube, "shared") })
+    try BatchExportTests.require(cachedReview.ready &&
+        FileDigestCache.shared.digestComputeCount(for: sharedCube) == lookBefore + 1,
+        "prepareExport hashes shared look once across 3 targets via FileDigestCache")
+    let cachedJob = try cachedCollection.freeze(cachedReview, store: cachedStore, journal: cachedJournal, validateActive: { _ in })
+    try BatchExportTests.require(FileDigestCache.shared.digestComputeCount(for: sharedCube) == lookBefore + 1,
+        "freeze reuses FileDigestCache for unchanged shared look across pre/post validation")
+    try cachedJob.targets[0].frozen!.verifyFiles(input: cachedJob.targets[0].sourceURL)
+    let inputCountBefore = FileDigestCache.shared.digestComputeCount(for: cachedJob.targets[0].sourceURL)
+    try cachedJob.targets[0].frozen!.verifyFiles(input: cachedJob.targets[0].sourceURL)
+    try BatchExportTests.require(FileDigestCache.shared.digestComputeCount(for: cachedJob.targets[0].sourceURL) == inputCountBefore,
+        "verifyFiles reuses FileDigestCache for unchanged input")
+    try (cubeData + Data("# tampered\n".utf8)).write(to: sharedCube)
+    var rejectedTampered = false
+    do { _ = try cachedCollection.freeze(cachedReview, store: cachedStore, journal: cachedJournal, validateActive: { _ in }) }
+    catch { rejectedTampered = true }
+    try BatchExportTests.require(rejectedTampered, "freeze detects replaced look even when FileDigestCache is warm")
 }

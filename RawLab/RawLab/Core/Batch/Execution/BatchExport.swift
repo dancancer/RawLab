@@ -168,7 +168,7 @@ final class BatchExportModel: ObservableObject {
                 stage = "readIdentity"
                 let resourceIdentifier = item.itemIdentifier
                 let identity = try await perform {
-                    try PhotoIdentity.fallback(for: file.url, resourceIdentifier: resourceIdentifier)
+                    try PhotoIdentity.cachedFallback(for: file.url, resourceIdentifier: resourceIdentifier)
                 }
                 stage = "prepareTarget"
                 let target = try await prepareTarget(file, identity: identity, jobID: jobID,
@@ -205,7 +205,7 @@ final class BatchExportModel: ObservableObject {
                 defer { PhotoImportFile.release(source.url) }
                 context["sourceKind"] = source.isRaw ? "raw" : "raster"
                 stage = "readIdentity"
-                let identity = try await perform { try PhotoIdentity.fallback(for: source.url) }
+                let identity = try await perform { try PhotoIdentity.cachedFallback(for: source.url) }
                 stage = "prepareTarget"
                 targets.append(try await prepareTarget(source, identity: identity, jobID: jobID,
                                                        journalStore: journalStore))
