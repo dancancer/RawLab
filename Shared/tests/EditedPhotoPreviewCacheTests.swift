@@ -46,5 +46,40 @@ struct EditedPhotoPreviewCacheTests {
             try EditedPhotoPreviewCache(directory: blocked).write(Data([2]), for: key())
             fatalError("FAIL: Cache IO failures must be reportable")
         } catch { print("PASS: Cache IO failures are reportable without modifying photo edits") }
+
+        // 尾趟 IO 账目（seam 计数）：撤掉 LRU 索引修复必红——旧实现每次写入都全目录
+        // 枚举 + stat 且走 Foundation 强制同步的原子写。
+        let ioDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: ioDirectory) }
+        final class OperationTally { var scan = 0; var plainWrite = 0; var atomicWrite = 0; var rename = 0 }
+        let tally = OperationTally()
+        let io = EditedPhotoPreviewCache(directory: ioDirectory, maximumEntries: 8, maximumBytes: 1 << 20)
+        io.observeFileOperation = { operation in
+            switch operation {
+            case .scan: tally.scan += 1
+            case .plainWrite: tally.plainWrite += 1
+            case .atomicWrite: tally.atomicWrite += 1
+            case .rename: tally.rename += 1
+            }
+        }
+        for index in 0..<5 { try io.write(Data(repeating: UInt8(index), count: 4), for: key("photo-\(index)")) }
+        _ = try io.read(key("photo-2"))
+        try io.write(Data([9]), for: key("photo-1"))
+        expect(tally.scan == 1, "Only the first cache access enumerates the directory; writes and index hits never stat it again")
+        expect(tally.plainWrite == 6 && tally.rename == 6, "Each preview is buffered to a temporary file and atomically renamed into place")
+        expect(tally.atomicWrite == 0, "Persisting a preview no longer pays the forced synchronous write cost")
+
+        // LRU 清退按使用新近度（读取会刷新），而不是创建时间——旧 mtime 排序会先淘汰被读热的 a。
+        let lruDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: lruDirectory) }
+        let lru = EditedPhotoPreviewCache(directory: lruDirectory, maximumEntries: 2, maximumBytes: 1 << 20)
+        try lru.write(Data([1]), for: key("lru-a"))
+        try lru.write(Data([2]), for: key("lru-b"))
+        _ = try lru.read(key("lru-a"))
+        try lru.write(Data([3]), for: key("lru-c"))
+        let keptA = try lru.read(key("lru-a")) != nil
+        let keptC = try lru.read(key("lru-c")) != nil
+        let goneB = try lru.read(key("lru-b")) == nil
+        expect(keptA && keptC && goneB, "Eviction follows usage recency refreshed by reads, not file creation order")
     }
 }
