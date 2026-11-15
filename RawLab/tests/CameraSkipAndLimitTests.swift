@@ -60,7 +60,10 @@ final class FakeSonyCameraChannel: CameraByteChannel {
     private(set) var closed = false
     let mode: Mode
     let supportsTethering: Bool
-    var entries: [FakeSonyCameraEntry]
+    var entries: [FakeSonyCameraEntry] {
+        didSet { mobileEntriesSortedByCreatedMillis = nil }
+    }
+    private var mobileEntriesSortedByCreatedMillis: Bool?
     var legacyHandleCountOverride: Int?
     private(set) var downloadAttempts: [String: Int] = [:]
     private(set) var mobileRangeReads: [String: [Range<Int>]] = [:]
@@ -202,8 +205,32 @@ final class FakeSonyCameraChannel: CameraByteChannel {
     }
 
     private func mobilePage(after cursor: UInt64, maxItems: Int) -> Data {
-        let remaining = entries.filter { $0.createdMillis > cursor }
-        let slice = Array(remaining.prefix(maxItems))
+        let slice: ArraySlice<FakeSonyCameraEntry>
+        if mobileEntriesSortedByCreatedMillis == nil {
+            var sorted = true
+            if entries.count > 1 {
+                for i in 1..<entries.count where entries[i - 1].createdMillis > entries[i].createdMillis {
+                    sorted = false
+                    break
+                }
+            }
+            mobileEntriesSortedByCreatedMillis = sorted
+        }
+        if mobileEntriesSortedByCreatedMillis == true {
+            var lo = 0
+            var hi = entries.count
+            while lo < hi {
+                let mid = lo + (hi - lo) / 2
+                if entries[mid].createdMillis > cursor {
+                    hi = mid
+                } else {
+                    lo = mid + 1
+                }
+            }
+            slice = entries[lo..<min(lo + max(0, maxItems), entries.count)]
+        } else {
+            slice = entries.filter { $0.createdMillis > cursor }.prefix(maxItems)
+        }
         var out = Data(repeating: 0, count: 144)
         out.appendLE(UInt32(slice.count))
         for (index, item) in slice.enumerated() {
