@@ -329,3 +329,12 @@
 - **新票四张全部并行派出**：①win-ub-hygiene（Hydrogen：P3-60 尾 Windows file_clock ns 溢出 UB 按 lens_correction static_assert 模式修+shader_vm SKIP 77 C22+5 支 Apple 脚本进 apple-models 门禁+gles_denoise dtor 守卫）；②ios-draft-close（Hydrogen：P2-26 三处草稿收口）；③looks-ui（codex：P2-16 三端外观库坏条目 UI）；④win-force-gpu（Hydrogen：P2-09 尾 Windows「强制 GPU 不可用」文案区分）+⑤jit-hardening（Hydrogen：完成-01 工程半边——token 出 plist 明文/launch_runner 剥 GH_TOKEN/allowlist 锁 head_sha/FIFO 抢占）。生产 JIT 切换本身仍归用户侧 k179。
 - **#361 r1（33cb399c，A1 @Synchronized/A2 rootLock+protect 覆盖面/A3 空操作不毒化/A4 NonCancellable 原子段，JVM 744 全绿）与 #362 r1（0be72764，B1 inFlight 代际+B2 读旧图后 gate，双变异真红+build.sh 绿）** 交碳包 review-mwhjhth4 复审（含 #360 r2 联审）。
 - D-02（降噪键跨端分叉）排队为下一张 codex；P2-26 实证若发现路径已兜住则按碳脑裁定缩范围。
+
+### (59) #364 合入（117th）；碳脑核验落地；#367/#368 一轮返工在跑
+
+- **#364 合入**（117th `8a1ee180`）：P3-60 尾 Windows `file_clock` ns 溢出 UB 按 raw-ticks 修（逐位十进制格式化不执行 negation，`INT64_MIN` 也安全；mac 侧 `__int128` 纳秒输出逐字符不变）+ C22 `SKIP 77`（4 项 glslang 系测试原名恒注册）+ thumbnail-cache.sh 入 apple-models + gles_denoise dtor 守卫。碳实证 185 全绿口径（168 假降=主仓旧 CTestTestfile 时间戳）。碳脑建议 sony2fuji_c.cpp:3484 microseconds 转换无乘法路径**不改**（第一性原理不捆绑）。
+- **碳脑（agy-brain 首用）核验裁定**：P3-60 成立（量级勘误 1.34e19 非 e21）；5 支 Apple 脚本"直塞 apple-models 会炸普通 PR"仅 1 支可入（crew 已按此做，碳裁定文档化=闭环附 1 行措辞修正）；shader_vm 目标名实为 gles_shader 等 4 项+异名即炸对账（已避）；**#367 数据层根因**（LookLibrary.swift:277 `file_name` 键 vs 真实 camelCase `fileName` → 真实坏条目 fileName=nil 删不掉实体文件，模拟器 camelCase 实证 RED）；**#368 残留**（requestCollectionNavigation/openBatchSelection 未收口，探针 RED）；完成-01 本机无 plist（仓模板 scripts/ci/launchd/），GH_TOKEN 剥离与 allowlist head_sha 落点 jit_dispatch.py。
+- **#365（jit-hardening）交付待审**：token 出 plist 明文→jit.env 0600+`--env-file`、launch_runner 剥 GH_TOKEN、allowlist 强制 `@<head_sha>`（对照 GitHub run 元数据，crew 纠正了"本地 rev-parse"的票面假设）、FIFO 无抢占窗口注释；scripts/ci 238（+7）全绿+红锚。
+- **#367/#368 一轮返工**（梯子第一轮=Hydrogen，双并行在跑）：#367 修 L277 键匹配+删除残留实体文件测试；#368 集合导航两入口收口。
+- **D-02**（降噪键跨端分叉）codex 已并行开工（现状矩阵先行，若已被 #321/#346 实际收敛则轻量交付）。
+- **用户侧**：自合 #363（update-roadmap）与 AGENTS.md 全局原则条目（第一性原理/主轴把关/诚实声明红线——与本链工作方式一致，已纳入派单口径）。
