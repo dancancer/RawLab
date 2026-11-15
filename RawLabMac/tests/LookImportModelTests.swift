@@ -98,18 +98,20 @@ struct LookImportModelTests {
         let badID = UUID().uuidString
         let badFile = directory.appendingPathComponent("\(badID).rlook")
         try Data("future look".utf8).write(to: badFile)
-        let raw = "{\"id\":\"\(badID)\",\"name\":\"Future look\",\"file_name\":\"\(badID).rlook\",\"format\":\"rlook\",\"formatVersion\":99}"
         var json = try JSONSerialization.jsonObject(with: Data(contentsOf: registry)) as! [String: Any]
         var entries = json["looks"] as! [Any]
-        entries.append(try JSONSerialization.jsonObject(with: Data(raw.utf8)))
+        entries.append(["id": badID, "name": "Future look", "fileName": "\(badID).rlook",
+                        "sourceName": "future.rlook", "format": "rlook", "formatVersion": 99])
         entries.append(NSNull())
         json["looks"] = entries
         try JSONSerialization.data(withJSONObject: json).write(to: registry)
         let damaged = EditorModel(lookDirectory: directory, editDirectory: edits, batchDirectory: jobs)
         check(damaged.films.filter { $0.managedID != nil }.count == 4 && damaged.unreadableLooks.count == 2,
               "UI model exposes unreadable rows alongside all valid looks")
-        check(damaged.unreadableLooks[0].displayName == "Future look" && !damaged.unreadableLooks[0].reason.isEmpty,
-              "unreadable UI row has its saved name and a reason")
+        check(damaged.unreadableLooks[0].displayName == "Future look"
+              && damaged.unreadableLooks[0].fileName == "\(badID).rlook"
+              && !damaged.unreadableLooks[0].reason.isEmpty,
+              "unreadable UI row has its saved name, fileName and a reason")
         check(!damaged.unreadableLooks[1].displayName.isEmpty, "nameless unreadable row has a display fallback")
         if ProcessInfo.processInfo.environment["RAWLAB_LOOK_UI_OUTPUT"] != nil {
             let host = NSHostingView(rootView: FilmDock(model: damaged).padding(12).background(Color(nsColor: .windowBackgroundColor)))

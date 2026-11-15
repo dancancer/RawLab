@@ -203,6 +203,35 @@ struct LookLibraryTests {
               "bad look can be removed and the library keeps the readable looks")
         rejects("already removed bad look needs a fresh confirmation") { try reloadedMixed.remove(badRecord) }
 
+        // 真实 UserLook 持久化使用 camelCase "fileName"（JSONSerialization 编码坏条目）及 fileName=nil 场景。
+        let camelID = UUID().uuidString
+        let camelFile = mixedDirectory.appendingPathComponent("\(camelID).rlook")
+        try Data("future camel look".utf8).write(to: camelFile)
+        var mixedObj = try JSONSerialization.jsonObject(with: Data(contentsOf: mixedRegistry)) as! [String: Any]
+        var mixedList = mixedObj["looks"] as! [Any]
+        mixedList.append([
+            "id": camelID, "name": "Camel future look", "fileName": "\(camelID).rlook",
+            "sourceName": "camel.rlook", "format": "rlook", "formatVersion": 99
+        ])
+        mixedList.append(["id": UUID().uuidString, "name": "No file entry"])
+        mixedObj["looks"] = mixedList
+        try JSONSerialization.data(withJSONObject: mixedObj).write(to: mixedRegistry)
+        let camelReloaded = try LookLibrary(directory: mixedDirectory)
+        check(camelReloaded.unreadableLooks.count == 2, "camelCase and fileName=nil bad entries both load")
+        check(camelReloaded.unreadableLooks[0].displayName == "Camel future look"
+              && camelReloaded.unreadableLooks[0].fileName == "\(camelID).rlook",
+              "camelCase bad entry preserves displayName and fileName")
+        check(camelReloaded.unreadableLooks[1].displayName == "No file entry"
+              && camelReloaded.unreadableLooks[1].fileName == nil,
+              "bad entry without fileName preserves displayName and nil fileName")
+        try camelReloaded.remove(camelReloaded.unreadableLooks[0])
+        let remainingFiles = try manager.contentsOfDirectory(atPath: mixedDirectory.path)
+        check(!manager.fileExists(atPath: camelFile.path) && !remainingFiles.contains("\(camelID).rlook"),
+              "removing camelCase bad entry cleans up its physical file")
+        try camelReloaded.remove(camelReloaded.unreadableLooks[0])
+        check(camelReloaded.unreadableLooks.isEmpty && camelReloaded.looks.map(\.id) == [keepNative.id, keepCube.id],
+              "removing fileName=nil bad entry leaves healthy looks intact")
+
         // 红锚点 B3：坏条目的 file_name 可能恰好指向存活文件——删除前须校验安全路径与文件归属。
         let ownershipDirectory = root.appendingPathComponent("ownership-looks", isDirectory: true)
         try manager.createDirectory(at: ownershipDirectory, withIntermediateDirectories: true)

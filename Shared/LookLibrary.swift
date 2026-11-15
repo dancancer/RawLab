@@ -274,7 +274,11 @@ final class LookLibrary {
                 var id: String?, fileName: String?
                 if case let .object(lookMembers, _) = element.value {
                     if case let .string(value)? = lookMembers.first(where: { $0.key == "id" })?.value.value { id = value }
-                    if case let .string(value)? = lookMembers.first(where: { $0.key == "file_name" })?.value.value { fileName = value }
+                    if case let .string(value)? = lookMembers.first(where: { $0.key == "fileName" })?.value.value {
+                        fileName = value
+                    } else if case let .string(value)? = lookMembers.first(where: { $0.key == "file_name" })?.value.value {
+                        fileName = value
+                    }
                 }
                 unreadable.append(UnreadableLook(id: id, fileName: fileName,
                     json: String(decoding: bytes[element.range], as: UTF8.self)))

@@ -95,7 +95,7 @@ for target in targets:
         (library / f'{bad}.rlook').write_text('future')
         (library / 'registry.json').write_text(json.dumps({'version': 1, 'looks': [
             {'id': good, 'name': 'Survivor', 'fileName': f'{good}.cube', 'sourceName': 'source.cube', 'format': 'cube', 'formatVersion': 0},
-            {'id': bad, 'name': 'Future iOS look', 'file_name': f'{bad}.rlook', 'format': 'rlook', 'formatVersion': 99}, None]}))
+            {'id': bad, 'name': 'Future iOS look', 'fileName': f'{bad}.rlook', 'sourceName': 'future.rlook', 'format': 'rlook', 'formatVersion': 99}, None]}))
     target['UITargetAppPath'] = str(app)
     target['DependentProductPaths'] = [str(app), str(runner), str(test_bundle)]
     source_files = ['RawLab/RawLab/UI/Editor/ContentView.swift',

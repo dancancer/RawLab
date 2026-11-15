@@ -194,7 +194,8 @@ struct LookImportTests {
         var json = try JSONSerialization.jsonObject(with: Data(contentsOf: registry)) as! [String: Any]
         var records = json["looks"] as! [Any]
         let validCount = records.count
-        records.append(["id": badID, "name": "Future iOS look", "file_name": "\(badID).rlook", "format": "rlook", "formatVersion": 99])
+        records.append(["id": badID, "name": "Future iOS look", "fileName": "\(badID).rlook",
+                        "sourceName": "future.rlook", "format": "rlook", "formatVersion": 99])
         records.append(NSNull())
         json["looks"] = records
         try JSONSerialization.data(withJSONObject: json).write(to: registry)
@@ -203,8 +204,10 @@ struct LookImportTests {
         guard case .success(let rows) = damagedLoad else { throw LookImportTestError.message("mixed library cannot load") }
         try check(rows.looks.count == validCount && rows.unreadableLooks.count == 2,
                   "iOS UI snapshot contains unreadable rows alongside valid looks")
-        try check(rows.unreadableLooks[0].displayName == "Future iOS look" && !rows.unreadableLooks[0].reason.isEmpty,
-                  "iOS unreadable UI row exposes name and reason")
+        try check(rows.unreadableLooks[0].displayName == "Future iOS look"
+                  && rows.unreadableLooks[0].fileName == "\(badID).rlook"
+                  && !rows.unreadableLooks[0].reason.isEmpty,
+                  "iOS unreadable UI row exposes name, fileName and reason")
         try check(!rows.unreadableLooks[1].displayName.isEmpty, "iOS nameless unreadable row has a fallback")
         let deleted = try awaitResult { damaged.removeUnreadable(rows.unreadableLooks[0], completion: $0) }
         guard case .success(let remaining) = deleted else { throw LookImportTestError.message("unreadable deletion failed") }
