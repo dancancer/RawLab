@@ -551,6 +551,9 @@ final class PhotoThumbnails: @unchecked Sendable {
             if keys.isEmpty { keysByPath.removeValue(forKey: path) }
             else { keysByPath[path] = keys }
         }
+        if inFlight.keys.contains(where: { $0.key.path == path && $0.key.fileIdentity != fileIdentity }) {
+            removedFile = true
+        }
         if expectedEditGeneration == nil || editGenerations[path, default: 0] == expectedEditGeneration {
             if let stateRevision {
                 let target = EditedRevision(identity: fileIdentity, revision: stateRevision)

@@ -1235,37 +1235,42 @@ struct ThumbnailCacheTests {
         final class DecodeGate: @unchecked Sendable {
             private let lock = NSLock()
             private var callCount = 0
-            private var firstStarted = false
+            private var firstDecoded = false
             private let allowFinish = DispatchSemaphore(value: 0)
 
-            func beginDecode() -> Bool {
+            func waitAfterDecodeIfFirst() {
                 lock.lock()
                 callCount += 1
                 let isFirst = callCount == 1
-                if isFirst { firstStarted = true }
+                if isFirst { firstDecoded = true }
                 lock.unlock()
                 if isFirst { allowFinish.wait() }
-                return isFirst
             }
 
-            func hasFirstStarted() -> Bool {
+            func hasFirstDecoded() -> Bool {
                 lock.lock(); defer { lock.unlock() }
-                return firstStarted
+                return firstDecoded
             }
 
             func releaseFirst() {
                 allowFinish.signal()
             }
         }
+        func srgbRedChannel(_ image: NSImage) -> CGFloat? {
+            guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+            return NSBitmapImageRep(cgImage: cg).colorAt(x: 0, y: 0)?.usingColorSpace(.sRGB)?.redComponent
+        }
+
         let racingFile = dir.appendingPathComponent("mn9-racing.png")
         try writePNG(to: racingFile, width: 120, height: 80, red: 0.1)
         let gate = DecodeGate()
         let racingThumbnails = PhotoThumbnails(decodeThumbnail: { url, _ in
-            _ = gate.beginDecode()
-            return NSImage(contentsOf: url)
+            let decoded = NSImage(contentsOf: url)
+            gate.waitAfterDecodeIfFirst()
+            return decoded
         })
         let inFlightTask = Task { await racingThumbnails.image(for: racingFile) }
-        while !gate.hasFirstStarted() {
+        while !gate.hasFirstDecoded() {
             try await Task.sleep(nanoseconds: 5_000_000)
         }
         try writePNG(to: racingFile, width: 120, height: 80, red: 0.9)
@@ -1274,7 +1279,45 @@ struct ThumbnailCacheTests {
         let staleResult = await inFlightTask.value
         check(staleResult == nil, "M-N9: in-flight decode invalidated mid-flight returns nil to waiters instead of stale bytes")
         let freshResult = await racingThumbnails.image(for: racingFile)
-        check(freshResult != nil && racingThumbnails.decodeCount == 2,
-              "M-N9: subsequent request after invalidation decodes fresh file bytes")
+        let freshRed = freshResult.flatMap(srgbRedChannel)
+        check(freshResult != nil && racingThumbnails.decodeCount == 2 && freshRed.map { abs($0 - 0.9) < 0.05 } == true,
+              "M-N9: subsequent request after invalidation decodes fresh file bytes (red=\(String(describing: freshRed)))")
+
+        // M-N9 (B1): invalidateStaleEntries must also advance fileGenerations when only inFlight holds the old identity.
+        let staleFile = dir.appendingPathComponent("mn9-stale-inflight.png")
+        try writePNG(to: staleFile, width: 120, height: 80, red: 0.1)
+        let oldKey = PhotoThumbnailCacheKey(uneditedFileAt: staleFile)!
+        let staleGate = DecodeGate()
+        let staleThumbnails = PhotoThumbnails(decodeThumbnail: { url, _ in
+            let decoded = NSImage(contentsOf: url)
+            staleGate.waitAfterDecodeIfFirst()
+            return decoded
+        })
+        let staleInFlightTask = Task { await staleThumbnails.image(for: staleFile) }
+        while !staleGate.hasFirstDecoded() {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        try writePNG(to: staleFile, width: 120, height: 80, red: 0.9)
+        let newAttrs = try FileManager.default.attributesOfItem(atPath: oldKey.path)
+        let newSize = (newAttrs[.size] as? NSNumber)?.uint64Value ?? 0
+        let newMod = (newAttrs[.modificationDate] as? Date) ?? Date()
+        let newInode = (newAttrs[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0
+        let invalidated = staleThumbnails.invalidateStaleEntries(
+            atPath: oldKey.path,
+            fileSize: newSize,
+            modified: newMod,
+            fileNumber: newInode,
+            editedRevision: nil
+        )
+        check(invalidated, "M-N9: invalidateStaleEntries returns true when in-flight decode holds stale identity")
+        staleGate.releaseFirst()
+        let staleInFlightResult = await staleInFlightTask.value
+        check(staleInFlightResult == nil, "M-N9: invalidateStaleEntries discards stale in-flight result for waiters")
+        check(staleThumbnails.cachedImage(for: oldKey) == nil, "M-N9: invalidateStaleEntries prevents stale in-flight result from entering cache")
+        let freshAfterStale = await staleThumbnails.image(for: staleFile)
+        let freshAfterStaleRed = freshAfterStale.flatMap(srgbRedChannel)
+        check(freshAfterStale != nil && staleThumbnails.decodeCount == 2 &&
+              freshAfterStaleRed.map { abs($0 - 0.9) < 0.05 } == true,
+              "M-N9: request after invalidateStaleEntries decodes new file bytes (red=\(String(describing: freshAfterStaleRed)))")
     }
 }
