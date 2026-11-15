@@ -275,3 +275,7 @@
 - **lead 处置获碳认可**：分离"逐张持久化"（保留）与"孤儿无条件删除"（改分级 re-adopt：完整件入索引 UI 恢复可见、垃圾件删、软链/非 UUID 保留），否决 quarantine（重+割裂）与纯回退删除（#339 孤儿仍拿不到）。
 - **crew 返工（mwha76tu 同线程，首次返工=Hydrogen Xhigh）**：新 head `ddc1cafa`（rebase 后仅 5 iOS 文件），8 红线全落；变异（re-adopt→无条件删）camera-originals EXIT=133 + skip-limit L1750/L2084 红；四脚本+apple-models ios 24 套件绿。碳复审 r2 `review-mwhaw0xw` 在跑（approve=第 109；打回=二次返工改派 codex）。
 - **教训（入规）**：**批式/延迟持久化改动必须审"跨版本升级首启"这一独立窗口**——旧版崩溃遗留的磁盘态由新代码首次 `recover()` 处置，删除类清扫在升级语境下默认危险（未索引≠垃圾）；对"唯一副本"存储的自动删除需与 UI"已保存"承诺 + 导出账本联合判定，缺任一即 re-adopt/保留而非删。
+
+### (51) 派发强度调整（用户指令）
+
+- 后续 Hydrogen 执行票直接按 **medium 强度**派发（原默认 Xhigh 停发；复杂任务仍直接 codex，二次返工 codex、三次返工 carbon 阶梯不变，碳审 high 门禁不变）。
