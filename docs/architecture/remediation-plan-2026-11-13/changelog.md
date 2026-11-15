@@ -279,3 +279,8 @@
 ### (51) 派发强度调整（用户指令）
 
 - 后续 Hydrogen 执行票直接按 **medium 强度**派发（原默认 Xhigh 停发；复杂任务仍直接 codex，二次返工 codex、三次返工 carbon 阶梯不变，碳审 high 门禁不变）。
+
+### (52) #353 合入（109th）；#352 二次返工（codex）交付待 r3
+
+- **#353 合入**（merge `c3029f5c`，第 109 个）：#351 碳审观察×2（jni_session_lock_test Test2 锁内 notify_all 消 1.5s 空等；recipe_probe_stages_test 死 stub+`static_assert(2248)`）+ k159 文档尾（processing-concurrency.md 阶段 3 检查点表）。碳审 0 阻塞，独立变异实证修复有效（无 notify 回退 1511-1543ms vs 修复 15ms，TSan 5 连 0 race）。碳新增 2 条 P3 转 k159：阶段 3 行旧标签归类失准 + `parallelPixelRanges` 取消步长现值 4096（16384 仅任务切分粒度）——全文行号/口径统一对齐并入 k159 收尾，勿单改一行自相矛盾。
+- **#352 二次返工**（阶梯规则首次实战：1st=Hydrogen、2nd=codex）：codex 收口碳 r2 的 F1-F5（三态清扫/单目录 do/catch/小写 UUID 守卫+去重/排序含 name/合规 .ARW 负向夹具），M1（prune 早退还原）与 M2（validateHeader 强真）均 exit 133 按预期死；新 head `0ccaa77d`。testIN6 首跑 L2227 超时（串行复跑过，flaky 定性待碳 r3）。碳 r3 `review-mwhbuii8` 在跑，approve=第 110 个。
