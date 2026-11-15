@@ -606,7 +606,14 @@ int main(int argc, char** argv) {
     const ImageData source = makeTestImage(64, 8);
     ImageData cpuRef = source;
     require(applyLUTWithConfig(lut3, cpuRef, {GpuMode::Off}) == ErrorCode::Success, "CPU reference render");
-    require(eglBindAPI(EGL_OPENGL_API) == EGL_TRUE, "start initialization with desktop GL API selected");
+    // 调用方 API 选择：桌面 EGL 与 FAKE 替身优先桌面 GL API，保持 API 恢复断言的区分度。
+    // Android libEGL 不提供 EGL_OPENGL_API，绑定返回 EGL_FALSE+EGL_BAD_PARAMETER；按 EGL 规范
+    // 回落为显式选择 GLES API（真机线程默认客户端 API 即 ES，此绑定等价且不破坏恢复语义）。
+    // 其他错误码仍视为硬失败，避免静默降级造成真机假绿。
+    if (eglBindAPI(EGL_OPENGL_API) != EGL_TRUE) {
+        require(eglGetError() == EGL_BAD_PARAMETER && eglBindAPI(EGL_OPENGL_ES_API) == EGL_TRUE,
+                "start initialization with desktop GL API selected (GLES API fallback on libEGL)");
+    }
 
     if (initFailureMode) {
 #ifdef SONY2FUJI_FAKE_EGL_GLES
