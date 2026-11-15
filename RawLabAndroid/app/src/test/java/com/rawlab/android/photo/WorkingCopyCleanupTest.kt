@@ -175,4 +175,62 @@ class WorkingCopyCleanupTest {
             assertTrue(active.exists())
         } finally { root.deleteRecursively() }
     }
+
+    @Test fun r1_a2_reclaimBatchArtifactsAndBatchJournalPendingSerializeAndProtectedTempsSurvive() {
+        val root = Files.createTempDirectory("rawlab-a2-race").toFile()
+        try {
+            val cache = File(root, "cache").apply { mkdirs() }
+            val files = File(root, "files").apply { mkdirs() }
+            val jobs = File(files, "RawLab/BatchJobs").apply { mkdirs() }
+            val journal = BatchJournal(jobs)
+            val sourceFile = File(root, "src.raw").apply { writeText("raw") }
+            val recentJobs = (1..4).map { idx ->
+                val dir = File(jobs, UUID.randomUUID().toString()).apply { mkdirs() }
+                val input = File(dir, "input.raw").apply { writeText("raw-$idx") }
+                BatchJob(
+                    BatchSourceSnapshot(PhotoIdentity("src-$idx"), input, EditSettings()),
+                    listOf(BatchTarget(PhotoIdentity("t-$idx"), input, "out-$idx.jpg")),
+                    id = dir.name,
+                ).also(journal::save)
+            }
+
+            val protectedRender = File(files, "render-active-${UUID.randomUUID()}.jpg").apply { writeText("render") }
+            val protectedPart = exportStagingFile(files, "active.jpg", ".jpg").apply { writeText("part") }
+            val protectedPreview = File(cache, "lut-preview-${UUID.randomUUID()}").apply { mkdirs(); resolve("p.jpg").writeText("p") }
+            val protectedJobDir = File(jobs, UUID.randomUUID().toString()).apply { mkdirs(); resolve("input.raw").writeText("in-flight") }
+            WorkingCopyCleanup.protect(protectedRender)
+            WorkingCopyCleanup.protect(protectedPart)
+            WorkingCopyCleanup.protect(protectedPreview)
+            WorkingCopyCleanup.protect(protectedJobDir)
+
+            val errors = java.util.concurrent.CopyOnWriteArrayList<Throwable>()
+            val t1 = Thread {
+                repeat(10) {
+                    try { RetentionPolicy.reclaimBatchArtifacts(jobs) }
+                    catch (t: Throwable) { errors += t }
+                }
+            }
+            val t2 = Thread {
+                repeat(10) {
+                    try { journal.pending().mapNotNull(journal::load) }
+                    catch (t: Throwable) { errors += t }
+                }
+            }
+            val t3 = Thread {
+                repeat(5) {
+                    try { WorkingCopyCleanup.atProcessStart(cache, jobs, listOf(cache, files)) }
+                    catch (t: Throwable) { errors += t }
+                }
+            }
+            t1.start(); t2.start(); t3.start()
+            t1.join(5_000); t2.join(5_000); t3.join(5_000)
+
+            assertTrue("Unexpected concurrency errors: $errors", errors.isEmpty())
+            assertEquals(recentJobs.map { it.id }.toSet(), journal.pending().toSet())
+            assertTrue(protectedRender.isFile)
+            assertTrue(protectedPart.isFile)
+            assertTrue(protectedPreview.isDirectory)
+            assertTrue(protectedJobDir.isDirectory)
+        } finally { root.deleteRecursively() }
+    }
 }

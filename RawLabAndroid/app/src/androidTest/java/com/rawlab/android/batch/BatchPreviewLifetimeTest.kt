@@ -130,13 +130,15 @@ class BatchPreviewLifetimeTest {
             withTimeout(10_000) { while (model.state.value.phase == BatchPhase.PREPARING) delay(10) }
             assertEquals(BatchPhase.SELECTING, model.state.value.phase)
             val source = model.state.value.job.source.sourceFile
-            instrumentation.runOnMainSync { model.discardDraftOrCompleted(); model.close() }
+            var cleanup: kotlinx.coroutines.Deferred<Unit>? = null
+            instrumentation.runOnMainSync { cleanup = model.discardDraftOrCompleted(); model.close() }
             try {
                 model.preview(BatchTarget(PhotoIdentity("closed"), source, source.name))
                 fail("Closed batch must reject new previews")
             } catch (_: CancellationException) {
                 assertEquals(0, calls.get())
             }
+            withTimeout(10_000) { cleanup?.await() }
             assertFalse(source.exists())
             assertTrue(original.isFile)
         } finally {

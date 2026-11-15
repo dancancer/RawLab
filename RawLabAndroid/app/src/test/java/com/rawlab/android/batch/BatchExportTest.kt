@@ -2,6 +2,7 @@ package com.rawlab.android.batch
 
 import com.rawlab.android.settings.legacyPipeSettings
 import com.rawlab.android.batch.journal.BatchJournal
+import kotlinx.coroutines.launch
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
@@ -571,7 +572,7 @@ class BatchExportTest {
                 val rootJob = kotlinx.coroutines.Job()
                 var closed = false
                 val completedDeferred = discardBatchDraftOrCompleted(
-                    job = journal.load(job.id)!!,
+                    currentJob = { journal.load(job.id)!! },
                     initialJobId = job.id,
                     journalRoot = journalRoot,
                     rootJob = rootJob,
@@ -591,7 +592,7 @@ class BatchExportTest {
                     id = "draft-job",
                 )
                 val draftDeferred = discardBatchDraftOrCompleted(
-                    job = draftJob,
+                    currentJob = { draftJob },
                     initialJobId = draftJob.id,
                     journalRoot = journalRoot,
                     rootJob = draftRootJob,
@@ -604,6 +605,127 @@ class BatchExportTest {
                 assertTrue(updateThreads.all { it === callerThread })
             } finally {
                 rawExecutor.shutdownNow()
+            }
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun r1_a3_discardDraftOrCompletedDoesNotPoisonSubsequentDiscard() {
+        val root = Files.createTempDirectory("rawlab-a3-poison").toFile()
+        try {
+            val sourceFile = File(root, "source.raw").apply { writeText("src") }
+            val targetFile = File(root, "target.raw").apply { writeText("dst") }
+            val job = BatchJob(
+                BatchSourceSnapshot(PhotoIdentity("source"), sourceFile, EditSettings()),
+                listOf(BatchTarget(PhotoIdentity("row-1"), targetFile, "out.jpg")),
+            ).let { base ->
+                base.withRows(base.rows.map { it.copy(status = BatchRowStatus.FAILED, error = "io") })
+            }
+            val journalRoot = File(root, "jobs").apply { mkdirs() }
+            val journal = BatchJournal(journalRoot).also { it.save(job) }
+            val ioExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "test-a3-io") }
+            val ioDispatcher = object : kotlinx.coroutines.CoroutineDispatcher() {
+                override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) {
+                    ioExecutor.execute(block)
+                }
+            }
+            try {
+                val ioScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + ioDispatcher)
+                val rootJob = kotlinx.coroutines.Job()
+                var cachedCompletion: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+                var closed = false
+                val noop = discardBatchDraftOrCompleted(
+                    currentJob = { job },
+                    initialJobId = job.id,
+                    journalRoot = journalRoot,
+                    rootJob = rootJob,
+                    ioScope = ioScope,
+                    onDiscarding = { cachedCompletion = it },
+                    closeModel = { closed = true; rootJob.cancel() },
+                )
+                kotlinx.coroutines.runBlocking { noop.await() }
+                assertNull("No-op must not poison discardCompletion", cachedCompletion)
+                assertFalse(closed)
+                assertTrue(journal.contains(job.id))
+
+                // 后续用户显式 discard() 仍能正常触发清理与关闭。
+                val explicit = discardBatchAfterWork(
+                    initialJobId = job.id,
+                    journalRoot = journalRoot,
+                    rootJob = rootJob,
+                    ioScope = ioScope,
+                    closeModel = { closed = true; rootJob.cancel() },
+                )
+                kotlinx.coroutines.runBlocking { explicit.await() }
+                assertTrue(closed)
+                assertFalse(journal.contains(job.id))
+            } finally {
+                ioExecutor.shutdownNow()
+            }
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun r1_a4_confirmLastRowThenImmediateCloseDoesNotLoseConfirmationOrLeaveOrphan() {
+        val root = Files.createTempDirectory("rawlab-a4-confirm").toFile()
+        try {
+            val sourceFile = File(root, "source.raw").apply { writeText("src") }
+            val targetFile = File(root, "target.raw").apply { writeText("dst") }
+            val initial = BatchJob(
+                BatchSourceSnapshot(PhotoIdentity("source"), sourceFile, EditSettings()),
+                listOf(BatchTarget(PhotoIdentity("row-1"), targetFile, "out.jpg")),
+            ).let { base ->
+                base.withRows(base.rows.map {
+                    it.copy(status = BatchRowStatus.NEEDS_CONFIRMATION, outputUri = "content://test/out.jpg", outputReady = true)
+                })
+            }
+            val journalRoot = File(root, "jobs").apply { mkdirs() }
+            val journal = BatchJournal(journalRoot).also { it.save(initial) }
+            val ioExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "test-a4-io") }
+            val ioDispatcher = object : kotlinx.coroutines.CoroutineDispatcher() {
+                override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) {
+                    ioExecutor.execute(block)
+                }
+            }
+            try {
+                val ioScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + ioDispatcher)
+                val panelScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob())
+                val confirmLock = kotlinx.coroutines.sync.Mutex()
+                var currentJob = initial
+                var error: Exception? = null
+
+                // 用户确认最后一条 NEEDS_CONFIRMATION，随即立即关闭面板取消 panelScope。
+                val confirmJob = ioScope.launch {
+                    confirmBatchOutput(
+                        lock = confirmLock,
+                        journalRoot = journalRoot,
+                        id = "row-1",
+                        saved = true,
+                        currentJob = { currentJob },
+                        updateJob = {
+                            currentJob = currentJob.withRows(currentJob.rows.map {
+                                it.copy(status = BatchRowStatus.SUCCESS, outputUri = null)
+                            })
+                        },
+                        onError = { error = it },
+                        ioDispatcher = ioDispatcher,
+                    )
+                }
+                val cleanup = discardBatchDraftOrCompleted(
+                    currentJob = { currentJob },
+                    initialJobId = initial.id,
+                    journalRoot = journalRoot,
+                    rootJob = panelScope.coroutineContext[kotlinx.coroutines.Job]!!,
+                    ioScope = ioScope,
+                    lastConfirm = confirmJob,
+                    closeModel = { panelScope.coroutineContext[kotlinx.coroutines.Job]?.cancel() },
+                )
+                panelScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+                kotlinx.coroutines.runBlocking { cleanup.await() }
+
+                assertNull(error)
+                assertEquals(BatchRowStatus.SUCCESS, currentJob.rows.single().status)
+                assertFalse("All-SUCCESS job must not be left as orphan after confirm+close", journal.contains(initial.id))
+            } finally {
+                ioExecutor.shutdownNow()
             }
         } finally { root.deleteRecursively() }
     }

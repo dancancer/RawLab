@@ -37,6 +37,7 @@ internal class BatchOutputPublisher(
     fun render(target: BatchTarget, settings: EditSettings): File {
         val format = job.formatFor(target)
         val temporary = File.createTempFile("render-", format.suffix, context.filesDir)
+            .also(com.rawlab.android.photo.WorkingCopyCleanup::protect)
         try {
             val hdrInfo = NativeHDRBridge.probeSource(target.sourceFile,
                 target.inputKind == com.rawlab.android.format.PhotoInputKind.RAW, settings.processing.version)

@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -114,6 +115,7 @@ class BatchExportModel(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val confirmLock = Mutex()
+    @Volatile private var lastConfirm: Job? = null
     private val resolver = context.contentResolver
     private val cancelRequested = BatchCancellation()
     private val activeProcessor = AtomicReference<NativeProcessor?>(null)
@@ -221,7 +223,10 @@ class BatchExportModel(
                     throw BatchGlobalFailure(AppStrings.text(R.string.message_the_task_source_or_look_file_is))
                 }
                 val journal = BatchJournal(journalRoot)
-                journal.save(materialized)
+                confirmLock.withLock {
+                    lastConfirm?.join()
+                    journal.save(materialized)
+                }
                 val processor = processorFactory(gpuMode, storage.lensDatabase())
                 val cancellationGeneration = processor.cancellationGeneration()
                 activeProcessor.set(processor)
@@ -323,6 +328,7 @@ class BatchExportModel(
         BatchJob.x3fModeResolver(EditStore(File(context.filesDir, "edits"))::readState)
 
     private fun inputFile(jobID: String, identity: PhotoIdentity, name: String): File {
+        com.rawlab.android.photo.WorkingCopyCleanup.protect(File(journalRoot, jobID))
         val root = File(context.filesDir, "RawLab/BatchJobs/${jobID}/inputs")
         if (!root.exists()) root.mkdirs()
         val extension = name.substringAfterLast('.', "raw").replace(Regex("[^A-Za-z0-9]"), "")
@@ -381,7 +387,7 @@ class BatchExportModel(
     }
 
     fun confirmOutput(id: String, saved: Boolean) {
-        scope.launch {
+        lastConfirm = ioScope.launch {
             confirmBatchOutput(
                 lock = confirmLock,
                 journalRoot = journalRoot,
@@ -400,16 +406,20 @@ class BatchExportModel(
 
     fun discardDraftOrCompleted(): Deferred<Unit>? {
         discardCompletion?.let { return it }
-        val completion = discardBatchDraftOrCompleted(
-            job = mutable.value.job,
+        if (lastConfirm == null && mutable.value.job.rows.all { it.status == BatchRowStatus.SUCCESS }) {
+            discardAfterWork()
+            return discardCompletion
+        }
+        return discardBatchDraftOrCompleted(
+            currentJob = { mutable.value.job },
             initialJobId = initialJob.id,
             journalRoot = journalRoot,
             rootJob = scope.coroutineContext[Job]!!,
             ioScope = ioScope,
+            lastConfirm = lastConfirm,
+            onDiscarding = { discardCompletion = it },
             closeModel = ::close,
         )
-        discardCompletion = completion
-        return completion
     }
 
     fun discard(): Boolean {
@@ -425,6 +435,7 @@ class BatchExportModel(
             journalRoot = journalRoot,
             rootJob = scope.coroutineContext[Job]!!,
             ioScope = ioScope,
+            lastConfirm = lastConfirm,
             closeModel = ::close,
         )
     }
@@ -448,12 +459,14 @@ internal suspend fun confirmBatchOutput(
     ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     lock.withLock {
-        val updated = currentJob().confirmedOutput(id, saved)
-        try {
-            withContext(ioDispatcher) { BatchJournal(journalRoot).save(updated) }
-            updateJob()
-        } catch (error: Exception) {
-            onError(error)
+        withContext(NonCancellable) {
+            val updated = currentJob().confirmedOutput(id, saved)
+            try {
+                withContext(ioDispatcher) { BatchJournal(journalRoot).save(updated) }
+                updateJob()
+            } catch (error: Exception) {
+                onError(error)
+            }
         }
     }
 }
@@ -463,13 +476,19 @@ internal fun discardBatchAfterWork(
     journalRoot: File,
     rootJob: Job,
     ioScope: CoroutineScope,
+    lastConfirm: Job? = null,
     closeModel: () -> Unit,
 ): CompletableDeferred<Unit> {
     val completion = CompletableDeferred<Unit>()
     rootJob.invokeOnCompletion {
         ioScope.launch {
-            try { BatchJournal(journalRoot).discard(initialJobId); completion.complete(Unit) }
-            catch (error: Exception) { completion.completeExceptionally(error) }
+            try {
+                lastConfirm?.join()
+                BatchJournal(journalRoot).discard(initialJobId)
+                completion.complete(Unit)
+            } catch (error: Exception) {
+                completion.completeExceptionally(error)
+            }
         }
     }
     closeModel()
@@ -477,21 +496,28 @@ internal fun discardBatchAfterWork(
 }
 
 internal fun discardBatchDraftOrCompleted(
-    job: BatchJob,
+    currentJob: () -> BatchJob,
     initialJobId: String,
     journalRoot: File,
     rootJob: Job,
     ioScope: CoroutineScope,
+    lastConfirm: Job? = null,
+    onDiscarding: (CompletableDeferred<Unit>) -> Unit = {},
     closeModel: () -> Unit,
 ): CompletableDeferred<Unit> {
-    if (job.rows.all { it.status == BatchRowStatus.SUCCESS }) {
-        return discardBatchAfterWork(initialJobId, journalRoot, rootJob, ioScope, closeModel)
+    if (lastConfirm == null && currentJob().rows.all { it.status == BatchRowStatus.SUCCESS }) {
+        return discardBatchAfterWork(initialJobId, journalRoot, rootJob, ioScope, null, closeModel)
+            .also(onDiscarding)
     }
     // 失败 phase 不代表已持久化；journal 决定副本是否需要保留。
+    // 仅在确实触发清理时通过 onDiscarding 缓存 completion，避免未完成持久化任务的空操作毒化后续 discard()。
     val completion = CompletableDeferred<Unit>()
     ioScope.launch {
         try {
-            if (!BatchJournal(journalRoot).contains(job.id)) {
+            lastConfirm?.join()
+            val job = currentJob()
+            if (job.rows.all { it.status == BatchRowStatus.SUCCESS } || !BatchJournal(journalRoot).contains(job.id)) {
+                onDiscarding(completion)
                 closeModel()
                 rootJob.join()
                 BatchJournal(journalRoot).discard(initialJobId)

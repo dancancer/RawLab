@@ -479,6 +479,7 @@ internal fun executeExport(
     val emptyPlaceholder = output.exists() && output.length() == 0L
     val parent = output.absoluteFile.parentFile ?: File(".")
     val staging = exportStagingFile(parent, output.name, suffix)
+        .also(com.rawlab.android.photo.WorkingCopyCleanup::protect)
     fun throwIfCancelled() {
         if (isCancelled()) throw NativeProcessingException(NativeProcessingException.CANCELLED, "Processing cancelled")
     }

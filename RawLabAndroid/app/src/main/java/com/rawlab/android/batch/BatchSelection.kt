@@ -106,7 +106,7 @@ class BatchSelectionExport(private val directory: File,
         }
         validate()
         val id = UUID.randomUUID().toString()
-        val folder = File(directory, id)
+        val folder = File(directory, id).also(com.rawlab.android.photo.WorkingCopyCleanup::protect)
         check(!folder.exists() && folder.mkdirs()) { "Cannot create batch inputs" }
         val journal = BatchJournal(directory)
         try {
