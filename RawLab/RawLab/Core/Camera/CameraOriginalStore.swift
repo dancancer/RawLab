@@ -216,7 +216,6 @@ final class CameraOriginalStore {
     private let directoryLock: FileHandle
     private let lock = NSRecursiveLock()
     private let onManifestWrite: (() -> Void)?
-    private let onFullHash: ((URL) -> Void)?
     private var state: CameraOriginalManifest
     private var batchDepth = 0
     private var batchDirty = false
@@ -227,10 +226,9 @@ final class CameraOriginalStore {
         try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
             appropriateFor: nil, create: true).appendingPathComponent("RawLab/CameraOriginals", isDirectory: true)
     }
-    init(directory: URL, onManifestWrite: (() -> Void)? = nil, onFullHash: ((URL) -> Void)? = nil) throws {
+    init(directory: URL, onManifestWrite: (() -> Void)? = nil) throws {
         self.directory = directory
         self.onManifestWrite = onManifestWrite
-        self.onFullHash = onFullHash
         originalsDirectory = directory.appendingPathComponent("originals", isDirectory: true)
         partialDirectory = directory.appendingPathComponent("partial", isDirectory: true)
         manifestURL = directory.appendingPathComponent("manifest.json")
@@ -359,6 +357,9 @@ final class CameraOriginalStore {
         guard size >= chunk * 3 else { return nil }
         return [0, (size - chunk) / 2, size - chunk]
     }
+    /// 整文件哈希账目挂在真实入口（直连 `Self.hash` 与恢复/复用等所有调用方都计数）；
+    /// 与 FileDigestCache.digestComputeCount 一起构成「完整原片算了几次」的可观察账。
+    static var fullFileHashCount = 0
     static func hash(_ url: URL) throws -> (size: UInt64, digest: String) {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
@@ -367,11 +368,8 @@ final class CameraOriginalStore {
             digest.update(data: bytes); size += UInt64(bytes.count)
             guard size <= 1 << 30 else { throw CameraProtocolError.invalid("Camera original exceeds budget") }
         }
+        fullFileHashCount += 1
         return (size, digest.finalize().map { String(format: "%02x", $0) }.joined())
-    }
-    private func hashFile(_ url: URL) throws -> (size: UInt64, digest: String) {
-        onFullHash?(url)
-        return try Self.hash(url)
     }
     private func availability(_ source: CameraStoredOriginal) -> CameraOriginalAvailability {
         let url = originalURL(source)
@@ -589,7 +587,7 @@ final class CameraOriginalStore {
             let output: (size: UInt64, digest: String)
             if let jpegSource, let adjustableSource {
                 try CameraJPEGProcessing.encode(source: adjustableSource, destinationURL: staged, options: jpegSource.options)
-                output = try hashFile(staged)
+                output = try Self.hash(staged)
                 guard output.size > 0 else { throw CameraProtocolError.jpegProcessing }
                 let handle = try FileHandle(forUpdating: staged)
                 defer { try? handle.close() }

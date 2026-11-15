@@ -881,11 +881,16 @@ import Darwin
                   "pruneExportedOriginals() reclaims exported re-adopted original and removes its directory")
     }
 
+    /// 统一整摘要账目：直连 `Self.hash`（含 recover/jpeg 重编码）+ FileDigestCache 计算入口。
+    /// 断言读它，任何绕过缓存的直连整算都无法假绿。
+    private static func totalDigestWork() -> Int {
+        CameraOriginalStore.fullFileHashCount + FileDigestCache.shared.digestComputeCount
+    }
+
     private static func completeReusesStreamedDigestWithoutRehashingPartial() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-complete-dedup-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
-        var fullHashes = 0
-        let store = try CameraOriginalStore(directory: root, onFullHash: { _ in fullHashes += 1 })
+        let store = try CameraOriginalStore(directory: root)
         let bytes = Data([73, 73, 42, 0, 1, 2, 3, 4])
         let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
         let identity = CameraDeviceIdentity(manufacturer: "Sony", model: "ILCE-7M4", firmware: "1.0", serial: "0001", operations: [0x923c, 0x923d])
@@ -895,9 +900,11 @@ import Darwin
         let target = try store.begin(job: job.id, item: job.items[0].id)
         try target.handle.write(contentsOf: bytes)
         try target.handle.close()
+        let beforeComplete = totalDigestWork()
         let saved = try store.complete(job: job.id, item: job.items[0].id, digest: digest)
-        try check(fullHashes == 0 && saved.digest == digest && saved.size == UInt64(bytes.count),
-                  "complete() reuses streamed digest without re-hashing .partial (actual hashes: \(fullHashes))")
+        let hashWork = totalDigestWork() - beforeComplete
+        try check(hashWork == 0 && saved.digest == digest && saved.size == UInt64(bytes.count),
+                  "complete() reuses streamed digest without re-hashing .partial (actual hashes: \(hashWork))")
 
         let badJob = try store.enqueue(device: identity, connectionKey: "fixture", assets: [
             CameraAssetSnapshot(content: 2, file: 2, storage: 1, format: 0xb101,
@@ -964,14 +971,15 @@ import Darwin
         let pendingSnapshot = CameraAssetSnapshot(content: 6, file: 6, storage: 0, format: 0,
                                                   name: "DSC00021.ARW", size: UInt64(bytes.count), created: "1700000021000", modified: "")
         let pendingJob = try store.enqueue(device: identity, connectionKey: "fixture", assets: [pendingSnapshot])
+        let base = totalDigestWork()
         guard let candidate = store.samplingCandidate(job: pendingJob.id, item: pendingJob.items[0].id) else {
             try check(false, "samplingCandidate finds the matching saved original for reuse"); fatalError("unreachable")
         }
-        let afterValidation = FileDigestCache.shared.digestComputeCount(for: candidate.url)
-        try check(afterValidation == 1,
-                  "samplingCandidate validates the candidate with exactly one cached digest computation (actual: \(afterValidation))")
+        let afterValidation = totalDigestWork()
+        try check(afterValidation == base + 1,
+                  "samplingCandidate validates the candidate with exactly one full digest (actual: \(afterValidation - base))")
         let reused = try store.reuseSampledOriginal(job: pendingJob.id, item: pendingJob.items[0].id, sourceID: candidate.source.id)
-        let afterReuse = FileDigestCache.shared.digestComputeCount(for: candidate.url)
+        let afterReuse = totalDigestWork()
         try check(reused.id == saved.id && afterReuse == afterValidation,
                   "reuseSampledOriginal re-validates through the fingerprint cache without a second full digest (actual delta: \(afterReuse - afterValidation))")
     }
