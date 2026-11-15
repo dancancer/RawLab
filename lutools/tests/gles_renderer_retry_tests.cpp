@@ -8,6 +8,7 @@
 #include "sony2fuji/lut_parser.h"
 
 #include <chrono>
+#include <cmath>
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -47,13 +48,13 @@ bool renderPhoto(GlesPhotoRenderer& renderer, ImageData& output) {
     return renderPhotoSize(renderer, 17, 19, output);
 }
 
-std::shared_ptr<LUT3D> makeSimpleLut() {
+std::shared_ptr<LUT3D> makeSimpleLut(float scale = .9f) {
     std::ostringstream ss;
     ss << "#Gamma:FLog2\n#Gamut:FGamut\nLUT_3D_SIZE 2\n";
     for (int b = 0; b < 2; ++b)
         for (int g = 0; g < 2; ++g)
             for (int r = 0; r < 2; ++r)
-                ss << (r * 0.9f) << ' ' << (g * 0.9f) << ' ' << (b * 0.9f) << '\n';
+                ss << (r * scale) << ' ' << (g * scale) << ' ' << (b * scale) << '\n';
     auto lut = std::make_shared<LUT3D>();
     require(lut->loadFromData(ss.str()) == ErrorCode::Success, "failed to load test LUT");
     return lut;
@@ -204,16 +205,62 @@ void photoResizeOomAndLutOomResetState() {
     require(rawlabtest::glesVmStats().destroyContextCalls == destroysBefore,
         "17x19 recovery after OOM must not destroy context");
 
-    // setLut 的 glTexImage3D OOM 后，cachedLut 必须清零，后续同 LUT 渲染需重新上传 3D 纹理。
-    auto lut = makeSimpleLut();
+    // 已缓存 A 后切 B，失败的上传会破坏共用纹理；回到 A 也必须重传。
+    auto lutA = makeSimpleLut();
+    auto lutB = makeSimpleLut(.6f);
+    require(renderPhotoSize(renderer, 17, 19, output, lutA), "initial LUT A upload must succeed");
+    const ImageData expected = output;
     const size_t texUploadsBefore = rawlabtest::glesVmStats().texImage3DCalls;
     rawlabtest::glesVmConfig().failNextTexImage3DOom = true;
-    require(!renderPhotoSize(renderer, 17, 19, output, lut), "glTexImage3D OOM must fail");
+    require(!renderPhotoSize(renderer, 17, 19, output, lutB), "LUT B glTexImage3D OOM must fail");
     require(rawlabtest::glesVmStats().texImage3DCalls == texUploadsBefore + 1,
         "failed glTexImage3D should have attempted upload");
-    require(renderPhotoSize(renderer, 17, 19, output, lut), "same LUT after OOM must re-upload and succeed");
+    require(renderPhotoSize(renderer, 17, 19, output, lutA), "LUT A after LUT B OOM must re-upload and succeed");
+    require(output.width == expected.width && output.height == expected.height,
+        "recovered LUT A output dimensions changed");
+    for (size_t i = 0; i < expected.pixels.size(); ++i) {
+        require(std::abs(output.pixels[i].r - expected.pixels[i].r) < 1e-6f &&
+                std::abs(output.pixels[i].g - expected.pixels[i].g) < 1e-6f &&
+                std::abs(output.pixels[i].b - expected.pixels[i].b) < 1e-6f,
+            "LUT A sampled a damaged texture after LUT B upload OOM");
+    }
     require(rawlabtest::glesVmStats().texImage3DCalls == texUploadsBefore + 2,
         "cachedLut was not reset before glTexImage3D, skipping re-upload");
+    require(rawlabtest::glesVmStats().destroyContextCalls == destroysBefore,
+        "LUT upload OOM recovery must preserve healthy context");
+}
+
+void photoStickyErrorsAreDrainedAfterNonGlExceptions() {
+    rawlabtest::glesVmConfig() = {};
+    rawlabtest::glesVmConfig().maxTexture3DSize = 1;
+    gles_test::now = {};
+
+    GlesPhotoRenderer renderer;
+    ImageData output;
+    require(renderPhoto(renderer, output), "initial sticky-error fixture render must succeed");
+    const size_t destroysBefore = rawlabtest::glesVmStats().destroyContextCalls;
+    const size_t createsBefore = rawlabtest::glesVmStats().createContextCalls;
+
+    // VM 的 lastError 是尚未被 glGetError 消费的粘滞错误；取消先于 upload 的 checkGL 抛出。
+    rawlabtest::detail::state().lastError = GL_OUT_OF_MEMORY;
+    bool cancelled = false;
+    try {
+        ProcessingCancellationScope scope({[](void*) -> int32_t { return 1; }, nullptr});
+        renderPhoto(renderer, output);
+    } catch (const ProcessingCancelled&) {
+        cancelled = true;
+    }
+    require(cancelled, "sticky-error fixture must reach ProcessingCancelled catch");
+    require(renderPhoto(renderer, output), "healthy frame after cancellation must not inherit sticky GL error");
+
+    // 尺寸检查先于 glTexImage3D/checkGL，覆盖普通异常 catch 的排空路径。
+    rawlabtest::detail::state().lastError = GL_OUT_OF_MEMORY;
+    require(!renderPhotoSize(renderer, 17, 19, output, makeSimpleLut()),
+        "LUT exceeding device texture limit must fail");
+    require(renderPhoto(renderer, output), "healthy frame after texture-limit exception must not inherit sticky GL error");
+    require(rawlabtest::glesVmStats().destroyContextCalls == destroysBefore &&
+            rawlabtest::glesVmStats().createContextCalls == createsBefore,
+        "non-GL exceptions must preserve context without rebuild or cooldown");
 }
 
 void readbackMapUnmapErrorsAndStickyDrain() {
@@ -271,6 +318,7 @@ int main() {
         photoContextLostTriggersBackoff();
         filterTransientErrorAndContextLoss();
         photoResizeOomAndLutOomResetState();
+        photoStickyErrorsAreDrainedAfterNonGlExceptions();
         readbackMapUnmapErrorsAndStickyDrain();
         std::cout << "PASS: gpu_gles_renderer_retry\n";
         return 0;
