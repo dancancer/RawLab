@@ -8,6 +8,8 @@
 namespace sony2fuji::ai {
 enum class CacheKind { Raw, RGB, SceneRGB };
 std::string sourceMetadataKey(const std::string& path);
+// 仅供行为测试：强制走非 USN 卷的整文件回退分支（生产恒为 false，默认行为不变）。
+void forceMetadataFallbackForTests(bool enabled);
 std::string rawCacheKeyFromIdentity(const std::string& sourceIdentity, const std::string& modelDigest, int backend,
                                     bool legacySonyCrop = false);
 std::string sourceIdentityKey(const std::string& path, void (*checkpoint)() = nullptr);
@@ -20,10 +22,12 @@ public:
     explicit DenoiseCache(std::string directory);
     // SceneRGB 的 0,0 从校验后的缓存头读取旋转后画布尺寸。
     std::optional<Tensor> load(const std::string& key, CacheKind kind, int width, int height,
-                               const std::string& dependency = {}, std::string* producer = nullptr) const;
+                               const std::string& dependency = {}, std::string* producer = nullptr,
+                               std::string* payloadDigest = nullptr) const;
     void store(const std::string& key, CacheKind kind, int width, int height, const float* values, size_t count,
                const std::string& dependency = {}, const std::string& producer = {},
-               const std::function<void()>& beforePublish = {}) const;
+               const std::function<void()>& beforePublish = {},
+               std::string* payloadDigest = nullptr) const;
     void prune(uint64_t byteLimit, const std::set<std::string>& protectedKeys) const;
 private:
     std::string directory_;
