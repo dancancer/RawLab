@@ -135,6 +135,32 @@ void keyAndVersionInvalidationAndCorruptionRecovery() {
     }
 }
 
+#if defined(_WIN32)
+void diskReadersShareAtomicReplacementHandles() {
+    TempDir dir;
+    const auto key = makeD3D11ShaderCacheKey("RawLab replacement", "void main() {}", "main", "cs_5_0", 0);
+    const std::vector<uint8_t> expected{0x44, 0x58, 0x42, 0x43, 7, 8, 9};
+    ShaderBytecodeCache seed(dir.path);
+    seed.getOrCompile(key, [&]() { return expected; });
+
+    // MoveFileEx 替换期间持有 DELETE 访问；读端也必须允许该共享模式。
+    const HANDLE replacement = CreateFileW((dir.path / (key.id + ".dxbc")).c_str(), DELETE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL, nullptr);
+    require(replacement != INVALID_HANDLE_VALUE, "failed to open atomic replacement fixture handle");
+    ShaderBytecodeCache reader(dir.path);
+    int fallbackCompiles = 0;
+    const auto loaded = reader.getOrCompile(key, [&]() {
+        ++fallbackCompiles;
+        return expected;
+    });
+    CloseHandle(replacement);
+    require(fallbackCompiles == 0 && reader.stats().compiles == 0 && reader.stats().diskHits == 1 &&
+            loaded == expected,
+        "disk reader must share the DELETE handle used by atomic replacement without recompiling");
+}
+#endif
+
 void concurrentWritersAndReadersNeverObserveBrokenBlob() {
     TempDir dir;
     const std::string source = "void main() { /* concurrent */ }";
@@ -217,6 +243,9 @@ int main() {
     try {
         inProcessAndCrossProcessCacheHits();
         keyAndVersionInvalidationAndCorruptionRecovery();
+#if defined(_WIN32)
+        diskReadersShareAtomicReplacementHandles();
+#endif
         concurrentWritersAndReadersNeverObserveBrokenBlob();
         std::cout << "PASS: d3d11_shader_cache\n";
         return 0;

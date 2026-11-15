@@ -214,8 +214,29 @@ private:
     }
 
     bool readFromDisk(const ShaderCacheKey& key, std::vector<uint8_t>& out, uint32_t version) const {
-        std::error_code ec;
         const auto path = blobPath(key);
+#if defined(_WIN32)
+        // CRT 流未共享 DELETE，原子替换持有删除句柄时会误报缓存未命中。
+        const HANDLE file = CreateFileW(path.c_str(), GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+        if (file == INVALID_HANDLE_VALUE) return false;
+        struct CloseFile {
+            HANDLE handle;
+            ~CloseFile() { CloseHandle(handle); }
+        } close{file};
+        LARGE_INTEGER size{};
+        if (!GetFileSizeEx(file, &size) ||
+            size.QuadPart <= static_cast<LONGLONG>(sizeof(detail::ShaderBlobHeader)) ||
+            size.QuadPart > 16 * 1024 * 1024) {
+            return false;
+        }
+        std::vector<uint8_t> raw(static_cast<size_t>(size.QuadPart));
+        DWORD bytesRead = 0;
+        if (!ReadFile(file, raw.data(), static_cast<DWORD>(raw.size()), &bytesRead, nullptr) ||
+            bytesRead != raw.size()) return false;
+#else
+        std::error_code ec;
         if (!std::filesystem::is_regular_file(path, ec)) return false;
         std::ifstream in(path, std::ios::binary | std::ios::ate);
         if (!in) return false;
@@ -227,6 +248,7 @@ private:
         in.seekg(0);
         std::vector<uint8_t> raw(static_cast<size_t>(size));
         if (!in.read(reinterpret_cast<char*>(raw.data()), size)) return false;
+#endif
         return deserializeShaderBlob(key, raw, out, version);
     }
 
