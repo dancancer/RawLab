@@ -350,7 +350,8 @@ class CameraImportStoreTest {
         val job = store.create("camera", listOf(photo()), CameraImportDestination())
         val part = store.partial(job.id); part.writeBytes(raw)
         // (a) 全新发布直接采信流式摘要，不再整读 .partial 重算来抓“谎报摘要”：长度与文件头仍是拒绝门槛，
-        // 谎报摘要在恢复场景由 item.digest 交叉校验（见上方 resume CameraImportSourceChanged）与下次 load 的强校验兜底。
+        // 谎报摘要由恢复场景 item.digest 交叉校验（见上方 resume CameraImportSourceChanged）与打开路径
+        // savedUris 的整文件强校验兜底（load 命中 savedStat 指纹时信任登记摘要，与 A1 语义一致）。
         val trusted = store.publish(job, 0, part, "0".repeat(64), CameraTransferPermit())
         assertNotNull(trusted.items.single().saved)
         assertEquals("0".repeat(64), trusted.items.single().digest)
@@ -554,6 +555,22 @@ class CameraImportStoreTest {
         assertEquals("the recorded fingerprint must keep later loads free of whole-file digests", 0, fixture.media.opens)
     }
 
+    @Test fun strongVerificationFailureClearsFingerprintSoNextLoadFlipsToChanged() = withStore { fixture, store ->
+        val job = save(store)
+        val file = fixture.media.file(job.items.single().saved!!.uri)
+        val mtime = file.lastModified()
+        // 同 stat 改写：内容变化但 size 与 mtime 复原，stat 指纹抓不到（评审 finding 3 场景）。
+        file.writeBytes(ByteArray(raw.size) { ((it * 7 + 3) % 251).toByte() })
+        assertTrue(file.setLastModified(mtime))
+        val trusted = fixture.store().load().single()
+        assertNotNull("load keeps trusting the unchanged fingerprint", trusted.items.single().saved)
+        // 用户点打开：savedUris 整文件强校验拦截，同时必须清掉该条指纹并落盘（自愈前提）。
+        assertThrows(CameraLocalSourceChanged::class.java) { store.savedUris(trusted) }
+        val healed = fixture.store().load().single()
+        assertNull("after strong verification failed the entry must self-heal away from saved", healed.items.single().saved)
+        assertEquals(CameraMediaProblem.CHANGED, healed.items.single().problem)
+    }
+
     @Test fun statTrustRequiresFingerprintSizeToMatchExpectedSize() = withStore { fixture, store ->
         val job = save(store)
         val item = job.items.single()
@@ -604,40 +621,6 @@ class CameraImportStoreTest {
         assertEquals(hash(big), digest)
         assertEquals("候选指纹命中即复用：候选校验零整文件摘要", 0, store.contentDigestCount - before)
         assertArrayEquals(big, output.readBytes())
-    }
-
-    @Test fun savedUrisTrustsFingerprintAcrossOpens() = withStore { fixture, store ->
-        val job = save(store)
-        val savedUri = job.items.single().saved!!.uri
-        val before = store.contentDigestCount
-        assertEquals(savedUri, store.savedUris(job).single())
-        assertEquals("打开按 A1 指纹惯例放行：(size,mtime) 未变即零整文件摘要", 0, store.contentDigestCount - before)
-        val file = fixture.media.file(savedUri)
-        assertTrue(file.setLastModified(file.lastModified() + 5_000))
-        val touched = store.contentDigestCount
-        assertEquals(savedUri, store.savedUris(job).single())
-        assertEquals("只有指纹变化的条目才回落整文件强校验", 1, store.contentDigestCount - touched)
-    }
-
-    @Test fun fingerprintTrustOpensSavedPhotoAndStrongCheckHealsWhenStatUnavailable() = withStore { fixture, store ->
-        val job = save(store)
-        val file = fixture.media.file(job.items.single().saved!!.uri)
-        val mtime = file.lastModified()
-        // 同 stat 改写：内容变化但 size 与 mtime 复原，stat 指纹抓不到（评审 finding 3 场景）。
-        file.writeBytes(ByteArray(raw.size) { ((it * 7 + 3) % 251).toByte() })
-        assertTrue(file.setLastModified(mtime))
-        val trusted = fixture.store().load().single()
-        assertNotNull("load keeps trusting the unchanged fingerprint", trusted.items.single().saved)
-        // 打开语义（crypto 强度降级取舍已登记）：指纹命中即放行，不再每次整读兜底抓同秒改写。
-        val before = store.contentDigestCount
-        assertEquals(job.items.single().saved!!.uri, store.savedUris(trusted).single())
-        assertEquals(0, store.contentDigestCount - before)
-        // 元数据读不出（MediaProvider 给不出 stat）：整文件强校验兜底仍生效——抛错、清指纹并落盘（自愈前提）。
-        fixture.media.hideStat = true
-        assertThrows(CameraLocalSourceChanged::class.java) { store.savedUris(trusted) }
-        val healed = fixture.store().load().single()
-        assertNull("after strong verification failed the entry must self-heal away from saved", healed.items.single().saved)
-        assertEquals(CameraMediaProblem.CHANGED, healed.items.single().problem)
     }
 
     @Test fun adjustedJpegReuseRequiresTheSameSourceAndFrozenOptions() = withStore { fixture, _ ->
@@ -811,8 +794,6 @@ class CameraImportStoreTest {
         var opens = 0
         // 模拟个别 MediaProvider 在 IS_PENDING 期间就提前回填元数据的机型行为。
         var pendingStatOverride: MediaPhotoStat? = null
-        // 模拟 MediaStore 元数据读不出（DATE_MODIFIED 未定稿/查询失败）：stat 一律 null。
-        var hideStat = false
         private var next = 0
         fun file(uri: String) = File(root, uri.substringAfterLast('/'))
         override fun createPending(name: String, relativePath: String, mime: String, token: String): MediaPhoto {
@@ -832,7 +813,6 @@ class CameraImportStoreTest {
         override fun open(uri: String): InputStream { opens++; return file(uri).inputStream() }
         // 模拟真机 MediaProvider：IS_PENDING=1 期间 SIZE/DATE_MODIFIED 未定稿，publish（IS_PENDING=0）后才可 stat。
         override fun stat(uri: String): MediaPhotoStat? {
-            if (hideStat) return null
             val row = rows[uri] ?: return null
             if (!row.pending) return file(uri).takeIf { it.isFile }?.let { MediaPhotoStat(it.length(), it.lastModified()) }
             return pendingStatOverride

@@ -387,14 +387,9 @@ internal class CameraImportStore(private val directory: File, private val tempor
             item.saved?.let { saved ->
                 val current = media.inspect(saved.uri) ?: throw IOException("Camera original is unavailable")
                 if (current.pending) throw IOException("Camera original is not published")
-                val expectedSize = item.outputSize ?: item.photo.size
-                val expectedDigest = item.outputDigest ?: item.digest
-                // 打开按 A1 指纹惯例放行：(size,mtime) 未变即复用已登记摘要，不再每次整读 30–80MB。
-                // 取舍（登记为 crypto 强度降级）：同尺寸同秒的原位改写不再被打开路径的 SHA-256 兜底抓到；
-                // 指纹缺失/读不出（MediaProvider 元数据不可得）仍回落整文件强校验：
-                // 抓到篡改即清指纹落盘，下一次 load 整文件校验使条目自愈翻转为 CHANGED。
-                if (!fingerprintVerified(current.uri, expectedSize, expectedDigest, item.savedStat) &&
-                    !validContent(current.uri, expectedSize, expectedDigest)) {
+                if (!validContent(current.uri, item.outputSize ?: item.photo.size, item.outputDigest ?: item.digest)) {
+                    // 强校验抓到同指纹改写（stat 抓不到的篡改）：清掉该条指纹并落盘，
+                    // 下一次 load 走整文件校验，条目得以自愈翻转为 CHANGED（openSaved 的刷新依赖此语义）。
                     items[index] = item.copy(savedStat = null)
                     save(job.copy(items = items.toList()))
                     throw CameraLocalSourceChanged()
