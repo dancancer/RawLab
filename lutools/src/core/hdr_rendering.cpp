@@ -216,7 +216,7 @@ bool edit(ImageData& image, const HDRRenderOptions& o, bool hdr, float* contentM
     float fusedMax = -std::numeric_limits<float>::infinity();
     std::mutex fusedMaxMutex;
     parallelPixelRanges(image.pixels.size(), [&](size_t begin, size_t end) {
-        float localMax = fusedMax;
+        float localMax = -std::numeric_limits<float>::infinity();
         for (size_t i = begin; i < end; ++i) {
             auto& p = image.pixels[i];
             if (colorActive) p = {p.r * gain.r * exposure, p.g * gain.g * exposure, p.b * gain.b * exposure};
