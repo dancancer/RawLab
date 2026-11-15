@@ -618,7 +618,10 @@ final class PhotoThumbnails: @unchecked Sendable {
                 let cost = result.map(Self.imageCost) ?? 0
                 lock.lock()
                 _decodeCount += 1
-                let delivered = fileGenerations[key.path, default: 0] == fileGen ? result : nil
+                // 编辑通知或首次渲染可能先于目录监听追踪新身份，只丢弃旧身份的解码。
+                let trackedIdentity = trackedEditStates[key.path]?.identity
+                let identityMatches = trackedIdentity == nil || trackedIdentity == key.fileIdentity
+                let delivered = fileGenerations[key.path, default: 0] == fileGen && identityMatches ? result : nil
                 if let delivered {
                     insertLocked(delivered, for: key, cost: cost)
                 }
