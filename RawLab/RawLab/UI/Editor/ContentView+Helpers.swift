@@ -674,9 +674,15 @@ extension ContentView {
         do {
             let journal = try BatchJournalStore.appStore()
             if let job = try journal.pendingJobs().first {
+                BatchArtifactRetention.protectJob(job.id)
                 batchModel = BatchExportModel(job:job,journalStore:journal,editor:viewModel)
                 batchModel?.onUsage = { UsageAnalytics.shared.record($0) }
-                batchModel?.onDiscard = { batchModel = nil; showingBatchExport = false; recoverBatchExport() }
+                batchModel?.onDiscard = {
+                    BatchArtifactRetention.unprotectJob(job.id)
+                    batchModel = nil
+                    showingBatchExport = false
+                    recoverBatchExport()
+                }
             }
         } catch {
             viewModel.reportError(error, operation: .batchExport, stage: "recover",
