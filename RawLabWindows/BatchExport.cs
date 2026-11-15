@@ -160,24 +160,23 @@ public sealed class BatchJournal
     public string DirectoryPath { get; }
     private string PathName => Path.Combine(DirectoryPath, "job.json");
     public string? LastQuarantinedPath { get; private set; }
-    private (long Length, DateTime Modified)? writtenFingerprint;
+    // 上次写出后的 stat 快照；仅当卷带 USN 变更记录时才能证明磁盘上仍是本进程写出的那份。
+    private WindowsStatSnapshot? writtenStat;
     // Save() 实际执行整读盘校验的次数（测试锚点：跳过逻辑必须真的跳过）。
     public int DiskReloads { get; private set; }
     public BatchJournal(string directory) => DirectoryPath = directory;
     public void Save(BatchJob job)
     {
-        // 仅当磁盘文件不是本进程上次写出的那份（首次写、或外部改动）才整读回并重校验，
-        // 只为防「运行途中外部写入未来版本文件」；启动 Load 已全量校验，原子替换保证旧文件完整。
-        var fingerprint = Fingerprint();
-        if (writtenFingerprint == null || writtenFingerprint.Value != fingerprint) { DiskReloads++; _ = ReadJob(); }
+        // 仅当磁盘文件带 USN 独立变化标记且与上次写出的 stat 快照逐字段一致（长度、三时戳、FileID、Usn）才跳过整读回；
+        // NTFS 内核时钟以 ~15.6ms tick 印刻时戳，同 tick 等长原地覆写只能靠 USN 识破；
+        // Usn==0（卷未启用 USN Journal）或 stat 不可靠时一律回读，防外部未来版本文件被静默覆盖。
+        var trusted = writtenStat is { Usn: > 0 };
+        if (!trusted || !WindowsFileIdentity.TryReadStat(PathName, out var current) || current != writtenStat!.Value)
+        { DiskReloads++; _ = ReadJob(); }
         Validate(job);
         AtomicJson.Write(PathName, job);
-        writtenFingerprint = Fingerprint();
-    }
-    private (long Length, DateTime Modified)? Fingerprint()
-    {
-        var info = new FileInfo(PathName);
-        return info.Exists ? (info.Length, info.LastWriteTimeUtc) : null;
+        WindowsFileIdentity.TryReadStat(PathName, out var written);
+        writtenStat = written;
     }
 
     public void FreezeLook(BatchJob job)
@@ -273,6 +272,8 @@ public sealed class BatchJournal
 
     private BatchJob? ReadJob()
     {
+        // 任何一次读盘（含异常/隔离分支）都使上次写出指纹失效，后续 Save 不得沿用旧快照跳过。
+        writtenStat = null;
         LastQuarantinedPath = null;
         if (!File.Exists(PathName)) return null;
         try
@@ -313,6 +314,7 @@ public sealed class BatchJournal
     public void Discard(BatchJob job)
     {
         if (File.Exists(PathName)) File.Delete(PathName);
+        writtenStat = null;
         ReleaseResources(job);
     }
 

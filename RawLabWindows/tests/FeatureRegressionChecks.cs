@@ -107,7 +107,7 @@ internal static class FeatureRegressionChecks
                 job.Items = [BatchItem.Create(amplifySource) with { Selected = true, Status = status }];
                 return job;
             }
-            // 稳态写入：每任务至多首写整读一次，之后靠本进程 (size,mtime) 指纹跳过重读（撤跳过逻辑必红）。
+            // 稳态写入：每任务至多首写整读一次，之后靠本进程 USN/stat 快照（Usn>0 才可信）跳过重读（撤跳过逻辑必红）。
             amplifyJournal.Save(AmplifyJob("A", BatchStatus.Waiting));
             amplifyJournal.Save(AmplifyJob("B", BatchStatus.Waiting));
             amplifyJournal.Save(AmplifyJob("C", BatchStatus.Waiting));
@@ -127,6 +127,22 @@ internal static class FeatureRegressionChecks
             check(amplifyJournal.LastQuarantinedPath != null && amplifyJournal.DiskReloads == 3 &&
                   amplifyJournal.Load()?.LookName == "E",
                 "an externally corrupted journal is quarantined on the next Save instead of being skipped");
+            // 等长覆写红锚（hosted CI run 43751010759 根因）：NTFS 内核时钟以 ~15.6ms tick 印刻时戳，
+            // 同 tick 原地覆写只改版本号末位 → (Length, mtime) 逐位相同。紧跟一次成功 Save 重建可信指纹、
+            // 中途无 Load，跳过判定只能靠 USN/stat 快照识破：回退成 (size,mtime) 二维或去掉 USN 时本断言必红。
+            amplifyJournal.Save(AmplifyJob("E", BatchStatus.Waiting));
+            var sameLength = File.ReadAllText(journalPath);
+            var equalFuture = new System.Text.RegularExpressions.Regex("\"[Vv]ersion\":\\s*\\d+")
+                .Replace(sameLength, m => m.Value[..^1] + "9", 1);
+            check(equalFuture.Length == sameLength.Length && equalFuture != sameLength,
+                "the test fixture patches the journal version in place without changing the file length");
+            File.WriteAllText(journalPath, equalFuture);
+            var equalRejected = false;
+            try { amplifyJournal.Save(AmplifyJob("G", BatchStatus.Waiting)); } catch (Exception) { equalRejected = true; }
+            check(equalRejected && File.ReadAllText(journalPath) == equalFuture && amplifyJournal.DiskReloads == 5,
+                "an equal-length future-version overwrite is caught by the USN stat fingerprint and fails closed without rewriting");
+            File.WriteAllText(journalPath, sameLength);
+            amplifyJournal.Save(AmplifyJob("G", BatchStatus.Waiting));
             // 回归：写入中途被杀留下完整旧文件与游离 tmp → 启动 Load 仍恢复 Running→Waiting 且不误判损坏。
             amplifyJournal.Save(AmplifyJob("F", BatchStatus.Running));
             File.WriteAllText(Path.Combine(amplifyDirectory, "job.json.tmp-stray"), "stray");
