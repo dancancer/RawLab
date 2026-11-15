@@ -123,6 +123,22 @@ internal static class BatchSelectionUiChecks
             check(cancelRejected && cancelJournal.Load()==null && !app.Windows.OfType<BatchExportWindow>().Any()
                     && (!Directory.Exists(cancelJournal.DirectoryPath) || Directory.GetFiles(cancelJournal.DirectoryPath).Length==0),
                 "A freeze cancelled during the wait never saves the journal or leaves look copies behind");
+            // 对话框冻结期取消锚点：「取消」在冻结真正飞行中（copy 阶段挂起等待）时点击——checking 贯穿冻结期时
+            // CancelCheck 生效：窗口以 false 关闭、journal 不落盘、任务窗口不弹。撤修复（Confirm 提前 checking=false）
+            // 时取消空返，冻结照常落盘启动 → 必红。
+            var cancelDialog=new CollectionExportDialog(collection,window);Set(cancelDialog,"directory",root);
+            Get<TextBox>(cancelDialog,"edge").Text="256";Get<ComboBox>(cancelDialog,"formats").SelectedItem=ExportFormat.Png;
+            using var inCopy=new ManualResetEventSlim(false);using var resume=new ManualResetEventSlim(false);
+            cancelDialog.freezeStage=stage=>{if(stage=="copy"&&!inCopy.IsSet){inCopy.Set();resume.Wait(TimeSpan.FromSeconds(10));}};
+            var dialogStart=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(50)};var confirmRaised=false;
+            dialogStart.Tick+=(_,_)=>{
+                if(!confirmRaised){dialogStart.Stop();cancelDialog.UpdateLayout();Find<Button>(cancelDialog,"collection.export-confirm").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    confirmRaised=true;dialogStart.Interval=TimeSpan.FromMilliseconds(20);dialogStart.Start();return;}
+                if(inCopy.IsSet){dialogStart.Stop();Find<Button>(cancelDialog,"collection.export-cancel").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));resume.Set();}
+            };
+            dialogStart.Start();
+            check(cancelDialog.ShowDialog()==false && cancelJournal.Load()==null && !app.Windows.OfType<BatchExportWindow>().Any(),
+                "Cancelling while the dialog freeze is in flight discards the export before any journal write");
             var dialog=new CollectionExportDialog(collection,window);Set(dialog,"directory",root);
             Get<TextBox>(dialog,"edge").Text="256";
             Get<ComboBox>(dialog,"formats").SelectedItem=ExportFormat.Png;
