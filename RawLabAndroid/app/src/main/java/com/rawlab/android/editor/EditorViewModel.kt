@@ -1324,7 +1324,7 @@ class EditorViewModel @JvmOverloads constructor(
                     mutable.value = mutable.value.copy(processingMigration = null)
                 }
                 if (source == sourceRevision && mutable.value.photo?.identity == photo.identity &&
-                    mutable.value.edits.film == edits.film && edits.recipeID == null && previousFilm != edits.film) updateRecentLooks(edits.film)
+                    mutable.value.visibleEdits.film == edits.film && edits.recipeID == null && previousFilm != edits.film) updateRecentLooks(edits.film)
             }
             completed(saved)
             if (saved.state == EditSaveState.SAVED && source == sourceRevision) cacheAcceptedPhotoPreview()
