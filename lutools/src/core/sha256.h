@@ -1,16 +1,106 @@
 #pragma once
-#include <string>
 #include <algorithm>
 #include <array>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <stdexcept>
+#include <string>
+
+#if defined(__APPLE__)
+#include <CommonCrypto/CommonDigest.h>
+#elif defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <bcrypt.h>
+#if defined(_MSC_VER)
+#pragma comment(lib, "bcrypt.lib")
+#endif
+#else
 #include <iomanip>
 #include <sstream>
-#include <stdexcept>
+#endif
 
 namespace sony2fuji::hash {
 namespace detail {
+inline std::string formatDigest(const uint8_t* digest, size_t size) {
+    static constexpr char kHex[] = "0123456789abcdef";
+    std::string out(size * 2, '\0');
+    for (size_t i = 0; i < size; ++i) {
+        out[2 * i] = kHex[digest[i] >> 4];
+        out[2 * i + 1] = kHex[digest[i] & 0x0f];
+    }
+    return out;
+}
+
+#if defined(_WIN32)
+struct BcryptAlg {
+    BCRYPT_ALG_HANDLE handle = nullptr;
+    BcryptAlg() {
+        const NTSTATUS status = BCryptOpenAlgorithmProvider(
+            &handle, BCRYPT_SHA256_ALGORITHM, nullptr, 0);
+        if (!BCRYPT_SUCCESS(status) || !handle) {
+            throw std::runtime_error("BCryptOpenAlgorithmProvider(SHA256) failed");
+        }
+    }
+    ~BcryptAlg() {
+        if (handle) BCryptCloseAlgorithmProvider(handle, 0);
+    }
+    BcryptAlg(const BcryptAlg&) = delete;
+    BcryptAlg& operator=(const BcryptAlg&) = delete;
+};
+
+inline BCRYPT_ALG_HANDLE sha256AlgHandle() {
+    static const BcryptAlg alg;
+    return alg.handle;
+}
+
+struct BcryptHash {
+    BCRYPT_HASH_HANDLE handle = nullptr;
+    explicit BcryptHash(BCRYPT_ALG_HANDLE alg) {
+        const NTSTATUS status = BCryptCreateHash(
+            alg, &handle, nullptr, 0, nullptr, 0, 0);
+        if (!BCRYPT_SUCCESS(status) || !handle) {
+            throw std::runtime_error("BCryptCreateHash(SHA256) failed");
+        }
+    }
+    ~BcryptHash() {
+        if (handle) BCryptDestroyHash(handle);
+    }
+    BcryptHash(const BcryptHash&) = delete;
+    BcryptHash& operator=(const BcryptHash&) = delete;
+
+    void update(const void* data, size_t size) {
+        const auto* ptr = static_cast<const uint8_t*>(data);
+        size_t remaining = size;
+        while (remaining > 0) {
+            const auto chunk = static_cast<ULONG>(std::min<size_t>(remaining, 0x40000000u));
+            const NTSTATUS status = BCryptHashData(
+                handle, const_cast<PUCHAR>(ptr), chunk, 0);
+            if (!BCRYPT_SUCCESS(status)) {
+                throw std::runtime_error("BCryptHashData failed");
+            }
+            ptr += chunk;
+            remaining -= chunk;
+        }
+    }
+
+    std::string finish() {
+        std::array<uint8_t, 32> digest{};
+        const NTSTATUS status = BCryptFinishHash(
+            handle, digest.data(), static_cast<ULONG>(digest.size()), 0);
+        if (!BCRYPT_SUCCESS(status)) {
+            throw std::runtime_error("BCryptFinishHash failed");
+        }
+        return formatDigest(digest.data(), digest.size());
+    }
+};
+#elif !defined(__APPLE__)
 constexpr std::array<uint32_t, 8> initialState{0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
                                              0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19};
 inline uint32_t rotate(uint32_t value, unsigned count) { return (value >> count) | (value << (32 - count)); }
@@ -61,21 +151,68 @@ inline std::string finishDigest(std::array<uint32_t, 8> state, const uint8_t* ta
     for (uint32_t value : state) output << std::setw(8) << value;
     return output.str();
 }
-}
+#endif
+} // namespace detail
 
 inline std::string sha256Bytes(const void* data, size_t size) {
     if (!data && size) throw std::invalid_argument("invalid SHA-256 input");
+#if defined(__APPLE__)
+    CC_SHA256_CTX ctx;
+    CC_SHA256_Init(&ctx);
+    const auto* ptr = static_cast<const uint8_t*>(data);
+    size_t remaining = size;
+    while (remaining > 0) {
+        const auto chunk = static_cast<CC_LONG>(std::min<size_t>(remaining, 0x40000000u));
+        CC_SHA256_Update(&ctx, ptr, chunk);
+        ptr += chunk;
+        remaining -= chunk;
+    }
+    std::array<uint8_t, CC_SHA256_DIGEST_LENGTH> digest{};
+    CC_SHA256_Final(digest.data(), &ctx);
+    return detail::formatDigest(digest.data(), digest.size());
+#elif defined(_WIN32)
+    detail::BcryptHash hasher(detail::sha256AlgHandle());
+    if (size > 0) hasher.update(data, size);
+    return hasher.finish();
+#else
     static const uint8_t empty = 0;
     const auto* input = data ? static_cast<const uint8_t*>(data) : &empty;
     auto state = detail::initialState;
     size_t offset = 0;
     while (size - offset >= 64) { detail::compress(state, input + offset); offset += 64; }
     return detail::finishDigest(state, input + offset, size - offset, size);
+#endif
 }
 
 inline std::string sha256File(const std::string& path, void (*checkpoint)() = nullptr) {
     std::ifstream input(std::filesystem::u8path(path), std::ios::binary);
     if (!input) throw std::runtime_error("Cannot read file");
+#if defined(__APPLE__)
+    CC_SHA256_CTX ctx;
+    CC_SHA256_Init(&ctx);
+    std::array<uint8_t, 65536> buffer{};
+    while (input) {
+        if (checkpoint) checkpoint();
+        input.read(reinterpret_cast<char*>(buffer.data()), buffer.size());
+        const size_t count = static_cast<size_t>(input.gcount());
+        if (count > 0) CC_SHA256_Update(&ctx, buffer.data(), static_cast<CC_LONG>(count));
+    }
+    if (!input.eof()) throw std::runtime_error("Cannot finish reading file");
+    std::array<uint8_t, CC_SHA256_DIGEST_LENGTH> digest{};
+    CC_SHA256_Final(digest.data(), &ctx);
+    return detail::formatDigest(digest.data(), digest.size());
+#elif defined(_WIN32)
+    detail::BcryptHash hasher(detail::sha256AlgHandle());
+    std::array<uint8_t, 65536> buffer{};
+    while (input) {
+        if (checkpoint) checkpoint();
+        input.read(reinterpret_cast<char*>(buffer.data()), buffer.size());
+        const size_t count = static_cast<size_t>(input.gcount());
+        if (count > 0) hasher.update(buffer.data(), count);
+    }
+    if (!input.eof()) throw std::runtime_error("Cannot finish reading file");
+    return hasher.finish();
+#else
     auto state = detail::initialState;
     std::array<uint8_t, 65536> buffer{};
     uint64_t bytes = 0;
@@ -92,5 +229,6 @@ inline std::string sha256File(const std::string& path, void (*checkpoint)() = nu
     }
     if (!input.eof()) throw std::runtime_error("Cannot finish reading file");
     return detail::finishDigest(state, buffer.data(), remaining, bytes);
+#endif
 }
 } // namespace sony2fuji::hash
