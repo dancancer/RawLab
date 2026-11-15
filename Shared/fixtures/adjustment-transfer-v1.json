@@ -1888,6 +1888,22 @@
           "effects.dehaze": null
         }
       }
+    },
+    {
+      "id": "local-ai-activation-is-not-transferable",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "local.ai_denoise_enabled": true
+        }
+      }
     }
   ]
 }

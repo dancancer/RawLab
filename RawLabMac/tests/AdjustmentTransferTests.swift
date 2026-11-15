@@ -298,9 +298,8 @@ struct AdjustmentTransferTests {
         check(result.settings.aiDenoiseEnabled && result.settings.exposure == 0.5,
               "Explicit ordinary fields preserve unselected target AI state")
         let denoise = try MacAdjustmentTransfer.capture(scope: .custom([.chromaDenoise]), snapshot: state(), context: raw)
-        rejects("Ordinary denoise cannot be reported as applied while target AI overrides it") {
-            _ = try MacAdjustmentTransfer.prepare(payload: denoise, target: state(target), context: raw)
-        }
+        check(try MacAdjustmentTransfer.prepare(payload: denoise, target: state(target), context: raw) == state(target),
+              "Neutral denoise paste preserves the AI target without creating a change")
         check(try MacAdjustmentTransfer.prepare(payload: denoise, target: state(), context: raw) == state(),
               "Existing AI-off denoise behavior remains unchanged")
     }
@@ -614,9 +613,11 @@ struct AdjustmentTransferTests {
         }
         source.rawNoiseReduction = 1
         let denoise = try MacAdjustmentTransfer.capture(scope: .custom([.rawDenoise]), snapshot: state(source), context: raw)
-        rejects("Nonzero RAW FBDD is still incompatible with JPEG") {
-            _ = try MacAdjustmentTransfer.prepare(payload: denoise, target: target, context: raster)
-        }
+        var notices = [AdjustmentTransferNotice]()
+        raster.transferNotices = { notices.append($0) }
+        check(try MacAdjustmentTransfer.prepare(payload: denoise, target: target, context: raster) == target,
+            "Unsupported RAW FBDD alone leaves the raster target unchanged")
+        check(notices == [.ignoredRawDenoise], "Unsupported raster FBDD is ignored with a notice")
     }
 
     static func whiteBalanceAndCompatibility() throws {
@@ -932,6 +933,8 @@ struct AdjustmentTransferTests {
                 targetState = try MacAdjustmentTransfer.prepare(payload: seedPayload, target: targetState, context: seedContext)
             }
 
+            if targetSpec["ai_denoise_enabled"] as? Bool == true { targetState.settings.aiDenoiseEnabled = true }
+
             let payload = try JSONDecoder().decode(AdjustmentTransferPayload.self, from: JSONSerialization.data(withJSONObject: scenario["payload"]!))
             // S3：场景提示断言——收集 prepare 期间的忽略/版本提示，与 fixture 声明按集合比较。
             var scenarioNotices = [AdjustmentTransferNotice]()
@@ -953,6 +956,8 @@ struct AdjustmentTransferTests {
                 continue
             }
             let candidate = try MacAdjustmentTransfer.prepare(payload: payload, target: targetState, context: noticeContext)
+            check(candidate.settings.aiDenoiseEnabled == targetState.settings.aiDenoiseEnabled,
+                "Scenario \(id): target AI identity is preserved")
             let actualStatus = candidate == targetState ? "unchanged" : "applied"
             check(actualStatus == expectedStatus, "Scenario \(id): status \(expectedStatus)")
             let noticesByPlatform = ((scenario["expect"] as? [String: Any])?["notices_by_platform"] as? [String: Any])?["macos"] as? [String]
@@ -962,7 +967,9 @@ struct AdjustmentTransferTests {
             }
             if let valuesObj = expectSpec["values"] {
                 let expectedValues = try JSONDecoder().decode([String: AdjustmentTransferValue].self, from: JSONSerialization.data(withJSONObject: valuesObj))
-                let captured = try MacAdjustmentTransfer.capture(scope: .all, snapshot: candidate, context: context).values
+                let captured = candidate.settings.aiDenoiseEnabled
+                    ? MacAdjustmentTransfer.values(candidate, isRaw: context.isRaw)
+                    : try MacAdjustmentTransfer.capture(scope: .all, snapshot: candidate, context: context).values
                 for key in expectedValues.keys.sorted() {
                     check(matchesValue(captured[key], expectedValues[key]!), "Scenario \(id): value \(key)")
                 }

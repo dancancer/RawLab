@@ -157,7 +157,7 @@ enum IOSAdjustmentTransfer {
                 result.gradingSettings[zone] = ColorGradingWheel(hue: wheel["hue"]!.number!, saturation: wheel["saturation"]!.number!)
             }
         }
-        if !selected.contains(.postRGBDenoise), target.settings.denoise.enabled != result.denoise.enabled,
+        if context.isRaw, !selected.contains(.postRGBDenoise), target.settings.denoise.enabled != result.denoise.enabled,
            target.settings.noiseReduction != 0 {
             throw AdjustmentTransferError.unrepresentable("unselected \(Field.postRGBDenoise.rawValue)")
         }

@@ -276,6 +276,7 @@ import Foundation
 
     static func main() throws {
         try scenarioFixtures()
+        try rasterDormantDenoise()
         try decimalFixtures()
         try neutralRawRequestsOnRaster()
         try fullNeutralRecipeOnRaster()
@@ -606,6 +607,19 @@ import Foundation
             _ = try IOSAdjustmentTransfer.prepare(payload: relative, target: state(), context: raster)
         }
     }
+    static func rasterDormantDenoise() throws {
+        var raster = raw; raster.isRaw = false
+        var saved = RawSettings.default
+        saved.noiseReduction = 0.4
+        let loaded = try JSONDecoder().decode(RawSettings.self, from: JSONEncoder().encode(saved))
+        var source = RawSettings.default
+        source.denoise = RawDenoiseSettings(enabled: true, luma: 20, chroma: 30, coarse: 40)
+        let selected = try IOSAdjustmentTransfer.capture(scope: .custom([.waveletDenoise]), snapshot: state(source), context: raw)
+        let candidate = try IOSAdjustmentTransfer.prepare(payload: selected, target: state(loaded), context: raster)
+        check(candidate.settings.denoise == source.denoise && candidate.settings.noiseReduction == 0.4,
+            "Raster wavelet paste preserves loaded dormant post-RGB values without an unselected-field error")
+    }
+
     static func objects() throws {
         var source = RawSettings.default; source.noiseReduction = 0.25
         let copy = try IOSAdjustmentTransfer.capture(scope: .modified, snapshot: state(source), context: raw)

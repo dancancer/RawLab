@@ -116,28 +116,39 @@ extension MacAdjustmentTransfer {
             context.transferNotices?(.ignoredPostRGBDenoise)
         }
         if let raw = payload[.rawDenoise]?.number, payload.source.isRaw || !context.isRaw {
-            guard raw == 0 || (context.isRaw && settings.supportsRawNoiseReduction) else {
-                throw AdjustmentTransferError.incompatible(Field.rawDenoise.rawValue)
-            }
-            settings.rawNoiseReduction = raw
-            if raw != 0, settings.waveletNoiseReduction?.enabled == false {
-                settings.waveletNoiseReduction = nil
+            if raw != 0 && (settings.aiDenoiseEnabled || !context.isRaw || !settings.supportsRawNoiseReduction) {
+                context.transferNotices?(.ignoredRawDenoise)
+            } else if !settings.aiDenoiseEnabled {
+                settings.rawNoiseReduction = raw
+                if raw != 0, settings.waveletNoiseReduction?.enabled == false {
+                    settings.waveletNoiseReduction = nil
+                }
             }
         }
         if let value = payload[.chromaDenoise] {
             let chroma = value.number ?? 0
-            settings.chromaNoiseReduction = chroma == 0 ? nil : chroma
-            if chroma != 0, settings.waveletNoiseReduction?.enabled == false {
-                settings.waveletNoiseReduction = nil
+            if settings.aiDenoiseEnabled {
+                if chroma != 0 { context.transferNotices?(.ignoredTargetDenoise) }
+            } else {
+                settings.chromaNoiseReduction = chroma == 0 ? nil : chroma
+                if chroma != 0, settings.waveletNoiseReduction?.enabled == false {
+                    settings.waveletNoiseReduction = nil
+                }
             }
         }
         if let value = payload[.waveletDenoise] {
+            let decoded: WaveletDenoiseSettings
             if let wavelet = value.object {
-                let decoded = WaveletDenoiseSettings(enabled: wavelet["enabled"]!.boolean!,
+                decoded = WaveletDenoiseSettings(enabled: wavelet["enabled"]!.boolean!,
                     luma: wavelet["luma"]!.number!, chroma: wavelet["chroma"]!.number!, coarse: wavelet["coarse"]!.number!,
                     preset: DenoisePreset(rawValue: wavelet["preset"]!.string!)!)
+            } else { decoded = WaveletDenoiseSettings() }
+            // AI 运行时传统降噪不生效，连零值也不覆盖关闭 AI 后要恢复的存量参数。
+            if settings.aiDenoiseEnabled {
+                if decoded != WaveletDenoiseSettings() { context.transferNotices?(.ignoredTargetDenoise) }
+            } else {
                 settings.waveletNoiseReduction = decoded == WaveletDenoiseSettings() ? nil : decoded
-            } else { settings.waveletNoiseReduction = nil }
+            }
         }
         if payload.fields.contains(where: { $0.group == "geometry" && !Field.lensFields.contains($0) }) {
             var geometry = settings.geometrySettings

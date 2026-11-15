@@ -8928,7 +8928,7 @@
           "D-02",
           "P2-23"
         ],
-        "notes": "Q3: raw_level is the pre-demosaic Bayer FBDD level (integer 0/1/2) and is modeled only on Mac (SDR RAW). Ends without the key (iOS/Android/Windows) ignore a non-zero value and show a one-time prompt instead of rejecting the paste; Mac still rejects non-zero when its target cannot represent it (SDR raster target)."
+        "notes": "Q3/D-02: raw_level is pre-demosaic Bayer FBDD (integer 0/1/2), modeled only by Mac SDR RAW. A valid non-zero value unsupported by the platform or target (raster, non-Bayer, or active desktop AI) is ignored with ignored_raw_denoise; other selected edits still apply. Zero never overwrites dormant denoise on an AI target. Wire type/range/source validation remains strict before adaptation."
       }
     },
     {
@@ -9057,7 +9057,7 @@
           "D-02",
           "P2-23"
         ],
-        "notes": "Q3: post_rgb is post-render RGB denoise (0-1 float), the current HDR v6+ key; Mac and Android/Windows model it on HDR only, iOS on SDR+HDR (no SDR UI slider). Ends whose SDR path does not model the key (Mac, Android, Windows) ignore a non-zero value and show a one-time prompt instead of rejecting the paste; iOS keeps rejecting non-zero on raster targets. HDR denoise UI step is 0.1% on Mac/Windows, 1% on Android, and 5% (0.05) on iOS via AdjustmentKind.noiseReduction."
+        "notes": "Q3/D-02: post_rgb is post-render RGB denoise (0-1 float), the current HDR v6+ key; Mac/Android/Windows model it on HDR only and iOS on SDR RAW+HDR (no SDR UI slider). Unsupported SDR platform/target values, including iOS raster and desktop AI, are ignored with ignored_post_rgb_denoise; other selected edits still apply. This client capability rule does not remove the core display-buffer RGB stage. HDR denoise UI step is 0.1% on Mac/Windows, 1% on Android, and 5% (0.05) on iOS."
       }
     },
     {
@@ -9182,7 +9182,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "notes": "Mac stores optional Double? defaulting to nil (legacy picker visible when hasLegacyDenoise); iOS/Android/Windows store non-null Int 0..2 defaulting to 0 with UI hidden."
+        "notes": "Mac stores optional Double? defaulting to nil (legacy picker visible when hasLegacyDenoise); iOS/Android/Windows store non-null Int 0..2 defaulting to 0 with UI hidden. D-02: raster and non-Bayer targets support this field. Active desktop AI ignores selected traditional denoise fields with ignored_target_denoise for non-neutral values, preserving all saved dormant values even for zero/null pastes. Mobile clients do not represent an active AI target."
       }
     },
     {
@@ -9401,7 +9401,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "notes": "Desktop wavelet sliders use fine step 0.1 vs mobile 1 (rounded); Mac model is optional WaveletDenoiseSettings? = nil until upgraded while iOS/Android/Windows default to (false, 0, 46, 50); Windows DenoisePanel displays '%' suffix while Mac/iOS/Android display unitless values."
+        "notes": "Desktop wavelet sliders use fine step 0.1 vs mobile 1 (rounded); Mac model is optional WaveletDenoiseSettings? = nil until upgraded while iOS/Android/Windows default to (false, 0, 46, 50); Windows DenoisePanel displays '%' suffix while Mac/iOS/Android display unitless values. D-02: raster and non-Bayer targets support this field. Active desktop AI ignores selected traditional denoise fields with ignored_target_denoise for non-neutral values, preserving all saved dormant values even for zero/null pastes. Mobile clients do not represent an active AI target."
       }
     },
     {

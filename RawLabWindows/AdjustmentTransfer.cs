@@ -9,6 +9,7 @@ public enum AdjustmentTransferNotice
 {
     IgnoredRawDenoise,
     IgnoredPostRGBDenoise,
+    IgnoredTargetDenoise,
     RetainedTargetProcessingVersion
 }
 
@@ -19,6 +20,7 @@ public static class AdjustmentTransferNoticeExtensions
     {
         AdjustmentTransferNotice.IgnoredRawDenoise => "ignored_raw_denoise",
         AdjustmentTransferNotice.IgnoredPostRGBDenoise => "ignored_post_rgb_denoise",
+        AdjustmentTransferNotice.IgnoredTargetDenoise => "ignored_target_denoise",
         AdjustmentTransferNotice.RetainedTargetProcessingVersion => "retained_target_processing_version",
         _ => throw new ArgumentOutOfRangeException(nameof(notice))
     };
@@ -28,6 +30,7 @@ public static class AdjustmentTransferNoticeExtensions
     {
         AdjustmentTransferNotice.IgnoredRawDenoise=>"已忽略旧版 RAW 降噪（FBDD）",
         AdjustmentTransferNotice.IgnoredPostRGBDenoise=>"已忽略渲染后 RGB 降噪",
+        AdjustmentTransferNotice.IgnoredTargetDenoise=>"已忽略目标不支持的普通降噪设置",
         _=>"处理版本与来源不同，已沿用当前照片的处理版本"
     };
 }

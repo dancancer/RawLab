@@ -100,9 +100,6 @@ enum MacAdjustmentTransfer {
         if payload.source.processingVersion != target.settings.processing.version {
             context.transferNotices?(.retainedTargetProcessingVersion)
         }
-        if target.settings.aiDenoiseEnabled && !payload.fields.isDisjoint(with: Field.denoiseFields) {
-            throw AdjustmentTransferError.incompatible("ai.target_denoise")
-        }
         try target.settings.validateResetValues()
         guard target.masterRecipeID == target.settings.masterRecipeID else {
             throw AdjustmentTransferError.invalidPayload("target recipe identity")

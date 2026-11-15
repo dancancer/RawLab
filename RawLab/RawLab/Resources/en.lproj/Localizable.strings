@@ -356,6 +356,7 @@
 "已展开" = "Expanded";
 "已忽略旧版 RAW 降噪（FBDD）" = "Legacy RAW denoise (FBDD) ignored";
 "已忽略渲染后 RGB 降噪" = "Post-render RGB denoise ignored";
+"已忽略目标不支持的普通降噪设置" = "Standard denoise settings unsupported by the target were ignored";
 "已恢复上次调整" = "Previous Adjustments Restored";
 "已恢复已登记的接收任务。断线期间拍摄的照片请从相机手动导入。" = "Registered transfers have been restored. Import photos taken while disconnected manually from the camera.";
 "已撤销" = "Undone";
