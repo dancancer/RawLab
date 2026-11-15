@@ -34,7 +34,8 @@ internal data class LUTPreviewState(
     val comparison: LUTPreviewComparison? = null, val comparisonError: String? = null,
 )
 
-// 每个对话框拥有独立的文件副本与串行 native 会话；不借用编辑器或外观库。
+// 每个对话框拥有独立的临时目录；本地常规原片（编辑器工作副本）只读引用原路径，仅跨进程 content:// 流落盘。
+// 目录内文件与 native 会话一起释放；引用模式不拥有原片，关闭对话框不会删除它。
 internal class LUTCompatibilityPreview(private val context: Context, private val pending: PendingLookCompatibility) : AutoCloseable {
     var state by mutableStateOf(LUTPreviewState())
         private set
@@ -76,6 +77,8 @@ internal class LUTCompatibilityPreview(private val context: Context, private val
     } ?: uri.lastPathSegment.orEmpty()
     private fun ensureLut(): File = lut ?: copyURI(pending.uri, pending.name, 256L * 1024 * 1024).also { lut = it }
 
+    // 删除权限只限对话框自有目录内的文件；被只读引用的编辑器原片即便被 SDR 替换也不归本对话框删除。
+    private fun owned(file: File): Boolean = file.parentFile == directory
     private fun sdrPreviewSource(file: File, name: String): File {
         if (!HDRSourceInfo.mayContainGainMap(name, null)) return file
         val info = NativeHDRBridge.probe(file) ?: return file
@@ -83,7 +86,7 @@ internal class LUTCompatibilityPreview(private val context: Context, private val
         val output = File(directory, "${UUID.randomUUID()}.jpg")
         try {
             output.outputStream().use { stream -> check(image.sdrBitmap().compress(Bitmap.CompressFormat.JPEG, 95, stream)) }
-            image.close(); file.delete()
+            image.close(); if (owned(file)) file.delete()
             return output
         } catch (error: Throwable) {
             image.close(); output.delete(); throw error
@@ -93,10 +96,8 @@ internal class LUTCompatibilityPreview(private val context: Context, private val
         if (photo == null) return
         loadSource {
             photo.validateOriginal?.invoke()
-            val suffix = photo.name.substringAfterLast('.', "raw").lowercase().takeIf { it.matches(Regex("[a-z0-9]{1,12}")) } ?: "raw"
-            val copy = File(directory, "${UUID.randomUUID()}.$suffix")
-            try { photo.file.copyTo(copy) } catch (error: Throwable) { copy.delete(); throw error }
-            Triple(copy, photo.name, photo.inputKind)
+            // 编辑器照片是应用管理的工作副本（本地常规文件）：只读引用原路径，不整片复制 30–100MB RAW。
+            Triple(photo.file, photo.name, photo.inputKind)
         }
     }
     fun loadPhoto(uri: Uri) = loadSource {
@@ -131,7 +132,7 @@ internal class LUTCompatibilityPreview(private val context: Context, private val
                             old
                         }
                         if (!committed) return@withLock
-                        if (previous != file) previous?.delete()
+                        if (previous != null && previous != file && owned(previous)) previous.delete()
                         for (candidate in pending.draft.candidates) {
                             ensureActive(); if (sourceGeneration.get() != generation) break
                             val configured = pending.draft.applying(candidate, kind == PhotoInputKind.RASTER) ?: continue
@@ -149,7 +150,7 @@ internal class LUTCompatibilityPreview(private val context: Context, private val
                             }
                         }
                     } finally {
-                        if (!committed) file.delete()
+                        if (!committed && owned(file)) file.delete()
                     }
                 } }
             } catch (error: CancellationException) { throw error
