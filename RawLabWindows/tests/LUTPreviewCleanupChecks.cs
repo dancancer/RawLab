@@ -22,6 +22,7 @@ internal static class LUTPreviewCleanupChecks
             var active = Previews().Except(before).ToArray();
             check(active.Length == 1 && TempCleanup.IsTrackedOwnerAlive(new DirectoryInfo(active[0])),
                 "Switching photos removes the previous read-only preview copy and marks the active preview owner");
+            check(!Directory.GetFiles(active[0], "source*").Any(), "Preview references the original photo instead of copying it into the temporary directory");
             service.Dispose();
             var clock = System.Diagnostics.Stopwatch.StartNew();
             while (Previews().Except(before).Any() && clock.Elapsed < TimeSpan.FromSeconds(10)) Thread.Sleep(20);
