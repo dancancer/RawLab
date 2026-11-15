@@ -271,8 +271,10 @@ without requiring the source camera's white-balance calibration to be valid.
 required lowercase SHA-256 fingerprint to the v1 prefix. Probe the resource
 with `sony2fuji_hdr_probe_camera_profile`. Decoding uses the same bytes it
 hashes and rejects a different fingerprint before publishing a pair. Keep the
-profile fingerprint in any cache key for the developed source. The photo
-digest in the pair continues to identify the original RAW.
+profile fingerprint in any cache key for the developed source. Camera RAW pairs
+leave `source_sha256` zero and exports use a null `metadata_source_path`;
+file stamps bracket decoding and decode revisions identify the resulting pixels.
+HDR raster and ProRAW source digests retain their metadata-validation contract.
 
 The first subset extracts the unique D65 ColorMatrix and ForwardMatrix from
 a standalone DCP with Adobe's extended profile magic `0x4352`.

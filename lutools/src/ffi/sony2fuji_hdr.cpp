@@ -912,17 +912,10 @@ static sony2fuji_status decodeCameraRaw(sony2fuji_session* sessionHandle, const 
                 pair.sourceHeadroom = std::max(pair.sourceHeadroom, cameraLuminance(pixel));
             owner->sourceHeadroomKind = SONY2FUJI_HDR_HEADROOM_MEASURED;
         }
-        std::string digest;
-        try { digest = hash::sha256File(file, checkProcessingCancellation); }
-        catch (const std::runtime_error&) { cameraRawStatus(ErrorCode::FileNotFound); }
         const auto after = cameraRawStamp(filePath);
         if (before.size != after.size || before.modified != after.modified ||
             (ai && aiKey != hdrSessionCameraAIKey(session, file)))
             fail(SONY2FUJI_HDR_REASON_SOURCE_CHANGED, SONY2FUJI_HDR_FIELD_SOURCE, "Camera RAW source changed during decode");
-        for (size_t i = 0; i < owner->sha.size(); ++i) {
-            auto digit = [](char c) { return c <= '9' ? c - '0' : c - 'a' + 10; };
-            owner->sha[i] = uint8_t(digit(digest[2*i]) * 16 + digit(digest[2*i+1]));
-        }
         checkProcessingCancellation();
         pair.sourceQuality = pair.renderQuality = static_cast<HDRQuality>(options->intent);
         pair.isProxy = preview;

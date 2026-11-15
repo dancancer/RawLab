@@ -132,6 +132,8 @@ typedef struct sony2fuji_hdr_image_pair_v1 {
     uint64_t decode_revision;
     float source_headroom;
     uint32_t source_headroom_kind;
+    /* Camera RAW decode leaves this zero; its exports use metadata_source_path == NULL.
+       HDR raster and ProRAW decode retain the source content digest for metadata validation. */
     uint8_t source_sha256[32];
     uint64_t owner_token;
     /* 当前几何在原片分辨率上的输出尺寸；忽略预览和导出 long_edge。 */
@@ -268,7 +270,8 @@ sony2fuji_status sony2fuji_hdr_probe_look(const char* path, sony2fuji_hdr_look_i
 sony2fuji_status sony2fuji_hdr_decode(const char* path, const sony2fuji_hdr_decode_options_v1* options,
     sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic);
 // Explicit camera RAW development. Probe inspects the header only and does not hash
-// or unpack the file. Decode returns the oriented canvas and the source digest.
+// or unpack the file. Decode returns the oriented canvas with source_sha256 zero.
+// Camera RAW exports require metadata_source_path == NULL; source stamp checks bracket decode.
 // Pass the base of sony2fuji_hdr_camera_source_info_v1 to also get sensor capabilities.
 // The unversioned probe uses the same Legacy canvas as a default session.
 sony2fuji_status sony2fuji_hdr_probe_camera_raw(const char* path, sony2fuji_hdr_source_info_v1* info,

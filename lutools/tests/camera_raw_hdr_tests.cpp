@@ -528,9 +528,9 @@ int main(int argc, char** argv) {
         check(source.value.hdr.width == info.width && source.value.hdr.height == info.height,
               "full RAW decode lost native dimensions");
         check(external || source.value.source_headroom > 1.05f, "full RAW decode lost the synthetic highlight steps");
-        check(std::any_of(previewIdentity.begin(), previewIdentity.end(), [](uint8_t x) { return x != 0; }) &&
+        check(std::all_of(previewIdentity.begin(), previewIdentity.end(), [](uint8_t x) { return x == 0; }) &&
               std::equal(previewIdentity.begin(), previewIdentity.end(), source.value.source_sha256),
-              "RAW preview and FINAL disagree on original source identity");
+              "Camera RAW preview and FINAL must leave the unused source digest zero");
         const auto finalMs = elapsed(start);
         if (!external) cameraDevelopment(input, source.value);
         const auto* sdr = static_cast<const float*>(source.value.sdr.data);

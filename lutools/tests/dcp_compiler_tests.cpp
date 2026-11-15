@@ -390,8 +390,11 @@ void hdrCameraCalibrationTests(const char* source, const char* cameraModel, bool
            "DCP and HDR RLOOK differ across renditions");
     expect(std::memcmp(plain.value.sdr.data, calibrated.value.sdr.data, plain.value.sdr.size_bytes) != 0,
            "camera profile did not affect SDR base development");
-    expect(std::memcmp(plain.value.source_sha256, calibrated.value.source_sha256, 32) == 0,
-           "profile must not replace the source photo identity");
+    expect(std::all_of(std::begin(plain.value.source_sha256), std::end(plain.value.source_sha256),
+               [](uint8_t value) { return value == 0; }) &&
+           std::all_of(std::begin(calibrated.value.source_sha256), std::end(calibrated.value.source_sha256),
+               [](uint8_t value) { return value == 0; }),
+           "camera profile decode must leave the unused photo digest zero");
     bool negative = false, aboveWhite = false;
     for (uint32_t y = 0; y < a.height; ++y) {
         const auto* original = reinterpret_cast<const float*>(static_cast<const uint8_t*>(a.data) + y * a.stride_bytes);
