@@ -26,12 +26,13 @@ internal sealed partial class RenderEngine : IDisposable
     private readonly string lensDatabase;
     private Stamp? lensStamp;
     private LensCandidate[] lensCandidates = [];
-    private PreviewKey? previewKey;
+    private string? lastSourceFingerprint;
     private (OriginalIdentity Raw,OriginalIdentity? Lut)? sourceStamp;
     private ((NeutralReferenceKey Reference, int GpuMode, int? ProRAWDecodeVersion) Key, RenderedImage Frame)? original;
-    private readonly Dictionary<int,PreviewFrame> previews=new();
+    private readonly PreviewRevisionCache<(PreviewKey Key, int Edge), PreviewFrame> previewCache =
+        new(256L * 1024 * 1024, FrameBytes, maximumEntries: 16);
     // The optional result cache is separate from the active comparison image.
-    internal long CachedPreviewBytes=>previews.Values.Sum(FrameBytes);
+    internal long CachedPreviewBytes => previewCache.TotalBytes;
     private static long ImageBytes(RenderedImage value)=>(long)value.Image.PixelWidth*value.Image.PixelHeight*4*(value.Clipping==null ? 1 : 2) +
         (value.HDR is { } pair ? (long)pair.HDR.RGB.Length * sizeof(float) + (long)pair.SDR.RGB.Length * sizeof(float) : 0);
     private static long FrameBytes(PreviewFrame frame)=>ImageBytes(frame.Result)+
@@ -87,7 +88,7 @@ internal sealed partial class RenderEngine : IDisposable
         if (cancellationHandle.IsAllocated) cancellationHandle.Free();
     }
     private sealed record CancellationState(CancellationToken Token);
-    public void Dispose() { ClearCancellation(); previews.Clear();original=null;Native.sony2fuji_release_buffer(ref displayInput);inputStamp=null;session.Dispose();}
+    public void Dispose() { ClearCancellation(); previewCache.Clear(); original=null; Native.sony2fuji_release_buffer(ref displayInput); inputStamp=null; session.Dispose(); }
     public double AutoExposure(string path, Adjustments settings)
     {
         BeginAIOperation("auto_exposure",path);
@@ -187,15 +188,17 @@ internal sealed partial class RenderEngine : IDisposable
             sourceFingerprint = cameraInfo!.CacheIdentity;
         var key=new PreviewKey(settings.Request(path,lut,2000,null),settings.Denoise,settings.Effects,settings.ToneControls,settings.Atmosphere,settings.ColorGrading,settings.Curve,settings.DisplayChromaDenoise,
             settings.ExposureMode,settings.Hsl,settings.Lens,settings.Geometry,settings.Processing,settings.X3fMode,settings.MasterRecipeSettingsVersion,settings[Parameter.Strength],settings.ActiveAIDenoise,gpuMode,rawStamp,lutStamp,settings.HDR,settings.ProRAWDecodeVersion,sourceFingerprint);
-        var fingerprintChanged=previewKey?.SourceFingerprint!=sourceFingerprint;
-        if(previewKey!=key){previews.Clear();previewKey=key;}
+        var fingerprintChanged = lastSourceFingerprint != sourceFingerprint;
+        lastSourceFingerprint = sourceFingerprint;
         // HDR previews have a 2000px ceiling, including the viewport's native-size request.
         var cacheEdge=settings.IsHDREditing && sourceFingerprint!=null ? HDRPreviewEdge(edge) : edge;
+        var cacheKey = (key, cacheEdge);
         var referenceKey=(new NeutralReferenceKey(rawStamp,PhotoInput.IsRaster(path),settings.Processing,
             settings.Geometry,settings.Lens,cacheEdge,settings.IsHDREditing,settings.X3fMode,NeutralReference.HDRCameraSettings(settings.IsHDREditing ? settings.HDR : null)),gpuMode,settings.ProRAWDecodeVersion);
         if(original?.Key!=referenceKey || fingerprintChanged)original=null;
         // AI 模型或磁盘结果可在 WPF 帧之外变化，必须经过 native 的完整性与身份检查。
-        var cached=!settings.ActiveAIDenoise ? previews.GetValueOrDefault(cacheEdge) : null;
+        PreviewFrame? cached = null;
+        if(!settings.ActiveAIDenoise) previewCache.TryGet(cacheKey, out cached);
         if(cached!=null && !compare)
             return WithMask(ReferenceEquals(cached.Neutral,cached.Result) ? cached : new(cached.Result,cached.Result));
         if(cached!=null && !ReferenceEquals(cached.Neutral,cached.Result))
@@ -214,14 +217,7 @@ internal sealed partial class RenderEngine : IDisposable
         var frame=new PreviewFrame(neutral ?? result,result);
         if(!interactive && !settings.ActiveAIDenoise && result.Histogram.Length==768 && (!compare || neutral?.Histogram.Length==768))
         {
-            const long budget=256L*1024*1024;
-            var bytes=FrameBytes(frame);
-            if(bytes<=budget)
-            {
-                previews.Remove(cacheEdge);
-                if(CachedPreviewBytes+bytes>budget)previews.Clear();
-                previews[cacheEdge]=frame;
-            }
+            previewCache.Set(cacheKey, frame);
         }
         return WithMask(frame);
 
