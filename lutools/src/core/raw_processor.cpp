@@ -447,7 +447,8 @@ public:
         baselineExposureEV_=options.applyBaselineExposure ? sceneExposureEV(metadataExposureEV_) : 0;
         previewExposureEV_=0;
         if (options.matchEmbeddedPreviewExposure) {
-            auto preview=loadPreviewLuminance(filepath_);
+            auto* previewCache=currentPreviewExposureCache();
+            auto preview=previewCache ? previewCache->getOrLoad(filepath_) : localPreviewCache_.getOrLoad(filepath_);
             if (!preview.empty()) {
                 std::vector<float> luminance;
                 luminance.reserve(128*128);
@@ -760,6 +761,7 @@ private:
 #endif
     std::unique_ptr<LibRaw> rawProcessor_;
     std::unique_ptr<X3fProcessor> x3fProcessor_;
+    PreviewExposureCache localPreviewCache_;
     bool displayReferred_ = false;
     std::string lastError_;
     std::string filepath_;

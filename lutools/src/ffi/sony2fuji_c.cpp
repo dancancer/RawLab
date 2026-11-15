@@ -10,6 +10,7 @@
 #include "core/chroma_denoise.h"
 #include "core/wavelet_denoise.h"
 #include "core/wavelet_cache.h"
+#include "core/preview_exposure.h"
 #include "core/photo_effects.h"
 #include "core/photo_color.h"
 #include "core/photo_tone_controls.h"
@@ -109,6 +110,7 @@ struct sony2fuji_session {
     bool calibrated_wb = false;
     std::string preview_exposure_key;
     float preview_camera_ev = 0;
+    sony2fuji::PreviewExposureCache preview_exposure_cache;
     std::unique_ptr<sony2fuji::RAWProcessor> raw_processor;
     std::string processor_key;
     bool interactive_preview = false;
@@ -218,6 +220,11 @@ WaveletCacheDiagnostics waveletCacheDiagnostics(const sony2fuji_session* handle)
     auto result = session->wavelet_cache.diagnostics;
     result.previewBytes = session->wavelet_cache.previewBytes();
     return result;
+}
+PreviewExposureDiagnostics previewExposureDiagnostics(const sony2fuji_session* handle) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease)) return {};
+    return lease.constRaw()->preview_exposure_cache.diagnostics();
 }
 }
 
@@ -929,32 +936,7 @@ bool probeTiffHeaderSize(std::ifstream& stream, const uint8_t* head, std::stream
 bool buildRawSourceIdentityKey(
     const char* inputPathStr, bool legacySonyCrop, std::string& outBaseKey
 ) {
-    if (isEmptyString(inputPathStr)) return false;
-    std::error_code fileError;
-    const auto inputPath = std::filesystem::u8path(inputPathStr);
-    const auto modified = std::filesystem::last_write_time(inputPath, fileError);
-    if (fileError) return false;
-    const auto fileSize = std::filesystem::file_size(inputPath, fileError);
-    if (fileError) return false;
-    const auto modifiedNanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(
-        modified.time_since_epoch()).count();
-    outBaseKey = std::string(inputPathStr) + ":" +
-        std::to_string(modifiedNanoseconds) + ":" + std::to_string(fileSize);
-#ifdef _WIN32
-    const HANDLE identityHandle = CreateFileW(inputPath.c_str(), FILE_READ_ATTRIBUTES,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (identityHandle == INVALID_HANDLE_VALUE) return false;
-    BY_HANDLE_FILE_INFORMATION identity{};
-    const bool hasIdentity = GetFileInformationByHandle(identityHandle, &identity) != 0;
-    CloseHandle(identityHandle);
-    if (!hasIdentity) return false;
-    outBaseKey += ":file:" + std::to_string(identity.dwVolumeSerialNumber) + ":" +
-        std::to_string(identity.nFileIndexHigh) + ":" + std::to_string(identity.nFileIndexLow);
-#else
-    struct stat identity{};
-    if (::stat(inputPath.c_str(), &identity) != 0) return false;
-    outBaseKey += ":file:" + std::to_string(identity.st_dev) + ":" + std::to_string(identity.st_ino);
-#endif
+    if (!sony2fuji::buildFileIdentityKey(inputPathStr, outBaseKey)) return false;
     if (legacySonyCrop) outBaseKey += ":legacy-sony-crop";
     return true;
 }
@@ -1741,7 +1723,10 @@ sony2fuji_status loadRawImage(
 #endif
         sony2fuji::ImageData decoded;
         sony2fuji::ErrorCode result;
-        try { result = processor.process(options, decoded); }
+        try {
+            sony2fuji::PreviewExposureCacheScope previewCacheScope(&session->preview_exposure_cache);
+            result = processor.process(options, decoded);
+        }
         catch (...) {
             session->raw_processor.reset(); session->processor_key.clear();
             throw;
@@ -3021,6 +3006,8 @@ static sony2fuji_status processImpl(
 
     sony2fuji_request local = *request;
     if (session->tone_curve.custom() && local.tone_curve != 0) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    const bool cpuAnalysis = pre_hsl != nullptr;
+    const auto effectiveGpuMode = cpuAnalysis ? sony2fuji::GpuMode::Off : session->gpu_config.mode;
     const bool normalX3f = local.input_type == SONY2FUJI_INPUT_RAW && session->x3f_mode == SONY2FUJI_X3F_NORMAL &&
         sony2fuji::hasX3fSignature(local.input_path);
     const bool displayInput = local.input_type == SONY2FUJI_INPUT_DISPLAY_BUFFER || normalX3f;
@@ -3033,7 +3020,7 @@ static sony2fuji_status processImpl(
     const bool unsupportedDisplayLens = session->lens_correction.active() &&
         (normalX3f || !session->has_display_lens_metadata);
     if (displayInput && (session->raw_noise_reduction != 0 || unsupportedDisplayLens ||
-        session->gpu_config.mode == sony2fuji::GpuMode::Force)) {
+        effectiveGpuMode == sony2fuji::GpuMode::Force)) {
         if (normalX3f) session->x3f_error = session->raw_noise_reduction != 0
             ? "Normal X3F rendering does not support FBDD RAW denoise"
             : session->lens_correction.active() ? "Normal X3F rendering does not support additional lens correction"
@@ -3055,7 +3042,7 @@ static sony2fuji_status processImpl(
     const bool neighborhoodActive = atmosphereActive || basicToneActive;
     const bool colorGradingActive = session->color_grading.active();
     const bool geometryActive = session->geometry.active();
-    if (geometryActive && session->gpu_config.mode == sony2fuji::GpuMode::Force)
+    if (geometryActive && effectiveGpuMode == sony2fuji::GpuMode::Force)
         return SONY2FUJI_STATUS_UNSUPPORTED;
     // 预览到缓冲（含未开启视口标志的预览）必须保留大图 RAW 缓存供下一次渲染复用；
     // 只有导出才把工作图移走缓存来省一次整幅拷贝。
@@ -3072,7 +3059,7 @@ static sony2fuji_status processImpl(
     const bool c5Wavelet = waveletActive && sony2fuji::usesC5Denoise(session->wavelet_denoise.processingVersion);
     const bool fastWavelet = !neighborhoodActive && !geometryActive && waveletActive && !effectsActive && chromaMode == 0 && session->interactive_preview &&
         local.intent == SONY2FUJI_INTENT_PREVIEW && local.output_target == SONY2FUJI_TARGET_BUFFER;
-    if ((cpuOnlyStages || c5Wavelet) && session->gpu_config.mode == sony2fuji::GpuMode::Force)
+    if ((cpuOnlyStages || c5Wavelet) && effectiveGpuMode == sony2fuji::GpuMode::Force)
         return SONY2FUJI_STATUS_UNSUPPORTED;
     if (needsSourceSizePreflight(local)) {
         uint32_t source_width = local.input_width;
@@ -3125,7 +3112,7 @@ static sony2fuji_status processImpl(
             dcp = sony2fuji::DcpLook::loadCached(local.lut_path);
             if (!dcp) return SONY2FUJI_STATUS_UNSUPPORTED;
 #if !defined(SONY2FUJI_ENABLE_METAL)
-            if (session->gpu_config.mode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_UNSUPPORTED;
+            if (effectiveGpuMode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_UNSUPPORTED;
 #endif
         } else {
             status = loadLUT(local.lut_path, &lut);
@@ -3134,21 +3121,22 @@ static sony2fuji_status processImpl(
         }
     }
 #if defined(SONY2FUJI_ENABLE_METAL)
-    bool gpuPipeline = !cpuOnlyStages && session->gpu_config.mode != sony2fuji::GpuMode::Off;
+    bool sessionGpuPipeline = !cpuOnlyStages && session->gpu_config.mode != sony2fuji::GpuMode::Off;
 #elif defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
-    bool gpuPipeline = !cpuOnlyStages && !dcp && session->gpu_config.mode != sony2fuji::GpuMode::Off;
+    bool sessionGpuPipeline = !cpuOnlyStages && !dcp && session->gpu_config.mode != sony2fuji::GpuMode::Off;
 #else
-    bool gpuPipeline = false;
-    if (session->gpu_config.mode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_UNSUPPORTED;
+    bool sessionGpuPipeline = false;
+    if (effectiveGpuMode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_UNSUPPORTED;
 #endif
     // Reuse the reference stages; scene-view GPU shaders retain their existing
     // contract. Auto explicitly falls back for display-referred input.
-    if (displayInput) gpuPipeline = false;
+    if (displayInput) sessionGpuPipeline = false;
     const bool contractCPU = lut && lut->requiresCPU();
     if (contractCPU) {
-        if (session->gpu_config.mode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_UNSUPPORTED;
-        gpuPipeline = false;
+        if (effectiveGpuMode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_UNSUPPORTED;
+        sessionGpuPipeline = false;
     }
+    bool gpuPipeline = !cpuAnalysis && sessionGpuPipeline;
     sony2fuji::checkProcessingCancellation();
 
     sony2fuji::ImageData image;
@@ -3264,11 +3252,17 @@ static sony2fuji_status processImpl(
         const auto waveletKey = session->raw_key + ":baseline:" + std::to_string(baselineBits) + (viewportPreview ? ":viewport:" +
             std::to_string(image.width) + "x" + std::to_string(image.height) : "");
         auto* entry = cacheable ? &session->wavelet_cache.select(waveletKey, viewportPreview) : nullptr;
-        if (entry && entry->matches(session->wavelet_denoise, session->gpu_config.mode)) {
+        const bool cachedMatches = entry && entry->matches(session->wavelet_denoise, session->gpu_config.mode);
+        const bool cacheHit = cachedMatches ? (!cpuAnalysis || entry->cpuExecuted)
+            : (cpuAnalysis && entry && entry->matches(session->wavelet_denoise, sony2fuji::GpuMode::Off) &&
+               entry->cpuExecuted);
+        if (cacheHit) {
             image = entry->image;
             ++session->wavelet_cache.diagnostics.outputHits;
         } else {
-            if (entry) {
+            // HSL 取样在 Legacy GPU 模式下只计算临时 CPU 参考，不能清空/覆盖已缓存的 GPU 小波输出。
+            const bool preserveCachedOutput = cpuAnalysis && cachedMatches;
+            if (entry && !preserveCachedOutput) {
                 // 失效的整图输出先释放，避免与重算峰值叠加；分析模型仍可复用。
                 entry->image = {};
                 entry->completed = false;
@@ -3276,7 +3270,7 @@ static sony2fuji_status processImpl(
             sony2fuji::ColorConverter converter;
             converter.convertImage(image, toCoreColorSpace(color_space), sony2fuji::ColorSpace::sRGB);
             const bool cpuC5 = sony2fuji::usesC5Denoise(session->wavelet_denoise.processingVersion) &&
-                session->gpu_config.mode != sony2fuji::GpuMode::Force;
+                effectiveGpuMode != sony2fuji::GpuMode::Force;
             const auto mode = gpuPipeline && !cpuC5 ? sony2fuji::GpuMode::Force : sony2fuji::GpuMode::Off;
             sony2fuji::WaveletDenoiseDiagnostics diagnostics;
             auto filter = [&](sony2fuji::GpuMode backend) {
@@ -3286,19 +3280,29 @@ static sony2fuji_status processImpl(
                     local.input_type == SONY2FUJI_INPUT_RAW && !viewportPreview && !fastWavelet &&
                         !session->raw_cache.pixels.empty() ? &session->raw_cache : nullptr,
                     toCoreColorSpace(color_space));
+                if (result == sony2fuji::ErrorCode::Success && diagnostics.applied)
+                    ++session->wavelet_cache.diagnostics.appliedRuns;
                 if (diagnostics.analysisReused) ++session->wavelet_cache.diagnostics.analysisHits;
                 return result;
             };
             auto result = filter(mode);
             sony2fuji::checkProcessingCancellation();
-            const bool fallback = result != sony2fuji::ErrorCode::Success && session->gpu_config.mode == sony2fuji::GpuMode::Auto;
+            const bool fallback = result != sony2fuji::ErrorCode::Success && effectiveGpuMode == sony2fuji::GpuMode::Auto;
             if (fallback) {
                 gpuPipeline = false;
                 result = filter(sony2fuji::GpuMode::Off);
             }
             if (result != sony2fuji::ErrorCode::Success) return mapError(result);
-            if (entry && !fallback)
-                session->wavelet_cache.store(*entry, image, session->wavelet_denoise, session->gpu_config.mode);
+            if (entry && !preserveCachedOutput) {
+                const bool ranCpu = fallback || mode == sony2fuji::GpuMode::Off;
+                const bool normalUsesCpuWavelet = session->gpu_config.mode != sony2fuji::GpuMode::Force &&
+                    (!sessionGpuPipeline ||
+                     sony2fuji::usesC5Denoise(session->wavelet_denoise.processingVersion));
+                const auto storeMode = (!fallback && (!cpuAnalysis || normalUsesCpuWavelet))
+                    ? session->gpu_config.mode
+                    : sony2fuji::GpuMode::Off;
+                session->wavelet_cache.store(*entry, image, session->wavelet_denoise, storeMode, ranCpu);
+            }
         }
         // 小波及其重试已完成；视口与预览工作缓冲仍需缓存 RAW 供下一次滑杆调整复用，导出才释放。
         if (!viewportPreview && !previewToBuffer && !pre_hsl &&
@@ -3396,7 +3400,7 @@ static sony2fuji_status processImpl(
     }
 
     auto lookConfig = session->gpu_config;
-    if (contractCPU || gpuPipeline || neighborhoodActive || basicControlsActive || hslActive || toneControlsActive || colorGradingActive || chromaMode != 0 || waveletActive || effectsActive)
+    if (cpuAnalysis || contractCPU || gpuPipeline || neighborhoodActive || basicControlsActive || hslActive || toneControlsActive || colorGradingActive || chromaMode != 0 || waveletActive || effectsActive)
         lookConfig.mode = sony2fuji::GpuMode::Off;
     status = applyPhotoLook(image, lut, dcp, local.lut_strength, displayInput, lookConfig);
     if (status != SONY2FUJI_STATUS_OK) return status;
@@ -3614,19 +3618,17 @@ sony2fuji_status sony2fuji_session_create_hsl_probe(sony2fuji_session* handle,
     if (!SessionLease::acquire(handle, lease) || !request || !out_probe || request->output_target != SONY2FUJI_TARGET_BUFFER)
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     auto* session = lease.raw();
-    // 分析明确使用 CPU；临时策略和已发布渲染的元信息不能泄漏到后续调用。
+    // 分析明确使用 CPU；不改写 gpu_config（避免来回失效 wavelet 缓存），且已发布渲染元信息不泄漏。
     struct Restore {
         sony2fuji_session& session;
-        sony2fuji::GpuConfig gpu;
         sony2fuji_render_backend backend;
         uint32_t width, height;
         ~Restore() {
-            session.gpu_config = gpu; session.last_backend = backend;
+            session.last_backend = backend;
             session.geometry_width = width; session.geometry_height = height;
         }
-    } restore{*session, session->gpu_config, session->last_backend,
+    } restore{*session, session->last_backend,
         session->geometry_width, session->geometry_height};
-    session->gpu_config.mode = sony2fuji::GpuMode::Off;
     try {
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
         if (aiEnabled(session)) session->ai->beginOperation("hsl_probe");

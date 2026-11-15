@@ -13,8 +13,8 @@
 
 ## 2. 必须序列化到什么粒度
 
-- **同一 `sony2fuji_session` 必须由调用方严格串行化**：`struct sony2fuji_session`（`lutools/src/ffi/sony2fuji_c.cpp:63-122`）内部没有任何互斥锁，直接持有可变的 `raw_cache`、`raw_processor`、`x3f_processor`、`wavelet_cache`、`dehaze_analysis`、`lens_report`、`geometry_width/height`、`last_backend`、`cancellation_callback/context`、GPU 渲染器与 AI 状态。
-  - 所有传入同一 `session` 的函数——包括 setter、`sony2fuji_process`、HDR session 入口，以及签名为 `const sony2fuji_session*` 的 getter、`sony2fuji_session_create_hsl_probe`（会临时改写并恢复 `session->gpu_config`、`last_backend` 和 `geometry_width/height`，见 `sony2fuji_c.cpp:2877-2888`）和 `sony2fuji_session_migrate_processing`（读取 `source` 字段构造私有栈上 `worker` 会话，见 `sony2fuji_c.cpp:2714-2736`）——**均不得在同一 `session` 上并发执行**。
+- **同一 `sony2fuji_session` 必须由调用方严格串行化**：`struct sony2fuji_session`（`lutools/src/ffi/sony2fuji_c.cpp:68-132`）内部没有任何互斥锁，直接持有可变的 `raw_cache`、`preview_exposure_cache`、`raw_processor`、`x3f_processor`、`wavelet_cache`、`dehaze_analysis`、`lens_report`、`geometry_width/height`、`last_backend`、`cancellation_callback/context`、GPU 渲染器与 AI 状态。
+  - 所有传入同一 `session` 的函数——包括 setter、`sony2fuji_process`、HDR session 入口，以及签名为 `const sony2fuji_session*` 的 getter、`sony2fuji_session_create_hsl_probe`（不再改写 `session->gpu_config`，改为在 `processImpl` 中通过 `pre_hsl != nullptr` 内部触发 CPU 分析而不使 `wavelet_cache` 失效；仅临时保存并恢复 `last_backend` 与 `geometry_width/height`，仍会读写会话缓存，见 `sony2fuji_c.cpp:3613-3646`）和 `sony2fuji_session_migrate_processing`（读取 `source` 字段构造私有栈上 `worker` 会话，见 `sony2fuji_c.cpp:3432-3464`）——**均不得在同一 `session` 上并发执行**。
   - 唯一允许跨线程并发写的是宿主自己的原子取消标志（由后台会话串行调用 `sony2fuji_session_set_cancellation_callback` 注册后，由 UI／调度线程更新其上下文中的原子量，`sony2fuji_c.h:790-795`）。
 - **跨 `session` 与无状态入口无需宿主加同一把会话锁**：
   - 不同 `sony2fuji_session*` 实例拥有各自独立的缓存与处理器，可由不同后台线程并发驱动（例如交互预览 session 与导出／迁移／兼容预览独立 worker session，`sony2fuji_c.h:614`）。
