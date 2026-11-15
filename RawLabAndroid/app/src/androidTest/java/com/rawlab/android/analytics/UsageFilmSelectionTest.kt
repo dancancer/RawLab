@@ -1,11 +1,8 @@
 package com.rawlab.android.analytics
 
 import android.net.Uri
-import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.click
+import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performTouchInput
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -35,7 +32,10 @@ class UsageFilmSelectionTest {
                 )
             }
         }
-        compose.onNodeWithText("Missing look").assertIsNotEnabled().performTouchInput { click() }
+        compose.onNodeWithTag("editor-tool-0").performClick()
+        compose.onNodeWithTag("looks.search.open").performClick()
+        compose.onNodeWithTag("looks.search").performTextReplacement("Missing look")
+        compose.onNode(hasText("Missing look") and !hasSetTextAction()).assertIsNotEnabled().performTouchInput { click() }
         compose.runOnIdle {
             assertEquals(0, edits)
             assertEquals(0, events)

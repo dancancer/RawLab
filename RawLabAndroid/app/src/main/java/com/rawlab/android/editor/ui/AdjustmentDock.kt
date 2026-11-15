@@ -112,7 +112,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     onGradingZoneChange: (ColorGradingZone) -> Unit = {}, hslTarget: HslTargetActions = HslTargetActions(),
     onSelectFilm: (String) -> Boolean = { false }, onImportHDRLook: () -> Unit = {}, onApplyHDRSilver: (Boolean) -> Unit = {},
     onDeleteUnreadableLook: (com.rawlab.android.looks.UnreadableLook) -> Unit = {},
-    onRollbackProcessing: () -> Unit = {}, toolOpen: Boolean = true, fine: Boolean = false) {
+    onRollbackProcessing: () -> Unit = {}, toolOpen: Boolean = true, fine: Boolean = false,
+    processingContext: Boolean = false, onDismissProcessingContext: () -> Unit = {}) {
     val edits = state.visibleEdits
     val context = LocalContext.current
     val rawInput = state.photo?.inputKind == PhotoInputKind.RAW
@@ -135,7 +136,6 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     var renameText by remember { mutableStateOf("") }
     var allTools by rememberSaveable { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
-    var processingContext by remember { mutableStateOf(false) }
     var confirmProcessingRollback by remember { mutableStateOf(false) }
     var perspective by rememberSaveable(state.photo?.identity) { mutableStateOf(false) }
     var rotation by rememberSaveable(state.photo?.identity) { mutableStateOf(false) }
@@ -441,7 +441,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
 
 
     }
-    if (processingContext) AlertDialog(onDismissRequest = { processingContext = false },
+    if (processingContext) AlertDialog(onDismissRequest = onDismissProcessingContext,
         title = { Text(stringResource(R.string.photo_processing_settings)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
@@ -479,11 +479,11 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-        }, confirmButton = { TextButton(onClick = { processingContext = false }) { Text(stringResource(R.string.confirm)) } })
+        }, confirmButton = { TextButton(onClick = onDismissProcessingContext) { Text(stringResource(R.string.confirm)) } })
     if (confirmProcessingRollback) AlertDialog(onDismissRequest = { confirmProcessingRollback = false },
         title = { Text(stringResource(R.string.processing_migration_rollback)) },
         text = { Text(stringResource(R.string.processing_migration_rollback_warning)) },
-        confirmButton = { TextButton(onClick = { confirmProcessingRollback = false; processingContext = false; onRollbackProcessing() }) {
+        confirmButton = { TextButton(onClick = { confirmProcessingRollback = false; onDismissProcessingContext(); onRollbackProcessing() }) {
             Text(stringResource(R.string.processing_migration_rollback))
         } }, dismissButton = { TextButton(onClick = { confirmProcessingRollback = false }) { Text(stringResource(R.string.cancel)) } })
     if (allTools) ModalBottomSheet(onDismissRequest = { allTools = false },
