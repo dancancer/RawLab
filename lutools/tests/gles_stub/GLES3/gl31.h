@@ -25,6 +25,8 @@ typedef float GLfloat;
 #define GL_NO_ERROR 0
 #define GL_INVALID_VALUE 0x0501
 #define GL_INVALID_OPERATION 0x0502
+#define GL_OUT_OF_MEMORY 0x0505
+#define GL_CONTEXT_LOST 0x0507
 
 #define GL_UNPACK_ALIGNMENT 0x0CF5
 #define GL_RGBA 0x1908

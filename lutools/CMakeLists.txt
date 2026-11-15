@@ -1011,6 +1011,26 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         add_test(NAME gpu_gles_hw_photo COMMAND gles_photo_pixel_tests --hardware-gles)
         add_test(NAME gpu_d3d11_hw_photo COMMAND gles_photo_pixel_tests --hardware-d3d11)
         set_tests_properties(gpu_gles_hw_photo gpu_d3d11_hw_photo PROPERTIES SKIP_RETURN_CODE 77)
+        add_executable(gles_renderer_retry_tests tests/gles_renderer_retry_tests.cpp
+            src/gpu/gles_photo.cpp src/gpu/gles_denoise.cpp src/gpu/compute_denoise.cpp
+            src/gpu/denoise.cpp src/gpu/gles_lut.cpp src/gpu/lut_gpu.cpp
+            src/core/chroma_denoise.cpp src/core/lut_applicator.cpp src/core/lut_parser.cpp
+            src/core/color_converter.cpp src/core/photo_color.cpp src/core/photo_effects.cpp
+            src/core/photo_tone_controls.cpp src/core/photo_color_grading.cpp src/core/photo_tone_curve.cpp)
+        target_include_directories(gles_renderer_retry_tests PRIVATE tests/gles_stub tests third_party)
+        target_link_libraries(gles_renderer_retry_tests Threads::Threads)
+        if(SONY2FUJI_DENOISE_LIBRARIES)
+            target_link_libraries(gles_renderer_retry_tests ${SONY2FUJI_DENOISE_LIBRARIES})
+        endif()
+        target_compile_definitions(gles_renderer_retry_tests PRIVATE
+            SONY2FUJI_ENABLE_GLES SONY2FUJI_FAKE_EGL_GLES RAWLAB_GLES_TESTING RAWLAB_GLSLANG_PATH="${RAWLAB_GLSLANG}")
+        if(MSVC)
+            target_compile_options(gles_renderer_retry_tests PRIVATE /W4 /utf-8 /UNDEBUG /USONY2FUJI_ENABLE_METAL /USONY2FUJI_ENABLE_D3D11)
+            target_compile_definitions(gles_renderer_retry_tests PRIVATE NOMINMAX)
+        else()
+            target_compile_options(gles_renderer_retry_tests PRIVATE -Wall -Wextra -UNDEBUG -USONY2FUJI_ENABLE_METAL -USONY2FUJI_ENABLE_D3D11)
+        endif()
+        add_test(NAME gpu_gles_renderer_retry COMMAND gles_renderer_retry_tests)
     elseif(RAWLAB_SHADER_PYTHON)
         add_test(NAME gpu_gles_photo_pixel COMMAND "${RAWLAB_SHADER_PYTHON}" -c
             "import sys; print('SKIP gpu_gles_photo_pixel: glslangValidator unavailable'); sys.exit(77)")

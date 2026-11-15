@@ -8,6 +8,7 @@
 #include <exception>
 #if defined(SONY2FUJI_ENABLE_GLES)
 #include <android/log.h>
+#include "gles_recovery.h"
 #elif defined(SONY2FUJI_ENABLE_D3D11)
 #include <windows.h>
 #include "d3d11_recovery.h"
@@ -16,16 +17,25 @@
 namespace sony2fuji {
 namespace {
 #if defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
+inline DeviceRetry::Clock::time_point filterRetryNow() {
+#if defined(SONY2FUJI_ENABLE_GLES)
+    return glesRetryNow();
+#else
+    return d3d11RetryNow();
+#endif
+}
 struct ComputeContext {
     std::mutex mutex;
     std::unique_ptr<FilterDevice> device;
-#if defined(SONY2FUJI_ENABLE_D3D11)
     DeviceRetry retry;
-#endif
     ComputeContext() {
         // Register our destructor after EGL's lazily initialized driver state.
 #if defined(SONY2FUJI_ENABLE_GLES)
-        device = createGlesFilterDevice();
+        try {
+            device = createGlesFilterDevice();
+        } catch (const std::exception&) {
+            retry.failed(glesRetryNow());
+        }
 #endif
     }
 };
@@ -40,33 +50,34 @@ bool compute(Operation operation) {
         std::lock_guard<std::mutex> lock(context.mutex);
 #if defined(SONY2FUJI_ENABLE_D3D11)
         if (GetEnvironmentVariableW(L"RAWLAB_DISABLE_D3D11", nullptr, 0) > 0) return false;
-        if (!device && !context.retry.ready(d3d11RetryNow())) return false;
-        bool initializing = !device;
 #endif
+        if (!device && !context.retry.ready(filterRetryNow())) return false;
+        bool initializing = !device;
         try {
 #if defined(SONY2FUJI_ENABLE_GLES)
             if (!device) device = createGlesFilterDevice();
 #else
             if (!device) device = createD3D11FilterDevice();
-            initializing = false;
 #endif
+            initializing = false;
             auto scope = device->activate();
             const bool ok = operation(*device);
             device->trimPool();
-#if defined(SONY2FUJI_ENABLE_D3D11)
             if (ok) context.retry.succeeded();
-#endif
             return ok;
         } catch (const ProcessingCancelled&) {
             throw;
         } catch (const std::exception& error) {
 #if defined(SONY2FUJI_ENABLE_D3D11)
             if (initializing || d3d11LostDevice(error) || (device && device->deviceLost())) {
-                context.retry.failed(d3d11RetryNow());
+                context.retry.failed(filterRetryNow());
                 device.reset();
             }
 #else
-            device.reset();
+            if (initializing || glesLostDevice(error)) {
+                context.retry.failed(filterRetryNow());
+                device.reset();
+            }
 #endif
             throw;
         }

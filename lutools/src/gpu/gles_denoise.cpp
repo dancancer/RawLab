@@ -1,4 +1,5 @@
 #include "compute_denoise.h"
+#include "gles_recovery.h"
 #include "compute_denoise_shader.h"
 #include "filter_buffer_pool.h"
 #include <EGL/egl.h>
@@ -14,7 +15,7 @@ namespace {
 constexpr GLuint groupSize = 128;
 void checked() {
     const auto error = glGetError();
-    if (error != GL_NO_ERROR) throw std::runtime_error("GLES filter error " + std::to_string(error));
+    if (error != GL_NO_ERROR) throw GlesFailure(error);
 }
 struct Binding final : FilterContext {
     EGLDisplay previousDisplay = eglGetCurrentDisplay();
@@ -28,8 +29,9 @@ struct Binding final : FilterContext {
             void (*trim)(void*) = nullptr, void* arg = nullptr)
         : display(d), onUnbind(trim), unbindArg(arg) {
         if (!eglBindAPI(EGL_OPENGL_ES_API) || !eglMakeCurrent(d, surface, surface, context)) {
+            const EGLint error = eglGetError();
             if (previousApi != EGL_NONE) eglBindAPI(previousApi);
-            throw std::runtime_error("GLES filter context unavailable");
+            throw sony2fuji::EglFailure(error);
         }
     }
     ~Binding() override {
