@@ -259,3 +259,10 @@
 - **规则**：同一票多次返工按阶梯升级执行方——首次返工 Hydrogen Xhigh；**二次返工改派 codex**；**三次返工改派 carbon（implement）**。合入门禁复审始终 carbon-high 不变。
 - 首例执行：#349 r2（二次返工）由氢派单被撤销、codex 接管（现场：中断 worker 已产出未推送草稿 460f7b88，codex 指令含"不信任草稿逐条核实"）。
 - 配套事实（碳审 r2 揭露）：普通 PR 自动门禁只跑 models 快速档，**不执行 C++ ctest**——新增/改动原生测试的分支矩阵（如无硬件 GPU 回退）需本地注入（Mach-O interpose MTLCreateSystemDefaultDevice→nil）或手动 native/full 档闭环，名单绿≠执行绿。
+
+### (49) 第 107/108 合入：#349 三轮链 + #351 卫生票；workflow-scope 合并经验
+
+- **#349（第 107 个，merge 6c147f96）**：P3-60/C12 preview 曝光缓存 + P3-61/C13 HSL 小波缓存。三轮评审链（氢 r1 → codex r2 → 碳 r3 approve）：ci.yml $tests 名单、512 Bayer 合成夹具+入库 DJI、scale_denom≤2（EV |Δ|≤0.07 十二真片 max 0.034）、无硬件 GPU 注入必红修复（fallback 回填 Off+cpuExecuted）、Force 伪装缓存修复（Force probe 恒存 Off）、损坏 JPEG longjmp、LRU/负缓存。codex 二次返工首例全绿交付（interpose 红绿闭环+双变异）；碳 r3 独立注入复验+变异 A/B 击杀。ctest 185/185。
+- **#351（第 108 个，merge 83d54f81）**：host-jni-hygiene（bitmap.h 常量对齐真 NDK -3/-1/-2、recipe_probe_stages 子结构 memcmp+stub ABI、jni_session_lock TSan 干净、双脚本接 Android 强制档）。碳审 3 变异全死。
+- **GitHub workflow-scope 实操规则**：dancancer OAuth token 无 `workflow` scope——**API 建的分支提交**（update-branch）与部分 `mergePullRequest` 会被 `refusing to allow an OAuth App to create or update workflow` 拒绝；**git push 不受限**。处置：分支本地 rebase 到最新 development + force push（新 head 自动门禁重跑）→ `gh pr merge` 立即成功（#349/#351 双实证）。若再遇拒：先 rebase 重试，最后才网页合并或让用户给 token 加 scope。
+- 碳审非阻塞移交：#351 ①jni_session_lock Test2 补锁内 notify_all（省 CI 固定 1.5s 空等）②recipe_probe_stages_test 单数 stub 清理+sizeof==2248 static_assert；#349 ③processing-concurrency.md sony2fuji_session 行号差 1。
