@@ -131,7 +131,8 @@ struct MacPhotoPreviewPlan {
     fileprivate static func decodeThumbnailImage(_ data: Data) -> NSImage? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let cgImage = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary) else {
-            return NSImage(data: data)
+            // 不兜 NSImage(data:)：它能按 PNG 头部懒初始化出 0×0 空白图，把「解不出 CGImage」伪装成成功。
+            return nil
         }
         return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
     }

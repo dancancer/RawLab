@@ -71,4 +71,34 @@ class WorkingCopyTest {
             assertTrue(root.listFiles().orEmpty().isEmpty())
         } finally { root.deleteRecursively() }
     }
+
+    @Test fun freeSpaceIsCheckedAtEntryOnlyBelowOneSampleInterval() {
+        val root = Files.createTempDirectory("rawlab-copy-budget").toFile()
+        val checks = java.util.concurrent.atomic.AtomicInteger()
+        val directory = object : File(root.path) {
+            override fun getUsableSpace(): Long { checks.incrementAndGet(); return Long.MAX_VALUE / 4 }
+        }
+        try {
+            val payload = ByteArray(200 * 1024)
+            val file = WorkingCopy.import(directory, ByteArrayInputStream(payload), expectedBytes = payload.size.toLong())
+            assertEquals(payload.size.toLong(), file.length())
+            assertEquals("free-space checking stays at the entry below one 8MB sample interval",
+                1L, checks.get().toLong())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun largeImportSamplesFreeSpaceOncePerEightMegabytes() {
+        val root = Files.createTempDirectory("rawlab-copy-sampling").toFile()
+        val checks = java.util.concurrent.atomic.AtomicInteger()
+        val directory = object : File(root.path) {
+            override fun getUsableSpace(): Long { checks.incrementAndGet(); return Long.MAX_VALUE / 4 }
+        }
+        try {
+            val payload = ByteArray(17 * 1024 * 1024)
+            val file = WorkingCopy.import(directory, ByteArrayInputStream(payload), expectedBytes = payload.size.toLong())
+            assertEquals(payload.size.toLong(), file.length())
+            assertEquals("272 chunks must not statvfs per chunk; entry plus one sample per crossed 8MB",
+                3L, checks.get().toLong())
+        } finally { root.deleteRecursively() }
+    }
 }
