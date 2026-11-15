@@ -1042,6 +1042,9 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
             PROPERTIES SKIP_RETURN_CODE 77)
     endif()
     add_executable(d3d11_shader_cache_tests tests/d3d11_shader_cache_tests.cpp)
+    if(WIN32)
+        target_link_libraries(d3d11_shader_cache_tests PRIVATE d3dcompiler)
+    endif()
     target_compile_options(d3d11_shader_cache_tests PRIVATE
         $<$<CXX_COMPILER_ID:MSVC>:/W4 /utf-8>
         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra>)

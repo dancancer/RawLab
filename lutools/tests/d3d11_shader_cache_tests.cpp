@@ -83,6 +83,37 @@ void inProcessAndCrossProcessCacheHits() {
     }
 }
 
+void distinctSourceDefinesProduceDistinctCachedShaders() {
+    TempDir dir;
+    const std::string body =
+        "RWStructuredBuffer<uint> resultBuffer : register(u0); "
+        "[numthreads(1,1,1)] void main(uint3 id : SV_DispatchThreadID) { resultBuffer[id.x] = VALUE; }";
+    const std::string sources[] = {"#define VALUE 1\n" + body, "#define VALUE 2\n" + body};
+    const auto key1 = makeD3D11ShaderCacheKey("variant", sources[0], "main", "cs_5_0", 0);
+    const auto key2 = makeD3D11ShaderCacheKey("variant", sources[1], "main", "cs_5_0", 0);
+    ShaderBytecodeCache cache(dir.path);
+    auto compile = [&](int index) {
+#if defined(_WIN32)
+        Microsoft::WRL::ComPtr<ID3DBlob> code, errors;
+        const auto hr = D3DCompile(sources[index].data(), sources[index].size(), "variant", nullptr, nullptr,
+                                   "main", "cs_5_0", 0, 0, &code, &errors);
+        require(SUCCEEDED(hr) && code.Get() != nullptr, "variant shader compilation failed");
+        const auto* bytes = static_cast<const uint8_t*>(code->GetBufferPointer());
+        return std::vector<uint8_t>(bytes, bytes + code->GetBufferSize());
+#else
+        return std::vector<uint8_t>{static_cast<uint8_t>(index + 1)};
+#endif
+    };
+    const auto first = cache.getOrCompile(key1, [&] { return compile(0); });
+    const auto second = cache.getOrCompile(key2, [&] { return compile(1); });
+    require(first != second, "different source defines must not reuse shader bytecode");
+    ShaderBytecodeCache restarted(dir.path);
+    require(restarted.getOrCompile(key1, [] { return std::vector<uint8_t>{}; }) == first &&
+            restarted.getOrCompile(key2, [] { return std::vector<uint8_t>{}; }) == second &&
+            restarted.stats().diskHits == 2,
+            "both shader variants must survive independently in the disk cache");
+}
+
 void keyAndVersionInvalidationAndCorruptionRecovery() {
     TempDir dir;
     const std::string sourceA = "void main() { /* v1 */ }";
@@ -242,6 +273,7 @@ void concurrentWritersAndReadersNeverObserveBrokenBlob() {
 int main() {
     try {
         inProcessAndCrossProcessCacheHits();
+        distinctSourceDefinesProduceDistinctCachedShaders();
         keyAndVersionInvalidationAndCorruptionRecovery();
 #if defined(_WIN32)
         diskReadersShareAtomicReplacementHandles();
