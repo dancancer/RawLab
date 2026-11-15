@@ -390,8 +390,12 @@ gate's honest skip pair otherwise.
 - Edited-preview cache and iOS recent-source retention checks run in the fast Apple model groups; `RawLabMac/tests/thumbnail-cache.sh` likewise runs in the standalone macOS model route. Mac rendered-preview and resource-watcher checks use `bash RawLabMac/tests/edited-photo-previews.sh` after building the native core; `edited-photo-ui.sh <output-directory>` builds an isolated native editor harness for marker, selection and reset inspection. `RawLabMac/tests/batch-cancellation.sh` delegates to `batch-render.sh` (requiring the prebuilt C++ core and native dependencies), `RawLab/tests/ios-photo-previews.sh` requires a booted iOS Simulator, and `RawLab/tests/raw-unpack-export.sh` and `RawLab/tests/subtool-menu-draft.sh` require both a built simulator `RawLab.app` and a booted iOS Simulator, so these four remain local/native-gate suites rather than `apple-models.sh` entries.
 - Windows fast models: `./scripts/ci/windows-models.ps1`; no WPF window, native
   rendering DLL, RAW fixture or self-contained app build is required.
-- Android models: `./gradlew :app:testDebugUnitTest`; the task graph excludes native
-  compilation and APK assembly. Instrumentation remains a separate local entry.
+- Android models: `./gradlew :app:testDebugUnitTest` plus
+  `RawLabAndroid/tests/jni-session-lock.sh`, `recipe-probe-stages.sh` and
+  `ndk-compile.sh` (arm64 NDK CMake compile check for GLES/test targets without
+  building full native dependencies or running on device); the task graph
+  excludes full native compilation and APK assembly. Instrumentation remains a
+  separate local entry.
 - Mac UI checks remain independent scripts: `horizontal-picker-native.sh`,
   `parameter-value.sh`, `mac-straighten-preview.sh`, `mac-canvas-input.sh`.
   `presentation.sh --models-only` skips canvas UI but still needs the native core,
