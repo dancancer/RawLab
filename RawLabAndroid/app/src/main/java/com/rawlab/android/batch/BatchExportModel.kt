@@ -7,6 +7,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -18,6 +19,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -114,8 +116,7 @@ class BatchExportModel(
 ) : AutoCloseable {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val confirmLock = Mutex()
-    @Volatile private var lastConfirm: Job? = null
+    private val confirmations = BatchConfirmations(ioScope)
     private val resolver = context.contentResolver
     private val cancelRequested = BatchCancellation()
     private val activeProcessor = AtomicReference<NativeProcessor?>(null)
@@ -199,7 +200,6 @@ class BatchExportModel(
             if (it.canStart(retry)) it.configuredFor(format, destination, longEdge) else it
         }
         if (!previous.canStart(retry)) return
-        val configured = previous.configuredFor(format, destination, longEdge).job
         val successBefore = previous.successCount
         val attempted = mutableSetOf<String>()
         var terminalReported = false
@@ -213,20 +213,18 @@ class BatchExportModel(
         cancelRequested.reset()
         running = scope.launch(Dispatchers.IO) {
             try {
-                val materialized = if(configured.settingsMode==BatchSettingsMode.UNIFORM_FROZEN && configured.source.settings.isHDREditing)
-                    hdrPreparation(configured.source).freeze(configured,journalRoot,cancelRequested::get) else configured
-                mutable.update { it.copy(job = materialized) }
-                if (materialized.settingsMode == BatchSettingsMode.UNIFORM_FROZEN && !materialized.source.sourceFile.isFile) {
-                    throw BatchGlobalFailure(AppStrings.text(R.string.message_task_source_unavailable))
-                }
-                if (materialized.settingsMode == BatchSettingsMode.UNIFORM_FROZEN && (materialized.source.settings.film != "neutral" || materialized.source.settings.recipeID != null) && materialized.source.lookFile?.isFile != true) {
-                    throw BatchGlobalFailure(AppStrings.text(R.string.message_the_task_source_or_look_file_is))
+                val materialized = prepareBatchStart(confirmations, mutable, journalRoot) { configured ->
+                    val ready = if (configured.settingsMode == BatchSettingsMode.UNIFORM_FROZEN && configured.source.settings.isHDREditing)
+                        hdrPreparation(configured.source).freeze(configured, journalRoot, cancelRequested::get) else configured
+                    if (ready.settingsMode == BatchSettingsMode.UNIFORM_FROZEN && !ready.source.sourceFile.isFile) {
+                        throw BatchGlobalFailure(AppStrings.text(R.string.message_task_source_unavailable))
+                    }
+                    if (ready.settingsMode == BatchSettingsMode.UNIFORM_FROZEN && (ready.source.settings.film != "neutral" || ready.source.settings.recipeID != null) && ready.source.lookFile?.isFile != true) {
+                        throw BatchGlobalFailure(AppStrings.text(R.string.message_the_task_source_or_look_file_is))
+                    }
+                    ready
                 }
                 val journal = BatchJournal(journalRoot)
-                confirmLock.withLock {
-                    lastConfirm?.join()
-                    journal.save(materialized)
-                }
                 val processor = processorFactory(gpuMode, storage.lensDatabase())
                 val cancellationGeneration = processor.cancellationGeneration()
                 activeProcessor.set(processor)
@@ -387,9 +385,9 @@ class BatchExportModel(
     }
 
     fun confirmOutput(id: String, saved: Boolean) {
-        lastConfirm = ioScope.launch {
+        confirmations.launch {
             confirmBatchOutput(
-                lock = confirmLock,
+                lock = confirmations.lock,
                 journalRoot = journalRoot,
                 id = id,
                 saved = saved,
@@ -406,17 +404,13 @@ class BatchExportModel(
 
     fun discardDraftOrCompleted(): Deferred<Unit>? {
         discardCompletion?.let { return it }
-        if (lastConfirm == null && mutable.value.job.rows.all { it.status == BatchRowStatus.SUCCESS }) {
-            discardAfterWork()
-            return discardCompletion
-        }
         return discardBatchDraftOrCompleted(
             currentJob = { mutable.value.job },
             initialJobId = initialJob.id,
             journalRoot = journalRoot,
             rootJob = scope.coroutineContext[Job]!!,
             ioScope = ioScope,
-            lastConfirm = lastConfirm,
+            confirmations = confirmations,
             onDiscarding = { discardCompletion = it },
             closeModel = ::close,
         )
@@ -435,7 +429,7 @@ class BatchExportModel(
             journalRoot = journalRoot,
             rootJob = scope.coroutineContext[Job]!!,
             ioScope = ioScope,
-            lastConfirm = lastConfirm,
+            confirmations = confirmations,
             closeModel = ::close,
         )
     }
@@ -445,6 +439,40 @@ class BatchExportModel(
         val job = running
         if (job?.isActive == true) job.invokeOnCompletion { scope.coroutineContext[Job]?.cancel() }
         else scope.coroutineContext[Job]?.cancel()
+    }
+}
+
+internal class BatchConfirmations(private val scope: CoroutineScope) {
+    val lock = Mutex()
+    private val pending = mutableSetOf<Job>()
+
+    fun launch(block: suspend () -> Unit): Job {
+        val job = scope.launch(start = CoroutineStart.LAZY) { block() }
+        synchronized(pending) { pending.add(job) }
+        job.invokeOnCompletion { synchronized(pending) { pending.remove(job) } }
+        job.start()
+        return job
+    }
+
+    suspend fun awaitPending() {
+        val snapshot = synchronized(pending) { pending.toList() }
+        snapshot.joinAll()
+    }
+}
+
+internal suspend fun prepareBatchStart(
+    confirmations: BatchConfirmations,
+    state: MutableStateFlow<BatchExportState>,
+    journalRoot: File,
+    materialize: (BatchJob) -> BatchJob,
+): BatchJob {
+    // 确认任务也需要这把锁，必须先等全部已提交确认，再读取最新状态。
+    confirmations.awaitPending()
+    return confirmations.lock.withLock {
+        val materialized = materialize(state.value.job)
+        state.update { it.copy(job = materialized) }
+        BatchJournal(journalRoot).save(materialized)
+        materialized
     }
 }
 
@@ -476,15 +504,15 @@ internal fun discardBatchAfterWork(
     journalRoot: File,
     rootJob: Job,
     ioScope: CoroutineScope,
-    lastConfirm: Job? = null,
+    confirmations: BatchConfirmations = BatchConfirmations(ioScope),
     closeModel: () -> Unit,
 ): CompletableDeferred<Unit> {
     val completion = CompletableDeferred<Unit>()
     rootJob.invokeOnCompletion {
         ioScope.launch {
             try {
-                lastConfirm?.join()
-                BatchJournal(journalRoot).discard(initialJobId)
+                confirmations.awaitPending()
+                confirmations.lock.withLock { BatchJournal(journalRoot).discard(initialJobId) }
                 completion.complete(Unit)
             } catch (error: Exception) {
                 completion.completeExceptionally(error)
@@ -501,26 +529,26 @@ internal fun discardBatchDraftOrCompleted(
     journalRoot: File,
     rootJob: Job,
     ioScope: CoroutineScope,
-    lastConfirm: Job? = null,
+    confirmations: BatchConfirmations = BatchConfirmations(ioScope),
     onDiscarding: (CompletableDeferred<Unit>) -> Unit = {},
     closeModel: () -> Unit,
 ): CompletableDeferred<Unit> {
-    if (lastConfirm == null && currentJob().rows.all { it.status == BatchRowStatus.SUCCESS }) {
-        return discardBatchAfterWork(initialJobId, journalRoot, rootJob, ioScope, null, closeModel)
-            .also(onDiscarding)
-    }
     // 失败 phase 不代表已持久化；journal 决定副本是否需要保留。
     // 仅在确实触发清理时通过 onDiscarding 缓存 completion，避免未完成持久化任务的空操作毒化后续 discard()。
     val completion = CompletableDeferred<Unit>()
     ioScope.launch {
         try {
-            lastConfirm?.join()
-            val job = currentJob()
-            if (job.rows.all { it.status == BatchRowStatus.SUCCESS } || !BatchJournal(journalRoot).contains(job.id)) {
-                onDiscarding(completion)
-                closeModel()
+            confirmations.awaitPending()
+            val shouldDiscard = confirmations.lock.withLock {
+                val job = currentJob()
+                (job.rows.all { it.status == BatchRowStatus.SUCCESS } || !BatchJournal(journalRoot).contains(job.id)).also {
+                    if (it) { onDiscarding(completion); closeModel() }
+                }
+            }
+            if (shouldDiscard) {
+                // running 可能还要拿确认锁，等模型退出时不能持锁。
                 rootJob.join()
-                BatchJournal(journalRoot).discard(initialJobId)
+                confirmations.lock.withLock { BatchJournal(journalRoot).discard(initialJobId) }
             }
             completion.complete(Unit)
         } catch (error: Exception) {
