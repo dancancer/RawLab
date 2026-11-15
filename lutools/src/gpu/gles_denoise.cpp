@@ -42,7 +42,9 @@ struct Binding final : FilterContext {
 };
 struct Buffer final : FilterBuffer {
     GLuint name = 0;
-    ~Buffer() override { if (name) glDeleteBuffers(1, &name); }
+    ~Buffer() override {
+        if (name && eglGetCurrentContext() != EGL_NO_CONTEXT) glDeleteBuffers(1, &name);
+    }
 };
 
 const char* prefix = R"glsl(#version 310 es
@@ -92,12 +94,22 @@ public:
                 auto scope = activate();
                 pool.clear();
                 dummy.reset();
-                if (constants) glDeleteBuffers(1, &constants);
-                if (program) glDeleteProgram(program);
+                if (constants) {
+                    glDeleteBuffers(1, &constants);
+                    constants = 0;
+                }
+                if (program) {
+                    glDeleteProgram(program);
+                    program = 0;
+                }
             } catch (...) { }
             eglDestroyContext(display, context);
+            context = EGL_NO_CONTEXT;
         }
-        if (surface != EGL_NO_SURFACE) eglDestroySurface(display, surface);
+        if (surface != EGL_NO_SURFACE) {
+            eglDestroySurface(display, surface);
+            surface = EGL_NO_SURFACE;
+        }
         // Never terminate Android's process-wide display, shared with HWUI.
     }
     void initialize() {

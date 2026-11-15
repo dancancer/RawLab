@@ -182,6 +182,10 @@ exit 0
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("PASS: batch export SKIP action preserves active draft", result.stdout)
 
+    def test_apple_models_includes_thumbnail_cache_suite(self):
+        script = (ROOT / "scripts/ci/apple-models.sh").read_text(encoding="utf-8")
+        self.assertIn("RawLabMac/tests/thumbnail-cache.sh", script)
+
 
 if __name__ == "__main__":
     unittest.main()
