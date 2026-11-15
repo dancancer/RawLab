@@ -340,15 +340,29 @@ jobs:
           $rustup = "$env:CARGO_HOME/bin/rustup.exe"
           if (!(Test-Path $rustup)) {
             $url = 'https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe'
-            Invoke-WebRequest $url -OutFile "$tools/rustup-init.exe"
-            Invoke-WebRequest "$url.sha256" -OutFile "$tools/rustup-init.sha256"
-            $expected = (Get-Content "$tools/rustup-init.sha256").Trim().Split(' ')[0]
-            if ((Get-FileHash "$tools/rustup-init.exe" -Algorithm SHA256).Hash.ToLower() -ne $expected) { throw 'Rust installer checksum mismatch' }
-            & "$tools/rustup-init.exe" -y --no-modify-path --profile minimal --default-toolchain 1.99.1
-            if ($LASTEXITCODE) { throw 'Cannot install Rust' }
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              try {
+                Invoke-WebRequest $url -OutFile "$tools/rustup-init.exe"
+                Invoke-WebRequest "$url.sha256" -OutFile "$tools/rustup-init.sha256"
+                $expected = (Get-Content "$tools/rustup-init.sha256").Trim().Split(' ')[0]
+                if ((Get-FileHash "$tools/rustup-init.exe" -Algorithm SHA256).Hash.ToLower() -ne $expected) { throw 'Rust installer checksum mismatch' }
+                & "$tools/rustup-init.exe" -y --no-modify-path --profile minimal --default-toolchain 1.99.1
+                if ($LASTEXITCODE -eq 0) { break }
+                throw "rustup-init exited with $LASTEXITCODE"
+              } catch {
+                if ($attempt -eq 3) { throw }
+                Write-Warning "Rust bootstrap attempt $attempt failed: $_; retrying in 5s"
+                Start-Sleep -Seconds 5
+              }
+            }
           }
-          & $rustup toolchain install 1.99.1 --profile minimal --component rust-docs
-          if ($LASTEXITCODE) { throw 'Cannot prepare Rust runtime notices' }
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            & $rustup toolchain install 1.99.1 --profile minimal --component rust-docs
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($attempt -eq 3) { throw 'Cannot prepare Rust runtime notices' }
+            Write-Warning "rustup toolchain install attempt $attempt failed (exit $LASTEXITCODE); retrying in 5s"
+            Start-Sleep -Seconds 5
+          }
           python -m pip install --target "$tools/libclang" libclang==18.1.1
           if ($LASTEXITCODE) { throw 'Cannot prepare libclang' }
           @("CARGO_HOME=$env:CARGO_HOME", "RUSTUP_HOME=$env:RUSTUP_HOME", 'RUSTUP_TOOLCHAIN=1.99.1', "LIBCLANG_PATH=$tools/libclang/clang/native") | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
