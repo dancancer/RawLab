@@ -93,4 +93,24 @@ class EditPersistenceTest {
             assertThrows(Exception::class.java) { EditStore(File(broken, "child")).save(first, EditSettings()) }
         } finally { directory.deleteRecursively() }
     }
+
+    // 写成功后就地登记 (mtime,length)：后续读取走 stat 短路复用已解析快照，不再触文件。
+    // 撤掉 write() 里的 cachedStat 登记（回到写后自废语义）此用例必红：load 必须重新全文件读取。
+    @Test fun readAfterWriteReusesSnapshotWithoutReReadingFile() {
+        val directory = Files.createTempDirectory("rawlab-edit-cache").toFile()
+        try {
+            val store = EditStore(directory)
+            val identity = PhotoIdentity("cache-hit")
+            store.save(identity, EditSettings(exposure = .5f))
+            val readsAfterSave = store.fileReadCount
+            assertEquals(.5f, store.load(identity)?.exposure)
+            assertEquals("A read after a successful write must reuse the parsed snapshot",
+                readsAfterSave, store.fileReadCount)
+            // 对照：外部实例改写文件 ⇒ stat 变化，强制恰好一次重读并观察到旧记录仍在。
+            EditStore(directory).save(PhotoIdentity("other"), EditSettings(exposure = 1f))
+            assertEquals(.5f, store.load(identity)?.exposure)
+            assertEquals("An externally modified file must force exactly one re-read",
+                readsAfterSave + 1, store.fileReadCount)
+        } finally { directory.deleteRecursively() }
+    }
 }
