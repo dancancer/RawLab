@@ -1,7 +1,8 @@
+import Combine
 import Foundation
 
 // 每个请求独占粘性取消标记；旧任务排空后才开始下一轮，完成回调也按请求身份验收。
-final class AdjustmentTransferPreflight {
+final class AdjustmentTransferPreflight: ObservableObject {
     private final class Cancellation {
         private let lock = NSLock()
         private var value = false
