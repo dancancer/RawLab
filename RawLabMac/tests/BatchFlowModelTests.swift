@@ -454,6 +454,37 @@ enum BatchFlowModelTests {
         return CGImageSourceCreateImageAtIndex(source, 0, nil)!.dataProvider!.data! as Data
     }
 
+    // 线程锚点：后台预检完成后，冻结（前后双遍全集重验 + 每目标 look 副本拷贝）全部在后台队列执行；
+    // 撤掉修复（冻结回到主线程）时每个阶段的 onMain 记为 true，本断言必红。
+    static func freezeStagesOffMain(root: URL, fixture: URL) throws {
+        let directory = root.appendingPathComponent("freeze-thread")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let output = directory.appendingPathComponent("output")
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        var files = [URL]()
+        for name in ["first.png", "second.png", "third.png"] {
+            let file = directory.appendingPathComponent(name)
+            try FileManager.default.copyItem(at: fixture, to: file); files.append(file)
+        }
+        let model = EditorModel(lookDirectory: directory.appendingPathComponent("looks"),
+            editDirectory: directory.appendingPathComponent("edits"), batchDirectory: directory.appendingPathComponent("batch"),
+            presetDirectory: directory.appendingPathComponent("presets"))
+        model.addCollectionPhotos(files)
+        model.open(files[0]); try BatchSelectionModelTests.rendered(model)
+        model.settings.exposure = 0.4
+        try require(model.saveEdits(), "freeze thread fixture saves an adjustment")
+        var stages = [(String, Bool)]()
+        let lock = NSLock()
+        model.startCollectionExport(skipping: [], format: .png, longEdge: nil, directory: output,
+            observeFreezeStage: { stage, main in lock.lock(); stages.append((stage, main)); lock.unlock() })
+        try wait { model.batch != nil && model.batch?.running == false }
+        lock.lock(); let recorded = stages; lock.unlock()
+        try require((recorded.filter({ $0.0 == "revalidate" }).count == 2 && recorded.contains(where: { $0.0 == "copy" })
+                && recorded.allSatisfy({ !$0.1 })),
+            "collection freeze revalidates twice and copies looks entirely off the main thread")
+        try require(model.batch!.job.succeededCount == 3, "off-main freeze still exports every photo")
+    }
+
     static func pendingLaunches(root: URL, fixture: URL) throws {
         for action in ["cancel", "photo", "edit", "selection", "conflict", "restart"] {
             let directory = root.appendingPathComponent("pending-\(action)")
