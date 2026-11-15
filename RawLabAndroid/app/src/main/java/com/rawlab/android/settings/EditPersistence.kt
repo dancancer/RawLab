@@ -67,6 +67,11 @@ class EditStore(private val directory: File,
 
     private var cachedBytes: ByteArray? = null
     private var cachedSnapshot: Snapshot? = null
+    // 写成功后就地登记文件的 (lastModified, length)；(mtime, length) 双字段一致的读取直接复用已解析快照，
+    // 不再 readBytes 全文件（与 #394 的 Mac 侧修复同口径；mtime 单独使用可能被文件系统时间戳精度坑到，length 兜底）。
+    private var cachedStat: Pair<Long, Long>? = null
+    // 测试观察点：read() 真正读取文件字节的次数（写后再读应命中 stat 短路，不再触文件）。
+    internal var fileReadCount = 0
 
     init {
         if (directory.exists() && !directory.isDirectory) throw IOException("Edit store path is not a directory")
@@ -179,9 +184,16 @@ class EditStore(private val directory: File,
     private fun read(): Snapshot {
         if (file.exists() && !file.isFile) throw IOException("Edit record path is not a file")
         if (!file.exists()) return Snapshot(emptyMap()).also { lastReadableRecords = it.records }
-        // 部分文件系统的时间戳精度不足；内容未变时才复用解析结果。
+        // (mtime, length) 与上次成功解析一致 ⇒ 文件未变，直接复用已解析快照，连文件都不再读；
+        // 任一项不符再回退到内容比对（部分文件系统的时间戳精度不足，内容未变时才复用解析结果）。
+        val stat = file.lastModified() to file.length()
+        if (cachedStat == stat) cachedSnapshot?.let { return it }
+        fileReadCount += 1
         val bytes = file.readBytes()
-        if (cachedBytes?.contentEquals(bytes) == true) cachedSnapshot?.let { return it }
+        if (cachedBytes?.contentEquals(bytes) == true) {
+            cachedStat = stat
+            cachedSnapshot?.let { return it }
+        }
         val properties = Properties()
         bytes.inputStream().use(properties::load)
         val rawLines = parseRawPropertyLines(bytes, properties)
@@ -245,6 +257,8 @@ class EditStore(private val directory: File,
         return Snapshot(records, unusable = unusable, properties = properties, rawLines = rawLines).also {
             cachedSnapshot = it
             cachedBytes = bytes
+            // 解析期间文件未再变动才启用 stat 短路；变过则置空，强制下次读取重验内容。
+            cachedStat = if ((file.lastModified() to file.length()) == stat) stat else null
         }
     }
 
@@ -362,11 +376,13 @@ class EditStore(private val directory: File,
             replaceFile(temporary, file)
             cachedSnapshot = updated.copy(properties = properties, rawLines = rawLines.toMap())
             cachedBytes = bytes
+            // 写成功后用新 (mtime, length) 原地登记，后续读取走 stat 短路，不再全文件重读（写后自废修复）。
+            cachedStat = file.lastModified() to file.length()
             lastReadableRecords = updated.records.toMap()
             lastUnusableRecords = updated.unusable.toMap()
             changed.tryEmit(EditStoreChange(directoryPath, updated.record(identity)))
         } catch (error: Throwable) {
-            cachedBytes = null; cachedSnapshot = null
+            cachedBytes = null; cachedSnapshot = null; cachedStat = null
             temporary.delete()
             throw if (error is IOException) error else IOException("Cannot save edit store", error)
         }
