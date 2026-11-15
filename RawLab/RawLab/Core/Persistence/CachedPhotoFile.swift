@@ -53,6 +53,9 @@ struct PhotoSourceFile: Codable, Equatable {
     var displayName: String { url.lastPathComponent }
     func matches(_ url: URL) -> Bool { self.url == url }
 
+    /* 应用缓存副本在进程内路径稳定（LUT 兼容向导据此只读引用原片）；外部托管 URL 保留拷贝语义。 */
+    var persistentLocalURL: URL? { owner == nil ? nil : url }
+
     /* 在后台闭包内调用；读取必须在闭包返回前完成，不能将裸路径交给另一个异步任务。 */
     func withReadAccess<T>(_ read: (URL) throws -> T) rethrows -> T {
         try withExtendedLifetime(self) { try read(url) }

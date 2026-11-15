@@ -659,7 +659,7 @@ extension EditorModel {
 
     func importLooks(_ urls: [URL], dcpOptionsPrompt: MacDCPOptionsPrompt? = nil) {
         guard !urls.isEmpty else { return }
-        let previewPhoto = file.map { LUTPreviewSource(url: $0) }
+        let previewPhoto = file.map { LUTPreviewSource(localURL: $0) }
         changeLookLibrary { library in
             var selectedID: String?
             var imported = 0

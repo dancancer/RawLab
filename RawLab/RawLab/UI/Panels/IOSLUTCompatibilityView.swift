@@ -33,8 +33,8 @@ struct IOSLUTCompatibilityView: View {
             guard let item = values.first else { return }
             items = []
             selection.load(using: { try await PhotoImportFile.load(from: item) }) { photo in
-                // 预览队列读完之前，闭包保留图库下载副本；不调用编辑器的照片导入。
-                selectedPhoto?(LUTPreviewSource(name: photo.name) { try photo.copy(to: $0) })
+                // 预览队列读完之前，闭包保留图库下载副本（引用模式不再二次拷贝）；不调用编辑器的照片导入。
+                selectedPhoto?(LUTPreviewSource(name: photo.name, localURL: photo.fileURL) { try photo.copy(to: $0) })
                 selectedPhoto = nil
             }
         }
