@@ -356,3 +356,10 @@
 - **#367 r2**（codex）：Android 宿主接线放行 draft.group==LOOK+recipe-lut 保留+穿宿主仪器测试 4/4 真跑（真实宿主/ViewModel/队列/持久化）；并实证纠正 JVM 基线口径（looks-ui 分支=737 非 744）；rebase 含 #369+字符串并集重生成。碳复审在跑。
 - **#365/#366 一轮返工**（Hydrogen）：#365 两项（fork PR pull_requests=[] 恒不命中+stub 假绿；同仓 push 信任判定须前置防队列锁死）；#366 一项（RenderHDRAsSDR Native.Check 漏传 session→HDR 容器+强制 GPU 仍弹误导文案）。
 - **codex 吞吐观察**：本轮 5 张 codex 票全部 20–65 分钟交付且红绿证据齐全，"碳处方照抄+先证实现状"票面对 codex 高效；碳审仍是唯一放行闸。
+
+### (62) 宿主重启事故恢复零损失；#365 合入（120th）；真机门禁首跑抓到 Android 构建期红
+
+- **事故**：19:01–19:08 宿主 harness 重启，6 个在途任务（4 碳审+1 返工+1 真机门禁）中断，轮询器全灭。**远端零损失**（各分支 r1/r2 head 均已 push 存留：#365=c1877834、#367=f7f677ba 等），仅评审过程重跑（碳包A #361r2/#362r2/#371、碳包B #366r1/#367r2、碳审 #365r1 重新派发）。
+- **#365 合入（120th，`59b0de8e`）**：完成-01 工程半边收口（jit.env 0600、GH_TOKEN 剥离、pr#n@sha 同仓限定+外部 fork 指路 run_id@sha、push 信任前置防队列锁死；scripts/ci 240）。iOS models 首跑红=自托管 runner 失联（重启窗口），`gh run rerun --failed` 转绿后合入。k179 剩用户侧生产切换演练。
+- **真机首轮（Pixel XL marlin，API 29/Adreno 530）**：`:app:buildCMakeDebug[arm64]` 自 **700eeb408（#334）** 起编译失败——`driver()` 仅在 `#ifdef SONY2FUJI_FAKE_EGL_GLES` 内定义，NDK 真机构建 11 处 undeclared identifier。**Android APK 仪器测试链在真机侧从未跑通**（hosted CI Android models 不构建该 cmake 测试目标=门禁盲区，k163 候选补录）。解锁票 fix/android-device-gate 在跑（1b 段出宏+真机全套 connectedDebugAndroidTest+k173 签收表随 PR）。
+- **iOS 模拟器高占用答疑**：为自动化任务临时模拟器的正常负载（碳审/测试起停），harness 重启后 booted 清空、CPU 回落，无孤儿残留。
