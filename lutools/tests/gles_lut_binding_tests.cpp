@@ -700,6 +700,7 @@ int main(int argc, char** argv) {
                            "Custom-domain GLES output matches CPU reference");
     }
 
+#ifdef SONY2FUJI_FAKE_EGL_GLES
     // 1b. 单位域多瓦片失败语义：瓦片只有在完整成功后才提交回写；Auto 回退只补未提交
     // 尾部（不二次套 LUT），未提交任何瓦片的 Force 失败不留痕（含越界源像素）。
     // fake 上限：1024 组 × 256 线程 = 262144 px/瓦片。
@@ -774,6 +775,7 @@ int main(int argc, char** argv) {
         require(glesFailed && glesCompleted == kTilePixels,
                 "applyLutGles reports the committed watermark on mid-tile failure");
     }
+#endif // SONY2FUJI_FAKE_EGL_GLES
 
     // 2. 调用线程已有独立 draw/read surface 的 EGLContext：正常路径与提前失败路径都恢复原上下文。
     {
