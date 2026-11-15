@@ -40,6 +40,45 @@ class EditedPhotoPreviewTest {
             cache.write(key, ByteArray(10)); assertNull(cache.read(key))
         } finally { root.deleteRecursively() }
     }
+    @Test fun cacheUsesLruIndexWithoutReEnumeratingDirectory() {
+        val root = Files.createTempDirectory("rawlab-preview-lru").toFile()
+        try {
+            var listCalls = 0
+            var readCalls = 0
+            val storage = HashMap<String, ByteArray>()
+            val fakeFs = object : PreviewCacheFileSystem {
+                override fun listEntries(directory: File): List<PreviewCacheEntry> {
+                    listCalls++
+                    return emptyList()
+                }
+                override fun readBytes(file: File): ByteArray? {
+                    readCalls++
+                    return storage[file.name]
+                }
+                override fun writeAtomic(directory: File, target: File, data: ByteArray) {
+                    storage[target.name] = data
+                }
+                override fun delete(file: File): Boolean = storage.remove(file.name) != null
+            }
+            val settings = EditSettings(exposure = .5f)
+            val keyA = EditedPhotoPreviewKey.create("source-a", settings, "look-a")
+            val keyB = EditedPhotoPreviewKey.create("source-b", settings, "look-a")
+            val keyC = EditedPhotoPreviewKey.create("source-c", settings, "look-a")
+            val cache = EditedPhotoPreviewCache(root, maximumEntries = 2, maximumBytes = 1024, fileSystem = fakeFs)
+            cache.write(keyA, byteArrayOf(1))
+            cache.write(keyB, byteArrayOf(2))
+            assertEquals(1, listCalls)
+            assertArrayEquals(byteArrayOf(1), cache.read(keyA)) // touch keyA -> keyB becomes LRU
+            assertEquals(1, readCalls)
+            assertNull(cache.read(keyC)) // miss should not stat/read disk
+            assertEquals(1, readCalls)
+            cache.write(keyC, byteArrayOf(3)) // evicts keyB without re-listing directory
+            assertEquals(1, listCalls)
+            assertNotNull(cache.read(keyA))
+            assertNull(cache.read(keyB))
+            assertNotNull(cache.read(keyC))
+        } finally { root.deleteRecursively() }
+    }
     @Test fun successfulSaveAndResetNotifyAllStoreInstances() = runBlocking {
         val root = Files.createTempDirectory("rawlab-preview-events").toFile()
         try {

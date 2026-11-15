@@ -52,7 +52,8 @@ internal static class EditedPhotoPreviewKey
 }
 
 internal sealed class EditedPhotoPreviewCache(string directory, int maximumEntries = 256, long maximumBytes = 64 * 1024 * 1024,
-    Action<string, string>? moveFile = null, Action<TimeSpan>? sleep = null, Func<TimeSpan>? elapsed = null)
+    Action<string, string>? moveFile = null, Action<TimeSpan>? sleep = null, Func<TimeSpan>? elapsed = null,
+    Action<string, byte[]>? writeTemporary = null)
 {
     private readonly object gate = new();
     internal byte[]? Read(string key)
@@ -67,7 +68,10 @@ internal sealed class EditedPhotoPreviewCache(string directory, int maximumEntri
         if (data.LongLength > maximumBytes) return;
         lock (gate) {
             var path = Location(key);
-            AtomicFileWrite.Write(path, data, moveFile, sleep, elapsed);
+            AtomicFileWrite.Write(path, data,
+                writeTemporary ?? AtomicFileWrite.WriteBufferedTemporaryFile,
+                moveFile ?? AtomicFileWrite.ReplaceFile,
+                sleep, elapsed);
             var entries = new DirectoryInfo(directory).EnumerateFiles("*.preview")
                 .OrderBy(file => file.FullName == path ? 1 : 0).ThenBy(file => file.LastWriteTimeUtc).ToArray();
             var remaining = entries.Length; var bytes = entries.Sum(file => file.Length);
