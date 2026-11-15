@@ -389,6 +389,46 @@ class CameraImportStoreTest {
         assertEquals(1, fixture.media.rows.size)
     }
 
+    @Test fun perPhotoImportAppendsWalAnchorsAndMergesSnapshotOnlyAtCompletion() = withStore { fixture, store ->
+        // 两个已完成的历史任务提供跨任务去重视图；重启后由 load 一次性装入内存账本。
+        save(store, raw)
+        val otherBytes = byteArrayOf(73, 73, 42, 0, 8, 0, 0, 0) + ByteArray(100) { (it + 1).toByte() }
+        save(store, otherBytes)
+        val reopened = fixture.store()
+        reopened.load()
+        val scans = reopened.directoryScans
+        val rewrites = reopened.journalRewrites
+        val appends = reopened.walAppends
+        val job = reopened.create("camera", listOf(photo("1"), photo("2")), CameraImportDestination())
+        var current = job
+        // 内容避开历史摘要：两张都走非复用路径，计数才反映稳态写路径。
+        val bytes = listOf(raw.copyOf().also { it[20] = 11 }, raw.copyOf().also { it[20] = 22 })
+        bytes.forEachIndexed { index, content ->
+            val part = reopened.partial(job.id); part.writeBytes(content)
+            current = reopened.publish(current, index, part, hash(content), CameraTransferPermit())
+        }
+        assertEquals(CameraJobStatus.COMPLETE, current.status)
+        assertEquals("去重与抽样走内存账本，不再逐张全目录重读", scans, reopened.directoryScans)
+        assertEquals("稳态每张零全量重写：仅创建与任务完成各 1 次快照", rewrites + 2, reopened.journalRewrites)
+        assertEquals("每张只追加行级锚：非完成张 prepared+saved，完成张 prepared", appends + 3, reopened.walAppends)
+        assertFalse(File(fixture.root, "jobs/${job.id}.wal").exists()) // 完成点合并快照即截断 WAL
+    }
+
+    @Test fun truncatedWalTailIsDroppedAndOrphanWalReapedOnLoad() = withStore { fixture, store ->
+        val job = save(store)
+        val wal = File(fixture.root, "jobs/${job.id}.wal")
+        assertFalse("完成快照后 WAL 已截断", wal.exists())
+        wal.writeText("{\"i\":0,\"prepared\":") // 模拟崩溃留下的半行：重放丢弃，快照为准
+        val recovered = fixture.store().load().single()
+        assertEquals(job.id, recovered.id)
+        assertNotNull(recovered.items.single().saved)
+        assertFalse("load 折叠后重写快照时截断 WAL", wal.exists())
+        val orphan = File(fixture.root, "jobs/00000000-0000-0000-0000-00000000000f.wal")
+        orphan.writeText("{}\n")
+        fixture.store().load()
+        assertFalse("没有快照的孤儿 WAL 由 load 回收", orphan.exists())
+    }
+
     @Test fun damagedPendingMediaIsRemovedOnRecovery() = withStore { fixture, store ->
         fixture.media.failBeforePublish = true
         assertThrows(IOException::class.java) { save(store) }
@@ -444,7 +484,7 @@ class CameraImportStoreTest {
             assertThrows(IOException::class.java) { save(store, raw.copyOf().also { it[20] = 7 }) }
             fixture.media.failBeforePublish = false
             val pending = fixture.media.rows.values.single { it.pending }
-            val journal = File(fixture.root, "jobs").listFiles()!!.single { it.nameWithoutExtension != kept.id }
+            val journal = File(fixture.root, "jobs").listFiles()!!.single { it.extension == "json" && it.nameWithoutExtension != kept.id }
             damage(journal)
             val damaged = journal.readBytes()
 
@@ -468,7 +508,7 @@ class CameraImportStoreTest {
         assertThrows(IOException::class.java) { save(store, raw.copyOf().also { it[20] = 7 }) }
         fixture.media.failBeforePublish = false
         val pending = fixture.media.rows.values.single { it.pending }
-        val journal = File(fixture.root, "jobs").listFiles()!!.single { it.nameWithoutExtension != kept.id }
+        val journal = File(fixture.root, "jobs").listFiles()!!.single { it.extension == "json" && it.nameWithoutExtension != kept.id }
         journal.writeText("{broken")
         val damaged = journal.nameWithoutExtension
 
