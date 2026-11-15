@@ -8758,5 +8758,13 @@
     "fr": "{0} fichiers nettoyés, {1} libérés.",
     "es": "Se limpiaron {0} archivos y se liberaron {1}.",
     "ja": "{0} 件のファイルを整理し、{1} を解放しました。"
+  },
+  "已忽略目标不支持的普通降噪设置": {
+    "zh-Hans": "已忽略目标不支持的普通降噪设置",
+    "en": "Standard denoise settings unsupported by the target were ignored",
+    "de": "Vom Ziel nicht unterstützte Standard-Rauschunterdrückung wurde ignoriert",
+    "es": "Se han ignorado los ajustes de reducción de ruido estándar no compatibles con el destino",
+    "fr": "Les réglages de réduction du bruit standard non pris en charge par la cible ont été ignorés",
+    "ja": "対象でサポートされていない通常のノイズリダクション設定を無視しました"
   }
 }

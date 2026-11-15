@@ -14,7 +14,7 @@ PLATFORMS = {"macos", "ios", "android", "windows"}
 TARGET_KINDS = {"sdr_raw", "sdr_raster", "hdr"}
 STATUSES = {"applied", "unchanged", "rejected"}
 REASONS = {"incompatible", "unrepresentable", "missing_look"}
-NOTICES = {"ignored_raw_denoise", "ignored_post_rgb_denoise", "retained_target_processing_version"}
+NOTICES = {"ignored_target_denoise", "ignored_raw_denoise", "ignored_post_rgb_denoise", "retained_target_processing_version"}
 
 
 class TransferScenarioContracts(unittest.TestCase):
@@ -83,6 +83,22 @@ class TransferScenarioContracts(unittest.TestCase):
         self.assertEqual(set(ignored["windows"]), {"ignored_raw_denoise", "ignored_post_rgb_denoise"})
         retained = by_id["sdr-source-v1-pasted-retains-target-version"]["expect"]["notices"]
         self.assertEqual(retained, ["retained_target_processing_version"])
+
+    def test_unsupported_denoise_targets_keep_shared_coverage(self):
+        by_id = {scenario["id"]: scenario for scenario in self.scenarios}
+        for name in ("unsupported-raster-denoise-keeps-other-edits",
+                     "unsupported-non-bayer-fbdd-keeps-other-edits"):
+            self.assertEqual(set(by_id[name].get("platforms", PLATFORMS)), PLATFORMS)
+            self.assertEqual(by_id[name]["expect"]["status"], "applied")
+            self.assertIn("ignored_raw_denoise", by_id[name]["expect"]["notices"])
+        for name in ("ai-target-ignores-denoise-keeps-other-edits",
+                     "ai-target-neutral-denoise-preserves-dormant-settings",
+                     "ai-target-denoise-only-ignored-with-notice"):
+            scenario = by_id[name]
+            self.assertEqual(set(scenario["platforms"]), {"macos", "windows"})
+            self.assertTrue(scenario["target"]["ai_denoise_enabled"])
+            self.assertIn("detail.denoise.wavelet", scenario["payload"]["values"])
+        self.assertEqual(by_id["ai-target-neutral-denoise-preserves-dormant-settings"]["expect"]["notices"], [])
 
     def test_hdr_intensity_scenarios_declare_protocol_expectations(self):
         # P1① 补票：HDR 强度粘贴向量必须以 v2 payload 消费，并登记跨端 HDR 降级语义。

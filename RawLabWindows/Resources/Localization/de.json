@@ -340,6 +340,7 @@
     "已应用 AI 降噪；曝光和外观调整复用结果。": "KI-Entrauschen angewendet. Belichtungs- und Look-Anpassungen verwenden das Ergebnis erneut.",
     "已忽略旧版 RAW 降噪（FBDD）": "Frühere RAW-Rauschunterdrückung (FBDD) ignoriert",
     "已忽略渲染后 RGB 降噪": "RGB-Rauschunterdrückung nach dem Rendern ignoriert",
+    "已忽略目标不支持的普通降噪设置": "Vom Ziel nicht unterstützte Standard-Rauschunterdrückung wurde ignoriert",
     "已恢复上次调整": "Vorherige Anpassungen wiederhergestellt",
     "已撤销": "Rückgängig gemacht",
     "已收起": "Eingeklappt",

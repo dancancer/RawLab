@@ -356,6 +356,7 @@
 "已展开" = "Aufgeklappt";
 "已忽略旧版 RAW 降噪（FBDD）" = "Frühere RAW-Rauschunterdrückung (FBDD) ignoriert";
 "已忽略渲染后 RGB 降噪" = "RGB-Rauschunterdrückung nach dem Rendern ignoriert";
+"已忽略目标不支持的普通降噪设置" = "Vom Ziel nicht unterstützte Standard-Rauschunterdrückung wurde ignoriert";
 "已恢复上次调整" = "Vorherige Anpassungen wiederhergestellt";
 "已恢复已登记的接收任务。断线期间拍摄的照片请从相机手动导入。" = "Registrierte Übertragungen wurden wiederhergestellt. Importieren Sie während der Unterbrechung aufgenommene Fotos manuell von der Kamera.";
 "已撤销" = "Rückgängig gemacht";

@@ -84,8 +84,11 @@ extension IOSAdjustmentTransfer {
         // Q3：iOS 不建模解马赛克前 FBDD，收到非 0 raw_level 忽略并提示，不再拒绝。
         if let raw = payload[.rawDenoise]?.number, raw != 0 { context.transferNotices?(.ignoredRawDenoise) }
         if let post = payload[.postRGBDenoise]?.number, payload.source.isRaw || !context.isRaw {
-            guard context.isRaw || post == 0 else { throw AdjustmentTransferError.incompatible(Field.postRGBDenoise.rawValue) }
-            settings.noiseReduction = post
+            if !context.isRaw && post != 0 {
+                context.transferNotices?(.ignoredPostRGBDenoise)
+            } else {
+                settings.noiseReduction = post
+            }
         }
         if let chroma = payload[.chromaDenoise] { settings.displayChromaDenoise = Int(chroma.number ?? 0) }
         if let value = payload[.waveletDenoise] {

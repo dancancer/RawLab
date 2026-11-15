@@ -206,6 +206,12 @@ internal static class AdjustmentTransferChecks
             Check(SamePayload(seedPayload, AdjustmentPayload.Parse(seedPayload.ToJson())), $"Scenario {id}: seed payload round-trip");
             targetState = AdjustmentTransfer.Prepare(seedPayload, targetState, scenarioContext with { ValidateLens = _ => { } });
         }
+        if (targetSpec.TryGetProperty("ai_denoise_enabled", out var aiElem) && aiElem.ValueKind == JsonValueKind.True)
+        {
+            var aiSettings = targetState.Settings.Restore();
+            aiSettings.AIDenoiseEnabled = true;
+            targetState = targetState with { Settings = aiSettings.Capture() };
+        }
 
         var payload = AdjustmentPayload.Parse(scenario.GetProperty("payload").GetRawText());
         Check(SamePayload(payload, AdjustmentPayload.Parse(payload.ToJson())), $"Scenario {id}: payload round-trip");
@@ -252,6 +258,9 @@ internal static class AdjustmentTransferChecks
             diffs.Add(new(statusKey, $"status expected={expectedStatus}, actual=rejected({ErrorReason(error)}: {error.Message})"));
             return diffs;
         }
+        if (targetSpec.TryGetProperty("ai_denoise_enabled", out aiElem) && aiElem.ValueKind == JsonValueKind.True &&
+            !candidate.Settings.AIDenoiseEnabled)
+            diffs.Add(new("target_ai", "AI target flag was not preserved by paste"));
         var actualStatus = candidate.SameAs(targetState) ? "unchanged" : "applied";
         if (actualStatus != expectedStatus)
         {
@@ -291,7 +300,9 @@ internal static class AdjustmentTransferChecks
         }
         if (expectSpec.TryGetProperty("values", out var valuesElem) && valuesElem.ValueKind == JsonValueKind.Object)
         {
-            var captured = AdjustmentTransfer.Capture(AdjustmentScope.All, candidate, scenarioContext).Values;
+            var captured = candidate.Settings.AIDenoiseEnabled
+                ? AdjustmentTransferValues.Values(candidate, scenarioContext)
+                : AdjustmentTransfer.Capture(AdjustmentScope.All, candidate, scenarioContext).Values;
             foreach (var prop in valuesElem.EnumerateObject().OrderBy(p => p.Name, StringComparer.Ordinal))
             {
                 var field = AdjustmentFields.Parse(prop.Name);
@@ -580,7 +591,15 @@ internal static class AdjustmentTransferChecks
         Reject(()=>AdjustmentTransfer.Capture(AdjustmentScope.All,Edit(ai),Context),"AI all capture blocked");
         Reject(()=>AdjustmentTransfer.Capture(AdjustmentScope.Modified,Edit(ai),Context),"AI modified capture blocked");
         Check(Copy(ai,F.Exposure).Fields.Count==1,"AI custom ordinary field allowed");
-        Reject(()=>Prepare(Payload((F.ChromaDenoise,1)),ai),"ordinary denoise target AI blocked");
+        var aiDenoiseNotices=new List<AdjustmentTransferNotice>();
+        var aiDenoiseTarget=Prepare(Payload((F.ChromaDenoise,1)),ai,
+            Context with { OnTransferNotice=aiDenoiseNotices.Add });
+        Check(aiDenoiseTarget.Settings.AIDenoiseEnabled &&
+              aiDenoiseTarget.Settings.Denoise == ai.Denoise &&
+              aiDenoiseTarget.Settings.DisplayChromaDenoise == ai.DisplayChromaDenoise,
+            "ordinary denoise target AI preserves dormant denoise settings and AI state");
+        Check(aiDenoiseNotices.Contains(AdjustmentTransferNotice.IgnoredTargetDenoise),
+            "ordinary denoise target AI reports the generic ignored-target notice");
         Check(Prepare(Payload((F.Exposure,1)),ai).Settings.AIDenoiseEnabled,"other fields preserve AI");
         Console.WriteLine("PASS: Windows recipe, partial fields, WB, lens, denoise and AI transfer boundaries");
     }

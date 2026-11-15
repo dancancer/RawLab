@@ -15,6 +15,7 @@ enum AdjustmentTransferError: Error, Equatable {
 enum AdjustmentTransferNotice: Equatable, Hashable {
     case ignoredRawDenoise
     case ignoredPostRGBDenoise
+    case ignoredTargetDenoise
     case retainedTargetProcessingVersion
 
     // 共享场景 fixture（adjustment-transfer-scenarios-v1.json expect.notices）的稳定标识。
@@ -22,6 +23,7 @@ enum AdjustmentTransferNotice: Equatable, Hashable {
         switch self {
         case .ignoredRawDenoise: return "ignored_raw_denoise"
         case .ignoredPostRGBDenoise: return "ignored_post_rgb_denoise"
+        case .ignoredTargetDenoise: return "ignored_target_denoise"
         case .retainedTargetProcessingVersion: return "retained_target_processing_version"
         }
     }
@@ -31,6 +33,7 @@ enum AdjustmentTransferNotice: Equatable, Hashable {
         switch self {
         case .ignoredRawDenoise: return "已忽略旧版 RAW 降噪（FBDD）"
         case .ignoredPostRGBDenoise: return "已忽略渲染后 RGB 降噪"
+        case .ignoredTargetDenoise: return "已忽略目标不支持的普通降噪设置"
         case .retainedTargetProcessingVersion: return "处理版本与来源不同，已沿用当前照片的处理版本"
         }
     }

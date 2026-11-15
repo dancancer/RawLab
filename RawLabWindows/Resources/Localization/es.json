@@ -340,6 +340,7 @@
     "已应用 AI 降噪；曝光和外观调整复用结果。": "Reducción de ruido con IA aplicada. Los ajustes de exposición y apariencia reutilizan el resultado.",
     "已忽略旧版 RAW 降噪（FBDD）": "Reducción de ruido RAW heredada (FBDD) ignorada",
     "已忽略渲染后 RGB 降噪": "Reducción de ruido RGB posterior al renderizado ignorada",
+    "已忽略目标不支持的普通降噪设置": "Se han ignorado los ajustes de reducción de ruido estándar no compatibles con el destino",
     "已恢复上次调整": "Ajustes anteriores restaurados",
     "已撤销": "Deshecho",
     "已收起": "Contraído",

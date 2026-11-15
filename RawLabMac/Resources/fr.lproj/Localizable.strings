@@ -364,6 +364,7 @@
 "已开启" = "Activé";
 "已忽略旧版 RAW 降噪（FBDD）" = "Réduction du bruit RAW héritée (FBDD) ignorée";
 "已忽略渲染后 RGB 降噪" = "Réduction du bruit RVB post-rendu ignorée";
+"已忽略目标不支持的普通降噪设置" = "Les réglages de réduction du bruit standard non pris en charge par la cible ont été ignorés";
 "已恢复上次调整" = "Réglages précédents restaurés";
 "已撤销" = "Annulé";
 "已撤销 %@ 张 · 未完成 %@ 张" = "Annulées %@ · Inachevées %@";
