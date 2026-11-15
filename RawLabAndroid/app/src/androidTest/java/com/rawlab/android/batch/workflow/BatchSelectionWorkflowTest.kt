@@ -51,11 +51,13 @@ class BatchSelectionWorkflowTest {
             screenshot("collection")
             compose.onNodeWithTag("collection-sync").assertIsNotEnabled()
             compose.onNodeWithTag("collection-edit-$uri").performClick()
+            compose.waitUntil(60_000) { model.collection.value.currentID == uri.toString() && model.state.value.controlsEnabled }
             compose.runOnUiThread { model.edit(model.state.value.edits.copy(exposure = .4f)) }
             compose.waitUntil(60_000) { model.state.value.canExport }
             compose.onNode(hasContentDescription(AppStrings.text(R.string.more)) and
                 !hasAnyAncestor(hasTestTag("adjustment-dock"))).performClick()
             compose.onNodeWithTag("collection-menu").performClick()
+            compose.waitUntil(60_000) { model.collection.value.currentID == null && !model.collection.value.busy }
             assertEquals(setOf(uri.toString()), model.collection.value.selected)
             compose.onNodeWithTag("collection-export").performClick()
             compose.onNodeWithTag("collection-export-start").assertIsDisplayed().assertIsEnabled()

@@ -131,3 +131,14 @@ class BatchSelectionExport(private val directory: File,
         } catch (error: Throwable) { journal.discard(id); throw error }
     }
 }
+
+internal suspend fun prepareCollectionReview(
+    awaitPending: suspend () -> Unit = {},
+    captureActiveValidation: () -> (String) -> Unit,
+    runPrepare: suspend ((String) -> Unit) -> CollectionExportReview,
+): CollectionExportReview {
+    // 预检必须在已提交的编辑落盘后再捕获活动状态与读盘，避免读到旧/空记录。
+    awaitPending()
+    val validateActive = captureActiveValidation()
+    return runPrepare(validateActive)
+}
