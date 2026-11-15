@@ -262,7 +262,7 @@ struct ContentView: View {
         }) { pending in
             IOSLUTCompatibilityView(source: pending.source, draft: pending.draft,
                 initialPhoto: viewModel.sourceFile.map { file in
-                    LUTPreviewSource(name: file.displayName) { destination in
+                    LUTPreviewSource(name: file.displayName, localURL: file.persistentLocalURL) { destination in
                         try file.withReadAccess { try FileManager.default.copyItem(at: $0, to: destination) }
                     }
                 }) { result in
