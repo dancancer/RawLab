@@ -288,7 +288,9 @@ cannot forge: the run `event`, `head_repository.full_name`, and the queued jobs'
 `labels` (a job is only claimable when its label set is one this machine actually
 registers). A run may reach the physical machine only when it is a `push` on this
 repository or an operator admitted it through the `RAWLAB_JIT_ALLOWLIST` environment
-variable (comma-separated run ids, head repositories, or `head-repo:branch`). Claimed
+variable (comma-separated `@<head_sha>`-pinned targets: `pr#<number>@<head_sha>`,
+`<run_id>@<head_sha>`, `<head-repo>@<head_sha>`, or `<head-repo>:<head-branch>@<head_sha>`;
+unpinned entries or `head_sha` mismatches are refused). Claimed
 runs get a `POST .../runners/generate-jitconfig` registration (`name` +
 `runner_group_id` + `labels`; a 2026-11-14 live probe against API version 2022-11-28
 pinned the contract: omitting the group answers 422, the response field is
@@ -318,17 +320,20 @@ execute unreviewed queue contents unconditionally.
   `--runner-dir ~/jit-runner` for the real launch). The dispatcher starts `./run.sh`
   from the archive root with the config in `ACTIONS_RUNNER_INPUT_JITCONFIG` —
   `./runsvc.sh` at the root exists only after `svc.sh install`, and `--launch-command
-  ./bin/runsvc.sh` is the service-mode override; then copy
+  ./bin/runsvc.sh` is the service-mode override; store `RAWLAB_JIT_TOKEN=<PAT>` in a `0600`
+  env file (`mkdir -p ~/RawLabCI && chmod 600 ~/RawLabCI/jit.env`) instead of putting the
+  plaintext token in the plist, then copy
   [`scripts/ci/launchd/com.rawlab.jit-dispatcher.plist`](../../scripts/ci/launchd/com.rawlab.jit-dispatcher.plist)
-  to `~/Library/LaunchAgents/`, adjust the paths and the token placeholder (keep the
-  file `0600`), and load it with `launchctl bootstrap gui/$(id -u)
-  ~/Library/LaunchAgents/com.rawlab.jit-dispatcher.plist`. The token needs repository
+  to `~/Library/LaunchAgents/`, adjust the host paths (keeping `RAWLAB_JIT_ENV_FILE` pointing
+  at `jit.env`), and load it with `launchctl bootstrap gui/$(id -u)
+  ~/Library/LaunchAgents/com.rawlab.jit-dispatcher.plist`. The dispatcher strips
+  `RAWLAB_JIT_TOKEN`, `GITHUB_TOKEN`, and `GH_TOKEN` from the runner child environment. The token needs repository
   `Administration` (write) for `generate-jitconfig` plus `Actions` (read) for the
   queue poll on fine-grained PATs — `Actions: write` alone answers 403 on the dispatch
   POST — or the classic `repo` scope. Same-repository `pull_request` and
-  `workflow_dispatch` (manual *Run workflow*) jobs are not push events, so add the run
-  id — or the repository name for a transitional window — to `RAWLAB_JIT_ALLOWLIST` if
-  this machine must keep serving them.
+  `workflow_dispatch` (manual *Run workflow*) jobs are not push events, so add the
+  `@<head_sha>`-pinned entry (`pr#<number>@<head_sha>` or `<run_id>@<head_sha>`) to
+  `RAWLAB_JIT_ALLOWLIST` if this machine must keep serving them.
 - **Disable**: `launchctl bootout gui/$(id -u)/com.rawlab.jit-dispatcher`, remove the
   copied plist, and restart the resident `Runner.Listener` agent; the fresh
   `~/jit-runner` directory can stay for the next activation. Queued jobs resume being

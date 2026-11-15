@@ -33,6 +33,7 @@ import os
 import shlex
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import time
@@ -61,8 +62,10 @@ DEFAULT_RUNNER_TIMEOUT = 6 * 3600
 # Page size and upper page bound for Actions REST pagination (1,000 items max per query).
 DEFAULT_PAGE_SIZE = 100
 MAX_PAGES = 10
+# Default 0600 env file for the dispatcher PAT (never stored in launchd plists).
+DEFAULT_ENV_FILE = "~/RawLabCI/jit.env"
 # Dispatcher credentials stripped from runner child environments before launching ./run.sh.
-STRIPPED_ENV_VARS = ("RAWLAB_JIT_TOKEN", "GITHUB_TOKEN")
+STRIPPED_ENV_VARS = ("RAWLAB_JIT_TOKEN", "GITHUB_TOKEN", "GH_TOKEN")
 
 Decision = namedtuple("Decision", ("dispatch", "reason"))
 
@@ -72,17 +75,64 @@ def parse_allowlist(value):
     return {entry.strip().lower() for entry in (value or "").split(",") if entry.strip()}
 
 
-def allowlist_match(run, allowlist):
-    """Return the allowlist entry naming this run, matched only on server-side fields.
-
-    An entry is the run id, the head repository full name, or ``head-repo:head-branch``.
-    The operator adds entries after reviewing a run; the workflow YAML has no say here."""
-    head_repo = ((run.get("head_repository") or {}).get("full_name") or "").lower()
-    candidates = {str(run.get("id", "")).lower()}
+def _allowlist_targets(run):
+    """Server-side target keys for allowlist matching (run id, PR#, head repo, head repo:branch)."""
+    targets = set()
+    run_id = str(run.get("id", "")).strip().lower()
+    if run_id:
+        targets.add(run_id)
+    for pr in run.get("pull_requests") or []:
+        number = pr.get("number") if isinstance(pr, dict) else None
+        if number is not None and str(number).strip():
+            targets.add(f"pr#{str(number).strip().lower()}")
+    head_repo = ((run.get("head_repository") or {}).get("full_name") or "").strip().lower()
     if head_repo:
-        candidates |= {head_repo, f"{head_repo}:{(run.get('head_branch') or '').lower()}"}
-    matched = candidates & {entry.lower() for entry in allowlist}
-    return sorted(matched)[0] if matched else ""
+        targets.add(head_repo)
+        head_branch = (run.get("head_branch") or "").strip().lower()
+        if head_branch:
+            targets.add(f"{head_repo}:{head_branch}")
+    return targets
+
+
+def _check_allowlist(run, allowlist):
+    """Evaluate allowlist entries with mandatory @head_sha pinning.
+
+    Returns ``(Decision, matched_entry)`` where ``Decision`` is ``None`` when no entry targets
+    this run. Entries without ``@<head_sha>`` or with a mismatched ``head_sha`` fail closed."""
+    targets = _allowlist_targets(run)
+    if not targets or not allowlist:
+        return None, ""
+    actual_sha = (run.get("head_sha") or "").strip().lower()
+    normalized = sorted({entry.strip().lower() for entry in allowlist if entry.strip()})
+    mismatched = None
+    unpinned = None
+    for entry in normalized:
+        if "@" not in entry:
+            if entry in targets and unpinned is None:
+                unpinned = entry
+            continue
+        target, expected_sha = entry.rsplit("@", 1)
+        if target not in targets:
+            continue
+        if expected_sha and actual_sha and actual_sha == expected_sha:
+            return Decision(True, f"allowlisted ({entry})"), entry
+        if mismatched is None:
+            mismatched = entry
+    if mismatched is not None:
+        return Decision(False, f"allowlist head_sha mismatch ({mismatched}: got {actual_sha or 'none'})"), ""
+    if unpinned is not None:
+        return Decision(False, f"allowlist entry missing @head_sha ({unpinned})"), ""
+    return None, ""
+
+
+def allowlist_match(run, allowlist):
+    """Return the allowlist entry admitting this run, matched only on server-side fields + head_sha.
+
+    An entry must pin ``@<head_sha>`` onto ``pr#<number>``, the run id, the head repository full
+    name, or ``head-repo:head-branch``. The operator adds entries after reviewing a commit; the
+    workflow YAML has no say here."""
+    _decision, entry = _check_allowlist(run, allowlist)
+    return entry
 
 
 def open_runner_jobs(jobs, runner_label, runner_labels=DEFAULT_RUNNER_LABELS.split(",")):
@@ -100,11 +150,11 @@ def trusted_run(run, *, repo=DEFAULT_REPO, allowlist=frozenset()):
     """Hard-check server metadata for run trust without consulting job payloads.
 
     Trust comes only from GitHub: a push on this repository's own branches, or an explicit
-    allowlist entry. Nothing read from the run's YAML (jobs, steps, if-conditions) is consulted,
-    because a fork PR ships its own YAML."""
-    entry = allowlist_match(run, allowlist)
-    if entry:
-        return Decision(True, f"allowlisted ({entry})")
+    head_sha-pinned allowlist entry. Nothing read from the run's YAML (jobs, steps,
+    if-conditions) is consulted, because a fork PR ships its own YAML."""
+    allowlist_decision, _entry = _check_allowlist(run, allowlist)
+    if allowlist_decision is not None:
+        return allowlist_decision
     head_repo = (run.get("head_repository") or {}).get("full_name") or ""
     event = run.get("event") or "none"
     if run.get("event") == "push" and head_repo.lower() == repo.lower():
@@ -136,6 +186,11 @@ def next_dispatch(runs, jobs_of, *, repo=DEFAULT_REPO, runner_label=DEFAULT_RUNN
     untrusted, log it and return ``None`` with zero ``/jobs`` requests. Tradeoff: trusted dispatches
     wait while an untrusted run remains active (acceptable on this low-fork-traffic repo, with
     GitHub's 24h queued-run expiration as the automatic backstop)."""
+    # Post-#316 FIFO preemption audit: `ordered` sorts by `(created_at, id)` oldest-first and
+    # Loop 1 pre-scans every active (`queued` + `in_progress`) run with `trusted_run()` before any
+    # `/jobs` or dispatch call. No newer untrusted run can bypass the barrier, and no newer trusted
+    # run can preempt an older queued trusted run (only `await-planning` runs with zero visible
+    # jobs yet are skipped until their jobs appear).
     ordered = sorted(runs, key=lambda run: (run.get("created_at") or "", run.get("id") or 0))
     for run in ordered:
         trust = trusted_run(run, repo=repo, allowlist=allowlist)
@@ -158,7 +213,8 @@ def launch_runner(config, runner_dir=".", argv=None, timeout=DEFAULT_RUNNER_TIME
     ``./runsvc.sh`` exists only after ``svc.sh install``, while ``run.sh`` ships in the archive
     root and forwards to ``Runner.Listener run``. The configuration travels only through
     ACTIONS_RUNNER_INPUT_JITCONFIG (never argv, so a long job does not expose it in `ps`);
-    dispatcher PAT variables are stripped so job steps never inherit them;
+    dispatcher PAT variables (RAWLAB_JIT_TOKEN, GITHUB_TOKEN, GH_TOKEN) are stripped so job
+    steps and same-UID child processes never inherit them;
     GITHUB_ACTIONS_SERVICE_EXIT_AFTER_N_FAILURES=1 guards the runsvc.sh override mode against
     retry loops. The process leads its own group so the timeout backstop can SIGTERM the whole
     tree (run.sh traps TERM into a graceful listener stop) instead of orphaning the listener."""
@@ -282,6 +338,34 @@ def dispatch(run, api, *, runner_label=DEFAULT_RUNNER_LABEL, runner_labels=DEFAU
     return code
 
 
+def load_env_file(path):
+    """Load key=value pairs from a 0600-restricted env file without mutating os.environ."""
+    expanded = os.path.expanduser(path)
+    st = os.stat(expanded)
+    mode = stat.S_IMODE(st.st_mode)
+    if mode & 0o077:
+        raise RuntimeError(
+            f"env file '{expanded}' has mode {oct(mode)}; expected 0600 (run: chmod 600 {expanded})")
+    values = {}
+    with open(expanded, encoding="utf-8") as handle:
+        for raw in handle:
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[len("export "):].lstrip()
+            if "=" not in line:
+                continue
+            key, val = line.split("=", 1)
+            key = key.strip()
+            val = val.strip()
+            if len(val) >= 2 and val[0] == val[-1] and val[0] in ("'", '"'):
+                val = val[1:-1]
+            if key:
+                values[key] = val
+    return values
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Poll the Actions queue and hand only trusted runs to ephemeral runners.")
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", DEFAULT_REPO))
@@ -292,9 +376,11 @@ def main(argv=None):
     parser.add_argument("--runner-group-id", type=int, default=DEFAULT_RUNNER_GROUP_ID,
                         help="repository runner group id (required by the API; default: %(default)s)")
     parser.add_argument("--allow", action="append", default=[],
-                        help="extra allowlist entry (run id, head repo, or head-repo:branch); repeatable")
+                        help="extra allowlist entry (pr#<n>@<sha>, <run_id>@<sha>, <repo>@<sha>, or <repo>:<branch>@<sha>); repeatable")
     parser.add_argument("--allowlist-env", default="RAWLAB_JIT_ALLOWLIST",
                         help="environment variable holding the comma-separated allowlist")
+    parser.add_argument("--env-file", default=os.environ.get("RAWLAB_JIT_ENV_FILE", ""),
+                        help=f"0600 env file holding RAWLAB_JIT_TOKEN (default fallback: {DEFAULT_ENV_FILE})")
     parser.add_argument("--runner-dir", default=".",
                         help="fresh runner archive directory for JIT only (with .path/.env copied from the "
                              "provisioned resident runner; keep the resident directory itself separate)")
@@ -311,12 +397,28 @@ def main(argv=None):
                         help="single queue pass (dispatches at most one job unless --dry-run), then exit")
     parser.add_argument("--dry-run", action="store_true", help="decide without spending JIT registrations")
     args = parser.parse_args(argv)
-    token = os.environ.get("RAWLAB_JIT_TOKEN") or os.environ.get("GITHUB_TOKEN", "")
+    env_values = {}
+    if args.env_file:
+        try:
+            env_values = load_env_file(args.env_file)
+        except (OSError, RuntimeError) as error:
+            print(f"failed to load --env-file: {error}", file=sys.stderr)
+            return 2
+    token = env_values.get("RAWLAB_JIT_TOKEN") or env_values.get("GITHUB_TOKEN") or os.environ.get("RAWLAB_JIT_TOKEN") or os.environ.get("GITHUB_TOKEN", "")
+    if not token and not args.env_file and os.path.exists(os.path.expanduser(DEFAULT_ENV_FILE)):
+        try:
+            env_values = load_env_file(DEFAULT_ENV_FILE)
+        except (OSError, RuntimeError) as error:
+            print(f"failed to load default env file: {error}", file=sys.stderr)
+            return 2
+        token = env_values.get("RAWLAB_JIT_TOKEN") or env_values.get("GITHUB_TOKEN", "")
     if not token:
-        print("Set RAWLAB_JIT_TOKEN (fine-grained PAT: repository Administration write plus Actions "
-              "read; classic PAT: repo scope).", file=sys.stderr)
+        print("Set RAWLAB_JIT_TOKEN in a 0600 env file (RAWLAB_JIT_ENV_FILE / ~/RawLabCI/jit.env) or "
+              "environment (fine-grained PAT: repository Administration write plus Actions read; "
+              "classic PAT: repo scope).", file=sys.stderr)
         return 2
-    allowlist = parse_allowlist(os.environ.get(args.allowlist_env, "")) | parse_allowlist(",".join(args.allow))
+    allowlist_raw = os.environ.get(args.allowlist_env, "") or env_values.get(args.allowlist_env, "")
+    allowlist = parse_allowlist(allowlist_raw) | parse_allowlist(",".join(args.allow))
     labels = [label.strip() for label in args.runner_labels.split(",") if label.strip()]
     api = ActionsAPI(token, repo=args.repo)
     logged = set()
