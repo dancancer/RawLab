@@ -723,6 +723,23 @@ final class CameraOriginalStore {
                     try FileManager.default.removeItem(at: file)
                 }
             }
+            // 清扫未被 manifest state.originals 引用的孤儿 UUID 目录（与上方 .prepared 恢复协同，避免误删已引用目录）。
+            let referencedIDs = Set(state.originals.map(\.id))
+            var removedOrphans = false
+            for entry in try FileManager.default.contentsOfDirectory(
+                at: originalsDirectory,
+                includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]
+            ) {
+                let values = try entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+                guard values.isDirectory == true, values.isSymbolicLink != true,
+                      let entryID = UUID(uuidString: entry.lastPathComponent),
+                      !referencedIDs.contains(entryID) else { continue }
+                try FileManager.default.removeItem(at: entry)
+                removedOrphans = true
+            }
+            if removedOrphans {
+                syncDirectory(originalsDirectory)
+            }
         }
     }
 
@@ -811,23 +828,27 @@ final class CameraOriginalStore {
         }
     }
     func acknowledgeShutter(owner: UUID) throws {
-        try change {
+        try locked {
             guard state.tether?.shutterOwner == owner else { return }
-            state.tether?.shutterAcknowledged = true
+            try change { state.tether?.shutterAcknowledged = true }
         }
     }
     func clearUnsentShutter(owner: UUID) throws {
-        try change {
+        try locked {
             guard state.tether?.shutterOwner == owner, state.tether?.shutterAcknowledged == false else { return }
-            state.tether?.shutterRequestedAt = nil; state.tether?.shutterOwner = nil; state.tether?.shutterJobs = []
+            try change {
+                state.tether?.shutterRequestedAt = nil; state.tether?.shutterOwner = nil; state.tether?.shutterJobs = []
+            }
         }
     }
     func finishConfirmedShutter(owner: UUID) throws {
-        try change {
+        try locked {
             guard let tether = state.tether, tether.shutterOwner == owner, tether.shutterAcknowledged,
                   !tether.shutterJobs.isEmpty, tether.shutterJobs.allSatisfy({ id in state.jobs.first { $0.id == id }?.complete == true }) else { return }
-            state.tether?.shutterRequestedAt = nil; state.tether?.shutterOwner = nil
-            state.tether?.shutterAcknowledged = false; state.tether?.shutterJobs = []
+            try change {
+                state.tether?.shutterRequestedAt = nil; state.tether?.shutterOwner = nil
+                state.tether?.shutterAcknowledged = false; state.tether?.shutterJobs = []
+            }
         }
     }
 }

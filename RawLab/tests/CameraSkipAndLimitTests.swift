@@ -3,6 +3,7 @@ import CryptoKit
 import ImageIO
 import CoreGraphics
 import SwiftUI
+import Darwin
 
 #if os(macOS)
 struct UIImage {
@@ -68,6 +69,7 @@ final class FakeSonyCameraChannel: CameraByteChannel {
     private(set) var objectInfoCalls = 0
     private(set) var shutterCommands = 0
     var onShutter: (() -> Void)?
+    var onMobileDownloadChunk: ((String, Int) -> Void)?
     private var pendingOutgoing: [UInt32: (op: UInt16, param: UInt32)] = [:]
     private var dropNextRead = false
 
@@ -111,36 +113,48 @@ final class FakeSonyCameraChannel: CameraByteChannel {
     }
 
     func write(_ data: Data) throws {
+        var postRespondHook: (() -> Void)?
         lock.lock()
-        defer { lock.unlock() }
-        guard !closed else { throw CameraProtocolError.disconnected }
-        var reader = CameraDataReader(data)
-        let length = Int(try reader.u32())
-        let packetType = try reader.u32()
-        guard length == data.count else { throw CameraProtocolError.invalid("Invalid test packet length") }
-        if packetType == 14 || packetType == 9 { return }
-        if packetType == 12 {
-            let tid = try reader.u32()
-            let val = reader.remaining >= 2 ? try reader.u16() : 0
-            if let pending = pendingOutgoing.removeValue(forKey: tid),
-               pending.op == 0x9207, pending.param == 0xd2c2, val == 2 {
-                onShutter?()
+        do {
+            guard !closed else { throw CameraProtocolError.disconnected }
+            var reader = CameraDataReader(data)
+            let length = Int(try reader.u32())
+            let packetType = try reader.u32()
+            guard length == data.count else { throw CameraProtocolError.invalid("Invalid test packet length") }
+            if packetType == 14 || packetType == 9 {
+                lock.unlock()
+                return
             }
-            appendResponse(tid)
-            return
+            if packetType == 12 {
+                let tid = try reader.u32()
+                let val = reader.remaining >= 2 ? try reader.u16() : 0
+                if let pending = pendingOutgoing.removeValue(forKey: tid),
+                   pending.op == 0x9207, pending.param == 0xd2c2, val == 2 {
+                    onShutter?()
+                }
+                appendResponse(tid)
+                lock.unlock()
+                return
+            }
+            guard packetType == 6 else { throw CameraProtocolError.invalid("Unexpected test request packet \(packetType)") }
+            let dataPhase = try reader.u32()
+            let op = try reader.u16()
+            let tid = try reader.u32()
+            var params: [UInt32] = []
+            while reader.remaining >= 4 { params.append(try reader.u32()) }
+            if dataPhase == 2 {
+                if op == 0x9207 { shutterCommands += 1 }
+                pendingOutgoing[tid] = (op, params.first ?? 0)
+                lock.unlock()
+                return
+            }
+            postRespondHook = try respond(op: op, tid: tid, params: params)
+        } catch {
+            lock.unlock()
+            throw error
         }
-        guard packetType == 6 else { throw CameraProtocolError.invalid("Unexpected test request packet \(packetType)") }
-        let dataPhase = try reader.u32()
-        let op = try reader.u16()
-        let tid = try reader.u32()
-        var params: [UInt32] = []
-        while reader.remaining >= 4 { params.append(try reader.u32()) }
-        if dataPhase == 2 {
-            if op == 0x9207 { shutterCommands += 1 }
-            pendingOutgoing[tid] = (op, params.first ?? 0)
-            return
-        }
-        try respond(op: op, tid: tid, params: params)
+        lock.unlock()
+        postRespondHook?()
     }
 
     func close() {
@@ -228,7 +242,7 @@ final class FakeSonyCameraChannel: CameraByteChannel {
         return out
     }
 
-    private func respond(op: UInt16, tid: UInt32, params: [UInt32]) throws {
+    private func respond(op: UInt16, tid: UInt32, params: [UInt32]) throws -> (() -> Void)? {
         switch op {
         case 0x1001:
             appendResponse(tid, data: deviceDataset())
@@ -279,7 +293,7 @@ final class FakeSonyCameraChannel: CameraByteChannel {
             objectInfoCalls += 1
             guard let handle = params.first, let entry = entries.first(where: { $0.content == handle }) else {
                 appendResponse(tid, code: 0x2009)
-                return
+                return nil
             }
             appendResponse(tid, data: legacyObjectInfo(entry))
         case 0x923c:
@@ -292,16 +306,16 @@ final class FakeSonyCameraChannel: CameraByteChannel {
             let file = op == 0x923d ? (params[1] & 0xffff) : 1
             guard let entry = entries.first(where: { $0.content == content && (op == 0x1009 || $0.file == file) }) else {
                 appendResponse(tid, code: 0x2009)
-                return
+                return nil
             }
             downloadAttempts[entry.name, default: 0] += 1
             if entry.dropConnectionOnDownload {
                 dropNextRead = true
-                return
+                return nil
             }
             if let code = entry.downloadResponseCode {
                 appendResponse(tid, code: code)
-                return
+                return nil
             }
             if op == 0x923d {
                 let offset = Int(UInt64(params[2]) | (UInt64(params[3]) << 32))
@@ -318,6 +332,9 @@ final class FakeSonyCameraChannel: CameraByteChannel {
                 mobileRangeReads[entry.name, default: []].append(offset..<end)
                 bytesReadByName[entry.name, default: 0] += slice.count
                 appendResponse(tid, data: slice)
+                if let hook = onMobileDownloadChunk {
+                    return { hook(entry.name, offset) }
+                }
             } else {
                 legacyFullReads[entry.name, default: 0] += 1
                 bytesReadByName[entry.name, default: 0] += entry.bytes.count
@@ -326,6 +343,7 @@ final class FakeSonyCameraChannel: CameraByteChannel {
         default:
             appendResponse(tid, code: 0x2005)
         }
+        return nil
     }
 }
 
@@ -434,6 +452,18 @@ struct CameraSkipAndLimitTests {
 
     static func main() async {
         do {
+            #if os(macOS)
+            if let index = CommandLine.arguments.firstIndex(of: "--p222-crash-child"),
+               index + 1 < CommandLine.arguments.count {
+                try await runP222CrashChild(rootPath: CommandLine.arguments[index + 1])
+                return
+            }
+            if let index = CommandLine.arguments.firstIndex(of: "--p222-orphan-crash-child"),
+               index + 1 < CommandLine.arguments.count {
+                try await runP222OrphanCrashChild(rootPath: CommandLine.arguments[index + 1])
+                return
+            }
+            #endif
             try await runAll()
         } catch {
             fputs("FAIL: \(error.localizedDescription)\n", stderr)
@@ -444,7 +474,7 @@ struct CameraSkipAndLimitTests {
     @MainActor static func runAll() async throws {
         UserDefaults.standard.set("zh-Hans", forKey: L10n.preferenceKey)
         defer { UserDefaults.standard.removeObject(forKey: fakeCameraPrefsKey) }
-        let suite: [(String, () async throws -> Void)] = [
+        var suite: [(String, () async throws -> Void)] = [
             ("testI13BadHeaderContinuesAndSkipsWithoutAdvancingCheckpointPastBadItem", testI13BadHeaderContinuesAndSkipsWithoutAdvancingCheckpointPastBadItem),
             ("testI13PerObjectPTPErrorContinuesWhileConnectionErrorsAbort", testI13PerObjectPTPErrorContinuesWhileConnectionErrorsAbort),
             ("testI15PhotoLimitExceededOnMobileAndLegacyKeepsConnectionUsable", testI15PhotoLimitExceededOnMobileAndLegacyKeepsConnectionUsable),
@@ -458,8 +488,12 @@ struct CameraSkipAndLimitTests {
             ("testIN6TetheringPhotoLimitExceededKeepsSessionAliveAndRecovers", testIN6TetheringPhotoLimitExceededKeepsSessionAliveAndRecovers),
             ("testIN6TetheringResumeLimitAndExactBoundary10000To10001AndLanguageSwitch", testIN6TetheringResumeLimitAndExactBoundary10000To10001AndLanguageSwitch),
             ("testP222ManifestWritesCoalescedToOneBatchWrite", testP222ManifestWritesCoalescedToOneBatchWrite),
+            ("testP222OrphanRecoveryAndPerPhotoDurability", testP222OrphanRecoveryAndPerPhotoDurability),
             ("testP222PerformBatchPersistFailureRollbackAndRecovery", testP222PerformBatchPersistFailureRollbackAndRecovery)
         ]
+        #if os(macOS)
+        suite.append(("testP222HardExitSubprocessDurabilityAndOrphanCleanup", testP222HardExitSubprocessDurabilityAndOrphanCleanup))
+        #endif
         var failures: [(String, String)] = []
         for (name, testCase) in suite {
             do {
@@ -1428,7 +1462,7 @@ struct CameraSkipAndLimitTests {
         let endpoint = IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:P2-22", label: "Fake")
         let baseMillis = UInt64(Date().timeIntervalSince1970 * 1000) + 10_000
 
-        // 1) Importing N = 5 new photos must coalesce enqueue + begin/sourceDigest/prepared/saved into 1 batch manifest write.
+        // 1) Importing N = 5 new photos writes 1 (enqueue) + N (1 coalesced write per photo) = N + 1 = 6 times.
         do {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-p222-ok-\(UUID().uuidString)")
             defer { try? FileManager.default.removeItem(at: root) }
@@ -1459,8 +1493,8 @@ struct CameraSkipAndLimitTests {
             controller.startIncremental(scan)
             try await waitUntil { controller.phase == .browsing && store.snapshot.originals.count == 5 }
             let writesForFivePhotos = readWrites()
-            try check(writesForFivePhotos == 1,
-                      "P2-22: Batch import of N=5 photos writes manifest.json 1 time (actual: \(writesForFivePhotos))")
+            try check(writesForFivePhotos == 6,
+                      "P2-22: Batch import of N=5 photos writes manifest.json N+1=6 times (1 enqueue + 1 per photo; actual: \(writesForFivePhotos))")
             for original in store.snapshot.originals {
                 _ = try store.verifiedURL(original.id)
             }
@@ -1470,8 +1504,7 @@ struct CameraSkipAndLimitTests {
             await drainBackend(backend)
         }
 
-        // Verify the coalesced manifest on disk reloads cleanly with all 5 saved originals intact.
-        // 2) Mixed failure batch (N = 4 photos, item 2 bad header -> failed, items 1/3/4 saved) ALSO coalesces into 1 batch write.
+        // 2) Mixed failure batch (N = 4 photos, item 2 bad header -> failed, items 1/3/4 saved) writes 1 (enqueue) + 4 = 5 times.
         do {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-p222-mixed-\(UUID().uuidString)")
             defer { try? FileManager.default.removeItem(at: root) }
@@ -1503,8 +1536,8 @@ struct CameraSkipAndLimitTests {
                 controller.startIncremental(controller.incrementalScan(customCutoff: Date(timeIntervalSince1970: Double(baseMillis) / 1000), includeUndated: false))
                 try await waitUntil { controller.phase == .browsing && store.snapshot.originals.count == 3 }
                 let writes = readWrites()
-                try check(writes == 1 && store.snapshot.jobs[0].failedItems.count == 1,
-                          "P2-22: Mixed batch (3 saved + 1 failed) coalesces into 1 manifest write (actual: \(writes))")
+                try check(writes == 5 && store.snapshot.jobs[0].failedItems.count == 1,
+                          "P2-22: Mixed batch (N=4: 3 saved + 1 failed) writes N+1=5 times (actual: \(writes))")
                 await withCheckedContinuation { continuation in
                     controller.stop { continuation.resume() }
                 }
@@ -1512,7 +1545,7 @@ struct CameraSkipAndLimitTests {
             }
             try await runMixedBatch()
 
-            // Reopen from disk to prove the single coalesced write durably saved all state and published files.
+            // Reopen from disk to prove per-photo manifests durably saved all state and published files.
             let reopened = try CameraOriginalStore(directory: root)
             try check(reopened.snapshot.originals.count == 3 &&
                       reopened.snapshot.originals.allSatisfy { $0.availability == .available } &&
@@ -1524,7 +1557,8 @@ struct CameraSkipAndLimitTests {
             }
         }
 
-        // 3) Transient interruption mid-batch (N = 3 photos, item 2 shortChunkCount: 1) STILL coalesces into 1 write.
+        // 3) Transient interruption mid-batch (N = 3 photos, item 2 shortChunkCount: 1) writes 1 (enqueue) + 2 processed = 3,
+        // and resumeImport for the remaining 2 items writes 2 times (1 per resumed photo).
         do {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-p222-int-\(UUID().uuidString)")
             defer { try? FileManager.default.removeItem(at: root) }
@@ -1553,20 +1587,412 @@ struct CameraSkipAndLimitTests {
             resetWrites()
             controller.startIncremental(controller.incrementalScan(customCutoff: Date(timeIntervalSince1970: Double(baseMillis) / 1000), includeUndated: false))
             try await waitUntil {
-                controller.phase == .browsing && store.snapshot.jobs.last?.items[1].phase == .interrupted
+                controller.phase == .browsing && controller.manifest.jobs.last?.items[1].phase == .interrupted
             }
             let writesForInterruptedBatch = readWrites()
-            try check(writesForInterruptedBatch == 1 && store.snapshot.originals.count == 1 &&
+            try check(writesForInterruptedBatch == 3 && store.snapshot.originals.count == 1 &&
                       store.snapshot.jobs[0].items[0].phase == .saved &&
                       store.snapshot.jobs[0].items[1].phase == .interrupted &&
                       store.snapshot.jobs[0].items[2].phase == .queued,
-                      "P2-22: Interrupted batch flushes saved + interrupted state in 1 coalesced write (actual: \(writesForInterruptedBatch))")
+                      "P2-22: Interrupted batch writes 1 enqueue + 2 processed items = 3 (actual: \(writesForInterruptedBatch))")
+
+            resetWrites()
+            controller.resumeImport(store.snapshot.jobs[0])
+            try await waitUntil {
+                controller.phase == .browsing && controller.manifest.jobs.last?.complete == true && store.snapshot.originals.count == 3
+            }
+            let writesForResume = readWrites()
+            try check(writesForResume == 2 && store.snapshot.jobs[0].complete,
+                      "P2-22: resumeImport of 2 remaining items writes 1 per resumed photo = 2 (actual: \(writesForResume))")
             await withCheckedContinuation { continuation in
                 controller.stop { continuation.resume() }
             }
             await drainBackend(backend)
         }
+
+        // 4) Mobile sampling reuse (N = 2 large RAWs) writes 1 (enqueue) + 2 (1 per reused photo) = 3.
+        do {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-p222-reuse-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let counterLock = NSLock()
+            var writeCount = 0
+            func resetWrites() { counterLock.lock(); writeCount = 0; counterLock.unlock() }
+            func readWrites() -> Int { counterLock.lock(); defer { counterLock.unlock() }; return writeCount }
+
+            let raw1 = makeLargeRAW(size: 262_144, seed: 0x31)
+            let raw2 = makeLargeRAW(size: 262_144, seed: 0x32)
+            let store = try CameraOriginalStore(directory: root) {
+                counterLock.lock()
+                writeCount += 1
+                counterLock.unlock()
+            }
+            let entries = [
+                FakeSonyCameraEntry(content: 1, name: "DSC08211.ARW", createdMillis: baseMillis + 1_000, bytes: raw1),
+                FakeSonyCameraEntry(content: 2, name: "DSC08212.ARW", createdMillis: baseMillis + 2_000, bytes: raw2)
+            ]
+            let ch1 = FakeSonyCameraChannel(entries: entries)
+            let backend1 = CameraWorkspaceBackend(storage: store, clientID: UUID()) { _, purpose, _ in
+                try SonyCameraSession(client: CameraPTPClient(command: ch1, event: nil), purpose: purpose)
+            }
+            let ctrl1 = IOSCameraController(backend: backend1)
+            ctrl1.connect(endpoint: endpoint, mode: .importing, cardConfirmed: false, resume: false)
+            try await waitUntil { ctrl1.phase == .browsing && ctrl1.assets.count == 2 }
+            ctrl1.startIncremental(ctrl1.incrementalScan(customCutoff: Date(timeIntervalSince1970: Double(baseMillis) / 1000), includeUndated: false))
+            try await waitUntil { ctrl1.phase == .browsing && ctrl1.savedCount == 2 }
+            await withCheckedContinuation { continuation in ctrl1.stop { continuation.resume() } }
+            await drainBackend(backend1)
+
+            resetWrites()
+            let ch2 = FakeSonyCameraChannel(entries: entries)
+            let backend2 = CameraWorkspaceBackend(storage: store, clientID: UUID()) { _, purpose, _ in
+                try SonyCameraSession(client: CameraPTPClient(command: ch2, event: nil), purpose: purpose)
+            }
+            let ctrl2 = IOSCameraController(backend: backend2)
+            ctrl2.connect(endpoint: endpoint, mode: .importing, cardConfirmed: false, resume: false)
+            try await waitUntil { ctrl2.phase == .browsing && ctrl2.assets.count == 2 }
+            ctrl2.customCutoff = Date(timeIntervalSince1970: Double(baseMillis) / 1000)
+            let rescan = ctrl2.incrementalScan(customCutoff: ctrl2.customCutoff, includeUndated: false)
+            ctrl2.startIncremental(rescan)
+            try await waitUntil { ctrl2.phase == .browsing && ctrl2.savedCount == 2 }
+            let writesForSamplingReuse = readWrites()
+            try check(writesForSamplingReuse == 3 &&
+                      ch2.mobileRangeReads["DSC08211.ARW"]?.count == 3 &&
+                      ch2.mobileRangeReads["DSC08212.ARW"]?.count == 3 &&
+                      store.snapshot.originals.count == 2,
+                      "P2-22: Mobile sampling reuse of N=2 photos writes N+1=3 times (actual: \(writesForSamplingReuse))")
+            await withCheckedContinuation { continuation in ctrl2.stop { continuation.resume() } }
+            await drainBackend(backend2)
+        }
+
+        // 5) Tether poll writes 0 times when idle, and N+1 times when N=2 new shots arrive.
+        do {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-p222-tether-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let counterLock = NSLock()
+            var writeCount = 0
+            func resetWrites() { counterLock.lock(); writeCount = 0; counterLock.unlock() }
+            func readWrites() -> Int { counterLock.lock(); defer { counterLock.unlock() }; return writeCount }
+
+            let store = try CameraOriginalStore(directory: root) {
+                counterLock.lock()
+                writeCount += 1
+                counterLock.unlock()
+            }
+            let channel = FakeSonyCameraChannel(mode: .mobile, supportsTethering: true, entries: [])
+            let backend = CameraWorkspaceBackend(storage: store, clientID: UUID()) { _, purpose, _ in
+                try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+            }
+            let controller = IOSCameraController(backend: backend)
+            controller.connect(endpoint: endpoint, mode: .tethering, cardConfirmed: true, resume: false)
+            try await waitUntil { controller.phase == .ready && controller.shutterReady }
+
+            resetWrites()
+            try await Task.sleep(nanoseconds: 1_800_000_000)
+            let writesDuringIdlePoll = readWrites()
+            try check(writesDuringIdlePoll == 0,
+                      "P2-22: Idle tether poll writes manifest.json 0 times (actual: \(writesDuringIdlePoll))")
+
+            resetWrites()
+            channel.updateEntries {
+                $0 = [
+                    FakeSonyCameraEntry(content: 1, name: "DSC08401.ARW", createdMillis: baseMillis + 1_000, bytes: validRAWBytes(101)),
+                    FakeSonyCameraEntry(content: 2, name: "DSC08402.ARW", createdMillis: baseMillis + 2_000, bytes: validRAWBytes(102))
+                ]
+            }
+            try await waitUntil(timeout: 6) { controller.savedCount == 2 && controller.originals.count == 2 }
+            let writesForTetherPoll = readWrites()
+            try check(writesForTetherPoll == 3,
+                      "P2-22: Tether poll receiving N=2 shots writes 1 register + 2 per-shot = 3 (actual: \(writesForTetherPoll))")
+            await withCheckedContinuation { continuation in controller.stop { continuation.resume() } }
+            await drainBackend(backend)
+        }
     }
+
+    @MainActor static func testP222OrphanRecoveryAndPerPhotoDurability() async throws {
+        defer { UserDefaults.standard.removeObject(forKey: fakeCameraPrefsKey) }
+        let endpoint = IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:P2-22-ORPHAN", label: "Fake")
+        let device = CameraDeviceIdentity(manufacturer: "Sony", model: "ILCE-6700", firmware: "2.00", serial: "FAKE-SERIAL-01", operations: [])
+        let baseMillis = UInt64(Date().timeIntervalSince1970 * 1000) + 10_000
+
+        // 1) Pure unreferenced orphan in originals/ with empty manifest.originals -> recover() deletes to 0 residuals & 0 UI ghosts.
+        do {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-p222-orphan-zero-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            do { _ = try CameraOriginalStore(directory: root) }
+            let orphanDir = root.appendingPathComponent("originals", isDirectory: true)
+                .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+            try FileManager.default.createDirectory(at: orphanDir, withIntermediateDirectories: true)
+            try makeLargeRAW(size: 8192, seed: 0x41).write(to: orphanDir.appendingPathComponent("DSC_GHOST.ARW"))
+
+            let restartedStore = try CameraOriginalStore(directory: root)
+            let channel = FakeSonyCameraChannel(entries: [])
+            let backend = CameraWorkspaceBackend(storage: restartedStore, clientID: UUID()) { _, purpose, _ in
+                try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+            }
+            let controller = IOSCameraController(backend: backend)
+            await drainBackend(backend)
+            try await Task.sleep(nanoseconds: 50_000_000)
+            let remainingEntries = try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("originals").path)
+            try check(remainingEntries.isEmpty &&
+                      restartedStore.snapshot.originals.isEmpty &&
+                      controller.originals.isEmpty &&
+                      controller.storedOriginalsBytes == 0,
+                      "P2-22 orphan sweep: Unreferenced originals/<uuid>/ directory is deleted to 0 residuals and 0 ghost bytes")
+            await drainBackend(backend)
+        }
+
+        // 2) Mixed recovery: keeps .available and valid .prepared, deletes unreferenced orphan + missing .prepared dir, keeps non-UUID marker.
+        do {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-p222-orphan-mix-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let bytes1 = makeLargeRAW(size: 4096, seed: 0x42)
+            let bytes2 = makeLargeRAW(size: 6144, seed: 0x43)
+            let bytes3 = makeLargeRAW(size: 4096, seed: 0x44)
+            func snap(_ content: UInt32, _ name: String, _ bytes: Data) -> CameraAssetSnapshot {
+                CameraAssetSnapshot(content: content, file: 1, storage: 0, format: 0x3800, name: name,
+                                    size: UInt64(bytes.count), created: "\(baseMillis + UInt64(content) * 1_000)", modified: "")
+            }
+
+            var store: CameraOriginalStore? = try CameraOriginalStore(directory: root)
+            let job = try store!.enqueue(device: device, connectionKey: endpoint.connectionKey, assets: [
+                snap(1, "DSC08501.ARW", bytes1),
+                snap(2, "DSC08502.ARW", bytes2),
+                snap(3, "DSC08503.ARW", bytes3)
+            ])
+            func commit(_ data: Data, _ item: CameraTransferItem) throws -> CameraStoredOriginal {
+                let target = try store!.begin(job: job.id, item: item.id)
+                try target.handle.write(contentsOf: data)
+                try target.handle.close()
+                return try store!.complete(job: job.id, item: item.id, digest: sha256Hex(data))
+            }
+            let kept = try commit(bytes1, job.items[0])
+            let preparedValid = try commit(bytes2, job.items[1])
+            let preparedMissing = try commit(bytes3, job.items[2])
+
+            var manifest = store!.snapshot
+            manifest.jobs[0].items[1].phase = .prepared
+            manifest.originals[1].availability = .prepared
+            manifest.jobs[0].items[2].phase = .prepared
+            manifest.originals[2].availability = .prepared
+            try FileManager.default.removeItem(at: store!.originalURL(preparedMissing))
+            let orphanDir = root.appendingPathComponent("originals", isDirectory: true)
+                .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+            try FileManager.default.createDirectory(at: orphanDir, withIntermediateDirectories: true)
+            try Data([0x49, 0x49, 0x2a, 0]).write(to: orphanDir.appendingPathComponent("DSC_ORPHAN.ARW"))
+            let nonUUIDMarker = root.appendingPathComponent("originals", isDirectory: true).appendingPathComponent(".keep")
+            try Data([1]).write(to: nonUUIDMarker)
+            store = nil
+            try JSONEncoder().encode(manifest).write(to: root.appendingPathComponent("manifest.json"), options: .atomic)
+
+            let restartedStore = try CameraOriginalStore(directory: root)
+            let channel = FakeSonyCameraChannel(entries: [])
+            let backend = CameraWorkspaceBackend(storage: restartedStore, clientID: UUID()) { _, purpose, _ in
+                try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+            }
+            let controller = IOSCameraController(backend: backend)
+            try await waitUntil { controller.originals.count == 2 }
+            try check(!FileManager.default.fileExists(atPath: orphanDir.path) &&
+                      FileManager.default.fileExists(atPath: nonUUIDMarker.path) &&
+                      restartedStore.snapshot.originals.map(\.id) == [kept.id, preparedValid.id] &&
+                      controller.storedOriginalsBytes == UInt64(bytes1.count + bytes2.count) &&
+                      restartedStore.snapshot.jobs[0].items[1].phase == .saved &&
+                      restartedStore.snapshot.jobs[0].items[2].phase == .interrupted,
+                      "P2-22 mixed recovery: Sweeps unreferenced orphan & missing .prepared while keeping .available, promoted .prepared, and non-UUID marker")
+            let keptData = try Data(contentsOf: restartedStore.verifiedURL(kept.id))
+            let preparedData = try Data(contentsOf: restartedStore.verifiedURL(preparedValid.id))
+            try check(keptData == bytes1 && preparedData == bytes2,
+                      "P2-22 mixed recovery: Verified file bytes remain intact for referenced originals")
+            await drainBackend(backend)
+        }
+    }
+
+    #if os(macOS)
+    @MainActor private static func runP222CrashChild(rootPath: String) async throws {
+        UserDefaults.standard.set("zh-Hans", forKey: L10n.preferenceKey)
+        defer { UserDefaults.standard.removeObject(forKey: fakeCameraPrefsKey) }
+        let root = URL(fileURLWithPath: rootPath, isDirectory: true)
+        let endpoint = IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:P2-22-EXIT", label: "Fake")
+        let baseMillis: UInt64 = 1_700_000_000_000
+        let counterLock = NSLock()
+        var writeCount = 0
+        func readWrites() -> Int { counterLock.lock(); defer { counterLock.unlock() }; return writeCount }
+
+        let store = try CameraOriginalStore(directory: root) {
+            counterLock.lock()
+            writeCount += 1
+            counterLock.unlock()
+        }
+        let entries = [
+            FakeSonyCameraEntry(content: 1, name: "DSC08301.ARW", createdMillis: baseMillis + 1_000, bytes: makeLargeRAW(size: 262_144, seed: 0x61)),
+            FakeSonyCameraEntry(content: 2, name: "DSC08302.ARW", createdMillis: baseMillis + 2_000, bytes: makeLargeRAW(size: (3 << 20) + 4096, seed: 0x62)),
+            FakeSonyCameraEntry(content: 3, name: "DSC08303.ARW", createdMillis: baseMillis + 3_000, bytes: makeLargeRAW(size: 8192, seed: 0x63))
+        ]
+        let photo1ObservedOnUI = DispatchSemaphore(value: 0)
+        let channel = FakeSonyCameraChannel(entries: entries)
+        channel.onMobileDownloadChunk = { name, offset in
+            guard name == "DSC08302.ARW", offset > 0 else { return }
+            guard photo1ObservedOnUI.wait(timeout: .now() + 5) == .success else {
+                fputs("Child timed out waiting for UI observation of photo 1 before _exit\n", stderr)
+                Darwin._exit(99)
+            }
+            Darwin._exit(42)
+        }
+        let backend = CameraWorkspaceBackend(storage: store, clientID: UUID()) { _, purpose, _ in
+            try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+        }
+        let controller = IOSCameraController(backend: backend)
+        controller.connect(endpoint: endpoint, mode: .importing, cardConfirmed: false, resume: false)
+        try await waitUntil { controller.phase == .browsing && controller.assets.count == 3 }
+        let scan = controller.incrementalScan(customCutoff: Date(timeIntervalSince1970: Double(baseMillis) / 1000), includeUndated: false)
+        controller.startIncremental(scan)
+        try await waitUntil(timeout: 10) {
+            controller.savedCount == 1 && controller.originals.count == 1
+        }
+        let writesAtPhoto1Saved = readWrites()
+        let manifestData = try Data(contentsOf: root.appendingPathComponent("manifest.json"))
+        let diskManifest = try JSONDecoder().decode(CameraOriginalManifest.self, from: manifestData)
+        guard writesAtPhoto1Saved == 2,
+              diskManifest.originals.count == 1,
+              diskManifest.originals[0].name == "DSC08301.ARW",
+              diskManifest.jobs.first?.items.first?.phase == .saved else {
+            fputs("Child invariant failed at photo 1 saved: writes=\(writesAtPhoto1Saved), diskOriginals=\(diskManifest.originals.count)\n", stderr)
+            Darwin._exit(98)
+        }
+        photo1ObservedOnUI.signal()
+        try await Task.sleep(nanoseconds: 5_000_000_000)
+        Darwin._exit(97)
+    }
+
+    private static func runP222OrphanCrashChild(rootPath: String) async throws {
+        let root = URL(fileURLWithPath: rootPath, isDirectory: true)
+        _ = try CameraOriginalStore(directory: root)
+        let orphanDir = root.appendingPathComponent("originals", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: orphanDir, withIntermediateDirectories: true)
+        try makeLargeRAW(size: 8192, seed: 0x71).write(to: orphanDir.appendingPathComponent("DSC_ORPHAN.ARW"))
+        Darwin._exit(42)
+    }
+
+    private static func runSubprocess(flag: String, root: URL) throws -> Int32 {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+        process.arguments = [flag, root.path]
+        let stderrPipe = Pipe()
+        process.standardError = stderrPipe
+        try process.run()
+        process.waitUntilExit()
+        if process.terminationReason != .exit || process.terminationStatus != 42 {
+            let errText = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            throw CameraProtocolError.invalid("Child \(flag) exited unexpectedly (reason: \(process.terminationReason.rawValue), status: \(process.terminationStatus)): \(errText)")
+        }
+        return process.terminationStatus
+    }
+
+    @MainActor static func testP222HardExitSubprocessDurabilityAndOrphanCleanup() async throws {
+        defer { UserDefaults.standard.removeObject(forKey: fakeCameraPrefsKey) }
+        let endpoint = IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:P2-22-EXIT", label: "Fake")
+        let baseMillis: UInt64 = 1_700_000_000_000
+
+        // Part A: Real import child process saves photo 1, starts photo 2 chunk 2 -> Darwin._exit(42).
+        // Parent restarts store + backend + controller and verifies:
+        // (1) Photo 1 is durably persisted in manifest & originals/, counted in storedOriginalsBytes, and not re-downloaded on resume.
+        // (2) Photo 2 partial file is cleaned, originals/ has 0 unreferenced directories, and remaining items 2+3 resume cleanly.
+        do {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-p222-exit-a-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let exitStatus = try runSubprocess(flag: "--p222-crash-child", root: root)
+            try check(exitStatus == 42, "P2-22 _exit(42) Part A: Child process hard-exited with status 42 during photo 2 download")
+
+            let photo1Bytes = makeLargeRAW(size: 262_144, seed: 0x61)
+            let photo2Bytes = makeLargeRAW(size: (3 << 20) + 4096, seed: 0x62)
+            let photo3Bytes = makeLargeRAW(size: 8192, seed: 0x63)
+
+            let restartedStore = try CameraOriginalStore(directory: root)
+            let partialEntries = try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("partial").path)
+            let originalDirEntries = try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("originals").path)
+            let photo1 = try restartedStore.snapshot.originals.first ?? {
+                throw CameraProtocolError.invalid("Photo 1 missing after _exit(42) recovery")
+            }()
+            try check(restartedStore.snapshot.originals.count == 1 &&
+                      photo1.name == "DSC08301.ARW" &&
+                      partialEntries.isEmpty &&
+                      originalDirEntries == [photo1.id.uuidString.lowercased()],
+                      "P2-22 _exit(42) Part A: Restart retains photo 1, sweeps partial/ of photo 2, and leaves 0 orphan directories")
+            try check(try Data(contentsOf: restartedStore.verifiedURL(photo1.id)) == photo1Bytes,
+                      "P2-22 _exit(42) Part A: Persisted photo 1 bytes verify intact on disk")
+
+            let channel = FakeSonyCameraChannel(entries: [
+                FakeSonyCameraEntry(content: 101, name: "DSC08301.ARW", createdMillis: baseMillis + 1_000, bytes: photo1Bytes),
+                FakeSonyCameraEntry(content: 102, name: "DSC08302.ARW", createdMillis: baseMillis + 2_000, bytes: photo2Bytes),
+                FakeSonyCameraEntry(content: 103, name: "DSC08303.ARW", createdMillis: baseMillis + 3_000, bytes: photo3Bytes)
+            ])
+            let backend = CameraWorkspaceBackend(storage: restartedStore, clientID: UUID()) { _, purpose, _ in
+                try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+            }
+            let controller = IOSCameraController(backend: backend)
+            try await waitUntil { controller.originals.count == 1 && controller.unfinishedJobs.count == 1 }
+            try check(controller.storedOriginalsBytes == UInt64(photo1Bytes.count) &&
+                      restartedStore.snapshot.jobs[0].items.map(\.phase) == [.saved, .queued, .queued],
+                      "P2-22 _exit(42) Part A: Controller reports photo 1 bytes and shows items 2 & 3 pending")
+
+            controller.connect(endpoint: endpoint, mode: .importing, cardConfirmed: false, resume: false)
+            try await waitUntil { controller.phase == .browsing && controller.assets.count == 3 }
+            try check(restartedStore.snapshot.jobs[0].requiresNewImport(connected: true, assets: controller.assets),
+                      "P2-22 _exit(42) Part A: Reconnect across process restart routes unhashed pending items to fresh selection")
+
+            // Fresh incremental scan over all 3 assets reuses persisted photo 1 via 3-segment sampling (no full re-download, no duplicate file).
+            controller.customCutoff = Date(timeIntervalSince1970: Double(baseMillis) / 1000)
+            let reconnectScan = controller.incrementalScan(customCutoff: controller.customCutoff, includeUndated: false)
+            controller.startIncremental(reconnectScan)
+            try await waitUntil(timeout: 10) {
+                controller.phase == .browsing && restartedStore.snapshot.originals.count == 3 && controller.savedCount == 3
+            }
+            let expectedTotalBytes = UInt64(photo1Bytes.count + photo2Bytes.count + photo3Bytes.count)
+            let postReconnectDirs = try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("originals").path)
+            let expectedDirs = Set(restartedStore.snapshot.originals.map { $0.id.uuidString.lowercased() })
+            let job2 = restartedStore.snapshot.jobs.last
+            let reusedItem1 = job2?.items.first { $0.asset.name == "DSC08301.ARW" }
+            try check(channel.mobileRangeReads["DSC08301.ARW"]?.count == 3 &&
+                      channel.bytesReadByName["DSC08301.ARW"] == 3 * 65_536 &&
+                      reusedItem1?.reused == true &&
+                      reusedItem1?.sourceID == photo1.id &&
+                      job2?.complete == true &&
+                      controller.storedOriginalsBytes == expectedTotalBytes &&
+                      Set(postReconnectDirs) == expectedDirs &&
+                      postReconnectDirs.count == 3,
+                      "P2-22 _exit(42) Part A: Reconnect samples & reuses photo 1 without full re-download or disk duplication")
+            await withCheckedContinuation { continuation in controller.stop { continuation.resume() } }
+            await drainBackend(backend)
+        }
+
+        // Part B: Hard-exit child leaves an unreferenced originals/<uuid>/ directory (e.g. crash before persist).
+        // Parent restarts store + backend + controller and verifies orphan sweep removes it to 0 disk residuals and 0 ghosts.
+        do {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-p222-exit-b-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let exitStatus = try runSubprocess(flag: "--p222-orphan-crash-child", root: root)
+            let preRestartOriginals = try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("originals").path)
+            try check(exitStatus == 42 && preRestartOriginals.count == 1,
+                      "P2-22 _exit(42) Part B: Child exited 42 leaving 1 unreferenced orphan directory before restart")
+
+            let restartedStore = try CameraOriginalStore(directory: root)
+            let channel = FakeSonyCameraChannel(entries: [])
+            let backend = CameraWorkspaceBackend(storage: restartedStore, clientID: UUID()) { _, purpose, _ in
+                try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+            }
+            let controller = IOSCameraController(backend: backend)
+            await drainBackend(backend)
+            try await Task.sleep(nanoseconds: 50_000_000)
+            let postRestartOriginals = try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("originals").path)
+            try check(postRestartOriginals.isEmpty &&
+                      restartedStore.snapshot.originals.isEmpty &&
+                      controller.originals.isEmpty &&
+                      controller.storedOriginalsBytes == 0,
+                      "P2-22 _exit(42) Part B: Restart orphan sweep removes unreferenced originals/<uuid>/ to 0 disk residuals and 0 ghosts")
+            await drainBackend(backend)
+        }
+    }
+    #endif
 
     @MainActor static func testIN4SkippedAssetsFIFOOverMaximumLimitSurvivesRestart() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-in4-cap-\(UUID().uuidString)")

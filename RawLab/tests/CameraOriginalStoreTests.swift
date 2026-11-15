@@ -119,6 +119,7 @@ import CoreGraphics
         try incrementalRecovery()
         try switchingFormatsFindsBothUnimportedJPEGs()
         try adjustedJPEG()
+        try recoverSweepsOrphanDirectories()
         if #available(macOS 15.0, iOS 18.0, *) { try isoGainMapJPEG() }
     }
 
@@ -635,6 +636,66 @@ import CoreGraphics
         ] as CFDictionary)
         try check(CGImageDestinationFinalize(encoder), "Encode the ISO-only JPEG fixture")
         return input as Data
+    }
+
+    private static func recoverSweepsOrphanDirectories() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-recover-orphan-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let device = CameraDeviceIdentity(manufacturer: "Sony", model: "Fixture", firmware: "1.00", serial: "orphan", operations: [])
+        let bytes1 = Data([0xff, 0xd8, 0xff, 1, 2, 3, 4])
+        let bytes2 = Data([0xff, 0xd8, 0xff, 5, 6, 7, 8])
+        let bytes3 = Data([0xff, 0xd8, 0xff, 9, 10, 11, 12])
+        func snap(_ content: UInt32, _ name: String, _ data: Data) -> CameraAssetSnapshot {
+            CameraAssetSnapshot(content: content, file: 1, storage: 0, format: 0, name: name,
+                                size: UInt64(data.count), created: "1700000000000", modified: "")
+        }
+
+        var store: CameraOriginalStore? = try CameraOriginalStore(directory: root)
+        let job = try store!.enqueue(device: device, connectionKey: "fixture", assets: [
+            snap(1, "DSC00001.JPG", bytes1),
+            snap(2, "DSC00002.JPG", bytes2),
+            snap(3, "DSC00003.JPG", bytes3)
+        ])
+        let kept = try write(bytes1, item: job.items[0], job: job, store: store!)
+        let preparedValid = try write(bytes2, item: job.items[1], job: job, store: store!)
+        let preparedMissing = try write(bytes3, item: job.items[2], job: job, store: store!)
+
+        // Simulate crash mid-publish for items 2 (file exists) and 3 (file missing, empty dir remains),
+        // plus an unreferenced orphan UUID directory and a non-UUID metadata file in originals/.
+        var manifest = store!.snapshot
+        manifest.jobs[0].items[1].phase = .prepared
+        manifest.originals[1].availability = .prepared
+        manifest.jobs[0].items[2].phase = .prepared
+        manifest.originals[2].availability = .prepared
+        try FileManager.default.removeItem(at: store!.originalURL(preparedMissing))
+        let orphanID = UUID()
+        let orphanDir = root.appendingPathComponent("originals", isDirectory: true)
+            .appendingPathComponent(orphanID.uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: orphanDir, withIntermediateDirectories: true)
+        try Data([0x49, 0x49, 0x2a, 0]).write(to: orphanDir.appendingPathComponent("DSC_ORPHAN.ARW"))
+        let nonUUIDMarker = root.appendingPathComponent("originals", isDirectory: true).appendingPathComponent(".keep")
+        try Data([1]).write(to: nonUUIDMarker)
+        store = nil
+        try JSONEncoder().encode(manifest).write(to: root.appendingPathComponent("manifest.json"), options: .atomic)
+
+        store = try CameraOriginalStore(directory: root)
+        try check(!FileManager.default.fileExists(atPath: orphanDir.path),
+                  "recover() removes unreferenced UUID orphan directories and their files from originals/")
+        let missingDir = root.appendingPathComponent("originals", isDirectory: true)
+            .appendingPathComponent(preparedMissing.id.uuidString.lowercased(), isDirectory: true)
+        try check(!FileManager.default.fileExists(atPath: missingDir.path),
+                  "recover() removes empty UUID directory after missing .prepared source is discarded")
+        try check(FileManager.default.fileExists(atPath: nonUUIDMarker.path),
+                  "recover() preserves non-UUID entries in originals/")
+        try check(store!.snapshot.originals.map(\.id) == [kept.id, preparedValid.id] &&
+                  store!.snapshot.jobs[0].items[0].phase == .saved &&
+                  store!.snapshot.jobs[0].items[1].phase == .saved &&
+                  store!.snapshot.jobs[0].items[2].phase == .interrupted,
+                  "recover() retains referenced .available and valid .prepared originals while marking missing .prepared interrupted")
+        let keptData = try Data(contentsOf: store!.verifiedURL(kept.id))
+        let preparedData = try Data(contentsOf: store!.verifiedURL(preparedValid.id))
+        try check(keptData == bytes1 && preparedData == bytes2,
+                  "recover() preserves file contents for both .available and promoted .prepared originals")
     }
 
     private static func write(_ bytes: Data, item: CameraTransferItem, job: CameraTransferJob, store: CameraOriginalStore) throws -> CameraStoredOriginal {
