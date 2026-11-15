@@ -11,6 +11,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <type_traits>
 #include <jpeglib.h>
 #include <jerror.h>
 #ifdef _WIN32
@@ -315,10 +316,24 @@ bool buildFileIdentityKey(const char* inputPathStr, std::string& outKey) {
     if (fileError) return false;
     const auto fileSize = std::filesystem::file_size(inputPath, fileError);
     if (fileError) return false;
-    const auto modifiedNanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(
-        modified.time_since_epoch()).count();
+    static_assert(std::is_arithmetic_v<std::filesystem::file_time_type::rep>,
+        "file_time_type::rep must be arithmetic to format raw ticks without nanosecond duration_cast overflow");
+    auto ticks = modified.time_since_epoch().count();
+    std::string modifiedTicks;
+    if (ticks == 0) {
+        modifiedTicks = "0";
+    } else {
+        const bool negative = ticks < 0;
+        while (ticks != 0) {
+            const auto digit = ticks % 10;
+            modifiedTicks.push_back(static_cast<char>('0' + (digit < 0 ? -digit : digit)));
+            ticks /= 10;
+        }
+        if (negative) modifiedTicks.push_back('-');
+        std::reverse(modifiedTicks.begin(), modifiedTicks.end());
+    }
     outKey = std::string(inputPathStr) + ":" +
-        std::to_string(modifiedNanoseconds) + ":" + std::to_string(fileSize);
+        modifiedTicks + ":" + std::to_string(fileSize);
 #ifdef _WIN32
     const HANDLE identityHandle = CreateFileW(inputPath.c_str(), FILE_READ_ATTRIBUTES,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
