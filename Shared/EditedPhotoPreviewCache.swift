@@ -55,6 +55,14 @@ final class EditedPhotoPreviewCache: @unchecked Sendable {
         guard sizes[key.digest] != nil else { return nil }
         do {
             let data = try Data(contentsOf: location(key))
+            guard Self.isCompleteContainer(data) else {
+                // 断电半写会留下「头部落盘、尾部 IEND/EOI 未刷」的残件，ImageIO 渐进解码把它当
+                // 成功返回非空残图，判命中则跨重启常驻不自愈；首尾帧界不齐即判未命中并删除
+                // 坏条目，让调用方重渲后原子覆盖（与 Android #397 同口径）。
+                removeIndexed(key.digest)
+                try? FileManager.default.removeItem(at: location(key))
+                return nil
+            }
             touch(key.digest)
             return data
         } catch {
@@ -62,6 +70,14 @@ final class EditedPhotoPreviewCache: @unchecked Sendable {
             removeIndexed(key.digest)
             return nil
         }
+    }
+
+    /// 容器首尾帧界完整性：PNG 须签名齐 + 以 IEND 块结尾，JPEG 须 SOI 开 EOI 闭；其余容器一律不完整。
+    private static func isCompleteContainer(_ data: Data) -> Bool {
+        if data.count >= 57, data.starts(with: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) {
+            return data.suffix(12).elementsEqual([0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82])
+        }
+        return data.count >= 4 && data.starts(with: [0xFF, 0xD8]) && data.suffix(2).elementsEqual([0xFF, 0xD9])
     }
 
     func write(_ data: Data, for key: PhotoPreviewCacheKey) throws {
