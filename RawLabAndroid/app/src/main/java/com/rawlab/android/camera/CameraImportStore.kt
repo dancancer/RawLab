@@ -143,11 +143,25 @@ internal class CameraImportStore(private val directory: File, private val tempor
 
     /** 进程内增量账本：目录内全部任务的最新状态（save/append 在保存锁内维护，等价此前每次重读磁盘的视野）。 */
     private val journals = LinkedHashMap<String, CameraImportJob>()
+    /** 每任务快照与锚行共用的单调写序号：只存 store（锁内推进），不进入任务数据，避免把易变序号带进任务相等性。 */
+    private val sequences = mutableMapOf<String, Long>()
 
     /** 发布去重与抽样复用共用的内存视野（排序与 readJobs 一致：createdAt 降序）。 */
     @Synchronized private fun ledgerJobs(): List<CameraImportJob> = journals.values.sortedByDescending { it.createdAt }
 
     private fun walFile(id: String) = File(directory, "$id.wal")
+
+    /** 崩溃留下的坏 `.wal` 不该无限膨胀：超预算即按坏日志隔离（与坏快照同纪律，文件原样保留）。 */
+    private val maxWalBytes = 8L shl 20
+
+    /** 快照与锚行共用一把序号：store 锁内单调推进；load/recover 从盘上两份文件的最大值重新起算。 */
+    private fun nextWalSeq(id: String): Long = (sequences[id] ?: 0L) + 1
+
+    /** 快照+锚的行级合并视图（只读，不恢复、不落盘）：供门禁与调试取待发布 URI。 */
+    internal fun mergedView(jobId: String): CameraImportJob? {
+        val journal = File(directory, "$jobId.json")
+        return if (journal.isFile) replayWal(readJob(journal), journal) else null
+    }
 
     fun create(cameraId: String, photos: List<CameraPhoto>, destination: CameraImportDestination,
         id: String = UUID.randomUUID().toString(), incremental: CameraIncrementalPlan? = null,
@@ -161,7 +175,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
             require(photos.all(plan.format::includes))
         }
         // 只核对本任务的日志：读不出时报错而不是覆盖，也不受其它日志影响。
-        File(directory, "$id.json").takeIf { it.isFile }?.let { replayWal(readJob(it)) }?.let { existing ->
+        File(directory, "$id.json").takeIf { it.isFile }?.let { replayWal(readJob(it), it) }?.let { existing ->
             if (existing.cameraId != cameraId || existing.hardwareIdentity != hardwareIdentity ||
                 existing.destination != destination || existing.incremental != incremental ||
                 existing.listingOwner != listingOwner || existing.items.size != photos.size ||
@@ -179,7 +193,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
     fun load(): List<CameraImportJob> {
         cleanupLoadArtifacts()
         val unreadable = mutableSetOf<String>()
-        val jobs = readJobs(unreadable).map { migrateLegacyBoundary(replayWal(it)) }
+        val jobs = readJobs(unreadable).map(::migrateLegacyBoundary)
         unreadableJobIds = unreadable
         synchronized(this) { journals.clear(); jobs.forEach { journals[it.id] = it } }
         // 读不出的日志可能引用待发布媒体，存在时不能据此判定孤儿。
@@ -212,7 +226,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
             .forEach { it.delete() }
         File(directory, "$id.tmp").delete()
         val journal = File(directory, "$id.json")
-        return if (journal.isFile) recoverJob(migrateLegacyBoundary(replayWal(readJob(journal)))) else null
+        return if (journal.isFile) recoverJob(migrateLegacyBoundary(replayWal(readJob(journal), journal))) else null
     }
 
     /** Resume-specific spelling used by the import queue. */
@@ -236,19 +250,19 @@ internal class CameraImportStore(private val directory: File, private val tempor
                 val expectedSize = item.outputSize ?: item.photo.size
                 val expectedDigest = item.outputDigest ?: item.digest
                 if (current == null || current.pending) {
-                    item.copy(saved = null, unavailable = item.saved, problem = CameraMediaProblem.MISSING, savedStat = null)
+                    item.copy(saved = null, unavailable = item.saved, problem = CameraMediaProblem.MISSING, savedStat = null, prepared = null)
                 } else {
                     // stat 指纹（size＋mtime）优先；首次、指纹缺失或变化才做整文件内容摘要（A1）。
                     // 信任前提：指纹与记录值一致且指纹 size 等于预期校验 size，防止 size 漂移时误信旧 digest。
                     val stat = mediaStat(current.uri)
                     if (stat != null && stat.size == expectedSize && stat.fingerprint() == item.savedStat && validDigest(expectedDigest)) {
                         media.remember(current.uri, expectedSize, checkNotNull(expectedDigest))
-                        item.copy(saved = current, problem = null)
+                        item.copy(saved = current, problem = null, prepared = null)
                     } else if (!validContent(current.uri, expectedSize, expectedDigest)) {
-                        item.copy(saved = null, unavailable = current, problem = CameraMediaProblem.CHANGED, savedStat = null)
+                        item.copy(saved = null, unavailable = current, problem = CameraMediaProblem.CHANGED, savedStat = null, prepared = null)
                     } else {
                         media.remember(current.uri, expectedSize, checkNotNull(expectedDigest))
-                        item.copy(saved = current, problem = null, savedStat = stat?.fingerprint())
+                        item.copy(saved = current, problem = null, savedStat = stat?.fingerprint(), prepared = null)
                     }
                 }
             } else if (item.prepared != null) {
@@ -436,7 +450,8 @@ internal class CameraImportStore(private val directory: File, private val tempor
         require(validId(job.id))
         val items = JSONArray()
         job.items.forEach { items.put(itemJson(it)) }
-        val json = JSONObject().put("version", 2).put("camera", job.cameraId).put("time", job.createdAt)
+        val next = nextWalSeq(job.id)
+        val json = JSONObject().put("version", 2).put("seq", next).put("camera", job.cameraId).put("time", job.createdAt)
             .put("status", job.status.name).put("items", items).put("directory", job.destination.directory)
             .put("grouping", job.destination.grouping.name).put("incremental", job.incremental?.json())
             .put("committed", job.committed).put("listingOwner", job.listingOwner)
@@ -450,31 +465,42 @@ internal class CameraImportStore(private val directory: File, private val tempor
         } finally { part.delete() }
         journalRewrites++
         journals[job.id] = job
-        // 快照严格新于锚日志：落盘成功后即截断 WAL；截断前崩溃只会重放已在快照内的锚（幂等覆盖同一条目）。
+        sequences[job.id] = next
+        // 快照携带写序号后截断 WAL；快照落盘与截断之间崩溃时，旧锚行 seq 必小于快照 seq，重放按序跳过而非覆盖。
         walFile(job.id).delete()
     }
 
     /** 追加单行锚到 `<id>.wal` 并对短行 fsync，同步刷新内存账本。崩溃留下的半行在重放处丢弃，其 pending 媒体由 cleanupOrphans 回收。 */
     @Synchronized private fun appendWalAnchor(job: CameraImportJob, line: JSONObject) {
         require(validId(job.id))
+        val next = nextWalSeq(job.id)
+        line.put("seq", next)
         FileOutputStream(walFile(job.id), true).use {
             it.write(line.toString().toByteArray())
             it.write('\n'.code)
             it.fd.sync()
         }
         walAppends++
+        sequences[job.id] = next
         journals[job.id] = job
     }
 
-    /** 把 `<id>.wal` 的行级锚折叠进快照；首个坏行/半行即停（append-only 尾部语义），后随合法行本就晚于崩溃点。 */
-    private fun replayWal(job: CameraImportJob): CameraImportJob {
-        val wal = walFile(job.id)
-        if (!wal.isFile) return job
-        val lines = runCatching { wal.readLines() }.getOrDefault(emptyList())
-        if (lines.isEmpty()) return job
+    /** 把 `<id>.wal` 中晚于快照序号的行级锚折叠进快照；首个坏行/半行即停（append-only 尾部语义）。
+     *  快照落盘与 WAL 截断之间崩溃留下的旧行（seq ≤ 快照 seq）被跳过，不会把旧条目盖回新快照。
+     *  读异常与超预算抛出，由 readJobs 的单文件 try 复用坏日志隔离，不能静默当空 WAL
+     *  （否则只登记在锚日志里的 pending 媒体会被 cleanupOrphans 误删）。 */
+    private fun replayWal(job: CameraImportJob, journal: File): CameraImportJob {
+        val wal = File(journal.parentFile, "${job.id}.wal")
+        if (!wal.isFile) return job.also { sequences[job.id] = maxOf(sequences[job.id] ?: 0L,
+            runCatching { JSONObject(journal.readText()).optLong("seq", 0L) }.getOrDefault(0L)) }
+        if (wal.length() > maxWalBytes) throw IOException("Camera journal anchor log too large")
         val items = job.items.toMutableList()
-        for (line in lines) {
+        var seq = runCatching { JSONObject(journal.readText()).optLong("seq", 0L) }.getOrDefault(0L)
+        var applied = seq
+        for (line in wal.readLines()) {
             val record = runCatching { JSONObject(line) }.getOrNull() ?: break
+            val lineSeq = record.optLong("seq", 0L)
+            if (lineSeq <= seq) continue
             val index = record.optInt("i", -1)
             if (index !in items.indices) break
             val folded = runCatching {
@@ -487,7 +513,9 @@ internal class CameraImportStore(private val directory: File, private val tempor
             }
             if (folded.isFailure) break
             items[index] = folded.getOrThrow()
+            applied = lineSeq
         }
+        sequences[job.id] = maxOf(sequences[job.id] ?: 0L, applied)
         return job.copy(items = items)
     }
 
@@ -497,7 +525,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
         return directory.listFiles().orEmpty()
         .filter { it.isFile && it.extension == "json" && validId(it.nameWithoutExtension) }
         .mapNotNull { file ->
-            try { readJob(file) }
+            try { replayWal(readJob(file), file) }
             catch (_: Exception) { unreadable?.add(file.nameWithoutExtension); null }
         }.sortedByDescending { it.createdAt }
     }
