@@ -284,3 +284,10 @@
 
 - **#353 合入**（merge `c3029f5c`，第 109 个）：#351 碳审观察×2（jni_session_lock_test Test2 锁内 notify_all 消 1.5s 空等；recipe_probe_stages_test 死 stub+`static_assert(2248)`）+ k159 文档尾（processing-concurrency.md 阶段 3 检查点表）。碳审 0 阻塞，独立变异实证修复有效（无 notify 回退 1511-1543ms vs 修复 15ms，TSan 5 连 0 race）。碳新增 2 条 P3 转 k159：阶段 3 行旧标签归类失准 + `parallelPixelRanges` 取消步长现值 4096（16384 仅任务切分粒度）——全文行号/口径统一对齐并入 k159 收尾，勿单改一行自相矛盾。
 - **#352 二次返工**（阶梯规则首次实战：1st=Hydrogen、2nd=codex）：codex 收口碳 r2 的 F1-F5（三态清扫/单目录 do/catch/小写 UUID 守卫+去重/排序含 name/合规 .ARW 负向夹具），M1（prune 早退还原）与 M2（validateHeader 强真）均 exit 133 按预期死；新 head `0ccaa77d`。testIN6 首跑 L2227 超时（串行复跑过，flaky 定性待碳 r3）。碳 r3 `review-mwhbuii8` 在跑，approve=第 110 个。
+
+### (53) #352 合入（110th）：跨版本 re-adopt 收口；教训入库
+
+- **#352 合入**（merge `44b053f2`，第 110 个，head `0ccaa77d`）：P2-22 翻 ✅。碳 r3 门禁 APPROVE 0 阻塞：独立最小复现反证（r2 head 对 chmod 000/1GiB+1B/双文件=SIGTRAP 崩或盲删，r3 head 全部保留、权限恢复后次轮 1 写接管）；变异三枪 Mut1(preserve→盲删)/Mut2(去 validateHeader)/Mut3(去小写守卫) 均 133 死；r2 已认可件（逐张持久化/prune/Step 顺序/幂等）零回退；CI 全绿绑定 head；PR 正文升级语义表逐格真实。
+- **testIN6 flaky 定性（碳 r3）**：既有紧时序——capture 后台刚性 1.535s 睡眠 + 3s nextCardCheck=4.535s 下界 vs 6s 窗口仅 <1.4s 余量，再叠 101 页全表 filter（1.01×10⁶ 闭包扫描）与并发编译负载；3 连跑绿。修复尾项（timeout 6→10 或 mobilePage 二分游标）转 **k163**。
+- **升级阶梯首次完整实战**：#352 = Hydrogen 首轮（approve 后用户反馈触发返工）→ Hydrogen 1st rework（碳 r2 打回 5 缺陷）→ **codex 2nd rework（阶梯规则首次执行）**→ 碳 r3 approve。全过程碳三审+双二进制复现，用户跨版本反馈第 3 击避免了一次"合入后升级删片"生产事故。
+- **遗留**：真机大小写敏感 APFS 实测→k173；PR body 基线 SHA 笔误（57213002 应为 4426fa41，纯描述）随归档不追改。
