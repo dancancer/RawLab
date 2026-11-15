@@ -21,15 +21,34 @@ struct ExportMetadataTests {
     static func pixels(_ url: URL) -> Data { decoded(url).dataProvider!.data! as Data }
 
     static func hasPNGEXIF(_ url: URL) throws -> Bool {
+        try countPNGChunks(url, "eXIf") > 0
+    }
+
+    static func countPNGChunks(_ url: URL, _ type: String) throws -> Int {
         let data = try Data(contentsOf: url)
-        var offset = 8
+        var count = 0, offset = 8
         while offset + 12 <= data.count {
             let length = data[offset..<offset+4].reduce(0) { ($0 << 8) | Int($1) }
-            guard length <= data.count - offset - 12 else { return false }
-            if String(data: data[offset+4..<offset+8], encoding: .ascii) == "eXIf" { return true }
+            guard length <= data.count - offset - 12 else { return -1 }
+            if String(data: data[offset+4..<offset+8], encoding: .ascii) == type { count += 1 }
             offset += length + 12
         }
-        return false
+        return count
+    }
+
+    /// 全部 IDAT chunk 的载荷拼接：chunk 拼接路径必须逐字节保留，重压缩路径必然改变它。
+    static func idatPayload(_ url: URL) throws -> Data {
+        let data = try Data(contentsOf: url)
+        var payload = Data(), offset = 8
+        while offset + 12 <= data.count {
+            let length = data[offset..<offset+4].reduce(0) { ($0 << 8) | Int($1) }
+            guard length <= data.count - offset - 12 else { break }
+            if String(data: data[offset+4..<offset+8], encoding: .ascii) == "IDAT" {
+                payload.append(data[(offset+8)..<(offset+8+length)])
+            }
+            offset += length + 12
+        }
+        return payload
     }
 
     static func image(bits: Int = 8) -> CGImage {
@@ -92,10 +111,27 @@ struct ExportMetadataTests {
             let destination = output.appendingPathComponent("metadata-copy.\(suffix)")
             encode(image(bits: bits), to: destination, type: type as CFString)
             let before = pixels(destination)
+            let idatBefore = try idatPayload(destination)
+            let splicesBefore = ExportMetadata.pngExifSpliceCount
+            let reencodesBefore = ExportMetadata.pngPixelReencodeCount
             try ExportMetadata.preserve(from: original, in: destination)
             verifyCapture(properties(destination), orientation: 1, width: 3, height: 2)
             check(pixels(destination) == before && decoded(destination).bitsPerComponent == bits,
                   "\(suffix) metadata attachment preserves decoded pixels and bit depth")
+            if suffix == "png" {
+                // 性能契约：PNG 补写走 eXIf chunk 拼接——零像素解码/重压缩；撤修复回退重编码必红。
+                check(ExportMetadata.pngExifSpliceCount == splicesBefore + 1 &&
+                      ExportMetadata.pngPixelReencodeCount == reencodesBefore,
+                      "png metadata attachment splices one eXIf chunk without any pixel re-encode")
+                check(try idatPayload(destination) == idatBefore,
+                      "png IDAT pixel stream survives metadata attachment byte-for-byte")
+                // 幂等：重复补写只替换既有 eXIf，不产生第二个，也不触碰 IDAT。
+                try ExportMetadata.preserve(from: original, in: destination)
+                check(try countPNGChunks(destination, "eXIf") == 1 &&
+                      idatPayload(destination) == idatBefore,
+                      "repeated attachment replaces the eXIf chunk instead of duplicating it")
+                verifyCapture(properties(destination), orientation: 1, width: 3, height: 2)
+            }
         }
         let jpeg = try ExportMetadata.jpegData(image: image(), sourceURL: original, orientation: .right, quality: 0.92)
         let jpegURL = output.appendingPathComponent("ios-encoder.jpg")
