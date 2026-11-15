@@ -146,6 +146,12 @@ internal class MediaPhotoLibrary(private val context: Context) : MediaPhotoAcces
             ?: throw IOException("Camera media reference is unavailable")
         val size = record.firstOrNull()?.toLongOrNull() ?: throw IOException("Invalid camera media reference")
         val expected = record.getOrNull(1) ?: throw IOException("Invalid camera media reference")
+        // (size,lastModified) 指纹命中即复用已登记摘要，打开不再整读 30–80MB。
+        // 取舍（crypto 强度降级，随 #403 iOS 半边同构登记）：稳态打开从「每次全量 SHA-256」降为
+        // 「发布后首次全量校验 + stat 指纹信任」，同尺寸同秒的原位改写不再被打开路径抓到，与相机日志 A1 同口径。
+        val stat = stat(canonical.toString())?.takeIf { it.size > 0 && it.modifiedAt > 0 }
+        if (stat != null && stat.size == size && sources.getString("$canonical.stat", null) == stat.fingerprint())
+            return canonical
         var total = 0L
         val digest = MessageDigest.getInstance("SHA-256")
         open(canonical.toString()).use { inputStream ->
@@ -158,6 +164,10 @@ internal class MediaPhotoLibrary(private val context: Context) : MediaPhotoAcces
             }
         }
         if (total != size || digest.digest().joinToString("") { "%02x".format(it) } != expected) throw MediaPhotoChanged()
+        // 全量校验通过才登记指纹（指纹 size 必须等于校验 size），下次打开走免读盘快路径。
+        stat?.takeIf { it.size == size }?.let {
+            sources.edit().putString("$canonical.stat", it.fingerprint()).commit()
+        }
         return canonical
     }
 
