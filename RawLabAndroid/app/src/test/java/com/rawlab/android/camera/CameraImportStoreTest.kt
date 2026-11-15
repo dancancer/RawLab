@@ -429,6 +429,38 @@ class CameraImportStoreTest {
         assertFalse("没有快照的孤儿 WAL 由 load 回收", orphan.exists())
     }
 
+    @Test fun staleWalLinesDoNotOverwriteNewerSnapshotAfterCrashBeforeTruncation() = withStore { fixture, store ->
+        val bytes = listOf(raw.copyOf().also { it[20] = 5 }, raw.copyOf().also { it[20] = 6 })
+        val job = store.create("camera", listOf(photo("1"), photo("2")), CameraImportDestination())
+        var current = job
+        var staleSavedLine = ""
+        bytes.forEachIndexed { index, content ->
+            val part = store.partial(job.id); part.writeBytes(content)
+            current = store.publish(current, index, part, hash(content), CameraTransferPermit())
+            // 第一张的已保存锚行（带当时有效的 savedStat），模拟截断前崩溃的 WAL 残留。
+            if (index == 0) staleSavedLine = File(fixture.root, "jobs/${job.id}.wal").readLines().last()
+        }
+        assertEquals(CameraJobStatus.COMPLETE, current.status)
+        // 同尺寸同 mtime 改写：savedUris 的强校验抓到摘要不符，清掉指纹并落盘新快照。
+        val firstUri = current.items[0].saved!!.uri
+        val file = fixture.media.file(firstUri)
+        val stamp = file.lastModified()
+        val tampered = file.readBytes().also { it[0] = (it[0] + 1).toByte() }
+        file.writeBytes(tampered); file.setLastModified(stamp)
+        assertThrows(CameraLocalSourceChanged::class.java) { store.savedUris(current) }
+        // 快照落盘与 WAL 截断之间崩溃：旧锚行（含无序号的旧 prepared 行）回到 WAL 上。
+        File(fixture.root, "jobs/${job.id}.wal").writeText(staleSavedLine + "\n" +
+            JSONObject().put("i", 1).put("digest", hash(bytes[1]))
+                .put("prepared", JSONObject().put("uri", current.items[1].saved!!.uri)
+                    .put("name", "DSC00001.ARW").put("path", "DSC00001.ARW").put("pending", false)) + "\n")
+        val recovered = fixture.store().load().single()
+        assertNull("旧 prepared 锚按写序号跳过，不再盖回已保存条目（撤序号必红）", recovered.items[1].prepared)
+        assertEquals("旧 savedStat 不能复活放行被篡改的文件：仍翻转为 CHANGED（撤序号必红）",
+            CameraMediaProblem.CHANGED, recovered.items[0].problem)
+        assertNotNull(recovered.items[1].saved)
+        assertEquals(CameraJobStatus.PAUSED, recovered.status)
+    }
+
     @Test fun damagedPendingMediaIsRemovedOnRecovery() = withStore { fixture, store ->
         fixture.media.failBeforePublish = true
         assertThrows(IOException::class.java) { save(store) }
@@ -655,11 +687,13 @@ class CameraImportStoreTest {
         val second = store.create("camera", listOf(bigPhoto), CameraImportDestination())
         val output = File(fixture.root, "reuse.out")
         val before = store.contentDigestCount
+        val scans = store.directoryScans
         val digest = store.copySampledOriginal(second, bigPhoto, FileOutputStream(output), CameraTransferPermit()) { offset, length ->
             big.copyOfRange(offset.toInt(), offset.toInt() + length)
         }
         assertEquals(hash(big), digest)
         assertEquals("候选指纹命中即复用：候选校验零整文件摘要", 0, store.contentDigestCount - before)
+        assertEquals("候选复用视野走内存账本，不重读全目录", scans, store.directoryScans)
         assertArrayEquals(big, output.readBytes())
     }
 
