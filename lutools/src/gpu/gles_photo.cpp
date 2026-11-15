@@ -168,6 +168,7 @@ struct GlesPhotoRenderer::Impl {
         if (bytes == 0 || bytes > blockLimit) throw std::runtime_error("SSBO size exceeds device limit");
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffers[index]);
         if (capacities[index] != bytes) {
+            capacities[index] = 0;
             glBufferData(GL_SHADER_STORAGE_BUFFER, static_cast<GLsizeiptr>(bytes), nullptr, GL_DYNAMIC_COPY);
             checkGL(); capacities[index] = bytes;
         }
@@ -196,15 +197,28 @@ struct GlesPhotoRenderer::Impl {
         checkProcessingCancellation();
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffers[2]);
         auto mapped = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, static_cast<GLsizeiptr>(bytes), GL_MAP_READ_BIT);
-        if (!mapped) throw std::runtime_error("GPU readback failed");
+        if (!mapped) {
+            checkGL();
+            throw std::runtime_error("GPU readback failed");
+        }
         std::memcpy(destination, mapped, bytes);
-        if (!glUnmapBuffer(GL_SHADER_STORAGE_BUFFER)) throw std::runtime_error("GPU buffer contents lost");
+        if (!glUnmapBuffer(GL_SHADER_STORAGE_BUFFER)) {
+            checkGL();
+            throw std::runtime_error("GPU buffer contents lost");
+        }
         checkProcessingCancellation();
         checkGL();
+    }
+    void clearStickyErrors() {
+        Binding binding(display, surface, context);
+        if (binding.bound) {
+            while (glGetError() != GL_NO_ERROR) {}
+        }
     }
     void setLut(const std::shared_ptr<LUT3D>& lut) {
         glActiveTexture(GL_TEXTURE0);
         if (lut && cachedLut != lut) {
+            cachedLut.reset();
             if (lut->getSize() > textureLimit) throw std::runtime_error("LUT exceeds device texture limit");
             if (!texture) glGenTextures(1, &texture);
             glBindTexture(GL_TEXTURE_3D, texture);
@@ -335,12 +349,15 @@ bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
         retry_.succeeded();
         return true;
     } catch (const ProcessingCancelled&) {
+        if (impl_) impl_->clearStickyErrors();
         throw;
     } catch (const std::exception& error) {
         __android_log_print(ANDROID_LOG_WARN, "RawLabGPU", "%s; falling back when Auto is selected", error.what());
         if (initializing || glesLostDevice(error)) {
             retry_.failed(glesRetryNow());
             impl_.reset();
+        } else if (impl_) {
+            impl_->clearStickyErrors();
         }
         return false;
     }

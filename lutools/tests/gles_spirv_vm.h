@@ -38,6 +38,10 @@ struct GlesVmConfig {
     int failCreateContextRemaining = 0;
     GLenum injectNextGlError = GL_NO_ERROR;
     EGLint injectNextMakeCurrentError = EGL_SUCCESS;
+    bool failNextBufferDataOom = false;
+    bool failNextTexImage3DOom = false;
+    GLenum failNextMapBufferError = GL_NO_ERROR;
+    GLenum failNextUnmapBufferError = GL_NO_ERROR;
 };
 
 struct GlesVmStats {
@@ -1611,6 +1615,13 @@ void glTexImage3D(GLenum, GLint, GLint internalformat, GLsizei width, GLsizei he
     s.stats.lastTexType = type;
 
     auto& tex = s.textures[c.boundTex3D[c.activeTexUnit]];
+    if (s.config.failNextTexImage3DOom) {
+        s.config.failNextTexImage3DOom = false;
+        tex.width = tex.height = tex.depth = 0;
+        tex.data.clear();
+        s.lastError = GL_OUT_OF_MEMORY;
+        return;
+    }
     tex.width = width;
     tex.height = height;
     tex.depth = depth;
@@ -1663,6 +1674,12 @@ void glBufferData(GLenum target, GLsizeiptr size, const void* data, GLenum) {
     s.stats.maxBufferDataBytes = std::max(s.stats.maxBufferDataBytes, nbytes);
     const GLuint id = detail::boundBufferFor(target);
     auto& b = s.buffers[id];
+    if (s.config.failNextBufferDataOom) {
+        s.config.failNextBufferDataOom = false;
+        b.bytes.clear();
+        s.lastError = GL_OUT_OF_MEMORY;
+        return;
+    }
     b.bytes.assign(static_cast<size_t>(size), 0);
     if (data && size > 0) std::memcpy(b.bytes.data(), data, static_cast<size_t>(size));
 }
@@ -1681,6 +1698,11 @@ void glBufferSubData(GLenum target, GLintptr offset, GLsizeiptr size, const void
 }
 void* glMapBufferRange(GLenum target, GLintptr offset, GLsizeiptr length, GLbitfield) {
     auto& s = detail::state();
+    if (s.config.failNextMapBufferError != GL_NO_ERROR) {
+        s.lastError = s.config.failNextMapBufferError;
+        s.config.failNextMapBufferError = GL_NO_ERROR;
+        return nullptr;
+    }
     const GLuint id = detail::boundBufferFor(target);
     auto& b = s.buffers[id];
     if (offset < 0 || length < 0 || size_t(offset) + size_t(length) > b.bytes.size()) {
@@ -1694,6 +1716,11 @@ GLboolean glUnmapBuffer(GLenum target) {
     auto& s = detail::state();
     const GLuint id = detail::boundBufferFor(target);
     s.buffers[id].mapped = false;
+    if (s.config.failNextUnmapBufferError != GL_NO_ERROR) {
+        s.lastError = s.config.failNextUnmapBufferError;
+        s.config.failNextUnmapBufferError = GL_NO_ERROR;
+        return GL_FALSE;
+    }
     return GL_TRUE;
 }
 void glDeleteBuffers(GLsizei n, const GLuint* buffers) {

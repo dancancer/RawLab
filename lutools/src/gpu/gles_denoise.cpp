@@ -202,10 +202,22 @@ public:
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, static_cast<Buffer&>(buffer.underlying()).name);
         const auto bytes = static_cast<GLsizeiptr>(count * sizeof(float));
         const auto mapped = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, bytes, GL_MAP_READ_BIT);
-        if (!mapped) throw std::runtime_error("GLES filter readback failed");
+        if (!mapped) {
+            checked();
+            throw std::runtime_error("GLES filter readback failed");
+        }
         std::memcpy(output, mapped, static_cast<size_t>(bytes));
-        if (!glUnmapBuffer(GL_SHADER_STORAGE_BUFFER)) throw std::runtime_error("GLES filter buffer contents lost");
+        if (!glUnmapBuffer(GL_SHADER_STORAGE_BUFFER)) {
+            checked();
+            throw std::runtime_error("GLES filter buffer contents lost");
+        }
         checked();
+    }
+    void clearErrors() override {
+        try {
+            auto scope = activate();
+            while (glGetError() != GL_NO_ERROR) {}
+        } catch (...) {}
     }
 };
 } // namespace

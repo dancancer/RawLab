@@ -66,17 +66,22 @@ bool compute(Operation operation) {
             if (ok) context.retry.succeeded();
             return ok;
         } catch (const ProcessingCancelled&) {
+            if (device) device->clearErrors();
             throw;
         } catch (const std::exception& error) {
 #if defined(SONY2FUJI_ENABLE_D3D11)
             if (initializing || d3d11LostDevice(error) || (device && device->deviceLost())) {
                 context.retry.failed(filterRetryNow());
                 device.reset();
+            } else if (device) {
+                device->clearErrors();
             }
 #else
             if (initializing || glesLostDevice(error)) {
                 context.retry.failed(filterRetryNow());
                 device.reset();
+            } else if (device) {
+                device->clearErrors();
             }
 #endif
             throw;
