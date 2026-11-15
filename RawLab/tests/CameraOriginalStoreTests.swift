@@ -124,6 +124,7 @@ import Darwin
         try recoverRetriesEmptyDirectoryRemoval()
         try recoverOrdersReAdoptedOriginals()
         try recoverSweepsOrphanDirectories()
+        try completeReusesStreamedDigestWithoutRehashingPartial()
         if #available(macOS 15.0, iOS 18.0, *) { try isoGainMapJPEG() }
     }
 
@@ -876,6 +877,40 @@ import Darwin
                   !FileManager.default.fileExists(atPath: orphanCompleteDir.path) &&
                   store!.snapshot.originals.map(\.id) == [kept.id, preparedValid.id],
                   "pruneExportedOriginals() reclaims exported re-adopted original and removes its directory")
+    }
+
+    private static func completeReusesStreamedDigestWithoutRehashingPartial() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-complete-dedup-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        var fullHashes = 0
+        let store = try CameraOriginalStore(directory: root, onFullHash: { _ in fullHashes += 1 })
+        let bytes = Data([73, 73, 42, 0, 1, 2, 3, 4])
+        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        let identity = CameraDeviceIdentity(manufacturer: "Sony", model: "ILCE-7M4", firmware: "1.0", serial: "0001", operations: [0x923c, 0x923d])
+        let snapshot = CameraAssetSnapshot(content: 1, file: 1, storage: 1, format: 0xb101,
+                                           name: "DSC00010.ARW", size: UInt64(bytes.count), created: "1700000000000", modified: "")
+        let job = try store.enqueue(device: identity, connectionKey: "fixture", assets: [snapshot])
+        let target = try store.begin(job: job.id, item: job.items[0].id)
+        try target.handle.write(contentsOf: bytes)
+        try target.handle.close()
+        let saved = try store.complete(job: job.id, item: job.items[0].id, digest: digest)
+        try check(fullHashes == 0 && saved.digest == digest && saved.size == UInt64(bytes.count),
+                  "complete() reuses streamed digest without re-hashing .partial (actual hashes: \(fullHashes))")
+
+        let badJob = try store.enqueue(device: identity, connectionKey: "fixture", assets: [
+            CameraAssetSnapshot(content: 2, file: 2, storage: 1, format: 0xb101,
+                                name: "DSC00011.ARW", size: UInt64(bytes.count), created: "1700000001000", modified: "")
+        ])
+        let badTarget = try store.begin(job: badJob.id, item: badJob.items[0].id)
+        try badTarget.handle.write(contentsOf: Data(bytes.dropLast()))
+        try badTarget.handle.close()
+        var sizeRejected = false
+        do {
+            _ = try store.complete(job: badJob.id, item: badJob.items[0].id, digest: digest)
+        } catch CameraProtocolError.invalid(_) {
+            sizeRejected = true
+        }
+        try check(sizeRejected, "complete() still rejects .partial whose file size differs from asset size")
     }
 
     private static func write(_ bytes: Data, item: CameraTransferItem, job: CameraTransferJob, store: CameraOriginalStore) throws -> CameraStoredOriginal {

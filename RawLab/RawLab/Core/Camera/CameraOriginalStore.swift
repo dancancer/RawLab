@@ -216,6 +216,7 @@ final class CameraOriginalStore {
     private let directoryLock: FileHandle
     private let lock = NSRecursiveLock()
     private let onManifestWrite: (() -> Void)?
+    private let onFullHash: ((URL) -> Void)?
     private var state: CameraOriginalManifest
     private var batchDepth = 0
     private var batchDirty = false
@@ -226,9 +227,10 @@ final class CameraOriginalStore {
         try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
             appropriateFor: nil, create: true).appendingPathComponent("RawLab/CameraOriginals", isDirectory: true)
     }
-    init(directory: URL, onManifestWrite: (() -> Void)? = nil) throws {
+    init(directory: URL, onManifestWrite: (() -> Void)? = nil, onFullHash: ((URL) -> Void)? = nil) throws {
         self.directory = directory
         self.onManifestWrite = onManifestWrite
+        self.onFullHash = onFullHash
         originalsDirectory = directory.appendingPathComponent("originals", isDirectory: true)
         partialDirectory = directory.appendingPathComponent("partial", isDirectory: true)
         manifestURL = directory.appendingPathComponent("manifest.json")
@@ -367,12 +369,16 @@ final class CameraOriginalStore {
         }
         return (size, digest.finalize().map { String(format: "%02x", $0) }.joined())
     }
+    private func hashFile(_ url: URL) throws -> (size: UInt64, digest: String) {
+        onFullHash?(url)
+        return try Self.hash(url)
+    }
     private func availability(_ source: CameraStoredOriginal) -> CameraOriginalAvailability {
         let url = originalURL(source)
         do {
             let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
             guard attributes[.type] as? FileAttributeType == .typeRegular else { return .changed }
-            let actual = try Self.hash(url)
+            let actual = try hashFile(url)
             return actual.size == source.size && actual.digest == source.digest ? .available : .changed
         } catch {
             let code = (error as NSError).code
@@ -540,8 +546,12 @@ final class CameraOriginalStore {
             let (j, i) = try indices(job: job, item: item)
             let transfer = state.jobs[j].items[i], partial = partialURL(item)
             guard transfer.phase == .downloading, Self.validDigest(digest) else { throw CameraProtocolError.invalid("Original transfer is not complete") }
-            let actual = try Self.hash(partial)
-            guard actual.size == transfer.asset.size, actual.digest == digest else { throw CameraProtocolError.invalid("Original size or checksum mismatch") }
+            let attributes = try FileManager.default.attributesOfItem(atPath: partial.path)
+            guard attributes[.type] as? FileAttributeType == .typeRegular,
+                  let partialSize = (attributes[.size] as? NSNumber)?.uint64Value,
+                  partialSize == transfer.asset.size else {
+                throw CameraProtocolError.invalid("Original size or checksum mismatch")
+            }
             let reader = try FileHandle(forReadingFrom: partial)
             let prefix = try reader.read(upToCount: 4) ?? Data(); try reader.close()
             try CameraWire.validateHeader(name: transfer.asset.name, data: prefix)
@@ -557,7 +567,7 @@ final class CameraOriginalStore {
             let adjustableSource = try jpegSource.map { _ in try CameraJPEGProcessing.adjustableSource(partial) }
             if let existing = state.originals.first(where: { source in
                 guard source.availability != .prepared, source.jpegSource == jpegSource else { return false }
-                return (jpegSource != nil || (source.digest == digest && source.size == actual.size)) && availability(source) == .available
+                return (jpegSource != nil || (source.digest == digest && source.size == transfer.asset.size)) && availability(source) == .available
             }) {
                 try change {
                     state.jobs[j].items[i].sourceID = existing.id
@@ -575,12 +585,12 @@ final class CameraOriginalStore {
             let output: (size: UInt64, digest: String)
             if let jpegSource, let adjustableSource {
                 try CameraJPEGProcessing.encode(source: adjustableSource, destinationURL: staged, options: jpegSource.options)
-                output = try Self.hash(staged)
+                output = try hashFile(staged)
                 guard output.size > 0 else { throw CameraProtocolError.jpegProcessing }
                 let handle = try FileHandle(forUpdating: staged)
                 defer { try? handle.close() }
                 try handle.synchronize()
-            } else { output = actual }
+            } else { output = (size: transfer.asset.size, digest: digest) }
             let source = CameraStoredOriginal(id: UUID(), name: transfer.asset.name, size: output.size, digest: output.digest,
                                               savedAt: Date(), jpegSource: jpegSource)
             try change {
