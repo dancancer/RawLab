@@ -154,7 +154,7 @@ internal static class RenderedDngChecks
             auto.SetGpuMode(2);
             var rejected = false; var forced = Path.Combine(output, "force.dng");
             try { auto.Render(source, settings, look, 0, output: forced, longEdge: 128); }
-            catch (InvalidOperationException error) when (error.Message == StatusMessage(2) || error.Message == StatusMessage(4))
+            catch (InvalidOperationException error) when (error.Message == Native.FormatErrorMessage(2, null, Native.UnsupportedReason.ForceGpu) || error.Message == StatusMessage(4))
             { rejected = true; Console.WriteLine("FORCE rejection=" + error.Message); }
             Check(rejected && !File.Exists(forced), "Force cannot publish CPU C5 as GPU output");
         }

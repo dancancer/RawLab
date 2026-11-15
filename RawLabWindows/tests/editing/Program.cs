@@ -125,6 +125,12 @@ static void ForceGpuErrorMessageChecks()
     var renderEngineSource = File.ReadAllText(ResolveRepoPath("RawLabWindows/RenderEngine.cs"));
     Check(System.Text.RegularExpressions.Regex.Matches(renderEngineSource, @"\bNative\.Check\(\s*status\s*,\s*session\s*\)").Count >= 6,
         "RenderEngine.cs must pass session to all session-result Native.Check(status, session) calls");
+    var renderedDngSource = File.ReadAllText(ResolveRepoPath("RawLabWindows/tests/RenderedDngChecks.cs"));
+    Check(!System.Text.RegularExpressions.Regex.IsMatch(renderedDngSource, @"\bStatusMessage\(\s*2\s*\)"),
+        "Rendered DNG Force rejection must not filter on the sessionless unsupported message");
+    Check(System.Text.RegularExpressions.Regex.IsMatch(renderedDngSource,
+        @"error\.Message\s*==\s*Native\.FormatErrorMessage\(\s*2\s*,\s*null\s*,\s*Native\.UnsupportedReason\.ForceGpu\s*\)\s*\|\|\s*error\.Message\s*==\s*StatusMessage\(\s*4\s*\)"),
+        "Rendered DNG Force rejection accepts the Force GPU message and status 4 fallback");
 }
 static string ResolveRepoPath(string relativePath)
 {
