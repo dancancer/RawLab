@@ -382,3 +382,14 @@
 - **#360 根因翻案（codex）**：Windows native `lut_contract_render` 12 连红非 d3d11 缓存键，而是 **LUT 文件缓存只比路径/大小/mtime**——测试同尺寸同时间戳覆写同路径时 V-Log 错误复用线性 LUT，本机确定性复现同款 12 红；系 development 既有缺陷（非 #360 引入）。修复=lut_parser 按内容 SHA-256 判缓存+同尺寸同 mtime 覆写回归（红锚成立）+两个 `#define` 变体缓存测试。native 前二跑败于 Adobe 下载网络断（码 56/18，未及测试），第三跑 `43716383315` 在途。遗留：LUT 加载新增全文件哈希的性能基准待补（非阻断）。
 - **真机三分类（research，双环境对照+素材入 APK）**：12 嫌疑类**全部 A 类真实缺陷**（API29+API35 同红，素材无关）；素材类（RasterFixture/NativeMemory/HDRBatchCancel 等）装样片即转绿=C 类。拆 4 票：**k531** P0 batch cancel 门序崩溃（latch 30s 主线程 AssertionError 崩仪器进程，连带同类 3 法没跑）；**k533** P0 小图 master recipe 预览上变换 19→1600（viewportPreview 绕过原生钳制，C++ 侧）；**k535** P1 Editor v0.8 toolOpen 契约错位（6 UI 套件共因：EditorWorkspaceGroups 15/18、UsageFilm、LookLibrary、AdjustmentPresetUI、CameraMediaUi、X3fEditor）；**k537** P1/P2 尾批（colorState 枚举 5vs6、批量选择读盘竞态、相机续传句柄契约、API29 Compose no-paragraph 崩溃+411dp 裁切）。k531/k533 Hydrogen、k535 codex 并行在跑。
 - **滑杆票 #373**：双击容差子类+惯性合并交付（红锚/13+29 全绿/CI 7/7），碳实跑仍拦两阻断（第 2 触快滑零写回假绿、touchesBegan 抹惯性窗致既有回归分裂 4 对编辑态）→ Hydrogen 一轮返工在跑。另两张 k161 小票经 git 证据确认**已随 #359 顺路修复**（b9f00f1f：preflight @StateObject+nearGray 断言），零改动关票。
+
+### (65) 大波合入（128–141）：#373–#386 十四单；#360 收官；真机红尾批 k531–k537 全清
+
+- **#373 合入（128th `5711a6f8`）**：iOS HDR 滑杆 r2（delegate 判定+位移回退，碳两轮后 APPROVE 0 阻断）。**#375（129th `d23475d4`）**：批量状态门序测试搬迁（PROCESSING→PUBLISHING/FAILED），零产品改动；碳用两个独立反证锁定"测试有罪"。**#376（130th `26193be8`）**：PREVIEW+邻域/几何统一 `preview_long_edge=min(pl,native)` 封顶（#533 主修）。
+- **CI 三连（131–133）**：#377 ndk-compile 工具链过滤+Python 契约测试入 CI；#378 `raw_active_area` CLI 消费矩阵；#380 `inspect_lut_color` 状态语义（rlook→LEGACY(5)/畸形→UNREADABLE(6)），碳实跑核 strength=2f 不钳 1.0。
+- **#381 合入（134th `863f4028`）**：Editor v0.8 toolOpen 契约错位主修（codex，6 UI 套件共因）；契约裁定=桌面分组工具网格、选中工具才开草稿（与 mobile-r2 分组语义对齐，Mac 桌面=不同契约）。6 套件 API35 全绿+碳加跑 Pixel XL API29 抽验绿。
+- **#360 合入（135th `9e94034f`）**：GPU 跟随大票（LUT SHA-256 缓存内容失效+d3d11 双 define+`--rendered-dng` 组合），native 手动门禁 139/139 绿。碳 r3 简注：64³/65³ `.cube` 热哈希 +29–31ms/帧 → 派生 perf 票 #387。
+- **真机红尾批 k537 四单全清（136–141）**：#382 API29 簇（compose-bom 2025.06 修 `GraphicsLayerV29` no-paragraph 崩溃+AboutDialog 411dp，Pixel 16/16）136th；#383 GLES 设备 EGL 平台分支（**#343 真机触达 0→31 PASS**，AVD+Pixel）137th；#384 小图纯几何封顶 138th；#385 SDR 批量取消代际透传锁 139th；#386 相机续传契约断言对齐 #340（又是测试随实现漂移；双设备 6/6）140th；#379 批量选择读盘竞态——碳包 D 打回**测试注入时序**真根因（controlsEnabled 守卫静默丢 edit），处方 r2 后碳独立 6/6 亲验 141th。
+- **Windows native 下载 flake 治理**：DNG SDK/rustup 下载连挂 4 次（schannel/GOAWAY/tls eof，run 43726623136 三连败）；#388 换仓内 `rawlab_download_archive` 3 重试+SHA256 校验（氢实测 `DOWNLOAD_RETRIES` 非 FetchContent 合法关键字）碳 APPROVE，分支 native 端到端实测在跑。**教训**：连挂≥2 次即升碳/codex 接手，氢不再盲重试。
+- **在途**：#387 LUT 哈希平台加速（CC_SHA256/CNG；64³ SHA 28.2→2.6ms 达标；碳 r1 拦 Windows `RGB` 宏击穿/provider 析构序/MinGW 链接三阻断，codex r2 已修，碳 r3+Windows native 门禁收口）。
+- **登记**：k159 双简注（viewport_preview==0+邻域微差异、geom 封顶已随 #384 落）；k163（DNG 重试已票面化 #388）；k161（commitAdjustments 解锁序/revision 快照下沉；controlsEnabled 静默丢编辑的普通用户路径确认票）；AVD-B（rawlab-api35-b）本轮新增为并行设备泳道，波尾拆除。
