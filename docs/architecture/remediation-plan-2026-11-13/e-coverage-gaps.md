@@ -47,3 +47,11 @@
 - **E.2#5（`TempCleanupTests` 是否进 CI）**：已核实进入 CI——`scripts/ci/windows-models.ps1:25` 执行 `[usage]` 套件，GitHub Actions Run `43464214720` 实跑通过（完成-05 **✅ 复核通过**）。
 - **E.2#6（四端重置入口）**：已由 #307 @ `3afff0b8` 建立 `Shared/fixtures/reset-scenarios-v1.json` 并在四端实跑，但 `@spec_default` 掩盖了跨端 wire 载荷分歧（P1-③ **复核：部分成立**）。
 - **E.2#8（#260 Android 联机逐行审）**：已结合 #296 @ `f72b1e8a`（WP-10）逐行复核：A13/A16 **✅ 复核通过**；A14 冷启动恢复 `PAUSED` 落 `CameraRoute.HOME` 缺确认继续按钮（完成-07 **复核：部分成立**）。
+
+### E.6 2026-11-15 第三轮复核回填（`6d6a7acf`）
+
+- **E.2#1（iOS AX 静默跳过）已关闭**：`#318 @ 29686139` 补齐 `IOSResetEntryUITests` 的 `RAWLAB_REQUIRE_AX` 门禁、显式 `SKIP` 日志及无 AX 表示层测试，并扩 `test_ax_gate.py` 至 4 套件（**✅ 复核通过**）。
+- **E.2#4（三段抽样文档缺口）已收口文档半边**：`#340 @ a28c6930` 已在跨端契约 `docs/design/camera-transfer/mobile-ui-interaction.md:176-177` 写明复用条件与非完整性哈希边界（`完成-06` **✅ 复核通过**；`CameraOriginalStore.swift` 锁内全量遍历优化仍归 `P3-47`）。
+- **E.2#6（四端重置入口）已收口**：`#322 @ 6ec32822` + `#326 @ e0b8a453` + `#346 @ 56c815ab` 将 `@spec_default` 改为严格 wire 值比对并扩至 18 场景（含 `.hdrRendition`），四端重置分歧归 `0`（**✅ 复核通过**）。
+- **R6（Windows CTest 允许名单盲区）已收口**：`#346 @ 56c815ab` 新增 `scripts/ci/test_windows_inventory.py`，对 `140` 项允许名单与 `41` 项已知不适用名单对照全量 `181` 项 CTest 做双向零差集对账（`P2-24` **✅ 复核通过**）。
+- **新发现的门禁注册缺口（非阻断工程卫生）**：三轮新增的 5 支 Apple 专项回归脚本（`RawLabMac/tests/{thumbnail-cache,batch-cancellation}.sh`、`RawLab/tests/{ios-photo-previews,raw-unpack-export,subtool-menu-draft}.sh`）本机均实跑全绿，但尚未注册进 `scripts/ci/apple-models.sh`；另缺 `glslangValidator` 时 `lutools/CMakeLists.txt` 的 `gles_photo_shader_vm` 宜改为登记 `SKIP 77` 以遵守 `C22`。

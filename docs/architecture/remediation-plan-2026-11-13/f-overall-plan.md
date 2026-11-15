@@ -53,10 +53,11 @@
 - **最小可行路线**：P0 + P1 + P2 的 S1/版本表，约 2.5 轮。
 - **理想路线**：P0–P4，约 4.5–5 轮。
 - **止损点**：P1 结束若 Android/Windows 接入仍未绿 → 停止扩规格只保留向量；代码生成永不主动启动；渲染对拍若 CI 跑不了 WARP/GLES → 只留发布门禁。
-- **P1 语义地基复核状态（2026-11-14，`bcdc7c64`）**：
-  - **P1-① 传输场景接入**（#283 / #285 / #312 @ `916ecadd`）：**✅ 复核通过**——四端消费 `adjustment-transfer-scenarios-v1.json`，Android/Windows 例外棘轮归零且 HDR 配方强度换算（A17）已补齐；但 #301 新增的 Q3 降噪向量未覆盖栅格/非 Bayer/AI 目标（见 D-02）与小数精度（见 D-05）。
-  - **P1-② 字段表 + 四端 parity**（#286 @ `9230b1e8`）：**复核：部分成立**——Layer 1（83 字段闭环、别名、棘轮 71 条）成立；但 `scripts/ci/test_adjustment_fields_spec.py` 的 Layer 2/3 有 20+ 处调用 `_snap4(...)` 未接返回值、多组字段直接拿单端常量（如 Windows `PhotoEffectsSettings.cs`、Android `EditSettings.kt`）冒充四端或写死 `-100..100`、以及 `_ANCHORS` 指错函数（如 `:317` 小波色度指向 `RawDenoiseSettings`），本轮改坏 `Shared/Models/RawSettings.swift:57`（`vignetteMidpointRange`）与 `AdjustmentKind.swift:109`（`highlights` 步长）后仍假绿通过。
-  - **P1-③ 重置场景向量**（#307 @ `3afff0b8`）：**复核：部分成立**——四端已接入真实生产重置入口并进入模型门禁；但 `@spec_default` 按各端本地默认值展开，掩盖了真实跨端 wire 载荷分歧（例如 `all-reset-raw` 在 Mac 输出 `chroma_mode=null, wavelet=null`、其余三端输出 `0` 与对象，夹具却记 `divergences: []`），且仅 9 个场景、未覆盖 Q5 `.hdrRendition` 分组及非字段表状态（胶片颗粒开关、曲线点、局部蒙版等）。
+- **P1 语义地基复核状态（2026-11-15，`6d6a7acf`）**：
+  - **P1-① 传输场景接入**（`#283 / #285 / #312 / #332 @ 9a4936e4`）：**✅ 复核通过**——四端消费 `adjustment-transfer-scenarios-v1.json`，Android/Windows 例外棘轮归零、HDR 配方强度换算（A17）与 R7 小数精度量化/传输向量（`D-05`）均已闭环；仅余 `D-02` 栅格/非 Bayer RAW/AI 目标降噪键兼容分叉待补（UI 提示回归已由 `#317`/`#320` 修复）。
+  - **P1-② 字段表 + 四端 parity**（`#286 / #321 @ 9bb391c4 / #346 @ 56c815ab`）：**✅ 复核通过**——`scripts/ci/test_adjustment_fields_spec.py` 全部 `_snap4(...)` 返回值丢弃与单端冒充缺口已修复，二轮逃逸变异（`vignetteMidpointRange`、`.highlights` 步长）与 HSL 范围变异全部实测变红，分歧棘轮显著收窄（小注：`color.grading.*` 复合行 UI `0..360` 捕获组可后续补强）。
+  - **P1-③ 重置场景向量**（`#307 / #322 @ 6ec32822 / #326 @ e0b8a453 / #346 @ 56c815ab`）：**✅ 复核通过**——`@spec_default` 改为严格 wire 值比对，向量扩至 18 场景（覆盖 Q5 `.hdrRendition` 分组与胶片/曲线/蒙版等非字段表状态），四端重置分歧棘轮全部归 **`0`**。
+  - **P2/P3 关键里程碑（`6d6a7acf`）**：`S1` 编辑记录黄金夹具（`#330 @ 7a747dcb` + `#346`，**✅ 复核通过**）、`S3/X2` 四端热路径 I/O 与 stat 指纹去重（`#335/#336/#341/#344`，**✅ 复核通过**）、`S5/AR-4` 并发取消契约与全管线检查点（`#293/#319/#329/#357`，**✅ 复核通过**）、`S6` Windows 更新器状态矩阵（`#337`，**✅ 复核通过**）、`Q6` 移动端留存回收（`#310`，**✅ 复核通过**）；`P2-16` 外观库三端 UI、`P1-21` GLES 退避/真机与 `P3-60` Windows 时间戳溢出仍标 **复核：部分成立**。
 
 ### 双轨期间的插队准入（四条同时满足）
 
