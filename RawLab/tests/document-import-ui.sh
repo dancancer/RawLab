@@ -84,6 +84,18 @@ for target in targets:
     (documents / 'RawLabImportFixture.cube').write_text(
         '#Gamma:F-Log2 to Test\n#Gamut:F-Gamut to ITU-R BT.709\nLUT_3D_SIZE 2\n' + values)
     (documents / 'RawLabUnknownLook.cube').write_text('LUT_3D_SIZE 2\n' + values)
+    if os.environ.get('RAWLAB_DOCUMENT_IMPORT_TEST', '').endswith('/testUnreadableLooksShowReasonAndCanBeDeleted'):
+        import uuid
+        subprocess.run(['xcrun', 'simctl', 'addmedia', device, str(documents / 'RawLabImportFixture.png')], check=True)
+        subprocess.run(['xcrun', 'simctl', 'privacy', device, 'grant', 'photos', info['CFBundleIdentifier']], check=True)
+        library = data / 'Library/Application Support/RawLab/Looks'
+        library.mkdir(parents=True, exist_ok=True)
+        good, bad = str(uuid.uuid4()).upper(), str(uuid.uuid4()).upper()
+        (library / f'{good}.cube').write_text((documents / 'RawLabImportFixture.cube').read_text())
+        (library / f'{bad}.rlook').write_text('future')
+        (library / 'registry.json').write_text(json.dumps({'version': 1, 'looks': [
+            {'id': good, 'name': 'Survivor', 'fileName': f'{good}.cube', 'sourceName': 'source.cube', 'format': 'cube', 'formatVersion': 0},
+            {'id': bad, 'name': 'Future iOS look', 'fileName': f'{bad}.rlook', 'sourceName': 'future.rlook', 'format': 'rlook', 'formatVersion': 99}, None]}))
     target['UITargetAppPath'] = str(app)
     target['DependentProductPaths'] = [str(app), str(runner), str(test_bundle)]
     source_files = ['RawLab/RawLab/UI/Editor/ContentView.swift',
@@ -109,6 +121,10 @@ TEST_FILTERS=(-only-testing:"$TEST_FILTER")
 # The large-photo detail check requires an iPad and its own fixture; select it explicitly.
 if [[ "${RAWLAB_DOCUMENT_IMPORT_TEST:-}" != */testIPadJPEGPreviewResolvesFineDetailAfterZoom ]]; then
     TEST_FILTERS+=(-skip-testing:RawLabUITests/DocumentImportUITests/testIPadJPEGPreviewResolvesFineDetailAfterZoom)
+fi
+# The damaged-look check seeds a dedicated registry; select it explicitly.
+if [[ "${RAWLAB_DOCUMENT_IMPORT_TEST:-}" != */testUnreadableLooksShowReasonAndCanBeDeleted ]]; then
+    TEST_FILTERS+=(-skip-testing:RawLabUITests/DocumentImportUITests/testUnreadableLooksShowReasonAndCanBeDeleted)
 fi
 xcodebuild test-without-building -xctestrun "$OUT/document-import.xctestrun" \
     -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_UDID" \

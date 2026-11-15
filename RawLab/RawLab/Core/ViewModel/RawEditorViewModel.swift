@@ -70,6 +70,7 @@ final class RawEditorViewModel: ObservableObject {
     var basePreviewLens = LensCorrectionSettings()
     @Published var histogram: Sony2FujiProcessor.RGBHistogram? = nil
     @Published var baseHistogram: Sony2FujiProcessor.RGBHistogram? = nil
+    @Published var unreadableLooks: [LookLibrary.UnreadableLook] = []
     @Published var availableLUTs: [LUTOption] = []
     @Published var lookBrowser = LookBrowserState()
     @Published var recentLooks = RecentLooks()

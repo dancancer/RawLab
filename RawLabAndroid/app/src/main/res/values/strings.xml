@@ -341,6 +341,9 @@
     <string name="look_name">"Look name"</string>
     <string name="look_storage_error">"The look library could not be read. Try again later or delete corrupted look records."</string>
     <string name="look_unavailable">"This look file is unavailable. Delete it and import it again."</string>
+    <string name="look_unreadable_name">"Damaged look"</string>
+    <string name="look_unreadable_reason">"This look cannot be read. It may be damaged or from an incompatible version."</string>
+    <string name="look_unreadable_title">"Unreadable looks"</string>
     <string name="master_recipes">"Master Recipe"</string>
     <string name="memory_error">"Not enough memory to process this photo"</string>
     <string name="message_adjustment_source">"Adjustment Source"</string>

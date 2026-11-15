@@ -108,6 +108,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onImportHDRLook: () -> Unit = {},
     onApplyHDRSilver: (Boolean) -> Unit = {},
     onCancelHDRLookImport: () -> Unit = {},
+    onDeleteUnreadableLook: (com.rawlab.android.looks.UnreadableLook) -> Unit = {},
     onDeleteLook: (String) -> Unit = {}, onLookImportReportDismiss: () -> Unit = {},
     onAbout: () -> Unit = {}, updateVersion: String? = null,
     onPreviewSizeChange: (Int) -> Unit = {},
@@ -430,7 +431,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             quickPresetsVisible = quickPresetsVisible, quickPresetContent = quickPresetContent, gradingZone = gradingZone,
             onGradingZoneChange = { onCancelAdjustment(); gradingZone = it }, hslTarget = hslTarget, onSelectFilm = onSelectFilm,
             onImportHDRLook = onImportHDRLook, onApplyHDRSilver = onApplyHDRSilver,
-            onRollbackProcessing = onRollbackProcessing, toolOpen = toolOpen, fine = fine)
+            onRollbackProcessing = onRollbackProcessing, toolOpen = toolOpen, fine = fine, onDeleteUnreadableLook = onDeleteUnreadableLook)
     })
     val resetPresentation = if (state.photo != null && !view.purePreview) EditorWorkspaceResetPresentation.make(
         state = state, toolOpen = toolOpen, quickPresetsVisible = quickPresetsVisible,

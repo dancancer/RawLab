@@ -341,6 +341,9 @@
     <string name="look_name">"Look-Name"</string>
     <string name="look_storage_error">"Die Look-Bibliothek konnte nicht gelesen werden. Versuchen Sie es später erneut oder löschen Sie beschädigte Look-Einträge."</string>
     <string name="look_unavailable">"Diese Look-Datei ist nicht verfügbar. Löschen Sie sie und importieren Sie sie erneut."</string>
+    <string name="look_unreadable_name">"Beschädigter Look"</string>
+    <string name="look_unreadable_reason">"Dieser Look kann nicht gelesen werden. Er ist möglicherweise beschädigt oder stammt aus einer inkompatiblen Version."</string>
+    <string name="look_unreadable_title">"Nicht lesbare Looks"</string>
     <string name="master_recipes">"Master-Rezept"</string>
     <string name="memory_error">"Nicht genügend Speicher zum Verarbeiten dieses Fotos"</string>
     <string name="message_adjustment_source">"Anpassungsquelle"</string>

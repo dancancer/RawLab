@@ -92,6 +92,7 @@
 "上次使用的外观不可用，请重新选择或导入外观。" = "El último look usado no está disponible. Vuelve a elegir o importar un look.";
 "上次批量任务尚未完成" = "La última exportación por lotes aún no ha terminado";
 "下次退出时安装" = "Instalar al salir la próxima vez";
+"不可读外观" = "Looks ilegibles";
 "不支持此 HDR 格式或颜色描述。" = "Este formato HDR o descripción de color no es compatible.";
 "不支持此 X3F 显影模式。" = "Este modo de revelado X3F no es compatible.";
 "不支持此处理版本，原有记录未被覆盖。" = "Esta versión de procesamiento no es compatible. Las ediciones guardadas no se han sobrescrito.";
@@ -454,6 +455,7 @@
 "按实际生效值应用，已包含配方强度。" = "Se aplican los valores efectivos, incluida la intensidad de la receta.";
 "按已确认条件比较缩小后的 sRGB 像素；差异越小表示越接近此参考，效果仍未验证。" = "Compara píxeles sRGB reducidos con las condiciones confirmadas; una diferencia menor indica mayor proximidad a esta referencia, pero el aspecto sigue sin verificarse.";
 "按每张照片" = "Por foto";
+"损坏的外观" = "Look dañado";
 "损坏的预设" = "Preajuste dañado";
 "排列顺序不代表准确度。未识别的颜色空间、范围和基础图像仍属于假设。" = "El orden no indica precisión. Los espacios de color, rangos y bases de imagen no identificados siguen siendo hipótesis.";
 "控制点 %d" = "Punto %d";
@@ -670,6 +672,7 @@
 "此 X3F 显影模式不支持 AI 降噪。" = "Este modo de revelado X3F no admite reducción de ruido por IA.";
 "此像素不可取样。" = "No se puede tomar una muestra de este píxel.";
 "此外观已不在外观库中。" = "Este look ya no está en la biblioteca de looks.";
+"此外观无法读取，可能已损坏或来自不兼容版本。" = "No se puede leer este look. Puede estar dañado o proceder de una versión incompatible.";
 "此安装暂不支持自动安装更新" = "Esta instalación todavía no admite actualizaciones automáticas";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Solo se restablecerán los ajustes del grupo %@. Los demás grupos no cambiarán.";
 "此操作已过期，请重新操作。" = "Esta operación ha quedado desactualizada. Vuelve a iniciarla.";

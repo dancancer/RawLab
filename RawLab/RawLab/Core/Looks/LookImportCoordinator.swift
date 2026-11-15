@@ -62,6 +62,11 @@ enum LookImportSelection {
     }
 }
 
+struct LookLibrarySnapshot {
+    let looks: [ManagedLook]
+    let unreadableLooks: [LookLibrary.UnreadableLook]
+}
+
 final class LookImportCoordinator {
     typealias Delivery = (@escaping () -> Void) -> Void
     typealias CompatibilityPrompt = (URL, LUTCompatibility, @escaping (LUTCompatibility?) -> Void) -> Void
@@ -85,11 +90,13 @@ final class LookImportCoordinator {
         self.delivery = delivery
     }
 
-    func load(completion: @escaping (Result<[ManagedLook], LookImportFailureReason>) -> Void) {
+    func load(completion: @escaping (Result<LookLibrarySnapshot, LookImportFailureReason>) -> Void) {
         queue.async {
             do {
                 let library = try self.ensureLibrary()
-                let snapshot = library.looks.map { ManagedLook(record: $0, url: library.url(for: $0)) }
+                let snapshot = LookLibrarySnapshot(
+                    looks: library.looks.map { ManagedLook(record: $0, url: library.url(for: $0)) },
+                    unreadableLooks: library.unreadableLooks)
                 self.deliver { completion(.success(snapshot)) }
             } catch {
                 self.deliver { completion(.failure(Self.reason(for: error))) }
@@ -234,6 +241,18 @@ final class LookImportCoordinator {
                 try library.rename(id: id, to: name)
                 guard let record = library.looks.first(where: { $0.id == id }) else { throw LookLibraryError.missingLook }
                 self.deliver { completion(.success(.init(record: record, url: library.url(for: record)))) }
+            } catch { self.deliver { completion(.failure(Self.reason(for: error))) } }
+        }
+    }
+
+    func removeUnreadable(_ entry: LookLibrary.UnreadableLook,
+                          completion: @escaping (Result<[LookLibrary.UnreadableLook], LookImportFailureReason>) -> Void) {
+        queue.async {
+            do {
+                let library = try self.ensureLibrary()
+                try library.remove(entry)
+                let remaining = library.unreadableLooks
+                self.deliver { completion(.success(remaining)) }
             } catch { self.deliver { completion(.failure(Self.reason(for: error))) } }
         }
     }

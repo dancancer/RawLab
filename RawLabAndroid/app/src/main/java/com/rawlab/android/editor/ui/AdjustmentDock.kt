@@ -111,6 +111,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     onPresets: () -> Unit = {}, quickPresetsVisible: Boolean = false, quickPresetContent: @Composable () -> Unit = {}, gradingZone: ColorGradingZone = ColorGradingZone.SHADOWS,
     onGradingZoneChange: (ColorGradingZone) -> Unit = {}, hslTarget: HslTargetActions = HslTargetActions(),
     onSelectFilm: (String) -> Boolean = { false }, onImportHDRLook: () -> Unit = {}, onApplyHDRSilver: (Boolean) -> Unit = {},
+    onDeleteUnreadableLook: (com.rawlab.android.looks.UnreadableLook) -> Unit = {},
     onRollbackProcessing: () -> Unit = {}, toolOpen: Boolean = true, fine: Boolean = false) {
     val edits = state.visibleEdits
     val context = LocalContext.current
@@ -284,6 +285,9 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                     }
                 }
                 }
+                UnreadableLookRows(state.unreadableLooks, state.operation == Operation.NONE && !state.committingAdjustments &&
+                    (state.draft == null || state.draft.group == AdjustmentGroup.LOOK),
+                    onDeleteUnreadableLook)
             }
             1 -> NumericControl(R.string.strength, edits.strength * 100, 0f..200f, "%", state.controlsEnabled && (edits.film != "neutral" || edits.recipeID != null),
                 { value, dragging -> onEdit(edits.copy(strength = value / 100), dragging) }, { onEdit(edits.copy(strength = 1f), false) })
@@ -532,5 +536,37 @@ internal fun MasterRecipePicker(recipes: List<MasterRecipe>, selected: String?, 
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+    }
+}
+
+@Composable
+internal fun UnreadableLookRows(entries: List<com.rawlab.android.looks.UnreadableLook>, enabled: Boolean,
+    onDelete: (com.rawlab.android.looks.UnreadableLook) -> Unit) {
+    if (entries.isEmpty()) return
+    var deleting by remember { mutableStateOf<com.rawlab.android.looks.UnreadableLook?>(null) }
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("looks.unreadable")) {
+        Text(stringResource(R.string.look_unreadable_title), style = MaterialTheme.typography.titleSmall)
+        entries.forEach { entry ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 8.dp).testTag("looks.rowUnreadable"), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(entry.name?.takeIf { it.isNotBlank() } ?: entry.path?.takeIf { it.isNotBlank() }
+                        ?: stringResource(R.string.look_unreadable_name))
+                    Text(stringResource(R.string.look_unreadable_reason), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(onClick = { deleting = entry }, enabled = enabled, modifier = Modifier.testTag("looks.deleteUnreadable")) {
+                    Text(stringResource(R.string.message_remove))
+                }
+            }
+        }
+    }
+    deleting?.let { entry ->
+        AlertDialog(onDismissRequest = { deleting = null },
+            title = { Text(stringResource(R.string.remove_look_confirmation,
+                entry.name?.takeIf { it.isNotBlank() } ?: entry.path?.takeIf { it.isNotBlank() } ?: stringResource(R.string.look_unreadable_name))) },
+            text = { Text(stringResource(R.string.look_remove_body)) },
+            confirmButton = { TextButton(onClick = { deleting = null; onDelete(entry) }, enabled = enabled,
+                modifier = Modifier.testTag("looks.deleteUnreadable.confirm")) { Text(stringResource(R.string.confirm)) } },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text(stringResource(R.string.cancel)) } })
     }
 }

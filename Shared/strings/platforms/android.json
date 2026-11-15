@@ -6873,6 +6873,24 @@
       "file": "editor_strings.xml",
       "formats": [],
       "types": []
+    },
+    "look_unreadable_title": {
+      "source": "不可读外观",
+      "formats": [],
+      "types": [],
+      "file": "strings.xml"
+    },
+    "look_unreadable_name": {
+      "source": "损坏的外观",
+      "formats": [],
+      "types": [],
+      "file": "strings.xml"
+    },
+    "look_unreadable_reason": {
+      "source": "此外观无法读取，可能已损坏或来自不兼容版本。",
+      "formats": [],
+      "types": [],
+      "file": "strings.xml"
     }
   },
   "overrides": {

@@ -341,6 +341,9 @@
     <string name="look_name">"Nombre del look"</string>
     <string name="look_storage_error">"No se pudo leer la biblioteca de looks. Inténtalo de nuevo más tarde o elimina los registros de looks dañados."</string>
     <string name="look_unavailable">"Este archivo de look no está disponible. Elimínalo e impórtalo de nuevo."</string>
+    <string name="look_unreadable_name">"Look dañado"</string>
+    <string name="look_unreadable_reason">"No se puede leer este look. Puede estar dañado o proceder de una versión incompatible."</string>
+    <string name="look_unreadable_title">"Looks ilegibles"</string>
     <string name="master_recipes">"Receta maestra"</string>
     <string name="memory_error">"No hay memoria suficiente para procesar esta foto"</string>
     <string name="message_adjustment_source">"Origen de los ajustes"</string>

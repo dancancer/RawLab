@@ -134,6 +134,7 @@ struct ContentView: View {
     @State var renamingLUT: LUTOption?
     @State var renamedLUTName = ""
     @State var showingLookRename = false
+    @State var showingUnreadableLooks = false
     @State private var checkedBatchRecovery = false
     @State var showingBatchSelection = false
     @State var queuedCollectionEdit: String?

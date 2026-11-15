@@ -237,6 +237,12 @@ class PhotoStorage(
     fun looks(): List<LookChoice> = films.map { LookChoice(it.id, it.name, managed = false) } + lookLibrary.list().map {
         LookChoice(it.id, it.name, managed = true, available = it.available, appearanceUnverified = it.appearanceUnverified, compatibilityMode = it.compatibilityMode)
     }
+    fun lookEntries() = com.rawlab.android.looks.LookLibraryEntries.load(lookLibrary,
+        films.map { LookChoice(it.id, it.name, managed = false) })
+    fun deleteUnreadableLook(entry: com.rawlab.android.looks.UnreadableLook) =
+        com.rawlab.android.looks.LookLibraryEntries.removeUnreadable(lookLibrary, entry,
+            films.map { LookChoice(it.id, it.name, managed = false) })
+
     fun builtinLookIDs(): Map<String, String> = films.mapNotNull { film -> film.fileName?.let { it to film.id } }.toMap()
 
     internal fun lookSourceName(uri: Uri): String = runCatching { resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
