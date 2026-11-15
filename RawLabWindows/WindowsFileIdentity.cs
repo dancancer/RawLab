@@ -117,7 +117,8 @@ internal static class WindowsFileIdentity
                 changeTicks,
                 usn,
                 fileId);
-            return true;
+            // 原地覆写可保留尺寸、mtime 和 FileID；没有独立变化标记时不能复用摘要。
+            return changeTicks > 0 || usn > 0;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)
         {
