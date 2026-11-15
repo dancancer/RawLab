@@ -133,7 +133,7 @@
 | P3-63 | C16 | Mac 普通 AI 路径不校验 Core ML 是否真的在 GPU 上跑 | 低到中 | 主 §4 C16 | 核心（Mac） | 未修 | 沿用主评审（待验证） | Core·主 | 需要先确认 Core ML 是否会把算子排到 CPU | 不在 GPU 上时明确提示（符合 AGENTS 里 AI 降噪的规定） |
 | P3-64 | C17 | HDR 缩小用的是不带预滤波的双线性，还有三份实现 | 中到低 | 主 §4 C17 | 核心 | 未修 | 沿用主评审 | Core·主 | 无 | 统一成一份带预滤波的实现 |
 | P3-65 | C18 | HDR 流式导出每读一个像素都要查哈希表、过三层 std::function | 中到低 | 主 §4 C18 | 核心 | 未修 | 沿用主评审 | Core·主 | 无 | 耗时测量写进 PR |
-| P3-66 | C19 | libjpeg-turbo 在所有平台都关了 SIMD，没写原因 | 中到低 | 主 §4 C19 | 核心 | 未修 | 沿用主评审 | Core·主 | 无 | 开启 SIMD，或者写明原因 |
+| P3-66 | C19 | libjpeg-turbo 在所有平台都关了 SIMD，没写原因 | 中到低 | 主 §4 C19 | 核心 | ✅ 已修复（#355 全平台 WITH_SIMD=ON；REQUIRE_SIMD 保持 OFF 无 NASM 平滑回退 scalar，JDCT_ISLOW 下 SIMD/scalar 字节逐位一致，碳审上游 MD5 向量+独立探针对拍实证） | 沿用主评审；encode 2.36x/decode 2.10x（arm64 NEON，4000×3000 Q92）；hdr_codec 离线探针保留 OFF 属独立基准非产品路径 | Core·主 | 无 | 开启 SIMD，或者写明原因 |
 | P3-67 | C20 | Apple 的 8 位显示图像被完整解码两次 | 低到中 | 主 §4 C20 | 核心（Apple） | 未修 | 沿用主评审 | Core·主 | 无 | 解码次数为 1 |
 | P3-68 | C21 | GLES 和 D3D11 通用滤波每块重新分配缓冲 | 低到中 | 主 §4 C21 | 核心 | 已修复 | PR **#343**（GLES FilterBufferPool）+ **#350 @be09ae35**（核实 #343 已带 D3D11 池路径，补 RAWLAB_D3D11_TESTING 原生验证：no-reuse/no-trim 双红副本+64MiB 空闲限额断言，d3d11-warp 独立构建） | Core·主 | 与 C2 一起 | 缓冲复用 |
 | P3-69 | C23 | 没有调用方的代码 | 低 | 主 §4 C23 | 核心 | 未修 | 沿用主评审 | Core·轻 | 无 | 删除 |

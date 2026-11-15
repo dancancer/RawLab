@@ -291,3 +291,12 @@
 - **testIN6 flaky 定性（碳 r3）**：既有紧时序——capture 后台刚性 1.535s 睡眠 + 3s nextCardCheck=4.535s 下界 vs 6s 窗口仅 <1.4s 余量，再叠 101 页全表 filter（1.01×10⁶ 闭包扫描）与并发编译负载；3 连跑绿。修复尾项（timeout 6→10 或 mobilePage 二分游标）转 **k163**。
 - **升级阶梯首次完整实战**：#352 = Hydrogen 首轮（approve 后用户反馈触发返工）→ Hydrogen 1st rework（碳 r2 打回 5 缺陷）→ **codex 2nd rework（阶梯规则首次执行）**→ 碳 r3 approve。全过程碳三审+双二进制复现，用户跨版本反馈第 3 击避免了一次"合入后升级删片"生产事故。
 - **遗留**：真机大小写敏感 APFS 实测→k173；PR body 基线 SHA 笔误（57213002 应为 4426fa41，纯描述）随归档不追改。
+
+### (54) 卫生波四连合入（111–114th）+ medium 强度批次首航
+
+- **#354 合入**（111th `ee346058`，P3/#345①）：raw_active_area_tests 严格 argv（argc>2/-h→usage exit 2），碳新旧二进制对拍 6 组 exit 全中。
+- **#355 合入**（112th `76ee4947`，P3-66/C19）：libjpeg-turbo 全平台 `WITH_SIMD=ON`（REQUIRE_SIMD 保持 OFF：无 NASM 平滑回退 scalar）；encode 2.36x/decode 2.10x、JDCT_ISLOW 下 SIMD/scalar 字节逐位一致（碳上游 MD5 向量+独立探针双重实证）。**碳纠偏**：worktree ctest 157+28 vs 主基线 158+27 的真因=CMake 自动拾取 Homebrew py3.15 缺 `jsonschema` 吞掉 edit_recipe_schema 注册（夹具缺位是另一对 skip、本在基线内）——**今后 worktree 跑 ctest 一律显式 `-DPython3_EXECUTABLE=<含 jsonschema 的 pyenv python3.11>`**。
+- **#356 合入**（113th `fc854a1d`，k163 testIN6 flaky）：FakeSonyCameraChannel.mobilePage 惰性有序校验+二分切片（O(log N)/页，didSet 失效+filter 兜底），timeout 6 未放宽；碳对拍夹具新旧逐页一致+off-by-one 变异 13 组红。
+- **#357 合入**（114th `17e32f51`，纯文档免门禁）：processing-concurrency.md 全文 154 处 file:line 脚本化零漂移；阶段 3 标签归类别修正+cancelStep=4096 口径。
+- **Hydrogen medium 首航**（用户新强度口径）：三票全部一次交付、碳审 0 发现，medium 足以胜任卫生/文档/工具类票；复杂票继续 codex。
+- **在途**：#358（C23 死代码：只删 1 个真孤儿 stub、C23 点名五项全数 C ABI/测试豁免留证）碳审 mwhdjf84 在跑；碳清道夫 mwhdc9p0（worktree/分支/.cache/tmp/AGY 产物盘点）在跑。
