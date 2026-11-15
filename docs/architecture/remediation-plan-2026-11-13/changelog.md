@@ -373,3 +373,12 @@
 - **#366 r2（codex 在跑）**：碳拦下 RenderedDngChecks 间接取串过滤（原生门 --rendered-dng 必崩，hosted 不跑原生套件故 CI 全绿掩盖）；一行对齐 FormatErrorMessage(2,null,ForceGpu)+对账扩展；native 实跑并入 #360 复跑窗口。
 - **#360 rebase+native 复跑票（在跑）**：让位 #364 清单机制保原注册名；预期 139 项（138+新 d3d11_shader_cache）全绿后即 r3 碳终审。
 - **节奏已按用户指令调整**：并行 9 路；全量测试收缩到关键节点（碳包实跑+合入波前），小票只跑针对性脚本+hosted CI。k161 移交项拆 3 张小票并行中（滑杆容差/preflight 生命周期/中性灰假红）。
+
+### (64) 真机解锁与三分类清障（125–127）：#374/#366/#372 合入；#360 根因翻案=LUT 缓存缺内容哈希
+
+- **#374 合入（125th `8d01b2ef`）**：`gles_lut_binding_tests.cpp` 1b 故障注入段包 `#ifdef SONY2FUJI_FAKE_EGL_GLES`，Android NDK 真机构建自 700eeb408 起首次编译通过。碳审拦下**签收口径失真**（非代码）：assumeTrue 静默跳过被计入 PASS、#343 真机 GLES 实为 0 触达（跑通项均 CPU 路径）——按处方修正 PR/k173 后放行。教训入派单口径：仪器 PASS 必须与 `-r` 模式 skipped 对账。
+- **#366 合入（126th `456be34b`）**：Force-GPU 文案对齐 r2（native `--rendered-dng` 证据并入 #360 native 窗口）。
+- **#372 合入（127th `97f66433`）**：hosted「Android models」新增 ndk-compile.sh 轻量 CMake 门禁（~12s），活红锚实证（未修必红 run 43710892455）——Android 测试源 NDK 编译盲区永久关闭。
+- **#360 根因翻案（codex）**：Windows native `lut_contract_render` 12 连红非 d3d11 缓存键，而是 **LUT 文件缓存只比路径/大小/mtime**——测试同尺寸同时间戳覆写同路径时 V-Log 错误复用线性 LUT，本机确定性复现同款 12 红；系 development 既有缺陷（非 #360 引入）。修复=lut_parser 按内容 SHA-256 判缓存+同尺寸同 mtime 覆写回归（红锚成立）+两个 `#define` 变体缓存测试。native 前二跑败于 Adobe 下载网络断（码 56/18，未及测试），第三跑 `43716383315` 在途。遗留：LUT 加载新增全文件哈希的性能基准待补（非阻断）。
+- **真机三分类（research，双环境对照+素材入 APK）**：12 嫌疑类**全部 A 类真实缺陷**（API29+API35 同红，素材无关）；素材类（RasterFixture/NativeMemory/HDRBatchCancel 等）装样片即转绿=C 类。拆 4 票：**k531** P0 batch cancel 门序崩溃（latch 30s 主线程 AssertionError 崩仪器进程，连带同类 3 法没跑）；**k533** P0 小图 master recipe 预览上变换 19→1600（viewportPreview 绕过原生钳制，C++ 侧）；**k535** P1 Editor v0.8 toolOpen 契约错位（6 UI 套件共因：EditorWorkspaceGroups 15/18、UsageFilm、LookLibrary、AdjustmentPresetUI、CameraMediaUi、X3fEditor）；**k537** P1/P2 尾批（colorState 枚举 5vs6、批量选择读盘竞态、相机续传句柄契约、API29 Compose no-paragraph 崩溃+411dp 裁切）。k531/k533 Hydrogen、k535 codex 并行在跑。
+- **滑杆票 #373**：双击容差子类+惯性合并交付（红锚/13+29 全绿/CI 7/7），碳实跑仍拦两阻断（第 2 触快滑零写回假绿、touchesBegan 抹惯性窗致既有回归分裂 4 对编辑态）→ Hydrogen 一轮返工在跑。另两张 k161 小票经 git 证据确认**已随 #359 顺路修复**（b9f00f1f：preflight @StateObject+nearGray 断言），零改动关票。
