@@ -11,6 +11,11 @@ extern "C" sony2fuji_status sony2fuji_session_set_tone_controls(sony2fuji_sessio
 extern "C" sony2fuji_status sony2fuji_session_set_atmosphere(sony2fuji_session* s,const sony2fuji_atmosphere_config* c) { s->active.atmosphere=*c;return SONY2FUJI_STATUS_OK; }
 extern "C" sony2fuji_status sony2fuji_session_set_color_grading(sony2fuji_session* s,const sony2fuji_color_grading_config* c) { s->active.grading=*c;return SONY2FUJI_STATUS_OK; }
 extern "C" sony2fuji_status sony2fuji_session_set_tone_curve(sony2fuji_session* s,const sony2fuji_tone_curve_config* c) { s->active.curve=*c;return SONY2FUJI_STATUS_OK; }
+extern "C" sony2fuji_status sony2fuji_session_set_tone_curves(sony2fuji_session* s,const sony2fuji_tone_curve_set_config* c) {
+    s->active.curve=c->curves[0];
+    for (int i = 0; i < 3; ++i) s->active.channels[i] = c->curves[i + 1];
+    return SONY2FUJI_STATUS_OK;
+}
 
 static void testWhiteBalanceCache() {
     namespace fs = std::filesystem;
@@ -62,6 +67,8 @@ int main() {
     active.grading.shadows_hue=120;active.grading.shadows_saturation=30;
     active.curve.mode=SONY2FUJI_CURVE_CUSTOM;active.curve.count=3;
     active.curve.points[0]={0,0};active.curve.points[1]={.5,.7};active.curve.points[2]={1,1};
+    active.channels[0].mode=SONY2FUJI_CURVE_CUSTOM;active.channels[0].count=2;
+    active.channels[0].points[0]={0,0};active.channels[0].points[1]={1,1};
     const auto saved=active;
     for(bool fail : {false,true}) {
         try {
@@ -69,9 +76,14 @@ int main() {
             assert(active.tone.black_point==0 && active.tone.white_point==0 && active.tone.vibrance==0);
             assert(active.atmosphere.clarity==0 && active.atmosphere.dehaze==0);
             assert(active.grading.shadows_saturation==0 && active.curve.mode==0 && active.curve.count==0);
+            assert(active.channels[0].mode==0 && active.channels[0].count==0);
             if(fail)throw std::runtime_error("injected probe failure");
         } catch(const std::runtime_error&) {}
-        assert(std::memcmp(&active,&saved,sizeof(saved))==0);
+        assert(std::memcmp(&active.tone,&saved.tone,sizeof(saved.tone))==0);
+        assert(std::memcmp(&active.atmosphere,&saved.atmosphere,sizeof(saved.atmosphere))==0);
+        assert(std::memcmp(&active.grading,&saved.grading,sizeof(saved.grading))==0);
+        assert(std::memcmp(&active.curve,&saved.curve,sizeof(saved.curve))==0);
+        assert(std::memcmp(active.channels,saved.channels,sizeof(saved.channels))==0);
     }
     std::cout<<"PASS: recipe probe uses identity stages and restores them after success or failure\n";
     testWhiteBalanceCache();

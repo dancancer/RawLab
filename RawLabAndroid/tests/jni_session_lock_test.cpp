@@ -600,7 +600,8 @@ sony2fuji_status sony2fuji_session_create_hsl_probe(sony2fuji_session* s, const 
     return SONY2FUJI_STATUS_OK;
 }
 sony2fuji_status sony2fuji_session_set_cancellation_callback(sony2fuji_session* s, sony2fuji_cancel_callback cb, void* ctx) {
-    // CancellationScope calls this in constructor & destructor; record without blocking.
+    // CancellationScope calls this under SessionGuard in constructor & destructor; track call scope and record without blocking.
+    SessionCallScope scope(s);
     std::lock_guard<std::mutex> lock(gCoreMutex);
     auto it = gMockSessions.find(s);
     if (it != gMockSessions.end()) {
