@@ -8,6 +8,8 @@
 namespace sony2fuji::ai {
 enum class CacheKind { Raw, RGB, SceneRGB };
 std::string sourceMetadataKey(const std::string& path);
+// 仅供行为测试：强制走非 USN 卷的整文件回退分支（生产恒为 false，默认行为不变）。
+void forceMetadataFallbackForTests(bool enabled);
 std::string rawCacheKeyFromIdentity(const std::string& sourceIdentity, const std::string& modelDigest, int backend,
                                     bool legacySonyCrop = false);
 std::string sourceIdentityKey(const std::string& path, void (*checkpoint)() = nullptr);

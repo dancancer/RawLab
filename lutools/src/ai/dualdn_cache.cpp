@@ -6,6 +6,7 @@
 #include "core/sha256.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -84,10 +85,42 @@ SourceMetadata sourceMetadata(const std::filesystem::path& path, bool model = fa
 }
 }
 
+namespace {
+struct MetadataFallbackEntry { std::string stamp, key; uint64_t used; };
+// 非 USN 卷（无变更通知）退路要整文件哈希；packageStamp() 每帧对每个模型文件调用本函数，
+// 单槽会被逐文件轮转打穿，故沿用 sourceIdentityKey 的有界 LRU 形态，按 stat 身份
+// （卷/索引/创建/修改/变更时间与字节数构成的 stamp）复用完整摘要；stat 身份变化即回退全量哈希。
+std::mutex metadataFallbackMutex;
+std::map<std::string, MetadataFallbackEntry> metadataFallback;
+uint64_t metadataFallbackAccess = 0;
+std::atomic<bool> metadataFallbackForced{false};
+}
+
+void forceMetadataFallbackForTests(bool enabled) {
+    metadataFallbackForced.store(enabled, std::memory_order_relaxed);
+}
+
 std::string sourceMetadataKey(const std::string& path) {
-    const auto metadata = sourceMetadata(std::filesystem::canonical(std::filesystem::u8path(path)), true);
+    const auto file = std::filesystem::canonical(std::filesystem::u8path(path));
+    const auto metadata = sourceMetadata(file, true);
+    const auto stamp = metadata.stamp();
     // 不支持变更通知的文件系统不能安全复用元数据；只在该退路读取内容。
-    return metadata.cacheable ? metadata.stamp() : digestJson({metadata.stamp(), sha256File(path)});
+    if (metadata.cacheable && !metadataFallbackForced.load(std::memory_order_relaxed)) return stamp;
+    const auto canonicalPath = file.u8string();
+    std::lock_guard<std::mutex> lock(metadataFallbackMutex);
+    const auto found = metadataFallback.find(canonicalPath);
+    if (found != metadataFallback.end() && found->second.stamp == stamp) {
+        found->second.used = ++metadataFallbackAccess;
+        return found->second.key;
+    }
+    const auto key = digestJson({stamp, sha256File(path)});
+    if (found == metadataFallback.end() && metadataFallback.size() >= 128) {
+        const auto oldest = std::min_element(metadataFallback.begin(), metadataFallback.end(),
+            [](const auto& left, const auto& right) { return left.second.used < right.second.used; });
+        metadataFallback.erase(oldest);
+    }
+    metadataFallback[canonicalPath] = {stamp, key, ++metadataFallbackAccess};
+    return key;
 }
 
 std::string sourceIdentityKey(const std::string& path, void (*checkpoint)()) {

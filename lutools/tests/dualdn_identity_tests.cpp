@@ -70,6 +70,38 @@ int main(int argc, char** argv) {
             if (sourceIdentityKey(hot.string()) != hotKey || fileReads != before)
                 throw std::runtime_error("Frequently rendered photo was evicted instead of the least recently used photo");
         }
+        // 非 USN 卷 packageStamp() 每帧逐个模型文件调用退路：stat 身份不变时整文件摘要必须只读一次。
+        {
+            forceMetadataFallbackForTests(true);
+            const auto before = fileReads;
+            std::vector<fs::path> fallbackFiles;
+            std::vector<std::string> fallbackKeys;
+            for (int i = 0; i < 3; ++i) {
+                const auto model = fs::path(argv[1]) / ("fallback-model-" + std::to_string(i));
+                { std::ofstream(model) << std::string(64 + i, char('a' + i)); }
+                fallbackFiles.push_back(model);
+                fallbackKeys.push_back(sourceMetadataKey(model.string()));
+            }
+            if (fileReads != before + 3) {
+                forceMetadataFallbackForTests(false);
+                throw std::runtime_error("metadata fallback must hash each file exactly once");
+            }
+            for (int frame = 0; frame < 5; ++frame)
+                for (size_t i = 0; i < fallbackFiles.size(); ++i)
+                    if (sourceMetadataKey(fallbackFiles[i].string()) != fallbackKeys[i]) {
+                        forceMetadataFallbackForTests(false);
+                        throw std::runtime_error("metadata fallback changed the key for an unchanged file");
+                    }
+            if (fileReads != before + 3) {
+                forceMetadataFallbackForTests(false);
+                throw std::runtime_error("metadata fallback reread whole files for every package stamp");
+            }
+            { std::ofstream(fallbackFiles[1]) << std::string(66, 'z'); }
+            const auto changed = sourceMetadataKey(fallbackFiles[1].string());
+            forceMetadataFallbackForTests(false);
+            if (changed == fallbackKeys[1]) throw std::runtime_error("metadata fallback reused a stale key after the file changed");
+            if (fileReads != before + 4) throw std::runtime_error("metadata fallback did not rehash exactly once after the change");
+        }
 #ifdef _WIN32
         const auto writer = CreateFileW(file.c_str(), GENERIC_WRITE,
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr);
