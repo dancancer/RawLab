@@ -347,3 +347,12 @@
 - **三张 codex 返工在跑**：#361 r2（A4 死锁/过期快照/单槽 lastConfirm/r1_a4 恒真，碳处方）、#362 r2（M-N9 image(for:) 身份精确判定 2 行+CASE_E_MN9 常驻）、win-native-baseline（Windows native 门基线 2 红：preview_exposure_cache 合成 DNG 覆写+wavelet_noise_model 跨标准库分布断言——#360 放行前置）。
 - **#365/#366 碳包在跑**（jit token/head_sha 闭环性+TOCTOU 裁定；#366 ABI 增量+reason 清零时序）。
 - **合入计数**：119（#368=d7390743、#369=c0f2231e）。
+
+### (61) 返工波：#361r2/#362r2/#367r2/#371 交付待复审；#365/#366 一轮返工在跑
+
+- **wnb 票→#371**（codex 65 分钟）：Windows native 门两条基线红修复（preview_exposure_cache 合成 DNG Windows 覆写+wavelet_noise_model 跨标准库分布去耦合，JUnit 138 名前后一致不删项），**Windows native 整门首次 100% 绿**（run 43699429908）。合入后 #360 rebase+重跑 native 门即达放行标准。
+- **#361 r2**（codex）：A4 死锁/过期快照/单槽覆盖/恒真测试四项重写，749 测全绿+6 变异全红+CI 绿，碳复审在跑。
+- **#362 r2**（codex）：M-N9 身份精确判定 2 行+CASE_E_MN9 双入口常驻（旧代码红、Case E 并发绿），四脚本+build.sh+CI 绿，碳复审在跑。
+- **#367 r2**（codex）：Android 宿主接线放行 draft.group==LOOK+recipe-lut 保留+穿宿主仪器测试 4/4 真跑（真实宿主/ViewModel/队列/持久化）；并实证纠正 JVM 基线口径（looks-ui 分支=737 非 744）；rebase 含 #369+字符串并集重生成。碳复审在跑。
+- **#365/#366 一轮返工**（Hydrogen）：#365 两项（fork PR pull_requests=[] 恒不命中+stub 假绿；同仓 push 信任判定须前置防队列锁死）；#366 一项（RenderHDRAsSDR Native.Check 漏传 session→HDR 容器+强制 GPU 仍弹误导文案）。
+- **codex 吞吐观察**：本轮 5 张 codex 票全部 20–65 分钟交付且红绿证据齐全，"碳处方照抄+先证实现状"票面对 codex 高效；碳审仍是唯一放行闸。
