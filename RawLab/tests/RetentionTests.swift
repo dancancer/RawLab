@@ -13,6 +13,7 @@ import Foundation
         try batchArtifactCountBoundary()
         try batchArtifactGroupedEntry()
         try batchArtifactBothConditions()
+        try batchArtifactSkipsRecoveredJobDuringSweep()
         try exportEvidenceRegistry()
     }
 
@@ -166,5 +167,79 @@ import Foundation
         let remainingFresh = try fixture.fileCount(fixture.exports)
         try check(reclaimed == 10 && remainingFresh == 95,
                   "Ten 35-day-old artifacts are reclaimed below the count cap while fresh entries stay")
+    }
+
+    // 竞态回归：后台清扫尚未结束时，首屏恢复同 ID 任务（原子重写 journal + 写入 inputs，或标记为活跃保护），
+    // 清扫结束后该任务的 journal 与 inputs 仍存在（撤掉删除前复核必红）。
+    private static func batchArtifactSkipsRecoveredJobDuringSweep() throws {
+        let fixture = try Fixture("race")
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let expiredID = UUID()
+        let resumedID = UUID()
+        let protectedID = UUID()
+        defer { BatchArtifactRetention.unprotectJob(protectedID) }
+
+        _ = try fixture.exportDirectory(age: 35 * day, now: now, id: expiredID)
+        _ = try fixture.journalRecord(age: 35 * day, now: now, id: expiredID)
+
+        let resumedExport = try fixture.exportDirectory(age: 31 * day, now: now, id: resumedID)
+        let resumedJournal = try fixture.journalRecord(age: 31 * day, now: now, id: resumedID)
+        let resumedInputs = fixture.journals.appendingPathComponent(resumedID.uuidString, isDirectory: true)
+            .appendingPathComponent("inputs", isDirectory: true)
+        try FileManager.default.createDirectory(at: resumedInputs, withIntermediateDirectories: true)
+        let resumedInputFile = resumedInputs.appendingPathComponent("photo.raw")
+        try Data([1]).write(to: resumedInputFile)
+
+        let protectedExport = try fixture.exportDirectory(age: 31 * day, now: now, id: protectedID)
+        let protectedJournal = try fixture.journalRecord(age: 31 * day, now: now, id: protectedID)
+        let protectedInputs = fixture.journals.appendingPathComponent(protectedID.uuidString, isDirectory: true)
+            .appendingPathComponent("inputs", isDirectory: true)
+        try FileManager.default.createDirectory(at: protectedInputs, withIntermediateDirectories: true)
+        let protectedInputFile = protectedInputs.appendingPathComponent("photo.raw")
+        try Data([2]).write(to: protectedInputFile)
+
+        let enteredRace = DispatchSemaphore(value: 0)
+        let recoveryDone = DispatchSemaphore(value: 0)
+        let sweepDone = DispatchSemaphore(value: 0)
+        var didTriggerRace = false
+        var reclaimed = -1
+
+        DispatchQueue.global(qos: .utility).async {
+            reclaimed = BatchArtifactRetention.reclaim(
+                exportsRoot: fixture.exports,
+                journalRoot: fixture.journals,
+                now: now
+            ) { candidateID in
+                guard !didTriggerRace, candidateID == resumedID || candidateID == protectedID else { return }
+                didTriggerRace = true
+                enteredRace.signal()
+                recoveryDone.wait()
+            }
+            sweepDone.signal()
+        }
+
+        enteredRace.wait()
+        // 模拟清扫期间恢复同 ID 任务：resumedID 原子重写 journal 并写入新 input；
+        // protectedID 走未重写 journal 的直接恢复路径并登记活跃保护。
+        try Data("{\"resumed\":true}".utf8).write(to: resumedJournal, options: .atomic)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: resumedJournal.path)
+        let newInputFile = resumedInputs.appendingPathComponent("resumed.raw")
+        try Data([3]).write(to: newInputFile)
+        BatchArtifactRetention.protectJob(protectedID)
+        recoveryDone.signal()
+
+        sweepDone.wait()
+
+        try check(reclaimed == 1, "Only the unrecovered expired job is reclaimed while in-flight recovered jobs survive")
+        try check(FileManager.default.fileExists(atPath: resumedJournal.path)
+                      && FileManager.default.fileExists(atPath: resumedInputFile.path)
+                      && FileManager.default.fileExists(atPath: newInputFile.path)
+                      && FileManager.default.fileExists(atPath: resumedExport.path),
+                  "A job whose journal and inputs are rewritten mid-sweep retains its journal, inputs, and exports")
+        try check(FileManager.default.fileExists(atPath: protectedJournal.path)
+                      && FileManager.default.fileExists(atPath: protectedInputFile.path)
+                      && FileManager.default.fileExists(atPath: protectedExport.path),
+                  "A recovered job protected without rewriting its journal retains its journal, inputs, and exports")
     }
 }

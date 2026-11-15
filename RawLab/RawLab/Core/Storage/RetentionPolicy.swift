@@ -20,6 +20,26 @@ enum RetentionPolicy {
 
 enum BatchArtifactRetention {
     private static let fileManager = FileManager.default
+    private static let protectedJobsLock = NSLock()
+    private static var protectedJobIDs: Set<UUID> = []
+
+    static func protectJob(_ id: UUID) {
+        protectedJobsLock.lock()
+        protectedJobIDs.insert(id)
+        protectedJobsLock.unlock()
+    }
+
+    static func unprotectJob(_ id: UUID) {
+        protectedJobsLock.lock()
+        protectedJobIDs.remove(id)
+        protectedJobsLock.unlock()
+    }
+
+    private static func isJobProtected(_ id: UUID) -> Bool {
+        protectedJobsLock.lock()
+        defer { protectedJobsLock.unlock() }
+        return protectedJobIDs.contains(id)
+    }
 
     /// journal 根目录（与 `BatchJournalStore.appStore()` 同一布局：App Support/RawLab/BatchJobs）。
     static var defaultJournalRoot: URL {
@@ -39,13 +59,14 @@ enum BatchArtifactRetention {
     @discardableResult
     static func reclaim(exportsRoot: URL, journalRoot: URL, now: Date = Date(),
                         maxAge: TimeInterval = RetentionPolicy.batchArtifactMaxAge,
-                        maxCount: Int = RetentionPolicy.batchArtifactMaxCount) -> Int {
+                        maxCount: Int = RetentionPolicy.batchArtifactMaxCount,
+                        willReclaimGroup: ((UUID) -> Void)? = nil) -> Int {
         // 以任务 id 归组：一个条目的产物目录与 journal 记录（含输入副本目录）同进同退。
-        var groups: [String: (key: String, date: Date, parts: [(url: URL, companion: URL?)])] = [:]
+        var groups: [String: (id: UUID, key: String, date: Date, parts: [(url: URL, companion: URL?)])] = [:]
         func add(_ id: UUID, _ date: Date, url: URL, companion: URL?) {
             let key = id.uuidString
             let existing = groups[key]
-            groups[key] = (key, max(existing?.date ?? date, date), (existing?.parts ?? []) + [(url, companion)])
+            groups[key] = (id, key, max(existing?.date ?? date, date), (existing?.parts ?? []) + [(url, companion)])
         }
         for url in (try? fileManager.contentsOfDirectory(at: exportsRoot,
                 includingPropertiesForKeys: [.creationDateKey, .contentModificationDateKey, .isDirectoryKey],
@@ -67,6 +88,11 @@ enum BatchArtifactRetention {
         var reclaimed = 0
         for (index, group) in groups.values.sorted(by: { $0.date != $1.date ? $0.date > $1.date : $0.key > $1.key }).enumerated() {
             if now.timeIntervalSince(group.date) <= maxAge && index < maxCount { continue }
+            willReclaimGroup?(group.id)
+            // 后台清扫期间首屏恢复或新写入可能复用同 id：删除前复核活跃保护与磁盘最新时间，避免误删已恢复任务。
+            if isJobProtected(group.id) || hasNewerActivityOnDisk(parts: group.parts, recordedDate: group.date) {
+                continue
+            }
             var removed = false
             for part in group.parts {
                 if (try? fileManager.removeItem(at: part.url)) != nil { removed = true }
@@ -75,6 +101,20 @@ enum BatchArtifactRetention {
             if removed { reclaimed += 1 }
         }
         return reclaimed
+    }
+
+    private static func hasNewerActivityOnDisk(parts: [(url: URL, companion: URL?)], recordedDate: Date) -> Bool {
+        for part in parts {
+            if let date = currentModificationDate(part.url), date > recordedDate {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func currentModificationDate(_ url: URL) -> Date? {
+        // 用 attributesOfItem 直接 stat 磁盘，避免复用 contentsOfDirectory 缓存在 URL 上的旧时间戳。
+        (try? fileManager.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
     }
 
     private static func artifactDate(_ url: URL) -> Date? {
