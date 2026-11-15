@@ -288,8 +288,11 @@ cannot forge: the run `event`, `head_repository.full_name`, and the queued jobs'
 `labels` (a job is only claimable when its label set is one this machine actually
 registers). A run may reach the physical machine only when it is a `push` on this
 repository or an operator admitted it through the `RAWLAB_JIT_ALLOWLIST` environment
-variable (comma-separated `@<head_sha>`-pinned targets: `pr#<number>@<head_sha>`,
+variable (comma-separated `@<head_sha>`-pinned targets: same-repo `pr#<number>@<head_sha>`,
 `<run_id>@<head_sha>`, `<head-repo>@<head_sha>`, or `<head-repo>:<head-branch>@<head_sha>`;
+because GitHub REST `workflow_run` returns `pull_requests: []` for external fork PRs,
+`pr#<number>@<head_sha>` matches same-repository PRs only and external forks must use
+`<run_id>@<head_sha>` or `<owner>/<repo>:<branch>@<head_sha>`;
 unpinned entries or `head_sha` mismatches are refused). Claimed
 runs get a `POST .../runners/generate-jitconfig` registration (`name` +
 `runner_group_id` + `labels`; a 2026-11-14 live probe against API version 2022-11-28
@@ -332,7 +335,9 @@ execute unreviewed queue contents unconditionally.
   queue poll on fine-grained PATs — `Actions: write` alone answers 403 on the dispatch
   POST — or the classic `repo` scope. Same-repository `pull_request` and
   `workflow_dispatch` (manual *Run workflow*) jobs are not push events, so add the
-  `@<head_sha>`-pinned entry (`pr#<number>@<head_sha>` or `<run_id>@<head_sha>`) to
+  `@<head_sha>`-pinned entry (`pr#<number>@<head_sha>` or `<run_id>@<head_sha>` for
+  same-repo PRs, or `<run_id>@<head_sha>` / `<owner>/<repo>:<branch>@<head_sha>` for
+  external fork PRs) to
   `RAWLAB_JIT_ALLOWLIST` if this machine must keep serving them.
 - **Disable**: `launchctl bootout gui/$(id -u)/com.rawlab.jit-dispatcher`, remove the
   copied plist, and restart the resident `Runner.Listener` agent; the fresh
@@ -344,7 +349,7 @@ execute unreviewed queue contents unconditionally.
   rawlab-apple]`), and confirm all four observations: the dispatcher logs the run as
   `skip (untrusted …)`; no JIT token is generated for it while the allowlist stays
   empty, so with the resident listener stopped the job only queues; after allowlisting
-  the run id and re-running `--once --runner-dir ~/jit-runner`, one ephemeral runner claims it and deregisters;
+  `<run_id>@<40-char-sha>` and re-running `--once --runner-dir ~/jit-runner`, one ephemeral runner claims it and deregisters;
   without the allowlist entry the job expires in the queue instead of executing on the
   machine.
 - **Retirement for hosted runners (deprecation path)**: the dispatcher keeps no state

@@ -75,17 +75,18 @@ def parse_allowlist(value):
     return {entry.strip().lower() for entry in (value or "").split(",") if entry.strip()}
 
 
-def _allowlist_targets(run):
-    """Server-side target keys for allowlist matching (run id, PR#, head repo, head repo:branch)."""
+def _allowlist_targets(run, *, repo=DEFAULT_REPO):
+    """Server-side target keys for allowlist matching (run id, same-repo PR#, head repo, head repo:branch)."""
     targets = set()
     run_id = str(run.get("id", "")).strip().lower()
     if run_id:
         targets.add(run_id)
-    for pr in run.get("pull_requests") or []:
-        number = pr.get("number") if isinstance(pr, dict) else None
-        if number is not None and str(number).strip():
-            targets.add(f"pr#{str(number).strip().lower()}")
     head_repo = ((run.get("head_repository") or {}).get("full_name") or "").strip().lower()
+    if head_repo == repo.lower():
+        for pr in run.get("pull_requests") or []:
+            number = pr.get("number") if isinstance(pr, dict) else None
+            if number is not None and str(number).strip():
+                targets.add(f"pr#{str(number).strip().lower()}")
     if head_repo:
         targets.add(head_repo)
         head_branch = (run.get("head_branch") or "").strip().lower()
@@ -94,12 +95,12 @@ def _allowlist_targets(run):
     return targets
 
 
-def _check_allowlist(run, allowlist):
+def _check_allowlist(run, allowlist, *, repo=DEFAULT_REPO):
     """Evaluate allowlist entries with mandatory @head_sha pinning.
 
     Returns ``(Decision, matched_entry)`` where ``Decision`` is ``None`` when no entry targets
     this run. Entries without ``@<head_sha>`` or with a mismatched ``head_sha`` fail closed."""
-    targets = _allowlist_targets(run)
+    targets = _allowlist_targets(run, repo=repo)
     if not targets or not allowlist:
         return None, ""
     actual_sha = (run.get("head_sha") or "").strip().lower()
@@ -125,13 +126,13 @@ def _check_allowlist(run, allowlist):
     return None, ""
 
 
-def allowlist_match(run, allowlist):
+def allowlist_match(run, allowlist, *, repo=DEFAULT_REPO):
     """Return the allowlist entry admitting this run, matched only on server-side fields + head_sha.
 
-    An entry must pin ``@<head_sha>`` onto ``pr#<number>``, the run id, the head repository full
-    name, or ``head-repo:head-branch``. The operator adds entries after reviewing a commit; the
-    workflow YAML has no say here."""
-    _decision, entry = _check_allowlist(run, allowlist)
+    An entry must pin ``@<head_sha>`` onto same-repo ``pr#<number>``, the run id, the head
+    repository full name, or ``head-repo:head-branch``. The operator adds entries after reviewing a
+    commit; the workflow YAML has no say here."""
+    _decision, entry = _check_allowlist(run, allowlist, repo=repo)
     return entry
 
 
@@ -152,13 +153,13 @@ def trusted_run(run, *, repo=DEFAULT_REPO, allowlist=frozenset()):
     Trust comes only from GitHub: a push on this repository's own branches, or an explicit
     head_sha-pinned allowlist entry. Nothing read from the run's YAML (jobs, steps,
     if-conditions) is consulted, because a fork PR ships its own YAML."""
-    allowlist_decision, _entry = _check_allowlist(run, allowlist)
-    if allowlist_decision is not None:
-        return allowlist_decision
     head_repo = (run.get("head_repository") or {}).get("full_name") or ""
     event = run.get("event") or "none"
-    if run.get("event") == "push" and head_repo.lower() == repo.lower():
+    if event == "push" and head_repo.lower() == repo.lower():
         return Decision(True, "trusted push on this repository")
+    allowlist_decision, _entry = _check_allowlist(run, allowlist, repo=repo)
+    if allowlist_decision is not None:
+        return allowlist_decision
     return Decision(False, f"untrusted (event={event}, head={head_repo or 'none'})")
 
 

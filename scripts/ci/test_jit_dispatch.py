@@ -30,13 +30,11 @@ OTHER_SHA = "b" * 40
 
 
 def run(run_id=101, event="push", repo=OWN, branch="development", created="2026-11-13T00:00:00Z",
-        head_sha=HEAD_SHA, pull_requests=None):
+        head_sha=HEAD_SHA, pull_requests=()):
     """A workflow-run list entry reduced to the fields the dispatcher trusts: all server-side."""
-    payload = {"id": run_id, "event": event, "head_branch": branch, "status": "queued",
-               "head_repository": {"full_name": repo}, "created_at": created, "head_sha": head_sha}
-    if pull_requests is not None:
-        payload["pull_requests"] = pull_requests
-    return payload
+    return {"id": run_id, "event": event, "head_branch": branch, "status": "queued",
+            "head_repository": {"full_name": repo}, "created_at": created, "head_sha": head_sha,
+            "pull_requests": list(pull_requests)}
 
 
 def jobs(labels=None, status="queued", count=1):
@@ -152,28 +150,56 @@ class DecisionTableTests(unittest.TestCase):
 
     def test_allowlist_admits_a_fork_pull_request_only_with_pinned_head_sha(self):
         fork = run(run_id=777, event="pull_request", repo=FOREIGN, branch="feature/x",
-                   pull_requests=[{"number": 42}])
-        for entry in (f"777@{HEAD_SHA}", f"pr#42@{HEAD_SHA}", f"contributor/RawLab@{HEAD_SHA}",
+                   pull_requests=[])
+        for entry in (f"777@{HEAD_SHA}", f"contributor/RawLab@{HEAD_SHA}",
                       f"Contributor/RawLab:feature/x@{HEAD_SHA}"):
             with self.subTest(entry=entry):
                 self.assertEqual(self.decide(fork, jobs(), jit.parse_allowlist(entry)),
                                  (True, f"allowlisted ({entry.lower()})"))
 
+    def test_allowlist_pr_number_is_same_repo_only(self):
+        same_repo_pr = run(run_id=778, event="pull_request", repo=OWN, branch="feature/x",
+                           pull_requests=[{"number": 42}])
+        self.assertEqual(self.decide(same_repo_pr, jobs(), jit.parse_allowlist(f"pr#42@{HEAD_SHA}")),
+                         (True, f"allowlisted (pr#42@{HEAD_SHA})"))
+        for fork_prs in ([], [{"number": 42}]):
+            fork = run(run_id=777, event="pull_request", repo=FOREIGN, branch="feature/x",
+                       pull_requests=fork_prs)
+            with self.subTest(pull_requests=fork_prs):
+                self.assertEqual(self.decide(fork, jobs(), jit.parse_allowlist(f"pr#42@{HEAD_SHA}")),
+                                 (False, "untrusted (event=pull_request, head=contributor/RawLab)"))
+
     def test_allowlist_rejects_head_sha_mismatch_and_logs_reason(self):
         fork = run(run_id=777, event="pull_request", repo=FOREIGN, branch="feature/x",
-                   head_sha=OTHER_SHA, pull_requests=[{"number": 42}])
-        for entry in (f"pr#42@{HEAD_SHA}", f"777@{HEAD_SHA}", f"contributor/RawLab:feature/x@{HEAD_SHA}"):
+                   head_sha=OTHER_SHA, pull_requests=[])
+        for entry in (f"777@{HEAD_SHA}", f"contributor/RawLab:feature/x@{HEAD_SHA}"):
             with self.subTest(entry=entry):
                 decision = self.decide(fork, jobs(), jit.parse_allowlist(entry))
                 self.assertFalse(decision.dispatch)
                 self.assertIn("allowlist head_sha mismatch", decision.reason)
                 self.assertIn(OTHER_SHA, decision.reason)
+        same_repo_pr = run(run_id=778, event="pull_request", repo=OWN, branch="feature/x",
+                           head_sha=OTHER_SHA, pull_requests=[{"number": 42}])
+        decision = self.decide(same_repo_pr, jobs(), jit.parse_allowlist(f"pr#42@{HEAD_SHA}"))
+        self.assertFalse(decision.dispatch)
+        self.assertIn("allowlist head_sha mismatch", decision.reason)
+        self.assertIn(OTHER_SHA, decision.reason)
 
     def test_allowlist_rejects_missing_head_sha_on_run(self):
         fork = run(run_id=777, event="pull_request", repo=FOREIGN, head_sha="",
-                   pull_requests=[{"number": 42}])
-        decision = self.decide(fork, jobs(), jit.parse_allowlist(f"pr#42@{HEAD_SHA}"))
-        self.assertEqual(decision, (False, f"allowlist head_sha mismatch (pr#42@{HEAD_SHA}: got none)"))
+                   pull_requests=[])
+        decision = self.decide(fork, jobs(), jit.parse_allowlist(f"777@{HEAD_SHA}"))
+        self.assertEqual(decision, (False, f"allowlist head_sha mismatch (777@{HEAD_SHA}: got none)"))
+
+    def test_stale_repo_allowlist_does_not_block_newer_same_repo_push(self):
+        push_run = run(run_id=888, event="push", repo=OWN, branch="development", head_sha=OTHER_SHA)
+        allowlist = jit.parse_allowlist(f"{OWN}@{HEAD_SHA}")
+        self.assertEqual(self.decide(push_run, jobs(), allowlist),
+                         (True, "trusted push on this repository"))
+        api = FakeAPI(jobs_by_run={888: jobs()})
+        claimed = jit.next_dispatch([push_run], api.jobs, allowlist=allowlist)
+        self.assertIsNotNone(claimed)
+        self.assertEqual(claimed["id"], 888)
 
     def test_allowlist_rejects_unpinned_entry_without_head_sha(self):
         fork = run(run_id=777, event="pull_request", repo=FOREIGN, branch="feature/x")
