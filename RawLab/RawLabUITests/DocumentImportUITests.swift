@@ -9,6 +9,60 @@ final class DocumentImportUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
     }
 
+    func testUnreadableLooksShowReasonAndCanBeDeleted() {
+        addUIInterruptionMonitor(withDescription: "Photos access") { alert in
+            let allow = alert.buttons.matching(NSPredicate(format: "label IN %@", ["Allow Full Access", "允许完全访问"])).firstMatch
+            if allow.exists { allow.tap(); return true }
+            return false
+        }
+        let app = launchEditor()
+        app.buttons["editor.import.empty"].tap()
+        let photoCell = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
+        XCTAssertTrue(photoCell.waitForExistence(timeout: 15))
+        photoCell.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        waitUntil(timeout: 60) {
+            let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons.matching(
+                NSPredicate(format: "label IN %@", ["Allow Full Access", "允许完全访问"])).firstMatch
+            if allow.exists { allow.tap() }
+            return app.descendants(matching: .any)["editor.photo"].exists
+        }
+        waitUntil { app.buttons["editor.group.looks"].isEnabled }
+        app.buttons["editor.group.looks"].tap()
+        waitUntil { app.buttons["tool.film"].isEnabled }
+        app.buttons["tool.film"].tap()
+        let unreadable = app.buttons["looks.unreadable"]
+        XCTAssertTrue(unreadable.waitForExistence(timeout: 10), app.debugDescription)
+        unreadable.tap()
+        XCTAssertTrue(app.staticTexts["Future iOS look"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["This look cannot be read. It may be damaged or from an incompatible version."].firstMatch.exists)
+        XCTAssertEqual(app.buttons.matching(identifier: "looks.deleteUnreadable").count, 2)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "unreadable-looks"; screenshot.lifetime = .keepAlways; add(screenshot)
+        app.buttons.matching(identifier: "looks.deleteUnreadable").element(boundBy: 0).tap()
+        app.alerts.buttons["Cancel"].tap()
+        XCTAssertTrue(app.staticTexts["Future iOS look"].exists)
+        app.buttons.matching(identifier: "looks.deleteUnreadable").element(boundBy: 0).tap()
+        app.alerts.buttons["looks.deleteUnreadable.confirm"].firstMatch.tap()
+        waitUntil { !app.staticTexts["Future iOS look"].exists }
+        XCTAssertEqual(app.buttons.matching(identifier: "looks.deleteUnreadable").count, 1)
+        app.buttons["looks.deleteUnreadable"].tap()
+        app.alerts.buttons["looks.deleteUnreadable.confirm"].firstMatch.tap()
+        waitUntil { app.buttons.matching(identifier: "looks.deleteUnreadable").count == 0 }
+        app.buttons["Done"].tap()
+        XCTAssertFalse(unreadable.exists)
+        app.terminate()
+        app.launch()
+        app.buttons["editor.import.empty"].tap()
+        let restartPhoto = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
+        XCTAssertTrue(restartPhoto.waitForExistence(timeout: 15))
+        restartPhoto.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        waitUntil { app.buttons["editor.group.looks"].isEnabled }
+        app.buttons["editor.group.looks"].tap()
+        waitUntil { app.buttons["tool.film"].isEnabled }
+        app.buttons["tool.film"].tap()
+        XCTAssertFalse(app.buttons["looks.unreadable"].exists, "Deleted bad entries must stay absent after restart")
+    }
+
     func testFilesPickerCanBeCancelledAndReopened() {
         let app = launchEditor()
         app.buttons["editor.import.file"].tap()

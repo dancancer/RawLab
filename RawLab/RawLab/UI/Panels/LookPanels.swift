@@ -32,6 +32,12 @@ extension ContentView {
                     .accessibilityLabel(L10n.text("导入外观")).accessibilityIdentifier("looks.import")
                     .disabled(editorBusy || viewModel.isImportingLooks)
             }.padding(.horizontal, 16)
+            if !viewModel.unreadableLooks.isEmpty {
+                Button { showingUnreadableLooks = true } label: {
+                    Label(L10n.text("不可读外观") + " (\(viewModel.unreadableLooks.count))", systemImage: "exclamationmark.triangle")
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                }.padding(.horizontal, 16).accessibilityIdentifier("looks.unreadable")
+            }
             if lookSearchExpanded {
                 TextField(L10n.text("搜索外观"), text: $viewModel.lookBrowser.query)
                     .textFieldStyle(.roundedBorder).frame(minHeight: 44).padding(.horizontal, 16)
@@ -74,11 +80,14 @@ extension ContentView {
                     .environment(\.compactAdjustmentRows, true).padding(.horizontal, 16)
             }
         }
+        .sheet(isPresented: $showingUnreadableLooks) {
+            IOSUnreadableLooksView(model: viewModel)
+        }
         .overlay {
             if viewModel.isLoadingLUTs { ProgressView(L10n.text("正在加载胶片")).padding(8).background(.regularMaterial) }
 
         }
-        .disabled(!viewModel.hasImage || editingLocked || viewModel.isLoadingLUTs)
+        .disabled(!viewModel.hasImage || editingLocked || viewModel.isLoadingLUTs || viewModel.isImportingLooks)
     }
 
 
@@ -188,5 +197,35 @@ extension ContentView {
         .id(id ?? "neutral")
         .accessibilityLabel(colorNotice.map { name + " · " + $0 } ?? name)
         .accessibilityAddTraits(workingSettings.lutID == id ? .isSelected : [])
+    }
+}
+
+struct IOSUnreadableLooksView: View {
+    @ObservedObject var model: RawEditorViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var deleting: LookLibrary.UnreadableLook?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(Array(model.unreadableLooks.enumerated()), id: \.offset) { _, entry in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(entry.displayName).font(.headline)
+                        Text(entry.reason).font(.subheadline).foregroundStyle(.secondary)
+                        Button(L10n.text("删除"), role: .destructive) { deleting = entry }
+                            .frame(minHeight: 44).disabled(model.isImportingLooks)
+                            .accessibilityIdentifier("looks.deleteUnreadable")
+                    }.accessibilityElement(children: .contain).accessibilityIdentifier("looks.rowUnreadable")
+                }
+            }
+            .navigationTitle(L10n.text("不可读外观"))
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.text("完成")) { dismiss() } } }
+            .alert(L10n.format("移除“%@”？", deleting?.displayName ?? ""),
+                   isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), presenting: deleting) { entry in
+                Button(L10n.text("删除"), role: .destructive) { model.removeUnreadableLook(entry) }
+                    .accessibilityIdentifier("looks.deleteUnreadable.confirm")
+                Button(L10n.text("取消"), role: .cancel) {}
+            } message: { _ in Text(L10n.text("将移除 RawLab 保存的外观副本，原始文件不会被删除。")) }
+        }
     }
 }

@@ -150,8 +150,8 @@ struct LookImportTests {
             throw LookImportTestError.message("managed look startup snapshot failed")
         }
         let expectedManagedIDs = (result.imported + curvePrompted.imported + blackPrompted.imported + bothOptionsPrompted.imported + retriedBothOptions.imported).map { $0.record.id }
-        try check(snapshot.map { $0.record.id } == expectedManagedIDs &&
-                  snapshot.allSatisfy { manager.fileExists(atPath: $0.url.path) },
+        try check(snapshot.looks.map { $0.record.id } == expectedManagedIDs &&
+                  snapshot.looks.allSatisfy { manager.fileExists(atPath: $0.url.path) },
                   "managed look IDs and files survive a fresh startup snapshot")
         let unknown = root.appendingPathComponent("Unknown.cube")
         try "LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n".write(to: unknown, atomically: true, encoding: .utf8)
@@ -186,6 +186,38 @@ struct LookImportTests {
                   "rename changes the display name and preserves look identity and compatibility state")
         let renamedBytes = try Data(contentsOf: changed.url)
         try check(renamedBytes == renameBytes, "renaming never rewrites LUT bytes")
+        let libraryDirectory = root.appendingPathComponent("library")
+        let registry = libraryDirectory.appendingPathComponent("registry.json")
+        let badID = UUID().uuidString
+        let badFile = libraryDirectory.appendingPathComponent("\(badID).rlook")
+        try Data("future look".utf8).write(to: badFile)
+        var json = try JSONSerialization.jsonObject(with: Data(contentsOf: registry)) as! [String: Any]
+        var records = json["looks"] as! [Any]
+        let validCount = records.count
+        records.append(["id": badID, "name": "Future iOS look", "file_name": "\(badID).rlook", "format": "rlook", "formatVersion": 99])
+        records.append(NSNull())
+        json["looks"] = records
+        try JSONSerialization.data(withJSONObject: json).write(to: registry)
+        let damaged = LookImportCoordinator(directory: libraryDirectory, delivery: { $0() })
+        let damagedLoad = try awaitResult { damaged.load(completion: $0) }
+        guard case .success(let rows) = damagedLoad else { throw LookImportTestError.message("mixed library cannot load") }
+        try check(rows.looks.count == validCount && rows.unreadableLooks.count == 2,
+                  "iOS UI snapshot contains unreadable rows alongside valid looks")
+        try check(rows.unreadableLooks[0].displayName == "Future iOS look" && !rows.unreadableLooks[0].reason.isEmpty,
+                  "iOS unreadable UI row exposes name and reason")
+        try check(!rows.unreadableLooks[1].displayName.isEmpty, "iOS nameless unreadable row has a fallback")
+        let deleted = try awaitResult { damaged.removeUnreadable(rows.unreadableLooks[0], completion: $0) }
+        guard case .success(let remaining) = deleted else { throw LookImportTestError.message("unreadable deletion failed") }
+        try check(remaining == [rows.unreadableLooks[1]] && !manager.fileExists(atPath: badFile.path),
+                  "iOS UI deletion returns refreshed rows and clears corrupt managed file")
+        let afterRemoval = LookImportCoordinator(directory: libraryDirectory, delivery: { $0() })
+        let restartLoad = try awaitResult { afterRemoval.load(completion: $0) }
+        guard case .success(let restartRows) = restartLoad else { throw LookImportTestError.message("restart failed") }
+        try check(restartRows.looks.count == validCount && restartRows.unreadableLooks == remaining,
+                  "iOS deleted row stays absent after restart while siblings remain")
+        let lastDeleted = try awaitResult { afterRemoval.removeUnreadable(remaining[0], completion: $0) }
+        guard case .success(let empty) = lastDeleted else { throw LookImportTestError.message("last deletion failed") }
+        try check(empty.isEmpty, "iOS all unreadable UI rows can be removed")
         print("PASS: iOS look import regression suite")
     }
 }
