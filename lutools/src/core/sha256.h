@@ -16,8 +16,14 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#ifndef NOGDI
+#define NOGDI
+#endif
 #include <windows.h>
 #include <bcrypt.h>
+#ifdef RGB
+#undef RGB
+#endif
 #if defined(_MSC_VER)
 #pragma comment(lib, "bcrypt.lib")
 #endif
@@ -39,25 +45,18 @@ inline std::string formatDigest(const uint8_t* digest, size_t size) {
 }
 
 #if defined(_WIN32)
-struct BcryptAlg {
-    BCRYPT_ALG_HANDLE handle = nullptr;
-    BcryptAlg() {
+inline BCRYPT_ALG_HANDLE sha256AlgHandle() {
+    // Keep the provider until process exit to avoid DLL static destruction order.
+    static const BCRYPT_ALG_HANDLE handle = [] {
+        BCRYPT_ALG_HANDLE handle = nullptr;
         const NTSTATUS status = BCryptOpenAlgorithmProvider(
             &handle, BCRYPT_SHA256_ALGORITHM, nullptr, 0);
         if (!BCRYPT_SUCCESS(status) || !handle) {
             throw std::runtime_error("BCryptOpenAlgorithmProvider(SHA256) failed");
         }
-    }
-    ~BcryptAlg() {
-        if (handle) BCryptCloseAlgorithmProvider(handle, 0);
-    }
-    BcryptAlg(const BcryptAlg&) = delete;
-    BcryptAlg& operator=(const BcryptAlg&) = delete;
-};
-
-inline BCRYPT_ALG_HANDLE sha256AlgHandle() {
-    static const BcryptAlg alg;
-    return alg.handle;
+        return handle;
+    }();
+    return handle;
 }
 
 struct BcryptHash {
