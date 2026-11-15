@@ -248,3 +248,8 @@
 - **codex 全程无事故首次**：分票 checkpoint push+WARP 自证+CI 全绿一棒交付（此前两次需 hydrogen 收尾人）。
 - 碳审 4 项非阻塞移交：①台账如实保留 C7 残段（GLES/Android 退避、D3D11 shader 字节码缓存）勿误标全平台关闭；②WARP 套件未来挂 full 发布门禁；③D3D11 大图预览 revision 缓存对齐 GLES（真机带宽实测后定）；④stage 2/3 死分支+C4456 顺手清。
 - **同轮 #349 教训预告**（待 r1 闭环补记）：新 portable ctest 必须同步 ci.yml $tests 名单——#346 inventory 门禁第一次在评审窗口外抓到活例（Contracts 红：两个新测试 neither selected nor inapplicable）。
+
+### (47) 用户反馈双审计：#329 降级真机实测、#339 补票立项
+
+- 用户提出两条事后发现，碳审独立核实（不采信自述，全部源码+实跑）：**#329【部分成立】**——取消测试确无耗时断言，但"1 秒内返回"只是台账验收期望（契约按检查点粒度定义，无 ≤1s 硬承诺）；66.45MP 真片+Metal/CoreML 本机实测各路径 0.19ms~626ms 均 <1s，唯 CoreML 单 tile 物理 0.70–1.04s 在临界线 → 处置=k173 登记 Windows D3D11 分带与 DirectML 单 tile 真机计时项，CI 不加挂钟断言。**#339【成立】**——整批 performBatch 过度合并（第一张"已保存"时 manifest 写 0 次），双进程 `_exit(42)` 实跑复现幽灵缺失+永久孤儿原件（不占统计/prune 不回收/重连重复下载）；台账 P2-22 改 ◐，k147 补票开工（按张落盘+recover 孤儿清扫+_exit 回归并入 camera-skip-and-limit.sh）。
+- 教训入库：**写合并的原子性口径必须与"UI 已保存"承诺对齐**——"每张最多写 1 次"≠"整批写 1 次"；硬杀进程（非可捕获 Error）是批式持久化的必测窗口。
