@@ -117,6 +117,8 @@ int main() {
             const auto release=[](sony2fuji_hdr_image_pair_v1* value) { sony2fuji_hdr_release_pair(value); };
             const std::unique_ptr<sony2fuji_hdr_image_pair_v1,decltype(release)> guard(&result,release);
             check(sony2fuji_hdr_render(session.get(),&borrowed,&request.base.base.base.base.base.base.base,&result,&diagnostic)==SONY2FUJI_STATUS_OK,"recipe native render failed");
+            check(std::all_of(std::begin(result.source_sha256), std::end(result.source_sha256),
+                [](uint8_t value) { return value == 0; }), "recipe render must preserve an absent source digest");
             const auto reference=renderHDRPair(source,expected);
             auto compare=[&](const sony2fuji_hdr_buffer_v1& actual,const ImageData& wanted) {
                 check(actual.width==uint32_t(wanted.width) && actual.height==uint32_t(wanted.height),"recipe geometry differs");

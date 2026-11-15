@@ -9,7 +9,7 @@ namespace sony2fuji {
 
 class HDRLook {
 public:
-    static std::shared_ptr<const HDRLook> load(const std::string& path, std::string_view expectedHash = {});
+    static std::shared_ptr<const HDRLook> load(const std::string& path, std::string_view expectedHash = {}, size_t* ioCount = nullptr);
 
     const std::string& fingerprint() const { return fingerprint_; }
     const RGB& domainMin() const { return low_; }

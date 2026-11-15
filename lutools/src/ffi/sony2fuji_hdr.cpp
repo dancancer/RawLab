@@ -7,6 +7,7 @@
 #include "core/photo_color.h"
 #include "core/photo_rendering.h"
 #include "core/sha256.h"
+#include "core/parsed_resource_cache.h"
 #include "core/hdr_stream.h"
 #include "core/hdr_storage.h"
 #include "core/hdr_look.h"
@@ -366,14 +367,19 @@ CameraProfileResource loadCameraProfile(const char* file, std::string_view expec
         stream.peek() != std::char_traits<char>::eof() || stream.bad())
         fail(SONY2FUJI_HDR_REASON_CAMERA_PROFILE, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT, "HDR camera profile changed during reading");
     auto digest = hash::sha256Bytes(bytes.data(), bytes.size());
-    if (!expected.empty() && expected != digest)
+    static ParsedResourceCache<CameraProfileResource> cache;
+    if (!expected.empty() && expected != digest) {
+        cache.evict(file);
         fail(SONY2FUJI_HDR_REASON_CAMERA_PROFILE, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT, "HDR camera profile fingerprint changed");
+    }
+    checkProcessingCancellation();
+    if (auto cached = cache.find(file, digest)) return *cached;
     auto profile = readHDRCameraProfile(bytes.data(), bytes.size());
     checkProcessingCancellation();
     if (!profile)
         fail(SONY2FUJI_HDR_REASON_CAMERA_PROFILE, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT,
             "Unsupported HDR camera calibration", SONY2FUJI_STATUS_UNSUPPORTED);
-    return {std::move(*profile), std::move(digest)};
+    return cache.put(file, digest, {std::move(*profile), digest});
 }
 
 void cameraRawStatus(ErrorCode code) {
@@ -912,17 +918,10 @@ static sony2fuji_status decodeCameraRaw(sony2fuji_session* sessionHandle, const 
                 pair.sourceHeadroom = std::max(pair.sourceHeadroom, cameraLuminance(pixel));
             owner->sourceHeadroomKind = SONY2FUJI_HDR_HEADROOM_MEASURED;
         }
-        std::string digest;
-        try { digest = hash::sha256File(file, checkProcessingCancellation); }
-        catch (const std::runtime_error&) { cameraRawStatus(ErrorCode::FileNotFound); }
         const auto after = cameraRawStamp(filePath);
         if (before.size != after.size || before.modified != after.modified ||
             (ai && aiKey != hdrSessionCameraAIKey(session, file)))
             fail(SONY2FUJI_HDR_REASON_SOURCE_CHANGED, SONY2FUJI_HDR_FIELD_SOURCE, "Camera RAW source changed during decode");
-        for (size_t i = 0; i < owner->sha.size(); ++i) {
-            auto digit = [](char c) { return c <= '9' ? c - '0' : c - 'a' + 10; };
-            owner->sha[i] = uint8_t(digit(digest[2*i]) * 16 + digit(digest[2*i+1]));
-        }
         checkProcessingCancellation();
         pair.sourceQuality = pair.renderQuality = static_cast<HDRQuality>(options->intent);
         pair.isProxy = preview;
@@ -1006,7 +1005,7 @@ sony2fuji_status sony2fuji_hdr_export_proraw(sony2fuji_session* sessionHandle, c
         // SDK stage 与完整源 float spool 同时存活，开始解码前按同一卷的合计峰值准入。
         hdr::storage::requireSpace(std::filesystem::u8path(temporaryRoot),
             hdr::proRAWStageBytes(uint64_t(info.width) * info.height) + streamBytes);
-        auto source = hdr::openProRAW(sourceFile, std::filesystem::u8path(temporaryRoot));
+        auto source = hdr::openProRAW(sourceFile, std::filesystem::u8path(temporaryRoot), config->source_sha256);
         auto encoded = hdr::encodeStream(source, options, keepHDR != 0, config->jpeg_quality ? config->jpeg_quality : 95,
             config->base_color, std::filesystem::u8path(temporaryRoot));
         hdr::publishStreamJPEG(std::move(encoded.jpeg), encoded.width, encoded.height, *config, keepHDR != 0, file);

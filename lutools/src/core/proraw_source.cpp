@@ -2,6 +2,7 @@
 #include "core/hdr_storage.h"
 #include "core/processing_cancellation.h"
 #include "core/sha256.h"
+#include "core/resource_file_stamp.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -192,7 +193,7 @@ public:
 struct Source {
     fs::path path;
     uintmax_t size;
-    fs::file_time_type modified;
+    ResourceFileStamp stamp{};
     Sniffer sniffer;
     Memory memory;
     Host host{&memory, &sniffer};
@@ -201,12 +202,12 @@ struct Source {
     AutoPtr<dng_negative> negative;
     AutoPtr<dng_image> rendered;
     uint32_t width = 0, height = 0;
-    std::string digest;
+    std::array<uint8_t, 32> digest{};
     int renderedKind = -1;
     explicit Source(const char* file) : path(fs::u8path(file)) {
-        std::error_code error;
-        size = fs::file_size(path, error); if (error || size < 8 || size > (512ull << 20)) unsupported();
-        modified = fs::last_write_time(path);
+        const auto before = resourceFileStamp(path);
+        if (!before || before->size < 8 || before->size > (512ull << 20)) unsupported();
+        stamp = *before; size = stamp.size;
 #ifdef _WIN32
         stream = std::make_unique<dng_file_stream>(path.c_str());
 #else
@@ -234,7 +235,7 @@ struct Source {
         result.container = SONY2FUJI_HDR_CONTAINER_PRORAW; result.color_description = SONY2FUJI_HDR_COLOR_SRGB;
         return result;
     }
-    void develop(const fs::path& root) {
+    void develop(const fs::path& root, const uint8_t* expectedSHA256 = nullptr) {
         const auto& raw = *info.fIFD[info.fMainIndex];
         const uint64_t tileWidth = raw.fTileWidth ? raw.fTileWidth : raw.fImageWidth;
         const uint64_t tileHeight = raw.fTileLength ? raw.fTileLength : raw.fImageLength;
@@ -242,7 +243,13 @@ struct Source {
         // 压缩输入、predictor 额外行和浮点展开；JXL 的其它分配由 Memory 逐次核验。
         admitMemory((96ull << 20) + size + tileWidth * (tileHeight + 1) * raw.fSamplesPerPixel * 8);
         host.storage = std::make_shared<Storage>(root, uint64_t(width) * height);
-        digest = hash::sha256File(path.u8string());
+        if (expectedSHA256) {
+            std::copy_n(expectedSHA256, digest.size(), digest.begin());
+        } else {
+            const auto hex = hash::sha256File(path.u8string(), checkProcessingCancellation);
+            for (size_t i = 0; i < digest.size(); ++i)
+                digest[i] = uint8_t(std::stoul(hex.substr(2 * i, 2), nullptr, 16));
+        }
         verify();
         try { negative->ReadStage1Image(host, *stream, info); }
         catch (...) { memory.check(); throw; }
@@ -281,12 +288,12 @@ struct Source {
     }
     void verify() const {
         checkProcessingCancellation();
-        if (size != fs::file_size(path) || modified != fs::last_write_time(path)) changed();
+        const auto current = resourceFileStamp(path);
+        if (!current || !(*current == stamp)) changed();
     }
     void finish() {
         rendered.Reset(); negative.Reset(); host.storage->check(); host.storage.reset();
         verify();
-        if (hash::sha256File(path.u8string()) != digest) changed();
         checkProcessingCancellation();
     }
 };
@@ -337,17 +344,17 @@ DecodedImage decodeProRAW(const char* path, const sony2fuji_hdr_decode_options_v
             for (const auto& p : pair.hdr.pixels) pair.sourceHeadroom = std::max(pair.sourceHeadroom, .2126f*p.r + .7152f*p.g + .0722f*p.b);
             result.info.headroom_kind = SONY2FUJI_HDR_HEADROOM_MEASURED; result.info.content_headroom = pair.sourceHeadroom;
         }
-        for (size_t i = 0; i < 32; ++i) result.info.source_sha256[i] = uint8_t(std::stoul(source.digest.substr(2*i, 2), nullptr, 16));
+        std::copy(source.digest.begin(), source.digest.end(), result.info.source_sha256);
         return result;
     });
 #else
     (void)path; (void)options; (void)root; unsupported();
 #endif
 }
-HDRRowSource openProRAW(const char* path, const fs::path& root) {
+HDRRowSource openProRAW(const char* path, const fs::path& root, const uint8_t expectedSHA256[32]) {
 #ifdef SONY2FUJI_ENABLE_DNGSDK
     return sdkBoundary([&] {
-        auto source = std::make_shared<Source>(path); source->develop(root);
+        auto source = std::make_shared<Source>(path); source->develop(root, expectedSHA256);
         HDRRowSource result; result.width = source->width; result.height = source->height;
         result.read = [source](bool hdr, uint32_t row, uint32_t count, RGB* output) {
             sdkBoundary([&] {
@@ -363,7 +370,7 @@ HDRRowSource openProRAW(const char* path, const fs::path& root) {
         return result;
     });
 #else
-    (void)path; (void)root; unsupported();
+    (void)path; (void)root; (void)expectedSHA256; unsupported();
 #endif
 }
 }

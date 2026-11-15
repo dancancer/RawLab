@@ -4,12 +4,12 @@
 #include <cmath>
 #include <fstream>
 #include <filesystem>
-#include <mutex>
 #include <set>
 #include <sstream>
 #include <sys/stat.h>
 #include "../../third_party/nlohmann/json.hpp"
 #include "sha256.h"
+#include "parsed_resource_cache.h"
 #include "lut_compatibility.h"
 #include "lut_contract_json.h"
 
@@ -317,16 +317,11 @@ std::shared_ptr<LUT3D> LUTParser::loadLUTCached(const std::string& path) {
     if (!file.read(bytes.data(), bytes.size()) || file.peek() != std::char_traits<char>::eof()) return nullptr;
     // 文件可能被同大小内容覆盖且时间戳不变；缓存命中必须基于实际字节。
     const auto digest = hash::sha256Bytes(bytes.data(), bytes.size());
-    static std::mutex mutex;
-    static std::string previous;
-    static std::string fingerprint;
-    static std::shared_ptr<LUT3D> cached;
-    std::lock_guard<std::mutex> lock(mutex);
-    if (previous == path && fingerprint == digest && cached) return cached;
+    static ParsedResourceCache<std::shared_ptr<LUT3D>> cache;
+    if (auto cached = cache.find(path, digest)) return *cached;
     auto parsed = std::make_shared<LUT3D>();
-    cached = parsed->loadFromData(bytes, format == "vlt") == ErrorCode::Success ? std::move(parsed) : nullptr;
-    previous = path; fingerprint = digest;
-    return cached;
+    if (parsed->loadFromData(bytes, format == "vlt") != ErrorCode::Success) return nullptr;
+    return cache.put(path, digest, std::move(parsed));
 }
 
 std::string LUTParser::detectFormat(const std::string& path) {
