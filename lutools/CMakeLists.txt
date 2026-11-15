@@ -913,7 +913,12 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         add_test(NAME d3d11_shader COMMAND d3d11_shader_tests)
     endif()
     find_program(RAWLAB_GLSLANG NAMES glslangValidator glslang)
-    find_program(RAWLAB_SHADER_PYTHON NAMES python3 python)
+    # 优先复用已解析的 Python3_EXECUTABLE，避免 Windows 下 find_program 命中应用商店占位符或漏找导致静默跳过。
+    if(Python3_EXECUTABLE)
+        set(RAWLAB_SHADER_PYTHON "${Python3_EXECUTABLE}")
+    else()
+        find_program(RAWLAB_SHADER_PYTHON NAMES python3 python)
+    endif()
     if(RAWLAB_GLSLANG AND RAWLAB_SHADER_PYTHON)
         add_test(NAME gles_shader COMMAND "${RAWLAB_SHADER_PYTHON}"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_gles_shader.py" --validator "${RAWLAB_GLSLANG}")
