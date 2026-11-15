@@ -666,6 +666,10 @@ struct ThumbnailCacheTests {
             let previews = observingPreviews ?? MacEditedPhotoPreviews(
                 editDirectory: editsDir, cacheDirectory: diskCacheDir, thumbnails: thumbnails
             )
+            let expectedBeforeRender = usesNotification ? 1 : 0
+            check(thumbnails.editGeneration(forPath: keyB.path) == UInt64(expectedBeforeRender) &&
+                  previews.editedInvalidationCount == expectedBeforeRender,
+                  "CASE_E_MN9 \(route): tracking occurs at the intended entry point before render")
             let editedC = try await previews.image(for: savedC)
             check(previews.cachedThumbnail(for: photo)?.image === editedC,
                   "CASE_E_MN9 \(route): idC edited preview is active before idB completes")
