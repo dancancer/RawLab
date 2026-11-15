@@ -59,7 +59,7 @@ internal sealed class LUTPreviewWorker : IDisposable
                 if (PhotoInput.ProbeHDR(photo, out _) == HDRProbeState.Supported)
                 {
                     using var decoded = HDRNative.Decode(photo, HDRIntent.Preview, 512);
-                    hdrDisplay = new HDRSdrInput(HDRDisplay.CopyPair(decoded.Pair).SDR);
+                    hdrDisplay = new HDRSdrInput(HDRDisplay.CopySDROnly(decoded.Pair).SDR);
                     display = hdrDisplay.Buffer;
                 }
                 else Native.Check(Native.sony2fuji_load_display_image(source, ref display));
@@ -112,7 +112,7 @@ internal sealed class LUTPreviewWorker : IDisposable
             if (PhotoInput.ProbeHDR(file, out _) == HDRProbeState.Supported)
             {
                 using var decoded = HDRNative.Decode(file, HDRIntent.Preview, 512);
-                hdrInput = new HDRSdrInput(HDRDisplay.CopyPair(decoded.Pair).SDR); input = hdrInput.Buffer;
+                hdrInput = new HDRSdrInput(HDRDisplay.CopySDROnly(decoded.Pair).SDR); input = hdrInput.Buffer;
             }
             else Native.Check(Native.sony2fuji_load_display_image(file, ref input));
             var request = Request(); SetDisplay(ref request, input);

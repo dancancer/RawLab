@@ -4335,6 +4335,20 @@
     "已忽略目标不支持的普通降噪设置": {
       "formats": [],
       "source": "已忽略目标不支持的普通降噪设置"
+    },
+    "EXIF 参数不能包含 -execute。": {
+      "formats": [],
+      "source": "EXIF 参数不能包含 -execute。"
+    },
+    "EXIF 导出进程意外中断，未确认写入结果。": {
+      "formats": [],
+      "source": "EXIF 导出进程意外中断，未确认写入结果。"
+    },
+    "退出码 {0}。": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "退出码 {0}。"
     }
   },
   "overrides": {
@@ -6023,6 +6037,30 @@
       "fr": "Enregistrement de la dernière tâche par lots endommagé, déplacé vers : {0}",
       "ja": "破損した前回の一括タスク記録を次に移動しました: {0}",
       "es": "Registro dañado de la última tarea por lotes movido a: {0}"
+    },
+    "EXIF 参数不能包含 -execute。": {
+      "de": "EXIF-Argumente dürfen kein -execute enthalten.",
+      "en": "EXIF arguments cannot contain -execute.",
+      "es": "Los argumentos EXIF no pueden contener -execute.",
+      "fr": "Les arguments EXIF ne peuvent pas contenir -execute.",
+      "ja": "EXIF引数に-executeは使用できません。",
+      "zh-Hans": "EXIF 参数不能包含 -execute。"
+    },
+    "EXIF 导出进程意外中断，未确认写入结果。": {
+      "de": "Der EXIF-Exportprozess wurde unerwartet unterbrochen; das Schreibergebnis ist nicht bestätigt.",
+      "en": "The EXIF export process stopped unexpectedly; the write result is unconfirmed.",
+      "es": "El proceso de exportación de EXIF se interrumpió inesperadamente; el resultado de escritura no está confirmado.",
+      "fr": "Le processus d’export EXIF s’est interrompu de façon inattendue ; résultat d’écriture non confirmé.",
+      "ja": "EXIF書き出しプロセスが予期せず中断され、書き込み結果を確認できませんでした。",
+      "zh-Hans": "EXIF 导出进程意外中断，未确认写入结果。"
+    },
+    "退出码 {0}。": {
+      "de": "Exit-Code {0}.",
+      "en": "Exit code {0}.",
+      "es": "Código de salida {0}.",
+      "fr": "Code de sortie {0}.",
+      "ja": "終了コード {0}。",
+      "zh-Hans": "退出码 {0}。"
     }
   }
 }

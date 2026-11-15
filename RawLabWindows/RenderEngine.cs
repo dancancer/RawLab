@@ -158,7 +158,7 @@ internal sealed partial class RenderEngine : IDisposable
     private double AutoExposureHDRSource(string path, Adjustments settings,HDRSourceInfo info)
     {
         using var source = HDRSourceCache.Acquire(path,info,false,256,session);
-        var pair = HDRDisplay.CopyPair(source.Owner.Pair);
+        var pair = HDRDisplay.CopySDROnly(source.Owner.Pair);
         using var input = new HDRSdrInput(pair.SDR);
         var prepared = PrepareRequest(path, settings, null, 256, false, null, null, true, input.Buffer);
         var request = prepared.Item2;
@@ -379,7 +379,7 @@ internal sealed partial class RenderEngine : IDisposable
     private RenderedImage? RenderHDRAsSDR(string path, Adjustments settings, string? lut, int edge, string? output,
         int? longEdge, ExportFormat? formatOverride, HDRPairOwner source,bool statistics,bool clipping)
     {
-        var pair = HDRDisplay.CopyPair(source.Pair);
+        var pair = HDRDisplay.CopySDROnly(source.Pair);
         using var input = new HDRSdrInput(pair.SDR);
         var prepared = PrepareRequest(path, settings, lut, edge, false, output, longEdge, output == null, input.Buffer);
         var request = prepared.Item2;
@@ -465,7 +465,7 @@ internal sealed partial class RenderEngine : IDisposable
         }
         using var source=PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path,out var info)==HDRProbeState.Supported
             ? HDRSourceCache.Acquire(path,info!,false,hdrEdge,session) : null;
-        using var input=source==null ? null : new HDRSdrInput(HDRDisplay.CopyPair(source.Owner.Pair).SDR);
+        using var input=source==null ? null : new HDRSdrInput(HDRDisplay.CopySDROnly(source.Owner.Pair).SDR);
         var prepared=PrepareRequest(path,settings,lut,edge,interactive,null,null,true,input?.Buffer);
         var request=prepared.Item2;
         IntPtr probe=IntPtr.Zero;
@@ -614,7 +614,7 @@ internal sealed partial class RenderEngine : IDisposable
             if (PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path, out _) == HDRProbeState.Supported)
             {
                 using var decoded = HDRNative.Decode(path, HDRIntent.Preview, checked((uint)Math.Clamp(edge, 1, 65535)));
-                var pair = HDRDisplay.CopyPair(decoded.Pair);
+                var pair = HDRDisplay.CopySDROnly(decoded.Pair);
                 return new(pair.SDRBitmap, pair.SDR.Width, pair.SDR.Height);
             }
             if(LibraryEntry.IsRaster(path))

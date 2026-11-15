@@ -53,6 +53,20 @@ internal static class HDRDisplay
             pair.IsProxy != 0, pair.SourceSha256?.ToArray() ?? []);
     }
 
+    // 导出尾趟/输入喂图/缩略图等只消费 SDR 平面：仅克隆一份 float[]，省掉整幅 HDR 平面
+    // （42MP 量级即每处约 0.5GB 的 LOH 分配与随后的即弃回收）。HDR 槽位别名到同一份拷贝，
+    // 需要 HDR 语义（Statistics、FalseColor、swap chain）的消费者必须继续用 CopyPair。
+    internal static HDRRenderedPair CopySDROnly(Native.HDRImagePair pair)
+    {
+        if (!IsReadable(pair.Hdr) || !IsReadable(pair.Sdr)) throw new InvalidDataException("Invalid HDR float buffer");
+        var sdr = Copy(pair.Sdr);
+        if (pair.Hdr.Width != pair.Sdr.Width || pair.Hdr.Height != pair.Sdr.Height || pair.OrientationApplied != 1 ||
+            pair.NativeWidth == 0 || pair.NativeHeight == 0)
+            throw new InvalidDataException("Invalid HDR image pair");
+        return new(sdr, sdr, pair.NativeWidth, pair.NativeHeight, pair.OutputNativeWidth, pair.OutputNativeHeight,
+            pair.IsProxy != 0, pair.SourceSha256?.ToArray() ?? []);
+    }
+
     internal static BitmapSource SDRBitmap(HDRFloatImage image)
     {
         var pixels = new byte[checked(image.Width * image.Height * 4)];
@@ -106,12 +120,15 @@ internal static class HDRDisplay
         return (bins, (double)shadows / count, (double)highlights / count,overlay);
     }
 
+    private static bool IsReadable(Native.HDRBuffer buffer) =>
+        !(buffer.Data == IntPtr.Zero || buffer.PixelFormat != HDRNative.PixelRGB32FLinear ||
+          buffer.ColorEncoding != HDRNative.LinearSRGB || buffer.Width == 0 || buffer.Height == 0 ||
+          buffer.StrideBytes < (ulong)buffer.Width * 12 ||
+          buffer.SizeBytes < (ulong)(buffer.Height - 1) * buffer.StrideBytes + (ulong)buffer.Width * 12);
+
     private static HDRFloatImage Copy(Native.HDRBuffer buffer)
     {
-        if (buffer.Data == IntPtr.Zero || buffer.PixelFormat != HDRNative.PixelRGB32FLinear ||
-            buffer.ColorEncoding != HDRNative.LinearSRGB || buffer.Width == 0 || buffer.Height == 0 ||
-            buffer.StrideBytes < (ulong)buffer.Width * 12 || buffer.SizeBytes < (ulong)(buffer.Height - 1) * buffer.StrideBytes + (ulong)buffer.Width * 12)
-            throw new InvalidDataException("Invalid HDR float buffer");
+        if (!IsReadable(buffer)) throw new InvalidDataException("Invalid HDR float buffer");
         var width = checked((int)buffer.Width); var height = checked((int)buffer.Height);
         var values = new float[checked(width * height * 3)]; var row = new byte[checked(width * 12)];
         for (var y = 0; y < height; y++)
