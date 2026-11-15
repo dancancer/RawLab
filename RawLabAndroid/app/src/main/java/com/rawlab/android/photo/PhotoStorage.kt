@@ -84,7 +84,7 @@ class PhotoStorage(
 ) : AutoCloseable {
     private val resolver = context.contentResolver
     private val mediaLibrary = MediaPhotoLibrary(context)
-    private val directory = File(context.cacheDir, "rawlab-${UUID.randomUUID()}")
+    private val directory = File(context.cacheDir, "rawlab-${UUID.randomUUID()}").also(WorkingCopyCleanup::protect)
     private val systemPhotos = File(context.filesDir, "system-photos")
     private val lookLibrary = LookLibrary(looksDirectory, lookValidator, dcpCompiler)
     internal val hdrLookDirectory = File(looksDirectory, "HDR")

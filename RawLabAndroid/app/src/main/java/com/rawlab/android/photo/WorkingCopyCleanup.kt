@@ -6,6 +6,7 @@ import java.nio.file.Files
 
 /** 仅在进程入口、创建任何 PhotoStorage 之前调用。无法确认恢复引用时保留全部副本。 */
 internal object WorkingCopyCleanup {
+    private val protectedDirectories = java.util.concurrent.ConcurrentHashMap.newKeySet<java.nio.file.Path>()
     private const val UUID_HEX = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
     private val BATCH_RENDER_TEMP_PATTERN = Regex("^render-.+\\.(jpg|png|dng)$", RegexOption.IGNORE_CASE)
     private val EXPORT_STAGING_PART_PATTERN = Regex("^\\..+\\.$UUID_HEX\\.part(\\.[A-Za-z0-9]+)?$")
@@ -50,6 +51,11 @@ internal object WorkingCopyCleanup {
     internal fun cleanTransientExportFiles(directories: Iterable<File>): List<File> =
         transientExportFiles(directories).filter { it.delete() }
 
+    /** 在后台启动清理期间注册新建的工作目录，避免与进程入口清理竞态。 */
+    fun protect(directory: File) {
+        try { protectedDirectories.add(directory.canonicalFile.toPath()) } catch (_: Exception) {}
+    }
+
     fun atProcessStart(cache: File, journalRoot: File, exportTempRoots: Iterable<File> = listOf(cache)) {
         cleanTransientExportFiles(exportTempRoots)
         // LUT 兼容性预览目录只属于单次对话框，进程重启后不再有持有者。
@@ -69,7 +75,7 @@ internal object WorkingCopyCleanup {
         for (directory in cache.listFiles().orEmpty()) {
             if (!directory.name.matches(Regex("rawlab-[0-9a-fA-F-]{36}")) || !directory.isDirectory || Files.isSymbolicLink(directory.toPath())) continue
             val candidate = directory.canonicalFile.toPath()
-            if (candidate.parent == root && paths.none { it.startsWith(candidate) }) directory.deleteRecursively()
+            if (candidate.parent == root && candidate !in protectedDirectories && paths.none { it.startsWith(candidate) }) directory.deleteRecursively()
         }
         // 没有快照的任务目录无法恢复；有快照（含失败、取消或读不出的）一律保留供重试。
         deleteOwnedDirectories(journalRoot) { directory, candidate ->

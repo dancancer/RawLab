@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -16,6 +17,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
@@ -109,10 +112,12 @@ class BatchExportModel(
     private val onTerminal: (succeeded: Int, failed: Int, outcome: UsageBatchOutcome) -> Unit = { _, _, _ -> },
 ) : AutoCloseable {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val confirmLock = Mutex()
     private val resolver = context.contentResolver
     private val cancelRequested = BatchCancellation()
     private val activeProcessor = AtomicReference<NativeProcessor?>(null)
-    private var running: Job? = null
+    @Volatile private var running: Job? = null
     private var discardCompletion: CompletableDeferred<Unit>? = null
     private val journalRoot = File(context.filesDir, "RawLab/BatchJobs")
     private val initialJob = initial ?: BatchJob(source, emptyList())
@@ -376,9 +381,17 @@ class BatchExportModel(
     }
 
     fun confirmOutput(id: String, saved: Boolean) {
-        val updated = mutable.value.job.confirmedOutput(id, saved)
-        try { BatchJournal(journalRoot).save(updated); mutable.update { it.copy(job = it.job.confirmedOutput(id, saved)) } }
-        catch (error: Exception) { mutable.update { it.copy(error = error.message) } }
+        scope.launch {
+            confirmBatchOutput(
+                lock = confirmLock,
+                journalRoot = journalRoot,
+                id = id,
+                saved = saved,
+                currentJob = { mutable.value.job },
+                updateJob = { mutable.update { it.copy(job = it.job.confirmedOutput(id, saved)) } },
+                onError = { error -> mutable.update { it.copy(error = error.message) } },
+            )
+        }
     }
 
     fun setDestination(destination: Uri?) { mutable.update {
@@ -386,10 +399,17 @@ class BatchExportModel(
     } }
 
     fun discardDraftOrCompleted(): Deferred<Unit>? {
-        val job = mutable.value.job
-        // 失败 phase 不代表已持久化；journal 决定副本是否需要保留。
-        if (!BatchJournal(journalRoot).contains(job.id) || job.rows.all { it.status == BatchRowStatus.SUCCESS }) discardAfterWork()
-        return discardCompletion
+        discardCompletion?.let { return it }
+        val completion = discardBatchDraftOrCompleted(
+            job = mutable.value.job,
+            initialJobId = initialJob.id,
+            journalRoot = journalRoot,
+            rootJob = scope.coroutineContext[Job]!!,
+            ioScope = ioScope,
+            closeModel = ::close,
+        )
+        discardCompletion = completion
+        return completion
     }
 
     fun discard(): Boolean {
@@ -400,12 +420,13 @@ class BatchExportModel(
 
     private fun discardAfterWork() {
         if (discardCompletion != null) return
-        val completion = CompletableDeferred<Unit>().also { discardCompletion = it }
-        scope.coroutineContext[Job]!!.invokeOnCompletion {
-            try { BatchJournal(journalRoot).discard(initialJob.id); completion.complete(Unit) }
-            catch (error: Exception) { completion.completeExceptionally(error) }
-        }
-        close()
+        discardCompletion = discardBatchAfterWork(
+            initialJobId = initialJob.id,
+            journalRoot = journalRoot,
+            rootJob = scope.coroutineContext[Job]!!,
+            ioScope = ioScope,
+            closeModel = ::close,
+        )
     }
 
     override fun close() {
@@ -414,4 +435,71 @@ class BatchExportModel(
         if (job?.isActive == true) job.invokeOnCompletion { scope.coroutineContext[Job]?.cancel() }
         else scope.coroutineContext[Job]?.cancel()
     }
+}
+
+internal suspend fun confirmBatchOutput(
+    lock: Mutex,
+    journalRoot: File,
+    id: String,
+    saved: Boolean,
+    currentJob: () -> BatchJob,
+    updateJob: () -> Unit,
+    onError: (Exception) -> Unit,
+    ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) {
+    lock.withLock {
+        val updated = currentJob().confirmedOutput(id, saved)
+        try {
+            withContext(ioDispatcher) { BatchJournal(journalRoot).save(updated) }
+            updateJob()
+        } catch (error: Exception) {
+            onError(error)
+        }
+    }
+}
+
+internal fun discardBatchAfterWork(
+    initialJobId: String,
+    journalRoot: File,
+    rootJob: Job,
+    ioScope: CoroutineScope,
+    closeModel: () -> Unit,
+): CompletableDeferred<Unit> {
+    val completion = CompletableDeferred<Unit>()
+    rootJob.invokeOnCompletion {
+        ioScope.launch {
+            try { BatchJournal(journalRoot).discard(initialJobId); completion.complete(Unit) }
+            catch (error: Exception) { completion.completeExceptionally(error) }
+        }
+    }
+    closeModel()
+    return completion
+}
+
+internal fun discardBatchDraftOrCompleted(
+    job: BatchJob,
+    initialJobId: String,
+    journalRoot: File,
+    rootJob: Job,
+    ioScope: CoroutineScope,
+    closeModel: () -> Unit,
+): CompletableDeferred<Unit> {
+    if (job.rows.all { it.status == BatchRowStatus.SUCCESS }) {
+        return discardBatchAfterWork(initialJobId, journalRoot, rootJob, ioScope, closeModel)
+    }
+    // 失败 phase 不代表已持久化；journal 决定副本是否需要保留。
+    val completion = CompletableDeferred<Unit>()
+    ioScope.launch {
+        try {
+            if (!BatchJournal(journalRoot).contains(job.id)) {
+                closeModel()
+                rootJob.join()
+                BatchJournal(journalRoot).discard(initialJobId)
+            }
+            completion.complete(Unit)
+        } catch (error: Exception) {
+            completion.completeExceptionally(error)
+        }
+    }
+    return completion
 }

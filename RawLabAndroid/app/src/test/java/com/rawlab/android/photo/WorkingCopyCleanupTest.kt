@@ -143,4 +143,36 @@ class WorkingCopyCleanupTest {
             assertEquals("original-photo", outsideUserPhoto.readText())
         } finally { root.deleteRecursively() }
     }
+
+    @Test fun p3_29_startupCleanupRunsOffCallingThreadAndProtectsActivePhotoStorage() {
+        val root = Files.createTempDirectory("rawlab-startup-cleanup").toFile()
+        try {
+            val files = File(root, "files").apply { mkdirs() }
+            val cache = File(root, "cache").apply { mkdirs() }
+            val orphan = File(cache, "rawlab-${UUID.randomUUID()}").apply { mkdirs(); resolve("orphan.raw").writeText("old") }
+            val active = File(cache, "rawlab-${UUID.randomUUID()}").apply { mkdirs(); resolve("active.raw").writeText("new") }
+            val queued = mutableListOf<Runnable>()
+            val callerThread = Thread.currentThread()
+
+            com.rawlab.android.scheduleStartupCleanup(files, cache) { task -> queued += task }
+
+            // 调度阶段不在调用线程（冷启动主线程）扫描或删除目录。
+            assertEquals(1, queued.size)
+            assertTrue(orphan.exists())
+            assertTrue(active.exists())
+
+            WorkingCopyCleanup.protect(active)
+            var workerThread: Thread? = null
+            val done = java.util.concurrent.CountDownLatch(1)
+            Thread({
+                workerThread = Thread.currentThread()
+                queued.single().run()
+                done.countDown()
+            }, "test-startup-bg").start()
+            assertTrue(done.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            assertNotSame(callerThread, workerThread)
+            assertFalse(orphan.exists())
+            assertTrue(active.exists())
+        } finally { root.deleteRecursively() }
+    }
 }
