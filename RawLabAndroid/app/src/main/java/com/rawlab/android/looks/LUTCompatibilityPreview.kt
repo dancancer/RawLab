@@ -48,7 +48,9 @@ internal class LUTCompatibilityPreview(private val context: Context, private val
     private val referenceGeneration = AtomicInteger()
     private val comparisonGeneration = AtomicInteger()
     private var closed = false
-    private val directory = File(context.cacheDir, "lut-preview-${UUID.randomUUID()}").apply { check(mkdirs()) }
+    private val directory = File(context.cacheDir, "lut-preview-${UUID.randomUUID()}")
+        .also(com.rawlab.android.photo.WorkingCopyCleanup::protect)
+        .apply { check(mkdirs()) }
     private val processorOwner = lazy { NativeProcessor(NativeProcessor.CPU) }
     private val processor get() = processorOwner.value
     private var lut: File? = null

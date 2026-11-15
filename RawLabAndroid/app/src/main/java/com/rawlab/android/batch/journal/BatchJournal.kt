@@ -30,9 +30,11 @@ import org.json.JSONObject
 // ============================================================================
 
 class BatchJournal(private val directory: File) {
-    private companion object {
-        const val LOG_MAGIC = 0x52424a33
+    internal companion object {
+        private const val LOG_MAGIC = 0x52424a33
         const val LOG_TAG = "RawLabBatch"
+        /** 跨实例互斥锁：保护 BatchJobs 目录免于与启动清理/保留回收并发读写。 */
+        val rootLock = Any()
     }
     private val generations = mutableMapOf<String, String>()
 
@@ -46,7 +48,7 @@ class BatchJournal(private val directory: File) {
     private fun journalFile(id: String) = File(directory, "$id.properties")
     private fun logFile(id: String) = File(directory, "$id.rows")
 
-    fun contains(id: String): Boolean = journalFile(id).isFile
+    fun contains(id: String): Boolean = synchronized(rootLock) { journalFile(id).isFile }
 
     private fun isUnsupportedFuture(snapshotBytes: ByteArray): Boolean {
         return try {
@@ -93,8 +95,7 @@ class BatchJournal(private val directory: File) {
         }
     }
 
-    @Synchronized
-    fun save(job: BatchJob) {
+    fun save(job: BatchJob) = synchronized(rootLock) {
         // 旧实例不得覆盖另一个版本已经保存的新格式。
         if (contains(job.id)) {
             try {
@@ -115,8 +116,7 @@ class BatchJournal(private val directory: File) {
         generations[job.id] = generation
     }
 
-    @Synchronized
-    fun recordRow(job: BatchJob, index: Int) {
+    fun recordRow(job: BatchJob, index: Int) = synchronized(rootLock) {
         val row = job.rows[index]
         val generation = generations[job.id]
         if (generation == null || !contains(job.id) || logGeneration(logFile(job.id)) != generation) {
@@ -147,16 +147,15 @@ class BatchJournal(private val directory: File) {
         }
     }
 
-    @Synchronized
-    fun load(id: String): BatchJob? {
+    fun load(id: String): BatchJob? = synchronized(rootLock) {
         val snapshotFile = journalFile(id)
-        if (!snapshotFile.isFile) return null
+        if (!snapshotFile.isFile) return@synchronized null
         // 「读不了」≠「坏了」：先把整份字节读进内存，读 I/O 失败原样上抛且不动原文件；
         // 只有内存字节的解析/版本判定才走损坏隔离与未来版本拒绝（对齐 Mac readJob）。
         val snapshotBytes = snapshotFile.readBytes()
         val log = logFile(id)
         val logBytes = if (log.isFile) log.readBytes() else null
-        return try {
+        try {
             val properties = Properties().also { it.load(snapshotBytes.inputStream()) }
             val snapshot = JournalCodec.readSnapshot(id, properties)
             val replayed = replay(snapshot, properties.getProperty("journal.generation"), logBytes)
@@ -286,27 +285,28 @@ class BatchJournal(private val directory: File) {
         return moved
     }
 
-    fun pending(): List<String> = directory.listFiles().orEmpty()
-        .filter { it.extension == "properties" }
-        .mapNotNull { file ->
-            val id = file.nameWithoutExtension
-            try {
-                load(id)?.let { job ->
-                    if (job.rows.isNotEmpty() && job.rows.all { it.status == BatchRowStatus.SUCCESS }) {
-                        discard(job.id)
-                        null
-                    } else job.takeIf { it.rows.isNotEmpty() }?.id
+    fun pending(): List<String> = synchronized(rootLock) {
+        directory.listFiles().orEmpty()
+            .filter { it.extension == "properties" }
+            .mapNotNull { file ->
+                val id = file.nameWithoutExtension
+                try {
+                    load(id)?.let { job ->
+                        if (job.rows.isNotEmpty() && job.rows.all { it.status == BatchRowStatus.SUCCESS }) {
+                            discard(job.id)
+                            null
+                        } else job.takeIf { it.rows.isNotEmpty() }?.id
+                    }
+                } catch (error: Exception) {
+                    // 读 I/O 与未来版本原样传播；只有「读得到但坏了」才隔离并继续扫描其余待办。
+                    if (error !is CorruptBatchJournalEntry) throw error
+                    quarantine(id, error)
+                    null
                 }
-            } catch (error: Exception) {
-                // 读 I/O 与未来版本原样传播；只有「读得到但坏了」才隔离并继续扫描其余待办。
-                if (error !is CorruptBatchJournalEntry) throw error
-                quarantine(id, error)
-                null
             }
-        }
+    }
 
-    @Synchronized
-    fun discard(id: String) {
+    fun discard(id: String) = synchronized(rootLock) {
         generations.remove(id)
         journalFile(id).delete()
         logFile(id).delete()

@@ -829,4 +829,87 @@ class CameraImportAuditTest {
         assertTrue(session.isOpen)
         assertEquals(0, session.closeCalls)
     }
+
+    @Test fun p3_27_openSavedAndOpenTetherSavedResetPreparingOnEarlyReturnAndException() = runBlocking {
+        // 1. 提前 return（job 切换）时，preparing 和 opening 必须复位。
+        var opening: String? = "req-1"
+        var currentJobId: String? = "job-1"
+        var preparing = true
+        var readyCalls = 0
+        executeOpenSaved(
+            jobId = "job-1",
+            request = "req-1",
+            currentOpening = { opening },
+            currentJobId = { currentJobId },
+            clearOpening = { opening = null },
+            resetPreparing = { preparing = false },
+            loadUris = {
+                currentJobId = "job-2"
+                Result.success(emptyList<android.net.Uri>()) to null
+            },
+            onRefreshed = {},
+            onReady = { readyCalls++ },
+            onError = {},
+        )
+        assertFalse(preparing)
+        assertNull(opening)
+        assertEquals(0, readyCalls)
+
+        // 2. 新请求接管 opening 后，旧请求不得误清新请求的 preparing。
+        opening = "req-2"
+        preparing = true
+        executeOpenSaved(
+            jobId = "job-1",
+            request = "req-1",
+            currentOpening = { opening },
+            currentJobId = { "job-1" },
+            clearOpening = { opening = null },
+            resetPreparing = { preparing = false },
+            loadUris = { Result.success(emptyList<android.net.Uri>()) to null },
+            onRefreshed = {},
+            onReady = { readyCalls++ },
+            onError = {},
+        )
+        assertTrue(preparing)
+        assertEquals("req-2", opening)
+
+        // 3. loadUris 抛出异常时，openSaved 与 openTetherSaved 都必须复位 preparing。
+        opening = "req-3"
+        preparing = true
+        val savedError = runCatching {
+            executeOpenSaved(
+                jobId = "job-1",
+                request = "req-3",
+                currentOpening = { opening },
+                currentJobId = { "job-1" },
+                clearOpening = { opening = null },
+                resetPreparing = { preparing = false },
+                loadUris = { throw IllegalStateException("boom") },
+                onRefreshed = {},
+                onReady = {},
+                onError = {},
+            )
+        }
+        assertTrue(savedError.isFailure)
+        assertFalse(preparing)
+        assertNull(opening)
+
+        preparing = true
+        val tetherError = runCatching {
+            executeOpenTetherSaved(
+                resetPreparing = { preparing = false },
+                loadUris = { throw IllegalStateException("boom") },
+                canDeliver = { true },
+                onReady = {},
+                onError = {},
+            )
+        }
+        assertTrue(tetherError.isFailure)
+        assertFalse(preparing)
+    }
+
+    @Test fun p3_28_cameraImportViewModelAssetsFieldIsVolatile() {
+        val field = CameraImportViewModel::class.java.getDeclaredField("assets")
+        assertTrue(java.lang.reflect.Modifier.isVolatile(field.modifiers))
+    }
 }

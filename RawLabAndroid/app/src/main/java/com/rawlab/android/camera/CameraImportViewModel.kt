@@ -172,7 +172,7 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     val tether = CameraTetherController(viewModelScope, store, tetherJournal, storeLock, ::updateJob)
     @Volatile private var session: CameraMediaSession? = null
     private var device: SonyMobileSession.Device? = null
-    private var assets: Map<String, SonyMobileSession.Asset> = emptyMap()
+    @Volatile private var assets: Map<String, SonyMobileSession.Asset> = emptyMap()
     private var cameraId = ""
     @Volatile private var generation = 0
     private var permit: CameraTransferPermit? = null
@@ -608,10 +608,10 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
         val cacheKey = "$cameraId:${photo.key}:$large"
         previews.get(cacheKey)?.let { return it }
         if (mutable.value.transferring) return null
+        val asset = assets[photo.key] ?: return null
         val current = generation
         return withContext(Dispatchers.IO) { sessionLock.withLock {
             if (current != generation || mutable.value.transferring) return@withLock null
-            val asset = assets[photo.key] ?: return@withLock null
             val bytes = try { session?.preview(asset, large) ?: return@withLock null }
             catch (_: SonyMobileSession.ResponseException) { return@withLock null }
             catch (_: IOException) {
@@ -637,20 +637,27 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
         mutable.update { it.copy(preparing = true, message = null) }
         viewModelScope.launch {
             var refreshed: CameraImportJob? = null
-            val result = withContext(Dispatchers.IO) { storeLock.withLock {
-                runCatching { store.savedUris(job).map(Uri::parse) }.onFailure {
-                    refreshed = runCatching { store.load().firstOrNull { it.id == job.id } }.getOrNull()
-                }
-            } }
-            if (opening != request || mutable.value.job?.id != job.id) return@launch
-            opening = null
-            refreshed?.let(::updateJob)
-            mutable.update { it.copy(preparing = false) }
-            result.onSuccess { if (it.isNotEmpty()) onReady(it) }
-                .onFailure { error ->
+            executeOpenSaved(
+                jobId = job.id,
+                request = request,
+                currentOpening = { opening },
+                currentJobId = { mutable.value.job?.id },
+                clearOpening = { opening = null },
+                resetPreparing = { mutable.update { it.copy(preparing = false) } },
+                loadUris = {
+                    withContext(Dispatchers.IO) { storeLock.withLock {
+                        runCatching { store.savedUris(job).map(Uri::parse) }.onFailure {
+                            refreshed = runCatching { store.load().firstOrNull { it.id == job.id } }.getOrNull()
+                        }
+                    } } to refreshed
+                },
+                onRefreshed = ::updateJob,
+                onReady = onReady,
+                onError = { error ->
                     mutable.update { it.copy(message = if (error is CameraLocalSourceChanged)
                         R.string.camera_local_source_changed else R.string.camera_source_missing) }
-                }
+                },
+            )
         }
     }
     private fun updateJob(job: CameraImportJob) { mutable.update { it.copy(job = job,
@@ -662,16 +669,21 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
         val closing = closingWork
         mutable.update { it.copy(preparing = true) }
         viewModelScope.launch {
-            closing?.join()
-            val result = withContext(Dispatchers.IO) { storeLock.withLock { runCatching {
-                val jobs = store.load(); tether.refreshJobs(jobs)
-                val job = jobs.find { it.id == photo.jobId } ?: throw IOException("Saved camera job missing")
-                if (photo.uri !in store.savedUris(job)) throw IOException("Saved camera photo missing")
-                listOf(Uri.parse(photo.uri))
-            } } }
-            mutable.update { it.copy(preparing = false) }
-            if (current == generation && foreground) result.onSuccess(onReady)
-                .onFailure { mutable.update { it.copy(message = R.string.camera_source_missing) } }
+            executeOpenTetherSaved(
+                resetPreparing = { mutable.update { it.copy(preparing = false) } },
+                loadUris = {
+                    closing?.join()
+                    withContext(Dispatchers.IO) { storeLock.withLock { runCatching {
+                        val jobs = store.load(); tether.refreshJobs(jobs)
+                        val job = jobs.find { it.id == photo.jobId } ?: throw IOException("Saved camera job missing")
+                        if (photo.uri !in store.savedUris(job)) throw IOException("Saved camera photo missing")
+                        listOf(Uri.parse(photo.uri))
+                    } } }
+                },
+                canDeliver = { current == generation && foreground },
+                onReady = onReady,
+                onError = { mutable.update { it.copy(message = R.string.camera_source_missing) } },
+            )
         }
     }
     // Q6 相机原件手动清理：与传输/恢复共用 storeLock；清理后重新加载 jobs 刷新 state，
@@ -754,4 +766,48 @@ internal fun decodeCameraPreview(bytes: ByteArray, large: Boolean, pixelBudget: 
             decoder.setOnPartialImageListener { false }
         }
     }.getOrNull()
+}
+
+internal suspend fun executeOpenSaved(
+    jobId: String,
+    request: String,
+    currentOpening: () -> String?,
+    currentJobId: () -> String?,
+    clearOpening: () -> Unit,
+    resetPreparing: () -> Unit,
+    loadUris: suspend () -> Pair<Result<List<Uri>>, CameraImportJob?>,
+    onRefreshed: (CameraImportJob) -> Unit,
+    onReady: (List<Uri>) -> Unit,
+    onError: (Throwable) -> Unit,
+) {
+    try {
+        val (result, refreshed) = loadUris()
+        if (currentOpening() != request || currentJobId() != jobId) return
+        clearOpening()
+        refreshed?.let(onRefreshed)
+        resetPreparing()
+        result.onSuccess { if (it.isNotEmpty()) onReady(it) }
+            .onFailure(onError)
+    } finally {
+        if (currentOpening() == request) {
+            clearOpening()
+            resetPreparing()
+        }
+    }
+}
+
+internal suspend fun executeOpenTetherSaved(
+    resetPreparing: () -> Unit,
+    loadUris: suspend () -> Result<List<Uri>>,
+    canDeliver: () -> Boolean,
+    onReady: (List<Uri>) -> Unit,
+    onError: (Throwable) -> Unit,
+) {
+    try {
+        val result = loadUris()
+        resetPreparing()
+        if (canDeliver()) result.onSuccess(onReady).onFailure(onError)
+    } finally {
+        resetPreparing()
+    }
 }
