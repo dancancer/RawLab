@@ -3,6 +3,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <cstring>
 #include <iostream>
 #include <limits>
@@ -379,6 +382,68 @@ void look(const char* path) {
     check(renderHDRPair(source, options).editedHeadroom <= std::exp2(.5f) + 1e-6f, "Look bypassed the HDR limit");
 }
 
+struct LookCacheFiles {
+    std::filesystem::path directory = std::filesystem::temp_directory_path() /
+        ("rawlab-look-cache-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    LookCacheFiles() { std::filesystem::create_directory(directory); }
+    ~LookCacheFiles() { std::error_code error; std::filesystem::remove_all(directory, error); }
+    std::string write(const char* name, int gain, const std::string& padding = {}) {
+        const auto path = directory / name;
+        std::ofstream file(path, std::ios::binary);
+        file << "# RawLabHDRLook: display-linear-srgb-v1\nLUT_3D_SIZE 2\nDOMAIN_MAX 4 4 4\n";
+        for (int b = 0; b < 2; ++b) for (int g = 0; g < 2; ++g) for (int r = 0; r < 2; ++r)
+            file << r * gain << ' ' << g * gain << ' ' << b * gain << '\n';
+        file << padding;
+        check(bool(file), "Cannot write look cache fixture");
+        return path.u8string();
+    }
+};
+
+void lookCacheAlternating() {
+    LookCacheFiles files;
+    const auto a = files.write("a.cube", 2), b = files.write("b.cube", 3);
+    const auto hdrA = HDRLook::load(a), hdrB = HDRLook::load(b);
+    const auto lutA = LUTParser::loadLUTCached(a), lutB = LUTParser::loadLUTCached(b);
+    check(lutA && lutB && hdrA != hdrB && lutA != lutB, "Distinct LUTs must have distinct parsed resources");
+    for (int i = 0; i < 4; ++i) {
+        check(HDRLook::load(a, hdrA->fingerprint()) == hdrA && HDRLook::load(b) == hdrB,
+            "Alternating HDR LUTs evicted a hot parsed resource");
+        check(LUTParser::loadLUTCached(a) == lutA && LUTParser::loadLUTCached(b) == lutB,
+            "Alternating SDR LUTs evicted a hot parsed resource");
+    }
+    rejects([&] { HDRLook::load(a, hdrB->fingerprint()); }, "Cached HDR look ignored the expected digest");
+    near(hdrA->apply({4, 4, 4}, 1).r, 2, "Alternating HDR cache mixed LUT contents");
+    near(hdrB->apply({4, 4, 4}, 1).r, 3, "Alternating HDR cache mixed LUT contents");
+}
+
+void lookCacheOverwrite() {
+    LookCacheFiles files;
+    const auto path = files.write("overwrite.cube", 2);
+    auto hdr = HDRLook::load(path);
+    auto lut = LUTParser::loadLUTCached(path);
+    check(bool(lut), "Initial cached LUT failed to parse");
+    for (bool sizeOnly : {false, true}) {
+        const auto stamp = std::filesystem::last_write_time(std::filesystem::u8path(path));
+        const auto bytes = std::filesystem::file_size(std::filesystem::u8path(path));
+        const int gain = sizeOnly ? 4 : 3;
+        files.write("overwrite.cube", gain, sizeOnly ? "# size changed\n" : "");
+        std::filesystem::last_write_time(std::filesystem::u8path(path),
+            sizeOnly ? stamp : stamp + std::chrono::seconds(2));
+        check((std::filesystem::file_size(std::filesystem::u8path(path)) != bytes) == sizeOnly,
+            "Overwrite fixture did not isolate size and mtime changes");
+        rejects([&] { HDRLook::load(path, hdr->fingerprint()); }, "Overwritten HDR LUT accepted its stale digest");
+        const auto nextHDR = HDRLook::load(path);
+        const auto nextLUT = LUTParser::loadLUTCached(path);
+        check(nextLUT && nextHDR != hdr && nextLUT != lut && nextHDR->fingerprint() != hdr->fingerprint(),
+            "Same-path overwrite reused stale parsed LUTs");
+        near(nextHDR->apply({4, 4, 4}, 1).r, gain, "HDR overwrite did not update rendered values");
+        near(LUTApplicator(nextLUT).apply({4, 4, 4}).r, gain, "SDR overwrite did not update rendered values");
+        check(HDRLook::load(path) == nextHDR && LUTParser::loadLUTCached(path) == nextLUT,
+            "Replacement LUT was not cached");
+        hdr = nextHDR; lut = nextLUT;
+    }
+}
+
 void silver(const char* path) {
     const auto table = HDRLook::load(path);
     for (const float grey : {-4.f, 0.f, .015625f, .1845f, 1.f, 2.f, 4.f, 16.f, 64.f, 80.f}) {
@@ -502,6 +567,8 @@ int main(int argc, char* argv[]) {
         else if (name == "effects") effects();
         else if (name == "detail") detail();
         else if (name == "look" && argc == 3) look(argv[2]);
+        else if (name == "look_cache_alternating") lookCacheAlternating();
+        else if (name == "look_cache_overwrite") lookCacheOverwrite();
         else if (name == "silver" && argc == 3) silver(argv[2]);
         else if (name == "white_balance") whiteBalance();
         else if (name == "geometry") geometry();

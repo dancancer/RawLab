@@ -5,11 +5,13 @@
 #include <fstream>
 #include <filesystem>
 #include <mutex>
+#include <list>
 #include <set>
 #include <sstream>
 #include <sys/stat.h>
 #include "../../third_party/nlohmann/json.hpp"
 #include "sha256.h"
+#include "resource_file_stamp.h"
 #include "lut_compatibility.h"
 #include "lut_contract_json.h"
 
@@ -308,25 +310,40 @@ std::unique_ptr<LUT3D> LUTParser::loadLUT(const std::string& path) {
 std::shared_ptr<LUT3D> LUTParser::loadLUTCached(const std::string& path) {
     const auto format = detectFormat(path);
     if (format != "cube" && format != "vlt") return nullptr;
-    std::ifstream file(std::filesystem::u8path(path), std::ios::binary | std::ios::ate);
-    if (!file) return nullptr;
-    const auto length = file.tellg();
-    if (length < 0 || length > 256u * 1024u * 1024u) return nullptr;
-    file.seekg(0);
-    std::string bytes(static_cast<size_t>(length), '\0');
-    if (!file.read(bytes.data(), bytes.size()) || file.peek() != std::char_traits<char>::eof()) return nullptr;
-    // 文件可能被同大小内容覆盖且时间戳不变；缓存命中必须基于实际字节。
-    const auto digest = hash::sha256Bytes(bytes.data(), bytes.size());
+    const auto filePath = std::filesystem::u8path(path);
+    const auto stamp = resourceFileStamp(filePath);
+    if (!stamp || stamp->size > 256u * 1024u * 1024u) return nullptr;
+    struct Entry {
+        std::string path;
+        ResourceFileStamp stamp;
+        std::string digest;
+        std::shared_ptr<LUT3D> lut;
+    };
     static std::mutex mutex;
-    static std::string previous;
-    static std::string fingerprint;
-    static std::shared_ptr<LUT3D> cached;
+    static std::list<Entry> cache;
     std::lock_guard<std::mutex> lock(mutex);
-    if (previous == path && fingerprint == digest && cached) return cached;
+    const auto found = std::find_if(cache.begin(), cache.end(), [&](const Entry& entry) { return entry.path == path; });
+    auto reuse = [&] {
+        cache.splice(cache.begin(), cache, found);
+        return cache.front().lut;
+    };
+    if (found != cache.end() && found->stamp == *stamp) return reuse();
+    std::ifstream file(filePath, std::ios::binary);
+    std::string bytes(static_cast<size_t>(stamp->size), '\0');
+    if (!file.read(bytes.data(), bytes.size()) || file.peek() != std::char_traits<char>::eof() ||
+        !(resourceFileStamp(filePath) == stamp)) return nullptr;
+    // stat 变化后必须重算内容摘要；相同字节仍可复用已解析对象。
+    const auto digest = hash::sha256Bytes(bytes.data(), bytes.size());
+    if (found != cache.end() && found->digest == digest) {
+        found->stamp = *stamp;
+        return reuse();
+    }
     auto parsed = std::make_shared<LUT3D>();
-    cached = parsed->loadFromData(bytes, format == "vlt") == ErrorCode::Success ? std::move(parsed) : nullptr;
-    previous = path; fingerprint = digest;
-    return cached;
+    if (parsed->loadFromData(bytes, format == "vlt") != ErrorCode::Success) return nullptr;
+    if (found != cache.end()) cache.erase(found);
+    cache.push_front({path, *stamp, digest, parsed});
+    if (cache.size() > 8) cache.pop_back();
+    return parsed;
 }
 
 std::string LUTParser::detectFormat(const std::string& path) {
