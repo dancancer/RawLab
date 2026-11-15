@@ -7,7 +7,7 @@
 namespace sony2fuji {
 
 struct WaveletCacheDiagnostics {
-    uint64_t filterRuns = 0, outputHits = 0, analysisHits = 0;
+    uint64_t filterRuns = 0, appliedRuns = 0, outputHits = 0, analysisHits = 0;
     size_t previewBytes = 0;
 };
 

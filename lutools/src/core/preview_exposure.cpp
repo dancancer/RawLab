@@ -12,6 +12,7 @@
 #include <memory>
 #include <mutex>
 #include <jpeglib.h>
+#include <jerror.h>
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -61,7 +62,15 @@ bool sampleScaledJpegLuminance(
     state->error.manager.error_exit = [](j_common_ptr p) {
         std::longjmp(reinterpret_cast<PreviewJpegError*>(p->err)->jump, 1);
     };
-    state->error.manager.emit_message = [](j_common_ptr, int) {};
+    state->error.manager.emit_message = [](j_common_ptr p, int msgLevel) {
+        if (msgLevel < 0) {
+            const int code = p->err->msg_code;
+            if (code == JWRN_JPEG_EOF || code == JWRN_HIT_MARKER ||
+                code == JWRN_HUFF_BAD_CODE || code == JWRN_MUST_RESYNC) {
+                std::longjmp(reinterpret_cast<PreviewJpegError*>(p->err)->jump, 1);
+            }
+        }
+    };
     if (setjmp(state->error.jump)) {
         outLuminance.clear();
         return false;
@@ -73,13 +82,11 @@ bool sampleScaledJpegLuminance(
     if (c.image_width == 0 || c.image_height == 0 ||
         uint64_t(c.image_width) * c.image_height > 64000000) return false;
 
-    // Only 128x128 luminance samples are needed; decode via DCT scaling so each axis stays >= 128 px.
+    // Only 128x128 luminance samples are needed; cap DCT scaling at 1/2 so
+    // coarse block averaging does not shift median preview EV while still saving 75% decoded pixels (50% row memory).
     const uint32_t minDim = std::min(c.image_width, c.image_height);
     c.scale_num = 1;
-    if (minDim >= 1024) c.scale_denom = 8;
-    else if (minDim >= 512) c.scale_denom = 4;
-    else if (minDim >= 256) c.scale_denom = 2;
-    else c.scale_denom = 1;
+    c.scale_denom = minDim >= 256 ? 2 : 1;
 
     if (c.num_components == 1 || c.jpeg_color_space == JCS_GRAYSCALE) {
         c.out_color_space = JCS_GRAYSCALE;

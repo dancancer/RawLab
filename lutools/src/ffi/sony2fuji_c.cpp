@@ -3280,6 +3280,8 @@ static sony2fuji_status processImpl(
                     local.input_type == SONY2FUJI_INPUT_RAW && !viewportPreview && !fastWavelet &&
                         !session->raw_cache.pixels.empty() ? &session->raw_cache : nullptr,
                     toCoreColorSpace(color_space));
+                if (result == sony2fuji::ErrorCode::Success && diagnostics.applied)
+                    ++session->wavelet_cache.diagnostics.appliedRuns;
                 if (diagnostics.analysisReused) ++session->wavelet_cache.diagnostics.analysisHits;
                 return result;
             };
