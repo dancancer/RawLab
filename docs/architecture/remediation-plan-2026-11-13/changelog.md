@@ -307,3 +307,10 @@
 - **worktree 本地 ctest 口径入规（碳 #358 根因裁定）**：worktree 手跑 lutools 全量必须 ①`source RawLabMac/build-env.sh` + `-DSONY2FUJI_ENABLE_LENSFUN=ON -DSONY2FUJI_ENABLE_DNGSDK=ON`（否则 LensFun 静默 OFF 吞 #85/#140/#141/#170 注册）②显式 `-DPython3_EXECUTABLE=<pyenv 3.11 含 jsonschema>`（否则 Homebrew py3.15 把 #82 降级 skip）。181=154+27 假降由此而来，非回归。今后 crew 报 ctest 口径差先按这两查。
 - **碳清道夫报告（用户指令）**：删已合并 worktree 15 个（12 个 ~/.codex 历史 feature worktree + decimal-vectors/read-development/wp-verify-windows）、已合并本地分支 fix/decimal-vectors、`.cache/tmp` 闭环目录 32 个（≈1.65 GB，含 rawlab-mobile-native 1.4 GB 临时 DerivedData）、AGY 终态作业文件 1486 个（64 MB，keep 25 dry-run 后 apply）；脏 worktree（release-0.9.0-gate 等 12 个含未提交改动）与 PR 正文引用的 .cache/tmp 产物全部保守保留。主仓 status 干净、HEAD=origin。
 - **在途**：#359（client-tails：#347 @StateObject + #345② nearGray 假红）Hydrogen medium mwhdpb5y 在跑。
+
+### (56) #359 合入（116th）；#360 碳审打回→Hydrogen 一轮返工；P3 双批在审
+
+- **#359 合入**（116th `766ebcca`）：@State→@StateObject（碳实证 CI 不编译该文件后本机全量 build.sh exit 0 补编译盲区；泄漏前提未被实测复现、PR 如实表述）+nearGray 放宽（color-contract §"Spread<1/255"契约一致，三夹具模拟器复现灰 DNG 红→绿）。#347 移交与 #345② 两票销。
+- **#360 碳审 request changes**（1 P0+3 P1+1 P2，全有注入实证）：P0=契约红（d3d11_shader_cache 进 ci.yml Windows 名单、gpu_gles_renderer_retry 应进 test_windows_inventory KNOWN_INAPPLICABLE 而非 $tests——glslang 块内 Windows 无 glslangValidator；C# 缺 PASS 横幅）；P1a=GLES 保留上下文后 capacities/cachedLut 失步（glBufferData OOM 先毁旧数据，ES3.1 §6.2）+map/unmap 抛错不排空 glGetError（CONTEXT_LOST 漏判+粘滞污染下帧）；P1b=磁盘缓存 tmp 名拼 this 指针单例同址并发破原子（20/80 破损实测）；P1c=LRU 测试第 4 步淘汰 0 次假覆盖。Hydrogen 一轮返工 mwhfzdz3 同线程在跑。
+- **P3 双批交付待审**：#361（Android：A-N4 preparing finally 复位/A-N5 assets @Volatile+快照前置/A-N6 启动清理后台化+protect 竞态/A-N7 BatchExport 下 IO；JVM 740 全绿，基线 SonyLegacyImportSessionTest 5 失败为 k171 已知 flaky）；#362（Mac：M-N3 isRasterInput 单一事实源/M-N7 版本键 CaseIterable fail-closed 穷举/M-N9 代际过期丢弃含 inFlight waiters；4 脚本 exit 0）。碳包 mw 在跑。
+- **口径确认**：`gpu_gles_renderer_retry` 类 glslang 门控测试的正解=KNOWN_INAPPLICABLE_WINDOWS_CTESTS 登记（mac native 实执行），与 lesson 46 的 $tests 名单法互补——**$tests 只收"Windows 可构建"的 portable 测试**。
