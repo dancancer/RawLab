@@ -243,6 +243,49 @@ enum SubtoolDraftProbe {
         check(view.draftExitPresented && view.adjustmentSheet == nil,
               "Modified geometry draft triggers draftExitPresented before copy sheet")
 
+        // 3. Batch-sync resolveCollectionDraft must close workspaceDraft/toolWorkspaceOpen so
+        //    the async editorDraftSnapshot observer does not re-enable hasAdjustmentDraft.
+        guard let sourceKey = view.viewModel.sourceIdentity?.key else {
+            fail("Missing sourceIdentity key for resolveCollectionDraft test")
+        }
+
+        await resetToCleanEditor()
+        view.selectEditorTool(.adjustment(.contrast))
+        await yieldFrames(6)
+        view.workingSettings.contrast = (view.settings.contrast > 1.2 ? 0.8 : 1.25)
+        await yieldFrames(4)
+        check(view.resolveCollectionDraft(sourceKey, apply: false),
+              "resolveCollectionDraft(apply: false) succeeds for modified contrast draft")
+        await yieldFrames(8)
+        check(!view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.viewModel.hasAdjustmentDraft,
+              "resolveCollectionDraft(apply: false) closes workspace and keeps hasAdjustmentDraft=false")
+        check(view.viewModel.adjustmentTargetIsCurrent(sourceKey),
+              "resolveCollectionDraft(apply: false) leaves batch sync target check button enabled")
+
+        await resetToCleanEditor()
+        view.selectEditorTool(.adjustment(.contrast))
+        await yieldFrames(6)
+        check(view.resolveCollectionDraft(sourceKey, apply: true),
+              "resolveCollectionDraft(apply: true) succeeds for unchanged contrast draft")
+        await yieldFrames(8)
+        check(!view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.viewModel.hasAdjustmentDraft,
+              "resolveCollectionDraft(apply: true) on unchanged draft closes workspace and keeps hasAdjustmentDraft=false")
+        check(view.viewModel.adjustmentTargetIsCurrent(sourceKey),
+              "resolveCollectionDraft(apply: true) on unchanged draft leaves batch sync target check button enabled")
+
+        await resetToCleanEditor()
+        view.selectEditorTool(.geometry)
+        await yieldFrames(6)
+        view.geometryDraft?.straightenDegrees = 2.0
+        await yieldFrames(4)
+        check(view.resolveCollectionDraft(sourceKey, apply: true),
+              "resolveCollectionDraft(apply: true) succeeds for modified geometry draft")
+        await yieldFrames(8)
+        check(!view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.geometrySelected && !view.viewModel.hasAdjustmentDraft,
+              "resolveCollectionDraft(apply: true) on modified geometry draft closes workspace and keeps hasAdjustmentDraft=false")
+        check(view.viewModel.adjustmentTargetIsCurrent(sourceKey),
+              "resolveCollectionDraft(apply: true) on modified geometry draft leaves batch sync target check button enabled")
+
         writeResult(passed: true)
         print("PASS: subtool menu draft suite (\(checks) checks)")
     }

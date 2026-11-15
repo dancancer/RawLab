@@ -86,14 +86,13 @@ extension ContentView {
                 isAdjustingSlider = false
             }
             if isEditorDraftChanged && !commitEditorDraft() { return false }
-            if isEditorDraftActive { activateEditorTool(.adjustment(.exposure)) }
+            if isEditorDraftActive || toolWorkspaceOpen { finishEditorTool() }
             viewModel.hasAdjustmentDraft = false
             return viewModel.saveCurrentSettings(settings)
         }
         cancelSliderInteraction()
         discardEditorDraft()
-        activateEditorTool(.adjustment(.exposure))
-        viewModel.hasAdjustmentDraft = false
+        finishEditorTool()
         do {
             let restored = try viewModel.restoreCommittedSettings()
             settings = restored
