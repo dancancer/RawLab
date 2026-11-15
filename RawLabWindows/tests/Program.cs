@@ -134,6 +134,7 @@ static class Program
                 "Film slider supports 0-200% and numeric input rejects out-of-range text");
             settings.Reset(Parameter.Strength); Check(settings[Parameter.Strength]==100,"Film strength resets to 100%");
             ExportMetadataChecks.Run(output,Check);
+            HDRDisplayChecks.Run(Check);
             var wb=(Temperature:4870.0,Tint:17.0);settings.ResolveWhiteBalance(wb);
             settings.Set(Parameter.Temperature,8000);settings.Set(Parameter.Highlights,30);settings.Set(Parameter.Contrast,-20);
             var mapped=settings.Request("test.arw","test.cube",2000,null);
