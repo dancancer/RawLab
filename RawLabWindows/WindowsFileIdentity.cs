@@ -93,7 +93,8 @@ internal static class WindowsFileIdentity
         return ReadIdentityFromStream(path, stream);
     }
 
-    internal static bool TryReadStat(string path, out WindowsStatSnapshot snapshot)
+    internal static bool TryReadStat(string path, out WindowsStatSnapshot snapshot,
+        Func<SafeFileHandle, (long ChangeTicks, long Usn)>? readChangeMarkers = null)
     {
         try
         {
@@ -105,22 +106,7 @@ internal static class WindowsFileIdentity
                 return false;
             }
 
-            long changeTicks = 0;
-            if (GetFileInformationByHandleEx(
-                stream.SafeFileHandle, FileBasicInfoClass, out var basic, (uint)Marshal.SizeOf<FileBasicInfo>()))
-            {
-                changeTicks = basic.ChangeTime > 0 ? DateTime.FromFileTimeUtc(basic.ChangeTime).Ticks : 0;
-            }
-
-            long usn = 0;
-            var usnBuffer = new byte[1024];
-            if (DeviceIoControl(stream.SafeFileHandle, FsctlReadFileUsnData, IntPtr.Zero, 0,
-                usnBuffer, (uint)usnBuffer.Length, out var returned, IntPtr.Zero) && returned >= 32)
-            {
-                var major = BitConverter.ToUInt16(usnBuffer, 4);
-                if (major == 2) usn = BitConverter.ToInt64(usnBuffer, 24);
-                else if (major == 3 && returned >= 48) usn = BitConverter.ToInt64(usnBuffer, 40);
-            }
+            var (changeTicks, usn) = (readChangeMarkers ?? ReadChangeMarkers)(stream.SafeFileHandle);
 
             var length = ((long)information.FileSizeHigh << 32) | information.FileSizeLow;
             var fileId = $"{information.VolumeSerialNumber:x8}-{information.FileIndexHigh:x8}-{information.FileIndexLow:x8}";
@@ -138,6 +124,27 @@ internal static class WindowsFileIdentity
             snapshot = default;
             return false;
         }
+    }
+
+    private static (long ChangeTicks, long Usn) ReadChangeMarkers(SafeFileHandle file)
+    {
+        long changeTicks = 0;
+        if (GetFileInformationByHandleEx(
+            file, FileBasicInfoClass, out var basic, (uint)Marshal.SizeOf<FileBasicInfo>()))
+        {
+            changeTicks = basic.ChangeTime > 0 ? DateTime.FromFileTimeUtc(basic.ChangeTime).Ticks : 0;
+        }
+
+        long usn = 0;
+        var usnBuffer = new byte[1024];
+        if (DeviceIoControl(file, FsctlReadFileUsnData, IntPtr.Zero, 0,
+            usnBuffer, (uint)usnBuffer.Length, out var returned, IntPtr.Zero) && returned >= 32)
+        {
+            var major = BitConverter.ToUInt16(usnBuffer, 4);
+            if (major == 2) usn = BitConverter.ToInt64(usnBuffer, 24);
+            else if (major == 3 && returned >= 48) usn = BitConverter.ToInt64(usnBuffer, 40);
+        }
+        return (changeTicks, usn);
     }
 
     private static OriginalIdentity ReadIdentityFromStream(string path, FileStream stream)

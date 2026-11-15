@@ -15,6 +15,7 @@ internal static class HotPathIoAndRefreshChecks
     {
         S3EditStoreRegistryCacheChecks();
         S3ResourceDigestCacheChecks();
+        WindowsDigestChangeMarkerChecks();
         S3PhotoProbeCacheChecks();
         W6ViewSourceStateChecks();
         W6LookAvailabilityAndHDRPresentationChecks();
@@ -424,6 +425,74 @@ internal static class HotPathIoAndRefreshChecks
             var c3 = BatchFrozenSettings.Checksum(batchCube);
             Check(c3 != c1 && FileDigestCache.Shared.ComputeCount == sharedComputeBefore + 2,
                 "BatchFrozenSettings.Checksum detects replaced look via FileDigestCache.Shared");
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    private static void WindowsDigestChangeMarkerChecks()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Console.WriteLine("SKIP: Windows native file identity change-marker checks require Windows");
+            return;
+        }
+
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-digest-markers-" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        try
+        {
+            var markers = new (string Name, long ChangeTicks, long Usn)[]
+            {
+                ("change-time", DateTime.UtcNow.Ticks, 0),
+                ("usn", 0, 123),
+                ("unavailable", 0, 0)
+            };
+            foreach (var marker in markers)
+            {
+                var path = Path.Combine(root, marker.Name + ".cube");
+                File.WriteAllText(path, BuildLargeCube("0.1 0.2 0.3"));
+                var identity = OriginalIdentity.Read(path);
+                Check(identity.Length > FileDigestCache.SmallFileDirectHashBytes,
+                    "Change-marker regression must exercise the large-file cache path");
+
+                PathStatStamp Capture(string p)
+                {
+                    // 只替换卷提供的变化标记；文件身份和摘要仍读取真实文件。
+                    var reliable = WindowsFileIdentity.TryReadStat(p, out var stat,
+                        _ => (marker.ChangeTicks, marker.Usn));
+                    return new(true, p, p, null, stat.Length, stat.ModifiedTicks, stat.CreatedTicks,
+                        stat.ChangeTicks, stat.Usn, stat.FileId, StatReliable: reliable);
+                }
+                var cache = new FileDigestCache(captureStamp: Capture);
+                var first = cache.GetDigest(path);
+                var repeated = cache.GetDigest(path);
+                Check(repeated.Sha256Hex == first.Sha256Hex, "Unchanged LUT preserves its digest");
+                if (marker.Name != "unavailable")
+                {
+                    Check(cache.ComputeCount == 1 && cache.HitCount == 1,
+                        $"{marker.Name} alone preserves the large-file digest cache fast path");
+                    continue;
+                }
+
+                var replacement = Encoding.UTF8.GetBytes(BuildLargeCube("0.9 0.8 0.7"));
+                Check(replacement.LongLength == identity.Length, "Overwrite fixture preserves byte length");
+                using (var stream = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite))
+                    stream.Write(replacement);
+                File.SetLastWriteTimeUtc(path, new DateTime(identity.Modified, DateTimeKind.Utc));
+                Check(identity.SameFile(OriginalIdentity.Read(path)),
+                    "In-place overwrite preserves path, length, timestamps and Windows FileID");
+
+                var changed = cache.GetDigest(path);
+                var expected = Convert.ToHexString(SHA256.HashData(replacement));
+                Check(changed.Sha256Hex == expected && changed.Sha256Hex != first.Sha256Hex,
+                    "Large LUT without change markers must rehash a same-size same-mtime in-place overwrite");
+                Check(cache.ComputeCount == 3 && cache.HitCount == 0,
+                    "Missing change markers force direct hashing only for the affected file");
+            }
+            Console.WriteLine("PASS: Windows large-file digests require ChangeTime or USN and preserve either fast path");
         }
         finally
         {
