@@ -6,6 +6,7 @@ import com.rawlab.android.photo.MediaPhotoStat
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import org.json.JSONObject
@@ -345,15 +346,21 @@ class CameraImportStoreTest {
         assertThrows(IOException::class.java) { store.savedUris(replacement) }
     }
 
-    @Test fun wrongLengthDigestOrFormatNeverCreatesMedia() = withStore { fixture, store ->
+    @Test fun wrongLengthOrFormatNeverCreatesMediaStreamedDigestTrusted() = withStore { fixture, store ->
         val job = store.create("camera", listOf(photo()), CameraImportDestination())
         val part = store.partial(job.id); part.writeBytes(raw)
-        assertThrows(IOException::class.java) { store.publish(job, 0, part, "0".repeat(64), CameraTransferPermit()) }
+        // (a) 全新发布直接采信流式摘要，不再整读 .partial 重算来抓“谎报摘要”：长度与文件头仍是拒绝门槛，
+        // 谎报摘要由恢复场景 item.digest 交叉校验（见上方 resume CameraImportSourceChanged）与打开路径
+        // savedUris 的整文件强校验兜底（load 命中 savedStat 指纹时信任登记摘要，与 A1 语义一致）。
+        val trusted = store.publish(job, 0, part, "0".repeat(64), CameraTransferPermit())
+        assertNotNull(trusted.items.single().saved)
+        assertEquals("0".repeat(64), trusted.items.single().digest)
+        assertEquals(1, fixture.media.rows.size)
         part.writeText("short")
         assertThrows(IOException::class.java) { store.publish(job, 0, part, hash(part.readBytes()), CameraTransferPermit()) }
         part.writeBytes(ByteArray(raw.size))
         assertThrows(IOException::class.java) { store.publish(job, 0, part, hash(part.readBytes()), CameraTransferPermit()) }
-        assertTrue(fixture.media.rows.isEmpty())
+        assertEquals("长度或文件头不符不得新建媒体", 1, fixture.media.rows.size)
     }
 
     @Test fun completePendingMediaFinishesAfterRestartWithoutAnotherCopy() = withStore { fixture, store ->
@@ -577,6 +584,45 @@ class CameraImportStoreTest {
         assertEquals(1, fixture.media.opens)
     }
 
+    @Test fun publishReusesStreamedDigestWithoutRehashingPartOrPending() = withStore { fixture, store ->
+        val job = store.create("camera", listOf(photo()), CameraImportDestination())
+        val part = store.partial(job.id); part.writeBytes(raw)
+        fixture.media.opens = 0
+        val before = store.contentDigestCount
+        val published = store.publish(job, 0, part, hash(raw), CameraTransferPermit())
+        assertNotNull(published.items.single().saved)
+        assertEquals("publish 必须直接采信下载路径的流式摘要：.partial 与 pending 写入零整文件摘要",
+            0, store.contentDigestCount - before)
+        assertEquals("publish 不应整读媒体文件", 0, fixture.media.opens)
+    }
+
+    @Test fun pendingSizeFingerprintMismatchRejectsPublication() = withStore { fixture, store ->
+        val job = store.create("camera", listOf(photo()), CameraImportDestination())
+        val part = store.partial(job.id); part.writeBytes(raw)
+        // 机型差异：个别 MediaProvider 在 pending 期间就回填 SIZE；指纹 size 与预期校验大小不符必须拒绝发布。
+        fixture.media.pendingStatOverride = MediaPhotoStat(raw.size - 1L, System.currentTimeMillis())
+        val error = assertThrows(IOException::class.java) { store.publish(job, 0, part, hash(raw), CameraTransferPermit()) }
+        assertEquals("Stored camera photo differs", error.message)
+    }
+
+    @Test fun sampledReuseValidatesCandidateByFingerprintWithoutDigest() = withStore { fixture, store ->
+        val big = ByteArray(200_000) { ((it * 31 + 7) % 251).toByte() }
+        big[0] = 73; big[1] = 73; big[2] = 42; big[3] = 0
+        val bigPhoto = CameraPhoto("1", "DSC00001.ARW", big.size.toLong(), 1_764_000_000_000L)
+        val first = store.create("camera", listOf(bigPhoto), CameraImportDestination())
+        val part = store.partial(first.id); part.writeBytes(big)
+        store.publish(first, 0, part, hash(big), CameraTransferPermit())
+        val second = store.create("camera", listOf(bigPhoto), CameraImportDestination())
+        val output = File(fixture.root, "reuse.out")
+        val before = store.contentDigestCount
+        val digest = store.copySampledOriginal(second, bigPhoto, FileOutputStream(output), CameraTransferPermit()) { offset, length ->
+            big.copyOfRange(offset.toInt(), offset.toInt() + length)
+        }
+        assertEquals(hash(big), digest)
+        assertEquals("候选指纹命中即复用：候选校验零整文件摘要", 0, store.contentDigestCount - before)
+        assertArrayEquals(big, output.readBytes())
+    }
+
     @Test fun adjustedJpegReuseRequiresTheSameSourceAndFrozenOptions() = withStore { fixture, _ ->
         val processor: (File, File, CameraJPEGOptions) -> CameraProcessedFile = { _, destination, options ->
             val bytes = ("adjusted-${options.longEdge}-${options.quality}").toByteArray()
@@ -746,6 +792,8 @@ class CameraImportStoreTest {
         var failAfterPublish = false
         // 计数探针：JVM 里 load 路径的整文件 digest 恰好等于一次 open+全量读，用它数 digest 次数。
         var opens = 0
+        // 模拟个别 MediaProvider 在 IS_PENDING 期间就提前回填元数据的机型行为。
+        var pendingStatOverride: MediaPhotoStat? = null
         private var next = 0
         fun file(uri: String) = File(root, uri.substringAfterLast('/'))
         override fun createPending(name: String, relativePath: String, mime: String, token: String): MediaPhoto {
@@ -764,9 +812,11 @@ class CameraImportStoreTest {
         override fun inspect(uri: String): MediaPhoto? = rows[uri]?.takeIf { file(uri).isFile }
         override fun open(uri: String): InputStream { opens++; return file(uri).inputStream() }
         // 模拟真机 MediaProvider：IS_PENDING=1 期间 SIZE/DATE_MODIFIED 未定稿，publish（IS_PENDING=0）后才可 stat。
-        override fun stat(uri: String): MediaPhotoStat? =
-            rows[uri]?.takeIf { !it.pending }?.let { file(uri) }?.takeIf { it.isFile }
-                ?.let { MediaPhotoStat(it.length(), it.lastModified()) }
+        override fun stat(uri: String): MediaPhotoStat? {
+            val row = rows[uri] ?: return null
+            if (!row.pending) return file(uri).takeIf { it.isFile }?.let { MediaPhotoStat(it.length(), it.lastModified()) }
+            return pendingStatOverride
+        }
         override fun remember(uri: String, size: Long, digest: String) = Unit
         override fun deletePending(uri: String) { if (rows[uri]?.pending == true) { file(uri).delete(); rows.remove(uri) } }
         override fun cleanupOrphans(referenced: Set<String>) {
