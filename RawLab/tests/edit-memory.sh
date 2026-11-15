@@ -8,6 +8,7 @@ swiftc -whole-module-optimization "$ROOT/Shared/Localization.swift" -swift-versi
     "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HDRSettings.swift" "$ROOT/Shared/ProcessingMigration.swift" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/Shared/AtmosphereSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/PhotoImportTypes.swift" \
     "$ROOT/RawLab/RawLab/Core/Persistence/EditPersistence.swift" \
+    "$ROOT/RawLab/RawLab/Core/Persistence/FileDigestCache.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/AdjustmentKind.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/EditorAdjustmentRules.swift" \
     "$ROOT/RawLab/tests/EditMemoryTests.swift" \

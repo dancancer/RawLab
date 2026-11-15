@@ -16,6 +16,7 @@ swiftc -swift-version 5 -whole-module-optimization -module-cache-path "$OUT/modu
     "$ROOT/RawLab/RawLab/Core/Camera/CameraIncrementalImport.swift" \
     "$ROOT/RawLab/RawLab/Core/Camera/CameraJPEGProcessing.swift" \
     "$ROOT/RawLab/RawLab/Core/Camera/CameraOriginalStore.swift" \
+    "$ROOT/RawLab/RawLab/Core/Persistence/FileDigestCache.swift" \
     "$ROOT/RawLab/RawLab/Core/Camera/CameraWorkspaceBackend.swift" \
     "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraController.swift" \
     "$ROOT/RawLab/tests/CameraSkipAndLimitTests.swift" \
@@ -38,6 +39,7 @@ if SIM_SDK="$(env -u SDKROOT xcrun --sdk iphonesimulator --show-sdk-path 2>/dev/
         "$ROOT/RawLab/RawLab/Core/Camera/CameraIncrementalImport.swift" \
         "$ROOT/RawLab/RawLab/Core/Camera/CameraJPEGProcessing.swift" \
         "$ROOT/RawLab/RawLab/Core/Camera/CameraOriginalStore.swift" \
+        "$ROOT/RawLab/RawLab/Core/Persistence/FileDigestCache.swift" \
         "$ROOT/RawLab/RawLab/Core/Camera/CameraWorkspaceBackend.swift" \
         "$ROOT/RawLab/RawLab/Core/Camera/IOSCameraConnection.swift" \
         "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraController.swift" \

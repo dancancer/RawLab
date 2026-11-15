@@ -377,9 +377,13 @@ final class CameraOriginalStore {
         let url = originalURL(source)
         do {
             let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-            guard attributes[.type] as? FileAttributeType == .typeRegular else { return .changed }
-            let actual = try hashFile(url)
-            return actual.size == source.size && actual.digest == source.digest ? .available : .changed
+            guard attributes[.type] as? FileAttributeType == .typeRegular,
+                  let size = (attributes[.size] as? NSNumber)?.uint64Value,
+                  size == source.size else { return .changed }
+            // #341 摘要缓存复用（同一 FileDigestCache.shared 权威）：stat 指纹（inode+size+ctime+mtime）
+            // 未变时直接复用摘要，验证只余 stat 复查；采样→复用二次校验、重复打开不再整读整算，
+            // 内容真实变化（指纹任一字段变化）自动重算，语义与整文件重算一致。
+            return try FileDigestCache.shared.digest(for: url) == source.digest ? .available : .changed
         } catch {
             let code = (error as NSError).code
             return code == NSFileNoSuchFileError || code == NSFileReadNoSuchFileError ? .missing : .unavailable

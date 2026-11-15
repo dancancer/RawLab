@@ -134,6 +134,7 @@
 		8F3A1B2C3D4E5F678901234C /* sony2fuji.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 8F3A1B2C3D4E5F678901234A /* sony2fuji.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		C9A1B2C3D4E5F60718293A4B /* Support/RawMetadataBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9A1B2C3D4E5F60718293A4D /* Support/RawMetadataBridge.mm */; };
 		D00100000000000000000001 /* Core/Persistence/EditPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000011 /* Core/Persistence/EditPersistence.swift */; };
+		D001000000000000000000FD /* Core/Persistence/FileDigestCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = D001000000000000000000ED /* Core/Persistence/FileDigestCache.swift */; };
 		D00100000000000000000002 /* Core/Batch/BatchExportCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000012 /* Core/Batch/BatchExportCore.swift */; };
 		D00100000000000000000003 /* Core/Batch/BatchExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000013 /* Core/Batch/BatchExport.swift */; };
 		A0D17B5E0000000000000001 /* Core/Batch/BatchSettingsSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0D17B5E0000000000000002 /* Core/Batch/BatchSettingsSummary.swift */; };
@@ -463,6 +464,7 @@
 		C9A1B2C3D4E5F60718293A4C /* Support/RawMetadataBridge.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = RawMetadataBridge.h; sourceTree = "<group>"; };
 		C9A1B2C3D4E5F60718293A4D /* Support/RawMetadataBridge.mm */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.cpp.objcpp; path = RawMetadataBridge.mm; sourceTree = "<group>"; };
 		D00100000000000000000011 /* Core/Persistence/EditPersistence.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EditPersistence.swift; sourceTree = "<group>"; };
+		D001000000000000000000ED /* Core/Persistence/FileDigestCache.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FileDigestCache.swift; sourceTree = "<group>"; };
 		D00100000000000000000012 = {
 			path = "RawLab/Core/Batch/Model/BatchExportModels.swift";
 			isa = PBXFileReference;
@@ -737,6 +739,7 @@
 			children = (
 				A9C525ED8676B61E6978BA9D /* IOSAdjustmentTransferSession.swift */,
 				D00100000000000000000011 /* Core/Persistence/EditPersistence.swift */,
+				D001000000000000000000ED /* Core/Persistence/FileDigestCache.swift */,
 			);
 			path = Persistence;
 			sourceTree = "<group>";
@@ -1459,6 +1462,7 @@
 				F985B27612A241E0BF2D3B6E,
 				2A9B3E15E0704167ABE93960,
 				D00100000000000000000001,
+				D001000000000000000000FD,
 				D00100000000000000000002,
 				D00100000000000000000003,
 				A0D17B5E0000000000000001,

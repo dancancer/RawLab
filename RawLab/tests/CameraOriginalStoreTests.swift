@@ -125,6 +125,7 @@ import Darwin
         try recoverOrdersReAdoptedOriginals()
         try recoverSweepsOrphanDirectories()
         try completeReusesStreamedDigestWithoutRehashingPartial()
+        try verifiedURLReusesDigestCacheAcrossOpens()
         if #available(macOS 15.0, iOS 18.0, *) { try isoGainMapJPEG() }
     }
 
@@ -911,6 +912,37 @@ import Darwin
             sizeRejected = true
         }
         try check(sizeRejected, "complete() still rejects .partial whose file size differs from asset size")
+    }
+
+    private static func verifiedURLReusesDigestCacheAcrossOpens() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-verified-digest-cache-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try CameraOriginalStore(directory: root)
+        let bytes = Data([73, 73, 42, 0, 1, 2, 3, 4])
+        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        let identity = CameraDeviceIdentity(manufacturer: "Sony", model: "ILCE-7M4", firmware: "1.0", serial: "0002", operations: [0x923c, 0x923d])
+        let snapshot = CameraAssetSnapshot(content: 3, file: 3, storage: 1, format: 0xb101,
+                                           name: "DSC00012.ARW", size: UInt64(bytes.count), created: "1700000002000", modified: "")
+        let job = try store.enqueue(device: identity, connectionKey: "fixture", assets: [snapshot])
+        let target = try store.begin(job: job.id, item: job.items[0].id)
+        try target.handle.write(contentsOf: bytes)
+        try target.handle.close()
+        let saved = try store.complete(job: job.id, item: job.items[0].id, digest: digest)
+        let url = try store.verifiedURL(saved.id)
+        let openedOnce = FileDigestCache.shared.digestComputeCount(for: url)
+        _ = try store.verifiedURL(saved.id)
+        let openedTwice = FileDigestCache.shared.digestComputeCount(for: url)
+        try check(openedOnce == 1 && openedTwice == openedOnce,
+                  "verifiedURL computes the digest once and reuses FileDigestCache across opens (actual: \(openedOnce), \(openedTwice))")
+        let writer = try FileHandle(forWritingTo: url)
+        defer { try? writer.close() }
+        try writer.seek(toOffset: 4)
+        try writer.write(contentsOf: Data([99]))
+        var changeRejected = false
+        do { _ = try store.verifiedURL(saved.id) } catch CameraProtocolError.invalid(_) { changeRejected = true }
+        let afterChange = FileDigestCache.shared.digestComputeCount(for: url)
+        try check(changeRejected && afterChange == openedOnce + 1,
+                  "verifiedURL recomputes through the cache and still rejects in-place same-size content changes")
     }
 
     private static func write(_ bytes: Data, item: CameraTransferItem, job: CameraTransferJob, store: CameraOriginalStore) throws -> CameraStoredOriginal {
