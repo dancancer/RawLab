@@ -440,8 +440,7 @@ final class CameraOriginalStore {
     func pruneExportedOriginals(exportedContentIdentifiers: Set<String> = []) throws
         -> (originals: Int, freedBytes: UInt64) {
         try change {
-            guard let newestJob = state.jobs.max(by: { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) })?.id
-            else { return (0, 0) }
+            let newestJob = state.jobs.max(by: { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) })?.id
             var tetherReferenced = Set(state.tether?.jobIDs ?? [])
             tetherReferenced.formUnion(state.tether?.shutterJobs ?? [])
             // 与 incrementalBoundaries 同构的逆序扫描。分组键复刻 matches(camera:connectionKey:)：
@@ -479,12 +478,16 @@ final class CameraOriginalStore {
                 job.complete && job.id != newestJob && !tetherReferenced.contains(job.id) &&
                     !anchorIDs.contains(job.id) && fullyExported(job)
             }
-            guard !prunable.isEmpty else { return (0, 0) }
             let prunableIDs = Set(prunable.map(\.id))
+            let allJobSourceIDs = Set(state.jobs.flatMap { $0.items.compactMap(\.sourceID) })
             let remainingSourceIDs = Set(state.jobs.filter { !prunableIDs.contains($0.id) }
                 .flatMap { $0.items.compactMap(\.sourceID) })
             let prunedSourceIDs = Set(prunable.flatMap { $0.items.compactMap(\.sourceID) })
-            let orphans = state.originals.filter { prunedSourceIDs.contains($0.id) && !remainingSourceIDs.contains($0.id) }
+            let orphans = state.originals.filter { original in
+                (prunedSourceIDs.contains(original.id) && !remainingSourceIDs.contains(original.id)) ||
+                    (!allJobSourceIDs.contains(original.id) && exportedContentIdentifiers.contains(original.digest))
+            }
+            guard !prunable.isEmpty || !orphans.isEmpty else { return (0, 0) }
             for original in orphans {
                 let file = originalURL(original)
                 try? FileManager.default.removeItem(at: file)
@@ -683,8 +686,42 @@ final class CameraOriginalStore {
             try? FileManager.default.removeItem(at: partialURL(item))
         }
     }
+    private enum OrphanRecovery {
+        case original(CameraStoredOriginal)
+        case empty
+        case preserve
+    }
+    private func reAdoptOrphanOriginal(in directory: URL, id: UUID) throws -> OrphanRecovery {
+        let children = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey]
+        ).filter { $0.lastPathComponent != ".DS_Store" }
+        if children.isEmpty { return .empty }
+        // 最终目录只应有同卷原子移动的一个完整文件；非空异常目录可能包含唯一原件，不能当垃圾。
+        guard children.count == 1, let file = children.first else { return .preserve }
+        let name = file.lastPathComponent
+        guard CameraWire.validName(name), CameraWire.photoName(name) else { return .preserve }
+        let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey])
+        guard values.isRegularFile == true, values.isSymbolicLink != true,
+              let size = values.fileSize, size > 0, size <= 1 << 30 else { return .preserve }
+        let reader = try FileHandle(forReadingFrom: file)
+        defer { try? reader.close() }
+        let prefix = try reader.read(upToCount: 4) ?? Data()
+        try CameraWire.validateHeader(name: name, data: prefix)
+        let hashed = try Self.hash(file)
+        guard hashed.size == UInt64(size), Self.validDigest(hashed.digest) else { return .preserve }
+        return .original(CameraStoredOriginal(
+            id: id,
+            name: name,
+            size: hashed.size,
+            digest: hashed.digest,
+            savedAt: values.contentModificationDate ?? Date(),
+            availability: .available,
+            jpegSource: nil
+        ))
+    }
     func recover() throws {
-        try locked {
+        try performBatch {
             let needsStateRecovery = state.jobs.contains { job in
                 job.items.contains { $0.phase == .prepared || $0.phase == .downloading }
             }
@@ -722,6 +759,45 @@ final class CameraOriginalStore {
                    UUID(uuidString: file.deletingPathExtension().lastPathComponent) != nil {
                     try FileManager.default.removeItem(at: file)
                 }
+            }
+            // 在 .prepared 恢复之后接管完整孤儿；仅删空目录，其余非空条目及读取失败均保留。
+            var referencedIDs = Set(state.originals.map(\.id))
+            var reAdopted: [CameraStoredOriginal] = []
+            var removedOrphans = false
+            let entries = (try? FileManager.default.contentsOfDirectory(
+                at: originalsDirectory,
+                includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]
+            )) ?? []
+            for entry in entries {
+                do {
+                    let values = try entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+                    guard values.isSymbolicLink != true, values.isDirectory == true,
+                          let entryID = UUID(uuidString: entry.lastPathComponent),
+                          entry.lastPathComponent == entryID.uuidString.lowercased(),
+                          !referencedIDs.contains(entryID) else { continue }
+                    switch try reAdoptOrphanOriginal(in: entry, id: entryID) {
+                    case .original(let adopted):
+                        reAdopted.append(adopted)
+                        referencedIDs.insert(entryID)
+                    case .empty:
+                        try FileManager.default.removeItem(at: entry)
+                        removedOrphans = true
+                    case .preserve:
+                        continue
+                    }
+                } catch {
+                    // 单目录的元数据、读取、哈希或删除失败不阻断启动，保留原件下次重试。
+                    continue
+                }
+            }
+            if !reAdopted.isEmpty {
+                reAdopted.sort { ($0.savedAt, $0.name, $0.id.uuidString) < ($1.savedAt, $1.name, $1.id.uuidString) }
+                try change {
+                    state.originals.append(contentsOf: reAdopted)
+                }
+            }
+            if removedOrphans {
+                syncDirectory(originalsDirectory)
             }
         }
     }
@@ -811,23 +887,27 @@ final class CameraOriginalStore {
         }
     }
     func acknowledgeShutter(owner: UUID) throws {
-        try change {
+        try locked {
             guard state.tether?.shutterOwner == owner else { return }
-            state.tether?.shutterAcknowledged = true
+            try change { state.tether?.shutterAcknowledged = true }
         }
     }
     func clearUnsentShutter(owner: UUID) throws {
-        try change {
+        try locked {
             guard state.tether?.shutterOwner == owner, state.tether?.shutterAcknowledged == false else { return }
-            state.tether?.shutterRequestedAt = nil; state.tether?.shutterOwner = nil; state.tether?.shutterJobs = []
+            try change {
+                state.tether?.shutterRequestedAt = nil; state.tether?.shutterOwner = nil; state.tether?.shutterJobs = []
+            }
         }
     }
     func finishConfirmedShutter(owner: UUID) throws {
-        try change {
+        try locked {
             guard let tether = state.tether, tether.shutterOwner == owner, tether.shutterAcknowledged,
                   !tether.shutterJobs.isEmpty, tether.shutterJobs.allSatisfy({ id in state.jobs.first { $0.id == id }?.complete == true }) else { return }
-            state.tether?.shutterRequestedAt = nil; state.tether?.shutterOwner = nil
-            state.tether?.shutterAcknowledged = false; state.tether?.shutterJobs = []
+            try change {
+                state.tether?.shutterRequestedAt = nil; state.tether?.shutterOwner = nil
+                state.tether?.shutterAcknowledged = false; state.tether?.shutterJobs = []
+            }
         }
     }
 }

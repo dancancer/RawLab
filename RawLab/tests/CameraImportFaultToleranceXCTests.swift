@@ -32,6 +32,11 @@ final class CameraImportFaultToleranceXCTests: XCTestCase {
     }
 
     @MainActor
+    func testP222_OrphanRecoveryAndPerPhotoDurability() async throws {
+        try await CameraSkipAndLimitTests.testP222OrphanRecoveryAndPerPhotoDurability()
+    }
+
+    @MainActor
     func testP222_PerformBatchPersistFailureRollbackAndRecovery() async throws {
         try await CameraSkipAndLimitTests.testP222PerformBatchPersistFailureRollbackAndRecovery()
     }

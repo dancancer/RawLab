@@ -2,6 +2,7 @@ import Foundation
 import CryptoKit
 import ImageIO
 import CoreGraphics
+import Darwin
 
 @main struct CameraOriginalStoreTests {
     static func check(_ value: Bool, _ message: String) throws {
@@ -119,6 +120,10 @@ import CoreGraphics
         try incrementalRecovery()
         try switchingFormatsFindsBothUnimportedJPEGs()
         try adjustedJPEG()
+        try recoverPreservesNonemptyOrphans()
+        try recoverRetriesEmptyDirectoryRemoval()
+        try recoverOrdersReAdoptedOriginals()
+        try recoverSweepsOrphanDirectories()
         if #available(macOS 15.0, iOS 18.0, *) { try isoGainMapJPEG() }
     }
 
@@ -635,6 +640,242 @@ import CoreGraphics
         ] as CFDictionary)
         try check(CGImageDestinationFinalize(encoder), "Encode the ISO-only JPEG fixture")
         return input as Data
+    }
+
+    private static func recoverPreservesNonemptyOrphans() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-recover-preserve-\(UUID())")
+        let originalsRoot = root.appendingPathComponent("originals", isDirectory: true)
+        let raw = Data([0x49, 0x49, 0x2a, 0, 1, 2, 3, 4])
+        func makeDirectory(_ name: String = UUID().uuidString.lowercased()) throws -> URL {
+            let url = originalsRoot.appendingPathComponent(name, isDirectory: true)
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            return url
+        }
+        let badHeader = try makeDirectory().appendingPathComponent("DSC_BAD.ARW")
+        let badBytes = Data([0, 1, 2, 3, 4, 5, 6, 7])
+        try badBytes.write(to: badHeader)
+        let oversized = try makeDirectory().appendingPathComponent("DSC_LARGE.ARW")
+        try raw.write(to: oversized)
+        let handle = try FileHandle(forWritingTo: oversized)
+        let oversizedSize = UInt64(1 << 30) + 1
+        let truncateResult = ftruncate(handle.fileDescriptor, off_t(oversizedSize))
+        try handle.close()
+        try check(truncateResult == 0, "Creates a sparse 1 GiB + 1 byte RAW with a valid header")
+        let multi = try makeDirectory()
+        let first = multi.appendingPathComponent("DSC_A.ARW"), second = multi.appendingPathComponent("DSC_B.ARW")
+        try raw.write(to: first); try raw.write(to: second)
+        let zero = try makeDirectory().appendingPathComponent("DSC_ZERO.ARW")
+        try Data().write(to: zero)
+        let residue = try makeDirectory().appendingPathComponent("DSC_TMP.ARW.partial")
+        try raw.write(to: residue)
+        let nested = try makeDirectory()
+        try FileManager.default.createDirectory(at: nested.appendingPathComponent("nested"), withIntermediateDirectories: true)
+        let mixedCase = try makeDirectory("aBcD0000-0000-0000-0000-000000000001")
+        let mixedFile = mixedCase.appendingPathComponent("DSC_CASE.ARW")
+        try raw.write(to: mixedFile)
+        let uppercaseEmpty = try makeDirectory("ABCD0000-0000-0000-0000-000000000002")
+        let unreadable = try makeDirectory().appendingPathComponent("DSC_UNREADABLE.ARW")
+        try raw.write(to: unreadable)
+        let inaccessible = try makeDirectory()
+        let inaccessibleFile = inaccessible.appendingPathComponent("DSC_BLOCKED.ARW")
+        try raw.write(to: inaccessibleFile)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: unreadable.path)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: inaccessible.path)
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: unreadable.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: inaccessible.path)
+        try check(access(unreadable.path, R_OK) != 0 && access(inaccessible.path, R_OK) != 0,
+                  "Permission fixtures really deny RAW reads and directory enumeration")
+
+        var writes = 0
+        var store: CameraOriginalStore? = try CameraOriginalStore(directory: root) { writes += 1 }
+        try check(store!.snapshot.originals.isEmpty && writes == 0,
+                  "recover() skips invalid nonempty and non-lowercase UUID directories without indexing or manifest writes")
+        try check(try Data(contentsOf: badHeader) == badBytes,
+                  "A compliant .ARW name with bad magic is preserved and never re-adopted")
+        let size = try oversized.resourceValues(forKeys: [.fileSizeKey]).fileSize
+        try check(size == Int(oversizedSize), "An over-budget sparse RAW remains on disk without re-adoption")
+        try check(try Data(contentsOf: first) == raw && Data(contentsOf: second) == raw,
+                  "A two-original directory preserves both files and adopts neither")
+        for file in [zero, residue, nested, mixedFile, uppercaseEmpty, unreadable, inaccessible] {
+            try check(FileManager.default.fileExists(atPath: file.path), "Unadmitted entry is retained: \(file.lastPathComponent)")
+        }
+        let pruned = try store!.pruneExportedOriginals(exportedContentIdentifiers: [SHA256.hash(data: raw).map { String(format: "%02x", $0) }.joined()])
+        try check(pruned.originals == 0 && FileManager.default.fileExists(atPath: first.path) &&
+                  FileManager.default.fileExists(atPath: second.path),
+                  "Export evidence cannot recursively prune an unadmitted multi-original directory")
+        store = nil
+        writes = 0
+        store = try CameraOriginalStore(directory: root) { writes += 1 }
+        try check(store!.snapshot.originals.isEmpty && writes == 0,
+                  "Repeated init preserves exceptional orphans without manifest uniqueness failures")
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: unreadable.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: inaccessible.path)
+        try check(try Data(contentsOf: unreadable) == raw && Data(contentsOf: inaccessibleFile) == raw,
+                  "Transient read and enumeration failures preserve the only original bytes")
+        store = nil
+        writes = 0
+        store = try CameraOriginalStore(directory: root) { writes += 1 }
+        try check(Set(store!.snapshot.originals.map(\.name)) == ["DSC_UNREADABLE.ARW", "DSC_BLOCKED.ARW"] && writes == 1,
+                  "A later init re-adopts preserved originals after permissions recover")
+    }
+
+    private static func recoverRetriesEmptyDirectoryRemoval() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-recover-remove-\(UUID())")
+        let originalsRoot = root.appendingPathComponent("originals", isDirectory: true)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: originalsRoot.path)
+            try? FileManager.default.removeItem(at: root)
+        }
+        do { _ = try CameraOriginalStore(directory: root) }
+        let empty = originalsRoot.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: originalsRoot.path)
+        try check(access(originalsRoot.path, W_OK) != 0, "Empty-directory fixture really denies deletion")
+        var writes = 0
+        var store: CameraOriginalStore? = try CameraOriginalStore(directory: root) { writes += 1 }
+        try check(FileManager.default.fileExists(atPath: empty.path) && writes == 0,
+                  "A failed empty-directory removal preserves the directory and does not abort init")
+        store = nil
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: originalsRoot.path)
+        store = try CameraOriginalStore(directory: root) { writes += 1 }
+        try check(!FileManager.default.fileExists(atPath: empty.path) && writes == 0 && store!.snapshot.originals.isEmpty,
+                  "A later init retries empty-directory removal without manifest writes")
+    }
+
+    private static func recoverOrdersReAdoptedOriginals() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-recover-order-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let originalsRoot = root.appendingPathComponent("originals", isDirectory: true)
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let fixtures = [("00000000-0000-0000-0000-000000000001", "DSC_Z.ARW"),
+                        ("00000000-0000-0000-0000-000000000003", "DSC_A.ARW"),
+                        ("00000000-0000-0000-0000-000000000002", "DSC_A.ARW")]
+        for (id, name) in fixtures {
+            let directory = originalsRoot.appendingPathComponent(id, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let file = directory.appendingPathComponent(name)
+            try Data([0x49, 0x49, 0x2a, 0, 1]).write(to: file)
+            try Data([1]).write(to: directory.appendingPathComponent(".DS_Store"))
+            try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: file.path)
+        }
+        let store = try CameraOriginalStore(directory: root)
+        try check(store.snapshot.originals.map(\.name) == ["DSC_A.ARW", "DSC_A.ARW", "DSC_Z.ARW"] &&
+                  store.snapshot.originals.map(\.id) == [fixtures[2].0, fixtures[1].0, fixtures[0].0].map { UUID(uuidString: $0)! },
+                  "Equal-mtime originals sort by name then UUID, ignoring .DS_Store")
+    }
+
+    private static func recoverSweepsOrphanDirectories() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-recover-orphan-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let device = CameraDeviceIdentity(manufacturer: "Sony", model: "Fixture", firmware: "1.00", serial: "orphan", operations: [])
+        let bytes1 = Data([0xff, 0xd8, 0xff, 1, 2, 3, 4])
+        let bytes2 = Data([0xff, 0xd8, 0xff, 5, 6, 7, 8])
+        let bytes3 = Data([0xff, 0xd8, 0xff, 9, 10, 11, 12])
+        func snap(_ content: UInt32, _ name: String, _ data: Data) -> CameraAssetSnapshot {
+            CameraAssetSnapshot(content: content, file: 1, storage: 0, format: 0, name: name,
+                                size: UInt64(data.count), created: "1700000000000", modified: "")
+        }
+
+        var store: CameraOriginalStore? = try CameraOriginalStore(directory: root)
+        let job = try store!.enqueue(device: device, connectionKey: "fixture", assets: [
+            snap(1, "DSC00001.JPG", bytes1),
+            snap(2, "DSC00002.JPG", bytes2),
+            snap(3, "DSC00003.JPG", bytes3)
+        ])
+        let kept = try write(bytes1, item: job.items[0], job: job, store: store!)
+        let preparedValid = try write(bytes2, item: job.items[1], job: job, store: store!)
+        let preparedMissing = try write(bytes3, item: job.items[2], job: job, store: store!)
+
+        // Simulate crash mid-publish for items 2 (file exists) and 3 (file missing, empty dir remains),
+        // plus a complete orphan UUID directory (re-adopted), empty orphan UUID dirs (deleted) and nonempty residues (preserved),
+        // a UUID symlink (preserved), and a non-UUID metadata file in originals/.
+        var manifest = store!.snapshot
+        manifest.jobs[0].items[1].phase = .prepared
+        manifest.originals[1].availability = .prepared
+        manifest.jobs[0].items[2].phase = .prepared
+        manifest.originals[2].availability = .prepared
+        try FileManager.default.removeItem(at: store!.originalURL(preparedMissing))
+
+        let originalsRoot = root.appendingPathComponent("originals", isDirectory: true)
+        let orphanCompleteID = UUID()
+        let orphanCompleteDir = originalsRoot.appendingPathComponent(orphanCompleteID.uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: orphanCompleteDir, withIntermediateDirectories: true)
+        let orphanBytes = Data([0x49, 0x49, 0x2a, 0, 1, 2, 3, 4])
+        let orphanFile = orphanCompleteDir.appendingPathComponent("DSC_ORPHAN.ARW")
+        try orphanBytes.write(to: orphanFile)
+        let expectedOrphanMtime = Date(timeIntervalSince1970: 1_700_000_123)
+        try FileManager.default.setAttributes([.modificationDate: expectedOrphanMtime], ofItemAtPath: orphanFile.path)
+
+        let orphanEmptyDir = originalsRoot.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: orphanEmptyDir, withIntermediateDirectories: true)
+        let orphanResidueDir = originalsRoot.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: orphanResidueDir, withIntermediateDirectories: true)
+        try Data([0x49, 0x49, 0x2a, 0]).write(to: orphanResidueDir.appendingPathComponent("DSC_TMP.ARW.partial"))
+
+        let symlinkTargetDir = root.appendingPathComponent("external-symlink-target", isDirectory: true)
+        try FileManager.default.createDirectory(at: symlinkTargetDir, withIntermediateDirectories: true)
+        let symlinkTargetFile = symlinkTargetDir.appendingPathComponent("keep.txt")
+        try Data([7, 8]).write(to: symlinkTargetFile)
+        let uuidSymlink = originalsRoot.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: uuidSymlink, withDestinationURL: symlinkTargetDir)
+
+        let nonUUIDMarker = originalsRoot.appendingPathComponent(".keep")
+        try Data([1]).write(to: nonUUIDMarker)
+        store = nil
+        try JSONEncoder().encode(manifest).write(to: root.appendingPathComponent("manifest.json"), options: .atomic)
+
+        var recoverWrites = 0
+        store = try CameraOriginalStore(directory: root) { recoverWrites += 1 }
+        try check(recoverWrites == 1,
+                  "recover() coalesces .prepared promotion/discard and orphan re-adoption into 1 manifest write (actual: \(recoverWrites))")
+        try check(!FileManager.default.fileExists(atPath: orphanEmptyDir.path) &&
+                  FileManager.default.fileExists(atPath: orphanResidueDir.path),
+                  "recover() removes only empty UUID orphan directories and preserves nonempty residues")
+        let missingDir = originalsRoot.appendingPathComponent(preparedMissing.id.uuidString.lowercased(), isDirectory: true)
+        try check(!FileManager.default.fileExists(atPath: missingDir.path),
+                  "recover() removes empty UUID directory after missing .prepared source is discarded")
+        let symlinkValues = try? uuidSymlink.resourceValues(forKeys: [.isSymbolicLinkKey])
+        try check(FileManager.default.fileExists(atPath: nonUUIDMarker.path) &&
+                  symlinkValues?.isSymbolicLink == true &&
+                  FileManager.default.fileExists(atPath: symlinkTargetFile.path),
+                  "recover() preserves non-UUID entries and UUID symlinks in originals/")
+
+        let expectedOrphanDigest = SHA256.hash(data: orphanBytes).map { String(format: "%02x", $0) }.joined()
+        let adoptedEntry = store!.snapshot.originals.first { $0.id == orphanCompleteID }
+        try check(store!.snapshot.originals.map(\.id) == [kept.id, preparedValid.id, orphanCompleteID] &&
+                  adoptedEntry?.name == "DSC_ORPHAN.ARW" &&
+                  adoptedEntry?.size == UInt64(orphanBytes.count) &&
+                  adoptedEntry?.digest == expectedOrphanDigest &&
+                  adoptedEntry?.availability == .available &&
+                  abs((adoptedEntry?.savedAt.timeIntervalSince1970 ?? 0) - expectedOrphanMtime.timeIntervalSince1970) < 2 &&
+                  store!.snapshot.jobs[0].items[0].phase == .saved &&
+                  store!.snapshot.jobs[0].items[1].phase == .saved &&
+                  store!.snapshot.jobs[0].items[2].phase == .interrupted,
+                  "recover() re-adopts complete orphan as .available and retains referenced .available/.prepared originals")
+        let keptData = try Data(contentsOf: store!.verifiedURL(kept.id))
+        let preparedData = try Data(contentsOf: store!.verifiedURL(preparedValid.id))
+        let adoptedData = try Data(contentsOf: store!.verifiedURL(orphanCompleteID))
+        try check(keptData == bytes1 && preparedData == bytes2 && adoptedData == orphanBytes,
+                  "recover() preserves file contents for .available, promoted .prepared, and re-adopted originals")
+
+        store = nil
+        var secondRecoverWrites = 0
+        store = try CameraOriginalStore(directory: root) { secondRecoverWrites += 1 }
+        try check(secondRecoverWrites == 0 && store!.snapshot.originals.count == 3,
+                  "recover() is idempotent and performs 0 manifest writes after re-adoption (actual: \(secondRecoverWrites))")
+
+        let noEvidencePrune = try store!.pruneExportedOriginals()
+        try check(noEvidencePrune.originals == 0 && store!.snapshot.originals.count == 3,
+                  "pruneExportedOriginals() never auto-deletes a re-adopted original without export evidence")
+        let exportedPrune = try store!.pruneExportedOriginals(exportedContentIdentifiers: [expectedOrphanDigest])
+        try check(exportedPrune.originals == 1 && exportedPrune.freedBytes == UInt64(orphanBytes.count) &&
+                  !FileManager.default.fileExists(atPath: orphanCompleteDir.path) &&
+                  store!.snapshot.originals.map(\.id) == [kept.id, preparedValid.id],
+                  "pruneExportedOriginals() reclaims exported re-adopted original and removes its directory")
     }
 
     private static func write(_ bytes: Data, item: CameraTransferItem, job: CameraTransferJob, store: CameraOriginalStore) throws -> CameraStoredOriginal {
