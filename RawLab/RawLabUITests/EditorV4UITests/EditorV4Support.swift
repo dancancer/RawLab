@@ -50,10 +50,18 @@ extension EditorV4UITests {
         waitUntil { !probe.exists }
     }
 
-    func assertFileImportItem(enabled: Bool, in app: XCUIApplication) {
+    /// Opens the overview overflow menu. The busy editor re-renders its toolbar, so wait
+    /// for a stable hittable state before tapping (otherwise the tap races the flicker).
+    @discardableResult
+    func openOverflowMenu(in app: XCUIApplication) -> XCUIElement {
         let privacy = app.buttons["editor.privacy"]
-        XCTAssertTrue(privacy.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(waitTrue(15, { privacy.exists && privacy.isHittable }), app.debugDescription)
         privacy.tap()
+        return privacy
+    }
+
+    func assertFileImportItem(enabled: Bool, in app: XCUIApplication) {
+        let privacy = openOverflowMenu(in: app)
         let file = app.buttons["editor.import.file"]
         XCTAssertTrue(file.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertEqual(file.isEnabled, enabled, "File import must follow editor draft/busy lock")
@@ -61,9 +69,7 @@ extension EditorV4UITests {
     }
 
     func cancelFileImporter(in app: XCUIApplication) {
-        let privacy = app.buttons["editor.privacy"]
-        XCTAssertTrue(privacy.waitForExistence(timeout: 5), app.debugDescription)
-        privacy.tap()
+        openOverflowMenu(in: app)
         let file = app.buttons["editor.import.file"]
         XCTAssertTrue(file.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(file.isEnabled, "The Files picker can only be opened from a clean editor state")
@@ -77,9 +83,7 @@ extension EditorV4UITests {
     }
 
     func selectSeededFilesImage(in app: XCUIApplication) throws {
-        let privacy = app.buttons["editor.privacy"]
-        XCTAssertTrue(privacy.waitForExistence(timeout: 5), app.debugDescription)
-        privacy.tap()
+        openOverflowMenu(in: app)
         let candidate = app.buttons.matching(identifier: "editor.import.file").firstMatch
         XCTAssertTrue(candidate.waitForExistence(timeout: 5), app.debugDescription)
         revealOverflowItem(candidate, in: app)
