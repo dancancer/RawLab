@@ -28,6 +28,7 @@ import com.rawlab.android.editor.render.PreviewPair
 import com.rawlab.android.editor.ui.EditorScreen
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.testing.LanguageTestRule
+import com.rawlab.android.testing.localizedTestContext
 import com.rawlab.android.testing.localizedTestConfiguration
 import com.rawlab.android.testing.workbenchTool
 import com.rawlab.android.testing.selectWorkbenchGroup
@@ -57,7 +58,7 @@ class EditorParameterViewportTest {
         compose.setContent {
             val base = LocalContext.current
             val config = localizedTestConfiguration(LocalConfiguration.current, language, scale)
-            val localized = base.createConfigurationContext(config)
+            val localized = localizedTestContext(base, language, scale)
             check(localized.resources.configuration.locales[0].language == Locale.forLanguageTag(language).language)
             CompositionLocalProvider(LocalDensity provides Density(1f, scale), LocalContext provides localized, LocalConfiguration provides config) {
                 Box(Modifier.size(width.dp, height.dp).consumeWindowInsets(WindowInsets.safeDrawing).testTag("parameter-fixture")) {
@@ -133,8 +134,7 @@ class EditorParameterViewportTest {
                 for ((action, description) in listOf("draft.apply" to R.string.adjustment_apply, "draft.cancel" to R.string.cancel)) {
                     val node = compose.onNodeWithTag(action).assertHasClickAction()
                     node.assertContentDescriptionEquals(
-                        InstrumentationRegistry.getInstrumentation().targetContext.createConfigurationContext(
-                            localizedTestConfiguration(InstrumentationRegistry.getInstrumentation().targetContext.resources.configuration, language)).getString(description))
+                        localizedTestContext(InstrumentationRegistry.getInstrumentation().targetContext, language).getString(description))
                     wholeTarget(action)
                     assertTrue("$action has a full 48dp width", bounds(action).width >= 48f - 1)
                     assertFalse("$action remains outside scrolling parameters", viewport.overlaps(bounds(action)))
