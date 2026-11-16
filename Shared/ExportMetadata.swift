@@ -132,6 +132,10 @@ enum ExportMetadata {
         try (data as Data).write(to: rendered, options: .atomic)
     }
 
+    // 冻结：禁新增字节级解析（WR-05 评估结论：Mac PNG 导出仍由 RawLabMac 在 sony2fuji_process
+    // 之后调用 ExportMetadata.preserve，核心 C ABI 尚未透传编码期 eXIf，故此路径仍活且语义必要；
+    // 保留现有 1×1 载体 + 原位改尺寸字段 + eXIf 块拼接与回退路径，待后续 C ABI 收敛编码期 eXIf 后再整体退役）。
+
     /// 在 1×1 载体上把拍摄参数编成 ImageIO 标准 eXIf chunk 数据（TIFF 块），并把其中的像素尺寸
     /// 改写为真实输出尺寸（ImageIO 会按载体 1×1 覆盖 ExifImageWidth/Height 与 TIFF ImageWidth/Length）。
     /// 载体拿不到 eXIf chunk 或 TIFF 载荷解析失败时返回 nil，触发整读重压缩回退。

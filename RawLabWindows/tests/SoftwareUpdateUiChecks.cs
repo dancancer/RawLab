@@ -107,7 +107,7 @@ internal static class SoftwareUpdateUiChecks
             failed.PendingUpdate.Installing(token);failed.PendingUpdate.Fail("test","Injected failed install",token);recoveryStore.Save(failed);
             File.WriteAllText(original,"new format");
             var recovery=new DesktopUpdateController(new Adapter(),new(),recoveryStore,"0.8.2","14");
-            var recoveryWindow=new SoftwareUpdateWindow(recovery,new UpdateChecker("0.8.2")){Owner=window,FontSize=26};recoveryWindow.Show();recoveryWindow.UpdateLayout();
+            var recoveryWindow=new SoftwareUpdateWindow(recovery){Owner=window,FontSize=26};recoveryWindow.Show();recoveryWindow.UpdateLayout();
             check(Button(recoveryWindow,"updates.restore").IsEnabled && !Button(recoveryWindow,"updates.check").IsEnabled,
                 "Native recovery window offers explicit restoration and blocks new checks");
             Screenshot(recoveryWindow,Path.Combine(output,"recovery-en.png"));
@@ -120,7 +120,7 @@ internal static class SoftwareUpdateUiChecks
             var repairStore=new UpdateStore(Path.Combine(output,"state-repair","Updates"));Directory.CreateDirectory(repairStore.DirectoryPath);
             File.WriteAllText(repairStore.StatePath,"{broken");
             var repair=new DesktopUpdateController(new Adapter(),new(),repairStore,"0.8.2","14");
-            var repairWindow=new SoftwareUpdateWindow(repair,new UpdateChecker("0.8.2")){Owner=window,FontSize=26};repairWindow.Show();repairWindow.UpdateLayout();
+            var repairWindow=new SoftwareUpdateWindow(repair){Owner=window,FontSize=26};repairWindow.Show();repairWindow.UpdateLayout();
             check(Button(repairWindow,"updates.repairState").IsEnabled,"Native corrupt-state screen offers explicit repair");
             Click(Button(repairWindow,"updates.repairState"));InteractionChecks.PumpUntil(()=>repair.RecoveryNeedsRestart);
             check(repair.RequiresRecovery && !Button(repairWindow,"updates.check").IsEnabled && File.ReadAllText(repair.StateArchive!)=="{broken",

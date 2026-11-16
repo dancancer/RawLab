@@ -11,8 +11,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.input.ImeAction
@@ -42,6 +45,9 @@ sealed interface AdjustmentPresetAction {
 internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = false, onClose: () -> Unit,
     onRequest: (AdjustmentPresetAction) -> Unit) {
     val editor by model.state.collectAsStateWithLifecycle()
+    val configuration = LocalConfiguration.current
+    val context = LocalContext.current
+    val density = LocalDensity.current
     val focus = LocalFocusManager.current
     var presets by remember { mutableStateOf(emptyList<AdjustmentPreset>()) }
     var unreadable by remember { mutableStateOf(emptyList<UnreadablePreset>()) }
@@ -67,8 +73,13 @@ internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = fal
     LaunchedEffect(model) { reload() }
     ModalBottomSheet(onDismissRequest = ::close,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        EditorSheetSystemBars()
-        Column(Modifier.fillMaxWidth().fillMaxHeight(.94f).imePadding().padding(horizontal = 20.dp).testTag("preset-root")) {
+        CompositionLocalProvider(
+            LocalConfiguration provides configuration,
+            LocalContext provides context,
+            LocalDensity provides density,
+        ) {
+            EditorSheetSystemBars()
+            Column(Modifier.fillMaxWidth().fillMaxHeight(.94f).imePadding().padding(horizontal = 20.dp).testTag("preset-root")) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(if (creating) R.string.preset_save else if (rename != null) R.string.preset_rename else R.string.preset_library),
                     Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
@@ -160,6 +171,7 @@ internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = fal
                     }
                 }
             }
+        }
         }
     }
     overwrite?.let { (expected, payload) ->

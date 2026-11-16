@@ -28,7 +28,7 @@ public partial class MainWindow
     {
         if (aboutWindow == null)
         {
-            aboutWindow = new AboutWindow(updates, usageAnalytics) { Owner = this };
+            aboutWindow = new AboutWindow(desktopUpdates.CurrentVersion, usageAnalytics) { Owner = this };
             aboutWindow.Closed += (_, _) => aboutWindow = null;
             aboutWindow.Show();
         }

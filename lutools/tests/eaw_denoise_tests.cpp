@@ -33,6 +33,64 @@ static double difference(const ImageData& a, const ImageData& b) {
                     cv::Mat(b.height,b.width,CV_32FC3,const_cast<RGB*>(b.pixels.data())),cv::NORM_INF);
 }
 
+static void viewportSourceChecks() {
+    ImageData source(1024,768), viewport(350,263);
+    std::mt19937 random(692);
+    std::normal_distribution<float> noise(0,1);
+    for (auto& pixel:source.pixels)
+        pixel={.18f+.0052f*noise(random),.18f+.002f*noise(random),.18f+.002f*noise(random)};
+    cv::Mat sourceRGB(source.height,source.width,CV_32FC3,source.pixels.data());
+    cv::Mat reduced(viewport.height,viewport.width,CV_32FC3,viewport.pixels.data());
+    cv::resize(sourceRGB,reduced,reduced.size(),0,0,cv::INTER_LINEAR);
+    require(ColorConverter().convertImage(source,ColorSpace::sRGB,ColorSpace::AdobeRGB)==ErrorCode::Success,
+            "prepare RAW working-space source");
+    auto srgbSource=source;
+    require(ColorConverter().convertImage(srgbSource,ColorSpace::AdobeRGB,ColorSpace::sRGB)==ErrorCode::Success,
+            "prepare full-frame sRGB reference for sampled color conversion");
+    const auto before=source;
+    WaveletDenoiseOptions options{true,100,100,100};
+    WaveletDenoiseDiagnostics diagnostics;
+    auto withoutSource=viewport;
+    require(applyWaveletDenoise(withoutSource,options,&diagnostics)==ErrorCode::Success &&
+            diagnostics.outcome==WaveletDenoiseOutcome::LowNoise,"reduced noise alone is below the guard");
+    WaveletDenoiseAnalysisCache cache;
+    auto first=viewport;
+    require(applyWaveletDenoise(first,options,&diagnostics,GpuMode::Off,&cache,"viewport",nullptr,
+            ColorSpace::AdobeRGB,&source)==ErrorCode::Success && diagnostics.applied && !diagnostics.analysisReused,
+            "native-resolution noise must enable viewport denoise");
+    options.luma=30; options.chroma=50;
+    auto cached=viewport, fresh=viewport, srgb=viewport;
+    require(applyWaveletDenoise(cached,options,&diagnostics,GpuMode::Off,&cache,"viewport",nullptr,
+            ColorSpace::AdobeRGB,&source)==ErrorCode::Success && diagnostics.applied && diagnostics.analysisReused,
+            "changed strengths reuse the source-noise guard");
+    require(applyWaveletDenoise(fresh,options,nullptr,GpuMode::Off,nullptr,{},nullptr,
+            ColorSpace::AdobeRGB,&source)==ErrorCode::Success && difference(cached,fresh)==0 && difference(cached,first)>0,
+            "cached source analysis matches fresh filtering after strength changes");
+    require(applyWaveletDenoise(srgb,options,nullptr,GpuMode::Off,nullptr,{},nullptr,
+            ColorSpace::sRGB,&srgbSource)==ErrorCode::Success,"full-frame sRGB source filtering");
+    const double gamutError=difference(srgb,fresh);
+    std::cout<<"Sampled/full-frame color conversion maximum error: "<<gamutError<<'\n';
+    require(gamutError<2e-6,
+            "source patches use the same linear sRGB noise regardless of input gamut");
+    require(difference(source,before)==0,"source noise estimation must not modify immutable RAW pixels");
+
+    // 原生平坦区域足以拟合噪声，但缩小后只能容纳少量完整的 64x64 校准块。
+    for (int y=0;y<source.height;++y) for (int x=0;x<source.width;++x) {
+        const float base=x<250 && y<250 ? .18f : .05f+.004f*x+.003f*y;
+        source.at(x,y)={base+.0052f*noise(random),base+.002f*noise(random),base+.002f*noise(random)};
+    }
+    cv::resize(sourceRGB,reduced,reduced.size(),0,0,cv::INTER_LINEAR);
+    WaveletNoiseEstimateDiagnostics estimate;
+    const auto workingSamples=flatSamples(reduced,estimate);
+    require(!workingSamples.empty() && workingSamples.size()<8,"fixture has fewer than eight reduced flat patches");
+    auto sparse=viewport;
+    require(applyWaveletDenoise(sparse,options,&diagnostics)==ErrorCode::Success &&
+            diagnostics.outcome==WaveletDenoiseOutcome::InsufficientSamples,"reduced patches alone cannot fit noise");
+    require(applyWaveletDenoise(sparse,options,&diagnostics,GpuMode::Off,nullptr,{},nullptr,
+            ColorSpace::sRGB,&source)==ErrorCode::Success && diagnostics.applied && diagnostics.flatTiles>=8,
+            "native fit admits viewport band calibration with fewer than eight working patches");
+}
+
 static void tiledChecks() {
     ImageData source(779,539);
     std::mt19937 random(20261021);
@@ -111,6 +169,7 @@ int main() {
         const auto error=difference(actual,expected);
         std::cout<<"C5 reference maximum error: "<<error<<'\n';
         require(error<2e-6,"v2 must reproduce the independent C5 reference");
+        viewportSourceChecks();
         tiledChecks();
         return 0;
     } catch (const std::exception& error) {

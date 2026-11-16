@@ -54,7 +54,7 @@ public partial class MainWindow
     }
     private void UpdateChanged(object? sender, PropertyChangedEventArgs args)
     {
-        var notice=UpdatePresentation.MainWindowNotice(desktopUpdates.Preferences,desktopUpdates.UnavailableReason,updates.Available?.Version);
+        var notice=UpdatePresentation.MainWindowNotice(desktopUpdates.Preferences,desktopUpdates.UnavailableReason);
         UpdateNotice.Content=notice.ReleaseVersion!=null ? Loc.Format("RawLab {0} 已发布",notice.ReleaseVersion)
             : notice.HasFailure ? Loc.Text("更新失败") : "";
         UpdateNotice.Visibility=notice.Visible ? Visibility.Visible : Visibility.Collapsed;
@@ -86,7 +86,7 @@ public partial class MainWindow
         PreserveUpdateNavigation();
         if(softwareUpdateWindow==null)
         {
-            softwareUpdateWindow=new(desktopUpdates,updates,settings){Owner=this};
+            softwareUpdateWindow=new(desktopUpdates,settings){Owner=this};
             softwareUpdateWindow.Closed+=(_,_)=>softwareUpdateWindow=null;
             softwareUpdateWindow.Show();
         }

@@ -18,8 +18,7 @@ internal static class AppearanceChecks
         app.Resources.MergedDictionaries.Add(new(){Source=new Uri("/RawLab;component/Controls.xaml",UriKind.Relative)});
         app.Resources.MergedDictionaries.Add(new(){Source=new Uri("/RawLab;component/FileTreeStyles.xaml",UriKind.Relative)});
         var editor=new MainWindow();TestWindowState.Isolate(editor,output);editor.Show();
-        var updates=new UpdateChecker("0.8.0",Path.Combine(output,"updates.json")){Automatic=false};
-        var about=new AboutWindow(updates);var settings=new SettingsWindow(0);
+        var about=new AboutWindow("0.8.0");var settings=new SettingsWindow(0);
         var sizeDialog=(Window)Activator.CreateInstance(typeof(LongEdgeDialog),BindingFlags.Instance|BindingFlags.NonPublic,null,new object?[]{null,editor},null)!;
         typeof(LongEdgeDialog).GetMethod("Accept",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(sizeDialog,null);
         typeof(MainWindow).GetMethod("SetStatus",BindingFlags.Instance|BindingFlags.NonPublic,null,new[]{typeof(string),typeof(bool)},null)!.Invoke(editor,new object[]{"Error",true});

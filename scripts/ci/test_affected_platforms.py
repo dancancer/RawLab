@@ -219,6 +219,7 @@ class VerifyTests(unittest.TestCase):
         outputs = {platform: "true" if platform in selected else "false" for platform in selection.PLATFORMS}
         outputs.update(mode="automatic", scope="affected", checks="models", contracts="true", models="true", build="false", native="false", cold="false")
         return {"changes": {"result": changes, "outputs": outputs}, "contracts": {"result": contracts},
+                "windows-batch-selection": {"result": "success" if "windows" in selected else "skipped"},
                 **{platform: {"result": result} for platform, result in results.items()}}
 
     def test_selected_checks_pass_and_unselected_checks_stay_skipped(self):
@@ -239,10 +240,25 @@ class VerifyTests(unittest.TestCase):
         self.assertTrue(selection.verify(self.needs(set(), skipped, contracts="failure")))
         self.assertTrue(selection.verify({}))
 
+    def test_automatic_windows_requires_the_batch_selection_job_to_succeed(self):
+        results = dict.fromkeys(selection.PLATFORMS, "skipped") | {"windows": "success"}
+        needs = self.needs({"windows"}, results)
+        self.assertEqual(selection.verify(needs), [])
+        for result in ("failure", "cancelled", "skipped", None):
+            with self.subTest(result=result):
+                needs["windows-batch-selection"]["result"] = result
+                self.assertTrue(selection.verify(needs))
+
+    def test_unselected_batch_selection_cannot_report_success(self):
+        needs = self.needs(set(), dict.fromkeys(selection.PLATFORMS, "skipped"))
+        needs["windows-batch-selection"]["result"] = "success"
+        self.assertTrue(selection.verify(needs))
+
     def test_manual_verification_requires_exact_selected_results(self):
         results = dict.fromkeys(selection.PLATFORMS, "skipped") | {"windows": "success"}
         needs = self.needs({"windows"}, results, contracts="skipped")
         needs["changes"]["outputs"].update(mode="manual", scope="windows", checks="full", contracts="false", build="true", native="true", cold="true")
+        needs["windows-batch-selection"]["result"] = "skipped"
         self.assertEqual(selection.verify(needs), [])
         for field, value in (("windows", "false"), ("ios", "true"), ("mode", "automatic"), ("mode", "unknown"), ("checks", "ui"), ("build", "false"), ("native", "false")):
             changed = json.loads(json.dumps(needs))
@@ -255,6 +271,7 @@ class VerifyTests(unittest.TestCase):
     def test_manual_all_full_requires_contracts_cold_and_every_platform(self):
         needs = self.needs(EVERY, dict.fromkeys(selection.PLATFORMS, "success"))
         needs["changes"]["outputs"].update(mode="manual", scope="all", checks="full", build="true", native="true", cold="true")
+        needs["windows-batch-selection"]["result"] = "skipped"
         self.assertEqual(selection.verify(needs), [])
         for field, value in (("contracts", "false"), ("cold", "false"), ("windows", "false")):
             changed = json.loads(json.dumps(needs))

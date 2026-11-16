@@ -69,10 +69,8 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer previewResize=new(){Interval=TimeSpan.FromMilliseconds(200)};
     private int previewLongEdge=2000,requestedPreviewLongEdge=2000;
     private bool previewDeferred;
-    private readonly UpdateChecker updates = new(typeof(App).Assembly.GetName().Version?.ToString(3) ?? "unknown");
     private readonly UsageAnalytics usageAnalytics;
     private AboutWindow? aboutWindow;
-    private readonly CancellationTokenSource updateCancellation = new();
     private bool startupReported, analyticsDisposed;
     private long photoImportReportedRevision;
     public MainWindow() : this(new UsageAnalytics()) { }
@@ -82,7 +80,7 @@ public partial class MainWindow : Window
     {
         this.usageAnalytics = usageAnalytics;
         aiPreference=aiPreferenceStore.Read();
-        this.desktopUpdates=desktopUpdates ?? new(new UnavailableUpdateAdapter("configuration"),new(),new(UpdateStore.DefaultDirectory),updates.CurrentVersion,"",updates.Automatic);
+        this.desktopUpdates=desktopUpdates ?? new(new UnavailableUpdateAdapter("configuration"),new(),new(UpdateStore.DefaultDirectory),typeof(App).Assembly.GetName().Version?.ToString(3) ?? "unknown","");
         this.aiJob=aiJob ?? new((identity,snapshot,progress)=>{
             using var worker=new RenderEngine(gpuMode:0,aiBackend:identity.Backend,aiDeviceID:identity.DeviceID,aiDiagnostics:aiDiagnostics);
             worker.PrepareAI(identity.Source.Path,snapshot,progress);
@@ -111,14 +109,9 @@ public partial class MainWindow : Window
             RefreshComparisonToolTip();
             RefreshWorkspaceBrowserLayout();
             foreach(var entry in galleries.SelectMany(gallery=>gallery.Photos).Distinct())entry.RefreshPhotoStatus();
-            updates.RefreshLanguage();
         }
         Loc.Changed += RefreshLanguage;
         Closed += (_, _) => Loc.Changed -= RefreshLanguage;
-        void RefreshUpdateNotice() => UpdateChanged(null,new(null));
-        updates.PropertyChanged += (_, _) => RefreshUpdateNotice();
-        RefreshUpdateNotice();
-        Closed += (_, _) => updateCancellation.Cancel();
         foreach(var navigation in new UIElement[]{Groups,Tools,OpenPhoto,AdjustToggleButton,MainMenu})
             navigation.AddHandler(PreviewMouseDownEvent,new MouseButtonEventHandler(ParameterNavigationPressed),true);
         PreviewKeyDown+=(_,e)=>{if(e.Key==Key.System && e.SystemKey is Key.F or Key.F4)CancelParameterInputs();};
@@ -231,10 +224,7 @@ public partial class MainWindow : Window
             if (!startupReported) { startupReported = true; this.usageAnalytics.BeginSession(); }
             if (lookLibraryLoadError != null)
                 SetStatus(() => lookLibraryLoadError is LookLibraryException ? lookLibraryLoadError.Message : Loc.Text("本地记录损坏。"), true);
-            await this.desktopUpdates.PerformStartupCheckAsync(
-                automatic => { if(updates.Automatic!=automatic) updates.Automatic=automatic; },
-                token => updates.CheckAsync(false, token),
-                updateCancellation.Token);
+            await this.desktopUpdates.PerformStartupCheckAsync();
         };
     }
 }

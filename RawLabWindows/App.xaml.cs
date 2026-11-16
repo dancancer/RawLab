@@ -168,7 +168,6 @@ public partial class App : Application
         Exit += (_, _) => SetSystemPhotoAdmission(false);
         var version = typeof(App).Assembly.GetName().Version;
         var current = version?.ToString(3) ?? "unknown";
-        var legacy = new UpdateChecker(current);
         // 启动清扫（临时目录前缀通配枚举 + 过期树递归删除）不挡首屏：先派发到工作线程，
         // 主窗口创建与显示不再等待它。清扫只删超过保留期且 owner 进程已死的本应用前缀
         // 目录；首窗之后本实例创建的 UUID 新目录 mtime 晚于清扫起点、在保留期内，且带
@@ -178,7 +177,7 @@ public partial class App : Application
         var adapter = await Task.Run(() => VelopackUpdateAdapter.Create(current));
         var fileVersion=System.Diagnostics.FileVersionInfo.GetVersionInfo(typeof(App).Assembly.Location);
         var updates = new DesktopUpdateController(adapter, new(), new(UpdateStore.DefaultDirectory), current,
-            fileVersion.FilePrivatePart.ToString(), legacy.Automatic);
+            fileVersion.FilePrivatePart.ToString());
         MainWindow? editor = null;
         if (!updates.RequiresRecovery)
         {
@@ -198,7 +197,7 @@ public partial class App : Application
                     MainWindow = editor; ShowSystemEditor(editor); recovery?.Close();
                 };
             }
-            recovery = new SoftwareUpdateWindow(updates, legacy) { Title = Loc.Text("更新恢复需要处理，编辑暂未开放") };
+            recovery = new SoftwareUpdateWindow(updates) { Title = Loc.Text("更新恢复需要处理，编辑暂未开放") };
             MainWindow = recovery;
             recovery.Show();
         }

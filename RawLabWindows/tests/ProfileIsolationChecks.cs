@@ -21,39 +21,36 @@ internal static class ProfileIsolationChecks
         check(Loc.Preference=="de" && Loc.Language=="de" && File.ReadAllText(privatePreference)=="de","Private language preference survives the real persistence/reload path");
         check(languageBefore==Stamp(defaultPreference),"Private language changes leave the default preference existence, bytes and timestamp unchanged");
         Loc.Initialize("zh-Hans");
-        var protectedPath=Path.Combine(root,"existing-updates.json");
-        File.WriteAllText(protectedPath,"{\"Automatic\":true,\"LastAttempt\":0}");
-        var before=File.ReadAllBytes(protectedPath);var written=File.GetLastWriteTimeUtc(protectedPath);
-        using var handler=new Requests();using var client=new HttpClient(handler);
-        var existing=new UpdateChecker("0.8.0",protectedPath,client);
         var app=new Application{ShutdownMode=ShutdownMode.OnExplicitShutdown};
         app.Resources.MergedDictionaries.Add(new(){Source=new Uri("/RawLab;component/Controls.xaml",UriKind.Relative)});
         app.Resources.MergedDictionaries.Add(new(){Source=new Uri("/RawLab;component/FileTreeStyles.xaml",UriKind.Relative)});
         var usagePath=Path.Combine(root,"existing-usage.json");File.WriteAllText(usagePath,"{\"Enabled\":true}");
         var usageBefore=Stamp(usagePath);var transport=new UsageTransport();
         var existingUsage=new UsageAnalytics(usagePath,transport);
-        var window=new MainWindow(existingUsage);typeof(MainWindow).GetField("updates",Private)!.SetValue(window,existing);
+        var window=new MainWindow(existingUsage);
+        var existingUpdates=(DesktopUpdateController)typeof(MainWindow).GetField("desktopUpdates",Private)!.GetValue(window)!;
+        var existingStore=typeof(DesktopUpdateController).GetField("store",Private)!.GetValue(existingUpdates)!;
         window.UpdateNotice.Visibility=Visibility.Visible;
         try
         {
-            TestWindowState.Isolate(window,root,client);
-            var updates=(UpdateChecker)typeof(MainWindow).GetField("updates",Private)!.GetValue(window)!;
+            TestWindowState.Isolate(window,root);
+            var updates=(DesktopUpdateController)typeof(MainWindow).GetField("desktopUpdates",Private)!.GetValue(window)!;
+            var isolatedStore=(UpdateStore)typeof(DesktopUpdateController).GetField("store",Private)!.GetValue(updates)!;
             var usage=(UsageAnalytics)typeof(MainWindow).GetField("usageAnalytics",Private)!.GetValue(window)!;
             check(!ReferenceEquals(existingUsage,usage) && !usage.ConsentGiven && !usage.CanEnable,
                 "Every test window gets private disabled analytics instead of retaining existing consent or transport");
-            check(!ReferenceEquals(existing,updates) && !updates.Automatic && window.UpdateNotice.Visibility==Visibility.Collapsed,
+            check(!ReferenceEquals(existingStore,isolatedStore) && !updates.Preferences.AutomaticCheck && window.UpdateNotice.Visibility==Visibility.Collapsed,
                 "Every test window gets private disabled updates without retaining a default-profile badge");
             window.Show();window.UpdateLayout();
-            check(handler.Count==0 && !updates.Checking,"Test window Loaded sends no update request");
             check(transport.Starts==0 && usageBefore==Stamp(usagePath),
                 "Test window Loaded leaves existing analytics consent bytes/timestamp and transport untouched");
             var privateConsent=(string)typeof(UsageAnalytics).GetField("settingsPath",Private)!.GetValue(usage)!;
             check(File.ReadAllText(privateConsent).Contains("false") && !File.Exists(UsageAnalytics.InstallIdPathFor(privateConsent)) &&
                 !File.Exists(UsageAnalytics.InstallIdPathFor(usagePath)),
                 "Default-on analytics never reaches test windows: private consent is explicitly off and no install ID is created");
-            check(before.SequenceEqual(File.ReadAllBytes(protectedPath)) && written==File.GetLastWriteTimeUtc(protectedPath) && !File.Exists(protectedPath+".tmp"),
-                "Test window preserves existing update preferences and temporary files");
-            foreach(var field in new[]{"editStore","batchJournal","library","updates","usageAnalytics"})
+            check(isolatedStore.DirectoryPath.StartsWith(Path.GetFullPath(root),StringComparison.OrdinalIgnoreCase),
+                "Test window isolates update store under private test directory");
+            foreach(var field in new[]{"editStore","batchJournal","library","usageAnalytics"})
             {
                 var value=typeof(MainWindow).GetField(field,Private)!.GetValue(window)!;
                 var path=field switch {

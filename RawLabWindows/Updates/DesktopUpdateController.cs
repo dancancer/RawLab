@@ -149,14 +149,10 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         if (startupStorageBlocked || storageBlocksEditing || RequiresStartupHealthCheck || RequiresRecovery) return;
         var next = preferences.Copy(); next.AutomaticCheck = value; Save(next);
     }
-    public async Task PerformStartupCheckAsync(Action<bool> syncLegacyAutomaticCheck, Func<CancellationToken, Task> checkLegacyAsync, CancellationToken cancellationToken = default)
+    public async Task PerformStartupCheckAsync()
     {
-        if (StorageError == null) syncLegacyAutomaticCheck(preferences.AutomaticCheck);
-        if (StorageError == null && UnavailableReason != "storage")
-        {
-            if (UnavailableReason != null) await checkLegacyAsync(cancellationToken);
-            else await CheckAsync(false);
-        }
+        if (StorageError == null && UnavailableReason == null)
+            await CheckAsync(false);
     }
     public void SetAutomaticInstall(bool value)
     {

@@ -100,6 +100,62 @@ std::vector<uint8_t> amplifiedExif(size_t whole) {
     }
     return tiff;
 }
+
+void metadataCompatibility(const std::filesystem::path& root) {
+    for (bool little : {true, false}) {
+        std::vector<uint8_t> bytes(26, 0);
+        const auto put = [&](size_t at, uint64_t value, size_t width) {
+            for (size_t i = 0; i < width; ++i)
+                bytes.at(at + i) = uint8_t(value >> (8 * (little ? i : width - 1 - i)));
+        };
+        const auto rejected = [&] {
+            try { sony2fuji::hdr::exifOrientation(bytes.data(), bytes.size()); }
+            catch (const sony2fuji::hdr::Error& error) {
+                check(error.reason == SONY2FUJI_HDR_REASON_MALFORMED_AUX, "EXIF malformed diagnostic changed");
+                return;
+            }
+            check(false, "malformed EXIF was accepted");
+        };
+        bytes[0] = bytes[1] = little ? 'I' : 'M';
+        put(2, 42, 2); put(4, 8, 4); put(8, 1, 2);
+        put(10, 0x0112, 2); put(12, 3, 2); put(14, 1, 4); put(18, 6, 2);
+        check(sony2fuji::hdr::exifOrientation(bytes.data(), bytes.size()) == 6, "EXIF inline orientation byte order changed");
+        put(22, 8, 4); rejected();
+        put(22, 0, 4);
+        put(10, 0x8769, 2); put(12, 4, 2); put(18, 8, 4); rejected();
+        put(18, 0, 4);
+        check(sony2fuji::hdr::exifOrientation(bytes.data(), bytes.size()) == 1, "EXIF null child remains tolerated");
+        put(10, 0x1000, 2); put(12, 13, 2);
+        check(sony2fuji::hdr::exifOrientation(bytes.data(), bytes.size()) == 1, "EXIF retains type-13 support");
+        put(12, 7, 2); put(14, 0, 4);
+        check(sony2fuji::hdr::exifOrientation(bytes.data(), bytes.size()) == 1, "EXIF zero-count unknown tag remains tolerated");
+        bytes.resize(38, 0); put(8, 2, 2);
+        std::copy_n(bytes.begin() + 10, 12, bytes.begin() + 22);
+        rejected();
+
+        // RAW 不读取 next IFD，也不验证未选中的像素/私有标签。
+        put(10, 0x010f, 2); put(12, 2, 2); put(14, 4, 4);
+        bytes[18] = 'C'; bytes[19] = 'a'; bytes[20] = 'm'; bytes[21] = 0;
+        put(22, 0x1000, 2); put(24, 0, 2); put(26, 0xffffffff, 4); put(30, 0xffffffff, 4);
+        put(34, 8, 4);
+        rejected();
+        const auto path = root / (little ? "capture-le.dng" : "capture-be.dng");
+        write(path, bytes);
+        const auto sanitized = sony2fuji::hdr::sanitizedDNGExif(path, 640, 480);
+        check(!sanitized.empty() && sony2fuji::hdr::exifOrientation(sanitized.data(), sanitized.size()) == 1,
+              "RAW ignores unrelated malformed entries and its next offset");
+        put(22, 0x010f, 2); put(24, 2, 2); put(26, 4, 4); put(30, 0, 4);
+        write(path, bytes);
+        try { sony2fuji::hdr::sanitizedDNGExif(path, 640, 480); check(false, "RAW duplicate capture tag admitted"); }
+        catch (const sony2fuji::hdr::Error& error) {
+            check(error.reason == SONY2FUJI_HDR_REASON_MALFORMED_AUX, "RAW duplicate tag diagnostic changed");
+        }
+        std::filesystem::remove(path);
+    }
+    check(sony2fuji::hdr::exifOrientation(nullptr, 0) == 1, "empty EXIF retains default orientation");
+    const uint8_t noDirectory[] = {'I', 'I', 42, 0, 0, 0, 0, 0};
+    check(sony2fuji::hdr::exifOrientation(noDirectory, sizeof(noDirectory)) == 1, "EXIF null first IFD remains tolerated");
+}
 }
 
 int main(int argc, const char* argv[]) {
@@ -107,6 +163,7 @@ int main(int argc, const char* argv[]) {
         ("rawlab-portable-hdr-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     std::filesystem::create_directories(root);
     try {
+        metadataCompatibility(root);
         sdrNclxColors();
         {
             // 一条值覆盖整块（例如计数偏大的 MakerNote）仍在预算余量内。

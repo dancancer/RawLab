@@ -2,6 +2,7 @@
 // Copyright 2006-2019 Adobe Systems Incorporated. All Rights Reserved.
 // See third_party/Adobe-DNG-SDK-LICENSE.txt for the retained license.
 #include "sony2fuji/dcp_compiler.h"
+#include "tiff_ifd.h"
 
 #include "nlohmann/json.hpp"
 
@@ -66,46 +67,25 @@ struct Table {
 struct Reader {
     const uint8_t* bytes = nullptr;
     std::size_t size = 0;
-    bool bigEndian = false;
+    tiff::Reader container;
     std::map<uint16_t, Tag> tags;
 
     Reader(const void* source, std::size_t sourceSize) :
-        bytes(static_cast<const uint8_t*>(source)), size(sourceSize) {
+        bytes(static_cast<const uint8_t*>(source)), size(sourceSize), container(source, sourceSize) {
         if (size > maxDcpSourceBytes) fail(DcpCompilerError::TooLarge);
-        if (!bytes || size < 8) fail(DcpCompilerError::Malformed);
-        if ((bytes[0] != 'I' && bytes[0] != 'M') || bytes[0] != bytes[1]) fail(DcpCompilerError::Malformed);
-        bigEndian = bytes[0] == 'M';
-        const uint16_t magic = static_cast<uint16_t>(integer(2, 2));
-        const uint64_t startValue = integer(4, 4);
-        if (magic != 42 && magic != 0x4352) fail(DcpCompilerError::Malformed);
-        if (startValue < 8 || startValue > size - 2) fail(DcpCompilerError::Malformed);
-        const std::size_t start = static_cast<std::size_t>(startValue);
-        const uint64_t count = integer(start, 2);
-        if (count > 4096) fail(DcpCompilerError::Malformed);
-        const uint64_t endValue = uint64_t(start) + 2 + count * 12;
-        if (endValue > size - 4) fail(DcpCompilerError::Malformed);
-        const std::size_t end = static_cast<std::size_t>(endValue);
-        if (integer(end, 4) != 0) fail(DcpCompilerError::Malformed);
-
-        static constexpr std::array<std::size_t, 13> elementSizes = {
-            0, 1, 1, 2, 4, 8, 1, 1, 2, 4, 8, 4, 8};
+        uint32_t first = 0;
+        tiff::Directory directory;
+        // DCP 只接受一个非空起始目录，任何非零 next-offset 均按既有规则拒绝。
+        if (!container.header(first, 0x4352) || first < 8 ||
+            !container.directory(first, directory) || directory.next != 0) fail(DcpCompilerError::Malformed);
         std::size_t rationalCount = 0;
-        for (uint64_t index = 0; index < count; ++index) {
-            const std::size_t base = start + 2 + static_cast<std::size_t>(index) * 12;
-            const auto key = static_cast<uint16_t>(integer(base, 2));
-            const auto kind = static_cast<uint16_t>(integer(base + 2, 2));
-            const uint64_t length = integer(base + 4, 4);
+        if (!container.entries(directory, [&](const tiff::Entry& entry) {
+            const auto key = entry.tag, kind = entry.type;
+            const uint32_t length = entry.count;
             if (tags.find(key) != tags.end() || kind == 0 || kind > 12) fail(DcpCompilerError::Malformed);
-            const std::size_t width = elementSizes[kind];
-            if (length > std::numeric_limits<std::size_t>::max() / width) fail(DcpCompilerError::Malformed);
-            const std::size_t payloadSize = static_cast<std::size_t>(length) * width;
-            std::size_t offset = base + 8;
-            if (payloadSize > 4) {
-                const uint64_t location = integer(base + 8, 4);
-                if (location > size) fail(DcpCompilerError::Malformed);
-                offset = static_cast<std::size_t>(location);
-            }
-            if (offset > size || payloadSize > size - offset) fail(DcpCompilerError::Malformed);
+            tiff::Payload payload;
+            if (!container.payload(entry, payload)) fail(DcpCompilerError::Malformed);
+            const std::size_t offset = payload.offset;
             if ((kind == 5 || kind == 10)) {
                 if (length > size / 8 - rationalCount) fail(DcpCompilerError::TooLarge);
                 rationalCount += static_cast<std::size_t>(length);
@@ -115,15 +95,13 @@ struct Reader {
                 }
             }
             tags.emplace(key, Tag{kind, static_cast<uint32_t>(length), offset});
-        }
+            return true;
+        })) fail(DcpCompilerError::Malformed);
     }
 
     uint64_t integer(std::size_t offset, std::size_t width) const {
         uint64_t result = 0;
-        for (std::size_t index = 0; index < width; ++index) {
-            const std::size_t shift = (bigEndian ? width - 1 - index : index) * 8;
-            result |= uint64_t(bytes[offset + index]) << shift;
-        }
+        if (!container.integer(offset, width, result)) fail(DcpCompilerError::Malformed);
         return result;
     }
 

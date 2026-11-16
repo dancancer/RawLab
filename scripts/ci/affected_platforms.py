@@ -185,6 +185,11 @@ def verify(needs):
         result = needs.get(platform, {}).get("result")
         if result != expected:
             errors.append(f"{platform} finished as {result}, expected {expected}")
+    batch_selection = mode == "automatic" and checks == "models" and outputs.get("windows") == "true"
+    expected = "success" if batch_selection else "skipped"
+    result = needs.get("windows-batch-selection", {}).get("result")
+    if result != expected:
+        errors.append(f"windows-batch-selection finished as {result}, expected {expected}")
     return errors
 
 

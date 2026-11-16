@@ -6,18 +6,19 @@ extension EditorUITests {
         app.launchArguments += ["-RawLab.language", "zh-Hans"]
         app.launch()
         importPhoto(in: app)
-        app.buttons["tool.exposure"].tap()
         // 编辑器 V4 没有单项重置按钮；专用模拟器可能保留旧调整，只要求本次拖动产生新值。
-        let before = app.buttons["tool.exposure"].value as? String
+        let before = app.buttons["adjustment.value"].value as? String
         dragRuler(app.descendants(matching: .any)["adjustment.ruler"])
-        let saved = app.buttons["tool.exposure"].value as? String
+        let saved = app.buttons["adjustment.value"].value as? String
         XCTAssertNotNil(saved)
         XCTAssertNotEqual(saved, before)
+        applyEditorTool(in: app)
         // 编辑区只显示保存失败；工具栏导入前会同步保存，下面的恢复断言验证持久化结果。
         XCTAssertFalse(app.buttons["调整未保存 · 重试"].exists, app.debugDescription)
         importPhoto(in: app)
-        XCTAssertEqual(app.buttons["tool.exposure"].value as? String, saved,
+        XCTAssertEqual(app.buttons["adjustment.value"].value as? String, saved,
                        "The toolbar picker must restore edits saved through the empty-state picker")
+        cancelEditorTool(in: app)
 
         app.buttons["editor.privacy"].tap()
         app.buttons["collection.open"].tap()
@@ -306,16 +307,18 @@ extension EditorUITests {
         app.launchArguments += ["-RawLab.language", "zh-Hans"]
         app.launch()
         importPhoto(in: app)
-        app.buttons["tool.exposure"].tap()
-        app.buttons["重置曝光"].tap()
+        resetParameterDefault("adjustment", expectedValue: "0.00 EV", in: app)
         dragRuler(app.descendants(matching: .any)["adjustment.ruler"])
-        let savedExposure = app.buttons["tool.exposure"].value as? String
-        XCTAssertNotEqual(savedExposure, "+0.00 EV")
-        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "调整已保存")).firstMatch.waitForExistence(timeout: 10))
+        let savedExposure = app.buttons["adjustment.value"].value as? String
+        XCTAssertNotNil(savedExposure)
+        XCTAssertNotEqual(savedExposure, "0.00 EV")
+        applyEditorTool(in: app)
+        XCTAssertFalse(app.buttons["调整未保存 · 重试"].exists, app.debugDescription)
         app.terminate()
         app.launch()
         importPhoto(in: app)
-        XCTAssertEqual(app.buttons["tool.exposure"].value as? String, savedExposure)
+        XCTAssertEqual(app.buttons["adjustment.value"].value as? String, savedExposure)
+        cancelEditorTool(in: app)
         app.buttons["editor.export"].tap()
         XCTAssertTrue(app.buttons["editor.batchExport"].isEnabled, "Seed the simulator with a RAW photo, not an earlier JPEG export")
         app.buttons["使用当前调整批量导出…"].tap()

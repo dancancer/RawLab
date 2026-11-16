@@ -28,7 +28,7 @@ if($args[0] -eq 'msbuild'){
 }
 exit 0
 '@)
-$names=@('build','build-localization-ui','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','ai-panel','editor-shell','ui-details','geometry','transform-ui','adjustment-history','hsl-target','adjustment-presets','editor-review','tool-groups','workspace-looks','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default')
+$names=@('build','build-localization-ui','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','ai-panel','editor-shell','ui-details','geometry','transform-ui','adjustment-history','hsl-target','adjustment-presets','editor-review','tool-groups','workspace-looks','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default','batch-selection')
 $saved=@{};foreach($key in @('RAWLAB_RUNNER_CALLS','RAWLAB_RUNNER_TARGET','RAWLAB_RUNNER_FAIL')){$saved[$key]=[Environment]::GetEnvironmentVariable($key)}
 $checks=0;$index=0
 function Check([bool]$Success,[string]$Name){if(!$Success){throw $Name};$script:checks++;Write-Output "PASS $Name"}
@@ -72,6 +72,13 @@ try{
     $result=Run '' ''
     $expected=@($names[0..1])+@('target-RawLabWindows.Tests','target-LocalizationUiChecks')+@($names[2..($names.Count-1)])
     Check ($result.Code -eq 0 -and ($result.Rows.name -join ',') -eq ($expected -join ',') -and @($result.Rows | Where-Object {$_.exitCode -ne 0}).Count -eq 0 -and $result.Calls.Count -eq $names.Count+2) 'Empty selection runs the complete declared suite list successfully'
+    $result=Run 'batch-selection' ''
+    Check ($result.Code -eq 0 -and ($result.Rows.name -join ',') -eq 'build,build-localization-ui,target-RawLabWindows.Tests,target-LocalizationUiChecks,batch-selection') 'Batch selection runs alone after WPF build and layout prerequisites'
+    $last=ConvertFrom-Json $result.Calls[-1]
+    Check ($last.Count -eq 4 -and $last[0] -like '*RawLabWindows.Tests.dll' -and $last[1] -eq '--batch-selection' -and $last[2] -eq $root -and $last[3] -eq (Join-Path $root 'fixture.arw')) 'Batch selection receives its actual DLL mode, repository and RAW fixture'
+    foreach($name in @('sony2fuji.dll','raw.dll','ExifTool/sentinel')) {
+        Check (Test-Path (Join-Path $env:RAWLAB_RUNNER_TARGET "main/$name")) "Batch selection receives its runtime dependency: $name"
+    }
     $result=Run 'ai-panel' ''
     Check ($result.Code -eq 0 -and 'ai-panel' -in $result.Rows.name -and (ConvertFrom-Json $result.Calls[-1])[1] -eq '--ai-panel') 'AI panel is selectable without an installed model'
     $result=Run 'ai-window' ''

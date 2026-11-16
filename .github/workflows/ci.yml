@@ -476,7 +476,7 @@ jobs:
             $package = Join-Path $PWD 'build/RawLab-Windows'
             $env:PATH = "$package;$env:PATH"
             if ($env:RAWLAB_CI_NATIVE -eq 'true') {
-              $tests = '^(ai_device_abi|ai_device_policy|ai_diagnostics|atmosphere|atmosphere_api|basic_controls_v3|camera_raw_hdr|camera_white_balance|chroma_denoise|color_contracts|color_grading|color_grading_api|color_grading_recipe|cpu_parallel_determinism|cpu_workspace|d3d11_shader|d3d11_shader_cache|dcp_compiler|denoise_quality_metrics|denoise_quality_runner|display_lens|display_render|dji_raw|dng_jxl|dng_white_balance|dualdn_.*|eaw_denoise|eaw_failure|edit_recipe|edit_recipe_cli|edit_recipe_geometry|edit_recipe_perspective|edit_recipe_raster|edit_recipe_schema|agent_commands|agent_preview|geometry_api|geometry_cli|geometry_size|geometry_viewport|hdr_api_validation|hdr_display_shader_warp|hdr_half_float|hdr_portable_files|hdr_recipe_native_parity|hdr_recipe_roundtrip|hdr_render_bundled_silver|hdr_render_color|hdr_render_detail|hdr_render_effects|hdr_render_geometry|hdr_render_headroom_fusion|hdr_render_identity|hdr_render_look|hdr_render_look_cache_.*|hdr_render_move_reuse|hdr_render_parallel|hdr_render_rendition|hdr_render_tone|hdr_render_validation|hdr_render_white_balance|hdr_source_cache|hdr_stream|hdr_stream_api|hdr_stream_geometry|hsl_boundary|hsl_probe|hsl_wavelet_cache|image_stats|jpeg_mpf|lens_api|lens_correction|lens_database_cache|look_exactness|lut_compatibility|lut_contract|lut_contract_render|lut_gpu_no_backend|lut_guided_import|native_dcp_look|nikon_he_codec|noise_aware_sharpen|noise_aware_sharpen_cpu_only|noise_aware_sharpen_disabled|noise_aware_sharpen_failure|perspective|perspective_api|photo_color|photo_effects|photo_geometry|photo_geometry_exactness|preview_exposure_cache|processing_cancellation|processing_migration|processing_migration_api|processing_recipe|processing_session|processing_version|proraw_hdr|raw_active_area_metadata|raw_active_area_sony|raw_cache_preview|raw_demosaic|raw_formats|raw_info_cli|raw_noise_estimate|raw_thread_safety|rendered_dng|scene_rgb_adapter|session_boundary|sony_arw6|sony_arw6_bounds|tone_controls|tone_controls_api|tone_curve|tone_curve_api|tone_curve_recipe|tone_recipe|vng_parallel_multi|vng_parallel_single|wavelet_cache|wavelet_chroma|wavelet_denoise|wavelet_diagnostics|wavelet_diagnostics_disabled|wavelet_luminance|wavelet_noise_model|wavelet_render|wavelet_restore|windows_display_image|x3f_bridge_contracts|x3f_parallel_contracts|x3f_render)$'
+              $tests = '^(ai_device_abi|ai_device_policy|ai_diagnostics|atmosphere|atmosphere_api|basic_controls_v3|camera_raw_hdr|camera_white_balance|chroma_denoise|color_contracts|color_grading|color_grading_api|color_grading_recipe|cpu_parallel_determinism|cpu_workspace|d3d11_shader|d3d11_shader_cache|dcp_compiler|denoise_quality_metrics|denoise_quality_runner|display_lens|display_render|dji_raw|dng_jxl|dng_white_balance|dualdn_.*|eaw_denoise|eaw_failure|edit_recipe|edit_recipe_cli|edit_recipe_geometry|edit_recipe_perspective|edit_recipe_raster|edit_recipe_schema|agent_commands|agent_preview|geometry_api|geometry_cli|geometry_size|geometry_viewport|hdr_api_validation|hdr_display_shader_warp|hdr_half_float|hdr_portable_files|hdr_recipe_native_parity|hdr_recipe_roundtrip|hdr_render_bundled_silver|hdr_render_color|hdr_render_detail|hdr_render_effects|hdr_render_geometry|hdr_render_headroom_fusion|hdr_render_identity|hdr_render_look|hdr_render_look_cache_.*|hdr_render_move_reuse|hdr_render_parallel|hdr_render_rendition|hdr_render_tone|hdr_render_validation|hdr_render_white_balance|hdr_source_cache|hdr_stream|hdr_stream_api|hdr_stream_geometry|hsl_boundary|hsl_probe|hsl_wavelet_cache|image_stats|jpeg_mpf|lens_api|lens_correction|lens_database_cache|look_exactness|lut_compatibility|lut_contract|lut_contract_render|lut_gpu_no_backend|lut_guided_import|native_dcp_look|nikon_he_codec|noise_aware_sharpen|noise_aware_sharpen_cpu_only|noise_aware_sharpen_disabled|noise_aware_sharpen_failure|perspective|perspective_api|photo_color|photo_effects|photo_geometry|photo_geometry_exactness|preview_exposure_cache|processing_cancellation|processing_migration|processing_migration_api|processing_recipe|processing_session|processing_version|proraw_hdr|raw_active_area_metadata|raw_active_area_sony|raw_cache_preview|raw_demosaic|raw_formats|raw_info_cli|raw_noise_estimate|raw_thread_safety|rendered_dng|scene_rgb_adapter|session_boundary|sony_arw6|sony_arw6_bounds|tiff_ifd|tone_controls|tone_controls_api|tone_curve|tone_curve_api|tone_curve_recipe|tone_recipe|vng_parallel_multi|vng_parallel_single|wavelet_cache|wavelet_chroma|wavelet_denoise|wavelet_diagnostics|wavelet_diagnostics_disabled|wavelet_luminance|wavelet_noise_model|wavelet_render|wavelet_restore|windows_display_image|x3f_bridge_contracts|x3f_parallel_contracts|x3f_render)$'
               Invoke-Checked ctest @('--test-dir', 'build/windows-native', '-C', 'Release', '--output-on-failure', '--no-tests=error', '-R', $tests, '-E', '^dualdn_onnx(_skip)?$', '--output-junit', "$PWD/build/ci/windows-ctest.xml")
               Invoke-Checked python @('lutools/tests/test_dcp_compiler.py', 'build/windows-native/bin/Release/dcp_compiler_tests.exe')
               $raw = Join-Path $PWD 'lutools/examples/DJI_20250602164503_0444_D.DNG'
@@ -526,6 +526,117 @@ jobs:
             build/ci/runner-checks/**/*.log
             build/ci/runner-checks/**/*.json
             build/ci/runner-checks/**/*.jsonl
+          retention-days: 7
+
+  windows-batch-selection:
+    name: Windows batch-selection
+    needs: changes
+    if: >-
+      needs.changes.outputs.windows == 'true' &&
+      needs.changes.outputs.mode == 'automatic' &&
+      needs.changes.outputs.checks == 'models'
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      JOBS: '4'
+      CMAKE_BUILD_PARALLEL_LEVEL: '4'
+      UseMultiToolTask: 'true'
+      EnforceProcessCountAcrossBuilds: 'true'
+      CL_MPCount: '4'
+      RUSTUP_TOOLCHAIN: '1.99.1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '8.0.x'
+      - name: Identify dependency archive cache
+        id: dep-archives-key
+        shell: pwsh
+        run: |
+          $env:RAWLAB_SOURCE_ARCHIVE_CACHE = Join-Path $env:RUNNER_TEMP 'rawlab-ci/cache/rawlab-deps'
+          $env:RAWLAB_LENS_SOURCE_CACHE = Join-Path $env:RUNNER_TEMP 'rawlab-ci/cache/lens-sources'
+          @("RAWLAB_SOURCE_ARCHIVE_CACHE=$env:RAWLAB_SOURCE_ARCHIVE_CACHE", "RAWLAB_LENS_SOURCE_CACHE=$env:RAWLAB_LENS_SOURCE_CACHE") | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          python -m pip install -r scripts/ci/requirements.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot install CI Python requirements.' }
+          python scripts/ci/native_cache.py archives --platform windows --arch x86_64
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot identify dependency archive cache.' }
+      - name: Restore dependency archives
+        id: dep-archives-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.dep-archives-key.outputs.key }}
+          restore-keys: |
+            rawlab-dep-archives-v1-windows-x86_64-
+            rawlab-dep-archives-v1-
+          path: ${{ steps.dep-archives-key.outputs.path }}
+      - name: Build current-source native prerequisites for batch-selection
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force build/ci, build/windows-batch-selection | Out-Null
+          Start-Transcript -Path build/ci/windows-batch-selection-build.log
+          function Invoke-Checked([string]$Command, [string[]]$Arguments) {
+            & $Command @Arguments
+            if ($LASTEXITCODE -ne 0) { throw "$Command failed: $LASTEXITCODE" }
+          }
+          try {
+            Invoke-Checked git @('rev-parse', 'HEAD')
+            Invoke-Checked rustup @('toolchain', 'install', '1.99.1', '--profile', 'minimal', '--component', 'rust-docs')
+            Invoke-Checked python @('-m', 'pip', 'install', '-r', 'lutools/requirements-lutprep.txt')
+            $clang = Join-Path $env:RUNNER_TEMP 'rawlab-batch-libclang'
+            Invoke-Checked python @('-m', 'pip', 'install', '--target', $clang, 'libclang==18.1.1')
+            $env:LIBCLANG_PATH = "$clang/clang/native"
+            $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+            $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            if (!$vs) { throw 'Cannot locate the MSVC x64 toolchain.' }
+            $environment = & cmd.exe /d /s /c "`"$vs/VC/Auxiliary/Build/vcvars64.bat`" >nul && set"
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot initialize the MSVC x64 environment.' }
+            foreach ($line in $environment) {
+              if ($line -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process') }
+            }
+            $python = (Get-Command python).Source
+            Invoke-Checked cmake @('-S', 'RawLabWindows/native', '-B', 'build/windows-native', '-A', 'x64', '-DBUILD_TESTING=OFF', "-DPython3_EXECUTABLE=$python")
+            Invoke-Checked cmake @('--build', 'build/windows-native', '--config', 'Release', '--target', 'sony2fuji', '--parallel', '4')
+            $package = Join-Path $PWD 'build/windows-batch-selection'
+            Copy-Item build/windows-native/core/Release/sony2fuji.dll, build/windows-native/Release/raw.dll $package
+            $redist = Get-ChildItem "$vs/VC/Redist/MSVC" -Directory | Where-Object Name -Match '^\d+\.' | Sort-Object Name -Descending | Select-Object -First 1
+            foreach ($kind in @('*.CRT', '*.OpenMP')) {
+              $runtime = Get-ChildItem "$($redist.FullName)/x64" -Directory -Filter $kind | Select-Object -First 1
+              if (!$runtime) { throw "Cannot locate the MSVC runtime: $kind" }
+              Copy-Item "$($runtime.FullName)/*.dll" $package
+            }
+            & ./RawLabWindows/build-exiftool.ps1 -Output $package
+          }
+          finally { Stop-Transcript }
+      - name: Run only the batch-selection v08 suite
+        shell: pwsh
+        run: |
+          try {
+            & ./RawLabWindows/tests/run-v08.ps1 -RawPath "$PWD/lutools/examples/DJI_20250602164503_0444_D.DNG" -NativeArtifacts "$PWD/build/windows-batch-selection" -Only 'batch-selection'
+          }
+          finally {
+            Copy-Item build/windows-v08-results/*.log build/ci
+            Copy-Item build/windows-v08-results/summary.json build/ci/batch-selection-summary.json
+          }
+      - name: Save dependency archives
+        if: success() && steps.dep-archives-cache.outcome == 'success' && steps.dep-archives-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.dep-archives-key.outputs.key }}
+          path: ${{ steps.dep-archives-key.outputs.path }}
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: windows-batch-selection-results
+          path: |
+            build/ci/*.log
+            build/ci/*.json
           retention-days: 7
 
   android:
@@ -714,7 +825,7 @@ jobs:
 
   result:
     name: ${{ github.event_name == 'workflow_dispatch' && format('Manual verification ({0}, {1})', inputs.platform, inputs.checks) || 'CI result' }}
-    needs: [changes, contracts, macos, windows, android, ios]
+    needs: [changes, contracts, macos, windows, windows-batch-selection, android, ios]
     # Drafts defer platform checks, so their result stays skipped instead of reporting a pass.
     if: ${{ !cancelled() && needs.changes.outputs.draft != 'true' }}
     runs-on: ubuntu-24.04
