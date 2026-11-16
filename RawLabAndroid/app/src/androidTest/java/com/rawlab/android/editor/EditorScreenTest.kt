@@ -30,6 +30,7 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import com.rawlab.android.MainActivity
+import com.rawlab.android.R
 import com.rawlab.android.batch.BatchJob
 import com.rawlab.android.batch.journal.BatchJournal
 import com.rawlab.android.batch.BatchPhase
@@ -43,6 +44,8 @@ import com.rawlab.android.settings.HslSettings
 import com.rawlab.android.settings.LensSettings
 import com.rawlab.android.settings.PhotoEffectsSettings
 import com.rawlab.android.settings.PhotoIdentity
+import com.rawlab.android.testing.openWorkbenchTool
+import com.rawlab.android.testing.returnToWorkbench
 import com.rawlab.android.testing.LanguageTestRule
 
 class EditorScreenTest {
@@ -74,32 +77,40 @@ class EditorScreenTest {
         compose.waitUntil(180_000) { model.state.value.canExport || model.state.value.error != null }
         assertNull(model.state.value.error)
         assertEquals("velvia", model.state.value.edits.film)
-        compose.onNodeWithText("强度").performClick()
-        compose.onNodeWithTag("adjustment-slider").performSemanticsAction(SemanticsActions.SetProgress) { it(200f) }
+        compose.openWorkbenchTool(0)
+        compose.onNodeWithTag("adjustment-slider").performScrollTo().performSemanticsAction(SemanticsActions.SetProgress) { it(200f) }
+        compose.waitUntil(180_000) { model.state.value.visibleEdits.strength == 2f || model.state.value.error != null }
+        // look strength 的语义 SetProgress 按当前产品契约直写提交值（LOOK draft 不隔离子参数）；断言锚定可观察直写行为。
+        val afterSlider = model.state.value
+        assertEquals(2f, afterSlider.visibleEdits.strength)
+        assertEquals(2f, afterSlider.edits.strength)
+        assertNull(afterSlider.error)
+        compose.onNodeWithTag("draft.cancel").performClick()
         compose.waitUntil(180_000) { model.state.value.canExport || model.state.value.error != null }
         assertEquals(2f, model.state.value.edits.strength)
         assertNull(model.state.value.error)
-        compose.onNodeWithContentDescription("对比").performClick()
+        compose.openWorkbenchTool(2)
+        compose.onNodeWithContentDescription("开启对比").performClick()
+        compose.onNodeWithTag("comparison-mode").performClick()
+        compose.onNodeWithText(compose.activity.getString(R.string.editor_compare_wipe)).performClick()
         compose.onNodeWithTag("comparison-wipe").assertExists().performSemanticsAction(SemanticsActions.SetProgress) { it(.3f) }
-        compose.onNodeWithContentDescription("收起调整栏").performClick()
+        compose.onNodeWithTag("draft.cancel").performClick()
         compose.onNodeWithText("色温").assertDoesNotExist()
         compose.onNodeWithTag("adjustment-slider").assertDoesNotExist()
         capture("editor-collapsed.png")
-        compose.onNodeWithContentDescription("展开调整栏").performClick()
-        compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-color"))
-        compose.onNodeWithTag("editor-group-color").performClick()
-        compose.onNodeWithContentDescription("白平衡").performClick()
+        compose.openWorkbenchTool(8)
         compose.onNode(hasTestTag("adjustment-slider") and hasContentDescription("色温")).performScrollTo().assertIsDisplayed()
         compose.onNode(hasTestTag("adjustment-slider") and hasContentDescription("色调")).performScrollTo().assertIsDisplayed()
         capture("editor-tint.png")
-        compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-looks"))
-        compose.onNodeWithTag("editor-group-looks").performClick()
+        compose.openWorkbenchTool(0)
         compose.waitForIdle()
         capture("editor-comparison.png")
+        compose.returnToWorkbench()
         val empty = File(instrumentation.targetContext.cacheDir, "empty-test.dng").apply { writeBytes(byteArrayOf()) }
         compose.runOnUiThread { model.importPhoto(Uri.fromFile(empty)) }
-        compose.waitUntil(10_000) { model.state.value.operation == Operation.NONE }
+        compose.waitUntil(10_000) { model.state.value.error != null || model.state.value.photo != original }
         assertNotNull(model.state.value.error)
+        compose.waitUntil(30_000) { model.state.value.operation == Operation.NONE }
         assertEquals(original, model.state.value.photo)
         assertTrue(model.state.value.canExport)
         val savedEdits = model.state.value.edits
