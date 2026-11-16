@@ -302,7 +302,7 @@ internal static class PhotoFeatureChecks
             }
             var native = engine.Render(source, current.Restore(), null, 0)!;
             var large = Path.Combine(output, "no-enlargement.jpg");
-            engine.Render(source, current.Restore(), null, 0, output: large, longEdge: 65535);
+            engine.Render(source, current.Restore(), null, 0, output: large, longEdge: 65500);
             var largeImage = ReadImage(large);
             Check(largeImage.PixelWidth == native.Image.PixelWidth && largeImage.PixelHeight == native.Image.PixelHeight,
                 "Windows actual RAW export never enlarges smaller sources");

@@ -27,7 +27,7 @@ struct ExportSizePicker: View {
                 HStack(spacing: 8) {
                     Text(L10n.text("长边"))
                     TextField(L10n.text("像素"), value: Binding(get: { longEdge ?? 2048 }, set: {
-                        longEdge = min(65535, max(1, $0))
+                        longEdge = min(65500, max(1, $0))
                     }), format: .number.grouping(.never))
                         .frame(width: 80).textFieldStyle(.roundedBorder).accessibilityLabel(L10n.text("导出长边像素"))
                     Text("px").foregroundStyle(.secondary)

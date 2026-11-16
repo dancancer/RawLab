@@ -15,7 +15,7 @@ internal enum class ExportSizeChoice(val key: String, val longEdge: Int?) {
 
 internal object ExportSize {
     const val MIN_LONG_EDGE = 1
-    const val MAX_LONG_EDGE = 65535
+    const val MAX_LONG_EDGE = 65500
 
     fun isValid(longEdge: Int?): Boolean = longEdge == null || longEdge in MIN_LONG_EDGE..MAX_LONG_EDGE
 

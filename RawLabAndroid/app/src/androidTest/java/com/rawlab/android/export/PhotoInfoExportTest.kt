@@ -149,7 +149,7 @@ class PhotoInfoExportTest {
                 }
                 val native = File(root, "native.jpg"); val capped = File(root, "no-enlarge.jpg")
                 processor.export(source, null, EditSettings(), native, ExportFormat.JPEG)
-                processor.export(source, null, EditSettings(), capped, ExportFormat.JPEG, 65535)
+                processor.export(source, null, EditSettings(), capped, ExportFormat.JPEG, 65500)
                 val a = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 val b = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeFile(native.path, a); BitmapFactory.decodeFile(capped.path, b)

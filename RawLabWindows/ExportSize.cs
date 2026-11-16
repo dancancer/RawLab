@@ -5,7 +5,7 @@ namespace RawLab.Windows;
 public static class ExportSize
 {
     public const int MinimumLongEdge = 1;
-    public const int MaximumLongEdge = 65535;
+    public const int MaximumLongEdge = 65500;
 
     public static bool IsValid(int value) => value is >= MinimumLongEdge and <= MaximumLongEdge;
     public static int? Parse(string? value) => int.TryParse(value, out var edge) && IsValid(edge) ? edge : null;

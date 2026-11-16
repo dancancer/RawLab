@@ -18,6 +18,7 @@
 #include <iostream>
 #include <memory>
 #include <cstring>
+#include <cstddef>
 #include <cstdio>
 #include <fstream>
 #include <array>
@@ -25,6 +26,8 @@
 #include <new>
 #include <system_error>
 #include <zlib.h>
+#include <jpeglib.h>
+#include <jerror.h>
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -51,11 +54,6 @@
 #include <dng_host.h>
 #endif
 
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#ifdef _WIN32
-#define STBIW_WINDOWS_UTF8
-#endif
-#include "stb_image_write.h"
 #include "rendered_dng.h"
 
 namespace sony2fuji {
@@ -1133,66 +1131,65 @@ private:
     bool published_ = false;
 };
 
-struct JpegWriteContext {
-    static constexpr size_t kCancelCheckBytes = 16384;
+// libjpeg-turbo 扫描线编码器：写入 EncodedStagingFile 的暂存 FILE（stdio 目标管理器），
+// 取消信号在扫描线边界即时中止（ProcessingCancelled 沿栈展开，析构删 .tmp），
+// ERREXIT 经 setjmp 分类为 IO/内存/处理错误；流式写出，无整帧偏移量索引。
+struct TurboJpegEncoder {
+    jpeg_compress_struct codec{};
+    jpeg_error_mgr manager{};
+    std::jmp_buf jump{};
     std::FILE* file = nullptr;
-    size_t bytesSinceCheck = 0;
-    bool failed = false;
-    bool cancelled = false;
-    std::exception_ptr exception;
-    std::jmp_buf abortJump{};
+    bool outOfMemory = false;
 
-    static void write(void* context, void* data, int size) {
-        auto* state = static_cast<JpegWriteContext*>(context);
-        if (!state || state->failed || state->cancelled) return;
-        if (!state->file || size < 0) {
-            state->failed = true;
-            return;
+    explicit TurboJpegEncoder(std::FILE* destination) : file(destination) {}
+    ~TurboJpegEncoder() { jpeg_destroy_compress(&codec); }
+
+    static void fail(j_common_ptr codec) {
+        auto* self = reinterpret_cast<TurboJpegEncoder*>(
+            reinterpret_cast<char*>(codec->err) - offsetof(TurboJpegEncoder, manager));
+        self->outOfMemory = codec->err->msg_code == JERR_OUT_OF_MEMORY;
+        std::longjmp(self->jump, 1);
+    }
+
+    // 返回 false 表示 libjpeg 报错：按 outOfMemory 或 FILE 错误位分类。
+    bool encode(int width, int height, const uint8_t* data, int quality) {
+        codec.err = jpeg_std_error(&manager);
+        manager.error_exit = &TurboJpegEncoder::fail;
+        if (setjmp(jump) != 0) return false;
+        jpeg_create_compress(&codec);
+        jpeg_stdio_dest(&codec, file);
+        codec.image_width = static_cast<JDIMENSION>(width);
+        codec.image_height = static_cast<JDIMENSION>(height);
+        codec.input_components = 3;
+        codec.in_color_space = JCS_RGB;
+        jpeg_set_defaults(&codec);
+        const int effectiveQuality = std::clamp(quality, 1, 100);
+        // 基线表，与旧 stb 写出同语义。
+        jpeg_set_quality(&codec, effectiveQuality, TRUE);
+        // stb 参考语义：q<=90 用 4:2:0，q>90 用 4:4:4；对齐采样因子，
+        // 避免高质量导出的色彩细节相对旧管线回退。
+        const bool subsample = effectiveQuality <= 90;
+        codec.comp_info[0].h_samp_factor = subsample ? 2 : 1;
+        codec.comp_info[0].v_samp_factor = subsample ? 2 : 1;
+        for (int component = 1; component < codec.num_components; ++component) {
+            codec.comp_info[component].h_samp_factor = 1;
+            codec.comp_info[component].v_samp_factor = 1;
         }
-        if (size == 0) return;
-        const size_t expected = static_cast<size_t>(size);
-        state->bytesSinceCheck += expected;
-        if (state->bytesSinceCheck >= kCancelCheckBytes) {
-            state->bytesSinceCheck = 0;
-            try {
-                if (processingCancellation.cancelled()) {
-                    state->cancelled = true;
-                    std::longjmp(state->abortJump, 1);
-                }
-            } catch (...) {
-                state->exception = std::current_exception();
-                std::longjmp(state->abortJump, 1);
-            }
+        jpeg_start_compress(&codec, TRUE);
+        // 行首指针用 size_t 步长：>2GiB 输入缓冲（约 715.8MP 上限 × 3B）无 int 溢出。
+        const size_t rowBytes = static_cast<size_t>(width) * 3u;
+        while (codec.next_scanline < static_cast<JDIMENSION>(height)) {
+            checkProcessingCancellation();
+            JSAMPROW row = const_cast<JSAMPLE*>(data) + static_cast<size_t>(codec.next_scanline) * rowBytes;
+            jpeg_write_scanlines(&codec, &row, 1);
         }
-        if (std::fwrite(data, 1, expected, state->file) != expected) {
-            state->failed = true;
-        }
+        jpeg_finish_compress(&codec);
+        return true;
     }
 };
 
-int writeJpegStream(
-    JpegWriteContext& context,
-    int width,
-    int height,
-    const uint8_t* data,
-    int quality
-) {
-    if (setjmp(context.abortJump) != 0) {
-        return 0;
-    }
-    return stbi_write_jpg_to_func(
-        &JpegWriteContext::write,
-        &context,
-        width,
-        height,
-        3,
-        data,
-        quality
-    );
-}
-
 } // namespace
-
+static_assert(JPEG_MAX_DIMENSION == 65500, "libjpeg-turbo dimension ceiling matches SDR JPEG contract");
 ErrorCode ImageEncoder::saveJPEG(
     const ImageData& image,
     const std::string& filepath,
@@ -1200,7 +1197,7 @@ ErrorCode ImageEncoder::saveJPEG(
 ) {
     if (filepath.empty() || filepath.find('\0') != std::string::npos ||
         image.width <= 0 || image.height <= 0 ||
-        image.width > 65535 || image.height > 65535 ||
+        image.width > 65500 || image.height > 65500 ||
         image.pixels.empty() ||
         image.pixels.size() != static_cast<size_t>(image.width) * static_cast<size_t>(image.height)) {
         return ErrorCode::ProcessingError;
@@ -1250,29 +1247,11 @@ ErrorCode ImageEncoder::saveJPEG(
             return ErrorCode::IOError;
         }
 
-        JpegWriteContext writeContext{};
-        writeContext.file = staging.file();
-        const int result = writeJpegStream(
-            writeContext,
-            image.width,
-            image.height,
-            data.data(),
-            quality
-        );
-
-        if (writeContext.exception) {
-            std::rethrow_exception(writeContext.exception);
-        }
-        if (writeContext.cancelled) {
-            throw ProcessingCancelled();
-        }
-        if (writeContext.failed) {
+        TurboJpegEncoder encoder(staging.file());
+        if (!encoder.encode(image.width, image.height, data.data(), quality)) {
             std::cerr << "保存 JPEG 失败: " << filepath << std::endl;
-            return ErrorCode::IOError;
-        }
-        if (result == 0) {
-            std::cerr << "保存 JPEG 失败: " << filepath << std::endl;
-            return ErrorCode::ProcessingError;
+            if (encoder.outOfMemory) return ErrorCode::OutOfMemory;
+            return std::ferror(staging.file()) != 0 ? ErrorCode::IOError : ErrorCode::ProcessingError;
         }
         // 提交点：编码完成后、替换目标文件之前再看一次取消。
         checkProcessingCancellation();

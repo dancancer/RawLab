@@ -392,12 +392,32 @@ int main() {
             const auto overwriteUmask = ::umask(022);
             (void)::chmod(target.c_str(), 0640);
 #endif
+            struct StagingPollCounter {
+                std::filesystem::path directory;
+                std::atomic<int> count{0};
+            } stagingCounter{root};
+            sony2fuji_session_set_cancellation_callback(session, +[](void* context) -> int32_t {
+                auto& state = *static_cast<StagingPollCounter*>(context);
+                std::error_code error;
+                for (std::filesystem::directory_iterator it(state.directory, error), last;
+                     !error && it != last; it.increment(error)) {
+                    if (isStagingFile(it->path())) {
+                        state.count.fetch_add(1, std::memory_order_relaxed);
+                        break;
+                    }
+                }
+                return 0;
+            }, &stagingCounter);
             sony2fuji_buffer published{};
             const auto publishStatus = sony2fuji_process(session, &exportRequest, &published);
+            sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr);
 #ifndef _WIN32
             ::umask(overwriteUmask);
 #endif
-            check(publishStatus == SONY2FUJI_STATUS_OK,
+            const int expectedStagingPolls = exportCase.format == SONY2FUJI_OUTPUT_JPEG
+                ? static_cast<int>(exportRequest.target_height) + 1
+                : 1;
+            check(publishStatus == SONY2FUJI_STATUS_OK && stagingCounter.count.load() == expectedStagingPolls,
                 "The session exports the same FINAL request successfully after a cancellation");
             sony2fuji_release_buffer(&published);
             const auto written = readFile(target);
@@ -405,12 +425,16 @@ int main() {
                   std::equal(exportCase.magic.begin(), exportCase.magic.end(), written.begin()),
                 "A completed FINAL export replaces the target with the encoded file");
             {
-                // Flip cancellation to true right as execution passes the pre-rename commit point:
-                // once committed, late cancellation must neither delete the file nor alter OK status.
+                // Flip cancellation to true right as execution passes the pre-rename commit point
+                // (the N-th staging poll observed during a full export): once committed, late
+                // cancellation must neither delete the file nor alter OK status.
+                writeFile(target, existing);
                 struct PostCommitFlip {
                     std::filesystem::path directory;
+                    int commitPoll = 0;
+                    std::atomic<int> seen{0};
                     std::atomic<bool> armed{false};
-                } flip{root};
+                } flip{root, stagingCounter.count.load()};
                 sony2fuji_session_set_cancellation_callback(session, +[](void* context) -> int32_t {
                     auto& state = *static_cast<PostCommitFlip*>(context);
                     if (state.armed.load(std::memory_order_acquire)) return 1;
@@ -418,20 +442,29 @@ int main() {
                     for (std::filesystem::directory_iterator it(state.directory, error), last;
                          !error && it != last; it.increment(error)) {
                         if (isStagingFile(it->path())) {
-                            state.armed.store(true, std::memory_order_release);
+                            if (state.seen.fetch_add(1, std::memory_order_acq_rel) + 1 >= state.commitPoll) {
+                                state.armed.store(true, std::memory_order_release);
+                            }
                             return 0;
                         }
                     }
                     return 0;
                 }, &flip);
+#ifndef _WIN32
+                const auto postCommitUmask = ::umask(022);
+#endif
                 sony2fuji_buffer postCommitOut{};
                 const auto postCommitStatus = sony2fuji_process(session, &exportRequest, &postCommitOut);
+#ifndef _WIN32
+                ::umask(postCommitUmask);
+#endif
                 sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr);
                 sony2fuji_release_buffer(&postCommitOut);
                 const auto committedBytes = readFile(target);
                 const std::string postCommitLabel = std::string("FINAL ") + exportCase.label +
                     " cancellation after the commit point preserves OK status and published bytes";
-                check(flip.armed.load() && postCommitStatus == SONY2FUJI_STATUS_OK &&
+                check(flip.commitPoll > 0 && flip.armed.load() && flip.seen.load() == flip.commitPoll &&
+                      postCommitStatus == SONY2FUJI_STATUS_OK &&
                       committedBytes == written && stagingResidue(root) == 0,
                     postCommitLabel.c_str());
             }
