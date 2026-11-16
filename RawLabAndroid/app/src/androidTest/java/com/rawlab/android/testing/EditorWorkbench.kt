@@ -14,6 +14,13 @@ fun ComposeTestRule.returnToWorkbench() {
     onNodeWithTag("editor-groups").assertIsDisplayed()
 }
 
+fun ComposeTestRule.requestWorkbenchLeave() {
+    InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+    val title = com.rawlab.android.i18n.AppStrings.text(com.rawlab.android.R.string.adjustment_leave)
+    waitUntil(5_000) { onAllNodesWithText(title).fetchSemanticsNodes().isNotEmpty() }
+    onNodeWithText(title).assertIsDisplayed()
+}
+
 fun ComposeTestRule.selectWorkbenchGroup(group: String) {
     returnToWorkbench()
     onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-$group"))
@@ -59,6 +66,13 @@ fun ComposeTestRule.openEditorMenu() {
 fun ComposeTestRule.toggleWorkbenchFine() {
     openWorkbenchMore()
     onNodeWithTag("adjustment-fine").assertIsDisplayed().performClick()
+}
+
+fun ComposeTestRule.assertWorkbenchFine(selected: Boolean) {
+    openWorkbenchMore()
+    val item = onNodeWithTag("adjustment-fine").assertIsDisplayed().assertHasClickAction()
+    if (selected) item.assertIsSelected() else item.assertIsNotSelected()
+    dismissWorkbenchMenu()
 }
 
 fun ComposeTestRule.toggleWorkbenchHistogram() {
