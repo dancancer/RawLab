@@ -35,37 +35,51 @@ struct TextFitTests {
         NSHostingView(rootView: Text(text).font(.system(size: size)).fixedSize()).fittingSize.width
     }
 
-    @MainActor static func fittingHeight(_ text: String, size: CGFloat, width: CGFloat) -> CGFloat {
+    @MainActor static func fittingSize(_ text: String, size: CGFloat, width: CGFloat) -> NSSize {
         let view = NSHostingView(rootView: Text(text).font(.system(size: size)).multilineTextAlignment(.center)
             .frame(width: width).fixedSize(horizontal: false, vertical: true))
-        return view.fittingSize.height
+        return view.fittingSize
     }
 
     // ------------------------------------------------------------------------
-    //  配方卡片的说明行数有上限，上限内的每一行都要完整显示，不能被截成省略号
+    //  配方卡片在最窄调整栏三列网格下自然换行完整排版，不被固定高度截成省略号
     // ------------------------------------------------------------------------
     @MainActor static func recipeSubtitles(_ root: URL, _ catalogs: [String: [String: String]]) -> [String] {
-        struct Recipe: Decodable { let subtitle: String }
+        struct Recipe: Decodable { let name: String; let subtitle: String }
         let data = (try? Data(contentsOf: root.appendingPathComponent("Shared/master-recipes.json"))) ?? Data()
-        let keys = ((try? JSONDecoder().decode([Recipe].self, from: data)) ?? []).map(\.subtitle) + ["中性直出"]
+        let recipes = (try? JSONDecoder().decode([Recipe].self, from: data)) ?? []
+        let titles = ["无配方"] + recipes.map(\.name)
+        let subtitles = ["中性直出"] + recipes.map(\.subtitle)
         let card = AdjustmentPanelLayout.RecipeCard.self
-        let lines = fittingHeight((1...card.subtitleLines).map(String.init).joined(separator: "\n"),
-                                  size: card.subtitleSize, width: card.width)
+        let textWidth = card.textWidth(inspectorWidth: MacWorkspaceLayout.inspectorRange.lowerBound)
         var failures: [String] = []
-        if lines > card.subtitleHeight {
-            failures.append("\(card.subtitleLines) subtitle lines need \(lines) pt, the card gives \(card.subtitleHeight) pt")
+        if card.columns != 3 || card.artworkSize != 46 {
+            failures.append("recipe grid layout (\(card.columns) columns, \(card.artworkSize) pt artwork) must match film grid")
         }
-        if card.dockHeight - 16 < 32 + card.textHeight(subtitle: true) {
-            failures.append("the recipe dock is too short to show subtitles")
+        if textWidth <= card.artworkSize {
+            failures.append("narrow recipe column text width \(textWidth) pt is too narrow")
         }
+        let oneTitleLine = fittingSize("A", size: card.titleSize, width: textWidth).height
+        let oneSubtitleLine = fittingSize("A", size: card.subtitleSize, width: textWidth).height
         for language in languages {
-            for key in keys {
+            for key in titles {
                 let text = catalogs[language]?[key] ?? key
-                let needed = fittingHeight(text, size: card.subtitleSize, width: card.width)
-                if needed > max(lines, card.subtitleHeight) { failures.append("\(language): \(text) needs \(needed) pt") }
+                let size = fittingSize(text, size: card.titleSize, width: textWidth)
+                if size.height <= 0 || size.height > oneTitleLine * 2 + 0.5 || size.width > ceil(textWidth) + 0.5 {
+                    failures.append("\(language): title '\(text)' measured \(size) at width \(textWidth)")
+                }
+            }
+            for key in subtitles {
+                let text = catalogs[language]?[key] ?? key
+                let size = fittingSize(text, size: card.subtitleSize, width: textWidth)
+                if size.height < oneSubtitleLine - 0.5 || size.height > oneSubtitleLine * 6 + 0.5 || size.width > ceil(textWidth) + 0.5 {
+                    failures.append("\(language): subtitle '\(text)' measured \(size) at width \(textWidth)")
+                }
             }
         }
-        if failures.isEmpty { print("PASS: recipe subtitles fit \(card.subtitleLines) lines in every language") }
+        if failures.isEmpty {
+            print("PASS: recipe titles and subtitles fit 3-column narrow grid (\(textWidth) pt) in every language")
+        }
         return failures
     }
 

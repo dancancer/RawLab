@@ -253,7 +253,7 @@ extension EditorModel {
 
     func selectMasterRecipe(_ recipe: MasterRecipe?) {
         guard geometryDraft == nil,!settings.isHDREditing else { return }
-        guard recipe != nil || settings.masterRecipeID != nil else { return }
+        guard recipe?.id != settings.masterRecipeID else { return }
         updatingMetadata = true
         if let recipe {
             settings.applyMasterRecipe(recipe)

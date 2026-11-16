@@ -254,7 +254,7 @@ struct AdjustmentDock: View {
             if parameter.isWhiteBalance { whiteBalance }
             else { parameterRow(parameter) }
         } else if tool == .recipe {
-            MasterRecipeDock(model: model).frame(height: AdjustmentPanelLayout.RecipeCard.dockHeight)
+            MasterRecipeDock(model: model)
         } else if tool == .film {
             FilmDock(model: model)
         }

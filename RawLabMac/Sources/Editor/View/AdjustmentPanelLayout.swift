@@ -85,21 +85,21 @@ struct MacWorkspaceLayout {
 enum AdjustmentPanelLayout {}
 
 // ----------------------------------------------------------------------------
-//  大师配方卡片：名称最多两行，说明最多三行（德、法、西文的说明在 112 pt 宽时要三行）
-//  卡片铺满默认高度面板的内容区，图下留出完整的文字高度，文字不再被截成省略号
+//  大师配方卡片：与胶片一致的三列纵向网格，文字随宽度自然换行，不固定高度截断
 // ----------------------------------------------------------------------------
 extension AdjustmentPanelLayout {
     enum RecipeCard {
-        static let dockHeight: CGFloat = 136
-        static let width: CGFloat = 112
-        static let titleHeight: CGFloat = 28
+        static let columns = 3
+        static let columnSpacing: CGFloat = 5
+        static let rowSpacing: CGFloat = 7
+        static let cardPadding: CGFloat = 4
+        static let artworkSize: CGFloat = 46
+        static let titleSize: CGFloat = 11
         static let subtitleSize: CGFloat = 10
-        static let subtitleLines = 3
-        static let subtitleHeight: CGFloat = 39
 
-        // 图片上下留白 5 + 3，名称与说明间隔 2
-        static func textHeight(subtitle: Bool) -> CGFloat {
-            8 + titleHeight + (subtitle ? 2 + subtitleHeight : 0)
+        static func textWidth(inspectorWidth: CGFloat, sectionHorizontalPadding: CGFloat = 20) -> CGFloat {
+            let gridWidth = inspectorWidth - sectionHorizontalPadding - columnSpacing * CGFloat(columns - 1)
+            return max(0, gridWidth / CGFloat(columns) - cardPadding * 2)
         }
     }
 }

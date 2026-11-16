@@ -70,10 +70,15 @@ struct CompactControlsPresentationTests {
         (view as? NumericTextField).map { [$0] } ?? view.subviews.flatMap { fields(in: $0) }
     }
 
+    @MainActor private static func hasSubview<T: NSView>(ofType _: T.Type, in view: NSView) -> Bool {
+        view is T || view.subviews.contains { hasSubview(ofType: T.self, in: $0) }
+    }
+
     @MainActor private static func snapshot<V: View>(
         _ view: V, name: String, language: AppLanguage, size: NSSize,
         expectedFields: Int, output: URL, renderModel: EditorModel? = nil, textSize: DynamicTypeSize = .large,
-        expectedIdentifiers: Set<String>? = nil
+        expectedIdentifiers: Set<String>? = nil,
+        verifyHost: ((NSView) throws -> Void)? = nil
     ) async throws -> SnapshotEvidence {
         let host = NSHostingView(rootView: view.dynamicTypeSize(textSize).environment(\.locale, Locale(identifier: language.rawValue))
             .preferredColorScheme(.dark))
@@ -90,6 +95,7 @@ struct CompactControlsPresentationTests {
         if let renderModel { try await waitForRender(renderModel) }
         host.layoutSubtreeIfNeeded()
         host.displayIfNeeded()
+        try verifyHost?(host)
 
         guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
             throw RenderError.failed("\(name): view bitmap unavailable")
@@ -319,10 +325,27 @@ struct CompactControlsPresentationTests {
                 .frame(width: 650, height: 200, alignment: .top).background(Color(nsColor: .windowBackgroundColor)),
                 name: "grain-workspace-650", language: language, size: NSSize(width: 650, height: 200),
                 expectedFields: 3, output: output))
-            snapshots.append(try await snapshot(MasterRecipeDock(model: model)
-                .frame(width: 650, height: 124).background(Color(nsColor: .windowBackgroundColor)),
-                name: "recipes-workspace-650", language: language, size: NSSize(width: 650, height: 124),
-                expectedFields: 0, output: output))
+            let recipeProbe = EditorModel(lookDirectory: state.appendingPathComponent("recipe-looks-\(language.rawValue)"),
+                                          editDirectory: state.appendingPathComponent("recipe-edits-\(language.rawValue)"),
+                                          batchDirectory: state.appendingPathComponent("recipe-batch-\(language.rawValue)"))
+            recipeProbe.selectMasterRecipe(.hamadaDaylightV2)
+            recipeProbe.settings.exposure = 1.15
+            recipeProbe.selectMasterRecipe(.hamadaDaylightV2)
+            guard recipeProbe.settings.exposure == 1.15,
+                  recipeProbe.settings.masterRecipeID == MasterRecipe.hamadaDaylightV2.id else {
+                throw RenderError.failed("\(language.rawValue): reselecting active recipe reset manual adjustments")
+            }
+            snapshots.append(try await snapshot(ScrollView {
+                MasterRecipeDock(model: recipeProbe).padding(10)
+            }.frame(width: MacWorkspaceLayout.defaultInspectorWidth, height: 420)
+                .background(Color(nsColor: .windowBackgroundColor)),
+                name: "recipes-workspace-304", language: language,
+                size: NSSize(width: MacWorkspaceLayout.defaultInspectorWidth, height: 420),
+                expectedFields: 0, output: output) { host in
+                guard !hasSubview(ofType: HorizontalPickerScrollBridgeView.self, in: host) else {
+                    throw RenderError.failed("recipes-workspace-304: MasterRecipeDock must not embed HorizontalPicker")
+                }
+            })
             guard model.beginGeometryDraft() else { throw RenderError.failed("Could not begin geometry draft") }
             model.updateGeometryDraft { geometry in
                 geometry.cropX = 0.08; geometry.cropY = 0.12
