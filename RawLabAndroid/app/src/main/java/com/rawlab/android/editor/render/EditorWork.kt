@@ -93,6 +93,11 @@ internal sealed interface WorkResult {
     data object Export : WorkResult
     data class AutoExposure(val request: Work.AutoExposure, val exposure: Float) : WorkResult
 }
+
+internal fun Work.canFinishPreviewBefore(next: Work): Boolean =
+    this is Work.Preview && next is Work.Preview && interactive && next.interactive &&
+        !importing && !next.importing && photo == next.photo && draft == next.draft && gpuMode == next.gpuMode
+
 internal fun interface ExportDestinationDeleter {
     fun deleteIncomplete(destination: Uri, original: Uri?)
 }
