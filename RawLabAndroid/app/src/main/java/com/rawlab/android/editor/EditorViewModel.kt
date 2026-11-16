@@ -1405,6 +1405,10 @@ class EditorViewModel @JvmOverloads constructor(
             else session.redoPhoto(request.photo, request.transactionID, ::adjustmentTargetIsCurrent)
             outcomes
         }) { outcome ->
+            (outcome.exceptionOrNull() as? AdjustmentTransferException)?.takeIf { it.reason == AdjustmentFailure.DRAFT }?.let {
+                // 门控忙拒收不弹历史面板（k161 遗留），提示改走既有非阻塞 Snackbar（state.message）。
+                mutable.value = mutable.value.copy(message = adjustmentErrorMessage(it))
+            }
             val results = outcome.getOrElse { listOf(AdjustmentOutcome(request.photo?.value.orEmpty(), AdjustmentStatus.FAILED, error = it)) }
             val accepted = acceptAdjustmentOutcomes(results, expectedSourceToken = expectedSourceToken)
             mutableAdjustmentTransfer.value = mutableAdjustmentTransfer.value.copy(historyRequest = request, historyResults = accepted)

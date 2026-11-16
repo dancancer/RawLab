@@ -44,6 +44,10 @@ import com.rawlab.android.analytics.setup.UsageAnalyticsRegistry
 import com.rawlab.android.batch.ui.BatchSelectionScreen
 import com.rawlab.android.batch.ui.BatchExportScreen
 import com.rawlab.android.editor.EditorViewModel
+import com.rawlab.android.adjustments.AdjustmentFailure
+import com.rawlab.android.adjustments.AdjustmentOutcome
+import com.rawlab.android.adjustments.AdjustmentStatus
+import com.rawlab.android.adjustments.AdjustmentTransferException
 import com.rawlab.android.photo.SystemPhotoIntent
 import com.rawlab.android.editor.PendingDcpImport
 import com.rawlab.android.editor.PendingLookCompatibility
@@ -136,9 +140,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
     var presetAction by remember { mutableStateOf<AdjustmentPresetAction?>(null) }
     fun history(undo: Boolean) {
         model.performAdjustmentHistory(undo, completed = { results ->
-            if (results.any { it.status in setOf(com.rawlab.android.adjustments.AdjustmentStatus.BLOCKED,
-                    com.rawlab.android.adjustments.AdjustmentStatus.CONFLICT, com.rawlab.android.adjustments.AdjustmentStatus.FAILED) })
-                adjustmentSheet = AdjustmentSheet.HISTORY
+            adjustmentHistorySheetFor(userRequested = false, results)?.let { adjustmentSheet = it }
         })
     }
     var cameraOpen by rememberSaveable { mutableStateOf(false) }
@@ -289,7 +291,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             canPasteAdjustment = model.adjustmentClipboard != null,
             onCopyAdjustments = { model.closeAdjustmentOperation(); adjustmentSheet = AdjustmentSheet.COPY },
             onPasteAdjustments = { model.closeAdjustmentOperation(); adjustmentSheet = AdjustmentSheet.PASTE },
-            onAdjustmentHistory = { model.closeAdjustmentOperation(); adjustmentSheet = AdjustmentSheet.HISTORY },
+            onAdjustmentHistory = { model.closeAdjustmentOperation(); adjustmentSheet = adjustmentHistorySheetFor(userRequested = true, emptyList()) },
             onPresets = model::showQuickPresets, onClosePresets = model::closeQuickPresets,
             quickPresetsVisible = quickPreset.visible,
             quickPresetContent = { QuickPresetContent(model, presetLibraryRevision,
@@ -426,3 +428,12 @@ private fun LicenseDialog(onClose: () -> Unit) {
         text = { Text(notices, Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()), style = MaterialTheme.typography.bodySmall) },
         confirmButton = { TextButton(onClick = onClose) { Text(stringResource(R.string.confirm)) } })
 }
+
+// 历史面板打开判据（k161 遗留：undo/redo 撞 DRAFT 单槽门控拒收时不得平白弹面板）：
+// 用户主动请求历史恒开；undo/redo 仅在结果出现真实失败（BLOCKED/CONFLICT/FAILED）时开。
+// 门控忙产生的 DRAFT 拒收不是某张照片的历史失败——提示由 ViewModel 走既有 Snackbar
+// （state.message，文案 transfer_draft_message），此处返回 null 保持当前 sheet。
+internal fun adjustmentHistorySheetFor(userRequested: Boolean, results: List<AdjustmentOutcome>): AdjustmentSheet? =
+    if (userRequested || results.any { it.status == AdjustmentStatus.BLOCKED || it.status == AdjustmentStatus.CONFLICT ||
+        (it.status == AdjustmentStatus.FAILED && (it.error as? AdjustmentTransferException)?.reason != AdjustmentFailure.DRAFT)
+    }) AdjustmentSheet.HISTORY else null
