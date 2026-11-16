@@ -201,10 +201,15 @@ class CameraTetherUiTest {
             }
         }
         compose.onNodeWithTag("tether-shutter").assertIsDisplayed()
+        compose.onNodeWithTag("tether-recent").assertIsDisplayed()
         capture("portrait")
         compose.runOnIdle { size.value = Size(680, 300) }
         compose.onNodeWithTag("tether-shutter").assertIsDisplayed()
+        compose.onNodeWithTag("tether-recent").assertIsDisplayed()
         capture("landscape")
+        compose.onNodeWithTag("tether-menu").performClick()
+        compose.onNodeWithTag("tether-auto-review").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("tether-recent").assertExists()
     }
 
     private fun savedState(names: List<String>): CameraTetherState {

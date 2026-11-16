@@ -71,7 +71,7 @@ swiftc -swift-version 5 -parse-as-library -module-name HDRRenditionSliderHarness
     -o "$APP/HDRRenditionSliderHarness"
 codesign --force --sign - "$APP" >/dev/null
 
-# Stage 1: Method-level UIKit/Accessibility checks (VoiceOver .adjustable, non-touch .valueChanged, .disabled, panel disappear)
+# Stage 1: Method-level UIKit checks (non-touch .valueChanged, .disabled)
 xcrun simctl install "$DEVICE" "$APP"
 RESULT_JSON="$OUT/probe-result.json"
 rm -f "$RESULT_JSON"
@@ -93,7 +93,7 @@ if [[ "${RAWLAB_SLIDER_METHOD_ONLY:-0}" == 1 ]]; then
     exit 0
 fi
 
-# Stage 2: Real XCUITest touch/drag/micro-slide/double-tap/VoiceOver verification
+# Stage 2: Real XCUITest touch/drag/micro-slide/double-tap verification
 RUNNER="$OUT/HDRRenditionSliderUITests-Runner.app"
 cp -R "$PLAT/Developer/Library/Xcode/Agents/XCTRunner.app" "$RUNNER"
 mv "$RUNNER/XCTRunner" "$RUNNER/HDRRenditionSliderUITests-Runner"

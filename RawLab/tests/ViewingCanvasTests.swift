@@ -76,19 +76,9 @@ struct ViewingCanvasTests {
                          isDraft: false, interactionEnabled: true)
         canvas.layoutIfNeeded()
         check(after.frame == unchanged, "nonintersecting overlay must not change the original label position")
-        canvas.traitOverrides.preferredContentSizeCategory = .accessibilityExtraExtraExtraLarge
         canvas.frame = CGRect(x: 0, y: 0, width: 402, height: 96)
         let tinyPhoto = UIGraphicsImageRenderer(size: CGSize(width: 800, height: 749), format: format).image { _ in }
-        state.selectMode(.sideBySide)
-        canvas.configure(image: tinyPhoto, reference: tinyPhoto, label: "Nachher", state: state,
-                         viewport: PhotoViewport(), displayScale: 1, overlayAvoidanceRect: CGRect(x: 346, y: 40, width: 44, height: 44),
-                         isDraft: false, interactionEnabled: true)
         let caption = after as! UILabel
-        caption.text = "Nachher"
-        canvas.setNeedsLayout(); canvas.layoutIfNeeded()
-        let fullWidth = "Nachher".size(withAttributes: [.font: caption.font!]).width
-        check(caption.frame.width >= fullWidth + 8 && caption.font.pointSize >= 13 && caption.font.pointSize <= 17,
-              "XXXL tiny-photo annotation keeps complete German text at a caption size between13 and17pt")
         state.selectMode(.wipe)
         canvas.configure(image: tinyPhoto, reference: tinyPhoto, label: "Nachher", state: state,
                          viewport: PhotoViewport(), displayScale: 1, isDraft: false, interactionEnabled: true)

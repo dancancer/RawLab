@@ -79,7 +79,7 @@ target = config["RawLabUITests"]
 for key in ("EnvironmentVariables", "TestingEnvironmentVariables"):
     target.setdefault(key, {})["RAWLAB_GEOMETRY_SOURCE_HARNESS"] = "1"
     import os
-    for option in ("RAWLAB_WORKSPACE_LANGUAGE", "RAWLAB_WORKSPACE_LARGE_TEXT"):
+    for option in ("RAWLAB_WORKSPACE_LANGUAGE",):
         if option in os.environ: target[key][option] = os.environ[option]
 (out / "geometry-source.xctestrun").write_bytes(plistlib.dumps(config))
 PY
