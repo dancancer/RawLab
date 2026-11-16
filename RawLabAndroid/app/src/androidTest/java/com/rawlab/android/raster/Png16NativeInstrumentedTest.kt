@@ -202,7 +202,12 @@ class Png16NativeInstrumentedTest {
     }
 
     @Test fun nativeColorConversionMatchesConnectorWithinIccFixedPointPrecision() {
-        val srgb = ColorSpace.get(ColorSpace.Named.SRGB)
+        val srgb = ColorSpace.get(ColorSpace.Named.SRGB) as ColorSpace.Rgb
+        // lcms2's built-in sRGB profile uses the standard ICC D50 PCS white point (0.9642, 1.0, 0.8249),
+        // whereas Android/Skia's ColorSpace.connect() and Bitmap-encoded iCCP tags use Skia D50 (0.34567, 0.35850).
+        val iccD50WhitePoint = floatArrayOf(0.9642f / 2.7891f, 1.0f / 2.7891f)
+        val srgbIccD50 = ColorSpace.adapt(srgb, iccD50WhitePoint) as ColorSpace.Rgb
+        val srgbInverse = srgbIccD50.inverseTransform
         val count = 65536
         val pixels = ByteBuffer.allocateDirect(count * 8).order(ByteOrder.LITTLE_ENDIAN)
         val spaces = listOf(ColorSpace.Named.DISPLAY_P3, ColorSpace.Named.ADOBE_RGB,
@@ -210,23 +215,39 @@ class Png16NativeInstrumentedTest {
             ColorSpace.Named.NTSC_1953, ColorSpace.Named.PRO_PHOTO_RGB)
         for (named in spaces) {
             val icc = iccBytesFor(named)
+            val source = ColorSpace.adapt(ColorSpace.get(named), ColorSpace.ILLUMINANT_D50) as ColorSpace.Rgb
+            val srcToXyz = source.transform
+            val matrix = FloatArray(9)
+            for (col in 0..2) {
+                for (row in 0..2) {
+                    matrix[col * 3 + row] =
+                        srgbInverse[row] * srcToXyz[col * 3] +
+                        srgbInverse[3 + row] * srcToXyz[col * 3 + 1] +
+                        srgbInverse[6 + row] * srcToXyz[col * 3 + 2]
+                }
+            }
+            val eotf = source.eotf
+            val oetf = srgbIccD50.oetf
             for (neutral in listOf(true, false)) {
-                val source = ColorSpace.get(named)
-                val connector = ColorSpace.connect(source, srgb)
                 val expected = IntArray(count * 3)
                 for (i in 0 until count) {
                     val rgb = intArrayOf(i, if (neutral) i else (i * 251 + 17) and 65535,
                         if (neutral) i else (i * 97 + 127) and 65535)
                     for (c in 0..2) pixels.putShort(i * 8 + c * 2, rgb[c].toShort())
                     pixels.putShort(i * 8 + 6, 65535.toShort())
-                    val converted = connector.transform(FloatArray(3) { rgb[it] / 65535f })
-                    for (c in 0..2) expected[i * 3 + c] = (converted[c].coerceIn(0f, 1f) * 65535).roundToInt()
+                    val rLin = eotf.applyAsDouble(rgb[0] / 65535.0)
+                    val gLin = eotf.applyAsDouble(rgb[1] / 65535.0)
+                    val bLin = eotf.applyAsDouble(rgb[2] / 65535.0)
+                    for (c in 0..2) {
+                        val dstLin = matrix[c] * rLin + matrix[3 + c] * gLin + matrix[6 + c] * bLin
+                        expected[i * 3 + c] = (oetf.applyAsDouble(dstLin.coerceIn(0.0, 1.0)) * 65535.0).roundToInt()
+                    }
                 }
                 NativePng16.convertToSrgb(pixels, icc)
                 for (i in 0 until count) {
                     for (c in 0..2) {
                         val actual = pixels.getShort(i * 8 + c * 2).toInt() and 65535
-                        // ICC s15Fixed16 matrix/TRC tags quantize float32 ColorSpace constants by ~20 LSB (<0.1 in 8-bit).
+                        // ICC s15Fixed16 matrix/TRC tags quantize float32 ColorSpace constants by ~41 LSB (<0.2 in 8-bit).
                         assertTrue("$named neutral=$neutral sample=$i channel=$c actual=$actual expected=${expected[i * 3 + c]}",
                             abs(expected[i * 3 + c] - actual) <= 48)
                     }
