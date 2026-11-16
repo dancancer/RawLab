@@ -76,7 +76,7 @@ internal sealed partial class RenderEngine
             throw new AIDenoiseException(Loc.Text("所选 AI 显卡不可用，请在设置中重新选择。"));
         if(detail.Contains("887A0001",StringComparison.OrdinalIgnoreCase))
             throw new AIDenoiseException(Loc.Text("AI 显卡执行失败，请更换 AI 显卡或导出诊断包。")+" (0x887A0001)");
-        if(detail.Length==0)Native.Check(status);
+        if(detail.Length==0)Native.Check(status, session);
         throw new AIDenoiseException(Loc.Format("AI 降噪失败：{0}",detail));
     }
     internal void PrepareAI(string path,Adjustments settings,AIPreparation progress)

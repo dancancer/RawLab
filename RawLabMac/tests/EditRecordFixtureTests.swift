@@ -22,6 +22,8 @@ private enum ExpectationMismatch: Error, CustomStringConvertible {
     }
 }
 
+private struct InjectedEditWriteFailure: Error {}
+
 enum EvalCatchScope {
     case expectationOnly
     case expectationOrPersistenceRejection
@@ -361,31 +363,6 @@ struct Harness {
         if let hai = localValues["local.hdr_camera_ai_enabled"] as? Bool { settings.hdrCameraAIEnabled = hai }
 
         return (PhotoEditState(settings: settings, filmID: filmID, masterRecipeID: masterRecipeID), isRaw, metadata)
-    }
-
-    static func verifyCurve(_ expected: [String: Any], _ actual: ToneCurveSettings, _ label: String) throws {
-        let expMode = expected["mode"] as? String ?? "legacy"
-        try check((actual.mode == .custom ? "custom" : "legacy") == expMode, "\(label): curve mode mismatch")
-        let expPts = expected["points"] as? [[Any]] ?? []
-        try check(actual.points.count == expPts.count, "\(label): curve point count mismatch")
-        for (i, p) in expPts.enumerated() {
-            try check(approx(actual.points[i].x, num(p[0]) ?? -999) && approx(actual.points[i].y, num(p[1]) ?? -999),
-                      "\(label): curve point \(i) mismatch")
-        }
-        if let chObj = expected["channels"] as? [String: Any] {
-            for (cname, cval) in [("red", actual.channels.red), ("green", actual.channels.green), ("blue", actual.channels.blue)] {
-                if let expShape = chObj[cname] as? [String: Any] {
-                    let em = expShape["mode"] as? String ?? "legacy"
-                    try check((cval.mode == .custom ? "custom" : "legacy") == em, "\(label): curve channel \(cname) mode")
-                    let epts = expShape["points"] as? [[Any]] ?? []
-                    try check(cval.points.count == epts.count, "\(label): curve channel \(cname) count")
-                    for (i, p) in epts.enumerated() {
-                        try check(approx(cval.points[i].x, num(p[0]) ?? -999) && approx(cval.points[i].y, num(p[1]) ?? -999),
-                                  "\(label): curve channel \(cname)[\(i)]")
-                    }
-                }
-            }
-        }
     }
 
     static func verifyState(_ actual: PhotoEditState, matches record: [String: Any]) throws {
@@ -1177,6 +1154,61 @@ struct Harness {
                 failures.append("SETUP[\(id)]: \(error)")
                 print("FAIL SETUP[\(id)]: \(error)")
             }
+        }
+
+        // 5. 写后缓存自 refresh（H-03 镜像 iOS #398）：写成功用换 inode 后的新指纹原地更新条目，
+        //    写失败仍自废。红锚：撤修复（写后整体 invalidate）→ 写后紧接读的磁盘读次数 +2 而非 +1，必红。
+        do {
+            let (refreshStore, refreshDir, _) = try makeStore(tempRoot: tempRoot, name: "cache-refresh")
+            let refreshURL = try touchPhoto(tempRoot, name: "cache-refresh.DNG")
+            let refreshState = PhotoEditState(settings: Adjustments(), filmID: "")
+            try refreshStore.save(refreshURL, state: refreshState)
+            _ = try refreshStore.state(for: refreshURL)
+            // save 对相同 state 跳过写盘：红锚必须用变化的 state 才能触发一次真实写。
+            var changedAdjustments = Adjustments()
+            changedAdjustments.exposureMode = .sensor
+            changedAdjustments.exposure = 0.25
+            let readsBefore = EditPersistence.registryDiskReadCount(forDirectory: refreshDir)
+            try refreshStore.save(refreshURL, state: PhotoEditState(settings: changedAdjustments, filmID: ""))
+            _ = try refreshStore.state(for: refreshURL)
+            eval("cache:write-refreshes-entry") {
+                try check(try refreshStore.state(for: refreshURL)?.settings.exposure == 0.25,
+                          "cache-refresh store observes the committed exposure after write")
+                try check(EditPersistence.registryDiskReadCount(forDirectory: refreshDir) == readsBefore + 1,
+                          "one more write plus the immediate read adds only the mandatory uncached pre-write disk read (post-write read hits the refreshed entry)")
+            }
+        } catch {
+            failures.append("SETUP[cache:write-refreshes-entry]: \(error)")
+            print("FAIL SETUP[cache:write-refreshes-entry]: \(error)")
+        }
+        do {
+            var failNextWrite = false
+            let failDir = tempRoot.appendingPathComponent("cache-refresh-fail", isDirectory: true)
+            try FileManager.default.createDirectory(at: failDir, withIntermediateDirectories: true)
+            let failStore = try EditPersistence(directory: failDir, writeData: { data, url in
+                if failNextWrite { throw InjectedEditWriteFailure() }
+                try data.write(to: url, options: .atomic)
+            })
+            let failURL = try touchPhoto(tempRoot, name: "cache-refresh-fail.DNG")
+            try failStore.save(failURL, state: PhotoEditState(settings: Adjustments(), filmID: ""))
+            _ = try failStore.state(for: failURL)
+            failNextWrite = true
+            eval("cache:write-failure-invalidates") {
+                var threw = false
+                do {
+                    try failStore.save(try touchPhoto(tempRoot, name: "cache-refresh-fail-second.DNG"),
+                                       state: PhotoEditState(settings: Adjustments(), filmID: ""))
+                } catch is InjectedEditWriteFailure { threw = true }
+                try check(threw, "injected write failure surfaces from save")
+                failNextWrite = false
+                let readsBeforeFailedRead = EditPersistence.registryDiskReadCount(forDirectory: failDir)
+                _ = try failStore.state(for: failURL)
+                try check(EditPersistence.registryDiskReadCount(forDirectory: failDir) == readsBeforeFailedRead + 1,
+                          "failed write still invalidates: the next read must re-read the ledger from disk")
+            }
+        } catch {
+            failures.append("SETUP[cache:write-failure-invalidates]: \(error)")
+            print("FAIL SETUP[cache:write-failure-invalidates]: \(error)")
         }
 
         let orphanKeys = Set(knownEditRecordDivergences.keys).subtracting(evaluatedIDs)

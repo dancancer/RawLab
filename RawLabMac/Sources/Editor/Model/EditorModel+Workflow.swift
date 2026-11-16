@@ -384,7 +384,7 @@ extension EditorModel {
             var job = BatchExportJob(source: file, settings: settings, look: nil, lookName: lookName)
             if settings.isHDREditing { job.format = .hdrJPEG }
             job.longEdge = exportLongEdge
-            let copiedLook = try batchJournal.snapshotLook(lookURL, for: job.id)
+            let copiedLook = try batchJournal.snapshotLook(lookURL, jobID: job.id, contentIdentifier: lookURL.map { try BatchFrozenSettings.checksum($0) })
             job.look = copiedLook
             do {
                 try batchJournal.save(job)
@@ -659,7 +659,7 @@ extension EditorModel {
 
     func importLooks(_ urls: [URL], dcpOptionsPrompt: MacDCPOptionsPrompt? = nil) {
         guard !urls.isEmpty else { return }
-        let previewPhoto = file.map { LUTPreviewSource(url: $0) }
+        let previewPhoto = file.map { LUTPreviewSource(localURL: $0) }
         changeLookLibrary { library in
             var selectedID: String?
             var imported = 0
@@ -740,6 +740,10 @@ extension EditorModel {
         changeLookLibrary { try $0.remove(id: id); return (nil, nil) }
     }
 
+    func removeUnreadableLook(_ look: LookLibrary.UnreadableLook) {
+        changeLookLibrary { try $0.remove(look); return (nil, nil) }
+    }
+
     func renameLookPanel(_ film: Film) {
         guard let id = film.managedID, !lookLibraryBusy, !exporting else { return }
         let alert = NSAlert()
@@ -779,8 +783,10 @@ extension EditorModel {
                     currentLooks[id] == url ? nil : id
                 })
                 let updated = library.looks.map { Film(name: $0.name, url: library.url(for: $0), managedID: $0.id, colorNotice: $0.colorNotice, isCompatibility: $0.isCompatibility) }
+                let unreadable = library.unreadableLooks
                 DispatchQueue.main.async {
                     guard let self else { return }
+                    self.unreadableLooks = unreadable
                     if !invalidatedLookIDs.isEmpty {
                         self.invalidateEditedThumbnails(forLookIDs: invalidatedLookIDs)
                     }

@@ -25,6 +25,7 @@ import org.junit.rules.RuleChain
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
+import kotlinx.coroutines.flow.MutableStateFlow
 
 @SdkSuppress(minSdkVersion = 29)
 class CameraMediaUiTest {
@@ -36,6 +37,7 @@ class CameraMediaUiTest {
         val previous = compose.activity.camera.state.value.destination
         try {
             compose.onNodeWithTag("camera-entry").performClick()
+            compose.onNodeWithTag("camera-menu").performClick()
             compose.onNodeWithTag("camera-destination-settings").performClick()
             compose.onNodeWithTag("camera-directory-input").performTextReplacement("../Private")
             compose.onNodeWithTag("camera-destination-save").assertIsNotEnabled()
@@ -44,6 +46,7 @@ class CameraMediaUiTest {
             compose.onNodeWithText("Pictures/Trips/Sony/2026-10/").performScrollTo().assertIsDisplayed()
             compose.onNodeWithTag("camera-destination-save").performClick()
             assertEquals(CameraImportDestination("Trips/Sony", CameraDirectoryGrouping.CAPTURE_MONTH), compose.activity.camera.state.value.destination)
+            compose.onNodeWithTag("camera-menu").performClick()
             compose.onNodeWithTag("camera-destination-settings").performClick()
             compose.onNodeWithTag("camera-directory-input").assert(
                 SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("Trips/Sony")))
@@ -88,9 +91,12 @@ class CameraMediaUiTest {
         val draft = compose.activity.model.state.value.draft
         compose.waitUntil(10_000) { !compose.activity.camera.state.value.preparing }
         compose.runOnUiThread { compose.activity.camera.selectJob(incoming) }
-        compose.onNode(hasContentDescription("更多") and hasAnyAncestor(hasTestTag("editor-menu"))).performClick()
-        compose.onNodeWithTag("camera-entry").performClick()
-        compose.onNodeWithText("查看导入任务").performClick()
+        compose.onNodeWithTag("workspace-more").performClick()
+        compose.onNodeWithTag("workspace-camera").performClick()
+        compose.onNodeWithTag("camera-menu").performClick()
+        compose.onNodeWithTag("camera-history").performClick()
+        compose.onNodeWithTag("camera-menu").performClick()
+        compose.onNodeWithTag("camera-view-task").performClick()
         compose.onNodeWithTag("camera-view-album").performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithText("INCOMING.JPG").fetchSemanticsNodes().isNotEmpty() }
         assertEquals(draft, compose.activity.model.state.value.draft)
@@ -114,7 +120,8 @@ class CameraMediaUiTest {
         compose.onNodeWithText("已保存 0 / 1 张").assertIsDisplayed()
         compose.onNodeWithTag("camera-open").assertDoesNotExist()
         compose.onNodeWithTag("camera-view-album").assertDoesNotExist()
-        compose.onNodeWithText("重新下载不可用的原片").assertIsDisplayed()
+        compose.onNodeWithTag("camera-resume").assertIsDisplayed().assertIsEnabled()
+            .assertTextContains(compose.activity.getString(com.rawlab.android.R.string.camera_connect_action))
     }
 
     @Test fun tetherReviewUsesTheSavedOriginalAndOnlyEditLeavesTheCamera() = withMedia { root, _, save ->
@@ -129,6 +136,15 @@ class CameraMediaUiTest {
             compose.runOnUiThread { camera.tether.restore(listOf(run), listOf(job)); camera.setMode(CameraMode.TETHER) }
             compose.waitUntil(10_000) { !camera.state.value.closing }
             compose.onNodeWithTag("camera-entry").performClick()
+            compose.onNodeWithTag("camera-mode-TETHER").performClick()
+            // 用已保存任务替代真实相机连接，仍从相机入口走到联机审片和真实原片交接。
+            @Suppress("UNCHECKED_CAST")
+            val cameraState = CameraImportViewModel::class.java.getDeclaredField("mutable")
+                .apply { isAccessible = true }.get(camera) as MutableStateFlow<CameraImportState>
+            compose.runOnUiThread {
+                camera.tether.restore(listOf(run), listOf(job))
+                cameraState.value = cameraState.value.copy(connected = true, mode = CameraMode.TETHER)
+            }
             compose.onNodeWithTag("tether-shutter").assertIsNotEnabled()
             compose.onNodeWithTag("tether-recent").performClick()
             compose.onNodeWithTag("tether-review").assertIsDisplayed()

@@ -108,6 +108,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onImportHDRLook: () -> Unit = {},
     onApplyHDRSilver: (Boolean) -> Unit = {},
     onCancelHDRLookImport: () -> Unit = {},
+    onDeleteUnreadableLook: (com.rawlab.android.looks.UnreadableLook) -> Unit = {},
     onDeleteLook: (String) -> Unit = {}, onLookImportReportDismiss: () -> Unit = {},
     onAbout: () -> Unit = {}, updateVersion: String? = null,
     onPreviewSizeChange: (Int) -> Unit = {},
@@ -139,6 +140,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     var fine by rememberSaveable(state.photo?.identity) { mutableStateOf(false) }
     var toolMenu by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
+    var processingContext by remember { mutableStateOf(false) }
     var tool by rememberSaveable { mutableIntStateOf(0) }
     var channel by rememberSaveable { mutableIntStateOf(0) }
     var gradingZone by rememberSaveable(state.photo?.identity, state.photo?.file?.absolutePath) { mutableStateOf(com.rawlab.android.settings.ColorGradingZone.SHADOWS) }
@@ -423,14 +425,16 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             if (quickPresetsVisible) onClosePresets()
             if (targetMode) expanded = !expanded else leave { expanded = !expanded }
         },
-            compare, { view = view.toggleComparison() }, onEdit, onImportLook, onRenameLook, onDeleteLook,
+            compare, { view = view.toggleComparison() }, onEdit, onImportLook,
+            { id, name -> leave { onRenameLook(id, name) } }, { id -> leave { onDeleteLook(id) } },
             onAutoExposure, onDraftEdit, { applyAndLeave(); Unit }, { onDiscardDraft(); toolOpen = false },
             onFilmSelected, onGeometryRatio, selectGroup, channel, { onCancelAdjustment(); channel = it }, requestReset, side, !pendingAll, compact,
             onGeometryLock, onGeometrySwap, onGeometryGrid, onPresets = { if (quickPresetsVisible) onClosePresets() else openQuickPresets() },
             quickPresetsVisible = quickPresetsVisible, quickPresetContent = quickPresetContent, gradingZone = gradingZone,
             onGradingZoneChange = { onCancelAdjustment(); gradingZone = it }, hslTarget = hslTarget, onSelectFilm = onSelectFilm,
             onImportHDRLook = onImportHDRLook, onApplyHDRSilver = onApplyHDRSilver,
-            onRollbackProcessing = onRollbackProcessing, toolOpen = toolOpen, fine = fine)
+            onRollbackProcessing = onRollbackProcessing, toolOpen = toolOpen, fine = fine, onDeleteUnreadableLook = onDeleteUnreadableLook,
+            processingContext = processingContext, onDismissProcessingContext = { processingContext = false })
     })
     val resetPresentation = if (state.photo != null && !view.purePreview) EditorWorkspaceResetPresentation.make(
         state = state, toolOpen = toolOpen, quickPresetsVisible = quickPresetsVisible,
@@ -460,6 +464,11 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             if (toolOpen) Box(Modifier.testTag("workspace-more")) {
                 ToolIcon(Icons.Outlined.MoreHoriz, R.string.more) { toolMenu = true }
                 DropdownMenu(toolMenu, { toolMenu = false }) {
+                    DropdownMenuItem(text = { Text(stringResource(R.string.camera_title)) },
+                        modifier = Modifier.testTag("workspace-camera"), enabled = state.operation == Operation.NONE,
+                        onClick = { toolMenu = false; onCancelAdjustment(); onCamera() })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.preset_library)) },
+                        modifier = Modifier.testTag("workspace-presets"), onClick = { toolMenu = false; openQuickPresets() })
                     DropdownMenuItem(text = { Text(stringResource(R.string.editor_photo_info)) },
                         onClick = { view = view.copy(infoMode = (view.infoMode + 1) % 3); toolMenu = false })
                     DropdownMenuItem(text = { Text(stringResource(R.string.editor_rgb_histogram)) },
@@ -538,6 +547,9 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         onClick = { workspaceHistogram = !workspaceHistogram; menu = false })
                     DropdownMenuItem(text = { Text(stringResource(R.string.editor_zoom_display)) }, enabled = state.preview != null && state.draft == null,
                         leadingIcon = { Icon(Icons.Outlined.ZoomIn, null) }, onClick = { menu = false; zoomMenu = true })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.photo_processing_settings)) },
+                        enabled = state.photo != null, modifier = Modifier.testTag("processing-settings"),
+                        onClick = { menu = false; processingContext = true })
                     DropdownMenuItem(text = { Text(stringResource(R.string.editor_settings)) },
                         leadingIcon = { Icon(Icons.Outlined.Settings, null) }, onClick = { menu = false; settings = true })
                     DropdownMenuItem(text = { Text(stringResource(R.string.licenses)) },

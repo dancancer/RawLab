@@ -22,7 +22,7 @@ struct IOSCollectionPhoto: Identifiable {
         do {
             if let error = photo.error { throw error }
             guard let file = photo.file else { throw CocoaError(.fileReadNoSuchFile) }
-            inputSHA256 = try file.withReadAccess { try PhotoIdentity.fallback(for: $0).contentIdentifier }
+            inputSHA256 = try file.withReadAccess { try PhotoIdentity.cachedFallback(for: $0).contentIdentifier }
             error = nil
         } catch { inputSHA256 = nil; self.error = error }
     }
@@ -30,7 +30,7 @@ struct IOSCollectionPhoto: Identifiable {
     func validate() throws {
         if let error { throw error }
         guard let file = photo.file, let inputSHA256,
-              try file.withReadAccess({ try PhotoIdentity.fallback(for: $0).contentIdentifier }) == inputSHA256 else {
+              try file.withReadAccess({ try PhotoIdentity.cachedFallback(for: $0).contentIdentifier }) == inputSHA256 else {
             throw BatchExportError.target(L10n.text("原始文件已被替换，请重新选择照片。"))
         }
     }
@@ -157,7 +157,7 @@ struct IOSCollectionExportInput {
                 if settings.hasLook && look == nil {
                     throw BatchExportError.target(L10n.text("目标所需的外观不可用，请先导入外观。"))
                 }
-                let hash = try look.map { try PhotoIdentity.fallback(for: $0).contentIdentifier! }
+                let hash = try look.map { try PhotoIdentity.cachedFallback(for: $0).contentIdentifier! }
                 return .init(photo: photo, record: record, settings: settings, look: look, lookSHA256: hash,
                     lookName: name, error: nil, editGeneration: generation)
             } catch {
@@ -181,7 +181,7 @@ struct IOSCollectionExportInput {
                 if row.record?.state == nil {
                     _ = try store.readState(for: row.photo.photo.identity, requiringLegacyDecision: true)
                 }
-                if let look = row.look, try PhotoIdentity.fallback(for: look).contentIdentifier != row.lookSHA256 {
+                if let look = row.look, try PhotoIdentity.cachedFallback(for: look).contentIdentifier != row.lookSHA256 {
                     throw AdjustmentCommitError.expired
                 }
             }
@@ -198,8 +198,11 @@ struct IOSCollectionExportInput {
                 var look: URL?
                 if let original = row.look {
                     let folder = try BatchInputStore.directory(for: jobID, root: journal.directory).deletingLastPathComponent()
-                    let destination = folder.appendingPathComponent("look-\(ordinal).\(original.pathExtension)")
-                    try FileManager.default.copyItem(at: original, to: destination)
+                    // 同一任务的多个目标共享同一 look 时按内容寻址只存一份（已有即复用）；任务目录整体回收。
+                    let destination = folder.appendingPathComponent("look-\(row.lookSHA256 ?? UUID().uuidString).\(original.pathExtension)")
+                    if !FileManager.default.fileExists(atPath: destination.path) {
+                        try FileManager.default.copyItem(at: original, to: destination)
+                    }
                     look = destination
                 }
                 var target = BatchTarget(identity: photo.identity, sourceURL: input, displayName: photo.displayName,

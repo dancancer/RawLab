@@ -4,12 +4,12 @@
 #include <cmath>
 #include <fstream>
 #include <filesystem>
-#include <mutex>
 #include <set>
 #include <sstream>
 #include <sys/stat.h>
 #include "../../third_party/nlohmann/json.hpp"
 #include "sha256.h"
+#include "parsed_resource_cache.h"
 #include "lut_compatibility.h"
 #include "lut_contract_json.h"
 
@@ -306,22 +306,22 @@ std::unique_ptr<LUT3D> LUTParser::loadLUT(const std::string& path) {
 }
 
 std::shared_ptr<LUT3D> LUTParser::loadLUTCached(const std::string& path) {
-    std::error_code error;
-    const auto filePath = std::filesystem::u8path(path);
-    const auto stamp = std::filesystem::last_write_time(filePath, error);
-    if (error) return nullptr;
-    const auto bytes = std::filesystem::file_size(filePath, error);
-    if (error) return nullptr;
-    static std::mutex mutex;
-    static std::string previous;
-    static std::filesystem::file_time_type modified;
-    static uintmax_t size = 0;
-    static std::shared_ptr<LUT3D> cached;
-    std::lock_guard<std::mutex> lock(mutex);
-    if (previous == path && modified == stamp && size == bytes && cached) return cached;
-    cached = loadLUT(path);
-    previous = path; modified = stamp; size = bytes;
-    return cached;
+    const auto format = detectFormat(path);
+    if (format != "cube" && format != "vlt") return nullptr;
+    std::ifstream file(std::filesystem::u8path(path), std::ios::binary | std::ios::ate);
+    if (!file) return nullptr;
+    const auto length = file.tellg();
+    if (length < 0 || length > 256u * 1024u * 1024u) return nullptr;
+    file.seekg(0);
+    std::string bytes(static_cast<size_t>(length), '\0');
+    if (!file.read(bytes.data(), bytes.size()) || file.peek() != std::char_traits<char>::eof()) return nullptr;
+    // 文件可能被同大小内容覆盖且时间戳不变；缓存命中必须基于实际字节。
+    const auto digest = hash::sha256Bytes(bytes.data(), bytes.size());
+    static ParsedResourceCache<std::shared_ptr<LUT3D>> cache;
+    if (auto cached = cache.find(path, digest)) return *cached;
+    auto parsed = std::make_shared<LUT3D>();
+    if (parsed->loadFromData(bytes, format == "vlt") != ErrorCode::Success) return nullptr;
+    return cache.put(path, digest, std::move(parsed));
 }
 
 std::string LUTParser::detectFormat(const std::string& path) {

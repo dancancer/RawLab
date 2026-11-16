@@ -329,3 +329,121 @@
 - **新票四张全部并行派出**：①win-ub-hygiene（Hydrogen：P3-60 尾 Windows file_clock ns 溢出 UB 按 lens_correction static_assert 模式修+shader_vm SKIP 77 C22+5 支 Apple 脚本进 apple-models 门禁+gles_denoise dtor 守卫）；②ios-draft-close（Hydrogen：P2-26 三处草稿收口）；③looks-ui（codex：P2-16 三端外观库坏条目 UI）；④win-force-gpu（Hydrogen：P2-09 尾 Windows「强制 GPU 不可用」文案区分）+⑤jit-hardening（Hydrogen：完成-01 工程半边——token 出 plist 明文/launch_runner 剥 GH_TOKEN/allowlist 锁 head_sha/FIFO 抢占）。生产 JIT 切换本身仍归用户侧 k179。
 - **#361 r1（33cb399c，A1 @Synchronized/A2 rootLock+protect 覆盖面/A3 空操作不毒化/A4 NonCancellable 原子段，JVM 744 全绿）与 #362 r1（0be72764，B1 inFlight 代际+B2 读旧图后 gate，双变异真红+build.sh 绿）** 交碳包 review-mwhjhth4 复审（含 #360 r2 联审）。
 - D-02（降噪键跨端分叉）排队为下一张 codex；P2-26 实证若发现路径已兜住则按碳脑裁定缩范围。
+
+### (59) #364 合入（117th）；碳脑核验落地；#367/#368 一轮返工在跑
+
+- **#364 合入**（117th `8a1ee180`）：P3-60 尾 Windows `file_clock` ns 溢出 UB 按 raw-ticks 修（逐位十进制格式化不执行 negation，`INT64_MIN` 也安全；mac 侧 `__int128` 纳秒输出逐字符不变）+ C22 `SKIP 77`（4 项 glslang 系测试原名恒注册）+ thumbnail-cache.sh 入 apple-models + gles_denoise dtor 守卫。碳实证 185 全绿口径（168 假降=主仓旧 CTestTestfile 时间戳）。碳脑建议 sony2fuji_c.cpp:3484 microseconds 转换无乘法路径**不改**（第一性原理不捆绑）。
+- **碳脑（agy-brain 首用）核验裁定**：P3-60 成立（量级勘误 1.34e19 非 e21）；5 支 Apple 脚本"直塞 apple-models 会炸普通 PR"仅 1 支可入（crew 已按此做，碳裁定文档化=闭环附 1 行措辞修正）；shader_vm 目标名实为 gles_shader 等 4 项+异名即炸对账（已避）；**#367 数据层根因**（LookLibrary.swift:277 `file_name` 键 vs 真实 camelCase `fileName` → 真实坏条目 fileName=nil 删不掉实体文件，模拟器 camelCase 实证 RED）；**#368 残留**（requestCollectionNavigation/openBatchSelection 未收口，探针 RED）；完成-01 本机无 plist（仓模板 scripts/ci/launchd/），GH_TOKEN 剥离与 allowlist head_sha 落点 jit_dispatch.py。
+- **#365（jit-hardening）交付待审**：token 出 plist 明文→jit.env 0600+`--env-file`、launch_runner 剥 GH_TOKEN、allowlist 强制 `@<head_sha>`（对照 GitHub run 元数据，crew 纠正了"本地 rev-parse"的票面假设）、FIFO 无抢占窗口注释；scripts/ci 238（+7）全绿+红锚。
+- **#367/#368 一轮返工**（梯子第一轮=Hydrogen，双并行在跑）：#367 修 L277 键匹配+删除残留实体文件测试；#368 集合导航两入口收口。
+- **D-02**（降噪键跨端分叉）codex 已并行开工（现状矩阵先行，若已被 #321/#346 实际收敛则轻量交付）。
+- **用户侧**：自合 #363（update-roadmap）与 AGENTS.md 全局原则条目（第一性原理/主轴把关/诚实声明红线——与本链工作方式一致，已纳入派单口径）。
+
+### (60) #368（118th）/#369（119th）合入；D-02/P2-26 台账闭环；#367 r2 与三张返工在跑
+
+- **#368 合入**（`d7390743`）：iOS 草稿收口全链（resolveCollectionDraft/quickPresets/导出/openBatchSelection/requestCollectionNavigation），模拟器 123 项 RED→GREEN，碳 approve 附 2 条非阻断 UX 简注（批量入口 disabled 未含 previewRendering 极短窗口点击静默——已登记简注）。
+- **#369 合入**（`c0f2231e`）：D-02 收口（碳首审 approve：四端矩阵逐格源码核对+Mac/iOS/Windows/Shared 本机实跑+变异实测）。**台账已更新**：D-02→✅（b-task-table/c-four-end/f-overall/g-product-decisions 四处），P2-26→✅（#368 闭环）。codex 交付仅用 ~20 分钟（票内含现状矩阵自查），再次验证"复杂票直接 codex+先证实现状"的高效路径。
+- **#367 r2**（codex 在跑）：碳二轮发现 Android 宿主接线死锁（面板打开即 draft=LOOK 而删除按钮 enabled 写死 draft==null → 恒灰；单挂测试假绿）——放行 draft.group==LOOK+穿 EditorViewModel 宿主回归+recipe-lut 保留对齐；r2 需 rebase 含 #369 的 development 并重生成字符串。
+- **三张 codex 返工在跑**：#361 r2（A4 死锁/过期快照/单槽 lastConfirm/r1_a4 恒真，碳处方）、#362 r2（M-N9 image(for:) 身份精确判定 2 行+CASE_E_MN9 常驻）、win-native-baseline（Windows native 门基线 2 红：preview_exposure_cache 合成 DNG 覆写+wavelet_noise_model 跨标准库分布断言——#360 放行前置）。
+- **#365/#366 碳包在跑**（jit token/head_sha 闭环性+TOCTOU 裁定；#366 ABI 增量+reason 清零时序）。
+- **合入计数**：119（#368=d7390743、#369=c0f2231e）。
+
+### (61) 返工波：#361r2/#362r2/#367r2/#371 交付待复审；#365/#366 一轮返工在跑
+
+- **wnb 票→#371**（codex 65 分钟）：Windows native 门两条基线红修复（preview_exposure_cache 合成 DNG Windows 覆写+wavelet_noise_model 跨标准库分布去耦合，JUnit 138 名前后一致不删项），**Windows native 整门首次 100% 绿**（run 43699429908）。合入后 #360 rebase+重跑 native 门即达放行标准。
+- **#361 r2**（codex）：A4 死锁/过期快照/单槽覆盖/恒真测试四项重写，749 测全绿+6 变异全红+CI 绿，碳复审在跑。
+- **#362 r2**（codex）：M-N9 身份精确判定 2 行+CASE_E_MN9 双入口常驻（旧代码红、Case E 并发绿），四脚本+build.sh+CI 绿，碳复审在跑。
+- **#367 r2**（codex）：Android 宿主接线放行 draft.group==LOOK+recipe-lut 保留+穿宿主仪器测试 4/4 真跑（真实宿主/ViewModel/队列/持久化）；并实证纠正 JVM 基线口径（looks-ui 分支=737 非 744）；rebase 含 #369+字符串并集重生成。碳复审在跑。
+- **#365/#366 一轮返工**（Hydrogen）：#365 两项（fork PR pull_requests=[] 恒不命中+stub 假绿；同仓 push 信任判定须前置防队列锁死）；#366 一项（RenderHDRAsSDR Native.Check 漏传 session→HDR 容器+强制 GPU 仍弹误导文案）。
+- **codex 吞吐观察**：本轮 5 张 codex 票全部 20–65 分钟交付且红绿证据齐全，"碳处方照抄+先证实现状"票面对 codex 高效；碳审仍是唯一放行闸。
+
+### (62) 宿主重启事故恢复零损失；#365 合入（120th）；真机门禁首跑抓到 Android 构建期红
+
+- **事故**：19:01–19:08 宿主 harness 重启，6 个在途任务（4 碳审+1 返工+1 真机门禁）中断，轮询器全灭。**远端零损失**（各分支 r1/r2 head 均已 push 存留：#365=c1877834、#367=f7f677ba 等），仅评审过程重跑（碳包A #361r2/#362r2/#371、碳包B #366r1/#367r2、碳审 #365r1 重新派发）。
+- **#365 合入（120th，`59b0de8e`）**：完成-01 工程半边收口（jit.env 0600、GH_TOKEN 剥离、pr#n@sha 同仓限定+外部 fork 指路 run_id@sha、push 信任前置防队列锁死；scripts/ci 240）。iOS models 首跑红=自托管 runner 失联（重启窗口），`gh run rerun --failed` 转绿后合入。k179 剩用户侧生产切换演练。
+- **真机首轮（Pixel XL marlin，API 29/Adreno 530）**：`:app:buildCMakeDebug[arm64]` 自 **700eeb408（#334）** 起编译失败——`driver()` 仅在 `#ifdef SONY2FUJI_FAKE_EGL_GLES` 内定义，NDK 真机构建 11 处 undeclared identifier。**Android APK 仪器测试链在真机侧从未跑通**（hosted CI Android models 不构建该 cmake 测试目标=门禁盲区，k163 候选补录）。解锁票 fix/android-device-gate 在跑（1b 段出宏+真机全套 connectedDebugAndroidTest+k173 签收表随 PR）。
+- **iOS 模拟器高占用答疑**：为自动化任务临时模拟器的正常负载（碳审/测试起停），harness 重启后 booted 清空、CPU 回落，无孤儿残留。
+
+### (63) 连合五单（121–124）：#367/#371/#361/#362 全 APPROVE；#366 r2 与 #360 rebase 接力
+
+- **#367 合入（121th `dd944aff`）**：碳三枪独立变异（UI 门禁/ViewModel 门禁/recipe-lut 恢复各必红）+737 口径纠偏（dev=736+1 新增）+字符串并集 --check 全绿。
+- **#371 合入（122th `8f89f40d`）**：Windows native 整门 138 项保序 1:1 对账（2 红→0 红零删项）；preview_exposure_cache 修法核到 LibRaw `_wfopen` 共享模式根因（优于跳过：切照片释放句柄+负缓存跨照片断言）；wavelet 换 SplitMix64+Box-Muller 阈值一字未松+`/UNDEBUG` 防断言被 Release 吞。**native 门基线自此全绿**。
+- **#361 合入（123th `cefbc514`）**：A4 四阻断全闭（锁外 awaitPending/无过期快照/集合化 pending/4 线程夹具）；碳 4 枪运行时变异全红（含锁内 join 死锁还原=超时红）。
+- **#362 合入（124th `3bdacd59`）**：M-N9 持锁身份判定+CASE_E_MN9 双路由常驻；碳变异（去 identityMatches）双路由必红；跨 47 夹具联调+隔离 build.sh 绿。
+- **#366 r2（codex 在跑）**：碳拦下 RenderedDngChecks 间接取串过滤（原生门 --rendered-dng 必崩，hosted 不跑原生套件故 CI 全绿掩盖）；一行对齐 FormatErrorMessage(2,null,ForceGpu)+对账扩展；native 实跑并入 #360 复跑窗口。
+- **#360 rebase+native 复跑票（在跑）**：让位 #364 清单机制保原注册名；预期 139 项（138+新 d3d11_shader_cache）全绿后即 r3 碳终审。
+- **节奏已按用户指令调整**：并行 9 路；全量测试收缩到关键节点（碳包实跑+合入波前），小票只跑针对性脚本+hosted CI。k161 移交项拆 3 张小票并行中（滑杆容差/preflight 生命周期/中性灰假红）。
+
+### (64) 真机解锁与三分类清障（125–127）：#374/#366/#372 合入；#360 根因翻案=LUT 缓存缺内容哈希
+
+- **#374 合入（125th `8d01b2ef`）**：`gles_lut_binding_tests.cpp` 1b 故障注入段包 `#ifdef SONY2FUJI_FAKE_EGL_GLES`，Android NDK 真机构建自 700eeb408 起首次编译通过。碳审拦下**签收口径失真**（非代码）：assumeTrue 静默跳过被计入 PASS、#343 真机 GLES 实为 0 触达（跑通项均 CPU 路径）——按处方修正 PR/k173 后放行。教训入派单口径：仪器 PASS 必须与 `-r` 模式 skipped 对账。
+- **#366 合入（126th `456be34b`）**：Force-GPU 文案对齐 r2（native `--rendered-dng` 证据并入 #360 native 窗口）。
+- **#372 合入（127th `97f66433`）**：hosted「Android models」新增 ndk-compile.sh 轻量 CMake 门禁（~12s），活红锚实证（未修必红 run 43710892455）——Android 测试源 NDK 编译盲区永久关闭。
+- **#360 根因翻案（codex）**：Windows native `lut_contract_render` 12 连红非 d3d11 缓存键，而是 **LUT 文件缓存只比路径/大小/mtime**——测试同尺寸同时间戳覆写同路径时 V-Log 错误复用线性 LUT，本机确定性复现同款 12 红；系 development 既有缺陷（非 #360 引入）。修复=lut_parser 按内容 SHA-256 判缓存+同尺寸同 mtime 覆写回归（红锚成立）+两个 `#define` 变体缓存测试。native 前二跑败于 Adobe 下载网络断（码 56/18，未及测试），第三跑 `43716383315` 在途。遗留：LUT 加载新增全文件哈希的性能基准待补（非阻断）。
+- **真机三分类（research，双环境对照+素材入 APK）**：12 嫌疑类**全部 A 类真实缺陷**（API29+API35 同红，素材无关）；素材类（RasterFixture/NativeMemory/HDRBatchCancel 等）装样片即转绿=C 类。拆 4 票：**k531** P0 batch cancel 门序崩溃（latch 30s 主线程 AssertionError 崩仪器进程，连带同类 3 法没跑）；**k533** P0 小图 master recipe 预览上变换 19→1600（viewportPreview 绕过原生钳制，C++ 侧）；**k535** P1 Editor v0.8 toolOpen 契约错位（6 UI 套件共因：EditorWorkspaceGroups 15/18、UsageFilm、LookLibrary、AdjustmentPresetUI、CameraMediaUi、X3fEditor）；**k537** P1/P2 尾批（colorState 枚举 5vs6、批量选择读盘竞态、相机续传句柄契约、API29 Compose no-paragraph 崩溃+411dp 裁切）。k531/k533 Hydrogen、k535 codex 并行在跑。
+- **滑杆票 #373**：双击容差子类+惯性合并交付（红锚/13+29 全绿/CI 7/7），碳实跑仍拦两阻断（第 2 触快滑零写回假绿、touchesBegan 抹惯性窗致既有回归分裂 4 对编辑态）→ Hydrogen 一轮返工在跑。另两张 k161 小票经 git 证据确认**已随 #359 顺路修复**（b9f00f1f：preflight @StateObject+nearGray 断言），零改动关票。
+
+### (65) 大波合入（128–141）：#373–#386 十四单；#360 收官；真机红尾批 k531–k537 全清
+
+- **#373 合入（128th `5711a6f8`）**：iOS HDR 滑杆 r2（delegate 判定+位移回退，碳两轮后 APPROVE 0 阻断）。**#375（129th `d23475d4`）**：批量状态门序测试搬迁（PROCESSING→PUBLISHING/FAILED），零产品改动；碳用两个独立反证锁定"测试有罪"。**#376（130th `26193be8`）**：PREVIEW+邻域/几何统一 `preview_long_edge=min(pl,native)` 封顶（#533 主修）。
+- **CI 三连（131–133）**：#377 ndk-compile 工具链过滤+Python 契约测试入 CI；#378 `raw_active_area` CLI 消费矩阵；#380 `inspect_lut_color` 状态语义（rlook→LEGACY(5)/畸形→UNREADABLE(6)），碳实跑核 strength=2f 不钳 1.0。
+- **#381 合入（134th `863f4028`）**：Editor v0.8 toolOpen 契约错位主修（codex，6 UI 套件共因）；契约裁定=桌面分组工具网格、选中工具才开草稿（与 mobile-r2 分组语义对齐，Mac 桌面=不同契约）。6 套件 API35 全绿+碳加跑 Pixel XL API29 抽验绿。
+- **#360 合入（135th `9e94034f`）**：GPU 跟随大票（LUT SHA-256 缓存内容失效+d3d11 双 define+`--rendered-dng` 组合），native 手动门禁 139/139 绿。碳 r3 简注：64³/65³ `.cube` 热哈希 +29–31ms/帧 → 派生 perf 票 #387。
+- **真机红尾批 k537 四单全清（136–141）**：#382 API29 簇（compose-bom 2025.06 修 `GraphicsLayerV29` no-paragraph 崩溃+AboutDialog 411dp，Pixel 16/16）136th；#383 GLES 设备 EGL 平台分支（**#343 真机触达 0→31 PASS**，AVD+Pixel）137th；#384 小图纯几何封顶 138th；#385 SDR 批量取消代际透传锁 139th；#386 相机续传契约断言对齐 #340（又是测试随实现漂移；双设备 6/6）140th；#379 批量选择读盘竞态——碳包 D 打回**测试注入时序**真根因（controlsEnabled 守卫静默丢 edit），处方 r2 后碳独立 6/6 亲验 141th。
+- **Windows native 下载 flake 治理**：DNG SDK/rustup 下载连挂 4 次（schannel/GOAWAY/tls eof，run 43726623136 三连败）；#388 换仓内 `rawlab_download_archive` 3 重试+SHA256 校验（氢实测 `DOWNLOAD_RETRIES` 非 FetchContent 合法关键字）碳 APPROVE，分支 native 端到端实测在跑。**教训**：连挂≥2 次即升碳/codex 接手，氢不再盲重试。
+- **在途**：#387 LUT 哈希平台加速（CC_SHA256/CNG；64³ SHA 28.2→2.6ms 达标；碳 r1 拦 Windows `RGB` 宏击穿/provider 析构序/MinGW 链接三阻断，codex r2 已修，碳 r3+Windows native 门禁收口）。
+- **登记**：k159 双简注（viewport_preview==0+邻域微差异、geom 封顶已随 #384 落）；k163（DNG 重试已票面化 #388）；k161（commitAdjustments 解锁序/revision 快照下沉；controlsEnabled 静默丢编辑的普通用户路径确认票）；AVD-B（rawlab-api35-b）本轮新增为并行设备泳道，波尾拆除。
+
+---
+
+### (66) 过度防御大扫除波（142–158）：十七单；SHA-256 全仓审计 41 点 + 非哈希重处理 15 组；对抗式评审成为默认
+
+- **起点=两次全仓审计（carbon-high）**：①**SHA-256 审计 41 个运行时调用点**（17 必要-保留 / 19 必要-可降载 / 5 过度防御-可去），最重为"同一张 25–75MB ProRAW 流式导出被全量哈希 7 次""Android 批量单张 RAW 10 次""HDR 滑杆每帧扫整张 20–80MB RAW 但摘要无人消费""AI 降噪 96–720MB 浮点张量背靠背双算"；②**非哈希过度防御 15 组**，最重为批量账本 `O(N²)` 写放大（每张 3–4 次写、每次写前整读回+解码+全量校验，500 张≈3–6GB JSON 吞吐）、HDR 滑杆 4 层逐像素 `isfinite` 扫描栈、主线程同步清扫/冻结、16-bit PNG 为 2KB EXIF 重解码重压缩、可再生缩略图缓存用 `WriteThrough+fsync` 且每写全目录 stat（≈3.3 万次）。
+- **合入清单（142–158）**：
+  - **#388（142nd）** DNG SDK/rustup 下载改走 `rawlab_download_archive`（3 重试+SHA256）；**#404（158th）** 同法收编 opencv/opencv_contrib（pin 实算），Windows native 的 schannel 抖动不再卡门禁。
+  - **#390（143rd）** k161 `controlsEnabled` 静默丢弃七入口结构化日志（零行为变更，观察真实命中率再决定是否上单槽合并队列）；**#392（145th）** k161 `commitAdjustments` 单槽契约注释（碳定性=顺序自洽非竞态）。
+  - **#387（144th）** LUT 哈希平台加速（CC_SHA256/CNG，64³ 28.2→2.6ms，三平台字节一致；codex r2 修 Windows 宏击穿/BCrypt 析构序/MinGW 链接）。
+  - **#389（146th）** k163 批 B：CMake 优先 `Python3_EXECUTABLE`、Mac 死代码清理、`batch-cancellation.sh` 接入 CI `in_suite model` 分片；**#395（147th）** k163 iOS 三脚本分类（`ios-photo-previews.sh` 20.8s、`raw-unpack-export.sh` 26 checks、`subtool-menu-draft.sh` 123 checks 均实跑，落 native-gate 模拟器路线/手动门）。
+  - **#391（148th）** Mac UI harness 隔离（三 harness 注入目录）——碳 r1 打回 B1：`seeded` 哨兵留在持久夹具而 `editDirectory` 改随机临时目录→同 root 二次启动丢编辑仍跳过播种；返工改 `root/rawlab-iso-state` 确定性路径并去掉退出自删，增量复位 APPROVE。
+  - **#399（149th）** 安卓批量日志：长连接流 + `recordRow(sync:)` 只在 URI 登记后与终态 fsync（每张 ≤2 次），codex 独立审确认撕裂尾行 replay 容错真实存在、URI checkpoint 不会恢复成假成功项。
+  - **#398（150th）** 编辑账本写后原地更新缓存（iOS）+ Android `(lastModified,length)` 短路；Android 因 java.io 面只有两维、`fileKey` 规范允许 null 而修订既有契约用例——原生独立审**裁决修订成立**（`Os.stat` 的 st_ino/st_ctim 可零窗口但代价=秒粒度合成+host JVM 不可用），并登记"同毫秒跨进程 lost-update 窗口"。
+  - **#397（151st）** 缩略图缓存去 fsync/WriteThrough + **进程内共享实例**（修 AlbumScreen/EditorViewModel 双实例索引失步）+ **JPEG SOI/EOI 校验**（AOSP `BitmapFactory` 把 `kIncompleteInput` 当成功）；碳两阻断，返工后独立复审确认真闭环（含 130-filler 逐出脑洞的边界核）。
+  - **#394（152nd）** 三端批量检查/回退接既有 stat 校验缓存；codex 审出 **Windows P1**：`WindowsFileIdentity` 在 FAT/exFAT 无故 ChangeTime/USN 时仍报 `StatReliable=true` → 脏摘要复用致冻结反复失败；修复=两标记都不可用即走全量哈希（回归含"大文件+标记不可用+同尺寸同 mtime 覆写"，旧判定实跑红）。
+  - **#396（153rd）** 启动清扫离首屏——**三轮**：codex 实跑复现 P1（Q6 reclaim 与同 ID 任务恢复的旧快照删除）→ 修复又引入反向 P1（`modificationDate` 比 `creationDate` 使非空导出目录**永不回收**）→ 终版=每 part 记自身快照 mtime 比较、夹具改"建目录后写子文件"真实形态。
+  - **#401（154th）** LUT 兼容性向导四端免整片拷贝（引用原路径，content:// 流与安全作用域仍落盘）；碳阻断=androidTest 仍断言旧拷贝契约，返工后仪器化 3/3 实跑绿 + 增量审确认只多 1 行只读 getter。
+  - **#400（155th）** Windows 导出尾趟：ExifTool `-stay_open` 常驻管道（整批省 N−1 次 Perl 冷启动）+ `CopySDROnly`（6 处 SDR-only 省整幅 HDR float LOH 克隆，42MP 成片峰值额外分配 ~1.0GB→~0.5GB）。
+  - **#402（156th）** AI 摘要簇：T1 cache.load/store 透传张量摘要（96–240MB 不再背靠背双算）+ T4 非 USN 卷退路按 stat 身份复用（有界 LRU 128、canonicalPath、before/after 双读复验）——碳拦并发 TOCTOU 污染与测试假绿（注入点在 `sourceMetadata` 之后测不到 `sequence==null`），返工 + 测试自比假绿再修（filler 逐出制造真实污染窗口）。
+  - **#403（157th）** 相机 iOS 落盘去重（`complete()` 零重算/采样复用/`verifiedURL` 接缓存；顺带把 `FileDigestCache` 拆独立编译单元让相机 harness 免拖编辑持久化依赖，pbxproj+16 脚本同步）；codex 判 a/b 红锚**假绿**（钩子只覆盖新包装）→ 计数下沉到真实 `hash()` 入口并撤除 seam，codex 亲自变异 `mutation_exit=133` 实证。
+- **方法论沉淀**：
+  - **对抗式评审成默认**：`异步化/顺序放宽`类改动单审会漏并发窗口（#396 的 Q6 竞态、#394 的 Windows 脏摘要都是二审才抓到），此类票一律叠二审（carbon 或 codex），并优先用"实跑变异"而非推演。
+  - **假绿三形态**：断言未覆盖真实入口（#403）、受污染值自比（#402）、夹具形态失真（#396 空目录 ctime==mtime）——交付必须"撤修复实跑变红"。
+  - **返工的反向 bug**：为堵竞态加的"过保守"判据同样致命（#396 回收 100% 失效），修复后要验证"该删的还能删"。
+  - **执行方分配纪律**：过度防御/降载类减法票**不派 codex**（风格偏加法）；凡派 codex 前置"最小充分改动+禁止净增防御层"纪律；agy 网关反复 `loadCodeAssist` EOF 时改派原生 subagent，agy 并发上限 **4**。
+- **在途**：#405（Mac 缩略图缓存去 fsync+LRU 索引、Android statvfs 风暴）、#406（批量账本写放大 Mac/Win）、#407（相机 Android 半边）、#393 r3（stat 短路→内容寻址零 I/O+摘要键 parse 缓存，等 Windows native 重跑）。
+
+---
+
+### (67) 过度防御大扫除波二（159–171）：审计清单全部落地；冲突规则与"假绿三形态"再次被实证
+
+- **#393（159th `62e463d5`）SHA 降载票①（C++ 核心）**：T1 相机 RAW 解码末尾无人消费摘要（前后已有 `cameraRawStamp` 夹逼）→ 不读盘；T2 ProRAW develop/finish 双算→单算、openPROW 复用准入摘要；T3 portable HDR 边界双验→单验；**T4/T5 三轮返工**——先把 #360 的内容防线退回 stat 短路（碳审：NTFS 粗时钟重开原发故障 + `expectedHash` 失配卡死 + 假绿测试），终版=**内容寻址零 I/O**（`Looks/HDR/<sha256>.cube` 文件名即摘要，直接比名）+ 摘要键 parse 缓存 + 三套样板合一；Windows native 重跑绿（首跑败于 opencv 下载 flake）。
+- **#404（158th）/#408（160th）** opencv/opencv_contrib 收编 `rawlab_download_archive`（重试+SHA256 pin，终结 schannel 抖动卡 native 门禁）；changelog (66) 入库。
+- **#406（161st）+ #409（164th）批量账本写放大（Mac/Win/iOS）**：`save()` 改为"首写或磁盘指纹≠本进程上次写出"才整读回+校验；探针文件任务级化；**保留 publishing/checkpoint/succeeded 三崩溃锚**（评估后不合并，合并会弱化恢复语义）；IO 账：500 张整文件重读 1500+→1、探针 6000+→1500 stat。**Windows 指纹被碳审打回并 CI 实红**（`(Length,LastWriteTime)` 在 NTFS 15.6ms 粗时钟下等长覆写漏检 → 静默覆盖未来版本 job.json）→ 终版=USN>0 + 六字段全匹配才跳过，否则回退全读；iOS 用 APFS 全纳秒 stat（`dev+ino+size+mtime_ns+ctime_ns`，`.atomic` 换 inode 反而成为检出依据）。
+- **#407（162nd）相机 Android 半边**：publish 采信流式摘要、pending 尺寸复核、采样 savedStat 快路径；**d1/d2 打开路径被碳审整段否决并撤回**（MediaStore `(SIZE,DATE_MODIFIED)` 整秒精度非 iOS 纳秒语义，同秒等长覆写会静默错图+编辑串图+账本不自愈），仅保留 a/b/c；仪器化 `CameraMediaLibraryTest` 6/6 实跑。
+- **#405（163rd）缩略图缓存三端**：去 fsync/WriteThrough + 共享实例（修 Album/Editor 双实例索引失步）+ **容器完整性校验**（Android JPEG SOI/EOI；Mac/iOS PNG IEND、JPEG EOI——ImageIO 对截断图返回非空残图已被实测钉死），坏条目删除+剔索引自愈；Mac 删掉 `NSImage(data:)` 的 0×0 伪装成功兜底。
+- **#411（165th）基线断裂修复**：`BatchPublicationTests` 的 `preview.cgImage`→`preview.image.cgImage`（生产从未有该访问器；回加才是为一条断言净增 API），并把 `hdr-batch.sh` 模拟器不适用登记入 ci.md。
+- **#413（166th）Mac 16-bit PNG 导出尾趟**：为 2KB EXIF 整图重解码重压缩 → **`eXIf` chunk 流式注入 + IDAT 原样平移**；61MP 实测 preserve 尾趟 **8.92s→0.45s**、峰值 RSS **+910MB→+9MB**、像素解码/编码 **1+1→0+0**，成片像素 SHA256 与 EXIF 读回逐项一致。
+- **#412（167th）HDR 滑杆扫描融合**：4 层整图扫描里可融合的两层并入 edit 写趟（**每帧整图扫描 7→4**），FFI/核心校验因错误契约不同不硬合；碳审 TSan 抓出并行归约对非原子 `fusedMax` 的无锁读（UB）→ 一行修（初值 `-inf`），TSan 前后对比 2 race→0。
+- **#414（168th）Android 相机账本**：进程内增量账本 + 行级 WAL + 任务级快照替代每张全量重写（单张：全目录枚举 1→0、重写 2→0、fsync 4→2–3）；碳审两阻断=设备门禁测试直读 json `prepared` 必红（hosted CI 只编不跑=假绿）+ **WAL 缺单调序号**（`Files.move` 与 `wal.delete()` 间崩溃会把旧 WAL 重放到新快照上，复活被清零的 `savedStat` 绕过篡改自愈）→ 加 `seq` 判据与 `recoverJob` 清 `prepared`，仪器 6/6 真绿。
+- **#410（169th）Freeze 离主线程（Mac/Win）**：双遍全集重验 + look 拷贝搬后台；碳审三阻断=后台读 WPF `GpuMode.SelectedIndex` **100% 崩**、`checking` 提前清导致**冻结期取消失效仍落盘**、Windows 红锚自写 `Task.Run` 绕过生产入口（且 PR 误称 WPF 已编译）→ 修后手动 Windows `build` 门禁真编 WPF，锚点③变异实证（撤修复两次独立 run 精准红、恢复 3 连绿 32 checks）。
+- **#415（170th）Mac 编辑账本缓存**：写后重取指纹原地更新（写+读配对磁盘读 2N→N），补齐 H-03 的 Mac 半边。
+- **#416（172nd `548ab84b`）LUT 副本内容寻址去重**：同一 look 在任务目录内 N 份 → 1 份（4 处 per-target 复制点；7.4MB/份）。碳审打回两点——**Mac 的 `BatchJournal.directory` 是跨任务平铺目录**（不像 iOS/Android 有 `<jobID>/`），副本平铺会被上一个任务的 `releaseResources` 误删（`missingLook`）→ 改为任务作用域前缀 `Batch/<jobID>-<sha>.<ext>` 且回收只看本任务前缀；**iOS 集合导出 `IOSBatchSelection` 漏改** → `look-<ordinal>`→`look-<sha>` 补齐。两处红锚均实测 EXIT=133。
+- **方法论再确认**：①**冲突/竞态类必须二审**（本轮 5 张票的阻断全是"单审会漏"的时序或平台契约）；②**假绿三形态全部再次出现**（未覆盖真实入口、自比值、夹具失真）；③**"减法票写成加法票"的具体形态**=用元数据短路顶替内容凭证（#393 T4/T5）与"按实例私有缓存"（#397）；④**平台语义不可类推**：MediaStore 整秒 ≠ VFS 纳秒、NTFS 粗时钟/FAT 无 ChangeTime、ImageIO 对截断图返回非空——三处都靠实跑或实测钉死。
+
+---
+
+### (68) 审计清单清零（至 172）：过度防御大扫除收官；剩余项均为用户侧手动门禁
+
+- **累计合入 172**（本波从 #388 起 36 单），`development` 现 `548ab84b`。**两次全仓审计（SHA-256 41 点 / 非哈希重处理 15 组）派生出的全部工单已落地**：SHA 四簇（#393/#394/#402/#403+#407）、批量账本三端（#406/#409）、启动清扫与 Freeze 搬线程（#396/#410）、缩略图缓存三端（#405/#397）、LUT 向导免拷贝（#401）、Win 导出尾趟（#400）、Android 相机账本（#414）、HDR 扫描融合（#412）、Mac PNG eXIf（#413）、Mac 账本缓存（#415）、LUT 副本去重（#416），以及两笔基建（#404 opencv 收编、#411 基线断裂修复）。
+- **本轮净收益样例（实跑口径）**：LUT SHA-256 28.2→2.6ms；Mac PNG 导出 preserve 尾趟 8.92s→0.45s、峰值内存 +910MB→+9MB；HDR 拖杆每帧整图扫描 7→4；500 张批量账本整文件重读 1500+→1；缩略图缓存写 256 张 stat 3.3 万→256 且零强制同步；相机导出单张 ProRAW 全量哈希 7 次→0（内容寻址/摘要透传）。
+- **收尾验证**：`development` 上 scripts/ci **245 OK(4 skip)**；dev-tip Windows native 门禁已派（run 43778371601）作为跨端最终回归。
+- **剩余均为用户侧**：手动门禁 k165（Mac 桌面会话+AX）/k167（有显示器非锁屏）/k169（素材补齐后 5 脚本）/k173（真机与硬件 GPU 签收）/k175（待开工批次前置）、#370（用户侧 PR）、k179（Runner JIT 切生产）、k161 尾注（undo DRAFT 误开历史面板；单槽合并队列待日志证据）、k163 尾注（`--batch-selection` 纳入常规 CI 需 v08 布局）。

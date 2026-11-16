@@ -3,6 +3,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <cstring>
 #include <iostream>
 #include <limits>
@@ -48,6 +51,72 @@ template<class Function> void rejects(Function function, const char* message) {
     bool rejected = false;
     try { function(); } catch (const std::invalid_argument&) { rejected = true; }
     check(rejected, message);
+}
+
+// V-01 融合红锚：撤掉融合（或放宽 inert 判据、改变 max 口径）时本用例必红；NaN/Inf 分支锁定逐位语义不变。
+void headroomFusion() {
+    const auto reference = [](const ImageData& image) {
+        float peak = 1;
+        for (const auto& pixel : image.pixels) peak = std::max(peak, luminance(pixel));
+        return peak;
+    };
+    auto source = fixture();
+    source.hdr.pixels[0] = {-1.5f, 2.25f, -0.75f};
+    source.hdr.pixels[1] = {std::numeric_limits<float>::denorm_min(), 0, 0};
+    source.hdr.pixels[2] = {std::numeric_limits<float>::max(), 0, 0};
+    source.sdr.pixels[0] = {-0.25f, 0, 1.0f};
+    HDRRenderOptions slider;
+    slider.saturation = -50;
+    const auto fused = renderHDRPair(source, slider);
+    check(fused.editedHeadroom == reference(fused.hdr) && fused.editedSdrHeadroom == reference(fused.sdr),
+        "fused single-pass headroom drifted from the independent full-image scan");
+    check(fused.editedSdrHeadroom >= 1, "inert render did not measure the SDR content peak");
+
+    HDRImagePair big;
+    big.hdr = ImageData(512, 258); big.sdr = ImageData(512, 258);
+    for (size_t i = 0; i < big.hdr.pixels.size(); ++i) {
+        const float v = (float(i % 4097) - 2048.f) * 1e-6f;
+        big.hdr.pixels[i] = {v, (i % 7) ? v * 2.f : -1e-7f, float(i % 3) * .5f};
+        big.sdr.pixels[i] = {v * .5f, float(i % 5) * .25f, (i % 9) ? 1.0f : -2.f};
+    }
+    big.nativeWidth = 512; big.nativeHeight = 258;
+    const auto fusedBig = renderHDRPair(big, slider);
+    check(fusedBig.editedHeadroom == reference(fusedBig.hdr) && fusedBig.editedSdrHeadroom == reference(fusedBig.sdr),
+        "parallel-range headroom reduction changed bits across threads");
+
+    HDRRenderOptions cropped = slider;
+    cropped.geometry.crop_width = .9f;
+    const auto fallback = renderHDRPair(source, cropped);
+    check(fallback.editedSdrHeadroom == 0, "active geometry published a fused SDR peak it did not measure");
+    check(fallback.editedHeadroom == reference(fallback.hdr), "fallback headroom scan changed");
+
+    HDRRenderOptions renditionOnly;
+    renditionOnly.processingVersion = SONY2FUJI_HDR_PROCESSING_RENDITION_VERSION;
+    renditionOnly.rendition.peakLimitEV = 1;
+    const auto hdrOnly = renderHDRPair(source, renditionOnly);
+    check(hdrOnly.editedSdrHeadroom == 0, "inactive SDR pass must not report a measured peak");
+    check(hdrOnly.editedHeadroom == reference(hdrOnly.hdr), "rendition fused headroom drifted");
+
+    auto corrupted = fixture();
+    corrupted.hdr.pixels[5] = {std::numeric_limits<float>::quiet_NaN(), 1, 1};
+    rejects([&] { renderHDRPair(corrupted, slider); }, "NaN pixel survived HDR input validation");
+    corrupted.hdr.pixels[5] = {std::numeric_limits<float>::infinity(), 1, 1};
+    rejects([&] { renderHDRPair(corrupted, slider); }, "Infinite pixel survived HDR input validation");
+
+    auto saturated = fixture();
+    saturated.hdr.pixels[3] = {std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), 0};
+    saturated.hdr.pixels[4] = {std::numeric_limits<float>::max(), .75f * std::numeric_limits<float>::max(), 0};
+    const auto boundary = renderHDRPair(saturated, {});
+    check(boundary.editedHeadroom == reference(boundary.hdr) && boundary.editedSdrHeadroom == 0,
+        "scan-only render must match the fallback headroom bit-for-bit and leave the SDR peak unmeasured");
+
+    auto doubled = fixture();
+    doubled.hdr.pixels[3] = {std::numeric_limits<float>::max(), 0, 0};
+    HDRRenderOptions boost;
+    boost.exposureEV = 1;
+    bool editThrew = false;
+    try { renderHDRPair(doubled, boost); } catch (const std::overflow_error&) { editThrew = true; }
+    check(editThrew, "exposure overflow must still throw from the edit pass with a fused max tracked");
 }
 
 void identity() {
@@ -379,6 +448,118 @@ void look(const char* path) {
     check(renderHDRPair(source, options).editedHeadroom <= std::exp2(.5f) + 1e-6f, "Look bypassed the HDR limit");
 }
 
+struct LookCacheFiles {
+    std::filesystem::path directory = std::filesystem::temp_directory_path() /
+        ("rawlab-look-cache-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    LookCacheFiles() { std::filesystem::create_directory(directory); }
+    ~LookCacheFiles() { std::error_code error; std::filesystem::remove_all(directory, error); }
+    std::string write(const std::filesystem::path& relative, int gain) {
+        const auto path = directory / relative;
+        std::filesystem::create_directories(path.parent_path());
+        std::ofstream file(path, std::ios::binary);
+        file << "# RawLabHDRLook: display-linear-srgb-v1\nLUT_3D_SIZE 2\nDOMAIN_MAX 4 4 4\n";
+        for (int b = 0; b < 2; ++b) for (int g = 0; g < 2; ++g) for (int r = 0; r < 2; ++r)
+            file << r * gain << ' ' << g * gain << ' ' << b * gain << '\n';
+        check(bool(file), "Cannot write look cache fixture");
+        return path.u8string();
+    }
+};
+
+void lookCacheAlternating() {
+    LookCacheFiles files;
+    const auto a = files.write("a.cube", 2), b = files.write("b.cube", 3);
+    const auto hdrA = HDRLook::load(a), hdrB = HDRLook::load(b);
+    const auto lutA = LUTParser::loadLUTCached(a), lutB = LUTParser::loadLUTCached(b);
+    check(lutA && lutB && hdrA != hdrB && lutA != lutB, "Distinct LUTs must have distinct parsed resources");
+    for (int i = 0; i < 4; ++i) {
+        check(HDRLook::load(a, hdrA->fingerprint()) == hdrA && HDRLook::load(b) == hdrB,
+            "Alternating HDR LUTs evicted a hot parsed resource");
+        check(LUTParser::loadLUTCached(a) == lutA && LUTParser::loadLUTCached(b) == lutB,
+            "Alternating SDR LUTs evicted a hot parsed resource");
+    }
+    rejects([&] { HDRLook::load(a, hdrB->fingerprint()); }, "Cached HDR look ignored the expected digest");
+    const auto healed = HDRLook::load(a, hdrA->fingerprint());
+    check(healed && healed != hdrA && healed->fingerprint() == hdrA->fingerprint() &&
+        HDRLook::load(a, hdrA->fingerprint()) == healed,
+        "Expected-digest mismatch did not evict and self-heal on the next load");
+    near(healed->apply({4, 4, 4}, 1).r, 2, "Alternating HDR cache mixed LUT contents");
+    near(hdrB->apply({4, 4, 4}, 1).r, 3, "Alternating HDR cache mixed LUT contents");
+}
+
+void lookCacheOverwrite() {
+    LookCacheFiles files;
+    const auto gain4Digest = HDRLook::load(files.write("ref4.cube", 4))->fingerprint();
+    const auto path = files.write("overwrite.cube", 2);
+    const auto filePath = std::filesystem::u8path(path);
+    const auto hdr = HDRLook::load(path);
+    const auto lut = LUTParser::loadLUTCached(path);
+    check(bool(lut), "Initial cached LUT failed to parse");
+    const auto stamp = std::filesystem::last_write_time(filePath);
+    const auto bytes = std::filesystem::file_size(filePath);
+
+    files.write("overwrite.cube", 3);
+    std::filesystem::last_write_time(filePath, stamp);
+    check(std::filesystem::file_size(filePath) == bytes && std::filesystem::last_write_time(filePath) == stamp,
+        "Same-size overwrite fixture changed size or mtime");
+    rejects([&] { HDRLook::load(path, hdr->fingerprint()); }, "Overwritten HDR LUT accepted its stale digest");
+    const auto nextHDR = HDRLook::load(path);
+    const auto nextLUT = LUTParser::loadLUTCached(path);
+    check(nextLUT && nextHDR != hdr && nextLUT != lut && nextHDR->fingerprint() != hdr->fingerprint(),
+        "Same-size same-mtime overwrite reused stale parsed LUTs");
+    near(nextHDR->apply({4, 4, 4}, 1).r, 3, "HDR overwrite did not update rendered values");
+    near(LUTApplicator(nextLUT).apply({4, 4, 4}).r, 3, "SDR overwrite did not update rendered values");
+    check(HDRLook::load(path) == nextHDR && LUTParser::loadLUTCached(path) == nextLUT,
+        "Replacement LUT was not cached");
+
+    files.write("overwrite.cube", 4);
+    std::filesystem::last_write_time(filePath, stamp);
+    check(std::filesystem::file_size(filePath) == bytes && std::filesystem::last_write_time(filePath) == stamp,
+        "Second same-size overwrite fixture changed size or mtime");
+    rejects([&] { HDRLook::load(path, nextHDR->fingerprint()); }, "Second overwrite accepted its stale digest");
+    const auto healed = HDRLook::load(path, gain4Digest);
+    check(healed && healed != nextHDR && healed->fingerprint() == gain4Digest,
+        "Expected-digest load remained stuck after same-size same-mtime overwrite");
+    near(healed->apply({4, 4, 4}, 1).r, 4, "Self-healed HDR look rendered stale values");
+}
+
+void lookCacheContentAddressed() {
+    LookCacheFiles files;
+    const auto digest = HDRLook::load(files.write("seed.cube", 2))->fingerprint();
+    const auto other = HDRLook::load(files.write("other.cube", 3))->fingerprint();
+    for (const auto& dir : {std::filesystem::path("HDRLooks"),
+            std::filesystem::path("RawLab") / "Looks" / "HDR",
+            std::filesystem::path("looks") / "HDR"}) {
+        const auto addressed = files.write(dir / (digest + ".cube"), 2);
+        size_t io = 0;
+        const auto first = HDRLook::load(addressed, digest, &io);
+        check(io == 1 && first->fingerprint() == digest, "Cold content-addressed load must read once");
+        for (int i = 0; i < 3; ++i)
+            check(HDRLook::load(addressed, digest, &io) == first && io == 1,
+                "Warm content-addressed load performed disk I/O");
+        check(HDRLook::load(addressed, {}, &io) == first && io == 2,
+            "Unkeyed load on content-addressed path skipped byte hashing");
+    }
+
+    const auto hdrLooks = files.write(std::filesystem::path("HDRLooks") / (digest + ".cube"), 2);
+    size_t io = 0;
+    const auto cached = HDRLook::load(hdrLooks, digest, &io);
+    io = 0;
+    check(HDRLook::load(hdrLooks, digest, &io) == cached && io == 0, "Content-addressed hit performed disk I/O");
+    rejects([&] { HDRLook::load(hdrLooks, other, &io); }, "Content-addressed load accepted mismatched digest");
+    check(io == 1, "Mismatched expected digest did not fall back to full byte hashing");
+    const auto healed = HDRLook::load(hdrLooks, digest, &io);
+    check(healed && healed != cached && io == 2 && HDRLook::load(hdrLooks, digest, &io) == healed && io == 2,
+        "Content-addressed cache did not evict on mismatch and self-heal to zero-I/O");
+
+    for (const auto& fallback : {files.write(std::filesystem::path("HDRLooks") / "custom.cube", 2),
+            files.write(digest + ".cube", 2)}) {
+        size_t reads = 0;
+        const auto loaded = HDRLook::load(fallback, digest, &reads);
+        check(HDRLook::load(fallback, digest, &reads) == loaded && reads == 2,
+            "Non-content-addressed path skipped byte hashing");
+    }
+}
+
 void silver(const char* path) {
     const auto table = HDRLook::load(path);
     for (const float grey : {-4.f, 0.f, .015625f, .1845f, 1.f, 2.f, 4.f, 16.f, 64.f, 80.f}) {
@@ -496,12 +677,16 @@ int main(int argc, char* argv[]) {
     try {
         const std::string name = argc >= 2 ? argv[1] : "";
         if (name == "identity") identity();
+        else if (name == "headroom_fusion") headroomFusion();
         else if (name == "tone") tone();
         else if (name == "color") color();
         else if (name == "rendition") rendition();
         else if (name == "effects") effects();
         else if (name == "detail") detail();
         else if (name == "look" && argc == 3) look(argv[2]);
+        else if (name == "look_cache_alternating") lookCacheAlternating();
+        else if (name == "look_cache_overwrite") lookCacheOverwrite();
+        else if (name == "look_cache_content_addressed") lookCacheContentAddressed();
         else if (name == "silver" && argc == 3) silver(argv[2]);
         else if (name == "white_balance") whiteBalance();
         else if (name == "geometry") geometry();

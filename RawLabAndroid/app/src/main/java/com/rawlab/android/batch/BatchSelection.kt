@@ -106,14 +106,16 @@ class BatchSelectionExport(private val directory: File,
         }
         validate()
         val id = UUID.randomUUID().toString()
-        val folder = File(directory, id)
+        val folder = File(directory, id).also(com.rawlab.android.photo.WorkingCopyCleanup::protect)
         check(!folder.exists() && folder.mkdirs()) { "Cannot create batch inputs" }
         val journal = BatchJournal(directory)
         try {
             val targets = review.rows.mapIndexed { index, row ->
                 val extension = row.target.displayName.substringAfterLast('.', "raw").replace(Regex("[^A-Za-z0-9]"), "").ifEmpty { "raw" }
                 val input = row.target.sourceFile.copyTo(File(folder, "input-$index.$extension"))
-                val look = row.look?.copyTo(File(folder, "look-$index.${row.look.extension}"))
+                val look = row.look?.let { source ->
+                    File(folder, "${row.lookSHA256}.${source.extension}").also { if (!it.exists()) source.copyTo(it) }
+                }
                 val frozen = BatchFrozenSettings(ordinal = index, settings = row.settings!!,
                     inputSHA256 = row.inputSHA256!!, lookFile = look, lookSHA256 = row.lookSHA256,
                     outputFormat = review.format, longEdge = review.longEdge)
@@ -130,4 +132,15 @@ class BatchSelectionExport(private val directory: File,
             return job
         } catch (error: Throwable) { journal.discard(id); throw error }
     }
+}
+
+internal suspend fun prepareCollectionReview(
+    awaitPending: suspend () -> Unit = {},
+    captureActiveValidation: () -> (String) -> Unit,
+    runPrepare: suspend ((String) -> Unit) -> CollectionExportReview,
+): CollectionExportReview {
+    // 预检必须在已提交的编辑落盘后再捕获活动状态与读盘，避免读到旧/空记录。
+    awaitPending()
+    val validateActive = captureActiveValidation()
+    return runPrepare(validateActive)
 }

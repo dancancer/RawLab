@@ -1,4 +1,5 @@
 #include "compute_denoise.h"
+#include "gles_recovery.h"
 #include "compute_denoise_shader.h"
 #include "filter_buffer_pool.h"
 #include <EGL/egl.h>
@@ -14,7 +15,7 @@ namespace {
 constexpr GLuint groupSize = 128;
 void checked() {
     const auto error = glGetError();
-    if (error != GL_NO_ERROR) throw std::runtime_error("GLES filter error " + std::to_string(error));
+    if (error != GL_NO_ERROR) throw GlesFailure(error);
 }
 struct Binding final : FilterContext {
     EGLDisplay previousDisplay = eglGetCurrentDisplay();
@@ -28,8 +29,9 @@ struct Binding final : FilterContext {
             void (*trim)(void*) = nullptr, void* arg = nullptr)
         : display(d), onUnbind(trim), unbindArg(arg) {
         if (!eglBindAPI(EGL_OPENGL_ES_API) || !eglMakeCurrent(d, surface, surface, context)) {
+            const EGLint error = eglGetError();
             if (previousApi != EGL_NONE) eglBindAPI(previousApi);
-            throw std::runtime_error("GLES filter context unavailable");
+            throw sony2fuji::EglFailure(error);
         }
     }
     ~Binding() override {
@@ -42,7 +44,9 @@ struct Binding final : FilterContext {
 };
 struct Buffer final : FilterBuffer {
     GLuint name = 0;
-    ~Buffer() override { if (name) glDeleteBuffers(1, &name); }
+    ~Buffer() override {
+        if (name && eglGetCurrentContext() != EGL_NO_CONTEXT) glDeleteBuffers(1, &name);
+    }
 };
 
 const char* prefix = R"glsl(#version 310 es
@@ -92,12 +96,22 @@ public:
                 auto scope = activate();
                 pool.clear();
                 dummy.reset();
-                if (constants) glDeleteBuffers(1, &constants);
-                if (program) glDeleteProgram(program);
+                if (constants) {
+                    glDeleteBuffers(1, &constants);
+                    constants = 0;
+                }
+                if (program) {
+                    glDeleteProgram(program);
+                    program = 0;
+                }
             } catch (...) { }
             eglDestroyContext(display, context);
+            context = EGL_NO_CONTEXT;
         }
-        if (surface != EGL_NO_SURFACE) eglDestroySurface(display, surface);
+        if (surface != EGL_NO_SURFACE) {
+            eglDestroySurface(display, surface);
+            surface = EGL_NO_SURFACE;
+        }
         // Never terminate Android's process-wide display, shared with HWUI.
     }
     void initialize() {
@@ -188,10 +202,22 @@ public:
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, static_cast<Buffer&>(buffer.underlying()).name);
         const auto bytes = static_cast<GLsizeiptr>(count * sizeof(float));
         const auto mapped = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, bytes, GL_MAP_READ_BIT);
-        if (!mapped) throw std::runtime_error("GLES filter readback failed");
+        if (!mapped) {
+            checked();
+            throw std::runtime_error("GLES filter readback failed");
+        }
         std::memcpy(output, mapped, static_cast<size_t>(bytes));
-        if (!glUnmapBuffer(GL_SHADER_STORAGE_BUFFER)) throw std::runtime_error("GLES filter buffer contents lost");
+        if (!glUnmapBuffer(GL_SHADER_STORAGE_BUFFER)) {
+            checked();
+            throw std::runtime_error("GLES filter buffer contents lost");
+        }
         checked();
+    }
+    void clearErrors() override {
+        try {
+            auto scope = activate();
+            while (glGetError() != GL_NO_ERROR) {}
+        } catch (...) {}
     }
 };
 } // namespace

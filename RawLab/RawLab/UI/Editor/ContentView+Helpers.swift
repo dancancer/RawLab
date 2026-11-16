@@ -650,8 +650,15 @@ extension ContentView {
         return true
     }
 
+    func requestSingleExport(_ format: BatchOutputFormat) {
+        guard closeEditorDraftCleanly() else { return }
+        singleExportFormat = format
+        exportLongEdge = nil
+        showingExportSize = true
+    }
+
     func openBatchExport() {
-        guard !isEditorDraftActive else { return }
+        guard closeEditorDraftCleanly() else { return }
         if batchModel != nil { showingBatchExport = true; return }
         guard let source = viewModel.currentBatchSource(settings: settings) else {
             viewModel.statusMessage = L10n.text("请先导入一张照片。")
@@ -667,9 +674,15 @@ extension ContentView {
         do {
             let journal = try BatchJournalStore.appStore()
             if let job = try journal.pendingJobs().first {
+                BatchArtifactRetention.protectJob(job.id)
                 batchModel = BatchExportModel(job:job,journalStore:journal,editor:viewModel)
                 batchModel?.onUsage = { UsageAnalytics.shared.record($0) }
-                batchModel?.onDiscard = { batchModel = nil; showingBatchExport = false; recoverBatchExport() }
+                batchModel?.onDiscard = {
+                    BatchArtifactRetention.unprotectJob(job.id)
+                    batchModel = nil
+                    showingBatchExport = false
+                    recoverBatchExport()
+                }
             }
         } catch {
             viewModel.reportError(error, operation: .batchExport, stage: "recover",

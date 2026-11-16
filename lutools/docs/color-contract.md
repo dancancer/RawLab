@@ -407,6 +407,40 @@ References considered: [darktable lightness grain](https://docs.darktable.org/us
 [IPOL Monte Carlo film grain](https://www.ipol.im/pub/art/2017/192/). None of these
 implementations is copied or embedded.
 
+### Denoise keys in editing clients
+
+`detail.denoise.raw_level` is pre-demosaic Bayer FBDD (integer 0/1/2),
+not post-render RGB denoising. `detail.denoise.post_rgb` is the separate
+post-render RGB amount (0–1). Chroma and wavelet filtering are supported on
+raster and non-Bayer inputs; they must not be discarded merely because the
+input cannot run FBDD.
+
+Portable adjustment payloads are validated before target adaptation. Unknown
+fields, invalid types/ranges, and invalid source declarations remain errors.
+A valid denoise value that the client or target cannot execute is ignored with
+a paste notice, while other selected edits still apply. In particular, Mac
+ignores non-zero FBDD on raster/non-Bayer targets, and iOS ignores non-zero
+post-RGB on raster targets. The other SDR client paths that do not model these
+keys retain the same ignore-and-notify rule. These client capability limits do
+not remove the corresponding core display-buffer RGB stages.
+
+An active desktop AI target ignores all selected traditional denoise fields,
+including neutral zero/null values, and keeps its AI flag and saved ordinary
+denoise values. Non-neutral ignored values produce a notice. Turning AI off can
+therefore restore the previous ordinary denoise settings. AI activation has no
+portable transfer field; mobile clients do not represent an active AI target.
+Loading native edit records remains separate from cross-photo paste: known
+valid dormant values survive persistence, and the existing per-format extension
+and version-bound validation rules still apply. Neither an ignored paste field
+nor a retained dormant value claims that a filter actually ran.
+
+The field support matrix and executable scenarios are maintained in
+[the shared field spec](../../Shared/specs/adjustment-fields-v1.json),
+[transfer scenarios](../../Shared/fixtures/adjustment-transfer-scenarios-v1.json),
+and [edit records](../../Shared/fixtures/edit-records-v1.json).
+Core unsupported requests continue to return `UNSUPPORTED`; GPU Auto/Force
+and hardware-only AI failure policies are unchanged.
+
 ### GPU Denoising
 
 The existing luma, chroma and coarse strengths remain independently adjustable from

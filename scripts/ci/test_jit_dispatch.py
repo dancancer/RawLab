@@ -25,10 +25,16 @@ REGISTRATION = ["self-hosted", "macOS", "ARM64", LABEL]
 NO_JOB = f"labels-mismatch (no open job asks for {LABEL})"
 
 
-def run(run_id=101, event="push", repo=OWN, branch="development", created="2026-11-13T00:00:00Z"):
+HEAD_SHA = "a" * 40
+OTHER_SHA = "b" * 40
+
+
+def run(run_id=101, event="push", repo=OWN, branch="development", created="2026-11-13T00:00:00Z",
+        head_sha=HEAD_SHA, pull_requests=()):
     """A workflow-run list entry reduced to the fields the dispatcher trusts: all server-side."""
     return {"id": run_id, "event": event, "head_branch": branch, "status": "queued",
-            "head_repository": {"full_name": repo}, "created_at": created}
+            "head_repository": {"full_name": repo}, "created_at": created, "head_sha": head_sha,
+            "pull_requests": list(pull_requests)}
 
 
 def jobs(labels=None, status="queued", count=1):
@@ -123,7 +129,8 @@ class DecisionTableTests(unittest.TestCase):
 
     def test_labels_mismatch_stays_refused_even_when_allowlisted(self):
         self.assertEqual(self.decide(run(event="pull_request", repo=FOREIGN),
-                                     jobs(labels=["self-hosted", "rawlab-android"]), {"contributor/RawLab"}),
+                                     jobs(labels=["self-hosted", "rawlab-android"]),
+                                     {f"contributor/RawLab@{HEAD_SHA}"}),
                          (False, NO_JOB))
 
     def test_unplanned_run_retries_instead_of_being_claimed(self):
@@ -141,12 +148,65 @@ class DecisionTableTests(unittest.TestCase):
         self.assertEqual(self.decide(run(event="pull_request", repo=FOREIGN), []),
                          (False, "untrusted (event=pull_request, head=contributor/RawLab)"))
 
-    def test_allowlist_admits_a_fork_pull_request_by_run_repo_and_repo_branch(self):
-        fork = run(run_id=777, event="pull_request", repo=FOREIGN, branch="feature/x")
-        for entry in ("777", "contributor/RawLab", "Contributor/RawLab:feature/x"):
+    def test_allowlist_admits_a_fork_pull_request_only_with_pinned_head_sha(self):
+        fork = run(run_id=777, event="pull_request", repo=FOREIGN, branch="feature/x",
+                   pull_requests=[])
+        for entry in (f"777@{HEAD_SHA}", f"contributor/RawLab@{HEAD_SHA}",
+                      f"Contributor/RawLab:feature/x@{HEAD_SHA}"):
             with self.subTest(entry=entry):
                 self.assertEqual(self.decide(fork, jobs(), jit.parse_allowlist(entry)),
                                  (True, f"allowlisted ({entry.lower()})"))
+
+    def test_allowlist_pr_number_is_same_repo_only(self):
+        same_repo_pr = run(run_id=778, event="pull_request", repo=OWN, branch="feature/x",
+                           pull_requests=[{"number": 42}])
+        self.assertEqual(self.decide(same_repo_pr, jobs(), jit.parse_allowlist(f"pr#42@{HEAD_SHA}")),
+                         (True, f"allowlisted (pr#42@{HEAD_SHA})"))
+        for fork_prs in ([], [{"number": 42}]):
+            fork = run(run_id=777, event="pull_request", repo=FOREIGN, branch="feature/x",
+                       pull_requests=fork_prs)
+            with self.subTest(pull_requests=fork_prs):
+                self.assertEqual(self.decide(fork, jobs(), jit.parse_allowlist(f"pr#42@{HEAD_SHA}")),
+                                 (False, "untrusted (event=pull_request, head=contributor/RawLab)"))
+
+    def test_allowlist_rejects_head_sha_mismatch_and_logs_reason(self):
+        fork = run(run_id=777, event="pull_request", repo=FOREIGN, branch="feature/x",
+                   head_sha=OTHER_SHA, pull_requests=[])
+        for entry in (f"777@{HEAD_SHA}", f"contributor/RawLab:feature/x@{HEAD_SHA}"):
+            with self.subTest(entry=entry):
+                decision = self.decide(fork, jobs(), jit.parse_allowlist(entry))
+                self.assertFalse(decision.dispatch)
+                self.assertIn("allowlist head_sha mismatch", decision.reason)
+                self.assertIn(OTHER_SHA, decision.reason)
+        same_repo_pr = run(run_id=778, event="pull_request", repo=OWN, branch="feature/x",
+                           head_sha=OTHER_SHA, pull_requests=[{"number": 42}])
+        decision = self.decide(same_repo_pr, jobs(), jit.parse_allowlist(f"pr#42@{HEAD_SHA}"))
+        self.assertFalse(decision.dispatch)
+        self.assertIn("allowlist head_sha mismatch", decision.reason)
+        self.assertIn(OTHER_SHA, decision.reason)
+
+    def test_allowlist_rejects_missing_head_sha_on_run(self):
+        fork = run(run_id=777, event="pull_request", repo=FOREIGN, head_sha="",
+                   pull_requests=[])
+        decision = self.decide(fork, jobs(), jit.parse_allowlist(f"777@{HEAD_SHA}"))
+        self.assertEqual(decision, (False, f"allowlist head_sha mismatch (777@{HEAD_SHA}: got none)"))
+
+    def test_stale_repo_allowlist_does_not_block_newer_same_repo_push(self):
+        push_run = run(run_id=888, event="push", repo=OWN, branch="development", head_sha=OTHER_SHA)
+        allowlist = jit.parse_allowlist(f"{OWN}@{HEAD_SHA}")
+        self.assertEqual(self.decide(push_run, jobs(), allowlist),
+                         (True, "trusted push on this repository"))
+        api = FakeAPI(jobs_by_run={888: jobs()})
+        claimed = jit.next_dispatch([push_run], api.jobs, allowlist=allowlist)
+        self.assertIsNotNone(claimed)
+        self.assertEqual(claimed["id"], 888)
+
+    def test_allowlist_rejects_unpinned_entry_without_head_sha(self):
+        fork = run(run_id=777, event="pull_request", repo=FOREIGN, branch="feature/x")
+        for entry in ("777", "contributor/RawLab", "Contributor/RawLab:feature/x"):
+            with self.subTest(entry=entry):
+                decision = self.decide(fork, jobs(), jit.parse_allowlist(entry))
+                self.assertEqual(decision, (False, f"allowlist entry missing @head_sha ({entry.lower()})"))
 
     def test_allowlist_entries_are_normalized_and_case_insensitive(self):
         self.assertEqual(jit.parse_allowlist(" A/b, 777 ,,C:d "), {"a/b", "777", "c:d"})
@@ -286,7 +346,7 @@ class QueuePassTests(unittest.TestCase):
     def test_allowlisted_fork_is_claimed_when_it_is_the_only_trusted_run(self):
         fork = run(run_id=6, event="pull_request", repo=FOREIGN)
         api = FakeAPI(jobs_by_run={6: jobs()})
-        candidate = jit.next_dispatch([fork], api.jobs, allowlist={"contributor/RawLab"})
+        candidate = jit.next_dispatch([fork], api.jobs, allowlist={f"contributor/RawLab@{HEAD_SHA}"})
         self.assertEqual(candidate["id"], 6)
 
     def test_job_running_elsewhere_does_not_block_the_queued_sibling(self):
@@ -407,11 +467,13 @@ class DispatchPayloadTests(unittest.TestCase):
     def test_launch_runner_strips_dispatcher_tokens_from_child_env(self):
         seen = {}
         with unittest.mock.patch.dict(os.environ, {
-                "RAWLAB_JIT_TOKEN": "admin-pat", "GITHUB_TOKEN": "gh-pat", "KEEP_VAR": "ok"}), \
+                "RAWLAB_JIT_TOKEN": "admin-pat", "GITHUB_TOKEN": "gh-pat",
+                "GH_TOKEN": "gh-cli-pat", "KEEP_VAR": "ok"}), \
                 unittest.mock.patch.object(jit.subprocess, "Popen", self.popen_factory(seen)):
             self.assertEqual(jit.launch_runner("cfg-9", runner_dir="/jit-runner"), 0)
         self.assertNotIn("RAWLAB_JIT_TOKEN", seen["env"])
         self.assertNotIn("GITHUB_TOKEN", seen["env"])
+        self.assertNotIn("GH_TOKEN", seen["env"])
         self.assertEqual(seen["env"]["KEEP_VAR"], "ok")
         self.assertEqual(seen["env"]["ACTIONS_RUNNER_INPUT_JITCONFIG"], "cfg-9")
 
@@ -589,10 +651,49 @@ class MainTests(unittest.TestCase):
 
     def test_missing_token_names_the_fine_grained_permissions(self):
         with contextlib.redirect_stderr(io.StringIO()) as err, \
-                unittest.mock.patch.dict(os.environ, {"RAWLAB_JIT_TOKEN": "", "GITHUB_TOKEN": ""}):
+                unittest.mock.patch.dict(os.environ, {"RAWLAB_JIT_TOKEN": "", "GITHUB_TOKEN": ""}), \
+                unittest.mock.patch.object(jit.os.path, "exists", lambda _p: False):
             code = jit.main(["--once"])
         self.assertEqual(code, 2)
         self.assertIn("Administration", err.getvalue())
+
+    def test_env_file_loads_token_with_0600_without_mutating_os_environ(self):
+        seen_tokens = []
+        api = FakeAPI(runs=[run()], jobs_by_run={101: jobs()})
+
+        def capture_api(token, repo=None):
+            seen_tokens.append(token)
+            return api
+
+        with tempfile.TemporaryDirectory() as tmp:
+            env_path = Path(tmp) / "jit.env"
+            env_path.write_text("# comment\nRAWLAB_JIT_TOKEN=\"secret-from-file\"\n")
+            env_path.chmod(0o600)
+            with contextlib.redirect_stdout(io.StringIO()), \
+                    unittest.mock.patch.dict(os.environ, {"RAWLAB_JIT_TOKEN": "", "GITHUB_TOKEN": ""}), \
+                    unittest.mock.patch.object(jit, "ActionsAPI", capture_api), \
+                    unittest.mock.patch.object(jit, "dispatch", lambda *a, **k: 0):
+                code = jit.main(["--once", "--env-file", str(env_path)])
+                self.assertEqual(os.environ.get("RAWLAB_JIT_TOKEN"), "")
+        self.assertEqual(code, 0)
+        self.assertEqual(seen_tokens, ["secret-from-file"])
+
+    def test_env_file_rejects_non_0600_permissions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env_path = Path(tmp) / "jit.env"
+            env_path.write_text("RAWLAB_JIT_TOKEN=secret\n")
+            env_path.chmod(0o644)
+            with contextlib.redirect_stderr(io.StringIO()) as err, \
+                    unittest.mock.patch.dict(os.environ, {"RAWLAB_JIT_TOKEN": "", "GITHUB_TOKEN": ""}):
+                code = jit.main(["--once", "--env-file", str(env_path)])
+        self.assertEqual(code, 2)
+        self.assertIn("0600", err.getvalue())
+
+    def test_env_file_rejects_missing_explicit_file(self):
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            code = jit.main(["--once", "--env-file", "/definitely-missing-jit.env"])
+        self.assertEqual(code, 2)
+        self.assertIn("--env-file", err.getvalue())
 
     def test_main_recovers_and_dispatches_after_poison_run_completes(self):
         class StopPolling(BaseException):
@@ -687,6 +788,14 @@ class LaunchdExampleTests(unittest.TestCase):
 
     def test_plist_declares_process_type_interactive(self):
         self.assertIn("<key>ProcessType</key>", self.text)
+
+    def test_plist_does_not_store_plaintext_token_and_points_to_0600_env_file(self):
+        self.assertNotIn("<key>RAWLAB_JIT_TOKEN</key>", self.text,
+                         "token must live in a 0600 env file, never plaintext in the launchd plist")
+        self.assertNotIn("__REPLACE_WITH_FINE_GRAINED_PAT__", self.text)
+        self.assertIn("<key>RAWLAB_JIT_ENV_FILE</key>", self.text)
+        self.assertIn("jit.env", self.text)
+        self.assertIn("0600", self.text)
 
 
 if __name__ == "__main__":

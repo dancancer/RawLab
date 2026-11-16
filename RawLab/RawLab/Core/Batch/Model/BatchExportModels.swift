@@ -33,10 +33,10 @@ struct BatchFrozenSettings: Codable, Equatable {
     }
 
     func verifyFiles(input: URL) throws {
-        guard try PhotoIdentity.fallback(for: input).contentIdentifier == inputSHA256 else {
+        guard try PhotoIdentity.cachedFallback(for: input).contentIdentifier == inputSHA256 else {
             throw BatchExportError.target(L10n.text("原始文件已被替换，请重新选择照片。"))
         }
-        if let lookURL, (try? PhotoIdentity.fallback(for: lookURL).contentIdentifier) != lookSHA256 {
+        if let lookURL, (try? PhotoIdentity.cachedFallback(for: lookURL).contentIdentifier) != lookSHA256 {
             throw BatchExportError.target(L10n.text("任务使用的外观文件不可用，请重新创建任务。"))
         }
     }

@@ -829,6 +829,12 @@
       "symbol": "sony2fuji_session_get_last_backend"
     },
     {
+      "name": "sony2fuji_session_get_unsupported_reason",
+      "return_type": "sony2fuji_unsupported_reason",
+      "params": ["const sony2fuji_session*"],
+      "symbol": "sony2fuji_session_get_unsupported_reason"
+    },
+    {
       "name": "sony2fuji_session_get_raw_decode_count",
       "return_type": "uint64_t",
       "params": ["const sony2fuji_session*"],
@@ -1239,6 +1245,14 @@
         {"name": "SONY2FUJI_STATUS_OUTPUT_IO_ERROR", "value": 6},
         {"name": "SONY2FUJI_STATUS_CANCELLED", "value": 7},
         {"name": "SONY2FUJI_STATUS_AI_NOT_READY", "value": 8}
+      ]
+    },
+    {
+      "enum": "sony2fuji_unsupported_reason",
+      "size": 4,
+      "values": [
+        {"name": "SONY2FUJI_UNSUPPORTED_NONE", "value": 0},
+        {"name": "SONY2FUJI_UNSUPPORTED_FORCE_GPU", "value": 1}
       ]
     },
     {

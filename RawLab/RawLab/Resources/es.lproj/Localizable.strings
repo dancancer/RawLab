@@ -91,6 +91,7 @@
 "上次导入未完成" = "La última importación no se completó";
 "上次预览" = "Última vista previa";
 "下一张" = "Foto siguiente";
+"不可读外观" = "Looks ilegibles";
 "不支持此 HDR 格式或颜色描述。" = "Este formato HDR o descripción de color no es compatible.";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "Esta foto, look o modo de procesamiento no es compatible. Comprueba la compatibilidad de los archivos y los ajustes de procesamiento.";
 "不能覆盖原始文件。" = "No se puede sobrescribir el archivo original.";
@@ -356,6 +357,7 @@
 "已展开" = "Expandido";
 "已忽略旧版 RAW 降噪（FBDD）" = "Reducción de ruido RAW heredada (FBDD) ignorada";
 "已忽略渲染后 RGB 降噪" = "Reducción de ruido RGB posterior al renderizado ignorada";
+"已忽略目标不支持的普通降噪设置" = "Se han ignorado los ajustes de reducción de ruido estándar no compatibles con el destino";
 "已恢复上次调整" = "Ajustes anteriores restaurados";
 "已恢复已登记的接收任务。断线期间拍摄的照片请从相机手动导入。" = "Se han restaurado las transferencias registradas. Importa manualmente las fotos tomadas durante la desconexión.";
 "已撤销" = "Deshecho";
@@ -447,6 +449,7 @@
 "按每张照片" = "Por foto";
 "按每张调整导出" = "Exportar con los ajustes de cada foto";
 "按每张调整导出…" = "Exportar con los ajustes de cada foto…";
+"损坏的外观" = "Look dañado";
 "损坏的预设" = "Preajuste dañado";
 "授权核对相册中的保存结果" = "Autorizar para verificar los resultados guardados en Fotos";
 "排列顺序不代表准确度。未识别的颜色空间、范围和基础图像仍属于假设。" = "El orden no indica precisión. Los espacios de color, rangos y bases de imagen no identificados siguen siendo hipótesis.";
@@ -650,6 +653,7 @@
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "No se pudo analizar el balance de blancos de toma de este RAW; no se puede aplicar el matiz de la receta.";
 "此像素不可取样。" = "No se puede tomar una muestra de este píxel.";
 "此外观已不在外观库中。" = "Este look ya no está en la biblioteca de looks.";
+"此外观无法读取，可能已损坏或来自不兼容版本。" = "No se puede leer este look. Puede estar dañado o proceder de una versión incompatible.";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Solo se restablecerán los ajustes del grupo %@. Los demás grupos no cambiarán.";
 "此操作已过期，请重新操作。" = "Esta operación ha quedado desactualizada. Vuelve a iniciarla.";
 "此照片或构建尚不能使用 AI 降噪。" = "La reducción de ruido con IA no está disponible para esta foto o compilación.";

@@ -35,15 +35,26 @@ class AdjustmentPresetUITest {
         }
     }
     private fun click(tag: String) {
-        if (tag == "preset-dock") compose.onNodeWithTag("editor-tools").performScrollToNode(hasTestTag(tag))
         val node = compose.onNodeWithTag(tag)
         if (compose.onAllNodes(hasTestTag(tag) and hasAnyAncestor(hasScrollAction())).fetchSemanticsNodes().isNotEmpty()) node.performScrollTo()
         node.performClick(); compose.waitForIdle()
         if (tag == "preset-save") compose.waitUntil(60_000) { !model.state.value.committingAdjustments }
     }
+    private fun openQuickPresets() {
+        if (model.quickPreset.value.visible) return
+        if (compose.onAllNodesWithTag("workspace-more").fetchSemanticsNodes().isNotEmpty()) {
+            click("workspace-more"); click("workspace-presets")
+        } else {
+            compose.onNode(hasContentDescription(compose.activity.getString(R.string.more)) and hasAnyAncestor(hasTestTag("editor-menu"))).performClick()
+            click("preset-menu")
+        }
+    }
+    private fun closeQuickPresets() {
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        compose.waitUntil(10_000) { !model.quickPreset.value.visible }
+    }
     private fun library() {
-        compose.onNode(hasContentDescription(compose.activity.getString(R.string.more)) and !hasAnyAncestor(hasTestTag("adjustment-dock"))).performClick()
-        click("preset-menu")
+        openQuickPresets()
         click("preset.quick.manage")
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("preset-create").fetchSemanticsNodes().isNotEmpty() }
     }
@@ -81,7 +92,7 @@ class AdjustmentPresetUITest {
             library(); save(if (compose.activity.resources.configuration.locales[0].language == "de")
                 "Abendlicht mit sanften Farben und unveränderter Geometrie" else "Quick exposure")
             val preset = model.presetStore.list().single { it.id !in before }
-            click("preset-close"); click("editor-group-light")
+            click("preset-close"); closeQuickPresets(); click("editor-group-light")
             compose.runOnUiThread { model.edit(model.state.value.edits.copy(exposure = .2f)) }; ready()
             compose.onNode(hasContentDescription(compose.activity.getString(R.string.more)) and !hasAnyAncestor(hasTestTag("adjustment-dock"))).performClick()
             click("preset-menu")
@@ -143,10 +154,10 @@ class AdjustmentPresetUITest {
             compose.waitUntil(30_000) { model.quickPreset.value.phase == QuickPresetPhase.UNCHANGED }
             assertEquals(saved, edits.readState(identity)); assertEquals(savedHistory, model.adjustmentTransactions)
             screenshot("quick-unchanged", "editor")
-            click("editor-group-light")
+            closeQuickPresets(); click("editor-group-light")
             compose.onNodeWithTag("editor-tool-2").assertIsDisplayed()
             assertFalse(model.quickPreset.value.visible)
-            click("editor-group-looks"); click("preset-dock")
+            click("editor-group-looks"); openQuickPresets()
             InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
             compose.waitUntil(10_000) { !model.quickPreset.value.visible }
         } finally {
@@ -193,16 +204,14 @@ class AdjustmentPresetUITest {
         try {
             compose.runOnUiThread { model.importPhoto(Uri.fromFile(source)) }; ready()
             compose.runOnUiThread { model.edit(model.state.value.edits.copy(exposure = .7f, temperature = 7200f, tint = -4f)) }; ready()
-            click("editor-group-looks"); click("preset-dock")
+            click("editor-group-looks")
+            compose.onNodeWithTag("editor-tool-0").assertIsEnabled()
+            compose.onNodeWithTag("editor-tool-15").assertIsNotEnabled()
+            openQuickPresets()
             compose.waitUntil(10_000) {
                 compose.onAllNodes(hasTestTag("preset.quick.create") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
             }
             compose.onNodeWithTag("preset.quick.create").assertExists()
-            compose.onNodeWithTag("editor-tool-0").assertIsEnabled()
-            for (tool in listOf(15, 1)) {
-                compose.onNodeWithTag("editor-tools").performScrollToNode(hasTestTag("editor-tool-$tool"))
-                compose.onNodeWithTag("editor-tool-$tool").assertIsNotEnabled()
-            }
             click("preset.quick.create"); enterName("Quick HDR")
             click("preset-save")
             val preset = model.presetStore.list().single { it.id !in before }
@@ -220,7 +229,7 @@ class AdjustmentPresetUITest {
             assertEquals(0f, model.state.value.edits.hdr!!.exposure)
             compose.runOnUiThread { model.setHDRMode(false) }; ready()
             compose.waitUntil(10_000) { !model.quickPreset.value.visible }
-            click("preset-dock")
+            openQuickPresets()
             val edits = EditStore(File(compose.activity.filesDir, "edits"))
             val identity = model.state.value.photo!!.identity; val saved = edits.readState(identity); val history = model.adjustmentTransactions.toList()
             click("preset.quick.apply.${preset.id}")

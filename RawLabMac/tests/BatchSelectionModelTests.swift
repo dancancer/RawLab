@@ -83,6 +83,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         }
         try BatchFlowModelTests.preparedSourceChange(root: root, fixture: first)
         try BatchFlowModelTests.automaticLaunch(root: root, fixture: first)
+        try BatchFlowModelTests.freezeStagesOffMain(root: root, fixture: first)
         try BatchFlowModelTests.pendingLaunches(root: root, fixture: first)
         try BatchFlowModelTests.x3fSnapshots(root: root)
         let alias = root.appendingPathComponent("alias.png")
@@ -269,6 +270,24 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
             "each photo freezes its own look and retains task-owned copy after library removal")
         try check(model.batch!.discardDraft() && model.batch == nil, "discarding a frozen draft frees its task and owned resources")
         try check(!FileManager.default.fileExists(atPath: job.items[0].frozen!.look!.path), "discard cleans task-owned look")
+        do {
+            let cachedCube = root.appendingPathComponent("cached-batch-look.cube")
+            try data.write(to: cachedCube)
+            MacResourceDigestCache.shared.invalidate(url: cachedCube)
+            let beforeCount = MacResourceDigestCache.shared.sha256Count
+            let firstDigest = try BatchFrozenSettings.checksum(cachedCube)
+            let secondDigest = try BatchFrozenSettings.checksum(cachedCube)
+            let thirdDigest = try BatchFrozenSettings.checksum(cachedCube)
+            try check(firstDigest == secondDigest && secondDigest == thirdDigest &&
+                      MacResourceDigestCache.shared.sha256Count == beforeCount + 1,
+                "BatchFrozenSettings.checksum reuses MacResourceDigestCache across repeated calls for unchanged look")
+            let updatedData = data + Data("# updated\n".utf8)
+            try updatedData.write(to: cachedCube)
+            let updatedDigest = try BatchFrozenSettings.checksum(cachedCube)
+            try check(updatedDigest != firstDigest &&
+                      MacResourceDigestCache.shared.sha256Count == beforeCount + 2,
+                "BatchFrozenSettings.checksum detects replaced look and recomputes digest")
+        }
         do {
             let corruptBatchDir = root.appendingPathComponent("editor-corrupt-batch")
             try FileManager.default.createDirectory(at: corruptBatchDir, withIntermediateDirectories: true)

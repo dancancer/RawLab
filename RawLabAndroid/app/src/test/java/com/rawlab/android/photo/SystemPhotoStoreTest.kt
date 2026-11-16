@@ -214,4 +214,41 @@ class SystemPhotoStoreTest {
             workspace.deleteRecursively()
         }
     }
+
+    @Test fun r1_a1_concurrentRetain128KiBJpegAndRunStartupCleanupPreservesRetainedFile() {
+        val workspace = Files.createTempDirectory("rawlab-a1-repro").toFile()
+        try {
+            val files = File(workspace, "files").apply { mkdirs() }
+            val cache = File(workspace, "cache").apply { mkdirs() }
+            val storeDir = File(files, "system-photos").apply { mkdirs() }
+            val tempDir = File(cache, "system-photo-imports").apply { mkdirs() }
+            val jpeg128KiB = byteArrayOf(-1, -40, -1, -32) + ByteArray(128 * 1024 - 4) { (it % 251).toByte() }
+            val slowStream = object : ByteArrayInputStream(jpeg128KiB) {
+                override fun read(b: ByteArray, off: Int, len: Int): Int {
+                    Thread.sleep(1)
+                    return super.read(b, off, minOf(len, 8192))
+                }
+            }
+            val cleanupErrors = java.util.concurrent.CopyOnWriteArrayList<Throwable>()
+            val stopCleanup = java.util.concurrent.atomic.AtomicBoolean(false)
+            val cleanupThread = Thread({
+                while (!stopCleanup.get()) {
+                    try { com.rawlab.android.runStartupCleanup(files, cache) }
+                    catch (t: Throwable) { cleanupErrors += t }
+                }
+            }, "test-a1-cleanup").apply { start() }
+            val retained = try {
+                SystemPhotoStore.retain(storeDir, slowStream, "coldstart.jpg", "image/jpeg", temporaryDirectory = tempDir)
+            } finally {
+                stopCleanup.set(true)
+                cleanupThread.join(5_000)
+            }
+            assertTrue("Unexpected cleanup error: $cleanupErrors", cleanupErrors.isEmpty())
+            assertTrue(retained.isFile)
+            assertEquals(jpeg128KiB.size.toLong(), retained.length())
+            SystemPhotoStore.validate(retained)
+        } finally {
+            workspace.deleteRecursively()
+        }
+    }
 }

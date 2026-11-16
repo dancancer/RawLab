@@ -6,6 +6,7 @@ import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.PhotoIdentity
 import java.io.File
+import java.io.FileOutputStream
 import java.util.Properties
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
@@ -459,5 +460,47 @@ class BatchJournalTest {
         } finally {
             rows.setReadable(true)
         }
+    }
+
+    @Test fun batchRunnerReusesLogStreamAndSyncsAtMostTwicePerPhoto() {
+        val count = 3
+        val original = job(count)
+        var openCount = 0
+        var syncCount = 0
+        val streams = mutableListOf<FileOutputStream>()
+        val journal = BatchJournal(
+            directory = root,
+            openLogOutputStream = { file, append ->
+                openCount++
+                object : FileOutputStream(file, append) {}.also { streams += it }
+            },
+            syncOutputStream = { stream ->
+                assertTrue("Log stream must be a FileOutputStream", stream is FileOutputStream)
+                syncCount++
+            },
+        )
+        var updates = 0
+        var syncsAtFirstRender = -1
+        var syncsRightAfterFirstUri = -1
+        val result = BatchRunner.run(
+            original,
+            render = { target, _ ->
+                if (target.id == "target-0") syncsAtFirstRender = syncCount
+            },
+            write = { _, _, _ -> },
+            journal = journal,
+            didUpdate = { updates++ },
+            publish = { _, _, target, checkpoint ->
+                checkpoint("content://output/${target.id}")
+                if (target.id == "target-0") syncsRightAfterFirstUri = syncCount
+            },
+        )
+        assertEquals(5 * count + 1, updates)
+        assertEquals(1, openCount)
+        assertEquals(0, syncsAtFirstRender)
+        assertEquals(1, syncsRightAfterFirstUri)
+        assertTrue("Expected at most 2 syncs per photo (<= ${2 * count}), got $syncCount", syncCount <= 2 * count)
+        assertEquals(2 * count, syncCount)
+        assertEquals(result, BatchJournal(root).load(original.id))
     }
 }

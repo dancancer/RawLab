@@ -1902,6 +1902,374 @@
           "light.shadows": 0.6
         }
       }
+    },
+    {
+      "id": "unsupported-raster-denoise-keeps-other-edits",
+      "target": {
+        "kind": "sdr_raster",
+        "as_shot_wb": null,
+        "lens_valid": false,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "light.exposure": 0.5,
+          "detail.denoise.raw_level": 1,
+          "detail.denoise.post_rgb": 0.5,
+          "detail.denoise.chroma_mode": 1,
+          "detail.denoise.wavelet": {
+            "enabled": true,
+            "luma": 20,
+            "chroma": 30,
+            "coarse": 40,
+            "preset": "custom"
+          }
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "light.exposure": 0.5,
+          "detail.denoise.raw_level": 0,
+          "detail.denoise.post_rgb": 0,
+          "detail.denoise.chroma_mode": 1,
+          "detail.denoise.wavelet": {
+            "enabled": true,
+            "luma": 20,
+            "chroma": 30,
+            "coarse": 40,
+            "preset": "custom"
+          }
+        },
+        "notices": [
+          "ignored_raw_denoise",
+          "ignored_post_rgb_denoise"
+        ]
+      }
+    },
+    {
+      "id": "unsupported-non-bayer-fbdd-keeps-other-edits",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": null,
+        "lens_valid": false,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "light.exposure": 0.5,
+          "detail.denoise.raw_level": 1
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "light.exposure": 0.5,
+          "detail.denoise.raw_level": 0
+        },
+        "notices": [
+          "ignored_raw_denoise"
+        ]
+      }
+    },
+    {
+      "id": "ai-target-ignores-denoise-keeps-other-edits",
+      "platforms": [
+        "macos",
+        "windows"
+      ],
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": null,
+        "lens_valid": false,
+        "supports_raw_denoise": true,
+        "available_looks": [],
+        "seed_payload": {
+          "payload_version": 1,
+          "scope_version": 1,
+          "source": {
+            "identifier": "source.ARW",
+            "is_raw": true,
+            "processing_version": 3
+          },
+          "values": {
+            "detail.denoise.chroma_mode": 2,
+            "detail.denoise.wavelet": {
+              "enabled": false,
+              "luma": 17,
+              "chroma": 31,
+              "coarse": 43,
+              "preset": "custom"
+            },
+            "detail.denoise.raw_level": 2
+          }
+        },
+        "ai_denoise_enabled": true
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "light.exposure": 0.5,
+          "detail.denoise.raw_level": 1,
+          "detail.denoise.post_rgb": 0.5,
+          "detail.denoise.chroma_mode": 1,
+          "detail.denoise.wavelet": {
+            "enabled": true,
+            "luma": 20,
+            "chroma": 30,
+            "coarse": 40,
+            "preset": "custom"
+          }
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "notices": [
+          "ignored_raw_denoise",
+          "ignored_post_rgb_denoise",
+          "ignored_target_denoise"
+        ],
+        "values": {
+          "light.exposure": 0.5,
+          "detail.denoise.chroma_mode": 2,
+          "detail.denoise.wavelet": {
+            "enabled": false,
+            "luma": 17,
+            "chroma": 31,
+            "coarse": 43,
+            "preset": "custom"
+          },
+          "detail.denoise.raw_level": 0,
+          "detail.denoise.post_rgb": 0
+        }
+      },
+      "platform_expect": {
+        "macos": {
+          "status": "applied",
+          "notices": [
+            "ignored_raw_denoise",
+            "ignored_post_rgb_denoise",
+            "ignored_target_denoise"
+          ],
+          "values": {
+            "light.exposure": 0.5,
+            "detail.denoise.chroma_mode": 2,
+            "detail.denoise.wavelet": {
+              "enabled": false,
+              "luma": 17,
+              "chroma": 31,
+              "coarse": 43,
+              "preset": "custom"
+            },
+            "detail.denoise.raw_level": 2,
+            "detail.denoise.post_rgb": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "ai-target-neutral-denoise-preserves-dormant-settings",
+      "platforms": [
+        "macos",
+        "windows"
+      ],
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": null,
+        "lens_valid": false,
+        "supports_raw_denoise": true,
+        "available_looks": [],
+        "seed_payload": {
+          "payload_version": 1,
+          "scope_version": 1,
+          "source": {
+            "identifier": "source.ARW",
+            "is_raw": true,
+            "processing_version": 3
+          },
+          "values": {
+            "detail.denoise.chroma_mode": 2,
+            "detail.denoise.wavelet": {
+              "enabled": false,
+              "luma": 17,
+              "chroma": 31,
+              "coarse": 43,
+              "preset": "custom"
+            },
+            "detail.denoise.raw_level": 2
+          }
+        },
+        "ai_denoise_enabled": true
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "detail.denoise.raw_level": 0,
+          "detail.denoise.post_rgb": 0,
+          "detail.denoise.chroma_mode": 0,
+          "detail.denoise.wavelet": null
+        }
+      },
+      "expect": {
+        "status": "unchanged",
+        "notices": [],
+        "values": {
+          "light.exposure": 0,
+          "detail.denoise.chroma_mode": 2,
+          "detail.denoise.wavelet": {
+            "enabled": false,
+            "luma": 17,
+            "chroma": 31,
+            "coarse": 43,
+            "preset": "custom"
+          },
+          "detail.denoise.raw_level": 0,
+          "detail.denoise.post_rgb": 0
+        }
+      },
+      "platform_expect": {
+        "macos": {
+          "status": "unchanged",
+          "notices": [],
+          "values": {
+            "light.exposure": 0,
+            "detail.denoise.chroma_mode": 2,
+            "detail.denoise.wavelet": {
+              "enabled": false,
+              "luma": 17,
+              "chroma": 31,
+              "coarse": 43,
+              "preset": "custom"
+            },
+            "detail.denoise.raw_level": 2,
+            "detail.denoise.post_rgb": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "ai-target-denoise-only-ignored-with-notice",
+      "platforms": [
+        "macos",
+        "windows"
+      ],
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": null,
+        "lens_valid": false,
+        "supports_raw_denoise": true,
+        "available_looks": [],
+        "seed_payload": {
+          "payload_version": 1,
+          "scope_version": 1,
+          "source": {
+            "identifier": "source.ARW",
+            "is_raw": true,
+            "processing_version": 3
+          },
+          "values": {
+            "detail.denoise.chroma_mode": 2,
+            "detail.denoise.wavelet": {
+              "enabled": false,
+              "luma": 17,
+              "chroma": 31,
+              "coarse": 43,
+              "preset": "custom"
+            },
+            "detail.denoise.raw_level": 2
+          }
+        },
+        "ai_denoise_enabled": true
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "detail.denoise.chroma_mode": 1,
+          "detail.denoise.wavelet": {
+            "enabled": true,
+            "luma": 20,
+            "chroma": 30,
+            "coarse": 40,
+            "preset": "detail"
+          }
+        }
+      },
+      "expect": {
+        "status": "unchanged",
+        "notices": [
+          "ignored_target_denoise"
+        ],
+        "values": {
+          "light.exposure": 0,
+          "detail.denoise.chroma_mode": 2,
+          "detail.denoise.wavelet": {
+            "enabled": false,
+            "luma": 17,
+            "chroma": 31,
+            "coarse": 43,
+            "preset": "custom"
+          },
+          "detail.denoise.raw_level": 0,
+          "detail.denoise.post_rgb": 0
+        }
+      },
+      "platform_expect": {
+        "macos": {
+          "status": "unchanged",
+          "notices": [
+            "ignored_target_denoise"
+          ],
+          "values": {
+            "light.exposure": 0,
+            "detail.denoise.chroma_mode": 2,
+            "detail.denoise.wavelet": {
+              "enabled": false,
+              "luma": 17,
+              "chroma": 31,
+              "coarse": 43,
+              "preset": "custom"
+            },
+            "detail.denoise.raw_level": 2,
+            "detail.denoise.post_rgb": 0
+          }
+        }
+      }
     }
   ]
 }

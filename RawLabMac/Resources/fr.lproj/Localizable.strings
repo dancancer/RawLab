@@ -92,6 +92,7 @@
 "上次使用的外观不可用，请重新选择或导入外观。" = "Le dernier look utilisé n’est pas disponible. Choisissez ou importez de nouveau un look.";
 "上次批量任务尚未完成" = "La dernière exportation par lots n’est pas terminée";
 "下次退出时安装" = "Installer à la prochaine fermeture";
+"不可读外观" = "Looks illisibles";
 "不支持此 HDR 格式或颜色描述。" = "Ce format HDR ou cette description colorimétrique n’est pas pris en charge.";
 "不支持此 X3F 显影模式。" = "Ce mode de développement X3F n’est pas pris en charge.";
 "不支持此处理版本，原有记录未被覆盖。" = "Cette version de traitement n'est pas prise en charge. Les réglages enregistrés n'ont pas été écrasés.";
@@ -364,6 +365,7 @@
 "已开启" = "Activé";
 "已忽略旧版 RAW 降噪（FBDD）" = "Réduction du bruit RAW héritée (FBDD) ignorée";
 "已忽略渲染后 RGB 降噪" = "Réduction du bruit RVB post-rendu ignorée";
+"已忽略目标不支持的普通降噪设置" = "Les réglages de réduction du bruit standard non pris en charge par la cible ont été ignorés";
 "已恢复上次调整" = "Réglages précédents restaurés";
 "已撤销" = "Annulé";
 "已撤销 %@ 张 · 未完成 %@ 张" = "Annulées %@ · Inachevées %@";
@@ -453,6 +455,7 @@
 "按实际生效值应用，已包含配方强度。" = "Application des valeurs effectives, intensité de la recette comprise.";
 "按已确认条件比较缩小后的 sRGB 像素；差异越小表示越接近此参考，效果仍未验证。" = "Compare des pixels sRGB réduits selon les conditions confirmées ; un écart plus faible indique une plus grande proximité avec cette référence, mais le rendu reste non vérifié.";
 "按每张照片" = "Par photo";
+"损坏的外观" = "Look endommagé";
 "损坏的预设" = "Préréglage endommagé";
 "排列顺序不代表准确度。未识别的颜色空间、范围和基础图像仍属于假设。" = "L’ordre n’indique pas la précision. Les espaces colorimétriques, plages et images de base non identifiés restent des hypothèses.";
 "控制点 %d" = "Point %d";
@@ -669,6 +672,7 @@
 "此 X3F 显影模式不支持 AI 降噪。" = "La réduction du bruit par IA n’est pas prise en charge dans ce mode de développement X3F.";
 "此像素不可取样。" = "Ce pixel ne peut pas être échantillonné.";
 "此外观已不在外观库中。" = "Ce look n'est plus dans la bibliothèque de looks.";
+"此外观无法读取，可能已损坏或来自不兼容版本。" = "Ce look ne peut pas être lu. Il est peut-être endommagé ou provient d’une version incompatible.";
 "此安装暂不支持自动安装更新" = "Cette installation ne prend pas encore en charge les mises à jour automatiques";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Seuls les réglages du groupe %@ seront réinitialisés. Les autres groupes resteront inchangés.";
 "此操作已过期，请重新操作。" = "Cette opération n’est plus à jour. Relancez-la.";

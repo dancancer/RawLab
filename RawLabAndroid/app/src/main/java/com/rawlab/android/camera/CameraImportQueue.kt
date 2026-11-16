@@ -213,10 +213,10 @@ internal fun receiveCameraJob(store: CameraImportStore, job: CameraImportJob, pe
         try {
             var downloadedDigest: String? = null
             try {
+                // `.part` 不 fsync：拷入 MediaStore 并校验前崩溃本就整张重下，耐久性锚在 WAL/journal 与
+                // media.write 的 sync 上；page cache 中的 .part 被断电丢弃不影响正确性，省一次整张 fsync。
                 val digest = FileOutputStream(part).use { output ->
-                    val result = download(item.photo, output)
-                    output.fd.sync()
-                    result
+                    download(item.photo, output)
                 }
                 downloadedDigest = digest
                 permit.check()

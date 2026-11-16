@@ -168,7 +168,7 @@ final class BatchExportModel: ObservableObject {
                 stage = "readIdentity"
                 let resourceIdentifier = item.itemIdentifier
                 let identity = try await perform {
-                    try PhotoIdentity.fallback(for: file.url, resourceIdentifier: resourceIdentifier)
+                    try PhotoIdentity.cachedFallback(for: file.url, resourceIdentifier: resourceIdentifier)
                 }
                 stage = "prepareTarget"
                 let target = try await prepareTarget(file, identity: identity, jobID: jobID,
@@ -205,7 +205,7 @@ final class BatchExportModel: ObservableObject {
                 defer { PhotoImportFile.release(source.url) }
                 context["sourceKind"] = source.isRaw ? "raw" : "raster"
                 stage = "readIdentity"
-                let identity = try await perform { try PhotoIdentity.fallback(for: source.url) }
+                let identity = try await perform { try PhotoIdentity.cachedFallback(for: source.url) }
                 stage = "prepareTarget"
                 targets.append(try await prepareTarget(source, identity: identity, jobID: jobID,
                                                        journalStore: journalStore))
@@ -236,8 +236,9 @@ final class BatchExportModel: ObservableObject {
             var frozen=prepared
             if let original=prepared.lookURL {
                 let folder=try BatchInputStore.directory(for:draft.id,root:journal.directory).deletingLastPathComponent()
-                let copy=folder.appendingPathComponent("hdr-look-\(UUID().uuidString).\(original.pathExtension)")
-                try FileManager.default.copyItem(at:original,to:copy); owned.append(copy); frozen.lookURL=copy
+                let copy=folder.appendingPathComponent("hdr-look-\(prepared.lookSHA256 ?? UUID().uuidString).\(original.pathExtension)")
+                if !FileManager.default.fileExists(atPath:copy.path){try FileManager.default.copyItem(at:original,to:copy)}
+                owned.append(copy); frozen.lookURL=copy
             }
             try frozen.verifyFiles(input:result.targets[index].sourceURL)
             result.targets[index].frozen=frozen

@@ -74,6 +74,21 @@ static class BatchSelectionChecks
             var job=exporter.Freeze(selection,review,_=>null);
             Rejected(()=>exporter.Freeze(selection,review,_=>null),"Pending task is preserved until explicitly discarded");
             Check(job.Mode==BatchJob.PerTargetFrozen && job.Items[1].Frozen!.Settings.Restore()[Parameter.Contrast]==30,"Each item keeps its own micro-edit");
+            // 线程锚点：冻结核心（前后双遍全集重验 + look 副本拷贝）整体离开调用线程（异步路径经 Task.Run 调度同一核心）。
+            // 撤掉修复（Freeze 在调用线程内联完成重验与拷贝）时派发用例的 IsThreadPoolThread 记为 false，断言必红；内联用例防止探针恒真假绿。
+            var dispatchedStages=new System.Collections.Concurrent.ConcurrentQueue<(string,bool)>();
+            var dispatchedReview=exporter.Prepare(selection,[],ExportFormat.Png,1024,output,_=>null);
+            var dispatchedIDs=selection.SelectedPhotos.Select(photo=>photo.ID).ToList();
+            var dispatched=Task.Run(()=>exporter.FreezeCore(dispatchedReview,dispatchedIDs,_=>null,2,"",
+                stage=>dispatchedStages.Enqueue((stage,Thread.CurrentThread.IsThreadPoolThread)))).GetAwaiter().GetResult();
+            Check(dispatchedStages.Count(entry=>entry.Item1=="revalidate")==2 && dispatchedStages.Any(entry=>entry.Item1=="copy") &&
+                dispatchedStages.All(entry=>entry.Item2),"Collection freeze revalidates twice and copies looks on the dispatched worker thread");
+            Check(dispatched.Job.Items.Count==2 && dispatched.OwnedLookCopies.Count==1,"Dispatched freeze returns the frozen job with task-owned look copies");
+            var inlineStages=new System.Collections.Concurrent.ConcurrentQueue<(string,bool)>();
+            var inline=exporter.FreezeCore(dispatchedReview,dispatchedIDs,_=>null,2,"",stage=>inlineStages.Enqueue((stage,Thread.CurrentThread.IsThreadPoolThread)));
+            Check(inlineStages.Count==3 && inlineStages.All(entry=>!entry.Item2),"Inline freeze stays on the calling thread");
+            foreach(var path in dispatched.OwnedLookCopies)File.Delete(path);
+            foreach(var path in inline.OwnedLookCopies)File.Delete(path);
             settings.Set(Parameter.Exposure,3);store.Save(target,settings.Capture(),look);File.Delete(look);
             var exposures=new List<double>();BatchRunner.Run(journal.Load()!,journal,false,CancellationToken.None,(_,_)=>{},(_,edit,_,path)=>{
                 exposures.Add(edit[Parameter.Exposure]);File.WriteAllText(path,"rendered");

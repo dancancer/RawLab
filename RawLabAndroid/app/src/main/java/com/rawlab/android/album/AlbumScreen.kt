@@ -129,10 +129,12 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: (() -> Unit)?
         try {
             photos = withContext(Dispatchers.IO) { storage.album(ownOnly = access == AlbumAccess.Level.NONE) }
             if (bucket != null && photos.none { it.albumId == bucket }) bucket = null
+            loading = false
         } catch (error: Exception) {
             if (error is kotlinx.coroutines.CancellationException) throw error
             failed = true
-        } finally { loading = false }
+            loading = false
+        }
     }
     Scaffold(topBar = {
         TopAppBar(title = { Text(stringResource(R.string.open_album)) }, navigationIcon = {
@@ -175,7 +177,7 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: (() -> Unit)?
                 }
             }
             if (onFile != null) ToolIcon(Icons.Outlined.FolderOpen, R.string.open_file, onClick = onFile)
-            ToolIcon(Icons.Outlined.Refresh, R.string.refresh, onClick = { refresh++ })
+            ToolIcon(Icons.Outlined.Refresh, R.string.refresh, onClick = { loading = true; refresh++ })
         })
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).testTag("album-root")) {

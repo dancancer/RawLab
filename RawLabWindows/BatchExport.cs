@@ -21,11 +21,8 @@ public sealed record BatchFrozenSettings
     public int? LongEdge { get; init; }
 
     public BatchFrozenSettings Copy() => this with { Settings = Settings.Copy() };
-    public static string Checksum(string path)
-    {
-        using var stream = File.OpenRead(path);
-        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
-    }
+    public static string Checksum(string path) =>
+        FileDigestCache.Shared.GetDigest(path).Sha256Hex.ToLowerInvariant();
     public void Validate()
     {
         if (Version != 1 || SettingsVersion != 1 || Ordinal < 0 || !Enum.IsDefined(OutputFormat) ||
@@ -163,12 +160,23 @@ public sealed class BatchJournal
     public string DirectoryPath { get; }
     private string PathName => Path.Combine(DirectoryPath, "job.json");
     public string? LastQuarantinedPath { get; private set; }
+    // 上次写出后的 stat 快照；仅当卷带 USN 变更记录时才能证明磁盘上仍是本进程写出的那份。
+    private WindowsStatSnapshot? writtenStat;
+    // Save() 实际执行整读盘校验的次数（测试锚点：跳过逻辑必须真的跳过）。
+    public int DiskReloads { get; private set; }
     public BatchJournal(string directory) => DirectoryPath = directory;
     public void Save(BatchJob job)
     {
-        _ = ReadJob();
+        // 仅当磁盘文件带 USN 独立变化标记且与上次写出的 stat 快照逐字段一致（长度、三时戳、FileID、Usn）才跳过整读回；
+        // NTFS 内核时钟以 ~15.6ms tick 印刻时戳，同 tick 等长原地覆写只能靠 USN 识破；
+        // Usn==0（卷未启用 USN Journal）或 stat 不可靠时一律回读，防外部未来版本文件被静默覆盖。
+        var trusted = writtenStat is { Usn: > 0 };
+        if (!trusted || !WindowsFileIdentity.TryReadStat(PathName, out var current) || current != writtenStat!.Value)
+        { DiskReloads++; _ = ReadJob(); }
         Validate(job);
         AtomicJson.Write(PathName, job);
+        WindowsFileIdentity.TryReadStat(PathName, out var written);
+        writtenStat = written;
     }
 
     public void FreezeLook(BatchJob job)
@@ -264,6 +272,8 @@ public sealed class BatchJournal
 
     private BatchJob? ReadJob()
     {
+        // 任何一次读盘（含异常/隔离分支）都使上次写出指纹失效，后续 Save 不得沿用旧快照跳过。
+        writtenStat = null;
         LastQuarantinedPath = null;
         if (!File.Exists(PathName)) return null;
         try
@@ -304,6 +314,7 @@ public sealed class BatchJournal
     public void Discard(BatchJob job)
     {
         if (File.Exists(PathName)) File.Delete(PathName);
+        writtenStat = null;
         ReleaseResources(job);
     }
 
@@ -352,6 +363,7 @@ public static class BatchRunner
         if (job.SelectedCount == 0) throw new InvalidOperationException(Loc.Text("请至少选择一张照片。"));
         if (job.OutputDirectory == null) throw new OutputWriteException(Loc.Text("选择输出文件夹"));
         if (job.Mode == BatchJob.UniformFrozen && job.Look != null && !File.Exists(job.Look)) throw new InvalidOperationException(Loc.Text("任务使用的外观文件不可用，请重新创建任务。"));
+        VerifyDestination(job.OutputDirectory);
         job.Started = true; job.Interrupted = false; job.Cancelled = false; job.Error = null;
         journal.Save(job);
         try
@@ -362,7 +374,8 @@ public static class BatchRunner
                 if (!item.Selected || !item.CanSelect || item.AwaitingTargetSettings || item.Status == BatchStatus.Succeeded ||
                     (failuresOnly && item.Status != BatchStatus.Failed)) continue;
                 if (cancellation.IsCancellationRequested) { job.Cancelled = true; break; }
-                VerifyDestination(job.OutputDirectory);
+                // 每张照片不再建删探针文件；目录存在性检查足以在渲染前拦截被移除/弹出的输出盘。
+                if (!Directory.Exists(job.OutputDirectory)) throw new OutputWriteException(Loc.Text("无法写入输出目录，请检查访问权限和剩余空间。"));
                 job.Items[i] = item with { Status = BatchStatus.Running, Error = null };
                 journal.Save(job); changed(job.Copy(), null);
                 Export(i, job, journal, cancellation, render, resolveX3fMode);

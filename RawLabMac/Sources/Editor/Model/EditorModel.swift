@@ -231,6 +231,7 @@ final class EditorModel: ObservableObject {
             !(RenderEngine.isX3fInput(file) && settings.x3fMode == .normal) &&
             RenderEngine.bundledAIModel != nil && !exporting && geometryDraft == nil
     }
+    @Published var unreadableLooks: [LookLibrary.UnreadableLook] = []
     @Published var lookLibraryBusy = false
     @Published var previewOutdated = false
     @Published var error: String?
@@ -369,6 +370,7 @@ final class EditorModel: ObservableObject {
         do {
             let library = try LookLibrary(directory: lookDirectory)
             lookLibrary = library
+            unreadableLooks = library.unreadableLooks
             films += library.looks.map { Film(name: $0.name, url: library.url(for: $0), managedID: $0.id, colorNotice: $0.colorNotice, isCompatibility: $0.isCompatibility) }
             pruneRecentLooks()
         } catch {

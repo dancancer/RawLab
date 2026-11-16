@@ -329,7 +329,13 @@ class CameraImportAuditTest {
             val saved = receiveCameraJob(store, oldJob, CameraTransferPermit(), { _, output ->
                 output.write(bytes); sha256(bytes)
             })
-            if (case.damageLocal) media.file(saved.items.single().saved!!.uri).writeBytes(bytes.copyOf().apply { this[100_000]++ })
+            if (case.damageLocal) {
+                // 真实本地损伤（拔卡/外部改写）必然改动 mtime；同秒内改写属于指纹信任的已登记 crypto 降级取舍。
+                // 复位 mtime 之外再改一字节，让 savedStat 指纹失配 → 回落 validContent 整文件摘要抓伤 → 整盘重下。
+                val damaged = media.file(saved.items.single().saved!!.uri)
+                damaged.writeBytes(bytes.copyOf().apply { this[100_000]++ })
+                assertTrue(damaged.setLastModified(damaged.lastModified() + 5_000))
+            }
             if (case.ambiguous) {
                 val different = bytes.copyOf().apply { this[100_000]++ }
                 val another = store.create("BLE:sony", listOf(original), CameraImportDestination(),
@@ -828,5 +834,88 @@ class CameraImportAuditTest {
         assertEquals(1, imported.job.savedCount)
         assertTrue(session.isOpen)
         assertEquals(0, session.closeCalls)
+    }
+
+    @Test fun p3_27_openSavedAndOpenTetherSavedResetPreparingOnEarlyReturnAndException() = runBlocking {
+        // 1. 提前 return（job 切换）时，preparing 和 opening 必须复位。
+        var opening: String? = "req-1"
+        var currentJobId: String? = "job-1"
+        var preparing = true
+        var readyCalls = 0
+        executeOpenSaved(
+            jobId = "job-1",
+            request = "req-1",
+            currentOpening = { opening },
+            currentJobId = { currentJobId },
+            clearOpening = { opening = null },
+            resetPreparing = { preparing = false },
+            loadUris = {
+                currentJobId = "job-2"
+                Result.success(emptyList<android.net.Uri>()) to null
+            },
+            onRefreshed = {},
+            onReady = { readyCalls++ },
+            onError = {},
+        )
+        assertFalse(preparing)
+        assertNull(opening)
+        assertEquals(0, readyCalls)
+
+        // 2. 新请求接管 opening 后，旧请求不得误清新请求的 preparing。
+        opening = "req-2"
+        preparing = true
+        executeOpenSaved(
+            jobId = "job-1",
+            request = "req-1",
+            currentOpening = { opening },
+            currentJobId = { "job-1" },
+            clearOpening = { opening = null },
+            resetPreparing = { preparing = false },
+            loadUris = { Result.success(emptyList<android.net.Uri>()) to null },
+            onRefreshed = {},
+            onReady = { readyCalls++ },
+            onError = {},
+        )
+        assertTrue(preparing)
+        assertEquals("req-2", opening)
+
+        // 3. loadUris 抛出异常时，openSaved 与 openTetherSaved 都必须复位 preparing。
+        opening = "req-3"
+        preparing = true
+        val savedError = runCatching {
+            executeOpenSaved(
+                jobId = "job-1",
+                request = "req-3",
+                currentOpening = { opening },
+                currentJobId = { "job-1" },
+                clearOpening = { opening = null },
+                resetPreparing = { preparing = false },
+                loadUris = { throw IllegalStateException("boom") },
+                onRefreshed = {},
+                onReady = {},
+                onError = {},
+            )
+        }
+        assertTrue(savedError.isFailure)
+        assertFalse(preparing)
+        assertNull(opening)
+
+        preparing = true
+        val tetherError = runCatching {
+            executeOpenTetherSaved(
+                resetPreparing = { preparing = false },
+                loadUris = { throw IllegalStateException("boom") },
+                canDeliver = { true },
+                onReady = {},
+                onError = {},
+            )
+        }
+        assertTrue(tetherError.isFailure)
+        assertFalse(preparing)
+    }
+
+    @Test fun p3_28_cameraImportViewModelAssetsFieldIsVolatile() {
+        val field = CameraImportViewModel::class.java.getDeclaredField("assets")
+        assertTrue(java.lang.reflect.Modifier.isVolatile(field.modifiers))
     }
 }

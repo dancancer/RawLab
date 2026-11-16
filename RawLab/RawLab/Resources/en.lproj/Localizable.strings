@@ -91,6 +91,7 @@
 "上次导入未完成" = "The last import did not finish";
 "上次预览" = "Last preview";
 "下一张" = "Next photo";
+"不可读外观" = "Unreadable looks";
 "不支持此 HDR 格式或颜色描述。" = "This HDR format or color description is not supported.";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "This photo, look, or processing mode is not supported. Check file compatibility and processing settings.";
 "不能覆盖原始文件。" = "The original file cannot be overwritten.";
@@ -356,6 +357,7 @@
 "已展开" = "Expanded";
 "已忽略旧版 RAW 降噪（FBDD）" = "Legacy RAW denoise (FBDD) ignored";
 "已忽略渲染后 RGB 降噪" = "Post-render RGB denoise ignored";
+"已忽略目标不支持的普通降噪设置" = "Standard denoise settings unsupported by the target were ignored";
 "已恢复上次调整" = "Previous Adjustments Restored";
 "已恢复已登记的接收任务。断线期间拍摄的照片请从相机手动导入。" = "Registered transfers have been restored. Import photos taken while disconnected manually from the camera.";
 "已撤销" = "Undone";
@@ -447,6 +449,7 @@
 "按每张照片" = "Per Photo";
 "按每张调整导出" = "Export with each photo’s adjustments";
 "按每张调整导出…" = "Export with each photo’s adjustments…";
+"损坏的外观" = "Damaged look";
 "损坏的预设" = "Damaged preset";
 "授权核对相册中的保存结果" = "Authorize Access to Verify Saved Results in Photos";
 "排列顺序不代表准确度。未识别的颜色空间、范围和基础图像仍属于假设。" = "Order does not indicate accuracy. Unidentified color spaces, ranges, and base images remain hypotheses.";
@@ -650,6 +653,7 @@
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "This RAW’s as-shot white balance could not be parsed; the recipe tint cannot be applied.";
 "此像素不可取样。" = "This pixel cannot be sampled.";
 "此外观已不在外观库中。" = "This look is no longer in the look library.";
+"此外观无法读取，可能已损坏或来自不兼容版本。" = "This look cannot be read. It may be damaged or from an incompatible version.";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Only adjustments in the %@ group will be reset. Other groups will stay unchanged.";
 "此操作已过期，请重新操作。" = "This operation is out of date. Start it again.";
 "此照片或构建尚不能使用 AI 降噪。" = "AI denoising is unavailable for this photo or build.";

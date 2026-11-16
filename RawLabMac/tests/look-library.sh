@@ -18,3 +18,6 @@ swiftc "$ROOT/Shared/Localization.swift" -parse-as-library -swift-version 5 -O -
     -L "$(pkg-config --variable=libdir libraw_r)" -lraw_r $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
     -framework Metal -o "$OUT/look-library"
 "$OUT/look-library"
+
+# 同时验证 UI 使用的编辑器状态和持久化删除链路。
+bash "$ROOT/RawLabMac/tests/look-import-model.sh"

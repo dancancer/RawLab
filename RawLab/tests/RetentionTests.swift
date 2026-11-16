@@ -13,6 +13,8 @@ import Foundation
         try batchArtifactCountBoundary()
         try batchArtifactGroupedEntry()
         try batchArtifactBothConditions()
+        try batchArtifactReclaimsPopulatedStandaloneExport()
+        try batchArtifactSkipsRecoveredJobDuringSweep()
         try exportEvidenceRegistry()
     }
 
@@ -81,8 +83,10 @@ import Foundation
         func exportDirectory(age: TimeInterval, now: Date, id: UUID = UUID()) throws -> URL {
             let url = exports.appendingPathComponent(id.uuidString, isDirectory: true)
             try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-            let date = now.addingTimeInterval(-age)
-            try FileManager.default.setAttributes([.creationDate: date, .modificationDate: date], ofItemAtPath: url.path)
+            try Data([0]).write(to: url.appendingPathComponent("rendered.dng"))
+            let createdAt = now.addingTimeInterval(-age)
+            let modifiedAt = createdAt.addingTimeInterval(1)
+            try FileManager.default.setAttributes([.creationDate: createdAt, .modificationDate: modifiedAt], ofItemAtPath: url.path)
             return url
         }
         func journalRecord(age: TimeInterval, now: Date, id: UUID = UUID()) throws -> URL {
@@ -166,5 +170,102 @@ import Foundation
         let remainingFresh = try fixture.fileCount(fixture.exports)
         try check(reclaimed == 10 && remainingFresh == 95,
                   "Ten 35-day-old artifacts are reclaimed below the count cap while fresh entries stay")
+    }
+
+    // 回归：真实渲染型 DNG 导出先建 Exports/<uuid>/（定格 creationDate），随后写入 .dng 推进目录 modificationDate > creationDate，
+    // discard 删除 journal 后仅留独立产物目录；超过 30 天后仍能被回收（撤掉按 part 快照 mtime 复核必红）。
+    private static func batchArtifactReclaimsPopulatedStandaloneExport() throws {
+        let fixture = try Fixture("populated-export")
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let exportDir = fixture.exports.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: exportDir, withIntermediateDirectories: true)
+        let createdAt = Date().addingTimeInterval(-60)
+        try FileManager.default.setAttributes([.creationDate: createdAt, .modificationDate: createdAt], ofItemAtPath: exportDir.path)
+        let renderedFile = exportDir.appendingPathComponent("IMG_0001.dng")
+        try Data([0x49, 0x49, 0x2A, 0x00]).write(to: renderedFile)
+        let values = try exportDir.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey])
+        try check((values.contentModificationDate ?? .distantPast) > (values.creationDate ?? .distantFuture),
+                  "Writing a rendered child file advances export directory modificationDate past creationDate")
+        let reclaimed = BatchArtifactRetention.reclaim(
+            exportsRoot: fixture.exports,
+            journalRoot: fixture.journals,
+            now: createdAt.addingTimeInterval(31 * day)
+        )
+        try check(reclaimed == 1 && !FileManager.default.fileExists(atPath: exportDir.path),
+                  "A populated standalone export directory with mtime > ctime is reclaimed after 30 days")
+    }
+
+    // 竞态回归：后台清扫尚未结束时，首屏恢复同 ID 任务（原子重写 journal + 写入 inputs，或标记为活跃保护），
+    // 清扫结束后该任务的 journal 与 inputs 仍存在（撤掉删除前复核必红）。
+    private static func batchArtifactSkipsRecoveredJobDuringSweep() throws {
+        let fixture = try Fixture("race")
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let expiredID = UUID()
+        let resumedID = UUID()
+        let protectedID = UUID()
+        defer { BatchArtifactRetention.unprotectJob(protectedID) }
+
+        _ = try fixture.exportDirectory(age: 35 * day, now: now, id: expiredID)
+        _ = try fixture.journalRecord(age: 35 * day, now: now, id: expiredID)
+
+        let resumedExport = try fixture.exportDirectory(age: 31 * day, now: now, id: resumedID)
+        let resumedJournal = try fixture.journalRecord(age: 31 * day, now: now, id: resumedID)
+        let resumedInputs = fixture.journals.appendingPathComponent(resumedID.uuidString, isDirectory: true)
+            .appendingPathComponent("inputs", isDirectory: true)
+        try FileManager.default.createDirectory(at: resumedInputs, withIntermediateDirectories: true)
+        let resumedInputFile = resumedInputs.appendingPathComponent("photo.raw")
+        try Data([1]).write(to: resumedInputFile)
+
+        let protectedExport = try fixture.exportDirectory(age: 31 * day, now: now, id: protectedID)
+        let protectedJournal = try fixture.journalRecord(age: 31 * day, now: now, id: protectedID)
+        let protectedInputs = fixture.journals.appendingPathComponent(protectedID.uuidString, isDirectory: true)
+            .appendingPathComponent("inputs", isDirectory: true)
+        try FileManager.default.createDirectory(at: protectedInputs, withIntermediateDirectories: true)
+        let protectedInputFile = protectedInputs.appendingPathComponent("photo.raw")
+        try Data([2]).write(to: protectedInputFile)
+
+        let enteredRace = DispatchSemaphore(value: 0)
+        let recoveryDone = DispatchSemaphore(value: 0)
+        let sweepDone = DispatchSemaphore(value: 0)
+        var didTriggerRace = false
+        var reclaimed = -1
+
+        DispatchQueue.global(qos: .utility).async {
+            reclaimed = BatchArtifactRetention.reclaim(
+                exportsRoot: fixture.exports,
+                journalRoot: fixture.journals,
+                now: now
+            ) { candidateID in
+                guard !didTriggerRace, candidateID == resumedID || candidateID == protectedID else { return }
+                didTriggerRace = true
+                enteredRace.signal()
+                recoveryDone.wait()
+            }
+            sweepDone.signal()
+        }
+
+        enteredRace.wait()
+        // 模拟清扫期间恢复同 ID 任务：resumedID 原子重写 journal 并写入新 input；
+        // protectedID 走未重写 journal 的直接恢复路径并登记活跃保护。
+        try Data("{\"resumed\":true}".utf8).write(to: resumedJournal, options: .atomic)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: resumedJournal.path)
+        let newInputFile = resumedInputs.appendingPathComponent("resumed.raw")
+        try Data([3]).write(to: newInputFile)
+        BatchArtifactRetention.protectJob(protectedID)
+        recoveryDone.signal()
+
+        sweepDone.wait()
+
+        try check(reclaimed == 1, "Only the unrecovered expired job is reclaimed while in-flight recovered jobs survive")
+        try check(FileManager.default.fileExists(atPath: resumedJournal.path)
+                      && FileManager.default.fileExists(atPath: resumedInputFile.path)
+                      && FileManager.default.fileExists(atPath: newInputFile.path)
+                      && FileManager.default.fileExists(atPath: resumedExport.path),
+                  "A job whose journal and inputs are rewritten mid-sweep retains its journal, inputs, and exports")
+        try check(FileManager.default.fileExists(atPath: protectedJournal.path)
+                      && FileManager.default.fileExists(atPath: protectedInputFile.path)
+                      && FileManager.default.fileExists(atPath: protectedExport.path),
+                  "A recovered job protected without rewriting its journal retains its journal, inputs, and exports")
     }
 }

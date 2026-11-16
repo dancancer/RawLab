@@ -45,6 +45,7 @@
     <Compile Include="../../MainWindow/X3fModeReset.cs" Link="X3fModeReset.cs" />
     <Compile Include="../FeatureRegressionChecks.cs" Link="FeatureRegressionChecks.cs" />
     <Compile Include="../../EditedPhotoPreviewCache.cs" />
+    <Compile Include="../../PreviewRevisionCache.cs" />
     <Compile Include="../../EditPersistence.cs" Link="EditPersistence.cs" Condition="Exists('../../EditPersistence.cs')" />
     <Compile Include="../../ProcessingMigration.cs" Link="ProcessingMigration.cs" />
     <Compile Include="../../BatchSelection.cs" />
@@ -55,6 +56,7 @@
     <Compile Include="../../InspectorRefreshCoordinator.cs" />
     <Compile Include="../../PreviewFallback.cs" />
     <Compile Include="../../BatchExport.cs" Link="BatchExport.cs" Condition="Exists('../../BatchExport.cs')" />
+    <Compile Include="../../ExifToolSession.cs" Link="ExifToolSession.cs" />
     <Compile Include="../../HDRSettings.cs" Link="HDRSettings.cs" />
     <Compile Include="../../HDRSourceInfo.cs" Link="HDRSourceInfo.cs" />
     <Compile Include="../../HDRNative.cs" Link="HDRNative.cs" />

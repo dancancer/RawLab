@@ -169,11 +169,13 @@ public partial class App : Application
         var version = typeof(App).Assembly.GetName().Version;
         var current = version?.ToString(3) ?? "unknown";
         var legacy = new UpdateChecker(current);
-        var adapter = await Task.Run(() =>
-        {
-            TempCleanup.SweepStartup();
-            return VelopackUpdateAdapter.Create(current);
-        });
+        // 启动清扫（临时目录前缀通配枚举 + 过期树递归删除）不挡首屏：先派发到工作线程，
+        // 主窗口创建与显示不再等待它。清扫只删超过保留期且 owner 进程已死的本应用前缀
+        // 目录；首窗之后本实例创建的 UUID 新目录 mtime 晚于清扫起点、在保留期内，且带
+        // 存活的 owner 标记，不会被误删；分析缓存目录另有 in-use 短路，导出 staging 按
+        // 租约进程存活判断，与并发窗口创建互不干扰。
+        var startupSweep = Task.Run(TempCleanup.SweepStartup);
+        var adapter = await Task.Run(() => VelopackUpdateAdapter.Create(current));
         var fileVersion=System.Diagnostics.FileVersionInfo.GetVersionInfo(typeof(App).Assembly.Location);
         var updates = new DesktopUpdateController(adapter, new(), new(UpdateStore.DefaultDirectory), current,
             fileVersion.FilePrivatePart.ToString(), legacy.Automatic);
@@ -203,5 +205,8 @@ public partial class App : Application
         else { MainWindow = editor; ShowSystemEditor(editor!); }
         startupCompleted = true;
         ShutdownMode = ShutdownMode.OnMainWindowClose;
+        // 首屏已就绪；等待后台清扫完成以保留异常观察（SweepStartup 已兜底常规 IO 异常，
+        // 仅 OOM/StackOverflow 会在此上抛，与此前同步 await 时的语义一致）。
+        await startupSweep;
     }
 }

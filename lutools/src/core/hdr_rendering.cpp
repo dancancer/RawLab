@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cmath>
 #include <limits>
+#include <mutex>
 #include <stdexcept>
 #include <utility>
 
@@ -178,7 +179,9 @@ RGB limitHDRLuminance(const RGB& pixel, double knee, double span) {
     return {float(pixel.r * scale), float(pixel.g * scale), float(pixel.b * scale)};
 }
 
-void edit(ImageData& image, const HDRRenderOptions& o, bool hdr) {
+// contentMax 非空且本趟确实全量改写了像素时，回填写出像素的亮度峰值，供调用方融合掉后续独立的
+// headroom 全图扫描；返回值表示该趟是否执行（全部滑杆关闭时提前返回，未覆盖像素）。
+bool edit(ImageData& image, const HDRRenderOptions& o, bool hdr, float* contentMax = nullptr) {
     const RGB gain = hdrRelativeWhiteBalance(o.temperature, o.tint);
     const float exposure = std::exp2(o.exposureEV);
     const bool colorActive = o.exposureEV != 0 || o.temperature != 6500 || o.tint != 0;
@@ -208,9 +211,12 @@ void edit(ImageData& image, const HDRRenderOptions& o, bool hdr) {
     baseTone.contrast = rendition.sdrContrast;
     baseTone.saturation = rendition.sdrSaturation;
     if (!colorActive && !toneActive && !advancedToneActive && !channelsActive && !vibranceActive && !hslActive && !gradingActive &&
-        !lookActive && !limitHDR && !adjustBase) return;
+        !lookActive && !limitHDR && !adjustBase) return false;
     std::atomic<bool> overflow{false};
+    float fusedMax = -std::numeric_limits<float>::infinity();
+    std::mutex fusedMaxMutex;
     parallelPixelRanges(image.pixels.size(), [&](size_t begin, size_t end) {
+        float localMax = -std::numeric_limits<float>::infinity();
         for (size_t i = begin; i < end; ++i) {
             auto& p = image.pixels[i];
             if (colorActive) p = {p.r * gain.r * exposure, p.g * gain.g * exposure, p.b * gain.b * exposure};
@@ -224,10 +230,18 @@ void edit(ImageData& image, const HDRRenderOptions& o, bool hdr) {
             if (limitHDR) p = limitHDRLuminance(p, knee, peak - knee);
             if (adjustBase) p = toneSDR({p.r * baseExposure, p.g * baseExposure, p.b * baseExposure}, baseTone);
             if (!finite(p)) overflow.store(true, std::memory_order_relaxed);
+            if (contentMax) localMax = std::max(localMax, luminance(p));
+        }
+        if (contentMax) {
+            // max 对有限 float 可交换可结合，归并顺序不改变结果位形；非有限像素由 overflow 抛出。
+            std::lock_guard<std::mutex> lock(fusedMaxMutex);
+            fusedMax = std::max(fusedMax, localMax);
         }
     });
     if (overflow.load(std::memory_order_relaxed))
         throw std::overflow_error("HDR adjustments exceeded finite float range");
+    if (contentMax) *contentMax = fusedMax;
+    return true;
 }
 
 template<class Reader> RGB sampleResize(int x, int y, int width, int height, int outputWidth, int outputHeight,
@@ -320,21 +334,33 @@ HDRImagePair renderHDRPairOwned(HDRImagePair source, const HDRRenderOptions& o) 
     HDRImagePair result = std::move(source);
     const auto nativeSize=geometryOutputSize(int(result.nativeWidth),int(result.nativeHeight),o.geometry);
     result.outputNativeWidth=nativeSize.first; result.outputNativeHeight=nativeSize.second;
-    edit(result.hdr, o, true); edit(result.sdr, o, false);
-    finishGeometry(result.hdr, o);
-    finishGeometry(result.sdr, o);
+    // 尾段不改变像素值（几何恒等、resize 空操作、无细节/效果）时，headroom 由 edit 单趟顺带采集，
+    // 省掉循环后对双平面的独立全图扫描；任一尾段活跃则回退原逐像素扫描，语义逐位不变。
+    const uint32_t canvasEdge = uint32_t(std::max(result.hdr.width, result.hdr.height));
+    const bool inertLater = !o.geometry.active() && !o.hasDetail() && !o.hasPhotoEffects() &&
+        (o.longEdge == 0 || o.longEdge >= canvasEdge);
+    float hdrContentMax = 0, sdrContentMax = 0;
+    const bool hdrRan = edit(result.hdr, o, true, inertLater ? &hdrContentMax : nullptr);
+    const bool sdrRan = edit(result.sdr, o, false, inertLater ? &sdrContentMax : nullptr);
+    finishGeometry(result.hdr, o); finishGeometry(result.sdr, o);
     finishDetail(result.hdr, o, true);
     finishDetail(result.sdr, o, false);
     finishEffects(result.hdr, o, true);
     finishEffects(result.sdr, o, false);
     result.renderQuality = o.intent;
     result.isProxy = result.isProxy || o.intent == HDRQuality::Preview;
-    result.editedHeadroom = 1;
-    for (const auto& pixel : result.hdr.pixels) {
-        if (!finite(pixel)) throw std::overflow_error("HDR geometry exceeded finite float range");
-        result.editedHeadroom = std::max(result.editedHeadroom, luminance(pixel));
+    if (inertLater && hdrRan) {
+        // edit 已逐像素验证非有限并采集峰值；几何恒等保证这些像素就是最终像素。
+        result.editedHeadroom = std::max(1.0f, hdrContentMax);
+    } else {
+        result.editedHeadroom = 1;
+        for (const auto& pixel : result.hdr.pixels) {
+            if (!finite(pixel)) throw std::overflow_error("HDR geometry exceeded finite float range");
+            result.editedHeadroom = std::max(result.editedHeadroom, luminance(pixel));
+        }
     }
     if (!std::isfinite(result.editedHeadroom)) throw std::overflow_error("HDR headroom exceeded finite float range");
+    result.editedSdrHeadroom = inertLater && sdrRan ? std::max(1.0f, sdrContentMax) : 0;
     return result;
 }
 

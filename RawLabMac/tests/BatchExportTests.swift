@@ -103,6 +103,48 @@ private func perTargetSnapshots(root: URL, inputs: [URL], output: URL) throws {
     }
 }
 
+private func lookDeduplication(root: URL, inputs: [URL]) throws {
+    // C-03/B1：任务内一份内容寻址副本；跨任务由 jobID 前缀隔离，释放旧任务不得误删在用副本。
+    let journal = BatchJournal(directory: root.appendingPathComponent("look-dedupe"))
+    let original = root.appendingPathComponent("shared-look.cube")
+    let lookBytes = Data("LUT 3 1 2\n0 0 0\n1 1 1\n".utf8)
+    try lookBytes.write(to: original)
+    let sha = try BatchFrozenSettings.checksum(original)
+    var taskA = BatchExportJob(source: inputs[0], settings: Adjustments(), look: nil, lookName: "Shared")
+    taskA.version = 3; taskA.settingsMode = .perTargetFrozen
+    taskA.items = try [inputs[1], inputs[2]].map { try BatchExportItem(url: $0) }
+    let first = try journal.snapshotLook(original, jobID: taskA.id, contentIdentifier: sha)
+    let second = try journal.snapshotLook(original, jobID: taskA.id, contentIdentifier: sha)
+    try check(first == second && first?.lastPathComponent == "\(taskA.id.uuidString)-\(sha).cube",
+              "targets sharing one look must reuse the single content-addressed task copy")
+    let cubes = { try FileManager.default.contentsOfDirectory(at: journal.directory, includingPropertiesForKeys: nil)
+        .filter { $0.pathExtension == "cube" } }
+    try check(cubes().count == 1, "one look file per task directory")
+    // B1 回归：任务 A 仍 attach 时冻结同 look 的任务 B；A 释放（releaseResources(prior)）后 B 必须仍读得到。
+    var taskB = BatchExportJob(source: inputs[0], settings: Adjustments(), look: nil, lookName: "Shared")
+    taskB.version = 3; taskB.settingsMode = .perTargetFrozen
+    taskB.items = [try BatchExportItem(url: inputs[1])]
+    let live = try journal.snapshotLook(original, jobID: taskB.id, contentIdentifier: sha)
+    try check(live != first && cubes().count == 2, "each task must own a jobID-scoped copy instead of sharing one flat file")
+    taskA.look = first
+    taskB.look = live
+    let legacy = journal.directory.appendingPathComponent("\(taskA.items[1].id.uuidString).cube")
+    try lookBytes.write(to: legacy)
+    taskA.items[0].frozen = BatchFrozenSettings(ordinal: 0, settings: Adjustments(), look: first,
+        lookSHA256: sha, lookName: "Shared", outputFormat: .jpeg, longEdge: 1024)
+    taskA.items[1].frozen = BatchFrozenSettings(ordinal: 1, settings: Adjustments(), look: legacy,
+        lookSHA256: sha, lookName: "Shared", outputFormat: .jpeg, longEdge: 1024)
+    taskB.items[0].frozen = BatchFrozenSettings(ordinal: 0, settings: Adjustments(), look: live,
+        lookSHA256: sha, lookName: "Shared", outputFormat: .jpeg, longEdge: 1024)
+    try taskA.validate(); try taskB.validate()
+    journal.releaseResources(taskA)
+    try check(!FileManager.default.fileExists(atPath: first!.path) && !FileManager.default.fileExists(atPath: legacy.path),
+        "releasing a job must reclaim its own content-addressed and legacy UUID-named look copies")
+    try check(FileManager.default.fileExists(atPath: live!.path) && (try BatchFrozenSettings.checksum(live!) == sha),
+        "releasing a prior job must not delete the live job's look (BatchExportFailure.missingLook regression)")
+    journal.releaseResources(taskB)
+    try check(!FileManager.default.fileExists(atPath: live!.path), "releasing the live job reclaims its own copy")
+}
 private func journalIsolation(root: URL, inputs: [URL], output: URL) throws {
     let isolationRoot = root.appendingPathComponent("journal-isolation")
     let corruptJournal = BatchJournal(directory: isolationRoot.appendingPathComponent("corrupt"))
@@ -323,6 +365,58 @@ private func journalIsolation(root: URL, inputs: [URL], output: URL) throws {
     print("PASS: batch journal isolation, quarantine notice lifecycle and semantic validation")
 }
 
+private func journalWriteAmplification(root: URL, inputs: [URL], output: URL) throws {
+    let dir = root.appendingPathComponent("journal-amplify")
+    let journal = BatchJournal(directory: dir)
+    let url = dir.appendingPathComponent("job.json")
+    func job(_ name: String) throws -> BatchExportJob {
+        var value = BatchExportJob(source: inputs[0], settings: Adjustments(), look: nil, lookName: name)
+        value.outputDirectory = output
+        value.items = [try BatchExportItem(url: inputs[0])]
+        value.items[0].selected = true
+        return value
+    }
+
+    // 稳态写入：每任务至多首写整读一次，之后靠本进程 (size,mtime) 指纹跳过重读（撤跳过逻辑必红）。
+    try journal.save(job("A"))
+    try journal.save(job("B"))
+    try journal.save(job("C"))
+    try check(journal.diskReloads == 1, "steady-state saves reload the journal once, not once per write")
+    try check(try journal.load()?.lookName == "C", "skipped re-reads still persist the newest job")
+
+    // 外部改动检测：未来版本文件必须被重读并 fail-closed，而不是被静默覆盖（去掉重读必红）。
+    var futureObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(job("D"))) as! [String: Any]
+    futureObject["version"] = 999
+    let futureBytes = try JSONSerialization.data(withJSONObject: futureObject)
+    try futureBytes.write(to: url)
+    var rejected = false
+    do { try journal.save(job("E")) } catch { rejected = true }
+    try check(rejected && (try Data(contentsOf: url)) == futureBytes && journal.diskReloads == 2,
+              "an externally replaced future-version journal triggers exactly one reload and fails closed")
+
+    // 外部损坏（截断写入被杀留下的旧坏文件）：下一次 save 重读并隔离，然后正常写出。
+    try Data("{corrupt-amplify".utf8).write(to: url)
+    try journal.save(job("F"))
+    try check(journal.lastQuarantinedURL != nil && journal.diskReloads == 3 && (try journal.load()?.lookName) == "F",
+              "an externally corrupted journal is quarantined on the next save instead of being skipped")
+
+    // 回归：写入中途被杀留下完整旧文件与游离 tmp → 启动 load 仍恢复 running→waiting 且不误判损坏。
+    var crashed = try job("G")
+    crashed.started = true
+    crashed.items[0].status = .running
+    try journal.save(crashed)
+    try Data("stray".utf8).write(to: dir.appendingPathComponent("job.json.tmp-stray"))
+    let reopened = BatchJournal(directory: dir)
+    guard let recovered = try reopened.load() else {
+        throw Failure(message: "mid-write kill must leave the previous complete journal loadable")
+    }
+    try check(recovered.items[0].status == .waiting && recovered.interrupted,
+              "restart derives the interrupted running item back to waiting without false quarantine")
+    try reopened.save(recovered)
+    try check(reopened.diskReloads == 1 && (try reopened.load()?.lookName) == "G",
+              "a reopened journal runs one full validation on its first save and recovers the job")
+}
+
 @main struct BatchExportTests {
     static func main() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -333,7 +427,9 @@ private func journalIsolation(root: URL, inputs: [URL], output: URL) throws {
         let output = root.appendingPathComponent("output")
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         try perTargetSnapshots(root: root, inputs: inputs, output: output)
+        try lookDeduplication(root: root, inputs: inputs)
         try journalIsolation(root: root, inputs: inputs, output: output)
+        try journalWriteAmplification(root: root, inputs: inputs, output: output)
         let existing = output.appendingPathComponent("one-Velvia.jpg")
         try Data("existing".utf8).write(to: existing)
         var settings = Adjustments(); settings.exposure = 0.75
@@ -588,6 +684,82 @@ private func journalIsolation(root: URL, inputs: [URL], output: URL) throws {
         _ = try journal.load()
         try check(!FileManager.default.fileExists(atPath: temporary.path), "recovery removes abandoned partial output")
         try BatchExportX3fTargetTests.run(root: root)
+        try verifyVersionManifestFailClosed(root: root, sampleJob: cancelled, sampleInput: inputs[0])
         print("PASS: snapshot, collisions, failure continuation, retry, cancel and durable recovery")
+    }
+
+    private static func verifyVersionManifestFailClosed(root: URL, sampleJob: BatchExportJob, sampleInput: URL) throws {
+        var maxHDR = HDRSettings()
+        maxHDR.toneSettings.curve.channels.red = ToneCurveShape(
+            points: [ToneCurvePoint(x: 0, y: 0), ToneCurvePoint(x: 0.5, y: 0.6), ToneCurvePoint(x: 1, y: 1)]
+        )
+        let expectedMax: (BatchJournalVersionKey) -> Int = { key in
+            switch key {
+            case .job: return 3
+            case .frozen: return 1
+            case .frozenSettings: return 1
+            case .processing: return ProcessingIdentity.current.version
+            case .masterRecipeSettings: return 4
+            case .hdrProcessing: return maxHDR.processingVersion
+            case .hdrRecord: return maxHDR.recordVersion
+            case .hdrCameraDevelopment: return HDRCameraDevelopmentSettings().version
+            }
+        }
+        for key in BatchJournalVersionKey.allCases {
+            try check(key.maxSupportedVersion == expectedMax(key),
+                      "BatchJournalVersionKey.\(key.rawValue) maxSupportedVersion (\(key.maxSupportedVersion)) matches model (\(expectedMax(key)))")
+        }
+
+        // Every version key above its manifest limit must fail-closed without quarantining job.json.
+        let encoded = try JSONEncoder().encode(sampleJob)
+        for key in BatchJournalVersionKey.allCases {
+            var obj = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
+            let bumped = key.maxSupportedVersion + 1
+            switch key {
+            case .job:
+                obj["version"] = bumped
+            case .frozen:
+                var item = (obj["items"] as! [[String: Any]])[0]
+                item["frozen"] = ["version": bumped, "settingsVersion": 1, "ordinal": 0]
+                obj["items"] = [item]
+            case .frozenSettings:
+                var item = (obj["items"] as! [[String: Any]])[0]
+                item["frozen"] = ["version": 1, "settingsVersion": bumped, "ordinal": 0]
+                obj["items"] = [item]
+            case .processing:
+                var s = obj["settings"] as! [String: Any]
+                s["processing"] = ["family": "rawlab", "version": bumped, "quality": "standard"]
+                obj["settings"] = s
+            case .masterRecipeSettings:
+                var s = obj["settings"] as! [String: Any]
+                s["masterRecipeSettingsVersion"] = bumped
+                obj["settings"] = s
+            case .hdrProcessing:
+                var s = obj["settings"] as! [String: Any]
+                s["hdr"] = ["hdr_processing_version": bumped, "record_version": 1]
+                obj["settings"] = s
+            case .hdrRecord:
+                var s = obj["settings"] as! [String: Any]
+                s["hdr"] = ["hdr_processing_version": 1, "record_version": bumped]
+                obj["settings"] = s
+            case .hdrCameraDevelopment:
+                var s = obj["settings"] as! [String: Any]
+                s["hdr"] = ["hdr_processing_version": 8, "record_version": 9, "camera_development": ["version": bumped]]
+                obj["settings"] = s
+            }
+            let dir = root.appendingPathComponent("manifest-\(key.rawValue)")
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let journalURL = dir.appendingPathComponent("job.json")
+            let bytes = try JSONSerialization.data(withJSONObject: obj)
+            try bytes.write(to: journalURL)
+            let journal = BatchJournal(directory: dir)
+            do {
+                _ = try journal.load()
+                throw Failure(message: "future \(key.rawValue)=\(bumped) must fail-closed on load")
+            } catch where journal.lastQuarantinedURL == nil { }
+            try check(try Data(contentsOf: journalURL) == bytes,
+                      "future \(key.rawValue)=\(bumped) journal remains intact without quarantine")
+        }
+        _ = sampleInput
     }
 }

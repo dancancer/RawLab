@@ -73,8 +73,15 @@ class EditorWorkspaceGroupsTest {
         compose.onNodeWithTag("editor-group-$id").performClick()
     }
     private fun tool(id: Int) {
-        compose.onNodeWithTag("editor-tools").performScrollToNode(hasTestTag("editor-tool-$id"))
-        compose.onNodeWithTag("editor-tool-$id").performClick()
+        compose.onNodeWithTag("editor-tool-$id").performScrollTo().performClick()
+    }
+    private fun back() {
+        compose.waitForIdle()
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        compose.waitForIdle()
+    }
+    private fun fine() {
+        compose.onNodeWithTag("workspace-more").performClick()
     }
     private fun reset(scope: String) {
         compose.onNodeWithContentDescription("重置调整").performClick()
@@ -86,19 +93,18 @@ class EditorWorkspaceGroupsTest {
         File(dir, "$name.png").outputStream().use { compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
-    @Test fun collapsedHslTargetKeepsCanvasGestureAndExplicitExit() {
+    @Test fun hslTargetKeepsCanvasGestureAndExplicitExit() {
         show(); group("color"); tool(14)
-        compose.onNodeWithTag("hsl-target").performScrollTo().performClick()
-        compose.onNode(hasContentDescription("更多") and hasAnyAncestor(hasTestTag("adjustment-dock"))).performClick()
-        compose.onNodeWithText("收起调整栏").performClick()
-        compose.onNodeWithTag("hsl-target-canvas").assertIsDisplayed()
-        compose.onNodeWithText("目标调整：色相").assertIsDisplayed()
+        compose.onNodeWithTag("workspace-more").performClick()
+        compose.onNodeWithText(InstrumentationRegistry.getInstrumentation().targetContext
+            .getString(com.rawlab.android.R.string.hsl_target)).performClick()
+        compose.onNodeWithTag("hsl-target-axis-0").assertExists()
         compose.onNodeWithTag("photo-canvas").performTouchInput {
             down(center); moveBy(Offset(0f, -30f)); up()
         }
         compose.runOnIdle { assertEquals(1, targetBegins); assertTrue(targetMoves.isNotEmpty()); assertEquals(1, targetEnds) }
-        compose.onNodeWithTag("hsl-target-exit").performClick()
-        compose.onNodeWithTag("hsl-target-canvas").assertDoesNotExist()
+        compose.onNodeWithTag("hsl-target").performScrollTo().performClick()
+        compose.onNodeWithTag("hsl-target-axis-0").assertDoesNotExist()
         compose.runOnIdle { assertFalse(target.enabled) }
     }
 
@@ -134,24 +140,26 @@ class EditorWorkspaceGroupsTest {
 
     @Test fun onePanelFineResetsOnlyAfterActualToolOrGroupNavigation() {
         show(); group("color"); tool(14)
+        fine()
         compose.onAllNodesWithTag("adjustment-fine").assertCountEquals(1)
-        compose.onNodeWithTag("adjustment-fine").assertIsDisplayed().performClick().assertIsSelected()
+        compose.onNodeWithTag("adjustment-fine").assertIsNotSelected().performClick()
         compose.onNodeWithTag("hsl-channel-1").performClick()
-        compose.onNodeWithTag("adjustment-fine").assertIsSelected()
-        tool(7)
-        compose.onNodeWithTag("adjustment-fine").assertIsNotSelected().performClick().assertIsSelected()
-        group("light")
+        fine(); compose.onNodeWithTag("adjustment-fine").assertIsSelected(); back()
+        compose.onNodeWithTag("draft.cancel").performClick(); tool(7)
+        fine(); compose.onNodeWithTag("adjustment-fine").assertIsNotSelected().performClick()
+        compose.onNodeWithTag("draft.cancel").performClick(); group("light"); tool(2)
+        fine()
         compose.onNodeWithTag("adjustment-fine").assertIsNotSelected()
         compose.runOnIdle { assertEquals(0, edits); assertEquals(0, commits) }
     }
 
     @Test fun stayingInChangedGeometryRetainsFineWithoutCallbacks() {
-        show(); group("geometry")
+        show(); group("geometry"); tool(17)
         compose.runOnIdle { state = state.copy(draft = state.draft!!.update(state.edits.copy(geometry = GeometrySettings(quarterTurns = 1)))) }
-        compose.onNodeWithTag("adjustment-fine").assertIsDisplayed().performClick().assertIsSelected()
+        fine(); compose.onNodeWithTag("adjustment-fine").assertIsDisplayed().performClick()
         val draft = state.draft
-        group("color"); dialog("继续编辑").performClick()
-        compose.onNodeWithTag("editor-tool-17").assertIsSelected()
+        back(); dialog("继续编辑").performClick()
+        fine()
         compose.onNodeWithTag("adjustment-fine").assertIsSelected()
         compose.runOnIdle { assertSame(draft, state.draft); assertEquals(0, edits); assertEquals(0, commits); assertEquals(0, draftApplies); assertEquals(0, draftDiscards) }
     }
@@ -161,8 +169,9 @@ class EditorWorkspaceGroupsTest {
         show(); group("color"); tool(14)
         compose.onNodeWithTag("adjustment-value-${com.rawlab.android.R.string.hsl_hue}").performClick()
         compose.onNodeWithTag("adjustment-input").performTextReplacement("25")
-        compose.runOnIdle { state = state.copy(photo = photo.copy(identity = PhotoIdentity("other-source"), file = File("other-fixture"))) }
+        compose.runOnIdle { state = state.copy(photo = photo.copy(identity = PhotoIdentity("other-source"), file = File("other-fixture")), draft = null) }
         compose.onNodeWithTag("adjustment-input").assertDoesNotExist()
+        group("color"); tool(14)
         compose.onNodeWithTag("adjustment-value-${com.rawlab.android.R.string.hsl_hue}").assertTextContains("0.5").performClick()
         compose.onNodeWithTag("adjustment-input-apply").performClick()
         compose.runOnIdle { assertEquals(.5f, state.edits.hsl.value(0, 0), 0f); assertEquals(0, edits); assertEquals(0, commits) }
@@ -181,7 +190,7 @@ class EditorWorkspaceGroupsTest {
     @Test fun neutralCurrentAllResetKeepsTheSameUnchangedDraftWithNoNavigationEffects() = neutralAll(ProcessingIdentity.CURRENT)
     private fun neutralAll(processing: ProcessingIdentity) {
         state = state.copy(edits = EditSettings(processing = processing))
-        show(); group("geometry")
+        show(); group("geometry"); tool(17)
         compose.waitUntil { state.draft != null }
         val original = state.draft
         val initialBegins = begins
@@ -193,46 +202,45 @@ class EditorWorkspaceGroupsTest {
             assertEquals(0, draftDiscards); assertEquals(0, draftApplies); assertEquals(0, commits); assertEquals(0, edits)
         }
         compose.onNodeWithTag("editor-reset-confirm").assertDoesNotExist()
-        compose.onNodeWithTag("editor-tool-17").assertIsSelected()
+        compose.onNodeWithTag("draft.cancel").assertIsDisplayed()
     }
 
     @Test fun pendingFullResetFreezesNavigationUntilExactReadyAndRestoresTheOriginalTool() {
         state = state.copy(edits = EditSettings(exposure = .5f))
         delayReady = true
-        show(); group("geometry")
+        show(); group("geometry"); tool(17)
         compose.runOnIdle { state = state.copy(draft = state.draft!!.update(state.edits.copy(geometry = GeometrySettings(quarterTurns = 1)))) }
         reset("all"); dialog("应用").performClick()
         compose.onNodeWithTag("editor-reset-confirm").assertDoesNotExist()
         compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-light"))
         compose.onNodeWithTag("editor-group-light").assertIsNotEnabled().performClick()
-        compose.onNode(hasContentDescription("更多") and hasAnyAncestor(hasTestTag("adjustment-dock"))).assertIsNotEnabled().performClick()
         compose.onNodeWithContentDescription("重置调整").assertIsNotEnabled().performClick()
-        compose.onNodeWithTag("editor-tool-17").assertIsSelected()
+        compose.onNodeWithTag("editor-group-geometry").assertIsSelected()
         compose.runOnIdle { state = state.copy(exact = true, rendering = false) }
         compose.onNodeWithTag("editor-reset-confirm").assertIsDisplayed()
         dialog("取消").performClick()
         compose.waitForIdle()
-        compose.onNodeWithTag("editor-tool-17").assertIsSelected()
+        tool(17)
         compose.runOnIdle { assertNotNull(state.draft); assertFalse(state.draft!!.changed); assertEquals(1, draftApplies); assertEquals(0, commits) }
     }
 
-    @Test fun sixGroupsChooseDefaultToolsKeepNavigationAnchoredAndNeverEdit() {
+    @Test fun sixGroupsOpenTheirToolsAndReturnWithoutEditing() {
         show()
         val navigation = compose.onNodeWithTag("editor-groups").fetchSemanticsNode().boundsInRoot
-        for ((group, tool) in listOf("looks" to 0, "light" to 2, "color" to 8, "effects" to 22, "detail" to 11, "geometry" to 17)) {
+        for ((group, toolId) in listOf("looks" to 0, "light" to 2, "color" to 8, "effects" to 22, "detail" to 11, "geometry" to 17)) {
             if (group != "looks") group(group)
-            compose.onNodeWithTag("editor-tool-$tool").assertIsSelected()
+            compose.onNodeWithTag("editor-group-$group").assertIsSelected()
+            compose.onNodeWithTag("editor-tool-$toolId").assertIsDisplayed()
+            compose.onNodeWithTag("editor-parameters").assertDoesNotExist()
             assertEquals(navigation, compose.onNodeWithTag("editor-groups").fetchSemanticsNode().boundsInRoot)
             val dock = compose.onNodeWithTag("adjustment-dock").fetchSemanticsNode().boundsInRoot
             val photo = compose.onNodeWithTag("editor-canvas").fetchSemanticsNode().boundsInRoot
             assertFalse("Content-sized adjustments do not overlap the photo", dock.overlaps(photo))
             capture(group)
+            tool(toolId)
+            compose.onNodeWithTag("editor-groups").assertDoesNotExist()
+            compose.onNodeWithTag("draft.cancel").assertIsDisplayed().performClick()
         }
-        group("geometry")
-        compose.onNodeWithTag("editor-tools").assertDoesNotExist()
-        compose.onNodeWithTag("editor-group-geometry").assertExists()
-        group("geometry")
-        compose.onNodeWithTag("editor-tool-17").assertIsSelected()
         compose.runOnIdle { assertEquals(0, edits); assertEquals(0, commits); assertEquals(0, draftApplies) }
     }
 
@@ -242,6 +250,7 @@ class EditorWorkspaceGroupsTest {
         show(); group("color"); tool(14)
         compose.onNodeWithTag("hsl-channels").performScrollToNode(hasTestTag("hsl-channel-3"))
         compose.onNodeWithTag("hsl-channel-3").performClick().assertIsSelected()
+        compose.onNodeWithTag("draft.cancel").performClick()
         group("light"); group("color"); tool(14)
         compose.onNodeWithTag("hsl-channel-3").assertIsSelected()
         reset("hsl"); dialog("取消").performClick()
@@ -250,8 +259,8 @@ class EditorWorkspaceGroupsTest {
         reset("channel")
         compose.runOnIdle {
             assertEquals(1, commits)
-            assertEquals(hsl.withValue(0, 3, 0f), state.edits.hsl)
-            assertEquals(.2f, state.edits.saturation)
+            assertEquals(hsl.withValue(0, 3, 0f), state.visibleEdits.hsl)
+            assertEquals(.2f, state.visibleEdits.saturation)
         }
         compose.onNodeWithTag("hsl-channel-3").assertIsSelected()
     }
@@ -261,7 +270,7 @@ class EditorWorkspaceGroupsTest {
     private fun fullResetCancel(apply: Boolean) {
         val source = EditSettings(exposure = .5f, processing = ProcessingIdentity.LEGACY)
         state = state.copy(edits = source)
-        show(); group("geometry")
+        show(); group("geometry"); tool(17)
         val editedGeometry = GeometrySettings(quarterTurns = 1)
         compose.runOnIdle { state = state.copy(draft = state.draft!!.update(source.copy(geometry = editedGeometry))) }
         reset("all")
@@ -270,7 +279,7 @@ class EditorWorkspaceGroupsTest {
         compose.runOnIdle { assertNull(state.draft) }
         dialog("取消").performClick()
         compose.waitForIdle()
-        compose.onNodeWithTag("editor-tool-17").assertIsSelected()
+        tool(17)
         compose.runOnIdle {
             assertNotNull(state.draft); assertFalse(state.draft!!.changed)
             assertEquals(source.copy(geometry = if (apply) editedGeometry else source.geometry), state.edits)
@@ -284,7 +293,7 @@ class EditorWorkspaceGroupsTest {
     @Test fun fullResetStayAndFailedApplyPreserveDraftThenRetryExecutesOnce() {
         val source = EditSettings(exposure = .5f, processing = ProcessingIdentity.LEGACY)
         state = state.copy(edits = source)
-        show(); group("geometry")
+        show(); group("geometry"); tool(17)
         compose.runOnIdle { state = state.copy(draft = state.draft!!.update(source.copy(geometry = GeometrySettings(quarterTurns = 1)))) }
         val draft = state.draft
         reset("all"); dialog("继续编辑").performClick()
@@ -296,6 +305,7 @@ class EditorWorkspaceGroupsTest {
         dialog("应用").performClick()
         compose.onNodeWithTag("editor-reset-confirm").performClick()
         compose.waitForIdle()
+        tool(17)
         compose.runOnIdle {
             assertEquals(1, draftApplies); assertEquals(1, commits)
             assertEquals(ProcessingIdentity.LEGACY, state.edits.processing)
@@ -316,10 +326,11 @@ class EditorWorkspaceGroupsTest {
         reset("tool")
         compose.onNodeWithTag("editor-reset-confirm").performClick()
         compose.runOnIdle {
-            assertEquals(source.copy(recipeID = null, strength = 1f, exposure = .375f), state.edits)
+            assertEquals(source.copy(recipeID = null, strength = 1f, exposure = .375f), state.visibleEdits)
             assertEquals(1, commits)
         }
-        compose.onNodeWithTag("editor-tool-15").assertIsSelected()
+        compose.onNodeWithTag("draft.apply").performClick()
+        compose.runOnIdle { assertEquals(source.copy(recipeID = null, strength = 1f, exposure = .375f), state.edits) }
     }
 
     @Test fun recipeToolBlockedByMissingCalibrationOffersASeparateAllConfirmation() {
@@ -333,7 +344,7 @@ class EditorWorkspaceGroupsTest {
         compose.onNodeWithTag("editor-reset-confirm").assertIsDisplayed()
         dialog("取消").performClick()
         compose.runOnIdle { assertEquals("fixture-recipe", state.edits.recipeID); assertEquals(0, commits) }
-        compose.onNodeWithTag("editor-tool-15").assertIsSelected()
+        compose.onNodeWithTag("editor-group-looks").assertIsSelected()
     }
 
     @Test fun staleConfirmationCannotOverwriteNewProcessingIdentity() {
@@ -343,6 +354,6 @@ class EditorWorkspaceGroupsTest {
         compose.onNodeWithTag("editor-reset-confirm").performClick()
         compose.runOnIdle { assertEquals(.5f, state.edits.exposure); assertEquals(0, commits) }
         dialog("确定").performClick()
-        compose.onNodeWithTag("editor-tool-2").assertIsSelected()
+        compose.onNodeWithTag("editor-group-light").assertIsSelected()
     }
 }

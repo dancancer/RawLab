@@ -253,5 +253,35 @@ import Combine
         await rebuiltLookTile.refresh(url: photo, previews: previews)
         check(rebuiltLookTile.thumbnail !== oldLookImg && rebuiltLookTile.thumbnail === uneditedImg && !rebuiltLookTile.adjustedThumbnail && rebuiltLookTile.notice == "预览未更新",
               "Rebuilt tile after EditorModel.removeLook shows original fallback instead of stale look thumbnail")
+
+        // M-N3: EditPersistence.editedRevision and MacPhotoPreviewPlan.isEditedState share raster classification.
+        var sensorNeutral = Adjustments()
+        sensorNeutral.exposureMode = .sensor
+        let sensorState = PhotoEditState(settings: sensorNeutral, filmID: "")
+        var modified = Adjustments()
+        modified.exposure = 0.5
+        let modifiedState = PhotoEditState(settings: modified, filmID: "")
+        for ext in ["tiff", "tif", "heic"] {
+            let path = "/tmp/mn3-sample.\(ext)"
+            let url = URL(fileURLWithPath: path)
+            check(PhotoInputClassification.isRasterInput(url) && RenderEngine.isRasterInput(url),
+                  "\(ext) is classified as raster on both paths")
+            check(MacPhotoPreviewPlan.isEditedState(sensorState, atPath: path) ==
+                  (EditPersistence.editedRevision(for: sensorState, atPath: path) != nil) &&
+                  !MacPhotoPreviewPlan.isEditedState(sensorState, atPath: path),
+                  "Neutral .sensor state is unedited for \(ext) on both paths")
+            check(MacPhotoPreviewPlan.isEditedState(modifiedState, atPath: path) ==
+                  (EditPersistence.editedRevision(for: modifiedState, atPath: path) != nil) &&
+                  MacPhotoPreviewPlan.isEditedState(modifiedState, atPath: path),
+                  "Exposure-modified state is edited for \(ext) on both paths")
+        }
+        let rawPath = "/tmp/mn3-sample.arw"
+        let rawURL = URL(fileURLWithPath: rawPath)
+        check(!PhotoInputClassification.isRasterInput(rawURL) && !RenderEngine.isRasterInput(rawURL),
+              "ARW is classified as non-raster on both paths")
+        check(MacPhotoPreviewPlan.isEditedState(sensorState, atPath: rawPath) ==
+              (EditPersistence.editedRevision(for: sensorState, atPath: rawPath) != nil) &&
+              MacPhotoPreviewPlan.isEditedState(sensorState, atPath: rawPath),
+              "RAW .sensor state differs from default .preview on both paths")
     }
 }

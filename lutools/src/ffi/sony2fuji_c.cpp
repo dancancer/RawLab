@@ -116,6 +116,7 @@ struct sony2fuji_session {
     bool interactive_preview = false;
     bool viewport_preview = false;
     sony2fuji_render_backend last_backend = SONY2FUJI_BACKEND_CPU;
+    sony2fuji_unsupported_reason unsupported_reason = SONY2FUJI_UNSUPPORTED_NONE;
     uint64_t raw_decode_count = 0;
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
     std::unique_ptr<sony2fuji::ai::AISession> ai;
@@ -2110,6 +2111,11 @@ sony2fuji_status sony2fuji_validate_look(
 sony2fuji_lut_color_state sony2fuji_inspect_lut_color(const char* path) {
     if (isEmptyString(path)) return SONY2FUJI_LUT_UNREADABLE;
     try {
+        if (sony2fuji::LUTParser::detectFormat(path) == "rlook") {
+            return sony2fuji::DcpLook::loadCached(path)
+                ? SONY2FUJI_LUT_LEGACY_DECLARATION
+                : SONY2FUJI_LUT_UNREADABLE;
+        }
         const auto lut = sony2fuji::LUTParser::loadLUT(path);
         if (!lut) return SONY2FUJI_LUT_UNREADABLE;
         return static_cast<sony2fuji_lut_color_state>(lut->contractState());
@@ -2338,6 +2344,12 @@ sony2fuji_render_backend sony2fuji_session_get_last_backend(const sony2fuji_sess
     return lease.constRaw()->last_backend;
 }
 
+sony2fuji_unsupported_reason sony2fuji_session_get_unsupported_reason(const sony2fuji_session* handle) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease)) return SONY2FUJI_UNSUPPORTED_NONE;
+    return lease.constRaw()->unsupported_reason;
+}
+
 uint64_t sony2fuji_session_get_raw_decode_count(const sony2fuji_session* handle) {
     SessionLease lease;
     if (!SessionLease::acquire(handle, lease)) return 0;
@@ -2430,6 +2442,7 @@ sony2fuji_status sony2fuji_session_set_x3f_mode(sony2fuji_session* handle, sony2
     auto* session = lease.raw();
     session->x3f_mode = mode;
     session->x3f_error.clear();
+    session->unsupported_reason = SONY2FUJI_UNSUPPORTED_NONE;
     return SONY2FUJI_STATUS_OK;
 }
 
@@ -2916,6 +2929,7 @@ sony2fuji_status sony2fuji_session_estimate_auto_exposure(
     if (!SessionLease::acquire(handle, lease)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     auto* session = lease.raw();
     session->x3f_error.clear();
+    session->unsupported_reason = SONY2FUJI_UNSUPPORTED_NONE;
     if (!request || !exposure_ev) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     if (request->version != SONY2FUJI_REQUEST_VERSION || request->struct_size < sizeof(*request))
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
@@ -2986,6 +3000,7 @@ static sony2fuji_status processImpl(
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     }
     session->x3f_error.clear();
+    session->unsupported_reason = SONY2FUJI_UNSUPPORTED_NONE;
     sony2fuji::checkProcessingCancellation();
     session->geometry_width = session->geometry_height = 0;
 
@@ -3025,6 +3040,10 @@ static sony2fuji_status processImpl(
             ? "Normal X3F rendering does not support FBDD RAW denoise"
             : session->lens_correction.active() ? "Normal X3F rendering does not support additional lens correction"
             : "Normal X3F rendering uses CPU filtering; GPU Force is not supported";
+        if (session->raw_noise_reduction == 0 && !unsupportedDisplayLens &&
+            effectiveGpuMode == sony2fuji::GpuMode::Force) {
+            session->unsupported_reason = SONY2FUJI_UNSUPPORTED_FORCE_GPU;
+        }
         return SONY2FUJI_STATUS_UNSUPPORTED;
     }
     local.lut_strength = clampFloat(local.lut_strength, 0.0f, 2.0f);
@@ -3042,8 +3061,10 @@ static sony2fuji_status processImpl(
     const bool neighborhoodActive = atmosphereActive || basicToneActive;
     const bool colorGradingActive = session->color_grading.active();
     const bool geometryActive = session->geometry.active();
-    if (geometryActive && effectiveGpuMode == sony2fuji::GpuMode::Force)
+    if (geometryActive && effectiveGpuMode == sony2fuji::GpuMode::Force) {
+        session->unsupported_reason = SONY2FUJI_UNSUPPORTED_FORCE_GPU;
         return SONY2FUJI_STATUS_UNSUPPORTED;
+    }
     // 预览到缓冲（含未开启视口标志的预览）必须保留大图 RAW 缓存供下一次渲染复用；
     // 只有导出才把工作图移走缓存来省一次整幅拷贝。
     const bool previewToBuffer = local.intent == SONY2FUJI_INTENT_PREVIEW &&
@@ -3059,8 +3080,10 @@ static sony2fuji_status processImpl(
     const bool c5Wavelet = waveletActive && sony2fuji::usesC5Denoise(session->wavelet_denoise.processingVersion);
     const bool fastWavelet = !neighborhoodActive && !geometryActive && waveletActive && !effectsActive && chromaMode == 0 && session->interactive_preview &&
         local.intent == SONY2FUJI_INTENT_PREVIEW && local.output_target == SONY2FUJI_TARGET_BUFFER;
-    if ((cpuOnlyStages || c5Wavelet) && effectiveGpuMode == sony2fuji::GpuMode::Force)
+    if ((cpuOnlyStages || c5Wavelet) && effectiveGpuMode == sony2fuji::GpuMode::Force) {
+        session->unsupported_reason = SONY2FUJI_UNSUPPORTED_FORCE_GPU;
         return SONY2FUJI_STATUS_UNSUPPORTED;
+    }
     if (needsSourceSizePreflight(local)) {
         uint32_t source_width = local.input_width;
         uint32_t source_height = local.input_height;
@@ -3112,7 +3135,10 @@ static sony2fuji_status processImpl(
             dcp = sony2fuji::DcpLook::loadCached(local.lut_path);
             if (!dcp) return SONY2FUJI_STATUS_UNSUPPORTED;
 #if !defined(SONY2FUJI_ENABLE_METAL)
-            if (effectiveGpuMode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_UNSUPPORTED;
+            if (effectiveGpuMode == sony2fuji::GpuMode::Force) {
+                session->unsupported_reason = SONY2FUJI_UNSUPPORTED_FORCE_GPU;
+                return SONY2FUJI_STATUS_UNSUPPORTED;
+            }
 #endif
         } else {
             status = loadLUT(local.lut_path, &lut);
@@ -3126,14 +3152,20 @@ static sony2fuji_status processImpl(
     bool sessionGpuPipeline = !cpuOnlyStages && !dcp && session->gpu_config.mode != sony2fuji::GpuMode::Off;
 #else
     bool sessionGpuPipeline = false;
-    if (effectiveGpuMode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_UNSUPPORTED;
+    if (effectiveGpuMode == sony2fuji::GpuMode::Force) {
+        session->unsupported_reason = SONY2FUJI_UNSUPPORTED_FORCE_GPU;
+        return SONY2FUJI_STATUS_UNSUPPORTED;
+    }
 #endif
     // Reuse the reference stages; scene-view GPU shaders retain their existing
     // contract. Auto explicitly falls back for display-referred input.
     if (displayInput) sessionGpuPipeline = false;
     const bool contractCPU = lut && lut->requiresCPU();
     if (contractCPU) {
-        if (effectiveGpuMode == sony2fuji::GpuMode::Force) return SONY2FUJI_STATUS_UNSUPPORTED;
+        if (effectiveGpuMode == sony2fuji::GpuMode::Force) {
+            session->unsupported_reason = SONY2FUJI_UNSUPPORTED_FORCE_GPU;
+            return SONY2FUJI_STATUS_UNSUPPORTED;
+        }
         sessionGpuPipeline = false;
     }
     bool gpuPipeline = !cpuAnalysis && sessionGpuPipeline;
@@ -3186,6 +3218,12 @@ static sony2fuji_status processImpl(
         ? session->raw_native_size : std::pair{image.width, image.height};
     const auto native = sony2fuji::geometryOutputSize(canvasWidth, canvasHeight, session->geometry);
     const uint32_t native_width = native.first, native_height = native.second;
+    // 预览长边封顶到裁剪旋转后的 native 长边：neighborhood 与纯几何预览共用该契约，
+    // 显式 FIT_LONG_EDGE/EXACT（FINAL）不受影响。
+    if ((neighborhoodActive || geometryActive) && local.intent == SONY2FUJI_INTENT_PREVIEW &&
+        local.preview_long_edge > 0) {
+        local.preview_long_edge = std::min(local.preview_long_edge, std::max(native_width, native_height));
+    }
     uint32_t target_width = 0, target_height = 0;
     status = computeTargetSize(local, native_width, native_height, &target_width, &target_height);
     if (status != SONY2FUJI_STATUS_OK) return status;
@@ -3292,7 +3330,12 @@ static sony2fuji_status processImpl(
                 gpuPipeline = false;
                 result = filter(sony2fuji::GpuMode::Off);
             }
-            if (result != sony2fuji::ErrorCode::Success) return mapError(result);
+            if (result != sony2fuji::ErrorCode::Success) {
+                if (result == sony2fuji::ErrorCode::Unsupported && mode == sony2fuji::GpuMode::Force) {
+                    session->unsupported_reason = SONY2FUJI_UNSUPPORTED_FORCE_GPU;
+                }
+                return mapError(result);
+            }
             if (entry && !preserveCachedOutput) {
                 const bool ranCpu = fallback || mode == sony2fuji::GpuMode::Off;
                 const bool normalUsesCpuWavelet = session->gpu_config.mode != sony2fuji::GpuMode::Force &&

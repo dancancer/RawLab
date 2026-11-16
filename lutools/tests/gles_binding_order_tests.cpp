@@ -1,5 +1,6 @@
 #include <EGL/egl.h>
 #include "gpu/compute_denoise.h"
+#include "gpu/gles_recovery.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -46,6 +47,7 @@ EGLDisplay eglGetCurrentDisplay() { return current(api).display; }
 EGLContext eglGetCurrentContext() { return current(api).context; }
 EGLSurface eglGetCurrentSurface(EGLint which) { return which == EGL_READ ? current(api).read : current(api).draw; }
 EGLenum eglQueryAPI() { return api; }
+EGLint eglGetError() { return EGL_SUCCESS; }
 EGLBoolean eglBindAPI(EGLenum value) {
     calls.emplace_back("api");
     if (value == EGL_NONE) {

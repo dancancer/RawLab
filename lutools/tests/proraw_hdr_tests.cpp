@@ -275,7 +275,7 @@ int main(int argc, char** argv) {
             edit.geometry.quarter_turns = 1; edit.geometry.flip_horizontal = true;
             const auto reference = renderHDRPair(pair, edit);
             for (bool hdr : {true, false}) {
-                auto rows = hdr::openProRAW(input, temporary);
+                auto rows = hdr::openProRAW(input, temporary, decoded.info.source_sha256);
                 const auto streamed = hdr::encodeStream(rows, edit, hdr, 93, SONY2FUJI_HDR_COLOR_DISPLAY_P3, temporary);
                 const auto expected = hdr ? hdr::encodeJPEG(reference, 93, SONY2FUJI_HDR_COLOR_DISPLAY_P3) : hdr::encodeSDRJPEG(reference.sdr, 93);
                 check(streamed.jpeg == expected, "Real ProRAW stream differs from full-frame JPEG");

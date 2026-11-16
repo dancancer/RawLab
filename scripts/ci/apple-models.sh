@@ -48,7 +48,7 @@ case "${1:-}" in
             RawLabMac/tests/adjustment-preset-application.sh Shared/tests/usage-analytics.sh
             Shared/tests/usage-transport.sh RawLabMac/tests/rum-configuration.sh
             RawLabMac/tests/localization.sh RawLabMac/tests/update-check.sh
-            RawLabMac/tests/update-install.sh)
+            RawLabMac/tests/update-install.sh RawLabMac/tests/thumbnail-cache.sh)
         ;;
     ios)
         pre_checks=()

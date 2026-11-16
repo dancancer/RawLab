@@ -143,6 +143,7 @@ xcrun --sdk iphonesimulator swiftc -swift-version 5 -DRAWLAB_XCTEST -module-name
     "$ROOT/RawLab/RawLab/Core/Camera/CameraIncrementalImport.swift" \
     "$ROOT/RawLab/RawLab/Core/Camera/CameraJPEGProcessing.swift" \
     "$ROOT/RawLab/RawLab/Core/Camera/CameraOriginalStore.swift" \
+    "$ROOT/RawLab/RawLab/Core/Persistence/FileDigestCache.swift" \
     "$ROOT/RawLab/RawLab/Core/Camera/CameraWorkspaceBackend.swift" \
     "$ROOT/RawLab/RawLab/Core/Camera/IOSCameraConnection.swift" \
     "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraController.swift" \

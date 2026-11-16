@@ -9,6 +9,7 @@ swiftc -whole-module-optimization -swift-version 5 -sdk "$SDK" \
     "$ROOT/Shared/Localization.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HDRSettings.swift" "$ROOT/Shared/ProcessingMigration.swift" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/Shared/AtmosphereSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" \
     "$ROOT/RawLab/RawLab/Core/Persistence/EditPersistence.swift" \
+    "$ROOT/RawLab/RawLab/Core/Persistence/FileDigestCache.swift" \
     "$ROOT/Shared/EditedPhotoPreviewCache.swift" "$ROOT/RawLab/RawLab/Core/Persistence/RecentPhotoStore.swift" "$ROOT/RawLab/tests/RecentPhotoTests.swift" -o "$OUT/tests"
 cd "$ROOT"
 "$OUT/tests"

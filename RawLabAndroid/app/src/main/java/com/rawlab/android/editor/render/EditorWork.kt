@@ -141,12 +141,14 @@ internal sealed interface LookWork {
     ) : LookWork
     data class Rename(val id: String, val name: String) : LookWork
     data class Delete(val id: String) : LookWork
+    data class DeleteUnreadable(val entry: com.rawlab.android.looks.UnreadableLook) : LookWork
 }
 internal data class LookImportFailure(val message: String, val invalid: Boolean,
     val dcpReason: DcpFailureReason? = null, val colorReason: Int? = null)
 
 internal sealed interface LookResult {
-    data class Loaded(val looks: List<LookChoice>) : LookResult
+    data class Loaded(val entries: com.rawlab.android.looks.LookLibraryEntries) : LookResult
+    data class UnreadableDeleted(val entries: com.rawlab.android.looks.LookLibraryEntries) : LookResult
     data class Imported(val imported: List<ManagedLook>, val failures: List<LookImportFailure>, val looks: List<LookChoice>,
         val pending: List<PendingLookImport> = emptyList()) : LookResult
     data class Renamed(val look: ManagedLook, val looks: List<LookChoice>) : LookResult
@@ -157,7 +159,8 @@ internal sealed interface LookResult {
 /** 外观库操作在外观队列线程上执行；失败时只有用户发起的操作需要重新加载列表 */
 internal fun runLookWork(storage: PhotoStorage, work: LookWork): LookResult = synchronized(storage) { try {
     when (work) {
-        LookWork.Load -> LookResult.Loaded(storage.looks())
+        LookWork.Load -> LookResult.Loaded(storage.lookEntries())
+        is LookWork.DeleteUnreadable -> LookResult.UnreadableDeleted(storage.deleteUnreadableLook(work.entry))
         is LookWork.Import -> {
             val imported = mutableListOf<ManagedLook>()
             val failures = mutableListOf<LookImportFailure>()

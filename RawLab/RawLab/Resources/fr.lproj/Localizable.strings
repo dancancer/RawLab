@@ -91,6 +91,7 @@
 "上次导入未完成" = "La dernière importation n’est pas terminée";
 "上次预览" = "Dernier aperçu";
 "下一张" = "Photo suivante";
+"不可读外观" = "Looks illisibles";
 "不支持此 HDR 格式或颜色描述。" = "Ce format HDR ou cette description colorimétrique n’est pas pris en charge.";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "Cette photo, ce look ou ce mode de traitement n’est pas pris en charge. Vérifiez la compatibilité des fichiers et les réglages de traitement.";
 "不能覆盖原始文件。" = "Le fichier d’origine ne peut pas être écrasé.";
@@ -356,6 +357,7 @@
 "已展开" = "Développé";
 "已忽略旧版 RAW 降噪（FBDD）" = "Réduction du bruit RAW héritée (FBDD) ignorée";
 "已忽略渲染后 RGB 降噪" = "Réduction du bruit RVB post-rendu ignorée";
+"已忽略目标不支持的普通降噪设置" = "Les réglages de réduction du bruit standard non pris en charge par la cible ont été ignorés";
 "已恢复上次调整" = "Réglages précédents restaurés";
 "已恢复已登记的接收任务。断线期间拍摄的照片请从相机手动导入。" = "Les transferts enregistrés ont été restaurés. Importez manuellement les photos prises pendant l’interruption.";
 "已撤销" = "Annulé";
@@ -447,6 +449,7 @@
 "按每张照片" = "Par photo";
 "按每张调整导出" = "Exporter avec les réglages de chaque photo";
 "按每张调整导出…" = "Exporter avec les réglages de chaque photo…";
+"损坏的外观" = "Look endommagé";
 "损坏的预设" = "Préréglage endommagé";
 "授权核对相册中的保存结果" = "Autoriser l’accès pour vérifier les résultats enregistrés dans Photos";
 "排列顺序不代表准确度。未识别的颜色空间、范围和基础图像仍属于假设。" = "L’ordre n’indique pas la précision. Les espaces colorimétriques, plages et images de base non identifiés restent des hypothèses.";
@@ -650,6 +653,7 @@
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "La balance des blancs prise de vue de ce RAW n’a pas pu être analysée ; la teinte de la recette ne peut pas être appliquée.";
 "此像素不可取样。" = "Ce pixel ne peut pas être échantillonné.";
 "此外观已不在外观库中。" = "Ce look n'est plus dans la bibliothèque de looks.";
+"此外观无法读取，可能已损坏或来自不兼容版本。" = "Ce look ne peut pas être lu. Il est peut-être endommagé ou provient d’une version incompatible.";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Seuls les réglages du groupe %@ seront réinitialisés. Les autres groupes resteront inchangés.";
 "此操作已过期，请重新操作。" = "Cette opération n’est plus à jour. Relancez-la.";
 "此照片或构建尚不能使用 AI 降噪。" = "Le débruitage IA est indisponible pour cette photo ou cette version.";

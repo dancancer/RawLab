@@ -61,6 +61,7 @@ import Foundation
         try legacyDeletionFallback(root.appendingPathComponent("legacy-deletion-fallback"))
         try await lazyTransferableFallback(root.appendingPathComponent("lazy-transferable-fallback"))
         try perRecordIsolationAndRecovery(root.appendingPathComponent("per-record-isolation"))
+        try writeThenReadHitsRegistryCache(root.appendingPathComponent("write-then-read-cache"))
     }
 
     static func processingMigration() throws {
@@ -788,5 +789,23 @@ import Foundation
             } catch EditPersistenceError.corruptStore { }
         }
         print("PASS: iOS per-record isolation, verbatim preservation, D5 identity safety, and D2 fail-closed")
+    }
+
+    static func writeThenReadHitsRegistryCache(_ directory: URL) throws {
+        let store = try EditPersistence(directory: directory)
+        let identity = PhotoIdentity(resourceIdentifier: "cache-hit-after-write")
+        var settings = RawSettings.default; settings.exposure = 0.5
+        try store.save(identity, state: .init(settings: settings))
+        let readsAfterSave = EditPersistence.registryDiskReadCount(forDirectory: directory)
+        _ = try store.state(for: identity)
+        _ = try store.readState(for: identity)
+        try check(EditPersistence.registryDiskReadCount(forDirectory: directory) == readsAfterSave,
+            "Reading after a successful write updates the cache in place instead of re-reading the ledger")
+        let file = directory.appendingPathComponent("edits.json")
+        try (try Data(contentsOf: file) + Data(" ".utf8)).write(to: file)
+        try check(try store.readState(for: identity).state?.settings.exposure == 0.5,
+            "An externally appended byte still parses the same record")
+        try check(EditPersistence.registryDiskReadCount(forDirectory: directory) == readsAfterSave + 1,
+            "An externally modified ledger is read from disk again")
     }
 }

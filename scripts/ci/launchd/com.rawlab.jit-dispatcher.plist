@@ -2,8 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- Example LaunchAgent for the opt-in JIT dispatcher (WP-01). Nothing in CI loads this file:
      copy it to ~/Library/LaunchAgents/com.rawlab.jit-dispatcher.plist on one Apple pool Mac,
-     replace the token placeholder (keep the file 0600), adjust the paths to that host, and
-     bootstrap it only after the resident Runner.Listener agent has been stopped.
+     create ~/RawLabCI/jit.env with mode 0600 (`chmod 600 ~/RawLabCI/jit.env`) containing
+     `RAWLAB_JIT_TOKEN=<fine-grained-PAT>` (never put the token in this plist), adjust the paths
+     to that host, and bootstrap it only after the resident Runner.Listener agent has been stopped.
      --runner-dir must be a FRESH actions/runner directory (unpack the pinned runner archive
      with `tar -xzf <archive> -C ~/jit-runner`; never point it at the resident runner directory,
      or the JIT run would overwrite and deregister the resident .runner/.credentials, whose
@@ -34,13 +35,13 @@
     </array>
     <key>EnvironmentVariables</key>
     <dict>
-        <!-- Fine-grained PAT scoped to dancancer/RawLab: repository Administration (write) for
-             generate-jitconfig plus Actions (read) for the queue poll; a classic PAT needs the
-             repo scope. Actions: write alone answers 403 on the dispatch POST. -->
-        <key>RAWLAB_JIT_TOKEN</key>
-        <string>__REPLACE_WITH_FINE_GRAINED_PAT__</string>
+        <!-- Path to the 0600 env file holding RAWLAB_JIT_TOKEN (never store the token in this
+             plist). Fine-grained PAT scoped to dancancer/RawLab: repository Administration (write)
+             for generate-jitconfig plus Actions (read) for the queue poll; classic PAT: repo. -->
+        <key>RAWLAB_JIT_ENV_FILE</key>
+        <string>/Users/rawlab-ci/RawLabCI/jit.env</string>
         <!-- Empty default: only push runs on this repository are claimed. Entries are comma-
-             separated run ids, head repositories, or head-repo:branch, e.g. 777,octo/RawLab. -->
+             separated @head_sha-pinned targets, e.g. pr#42@<sha>,777@<sha>,octo/RawLab:branch@<sha>. -->
         <key>RAWLAB_JIT_ALLOWLIST</key>
         <string></string>
     </dict>

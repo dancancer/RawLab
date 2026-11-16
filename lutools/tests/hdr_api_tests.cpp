@@ -350,6 +350,16 @@ int main(int argc, char** argv) {
             std::memcmp(output.sdr.data, source.sdr.data(), 24) == 0, "float identity clipped or quantized");
         check(output.decode_revision == 99 && output.source_headroom == 8 && output.hdr.content_headroom > 1,
             "headroom or provenance was lost");
+        auto contentRef = [](const void* data, size_t pixels) {
+            const auto* values = static_cast<const float*>(data);
+            float peak = 1;
+            for (size_t i = 0; i < pixels; ++i)
+                peak = std::max(peak, .2126f * values[i * 3] + .7152f * values[i * 3 + 1] + .0722f * values[i * 3 + 2]);
+            return peak;
+        };
+        check(output.hdr.content_headroom == contentRef(output.hdr.data, 2) &&
+            output.sdr.content_headroom == contentRef(output.sdr.data, 2),
+            "published content headroom drifted from a fresh scan of the published pixels");
         const std::vector<uint8_t> ownerHdrBefore(static_cast<const uint8_t*>(output.hdr.data),
             static_cast<const uint8_t*>(output.hdr.data) + output.hdr.size_bytes);
         const std::vector<uint8_t> ownerSdrBefore(static_cast<const uint8_t*>(output.sdr.data),

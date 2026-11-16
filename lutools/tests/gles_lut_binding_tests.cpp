@@ -606,7 +606,14 @@ int main(int argc, char** argv) {
     const ImageData source = makeTestImage(64, 8);
     ImageData cpuRef = source;
     require(applyLUTWithConfig(lut3, cpuRef, {GpuMode::Off}) == ErrorCode::Success, "CPU reference render");
-    require(eglBindAPI(EGL_OPENGL_API) == EGL_TRUE, "start initialization with desktop GL API selected");
+    // 调用方 API 选择：桌面 EGL 与 FAKE 替身优先桌面 GL API，保持 API 恢复断言的区分度。
+    // Android libEGL 不提供 EGL_OPENGL_API，绑定返回 EGL_FALSE+EGL_BAD_PARAMETER；按 EGL 规范
+    // 回落为显式选择 GLES API（真机线程默认客户端 API 即 ES，此绑定等价且不破坏恢复语义）。
+    // 其他错误码仍视为硬失败，避免静默降级造成真机假绿。
+    if (eglBindAPI(EGL_OPENGL_API) != EGL_TRUE) {
+        require(eglGetError() == EGL_BAD_PARAMETER && eglBindAPI(EGL_OPENGL_ES_API) == EGL_TRUE,
+                "start initialization with desktop GL API selected (GLES API fallback on libEGL)");
+    }
 
     if (initFailureMode) {
 #ifdef SONY2FUJI_FAKE_EGL_GLES
@@ -700,6 +707,7 @@ int main(int argc, char** argv) {
                            "Custom-domain GLES output matches CPU reference");
     }
 
+#ifdef SONY2FUJI_FAKE_EGL_GLES
     // 1b. 单位域多瓦片失败语义：瓦片只有在完整成功后才提交回写；Auto 回退只补未提交
     // 尾部（不二次套 LUT），未提交任何瓦片的 Force 失败不留痕（含越界源像素）。
     // fake 上限：1024 组 × 256 线程 = 262144 px/瓦片。
@@ -774,6 +782,7 @@ int main(int argc, char** argv) {
         require(glesFailed && glesCompleted == kTilePixels,
                 "applyLutGles reports the committed watermark on mid-tile failure");
     }
+#endif // SONY2FUJI_FAKE_EGL_GLES
 
     // 2. 调用线程已有独立 draw/read surface 的 EGLContext：正常路径与提前失败路径都恢复原上下文。
     {

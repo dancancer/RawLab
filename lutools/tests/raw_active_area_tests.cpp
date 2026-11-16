@@ -257,14 +257,36 @@ void sonyPhoto(const char* path) {
 
 int main(int argc, char** argv) {
     try {
-        if (argc < 1 || argc > 2 ||
-            (argc == 2 && (std::strcmp(argv[1], "-h") == 0 || std::strcmp(argv[1], "--help") == 0))) {
-            std::cerr << "usage: raw_active_area_tests [RAW_PATH]\n";
+        const auto usage = []() {
+            std::cerr << "usage: raw_active_area_tests [--raw RAW_PATH | RAW_PATH]\n";
             return 2;
+        };
+        if (argc < 1 || argc > 3) {
+            return usage();
         }
+        const char* argPath = nullptr;
+        bool runSony = false;
         if (argc == 2) {
-            const char* argPath = *argv[1] ? argv[1] : nullptr;
+            if (std::strcmp(argv[1], "-h") == 0 || std::strcmp(argv[1], "--help") == 0) {
+                return usage();
+            }
+            if (argv[1][0] == '-') {
+                std::cerr << "invalid argument: " << argv[1] << '\n';
+                return usage();
+            }
+            argPath = *argv[1] ? argv[1] : nullptr;
+            runSony = true;
+        } else if (argc == 3) {
+            if (std::strcmp(argv[1], "--raw") != 0 || !*argv[2]) {
+                std::cerr << "invalid arguments\n";
+                return usage();
+            }
+            argPath = argv[2];
+            runSony = true;
+        }
+        if (runSony) {
             const char* envPath = std::getenv("RAWLAB_TEST_SONY_ASPECT_RAW");
+            if (!envPath || !*envPath) envPath = std::getenv("SONY2FUJI_TEST_SONY_ASPECT_RAW");
             if (envPath && !*envPath) envPath = nullptr;
             const char* path = argPath ? argPath : envPath;
             if (!path) {

@@ -4,7 +4,7 @@ enum IOSCollectionNavigation { case edit(String), returnToCollection }
 
 extension ContentView {
     func openBatchSelection() {
-        cancelHSLTarget()
+        guard closeEditorDraftCleanly() else { return }
         if let photo = viewModel.currentAdjustmentPhoto { viewModel.batchSelection.append(photo) }
         showingBatchSelection = true
     }
@@ -30,7 +30,7 @@ extension ContentView {
         cancelSliderInteraction()
         pendingCollectionNavigation = action
         if isEditorDraftChanged { draftExitPresented = true; return }
-        if isEditorDraftActive { activateEditorTool(.adjustment(.exposure)) }
+        if isEditorDraftActive || toolWorkspaceOpen { finishEditorTool() }
         continueCollectionNavigation()
     }
 
@@ -86,14 +86,13 @@ extension ContentView {
                 isAdjustingSlider = false
             }
             if isEditorDraftChanged && !commitEditorDraft() { return false }
-            if isEditorDraftActive { activateEditorTool(.adjustment(.exposure)) }
+            if isEditorDraftActive || toolWorkspaceOpen { finishEditorTool() }
             viewModel.hasAdjustmentDraft = false
             return viewModel.saveCurrentSettings(settings)
         }
         cancelSliderInteraction()
         discardEditorDraft()
-        activateEditorTool(.adjustment(.exposure))
-        viewModel.hasAdjustmentDraft = false
+        finishEditorTool()
         do {
             let restored = try viewModel.restoreCommittedSettings()
             settings = restored

@@ -11,6 +11,7 @@ swiftc -whole-module-optimization -swift-version 5 -sdk "$SDK" -module-cache-pat
     "$ROOT/Shared/AdjustmentTransfer.swift" "$ROOT/Shared/HDRAdjustmentTransfer.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/RawLab/RawLab/Core/Models/PhotoImportTypes.swift" \
     "$ROOT/RawLab/RawLab/Core/Persistence/EditPersistence.swift" \
+    "$ROOT/RawLab/RawLab/Core/Persistence/FileDigestCache.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/AdjustmentKind.swift" "$ROOT/RawLab/RawLab/Core/Models/EditorAdjustmentRules.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/IOSAdjustmentTransfer.swift" "$ROOT/RawLab/RawLab/Core/Models/IOSAdjustmentTransferValues.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/IOSAdjustmentTransferWB.swift" \

@@ -35,9 +35,9 @@ internal object RetentionPolicy {
      * 已超出最近 100 条。同毫秒时按 id 倒序，保证边界条目的选取可复现。
      * 返回被清退条目的 id 列表。
      */
-    @Synchronized
     fun reclaimBatchArtifacts(journalRoot: File, nowMillis: Long = System.currentTimeMillis(),
-        maxAgeMillis: Long = BATCH_ARTIFACT_MAX_AGE_MILLIS, maxCount: Int = BATCH_ARTIFACT_MAX_COUNT): List<String> {
+        maxAgeMillis: Long = BATCH_ARTIFACT_MAX_AGE_MILLIS, maxCount: Int = BATCH_ARTIFACT_MAX_COUNT): List<String> =
+        synchronized(com.rawlab.android.batch.journal.BatchJournal.rootLock) {
         val ordered = journalRoot.listFiles()?.filter { it.isFile && SNAPSHOT_PATTERN.matches(it.name) }
             .orEmpty().sortedWith(compareByDescending<File> { it.lastModified() }.thenByDescending { it.name })
         val reclaimed = mutableListOf<String>()

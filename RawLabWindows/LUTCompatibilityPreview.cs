@@ -50,16 +50,16 @@ internal sealed class LUTPreviewWorker : IDisposable
     internal bool DisplayInput { get; }
     internal LUTPreviewWorker(string look, string photo)
     {
-        session = NewSession(); source = Path.Combine(directory, "source" + Path.GetExtension(photo));
+        session = NewSession(); source = photo; // 本地常规路径：只读引用原片，不再整片拷贝 30–100MB 到临时目录。
         lut = Path.Combine(directory, "look" + Path.GetExtension(look)); DisplayInput = PhotoInput.IsRaster(photo);
         try {
-            Directory.CreateDirectory(directory); TempCleanup.WriteOwnerMarker(directory); CopyWritable(look, lut); CopyWritable(photo, source);
+            Directory.CreateDirectory(directory); TempCleanup.WriteOwnerMarker(directory); CopyWritable(look, lut);
             if (DisplayInput)
             {
                 if (PhotoInput.ProbeHDR(photo, out _) == HDRProbeState.Supported)
                 {
                     using var decoded = HDRNative.Decode(photo, HDRIntent.Preview, 512);
-                    hdrDisplay = new HDRSdrInput(HDRDisplay.CopyPair(decoded.Pair).SDR);
+                    hdrDisplay = new HDRSdrInput(HDRDisplay.CopySDROnly(decoded.Pair).SDR);
                     display = hdrDisplay.Buffer;
                 }
                 else Native.Check(Native.sony2fuji_load_display_image(source, ref display));
@@ -112,7 +112,7 @@ internal sealed class LUTPreviewWorker : IDisposable
             if (PhotoInput.ProbeHDR(file, out _) == HDRProbeState.Supported)
             {
                 using var decoded = HDRNative.Decode(file, HDRIntent.Preview, 512);
-                hdrInput = new HDRSdrInput(HDRDisplay.CopyPair(decoded.Pair).SDR); input = hdrInput.Buffer;
+                hdrInput = new HDRSdrInput(HDRDisplay.CopySDROnly(decoded.Pair).SDR); input = hdrInput.Buffer;
             }
             else Native.Check(Native.sony2fuji_load_display_image(file, ref input));
             var request = Request(); SetDisplay(ref request, input);

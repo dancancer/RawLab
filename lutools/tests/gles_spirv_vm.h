@@ -35,6 +35,13 @@ struct GlesVmConfig {
     int maxComputeWorkGroupCount = 65535;
     int64_t maxSsboBytes = 64 * 1024 * 1024;
     int maxTexture3DSize = 256;
+    int failCreateContextRemaining = 0;
+    GLenum injectNextGlError = GL_NO_ERROR;
+    EGLint injectNextMakeCurrentError = EGL_SUCCESS;
+    bool failNextBufferDataOom = false;
+    bool failNextTexImage3DOom = false;
+    GLenum failNextMapBufferError = GL_NO_ERROR;
+    GLenum failNextUnmapBufferError = GL_NO_ERROR;
 };
 
 struct GlesVmStats {
@@ -49,6 +56,8 @@ struct GlesVmStats {
     size_t totalBufferSubDataBytes = 0;
     size_t dispatchCalls = 0;
     size_t texImage3DCalls = 0;
+    size_t createContextCalls = 0;
+    size_t destroyContextCalls = 0;
     GLint lastTexUnpackAlignment = 0;
     GLint lastTexInternalFormat = 0;
     GLenum lastTexFormat = 0;
@@ -71,6 +80,8 @@ struct GlesVmStats {
         totalBufferSubDataBytes = 0;
         dispatchCalls = 0;
         texImage3DCalls = 0;
+        createContextCalls = 0;
+        destroyContextCalls = 0;
         lastTexUnpackAlignment = 0;
         lastTexInternalFormat = 0;
         lastTexFormat = 0;
@@ -1196,6 +1207,7 @@ struct GlState {
     std::unordered_map<GLuint, BufferObj> buffers;
     std::unordered_map<GLuint, Texture3DObj> textures;
     GLenum lastError = GL_NO_ERROR;
+    EGLint lastEglError = EGL_SUCCESS;
 };
 
 inline GlState& state() {
@@ -1305,6 +1317,7 @@ inline void resetGlesVmState() {
     s.buffers.clear();
     s.textures.clear();
     s.lastError = GL_NO_ERROR;
+    s.lastEglError = EGL_SUCCESS;
 }
 
 inline size_t glesVmLiveBufferBytes() {
@@ -1337,17 +1350,29 @@ EGLBoolean eglChooseConfig(EGLDisplay, const EGLint*, EGLConfig* cfgs, EGLint sz
 EGLSurface eglCreatePbufferSurface(EGLDisplay, EGLConfig, const EGLint*) { return kSurface; }
 EGLContext eglCreateContext(EGLDisplay, EGLConfig, EGLContext, const EGLint*) {
     auto& s = detail::state();
+    ++s.stats.createContextCalls;
+    if (s.config.failCreateContextRemaining > 0) {
+        --s.config.failCreateContextRemaining;
+        s.lastEglError = EGL_BAD_ALLOC;
+        return EGL_NO_CONTEXT;
+    }
     auto ctx = reinterpret_cast<EGLContext>(s.nextContextId++);
     s.contexts[ctx] = {};
     return ctx;
 }
 EGLBoolean eglDestroyContext(EGLDisplay, EGLContext ctx) {
+    ++detail::state().stats.destroyContextCalls;
     detail::state().contexts.erase(ctx);
     return EGL_TRUE;
 }
 EGLBoolean eglDestroySurface(EGLDisplay, EGLSurface) { return EGL_TRUE; }
 EGLBoolean eglMakeCurrent(EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGLContext ctx) {
     auto& s = detail::state();
+    if (ctx != EGL_NO_CONTEXT && s.config.injectNextMakeCurrentError != EGL_SUCCESS) {
+        s.lastEglError = s.config.injectNextMakeCurrentError;
+        s.config.injectNextMakeCurrentError = EGL_SUCCESS;
+        return EGL_FALSE;
+    }
     s.currentDisplay = dpy;
     s.currentDraw = draw;
     s.currentRead = read;
@@ -1361,7 +1386,11 @@ EGLSurface eglGetCurrentSurface(EGLint readdraw) {
 EGLContext eglGetCurrentContext(void) { return detail::state().currentContext; }
 EGLBoolean eglBindAPI(EGLenum api) { detail::state().currentApi = api; return EGL_TRUE; }
 EGLenum eglQueryAPI(void) { return detail::state().currentApi; }
-EGLint eglGetError(void) { return EGL_SUCCESS; }
+EGLint eglGetError(void) {
+    const EGLint err = detail::state().lastEglError;
+    detail::state().lastEglError = EGL_SUCCESS;
+    return err;
+}
 
 int __android_log_print(int prio, const char* tag, const char* fmt, ...) {
     if (prio >= ANDROID_LOG_WARN) {
@@ -1537,8 +1566,14 @@ void glGetInteger64v(GLenum pname, GLint64* data) {
     if (pname == GL_MAX_SHADER_STORAGE_BLOCK_SIZE && data) *data = detail::state().config.maxSsboBytes;
 }
 GLenum glGetError(void) {
-    const GLenum err = detail::state().lastError;
-    detail::state().lastError = GL_NO_ERROR;
+    auto& s = detail::state();
+    if (s.config.injectNextGlError != GL_NO_ERROR) {
+        const GLenum injected = s.config.injectNextGlError;
+        s.config.injectNextGlError = GL_NO_ERROR;
+        return injected;
+    }
+    const GLenum err = s.lastError;
+    s.lastError = GL_NO_ERROR;
     return err;
 }
 
@@ -1580,6 +1615,13 @@ void glTexImage3D(GLenum, GLint, GLint internalformat, GLsizei width, GLsizei he
     s.stats.lastTexType = type;
 
     auto& tex = s.textures[c.boundTex3D[c.activeTexUnit]];
+    if (s.config.failNextTexImage3DOom) {
+        s.config.failNextTexImage3DOom = false;
+        tex.width = tex.height = tex.depth = 0;
+        tex.data.clear();
+        s.lastError = GL_OUT_OF_MEMORY;
+        return;
+    }
     tex.width = width;
     tex.height = height;
     tex.depth = depth;
@@ -1632,6 +1674,12 @@ void glBufferData(GLenum target, GLsizeiptr size, const void* data, GLenum) {
     s.stats.maxBufferDataBytes = std::max(s.stats.maxBufferDataBytes, nbytes);
     const GLuint id = detail::boundBufferFor(target);
     auto& b = s.buffers[id];
+    if (s.config.failNextBufferDataOom) {
+        s.config.failNextBufferDataOom = false;
+        b.bytes.clear();
+        s.lastError = GL_OUT_OF_MEMORY;
+        return;
+    }
     b.bytes.assign(static_cast<size_t>(size), 0);
     if (data && size > 0) std::memcpy(b.bytes.data(), data, static_cast<size_t>(size));
 }
@@ -1650,6 +1698,11 @@ void glBufferSubData(GLenum target, GLintptr offset, GLsizeiptr size, const void
 }
 void* glMapBufferRange(GLenum target, GLintptr offset, GLsizeiptr length, GLbitfield) {
     auto& s = detail::state();
+    if (s.config.failNextMapBufferError != GL_NO_ERROR) {
+        s.lastError = s.config.failNextMapBufferError;
+        s.config.failNextMapBufferError = GL_NO_ERROR;
+        return nullptr;
+    }
     const GLuint id = detail::boundBufferFor(target);
     auto& b = s.buffers[id];
     if (offset < 0 || length < 0 || size_t(offset) + size_t(length) > b.bytes.size()) {
@@ -1663,6 +1716,11 @@ GLboolean glUnmapBuffer(GLenum target) {
     auto& s = detail::state();
     const GLuint id = detail::boundBufferFor(target);
     s.buffers[id].mapped = false;
+    if (s.config.failNextUnmapBufferError != GL_NO_ERROR) {
+        s.lastError = s.config.failNextUnmapBufferError;
+        s.config.failNextUnmapBufferError = GL_NO_ERROR;
+        return GL_FALSE;
+    }
     return GL_TRUE;
 }
 void glDeleteBuffers(GLsizei n, const GLuint* buffers) {

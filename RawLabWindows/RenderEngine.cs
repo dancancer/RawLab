@@ -26,12 +26,13 @@ internal sealed partial class RenderEngine : IDisposable
     private readonly string lensDatabase;
     private Stamp? lensStamp;
     private LensCandidate[] lensCandidates = [];
-    private PreviewKey? previewKey;
+    private string? lastSourceFingerprint;
     private (OriginalIdentity Raw,OriginalIdentity? Lut)? sourceStamp;
     private ((NeutralReferenceKey Reference, int GpuMode, int? ProRAWDecodeVersion) Key, RenderedImage Frame)? original;
-    private readonly Dictionary<int,PreviewFrame> previews=new();
+    private readonly PreviewRevisionCache<(PreviewKey Key, int Edge), PreviewFrame> previewCache =
+        new(256L * 1024 * 1024, FrameBytes, maximumEntries: 16);
     // The optional result cache is separate from the active comparison image.
-    internal long CachedPreviewBytes=>previews.Values.Sum(FrameBytes);
+    internal long CachedPreviewBytes => previewCache.TotalBytes;
     private static long ImageBytes(RenderedImage value)=>(long)value.Image.PixelWidth*value.Image.PixelHeight*4*(value.Clipping==null ? 1 : 2) +
         (value.HDR is { } pair ? (long)pair.HDR.RGB.Length * sizeof(float) + (long)pair.SDR.RGB.Length * sizeof(float) : 0);
     private static long FrameBytes(PreviewFrame frame)=>ImageBytes(frame.Result)+
@@ -87,7 +88,7 @@ internal sealed partial class RenderEngine : IDisposable
         if (cancellationHandle.IsAllocated) cancellationHandle.Free();
     }
     private sealed record CancellationState(CancellationToken Token);
-    public void Dispose() { ClearCancellation(); previews.Clear();original=null;Native.sony2fuji_release_buffer(ref displayInput);inputStamp=null;session.Dispose();}
+    public void Dispose() { ClearCancellation(); previewCache.Clear(); original=null; Native.sony2fuji_release_buffer(ref displayInput); inputStamp=null; session.Dispose(); }
     public double AutoExposure(string path, Adjustments settings)
     {
         BeginAIOperation("auto_exposure",path);
@@ -157,7 +158,7 @@ internal sealed partial class RenderEngine : IDisposable
     private double AutoExposureHDRSource(string path, Adjustments settings,HDRSourceInfo info)
     {
         using var source = HDRSourceCache.Acquire(path,info,false,256,session);
-        var pair = HDRDisplay.CopyPair(source.Owner.Pair);
+        var pair = HDRDisplay.CopySDROnly(source.Owner.Pair);
         using var input = new HDRSdrInput(pair.SDR);
         var prepared = PrepareRequest(path, settings, null, 256, false, null, null, true, input.Buffer);
         var request = prepared.Item2;
@@ -187,15 +188,17 @@ internal sealed partial class RenderEngine : IDisposable
             sourceFingerprint = cameraInfo!.CacheIdentity;
         var key=new PreviewKey(settings.Request(path,lut,2000,null),settings.Denoise,settings.Effects,settings.ToneControls,settings.Atmosphere,settings.ColorGrading,settings.Curve,settings.DisplayChromaDenoise,
             settings.ExposureMode,settings.Hsl,settings.Lens,settings.Geometry,settings.Processing,settings.X3fMode,settings.MasterRecipeSettingsVersion,settings[Parameter.Strength],settings.ActiveAIDenoise,gpuMode,rawStamp,lutStamp,settings.HDR,settings.ProRAWDecodeVersion,sourceFingerprint);
-        var fingerprintChanged=previewKey?.SourceFingerprint!=sourceFingerprint;
-        if(previewKey!=key){previews.Clear();previewKey=key;}
+        var fingerprintChanged = lastSourceFingerprint != sourceFingerprint;
+        lastSourceFingerprint = sourceFingerprint;
         // HDR previews have a 2000px ceiling, including the viewport's native-size request.
         var cacheEdge=settings.IsHDREditing && sourceFingerprint!=null ? HDRPreviewEdge(edge) : edge;
+        var cacheKey = (key, cacheEdge);
         var referenceKey=(new NeutralReferenceKey(rawStamp,PhotoInput.IsRaster(path),settings.Processing,
             settings.Geometry,settings.Lens,cacheEdge,settings.IsHDREditing,settings.X3fMode,NeutralReference.HDRCameraSettings(settings.IsHDREditing ? settings.HDR : null)),gpuMode,settings.ProRAWDecodeVersion);
         if(original?.Key!=referenceKey || fingerprintChanged)original=null;
         // AI 模型或磁盘结果可在 WPF 帧之外变化，必须经过 native 的完整性与身份检查。
-        var cached=!settings.ActiveAIDenoise ? previews.GetValueOrDefault(cacheEdge) : null;
+        PreviewFrame? cached = null;
+        if(!settings.ActiveAIDenoise) previewCache.TryGet(cacheKey, out cached);
         if(cached!=null && !compare)
             return WithMask(ReferenceEquals(cached.Neutral,cached.Result) ? cached : new(cached.Result,cached.Result));
         if(cached!=null && !ReferenceEquals(cached.Neutral,cached.Result))
@@ -214,14 +217,7 @@ internal sealed partial class RenderEngine : IDisposable
         var frame=new PreviewFrame(neutral ?? result,result);
         if(!interactive && !settings.ActiveAIDenoise && result.Histogram.Length==768 && (!compare || neutral?.Histogram.Length==768))
         {
-            const long budget=256L*1024*1024;
-            var bytes=FrameBytes(frame);
-            if(bytes<=budget)
-            {
-                previews.Remove(cacheEdge);
-                if(CachedPreviewBytes+bytes>budget)previews.Clear();
-                previews[cacheEdge]=frame;
-            }
+            previewCache.Set(cacheKey, frame);
         }
         return WithMask(frame);
 
@@ -383,7 +379,7 @@ internal sealed partial class RenderEngine : IDisposable
     private RenderedImage? RenderHDRAsSDR(string path, Adjustments settings, string? lut, int edge, string? output,
         int? longEdge, ExportFormat? formatOverride, HDRPairOwner source,bool statistics,bool clipping)
     {
-        var pair = HDRDisplay.CopyPair(source.Pair);
+        var pair = HDRDisplay.CopySDROnly(source.Pair);
         using var input = new HDRSdrInput(pair.SDR);
         var prepared = PrepareRequest(path, settings, lut, edge, false, output, longEdge, output == null, input.Buffer);
         var request = prepared.Item2;
@@ -394,7 +390,7 @@ internal sealed partial class RenderEngine : IDisposable
             var format = output == null ? (ExportFormat?)null : formatOverride ?? ExportFormatExtensions.FromPath(output);
             if (output != null && (status == 6 || status == 3 && format != ExportFormat.RenderedDng))
                 throw new OutputWriteException(Loc.Text("无法写入成片，请检查输出位置和剩余空间。"));
-            Native.Check(status);
+            Native.Check(status, session);
             if (output != null)
             {
                 if (HDRNative.Probe(path, out var currentSource) != HDRProbeState.Supported || currentSource == null ||
@@ -469,7 +465,7 @@ internal sealed partial class RenderEngine : IDisposable
         }
         using var source=PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path,out var info)==HDRProbeState.Supported
             ? HDRSourceCache.Acquire(path,info!,false,hdrEdge,session) : null;
-        using var input=source==null ? null : new HDRSdrInput(HDRDisplay.CopyPair(source.Owner.Pair).SDR);
+        using var input=source==null ? null : new HDRSdrInput(HDRDisplay.CopySDROnly(source.Owner.Pair).SDR);
         var prepared=PrepareRequest(path,settings,lut,edge,interactive,null,null,true,input?.Buffer);
         var request=prepared.Item2;
         IntPtr probe=IntPtr.Zero;
@@ -618,7 +614,7 @@ internal sealed partial class RenderEngine : IDisposable
             if (PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path, out _) == HDRProbeState.Supported)
             {
                 using var decoded = HDRNative.Decode(path, HDRIntent.Preview, checked((uint)Math.Clamp(edge, 1, 65535)));
-                var pair = HDRDisplay.CopyPair(decoded.Pair);
+                var pair = HDRDisplay.CopySDROnly(decoded.Pair);
                 return new(pair.SDRBitmap, pair.SDR.Width, pair.SDR.Height);
             }
             if(LibraryEntry.IsRaster(path))

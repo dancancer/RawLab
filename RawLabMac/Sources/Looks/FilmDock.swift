@@ -3,6 +3,8 @@ import SwiftUI
 struct FilmDock: View {
     @Environment(\.locale) private var localizationLocale
     @ObservedObject var model: EditorModel
+    @State private var unreadableExpanded = true
+    @State private var deletingUnreadable: LookLibrary.UnreadableLook?
     var body: some View {
         let _ = localizationLocale
         let choices = FilmGroup.sections(model.filmChoices, group: { $0.group }).flatMap { $0 }
@@ -54,7 +56,32 @@ struct FilmDock: View {
                     }
                 }
             }
+            if !model.unreadableLooks.isEmpty {
+                DisclosureGroup(L10n.text("不可读外观") + " (\(model.unreadableLooks.count))", isExpanded: $unreadableExpanded) {
+                    ForEach(Array(model.unreadableLooks.enumerated()), id: \.offset) { _, entry in
+                        HStack(alignment: .top) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(entry.displayName).font(.callout)
+                                Text(entry.reason).font(.caption).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                            Button(L10n.text("删除"), role: .destructive) { deletingUnreadable = entry }
+                                .disabled(model.lookLibraryBusy || model.exporting)
+                                .accessibilityIdentifier("looks.deleteUnreadable")
+                        }.padding(.vertical, 4).accessibilityIdentifier("looks.rowUnreadable")
+                    }
+                }.accessibilityIdentifier("looks.unreadable")
+            }
         }.frame(maxWidth: .infinity).controlSize(.small).tint(.yellow)
+            .alert(L10n.format("移除“%@”？", deletingUnreadable?.displayName ?? ""),
+                   isPresented: Binding(get: { deletingUnreadable != nil }, set: { if !$0 { deletingUnreadable = nil } }),
+                   presenting: deletingUnreadable) { entry in
+                Button(L10n.text("删除"), role: .destructive) { model.removeUnreadableLook(entry) }
+                    .accessibilityIdentifier("looks.deleteUnreadable.confirm")
+                Button(L10n.text("取消"), role: .cancel) {}
+            } message: { _ in
+                Text(L10n.text("将移除 RawLab 保存的外观副本，原始文件不会被删除。"))
+            }
     }
 
     private func filmButton(name: String, id: String,

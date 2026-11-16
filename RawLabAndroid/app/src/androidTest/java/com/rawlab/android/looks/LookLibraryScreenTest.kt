@@ -2,6 +2,7 @@ package com.rawlab.android.looks
 
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
@@ -23,6 +24,40 @@ import com.rawlab.android.testing.LanguageTestRule
 class LookLibraryScreenTest {
     val compose = createAndroidComposeRule<MainActivity>()
     @get:Rule val languageAndCompose = org.junit.rules.RuleChain.outerRule(LanguageTestRule()).around(compose)
+
+    private fun openLooks() {
+        compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-looks"))
+        compose.onNodeWithTag("editor-group-looks").performClick()
+        compose.onNodeWithTag("editor-tool-0").performScrollTo().performClick()
+        compose.waitUntil(30_000) { compose.activity.model.state.value.draftReady }
+    }
+
+    private fun applyLookDraft() {
+        compose.waitUntil(30_000) { compose.activity.model.state.value.let { it.draftReady && it.message == null } }
+        compose.onNodeWithTag("draft.apply").performClick()
+        try {
+            compose.waitUntil(30_000) { compose.activity.model.state.value.let { it.draft == null && it.canExport } }
+        } catch (failure: androidx.compose.ui.test.ComposeTimeoutException) {
+            val state = compose.activity.model.state.value
+            throw AssertionError("Look draft did not finish: draft=${state.draft?.group}, changed=${state.draft?.changed}, rendering=${state.rendering}, " +
+                "exact=${state.exact}, resize=${state.previewResizePending}, operation=${state.operation}, " +
+                "save=${state.saveState}, error=${state.error}, saveError=${state.saveError}, message=${state.message}", failure)
+        }
+    }
+
+    private fun searchLook(query: String) {
+        if (compose.onAllNodesWithTag("looks.search").fetchSemanticsNodes().isEmpty())
+            compose.onNodeWithTag("looks.search.open").performScrollTo().performClick()
+        compose.onNodeWithTag("looks.search").performScrollTo().performTextReplacement(query)
+        compose.onNodeWithTag("looks.search").performImeAction()
+    }
+
+    private fun showLook(name: String) {
+        compose.onNode(hasScrollToIndexAction() and
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange))
+            .performScrollToNode(hasText(name, substring = true))
+        compose.onNodeWithText(name, substring = true).assertIsDisplayed()
+    }
 
     @Test fun batchImportReportScrollsAndCanBeDismissed() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -69,21 +104,20 @@ class LookLibraryScreenTest {
         try {
             compose.runOnUiThread { compose.activity.model.importPhoto(Uri.fromFile(photo)) }
             compose.waitUntil(30_000) { compose.activity.model.state.value.canExport }
-            compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-looks"))
-            val looksGroup = compose.onNodeWithTag("editor-group-looks")
-            if (looksGroup.fetchSemanticsNode().config[SemanticsProperties.Selected] != true) looksGroup.performClick()
-            compose.onNodeWithTag("editor-tools").performScrollToNode(hasTestTag("editor-tool-0"))
-            compose.onNodeWithTag("editor-tool-0").performClick()
+            openLooks()
+            val recentBefore = compose.activity.model.state.value.recentLookIds
             compose.runOnUiThread { compose.activity.model.importLook(Uri.fromFile(source)) }
-            compose.waitUntil(30_000) { compose.activity.model.state.value.let { it.canExport && it.looks.any { look -> look.name == source.name } } }
-            lookId = compose.activity.model.state.value.edits.film
+            compose.waitUntil(30_000) { compose.activity.model.state.value.let { it.draftReady && it.looks.any { look -> look.name == source.name } } }
+            lookId = compose.activity.model.state.value.visibleEdits.film
+            assertEquals(recentBefore, compose.activity.model.state.value.recentLookIds)
+            applyLookDraft(); openLooks()
             assertEquals(lookId, compose.activity.model.state.value.recentLookIds.first())
             val saved = compose.activity.model.state.value.edits
             compose.onNodeWithTag("looks.search").assertDoesNotExist()
             compose.onNodeWithTag("looks.search.open").performScrollTo().performClick()
             compose.onNodeWithTag("looks.search").performScrollTo().performTextReplacement("ETE")
             compose.onNodeWithTag("looks.search").performImeAction()
-            compose.onNodeWithText(source.name).assertExists()
+            showLook(source.name)
             compose.onNodeWithTag("looks.search").performTextReplacement("no matching look")
             compose.onNodeWithTag("looks.search").performImeAction()
             compose.onNodeWithTag("looks.empty").performScrollTo().assertIsDisplayed()
@@ -93,9 +127,9 @@ class LookLibraryScreenTest {
             compose.onNodeWithTag("looks.search").assertDoesNotExist()
             compose.onNodeWithTag("looks.category").performScrollTo().performClick()
             compose.onNodeWithTag("looks.category.RECENT").performClick()
-            compose.onNodeWithText(source.name).assertExists()
+            showLook(source.name)
             compose.waitUntil(10_000) { compose.activity.model.state.value.message == null }
-            compose.onNodeWithText(source.name).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(source.name, substring = true).performScrollTo().assertIsDisplayed()
             val screenshots = requireNotNull(context.getExternalFilesDir("look-browser"))
             File(screenshots, "recent-${context.resources.configuration.screenWidthDp}.png").outputStream().use {
                 instrumentation.uiAutomation.takeScreenshot().compress(Bitmap.CompressFormat.PNG, 100, it)
@@ -115,7 +149,23 @@ class LookLibraryScreenTest {
             File(screenshots, "recent-landscape.png").outputStream().use {
                 instrumentation.uiAutomation.takeScreenshot().compress(Bitmap.CompressFormat.PNG, 100, it)
             }
-            compose.runOnUiThread { compose.activity.model.deleteLook(lookId!!) }
+            compose.runOnUiThread {
+                val model = compose.activity.model
+                model.changeDraft(model.state.value.visibleEdits.copy(strength = .75f), false)
+            }
+            compose.waitUntil(30_000) { compose.activity.model.state.value.draftReady }
+            searchLook(token)
+            fun requestDelete() {
+                compose.onNode(hasContentDescription(context.getString(R.string.more)) and hasAnyAncestor(hasScrollToIndexAction())).performClick()
+                compose.onNodeWithText(context.getString(R.string.delete_look)).performClick()
+                compose.onNode(hasText(context.getString(R.string.confirm)) and hasAnyAncestor(isDialog())).performClick()
+            }
+            requestDelete()
+            compose.onNode(hasText(context.getString(R.string.adjustment_continue)) and hasAnyAncestor(isDialog())).performClick()
+            assertTrue(compose.activity.model.state.value.looks.any { it.id == lookId })
+            assertTrue(compose.activity.model.state.value.draft!!.changed)
+            requestDelete()
+            compose.onNode(hasText(context.getString(R.string.adjustment_discard)) and hasAnyAncestor(isDialog())).performClick()
             compose.waitUntil(30_000) { compose.activity.model.state.value.looks.none { it.id == lookId } }
             assertTrue(lookId !in compose.activity.model.state.value.recentLookIds)
         } finally {
@@ -129,8 +179,10 @@ class LookLibraryScreenTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         compose.runOnUiThread { AppStrings.setPreference(context, language) }
-        compose.activityRule.scenario.recreate()
-        compose.waitForIdle()
+        if (Build.VERSION.SDK_INT < 33) compose.activityRule.scenario.recreate()
+        compose.waitUntil(10_000) {
+            runCatching { compose.activity.resources.configuration.locales[0].language == java.util.Locale.forLanguageTag(language).language }.getOrDefault(false)
+        }
         fun text(id: Int) = AppStrings.text(id)
         val token = UUID.randomUUID().toString().take(8)
         val raw = File(context.cacheDir, "screen-$token.arw")
@@ -147,30 +199,33 @@ class LookLibraryScreenTest {
             }
             compose.runOnUiThread { compose.activity.model.importPhoto(Uri.fromFile(raw)) }
             compose.waitUntil(30_000) { compose.activity.model.state.value.canExport }
+            openLooks()
             compose.onNodeWithContentDescription(text(R.string.import_look)).assertIsDisplayed().assertIsEnabled()
             compose.runOnUiThread { compose.activity.model.importLook(Uri.fromFile(source)) }
             compose.waitUntil(30_000) {
                 compose.activity.model.state.value.let { state ->
-                    state.canExport && state.looks.any { it.name == source.name }
+                    state.draftReady && state.looks.any { it.name == source.name }
                 }
             }
-            lookId = compose.activity.model.state.value.edits.film
+            lookId = compose.activity.model.state.value.visibleEdits.film
+            applyLookDraft(); openLooks()
             assertTrue(source.delete())
-            // 工具栏也是横向列表（v0.8 起排在胶片条之前）：按“不是工具栏”找胶片条
-            val strip = compose.onNode(hasScrollToIndexAction() and !hasTestTag("editor-tools") and
-                SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange))
-            strip.performScrollToNode(hasText(source.name))
+            searchLook(token)
+            compose.onNodeWithText(source.name, substring = true).assertExists()
             compose.onNode(hasContentDescription(text(R.string.more)) and hasAnyAncestor(hasScrollToIndexAction())).performClick()
             compose.onNodeWithText(text(R.string.rename_look)).performClick()
-            compose.onNode(hasSetTextAction()).performTextReplacement("Transferred Look $token")
+            compose.onNode(hasSetTextAction() and hasAnyAncestor(isDialog())).performTextReplacement("Transferred Look $token")
             compose.onNodeWithText(text(R.string.confirm)).performClick()
             compose.waitUntil(10_000) {
                 compose.activity.model.state.value.looks.any { it.id == lookId && it.name == "Transferred Look $token" }
             }
-            compose.runOnUiThread {
-                compose.activity.model.beginExport { assertTrue(it) }
-                compose.activity.model.export(Uri.fromFile(exported), ExportFormat.JPEG)
-            }
+            compose.waitUntil(30_000) { compose.activity.model.state.value.draft == null }
+            compose.waitUntil(30_000) { compose.activity.model.state.value.canExport }
+            val exportReady = java.util.concurrent.atomic.AtomicReference<Boolean?>(null)
+            compose.runOnUiThread { compose.activity.model.beginExport { exportReady.set(it) } }
+            compose.waitUntil(30_000) { exportReady.get() != null }
+            assertTrue(exportReady.get() == true)
+            compose.runOnUiThread { compose.activity.model.export(Uri.fromFile(exported), ExportFormat.JPEG) }
             compose.waitUntil(30_000) { compose.activity.model.state.value.operation == Operation.NONE }
             assertTrue(exported.length() > 0)
             compose.runOnUiThread { compose.activity.model.dismissMessage() }
@@ -182,7 +237,9 @@ class LookLibraryScreenTest {
             }
             compose.activityRule.scenario.recreate()
             compose.waitForIdle()
-            strip.performScrollToNode(hasText("Transferred Look $token"))
+            openLooks()
+            searchLook(token)
+            compose.onNodeWithText("Transferred Look $token", substring = true).assertExists()
             compose.onNode(hasContentDescription(text(R.string.more)) and hasAnyAncestor(hasScrollToIndexAction())).performClick()
             compose.onNodeWithText(text(R.string.delete_look)).performClick()
             compose.onNodeWithText(AppStrings.format(R.string.remove_look_confirmation,"Transferred Look $token")).assertIsDisplayed()

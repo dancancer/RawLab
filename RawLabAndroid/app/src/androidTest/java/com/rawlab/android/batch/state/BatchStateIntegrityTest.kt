@@ -5,6 +5,7 @@ import com.rawlab.android.batch.BatchPhase
 import com.rawlab.android.batch.BatchRowStatus
 import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.format.ExportFormat
+import com.rawlab.android.photo.WorkingCopyCleanup
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -31,8 +32,9 @@ class BatchStateIntegrityTest {
             val blockWorker = AtomicBoolean(true)
             val blockCancel = AtomicBoolean(true)
             var result: BatchExportState? = null
+            val workerGateStatus = if (terminal == BatchPhase.FAILED) BatchRowStatus.FAILED else BatchRowStatus.PUBLISHING
             fixture.gate(before = { next ->
-                if (next.job.rows.any { it.status == BatchRowStatus.PROCESSING } && !next.stopping && blockWorker.compareAndSet(true, false)) {
+                if (next.job.rows.any { it.status == workerGateStatus } && !next.stopping && blockWorker.compareAndSet(true, false)) {
                     workerEntered.countDown(); workerRelease.awaitBatch()
                 }
                 if (next.stopping && blockCancel.compareAndSet(true, false)) {
@@ -88,7 +90,7 @@ class BatchStateIntegrityTest {
             val armed = AtomicBoolean(true)
             val processingWrite = AtomicBoolean(false)
             fixture.gate(before = { next ->
-                if (next.job.rows.any { it.status == BatchRowStatus.PROCESSING } && armed.compareAndSet(true, false)) {
+                if (next.job.rows.any { it.status == BatchRowStatus.PUBLISHING } && armed.compareAndSet(true, false)) {
                     entered.countDown(); release.awaitBatch(); processingWrite.set(true)
                 }
             }, after = {
@@ -130,6 +132,48 @@ class BatchStateIntegrityTest {
             assertFalse(fixture.model.state.value.stopping)
             fixture.closePage()
             fixture.assertOriginals()
+        }
+    }
+
+    // 普通 SDR 行的取消依赖 cancelRequested→BatchOutputPublisher.render→processor.export(cancellationGeneration)
+    // 透传：门把 worker 停在 PROCESSING 提交上，取消在放行前落位（native generation 前移），
+    // 放行的 export 必须在提交点前抛 CANCELLED。撤掉 export 调用的 cancellationGeneration 实参（变异）后
+    // export 感知不到取消，照常发布为 SUCCESS，本用例必红。
+    @Test fun cancelWhileProcessingSDRRowCancelsRenderBeforeCommitWithoutPublishing() {
+        BatchStateTestFixture().use { fixture ->
+            fixture.addTargets(1)
+            val processingEntered = CountDownLatch(1)
+            val processingRelease = CountDownLatch(1)
+            val blockProcessing = AtomicBoolean(true)
+            val transientBefore = WorkingCopyCleanup.transientExportFiles(listOf(fixture.context.filesDir)).map { it.name }.toSet()
+            fixture.gate(before = { next ->
+                if (next.job.rows.any { it.status == BatchRowStatus.PROCESSING } && !next.stopping &&
+                    blockProcessing.compareAndSet(true, false)) {
+                    processingEntered.countDown(); processingRelease.awaitBatch()
+                }
+            })
+            try {
+                fixture.main { fixture.model.start(ExportFormat.JPEG, null) }
+                processingEntered.awaitBatch()
+                fixture.main { fixture.model.cancel() }
+                assertTrue("Cancel during PROCESSING must mark the run stopping", fixture.model.state.value.stopping)
+                processingRelease.countDown()
+                fixture.joinWorker()
+                val state = fixture.model.state.value
+                assertEquals(BatchPhase.CANCELLED, state.phase)
+                assertFalse(state.stopping)
+                val row = state.job.rows.single()
+                assertEquals("An SDR row cancelled during PROCESSING must not publish", BatchRowStatus.CANCELLED, row.status)
+                assertNull(row.outputUri)
+                assertNull(row.error)
+                val persisted = fixture.journal.load(state.job.id)!!
+                assertEquals(listOf(BatchRowStatus.CANCELLED), persisted.rows.map { it.status })
+                assertNull(persisted.rows.single().outputUri)
+                fixture.assertOutputs(state.job, 0)
+                assertEquals("A cancelled render must leave no temporary or staging residue",
+                    transientBefore, WorkingCopyCleanup.transientExportFiles(listOf(fixture.context.filesDir)).map { it.name }.toSet())
+                fixture.assertOriginals()
+            } finally { processingRelease.countDown() }
         }
     }
 }

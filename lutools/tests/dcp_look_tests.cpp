@@ -86,6 +86,8 @@ void mathTests(const fs::path& root) {
     check(sony2fuji_validate_look(path.u8string().c_str(), &format, &version) == SONY2FUJI_STATUS_OK &&
           format == SONY2FUJI_LOOK_RLOOK && version == 1,
           "native look import reports v1 without a RAW or GPU");
+    check(sony2fuji_inspect_lut_color(path.u8string().c_str()) == SONY2FUJI_LUT_LEGACY_DECLARATION,
+          "valid native rlook reports legacy/direct color state instead of unreadable");
     check(sony2fuji_validate_look(path.u8string().c_str(), nullptr, nullptr) == SONY2FUJI_STATUS_OK,
           "native look validation allows optional information outputs");
     check(look == DcpLook::loadCached(path.u8string()), "immutable native profile cache hit");
@@ -128,6 +130,8 @@ void mathTests(const fs::path& root) {
         check(sony2fuji_validate_look(v2path.u8string().c_str(), &format, &version) == SONY2FUJI_STATUS_OK &&
               format == SONY2FUJI_LOOK_RLOOK && version == 2,
               "native look import preserves v2 with either table layout");
+        check(sony2fuji_inspect_lut_color(v2path.u8string().c_str()) == SONY2FUJI_LUT_LEGACY_DECLARATION,
+              "valid native v2 rlook reports legacy/direct color state");
         if (v2) {
             const auto result = v2->apply(RGB(.5f, 0, 0));
             check(near(result.r, 0) && near(withLook ? result.b : result.g, encode(.5)),
@@ -172,6 +176,8 @@ void malformedTests(const fs::path& root) {
         check(sony2fuji_validate_look(path.u8string().c_str(), &format, &version) == SONY2FUJI_STATUS_UNSUPPORTED &&
               format == SONY2FUJI_LOOK_UNKNOWN && version == 0,
               "native look import fully validates all profile stages before accepting");
+        check(sony2fuji_inspect_lut_color(path.u8string().c_str()) == SONY2FUJI_LUT_UNREADABLE,
+              "malformed native rlook reports unreadable color state");
     }
 }
 

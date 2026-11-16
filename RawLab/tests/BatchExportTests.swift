@@ -80,6 +80,7 @@ struct BatchExportTests {
         try checkUniformBatchX3fTargetMode(root)
         try checkOrphanedJobDirectories(root)
         try checkCorruptJobIsolation(root)
+        try checkJournalWriteAmplification(root)
         try checkFutureJournalRefusesQuarantine(root)
         try BatchSourceJournalTests.run(root: root.appendingPathComponent("source-journal"))
 
@@ -685,6 +686,77 @@ private func checkCorruptJobIsolation(_ root: URL) throws {
     try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o600)], ofItemAtPath: healthyFile.path)
     BatchExportTests.check(unreadableSurfaced && healthyStillActive && unreadableOverwriteRejected && unreadableNothingQuarantined,
                            "pendingJobs/save surface an unreadable good journal instead of quarantining and overwriting it")
+}
+
+private func checkJournalWriteAmplification(_ root: URL) throws {
+    let journal = try BatchJournalStore(directory: root.appendingPathComponent("journal-amplify", isDirectory: true))
+    let sourceURL = root.appendingPathComponent("amplify-source.ARW")
+    try Data("amplify-source".utf8).write(to: sourceURL)
+    let identity = PhotoIdentity(resourceIdentifier: "amplify-source")
+    let id = UUID()
+    let input = try BatchInputStore.copy(sourceURL, identity: identity, jobID: id, root: journal.directory)
+    let source = BatchSourceSnapshot(identity: identity, sourceFile: .externallyManaged(input),
+                                     displayName: "amplify-source.ARW", settings: .default)
+    func job(_ longEdge: Int, status: BatchJobStatus = .failed) -> BatchExportJob {
+        var value = BatchExportJob(id: id, source: source,
+                                   targets: [BatchTarget(identity: identity, sourceURL: input, displayName: "amplify-source.ARW")],
+                                   outputFormat: .jpeg, longEdge: longEdge)
+        value.status = status
+        return value
+    }
+    let record = journal.directory.appendingPathComponent("\(id.uuidString).json")
+
+    // 稳态写入：每任务首写整读一次，之后靠本进程 APFS stat 指纹（dev+ino+size+mtime_ns+ctime_ns）跳过整读回（撤跳过逻辑必红）。
+    try journal.save(job(3000))
+    try journal.save(job(2048))
+    try journal.save(job(1024))
+    BatchExportTests.check(journal.diskReloads == 1, "steady-state saves reload the journal once, not once per write")
+    let newest = try journal.load(id: id)?.longEdge
+    BatchExportTests.check(newest == 1024, "skipped re-reads still persist the newest job")
+
+    // 外部改动检测：**同字节长度**、无 sleep 的未来版本覆写必须触发重读并 fail-closed，不得被静默覆盖
+    // （同 inode 原地等长覆写让 size-only 指纹失效，只能靠 mtime_ns/ctime_ns 纳秒变化识别；整读回都去掉必红）。
+    let beforeBytes = try Data(contentsOf: record)
+    // 顶层键按 sortedKeys 排序后 "version" 位于最后一个 `"version":` 出现处（source/targets 内嵌 version 都在其前）。
+    let marker = [UInt8]("\"version\":".utf8)
+    let bytes = [UInt8](beforeBytes)
+    var matchAt = -1
+    var scan = 0
+    while scan + marker.count <= bytes.count {
+        if Array(bytes[scan..<(scan + marker.count)]) == marker { matchAt = scan }
+        scan += 1
+    }
+    guard matchAt >= 0, matchAt + marker.count < bytes.count,
+          bytes[matchAt + marker.count] >= UInt8(ascii: "0"), bytes[matchAt + marker.count] <= UInt8(ascii: "9") else {
+        throw BatchExportError.global("amplify fixture journal has no root version digit.")
+    }
+    var tampered = bytes
+    tampered[matchAt + marker.count] = UInt8(ascii: "3")
+    let futureBytes = Data(tampered)
+    BatchExportTests.check(futureBytes.count == beforeBytes.count && futureBytes != beforeBytes,
+                           "future fixture rewrites the root version in place at identical byte length")
+    try futureBytes.write(to: record)
+    var rejected = false
+    do { try journal.save(job(512)) } catch { rejected = true }
+    let untouchedBytes = try Data(contentsOf: record)
+    BatchExportTests.check(rejected && untouchedBytes == futureBytes && journal.diskReloads == 2,
+                           "an externally replaced future-version journal triggers exactly one reload and fails closed")
+
+    // 回归：写入中途被杀留下完整旧文件与游离 tmp → 重启 load 仍整份恢复（processing→pending、running→interrupted）不误判损坏。
+    var crashed = job(2048, status: .running)
+    crashed.targets[0].status = .processing
+    // 上一段拒绝后磁盘仍是未来版本外壳；先把"进程被杀前最后一次成功写出的完整旧文件"放回盘上。
+    try JSONEncoder().encode(crashed).write(to: record)
+    try journal.save(crashed)
+    try Data("stray".utf8).write(to: journal.directory.appendingPathComponent("\(id.uuidString).json.tmp-stray"))
+    let reopened = try BatchJournalStore(directory: journal.directory)
+    guard let recovered = try reopened.load(id: id)?.recovered() else {
+        throw BatchExportError.global("mid-write kill must leave the previous complete journal loadable")
+    }
+    BatchExportTests.check(recovered.targets[0].status == .pending && recovered.status == .interrupted,
+                           "restart derives the interrupted processing target back to pending without false quarantine")
+    try reopened.save(recovered)
+    BatchExportTests.check(reopened.diskReloads == 1, "a reopened store runs one full validation on its first save")
 }
 
 private func checkFutureJournalRefusesQuarantine(_ root: URL) throws {

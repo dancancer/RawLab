@@ -150,9 +150,10 @@ const PreparedDenoise& AISession::result(const std::string& path, const RAWProce
             lastBackend = "SceneRGB=" + rgbProducer;
             return loaded_;
         }
-        auto raw = metadata ? cache.load(rawKey, CacheKind::Raw, metadata->width, metadata->height, {}, &rawProducer) : std::optional<Tensor>{};
+        std::string rawPayload;
+        auto raw = metadata ? cache.load(rawKey, CacheKind::Raw, metadata->width, metadata->height, {}, &rawProducer, &rawPayload) : std::optional<Tensor>{};
         auto rgb = raw ? cache.load(rgbCacheKey(rawKey,options), CacheKind::RGB, metadata->width, metadata->height,
-            sha256Bytes(raw->values.data(), raw->values.size() * sizeof(float)), &rgbProducer) : std::optional<Tensor>{};
+            rawPayload, &rgbProducer) : std::optional<Tensor>{};
         if (!raw || !rgb) {
             // 准备任务使用新会话；驱动/适配器身份变化或首次查询失败后，只刷新并重查一次。
             const auto runtime = package_->digest + ":" + runtimeVersion(true);
@@ -250,7 +251,8 @@ PrepareReport AISession::prepare(const std::string& path, const RAWProcessOption
     }
     report.route = "Bayer"; report.routeReason.clear(); report.noise = noise;
     RAWBayerOverride denoised;
-    if (auto raw = cache.load(rawKey, CacheKind::Raw, source.width, source.height, {}, &report.raw.backend)) {
+    std::string rawPayload;
+    if (auto raw = cache.load(rawKey, CacheKind::Raw, source.width, source.height, {}, &report.raw.backend, &rawPayload)) {
         denoised = {source.width, source.height, std::move(raw->values), {}};
         report.rawCacheHit = true;
         notify(progress, Phase::Raw, 1, 1);
@@ -261,9 +263,8 @@ PrepareReport AISession::prepare(const std::string& path, const RAWProcessOption
         notify(progress, Phase::Saving, 0, 1);
         // 第一阶段 RAW 缓存按阶段语义保留（可复用 .rawcache），只保留会话通道检查点。
         cache.store(rawKey, CacheKind::Raw, source.width, source.height, denoised.normalizedMosaic.data(),
-                    denoised.normalizedMosaic.size(), {}, report.raw.backend,[&] { checkProcessingCancellation(); });
+                    denoised.normalizedMosaic.size(), {}, report.raw.backend,[&] { checkProcessingCancellation(); }, &rawPayload);
     }
-    const auto rawPayload = sha256Bytes(denoised.normalizedMosaic.data(), denoised.normalizedMosaic.size() * sizeof(float));
     if (cache.load(rgbKey, CacheKind::RGB, source.width, source.height, rawPayload, &report.rgb.backend)) {
         report.rgbCacheHit = true;
         notify(progress, Phase::RGB, 1, 1);

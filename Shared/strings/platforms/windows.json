@@ -937,6 +937,10 @@
       "formats": [],
       "source": "当前构建未配置使用统计，未采集或上报。"
     },
+    "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。": {
+      "formats": [],
+      "source": "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。"
+    },
     "当前项完成后停止，已完成的输出会保留。": {
       "formats": [],
       "source": "当前项完成后停止，已完成的输出会保留。"
@@ -4327,6 +4331,24 @@
     "处理版本与来源不同，已沿用当前照片的处理版本": {
       "formats": [],
       "source": "处理版本与来源不同，已沿用当前照片的处理版本"
+    },
+    "已忽略目标不支持的普通降噪设置": {
+      "formats": [],
+      "source": "已忽略目标不支持的普通降噪设置"
+    },
+    "EXIF 参数不能包含 -execute。": {
+      "formats": [],
+      "source": "EXIF 参数不能包含 -execute。"
+    },
+    "EXIF 导出进程意外中断，未确认写入结果。": {
+      "formats": [],
+      "source": "EXIF 导出进程意外中断，未确认写入结果。"
+    },
+    "退出码 {0}。": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "退出码 {0}。"
     }
   },
   "overrides": {
@@ -4376,6 +4398,14 @@
     }
   },
   "unique": {
+    "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。": {
+      "zh-Hans": "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。",
+      "en": "Force GPU is unavailable for this photo, look, or processing mode. Switch to Auto to fall back.",
+      "de": "GPU erzwingen ist für dieses Foto, diesen Look oder diese Verarbeitungsart nicht verfügbar. Wechseln Sie für den Fallback zu Auto.",
+      "fr": "Le mode GPU forcé n’est pas disponible pour cette photo, ce look ou ce mode de traitement. Passez en mode Auto pour revenir en repli.",
+      "ja": "この写真、ルック、または処理方法では強制 GPU を利用できません。フォールバックするには自動（Auto）に切り替えてください。",
+      "es": "GPU forzada no está disponible para esta foto, look o modo de procesamiento. Cambia a Auto para usar el respaldo."
+    },
     "{0}（损坏）": {
       "zh-Hans": "{0}（损坏）",
       "en": "{0} (damaged)",
@@ -6007,6 +6037,30 @@
       "fr": "Enregistrement de la dernière tâche par lots endommagé, déplacé vers : {0}",
       "ja": "破損した前回の一括タスク記録を次に移動しました: {0}",
       "es": "Registro dañado de la última tarea por lotes movido a: {0}"
+    },
+    "EXIF 参数不能包含 -execute。": {
+      "de": "EXIF-Argumente dürfen kein -execute enthalten.",
+      "en": "EXIF arguments cannot contain -execute.",
+      "es": "Los argumentos EXIF no pueden contener -execute.",
+      "fr": "Les arguments EXIF ne peuvent pas contenir -execute.",
+      "ja": "EXIF引数に-executeは使用できません。",
+      "zh-Hans": "EXIF 参数不能包含 -execute。"
+    },
+    "EXIF 导出进程意外中断，未确认写入结果。": {
+      "de": "Der EXIF-Exportprozess wurde unerwartet unterbrochen; das Schreibergebnis ist nicht bestätigt.",
+      "en": "The EXIF export process stopped unexpectedly; the write result is unconfirmed.",
+      "es": "El proceso de exportación de EXIF se interrumpió inesperadamente; el resultado de escritura no está confirmado.",
+      "fr": "Le processus d’export EXIF s’est interrompu de façon inattendue ; résultat d’écriture non confirmé.",
+      "ja": "EXIF書き出しプロセスが予期せず中断され、書き込み結果を確認できませんでした。",
+      "zh-Hans": "EXIF 导出进程意外中断，未确认写入结果。"
+    },
+    "退出码 {0}。": {
+      "de": "Exit-Code {0}.",
+      "en": "Exit code {0}.",
+      "es": "Código de salida {0}.",
+      "fr": "Code de sortie {0}.",
+      "ja": "終了コード {0}。",
+      "zh-Hans": "退出码 {0}。"
     }
   }
 }

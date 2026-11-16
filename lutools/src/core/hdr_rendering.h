@@ -28,6 +28,8 @@ struct HDRImagePair {
     bool isProxy = false;
     float sourceHeadroom = 0;
     float editedHeadroom = 0;
+    // 渲染后 SDR 平面的内容亮度峰值（≥1）；渲染尾段无几何/效果/细节时由 edit 融合扫描写出，0 表示未测量。
+    float editedSdrHeadroom = 0;
 };
 
 struct HDRToneOptions {

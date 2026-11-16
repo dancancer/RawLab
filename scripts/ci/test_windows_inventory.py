@@ -105,6 +105,7 @@ KNOWN_INAPPLICABLE_WINDOWS_CTESTS = {
     "gpu_gles_lut_init_failure_binding": "gles_or_android_shader_suite",
     "gpu_gles_lut_init_retry": "gles_or_android_shader_suite",
     "gpu_gles_photo_pixel": "gles_or_android_shader_suite",
+    "gpu_gles_renderer_retry": "gles_or_android_shader_suite",
     # Excluded explicitly via `-E '^dualdn_onnx(_skip)?$'` in ci.yml (CI full runs DualDN package tests; empty model registers `dualdn_onnx_skip`).
     "dualdn_onnx_skip": "excluded_by_ci_e_flag",
 }

@@ -7,6 +7,7 @@
 #include "core/photo_color.h"
 #include "core/photo_rendering.h"
 #include "core/sha256.h"
+#include "core/parsed_resource_cache.h"
 #include "core/hdr_stream.h"
 #include "core/hdr_storage.h"
 #include "core/hdr_look.h"
@@ -35,6 +36,8 @@ using sony2fuji::hdr::Error;
 
 struct Owner {
     HDRImagePair pixels;
+    // publish 用的内容亮度峰值缓存：渲染尾段已对最终像素测量时直接复用（≥1），0 表示未测量、view 自行扫描。
+    float hdrContentHeadroom = 0, sdrContentHeadroom = 0;
     std::array<uint8_t, 32> sha{};
     uint32_t sourceHeadroomKind = SONY2FUJI_HDR_HEADROOM_UNKNOWN;
     sony2fuji_hdr_image_pair_v1 published{};
@@ -185,20 +188,24 @@ std::shared_ptr<Owner> readPair(const sony2fuji_hdr_image_pair_v1* p) {
     return result;
 }
 
-sony2fuji_hdr_buffer_v1 view(ImageData& image) {
+sony2fuji_hdr_buffer_v1 view(ImageData& image, float measuredContentHeadroom) {
     static_assert(sizeof(RGB) == 12);
     auto result = initialized<sony2fuji_hdr_buffer_v1>();
     result.data = image.pixels.data(); result.width = image.width; result.height = image.height;
     result.stride_bytes = uint64_t(image.width) * 12; result.size_bytes = image.pixels.size() * sizeof(RGB);
     result.pixel_format = SONY2FUJI_HDR_RGB32F_LINEAR; result.color_encoding = SONY2FUJI_HDR_LINEAR_SRGB;
-    result.content_headroom = 1; result.headroom_kind = SONY2FUJI_HDR_HEADROOM_MEASURED;
-    for (const auto& pixel : image.pixels)
-        result.content_headroom = std::max(result.content_headroom, .2126f * pixel.r + .7152f * pixel.g + .0722f * pixel.b);
+    result.headroom_kind = SONY2FUJI_HDR_HEADROOM_MEASURED;
+    // 峰值测量对同一批像素逐位一致；已测得时不再重复整图扫描。
+    result.content_headroom = measuredContentHeadroom >= 1 ? measuredContentHeadroom : 1;
+    if (measuredContentHeadroom < 1)
+        for (const auto& pixel : image.pixels)
+            result.content_headroom = std::max(result.content_headroom, .2126f * pixel.r + .7152f * pixel.g + .0722f * pixel.b);
     return result;
 }
 void publish(std::shared_ptr<Owner> owner, sony2fuji_hdr_image_pair_v1* result) {
     auto value = initialized<sony2fuji_hdr_image_pair_v1>(); value.struct_size = result->struct_size;
-    value.hdr = view(owner->pixels.hdr); value.sdr = view(owner->pixels.sdr);
+    value.hdr = view(owner->pixels.hdr, owner->hdrContentHeadroom);
+    value.sdr = view(owner->pixels.sdr, owner->sdrContentHeadroom);
     value.native_width = owner->pixels.nativeWidth; value.native_height = owner->pixels.nativeHeight;
     value.output_native_width = owner->pixels.outputNativeWidth ? owner->pixels.outputNativeWidth : value.native_width;
     value.output_native_height = owner->pixels.outputNativeHeight ? owner->pixels.outputNativeHeight : value.native_height;
@@ -366,14 +373,19 @@ CameraProfileResource loadCameraProfile(const char* file, std::string_view expec
         stream.peek() != std::char_traits<char>::eof() || stream.bad())
         fail(SONY2FUJI_HDR_REASON_CAMERA_PROFILE, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT, "HDR camera profile changed during reading");
     auto digest = hash::sha256Bytes(bytes.data(), bytes.size());
-    if (!expected.empty() && expected != digest)
+    static ParsedResourceCache<CameraProfileResource> cache;
+    if (!expected.empty() && expected != digest) {
+        cache.evict(file);
         fail(SONY2FUJI_HDR_REASON_CAMERA_PROFILE, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT, "HDR camera profile fingerprint changed");
+    }
+    checkProcessingCancellation();
+    if (auto cached = cache.find(file, digest)) return *cached;
     auto profile = readHDRCameraProfile(bytes.data(), bytes.size());
     checkProcessingCancellation();
     if (!profile)
         fail(SONY2FUJI_HDR_REASON_CAMERA_PROFILE, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT,
             "Unsupported HDR camera calibration", SONY2FUJI_STATUS_UNSUPPORTED);
-    return {std::move(*profile), std::move(digest)};
+    return cache.put(file, digest, {std::move(*profile), digest});
 }
 
 void cameraRawStatus(ErrorCode code) {
@@ -597,6 +609,9 @@ sony2fuji_status sony2fuji_hdr_render(sony2fuji_session* sessionHandle, const so
         auto output = std::make_shared<Owner>();
         output->pixels = source->owner_token ? renderHDRPair(input->pixels, o) :
             renderHDRPair(std::move(input->pixels), o);
+        // 渲染返回前已对最终像素测得双平面内容峰值（融合或回退扫描），publish 直接复用。
+        output->hdrContentHeadroom = output->pixels.editedHeadroom;
+        output->sdrContentHeadroom = output->pixels.editedSdrHeadroom;
         output->sha = input->sha; output->sourceHeadroomKind = input->sourceHeadroomKind;
         output->sourcePath = input->sourcePath;
         output->cameraProfilePath = input->cameraProfilePath;
@@ -912,17 +927,10 @@ static sony2fuji_status decodeCameraRaw(sony2fuji_session* sessionHandle, const 
                 pair.sourceHeadroom = std::max(pair.sourceHeadroom, cameraLuminance(pixel));
             owner->sourceHeadroomKind = SONY2FUJI_HDR_HEADROOM_MEASURED;
         }
-        std::string digest;
-        try { digest = hash::sha256File(file, checkProcessingCancellation); }
-        catch (const std::runtime_error&) { cameraRawStatus(ErrorCode::FileNotFound); }
         const auto after = cameraRawStamp(filePath);
         if (before.size != after.size || before.modified != after.modified ||
             (ai && aiKey != hdrSessionCameraAIKey(session, file)))
             fail(SONY2FUJI_HDR_REASON_SOURCE_CHANGED, SONY2FUJI_HDR_FIELD_SOURCE, "Camera RAW source changed during decode");
-        for (size_t i = 0; i < owner->sha.size(); ++i) {
-            auto digit = [](char c) { return c <= '9' ? c - '0' : c - 'a' + 10; };
-            owner->sha[i] = uint8_t(digit(digest[2*i]) * 16 + digit(digest[2*i+1]));
-        }
         checkProcessingCancellation();
         pair.sourceQuality = pair.renderQuality = static_cast<HDRQuality>(options->intent);
         pair.isProxy = preview;
@@ -1006,7 +1014,7 @@ sony2fuji_status sony2fuji_hdr_export_proraw(sony2fuji_session* sessionHandle, c
         // SDK stage 与完整源 float spool 同时存活，开始解码前按同一卷的合计峰值准入。
         hdr::storage::requireSpace(std::filesystem::u8path(temporaryRoot),
             hdr::proRAWStageBytes(uint64_t(info.width) * info.height) + streamBytes);
-        auto source = hdr::openProRAW(sourceFile, std::filesystem::u8path(temporaryRoot));
+        auto source = hdr::openProRAW(sourceFile, std::filesystem::u8path(temporaryRoot), config->source_sha256);
         auto encoded = hdr::encodeStream(source, options, keepHDR != 0, config->jpeg_quality ? config->jpeg_quality : 95,
             config->base_color, std::filesystem::u8path(temporaryRoot));
         hdr::publishStreamJPEG(std::move(encoded.jpeg), encoded.width, encoded.height, *config, keepHDR != 0, file);

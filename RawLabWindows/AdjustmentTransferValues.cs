@@ -87,15 +87,24 @@ internal static class AdjustmentTransferValues
         // Q3：Windows 的 SDR 管线不建模这两个键，收到非 0 值忽略并提示，不再拒绝。
         foreach(var field in new[]{F.RawDenoise,F.PostRGBDenoise})
             if(p[field]!=null && Number(p[field])!=0) context.OnTransferNotice?.Invoke(field==F.RawDenoise ? AdjustmentTransferNotice.IgnoredRawDenoise : AdjustmentTransferNotice.IgnoredPostRGBDenoise);
-        if(s.AIDenoiseEnabled && p.Fields.Overlaps(AdjustmentFields.Denoise))
-            throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"AI denoise is enabled on target");
-        if(p[F.ChromaDenoise]!=null) s=s with {DisplayChromaDenoise=(int)(Number(p[F.ChromaDenoise]) ?? 0)};
+        if(p[F.ChromaDenoise]!=null) {
+            var chroma=(int)(Number(p[F.ChromaDenoise]) ?? 0);
+            if(s.AIDenoiseEnabled) {
+                if(chroma!=0) context.OnTransferNotice?.Invoke(AdjustmentTransferNotice.IgnoredTargetDenoise);
+            } else s=s with {DisplayChromaDenoise=chroma};
+        }
         if(p[F.WaveletDenoise] is {} wavelet) {
             var d=Null(wavelet) ? new DenoiseSettings() : new(Boolean(wavelet.GetProperty("enabled"))!.Value,
                 Number(wavelet.GetProperty("luma"))!.Value,Number(wavelet.GetProperty("chroma"))!.Value,Number(wavelet.GetProperty("coarse"))!.Value);
-            if(!Null(wavelet) && new[]{"detail","clean","custom"}[d.Preset]!=Text(wavelet.GetProperty("preset")))
-                throw new AdjustmentTransferException(AdjustmentFailure.Unrepresentable,"detail.denoise.wavelet.preset");
-            s=s with {Denoise=d};
+            // AI 运行时传统降噪不生效，连零值也不覆盖关闭 AI 后要恢复的存量参数。
+            if(s.AIDenoiseEnabled) {
+                if(d!=new DenoiseSettings() || !Null(wavelet) && Text(wavelet.GetProperty("preset"))!="detail")
+                    context.OnTransferNotice?.Invoke(AdjustmentTransferNotice.IgnoredTargetDenoise);
+            } else {
+                if(!Null(wavelet) && new[]{"detail","clean","custom"}[d.Preset]!=Text(wavelet.GetProperty("preset")))
+                    throw new AdjustmentTransferException(AdjustmentFailure.Unrepresentable,"detail.denoise.wavelet.preset");
+                s=s with {Denoise=d};
+            }
         }
         if(p.Fields.Any(f=>f.Group()=="effects")) {
             var e=s.Effects ?? new();

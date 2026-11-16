@@ -15,7 +15,10 @@ class VersionedEditPersistenceTest {
         try { block(directory) } finally { directory.deleteRecursively() }
     }
 
-    @Test fun cachedReadsDetectSameSizePreservedTimeOverwriteAndSaveUsesIdentityOnly() = inStore { directory ->
+    // stat 短路上线后的既定契约（票 perf/edit-ledger-cache）：缓存读取信任 (lastModified,length)；
+    // 同长度、mtime 复原的 in-place 外部覆写走快路径返回快照（接受的弱化窗口，Android stat API 仅此两维），
+    // 长度或 mtime 任一变化（含 rename 替换与跨实例保存）仍必须被重读观察到。
+    @Test fun cachedReadsReuseSnapshotForSameSizePreservedTimeOverwriteAndDetectChangedSizeOverwrite() = inStore { directory ->
         val identity = PhotoIdentity("a"); val store = EditStore(directory)
         store.save(identity, EditSettings(exposure = .5f))
         val file = File(directory, "edits.properties")
@@ -24,7 +27,10 @@ class VersionedEditPersistenceTest {
         val replacement = before.replace("0.5", "0.9")
         assertNotEquals(before, replacement)
         file.writeText(replacement); Files.setLastModifiedTime(file.toPath(), modified)
-        assertEquals(.9f, store.readState(identity).settings!!.exposure)
+        assertEquals(.5f, store.readState(identity).settings!!.exposure)
+        val longer = before.replace("0.5", "0.95")
+        file.writeText(longer); Files.setLastModifiedTime(file.toPath(), modified)
+        assertEquals(.95f, store.readState(identity).settings!!.exposure)
         // 外部调整变化不再阻挡普通按身份保存。
         assertEquals(1f, store.save(identity, EditSettings(exposure = 1f)).settings!!.exposure)
     }

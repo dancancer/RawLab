@@ -134,6 +134,10 @@ internal static class TempCleanup
         try { if (IsReparsePoint(rootInfo)) return; }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Trace.WriteLine($"TempCleanup: skipping root {tempRoot}: {error.Message}"); return; }
 
+        // 单次枚举临时根目录，再由 HasOwnedTempPrefix 在 C# 层按前缀复核：
+        // .NET 8 在 Windows 下对通配枚举仍向内核传入 FileName=null，由托管层
+        // ShouldIncludePredicate 过滤；单次枚举可避免为三个前缀扫三轮根目录，
+        // 同时保留 enumerateDirectories 测试注入钩子。
         IEnumerable<DirectoryInfo> directories;
         try { directories = enumerateDirectories != null ? enumerateDirectories(tempRoot) : rootInfo.EnumerateDirectories(); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Trace.WriteLine($"TempCleanup: enumeration failed for {tempRoot}: {error.Message}"); return; }

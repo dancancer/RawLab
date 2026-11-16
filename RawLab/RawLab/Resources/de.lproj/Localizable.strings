@@ -91,6 +91,7 @@
 "上次导入未完成" = "Der letzte Import wurde nicht abgeschlossen";
 "上次预览" = "Letzte Vorschau";
 "下一张" = "Nächstes Foto";
+"不可读外观" = "Nicht lesbare Looks";
 "不支持此 HDR 格式或颜色描述。" = "Dieses HDR-Format oder diese Farbbeschreibung wird nicht unterstützt.";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "Dieses Foto, dieser Look oder diese Verarbeitungsart wird nicht unterstützt. Prüfen Sie die Dateikompatibilität und Verarbeitungseinstellungen.";
 "不能覆盖原始文件。" = "Die Originaldatei kann nicht überschrieben werden.";
@@ -356,6 +357,7 @@
 "已展开" = "Aufgeklappt";
 "已忽略旧版 RAW 降噪（FBDD）" = "Frühere RAW-Rauschunterdrückung (FBDD) ignoriert";
 "已忽略渲染后 RGB 降噪" = "RGB-Rauschunterdrückung nach dem Rendern ignoriert";
+"已忽略目标不支持的普通降噪设置" = "Vom Ziel nicht unterstützte Standard-Rauschunterdrückung wurde ignoriert";
 "已恢复上次调整" = "Vorherige Anpassungen wiederhergestellt";
 "已恢复已登记的接收任务。断线期间拍摄的照片请从相机手动导入。" = "Registrierte Übertragungen wurden wiederhergestellt. Importieren Sie während der Unterbrechung aufgenommene Fotos manuell von der Kamera.";
 "已撤销" = "Rückgängig gemacht";
@@ -447,6 +449,7 @@
 "按每张照片" = "Pro Foto";
 "按每张调整导出" = "Mit den Anpassungen jedes Fotos exportieren";
 "按每张调整导出…" = "Mit den Anpassungen jedes Fotos exportieren…";
+"损坏的外观" = "Beschädigter Look";
 "损坏的预设" = "Beschädigte Vorgabe";
 "授权核对相册中的保存结果" = "Zugriff auf Fotos erlauben, um gespeicherte Ergebnisse zu prüfen";
 "排列顺序不代表准确度。未识别的颜色空间、范围和基础图像仍属于假设。" = "Die Reihenfolge sagt nichts über die Genauigkeit aus. Nicht erkannte Farbräume, Wertebereiche und Basisbilder bleiben Annahmen.";
@@ -650,6 +653,7 @@
 "此 RAW 无法解析拍摄白平衡，不能应用配方色调。" = "Der Weißabgleich bei Aufnahme dieses RAW konnte nicht gelesen werden; die Tönung des Rezepts kann nicht angewendet werden.";
 "此像素不可取样。" = "Dieses Pixel kann nicht erfasst werden.";
 "此外观已不在外观库中。" = "Dieser Look ist nicht mehr in der Look-Bibliothek enthalten.";
+"此外观无法读取，可能已损坏或来自不兼容版本。" = "Dieser Look kann nicht gelesen werden. Er ist möglicherweise beschädigt oder stammt aus einer inkompatiblen Version.";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Nur Anpassungen in der Gruppe „%@“ werden zurückgesetzt. Andere Gruppen bleiben unverändert.";
 "此操作已过期，请重新操作。" = "Dieser Vorgang ist nicht mehr aktuell. Starten Sie ihn erneut.";
 "此照片或构建尚不能使用 AI 降噪。" = "KI-Entrauschen ist für dieses Foto oder Build nicht verfügbar.";

@@ -124,6 +124,9 @@ import Darwin
         try recoverRetriesEmptyDirectoryRemoval()
         try recoverOrdersReAdoptedOriginals()
         try recoverSweepsOrphanDirectories()
+        try completeReusesStreamedDigestWithoutRehashingPartial()
+        try verifiedURLReusesDigestCacheAcrossOpens()
+        try samplingValidationAndReuseComputeDigestOnce()
         if #available(macOS 15.0, iOS 18.0, *) { try isoGainMapJPEG() }
     }
 
@@ -876,6 +879,109 @@ import Darwin
                   !FileManager.default.fileExists(atPath: orphanCompleteDir.path) &&
                   store!.snapshot.originals.map(\.id) == [kept.id, preparedValid.id],
                   "pruneExportedOriginals() reclaims exported re-adopted original and removes its directory")
+    }
+
+    /// 统一整摘要账目：直连 `Self.hash`（含 recover/jpeg 重编码）+ FileDigestCache 计算入口。
+    /// 断言读它，任何绕过缓存的直连整算都无法假绿。
+    private static func totalDigestWork() -> Int {
+        CameraOriginalStore.fullFileHashCount + FileDigestCache.shared.digestComputeCount
+    }
+
+    private static func completeReusesStreamedDigestWithoutRehashingPartial() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-complete-dedup-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try CameraOriginalStore(directory: root)
+        let bytes = Data([73, 73, 42, 0, 1, 2, 3, 4])
+        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        let identity = CameraDeviceIdentity(manufacturer: "Sony", model: "ILCE-7M4", firmware: "1.0", serial: "0001", operations: [0x923c, 0x923d])
+        let snapshot = CameraAssetSnapshot(content: 1, file: 1, storage: 1, format: 0xb101,
+                                           name: "DSC00010.ARW", size: UInt64(bytes.count), created: "1700000000000", modified: "")
+        let job = try store.enqueue(device: identity, connectionKey: "fixture", assets: [snapshot])
+        let target = try store.begin(job: job.id, item: job.items[0].id)
+        try target.handle.write(contentsOf: bytes)
+        try target.handle.close()
+        let beforeComplete = totalDigestWork()
+        let saved = try store.complete(job: job.id, item: job.items[0].id, digest: digest)
+        let hashWork = totalDigestWork() - beforeComplete
+        try check(hashWork == 0 && saved.digest == digest && saved.size == UInt64(bytes.count),
+                  "complete() reuses streamed digest without re-hashing .partial (actual hashes: \(hashWork))")
+
+        let badJob = try store.enqueue(device: identity, connectionKey: "fixture", assets: [
+            CameraAssetSnapshot(content: 2, file: 2, storage: 1, format: 0xb101,
+                                name: "DSC00011.ARW", size: UInt64(bytes.count), created: "1700000001000", modified: "")
+        ])
+        let badTarget = try store.begin(job: badJob.id, item: badJob.items[0].id)
+        try badTarget.handle.write(contentsOf: Data(bytes.dropLast()))
+        try badTarget.handle.close()
+        var sizeRejected = false
+        do {
+            _ = try store.complete(job: badJob.id, item: badJob.items[0].id, digest: digest)
+        } catch CameraProtocolError.invalid(_) {
+            sizeRejected = true
+        }
+        try check(sizeRejected, "complete() still rejects .partial whose file size differs from asset size")
+    }
+
+    private static func verifiedURLReusesDigestCacheAcrossOpens() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-verified-digest-cache-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try CameraOriginalStore(directory: root)
+        let bytes = Data([73, 73, 42, 0, 1, 2, 3, 4])
+        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        let identity = CameraDeviceIdentity(manufacturer: "Sony", model: "ILCE-7M4", firmware: "1.0", serial: "0002", operations: [0x923c, 0x923d])
+        let snapshot = CameraAssetSnapshot(content: 3, file: 3, storage: 1, format: 0xb101,
+                                           name: "DSC00012.ARW", size: UInt64(bytes.count), created: "1700000002000", modified: "")
+        let job = try store.enqueue(device: identity, connectionKey: "fixture", assets: [snapshot])
+        let target = try store.begin(job: job.id, item: job.items[0].id)
+        try target.handle.write(contentsOf: bytes)
+        try target.handle.close()
+        let saved = try store.complete(job: job.id, item: job.items[0].id, digest: digest)
+        let url = try store.verifiedURL(saved.id)
+        let openedOnce = FileDigestCache.shared.digestComputeCount(for: url)
+        _ = try store.verifiedURL(saved.id)
+        let openedTwice = FileDigestCache.shared.digestComputeCount(for: url)
+        try check(openedOnce == 1 && openedTwice == openedOnce,
+                  "verifiedURL computes the digest once and reuses FileDigestCache across opens (actual: \(openedOnce), \(openedTwice))")
+        let writer = try FileHandle(forWritingTo: url)
+        defer { try? writer.close() }
+        try writer.seek(toOffset: 4)
+        try writer.write(contentsOf: Data([99]))
+        var changeRejected = false
+        do { _ = try store.verifiedURL(saved.id) } catch CameraProtocolError.invalid(_) { changeRejected = true }
+        let afterChange = FileDigestCache.shared.digestComputeCount(for: url)
+        try check(changeRejected && afterChange == openedOnce + 1,
+                  "verifiedURL recomputes through the cache and still rejects in-place same-size content changes")
+    }
+
+    private static func samplingValidationAndReuseComputeDigestOnce() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-sampling-digest-once-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try CameraOriginalStore(directory: root)
+        var bytes = Data(repeating: 71, count: 200_003)
+        bytes.replaceSubrange(0..<4, with: [73, 73, 42, 0])
+        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        let identity = CameraDeviceIdentity(manufacturer: "Sony", model: "ILCE-7M4", firmware: "1.0", serial: "0003", operations: [0x923c, 0x923d])
+        let savedSnapshot = CameraAssetSnapshot(content: 5, file: 5, storage: 0, format: 0,
+                                                name: "DSC00021.ARW", size: UInt64(bytes.count), created: "1700000021000", modified: "")
+        let savedJob = try store.enqueue(device: identity, connectionKey: "fixture", assets: [savedSnapshot])
+        let savedTarget = try store.begin(job: savedJob.id, item: savedJob.items[0].id)
+        try savedTarget.handle.write(contentsOf: bytes)
+        try savedTarget.handle.close()
+        let saved = try store.complete(job: savedJob.id, item: savedJob.items[0].id, digest: digest)
+        let pendingSnapshot = CameraAssetSnapshot(content: 6, file: 6, storage: 0, format: 0,
+                                                  name: "DSC00021.ARW", size: UInt64(bytes.count), created: "1700000021000", modified: "")
+        let pendingJob = try store.enqueue(device: identity, connectionKey: "fixture", assets: [pendingSnapshot])
+        let base = totalDigestWork()
+        guard let candidate = store.samplingCandidate(job: pendingJob.id, item: pendingJob.items[0].id) else {
+            try check(false, "samplingCandidate finds the matching saved original for reuse"); fatalError("unreachable")
+        }
+        let afterValidation = totalDigestWork()
+        try check(afterValidation == base + 1,
+                  "samplingCandidate validates the candidate with exactly one full digest (actual: \(afterValidation - base))")
+        let reused = try store.reuseSampledOriginal(job: pendingJob.id, item: pendingJob.items[0].id, sourceID: candidate.source.id)
+        let afterReuse = totalDigestWork()
+        try check(reused.id == saved.id && afterReuse == afterValidation,
+                  "reuseSampledOriginal re-validates through the fingerprint cache without a second full digest (actual delta: \(afterReuse - afterValidation))")
     }
 
     private static func write(_ bytes: Data, item: CameraTransferItem, job: CameraTransferJob, store: CameraOriginalStore) throws -> CameraStoredOriginal {

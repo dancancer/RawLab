@@ -357,6 +357,9 @@ final class CameraOriginalStore {
         guard size >= chunk * 3 else { return nil }
         return [0, (size - chunk) / 2, size - chunk]
     }
+    /// 整文件哈希账目挂在真实入口（直连 `Self.hash` 与恢复/复用等所有调用方都计数）；
+    /// 与 FileDigestCache.digestComputeCount 一起构成「完整原片算了几次」的可观察账。
+    static var fullFileHashCount = 0
     static func hash(_ url: URL) throws -> (size: UInt64, digest: String) {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
@@ -365,15 +368,20 @@ final class CameraOriginalStore {
             digest.update(data: bytes); size += UInt64(bytes.count)
             guard size <= 1 << 30 else { throw CameraProtocolError.invalid("Camera original exceeds budget") }
         }
+        fullFileHashCount += 1
         return (size, digest.finalize().map { String(format: "%02x", $0) }.joined())
     }
     private func availability(_ source: CameraStoredOriginal) -> CameraOriginalAvailability {
         let url = originalURL(source)
         do {
             let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-            guard attributes[.type] as? FileAttributeType == .typeRegular else { return .changed }
-            let actual = try Self.hash(url)
-            return actual.size == source.size && actual.digest == source.digest ? .available : .changed
+            guard attributes[.type] as? FileAttributeType == .typeRegular,
+                  let size = (attributes[.size] as? NSNumber)?.uint64Value,
+                  size == source.size else { return .changed }
+            // #341 摘要缓存复用（同一 FileDigestCache.shared 权威）：stat 指纹（inode+size+ctime+mtime）
+            // 未变时直接复用摘要，验证只余 stat 复查；采样→复用二次校验、重复打开不再整读整算，
+            // 内容真实变化（指纹任一字段变化）自动重算，语义与整文件重算一致。
+            return try FileDigestCache.shared.digest(for: url) == source.digest ? .available : .changed
         } catch {
             let code = (error as NSError).code
             return code == NSFileNoSuchFileError || code == NSFileReadNoSuchFileError ? .missing : .unavailable
@@ -540,8 +548,12 @@ final class CameraOriginalStore {
             let (j, i) = try indices(job: job, item: item)
             let transfer = state.jobs[j].items[i], partial = partialURL(item)
             guard transfer.phase == .downloading, Self.validDigest(digest) else { throw CameraProtocolError.invalid("Original transfer is not complete") }
-            let actual = try Self.hash(partial)
-            guard actual.size == transfer.asset.size, actual.digest == digest else { throw CameraProtocolError.invalid("Original size or checksum mismatch") }
+            let attributes = try FileManager.default.attributesOfItem(atPath: partial.path)
+            guard attributes[.type] as? FileAttributeType == .typeRegular,
+                  let partialSize = (attributes[.size] as? NSNumber)?.uint64Value,
+                  partialSize == transfer.asset.size else {
+                throw CameraProtocolError.invalid("Original size or checksum mismatch")
+            }
             let reader = try FileHandle(forReadingFrom: partial)
             let prefix = try reader.read(upToCount: 4) ?? Data(); try reader.close()
             try CameraWire.validateHeader(name: transfer.asset.name, data: prefix)
@@ -557,7 +569,7 @@ final class CameraOriginalStore {
             let adjustableSource = try jpegSource.map { _ in try CameraJPEGProcessing.adjustableSource(partial) }
             if let existing = state.originals.first(where: { source in
                 guard source.availability != .prepared, source.jpegSource == jpegSource else { return false }
-                return (jpegSource != nil || (source.digest == digest && source.size == actual.size)) && availability(source) == .available
+                return (jpegSource != nil || (source.digest == digest && source.size == transfer.asset.size)) && availability(source) == .available
             }) {
                 try change {
                     state.jobs[j].items[i].sourceID = existing.id
@@ -580,7 +592,7 @@ final class CameraOriginalStore {
                 let handle = try FileHandle(forUpdating: staged)
                 defer { try? handle.close() }
                 try handle.synchronize()
-            } else { output = actual }
+            } else { output = (size: transfer.asset.size, digest: digest) }
             let source = CameraStoredOriginal(id: UUID(), name: transfer.asset.name, size: output.size, digest: output.digest,
                                               savedAt: Date(), jpegSource: jpegSource)
             try change {

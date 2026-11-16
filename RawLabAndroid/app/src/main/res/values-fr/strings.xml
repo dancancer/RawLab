@@ -341,6 +341,9 @@
     <string name="look_name">"Nom du look"</string>
     <string name="look_storage_error">"Impossible de lire la bibliothèque de looks. Réessayez plus tard ou supprimez les entrées de looks corrompues."</string>
     <string name="look_unavailable">"Ce fichier de look est indisponible. Supprimez-le, puis importez-le à nouveau."</string>
+    <string name="look_unreadable_name">"Look endommagé"</string>
+    <string name="look_unreadable_reason">"Ce look ne peut pas être lu. Il est peut-être endommagé ou provient d’une version incompatible."</string>
+    <string name="look_unreadable_title">"Looks illisibles"</string>
     <string name="master_recipes">"Recette maître"</string>
     <string name="memory_error">"Mémoire insuffisante pour traiter cette photo"</string>
     <string name="message_adjustment_source">"Source des réglages"</string>

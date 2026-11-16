@@ -2,6 +2,7 @@ using RawLab.Windows;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
+if (args.Contains("--exif-stub")) { ExifToolSessionChecks.StubMain(args); return; }
 if (args.Contains("--edited-previews")) { EditedPhotoPreviewChecks.Run(); return; }
 if (args.Contains("--unhandled-only")) { UnhandledExceptionChecks.Run(); return; }
 if (args.Contains("--preview-fallback-only")) { PreviewFallbackChecks.Run(); return; }
@@ -58,6 +59,8 @@ if (args.Contains("--history-only")) {
     return;
 }
 EditedPhotoPreviewChecks.Run();
+PreviewRevisionCacheChecks.Run();
+ExifToolSessionChecks.Run();
 X3fPersistenceChecks();
 X3fModeResetChecks.Run();
 Check(PhotoInput.PrepareDefaultSettings("fixture.png").ExposureMode == 2,
@@ -98,8 +101,50 @@ CameraRawHDRChecks.Run();
 ProRAWHDRChecks.Run(Check);
 AdjustmentSummaryChecks.Run();
 UpdateReleaseAssetChecks.Run();
+ForceGpuErrorMessageChecks();
 
 static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
+static void ForceGpuErrorMessageChecks()
+{
+    var forceGpu = Native.FormatErrorMessage(2, null, Native.UnsupportedReason.ForceGpu);
+    var photoUnsupported = Native.FormatErrorMessage(2, null, Native.UnsupportedReason.None);
+    Check(forceGpu == Loc.Text("当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。"),
+        "Force GPU unsupported reason produces dedicated Auto-fallback guidance");
+    Check(photoUnsupported == Loc.Text("不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。"),
+        "Generic unsupported status retains photo/look compatibility message");
+    Check(forceGpu != photoUnsupported,
+        "Force GPU unsupported message is distinct from photo/look unsupported message");
+    var x3f = Native.FormatErrorMessage(2, "Normal X3F error", Native.UnsupportedReason.ForceGpu);
+    Check(x3f == Loc.Format("无法正常显影 X3F：{0}", "Normal X3F error"),
+        "X3F session detail takes precedence over generic status mapping");
+
+    foreach (var rel in new[] { "RawLabWindows/RenderEngine.cs", "RawLabWindows/RenderEngine.AIDenoise.cs" })
+    {
+        var path = ResolveRepoPath(rel);
+        var source = File.ReadAllText(path);
+        Check(!System.Text.RegularExpressions.Regex.IsMatch(source, @"\bNative\.Check\(\s*status\s*\)"),
+            $"{rel}: every Native.Check(status, ...) consuming a session result must pass session");
+    }
+    var renderEngineSource = File.ReadAllText(ResolveRepoPath("RawLabWindows/RenderEngine.cs"));
+    Check(System.Text.RegularExpressions.Regex.Matches(renderEngineSource, @"\bNative\.Check\(\s*status\s*,\s*session\s*\)").Count >= 6,
+        "RenderEngine.cs must pass session to all session-result Native.Check(status, session) calls");
+    var renderedDngSource = File.ReadAllText(ResolveRepoPath("RawLabWindows/tests/RenderedDngChecks.cs"));
+    Check(!System.Text.RegularExpressions.Regex.IsMatch(renderedDngSource, @"\bStatusMessage\(\s*2\s*\)"),
+        "Rendered DNG Force rejection must not filter on the sessionless unsupported message");
+    Check(System.Text.RegularExpressions.Regex.IsMatch(renderedDngSource,
+        @"error\.Message\s*==\s*Native\.FormatErrorMessage\(\s*2\s*,\s*null\s*,\s*Native\.UnsupportedReason\.ForceGpu\s*\)\s*\|\|\s*error\.Message\s*==\s*StatusMessage\(\s*4\s*\)"),
+        "Rendered DNG Force rejection accepts the Force GPU message and status 4 fallback");
+}
+static string ResolveRepoPath(string relativePath)
+{
+    for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+    {
+        var candidate = Path.Combine(dir.FullName, relativePath);
+        if (File.Exists(candidate)) return candidate;
+    }
+    if (File.Exists(relativePath)) return relativePath;
+    throw new FileNotFoundException("Repository file not found: " + relativePath);
+}
 static JsonNode? Processing(Adjustments value) => JsonSerializer.SerializeToNode(value.Capture())!["Processing"];
 static void X3fPersistenceChecks()
 {

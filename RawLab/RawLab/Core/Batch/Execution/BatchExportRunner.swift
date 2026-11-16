@@ -38,7 +38,9 @@ struct BatchExportRunner {
             job.targets[index].errorMessage = nil
             job.targets[index].outputAssetIdentifier = nil
             job.targets[index].outputFileURL = nil
-            try journalStore?.save(job)
+            // processing 不落盘（原每张第 1 次写，已并入后续锚）：它只是瞬态在制相位，UI 走 didUpdate；
+            // 崩溃时让磁盘停留在上次真实状态更安全——render 中途被杀时 pending/failed 本就可安全重跑，
+            // 且不会抹掉上一轮已提交产物的标识符。必需锚是 publishing（事务不确定）与 checkpoint（已提交标识符）。
             didUpdate(job)
             do {
                 let target = job.targets[index]

@@ -97,7 +97,8 @@ internal object SystemPhotoStore {
         if (digest.digest().toHex() != file.nameWithoutExtension) throw ChangedSystemPhoto()
     }
 
-    /** 进程启动时只清理本功能拥有的缓存文件，避免误删其他缓存或批量任务。 */
+    /** 进程启动时只清理本功能拥有的缓存文件，避免误删其他缓存或批量任务。与 [retain] 共用实例锁。 */
+    @Synchronized
     fun cleanupTemporary(directory: File, storeDirectory: File? = null) {
         directory.listFiles().orEmpty().forEach { file ->
             if (file.isFile && file.name.startsWith("raw-")) file.delete()

@@ -6,6 +6,7 @@ import com.rawlab.android.photo.MediaPhotoStat
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import org.json.JSONObject
@@ -345,15 +346,21 @@ class CameraImportStoreTest {
         assertThrows(IOException::class.java) { store.savedUris(replacement) }
     }
 
-    @Test fun wrongLengthDigestOrFormatNeverCreatesMedia() = withStore { fixture, store ->
+    @Test fun wrongLengthOrFormatNeverCreatesMediaStreamedDigestTrusted() = withStore { fixture, store ->
         val job = store.create("camera", listOf(photo()), CameraImportDestination())
         val part = store.partial(job.id); part.writeBytes(raw)
-        assertThrows(IOException::class.java) { store.publish(job, 0, part, "0".repeat(64), CameraTransferPermit()) }
+        // (a) 全新发布直接采信流式摘要，不再整读 .partial 重算来抓“谎报摘要”：长度与文件头仍是拒绝门槛，
+        // 谎报摘要由恢复场景 item.digest 交叉校验（见上方 resume CameraImportSourceChanged）与打开路径
+        // savedUris 的整文件强校验兜底（load 命中 savedStat 指纹时信任登记摘要，与 A1 语义一致）。
+        val trusted = store.publish(job, 0, part, "0".repeat(64), CameraTransferPermit())
+        assertNotNull(trusted.items.single().saved)
+        assertEquals("0".repeat(64), trusted.items.single().digest)
+        assertEquals(1, fixture.media.rows.size)
         part.writeText("short")
         assertThrows(IOException::class.java) { store.publish(job, 0, part, hash(part.readBytes()), CameraTransferPermit()) }
         part.writeBytes(ByteArray(raw.size))
         assertThrows(IOException::class.java) { store.publish(job, 0, part, hash(part.readBytes()), CameraTransferPermit()) }
-        assertTrue(fixture.media.rows.isEmpty())
+        assertEquals("长度或文件头不符不得新建媒体", 1, fixture.media.rows.size)
     }
 
     @Test fun completePendingMediaFinishesAfterRestartWithoutAnotherCopy() = withStore { fixture, store ->
@@ -380,6 +387,78 @@ class CameraImportStoreTest {
         assertEquals(CameraJobStatus.COMPLETE, recovered.status)
         assertEquals(published.uri, recovered.items.single().saved!!.uri)
         assertEquals(1, fixture.media.rows.size)
+    }
+
+    @Test fun perPhotoImportAppendsWalAnchorsAndMergesSnapshotOnlyAtCompletion() = withStore { fixture, store ->
+        // 两个已完成的历史任务提供跨任务去重视图；重启后由 load 一次性装入内存账本。
+        save(store, raw)
+        val otherBytes = byteArrayOf(73, 73, 42, 0, 8, 0, 0, 0) + ByteArray(100) { (it + 1).toByte() }
+        save(store, otherBytes)
+        val reopened = fixture.store()
+        reopened.load()
+        val scans = reopened.directoryScans
+        val rewrites = reopened.journalRewrites
+        val appends = reopened.walAppends
+        val job = reopened.create("camera", listOf(photo("1"), photo("2")), CameraImportDestination())
+        var current = job
+        // 内容避开历史摘要：两张都走非复用路径，计数才反映稳态写路径。
+        val bytes = listOf(raw.copyOf().also { it[20] = 11 }, raw.copyOf().also { it[20] = 22 })
+        bytes.forEachIndexed { index, content ->
+            val part = reopened.partial(job.id); part.writeBytes(content)
+            current = reopened.publish(current, index, part, hash(content), CameraTransferPermit())
+        }
+        assertEquals(CameraJobStatus.COMPLETE, current.status)
+        assertEquals("去重与抽样走内存账本，不再逐张全目录重读", scans, reopened.directoryScans)
+        assertEquals("稳态每张零全量重写：仅创建与任务完成各 1 次快照", rewrites + 2, reopened.journalRewrites)
+        assertEquals("每张只追加行级锚：非完成张 prepared+saved，完成张 prepared", appends + 3, reopened.walAppends)
+        assertFalse(File(fixture.root, "jobs/${job.id}.wal").exists()) // 完成点合并快照即截断 WAL
+    }
+
+    @Test fun truncatedWalTailIsDroppedAndOrphanWalReapedOnLoad() = withStore { fixture, store ->
+        val job = save(store)
+        val wal = File(fixture.root, "jobs/${job.id}.wal")
+        assertFalse("完成快照后 WAL 已截断", wal.exists())
+        wal.writeText("{\"i\":0,\"prepared\":") // 模拟崩溃留下的半行：重放丢弃，快照为准
+        val recovered = fixture.store().load().single()
+        assertEquals(job.id, recovered.id)
+        assertNotNull(recovered.items.single().saved)
+        assertFalse("load 折叠后重写快照时截断 WAL", wal.exists())
+        val orphan = File(fixture.root, "jobs/00000000-0000-0000-0000-00000000000f.wal")
+        orphan.writeText("{}\n")
+        fixture.store().load()
+        assertFalse("没有快照的孤儿 WAL 由 load 回收", orphan.exists())
+    }
+
+    @Test fun staleWalLinesDoNotOverwriteNewerSnapshotAfterCrashBeforeTruncation() = withStore { fixture, store ->
+        val bytes = listOf(raw.copyOf().also { it[20] = 5 }, raw.copyOf().also { it[20] = 6 })
+        val job = store.create("camera", listOf(photo("1"), photo("2")), CameraImportDestination())
+        var current = job
+        var staleSavedLine = ""
+        bytes.forEachIndexed { index, content ->
+            val part = store.partial(job.id); part.writeBytes(content)
+            current = store.publish(current, index, part, hash(content), CameraTransferPermit())
+            // 第一张的已保存锚行（带当时有效的 savedStat），模拟截断前崩溃的 WAL 残留。
+            if (index == 0) staleSavedLine = File(fixture.root, "jobs/${job.id}.wal").readLines().last()
+        }
+        assertEquals(CameraJobStatus.COMPLETE, current.status)
+        // 同尺寸同 mtime 改写：savedUris 的强校验抓到摘要不符，清掉指纹并落盘新快照。
+        val firstUri = current.items[0].saved!!.uri
+        val file = fixture.media.file(firstUri)
+        val stamp = file.lastModified()
+        val tampered = file.readBytes().also { it[0] = (it[0] + 1).toByte() }
+        file.writeBytes(tampered); file.setLastModified(stamp)
+        assertThrows(CameraLocalSourceChanged::class.java) { store.savedUris(current) }
+        // 快照落盘与 WAL 截断之间崩溃：旧锚行（含无序号的旧 prepared 行）回到 WAL 上。
+        File(fixture.root, "jobs/${job.id}.wal").writeText(staleSavedLine + "\n" +
+            JSONObject().put("i", 1).put("digest", hash(bytes[1]))
+                .put("prepared", JSONObject().put("uri", current.items[1].saved!!.uri)
+                    .put("name", "DSC00001.ARW").put("path", "DSC00001.ARW").put("pending", false)) + "\n")
+        val recovered = fixture.store().load().single()
+        assertNull("旧 prepared 锚按写序号跳过，不再盖回已保存条目（撤序号必红）", recovered.items[1].prepared)
+        assertEquals("旧 savedStat 不能复活放行被篡改的文件：仍翻转为 CHANGED（撤序号必红）",
+            CameraMediaProblem.CHANGED, recovered.items[0].problem)
+        assertNotNull(recovered.items[1].saved)
+        assertEquals(CameraJobStatus.PAUSED, recovered.status)
     }
 
     @Test fun damagedPendingMediaIsRemovedOnRecovery() = withStore { fixture, store ->
@@ -437,7 +516,7 @@ class CameraImportStoreTest {
             assertThrows(IOException::class.java) { save(store, raw.copyOf().also { it[20] = 7 }) }
             fixture.media.failBeforePublish = false
             val pending = fixture.media.rows.values.single { it.pending }
-            val journal = File(fixture.root, "jobs").listFiles()!!.single { it.nameWithoutExtension != kept.id }
+            val journal = File(fixture.root, "jobs").listFiles()!!.single { it.extension == "json" && it.nameWithoutExtension != kept.id }
             damage(journal)
             val damaged = journal.readBytes()
 
@@ -461,7 +540,7 @@ class CameraImportStoreTest {
         assertThrows(IOException::class.java) { save(store, raw.copyOf().also { it[20] = 7 }) }
         fixture.media.failBeforePublish = false
         val pending = fixture.media.rows.values.single { it.pending }
-        val journal = File(fixture.root, "jobs").listFiles()!!.single { it.nameWithoutExtension != kept.id }
+        val journal = File(fixture.root, "jobs").listFiles()!!.single { it.extension == "json" && it.nameWithoutExtension != kept.id }
         journal.writeText("{broken")
         val damaged = journal.nameWithoutExtension
 
@@ -575,6 +654,47 @@ class CameraImportStoreTest {
         assertEquals("a fingerprint whose size differs from the expected size must not be trusted",
             CameraMediaProblem.CHANGED, reloaded.items.single().problem)
         assertEquals(1, fixture.media.opens)
+    }
+
+    @Test fun publishReusesStreamedDigestWithoutRehashingPartOrPending() = withStore { fixture, store ->
+        val job = store.create("camera", listOf(photo()), CameraImportDestination())
+        val part = store.partial(job.id); part.writeBytes(raw)
+        fixture.media.opens = 0
+        val before = store.contentDigestCount
+        val published = store.publish(job, 0, part, hash(raw), CameraTransferPermit())
+        assertNotNull(published.items.single().saved)
+        assertEquals("publish 必须直接采信下载路径的流式摘要：.partial 与 pending 写入零整文件摘要",
+            0, store.contentDigestCount - before)
+        assertEquals("publish 不应整读媒体文件", 0, fixture.media.opens)
+    }
+
+    @Test fun pendingSizeFingerprintMismatchRejectsPublication() = withStore { fixture, store ->
+        val job = store.create("camera", listOf(photo()), CameraImportDestination())
+        val part = store.partial(job.id); part.writeBytes(raw)
+        // 机型差异：个别 MediaProvider 在 pending 期间就回填 SIZE；指纹 size 与预期校验大小不符必须拒绝发布。
+        fixture.media.pendingStatOverride = MediaPhotoStat(raw.size - 1L, System.currentTimeMillis())
+        val error = assertThrows(IOException::class.java) { store.publish(job, 0, part, hash(raw), CameraTransferPermit()) }
+        assertEquals("Stored camera photo differs", error.message)
+    }
+
+    @Test fun sampledReuseValidatesCandidateByFingerprintWithoutDigest() = withStore { fixture, store ->
+        val big = ByteArray(200_000) { ((it * 31 + 7) % 251).toByte() }
+        big[0] = 73; big[1] = 73; big[2] = 42; big[3] = 0
+        val bigPhoto = CameraPhoto("1", "DSC00001.ARW", big.size.toLong(), 1_764_000_000_000L)
+        val first = store.create("camera", listOf(bigPhoto), CameraImportDestination())
+        val part = store.partial(first.id); part.writeBytes(big)
+        store.publish(first, 0, part, hash(big), CameraTransferPermit())
+        val second = store.create("camera", listOf(bigPhoto), CameraImportDestination())
+        val output = File(fixture.root, "reuse.out")
+        val before = store.contentDigestCount
+        val scans = store.directoryScans
+        val digest = store.copySampledOriginal(second, bigPhoto, FileOutputStream(output), CameraTransferPermit()) { offset, length ->
+            big.copyOfRange(offset.toInt(), offset.toInt() + length)
+        }
+        assertEquals(hash(big), digest)
+        assertEquals("候选指纹命中即复用：候选校验零整文件摘要", 0, store.contentDigestCount - before)
+        assertEquals("候选复用视野走内存账本，不重读全目录", scans, store.directoryScans)
+        assertArrayEquals(big, output.readBytes())
     }
 
     @Test fun adjustedJpegReuseRequiresTheSameSourceAndFrozenOptions() = withStore { fixture, _ ->
@@ -746,6 +866,8 @@ class CameraImportStoreTest {
         var failAfterPublish = false
         // 计数探针：JVM 里 load 路径的整文件 digest 恰好等于一次 open+全量读，用它数 digest 次数。
         var opens = 0
+        // 模拟个别 MediaProvider 在 IS_PENDING 期间就提前回填元数据的机型行为。
+        var pendingStatOverride: MediaPhotoStat? = null
         private var next = 0
         fun file(uri: String) = File(root, uri.substringAfterLast('/'))
         override fun createPending(name: String, relativePath: String, mime: String, token: String): MediaPhoto {
@@ -764,9 +886,11 @@ class CameraImportStoreTest {
         override fun inspect(uri: String): MediaPhoto? = rows[uri]?.takeIf { file(uri).isFile }
         override fun open(uri: String): InputStream { opens++; return file(uri).inputStream() }
         // 模拟真机 MediaProvider：IS_PENDING=1 期间 SIZE/DATE_MODIFIED 未定稿，publish（IS_PENDING=0）后才可 stat。
-        override fun stat(uri: String): MediaPhotoStat? =
-            rows[uri]?.takeIf { !it.pending }?.let { file(uri) }?.takeIf { it.isFile }
-                ?.let { MediaPhotoStat(it.length(), it.lastModified()) }
+        override fun stat(uri: String): MediaPhotoStat? {
+            val row = rows[uri] ?: return null
+            if (!row.pending) return file(uri).takeIf { it.isFile }?.let { MediaPhotoStat(it.length(), it.lastModified()) }
+            return pendingStatOverride
+        }
         override fun remember(uri: String, size: Long, digest: String) = Unit
         override fun deletePending(uri: String) { if (rows[uri]?.pending == true) { file(uri).delete(); rows.remove(uri) } }
         override fun cleanupOrphans(referenced: Set<String>) {

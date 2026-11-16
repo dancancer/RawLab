@@ -168,8 +168,7 @@ final class RenderEngine {
     private let hdrSources=HDRSourceCache.shared
 
     static func isRasterInput(_ url: URL?) -> Bool {
-        guard let url, let type = UTType(filenameExtension: url.pathExtension.lowercased()) else { return false }
-        return type.conforms(to: .image) && !type.conforms(to: .rawImage)
+        PhotoInputClassification.isRasterInput(url)
     }
 
     private func withInput(_ url: URL, request: inout sony2fuji_request,

@@ -136,8 +136,10 @@ class CameraMediaLibraryTest {
         }
         val store = CameraImportStore(File(root, "jobs"), File(root, "partial"), interrupted, CameraCaptureDateReader::read)
         assertThrows(IOException::class.java) { save(store, destination, jpeg(root, Color.RED, "2026:10:22 12:00:00")) }
-        val before = org.json.JSONObject(File(root, "jobs").listFiles()!!.single { it.extension == "json" }.readText())
-            .getJSONArray("items").getJSONObject(0).getJSONObject("prepared").getString("uri")
+        // 待发布锚随行级 WAL 落盘：经 store 的快照+锚合并视图取 URI，不再直读 `<id>.json` 快照。
+        val journalId = File(root, "jobs").listFiles()!!.single { it.extension == "json" }.nameWithoutExtension
+        val before = CameraImportStore(File(root, "jobs"), File(root, "partial"), library, CameraCaptureDateReader::read)
+            .mergedView(journalId)!!.items.single().prepared!!.uri
         assertTrue(library.inspect(before)!!.pending)
         assertFalse(PhotoStorage(context).use { it.album() }.any { it.uri.toString() == before })
         val reopened = CameraImportStore(File(root, "jobs"), File(root, "partial"), library, CameraCaptureDateReader::read)

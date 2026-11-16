@@ -390,8 +390,53 @@ void hdrCameraCalibrationTests(const char* source, const char* cameraModel, bool
            "DCP and HDR RLOOK differ across renditions");
     expect(std::memcmp(plain.value.sdr.data, calibrated.value.sdr.data, plain.value.sdr.size_bytes) != 0,
            "camera profile did not affect SDR base development");
-    expect(std::memcmp(plain.value.source_sha256, calibrated.value.source_sha256, 32) == 0,
-           "profile must not replace the source photo identity");
+    expect(std::all_of(std::begin(plain.value.source_sha256), std::end(plain.value.source_sha256),
+               [](uint8_t value) { return value == 0; }) &&
+           std::all_of(std::begin(calibrated.value.source_sha256), std::end(calibrated.value.source_sha256),
+               [](uint8_t value) { return value == 0; }),
+           "camera profile decode must leave the unused photo digest zero");
+    {
+        const auto replacementDigest = std::string(development.profile_sha256);
+        sony2fuji::DcpCompilerError error;
+        const auto originalProfile = sony2fuji::compileHDRCameraDcp(unshifted.data(), unshifted.size(), error);
+        const auto replacement = sony2fuji::compileHDRCameraDcp(shifted.data(), shifted.size(), error);
+        expect(!originalProfile.empty() && replacement.size() == originalProfile.size(),
+               "profile overwrite fixture must preserve size");
+        const auto mutableFile = write("mutable.rlook", originalProfile.data(), originalProfile.size());
+        const auto mutablePath = std::filesystem::u8path(mutableFile);
+        configure(mutableFile);
+        const auto oldDigest = std::string(development.profile_sha256);
+        Pair initial, wrong, healed, stale, updated;
+        expect(decode(initial) == SONY2FUJI_STATUS_OK, "initial mutable camera profile decode failed");
+        std::copy_n(replacementDigest.c_str(), 65, development.profile_sha256);
+        expect(decode(wrong) == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
+               diagnostic.reason == SONY2FUJI_HDR_REASON_CAMERA_PROFILE && !wrong.value.owner_token,
+               "cached camera profile accepted a mismatched expected digest");
+        std::copy_n(oldDigest.c_str(), 65, development.profile_sha256);
+        expect(decode(healed) == SONY2FUJI_STATUS_OK,
+               "camera profile cache did not self-heal after expected-digest mismatch");
+        const auto stamp = std::filesystem::last_write_time(mutablePath);
+        const auto size = std::filesystem::file_size(mutablePath);
+        write("mutable.rlook", replacement.data(), replacement.size());
+        std::filesystem::last_write_time(mutablePath, stamp);
+        expect(std::filesystem::file_size(mutablePath) == size && std::filesystem::last_write_time(mutablePath) == stamp,
+               "camera profile overwrite fixture changed size or mtime");
+        expect(decode(stale) == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
+               diagnostic.reason == SONY2FUJI_HDR_REASON_CAMERA_PROFILE && !stale.value.owner_token,
+               "same-size profile overwrite accepted a stale digest after restoring mtime");
+        std::copy_n(replacementDigest.c_str(), 65, development.profile_sha256);
+        expect(decode(updated) == SONY2FUJI_STATUS_OK &&
+               updated.value.hdr.size_bytes == b.size_bytes &&
+               std::memcmp(updated.value.hdr.data, b.data, b.size_bytes) == 0,
+               "profile overwrite did not self-heal with updated expected digest");
+        configure(mutableFile);
+        expect(std::string(development.profile_sha256) == replacementDigest,
+               "profile probe did not refresh the digest");
+        write("mutable.rlook", replacement.data(), 7);
+        expect(sony2fuji_hdr_probe_camera_profile(mutableFile.c_str(), &info, &diagnostic) != SONY2FUJI_STATUS_OK,
+               "invalid profile replacement reused its cached calibration");
+        configure(compiledFile);
+    }
     bool negative = false, aboveWhite = false;
     for (uint32_t y = 0; y < a.height; ++y) {
         const auto* original = reinterpret_cast<const float*>(static_cast<const uint8_t*>(a.data) + y * a.stride_bytes);

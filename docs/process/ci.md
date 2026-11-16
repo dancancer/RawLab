@@ -288,7 +288,12 @@ cannot forge: the run `event`, `head_repository.full_name`, and the queued jobs'
 `labels` (a job is only claimable when its label set is one this machine actually
 registers). A run may reach the physical machine only when it is a `push` on this
 repository or an operator admitted it through the `RAWLAB_JIT_ALLOWLIST` environment
-variable (comma-separated run ids, head repositories, or `head-repo:branch`). Claimed
+variable (comma-separated `@<head_sha>`-pinned targets: same-repo `pr#<number>@<head_sha>`,
+`<run_id>@<head_sha>`, `<head-repo>@<head_sha>`, or `<head-repo>:<head-branch>@<head_sha>`;
+because GitHub REST `workflow_run` returns `pull_requests: []` for external fork PRs,
+`pr#<number>@<head_sha>` matches same-repository PRs only and external forks must use
+`<run_id>@<head_sha>` or `<owner>/<repo>:<branch>@<head_sha>`;
+unpinned entries or `head_sha` mismatches are refused). Claimed
 runs get a `POST .../runners/generate-jitconfig` registration (`name` +
 `runner_group_id` + `labels`; a 2026-11-14 live probe against API version 2022-11-28
 pinned the contract: omitting the group answers 422, the response field is
@@ -318,17 +323,22 @@ execute unreviewed queue contents unconditionally.
   `--runner-dir ~/jit-runner` for the real launch). The dispatcher starts `./run.sh`
   from the archive root with the config in `ACTIONS_RUNNER_INPUT_JITCONFIG` —
   `./runsvc.sh` at the root exists only after `svc.sh install`, and `--launch-command
-  ./bin/runsvc.sh` is the service-mode override; then copy
+  ./bin/runsvc.sh` is the service-mode override; store `RAWLAB_JIT_TOKEN=<PAT>` in a `0600`
+  env file (`mkdir -p ~/RawLabCI && chmod 600 ~/RawLabCI/jit.env`) instead of putting the
+  plaintext token in the plist, then copy
   [`scripts/ci/launchd/com.rawlab.jit-dispatcher.plist`](../../scripts/ci/launchd/com.rawlab.jit-dispatcher.plist)
-  to `~/Library/LaunchAgents/`, adjust the paths and the token placeholder (keep the
-  file `0600`), and load it with `launchctl bootstrap gui/$(id -u)
-  ~/Library/LaunchAgents/com.rawlab.jit-dispatcher.plist`. The token needs repository
+  to `~/Library/LaunchAgents/`, adjust the host paths (keeping `RAWLAB_JIT_ENV_FILE` pointing
+  at `jit.env`), and load it with `launchctl bootstrap gui/$(id -u)
+  ~/Library/LaunchAgents/com.rawlab.jit-dispatcher.plist`. The dispatcher strips
+  `RAWLAB_JIT_TOKEN`, `GITHUB_TOKEN`, and `GH_TOKEN` from the runner child environment. The token needs repository
   `Administration` (write) for `generate-jitconfig` plus `Actions` (read) for the
   queue poll on fine-grained PATs — `Actions: write` alone answers 403 on the dispatch
   POST — or the classic `repo` scope. Same-repository `pull_request` and
-  `workflow_dispatch` (manual *Run workflow*) jobs are not push events, so add the run
-  id — or the repository name for a transitional window — to `RAWLAB_JIT_ALLOWLIST` if
-  this machine must keep serving them.
+  `workflow_dispatch` (manual *Run workflow*) jobs are not push events, so add the
+  `@<head_sha>`-pinned entry (`pr#<number>@<head_sha>` or `<run_id>@<head_sha>` for
+  same-repo PRs, or `<run_id>@<head_sha>` / `<owner>/<repo>:<branch>@<head_sha>` for
+  external fork PRs) to
+  `RAWLAB_JIT_ALLOWLIST` if this machine must keep serving them.
 - **Disable**: `launchctl bootout gui/$(id -u)/com.rawlab.jit-dispatcher`, remove the
   copied plist, and restart the resident `Runner.Listener` agent; the fresh
   `~/jit-runner` directory can stay for the next activation. Queued jobs resume being
@@ -339,7 +349,7 @@ execute unreviewed queue contents unconditionally.
   rawlab-apple]`), and confirm all four observations: the dispatcher logs the run as
   `skip (untrusted …)`; no JIT token is generated for it while the allowlist stays
   empty, so with the resident listener stopped the job only queues; after allowlisting
-  the run id and re-running `--once --runner-dir ~/jit-runner`, one ephemeral runner claims it and deregisters;
+  `<run_id>@<40-char-sha>` and re-running `--once --runner-dir ~/jit-runner`, one ephemeral runner claims it and deregisters;
   without the allowlist entry the job expires in the queue instead of executing on the
   machine.
 - **Retirement for hosted runners (deprecation path)**: the dispatcher keeps no state
@@ -377,11 +387,19 @@ gate's honest skip pair otherwise.
   picker opening, selection, cancellation and reopening. Run on each required
   iPadOS runtime; `RAWLAB_DOCUMENT_IMPORT_TEST` selects a narrower XCTest case.
 - iOS Recently Opened UI: `IOS_SIMULATOR_UDID=<dedicated-device> bash RawLab/tests/recent-photo-ui.sh <build-for-testing-products> <new-output-directory>`. Seed one photo with `simctl addmedia` first. The runner grants Photos access only on that simulator and verifies edit filters, reopening across process restart, reset and removal. It rejects skipped tests.
-- Edited-preview cache and iOS recent-source retention checks run in the fast Apple model groups. Mac rendered-preview and resource-watcher checks use `bash RawLabMac/tests/edited-photo-previews.sh` after building the native core; `edited-photo-ui.sh <output-directory>` builds an isolated native editor harness for marker, selection and reset inspection.
+- Edited-preview cache and iOS recent-source retention checks run in the fast Apple model groups; `RawLabMac/tests/thumbnail-cache.sh` likewise runs in the standalone macOS model route. Mac rendered-preview and resource-watcher checks use `bash RawLabMac/tests/edited-photo-previews.sh` after building the native core; `edited-photo-ui.sh <output-directory>` builds an isolated native editor harness for marker, selection and reset inspection. `RawLabMac/tests/batch-cancellation.sh` delegates to `batch-render.sh` (requiring the prebuilt C++ core and native dependencies), `RawLab/tests/ios-photo-previews.sh` requires a booted iOS Simulator, and `RawLab/tests/raw-unpack-export.sh` and `RawLab/tests/subtool-menu-draft.sh` require both a built simulator `RawLab.app` and a booted iOS Simulator, so these four remain local/native-gate suites rather than `apple-models.sh` entries. Within that gate the iOS items split by drive mode: `ios-photo-previews.sh` (built-in harness app, headless `simctl spawn`, needs only a booted Simulator beyond the Xcode toolchain) and `raw-unpack-export.sh` (reuses the `RawLab.app` framework, headless `simctl spawn` with interpose counters, third argument is an absolute-path real RAW fixture) are latent-runnable without a GUI session or permission grant; `subtool-menu-draft.sh` launches the full `UIWindowScene` app through `simctl launch --console-pty`, so it stays a manual local UI gate: `bash RawLab/tests/subtool-menu-draft.sh <simulator RawLab.app> <booted simulator UDID>` and expect `VERIFIED: <N> checks passed` with exit 0.
+- iOS `RawLab/tests/hdr-batch.sh` is not simulator-applicable (real device plus an HDR-capable
+  environment required): the mixed HDR-JPEG collection assertions fail on the simulator even on a
+  pristine `development` base with the same framework and harness, so a simulator failure is not
+  a product delta and the suite stays a real-device HDR gate.
 - Windows fast models: `./scripts/ci/windows-models.ps1`; no WPF window, native
   rendering DLL, RAW fixture or self-contained app build is required.
-- Android models: `./gradlew :app:testDebugUnitTest`; the task graph excludes native
-  compilation and APK assembly. Instrumentation remains a separate local entry.
+- Android models: `./gradlew :app:testDebugUnitTest` plus
+  `RawLabAndroid/tests/jni-session-lock.sh`, `recipe-probe-stages.sh` and
+  `ndk-compile.sh` (arm64 NDK CMake compile check for GLES/test targets without
+  building full native dependencies or running on device); the task graph
+  excludes full native compilation and APK assembly. Instrumentation remains a
+  separate local entry.
 - Mac UI checks remain independent scripts: `horizontal-picker-native.sh`,
   `parameter-value.sh`, `mac-straighten-preview.sh`, `mac-canvas-input.sh`.
   `presentation.sh --models-only` skips canvas UI but still needs the native core,

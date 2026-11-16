@@ -6,6 +6,7 @@
 #include "core/proraw_source.h"
 #include "core/processing_cancellation.h"
 #include "core/sha256.h"
+#include "core/resource_file_stamp.h"
 #include "sony2fuji/raw_processor.h"
 #include <lcms2.h>
 #include <zlib.h>
@@ -48,19 +49,26 @@ struct File {
     bool jpeg=false;
     AppleGainMapMetadata apple;
 };
-File readFile(const char* name) {
+File readFile(const char* name, const uint8_t* expectedSHA256 = nullptr) {
     const auto path=std::filesystem::u8path(name);
     std::error_code error;
     if (!std::filesystem::is_regular_file(path,error))
         fail(SONY2FUJI_STATUS_IO_ERROR,SONY2FUJI_HDR_REASON_INPUT_IO,"HDR input is not a readable regular file");
     const uint64_t size=std::filesystem::file_size(path,error);
-    if (error || !size || size>512ull*1024*1024)
+    if (error || (!size && !expectedSHA256) || size>512ull*1024*1024)
         fail(SONY2FUJI_STATUS_IO_ERROR,SONY2FUJI_HDR_REASON_INPUT_IO,"HDR compressed input exceeds the file budget");
     admitMemory(size*3);
     File file; file.bytes.resize(size_t(size));
     std::ifstream input(path,std::ios::binary);
     if (!input.read(reinterpret_cast<char*>(file.bytes.data()),std::streamsize(size)))
         fail(SONY2FUJI_STATUS_IO_ERROR,SONY2FUJI_HDR_REASON_INPUT_IO,"Cannot read HDR source");
+    const auto sha=hash::sha256Bytes(file.bytes.data(),file.bytes.size());
+    auto hex=[](char c) { return c<='9' ? c-'0' : c-'a'+10; };
+    std::array<uint8_t, 32> digest{};
+    for (size_t i=0;i<digest.size();++i) digest[i]=uint8_t(hex(sha[2*i])*16+hex(sha[2*i+1]));
+    if (expectedSHA256 && std::memcmp(digest.data(),expectedSHA256,digest.size()))
+        fail(SONY2FUJI_STATUS_INVALID_ARGUMENT,SONY2FUJI_HDR_REASON_SOURCE_CHANGED,"HDR metadata source changed");
+    if (!size) fail(SONY2FUJI_STATUS_IO_ERROR,SONY2FUJI_HDR_REASON_INPUT_IO,"HDR compressed input exceeds the file budget");
     file.jpeg=size>=2 && file.bytes[0]==255 && file.bytes[1]==0xd8;
     const bool heif=size>=12 && std::memcmp(file.bytes.data()+4,"ftyp",4)==0;
     const bool xmp=has(file.bytes,"http://ns.adobe.com/hdr-gain-map/1.0/");
@@ -95,9 +103,7 @@ File readFile(const char* name) {
         fail(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_NOT_HDR,"No HDR gain map");
     }
     file.info.version=1; file.info.struct_size=sizeof(file.info);
-    const auto sha=hash::sha256Bytes(file.bytes.data(),file.bytes.size());
-    auto hex=[](char c) { return c<='9' ? c-'0' : c-'a'+10; };
-    for (size_t i=0;i<32;++i) file.info.source_sha256[i]=uint8_t(hex(sha[2*i])*16+hex(sha[2*i+1]));
+    std::copy(digest.begin(),digest.end(),file.info.source_sha256);
     return file;
 }
 void orient(ImageData& image,uint32_t orientation) {
@@ -141,15 +147,13 @@ void differentFile(const char* source, const char* output) {
 std::vector<uint8_t> captureMetadata(const char* source,const uint8_t sha[32],uint32_t width,uint32_t height) {
     std::vector<uint8_t> exif;
     if (source) {
-        verifyDigest(source,sha);
         if (isTIFF(source)) {
+            verifyDigest(source,sha);
             (void)probeProRAW(source);
             const auto path = std::filesystem::u8path(source);
             return sanitizedDNGExif(path,width,height);
         }
-        auto file=readFile(source);
-        if (std::memcmp(file.info.source_sha256,sha,32))
-            fail(SONY2FUJI_STATUS_INVALID_ARGUMENT,SONY2FUJI_HDR_REASON_SOURCE_CHANGED,"HDR metadata source changed");
+        auto file=readFile(source,sha);
         exif=file.jpeg ? jpegExif(file.bytes.data(),file.bytes.size()) : heifExif(file.bytes.data(),file.bytes.size());
     }
     return sanitizedExif(exif.data(),exif.size(),width,height);
@@ -276,15 +280,16 @@ void admitMemory(uint64_t additionalBytes) {
 void admitStreamingMemory(uint64_t additionalBytes) { admitMemory(additionalBytes); }
 void validateStreamSource(const sony2fuji_hdr_export_config_v1& config, uint32_t width, uint32_t height, const char* path) {
     differentFile(config.metadata_source_path,path);
-    verifyDigest(config.metadata_source_path,config.source_sha256);
     sony2fuji_hdr_source_info_v1 info;
     if (isTIFF(config.metadata_source_path)) {
-        info = probeProRAW(config.metadata_source_path);
+        const auto file = std::filesystem::u8path(config.metadata_source_path);
+        const auto before = resourceFileStamp(file);
         verifyDigest(config.metadata_source_path,config.source_sha256);
-    } else {
-        const auto source = readFile(config.metadata_source_path); info = source.info;
-        if (std::memcmp(info.source_sha256,config.source_sha256,32))
+        info = probeProRAW(config.metadata_source_path);
+        if (!before || !(resourceFileStamp(file) == before))
             fail(SONY2FUJI_STATUS_INVALID_ARGUMENT,SONY2FUJI_HDR_REASON_SOURCE_CHANGED,"HDR metadata source changed");
+    } else {
+        const auto source = readFile(config.metadata_source_path,config.source_sha256); info = source.info;
         if (info.orientation >= 5 && info.orientation <= 8) std::swap(info.width,info.height);
     }
     if (info.width != width || info.height != height)

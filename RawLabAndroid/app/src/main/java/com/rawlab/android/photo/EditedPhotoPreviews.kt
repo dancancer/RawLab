@@ -37,7 +37,7 @@ internal class EditedPhotoPreviews(context: Context) : AutoCloseable {
     private val storage by storageDelegate
     private val rendererDelegate = lazy { EditorRenderer(storage, { store.readState(it) }, BuildConfig.DEBUG) }
     private val renderer by rendererDelegate
-    private val cache = EditedPhotoPreviewCache(File(context.cacheDir, "edited-photo-previews"))
+    private val cache = EditedPhotoPreviewCache.shared(File(context.cacheDir, "edited-photo-previews"))
     private val requests = ConcurrentHashMap.newKeySet<RenderCancellation>()
     private val closed = AtomicBoolean(false)
     private val executor = Executors.newSingleThreadExecutor { action ->

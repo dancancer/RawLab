@@ -2,6 +2,7 @@ package com.rawlab.android.batch
 
 import com.rawlab.android.settings.legacyPipeSettings
 import com.rawlab.android.batch.journal.BatchJournal
+import kotlinx.coroutines.launch
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
@@ -517,4 +518,150 @@ class BatchExportTest {
             assertEquals(sourceSettings, source.settings)
         } finally { root.deleteRecursively() }
     }
+
+    @Test fun p3_30_confirmAndDiscardJournalOperationsRunOnIoDispatcher() {
+        val root = Files.createTempDirectory("rawlab-batch-io").toFile()
+        try {
+            val sourceFile = File(root, "source.raw").apply { writeText("src") }
+            val targetFile = File(root, "target.raw").apply { writeText("dst") }
+            val job = BatchJob(
+                BatchSourceSnapshot(PhotoIdentity("source"), sourceFile, EditSettings()),
+                listOf(BatchTarget(PhotoIdentity("row-1"), targetFile, "out.jpg")),
+            )
+            val journalRoot = File(root, "jobs").apply { mkdirs() }
+            val journal = BatchJournal(journalRoot)
+            val needsConfirm = job.withRows(job.rows.map {
+                it.copy(status = BatchRowStatus.NEEDS_CONFIRMATION, outputUri = "content://test/out.jpg", outputReady = true)
+            })
+            journal.save(needsConfirm)
+
+            val callerThread = Thread.currentThread()
+            val updateThreads = mutableListOf<Thread>()
+            val ioSubmissions = java.util.concurrent.atomic.AtomicInteger(0)
+            val rawExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "test-batch-io") }
+            val ioDispatcher = object : kotlinx.coroutines.CoroutineDispatcher() {
+                override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) {
+                    ioSubmissions.incrementAndGet()
+                    rawExecutor.execute(block)
+                }
+            }
+            try {
+                val ioScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + ioDispatcher)
+                val lock = kotlinx.coroutines.sync.Mutex()
+                var current = needsConfirm
+                var updatedCount = 0
+                kotlinx.coroutines.runBlocking {
+                    confirmBatchOutput(
+                        lock = lock,
+                        journalRoot = journalRoot,
+                        id = "row-1",
+                        saved = true,
+                        currentJob = { current },
+                        updateJob = {
+                            updateThreads += Thread.currentThread()
+                            updatedCount++
+                        },
+                        onError = { throw it },
+                        ioDispatcher = ioDispatcher,
+                    )
+                }
+                assertEquals(1, updatedCount)
+                assertEquals(BatchRowStatus.SUCCESS, journal.load(job.id)!!.rows.single().status)
+
+                // 已全部 SUCCESS 的任务在 discardDraftOrCompleted 中于 ioScope 清理 journal，不阻塞调用线程。
+                val rootJob = kotlinx.coroutines.Job()
+                var closed = false
+                val completedDeferred = discardBatchDraftOrCompleted(
+                    currentJob = { journal.load(job.id)!! },
+                    initialJobId = job.id,
+                    journalRoot = journalRoot,
+                    rootJob = rootJob,
+                    ioScope = ioScope,
+                    closeModel = { closed = true; rootJob.cancel() },
+                )
+                kotlinx.coroutines.runBlocking { completedDeferred.await() }
+                assertTrue(closed)
+                assertFalse(journal.contains(job.id))
+
+                // 未持久化的草稿也会在 ioScope 异步清理目录。
+                val draftDir = File(journalRoot, "draft-job").apply { mkdirs() }
+                val draftRootJob = kotlinx.coroutines.Job()
+                val draftJob = BatchJob(
+                    BatchSourceSnapshot(PhotoIdentity("source"), sourceFile, EditSettings()),
+                    listOf(BatchTarget(PhotoIdentity("row-1"), targetFile, "out.jpg")),
+                    id = "draft-job",
+                )
+                val draftDeferred = discardBatchDraftOrCompleted(
+                    currentJob = { draftJob },
+                    initialJobId = draftJob.id,
+                    journalRoot = journalRoot,
+                    rootJob = draftRootJob,
+                    ioScope = ioScope,
+                    closeModel = { draftRootJob.cancel() },
+                )
+                kotlinx.coroutines.runBlocking { draftDeferred.await() }
+                assertFalse(draftDir.exists())
+                assertTrue(ioSubmissions.get() >= 3)
+                assertTrue(updateThreads.all { it === callerThread })
+            } finally {
+                rawExecutor.shutdownNow()
+            }
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun r1_a3_discardDraftOrCompletedDoesNotPoisonSubsequentDiscard() {
+        val root = Files.createTempDirectory("rawlab-a3-poison").toFile()
+        try {
+            val sourceFile = File(root, "source.raw").apply { writeText("src") }
+            val targetFile = File(root, "target.raw").apply { writeText("dst") }
+            val job = BatchJob(
+                BatchSourceSnapshot(PhotoIdentity("source"), sourceFile, EditSettings()),
+                listOf(BatchTarget(PhotoIdentity("row-1"), targetFile, "out.jpg")),
+            ).let { base ->
+                base.withRows(base.rows.map { it.copy(status = BatchRowStatus.FAILED, error = "io") })
+            }
+            val journalRoot = File(root, "jobs").apply { mkdirs() }
+            val journal = BatchJournal(journalRoot).also { it.save(job) }
+            val ioExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "test-a3-io") }
+            val ioDispatcher = object : kotlinx.coroutines.CoroutineDispatcher() {
+                override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) {
+                    ioExecutor.execute(block)
+                }
+            }
+            try {
+                val ioScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + ioDispatcher)
+                val rootJob = kotlinx.coroutines.Job()
+                var cachedCompletion: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+                var closed = false
+                val noop = discardBatchDraftOrCompleted(
+                    currentJob = { job },
+                    initialJobId = job.id,
+                    journalRoot = journalRoot,
+                    rootJob = rootJob,
+                    ioScope = ioScope,
+                    onDiscarding = { cachedCompletion = it },
+                    closeModel = { closed = true; rootJob.cancel() },
+                )
+                kotlinx.coroutines.runBlocking { noop.await() }
+                assertNull("No-op must not poison discardCompletion", cachedCompletion)
+                assertFalse(closed)
+                assertTrue(journal.contains(job.id))
+
+                // 后续用户显式 discard() 仍能正常触发清理与关闭。
+                val explicit = discardBatchAfterWork(
+                    initialJobId = job.id,
+                    journalRoot = journalRoot,
+                    rootJob = rootJob,
+                    ioScope = ioScope,
+                    closeModel = { closed = true; rootJob.cancel() },
+                )
+                kotlinx.coroutines.runBlocking { explicit.await() }
+                assertTrue(closed)
+                assertFalse(journal.contains(job.id))
+            } finally {
+                ioExecutor.shutdownNow()
+            }
+        } finally { root.deleteRecursively() }
+    }
+
 }

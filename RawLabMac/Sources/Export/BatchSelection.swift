@@ -141,3 +141,69 @@ struct MacCollectionExportPreparation {
             noticeKey: sdrFallback ? "此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。" : nil)
     }
 }
+
+/// 冻结产物：任务与已写进日志目录的 look 副本（未落盘前由调用方负责释放）。
+struct MacFrozenCollectionExport {
+    let job: BatchExportJob
+    var ownedLooks: [URL] = []
+}
+
+/// 冻结核心：前后双遍全集重验 + 每目标 look 副本拷贝。只读取文件、会话代次与入口固化的
+/// 主线程值（同 MacCollectionExportPreparation 不变量），可在集合导出后台队列执行；
+/// 与 UI 状态的原子性（选择、草稿、修订、批次状态）由主线程在 attachBatch 前复核。
+struct MacCollectionExportFreeze {
+    let session: AdjustmentTransferSession
+    let drafts: Set<String>
+    let activeFile: URL?
+    let activeRevision: UUID
+    let journal: BatchJournal
+    var observeStage: ((String, Bool) -> Void)?
+
+    func freeze(_ review: MacCollectionExportReview) throws -> MacFrozenCollectionExport {
+        func validate() throws {
+            observeStage?("revalidate", Thread.isMainThread)
+            for snapshot in review.snapshots {
+                try snapshot.photo.validate()
+                guard !drafts.contains(snapshot.photo.id),
+                      session.editGeneration(for: snapshot.photo.url) == snapshot.editGeneration,
+                      snapshot.editorRevision == nil
+                        || (activeFile == snapshot.photo.url && activeRevision == snapshot.editorRevision) else {
+                    throw AdjustmentCommitError.expired
+                }
+                guard try snapshot.look.map(BatchFrozenSettings.checksum) == snapshot.lookSHA256 else {
+                    throw BatchExportFailure.missingLook
+                }
+            }
+        }
+        try validate()
+        let first = review.snapshots[0]
+        var job = BatchExportJob(source: first.photo.url, settings: first.settings, look: nil, lookName: first.lookName)
+        job.settingsMode = .perTargetFrozen; job.version = 3
+        job.format = review.adaptiveJPEG ? .jpeg : review.format
+        job.longEdge = review.longEdge; job.outputDirectory = review.directory
+        var ownedLooks = [URL]()
+        do {
+            observeStage?("copy", Thread.isMainThread)
+            for (ordinal, snapshot) in review.snapshots.enumerated() {
+                var item = try BatchExportItem(url: snapshot.photo.url)
+                guard item.identity == snapshot.record.identity, item.resourceIdentifier == snapshot.photo.id else {
+                    throw BatchExportFailure.changedInput
+                }
+                let look = try journal.snapshotLook(snapshot.look, jobID: job.id, contentIdentifier: snapshot.lookSHA256)
+                if let look { ownedLooks.append(look) }
+                item.selected = true
+                item.noticeKey = snapshot.noticeKey
+                item.frozen = BatchFrozenSettings(ordinal: ordinal, settings: snapshot.settings, look: look,
+                    lookSHA256: snapshot.lookSHA256, lookName: snapshot.lookName,
+                    outputFormat: review.adaptiveJPEG ? (snapshot.settings.isHDREditing ? .hdrJPEG : .jpeg) : review.format,
+                    longEdge: review.longEdge)
+                try item.frozen!.verifyLook(); job.items.append(item)
+            }
+            try validate()
+        } catch {
+            for look in ownedLooks { try? FileManager.default.removeItem(at: look) }
+            throw error
+        }
+        return MacFrozenCollectionExport(job: job, ownedLooks: ownedLooks)
+    }
+}

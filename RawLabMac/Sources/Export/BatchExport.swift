@@ -2,6 +2,30 @@ import Foundation
 import CryptoKit
 import Darwin
 
+enum BatchJournalVersionKey: String, CaseIterable {
+    case job
+    case frozen
+    case frozenSettings
+    case processing
+    case masterRecipeSettings
+    case hdrProcessing
+    case hdrRecord
+    case hdrCameraDevelopment
+
+    var maxSupportedVersion: Int {
+        switch self {
+        case .job: return 3
+        case .frozen: return 1
+        case .frozenSettings: return 1
+        case .processing: return ProcessingIdentity.current.version
+        case .masterRecipeSettings: return 4
+        case .hdrProcessing: return 8
+        case .hdrRecord: return 9
+        case .hdrCameraDevelopment: return 1
+        }
+    }
+}
+
 enum BatchSettingsMode: String, Codable {
     case uniformFrozen = "uniform_frozen", perTargetFrozen = "per_target_frozen"
 }
@@ -18,7 +42,8 @@ struct BatchFrozenSettings: Codable {
     let longEdge: Int?
 
     static func checksum(_ url: URL) throws -> String {
-        SHA256.hash(data: try Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
+        try MacResourceDigestCache.shared.fingerprintDigest(for: url).digest
+            .map { String(format: "%02x", $0) }.joined()
     }
 
     fileprivate static func validateSettings(_ settings: Adjustments) throws {
@@ -37,7 +62,9 @@ struct BatchFrozenSettings: Codable {
     }
 
     func validate() throws {
-        guard version == 1, settingsVersion == 1, ordinal >= 0,
+        guard version == BatchJournalVersionKey.frozen.maxSupportedVersion,
+              settingsVersion == BatchJournalVersionKey.frozenSettings.maxSupportedVersion,
+              ordinal >= 0,
               longEdge == nil || (1...65535).contains(longEdge!),
               settings.isHDREditing || settings.masterRecipeID == nil || look != nil,
               (look == nil && lookSHA256 == nil) || (look != nil && lookSHA256?.count == 64 &&
@@ -125,7 +152,7 @@ struct BatchExportJob: Codable {
     var mode: BatchSettingsMode { settingsMode ?? .uniformFrozen }
 
     func validate() throws {
-        guard (1...3).contains(version),
+        guard (1...BatchJournalVersionKey.job.maxSupportedVersion).contains(version),
               longEdge == nil || (1...65535).contains(longEdge!) else {
             throw CocoaError(.fileReadCorruptFile)
         }
@@ -227,6 +254,11 @@ final class BatchJournal {
     private(set) var lastQuarantinedURL: URL?
     private var quarantinedError: Error?
     private var url: URL { directory.appendingPathComponent("job.json") }
+    private struct FileFingerprint: Equatable { let size: Int; let modified: Date }
+    /// 本进程上次写出的账本文件 (size,mtime) 指纹；稳态写入据此跳过整读回。
+    private var writtenFingerprint: FileFingerprint?
+    /// save() 实际执行整读盘校验的次数（测试锚点：跳过逻辑必须真的跳过）。
+    private(set) var diskReloads = 0
 
     init(directory: URL = BatchJournal.defaultDirectory) { self.directory = directory }
 
@@ -238,16 +270,27 @@ final class BatchJournal {
     func save(_ job: BatchExportJob) throws {
         quarantinedError = nil
         try job.validate()
-        _ = try readJob()
+        // 仅当磁盘文件不是本进程上次写出的那份（首次写、或外部改动）才整读回并重校验，
+        // 只为防「运行途中外部写入未来版本文件」；启动 load() 已全量校验，原子替换保证旧文件完整。
+        let fingerprint = Self.fingerprint(atPath: url.path)
+        if writtenFingerprint == nil || writtenFingerprint != fingerprint {
+            diskReloads += 1
+            _ = try readJob()
+        }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try JSONEncoder().encode(job).write(to: url, options: .atomic)
+        writtenFingerprint = Self.fingerprint(atPath: url.path)
     }
 
-    func snapshotLook(_ original: URL?, for id: UUID) throws -> URL? {
+    func snapshotLook(_ original: URL?, jobID: UUID, contentIdentifier: String?) throws -> URL? {
         guard let original else { return nil }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let copy = directory.appendingPathComponent("\(id.uuidString).\(original.pathExtension)")
-        try FileManager.default.copyItem(at: original, to: copy)
+        // 同一任务共享同一 look 时按内容寻址只存一份（已有即复用）；文件名带 jobID 前缀隔离任务，
+        // 平铺目录里 releaseResources(prior) 不会误删仍在用任务的副本。
+        let copy = directory.appendingPathComponent("\(jobID.uuidString)-\(contentIdentifier ?? UUID().uuidString).\(original.pathExtension)")
+        if !FileManager.default.fileExists(atPath: copy.path) {
+            try FileManager.default.copyItem(at: original, to: copy)
+        }
         return copy
     }
 
@@ -299,6 +342,13 @@ final class BatchJournal {
                       parts.hour ?? 0, parts.minute ?? 0, parts.second ?? 0)
     }
 
+    private static func fingerprint(atPath path: String) -> FileFingerprint? {
+        guard let values = try? FileManager.default.attributesOfItem(atPath: path),
+              let size = values[.size] as? Int,
+              let modified = values[.modificationDate] as? Date else { return nil }
+        return FileFingerprint(size: size, modified: modified)
+    }
+
     private static func itemType(atPath path: String) throws -> FileAttributeType? {
         do {
             return try FileManager.default.attributesOfItem(atPath: path)[.type] as? FileAttributeType
@@ -332,17 +382,23 @@ final class BatchJournal {
         guard let settings = value as? [String: Any] else { return false }
         if let processing = settings["processing"] as? [String: Any],
            processing["family"] as? String == "rawlab",
-           isIntegerAbove(processing["version"], limit: ProcessingIdentity.current.version) {
+           isIntegerAbove(processing["version"], limit: BatchJournalVersionKey.processing.maxSupportedVersion) {
             return true
         }
-        if isIntegerAbove(settings["masterRecipeSettingsVersion"], limit: 4) { return true }
+        if isIntegerAbove(settings["masterRecipeSettingsVersion"],
+                          limit: BatchJournalVersionKey.masterRecipeSettings.maxSupportedVersion) {
+            return true
+        }
         if let hdr = settings["hdr"] as? [String: Any] {
-            if isIntegerAbove(hdr["hdr_processing_version"], limit: 8) ||
-               isIntegerAbove(hdr["record_version"], limit: 9) {
+            if isIntegerAbove(hdr["hdr_processing_version"],
+                              limit: BatchJournalVersionKey.hdrProcessing.maxSupportedVersion) ||
+               isIntegerAbove(hdr["record_version"],
+                              limit: BatchJournalVersionKey.hdrRecord.maxSupportedVersion) {
                 return true
             }
             if let cameraDev = hdr["camera_development"] as? [String: Any],
-               isIntegerAbove(cameraDev["version"], limit: 1) {
+               isIntegerAbove(cameraDev["version"],
+                              limit: BatchJournalVersionKey.hdrCameraDevelopment.maxSupportedVersion) {
                 return true
             }
         }
@@ -353,14 +409,15 @@ final class BatchJournal {
         guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             return false
         }
-        if isIntegerAbove(object["version"], limit: 3) || hasFutureSettings(object["settings"]) {
+        if isIntegerAbove(object["version"], limit: BatchJournalVersionKey.job.maxSupportedVersion) ||
+           hasFutureSettings(object["settings"]) {
             return true
         }
         if let items = object["items"] as? [Any] {
             for case let item as [String: Any] in items {
                 guard let frozen = item["frozen"] as? [String: Any] else { continue }
-                if isIntegerAbove(frozen["version"], limit: 1) ||
-                   isIntegerAbove(frozen["settingsVersion"], limit: 1) ||
+                if isIntegerAbove(frozen["version"], limit: BatchJournalVersionKey.frozen.maxSupportedVersion) ||
+                   isIntegerAbove(frozen["settingsVersion"], limit: BatchJournalVersionKey.frozenSettings.maxSupportedVersion) ||
                    hasFutureSettings(frozen["settings"]) {
                     return true
                 }
@@ -396,13 +453,15 @@ final class BatchJournal {
 
     func releaseResources(_ job: BatchExportJob) {
         for item in job.items { cleanup(job, item: item) }
+        // 只回收属于本任务名字的副本：jobID 前缀的内容寻址名 + 旧版 UUID 名（升级前在途任务兼容）。
+        let owned = { (stem: String, id: UUID) in stem == id.uuidString || stem.hasPrefix("\(job.id.uuidString)-") }
         if let look = job.look, look.deletingLastPathComponent().standardizedFileURL.path == directory.standardizedFileURL.path,
-           look.deletingPathExtension().lastPathComponent == job.id.uuidString {
+           owned(look.deletingPathExtension().lastPathComponent, job.id) {
             try? FileManager.default.removeItem(at: look)
         }
         for item in job.items {
             if let look = item.frozen?.look, look.deletingLastPathComponent().standardizedFileURL.path == directory.standardizedFileURL.path,
-               look.deletingPathExtension().lastPathComponent == item.id.uuidString {
+               owned(look.deletingPathExtension().lastPathComponent, item.id) {
                 try? FileManager.default.removeItem(at: look)
             }
         }
@@ -477,7 +536,8 @@ enum BatchExportRunner {
                 guard item.selected, item.status != .succeeded,
                       scope != .failed || item.status == .failed else { continue }
                 if shouldCancel() { job.cancelled = true; break }
-                try verifyDestination(directory)
+                // 每张照片不再建删探针文件；目录存在性与可写位检查足以在渲染前拦截被弹出/只读的输出盘。
+                guard FileManager.default.isWritableFile(atPath: directory.path) else { throw BatchExportFailure.destination }
                 job.items[index].status = .running
                 job.items[index].error = nil
                 try save(job, to: journal, onQuarantine: onQuarantine)

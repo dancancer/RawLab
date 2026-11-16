@@ -98,13 +98,24 @@ int main(int argc, char** argv) {
         cache.store(key, CacheKind::Raw, 3, 2, values.data(), values.size());
         const auto restored = cache.load(key, CacheKind::Raw, 3, 2);
         require(restored && restored->values == values, "cache did not preserve finite float32 values");
-        std::string producer = "stale";
+        const auto rawPayload = sha256Bytes(values.data(), values.size() * sizeof(float));
+        std::string producer = "stale", storedDigest = "stale", loadedDigest = "stale";
         require(cache.load(key, CacheKind::Raw, 3, 2, {}, &producer) && producer.empty(),
                 "legacy cache invented a producer");
-        cache.store(key, CacheKind::Raw, 3, 2, values.data(), values.size(), {}, "CoreML");
-        require(cache.load(key, CacheKind::Raw, 3, 2, {}, &producer) && producer == "CoreML",
-                "cache did not retain actual producer");
-        require(!cache.load(key, CacheKind::Raw, 2, 3), "wrong geometry accepted");
+        bool storeAborted = false;
+        try {
+            cache.store(key, CacheKind::Raw, 3, 2, values.data(), values.size(), {}, "CoreML",
+                        [] { throw std::runtime_error("abort"); }, &storedDigest);
+        } catch (const std::runtime_error&) { storeAborted = true; }
+        require(storeAborted && storedDigest.empty(), "aborted cache store leaked a payload digest");
+        storedDigest = "stale";
+        cache.store(key, CacheKind::Raw, 3, 2, values.data(), values.size(), {}, "CoreML", {}, &storedDigest);
+        require(storedDigest == rawPayload, "cache store did not report exact payload digest");
+        require(cache.load(key, CacheKind::Raw, 3, 2, {}, &producer, &loadedDigest) &&
+                producer == "CoreML" && loadedDigest == storedDigest,
+                "cache did not retain actual producer or payload digest");
+        require(!cache.load(key, CacheKind::Raw, 2, 3, {}, nullptr, &loadedDigest) && loadedDigest.empty(),
+                "wrong geometry accepted or retained stale payload digest");
         {
             const auto path = root / "cache" / (key + ".rawcache");
             std::string expected;
@@ -125,11 +136,12 @@ int main(int argc, char** argv) {
         const auto file = root / "cache" / (key + ".rawcache");
         { std::fstream stream(file, std::ios::in | std::ios::out | std::ios::binary); stream.seekp(-1, std::ios::end); stream.put('\0'); }
         require(!cache.load(key, CacheKind::Raw, 3, 2), "corrupt cache accepted");
-        require(!cache.load(key, CacheKind::Raw, 3, 2, {}, &producer) && producer.empty(),
-                "failed cache load retained a stale producer");
+        loadedDigest = "stale";
+        require(!cache.load(key, CacheKind::Raw, 3, 2, {}, &producer, &loadedDigest) &&
+                producer.empty() && loadedDigest.empty(),
+                "failed cache load retained a stale producer or payload digest");
         cache.store(key, CacheKind::Raw, 3, 2, values.data(), values.size());
         require(cache.load(key, CacheKind::Raw, 3, 2)->values == values, "corrupt cache could not be repaired");
-        const auto rawPayload = sha256Bytes(values.data(), values.size() * sizeof(float));
         cache.store(sceneKey, CacheKind::SceneRGB, 2, 1, values.data(), values.size(), {}, "CoreML");
         const auto scene = cache.load(sceneKey, CacheKind::SceneRGB, 0, 0);
         require(scene && scene->width == 2 && scene->height == 1 && scene->values == values,

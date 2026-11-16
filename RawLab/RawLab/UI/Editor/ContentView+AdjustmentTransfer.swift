@@ -18,7 +18,7 @@ extension ContentView {
 
     func showQuickPresets() {
         guard !editorBusy, viewModel.hasImage else { return }
-        cancelSliderInteraction(); cancelHSLTarget()
+        guard closeEditorDraftCleanly() else { return }
         viewModel.quickPresetsVisible = true
         selectedGroup = .looks
         adjustmentsExpanded = true

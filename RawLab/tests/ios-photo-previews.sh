@@ -39,6 +39,7 @@ xcrun --sdk iphonesimulator swiftc -parse-as-library -swift-version 5 -O -sdk "$
     "$ROOT/RawLab/RawLab/Core/Models/EditorAdjustmentRules.swift" \
     "$ROOT/RawLab/RawLab/Core/Persistence/CachedPhotoFile.swift" \
     "$ROOT/RawLab/RawLab/Core/Persistence/EditPersistence.swift" \
+    "$ROOT/RawLab/RawLab/Core/Persistence/FileDigestCache.swift" \
     "$ROOT/RawLab/RawLab/Core/Persistence/RecentPhotoStore.swift" \
     "$ROOT/RawLab/RawLab/Core/Persistence/IOSPhotoPreviews.swift" \
     "$ROOT/RawLab/tests/IOSPhotoPreviewTests.swift" \

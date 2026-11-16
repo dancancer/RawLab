@@ -1,5 +1,6 @@
 #include "gpu/gles_photo.h"
 #include "gpu/gles_pixel_contract.h"
+#include "gpu/gles_recovery.h"
 #include "core/processing_cancellation.h"
 #include "gpu/gles_photo_shader.h"
 #include "gpu/lut_gpu_internal.h"
@@ -44,8 +45,10 @@ struct Binding {
     EGLenum previousApi = eglQueryAPI();
     EGLDisplay display;
     bool bound;
+    EGLint error = EGL_SUCCESS;
     Binding(EGLDisplay d, EGLSurface s, EGLContext c) : display(d) {
         bound = eglBindAPI(EGL_OPENGL_ES_API) && eglMakeCurrent(d, s, s, c);
+        if (!bound) error = eglGetError();
     }
     ~Binding() {
         // EGL_NO_CONTEXT 按当前 API 解绑：先释放 ES，再恢复调用方 API 和非空 context。
@@ -63,7 +66,7 @@ struct Binding {
 
 void checkGL() {
     const auto error = glGetError();
-    if (error != GL_NO_ERROR) throw std::runtime_error("OpenGL error " + std::to_string(error));
+    if (error != GL_NO_ERROR) throw GlesFailure(error);
 }
 
 GLuint makeProgram() {
@@ -165,6 +168,7 @@ struct GlesPhotoRenderer::Impl {
         if (bytes == 0 || bytes > blockLimit) throw std::runtime_error("SSBO size exceeds device limit");
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffers[index]);
         if (capacities[index] != bytes) {
+            capacities[index] = 0;
             glBufferData(GL_SHADER_STORAGE_BUFFER, static_cast<GLsizeiptr>(bytes), nullptr, GL_DYNAMIC_COPY);
             checkGL(); capacities[index] = bytes;
         }
@@ -193,15 +197,28 @@ struct GlesPhotoRenderer::Impl {
         checkProcessingCancellation();
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffers[2]);
         auto mapped = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, static_cast<GLsizeiptr>(bytes), GL_MAP_READ_BIT);
-        if (!mapped) throw std::runtime_error("GPU readback failed");
+        if (!mapped) {
+            checkGL();
+            throw std::runtime_error("GPU readback failed");
+        }
         std::memcpy(destination, mapped, bytes);
-        if (!glUnmapBuffer(GL_SHADER_STORAGE_BUFFER)) throw std::runtime_error("GPU buffer contents lost");
+        if (!glUnmapBuffer(GL_SHADER_STORAGE_BUFFER)) {
+            checkGL();
+            throw std::runtime_error("GPU buffer contents lost");
+        }
         checkProcessingCancellation();
         checkGL();
+    }
+    void clearStickyErrors() {
+        Binding binding(display, surface, context);
+        if (binding.bound) {
+            while (glGetError() != GL_NO_ERROR) {}
+        }
     }
     void setLut(const std::shared_ptr<LUT3D>& lut) {
         glActiveTexture(GL_TEXTURE0);
         if (lut && cachedLut != lut) {
+            cachedLut.reset();
             if (lut->getSize() > textureLimit) throw std::runtime_error("LUT exceeds device texture limit");
             if (!texture) glGenTextures(1, &texture);
             glBindTexture(GL_TEXTURE_3D, texture);
@@ -265,11 +282,14 @@ bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
         width > INT32_MAX || height > INT32_MAX || uint64_t(width) * height > INT32_MAX ||
         input.pixels.size() != size_t(input.width) * input.height ||
         !effects.valid() || !hsl.valid() || !toneControls.valid() || !colorGrading.valid() || !customCurve.gpuSupported() || (customCurve.custom() && request.tone_curve != 0) || chromaDenoise < 0 || chromaDenoise > 2) return false;
+    if (!impl_ && !retry_.ready(glesRetryNow())) return false;
+    bool initializing = !impl_;
     try {
         if (!impl_) { impl_ = std::make_unique<Impl>(); impl_->initialize(); }
+        initializing = false;
         auto& context = *impl_;
         Binding binding(context.display, context.surface, context.context);
-        if (!binding.bound) throw std::runtime_error("EGL context lost or owned by another thread");
+        if (!binding.bound) throw EglFailure(binding.error);
         glUseProgram(context.program);
         context.matrixUniform("toSrgb", ColorConverter::getConversionMatrix(inputSpace, ColorSpace::sRGB));
         context.matrixUniform("toFGamut", photoLUTInputMatrix(lut ? lut->inputTransfer() : LUTTransfer::FLog2));
@@ -305,6 +325,7 @@ bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
                 context.bands(native, width, height, 4, &resized);
                 output = std::move(resized);
             } else output = std::move(native);
+            retry_.succeeded();
             return true;
         }
         ImageData result(static_cast<int>(width), static_cast<int>(height));
@@ -325,12 +346,19 @@ bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
             context.read(result.pixels.data(), bytes);
         } else context.bands(input, width, height, preview ? 3 : 2, &result);
         output = std::move(result);
+        retry_.succeeded();
         return true;
     } catch (const ProcessingCancelled&) {
+        if (impl_) impl_->clearStickyErrors();
         throw;
     } catch (const std::exception& error) {
         __android_log_print(ANDROID_LOG_WARN, "RawLabGPU", "%s; falling back when Auto is selected", error.what());
-        impl_.reset();
+        if (initializing || glesLostDevice(error)) {
+            retry_.failed(glesRetryNow());
+            impl_.reset();
+        } else if (impl_) {
+            impl_->clearStickyErrors();
+        }
         return false;
     }
 }
