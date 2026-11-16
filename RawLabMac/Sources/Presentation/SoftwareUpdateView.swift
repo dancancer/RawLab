@@ -14,7 +14,6 @@ struct SoftwareUpdateView: View {
     @Environment(\.dynamicTypeSize) private var textSize
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var updates: DesktopUpdateController
-    @ObservedObject var legacy: UpdateChecker
     var settings = true
     private var detailFont: Font { .system(size: textSize.isAccessibilitySize ? 18 : 13) }
 
@@ -25,7 +24,7 @@ struct SoftwareUpdateView: View {
                 Text(L10n.format("版本 %@", updates.currentVersion)).foregroundStyle(.secondary)
                 if settings {
                     Toggle(L10n.text("自动检查更新"), isOn: Binding(get: { updates.preferences.automaticCheck }, set: {
-                        updates.setAutomaticCheck($0); legacy.automatic = updates.preferences.automaticCheck
+                        updates.setAutomaticCheck($0)
                     })).disabled(updates.storageError != nil || updates.requiresRecovery || updates.requiresStartupHealthCheck).accessibilityIdentifier("updates.automaticCheck")
                     Toggle(L10n.text("自动下载并在退出时安装"), isOn: Binding(get: { updates.preferences.automaticInstall }, set: updates.setAutomaticInstall))
                         .disabled(updates.storageError != nil || updates.unavailableReason != nil || updates.requiresRecovery || updates.requiresStartupHealthCheck).accessibilityIdentifier("updates.automaticInstall")
@@ -34,15 +33,10 @@ struct SoftwareUpdateView: View {
                     Divider()
                 }
                 UpdateNoticeBanner(notice: UpdatePresentation.unavailableNotice(unavailableReason: updates.unavailableReason, storageError: updates.storageError))
-                if updates.unavailableReason != nil {
-                    Text(legacy.status).font(detailFont)
-                } else {
+                if updates.unavailableReason == nil {
                     Text(L10n.text(UpdatePresentation.phase(updates.state.phase))).font(.system(size: textSize.isAccessibilitySize ? 22 : 13, weight: .semibold))
                 }
                 if let release = updates.state.release {
-                    Text(L10n.format("发现新版本 %@", release.version)).font(.system(size: textSize.isAccessibilitySize ? 22 : 13, weight: .semibold))
-                    if !release.notes.isEmpty { Text(release.notes).textSelection(.enabled) }
-                } else if let release = legacy.available, updates.unavailableReason != nil {
                     Text(L10n.format("发现新版本 %@", release.version)).font(.system(size: textSize.isAccessibilitySize ? 22 : 13, weight: .semibold))
                     if !release.notes.isEmpty { Text(release.notes).textSelection(.enabled) }
                 }
@@ -100,7 +94,7 @@ struct SoftwareUpdateView: View {
                         Text(L10n.text("查看此说明不会启用自动安装。失败后请保留现有应用和数据，使用官方可信安装包恢复；不要用旧版覆盖新版编辑记录。"))
                     }.font(detailFont)
                 }
-                Link(L10n.text("官方手动下载"), destination: UpdateRelease.repository.appendingPathComponent("releases"))
+                Link(L10n.text("官方手动下载"), destination: URL(string: "https://github.com/dancancer/RawLab/releases")!)
                 if let path = updates.state.backupPath {
                     Button(L10n.text("查看更新前的数据备份")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
                 }
@@ -117,10 +111,8 @@ struct SoftwareUpdateView: View {
     }
 
     @ViewBuilder private var actions: some View {
-        Button(L10n.text("检查更新")) {
-            if updates.unavailableReason != nil { Task { await legacy.check(manual: true) } }
-            else { updates.check(manual: true) }
-        }.disabled(updates.requiresRecovery || legacy.checking || updates.unavailableReason == nil && !updates.canCheck)
+        Button(L10n.text("检查更新")) { updates.check(manual: true) }
+            .disabled(!updates.canCheck)
             .accessibilityIdentifier("updates.check")
         if updates.canDownload {
             Button(L10n.text("安装更新"), action: updates.download).accessibilityIdentifier("updates.download")

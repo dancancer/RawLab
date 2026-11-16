@@ -24,7 +24,6 @@ final class MacUpdateRunLease {
     @Published private(set) var model: EditorModel?
     @Published private(set) var controller: DesktopUpdateController?
     @Published private(set) var startupError: String?
-    let legacy = UpdateChecker()
     private var lease: MacUpdateRunLease?
     private var started = false
     private var controllerChanges: AnyCancellable?
@@ -34,10 +33,12 @@ final class MacUpdateRunLease {
         do { lease = try MacUpdateRunLease() }
         catch { startupError = (error as? UpdateAdapterError)?.code ?? "storage"; return }
         let adapter = await makeMacUpdateAdapter()
+        let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+        let automaticCheck = UserDefaults.standard.object(forKey: "updates.automatic") as? Bool ?? true
         let updates = DesktopUpdateController(adapter: adapter, gate: UpdateInstallGate(),
-            currentVersion: legacy.currentVersion,
+            currentVersion: currentVersion,
             currentBuild: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "",
-            automaticCheck: legacy.automatic)
+            automaticCheck: automaticCheck)
         controller = updates
         delegate.updates = updates
         controllerChanges = updates.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
@@ -64,6 +65,6 @@ final class MacUpdateRunLease {
         model = candidate
         delegate.model = candidate
         updates.startPolling()
-        await updates.performStartupCheck(legacy: legacy)
+        updates.performStartupCheck()
     }
 }

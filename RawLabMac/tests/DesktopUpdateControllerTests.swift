@@ -285,9 +285,7 @@ enum ParameterValueField { static var hasPendingInputs = false }
         check(controller.storageError != nil && !controller.blocksEditing && controller.canRetrySave && adapter.checks == 0,
             "Save failure when starting a check does not block editing and offers retrySave")
         _ = NSApplication.shared
-        let defaults = UserDefaults(suiteName: "dev.rawlab.update-storage-test.\(UUID())")!
-        let legacy = UpdateChecker(defaults: defaults, currentVersion: "0.8.2", fetch: { throw URLError(.notConnectedToInternet) })
-        let errorPNG = try renderPNG(SoftwareUpdateView(updates: controller, legacy: legacy))
+        let errorPNG = try renderPNG(SoftwareUpdateView(updates: controller))
         let notice = UpdatePresentation.storageNotice(canRetrySave: controller.canRetrySave, canRepairState: controller.canRepairState)
         let banner = UpdatePresentation.unavailableNotice(unavailableReason: controller.unavailableReason, storageError: controller.storageError)
         check(!errorPNG.isEmpty &&
@@ -300,7 +298,7 @@ enum ParameterValueField { static var hasPendingInputs = false }
         failAllSaves = false
         check(controller.retrySave() && controller.storageError == nil && !controller.canRetrySave && controller.canCheck,
             "Retrying save clears non-critical storage error and restores update checks")
-        let clearedPNG = try renderPNG(SoftwareUpdateView(updates: controller, legacy: legacy))
+        let clearedPNG = try renderPNG(SoftwareUpdateView(updates: controller))
         check(!clearedPNG.isEmpty && clearedPNG != errorPNG &&
             UpdatePresentation.unavailableNotice(unavailableReason: controller.unavailableReason, storageError: controller.storageError) == nil,
             "Clearing non-critical storage error updates the rendered SoftwareUpdateView")
@@ -553,50 +551,36 @@ enum ParameterValueField { static var hasPendingInputs = false }
         let store = UpdateStore(directory: root.appendingPathComponent("Updates"))
         try FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true)
         let corrupt = Data("{broken".utf8); try corrupt.write(to: store.stateURL)
-        let optOutSuite = "dev.rawlab.corrupt-optout.\(UUID())"
-        let optOutDefaults = UserDefaults(suiteName: optOutSuite)!
-        defer { optOutDefaults.removePersistentDomain(forName: optOutSuite) }
-        optOutDefaults.set(false, forKey: "updates.automatic")
-        var optOutFetches = 0
-        let legacyOptOut = UpdateChecker(defaults: optOutDefaults, currentVersion: "0.8.2", fetch: { optOutFetches += 1; return Data() })
         let adapter = FakeUpdateAdapter()
         let damaged = DesktopUpdateController(adapter: adapter, gate: UpdateInstallGate(), store: store,
-            currentVersion: "0.8.2", currentBuild: "14", automaticCheck: legacyOptOut.automatic)
-        await damaged.performStartupCheck(legacy: legacyOptOut)
+            currentVersion: "0.8.2", currentBuild: "14", automaticCheck: false)
+        damaged.performStartupCheck()
         check(!damaged.preferences.automaticCheck &&
-            !legacyOptOut.automatic && optOutDefaults.object(forKey: "updates.automatic") as? Bool == false &&
-            optOutDefaults.object(forKey: "updates.lastAttempt") == nil &&
-            adapter.checks == 0 && optOutFetches == 0 &&
+            adapter.checks == 0 &&
             (try? Data(contentsOf: store.stateURL)) == corrupt,
-            "Corrupt state.json preserves user automaticCheck opt-out, skips network check and leaves persisted config untouched")
-        let optInSuite = "dev.rawlab.corrupt-optin.\(UUID())"
-        let optInDefaults = UserDefaults(suiteName: optInSuite)!
-        defer { optInDefaults.removePersistentDomain(forName: optInSuite) }
-        optInDefaults.set(true, forKey: "updates.automatic")
-        var optInFetches = 0
-        let legacyOptIn = UpdateChecker(defaults: optInDefaults, currentVersion: "0.8.2", fetch: { optInFetches += 1; return Data() })
+            "Corrupt state.json preserves automaticCheck opt-out, skips network check and leaves persisted config untouched")
         let damagedOptIn = DesktopUpdateController(adapter: adapter, gate: UpdateInstallGate(), store: store,
-            currentVersion: "0.8.2", currentBuild: "14", automaticCheck: legacyOptIn.automatic)
-        await damagedOptIn.performStartupCheck(legacy: legacyOptIn)
-        check(damagedOptIn.preferences.automaticCheck &&
-            optInDefaults.object(forKey: "updates.lastAttempt") == nil &&
-            adapter.checks == 0 && optInFetches == 0,
+            currentVersion: "0.8.2", currentBuild: "14", automaticCheck: true)
+        damagedOptIn.performStartupCheck()
+        check(damagedOptIn.preferences.automaticCheck && adapter.checks == 0,
             "Storage-degraded UpdateStore skips automatic startup network checks even when automaticCheck is enabled")
         let healthyStore = UpdateStore(directory: root.appendingPathComponent("HealthyUpdates"))
         var saved = UpdatePreferences(); saved.automaticCheck = false
         try healthyStore.save(saved)
-        let syncSuite = "dev.rawlab.healthy-sync.\(UUID())"
-        let syncDefaults = UserDefaults(suiteName: syncSuite)!
-        defer { syncDefaults.removePersistentDomain(forName: syncSuite) }
-        syncDefaults.set(true, forKey: "updates.automatic")
-        var syncFetches = 0
-        let legacySync = UpdateChecker(defaults: syncDefaults, currentVersion: "0.8.2", fetch: { syncFetches += 1; return Data() })
         let healthy = DesktopUpdateController(adapter: adapter, gate: UpdateInstallGate(), store: healthyStore,
-            currentVersion: "0.8.2", currentBuild: "14", automaticCheck: legacySync.automatic)
-        await healthy.performStartupCheck(legacy: legacySync)
-        check(!legacySync.automatic && syncDefaults.object(forKey: "updates.automatic") as? Bool == false &&
-            adapter.checks == 0 && syncFetches == 0,
-            "Healthy UpdateStore syncs persisted automaticCheck opt-out back to legacy settings without checking")
+            currentVersion: "0.8.2", currentBuild: "14", automaticCheck: true)
+        healthy.performStartupCheck()
+        check(!healthy.preferences.automaticCheck && adapter.checks == 0,
+            "Healthy UpdateStore preserves persisted automaticCheck opt-out and skips startup check")
+        let unavailableAdapter = FakeUpdateAdapter()
+        unavailableAdapter.unavailableReason = "installation"
+        let unavailableStore = UpdateStore(directory: root.appendingPathComponent("UnavailableUpdates"))
+        let unavailable = DesktopUpdateController(adapter: unavailableAdapter, gate: UpdateInstallGate(), store: unavailableStore,
+            currentVersion: "0.8.2", currentBuild: "14", automaticCheck: true)
+        unavailable.performStartupCheck()
+        unavailable.check(manual: true)
+        check(!unavailable.canCheck && unavailableAdapter.checks == 0 && unavailable.state.phase == .idle && unavailable.state.release == nil,
+            "Version discovery uses single UpdateAdapter source only without fallback polling when unavailable")
     }
 
     @MainActor static func stateRepair() async throws {

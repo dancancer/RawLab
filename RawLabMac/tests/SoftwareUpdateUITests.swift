@@ -63,8 +63,6 @@ import SwiftUI
         let adapter = Adapter(), gate = UpdateInstallGate()
         model.registerUpdateGate(gate)
         let updates = DesktopUpdateController(adapter: adapter, gate: gate, store: UpdateStore(directory: state.appendingPathComponent("Updates")), currentVersion: "0.8.2", currentBuild: "14", automaticCheck: false)
-        let defaults = UserDefaults(suiteName: "dev.rawlab.updates-ui.\(UUID())")!
-        let legacy = UpdateChecker(defaults: defaults, currentVersion: "0.8.2", fetch: { throw URLError(.notConnectedToInternet) })
         model.open(photo); try await settle(model); model.selectAdjustmentTool(.exposure)
         let (editorWindow, editor) = window(GuardedEditor(model: model, updates: updates), width: 1200, height: 850)
         defer { editorWindow.contentView = nil; editorWindow.close() }
@@ -78,7 +76,7 @@ import SwiftUI
             let saved = try model.editStore!.readState(for: photo), count = model.adjustmentSession!.transactions.count
             let original = model.settings
             ParameterValueField.preserveInputsForUpdateNavigation()
-            let (updateWindow, _) = window(SoftwareUpdateView(updates: updates, legacy: legacy), width: 560, height: 600)
+            let (updateWindow, _) = window(SoftwareUpdateView(updates: updates), width: 560, height: 600)
             editorWindow.makeFirstResponder(nil); updateWindow.makeFirstResponder(updateWindow.contentView)
             updates.check(manual: true); adapter.send(.found(adapter.release)); updates.download()
             try await Task.sleep(for: .milliseconds(100)); editor.layoutSubtreeIfNeeded()
