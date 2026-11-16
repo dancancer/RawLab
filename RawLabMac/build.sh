@@ -145,6 +145,7 @@ mkdir -p "$APP/Contents/Resources/Licenses/dng-sdk"
 cp "$CHROMA_PREFIX/share/licenses/rawlab-dng-sdk/"*.txt "$APP/Contents/Resources/Licenses/dng-sdk/"
 cp -R "$BUILD/licenses/libultrahdr" "$APP/Contents/Resources/Licenses/"
 cp -R "$BUILD/licenses/libjpeg-turbo" "$APP/Contents/Resources/Licenses/"
+cp -R "$BUILD/licenses/libspng" "$APP/Contents/Resources/Licenses/"
 SDK="$(rawlab_mac_sdk_path)"
 RAW_LIB="$(pkg-config --variable=libdir libraw_r)"
 APP_SOURCES=()
