@@ -5,14 +5,19 @@ import android.net.Uri
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.semantics.SemanticsProperties
 import com.rawlab.android.R
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.rawlab.android.editor.EditorState
+import com.rawlab.android.editor.AdjustmentDraft
+import com.rawlab.android.editor.AdjustmentGroup
 import com.rawlab.android.editor.render.PreviewPair
 import com.rawlab.android.editor.ui.EditorScreen
+import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.photo.ImportedPhoto
+import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.testing.LanguageTestRule
 import com.rawlab.android.testing.setChineseContent
 import org.junit.Assert.*
@@ -98,5 +103,25 @@ class PhotoViewInteractionTest {
         compose.onNodeWithTag("photo-canvas").performTouchInput { longClick(center, 800) }
         compose.onNodeWithTag("adjustment-dock").assertIsDisplayed()
         compose.onNodeWithTag("comparison-before").assertDoesNotExist()
+    }
+
+    @Test fun straighteningShowsDimmedPhotoBeyondTheCrop() {
+        val bitmap = Bitmap.createBitmap(600, 400, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(android.graphics.Color.RED)
+        }
+        val edits = EditSettings()
+        val draft = AdjustmentDraft.begin(AdjustmentGroup.GEOMETRY, edits)
+            .update(edits.copy(geometry = GeometrySettings(straightenDegrees = 15.1f)))
+        val state = EditorState(photo = ImportedPhoto(Uri.parse("content://view/straighten"), "straighten", File("straighten")),
+            edits = edits, preview = PreviewPair(bitmap, bitmap, 6500f, 0f), exact = true, draft = draft)
+        compose.setChineseContent { MaterialTheme { EditorScreen(state, {}, {}, { _, _ -> }, {}, {}, {}, {}, {}) } }
+
+        val pixels = compose.onNodeWithTag("geometry.canvas").captureToImage().toPixelMap()
+        var dimmed = 0
+        for (y in 0 until pixels.height step 4) for (x in 0 until pixels.width step 4) {
+            val color = pixels[x, y]
+            if (color.red in .25f..0.65f && color.green < .05f && color.blue < .05f) dimmed++
+        }
+        assertTrue("The rotated photo extends past the crop and is dimmed there", dimmed > pixels.width * pixels.height / 1600)
     }
 }

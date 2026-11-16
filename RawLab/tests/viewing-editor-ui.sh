@@ -23,7 +23,7 @@ transforms={
   ('                    collectionBatchHandoff.enqueue(', '                    ViewingEditorProbe.shared.recordBatchHandoff(automaticallyStart, phase: scenePhase)\n                    collectionBatchHandoff.enqueue(')],
  'RawLab/RawLab/Core/Batch/Execution/BatchExport.swift':('@discardableResult func start() -> Bool { run(failuresOnly: false) }', '@discardableResult func start() -> Bool { MainActor.assumeIsolated { ViewingEditorProbe.shared.batchStarts.append(job.id.uuidString) }; return run(failuresOnly: false) }'),
  'RawLab/RawLab/Core/ViewModel/RawEditorViewModel+Rendering.swift':('        lastPreviewRequest = request','        MainActor.assumeIsolated { ViewingEditorProbe.shared.recordPreview(request, source: sourceRevision) }\n        lastPreviewRequest = request'),
- 'RawLab/RawLab/Core/Persistence/EditPersistence.swift':('        store.records[identity.key] = state','        try MainActor.assumeIsolated { try ViewingEditorProbe.shared.recordSave(state, identity: identity) }\n        store.records[identity.key] = state'),
+ 'RawLab/RawLab/Core/Persistence/EditPersistence.swift':('        let encodedState = try state.map(Self.encodeState)','        try MainActor.assumeIsolated { try ViewingEditorProbe.shared.recordSave(state, identity: identity) }\n        let encodedState = try state.map(Self.encodeState)'),
  'RawLab/RawLab/UI/Editor/ContentView+Panels.swift':('onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) }','onPreviewSizeChange: { ViewingEditorProbe.shared.resizing = true; defer { ViewingEditorProbe.shared.resizing = false }; viewModel.updatePreviewSize($0, settings: draftPreviewSettings) }')}
 sources=[];diff=[]
 for folder in ['RawLab/RawLab/Core','RawLab/RawLab/UI','Shared']:

@@ -47,22 +47,25 @@ struct EditorCropOverlay: View {
     let sourceRevision: UUID
     let onEditingChanged: (Bool) -> Void
     var showsGrid = true
+    var imageBounds: CGRect? = nil
+    var imageOutline: Path? = nil
+    var showsHandles = true
     @State private var dragSession = CropDragSession()
     @GestureState private var gestureActive = false
 
     var body: some View {
         GeometryReader { geometry in
-            let canvas = fittedCanvas(in: geometry.size)
+            let canvas = imageBounds ?? fittedCanvas(in: geometry.size)
             let crop = CropInteraction.rect(from: settings)
             let frame = CGRect(x: canvas.minX + crop.minX * canvas.width,
                                y: canvas.minY + crop.minY * canvas.height,
                                width: crop.width * canvas.width, height: crop.height * canvas.height)
             ZStack {
                 Path { path in
-                    path.addRect(canvas)
+                    path.addPath(imageOutline ?? Path(canvas))
                     path.addRect(frame)
                 }
-                .fill(.black.opacity(0.35), style: FillStyle(eoFill: true))
+                .fill(.black.opacity(0.55), style: FillStyle(eoFill: true))
                 .allowsHitTesting(false)
                 Rectangle().stroke(.white, lineWidth: 1)
                     .frame(width: frame.width, height: frame.height)
@@ -79,7 +82,7 @@ struct EditorCropOverlay: View {
                         }
                     }.stroke(.white.opacity(0.65), lineWidth: 0.7).allowsHitTesting(false)
                 }
-                if frame.width >= 88 && frame.height >= 88 {
+                if showsHandles && frame.width >= 88 && frame.height >= 88 {
                     Color.clear.contentShape(Rectangle())
                         .frame(width: frame.width - 44, height: frame.height - 44)
                         .position(x: frame.midX, y: frame.midY)
@@ -87,7 +90,7 @@ struct EditorCropOverlay: View {
                         .accessibilityLabel(L10n.text("裁切选区"))
                         .accessibilityIdentifier("geometry.crop.move")
                 }
-                ForEach(handles(for: frame), id: \.self) { handle in
+                ForEach(showsHandles ? handles(for: frame) : [], id: \.self) { handle in
                     let point = position(handle, frame: frame)
                     ZStack {
                         Color.clear

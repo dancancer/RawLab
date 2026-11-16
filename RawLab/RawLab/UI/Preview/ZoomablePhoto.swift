@@ -184,8 +184,10 @@ final class PhotoCanvasView: UIView {
         self.viewport = viewport
         self.isDraft = isDraft
         self.interactionEnabled = interactionEnabled
-        let pixels = nativePixelSize ?? CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
+        let renderedPixels = CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
+        let pixels = hdr == nil ? nativePixelSize ?? renderedPixels : renderedPixels
         let sideBySide = displayState.enabled && displayState.preferredMode == .sideBySide && !isDraft
+        result.previewNativeSize = hdr == nil ? nil : nativePixelSize
         result.previewLongEdgeLimit = previewLongEdgeLimit
         for scroll in [result, reference] {
             scroll.pixels = pixels
@@ -452,6 +454,7 @@ final class PhotoScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecogn
     var comparisonImage: UIImage? { didSet { beforeImageView.image = comparisonImage; updateWipe() } }
     var wipePosition: CGFloat = 0.5 { didSet { updateWipe() } }
     var pixels = CGSize.zero
+    var previewNativeSize: CGSize?
     var previewLongEdgeLimit = PhotoZoomGeometry.defaultPreviewLongEdge
     var displayScale: CGFloat = 1
     var photoMargin = true
@@ -591,7 +594,14 @@ final class PhotoScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecogn
     }
     private func reportPreviewSize() {
         guard !updatingGeometry, onPreviewSizeChange != nil, let geometry else { return }
-        let edge = geometry.previewLongEdge(scale: zoomScale, limit: previewLongEdgeLimit)
+        // HDR 几何预览的像素可能因裁切变小，渲染请求应以原生画布为准。
+        let edge = previewNativeSize.map { pixels in
+            let native = PhotoZoomGeometry(pixels: pixels, viewport: bounds.size, displayScale: displayScale,
+                                           margin: photoMargin ? PhotoZoomGeometry.defaultMargin : 0)
+            // 100% 小于 Fit 时仍用 Fit 的请求，避免重渲染改变当前的像素比例。
+            let relativeScale = max(1, zoomScale / geometry.fitScale)
+            return native.previewLongEdge(scale: native.fitScale * relativeScale, limit: previewLongEdgeLimit)
+        } ?? geometry.previewLongEdge(scale: zoomScale, limit: previewLongEdgeLimit)
         guard reportedEdge != edge else { return }
         reportedEdge = edge
         DispatchQueue.main.async { [weak self] in self?.onPreviewSizeChange?(edge) }

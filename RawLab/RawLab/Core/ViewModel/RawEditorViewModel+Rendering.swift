@@ -46,7 +46,7 @@ extension RawEditorViewModel {
     }
 
     var viewportNativeSize: CGSize? {
-        viewportPreviewLimit > Int(previewMaxDimension) ? nativeImageSize : nil
+        hdrPresentation != nil || viewportPreviewLimit > Int(previewMaxDimension) ? nativeImageSize : nil
     }
 
     func updatePreviewSize(_ requestedEdge: Int, settings: RawSettings) {

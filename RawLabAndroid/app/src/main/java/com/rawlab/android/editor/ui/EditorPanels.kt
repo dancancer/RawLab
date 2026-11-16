@@ -53,8 +53,11 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
     } else 12.dp
     Box(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).testTag("editor-canvas"), contentAlignment = Alignment.Center) {
         state.preview?.let {
-            if (state.draft?.group == AdjustmentGroup.GEOMETRY) GeometryCropCanvas(it, state.visibleEdits.geometry,
-                enabled = state.draftReady, physicalAspect = state.draft.geometryAspect, showsGrid = state.draft.geometryGrid) { value ->
+            val geometryDraft = state.draft?.takeIf { draft -> draft.group == AdjustmentGroup.GEOMETRY }
+            if (it.renderedGeometry.isIdentity && (geometryDraft != null || !state.edits.geometry.isIdentity))
+                GeometryCropCanvas(it, state.visibleEdits.geometry, editing = geometryDraft != null,
+                    enabled = state.draftReady, physicalAspect = geometryDraft?.geometryAspect,
+                    showsGrid = geometryDraft?.geometryGrid ?: true) { value ->
                 onDraftEdit(state.visibleEdits.copy(geometry = value), false)
             }
             else PhotoCanvas(it, compare && state.draft?.group != AdjustmentGroup.GEOMETRY, state.photo?.name.orEmpty(), photoCanvas, photoInfo, infoMode, onInfoClick, onPreviewSizeChange,

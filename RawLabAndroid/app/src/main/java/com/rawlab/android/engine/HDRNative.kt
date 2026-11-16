@@ -27,10 +27,12 @@ internal object NativeHDRBridge {
         require(!result.isProRAW && (info.cameraStamp == null || result.cameraStamp == info.cameraStamp)) { "HDR source changed" }
         return result
     }
-    fun geometrySize(info: HDRSourceInfo, geometry: GeometrySettings): IntArray = nativeGeometry(
+    fun geometrySize(info: HDRSourceInfo, geometry: GeometrySettings): IntArray = geometrySize(
         if (info.orientation >= 5) info.height else info.width,
         if (info.orientation >= 5) info.width else info.height,
-        HDRSettings(geometry = geometry).requestValues())
+        geometry)
+    fun geometrySize(width: Int, height: Int, geometry: GeometrySettings): IntArray =
+        nativeGeometry(width, height, HDRSettings(geometry = geometry).requestValues())
 
     fun decode(file: File, info: HDRSourceInfo, edge: Int): NativeHDRImage {
         if (edge == 0) HDRSourceCache.clear()

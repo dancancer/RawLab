@@ -14,6 +14,54 @@ struct ViewingRenderTests {
         let deadline = Date().addingTimeInterval(4)
         while model.histogram == nil && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
     }
+
+    @MainActor
+    static func checkHEICStraightenViewport(_ model: RawEditorViewModel) {
+        var settings = RawSettings.default
+        settings.hdr = HDRSettings()
+        settings.hdr?.geometry.straightenDegrees = 15.1
+        model.sourceIsHDR = true
+        model.updatePreviewSize(1280, settings: settings)
+        wait(model)
+        guard let initial = model.previewImage else {
+            check(false, "HEIC straightening must produce a preview")
+            return
+        }
+        check(!model.previewRendering && !model.previewFailed && model.hdrPresentation != nil
+            && model.acceptedPreviewRequest?.settings == settings, "HEIC straightening must render in HDR")
+
+        let view = PhotoCanvasView(frame: CGRect(x: 0, y: 0, width: 430, height: 500))
+        var viewport = PhotoViewport()
+        var reportedEdge: Int?
+        view.onViewportChange = { viewport = $0 }
+        view.onPreviewSizeChange = { edge in
+            reportedEdge = edge
+            model.updatePreviewSize(edge, settings: settings)
+        }
+        func layoutPreview() {
+            view.configure(image: model.previewImage!, reference: nil, label: "HDR preview",
+                           state: PhotoViewingState(), viewport: viewport, displayScale: 3,
+                           isDraft: false, interactionEnabled: true, nativePixelSize: model.viewportNativeSize,
+                           previewLongEdgeLimit: model.viewportPreviewLimit, hdr: model.hdrPresentation)
+            view.layoutIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            wait(model)
+        }
+        for _ in 0..<4 {
+            layoutPreview()
+            check(reportedEdge != nil, "HEIC canvas must report a viewport size")
+            check(!model.previewRendering && !model.previewFailed && model.previewImage?.size == initial.size,
+                  "HEIC preview shrank after viewport feedback from \(initial.size) to \(String(describing: model.previewImage?.size)) (request: \(reportedEdge!))")
+        }
+        view.result.setZoomScale(1, animated: false)
+        layoutPreview()
+        layoutPreview()
+        check(model.previewImage?.size == initial.size && view.result.accessibilityValue == "100%",
+              "HEIC preview changed size at 100% zoom (request: \(reportedEdge!), zoom: \(view.result.zoomScale))")
+        print("PASS: HDR HEIC preview at 15.1° remains \(initial.size) across viewport updates and 100% zoom")
+    }
+
+    @MainActor
     static func main() throws {
         setbuf(stdout, nil)
         let out = URL(fileURLWithPath: CommandLine.arguments[1])
@@ -260,6 +308,11 @@ struct ViewingRenderTests {
             check(!model.previewFailed && model.acceptedPreviewFrameID != acceptedFrameID && model.hdrReference === reference,
                   "HDR retry accepts a preview and reuses the still-valid reference")
             print("PASS: HDR preview failure retains pixels, exports diagnostics and preserves comparison reuse on retry")
+
+            let info = try HDRSourceInfo.probe(url)
+            if info?.native.container == UInt32(SONY2FUJI_HDR_CONTAINER_HEIF) {
+                checkHEICStraightenViewport(model)
+            }
         }
     }
 }
