@@ -1001,23 +1001,27 @@ sony2fuji_status sony2fuji_hdr_export_proraw(sony2fuji_session* sessionHandle, c
         if (options.intent != HDRQuality::Final || keepHDR > 1 || config->metadata_policy != SONY2FUJI_HDR_METADATA_ISO_XMP)
             fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_EXPORT, "Invalid ProRAW export configuration");
         if (std::filesystem::weakly_canonical(std::filesystem::u8path(sourceFile)) !=
-            std::filesystem::weakly_canonical(std::filesystem::u8path(config->metadata_source_path)) ||
-            std::all_of(config->source_sha256, config->source_sha256 + 32, [](uint8_t value) { return value == 0; }))
+            std::filesystem::weakly_canonical(std::filesystem::u8path(config->metadata_source_path)))
             fail(SONY2FUJI_HDR_REASON_SOURCE_CHANGED, SONY2FUJI_HDR_FIELD_SOURCE, "ProRAW export requires a frozen source");
+        // 全零 source_sha256 表示调用方没有预冻结摘要：由 validate 单次读取内部自采并贯穿发布。
+        const bool internalDigest = std::all_of(config->source_sha256, config->source_sha256 + 32,
+            [](uint8_t value) { return value == 0; });
         differentFile(std::string(sourceFile), file);
         differentFile(lookPath, file);
         const ProcessingCancellationScope cancellation(hdrSessionCancellation(session));
         checkProcessingCancellation();
         const auto info = hdr::probeProRAW(sourceFile);
-        hdr::validateStreamSource(*config, info.width, info.height, file);
+        hdr::StreamSourcePin pin;
+        hdr::validateStreamSource(*config, info.width, info.height, file, pin);
+        const uint8_t* frozen = internalDigest ? pin.digest : config->source_sha256;
         const auto streamBytes = hdr::streamScratchBytes(info.width, info.height, options, keepHDR != 0);
         // SDK stage 与完整源 float spool 同时存活，开始解码前按同一卷的合计峰值准入。
         hdr::storage::requireSpace(std::filesystem::u8path(temporaryRoot),
             hdr::proRAWStageBytes(uint64_t(info.width) * info.height) + streamBytes);
-        auto source = hdr::openProRAW(sourceFile, std::filesystem::u8path(temporaryRoot), config->source_sha256);
+        auto source = hdr::openProRAW(sourceFile, std::filesystem::u8path(temporaryRoot), frozen);
         auto encoded = hdr::encodeStream(source, options, keepHDR != 0, config->jpeg_quality ? config->jpeg_quality : 95,
             config->base_color, std::filesystem::u8path(temporaryRoot));
-        hdr::publishStreamJPEG(std::move(encoded.jpeg), encoded.width, encoded.height, *config, keepHDR != 0, file);
+        hdr::publishStreamJPEG(std::move(encoded.jpeg), encoded.width, encoded.height, *config, keepHDR != 0, file, pin);
         result->width = encoded.width; result->height = encoded.height;
         result->native_width = info.width; result->native_height = info.height;
         result->output_native_width = encoded.outputNativeWidth; result->output_native_height = encoded.outputNativeHeight;
@@ -1119,7 +1123,8 @@ sony2fuji_status sony2fuji_hdr_export_stream(sony2fuji_session* sessionHandle,
             return state.session.cancelled() || (state.source->is_cancelled && state.source->is_cancelled(state.source->context)) ? 1 : 0;
         }, &cancellation});
         checkProcessingCancellation();
-        hdr::validateStreamSource(*config, source->native_width, source->native_height, file);
+        hdr::StreamSourcePin pin;
+        hdr::validateStreamSource(*config, source->native_width, source->native_height, file, pin);
         auto checkCallback = [&](sony2fuji_status status, bool finish) {
             if (status == SONY2FUJI_STATUS_OK) return;
             if (status == SONY2FUJI_STATUS_CANCELLED) throw ProcessingCancelled();
@@ -1136,7 +1141,7 @@ sony2fuji_status sony2fuji_hdr_export_stream(sony2fuji_session* sessionHandle,
         rows.finish = [&] { checkCallback(source->finish_decode(source->context), true); };
         auto encoded = hdr::encodeStream(rows, options, keepHDR != 0, config->jpeg_quality ? config->jpeg_quality : 95,
             config->base_color, std::filesystem::u8path(temporaryRoot));
-        hdr::publishStreamJPEG(std::move(encoded.jpeg), encoded.width, encoded.height, *config, keepHDR != 0, file);
+        hdr::publishStreamJPEG(std::move(encoded.jpeg), encoded.width, encoded.height, *config, keepHDR != 0, file, pin);
         result->width = encoded.width; result->height = encoded.height;
         result->native_width = source->native_width; result->native_height = source->native_height;
         result->output_native_width = encoded.outputNativeWidth; result->output_native_height = encoded.outputNativeHeight;

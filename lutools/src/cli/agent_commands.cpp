@@ -1,7 +1,6 @@
 #include "agent_commands.h"
 #include "raw_info.h"
 #include "core/x3f_processor.h"
-#include "core/sha256.h"
 #include "sony2fuji/edit_recipe.h"
 #include "nlohmann/json.hpp"
 #include <filesystem>
@@ -120,8 +119,7 @@ HDRCommandResult renderHDR(const EditRecipe& recipe,bool preview,const std::stri
         auto config=hdrInitial<sony2fuji_hdr_export_config_v1>();
         config.jpeg_quality=recipe.jpegQuality; config.base_color=settings.baseColor;
         config.metadata_policy=SONY2FUJI_HDR_METADATA_ISO_XMP; config.metadata_source_path=recipe.inputPath.c_str();
-        const auto digest=hash::sha256File(recipe.inputPath);
-        for (size_t i=0;i<32;++i) config.source_sha256[i]=uint8_t(std::stoul(digest.substr(i*2,2),nullptr,16));
+        // 全零 source_sha256：导出内部在 validate 单次读取时自采冻结摘要，CLI 不再前置扫盘（C-10）。
         auto streamed=hdrInitial<sony2fuji_hdr_stream_result_v1>();
         const auto temporary=std::filesystem::temp_directory_path().u8string();
         result.status=sony2fuji_hdr_export_proraw(session.get(),recipe.inputPath.c_str(),

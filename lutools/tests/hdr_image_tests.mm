@@ -190,6 +190,20 @@ int main(int argc, const char* argv[]) {
                         "exported JPEG could not be decoded");
                     check(roundtrip.hdr.content_headroom>1.5,"HDR JPEG lost edited headroom");
                     sony2fuji_hdr_release_pair(&roundtrip);
+                    if (sony2fuji_hdr_heif_export_available()) {
+                        // C-08 红锚：HEIF 导出对元数据源只做一次整文件摘要；撤掉快照核对修复后此计数回到 2。
+                        auto heifConfig=init<sony2fuji_hdr_export_config_v1>();
+                        heifConfig.jpeg_quality=95; heifConfig.base_color=SONY2FUJI_HDR_COLOR_SRGB;
+                        heifConfig.metadata_policy=SONY2FUJI_HDR_METADATA_ISO;
+                        heifConfig.metadata_source_path=path;
+                        std::copy_n(info.source_sha256,32,heifConfig.source_sha256);
+                        NSURL* heifOutput=[directory URLByAppendingPathComponent:@"output.heif"];
+                        sony2fuji::hdr::resetSourceHashPassCount();
+                        status=sony2fuji_hdr_export_heif(&pair,&heifConfig,heifOutput.fileSystemRepresentation,&d);
+                        if (status) std::cerr<<"heif export status="<<status<<" reason="<<d.reason<<'\n';
+                        check(status==SONY2FUJI_STATUS_OK,"HDR HEIF export failed");
+                        check(sony2fuji::hdr::sourceHashPassCount()==1,"HDR HEIF export still performs a second full-file digest pass");
+                    }
                     // 编辑后全图低于参考白仍是有效的增益图来源，不能按峰值误判成坏图。
                     sony2fuji_session* session=nullptr;
                     check(sony2fuji_session_create(&session)==SONY2FUJI_STATUS_OK,"session creation failed");

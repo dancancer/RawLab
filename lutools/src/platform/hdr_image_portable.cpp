@@ -37,6 +37,10 @@
 namespace sony2fuji::hdr {
 namespace {
 std::atomic<uint64_t> nextRevision{1};
+std::atomic<uint64_t> sourceHashPasses{0};
+bool hasDigest(const uint8_t sha[32]) {
+    return std::any_of(sha, sha + 32, [](uint8_t value) { return value != 0; });
+}
 [[noreturn]] void fail(sony2fuji_status status,uint32_t reason,const char* message) {
     throw Error(status,reason,SONY2FUJI_HDR_FIELD_PATH,message);
 }
@@ -62,6 +66,7 @@ File readFile(const char* name, const uint8_t* expectedSHA256 = nullptr) {
     std::ifstream input(path,std::ios::binary);
     if (!input.read(reinterpret_cast<char*>(file.bytes.data()),std::streamsize(size)))
         fail(SONY2FUJI_STATUS_IO_ERROR,SONY2FUJI_HDR_REASON_INPUT_IO,"Cannot read HDR source");
+    sourceHashPasses.fetch_add(1, std::memory_order_relaxed);
     const auto sha=hash::sha256Bytes(file.bytes.data(),file.bytes.size());
     auto hex=[](char c) { return c<='9' ? c-'0' : c-'a'+10; };
     std::array<uint8_t, 32> digest{};
@@ -125,13 +130,16 @@ bool isTIFF(const char* source) {
     char magic[4]{}; input.read(magic, sizeof(magic));
     return input.gcount() == 4 && (!std::memcmp(magic,"II*\0",4) || !std::memcmp(magic,"MM\0*",4));
 }
-void verifyDigest(const char* source, const uint8_t sha[32]) {
+std::string fileDigest(const char* source) {
     checkProcessingCancellation();
-    std::string digest;
-    try { digest = hash::sha256File(source); }
+    sourceHashPasses.fetch_add(1, std::memory_order_relaxed);
+    try { return hash::sha256File(source); }
     catch (const std::runtime_error&) {
         fail(SONY2FUJI_STATUS_IO_ERROR,SONY2FUJI_HDR_REASON_INPUT_IO,"Cannot verify HDR metadata source");
     }
+}
+void verifyDigest(const char* source, const uint8_t sha[32]) {
+    const std::string digest = fileDigest(source);
     const auto hex = [](char c) { return c <= '9' ? c - '0' : c - 'a' + 10; };
     for (size_t i = 0; i < 32; ++i) if (uint8_t(hex(digest[2*i])*16 + hex(digest[2*i+1])) != sha[i])
         fail(SONY2FUJI_STATUS_INVALID_ARGUMENT,SONY2FUJI_HDR_REASON_SOURCE_CHANGED,"HDR metadata source changed");
@@ -278,13 +286,20 @@ void admitMemory(uint64_t additionalBytes) {
 }
 // Mac 上的可移植适配器测试也必须完全覆盖平台符号，不能链接回 Apple 对象。
 void admitStreamingMemory(uint64_t additionalBytes) { admitMemory(additionalBytes); }
-void validateStreamSource(const sony2fuji_hdr_export_config_v1& config, uint32_t width, uint32_t height, const char* path) {
+void validateStreamSource(const sony2fuji_hdr_export_config_v1& config, uint32_t width, uint32_t height,
+    const char* path, StreamSourcePin& pin) {
     differentFile(config.metadata_source_path,path);
     sony2fuji_hdr_source_info_v1 info;
     if (isTIFF(config.metadata_source_path)) {
         const auto file = std::filesystem::u8path(config.metadata_source_path);
         const auto before = resourceFileStamp(file);
-        verifyDigest(config.metadata_source_path,config.source_sha256);
+        if (hasDigest(config.source_sha256)) verifyDigest(config.metadata_source_path,config.source_sha256);
+        else {
+            // 全零 config.source_sha256：调用方未预冻结，内部自采一次并贯穿发布阶段。
+            const auto digest = fileDigest(config.metadata_source_path);
+            const auto hex = [](char c) { return c <= '9' ? c - '0' : c - 'a' + 10; };
+            for (size_t i = 0; i < 32; ++i) pin.digest[i] = uint8_t(hex(digest[2*i])*16 + hex(digest[2*i+1]));
+        }
         info = probeProRAW(config.metadata_source_path);
         if (!before || !(resourceFileStamp(file) == before))
             fail(SONY2FUJI_STATUS_INVALID_ARGUMENT,SONY2FUJI_HDR_REASON_SOURCE_CHANGED,"HDR metadata source changed");
@@ -296,11 +311,12 @@ void validateStreamSource(const sony2fuji_hdr_export_config_v1& config, uint32_t
         fail(SONY2FUJI_STATUS_INVALID_ARGUMENT,SONY2FUJI_HDR_REASON_PREVIEW_SOURCE,"Stream must read the complete source canvas");
 }
 void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t height,
-    const sony2fuji_hdr_export_config_v1& config, bool hdr, const char* path) {
+    const sony2fuji_hdr_export_config_v1& config, bool hdr, const char* path, const StreamSourcePin& pin) {
     checkProcessingCancellation();
     differentFile(config.metadata_source_path,path);
     admitStreamingMemory(uint64_t(data.size()) * 8 + (64ull << 20));
-    const auto exif = captureMetadata(config.metadata_source_path,config.source_sha256,width,height);
+    const uint8_t* expected = !hasDigest(config.source_sha256) && hasDigest(pin.digest) ? pin.digest : config.source_sha256;
+    const auto exif = captureMetadata(config.metadata_source_path,expected,width,height);
     if (hdr) {
         const auto base = jpegBase(data.data(),data.size());
         const auto tagged = withJPEGExif(base.data(),base.size(),exif.data(),exif.size());
@@ -312,7 +328,7 @@ void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t heigh
     }
     Temporary output(path);
     write(output.path(),data); syncOutput(output.path());
-    verifyDigest(config.metadata_source_path,config.source_sha256);
+    verifyDigest(config.metadata_source_path,expected);
     differentFile(config.metadata_source_path,path);
     checkProcessingCancellation();
     output.publish(path);
@@ -378,4 +394,10 @@ void exportSDR(const HDRImagePair& image,const sony2fuji_hdr_sdr_export_config_v
     } else fail(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_PROTOCOL,"Unsupported SDR export format");
     output.publish(path);
 }
+
+// 可移植路径按既有 verifyDigest 流程核对来源；快照冻结由摘要重算代替，impl 保持为空。
+StreamSourcePin::~StreamSourcePin() {}
+uint64_t sourceHashPassCount() { return sourceHashPasses.load(std::memory_order_relaxed); }
+void resetSourceHashPassCount() { sourceHashPasses.store(0, std::memory_order_relaxed); }
+void (*sourceReadTestHook)() = nullptr;
 } // namespace sony2fuji::hdr
