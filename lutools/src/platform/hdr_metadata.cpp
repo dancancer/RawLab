@@ -1,5 +1,6 @@
 #include "platform/hdr_metadata.h"
 #include "platform/hdr_image.h"
+#include "core/tiff_ifd.h"
 #include <lcms2.h>
 #include <algorithm>
 #include <array>
@@ -52,64 +53,52 @@ const std::set<uint16_t> exifCaptureTags{0x829a,0x829d,0x8822,0x8827,0x8830,0x88
     0x9286,0x9290,0x9291,0x9292,0xa20b,0xa215,0xa217,0xa402,0xa403,0xa404,0xa405,0xa406,
     0xa420,0xa430,0xa431,0xa432,0xa433,0xa434,0xa435};
 struct TIFF {
-    const uint8_t* data; size_t size; bool little=false;
+    size_t size; bool little=false;
     bool rawSource=false;
     size_t copiedBytes=0;
-    mutable std::ifstream input;
+    std::ifstream input;
+    tiff::Reader container;
     Directory primary,exif,gps;
-    std::set<uint32_t> visited;
-    TIFF(const void* bytes,size_t length,bool raw=false):data(static_cast<const uint8_t*>(bytes)),size(length),rawSource(raw) {
+    tiff::Traversal traversal;
+    TIFF(const void* bytes,size_t length,bool raw=false):size(length),rawSource(raw),container(bytes,length) {
         parse();
     }
-    explicit TIFF(const std::filesystem::path& path):data(nullptr),size(std::filesystem::file_size(path)),
-        rawSource(true),input(path,std::ios::binary) {
+    explicit TIFF(const std::filesystem::path& path):size(std::filesystem::file_size(path)),
+        rawSource(true),input(path,std::ios::binary),container(input,size) {
         if (!input) invalid();
         parse();
     }
     void parse() {
+        // 没有 EXIF 时保留默认值；共享读取器只负责非空 TIFF 的结构校验。
         if (!size) return;
-        if ((!data && !input.is_open()) || size<8 || size>(rawSource ? 512ull*1024*1024 : 1024*1024)) invalid();
-        uint8_t magic[2]; read(0,magic,2);
-        little=magic[0]=='I' && magic[1]=='I';
-        if ((!little && !(magic[0]=='M' && magic[1]=='M')) || u16(2)!=42) invalid();
-        directory(u32(4),&primary,0);
+        if (size<8 || size>(rawSource ? 512ull*1024*1024 : 1024*1024)) invalid();
+        uint32_t first=0;
+        if (!container.header(first)) invalid();
+        little=container.littleEndian();
+        directory(first,&primary,0);
     }
-    void range(size_t offset,size_t length) const { if (offset>size || length>size-offset) invalid(); }
     void read(size_t offset,void* target,size_t length) const {
-        range(offset,length);
-        if (data) std::memcpy(target,data+offset,length);
-        else {
-            input.seekg(std::streamoff(offset));
-            if (!input.read(static_cast<char*>(target),std::streamsize(length))) invalid();
-        }
-    }
-    uint16_t u16(size_t offset) const {
-        uint8_t bytes[2]; read(offset,bytes,2);
-        return little ? bytes[0]|uint16_t(bytes[1])<<8 : uint16_t(bytes[0])<<8|bytes[1];
+        if (!container.read(offset,target,length)) invalid();
     }
     uint32_t u32(size_t offset) const {
-        uint8_t bytes[4]; read(offset,bytes,4); uint32_t value=0;
-        for (int i=0;i<4;++i) value|=uint32_t(bytes[i])<<(8*(little ? i : 3-i));
-        return value;
+        uint64_t value=0;
+        if (!container.integer(offset,4,value)) invalid();
+        return uint32_t(value);
     }
     void directory(uint32_t offset,Directory* save,unsigned depth) {
         if (!offset) return;
-        if (depth>8 || visited.size()>=32 || !visited.insert(offset).second) invalid();
-        const uint16_t count=u16(offset);
-        if (count>4096) invalid();
-        range(offset,size_t(count)*12+6);
+        tiff::Directory ifd;
+        if (!traversal.open(container,offset,depth,ifd)) invalid();
         std::set<uint16_t> tags;
-        for (uint32_t i=0;i<count;++i) {
-            const size_t at=offset+2+size_t(i)*12;
-            const uint16_t tag=u16(at),type=u16(at+2); const uint32_t n=u32(at+4);
+        if (!container.entries(ifd,[&](const tiff::Entry& field) {
+            const uint16_t tag=field.tag,type=field.type; const uint32_t n=field.count;
             // DNG 像素、线性化表和增益表不属于拍摄 EXIF，也不能作为小元数据块复制。
             const bool capture = save==&primary ? primaryCaptureTags.count(tag)!=0 :
                 save==&exif ? exifCaptureTags.count(tag)!=0 : save==&gps && tag<=31;
-            if (rawSource && !capture && !(save==&primary && (tag==0x8769 || tag==0x8825))) continue;
-            static constexpr uint8_t widths[]={0,1,1,2,4,8,1,1,2,4,8,4,8,4};
-            if (!type || type>=sizeof(widths) || !tags.insert(tag).second) invalid();
-            const uint64_t length=uint64_t(n)*widths[type];
-            if (length>size) invalid();
+            if (rawSource && !capture && !(save==&primary && (tag==0x8769 || tag==0x8825))) return true;
+            tiff::Payload payload;
+            if (!tags.insert(tag).second || !container.payload(field,payload)) invalid();
+            const size_t length=payload.size,value=payload.offset;
             // 累计复制预算：每个目录最多 4096 条、每条都可声明“值就是整块数据”，
             // 不设总量时多个目录可把 1 MiB 的 HEIF EXIF 放大成 GB 级内存。
             // RAW 只复制拍摄标签，沿用单条 16 KiB、合计 1 MiB。普通 EXIF 取 2×块大小：
@@ -119,8 +108,6 @@ struct TIFF {
             const uint64_t budget=rawSource ? 1024*1024 : 2*uint64_t(size);
             if ((rawSource && length>16384) || length>budget-copiedBytes) invalid();
             copiedBytes+=size_t(length);
-            const size_t value=length<=4 ? at+8 : u32(at+8);
-            range(value,size_t(length));
             if (tag==0x8769 || tag==0x8825 || tag==0xa005 || tag==0x014a) {
                 if ((type!=4 && type!=13) || !n || n>32) invalid();
                 for (uint32_t child=0;child<n;++child) {
@@ -131,14 +118,16 @@ struct TIFF {
             }
             Entry entry{type,n,std::vector<uint8_t>(size_t(length))};
             read(value,entry.bytes.data(),size_t(length));
-            if (!little && widths[type]>1) {
-                const size_t unit=(type==5 || type==10) ? 4 : widths[type];
+            if (!little && payload.width>1) {
+                const size_t unit=(type==5 || type==10) ? 4 : payload.width;
                 for (size_t byte=0;byte<entry.bytes.size();byte+=unit)
                     std::reverse(entry.bytes.begin()+byte,entry.bytes.begin()+byte+unit);
             }
             if (save) save->emplace(tag,std::move(entry));
-        }
-        if (!rawSource) directory(u32(offset+2+size_t(count)*12),nullptr,depth+1);
+            return true;
+        })) invalid();
+        // RAW 的后续图像目录不属于拍摄 EXIF，保留既有忽略行为。
+        if (!rawSource) directory(ifd.next,nullptr,depth+1);
     }
 };
 uint32_t scalar(const Entry& e) {

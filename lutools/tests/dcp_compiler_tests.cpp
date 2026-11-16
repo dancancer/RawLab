@@ -182,7 +182,45 @@ void explicitImportOptions() {
     sony2fuji_release_blob(&blob);
 }
 
+void containerCompatibility() {
+    for (bool bigEndian : {false, true}) {
+        const auto put = [&](Bytes& bytes, size_t at, uint64_t value, size_t width) {
+            for (size_t i = 0; i < width; ++i)
+                bytes.at(at + i) = uint8_t(value >> (8 * (bigEndian ? width - 1 - i : i)));
+        };
+        const auto rejected = [&](const Bytes& bytes) {
+            sony2fuji_blob blob{};
+            sony2fuji_dcp_error reason = SONY2FUJI_DCP_ERROR_NONE;
+            expect(!compile(bytes, "malformed.dcp", blob, reason) && reason == SONY2FUJI_DCP_ERROR_MALFORMED,
+                   "DCP container retains its malformed diagnostic");
+        };
+        auto tags = validTags(bigEndian);
+        tags.push_back({60000, {7, {}}});
+        auto bytes = makeDcp(tags, bigEndian);
+        sony2fuji_blob blob{};
+        sony2fuji_dcp_error reason{};
+        expect(compile(bytes, "empty-tag.dcp", blob, reason), "DCP tolerates an unknown zero-count tag");
+        sony2fuji_release_blob(&blob);
+        put(bytes, 2, 42, 2);
+        expect(compile(bytes, "tiff-magic.dcp", blob, reason), "DCP compiler retains classic TIFF magic support");
+        sony2fuji_release_blob(&blob);
+
+        put(bytes, 8 + 2 + tags.size() * 12, 8, 4);
+        rejected(bytes);
+        bytes = makeDcp(tags, bigEndian);
+        put(bytes, 4, 0, 4);
+        rejected(bytes);
+        tags.push_back({60000, {7, {}}});
+        rejected(makeDcp(tags, bigEndian));
+        tags.back() = {60001, {13, {}}};
+        rejected(makeDcp(tags, bigEndian));
+        tags.back() = {60001, type10({{1, 0}}, bigEndian)};
+        rejected(makeDcp(tags, bigEndian));
+    }
+}
+
 void unitTests() {
+    containerCompatibility();
     explicitImportOptions();
     for (bool bigEndian : {false, true}) {
         sony2fuji_blob blob{};
