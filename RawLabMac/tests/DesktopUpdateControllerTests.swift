@@ -288,7 +288,9 @@ enum ParameterValueField { static var hasPendingInputs = false }
         let legacy = UpdateChecker(defaults: defaults, currentVersion: "0.8.2", fetch: { throw URLError(.notConnectedToInternet) })
         let errorPNG = try renderPNG(SoftwareUpdateView(updates: controller, legacy: legacy))
         let notice = UpdatePresentation.storageNotice(canRetrySave: controller.canRetrySave, canRepairState: controller.canRepairState)
+        let banner = UpdatePresentation.unavailableNotice(unavailableReason: controller.unavailableReason, storageError: controller.storageError)
         check(!errorPNG.isEmpty &&
+            banner == "自动更新不可用，请手动下载" &&
             notice == "无法读取或写入文件，请检查路径和访问权限。" &&
             notice != "无法确认更新或恢复状态，请保留全部文件并联系支持。",
             "SoftwareUpdateView renders non-blocking save notice and retry button on non-critical write failure")
@@ -298,7 +300,8 @@ enum ParameterValueField { static var hasPendingInputs = false }
         check(controller.retrySave() && controller.storageError == nil && !controller.canRetrySave && controller.canCheck,
             "Retrying save clears non-critical storage error and restores update checks")
         let clearedPNG = try renderPNG(SoftwareUpdateView(updates: controller, legacy: legacy))
-        check(!clearedPNG.isEmpty && clearedPNG != errorPNG,
+        check(!clearedPNG.isEmpty && clearedPNG != errorPNG &&
+            UpdatePresentation.unavailableNotice(unavailableReason: controller.unavailableReason, storageError: controller.storageError) == nil,
             "Clearing non-critical storage error updates the rendered SoftwareUpdateView")
         let release = UpdateDescriptor(version: "0.9.1", build: "19", platform: "macos", architecture: "arm64", channel: "stable",
             assetURL: "https://example.invalid/update.zip", size: 12, sha256: nil, notes: "")

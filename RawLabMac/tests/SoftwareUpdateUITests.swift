@@ -30,11 +30,14 @@ import SwiftUI
     @MainActor static func fields(_ view: NSView) -> [NumericTextField] {
         (view as? NumericTextField).map { [$0] } ?? view.subviews.flatMap { fields($0) }
     }
-    @MainActor static func labels(_ view: NSView) -> [String] {
-        ((view as? NSTextField).map { [$0.stringValue] } ?? []) + view.subviews.flatMap { labels($0) }
-    }
     @MainActor static func scrollViews(_ view: NSView) -> [NSScrollView] {
         (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap { scrollViews($0) }
+    }
+    @MainActor static func png(_ host: NSView) throws -> Data {
+        host.layoutSubtreeIfNeeded()
+        guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { throw RenderError.failed("No native update bitmap") }
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        return bitmap.representation(using: .png, properties: [:]) ?? Data()
     }
     @MainActor static func window<V: View>(_ view: V, width: CGFloat, height: CGFloat) -> (NSWindow, NSHostingView<V>) {
         let host = NSHostingView(rootView: view); host.frame = NSRect(x: 0, y: 0, width: width, height: height)
@@ -147,17 +150,31 @@ import SwiftUI
         try check(recovery.recoveryNeedsRestart && recovery.state.phase != .complete && String(contentsOf: original, encoding: .utf8) == "previous edit",
             "Native recovery restores verified data and keeps editing blocked until reopening")
         recoveryWindow.contentView = nil; recoveryWindow.close()
+        let unsupported = DesktopUpdateController(adapter: UnavailableUpdateAdapter("configuration"), gate: UpdateInstallGate(),
+            store: UpdateStore(directory: output.appendingPathComponent("unsupported/Updates")), currentVersion: "0.8.2", currentBuild: "14", automaticCheck: false)
+        let (unsupportedWindow, unsupportedHost) = window(SoftwareUpdateView(updates: unsupported, legacy: legacy).dynamicTypeSize(.accessibility3)
+            .background(Color(nsColor: .windowBackgroundColor)).preferredColorScheme(.dark), width: 560, height: 680)
+        try await Task.sleep(for: .milliseconds(100))
+        let unsupportedPNG = try png(unsupportedHost)
+        unsupportedWindow.contentView = nil; unsupportedWindow.close()
         let repairStore = UpdateStore(directory: output.appendingPathComponent("state-repair/Updates"))
         try FileManager.default.createDirectory(at: repairStore.directory, withIntermediateDirectories: true)
         let damaged = Data("{broken".utf8); try damaged.write(to: repairStore.stateURL)
         let repair = DesktopUpdateController(adapter: Adapter(), gate: UpdateInstallGate(), store: repairStore, currentVersion: "0.8.2", currentBuild: "14")
-        let (repairWindow, repairHost) = window(SoftwareUpdateView(updates: repair, legacy: legacy).dynamicTypeSize(.accessibility3), width: 560, height: 680)
-        try await Task.sleep(for: .milliseconds(100)); repairHost.layoutSubtreeIfNeeded()
+        let (repairWindow, repairHost) = window(SoftwareUpdateView(updates: repair, legacy: legacy).dynamicTypeSize(.accessibility3)
+            .background(Color(nsColor: .windowBackgroundColor)).preferredColorScheme(.dark), width: 560, height: 680)
+        try await Task.sleep(for: .milliseconds(100))
+        let degradedPNG = try png(repairHost)
         try check(!repair.blocksEditing && repair.unavailableReason == "storage" && repair.canRepairState && !repair.canCheck,
             "Damaged UpdateStore degrades updates without blocking editing and offers explicit repair")
-        let degradedNotice = L10n.text("自动更新不可用，请手动下载")
-        try check(degradedNotice != "自动更新不可用，请手动下载" && labels(repairHost).contains(where: { $0.contains(degradedNotice) }),
-            "SoftwareUpdateView displays degraded manual-download notice when UpdateStore is damaged")
+        let degradedKey = UpdatePresentation.unavailableNotice(unavailableReason: repair.unavailableReason, storageError: repair.storageError)
+        try check(degradedKey == "自动更新不可用，请手动下载" &&
+            L10n.text(degradedKey!) != "自动更新不可用，请手动下载" && !L10n.text(degradedKey!).isEmpty &&
+            UpdatePresentation.unavailableNotice(unavailableReason: "configuration", storageError: nil) == "此安装暂不支持自动安装更新" &&
+            UpdatePresentation.unavailableNotice(unavailableReason: nil, storageError: repair.storageError) == "自动更新不可用，请手动下载" &&
+            UpdatePresentation.unavailableNotice(unavailableReason: nil, storageError: nil) == nil &&
+            !degradedPNG.isEmpty && !unsupportedPNG.isEmpty && degradedPNG != unsupportedPNG,
+            "SoftwareUpdateView selects localized degraded manual-download notice and renders distinct bitmap when UpdateStore is damaged")
         let (degradedWindow, degradedEditor) = window(GuardedEditor(model: model, updates: repair), width: 1200, height: 850)
         degradedEditor.layoutSubtreeIfNeeded()
         try check(fields(degradedEditor).contains(where: { $0.isEnabled }) && !model.collectionHasDraft(photo.path),
@@ -168,9 +185,12 @@ import SwiftUI
         try check(model.canExport, "Editor can still export when UpdateStore is damaged")
         degradedWindow.contentView = nil; degradedWindow.close()
         repair.repairState()
-        try await Task.sleep(for: .milliseconds(100)); repairHost.layoutSubtreeIfNeeded()
-        try check(repair.recoveryNeedsRestart && repair.requiresRecovery && Data(contentsOf: repair.stateArchive!) == damaged,
-            "Native state repair preserves damaged bytes and remains blocked until reopening")
+        try await Task.sleep(for: .milliseconds(100))
+        let repairedPNG = try png(repairHost)
+        try check(repair.recoveryNeedsRestart && repair.requiresRecovery && Data(contentsOf: repair.stateArchive!) == damaged &&
+            UpdatePresentation.unavailableNotice(unavailableReason: repair.unavailableReason, storageError: repair.storageError) == nil &&
+            !repairedPNG.isEmpty && repairedPNG != degradedPNG,
+            "Native state repair preserves damaged bytes, updates rendered bitmap and remains blocked until reopening")
         let reopened = DesktopUpdateController(adapter: Adapter(), gate: UpdateInstallGate(), store: repairStore, currentVersion: "0.8.2", currentBuild: "14")
         await reopened.finishStartupHealthCheck(healthy: model.updateDataHealthy)
         try check(!reopened.requiresRecovery && !reopened.requiresStartupHealthCheck, "Real editor data health completes state repair on a fresh controller")
