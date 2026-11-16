@@ -43,7 +43,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -56,10 +55,9 @@ import kotlin.math.roundToInt
 import com.rawlab.android.R
 import com.rawlab.android.editor.render.PreviewPair
 import com.rawlab.android.editor.render.HDRBitmapAdapter
-import com.rawlab.android.engine.HDRDisplayController
-import com.rawlab.android.engine.HDRDisplayParameters
-import com.rawlab.android.engine.HDRPreviewMode
 import com.rawlab.android.photo.PhotoInfo
+
+internal val photoViewMargin = 8.dp
 
 class PhotoCanvasState {
     var viewport by mutableStateOf<PhotoViewport?>(null)
@@ -124,6 +122,7 @@ internal fun PhotoCanvas(
     onModeChange: (ComparisonMode) -> Unit = {}, onCompareClose: () -> Unit = {}, viewingEnabled: Boolean = true,
     hslTarget: HslTargetActions? = null, workspaceControls: Boolean = false,
     histogramExpanded: Boolean? = null, onHistogramExpandedChange: (Boolean) -> Unit = {},
+    hdrPreview: PhotoHDRPreview = rememberPhotoHDRPreview(pair.hdr?.result),
 ) {
     val wipeDescription = stringResource(R.string.editor_compare_split)
     val fitDescription = stringResource(R.string.zoom_fit)
@@ -142,24 +141,9 @@ internal fun PhotoCanvas(
     var targetTouch by remember { mutableStateOf<Offset?>(null) }
     var targetAnchor by remember { mutableStateOf<Offset?>(null) }
     var targetImage by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
-    val activity = (LocalView.current.context as? android.app.Activity)
-    val hardwareCanvas = LocalView.current.isHardwareAccelerated
-    val hdrController = remember(activity) { activity?.let { HDRDisplayController(it.window) } }
-    var hdrState by remember { mutableStateOf(com.rawlab.android.engine.HDRDisplayState(false, 1f)) }
-    var hdrMode by remember { mutableStateOf(HDRPreviewMode.AUTOMATIC) }
-    var hdrFalseColor by remember { mutableStateOf(false) }
-    LaunchedEffect(pair.hdr, activity, hdrMode, hardwareCanvas) {
-        hdrState = hdrController?.refresh(surfaceReady = pair.hdr != null && hardwareCanvas && hdrMode == HDRPreviewMode.AUTOMATIC,
-            contentHeadroom = pair.hdr?.result?.contentHeadroom ?: 1f)
-            ?: com.rawlab.android.engine.HDRDisplayState(false, 1f, "No activity window")
-    }
-    DisposableEffect(hdrController) {
-        if (activity != null && android.os.Build.VERSION.SDK_INT >= 34)
-            hdrController?.registerRatioChanges(activity.mainExecutor) { hdrState = it }
-        onDispose { hdrController?.close() }
-    }
+    val hdrParameters = hdrPreview.parameters
     DisposableEffect(Unit) { onDispose { hold(false); target?.cancel() } }
-    BoxWithConstraints(Modifier.fillMaxSize().padding(if (margins) 8.dp else 0.dp).clipToBounds()) {
+    BoxWithConstraints(Modifier.fillMaxSize().padding(if (margins) photoViewMargin else 0.dp).clipToBounds()) {
         if (constraints.maxWidth == 0 || constraints.maxHeight == 0) return@BoxWithConstraints
         val canvasWidth = constraints.maxWidth.toFloat(); val canvasHeight = constraints.maxHeight.toFloat()
         val horizontal = constraints.maxWidth >= constraints.maxHeight
@@ -196,9 +180,9 @@ internal fun PhotoCanvas(
                     translationX = zoom.x; translationY = zoom.y
                 }
                 val wipe = compare && mode == ComparisonMode.WIPE
-                val hdrFrame = if (neutralOnly || before) pair.hdr?.neutral else pair.hdr?.result
-                val hdrBitmap = HDRBitmapAdapter.rememberBitmap(hdrFrame,
-                    HDRDisplayParameters(hdrState.headroom, hdrMode, hdrFalseColor), hdrState.available || hdrFalseColor)
+                val hdrBitmap = if (neutralOnly || before)
+                    HDRBitmapAdapter.rememberBitmap(pair.hdr?.neutral, hdrParameters, hdrPreview.fp16Enabled)
+                else hdrPreview.bitmap
                 val shownBitmap = hdrBitmap ?: if (neutralOnly || before) pair.neutral else pair.result
                 Box(Modifier.fillMaxSize()
                     .pointerInput(state, area, compare, mode, viewingEnabled, hslTarget != null) {
@@ -208,7 +192,7 @@ internal fun PhotoCanvas(
                     }) {
                     Image(shownBitmap.asImageBitmap(), null,
                         transform.testTag(if (neutralOnly || before) "comparison-before" else "comparison-after").semantics {
-                            if(hdrFalseColor && hdrBitmap!=null)stateDescription=falseColorLabel
+                            if (hdrParameters.falseColor && hdrBitmap != null) stateDescription = falseColorLabel
                         }, contentScale = ContentScale.Fit)
                     if (wipe) {
                         Box(Modifier.fillMaxSize().drawWithContent {
@@ -216,8 +200,7 @@ internal fun PhotoCanvas(
                             clipRect(image.left, image.top, x, image.bottom) { this@drawWithContent.drawContent() }
                             drawLine(Color.White, Offset(x, image.top), Offset(x, image.bottom), 1.dp.toPx())
                         }) {
-                            val neutralBitmap = HDRBitmapAdapter.rememberBitmap(pair.hdr?.neutral,
-                                HDRDisplayParameters(hdrState.headroom, hdrMode, hdrFalseColor), hdrState.available || hdrFalseColor)
+                            val neutralBitmap = HDRBitmapAdapter.rememberBitmap(pair.hdr?.neutral, hdrParameters, hdrPreview.fp16Enabled)
                             Image((neutralBitmap ?: pair.neutral).asImageBitmap(), null, transform, contentScale = ContentScale.Fit)
                         }
                         Box(Modifier.offset { IntOffset(image.left.roundToInt(), image.top.roundToInt()) }
@@ -310,8 +293,9 @@ internal fun PhotoCanvas(
             }
             if (showOverlays) {
                 pair.hdr?.let { hdr ->
-                    HDRMonitoring((if (before) hdr.neutral else hdr.result).statistics, hdrState, hdrMode, hdrFalseColor,
-                        { hdrMode = it }, { hdrFalseColor = it }, Modifier.align(Alignment.TopEnd)
+                    HDRMonitoring((if (before) hdr.neutral else hdr.result).statistics, hdrPreview.display,
+                        hdrParameters.mode, hdrParameters.falseColor, hdrPreview.onModeChange, hdrPreview.onFalseColorChange,
+                        Modifier.align(Alignment.TopEnd)
                             .padding(top = if (compare || workspaceControls) 48.dp else 8.dp, end = 8.dp))
                 }
                 if (hslTarget == null) {

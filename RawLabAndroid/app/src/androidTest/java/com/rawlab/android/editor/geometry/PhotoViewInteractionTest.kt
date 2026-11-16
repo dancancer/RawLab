@@ -2,18 +2,26 @@ package com.rawlab.android.editor.geometry
 
 import android.graphics.Bitmap
 import android.net.Uri
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.unit.dp
 import com.rawlab.android.R
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.rawlab.android.editor.EditorState
 import com.rawlab.android.editor.AdjustmentDraft
 import com.rawlab.android.editor.AdjustmentGroup
+import com.rawlab.android.editor.canvas.PhotoCanvasState
+import com.rawlab.android.editor.canvas.PhotoViewOptions
+import com.rawlab.android.editor.render.HDRPreview
+import com.rawlab.android.editor.render.HDRPreviewFrame
 import com.rawlab.android.editor.render.PreviewPair
+import com.rawlab.android.editor.ui.EditorCanvas
 import com.rawlab.android.editor.ui.EditorScreen
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.photo.ImportedPhoto
@@ -123,5 +131,78 @@ class PhotoViewInteractionTest {
             if (color.red in .25f..0.65f && color.green < .05f && color.blue < .05f) dimmed++
         }
         assertTrue("The rotated photo extends past the crop and is dimmed there", dimmed > pixels.width * pixels.height / 1600)
+    }
+
+    @Test fun projectedCropKeepsTheViewingMarginUntilTheExactFrameArrives() {
+        val bitmap = redBitmap(600, 400)
+        val crop = GeometrySettings(cropWidth = .5f, cropHeight = .5f)
+        var state by mutableStateOf(EditorState(
+            edits = EditSettings(geometry = crop), preview = PreviewPair(bitmap, bitmap, 6500f, 0f)))
+        showCanvas(PhotoViewOptions(margins = true)) { state }
+        fun photoBounds(): IntRange {
+            val pixels = compose.onNodeWithTag("editor-canvas").captureToImage().toPixelMap()
+            val photo = (0 until pixels.width).filter { x ->
+                val pixel = pixels[x, pixels.height / 2]
+                pixel.red > .8f && pixel.green < .1f && pixel.blue < .1f
+            }
+            return photo.first()..photo.last()
+        }
+
+        val projected = photoBounds()
+        compose.runOnIdle {
+            val cropped = redBitmap(300, 200)
+            state = state.copy(preview = PreviewPair(cropped, cropped, 6500f, 0f, renderedGeometry = crop), exact = true)
+        }
+        val exact = photoBounds()
+        assertTrue("Viewing margin must be visible on the exact frame", exact.first > 0)
+        assertEquals("The projected crop has the same visible insets as the exact frame", exact, projected)
+    }
+
+    @Test fun geometryDraftKeepsTheDisplayedHDRFalseColor() {
+        val bitmap = redBitmap(360, 240)
+        val samples = FloatArray(bitmap.width * bitmap.height * 3) { .5f }
+        val frame = HDRPreviewFrame(bitmap.width, bitmap.height, samples, samples, 1f, 1f)
+        val edits = EditSettings()
+        var state by mutableStateOf(EditorState(
+            photo = ImportedPhoto(Uri.parse("content://view/hdr-geometry"), "HDR", File("hdr")),
+            edits = edits, preview = PreviewPair(bitmap, bitmap, 6500f, 0f, hdr = HDRPreview(frame, frame)), exact = true))
+        showCanvas { state }
+        val monitor = compose.onNodeWithTag("hdr-monitoring")
+        monitor.performClick()
+        compose.onNodeWithTag("hdr-false-color").performClick().assertIsOn()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasTestTag("comparison-after") and
+                SemanticsMatcher.keyIsDefined(SemanticsProperties.StateDescription)).fetchSemanticsNodes().isNotEmpty()
+        }
+        monitor.performClick()
+        fun centerPixel() = compose.onNodeWithTag("editor-canvas").captureToImage().toPixelMap().let {
+            it[it.width / 2, it.height / 2]
+        }
+        val viewing = centerPixel()
+        assertTrue("False color replaces the red SDR fallback", viewing.green > .3f)
+        compose.runOnIdle {
+            val draft = AdjustmentDraft.begin(AdjustmentGroup.GEOMETRY, edits)
+                .update(edits.copy(geometry = GeometrySettings(straightenDegrees = 15.1f)))
+                .copy(geometryGrid = false)
+            state = state.copy(draft = draft)
+        }
+        compose.onNodeWithTag("geometry.canvas").assertIsDisplayed()
+        val projected = centerPixel()
+        assertEquals(viewing.red, projected.red, .02f)
+        assertEquals(viewing.green, projected.green, .02f)
+        assertEquals(viewing.blue, projected.blue, .02f)
+    }
+
+    private fun redBitmap(width: Int, height: Int) = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        .apply { eraseColor(android.graphics.Color.RED) }
+
+    private fun showCanvas(view: PhotoViewOptions = PhotoViewOptions(), state: () -> EditorState) {
+        compose.setChineseContent {
+            MaterialTheme {
+                EditorCanvas(state(), compare = false, photoCanvas = remember { PhotoCanvasState() }, photoInfo = null,
+                    infoMode = 0, onInfoClick = {}, modifier = Modifier.size(280.dp), onAlbum = {}, onFile = {},
+                    onLicenses = {}, onPreviewSizeChange = {}, onDraftEdit = { _, _ -> }, onSaveRetry = {}, view = view)
+            }
+        }
     }
 }

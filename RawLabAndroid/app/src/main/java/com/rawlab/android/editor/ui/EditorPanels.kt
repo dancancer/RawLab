@@ -31,6 +31,8 @@ import com.rawlab.android.editor.EditorState
 import com.rawlab.android.editor.Operation
 import com.rawlab.android.editor.canvas.PhotoCanvas
 import com.rawlab.android.editor.canvas.PhotoCanvasState
+import com.rawlab.android.editor.canvas.photoViewMargin
+import com.rawlab.android.editor.canvas.rememberPhotoHDRPreview
 import com.rawlab.android.editor.geometry.GeometryCropCanvas
 import com.rawlab.android.photo.PhotoInfo
 import com.rawlab.android.settings.EditSettings
@@ -53,17 +55,19 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
     } else 12.dp
     Box(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).testTag("editor-canvas"), contentAlignment = Alignment.Center) {
         state.preview?.let {
+            val hdrPreview = rememberPhotoHDRPreview(it.hdr?.result)
             val geometryDraft = state.draft?.takeIf { draft -> draft.group == AdjustmentGroup.GEOMETRY }
             if (it.renderedGeometry.isIdentity && (geometryDraft != null || !state.edits.geometry.isIdentity))
                 GeometryCropCanvas(it, state.visibleEdits.geometry, editing = geometryDraft != null,
-                    enabled = state.draftReady, physicalAspect = geometryDraft?.geometryAspect,
+                    enabled = state.draftReady, photoMargin = if (view.margins) photoViewMargin else 0.dp,
+                    bitmap = hdrPreview.bitmap ?: it.result, physicalAspect = geometryDraft?.geometryAspect,
                     showsGrid = geometryDraft?.geometryGrid ?: true) { value ->
                 onDraftEdit(state.visibleEdits.copy(geometry = value), false)
             }
             else PhotoCanvas(it, compare && state.draft?.group != AdjustmentGroup.GEOMETRY, state.photo?.name.orEmpty(), photoCanvas, photoInfo, infoMode, onInfoClick, onPreviewSizeChange,
                 mode = view.preferredMode, holdingBefore = view.holdingBefore && state.draft?.group != AdjustmentGroup.GEOMETRY && hslTarget == null, hslTarget = hslTarget,
                 showOverlays = !view.purePreview, margins = view.margins, workspaceControls = workspaceControls,
-                histogramExpanded = histogramExpanded, onHistogramExpandedChange = onHistogramExpandedChange,
+                histogramExpanded = histogramExpanded, onHistogramExpandedChange = onHistogramExpandedChange, hdrPreview = hdrPreview,
                 onCanvasTap = { if (state.draft?.group != AdjustmentGroup.GEOMETRY) onCanvasTap() }, onHoldBefore = { onHoldBefore(it && state.draft?.group != AdjustmentGroup.GEOMETRY) },
                 onModeChange = onModeChange, onCompareClose = onCompareClose, viewingEnabled = state.draft?.group != AdjustmentGroup.GEOMETRY && state.controlsEnabled,
                 bottomOverlayInset = comparisonInset, bottomOverlay = {

@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.*
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.min
 import kotlin.math.abs
@@ -40,7 +41,8 @@ import com.rawlab.android.geometry.uncropped
 
 @Composable
 internal fun GeometryCropCanvas(pair: PreviewPair, value: GeometrySettings, editing: Boolean, enabled: Boolean,
-    physicalAspect: Float? = null, showsGrid: Boolean = true, onChange: (GeometrySettings) -> Unit) {
+    photoMargin: Dp, bitmap: Bitmap, physicalAspect: Float? = null, showsGrid: Boolean = true,
+    onChange: (GeometrySettings) -> Unit) {
     val current by rememberUpdatedState(value)
     val change by rememberUpdatedState(onChange)
     val description = stringResource(R.string.geometry_drag_hint)
@@ -50,7 +52,7 @@ internal fun GeometryCropCanvas(pair: PreviewPair, value: GeometrySettings, edit
     val paint = remember { Paint(Paint.FILTER_BITMAP_FLAG) }
     val geometry = value.uncropped()
     val projection = remember(pair.nativeWidth, pair.nativeHeight, geometry) { GeometryProjection(pair, geometry) }
-    BoxWithConstraints(Modifier.fillMaxSize().clipToBounds()) {
+    BoxWithConstraints(Modifier.fillMaxSize().padding(if (editing) 0.dp else photoMargin).clipToBounds()) {
         val viewport = Size(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
         val layout = projection.fit(viewport, if (editing) inset else 0f, value, editing)
         val image = layout.safeBounds
@@ -94,11 +96,11 @@ internal fun GeometryCropCanvas(pair: PreviewPair, value: GeometrySettings, edit
             val crop = value.rect(image)
             if (!editing) {
                 clipRect(crop.left, crop.top, crop.right, crop.bottom) {
-                    drawProjectedPhoto(pair.result, layout, paint)
+                    drawProjectedPhoto(bitmap, layout, paint)
                 }
                 return@Canvas
             }
-            drawProjectedPhoto(pair.result, layout, paint)
+            drawProjectedPhoto(bitmap, layout, paint)
             clipRect(crop.left, crop.top, crop.right, crop.bottom, ClipOp.Difference) {
                 drawPath(layout.outline, Color.Black.copy(alpha = .56f))
             }

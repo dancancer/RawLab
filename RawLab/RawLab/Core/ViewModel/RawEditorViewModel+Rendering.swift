@@ -46,7 +46,13 @@ extension RawEditorViewModel {
     }
 
     var viewportNativeSize: CGSize? {
-        hdrPresentation != nil || viewportPreviewLimit > Int(previewMaxDimension) ? nativeImageSize : nil
+        if let image = hdrPresentation?.image {
+            // HDR 的长边请求缩放整张源图，按交付帧的旋转方向计算 Fit。
+            let source = CGSize(width: image.nativeWidth, height: image.nativeHeight)
+            return basePreviewGeometry.quarterTurns.isMultiple(of: 2)
+                ? source : CGSize(width: source.height, height: source.width)
+        }
+        return viewportPreviewLimit > Int(previewMaxDimension) ? nativeImageSize : nil
     }
 
     func updatePreviewSize(_ requestedEdge: Int, settings: RawSettings) {

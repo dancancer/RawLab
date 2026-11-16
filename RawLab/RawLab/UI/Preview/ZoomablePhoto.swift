@@ -594,7 +594,7 @@ final class PhotoScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecogn
     }
     private func reportPreviewSize() {
         guard !updatingGeometry, onPreviewSizeChange != nil, let geometry else { return }
-        // HDR 几何预览的像素可能因裁切变小，渲染请求应以原生画布为准。
+        // HDR 渲染请求取整张源图的尺寸，查看缩放仍以交付像素为准。
         let edge = previewNativeSize.map { pixels in
             let native = PhotoZoomGeometry(pixels: pixels, viewport: bounds.size, displayScale: displayScale,
                                            margin: photoMargin ? PhotoZoomGeometry.defaultMargin : 0)
