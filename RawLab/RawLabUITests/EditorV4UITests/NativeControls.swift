@@ -997,6 +997,10 @@ extension EditorV4UITests {
         edge.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.45)))
         XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 5), "A clean back gesture returns directly")
         XCTAssertFalse(app.alerts.firstMatch.exists)
+        try selectTool("saturation", in: app)
+        XCTAssertTrue(app.navigationBars["Saturation"].waitForExistence(timeout: 5),
+                      "Selecting another group after back must open Saturation instead of returning to Exposure")
+        XCTAssertTrue(app.buttons["editor.tool.back"].exists)
     }
 
     func testCropWidthWheelKeepsAspectForCornerDragAndRotationPreservesDraft() throws {

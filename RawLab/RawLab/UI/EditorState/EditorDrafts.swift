@@ -296,6 +296,11 @@ extension ContentView {
         if expansion == false { completeAdjustmentExpansion(false, closingWorkspace: leavingWorkspace); return }
         if let selection { activateEditorTool(selection, leavingWorkspace: leavingWorkspace) }
         if let expansion { completeAdjustmentExpansion(expansion) }
+        if selection == nil && expansion == nil {
+            finishEditorTool()
+            collapsedEditorTool = nil
+            adjustmentsExpanded = true
+        }
     }
 
     func retryEditorSave() {
@@ -365,6 +370,7 @@ extension ContentView {
         guard !editorBusy else { return }
         closeQuickPresets()
         guard !isEditorDraftActive else { return }
+        collapsedEditorTool = nil
         selectedGroup = group
         adjustmentsExpanded = true
     }
@@ -382,8 +388,17 @@ extension ContentView {
     }
 
     func requestToolWorkspaceExit() {
-        guard toolWorkspaceOpen else { return }
-        requestAdjustmentExpansion(false)
+        guard toolWorkspaceOpen, !editorBusy else { return }
+        if !hslTargetEnabled { cancelSliderInteraction() }
+        if isEditorDraftChanged {
+            pendingToolSelection = nil
+            pendingAdjustmentExpansion = nil
+            draftExitPresented = true
+        } else {
+            finishEditorTool()
+            collapsedEditorTool = nil
+            adjustmentsExpanded = true
+        }
     }
 
     func requestAdjustmentExpansion(_ expanded: Bool) {

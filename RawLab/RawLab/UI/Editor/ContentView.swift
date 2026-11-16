@@ -216,7 +216,7 @@ struct ContentView: View {
                     }
             }
             .background(EditorToolBackGesture(
-                enabled: toolWorkspaceOpen && !editorBusy && !draftExitPresented && adjustmentSheet == nil,
+                enabled: toolWorkspaceOpen && !editorBusy && !draftExitPresented && adjustmentSheet == nil && !photoViewing.previewOnly,
                 onBack: requestToolWorkspaceExit))
             .safeAreaInset(edge: .top) {
                 if let batchModel, !showingBatchExport {

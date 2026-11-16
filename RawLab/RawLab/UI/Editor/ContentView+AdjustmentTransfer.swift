@@ -19,6 +19,7 @@ extension ContentView {
     func showQuickPresets() {
         guard !editorBusy, viewModel.hasImage else { return }
         guard closeEditorDraftCleanly() else { return }
+        collapsedEditorTool = nil
         viewModel.quickPresetsVisible = true
         selectedGroup = .looks
         adjustmentsExpanded = true
