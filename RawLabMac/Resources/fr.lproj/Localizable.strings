@@ -674,7 +674,6 @@
 "此外观已不在外观库中。" = "Ce look n'est plus dans la bibliothèque de looks.";
 "此外观无法读取，可能已损坏或来自不兼容版本。" = "Ce look ne peut pas être lu. Il est peut-être endommagé ou provient d’une version incompatible.";
 "此安装暂不支持自动安装更新" = "Cette installation ne prend pas encore en charge les mises à jour automatiques";
-"自动更新不可用，请手动下载" = "Les mises à jour automatiques ne sont pas disponibles. Veuillez télécharger manuellement.";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Seuls les réglages du groupe %@ seront réinitialisés. Les autres groupes resteront inchangés.";
 "此操作已过期，请重新操作。" = "Cette opération n’est plus à jour. Relancez-la.";
 "此构建未安装 AI 降噪模型。" = "Cette version ne contient pas le modèle de débruitage IA.";
@@ -819,6 +818,7 @@
 "自动下载并在退出时安装" = "Télécharger automatiquement et installer à la fermeture";
 "自动匹配" = "Correspondance automatique";
 "自动安装默认关闭。安装前会保存已提交的编辑，并等待草稿和任务处理完成。" = "L’installation automatique est désactivée par défaut. Avant l’installation, les modifications validées sont enregistrées et l’application attend la fin des brouillons et des tâches.";
+"自动更新不可用，请手动下载" = "Les mises à jour automatiques ne sont pas disponibles. Veuillez télécharger manuellement.";
 "自动检查更新" = "Rechercher automatiquement les mises à jour";
 "自动添加序号" = "Ajouter automatiquement des numéros de séquence";
 "自动裁切" = "Recadrage automatique";
