@@ -11,6 +11,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.rawlab.android.MainActivity
 import com.rawlab.android.R
 import com.rawlab.android.testing.ForegroundTestRule
+import com.rawlab.android.testing.openWorkbenchTool
+import com.rawlab.android.testing.openGeometryDimensions
 import com.rawlab.android.testing.LanguageTestRule
 import org.junit.Assert.*
 import org.junit.Rule
@@ -34,7 +36,9 @@ class EditorParameterRotationRuntimeTest {
         fun bounds(tag: String) = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
         fun capture(name: String) {
             val dir = File(compose.activity.getExternalFilesDir(null), "parameter-rotation").apply { mkdirs() }
-            File(dir, name).outputStream().use { compose.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            val screenshot = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+            try { File(dir, name).outputStream().use { screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) } }
+            finally { screenshot.recycle() }
         }
         try {
             android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand("settings put system font_scale $scale")).use { it.readBytes() }
@@ -42,8 +46,7 @@ class EditorParameterRotationRuntimeTest {
             compose.waitUntil(20_000) { compose.activity.resources.configuration.let { it.orientation == Configuration.ORIENTATION_LANDSCAPE && it.fontScale == scale } }
             compose.runOnUiThread { compose.activity.model.setGpuEnabled(false); compose.activity.model.importPhoto(Uri.fromFile(source)) }
             ready()
-            compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-geometry"))
-            compose.onNodeWithTag("editor-group-geometry").performClick()
+            compose.openWorkbenchTool(17)
             ready()
             val dock = bounds("adjustment-dock")
             val photo = bounds("editor-canvas")
@@ -54,7 +57,9 @@ class EditorParameterRotationRuntimeTest {
             assertTrue("Photo retains at least 96dp", photo.height >= 96 * density - 1)
             assertTrue("Real safe-area viewport supports a full operation row", viewport.height >= 48 * density)
             val committed = compose.activity.model.state.value.edits
-            val number = compose.onNodeWithTag("adjustment-value-${R.string.geometry_crop_height}").performScrollTo().assertIsDisplayed()
+            compose.openGeometryDimensions()
+            val dialog = compose.onNode(isDialog()).fetchSemanticsNode().boundsInRoot
+            val number = compose.onNodeWithTag("adjustment-value-${R.string.geometry_crop_height}").assertIsDisplayed()
             val numberBounds = number.fetchSemanticsNode().boundsInRoot
             val numericParts = mutableMapOf<String, androidx.compose.ui.geometry.Rect>()
             for (tag in listOf("adjustment-name-${R.string.geometry_crop_height}", "adjustment-value-${R.string.geometry_crop_height}", "adjustment-unit-${R.string.geometry_crop_height}")) {
@@ -73,36 +78,40 @@ class EditorParameterRotationRuntimeTest {
             assertEquals("Numeric draft operation preserves committed parameters and processing", committed, compose.activity.model.state.value.edits)
             capture("geometry-value-landscape-$scale.png")
             android.util.Log.i("RawLabWholeRowEvidence", "actual scale=$scale density=$density number=$numberBounds parts=$numericParts viewport=$viewport")
-            val ruler = compose.onAllNodesWithTag("adjustment-slider").onLast()
-            ruler.performScrollTo().assertIsDisplayed()
-            val rulerBounds = ruler.fetchSemanticsNode().boundsInRoot
-            assertTrue("Last geometry ruler is wholly visible", rulerBounds.height >= 48 * density - 1 && rulerBounds.top >= viewport.top - 1 && rulerBounds.bottom <= viewport.bottom + 1)
-            ruler.performSemanticsAction(SemanticsActions.SetProgress) { it(99f) }
+            val dimension = compose.onNodeWithTag("adjustment-value-${R.string.geometry_crop_height}").assertIsDisplayed()
+            val dimensionBounds = dimension.fetchSemanticsNode().boundsInRoot
+            assertTrue("The final geometry dimension is wholly visible in its dialog", dimensionBounds.height >= 48 * density - 1 &&
+                dimensionBounds.top >= dialog.top - 1 && dimensionBounds.bottom <= dialog.bottom + 1)
+            dimension.performSemanticsAction(SemanticsActions.SetProgress) { it(99f) }
             ready()
-            assertTrue("Last geometry control really operates on draft", compose.activity.model.state.value.draft!!.changed)
-            assertEquals("Track operates after the numeric row was scrolled away", .99f, compose.activity.model.state.value.draft!!.value.geometry.cropHeight, .0001f)
+            assertTrue("The final geometry control really operates on draft", compose.activity.model.state.value.draft!!.changed)
+            assertEquals("Accessible progress edits the same crop-height axis as exact input", .99f, compose.activity.model.state.value.draft!!.value.geometry.cropHeight, .0001f)
             capture("geometry-landscape-$scale.png")
-            compose.runOnUiThread { compose.activity.model.discardDraft() }
+            compose.onNodeWithText(compose.activity.getString(R.string.confirm)).performClick()
+            compose.onNodeWithTag("draft.cancel").performClick()
             ready()
-            compose.onNodeWithTag("editor-tools").performScrollToNode(hasTestTag("editor-tool-16"))
-            compose.onNodeWithTag("editor-tool-16").performClick()
+            compose.openWorkbenchTool(16)
             ready()
+            val lensViewport = bounds("editor-parameters")
+            val lensDock = bounds("adjustment-dock")
+            val lensPhoto = bounds("editor-canvas")
             val crop = compose.onNodeWithTag("lens.crop").performScrollTo().assertIsDisplayed().assertIsEnabled()
             val cropBounds = crop.fetchSemanticsNode().boundsInRoot
-            assertTrue("Last enabled lens switch has its entire 48dp touch target", cropBounds.height >= 48 * density - 1 && cropBounds.top >= viewport.top - 1 && cropBounds.bottom <= viewport.bottom + 1)
+            assertTrue("Last enabled lens switch has its entire 48dp touch target", cropBounds.height >= 48 * density - 1 && cropBounds.top >= lensViewport.top - 1 && cropBounds.bottom <= lensViewport.bottom + 1)
             crop.performTouchInput { click() }
             ready()
             assertTrue("Last lens control really operates on draft", compose.activity.model.state.value.draft!!.changed)
-            for (tag in listOf("draft.apply", "draft.cancel", "editor-groups")) compose.onNodeWithTag(tag).assertIsDisplayed()
-            assertEquals(dock, bounds("adjustment-dock")); assertEquals(photo, bounds("editor-canvas"))
+            for (tag in listOf("draft.apply", "draft.cancel", "workspace-more")) compose.onNodeWithTag(tag).assertIsDisplayed()
+            compose.onNodeWithTag("editor-groups").assertDoesNotExist()
+            assertEquals(lensDock, bounds("adjustment-dock")); assertEquals(lensPhoto, bounds("editor-canvas"))
             capture("lens-landscape-$scale.png")
             val profile = compose.onNodeWithTag("lens.profile").performScrollTo().assertIsDisplayed()
             val profileBounds = profile.fetchSemanticsNode().boundsInRoot
             val fullProfile = profile.getUnclippedBoundsInRoot()
             assertTrue("Actual last profile control retains its entire measured height", profileBounds.height >= (fullProfile.bottom - fullProfile.top).value * density - 1)
-            assertTrue("Last lens profile button is fully visible", profileBounds.height >= 48 * density - 1 && profileBounds.top >= viewport.top - 1 && profileBounds.bottom <= viewport.bottom + 1)
+            assertTrue("Last lens profile button is fully visible", profileBounds.height >= 48 * density - 1 && profileBounds.top >= lensViewport.top - 1 && profileBounds.bottom <= lensViewport.bottom + 1)
             capture("lens-profile-landscape-$scale.png")
-            android.util.Log.i("RawLabViewportEvidence", "density=$density root=${compose.onRoot().fetchSemanticsNode().boundsInRoot} photo=$photo dock=$dock parameters=$viewport ruler=$rulerBounds lens=$cropBounds profile=$profileBounds font=${compose.activity.resources.configuration.fontScale}")
+            android.util.Log.i("RawLabViewportEvidence", "density=$density root=${compose.onRoot().fetchSemanticsNode().boundsInRoot} photo=$photo dock=$dock parameters=$viewport dimension=$dimensionBounds lens=$cropBounds profile=$profileBounds font=${compose.activity.resources.configuration.fontScale}")
         } finally {
             compose.runOnUiThread { compose.activity.model.discardDraft(); compose.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
             android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand("settings put system font_scale 1.0")).use { it.readBytes() }
