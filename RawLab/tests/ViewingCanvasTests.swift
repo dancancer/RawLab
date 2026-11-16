@@ -77,7 +77,7 @@ struct ViewingCanvasTests {
         canvas.layoutIfNeeded()
         check(after.frame == unchanged, "nonintersecting overlay must not change the original label position")
         canvas.frame = CGRect(x: 0, y: 0, width: 402, height: 96)
-        let tinyPhoto = UIGraphicsImageRenderer(size: CGSize(width: 800, height: 749), format: format).image { _ in }
+        let tinyPhoto = UIGraphicsImageRenderer(size: CGSize(width: 700, height: 749), format: format).image { _ in }
         let caption = after as! UILabel
         state.selectMode(.wipe)
         canvas.configure(image: tinyPhoto, reference: tinyPhoto, label: "Nachher", state: state,
