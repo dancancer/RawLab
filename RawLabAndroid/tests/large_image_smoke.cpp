@@ -1,8 +1,6 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "sony2fuji/lut_parser.h"
-// WR-01 后核心不再编译 stb_image_write 实现，测试自带实现。
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "core/stb_image_write.h"
+#include "sony2fuji/raw_processor.h"
 #include <GLES3/gl31.h>
 #include <algorithm>
 #include <cmath>
@@ -152,9 +150,20 @@ int main(int argc, char** argv) {
         const auto gpu = render(session, request, gpuBackend, count, &outputWidth, &outputHeight);
         compare(expected, gpu, 2, "large image CPU/GPU with adjustments");
         // GPU/CPU 画质在编码前比较；单独编码已核验的 GPU buffer，检查文件输出是否提交了同一图像。
-        if (argc == 5 && !cpuLook)
-            require(stbi_write_jpg("large-reference-gpu.jpg", outputWidth, outputHeight, 4,
-                gpu.data(), request.jpeg_quality) != 0, "encode independently rendered GPU buffer");
+        if (argc == 5 && !cpuLook) {
+            sony2fuji::ImageData reference(static_cast<int>(outputWidth), static_cast<int>(outputHeight));
+            require(gpu.size() == reference.pixels.size() * 4, "verified GPU buffer matches RGBA8 dimensions");
+            for (size_t i = 0; i < reference.pixels.size(); ++i) {
+                reference.pixels[i] = sony2fuji::RGB(
+                    gpu[i * 4 + 0] / 255.0f,
+                    gpu[i * 4 + 1] / 255.0f,
+                    gpu[i * 4 + 2] / 255.0f);
+            }
+            require(sony2fuji::ImageEncoder::saveJPEG(
+                        reference, "large-reference-gpu.jpg", static_cast<int>(request.jpeg_quality)) ==
+                    sony2fuji::ErrorCode::Success,
+                "encode independently rendered GPU buffer");
+        }
     }
     if (cpuLook) {
         require(dispatches == 0, "RAW display look uses the CPU fallback");
