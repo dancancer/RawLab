@@ -63,7 +63,7 @@ struct RawLabMacApp: App {
             Group {
                 if let model = runtime.model, let updates = runtime.controller {
                     VStack(spacing: 0) {
-                        UpdateAvailabilityBanner(updates: updates, legacy: runtime.legacy) { showUpdateWindow("update-prompt") }
+                        UpdateAvailabilityBanner(updates: updates) { showUpdateWindow("update-prompt") }
                         EditorView(model: model)
                             .disabled(updates.blocksEditing)
                             .onReceive(model.$exporting.removeDuplicates()) { if !$0 { retrySystemOpen() } }
@@ -74,7 +74,7 @@ struct RawLabMacApp: App {
                 } else if let error = runtime.startupError {
                     VStack(alignment: .leading, spacing: 16) {
                         Text(L10n.text(error == "other_instance" ? "请先退出其他 RawLab 实例" : "更新恢复需要处理，编辑暂未开放")).font(.headline)
-                        if let updates = runtime.controller { SoftwareUpdateView(updates: updates, legacy: runtime.legacy) }
+                        if let updates = runtime.controller { SoftwareUpdateView(updates: updates) }
                         else { Text(L10n.text("请保留现有应用和数据，处理问题后重新启动。")) }
                     }.padding(24)
                 } else { ProgressView(L10n.text("正在检查启动状态…")) }
@@ -101,9 +101,7 @@ struct RawLabMacApp: App {
                     Button(L10n.text("关于 RawLab…")) { openWindow(id: "about") }
                     Button(L10n.text("检查更新…")) {
                         showUpdateWindow("update-prompt")
-                        guard let updates = runtime.controller else { return }
-                        if updates.unavailableReason != nil { Task { await runtime.legacy.check(manual: true) } }
-                        else { updates.check(manual: true) }
+                        runtime.controller?.check(manual: true)
                     }.disabled(runtime.controller == nil)
                 }
                 CommandGroup(replacing: .newItem) {
@@ -123,13 +121,16 @@ struct RawLabMacApp: App {
                     }
                 }
             }
-        Window(L10n.text("关于 RawLab"), id: "about") { AboutView(currentVersion: runtime.legacy.currentVersion).environment(\.locale, selectedLocale) }
+        Window(L10n.text("关于 RawLab"), id: "about") {
+            AboutView(currentVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown")
+                .environment(\.locale, selectedLocale)
+        }
             .windowResizability(.contentSize)
         Window(L10n.text("软件更新"), id: "software-update") {
-            if let updates = runtime.controller { SoftwareUpdateView(updates: updates, legacy: runtime.legacy).environment(\.locale, selectedLocale) }
+            if let updates = runtime.controller { SoftwareUpdateView(updates: updates).environment(\.locale, selectedLocale) }
         }.defaultSize(width: 560, height: 600)
         Window(L10n.text("RawLab 更新"), id: "update-prompt") {
-            if let updates = runtime.controller { SoftwareUpdateView(updates: updates, legacy: runtime.legacy, settings: false).environment(\.locale, selectedLocale) }
+            if let updates = runtime.controller { SoftwareUpdateView(updates: updates, settings: false).environment(\.locale, selectedLocale) }
         }.defaultSize(width: 560, height: 520)
         Window(L10n.text("批量编辑"), id: "batch-selection") {
             if let model = runtime.model { BatchSelectionView(model: model).disabled(installationActive).environment(\.locale, selectedLocale) }
@@ -198,11 +199,9 @@ enum SystemMenuLanguage {
 
 private struct UpdateAvailabilityBanner: View {
     @ObservedObject var updates: DesktopUpdateController
-    @ObservedObject var legacy: UpdateChecker
     var open: () -> Void
     var body: some View {
-        if let version = updates.state.phase == .available ? updates.state.release?.version :
-            (updates.unavailableReason != nil ? legacy.available?.version : nil) {
+        if updates.state.phase == .available, let version = updates.state.release?.version {
             HStack {
                 Text(L10n.format("RawLab %@ 已发布", version))
                 Spacer()

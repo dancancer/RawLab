@@ -21,7 +21,6 @@ swiftc -whole-module-optimization -swift-version 5 -sdk "$SDK" \
     "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HDRSettings.swift" "$ROOT/Shared/HSLSettings.swift" \
     "$ROOT/Shared/AdjustmentTransfer.swift" "$ROOT/Shared/AdjustmentPresetStore.swift" "$ROOT/Shared/PresetJSONScanner.swift" \
     "$ROOT/Shared/DCPCompiler.swift" "$ROOT/Shared/LookLibrary.swift" \
-    "$ROOT/RawLabMac/Sources/System/UpdateRelease.swift" "$ROOT/RawLabMac/Sources/System/UpdateChecker.swift" \
     "$ROOT/RawLabMac/Sources/System/Updates/UpdateState.swift" \
     "$ROOT/RawLabMac/Sources/System/Updates/UpdateAdapter.swift" "$ROOT/RawLabMac/Sources/System/Updates/UpdateStore.swift" \
     "$ROOT/RawLabMac/Sources/System/Updates/UpdateInstallGate.swift" "$ROOT/RawLabMac/Sources/System/Updates/DesktopUpdateController.swift" \

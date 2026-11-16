@@ -193,13 +193,9 @@ import Combine
         guard storageError == nil, !requiresStartupHealthCheck, !requiresRecovery else { return }
         var next = preferences; next.automaticCheck = value; _ = save(next)
     }
-    func performStartupCheck(legacy: UpdateChecker) async {
-        if storageError == nil, legacy.automatic != preferences.automaticCheck {
-            legacy.automatic = preferences.automaticCheck
-        }
-        if storageError == nil, unavailableReason != "storage" {
-            if unavailableReason != nil { await legacy.check(manual: false) }
-            else { check(manual: false) }
+    func performStartupCheck() {
+        if storageError == nil, unavailableReason == nil {
+            check(manual: false)
         }
     }
     func setAutomaticInstall(_ value: Bool) {

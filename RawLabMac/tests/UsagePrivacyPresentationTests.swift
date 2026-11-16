@@ -8,8 +8,7 @@ import SwiftUI
         let suite = "rawlab-usage-ui-\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        let updates = UpdateChecker(defaults: defaults, currentVersion: "0.5.0", fetch: { throw URLError(.notConnectedToInternet) })
-        let view = NSHostingView(rootView: AboutView(currentVersion: updates.currentVersion))
+        let view = NSHostingView(rootView: AboutView(currentVersion: "0.5.0"))
         let size = view.fittingSize
         guard size.width >= 440, size.height > 300, size.height < 850 else {
             throw CocoaError(.validationMissingMandatoryProperty)
