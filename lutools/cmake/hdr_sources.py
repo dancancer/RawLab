@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tarfile
+import time
 import urllib.request
 import tempfile
 from contextlib import contextmanager
@@ -77,14 +78,23 @@ def prepare_source(cache, pin, archive_name, folder):
     archive.parent.mkdir(parents=True, exist_ok=True)
     if not archive.exists():
         temporary = archive.with_suffix(f".part-{os.getpid()}")
-        try:
-            with urllib.request.urlopen(pin["url"], timeout=60) as response, temporary.open("wb") as output:
-                shutil.copyfileobj(response, output)
-            if digest(temporary) != pin["sha256"]:
-                raise RuntimeError(f"Dependency checksum mismatch: {archive_name}")
-            temporary.replace(archive)
-        finally:
-            temporary.unlink(missing_ok=True)
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                with urllib.request.urlopen(pin["url"], timeout=60) as response, temporary.open("wb") as output:
+                    shutil.copyfileobj(response, output)
+                if digest(temporary) != pin["sha256"]:
+                    raise RuntimeError(f"Dependency checksum mismatch: {archive_name}")
+                temporary.replace(archive)
+                last_error = None
+                break
+            except Exception as error:  # egress flakes: retry with the partial file removed
+                last_error = error
+                temporary.unlink(missing_ok=True)
+                if attempt < 3:
+                    time.sleep(attempt * 2)
+        if last_error is not None:
+            raise RuntimeError(f"Dependency download failed after 3 attempts: {archive_name}: {last_error}")
     if digest(archive) != pin["sha256"]:
         raise RuntimeError(f"Dependency checksum mismatch: {archive_name}")
     destination = cache / "hdr-codecs" / folder
