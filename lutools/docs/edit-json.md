@@ -445,7 +445,7 @@ color grading and atmospheric effects are rejected by field, even when neutral.
 
 HDR JPEG output requires explicit `base_color="srgb"|"display_p3"`, writes ISO
 and XMP gain-map descriptions, and defaults to quality 95. Optional long edge is
-1–65535, with no upscale. Source files and existing destinations survive failure.
+1–65535 in schema v6–v15 (effective JPEG encode/decode ceiling 65500), with no upscale. Source files and existing destinations survive failure.
 Metadata is copied from the SHA-256-verified original and the gain map is generated
 from the edited HDR/SDR pair.
 
@@ -629,3 +629,8 @@ raster recipes still reject active lens corrections: the native display
 lens API requires explicit camera metadata that this recipe does not carry.
 Camera HDR schemas 14 and 15 accept `input.camera_development.lens_vignetting`;
 a vignetting-only correction can select a `lens_profile`.
+
+For JPEG outputs (`jpeg` and `hdr_jpeg`), although historical JSON schemas v6–v15
+declare `output.size.long_edge` with `maximum: 65535`, the effective JPEG
+encode/decode dimension ceiling is **65500** pixels per edge (`JPEG_MAX_DIMENSION`);
+final JPEG dimensions exceeding 65500 are rejected before rendering.

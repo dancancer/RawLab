@@ -2,7 +2,7 @@ import Foundation
 
 enum ExportSize {
     static let presets = [2048, 3000, 4096]
-    static let range = 1...65535
+    static let range = 1...65500
 
     static func isValid(_ longEdge: Int?) -> Bool {
         guard let longEdge else { return true }

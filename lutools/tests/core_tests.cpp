@@ -310,12 +310,36 @@ void testJpegExportWriteSafety(const std::filesystem::path& parentDir, sony2fuji
 }
 
 // WR-01: libjpeg-turbo 扫描线编码器替换 stb 后，同源内容对旧参考编码器的 PSNR 对齐锚
-// （q95 覆盖 4:4:4 分支，q85 覆盖 4:2:0 分支，与 stb 的 subsample 阈值同语义）。
+// （覆盖 {85, 90, 91, 95}：q<=90 走 4:2:0，q>90 走 4:4:4，锁住 {90, 91} 子采样分界）。
 void testJpegEncoderTurboParity(const std::filesystem::path& parentDir) {
     const auto dir = parentDir / "jpeg-turbo-parity";
     std::filesystem::create_directories(dir);
 
-    // 渐变 + 高频噪声 + 硬边棋盘：比纯噪声更接近真实导出内容。
+    auto readSof0LumaSampling = [](const std::filesystem::path& jpegPath) -> int {
+        std::ifstream in(jpegPath, std::ios::binary);
+        const std::vector<unsigned char> bytes((std::istreambuf_iterator<char>(in)),
+                                               std::istreambuf_iterator<char>());
+        if (bytes.size() < 4 || bytes[0] != 0xFFu || bytes[1] != 0xD8u) return -1;
+        size_t pos = 2;
+        while (pos + 4 <= bytes.size()) {
+            if (bytes[pos] != 0xFFu) return -1;
+            while (pos < bytes.size() && bytes[pos] == 0xFFu) ++pos;
+            if (pos >= bytes.size()) return -1;
+            const unsigned char marker = bytes[pos++];
+            if (marker == 0xD9u || marker == 0xDAu) break;
+            if (marker == 0x01u || (marker >= 0xD0u && marker <= 0xD7u)) continue;
+            if (pos + 2 > bytes.size()) return -1;
+            const size_t segLen = (static_cast<size_t>(bytes[pos]) << 8) | bytes[pos + 1];
+            if (segLen < 2 || pos + segLen > bytes.size()) return -1;
+            if (marker == 0xC0u && segLen >= 11) {
+                return static_cast<int>(bytes[pos + 9]);
+            }
+            pos += segLen;
+        }
+        return -1;
+    };
+
+    // 渐变 + 高频噪声 + 8x8 硬边棋盘 + 下半幅单像素色度棋盘（若 4:4:4 被误强制为 4:2:0 则 PSNR 跌破 40 dB）。
     const int width = 320;
     const int height = 240;
     ImageData image(width, height);
@@ -328,7 +352,8 @@ void testJpegEncoderTurboParity(const std::filesystem::path& parentDir) {
             const float rawR = static_cast<float>(x) / static_cast<float>(width) + spike;
             const float r = rawR > 1.0f ? 1.0f : rawR;
             const float g = static_cast<float>(y) / static_cast<float>(height);
-            const float b = (((x / 8 + y / 8) % 2) != 0) ? 0.9f : 0.15f;
+            const bool checker = (y < height / 2) ? (((x / 8 + y / 8) % 2) != 0) : (((x + y) % 2) != 0);
+            const float b = checker ? 0.9f : 0.15f;
             const size_t pixel = static_cast<size_t>(y) * width + x;
             image.pixels[pixel] = RGB(r, g, b);
             reference[pixel * 3 + 0] = static_cast<unsigned char>(std::lround(r * 255.0f));
@@ -337,13 +362,17 @@ void testJpegEncoderTurboParity(const std::filesystem::path& parentDir) {
         }
     }
 
-    for (const int quality : {95, 85}) {
+    for (const int quality : {85, 90, 91, 95}) {
         const auto turboTarget = dir / ("turbo-q" + std::to_string(quality) + ".jpg");
         const auto stbTarget = dir / ("stb-reference-q" + std::to_string(quality) + ".jpg");
         check(ImageEncoder::saveJPEG(image, turboTarget.string(), quality) == ErrorCode::Success,
               "libjpeg-turbo JPEG export succeeds");
         check(stbi_write_jpg(stbTarget.string().c_str(), width, height, 3, reference.data(), quality) != 0,
               "stb reference JPEG export succeeds");
+        const int expectedSampling = quality <= 90 ? 0x22 : 0x11;
+        check(readSof0LumaSampling(turboTarget) == expectedSampling &&
+              readSof0LumaSampling(stbTarget) == expectedSampling,
+              "libjpeg-turbo SOF0 chroma subsampling matches stb across the {90, 91} threshold");
 
         int turboWidth = 0;
         int turboHeight = 0;
@@ -1608,59 +1637,145 @@ int main(int argc, char** argv) {
                   "resizeBilinear/sampleBilinear preserves exact endpoint indexing and bounds above 2^24 width");
         }
 
-        // WP-03 (2): Exact integer half-up scaling avoids float double-rounding false rejection at 65535 JPEG limit.
-        // 4717x75453 with FIT_SHORT_EDGE=4097 has exact long edge 75453 * 4097 / 4717 = 65535 + 2346/4717 (< .5 -> 65535),
-        // whereas 32-bit float scale (4097.0f / 4717.0f) rounds up to 65535.502 -> 65536 and falsely rejects.
+        // B2 + WP-03 (2): Real JPEG encode anchor at the 65500 libjpeg-turbo ceiling, plus exact
+        // integer half-up scaling at 65500 (127x93467 with FIT_SHORT_EDGE=89 has exact long edge
+        // 93467 * 89 / 127 = 65500 + 63/127 -> 65500, whereas 32-bit float scale 89.0f/127.0f rounds
+        // up to 65500.5 -> 65501 and falsely rejects).
         {
-            const auto exact65535Png = dir / "header-4717x75453.png";
-            writePngHeaderOnly(exact65535Png, 4717u, 75453u);
-            const std::string exact65535PngStr = exact65535Png.string();
-            auto short4097Jpeg = makeNativeRawReq(exact65535PngStr);
-            short4097Jpeg.output_target = SONY2FUJI_TARGET_FILE;
-            short4097Jpeg.output_format = SONY2FUJI_OUTPUT_JPEG;
-            short4097Jpeg.output_path = wideJpegOut.c_str();
-            short4097Jpeg.size_mode = SONY2FUJI_SIZE_FIT_SHORT_EDGE;
-            short4097Jpeg.short_edge = 4097u;
-            check(sony2fuji_process(session, &short4097Jpeg, nullptr) == SONY2FUJI_STATUS_UNSUPPORTED,
-                  "4717x75453 FIT_SHORT_EDGE=4097 JPEG computes exact 65535 long edge and passes preflight");
+            const auto ceilingDir = dir / "jpeg-65500-ceiling";
+            std::filesystem::create_directories(ceilingDir);
+            const auto maxWPath = ceilingDir / "exact-65500x1.jpg";
+            const auto maxHPath = ceilingDir / "exact-1x65500.jpg";
+            const std::string maxWStr = maxWPath.string();
+            const std::string maxHStr = maxHPath.string();
 
-            sony2fuji_session* short4097BufSession = nullptr;
-            sony2fuji_session_create(&short4097BufSession);
-            int short4097Polls = 0;
-            sony2fuji_session_set_cancellation_callback(short4097BufSession, [](void* ctx) -> int {
-                int& c = *static_cast<int*>(ctx);
-                return (++c >= 2) ? 1 : 0;
-            }, &short4097Polls);
-            auto short4097Buf = request(dngPixels);
-            short4097Buf.input_width = 4717u;
-            short4097Buf.input_height = 75453u;
-            short4097Buf.intent = SONY2FUJI_INTENT_FINAL;
-            short4097Buf.output_target = SONY2FUJI_TARGET_FILE;
-            short4097Buf.output_format = SONY2FUJI_OUTPUT_JPEG;
-            short4097Buf.output_path = wideJpegOut.c_str();
-            short4097Buf.size_mode = SONY2FUJI_SIZE_FIT_SHORT_EDGE;
-            short4097Buf.short_edge = 4097u;
-            const auto short4097BufSt = sony2fuji_process(short4097BufSession, &short4097Buf, nullptr);
-            sony2fuji_session_destroy(short4097BufSession);
-            check(short4097BufSt == SONY2FUJI_STATUS_CANCELLED && short4097Polls == 2,
-                  "4717x75453 INPUT_BUFFER FIT_SHORT_EDGE=4097 JPEG passes preflight before buffer load");
+            auto exactMaxW = request(dngPixels);
+            exactMaxW.intent = SONY2FUJI_INTENT_FINAL;
+            exactMaxW.output_target = SONY2FUJI_TARGET_FILE;
+            exactMaxW.output_format = SONY2FUJI_OUTPUT_JPEG;
+            exactMaxW.output_path = maxWStr.c_str();
+            exactMaxW.size_mode = SONY2FUJI_SIZE_EXACT;
+            exactMaxW.target_width = 65500u;
+            exactMaxW.target_height = 1u;
+            int infoW = 0, infoH = 0, infoComp = 0;
+            check(sony2fuji_process(session, &exactMaxW, nullptr) == SONY2FUJI_STATUS_OK &&
+                  stbi_info(maxWStr.c_str(), &infoW, &infoH, &infoComp) == 1 &&
+                  infoW == 65500 && infoH == 1 && infoComp == 3 && !hasJpegStagingFile(ceilingDir),
+                  "EXACT 65500x1 JPEG truly encodes and decodes header cleanly at JPEG_MAX_DIMENSION");
 
-            const auto over65536Png = dir / "header-4717x75454.png";
-            writePngHeaderOnly(over65536Png, 4717u, 75454u);
-            const std::string over65536PngStr = over65536Png.string();
-            auto short4097Over = short4097Jpeg;
-            short4097Over.input_path = over65536PngStr.c_str();
-            short4097Over.lut_path = absentLut.c_str();
-            short4097Over.lut_strength = 1.0f;
-            expectRejected(short4097Over, "4717x75454 FIT_SHORT_EDGE=4097 JPEG (65536.36 -> 65536) rejects in preflight");
+            auto exactMaxH = exactMaxW;
+            exactMaxH.output_path = maxHStr.c_str();
+            exactMaxH.target_width = 1u;
+            exactMaxH.target_height = 65500u;
+            infoW = infoH = infoComp = 0;
+            check(sony2fuji_process(session, &exactMaxH, nullptr) == SONY2FUJI_STATUS_OK &&
+                  stbi_info(maxHStr.c_str(), &infoW, &infoH, &infoComp) == 1 &&
+                  infoW == 1 && infoH == 65500 && infoComp == 3 && !hasJpegStagingFile(ceilingDir),
+                  "EXACT 1x65500 JPEG truly encodes and decodes header cleanly at JPEG_MAX_DIMENSION");
 
-            const auto halfUp65536Png = dir / "header-4x131071.png";
-            writePngHeaderOnly(halfUp65536Png, 4u, 131071u);
-            const std::string halfUp65536PngStr = halfUp65536Png.string();
-            auto halfUpOver = short4097Over;
-            halfUpOver.input_path = halfUp65536PngStr.c_str();
-            halfUpOver.short_edge = 2u; // 131071 * 2 / 4 = 65535.5 -> half-up rounds to 65536 -> reject
-            expectRejected(halfUpOver, "Exact .5 boundary (4x131071 FIT_SHORT_EDGE=2 -> 65535.5) rounds half-up to 65536 and rejects");
+            std::filesystem::remove(maxWPath);
+            std::filesystem::remove(maxHPath);
+
+            const auto rejectOutPath = ceilingDir / "rejected-65501.jpg";
+            const std::string rejectOutStr = rejectOutPath.string();
+            for (const uint32_t overEdge : {65501u, 65535u}) {
+                for (const bool wideOrientation : {true, false}) {
+                    sony2fuji_session* preflightSession = nullptr;
+                    sony2fuji_session_create(&preflightSession);
+                    int preflightPolls = 0;
+                    sony2fuji_session_set_cancellation_callback(preflightSession, [](void* ctx) -> int {
+                        ++(*static_cast<int*>(ctx));
+                        return 0;
+                    }, &preflightPolls);
+                    auto overReq = exactMaxW;
+                    overReq.output_path = rejectOutStr.c_str();
+                    overReq.lut_path = absentLut.c_str();
+                    overReq.lut_strength = 1.0f;
+                    overReq.target_width = wideOrientation ? overEdge : 1u;
+                    overReq.target_height = wideOrientation ? 1u : overEdge;
+                    const auto overSt = sony2fuji_process(preflightSession, &overReq, nullptr);
+                    sony2fuji_session_destroy(preflightSession);
+                    // Poll #1 is at processImpl entry before validateRequest; Poll #2 is after preflight,
+                    // right before buffer/RAW unpack. preflightPolls == 1 proves rejection preceded render.
+                    check(overSt == SONY2FUJI_STATUS_INVALID_ARGUMENT && preflightPolls == 1 &&
+                          !std::filesystem::exists(rejectOutPath) && !hasJpegStagingFile(ceilingDir),
+                          "JPEG >65500 single edge is rejected with INVALID_ARGUMENT before render and leaves no .tmp");
+                }
+            }
+
+            const auto over65501Hdr = ceilingDir / "header-65501x1.png";
+            writePngHeaderOnly(over65501Hdr, 65501u, 1u);
+            const std::string over65501HdrStr = over65501Hdr.string();
+            auto native65501Req = makeNativeRawReq(over65501HdrStr);
+            native65501Req.output_target = SONY2FUJI_TARGET_FILE;
+            native65501Req.output_format = SONY2FUJI_OUTPUT_JPEG;
+            native65501Req.output_path = rejectOutStr.c_str();
+            native65501Req.lut_path = absentLut.c_str();
+            native65501Req.lut_strength = 1.0f;
+            expectRejected(native65501Req, "NATIVE 65501x1 JPEG rejects in pre-decode header preflight");
+            check(!std::filesystem::exists(rejectOutPath) && !hasJpegStagingFile(ceilingDir),
+                  "Rejected NATIVE 65501x1 JPEG creates neither output nor staging .tmp");
+
+            ImageData directOk(65500, 1);
+            ImageData directOver(65501, 1);
+            const auto directOkPath = ceilingDir / "direct-65500x1.jpg";
+            const auto directOverPath = ceilingDir / "direct-65501x1.jpg";
+            check(ImageEncoder::saveJPEG(directOk, directOkPath.string(), 90) == ErrorCode::Success &&
+                  std::filesystem::exists(directOkPath) && !hasJpegStagingFile(ceilingDir),
+                  "ImageEncoder::saveJPEG accepts 65500x1");
+            check(ImageEncoder::saveJPEG(directOver, directOverPath.string(), 90) == ErrorCode::ProcessingError &&
+                  !std::filesystem::exists(directOverPath) && !hasJpegStagingFile(ceilingDir),
+                  "ImageEncoder::saveJPEG rejects 65501x1 before creating staging .tmp");
+            std::filesystem::remove(directOkPath);
+
+            const auto exact65500Png = dir / "header-127x93467.png";
+            writePngHeaderOnly(exact65500Png, 127u, 93467u);
+            const std::string exact65500PngStr = exact65500Png.string();
+            auto short89Jpeg = makeNativeRawReq(exact65500PngStr);
+            short89Jpeg.output_target = SONY2FUJI_TARGET_FILE;
+            short89Jpeg.output_format = SONY2FUJI_OUTPUT_JPEG;
+            short89Jpeg.output_path = wideJpegOut.c_str();
+            short89Jpeg.size_mode = SONY2FUJI_SIZE_FIT_SHORT_EDGE;
+            short89Jpeg.short_edge = 89u;
+            check(sony2fuji_process(session, &short89Jpeg, nullptr) == SONY2FUJI_STATUS_UNSUPPORTED,
+                  "127x93467 FIT_SHORT_EDGE=89 JPEG computes exact 65500 long edge and passes preflight");
+
+            const std::vector<unsigned char> exactBufPixels(127u * 93467u * 3u, 120u);
+            const auto exactScaledOut = ceilingDir / "scaled-89x65500.jpg";
+            const std::string exactScaledOutStr = exactScaledOut.string();
+            auto short89Buf = request(exactBufPixels.data());
+            short89Buf.input_width = 127u;
+            short89Buf.input_height = 93467u;
+            short89Buf.input_is_linear = 0;
+            short89Buf.intent = SONY2FUJI_INTENT_FINAL;
+            short89Buf.output_target = SONY2FUJI_TARGET_FILE;
+            short89Buf.output_format = SONY2FUJI_OUTPUT_JPEG;
+            short89Buf.output_path = exactScaledOutStr.c_str();
+            short89Buf.size_mode = SONY2FUJI_SIZE_FIT_SHORT_EDGE;
+            short89Buf.short_edge = 89u;
+            infoW = infoH = infoComp = 0;
+            check(sony2fuji_process(session, &short89Buf, nullptr) == SONY2FUJI_STATUS_OK &&
+                  stbi_info(exactScaledOutStr.c_str(), &infoW, &infoH, &infoComp) == 1 &&
+                  infoW == 89 && infoH == 65500 && !hasJpegStagingFile(ceilingDir),
+                  "127x93467 INPUT_BUFFER FIT_SHORT_EDGE=89 truly encodes 89x65500 JPEG without float-rounding rejection");
+            std::filesystem::remove(exactScaledOut);
+
+            const auto over65501Png = dir / "header-127x93468.png";
+            writePngHeaderOnly(over65501Png, 127u, 93468u);
+            const std::string over65501PngStr = over65501Png.string();
+            auto short89Over = short89Jpeg;
+            short89Over.input_path = over65501PngStr.c_str();
+            short89Over.lut_path = absentLut.c_str();
+            short89Over.lut_strength = 1.0f;
+            expectRejected(short89Over, "127x93468 FIT_SHORT_EDGE=89 JPEG (65501.19 -> 65501) rejects in preflight");
+
+            const auto halfUp65501Png = dir / "header-4x131001.png";
+            writePngHeaderOnly(halfUp65501Png, 4u, 131001u);
+            const std::string halfUp65501PngStr = halfUp65501Png.string();
+            auto halfUpOver = short89Over;
+            halfUpOver.input_path = halfUp65501PngStr.c_str();
+            halfUpOver.short_edge = 2u; // 131001 * 2 / 4 = 65500.5 -> half-up rounds to 65501 -> reject
+            expectRejected(halfUpOver, "Exact .5 boundary (4x131001 FIT_SHORT_EDGE=2 -> 65500.5) rounds half-up to 65501 and rejects");
         }
 
         // WP-03 (3a): JPEG header preflight scans markers under a 4 MiB byte budget instead of a fixed

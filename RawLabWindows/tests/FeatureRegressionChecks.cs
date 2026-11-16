@@ -51,7 +51,7 @@ internal static class FeatureRegressionChecks
               !ExportFormat.Jpeg.AcceptsPath("output.png") && ExportFormat.Png.AcceptsPath("output.PnG") &&
               ExportFormat.RenderedDng.AcceptsPath("output.DnG") && !ExportFormat.RenderedDng.AcceptsPath("output.jpg"),
             "single-export format validation accepts only the selected extension");
-        check(ExportSize.Parse("1") == 1 && ExportSize.Parse("65535") == 65535 && ExportSize.Parse("0") == null && ExportSize.Parse("65536") == null,
+        check(ExportSize.Parse("1") == 1 && ExportSize.Parse("65500") == 65500 && ExportSize.Parse("0") == null && ExportSize.Parse("65501") == null,
             "custom export size validates the inclusive pixel bounds");
 
         var oldJob = JsonSerializer.Deserialize<BatchJob>("{\"Version\":1,\"Source\":\"old.ARW\",\"Items\":[]}");

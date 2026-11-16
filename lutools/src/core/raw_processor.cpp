@@ -1189,6 +1189,7 @@ struct TurboJpegEncoder {
 };
 
 } // namespace
+static_assert(JPEG_MAX_DIMENSION == 65500, "libjpeg-turbo dimension ceiling matches SDR JPEG contract");
 ErrorCode ImageEncoder::saveJPEG(
     const ImageData& image,
     const std::string& filepath,
@@ -1196,7 +1197,7 @@ ErrorCode ImageEncoder::saveJPEG(
 ) {
     if (filepath.empty() || filepath.find('\0') != std::string::npos ||
         image.width <= 0 || image.height <= 0 ||
-        image.width > 65535 || image.height > 65535 ||
+        image.width > 65500 || image.height > 65500 ||
         image.pixels.empty() ||
         image.pixels.size() != static_cast<size_t>(image.width) * static_cast<size_t>(image.height)) {
         return ErrorCode::ProcessingError;

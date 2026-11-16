@@ -69,8 +69,8 @@ struct BatchExportTests {
         check(BatchOutputFormat.hdrJPEG.publishesToPhotos && BatchOutputFormat.jpeg.publishesToPhotos
               && !BatchOutputFormat.renderedDNG.publishesToPhotos,
               "HDR and SDR JPEG publication offer Photos confirmation; rendered DNG uses file reconciliation")
-        check(ExportSize.isValid(1) && ExportSize.isValid(65535) && !ExportSize.isValid(0) && !ExportSize.isValid(65536),
-              "custom export size enforces the 1-65535 range")
+        check(ExportSize.isValid(1) && ExportSize.isValid(65500) && !ExportSize.isValid(0) && !ExportSize.isValid(65501),
+              "custom export size enforces the 1-65500 range")
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("rawlab-batch-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

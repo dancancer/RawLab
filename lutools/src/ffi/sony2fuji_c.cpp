@@ -579,7 +579,8 @@ sony2fuji::GpuMode toCoreGpuMode(sony2fuji_gpu_mode mode) {
 
 // 输出像素数上限取有符号 32 位上限（约 2.14G 像素），防止尺寸相乘或核心 int 像素计数溢出。
 constexpr uint64_t kMaxOutputPixels = static_cast<uint64_t>(std::numeric_limits<int32_t>::max());
-constexpr uint32_t kMaxJpegDimension = 65535u;
+// 与 libjpeg-turbo JPEG_MAX_DIMENSION、解码端 jdinput.c、Android BitmapFactory 及 preview_exposure 一致。
+constexpr uint32_t kMaxJpegDimension = 65500u;
 
 bool exceedsOutputPixelCap(uint32_t width, uint32_t height) {
     return uint64_t(width) * uint64_t(height) > kMaxOutputPixels;
@@ -1187,7 +1188,7 @@ sony2fuji_status computeTargetSize(
     }
 
     // Exact rational round-half-up scaling: floor(src * num / den + 0.5), clamped to >= 1.
-    // Avoids binary32 intermediate scale rounding (e.g. 4717x75453 at short_edge=4097 -> exact 65535, not 65536).
+    // Avoids binary32 intermediate scale rounding (e.g. 127x93467 at short_edge=89 -> exact 65500, not 65501).
     auto scaleEdgeHalfUp = [](uint32_t src, uint32_t num, uint32_t den, uint32_t& out) -> bool {
         const uint64_t scaled =
             (static_cast<uint64_t>(src) * static_cast<uint64_t>(num) + static_cast<uint64_t>(den / 2u)) /
