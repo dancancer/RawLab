@@ -1,9 +1,20 @@
 #include "model_package.h"
+#include "dualdn_cache.h"
 #include <nlohmann/json.hpp>
+#include <algorithm>
+#include <atomic>
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <mutex>
 #include <set>
 #include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 namespace sony2fuji::ai {
 namespace {
@@ -44,9 +55,74 @@ std::string nativeModelPath(const std::filesystem::path& root, const nlohmann::j
     if (count != expected.size()) throw std::invalid_argument("Missing Core ML resource");
     return folder.u8string();
 }
+
+std::atomic<std::uint64_t> packageValidations{0};
+
+// 包目录内容指纹（不读文件内容）：每个条目的 relpath + 类型 + 身份戳，排序后拼接。普通文件
+// 复用 AISession::packageStamp() 同源的 sourceMetadataKey（POSIX dev/ino/ctime、Windows
+// 卷/索引/创建/变更时间 + 模型变更租约；正常卷零内容读取），与 Windows 粗 mtime tick 及
+// "保 size+mtime 篡改" 契约对齐。文件集合、任一身份或权限变化都改变指纹并触发全量重验；
+// 遍历/取戳失败（含目录不可达、文件不可读）返回 false，调用方退回直接全量校验，错误仍由
+// validate 原样抛出（与缓存引入前同语义）。
+bool packageStateFingerprint(const std::filesystem::path& root, std::string& out) {
+    namespace fs = std::filesystem;
+    try {
+        std::vector<std::string> lines;
+        std::error_code error;
+        for (fs::recursive_directory_iterator it(root, fs::directory_options::none, error), end;
+             !error && it != end; it.increment(error)) {
+            const auto relative = it->path().lexically_relative(root).generic_u8string();
+            if (fs::is_symlink(it->symlink_status())) lines.push_back("L " + relative);
+            else if (it->is_directory()) lines.push_back("D " + relative);
+            else if (it->is_regular_file()) {
+#ifndef _WIN32
+                // stat 对无读权限文件照样成功；旧语义里 validate 会在 ifstream 读取处报错，
+                // 故不可读必须让缓存让路（Windows 由 sourceMetadataKey 内 GENERIC_READ 句柄把关）。
+                if (::access(it->path().c_str(), R_OK) != 0) return false;
+#endif
+                lines.push_back("F " + relative + " " + sourceMetadataKey(it->path().u8string()));
+            }
+            else lines.push_back("X " + relative);
+        }
+        if (error) return false;
+        std::sort(lines.begin(), lines.end());
+        out = root.generic_u8string();
+        for (const auto& line : lines) { out += '\n'; out += line; }
+        return true;
+    } catch (...) { return false; }
 }
 
-ModelPackage loadModelPackage(const std::string& directory) {
+// 进程级已校验包缓存：每个新 AISession（缩略图/批量/编辑器）构造都会 loadModelPackage，
+// 未命中才全量 SHA-256（Mac 正式包实测每次校验需读 622MB），命中直接复用已校验包。
+// 键、校验与指纹一律走 canonical 目录（软链写法在入口处收敛，缓存内只存 canonical
+// 路径前缀，返回前按调用方写法重拼）；指纹取放与校验同在锁内，校验后复核目录未变才
+// 入库——锁外不做决定性命中，锁内校验也让并发构造的两个 session 只重算一次。
+struct PackageCache {
+    std::mutex mutex;
+    std::map<std::string, std::pair<std::string, ModelPackage>> entries;
+};
+PackageCache& packageCache() { static PackageCache cache; return cache; }
+
+// 缓存条目内部只存 canonical 前缀；返回前按调用方本次传入的写法重拼相对部分。
+ModelPackage rebasePackage(const ModelPackage& stored, const std::filesystem::path& canonical,
+                           const std::filesystem::path& caller) {
+    if (canonical == caller) return stored;
+    auto re = [&](const std::string& value) {
+        if (value.empty()) return value; // 未配置的可选路径保持空。
+        const auto full = std::filesystem::u8path(value);
+        return (caller / full.lexically_relative(canonical)).u8string();
+    };
+    auto out = stored;
+    for (auto& path : out.paths) path = re(path);
+    for (auto& path : out.coreMLPaths) path = re(path);
+    out.blindRGBPath = re(out.blindRGBPath);
+    out.blindRGBCoreMLPath = re(out.blindRGBCoreMLPath);
+    return out;
+}
+}
+
+static ModelPackage validateModelPackage(const std::string& directory) {
+    packageValidations.fetch_add(1, std::memory_order_relaxed);
     const auto root = std::filesystem::u8path(directory);
     const auto path = root / "manifest.json";
     if (!std::filesystem::is_regular_file(path) || std::filesystem::file_size(path) > 65536)
@@ -113,5 +189,34 @@ ModelPackage loadModelPackage(const std::string& directory) {
         }
     }
     return result;
+}
+
+ModelPackage loadModelPackage(const std::string& directory) {
+    std::error_code error;
+    const auto canonical = std::filesystem::canonical(std::filesystem::u8path(directory), error);
+    // canonical 失败（目录缺失/不可达）硬失败，不回退未规范化串；消息与原缺失语义一致。
+    if (error) throw std::invalid_argument("Missing or oversized DualDn manifest");
+    const auto caller = std::filesystem::u8path(directory);
+    const auto canonicalDirectory = canonical.u8string();
+    auto& cache = packageCache();
+    std::lock_guard<std::mutex> lock(cache.mutex);
+    std::string key;
+    // 枚举异常只跳过缓存这一优化层；校验仍对 canonical 执行，错误语义与缓存引入前一致。
+    if (!packageStateFingerprint(canonical, key))
+        return rebasePackage(validateModelPackage(canonicalDirectory), canonical, caller);
+    const auto entry = cache.entries.find(canonicalDirectory);
+    if (entry != cache.entries.end() && entry->second.first == key)
+        return rebasePackage(entry->second.second, canonical, caller);
+    auto result = validateModelPackage(canonicalDirectory);
+    std::string after; // 校验后复核：目录在校验期间变过就不入库，也不信任旧条目。
+    if (packageStateFingerprint(canonical, after) && after == key) {
+        cache.entries.insert_or_assign(canonicalDirectory, std::make_pair(std::move(key), std::move(result)));
+        result = cache.entries.at(canonicalDirectory).second;
+    } else cache.entries.erase(canonicalDirectory);
+    return rebasePackage(result, canonical, caller);
+}
+
+std::uint64_t modelPackageValidationCount() {
+    return packageValidations.load(std::memory_order_relaxed);
 }
 } // namespace sony2fuji::ai
