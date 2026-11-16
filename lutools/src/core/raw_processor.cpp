@@ -25,7 +25,7 @@
 #include <limits>
 #include <new>
 #include <system_error>
-#include <zlib.h>
+#include <spng.h>
 #include <jpeglib.h>
 #include <jerror.h>
 #ifdef _WIN32
@@ -1272,11 +1272,21 @@ ErrorCode ImageEncoder::saveJPEG(
     return ErrorCode::Success;
 }
 
-ErrorCode ImageEncoder::savePNG(const ImageData& image, const std::string& filepath) {
+ErrorCode ImageEncoder::savePNG(
+    const ImageData& image,
+    const std::string& filepath,
+    const PngMetadata* metadata
+) {
     if (filepath.empty() || filepath.find('\0') != std::string::npos ||
         image.width <= 0 || image.height <= 0 ||
-        image.pixels.size() != static_cast<size_t>(image.width) * image.height)
+        image.pixels.size() != static_cast<size_t>(image.width) * static_cast<size_t>(image.height)) {
         return ErrorCode::ProcessingError;
+    }
+
+    const uint64_t rowBytes64 = static_cast<uint64_t>(image.width) * 3u * sizeof(uint16_t);
+    if (rowBytes64 > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
+        return ErrorCode::OutOfMemory;
+    }
 
     std::filesystem::path destination;
     try {
@@ -1291,97 +1301,109 @@ ErrorCode ImageEncoder::savePNG(const ImageData& image, const std::string& filep
         return ErrorCode::IOError;
     }
     std::error_code directoryError;
-    if (!destination.has_filename() || std::filesystem::is_directory(destination, directoryError))
+    if (!destination.has_filename() || std::filesystem::is_directory(destination, directoryError)) {
         return ErrorCode::IOError;
+    }
 
     try {
         EncodedStagingFile staging(EncodedStagingFile::Kind::Png);
         if (!staging.create(destination)) return ErrorCode::IOError;
-        std::FILE* file = staging.file();
-        bool ok = true;
-        auto writeBytes = [&](const void* data, size_t length) {
-            if (!ok || length == 0) return;
-            if (std::fwrite(data, 1, length, file) != length) ok = false;
+
+        struct SpngEncoderGuard {
+            spng_ctx* ctx = nullptr;
+            explicit SpngEncoderGuard(spng_ctx* c) : ctx(c) {}
+            ~SpngEncoderGuard() {
+                if (ctx) spng_ctx_free(ctx);
+            }
         };
-        auto write32 = [&](uint32_t value) {
-            unsigned char bytes[] = {static_cast<unsigned char>(value>>24),
-                static_cast<unsigned char>(value>>16), static_cast<unsigned char>(value>>8),
-                static_cast<unsigned char>(value)};
-            writeBytes(bytes, sizeof(bytes));
+        spng_ctx* ctx = spng_ctx_new(SPNG_CTX_ENCODER);
+        if (!ctx) return ErrorCode::OutOfMemory;
+        SpngEncoderGuard ctxGuard(ctx);
+
+        auto mapSpngError = [&](int err) -> ErrorCode {
+            if (std::ferror(staging.file()) != 0) return ErrorCode::IOError;
+            if (err == SPNG_EMEM) return ErrorCode::OutOfMemory;
+            return ErrorCode::ProcessingError;
         };
-        auto chunk = [&](const char* type, const unsigned char* data, size_t length) {
-            write32(static_cast<uint32_t>(length));
-            writeBytes(type, 4);
-            writeBytes(data, length);
-            uLong crc = crc32(0, reinterpret_cast<const Bytef*>(type), 4);
-            if (length) crc = crc32(crc, data, static_cast<uInt>(length));
-            write32(static_cast<uint32_t>(crc));
-        };
-        const unsigned char signature[] = {137,80,78,71,13,10,26,10};
-        writeBytes(signature, sizeof(signature));
-        unsigned char header[13] = {};
-        for (int i=0; i<4; ++i) {
-            header[i] = static_cast<unsigned char>(image.width >> (24-8*i));
-            header[4+i] = static_cast<unsigned char>(image.height >> (24-8*i));
+
+        if (int err = spng_set_png_file(ctx, staging.file()); err != 0) {
+            return mapSpngError(err);
         }
-        header[8]=16; header[9]=2;
-        chunk("IHDR", header, sizeof(header));
-        const unsigned char intent = 0;
-        chunk("sRGB", &intent, 1);
-        z_stream stream{};
-        if (deflateInit(&stream, Z_DEFAULT_COMPRESSION) != Z_OK) return ErrorCode::ProcessingError;
-        // deflateEnd must run on every exit path, including a bad_alloc while the row buffer
-        // below is allocated or a cancellation raised before the publish.
-        struct DeflateGuard {
-            z_stream* stream;
-            ~DeflateGuard() { deflateEnd(stream); }
-        } deflateGuard{&stream};
-        const uint64_t rowBytes64 = static_cast<uint64_t>(image.width) * 6u + 1u;
-        if (rowBytes64 > static_cast<uint64_t>(std::numeric_limits<size_t>::max()))
-            return ErrorCode::OutOfMemory;
-        std::vector<unsigned char> row(static_cast<size_t>(rowBytes64));
-        std::array<unsigned char, 65536> compressed;
+
+        spng_ihdr ihdr{};
+        ihdr.width = static_cast<uint32_t>(image.width);
+        ihdr.height = static_cast<uint32_t>(image.height);
+        ihdr.bit_depth = 16;
+        ihdr.color_type = SPNG_COLOR_TYPE_TRUECOLOR;
+        if (int err = spng_set_ihdr(ctx, &ihdr); err != 0) {
+            return mapSpngError(err);
+        }
+
+        if (int err = spng_set_option(ctx, SPNG_FILTER_CHOICE, SPNG_FILTER_CHOICE_ALL); err != 0) {
+            return mapSpngError(err);
+        }
+
+        if (metadata && !metadata->iccProfile.empty()) {
+            spng_iccp iccp{};
+            const std::string& profileName =
+                metadata->iccProfileName.empty() ? std::string("ICC Profile") : metadata->iccProfileName;
+            const size_t nameLen = std::min<size_t>(profileName.size(), sizeof(iccp.profile_name) - 1);
+            std::memcpy(iccp.profile_name, profileName.data(), nameLen);
+            iccp.profile_name[nameLen] = '\0';
+            iccp.profile_len = metadata->iccProfile.size();
+            iccp.profile = reinterpret_cast<char*>(const_cast<uint8_t*>(metadata->iccProfile.data()));
+            if (int err = spng_set_iccp(ctx, &iccp); err != 0) {
+                return mapSpngError(err);
+            }
+        } else {
+            if (int err = spng_set_srgb(ctx, 0); err != 0) {
+                return mapSpngError(err);
+            }
+        }
+
+        if (metadata && !metadata->exif.empty()) {
+            spng_exif exif{};
+            exif.length = metadata->exif.size();
+            exif.data = reinterpret_cast<char*>(const_cast<uint8_t*>(metadata->exif.data()));
+            if (int err = spng_set_exif(ctx, &exif); err != 0) {
+                return mapSpngError(err);
+            }
+        }
+
+        if (int err = spng_encode_image(
+                ctx, nullptr, 0, SPNG_FMT_PNG, SPNG_ENCODE_PROGRESSIVE | SPNG_ENCODE_FINALIZE);
+            err != 0) {
+            return mapSpngError(err);
+        }
+
+        std::vector<uint16_t> row(static_cast<size_t>(image.width) * 3u);
+        const size_t rowBytes = static_cast<size_t>(rowBytes64);
         constexpr size_t kCancelCheckPixels = 65536;
-        constexpr size_t kMaxDeflateInput = static_cast<size_t>(std::numeric_limits<uInt>::max());
         size_t pixelsSinceCheck = 0;
-        for (int y=0; y<image.height && ok; ++y) {
+        for (int y = 0; y < image.height; ++y) {
             pixelsSinceCheck += static_cast<size_t>(image.width);
             if (pixelsSinceCheck >= kCancelCheckPixels) {
                 pixelsSinceCheck = 0;
                 checkProcessingCancellation();
             }
-            row[0]=0;
-            for (int x=0; x<image.width; ++x) {
-                const auto& p = image.at(x,y);
-                const uint16_t values[] = {floatToUint16(p.r),floatToUint16(p.g),floatToUint16(p.b)};
-                const size_t base = 1u + static_cast<size_t>(x) * 6u;
-                for (size_t c=0;c<3;++c) {
-                    row[base + c*2u] = static_cast<unsigned char>(values[c]>>8);
-                    row[base + c*2u + 1u] = static_cast<unsigned char>(values[c]);
-                }
+            for (int x = 0; x < image.width; ++x) {
+                const auto& p = image.at(x, y);
+                const size_t base = static_cast<size_t>(x) * 3u;
+                row[base + 0] = floatToUint16(p.r);
+                row[base + 1] = floatToUint16(p.g);
+                row[base + 2] = floatToUint16(p.b);
             }
-            unsigned char* nextIn = row.data();
-            size_t remainingIn = row.size();
-            while (remainingIn > 0 && ok) {
-                const size_t slice = std::min(remainingIn, kMaxDeflateInput);
-                remainingIn -= slice;
-                stream.next_in = nextIn;
-                stream.avail_in = static_cast<uInt>(slice);
-                nextIn += slice;
-                const int flush = (y == image.height-1 && remainingIn == 0) ? Z_FINISH : Z_NO_FLUSH;
-                int status;
-                do {
-                    stream.next_out = compressed.data();
-                    stream.avail_out = static_cast<uInt>(compressed.size());
-                    status = deflate(&stream, flush);
-                    if (status != Z_OK && status != Z_STREAM_END) { ok=false; break; }
-                    const size_t size = compressed.size()-stream.avail_out;
-                    if (size) chunk("IDAT", compressed.data(), size);
-                } while (stream.avail_in || stream.avail_out == 0 || (flush == Z_FINISH && status != Z_STREAM_END));
+            const int err = spng_encode_row(ctx, row.data(), rowBytes);
+            const bool lastRow = (y == image.height - 1);
+            const bool rowOk = lastRow ? (err == SPNG_EOI || err == 0) : (err == 0);
+            if (!rowOk) {
+                return mapSpngError(err);
             }
         }
-        chunk("IEND", nullptr, 0);
-        if (!ok || std::fflush(file) != 0 || std::ferror(file) != 0) return ErrorCode::ProcessingError;
+
+        if (std::fflush(staging.file()) != 0 || std::ferror(staging.file()) != 0) {
+            return ErrorCode::IOError;
+        }
         // 提交点：编码完成后、替换目标文件之前再看一次取消。
         checkProcessingCancellation();
         if (!staging.finishAndPublish(destination)) return ErrorCode::IOError;
