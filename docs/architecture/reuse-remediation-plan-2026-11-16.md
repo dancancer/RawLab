@@ -38,11 +38,11 @@
 | 编号 | 优先级 | 违背层级 | 模块 / 端 | 造轮子现象简述 | 目标收敛方案 | 量级 | 状态 |
 |---|---|---|---|---|---|---|---|
 | **WR-01** | **P1** | 一级（对内未复用）+ 二级 | Core (`lutools`) | 核心已链 `libjpeg-turbo`，普通 JPEG 导出仍用 `stb_image_write` + `longjmp`；16-bit PNG 导出手写 chunk/CRC/zlib 且固定滤波 `0` | JPEG 统一复用 `libjpeg-turbo` 并从核心生产路径移除 `stb_image_write.h`；PNG 编码改用 `libpng` / `libspng`（支持行滤波与编码期直写 `eXIf`/`iCCP`） | 2～3 天 | ✅ 已修（#426/#431） |
-| **WR-02** | **P1** | 一级（对内未复用） | Android + Core | 核心非 Apple 端已链 `lcms2` 且有 `display_image`，Android 却在 Kotlin/JNI 手写 289 行 ICC 解析器（拒收 `A2B0`/`B2A0`）、手写矩阵色彩转换并单独编一份 `stb_image.h` | Android PNG16 解码与 ICC→sRGB 转换下沉至原生层复用 `lcms2`（恢复 LUT 型 ICC 支持），逐步并入 `lutools` 栅格输入层 | 3～4 天 | ✅ 已修（#432/#433） |
+| **WR-02** | **P1** | 一级（对内未复用） | Android + Core | 核心非 Apple 端已链 `lcms2` 且有 `display_image`，Android 却在 Kotlin/JNI 手写 289 行 ICC 解析器（拒收 `A2B0`/`B2A0`）、手写矩阵色彩转换并单独编一份 `stb_image.h` | Android PNG16 解码与 ICC→sRGB 转换下沉至原生层复用 `lcms2`（恢复 LUT 型 ICC 支持），逐步并入 `lutools` 栅格输入层 | 3～4 天 | ✅ 已修（#433） |
 | **WR-03** | **P1** | 一级（跨端重复） | Shared + 四端 + CLI | 参数范围/步长/默认值写 5 份（65/83 字段分叉）；传输/重置/持久化四端各一套；Win 手抄 114+ 处 `DllImport`，Android `rawlab_jni.cpp` 自建第二套会话语义 | 衔接 `AR-1`/`AR-2`：以 `Shared/specs/` 单一真源 + 四端/CLI parity 测试收口语义分叉；扩 ABI fixture 覆盖函数签名与枚举，对账 P/Invoke 与 JNI | 持续（并入 AR-1/2） | 🔄 持续（随 AR 触达） |
 | **WR-04** | **P2** | 二级（对外未用标准库） | Android + Shared | Android 手写 `StrictJSON.kt` 状态机及数百行 `JSONObject` 手工映射；Swift 手写 `PresetJSONScanner.swift` 递归下降扫描器 | Android 引入 Apache-2.0 许可的严格 JSON 库（如 `Jackson` `STRICT_DUPLICATE_DETECTION`）或经 JNI 复用核心 `nlohmann::json`；Swift 存量扫描器冻结扩张 | 2～3 天 | ✅ 已修（#439：jackson-core 2.18.3 STRICT+嵌套64，−83 行） |
 | **WR-05** | **P2** | 一级 + 二级 | Core + Apple + Android | 仓内散落 **4 套**手搓 TIFF IFD / 容器段字节解析器（`dcp_compiler.cpp`、`hdr_metadata.cpp`、`Shared/ExportMetadata.swift`、Android `MpfThumbnails.kt` 等） | 在 `lutools` 收敛单一受界 TIFF/JPEG/PNG 容器读写原语（优先复用已链 `libtiff` / `DNG SDK`），客户端不再新增字节级容器解析；保留 Win `ExifTool` 外部进程隔离 | 3～5 天（按触达推进） | ✅ 本波收口（#440 Core 两处收敛 tiff_ifd；#442 Shared/ExportMetadata 判定"活且必要→冻结"，重复写定案不存在；Android Kotlin 按方案冻结禁新增） |
-| **WR-06** | **P2** | 二级（工程基建自造） | Win + Mac/Shared + Core | Win 拆 12 个手写 `Main` 测试 `Exe`；Mac/Shared 数十个 `.sh` 手抄 `swiftc` 源文件数组；`lutools/tests` 复制粘贴 `check()` | 衔接 `AR-6`：Win 纯模型测试迁入 `dotnet test` (`xUnit`)；`Shared`/Mac 模型层建 `Package.swift` 或自动源码清单；C++ 统一轻量测试断言头（如 `doctest`） | 分批（3～5 天） | ✅ C++ 部分闭环（#437 harness+清单对账、#438 *.mm+add_test 绑定；SwiftPM/JUnit 统一为后续顺路项） |
+| **WR-06** | **P2** | 二级（工程基建自造） | Win + Mac/Shared + Core | Win 拆 12 个手写 `Main` 测试 `Exe`；Mac/Shared 数十个 `.sh` 手抄 `swiftc` 源文件数组；`lutools/tests` 复制粘贴 `check()` | 衔接 `AR-6`：Win 纯模型测试迁入 `dotnet test` (`xUnit`)；`Shared`/Mac 模型层建 `Package.swift` 或自动源码清单；C++ 统一轻量测试断言头（如 `doctest`） | 分批（3～5 天） | ✅ C++ 部分闭环（#437 harness+清单对账、#438 *.mm+add_test 绑定；Windows 纯模型测试迁 `dotnet test`（xUnit）与 Mac/Shared SwiftPM 源码清单为后续顺路项） |
 | **WR-07** | **P2** | 一级（双端重复） | iOS + Android + Core | iOS (`CameraPTPClient.swift`) 与 Android (`SonyMobileSession.java`) 基于裸 TCP Socket 把 PTP/IP 协议栈与卡上分页核对各写了一遍 | 演进触发：冻结 Swift/Java 双写扩张；下次新增相机协议/机型时将 PTP/IP 报文与状态机下沉至 `lutools`（C++/Rust），移动端仅提供系统 Socket 字节通道 | 演进触发 | ❄️ 冻结（触发条件未到） |
 | **WR-08** | **P3** | 二级（框架外叠屋架床） | Mac + Win + Android | 桌面端已接 `Sparkle` / `Velopack`，仍保留拉 GitHub Releases 手拆版本号的 `UpdateChecker` 及厚重外围状态机（状态损坏甚至阻塞修图 `BlocksEditing`） | 桌面端收敛至 `Sparkle` / `Velopack` 单一更新发现源，退役桌面端重复 GitHub API 检查器；解耦更新状态文件故障对修图主流程的阻塞 | 2 天 | ✅（#429 门禁解耦、#435 Mac 退役净−244、#436 Win 退役净−459，WPF 门禁 checks=build hosted 实证+125 套件基线对照：5 红全预存在） |
 | **WR-09** | **P3** | 一级 + 二级（局部算子） | Core (`lutools`) | `hdr_resample.h` 手写标量双线性缩放、`hdr_half.h` 手写软 FP16、`sha256.h` 非 Apple/Win 手写压缩轮函数、CLI 手写 `argv` 循环 | 开启 OpenCV/硬件指令集时复用 `cv::resize` 与 NEON/F16C 半精度转换（标量仅作兜底）；冻结 `sha256.h` 标量兜底扩散；CLI 扩复杂子命令时引入 `CLI11`/`argparse` | 1～2 天 | ❄️ 冻结 |
@@ -158,7 +158,7 @@
   1. 保留真正承载业务安全边界的薄层：**自定义签名/包哈希信任校验**（零预算签名方案所需）与 **导出/编辑进行中推迟重启门禁（`UpdateInstallGate`）**。
   2. 桌面端统一以 `Sparkle` Appcast / `Velopack` Feed 作为唯一版本发现源，下线桌面端重复的 GitHub Releases JSON `UpdateChecker`；解耦更新组件状态异常对修图主界面的阻塞（更新坏了只降级为“自动更新不可用，提示手动下载”，绝不锁死用户修图）。
 - **验收锚点**：损坏 `UpdateStore` 状态文件后启动应用，编辑器仍可正常打开、调整和导出照片，仅更新入口展示明确降级提示。
-- **落地 PR**：#429（仅完成 WR-08a 解耦更新状态故障不锁编辑；WR-08b 退役桌面端重复 GitHub Releases 检查器仍待启动）
+- **落地 PR**：WR-08a=#429、WR-08b Mac=#435（净−244）、Win=#436（净−459），双端收官
 
 ---
 

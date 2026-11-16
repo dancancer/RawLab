@@ -476,6 +476,6 @@
 - **状态回填**：更新 [reuse-remediation-plan-2026-11-16.md](../reuse-remediation-plan-2026-11-16.md) 文首状态快照与 §2 总览状态列（`origin/development` @ `1e10a0152`）。
 - **本波合入 PR**：
   - **#435 / #436（`WR-08b`）**：Mac（#435，净 −244 行）与 Windows（#436，净 −459 行）退役旧 GitHub Releases `UpdateChecker`，桌面端收敛至 `Sparkle` / `Velopack`（WPF 门禁 `checks=build` hosted 实证 + 125 套件基线对照，5 红全预存在）。
-  - **#437 / #438（`WR-06`）**：C++ 测试引入共享 `test_harness.h` 与清单对账（#437），波二扩展至 `*.mm`、`IN LISTS` 与 `add_test` 绑定（#438）；SwiftPM / JUnit 统一列为后续顺路项。
+  - **#437 / #438（`WR-06`）**：C++ 测试引入共享 `test_harness.h` 与清单对账（#437），波二扩展至 `*.mm`、`IN LISTS` 与 `add_test` 绑定（#438）；Windows 纯模型测试迁 `dotnet test`（xUnit）与 Mac/Shared SwiftPM 源码清单为后续顺路项。
   - **#439（`WR-04`）**：Android `StrictJSON` 收敛至 `jackson-core 2.18.3`（`STRICT_DUPLICATE_DETECTION` + 嵌套深度 64，−83 行）。
   - **#440 / #442（`WR-05`）**：Core 两处 TIFF IFD 解析收敛至受界 `tiff_ifd`（#440）；`Shared/ExportMetadata.swift` 判定“活且必要→冻结”，重复写定案不存在（#442）；Android Kotlin 按方案冻结禁新增。
