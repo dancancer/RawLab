@@ -13,7 +13,6 @@ public partial class MainWindow
 {
     private bool choosingRecipes;
     private readonly Dictionary<string, Button> recipeButtons = new();
-    private readonly Dictionary<string,TextBlock> recipeSelectionMarkers=new();
     // ┌─ 当前外观的显示名：标题栏、对比标签、批量任务和导出文件名共用 ─────────────┐
     // │ 大师配方与“中性”按界面语言显示；胶片和导入外观用自己的名字                    │
     // └────────────────────────────────────────────────────────────────────────────┘
@@ -26,24 +25,28 @@ public partial class MainWindow
         foreach (var recipe in MasterRecipe.All) Add(recipe);
         void Add(MasterRecipe? recipe)
         {
-            var content = new StackPanel { Margin = new Thickness(4, 5, 4, 5) };
-            if (recipe != null) content.Children.Add(new Image { Source = new BitmapImage(new Uri(recipe.ArtworkPath)), Width = 64, Height = 64 });
-            else content.Children.Add(new EditorIcon { Kind = "Neutral", Width = 32, Height = 64 });
-            var title=new TextBlock { Text = Loc.Text(recipe?.Name ?? "无配方"), MinHeight = 20, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center };
-            title.SetResourceReference(TextBlock.FontSizeProperty,"EditorBodySize");content.Children.Add(title);
-            var caption=new TextBlock { Text = Loc.Text(recipe?.Subtitle ?? "中性直出"), MinHeight = 32, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center };
-            caption.SetResourceReference(TextBlock.FontSizeProperty,"EditorCaptionSize");content.Children.Add(caption);
-            var marker=new TextBlock{Text="✓",FontSize=16,FontWeight=FontWeights.Bold,HorizontalAlignment=HorizontalAlignment.Right,
-                VerticalAlignment=VerticalAlignment.Top,Visibility=Visibility.Hidden,IsHitTestVisible=false};
-            marker.SetResourceReference(TextBlock.ForegroundProperty,"Accent");
-            var card=new Grid();card.Children.Add(content);card.Children.Add(marker);
-            var button = new Button { Content = card, Style = (Style)FindResource("QuietButton"), Padding = new Thickness(0),
-                BorderThickness = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Stretch, ToolTip = Loc.Text(recipe?.Summary ?? "中性直出") };
-            recipeSelectionMarkers[recipe?.Id ?? ""]=marker;
+            var content = new StackPanel();
+            var artwork = new Grid { Width = 46, Height = 46 };
+            if (recipe != null && File.Exists(recipe.ArtworkPath)) artwork.Children.Add(new Image { Source = new BitmapImage(new Uri(recipe.ArtworkPath)), Width = 46, Height = 46 });
+            else artwork.Children.Add(new EditorIcon { Kind = recipe == null ? "Neutral" : "Photo", Width = 28, Height = 46 });
+            content.Children.Add(artwork);
+            var title = new TextBlock { Text = Loc.Text(recipe?.Name ?? "无配方"), FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 5, 0, 0) };
+            title.SetResourceReference(TextBlock.FontSizeProperty, "EditorCaptionSize"); content.Children.Add(title);
+            var caption = new TextBlock { Text = Loc.Text(recipe?.Subtitle ?? "中性直出"), MinHeight = 28, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 2, 0, 0) };
+            caption.SetResourceReference(TextBlock.FontSizeProperty, "EditorCaptionSize"); content.Children.Add(caption);
+            var button = new Button
+            {
+                Content = content,
+                Style = (Style)FindResource("QuietButton"),
+                Padding = new Thickness(3, 5, 3, 5),
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                VerticalContentAlignment = VerticalAlignment.Top,
+                ToolTip = recipe == null ? Loc.Text("中性直出") : $"{Loc.Text(recipe.Name)} · {Loc.Text(recipe.Summary)}"
+            };
             AutomationProperties.SetAutomationId(button,"recipe."+(recipe?.Id ?? "neutral"));
             AutomationProperties.SetName(button, Loc.Text(recipe?.Name ?? "无配方"));
             button.Click += (_, _) => {
-                if (exporting || !ResolveTransformDraft()) return;
+                if (exporting || !ResolveTransformDraft() || (recipe == null && settings.MasterRecipeID == null)) return;
                 if (recipe != null) { settings.ApplyMasterRecipe(recipe); lut = recipe.LutPath; }
                 else {
                     try { settings.ClearMasterRecipe(file == null || PhotoInput.IsRaw(file)); }

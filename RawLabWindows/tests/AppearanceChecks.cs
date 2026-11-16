@@ -149,7 +149,7 @@ internal static class AppearanceChecks
                 foreach(var recipe in editor.RecipeStrip.Children.OfType<Button>())
                 {
                     var labels=((StackPanel)recipe.Content).Children.OfType<TextBlock>().ToArray();
-                    check(labels.Length==2 && Math.Abs(labels[0].FontSize-13*scale)<.001 && Math.Abs(labels[1].FontSize-11*scale)<.001,
+                    check(labels.Length==2 && Math.Abs(labels[0].FontSize-11*scale)<.001 && Math.Abs(labels[1].FontSize-11*scale)<.001,
                         "Retained recipe title and caption follow live text scale: "+scale+"/"+labels[0].Text);
                 }
             }

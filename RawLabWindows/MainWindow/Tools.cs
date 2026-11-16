@@ -564,7 +564,6 @@ public partial class MainWindow
                 MasterRecipeCategory.Tag=choosingRecipes ? "selected" : null;MasterRecipeCategoryRing.Selected=choosingRecipes;MasterRecipeCategoryRing.Progress=settings.MasterRecipeID==null ? 0 : 1;MasterRecipeCategoryRing.InvalidateVisual();
                 foreach(var pair in recipeButtons) {
                     var selected=pair.Key==(settings.MasterRecipeID ?? "");pair.Value.Tag=selected ? "selected" : null;
-                    recipeSelectionMarkers[pair.Key].Visibility=selected ? Visibility.Visible : Visibility.Hidden;
                     AutomationProperties.SetItemStatus(pair.Value,selected ? Loc.Text("已应用") : "");
                 }
                 ParameterPanel.Visibility=CurrentTool is EditorAdjustmentTool.Strength or EditorAdjustmentTool.ToneCurve || choosingRecipes || choosingFilm || choosingDenoise || choosingPhotoEffects || choosingHsl || choosingGrading || choosingWhiteBalance || choosingLens || choosingGeometry ? Visibility.Collapsed : Visibility.Visible;

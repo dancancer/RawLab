@@ -5,29 +5,27 @@ struct MasterRecipeDock: View {
     @ObservedObject var model: EditorModel
 
     var body: some View {
-        GeometryReader { geometry in
-            // 留出水平滚动条的位置，避免覆盖底部文字。
-            let card = AdjustmentPanelLayout.RecipeCard.self
-            let height = max(54, geometry.size.height - 16)
-            let showsSubtitle = height >= 32 + card.textHeight(subtitle: true)
-            let imageSize = max(32, min(96, height - card.textHeight(subtitle: showsSubtitle)))
-            HorizontalPicker(selectedID: model.settings.masterRecipeID ?? "", name: L10n.text("大师配方")) {
-                HStack(spacing: 8) {
-                    recipeButton(recipe: nil, imageSize: imageSize, height: height, showsSubtitle: showsSubtitle)
-                    ForEach(MasterRecipe.allRecipes) { recipe in
-                        recipeButton(recipe: recipe, imageSize: imageSize, height: height, showsSubtitle: showsSubtitle)
-                    }
-                }
-                .scrollTargetLayout()
-                .padding(.horizontal, 16)
+        let _ = localizationLocale
+        let card = AdjustmentPanelLayout.RecipeCard.self
+        LazyVGrid(
+            columns: Array(
+                repeating: GridItem(.flexible(minimum: 0), spacing: card.columnSpacing, alignment: .top),
+                count: card.columns
+            ),
+            spacing: card.rowSpacing
+        ) {
+            recipeButton(recipe: nil)
+            ForEach(MasterRecipe.allRecipes) { recipe in
+                recipeButton(recipe: recipe)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity)
+        .controlSize(.small)
         .tint(.yellow)
     }
 
-    private func recipeButton(recipe: MasterRecipe?, imageSize: CGFloat, height: CGFloat,
-                              showsSubtitle: Bool) -> some View {
+    private func recipeButton(recipe: MasterRecipe?) -> some View {
+        let card = AdjustmentPanelLayout.RecipeCard.self
         let selected = model.settings.masterRecipeID == recipe?.id
         return Button { model.selectMasterRecipe(recipe) } label: {
             VStack(spacing: 5) {
@@ -39,32 +37,27 @@ struct MasterRecipeDock: View {
                             .font(.system(size: 28)).foregroundStyle(.secondary)
                     }
                 }
-                .frame(width: imageSize, height: imageSize)
+                .frame(width: card.artworkSize, height: card.artworkSize)
                 .clipShape(RoundedRectangle(cornerRadius: 3))
                 .accessibilityHidden(true)
                 VStack(spacing: 2) {
                     Text(recipe?.title ?? L10n.text("无配方"))
-                        .font(.system(size: 11, weight: selected ? .semibold : .regular))
-                        .lineLimit(2).multilineTextAlignment(.center)
-                        .frame(width: AdjustmentPanelLayout.RecipeCard.width, height: AdjustmentPanelLayout.RecipeCard.titleHeight)
-                    if showsSubtitle {
-                        Text(L10n.text(recipe?.subtitle ?? "中性直出"))
-                            .font(.system(size: AdjustmentPanelLayout.RecipeCard.subtitleSize))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(AdjustmentPanelLayout.RecipeCard.subtitleLines)
-                            .multilineTextAlignment(.center)
-                            .frame(width: AdjustmentPanelLayout.RecipeCard.width,
-                                   height: AdjustmentPanelLayout.RecipeCard.subtitleHeight, alignment: .top)
-                    }
+                        .font(.system(size: card.titleSize, weight: selected ? .semibold : .regular))
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(L10n.text(recipe?.subtitle ?? "中性直出"))
+                        .font(.system(size: card.subtitleSize))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .frame(width: max(112, imageSize + 12), height: height)
-            .foregroundStyle(selected ? Color.yellow : Color.primary)
-            .overlay(alignment: .topTrailing) {
-                if selected { Image(systemName: "checkmark.circle.fill").font(.system(size: 14))
-                    .foregroundStyle(.yellow).padding(3).accessibilityHidden(true) }
-            }
+            .padding(card.cardPadding)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .contentShape(Rectangle())
+            .foregroundStyle(selected ? Color.yellow : Color.primary)
+            .background(selected ? Color.yellow.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6))
+            .overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(selected ? Color.yellow : .clear, lineWidth: 1) }
         }
         .buttonStyle(.plain)
         .id(recipe?.id ?? "")

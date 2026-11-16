@@ -390,7 +390,7 @@
               </StackPanel>
             </Grid>
             <Border x:Name="MasterRecipePanel" Visibility="Collapsed">
-              <UniformGrid x:Name="RecipeStrip" Columns="2" VerticalAlignment="Top"/>
+              <UniformGrid x:Name="RecipeStrip" Columns="3" VerticalAlignment="Top"/>
             </Border>
             <Border x:Name="DenoiseSurface" Visibility="Collapsed"><local:DenoisePanel x:Name="DenoiseEditor"/></Border>
             <Border x:Name="LensSurface" Visibility="Collapsed"><local:LensPanel x:Name="LensEditor"/></Border>

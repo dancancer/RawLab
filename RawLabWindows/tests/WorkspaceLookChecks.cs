@@ -119,10 +119,20 @@ internal static class WorkspaceLookChecks
                 "Fixed import action stays inside narrow native window");
             EditorShellChecks.CaptureLayout(window,final,Path.Combine(output,"recent-de.png"));
             Invoke(window,"SelectTool",EditorAdjustmentTool.MasterRecipe);window.UpdateLayout();
+            check(window.RecipeStrip.Columns==3 && window.RecipeStrip.Columns==window.FilmStrip.Columns,
+                "Master recipe grid matches the three-column film grid");
             var recipes=Get<Dictionary<string,Button>>(window,"recipeButtons");
-            recipes.Values.Last().RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Ready(window);
-            check(Get<Dictionary<string,TextBlock>>(window,"recipeSelectionMarkers").Values.Count(marker=>marker.Visibility==Visibility.Visible)==1,
-                "Applied recipe has one visible non-color selection mark");
+            var lastRecipe=recipes.Values.Last();
+            lastRecipe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Ready(window);
+            check(recipes.Values.Count(button=>Equals(button.Tag,"selected") && button.BorderThickness==new Thickness(1) &&
+                  AutomationProperties.GetItemStatus(button)==Loc.Text("已应用"))==1 &&
+                  PhotoFeatureChecks.Descendants<TextBlock>(window.MasterRecipePanel).All(text=>text.Text!="✓"),
+                "Applied recipe uses the selected card border without an inline checkmark");
+            var recipeSettings=Get<Adjustments>(window,"settings");
+            recipeSettings.Set(Parameter.Exposure,1.25);
+            lastRecipe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(Math.Abs(Get<Adjustments>(window,"settings")[Parameter.Exposure]-MasterRecipe.All[^1].ExposureDelta)<.0001,
+                "Reselecting the active recipe reapplies its default adjustments");
             var recipeSurface=EditorShellChecks.ArrangeLayout(window,new Size(1024,720));
             EditorShellChecks.CaptureLayout(window,recipeSurface,Path.Combine(output,"recipe-selected-de.png"));
             var lens=new LensPanel();

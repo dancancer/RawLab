@@ -299,9 +299,9 @@ static class Program
                 System.Windows.Automation.AutomationProperties.GetName(button) == "EKTAR 100 RawLab edition"),
                 "The inspector's three-column film grid retains the RawLab Ektar display name");
             window.MasterRecipeCategory.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            window.Width = 1000; window.UpdateLayout();
-            Check(window.RecipeStrip.Columns == 2 && window.ToolsScroller.ScrollableHeight > 0,
-                "The recipe chooser uses a vertical viewport in a narrow inspector");
+            window.Width = 1000; window.Height = 680; window.UpdateLayout();
+            Check(window.RecipeStrip.Columns == 3 && window.ToolsScroller.ScrollableHeight > 0,
+                "The recipe chooser uses a three-column vertical viewport in a narrow inspector");
             var recipe = window.RecipeStrip.Children.OfType<Button>().Last();
             recipe.BringIntoView(); window.UpdateLayout();
             recipe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -313,7 +313,7 @@ static class Program
             Check(window.LookStrengthRow.Number.Text == "200" && !window.ExportPng.IsEnabled,
                 "Look Strength reaches 200% and invalidates stale export for a master recipe");
             PumpUntil(() => window.ExportPng.IsEnabled, TimeSpan.FromMinutes(3));
-            window.Width=1440;window.Measure(new Size(1440,920));window.Arrange(new Rect(0,0,1440,920));window.UpdateLayout();
+            window.Width=1440;window.Height=920;window.Measure(new Size(1440,920));window.Arrange(new Rect(0,0,1440,920));window.UpdateLayout();
             // Capture the client area independently of window chrome.
             var content=(FrameworkElement)window.Content;window.Content=null;
             content.Measure(new Size(1440,920));content.Arrange(new Rect(0,0,1440,920));content.UpdateLayout();

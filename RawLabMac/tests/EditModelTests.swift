@@ -713,13 +713,25 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
                   selection.settings.grainAmount == 40, "applying a recipe preserves unrelated adjustments")
         selection.settings.exposure = 1
         selection.selectMasterRecipe(.hamadaDaylightV2)
-        try check(selection.settings.exposure == 0.4, "explicitly reapplying the same recipe overwrites manual changes")
+        try check(selection.settings.exposure == 0.4 && selection.settings.masterRecipeID == MasterRecipe.hamadaDaylightV2.id,
+                  "explicitly reapplying the same recipe overwrites manual changes")
+        selection.selectMasterRecipe(.takashiYasuiZen)
+        try check(selection.settings.masterRecipeID == MasterRecipe.takashiYasuiZen.id &&
+                  selection.settings.exposure == MasterRecipe.takashiYasuiZen.exposureDelta,
+                  "selecting a different recipe applies its deltas")
+        selection.selectMasterRecipe(.hamadaDaylightV2)
+        try check(selection.settings.masterRecipeID == MasterRecipe.hamadaDaylightV2.id &&
+                  selection.settings.exposure == 0.4,
+                  "switching back to a recipe applies its deltas")
         selection.settings.resolveWhiteBalance(WhiteBalance(temperature: 5300, tint: 8))
         selection.selectedFilmID = ""
         try check(selection.settings.masterRecipeID == nil, "selecting neutral clears an active recipe")
         selection.selectMasterRecipe(.hamadaDaylightV2)
         selection.selectedFilmID = "PROVIA"
         try check(selection.settings.masterRecipeID == nil, "selecting a film clears an active recipe")
+        selection.selectMasterRecipe(nil)
+        try check(selection.settings.masterRecipeID == nil && selection.selectedFilmID == "PROVIA",
+                  "selecting neutral recipe when no recipe is active preserves the current film")
         fputs("[EXPECTED RAW FAILURE] EditModelTests.persistence: a.ARW and b.ARW in \(root.path) contain one-byte placeholders, not RAW photos. Their asynchronous decoder rejections are expected; assertion failures are not.\n", stderr)
         let first = model()
         first.open(a)
@@ -789,8 +801,11 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
                   "restoring a preset keeps later manual edits instead of reapplying preset defaults")
         let blocked = root.appendingPathComponent("blocked")
         for recipe in MasterRecipe.allRecipes {
+            let recipePhoto = root.appendingPathComponent("catalog-\(recipe.id).ARW")
+            try Data([1]).write(to: recipePhoto)
             let catalogModel = model()
-            catalogModel.open(a)
+            catalogModel.open(recipePhoto)
+            catalogModel.selectedFilmID = "PROVIA"
             catalogModel.selectMasterRecipe(recipe)
             try check(catalogModel.settings.masterRecipeID == recipe.id && catalogModel.selectedFilmID.isEmpty &&
                       catalogModel.settings.tint == recipe.tintDelta && catalogModel.settings.contrast == recipe.contrastDelta &&
@@ -800,7 +815,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
             catalogModel.settings.setHSL(.saturation, channel: 4, value: -37)
             try check(catalogModel.saveEdits(), "\(recipe.id): recipe saves")
             let restored = model()
-            restored.open(a)
+            restored.open(recipePhoto)
             try check(restored.settings.masterRecipeID == recipe.id && restored.settings.exposure == 0.63 &&
                       restored.settings.saturation == recipe.saturationDelta &&
                       restored.settings.hslSettings.value(.saturation, channel: 4) == -37,
