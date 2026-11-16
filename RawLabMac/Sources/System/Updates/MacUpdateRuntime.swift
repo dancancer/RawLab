@@ -41,7 +41,7 @@ final class MacUpdateRunLease {
         controller = updates
         delegate.updates = updates
         controllerChanges = updates.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
-        if updates.storageBlocksEditing || updates.requiresRecovery { startupError = "recovery"; return }
+        if updates.requiresRecovery { startupError = "recovery"; return }
         let candidate = EditorModel(onUsage: { UsageAnalytics.shared.record($0) })
         candidate.registerUpdateGate(updates.gate)
         updates.retryStartup = { [weak self, weak delegate] in
@@ -53,11 +53,11 @@ final class MacUpdateRunLease {
 
     private func openEditor(_ candidate: EditorModel, updates: DesktopUpdateController, delegate: RawLabMacDelegate) async {
         let dataFailures = candidate.updateDataFailures
-        await updates.finishStartupHealthCheck(healthy: dataFailures.isEmpty && !updates.storageBlocksEditing, dataFailures: dataFailures)
+        await updates.finishStartupHealthCheck(healthy: dataFailures.isEmpty, dataFailures: dataFailures)
         if updates.requiresStartupHealthCheck && !updates.requiresRecovery {
             startupError = "trust"; return
         }
-        if updates.storageBlocksEditing || updates.requiresRecovery {
+        if updates.requiresRecovery {
             startupError = "recovery"; return
         }
         startupError = nil; updates.retryStartup = nil

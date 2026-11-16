@@ -24,9 +24,12 @@ struct SoftwareUpdateView: View {
                     Divider()
                 }
                 if updates.unavailableReason != nil {
-                    Label(L10n.text("此安装暂不支持自动安装更新"), systemImage: "info.circle")
+                    Label(L10n.text(updates.unavailableReason == "storage" ? "自动更新不可用，请手动下载" : "此安装暂不支持自动安装更新"), systemImage: "info.circle")
                     Text(legacy.status).font(detailFont)
                 } else {
+                    if updates.storageError != nil {
+                        Label(L10n.text("自动更新不可用，请手动下载"), systemImage: "info.circle")
+                    }
                     Text(L10n.text(UpdatePresentation.phase(updates.state.phase))).font(.system(size: textSize.isAccessibilitySize ? 22 : 13, weight: .semibold))
                 }
                 if let release = updates.state.release {

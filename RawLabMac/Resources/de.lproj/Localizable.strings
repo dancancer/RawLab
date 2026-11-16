@@ -674,6 +674,7 @@
 "此外观已不在外观库中。" = "Dieser Look ist nicht mehr in der Look-Bibliothek enthalten.";
 "此外观无法读取，可能已损坏或来自不兼容版本。" = "Dieser Look kann nicht gelesen werden. Er ist möglicherweise beschädigt oder stammt aus einer inkompatiblen Version.";
 "此安装暂不支持自动安装更新" = "Diese Installation unterstützt automatische Updates noch nicht";
+"自动更新不可用，请手动下载" = "Automatische Updates sind nicht verfügbar. Bitte laden Sie manuell herunter.";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Nur Anpassungen in der Gruppe „%@“ werden zurückgesetzt. Andere Gruppen bleiben unverändert.";
 "此操作已过期，请重新操作。" = "Dieser Vorgang ist nicht mehr aktuell. Starten Sie ihn erneut.";
 "此构建未安装 AI 降噪模型。" = "Dieses Build enthält kein KI-Entrauschungsmodell.";

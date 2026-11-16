@@ -30,6 +30,9 @@ import SwiftUI
     @MainActor static func fields(_ view: NSView) -> [NumericTextField] {
         (view as? NumericTextField).map { [$0] } ?? view.subviews.flatMap { fields($0) }
     }
+    @MainActor static func labels(_ view: NSView) -> [String] {
+        ((view as? NSTextField).map { [$0.stringValue] } ?? []) + view.subviews.flatMap { labels($0) }
+    }
     @MainActor static func scrollViews(_ view: NSView) -> [NSScrollView] {
         (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap { scrollViews($0) }
     }
@@ -150,7 +153,20 @@ import SwiftUI
         let repair = DesktopUpdateController(adapter: Adapter(), gate: UpdateInstallGate(), store: repairStore, currentVersion: "0.8.2", currentBuild: "14")
         let (repairWindow, repairHost) = window(SoftwareUpdateView(updates: repair, legacy: legacy).dynamicTypeSize(.accessibility3), width: 560, height: 680)
         try await Task.sleep(for: .milliseconds(100)); repairHost.layoutSubtreeIfNeeded()
-        try check(repair.canRepairState && !repair.canCheck, "Native damaged-state screen offers explicit repair")
+        try check(!repair.blocksEditing && repair.unavailableReason == "storage" && repair.canRepairState && !repair.canCheck,
+            "Damaged UpdateStore degrades updates without blocking editing and offers explicit repair")
+        let degradedNotice = L10n.text("自动更新不可用，请手动下载")
+        try check(degradedNotice != "自动更新不可用，请手动下载" && labels(repairHost).contains(where: { $0.contains(degradedNotice) }),
+            "SoftwareUpdateView displays degraded manual-download notice when UpdateStore is damaged")
+        let (degradedWindow, degradedEditor) = window(GuardedEditor(model: model, updates: repair), width: 1200, height: 850)
+        degradedEditor.layoutSubtreeIfNeeded()
+        try check(fields(degradedEditor).contains(where: { $0.isEnabled }) && !model.collectionHasDraft(photo.path),
+            "Editor remains enabled and collectionHasDraft path stays usable when UpdateStore is damaged")
+        try check(model.beginGeometryDraft(tab: .perspective), "Editor can still adjust geometry draft when UpdateStore is damaged")
+        model.updateGeometryDraft { $0.perspectiveHorizontal = 0.2 }; try await settle(model)
+        model.applyGeometryDraft(); try await settle(model)
+        try check(model.canExport, "Editor can still export when UpdateStore is damaged")
+        degradedWindow.contentView = nil; degradedWindow.close()
         repair.repairState()
         try await Task.sleep(for: .milliseconds(100)); repairHost.layoutSubtreeIfNeeded()
         try check(repair.recoveryNeedsRestart && repair.requiresRecovery && Data(contentsOf: repair.stateArchive!) == damaged,

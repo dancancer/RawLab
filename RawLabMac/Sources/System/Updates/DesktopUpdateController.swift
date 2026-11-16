@@ -30,7 +30,7 @@ import Combine
     private var repairHealthFailed = false
     private var pendingSave: UpdatePreferences?
     var state: UpdateTaskState { preferences.pendingUpdate }
-    var blocksEditing: Bool { storageBlocksEditing || preparingInstallation || requiresStartupHealthCheck || requiresRecovery }
+    var blocksEditing: Bool { preparingInstallation || requiresStartupHealthCheck || requiresRecovery }
     var unavailableReason: String? { storageBlocksEditing ? "storage" : adapter.unavailableReason }
     var canCheck: Bool { storageError == nil && unavailableReason == nil && adapter.canCheck && !preparingInstallation && !requiresRecovery && !requiresStartupHealthCheck }
     var canDownload: Bool { storageError == nil && unavailableReason == nil && state.phase == .available }

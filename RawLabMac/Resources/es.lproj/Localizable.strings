@@ -674,6 +674,7 @@
 "此外观已不在外观库中。" = "Este look ya no está en la biblioteca de looks.";
 "此外观无法读取，可能已损坏或来自不兼容版本。" = "No se puede leer este look. Puede estar dañado o proceder de una versión incompatible.";
 "此安装暂不支持自动安装更新" = "Esta instalación todavía no admite actualizaciones automáticas";
+"自动更新不可用，请手动下载" = "Las actualizaciones automáticas no están disponibles. Descárguela manualmente.";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Solo se restablecerán los ajustes del grupo %@. Los demás grupos no cambiarán.";
 "此操作已过期，请重新操作。" = "Esta operación ha quedado desactualizada. Vuelve a iniciarla.";
 "此构建未安装 AI 降噪模型。" = "Esta compilación no incluye el modelo de reducción de ruido con IA.";

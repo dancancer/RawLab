@@ -307,8 +307,8 @@ enum ParameterValueField { static var hasPendingInputs = false }
         failPhase = .installing
         controller.choose(.restartNow)
         for _ in 0..<400 where controller.preparingInstallation || controller.storageError == nil { try await Task.sleep(for: .milliseconds(10)) }
-        check(controller.storageError != nil && controller.blocksEditing && !controller.canRetrySave && !controller.canCheck && adapter.installs == 0,
-            "Save failure when recording installing locks editing and blocks retry")
+        check(controller.storageError != nil && !controller.blocksEditing && controller.unavailableReason == "storage" && !controller.canRetrySave && !controller.canCheck && adapter.installs == 0,
+            "Save failure when recording installing degrades updates without locking editing and blocks retry")
         let pendingStore = UpdateStore(directory: root.appendingPathComponent("PendingRestartUpdates")) { preferences, stateURL in
             if preferences.pendingUpdate.phase == .pendingRestart {
                 throw UpdateAdapterError(code: "storage", detail: "Injected pendingRestart write failure")
@@ -514,7 +514,8 @@ enum ParameterValueField { static var hasPendingInputs = false }
         try Data("{broken".utf8).write(to: store.stateURL)
         let adapter = FakeUpdateAdapter()
         let damaged = DesktopUpdateController(adapter: adapter, gate: UpdateInstallGate(), store: store, currentVersion: "0.8.2", currentBuild: "14")
-        check(damaged.storageError != nil && damaged.canRepairState && !damaged.canCheck, "Corrupt pre-install state offers only explicit repair")
+        check(damaged.storageError != nil && !damaged.blocksEditing && damaged.unavailableReason == "storage" && damaged.canRepairState && !damaged.canCheck,
+            "Corrupt pre-install state degrades updates without blocking editing and offers explicit repair")
         damaged.repairState()
         damaged.setAutomaticCheck(true); damaged.setAutomaticInstall(true); damaged.cancel(); damaged.retry()
         await damaged.finishStartupHealthCheck(healthy: true)
