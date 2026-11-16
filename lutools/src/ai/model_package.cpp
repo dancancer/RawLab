@@ -94,14 +94,31 @@ bool packageStateFingerprint(const std::filesystem::path& root, std::string& out
 
 // 进程级已校验包缓存：每个新 AISession（缩略图/批量/编辑器）构造都会 loadModelPackage，
 // 未命中才全量 SHA-256（Mac 正式包实测每次校验需读 622MB），命中直接复用已校验包。
-// canonical 目录为键；同目录
-// 不同参数写法复用同一条目（路径串沿用首次校验时的写法，指向同一批文件）。锁内校验让
-// 并发构造的两个 session 只重算一次。
+// 键、校验与指纹一律走 canonical 目录（软链写法在入口处收敛，缓存内只存 canonical
+// 路径前缀，返回前按调用方写法重拼）；指纹取放与校验同在锁内，校验后复核目录未变才
+// 入库——锁外不做决定性命中，锁内校验也让并发构造的两个 session 只重算一次。
 struct PackageCache {
     std::mutex mutex;
     std::map<std::string, std::pair<std::string, ModelPackage>> entries;
 };
 PackageCache& packageCache() { static PackageCache cache; return cache; }
+
+// 缓存条目内部只存 canonical 前缀；返回前按调用方本次传入的写法重拼相对部分。
+ModelPackage rebasePackage(const ModelPackage& stored, const std::filesystem::path& canonical,
+                           const std::filesystem::path& caller) {
+    if (canonical == caller) return stored;
+    auto re = [&](const std::string& value) {
+        if (value.empty()) return value; // 未配置的可选路径保持空。
+        const auto full = std::filesystem::u8path(value);
+        return (caller / full.lexically_relative(canonical)).u8string();
+    };
+    auto out = stored;
+    for (auto& path : out.paths) path = re(path);
+    for (auto& path : out.coreMLPaths) path = re(path);
+    out.blindRGBPath = re(out.blindRGBPath);
+    out.blindRGBCoreMLPath = re(out.blindRGBCoreMLPath);
+    return out;
+}
 }
 
 static ModelPackage validateModelPackage(const std::string& directory) {
@@ -177,16 +194,26 @@ static ModelPackage validateModelPackage(const std::string& directory) {
 ModelPackage loadModelPackage(const std::string& directory) {
     std::error_code error;
     const auto canonical = std::filesystem::canonical(std::filesystem::u8path(directory), error);
-    std::string key;
-    if (error || !packageStateFingerprint(canonical, key)) return validateModelPackage(directory);
+    // canonical 失败（目录缺失/不可达）硬失败，不回退未规范化串；消息与原缺失语义一致。
+    if (error) throw std::invalid_argument("Missing or oversized DualDn manifest");
+    const auto caller = std::filesystem::u8path(directory);
+    const auto canonicalDirectory = canonical.u8string();
     auto& cache = packageCache();
-    const auto id = canonical.u8string();
     std::lock_guard<std::mutex> lock(cache.mutex);
-    const auto entry = cache.entries.find(id);
-    if (entry != cache.entries.end() && entry->second.first == key) return entry->second.second;
-    auto result = validateModelPackage(directory);
-    cache.entries.insert_or_assign(id, std::make_pair(std::move(key), result));
-    return result;
+    std::string key;
+    // 枚举异常只跳过缓存这一优化层；校验仍对 canonical 执行，错误语义与缓存引入前一致。
+    if (!packageStateFingerprint(canonical, key))
+        return rebasePackage(validateModelPackage(canonicalDirectory), canonical, caller);
+    const auto entry = cache.entries.find(canonicalDirectory);
+    if (entry != cache.entries.end() && entry->second.first == key)
+        return rebasePackage(entry->second.second, canonical, caller);
+    auto result = validateModelPackage(canonicalDirectory);
+    std::string after; // 校验后复核：目录在校验期间变过就不入库，也不信任旧条目。
+    if (packageStateFingerprint(canonical, after) && after == key) {
+        cache.entries.insert_or_assign(canonicalDirectory, std::make_pair(std::move(key), std::move(result)));
+        result = cache.entries.at(canonicalDirectory).second;
+    } else cache.entries.erase(canonicalDirectory);
+    return rebasePackage(result, canonical, caller);
 }
 
 std::uint64_t modelPackageValidationCount() {
