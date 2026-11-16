@@ -38,6 +38,10 @@ import com.rawlab.android.editor.ui.EditorScreen
 import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.testing.ForegroundTestRule
+import com.rawlab.android.testing.localizedTestContext
+import com.rawlab.android.testing.localizedTestConfiguration
+import com.rawlab.android.testing.openWorkbenchTool
+import com.rawlab.android.testing.cycleWorkbenchPhotoInfo
 
 class SaveFeedbackLayoutTest {
     val compose = createComposeRule()
@@ -53,24 +57,28 @@ class SaveFeedbackLayoutTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val bitmap = Bitmap.createBitmap(600, 900, Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.DKGRAY) }
         var editor by mutableStateOf(EditorState(photo = ImportedPhoto(Uri.parse("content://rawlab.test/save-layout"),
-            "save-layout.jpg", File("save-layout.jpg")), preview = PreviewPair(bitmap, bitmap, 6500f, 0f)))
+            "save-layout.jpg", File("save-layout.jpg")), preview = PreviewPair(bitmap, bitmap, 6500f, 0f), exact = true))
         var viewport by mutableStateOf(360 to 720)
         var language by mutableStateOf("en")
         var fontScale by mutableFloatStateOf(1f)
         var retries = 0
+        var draftRetries = 0
         val visualFailures = mutableListOf<String>()
         val savedTexts = mapOf("en" to "Adjustments Saved", "zh-Hans" to "调整已保存", "de" to "Anpassungen gespeichert",
             "fr" to "Réglages enregistrés", "ja" to "調整を保存しました", "es" to "Ajustes guardados")
         compose.setContent {
-            val config = Configuration(context.resources.configuration).apply { setLocale(Locale.forLanguageTag(language)) }
-            val localized = context.createConfigurationContext(config)
+            val config = localizedTestConfiguration(context.resources.configuration, language, fontScale)
+            val localized = localizedTestContext(context, language, config.fontScale)
             CompositionLocalProvider(LocalContext provides localized, LocalConfiguration provides config,
                 LocalDensity provides Density(1f, fontScale)) {
                 Box(Modifier.size(viewport.first.dp, viewport.second.dp)
                     .consumeWindowInsets(WindowInsets.safeDrawing).testTag("save-layout-fixture")) {
                     RawLabTheme {
                         key(viewport, language, fontScale) {
-                            EditorScreen(editor, {}, {}, { _, _ -> }, {}, {}, {}, {}, {}, onSaveRetry = { retries++ })
+                            EditorScreen(editor, {}, {}, { _, _ -> }, {}, {}, {}, {}, {}, onSaveRetry = { retries++ },
+                                onApplyDraft = { complete -> draftRetries++; complete(false) },
+                                onBeginDraft = { editor = editor.copy(draft = AdjustmentDraft.begin(it, editor.edits)) },
+                                onDiscardDraft = { editor = editor.copy(draft = null) })
                         }
                     }
                 }
@@ -80,30 +88,27 @@ class SaveFeedbackLayoutTest {
             for (locale in languages) {
                 val scale = 1f
                 run {
-                    compose.runOnIdle { viewport = size; language = locale; fontScale = scale; editor = editor.copy(saveState = EditSaveState.NONE) }
-                    val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply {
-                        setLocale(Locale.forLanguageTag(locale))
-                    })
+                    compose.runOnIdle { viewport = size; language = locale; fontScale = scale; editor = editor.copy(saveState = EditSaveState.NONE, draft = null) }
+                    val localized = context.createConfigurationContext(localizedTestConfiguration(context.resources.configuration, locale, scale))
                     assertEquals("The resource locale must really change: requested=$locale actual=${localized.resources.configuration.locales.toLanguageTags()} app=${AppStrings.preference(context)} base=${context.resources.configuration.locales.toLanguageTags()}",
                         savedTexts.getValue(locale), localized.getString(R.string.edit_saved))
                     val fixture = compose.onNodeWithTag("save-layout-fixture").fetchSemanticsNode().boundsInRoot
                     assertEquals("The requested viewport must really be measured", size.first.toFloat(), fixture.width, 1f)
                     assertEquals(size.second.toFloat(), fixture.height, 1f)
-                    compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-light"))
-                    compose.onNodeWithTag("editor-group-light").performClick()
+                    compose.openWorkbenchTool(2)
                     compose.onNodeWithTag("adjustment-slider").performScrollTo()
-                    compose.onNodeWithContentDescription(localized.getString(R.string.compare)).performClick()
-                    compose.onNodeWithTag("photo-info-button").performClick()
+                    compose.onNodeWithContentDescription(localized.getString(R.string.editor_compare_enable)).performClick()
+                    compose.cycleWorkbenchPhotoInfo(AppStrings.text(R.string.editor_photo_info))
                     compose.waitUntil(5_000) { compose.onAllNodesWithTag("photo-info-panel").fetchSemanticsNodes().isNotEmpty() }
                     for (expanded in listOf(true, false)) {
                         val tags = listOf("editor-canvas", "photo-canvas", "adjustment-dock") +
-                            if (expanded) listOf("editor-tools", "adjustment-slider") else emptyList()
+                            if (expanded) listOf("editor-parameters", "adjustment-slider", "draft.apply", "draft.cancel") else listOf("editor-groups", "editor-tool-2")
                         val before = tags.associateWith { compose.onNodeWithTag(it).fetchSemanticsNode().boundsInRoot }
                         val canvasBounds = before.getValue("editor-canvas")
                         val dockBounds = before.getValue("adjustment-dock")
                         if (size.first > size.second && scale == 1f && locale == "zh-Hans") {
                             assertTrue("Six measured Chinese labels fit the side dock", canvasBounds.right <= dockBounds.left)
-                            assertEquals(320f, dockBounds.width, 1f)
+                            assertEquals(336f, dockBounds.width, 1f)
                         } else if (scale >= 1.3f || size.first <= size.second) {
                             assertTrue("Narrow and accessibility layouts use the bottom dock", canvasBounds.bottom <= dockBounds.top)
                         } else {
@@ -118,7 +123,7 @@ class SaveFeedbackLayoutTest {
                                 assertBounds("$size/$locale/$scale/$expanded/$save/$tag", bounds,
                                     compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot)
                             }
-                            if (save == EditSaveState.NONE) compose.onNodeWithTag("edit-save-notice").assertDoesNotExist()
+                            if (save == EditSaveState.NONE || expanded && save != EditSaveState.FAILED) compose.onNodeWithTag("edit-save-notice").assertDoesNotExist()
                             else {
                                 compose.onNodeWithTag("edit-save-notice").assertIsDisplayed()
                                 val text = detail ?: localized.getString(when (save) {
@@ -141,18 +146,23 @@ class SaveFeedbackLayoutTest {
                                 val canvas = before.getValue("editor-canvas")
                                 if (!canvas.contains(notice.topLeft) || notice.right > canvas.right || notice.bottom > canvas.bottom)
                                     visualFailures += "$size/$locale/$scale/$expanded/$save outside canvas"
-                                for (other in listOf(compose.onNodeWithTag("photo-info-panel"),
-                                    compose.onNodeWithText(localized.getString(R.string.neutral)),
-                                    compose.onNodeWithText(localized.getString(R.string.result)))) {
-                                    if (notice.overlaps(other.fetchSemanticsNode().boundsInRoot))
-                                        visualFailures += "$size/$locale/$scale/$expanded/$save overlaps photo information or comparison labels"
+                                for ((who, other) in listOf("photo information" to compose.onNodeWithTag("photo-info-panel"),
+                                    "comparison label" to compose.onNodeWithText(localized.getString(R.string.editor_compare_before)),
+                                    "result label" to compose.onNodeWithText(localized.getString(R.string.result)))) {
+                                    val otherBounds = other.fetchSemanticsNode().boundsInRoot
+                                    if (notice.overlaps(otherBounds))
+                                        visualFailures += "$size/$locale/$scale/$expanded/$save overlaps $who: notice=$notice other=$otherBounds"
                                 }
                                 if (save == EditSaveState.FAILED) {
                                     val previous = retries
+                                    val previousDraft = draftRetries
                                     compose.onNodeWithTag("edit-save-retry").assertHasClickAction()
                                         .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
                                         .performTouchInput { click() }
-                                    compose.runOnIdle { assertEquals(previous + 1, retries) }
+                                    compose.runOnIdle {
+                                        assertEquals(previous + if (expanded) 0 else 1, retries)
+                                        assertEquals(previousDraft + if (expanded) 1 else 0, draftRetries)
+                                    }
                                 }
                                 if (expanded && save in listOf(EditSaveState.SAVED, EditSaveState.FAILED) &&
                                     ((size.first in listOf(320, 360) && locale in listOf("zh-Hans", "en")) || (size.first == 960 && locale in listOf("en", "zh-Hans")))) {
@@ -160,26 +170,36 @@ class SaveFeedbackLayoutTest {
                                 }
                             }
                         }
-                        if (expanded) compose.onNodeWithContentDescription(localized.getString(R.string.collapse_adjustments)).performClick()
+                        if (expanded) compose.onNodeWithTag("draft.cancel").performClick()
                         else compose.onNodeWithTag("editor-tools").assertDoesNotExist()
                     }
                 }
             }
         }
         compose.runOnIdle { viewport = 360 to 600; editor = editor.copy(saveState = EditSaveState.SAVED) }
-        compose.onNodeWithTag("photo-info-button").performClick().performClick()
+        val infoLabel = AppStrings.text(R.string.editor_photo_info)
+        compose.cycleWorkbenchPhotoInfo(infoLabel)
+        compose.cycleWorkbenchPhotoInfo(infoLabel)
         val panel = compose.onNodeWithTag("photo-info-panel").assertIsDisplayed()
         val notice = compose.onNodeWithTag("edit-save-notice").fetchSemanticsNode().boundsInRoot
-        assertFalse("Capture information must not overlap feedback without comparison", panel.fetchSemanticsNode().boundsInRoot.overlaps(notice))
-        val scroll = panel.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
-        assertTrue("The capture-information scroll branch must really be reached", scroll.maxValue() > 0)
-        val beforeScroll = scroll.value()
-        panel.performTouchInput { swipeUp() }
-        compose.runOnIdle { assertTrue("Capture information must remain reachable by touch", scroll.value() > beforeScroll) }
+        val infoBounds = panel.fetchSemanticsNode().boundsInRoot
+        assertFalse("Capture information overlaps feedback: language=$language font=$fontScale panel=$infoBounds notice=$notice", infoBounds.overlaps(notice))
+        val infoResources = localizedTestContext(context, language, fontScale).resources
+        for (title in listOf(R.string.info_filename, R.string.info_camera, R.string.info_lens,
+            R.string.info_shutter, R.string.info_aperture, R.string.info_iso, R.string.info_focal_length)) {
+            val field = compose.onNode(hasText(infoResources.getString(title), substring = true) and hasAnyAncestor(hasTestTag("photo-info-panel"))).assertIsDisplayed()
+            val visible = field.fetchSemanticsNode().boundsInRoot
+            val full = field.getUnclippedBoundsInRoot()
+            assertTrue("Capture information keeps every complete field reachable: $title $visible / $full",
+                visible.height >= (full.bottom - full.top).value - 1 && visible.width >= (full.right - full.left).value - 1)
+            val canvas = compose.onNodeWithTag("editor-canvas").fetchSemanticsNode().boundsInRoot
+            assertTrue("Capture information fits the actual photo viewport", visible.top >= canvas.top - 1 && visible.bottom <= canvas.bottom + 1)
+        }
         for (group in listOf(AdjustmentGroup.LENS, AdjustmentGroup.GEOMETRY)) {
+            compose.runOnIdle { editor = editor.copy(saveState = EditSaveState.NONE, draft = AdjustmentDraft.begin(group, editor.edits)) }
             val draftBounds = compose.onNodeWithTag("adjustment-dock").fetchSemanticsNode().boundsInRoot
             for (save in listOf(EditSaveState.SAVED, EditSaveState.RESTORED, EditSaveState.FAILED)) {
-                compose.runOnIdle { editor = editor.copy(saveState = save, draft = AdjustmentDraft.begin(group, editor.edits)) }
+                compose.runOnIdle { editor = editor.copy(saveState = save) }
                 if (save == EditSaveState.FAILED) {
                     compose.onNodeWithTag("edit-save-notice").assertIsDisplayed()
                     compose.onNodeWithTag("edit-save-retry").assertIsDisplayed().assertHasClickAction()
@@ -192,7 +212,7 @@ class SaveFeedbackLayoutTest {
         val previous = retries
         compose.onNodeWithTag("edit-save-retry").performTouchInput { click() }
         compose.runOnIdle { assertEquals(previous + 1, retries) }
-        compose.runOnIdle { editor = editor.copy(saveState = EditSaveState.NONE) }
+        compose.runOnIdle { editor = editor.copy(saveState = EditSaveState.NONE, draft = null) }
         compose.onNodeWithTag("edit-save-notice").assertDoesNotExist()
         compose.onNodeWithTag("editor-canvas").assertExists()
         assertTrue(visualFailures.joinToString("\n"), visualFailures.isEmpty())

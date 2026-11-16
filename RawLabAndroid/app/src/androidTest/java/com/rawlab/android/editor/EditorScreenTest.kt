@@ -30,6 +30,7 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import com.rawlab.android.MainActivity
+import com.rawlab.android.R
 import com.rawlab.android.batch.BatchJob
 import com.rawlab.android.batch.journal.BatchJournal
 import com.rawlab.android.batch.BatchPhase
@@ -43,6 +44,8 @@ import com.rawlab.android.settings.HslSettings
 import com.rawlab.android.settings.LensSettings
 import com.rawlab.android.settings.PhotoEffectsSettings
 import com.rawlab.android.settings.PhotoIdentity
+import com.rawlab.android.testing.openWorkbenchTool
+import com.rawlab.android.testing.returnToWorkbench
 import com.rawlab.android.testing.LanguageTestRule
 
 class EditorScreenTest {
@@ -68,38 +71,58 @@ class EditorScreenTest {
             node.config.getOrNull(SemanticsProperties.Text)?.any { Regex("(?:GPU|CPU).*ms").matches(it.text) } == true
         }).assertDoesNotExist()
         val original = model.state.value.photo
-        compose.runOnUiThread { model.edit(model.state.value.edits.copy(film = "velvia", exposure = .5f)) }
+        compose.runOnUiThread { model.edit(model.state.value.edits.copy(film = "velvia", strength = 1f, exposure = .5f)) }
         compose.activityRule.scenario.recreate()
         compose.activityRule.scenario.onActivity { model = it.model }
         compose.waitUntil(180_000) { model.state.value.canExport || model.state.value.error != null }
         assertNull(model.state.value.error)
         assertEquals("velvia", model.state.value.edits.film)
-        compose.onNodeWithText("强度").performClick()
-        compose.onNodeWithTag("adjustment-slider").performSemanticsAction(SemanticsActions.SetProgress) { it(200f) }
-        compose.waitUntil(180_000) { model.state.value.canExport || model.state.value.error != null }
-        assertEquals(2f, model.state.value.edits.strength)
+        // 显式写入 strength=1f 基准：同身份缓存文件的上一轮持久化值会随导入恢复，须保证草稿隔离断言的基线确定。
+        assertEquals(1f, model.state.value.edits.strength)
+        compose.openWorkbenchTool(0)
+        compose.waitUntil(120_000) { model.state.value.let { it.draftReady || it.error != null } }
         assertNull(model.state.value.error)
-        compose.onNodeWithContentDescription("对比").performClick()
+        compose.onNodeWithTag("adjustment-slider").performScrollTo().performSemanticsAction(SemanticsActions.SetProgress) { it(200f) }
+        compose.waitUntil(180_000) { model.state.value.visibleEdits.strength == 2f || model.state.value.error != null }
+        // LOOK draft 隔离契约：draftReady 后的标尺 SetProgress 经 projectLook 投影进草稿，visibleEdits 反映草稿值而提交态 edits 保值。
+        val afterSlider = model.state.value
+        assertEquals(2f, afterSlider.visibleEdits.strength)
+        assertEquals(1f, afterSlider.edits.strength)
+        assertNull(afterSlider.error)
+        // 点击前须再次等 draftReady：SetProgress 触发草稿预览重渲（rendering=true），applyDraft 在非 ready 时直接 no-op。
+        compose.waitUntil(120_000) { model.state.value.let { it.draftReady || it.error != null } }
+        assertNull(model.state.value.error)
+        compose.onNodeWithTag("draft.apply").performClick()
+        // apply 完成（draft 清空）或失败（saveState=FAILED 令 canExport 恒假）都要退出等待，避免盲等 180s。
+        compose.waitUntil(180_000) { model.state.value.let { it.canExport || it.error != null || it.saveState == EditSaveState.FAILED || it.draft == null } }
+        val afterApply = model.state.value
+        assertNull(afterApply.error)
+        assertNull("apply left state save=${afterApply.saveState} draft=${afterApply.draft?.group} rendering=${afterApply.rendering} exact=${afterApply.exact}", afterApply.draft)
+        assertEquals("apply left state save=${afterApply.saveState}", 2f, afterApply.edits.strength)
+        compose.openWorkbenchTool(2)
+        compose.waitUntil(120_000) { model.state.value.let { it.draftReady || it.error != null } }
+        assertNull(model.state.value.error)
+        compose.onNodeWithContentDescription("开启对比").performClick()
+        compose.onNodeWithTag("comparison-mode").performClick()
+        compose.onNodeWithText(compose.activity.getString(R.string.editor_compare_wipe)).performClick()
         compose.onNodeWithTag("comparison-wipe").assertExists().performSemanticsAction(SemanticsActions.SetProgress) { it(.3f) }
-        compose.onNodeWithContentDescription("收起调整栏").performClick()
+        compose.onNodeWithTag("draft.cancel").performClick()
         compose.onNodeWithText("色温").assertDoesNotExist()
         compose.onNodeWithTag("adjustment-slider").assertDoesNotExist()
         capture("editor-collapsed.png")
-        compose.onNodeWithContentDescription("展开调整栏").performClick()
-        compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-color"))
-        compose.onNodeWithTag("editor-group-color").performClick()
-        compose.onNodeWithContentDescription("白平衡").performClick()
+        compose.openWorkbenchTool(8)
         compose.onNode(hasTestTag("adjustment-slider") and hasContentDescription("色温")).performScrollTo().assertIsDisplayed()
         compose.onNode(hasTestTag("adjustment-slider") and hasContentDescription("色调")).performScrollTo().assertIsDisplayed()
         capture("editor-tint.png")
-        compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-looks"))
-        compose.onNodeWithTag("editor-group-looks").performClick()
+        compose.openWorkbenchTool(0)
         compose.waitForIdle()
         capture("editor-comparison.png")
+        compose.returnToWorkbench()
         val empty = File(instrumentation.targetContext.cacheDir, "empty-test.dng").apply { writeBytes(byteArrayOf()) }
         compose.runOnUiThread { model.importPhoto(Uri.fromFile(empty)) }
-        compose.waitUntil(10_000) { model.state.value.operation == Operation.NONE }
+        compose.waitUntil(10_000) { model.state.value.error != null || model.state.value.photo != original }
         assertNotNull(model.state.value.error)
+        compose.waitUntil(30_000) { model.state.value.operation == Operation.NONE }
         assertEquals(original, model.state.value.photo)
         assertTrue(model.state.value.canExport)
         val savedEdits = model.state.value.edits
