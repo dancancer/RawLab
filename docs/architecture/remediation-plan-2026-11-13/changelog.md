@@ -447,3 +447,17 @@
 - **本轮净收益样例（实跑口径）**：LUT SHA-256 28.2→2.6ms；Mac PNG 导出 preserve 尾趟 8.92s→0.45s、峰值内存 +910MB→+9MB；HDR 拖杆每帧整图扫描 7→4；500 张批量账本整文件重读 1500+→1；缩略图缓存写 256 张 stat 3.3 万→256 且零强制同步；相机导出单张 ProRAW 全量哈希 7 次→0（内容寻址/摘要透传）。
 - **收尾验证**：`development` 上 scripts/ci **245 OK(4 skip)**；dev-tip Windows native 门禁已派（run 43778371601）作为跨端最终回归。
 - **剩余均为用户侧**：手动门禁 k165（Mac 桌面会话+AX）/k167（有显示器非锁屏）/k169（素材补齐后 5 脚本）/k173（真机与硬件 GPU 签收）/k175（待开工批次前置）、#370（用户侧 PR）、k179（Runner JIT 切生产）、k161 尾注（undo DRAFT 误开历史面板；单槽合并队列待日志证据）、k163 尾注（`--batch-selection` 纳入常规 CI 需 v08 布局）。
+
+---
+
+### (69) 审计残留清零（171–178）：模型包/AI 门禁收口；`分层复用` 成为成文硬原则
+
+- **#417（171th）/#418（173th）** 文档：changelog (67)(68) 入库。
+- **#416（172nd `548ab84b`）LUT 副本内容寻址去重**：任务目录内同一 look N 份→1 份（`<jobID>-<sha>.<ext>` 任务作用域前缀）。碳审打回两点：Mac `BatchJournal.directory` 是**跨任务平铺**目录，平铺放副本会被上一任务的 `releaseResources` 误删（`missingLook`）；iOS 集合导出漏改。返工后两处红锚均实测 EXIT=133。
+- **#419（174th `5099381d` 前）undo/DRAFT 误开历史面板**（k161 登记项）：判据抽成 `adjustmentHistorySheetFor(userRequested, results)`——主动请求恒开、undo/redo 仅真实 BLOCKED/CONFLICT/FAILED 开、**DRAFT 门控拒收保持当前 sheet** 并走既有 Snackbar 提示；JVM 769/0，撤排除必红。
+- **#421（175th）Apple HDR 单次读取+摘要复用（C-08/C-10）**：`export_stream` 内部哈希 **3→1**、`exportHEIF` **2→1**、CLI ProRAW（含前置扫盘）**4→1**。碳审抓出真阻断：原实现"先按路径读 NSData、再按路径 `stat`"（非 `fstat(fd)`），"读后 stat 前"替换会漏检，且 C-10 全零摘要路径可**把 A 的 EXIF 写进 B 的像素**并原子落盘；返工为 `open→fstat(before)→同一 fd 分块读入堆内存→fstat(after) 夹逼`，不跨流式周期持映射（防外部 `O_TRUNC` 触发 SIGBUS），红锚以注入缝模拟"读中途换 inode 替补"必 `SOURCE_CHANGED`。
+- **#420（176th）AI 模型包进程级缓存（C-11/T2）**：正式包单次校验 **621.9MB**，此前每个新 session（缩略图/批量/编辑器）都重算。首版用 `(size,mtime)` 指纹被碳审打回（NTFS 15.6ms tick 击穿 `dualdn_package` 测试、且绕过硬 `packageStamp` 契约；canonical 为键却校验未规范化路径 + 锁外指纹 TOCTOU）→ 终版**复用同库 `sourceMetadataKey`**（零内容读、`fileReads==1` 不变）+ canonical 统一 + 指纹与校验同锁内。
+- **#370（177th）MPF JPEG 导入校验**（用户 PR）：CI 两处注册遗漏由 lead 补齐——host JNI 测试缺 `-I lutools/src` 且未链接 `jpeg_mpf.cpp`；新 ctest `jpeg_mpf` 未进 `ci.yml` 白名单。
+- **#422（178th）`dualdn_api` 预存在红定界 + Mac 真包门禁**：定界=**测试夹具漂移**（`b9e5de06` 把 `legacySonyCrop` 纳入 raw key 契约时，session 默认 `processing_version=Legacy`→true 而手工 fixture 走 false），产品反证=`dualdn_session`/`dualdn_native` 真包全绿。修法改测试不改产品；门禁首版挂错 `full`（`full` 本已跑真包 → 重复重建）且脚本在 GHA `GITHUB_ENV` 环境必崩、`eval "$(...)"` 吞退出码 → 返工改挂 `native && arm64`、显式 env 优先、缺输入硬失败。
+- **成文原则（AGENTS.md 更新）**：新增 **「分层复用」** 三级优先级——①优先复用项目内已有基础设施与组件（`lutools`/`Shared/`/现有缓存与原子写原语）；②次选平台原生 SDK 或成熟开源库；③最后才最小必要自研并收敛为单一共享模块。本轮两例即实践：#420 从自造弱指纹改为复用 `sourceMetadataKey`、#422 复用既有 `ai-inputs.py` 而非另写解析。
+- **收尾**：`development@97b5182b`，**开放 PR = 0**，scripts/ci 245 OK；剩余项全部为用户侧手动门禁（k165/k167/k169/k173/k175）、k179 Runner 切生产，以及两条条件项（k161 单槽合并队列待日志证据、k163 `--batch-selection` 入 CI 需 v08 布局）。
