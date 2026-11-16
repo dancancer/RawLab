@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "sony2fuji/sony2fuji.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "sony2fuji/gpu/lut_gpu.h"
@@ -53,10 +54,10 @@
 #endif
 
 using namespace sony2fuji;
-int failures = 0;
 void check(bool ok, const char* name) {
-    std::cout << (ok ? "PASS " : "FAIL ") << name << '\n';
-    if (!ok) ++failures;
+    if (rawlab::test::check(ok, name)) {
+        std::cout << "PASS " << name << '\n';
+    }
 }
 bool near(float a, float b, float tolerance = 1e-5f) { return std::abs(a-b) < tolerance; }
 
@@ -705,7 +706,7 @@ int main(int argc, char** argv) {
         if (!started) pthread_join(worker,&result);
         check(!started && !result,"Preview decode fits a desktop worker thread stack");
 #endif
-        return failures ? 1 : 0;
+        return rawlab::test::exitCode();
     }
     check(!RAWProcessOptions().matchEmbeddedPreviewExposure, "Default exposure does not meter the embedded JPEG");
     check(near(sceneExposureEV(.35f),1.05f) && near(sceneExposureEV(-.5f),.2f) &&
@@ -2496,5 +2497,5 @@ int main(int argc, char** argv) {
           "Export sizing rejects an empty pixel limit");
     sony2fuji_session_destroy(session);
     std::filesystem::remove_all(dir);
-    return failures ? 1 : 0;
+    return rawlab::test::exitCode();
 }

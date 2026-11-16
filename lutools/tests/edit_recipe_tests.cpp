@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "sony2fuji/edit_recipe.h"
 #include <iostream>
 #include <limits>
@@ -9,15 +10,11 @@
 namespace {
 
 using sony2fuji::EditRecipe;
-int failures = 0;
 int checks = 0;
 
 void check(bool condition, const std::string& message) {
     ++checks;
-    if (!condition) {
-        ++failures;
-        std::cerr << "FAIL: " << message << '\n';
-    }
+    rawlab::test::check(condition, message);
 }
 
 std::string document(const std::string& exposure = R"({"mode":"scene"})",
@@ -402,42 +399,37 @@ void atmosphereCompatibility() {
 
 } // namespace
 
-int main() {
-    try {
-        {
-            sony2fuji::EditRecipe x3f;
-            x3f.inputPath = "photo.X3F"; x3f.outputPath = "photo.png";
-            x3f.schemaVersion = 7; x3f.x3fMode = SONY2FUJI_X3F_NORMAL;
-            const auto serialized = sony2fuji::serializeEditRecipe(x3f);
-            sony2fuji::EditRecipe restored; std::string error;
-            check(sony2fuji::parseEditRecipe(serialized, restored, error) && restored.x3fMode == SONY2FUJI_X3F_NORMAL,
-                "v7 preserves normal X3F identity");
-            check(!sony2fuji::parseEditRecipe(replaceOnce(serialized,"normal-v1","future"), restored, error),
-                "unknown X3F mode rejected");
-            check(x3f.toRequest().input_type == SONY2FUJI_INPUT_RAW, "v7 maps to the RAW request rather than HDR");
-            x3f.schemaVersion = 5;
-            bool rejected = false;
-            try { sony2fuji::serializeEditRecipe(x3f); } catch (const std::invalid_argument&) { rejected = true; }
-            check(rejected,"old schemas cannot silently discard normal X3F identity");
-        }
-        defaultsAndExposure();
-        whiteBalanceAndLook();
-        outputAndRoundTrip();
-        legacyRequestParity();
-        completeEdits();
-        hdrLensProfileBounds();
-        invalidFields();
-        unknownAndDuplicateKeys();
-        malformedAndUnicode();
-        atmosphereCompatibility();
-    } catch (const std::exception& error) {
-        std::cerr << "FAIL: " << error.what() << '\n';
-        return 1;
+TEST_MAIN(
+    {
+        sony2fuji::EditRecipe x3f;
+        x3f.inputPath = "photo.X3F"; x3f.outputPath = "photo.png";
+        x3f.schemaVersion = 7; x3f.x3fMode = SONY2FUJI_X3F_NORMAL;
+        const auto serialized = sony2fuji::serializeEditRecipe(x3f);
+        sony2fuji::EditRecipe restored; std::string error;
+        RAWLAB_CHECK(sony2fuji::parseEditRecipe(serialized, restored, error) && restored.x3fMode == SONY2FUJI_X3F_NORMAL,
+            "v7 preserves normal X3F identity");
+        RAWLAB_CHECK(!sony2fuji::parseEditRecipe(replaceOnce(serialized,"normal-v1","future"), restored, error),
+            "unknown X3F mode rejected");
+        RAWLAB_CHECK(x3f.toRequest().input_type == SONY2FUJI_INPUT_RAW, "v7 maps to the RAW request rather than HDR");
+        x3f.schemaVersion = 5;
+        bool rejected = false;
+        try { sony2fuji::serializeEditRecipe(x3f); } catch (const std::invalid_argument&) { rejected = true; }
+        RAWLAB_CHECK(rejected,"old schemas cannot silently discard normal X3F identity");
+        checks += 4;
     }
-    if (failures) {
-        std::cerr << failures << " of " << checks << " checks failed\n";
-        return 1;
+    defaultsAndExposure();
+    whiteBalanceAndLook();
+    outputAndRoundTrip();
+    legacyRequestParity();
+    completeEdits();
+    hdrLensProfileBounds();
+    invalidFields();
+    unknownAndDuplicateKeys();
+    malformedAndUnicode();
+    atmosphereCompatibility();
+    if (rawlab::test::failureCount() != 0) {
+        std::cerr << rawlab::test::failureCount() << " of " << checks << " checks failed\n";
+    } else {
+        std::cout << checks << " edit recipe parsing, normalization and legacy request mapping checks passed\n";
     }
-    std::cout << checks << " edit recipe parsing, normalization and legacy request mapping checks passed\n";
-    return 0;
-}
+)
