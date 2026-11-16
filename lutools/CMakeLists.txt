@@ -732,7 +732,8 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
                 target_include_directories(${test_name}_portable_tests BEFORE PRIVATE src "${RAWLAB_HDR_LCMS_INCLUDE}"
                     "${RAWLAB_HDR_UHDR_INCLUDE}" "${RAWLAB_HDR_XML_INCLUDE}")
                 target_link_libraries(${test_name}_portable_tests sony2fuji_core heif rawlab_lcms)
-                target_compile_definitions(${test_name}_portable_tests PRIVATE TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+                target_compile_definitions(${test_name}_portable_tests PRIVATE TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+                    RAWLAB_HDR_PORTABLE_ADAPTER=1)
                 if(SONY2FUJI_ENABLE_DNGSDK)
                     target_compile_definitions(${test_name}_portable_tests PRIVATE SONY2FUJI_TEST_DNGSDK)
                 endif()

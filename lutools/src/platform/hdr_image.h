@@ -51,4 +51,8 @@ void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t heigh
 uint64_t sourceHashPassCount();
 void resetSourceHashPassCount();
 
+// 测试注入缝：非空时，元数据源首块数据读取完成后恰好触发一次并置空，
+// 用于模拟「读后、快照夹逼前」路径被原子替换（B1 红锚）。生产恒为空。
+extern void (*sourceReadTestHook)();
+
 } // namespace sony2fuji::hdr

@@ -399,4 +399,5 @@ void exportSDR(const HDRImagePair& image,const sony2fuji_hdr_sdr_export_config_v
 StreamSourcePin::~StreamSourcePin() {}
 uint64_t sourceHashPassCount() { return sourceHashPasses.load(std::memory_order_relaxed); }
 void resetSourceHashPassCount() { sourceHashPasses.store(0, std::memory_order_relaxed); }
+void (*sourceReadTestHook)() = nullptr;
 } // namespace sony2fuji::hdr

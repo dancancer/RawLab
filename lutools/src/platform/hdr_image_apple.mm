@@ -45,14 +45,17 @@ struct SourceSnapshot {
     struct timespec statusChange{};
     bool valid = false;
 };
-SourceSnapshot snapshotSource(const char* path) {
-    struct stat details{};
-    if (!path || ::stat(path, &details) != 0) return {};
+SourceSnapshot snapshotOf(const struct stat& details) {
     SourceSnapshot snapshot;
     snapshot.device = details.st_dev; snapshot.inode = details.st_ino; snapshot.size = details.st_size;
     snapshot.modification = details.st_mtimespec; snapshot.statusChange = details.st_ctimespec;
     snapshot.valid = true;
     return snapshot;
+}
+SourceSnapshot snapshotSource(const char* path) {
+    struct stat details{};
+    if (!path || ::stat(path, &details) != 0) return {};
+    return snapshotOf(details);
 }
 bool snapshotMatches(const SourceSnapshot& left, const SourceSnapshot& right) {
     return left.valid && right.valid && left.device == right.device && left.inode == right.inode &&
@@ -105,13 +108,54 @@ void validateMap(NSDictionary* map) {
 void readMetadataSource(File& file, const char* path, const uint8_t* expectedSHA = nullptr) {
     NSString* name = [NSString stringWithUTF8String:path];
     if (!name) error(SONY2FUJI_STATUS_INVALID_ARGUMENT, SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, "Invalid UTF-8 HDR path");
-    NSNumber* regular = nil;
-    NSURL* url = [NSURL fileURLWithPath:name];
-    [url getResourceValue:&regular forKey:NSURLIsRegularFileKey error:nil];
-    if (!regular.boolValue) error(SONY2FUJI_STATUS_IO_ERROR, SONY2FUJI_HDR_REASON_INPUT_IO, "HDR source is not a regular file");
-    file.data = [NSData dataWithContentsOfURL:url options:NSDataReadingMappedIfSafe error:nil];
+    // 单次打开：数据读取与前后两次 fstat 共享同一 fd，「数据 ↔ 快照身份」原子绑定；
+    // 读后「路径被原子替换」不会被误记为本体快照（B1）。堆内读取不跨流式周期持有
+    // 文件映射，外部就地 O_TRUNC 不会在延后解析时触发 SIGBUS。
+    const int descriptor = ::open([name fileSystemRepresentation], O_RDONLY | O_CLOEXEC);
+    if (descriptor < 0) error(SONY2FUJI_STATUS_IO_ERROR, SONY2FUJI_HDR_REASON_INPUT_IO, "HDR source is not a regular file");
+    struct stat before{};
+    if (::fstat(descriptor, &before) != 0 || !S_ISREG(before.st_mode)) {
+        ::close(descriptor);
+        error(SONY2FUJI_STATUS_IO_ERROR, SONY2FUJI_HDR_REASON_INPUT_IO, "HDR source is not a regular file");
+    }
+    struct DescriptorGuard {
+        int descriptor;
+        ~DescriptorGuard() { if (descriptor >= 0) ::close(descriptor); }
+    } guard{descriptor};
+    NSMutableData* storage = [[NSMutableData alloc] initWithLength:(NSUInteger)std::max<off_t>(before.st_size, 0)];
+    if (before.st_size > 0) {
+        auto* bytes = static_cast<uint8_t*>(storage.mutableBytes);
+        off_t filled = 0;
+        bool firstChunk = true;
+        while (true) {
+            checkProcessingCancellation();
+            ssize_t got = -1; errno = 0;
+            if (filled < before.st_size)
+                got = ::read(descriptor, bytes + filled,
+                    std::min<size_t>(4u * 1024 * 1024, size_t(before.st_size - filled)));
+            else { // 容量已满仍可能有并发增长；探测一次即可，由后一次 fstat 夹逼裁决。
+                unsigned char probe = 0;
+                got = ::read(descriptor, &probe, 1);
+                if (got != 0) { ++filled; break; }
+                break;
+            }
+            if (got < 0 && errno == EINTR) continue;
+            if (got < 0) { ::close(guard.descriptor); guard.descriptor = -1;
+                error(SONY2FUJI_STATUS_IO_ERROR, SONY2FUJI_HDR_REASON_INPUT_IO, "Cannot read HDR source"); }
+            if (got == 0) break; // 并发截断：短读由后一次 fstat 夹逼裁决。
+            filled += got;
+            if (firstChunk) {
+                firstChunk = false;
+                if (sourceReadTestHook) sourceReadTestHook(); // 测试注入缝：读中途恰好触发一次。
+            }
+        }
+    }
+    struct stat after{};
+    if (::fstat(descriptor, &after) != 0 || !snapshotMatches(snapshotOf(before), snapshotOf(after)))
+        error(SONY2FUJI_STATUS_INVALID_ARGUMENT, SONY2FUJI_HDR_REASON_SOURCE_CHANGED, "HDR metadata source has changed");
+    file.data = storage;
     if (!file.data.length) error(SONY2FUJI_STATUS_IO_ERROR, SONY2FUJI_HDR_REASON_INPUT_IO, "Cannot read HDR source");
-    file.snapshot = snapshotSource(path);
+    file.snapshot = snapshotOf(before);
     // 源身份不依赖路径/mtime，元数据保存使用同一 SHA-256 校验原容器。
     sourceHashPasses.fetch_add(1, std::memory_order_relaxed);
 #pragma clang diagnostic push
@@ -793,4 +837,5 @@ void exportSDR(const HDRImagePair& image,const sony2fuji_hdr_sdr_export_config_v
 
 uint64_t sourceHashPassCount() { return sourceHashPasses.load(std::memory_order_relaxed); }
 void resetSourceHashPassCount() { sourceHashPasses.store(0, std::memory_order_relaxed); }
+void (*sourceReadTestHook)() = nullptr;
 } // namespace sony2fuji::hdr
