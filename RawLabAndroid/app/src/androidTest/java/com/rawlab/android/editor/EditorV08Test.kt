@@ -38,6 +38,7 @@ import com.rawlab.android.settings.EditStore
 import com.rawlab.android.settings.Film
 import com.rawlab.android.settings.LensSettings
 import com.rawlab.android.settings.LookChoice
+import com.rawlab.android.testing.openWorkbenchTool
 import com.rawlab.android.testing.LanguageTestRule
 import com.rawlab.android.ui.ExportFormatControls
 
@@ -141,13 +142,16 @@ class EditorV08ControlsTest {
 
 class EditorV08DraftTest {
     val compose = createAndroidComposeRule<MainActivity>()
-    private fun selectGeometryTool(id: Int = 17) {
-        compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-geometry"))
-        compose.onNodeWithTag("editor-group-geometry").performClick()
-        if (id != 17) {
-            compose.onNodeWithTag("editor-tools").performScrollToNode(hasTestTag("editor-tool-$id"))
-            compose.onNodeWithTag("editor-tool-$id").performClick()
-        }
+    private fun selectGeometryTool(id: Int = 17) = compose.openWorkbenchTool(id)
+    private fun assertHomeAndExposureReachable() {
+        compose.onNodeWithTag("editor-groups").assertIsDisplayed()
+        compose.onNodeWithTag("editor-parameters").assertDoesNotExist()
+        assertNull(compose.activity.model.state.value.draft)
+        compose.openWorkbenchTool(2)
+        compose.waitUntil(180_000) { compose.activity.model.state.value.draftReady }
+        compose.onNodeWithTag("exposure.auto").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("draft.cancel").performClick()
+        compose.waitUntil(180_000) { compose.activity.model.state.value.canExport }
     }
     @get:Rule val rule = org.junit.rules.RuleChain.outerRule(LanguageTestRule()).around(compose)
 
@@ -223,7 +227,15 @@ class EditorV08DraftTest {
             val identity = model.state.value.photo!!.identity
             selectGeometryTool()
             compose.waitUntil(180_000) { model.state.value.draftReady }
-            compose.onNodeWithTag("draft.apply").assertIsNotEnabled()
+            val unchangedRecord = record.readBytes()
+            val unchangedPreview = model.state.value.preview
+            compose.onNodeWithTag("draft.apply").assertIsEnabled().performClick()
+            ready()
+            assertArrayEquals("No-op Apply preserves the saved record", unchangedRecord, record.readBytes())
+            assertSame("No-op Apply preserves the accepted preview", unchangedPreview, model.state.value.preview)
+            assertNull(model.state.value.draft)
+            selectGeometryTool()
+            compose.waitUntil(180_000) { model.state.value.draftReady }
             compose.runOnUiThread { model.changeDraft(model.state.value.visibleEdits.copy(geometry = GeometrySettings(cropWidth = .75f))) }
             compose.waitUntil(180_000) { model.state.value.canApplyDraft }
             val draft = model.state.value.draft
@@ -245,8 +257,7 @@ class EditorV08DraftTest {
             ready()
             compose.onNodeWithText(context.getString(R.string.adjustment_leave)).assertDoesNotExist()
             compose.onNodeWithTag("draft.apply").assertDoesNotExist()
-            compose.onNodeWithTag("editor-tool-2").assertIsSelected()
-            compose.onNodeWithTag("exposure.auto").performScrollTo().assertIsDisplayed()
+            assertHomeAndExposureReachable()
             assertNull(model.state.value.draft)
             assertEquals(.75f, model.state.value.edits.geometry.cropWidth, 0f)
             assertEquals(model.state.value.edits, EditStore(record.parentFile!!).load(identity))
@@ -298,14 +309,12 @@ class EditorV08DraftTest {
             assertTrue(backup.renameTo(record))
             compose.onNodeWithTag("edit-save-retry").performClick()
             ready()
-            compose.onNodeWithTag("editor-tool-2").assertIsSelected()
-            compose.onNodeWithTag("exposure.auto").performScrollTo().assertIsDisplayed()
+            assertHomeAndExposureReachable()
             assertNull(model.state.value.draft)
             select(16)
             compose.onNodeWithTag("draft.cancel").performClick()
             ready()
-            compose.onNodeWithTag("editor-tool-2").assertIsSelected()
-            compose.onNodeWithTag("exposure.auto").performScrollTo().assertIsDisplayed()
+            assertHomeAndExposureReachable()
             assertNull(model.state.value.draft)
         } finally {
             if (backup.exists()) { record.deleteRecursively(); backup.renameTo(record) }
@@ -330,10 +339,10 @@ class EditorV08DraftTest {
             compose.runOnUiThread { model.importPhoto(Uri.fromFile(source)) }
             ready()
             assertNull(model.state.value.error)
+            compose.openWorkbenchTool(0)
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("film-artwork-provia", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
             capture("film")
-            compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-light"))
-            compose.onNodeWithTag("editor-group-light").performClick()
+            compose.openWorkbenchTool(2)
             val photo = compose.onNodeWithTag("photo-canvas").fetchSemanticsNode().boundsInRoot
             val ruler = compose.onNodeWithTag("adjustment-slider").fetchSemanticsNode().boundsInRoot
             val configuration = compose.activity.resources.configuration
@@ -343,7 +352,8 @@ class EditorV08DraftTest {
             capture("exposure")
             selectGeometryTool()
             compose.waitUntil(30_000) { model.state.value.draftReady }
-            compose.onNodeWithTag("editor-tool-17").assertIsDisplayed()
+            compose.onNodeWithTag("geometry-crop-tab").assertIsDisplayed()
+            assertEquals(AdjustmentGroup.GEOMETRY, model.state.value.draft!!.group)
             compose.onNodeWithTag("draft.cancel").assertIsDisplayed()
             compose.onNodeWithTag("draft.apply").assertIsDisplayed()
             compose.onNodeWithTag("geometry.rotate-right").performScrollTo().performClick()
