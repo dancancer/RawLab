@@ -461,3 +461,10 @@
 - **#422（178th）`dualdn_api` 预存在红定界 + Mac 真包门禁**：定界=**测试夹具漂移**（`b9e5de06` 把 `legacySonyCrop` 纳入 raw key 契约时，session 默认 `processing_version=Legacy`→true 而手工 fixture 走 false），产品反证=`dualdn_session`/`dualdn_native` 真包全绿。修法改测试不改产品；门禁首版挂错 `full`（`full` 本已跑真包 → 重复重建）且脚本在 GHA `GITHUB_ENV` 环境必崩、`eval "$(...)"` 吞退出码 → 返工改挂 `native && arm64`、显式 env 优先、缺输入硬失败。
 - **成文原则（AGENTS.md 更新）**：新增 **「分层复用」** 三级优先级——①优先复用项目内已有基础设施与组件（`lutools`/`Shared/`/现有缓存与原子写原语）；②次选平台原生 SDK 或成熟开源库；③最后才最小必要自研并收敛为单一共享模块。本轮两例即实践：#420 从自造弱指纹改为复用 `sourceMetadataKey`、#422 复用既有 `ai-inputs.py` 而非另写解析。
 - **收尾**：`development@97b5182b`，**开放 PR = 0**，scripts/ci 245 OK；剩余项全部为用户侧手动门禁（k165/k167/k169/k173/k175）、k179 Runner 切生产，以及两条条件项（k161 单槽合并队列待日志证据、k163 `--batch-selection` 入 CI 需 v08 布局）。
+
+---
+
+### (70) 分层复用（WR）整改方案入库及首批落地回填（2026-11-16）
+
+- **方案文档**：[reuse-remediation-plan-2026-11-16.md](../reuse-remediation-plan-2026-11-16.md)（基线更新至 `origin/development` @ `b08ce1d11`）。
+- **已落地项回填**：`WR-01`（#426 + #431）、`WR-02`（#433）、`WR-08a`（#429，解耦更新状态故障不锁编辑；`WR-08b` 退役桌面端重复 GitHub Releases 检查器仍待启动）。
