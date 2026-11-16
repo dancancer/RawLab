@@ -9,6 +9,22 @@ using namespace sony2fuji::ai;
 using Json = nlohmann::json;
 void require(bool condition, const char* message) { if (!condition) throw std::runtime_error(message); }
 
+void requireSamePath(const std::string& actualUtf8, const std::filesystem::path& expected,
+                     bool expectDirectory, const char* message) {
+    const auto actual = std::filesystem::u8path(actualUtf8);
+    require(actual.lexically_normal() == expected.lexically_normal(), message);
+    std::error_code ec;
+    require(std::filesystem::equivalent(actual, expected, ec) && !ec, message);
+    require(std::filesystem::exists(actual), message);
+    require(expectDirectory ? std::filesystem::is_directory(actual) : std::filesystem::is_regular_file(actual), message);
+    require(actual.u8string() == actualUtf8 && std::filesystem::u8path(actual.u8string()) == actual,
+            "UTF-8 path round-trip failed");
+    require(actual.parent_path().filename().u8string() == expected.parent_path().filename().u8string(),
+            "UTF-8 parent directory round-trip failed");
+    require(actual.filename().u8string() == expected.filename().u8string(),
+            "UTF-8 filename round-trip failed");
+}
+
 int main(int argc, char** argv) {
     std::filesystem::path root;
     bool created = false;
@@ -63,8 +79,9 @@ int main(int argc, char** argv) {
         write();
         const auto package = loadModelPackage(root.u8string());
         require(package.tileSize == 640 && package.digest.size() == 64, "valid model package rejected");
-        require(package.paths == std::array<std::string, 3>{(root/"raw.onnx").u8string(),
-                (root/"isp.onnx").u8string(), (root/"rgb.onnx").u8string()}, "ONNX paths must remain UTF-8");
+        requireSamePath(package.paths[0], root / "raw.onnx", false, "ONNX raw path must match semantically and remain UTF-8");
+        requireSamePath(package.paths[1], root / "isp.onnx", false, "ONNX isp path must match semantically and remain UTF-8");
+        requireSamePath(package.paths[2], root / "rgb.onnx", false, "ONNX rgb path must match semantically and remain UTF-8");
         auto rejects = [&] {
             bool failed = false; try { loadModelPackage(root.u8string()); } catch (const std::exception&) { failed = true; }
             require(failed, "corrupt model package accepted");
@@ -80,7 +97,7 @@ int main(int argc, char** argv) {
             {"file","blind_rgb.onnx"}, {"bytes",std::filesystem::file_size(blindFile)}, {"sha256",sha256File(blindFile.u8string())},
             {"license_file","Restormer-LICENSE.txt"}, {"license_sha256",restormerLicenseSHA256}};
         write();
-        require(loadModelPackage(root.u8string()).blindRGBPath == blindFile.u8string(),"valid scene RGB package rejected");
+        requireSamePath(loadModelPackage(root.u8string()).blindRGBPath, blindFile, false, "valid scene RGB package rejected");
         manifest["blind_rgb"]["sha256"] = std::string(64,'a'); write(); rejects();
         manifest["blind_rgb"]["sha256"] = sha256File(blindFile.u8string());
         manifest["blind_rgb"]["weights_sha256"] = std::string(64,'b'); write(); rejects();
@@ -94,8 +111,8 @@ int main(int argc, char** argv) {
         manifest["blind_rgb"]["coreml"] = {{"directory","blind_rgb.mlmodelc"}, {"precision","float32"},
             {"files",Json::array({{{"path","model.mil"}, {"bytes",std::filesystem::file_size(nativeRGB)}, {"sha256",sha256File(nativeRGB.u8string())}}})}};
         write();
-        require(loadModelPackage(root.u8string()).blindRGBCoreMLPath == (root/"blind_rgb.mlmodelc").u8string(),
-                "scene RGB native path must remain UTF-8");
+        requireSamePath(loadModelPackage(root.u8string()).blindRGBCoreMLPath, root / "blind_rgb.mlmodelc", true,
+                        "scene RGB native path must remain UTF-8");
         manifest["blind_rgb"]["coreml"]["files"][0]["path"] = "../sample"; write(); rejects();
         manifest["blind_rgb"]["coreml"]["files"][0]["path"] = "model.mil";
         const auto blindManifest = manifest["blind_rgb"];
@@ -118,8 +135,8 @@ int main(int argc, char** argv) {
         }
         write();
         const auto native = loadModelPackage(root.u8string());
-        require(native.coreMLPaths == std::array<std::string, 2>{(root/"raw.mlmodelc").u8string(),
-                (root/"rgb.mlmodelc").u8string()}, "native model paths must remain UTF-8");
+        requireSamePath(native.coreMLPaths[0], root / "raw.mlmodelc", true, "native raw model path must remain UTF-8");
+        requireSamePath(native.coreMLPaths[1], root / "rgb.mlmodelc", true, "native rgb model path must remain UTF-8");
         manifest["blind_rgb"] = blindManifest; write();
         require(!loadModelPackage(root.u8string()).blindRGBCoreMLPath.empty(),"combined native model bundle rejected");
         const auto nativeManifest = manifest["coreml"];
@@ -174,6 +191,12 @@ int main(int argc, char** argv) {
             }
         }
         std::filesystem::remove_all(root);
+        if (argc == 3 && std::string(argv[2]) == "chinese") {
+            const char* modelDir = std::getenv("RAWLAB_DUALDN_MODEL_DIR");
+            if (!modelDir || !*modelDir || !std::filesystem::exists(std::filesystem::u8path(modelDir))) {
+                std::cout << "SKIP dualdn_package_chinese_onnx_session: supply RAWLAB_DUALDN_MODEL_DIR with a real DualDn model package to test loading and opening an ONNX session under a Chinese directory\n";
+            }
+        }
         std::cout << "PASS SHA-256 and DualDn package integrity/protocol\n";
         return 0;
     } catch (const std::exception& error) {
