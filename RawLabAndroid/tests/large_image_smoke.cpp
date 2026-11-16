@@ -1,5 +1,7 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "sony2fuji/lut_parser.h"
+// WR-01 后核心不再编译 stb_image_write 实现，测试自带实现。
+#define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "core/stb_image_write.h"
 #include <GLES3/gl31.h>
 #include <algorithm>

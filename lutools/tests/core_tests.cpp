@@ -4,6 +4,11 @@
 #include "core/preview_exposure.h"
 #include "core/photo_rendering.h"
 #include "core/photo_lut.h"
+// WR-01 后核心不再编译 stb_image_write 实现；测试保留 stb 作旧实现参考编码器。
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#ifdef _WIN32
+#define STBIW_WINDOWS_UTF8
+#endif
 #include "core/stb_image_write.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "core/stb_image.h"
