@@ -79,7 +79,7 @@ class WorkflowContractTests(unittest.TestCase):
 
     def test_all_platforms_are_selected_bounded_and_gated(self):
         jobs = self.workflow["jobs"]
-        self.assertEqual(set(jobs), {"changes", "contracts", *PLATFORM_JOBS, "result"})
+        self.assertEqual(set(jobs), {"changes", "contracts", *PLATFORM_JOBS, "windows-batch-selection", "result"})
         for name, job in jobs.items():
             with self.subTest(job=name):
                 self.assertLessEqual(int(job["timeout-minutes"]), 180)
@@ -124,7 +124,7 @@ class WorkflowContractTests(unittest.TestCase):
                       "\n".join(step.get("run", "") for step in selection["steps"]))
         result = jobs["result"]
         self.assertEqual(result["name"], "${{ github.event_name == 'workflow_dispatch' && format('Manual verification ({0}, {1})', inputs.platform, inputs.checks) || 'CI result' }}")
-        self.assertEqual(result["needs"], ["changes", "contracts", *PLATFORM_JOBS])
+        self.assertEqual(result["needs"], ["changes", "contracts", "macos", "windows", "windows-batch-selection", "android", "ios"])
         self.assertEqual(result["if"], "${{ !cancelled() && needs.changes.outputs.draft != 'true' }}")
         gate = next(step for step in result["steps"] if "run" in step)
         self.assertEqual(gate["env"]["NEEDS"], "${{ toJSON(needs) }}")
@@ -305,7 +305,7 @@ class WorkflowContractTests(unittest.TestCase):
         mac = "\n".join(step.get("run", "") for step in self.workflow["jobs"]["macos"]["steps"])
         self.assertIn("bash scripts/ci/apple-models.sh macos", mac)
 
-    def test_ci_runs_models_and_native_checks_without_ui_automation(self):
+    def test_ci_keeps_other_ui_automation_local(self):
         commands = {
             name: "\n".join(step.get("run", "") for step in job["steps"])
             for name, job in self.workflow["jobs"].items()
@@ -331,6 +331,25 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("RawLab/tests/batch-export.sh", apple_models)
         self.assertNotIn("test-without-building", commands["ios"])
         self.assertNotIn("connectedDebugAndroidTest", commands["android"])
+
+    def test_batch_selection_is_an_isolated_automatic_hosted_job(self):
+        job = self.workflow["jobs"]["windows-batch-selection"]
+        self.assertEqual(job["needs"], "changes")
+        self.assertEqual(job["runs-on"], "windows-2022")
+        self.assertEqual(" ".join(job["if"].split()),
+                         "needs.changes.outputs.windows == 'true' && "
+                         "needs.changes.outputs.mode == 'automatic' && "
+                         "needs.changes.outputs.checks == 'models'")
+        suite = next(step for step in job["steps"] if "run-v08.ps1" in step.get("run", ""))
+        self.assertNotIn("if", suite)
+        self.assertNotIn("continue-on-error", suite)
+        invocation = next(line for line in suite["run"].splitlines() if "run-v08.ps1" in line)
+        self.assertEqual(invocation.split("-Only '", 1)[1].split("'", 1)[0], "batch-selection")
+        self.assertIn("DJI_20250602164503_0444_D.DNG", invocation)
+        self.assertIn("build/windows-v08-results/summary.json", suite["run"])
+        upload = next(step for step in job["steps"] if step.get("with", {}).get("name") == "windows-batch-selection-results")
+        self.assertIn("build/ci/*.log", upload["with"]["path"])
+        self.assertIn("build/ci/*.json", upload["with"]["path"])
 
     def test_desktop_update_models_do_not_install_packages(self):
         apple = (ROOT / "scripts/ci/apple-models.sh").read_text()

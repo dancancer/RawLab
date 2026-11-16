@@ -97,7 +97,8 @@
 
 - 普通 PR 的 CI 默认只跑静态契约和受影响平台的快速模型测试；完整构建、原生回归按平台和
   测试组手动触发，全量非 UI 检查留给发布、热修复等重要门禁。
-- CI 不重复执行 UI 测试；编译 UI 测试目标不代表执行或通过 UI 测试。触发范围、手动操作和
+- CI 的 UI 执行仅例外包含普通 Windows PR/push 的 `batch-selection` 子集，其余 UI 测试仍在本地执行；
+  编译 UI 测试目标不代表执行或通过 UI 测试。触发范围、手动操作和
   验收记录遵循 [验证 SOP](docs/process/ci.md)。
 - **共享 C++ 核心**：遵守 [lutools/AGENTS.md](lutools/AGENTS.md) 和
   [颜色与渲染契约](lutools/docs/color-contract.md)；Mac 已配置构建可运行
