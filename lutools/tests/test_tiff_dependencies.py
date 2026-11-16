@@ -11,6 +11,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 HELPER = ROOT / "lutools/cmake/download-archive.cmake"
+DOWNLOAD_ATTEMPTS = 6  # keep in sync with lutools/cmake/download-archive.cmake
 PAYLOAD = b"checksum-verified source archive\n"
 DIGEST = hashlib.sha256(PAYLOAD).hexdigest()
 
@@ -74,13 +75,13 @@ class TiffDownloadTests(unittest.TestCase):
         with server([(502, b"unavailable")]) as (url, requests):
             result = self.download(url)
         self.assert_clean_failure(result)
-        self.assertEqual(len(requests), 3)
+        self.assertEqual(len(requests), DOWNLOAD_ATTEMPTS)
 
     def test_checksum_failure_never_publishes_downloaded_bytes(self):
         with server([(200, b"wrong archive")]) as (url, requests):
             result = self.download(url)
         self.assert_clean_failure(result)
-        self.assertEqual(len(requests), 3)
+        self.assertEqual(len(requests), DOWNLOAD_ATTEMPTS)
         self.assertIn("SHA256", result.stderr)
 
     def test_verified_cache_is_reused_without_another_network_request(self):
