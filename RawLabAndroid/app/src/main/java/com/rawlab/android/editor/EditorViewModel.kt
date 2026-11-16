@@ -40,6 +40,7 @@ import com.rawlab.android.editor.render.discardOwnedInput
 import com.rawlab.android.editor.render.discardPendingWork
 import com.rawlab.android.editor.render.ExportDestinationCleanup
 import com.rawlab.android.editor.render.isExportCancellation
+import com.rawlab.android.editor.render.canFinishPreviewBefore
 import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
@@ -228,6 +229,8 @@ class EditorViewModel @JvmOverloads constructor(
     private var acceptedHslSettings: EditSettings? = null
     private var acceptedHslRevision: HslTargetRevision? = null
     private var currentRevision = 0L
+    private var latestRender: Work? = null
+    private var progressivePreviewFloor = 0L
     private var cameraHDRPreflightPending = false
     @Volatile private var sourceRevision = 0L
         set(value) {
@@ -268,7 +271,13 @@ class EditorViewModel @JvmOverloads constructor(
     private val queue = RenderQueue<Work, WorkResult>(renderer::perform, { revision, result ->
         // 结果持有临时输入；即使 ViewModel scope 已取消，也要在主线程完成移交或释放。
         renderDelivery.post {
+            val preview = result.getOrNull() as? WorkResult.Preview
             if (!disposed && revision == currentRevision) accept(result)
+            else if (!disposed && revision >= progressivePreviewFloor && preview != null &&
+                latestRender?.let(preview.request::canFinishPreviewBefore) == true) {
+                // 交互中间帧只推进像素；设置、草稿、保存状态和取色依据仍属于最新请求。
+                mutable.value = mutable.value.copy(preview = preview.pair, exact = false)
+            }
             else result.fold({ lateExportCompleted(it) }, { error ->
                 // Q12（不确定≠取消）：cancelExport 已使代次失效，但发布不确定的结果仍以旧代次到达——
                 // 不得按取消吞掉，须上屏告知文件可能已落盘（如照片图库需核对/清理）。
@@ -278,7 +287,7 @@ class EditorViewModel @JvmOverloads constructor(
         }
     }, { renderer.close(); releaseStorage() }, ::lateExportCompleted, { work ->
         work.discardPendingWork(exportDestinationCleanup)
-    })
+    }, canFinishInFlight = Work::canFinishPreviewBefore)
     private val lookQueue = RenderQueue<LookWork, LookResult>({ runLookWork(storage, it) }, { revision, result ->
         viewModelScope.launch {
             if (!disposed && revision == lookRevision) acceptLook(result)
@@ -335,7 +344,14 @@ class EditorViewModel @JvmOverloads constructor(
         // 新任务替换取色时，队列可能不再回调旧请求；这里同步清除等待状态。
         if (work !is Work.HslProbe && hslInteraction.waiting) clearHslTarget()
         cameraHDRPreflightPending = work is Work.CameraHDRPreflight
-        return queue.submit(work)
+        val continuesInteraction = latestRender?.canFinishPreviewBefore(work) == true
+        latestRender = work
+        return queue.submit(work).also { if (!continuesInteraction) progressivePreviewFloor = it }
+    }
+
+    private fun invalidateRender(): Long {
+        latestRender = null
+        return queue.invalidate().also { progressivePreviewFloor = it }
     }
 
     fun setHslTargetEnabled(enabled: Boolean) {
@@ -1280,7 +1296,7 @@ class EditorViewModel @JvmOverloads constructor(
                     val migrated = receipt.status == ProcessingMigrationStatus.MIGRATED
                     editRevision += 1
                     if (migrated) {
-                        currentRevision = queue.invalidate()
+                        currentRevision = invalidateRender()
                         previewResizeJob?.cancel(); previewResizeJob = null
                         durablePreview = null; navigationPreview = null
                         deferredMigrationPreview = true
@@ -1789,7 +1805,7 @@ class EditorViewModel @JvmOverloads constructor(
         if (operation == Operation.PICK_EXPORT) {
             mutable.value = mutable.value.copy(operation = Operation.NONE)
         } else if (operation == Operation.EXPORT) {
-            currentRevision = queue.invalidate()
+            currentRevision = invalidateRender()
             mutable.value = EditorStateReducer.renderFinished(mutable.value)
             collections.releaseDeferred()
         }
