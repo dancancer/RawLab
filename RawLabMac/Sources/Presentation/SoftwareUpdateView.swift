@@ -1,5 +1,15 @@
 import SwiftUI
 
+struct UpdateNoticeBanner: View {
+    let notice: String?
+
+    var body: some View {
+        if let notice {
+            Label(L10n.text(notice), systemImage: "info.circle")
+        }
+    }
+}
+
 struct SoftwareUpdateView: View {
     @Environment(\.dynamicTypeSize) private var textSize
     @Environment(\.dismiss) private var dismiss
@@ -23,9 +33,7 @@ struct SoftwareUpdateView: View {
                         .font(detailFont).foregroundStyle(.secondary)
                     Divider()
                 }
-                if let notice = UpdatePresentation.unavailableNotice(unavailableReason: updates.unavailableReason, storageError: updates.storageError) {
-                    Label(L10n.text(notice), systemImage: "info.circle")
-                }
+                UpdateNoticeBanner(notice: UpdatePresentation.unavailableNotice(unavailableReason: updates.unavailableReason, storageError: updates.storageError))
                 if updates.unavailableReason != nil {
                     Text(legacy.status).font(detailFont)
                 } else {

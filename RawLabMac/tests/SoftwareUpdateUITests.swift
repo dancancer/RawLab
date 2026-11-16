@@ -167,6 +167,17 @@ import SwiftUI
         let degradedPNG = try png(repairHost)
         try check(!repair.blocksEditing && repair.unavailableReason == "storage" && repair.canRepairState && !repair.canCheck,
             "Damaged UpdateStore degrades updates without blocking editing and offers explicit repair")
+        let (bannerNilWindow, bannerNilHost) = window(UpdateNoticeBanner(notice: nil).frame(width: 400, height: 60, alignment: .leading)
+            .background(Color(nsColor: .windowBackgroundColor)).preferredColorScheme(.dark), width: 400, height: 60)
+        let (bannerDegradedWindow, bannerDegradedHost) = window(UpdateNoticeBanner(notice: "自动更新不可用，请手动下载").frame(width: 400, height: 60, alignment: .leading)
+            .background(Color(nsColor: .windowBackgroundColor)).preferredColorScheme(.dark), width: 400, height: 60)
+        try await Task.sleep(for: .milliseconds(100))
+        let bannerNilPNG = try png(bannerNilHost)
+        let bannerDegradedPNG = try png(bannerDegradedHost)
+        bannerNilWindow.contentView = nil; bannerNilWindow.close()
+        bannerDegradedWindow.contentView = nil; bannerDegradedWindow.close()
+        try check(!bannerNilPNG.isEmpty && !bannerDegradedPNG.isEmpty && bannerNilPNG != bannerDegradedPNG,
+            "UpdateNoticeBanner renders distinct bitmap when degraded notice is non-nil")
         let degradedKey = UpdatePresentation.unavailableNotice(unavailableReason: repair.unavailableReason, storageError: repair.storageError)
         try check(degradedKey == "自动更新不可用，请手动下载" &&
             L10n.text(degradedKey!) != "自动更新不可用，请手动下载" && !L10n.text(degradedKey!).isEmpty &&
