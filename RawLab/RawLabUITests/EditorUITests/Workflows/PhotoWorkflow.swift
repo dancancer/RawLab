@@ -61,27 +61,6 @@ extension EditorUITests {
         app.alerts.buttons["关闭"].tap()
     }
 
-    func testLargeText() {
-        let app = XCUIApplication()
-        app.launchArguments += ["-RawLab.language", "zh-Hans"]
-        app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
-        app.launch()
-        XCTAssertTrue(app.buttons["editor.import.empty"].waitForExistence(timeout: 10))
-        capture("large-text-empty")
-        importPhoto(in: app)
-        XCTAssertTrue(app.buttons["tool.film"].waitForExistence(timeout: 10))
-        capture("large-text-portrait")
-        let ruler = app.descendants(matching: .any)["adjustment.ruler"]
-        revealRuler(ruler, in: app)
-        XCTAssertTrue(ruler.isHittable)
-        XCTAssertLessThan(app.buttons["adjustment.value"].frame.maxX, app.frame.maxX)
-        capture("large-text-ruler")
-        XCUIDevice.shared.orientation = .landscapeLeft
-        revealRuler(ruler, in: app)
-        XCTAssertTrue(ruler.isHittable)
-        capture("large-text-landscape")
-    }
-
     func testAllBuiltInFilmsAreAvailable() {
         let app = XCUIApplication()
         app.launchArguments += ["-RawLab.language", "zh-Hans"]

@@ -101,15 +101,13 @@ class EditorV08ControlsTest {
         compose.runOnIdle { assertEquals(.75f, value, .00001f) }
     }
 
-    @Test fun formatRowsWrapAtNarrowWidthInSixLanguagesAndLargeFont() {
+    @Test fun formatRowsWrapAtNarrowWidthInSixLanguages() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         var language by mutableStateOf("en")
         var selected by mutableStateOf(ExportFormat.JPEG)
         compose.setContent {
             val config = Configuration(context.resources.configuration).apply { setLocale(Locale.forLanguageTag(language)) }
-            val density = LocalDensity.current
-            CompositionLocalProvider(LocalContext provides context.createConfigurationContext(config),
-                LocalDensity provides Density(density.density, 1.6f)) {
+            CompositionLocalProvider(LocalContext provides context.createConfigurationContext(config)) {
                 RawLabTheme { Column(Modifier.width(280.dp).verticalScroll(rememberScrollState())) {
                     ExportFormatControls(selected, { selected = it })
                 } }

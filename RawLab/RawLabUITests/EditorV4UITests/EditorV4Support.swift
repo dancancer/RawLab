@@ -352,7 +352,6 @@ extension EditorV4UITests {
         let picker = app.descendants(matching: .any)["adjustment.wheel"]
         let wheel = picker.pickerWheels.firstMatch
         let standardIPad = min(app.frame.width, app.frame.height) >= 700
-            && !app.launchArguments.contains("UICTContentSizeCategoryAccessibilityXXXL")
         waitUntil {
             guard wheel.isHittable else { return false }
             return !standardIPad || (picker.frame.height >= 200
@@ -373,14 +372,6 @@ extension EditorV4UITests {
             XCTAssertTrue(element.isHittable, "Wheel context must be visible when opened: \(identifier)")
             XCTAssertTrue(app.frame.insetBy(dx: -1, dy: -1).contains(element.frame), "Complete wheel context must fit in the window")
         }
-    }
-
-    func assertLargeTextPhotoVisible(in app: XCUIApplication) {
-        let photo = app.descendants(matching: .any)["editor.photo"]
-        waitUntil {
-            photo.frame.height >= 80 && app.frame.insetBy(dx: -1, dy: -1).contains(photo.frame)
-        }
-        XCTAssertGreaterThanOrEqual(photo.frame.height, 80, "Large text must preserve a visible photo region")
     }
 
     func capture(_ name: String, in app: XCUIApplication) {

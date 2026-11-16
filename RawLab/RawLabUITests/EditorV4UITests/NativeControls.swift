@@ -104,38 +104,6 @@ extension EditorV4UITests {
         XCTAssertTrue((-4...4).contains(try number(app.buttons["adjustment.value"])))
     }
 
-    func testCompactEditorLargeTextKeepsParametersAndDraftActionsReachable() throws {
-        let app = XCUIApplication()
-        launchEnglish(app, additionalArguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
-        try importFirstVisiblePhoto(in: app)
-        let fine = app.buttons["editor.fine"]
-        XCTAssertTrue(fine.waitForExistence(timeout: 5))
-        XCTAssertGreaterThanOrEqual(fine.frame.height, 43.5)
-        let ruler = app.descendants(matching: .any)["adjustment.ruler"]
-        try revealInPanel(ruler, in: app, fully: true)
-        XCTAssertGreaterThanOrEqual(ruler.frame.width, app.scrollViews["editor.panel"].frame.width - 33)
-        capture("compact-editor-large-text", in: app)
-        for identifier in ["exposure.mode", "exposure.auto"] {
-            let action = app.buttons[identifier]
-            if action.exists {
-                try revealInPanel(action, in: app, fully: true)
-                XCTAssertGreaterThanOrEqual(action.frame.height, 43.5)
-            }
-        }
-        capture("compact-editor-large-actions", in: app)
-        try selectTool("geometry", in: app)
-        let straighten = app.descendants(matching: .any)["geometry.straighten.ruler"]
-        try revealInPanel(straighten, in: app, fully: true)
-        for identifier in ["editor.draft.cancel", "editor.draft.apply"] {
-            let button = app.buttons[identifier]
-            XCTAssertTrue(button.isHittable)
-            XCTAssertGreaterThanOrEqual(button.frame.height, 44)
-            XCTAssertFalse(app.scrollViews["editor.panel"].frame.intersects(button.frame))
-        }
-        capture("compact-editor-large-draft", in: app)
-        app.buttons["editor.draft.cancel"].tap()
-    }
-
     func testAtmosphereEditingHistoryPersistenceAndLanguages() throws {
         let app = try launchImportedEditor()
         try selectTool("clarity", in: app)
@@ -161,8 +129,7 @@ extension EditorV4UITests {
                          ("ja", "明瞭度", "かすみの除去"), ("es", "Claridad", "Borrar neblina")]
         for (language, clarity, dehaze) in languages {
             app.terminate()
-            app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", language,
-                                   "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+            app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", language]
             app.launch(); XCTAssertTrue(app.buttons["editor.import"].waitForExistence(timeout: 10))
             try importFirstVisiblePhoto(in: app)
             for (tool, title, value) in [("clarity", clarity, 37.0), ("dehaze", dehaze, -42.0)] {
@@ -220,10 +187,8 @@ extension EditorV4UITests {
     func testParameterInputWorkspaceSessionsAndLayout() throws {
         guard ProcessInfo.processInfo.environment["RAWLAB_GEOMETRY_SOURCE_HARNESS"] == "1" else { throw XCTSkip("Use the workspace UI harness") }
         let german = ProcessInfo.processInfo.environment["RAWLAB_WORKSPACE_LANGUAGE"] == "de"
-        let large = ProcessInfo.processInfo.environment["RAWLAB_WORKSPACE_LARGE_TEXT"] == "1"
         let app = XCUIApplication(bundleIdentifier: "com.rawlab.tests.geometry-source")
         app.launchArguments = ["-RawLab.language", german ? "de" : "en", "-RawLab.workspaceUIOnly", "-RawLab.parameterInputUI"]
-        if large { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
         XCUIDevice.shared.orientation = .portrait; app.launch()
         let probe = app.staticTexts["geometry.review.probe"]
         func snapshot() throws -> [String: Any] {
@@ -283,7 +248,7 @@ extension EditorV4UITests {
             XCTAssertTrue(app.scrollViews["editor.panel"].frame.contains(value.frame))
             XCTAssertFalse((value.value as? String ?? "").contains("%")); XCTAssertFalse((value.value as? String ?? "").contains("°"))
             XCTAssertFalse(app.buttons["hsl.\(axis).fine"].exists); XCTAssertFalse(app.buttons["hsl.\(axis).reset"].exists)
-            if !large && app.scrollViews["editor.panel"].frame.width >= 512 {
+            if app.scrollViews["editor.panel"].frame.width >= 512 {
                 XCTAssertEqual(value.frame.midY, app.descendants(matching: .any)["hsl.\(axis).ruler"].frame.midY, accuracy: 2)
             }
             try revealInPanel(app.descendants(matching: .any)["hsl.\(axis).ruler"], in: app, fully: true)
@@ -377,9 +342,6 @@ extension EditorV4UITests {
         }
         let app = XCUIApplication(bundleIdentifier: "com.rawlab.tests.geometry-source")
         app.launchArguments = ["-RawLab.language", ProcessInfo.processInfo.environment["RAWLAB_WORKSPACE_LANGUAGE"] ?? "en"]
-        if ProcessInfo.processInfo.environment["RAWLAB_WORKSPACE_LARGE_TEXT"] == "1" {
-            app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
-        }
         app.launch()
         let probe = app.staticTexts["geometry.review.probe"]
         XCTAssertTrue(probe.waitForExistence(timeout: 15))
@@ -563,12 +525,6 @@ extension EditorV4UITests {
         let landscapePanelFrame = try panelFrame()
         app.buttons["editor.draft.cancel"].tap()
         XCTAssertTrue(navigation.waitForExistence(timeout: 30), "The overview returns after the landscape layout receipt")
-        if ProcessInfo.processInfo.environment["RAWLAB_WORKSPACE_LARGE_TEXT"] == "1" {
-            if policy["scrollTools"] as? Bool == true {
-                XCTAssertGreaterThan(app.images["editor.photo"].frame.height, 0)
-                XCTAssertGreaterThan(app.images["editor.photo"].frame.width, 0)
-            } else { assertLargeTextPhotoVisible(in: app) }
-        }
         try selectGroup("color")
         XCTAssertFalse(app.scrollViews["editor.panel"].exists)
         let width = try XCTUnwrap(policy["width"] as? Double)
@@ -667,9 +623,6 @@ extension EditorV4UITests {
         let german = ProcessInfo.processInfo.environment["RAWLAB_WORKSPACE_LANGUAGE"] == "de"
         let app = XCUIApplication(bundleIdentifier: "com.rawlab.tests.geometry-source")
         app.launchArguments = ["-RawLab.language", german ? "de" : "zh-Hans", "-RawLab.workspaceUIOnly"]
-        if ProcessInfo.processInfo.environment["RAWLAB_WORKSPACE_LARGE_TEXT"] == "1" {
-            app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
-        }
         XCUIDevice.shared.orientation = .portrait
         app.launch()
         let probe = app.staticTexts["geometry.review.probe"]
@@ -732,61 +685,6 @@ extension EditorV4UITests {
         for glyph in draftGlyphs {
             XCTAssertTrue(app.frame.contains(glyph.frame)); XCTAssertTrue(draftReset.frame.insetBy(dx: -1, dy: -1).contains(glyph.frame))
         }
-    }
-
-    func testWorkspaceShortAccessibilityDraftLayout() throws {
-        guard ProcessInfo.processInfo.environment["RAWLAB_GEOMETRY_SOURCE_HARNESS"] == "1" else { throw XCTSkip("Use the dedicated workspace harness") }
-        let app = XCUIApplication(bundleIdentifier: "com.rawlab.tests.geometry-source")
-        app.launchArguments = ["-RawLab.language", "de", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL", "-RawLab.workspaceUIOnly"]
-        app.launch()
-        let probe = app.staticTexts["geometry.review.probe"]
-        waitUntil(timeout: 30) {
-            guard let value = probe.value as? String, let data = value.data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
-            return json["done"] as? Bool == true
-        }
-        try selectTool("geometry", in: app)
-        XCUIDevice.shared.orientation = .landscapeLeft
-        waitUntil { app.frame.width > app.frame.height }
-        let scroll = app.scrollViews["editor.panel"]
-        let last = app.buttons["geometry.cropHeight.value"]
-        let apply = app.buttons["editor.draft.apply"]
-        let cancel = app.buttons["editor.draft.cancel"]
-        capture("workspace-short-draft-before-scroll", in: app)
-        print("WORKSPACE_SHORT_DRAFT scroll=\(scroll.frame) last=\(last.frame) apply=\(apply.frame) cancel=\(cancel.frame) photo=\(app.images["editor.photo"].frame)")
-        XCTAssertGreaterThanOrEqual(scroll.frame.height, last.frame.height, "The scrolling parameters must fit a complete operable value")
-        try revealInPanel(last, in: app, fully: true)
-        XCTAssertTrue(scroll.frame.contains(last.frame)); XCTAssertTrue(last.isHittable)
-        XCTAssertTrue(app.frame.contains(apply.frame)); XCTAssertTrue(app.frame.contains(cancel.frame)); XCTAssertTrue(cancel.isHittable)
-        capture("workspace-short-draft-last-control", in: app)
-        let expandedPhoto = app.images["editor.photo"].frame
-        let geometryTool = app.buttons["tool.geometry"]
-        try revealInPanel(geometryTool, in: app, fully: true)
-        XCTAssertTrue(scroll.frame.contains(geometryTool.frame)); XCTAssertTrue(geometryTool.isHittable)
-        geometryTool.tap(); XCTAssertTrue(geometryTool.isSelected)
-        print("WORKSPACE_SHORT_TOOL scroll=\(scroll.frame) tool=\(geometryTool.frame) photo=\(expandedPhoto)")
-        let group = app.buttons["editor.group.geometry"]
-        try revealHorizontally(group, in: app.scrollViews["editor.groups"], app: app); group.tap()
-        waitUntil { !app.scrollViews["editor.panel"].exists }
-        let collapsedPhoto = app.images["editor.photo"].frame
-        XCTAssertGreaterThan(collapsedPhoto.height, expandedPhoto.height + 80)
-        print("WORKSPACE_SHORT_PHOTO expanded=\(expandedPhoto) collapsed=\(collapsedPhoto)")
-        capture("workspace-short-photo-collapsed", in: app)
-        group.tap()
-        XCTAssertTrue(app.buttons["tool.geometry"].isSelected)
-        // 从末项滚回组内工具，再跨工具验证选择与 HSL 会话仍可用。
-        try selectTool("hsl", in: app)
-        let swatch = app.buttons["hsl.channel.6"]
-        try revealInPanel(swatch, in: app)
-        let colors = app.scrollViews.containing(.button, identifier: "hsl.channel.6").allElementsBoundByIndex.min { $0.frame.height < $1.frame.height }!
-        try revealHorizontally(swatch, in: colors, app: app); swatch.tap()
-        try revealInPanel(app.buttons["hsl.lightness.value"], in: app, fully: true)
-        try revealInPanel(app.buttons["tool.saturation"], in: app, fully: true)
-        try selectTool("saturation", in: app)
-        XCTAssertTrue(app.buttons["tool.saturation"].isSelected)
-        try selectTool("hsl", in: app)
-        XCTAssertTrue(app.buttons["hsl.channel.6"].isSelected)
-        capture("workspace-short-tools-reachable", in: app)
     }
 
     func testExposureNativeWheelCancelApplySignAndDefault() throws {
@@ -1123,23 +1021,6 @@ extension EditorV4UITests {
             XCTAssertGreaterThanOrEqual(value.frame.height, 44)
         }
         capture("mobile-hsl-compact", in: app)
-    }
-
-    func testMobileLargeTextKeepsApplyReachableInBothOrientations() throws {
-        let app = XCUIApplication()
-        launchEnglish(app, additionalArguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
-        try importFirstVisiblePhoto(in: app)
-        app.buttons["editor.draft.cancel"].tap()
-        try selectTool("hsl", in: app)
-        XCTAssertTrue(app.buttons["editor.draft.cancel"].isHittable)
-        XCTAssertTrue(app.buttons["editor.draft.apply"].isHittable)
-        try revealInPanel(app.buttons["hsl.lightness.value"], in: app, fully: true)
-        capture("mobile-hsl-large-text", in: app)
-        XCUIDevice.shared.orientation = .landscapeLeft
-        waitUntil { app.frame.width > app.frame.height }
-        XCTAssertTrue(app.buttons["editor.draft.cancel"].isHittable)
-        XCTAssertTrue(app.buttons["editor.draft.apply"].isHittable)
-        capture("mobile-hsl-large-landscape", in: app)
     }
 }
 

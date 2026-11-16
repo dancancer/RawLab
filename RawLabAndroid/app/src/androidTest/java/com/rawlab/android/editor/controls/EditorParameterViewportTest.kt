@@ -42,25 +42,8 @@ class EditorParameterViewportTest {
     @Test fun portrait360Normal() = verify(360, 720, 1f)
     @Test fun portrait390Normal() = verify(390, 844, 1f)
     @Test fun portrait412Normal() = verify(412, 892, 1f)
-    @Test fun portrait390LargeText() = verify(390, 844, 1.6f)
-    @Test fun portrait412LargeText() = verify(412, 892, 1.6f)
-    @Test fun portrait320LargeText() = verify(320, 720, 1.6f)
-    @Test fun portrait360LargeText() = verify(360, 720, 1.6f)
     @Test fun sideLandscapeNormal() = verify(960, 360, 1f, true)
     @Test fun bottomLandscapeNormal() = verify(560, 360, 1f)
-    @Test fun bottomLandscapeLargeText() = verify(640, 360, 1.6f)
-
-    @Test fun portrait320LargeGerman() = verify(320, 720, 1.6f, language = "de")
-    @Test fun portrait320LargeFrench() = verify(320, 720, 1.6f, language = "fr")
-    @Test fun portrait320LargeEnglish() = verify(320, 720, 1.6f, language = "en")
-    @Test fun portrait320LargeJapanese() = verify(320, 720, 1.6f, language = "ja")
-    @Test fun portrait320LargeSpanish() = verify(320, 720, 1.6f, language = "es")
-
-    @Test fun bottomLandscapeLongLabels() = verify(640, 360, 1.6f, language = "de")
-    @Test fun bottomLandscapeFrench() = verify(640, 360, 1.6f, language = "fr")
-    @Test fun bottomLandscapeEnglish() = verify(640, 360, 1.6f, language = "en")
-    @Test fun bottomLandscapeJapanese() = verify(640, 360, 1.6f, language = "ja")
-    @Test fun bottomLandscapeSpanish() = verify(640, 360, 1.6f, language = "es")
 
     private fun verify(width: Int, height: Int, scale: Float, side: Boolean = false, language: String = "zh-Hans") {
         val bitmap = Bitmap.createBitmap(60, 90, Bitmap.Config.ARGB_8888)

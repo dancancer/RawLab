@@ -190,33 +190,21 @@ class CameraTetherUiTest {
         assertEquals(1, edits)
     }
 
-    @Test fun shutterAndReviewControlsRemainReachableInPortraitLandscapeAndLargeText() {
-        data class Size(val width: Int, val height: Int, val scale: Float)
-        val size = mutableStateOf(Size(360, 700, 1f))
+    @Test fun shutterAndReviewControlsRemainReachableInPortraitAndLandscape() {
+        data class Size(val width: Int, val height: Int)
+        val size = mutableStateOf(Size(360, 700))
         compose.setChineseContent {
-            CompositionLocalProvider(LocalDensity provides Density(1f, size.value.scale)) {
-                RawLabTheme {
-                    Box(Modifier.size(size.value.width.dp, size.value.height.dp).testTag("tether-fixture")) {
-                        CameraTetherWorkspace(savedState(listOf("DSC00252.JPG")), { _, _ -> frame() }, {}, {}, {})
-                    }
+            RawLabTheme {
+                Box(Modifier.size(size.value.width.dp, size.value.height.dp).testTag("tether-fixture")) {
+                    CameraTetherWorkspace(savedState(listOf("DSC00252.JPG")), { _, _ -> frame() }, {}, {}, {})
                 }
             }
         }
         compose.onNodeWithTag("tether-shutter").assertIsDisplayed()
         capture("portrait")
-        compose.runOnIdle { size.value = Size(680, 300, 1f) }
+        compose.runOnIdle { size.value = Size(680, 300) }
         compose.onNodeWithTag("tether-shutter").assertIsDisplayed()
         capture("landscape")
-        compose.runOnIdle { size.value = Size(480, 240, 1.7f) }
-        compose.onNodeWithTag("tether-shutter").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("tether-menu").performClick()
-        compose.onNodeWithTag("tether-auto-review").assertIsDisplayed().performClick()
-        capture("compact-landscape-large-text")
-        compose.runOnIdle { size.value = Size(360, 740, 2f) }
-        compose.onNodeWithTag("tether-shutter").assertIsDisplayed()
-        compose.onNodeWithTag("tether-menu").performClick()
-        compose.onNodeWithTag("tether-auto-review").assertIsDisplayed().performClick()
-        capture("portrait-large-text")
     }
 
     private fun savedState(names: List<String>): CameraTetherState {

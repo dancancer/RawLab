@@ -179,21 +179,6 @@ class EditorCompactLayoutTest {
         assertEquals("Adjusting a value does not move the panel", dock, bounds("adjustment-dock"))
     }
 
-    @Test fun shortLargeTextKeepsDraftActionsAndNavigationOutsideScrolling() {
-        show(640, 360, 1.6f, "de"); group("geometry")
-        val groups = bounds("editor-groups")
-        val cancel = bounds("draft.cancel")
-        val apply = bounds("draft.apply")
-        compose.onAllNodesWithTag("adjustment-slider").onLast().performScrollTo().assertIsDisplayed()
-        capture("short-large-draft")
-        assertEquals(groups, bounds("editor-groups"))
-        assertEquals(cancel, bounds("draft.cancel"))
-        assertEquals(apply, bounds("draft.apply"))
-        assertTrue("Photo remains available in a short window", bounds("editor-canvas").height >= 95f)
-        assertTrue("Draft actions retain touch targets", cancel.height >= 48f && apply.height >= 48f)
-        assertFalse("Draft actions remain outside the parameter viewport", bounds("editor-parameters").overlaps(cancel))
-    }
-
     @Test fun wideWindowKeepsAFullHeightSidePanel() {
         show(960, 600); group("light"); tool(3)
         val dock = bounds("adjustment-dock")

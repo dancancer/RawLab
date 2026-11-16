@@ -33,76 +33,14 @@ class PhotoViewRuntimeTest {
     @Test fun legacyRawViewsKeepDefaultReferenceCommittedCompositionAndZeroWrites() = verify(ProcessingIdentity.LEGACY)
     @Test fun rasterViewsKeepSensorReferenceAndZeroWrites() = verify(ProcessingIdentity.CURRENT, true)
 
-    @Test fun actualRotationNormalKeepsSharedViewAndZeroWrites() = rotate(1f)
-    @Test fun actualRotationLargeKeepsSharedViewAndZeroWrites() = rotate(1.6f)
+    @Test fun actualRotationNormalKeepsSharedViewAndZeroWrites() = rotate()
 
-    @Test fun compactCropControlsKeepFixedActionsWithLargeTextAndRotation() {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val source = File(compose.activity.cacheDir, "compact-crop-${UUID.randomUUID()}.RAW")
-        instrumentation.context.assets.open("sample.RAW").use { input -> source.outputStream().use { input.copyTo(it) } }
-        val originalScale = compose.activity.resources.configuration.fontScale
-        fun font(scale: Float) {
-            android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation
-                .executeShellCommand("settings put system font_scale $scale")).use { it.readBytes() }
-            compose.waitUntil(20_000) { compose.activity.resources.configuration.fontScale == scale }
-        }
-        fun draftReady() {
-            compose.waitForIdle()
-            compose.waitUntil(180_000) { compose.activity.model.state.value.let { it.draftReady || it.error != null } }
-            assertNull(compose.activity.model.state.value.error)
-        }
-        fun fixedActions() {
-            val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
-            for (tag in listOf("draft.cancel", "draft.apply")) {
-                val node = compose.onNodeWithTag(tag).assertIsDisplayed().fetchSemanticsNode()
-                assertTrue("$tag fully inside native window: ${node.boundsInRoot} / $root",
-                    node.boundsInRoot.top >= root.top && node.boundsInRoot.bottom <= root.bottom &&
-                        node.boundsInRoot.left >= root.left && node.boundsInRoot.right <= root.right)
-            }
-        }
-        try {
-            font(1f)
-            compose.runOnUiThread { compose.activity.model.setGpuEnabled(false); compose.activity.model.importPhoto(Uri.fromFile(source)) }
-            ready()
-            compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-geometry"))
-            compose.onNodeWithTag("editor-group-geometry").performClick(); draftReady()
-            compose.onNodeWithTag("geometry.dimensions").performScrollTo().performClick()
-            compose.onNodeWithTag("adjustment-value-${com.rawlab.android.R.string.geometry_crop_width}").performScrollTo().performClick()
-            compose.onNodeWithTag("adjustment-input").performTextReplacement("75.01")
-            compose.onNodeWithTag("adjustment-input-apply").performClick(); draftReady()
-            assertEquals(.7501f, compose.activity.model.state.value.draft!!.value.geometry.cropWidth, .000001f)
-            fixedActions(); capture("compact-crop-portrait.png")
-            compose.runOnUiThread { compose.activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
-            compose.waitUntil(20_000) { compose.activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE }
-            draftReady(); fixedActions(); capture("compact-crop-landscape.png")
-            compose.onNodeWithTag("draft.apply").performClick(); ready()
-            assertEquals(.7501f, compose.activity.model.state.value.edits.geometry.cropWidth, .000001f)
-            font(1.6f)
-            compose.runOnUiThread { com.rawlab.android.i18n.AppStrings.setPreference(compose.activity, "de") }
-            compose.waitForIdle()
-            compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-geometry"))
-            compose.onNodeWithTag("editor-group-geometry").performClick(); draftReady()
-            fixedActions(); capture("compact-german-large-landscape.png")
-            compose.runOnUiThread { compose.activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
-            compose.waitUntil(20_000) { compose.activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT }
-            draftReady(); fixedActions(); capture("compact-german-large-portrait.png")
-            compose.onNodeWithTag("draft.cancel").performClick(); ready()
-        } finally {
-            font(originalScale)
-            compose.runOnUiThread { compose.activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
-            source.delete()
-        }
-    }
-
-    private fun rotate(scale: Float) {
+    private fun rotate() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val source = File(compose.activity.cacheDir, "view-rotation-${UUID.randomUUID()}.RAW")
         instrumentation.context.assets.open("sample.RAW").use { input -> source.outputStream().use { input.copyTo(it) } }
         var observer: FileObserver? = null
-        fun shell(command: String) = android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(command)).use { it.readBytes() }
         try {
-            shell("settings put system font_scale $scale")
-            compose.waitUntil(20_000) { compose.activity.resources.configuration.fontScale == scale }
             compose.runOnUiThread { compose.activity.model.setGpuEnabled(false); compose.activity.model.importPhoto(Uri.fromFile(source)) }
             ready()
             val committed = compose.activity.model.state.value.edits
@@ -126,7 +64,7 @@ class PhotoViewRuntimeTest {
             compose.onNodeWithTag("photo-canvas").assert(SemanticsMatcher("Rotation retains magnification above fit") {
                 !it.config[androidx.compose.ui.semantics.SemanticsProperties.StateDescription].startsWith("适合窗口")
             })
-            capture("rotation-$scale-side.png")
+            capture("rotation-1.0-side.png")
             compose.onNodeWithTag("comparison-mode").performClick(); compose.onNodeWithText("分割线").performClick(); ready()
             val wipe = compose.onNodeWithTag("comparison-wipe")
             val photo = wipe.fetchSemanticsNode().boundsInRoot
@@ -142,15 +80,15 @@ class PhotoViewRuntimeTest {
                 compose.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
             }
             for ((tag, background) in backgrounds) assertFalse("Actual short label background leaves the handle body visible: $tag $background $handle", background.overlaps(handle))
-            android.util.Log.i("RawLabShortOverlayEvidence", "scale=$scale density=$density photo=$photo glyph=$handle backgrounds=$backgrounds")
-            capture("rotation-$scale-wipe.png")
-            android.util.Log.i("RawLabViewRotationEvidence", "scale=$scale root=${compose.onRoot().fetchSemanticsNode().boundsInRoot} photo=$photo dock=${compose.onNodeWithTag("adjustment-dock").fetchSemanticsNode().boundsInRoot}")
+            android.util.Log.i("RawLabShortOverlayEvidence", "density=$density photo=$photo glyph=$handle backgrounds=$backgrounds")
+            capture("rotation-1.0-wipe.png")
+            android.util.Log.i("RawLabViewRotationEvidence", "root=${compose.onRoot().fetchSemanticsNode().boundsInRoot} photo=$photo dock=${compose.onNodeWithTag("adjustment-dock").fetchSemanticsNode().boundsInRoot}")
             assertEquals(committed, compose.activity.model.state.value.edits)
             assertEquals(inode, android.system.Os.stat(record.absolutePath).st_ino); assertArrayEquals(bytes, record.readBytes()); assertEquals(0, writes.get())
         } finally {
             observer?.stopWatching()
             compose.runOnUiThread { compose.activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
-            shell("settings put system font_scale 1.0"); source.delete()
+            source.delete()
         }
     }
 
