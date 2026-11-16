@@ -6,6 +6,8 @@
 
 namespace rawlab::test {
 
+// Single-threaded assertion counter: failureCount(), check(), and resetFailures()
+// mutate a non-atomic static int and must only be called from one thread.
 inline int& failureCount() {
     static int count = 0;
     return count;

@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "sony2fuji/gpu/lut_gpu.h"
 #include "sony2fuji/lut_parser.h"
@@ -12,8 +13,7 @@
 #include <vector>
 using nlohmann::json;
 namespace {
-int failures=0;
-void check(bool value,const char* label) { if (!value) { ++failures; std::cerr<<"FAIL "<<label<<'\n'; } }
+using rawlab::test::check;
 json contract(std::string input, std::string output="srgb", std::string reference="scene", std::string base="none") {
     return {{"version",1},{"input",{{"space",input},{"reference",reference},{"range","full"}}},
         {"output",{{"space",output},{"reference",output=="linear-srgb"?"scene":"display"},{"range","full"}}},
@@ -387,5 +387,5 @@ int main() {
         }
     }
     sony2fuji_session_destroy(session);std::filesystem::remove_all(dir);
-    std::cout<<"LUT contract render failures: "<<failures<<'\n';return failures?1:0;
+    std::cout<<"LUT contract render failures: "<<rawlab::test::failureCount()<<'\n';return rawlab::test::exitCode();
 }

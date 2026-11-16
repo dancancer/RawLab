@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "core/rendered_dng.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #ifdef TEST_LENS_WAVELET_DNG
@@ -40,11 +41,10 @@ namespace {
 constexpr uint16_t kLinearRaw = 34892;
 constexpr const char* kStagingMarker = ".rawlab-rendered-dng-";
 
-int failures = 0;
-
 void check(bool condition, const std::string& name) {
-    std::cout << (condition ? "PASS " : "FAIL ") << name << '\n';
-    if (!condition) ++failures;
+    if (rawlab::test::check(condition, name)) {
+        std::cout << "PASS " << name << '\n';
+    }
 }
 
 constexpr TIFFFieldInfo kCustomFields[] = {
@@ -914,7 +914,7 @@ int main(int argc, char** argv) {
         }
         testLensWaveletViewportDng(directory, rawPath);
         std::filesystem::remove_all(directory);
-        return failures == 0 ? 0 : 1;
+        return rawlab::test::exitCode();
     }
 #endif
     testJpegPreviews(directory);
@@ -932,5 +932,5 @@ int main(int argc, char** argv) {
     testMidwriteFailure(directory);
 #endif
     std::filesystem::remove_all(directory);
-    return failures == 0 ? 0 : 1;
+    return rawlab::test::exitCode();
 }

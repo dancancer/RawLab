@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "sony2fuji/ffi/sony2fuji_hdr.h"
 
@@ -28,11 +29,10 @@ extern "C" sony2fuji_status sony2fuji_load_display_image(
 
 namespace {
 
-int failures = 0;
-
 void check(bool condition, const std::string& message) {
-    std::cout << (condition ? "PASS " : "FAIL ") << message << '\n';
-    if (!condition) ++failures;
+    if (rawlab::test::check(condition, message)) {
+        std::cout << "PASS " << message << '\n';
+    }
 }
 
 #if defined(__APPLE__)
@@ -1069,5 +1069,5 @@ int main() {
           "Non-Apple display decoder is an explicit unsupported stub");
     sony2fuji_release_buffer(&output);
 #endif
-    return failures == 0 ? 0 : 1;
+    return rawlab::test::exitCode();
 }
