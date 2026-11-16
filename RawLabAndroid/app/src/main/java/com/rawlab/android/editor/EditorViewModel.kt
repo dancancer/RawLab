@@ -501,11 +501,15 @@ class EditorViewModel @JvmOverloads constructor(
                         // 编辑已在动作提交处保存；预览回调只更新像素和目标相机派生值。
                         else -> null
                     }
+                    val processingMigration = if (request.importing)
+                        runCatching { editStore.processingMigration(request.photo.identity) }.getOrNull()
+                    else mutable.value.processingMigration
                     mutable.value = EditorStateReducer.renderFinished(mutable.value).copy(
                         photo = request.photo, edits = settings, preview = value.pair,
                         exact = !request.interactive, error = null,
                         saveState = if (request.restored && saved?.state == EditSaveState.SAVED) EditSaveState.RESTORED else saved?.state ?: mutable.value.saveState,
-                        saveError = if (saved == null) mutable.value.saveError else saved.message)
+                        saveError = if (saved == null) mutable.value.saveError else saved.message,
+                        processingMigration = processingMigration)
                     acceptedHslPreview = request
                     acceptedHslSettings = settings
                     acceptedHslRevision = HslTargetRevision(sourceRevision, currentRevision)
@@ -516,8 +520,6 @@ class EditorViewModel @JvmOverloads constructor(
                     if (request.persistOnImport) persist(request.photo, settings) { saved ->
                         mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
                     }
-                    if (request.importing) mutable.value = mutable.value.copy(
-                        processingMigration = runCatching { editStore.processingMigration(request.photo.identity) }.getOrNull())
                     if (request.importing && mutable.value.draft == null) restoreEditorDraft()
                     startProcessingMigrationIfNeeded()
                 }
