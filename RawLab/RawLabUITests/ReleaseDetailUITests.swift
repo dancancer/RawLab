@@ -171,25 +171,41 @@ final class ReleaseDetailUITests: XCTestCase {
         let imported = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             let allow = springboard.buttons.matching(NSPredicate(format: "label == 'Allow Full Access' OR label == '允许完全访问'")).firstMatch
             if allow.exists { allow.tap() }
-            return app.buttons["editor.compare"].isEnabled
+            // v0.8: the workbench overview grid is the imported-ready anchor; the compare
+            // entry collapsed into the overflow menu and no longer sits in the toolbar.
+            return app.scrollViews["editor.tools"].exists && !app.descendants(matching: .any)["editor.preview.updating"].exists
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [imported], timeout: 120), .completed, app.debugDescription)
     }
 
     private func selectTool(_ name: String, in app: XCUIApplication) throws {
+        // v0.8 two-level workbench: from the tool page go back to the overview first
+        // (these cases never edit values, so a dirty-draft guard only discards).
+        if app.buttons["editor.tool.back"].exists {
+            app.buttons["editor.tool.back"].tap()
+            if app.alerts.buttons["Discard Changes"].waitForExistence(timeout: 2) {
+                app.alerts.buttons["Discard Changes"].tap()
+            }
+        }
+        let group: String
+        switch name {
+        case "hsl": group = "color"
+        default: group = "geometry"
+        }
+        let groupButton = app.buttons["editor.group." + group]
+        XCTAssertTrue(groupButton.waitForExistence(timeout: 10), app.debugDescription)
+        if !groupButton.isSelected || !app.buttons["tool." + name].exists { groupButton.tap() }
         let tool = app.buttons["tool." + name]
         XCTAssertTrue(tool.waitForExistence(timeout: 10))
-        let strips = app.scrollViews.containing(.button, identifier: "tool." + name).allElementsBoundByIndex
-        let strip = try XCTUnwrap(strips.min { $0.frame.height < $1.frame.height })
-        for _ in 0..<18 {
-            let frame = tool.frame
-            if strip.frame.insetBy(dx: 8, dy: 0).contains(CGPoint(x: frame.midX, y: frame.midY)) { break }
-            let right = frame.midX < strip.frame.midX
-            strip.coordinate(withNormalizedOffset: CGVector(dx: right ? 0.25 : 0.75, dy: 0.5))
-                .press(forDuration: 0.1, thenDragTo: strip.coordinate(withNormalizedOffset: CGVector(dx: right ? 0.70 : 0.30, dy: 0.5)))
+        let strip = app.scrollViews["editor.tools"]
+        XCTAssertTrue(strip.waitForExistence(timeout: 5), app.debugDescription)
+        for _ in 0..<8 where !tool.isHittable {
+            strip.swipeLeft()
         }
+        XCTAssertTrue(tool.isHittable, tool.debugDescription)
         let frame = tool.frame
         app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: frame.midX, dy: frame.midY)).tap()
+        XCTAssertTrue(app.scrollViews["editor.panel"].waitForExistence(timeout: 10), app.debugDescription)
     }
 
     private func openBatch(in app: XCUIApplication) throws {

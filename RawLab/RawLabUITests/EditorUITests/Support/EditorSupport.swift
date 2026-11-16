@@ -19,12 +19,15 @@ extension EditorUITests {
         photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         waitForImportedPhoto(in: app)
         let panel = app.scrollViews["editor.panel"]
-        let reset = app.buttons["Reset Adjustments"]
-        let tool = app.buttons["tool.exposure"]
+        // v0.8: the tool page replaces the overview tiles; reset lives in the workspace draft control.
+        let reset = app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@",
+                                                     "editor.draft.reset", "Reset Adjustments")).firstMatch
+        let workspace = app.buttons["editor.tool.back"]
         let ruler = app.descendants(matching: .any)["adjustment.ruler"]
         let value = app.buttons["adjustment.value"]
         XCTAssertTrue(ruler.waitForExistence(timeout: 10))
-        XCTAssertTrue(tool.isSelected, "The save regression must exercise the selected native exposure control")
+        XCTAssertTrue(workspace.waitForExistence(timeout: 10),
+                      "The save regression must exercise the selected native exposure tool page")
         XCTAssertTrue(ruler.isHittable, "The native ruler must be reachable at every text size")
         let notice = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Adjustments Saved")).firstMatch
         resetParameterDefault("adjustment", expectedValue: "0.00 EV", in: app)
@@ -36,7 +39,7 @@ extension EditorUITests {
         XCTAssertGreaterThanOrEqual(reset.frame.width, 44)
         XCTAssertGreaterThanOrEqual(reset.frame.height, 44)
         XCTAssertTrue(panel.frame.contains(reset.frame), "The reset target must remain inside the panel at every text size")
-        let controls = [panel, tool, ruler, reset]
+        let controls = [panel, workspace, ruler, reset]
         let beforeFrames = controls.map(\.frame)
         let originalValue = value.value as? String
         ruler.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5))
@@ -113,6 +116,14 @@ extension EditorUITests {
     }
 
     func tapTool(_ name: String, in app: XCUIApplication) {
+        // v0.8 two-level workbench: on a tool page, return to the overview grid first;
+        // a leftover draft is discarded so the next tool always opens a clean workspace.
+        if app.buttons["editor.tool.back"].exists {
+            app.buttons["editor.tool.back"].tap()
+            if app.alerts.buttons["Discard Changes"].waitForExistence(timeout: 2) {
+                app.alerts.buttons["Discard Changes"].tap()
+            }
+        }
         let group: String
         switch name {
         case "film", "masterRecipe", "strength": group = "looks"
@@ -142,6 +153,7 @@ extension EditorUITests {
             if frame.width > 0 && viewport.contains(CGPoint(x: frame.midX, y: frame.midY)) {
                 app.coordinate(withNormalizedOffset: .zero)
                     .withOffset(CGVector(dx: frame.midX, dy: frame.midY)).tap()
+                XCTAssertTrue(app.scrollViews["editor.panel"].waitForExistence(timeout: 15), app.debugDescription)
                 return
             }
             if frame.midX < strip.frame.midX { strip.swipeRight() } else { strip.swipeLeft() }
@@ -161,6 +173,11 @@ extension EditorUITests {
         app.buttons["editor.privacy"].tap()
         let files = app.buttons.matching(identifier: "editor.import.file")
         XCTAssertTrue(files.firstMatch.waitForExistence(timeout: 5))
+        // v0.8: the overflow popover is short; the Files row sits below the fold until scrolled.
+        for _ in 0..<6 where !files.allElementsBoundByIndex.contains(where: { $0.isHittable }) {
+            let container = app.collectionViews.firstMatch
+            if container.exists { container.swipeUp() } else { break }
+        }
         guard let file = files.allElementsBoundByIndex.first(where: { $0.isHittable }) else {
             XCTFail("Files import menu item is not reachable"); return
         }
