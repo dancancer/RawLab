@@ -190,6 +190,57 @@ class EditorScreenTest {
         }
     }
 
+    @Test fun externalApplyAndDiscardDraftCollapseToolPanelWithoutReopening() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val source = File(context.cacheDir, "external-draft-close-${System.nanoTime()}.jpg")
+        val bitmap = Bitmap.createBitmap(300, 200, Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.GRAY) }
+        source.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 95, it) }
+        bitmap.recycle()
+        val model = compose.activity.model
+        fun waitReady() {
+            compose.waitUntil(30_000) { model.state.value.let { it.canExport || it.error != null } }
+            assertNull(model.state.value.error)
+            compose.waitForIdle()
+            assertTrue(model.state.value.canExport)
+            assertNull(model.state.value.draft)
+        }
+        try {
+            compose.runOnUiThread { model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(source)) }
+            waitReady()
+
+            compose.runOnUiThread {
+                model.beginDraft(AdjustmentGroup.GEOMETRY)
+                model.changeDraft(model.state.value.visibleEdits.copy(
+                    geometry = com.rawlab.android.geometry.GeometrySettings(quarterTurns = 1)))
+            }
+            compose.waitUntil(30_000) { model.state.value.draftReady || model.state.value.error != null }
+            assertNull(model.state.value.error)
+            compose.onNodeWithTag("workspace-more").assertIsDisplayed()
+
+            compose.runOnUiThread { model.applyDraft { assertTrue(it) } }
+            waitReady()
+            compose.onNodeWithTag("workspace-more").assertDoesNotExist()
+            compose.onNodeWithTag("editor-groups").assertIsDisplayed()
+
+            compose.runOnUiThread {
+                model.beginDraft(AdjustmentGroup.GEOMETRY)
+                model.changeDraft(model.state.value.visibleEdits.copy(
+                    geometry = model.state.value.visibleEdits.geometry.copy(quarterTurns = 2)))
+            }
+            compose.waitUntil(30_000) { model.state.value.draftReady || model.state.value.error != null }
+            assertNull(model.state.value.error)
+            compose.onNodeWithTag("workspace-more").assertIsDisplayed()
+
+            compose.runOnUiThread { model.discardDraft() }
+            waitReady()
+            compose.onNodeWithTag("workspace-more").assertDoesNotExist()
+            compose.onNodeWithTag("editor-groups").assertIsDisplayed()
+        } finally {
+            compose.runOnUiThread { model.discardDraft() }
+            source.delete()
+        }
+    }
+
     private fun capture(name: String) {
         compose.waitForIdle()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
