@@ -46,8 +46,12 @@ public:
         if (!length) return true;
         if (data_) std::memcpy(target, data_ + offset, length);
         else {
-            input_->seekg(std::streamoff(offset));
-            if (!input_->read(static_cast<char*>(target), std::streamsize(length))) return false;
+            try {
+                input_->seekg(std::streamoff(offset));
+                if (!input_->read(static_cast<char*>(target), std::streamsize(length))) return false;
+            } catch (const std::ios_base::failure&) {
+                return false;
+            }
         }
         return true;
     }
