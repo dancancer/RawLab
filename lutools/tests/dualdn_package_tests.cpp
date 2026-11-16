@@ -139,6 +139,25 @@ int main(int argc, char** argv) {
         manifest.erase("coreml"); write();
         { std::ofstream out(root / "raw.onnx", std::ios::app); out << "corrupt"; }
         rejects();
+        { // 进程级缓存：第二次加载零全量重哈希（等价再建一个 session）；目录改动必须失效重验（撤缓存必红）。
+            { std::ofstream out(root / "raw.onnx"); out << "test package integrity"; } // 复原上一例弄坏的内容
+            write(); // manifest 更新即新指纹：确立一次全量校验基线
+            const auto first = loadModelPackage(root.u8string());
+            const auto validations = modelPackageValidationCount();
+            const auto second = loadModelPackage(root.u8string());
+            require(modelPackageValidationCount() == validations, "second model package load re-hashed the full model set");
+            require(second.digest == first.digest && second.paths == first.paths &&
+                    second.blindRGBPath == first.blindRGBPath && second.blindRGBCoreMLPath == first.blindRGBCoreMLPath,
+                    "cached package must equal the validated package");
+            { std::ofstream out(root / "raw.onnx", std::ios::app); out << 'x'; } // size 变化＝指纹变化：必须重验，此处 SHA 随即不符
+            bool failed = false;
+            try { loadModelPackage(root.u8string()); } catch (const std::exception&) { failed = true; }
+            require(failed, "tampered model package served from stale cache");
+            require(modelPackageValidationCount() == validations + 1, "changed package directory did not trigger revalidation");
+            { std::ofstream out(root / "raw.onnx"); out << "test package integrity"; } // 复原：再走一轮全量校验并通过
+            require(loadModelPackage(root.u8string()).digest == first.digest, "restored package rejected after revalidation");
+            require(modelPackageValidationCount() == validations + 2, "restored package did not run exactly one fresh validation");
+        }
         std::filesystem::remove_all(root);
         std::cout << "PASS SHA-256 and DualDn package integrity/protocol\n";
         return 0;

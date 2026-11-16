@@ -29,7 +29,9 @@ int main(int argc, char** argv) {
         RAWProcessOptions options;
         fileReads = 0;
         const auto initialKey = session.renderKey(source.string(), options);
-        require(fileReads == validationReads + 1, "model content read outside package validation");
+        // 进程级包缓存后，session 构造不再整包重哈希：本步只允许 1 次源文件内容读取（源标识）。
+        // 撤掉缓存时此处回升为 validationReads+1，必红。
+        require(validationReads > 1 && fileReads == 1, "session preparation must reuse the validated package");
         fileReads = 0;
         require(session.renderKey(source.string(), options) == initialKey && fileReads == 0,
             "render cache hit reread model or source content");

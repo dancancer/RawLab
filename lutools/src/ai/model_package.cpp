@@ -1,9 +1,17 @@
 #include "model_package.h"
 #include <nlohmann/json.hpp>
+#include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <mutex>
 #include <set>
 #include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace sony2fuji::ai {
 namespace {
@@ -44,9 +52,50 @@ std::string nativeModelPath(const std::filesystem::path& root, const nlohmann::j
     if (count != expected.size()) throw std::invalid_argument("Missing Core ML resource");
     return folder.u8string();
 }
+
+std::atomic<std::uint64_t> packageValidations{0};
+
+// 包目录内容指纹（不读文件内容）：每个条目的 relpath + 类型 + size + mtime(ns)，排序后拼接。
+// 文件集合、任一 size 或 mtime 变化都改变指纹并触发全量重验；枚举/stat 失败返回 false，
+// 调用方退回直接全量校验，错误仍由 validate 原样抛出（与缓存引入前同语义）。
+bool packageStateFingerprint(const std::filesystem::path& root, std::string& out) {
+    namespace fs = std::filesystem;
+    try {
+        std::vector<std::string> lines;
+        std::error_code error;
+        for (fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied, error), end;
+             !error && it != end; it.increment(error)) {
+            const auto relative = it->path().lexically_relative(root).generic_u8string();
+            if (fs::is_symlink(it->symlink_status())) lines.push_back("L " + relative);
+            else if (it->is_directory()) lines.push_back("D " + relative);
+            else if (it->is_regular_file())
+                lines.push_back("F " + relative + " " + std::to_string(it->file_size()) + " " +
+                    std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        fs::last_write_time(it->path()).time_since_epoch()).count()));
+            else lines.push_back("X " + relative);
+        }
+        if (error) return false;
+        std::sort(lines.begin(), lines.end());
+        out = root.generic_u8string();
+        for (const auto& line : lines) { out += '\n'; out += line; }
+        return true;
+    } catch (...) { return false; }
 }
 
-ModelPackage loadModelPackage(const std::string& directory) {
+// 进程级已校验包缓存：每个新 AISession（缩略图/批量/编辑器）构造都会 loadModelPackage，
+// 未命中才全量 SHA-256（Mac 正式包实测每次校验需读 622MB），命中直接复用已校验包。
+// canonical 目录为键；同目录
+// 不同参数写法复用同一条目（路径串沿用首次校验时的写法，指向同一批文件）。锁内校验让
+// 并发构造的两个 session 只重算一次。
+struct PackageCache {
+    std::mutex mutex;
+    std::map<std::string, std::pair<std::string, ModelPackage>> entries;
+};
+PackageCache& packageCache() { static PackageCache cache; return cache; }
+}
+
+static ModelPackage validateModelPackage(const std::string& directory) {
+    packageValidations.fetch_add(1, std::memory_order_relaxed);
     const auto root = std::filesystem::u8path(directory);
     const auto path = root / "manifest.json";
     if (!std::filesystem::is_regular_file(path) || std::filesystem::file_size(path) > 65536)
@@ -113,5 +162,24 @@ ModelPackage loadModelPackage(const std::string& directory) {
         }
     }
     return result;
+}
+
+ModelPackage loadModelPackage(const std::string& directory) {
+    std::error_code error;
+    const auto canonical = std::filesystem::canonical(std::filesystem::u8path(directory), error);
+    std::string key;
+    if (error || !packageStateFingerprint(canonical, key)) return validateModelPackage(directory);
+    auto& cache = packageCache();
+    const auto id = canonical.u8string();
+    std::lock_guard<std::mutex> lock(cache.mutex);
+    const auto entry = cache.entries.find(id);
+    if (entry != cache.entries.end() && entry->second.first == key) return entry->second.second;
+    auto result = validateModelPackage(directory);
+    cache.entries.insert_or_assign(id, std::make_pair(std::move(key), result));
+    return result;
+}
+
+std::uint64_t modelPackageValidationCount() {
+    return packageValidations.load(std::memory_order_relaxed);
 }
 } // namespace sony2fuji::ai
