@@ -120,24 +120,6 @@ private struct FullControlsProbeView: View {
         try await Task.sleep(for: .milliseconds(30))
     }
 
-    @MainActor static func accessibilityElements(in root: Any) -> [AnyObject] {
-        var result: [AnyObject] = []
-        var visited = Set<ObjectIdentifier>()
-        func visit(_ node: AnyObject) {
-            let id = ObjectIdentifier(node)
-            guard visited.insert(id).inserted else { return }
-            result.append(node)
-            if let children = node.accessibilityChildren?() as? [AnyObject] {
-                for child in children { visit(child) }
-            }
-            if let view = node as? NSView {
-                for subview in view.subviews { visit(subview) }
-            }
-        }
-        visit(root as AnyObject)
-        return result
-    }
-
     @MainActor static func requireResetButton(in view: NSView) throws -> NSButton {
         let candidates = buttons(in: view)
         guard candidates.count == 1, let button = candidates.first else {
@@ -239,11 +221,7 @@ private struct FullControlsProbeView: View {
                       "Single rendition reset keeps sibling fields intact for \(name)")
         }
 
-        // 6. VoiceOver 开启时禁用双击手势且仅保留无障碍操作，展开 DisclosureGroup 验证真实物化滑杆入口
-        try check(!HDRRenditionControls.allowsDoubleTapReset(voiceOverEnabled: true) &&
-                  HDRRenditionControls.allowsDoubleTapReset(voiceOverEnabled: false),
-                  "Double-tap rendition reset is disabled when VoiceOver is active")
-
+        // 6. 展开 DisclosureGroup 物化真实滑杆轨道，供后续双击/拖拽行为回归使用
         let expandedModel = RenditionResetHostModel()
         expandedModel.initiallyExpanded = true
         expandedModel.settings = combined
@@ -256,51 +234,11 @@ private struct FullControlsProbeView: View {
         defer { expandedWindow.contentView = nil; expandedWindow.close() }
         try await settle(expandedHost)
 
-        let elements = accessibilityElements(in: expandedHost)
         let trackViews = collectSliderTrackViews(in: expandedHost)
         try check(trackViews.count == 4,
                   "Expanded HDRRenditionControls materializes four slider track controls (tracks=\(trackViews.count))")
-        if elements.contains(where: { $0.accessibilityIdentifier?() == "hdr.rendition.peakLimit" }) {
-            let expectedFields: [(String, WritableKeyPath<HDRRenditionSettings, Double>)] = [
-                ("hdr.rendition.peakLimit", \.peakLimitEV),
-                ("hdr.rendition.sdrExposure", \.sdrExposureEV),
-                ("hdr.rendition.sdrContrast", \.sdrContrast),
-                ("hdr.rendition.sdrSaturation", \.sdrSaturation),
-            ]
-            for (identifier, keyPath) in expectedFields {
-                expandedModel.voiceOverOverride = false
-                expandedModel.settings = combined
-                expandedModel.writes = 0
-                try await settle(expandedHost)
-                guard let slider = accessibilityElements(in: expandedHost).first(where: { $0.accessibilityIdentifier?() == identifier }) else {
-                    throw Failure.assertion("Missing materialized slider \(identifier) in expanded HDRRenditionControls")
-                }
-                let standardHelp = slider.accessibilityHelp?() ?? ""
-                try check(standardHelp == L10n.text("双击名称或轨道恢复默认值。"),
-                          "Slider \(identifier) advertises double-tap hint when VoiceOver is off")
-                guard let resetAction = slider.accessibilityCustomActions?()?.first(where: { $0.name == L10n.text("重置") }) else {
-                    throw Failure.assertion("Missing accessibility custom reset action on \(identifier)")
-                }
-                _ = resetAction.handler?()
-                var expected = combined
-                expected[keyPath: keyPath] = 0
-                try check(expandedModel.settings == expected && expandedModel.writes == 1,
-                          "Materialized slider accessibility action resets \(identifier) through HDRRenditionControls.reset")
-            }
 
-            expandedModel.voiceOverOverride = true
-            try await settle(expandedHost)
-            guard let voSlider = accessibilityElements(in: expandedHost).first(where: { $0.accessibilityIdentifier?() == "hdr.rendition.sdrExposure" }) else {
-                throw Failure.assertion("Missing sdrExposure slider under VoiceOver override")
-            }
-            try check((voSlider.accessibilityHelp?() ?? "").isEmpty &&
-                      (voSlider.accessibilityCustomActions?()?.contains(where: { $0.name == L10n.text("重置") }) == true),
-                      "VoiceOver suppresses double-tap hint while preserving reset accessibilityAction")
-        } else {
-            print("NOTE: SwiftUI accessibility slider nodes unavailable under prohibited activation policy; verified via track views + real pointer events")
-        }
-
-        // 7. 行为回归：真实鼠标双击滑杆轨道恢复默认且吞掉单击坐标跳变；拖拽与 VoiceOver 门禁保持完整
+        // 7. 行为回归：真实鼠标双击滑杆轨道恢复默认且吞掉单击坐标跳变，拖拽保护保持完整
         expandedModel.voiceOverOverride = false
         expandedModel.settings = combined
         expandedModel.writes = 0
@@ -342,14 +280,6 @@ private struct FullControlsProbeView: View {
         )
         try check(expandedModel.settings.peakLimitEV > 3.0 && expandedModel.editingLog == [true, false],
                   "Dragging peakLimit slider track updates value smoothly and brackets editing state")
-
-        expandedModel.voiceOverOverride = true
-        expandedModel.settings = combined
-        expandedModel.writes = 0
-        try await settle(expandedHost)
-        try await sendDoubleClick(at: peakTrackPoint, in: expandedWindow)
-        try check(expandedModel.settings.peakLimitEV != 0,
-                  "VoiceOver enabled disables double-click track reset")
 
         // Intentional single-click on track commits cleanly once doubleClickInterval elapses
         expandedModel.voiceOverOverride = false

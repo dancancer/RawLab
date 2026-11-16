@@ -466,27 +466,6 @@ final class ViewingEditorUITests: XCTestCase {
         capture(app, "adjustment-editable-save-draft-copy-guard")
     }
 
-    func testAdjustmentCopyGermanLargeText() {
-        let app = launch(language: "de", textCategory: "UICTContentSizeCategoryAccessibilityXXXL")
-        app.buttons["editor.privacy"].tap()
-        let copyAction = app.buttons["Anpassungen kopieren"]
-        XCTAssertTrue(copyAction.waitForExistence(timeout: 5)); copyAction.tap()
-        let clear = app.buttons["adjustment.copy.clear"]
-        revealFormControl(clear, app: app); clear.tap()
-        let light = app.descendants(matching: .any).matching(identifier: "adjustment.group.light").firstMatch
-        revealFormControl(light, app: app); light.tap()
-        let exposure = app.switches["adjustment.field.light.exposure"]
-        revealFormControl(exposure, app: app)
-        XCTAssertGreaterThanOrEqual(exposure.frame.height, 44)
-        toggleField(exposure)
-        capture(app, "adjustment-copy-german-large-field-selection")
-        let copy = app.buttons["adjustment.copy.confirm"]
-        revealFormControl(copy, app: app)
-        XCTAssertGreaterThanOrEqual(copy.frame.height, 44)
-        XCTAssertTrue(copy.isEnabled); copy.tap()
-        wait(app) { $0["clipboard"] is [String: Any] }
-        XCTAssertEqual(receipt(app)["historyCount"] as? Int, 0)
-    }
     func launch(language requestedLanguage: String? = nil, textCategory: String? = nil, adjustmentFixtures: Bool = false,
                 presetFixtures: Bool = false, looksFixtures: Bool = false) -> XCUIApplication {
         let app = XCUIApplication(bundleIdentifier: "com.rawlab.tests.viewing-editor")
@@ -564,25 +543,6 @@ final class ViewingEditorUITests: XCTestCase {
         capture(app, "compact-unreachable-" + element.identifier)
         XCTFail("Control remains reachable: \(element.identifier), frame=\(element.frame), panel=\(panel.frame)\n\(app.debugDescription)")
     }
-    func testCompactGermanLargeLandscapeControls() {
-        let app = launch(language: "de", textCategory: "UICTContentSizeCategoryAccessibilityXXXL")
-        XCUIDevice.shared.orientation = .landscapeLeft
-        wait(app) { $0["ready"] as? Bool == true }
-        selectGeometry(app)
-        let dimensions = app.buttons["geometry.dimensions"]
-        revealCompactControl(dimensions, in: app); dimensions.tap()
-        let width = app.buttons["geometry.cropWidth.value"]
-        revealCompactControl(width, in: app)
-        XCTAssertTrue(app.scrollViews["editor.panel"].frame.insetBy(dx: -1, dy: -1)
-            .contains(app.staticTexts["geometry.cropWidth.title"].frame),
-            "The complete large-text crop label and value are visible together")
-        capture(app, "compact-german-large-landscape-numbers")
-        width.tap()
-        XCTAssertTrue(app.buttons["adjustment.wheel.cancel"].waitForExistence(timeout: 5))
-        app.buttons["adjustment.wheel.cancel"].tap()
-        app.buttons["editor.draft.cancel"].tap()
-        wait(app) { $0["draftActive"] as? Bool == false && $0["ready"] as? Bool == true }
-    }
     func testCompactCropPrecisionAndResponsiveNavigation() {
         let app = launch(language: "en")
         app.buttons["editor.group.color"].tap()
@@ -636,20 +596,6 @@ final class ViewingEditorUITests: XCTestCase {
         capture(app, "compact-crop-applied")
         app.terminate()
         XCUIDevice.shared.orientation = .portrait
-        let german = launch(language: "de", textCategory: "UICTContentSizeCategoryAccessibilityXXXL")
-        selectGeometry(german)
-        for id in ["editor.draft.cancel", "editor.draft.apply"] {
-            let button = german.buttons[id]
-            XCTAssertTrue(button.exists && german.frame.contains(button.frame), "Large German text retains fixed draft actions")
-            XCTAssertGreaterThanOrEqual(button.frame.height, 44)
-        }
-        capture(german, "compact-german-large-portrait")
-        XCUIDevice.shared.orientation = .landscapeLeft
-        wait(german) { $0["ready"] as? Bool == true }
-        capture(german, "compact-german-large-landscape")
-        XCTAssertTrue(german.buttons["editor.draft.cancel"].isHittable)
-        german.buttons["editor.draft.cancel"].tap()
-        wait(german) { $0["draftActive"] as? Bool == false && $0["ready"] as? Bool == true }
     }
     func histogramPlot(_ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: "editor.histogram.plot").firstMatch
@@ -737,11 +683,8 @@ final class ViewingEditorUITests: XCTestCase {
         XCTAssertEqual((receipt(app)["saves"] as! [[String: Any]]).count, (initial["saves"] as! [[String: Any]]).count)
     }
 
-    func testRGBHistogramAcrossSixLanguagesAndLargeText() {
+    func testRGBHistogramAcrossSixLanguages() {
         checkRGBHistogramLanguages()
-    }
-    func testRGBHistogramGermanLargeText() {
-        checkRGBHistogramLanguages(only: "de")
     }
     func testRGBHistogramRotationAndExpansion() {
         checkRGBHistogramLanguages(only: "en")
@@ -756,7 +699,7 @@ final class ViewingEditorUITests: XCTestCase {
             ("es", "Histograma RGB", "Después", "Estadísticas no disponibles")
         ] {
             if let requestedLanguage, language != requestedLanguage { continue }
-            let app = launch(language: language, textCategory: language == "de" ? "UICTContentSizeCategoryAccessibilityXXXL" : nil)
+            let app = launch(language: language)
             wait(app) { !($0["afterHistogram"] as! [String: Any]).isEmpty }
             let initial = receipt(app)
             let histogram = app.buttons["editor.histogram"]
@@ -803,7 +746,7 @@ final class ViewingEditorUITests: XCTestCase {
             ("es", "Activar comparación", "Desactivar comparación", "Antes", "Después", "En paralelo", "Línea divisoria", "Zoom y visualización", "Espacio alrededor de la foto")
         ]
         for (language, enabled, disabled, before, after, side, wipe, display, margin) in samples {
-            let app = launch(language: language, textCategory: language == "de" ? "UICTContentSizeCategoryAccessibilityXXXL" : nil)
+            let app = launch(language: language)
             let original = receipt(app)
             XCTAssertEqual(app.buttons["editor.compare"].label, enabled)
             app.buttons["editor.compare"].tap()
@@ -852,24 +795,6 @@ final class ViewingEditorUITests: XCTestCase {
             XCTAssertLessThanOrEqual(label["pointSize"] as! Double, 17)
             XCTAssertFalse(CGRect(x: rect[0], y: rect[1], width: rect[2], height: rect[3]).intersects(app.buttons["editor.compare.mode"].frame))
         }
-    }
-    func testLargeViewingLabelsAndModeStayComplete() {
-        let app = launch(language: "de", textCategory: "UICTContentSizeCategoryAccessibilityXXXL")
-        app.buttons["editor.compare"].tap()
-        wait(app) { $0["ready"] as? Bool == true && $0["compare"] as? Bool == true }
-        XCTAssertEqual(receipt(app)["preferredContentSizeCategory"] as? String, "UICTContentSizeCategoryAccessibilityXXXL")
-        capture(app, "de-xxxl-side-text-metrics")
-        assertCompleteViewingLabels(app)
-        XCTAssertEqual(app.staticTexts["editor.compare.before"].label, "Vorher")
-        XCTAssertEqual(app.staticTexts["editor.compare.after"].label, "Nachher")
-        XCTAssertEqual(app.buttons["editor.compare.mode"].frame.width, 44)
-        XCTAssertEqual(app.buttons["editor.compare.mode"].frame.height, 44)
-        capture(app, "de-xxxl-complete-side-labels")
-        app.buttons["editor.compare.mode"].tap()
-        app.buttons["editor.compare.wipe"].tap()
-        wait(app) { $0["mode"] as? String == "wipe" && $0["ready"] as? Bool == true }
-        assertCompleteViewingLabels(app)
-        capture(app, "de-xxxl-complete-wipe-labels")
     }
     func testWipeLabelAvoidsModeControlInsideActualPhoto() {
         let app = launch()

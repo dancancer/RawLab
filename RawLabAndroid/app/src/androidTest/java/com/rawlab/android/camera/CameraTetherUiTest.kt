@@ -3,14 +3,11 @@ package com.rawlab.android.camera
 import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.rawlab.android.photo.MediaPhoto
@@ -201,10 +198,15 @@ class CameraTetherUiTest {
             }
         }
         compose.onNodeWithTag("tether-shutter").assertIsDisplayed()
+        compose.onNodeWithTag("tether-recent").assertIsDisplayed()
         capture("portrait")
         compose.runOnIdle { size.value = Size(680, 300) }
         compose.onNodeWithTag("tether-shutter").assertIsDisplayed()
+        compose.onNodeWithTag("tether-recent").assertIsDisplayed()
         capture("landscape")
+        compose.onNodeWithTag("tether-menu").performClick()
+        compose.onNodeWithTag("tether-auto-review").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("tether-recent").assertExists()
     }
 
     private fun savedState(names: List<String>): CameraTetherState {

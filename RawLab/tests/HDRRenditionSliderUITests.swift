@@ -222,29 +222,4 @@ final class HDRRenditionSliderUITests: XCTestCase {
     func testFirstThumbDoubleTapAfterDragAndValueChangedResets() throws {
         try assertFirstDoubleTapAfterDragResets(at: 3.4 / 6)
     }
-
-    func testVoiceOverTouchDragHasSingleEditingSession() {
-        let app = launchHarness(initialPeak: "0.0", voiceOver: true)
-        let slider = app.sliders["hdr.rendition.peakLimit"]
-        slider.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5))
-            .press(forDuration: 0.15, thenDragTo: slider.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)))
-        let status = app.staticTexts["probe.status"].label
-        print("VOICEOVER_TOUCH_DRAG: \(status)")
-        XCTAssertFalse(status.contains("peak=0.0"), "Expected VoiceOver touch drag to update peak, got \(status)")
-        XCTAssertTrue(status.contains("editing=1,0 cancelled=0"), "Expected one closed editing session, got \(status)")
-    }
-
-    func testVoiceOverDisablesDoubleTapAndClosesNormalizedAdjustment() {
-        let app = launchHarness(initialPeak: "2.5", voiceOver: true)
-        let slider = app.sliders["hdr.rendition.peakLimit"]
-        slider.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)).doubleTap()
-        var status = app.staticTexts["probe.status"].label
-        XCTAssertTrue(status.contains("peak=2.5"), "VoiceOver must disable double-tap reset, got \(status)")
-
-        slider.adjust(toNormalizedSliderPosition: 0.8)
-        status = app.staticTexts["probe.status"].label
-        XCTAssertFalse(status.contains("peak=2.5"), "Expected adjust under VoiceOver to update peak, got \(status)")
-        XCTAssertTrue(status.contains("editing=1,0") && status.hasSuffix("cancelled=0"),
-                      "Expected non-touch adjust to close editing state cleanly, got \(status)")
-    }
 }

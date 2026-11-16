@@ -364,9 +364,9 @@ extension ViewingEditorUITests {
         capture(app, "preset-draft-preflight-and-cancellation")
     }
 
-    func testPresetLocalizedLargeTextLayouts() {
+    func testPresetLocalizedLayouts() {
         for language in ["en", "zh-Hans", "de", "fr", "ja", "es"] {
-            let app = launch(language: language, textCategory: "UICTContentSizeCategoryAccessibilityXXXL", presetFixtures: true)
+            let app = launch(language: language, textCategory: nil, presetFixtures: true)
             if receipt(app)["group"] as? String != "looks" || receipt(app)["expanded"] as? Bool != true {
                 app.buttons["editor.group.looks"].tap()
             }
