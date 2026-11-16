@@ -111,6 +111,26 @@ class BatchSelectionTest {
         } finally { root.deleteRecursively() }
     }
 
+    @Test fun collectionFreezeStoresOneContentAddressedCopyPerLook() {
+        val root = Files.createTempDirectory("collection-look-dedupe").toFile()
+        try {
+            val store = EditStore(File(root, "edits"))
+            val photos = (0..1).map { i -> BatchTarget(PhotoIdentity("$i"), File(root, "$i.jpg").also { it.writeText("input $i") },
+                "same.jpg", inputKind = PhotoInputKind.RASTER) }
+            val selection = BatchSelectionState().append(photos)
+            val look = File(root, "shared.cube").also { it.writeText("shared look") }
+            photos.forEach { store.save(it.identity, EditSettings(film = "custom")) }
+            val exporter = BatchSelectionExport(File(root, "jobs"), store::readState, { if (it.film == "custom") look else null })
+            val review = exporter.prepare(selection, emptySet(), ExportFormat.PNG, 1024, "output") {}
+            val job = exporter.freeze(selection, review) {}
+            val lookFiles = File(File(root, "jobs"), job.id).listFiles()!!.filter { it.extension == "cube" }
+            assertEquals(1, lookFiles.size)
+            assertEquals(1, job.rows.map { it.target.frozen!!.lookFile!!.path }.distinct().size)
+            assertEquals(BatchFrozenSettings.checksum(look), lookFiles.first().nameWithoutExtension)
+            assertEquals(look.readText(), lookFiles.first().readText())
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun missingOrChangedInputIsMarkedPerPhotoAndFailedFreezeLeavesNoJob() {
         val root = Files.createTempDirectory("collection-missing").toFile()
         try {

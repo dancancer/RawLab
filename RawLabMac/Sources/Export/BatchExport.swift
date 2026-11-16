@@ -282,11 +282,15 @@ final class BatchJournal {
         writtenFingerprint = Self.fingerprint(atPath: url.path)
     }
 
-    func snapshotLook(_ original: URL?, for id: UUID) throws -> URL? {
+    func snapshotLook(_ original: URL?, jobID: UUID, contentIdentifier: String?) throws -> URL? {
         guard let original else { return nil }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let copy = directory.appendingPathComponent("\(id.uuidString).\(original.pathExtension)")
-        try FileManager.default.copyItem(at: original, to: copy)
+        // 同一任务共享同一 look 时按内容寻址只存一份（已有即复用）；文件名带 jobID 前缀隔离任务，
+        // 平铺目录里 releaseResources(prior) 不会误删仍在用任务的副本。
+        let copy = directory.appendingPathComponent("\(jobID.uuidString)-\(contentIdentifier ?? UUID().uuidString).\(original.pathExtension)")
+        if !FileManager.default.fileExists(atPath: copy.path) {
+            try FileManager.default.copyItem(at: original, to: copy)
+        }
         return copy
     }
 
@@ -449,13 +453,15 @@ final class BatchJournal {
 
     func releaseResources(_ job: BatchExportJob) {
         for item in job.items { cleanup(job, item: item) }
+        // 只回收属于本任务名字的副本：jobID 前缀的内容寻址名 + 旧版 UUID 名（升级前在途任务兼容）。
+        let owned = { (stem: String, id: UUID) in stem == id.uuidString || stem.hasPrefix("\(job.id.uuidString)-") }
         if let look = job.look, look.deletingLastPathComponent().standardizedFileURL.path == directory.standardizedFileURL.path,
-           look.deletingPathExtension().lastPathComponent == job.id.uuidString {
+           owned(look.deletingPathExtension().lastPathComponent, job.id) {
             try? FileManager.default.removeItem(at: look)
         }
         for item in job.items {
             if let look = item.frozen?.look, look.deletingLastPathComponent().standardizedFileURL.path == directory.standardizedFileURL.path,
-               look.deletingPathExtension().lastPathComponent == item.id.uuidString {
+               owned(look.deletingPathExtension().lastPathComponent, item.id) {
                 try? FileManager.default.removeItem(at: look)
             }
         }
