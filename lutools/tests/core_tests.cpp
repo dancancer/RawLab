@@ -5,6 +5,9 @@
 #include "core/photo_rendering.h"
 #include "core/photo_lut.h"
 #include "core/stb_image_write.h"
+#define STB_IMAGE_IMPLEMENTATION
+#include "core/stb_image.h"
+#include "core/processing_cancellation.h"
 #include <cerrno>
 #include <cmath>
 #include <csetjmp>
@@ -268,7 +271,6 @@ void testJpegExportWriteSafety(const std::filesystem::path& parentDir, sony2fuji
         if (waitpid(child, &status, 0) != child || !WIFEXITED(status)) return -2;
         return WEXITSTATUS(status);
     };
-
     const auto midwriteMissingTarget = jpegDir / "midwrite-missing.jpg";
     const int missingExit = runLimitedWriteChild(4096, [&]() {
         return ImageEncoder::saveJPEG(noisy, midwriteMissingTarget.string(), 95) == ErrorCode::IOError;
@@ -300,6 +302,106 @@ void testJpegExportWriteSafety(const std::filesystem::path& parentDir, sony2fuji
           !hasJpegStagingFile(jpegDir),
           "stdio-buffered small JPEG flush failure returns IOError and leaves no partial file");
 #endif
+}
+
+// WR-01: libjpeg-turbo 扫描线编码器替换 stb 后，同源内容对旧参考编码器的 PSNR 对齐锚
+// （q95 覆盖 4:4:4 分支，q85 覆盖 4:2:0 分支，与 stb 的 subsample 阈值同语义）。
+void testJpegEncoderTurboParity(const std::filesystem::path& parentDir) {
+    const auto dir = parentDir / "jpeg-turbo-parity";
+    std::filesystem::create_directories(dir);
+
+    // 渐变 + 高频噪声 + 硬边棋盘：比纯噪声更接近真实导出内容。
+    const int width = 320;
+    const int height = 240;
+    ImageData image(width, height);
+    std::vector<unsigned char> reference(static_cast<size_t>(width) * height * 3);
+    uint32_t seed = 0xBEEF1234u;
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            seed = seed * 1664525u + 1013904223u;
+            const float spike = ((seed >> 16) & 0xFFu) > 230u ? 0.25f : 0.0f;
+            const float rawR = static_cast<float>(x) / static_cast<float>(width) + spike;
+            const float r = rawR > 1.0f ? 1.0f : rawR;
+            const float g = static_cast<float>(y) / static_cast<float>(height);
+            const float b = (((x / 8 + y / 8) % 2) != 0) ? 0.9f : 0.15f;
+            const size_t pixel = static_cast<size_t>(y) * width + x;
+            image.pixels[pixel] = RGB(r, g, b);
+            reference[pixel * 3 + 0] = static_cast<unsigned char>(std::lround(r * 255.0f));
+            reference[pixel * 3 + 1] = static_cast<unsigned char>(std::lround(g * 255.0f));
+            reference[pixel * 3 + 2] = static_cast<unsigned char>(std::lround(b * 255.0f));
+        }
+    }
+
+    for (const int quality : {95, 85}) {
+        const auto turboTarget = dir / ("turbo-q" + std::to_string(quality) + ".jpg");
+        const auto stbTarget = dir / ("stb-reference-q" + std::to_string(quality) + ".jpg");
+        check(ImageEncoder::saveJPEG(image, turboTarget.string(), quality) == ErrorCode::Success,
+              "libjpeg-turbo JPEG export succeeds");
+        check(stbi_write_jpg(stbTarget.string().c_str(), width, height, 3, reference.data(), quality) != 0,
+              "stb reference JPEG export succeeds");
+
+        int turboWidth = 0;
+        int turboHeight = 0;
+        int stbWidth = 0;
+        int stbHeight = 0;
+        unsigned char* turboPixels = stbi_load(turboTarget.string().c_str(), &turboWidth, &turboHeight, nullptr, 3);
+        unsigned char* stbPixels = stbi_load(stbTarget.string().c_str(), &stbWidth, &stbHeight, nullptr, 3);
+        if (!turboPixels || !stbPixels) {
+            check(false, "JPEG parity decode failed");
+            std::free(turboPixels);
+            std::free(stbPixels);
+            return;
+        }
+        check(turboWidth == stbWidth && turboHeight == stbHeight, "JPEG parity decoders agree on dimensions");
+        double mse = 0.0;
+        const size_t samples = static_cast<size_t>(turboWidth) * turboHeight * 3;
+        for (size_t i = 0; i < samples; ++i) {
+            const double delta = static_cast<double>(turboPixels[i]) - static_cast<double>(stbPixels[i]);
+            mse += delta * delta;
+        }
+        mse /= static_cast<double>(samples);
+        const double psnr = mse == 0.0 ? 999.0 : 10.0 * std::log10(255.0 * 255.0 / mse);
+        check(psnr >= 40.0, "libjpeg-turbo export stays within PSNR >= 40 dB of the stb reference");
+        std::cout << "  JPEG encoder parity q" << quality << ": PSNR=" << psnr << " dB, turbo="
+                  << std::filesystem::file_size(turboTarget) << " B, stb="
+                  << std::filesystem::file_size(stbTarget) << " B\n";
+        std::free(turboPixels);
+        std::free(stbPixels);
+    }
+}
+
+// WR-01: 取消在扫描线边界即时中止且不留 .tmp——旧逐 16KB 写出轮询在本尺寸下
+// 整个编码过程都不会轮询，只能在提交点观测到取消，撤掉修复本锚必红。
+void testJpegExportScanlineCancellation(const std::filesystem::path& parentDir) {
+    const auto dir = parentDir / "jpeg-scanline-cancel";
+    std::filesystem::create_directories(dir);
+    const auto target = dir / "cancelled.jpg";
+    writeTextFile(target, "existing target");
+
+    ImageData image(64, 256);  // 16K px：低于并行阈值，转换阶段不产生额外轮询
+    for (size_t i = 0; i < image.pixels.size(); ++i) {
+        image.pixels[i] = RGB(static_cast<float>(i % 64) / 63.0f,
+                              static_cast<float>(i / 64) / 255.0f,
+                              0.5f);
+    }
+
+    int polls = 0;
+    ProcessingCancellation cancellation{};
+    cancellation.callback = [](void* context) -> int {
+        int& count = *static_cast<int*>(context);
+        return (++count >= 9) ? 1 : 0;
+    };
+    cancellation.context = &polls;
+    ProcessingCancellationScope scope(cancellation);
+    bool cancelled = false;
+    try {
+        (void)ImageEncoder::saveJPEG(image, target.string(), 95);
+    } catch (const ProcessingCancelled&) {
+        cancelled = true;
+    }
+    check(cancelled && polls == 9, "JPEG export cancels at the 9th scanline boundary");
+    check(readTextFile(target) == "existing target" && !hasJpegStagingFile(dir),
+          "cancelled JPEG export keeps the old target and leaves no staging .tmp");
 }
 
 int main(int argc, char** argv) {
@@ -1830,6 +1932,8 @@ int main(int argc, char** argv) {
               !rawOutput.data, "RAW C ABI preserves missing-path IO failure");
     }
     testJpegExportWriteSafety(dir, session);
+    testJpegEncoderTurboParity(dir);
+    testJpegExportScanlineCancellation(dir);
     testFujiLUTs(dir, session);
     const unsigned char black[3]={0,0,0};
     auto r=request(black);

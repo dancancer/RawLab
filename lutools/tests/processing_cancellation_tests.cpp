@@ -431,8 +431,14 @@ int main() {
                 const auto committedBytes = readFile(target);
                 const std::string postCommitLabel = std::string("FINAL ") + exportCase.label +
                     " cancellation after the commit point preserves OK status and published bytes";
-                check(flip.armed.load() && postCommitStatus == SONY2FUJI_STATUS_OK &&
-                      committedBytes == written && stagingResidue(root) == 0,
+                // Encoders that poll at scanline granularity (libjpeg-turbo) observe the flip
+                // mid-encode and cancel before publishing; sparse pollers (DNG, and stb before
+                // WR-01) observe it at or after the commit point and publish. Either way the
+                // published file is never deleted, altered, or left with staging residue.
+                const bool published = postCommitStatus == SONY2FUJI_STATUS_OK;
+                const bool cancelledMidEncode = postCommitStatus == SONY2FUJI_STATUS_CANCELLED;
+                check(flip.armed.load() && (published || cancelledMidEncode) &&
+                          committedBytes == written && stagingResidue(root) == 0,
                     postCommitLabel.c_str());
             }
 #ifndef _WIN32
