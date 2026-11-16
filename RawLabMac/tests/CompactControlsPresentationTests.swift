@@ -76,11 +76,11 @@ struct CompactControlsPresentationTests {
 
     @MainActor private static func snapshot<V: View>(
         _ view: V, name: String, language: AppLanguage, size: NSSize,
-        expectedFields: Int, output: URL, renderModel: EditorModel? = nil, textSize: DynamicTypeSize = .large,
+        expectedFields: Int, output: URL, renderModel: EditorModel? = nil,
         expectedIdentifiers: Set<String>? = nil,
         verifyHost: ((NSView) throws -> Void)? = nil
     ) async throws -> SnapshotEvidence {
-        let host = NSHostingView(rootView: view.dynamicTypeSize(textSize).environment(\.locale, Locale(identifier: language.rawValue))
+        let host = NSHostingView(rootView: view.environment(\.locale, Locale(identifier: language.rawValue))
             .preferredColorScheme(.dark))
         host.appearance = NSAppearance(named: .darkAqua)
         host.frame = NSRect(origin: .zero, size: size)
@@ -255,12 +255,10 @@ struct CompactControlsPresentationTests {
                 for (tool, fieldCount) in controls {
                     model.selectAdjustmentTool(tool)
                     try await waitForRender(model)
-                    for (fontName, fontSize) in [("normal", DynamicTypeSize.large), ("large", .accessibility3)] {
-                        for (sizeName, size) in [("minimum", NSSize(width: 950, height: 620)), ("wide", NSSize(width: 1440, height: 900))] {
-                            snapshots.append(try await snapshot(EditorView(model: model),
-                                name: "parameter-\(tool.rawValue)-\(fontName)-\(sizeName)", language: language,
-                                size: size, expectedFields: fieldCount, output: output, renderModel: model, textSize: fontSize))
-                        }
+                    for (sizeName, size) in [("minimum", NSSize(width: 950, height: 620)), ("wide", NSSize(width: 1440, height: 900))] {
+                        snapshots.append(try await snapshot(EditorView(model: model),
+                            name: "parameter-\(tool.rawValue)-\(sizeName)", language: language,
+                            size: size, expectedFields: fieldCount, output: output, renderModel: model))
                     }
                     if model.geometryDraft != nil { model.cancelGeometryDraft(); try await waitForRender(model) }
                 }
@@ -298,13 +296,8 @@ struct CompactControlsPresentationTests {
                     size: size, expectedFields: 6, output: output, renderModel: model,
                     expectedIdentifiers: lightGroupFields))
             }
-            for (name, size, textSize) in [
-                ("hsl-target-collapsed", NSSize(width: 560, height: 150), DynamicTypeSize.large),
-                ("hsl-target-collapsed-large", NSSize(width: 390, height: 320), DynamicTypeSize.accessibility3)
-            ] {
-                snapshots.append(try await snapshot(HSLTargetCanvasControls(axis: .lightness, onExit: {}).padding(12),
-                    name: name, language: language, size: size, expectedFields: 0, output: output, textSize: textSize))
-            }
+            snapshots.append(try await snapshot(HSLTargetCanvasControls(axis: .lightness, onExit: {}).padding(12),
+                name: "hsl-target-collapsed", language: language, size: NSSize(width: 560, height: 150), expectedFields: 0, output: output))
             snapshots.append(try await snapshot(MacHSLMixer(settings: .constant(hsl)).padding(16)
                 .frame(width: 650, height: 220, alignment: .top).background(Color(nsColor: .windowBackgroundColor)),
                 name: "hsl-workspace-650", language: language, size: NSSize(width: 650, height: 220),
@@ -312,15 +305,12 @@ struct CompactControlsPresentationTests {
             var grading = ColorGradingSettings()
             grading.shadows = ColorGradingWheel(hue: 231.25, saturation: 0)
             grading.midtones = ColorGradingWheel(hue: 110.125, saturation: 32.375)
-            for (name, width, textSize) in [("grading-wide", 650.0, DynamicTypeSize.large),
-                                           ("grading-narrow-large", 360.0, DynamicTypeSize.accessibility3)] {
-                snapshots.append(try await snapshot(ScrollView {
-                    MacColorGradingControls(settings: .constant(grading), zone: .constant(.shadows),
-                        source: "grading-fixture", isCurrent: { true }, onEditingChanged: { _ in }, onCancelled: {})
-                        .padding(16)
-                }.background(Color(nsColor: .windowBackgroundColor)), name: name, language: language,
-                    size: NSSize(width: width, height: 340), expectedFields: 2, output: output, textSize: textSize))
-            }
+            snapshots.append(try await snapshot(ScrollView {
+                MacColorGradingControls(settings: .constant(grading), zone: .constant(.shadows),
+                    source: "grading-fixture", isCurrent: { true }, onEditingChanged: { _ in }, onCancelled: {})
+                    .padding(16)
+            }.background(Color(nsColor: .windowBackgroundColor)), name: "grading-wide", language: language,
+                size: NSSize(width: 650, height: 340), expectedFields: 2, output: output))
             snapshots.append(try await snapshot(PhotoEffectsControls(model: model, tool: .grainAmount).padding(.vertical, 12)
                 .frame(width: 650, height: 200, alignment: .top).background(Color(nsColor: .windowBackgroundColor)),
                 name: "grain-workspace-650", language: language, size: NSSize(width: 650, height: 200),

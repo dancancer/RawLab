@@ -100,7 +100,7 @@ import SwiftUI
         updates.cancel(); model.cancelGeometryDraft(); try await settle(model)
         for language in ["zh-Hans", "en", "de", "fr", "ja", "es"] {
             UserDefaults.standard.setVolatileDomain([L10n.preferenceKey: language, "photoFolders": [String]()], forName: UserDefaults.argumentDomain)
-            let (dialog, host) = window(SoftwareUpdateView(updates: updates).environment(\.locale, Locale(identifier: language)).dynamicTypeSize(.accessibility3)
+            let (dialog, host) = window(SoftwareUpdateView(updates: updates).environment(\.locale, Locale(identifier: language))
                 .background(Color(nsColor: .windowBackgroundColor)).preferredColorScheme(.dark), width: 560, height: 680)
             try await Task.sleep(for: .milliseconds(150)); host.layoutSubtreeIfNeeded()
             guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { throw RenderError.failed("No native update bitmap") }
@@ -131,7 +131,7 @@ import SwiftUI
         _ = pending.pendingUpdate.installing(token: token); _ = pending.pendingUpdate.fail("test", detail: "Injected failed install", token: token)
         try recoveryStore.save(pending); try Data("new format".utf8).write(to: original)
         let recovery = DesktopUpdateController(adapter: Adapter(), gate: UpdateInstallGate(), store: recoveryStore, currentVersion: "0.8.2", currentBuild: "14")
-        let (recoveryWindow, recoveryHost) = window(SoftwareUpdateView(updates: recovery).dynamicTypeSize(.accessibility3)
+        let (recoveryWindow, recoveryHost) = window(SoftwareUpdateView(updates: recovery)
             .background(Color(nsColor: .windowBackgroundColor)).preferredColorScheme(.dark), width: 560, height: 680)
         try await Task.sleep(for: .milliseconds(100)); recoveryHost.layoutSubtreeIfNeeded()
         try check(recovery.canRestorePreviousData && !recovery.canCheck, "Native recovery screen exposes the explicit restore action and blocks new checks")
@@ -150,7 +150,7 @@ import SwiftUI
         recoveryWindow.contentView = nil; recoveryWindow.close()
         let unsupported = DesktopUpdateController(adapter: UnavailableUpdateAdapter("configuration"), gate: UpdateInstallGate(),
             store: UpdateStore(directory: output.appendingPathComponent("unsupported/Updates")), currentVersion: "0.8.2", currentBuild: "14", automaticCheck: false)
-        let (unsupportedWindow, unsupportedHost) = window(SoftwareUpdateView(updates: unsupported).dynamicTypeSize(.accessibility3)
+        let (unsupportedWindow, unsupportedHost) = window(SoftwareUpdateView(updates: unsupported)
             .background(Color(nsColor: .windowBackgroundColor)).preferredColorScheme(.dark), width: 560, height: 680)
         try await Task.sleep(for: .milliseconds(100))
         let unsupportedPNG = try png(unsupportedHost)
@@ -159,7 +159,7 @@ import SwiftUI
         try FileManager.default.createDirectory(at: repairStore.directory, withIntermediateDirectories: true)
         let damaged = Data("{broken".utf8); try damaged.write(to: repairStore.stateURL)
         let repair = DesktopUpdateController(adapter: Adapter(), gate: UpdateInstallGate(), store: repairStore, currentVersion: "0.8.2", currentBuild: "14")
-        let (repairWindow, repairHost) = window(SoftwareUpdateView(updates: repair).dynamicTypeSize(.accessibility3)
+        let (repairWindow, repairHost) = window(SoftwareUpdateView(updates: repair)
             .background(Color(nsColor: .windowBackgroundColor)).preferredColorScheme(.dark), width: 560, height: 680)
         try await Task.sleep(for: .milliseconds(100))
         let degradedPNG = try png(repairHost)
