@@ -4,6 +4,28 @@ import SwiftUI
 extension ContentView {
     @ToolbarContentBuilder
     var editorToolbar: some ToolbarContent {
+        if toolWorkspaceOpen {
+            ToolbarItem(placement: .topBarLeading) {
+                Button(action: requestToolWorkspaceExit) {
+                    Label(L10n.text("返回"), systemImage: "chevron.left")
+                }
+                .disabled(editorBusy)
+                .accessibilityIdentifier("editor.tool.back")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(action: requestToolWorkspaceExit) {
+                    Label(L10n.text("收起调整栏"), systemImage: "slider.horizontal.3")
+                }
+                .disabled(editorBusy)
+                .accessibilityIdentifier("editor.adjustments")
+            }
+        } else {
+            editorOverviewToolbar
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var editorOverviewToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarLeading) {
             if viewModel.batchSelection.selection.current != nil {
                 Button { requestCollectionNavigation(.returnToCollection) } label: { Image(systemName: "square.grid.2x2") }

@@ -152,6 +152,7 @@ extension ContentView {
         cancelSliderInteraction()
         if resettingFine && selection != currentEditorTool { adjustmentFine = false }
         collapsedEditorTool = nil
+        adjustmentsExpanded = true
         // finishDraftNavigation 已先清 workspaceDraft/toolWorkspaceOpen；导航来源仍要按离开草稿处理。
         let leavingDraft = isEditorDraftActive || leavingWorkspace
         if leavingDraft { clearRecoverableDraft(); viewModel.discardDraftSaveFailure(settings: settings) }
@@ -378,6 +379,11 @@ extension ContentView {
         if let collapsed = collapsedEditorTool, EditorAdjustmentRules.groupFor(collapsed) == .hdrRendition {
             collapsedEditorTool = nil
         }
+    }
+
+    func requestToolWorkspaceExit() {
+        guard toolWorkspaceOpen else { return }
+        requestAdjustmentExpansion(false)
     }
 
     func requestAdjustmentExpansion(_ expanded: Bool) {

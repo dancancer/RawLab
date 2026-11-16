@@ -266,6 +266,7 @@
 		D941E65A54F645C882ABF673 /* CameraIncrementalImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D941E65A54F645C882ABF674 /* CameraIncrementalImport.swift */; };
 		D941E65A54F645C882ABF675 /* CameraJPEGProcessing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D941E65A54F645C882ABF676 /* CameraJPEGProcessing.swift */; };
 		D941E65A54F645C882ABF677 /* IOSCameraIncrementalImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D941E65A54F645C882ABF678 /* IOSCameraIncrementalImport.swift */; };
+		D71100000000000000000001 /* EditorToolBackGesture.swift in Sources */ = {isa = PBXBuildFile; fileRef = D71100000000000000000002 /* EditorToolBackGesture.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -671,6 +672,7 @@
 		D941E65A54F645C882ABF674 /* CameraIncrementalImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraIncrementalImport.swift"; sourceTree = "<group>"; };
 		D941E65A54F645C882ABF676 /* CameraJPEGProcessing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraJPEGProcessing.swift"; sourceTree = "<group>"; };
 		D941E65A54F645C882ABF678 /* IOSCameraIncrementalImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IOSCameraIncrementalImport.swift"; sourceTree = "<group>"; };
+		D71100000000000000000002 /* EditorToolBackGesture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Editor/EditorToolBackGesture.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -835,6 +837,7 @@
 				F6EB4A58E1F35560B145D655,
 				BC0C49C5B9A35219B440639F,
 				9B66B134CB4D50238C320F70,
+				D71100000000000000000002,
 				C33A1CD0D88E5254A47F3CA5,
 				D8A16E4C92B04F35817CC002,
 				2F40F7AA6DE556A4A238F267,
@@ -1383,6 +1386,7 @@
 				F0F35CB910A955F5B883934F,
 				EA054B21750151F8A61960F0,
 				4A5D819653CC5BEC83C83458,
+				D71100000000000000000001,
 				B3D998046DAF5568B14233EF,
 				D8A16E4C92B04F35817CC001,
 				6BD98E141C695971B42798C6,

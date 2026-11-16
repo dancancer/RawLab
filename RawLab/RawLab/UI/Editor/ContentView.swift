@@ -215,6 +215,9 @@ struct ContentView: View {
                         return true
                     }
             }
+            .background(EditorToolBackGesture(
+                enabled: toolWorkspaceOpen && !editorBusy && !draftExitPresented && adjustmentSheet == nil,
+                onBack: requestToolWorkspaceExit))
             .safeAreaInset(edge: .top) {
                 if let batchModel, !showingBatchExport {
                     Button { showingBatchExport = true } label: {
@@ -227,10 +230,10 @@ struct ContentView: View {
                     }.background(Color(.secondarySystemBackground)).accessibilityIdentifier("batch.resume")
                 }
             }
-            .navigationTitle(viewModel.sourceDisplayName ?? "RawLab")
+            .navigationTitle(toolWorkspaceOpen ? currentEditorTool.title : viewModel.sourceDisplayName ?? "RawLab")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { editorToolbar }
-            .toolbar(photoViewing.previewOnly || toolWorkspaceOpen ? .hidden : .visible, for: .navigationBar)
+            .toolbar(photoViewing.previewOnly ? .hidden : .visible, for: .navigationBar)
             .toolbarBackground(Color(.secondarySystemBackground), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
         }
