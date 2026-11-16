@@ -495,20 +495,17 @@ Java_com_rawlab_android_raster_NativeMpf_nativeInspectSdrJpegMpf(JNIEnv* env, jo
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_raster_NativePng16_nativeConvert(JNIEnv* env, jobject, jobject pixels,
-    jfloatArray eotf, jfloatArray matrix, jfloatArray oetf) {
+    jbyteArray iccProfile) {
     try {
-        auto* data = static_cast<uint16_t*>(env->GetDirectBufferAddress(pixels));
-        const auto bytes = env->GetDirectBufferCapacity(pixels);
-        if (!data || bytes < 0 || bytes % 8 != 0 || env->GetArrayLength(eotf) != 65536 ||
-            env->GetArrayLength(oetf) != 65536 || env->GetArrayLength(matrix) != 9)
+        auto* data = pixels ? static_cast<uint16_t*>(env->GetDirectBufferAddress(pixels)) : nullptr;
+        const auto bytes = pixels ? env->GetDirectBufferCapacity(pixels) : -1;
+        const jsize profileLength = iccProfile ? env->GetArrayLength(iccProfile) : 0;
+        if (!data || bytes < 0 || bytes % 8 != 0 || profileLength <= 0)
             throw std::invalid_argument("Invalid PNG color conversion buffer");
-        std::vector<float> decode(65536), encode(65536);
-        std::array<float, 9> transform{};
-        env->GetFloatArrayRegion(eotf, 0, 65536, decode.data());
-        env->GetFloatArrayRegion(oetf, 0, 65536, encode.data());
-        env->GetFloatArrayRegion(matrix, 0, 9, transform.data());
+        ByteArrayElements profile(env, iccProfile);
         if (env->ExceptionCheck()) return;
-        rawlab::convertPng16ToSrgb(data, static_cast<size_t>(bytes / 8), decode.data(), transform.data(), encode.data());
+        rawlab::convertPng16ToSrgb(data, static_cast<size_t>(bytes / 8),
+            profile.bytes, static_cast<size_t>(profileLength));
     } catch (const std::bad_alloc&) { throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory for PNG");
     } catch (const std::exception& error) { throwJava(env, "java/io/IOException", error.what()); }
 }

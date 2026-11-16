@@ -43,6 +43,7 @@ internal object RasterImageDecoder {
             if (validation.error == RasterContainerValidator.PNG16_TOO_LARGE)
                 AppStrings.text(R.string.message_png16_decode_limit)
             else validation.error ?: "Unsupported raster image")
+        if (info.bitDepth == 16) return NativePng16.decode(file, info)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         // decodeFile returns null for a bounds-only request on some API levels; out* is the contract.
         BitmapFactory.decodeFile(file.path, bounds)
@@ -51,14 +52,10 @@ internal object RasterImageDecoder {
         if (bounds.outWidth != info.width || bounds.outHeight != info.height)
             throw IOException("Image dimensions changed during decode")
         if (bounds.outWidth.toLong() * bounds.outHeight > RasterContainerValidator.MAX_PIXELS) throw IOException("Image is too large")
-        // Android 将整数 PNG16 的 sRGB 报告为 RGBA_F16/scRGB-nl；原始采样仍被限制在 [0,1]。
-        val sourceSpace = if (info.bitDepth == 16 && bounds.outColorSpace == ColorSpace.get(ColorSpace.Named.EXTENDED_SRGB))
-            ColorSpace.get(ColorSpace.Named.SRGB) else bounds.outColorSpace
-        if (info.hasColorProfile && sourceSpace == null)
+        if (info.hasColorProfile && bounds.outColorSpace == null)
             throw IOException("Image color space is not supported")
-        if (Build.VERSION.SDK_INT >= 26 && !isSupportedSdrColorSpace(sourceSpace))
+        if (Build.VERSION.SDK_INT >= 26 && !isSupportedSdrColorSpace(bounds.outColorSpace))
             throw IOException("Image color space is not supported")
-        if (info.bitDepth == 16) return NativePng16.decode(file, info, sourceSpace)
         val options = BitmapFactory.Options().apply {
             inPreferredConfig = Bitmap.Config.ARGB_8888
             inScaled = false
