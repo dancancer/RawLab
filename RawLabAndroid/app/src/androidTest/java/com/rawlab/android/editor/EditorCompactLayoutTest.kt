@@ -22,6 +22,13 @@ import com.rawlab.android.RawLabTheme
 import com.rawlab.android.editor.render.PreviewPair
 import com.rawlab.android.editor.ui.EditorScreen
 import com.rawlab.android.photo.ImportedPhoto
+import com.rawlab.android.testing.localizedTestContext
+import com.rawlab.android.testing.localizedTestConfiguration
+import com.rawlab.android.testing.openWorkbenchTool
+import com.rawlab.android.testing.selectWorkbenchGroup
+import com.rawlab.android.testing.openWorkbenchMore
+import com.rawlab.android.testing.toggleWorkbenchFine
+import com.rawlab.android.testing.dismissWorkbenchMenu
 import com.rawlab.android.testing.LanguageTestRule
 import com.rawlab.android.testing.ForegroundTestRule
 import org.junit.Assert.*
@@ -33,7 +40,7 @@ import java.util.Locale
 
 class EditorCompactLayoutTest {
     private val compose = createComposeRule()
-    @get:Rule val rule = RuleChain.outerRule(LanguageTestRule()).around(ForegroundTestRule()).around(compose)
+    @get:Rule val rule = RuleChain.outerRule(LanguageTestRule("system")).around(ForegroundTestRule()).around(compose)
     private var state by mutableStateOf(EditorState(
         photo = ImportedPhoto(Uri.parse("content://rawlab.test/compact-layout"), "layout.dng", File("layout.dng")),
         preview = Bitmap.createBitmap(12, 16, Bitmap.Config.ARGB_8888).let {
@@ -43,14 +50,14 @@ class EditorCompactLayoutTest {
     private fun show(width: Int = 360, height: Int = 780, scale: Float = 1f, language: String = "zh-Hans") {
         compose.setContent {
             val base = LocalContext.current
-            val config = Configuration(LocalConfiguration.current).apply {
-                setLocale(Locale.forLanguageTag(language)); fontScale = scale
-            }
+            val config = localizedTestConfiguration(LocalConfiguration.current, language, scale)
+            val localized = localizedTestContext(base, language, scale)
+            check(localized.resources.configuration.locales[0].language == Locale.forLanguageTag(language).language)
             CompositionLocalProvider(LocalDensity provides Density(1f, scale),
-                LocalContext provides base.createConfigurationContext(config), LocalConfiguration provides config) {
+                LocalContext provides localized, LocalConfiguration provides config) {
                 Box(Modifier.size(width.dp, height.dp).consumeWindowInsets(WindowInsets.safeDrawing).testTag("layout-fixture")) {
                     RawLabTheme {
-                        EditorScreen(state, {}, {}, { edits, _ -> state = state.copy(edits = edits) }, {}, {}, {}, {}, {},
+                        EditorScreen(state, {}, {}, { edits, dragging -> state = state.copy(draft = state.draft!!.update(edits, dragging)) }, {}, {}, {}, {}, {},
                             onBeginDraft = { state = state.copy(draft = AdjustmentDraft.begin(it, state.edits)) },
                             onDiscardDraft = { state = state.copy(draft = null) })
                     }
@@ -60,14 +67,13 @@ class EditorCompactLayoutTest {
     }
 
     private fun bounds(tag: String) = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
-    private fun group(id: String) {
-        compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-$id"))
-        compose.onNodeWithTag("editor-group-$id").performClick()
-    }
-    private fun tool(id: Int) {
-        compose.onNodeWithTag("editor-tools").performScrollToNode(hasTestTag("editor-tool-$id"))
-        compose.onNodeWithTag("editor-tool-$id").performClick()
-    }
+    private fun group(id: String) = compose.openWorkbenchTool(when (id) {
+        "light" -> 2
+        "color" -> 8
+        "geometry" -> 17
+        else -> error("Unknown fixture group $id")
+    })
+    private fun tool(id: Int) = compose.openWorkbenchTool(id)
     private fun capture(name: String) {
         val dir = File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null), "compact-layout").apply { mkdirs() }
         File(dir, "$name.png").outputStream().use {
@@ -76,39 +82,41 @@ class EditorCompactLayoutTest {
     }
 
     @Test fun phoneToolsUseTheFullRowAboveFineActions() {
-        show(); group("light")
+        show(); compose.selectWorkbenchGroup("light")
         capture("phone-tools")
         val dock = bounds("adjustment-dock")
-        val tools = bounds("editor-tools")
-        val fine = bounds("adjustment-fine")
-        assertEquals("Tool navigation uses the available panel width", dock.width, tools.width, 1f)
-        assertTrue("Fine control does not consume tool navigation width", fine.top >= tools.bottom)
-        for (id in listOf(2, 3, 4)) compose.onNodeWithTag("editor-tool-$id").assertIsDisplayed()
-        compose.onNodeWithTag("adjustment-fine").performClick().assertIsSelected()
-        tool(3)
+        for (id in listOf(2, 5, 3, 4)) compose.onNodeWithTag("editor-tool-$id").assertIsDisplayed()
+        val first = bounds("editor-tool-2")
+        val last = bounds("editor-tool-4")
+        assertEquals("The grid uses the full panel row inside its 8dp insets", dock.width - 16f, last.right - first.left, 1f)
+        compose.onNodeWithTag("adjustment-fine").assertDoesNotExist()
+        tool(2); compose.toggleWorkbenchFine()
+        compose.openWorkbenchMore()
+        compose.onNodeWithTag("adjustment-fine").assertIsSelected()
+        compose.dismissWorkbenchMenu()
+        tool(3); compose.openWorkbenchMore()
         compose.onNodeWithTag("adjustment-fine").assertIsNotSelected()
+        compose.dismissWorkbenchMenu()
     }
 
     @Test fun fineModeIsACompactButtonGroupedWithReset() {
         show(); group("light")
+        val more = bounds("workspace-more")
+        val reset = compose.onNodeWithContentDescription("重置调整").fetchSemanticsNode().boundsInRoot
+        assertTrue("Fine mode is reached from the same workspace action group as reset", more.left >= reset.right)
+        assertEquals("More and reset share the workspace action row", reset.center.y, more.center.y, 1f)
+        compose.openWorkbenchMore()
         val fine = compose.onNodeWithTag("adjustment-fine")
         val fineBounds = fine.fetchSemanticsNode().boundsInRoot
-        val reset = compose.onNode(hasContentDescription("重置调整") and
-            hasAnyAncestor(hasTestTag("adjustment-dock"))).fetchSemanticsNode().boundsInRoot
-        assertTrue("Fine mode belongs next to reset in the trailing action group", reset.left - fineBounds.right in 0f..12f)
-        assertEquals("Fine and reset share one action row", reset.center.y, fineBounds.center.y, 1f)
         assertTrue("Fine mode retains a full-width touch target", fineBounds.width >= 48f)
-        fine.assertIsNotSelected()
-        // Material 的紧凑 chip 视觉高度为 32dp；实际命中区域应向上下扩展到 48dp。
-        compose.onNodeWithTag("layout-fixture").performTouchInput {
-            click(Offset(fineBounds.center.x, fineBounds.center.y - 23f))
-        }
-        fine.assertIsSelected()
-        compose.onNodeWithTag("layout-fixture").performTouchInput {
-            click(Offset(fineBounds.center.x, fineBounds.center.y + 23f))
-        }
-        fine.assertIsNotSelected()
-        compose.runOnIdle { assertEquals(0f, state.edits.exposure, 0f) }
+        assertTrue("The menu item exposes the complete 48dp touch height", fineBounds.height >= 48f)
+        fine.assertIsNotSelected().performTouchInput { click(Offset(centerX, 1f)) }
+        compose.openWorkbenchMore()
+        compose.onNodeWithTag("adjustment-fine").assertIsSelected().performTouchInput { click(Offset(centerX, height - 1f)) }
+        compose.openWorkbenchMore()
+        compose.onNodeWithTag("adjustment-fine").assertIsNotSelected()
+        compose.dismissWorkbenchMenu()
+        compose.runOnIdle { assertEquals(0f, state.visibleEdits.exposure, 0f); assertEquals(0f, state.edits.exposure, 0f) }
     }
 
     @Test fun scalarPanelReturnsUnusedSpaceToPhoto() {
@@ -140,7 +148,7 @@ class EditorCompactLayoutTest {
         val ruler = bounds("adjustment-slider")
         val number = bounds("adjustment-value-${R.string.exposure}")
         for (value in listOf(-3.95f, -.5f, 0f, .05f, .5f, 3.95f, 4f)) {
-            compose.runOnIdle { state = state.copy(edits = state.edits.copy(exposure = value)) }
+            compose.runOnIdle { state = state.copy(draft = state.draft!!.update(state.visibleEdits.copy(exposure = value))) }
             assertEquals("Value $value must not move or resize the ruler", ruler, bounds("adjustment-slider"))
             assertEquals("Value $value must keep the readout slot stable", number, bounds("adjustment-value-${R.string.exposure}"))
         }
@@ -153,14 +161,14 @@ class EditorCompactLayoutTest {
         val before = bounds("adjustment-slider")
         ruler.performTouchInput { down(center); moveBy(Offset(32f, 0f)) }
         compose.waitForIdle()
-        compose.runOnIdle { assertEquals(.2f, state.edits.exposure, .0001f) }
+        compose.runOnIdle { assertEquals(.2f, state.visibleEdits.exposure, .0001f) }
         assertEquals(before, bounds("adjustment-slider"))
         ruler.performTouchInput { moveBy(Offset(32f, 0f)) }
         compose.waitForIdle()
-        compose.runOnIdle { assertEquals(.4f, state.edits.exposure, .0001f) }
+        compose.runOnIdle { assertEquals(.4f, state.visibleEdits.exposure, .0001f) }
         assertEquals(before, bounds("adjustment-slider"))
         ruler.performTouchInput { up() }
-        compose.runOnIdle { assertEquals(.4f, state.edits.exposure, .0001f) }
+        compose.runOnIdle { assertEquals(.4f, state.visibleEdits.exposure, .0001f) }
     }
 
     private fun verifyRulerWidth(width: Int, height: Int) {
@@ -175,7 +183,7 @@ class EditorCompactLayoutTest {
         compose.onNodeWithTag("adjustment-slider").performTouchInput {
             down(center); moveBy(Offset(-64f, 0f)); up()
         }
-        compose.runOnIdle { assertNotEquals(0f, state.edits.exposure) }
+        compose.runOnIdle { assertNotEquals(0f, state.visibleEdits.exposure) }
         assertEquals("Adjusting a value does not move the panel", dock, bounds("adjustment-dock"))
     }
 
@@ -185,7 +193,9 @@ class EditorCompactLayoutTest {
         val photo = bounds("editor-canvas")
         assertTrue(photo.right <= dock.left)
         assertEquals(photo.height, dock.height, 1f)
+        compose.openWorkbenchMore()
         compose.onNodeWithTag("adjustment-fine").assertIsDisplayed()
+        compose.dismissWorkbenchMenu()
         capture("wide-side-panel")
     }
 }

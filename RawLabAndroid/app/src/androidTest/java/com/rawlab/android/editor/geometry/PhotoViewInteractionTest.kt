@@ -27,6 +27,10 @@ import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.testing.LanguageTestRule
+import com.rawlab.android.testing.openWorkbenchTool
+import com.rawlab.android.testing.openWorkbenchMore
+import com.rawlab.android.testing.toggleWorkbenchFine
+import com.rawlab.android.testing.dismissWorkbenchMenu
 import com.rawlab.android.testing.setChineseContent
 import org.junit.Assert.*
 import org.junit.Rule
@@ -47,11 +51,11 @@ class PhotoViewInteractionTest {
 
     @Test fun singleTapAndBackRestoreTheSameToolAndFineState() {
         editor()
-        compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-color"))
-        compose.onNodeWithTag("editor-group-color").performClick()
-        compose.onNodeWithTag("editor-tools").performScrollToNode(hasTestTag("editor-tool-14"))
-        compose.onNodeWithTag("editor-tool-14").performClick()
-        compose.onNodeWithTag("adjustment-fine").performClick().assertIsOn()
+        compose.openWorkbenchTool(14)
+        compose.toggleWorkbenchFine()
+        compose.openWorkbenchMore()
+        compose.onNodeWithTag("adjustment-fine").assertIsSelected()
+        compose.dismissWorkbenchMenu()
         val lastAxis = compose.onNodeWithTag("adjustment-value-${R.string.hsl_lightness}").performScrollTo()
         val scrollPosition = lastAxis.fetchSemanticsNode().boundsInRoot
         val canvas = compose.onNodeWithTag("photo-canvas")
@@ -62,8 +66,11 @@ class PhotoViewInteractionTest {
         compose.onNodeWithTag("adjustment-dock").assertDoesNotExist()
         androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
         compose.waitUntil(3_000) { compose.onAllNodesWithTag("adjustment-dock").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("adjustment-fine").assertIsOn()
-        compose.onNodeWithTag("editor-tool-14").assertIsSelected()
+        compose.openWorkbenchMore()
+        compose.onNodeWithTag("adjustment-fine").assertIsSelected()
+        compose.dismissWorkbenchMenu()
+        compose.onNodeWithTag("adjustment-row-${R.string.hsl_hue}").assertExists()
+        compose.onNodeWithTag("editor-groups").assertDoesNotExist()
         assertEquals("Pure preview keeps parameter scroll", scrollPosition, lastAxis.fetchSemanticsNode().boundsInRoot)
         canvas.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, originalView))
     }
@@ -84,7 +91,7 @@ class PhotoViewInteractionTest {
         compose.onNodeWithTag("comparison-mode").performClick()
         compose.onNodeWithText("分割线").performClick()
         compose.onNodeWithTag("comparison-wipe").assertIsDisplayed()
-        compose.onNodeWithContentDescription("关闭对比").performClick()
+        compose.onNodeWithContentDescription("开启对比").performClick()
         compose.onNodeWithTag("comparison-wipe").assertDoesNotExist()
         compose.onNodeWithContentDescription("开启对比").performClick()
         compose.onNodeWithTag("comparison-wipe").assertIsDisplayed()

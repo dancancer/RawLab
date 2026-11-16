@@ -14,6 +14,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -35,6 +36,9 @@ import com.rawlab.android.editor.ui.EditorScreen
 import com.rawlab.android.editor.ui.EditorToolStrip
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.testing.openWorkbenchTool
+import com.rawlab.android.testing.workbenchTool
+import com.rawlab.android.testing.openEditorMenu
 import com.rawlab.android.testing.LanguageTestRule
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onNodeWithTag
@@ -57,17 +61,16 @@ class EditorToolsTest {
                 onAlbum = {}, onFile = {}, onEdit = { next, dragging -> edits = next; if (!dragging) commits++ }, onRetry = {},
                 onExport = {}, onMessageDismiss = {}, onLicenses = {}, onGpuChange = {})
         } }
-        compose.onNodeWithTag("editor-group-effects").performClick()
-        compose.onNodeWithTag("editor-tool-22").assertIsSelected()
+        compose.openWorkbenchTool(22)
         compose.onNodeWithTag("adjustment-value-${com.rawlab.android.R.string.clarity}").assertTextContains("37.25").performClick()
         compose.onNodeWithTag("adjustment-input-apply").performClick()
         compose.runOnIdle { assertEquals(37.251234f, edits.clarity); assertEquals(0, commits) }
-        compose.onNodeWithTag("editor-tool-23").performClick()
+        compose.openWorkbenchTool(23)
         compose.onNodeWithTag("adjustment-value-${com.rawlab.android.R.string.dehaze}").assertTextContains("-42.5").performClick()
         compose.onNodeWithTag("adjustment-input").performTextReplacement("-25")
         compose.onNodeWithTag("adjustment-input-apply").performClick()
         compose.runOnIdle { assertEquals(-25f, edits.dehaze); assertEquals(37.251234f, edits.clarity); assertEquals(1, commits) }
-        compose.onNodeWithTag("editor-tool-22").performClick()
+        compose.openWorkbenchTool(22)
         compose.onNodeWithTag("adjustment-value-${com.rawlab.android.R.string.clarity}").performClick()
         compose.onNodeWithTag("adjustment-input").performTextReplacement("-30")
         compose.onNodeWithTag("adjustment-input-apply").performClick()
@@ -98,29 +101,39 @@ class EditorToolsTest {
     @Test fun whiteBalancePanelKeepsBothAxesAndAsShotResetsTheGroup() {
         val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
         var edits by mutableStateOf(EditSettings(customWb = true, temperature = 7200f, tint = 15f))
+        var draft by mutableStateOf<AdjustmentDraft?>(null)
         compose.setContent {
             RawLabTheme {
                 EditorScreen(
                     state = EditorState(
                         photo = ImportedPhoto(Uri.parse("content://rawlab.test/wb-panel"), "fixture", File("fixture")),
                         edits = edits,
+                        draft = draft,
                         preview = PreviewPair(bitmap, bitmap, temperature = 6500f, tint = 0f),
                         exact = true,
                     ),
                     onAlbum = {}, onFile = {}, onEdit = { next, _ -> edits = next }, onRetry = {},
                     onExport = {}, onMessageDismiss = {}, onLicenses = {}, onGpuChange = {},
+                    onBeginDraft = { draft = AdjustmentDraft.begin(it, edits) },
+                    onApplyDraft = { complete -> edits = draft!!.project(edits); draft = null; complete(true) },
                     onPrepareReset = { scope -> EditorResetTransaction.prepare(scope, EditorResetSession(
-                        com.rawlab.android.settings.PhotoIdentity("fixture"), "fixture", 1, 1, edits, null, 0,
+                        com.rawlab.android.settings.PhotoIdentity("fixture"), "fixture", 1, 1, edits, draft, 0,
                         EditorResetContext(com.rawlab.android.format.PhotoInputKind.RAW, EditSettings(), AsShotWhiteBalance(6500f, 0f)))) },
-                    onCommitReset = { prepared -> edits = prepared.result.candidate; true },
+                    onCommitReset = { prepared -> draft = prepared.draftCandidate; true },
                 )
             }
         }
-        compose.onNodeWithContentDescription("全部工具").performClick()
-        compose.onNodeWithContentDescription("白平衡").performClick()
+        compose.openWorkbenchTool(8)
         compose.onNodeWithText("色温").assertIsDisplayed()
         compose.onNodeWithText("色调").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("拍摄时设置").performClick()
+        compose.onNodeWithContentDescription("重置调整").performClick()
+        compose.onNodeWithTag("editor-reset-tool").performClick()
+        compose.runOnIdle {
+            assertEquals(6500f, draft!!.value.temperature)
+            assertEquals(0f, draft!!.value.tint)
+            assertEquals(7200f, edits.temperature)
+        }
+        compose.onNodeWithTag("draft.apply").performClick()
         compose.runOnIdle {
             assertFalse(edits.customWb)
             assertEquals(6500f, edits.temperature)
@@ -136,9 +149,9 @@ class EditorToolsTest {
                     onExport = {}, onMessageDismiss = {}, onLicenses = {}, onGpuChange = {}, updateVersion = "9.9.9")
             }
         }
-        compose.onNodeWithContentDescription("更多").performClick()
+        compose.openEditorMenu()
         val lefts = listOf("从文件导入", "批量导出", "设置", "开源许可", "关于 RawLab", "查看更新").associateWith { label ->
-            compose.onAllNodesWithText(label, useUnmergedTree = true).fetchSemanticsNodes().last().boundsInRoot.left
+            compose.onAllNodesWithText(label, useUnmergedTree = true).onLast().performScrollTo().assertIsDisplayed().fetchSemanticsNode().boundsInRoot.left
         }
         assertEquals(lefts.toString(), 1, lefts.values.distinct().size)
     }
@@ -160,7 +173,7 @@ class EditorToolsTest {
                 )
             }
         }
-        compose.onNodeWithTag("editor-group-light").performClick()
+        compose.openWorkbenchTool(2)
         compose.onNodeWithContentDescription("重置调整").assertIsDisplayed()
         compose.onAllNodesWithContentDescription("重置此项").assertCountEquals(0)
         val actions = compose.onNodeWithTag("adjustment-slider").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.CustomActions]
@@ -175,7 +188,10 @@ class EditorToolsTest {
             edits = EditSettings(exposure = .5f),
             preview = PreviewPair(bitmap, bitmap, temperature = 6500f, tint = 0f),
         )
-        compose.setContent { RawLabTheme { Surface { EditorToolStrip(state, selected = 2, tools = EditorAdjustmentRules.tools(EditorAdjustmentGroup.LIGHT)) {} } } }
+        compose.setContent { RawLabTheme {
+            EditorScreen(state, {}, {}, { _, _ -> }, {}, {}, {}, {}, {})
+        } }
+        compose.workbenchTool(2)
         fun bounds(tag: String) = compose.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val ring = bounds("editor-tool-ring-2")
         val marker = bounds("editor-tool-marker-2")

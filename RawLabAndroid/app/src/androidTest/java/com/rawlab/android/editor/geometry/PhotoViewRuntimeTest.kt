@@ -15,6 +15,7 @@ import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.LensSettings
 import com.rawlab.android.settings.ProcessingIdentity
 import com.rawlab.android.testing.ForegroundTestRule
+import com.rawlab.android.testing.toggleWorkbenchHistogram
 import com.rawlab.android.testing.LanguageTestRule
 import com.rawlab.android.testing.assertHistogramMatches
 import org.junit.Assert.*
@@ -181,7 +182,7 @@ class PhotoViewRuntimeTest {
             compose.onNodeWithContentDescription("开启对比").performClick(); ready()
             compose.onNodeWithTag("comparison-before").assertIsDisplayed()
             val label = if (raster) "raster" else if (processing == ProcessingIdentity.LEGACY) "legacy" else "current"
-            compose.onNodeWithTag("rgb-histogram-toggle").performClick()
+            compose.toggleWorkbenchHistogram()
             compose.onNodeWithTag("rgb-histogram-source").assertTextEquals("调整后")
             compose.onNodeWithTag("rgb-histogram-plot").assertIsDisplayed()
             capture("$label-rgb.png")
@@ -191,8 +192,8 @@ class PhotoViewRuntimeTest {
             compose.onNodeWithText("分割线").performClick(); ready()
             compose.onNodeWithTag("comparison-wipe").performTouchInput { swipe(center, androidx.compose.ui.geometry.Offset(width * .7f, centerY), 400) }
             capture("$label-wipe.png")
-            compose.onNodeWithContentDescription("关闭对比").performClick(); ready()
-            compose.onNodeWithTag("rgb-histogram-toggle").performClick()
+            compose.onNodeWithContentDescription("开启对比").performClick(); ready()
+            compose.toggleWorkbenchHistogram()
             compose.onNodeWithTag("photo-canvas").performCustomAccessibilityActionWithLabel("查看调整前")
             compose.onNodeWithTag("rgb-histogram-source").assertTextEquals("调整前")
             compose.onNodeWithTag("photo-canvas").performCustomAccessibilityActionWithLabel("返回调整后")

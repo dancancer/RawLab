@@ -11,6 +11,7 @@ import com.rawlab.android.MainActivity
 import com.rawlab.android.R
 import com.rawlab.android.settings.ProcessingIdentity
 import com.rawlab.android.testing.ForegroundTestRule
+import com.rawlab.android.testing.openWorkbenchTool
 import com.rawlab.android.testing.LanguageTestRule
 import org.junit.Assert.*
 import org.junit.Rule
@@ -32,7 +33,7 @@ class ParameterInputRuntimeTest {
         instrumentation.context.assets.open("sample.RAW").use { input -> source.outputStream().use { input.copyTo(it) } }
         val model = compose.activity.model
         fun ready() {
-            compose.waitUntil(180_000) { model.state.value.let { (it.canExport && !it.previewResizePending) || it.error != null } }
+            compose.waitUntil(180_000) { model.state.value.let { ((it.canExport || it.draftReady) && !it.previewResizePending) || it.error != null } }
             assertNull(model.state.value.error)
         }
         try {
@@ -40,10 +41,7 @@ class ParameterInputRuntimeTest {
             ready()
             compose.runOnUiThread { model.edit(model.state.value.edits.let { it.copy(processing = processing, hsl = it.hsl.withValue(0, 0, .5f)) }) }
             ready()
-            compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-color"))
-            compose.onNodeWithTag("editor-group-color").performClick()
-            compose.onNodeWithTag("editor-tools").performScrollToNode(hasTestTag("editor-tool-14"))
-            compose.onNodeWithTag("editor-tool-14").performClick()
+            compose.openWorkbenchTool(14)
             ready()
             val snapshot = model.state.value
             val revision = EditorViewModel::class.java.getDeclaredField("currentRevision").apply { isAccessible = true }
@@ -74,9 +72,15 @@ class ParameterInputRuntimeTest {
                 compose.onNodeWithTag("adjustment-input").performTextReplacement("1")
                 compose.onNodeWithTag("adjustment-input-apply").performClick()
                 ready()
-                assertEquals(snapshot.edits.copy(hsl = snapshot.edits.hsl.withValue(0, 0, 1f)), model.state.value.edits)
-                assertEquals(processing, model.state.value.edits.processing)
+                val expected = snapshot.edits.copy(hsl = snapshot.edits.hsl.withValue(0, 0, 1f))
+                assertEquals(expected, model.state.value.visibleEdits)
+                assertEquals("Editing a draft preserves committed axes until Apply", snapshot.edits, model.state.value.edits)
                 assertEquals("One new scalar input submits one render revision", beforeRequest + 1, revision.getLong(model))
+                compose.onNodeWithTag("draft.apply").assertIsEnabled().performClick()
+                ready()
+                assertEquals(expected, model.state.value.edits)
+                assertEquals(processing, model.state.value.edits.processing)
+                assertEquals("Applying the draft submits its committed preview", beforeRequest + 2, revision.getLong(model))
             } finally { observer.stopWatching() }
         } finally { source.delete() }
     }

@@ -127,7 +127,7 @@ class ParameterInputControlsTest {
             val marker = compose.onNodeWithTag("hsl-marker-$index", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
             val density = compose.density.density
             assertEquals(48f * density, item.height, 1f)
-            assertEquals(24f * density, color.height, 1f)
+            assertEquals(19f * density, color.height, 1f)
             assertTrue("Changed marker has an independent slot below the color/selection ring", marker.top >= color.bottom + 2f * density && marker.bottom <= item.bottom)
         }
     }
