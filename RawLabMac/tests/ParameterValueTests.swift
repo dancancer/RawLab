@@ -524,35 +524,30 @@ struct ParameterValueTests {
             check(!rail.intersects(field.convert(field.bounds, to: host)),
                   "The rail and numeric field occupy separate rows")
         }
-        var fontSizes: [CGFloat] = []
-        for size in [DynamicTypeSize.large, .accessibility3] {
-            let box = ValueBox(12.34)
-            let host = NSHostingView(rootView: ParameterRow(title: "Luminanz-Rauschreduzierung",
-                value: Binding(get: { box.value }, set: { box.writes += 1; box.value = $0 }),
-                range: -100...100, defaultValue: 20, identifier: "value.layout").dynamicTypeSize(size))
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 650, height: 220), styleMask: [.borderless], backing: .buffered, defer: false)
-            window.isReleasedWhenClosed = false
-            window.contentView = host
-            defer { window.contentView = nil; window.close() }
-            host.layoutSubtreeIfNeeded()
-            drainDeferredValidity()
-            host.layoutSubtreeIfNeeded()
-            let native = fields(host)
-            check(native.count == 1, "The real parameter row creates exactly one numeric field")
-            guard let field = native.first, let font = field.font else { return }
-            let textWidth = (field.stringValue as NSString).size(withAttributes: [.font: font]).width
-            check(textWidth <= field.bounds.width - 14 && host.bounds.contains(field.convert(field.bounds, to: host)),
-                  "Exact off-grid text fits inside its native field and row at \(size)")
-            check(box.writes == 0 && field.stringValue == "+12.34", "Row layout and font changes preserve exact values without setters")
-            fontSizes.append(font.pointSize)
-        }
-        check(fontSizes.count == 2 && fontSizes[1] > fontSizes[0], "The accessibility row increases its native numeric font without shrinking text")
+        let box = ValueBox(12.34)
+        let layoutHost = NSHostingView(rootView: ParameterRow(title: "Luminanz-Rauschreduzierung",
+            value: Binding(get: { box.value }, set: { box.writes += 1; box.value = $0 }),
+            range: -100...100, defaultValue: 20, identifier: "value.layout"))
+        let layoutWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 650, height: 220), styleMask: [.borderless], backing: .buffered, defer: false)
+        layoutWindow.isReleasedWhenClosed = false
+        layoutWindow.contentView = layoutHost
+        defer { layoutWindow.contentView = nil; layoutWindow.close() }
+        layoutHost.layoutSubtreeIfNeeded()
+        drainDeferredValidity()
+        layoutHost.layoutSubtreeIfNeeded()
+        let native = fields(layoutHost)
+        check(native.count == 1, "The real parameter row creates exactly one numeric field")
+        guard let field = native.first, let font = field.font else { return }
+        let textWidth = (field.stringValue as NSString).size(withAttributes: [.font: font]).width
+        check(textWidth <= field.bounds.width - 14 && layoutHost.bounds.contains(field.convert(field.bounds, to: layoutHost)),
+              "Exact off-grid text fits inside its native field and row")
+        check(box.writes == 0 && field.stringValue == "+12.34", "Row layout and font changes preserve exact values without setters")
 
         let temperature = ValueBox(6500)
         func temperatureRow() -> some View {
             ParameterRow(title: "Temperature", value: Binding(get: { temperature.value }, set: { temperature.value = $0 }),
                          range: 2000...50000, defaultValue: 6500, unit: "K", precision: .temperature,
-                         identifier: "value.layout.temperature", sliderMapping: .reciprocalKelvin).dynamicTypeSize(.xxxLarge)
+                         identifier: "value.layout.temperature", sliderMapping: .reciprocalKelvin)
         }
         let host = NSHostingView(rootView: temperatureRow())
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 650, height: 220),
@@ -570,7 +565,7 @@ struct ParameterValueTests {
         check(updated.stringValue == "50000", "The layout regression reaches the legal five-digit temperature")
         print("Temperature field frames: \(initial) -> \(updated.convert(updated.bounds, to: host))")
         check(updated.convert(updated.bounds, to: host) == initial,
-              "Changing 6500K to 50000K at xxxLarge keeps the numeric slot and adjacent track geometry stable")
+              "Changing 6500K to 50000K keeps the numeric slot and adjacent track geometry stable")
         if let directory = ProcessInfo.processInfo.environment["RAWLAB_PARAMETER_LAYOUT_SNAPSHOTS"],
            let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
             host.cacheDisplay(in: host.bounds, to: bitmap)

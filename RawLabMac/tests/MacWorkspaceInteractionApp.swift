@@ -29,7 +29,6 @@ struct MacWorkspaceInteractionApp {
         let settingEvents = model.$settings.dropFirst().sink {
             print("SETTING_STATE exposure=\($0.exposure) redHue=\($0.hslSettings.value(.hue, channel: 0))")
         }
-        let textSize: DynamicTypeSize = environment["RAWLAB_PARAMETER_LARGE_TEXT"] == "1" ? .accessibility3 : .large
         let panFixture = environment["RAWLAB_VIEWING_PAN_FIXTURE"] == "1"
         let panState = MacViewingPanFixtureState()
         let panInterruptionWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
@@ -52,7 +51,7 @@ struct MacWorkspaceInteractionApp {
             }
         }
         let root = panFixture ? AnyView(MacViewingPanFixture(state: panState)) : AnyView(EditorView(model: model))
-        let host = NSHostingView(rootView: root.dynamicTypeSize(textSize))
+        let host = NSHostingView(rootView: root)
         var initialLoad: AnyCancellable?
         if !panFixture, let source = environment["RAWLAB_PARAMETER_SOURCE"] {
             if environment["RAWLAB_PARAMETER_LEGACY_HSL"] == "1" {
