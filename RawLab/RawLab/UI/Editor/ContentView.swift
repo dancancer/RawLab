@@ -37,6 +37,7 @@ struct ContentView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityReduceMotion) var reduceMotion
+    @Environment(\.displayScale) var displayScale
     @Environment(\.scenePhase) var scenePhase
     @StateObject var viewModel = RawEditorViewModel()
     @StateObject var hdrDisplay=HDRDisplayState()
@@ -376,7 +377,7 @@ struct ContentView: View {
         content
         .onChange(of: editorDraftSnapshot) { old, draft in
             viewModel.hasAdjustmentDraft = draft.isActive
-            if old.projecting(on: settings) != draft.projecting(on: settings), draft.isActive {
+            if draft.isActive, previewSettings(for: old) != previewSettings(for: draft) {
                 previewEditorDraft()
             }
         }

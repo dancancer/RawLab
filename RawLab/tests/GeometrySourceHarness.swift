@@ -141,6 +141,17 @@ extension ContentView {
             try geometryReviewImage(bURL, color: .systemBlue)
             let aID = PhotoIdentity(resourceIdentifier: "geometry-review-A")
             let bID = PhotoIdentity(resourceIdentifier: "geometry-review-B")
+            var transform = GeometrySettings()
+            transform.quarterTurns = 1
+            transform.flipHorizontal = true
+            transform.straightenDegrees = 30
+            transform.perspectiveHorizontal = 0.5
+            transform.perspectiveVertical = -0.25
+            let projection = GeometryDraftProjection(source: CGSize(width: 8, height: 6), settings: transform)
+            let projectedCorner = projection?.project(CGPoint(x: -4, y: -3))
+            probe.check("projection.MatchesNativeCanvasAndDirection", projection?.safeSize == CGSize(width: 3, height: 4) &&
+                        abs((projectedCorner?.x ?? 0) + 0.562895) < 0.00001 &&
+                        abs((projectedCorner?.y ?? 0) + 4.672096) < 0.00001)
             var bSettings = RawSettings.default
             bSettings.exposure = 0.25
             bSettings.geometry.cropX = 0.25
@@ -185,13 +196,27 @@ extension ContentView {
                     committed.geometry = edited
                 }
                 if action == "cancel" {
-                    // 返工 R3 锚点1：旋转脏草稿取消——草稿期底图与比对基准都是未裁切旋转态。
+                    let frame = viewModel.acceptedPreviewFrameID
+                    let previews = probe.previewRequests.count
                     var turned = geometryDraftBinding.wrappedValue
                     turned.quarterTurns = 1
+                    turned.flipHorizontal = true
                     geometryDraftBinding.wrappedValue = turned
                     try await geometryReviewSettled()
-                    probe.check("cancel.DraftRotationStaysUncropped", viewModel.basePreviewGeometry.cropWidth == 1 &&
-                                viewModel.basePreviewGeometry.cropHeight == 1)
+                    setSliderEditing(true)
+                    for angle in [8.0, 15.1, -20.0] {
+                        turned.straightenDegrees = angle
+                        turned.perspectiveHorizontal = angle / 50
+                        turned.perspectiveVertical = -angle / 100
+                        geometryDraftBinding.wrappedValue = turned
+                        try await Task.sleep(for: .milliseconds(150))
+                    }
+                    setSliderEditing(false)
+                    try await geometryReviewSettled()
+                    probe.check("cancel.GeometryDoesNotRerenderSource", viewModel.acceptedPreviewFrameID == frame &&
+                                probe.previewRequests.count == previews && viewModel.previewImage?.pngData() == actual)
+                    probe.check("cancel.DraftKeepsGeometryWhilePreviewIsUntransformed",
+                                geometryDraftBinding.wrappedValue == turned && viewModel.basePreviewGeometry.isIdentity)
                     cancelEditorDraft()
                 }
                 else if action == "apply" {

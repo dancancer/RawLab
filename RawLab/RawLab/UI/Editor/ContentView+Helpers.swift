@@ -318,7 +318,9 @@ extension ContentView {
         updateRulerFocus(editing: editing, wasEditing: wasEditing)
         if !editing {
             workspaceDraft?.finishInteraction()
-            viewModel.updatePreview(settings: draftPreviewSettings, includeHistogram: true, quality: .final)
+            if !geometrySelected {
+                viewModel.updatePreview(settings: draftPreviewSettings, includeHistogram: true, quality: .final)
+            }
         }
     }
 

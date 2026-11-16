@@ -260,7 +260,8 @@ internal class EditorRenderer(
         val film = native.preview(work.photo.file, lut, work.edits, edge, work.interactive, work.photo.inputKind, generation)
         val dimensions = comparisonDimensions(film.geometryWidth, film.geometryHeight)
         return PreviewPair(neutral.bitmap, film.bitmap(), film.temperature, film.tint, film.lens,
-            dimensions.first, dimensions.second, originalAspect, neutral.histogram, film.histogram)
+            dimensions.first, dimensions.second, originalAspect, neutral.histogram, film.histogram,
+            renderedGeometry = work.edits.geometry, nativeWidth = film.geometryWidth, nativeHeight = film.geometryHeight)
     }
 
     private fun hdrSourceInfo(photo: ImportedPhoto, edits: EditSettings): HDRSourceInfo {
@@ -337,7 +338,8 @@ internal class EditorRenderer(
                 reference.bitmap, sdrBitmap(resultFrame), Float.NaN, Float.NaN,
                 null, dimensions.first, dimensions.second,
                 (if (info.orientation >= 5) info.height.toFloat() / info.width else info.width.toFloat() / info.height), null, null,
-                HDRPreview(reference.frame, resultFrame))
+                HDRPreview(reference.frame, resultFrame), renderedGeometry = geometry,
+                nativeWidth = resultFrame.nativeWidth, nativeHeight = resultFrame.nativeHeight)
         }
     }
 

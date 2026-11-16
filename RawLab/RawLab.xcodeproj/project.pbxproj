@@ -153,6 +153,7 @@
 		D8A16E4C92B04F35817CC001 /* EditorWorkspaceResetControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8A16E4C92B04F35817CC002 /* EditorWorkspaceResetControl.swift */; };
 		6BD98E141C695971B42798C6 /* EditorDrafts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F40F7AA6DE556A4A238F267 /* EditorDrafts.swift */; };
 		C3A803626CF750D1B9AFFCDA /* EditorCropOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 442ED03D4FD75EBCA83B9DFE /* EditorCropOverlay.swift */; };
+		A7894D11E1234B7FBE0F0CC1 /* GeometryDraftCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7894D11E1234B7FBE0F0CC2 /* GeometryDraftCanvas.swift */; };
 		39E615609C9D5AC1B16063C7 /* EditorV4UITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC236099D6C65BBF9F3BBE58 /* EditorV4UITests.swift */; };
 		D00900000000000000000001 /* CropLockUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00900000000000000000011 /* CropLockUITests.swift */; };
 		A0D17B5E0000000000000003 /* ReleaseDetailUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0D17B5E0000000000000004 /* ReleaseDetailUITests.swift */; };
@@ -519,6 +520,7 @@
 		D8A16E4C92B04F35817CC002 /* EditorWorkspaceResetControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorWorkspaceResetControl.swift"; sourceTree = SOURCE_ROOT; };
 		2F40F7AA6DE556A4A238F267 /* EditorDrafts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorDrafts.swift"; sourceTree = SOURCE_ROOT; };
 		442ED03D4FD75EBCA83B9DFE /* EditorCropOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorCropOverlay.swift"; sourceTree = SOURCE_ROOT; };
+		A7894D11E1234B7FBE0F0CC2 /* GeometryDraftCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/GeometryDraftCanvas.swift"; sourceTree = SOURCE_ROOT; };
 		BC236099D6C65BBF9F3BBE58 = {
 			path = "RawLabUITests/EditorV4UITests/EditorV4UITests.swift";
 			isa = PBXFileReference;
@@ -839,6 +841,7 @@
 				D8A16E4C92B04F35817CC002,
 				2F40F7AA6DE556A4A238F267,
 				442ED03D4FD75EBCA83B9DFE,
+				A7894D11E1234B7FBE0F0CC2,
 				BFDCFB6A137F996DD48D076B,
 				0E2D0EEF39E86136EF2B8850,
 				4929D5873644FF7ABA4DE756,
@@ -1387,6 +1390,7 @@
 				D8A16E4C92B04F35817CC001,
 				6BD98E141C695971B42798C6,
 				C3A803626CF750D1B9AFFCDA,
+				A7894D11E1234B7FBE0F0CC1,
 				AB1700000000000000000001,
 				D00300000000000000000001,
 				D14000000000000000000001,

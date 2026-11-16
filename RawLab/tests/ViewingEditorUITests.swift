@@ -900,22 +900,28 @@ final class ViewingEditorUITests: XCTestCase {
         wait(app) { ($0["relativeScale"] as? Double ?? 1) > 1.5 }
         capture(app, "zoom-before-geometry")
         selectGeometry(app)
-        let rect = (receipt(app)["nativePhotoRects"] as! [[Double]])[0]
+        let rect = app.images["editor.photo"].frame
         let handle = app.descendants(matching: .any).matching(identifier: "geometry.crop.topLeft").firstMatch
         capture(app, "zoom-to-geometry-alignment")
-        XCTAssertEqual(handle.frame.midX, rect[0], accuracy: 0.5)
-        XCTAssertEqual(handle.frame.midY, rect[1], accuracy: 0.5)
+        XCTAssertEqual(handle.frame.midX, rect.minX, accuracy: 0.5)
+        XCTAssertEqual(handle.frame.midY, rect.minY, accuracy: 0.5)
     }
     func testActualCropHandlesAlignWithNativePhotoMargin() {
         let app = launch()
+        func toggleMargin() {
+            app.buttons["editor.privacy"].tap()
+            app.buttons["Zoom and display"].tap()
+            app.buttons["Space around photo"].tap()
+        }
+        toggleMargin()
+        wait(app) { $0["margin"] as? Bool == true }
         selectGeometry(app)
-        let data = receipt(app)
-        let rect = (data["nativePhotoRects"] as! [[Double]])[0]
+        let rect = app.images["editor.photo"].frame
         let handle = app.descendants(matching: .any).matching(identifier: "geometry.crop.topLeft").firstMatch
         XCTAssertTrue(handle.waitForExistence(timeout: 5))
         capture(app, "margin-on-geometry-alignment")
-        XCTAssertEqual(handle.frame.midX, rect[0], accuracy: 0.5, "crop handle must align with actual UIKit photo, including view margin")
-        XCTAssertEqual(handle.frame.midY, rect[1], accuracy: 0.5)
+        XCTAssertEqual(handle.frame.midX, rect.minX, accuracy: 0.5, "crop handle must align with the displayed photo, including view margin")
+        XCTAssertEqual(handle.frame.midY, rect.minY, accuracy: 0.5)
         let bottomRight = app.descendants(matching: .any).matching(identifier: "geometry.crop.bottomRight").firstMatch
         let corner = bottomRight.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         corner.press(forDuration: 0.05, thenDragTo: corner.withOffset(CGVector(dx: -16, dy: -12)))
@@ -925,15 +931,13 @@ final class ViewingEditorUITests: XCTestCase {
         capture(app, "margin-on-applied")
         XCTAssertEqual(receipt(app)["referenceSize"] as? [Double], receipt(app)["previewSize"] as? [Double], "Apply must publish a neutral reference with the newly committed composition")
         let committed = receipt(app)["settings"] as! String
-        app.buttons["editor.privacy"].tap()
-        app.buttons["Zoom and display"].tap()
-        app.buttons["Space around photo"].tap()
+        toggleMargin()
         wait(app) { $0["margin"] as? Bool == false }
         selectGeometry(app)
-        let noMargin = (receipt(app)["nativePhotoRects"] as! [[Double]])[0]
+        let noMargin = app.images["editor.photo"].frame
         capture(app, "margin-off-geometry-alignment")
-        XCTAssertEqual(handle.frame.midX, noMargin[0], accuracy: 0.5)
-        XCTAssertEqual(handle.frame.midY, noMargin[1], accuracy: 0.5)
+        XCTAssertEqual(handle.frame.midX, noMargin.minX, accuracy: 0.5)
+        XCTAssertEqual(handle.frame.midY, noMargin.minY, accuracy: 0.5)
         let movedCorner = bottomRight.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         movedCorner.press(forDuration: 0.05, thenDragTo: movedCorner.withOffset(CGVector(dx: -12, dy: -8)))
         wait(app) { $0["ready"] as? Bool == true && $0["draftChanged"] as? Bool == true }

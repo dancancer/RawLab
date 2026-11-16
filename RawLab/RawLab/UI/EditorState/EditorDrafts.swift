@@ -60,14 +60,23 @@ extension ContentView {
     }
 
     var draftPreviewSettings: RawSettings {
-        var result = effectivePreviewSettings
-        if geometrySelected {
-            result.geometrySettings.cropX = 0
-            result.geometrySettings.cropY = 0
-            result.geometrySettings.cropWidth = 1
-            result.geometrySettings.cropHeight = 1
-        }
+        previewSettings(for: editorDraftSnapshot)
+    }
+
+    func previewSettings(for draft: EditorDraftSnapshot) -> RawSettings {
+        var result = draft.projecting(on: settings)
+        if geometrySelected { result.setGeometrySettings(GeometrySettings()) }
         return result
+    }
+
+    func geometryProjection(for image: UIImage) -> GeometryDraftProjection? {
+        var base = effectivePreviewSettings
+        let geometry = base.geometrySettings
+        guard geometrySelected || !geometry.isIdentity else { return nil }
+        base.setGeometrySettings(GeometrySettings())
+        // 只投影已经交付的无几何底图；应用或取消后用它承接到精确帧到达。
+        guard viewModel.acceptedPreviewRequest?.settings == base else { return nil }
+        return GeometryDraftProjection(source: viewModel.nativeImageSize ?? image.size, settings: geometry)
     }
 
     var geometryDraftBinding: Binding<GeometrySettings> {
@@ -188,7 +197,7 @@ extension ContentView {
             viewModel.committedPreviewSettings = settings
             viewModel.updatePreview(settings: settings, includeHistogram: true, quality: .final)
         } else if geometrySelected || lensSelected {
-            // 几何/镜头草稿以未裁切底图（draftPreviewSettings）为工作区底图；
+            // 几何草稿在无几何的底图上即时显示，镜头草稿仍由原生渲染；
             // 新会话即使投影与 committed 相等（fresh draft）也必须换掉已裁切的交付画面。
             previewEditorDraft()
         }
@@ -344,8 +353,7 @@ extension ContentView {
     func previewEditorDraft() {
         guard !editorBusy, viewModel.hasImage else { return }
         showingBefore = false
-        // 草稿工作区的画布与比对基准必须同态：把比对参考重锚到草稿预览设置，
-        // 交付时 applyComparison 随草稿裁切推进 basePreviewGeometry，几何裁切框在画布与比对态都对齐。
+        // 草稿预览与比对基准使用同一构图。几何编辑的画布变换由显示层负责。
         viewModel.committedPreviewSettings = draftPreviewSettings
         if isAdjustingSlider {
             viewModel.schedulePreviewUpdate(settings: draftPreviewSettings, delay: 0.08,

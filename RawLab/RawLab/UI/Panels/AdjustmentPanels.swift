@@ -20,7 +20,7 @@ extension ContentView {
                                     lockedRatio: $geometryLockedRatio, aspectSwapped: $geometryAspectSwapped,
                                     showsGrid: $geometryGrid, perspective: geometryPerspective, rotation: geometryRotation)
             .padding(.horizontal, 16)
-            .disabled(!viewModel.hasImage || editingLocked)
+            .disabled(geometryEditingCanvasSize == .zero || editingLocked)
         } else if lensSelected {
             IOSLensControls(settings: lensDraftBinding, info: viewModel.lensInfo)
             .padding(.horizontal, 16)
@@ -83,13 +83,8 @@ extension ContentView {
         }
     }
 
-    var geometrySourceCanvasSize: CGSize {
-        guard let buffer = viewModel.draftBuffer else { return .zero }
-        return buffer.nativeSize ?? CGSize(width: buffer.width, height: buffer.height)
-    }
-
     var geometryEditingCanvasSize: CGSize {
-        viewModel.nativeImageSize ?? currentPreviewImage?.size ?? geometrySourceCanvasSize
+        currentPreviewImage.flatMap { geometryProjection(for: $0)?.safeSize } ?? .zero
     }
 
     var geometryDraftAspectRatio: Double? {

@@ -30,6 +30,7 @@ import com.rawlab.android.batch.BatchSourceSnapshot
 import com.rawlab.android.editor.render.EditorRenderer
 import com.rawlab.android.editor.render.LookResult
 import com.rawlab.android.editor.render.LookWork
+import com.rawlab.android.editor.render.PreviewPair
 import com.rawlab.android.looks.LUTCompatibility
 import com.rawlab.android.editor.render.SerialWorkQueue
 import com.rawlab.android.editor.render.RenderQueue
@@ -41,10 +42,12 @@ import com.rawlab.android.editor.render.discardPendingWork
 import com.rawlab.android.editor.render.ExportDestinationCleanup
 import com.rawlab.android.editor.render.isExportCancellation
 import com.rawlab.android.editor.render.canFinishPreviewBefore
+import com.rawlab.android.editor.render.uncroppedGeometrySize
 import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
 import com.rawlab.android.geometry.GeometryRatio
+import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.looks.DcpFailureReason
 import com.rawlab.android.looks.DcpImportChoices
@@ -61,7 +64,6 @@ import com.rawlab.android.settings.withEditingHsl
 import com.rawlab.android.editor.storage.EditorEditStore
 import com.rawlab.android.editor.storage.EditSaveResult
 import com.rawlab.android.settings.PhotoIdentity
-import com.rawlab.android.geometry.uncropped
 import com.rawlab.android.looks.MasterRecipe
 import com.rawlab.android.looks.localizedName
 import com.rawlab.android.adjustments.*
@@ -481,7 +483,7 @@ class EditorViewModel @JvmOverloads constructor(
                     if (request.draft) {
                         val current = mutable.value
                         val draft = current.draft ?: return@fold
-                        val refitted = draft.acceptGeometryCanvas(value.pair.comparisonWidth / value.pair.comparisonHeight)
+                        val refitted = fitGeometryDraft(draft, value.pair)
                         if (refitted != draft) draftRevision += 1
                         mutable.value = EditorStateReducer.renderFinished(current)
                             .copy(draft = refitted, preview = value.pair, exact = !request.interactive, error = null)
@@ -988,7 +990,7 @@ class EditorViewModel @JvmOverloads constructor(
         draftSaveBaseline = current.saveState to current.saveError
         mutable.value = current.copy(draft = AdjustmentDraft.begin(group, current.edits, pair.originalAspect,
             pair.comparisonWidth / pair.comparisonHeight), previewResizePending = false, error = null)
-        if (group == AdjustmentGroup.GEOMETRY && current.edits.geometry != current.edits.geometry.uncropped()) renderDraft(false)
+        if (group == AdjustmentGroup.GEOMETRY && !current.edits.geometry.isIdentity) renderDraft(false)
     }
 
     fun changeDraft(edits: EditSettings, interactive: Boolean = false) {
@@ -1000,21 +1002,34 @@ class EditorViewModel @JvmOverloads constructor(
         }
         val next = previous.update(edits, interactive)
         if (next == previous && (interactive || current.exact)) return
-        draftRevision += 1
-        mutable.value = current.copy(draft = next)
-        // Crop-only edits are an overlay on the full transformed preview, not a RAW render.
-        if (previous.group == AdjustmentGroup.GEOMETRY &&
-            previous.value.geometry.uncropped() == next.value.geometry.uncropped() && (interactive || current.exact)) return
-        renderDraft(interactive)
+        updateDraft(current, next, interactive)
     }
+
+    private fun updateDraft(current: EditorState, draft: AdjustmentDraft, interactive: Boolean = false) {
+        // 手势结束再按精确画布调整锁定比例，免得每个中间角度累积裁切。
+        val next = current.copy(draft = if (interactive) draft else fitGeometryDraft(draft, current.preview))
+        draftRevision += 1
+        mutable.value = next
+        if (draft.group != AdjustmentGroup.GEOMETRY || current.draftRenderEdits() != next.draftRenderEdits())
+            renderDraft(interactive)
+    }
+
+    private fun fitGeometryDraft(draft: AdjustmentDraft, pair: PreviewPair?): AdjustmentDraft {
+        if (draft.group != AdjustmentGroup.GEOMETRY || pair == null || !pair.renderedGeometry.isIdentity) return draft
+        val (width, height) = pair.uncroppedGeometrySize(draft.value.geometry)
+        return draft.acceptGeometryCanvas(width.toFloat() / height)
+    }
+
+    private fun EditorState.draftRenderEdits(): EditSettings =
+        if (draft?.group == AdjustmentGroup.GEOMETRY)
+            visibleEdits.copy(geometry = GeometrySettings()).synchronizeHDR()
+        else visibleEdits
 
     private fun renderDraft(interactive: Boolean) {
         val current = mutable.value
-        val draft = current.draft ?: return
         val photo = current.photo ?: return
-        val edits = draft.project(current.edits).let {
-            if (draft.group == AdjustmentGroup.GEOMETRY) it.copy(geometry = it.geometry.uncropped()) else it
-        }
+        if (current.draft == null) return
+        val edits = current.draftRenderEdits()
         mutable.value = current.copy(rendering = true, exact = false, error = null)
         currentRevision = submitRender(Work.Preview(photo, edits, interactive, gpuMode(),
             edge = interactivePreviewSize.edge(1600, interactive, android.os.SystemClock.uptimeMillis()), draft = true))
@@ -1029,9 +1044,7 @@ class EditorViewModel @JvmOverloads constructor(
         if (!current.controlsEnabled) return
         val next = change(draft)
         if (next == draft) return
-        draftRevision += 1
-        mutable.value = current.copy(draft = next)
-        renderDraft(false)
+        updateDraft(current, next)
     }
 
     fun chooseGeometryRatio(ratio: GeometryRatio, portrait: Boolean) {
@@ -1099,9 +1112,7 @@ class EditorViewModel @JvmOverloads constructor(
         val committed = current.copy(draft = null, saveState = saved?.first ?: current.saveState,
             saveError = if (saved != null) saved.second else current.saveError)
         mutable.value = committed
-        val shown = draft.project(current.edits).let {
-            if (draft.group == AdjustmentGroup.GEOMETRY) it.copy(geometry = it.geometry.uncropped()) else it
-        }
+        val shown = current.draftRenderEdits()
         // 草稿的裁切框可能只改覆盖层；只有实际预览不同或尚未收敛时才恢复提交预览。
         if (shown == current.edits && current.exact && !current.rendering && current.error == null) return
         renderCommittedForNavigation()
@@ -1177,9 +1188,7 @@ class EditorViewModel @JvmOverloads constructor(
             current.previewResizePending || current.error != null || !prepared.matches(session)) return false
         prepared.draftCandidate?.let { next ->
             if (next == current.draft) return false
-            draftRevision += 1
-            mutable.value = current.copy(draft = next)
-            renderDraft(false)
+            updateDraft(current, next)
             return true
         }
         val previousRequest = currentRevision

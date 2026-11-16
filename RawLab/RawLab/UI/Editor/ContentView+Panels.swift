@@ -124,35 +124,15 @@ extension ContentView {
             ZStack {
                 Color(white: 0.12)
                 if let image = currentPreviewImage {
-                    ZoomablePhoto(image: image, referenceImage: viewModel.basePreviewImage,
-                                  label: L10n.text("调整后"), viewing: $photoViewing, viewport: $photoViewport,
-                                  isDraft: geometrySelected,
-                                  interactionEnabled: !editorBusy && !draftExitPresented && !resetConfirmationPresented && !showingDocumentImporter,
-                                  overlayAvoidanceRect: photoComparisonControlBounds,
-                                  onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) },
-                                  hslTarget: hslTargetActive ? hslTargetInput : nil, hslTargetPoint: hslTargetPoint,
-                                  nativePixelSize: viewModel.viewportNativeSize, previewLongEdgeLimit: viewModel.viewportPreviewLimit,
-                                  hdr:viewModel.hdrPresentation,referenceHDR:viewModel.hdrReference,hdrDisplay:hdrDisplay)
+                    editorPhotoCanvas(image, size: geometry.size,
+                                      onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) })
                         .id(viewModel.sourceRevision)
                         .frame(width: geometry.size.width, height: geometry.size.height)
-                        .allowsHitTesting(!geometrySelected)
                         .overlay(alignment: .bottom) {
                             if !adjustmentsExpanded && hslTargetActive {
                                 HSLTargetCanvasControls(axis: hslTargetAxis) {
                                     cancelHSLTarget(); hslTargetEnabled = false
                                 }.padding(8)
-                            }
-                        }
-                        .overlay {
-                            if geometrySelected && !geometryPerspective {
-                                EditorCropOverlay(settings: geometryDraftBinding, imageSize: image.size,
-                                                  aspectRatio: geometryDraftAspectRatio,
-                                                  isEnabled: !editorBusy && viewModel.hasImage,
-                                                  sourceRevision: viewModel.sourceRevision,
-                                                  onEditingChanged: setSliderEditing, showsGrid: geometryGrid)
-                                    .padding(PhotoZoomGeometry.marginInset(viewport: geometry.size,
-                                        margin: photoViewing.photoMargin ? PhotoZoomGeometry.defaultMargin : 0))
-                                    .id(viewModel.sourceRevision)
                             }
                         }
                 } else {
@@ -245,6 +225,43 @@ extension ContentView {
             .coordinateSpace(name: "editor.photo.canvas")
             .onPreferenceChange(PhotoComparisonControlBoundsKey.self) { photoComparisonControlBounds = $0 }
             .clipped()
+        }
+    }
+
+    @ViewBuilder private func editorPhotoCanvas(_ image: UIImage, size: CGSize,
+                                                onPreviewSizeChange: @escaping (Int) -> Void) -> some View {
+        if let projection = geometryProjection(for: image) {
+            let margin = photoViewing.photoMargin ? PhotoZoomGeometry.defaultMargin : 0
+            let inset = PhotoZoomGeometry.marginInset(viewport: size, margin: margin)
+            let layout = projection.layout(in: size, margin: inset, editing: geometrySelected)
+            let photo = GeometryDraftImage(image: image, hdr: viewModel.hdrPresentation, hdrDisplay: hdrDisplay, layout: layout)
+            if geometrySelected {
+                let sizing = PhotoZoomGeometry(pixels: projection.source, viewport: size, displayScale: displayScale, margin: margin)
+                let edge = sizing.previewLongEdge(scale: sizing.fitScale, limit: viewModel.viewportPreviewLimit)
+                ZStack {
+                    photo
+                    EditorCropOverlay(settings: geometryDraftBinding, imageSize: projection.safeSize,
+                                      aspectRatio: geometryDraftAspectRatio, isEnabled: !editorBusy,
+                                      sourceRevision: viewModel.sourceRevision, onEditingChanged: setSliderEditing,
+                                      showsGrid: geometryGrid, imageBounds: layout.safeBounds, imageOutline: layout.outline,
+                                      showsHandles: !geometryPerspective)
+                }
+                .clipped()
+                .onChange(of: edge, initial: true) { _, edge in onPreviewSizeChange(edge) }
+            } else {
+                photo.mask { Path(layout.cropBounds) }.clipped()
+            }
+        } else {
+            ZoomablePhoto(image: image, referenceImage: viewModel.basePreviewImage,
+                          label: L10n.text("调整后"), viewing: $photoViewing, viewport: $photoViewport,
+                          isDraft: geometrySelected,
+                          interactionEnabled: !editorBusy && !draftExitPresented && !resetConfirmationPresented && !showingDocumentImporter,
+                          overlayAvoidanceRect: photoComparisonControlBounds,
+                          onPreviewSizeChange: geometrySelected ? nil : onPreviewSizeChange,
+                          hslTarget: hslTargetActive ? hslTargetInput : nil, hslTargetPoint: hslTargetPoint,
+                          nativePixelSize: viewModel.viewportNativeSize, previewLongEdgeLimit: viewModel.viewportPreviewLimit,
+                          hdr: viewModel.hdrPresentation, referenceHDR: viewModel.hdrReference, hdrDisplay: hdrDisplay)
+                .allowsHitTesting(!geometrySelected)
         }
     }
 
