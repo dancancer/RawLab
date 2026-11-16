@@ -2,6 +2,7 @@ package com.rawlab.android.testing
 
 import android.app.LocaleManager
 import android.content.res.Configuration
+import android.content.res.Resources
 import android.os.Build
 import android.os.LocaleList
 import androidx.test.platform.app.InstrumentationRegistry
@@ -26,7 +27,8 @@ class LanguageTestRule(private val language: String = "zh-Hans") : TestWatcher()
         configuration = Configuration(context.resources.configuration)
         AppStrings.setPreference(context, language)
         val chinese = Configuration(context.resources.configuration)
-        chinese.setLocales(LocaleList(Locale.forLanguageTag(language)))
+        chinese.setLocales(if (language == "system") Resources.getSystem().configuration.locales
+            else LocaleList(Locale.forLanguageTag(language)))
         @Suppress("DEPRECATION")
         context.resources.updateConfiguration(chinese, context.resources.displayMetrics)
     }
