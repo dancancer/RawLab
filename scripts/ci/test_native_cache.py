@@ -196,5 +196,35 @@ class NativeCacheTests(unittest.TestCase):
                 self.assertEqual({str(path.relative_to(root)) for path in selected}, set(included))
 
 
+class DependencyArchiveKeyTests(unittest.TestCase):
+    """归档缓存键只随下载归档 (URL, SHA256) pin 集合变化，与 toolchain 键解耦。"""
+
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location("native_cache_archives", MODULE_PATH)
+        cls.cache = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.cache)
+
+    def test_key_covers_every_configured_archive_pin(self):
+        pairs = self.cache.dependency_archives(ROOT)
+        # 4 个 cmake pin（dng/tiff/opencv/opencv_contrib）+ 5 个 hdr manifest pin；
+        # 新增或漏抓都会改变数量，强制有意识地更新归档缓存合同。
+        self.assertEqual(len(pairs), 9)
+        urls = {url for url, _ in pairs}
+        for fragment in ("dng_sdk_1_7_1_2724_20260908.zip", "tiff-4.7.1.tar.gz",
+                         "opencv/opencv/archive/refs/tags/4.12.0.tar.gz",
+                         "opencv/opencv_contrib/archive/refs/tags/4.12.0.tar.gz",
+                         "libultrahdr", "libjpeg-turbo"):
+            self.assertTrue(any(fragment in url for url in urls), f"archive pin not hashed: {fragment}")
+        self.assertTrue(all(len(sha) == 64 and all(c in "0123456789abcdef" for c in sha) for _, sha in pairs))
+
+    def test_key_is_stable_and_follows_the_pin_set(self):
+        pairs = self.cache.dependency_archives(ROOT)
+        key = self.cache.archives_key("windows", "x86_64", pairs)
+        self.assertEqual(key, self.cache.archives_key("windows", "x86_64", self.cache.dependency_archives(ROOT)))
+        self.assertNotEqual(key, self.cache.archives_key("windows", "x86_64", [(url + "x", sha) for url, sha in pairs]))
+        self.assertNotEqual(key, self.cache.archives_key("windows", "x86_64", pairs[:-1]))
+
+
 if __name__ == "__main__":
     unittest.main()

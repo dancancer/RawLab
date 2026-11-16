@@ -7,7 +7,7 @@ FetchContent_GetProperties(rawlab_dng_source)
 if(NOT rawlab_dng_source_POPULATED AND NOT FETCHCONTENT_SOURCE_DIR_RAWLAB_DNG_SOURCE
         AND NOT FETCHCONTENT_FULLY_DISCONNECTED)
     include("${CMAKE_CURRENT_LIST_DIR}/download-archive.cmake")
-    set(dng_archive "${FETCHCONTENT_BASE_DIR}/rawlab_dng_source-cache/dng_sdk_1_7_1_2724_20260908.zip")
+    rawlab_archive_path(rawlab_dng_source dng_sdk_1_7_1_2724_20260908.zip dng_archive)
     rawlab_download_archive("${dng_url}" "${dng_sha256}" "${dng_archive}")
     set(dng_url "${dng_archive}")
 endif()

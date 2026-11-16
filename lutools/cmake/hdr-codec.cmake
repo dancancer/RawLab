@@ -16,7 +16,16 @@ function(rawlab_add_hdr_codec)
     if(NOT FETCHCONTENT_SOURCE_DIR_RAWLAB_ULTRAHDR OR
             (NOT TARGET rawlab_jpeg AND NOT FETCHCONTENT_SOURCE_DIR_RAWLAB_JPEG_SOURCE))
         find_package(Python3 COMPONENTS Interpreter REQUIRED)
-        execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/hdr_sources.py"
+        if(NOT DEFINED RAWLAB_HDR_SOURCE_CACHE)
+            # 与 RAWLAB_LENS_SOURCE_CACHE 同式:CI 设跨 run 稳定目录后,hdr 归档与解包源码
+            # 不再随 workspace 冷启动重下;prepare_source 命中照样逐文件对照 SHA256 pin。
+            set(RAWLAB_HDR_SOURCE_CACHE "$ENV{RAWLAB_HDR_SOURCE_CACHE}" CACHE PATH "Persistent hdr codec source cache root")
+        endif()
+        set(hdr_sources_args)
+        if(RAWLAB_HDR_SOURCE_CACHE)
+            list(APPEND hdr_sources_args --cache-root "${RAWLAB_HDR_SOURCE_CACHE}")
+        endif()
+        execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/hdr_sources.py" ${hdr_sources_args}
             RESULT_VARIABLE source_result OUTPUT_VARIABLE source_directories ERROR_VARIABLE source_error
             OUTPUT_STRIP_TRAILING_WHITESPACE)
         if(NOT source_result EQUAL 0)

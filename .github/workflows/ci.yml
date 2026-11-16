@@ -328,6 +328,8 @@ jobs:
             "DOTNET_INSTALL_DIR=$ciRoot\dotnet"
             "RAWLAB_LENS_SOURCE_CACHE=$ciRoot\cache\lens-sources"
             "RAWLAB_AI_SHARED_CACHE=$ciRoot\cache"
+            "RAWLAB_SOURCE_ARCHIVE_CACHE=$ciRoot\cache\rawlab-deps"
+            "RAWLAB_HDR_SOURCE_CACHE=$ciRoot\cache"
             "JOBS=$jobs"
             "CMAKE_BUILD_PARALLEL_LEVEL=$jobs"
             "CL_MPCount=$compilerProcesses"
@@ -396,6 +398,27 @@ jobs:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
           lookup-only: ${{ needs.changes.outputs.cold == 'true' }}
+      # 归档缓存与 toolchain 精确键解耦：键只随归档 URL/SHA256 pin 变化，宽松 restore-keys
+      # 让 pin 漂移也先取回全部旧归档；命中归档在 configure 期仍过 SHA256（损坏自动重下），
+      # 缓存服务不可用（continue-on-error）则回退为原下载路径。DNG SDK 出网抖动不再冷罚每次 run。
+      - name: Identify dependency archive cache
+        id: dep-archives-key
+        if: needs.changes.outputs.build == 'true'
+        shell: pwsh
+        run: |
+          python scripts/ci/native_cache.py archives --platform windows --arch x86_64
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot identify dependency archive cache.' }
+      - name: Restore dependency archives
+        id: dep-archives-cache
+        if: needs.changes.outputs.build == 'true'
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.dep-archives-key.outputs.key }}
+          restore-keys: |
+            rawlab-dep-archives-v1-windows-x86_64-
+            rawlab-dep-archives-v1-
+          path: ${{ steps.dep-archives-key.outputs.path }}
       - name: Run requested D3D11 software adapter regressions
         if: github.event_name == 'workflow_dispatch' && inputs.platform == 'windows' && inputs.checks == 'models'
         shell: pwsh
@@ -482,6 +505,12 @@ jobs:
         with:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
+      - name: Save dependency archives
+        if: success() && steps.dep-archives-cache.outcome == 'success' && steps.dep-archives-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.dep-archives-key.outputs.key }}
+          path: ${{ steps.dep-archives-key.outputs.path }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:

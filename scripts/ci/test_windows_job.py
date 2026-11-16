@@ -38,6 +38,8 @@ class WindowsJobEnvironmentTests(unittest.TestCase):
                 "EXISTING": "kept", "DOTNET_INSTALL_DIR": directory + "\\rawlab-ci\\dotnet",
                 "RAWLAB_LENS_SOURCE_CACHE": directory + "\\rawlab-ci\\cache\\lens-sources",
                 "RAWLAB_AI_SHARED_CACHE": directory + "\\rawlab-ci\\cache",
+                "RAWLAB_SOURCE_ARCHIVE_CACHE": directory + "\\rawlab-ci\\cache\\rawlab-deps",
+                "RAWLAB_HDR_SOURCE_CACHE": directory + "\\rawlab-ci\\cache",
                 "JOBS": "4", "CMAKE_BUILD_PARALLEL_LEVEL": "4", "CL_MPCount": "4",
             })
 
@@ -49,6 +51,8 @@ class WindowsJobEnvironmentTests(unittest.TestCase):
                 "EXISTING": "kept", "DOTNET_INSTALL_DIR": "E:\\RawLabCI\\dotnet",
                 "RAWLAB_LENS_SOURCE_CACHE": "E:\\RawLabCI\\cache\\lens-sources",
                 "RAWLAB_AI_SHARED_CACHE": "E:\\RawLabCI\\cache",
+                "RAWLAB_SOURCE_ARCHIVE_CACHE": "E:\\RawLabCI\\cache\\rawlab-deps",
+                "RAWLAB_HDR_SOURCE_CACHE": "E:\\RawLabCI\\cache",
                 "JOBS": "16", "CMAKE_BUILD_PARALLEL_LEVEL": "16", "CL_MPCount": "24",
             })
 

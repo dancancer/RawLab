@@ -1,4 +1,17 @@
 # 只有完整下载且校验通过的归档才进入可复用路径。
+if(NOT DEFINED RAWLAB_SOURCE_ARCHIVE_CACHE)
+    # 设置了 RAWLAB_SOURCE_ARCHIVE_CACHE（如 Windows CI 的 E:\RawLabCI\cache\rawlab-deps）时,
+    # 下载归档落在跨 run、跨 toolchain 缓存键稳定的目录:缓存只提供"已有归档",命中仍走下方
+    # SHA256 校验,损坏或不符照旧删除重下;未设置则归档维持既有 FETCHCONTENT_BASE_DIR 内位置。
+    set(RAWLAB_SOURCE_ARCHIVE_CACHE "$ENV{RAWLAB_SOURCE_ARCHIVE_CACHE}" CACHE PATH "Persistent directory of downloaded dependency archives")
+endif()
+function(rawlab_archive_path name file out)
+    if(RAWLAB_SOURCE_ARCHIVE_CACHE)
+        set(${out} "${RAWLAB_SOURCE_ARCHIVE_CACHE}/${file}" PARENT_SCOPE)
+    else()
+        set(${out} "${FETCHCONTENT_BASE_DIR}/${name}-cache/${file}" PARENT_SCOPE)
+    endif()
+endfunction()
 function(rawlab_download_archive url sha256 archive)
     get_filename_component(directory "${archive}" DIRECTORY)
     file(MAKE_DIRECTORY "${directory}")

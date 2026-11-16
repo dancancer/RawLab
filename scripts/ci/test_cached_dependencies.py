@@ -1,4 +1,5 @@
 """Exercise exact-hit dependency reuse without downloading third-party code."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -133,6 +134,65 @@ class CachedMacTests(unittest.TestCase):
         self.assertEqual(result.returncode, 31, result.stdout + result.stderr)
         self.assertTrue(os.path.isabs(expected))
         self.assertIn(f"-DPython3_EXECUTABLE={expected}", result.stdout)
+
+
+@unittest.skipUnless(shutil.which("cmake"), "CMake is required")
+class CachedSourceArchiveTests(unittest.TestCase):
+    """稳定归档根跨 run 复用；命中归档仍过 SHA256；损坏自动重下；未设环境变量时位置不变。"""
+
+    def configure(self, root, build, cache=None):
+        environment = dict(os.environ)
+        if cache is None:
+            environment.pop("RAWLAB_SOURCE_ARCHIVE_CACHE", None)
+        else:
+            environment["RAWLAB_SOURCE_ARCHIVE_CACHE"] = str(cache)
+        return subprocess.run(["cmake", "-S", str(root), "-B", str(root / build)],
+                              env=environment, text=True, capture_output=True)
+
+    def setUp(self):
+        self._directory = tempfile.TemporaryDirectory()
+        self.root = Path(self._directory.name)
+        shutil.copy2(ROOT / "lutools/cmake/download-archive.cmake", self.root / "download-archive.cmake")
+        self.remote = self.root / "remote"
+        self.remote.mkdir()
+        self.archive = self.remote / "demo-1.0.tar.gz"
+        self.archive.write_text("payload v1")
+        digest = hashlib.sha256(b"payload v1").hexdigest()
+        url = "file:///" + self.archive.resolve().as_posix().lstrip("/")
+        self.root.joinpath("CMakeLists.txt").write_text(
+            "cmake_minimum_required(VERSION 3.22)\nproject(ArchiveTest NONE)\n"
+            'set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/_deps")\n'
+            'include("${CMAKE_CURRENT_SOURCE_DIR}/download-archive.cmake")\n'
+            "rawlab_archive_path(rawlab_demo demo-1.0.tar.gz demo_archive)\n"
+            f'rawlab_download_archive("{url}" {digest} "${{demo_archive}}")\n'
+            'file(WRITE "${CMAKE_BINARY_DIR}/archive-path.txt" "${demo_archive}")\n')
+        self.addCleanup(self._directory.cleanup)
+
+    def test_default_archive_location_stays_under_fetchcontent_base(self):
+        result = self.configure(self.root, "build-default")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        recorded = (self.root / "build-default" / "archive-path.txt").read_text()
+        self.assertEqual(recorded, str(self.root / "build-default" / "_deps" / "rawlab_demo-cache" / "demo-1.0.tar.gz"))
+
+    def test_stable_root_serves_verified_archives_without_network(self):
+        cache = self.root / "cache"
+        result = self.configure(self.root, "build-first", cache=cache)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        cached = cache / "demo-1.0.tar.gz"
+        self.assertTrue(cached.is_file())
+        self.assertEqual((self.root / "build-first" / "archive-path.txt").read_text(), str(cached))
+        self.archive.unlink()  # 断网：URL 不再可达，唯一可能来自缓存复用
+        result = self.configure(self.root, "build-second", cache=cache)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_corrupted_cached_archive_is_not_trusted(self):
+        cache = self.root / "cache"
+        self.assertEqual(self.configure(self.root, "build-first", cache=cache).returncode, 0)
+        (cache / "demo-1.0.tar.gz").write_text("corrupt")
+        result = self.configure(self.root, "build-second", cache=cache)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # 撤掉"既有归档仍验 SHA"则损坏副本被盲信：内容会保持 corrupt 并通过 configure。
+        self.assertEqual((cache / "demo-1.0.tar.gz").read_text(), "payload v1")
 
 
 if __name__ == "__main__":
