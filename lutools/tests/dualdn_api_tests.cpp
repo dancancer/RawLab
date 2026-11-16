@@ -1,4 +1,5 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include "sony2fuji/processing_version.h"
 #include "sony2fuji/raw_processor.h"
 #include "ai/dualdn_cache.h"
 #include "ai/model_package.h"
@@ -162,7 +163,11 @@ int main(int argc, char** argv) {
             const auto package = loadModelPackage(argv[2]);
             const auto runtimeIdentity = package.digest + ":" + NetworkGraph::runtimeVersion(static_cast<Backend>(config.backend));
             const auto identity = sha256Bytes(runtimeIdentity.data(), runtimeIdentity.size());
-            const auto rawKey = rawCacheKey(argv[1], identity, static_cast<int>(config.backend));
+            // 手工缓存必须复刻会话的解码语义：默认 processing_version=Legacy（sony2fuji_c.cpp）
+            // 走 legacy Sony crop，raw key 契约包含该维度；漏掉它会算出另一张照片的 key，
+            // 渲染按契约拒绝越权缓存（AI_NOT_READY）而非消费 fixture。
+            const auto rawKey = rawCacheKey(argv[1], identity, static_cast<int>(config.backend),
+                sony2fuji::usesLegacySonyCrop(sony2fuji::ProcessingVersion::Legacy));
             DenoiseCache cache(argv[3]);
             const auto sceneKey = sceneRGBCacheKey(rawKey,options);
             std::vector<float> zero(source.pixels.size()*3,0);
