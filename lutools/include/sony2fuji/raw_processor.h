@@ -210,13 +210,20 @@ public:
         int quality = 95
     );
 
+    struct PngMetadata {
+        std::vector<uint8_t> exif;
+        std::string iccProfileName;
+        std::vector<uint8_t> iccProfile;
+    };
+
     /**
      * @brief 保存为 PNG
      * @note 取消语义同 saveImage：取消重抛 ProcessingCancelled，不退化成错误码。
      */
     static ErrorCode savePNG(
         const ImageData& image,
-        const std::string& filepath
+        const std::string& filepath,
+        const PngMetadata* metadata = nullptr
     );
 
 private:

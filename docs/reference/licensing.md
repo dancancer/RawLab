@@ -75,6 +75,7 @@ distributed component or runtime dependency.
 Sony ARW6 decoding is backported from pinned LibRaw source under its original
 LGPL/CDDL terms. Sigma X3F tools retain Roland Karlsson's BSD-style notice.
 JPEG-compressed DNG uses libjpeg-turbo 3.1.3 with its IJG/BSD/zlib notices.
+PNG export uses libspng 0.7.4 (`BSD-2-Clause AND libpng-2.0`), with its BSD-2-Clause and libpng-2.0 notices retained.
 Source revisions and format boundaries are recorded in
 [RAW format support](raw-format-support.md). Their notices accompany all native clients.
 
