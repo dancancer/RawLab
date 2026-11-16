@@ -46,7 +46,8 @@
 已完成且 source/configuration 未受影响的原实验保留其范围，不重复全量执行。
 纯文档同步检查内容、链接和 diff；不为 docs-only 提交重跑 native 构建或设备实验。
 每个新增结果在所属 PR 描述中记录 source SHA、配置、实际执行及限制，区分本地验证与 hosted CI。
-UI 改动先完成本地受影响的界面回归，通过后再提交；CI 不重复运行 UI 测试。
+UI 改动先完成本地受影响的界面回归，通过后再提交；普通 Windows PR/push 的 CI 仅例外执行
+`batch-selection` 子集，其余 UI 测试仍在本地运行。
 普通 PR 和 development push 默认只跑静态契约及受影响平台的快速模型。
 平台完整构建、UI 测试目标编译、原生核心和 CLI 验证拆为按需选择的检查组；
 发版、热修复等重要门禁跑全量非 UI CI，并完成适用的本地 UI/设备验收。

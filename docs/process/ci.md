@@ -28,7 +28,7 @@ The supported camera/settings boundary remains the [X3F contract](../../lutools/
 
 | Event or request | Automatic coverage |
 | --- | --- |
-| Ordinary PR / `development` push | Static contracts plus fast models for affected platforms; no product/native dependency build |
+| Ordinary PR / `development` push | Static contracts plus fast models for affected platforms; affected Windows also runs the isolated `batch-selection` WPF suite with its native prerequisites |
 | Draft PR | Contracts only; platform checks and aggregate result stay skipped |
 | External fork PR | Contracts plus hosted Android and Windows checks when selected; the self-hosted macOS and iOS jobs stay skipped (see [External fork pull requests](#external-fork-pull-requests)) |
 | Release or hotfix PR | Every platform, complete non-UI coverage and cold native dependencies |
@@ -138,7 +138,7 @@ protocols, resource validity, and build/test failure propagation.
 | Select affected platforms | Ubuntu 24.04 | Selects platforms, groups, matrix and cold/warm mode |
 | Contracts and CI policy | Ubuntu 24.04 | Static source/contracts, localization, LUT and MCP protocol checks |
 | macOS | Dedicated arm64 Mac; hosted Intel for heavier groups | Models run once on arm64. `build` runs once per architecture. `native/full` use arm64 all plus Intel core/agent/render shards |
-| Windows | Hosted Server 2022 for models; dedicated Windows 11 for explicit builds and cold gates | Seven managed model projects and runner checks / self-contained package, CTest, DCP and RAW/raster CLI parity |
+| Windows | Hosted Server 2022 for models and automatic batch-selection; dedicated Windows 11 for explicit builds and cold gates | Managed model projects and runner checks; separate automatic WPF batch-selection job / self-contained package, CTest, DCP and RAW/raster CLI parity |
 | Android | Hosted Ubuntu 24.04 / JDK 17 (dedicated guest paused) | JVM unit tests / lint, app and instrumentation APK builds, both native ABIs and alignment/cache checks |
 | iOS | Apple Silicon / Xcode | Standalone settings/viewing/persistence models / all framework slices, unsigned simulator app and UI-test compilation, simulator look-import integration |
 | CI result | Ubuntu 24.04 | Automatic gate: every selected job succeeds and every unselected job is skipped |
@@ -151,8 +151,9 @@ package fixture and native update UI remain local checks; they do not replace si
 seed-to-release installation and recovery acceptance.
 
 **CI result** must succeed on the current PR head/test merge for its automatic
-scope. An ordinary model-only result is not evidence of a product build or native
-regression run. Release/hotfix acceptance requires the full result. A missing,
+scope, including the isolated Windows WPF subset when selected. An ordinary result
+does not establish a complete product package build or the full native regression
+run. Release/hotfix acceptance requires the full result. A missing,
 cancelled or stale-head run is not a pass. After merge, inspect the exact
 `development` push SHA. Record event, source head, checked-out SHA and base; a PR
 can test GitHub's synthetic merge. A later source/base change invalidates the
@@ -580,6 +581,24 @@ and their requested non-UI suites. Manual runs have a separate result name. A PR
 Windows Server model result does not replace a requested Windows 11 build/native
 run or the automatic check on the resulting `development` push SHA.
 Neither route establishes physical GPU or interactive-desktop acceptance.
+
+For ordinary automatic PR/push events selecting Windows, **Windows batch-selection**
+runs independently on `windows-2022`, alongside the unchanged models job. It builds
+the current checkout's `sony2fuji` target and its `raw.dll` dependency, retaining the
+production rendering features while omitting native test executables and CLI builds.
+`run-v08.ps1 -Only 'batch-selection'` compiles the WPF app through its test project
+reference, compiles the existing localization UI prerequisite, resolves their real
+`TargetDir` values, and copies the native DLLs, MSVC CRT/OpenMP and complete pinned
+ExifTool 13.59 distribution there. The suite uses the tracked DJI DNG, CPU editing
+and ordinary Auto export with CPU fallback; it does not require AI models or a
+physical GPU. Only `BatchSelectionUiChecks` executes: the default/legacy suite and
+all other UI subsets stay outside this automatic job. Native products are rebuilt
+from source on every run; only checksum-verified source archives are shared by cache.
+The aggregate result requires this job to succeed when selected, so a skipped,
+failed or cancelled suite cannot produce a green automatic gate. Its v08 logs and
+summary are retained in `windows-batch-selection-results` for seven days. Manual
+groups and release/hotfix full gates retain their existing scope. This narrow WPF
+exception does not replace local UI, physical DPI, Narrator, Snap or hardware checks.
 
 The first Windows setup step uses `runner.environment` to select paths and limits.
 Hosted jobs keep .NET and lens source downloads under `RUNNER_TEMP\rawlab-ci`,

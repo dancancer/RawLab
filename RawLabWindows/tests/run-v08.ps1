@@ -13,7 +13,7 @@ if(!$DenoiseRaw){$DenoiseRaw=Join-Path $repo 'build/windows-fixtures/denoise.dng
 New-Item -ItemType Directory -Force $results | Out-Null
 $summary=@()
 $selected=@()
-$names=@('build','build-localization-ui','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','ai-panel','ai-window','editor-shell','ui-details','geometry','transform-ui','adjustment-history','hsl-target','adjustment-presets','editor-review','tool-groups','workspace-looks','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default')
+$names=@('build','build-localization-ui','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','ai-panel','ai-window','editor-shell','ui-details','geometry','transform-ui','adjustment-history','hsl-target','adjustment-presets','editor-review','tool-groups','workspace-looks','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default','batch-selection')
 [IO.File]::WriteAllText((Join-Path $results 'summary.json'),'[]')
 function Record-CheckResult([string]$Name,$Result) {
     $script:summary+=@{name=$Name;exitCode=$Result.exitCode;log=($Name+'.log');timedOut=$Result.timedOut;durationSeconds=$Result.durationSeconds;pid=$Result.pid}
@@ -85,6 +85,7 @@ foreach($name in @('geometry','transform-ui','adjustment-history','hsl-target','
 Invoke-Check 'agent-recipe' @($runner,'--agent-recipe',$repo,$RawPath,(Join-Path $NativeArtifacts 'sony2fuji.exe'))
 Invoke-Check 'raster' @($runner,'--raster',$repo,$RawPath,(Join-Path $NativeArtifacts 'sony2fuji.exe'))
 Invoke-Check 'comparison-default' @($runner,'--comparison-default',$repo,$RawPath)
+Invoke-Check 'batch-selection' @($runner,'--batch-selection',$repo,$RawPath)
 $missing=@($selected | Where-Object {$_ -notin $summary.name})
 if($missing.Count -gt 0){throw "Selected suites did not run: $($missing -join ', ')."}
 if(@($summary | Where-Object {$_.exitCode -ne 0}).Count -gt 0){throw 'Some checks failed; inspect summary.json and individual logs.'}
