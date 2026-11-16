@@ -124,7 +124,7 @@ extension EditorUITests {
         }
         let groupButton = app.buttons["editor.group." + group]
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in groupButton.exists && groupButton.isEnabled }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed, app.debugDescription)
         if !groupButton.isSelected || !app.buttons["tool." + name].exists {
             let groups = app.scrollViews["editor.groups"]
             for _ in 0..<12 {
@@ -207,45 +207,99 @@ extension EditorUITests {
             }
             // The system Photos grid can report no AX hit point for a visible image.
             photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-            waitForImportedPhoto(in: app)
+            waitForImportedPhoto(in: app, openingExposure: false)
             let importedName = importedPhotoFileName(in: app)
             if importedName.localizedCaseInsensitiveContains(seedPhotoBase + ".DNG") {
                 verifiedSeedPickerIndex = index
+                if app.buttons["editor.draft.cancel"].exists { cancelEditorTool(in: app) }
+                tapTool("exposure", in: app)
                 return
             }
             if attempt == 11 || attemptedIndices.count == candidates.count {
                 XCTFail("The seeded DNG was not selected; imported \(importedName)")
                 return
             }
+            if app.buttons["editor.draft.cancel"].exists {
+                // 非目标照片可能恢复已有草稿；重启保留它，再从空编辑器继续选样片。
+                app.terminate()
+                app.launch()
+                XCTAssertTrue(app.buttons["editor.import.empty"].waitForExistence(timeout: 10), app.debugDescription)
+            }
         }
     }
 
-    func waitForImportedPhoto(in app: XCUIApplication) {
+    func waitForImportedPhoto(in app: XCUIApplication, openingExposure: Bool = true) {
         expectation(for: NSPredicate { _, _ in
             let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
             let allow = springboard.buttons.matching(NSPredicate(format: "label == '允许完全访问' OR label == 'Allow Full Access'")).firstMatch
             if allow.exists { allow.tap() }
-            return app.buttons["editor.compare"].isEnabled || app.alerts.firstMatch.exists
+            return (!app.images.matching(identifier: "PXGGridLayout-Info").firstMatch.exists
+                && app.descendants(matching: .any)["editor.photo"].exists
+                && !app.descendants(matching: .any)["editor.preview.updating"].exists)
+                || app.alerts.firstMatch.exists
         }, evaluatedWith: app)
         waitForExpectations(timeout: 90)
-        if !app.buttons["editor.compare"].isEnabled && app.alerts.firstMatch.exists {
+        let photo = app.descendants(matching: .any)["editor.photo"]
+        if app.alerts.firstMatch.exists {
             let alert = app.alerts.firstMatch
             print("IMPORT_FAILURE_ALERT texts=\(alert.staticTexts.allElementsBoundByIndex.map(\.label)) buttons=\(alert.buttons.allElementsBoundByIndex.map(\.label))")
             capture("import-failure-alert")
         }
-        XCTAssertTrue(app.buttons["editor.compare"].isEnabled, app.alerts.debugDescription)
-        tapTool("exposure", in: app)
+        XCTAssertFalse(app.alerts.firstMatch.exists, "Photo import must finish without an error alert.\n" + app.alerts.debugDescription)
+        XCTAssertTrue(photo.exists, app.debugDescription)
+        if openingExposure { tapTool("exposure", in: app) }
+    }
+
+    func applyEditorTool(in app: XCUIApplication) {
+        let apply = app.buttons["editor.draft.apply"]
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            apply.exists && apply.isEnabled && apply.isHittable
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 90), .completed, app.debugDescription)
+        apply.tap()
+        let overview = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            let importer = app.buttons["editor.import"]
+            return importer.exists && importer.isEnabled && !apply.exists
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [overview], timeout: 90), .completed, app.debugDescription)
+        XCTAssertFalse(apply.exists)
+    }
+
+    func cancelEditorTool(in app: XCUIApplication) {
+        let cancel = app.buttons["editor.draft.cancel"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5), app.debugDescription)
+        cancel.tap()
+        let overview = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            let importer = app.buttons["editor.import"]
+            return importer.exists && importer.isEnabled && !cancel.exists
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [overview], timeout: 90), .completed, app.debugDescription)
+    }
+
+    func tapEditorMenuAction(_ identifier: String, in app: XCUIApplication) {
+        app.buttons["editor.privacy"].tap()
+        let action = app.buttons[identifier]
+        XCTAssertTrue(action.waitForExistence(timeout: 5), app.debugDescription)
+        action.tap()
     }
 
     func importedPhotoFileName(in app: XCUIApplication) -> String {
-        let info = app.buttons["editor.photoInfo"]
-        XCTAssertTrue(info.waitForExistence(timeout: 5), app.debugDescription)
-        info.tap()
+        let info = app.buttons.matching(NSPredicate(format: "identifier == %@ OR label IN %@",
+            "editor.photoInfo", ["照片信息", "Photo Information"])).firstMatch
+        func advancePhotoInfo() {
+            let toolMore = app.buttons["editor.tool.more"]
+            let more = toolMore.exists ? toolMore : app.buttons["editor.privacy"]
+            XCTAssertTrue(more.waitForExistence(timeout: 5), app.debugDescription)
+            more.tap()
+            XCTAssertTrue(info.waitForExistence(timeout: 5), app.debugDescription)
+            info.tap()
+        }
+        advancePhotoInfo()
         let overlay = app.descendants(matching: .any)["editor.photoInfo.overlay"]
         XCTAssertTrue(overlay.waitForExistence(timeout: 5), app.debugDescription)
         let fileName = overlay.label
-        info.tap()
-        info.tap()
+        advancePhotoInfo()
+        advancePhotoInfo()
         return fileName
     }
 

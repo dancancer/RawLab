@@ -144,7 +144,7 @@ extension EditorV4UITests {
         }
         XCTAssertTrue(app.descendants(matching: .any)["editor.photo"].exists, app.debugDescription)
         XCTAssertTrue(app.descendants(matching: .any)["editor.photo"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["tool.film"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 10), app.debugDescription)
         try selectTool("exposure", in: app)
     }
 
@@ -291,7 +291,7 @@ extension EditorV4UITests {
         XCTAssertTrue(apply.waitForExistence(timeout: 5))
         waitUntil(timeout: 60) { apply.isEnabled && apply.isHittable }
         apply.tap()
-        waitUntil { app.buttons["adjustment.value"].exists && !apply.exists }
+        waitUntil { app.scrollViews["editor.tools"].exists && !apply.exists }
     }
 
     func resetParameterDefault(_ identifier: String, in app: XCUIApplication) throws {

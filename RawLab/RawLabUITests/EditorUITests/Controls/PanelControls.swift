@@ -91,7 +91,11 @@ extension EditorUITests {
         XCTAssertFalse(app.buttons["editor.export"].isEnabled)
         capture("empty-portrait")
         XCTAssertFalse(app.buttons["tool.film"].exists)
+        app.buttons["editor.privacy"].tap()
+        XCTAssertTrue(app.buttons["editor.adjustments"].waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertFalse(app.buttons["editor.adjustments"].isEnabled)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.9)).tap()
+        XCTAssertTrue(app.buttons["editor.adjustments"].waitForNonExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(app.buttons["editor.import.empty"].isHittable)
         XCUIDevice.shared.orientation = .landscapeLeft
         capture("empty-landscape")

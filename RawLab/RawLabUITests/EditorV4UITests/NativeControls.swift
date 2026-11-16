@@ -877,55 +877,63 @@ extension EditorV4UITests {
 
     func testGeometryDraftCancelApplyAndToolExitPreserveCommittedValue() throws {
         let app = try launchImportedEditor()
+        app.buttons["editor.draft.cancel"].tap()
+        XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 5))
         try selectTool("geometry", in: app)
-        XCTAssertFalse(app.buttons["editor.export"].isEnabled, "Entering an unchanged geometry draft must block export")
-        if app.buttons["geometry.reset"].isEnabled {
-            resetIfEnabled("geometry.reset", in: app)
+        XCTAssertFalse(app.buttons["editor.export"].exists, "The tool workspace must not expose export while editing a draft")
+        let reset = app.buttons["editor.draft.reset"]
+        if reset.isEnabled {
+            XCTAssertTrue(reset.isHittable, "The workspace reset must be reachable beside the photo")
+            reset.tap()
             applyDraft(in: app)
             try selectTool("geometry", in: app)
         }
         let straighten = app.buttons["geometry.straighten.value"]
         XCTAssertEqual(try number(straighten), 0, accuracy: 0.0001)
-        XCTAssertFalse(app.buttons["editor.draft.apply"].isEnabled)
+        XCTAssertFalse(app.buttons["editor.draft.undo"].isEnabled, "A fresh tool draft has no local changes")
 
         try setValue("2.3", title: "Straighten", unit: "°", control: "geometry.straighten", in: app)
         waitUntil(timeout: 60) { app.buttons["editor.draft.apply"].isEnabled }
         app.buttons["editor.draft.cancel"].tap()
-        XCTAssertTrue(app.buttons["adjustment.value"].waitForExistence(timeout: 5), "Cancel returns to ordinary editing")
+        XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 5), "Cancel returns to the editor overview")
         XCTAssertFalse(app.buttons["editor.draft.apply"].exists)
         try selectTool("geometry", in: app)
         XCTAssertEqual(try number(straighten), 0, accuracy: 0.0001)
-        XCTAssertFalse(app.buttons["editor.draft.apply"].isEnabled)
+        XCTAssertFalse(app.buttons["editor.draft.undo"].isEnabled, "Cancelling must discard the previous local draft")
 
         try setValue("3.4", title: "Straighten", unit: "°", control: "geometry.straighten", in: app)
         applyDraft(in: app)
-        XCTAssertTrue(app.buttons["adjustment.value"].waitForExistence(timeout: 5), "Apply returns to ordinary editing")
+        XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 5), "Apply returns to the editor overview")
         XCTAssertFalse(app.buttons["editor.draft.apply"].exists)
         try selectTool("geometry", in: app)
-        XCTAssertFalse(app.buttons["editor.draft.apply"].isEnabled)
+        XCTAssertFalse(app.buttons["editor.draft.undo"].isEnabled, "Applying starts a fresh local draft on re-entry")
         XCTAssertEqual(try number(straighten), 3.4, accuracy: 0.0001)
 
         try setValue("51", title: "Horizontal Perspective", control: "geometry.perspectiveHorizontal", in: app)
         applyDraft(in: app)
-        XCTAssertTrue(app.buttons["adjustment.value"].waitForExistence(timeout: 5))
-        try selectTool("perspective", in: app)
+        XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 5))
+        try selectTool("geometry", in: app)
+        app.buttons["geometry.tab.2"].tap()
         XCTAssertEqual(try number(app.buttons["geometry.perspectiveHorizontal.value"]), 51, accuracy: 0.0001,
                        "Perspective must retain the legal integer value across draft application")
 
         try setValue("4.5", title: "Straighten", unit: "°", control: "geometry.straighten", in: app)
-        app.buttons["editor.group.light"].tap()
+        // 独立工具页隐藏主页分组；文档规定 iOS 返回手势处理未提交草稿。
+        let backStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.45))
+        let backEnd = app.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.45))
+        backStart.press(forDuration: 0.1, thenDragTo: backEnd)
         let discard = app.buttons["Discard Changes"]
-        XCTAssertTrue(discard.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(discard.waitForExistence(timeout: 5), "A back gesture from a modified tool must offer the draft-exit decision.\n" + app.debugDescription)
         let continueEditing = app.alerts.buttons["Keep Editing"]
         XCTAssertTrue(continueEditing.waitForExistence(timeout: 5), app.debugDescription)
         continueEditing.tap()
         XCTAssertEqual(try number(straighten), 4.5, accuracy: 0.0001, "Continuing editing keeps the active draft")
-        app.buttons["editor.group.light"].tap()
+        backStart.press(forDuration: 0.1, thenDragTo: backEnd)
         discard.tap()
-        XCTAssertTrue(app.buttons["adjustment.value"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 5))
         try selectTool("geometry", in: app)
         XCTAssertEqual(try number(straighten), 3.4, accuracy: 0.0001, "Discarding the draft restores the committed geometry")
-        try selectTool("perspective", in: app)
+        app.buttons["geometry.tab.2"].tap()
         XCTAssertEqual(try number(app.buttons["geometry.perspectiveHorizontal.value"]), 51, accuracy: 0.0001)
         capture("v4-geometry-committed", in: app)
     }
