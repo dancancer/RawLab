@@ -231,10 +231,10 @@ public partial class MainWindow : Window
             if (!startupReported) { startupReported = true; this.usageAnalytics.BeginSession(); }
             if (lookLibraryLoadError != null)
                 SetStatus(() => lookLibraryLoadError is LookLibraryException ? lookLibraryLoadError.Message : Loc.Text("本地记录损坏。"), true);
-            if(updates.Automatic!=this.desktopUpdates.Preferences.AutomaticCheck)
-                updates.Automatic=this.desktopUpdates.Preferences.AutomaticCheck;
-            if(this.desktopUpdates.UnavailableReason!=null)await updates.CheckAsync(false, updateCancellation.Token);
-            else await this.desktopUpdates.CheckAsync(false);
+            await this.desktopUpdates.PerformStartupCheckAsync(
+                automatic => { if(updates.Automatic!=automatic) updates.Automatic=automatic; },
+                token => updates.CheckAsync(false, token),
+                updateCancellation.Token);
         };
     }
 }

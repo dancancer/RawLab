@@ -53,7 +53,8 @@ import Combine
         backup = UpdateDataBackup(dataRoot: store.directory.deletingLastPathComponent(), updateRoot: store.directory)
         do { preferences = try store.load(automaticCheck: automaticCheck) }
         catch {
-            preferences = UpdatePreferences(); storageError = error.localizedDescription
+            var fallback = UpdatePreferences(); fallback.automaticCheck = automaticCheck
+            preferences = fallback; storageError = error.localizedDescription
             storageBlocksEditing = true; repairSnapshot = try? store.repairableState()
         }
         if storageError == nil, backup.hasPendingRecovery, let receipt = preferences.recoveryReceipt {
@@ -188,6 +189,15 @@ import Combine
     func setAutomaticCheck(_ value: Bool) {
         guard storageError == nil, !requiresStartupHealthCheck, !requiresRecovery else { return }
         var next = preferences; next.automaticCheck = value; _ = save(next)
+    }
+    func performStartupCheck(legacy: UpdateChecker) async {
+        if storageError == nil, legacy.automatic != preferences.automaticCheck {
+            legacy.automatic = preferences.automaticCheck
+        }
+        if storageError == nil, unavailableReason != "storage" {
+            if unavailableReason != nil { await legacy.check(manual: false) }
+            else { check(manual: false) }
+        }
     }
     func setAutomaticInstall(_ value: Bool) {
         guard storageError == nil, !requiresStartupHealthCheck, !requiresRecovery else { return }

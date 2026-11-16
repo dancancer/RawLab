@@ -64,8 +64,6 @@ final class MacUpdateRunLease {
         model = candidate
         delegate.model = candidate
         updates.startPolling()
-        if legacy.automatic != updates.preferences.automaticCheck { legacy.automatic = updates.preferences.automaticCheck }
-        if updates.unavailableReason != nil { await legacy.check(manual: false) }
-        else { updates.check(manual: false) }
+        await updates.performStartupCheck(legacy: legacy)
     }
 }

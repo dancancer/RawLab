@@ -60,7 +60,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
         this.adapter = adapter; this.gate = gate; this.store = store; this.currentVersion = currentVersion; this.currentBuild = currentBuild;
         this.now = now ?? (() => DateTimeOffset.UtcNow); backup = new(Path.GetDirectoryName(store.DirectoryPath)!, store.DirectoryPath);
         try { preferences = store.Load(automaticCheck); }
-        catch (Exception error) { preferences = new(); StorageError = error.Message; startupStorageBlocked = true; try { repairSnapshot = store.RepairableState(); } catch { } }
+        catch (Exception error) { preferences = new() { AutomaticCheck = automaticCheck }; StorageError = error.Message; startupStorageBlocked = true; try { repairSnapshot = store.RepairableState(); } catch { } }
         if (StorageError == null && backup.HasPendingRecovery && preferences.RecoveryReceipt is {} receipt)
         {
             try { backup.FinishRecovery(receipt); } catch (Exception error) { RecoveryError = error.Message; }
@@ -142,6 +142,15 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     public void SetAutomaticCheck(bool value) {
         if (startupStorageBlocked || RequiresStartupHealthCheck || RequiresRecovery) return;
         var next = preferences.Copy(); next.AutomaticCheck = value; Save(next);
+    }
+    public async Task PerformStartupCheckAsync(Action<bool> syncLegacyAutomaticCheck, Func<CancellationToken, Task> checkLegacyAsync, CancellationToken cancellationToken = default)
+    {
+        if (StorageError == null) syncLegacyAutomaticCheck(preferences.AutomaticCheck);
+        if (StorageError == null && UnavailableReason != "storage")
+        {
+            if (UnavailableReason != null) await checkLegacyAsync(cancellationToken);
+            else await CheckAsync(false);
+        }
     }
     public void SetAutomaticInstall(bool value)
     {
