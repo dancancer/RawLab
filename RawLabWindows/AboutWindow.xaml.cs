@@ -8,16 +8,15 @@ namespace RawLab.Windows;
 
 public partial class AboutWindow : Window
 {
-    private readonly UpdateChecker updates;
+    private readonly string currentVersion;
     private bool languageReady;
     private readonly UsageAnalytics analytics;
     private bool refreshingUsage;
-    public AboutWindow(UpdateChecker updates, UsageAnalytics? analytics = null)
+    public AboutWindow(string currentVersion, UsageAnalytics? analytics = null)
     {
         InitializeComponent();
-        this.updates = updates;
+        this.currentVersion = currentVersion;
         this.analytics = analytics ?? new UsageAnalytics();
-        DataContext = updates;
         RefreshVersion();
         LanguageBox.ItemsSource = Loc.Choices.Select(c => c.Code == "system" ? c with { NativeName = Loc.Text("跟随系统") } : c).ToList();
         LanguageBox.SelectedValue = Loc.Preference;
@@ -37,10 +36,7 @@ public partial class AboutWindow : Window
         languageReady = true;
         RefreshUsage();
     }
-    private void RefreshVersion() => VersionRun.SetBinding(Run.TextProperty,
-        new Binding(nameof(UpdateChecker.CurrentVersion)) {
-            Source=updates, Mode=BindingMode.OneWay, StringFormat=Loc.Text("版本 {0}")
-        });
+    private void RefreshVersion() => VersionRun.Text = Loc.Format("版本 {0}", currentVersion);
     private void LanguageChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
         if (!languageReady || LanguageBox.SelectedValue is not string preference || preference == Loc.Preference) return;
@@ -51,7 +47,6 @@ public partial class AboutWindow : Window
             LanguageBox.SelectedValue = Loc.Preference;
         }
     }
-    private async void CheckClicked(object sender, RoutedEventArgs e) => await updates.CheckAsync(true);
     private async void UsageConsentChanged(object sender, RoutedEventArgs e)
     {
         if (refreshingUsage) return;
@@ -60,10 +55,9 @@ public partial class AboutWindow : Window
         await analytics.SetConsentAsync(requested);
         RefreshUsage();
     }
-    private void RepositoryClicked(object sender, RoutedEventArgs e) => OpenLink(UpdateRelease.Repository);
-    private void AuthorClicked(object sender, RoutedEventArgs e) => OpenLink(UpdateRelease.Author);
+    private void RepositoryClicked(object sender, RoutedEventArgs e) => OpenLink("https://github.com/dancancer/RawLab");
+    private void AuthorClicked(object sender, RoutedEventArgs e) => OpenLink("https://www.xiaohongshu.com/user/profile/6474b1560000000010037c8e");
     private void PrivacyClicked(object sender, RoutedEventArgs e) => OpenLink("https://terms.alicdn.com/legal-agreement/terms/privacy_policy_full/20240308104330389/20240308104330389.html");
-    private void DownloadClicked(object sender, RoutedEventArgs e) { if (updates.Available is { } release) OpenLink(release.Url); }
     private void CloseClicked(object sender, RoutedEventArgs e) => Close();
     private void RefreshUsage()
     {

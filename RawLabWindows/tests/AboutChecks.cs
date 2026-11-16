@@ -22,13 +22,7 @@ internal static class AboutChecks
 
         var directory = Path.Combine(Path.GetTempPath(), "rawlab-about-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
-        var settingsPath = Path.Combine(directory, "updates.json");
-        const string preferences = "{\"Automatic\":false}";
-        File.WriteAllText(settingsPath, preferences);
-        using var handler = new NoNetworkHandler();
-        using var client = new HttpClient(handler);
         var version = typeof(App).Assembly.GetName().Version?.ToString(3) ?? "unknown";
-        var updates = new UpdateChecker(version, settingsPath, client);
         var previousLanguage = Loc.Preference;
         var previousContext = SynchronizationContext.Current;
         // A test application owns the production windows without launching App's automatic startup window.
@@ -45,9 +39,6 @@ internal static class AboutChecks
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
             window = new MainWindow();
             TestWindowState.Isolate(window,directory);
-            // Keep startup updates on the real path, with isolated settings and no network access.
-            typeof(MainWindow).GetField("updates", PrivateInstance)!.SetValue(window, updates);
-            window.UpdateNotice.DataContext = updates;
             window.Files.ItemsSource = Array.Empty<LibraryEntry>();
             window.Show();
             Pump();
@@ -65,7 +56,7 @@ internal static class AboutChecks
             }
 
             var about = OpenAbout();
-            CheckAbout(about, updates, "en", "Version", check);
+            CheckAbout(about, version, "en", "Version", check);
             foreach (var (language, label) in new[] {
                 ("zh-Hans", "版本"), ("en", "Version"), ("de", "Version"),
                 ("fr", "Version"), ("ja", "バージョン"), ("es", "Versión") })
@@ -74,7 +65,7 @@ internal static class AboutChecks
                 Loc.Initialize(language);
                 ((Action?)typeof(Loc).GetField("Changed", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null))?.Invoke();
                 Pump();
-                CheckAbout(about, updates, language, label, check);
+                CheckAbout(about, version, language, label, check);
                 var closed = about;
                 Descendants(about).OfType<Button>().Single(button => button.IsCancel)
                     .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -84,10 +75,8 @@ internal static class AboutChecks
                 about = OpenAbout();
                 check(!ReferenceEquals(about, closed) && about.IsVisible && window.IsVisible,
                     $"About button reopens a new window from the empty editor ({language})");
-                CheckAbout(about, updates, language, label, check);
+                CheckAbout(about, version, language, label, check);
             }
-            check(handler.Requests == 0 && File.ReadAllText(settingsPath) == preferences,
-                "About lifecycle sends no update requests and preserves isolated update preferences");
         }
         finally
         {
@@ -104,18 +93,14 @@ internal static class AboutChecks
         }
     }
 
-    private static void CheckAbout(AboutWindow about, UpdateChecker updates, string language, string label,
+    private static void CheckAbout(AboutWindow about, string currentVersion, string language, string label,
         Action<bool, string> check)
     {
-        var versionText = Descendants(about).OfType<TextBlock>().Single(text => text.Inlines.OfType<TextRun>().Any(run =>
-            BindingOperations.GetBinding(run, TextRun.TextProperty)?.Path?.Path == nameof(UpdateChecker.CurrentVersion)));
-        var versionRun = versionText.Inlines.OfType<TextRun>().Single(run =>
-            BindingOperations.GetBinding(run, TextRun.TextProperty)?.Path?.Path == nameof(UpdateChecker.CurrentVersion));
-        var expectedVersion = Loc.Format("版本 {0}", updates.CurrentVersion);
-        check(about.IsVisible && ReferenceEquals(about.DataContext, updates) && versionRun.Text == expectedVersion &&
-              BindingOperations.GetBinding(versionRun, TextRun.TextProperty)!.Mode == BindingMode.OneWay &&
-              BindingOperations.GetBindingExpression(versionRun, TextRun.TextProperty)!.Status == BindingStatus.Active,
-            $"About displays the current version through an active OneWay binding ({language})");
+        var versionRun = (TextRun)about.FindName("VersionRun")!;
+        var versionText = (TextBlock)versionRun.Parent;
+        var expectedVersion = Loc.Format("版本 {0}", currentVersion);
+        check(about.IsVisible && versionRun.Text == expectedVersion,
+            $"About displays the current version ({language})");
         var actualText = new TextRange(versionText.ContentStart, versionText.ContentEnd).Text;
         var selectedLanguage = ((ComboBox)about.FindName("LanguageBox")!).SelectedValue?.ToString();
         var localized = about.Title == Loc.Text("关于 RawLab") &&

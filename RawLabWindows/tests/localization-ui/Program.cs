@@ -81,9 +81,9 @@ internal static class Program
                 ?? throw new InvalidOperationException("Application startup did not create the editor window.");
 
             Check(Loc.Language == "en", "Startup test window uses its persisted private English preference");
-            var updates=(UpdateChecker)typeof(MainWindow).GetField("updates",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(window)!;
-            var updatePath=(string)typeof(UpdateChecker).GetField("settingsPath",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(updates)!;
-            Check(!updates.Automatic && updatePath.StartsWith(Path.GetDirectoryName(preferencePath)!+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase),
+            var updates=(DesktopUpdateController)typeof(MainWindow).GetField("desktopUpdates",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(window)!;
+            var updateStore=(UpdateStore)typeof(DesktopUpdateController).GetField("store",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(updates)!;
+            Check(!updates.Preferences.AutomaticCheck && updateStore.DirectoryPath.StartsWith(Path.GetDirectoryName(preferencePath)!+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase),
                 "Production StartupUri window receives private updates before its Loaded handler");
             Check(Application.Current.Resources["暗角"]?.ToString() == Loc.Text("暗角"), "Application resources contain the active catalog");
 
