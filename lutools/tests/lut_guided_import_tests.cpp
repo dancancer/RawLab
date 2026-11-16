@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "core/lut_compatibility.h"
 #include "core/lut_preview_comparison.h"
 #include "sony2fuji/lut_parser.h"
@@ -11,8 +12,7 @@
 using namespace sony2fuji;
 using nlohmann::json;
 namespace {
-int failures=0;
-void check(bool value,const char* label) { if(!value) {++failures;std::cerr<<"FAIL "<<label<<'\n';} }
+using rawlab::test::check;
 template<class F> void rejects(F action,const char* label) {try {action();check(false,label);}catch(const std::exception&){} }
 void write(const std::filesystem::path& file,const std::string& data) {std::ofstream(file,std::ios::binary)<<data;}
 }
@@ -64,5 +64,5 @@ int main() {
         reference.stride_bytes=8;b[3]=0;
         rejects([&]{compareLUTPreviews(candidate,reference,conditions.dump());},"Transparent reference pixels are not silently compared");
     } catch(const std::exception& error) {check(false,error.what());}
-    std::filesystem::remove_all(dir);std::cout<<"Guided LUT failures: "<<failures<<'\n';return failures?1:0;
+    std::filesystem::remove_all(dir);std::cout<<"Guided LUT failures: "<<rawlab::test::failureCount()<<'\n';return rawlab::test::exitCode();
 }
