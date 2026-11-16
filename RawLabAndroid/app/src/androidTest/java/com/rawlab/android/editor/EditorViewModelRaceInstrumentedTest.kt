@@ -67,7 +67,7 @@ class EditorViewModelRaceInstrumentedTest {
                 model.updatePreviewSize(1216)
                 model.edit(model.state.value.edits.copy(exposure = .75f), interactive = true)
             }
-            // 交互帧按 640d693f 契约封顶 1000px（min(1216,1000)）；视口 1216 由下一次非交互渲染兑现。
+            // 交互帧按 36c9afb04 契约封顶 1000px（min(1216,1000)）；视口 1216 由下一次非交互渲染兑现。
             awaitState(model) { !it.rendering && maxOf(it.preview!!.result.width, it.preview.result.height) == 1000 }
             assertFalse(model.state.value.exact)
             assertNull(model.state.value.preview!!.resultHistogram)
@@ -76,11 +76,12 @@ class EditorViewModelRaceInstrumentedTest {
             awaitState(model) { it.canExport }
             instrumentation.runOnMainSync { model.beginExport { assertTrue(it) } }
             // beginExport 改为异步提交：persist 落位前 operation 仍为 NONE，cancelExport 空转会把 PICK 留成悬挂态。
-            // 等选择器真正打开再取消；cancelExport 会作废挂起渲染，resize 必须在取消之后重发。
+            // 等选择器真正打开再取消。PICK_EXPORT 期 updatePreviewSize 只记 requestedPreviewLongEdge（controlsEnabled=false 早退），
+            // 真正发起 896 渲染靠 cancelExport 末尾 updatePreviewSize(requestedPreviewLongEdge)（e101b798，EditorViewModel.kt:1821）兑现——撤掉该行本用例必红。
             awaitState(model) { it.operation == Operation.PICK_EXPORT }
             instrumentation.runOnMainSync {
-                model.cancelExport()
                 model.updatePreviewSize(896)
+                model.cancelExport()
             }
             awaitState(model) { it.canExport && maxOf(it.preview!!.result.width, it.preview.result.height) == 896 }
             assertSame(neutralHistogram, model.state.value.preview!!.neutralHistogram)

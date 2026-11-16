@@ -59,7 +59,7 @@ class BatchGpuModeInstrumentedTest {
             store.put("validation", model)
         }
         try {
-            withBatch(false, EditSettings(customWb = true), resumed = false, model = model, expectCompleted = false) { batch ->
+            withBatch(false, EditSettings(customWb = true), resumed = false, customModel = model, expectCompleted = false) { batch ->
                 assertEquals(BatchPhase.SELECTING, batch.state.value.phase)
                 assertEquals(1, batch.state.value.job.rows.size)
                 assertEquals("Target validation must inherit GPU off, with one real processor", listOf(NativeProcessor.CPU), modes.toList())
@@ -93,7 +93,8 @@ class BatchGpuModeInstrumentedTest {
             denoise = DenoiseSettings(true, 10f, 72f, 100f))
         withBatch(gpuEnabled = false, settings = settings, resumed = true, format = ExportFormat.JPEG) { batch ->
             if (InstrumentationRegistry.getArguments().getString("batchAbortProbe") == "true") {
-                compose.runOnUiThread { batch.retryFailed() }
+                // cfff3308 契约下 resumed 冻结态是 CANCELLED+PENDING 行（failedCount=0），retryFailed 会因 canStart(retry=true) 空转。
+                compose.runOnUiThread { batch.continueUnfinished() }
                 compose.waitUntil(60_000) {
                     Thread.getAllStackTraces().values.any { stack -> stack.any {
                         it.className == NativeProcessor::class.java.name && it.methodName == "nativeProcess"
@@ -163,7 +164,7 @@ class BatchGpuModeInstrumentedTest {
 
     private fun withBatch(gpuEnabled: Boolean, settings: EditSettings, resumed: Boolean,
                           longEdge: Int? = null, rlook: Boolean = false, format: ExportFormat = ExportFormat.PNG,
-                          model: EditorViewModel = compose.activity.model, expectCompleted: Boolean = true,
+                          customModel: EditorViewModel? = null, expectCompleted: Boolean = true,
                           check: (BatchExportModel) -> Unit) {
         val id = UUID.randomUUID().toString()
         cleanup.begin(id)
@@ -175,6 +176,14 @@ class BatchGpuModeInstrumentedTest {
         val before = digest(source)
         val look = if (rlook) File(inputs, "batch-gpu-$id.rlook").apply { writeBytes(syntheticRlook()) } else null
         val journal = BatchJournal(journalRoot)
+        // 默认每次 withBatch 自建独立 EditorViewModel（仿本类 disabledNewBatch 先例）：共享 compose.activity.model 会把上一迭代
+        // 已删 fixture 的 photo 残留进下一迭代，setGpuEnabled 见 photo!=null 自动 edit（置 committingAdjustments 单槽门）后
+        // importPhoto 被静默吞掉、persist 对已删源图落 FAILED 而死等 canExport（PR #459 碳审 B3）。
+        val store = ViewModelStore()
+        lateinit var model: EditorViewModel
+        compose.runOnUiThread {
+            model = customModel ?: EditorViewModel(compose.activity.application).also { store.put("batchEditor", it) }
+        }
         try {
             val effectiveSettings = if (look != null && !resumed) {
                 cleanup.trackLookImport(look.name)
@@ -238,6 +247,7 @@ class BatchGpuModeInstrumentedTest {
             cleanup.finish(batch?.state?.value?.phase in setOf(BatchPhase.PREPARING, BatchPhase.RUNNING) ||
                 model.state.value.operation != Operation.NONE,
                 cancel = { batch?.cancel() }, close = { compose.runOnUiThread { model.closeBatch() } })
+            if (customModel == null) compose.runOnUiThread { store.clear() }
         }
     }
 
