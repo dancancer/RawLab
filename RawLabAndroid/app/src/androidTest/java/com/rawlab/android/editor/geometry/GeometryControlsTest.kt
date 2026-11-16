@@ -14,6 +14,16 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
+import com.rawlab.android.RawLabTheme
+import com.rawlab.android.testing.openGeometryDimensions
+import com.rawlab.android.testing.chooseGeometryMenuItem
+import com.rawlab.android.editor.*
+import com.rawlab.android.editor.ui.EditorScreen
+import com.rawlab.android.editor.render.PreviewPair
+import com.rawlab.android.photo.ImportedPhoto
+import android.graphics.Bitmap
+import android.net.Uri
+import java.io.File
 import com.rawlab.android.R
 import com.rawlab.android.editor.AdjustmentDraft
 import com.rawlab.android.editor.AdjustmentGroup
@@ -59,7 +69,7 @@ class GeometryControlsTest {
                 }
             }
         }
-        compose.onNodeWithTag("geometry.swap-ratio").performScrollTo().performClick()
+        compose.chooseGeometryMenuItem("geometry.swap-ratio")
         compose.runOnIdle {
             assertFalse(draft.geometryPortrait)
             assertEquals(16f / 9f, draft.geometryAspect!!, .00001f)
@@ -69,27 +79,38 @@ class GeometryControlsTest {
     @Test fun compactControlsValidateCropRotateFlipAndReset() {
         var value by mutableStateOf(GeometrySettings())
         val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val bitmap = Bitmap.createBitmap(60, 90, Bitmap.Config.ARGB_8888)
+        fun draft() = AdjustmentDraft.begin(AdjustmentGroup.GEOMETRY, EditSettings()).update(EditSettings(geometry = value))
         compose.setContent {
-            MaterialTheme {
-                Column(Modifier.width(360.dp).verticalScroll(rememberScrollState())) {
-                    GeometryControls(value, true) { next, _ -> value = next }
-                }
+            RawLabTheme {
+                EditorScreen(EditorState(
+                    photo = ImportedPhoto(Uri.parse("content://geometry/controls"), "fixture.RAW", File("fixture.RAW")),
+                    preview = PreviewPair(bitmap, bitmap, 6500f, 0f), exact = true, draft = draft()),
+                    {}, {}, { _, _ -> }, {}, {}, {}, {}, {},
+                    onDraftEdit = { next, _ -> value = next.geometry },
+                    onPrepareReset = { scope -> EditorResetTransaction.prepare(scope, EditorResetSession(
+                        com.rawlab.android.settings.PhotoIdentity("geometry-controls"), "fixture.RAW", 1, 1,
+                        EditSettings(), draft(), 0,
+                        EditorResetContext(com.rawlab.android.format.PhotoInputKind.RAW, EditSettings(), AsShotWhiteBalance(6500f, 0f)))) },
+                    onCommitReset = { value = it.draftCandidate!!.value.geometry; true })
             }
         }
         compose.onNodeWithTag("geometry.rotate-right").performScrollTo().performClick()
         compose.onNodeWithTag("geometry.flip-horizontal").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(1, value.quarterTurns); assertTrue(value.flipHorizontal) }
-        compose.onNodeWithTag("geometry.dimensions").performScrollTo().performClick()
-        compose.onNodeWithTag("adjustment-value-${R.string.geometry_crop_width}").performScrollTo().performClick()
+        compose.openGeometryDimensions()
+        compose.onNodeWithTag("adjustment-value-${R.string.geometry_crop_width}").assertIsDisplayed().performClick()
         compose.onNodeWithTag("adjustment-input").performTextReplacement("110")
         compose.onNodeWithTag("adjustment-input-apply").assertIsNotEnabled()
         compose.onNodeWithTag("adjustment-input").performTextReplacement("75")
         compose.onNodeWithTag("adjustment-input-apply").performClick()
-        compose.onNodeWithTag("adjustment-value-${R.string.geometry_crop_x}").performScrollTo().performClick()
+        compose.onNodeWithTag("adjustment-value-${R.string.geometry_crop_x}").assertIsDisplayed().performClick()
         compose.onNodeWithTag("adjustment-input").performTextReplacement("20")
         compose.onNodeWithTag("adjustment-input-apply").performClick()
         compose.runOnIdle { assertEquals(.2f, value.cropX); assertEquals(.75f, value.cropWidth) }
-        compose.onNodeWithContentDescription(context.getString(R.string.geometry_reset)).performScrollTo().performClick()
+        compose.onNodeWithText(context.getString(R.string.confirm)).performClick()
+        compose.onNodeWithContentDescription(context.getString(R.string.reset)).performClick()
+        compose.onNodeWithTag("editor-reset-tool").performClick()
         compose.runOnIdle { assertEquals(GeometrySettings(), value) }
     }
 
@@ -109,13 +130,15 @@ class GeometryControlsTest {
                 }
             }
         }
-        compose.onNodeWithTag("geometry.dimensions").performScrollTo().performClick()
-        fun openWidth() = compose.onNodeWithTag("adjustment-value-${R.string.geometry_crop_width}").performScrollTo().performClick()
+        compose.openGeometryDimensions()
+        fun openWidth() = compose.onNodeWithTag("adjustment-value-${R.string.geometry_crop_width}").assertIsDisplayed().performClick()
         openWidth()
         compose.onNodeWithTag("adjustment-input").assertTextEquals("71.23")
         compose.onNodeWithTag("adjustment-input-apply").performClick()
         compose.runOnIdle { assertEquals(original, draft.value.geometry); assertFalse(draft.changed) }
-        compose.onNodeWithTag("geometry.lock-ratio").performScrollTo().performClick()
+        compose.onNodeWithText(InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.confirm)).performClick()
+        compose.chooseGeometryMenuItem("geometry.lock-ratio")
+        compose.openGeometryDimensions()
         openWidth()
         compose.onNodeWithTag("adjustment-input").performTextReplacement("60.015")
         compose.onNodeWithTag("adjustment-input-apply").assertIsNotEnabled()
@@ -127,7 +150,8 @@ class GeometryControlsTest {
                 draft.value.geometry.cropWidth * 1.5f / draft.value.geometry.cropHeight, .000001f)
             assertNotNull(draft.geometryLockedRatio)
         }
-        compose.onNodeWithTag("geometry.swap-ratio").performScrollTo().performClick()
+        compose.onNodeWithText(InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.confirm)).performClick()
+        compose.chooseGeometryMenuItem("geometry.swap-ratio")
         compose.runOnIdle {
             assertEquals(1f / (original.cropWidth * 1.5f / original.cropHeight), draft.geometryAspect!!, .000001f)
         }
