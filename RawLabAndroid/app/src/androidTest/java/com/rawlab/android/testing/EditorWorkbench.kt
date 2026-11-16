@@ -15,6 +15,7 @@ fun ComposeTestRule.returnToWorkbench() {
 }
 
 fun ComposeTestRule.requestWorkbenchLeave() {
+    onNodeWithTag("workspace-more").assertIsDisplayed()
     InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
     val title = com.rawlab.android.i18n.AppStrings.text(com.rawlab.android.R.string.adjustment_leave)
     waitUntil(5_000) { onAllNodesWithText(title).fetchSemanticsNodes().isNotEmpty() }

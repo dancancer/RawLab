@@ -11,6 +11,9 @@ import com.rawlab.android.R
 import com.rawlab.android.adjustments.AdjustmentField
 import com.rawlab.android.settings.EditStore
 import com.rawlab.android.testing.ForegroundTestRule
+import com.rawlab.android.testing.openWorkbenchTool
+import com.rawlab.android.testing.openEditorMenu
+import com.rawlab.android.testing.requestWorkbenchLeave
 import com.rawlab.android.testing.LanguageTestRule
 import org.junit.Assert.*
 import org.junit.Rule
@@ -23,7 +26,7 @@ class AdjustmentTransferUITest {
     @get:Rule val rule = RuleChain.outerRule(LanguageTestRule()).around(ForegroundTestRule()).around(compose)
     private val model get() = compose.activity.model
     private fun ready() {
-        compose.waitUntil(60_000) { model.state.value.let { (it.canExport && !it.previewResizePending) || it.error != null } }
+        compose.waitUntil(60_000) { model.state.value.let { ((it.canExport || it.draftReady) && !it.previewResizePending) || it.error != null } }
         assertNull(model.state.value.error)
     }
     private fun fixture(name: String): File = File(compose.activity.cacheDir, "$name-${System.nanoTime()}.png").also { file ->
@@ -32,7 +35,7 @@ class AdjustmentTransferUITest {
         }
     }
     private fun openMenu(tag: String) {
-        compose.onNode(hasContentDescription(compose.activity.getString(R.string.more)) and !hasAnyAncestor(hasTestTag("adjustment-dock"))).performClick()
+        compose.openEditorMenu()
         compose.onNodeWithTag(tag).performScrollTo().performClick()
     }
     private fun screenshot(name: String) {
@@ -86,11 +89,14 @@ class AdjustmentTransferUITest {
                 model.changeDraft(model.state.value.visibleEdits.copy(geometry = model.state.value.visibleEdits.geometry.copy(cropWidth = .8f)))
             }
             compose.waitUntil(30_000) { model.state.value.draftReady }
-            openMenu("adjustment-menu-copy")
+            compose.requestWorkbenchLeave()
             compose.onNodeWithText("继续编辑").performClick()
             compose.runOnIdle { assertNotNull(model.state.value.draft) }
-            openMenu("adjustment-menu-copy")
+            compose.requestWorkbenchLeave()
             compose.onNode(hasText("应用") and hasAnyAncestor(isDialog())).performClick()
+            ready()
+            compose.onNodeWithTag("editor-groups").assertIsDisplayed()
+            openMenu("adjustment-menu-copy")
             compose.onNodeWithTag("adjustment-copy-clear").performScrollTo().performClick()
             compose.onNodeWithTag("adjustment-group-color").performScrollTo().performClick()
             compose.onNodeWithTag("adjustment-axis-0").performScrollTo().performClick()
@@ -122,16 +128,20 @@ class AdjustmentTransferUITest {
         val source = fixture("gesture-source")
         try {
             compose.runOnUiThread { model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(source)) }; ready()
-            compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-light"))
-            compose.onNodeWithTag("editor-group-light").performClick()
-            compose.onNodeWithTag("editor-tools").performScrollToNode(hasTestTag("editor-tool-2"))
-            compose.onNodeWithTag("editor-tool-2").performClick()
+            compose.openWorkbenchTool(2)
             val before = model.state.value.edits
             val count = model.adjustmentTransactions.size
             val slider = compose.onNodeWithTag("adjustment-slider")
             slider.performTouchInput { down(center); moveBy(Offset(42f, 0f)); cancel() }; ready()
-            compose.runOnIdle { assertEquals(before, model.state.value.edits); assertEquals(count, model.adjustmentTransactions.size) }
+            compose.runOnIdle { assertEquals(before, model.state.value.edits); assertEquals(before, model.state.value.visibleEdits); assertEquals(count, model.adjustmentTransactions.size) }
             slider.performTouchInput { down(center); moveBy(Offset(28f, 0f)); moveBy(Offset(18f, 0f)); up() }; ready()
+            compose.runOnIdle {
+                assertNotEquals(before.exposure, model.state.value.visibleEdits.exposure)
+                assertEquals(before, model.state.value.edits)
+                assertEquals(1, model.state.value.draft!!.undoValues.size)
+                assertEquals(count, model.adjustmentTransactions.size)
+            }
+            compose.onNodeWithTag("draft.apply").performClick(); ready()
             compose.runOnIdle { assertNotEquals(before.exposure, model.state.value.edits.exposure); assertEquals(count + 1, model.adjustmentTransactions.size) }
         } finally { source.delete() }
     }
