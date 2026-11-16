@@ -145,10 +145,10 @@ internal sealed record UpdateBannerNotice(bool HasFailure, string? ReleaseVersio
 
 internal static class UpdatePresentation
 {
-    public static UpdateBannerNotice MainWindowNotice(UpdatePreferences preferences, string? unavailableReason, string? fallbackVersion)
+    public static UpdateBannerNotice MainWindowNotice(UpdatePreferences preferences, string? unavailableReason)
     {
         if (unavailableReason != null)
-            return fallbackVersion != null ? new(false, fallbackVersion) : new(false, null);
+            return new(false, null);
         var state = preferences.PendingUpdate;
         if (state.Phase == UpdatePhase.Available && state.Release?.Version is { } available)
             return new(false, available);

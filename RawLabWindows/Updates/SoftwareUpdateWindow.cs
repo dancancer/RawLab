@@ -10,20 +10,19 @@ namespace RawLab.Windows;
 public sealed class SoftwareUpdateWindow : Window
 {
     private readonly DesktopUpdateController updates;
-    private readonly UpdateChecker legacy;
     private readonly bool settings;
     private readonly StackPanel panel = new() { Margin = new Thickness(24) };
     private bool refreshing;
 
-    public SoftwareUpdateWindow(DesktopUpdateController updates, UpdateChecker legacy, bool settings = true)
+    public SoftwareUpdateWindow(DesktopUpdateController updates, bool settings = true)
     {
-        this.updates=updates;this.legacy=legacy;this.settings=settings;
+        this.updates=updates;this.settings=settings;
         Style=(Style)FindResource(typeof(Window));Width=600;Height=640;MinWidth=420;MinHeight=320;
         WindowStartupLocation=WindowStartupLocation.CenterOwner;
         Content=new ScrollViewer{Content=panel,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};
         AutomationProperties.SetAutomationId(this,settings ? "updates.settings" : "updates.prompt");
-        updates.PropertyChanged+=Changed;legacy.PropertyChanged+=Changed;Loc.Changed+=Refresh;
-        Closed+=(_,_)=>{updates.PropertyChanged-=Changed;legacy.PropertyChanged-=Changed;Loc.Changed-=Refresh;};
+        updates.PropertyChanged+=Changed;Loc.Changed+=Refresh;
+        Closed+=(_,_)=>{updates.PropertyChanged-=Changed;Loc.Changed-=Refresh;};
         Closing+=(_,args)=>{if(updates.Recovering)args.Cancel=true;};
         Refresh();
     }
@@ -36,20 +35,20 @@ public sealed class SoftwareUpdateWindow : Window
             AddText(Title,true);AddText(Loc.Format("版本 {0}",updates.CurrentVersion),localized:true);
             if(settings) {
                 Toggle("自动检查更新",updates.Preferences.AutomaticCheck,updates.UnavailableReason!="storage" && !updates.RequiresRecovery && !updates.RequiresStartupHealthCheck,value=>{
-                    updates.SetAutomaticCheck(value);legacy.Automatic=updates.Preferences.AutomaticCheck;
+                    updates.SetAutomaticCheck(value);
                 },"updates.automaticCheck");
                 Toggle("自动下载并在退出时安装",updates.Preferences.AutomaticInstall,updates.UnavailableReason==null && !updates.RequiresRecovery && !updates.RequiresStartupHealthCheck,updates.SetAutomaticInstall,"updates.automaticInstall");
                 AddText("自动安装默认关闭。安装前会保存已提交的编辑，并等待草稿和任务处理完成。");
                 panel.Children.Add(new Separator{Margin=new Thickness(0,10,0,10)});
             }
-            if(updates.UnavailableReason!=null){AddText(updates.UnavailableReason=="storage" ? "自动更新不可用，请手动下载" : "此安装暂不支持自动安装更新",true);AddText(legacy.Status,localized:true);}
+            if(updates.UnavailableReason!=null){AddText(updates.UnavailableReason=="storage" ? "自动更新不可用，请手动下载" : "此安装暂不支持自动安装更新",true);}
             else {
                 if(updates.StorageError!=null)AddText("自动更新不可用，请手动下载",true);
                 AddText(UpdatePresentation.Status(updates.Preferences),true);
             }
-            var version=updates.State.Release?.Version ?? (updates.UnavailableReason!=null ? legacy.Available?.Version : null);
+            var version=updates.State.Release?.Version;
             if(version!=null)AddText(Loc.Format("发现新版本 {0}",version),true,true);
-            var notes=updates.State.Release?.Notes ?? (updates.UnavailableReason!=null ? legacy.Available?.Notes : null);
+            var notes=updates.State.Release?.Notes;
             if(!string.IsNullOrEmpty(notes))AddText(notes,localized:true);
             if(updates.State.Phase is UpdatePhase.Checking or UpdatePhase.Downloading or UpdatePhase.Verifying || updates.PreparingInstallation) {
                 var progress=new ProgressBar{Minimum=0,Maximum=100,Value=updates.State.Progress*100,Height=10,Margin=new Thickness(0,12,0,8),IsIndeterminate=updates.State.Phase!=UpdatePhase.Downloading};
@@ -97,7 +96,7 @@ public sealed class SoftwareUpdateWindow : Window
             foreach(var reason in updates.State.Blockers)AddText(UpdatePresentation.Blocker(reason));
             if(updates.State.Choice is UpdateInstallChoice.OnQuit or UpdateInstallChoice.AutomaticOnQuit)AddText("将在下次正常退出时重新检查并安装");
             var actions=new WrapPanel{Margin=new Thickness(0,12,0,12)};panel.Children.Add(actions);
-            ActionButton(actions,"检查更新",async()=>{if(updates.UnavailableReason!=null)await legacy.CheckAsync(true);else await updates.CheckAsync(true);},"updates.check",!updates.RequiresRecovery && legacy.CanCheck && (updates.UnavailableReason!=null || updates.CanCheck));
+            ActionButton(actions,"检查更新",()=>updates.CheckAsync(true),"updates.check",updates.CanCheck);
             if(updates.CanDownload) {
                 ActionButton(actions,"安装更新",()=>updates.DownloadAsync(),"updates.download");
                 ActionButton(actions,"跳过此版本",()=>{updates.Skip();if(updates.StorageError==null)Close();return Task.CompletedTask;});
@@ -115,7 +114,7 @@ public sealed class SoftwareUpdateWindow : Window
             support.Children.Add(Text(Loc.Text("查看此说明不会启用自动安装。失败后请保留现有应用和数据，使用官方可信安装包恢复；不要用旧版覆盖新版编辑记录。")));
             var disclosure=Disclosure("安装支持与恢复说明",support);disclosure.Margin=new Thickness(0,8,0,12);panel.Children.Add(disclosure);
             var links=new WrapPanel();panel.Children.Add(links);
-            ActionButton(links,"官方手动下载",()=>{Open(new(UpdateRelease.Repository+"/releases"){UseShellExecute=true});return Task.CompletedTask;});
+            ActionButton(links,"官方手动下载",()=>{Open(new("https://github.com/dancancer/RawLab/releases"){UseShellExecute=true});return Task.CompletedTask;});
             if(updates.State.BackupPath is {} path && Directory.Exists(path))ActionButton(links,"查看更新前的数据备份",()=>{
                 var start=new ProcessStartInfo("explorer.exe");start.ArgumentList.Add(path);Open(start);return Task.CompletedTask;
             });

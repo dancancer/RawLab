@@ -372,9 +372,8 @@ internal static class UiDetailChecks
     private static AboutWindow About(MainWindow window,string output)
     {
         var root=Path.Combine(output,"about-"+Guid.NewGuid().ToString("N")[..8]);Directory.CreateDirectory(root);
-        var updates=new UpdateChecker("0.8.0",Path.Combine(root,"updates.json")){Automatic=false};
         var usage=new UsageAnalytics(Path.Combine(root,"usage.json"),new UnavailableUsageAnalyticsTransport());
-        var about=new AboutWindow(updates,usage){Owner=window};about.Show();about.UpdateLayout();
+        var about=new AboutWindow("0.8.0",usage){Owner=window};about.Show();about.UpdateLayout();
         return about;
     }
     private static void Refresh(MainWindow window)=>typeof(MainWindow).GetMethod("RefreshControls",PrivateInstance)!.Invoke(window,null);

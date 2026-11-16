@@ -256,7 +256,7 @@ internal static class StateMatrixChecks
                 var rejected = state.Failure != null && UpdatePresentation.IsRejected(state.Failure);
                 var recovery = state.Failure?.Stage is UpdatePhase.Installing or UpdatePhase.PendingRestart;
                 var failureHeading = state.Failure != null ? UpdatePresentation.FailureHeading(state.Failure, recovery) : null;
-                var notice = UpdatePresentation.MainWindowNotice(prefs, null, null);
+                var notice = UpdatePresentation.MainWindowNotice(prefs, null);
                 var expectedNoticeVisible = row.ExpectedPhase is UpdatePhase.Available or UpdatePhase.Failed ||
                     row.ExpectedPhase == UpdatePhase.Idle && prefs.CheckFailure != null;
 
@@ -453,7 +453,7 @@ internal static class StateMatrixChecks
                 timeoutController.CheckFailure != null &&
                 !timeoutController.CanCancel && timeoutController.CanCheck &&
                 !timeoutController.BlocksEditing && !timeoutController.RequiresRecovery &&
-                UpdatePresentation.MainWindowNotice(timeoutController.Preferences, null, null) is { Visible: true, HasFailure: true },
+                UpdatePresentation.MainWindowNotice(timeoutController.Preferences, null) is { Visible: true, HasFailure: true },
                 $"P1-06 Download timeout transitions to Failed + records backoff (Phase={timeoutController.State.Phase})");
             now = now.AddMinutes(14).AddSeconds(59);
             await timeoutController.RefreshGateAsync();
@@ -473,30 +473,27 @@ internal static class StateMatrixChecks
                 UpdatePhase.Installing, UpdatePhase.PendingRestart })
             {
                 var failedPrefs = BuildStateInPhase(UpdatePhase.Failed, stage, stage == UpdatePhase.Verifying ? "interrupted" : "operation");
-                var banner = UpdatePresentation.MainWindowNotice(failedPrefs, null, null);
+                var banner = UpdatePresentation.MainWindowNotice(failedPrefs, null);
                 check(banner.Visible && banner.HasFailure && banner.ReleaseVersion == null,
                     $"P1-06 MainWindow notice surfaces failure for stage {stage}");
             }
             var idleWithCheckFailure = new UpdatePreferences { CheckFailure = new(now, "network", 1, "offline") };
-            var idleBanner = UpdatePresentation.MainWindowNotice(idleWithCheckFailure, null, null);
+            var idleBanner = UpdatePresentation.MainWindowNotice(idleWithCheckFailure, null);
             check(idleBanner.Visible && idleBanner.HasFailure && idleBanner.ReleaseVersion == null,
                 "P1-06 MainWindow notice surfaces Idle + CheckFailure");
-            var cleanIdleBanner = UpdatePresentation.MainWindowNotice(new UpdatePreferences(), null, null);
+            var cleanIdleBanner = UpdatePresentation.MainWindowNotice(new UpdatePreferences(), null);
             check(!cleanIdleBanner.Visible && !cleanIdleBanner.HasFailure,
                 "P1-06 MainWindow notice stays collapsed when Idle without CheckFailure");
 
-            var unavailableNoticeCases = new (string Label, UpdatePreferences Prefs, string UnavailableReason, string? FallbackVersion, UpdateBannerNotice Expected)[]
+            var unavailableNoticeCases = new (string Label, UpdatePreferences Prefs, string UnavailableReason, UpdateBannerNotice Expected)[]
             {
-                ("Failed/Downloading portable w/o fallback", BuildStateInPhase(UpdatePhase.Failed, UpdatePhase.Downloading, "operation"), "portable", null, new(false, null)),
-                ("Failed/Checking portable w/ fallback", BuildStateInPhase(UpdatePhase.Failed, UpdatePhase.Checking, "network"), "portable", "0.9.2", new(false, "0.9.2")),
-                ("Idle+CheckFailure storage w/o fallback", new UpdatePreferences { CheckFailure = new(now, "network", 1, "offline") }, "storage", null, new(false, null)),
-                ("Idle+CheckFailure storage w/ fallback", new UpdatePreferences { CheckFailure = new(now, "network", 1, "offline") }, "storage", "0.9.2", new(false, "0.9.2")),
-                ("Available portable w/o fallback", BuildStateInPhase(UpdatePhase.Available), "portable", null, new(false, null)),
-                ("Available portable w/ fallback", BuildStateInPhase(UpdatePhase.Available), "portable", "0.9.2", new(false, "0.9.2")),
+                ("Failed/Downloading portable", BuildStateInPhase(UpdatePhase.Failed, UpdatePhase.Downloading, "operation"), "portable", new(false, null)),
+                ("Idle+CheckFailure storage", new UpdatePreferences { CheckFailure = new(now, "network", 1, "offline") }, "storage", new(false, null)),
+                ("Available portable", BuildStateInPhase(UpdatePhase.Available), "portable", new(false, null)),
             };
             foreach (var c in unavailableNoticeCases)
             {
-                var actual = UpdatePresentation.MainWindowNotice(c.Prefs, c.UnavailableReason, c.FallbackVersion);
+                var actual = UpdatePresentation.MainWindowNotice(c.Prefs, c.UnavailableReason);
                 check(actual == c.Expected,
                     $"P1-06 MainWindowNotice unavailable [{c.Label}] expected={c.Expected} actual={actual}");
             }

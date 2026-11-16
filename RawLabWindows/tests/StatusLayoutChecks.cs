@@ -20,8 +20,6 @@ internal static class StatusLayoutChecks
             {
                 Loc.Initialize(language);foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
                 var window=new MainWindow();
-                var updates=new UpdateChecker("0.8.0",Path.Combine(output,Guid.NewGuid().ToString("N"),"updates.json")){Automatic=false};
-                typeof(MainWindow).GetField("updates",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(window,updates);
                 TestWindowState.Isolate(window,output);window.Show();
                 try
                 {
