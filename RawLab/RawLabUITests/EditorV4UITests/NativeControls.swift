@@ -18,13 +18,18 @@ extension EditorV4UITests {
 
     func testCompactEditorUsesFullWidthRulersAndContentHeight() throws {
         let app = try launchImportedEditor()
+        // v0.8 two-level workbench: the tool grid row lives on the overview, the panel on
+        // the tool page. Capture the grid row width before entering the tool page.
+        try exitToOverviewIfNeeded(in: app)
+        let tools = app.scrollViews["editor.tools"]
+        XCTAssertTrue(tools.waitForExistence(timeout: 5), app.debugDescription)
+        let toolsRowWidth = tools.frame.width
         try selectTool("highlights", in: app)
         let panel = app.scrollViews["editor.panel"]
-        let tools = app.scrollViews["editor.tools"]
         let ruler = app.descendants(matching: .any)["adjustment.ruler"]
         let title = app.staticTexts["adjustment.title"]
         let value = app.buttons["adjustment.value"]
-        XCTAssertGreaterThanOrEqual(tools.frame.width, panel.frame.width - 1, "Tools use their own complete row")
+        XCTAssertGreaterThanOrEqual(toolsRowWidth, panel.frame.width - 1, "Tools use their own complete row")
         XCTAssertGreaterThanOrEqual(ruler.frame.width, panel.frame.width - 33, "Phone and tablet rulers use all space inside their 16pt insets")
         XCTAssertGreaterThanOrEqual(ruler.frame.minY, value.frame.maxY, "The full value is above the ruler")
         XCTAssertLessThanOrEqual(panel.frame.height, ruler.frame.maxY - min(title.frame.minY, value.frame.minY) + 32, "A scalar panel does not fill unused height")
@@ -83,21 +88,24 @@ extension EditorV4UITests {
         XCUIDevice.shared.orientation = .landscapeLeft
         waitUntil { app.frame.width > app.frame.height }
         more.tap()
+        // The landscape popover is shorter; SwiftUI may not expose off-screen menu rows until scrolled.
+        revealOverflowItem(fine, in: app)
         XCTAssertTrue(fine.waitForExistence(timeout: 5))
         XCTAssertTrue(fine.isSelected)
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
         waitUntil { !fine.exists }
         capture("compact-editor-fine", in: app)
-        app.buttons["editor.draft.cancel"].tap()
-        XCTAssertTrue(app.buttons["editor.reset"].waitForExistence(timeout: 5))
+        cancelToolWorkspace(in: app)
+        XCTAssertTrue(app.buttons["editor.reset"].waitForExistence(timeout: 5), app.debugDescription)
         try selectTool("highlights", in: app)
         more.tap()
+        revealOverflowItem(fine, in: app)
         XCTAssertTrue(fine.waitForExistence(timeout: 5))
         XCTAssertFalse(fine.isSelected)
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
         waitUntil { !fine.exists }
         XCTAssertEqual(try number(app.buttons["adjustment.value"]), 0)
-        app.buttons["editor.draft.cancel"].tap()
+        cancelToolWorkspace(in: app)
         try selectTool("exposure", in: app)
         auto.tap()
         waitUntil { auto.isEnabled }
@@ -112,15 +120,20 @@ extension EditorV4UITests {
         try selectTool("dehaze", in: app)
         try setValue("-42", title: "Dehaze", unit: "%", control: "adjustment", in: app)
         XCTAssertEqual(try number(app.buttons["adjustment.value"]), -42, accuracy: 0.0001)
+        // v0.8: committed-history Undo/Redo live in the overview overflow menu, so commit
+        // the dehaze draft and leave the tool page before reaching for them.
+        applyDraft(in: app)
         app.buttons["editor.privacy"].tap()
-        let undo = app.buttons["Undo"]
-        XCTAssertTrue(undo.waitForExistence(timeout: 5)); XCTAssertTrue(undo.isEnabled); undo.tap()
-        waitUntil { (try? self.number(app.buttons["adjustment.value"])) == 0 }
+        let undo = app.buttons["adjustment.history.undo"]
+        revealOverflowItem(undo, in: app)
+        XCTAssertTrue(undo.waitForExistence(timeout: 5), app.debugDescription); XCTAssertTrue(undo.isEnabled); undo.tap()
         try selectTool("clarity", in: app)
         XCTAssertEqual(try number(app.buttons["adjustment.value"]), 37, accuracy: 0.0001, "Undo retains independent clarity")
+        try exitToOverviewIfNeeded(in: app)
         app.buttons["editor.privacy"].tap()
-        let redo = app.buttons["Redo"]
-        XCTAssertTrue(redo.waitForExistence(timeout: 5)); XCTAssertTrue(redo.isEnabled); redo.tap()
+        let redo = app.buttons["adjustment.history.redo"]
+        revealOverflowItem(redo, in: app)
+        XCTAssertTrue(redo.waitForExistence(timeout: 5), app.debugDescription); XCTAssertTrue(redo.isEnabled); redo.tap()
         try selectTool("dehaze", in: app)
         waitUntil { (try? self.number(app.buttons["adjustment.value"])) == -42 }
         capture("atmosphere-history", in: app)
@@ -133,10 +146,14 @@ extension EditorV4UITests {
             app.launch(); XCTAssertTrue(app.buttons["editor.import"].waitForExistence(timeout: 10))
             try importFirstVisiblePhoto(in: app)
             for (tool, title, value) in [("clarity", clarity, 37.0), ("dehaze", dehaze, -42.0)] {
-                try selectTool(tool, in: app)
-                let button = app.buttons["tool." + tool]
-                XCTAssertTrue(button.label.contains(title)); XCTAssertTrue(button.isHittable)
+                // The tile carries the localized title on the overview grid; assert the
+                // tile state there, then open the tool page to verify the persisted value.
+                try exitToOverviewIfNeeded(in: app)
+                let button = try revealTool(tool, in: app)
+                XCTAssertTrue(button.label.contains(title), button.debugDescription); XCTAssertTrue(button.isHittable)
                 XCTAssertGreaterThanOrEqual(button.frame.height, 44)
+                tapVisible(button, in: app)
+                XCTAssertTrue(app.scrollViews["editor.panel"].waitForExistence(timeout: 15), app.debugDescription)
                 XCTAssertEqual(try number(app.buttons["adjustment.value"]), value, accuracy: 0.0001, "Atmosphere survives reopening")
                 capture("atmosphere-" + language + "-" + tool, in: app)
             }
@@ -705,7 +722,12 @@ extension EditorV4UITests {
         try setValue("+0.50", title: "Exposure", unit: "EV", control: "adjustment", in: app)
         XCTAssertEqual(try number(value), 0.5, accuracy: 0.0001)
         XCTAssertTrue((value.value as? String)?.hasPrefix("+") == true, value.debugDescription)
-        XCTAssertEqual(app.buttons["tool.exposure"].value as? String, "+0.50 EV")
+        // v0.8: the overview tile mirrors the committed draft value; commit and step out
+        // to the grid to read it, then reopen the tool page for the rest of the flow.
+        try exitToOverviewIfNeeded(in: app)
+        XCTAssertEqual(app.buttons["tool.exposure"].value as? String, "+0.50 EV",
+                       "The overview tool tile must show the committed exposure value")
+        try selectTool("exposure", in: app)
 
         try setValue("-0.25", title: "Exposure", unit: "EV", control: "adjustment", in: app)
         XCTAssertEqual(try number(value), -0.25, accuracy: 0.0001)
@@ -964,7 +986,8 @@ extension EditorV4UITests {
             XCTAssertEqual(try number(app.buttons["geometry.\(id).value"]), portraitValues[index], accuracy: 0.1)
         }
         app.buttons["editor.draft.cancel"].tap()
-        XCTAssertTrue(app.buttons["adjustment.value"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 5),
+                      "Discarding the crop draft returns to the workbench overview: \(app.debugDescription)")
         try selectTool("geometry", in: app)
         try expandCropDimensions(in: app)
         XCTAssertEqual(try number(width), 100, accuracy: 0.1)
@@ -1007,9 +1030,12 @@ extension EditorV4UITests {
         try revealHorizontally(selected, in: choices, app: app)
         tapVisible(selected, in: app)
         XCTAssertTrue(selected.isSelected)
-        XCTAssertEqual(app.buttons["tool.masterRecipe"].value as? String, "Hideaki Hamada")
         XCTAssertTrue(app.buttons["masterRecipe.strength.value"].waitForExistence(timeout: 5))
         capture("v4-master-recipe-selected", in: app)
+        // v0.8: the overview tile mirrors the committed recipe; commit the draft to see it there.
+        applyDraft(in: app)
+        XCTAssertEqual(app.buttons["tool.masterRecipe"].value as? String, "Hideaki Hamada",
+                       "The overview recipe tile must show the committed recipe name")
     }
 
     func testVignetteHighlightAvailabilityAndHSLChannelValues() throws {

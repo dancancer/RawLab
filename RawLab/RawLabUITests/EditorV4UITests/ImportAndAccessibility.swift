@@ -75,11 +75,17 @@ extension EditorV4UITests {
 
     func testRasterJPEGExportConfirmationUsesCommittedValuesAndBlocksDirtyGeometry() throws {
         let app = try launchImportedEditor()
-        try selectTool("temperature", in: app)
+        // v0.8 two-level workbench: tiles live on the overview grid, one per selected group.
+        try exitToOverviewIfNeeded(in: app)
+        XCTAssertEqual(app.buttons.matching(identifier: "tool.temperature").count, 0,
+                       "White balance belongs to the colour group, not to the currently open light grid")
+        let temperatureTile = try revealTool("temperature", in: app)
         XCTAssertEqual(app.buttons.matching(identifier: "tool.temperature").count, 1)
-        XCTAssertEqual(app.buttons["tool.temperature"].label, "White Balance")
+        XCTAssertEqual(temperatureTile.label, "White Balance")
         XCTAssertFalse(app.buttons["tool.tint"].exists,
                        "Tint remains an editable parameter, not a second toolbar entry")
+        tapVisible(temperatureTile, in: app)
+        XCTAssertTrue(app.scrollViews["editor.panel"].waitForExistence(timeout: 15), app.debugDescription)
         let rasterTemperature = app.buttons["whiteBalance.temperature.value"]
         let rasterTint = app.buttons["whiteBalance.tint.value"]
         XCTAssertTrue(rasterTemperature.waitForExistence(timeout: 5), app.debugDescription)
@@ -90,27 +96,32 @@ extension EditorV4UITests {
         XCTAssertFalse(rasterTint.isEnabled, "Raster tint is a RAW-only control")
         XCTAssertEqual(try number(rasterTemperature), 6500, accuracy: 0.0001)
         XCTAssertEqual(try number(rasterTint), 0, accuracy: 0.0001)
+        try exitToOverviewIfNeeded(in: app)
         assertFileImportItem(enabled: true, in: app)
         cancelFileImporter(in: app)
         XCTAssertTrue(app.descendants(matching: .any)["editor.photo"].exists,
                       "Canceling the Files picker keeps the imported raster preview")
         try selectTool("exposure", in: app)
         try setValue("+0.40", title: "Exposure", unit: "EV", control: "adjustment", in: app)
+        // v0.8: the Files entry lives on the overview, so a wheel value is committed before leaving the tool page.
+        applyDraft(in: app)
         cancelFileImporter(in: app)
-        XCTAssertEqual(try number(app.buttons["adjustment.value"]), 0.4, accuracy: 0.0001,
+        XCTAssertEqual(app.buttons["tool.exposure"].value as? String, "+0.40 EV",
                        "Canceling the Files picker keeps the committed raster edit")
         try selectTool("geometry", in: app)
-        XCTAssertFalse(app.buttons["editor.export"].isEnabled, "An unchanged geometry draft must block every export entry")
+        XCTAssertFalse(app.buttons["editor.export"].exists, "The tool workspace keeps export on the workbench overview")
         if app.buttons["geometry.reset"].isEnabled {
             resetIfEnabled("geometry.reset", in: app)
             applyDraft(in: app)
             try selectTool("geometry", in: app)
         }
         try setValue("1.2", title: "Straighten", unit: "°", control: "geometry.straighten", in: app)
-        XCTAssertFalse(app.buttons["editor.export"].isEnabled, "Unapplied geometry must block export")
-        assertFileImportItem(enabled: false, in: app)
+        XCTAssertFalse(app.buttons["editor.export"].exists, "Unapplied geometry must block export")
+        XCTAssertFalse(app.buttons["editor.privacy"].exists,
+                       "The tool workspace swaps the overview overflow (with Files) for the workspace menu while a draft is open")
         applyDraft(in: app)
-        XCTAssertEqual(try number(app.buttons["adjustment.value"]), 0.4, accuracy: 0.0001)
+        XCTAssertEqual(try revealTool("exposure", in: app).value as? String, "+0.40 EV",
+                       "Applying geometry preserves the committed exposure value")
         XCTAssertTrue(app.buttons["editor.export"].isEnabled)
         assertFileImportItem(enabled: true, in: app)
         app.buttons["editor.export"].tap()
@@ -136,13 +147,14 @@ extension EditorV4UITests {
         capture("v4-jpeg-export-confirmation-landscape", in: app)
         app.navigationBars["Save Current Photo"].buttons["Cancel"].tap()
         waitUntil { !confirm.exists }
-        XCTAssertEqual(try number(app.buttons["adjustment.value"]), 0.4, accuracy: 0.0001)
+        XCTAssertEqual(app.buttons["tool.exposure"].value as? String, "+0.40 EV",
+                       "Canceling the export sheet preserves the committed exposure")
         try selectTool("geometry", in: app)
         XCTAssertEqual(try number(app.buttons["geometry.straighten.value"]), 1.2, accuracy: 0.0001,
                        "Canceling the export sheet preserves the committed geometry")
         XCTAssertFalse(app.buttons["editor.draft.apply"].isEnabled)
-        XCTAssertFalse(app.buttons["editor.export"].isEnabled, "Returning to a committed geometry value remains an active draft")
-        app.buttons["editor.draft.cancel"].tap()
+        XCTAssertFalse(app.buttons["editor.export"].exists, "Returning to a committed geometry value remains an active draft")
+        cancelToolWorkspace(in: app)
         XCTAssertFalse(app.buttons["tool.lens"].isEnabled, "Lens correction is unavailable for the raster fixture")
         XCTAssertTrue(app.buttons["editor.export"].isEnabled)
     }
@@ -153,10 +165,13 @@ extension EditorV4UITests {
         try selectSeededFilesImage(in: app)
         XCTAssertTrue(app.descendants(matching: .any)["editor.photo"].waitForExistence(timeout: 60),
                       app.debugDescription)
-        XCTAssertTrue(app.buttons["editor.compare"].isEnabled, app.debugDescription)
-        XCTAssertFalse(app.buttons["tool.lens"].isEnabled,
+        // v0.8: the workbench grid is the imported-ready anchor; the compare entry is collapsed into the overflow menu.
+        XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 10), app.debugDescription)
+        let lensTile = try revealTool("lens", in: app)
+        XCTAssertFalse(lensTile.isEnabled,
                        "A raster selected through Files must not expose RAW-only lens correction")
-        XCTAssertEqual(app.buttons["tool.temperature"].label, "White Balance")
+        let temperatureTile = try revealTool("temperature", in: app)
+        XCTAssertEqual(temperatureTile.label, "White Balance")
         capture("v4-files-raster-imported", in: app)
     }
 
