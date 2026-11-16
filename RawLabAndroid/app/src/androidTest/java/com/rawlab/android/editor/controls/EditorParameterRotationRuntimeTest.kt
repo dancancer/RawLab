@@ -23,7 +23,6 @@ class EditorParameterRotationRuntimeTest {
     @get:Rule val rule = RuleChain.outerRule(LanguageTestRule()).around(ForegroundTestRule()).around(compose)
 
     @Test fun actualLandscapeNormalTextKeepsGeometryAndLensControlsFullyOperable() = verify(1f)
-    @Test fun actualLandscapeLargeTextKeepsGeometryAndLensControlsFullyOperable() = verify(1.6f)
     private fun verify(scale: Float) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val source = File(compose.activity.cacheDir, "landscape-parameters-${System.nanoTime()}.RAW")

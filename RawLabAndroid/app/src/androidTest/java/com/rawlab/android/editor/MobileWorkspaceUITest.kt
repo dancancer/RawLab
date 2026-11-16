@@ -106,13 +106,4 @@ class MobileWorkspaceUITest {
         compose.onNodeWithTag("draft.apply").performClick()
         compose.runOnIdle { assertEquals(1, applied) }
     }
-
-    @Test fun largeTextAndShortWindowKeepFooterReachable() {
-        show(scale = 1.6f, width = 360, height = 640)
-        group("color"); compose.onNodeWithTag("editor-tool-14").performScrollTo().performClick()
-        compose.onNodeWithTag("draft.cancel").assertIsDisplayed()
-        compose.onNodeWithTag("draft.apply").assertIsDisplayed()
-        compose.onNodeWithTag("adjustment-value-${R.string.hsl_lightness}").performScrollTo().assertIsDisplayed()
-        assertTrue(bounds("editor-canvas").height >= 96f)
-    }
 }

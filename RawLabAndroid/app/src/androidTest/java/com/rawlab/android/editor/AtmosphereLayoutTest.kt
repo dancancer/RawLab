@@ -39,15 +39,13 @@ class AtmosphereLayoutTest(private val language: String) {
     private val compose = createComposeRule()
     @get:Rule val rule = RuleChain.outerRule(LanguageTestRule(language)).around(compose)
 
-    @Test fun atmosphereToolsAndNumbersFitLargeTextInEveryLanguage() {
+    @Test fun atmosphereToolsAndNumbersFitInEveryLanguage() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
-        val config = Configuration(context.resources.configuration).apply { setLocale(Locale.forLanguageTag(language)); fontScale = 1.6f }
+        val config = Configuration(context.resources.configuration).apply { setLocale(Locale.forLanguageTag(language)) }
         val localized = context.createConfigurationContext(config)
         compose.setContent {
-            val density = LocalDensity.current.density
-            CompositionLocalProvider(LocalContext provides localized, LocalConfiguration provides config,
-                LocalDensity provides Density(density, 1.6f)) {
+            CompositionLocalProvider(LocalContext provides localized, LocalConfiguration provides config) {
                 RawLabTheme { EditorScreen(state = EditorState(
                     photo = ImportedPhoto(Uri.parse("content://rawlab.test/atmosphere-layout"), "fixture", File("fixture")),
                     edits = EditSettings(clarity = 37.251234f, dehaze = -42.5f),

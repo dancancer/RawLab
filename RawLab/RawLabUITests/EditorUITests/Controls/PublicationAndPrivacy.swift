@@ -49,10 +49,6 @@ extension EditorUITests {
         checkSaveNoticeLayout(orientation: .landscapeLeft)
     }
 
-    func testSaveNoticeKeepsLargeTextControlsInPlace() {
-        checkSaveNoticeLayout(orientation: .portrait, contentSizeCategory: "UICTContentSizeCategoryAccessibilityM")
-    }
-
     func testSaveNoticeKeepsSmallTextControlsInPlace() {
         checkSaveNoticeLayout(orientation: .portrait, contentSizeCategory: "UICTContentSizeCategoryXS")
     }

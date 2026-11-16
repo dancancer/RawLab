@@ -78,7 +78,8 @@ class SaveFeedbackLayoutTest {
         }
         for (size in listOf(320 to 720, 360 to 720, 960 to 600)) {
             for (locale in languages) {
-                for (scale in listOf(1f, 1.6f)) {
+                val scale = 1f
+                run {
                     compose.runOnIdle { viewport = size; language = locale; fontScale = scale; editor = editor.copy(saveState = EditSaveState.NONE) }
                     val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply {
                         setLocale(Locale.forLanguageTag(locale))

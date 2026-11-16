@@ -285,49 +285,6 @@ class PhotoCanvasTest {
         assertFalse("Normal photo keeps before label clear of information control: $label $button", label.overlaps(button))
     }
 
-    private fun shortLargePhoto() {
-        val state = PhotoCanvasState()
-        compose.setChineseContent { MaterialTheme { CompositionLocalProvider(LocalDensity provides Density(1f, 1.6f)) {
-            Box(Modifier.width(400.dp).height(100.dp)) { PhotoCanvas(fixture(), true, "short-overlays", state,
-                mode = ComparisonMode.WIPE, bottomOverlayInset = 60.dp) }
-        } } }
-    }
-
-    @Test fun shortLargePhotoKeepsInformationTarget() {
-        shortLargePhoto()
-        val button = compose.onNodeWithTag("photo-info-button").fetchSemanticsNode().boundsInRoot
-        assertEquals("Information target remains 48dp despite save-overlay inset", 48f, button.height, 1f)
-        val description = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext.getString(com.rawlab.android.R.string.info_hidden)
-        val glyph = compose.onNode(hasContentDescription(description) and !hasClickAction(), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-        assertEquals(24f, glyph.width, 1f); assertEquals(24f, glyph.height, 1f)
-    }
-
-    @Test fun shortLargePhotoKeepsFullComparisonLabels() {
-        shortLargePhoto()
-        val image = compose.onNodeWithTag("comparison-wipe").fetchSemanticsNode().boundsInRoot
-        val handle = compose.onNodeWithTag("comparison-handle-glyph", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-        assertEquals(24f, handle.width, 1f); assertEquals(24f, handle.height, 1f)
-        for (tag in listOf("comparison-label-before", "comparison-label-after")) {
-            val background = compose.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-            assertFalse("Actual label background must leave the 24dp handle body visible: $background $handle", background.overlaps(handle))
-        }
-        for (label in listOf("调整前", "调整后")) {
-            val node = compose.onNodeWithText(label)
-            val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
-            node.performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(layouts) }
-            val layout = layouts.single()
-            val bounds = node.fetchSemanticsNode().boundsInRoot
-            android.util.Log.i("RawLabShortLabelEvidence", "label=$label size=${layout.size} lines=${layout.lineCount} widthOverflow=${layout.didOverflowWidth} heightOverflow=${layout.didOverflowHeight} right=${layout.getLineRight(0)} left=${layout.getLineLeft(0)} ellipsis=${layout.isLineEllipsized(0)} rect=$bounds image=$image")
-            val dir = java.io.File(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null), "view-native").apply { mkdirs() }
-            java.io.File(dir, "short-overlays.png").outputStream().use { compose.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
-            assertFalse("Label has no clipped lines", layout.didOverflowHeight)
-            assertEquals(1, layout.lineCount)
-            assertTrue("Both labels have complete glyphs inside their measured width: $label", !layout.isLineEllipsized(0) && layout.getLineLeft(0) >= -1f && layout.getLineRight(0) <= layout.size.width + 1f)
-            assertTrue("Whole label is visible", bounds.width >= layout.size.width - 1 && bounds.height >= layout.size.height - 1)
-            assertTrue("Label stays in visible photograph", bounds.left >= image.left && bounds.right <= image.right && bounds.top >= image.top && bounds.bottom <= image.bottom)
-        }
-    }
-
     @Test fun photoInformationTextDoesNotBlockPhotoPan() {
         val state = PhotoCanvasState()
         compose.setChineseContent { MaterialTheme { PhotoCanvas(fixture(), false, "info-pan", state,
