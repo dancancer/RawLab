@@ -311,8 +311,45 @@ enum ParameterValueField { static var hasPendingInputs = false }
         failPhase = .installing
         controller.choose(.restartNow)
         for _ in 0..<400 where controller.preparingInstallation || controller.storageError == nil { try await Task.sleep(for: .milliseconds(10)) }
-        check(controller.storageError != nil && !controller.blocksEditing && controller.unavailableReason == "storage" && !controller.canRetrySave && !controller.canCheck && adapter.installs == 0,
-            "Save failure when recording installing degrades updates without locking editing and blocks retry")
+        check(controller.storageError != nil && !controller.storageBlocksEditing && !controller.blocksEditing && controller.unavailableReason == "storage" && !controller.canRetrySave && !controller.canCheck && adapter.installs == 0,
+            "Pre-replace save failure when recording installing degrades updates without locking editing and blocks retry")
+        let postReplaceRoot = root.appendingPathComponent("PostReplaceInstalling")
+        let postReplaceEdits = postReplaceRoot.appendingPathComponent("Edits")
+        try FileManager.default.createDirectory(at: postReplaceEdits, withIntermediateDirectories: true)
+        let postReplacePhoto = postReplaceEdits.appendingPathComponent("photo.json")
+        try Data("committed before install".utf8).write(to: postReplacePhoto)
+        let postReplaceStore = UpdateStore(directory: postReplaceRoot.appendingPathComponent("Updates")) { preferences, stateURL in
+            if preferences.pendingUpdate.phase == .installing {
+                try UpdateStore.writeAtomically(preferences, to: stateURL) { _ in
+                    throw UpdateAdapterError(code: "storage", detail: "Injected fsync failure after atomic replace")
+                }
+            } else {
+                try UpdateStore.writeAtomically(preferences, to: stateURL)
+            }
+        }
+        let postReplaceAdapter = FakeUpdateAdapter()
+        let postReplaceController = DesktopUpdateController(adapter: postReplaceAdapter, gate: UpdateInstallGate(), store: postReplaceStore,
+            currentVersion: "0.8.2", currentBuild: "14", automaticCheck: false)
+        postReplaceController.check(manual: true); postReplaceAdapter.send(.found(release)); postReplaceController.download()
+        postReplaceAdapter.send(.preparing); postReplaceAdapter.hasPreparedInstaller = true; postReplaceAdapter.send(.verified)
+        postReplaceController.choose(.restartNow)
+        for _ in 0..<400 where postReplaceController.preparingInstallation || postReplaceController.storageError == nil { try await Task.sleep(for: .milliseconds(10)) }
+        check(postReplaceController.storageError != nil && postReplaceController.storageBlocksEditing && postReplaceController.blocksEditing &&
+            postReplaceController.unavailableReason == "storage" && !postReplaceController.canRetrySave && !postReplaceController.canRepairState &&
+            !postReplaceController.canCheck && postReplaceAdapter.installs == 0 &&
+            (try? postReplaceStore.load(automaticCheck: false))?.pendingUpdate.phase == .installing,
+            "Post-replace fsync failure when recording installing keeps editing locked so new edits cannot be rolled back by recovery")
+        let postReplaceQuit = await withCheckedContinuation { continuation in
+            postReplaceController.prepareForQuit { continuation.resume(returning: $0) }
+        }
+        check(postReplaceQuit, "Locked post-replace storage error still allows quitting to reach startup recovery")
+        let reopenedPostReplace = DesktopUpdateController(adapter: FakeUpdateAdapter(), gate: UpdateInstallGate(),
+            store: UpdateStore(directory: postReplaceStore.directory), currentVersion: "0.8.2", currentBuild: "14", automaticCheck: false)
+        await reopenedPostReplace.finishStartupHealthCheck(healthy: true)
+        check(reopenedPostReplace.blocksEditing && reopenedPostReplace.requiresRecovery && reopenedPostReplace.canRestorePreviousData,
+            "Persisted post-replace installing state enters recovery on next launch")
+        await reopenedPostReplace.restorePreviousData()
+        try checkData(postReplacePhoto, "committed before install")
         let pendingStore = UpdateStore(directory: root.appendingPathComponent("PendingRestartUpdates")) { preferences, stateURL in
             if preferences.pendingUpdate.phase == .pendingRestart {
                 throw UpdateAdapterError(code: "storage", detail: "Injected pendingRestart write failure")

@@ -983,6 +983,34 @@ internal static class ControllerChecks
             await reopenedUpdated.FinishStartupHealthCheckAsync(true);
             check(reopenedUpdated.StorageError == null && reopenedUpdated.State.Phase == UpdatePhase.Complete && !reopenedUpdated.BlocksEditing,
                 "Next launch on target version completes health check from the persisted Installing record");
+
+            var postReplaceDir = Path.Combine(root, "post-replace", "Updates");
+            var postReplaceStore = new UpdateStore(
+                postReplaceDir,
+                (temporary, bytes) => { files[temporary] = bytes.ToArray(); },
+                (source, destination) =>
+                {
+                    var bytes = files[source];
+                    files[destination] = bytes;
+                    files.Remove(source);
+                    if (SavedState(bytes).Phase == UpdatePhase.Installing)
+                        throw new IOException("Injected post-replace sync failure");
+                },
+                delay => { elapsed += delay; },
+                () => elapsed,
+                path => files.TryGetValue(path, out var bytes) ? bytes.ToArray() : null,
+                path => { files.Remove(path); return true; });
+            var postReplaceAdapter = new Adapter();
+            var postReplaceController = new DesktopUpdateController(postReplaceAdapter, new(), postReplaceStore, "0.8.2", "14", now: () => virtualNow);
+            await postReplaceController.CheckAsync(true);
+            await postReplaceController.DownloadAsync();
+            await postReplaceController.ChooseAsync(UpdateInstallChoice.RestartNow);
+            check(postReplaceAdapter.Installs == 0 && postReplaceController.StorageError != null &&
+                postReplaceController.BlocksEditing && postReplaceController.UnavailableReason == "storage" &&
+                !postReplaceController.CanCheck && !postReplaceController.CanDownload && !postReplaceController.CanChooseInstall &&
+                postReplaceStore.Load(true).PendingUpdate.Phase == UpdatePhase.Installing &&
+                await postReplaceController.PrepareForQuitAsync(),
+                "Post-replace Installing save failure keeps editing locked while permitting normal quit");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }
