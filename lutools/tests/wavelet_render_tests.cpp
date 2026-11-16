@@ -115,6 +115,64 @@ static void checkVersion(sony2fuji_processing_version version) {
     std::cout << "PASS: wavelet API, exact/interactive/final contracts, zero/off restoration, GPU policy, pre-LUT placement\n";
 }
 
+static void viewportNoiseChecks() {
+    std::vector<unsigned char> input(1024*768*3);
+    std::mt19937 rng(692);
+    std::normal_distribution<float> noise(46,1.25f);
+    for (auto& value:input) value=static_cast<unsigned char>(std::lround(noise(rng)));
+    sony2fuji_request request{};
+    request.version=SONY2FUJI_REQUEST_VERSION; request.struct_size=sizeof(request);
+    request.input_type=SONY2FUJI_INPUT_BUFFER; request.input_pixels=input.data();
+    request.input_width=1024; request.input_height=768;
+    request.input_pixel_format=SONY2FUJI_PIXEL_RGB8;
+    request.input_color_space=SONY2FUJI_COLOR_SRGB; request.input_is_linear=1;
+    request.brightness=request.contrast=request.saturation=1; request.temperature=6500;
+    request.wb_mode=SONY2FUJI_WB_CAMERA; request.intent=SONY2FUJI_INTENT_PREVIEW;
+    request.size_mode=SONY2FUJI_SIZE_NATIVE; request.preview_long_edge=350;
+    request.output_target=SONY2FUJI_TARGET_BUFFER; request.output_format=SONY2FUJI_OUTPUT_RGB8;
+    for (auto version:{SONY2FUJI_PROCESSING_C5_V2,SONY2FUJI_PROCESSING_BASIC_V3}) {
+        sony2fuji_session* session=nullptr;
+        assert(sony2fuji_session_create(&session)==SONY2FUJI_STATUS_OK);
+        assert(sony2fuji_session_set_processing_version(session,version)==SONY2FUJI_STATUS_OK);
+        sony2fuji_gpu_config gpu{SONY2FUJI_GPU_CONFIG_VERSION,sizeof(gpu),SONY2FUJI_GPU_OFF};
+        assert(sony2fuji_session_set_gpu_config(session,&gpu)==SONY2FUJI_STATUS_OK);
+        assert(sony2fuji_session_set_viewport_preview(session,1)==SONY2FUJI_STATUS_OK);
+        sony2fuji_wavelet_denoise_config options{SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION,sizeof(options),0,100,100,100};
+        auto render=[&]() {
+            assert(sony2fuji_session_set_wavelet_denoise(session,&options)==SONY2FUJI_STATUS_OK);
+            sony2fuji_buffer buffer{};
+            assert(sony2fuji_process(session,&request,&buffer)==SONY2FUJI_STATUS_OK);
+            const auto* bytes=static_cast<const unsigned char*>(buffer.data);
+            std::vector<unsigned char> result(bytes,bytes+buffer.size_bytes);
+            sony2fuji_release_buffer(&buffer);
+            return result;
+        };
+        const auto off=render();
+        options.enabled=1;
+        assert(render()!=off && "resizing must not turn source noise into a silent C5 bypass");
+
+        // 小于视口的源图继续走原生路径，低噪声输入仍须精确旁路。
+        request.input_width=256; request.input_height=192; request.preview_long_edge=1600;
+        const auto native=render();
+        assert(native.size()==256*192*3);
+        request.preview_long_edge=0;
+        assert(sony2fuji_session_set_viewport_preview(session,0)==SONY2FUJI_STATUS_OK);
+        assert(render()==native);
+        assert(sony2fuji_session_set_viewport_preview(session,1)==SONY2FUJI_STATUS_OK);
+        request.input_width=1024; request.input_height=768; request.preview_long_edge=350;
+        std::fill(input.begin(),input.end(),46);
+        options.enabled=0;
+        const auto clean=render();
+        options.enabled=1;
+        assert(render()==clean);
+        sony2fuji_session_destroy(session);
+        for (auto& value:input) value=static_cast<unsigned char>(std::lround(noise(rng)));
+        request.input_width=1024; request.input_height=768; request.preview_long_edge=350;
+    }
+    std::cout << "PASS: C5 viewport source-noise guard, native small images and clean bypass\n";
+}
+
 int main() {
+    viewportNoiseChecks();
     for (auto version : {SONY2FUJI_PROCESSING_LEGACY, SONY2FUJI_PROCESSING_C5_V2}) checkVersion(version);
 }

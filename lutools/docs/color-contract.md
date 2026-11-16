@@ -787,6 +787,12 @@ above the native geometry size remain exact. The immutable RAW cache is sampled 
 copying the entire image. Wavelet cache keys include the viewport dimensions and
 quality mode; reduced results cannot serve exact requests. GPU Auto fallback
 preserves the reduced source, while Force still requires GPU success.
+C5 fits its noise model and low-noise strength guard from up to 12x12 native
+64x64 patches of the immutable source, converting only those patches to linear sRGB. Resizing
+therefore cannot hide source noise from this guard. Band statistics and filtering
+still use flat patches and pixels from the reduced image; the eight-sample fit
+requirement applies to the source patches. The source model is cached with that
+viewport's analysis. Requests that do not reduce the source retain the exact path.
 
 Mac fit/zoom previews derive their long edge from the actual photo pane, display
 scale and magnification, rounded upward in 64-pixel steps and capped by source

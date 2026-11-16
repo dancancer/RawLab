@@ -52,7 +52,7 @@ class WaveletDenoiseAnalysisCache {
     std::unique_ptr<Impl> state;
     friend ErrorCode applyWaveletDenoise(ImageData&, const WaveletDenoiseOptions&,
         WaveletDenoiseDiagnostics*, GpuMode, WaveletDenoiseAnalysisCache*, const std::string&,
-        const ImageData*, ColorSpace);
+        const ImageData*, ColorSpace, const ImageData*);
 public:
     WaveletDenoiseAnalysisCache();
     ~WaveletDenoiseAnalysisCache();
@@ -64,9 +64,11 @@ public:
 bool waveletDenoiseAvailable();
 bool validWaveletDenoiseOptions(const WaveletDenoiseOptions& options);
 // immutableSource 必须是完整且不变的输入，image 为它按 sourceSpace 转换到 sRGB 的工作副本。
+// noiseSource 供缩小的 C5 视口拟合源图噪声模型；滤波及频带统计仍读取 image。
 ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& options,
                             WaveletDenoiseDiagnostics* diagnostics = nullptr, GpuMode gpuMode = GpuMode::Off,
                             WaveletDenoiseAnalysisCache* analysis = nullptr, const std::string& sourceKey = {},
-                            const ImageData* immutableSource = nullptr, ColorSpace sourceSpace = ColorSpace::sRGB);
+                            const ImageData* immutableSource = nullptr, ColorSpace sourceSpace = ColorSpace::sRGB,
+                            const ImageData* noiseSource = nullptr);
 
 } // namespace sony2fuji

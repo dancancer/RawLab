@@ -90,13 +90,21 @@ bool periodic(const cv::Mat& residual) {
 }
 
 std::vector<Sample> flatSamples(const cv::Mat& rgb, sony2fuji::WaveletNoiseEstimateDiagnostics& diagnostics,
-                              sony2fuji::ProcessingVersion version = sony2fuji::ProcessingVersion::C5V2) {
+                              sony2fuji::ProcessingVersion version = sony2fuji::ProcessingVersion::C5V2,
+                              sony2fuji::ColorSpace sourceSpace = sony2fuji::ColorSpace::sRGB) {
     std::vector<Sample> samples;
+    cv::Matx33f toSRGB;
+    if (sourceSpace != sony2fuji::ColorSpace::sRGB) {
+        const auto matrix=sony2fuji::ColorConverter::getConversionMatrix(sourceSpace,sony2fuji::ColorSpace::sRGB);
+        for (int y=0;y<3;++y) for (int x=0;x<3;++x) toSRGB(y,x)=matrix[y][x];
+    }
     for (int y:positions(rgb.rows)) for (int x:positions(rgb.cols)) {
+        sony2fuji::checkProcessingCancellation();
         ++diagnostics.candidateTiles;
-        const cv::Mat patch=rgb(cv::Rect(x,y,std::min(64,rgb.cols-x),std::min(64,rgb.rows-y))).clone();
+        cv::Mat patch=rgb(cv::Rect(x,y,std::min(64,rgb.cols-x),std::min(64,rgb.rows-y))).clone();
         // Calibration uses full 64-pixel tiles, keeping SWT's size contract explicit.
         if (patch.rows<64 || patch.cols<64) { ++diagnostics.rejectedSmall; continue; }
+        if (sourceSpace != sony2fuji::ColorSpace::sRGB) cv::transform(patch,patch,toSRGB);
         cv::Mat smooth;
         cv::GaussianBlur(patch,smooth,{},3);
         const cv::Mat residual=patch-smooth;
@@ -617,6 +625,7 @@ struct WaveletDenoiseAnalysisCache::Impl {
     NoiseModel model{};
     eaw::Analysis eawAnalysis{};
     bool eawReady = false;
+    int fitSampleCount = 0;
     std::vector<Sample> samples;
 #endif
 };
@@ -660,7 +669,7 @@ bool validWaveletDenoiseOptions(const WaveletDenoiseOptions& options) {
 }
 ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& options, WaveletDenoiseDiagnostics* diagnostics,
     GpuMode gpuMode, WaveletDenoiseAnalysisCache* analysis, const std::string& sourceKey,
-    const ImageData* immutableSource, ColorSpace sourceSpace) {
+    const ImageData* immutableSource, ColorSpace sourceSpace, const ImageData* noiseSource) {
     if (diagnostics) *diagnostics = {};
     auto finish = [&](WaveletDenoiseOutcome outcome, ErrorCode code) {
         if (diagnostics) diagnostics->outcome=outcome;
@@ -707,24 +716,38 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
             }
             state = analysis->state.get();
         }
-        if (!reused) state->samples=flatSamples(rgb,state->estimate,options.processingVersion);
+        if (!reused) {
+            state->samples=flatSamples(rgb,state->estimate,options.processingVersion);
+            std::vector<Sample> sourceSamples;
+            const auto* noiseSamples=&state->samples;
+            if (noiseSource && usesC5Denoise(options.processingVersion)) {
+                // 原生样块拟合噪声；小图的平坦样块只负责 guide/band MAD，不承担拟合的 8 块门槛。
+                // 最多读取 12x12 个 64x64 样块，不复制或滤波完整源图。
+                cv::Mat source(noiseSource->height,noiseSource->width,CV_32FC3,
+                    const_cast<RGB*>(noiseSource->pixels.data()));
+                state->estimate={};
+                sourceSamples=flatSamples(source,state->estimate,options.processingVersion,sourceSpace);
+                noiseSamples=&sourceSamples;
+            }
+            state->fitSampleCount=static_cast<int>(noiseSamples->size());
+            if (state->fitSampleCount>=8) {
+                state->model=fitNoise(*noiseSamples);
+                describeFit(*noiseSamples,state->model,state->estimate);
+            }
+        }
         const auto& samples = state->samples;
         if (diagnostics) {
-            diagnostics->flatTiles=static_cast<int>(samples.size());
+            diagnostics->flatTiles=state->fitSampleCount;
             diagnostics->analysisReused=reused;
             diagnostics->estimate=state->estimate;
         }
-        if (samples.size()<8) {
+        if (state->fitSampleCount<8 || samples.empty()) {
             state->ready=true;
             const auto& estimate=state->estimate;
             const auto outcome=estimate.rejectedSmall==estimate.candidateTiles ? WaveletDenoiseOutcome::SmallImage :
                 estimate.rejectedLowNoise==estimate.candidateTiles ? WaveletDenoiseOutcome::LowNoise :
                 WaveletDenoiseOutcome::InsufficientSamples;
             return finish(outcome, ErrorCode::Success);
-        }
-        if (!reused) {
-            state->model=fitNoise(samples);
-            describeFit(samples,state->model,state->estimate);
         }
         auto& model = state->model;
         if (diagnostics) {
@@ -826,6 +849,7 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
     (void)image;
     (void)gpuMode;
     (void)analysis;
+    (void)noiseSource;
     (void)sourceKey;
     (void)immutableSource;
     (void)sourceSpace;
