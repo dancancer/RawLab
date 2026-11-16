@@ -61,6 +61,8 @@ struct FakeJObject {
     std::vector<jfloat> floats;
     std::vector<jdouble> doubles;
     std::vector<jobject> objects;
+    void* directAddress = nullptr;
+    jlong directCapacity = 0;
     jint intArg = 0;
     std::string strArg;
 };
@@ -248,6 +250,28 @@ void JNICALL mockSetObjectArrayElement(JNIEnv*, jobjectArray arr, jsize index, j
     if (arr) asFake(arr)->objects[static_cast<size_t>(index)] = val;
 }
 
+jbyte* JNICALL mockGetByteArrayElements(JNIEnv*, jbyteArray arr, jboolean* isCopy) {
+    if (isCopy) *isCopy = JNI_FALSE;
+    return arr ? asFake(arr)->bytes.data() : nullptr;
+}
+
+void JNICALL mockReleaseByteArrayElements(JNIEnv*, jbyteArray, jbyte*, jint) {}
+
+jobject JNICALL mockNewDirectByteBuffer(JNIEnv*, void* address, jlong capacity) {
+    auto* obj = reinterpret_cast<FakeJObject*>(allocObj(FakeObjKind::DirectBuffer));
+    obj->directAddress = address;
+    obj->directCapacity = capacity;
+    return reinterpret_cast<jobject>(obj);
+}
+
+void* JNICALL mockGetDirectBufferAddress(JNIEnv*, jobject buf) {
+    return buf && asFake(buf)->kind == FakeObjKind::DirectBuffer ? asFake(buf)->directAddress : nullptr;
+}
+
+jlong JNICALL mockGetDirectBufferCapacity(JNIEnv*, jobject buf) {
+    return buf && asFake(buf)->kind == FakeObjKind::DirectBuffer ? asFake(buf)->directCapacity : -1;
+}
+
 JNINativeInterface_ makeEnvTable() {
     JNINativeInterface_ t{};
     t.FindClass = mockFindClass;
@@ -265,6 +289,8 @@ JNINativeInterface_ makeEnvTable() {
     t.NewByteArray = mockNewByteArray;
     t.NewIntArray = mockNewIntArray;
     t.NewFloatArray = mockNewFloatArray;
+    t.GetByteArrayElements = mockGetByteArrayElements;
+    t.ReleaseByteArrayElements = mockReleaseByteArrayElements;
     t.GetByteArrayRegion = mockGetByteArrayRegion;
     t.SetByteArrayRegion = mockSetByteArrayRegion;
     t.GetIntArrayRegion = mockGetIntArrayRegion;
@@ -275,6 +301,9 @@ JNINativeInterface_ makeEnvTable() {
     t.NewObjectArray = mockNewObjectArray;
     t.GetObjectArrayElement = mockGetObjectArrayElement;
     t.SetObjectArrayElement = mockSetObjectArrayElement;
+    t.NewDirectByteBuffer = mockNewDirectByteBuffer;
+    t.GetDirectBufferAddress = mockGetDirectBufferAddress;
+    t.GetDirectBufferCapacity = mockGetDirectBufferCapacity;
     return t;
 }
 
@@ -1432,6 +1461,68 @@ void testHdrPairReleaseDuringExportConcurrency() {
     std::cout << "PASS: testHdrPairReleaseDuringExportConcurrency" << std::endl;
 }
 
+void testNativePng16LutColorConversion() {
+    clearJniRegistries();
+    LocalEnv env;
+
+    // Build a pure A2B0 LUT RGB profile via lcms2 (no matrix/TRC fallback tags).
+    cmsHPROFILE src = cmsCreateProfilePlaceholder(nullptr);
+    cmsSetProfileVersion(src, 2.4);
+    cmsSetDeviceClass(src, cmsSigDisplayClass);
+    cmsSetColorSpace(src, cmsSigRgbData);
+    cmsSetPCS(src, cmsSigXYZData);
+    cmsCIEXYZ d50 = *cmsD50_XYZ();
+    cmsWriteTag(src, cmsSigMediaWhitePointTag, &d50);
+    cmsPipeline* pipe = cmsPipelineAlloc(nullptr, 3, 3);
+    cmsToneCurve* linear = cmsBuildGamma(nullptr, 1.0);
+    cmsToneCurve* curves[3] = {linear, linear, linear};
+    cmsUInt16Number clut[2 * 2 * 2 * 3]{};
+    size_t idx = 0;
+    for (int r = 0; r < 2; ++r)
+        for (int g = 0; g < 2; ++g)
+            for (int b = 0; b < 2; ++b) {
+                cmsCIEXYZ xyz{0.515102 * r + 0.291965 * g + 0.157153 * b,
+                              0.241182 * r + 0.692237 * g + 0.066582 * b,
+                              std::max(0.0, -0.001049 * r + 0.041882 * g + 0.784378 * b)};
+                cmsFloat2XYZEncoded(&clut[idx], &xyz);
+                idx += 3;
+            }
+    cmsPipelineInsertStage(pipe, cmsAT_END, cmsStageAllocToneCurves(nullptr, 3, curves));
+    cmsPipelineInsertStage(pipe, cmsAT_END, cmsStageAllocCLut16bit(nullptr, 2, 3, 3, clut));
+    cmsPipelineInsertStage(pipe, cmsAT_END, cmsStageAllocToneCurves(nullptr, 3, curves));
+    cmsFreeToneCurve(linear);
+    cmsWriteTag(src, cmsSigAToB0Tag, pipe);
+    cmsPipelineFree(pipe);
+    cmsUInt32Number iccLen = 0;
+    require(cmsSaveProfileToMem(src, nullptr, &iccLen) != 0 && iccLen > 128, "Serialize A2B0 LUT ICC");
+    std::vector<uint8_t> icc(iccLen);
+    require(cmsSaveProfileToMem(src, icc.data(), &iccLen) != 0, "Write A2B0 LUT ICC bytes");
+    cmsCloseProfile(src);
+
+    jbyteArray jIcc = mockNewByteArray(env.ptr(), static_cast<jsize>(icc.size()));
+    mockSetByteArrayRegion(env.ptr(), jIcc, 0, static_cast<jsize>(icc.size()), reinterpret_cast<const jbyte*>(icc.data()));
+
+    std::array<uint16_t, 8> pixels = {32768, 16384, 8192, 65535, 0, 0, 0, 65535};
+    jobject directBuf = mockNewDirectByteBuffer(env.ptr(), pixels.data(), sizeof(pixels));
+    Java_com_rawlab_android_raster_NativePng16_nativeConvert(env.ptr(), nullptr, directBuf, jIcc);
+    auto ex = consumeException();
+    require(!ex.active, "Valid A2B0 LUT ICC profile must convert without JNI exception: " + ex.message);
+    require(pixels[0] > 32768 && pixels[3] == 65535 && pixels[4] == 0 && pixels[7] == 65535,
+        "A2B0 LUT conversion must map wide-gamut red and preserve alpha/black");
+
+    // Reject odd-sized buffer and malformed ICC bytes via IOException.
+    jobject badBuf = mockNewDirectByteBuffer(env.ptr(), pixels.data(), 6);
+    Java_com_rawlab_android_raster_NativePng16_nativeConvert(env.ptr(), nullptr, badBuf, jIcc);
+    ex = consumeException();
+    require(ex.active && ex.className == "java/io/IOException", "Unaligned buffer capacity must throw IOException");
+
+    jbyteArray badIcc = mockNewByteArray(env.ptr(), 32);
+    Java_com_rawlab_android_raster_NativePng16_nativeConvert(env.ptr(), nullptr, directBuf, badIcc);
+    ex = consumeException();
+    require(ex.active && ex.className == "java/io/IOException", "Malformed ICC profile must throw IOException");
+    std::cout << "PASS: testNativePng16LutColorConversion" << std::endl;
+}
+
 } // namespace
 
 int main() {
@@ -1446,6 +1537,7 @@ int main() {
         {"testCancellationUnderContention", testCancellationUnderContention},
         {"testHdrCrossSessionRenderConcurrency", testHdrCrossSessionRenderConcurrency},
         {"testHdrPairReleaseDuringExportConcurrency", testHdrPairReleaseDuringExportConcurrency},
+        {"testNativePng16LutColorConversion", testNativePng16LutColorConversion},
     };
     int failures = 0;
     for (const auto& c : cases) {
