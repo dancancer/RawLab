@@ -22,6 +22,7 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <spng.h>
 #include <zlib.h>
 #include <limits>
 #include <array>
@@ -309,6 +310,236 @@ void testJpegExportWriteSafety(const std::filesystem::path& parentDir, sony2fuji
 #endif
 }
 
+void testPngEncoderLibspng(const std::filesystem::path& parentDir) {
+    const auto pngDir = parentDir / "png-libspng";
+    std::filesystem::create_directories(pngDir);
+
+    auto writeTextFile = [](const std::filesystem::path& path, const std::string& content) {
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        out.write(content.data(), static_cast<std::streamsize>(content.size()));
+    };
+    auto readTextFile = [](const std::filesystem::path& path) {
+        std::ifstream in(path, std::ios::binary);
+        return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    };
+    auto hasPngStagingFile = [](const std::filesystem::path& directory) {
+        for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+            const std::string name = entry.path().filename().string();
+            if (name.rfind(".rawlab-png-", 0) == 0 ||
+                (name.rfind("rl", 0) == 0 && entry.path().extension() == ".tmp")) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // 1. 16-bit 渐变图：逐像素无损一致 + 自适应行滤波启用且体积严格优于 row[0]=0 基线
+    constexpr int kSize = 256;
+    ImageData gradient(kSize, kSize);
+    std::vector<uint16_t> expectedRgb(static_cast<size_t>(kSize) * kSize * 3u);
+    std::vector<unsigned char> unfilteredRaw(static_cast<size_t>(kSize) * (static_cast<size_t>(kSize) * 6u + 1u), 0);
+    for (int y = 0; y < kSize; ++y) {
+        const size_t rawRow = static_cast<size_t>(y) * (static_cast<size_t>(kSize) * 6u + 1u);
+        unfilteredRaw[rawRow] = 0;
+        for (int x = 0; x < kSize; ++x) {
+            const float r = static_cast<float>(x) / static_cast<float>(kSize - 1);
+            const float g = static_cast<float>(y) / static_cast<float>(kSize - 1);
+            const float b = 0.5f * (r + g);
+            gradient.at(x, y) = RGB(r, g, b);
+            const uint16_t qr = static_cast<uint16_t>(std::clamp(std::lround(r * 65535.0f), 0L, 65535L));
+            const uint16_t qg = static_cast<uint16_t>(std::clamp(std::lround(g * 65535.0f), 0L, 65535L));
+            const uint16_t qb = static_cast<uint16_t>(std::clamp(std::lround(b * 65535.0f), 0L, 65535L));
+            const size_t idx = (static_cast<size_t>(y) * kSize + static_cast<size_t>(x)) * 3u;
+            expectedRgb[idx + 0] = qr;
+            expectedRgb[idx + 1] = qg;
+            expectedRgb[idx + 2] = qb;
+            const size_t rawBase = rawRow + 1u + static_cast<size_t>(x) * 6u;
+            unfilteredRaw[rawBase + 0] = static_cast<unsigned char>(qr >> 8);
+            unfilteredRaw[rawBase + 1] = static_cast<unsigned char>(qr);
+            unfilteredRaw[rawBase + 2] = static_cast<unsigned char>(qg >> 8);
+            unfilteredRaw[rawBase + 3] = static_cast<unsigned char>(qg);
+            unfilteredRaw[rawBase + 4] = static_cast<unsigned char>(qb >> 8);
+            unfilteredRaw[rawBase + 5] = static_cast<unsigned char>(qb);
+        }
+    }
+
+    const auto gradientPng = pngDir / "gradient-16bit.png";
+    writeTextFile(gradientPng, "old png target");
+    check(ImageEncoder::savePNG(gradient, gradientPng.string()) == ErrorCode::Success,
+          "PNG saves 16-bit gradient and atomically replaces existing target");
+    check(!hasPngStagingFile(pngDir), "successful PNG export leaves no staging file");
+
+    const std::string pngBytes = readTextFile(gradientPng);
+    {
+        spng_ctx* dec = spng_ctx_new(0);
+        check(dec != nullptr, "spng decoder context created");
+        spng_set_png_buffer(dec, pngBytes.data(), pngBytes.size());
+        spng_ihdr ihdr{};
+        uint8_t srgbIntent = 255;
+        std::vector<uint16_t> decodedRgb(expectedRgb.size());
+        const bool decodedOk = dec &&
+            spng_get_ihdr(dec, &ihdr) == 0 &&
+            ihdr.width == kSize && ihdr.height == kSize &&
+            ihdr.bit_depth == 16 && ihdr.color_type == SPNG_COLOR_TYPE_TRUECOLOR &&
+            spng_decode_image(dec, decodedRgb.data(), decodedRgb.size() * sizeof(uint16_t), SPNG_FMT_PNG, 0) == 0 &&
+            spng_get_srgb(dec, &srgbIntent) == 0 && srgbIntent == 0;
+        if (dec) spng_ctx_free(dec);
+        check(decodedOk && decodedRgb == expectedRgb,
+              "16-bit PNG decoded pixels match source bit-for-bit with default sRGB intent");
+    }
+
+    // 撤修复锚点：检查 IDAT 行滤波分布与压缩后体积（去掉自适应滤波会直接变红）
+    auto read32 = [&](size_t offset) {
+        return (uint32_t(static_cast<unsigned char>(pngBytes[offset])) << 24) |
+               (uint32_t(static_cast<unsigned char>(pngBytes[offset + 1])) << 16) |
+               (uint32_t(static_cast<unsigned char>(pngBytes[offset + 2])) << 8) |
+               uint32_t(static_cast<unsigned char>(pngBytes[offset + 3]));
+    };
+    std::vector<unsigned char> idatBytes;
+    for (size_t offset = 8; offset + 12 <= pngBytes.size();) {
+        const uint32_t length = read32(offset);
+        if (offset + 12 + length > pngBytes.size()) break;
+        if (pngBytes.compare(offset + 4, 4, "IDAT") == 0) {
+            idatBytes.insert(idatBytes.end(),
+                             pngBytes.begin() + static_cast<std::ptrdiff_t>(offset + 8),
+                             pngBytes.begin() + static_cast<std::ptrdiff_t>(offset + 8 + length));
+        }
+        offset += 12 + length;
+    }
+    std::vector<unsigned char> rawScanlines(unfilteredRaw.size());
+    uLongf rawLen = static_cast<uLongf>(rawScanlines.size());
+    check(uncompress(rawScanlines.data(), &rawLen, idatBytes.data(), static_cast<uLong>(idatBytes.size())) == Z_OK &&
+          rawLen == rawScanlines.size(),
+          "PNG IDAT decompresses to expected scanline byte count");
+    size_t nonZeroFilters = 0;
+    const size_t stride = static_cast<size_t>(kSize) * 6u + 1u;
+    for (int y = 0; y < kSize; ++y) {
+        const unsigned char f = rawScanlines[static_cast<size_t>(y) * stride];
+        if (f > 0 && f <= 4) ++nonZeroFilters;
+    }
+    uLongf baselineBound = compressBound(static_cast<uLong>(unfilteredRaw.size()));
+    std::vector<unsigned char> baselineDeflated(baselineBound);
+    check(compress2(baselineDeflated.data(), &baselineBound, unfilteredRaw.data(),
+                    static_cast<uLong>(unfilteredRaw.size()), Z_DEFAULT_COMPRESSION) == Z_OK,
+          "baseline unfiltered deflate succeeds");
+    check(nonZeroFilters > 0 && pngBytes.size() < baselineBound,
+          "PNG adaptive row filtering is active and beats unfiltered baseline size");
+
+    // 2. 编码期直写 eXIf 块并完整读回
+    ImageEncoder::PngMetadata exifMeta;
+    // 最小合法 little-endian TIFF/EXIF 头 + IFD0 (Make="RawLab\0", Orientation=1)
+    exifMeta.exif = {
+        'I', 'I', 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00, // TIFF header: II*, IFD0 offset=8
+        0x02, 0x00,                                     // 2 entries
+        0x0F, 0x01, 0x02, 0x00, 0x07, 0x00, 0x00, 0x00, 0x26, 0x00, 0x00, 0x00, // Make (ASCII, count=7, off=0x26)
+        0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, // Orientation (SHORT, count=1, val=1)
+        0x00, 0x00, 0x00, 0x00,                         // next IFD = 0
+        'R', 'a', 'w', 'L', 'a', 'b', '\0'              // value at offset 0x26
+    };
+    const auto exifPng = pngDir / "with-exif.png";
+    check(ImageEncoder::savePNG(gradient, exifPng.string(), &exifMeta) == ErrorCode::Success,
+          "PNG writes with encoding-time eXIf chunk");
+    {
+        const std::string exifBytes = readTextFile(exifPng);
+        spng_ctx* dec = spng_ctx_new(0);
+        spng_set_png_buffer(dec, exifBytes.data(), exifBytes.size());
+        spng_exif decodedExif{};
+        const bool ok = dec && spng_decode_chunks(dec) == 0 &&
+            spng_get_exif(dec, &decodedExif) == 0 &&
+            decodedExif.length == exifMeta.exif.size() &&
+            std::memcmp(decodedExif.data, exifMeta.exif.data(), exifMeta.exif.size()) == 0;
+        if (dec) spng_ctx_free(dec);
+        check(ok, "PNG encoding-time eXIf chunk roundtrips byte-for-byte");
+    }
+
+    // 3. 编码期直写 iCCP 块且与 sRGB 互斥
+    ImageEncoder::PngMetadata iccMeta;
+    iccMeta.iccProfileName = "RawLab Test ICC";
+    iccMeta.iccProfile.assign(128, 0);
+    iccMeta.iccProfile[3] = 128;
+    iccMeta.iccProfile[36] = 'a';
+    iccMeta.iccProfile[37] = 'c';
+    iccMeta.iccProfile[38] = 's';
+    iccMeta.iccProfile[39] = 'p';
+    const auto iccPng = pngDir / "with-icc.png";
+    check(ImageEncoder::savePNG(gradient, iccPng.string(), &iccMeta) == ErrorCode::Success,
+          "PNG writes with encoding-time iCCP chunk");
+    {
+        const std::string iccBytes = readTextFile(iccPng);
+        spng_ctx* dec = spng_ctx_new(0);
+        spng_set_png_buffer(dec, iccBytes.data(), iccBytes.size());
+        spng_iccp decodedIccp{};
+        uint8_t srgbIntent = 0;
+        const bool ok = dec && spng_decode_chunks(dec) == 0 &&
+            spng_get_iccp(dec, &decodedIccp) == 0 &&
+            std::string(decodedIccp.profile_name) == iccMeta.iccProfileName &&
+            decodedIccp.profile_len == iccMeta.iccProfile.size() &&
+            std::memcmp(decodedIccp.profile, iccMeta.iccProfile.data(), iccMeta.iccProfile.size()) == 0 &&
+            spng_get_srgb(dec, &srgbIntent) == SPNG_ECHUNKAVAIL;
+        if (dec) spng_ctx_free(dec);
+        check(ok, "PNG encoding-time iCCP chunk roundtrips and omits sRGB");
+    }
+
+    // 4. 失败路径不破坏既有目标、不留暂存文件
+    const auto invalidTarget = pngDir / "invalid-preserves.png";
+    writeTextFile(invalidTarget, "preserve this png");
+    ImageData mismatched(2, 2);
+    mismatched.pixels.resize(1);
+    check(ImageEncoder::savePNG(ImageData(), invalidTarget.string()) == ErrorCode::ProcessingError &&
+          ImageEncoder::savePNG(mismatched, invalidTarget.string()) == ErrorCode::ProcessingError,
+          "PNG rejects invalid ImageData as a processing error");
+    check(readTextFile(invalidTarget) == "preserve this png" && !hasPngStagingFile(pngDir),
+          "invalid PNG input preserves existing target and creates no staging file");
+
+    const auto missingParentTarget = pngDir / "absent" / "out.png";
+    check(ImageEncoder::savePNG(gradient, missingParentTarget.string()) == ErrorCode::IOError &&
+          !std::filesystem::exists(missingParentTarget),
+          "PNG missing output directory returns IOError without creating target");
+
+    const auto blockedDir = pngDir / "blocked-dir";
+    std::filesystem::create_directory(blockedDir);
+    const auto marker = blockedDir / "keep.txt";
+    writeTextFile(marker, "keep png directory");
+    check(ImageEncoder::savePNG(gradient, blockedDir.string()) == ErrorCode::IOError &&
+          std::filesystem::is_directory(blockedDir) &&
+          readTextFile(marker) == "keep png directory" &&
+          !hasPngStagingFile(pngDir),
+          "PNG directory target fails cleanly without leaving staging files");
+
+#ifndef _WIN32
+    ImageData noisyPng(128, 128);
+    uint32_t pngSeed = 0x51A7F00Du;
+    for (size_t i = 0; i < noisyPng.pixels.size(); ++i) {
+        pngSeed = pngSeed * 1664525u + 1013904223u;
+        const float r = static_cast<float>((pngSeed >> 16) & 0xFFFFu) / 65535.0f;
+        pngSeed = pngSeed * 1664525u + 1013904223u;
+        const float g = static_cast<float>((pngSeed >> 16) & 0xFFFFu) / 65535.0f;
+        pngSeed = pngSeed * 1664525u + 1013904223u;
+        const float b = static_cast<float>((pngSeed >> 16) & 0xFFFFu) / 65535.0f;
+        noisyPng.pixels[i] = RGB(r, g, b);
+    }
+    const auto midwriteTarget = pngDir / "midwrite-existing.png";
+    writeTextFile(midwriteTarget, "preserve existing png");
+    const pid_t child = fork();
+    int childExit = -1;
+    if (child == 0) {
+        std::signal(SIGXFSZ, SIG_IGN);
+        const struct rlimit limit = {4096, 4096};
+        if (setrlimit(RLIMIT_FSIZE, &limit) != 0) _exit(2);
+        const bool ok = ImageEncoder::savePNG(noisyPng, midwriteTarget.string()) == ErrorCode::IOError;
+        _exit(ok ? 0 : 1);
+    } else if (child > 0) {
+        int status = 0;
+        if (waitpid(child, &status, 0) == child && WIFEXITED(status)) {
+            childExit = WEXITSTATUS(status);
+        }
+    }
+    check(childExit == 0 && readTextFile(midwriteTarget) == "preserve existing png" &&
+          !hasPngStagingFile(pngDir),
+          "mid-write PNG failure returns IOError, preserves target, and removes staging file");
+#endif
+}
+
 // WR-01: libjpeg-turbo 扫描线编码器替换 stb 后，同源内容对旧参考编码器的 PSNR 对齐锚
 // （覆盖 {85, 90, 91, 95}：q<=90 走 4:2:0，q>90 走 4:4:4，锁住 {90, 91} 子采样分界）。
 void testJpegEncoderTurboParity(const std::filesystem::path& parentDir) {
@@ -550,20 +781,20 @@ int main(int argc, char** argv) {
     std::vector<unsigned char> bytes((std::istreambuf_iterator<char>(pf)),{});
     pf.close(); // Windows cannot remove the temporary directory while this file is open.
     check(bytes.size()>25 && bytes[24]==16, "PNG IHDR declares sixteen bits");
-    auto read32 = [&](size_t offset) { return (uint32_t(bytes[offset])<<24) |
-        (uint32_t(bytes[offset+1])<<16) | (uint32_t(bytes[offset+2])<<8) | bytes[offset+3]; };
-    std::vector<unsigned char> compressed;
-    for (size_t offset=8; offset+12<=bytes.size();) {
-        uint32_t size=read32(offset);
-        if (offset+size+12>bytes.size()) break;
-        if (std::string(reinterpret_cast<const char*>(bytes.data()+offset+4),4)=="IDAT")
-            compressed.insert(compressed.end(),bytes.begin()+offset+8,bytes.begin()+offset+8+size);
-        offset+=size+12;
+    {
+        spng_ctx* dec = spng_ctx_new(0);
+        spng_set_png_buffer(dec, bytes.data(), bytes.size());
+        spng_ihdr ihdr{};
+        uint16_t rgb[3] = {};
+        const bool ok = dec &&
+            spng_get_ihdr(dec, &ihdr) == 0 &&
+            ihdr.width == 1 && ihdr.height == 1 && ihdr.bit_depth == 16 &&
+            ihdr.color_type == SPNG_COLOR_TYPE_TRUECOLOR &&
+            spng_decode_image(dec, rgb, sizeof(rgb), SPNG_FMT_PNG, 0) == 0 &&
+            rgb[0] == 65535 && rgb[1] == 0 && rgb[2] == 0;
+        if (dec) spng_ctx_free(dec);
+        check(ok, "PNG sixteen-bit red survives decompression");
     }
-    unsigned char decoded[7]={}; uLongf length=sizeof(decoded);
-    check(uncompress(decoded,&length,compressed.data(),compressed.size())==Z_OK && length==7 &&
-        decoded[0]==0 && decoded[1]==255 && decoded[2]==255 && decoded[3]==0 && decoded[5]==0,
-        "PNG sixteen-bit red survives decompression");
     bool nativeRejected=false;
     try { ColorConverter().convert(RGB(1,0,0),ColorSpace::SonyNative,ColorSpace::FujiFilm_FGamut); }
     catch (const std::invalid_argument&) { nativeRejected=true; }
@@ -2054,6 +2285,7 @@ int main(int argc, char** argv) {
     testJpegExportWriteSafety(dir, session);
     testJpegEncoderTurboParity(dir);
     testJpegExportScanlineCancellation(dir);
+    testPngEncoderLibspng(dir);
     testFujiLUTs(dir, session);
     const unsigned char black[3]={0,0,0};
     auto r=request(black);
