@@ -824,6 +824,7 @@ extension EditorV4UITests {
         XCTAssertTrue(discard.waitForExistence(timeout: 5), "A back gesture from a modified tool must offer the draft-exit decision.\n" + app.debugDescription)
         let continueEditing = app.alerts.buttons["Keep Editing"]
         XCTAssertTrue(continueEditing.waitForExistence(timeout: 5), app.debugDescription)
+        capture("k711-geometry-draft-exit", in: app)
         continueEditing.tap()
         XCTAssertEqual(try number(straighten), 4.5, accuracy: 0.0001, "Continuing editing keeps the active draft")
         backStart.press(forDuration: 0.1, thenDragTo: backEnd)
@@ -834,6 +835,70 @@ extension EditorV4UITests {
         app.buttons["geometry.tab.2"].tap()
         XCTAssertEqual(try number(app.buttons["geometry.perspectiveHorizontal.value"]), 51, accuracy: 0.0001)
         capture("v4-geometry-committed", in: app)
+    }
+
+    func testToolWorkspaceBackAndCollapseShareDraftGuardAndPreserveCanvasGestures() throws {
+        let app = try launchImportedEditor()
+        try setValue("0.00", title: "Exposure", unit: "EV", control: "adjustment", in: app)
+        applyDraft(in: app)
+        try selectTool("exposure", in: app)
+
+        let back = app.buttons["editor.tool.back"]
+        XCTAssertTrue(back.waitForExistence(timeout: 5), "The tool has an accessible navigation back button")
+        back.tap()
+        XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 5), "A clean tool returns without a decision")
+        XCTAssertFalse(app.alerts.firstMatch.exists)
+        try selectTool("exposure", in: app)
+
+        try setValue("+1.20", title: "Exposure", unit: "EV", control: "adjustment", in: app)
+        XCTAssertEqual(try number(app.buttons["adjustment.value"]), 1.2, accuracy: 0.0001,
+                       "Re-entering the same tool after Back must accept new numeric edits")
+        waitUntil(timeout: 60) { app.buttons["editor.draft.apply"].isEnabled }
+        let canvas = app.descendants(matching: .any)["editor.photo"]
+        let fitted = canvas.value as? String
+        canvas.pinch(withScale: 2, velocity: 1)
+        waitUntil { canvas.value as? String != fitted }
+        waitUntil(timeout: 60) { app.buttons["editor.draft.apply"].isEnabled }
+        let beforePan = try XCTUnwrap(canvas.screenshot().image.cgImage?.dataProvider?.data)
+        capture("k711-tool-canvas-before-pan", in: app)
+        let panStart = canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.5))
+        panStart.press(forDuration: 0.1, thenDragTo: canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.5)))
+        let afterPan = try XCTUnwrap(canvas.screenshot().image.cgImage?.dataProvider?.data)
+        XCTAssertNotEqual(beforePan as Data, afterPan as Data, "Panning a zoomed canvas must move the photo")
+        XCTAssertFalse(app.alerts.firstMatch.exists, "A rightward pan inside the canvas is not a back gesture")
+        XCTAssertEqual(try number(app.buttons["adjustment.value"]), 1.2, accuracy: 0.0001)
+        capture("k711-tool-canvas-zoom-pan", in: app)
+
+        back.tap()
+        let keepEditing = app.alerts.buttons["Keep Editing"]
+        XCTAssertTrue(keepEditing.waitForExistence(timeout: 5))
+        keepEditing.tap()
+        XCTAssertEqual(try number(app.buttons["adjustment.value"]), 1.2, accuracy: 0.0001)
+        app.buttons["editor.adjustments"].tap()
+        let discard = app.alerts.buttons["Discard Changes"]
+        XCTAssertTrue(discard.waitForExistence(timeout: 5), "Collapse uses the same draft decision")
+        discard.tap()
+        XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 5))
+        try selectTool("exposure", in: app)
+        XCTAssertEqual(try number(app.buttons["adjustment.value"]), 0, accuracy: 0.0001)
+
+        try setValue("+2.10", title: "Exposure", unit: "EV", control: "adjustment", in: app)
+        waitUntil(timeout: 60) { app.buttons["editor.draft.apply"].isEnabled }
+        back.tap()
+        let apply = app.alerts.buttons["Apply"]
+        XCTAssertTrue(apply.waitForExistence(timeout: 5))
+        apply.tap()
+        XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 5), "Applying the decision returns to the overview")
+        try selectTool("exposure", in: app)
+        XCTAssertEqual(try number(app.buttons["adjustment.value"]), 2.1, accuracy: 0.0001)
+        let edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.45))
+        edge.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.45)))
+        XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 5), "A clean back gesture returns directly")
+        XCTAssertFalse(app.alerts.firstMatch.exists)
+        try selectTool("saturation", in: app)
+        XCTAssertTrue(app.navigationBars["Saturation"].waitForExistence(timeout: 5),
+                      "Selecting another group after back must open Saturation instead of returning to Exposure")
+        XCTAssertTrue(app.buttons["editor.tool.back"].exists)
     }
 
     func testCropWidthWheelKeepsAspectForCornerDragAndRotationPreservesDraft() throws {

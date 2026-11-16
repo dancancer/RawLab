@@ -161,6 +161,7 @@ extension ContentView {
         cancelSliderInteraction()
         if resettingFine && selection != currentEditorTool { adjustmentFine = false }
         collapsedEditorTool = nil
+        adjustmentsExpanded = true
         // finishDraftNavigation 已先清 workspaceDraft/toolWorkspaceOpen；导航来源仍要按离开草稿处理。
         let leavingDraft = isEditorDraftActive || leavingWorkspace
         if leavingDraft { clearRecoverableDraft(); viewModel.discardDraftSaveFailure(settings: settings) }
@@ -304,6 +305,11 @@ extension ContentView {
         if expansion == false { completeAdjustmentExpansion(false, closingWorkspace: leavingWorkspace); return }
         if let selection { activateEditorTool(selection, leavingWorkspace: leavingWorkspace) }
         if let expansion { completeAdjustmentExpansion(expansion) }
+        if selection == nil && expansion == nil {
+            finishEditorTool()
+            collapsedEditorTool = nil
+            adjustmentsExpanded = true
+        }
     }
 
     func retryEditorSave() {
@@ -372,6 +378,7 @@ extension ContentView {
         guard !editorBusy else { return }
         closeQuickPresets()
         guard !isEditorDraftActive else { return }
+        collapsedEditorTool = nil
         selectedGroup = group
         adjustmentsExpanded = true
     }
@@ -385,6 +392,20 @@ extension ContentView {
         }
         if let collapsed = collapsedEditorTool, EditorAdjustmentRules.groupFor(collapsed) == .hdrRendition {
             collapsedEditorTool = nil
+        }
+    }
+
+    func requestToolWorkspaceExit() {
+        guard toolWorkspaceOpen, !editorBusy else { return }
+        if !hslTargetEnabled { cancelSliderInteraction() }
+        if isEditorDraftChanged {
+            pendingToolSelection = nil
+            pendingAdjustmentExpansion = nil
+            draftExitPresented = true
+        } else {
+            finishEditorTool()
+            collapsedEditorTool = nil
+            adjustmentsExpanded = true
         }
     }
 
