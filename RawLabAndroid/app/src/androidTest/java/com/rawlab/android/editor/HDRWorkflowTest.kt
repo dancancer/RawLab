@@ -10,6 +10,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
+import com.rawlab.android.testing.openWorkbenchTool
+import com.rawlab.android.testing.selectWorkbenchGroup
+import com.rawlab.android.testing.openWorkbenchMore
 import com.rawlab.android.MainActivity
 import com.rawlab.android.R
 import com.rawlab.android.adjustments.AdjustmentPayload
@@ -27,6 +30,24 @@ import java.util.concurrent.atomic.AtomicReference
 
 class HDRWorkflowTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+
+    private fun draftReady() {
+        compose.waitUntil(120_000) { compose.activity.model.state.value.let { it.draftReady || it.error != null } }
+        assertNull(compose.activity.model.state.value.error)
+    }
+    private fun openToolDraft(id: Int) { compose.openWorkbenchTool(id); draftReady() }
+    private fun applyToolDraft() {
+        draftReady()
+        compose.onNodeWithTag("draft.apply").assertIsEnabled().performClick()
+        compose.waitUntil(120_000) { compose.activity.model.state.value.let { it.canExport || it.error != null } }
+        assertNull(compose.activity.model.state.value.error)
+        assertNull(compose.activity.model.state.value.draft)
+    }
+    private fun draftHistory(redo: Boolean) {
+        compose.onNodeWithContentDescription(compose.activity.getString(if (redo) R.string.transfer_redo else R.string.transfer_undo))
+            .assertIsEnabled().performClick()
+        draftReady()
+    }
 
     @Test fun hdrLookImportsThroughFilesAndSurvivesUndoAndReopen() {
         assumeTrue(Build.VERSION.SDK_INT >= 29)
@@ -63,47 +84,59 @@ class HDRWorkflowTest {
             compose.runOnUiThread { model.importPhoto(Uri.fromFile(source)) }
             ready()
             val before = model.state.value.preview!!.hdr!!.result
-            val lookGroup = "editor-group-looks"
-            compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag(lookGroup))
-            compose.onNodeWithTag(lookGroup).assertIsEnabled().performClick()
+            openToolDraft(0)
             compose.onNodeWithTag("hdr-look-silver").performScrollTo().performClick()
-            compose.waitUntil(30_000) { model.state.value.edits.hdr?.lookSettings?.name == "HDR Silver" }
-            ready()
+            compose.waitUntil(30_000) { model.state.value.visibleEdits.hdr?.lookSettings?.name == "HDR Silver" }
+            applyToolDraft(); ready()
             assertEquals(0f, model.state.value.edits.hdr!!.effectSettings.grainAmount, 0f)
+            openToolDraft(0)
             compose.onNodeWithTag("hdr-look-silver-master").performScrollTo().performClick()
-            compose.waitUntil(30_000) { model.state.value.edits.hdr?.effectSettings?.grainAmount == 14f }
-            ready()
+            compose.waitUntil(30_000) { model.state.value.visibleEdits.hdr?.effectSettings?.grainAmount == 14f }
+            applyToolDraft(); ready()
             val master = model.state.value.edits.hdr!!
             assertEquals(-8f, master.toneSettings.blackPoint, 0f)
             assertEquals(14f, master.toneSettings.curveStrength, .0001f)
+            openToolDraft(0)
             compose.onNodeWithTag("hdr-look-import").performScrollTo().performClick()
             val accessibility = instrumentation.uiAutomation
             fun pickerRoot() = accessibility.rootInActiveWindow?.takeIf { it.packageName.toString().endsWith("documentsui") }
             fun findFile() = pickerRoot()?.findAccessibilityNodeInfosByText(name)?.firstOrNull { it.text?.toString() == name }
             compose.waitUntil(10_000) { pickerRoot() != null }
             if (findFile() == null) {
+                // DocumentsUI 跟随系统语言；英文选择器在中文 Files 上会卡死，按标签并集与视图 id 定位。
+                val drawerLabels = setOf("Show roots", "Open navigation drawer", "显示根目录", "打开导航抽屉", "开启导航抽屉")
+                val downloadLabels = setOf("Downloads", "Download", "下载")
                 fun navigation(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
                     if (node == null) return null
-                    if (node.contentDescription?.toString() in setOf("Show roots", "Open navigation drawer")) return node
+                    if (node.contentDescription?.toString() in drawerLabels) return node
                     return (0 until node.childCount).firstNotNullOfOrNull { navigation(node.getChild(it)) }
                 }
+                fun downloadRoot() = pickerRoot()?.let { root ->
+                    root.findAccessibilityNodeInfosByViewId("com.android.documentsui:id/item_root")
+                        .firstOrNull { row -> row.findAccessibilityNodeInfosByViewId("android:id/title")
+                            .any { title -> title.text?.toString() in downloadLabels } }
+                        ?: downloadLabels.firstNotNullOfOrNull { label ->
+                            root.findAccessibilityNodeInfosByText(label)?.firstOrNull { it.text?.toString() == label } }
+                }
                 assertTrue("Open the Files location drawer", click(navigation(pickerRoot())))
-                compose.waitUntil(10_000) { pickerRoot()?.findAccessibilityNodeInfosByText("Downloads")?.isNotEmpty() == true }
-                assertTrue(click(pickerRoot()?.findAccessibilityNodeInfosByText("Downloads")?.firstOrNull()))
+                compose.waitUntil(10_000) { pickerRoot()?.findAccessibilityNodeInfosByViewId("com.android.documentsui:id/roots_list")?.isNotEmpty() == true }
+                assertTrue(click(downloadRoot()))
             }
             compose.waitUntil(10_000) { findFile() != null }
             assertTrue("Choose the HDR CUBE in Files", click(findFile()))
-            compose.waitUntil(30_000) { model.state.value.edits.hdr?.lookSettings?.name == name.removeSuffix(".cube") ||
+            compose.waitUntil(30_000) { model.state.value.visibleEdits.hdr?.lookSettings?.name == name.removeSuffix(".cube") ||
                 model.state.value.error != null }
-            ready()
+            applyToolDraft(); ready()
             val imported = model.state.value.edits.hdr!!
             asset = imported.lookSettings.asset(model.storage.hdrLookDirectory)
             assertTrue(asset!!.isFile)
             assertFalse(before.hdr.contentEquals(model.state.value.preview!!.hdr!!.result.hdr))
             assertFalse(before.sdr.contentEquals(model.state.value.preview!!.hdr!!.result.sdr))
+            openToolDraft(0)
             compose.onNodeWithTag("adjustment-value-${R.string.transfer_field_strength}").performScrollTo().performClick()
             compose.onNodeWithTag("adjustment-input").performTextReplacement("65")
             compose.onNodeWithTag("adjustment-input-apply").assertIsEnabled().performClick()
+            applyToolDraft()
             ready()
             val edited = model.state.value.edits.hdr!!
             assertEquals(7, edited.processingVersion)
@@ -112,11 +145,10 @@ class HDRWorkflowTest {
             ready()
             assertEquals(edited, model.state.value.edits.hdr)
             if (compose.onAllNodesWithTag("hdr-look-clear").fetchSemanticsNodes().isEmpty()) {
-                compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag(lookGroup))
-                compose.onNodeWithTag(lookGroup).performClick()
+                openToolDraft(0)
             }
             compose.onNodeWithTag("hdr-look-clear").performScrollTo().performClick()
-            ready()
+            applyToolDraft(); ready()
             assertTrue(model.state.value.edits.hdr!!.lookSettings.isDefault)
             compose.onNode(hasContentDescription(compose.activity.getString(R.string.more)) and
                 hasAnyAncestor(hasTestTag("editor-menu"))).performClick()
@@ -142,21 +174,15 @@ class HDRWorkflowTest {
             state.canExport
         }
         fun edit(tool: Int, label: Int, value: String) {
-            compose.onNodeWithTag("editor-tools").performScrollToNode(hasTestTag("editor-tool-$tool"))
-            compose.onNodeWithTag("editor-tool-$tool").assertIsEnabled().performClick()
+            openToolDraft(tool)
             compose.onNodeWithTag("adjustment-value-$label").performScrollTo().performClick()
             compose.onNodeWithTag("adjustment-input").performTextReplacement(value)
             compose.onNodeWithTag("adjustment-input-apply").assertIsEnabled().performClick()
+            applyToolDraft()
             ready()
         }
         fun frame() = model.state.value.preview!!.hdr!!.result
-        fun openGroup(group: String) {
-            val tag = "editor-group-$group"
-            compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag(tag))
-            if (compose.onAllNodes(hasTestTag(tag) and isSelected()).fetchSemanticsNodes().isEmpty()) {
-                compose.onNodeWithTag(tag).performClick()
-            }
-        }
+        fun openGroup(group: String) = compose.selectWorkbenchGroup(group)
         try {
             compose.runOnUiThread { model.importPhoto(Uri.fromFile(source)) }
             ready()
@@ -230,7 +256,7 @@ class HDRWorkflowTest {
             val original = frame()
             val dormant = model.state.value.edits.sdrSnapshot
             settings()
-            compose.onNodeWithTag("hdr-rendition").performClick()
+            compose.onNodeWithTag("hdr-rendition").performScrollTo().performClick()
             commit(R.string.hdr_sdr_exposure, "-1.5")
             val base = frame()
             assertArrayEquals(original.hdr, base.hdr, 0f)
@@ -265,12 +291,7 @@ class HDRWorkflowTest {
             if (state.error != null) throw AssertionError(state.error)
             state.canExport
         }
-        fun tool(id: Int) {
-            if (!compose.onAllNodesWithTag("editor-tool-7").fetchSemanticsNodes().any())
-                compose.onNodeWithTag("editor-group-color").performClick()
-            compose.onNodeWithTag("editor-tools").performScrollToNode(hasTestTag("editor-tool-$id"))
-            compose.onNodeWithTag("editor-tool-$id").assertIsEnabled().performClick()
-        }
+        fun tool(id: Int) = openToolDraft(id)
         fun menu() {
             compose.onNode(hasContentDescription(compose.activity.getString(R.string.more)) and
                 hasAnyAncestor(hasTestTag("editor-menu"))).performClick()
@@ -283,7 +304,7 @@ class HDRWorkflowTest {
         fun switchMode() {
             menu()
             compose.onNodeWithText(compose.activity.getString(R.string.editor_settings)).performClick()
-            compose.onNodeWithTag("hdr-editing").assertIsEnabled().performClick()
+            compose.onNodeWithTag("hdr-editing").performScrollTo().assertIsEnabled().performClick()
             compose.onNodeWithText(compose.activity.getString(R.string.confirm)).performClick()
             ready()
         }
@@ -294,12 +315,14 @@ class HDRWorkflowTest {
             compose.onNodeWithTag("adjustment-value-${R.string.vibrance}").performClick()
             compose.onNodeWithTag("adjustment-input").performTextReplacement("35")
             compose.onNodeWithTag("adjustment-input-apply").assertIsEnabled().performClick()
+            applyToolDraft()
             ready()
             assertEquals(35f, model.state.value.edits.hdr!!.colorSettings.vibrance)
             val original = model.state.value.edits.hdr!!.colorSettings.hsl
             tool(14)
-            compose.onNodeWithTag("hsl-target").performClick()
-            ready()
+            compose.openWorkbenchMore()
+            compose.onNodeWithText(compose.activity.getString(R.string.hsl_target)).assertIsEnabled().performClick()
+            draftReady()
             val canvas = compose.onNodeWithTag("photo-canvas")
             for (fraction in listOf(.53f, .42f, .58f)) {
                 canvas.performTouchInput {
@@ -308,15 +331,17 @@ class HDRWorkflowTest {
                     up()
                 }
                 compose.waitUntil(10_000) { !model.hslTarget.value.waiting }
-                if (model.state.value.edits.hdr!!.colorSettings.hsl != original) break
+                if (model.state.value.visibleEdits.hdr!!.colorSettings.hsl != original) break
             }
-            ready()
-            val mixed = model.state.value.edits.hdr!!.colorSettings.hsl
+            draftReady()
+            val mixed = model.state.value.visibleEdits.hdr!!.colorSettings.hsl
             assertTrue("HDR target sample unavailable: ${model.hslTarget.value.notice}", model.hslTarget.value.sample?.usable == true)
             assertNotEquals(original, mixed)
-            history("undo")
-            assertEquals(original, model.state.value.edits.hdr!!.colorSettings.hsl)
-            history("redo")
+            draftHistory(false)
+            assertEquals(original, model.state.value.visibleEdits.hdr!!.colorSettings.hsl)
+            draftHistory(true)
+            assertEquals(mixed, model.state.value.visibleEdits.hdr!!.colorSettings.hsl)
+            applyToolDraft(); ready()
             assertEquals(mixed, model.state.value.edits.hdr!!.colorSettings.hsl)
 
             tool(21)
@@ -324,7 +349,7 @@ class HDRWorkflowTest {
             compose.onNodeWithTag("grading-wheel").performTouchInput {
                 down(center); moveBy(Offset(20f, -24f)); up()
             }
-            ready()
+            applyToolDraft(); ready()
             val edited = model.state.value.edits.hdr!!
             assertEquals(3, edited.processingVersion)
             assertTrue(edited.colorSettings.grading.highlights.saturation > 0f)
@@ -350,14 +375,12 @@ class HDRWorkflowTest {
             if (state.error != null) throw AssertionError(state.error)
             state.canExport
         }
-        fun tool(id: Int) {
-            compose.onNodeWithTag("editor-tools").performScrollToNode(hasTestTag("editor-tool-$id"))
-            compose.onNodeWithTag("editor-tool-$id").assertIsEnabled().performClick()
-        }
+        fun tool(id: Int) = openToolDraft(id)
         fun commit(label: Int, value: String) {
             compose.onNodeWithTag("adjustment-value-$label").performClick()
             compose.onNodeWithTag("adjustment-input").performTextReplacement(value)
             compose.onNodeWithTag("adjustment-input-apply").assertIsEnabled().performClick()
+            applyToolDraft()
             ready()
         }
         fun history(action: String) {
@@ -375,26 +398,31 @@ class HDRWorkflowTest {
             tool(19); commit(R.string.white_point, "50")
             assertEquals(-25f, model.state.value.edits.hdr!!.toneSettings.blackPoint)
             assertEquals(50f, model.state.value.edits.hdr!!.toneSettings.whitePoint)
+            val committedBeforeCurve = model.state.value.edits.hdr!!.toneSettings.curve
             tool(6)
-            compose.onNodeWithTag("curve-switch").performClick()
-            compose.onNodeWithTag("curve-switch-confirm").performClick()
-            ready()
+            // 新照片默认已是自定义 EV 曲线画布；legacy→custom 的 curve-switch 入口收敛到编辑点面板，由 ToneCurveControlsTest 覆盖。
+            draftReady()
             compose.onNodeWithTag("curve-hdr-ev-axis").assertExists()
             val canvas = compose.onNodeWithTag("curve-canvas")
             canvas.performTouchInput { click(center) }
-            ready()
-            val before = model.state.value.edits.hdr!!.toneSettings.curve
+            draftReady()
+            val before = model.state.value.visibleEdits.hdr!!.toneSettings.curve
             assertEquals(3, before.points.size)
             canvas.performTouchInput { down(center); moveBy(Offset(26f, -30f)); up() }
-            ready()
+            draftReady()
+            val curve = model.state.value.visibleEdits.hdr!!.toneSettings.curve
+            draftHistory(false)
+            assertEquals(before, model.state.value.visibleEdits.hdr!!.toneSettings.curve)
+            draftHistory(true)
+            assertEquals(curve, model.state.value.visibleEdits.hdr!!.toneSettings.curve)
+            applyToolDraft(); ready()
             val edited = model.state.value.edits
-            val curve = edited.hdr!!.toneSettings.curve
             assertNotEquals(before, curve)
-            assertEquals(2, edited.hdr.processingVersion)
+            assertEquals(2, edited.hdr!!.processingVersion)
             assertEquals(original.sdrSnapshot, edited.sdrSnapshot)
             assertTrue(edited.curve.isDefault)
             history("undo")
-            assertEquals(before, model.state.value.edits.hdr!!.toneSettings.curve)
+            assertEquals(committedBeforeCurve, model.state.value.edits.hdr!!.toneSettings.curve)
             history("redo")
             assertEquals(curve, model.state.value.edits.hdr!!.toneSettings.curve)
             compose.runOnUiThread { model.importPhoto(Uri.fromFile(source)) }
@@ -421,7 +449,7 @@ class HDRWorkflowTest {
                 hasAnyAncestor(hasTestTag("editor-menu"))).performClick()
             compose.onNodeWithTag("adjustment-menu-$action").assertIsEnabled().performClick()
             ready()
-            assertEquals(exposure, model.state.value.edits.hdr!!.exposure)
+            assertEquals(exposure, model.state.value.visibleEdits.hdr!!.exposure)
         }
         try {
             compose.runOnUiThread { model.importPhoto(Uri.fromFile(source)) }
@@ -429,23 +457,26 @@ class HDRWorkflowTest {
             assertTrue(model.state.value.edits.isHDREditing)
             compose.runOnUiThread { model.edit(model.state.value.edits.copy(exposure = 3.75f)) }
             ready()
+            openToolDraft(2)
             val button = compose.onNodeWithTag("exposure.auto")
             button.assertIsEnabled().performClick()
-            ready()
-            val exposure = model.state.value.edits.exposure
+            draftReady()
+            val exposure = model.state.value.visibleEdits.exposure
             assertTrue(exposure in -4f..4f && exposure != 3.75f)
-            assertEquals(exposure, model.state.value.edits.hdr!!.exposure)
+            assertEquals(exposure, model.state.value.visibleEdits.hdr!!.exposure)
             val acceptedPreview = model.state.value.preview
             button.assertIsEnabled().performClick()
-            ready()
-            assertEquals(exposure, model.state.value.edits.exposure)
+            draftReady()
+            assertEquals(exposure, model.state.value.visibleEdits.exposure)
             assertSame(acceptedPreview, model.state.value.preview)
+            applyToolDraft(); ready()
+            assertEquals(exposure, model.state.value.edits.exposure)
             history("undo", 3.75f)
             history("redo", exposure)
             compose.runOnUiThread { model.importPhoto(Uri.fromFile(source)) }
             ready()
             assertTrue(model.state.value.edits.isHDREditing)
-            assertEquals(exposure, model.state.value.edits.hdr!!.exposure)
+            assertEquals(exposure, model.state.value.visibleEdits.hdr!!.exposure)
         } finally { source.delete() }
     }
 
@@ -530,7 +561,7 @@ class HDRWorkflowTest {
             compose.onNode(hasContentDescription(compose.activity.getString(R.string.more)) and
                 hasAnyAncestor(hasTestTag("editor-menu"))).performClick()
             compose.onNodeWithText(compose.activity.getString(R.string.editor_settings)).performClick()
-            compose.onNodeWithTag("hdr-editing").performClick()
+            compose.onNodeWithTag("hdr-editing").performScrollTo().performClick()
             compose.onNodeWithText(compose.activity.getString(R.string.confirm)).performClick()
             ready()
             assertEquals(enabled, model.state.value.edits.isHDREditing)
@@ -722,7 +753,7 @@ class HDRWorkflowTest {
             fun mode(enabled: Boolean) {
                 compose.onNode(hasContentDescription(compose.activity.getString(R.string.more)) and hasAnyAncestor(hasTestTag("editor-menu"))).performClick()
                 compose.onNodeWithText(compose.activity.getString(R.string.editor_settings)).performClick()
-                compose.onNodeWithTag("hdr-editing").performClick()
+                compose.onNodeWithTag("hdr-editing").performScrollTo().performClick()
                 compose.onNodeWithText(compose.activity.getString(R.string.confirm)).performClick()
                 ready()
                 compose.runOnIdle { assertEquals(enabled, compose.activity.model.state.value.edits.isHDREditing) }
