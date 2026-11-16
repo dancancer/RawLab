@@ -46,6 +46,12 @@ fun ComposeTestRule.openWorkbenchMore() {
     onNodeWithTag("workspace-more").assertIsDisplayed().performTouchInput { click() }
 }
 
+fun ComposeTestRule.dismissWorkbenchMenu() {
+    InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+    waitUntil(5_000) { onAllNodesWithTag("adjustment-fine").fetchSemanticsNodes().isEmpty() }
+    onNodeWithTag("editor-parameters").assertIsDisplayed()
+}
+
 fun ComposeTestRule.openEditorMenu() {
     onNodeWithTag("editor-menu").assertIsDisplayed().performTouchInput { click() }
 }
