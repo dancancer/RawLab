@@ -1,5 +1,6 @@
 #include "platform/hdr_image.h"
 #include "core/hdr_jpeg.h"
+#include "core/jpeg_mpf.h"
 #include "core/output_file_mode.h"
 #include "core/parallel_pixels.h"
 #import <Foundation/Foundation.h>
@@ -200,6 +201,20 @@ void describe(File& file) {
 
 void read(File& file, const char* path) {
     readMetadataSource(file,path);
+    const auto count = CGImageSourceGetCount(file.source);
+    const auto type = CGImageSourceGetType(file.source);
+    if (count > 1 && count <= 3 && type && CFEqual(type, CFSTR("public.jpeg")) &&
+        !declaresGainMap(file.data) && inspectSdrJpegMpf(std::filesystem::u8path(path)) == static_cast<int>(count)) {
+        // ImageIO can expose SDR thumbnails as frames. HDR gain maps still follow the HDR probe.
+        bool gainMap = CFBridgingRelease(CGImageSourceCopyAuxiliaryDataInfoAtIndex(
+            file.source, 0, kCGImageAuxiliaryDataTypeHDRGainMap)) != nil;
+        if (@available(macOS 15.0, iOS 18.0, *)) {
+            gainMap |= CFBridgingRelease(CGImageSourceCopyAuxiliaryDataInfoAtIndex(
+                file.source, 0, kCGImageAuxiliaryDataTypeISOGainMap)) != nil;
+        }
+        if (!gainMap)
+            error(SONY2FUJI_STATUS_UNSUPPORTED, SONY2FUJI_HDR_REASON_NOT_HDR, "No HDR gain map");
+    }
     describe(file);
 }
 

@@ -38,7 +38,7 @@ internal object RasterImageDecoder {
             val header=ByteArray(12);input.read(header)==header.size && header.copyOfRange(4,8).contentEquals("ftyp".toByteArray(Charsets.US_ASCII))
         }
         if (heif) return decodeHEIF(file)
-        val validation = file.inputStream().use(RasterContainerValidator::inspect)
+        val validation = RasterContainerValidator.inspect(file)
         val info = validation.info ?: throw IOException(
             if (validation.error == RasterContainerValidator.PNG16_TOO_LARGE)
                 AppStrings.text(R.string.message_png16_decode_limit)

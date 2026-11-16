@@ -661,13 +661,20 @@ int main(int argc, char** argv) {
         addMpfThumbnail(jpeg, root / "camera-mpf-vga.jpg", 0x010001);
         check(decode(root / "camera-mpf-vga.jpg", 12, 8) == upright,
             "An MPF VGA thumbnail also leaves the primary JPEG unchanged");
-        for (const auto& trailing : {std::vector<uint8_t>{0}, read(jpeg)}) {
-            auto unindexed = read(root / "camera-mpf.jpg");
-            unindexed.insert(unindexed.end(), trailing.begin(), trailing.end());
-            write(root / "mpf-unindexed-trailer.jpg", unindexed);
-            reject(root / "mpf-unindexed-trailer.jpg", SONY2FUJI_STATUS_UNSUPPORTED,
-                "MPF rejects bytes and JPEG images beyond its indexed ranges");
-        }
+        auto cameraVariant = read(root / "camera-mpf.jpg");
+        cameraVariant[63] = 0x80; // LE primary attributes without the representative flag.
+        cameraVariant.insert(cameraVariant.end(), {0xdc, 0xff, 0x00, 0x36});
+        const auto variantPath = root / "mpf-camera-trailer.jpg";
+        write(variantPath, cameraVariant);
+        check(decode(variantPath, 12, 8) == upright,
+            "An MPF JPEG without the representative flag can carry a camera trailer");
+        checkPreview(variantPath, 6, 12, 8, 6, 4);
+        auto unindexed = read(root / "camera-mpf.jpg");
+        const auto trailing = read(jpeg);
+        unindexed.insert(unindexed.end(), trailing.begin(), trailing.end());
+        write(root / "mpf-unindexed-trailer.jpg", unindexed);
+        reject(root / "mpf-unindexed-trailer.jpg", SONY2FUJI_STATUS_UNSUPPORTED,
+            "MPF rejects an unindexed JPEG immediately after its indexed ranges");
         addMpfThumbnail(jpeg, root / "camera-mpf-two-thumbnails.jpg", 0x010002, true, thumbnail, 0x010001);
         check(decode(root / "camera-mpf-two-thumbnails.jpg", 12, 8) == upright,
             "An MPF primary can have one thumbnail of each supported class");
