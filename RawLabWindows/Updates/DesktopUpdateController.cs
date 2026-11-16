@@ -37,7 +37,7 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     public bool CheckingStartupTrust { get; private set; }
     public string? StartupTrustError { get; private set; }
     public Func<Task>? RetryStartup { get; set; }
-    public bool BlocksEditing => startupStorageBlocked || PreparingInstallation || RequiresStartupHealthCheck || RequiresRecovery;
+    public bool BlocksEditing => PreparingInstallation || RequiresStartupHealthCheck || RequiresRecovery;
     public bool Recovering { get; private set; }
     public bool RecoveryNeedsRestart { get; private set; }
     public string? RecoveryError { get; private set; }

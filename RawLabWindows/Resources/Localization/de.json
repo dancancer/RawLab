@@ -632,6 +632,7 @@
     "此 X3F 显影模式不支持 AI 降噪。": "Dieser X3F-Entwicklungsmodus unterstützt keine KI-Entrauschung.",
     "此像素不可取样。": "Dieses Pixel kann nicht erfasst werden.",
     "此安装暂不支持自动安装更新": "Diese Installation unterstützt automatische Updates noch nicht",
+    "自动更新不可用，请手动下载": "Automatische Updates sind nicht verfügbar. Bitte laden Sie manuell herunter.",
     "此操作只恢复{0}组内的调整，其他分组保持不变。": "Nur Anpassungen in der Gruppe „{0}“ werden zurückgesetzt. Andere Gruppen bleiben unverändert.",
     "此操作已过期，请重新操作。": "Dieser Vorgang ist nicht mehr aktuell. Starten Sie ihn erneut.",
     "此构建未安装 AI 降噪模型。": "Dieses Build enthält kein KI-Entrauschungsmodell.",

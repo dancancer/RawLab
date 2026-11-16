@@ -682,13 +682,13 @@ internal static class ControllerChecks
                 var onDisk = File.ReadAllBytes(store.StatePath);
                 var adapter = new Adapter();
                 var controller = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14");
-                check(controller.StorageError != null && controller.BlocksEditing && !controller.CanCheck && !controller.CanRepairState &&
+                check(controller.StorageError != null && !controller.BlocksEditing && controller.UnavailableReason == "storage" && !controller.CanCheck && !controller.CanRepairState &&
                     Directory.Exists(backup) && controller.State.Phase == UpdatePhase.Idle && File.ReadAllBytes(store.StatePath).SequenceEqual(onDisk),
-                    "Unknown enum with installation evidence (" + name + ") keeps the install gate and preserves the backup (Q13 boundary)");
+                    "Unknown enum with installation evidence (" + name + ") keeps the storage update gate and preserves the backup without blocking editing (Q13 boundary)");
                 var reopened = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14");
-                check(reopened.BlocksEditing && Directory.Exists(backup) && File.Exists(Path.Combine(backup, "manifest.json")) &&
+                check(!reopened.BlocksEditing && reopened.UnavailableReason == "storage" && Directory.Exists(backup) && File.Exists(Path.Combine(backup, "manifest.json")) &&
                     File.ReadAllBytes(store.StatePath).SequenceEqual(onDisk),
-                    "Reopening the evidence combo (" + name + ") still refuses silent backup deletion");
+                    "Reopening the evidence combo (" + name + ") still refuses silent backup deletion without blocking editing");
                 await Task.CompletedTask;
             }
         }
@@ -726,13 +726,13 @@ internal static class ControllerChecks
                 File.WriteAllBytes(store.StatePath, JsonSerializer.SerializeToUtf8Bytes(document));
                 var onDisk = File.ReadAllBytes(store.StatePath);
                 var controller = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14");
-                check(controller.StorageError != null && controller.BlocksEditing && !controller.CanCheck && !controller.CanRepairState &&
+                check(controller.StorageError != null && !controller.BlocksEditing && controller.UnavailableReason == "storage" && !controller.CanCheck && !controller.CanRepairState &&
                     Directory.Exists(backup) && File.Exists(Path.Combine(backup, "manifest.json")) && File.ReadAllBytes(store.StatePath).SequenceEqual(onDisk),
-                    "Unknown enum with disk backup evidence (" + slot + ") keeps storage gate and preserves backup on disk");
+                    "Unknown enum with disk backup evidence (" + slot + ") keeps storage gate and preserves backup on disk without blocking editing");
                 var reopened = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14");
-                check(reopened.BlocksEditing && Directory.Exists(backup) && File.Exists(Path.Combine(backup, "manifest.json")) &&
+                check(!reopened.BlocksEditing && reopened.UnavailableReason == "storage" && Directory.Exists(backup) && File.Exists(Path.Combine(backup, "manifest.json")) &&
                     File.ReadAllBytes(store.StatePath).SequenceEqual(onDisk),
-                    "Reopening unknown enum with disk backup (" + slot + ") still preserves backup on disk");
+                    "Reopening unknown enum with disk backup (" + slot + ") still preserves backup on disk without blocking editing");
             }
             {
                 var recoveryRoot = Path.Combine(root, "RecoveryDir");
@@ -747,8 +747,8 @@ internal static class ControllerChecks
                 document["PendingUpdate"]!["Choice"] = 99;
                 File.WriteAllBytes(store.StatePath, JsonSerializer.SerializeToUtf8Bytes(document));
                 var controller = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14");
-                check(controller.StorageError != null && controller.BlocksEditing && !controller.CanRepairState && File.Exists(preservedEdit),
-                    "Unknown enum with Recoveries entry keeps storage gate and prevents archiving recovery data");
+                check(controller.StorageError != null && !controller.BlocksEditing && controller.UnavailableReason == "storage" && !controller.CanRepairState && File.Exists(preservedEdit),
+                    "Unknown enum with Recoveries entry keeps storage gate and prevents archiving recovery data without blocking editing");
                 Directory.Delete(Path.Combine(directory, "Recoveries"), true);
                 File.WriteAllText(Path.Combine(directory, "recovery-in-progress.json"), "journal");
                 var interrupted = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14");
@@ -802,8 +802,8 @@ internal static class ControllerChecks
                 var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(damaged); File.WriteAllBytes(store.StatePath, bytes);
                 var reopened = new DesktopUpdateController(new Adapter(), new(), store, "0.9.1", "19");
                 await reopened.FinishStartupHealthCheckAsync(true);
-                check(reopened.StorageError != null && reopened.BlocksEditing && !reopened.CanCheck && !reopened.CanChooseInstall && !reopened.CanRepairState,
-                    "Malformed installation failure blocks startup and state reset: " + name);
+                check(reopened.StorageError != null && !reopened.BlocksEditing && reopened.UnavailableReason == "storage" && !reopened.CanCheck && !reopened.CanChooseInstall && !reopened.CanRepairState,
+                    "Malformed installation failure degrades updates without blocking editing and blocks state reset: " + name);
                 check(File.ReadAllBytes(store.StatePath).SequenceEqual(bytes), "Blocked startup preserves the damaged failure record: " + name);
             }
         }

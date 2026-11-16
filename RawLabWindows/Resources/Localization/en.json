@@ -632,6 +632,7 @@
     "此 X3F 显影模式不支持 AI 降噪。": "AI denoising is not supported in this X3F rendering mode.",
     "此像素不可取样。": "This pixel cannot be sampled.",
     "此安装暂不支持自动安装更新": "This installation does not support automatic updates yet",
+    "自动更新不可用，请手动下载": "Automatic updates are unavailable. Please download manually.",
     "此操作只恢复{0}组内的调整，其他分组保持不变。": "Only adjustments in the {0} group will be reset. Other groups will stay unchanged.",
     "此操作已过期，请重新操作。": "This operation is out of date. Start it again.",
     "此构建未安装 AI 降噪模型。": "This build does not include the AI denoise model.",

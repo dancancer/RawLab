@@ -42,8 +42,11 @@ public sealed class SoftwareUpdateWindow : Window
                 AddText("自动安装默认关闭。安装前会保存已提交的编辑，并等待草稿和任务处理完成。");
                 panel.Children.Add(new Separator{Margin=new Thickness(0,10,0,10)});
             }
-            if(updates.UnavailableReason!=null){AddText("此安装暂不支持自动安装更新",true);AddText(legacy.Status,localized:true);}
-            else AddText(UpdatePresentation.Status(updates.Preferences),true);
+            if(updates.UnavailableReason!=null){AddText(updates.UnavailableReason=="storage" ? "自动更新不可用，请手动下载" : "此安装暂不支持自动安装更新",true);AddText(legacy.Status,localized:true);}
+            else {
+                if(updates.StorageError!=null)AddText("自动更新不可用，请手动下载",true);
+                AddText(UpdatePresentation.Status(updates.Preferences),true);
+            }
             var version=updates.State.Release?.Version ?? (updates.UnavailableReason!=null ? legacy.Available?.Version : null);
             if(version!=null)AddText(Loc.Format("发现新版本 {0}",version),true,true);
             var notes=updates.State.Release?.Notes ?? (updates.UnavailableReason!=null ? legacy.Available?.Notes : null);
