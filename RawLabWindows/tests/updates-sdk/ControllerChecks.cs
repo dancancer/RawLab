@@ -79,6 +79,7 @@ internal static class ControllerChecks
     private static async Task RunCore(Action<bool, string> check)
     {
         await AutomaticCheckRetries(check);
+        await CorruptStatePreservesOptOut(check);
         await StartupAndQuit(check);
         await StateRepair(check);
         await FutureEnumStateStaysEditable(check);
@@ -582,6 +583,38 @@ internal static class ControllerChecks
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
 
+    private static async Task CorruptStatePreservesOptOut(Action<bool, string> check)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-corrupt-optout-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new UpdateStore(Path.Combine(root, "Updates")); Directory.CreateDirectory(store.DirectoryPath);
+            var corrupt = System.Text.Encoding.UTF8.GetBytes("{broken");
+            File.WriteAllBytes(store.StatePath, corrupt);
+            var adapter = new Adapter();
+            var synced = new List<bool>();
+            var legacyChecks = 0;
+            var damaged = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14", automaticCheck: false);
+            await damaged.PerformStartupCheckAsync(synced.Add, _ => { legacyChecks++; return Task.CompletedTask; });
+            check(!damaged.Preferences.AutomaticCheck && synced.Count == 0 && legacyChecks == 0 && adapter.Checks == 0 &&
+                File.ReadAllBytes(store.StatePath).SequenceEqual(corrupt),
+                "Corrupt state.json preserves user AutomaticCheck opt-out, skips network check and leaves persisted settings untouched");
+
+            var damagedOptIn = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14", automaticCheck: true);
+            await damagedOptIn.PerformStartupCheckAsync(synced.Add, _ => { legacyChecks++; return Task.CompletedTask; });
+            check(damagedOptIn.Preferences.AutomaticCheck && synced.Count == 0 && legacyChecks == 0 && adapter.Checks == 0,
+                "Storage-degraded UpdateStore skips automatic startup network checks even when AutomaticCheck is enabled");
+
+            var healthyStore = new UpdateStore(Path.Combine(root, "HealthyUpdates"));
+            healthyStore.Save(new UpdatePreferences { AutomaticCheck = false });
+            var healthy = new DesktopUpdateController(adapter, new(), healthyStore, "0.8.2", "14", automaticCheck: true);
+            await healthy.PerformStartupCheckAsync(synced.Add, _ => { legacyChecks++; return Task.CompletedTask; });
+            check(!healthy.Preferences.AutomaticCheck && synced.SequenceEqual(new[] { false }) && legacyChecks == 0 && adapter.Checks == 0,
+                "Healthy UpdateStore syncs persisted AutomaticCheck opt-out back to legacy settings without checking");
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
     private static async Task StateRepair(Action<bool, string> check)
     {
         var root = Path.Combine(Path.GetTempPath(), "rawlab-controller-repair-" + Guid.NewGuid().ToString("N"));
@@ -682,13 +715,13 @@ internal static class ControllerChecks
                 var onDisk = File.ReadAllBytes(store.StatePath);
                 var adapter = new Adapter();
                 var controller = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14");
-                check(controller.StorageError != null && controller.BlocksEditing && !controller.CanCheck && !controller.CanRepairState &&
+                check(controller.StorageError != null && !controller.BlocksEditing && controller.UnavailableReason == "storage" && !controller.CanCheck && !controller.CanRepairState &&
                     Directory.Exists(backup) && controller.State.Phase == UpdatePhase.Idle && File.ReadAllBytes(store.StatePath).SequenceEqual(onDisk),
-                    "Unknown enum with installation evidence (" + name + ") keeps the install gate and preserves the backup (Q13 boundary)");
+                    "Unknown enum with installation evidence (" + name + ") keeps the storage update gate and preserves the backup without blocking editing (Q13 boundary)");
                 var reopened = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14");
-                check(reopened.BlocksEditing && Directory.Exists(backup) && File.Exists(Path.Combine(backup, "manifest.json")) &&
+                check(!reopened.BlocksEditing && reopened.UnavailableReason == "storage" && Directory.Exists(backup) && File.Exists(Path.Combine(backup, "manifest.json")) &&
                     File.ReadAllBytes(store.StatePath).SequenceEqual(onDisk),
-                    "Reopening the evidence combo (" + name + ") still refuses silent backup deletion");
+                    "Reopening the evidence combo (" + name + ") still refuses silent backup deletion without blocking editing");
                 await Task.CompletedTask;
             }
         }
@@ -726,13 +759,13 @@ internal static class ControllerChecks
                 File.WriteAllBytes(store.StatePath, JsonSerializer.SerializeToUtf8Bytes(document));
                 var onDisk = File.ReadAllBytes(store.StatePath);
                 var controller = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14");
-                check(controller.StorageError != null && controller.BlocksEditing && !controller.CanCheck && !controller.CanRepairState &&
+                check(controller.StorageError != null && !controller.BlocksEditing && controller.UnavailableReason == "storage" && !controller.CanCheck && !controller.CanRepairState &&
                     Directory.Exists(backup) && File.Exists(Path.Combine(backup, "manifest.json")) && File.ReadAllBytes(store.StatePath).SequenceEqual(onDisk),
-                    "Unknown enum with disk backup evidence (" + slot + ") keeps storage gate and preserves backup on disk");
+                    "Unknown enum with disk backup evidence (" + slot + ") keeps storage gate and preserves backup on disk without blocking editing");
                 var reopened = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14");
-                check(reopened.BlocksEditing && Directory.Exists(backup) && File.Exists(Path.Combine(backup, "manifest.json")) &&
+                check(!reopened.BlocksEditing && reopened.UnavailableReason == "storage" && Directory.Exists(backup) && File.Exists(Path.Combine(backup, "manifest.json")) &&
                     File.ReadAllBytes(store.StatePath).SequenceEqual(onDisk),
-                    "Reopening unknown enum with disk backup (" + slot + ") still preserves backup on disk");
+                    "Reopening unknown enum with disk backup (" + slot + ") still preserves backup on disk without blocking editing");
             }
             {
                 var recoveryRoot = Path.Combine(root, "RecoveryDir");
@@ -747,8 +780,8 @@ internal static class ControllerChecks
                 document["PendingUpdate"]!["Choice"] = 99;
                 File.WriteAllBytes(store.StatePath, JsonSerializer.SerializeToUtf8Bytes(document));
                 var controller = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14");
-                check(controller.StorageError != null && controller.BlocksEditing && !controller.CanRepairState && File.Exists(preservedEdit),
-                    "Unknown enum with Recoveries entry keeps storage gate and prevents archiving recovery data");
+                check(controller.StorageError != null && !controller.BlocksEditing && controller.UnavailableReason == "storage" && !controller.CanRepairState && File.Exists(preservedEdit),
+                    "Unknown enum with Recoveries entry keeps storage gate and prevents archiving recovery data without blocking editing");
                 Directory.Delete(Path.Combine(directory, "Recoveries"), true);
                 File.WriteAllText(Path.Combine(directory, "recovery-in-progress.json"), "journal");
                 var interrupted = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14");
@@ -802,8 +835,8 @@ internal static class ControllerChecks
                 var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(damaged); File.WriteAllBytes(store.StatePath, bytes);
                 var reopened = new DesktopUpdateController(new Adapter(), new(), store, "0.9.1", "19");
                 await reopened.FinishStartupHealthCheckAsync(true);
-                check(reopened.StorageError != null && reopened.BlocksEditing && !reopened.CanCheck && !reopened.CanChooseInstall && !reopened.CanRepairState,
-                    "Malformed installation failure blocks startup and state reset: " + name);
+                check(reopened.StorageError != null && !reopened.BlocksEditing && reopened.UnavailableReason == "storage" && !reopened.CanCheck && !reopened.CanChooseInstall && !reopened.CanRepairState,
+                    "Malformed installation failure degrades updates without blocking editing and blocks state reset: " + name);
                 check(File.ReadAllBytes(store.StatePath).SequenceEqual(bytes), "Blocked startup preserves the damaged failure record: " + name);
             }
         }
@@ -950,6 +983,34 @@ internal static class ControllerChecks
             await reopenedUpdated.FinishStartupHealthCheckAsync(true);
             check(reopenedUpdated.StorageError == null && reopenedUpdated.State.Phase == UpdatePhase.Complete && !reopenedUpdated.BlocksEditing,
                 "Next launch on target version completes health check from the persisted Installing record");
+
+            var postReplaceDir = Path.Combine(root, "post-replace", "Updates");
+            var postReplaceStore = new UpdateStore(
+                postReplaceDir,
+                (temporary, bytes) => { files[temporary] = bytes.ToArray(); },
+                (source, destination) =>
+                {
+                    var bytes = files[source];
+                    files[destination] = bytes;
+                    files.Remove(source);
+                    if (SavedState(bytes).Phase == UpdatePhase.Installing)
+                        throw new IOException("Injected post-replace sync failure");
+                },
+                delay => { elapsed += delay; },
+                () => elapsed,
+                path => files.TryGetValue(path, out var bytes) ? bytes.ToArray() : null,
+                path => { files.Remove(path); return true; });
+            var postReplaceAdapter = new Adapter();
+            var postReplaceController = new DesktopUpdateController(postReplaceAdapter, new(), postReplaceStore, "0.8.2", "14", now: () => virtualNow);
+            await postReplaceController.CheckAsync(true);
+            await postReplaceController.DownloadAsync();
+            await postReplaceController.ChooseAsync(UpdateInstallChoice.RestartNow);
+            check(postReplaceAdapter.Installs == 0 && postReplaceController.StorageError != null &&
+                postReplaceController.BlocksEditing && postReplaceController.UnavailableReason == "storage" &&
+                !postReplaceController.CanCheck && !postReplaceController.CanDownload && !postReplaceController.CanChooseInstall &&
+                postReplaceStore.Load(true).PendingUpdate.Phase == UpdatePhase.Installing &&
+                await postReplaceController.PrepareForQuitAsync(),
+                "Post-replace Installing save failure keeps editing locked while permitting normal quit");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }

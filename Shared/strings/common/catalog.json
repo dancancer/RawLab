@@ -8790,5 +8790,13 @@
     "ja": "このルックは読み込めません。破損しているか、互換性のないバージョンで作成された可能性があります。",
     "es": "No se puede leer este look. Puede estar dañado o proceder de una versión incompatible.",
     "zh-Hans": "此外观无法读取，可能已损坏或来自不兼容版本。"
+  },
+  "自动更新不可用，请手动下载": {
+    "en": "Automatic updates are unavailable. Please download manually.",
+    "de": "Automatische Updates sind nicht verfügbar. Bitte laden Sie manuell herunter.",
+    "fr": "Les mises à jour automatiques ne sont pas disponibles. Veuillez télécharger manuellement.",
+    "ja": "自動更新を利用できません。手動でダウンロードしてください。",
+    "es": "Las actualizaciones automáticas no están disponibles. Descárguela manualmente.",
+    "zh-Hans": "自动更新不可用，请手动下载"
   }
 }

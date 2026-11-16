@@ -774,6 +774,7 @@
     "自动 HDR": "HDR automático",
     "自动下载并在退出时安装": "Descargar automáticamente e instalar al salir",
     "自动安装默认关闭。安装前会保存已提交的编辑，并等待草稿和任务处理完成。": "La instalación automática está desactivada de forma predeterminada. Antes de instalar, se guardan las ediciones confirmadas y se espera a que terminen los borradores y las tareas.",
+    "自动更新不可用，请手动下载": "Las actualizaciones automáticas no están disponibles. Descárguela manualmente.",
     "自动检查更新": "Buscar actualizaciones automáticamente",
     "自动添加序号": "Añadir números de secuencia automáticamente",
     "自动裁切": "Recorte automático",

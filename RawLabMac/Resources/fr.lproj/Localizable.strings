@@ -818,6 +818,7 @@
 "自动下载并在退出时安装" = "Télécharger automatiquement et installer à la fermeture";
 "自动匹配" = "Correspondance automatique";
 "自动安装默认关闭。安装前会保存已提交的编辑，并等待草稿和任务处理完成。" = "L’installation automatique est désactivée par défaut. Avant l’installation, les modifications validées sont enregistrées et l’application attend la fin des brouillons et des tâches.";
+"自动更新不可用，请手动下载" = "Les mises à jour automatiques ne sont pas disponibles. Veuillez télécharger manuellement.";
 "自动检查更新" = "Rechercher automatiquement les mises à jour";
 "自动添加序号" = "Ajouter automatiquement des numéros de séquence";
 "自动裁切" = "Recadrage automatique";

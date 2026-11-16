@@ -74,6 +74,7 @@ enum ParameterValueField { static var hasPendingInputs = false }
     }
     @MainActor static func main() async throws {
         try await automaticCheckRetries()
+        try await corruptStatePreservesOptOut()
         try await stateRepair()
         try await storageFailureCriticalityAndRetry()
         try await preHandoffFailureAllowsRetry()
@@ -288,7 +289,9 @@ enum ParameterValueField { static var hasPendingInputs = false }
         let legacy = UpdateChecker(defaults: defaults, currentVersion: "0.8.2", fetch: { throw URLError(.notConnectedToInternet) })
         let errorPNG = try renderPNG(SoftwareUpdateView(updates: controller, legacy: legacy))
         let notice = UpdatePresentation.storageNotice(canRetrySave: controller.canRetrySave, canRepairState: controller.canRepairState)
+        let banner = UpdatePresentation.unavailableNotice(unavailableReason: controller.unavailableReason, storageError: controller.storageError)
         check(!errorPNG.isEmpty &&
+            banner == "自动更新不可用，请手动下载" &&
             notice == "无法读取或写入文件，请检查路径和访问权限。" &&
             notice != "无法确认更新或恢复状态，请保留全部文件并联系支持。",
             "SoftwareUpdateView renders non-blocking save notice and retry button on non-critical write failure")
@@ -298,7 +301,8 @@ enum ParameterValueField { static var hasPendingInputs = false }
         check(controller.retrySave() && controller.storageError == nil && !controller.canRetrySave && controller.canCheck,
             "Retrying save clears non-critical storage error and restores update checks")
         let clearedPNG = try renderPNG(SoftwareUpdateView(updates: controller, legacy: legacy))
-        check(!clearedPNG.isEmpty && clearedPNG != errorPNG,
+        check(!clearedPNG.isEmpty && clearedPNG != errorPNG &&
+            UpdatePresentation.unavailableNotice(unavailableReason: controller.unavailableReason, storageError: controller.storageError) == nil,
             "Clearing non-critical storage error updates the rendered SoftwareUpdateView")
         let release = UpdateDescriptor(version: "0.9.1", build: "19", platform: "macos", architecture: "arm64", channel: "stable",
             assetURL: "https://example.invalid/update.zip", size: 12, sha256: nil, notes: "")
@@ -307,8 +311,45 @@ enum ParameterValueField { static var hasPendingInputs = false }
         failPhase = .installing
         controller.choose(.restartNow)
         for _ in 0..<400 where controller.preparingInstallation || controller.storageError == nil { try await Task.sleep(for: .milliseconds(10)) }
-        check(controller.storageError != nil && controller.blocksEditing && !controller.canRetrySave && !controller.canCheck && adapter.installs == 0,
-            "Save failure when recording installing locks editing and blocks retry")
+        check(controller.storageError != nil && !controller.storageBlocksEditing && !controller.blocksEditing && controller.unavailableReason == "storage" && !controller.canRetrySave && !controller.canCheck && adapter.installs == 0,
+            "Pre-replace save failure when recording installing degrades updates without locking editing and blocks retry")
+        let postReplaceRoot = root.appendingPathComponent("PostReplaceInstalling")
+        let postReplaceEdits = postReplaceRoot.appendingPathComponent("Edits")
+        try FileManager.default.createDirectory(at: postReplaceEdits, withIntermediateDirectories: true)
+        let postReplacePhoto = postReplaceEdits.appendingPathComponent("photo.json")
+        try Data("committed before install".utf8).write(to: postReplacePhoto)
+        let postReplaceStore = UpdateStore(directory: postReplaceRoot.appendingPathComponent("Updates")) { preferences, stateURL in
+            if preferences.pendingUpdate.phase == .installing {
+                try UpdateStore.writeAtomically(preferences, to: stateURL) { _ in
+                    throw UpdateAdapterError(code: "storage", detail: "Injected fsync failure after atomic replace")
+                }
+            } else {
+                try UpdateStore.writeAtomically(preferences, to: stateURL)
+            }
+        }
+        let postReplaceAdapter = FakeUpdateAdapter()
+        let postReplaceController = DesktopUpdateController(adapter: postReplaceAdapter, gate: UpdateInstallGate(), store: postReplaceStore,
+            currentVersion: "0.8.2", currentBuild: "14", automaticCheck: false)
+        postReplaceController.check(manual: true); postReplaceAdapter.send(.found(release)); postReplaceController.download()
+        postReplaceAdapter.send(.preparing); postReplaceAdapter.hasPreparedInstaller = true; postReplaceAdapter.send(.verified)
+        postReplaceController.choose(.restartNow)
+        for _ in 0..<400 where postReplaceController.preparingInstallation || postReplaceController.storageError == nil { try await Task.sleep(for: .milliseconds(10)) }
+        check(postReplaceController.storageError != nil && postReplaceController.storageBlocksEditing && postReplaceController.blocksEditing &&
+            postReplaceController.unavailableReason == "storage" && !postReplaceController.canRetrySave && !postReplaceController.canRepairState &&
+            !postReplaceController.canCheck && postReplaceAdapter.installs == 0 &&
+            (try? postReplaceStore.load(automaticCheck: false))?.pendingUpdate.phase == .installing,
+            "Post-replace fsync failure when recording installing keeps editing locked so new edits cannot be rolled back by recovery")
+        let postReplaceQuit = await withCheckedContinuation { continuation in
+            postReplaceController.prepareForQuit { continuation.resume(returning: $0) }
+        }
+        check(postReplaceQuit, "Locked post-replace storage error still allows quitting to reach startup recovery")
+        let reopenedPostReplace = DesktopUpdateController(adapter: FakeUpdateAdapter(), gate: UpdateInstallGate(),
+            store: UpdateStore(directory: postReplaceStore.directory), currentVersion: "0.8.2", currentBuild: "14", automaticCheck: false)
+        await reopenedPostReplace.finishStartupHealthCheck(healthy: true)
+        check(reopenedPostReplace.blocksEditing && reopenedPostReplace.requiresRecovery && reopenedPostReplace.canRestorePreviousData,
+            "Persisted post-replace installing state enters recovery on next launch")
+        await reopenedPostReplace.restorePreviousData()
+        try checkData(postReplacePhoto, "committed before install")
         let pendingStore = UpdateStore(directory: root.appendingPathComponent("PendingRestartUpdates")) { preferences, stateURL in
             if preferences.pendingUpdate.phase == .pendingRestart {
                 throw UpdateAdapterError(code: "storage", detail: "Injected pendingRestart write failure")
@@ -506,6 +547,58 @@ enum ParameterValueField { static var hasPendingInputs = false }
         }
     }
 
+    @MainActor static func corruptStatePreservesOptOut() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-corrupt-optout-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = UpdateStore(directory: root.appendingPathComponent("Updates"))
+        try FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true)
+        let corrupt = Data("{broken".utf8); try corrupt.write(to: store.stateURL)
+        let optOutSuite = "dev.rawlab.corrupt-optout.\(UUID())"
+        let optOutDefaults = UserDefaults(suiteName: optOutSuite)!
+        defer { optOutDefaults.removePersistentDomain(forName: optOutSuite) }
+        optOutDefaults.set(false, forKey: "updates.automatic")
+        var optOutFetches = 0
+        let legacyOptOut = UpdateChecker(defaults: optOutDefaults, currentVersion: "0.8.2", fetch: { optOutFetches += 1; return Data() })
+        let adapter = FakeUpdateAdapter()
+        let damaged = DesktopUpdateController(adapter: adapter, gate: UpdateInstallGate(), store: store,
+            currentVersion: "0.8.2", currentBuild: "14", automaticCheck: legacyOptOut.automatic)
+        await damaged.performStartupCheck(legacy: legacyOptOut)
+        check(!damaged.preferences.automaticCheck &&
+            !legacyOptOut.automatic && optOutDefaults.object(forKey: "updates.automatic") as? Bool == false &&
+            optOutDefaults.object(forKey: "updates.lastAttempt") == nil &&
+            adapter.checks == 0 && optOutFetches == 0 &&
+            (try? Data(contentsOf: store.stateURL)) == corrupt,
+            "Corrupt state.json preserves user automaticCheck opt-out, skips network check and leaves persisted config untouched")
+        let optInSuite = "dev.rawlab.corrupt-optin.\(UUID())"
+        let optInDefaults = UserDefaults(suiteName: optInSuite)!
+        defer { optInDefaults.removePersistentDomain(forName: optInSuite) }
+        optInDefaults.set(true, forKey: "updates.automatic")
+        var optInFetches = 0
+        let legacyOptIn = UpdateChecker(defaults: optInDefaults, currentVersion: "0.8.2", fetch: { optInFetches += 1; return Data() })
+        let damagedOptIn = DesktopUpdateController(adapter: adapter, gate: UpdateInstallGate(), store: store,
+            currentVersion: "0.8.2", currentBuild: "14", automaticCheck: legacyOptIn.automatic)
+        await damagedOptIn.performStartupCheck(legacy: legacyOptIn)
+        check(damagedOptIn.preferences.automaticCheck &&
+            optInDefaults.object(forKey: "updates.lastAttempt") == nil &&
+            adapter.checks == 0 && optInFetches == 0,
+            "Storage-degraded UpdateStore skips automatic startup network checks even when automaticCheck is enabled")
+        let healthyStore = UpdateStore(directory: root.appendingPathComponent("HealthyUpdates"))
+        var saved = UpdatePreferences(); saved.automaticCheck = false
+        try healthyStore.save(saved)
+        let syncSuite = "dev.rawlab.healthy-sync.\(UUID())"
+        let syncDefaults = UserDefaults(suiteName: syncSuite)!
+        defer { syncDefaults.removePersistentDomain(forName: syncSuite) }
+        syncDefaults.set(true, forKey: "updates.automatic")
+        var syncFetches = 0
+        let legacySync = UpdateChecker(defaults: syncDefaults, currentVersion: "0.8.2", fetch: { syncFetches += 1; return Data() })
+        let healthy = DesktopUpdateController(adapter: adapter, gate: UpdateInstallGate(), store: healthyStore,
+            currentVersion: "0.8.2", currentBuild: "14", automaticCheck: legacySync.automatic)
+        await healthy.performStartupCheck(legacy: legacySync)
+        check(!legacySync.automatic && syncDefaults.object(forKey: "updates.automatic") as? Bool == false &&
+            adapter.checks == 0 && syncFetches == 0,
+            "Healthy UpdateStore syncs persisted automaticCheck opt-out back to legacy settings without checking")
+    }
+
     @MainActor static func stateRepair() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-controller-repair-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
@@ -514,7 +607,8 @@ enum ParameterValueField { static var hasPendingInputs = false }
         try Data("{broken".utf8).write(to: store.stateURL)
         let adapter = FakeUpdateAdapter()
         let damaged = DesktopUpdateController(adapter: adapter, gate: UpdateInstallGate(), store: store, currentVersion: "0.8.2", currentBuild: "14")
-        check(damaged.storageError != nil && damaged.canRepairState && !damaged.canCheck, "Corrupt pre-install state offers only explicit repair")
+        check(damaged.storageError != nil && !damaged.blocksEditing && damaged.unavailableReason == "storage" && damaged.canRepairState && !damaged.canCheck,
+            "Corrupt pre-install state degrades updates without blocking editing and offers explicit repair")
         damaged.repairState()
         damaged.setAutomaticCheck(true); damaged.setAutomaticInstall(true); damaged.cancel(); damaged.retry()
         await damaged.finishStartupHealthCheck(healthy: true)

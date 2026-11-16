@@ -1,6 +1,15 @@
 import Foundation
 import CryptoKit
 
+enum UpdateStateWriteFailure: LocalizedError {
+    case uncertainAfterReplace(Error)
+    var errorDescription: String? {
+        switch self {
+        case .uncertainAfterReplace(let error): return error.localizedDescription
+        }
+    }
+}
+
 struct UpdateStore {
     let directory: URL
     private let writeState: (UpdatePreferences, URL) throws -> Void
@@ -14,10 +23,18 @@ struct UpdateStore {
         self.directory = directory
         self.writeState = writeState
     }
+    static func synchronizeFile(at url: URL) throws {
+        let file = try FileHandle(forWritingTo: url); defer { try? file.close() }; try file.synchronize()
+    }
     static func writeAtomically(_ preferences: UpdatePreferences, to stateURL: URL) throws {
+        try writeAtomically(preferences, to: stateURL, synchronize: Self.synchronizeFile)
+    }
+    static func writeAtomically(_ preferences: UpdatePreferences, to stateURL: URL,
+                                synchronize: (URL) throws -> Void) throws {
         try FileManager.default.createDirectory(at: stateURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try JSONEncoder().encode(preferences).write(to: stateURL, options: .atomic)
-        let file = try FileHandle(forWritingTo: stateURL); defer { try? file.close() }; try file.synchronize()
+        do { try synchronize(stateURL) }
+        catch { throw UpdateStateWriteFailure.uncertainAfterReplace(error) }
     }
     func load(automaticCheck: Bool) throws -> UpdatePreferences {
         guard FileManager.default.fileExists(atPath: stateURL.path) else {

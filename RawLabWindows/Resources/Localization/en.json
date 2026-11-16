@@ -774,6 +774,7 @@
     "自动 HDR": "Automatic HDR",
     "自动下载并在退出时安装": "Automatically download and install on quit",
     "自动安装默认关闭。安装前会保存已提交的编辑，并等待草稿和任务处理完成。": "Automatic installation is off by default. Before installing, committed edits are saved and the app waits for drafts and tasks to finish.",
+    "自动更新不可用，请手动下载": "Automatic updates are unavailable. Please download manually.",
     "自动检查更新": "Automatically check for updates",
     "自动添加序号": "Add sequence numbers automatically",
     "自动裁切": "Automatic crop",

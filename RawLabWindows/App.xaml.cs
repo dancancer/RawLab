@@ -180,7 +180,7 @@ public partial class App : Application
         var updates = new DesktopUpdateController(adapter, new(), new(UpdateStore.DefaultDirectory), current,
             fileVersion.FilePrivatePart.ToString(), legacy.Automatic);
         MainWindow? editor = null;
-        if (updates.UnavailableReason != "storage" && !updates.RequiresRecovery)
+        if (!updates.RequiresRecovery)
         {
             editor = new MainWindow(new UsageAnalytics(), null, desktopUpdates: updates);
             await updates.FinishStartupHealthCheckAsync(editor.UpdateDataHealthy);

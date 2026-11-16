@@ -1,5 +1,15 @@
 import SwiftUI
 
+struct UpdateNoticeBanner: View {
+    let notice: String?
+
+    var body: some View {
+        if let notice {
+            Label(L10n.text(notice), systemImage: "info.circle")
+        }
+    }
+}
+
 struct SoftwareUpdateView: View {
     @Environment(\.dynamicTypeSize) private var textSize
     @Environment(\.dismiss) private var dismiss
@@ -23,8 +33,8 @@ struct SoftwareUpdateView: View {
                         .font(detailFont).foregroundStyle(.secondary)
                     Divider()
                 }
+                UpdateNoticeBanner(notice: UpdatePresentation.unavailableNotice(unavailableReason: updates.unavailableReason, storageError: updates.storageError))
                 if updates.unavailableReason != nil {
-                    Label(L10n.text("此安装暂不支持自动安装更新"), systemImage: "info.circle")
                     Text(legacy.status).font(detailFont)
                 } else {
                     Text(L10n.text(UpdatePresentation.phase(updates.state.phase))).font(.system(size: textSize.isAccessibilitySize ? 22 : 13, weight: .semibold))
@@ -145,6 +155,12 @@ enum UpdatePresentation {
         case .complete: return "更新已完成"
         case .failed: return "更新失败"
         }
+    }
+    static func unavailableNotice(unavailableReason: String?, storageError: String?) -> String? {
+        if let unavailableReason {
+            return unavailableReason == "storage" ? "自动更新不可用，请手动下载" : "此安装暂不支持自动安装更新"
+        }
+        return storageError == nil ? nil : "自动更新不可用，请手动下载"
     }
     static func storageNotice(canRetrySave: Bool, canRepairState: Bool) -> String {
         if canRetrySave { return "无法读取或写入文件，请检查路径和访问权限。" }
