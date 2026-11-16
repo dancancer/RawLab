@@ -7,6 +7,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.rawlab.android.MainActivity
 import com.rawlab.android.settings.ProcessingIdentity
 import com.rawlab.android.testing.ForegroundTestRule
+import com.rawlab.android.testing.openWorkbenchTool
 import com.rawlab.android.testing.LanguageTestRule
 import org.junit.Assert.*
 import org.junit.Rule
@@ -32,8 +33,7 @@ class EditorWorkspaceResetRuntimeTest {
             compose.runOnUiThread { model.edit(model.state.value.edits.copy(processing = processing)) }
             compose.waitUntil(180_000) { model.state.value.canExport || model.state.value.error != null }
             assertNull(model.state.value.error)
-            compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-geometry"))
-            compose.onNodeWithTag("editor-group-geometry").performClick()
+            compose.openWorkbenchTool(17)
             compose.waitUntil(180_000) { model.state.value.draftReady }
             val snapshot = model.state.value
             assertFalse(snapshot.draft!!.changed)
@@ -50,7 +50,8 @@ class EditorWorkspaceResetRuntimeTest {
             assertArrayEquals(bytes, record.readBytes())
             assertEquals(processing, model.state.value.edits.processing)
             compose.onNodeWithTag("editor-reset-confirm").assertDoesNotExist()
-            compose.onNodeWithTag("editor-tool-17").assertIsSelected()
+            compose.onNodeWithTag("geometry-crop-tab").assertIsDisplayed()
+            assertEquals(AdjustmentGroup.GEOMETRY, model.state.value.draft!!.group)
         } finally { source.delete() }
     }
 }
