@@ -16,6 +16,7 @@ internal data class RasterContainerInfo(
     val mayContainAlpha: Boolean,
     val hasColorProfile: Boolean = false,
     val bitDepth: Int = 8,
+    val iccProfile: ByteArray? = null,
 )
 
 internal data class RasterValidation(val info: RasterContainerInfo?, val error: String? = null) {
@@ -83,6 +84,7 @@ internal object RasterContainerValidator {
         var hasTransparencyChunk = false
         var hasSrgbProfile = false
         var hasIccProfile = false
+        var iccProfile: ByteArray? = null
         var hasUnresolvedColorMetadata = false
         while (!sawIend) {
             val chunkHeader = ByteArray(8)
@@ -115,9 +117,10 @@ internal object RasterContainerValidator {
                     hasSrgbProfile = true
                 }
                 type.contentEquals("iCCP".toByteArray()) -> {
-                    if (hasIccProfile || data == null || !IccProfiles.validatePngChunk(data, requireParametric = depth == 16))
-                        return invalid("Invalid PNG ICC profile")
+                    val decoded = if (!hasIccProfile && data != null) IccProfiles.decodePngChunk(data) else null
+                    if (decoded == null) return invalid("Invalid PNG ICC profile")
                     hasIccProfile = true
+                    if (depth == 16) iccProfile = decoded
                 }
                 type.contentEquals("gAMA".toByteArray()) || type.contentEquals("cHRM".toByteArray()) ->
                     hasUnresolvedColorMetadata = true
@@ -136,7 +139,7 @@ internal object RasterContainerValidator {
         if (hasSrgbProfile && hasIccProfile) return invalid("PNG has conflicting color profiles")
         if (hasUnresolvedColorMetadata && !hasSrgbProfile && !hasIccProfile)
             return invalid("PNG color metadata is not supported")
-        return RasterValidation(RasterContainerInfo("PNG", width, height, colorType == 6, hasIccProfile, depth))
+        return RasterValidation(RasterContainerInfo("PNG", width, height, colorType == 6, hasIccProfile, depth, iccProfile))
     }
 
     private fun inspectJpeg(stream: InputStream, hasMpf: Boolean): RasterValidation {
