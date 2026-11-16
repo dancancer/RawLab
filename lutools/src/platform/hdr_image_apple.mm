@@ -26,6 +26,7 @@ namespace sony2fuji::hdr {
 namespace {
 #define HDR_AVAILABLE API_AVAILABLE(macos(15.0), ios(18.0))
 std::atomic<uint64_t> revision{1};
+std::atomic<uint64_t> sourceHashPasses{0};
 
 [[noreturn]] void error(sony2fuji_status status, uint32_t reason, const char* message) {
     throw Error(status, reason, SONY2FUJI_HDR_FIELD_PATH, message);
@@ -34,12 +35,46 @@ void require(bool condition, uint32_t reason, const char* message) {
     if (!condition) error(SONY2FUJI_STATUS_PROCESSING_ERROR, reason, message);
 }
 
+// fstat 级源身份快照：发布前核对「路径未被替换/改写」，取代再读一遍并整文件重算摘要。
+// `.atomic` 替换换 inode；就地覆写改 size/mtime/ctime，两个方向都能命中。
+struct SourceSnapshot {
+    dev_t device = 0;
+    ino_t inode = 0;
+    off_t size = 0;
+    struct timespec modification{};
+    struct timespec statusChange{};
+    bool valid = false;
+};
+SourceSnapshot snapshotSource(const char* path) {
+    struct stat details{};
+    if (!path || ::stat(path, &details) != 0) return {};
+    SourceSnapshot snapshot;
+    snapshot.device = details.st_dev; snapshot.inode = details.st_ino; snapshot.size = details.st_size;
+    snapshot.modification = details.st_mtimespec; snapshot.statusChange = details.st_ctimespec;
+    snapshot.valid = true;
+    return snapshot;
+}
+bool snapshotMatches(const SourceSnapshot& left, const SourceSnapshot& right) {
+    return left.valid && right.valid && left.device == right.device && left.inode == right.inode &&
+        left.size == right.size &&
+        left.modification.tv_sec == right.modification.tv_sec && left.modification.tv_nsec == right.modification.tv_nsec &&
+        left.statusChange.tv_sec == right.statusChange.tv_sec && left.statusChange.tv_nsec == right.statusChange.tv_nsec;
+}
+
 struct File {
     NSData* data = nil;
     NSDictionary* properties = nil;
     CGImageSourceRef source = nullptr;
     sony2fuji_hdr_source_info_v1 info{};
+    SourceSnapshot snapshot{};
     ~File() { if (source) CFRelease(source); }
+};
+
+// 流式导出的源冻结快照（对 hdr_image.h 的 StreamSourcePin::impl 不透明）。
+struct StreamSourcePinImpl {
+    NSData* data = nil;               // validate 时单次读取的源容器
+    CGImageSourceRef source = nullptr; // 与 data 同一解析，publish 复用其元数据
+    SourceSnapshot snapshot{};
 };
 
 bool has(NSData* data, const char* marker) {
@@ -76,7 +111,9 @@ void readMetadataSource(File& file, const char* path, const uint8_t* expectedSHA
     if (!regular.boolValue) error(SONY2FUJI_STATUS_IO_ERROR, SONY2FUJI_HDR_REASON_INPUT_IO, "HDR source is not a regular file");
     file.data = [NSData dataWithContentsOfURL:url options:NSDataReadingMappedIfSafe error:nil];
     if (!file.data.length) error(SONY2FUJI_STATUS_IO_ERROR, SONY2FUJI_HDR_REASON_INPUT_IO, "Cannot read HDR source");
+    file.snapshot = snapshotSource(path);
     // 源身份不依赖路径/mtime，元数据保存使用同一 SHA-256 校验原容器。
+    sourceHashPasses.fetch_add(1, std::memory_order_relaxed);
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     CC_SHA256_CTX digest; CC_SHA256_Init(&digest);
@@ -286,10 +323,7 @@ void differentFile(const char* source,const char* target) {
         error(SONY2FUJI_STATUS_INVALID_ARGUMENT,SONY2FUJI_HDR_REASON_SAME_FILE,"HDR export cannot replace its source");
 }
 
-NSDictionary* metadata(File& file,const char* source,const uint8_t sha[32],uint32_t width,uint32_t height,const char* target) HDR_AVAILABLE {
-    if (!source) return @{(__bridge NSString*)kCGImagePropertyOrientation:@1};
-    differentFile(source,target);
-    readMetadataSource(file,source,sha);
+NSDictionary* buildMetadata(File& file,uint32_t width,uint32_t height) {
     NSDictionary* original=CFBridgingRelease(CGImageSourceCopyPropertiesAtIndex(file.source,0,nullptr));
     NSMutableDictionary* exif=[original[(__bridge NSString*)kCGImagePropertyExifDictionary] mutableCopy] ?: [NSMutableDictionary dictionary];
     for (NSString* key in @[(__bridge NSString*)kCGImagePropertyExifMakerNote,(__bridge NSString*)kCGImagePropertyExifCFAPattern,
@@ -312,6 +346,13 @@ NSDictionary* metadata(File& file,const char* source,const uint8_t sha[32],uint3
     if (original[(__bridge NSString*)kCGImagePropertyGPSDictionary])
         values[(__bridge NSString*)kCGImagePropertyGPSDictionary]=original[(__bridge NSString*)kCGImagePropertyGPSDictionary];
     return values;
+}
+
+NSDictionary* metadata(File& file,const char* source,const uint8_t sha[32],uint32_t width,uint32_t height,const char* target) HDR_AVAILABLE {
+    if (!source) return @{(__bridge NSString*)kCGImagePropertyOrientation:@1};
+    differentFile(source,target);
+    readMetadataSource(file,source,sha);
+    return buildMetadata(file,width,height);
 }
 
 NSData* addBaseMetadata(NSData* base,NSDictionary* properties,CGImageSourceRef original) {
@@ -366,7 +407,8 @@ void atomicWrite(NSData* data,const char* path) {
         error(SONY2FUJI_STATUS_OUTPUT_IO_ERROR,SONY2FUJI_HDR_REASON_OUTPUT_IO,"Atomic HDR output write failed");
 }
 
-void atomicStreamWrite(NSData* data, const char* path, const sony2fuji_hdr_export_config_v1& config) {
+void atomicStreamWrite(NSData* data, const char* path, const sony2fuji_hdr_export_config_v1& config,
+    const StreamSourcePin& pin) {
     std::string temporary;
     int createdFd = -1;
     for (int attempt = 0; attempt < 64 && createdFd < 0; ++attempt) {
@@ -400,7 +442,14 @@ void atomicStreamWrite(NSData* data, const char* path, const sony2fuji_hdr_expor
     if (closed != 0)
         error(SONY2FUJI_STATUS_OUTPUT_IO_ERROR, SONY2FUJI_HDR_REASON_OUTPUT_IO, "Cannot close streamed JPEG output");
     // 发布前再次核对来源；解码完成后的原片替换不能配上旧像素与新 EXIF。
-    File verification; readMetadataSource(verification, config.metadata_source_path, config.source_sha256);
+    if (const auto* impl = static_cast<const StreamSourcePinImpl*>(pin.impl)) {
+        // 导出期间源被替换/覆写会改变 inode 或 size/mtime/ctime；核对冻结快照即可（C-08），
+        // 不再重读整文件重算第三遍摘要。
+        if (!snapshotMatches(snapshotSource(config.metadata_source_path), impl->snapshot))
+            error(SONY2FUJI_STATUS_INVALID_ARGUMENT, SONY2FUJI_HDR_REASON_SOURCE_CHANGED, "HDR metadata source has changed");
+    } else {
+        File verification; readMetadataSource(verification, config.metadata_source_path, config.source_sha256);
+    }
     differentFile(config.metadata_source_path, path);
     checkProcessingCancellation();
     if (rename(temporary.c_str(), path) != 0)
@@ -487,10 +536,21 @@ void admitStreamingMemory(uint64_t additionalBytes) {
             "Streamed HDR codec exceeds current memory budget");
 }
 
-void validateStreamSource(const sony2fuji_hdr_export_config_v1& config, uint32_t width, uint32_t height, const char* path) {
+StreamSourcePin::~StreamSourcePin() {
+    auto* impl = static_cast<StreamSourcePinImpl*>(this->impl);
+    if (!impl) return;
+    if (impl->source) CFRelease(impl->source);
+    delete impl;
+}
+
+void validateStreamSource(const sony2fuji_hdr_export_config_v1& config, uint32_t width, uint32_t height,
+    const char* path, StreamSourcePin& pin) {
     @autoreleasepool {
         differentFile(config.metadata_source_path, path);
-        File source; readMetadataSource(source, config.metadata_source_path, config.source_sha256);
+        // 全零 config.source_sha256 表示调用方未预冻结：内部自采一次并贯穿发布阶段。
+        const bool hasExpected = !std::all_of(config.source_sha256, config.source_sha256 + 32,
+            [](uint8_t value) { return value == 0; });
+        File source; readMetadataSource(source, config.metadata_source_path, hasExpected ? config.source_sha256 : nullptr);
         NSDictionary* values = CFBridgingRelease(CGImageSourceCopyPropertiesAtIndex(source.source, 0, nullptr));
         uint32_t actualWidth = [values[(__bridge NSString*)kCGImagePropertyPixelWidth] unsignedIntValue];
         uint32_t actualHeight = [values[(__bridge NSString*)kCGImagePropertyPixelHeight] unsignedIntValue];
@@ -499,22 +559,44 @@ void validateStreamSource(const sony2fuji_hdr_export_config_v1& config, uint32_t
         if (actualWidth != width || actualHeight != height)
             error(SONY2FUJI_STATUS_INVALID_ARGUMENT, SONY2FUJI_HDR_REASON_PREVIEW_SOURCE,
                 "Stream must read the complete oriented source canvas");
+        // C-08：此处冻结一次源；publish 直接复用这份数据与解析，改名前只核对 fstat 快照。
+        if (!pin.impl) pin.impl = new StreamSourcePinImpl();
+        auto* impl = static_cast<StreamSourcePinImpl*>(pin.impl);
+        impl->data = source.data;
+        impl->source = source.source ? (CGImageSourceRef)CFRetain(source.source) : nullptr;
+        impl->snapshot = source.snapshot;
+        std::copy_n(source.info.source_sha256, 32, pin.digest);
     }
 }
 
 void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t height,
-    const sony2fuji_hdr_export_config_v1& config, bool hdr, const char* path) {
+    const sony2fuji_hdr_export_config_v1& config, bool hdr, const char* path, const StreamSourcePin& pin) {
     @autoreleasepool {
         if (@available(macOS 15.0, iOS 18.0, *)) {
             checkProcessingCancellation();
-            NSNumber* sourceBytes = [[[NSFileManager defaultManager]
-                attributesOfItemAtPath:[NSString stringWithUTF8String:config.metadata_source_path] error:nil] objectForKey:NSFileSize];
-            if (!sourceBytes)
-                error(SONY2FUJI_STATUS_IO_ERROR, SONY2FUJI_HDR_REASON_INPUT_IO, "Cannot inspect streamed metadata source");
+            const auto* impl = static_cast<const StreamSourcePinImpl*>(pin.impl);
+            uint64_t sourceSize = 0;
+            if (impl && impl->data) sourceSize = impl->data.length;
+            else {
+                NSNumber* sourceBytes = [[[NSFileManager defaultManager]
+                    attributesOfItemAtPath:[NSString stringWithUTF8String:config.metadata_source_path] error:nil] objectForKey:NSFileSize];
+                if (!sourceBytes)
+                    error(SONY2FUJI_STATUS_IO_ERROR, SONY2FUJI_HDR_REASON_INPUT_IO, "Cannot inspect streamed metadata source");
+                sourceSize = sourceBytes.unsignedLongLongValue;
+            }
             // 元数据重封装有自己的 compressed/NSData 工作集，不能沿用已结束的 codec 准入。
-            admitStreamingMemory(uint64_t(data.size()) * 8 + sourceBytes.unsignedLongLongValue * 2 + (64ull << 20));
+            admitStreamingMemory(uint64_t(data.size()) * 8 + sourceSize * 2 + (64ull << 20));
             File source;
-            NSDictionary* properties = metadata(source, config.metadata_source_path, config.source_sha256, width, height, path);
+            NSDictionary* properties = nil;
+            if (impl) {
+                // 单次读取贯穿 validate→publish：元数据直接来自冻结的同一 NSData/解析，不再重开重算。
+                source.data = impl->data;
+                source.source = impl->source ? (CGImageSourceRef)CFRetain(impl->source) : nullptr;
+                differentFile(config.metadata_source_path, path);
+                properties = buildMetadata(source, width, height);
+            } else {
+                properties = metadata(source, config.metadata_source_path, config.source_sha256, width, height, path);
+            }
             if (hdr) {
                 const auto base = jpegBase(data.data(), data.size());
                 NSData* tagged = addBaseMetadata([NSData dataWithBytesNoCopy:const_cast<uint8_t*>(base.data()) length:base.size() freeWhenDone:NO],
@@ -526,7 +608,7 @@ void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t heigh
                 NSData* tagged = addBaseMetadata([NSData dataWithBytesNoCopy:data.data() length:data.size() freeWhenDone:NO], properties, source.source);
                 data.assign(static_cast<const uint8_t*>(tagged.bytes), static_cast<const uint8_t*>(tagged.bytes) + tagged.length);
             }
-            atomicStreamWrite([NSData dataWithBytesNoCopy:data.data() length:data.size() freeWhenDone:NO], path, config);
+            atomicStreamWrite([NSData dataWithBytesNoCopy:data.data() length:data.size() freeWhenDone:NO], path, config, pin);
             return;
         }
         error(SONY2FUJI_STATUS_UNSUPPORTED, SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM, "HDR requires macOS15/iOS18");
@@ -671,8 +753,10 @@ void exportHEIF(const HDRImagePair& image,const sony2fuji_hdr_export_config_v1& 
             NSDictionary* properties = metadata(metadataFile,config.metadata_source_path,config.source_sha256,image.hdr.width,image.hdr.height,path);
             NSData* data = encodeHEIF(image,properties,config.base_color,config.jpeg_quality);
             if (config.metadata_source_path) {
-                File verification;
-                readMetadataSource(verification,config.metadata_source_path,config.source_sha256);
+                // 编码期间源若被替换/覆写，inode 或 size/mtime/ctime 已变；核对 metadata()
+                // 单次读取时抓取的快照即可，不再整文件重算第二遍摘要（C-08：2→1）。
+                if (!snapshotMatches(snapshotSource(config.metadata_source_path), metadataFile.snapshot))
+                    error(SONY2FUJI_STATUS_INVALID_ARGUMENT, SONY2FUJI_HDR_REASON_SOURCE_CHANGED, "HDR metadata source has changed");
                 differentFile(config.metadata_source_path,path);
             }
             checkProcessingCancellation();
@@ -706,4 +790,7 @@ void exportSDR(const HDRImagePair& image,const sony2fuji_hdr_sdr_export_config_v
         error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM,"HDR requires macOS15/iOS18");
     }
 }
+
+uint64_t sourceHashPassCount() { return sourceHashPasses.load(std::memory_order_relaxed); }
+void resetSourceHashPassCount() { sourceHashPasses.store(0, std::memory_order_relaxed); }
 } // namespace sony2fuji::hdr

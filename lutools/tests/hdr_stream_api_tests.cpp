@@ -103,8 +103,15 @@ int main(int argc, char* argv[]) {
             return sony2fuji_hdr_export_stream(session, &source, override ? override : &settings, &config,
                 hdr, scratch.c_str(), target.u8string().c_str(), &result, &diagnostic);
         };
+#ifdef __APPLE__
+        // C-08 红锚：一次导出只读/哈希整文件一次（validate 冻结，publish 改名前核对 fstat 快照）。
+        hdr::resetSourceHashPassCount();
+#endif
         check(run(output) == SONY2FUJI_STATUS_OK && result.width == 48 && result.height == 32 && result.decode_revision == 7,
             "Complete stream API export failed or lost provenance");
+#ifdef __APPLE__
+        check(hdr::sourceHashPassCount() == 1, "Stream export still performs a second full-file digest pass");
+#endif
         check(hdr::probeFile(output.u8string().c_str()).width == 48, "Stream output does not contain a valid gain map");
         const auto existing = read(output);
 #ifndef _WIN32

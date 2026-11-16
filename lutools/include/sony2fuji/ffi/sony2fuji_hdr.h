@@ -318,6 +318,7 @@ sony2fuji_status sony2fuji_hdr_decode_proraw(sony2fuji_session* session, const c
     const sony2fuji_hdr_decode_options_v1* options, const char* temporary_root,
     sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic);
 // 完整来源由原生后端分块读取；config 的路径和 SHA 必须对应冻结的原片。
+// source_sha256 全零表示调用方未预冻结：导出在内部单次读取时自采摘要并贯穿发布校验。
 sony2fuji_status sony2fuji_hdr_export_proraw(sony2fuji_session* session, const char* source_path,
     const sony2fuji_hdr_request_v1* request, const sony2fuji_hdr_export_config_v1* config,
     uint32_t keep_hdr, const char* temporary_root, const char* path,
