@@ -22,6 +22,7 @@ import com.rawlab.android.RawLabTheme
 import com.rawlab.android.editor.render.PreviewPair
 import com.rawlab.android.editor.ui.EditorScreen
 import com.rawlab.android.photo.ImportedPhoto
+import com.rawlab.android.testing.localizedTestContext
 import com.rawlab.android.testing.localizedTestConfiguration
 import com.rawlab.android.testing.openWorkbenchTool
 import com.rawlab.android.testing.selectWorkbenchGroup
@@ -39,7 +40,7 @@ import java.util.Locale
 
 class EditorCompactLayoutTest {
     private val compose = createComposeRule()
-    @get:Rule val rule = RuleChain.outerRule(LanguageTestRule()).around(ForegroundTestRule()).around(compose)
+    @get:Rule val rule = RuleChain.outerRule(LanguageTestRule("system")).around(ForegroundTestRule()).around(compose)
     private var state by mutableStateOf(EditorState(
         photo = ImportedPhoto(Uri.parse("content://rawlab.test/compact-layout"), "layout.dng", File("layout.dng")),
         preview = Bitmap.createBitmap(12, 16, Bitmap.Config.ARGB_8888).let {
@@ -50,8 +51,10 @@ class EditorCompactLayoutTest {
         compose.setContent {
             val base = LocalContext.current
             val config = localizedTestConfiguration(LocalConfiguration.current, language, scale)
+            val localized = localizedTestContext(base, language, scale)
+            check(localized.resources.configuration.locales[0].language == Locale.forLanguageTag(language).language)
             CompositionLocalProvider(LocalDensity provides Density(1f, scale),
-                LocalContext provides base.createConfigurationContext(config), LocalConfiguration provides config) {
+                LocalContext provides localized, LocalConfiguration provides config) {
                 Box(Modifier.size(width.dp, height.dp).consumeWindowInsets(WindowInsets.safeDrawing).testTag("layout-fixture")) {
                     RawLabTheme {
                         EditorScreen(state, {}, {}, { edits, dragging -> state = state.copy(draft = state.draft!!.update(edits, dragging)) }, {}, {}, {}, {}, {},
