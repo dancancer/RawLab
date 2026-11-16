@@ -136,6 +136,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     var resetMenu by remember { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(true) }
     var toolOpen by rememberSaveable(state.photo?.identity) { mutableStateOf(false) }
+    var draftOpened by rememberSaveable(state.photo?.identity) { mutableStateOf(state.draft != null) }
     var workspaceHistogram by rememberSaveable(state.photo?.identity) { mutableStateOf(false) }
     var fine by rememberSaveable(state.photo?.identity) { mutableStateOf(false) }
     var toolMenu by remember { mutableStateOf(false) }
@@ -201,7 +202,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     val retrySave = { if (state.draft != null) { applyAndLeave(); Unit } else onSaveRetry() }
     val selectTool: (Int) -> Unit = { next ->
         if (quickPresetsVisible) onClosePresets()
-        if (next != tool || !toolOpen) leave { tool = next; fine = false; toolOpen = true; expanded = true }
+        if (next != tool || !toolOpen) leave { tool = next; fine = false; draftOpened = false; toolOpen = true; expanded = true }
     }
     fun openQuickPresets() { onCancelAdjustment(); expanded = true; onPresets() }
     val selectGroup: (EditorAdjustmentGroup) -> Unit = { group ->
@@ -249,11 +250,21 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             prepareReset(EditorResetScope.All)
         }
     }
-    LaunchedEffect(tool, toolOpen, state.canExport, pendingAll) {
-        if (toolOpen && !pendingAll && state.draft == null && state.canExport)
+    LaunchedEffect(tool, toolOpen, draftOpened, state.canExport, pendingAll) {
+        if (toolOpen && !draftOpened && !pendingAll && state.draft == null && state.canExport)
             onBeginDraft(AdjustmentGroup.forTool(tool))
     }
-    LaunchedEffect(state.draft?.group) { state.draft?.let { tool = it.group.tool; toolOpen = true } }
+    LaunchedEffect(state.draft?.group) {
+        val draft = state.draft
+        if (draft != null) {
+            tool = draft.group.tool
+            toolOpen = true
+            draftOpened = true
+        } else if (draftOpened) {
+            draftOpened = false
+            toolOpen = false
+        }
+    }
     BackHandler(enabled = toolOpen) { leave { toolOpen = false } }
     BackHandler(enabled = state.operation == Operation.EXPORT, onBack = onCancelExport)
     BackHandler(enabled = state.importingHDRLook, onBack = onCancelHDRLookImport)
