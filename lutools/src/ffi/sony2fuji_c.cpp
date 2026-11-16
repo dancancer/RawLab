@@ -3229,6 +3229,8 @@ static sony2fuji_status processImpl(
     status = computeTargetSize(local, native_width, native_height, &target_width, &target_height);
     if (status != SONY2FUJI_STATUS_OK) return status;
 
+    sony2fuji::ImageData viewportNoiseSource;
+    const sony2fuji::ImageData* waveletNoiseSource = nullptr;
     if (viewportPreview) {
         uint32_t width = target_width, height = target_height;
         // Atmosphere 只近似缩小预览；原生及放大请求保留原请求的尺寸和精确输出。
@@ -3252,9 +3254,17 @@ static sony2fuji_status processImpl(
             local.size_mode = SONY2FUJI_SIZE_EXACT;
             local.target_width = width; local.target_height = height;
             // RAW 缓存保持不变，直接读取源像素，避免先拷贝完整大图。
-            if (sourceSize.first != source.width || sourceSize.second != source.height)
-                image = resizeBilinear(source, sourceSize.first, sourceSize.second);
-            else if (local.input_type == SONY2FUJI_INPUT_RAW)
+            if (sourceSize.first != source.width || sourceSize.second != source.height) {
+                auto reduced = resizeBilinear(source, sourceSize.first, sourceSize.second);
+                if (c5Wavelet) {
+                    if (local.input_type == SONY2FUJI_INPUT_RAW) waveletNoiseSource = &session->raw_cache;
+                    else {
+                        viewportNoiseSource = std::move(image);
+                        waveletNoiseSource = &viewportNoiseSource;
+                    }
+                }
+                image = std::move(reduced);
+            } else if (local.input_type == SONY2FUJI_INPUT_RAW)
                 image = source;
         }
     }
@@ -3318,7 +3328,7 @@ static sony2fuji_status processImpl(
                     backend, entry ? &entry->analysis : nullptr, waveletKey,
                     local.input_type == SONY2FUJI_INPUT_RAW && !viewportPreview && !fastWavelet &&
                         !session->raw_cache.pixels.empty() ? &session->raw_cache : nullptr,
-                    toCoreColorSpace(color_space));
+                    toCoreColorSpace(color_space), waveletNoiseSource);
                 if (result == sony2fuji::ErrorCode::Success && diagnostics.applied)
                     ++session->wavelet_cache.diagnostics.appliedRuns;
                 if (diagnostics.analysisReused) ++session->wavelet_cache.diagnostics.analysisHits;
