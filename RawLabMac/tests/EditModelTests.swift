@@ -527,7 +527,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         model.selectFilm(lut.path)
         try check(model.settings == beforeBlockedSelection && model.selectedFilmID.isEmpty && model.resetBlockedMessage != nil,
                   "unrepresentable film selection keeps the original edit and reports the block")
-        model.selectMasterRecipe(.takashiYasuiZen)
+        model.selectMasterRecipe(.hamadaDaylightV2)
         let looks = try prepared(.group(.looks))
         let beforeLooks = model.scheduler.latest!.id
         try check(model.commitReset(looks) && model.selectedFilmID.isEmpty &&
@@ -713,8 +713,8 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
                   selection.settings.grainAmount == 40, "applying a recipe preserves unrelated adjustments")
         selection.settings.exposure = 1
         selection.selectMasterRecipe(.hamadaDaylightV2)
-        try check(selection.settings.exposure == 1 && selection.settings.masterRecipeID == MasterRecipe.hamadaDaylightV2.id,
-                  "reselecting the active recipe preserves manual adjustments")
+        try check(selection.settings.exposure == 0.4 && selection.settings.masterRecipeID == MasterRecipe.hamadaDaylightV2.id,
+                  "explicitly reapplying the same recipe overwrites manual changes")
         selection.selectMasterRecipe(.takashiYasuiZen)
         try check(selection.settings.masterRecipeID == MasterRecipe.takashiYasuiZen.id &&
                   selection.settings.exposure == MasterRecipe.takashiYasuiZen.exposureDelta,

@@ -131,8 +131,8 @@ internal static class WorkspaceLookChecks
             var recipeSettings=Get<Adjustments>(window,"settings");
             recipeSettings.Set(Parameter.Exposure,1.25);
             lastRecipe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            check(Math.Abs(Get<Adjustments>(window,"settings")[Parameter.Exposure]-1.25)<.0001,
-                "Reselecting the active recipe preserves manual adjustments");
+            check(Math.Abs(Get<Adjustments>(window,"settings")[Parameter.Exposure]-MasterRecipe.All[^1].ExposureDelta)<.0001,
+                "Reselecting the active recipe reapplies its default adjustments");
             var recipeSurface=EditorShellChecks.ArrangeLayout(window,new Size(1024,720));
             EditorShellChecks.CaptureLayout(window,recipeSurface,Path.Combine(output,"recipe-selected-de.png"));
             var lens=new LensPanel();

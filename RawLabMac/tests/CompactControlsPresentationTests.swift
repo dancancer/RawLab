@@ -331,9 +331,9 @@ struct CompactControlsPresentationTests {
             recipeProbe.selectMasterRecipe(.hamadaDaylightV2)
             recipeProbe.settings.exposure = 1.15
             recipeProbe.selectMasterRecipe(.hamadaDaylightV2)
-            guard recipeProbe.settings.exposure == 1.15,
+            guard recipeProbe.settings.exposure == MasterRecipe.hamadaDaylightV2.exposureDelta,
                   recipeProbe.settings.masterRecipeID == MasterRecipe.hamadaDaylightV2.id else {
-                throw RenderError.failed("\(language.rawValue): reselecting active recipe reset manual adjustments")
+                throw RenderError.failed("\(language.rawValue): reselecting active recipe did not reapply recipe defaults")
             }
             snapshots.append(try await snapshot(ScrollView {
                 MasterRecipeDock(model: recipeProbe).padding(10)

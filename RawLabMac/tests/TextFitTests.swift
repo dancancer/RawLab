@@ -31,14 +31,14 @@ struct TextFitTests {
         return strings
     }
 
-    @MainActor static func singleLineWidth(_ text: String, size: CGFloat) -> CGFloat {
-        NSHostingView(rootView: Text(text).font(.system(size: size)).fixedSize()).fittingSize.width
+    @MainActor static func singleLineWidth(_ text: String, size: CGFloat, weight: Font.Weight = .regular) -> CGFloat {
+        NSHostingView(rootView: Text(text).font(.system(size: size, weight: weight)).fixedSize()).fittingSize.width
     }
 
-    @MainActor static func fittingSize(_ text: String, size: CGFloat, width: CGFloat) -> NSSize {
-        let view = NSHostingView(rootView: Text(text).font(.system(size: size)).multilineTextAlignment(.center)
+    @MainActor static func fittingHeight(_ text: String, size: CGFloat, weight: Font.Weight = .regular, width: CGFloat) -> CGFloat {
+        let view = NSHostingView(rootView: Text(text).font(.system(size: size, weight: weight)).multilineTextAlignment(.center)
             .frame(width: width).fixedSize(horizontal: false, vertical: true))
-        return view.fittingSize
+        return view.fittingSize.height
     }
 
     // ------------------------------------------------------------------------
@@ -52,6 +52,10 @@ struct TextFitTests {
         let subtitles = ["中性直出"] + recipes.map(\.subtitle)
         let card = AdjustmentPanelLayout.RecipeCard.self
         let textWidth = card.textWidth(inspectorWidth: MacWorkspaceLayout.inspectorRange.lowerBound)
+        // 280 pt 最窄调整栏（列文本宽 ~75.33 pt）下已接受德文长复合词字符级硬拆（最多 5 行）
+        let acceptedSubtitleWrapWords: Set<String> = [
+            "Abenddämmerung", "Minimalistisches", "Kameraausgabe", "Streetfotografie"
+        ]
         var failures: [String] = []
         if card.columns != 3 || card.artworkSize != 46 {
             failures.append("recipe grid layout (\(card.columns) columns, \(card.artworkSize) pt artwork) must match film grid")
@@ -59,21 +63,35 @@ struct TextFitTests {
         if textWidth <= card.artworkSize {
             failures.append("narrow recipe column text width \(textWidth) pt is too narrow")
         }
-        let oneTitleLine = fittingSize("A", size: card.titleSize, width: textWidth).height
-        let oneSubtitleLine = fittingSize("A", size: card.subtitleSize, width: textWidth).height
+        let oneTitleLine = fittingHeight("A", size: card.titleSize, weight: .semibold, width: textWidth)
+        let oneSubtitleLine = fittingHeight("A", size: card.subtitleSize, width: textWidth)
         for language in languages {
             for key in titles {
                 let text = catalogs[language]?[key] ?? key
-                let size = fittingSize(text, size: card.titleSize, width: textWidth)
-                if size.height <= 0 || size.height > oneTitleLine * 2 + 0.5 || size.width > ceil(textWidth) + 0.5 {
-                    failures.append("\(language): title '\(text)' measured \(size) at width \(textWidth)")
+                let height = fittingHeight(text, size: card.titleSize, weight: .semibold, width: textWidth)
+                if height <= 0 || height > oneTitleLine * 2 + 0.5 {
+                    failures.append("\(language): title '\(text)' height \(height) exceeds 2 lines at width \(textWidth)")
+                }
+                for word in text.split(whereSeparator: \.isWhitespace).map(String.init) {
+                    let wordWidth = singleLineWidth(word, size: card.titleSize, weight: .semibold)
+                    if wordWidth > ceil(textWidth) + 0.5 {
+                        failures.append("\(language): title word '\(word)' width \(wordWidth) exceeds column width \(textWidth)")
+                    }
                 }
             }
             for key in subtitles {
                 let text = catalogs[language]?[key] ?? key
-                let size = fittingSize(text, size: card.subtitleSize, width: textWidth)
-                if size.height < oneSubtitleLine - 0.5 || size.height > oneSubtitleLine * 6 + 0.5 || size.width > ceil(textWidth) + 0.5 {
-                    failures.append("\(language): subtitle '\(text)' measured \(size) at width \(textWidth)")
+                let height = fittingHeight(text, size: card.subtitleSize, width: textWidth)
+                if height < oneSubtitleLine - 0.5 || height > oneSubtitleLine * 5 + 0.5 {
+                    failures.append("\(language): subtitle '\(text)' height \(height) exceeds 5 lines at width \(textWidth)")
+                }
+                if language != "zh-Hans" && language != "ja" {
+                    for word in text.split(whereSeparator: { $0.isWhitespace || $0 == "-" }).map(String.init) {
+                        let wordWidth = singleLineWidth(word, size: card.subtitleSize)
+                        if wordWidth > ceil(textWidth) + 0.5 && !(language == "de" && acceptedSubtitleWrapWords.contains(word)) {
+                            failures.append("\(language): subtitle word '\(word)' width \(wordWidth) exceeds column width \(textWidth)")
+                        }
+                    }
                 }
             }
         }
