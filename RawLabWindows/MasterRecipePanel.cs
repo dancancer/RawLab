@@ -46,7 +46,7 @@ public partial class MainWindow
             AutomationProperties.SetAutomationId(button,"recipe."+(recipe?.Id ?? "neutral"));
             AutomationProperties.SetName(button, Loc.Text(recipe?.Name ?? "无配方"));
             button.Click += (_, _) => {
-                if (exporting || !ResolveTransformDraft() || settings.MasterRecipeID == recipe?.Id) return;
+                if (exporting || !ResolveTransformDraft() || (recipe == null && settings.MasterRecipeID == null)) return;
                 if (recipe != null) { settings.ApplyMasterRecipe(recipe); lut = recipe.LutPath; }
                 else {
                     try { settings.ClearMasterRecipe(file == null || PhotoInput.IsRaw(file)); }
