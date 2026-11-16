@@ -22,6 +22,7 @@ import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.testing.LanguageTestRule
 import com.rawlab.android.testing.workbenchTool
+import com.rawlab.android.testing.localizedTestContext
 import com.rawlab.android.testing.localizedTestConfiguration
 import org.junit.Assert.*
 import org.junit.Rule
@@ -45,7 +46,7 @@ class AtmosphereLayoutTest(private val language: String) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
         val config = localizedTestConfiguration(context.resources.configuration, language)
-        val localized = context.createConfigurationContext(config)
+        val localized = localizedTestContext(context, language, config.fontScale)
         assertEquals("The fixture must use the requested language", Locale.forLanguageTag(language).language,
             localized.resources.configuration.locales[0].language)
         compose.setContent {
