@@ -73,7 +73,8 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertNotIn("continue-on-error", job)
             for step in job["steps"]:
                 if "continue-on-error" in step:
-                    self.assertEqual(step.get("id"), "native-cache")
+                    # 只允许缓存恢复软失败(缓存服务不可用时回退下载),其余步骤失败必须硬停。
+                    self.assertIn(step.get("id"), {"native-cache", "dep-archives-cache"})
                     self.assertTrue(step.get("uses", "").startswith("actions/cache/restore@"))
 
     def test_all_platforms_are_selected_bounded_and_gated(self):
@@ -428,6 +429,11 @@ class WorkflowContractTests(unittest.TestCase):
                 steps = self.workflow["jobs"][name]["steps"]
                 restores = [step for step in steps if step.get("uses", "").startswith("actions/cache/restore@")]
                 saves = [step for step in steps if step.get("uses", "").startswith("actions/cache/save@")]
+                # Windows 额外叠一层"只随归档 pin 变化"的归档缓存，独立合同，单独校验。
+                archive_restores = [step for step in restores if step.get("id") == "dep-archives-cache"]
+                archive_saves = [step for step in saves if step["with"]["key"] == "${{ steps.dep-archives-key.outputs.key }}"]
+                restores = [step for step in restores if step.get("id") != "dep-archives-cache"]
+                saves = [step for step in saves if step["with"]["key"] != "${{ steps.dep-archives-key.outputs.key }}"]
                 self.assertEqual(len(restores), 1)
                 self.assertEqual(len(saves), 1)
                 restore, save = restores[0], saves[0]
@@ -450,6 +456,27 @@ class WorkflowContractTests(unittest.TestCase):
                                  "${{ needs.changes.outputs.cold != 'true' && steps.native-cache.outputs.cache-hit == 'true' }}")
                 self.assertLess(steps.index(restore), steps.index(builds[0]))
                 self.assertLess(steps.index(builds[0]), steps.index(save))
+                if name == "windows":
+                    # 归档缓存键只随 URL/SHA256 pin 变化；宽松 restore-keys 兜住 pin 漂移与新机冷启动，
+                    # 命中归档仍在 configure 期过 SHA256，所以缓存服务与稳定目录都可整体缺席回退。
+                    self.assertEqual(len(archive_restores), 1)
+                    self.assertEqual(len(archive_saves), 1)
+                    archive_restore, archive_save = archive_restores[0], archive_saves[0]
+                    self.assertEqual(archive_restore["if"], "needs.changes.outputs.build == 'true'")
+                    self.assertEqual(archive_restore["continue-on-error"], "true")
+                    self.assertNotIn("lookup-only", archive_restore["with"])
+                    self.assertEqual(archive_restore["with"]["key"], "${{ steps.dep-archives-key.outputs.key }}")
+                    self.assertEqual(archive_restore["with"]["path"], "${{ steps.dep-archives-key.outputs.path }}")
+                    self.assertEqual(archive_restore["with"]["restore-keys"],
+                                     "rawlab-dep-archives-v1-windows-x86_64-\nrawlab-dep-archives-v1-\n")
+                    self.assertEqual(archive_save["with"], {key: archive_restore["with"][key] for key in ("key", "path")})
+                    self.assertEqual(archive_save["if"], "success() && steps.dep-archives-cache.outcome == 'success' && "
+                                                         "steps.dep-archives-cache.outputs.cache-hit != 'true'")
+                    self.assertLess(steps.index(archive_restore), steps.index(builds[0]))
+                    self.assertLess(steps.index(builds[0]), steps.index(archive_save))
+                else:
+                    self.assertEqual(archive_restores, [])
+                    self.assertEqual(archive_saves, [])
 
     def test_intel_shards_cover_every_native_suite_and_model_suites_run_on_arm64(self):
         build = next(step for step in self.workflow["jobs"]["macos"]["steps"]

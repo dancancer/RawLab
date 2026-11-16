@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import platform as host_platform
+import re
 import shutil
 import subprocess
 import sys
@@ -80,6 +81,41 @@ def cache_key(platform, arch, inputs, environment):
     identity = {"platform": platform, "arch": arch, "inputs": inputs, "environment": environment}
     digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
     return f"native-deps-v1-{platform}-{arch}-{digest}"
+
+
+# configure 期下载的归档集合(URL+SHA256)只随 pin 变化；独立于 toolchain 精确键,
+# 让 actions/cache 的 key 在 ci.yml/工具链抖动时保持命中。cmake pin 成对提取,
+# 缺对即报错——键不得静默缩水。hdr-codec-dependencies.json 是 hdr 归档的 pin 源。
+ARCHIVE_PIN_FILES = ("lutools/cmake/dng-sdk.cmake", "lutools/cmake/tiff-dependencies.cmake",
+                     "lutools/cmake/denoise-dependencies.cmake")
+ARCHIVE_MANIFEST_FILES = ("lutools/cmake/hdr-codec-dependencies.json",)
+
+
+def dependency_archives(root):
+    pairs = set()
+    for name in ARCHIVE_PIN_FILES:
+        text = (root / name).read_text(encoding="utf-8")
+        shas = dict(re.findall(r"set\((\w+)_sha256 ([0-9a-f]{64})\)", text))
+        found = re.findall(r"set\((\w+)_url (https?://\S+)\)", text)
+        if not found:
+            raise ValueError(f"Dependency archive pin is missing: {name}")
+        for name, url in found:
+            if name not in shas:
+                raise ValueError(f"Dependency archive SHA256 pin is missing: {name}")
+            pairs.add((url, shas[name]))
+    for name in ARCHIVE_MANIFEST_FILES:
+        manifest = json.loads((root / name).read_text(encoding="utf-8"))
+        for entry in manifest.values():
+            if isinstance(entry, dict) and "url" in entry and "sha256" in entry:
+                pairs.add((entry["url"], entry["sha256"]))
+    return sorted(pairs)
+
+
+def archives_key(platform, arch, pairs):
+    if not pairs:
+        raise ValueError("Dependency archive list is empty")
+    identity = "\n".join(f"{url} {sha256}" for url, sha256 in pairs)
+    return f"rawlab-dep-archives-v1-{platform}-{arch}-{hashlib.sha256(identity.encode()).hexdigest()}"
 
 
 def cache_paths(platform, arch):
@@ -175,10 +211,26 @@ def toolchain_identity(platform):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("key", "inventory"))
+    parser.add_argument("mode", choices=("key", "inventory", "archives"))
     parser.add_argument("--platform", choices=tuple(PLATFORM_INPUTS), required=True)
     parser.add_argument("--arch", required=True)
     args = parser.parse_args()
+    if args.mode == "archives":
+        pairs = dependency_archives(ROOT)
+        key = archives_key(args.platform, args.arch, pairs)
+        path = os.environ.get("RAWLAB_SOURCE_ARCHIVE_CACHE", "")
+        report = {"key": key, "path": path,
+                  "archives": [{"url": url, "sha256": sha256} for url, sha256 in pairs]}
+        print(json.dumps(report, indent=2))
+        output = ROOT / "build/ci/native-archives.json"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        if os.environ.get("GITHUB_OUTPUT"):
+            if not path:
+                raise ValueError("RAWLAB_SOURCE_ARCHIVE_CACHE must be set to cache dependency archives")
+            with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
+                stream.write(f"key={key}\npath={path}\n")
+        return
     paths = cache_paths(args.platform, args.arch)
     if args.mode == "inventory":
         files = selected_files(ROOT, paths)
