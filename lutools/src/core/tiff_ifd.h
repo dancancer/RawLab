@@ -36,6 +36,7 @@ inline size_t elementWidth(uint16_t type) {
 
 class Reader {
 public:
+    // 借用输入及其长度；内存或流的生命周期须覆盖读取过程。
     Reader(const void* data, size_t size) : data_(static_cast<const uint8_t*>(data)), size_(size) {}
     Reader(std::istream& input, size_t size) : size_(size), input_(&input) {}
 
@@ -65,6 +66,7 @@ public:
         return true;
     }
 
+    // 首目录是否允许为零由调用方决定；DCP 另接受 0x4352 魔数。
     bool header(uint32_t& first, uint16_t alternateMagic = 42) {
         uint8_t bytes[8];
         if (!read(0, bytes, sizeof(bytes))) return false;
@@ -79,6 +81,7 @@ public:
 
     bool directory(uint32_t offset, Directory& output) const {
         uint64_t count = 0, next = 0;
+        // 一次校验整张目录及尾部 next-offset，再向调用方提供条目。
         if (!integer(offset, 2, count) || count > 4096 || !contains(offset, size_t(count) * 12 + 6))
             return false;
         const size_t start = size_t(offset) + 2;
@@ -100,6 +103,7 @@ public:
         return true;
     }
 
+    // RAW 会跳过不属于拍摄元数据的标签，须在筛选之后才校验其类型和载荷。
     bool payload(const Entry& entry, Payload& output) const {
         const size_t width = elementWidth(entry.type);
         if (!width) return false;
@@ -124,6 +128,7 @@ private:
 
 class Traversal {
 public:
+    // 子目录与 next 链共用访问记录；沿用 HDR 的深度 8、目录总量 32 上限。
     bool open(const Reader& reader, uint32_t offset, unsigned depth, Directory& output) {
         if (depth > 8 || count_ == visited_.size()) return false;
         for (size_t i = 0; i < count_; ++i)

@@ -75,6 +75,7 @@ struct Reader {
         if (size > maxDcpSourceBytes) fail(DcpCompilerError::TooLarge);
         uint32_t first = 0;
         tiff::Directory directory;
+        // DCP 只接受一个非空起始目录，任何非零 next-offset 均按既有规则拒绝。
         if (!container.header(first, 0x4352) || first < 8 ||
             !container.directory(first, directory) || directory.next != 0) fail(DcpCompilerError::Malformed);
         std::size_t rationalCount = 0;

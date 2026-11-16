@@ -69,6 +69,7 @@ struct TIFF {
         parse();
     }
     void parse() {
+        // 没有 EXIF 时保留默认值；共享读取器只负责非空 TIFF 的结构校验。
         if (!size) return;
         if (size<8 || size>(rawSource ? 512ull*1024*1024 : 1024*1024)) invalid();
         uint32_t first=0;
@@ -125,6 +126,7 @@ struct TIFF {
             if (save) save->emplace(tag,std::move(entry));
             return true;
         })) invalid();
+        // RAW 的后续图像目录不属于拍摄 EXIF，保留既有忽略行为。
         if (!rawSource) directory(ifd.next,nullptr,depth+1);
     }
 };
