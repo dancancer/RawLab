@@ -21,6 +21,8 @@ import com.rawlab.android.editor.ui.EditorScreen
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.testing.LanguageTestRule
+import com.rawlab.android.testing.workbenchTool
+import com.rawlab.android.testing.localizedTestConfiguration
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -42,8 +44,10 @@ class AtmosphereLayoutTest(private val language: String) {
     @Test fun atmosphereToolsAndNumbersFitInEveryLanguage() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
-        val config = Configuration(context.resources.configuration).apply { setLocale(Locale.forLanguageTag(language)) }
+        val config = localizedTestConfiguration(context.resources.configuration, language)
         val localized = context.createConfigurationContext(config)
+        assertEquals("The fixture must use the requested language", Locale.forLanguageTag(language).language,
+            localized.resources.configuration.locales[0].language)
         compose.setContent {
             CompositionLocalProvider(LocalContext provides localized, LocalConfiguration provides config) {
                 RawLabTheme { EditorScreen(state = EditorState(
@@ -54,11 +58,9 @@ class AtmosphereLayoutTest(private val language: String) {
                     onMessageDismiss = {}, onLicenses = {}, onGpuChange = {}) }
             }
         }
-        compose.onNodeWithTag("editor-groups").performScrollToNode(hasTestTag("editor-group-effects"))
-        compose.onNodeWithTag("editor-group-effects").performClick()
         for ((id, resource, number) in listOf(Triple(22, R.string.clarity, "37.25"), Triple(23, R.string.dehaze, "-42.5"))) {
-            compose.onNodeWithTag("editor-tools").performScrollToNode(hasTestTag("editor-tool-$id"))
-            compose.onNodeWithTag("editor-tool-$id").performClick().assertIsSelected().assertIsDisplayed()
+            val tool = compose.workbenchTool(id)
+            compose.onNodeWithTag("editor-group-effects").assertIsSelected()
             val layouts = mutableListOf<TextLayoutResult>()
             compose.onNodeWithTag("editor-tool-label-$id", useUnmergedTree = true).assertTextEquals(localized.getString(resource))
                 .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
@@ -67,8 +69,12 @@ class AtmosphereLayoutTest(private val language: String) {
             }
             val visible = compose.onNodeWithTag("editor-tool-label-$id", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
             assertTrue("The complete translated tool label must fit: visible=$visible " + layouts.map { "size=${it.size} right=${it.getLineRight(0)} lines=${it.lineCount} text=${it.layoutInput.text}" },
-                layouts.isNotEmpty() && layouts.all { !it.didOverflowHeight && it.lineCount == 1 &&
-                    it.getLineRight(0) <= it.size.width + 1f && it.size.width <= visible.width + 1f })
+                layouts.isNotEmpty() && layouts.all { !it.didOverflowHeight &&
+                    (0 until it.lineCount).all { line -> !it.isLineEllipsized(line) &&
+                        it.getLineRight(line) - it.getLineLeft(line) <= visible.width + 1f } &&
+                    it.size.height <= visible.height + 1f })
+            tool.performClick()
+            compose.onNodeWithTag("editor-parameters").assertIsDisplayed()
             val formatted = if (language in listOf("de", "fr", "es")) number.replace('.', ',') else number
             compose.onNodeWithTag("adjustment-value-$resource").assertIsDisplayed().assertTextContains(formatted)
         }
