@@ -39,16 +39,15 @@ class NativeExportBackendConcurrencyTest {
         try {
             instrumentation.context.assets.open("sample.RAW").use { from -> input.outputStream().use { from.copyTo(it) } }
             val output = object : File(root, "export.jpg") {
-                private val calls = AtomicInteger()
-                override fun getCanonicalPath(): String {
-                    val path = super.getCanonicalPath()
-                    // 第二次 canonical 检查是 metadata 入口，此时真实 native 导出已经完成。
-                    if (calls.incrementAndGet() == 2) {
-                        check(File(path).length() > 0)
-                        metadata.countDown()
-                        check(release.await(20, TimeUnit.SECONDS))
-                    }
-                    return path
+                override fun toPath(): java.nio.file.Path {
+                    // executeExport 在 renderToStaging 与 preserveMetadata 完成后再通过 output.toPath() 原子发布。
+                    val staged = root.listFiles { _, name ->
+                        name.startsWith(".export.jpg.") && name.endsWith(".part.jpg")
+                    }?.singleOrNull()
+                    check(staged != null && staged.length() > 0)
+                    metadata.countDown()
+                    check(release.await(20, TimeUnit.SECONDS))
+                    return super.toPath()
                 }
             }
             processors += NativeProcessor(NativeProcessor.CPU)

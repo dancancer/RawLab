@@ -48,7 +48,7 @@ class RasterRecipeSwitchTest {
             compose.runOnUiThread { model.importPhoto(Uri.fromFile(source)) }
             awaitPreview()
             assertEquals(PhotoInputKind.RASTER, model.state.value.photo!!.inputKind)
-            assertEquals(EditSettings(), model.state.value.edits)
+            assertEquals(EditSettings().effectiveFor(PhotoInputKind.RASTER), model.state.value.edits)
             for ((label, film) in listOf("中性" to "neutral", "PROVIA" to "provia", "无配方" to "neutral")) {
                 tool(15)
                 compose.onNodeWithText("保井崇志").performClick()
@@ -67,7 +67,7 @@ class RasterRecipeSwitchTest {
             source.copyTo(unseen)
             compose.runOnUiThread { model.importPhoto(Uri.fromFile(unseen)) }
             awaitPreview()
-            assertEquals(EditSettings(), model.state.value.edits)
+            assertEquals(EditSettings().effectiveFor(PhotoInputKind.RASTER), model.state.value.edits)
             compose.runOnUiThread { model.importPhoto(Uri.fromFile(source)) }
             awaitPreview()
             assertEquals("velvia", model.state.value.edits.film)

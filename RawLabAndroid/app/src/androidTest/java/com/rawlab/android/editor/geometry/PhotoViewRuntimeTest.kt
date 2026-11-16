@@ -44,12 +44,8 @@ class PhotoViewRuntimeTest {
             compose.runOnUiThread { compose.activity.model.setGpuEnabled(false); compose.activity.model.importPhoto(Uri.fromFile(source)) }
             ready()
             val committed = compose.activity.model.state.value.edits
-            val record = File(compose.activity.filesDir, "edits/edits.properties")
-            val bytes = record.readBytes(); val inode = android.system.Os.stat(record.absolutePath).st_ino
-            val writes = AtomicInteger()
-            observer = object : FileObserver(record.parentFile!!.absolutePath, FileObserver.MOVED_TO) {
-                override fun onEvent(event: Int, path: String?) { if (path == record.name) writes.incrementAndGet() }
-            }.also { it.startWatching() }
+            val watcher = EditRecordWatcher(File(compose.activity.filesDir, "edits/edits.properties"))
+            observer = watcher
             compose.onNodeWithContentDescription("开启对比").performClick(); ready()
             compose.onNodeWithTag("photo-canvas").performTouchInput {
                 pinch(start0 = androidx.compose.ui.geometry.Offset(centerX - 40f, centerY), end0 = androidx.compose.ui.geometry.Offset(centerX - 80f, centerY),
@@ -84,7 +80,7 @@ class PhotoViewRuntimeTest {
             capture("rotation-1.0-wipe.png")
             android.util.Log.i("RawLabViewRotationEvidence", "root=${compose.onRoot().fetchSemanticsNode().boundsInRoot} photo=$photo dock=${compose.onNodeWithTag("adjustment-dock").fetchSemanticsNode().boundsInRoot}")
             assertEquals(committed, compose.activity.model.state.value.edits)
-            assertEquals(inode, android.system.Os.stat(record.absolutePath).st_ino); assertArrayEquals(bytes, record.readBytes()); assertEquals(0, writes.get())
+            watcher.assertUnchanged()
         } finally {
             observer?.stopWatching()
             compose.runOnUiThread { compose.activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
@@ -180,13 +176,8 @@ class PhotoViewRuntimeTest {
                 assertTrue("Actual default native reference includes committed geometry/lens and processing", expected.sameAs(accepted.neutral))
                 expected.recycle()
             }
-            val record = File(compose.activity.filesDir, "edits/edits.properties")
-            val bytes = record.readBytes()
-            val inode = android.system.Os.stat(record.absolutePath).st_ino
-            val writes = AtomicInteger()
-            observer = object : FileObserver(record.parentFile!!.absolutePath, FileObserver.MOVED_TO) {
-                override fun onEvent(event: Int, path: String?) { if (path == record.name) writes.incrementAndGet() }
-            }.also { it.startWatching() }
+            val watcher = EditRecordWatcher(File(compose.activity.filesDir, "edits/edits.properties"))
+            observer = watcher
             compose.onNodeWithContentDescription("开启对比").performClick(); ready()
             compose.onNodeWithTag("comparison-before").assertIsDisplayed()
             val label = if (raster) "raster" else if (processing == ProcessingIdentity.LEGACY) "legacy" else "current"
@@ -225,10 +216,27 @@ class PhotoViewRuntimeTest {
             compose.onNodeWithTag("rgb-histogram-close").performClick()
             assertEquals(settings, model.state.value.edits)
             assertEquals(processing, model.state.value.edits.processing)
-            assertEquals(inode, android.system.Os.stat(record.absolutePath).st_ino)
-            assertArrayEquals(bytes, record.readBytes())
-            assertEquals("View operations and viewport demand never save", 0, writes.get())
-            android.util.Log.i("RawLabViewRuntimeEvidence", "$label processing=$processing writes=${writes.get()} inode=$inode neutral=${accepted.neutral.width}x${accepted.neutral.height} geometry=${settings.geometry} lens=${settings.lens}")
+            watcher.assertUnchanged("View operations and viewport demand never save")
+            android.util.Log.i("RawLabViewRuntimeEvidence", "$label processing=$processing writes=${watcher.writes.get()} neutral=${accepted.neutral.width}x${accepted.neutral.height} geometry=${settings.geometry} lens=${settings.lens}")
         } finally { observer?.stopWatching(); compose.runOnUiThread { model.discardDraft() }; source.delete() }
+    }
+
+    private class EditRecordWatcher(private val record: File) : FileObserver(
+        (record.parentFile!!.apply { mkdirs() }).absolutePath, MOVED_TO
+    ) {
+        private val bytes = if (record.exists()) record.readBytes() else null
+        private val inode = if (bytes != null) android.system.Os.stat(record.absolutePath).st_ino else null
+        val writes = AtomicInteger()
+        init { startWatching() }
+        override fun onEvent(event: Int, path: String?) { if (path == record.name) writes.incrementAndGet() }
+        fun assertUnchanged(message: String = "Zero edit writes") {
+            if (bytes == null) {
+                assertFalse(message, record.exists())
+            } else {
+                assertEquals(message, inode, android.system.Os.stat(record.absolutePath).st_ino)
+                assertArrayEquals(message, bytes, record.readBytes())
+            }
+            assertEquals(message, 0, writes.get())
+        }
     }
 }

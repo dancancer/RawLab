@@ -172,7 +172,8 @@ class PhotoInfoExportTest {
             import(source)
             val model = compose.activity.model
             compose.runOnUiThread { model.beginBatch() }
-            val batch = model.batch.value!!
+            compose.waitUntil(60_000) { model.batch.value != null }
+            val batch = requireNotNull(model.batch.value)
             compose.waitUntil(60_000) { batch.state.value.phase == BatchPhase.SELECTING }
             compose.runOnUiThread { batch.addUris(listOf(Uri.fromFile(target), Uri.fromFile(broken))) }
             compose.waitUntil(60_000) { batch.state.value.phase != BatchPhase.PREPARING }

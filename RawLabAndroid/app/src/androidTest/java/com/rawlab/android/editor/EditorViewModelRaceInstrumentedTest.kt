@@ -19,6 +19,7 @@ import java.util.UUID
 import com.rawlab.android.looks.LookLibrary
 import com.rawlab.android.settings.DenoisePreset
 import com.rawlab.android.settings.DenoiseSettings
+import com.rawlab.android.testing.TestTimeouts
 import com.rawlab.android.testing.assertHistogramMatches
 
 @RunWith(AndroidJUnit4::class)
@@ -636,7 +637,7 @@ class EditorViewModelRaceInstrumentedTest {
     }
 
     private fun awaitState(model: EditorViewModel, predicate: (EditorState) -> Boolean) {
-        val deadline = SystemClock.elapsedRealtime() + 30_000
+        val deadline = SystemClock.elapsedRealtime() + TestTimeouts.importMs
         while (SystemClock.elapsedRealtime() < deadline && !predicate(model.state.value)) SystemClock.sleep(50)
         assertTrue("Timed out waiting for EditorViewModel state: ${model.state.value}", predicate(model.state.value))
     }
