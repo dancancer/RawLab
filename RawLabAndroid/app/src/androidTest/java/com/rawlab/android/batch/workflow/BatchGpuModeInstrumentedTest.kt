@@ -204,6 +204,7 @@ class BatchGpuModeInstrumentedTest {
                 val loaded = requireNotNull(journal.load(id))
                 assertEquals(BatchRowStatus.PENDING, loaded.rows.single().status)
                 compose.runOnUiThread { model.resumeBatch(loaded) }
+                compose.waitUntil(60_000) { model.batch.value != null }
                 cleanup.trackJob(model.batch.value!!.state.value.job.id)
                 compose.waitUntil(60_000) { model.batch.value?.state?.value?.phase != BatchPhase.PREPARING }
                 assertEquals(BatchPhase.CANCELLED, model.batch.value!!.state.value.phase)
@@ -215,6 +216,7 @@ class BatchGpuModeInstrumentedTest {
                 compose.waitUntil(180_000) { model.state.value.canExport || model.state.value.error != null }
                 assertNull(model.state.value.error)
                 compose.runOnUiThread { model.beginBatch() }
+                compose.waitUntil(60_000) { model.batch.value != null }
                 cleanup.trackJob(model.batch.value!!.state.value.job.id)
                 compose.waitUntil(60_000) { model.batch.value?.state?.value?.phase == BatchPhase.SELECTING }
                 compose.runOnUiThread { model.batch.value!!.addUris(listOf(Uri.fromFile(target))) }

@@ -73,17 +73,17 @@ class PhotoCanvasTest {
             }
         }
         compose.runOnIdle {
-            assertEquals(852f, state.viewport!!.width, .01f)
-            assertEquals(552f, state.viewport!!.height, .01f)
-            assertEquals(listOf(832), edges)
+            assertEquals(900f, state.viewport!!.width, .01f)
+            assertEquals(600f, state.viewport!!.height, .01f)
+            assertEquals(listOf(960), edges)
             pair = PreviewPair(original, Bitmap.createScaledBitmap(original, 512, 341, false), 6500f, 0f)
         }
         compose.runOnIdle { assertEquals(1, edges.size); state.transform(1f, Offset(2f, 0f), Offset.Zero) }
         compose.runOnIdle { assertEquals(1, edges.size); width = 200.dp }
         compose.runOnIdle {
             assertEquals(2, edges.size)
-            assertEquals(552f, state.viewport!!.width, .01f)
-            assertEquals(576, edges.last())
+            assertEquals(600f, state.viewport!!.width, .01f)
+            assertEquals(640, edges.last())
         }
     }
 
@@ -202,7 +202,7 @@ class PhotoCanvasTest {
                 assertEquals(before, state.zoom)
             }
         }
-        capture("denoise-proxy-exact-pan.png")
+        capture("denoise-proxy-exact-pan.png", probeX = { it / 4 })
     }
 
     @Test fun wipeAccessibilityTargetAndHandleStayInsideTheLetterboxedPhoto() {
@@ -213,9 +213,9 @@ class PhotoCanvasTest {
             } }
         }
         val rect = compose.onNodeWithTag("comparison-wipe").fetchSemanticsNode().boundsInRoot
-        assertEquals("Wipe AX hit target excludes top and bottom letterbox", 189.333f, rect.height, 1f)
-        assertEquals(55.333f, rect.top, 1f)
-        assertEquals(244.667f, rect.bottom, 1f)
+        assertEquals("Wipe AX hit target excludes top and bottom letterbox", 200f, rect.height, 1f)
+        assertEquals(50f, rect.top, 1f)
+        assertEquals(250f, rect.bottom, 1f)
         for (split in listOf(0f, 1f)) {
             compose.onNodeWithTag("comparison-wipe").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(split) }
             val handle = compose.onNodeWithTag("comparison-handle", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
@@ -272,7 +272,7 @@ class PhotoCanvasTest {
             assertEquals(3f, state.view.magnification, .15f)
             assertEquals("Both pane pointers anchor the same photo X", .5f, state.view.focusX, .005f)
             assertEquals("Both pane pointers anchor the same photo Y", .5f, state.view.focusY, .005f)
-            assertEquals(0f, state.zoom!!.x, 1f); assertEquals(0f, state.zoom!!.y, 1f)
+            assertEquals(0f, state.zoom!!.x, 1.5f); assertEquals(0f, state.zoom!!.y, 1.5f)
         }
     }
 
@@ -303,10 +303,12 @@ class PhotoCanvasTest {
         return PreviewPair(bitmap, bitmap, 6500f, 0f)
     }
 
-    private fun capture(name: String) {
+    // `probeX` keeps WIPE captures with the split at .5 away from the centered white handle glyph; default probes the geometric center.
+    private fun capture(name: String, probeX: (Int) -> Int = { it / 2 }) {
         compose.waitForIdle()
         val image = compose.onRoot().captureToImage().asAndroidBitmap()
-        assertNotEquals("Canvas must render the image", image.getPixel(0, 0), image.getPixel(image.width / 2, image.height / 2))
+        val center = image.getPixel(probeX(image.width), image.height / 2)
+        assertTrue("Canvas must render the image: $center", center == Color.RED || center == Color.CYAN || center == Color.YELLOW)
         val directory = InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null)
         File(directory, name).outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }

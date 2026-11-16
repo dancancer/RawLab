@@ -1,7 +1,9 @@
 package com.rawlab.android.editor
 
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
@@ -85,6 +87,15 @@ class ProcessingMigrationNavigationTest {
                 compose.onNodeWithTag("camera-entry").performClick()
                 compose.onNodeWithTag("camera-back").assertIsDisplayed()
             } else {
+                val permission = if (Build.VERSION.SDK_INT >= 33) {
+                    "android.permission.READ_MEDIA_IMAGES"
+                } else {
+                    "android.permission.READ_EXTERNAL_STORAGE"
+                }
+                val instrumentation = InstrumentationRegistry.getInstrumentation()
+                if (context.checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
+                    instrumentation.uiAutomation.grantRuntimePermission(context.packageName, permission)
+                }
                 compose.onNodeWithContentDescription("相册").performClick()
                 compose.waitUntil(10_000) { compose.onAllNodesWithText("全部相册").fetchSemanticsNodes().isNotEmpty() }
             }

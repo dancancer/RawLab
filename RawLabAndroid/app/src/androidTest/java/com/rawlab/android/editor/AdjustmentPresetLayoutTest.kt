@@ -91,6 +91,7 @@ class AdjustmentPresetLayoutTest(private val language: String) {
                 val layouts = mutableListOf<TextLayoutResult>()
                 compose.onNodeWithText(name).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
                 assertTrue(layouts.isNotEmpty()); assertTrue(layouts.none { it.hasVisualOverflow })
+                assertEquals(1.6f, layouts.first().layoutInput.density.fontScale, 0.01f)
                 compose.runOnIdle { saving = true }
                 val field = compose.onNodeWithTag("preset-name")
                 field.performTextReplacement(name); field.performImeAction(); compose.waitForIdle()

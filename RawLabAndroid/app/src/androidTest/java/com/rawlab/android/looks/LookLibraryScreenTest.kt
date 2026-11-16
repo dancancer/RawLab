@@ -20,6 +20,7 @@ import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.editor.Operation
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.testing.LanguageTestRule
+import com.rawlab.android.testing.TestTimeouts
 
 class LookLibraryScreenTest {
     val compose = createAndroidComposeRule<MainActivity>()
@@ -198,11 +199,11 @@ class LookLibraryScreenTest {
                 source.outputStream().use { input.copyTo(it) }
             }
             compose.runOnUiThread { compose.activity.model.importPhoto(Uri.fromFile(raw)) }
-            compose.waitUntil(30_000) { compose.activity.model.state.value.canExport }
+            compose.waitUntil(TestTimeouts.importMs) { compose.activity.model.state.value.canExport }
             openLooks()
             compose.onNodeWithContentDescription(text(R.string.import_look)).assertIsDisplayed().assertIsEnabled()
             compose.runOnUiThread { compose.activity.model.importLook(Uri.fromFile(source)) }
-            compose.waitUntil(30_000) {
+            compose.waitUntil(TestTimeouts.operationMs) {
                 compose.activity.model.state.value.let { state ->
                     state.draftReady && state.looks.any { it.name == source.name }
                 }
@@ -219,14 +220,14 @@ class LookLibraryScreenTest {
             compose.waitUntil(10_000) {
                 compose.activity.model.state.value.looks.any { it.id == lookId && it.name == "Transferred Look $token" }
             }
-            compose.waitUntil(30_000) { compose.activity.model.state.value.draft == null }
-            compose.waitUntil(30_000) { compose.activity.model.state.value.canExport }
+            compose.waitUntil(TestTimeouts.operationMs) { compose.activity.model.state.value.draft == null }
+            compose.waitUntil(TestTimeouts.operationMs) { compose.activity.model.state.value.canExport }
             val exportReady = java.util.concurrent.atomic.AtomicReference<Boolean?>(null)
             compose.runOnUiThread { compose.activity.model.beginExport { exportReady.set(it) } }
-            compose.waitUntil(30_000) { exportReady.get() != null }
+            compose.waitUntil(TestTimeouts.operationMs) { exportReady.get() != null }
             assertTrue(exportReady.get() == true)
             compose.runOnUiThread { compose.activity.model.export(Uri.fromFile(exported), ExportFormat.JPEG) }
-            compose.waitUntil(30_000) { compose.activity.model.state.value.operation == Operation.NONE }
+            compose.waitUntil(TestTimeouts.operationMs) { compose.activity.model.state.value.operation == Operation.NONE }
             assertTrue(exported.length() > 0)
             compose.runOnUiThread { compose.activity.model.dismissMessage() }
             compose.waitForIdle()
