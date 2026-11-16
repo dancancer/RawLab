@@ -157,6 +157,21 @@ int main(int argc, char** argv) {
             { std::ofstream out(root / "raw.onnx"); out << "test package integrity"; } // 复原：再走一轮全量校验并通过
             require(loadModelPackage(root.u8string()).digest == first.digest, "restored package rejected after revalidation");
             require(modelPackageValidationCount() == validations + 2, "restored package did not run exactly one fresh validation");
+            { // 同长度保 mtime 覆写：(size,mtime) 弱指纹在此逐位相同（Windows ~15.6ms tick 同款雷），
+              // sourceMetadataKey 的 ctime/ino 契约（AISession::packageStamp 同源）必须触发重验。
+              const auto file = root / "raw.onnx";
+              const auto saved = std::filesystem::last_write_time(file);
+              { std::ofstream out(file); out << "TEST PACKAGE INTEGRITY"; }
+              std::filesystem::last_write_time(file, saved);
+              // 弱指纹在此会安静命中陈旧缓存返回旧包；正确实现必须重验并在 SHA 不符处抛错。
+              bool failed = false;
+              try { loadModelPackage(root.u8string()); } catch (const std::exception&) { failed = true; }
+              require(failed, "same-size same-mtime overwrite served from stale cache");
+              require(modelPackageValidationCount() == validations + 3, "same-size overwrite did not trigger revalidation");
+              { std::ofstream out(file); out << "test package integrity"; }
+              std::filesystem::last_write_time(file, saved);
+              require(loadModelPackage(root.u8string()).digest == first.digest, "restored package rejected after same-mtime overwrite");
+            }
         }
         std::filesystem::remove_all(root);
         std::cout << "PASS SHA-256 and DualDn package integrity/protocol\n";

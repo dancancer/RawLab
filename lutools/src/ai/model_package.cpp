@@ -1,8 +1,8 @@
 #include "model_package.h"
+#include "dualdn_cache.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -12,6 +12,9 @@
 #include <string>
 #include <utility>
 #include <vector>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 namespace sony2fuji::ai {
 namespace {
@@ -55,23 +58,30 @@ std::string nativeModelPath(const std::filesystem::path& root, const nlohmann::j
 
 std::atomic<std::uint64_t> packageValidations{0};
 
-// 包目录内容指纹（不读文件内容）：每个条目的 relpath + 类型 + size + mtime(ns)，排序后拼接。
-// 文件集合、任一 size 或 mtime 变化都改变指纹并触发全量重验；枚举/stat 失败返回 false，
-// 调用方退回直接全量校验，错误仍由 validate 原样抛出（与缓存引入前同语义）。
+// 包目录内容指纹（不读文件内容）：每个条目的 relpath + 类型 + 身份戳，排序后拼接。普通文件
+// 复用 AISession::packageStamp() 同源的 sourceMetadataKey（POSIX dev/ino/ctime、Windows
+// 卷/索引/创建/变更时间 + 模型变更租约；正常卷零内容读取），与 Windows 粗 mtime tick 及
+// "保 size+mtime 篡改" 契约对齐。文件集合、任一身份或权限变化都改变指纹并触发全量重验；
+// 遍历/取戳失败（含目录不可达、文件不可读）返回 false，调用方退回直接全量校验，错误仍由
+// validate 原样抛出（与缓存引入前同语义）。
 bool packageStateFingerprint(const std::filesystem::path& root, std::string& out) {
     namespace fs = std::filesystem;
     try {
         std::vector<std::string> lines;
         std::error_code error;
-        for (fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied, error), end;
+        for (fs::recursive_directory_iterator it(root, fs::directory_options::none, error), end;
              !error && it != end; it.increment(error)) {
             const auto relative = it->path().lexically_relative(root).generic_u8string();
             if (fs::is_symlink(it->symlink_status())) lines.push_back("L " + relative);
             else if (it->is_directory()) lines.push_back("D " + relative);
-            else if (it->is_regular_file())
-                lines.push_back("F " + relative + " " + std::to_string(it->file_size()) + " " +
-                    std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(
-                        fs::last_write_time(it->path()).time_since_epoch()).count()));
+            else if (it->is_regular_file()) {
+#ifndef _WIN32
+                // stat 对无读权限文件照样成功；旧语义里 validate 会在 ifstream 读取处报错，
+                // 故不可读必须让缓存让路（Windows 由 sourceMetadataKey 内 GENERIC_READ 句柄把关）。
+                if (::access(it->path().c_str(), R_OK) != 0) return false;
+#endif
+                lines.push_back("F " + relative + " " + sourceMetadataKey(it->path().u8string()));
+            }
             else lines.push_back("X " + relative);
         }
         if (error) return false;
