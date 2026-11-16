@@ -60,6 +60,7 @@ class RasterRecipeSwitchTest {
                 assertEquals("takashi_yasui_zen", model.state.value.edits.recipeID)
                 // 配方选中态同时把配方的渲染基准写进独立值；换胶片应原样承接该 tint（independentForReset 保值契约）。
                 val recipeTint = model.state.value.edits.tint
+                assertNotEquals("recipe must carry a non-zero tint baseline, else the keep-check below is vacuous", 0f, recipeTint)
                 // draft.apply 关闭工具面板；换胶片回 looks(0)，清除配方回配方面板(15) 点“无配方”磁贴。
                 tool(if (label == "无配方") 15 else 0)
                 compose.onNodeWithText(label).performScrollTo().performClick()
