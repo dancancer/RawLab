@@ -1,10 +1,11 @@
+#include "test_harness.h"
 #include "core/processing_migration.h"
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
 
 using namespace sony2fuji;
-static void require(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
+using rawlab::test::require;
 
 static ImageData testImage() {
     ImageData image(96, 64);
