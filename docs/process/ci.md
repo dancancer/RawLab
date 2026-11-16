@@ -432,6 +432,14 @@ gate's honest skip pair otherwise.
 - macOS explicitly excludes `native_dcp_metal`, `gpu_photo` and `metal_denoise`
   from the CI CTest invocation. Other tests may exercise an available GPU
   opportunistically; this is not a guaranteed physical GPU gate.
+- The fast macOS CTest selects `dualdn_api` only in its no-package
+  `dualdn_api_disabled` form, because `RAWLAB_DUALDN_TEST_PACKAGE` is unset
+  there and the `RAWLAB_TEST_AI` Core ML assertions are compiled out. The
+  self-hosted Apple-silicon `native/full` run closes that gap through
+  `RawLabMac/tests/dualdn-api-package.sh`, which configures a dedicated
+  AI-enabled build against the pinned ONNX Runtime and the validated DualDn
+  package and runs the real `dualdn_api` test; a missing model or runtime is a
+  hard failure there (via `scripts/ci/ai-inputs.py`), not a skip.
 - Windows does not invoke `build.ps1 -Test`: that entry point's default suite
   requires physical D3D11 and an external RAW path. The hosted suite uses the
   already-public tracked DJI DNG and explicitly selected CPU-safe cases.
