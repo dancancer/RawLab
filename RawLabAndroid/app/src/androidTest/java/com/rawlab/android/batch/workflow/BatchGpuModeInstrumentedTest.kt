@@ -88,7 +88,8 @@ class BatchGpuModeInstrumentedTest {
     }
 
     @Test fun resumedBatchWithGpuDisabledUsesCpuForPreviewAndOriginalSizeCleanExport() {
-        val settings = EditSettings(customWb = true, exposure = .5f, contrast = .2f,
+        // 对比度属于 BasicV3 基础控制（00aa7e20da 起按契约走 CPU 管线）；改用饱和度保持 GLES 资格。
+        val settings = EditSettings(customWb = true, exposure = .5f, saturation = .2f,
             denoise = DenoiseSettings(true, 10f, 72f, 100f))
         withBatch(gpuEnabled = false, settings = settings, resumed = true, format = ExportFormat.JPEG) { batch ->
             if (InstrumentationRegistry.getArguments().getString("batchAbortProbe") == "true") {
@@ -107,7 +108,8 @@ class BatchGpuModeInstrumentedTest {
     }
 
     @Test fun enabledNewAndResumedBatchesUseGlesInsteadOfBeingPinnedToCpu() {
-        val settings = EditSettings(customWb = true, exposure = .5f, contrast = .2f)
+        // contrast 会触发基础控制 CPU 回退（GLES 契约）；saturation 仍要求后端 2 且保持 CPU/GLES 像素可区分。
+        val settings = EditSettings(customWb = true, exposure = .5f, saturation = .2f)
         for (resumed in listOf(true, false)) {
             withBatch(gpuEnabled = true, settings = settings, resumed = resumed, longEdge = 300) { batch ->
                 assertPreviewMatchesMode(batch, NativeProcessor.FORCE)
@@ -117,7 +119,8 @@ class BatchGpuModeInstrumentedTest {
     }
 
     @Test fun enabledNewAndResumedBatchesExportOriginalSizeCleanWithAuto() {
-        val settings = EditSettings(customWb = true, exposure = .5f, contrast = .2f,
+        // 同上：饱和度不触发基础控制 CPU 回退，AUTO 原始尺寸导出仍须报告 GLES 后端。
+        val settings = EditSettings(customWb = true, exposure = .5f, saturation = .2f,
             denoise = DenoiseSettings(true, 10f, 72f, 100f))
         for (resumed in listOf(true, false)) {
             withBatch(gpuEnabled = true, settings = settings, resumed = resumed, format = ExportFormat.JPEG) { batch ->
@@ -262,8 +265,12 @@ class BatchGpuModeInstrumentedTest {
         val started = SystemClock.elapsedRealtime()
         status("$label exportStarted format=$format longEdge=$longEdge")
         compose.runOnUiThread {
-            if (batch.state.value.phase == BatchPhase.SELECTING) batch.start(format, null, longEdge)
-            else batch.retryFailed()
+            // 续跑恢复的 CANCELLED 作业带 PENDING 行：UI 唯一可用动作是继续未完成（canStart(retry) 要求 failedCount>0）。
+            when (batch.state.value.phase) {
+                BatchPhase.SELECTING -> batch.start(format, null, longEdge)
+                BatchPhase.CANCELLED -> batch.continueUnfinished()
+                else -> batch.retryFailed()
+            }
         }
         compose.waitUntil(240_000) { batch.state.value.phase !in setOf(BatchPhase.RUNNING, BatchPhase.PREPARING) }
         status("$label exportMs=${SystemClock.elapsedRealtime() - started}")
