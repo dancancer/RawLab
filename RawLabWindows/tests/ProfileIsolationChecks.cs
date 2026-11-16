@@ -50,7 +50,7 @@ internal static class ProfileIsolationChecks
                 "Default-on analytics never reaches test windows: private consent is explicitly off and no install ID is created");
             check(isolatedStore.DirectoryPath.StartsWith(Path.GetFullPath(root),StringComparison.OrdinalIgnoreCase),
                 "Test window isolates update store under private test directory");
-            foreach(var field in new[]{"editStore","batchJournal","library","updates","usageAnalytics"})
+            foreach(var field in new[]{"editStore","batchJournal","library","usageAnalytics"})
             {
                 var value=typeof(MainWindow).GetField(field,Private)!.GetValue(window)!;
                 var path=field switch {
