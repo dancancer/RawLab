@@ -260,6 +260,16 @@ jobs:
             ci_timed usage-termination bash RawLabMac/tests/usage-termination.sh
           fi
           python scripts/ci/native_cache.py inventory --platform macos --arch "$RAWLAB_ARCH"
+      - name: Exercise real-package DualDn C API on Core ML
+        # native 门的 build-macos 无包（dualdn_api_disabled，RAWLAB_TEST_AI 断言块被编译掉）；
+        # 本步骤用专用 AI-ON 构建目录跑真包 dualdn_api，输入缺失由脚本硬失败。full 已由
+        # ai-inputs 注入的 build.sh 构建走 core ctest 覆盖同一断言，不在 full 重复执行。
+        if: success() && needs.changes.outputs.checks == 'native' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          mkdir -p build/ci
+          exec > >(tee build/ci/macos-dualdn-api.log) 2>&1
+          bash RawLabMac/tests/dualdn-api-package.sh
       - name: Save successful native dependencies
         # Intel shards share one key; the core shard alone saves it.
         if: success() && (matrix.suite == 'all' || matrix.suite == 'core' || matrix.suite == 'build') && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
