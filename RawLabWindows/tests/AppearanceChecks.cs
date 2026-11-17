@@ -73,7 +73,9 @@ internal static class AppearanceChecks
                 check(((Border)target.Template.FindName("Row",target)).Background==Brushes.Transparent,"Batch checkboxes do not acquire an unrelated selection surface: "+light);
                 foreach(var text in VisualDescendants(target).OfType<TextBlock>())Pair(text.Foreground,batch.Background,"batch row "+text.Text);
                 SetState(target,"IsMouseOver",false);
-                Pair(((TextBlock)editor.DenoiseEditor.FindName("Summary")).Foreground,(Brush)app.Resources["Surface"],"denoise summary");
+                // The workspace redesign (8b55219a) replaced the denoise "Summary" text with unified rows;
+                // the panel's muted status text keeps the same Muted-on-Surface contrast contract.
+                Pair(((TextBlock)editor.DenoiseEditor.FindName("AIStatus")).Foreground,(Brush)app.Resources["Surface"],"denoise status");
                 Pair(input.SelectionTextBrush,input.SelectionBrush,"input selection");
                 Pair(editor.BusyAnimation.Foreground,editor.BusyAnimation.Background,"busy progress");
                 var progress=(ProgressBar)batch.FindName("Progress");Pair(progress.Foreground,progress.Background,"batch progress");

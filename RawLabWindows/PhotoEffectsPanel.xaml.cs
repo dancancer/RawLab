@@ -58,6 +58,9 @@ public partial class PhotoEffectsPanel : UserControl
         }
         syncing=false;
     }
+    // The row names come from Loc.Text inside Refresh and the panel refresh is gated on tool selection,
+    // so a language switch alone leaves them stale; re-apply the current state like the sibling panels do.
+    public void RefreshLanguage()=>Refresh(value,tool);
     private void Publish(PhotoEffectsSettings next,bool dragging=false){Refresh(next,tool);Changed?.Invoke(value,dragging);}
     private void RefreshResetVisibility()
     {

@@ -52,9 +52,14 @@ internal static class UiPanelChecks
         Host(denoise,()=>{
             denoise.Refresh(new DenoiseSettings());
             int Mentions()=>VisibleTexts(denoise).Count(text=>text.Contains(Loc.Text("色彩降噪"),StringComparison.Ordinal));
+            // The unified-rows redesign keeps luminance always visible and parks the advanced values behind
+            // a collapsed expander with no duplicated summary text, so anchor both halves of that contract.
+            var details=UiDetailChecks.Descendants(denoise).OfType<Expander>().Single();
+            details.IsExpanded=true;denoise.UpdateLayout();
             check(Mentions()==1,$"Expanded denoise rows are not repeated by a summary line: {Mentions()} ({language})");
-            UiDetailChecks.Descendants(denoise).OfType<Expander>().Single().IsExpanded=false;denoise.UpdateLayout();
-            check(Mentions()==1,$"Collapsed denoise panel still summarizes its values: {Mentions()} ({language})");
+            details.IsExpanded=false;denoise.UpdateLayout();
+            check(Mentions()==0 && VisibleTexts(denoise).Count(text=>text.Contains(Loc.Text("亮度降噪"),StringComparison.Ordinal))==1,
+                $"Collapsed denoise panel still summarizes its values: {Mentions()} ({language})");
         });
         var effects=new PhotoEffectsPanel();
         Host(effects,()=>{
