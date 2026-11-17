@@ -2,7 +2,7 @@ using System.IO;
 using System.Net.Http;
 using System.Reflection;
 using System.Windows;
-using System.Windows.Automation;
+using System.Windows.Automation.Peers;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Documents;
@@ -48,9 +48,11 @@ internal static class AboutChecks
 
             AboutWindow OpenAbout()
             {
-                var button = Descendants(window).OfType<Button>().Single(candidate =>
-                    AutomationProperties.GetName(candidate) == Loc.Text("关于 RawLab"));
-                button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                // The workspace redesign (8b55219a) moved About from the old toolbar button into the Help menu.
+                // Anchor the menu item by its localized screen-reader name and raise the menu item's own click.
+                var aboutItem = Descendants(window).OfType<MenuItem>().Single(candidate =>
+                    UIElementAutomationPeer.CreatePeerForElement(candidate)?.GetName() == Loc.Text("关于 RawLab"));
+                aboutItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
                 Pump();
                 return window.OwnedWindows.OfType<AboutWindow>().Single();
             }
