@@ -512,7 +512,7 @@ Java_com_rawlab_android_raster_NativePng16_nativeConvert(JNIEnv* env, jobject, j
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_raster_NativePng16_nativeRelease(JNIEnv* env, jobject, jobject pixels) {
-    stbi_image_free(env->GetDirectBufferAddress(pixels));
+    rawlab::Png16Deleter{}(static_cast<uint16_t*>(env->GetDirectBufferAddress(pixels)));
 }
 
 extern "C" JNIEXPORT void JNICALL

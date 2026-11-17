@@ -16,6 +16,7 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include <unistd.h>
 
 namespace {
 
@@ -1461,6 +1462,40 @@ void testHdrPairReleaseDuringExportConcurrency() {
     std::cout << "PASS: testHdrPairReleaseDuringExportConcurrency" << std::endl;
 }
 
+void testNativePng16DecodeRelease() {
+    clearJniRegistries();
+    LocalEnv env;
+    char path[] = "/tmp/rawlab-jni-png16.XXXXXX";
+    const int fd = mkstemp(path);
+    require(fd >= 0, "Create PNG16 JNI fixture");
+    auto* file = fdopen(fd, "wb");
+    require(file != nullptr, "Open PNG16 JNI fixture");
+    std::unique_ptr<FILE, decltype(&std::fclose)> output(file, std::fclose);
+    std::unique_ptr<spng_ctx, decltype(&spng_ctx_free)> encoder(spng_ctx_new(SPNG_CTX_ENCODER), spng_ctx_free);
+    require(encoder != nullptr, "Create PNG16 fixture encoder");
+    spng_ihdr header{};
+    header.width = 2; header.height = 1;
+    header.bit_depth = 16; header.color_type = SPNG_COLOR_TYPE_TRUECOLOR;
+    const uint16_t rgb[] = {0x1234, 0x5678, 0x7a01, 0x2345, 0x6789, 0x8b02};
+    require(spng_set_png_file(encoder.get(), file) == 0 &&
+            spng_set_ihdr(encoder.get(), &header) == 0 &&
+            spng_encode_image(encoder.get(), rgb, sizeof(rgb), SPNG_FMT_PNG, SPNG_ENCODE_FINALIZE) == 0,
+            "Encode PNG16 JNI fixture");
+    output.reset();
+    auto buffer = Java_com_rawlab_android_raster_NativePng16_nativeDecode(
+        env.ptr(), nullptr, makeJString(path), 2, 1, 2);
+    std::remove(path);
+    const auto ex = consumeException();
+    require(buffer != nullptr && !ex.active, "nativeDecode must return owned PNG16 pixels: " + ex.message);
+    require(env.ptr()->GetDirectBufferCapacity(buffer) == 16, "PNG16 JNI buffer has RGBA16 capacity");
+    const auto* pixels = static_cast<const uint16_t*>(env.ptr()->GetDirectBufferAddress(buffer));
+    const bool correct = pixels && pixels[0] == rgb[3] && pixels[1] == rgb[4] && pixels[2] == rgb[5] &&
+        pixels[3] == 65535 && pixels[4] == rgb[0] && pixels[5] == rgb[1] && pixels[6] == rgb[2] && pixels[7] == 65535;
+    Java_com_rawlab_android_raster_NativePng16_nativeRelease(env.ptr(), nullptr, buffer);
+    require(correct && !env.ptr()->ExceptionCheck(), "Decode/release preserves native-endian pixels and orientation");
+    std::cout << "PASS: testNativePng16DecodeRelease" << std::endl;
+}
+
 void testNativePng16LutColorConversion() {
     clearJniRegistries();
     LocalEnv env;
@@ -1537,6 +1572,7 @@ int main() {
         {"testCancellationUnderContention", testCancellationUnderContention},
         {"testHdrCrossSessionRenderConcurrency", testHdrCrossSessionRenderConcurrency},
         {"testHdrPairReleaseDuringExportConcurrency", testHdrPairReleaseDuringExportConcurrency},
+        {"testNativePng16DecodeRelease", testNativePng16DecodeRelease},
         {"testNativePng16LutColorConversion", testNativePng16LutColorConversion},
     };
     int failures = 0;

@@ -17,14 +17,17 @@ static void chunk(Bytes& png, const char* type, const Bytes& bytes) {
     png.insert(png.end(), bytes.begin(), bytes.end());
     number(png, crc32(0, png.data() + start, static_cast<uInt>(png.size() - start)));
 }
-static Bytes fixture(bool rgba = false, uint16_t alpha = 65535, bool interlaced = false) {
+static Bytes fixture(bool rgba = false, uint16_t alpha = 65535, bool interlaced = false,
+                     int bitDepth = 16, bool gray = false, bool transparentRgb = false) {
     Bytes png{137, 80, 78, 71, 13, 10, 26, 10};
     Bytes header;
     number(header, 2); number(header, 3);
-    header.insert(header.end(), {16, static_cast<unsigned char>(rgba ? 6 : 2), 0, 0,
+    header.insert(header.end(), {static_cast<unsigned char>(bitDepth),
+        static_cast<unsigned char>(gray ? 0 : rgba ? 6 : 2), 0, 0,
         static_cast<unsigned char>(interlaced)});
     chunk(png, "IHDR", header);
     chunk(png, "sRGB", {0});
+    if (transparentRgb) chunk(png, "tRNS", {0x12, 0x34, 0x56, 0x78, 0x7a, 0x01});
     Bytes raw;
     const std::array<int, 7> xs{0, 4, 0, 2, 0, 1, 0}, ys{0, 0, 4, 0, 2, 0, 1};
     const std::array<int, 7> dx{8, 8, 4, 4, 2, 2, 1}, dy{8, 8, 8, 4, 4, 2, 2};
@@ -34,10 +37,16 @@ static Bytes fixture(bool rgba = false, uint16_t alpha = 65535, bool interlaced 
         for (int y = startY; y < 3; y += interlaced ? dy[pass] : 1) {
             raw.push_back(0);
             for (int x = startX; x < 2; x += interlaced ? dx[pass] : 1) {
-                for (uint16_t value : {uint16_t(0x1234 + (y * 2 + x) * 16), uint16_t(0x5678 + y * 2 + x), uint16_t(0x7a01 + (y * 2 + x) * 3)}) {
-                    raw.push_back(value >> 8); raw.push_back(value & 255);
+                const std::array<uint16_t, 3> rgb{uint16_t(0x1234 + (y * 2 + x) * 16),
+                    uint16_t(0x5678 + y * 2 + x), uint16_t(0x7a01 + (y * 2 + x) * 3)};
+                for (int c = 0; c < (gray ? 1 : 3); ++c) {
+                    raw.push_back(rgb[c] >> 8);
+                    if (bitDepth == 16) raw.push_back(rgb[c] & 255);
                 }
-                if (rgba) { raw.push_back(alpha >> 8); raw.push_back(alpha & 255); }
+                if (rgba) {
+                    raw.push_back(alpha >> 8);
+                    if (bitDepth == 16) raw.push_back(alpha & 255);
+                }
             }
         }
     }
@@ -87,9 +96,17 @@ int main(int argc, char** argv) {
     } catch (const std::exception& error) {
         assert(std::string(error.what()) == "16-bit PNG exceeds the 32 MP decode limit");
     }
-    auto eightBit = fixture(); eightBit[24] = 8; write(eightBit);
+    write(fixture(false, 65535, false, 8));
+    rejects([&] { rawlab::decodePng16(path.c_str(), 2, 3, 1); });
+    write(fixture(false, 65535, false, 16, true));
+    rejects([&] { rawlab::decodePng16(path.c_str(), 2, 3, 1); });
+    write(fixture(false, 65535, false, 16, false, true));
+    rejects([&] { rawlab::decodePng16(path.c_str(), 2, 3, 1); });
+    auto badCrc = fixture(); badCrc[29] ^= 1; write(badCrc);
     rejects([&] { rawlab::decodePng16(path.c_str(), 2, 3, 1); });
     auto truncated = fixture(); truncated.resize(50); write(truncated);
     rejects([&] { rawlab::decodePng16(path.c_str(), 2, 3, 1); });
+    rejects([&] { rawlab::decodePng16(nullptr, 2, 3, 1); });
     std::filesystem::remove(path);
+    rejects([&] { rawlab::decodePng16(path.c_str(), 2, 3, 1); });
 }
