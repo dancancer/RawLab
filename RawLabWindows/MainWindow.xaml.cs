@@ -101,7 +101,7 @@ public partial class MainWindow : Window
         void RefreshLanguage()
         {
             RecipeStrip.Children.Clear(); recipeButtons.Clear();
-            RefreshLookCategories();BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu(); HslEditor.RefreshLanguage();GradingEditor.RefreshLanguage();CurveEditor.RefreshLanguage();GeometryEditor.RefreshLanguage();
+            RefreshLookCategories();BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu(); HslEditor.RefreshLanguage();GradingEditor.RefreshLanguage();CurveEditor.RefreshLanguage();GeometryEditor.RefreshLanguage();PhotoEffectsEditor.RefreshLanguage();
             RefreshControls(); RefreshPhotoInfo(); RefreshExportSizeMenu(); RefreshCopyLabels();
             RefreshRenderLabels();
             RefreshSaveNotice();
