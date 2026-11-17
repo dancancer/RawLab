@@ -9,6 +9,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -155,6 +156,16 @@ internal fun PhotoCanvas(
             if (sideBySide && !horizontal) ((constraints.maxHeight - gapPx) / 2).toFloat() else constraints.maxHeight.toFloat())
         SideEffect { if (state.viewport != primary) state.resize(primary) }
         val previewEdge = primary.previewLongEdge(state.view.project(primary).scale)
+        // Use the current pane geometry, not globally-positioned hit-test bounds: those
+        // also contain this overlay and arrive a frame after a resize/zoom/mode change.
+        val captionTop = if (sideBySide && horizontal) {
+            val labelStyle = MaterialTheme.typography.labelSmall
+            val measurer = rememberTextMeasurer()
+            val labelHeight = maxOf(measurer.measure(beforeLabel, labelStyle, maxLines = 1).size.height,
+                measurer.measure(afterLabel, labelStyle, maxLines = 1).size.height)
+            photoImageRect(primary, state.view.project(primary)).bottom - labelHeight -
+                with(androidx.compose.ui.platform.LocalDensity.current) { 8.dp.toPx() }
+        } else null
         LaunchedEffect(previewEdge) { onPreviewSizeChange(previewEdge) }
         val percent = "${(state.view.project(primary).scale * 100).roundToInt()}%"
         val before = holdingBefore && !compare && hslTarget == null
@@ -304,8 +315,13 @@ internal fun PhotoCanvas(
                     }
                 }
                 DisposableEffect(Unit) { onDispose { labelBounds.remove("bottom-overlay") } }
-                Box(Modifier.align(Alignment.BottomCenter).wrapContentWidth().padding(bottom = bottomOverlayInset)
-                    .onGloballyPositioned { labelBounds["bottom-overlay"] = it.boundsInWindow() }) { bottomOverlay() }
+                Box(Modifier.align(Alignment.BottomCenter).wrapContentWidth().layout { measurable, constraints ->
+                    val overlay = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+                    val inset = maxOf(bottomOverlayInset.roundToPx(),
+                        captionTop?.let { (canvasHeight - it + 8.dp.toPx()).roundToInt() } ?: 0)
+                        .coerceIn(0, (constraints.maxHeight - overlay.height).coerceAtLeast(0))
+                    layout(overlay.width, overlay.height + inset) { overlay.placeRelative(0, 0) }
+                }.onGloballyPositioned { labelBounds["bottom-overlay"] = it.boundsInWindow() }) { bottomOverlay() }
                 if (compare) {
                     var menu by remember { mutableStateOf(false) }
                     Box(Modifier.align(Alignment.TopEnd).padding(top = if (workspaceControls) 48.dp else 0.dp, end = 56.dp)) {
