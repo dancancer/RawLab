@@ -152,8 +152,29 @@ extension EditorV4UITests {
         try selectTool("geometry", in: app)
         XCTAssertEqual(try number(app.buttons["geometry.straighten.value"]), 1.2, accuracy: 0.0001,
                        "Canceling the export sheet preserves the committed geometry")
-        XCTAssertFalse(app.buttons["editor.draft.apply"].isEnabled)
-        XCTAssertFalse(app.buttons["editor.export"].exists, "Returning to a committed geometry value remains an active draft")
+        let cleanApply = app.buttons["editor.draft.apply"]
+        waitUntil(timeout: 60) { cleanApply.isEnabled && cleanApply.isHittable }
+        XCTAssertTrue(cleanApply.isEnabled, "A clean tool may Apply to leave the workspace")
+        XCTAssertFalse(app.buttons["editor.export"].exists, "Export stays outside an open tool workspace")
+        applyDraft(in: app)
+        XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 5))
+        // Re-enter and make a real dirty draft: Back must offer a decision, not silently commit it.
+        try selectTool("geometry", in: app)
+        try setValue("2.4", title: "Straighten", unit: "°", control: "geometry.straighten", in: app)
+        app.buttons["editor.tool.back"].tap()
+        let keep = app.alerts.buttons["Keep Editing"]
+        XCTAssertTrue(keep.waitForExistence(timeout: 5), app.debugDescription)
+        keep.tap()
+        XCTAssertEqual(try number(app.buttons["geometry.straighten.value"]), 2.4, accuracy: 0.0001)
+        XCTAssertFalse(app.buttons["editor.export"].exists, "Keeping dirty geometry must still block export")
+        app.buttons["editor.tool.back"].tap()
+        let discard = app.alerts.buttons["Discard Changes"]
+        XCTAssertTrue(discard.waitForExistence(timeout: 5), app.debugDescription)
+        discard.tap()
+        XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 5))
+        try selectTool("geometry", in: app)
+        XCTAssertEqual(try number(app.buttons["geometry.straighten.value"]), 1.2, accuracy: 0.0001,
+                       "Discarding the dirty draft must restore the exported committed geometry")
         cancelToolWorkspace(in: app)
         // k845 contract: v0.8 keeps the lens tile reachable for raster (manual EXIF metadata
         // path, backed by testJPEGManualLensMetadataIsScopedToDraft); the RAW-only profile
