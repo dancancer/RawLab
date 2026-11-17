@@ -98,11 +98,8 @@ extension EditorUITests {
         tapTool("film", in: app)
         let lutNames = ["ACROS", "ASTIA", "CLASSIC CHROME", "CLASSIC Neg.", "ETERNA", "ETERNA BB",
                         "PRO Neg.Std", "PROVIA", "REALA ACE", "Velvia"]
-        var lastChip = app.buttons["ACROS"]
         for name in lutNames {
             // v0.8: the film browser is a horizontal strip (LookPanels ScrollView(.horizontal)).
-            // Lazy rows can be materialized off-screen, so anchor on isHittable and swipe on
-            // the most recently hittable chip (exists alone over-scrolls past nothing).
             let lut = app.buttons[name]
             var steps = 0
             let strip = app.scrollViews["editor.panel"].scrollViews.firstMatch
@@ -114,7 +111,6 @@ extension EditorUITests {
                 steps += 1
             }
             XCTAssertTrue(lut.exists && strip.frame.contains(lut.frame), "Missing built-in LUT: \(name)")
-            lastChip = lut
         }
         XCTAssertFalse(app.buttons["WDR"].exists)
         XCTAssertFalse(app.buttons["FLog2 709"].exists)

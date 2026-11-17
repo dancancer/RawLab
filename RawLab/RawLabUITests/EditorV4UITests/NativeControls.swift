@@ -814,21 +814,21 @@ extension EditorV4UITests {
         // (menu rows drop their value on iOS 27; the off-state toggle itself is asserted above)
         dismissFineMenu()
 
-        try setValue("+4.00", title: "Exposure", unit: "EV", control: "adjustment", in: app)
+        try setValue("+5.00", title: "Exposure", unit: "EV", control: "adjustment", in: app)
         try revealInPanel(ruler, in: app)
         dragRuler(ruler, from: 0.75, to: 0.25)
-        // v0.8 ruler geometry shifts the coarse gesture's exact endpoint; the real tooth is
-        // that with fine off the ruler only snaps to whole-EV steps (fine mode above lands on
-        // the fractional grid). 撤牙齿记位: 精确端点值 → 整数网格.
-        let coarseUp = try number(app.buttons["adjustment.value"])
-        XCTAssertEqual(coarseUp, coarseUp.rounded(), accuracy: 0.0001,
-                       "With fine off the exposure ruler snaps to whole-EV steps")
-        try setValue("-4.00", title: "Exposure", unit: "EV", control: "adjustment", in: app)
+        // Carbon 阻断#2 重锚：真实契约是 -5...5 范围、0.05 EV 步进（AdjustmentKind），fine off
+        // 只缩放位移、绝不吸附整数 EV。牙齿=两端夹紧（撤掉 ±5 扩张即红）；旧整数网格系误读
+        // （b4.log `5.0 != 4.0` 正是新上限 +5.00 夹紧）。撤牙齿记位#11 就此撤销。
+        let clampedUp = try number(app.buttons["adjustment.value"])
+        XCTAssertEqual(clampedUp, 5, accuracy: 0.0001,
+                       "A positive drag from the ceiling must clamp at +5 EV")
+        try setValue("-5.00", title: "Exposure", unit: "EV", control: "adjustment", in: app)
         try revealInPanel(ruler, in: app)
         dragRuler(ruler, from: 0.25, to: 0.75)
-        let coarseDown = try number(app.buttons["adjustment.value"])
-        XCTAssertEqual(coarseDown, coarseDown.rounded(), accuracy: 0.0001,
-                       "With fine off the exposure ruler snaps to whole-EV steps")
+        let clampedDown = try number(app.buttons["adjustment.value"])
+        XCTAssertEqual(clampedDown, -5, accuracy: 0.0001,
+                       "A negative drag from the floor must clamp at -5 EV")
         try resetParameterDefault("adjustment", in: app)
         XCTAssertEqual(try number(app.buttons["adjustment.value"]), 0, accuracy: 0.0001)
         capture("v4-exposure-ruler", in: app)

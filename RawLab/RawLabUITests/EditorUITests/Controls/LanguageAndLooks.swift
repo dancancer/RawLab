@@ -168,15 +168,25 @@ extension EditorUITests {
     }
     func testLanguageSelectionPersists() {
         let app = XCUIApplication()
-        // The app's persisted language default outlives other cases in this runner; pin the
-        // launch language through the app's own default key so the English baseline is deterministic.
-        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", "en"]
+        // A previous case may leave RawLab.language persisted in NSApplicationDomain. Do not
+        // pin it through the argument domain: that would shadow the very UI-Picker write this
+        // test checks (and hide it again after relaunch). Reset via the UI when dirty instead.
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         // v0.8: the language picker is a submenu of the overview overflow menu; the entry
         // label is the observable signal that a language switch propagated through the app.
         app.buttons["editor.privacy"].tap()
         let language = app.buttons["settings.language"]
         XCTAssertTrue(language.waitForExistence(timeout: 10), app.debugDescription)
+        if language.label != "Language" {
+            // The submenu itself renders in the stale UI language; match its reset row there.
+            language.tap()
+            let follow = app.buttons.matching(NSPredicate(format: "label IN %@",
+                ["跟随系统", "Follow system", "Systemsprache verwenden", "Suivre le système", "システムに従う", "Seguir el sistema"])).firstMatch
+            XCTAssertTrue(follow.waitForExistence(timeout: 5), app.debugDescription)
+            follow.tap()
+            app.buttons["editor.privacy"].tap()
+        }
         XCTAssertEqual(language.label, "Language")
         language.tap()
         app.buttons["Deutsch"].tap()

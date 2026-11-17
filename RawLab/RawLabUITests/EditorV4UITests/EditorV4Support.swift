@@ -433,8 +433,8 @@ extension EditorV4UITests {
     }
 
     func assertExposureGrid(_ value: Double, file: StaticString = #filePath, line: UInt = #line) {
-        XCTAssertGreaterThanOrEqual(value, -4, file: file, line: line)
-        XCTAssertLessThanOrEqual(value, 4, file: file, line: line)
+        XCTAssertGreaterThanOrEqual(value, -5, file: file, line: line)
+        XCTAssertLessThanOrEqual(value, 5, file: file, line: line)
         XCTAssertEqual(value / 0.05, (value / 0.05).rounded(), accuracy: 0.0001, file: file, line: line)
     }
 
