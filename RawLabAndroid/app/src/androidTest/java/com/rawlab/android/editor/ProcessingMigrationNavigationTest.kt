@@ -13,6 +13,13 @@ import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.EditStore
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.settings.ProcessingIdentity
+import com.rawlab.android.settings.ProcessingMigrationQuality
+import com.rawlab.android.settings.ProcessingMigrationStatus
+import com.rawlab.android.R
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.util.Base64
 import com.rawlab.android.testing.LanguageTestRule
 import org.junit.Assert.*
 import org.junit.Rule
@@ -43,6 +50,76 @@ class ProcessingMigrationNavigationTest {
         queue.submit({}) { drained.countDown() }
         assertTrue("worker drained", drained.await(30, TimeUnit.SECONDS))
         compose.runOnIdle {}
+    }
+
+    @Test fun cancellingUnusableBPreservesARollbackAndSuccessfulBPublishesOnlyItsOwnReceipt() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        fun source() = File(context.cacheDir, "receipt-navigation-${UUID.randomUUID()}.png").also { file ->
+            Bitmap.createBitmap(80, 60, Bitmap.Config.ARGB_8888).apply { eraseColor(0xff777777.toInt()) }.let { bitmap ->
+                file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()
+            }
+        }
+        val a = source(); val b = source()
+        val aID = PhotoIdentity(Uri.fromFile(a).toString()); val bID = PhotoIdentity(Uri.fromFile(b).toString())
+        val directory = File(context.filesDir, "edits")
+        val store = EditStore(directory)
+        val original = EditSettings(customWb = true, processing = ProcessingIdentity.C5)
+        val quality = ProcessingMigrationQuality(.001f, .003f, .002f, .001f, 20)
+        store.save(aID, original)
+        store.commitProcessingMigration(store.readState(aID), original.copy(processing = ProcessingIdentity.CURRENT), quality)
+        val receiptA = requireNotNull(store.processingMigration(aID))
+        // A genuinely unusable saved record takes the renderer's recovery path, not a fabricated WorkResult.
+        store.save(bID, original)
+        val key = Base64.getUrlEncoder().withoutPadding().encodeToString(bID.value.toByteArray(Charsets.UTF_8))
+        File(directory, "edits.properties").appendText("\nrecord.$key.unknown=broken\n")
+        val model = compose.activity.model
+        val frames = mutableListOf<EditorState>()
+        var observation: kotlinx.coroutines.Job? = null
+        try {
+            compose.runOnIdle { model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(a)) }
+            compose.waitUntil(30_000) { model.state.value.canExport }
+            compose.runOnIdle { model.importPhoto(Uri.fromFile(b)) }
+            compose.waitUntil(30_000) { model.state.value.recoverUnusableRecord }
+            compose.onNodeWithText(compose.activity.getString(R.string.cancel)).performClick()
+            compose.runOnIdle {
+                assertFalse(model.state.value.recoverUnusableRecord)
+                assertEquals(aID, model.state.value.photo?.identity)
+                assertEquals("cancelling recovery must preserve A's rollback entry", receiptA, model.state.value.processingMigration)
+                model.setEditorActive(false); model.setEditorActive(true)
+                assertNull(model.state.value.saveError)
+            }
+            compose.onNode(hasContentDescription("更多") and hasAnyAncestor(hasTestTag("editor-menu"))).performClick()
+            compose.onNodeWithTag("processing-settings").performClick()
+            compose.onNodeWithTag("processing.migration.status").assertIsDisplayed()
+            compose.onNodeWithTag("processing.migration.rollback").assertIsDisplayed().assertIsEnabled()
+            compose.onNodeWithText(compose.activity.getString(R.string.confirm)).performClick()
+
+            store.resetToUnmodified(bID)
+            val originalB = original.copy(exposure = .5f)
+            store.save(bID, originalB)
+            store.commitProcessingMigration(store.readState(bID), originalB.copy(processing = ProcessingIdentity.CURRENT), quality)
+            val receiptB = requireNotNull(store.processingMigration(bID))
+            assertNotEquals(receiptA, receiptB)
+            compose.runOnIdle {
+                // Unconfined observes every publication synchronously, including a transient stale A receipt on B.
+                observation = CoroutineScope(Dispatchers.Unconfined).launch { model.state.collect { frames += it } }
+                model.importPhoto(Uri.fromFile(b))
+            }
+            compose.waitUntil(30_000) { model.state.value.photo?.identity == bID && model.state.value.canExport }
+            compose.runOnIdle {
+                observation?.cancel()
+                assertTrue(frames.any { it.photo?.identity == bID && it.canExport })
+                frames.forEach { state ->
+                    if (state.photo?.identity == aID) assertEquals(receiptA, state.processingMigration)
+                    if (state.photo?.identity == bID) assertEquals("B and B's receipt must be adopted atomically", receiptB, state.processingMigration)
+                }
+                assertEquals(ProcessingMigrationStatus.MIGRATED, model.state.value.processingMigration?.status)
+            }
+        } finally {
+            compose.runOnIdle { observation?.cancel() }
+            store.reset(aID); store.resetToUnmodified(bID)
+            a.delete(); b.delete()
+        }
     }
 
     @Test fun openingAlbumDiscardsQueuedMigrationWithoutAnAdjustmentGesture() = leaveDuringMigration(false)

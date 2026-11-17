@@ -40,6 +40,77 @@ class ProcessingMigrationCommitTest {
         assertTrue("migration state settled", condition())
     }
 
+    private fun migrationSource(): File = File(context.cacheDir, "import-receipt-${UUID.randomUUID()}.png").also { source ->
+        Bitmap.createBitmap(80, 60, Bitmap.Config.ARGB_8888).apply { eraseColor(0xff777777.toInt()) }.let { bitmap ->
+            source.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()
+        }
+    }
+
+    @Test fun failedRasterImportKeepsMigratedReceiptAndWorkingRollback() = failedImportKeepsReceipt(ProcessingMigrationStatus.MIGRATED)
+    @Test fun failedRasterImportKeepsRolledBackReceiptOnReactivation() = failedImportKeepsReceipt(ProcessingMigrationStatus.ROLLED_BACK)
+    @Test fun failedRasterImportKeepsKeptReceiptOnReactivation() = failedImportKeepsReceipt(ProcessingMigrationStatus.KEPT)
+
+    private fun failedImportKeepsReceipt(status: ProcessingMigrationStatus) {
+        val source = migrationSource()
+        val broken = File(context.cacheDir, "broken-import-${UUID.randomUUID()}.png").apply { writeText("not a PNG") }
+        val identity = PhotoIdentity(Uri.fromFile(source).toString())
+        val store = EditStore(File(context.filesDir, "edits"))
+        // customWb keeps the saved record equal to the KEPT original after preview white-balance publication.
+        val original = EditSettings(customWb = true, processing = ProcessingIdentity.C5)
+        val quality = ProcessingMigrationQuality(.001f, .003f, .002f, .001f, 20)
+        store.save(identity, original)
+        store.commitProcessingMigration(store.readState(identity),
+            if (status == ProcessingMigrationStatus.KEPT) null else original.copy(processing = ProcessingIdentity.CURRENT), quality)
+        if (status == ProcessingMigrationStatus.ROLLED_BACK) store.rollbackProcessingMigration(store.readState(identity))
+        val receipt = requireNotNull(store.processingMigration(identity))
+        val owner = ViewModelStore()
+        lateinit var model: EditorViewModel
+        try {
+            main {
+                model = EditorViewModel(context.applicationContext as Application)
+                owner.put("editor", model)
+                model.setGpuEnabled(false)
+                model.importPhoto(Uri.fromFile(source))
+            }
+            await { model.state.value.canExport }
+            assertEquals(receipt, model.state.value.processingMigration)
+            val photo = model.state.value.photo
+            val preview = model.state.value.preview
+            val edits = model.state.value.edits
+            val revision = field(model, "sourceRevision") as Long
+            // Album/picker navigation hides A before importing B; returning after B fails reactivates A.
+            main { model.setEditorActive(false); model.importPhoto(Uri.fromFile(broken)) }
+            await { model.state.value.operation == Operation.NONE && model.state.value.error != null }
+            assertSame("a failed decode still displays A", photo, model.state.value.photo)
+            assertSame("a failed decode preserves A's frame", preview, model.state.value.preview)
+            assertEquals(edits, model.state.value.edits)
+            assertTrue(model.state.value.canExport)
+            assertEquals("failure must not roll back the stale-work generation", revision + 1, field(model, "sourceRevision"))
+            main { model.setEditorActive(true) }
+            // Drain the real migration and commit workers: an erroneous retry must not hide behind an early poll.
+            for (name in listOf("processingMigrationQueue", "adjustmentQueue")) {
+                val drained = CountDownLatch(1)
+                (field(model, name) as SerialWorkQueue).submit({}) { drained.countDown() }
+                assertTrue("$name drained", drained.await(30, TimeUnit.SECONDS))
+                main {}
+            }
+            assertNull("reactivation must not report a spurious storage conflict", model.state.value.saveError)
+            assertFalse(model.state.value.matchingProcessing)
+            assertEquals(receipt, model.state.value.processingMigration)
+            assertEquals(receipt, store.processingMigration(identity))
+            if (status == ProcessingMigrationStatus.MIGRATED) {
+                main { model.rollbackProcessingMigration() }
+                await { model.state.value.canExport && model.state.value.processingMigration?.status == ProcessingMigrationStatus.ROLLED_BACK }
+                assertEquals(original, model.state.value.edits)
+                assertEquals(original, store.readState(identity).settings)
+            }
+        } finally {
+            main { owner.clear() }
+            store.reset(identity)
+            source.delete(); broken.delete()
+        }
+    }
+
     @Test fun becomingActiveAfterImportStartsTheDeferredMigration() {
         val source = File(context.cacheDir, "inactive-migration-${UUID.randomUUID()}.png")
         Bitmap.createBitmap(80, 60, Bitmap.Config.ARGB_8888).apply { eraseColor(0xff777777.toInt()) }.let { bitmap ->
