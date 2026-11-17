@@ -290,7 +290,7 @@ class BatchGpuModeInstrumentedTest {
         val backendLog = android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(
             "logcat -d --pid=${android.os.Process.myPid()} -v raw -s RawLabBatch:I")).use { it.bufferedReader().readText() }
         val reports = backendLog.lineSequence().filter { it.startsWith("job=${completed.id} exportBackend=") }.toList()
-        val expectedBackend = if (referenceMode == NativeProcessor.CPU) 0 else 2
+        val expectedBackend = if (referenceMode == NativeProcessor.CPU || !completed.source.settings.geometry.isIdentity) 0 else 2
         assertEquals("The actual batch render must report its own backend exactly once",
             listOf("job=${completed.id} exportBackend=$expectedBackend"), reports)
         status("$label actualBatchExportBackend=$expectedBackend job=${completed.id}")
@@ -316,7 +316,7 @@ class BatchGpuModeInstrumentedTest {
         val file = File(target.parentFile, name)
         NativeProcessor(mode).use {
             val backend = it.export(target, job.source.lookFile, job.source.settings, file, job.outputFormat, job.outputLongEdge)
-            assertEquals("Reference export reports actual backend", if (mode == NativeProcessor.CPU) 0 else 2, backend)
+            assertEquals("Reference export reports actual backend", if (mode == NativeProcessor.CPU || !job.source.settings.geometry.isIdentity) 0 else 2, backend)
             status("reference mode=$mode actualExportBackend=$backend")
         }
         return requireNotNull(BitmapFactory.decodeFile(file.path))
