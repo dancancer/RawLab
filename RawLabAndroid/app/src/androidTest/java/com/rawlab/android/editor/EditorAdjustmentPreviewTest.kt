@@ -25,6 +25,32 @@ class EditorAdjustmentPreviewTest {
     private val compose = createAndroidComposeRule<MainActivity>()
     @get:Rule val rule = RuleChain.outerRule(LanguageTestRule()).around(ForegroundTestRule()).around(compose)
 
+    // k826-1 撤牙齿：基线上 updatePreviewSize 在草稿分支直接丢弃视口边长，草稿关闭后
+    // 提交预览长边卡在旧值（重开工程才恢复），此断言红；修复后按记录边长收敛为绿。
+    @Test fun viewportEdgeRecordedDuringDraftAppliesWhenTheDraftCloses() {
+        val source = File(compose.activity.cacheDir, "draft-resize-${System.nanoTime()}.RAW")
+        InstrumentationRegistry.getInstrumentation().context.assets.open("sample.RAW").use { input ->
+            source.outputStream().use { input.copyTo(it) }
+        }
+        val model = compose.activity.model
+        fun edge(): Int = model.state.value.preview?.let { maxOf(it.result.width, it.result.height) } ?: 0
+        try {
+            compose.runOnUiThread { model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(source)) }
+            compose.waitUntil(180_000) { model.state.value.let { it.error != null || it.canExport } }
+            assertNull(model.state.value.error)
+            compose.runOnUiThread { model.beginDraft(AdjustmentGroup.EXPOSURE) }
+            compose.waitUntil(30_000) { model.state.value.draft != null }
+            // 草稿期间的视口边长变化：必须被记录，并在草稿关闭时应用。
+            compose.runOnUiThread { model.updatePreviewSize(640) }
+            compose.runOnUiThread { model.discardDraft() }
+            compose.waitUntil(60_000) {
+                model.state.value.let { it.error != null || (it.canExport && !it.previewResizePending && edge() == 640) }
+            }
+            assertNull(model.state.value.error)
+            assertTrue("Viewport edge requested during a draft must apply when the draft closes", edge() == 640)
+        } finally { source.delete() }
+    }
+
     @Test fun completedViewportSizesAreReusedUntilThePhotoIsEdited() {
         val source = File(compose.activity.cacheDir, "viewport-reuse-${System.nanoTime()}.RAW")
         InstrumentationRegistry.getInstrumentation().context.assets.open("sample.RAW").use { input ->
