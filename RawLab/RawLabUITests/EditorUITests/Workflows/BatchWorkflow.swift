@@ -81,6 +81,8 @@ extension EditorUITests {
         app.launchArguments += ["-RawLab.language", "zh-Hans"]
         app.launch()
         importPhoto(in: app)
+        // v0.8: the overflow menu with the collection entry hangs on the overview toolbar.
+        cancelEditorTool(in: app)
         app.buttons["editor.privacy"].tap()
         app.buttons["collection.open"].tap()
         let export = app.buttons["collection.export"]
@@ -268,6 +270,8 @@ extension EditorUITests {
         app.launchArguments += ["-RawLab.language", "zh-Hans"]
         app.launch()
         importPhoto(in: app)
+        // v0.8: the overflow menu with the collection entry hangs on the overview toolbar.
+        cancelEditorTool(in: app)
         app.buttons["editor.privacy"].tap()
         app.buttons["collection.open"].tap()
         XCTAssertTrue(app.staticTexts["已选 1 张"].waitForExistence(timeout: 10), app.debugDescription)

@@ -6,16 +6,23 @@ extension EditorUITests {
         app.launchArguments += ["-RawLab.language", "zh-Hans"]
         app.launch()
         importPhoto(in: app)
+        // v0.8: import lands on the exposure tool page; the tile no longer covers the screen, so the
+        // EV assertions read the panel's own value control instead of the overview tile.
         let compare = app.buttons["editor.compare"]
 
         let ruler = app.descendants(matching: .any)["adjustment.ruler"]
         XCTAssertTrue(ruler.isEnabled)
         resetParameterDefault("adjustment", expectedValue: "0.00 EV", in: app)
-        XCTAssertEqual(app.buttons["tool.exposure"].value as? String, "+0.00 EV")
+        let zeroValue = app.buttons["adjustment.value"].value as? String
+        XCTAssertNotNil(zeroValue)
+        XCTAssertTrue(zeroValue!.hasSuffix("0.00 EV"), "reset must read zero: \(zeroValue ?? "nil")")
         dragRuler(ruler)
-        XCTAssertNotEqual(app.buttons["tool.exposure"].value as? String, "+0.00 EV")
+        XCTAssertNotEqual(app.buttons["adjustment.value"].value as? String, zeroValue)
         app.staticTexts["adjustment.title"].doubleTap()
-        XCTAssertEqual(app.buttons["tool.exposure"].value as? String, "+0.00 EV")
+        let resetBack = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", zeroValue!),
+                                                  object: app.buttons["adjustment.value"])
+        XCTAssertEqual(XCTWaiter.wait(for: [resetBack], timeout: 10), .completed,
+                       app.buttons["adjustment.value"].debugDescription)
         tapTool("film", in: app)
         revealFilm("ETERNA", in: app)
         app.buttons["ETERNA"].tap()
@@ -66,7 +73,7 @@ extension EditorUITests {
         app.launchArguments += ["-RawLab.language", "zh-Hans"]
         app.launch()
         importPhoto(in: app)
-        app.buttons["tool.film"].tap()
+        tapTool("film", in: app)
         for name in ["ACROS", "ASTIA", "CLASSIC CHROME", "CLASSIC Neg.", "ETERNA", "ETERNA BB",
                      "PRO Neg.Std", "PROVIA", "REALA ACE", "Velvia"] {
             XCTAssertTrue(app.buttons[name].exists, "Missing built-in LUT: \(name)")
