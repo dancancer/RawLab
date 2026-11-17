@@ -43,8 +43,13 @@ extension EditorV4UITests {
     }
 
     private func dismissOverflowMenu(_ privacy: XCUIElement, _ probe: XCUIElement, in app: XCUIApplication) {
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
+        // The anchored popover swallows taps that land inside it, and while the busy
+        // editor flickers its toolbar the privacy anchor is not immediately hittable;
+        // dismiss from the photo area and wait for a stable anchor before a re-tap.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.3)).tap()
         if !waitTrue(3, { !probe.exists }) {
+            XCTAssertTrue(waitTrue(10, { privacy.isHittable }),
+                          "The privacy anchor must return once the popover closes: \(app.debugDescription)")
             privacy.tap()
         }
         waitUntil { !probe.exists }
@@ -119,7 +124,11 @@ extension EditorV4UITests {
             }
         }
 
-        let downloads = app.cells.matching(identifier: "Downloads").firstMatch
+        // iOS 27 reports the folder row as identifier "Downloads, Folder"; the Files
+        // sidebar/section labels localize ("下载项"), so keep the tolerant matcher
+        // used by EditorSupport.importRAWFile.
+        let downloads = app.cells.matching(NSPredicate(format: "identifier BEGINSWITH %@ OR label BEGINSWITH %@",
+                                                       "Downloads", "下载项")).firstMatch
         XCTAssertTrue(downloads.waitForExistence(timeout: 10), app.debugDescription)
         downloads.tap()
 
@@ -368,13 +377,12 @@ extension EditorV4UITests {
         waitUntil { !app.descendants(matching: .any)["adjustment.wheel"].exists }
     }
 
-    /// Discards the workspace draft through `editor.draft.cancel`; a dirty draft answers
-    /// the shared decision dialog with Discard Changes before the overview is reachable.
+    /// Discards the workspace draft through `editor.draft.cancel`: the product cancel path
+    /// discards directly (EditorDrafts.cancelEditorDraft), so the localized apply/discard
+    /// guard dialog only guards the workspace back action — polling for an alert here
+    /// would burn a dead timeout on every call.
     func cancelToolWorkspace(in app: XCUIApplication) {
         app.buttons["editor.draft.cancel"].tap()
-        if waitTrue(2, { app.alerts.firstMatch.exists }) {
-            app.alerts.buttons["Discard Changes"].tap()
-        }
         XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 5), app.debugDescription)
     }
 
