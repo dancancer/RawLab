@@ -3416,6 +3416,58 @@ def _parse_android_ui() -> dict[str, dict]:
     kt_tv = _strip_line_comments(_read("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentTransferValues.kt"))
     kt_hdr_tx = _strip_line_comments(_read("RawLabAndroid/app/src/main/java/com/rawlab/android/adjustments/AdjustmentTransfer.kt"))
 
+    # A renamed enabled/callback identifier is not enough: verify its owner gate,
+    # then keep these guarded bindings attached to every parameter tool arm.
+    dock_where = "AdjustmentDock.kt"
+    gate_field = "android parameter owner gate"
+    _require("val workspaceGroup = AdjustmentGroup.forTool(tool)", kt_dock, gate_field, dock_where)
+    _require("val parameterEnabled = state.controlsEnabled && toolOpen && !quickPresetsVisible && state.draft?.group == workspaceGroup",
+             kt_dock, gate_field, dock_where)
+    for binding in ("val liveState by rememberUpdatedState(state)",
+                    "val liveGroup by rememberUpdatedState(workspaceGroup)",
+                    "val liveWorkspace by rememberUpdatedState(toolOpen && !quickPresetsVisible)"):
+        _require(binding, kt_dock, gate_field, dock_where)
+    _need(r"fun ownsDraft\(\): Boolean = workspaceIsCurrent\(\) && liveWorkspace && liveState\.controlsEnabled && liveGroup == workspaceGroup\s*&&\s*"
+          r"liveState\.photo\?\.identity == state\.photo\?\.identity && liveState\.photo\?\.file == state\.photo\?\.file\s*&&\s*"
+          r"liveState\.draft\?\.group == workspaceGroup", kt_dock, gate_field, dock_where)
+    edit_gate = _extract_brace_block(kt_dock, r"val editParameter:", "android parameter edit guard", dock_where)
+    _need(r"\{ next, dragging ->\s*if \(ownsDraft\(\)\) \{\s*hslTarget\.cancel\(\)\s*"
+          r"onDraftEdit\(next\.canonicalZeros\(\)\.synchronizeHDR\(\), dragging\)\s*\}\s*\}$",
+          edit_gate, "android parameter edit guard", dock_where)
+    for binding in (
+        'val selectFilm: (String) -> Boolean = { id -> ownsDraft() && onSelectFilm(id) }',
+        'val autoExposure = { if (ownsDraft()) onAutoExposure() }',
+        'val importLook = { if (ownsDraft()) onImportLook() }',
+        'val importHDRLook = { if (ownsDraft()) onImportHDRLook() }',
+        'val applyHDRSilver: (Boolean) -> Unit = { master -> if (ownsDraft()) onApplyHDRSilver(master) }',
+        'val resetParameter: (EditorResetScope) -> Unit = { scope -> if (ownsDraft()) onResetScope(scope) }',
+    ):
+        _require(binding, kt_dock, "android parameter callback guard", dock_where)
+    # Exclude navigation, quick presets, and processingContext: they deliberately
+    # keep separate lifecycles. Inspect each complete when(tool) arm, not a regex
+    # that can wander into a later tool and accidentally find a guarded callback.
+    parameter_arms = _extract_brace_block(kt_dock, r"else when \(tool\)", "android parameter arms", dock_where)
+    arms = list(re.finditer(r"^ {12}(\d+) ->", parameter_arms, re.M))
+    by_tool = {int(m.group(1)): parameter_arms[m.start():arms[i + 1].start() if i + 1 < len(arms) else len(parameter_arms)]
+               for i, m in enumerate(arms)}
+    if set(by_tool) != set(range(28)) - {9}:
+        raise AssertionError("android parameter arms: unexpected tool coverage")
+    for tool_id, arm in by_tool.items():
+        field = f"android parameter tool {tool_id}"
+        _require("parameterEnabled", arm, field, dock_where)
+        _require_absent("onEdit(", arm, field, dock_where)
+        _require_absent("onResetScope(", arm, field, dock_where)
+        if tool_id in (16, 17):
+            _require("if (ownsDraft()) onDraftEdit(", arm, field, dock_where)
+        else:
+            _require("editParameter(", arm, field, dock_where)
+    for binding in (
+        'HslControls(edits.editingHsl, parameterEnabled, channel, onChannelChange,',
+        '{ all -> resetParameter(if (all) EditorResetScope.AllHsl else EditorResetScope.HslChannel(channel)) }',
+        'ratioEnabled = state.draftReady, onRatioChange = onGeometryRatio, onReset = { resetParameter(EditorResetScope.Tool(17)) }',
+    ):
+        _require(binding, kt_dock, "android hsl geometry reset guard", dock_where)
+
     # NumericControl defaultValue / baseline / step arms (AdjustmentControls.kt)
     kt_nc_sig_def = float(_need(r"defaultValue:\s*Float\s*=\s*(-?\d+(?:\.\d+)?)f", kt_ctrl, "NumericControl defaultValue", "AdjustmentControls.kt").group(1))
     kt_baseline_blk = _extract_brace_block(kt_ctrl, r"val baseline = when \(label\)", "android baselines", "AdjustmentControls.kt")
@@ -3484,7 +3536,7 @@ def _parse_android_ui() -> dict[str, dict]:
         ("hdr.sdr_saturation", 27, "hdr_sdr_saturation", "sdrSaturation", (hdr_sdr_sat_lo, hdr_sdr_sat_hi, hdr_sdr_sat_unit, hdr_sdr_sat_def, hdr_sdr_sat_step)),
     ):
         pm = _need(
-            rf'{tool_id}\s*->\s*if\s*\(edits\.isHDREditing\)\s*NumericControl\(R\.string\.{r_name},\s*edits\.hdr!!\.\s*renditionSettings\.{prop},\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)",\s*state\.controlsEnabled,\s*\{{[^}}]+\}},\s*\{{[^}}]*{prop}\s*=\s*(-?\d+(?:\.\d+)?)f[^}}]*\}}(?:,\s*stepOverride\s*=\s*(\.\d+|\d+(?:\.\d+)?)f)?\)',
+            rf'{tool_id}\s*->\s*if\s*\(edits\.isHDREditing\)\s*NumericControl\(R\.string\.{r_name},\s*edits\.hdr!!\.\s*renditionSettings\.{prop},\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)",\s*parameterEnabled,\s*\{{\s*value,\s*dragging\s*->\s*editParameter\(edits\.copy\(hdr = edits\.hdr\.withRendition\(edits\.hdr\.renditionSettings\.copy\({prop} = value\)\)\), dragging\)\s*\}},\s*\{{\s*editParameter\(edits\.copy\(hdr = edits\.hdr\.withRendition\(edits\.hdr\.renditionSettings\.copy\({prop}\s*=\s*(-?\d+(?:\.\d+)?)f\)\)\), false\)\s*\}}(?:,\s*stepOverride\s*=\s*(\.\d+|\d+(?:\.\d+)?)f)?\)',
             kt_dock,
             f"kt {fid} android primary dock",
             "AdjustmentDock.kt",
@@ -3606,7 +3658,7 @@ def _parse_android_ui() -> dict[str, dict]:
         "AdjustmentDock.kt",
         re.S,
     )
-    _require("onResetScope(EditorResetScope.Tool(11))", kt_dock, "kt hdr denoise reset", "AdjustmentDock.kt")
+    _require("resetParameter(EditorResetScope.Tool(11))", kt_dock, "kt hdr denoise reset", "AdjustmentDock.kt")
     kt_hdr_denoise_def = float(_need(r"val denoise:\s*Float\s*=\s*(-?\d+(?:\.\d+)?)f", _extract_kt_class_block(kt_hdr, r"data class HDRDetailSettings\b", "kt hdr denoise default", "HDRSettings.kt"), "kt hdr denoise default", "HDRSettings.kt").group(1))
     scurve_m = _need(
         r'NumericControl\(R\.string\.tone_curve,\s*legacy \* \d+,\s*(-?\d+)f\.\.(-?\d+)f,\s*"([^"]*)",\s*enabled,\s*\{[^\n]+?\},\s*\{\s*onLegacyEdit\((-?\d+(?:\.\d+)?)f',
@@ -4493,6 +4545,41 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, r"editor_group_overrides drift on hdr\.peak_limit_ev"):
                 validate_editor_group_overrides(self.document, parse_editor_groups_from_sources())
 
+    def test_android_parameter_owner_gate_mutations_fail_closed(self):
+        from unittest import mock
+
+        path = "RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/AdjustmentDock.kt"
+        source = _read(path)
+        original_read = _read
+        mutations = [
+            ("drop draft owner", " && state.draft?.group == workspaceGroup", ""),
+            ("drop workspace callback guard", "workspaceIsCurrent() && liveWorkspace", "liveWorkspace"),
+            ("drop live draft owner", "liveState.draft?.group == workspaceGroup", "true"),
+            ("drop live photo owner", "liveState.photo?.identity == state.photo?.identity", "true"),
+            ("drop edit guard", "if (ownsDraft()) {", "if (true) {"),
+            ("wrong edit callback", "onDraftEdit(next.canonicalZeros().synchronizeHDR(), dragging)",
+             "onEdit(next.canonicalZeros().synchronizeHDR(), dragging)"),
+            ("drop reset guard", "{ scope -> if (ownsDraft()) onResetScope(scope) }", "{ scope -> onResetScope(scope) }"),
+            ("wrong hsl reset callback", "resetParameter(if (all) EditorResetScope.AllHsl", "onResetScope(if (all) EditorResetScope.AllHsl"),
+            ("drop hsl enabled gate", "HslControls(edits.editingHsl, parameterEnabled,", "HslControls(edits.editingHsl, state.controlsEnabled,"),
+            ("drop geometry edit guard", "if (ownsDraft()) onDraftEdit(edits.copy(geometry = value), dragging)",
+             "onDraftEdit(edits.copy(geometry = value), dragging)"),
+            ("drop lens edit guard", "if (ownsDraft()) onDraftEdit(edits.copy(lens = value), false)",
+             "onDraftEdit(edits.copy(lens = value), false)"),
+            ("wrong hdr reset callback", "{ editParameter(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrExposureEV = 0f))), false) }",
+             "{ onEdit(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrExposureEV = 0f))), false) }"),
+        ]
+        for label, old, new in mutations:
+            with self.subTest(mutation=label):
+                self.assertIn(old, source, f"Test bug: mutation anchor absent: {label}")
+                mutated = source.replace(old, new, 1)
+                self.assertNotEqual(mutated, source)
+                def reader(rel_path):
+                    return mutated if rel_path == path else original_read(rel_path)
+                with mock.patch(f"{__name__}._read", side_effect=reader):
+                    with self.assertRaisesRegex(AssertionError, "android .*?(gate|guard|tool)"):
+                        _parse_android_ui()
+
     def test_mutation_anchors_detect_protocol_model_and_ui_drift(self):
         # 1. Mutating a protocol range bound must fail Layer 1
         bad_proto = copy.deepcopy(self.document)
@@ -4652,8 +4739,8 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
             ),
             (
                 "RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/AdjustmentDock.kt",
-                "{ onEdit(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrExposureEV = 0f))), false) }, stepOverride = .1f)",
-                "{ onEdit(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrExposureEV = 0f))), false) }, stepOverride = .2f)",
+                "{ editParameter(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrExposureEV = 0f))), false) }, stepOverride = .1f)",
+                "{ editParameter(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrExposureEV = 0f))), false) }, stepOverride = .2f)",
                 r"hdr\.sdr_exposure_ev android primary AdjustmentDock\.kt",
             ),
             (

@@ -39,8 +39,9 @@ class MobileWorkspaceUITest {
             CompositionLocalProvider(LocalDensity provides Density(1f, scale)) {
                 Box(Modifier.size(width.dp, height.dp).consumeWindowInsets(WindowInsets.safeDrawing).testTag("workspace-fixture")) {
                     RawLabTheme {
-                        EditorScreen(state, {}, {}, { edits, dragging -> state = state.copy(draft = state.draft!!.update(edits, dragging)) },
+                        EditorScreen(state, {}, {}, { _, _ -> fail("Workspace parameters must edit their draft") },
                             {}, {}, {}, {}, {}, onBeginDraft = { state = state.copy(draft = AdjustmentDraft.begin(it, state.edits)) },
+                            onDraftEdit = { edits, dragging -> state = state.copy(draft = state.draft!!.update(edits, dragging)) },
                             onDiscardDraft = { state = state.copy(draft = null) },
                             onUndoDraft = { state = state.copy(draft = state.draft?.undo()) },
                             onRedoDraft = { state = state.copy(draft = state.draft?.redo()) },

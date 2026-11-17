@@ -57,8 +57,9 @@ class EditorCompactLayoutTest {
                 LocalContext provides localized, LocalConfiguration provides config) {
                 Box(Modifier.size(width.dp, height.dp).consumeWindowInsets(WindowInsets.safeDrawing).testTag("layout-fixture")) {
                     RawLabTheme {
-                        EditorScreen(state, {}, {}, { edits, dragging -> state = state.copy(draft = state.draft!!.update(edits, dragging)) }, {}, {}, {}, {}, {},
+                        EditorScreen(state, {}, {}, { _, _ -> fail("Workspace parameters must edit their draft") }, {}, {}, {}, {}, {},
                             onBeginDraft = { state = state.copy(draft = AdjustmentDraft.begin(it, state.edits)) },
+                            onDraftEdit = { edits, dragging -> state = state.copy(draft = state.draft!!.update(edits, dragging)) },
                             onDiscardDraft = { state = state.copy(draft = null) })
                     }
                 }
