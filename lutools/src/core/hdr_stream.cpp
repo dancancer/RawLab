@@ -127,25 +127,12 @@ public:
         return rows_.data() + size_t(y - first_) * width_;
     }
 };
-}
 
-uint64_t streamScratchBytes(uint32_t width, uint32_t height, const HDRRenderOptions& options, bool hdr) {
-    validateHDRRenderOptions(options);
-    if (!width || !height || width > 65535 || height > 65535 || uint64_t(width) * height > 128000000)
-        throw std::invalid_argument("Invalid complete HDR stream dimensions");
-    const auto native = geometryOutputSize(width, height, options.geometry);
-    const auto output = hdrResizeSize(native.first, native.second, options.longEdge);
-    if (output.first > 65500 || output.second > 65500) throw std::invalid_argument("Stream output exceeds JPEG limits");
-    return uint64_t(width) * height * 24 + uint64_t(output.first) * output.second * (hdr ? 20 : 4) + (64ull << 20);
-}
-
-HDRStreamResult encodeStream(const HDRRowSource& source, const HDRRenderOptions& options,
-    bool highDynamicRange, uint32_t quality, uint32_t baseColor, const fs::path& temporaryRoot) {
+HDRStreamResult streamShape(const HDRRowSource& source, const HDRRenderOptions& options) {
     validateHDRRenderOptions(options);
     if (!source.width || !source.height || source.width > 65535 || source.height > 65535 ||
         uint64_t(source.width) * source.height > 128000000 || !source.read || !source.finish ||
-        options.intent != HDRQuality::Final || quality < 1 || quality > 100 ||
-        (baseColor != SONY2FUJI_HDR_COLOR_SRGB && baseColor != SONY2FUJI_HDR_COLOR_DISPLAY_P3))
+        options.intent != HDRQuality::Final)
         throw std::invalid_argument("Invalid complete HDR stream source or output settings");
     checkProcessingCancellation();
     HDRStreamResult result;
@@ -153,14 +140,15 @@ HDRStreamResult encodeStream(const HDRRowSource& source, const HDRRenderOptions&
     const auto size = hdrResizeSize(native.first, native.second, options.longEdge);
     result.width = size.first; result.height = size.second;
     result.outputNativeWidth = native.first; result.outputNativeHeight = native.second;
-    if (result.width > 65500 || result.height > 65500) throw std::invalid_argument("Stream output exceeds JPEG limits");
-    const uint64_t outputPixels = uint64_t(result.width) * result.height;
-    // 两份浮点源、紧凑编码输入及压缩产物；不依赖稀疏文件虚报可用空间。
-    Directory scratch(temporaryRoot, streamScratchBytes(source.width, source.height, options, highDynamicRange));
-    const auto high = scratch.path / "hdr.rgb32f", low = scratch.path / "sdr.rgb32f";
+    return result;
+}
+
+std::shared_ptr<Directory> stageSource(const HDRRowSource& source, const HDRRenderOptions& options,
+    HDRStreamResult& result, const fs::path& temporaryRoot, uint64_t requiredBytes) {
+    auto scratch = std::make_shared<Directory>(temporaryRoot, requiredBytes);
     admitMemory(uint64_t(source.width) * std::min(decodeRows, source.height) * sizeof(RGB) + (32ull << 20));
     for (bool hdr : {true, false}) {
-        File file(hdr ? high : low, true);
+        File file(scratch->path / (hdr ? "hdr.rgb32f" : "sdr.rgb32f"), true);
         for (uint32_t row = 0; row < source.height; row += decodeRows) {
             checkProcessingCancellation();
             ImageData strip(source.width, std::min(decodeRows, source.height - row));
@@ -184,12 +172,66 @@ HDRStreamResult encodeStream(const HDRRowSource& source, const HDRRenderOptions&
         extra = uint64_t(result.width) * std::min(result.height, tileEdge + 2 * halo) * (sizeof(RGB) + sizeof(float));
     }
     admitMemory(uint64_t(result.width) * tileEdge * 20 + (32ull << 20) + extra);
+    return scratch;
+}
+}
+
+HDRStreamFiles renderStreamFiles(const HDRRowSource& source, const HDRRenderOptions& options,
+    bool includeHDR, const fs::path& temporaryRoot) {
+    HDRStreamFiles output;
+    output.result = streamShape(source, options);
+    const uint64_t outputPixels = uint64_t(output.result.width) * output.result.height;
+    // 完整源双平面、输出浮点文件与成片空间一并准入，避免中途才发现磁盘不足。
+    const uint64_t requiredBytes = uint64_t(source.width) * source.height * 24 +
+        outputPixels * (includeHDR ? 40 : 24) + (64ull << 20);
+    output.directory = stageSource(source, options, output.result, temporaryRoot, requiredBytes);
+    output.sdr = output.directory->path / "rendered-sdr.rgb32f";
+    if (includeHDR) output.hdr = output.directory->path / "rendered-hdr.rgb32f";
+    output.result.editedHeadroom = includeHDR ? 1 : 0;
+    for (bool hdr : {true, false}) {
+        if (hdr && !includeHDR) continue;
+        File file(hdr ? output.hdr : output.sdr, true);
+        RenderedRows rows(output.directory->path / (hdr ? "hdr.rgb32f" : "sdr.rgb32f"), source, options,
+            output.result.width, output.result.height, hdr ? &output.result.editedHeadroom : nullptr);
+        for (uint32_t row = 0; row < output.result.height; ++row) {
+            checkProcessingCancellation();
+            const auto* pixels = rows.row(row);
+            if (hdr) for (uint32_t x = 0; x < output.result.width; ++x)
+                output.rgbHeadroom = std::max({output.rgbHeadroom, pixels[x].r, pixels[x].g, pixels[x].b});
+            file.append(pixels, size_t(output.result.width) * sizeof(RGB));
+        }
+    }
+    return output;
+}
+
+uint64_t streamScratchBytes(uint32_t width, uint32_t height, const HDRRenderOptions& options, bool hdr) {
+    validateHDRRenderOptions(options);
+    if (!width || !height || width > 65535 || height > 65535 || uint64_t(width) * height > 128000000)
+        throw std::invalid_argument("Invalid complete HDR stream dimensions");
+    const auto native = geometryOutputSize(width, height, options.geometry);
+    const auto output = hdrResizeSize(native.first, native.second, options.longEdge);
+    if (output.first > 65500 || output.second > 65500) throw std::invalid_argument("Stream output exceeds JPEG limits");
+    return uint64_t(width) * height * 24 + uint64_t(output.first) * output.second * (hdr ? 20 : 4) + (64ull << 20);
+}
+
+HDRStreamResult encodeStream(const HDRRowSource& source, const HDRRenderOptions& options,
+    bool highDynamicRange, uint32_t quality, uint32_t baseColor, const fs::path& temporaryRoot) {
+    if (quality < 1 || quality > 100 ||
+        (baseColor != SONY2FUJI_HDR_COLOR_SRGB && baseColor != SONY2FUJI_HDR_COLOR_DISPLAY_P3))
+        throw std::invalid_argument("Invalid complete HDR stream source or output settings");
+    HDRStreamResult result = streamShape(source, options);
+    if (result.width > 65500 || result.height > 65500) throw std::invalid_argument("Stream output exceeds JPEG limits");
+    const uint64_t outputPixels = uint64_t(result.width) * result.height;
+    // 两份浮点源、紧凑编码输入及压缩产物；不依赖稀疏文件虚报可用空间。
+    auto scratch = stageSource(source, options, result, temporaryRoot,
+        streamScratchBytes(source.width, source.height, options, highDynamicRange));
+    const auto high = scratch->path / "hdr.rgb32f", low = scratch->path / "sdr.rgb32f";
     if (!highDynamicRange) {
         RenderedRows rows(low, source, options, result.width, result.height, nullptr);
         result.jpeg = encodeSDRJPEGRows(result.width, result.height, quality, [&](uint32_t y) { return rows.row(y); });
         return result;
     }
-    const auto packedHigh = scratch.path / "hdr.rgba16f", packedLow = scratch.path / "sdr.rgba8";
+    const auto packedHigh = scratch->path / "hdr.rgba16f", packedLow = scratch->path / "sdr.rgba8";
     float capacity = 1;
     result.editedHeadroom = 1;
     for (bool hdr : {true, false}) {

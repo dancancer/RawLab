@@ -295,9 +295,8 @@ extension RawEditorViewModel {
                 do {
                     let lutURL = self.lutURL(for: settings)
                     if let hdr=settings.hdr,settings.isHDREditing {
-                        let pair=try self.processor.processHDR(url:sourceURL,settings:hdr,previewLongEdge:nil,exportLongEdge:longEdge,
-                            processing:settings.processing)
-                        try pair.exportSDR(to:outputURL,format:SONY2FUJI_OUTPUT_DNG)
+                        try self.processor.exportHDRDNG(url: sourceURL, settings: hdr, output: outputURL, longEdge: longEdge,
+                            processing: settings.processing, proRAWDecodeVersion: settings.proRAWDecodeVersion)
                     } else if sourceKind == .raw {
                         try self.processor.exportDNG(url: sourceURL, settings: settings, lutURL: lutURL,
                                                      outputURL: outputURL, exportLongEdge: longEdge)

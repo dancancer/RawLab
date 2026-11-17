@@ -124,6 +124,30 @@ int main(int argc, char* argv[]) {
 #if defined(__APPLE__) && !defined(RAWLAB_HDR_PORTABLE_ADAPTER)
         check(hdr::sourceHashPassCount() == 1, "Stream export still performs a second full-file digest pass");
         {
+            auto tiledConfig = config; tiledConfig.metadata_policy = SONY2FUJI_HDR_METADATA_ISO;
+            check(sony2fuji_hdr_heif_export_available() != 0, "Tiled row-source acceptance requires a working HEIF codec");
+            const auto tiledOutput = directory / "tiled-rows-output";
+            auto tiled = [&](uint32_t format) {
+                return sony2fuji_hdr_export_tiled(session, nullptr, &source, originalPath.c_str(), &settings, &tiledConfig,
+                    format, scratch.c_str(), tiledOutput.c_str(), &result, &diagnostic);
+            };
+            for (uint32_t format : {SONY2FUJI_HDR_TILED_HEIF, SONY2FUJI_HDR_TILED_SDR_DNG}) {
+                check(tiled(format) == SONY2FUJI_STATUS_OK && result.width == 48 && result.height == 32 &&
+                    result.decode_revision == 7 && fs::is_empty(directory / "scratch"),
+                    "Tiled complete-row export failed or lost provenance");
+                const auto previous = read(tiledOutput);
+                source.source_intent = SONY2FUJI_INTENT_PREVIEW;
+                check(tiled(format) == SONY2FUJI_STATUS_INVALID_ARGUMENT && diagnostic.reason == SONY2FUJI_HDR_REASON_PREVIEW_SOURCE,
+                    "Tiled row export accepted a preview source");
+                source.source_intent = SONY2FUJI_INTENT_FINAL;
+                context.cancelAtFinish = true;
+                check(tiled(format) == SONY2FUJI_STATUS_CANCELLED && read(tiledOutput) == previous && fs::is_empty(directory / "scratch"),
+                    "Tiled row cancellation changed the target or leaked scratch");
+                context.cancelled = false; context.cancelAtFinish = false;
+            }
+            fs::remove(tiledOutput);
+        }
+        {
             // B1 红锚：读中途替换源。修复版把「数据 ↔ 快照」绑定同一 fd，发布前按路径核对必判
             // SOURCE_CHANGED 且不发布；按路径 stat 的旧版会把快照记成替补文件、误判一致照常发布。
             const auto staged = directory / "staged-source.jpg";

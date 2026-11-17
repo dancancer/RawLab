@@ -5,9 +5,20 @@ import Foundation
 import Metal
 
 enum ProRAWExporter {
+    enum Format { case sdrJPEG, hdrJPEG, hdrHEIF, renderedDNG }
+
     @discardableResult
     static func export(url: URL, info: HDRSourceInfo, settings: HDRSettings, output: URL,
                        longEdge: Int? = nil, keepHDR: Bool, session: OpaquePointer,
+                       temporaryRoot: URL = FileManager.default.temporaryDirectory,
+                       cancelled: () -> Bool = { false }) throws -> sony2fuji_hdr_stream_result_v1 {
+        try export(url: url, info: info, settings: settings, output: output, longEdge: longEdge,
+                   format: keepHDR ? .hdrJPEG : .sdrJPEG, session: session, temporaryRoot: temporaryRoot, cancelled: cancelled)
+    }
+
+    @discardableResult
+    static func export(url: URL, info: HDRSourceInfo, settings: HDRSettings, output: URL,
+                       longEdge: Int? = nil, format: Format, session: OpaquePointer,
                        temporaryRoot: URL = FileManager.default.temporaryDirectory,
                        cancelled: () -> Bool = { false }) throws -> sony2fuji_hdr_stream_result_v1 {
         guard let source = info.proRAW, let stamp = info.cameraStamp, settings.cameraDevelopmentSettings.isDefault else {
@@ -42,7 +53,8 @@ enum ProRAWExporter {
             var config = sony2fuji_hdr_export_config_v1()
             config.version = 1; config.struct_size = UInt32(MemoryLayout.size(ofValue: config))
             config.jpeg_quality = 95; config.base_color = UInt32(SONY2FUJI_HDR_COLOR_DISPLAY_P3)
-            config.metadata_policy = UInt32(SONY2FUJI_HDR_METADATA_ISO_XMP)
+            let tiled = format == .hdrHEIF || format == .renderedDNG
+            config.metadata_policy = UInt32(tiled ? SONY2FUJI_HDR_METADATA_ISO : SONY2FUJI_HDR_METADATA_ISO_XMP)
             config.source_sha256 = input.source_sha256
             var result = sony2fuji_hdr_stream_result_v1()
             result.version = 1; result.struct_size = UInt32(MemoryLayout.size(ofValue: result))
@@ -55,7 +67,12 @@ enum ProRAWExporter {
                             input.decoder_identifier = decoder
                             config.metadata_source_path = sourcePath
                             return withHDRRequestPrefix(request) {
-                                sony2fuji_hdr_export_stream(session, &input, $0, &config, keepHDR ? 1 : 0,
+                                if tiled {
+                                    return sony2fuji_hdr_export_tiled(session, nil, &input, sourcePath, $0, &config,
+                                        UInt32(format == .hdrHEIF ? SONY2FUJI_HDR_TILED_HEIF : SONY2FUJI_HDR_TILED_SDR_DNG),
+                                        temporaryPath, outputPath, &result, &diagnostic)
+                                }
+                                return sony2fuji_hdr_export_stream(session, &input, $0, &config, format == .hdrJPEG ? 1 : 0,
                                     temporaryPath, outputPath, &result, &diagnostic)
                             }
                         }

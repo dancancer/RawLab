@@ -357,6 +357,18 @@ sony2fuji_status sony2fuji_hdr_export_stream(sony2fuji_session* session,
     const sony2fuji_hdr_stream_source_v1* source, const sony2fuji_hdr_request_v1* request,
     const sony2fuji_hdr_export_config_v1* config, uint32_t keep_hdr, const char* temporary_root,
     const char* path, sony2fuji_hdr_stream_result_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic);
+enum { SONY2FUJI_HDR_TILED_HEIF = 1, SONY2FUJI_HDR_TILED_SDR_DNG = 2 };
+// Apple 分块导出：source/stream 均为 NULL 时从冻结的 HDR JPEG/HEIF 原片逐行读取。
+// 非 NULL source 必须是该 source_path 已完整显影的 owned FINAL camera RAW pair，
+// 原始尺寸与画布一致，config.metadata_source_path 必须为 NULL；不改变 RAW 显影算法。
+// 非 NULL stream 复用完整 FINAL 行源契约（如 ProRAW），不得同时提供 source。
+// HEIF 使用 ISO metadata policy；DNG 仅烘焙 SDR，不复制原相机校准/EXIF。
+// 完整源与渲染中间结果使用 temporary_root 下的私有文件；成功只原子发布一个成片。
+sony2fuji_status sony2fuji_hdr_export_tiled(sony2fuji_session* session,
+    const sony2fuji_hdr_image_pair_v1* source, const sony2fuji_hdr_stream_source_v1* stream, const char* source_path,
+    const sony2fuji_hdr_request_v1* request, const sony2fuji_hdr_export_config_v1* config,
+    uint32_t output_format, const char* temporary_root, const char* path,
+    sony2fuji_hdr_stream_result_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic);
 void sony2fuji_hdr_release_pair(sony2fuji_hdr_image_pair_v1* image);
 
 #ifdef __cplusplus

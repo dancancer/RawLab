@@ -1,5 +1,6 @@
 #include "sony2fuji/ffi/sony2fuji_hdr.h"
 #include "platform/hdr_image.h"
+#include "core/hdr_jpeg.h"
 #import <Foundation/Foundation.h>
 #import <CoreImage/CoreImage.h>
 #import <ImageIO/ImageIO.h>
@@ -7,6 +8,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <vector>
@@ -41,6 +44,134 @@ NSData* fixture(bool changed=false) API_AVAILABLE(macos(15.0), ios(18.0)) {
         (__bridge NSString*)kCGImageDestinationLossyCompressionQuality:@.98}];
     CGImageRelease(tagged); CGImageRelease(image); CGColorSpaceRelease(linear); CGColorSpaceRelease(srgb);
     check(data.length>0,"cannot encode HDR fixture"); return data;
+}
+
+void tiledExports(NSURL* directory) API_AVAILABLE(macos(15.0), ios(18.0)) {
+    using namespace sony2fuji;
+    namespace fs = std::filesystem;
+    check(sony2fuji_hdr_heif_export_available() != 0, "Tiled HEIF acceptance requires a working HEIF codec");
+    HDRImagePair source;
+    source.hdr = ImageData(529, 317); source.sdr = ImageData(529, 317);
+    source.nativeWidth = 529; source.nativeHeight = 317; source.sourceHeadroom = 8;
+    for (int y = 0; y < 317; ++y) for (int x = 0; x < 529; ++x) {
+        const float r = .05f + .75f * x / 528, g = .03f + .7f * y / 316;
+        source.sdr.at(x, y) = {r, g, .12f};
+        source.hdr.at(x, y) = {r * 8, g * 2, .25f};
+    }
+    const auto root = fs::path(directory.fileSystemRepresentation);
+    const auto opaqueSource = root / "camera-source.raw";
+    std::ofstream(opaqueSource) << "Decoded by the camera backend, without ImageIO metadata";
+    {
+        hdr::StreamSourcePin pin;
+        const auto hashes = hdr::sourceHashPassCount();
+        hdr::freezeStreamSourceFile(opaqueSource.c_str(), pin);
+        check(hdr::sourceHashPassCount() == hashes, "Camera source pin read the original for unused metadata");
+        hdr::verifyStreamSource(pin);
+        std::ofstream(opaqueSource, std::ios::app) << "changed";
+        bool rejected = false;
+        try { hdr::verifyStreamSource(pin); }
+        catch (const hdr::Error& error) { rejected = error.reason == SONY2FUJI_HDR_REASON_SOURCE_CHANGED; }
+        check(rejected, "Camera source mutation was not rejected without ImageIO metadata");
+    }
+    const auto original = root / "tiled-original.jpg", scratch = root / "tiled-scratch";
+    fs::create_directory(scratch);
+    const auto originalBytes = hdr::encodeJPEG(source, 95, SONY2FUJI_HDR_COLOR_SRGB);
+    std::ofstream(original, std::ios::binary).write(reinterpret_cast<const char*>(originalBytes.data()), originalBytes.size());
+    auto read = [](const fs::path& path) {
+        std::ifstream file(path, std::ios::binary);
+        return std::vector<uint8_t>(std::istreambuf_iterator<char>(file), {});
+    };
+    auto diagnostic = init<sony2fuji_hdr_diagnostic_v1>();
+    auto info = init<sony2fuji_hdr_source_info_v1>();
+    check(sony2fuji_hdr_probe(original.c_str(), &info, &diagnostic) == SONY2FUJI_STATUS_OK, "Tiled fixture probe failed");
+    auto decode = init<sony2fuji_hdr_decode_options_v1>(); decode.intent = SONY2FUJI_INTENT_FINAL;
+    auto decoded = init<sony2fuji_hdr_image_pair_v1>();
+    check(sony2fuji_hdr_decode(original.c_str(), &decode, &decoded, &diagnostic) == SONY2FUJI_STATUS_OK,
+        "Tiled full-frame reference decode failed");
+    sony2fuji_session* session = nullptr;
+    check(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK, "Tiled reference session failed");
+    struct Release {
+        sony2fuji_session* session;
+        sony2fuji_hdr_image_pair_v1& image;
+        ~Release() { sony2fuji_hdr_release_pair(&image); sony2fuji_session_destroy(session); }
+    } release{session, decoded};
+    auto request = init<sony2fuji_hdr_request_v1>();
+    request.hdr_processing_version = 1; request.intent = SONY2FUJI_INTENT_FINAL;
+    request.temperature = 6500; request.exposure_ev = .35f;
+    request.crop_x = .1f; request.crop_y = .07f; request.crop_width = .8f; request.crop_height = .83f;
+    request.quarter_turns = 1; request.long_edge = 293;
+    auto config = init<sony2fuji_hdr_export_config_v1>();
+    config.jpeg_quality = 95; config.base_color = SONY2FUJI_HDR_COLOR_SRGB;
+    config.metadata_policy = SONY2FUJI_HDR_METADATA_ISO; config.metadata_source_path = original.c_str();
+    std::copy_n(info.source_sha256, 32, config.source_sha256);
+    auto result = init<sony2fuji_hdr_stream_result_v1>();
+    auto run = [&](const fs::path& output, uint32_t format) {
+        return sony2fuji_hdr_export_tiled(session, nullptr, nullptr, original.c_str(), &request, &config, format,
+            scratch.c_str(), output.c_str(), &result, &diagnostic);
+    };
+    auto rendered = init<sony2fuji_hdr_image_pair_v1>();
+    check(sony2fuji_hdr_render(session, &decoded, &request, &rendered, &diagnostic) == SONY2FUJI_STATUS_OK,
+        "Tiled full-frame render reference failed");
+    struct ReleasePair { sony2fuji_hdr_image_pair_v1& image; ~ReleasePair() { sony2fuji_hdr_release_pair(&image); } } pairRelease{rendered};
+    for (auto color : {SONY2FUJI_HDR_COLOR_SRGB, SONY2FUJI_HDR_COLOR_DISPLAY_P3}) {
+        config.base_color = color;
+        const auto output = root / ("tiled-" + std::to_string(color) + ".heif"), reference = root / "full-reference.heif";
+        check(sony2fuji_hdr_export_heif(&rendered, &config, reference.c_str(), &diagnostic) == SONY2FUJI_STATUS_OK,
+            "Full-frame HEIF reference export failed");
+        const auto status = run(output, SONY2FUJI_HDR_TILED_HEIF);
+        if (status) std::cerr << "tiled HEIF status=" << status << " reason=" << diagnostic.reason << '\n';
+        check(status == SONY2FUJI_STATUS_OK, "Tiled HEIF export failed");
+        auto outputInfo = hdr::probeFile(output.c_str());
+        check(result.width == rendered.hdr.width && result.height == rendered.hdr.height &&
+            outputInfo.width == rendered.hdr.width && outputInfo.height == rendered.hdr.height && outputInfo.orientation == 1 &&
+            outputInfo.protocol == SONY2FUJI_HDR_PROTOCOL_ISO && outputInfo.color_description == uint32_t(color),
+            "Tiled HEIF lost its canvas, ISO gain map, direction or color");
+        const auto actual = hdr::decodeFile(output.c_str(), decode), expected = hdr::decodeFile(reference.c_str(), decode);
+        std::vector<double> luminanceError;
+        double sdrError = 0;
+        for (size_t i = 0; i < expected.pixels.hdr.pixels.size(); ++i) {
+            const auto& a = actual.pixels.hdr.pixels[i]; const auto& b = expected.pixels.hdr.pixels[i];
+            const double ay = .2126 * a.r + .7152 * a.g + .0722 * a.b, by = .2126 * b.r + .7152 * b.g + .0722 * b.b;
+            luminanceError.push_back(std::abs(std::log2(std::max(ay, 1e-4) / std::max(by, 1e-4))));
+            const auto& low = actual.pixels.sdr.pixels[i]; const auto& baseline = expected.pixels.sdr.pixels[i];
+            sdrError += std::abs(low.r - baseline.r) + std::abs(low.g - baseline.g) + std::abs(low.b - baseline.b);
+        }
+        std::sort(luminanceError.begin(), luminanceError.end());
+        check(luminanceError[luminanceError.size() * 95 / 100] <= .10 &&
+            sdrError / (luminanceError.size() * 3) <= .01, "Tiled HEIF pixels differ from the full-frame reference");
+        check(fs::is_empty(scratch), "Tiled HEIF left scratch files");
+    }
+    const auto dng = root / "tiled-output.dng", dngReference = root / "full-reference.dng";
+    auto dngConfig = init<sony2fuji_hdr_sdr_export_config_v1>();
+    dngConfig.output_format = SONY2FUJI_OUTPUT_DNG; dngConfig.quality = 95;
+    check(sony2fuji_hdr_export_sdr(&rendered, &dngConfig, dngReference.c_str(), &diagnostic) == SONY2FUJI_STATUS_OK,
+        "Full-frame DNG reference failed");
+    check(run(dng, SONY2FUJI_HDR_TILED_SDR_DNG) == SONY2FUJI_STATUS_OK && read(dng) == read(dngReference),
+        "Tiled DNG differs from the full-frame pixels, tags or previews");
+    const auto saved = read(dng);
+    request.intent = SONY2FUJI_INTENT_PREVIEW;
+    check(run(dng, SONY2FUJI_HDR_TILED_SDR_DNG) == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
+        diagnostic.reason == SONY2FUJI_HDR_REASON_PREVIEW_SOURCE && result.width == 0, "Tiled export accepted preview intent");
+    request.intent = SONY2FUJI_INTENT_FINAL;
+    config.source_sha256[0] ^= 1;
+    check(run(dng, SONY2FUJI_HDR_TILED_SDR_DNG) == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
+        diagnostic.reason == SONY2FUJI_HDR_REASON_SOURCE_CHANGED, "Tiled export accepted a changed source");
+    config.source_sha256[0] ^= 1;
+    check(run(original, SONY2FUJI_HDR_TILED_SDR_DNG) == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
+        diagnostic.reason == SONY2FUJI_HDR_REASON_SAME_FILE, "Tiled export overwrote its source");
+    int checks = 0;
+    sony2fuji_session_set_cancellation_callback(session, [](void* opaque) {
+        return ++*static_cast<int*>(opaque) > 20 ? 1 : 0;
+    }, &checks);
+    check(run(dng, SONY2FUJI_HDR_TILED_SDR_DNG) == SONY2FUJI_STATUS_CANCELLED,
+        "Tiled export did not cancel during processing");
+    sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr);
+    check(read(dng) == saved && read(original) == originalBytes && fs::is_empty(scratch),
+        "Failed tiled export changed its target, original or scratch ownership");
+    request.exposure_ev = -4;
+    check(run(root / "tiled-below-white.heif", SONY2FUJI_HDR_TILED_HEIF) == SONY2FUJI_STATUS_OK,
+        "Tiled HEIF rejected an edited image below reference white");
+    std::cout << "PASS tiled HEIF/DNG full-frame equivalence, ISO gain maps, source identity, cancellation and cleanup\n";
 }
 }
 
@@ -88,6 +219,7 @@ int main(int argc, const char* argv[]) {
                 check(pair.source_headroom>1 && pair.source_headroom_kind,"source headroom missing");
                 sony2fuji_hdr_release_pair(&pair);
                 if (argc==1) {
+                    tiledExports(directory);
                     try {
                         sony2fuji::hdr::admitMemory(UINT64_MAX);
                         check(false,"unbounded HDR allocation admitted");

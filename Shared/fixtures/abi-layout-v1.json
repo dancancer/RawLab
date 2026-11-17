@@ -1225,6 +1225,12 @@
       "symbol": "sony2fuji_hdr_export_stream"
     },
     {
+      "name": "sony2fuji_hdr_export_tiled",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_hdr_image_pair_v1*", "const sony2fuji_hdr_stream_source_v1*", "const char*", "const sony2fuji_hdr_request_v1*", "const sony2fuji_hdr_export_config_v1*", "uint32_t", "const char*", "const char*", "sony2fuji_hdr_stream_result_v1*", "sony2fuji_hdr_diagnostic_v1*"],
+      "symbol": "sony2fuji_hdr_export_tiled"
+    },
+    {
       "name": "sony2fuji_hdr_release_pair",
       "return_type": "void",
       "params": ["sony2fuji_hdr_image_pair_v1*"],
