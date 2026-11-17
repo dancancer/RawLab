@@ -3,6 +3,7 @@
 #include "core/jpeg_mpf.h"
 #include "core/output_file_mode.h"
 #include "core/parallel_pixels.h"
+#include "core/hdr_storage.h"
 #import <Foundation/Foundation.h>
 #import <CoreImage/CoreImage.h>
 #import <ImageIO/ImageIO.h>
@@ -15,13 +16,61 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <mutex>
+#include <limits>
 #include <malloc/malloc.h>
 #include <cerrno>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+@interface RawLabHDRFileProvider : NSObject {
+@public
+    std::shared_ptr<sony2fuji::hdr::storage::File> pixels;
+    uint32_t imageWidth, imageHeight;
+    sony2fuji::ProcessingCancellation cancellation;
+    std::mutex failureLock;
+    std::exception_ptr failure;
+}
+- (void)checkFailure;
+@end
+
+@implementation RawLabHDRFileProvider
+- (void)provideImageData:(void*)data bytesPerRow:(size_t)rowbytes origin:(size_t)x :(size_t)y
+    size:(size_t)width :(size_t)height userInfo:(id)info {
+    try {
+        cancellation.check();
+        if (x > imageWidth || y > imageHeight || width > imageWidth - x || height > imageHeight - y || rowbytes < width * 16)
+            throw std::invalid_argument("Invalid HEIF provider tile");
+        std::vector<sony2fuji::RGB> row(width);
+        for (size_t i = 0; i < height; ++i) {
+            cancellation.check();
+            pixels->read(((y + i) * imageWidth + x) * sizeof(sony2fuji::RGB), row.data(), width * sizeof(sony2fuji::RGB));
+            auto* target = reinterpret_cast<float*>(static_cast<uint8_t*>(data) + i * rowbytes);
+            for (size_t column = 0; column < width; ++column) {
+                target[column * 4] = row[column].r;
+                target[column * 4 + 1] = row[column].g;
+                target[column * 4 + 2] = row[column].b;
+                target[column * 4 + 3] = 1;
+            }
+        }
+    } catch (...) {
+        // Core Image 可在工作线程调用 provider；异常留给编码返回后统一处理。
+        std::lock_guard<std::mutex> lock(failureLock);
+        if (!failure) failure = std::current_exception();
+        for (size_t i = 0; i < height; ++i)
+            std::memset(static_cast<uint8_t*>(data) + i * rowbytes, 0, rowbytes);
+    }
+}
+- (void)checkFailure {
+    std::lock_guard<std::mutex> lock(failureLock);
+    if (failure) std::rethrow_exception(failure);
+}
+@end
 
 namespace sony2fuji::hdr {
 namespace {
@@ -79,7 +128,18 @@ struct StreamSourcePinImpl {
     NSData* data = nil;               // validate 时单次读取的源容器
     CGImageSourceRef source = nullptr; // 与 data 同一解析，publish 复用其元数据
     SourceSnapshot snapshot{};
+    std::string path;
 };
+
+void pinFile(const File& source, const char* path, StreamSourcePin& pin) {
+    if (!pin.impl) pin.impl = new StreamSourcePinImpl();
+    auto* impl = static_cast<StreamSourcePinImpl*>(pin.impl);
+    if (impl->source) CFRelease(impl->source);
+    impl->data = source.data;
+    impl->source = source.source ? (CGImageSourceRef)CFRetain(source.source) : nullptr;
+    impl->snapshot = source.snapshot; impl->path = path;
+    std::copy_n(source.info.source_sha256, 32, pin.digest);
+}
 
 bool has(NSData* data, const char* marker) {
     const auto* begin = static_cast<const char*>(data.bytes);
@@ -280,15 +340,15 @@ void open(File& file, const char* path) HDR_AVAILABLE {
     inspectGainMap(file);
 }
 
-ImageData pixels(CIContext* context, CIImage* input, int width, int height) {
-    ImageData result(width, height);
+void pixelRows(CIContext* context, CIImage* input, int width, int height, int first, int count, RGB* output) {
     CGColorSpaceRef color = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearSRGB);
     if (!color) throw std::bad_alloc();
     std::unique_ptr<std::remove_pointer_t<CGColorSpaceRef>, decltype(&CGColorSpaceRelease)> managed(color, CGColorSpaceRelease);
     // 分条取 CGImage 的上向下存储，避免额外常驻整张 RGBA32F；工作图也是左上起点。
-    for (int top = 0; top < height; top += 128) {
+    for (int top = first; top < first + count; top += 128) {
         @autoreleasepool {
-            const int rows = std::min(128, height-top);
+            checkProcessingCancellation();
+            const int rows = std::min(128, first + count - top);
             CGImageRef image = [context createCGImage:input fromRect:CGRectMake(0,height-top-rows,width,rows)
                 format:kCIFormatRGBAf colorSpace:color];
             require(image, SONY2FUJI_HDR_REASON_INVALID_BUFFER, "HDR pixel rendering failed");
@@ -306,13 +366,18 @@ ImageData pixels(CIContext* context, CIImage* input, int width, int height) {
                 float rgba[4]; std::memcpy(rgba,bytes+y*stride+x*16,16);
                 for (float c:rgba) finite &= std::isfinite(c);
                 opaque &= std::abs(rgba[3]-1)<1e-5f;
-                result.at(x,top+y)={rgba[0],rgba[1],rgba[2]};
+                output[size_t(top + y - first) * width + x]={rgba[0],rgba[1],rgba[2]};
             }
             CFRelease(data); CGImageRelease(image);
             require(finite,SONY2FUJI_HDR_REASON_NONFINITE,"Native HDR contains nonfinite pixels");
             require(opaque,SONY2FUJI_HDR_REASON_UNSUPPORTED_COLOR,"Native HDR contains transparency");
         }
     }
+}
+
+ImageData pixels(CIContext* context, CIImage* input, int width, int height) {
+    ImageData result(width, height);
+    pixelRows(context, input, width, height, 0, height, result.pixels.data());
     return result;
 }
 
@@ -501,12 +566,9 @@ void atomicStreamWrite(NSData* data, const char* path, const sony2fuji_hdr_expor
     if (closed != 0)
         error(SONY2FUJI_STATUS_OUTPUT_IO_ERROR, SONY2FUJI_HDR_REASON_OUTPUT_IO, "Cannot close streamed JPEG output");
     // 发布前再次核对来源；解码完成后的原片替换不能配上旧像素与新 EXIF。
-    if (const auto* impl = static_cast<const StreamSourcePinImpl*>(pin.impl)) {
-        // 导出期间源被替换/覆写会改变 inode 或 size/mtime/ctime；核对冻结快照即可（C-08），
-        // 不再重读整文件重算第三遍摘要。
-        if (!snapshotMatches(snapshotSource(config.metadata_source_path), impl->snapshot))
-            error(SONY2FUJI_STATUS_INVALID_ARGUMENT, SONY2FUJI_HDR_REASON_SOURCE_CHANGED, "HDR metadata source has changed");
-    } else {
+    if (pin.impl) {
+        verifyStreamSource(pin);
+    } else if (config.metadata_source_path) {
         File verification; readMetadataSource(verification, config.metadata_source_path, config.source_sha256);
     }
     differentFile(config.metadata_source_path, path);
@@ -581,7 +643,8 @@ static uint64_t availableMemory() {
 }
 
 void admitMemory(uint64_t additionalBytes) {
-    if (additionalBytes > availableMemory() * .65)
+    const auto available = availableMemory();
+    if (additionalBytes > available * .65)
         error(SONY2FUJI_STATUS_OUT_OF_MEMORY,SONY2FUJI_HDR_REASON_OUT_OF_MEMORY,"HDR task exceeds current memory budget");
 }
 
@@ -602,6 +665,100 @@ StreamSourcePin::~StreamSourcePin() {
     delete impl;
 }
 
+void freezeStreamSourceFile(const char* path, StreamSourcePin& pin) {
+    @autoreleasepool {
+        // 相机 RAW 不复制原始元数据；仅固定文件身份，不追加 ImageIO 解码能力要求。
+        File source; source.snapshot = snapshotSource(path);
+        if (!source.snapshot.valid)
+            error(SONY2FUJI_STATUS_IO_ERROR, SONY2FUJI_HDR_REASON_INPUT_IO, "Cannot read camera source identity");
+        pinFile(source, path, pin);
+    }
+}
+
+void verifyStreamSource(const StreamSourcePin& pin) {
+    const auto* impl = static_cast<const StreamSourcePinImpl*>(pin.impl);
+    if (!impl || !snapshotMatches(snapshotSource(impl->path.c_str()), impl->snapshot))
+        error(SONY2FUJI_STATUS_INVALID_ARGUMENT, SONY2FUJI_HDR_REASON_SOURCE_CHANGED, "HDR source has changed during export");
+}
+
+HDRRowSource openRasterRows(const char* path, const uint8_t expectedSHA[32], StreamSourcePin& pin, uint64_t& decodeRevision) {
+    @autoreleasepool {
+        if (@available(macOS 15.0, iOS 18.0, *)) {
+            File file; open(file, path);
+            if (std::memcmp(file.info.source_sha256, expectedSHA, 32) != 0)
+                error(SONY2FUJI_STATUS_INVALID_ARGUMENT, SONY2FUJI_HDR_REASON_SOURCE_CHANGED, "HDR source differs from the frozen file");
+            pinFile(file, path, pin);
+            struct Reader {
+                CIImage* high = nil;
+                CIImage* low = nil;
+                CIContext* context = nil;
+                NSData* compressed = nil;
+                uint32_t width = 0, height = 0, orientation = 1;
+                bool fallback = false;
+                std::unique_ptr<ImageData> jpeg;
+                void release() {
+                    [context clearCaches]; context = nil; high = nil; low = nil; compressed = nil; jpeg.reset();
+                }
+                ~Reader() { release(); }
+            };
+            auto reader = std::make_shared<Reader>();
+            reader->high = [CIImage imageWithData:file.data options:@{kCIImageApplyOrientationProperty:@YES,kCIImageExpandToHDR:@YES}];
+            reader->low = [CIImage imageWithData:file.data options:@{kCIImageApplyOrientationProperty:@YES,kCIImageExpandToHDR:@NO}];
+            require(reader->high && reader->low && CGRectEqualToRect(reader->high.extent, reader->low.extent),
+                SONY2FUJI_HDR_REASON_MALFORMED_AUX, "HDR/SDR canvases differ");
+            reader->orientation = file.info.orientation;
+            reader->width = file.info.orientation >= 5 ? file.info.height : file.info.width;
+            reader->height = file.info.orientation >= 5 ? file.info.width : file.info.height;
+            require(reader->high.extent.size.width == reader->width && reader->high.extent.size.height == reader->height,
+                SONY2FUJI_HDR_REASON_INVALID_BUFFER, "Decoded HDR canvas differs from metadata");
+            reader->fallback = reader->high.contentHeadroom <= 1 && file.info.container == SONY2FUJI_HDR_CONTAINER_JPEG &&
+                file.info.protocol != SONY2FUJI_HDR_PROTOCOL_APPLE;
+            if (reader->fallback) reader->compressed = file.data;
+            require(file.info.content_headroom > 1, SONY2FUJI_HDR_REASON_UNSUPPORTED_PROTOCOL,
+                "Native codec did not expand the gain map");
+            auto normalize = [](CIImage* image) {
+                return [image imageByApplyingTransform:CGAffineTransformMakeTranslation(-image.extent.origin.x, -image.extent.origin.y)];
+            };
+            reader->high = normalize(reader->high); reader->low = normalize(reader->low);
+            NSMutableDictionary* contextOptions = [@{kCIContextWorkingFormat:@(kCIFormatRGBAf),
+                kCIContextCacheIntermediates:@NO,kCIContextUseSoftwareRenderer:@YES} mutableCopy];
+            contextOptions[kCIContextMemoryLimit] = @256;
+            reader->context = [CIContext contextWithOptions:contextOptions];
+            HDRRowSource rows; rows.width = reader->width; rows.height = reader->height;
+            rows.read = [reader](bool hdr, uint32_t first, uint32_t count, RGB* output) {
+                @autoreleasepool {
+                    if (!output || !count || count > 256 || first > reader->height || count > reader->height - first)
+                        throw std::invalid_argument("Invalid complete HDR source row range");
+                    if (hdr && reader->fallback) {
+                        if (!reader->jpeg) {
+                            admitMemory(uint64_t(reader->width) * reader->height * sizeof(RGB) + (64ull << 20));
+                            reader->jpeg = std::make_unique<ImageData>(decodeJPEG(reader->compressed.bytes, reader->compressed.length));
+                            GeometryOptions geometry;
+                            switch (reader->orientation) {
+                                case 2: geometry.flip_horizontal = true; break;
+                                case 3: geometry.quarter_turns = 2; break;
+                                case 4: geometry.flip_vertical = true; break;
+                                case 5: geometry.quarter_turns = 1; geometry.flip_horizontal = true; break;
+                                case 6: geometry.quarter_turns = 1; break;
+                                case 7: geometry.quarter_turns = 1; geometry.flip_vertical = true; break;
+                                case 8: geometry.quarter_turns = 3; break;
+                            }
+                            require(applyGeometry(*reader->jpeg, geometry) == ErrorCode::Success &&
+                                uint32_t(reader->jpeg->width) == reader->width && uint32_t(reader->jpeg->height) == reader->height,
+                                SONY2FUJI_HDR_REASON_INVALID_BUFFER, "JPEG fallback and SDR canvases disagree");
+                        }
+                        std::copy_n(reader->jpeg->pixels.data() + size_t(first) * reader->width, size_t(count) * reader->width, output);
+                    } else pixelRows(reader->context, hdr ? reader->high : reader->low, reader->width, reader->height, first, count, output);
+                }
+            };
+            rows.finish = [reader, &pin] { reader->release(); verifyStreamSource(pin); };
+            decodeRevision = revision.fetch_add(1);
+            return rows;
+        }
+        error(SONY2FUJI_STATUS_UNSUPPORTED, SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM, "HDR requires macOS15/iOS18");
+    }
+}
+
 void validateStreamSource(const sony2fuji_hdr_export_config_v1& config, uint32_t width, uint32_t height,
     const char* path, StreamSourcePin& pin) {
     @autoreleasepool {
@@ -619,12 +776,7 @@ void validateStreamSource(const sony2fuji_hdr_export_config_v1& config, uint32_t
             error(SONY2FUJI_STATUS_INVALID_ARGUMENT, SONY2FUJI_HDR_REASON_PREVIEW_SOURCE,
                 "Stream must read the complete oriented source canvas");
         // C-08：此处冻结一次源；publish 直接复用这份数据与解析，改名前只核对 fstat 快照。
-        if (!pin.impl) pin.impl = new StreamSourcePinImpl();
-        auto* impl = static_cast<StreamSourcePinImpl*>(pin.impl);
-        impl->data = source.data;
-        impl->source = source.source ? (CGImageSourceRef)CFRetain(source.source) : nullptr;
-        impl->snapshot = source.snapshot;
-        std::copy_n(source.info.source_sha256, 32, pin.digest);
+        pinFile(source, config.metadata_source_path, pin);
     }
 }
 
@@ -748,20 +900,28 @@ static CIImage* heifLinearImage(const ImageData& plane, CGColorSpaceRef color, b
     return image;
 }
 
-static NSData* encodeHEIF(const HDRImagePair& image, NSDictionary* properties, uint32_t color, uint32_t quality) HDR_AVAILABLE {
+static NSData* encodeHEIFImages(CIImage* hdr, CIImage* sdr, uint32_t width, uint32_t height,
+    NSDictionary* properties, uint32_t color, uint32_t quality, bool tiled,
+    const std::function<void()>& checkInput = {}) HDR_AVAILABLE {
     using ColorSpace = std::unique_ptr<std::remove_pointer_t<CGColorSpaceRef>,decltype(&CGColorSpaceRelease)>;
     ColorSpace linear(CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearSRGB),CGColorSpaceRelease);
     ColorSpace base(CGColorSpaceCreateWithName(color == SONY2FUJI_HDR_COLOR_DISPLAY_P3 ?
         kCGColorSpaceDisplayP3 : kCGColorSpaceSRGB),CGColorSpaceRelease);
     if (!linear || !base) throw std::bad_alloc();
-    CIImage* hdr = heifLinearImage(image.hdr,linear.get(),true);
-    CIImage* sdr = [heifLinearImage(image.sdr,linear.get(),false) imageBySettingProperties:properties];
+    sdr = [sdr imageBySettingProperties:properties];
     require(hdr && sdr,SONY2FUJI_HDR_REASON_OUTPUT_IO,"Cannot build the HEIF renditions");
-    CIContext* context = [CIContext contextWithOptions:@{kCIContextUseSoftwareRenderer:@YES,
-        kCIContextWorkingColorSpace:(__bridge id)linear.get()}];
+    NSMutableDictionary* contextOptions = [@{kCIContextUseSoftwareRenderer:@YES,
+        kCIContextWorkingColorSpace:(__bridge id)linear.get()} mutableCopy];
+    if (tiled) {
+        contextOptions[kCIContextCacheIntermediates] = @NO;
+        contextOptions[kCIContextMemoryLimit] = @256;
+    }
+    CIContext* context = [CIContext contextWithOptions:contextOptions];
     NSData* data = [context HEIFRepresentationOfImage:sdr format:kCIFormatRGBX8 colorSpace:base.get()
         options:@{kCIImageRepresentationHDRImage:hdr, kCIImageRepresentationHDRGainMapAsRGB:@YES,
             (__bridge NSString*)kCGImageDestinationLossyCompressionQuality:@((quality ? quality : 95)/100.0)}];
+    if (checkInput) checkInput();
+    checkProcessingCancellation();
     require(data.length,SONY2FUJI_HDR_REASON_OUTPUT_IO,"Cannot encode adaptive HDR HEIF");
     File verification; verification.data = data;
     verification.source = CGImageSourceCreateWithData((__bridge CFDataRef)data,nullptr);
@@ -769,12 +929,20 @@ static NSData* encodeHEIF(const HDRImagePair& image, NSDictionary* properties, u
     describe(verification);
     inspectGainMap(verification);
     require(verification.info.container == SONY2FUJI_HDR_CONTAINER_HEIF && verification.info.protocol == SONY2FUJI_HDR_PROTOCOL_ISO &&
-        verification.info.width == uint32_t(image.hdr.width) && verification.info.height == uint32_t(image.hdr.height) &&
+        verification.info.width == width && verification.info.height == height &&
         verification.info.orientation == 1 && verification.info.color_description == color &&
         [verification.properties[(__bridge NSString*)kCGImagePropertyDepth] unsignedIntValue] == 8 &&
         (hdr.contentHeadroom <= 1.001f || verification.info.content_headroom > 1),
         SONY2FUJI_HDR_REASON_OUTPUT_IO,"Encoded HEIF did not retain the expected ISO gain map, geometry or color");
     return data;
+}
+
+static NSData* encodeHEIF(const HDRImagePair& image, NSDictionary* properties, uint32_t color, uint32_t quality) HDR_AVAILABLE {
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearSRGB);
+    if (!space) throw std::bad_alloc();
+    std::unique_ptr<std::remove_pointer_t<CGColorSpaceRef>, decltype(&CGColorSpaceRelease)> linear(space, CGColorSpaceRelease);
+    return encodeHEIFImages(heifLinearImage(image.hdr, space, true), heifLinearImage(image.sdr, space, false),
+        uint32_t(image.hdr.width), uint32_t(image.hdr.height), properties, color, quality, false);
 }
 
 static bool probeHEIFExport() HDR_AVAILABLE {
@@ -823,6 +991,44 @@ void exportHEIF(const HDRImagePair& image,const sony2fuji_hdr_export_config_v1& 
             return;
         }
         error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM,"HDR HEIF requires macOS15/iOS18");
+    }
+}
+
+void publishTiledHEIF(const HDRStreamFiles& image, const sony2fuji_hdr_export_config_v1& config,
+    const char* path, const StreamSourcePin& pin) {
+    @autoreleasepool {
+        if (@available(macOS 15.0, iOS 18.0, *)) {
+            const uint32_t width = image.result.width, height = image.result.height;
+            // 工作平面由 provider 按块读取；预算仍覆盖目标尺寸的系统编码与增益图缓冲。
+            admitStreamingMemory(uint64_t(width) * height * 16 + (128ull << 20));
+            const auto* impl = static_cast<const StreamSourcePinImpl*>(pin.impl);
+            verifyStreamSource(pin);
+            differentFile(impl->path.c_str(), path);
+            File source; source.data = impl->data;
+            source.source = impl->source ? (CGImageSourceRef)CFRetain(impl->source) : nullptr;
+            NSDictionary* properties = config.metadata_source_path ? buildMetadata(source, width, height) : @{};
+            CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearSRGB);
+            if (!space) throw std::bad_alloc();
+            std::unique_ptr<std::remove_pointer_t<CGColorSpaceRef>, decltype(&CGColorSpaceRelease)> linear(space, CGColorSpaceRelease);
+            auto provider = [&](const std::filesystem::path& file) {
+                RawLabHDRFileProvider* value = [RawLabHDRFileProvider new];
+                value->pixels = std::make_shared<storage::File>(file);
+                value->imageWidth = width; value->imageHeight = height;
+                value->cancellation = processingCancellation;
+                return value;
+            };
+            RawLabHDRFileProvider* high = provider(image.hdr);
+            RawLabHDRFileProvider* low = provider(image.sdr);
+            auto input = [&](RawLabHDRFileProvider* provider, float headroom) {
+                return [CIImage imageWithImageProvider:provider size:width :height format:kCIFormatRGBAf colorSpace:space
+                    options:@{kCIImageProviderTileSize:@128, kCIImageContentHeadroom:@(headroom)}];
+            };
+            NSData* data = encodeHEIFImages(input(high, image.rgbHeadroom), input(low, 1), width, height,
+                properties, config.base_color, config.jpeg_quality, true, [&] { [high checkFailure]; [low checkFailure]; });
+            atomicStreamWrite(data, path, config, pin);
+            return;
+        }
+        error(SONY2FUJI_STATUS_UNSUPPORTED, SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM, "HDR HEIF requires macOS15/iOS18");
     }
 }
 

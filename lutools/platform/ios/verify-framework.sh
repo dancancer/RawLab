@@ -45,7 +45,7 @@ for slice in ios-arm64 ios-arm64_x86_64-simulator; do
     nm -gU "$binary" | grep -E ' _sony2fuji_compile_hdr_camera_dcp$' >/dev/null
     nm -gU "$binary" | grep -F '_sony2fuji_release_blob' >/dev/null
     for symbol in probe decode probe_camera_raw probe_camera_profile decode_camera_raw camera_ai_key decode_camera_raw_with_ai \
-        probe_proraw decode_proraw export_proraw render export_jpeg export_sdr export_stream release_pair; do
+        probe_proraw decode_proraw export_proraw render export_jpeg export_sdr export_stream export_tiled release_pair; do
         nm -gU "$binary" | grep -E " _sony2fuji_hdr_${symbol}$" >/dev/null
     done
     for header in sony2fuji_c.h sony2fuji_hdr.h; do

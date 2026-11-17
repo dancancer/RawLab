@@ -1151,6 +1151,138 @@ sony2fuji_status sony2fuji_hdr_export_stream(sony2fuji_session* sessionHandle,
 
     });
 }
+sony2fuji_status sony2fuji_hdr_export_tiled(sony2fuji_session* sessionHandle,
+    const sony2fuji_hdr_image_pair_v1* source, const sony2fuji_hdr_stream_source_v1* stream, const char* sourceFile,
+    const sony2fuji_hdr_request_v1* request, const sony2fuji_hdr_export_config_v1* config,
+    uint32_t format, const char* temporaryRoot, const char* file,
+    sony2fuji_hdr_stream_result_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic) {
+    return boundary(diagnostic, [&] {
+#if defined(__APPLE__)
+        header(config, SONY2FUJI_HDR_FIELD_EXPORT); header(result, SONY2FUJI_HDR_FIELD_RESULT);
+        if (source && stream)
+            fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_SOURCE, "Specify one tiled source representation");
+        if (stream) header(stream, SONY2FUJI_HDR_FIELD_SOURCE);
+        if ((source && sourceAliases(source, result, sizeof(*result))) ||
+            (stream && overlaps(stream, sizeof(*stream), result, sizeof(*result))) ||
+            overlaps(config, sizeof(*config), result, sizeof(*result)) || requestAliases(request, result, sizeof(*result)))
+            fail(SONY2FUJI_HDR_REASON_INVALID_BUFFER, SONY2FUJI_HDR_FIELD_RESULT, "Tiled result aliases input");
+        clearOutput(result); path(sourceFile); path(file); path(temporaryRoot);
+        SessionLease session; requireSession(sessionHandle, session);
+        if (hdrSessionForcesGPU(session))
+            fail(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU, SONY2FUJI_HDR_FIELD_SESSION, "Tiled HDR processing is CPU only",
+                SONY2FUJI_STATUS_UNSUPPORTED);
+        std::string lookPath;
+        const auto options = renderOptions(request, session, &lookPath);
+        if (options.intent != HDRQuality::Final)
+            fail(SONY2FUJI_HDR_REASON_PREVIEW_SOURCE, SONY2FUJI_HDR_FIELD_REQUEST, "Tiled export requires FINAL processing");
+        if ((format != SONY2FUJI_HDR_TILED_HEIF && format != SONY2FUJI_HDR_TILED_SDR_DNG) ||
+            config->metadata_policy != SONY2FUJI_HDR_METADATA_ISO || config->jpeg_quality > 100 ||
+            (config->base_color != SONY2FUJI_HDR_COLOR_SRGB && config->base_color != SONY2FUJI_HDR_COLOR_DISPLAY_P3))
+            fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_EXPORT, "Invalid tiled export configuration");
+        if (format == SONY2FUJI_HDR_TILED_HEIF && !hdr::heifExportAvailable())
+            fail(SONY2FUJI_HDR_REASON_UNSUPPORTED_PROTOCOL, SONY2FUJI_HDR_FIELD_EXPORT,
+                "HDR HEIF encoding is unavailable", SONY2FUJI_STATUS_UNSUPPORTED);
+        differentFile(std::string(sourceFile), file); differentFile(lookPath, file);
+        struct Cancellation {
+            ProcessingCancellation session;
+            const sony2fuji_hdr_stream_source_v1* source;
+        } cancellation{hdrSessionCancellation(session), stream};
+        const ProcessingCancellationScope scope({[](void* opaque) {
+            const auto& state = *static_cast<Cancellation*>(opaque);
+            return state.session.cancelled() || (state.source && state.source->is_cancelled &&
+                state.source->is_cancelled(state.source->context)) ? 1 : 0;
+        }, &cancellation});
+        checkProcessingCancellation();
+        hdr::StreamSourcePin pin;
+        HDRRowSource rows;
+        uint64_t decodeRevision = 0;
+        if (source) {
+            header(source, SONY2FUJI_HDR_FIELD_SOURCE);
+            if (!source->owner_token || config->metadata_source_path)
+                fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_SOURCE, "Tiled RAW export requires an owned camera source without copied metadata");
+            auto owned = readPair(source); finalSource(owned->pixels);
+            if (owned->pixels.hdr.width != int(owned->pixels.nativeWidth) || owned->pixels.hdr.height != int(owned->pixels.nativeHeight))
+                fail(SONY2FUJI_HDR_REASON_PREVIEW_SOURCE, SONY2FUJI_HDR_FIELD_SOURCE, "Tiled export requires the complete decoded source canvas");
+            if (owned->sourcePath.empty() || !std::all_of(owned->sha.begin(), owned->sha.end(), [](uint8_t value) { return value == 0; }) ||
+                std::filesystem::weakly_canonical(std::filesystem::u8path(sourceFile)) !=
+                    std::filesystem::weakly_canonical(std::filesystem::u8path(owned->sourcePath)))
+                fail(SONY2FUJI_HDR_REASON_SOURCE_CHANGED, SONY2FUJI_HDR_FIELD_SOURCE, "Tiled camera source does not match its original file");
+            differentFile(*owned, file);
+            hdr::freezeStreamSourceFile(sourceFile, pin);
+            rows.width = source->native_width; rows.height = source->native_height;
+            rows.read = [owned](bool hdr, uint32_t first, uint32_t count, RGB* output) {
+                const auto& plane = hdr ? owned->pixels.hdr : owned->pixels.sdr;
+                if (!output || !count || first > uint32_t(plane.height) || count > uint32_t(plane.height) - first)
+                    throw std::invalid_argument("Invalid decoded camera row range");
+                std::copy_n(plane.pixels.data() + size_t(first) * plane.width, size_t(count) * plane.width, output);
+            };
+            rows.finish = [&pin] { hdr::verifyStreamSource(pin); };
+            decodeRevision = source->decode_revision;
+        } else {
+            path(config->metadata_source_path);
+            if (std::filesystem::weakly_canonical(std::filesystem::u8path(sourceFile)) !=
+                    std::filesystem::weakly_canonical(std::filesystem::u8path(config->metadata_source_path)) ||
+                std::all_of(config->source_sha256, config->source_sha256 + 32, [](uint8_t value) { return value == 0; }))
+                fail(SONY2FUJI_HDR_REASON_SOURCE_CHANGED, SONY2FUJI_HDR_FIELD_SOURCE, "Tiled raster export requires its frozen original");
+            if (stream) {
+                header(stream, SONY2FUJI_HDR_FIELD_SOURCE);
+                if (stream->source_intent != SONY2FUJI_INTENT_FINAL || stream->orientation_applied != 1)
+                    fail(SONY2FUJI_HDR_REASON_PREVIEW_SOURCE, SONY2FUJI_HDR_FIELD_SOURCE, "Tiled export requires complete oriented FINAL rows");
+                if (!stream->native_width || !stream->native_height || !stream->decode_revision ||
+                    !stream->decoder_identifier || !*stream->decoder_identifier || !stream->read_rows || !stream->finish_decode)
+                    fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_SOURCE, "Incomplete tiled row source");
+                if (std::memcmp(stream->source_sha256, config->source_sha256, 32) != 0)
+                    fail(SONY2FUJI_HDR_REASON_SOURCE_CHANGED, SONY2FUJI_HDR_FIELD_SOURCE, "Tiled row source digest differs from the frozen file");
+                hdr::validateStreamSource(*config, stream->native_width, stream->native_height, file, pin);
+                auto checkCallback = [](sony2fuji_status status, bool finish) {
+                    if (status == SONY2FUJI_STATUS_OK) return;
+                    if (status == SONY2FUJI_STATUS_CANCELLED) throw ProcessingCancelled();
+                    fail(status == SONY2FUJI_STATUS_OUT_OF_MEMORY ? SONY2FUJI_HDR_REASON_OUT_OF_MEMORY :
+                        finish ? SONY2FUJI_HDR_REASON_SOURCE_CHANGED : SONY2FUJI_HDR_REASON_INVALID_BUFFER,
+                        SONY2FUJI_HDR_FIELD_SOURCE, "Tiled source callback failed", status);
+                };
+                rows.width = stream->native_width; rows.height = stream->native_height;
+                rows.read = [stream, checkCallback](bool hdr, uint32_t first, uint32_t count, RGB* output) {
+                    checkCallback(stream->read_rows(stream->context, hdr ? 1 : 0, first, count, reinterpret_cast<float*>(output)), false);
+                };
+                rows.finish = [stream, checkCallback] { checkCallback(stream->finish_decode(stream->context), true); };
+                decodeRevision = stream->decode_revision;
+            } else rows = hdr::openRasterRows(sourceFile, config->source_sha256, pin, decodeRevision);
+        }
+        auto rendered = hdr::renderStreamFiles(rows, options, format == SONY2FUJI_HDR_TILED_HEIF,
+            std::filesystem::u8path(temporaryRoot));
+        if (format == SONY2FUJI_HDR_TILED_HEIF) {
+            hdr::publishTiledHEIF(rendered, *config, file, pin);
+        } else {
+            hdr::storage::File pixels(rendered.sdr);
+            std::vector<RGB> row(rendered.result.width);
+            RenderedDNGRows image{rendered.result.width, rendered.result.height, [&](uint32_t y) {
+                pixels.read(uint64_t(y) * row.size() * sizeof(RGB), row.data(), row.size() * sizeof(RGB));
+                for (auto& pixel : row) for (float* channel : {&pixel.r, &pixel.g, &pixel.b}) {
+                    const float value = std::clamp(*channel, 0.0f, 1.0f);
+                    *channel = value <= .0031308f ? 12.92f * value : 1.055f * std::pow(value, 1 / 2.4f) - .055f;
+                }
+                return row.data();
+            }};
+            const auto status = saveRenderedDNGRows(image, file, [&] {
+                hdr::verifyStreamSource(pin); differentFile(std::string(sourceFile), file);
+            });
+            if (status == ErrorCode::OutOfMemory) throw std::bad_alloc();
+            if (status != ErrorCode::Success)
+                fail(SONY2FUJI_HDR_REASON_OUTPUT_IO, SONY2FUJI_HDR_FIELD_EXPORT, "Cannot write tiled SDR DNG", SONY2FUJI_STATUS_OUTPUT_IO_ERROR);
+        }
+        result->width = rendered.result.width; result->height = rendered.result.height;
+        result->native_width = rows.width; result->native_height = rows.height;
+        result->output_native_width = rendered.result.outputNativeWidth; result->output_native_height = rendered.result.outputNativeHeight;
+        result->decode_revision = decodeRevision;
+        result->source_headroom = rendered.result.sourceHeadroom; result->edited_headroom = rendered.result.editedHeadroom;
+        hdrSessionDidRenderCPU(session);
+#else
+        fail(SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM, SONY2FUJI_HDR_FIELD_EXPORT, "Tiled HDR file export requires an Apple runtime", SONY2FUJI_STATUS_UNSUPPORTED);
+#endif
+    });
+}
+
 void sony2fuji_hdr_release_pair(sony2fuji_hdr_image_pair_v1* image) {
     if (!image || image->version != 1 || image->struct_size < sizeof(*image)) return;
     const size_t size=image->struct_size;

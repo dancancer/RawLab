@@ -816,6 +816,38 @@ void testLensWaveletViewportDng(const std::filesystem::path& directory, const st
 }
 #endif
 
+void testRowSource(const std::filesystem::path& directory) {
+    using namespace sony2fuji;
+    ImageData image(321, 161);
+    for (int y = 0; y < image.height; ++y) for (int x = 0; x < image.width; ++x) {
+        const float value = float((x * 17 + y * 31) % 521) / 400 - .1f;
+        image.at(x, y) = {value, float(y) / 160, float(x) / 320};
+    }
+    const auto reference = directory / "row-reference.dng", output = directory / "row-source.dng";
+    check(saveRenderedDNG(image, reference.string()) == ErrorCode::Success, "DNG row-source reference writes");
+    std::vector<RGB> row(image.width);
+    RenderedDNGRows source{uint32_t(image.width), uint32_t(image.height), [&](uint32_t y) {
+        std::copy_n(image.pixels.data() + size_t(y) * image.width, image.width, row.data());
+        return row.data();
+    }};
+    check(saveRenderedDNGRows(source, output.string()) == ErrorCode::Success, "DNG writes from reusable row storage");
+    check(readFile(output) == readFile(reference), "DNG row source preserves main pixels, tags and both JPEG previews");
+    const auto previous = readFile(output);
+    source.read = [&](uint32_t y) -> const RGB* {
+        if (y == 80) throw std::runtime_error("source row failed");
+        return image.pixels.data() + size_t(y) * image.width;
+    };
+    check(saveRenderedDNGRows(source, output.string()) == ErrorCode::ProcessingError,
+        "DNG reports a failed source row");
+    check(readFile(output) == previous && !hasStagingFile(directory), "Failed DNG row preserves the previous target and clears staging");
+    source.read = [&](uint32_t y) { return image.pixels.data() + size_t(y) * image.width; };
+    bool stopped = false;
+    try { saveRenderedDNGRows(source, output.string(), [] { throw std::runtime_error("source changed before publication"); }); }
+    catch (const std::runtime_error&) { stopped = true; }
+    check(stopped && readFile(output) == previous && !hasStagingFile(directory),
+        "DNG source validation before publication preserves the previous target");
+}
+
 void testAtomicStorage(const std::filesystem::path& directory) {
     using sony2fuji::ErrorCode;
 
@@ -924,6 +956,7 @@ int main(int argc, char** argv) {
     testRenderedDng(directory);
     testQuantizationRamp(directory);
     testRejectsInvalidInput(directory);
+    testRowSource(directory);
 #ifdef TEST_LENS_SDK_DNG
     testLensSdkDng(directory);
 #endif

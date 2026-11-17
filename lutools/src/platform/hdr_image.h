@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/hdr_rendering.h"
+#include "core/hdr_stream.h"
 #include "sony2fuji/ffi/sony2fuji_hdr.h"
 #include <stdexcept>
 #include <vector>
@@ -46,6 +47,14 @@ void validateStreamSource(const sony2fuji_hdr_export_config_v1& config, uint32_t
     const char* path, StreamSourcePin& pin);
 void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t height,
     const sony2fuji_hdr_export_config_v1& config, bool hdr, const char* path, const StreamSourcePin& pin);
+
+#if defined(__APPLE__)
+HDRRowSource openRasterRows(const char* path, const uint8_t expectedSHA[32], StreamSourcePin& pin, uint64_t& decodeRevision);
+void freezeStreamSourceFile(const char* path, StreamSourcePin& pin);
+void verifyStreamSource(const StreamSourcePin& pin);
+void publishTiledHEIF(const HDRStreamFiles& image, const sony2fuji_hdr_export_config_v1& config,
+    const char* path, const StreamSourcePin& pin);
+#endif
 
 // 平台适配器对元数据源执行整文件摘要的累计次数（测试注入计数，进程级）。
 uint64_t sourceHashPassCount();

@@ -28,6 +28,11 @@ struct Sony2FujiProcessor {
             throw HDRNativeError(status: SONY2FUJI_STATUS_UNSUPPORTED,
                 reason: UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU), field: UInt32(SONY2FUJI_HDR_FIELD_SESSION))
         }
+        if format == .hdrHEIF {
+            try exportTiledHDR(url: url, settings: settings, output: output, longEdge: longEdge, processing: processing,
+                proRAWDecodeVersion: proRAWDecodeVersion, format: UInt32(SONY2FUJI_HDR_TILED_HEIF), cancelled: cancelled)
+            return
+        }
         if format != .hdrHEIF, url.pathExtension.lowercased() == "dng",
            let info = try HDRSourceInfo.probeRAW(url), info.proRAW != nil {
             try ProRAWSource.validatedDecodeVersion(proRAWDecodeVersion)
@@ -47,6 +52,39 @@ struct Sony2FujiProcessor {
         case .hdrHEIF: try pair.exportHEIF(to: output)
         }
         if cancelled() { throw CancellationError() }
+    }
+
+    func exportHDRDNG(url: URL, settings: HDRSettings, output: URL, longEdge: Int? = nil,
+                      processing: ProcessingIdentity = .current, proRAWDecodeVersion: Int? = nil,
+                      cancelled: () -> Bool = { false }) throws {
+        guard settings.mode == .hdr, settings.isValid else { throw HDRRequestError.invalidSettings }
+        guard gpuMode != SONY2FUJI_GPU_FORCE else {
+            throw HDRNativeError(status: SONY2FUJI_STATUS_UNSUPPORTED,
+                reason: UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU), field: UInt32(SONY2FUJI_HDR_FIELD_SESSION))
+        }
+        try exportTiledHDR(url: url, settings: settings, output: output, longEdge: longEdge, processing: processing,
+            proRAWDecodeVersion: proRAWDecodeVersion, format: UInt32(SONY2FUJI_HDR_TILED_SDR_DNG), cancelled: cancelled)
+    }
+
+    private func exportTiledHDR(url: URL, settings: HDRSettings, output: URL, longEdge: Int?,
+                                processing: ProcessingIdentity, proRAWDecodeVersion: Int?, format: UInt32,
+                                cancelled: () -> Bool) throws {
+        guard let info = try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url, processing: processing.core) else {
+            throw HDRSettings.ModeError.unsupportedSource
+        }
+        let inputType = info.isCameraRAW ? SONY2FUJI_INPUT_RAW : SONY2FUJI_INPUT_DISPLAY_BUFFER
+        try withRawSession(reuse: false, inputType: inputType) { session in
+            if info.proRAW != nil {
+                try ProRAWSource.validatedDecodeVersion(proRAWDecodeVersion)
+                hdrSources.clear()
+                _ = try ProRAWExporter.export(url: url, info: info, settings: settings, output: output, longEdge: longEdge,
+                    format: format == UInt32(SONY2FUJI_HDR_TILED_HEIF) ? .hdrHEIF : .renderedDNG,
+                    session: session, cancelled: cancelled)
+            } else {
+                _ = try HDRImage.exportTiled(url, info: info, settings: settings, output: output,
+                    longEdge: longEdge, format: format, session: session, cancelled: cancelled)
+            }
+        }
     }
 
     func processHDR(url: URL,settings: HDRSettings,previewLongEdge: Int?, exportLongEdge: Int? = nil,

@@ -1,10 +1,12 @@
 #include "core/hdr_stream.h"
 #include "core/hdr_look.h"
 #include "core/hdr_jpeg.h"
+#include "core/hdr_storage.h"
 #include "core/processing_cancellation.h"
 #include "platform/hdr_image.h"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #ifdef _WIN32
@@ -128,7 +130,7 @@ int main(int argc, char* argv[]) {
         options.exposureEV = .25f; options.temperature = 7200; options.tint = 5;
         options.contrast = 12; options.highlights = -17; options.shadows = 7;
         int passed = 0;
-        for (int transform = 0; transform < 6; ++transform) for (bool hdr : {true, false}) {
+        for (int transform = 0; transform < 7; ++transform) for (bool hdr : {true, false}) {
             options.geometry = {};
             if (transform) {
                 options.geometry.quarter_turns = 1; options.geometry.flip_horizontal = true;
@@ -148,10 +150,15 @@ int main(int argc, char* argv[]) {
                 options.processingVersion = SONY2FUJI_HDR_PROCESSING_DETAIL_VERSION;
                 options.detail = {1.3f, .65f, -.4f, .72f};
             }
-            if (transform == 5) {
+            if (transform >= 5) {
                 options.processingVersion = SONY2FUJI_HDR_PROCESSING_LOOK_VERSION;
                 options.look = look;
                 options.lookStrength = 1.1f;
+            }
+            if (transform == 6) {
+                options.processingVersion = SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION;
+                options.tone.channels[0] = {SONY2FUJI_TONE_CURVE_CONFIG_VERSION, sizeof(sony2fuji_tone_curve_config),
+                    SONY2FUJI_CURVE_CUSTOM, 3, {{0,0},{.5,.6},{1,1}}};
             }
             for (uint32_t edge : {0u, 151u}) {
                 options.longEdge = edge;
@@ -165,7 +172,32 @@ int main(int argc, char* argv[]) {
                     "Native geometry size differs after resize");
                 if (hdr) check(result.editedHeadroom == expected.editedHeadroom, "Edited headroom differs");
                 check(fs::is_empty(root), "Successful stream left temporary files");
-                ++passed;
+                {
+                    const auto files = hdr::renderStreamFiles(source, options, hdr, root);
+                    check(files.result.width == uint32_t(expected.hdr.width) && files.result.height == uint32_t(expected.hdr.height),
+                        "Tiled output file dimensions differ");
+                    for (bool high : {false, true}) {
+                        if (high && !hdr) continue;
+                        const auto& plane = high ? expected.hdr : expected.sdr;
+                        hdr::storage::File pixels(high ? files.hdr : files.sdr);
+                        std::vector<RGB> row(plane.width);
+                        check(pixels.size() == plane.pixels.size() * sizeof(RGB), "Tiled output file is incomplete");
+                        // HEIF 会随机索取区域，反向读取同时验证尾块和稳定的全局坐标。
+                        for (int y = plane.height - 1; y >= 0; --y) {
+                            pixels.read(uint64_t(y) * row.size() * sizeof(RGB), row.data(), row.size() * sizeof(RGB));
+                            check(std::memcmp(row.data(), plane.pixels.data() + size_t(y) * plane.width, row.size() * sizeof(RGB)) == 0,
+                                "Tiled float output differs from full-frame pixels");
+                        }
+                    }
+                    if (hdr) {
+                        float peak = 1.001f;
+                        for (const auto& pixel : expected.hdr.pixels) peak = std::max({peak, pixel.r, pixel.g, pixel.b});
+                        check(files.rgbHeadroom == peak && files.result.editedHeadroom == expected.editedHeadroom,
+                            "Tiled RGB peak or luminance headroom differs");
+                    }
+                }
+                check(fs::is_empty(root), "Tiled output ownership left temporary files");
+                passed += 2;
             }
         }
         check(finishes == passed, "Decoder was not released once per completed decode");
