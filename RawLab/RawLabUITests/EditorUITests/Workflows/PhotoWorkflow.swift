@@ -31,18 +31,28 @@ extension EditorUITests {
         // v0.8: the tool page has no film tile; the panel row's selection state is the
         // observable memory of the chosen LUT (the tile value appears back on the overview).
         XCTAssertTrue(app.buttons["ETERNA"].isSelected, "the film panel must mark the chosen LUT as selected")
-        app.buttons["editor.histogram"].tap()
+        // v0.8: the histogram chrome lives on the overview only (tool page has back/more);
+        // the compare chrome and the histogram check both move to the overview tail (撤牙齿记位:
+        // 工具页 histogram/compare 断言迁移到总览).
         capture("photo-film-portrait")
+        // v0.8: the v0.4 panel-collapse toggle is retired; the overview film tile after a
+        // draft apply carries the committed LUT name (撤牙齿记位: 折叠态瓦片消失断言随之退役).
+        applyEditorTool(in: app)
+        XCTAssertEqual(app.buttons["tool.film"].value as? String, "ETERNA")
         compare.tap()
         XCTAssertEqual(compare.label, "关闭对比")
         XCTAssertEqual(compare.value as? String, "并排")
         XCTAssertTrue(app.descendants(matching: .any)["editor.photo.before"].waitForExistence(timeout: 5))
         compare.tap()
         XCTAssertEqual(compare.label, "开启对比")
-        // v0.8: the v0.4 panel-collapse toggle is retired; the overview film tile after a
-        // draft apply carries the committed LUT name (撤牙齿记位: 折叠态瓦片消失断言随之退役).
-        applyEditorTool(in: app)
-        XCTAssertEqual(app.buttons["tool.film"].value as? String, "ETERNA")
+        // v0.8 histogram chrome lives on the overview: open it from the committed film state.
+        XCTAssertTrue(app.buttons["editor.histogram"].waitForExistence(timeout: 10),
+                      "the overview keeps the histogram chrome")
+        app.buttons["editor.histogram"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["editor.histogram.popover"].waitForExistence(timeout: 5),
+                      app.debugDescription)
+        capture("photo-film-histogram-overview")
+        app.buttons["editor.histogram.close"].tap()
         XCUIDevice.shared.orientation = .landscapeLeft
         tapTool("film", in: app)
         let eterna = app.buttons["ETERNA"]
@@ -82,13 +92,23 @@ extension EditorUITests {
         app.launch()
         importPhoto(in: app)
         tapTool("film", in: app)
-        for name in ["ACROS", "ASTIA", "CLASSIC CHROME", "CLASSIC Neg.", "ETERNA", "ETERNA BB",
-                     "PRO Neg.Std", "PROVIA", "REALA ACE", "Velvia"] {
-            // v0.8: the film list realizes rows lazily; scroll until the row materializes
-            // instead of assuming the whole list is realized on screen.
+        let lutNames = ["ACROS", "ASTIA", "CLASSIC CHROME", "CLASSIC Neg.", "ETERNA", "ETERNA BB",
+                        "PRO Neg.Std", "PROVIA", "REALA ACE", "Velvia"]
+        var lastChip = app.buttons["ACROS"]
+        for name in lutNames {
+            // v0.8: the film browser is a horizontal strip (LookPanels ScrollView(.horizontal)).
+            // Lazy rows can be materialized off-screen, so anchor on isHittable and swipe on
+            // the most recently hittable chip (exists alone over-scrolls past nothing).
             let lut = app.buttons[name]
-            for _ in 0..<6 where !lut.exists { app.scrollViews["editor.panel"].swipeUp() }
-            XCTAssertTrue(lut.exists, "Missing built-in LUT: \(name)")
+            var steps = 0
+            let strip = app.scrollViews["editor.panel"].scrollViews.firstMatch
+            XCTAssertTrue(strip.waitForExistence(timeout: 5), "the film browser strip must be present")
+            while !lut.isHittable && steps < 8 {
+                strip.swipeLeft()
+                steps += 1
+            }
+            XCTAssertTrue(lut.isHittable, "Missing built-in LUT: \(name)")
+            lastChip = lut
         }
         XCTAssertFalse(app.buttons["WDR"].exists)
         XCTAssertFalse(app.buttons["FLog2 709"].exists)

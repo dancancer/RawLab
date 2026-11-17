@@ -95,6 +95,10 @@ extension EditorUITests {
                 capture("extra-batch-completed-spanish")
                 app.buttons[c[19]].tap()
             } else { app.buttons[c[13]].tap() }
+            // v0.8: assert the workbench overview is really frontmost before re-entering the
+            // tool page (batch sheet dismissal is async; without this the tile tap lands blind).
+            XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 15),
+                          "workbench overview must be frontmost before re-entering exposure")
             tapTool("exposure")
             XCTAssertEqual(app.buttons["adjustment.value"].value as? String, exposure)
         }
