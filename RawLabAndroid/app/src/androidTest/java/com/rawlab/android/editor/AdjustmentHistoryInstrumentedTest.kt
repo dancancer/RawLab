@@ -308,6 +308,33 @@ class AdjustmentHistoryInstrumentedTest {
         assertEquals(saved, edits.readState(identity))
     }
 
+    // 碳审 Finding 1 回归锁（撤牙 ① 必红）：HSL 草稿期内发生过真实视口边长变化后，渲染收尾
+    // 按已记录边长的同边长重试不得被误判为视口变化而 cancelHslTarget 清空取色样本；
+    // 草稿关闭后提交预览仍须按草稿期记录的边长收敛。
+    @Test fun hslSamplingStaysUsableAfterViewportEdgeChangeDuringHslDraft() = withModel { model, edits, identity ->
+        val before = edits.readState(identity)
+        main {
+            model.beginDraft(AdjustmentGroup.HSL)
+            // 真实视口变化：草稿分支只记录 requestedPreviewLongEdge，previewLongEdge 保持旧值。
+            model.updatePreviewSize(640)
+            model.setHslTargetEnabled(true)
+            model.beginHslTarget(.5f, .5f)
+            model.moveHslTarget(20f)
+            model.endHslTarget()
+        }
+        await(model) { !model.hslTarget.value.waiting && it.draftReady && !it.visibleEdits.hsl.isIdentity }
+        // 撤牙形态下同一 accept() 尾部的误取消紧随样本写入；等待全部收尾重试落定再断言。
+        SystemClock.sleep(300)
+        assertTrue("A same-edge retry at render completion must keep the HSL sample usable",
+            model.hslTarget.value.sample?.usable == true)
+        val sampled = model.state.value.visibleEdits.hsl
+        assertFalse("HSL drag must still change the draft after an in-draft viewport change", sampled.isIdentity)
+        assertEquals(before, edits.readState(identity))
+        assertTrue(result<Boolean> { model.applyDraft(it) })
+        await(model) { it.canExport && maxOf(it.preview!!.result.width, it.preview.result.height) <= 640 }
+        assertEquals(sampled, edits.readState(identity).settings!!.hsl)
+    }
+
     @Test fun externalRecordChangeDoesNotLockOrdinarySave() = withModel { model, edits, identity ->
         main { model.edit(model.state.value.edits.copy(exposure = .5f)) }
         await(model) { it.canExport }
