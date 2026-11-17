@@ -16,9 +16,36 @@ extension EditorUITests {
             ["Idioma", "Revelado estándar", "Coincidir con la vista previa incrustada", "Referencia del sensor", "Ajuste según la toma", "Personalizado", "Prioridad al detalle", "Prioridad a la reducción de ruido", "Tamaño original", "Especificar borde largo", "Borde largo %@ px", "Cancelar", "Guardar foto actual", "Volver", "Ver tarea por lotes…", "Origen de los ajustes", "Seleccionadas: %@", "Tamaño de exportación", "Guardadas en Fotos: %@", "Listo", "Seguir el sistema"]
         ]
         func tapTool(_ id: String) { self.tapTool(id, in: app) }
+        // v0.8: the language picker is a submenu of the overview overflow menu, and the
+        // tool tile value only exists on the overview; the workspace exposes it as the panel value.
+        func exitWorkspace() {
+            if app.buttons["editor.tool.back"].exists {
+                app.buttons["editor.tool.back"].tap()
+                if app.alerts.buttons["Discard Changes"].waitForExistence(timeout: 2) {
+                    app.alerts.buttons["Discard Changes"].tap()
+                }
+            }
+        }
+        func switchLanguage(to name: String) {
+            exitWorkspace()
+            app.buttons["editor.privacy"].tap()
+            let entry = app.buttons["settings.language"]
+            XCTAssertTrue(entry.waitForExistence(timeout: 5), app.debugDescription)
+            entry.tap()
+            app.buttons[name].tap()
+        }
+        func assertLanguageEntryLabel(_ label: String) {
+            app.buttons["editor.privacy"].tap()
+            let entry = app.buttons["settings.language"]
+            XCTAssertTrue(entry.waitForExistence(timeout: 5), app.debugDescription)
+            XCTAssertEqual(entry.label, label)
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
+            expectation(for: NSPredicate { _, _ in !app.buttons["settings.language"].exists }, evaluatedWith: app)
+            waitForExpectations(timeout: 5)
+        }
         tapTool("exposure")
         dragRuler(app.descendants(matching: .any)["adjustment.ruler"])
-        guard let exposure = app.buttons["tool.exposure"].value as? String else {
+        guard let exposure = app.buttons["adjustment.value"].value as? String else {
             XCTFail("Exposure control did not expose its value")
             return
         }
@@ -26,13 +53,11 @@ extension EditorUITests {
         var batchCreated = app.buttons["batch.resume"].exists
         for index in names.indices {
             let c = copies[index]
-            let language = app.buttons["settings.language"]
-            language.tap()
-            app.buttons[names[index]].tap()
-            expectation(for: NSPredicate { _, _ in language.label == c[0] }, evaluatedWith: app)
-            waitForExpectations(timeout: 10)
+            switchLanguage(to: names[index])
+            assertLanguageEntryLabel(c[0])
             tapTool("exposure")
-            XCTAssertEqual(app.buttons["tool.exposure"].value as? String, exposure)
+            XCTAssertEqual(app.buttons["adjustment.value"].value as? String, exposure)
+            exitWorkspace()
             app.buttons["editor.export"].tap()
             if batchCreated { app.buttons[c[14]].tap() } else { app.buttons["editor.batchExport"].tap() }
             XCTAssertTrue(app.buttons["batch.pick"].waitForExistence(timeout: 10), app.debugDescription)
@@ -72,17 +97,16 @@ extension EditorUITests {
                 app.buttons[c[19]].tap()
             } else { app.buttons[c[13]].tap() }
             tapTool("exposure")
-            XCTAssertEqual(app.buttons["tool.exposure"].value as? String, exposure)
+            XCTAssertEqual(app.buttons["adjustment.value"].value as? String, exposure)
         }
 
         // 先完成批量任务，避免恢复任务横幅改变编辑控件的位置。
         for index in names.indices {
             let c = copies[index]
-            app.buttons["settings.language"].tap()
-            app.buttons[names[index]].tap()
-            XCTAssertEqual(app.buttons["settings.language"].label, c[0])
+            switchLanguage(to: names[index])
+            assertLanguageEntryLabel(c[0])
             tapTool("exposure")
-            XCTAssertEqual(app.buttons["tool.exposure"].value as? String, exposure)
+            XCTAssertEqual(app.buttons["adjustment.value"].value as? String, exposure)
             let mode = app.buttons["exposure.mode"]
             XCTAssertTrue(mode.waitForExistence(timeout: 5), app.debugDescription)
             mode.tap()
@@ -118,6 +142,7 @@ extension EditorUITests {
             app.buttons[c[6]].tap()
             XCTAssertTrue(preset.label.contains(c[6]), preset.label)
 
+            exitWorkspace()
             app.buttons["editor.export"].tap()
             app.buttons[c[12]].tap()
             let exportSize = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", c[17])).firstMatch
@@ -132,39 +157,50 @@ extension EditorUITests {
             app.buttons[c[11]].tap()
 
             tapTool("exposure")
-            XCTAssertEqual(app.buttons["tool.exposure"].value as? String, exposure)
+            XCTAssertEqual(app.buttons["adjustment.value"].value as? String, exposure)
         }
-        app.buttons["settings.language"].tap()
-        app.buttons[copies.last![20]].tap()
+        switchLanguage(to: copies.last![20])
     }
     func testLanguageSelectionPersists() {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
+        // v0.8: the language picker is a submenu of the overview overflow menu; the entry
+        // label is the observable signal that a language switch propagated through the app.
+        app.buttons["editor.privacy"].tap()
         let language = app.buttons["settings.language"]
-        XCTAssertTrue(language.waitForExistence(timeout: 10))
+        XCTAssertTrue(language.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(language.label, "Language")
         language.tap()
         app.buttons["Deutsch"].tap()
-        XCTAssertTrue(app.staticTexts["RAW-Foto"].waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertEqual(language.label, "Sprache")
+        app.buttons["editor.privacy"].tap()
+        XCTAssertEqual(app.buttons["settings.language"].label, "Sprache",
+                       "Selecting Deutsch must propagate to the localized language entry")
         let german = XCTAttachment(screenshot: app.screenshot())
         german.name = "localization-german"
         german.lifetime = .keepAlways
         add(german)
-        language.tap()
+        app.buttons["settings.language"].tap()
         app.buttons["Français"].tap()
-        XCTAssertTrue(app.staticTexts["Photo RAW"].waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons["editor.privacy"].tap()
+        XCTAssertEqual(app.buttons["settings.language"].label, "Langue")
         let french = XCTAttachment(screenshot: app.screenshot())
         french.name = "localization-french"
         french.lifetime = .keepAlways
         add(french)
+        app.buttons["settings.language"].tap()
         app.terminate()
         app.launch()
-        XCTAssertTrue(language.waitForExistence(timeout: 10))
-        XCTAssertEqual(language.label, "Langue")
-        language.tap()
+        XCTAssertTrue(app.buttons["editor.privacy"].waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["editor.privacy"].tap()
+        let relaunched = app.buttons["settings.language"]
+        XCTAssertTrue(relaunched.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(relaunched.label, "Langue", "Language selection must survive relaunch")
+        relaunched.tap()
         app.buttons["Suivre le système"].tap()
-        XCTAssertTrue(app.staticTexts["RAW Photo"].waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons["editor.privacy"].tap()
+        XCTAssertEqual(app.buttons["settings.language"].label, "Language",
+                       "Following the system language restores the English entry")
     }
 
     func testRAWRecipeSelectionAndLensCapabilityStates() {

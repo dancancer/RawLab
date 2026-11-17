@@ -10,30 +10,70 @@ extension EditorV4UITests {
         XCTAssertTrue(app.frame.insetBy(dx: -1, dy: -1).contains(emptyImport.frame))
         XCTAssertTrue(app.buttons["editor.import"].isEnabled && app.buttons["editor.import"].isHittable)
         XCTAssertFalse(app.buttons["editor.export"].isEnabled)
-        XCTAssertFalse(app.buttons["editor.adjustments"].isEnabled)
+        XCTAssertFalse(app.buttons["editor.adjustments"].exists,
+                       "The collapsed v0.8 overview keeps the adjustment bar entry inside the overflow menu until a photo is loaded")
         XCTAssertFalse(app.buttons["tool.film"].exists)
         let labels = Set(app.staticTexts.allElementsBoundByIndex.map(\.label).filter { !$0.isEmpty })
         XCTAssertTrue(labels.isSubset(of: Set(["RawLab", importLabel])), "The empty editor must show only functional copy and its optional navigation title")
     }
 
-    func assertFileImportItem(enabled: Bool, in app: XCUIApplication) {
+    @discardableResult
+    private func waitTrue(_ timeout: TimeInterval = 5, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            usleep(100_000)
+        }
+        return condition()
+    }
+
+    /// v0.8: overflow menus are short popovers; SwiftUI may not expose rows below the
+    /// fold, so scroll the menu container until the row is hittable.
+    func revealOverflowItem(_ item: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<6 where !item.isHittable {
+            let container = app.collectionViews.firstMatch
+            if container.exists {
+                container.swipeUp()
+            } else if item.exists {
+                item.swipeUp()
+            } else {
+                break
+            }
+        }
+    }
+
+    private func dismissOverflowMenu(_ privacy: XCUIElement, _ probe: XCUIElement, in app: XCUIApplication) {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
+        if !waitTrue(3, { !probe.exists }) {
+            privacy.tap()
+        }
+        waitUntil { !probe.exists }
+    }
+
+    /// Opens the overview overflow menu. The busy editor re-renders its toolbar, so wait
+    /// for a stable hittable state before tapping (otherwise the tap races the flicker).
+    @discardableResult
+    func openOverflowMenu(in app: XCUIApplication) -> XCUIElement {
         let privacy = app.buttons["editor.privacy"]
-        XCTAssertTrue(privacy.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(waitTrue(15, { privacy.exists && privacy.isHittable }), app.debugDescription)
         privacy.tap()
+        return privacy
+    }
+
+    func assertFileImportItem(enabled: Bool, in app: XCUIApplication) {
+        let privacy = openOverflowMenu(in: app)
         let file = app.buttons["editor.import.file"]
         XCTAssertTrue(file.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertEqual(file.isEnabled, enabled, "File import must follow editor draft/busy lock")
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
-        waitUntil { !file.exists }
+        dismissOverflowMenu(privacy, file, in: app)
     }
 
     func cancelFileImporter(in app: XCUIApplication) {
-        let privacy = app.buttons["editor.privacy"]
-        XCTAssertTrue(privacy.waitForExistence(timeout: 5), app.debugDescription)
-        privacy.tap()
+        openOverflowMenu(in: app)
         let file = app.buttons["editor.import.file"]
         XCTAssertTrue(file.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(file.isEnabled, "The Files picker can only be opened from a clean editor state")
+        revealOverflowItem(file, in: app)
         file.tap()
         let cancel = app.buttons["Cancel"].firstMatch
         XCTAssertTrue(cancel.waitForExistence(timeout: 10), app.debugDescription)
@@ -43,9 +83,10 @@ extension EditorV4UITests {
     }
 
     func selectSeededFilesImage(in app: XCUIApplication) throws {
-        let privacy = app.buttons["editor.privacy"]
-        XCTAssertTrue(privacy.waitForExistence(timeout: 5), app.debugDescription)
-        privacy.tap()
+        openOverflowMenu(in: app)
+        let candidate = app.buttons.matching(identifier: "editor.import.file").firstMatch
+        XCTAssertTrue(candidate.waitForExistence(timeout: 5), app.debugDescription)
+        revealOverflowItem(candidate, in: app)
         let filesItems = app.buttons.matching(identifier: "editor.import.file").allElementsBoundByIndex
         let file = filesItems.first { $0.exists && $0.isHittable }
         XCTAssertNotNil(file, app.debugDescription)
@@ -148,7 +189,36 @@ extension EditorV4UITests {
         try selectTool("exposure", in: app)
     }
 
-    func selectTool(_ name: String, in app: XCUIApplication) throws {
+    /// v0.8 two-level workbench (Android #455/#457 precedent): the group row and the tool
+    /// grid only exist on the workbench overview; the tool page replaces them with
+    /// `editor.panel`. Leaving a tool page with an uncommitted draft runs through the
+    /// shared decision dialog (Apply / Discard Changes / Keep Editing), so a helper that
+    /// navigates back to the grid must resolve that dialog explicitly instead of
+    /// assuming the overview is already there. Committed-draft navigation uses Apply;
+    /// tests that intentionally keep a draft uncommitted stay inside the workspace.
+    @discardableResult
+    func exitToOverviewIfNeeded(in app: XCUIApplication, commit: Bool = true) throws -> Bool {
+        guard app.buttons["editor.tool.back"].exists else { return false }
+        if commit, app.buttons["editor.draft.apply"].exists, app.buttons["editor.draft.apply"].isEnabled {
+            applyDraft(in: app)
+            XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 5), app.debugDescription)
+            return true
+        }
+        app.buttons["editor.tool.back"].tap()
+        if waitTrue(2, { app.alerts.firstMatch.exists }) {
+            let decision = app.alerts.buttons[commit ? "Apply" : "Discard Changes"]
+            XCTAssertTrue(decision.waitForExistence(timeout: 5), app.debugDescription)
+            decision.tap()
+        }
+        XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 5), app.debugDescription)
+        return true
+    }
+
+    /// Selects the owning group and reveals the requested tool tile in the overview grid.
+    /// Returns the revealed (not yet tapped) tile so tests can assert tile state before
+    /// entering the tool page.
+    @discardableResult
+    func revealTool(_ name: String, in app: XCUIApplication) throws -> XCUIElement {
         let group: String
         switch name {
         case "film", "masterRecipe", "strength": group = "looks"
@@ -156,11 +226,13 @@ extension EditorV4UITests {
         case "temperature", "tint", "saturation", "hsl": group = "color"
         case "clarity", "dehaze", "vignette", "grain": group = "effects"
         case "noiseReduction", "sharpening": group = "detail"
+        case "hdrPeakLimit", "hdrSDRExposure", "hdrSDRContrast", "hdrSDRSaturation": group = "hdrRendition"
         default: group = "geometry"
         }
         let groupButton = app.buttons["editor.group." + group]
-        waitUntil(timeout: 30) { groupButton.exists && groupButton.isEnabled }
-        if groupButton.exists && (!groupButton.isSelected || !app.buttons["tool." + name].exists) {
+        XCTAssertTrue(groupButton.waitForExistence(timeout: 15) && groupButton.isEnabled,
+                      "The workbench overview must expose the group row: \(groupButton.debugDescription)")
+        if !groupButton.isSelected || !app.buttons["tool." + name].exists {
             let groups = app.scrollViews["editor.groups"]
             try revealHorizontally(groupButton, in: groups, app: app)
             groupButton.tap()
@@ -168,7 +240,17 @@ extension EditorV4UITests {
         let tool = app.buttons["tool." + name]
         let strip = app.scrollViews["editor.tools"]
         try revealHorizontally(tool, in: strip, app: app)
+        return tool
+    }
+
+    func selectTool(_ name: String, in app: XCUIApplication) throws {
+        try exitToOverviewIfNeeded(in: app)
+        let tool = try revealTool(name, in: app)
         tapVisible(tool, in: app)
+        // Wait for the tool page to become the active workspace (draftReady analogue):
+        // the panel exists and carries the workspace draft actions.
+        XCTAssertTrue(app.scrollViews["editor.panel"].waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(app.buttons["editor.draft.apply"].waitForExistence(timeout: 5), app.debugDescription)
     }
 
     func revealHorizontally(_ element: XCUIElement, in strip: XCUIElement, app: XCUIApplication) throws {
@@ -284,6 +366,16 @@ extension EditorV4UITests {
         try selectWheelValue(formatted, title: title, unit: unit, in: app)
         app.buttons["adjustment.wheel.apply"].tap()
         waitUntil { !app.descendants(matching: .any)["adjustment.wheel"].exists }
+    }
+
+    /// Discards the workspace draft through `editor.draft.cancel`; a dirty draft answers
+    /// the shared decision dialog with Discard Changes before the overview is reachable.
+    func cancelToolWorkspace(in app: XCUIApplication) {
+        app.buttons["editor.draft.cancel"].tap()
+        if waitTrue(2, { app.alerts.firstMatch.exists }) {
+            app.alerts.buttons["Discard Changes"].tap()
+        }
+        XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 5), app.debugDescription)
     }
 
     func applyDraft(in app: XCUIApplication) {
