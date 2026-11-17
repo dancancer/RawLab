@@ -84,18 +84,14 @@ extension EditorV4UITests {
         XCTAssertEqual(temperatureTile.label, "White Balance")
         XCTAssertFalse(app.buttons["tool.tint"].exists,
                        "Tint remains an editable parameter, not a second toolbar entry")
+        // v0.8 contract: a raster source disables the RAW-only white balance tile on the
+        // overview grid (EditorLayout, same contract the PNG-fixture test relies on), so
+        // tapping it must not open a tool page; the in-panel RAW temperature/tint rows are
+        // unreachable from a JPEG fixture and are no longer asserted here.
         tapVisible(temperatureTile, in: app)
-        XCTAssertTrue(app.scrollViews["editor.panel"].waitForExistence(timeout: 15), app.debugDescription)
-        let rasterTemperature = app.buttons["whiteBalance.temperature.value"]
-        let rasterTint = app.buttons["whiteBalance.tint.value"]
-        XCTAssertTrue(rasterTemperature.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertTrue(rasterTint.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertFalse(app.segmentedControls["whiteBalance.mode"].exists,
-                       "Raster white balance has no RAW camera mode")
-        XCTAssertFalse(rasterTemperature.isEnabled, "Raster temperature is a RAW-only control")
-        XCTAssertFalse(rasterTint.isEnabled, "Raster tint is a RAW-only control")
-        XCTAssertEqual(try number(rasterTemperature), 6500, accuracy: 0.0001)
-        XCTAssertEqual(try number(rasterTint), 0, accuracy: 0.0001)
+        XCTAssertFalse(temperatureTile.isEnabled, "A raster source must disable the white balance tile")
+        XCTAssertFalse(app.scrollViews["editor.panel"].exists,
+                       "The disabled raster white balance tile must not open a tool page")
         try exitToOverviewIfNeeded(in: app)
         assertFileImportItem(enabled: true, in: app)
         cancelFileImporter(in: app)
@@ -110,10 +106,11 @@ extension EditorV4UITests {
                        "Canceling the Files picker keeps the committed raster edit")
         try selectTool("geometry", in: app)
         XCTAssertFalse(app.buttons["editor.export"].exists, "The tool workspace keeps export on the workbench overview")
-        if app.buttons["geometry.reset"].isEnabled {
-            resetIfEnabled("geometry.reset", in: app)
-            applyDraft(in: app)
-            try selectTool("geometry", in: app)
+        // v0.8: the per-tool reset is the workspace toolbar's editor.draft.reset button;
+        // it resets the tool draft in place, so no apply-and-reopen round trip follows it.
+        let workspaceReset = app.buttons["editor.draft.reset"]
+        if workspaceReset.waitForExistence(timeout: 2), workspaceReset.isEnabled {
+            workspaceReset.tap()
         }
         try setValue("1.2", title: "Straighten", unit: "°", control: "geometry.straighten", in: app)
         XCTAssertFalse(app.buttons["editor.export"].exists, "Unapplied geometry must block export")

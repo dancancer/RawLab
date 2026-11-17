@@ -43,7 +43,14 @@ extension EditorV4UITests {
             try revealInPanel(axisValue, in: app, fully: true)
             XCTAssertGreaterThanOrEqual(axisValue.frame.height, 44)
             try revealInPanel(axisRuler, in: app, fully: true)
-            XCTAssertGreaterThanOrEqual(axisRuler.frame.width, panel.frame.width - 33)
+            // v0.8: the hsl panel runs the compact inline row layout (ContentView+Panels
+            // enables compactAdjustmentRows for hsl): title and value flank the ruler in
+            // one row, so the ruler takes the stretch width between them instead of the
+            // full panel row it had in the stacked v0.4 layout.
+            XCTAssertEqual(axisRuler.frame.midY, axisValue.frame.midY, accuracy: 4,
+                           "Compact rows keep the \(axis) ruler inline with its value")
+            XCTAssertGreaterThanOrEqual(axisRuler.frame.width, panel.frame.width - 190,
+                                        "The inline ruler still takes the stretch between the title and the value")
         }
         capture("compact-editor-hsl", in: app)
         try selectTool("highlights", in: app)
@@ -124,14 +131,19 @@ extension EditorV4UITests {
         // the dehaze draft and leave the tool page before reaching for them.
         applyDraft(in: app)
         app.buttons["editor.privacy"].tap()
-        let undo = app.buttons["adjustment.history.undo"]
+        // The undo/redo rows sit in a SwiftUI Menu Section, which drops their accessibility
+        // identifiers on iOS 27; scope the label-or-id match to the popover's collection view
+        // so a same-label toolbar icon can never be tapped instead of the menu row.
+        let undo = app.collectionViews.buttons.matching(NSPredicate(
+            format: "identifier == %@ OR label == %@", "adjustment.history.undo", "Undo")).firstMatch
         revealOverflowItem(undo, in: app)
         XCTAssertTrue(undo.waitForExistence(timeout: 5), app.debugDescription); XCTAssertTrue(undo.isEnabled); undo.tap()
         try selectTool("clarity", in: app)
         XCTAssertEqual(try number(app.buttons["adjustment.value"]), 37, accuracy: 0.0001, "Undo retains independent clarity")
         try exitToOverviewIfNeeded(in: app)
         app.buttons["editor.privacy"].tap()
-        let redo = app.buttons["adjustment.history.redo"]
+        let redo = app.collectionViews.buttons.matching(NSPredicate(
+            format: "identifier == %@ OR label == %@", "adjustment.history.redo", "Redo")).firstMatch
         revealOverflowItem(redo, in: app)
         XCTAssertTrue(redo.waitForExistence(timeout: 5), app.debugDescription); XCTAssertTrue(redo.isEnabled); redo.tap()
         try selectTool("dehaze", in: app)
@@ -764,12 +776,28 @@ extension EditorV4UITests {
         XCTAssertEqual(try number(ruler), standard, accuracy: 0.0001)
 
         try resetParameterDefault("adjustment", in: app)
+        // v0.8: the fine-mode toggle lives in the tool page's more menu (workspaceActions),
+        // not inside the panel; its state is read by reopening the menu, and tapping the
+        // photo area closes the menu again (same dismissal pattern testCompactFine relies on).
         let fine = app.buttons["editor.fine"]
-        if !fine.isHittable { try revealInPanel(fine, in: app, fully: true) }
+        let more = app.buttons["editor.tool.more"]
+        XCTAssertTrue(more.waitForExistence(timeout: 5), app.debugDescription)
+        func openFineMenu() {
+            more.tap()
+            XCTAssertTrue(fine.waitForExistence(timeout: 5), app.debugDescription)
+        }
+        func dismissFineMenu() {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.3)).tap()
+            self.waitUntil { !fine.exists }
+        }
+        openFineMenu()
         let standardSensitivity = fine.value as? String
         fine.tap()
+        waitUntil { !fine.exists }
+        openFineMenu()
         XCTAssertTrue(fine.isSelected, fine.debugDescription)
         XCTAssertNotEqual(fine.value as? String, standardSensitivity)
+        dismissFineMenu()
         try revealInPanel(ruler, in: app)
         dragRuler(ruler, from: 0.75, to: 0.25)
         waitUntil { (try? self.number(app.buttons["adjustment.value"])) != 0 }
@@ -778,9 +806,13 @@ extension EditorV4UITests {
         XCTAssertGreaterThan(precise, 0)
         XCTAssertLessThan(precise, standard, "The same gesture in fine mode must move fewer legal steps")
         XCTAssertEqual(try number(ruler), precise, accuracy: 0.0001)
+        openFineMenu()
         fine.tap()
+        waitUntil { !fine.exists }
+        openFineMenu()
         XCTAssertFalse(fine.isSelected)
         XCTAssertEqual(fine.value as? String, standardSensitivity)
+        dismissFineMenu()
 
         try setValue("+4.00", title: "Exposure", unit: "EV", control: "adjustment", in: app)
         try revealInPanel(ruler, in: app)
@@ -926,10 +958,12 @@ extension EditorV4UITests {
     func testCropWidthWheelKeepsAspectForCornerDragAndRotationPreservesDraft() throws {
         let app = try launchImportedEditor()
         try selectTool("geometry", in: app)
-        if app.buttons["geometry.reset"].isEnabled {
-            resetIfEnabled("geometry.reset", in: app)
-            applyDraft(in: app)
-            try selectTool("geometry", in: app)
+        // v0.8: the per-tool reset is the workspace toolbar's editor.draft.reset button
+        // (a plain button for geometry, no menu), replacing the v0.4 in-panel geometry.reset.
+        let workspaceReset = app.buttons["editor.draft.reset"]
+        if workspaceReset.waitForExistence(timeout: 2), workspaceReset.isEnabled {
+            XCTAssertTrue(workspaceReset.isHittable, workspaceReset.debugDescription)
+            workspaceReset.tap()
         }
         let aspect = app.buttons["geometry.aspectRatio"]
         try revealInPanel(aspect, in: app)
