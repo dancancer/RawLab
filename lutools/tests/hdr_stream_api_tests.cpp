@@ -64,6 +64,34 @@ int main(int argc, char* argv[]) {
     sony2fuji_session* session = nullptr;
     try {
         fs::create_directory(directory); fs::create_directory(directory / "scratch");
+#if defined(__APPLE__) && defined(RAWLAB_HDR_PORTABLE_ADAPTER)
+        // Every Apple-only entry point must stay owned by the portable adapter,
+        // reject explicitly, and leave the caller's source state untouched.
+        {
+            hdr::StreamSourcePin pin;
+            uint64_t revision = 7;
+            const uint8_t digest[32]{};
+            const hdr::HDRStreamFiles files;
+            const auto config = initialized<sony2fuji_hdr_export_config_v1>();
+            auto unsupported = [&](auto operation, uint32_t field) {
+                try { operation(); }
+                catch (const hdr::Error& error) {
+                    check(error.status == SONY2FUJI_STATUS_UNSUPPORTED &&
+                        error.reason == SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM && error.field == field,
+                        "Portable tiled adapter returned the wrong diagnostic");
+                    return;
+                }
+                throw std::runtime_error("Portable tiled adapter reported success");
+            };
+            const auto absent = (directory / "unsupported-source").u8string();
+            unsupported([&] { (void)hdr::openRasterRows(absent.c_str(), digest, pin, revision); }, SONY2FUJI_HDR_FIELD_PATH);
+            unsupported([&] { hdr::freezeStreamSourceFile(absent.c_str(), pin); }, SONY2FUJI_HDR_FIELD_PATH);
+            unsupported([&] { hdr::verifyStreamSource(pin); }, SONY2FUJI_HDR_FIELD_PATH);
+            unsupported([&] { hdr::publishTiledHEIF(files, config, absent.c_str(), pin); }, SONY2FUJI_HDR_FIELD_EXPORT);
+            check(pin.impl == nullptr && revision == 7 && !fs::exists(absent),
+                "Unsupported tiled adapter changed source state or created output");
+        }
+#endif
         const auto original = directory / "original.jpg", output = directory / "result.jpg";
         Context context;
         context.pair.hdr = ImageData(48, 32); context.pair.sdr = ImageData(48, 32);

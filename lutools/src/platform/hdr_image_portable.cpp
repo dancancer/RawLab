@@ -360,6 +360,27 @@ DecodedImage decodeFile(const char* path,const sony2fuji_hdr_decode_options_v1& 
     result.pixels.decodeRevision=nextRevision.fetch_add(1);
     return result;
 }
+#if defined(__APPLE__)
+// Keep the portable adapter's symbol closure complete when the Apple-compiled
+// C ABI object also references tiled export. Never pull the Apple adapter back in.
+HDRRowSource openRasterRows(const char*, const uint8_t[32], StreamSourcePin&, uint64_t&) {
+    fail(SONY2FUJI_STATUS_UNSUPPORTED, SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM,
+        "Tiled HDR raster decoding is unavailable on this platform");
+}
+void freezeStreamSourceFile(const char*, StreamSourcePin&) {
+    fail(SONY2FUJI_STATUS_UNSUPPORTED, SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM,
+        "Tiled HDR source snapshots are unavailable on this platform");
+}
+void verifyStreamSource(const StreamSourcePin&) {
+    fail(SONY2FUJI_STATUS_UNSUPPORTED, SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM,
+        "Tiled HDR source snapshots are unavailable on this platform");
+}
+void publishTiledHEIF(const HDRStreamFiles&, const sony2fuji_hdr_export_config_v1&, const char*, const StreamSourcePin&) {
+    throw Error(SONY2FUJI_STATUS_UNSUPPORTED, SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM,
+        SONY2FUJI_HDR_FIELD_EXPORT, "Tiled HDR HEIF encoding is unavailable on this platform");
+}
+#endif
+
 bool heifExportAvailable() { return false; }
 void exportHEIF(const HDRImagePair&,const sony2fuji_hdr_export_config_v1&,const char*) {
     throw Error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM,
