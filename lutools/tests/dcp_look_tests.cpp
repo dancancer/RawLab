@@ -87,11 +87,12 @@ void cacheTests(const fs::path& root) {
         check(alternate && alternate == DcpLook::loadCached(alternatePath.u8string()),
               "alternating A/B retains B parsed object");
     }
+    const auto beforeRewrite = DcpLook::loadCached(path.u8string());
     const auto modified = fs::last_write_time(path);
     save(path, fixture(120));
     fs::last_write_time(path, modified);
     const auto rewritten = DcpLook::loadCached(path.u8string());
-    check(rewritten && rewritten != first, "same-size rewrite with restored mtime invalidates cache");
+    check(rewritten && rewritten != beforeRewrite, "same-size rewrite with restored mtime invalidates cache");
     check(rewritten && near(rewritten->apply(RGB(.5f, 0, 0)).g, encode(.5)), "rewrite changes rendered color");
     check(first && near(first->apply(RGB(.5f, 0, 0)).r, encode(.5)), "retained pre-rewrite profile stays immutable");
     auto invalid = fixture();
