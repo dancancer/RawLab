@@ -117,6 +117,10 @@ internal static class UiDetailChecks
         settings.ApplyMasterRecipe(recipe);lut.SetValue(window,recipe.LutPath);Refresh(window);
         check(window.ActiveFilm.Text==Loc.Text(recipe.Name) && window.FilmLabelText.Text==Loc.Text("调整后"),
             $"Active look names the recipe while comparison identifies the adjusted image in {language}: {window.ActiveFilm.Text} / {window.FilmLabelText.Text}");
+        // Precondition declared for this file-less fixture: clearing a recipe whose tint delta differs from
+        // neutral needs as-shot calibration (the guard added with the v4 recipe controls); resolving it is
+        // exactly what opening a calibrated RAW does, so ClearMasterRecipe keeps its real contract here.
+        settings.ResolveWhiteBalance((5500,0));
         settings.ClearMasterRecipe();lut.SetValue(window,null);Refresh(window);
         check(window.ActiveFilm.Text==Loc.Text("中性"),$"Neutral look is named in {language}: {window.ActiveFilm.Text}");
     }
@@ -296,12 +300,14 @@ internal static class UiDetailChecks
     {
         var broken=Path.Combine(output,"broken-"+language+".ARW");File.WriteAllText(broken,"not a raw file");
         window.OpenFile(broken);
-        var failed=typeof(MainWindow).GetField("renderFailed",PrivateInstance)!;
-        Pump(()=>(bool)failed.GetValue(window)!,TimeSpan.FromSeconds(20));
-        check((bool)failed.GetValue(window)! && window.BackendLabel.Text!=Loc.Text("相机预览 · 正在显影"),$"Failed open does not keep reporting development: {window.BackendLabel.Text}");
+        // A content-rejecting RAW now fails in the camera-raw probe before a source is bound, so the terminal
+        // state is a status hint on the welcome surface, not a render failure (no file, no result, no retry).
+        Pump(()=>!string.IsNullOrWhiteSpace(window.Status.Text),TimeSpan.FromSeconds(20));
+        check(window.BackendLabel.Text!=Loc.Text("相机预览 · 正在显影"),$"Failed open does not keep reporting development: {window.BackendLabel.Text}");
         check(window.HistogramSurface.Visibility!=Visibility.Visible,"Failed open leaves no empty histogram box: "+language);
-        check(!string.IsNullOrWhiteSpace(window.Status.Text) && window.ExportButton.ToolTip as string==window.Status.Text,"Failed render export hint reports the actual failure, not waiting: "+language);
-        check(!window.ExportPng.IsEnabled && window.RetryButton.Visibility==Visibility.Visible,"Failed render keeps export disabled and retry visible: "+language);
+        check(!string.IsNullOrWhiteSpace(window.Status.Text),"Failed open reports the actual failure in the status bar: "+language);
+        check(!window.Title.Contains(Path.GetFileName(broken),StringComparison.Ordinal),"Failed open does not adopt the broken file: "+language);
+        check(!window.ExportPng.IsEnabled,"Failed open keeps export disabled: "+language);
     }
     // 关于窗口变矮时，“关闭”按钮仍完整可见，不随内容一起被截掉
     private static void AboutFooter(MainWindow window,string output,Action<bool,string> check)
