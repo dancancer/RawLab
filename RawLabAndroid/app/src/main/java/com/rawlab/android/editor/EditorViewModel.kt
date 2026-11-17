@@ -757,9 +757,11 @@ class EditorViewModel @JvmOverloads constructor(
         closeAdjustmentOperation()
         durablePreview = null
         pendingPhotoImport.begin(PhotoIdentity(uri.toString()))
+        // A remains the displayed photo until B succeeds; its receipt belongs to that same state.
+        // Successful import publishes B and B's receipt together in accept().
         mutable.value = mutable.value.copy(operation = Operation.IMPORT, rendering = true, error = null,
             retryLegacyX3f = false, recoverUnusableRecord = false,
-            hdrCameraDraft = null, processingMigration = null)
+            hdrCameraDraft = null)
         // closeAdjustmentOperation 会释放延迟文件，先建立导入保护再移交恢复引用。
         failedX3fImport = null
         failedUnusableImport = null
