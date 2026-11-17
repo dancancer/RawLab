@@ -164,7 +164,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         if (pendingAll) return
         onCancelAdjustment()
         if (state.draft?.changed == true) pendingLeave = action
-        else { if (state.draft != null) onDiscardDraft(); toolOpen = false; action() }
+        else { toolOpen = false; if (state.draft != null) onDiscardDraft(); action() }
     }
     fun applyAndLeave() {
         onApplyDraft { accepted ->
@@ -274,7 +274,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             enabled = state.canApplyDraft) { Text(stringResource(R.string.adjustment_apply)) } },
         dismissButton = {
             Column {
-                TextButton(onClick = { onDiscardDraft(); toolOpen = false; pendingLeave?.invoke(); pendingLeave = null }) { Text(stringResource(R.string.adjustment_discard)) }
+                TextButton(onClick = { toolOpen = false; onDiscardDraft(); pendingLeave?.invoke(); pendingLeave = null }) { Text(stringResource(R.string.adjustment_discard)) }
                 TextButton(onClick = { cancelLeave() }) { Text(stringResource(R.string.adjustment_continue)) }
             }
         })
@@ -432,20 +432,22 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     CompositionLocalProvider(LocalEditorHaptics provides haptics, LocalAdjustmentFocus provides { adjusting = it },
         LocalAdjustmentHapticGate provides hapticGate, LocalAdjustmentCancellation provides cancelRuler) {
     val currentDock by rememberUpdatedState<@Composable (Modifier, Boolean, Boolean) -> Unit>({ modifier, side, compact ->
-        AdjustmentDock(state, modifier, tool, selectTool, expanded, {
+        val dockTool = tool
+        AdjustmentDock(state, modifier, dockTool, selectTool, expanded, {
             if (quickPresetsVisible) onClosePresets()
             if (targetMode) expanded = !expanded else leave { expanded = !expanded }
         },
             compare, { view = view.toggleComparison() }, onEdit, onImportLook,
             { id, name -> leave { onRenameLook(id, name) } }, { id -> leave { onDeleteLook(id) } },
-            onAutoExposure, onDraftEdit, { applyAndLeave(); Unit }, { onDiscardDraft(); toolOpen = false },
+            onAutoExposure, onDraftEdit, { applyAndLeave(); Unit }, { toolOpen = false; onDiscardDraft() },
             onFilmSelected, onGeometryRatio, selectGroup, channel, { onCancelAdjustment(); channel = it }, requestReset, side, !pendingAll, compact,
             onGeometryLock, onGeometrySwap, onGeometryGrid, onPresets = { if (quickPresetsVisible) onClosePresets() else openQuickPresets() },
             quickPresetsVisible = quickPresetsVisible, quickPresetContent = quickPresetContent, gradingZone = gradingZone,
             onGradingZoneChange = { onCancelAdjustment(); gradingZone = it }, hslTarget = hslTarget, onSelectFilm = onSelectFilm,
             onImportHDRLook = onImportHDRLook, onApplyHDRSilver = onApplyHDRSilver,
             onRollbackProcessing = onRollbackProcessing, toolOpen = toolOpen, fine = fine, onDeleteUnreadableLook = onDeleteUnreadableLook,
-            processingContext = processingContext, onDismissProcessingContext = { processingContext = false })
+            processingContext = processingContext, onDismissProcessingContext = { processingContext = false },
+            workspaceIsCurrent = { toolOpen && tool == dockTool && !pendingAll })
     })
     val resetPresentation = if (state.photo != null && !view.purePreview) EditorWorkspaceResetPresentation.make(
         state = state, toolOpen = toolOpen, quickPresetsVisible = quickPresetsVisible,

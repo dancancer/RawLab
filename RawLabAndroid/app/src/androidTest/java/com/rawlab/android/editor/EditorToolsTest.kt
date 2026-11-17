@@ -53,13 +53,18 @@ class EditorToolsTest {
     @Test fun atmosphereToolsEditIndependentlyAndKeepRoundedOriginalPrecision() {
         val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
         var edits by mutableStateOf(EditSettings(clarity = 37.251234f, dehaze = -42.5f))
+        var draft by mutableStateOf<AdjustmentDraft?>(null)
         var commits = 0
         compose.setContent { RawLabTheme {
             EditorScreen(state = EditorState(
                 photo = ImportedPhoto(Uri.parse("content://rawlab.test/atmosphere"), "fixture", File("fixture")),
-                edits = edits, preview = PreviewPair(bitmap, bitmap, temperature = 6500f, tint = 0f), exact = true),
-                onAlbum = {}, onFile = {}, onEdit = { next, dragging -> edits = next; if (!dragging) commits++ }, onRetry = {},
-                onExport = {}, onMessageDismiss = {}, onLicenses = {}, onGpuChange = {})
+                edits = edits, draft = draft, preview = PreviewPair(bitmap, bitmap, temperature = 6500f, tint = 0f), exact = true),
+                onAlbum = {}, onFile = {}, onEdit = { _, _ -> org.junit.Assert.fail("Tool parameters must remain in their draft") }, onRetry = {},
+                onExport = {}, onMessageDismiss = {}, onLicenses = {}, onGpuChange = {},
+                onBeginDraft = { draft = AdjustmentDraft.begin(it, edits) },
+                onDraftEdit = { next, dragging -> draft = requireNotNull(draft).update(next, dragging) },
+                onDiscardDraft = { draft = null },
+                onApplyDraft = { complete -> edits = requireNotNull(draft).project(edits); draft = null; commits++; complete(true) })
         } }
         compose.openWorkbenchTool(22)
         compose.onNodeWithTag("adjustment-value-${com.rawlab.android.R.string.clarity}").assertTextContains("37.25").performClick()
@@ -69,11 +74,15 @@ class EditorToolsTest {
         compose.onNodeWithTag("adjustment-value-${com.rawlab.android.R.string.dehaze}").assertTextContains("-42.5").performClick()
         compose.onNodeWithTag("adjustment-input").performTextReplacement("-25")
         compose.onNodeWithTag("adjustment-input-apply").performClick()
+        compose.runOnIdle { assertEquals(-25f, draft!!.value.dehaze); assertEquals(-42.5f, edits.dehaze); assertEquals(0, commits) }
+        compose.onNodeWithTag("draft.apply").performClick()
         compose.runOnIdle { assertEquals(-25f, edits.dehaze); assertEquals(37.251234f, edits.clarity); assertEquals(1, commits) }
         compose.openWorkbenchTool(22)
         compose.onNodeWithTag("adjustment-value-${com.rawlab.android.R.string.clarity}").performClick()
         compose.onNodeWithTag("adjustment-input").performTextReplacement("-30")
         compose.onNodeWithTag("adjustment-input-apply").performClick()
+        compose.runOnIdle { assertEquals(-30f, draft!!.value.clarity); assertEquals(37.251234f, edits.clarity); assertEquals(1, commits) }
+        compose.onNodeWithTag("draft.apply").performClick()
         compose.runOnIdle { assertEquals(-30f, edits.clarity); assertEquals(-25f, edits.dehaze); assertEquals(2, commits) }
     }
 
