@@ -115,14 +115,27 @@ extension EditorUITests {
         XCTFail("Could not reveal \(ruler.identifier): ruler \(ruler.frame), panel \(panel.frame)")
     }
 
-    func tapTool(_ name: String, in app: XCUIApplication) {
+    /// The v0.8 draft-exit guard dialog follows the app language (ContentView's
+    /// 应用/放弃修改/继续编辑 buttons): match both decisions by their localized labels and
+    /// answer with the caller's intent instead of a hardcoded English literal.
+    @discardableResult
+    func resolveDraftGuard(commit: Bool, in app: XCUIApplication, timeout: TimeInterval = 2) -> Bool {
+        let labels = commit
+            ? ["Apply", "应用", "Anwenden", "Appliquer", "適用", "Aplicar"]
+            : ["Discard Changes", "放弃修改", "Änderungen verwerfen", "Abandonner les modifications", "変更を破棄", "Descartar cambios"]
+        let decision = app.alerts.buttons.matching(NSPredicate(format: "label IN %@", labels)).firstMatch
+        guard decision.waitForExistence(timeout: timeout) else { return false }
+        decision.tap()
+        return true
+    }
+
+    func tapTool(_ name: String, in app: XCUIApplication, commitDraft: Bool = false) {
         // v0.8 two-level workbench: on a tool page, return to the overview grid first;
-        // a leftover draft is discarded so the next tool always opens a clean workspace.
+        // a leftover draft is discarded by default so the next tool opens a clean workspace.
+        // Callers asserting committed results answer the guard with Apply via commitDraft: true.
         if app.buttons["editor.tool.back"].exists {
             app.buttons["editor.tool.back"].tap()
-            if app.alerts.buttons["Discard Changes"].waitForExistence(timeout: 2) {
-                app.alerts.buttons["Discard Changes"].tap()
-            }
+            resolveDraftGuard(commit: commitDraft, in: app)
         }
         let group: String
         switch name {

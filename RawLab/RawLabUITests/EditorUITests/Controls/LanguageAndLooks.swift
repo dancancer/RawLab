@@ -21,9 +21,8 @@ extension EditorUITests {
         func exitWorkspace() {
             if app.buttons["editor.tool.back"].exists {
                 app.buttons["editor.tool.back"].tap()
-                if app.alerts.buttons["Discard Changes"].waitForExistence(timeout: 2) {
-                    app.alerts.buttons["Discard Changes"].tap()
-                }
+                // The guard dialog follows the language just selected; answer by localized labels.
+                self.resolveDraftGuard(commit: false, in: app)
             }
         }
         func switchLanguage(to name: String) {
@@ -116,7 +115,9 @@ extension EditorUITests {
             XCTAssertTrue(mode.label.contains(c[1]), mode.label)
 
             tapTool("temperature")
-            XCTAssertTrue(app.buttons["tool.temperature"].isSelected)
+            // v0.8: the tool page has no tiles; the language-neutral white balance panel
+            // identifies the open tool, replacing the v0.4 tile isSelected check.
+            XCTAssertTrue(app.buttons["whiteBalance.temperature.value"].waitForExistence(timeout: 10), app.debugDescription)
             XCTAssertFalse(app.buttons["tool.tint"].exists,
                            "White balance keeps tint as a parameter rather than a second tool")
             let wb = app.segmentedControls["whiteBalance.mode"]
@@ -188,7 +189,8 @@ extension EditorUITests {
         french.name = "localization-french"
         french.lifetime = .keepAlways
         add(french)
-        app.buttons["settings.language"].tap()
+        // The menu closes with the app; tapping the submenu entry right before terminate
+        // only raced the relaunch, it asserts nothing.
         app.terminate()
         app.launch()
         XCTAssertTrue(app.buttons["editor.privacy"].waitForExistence(timeout: 10), app.debugDescription)
@@ -265,11 +267,16 @@ extension EditorUITests {
         revealRuler(profile, in: app)
         XCTAssertTrue(profile.isHittable, "Lens selection remains reachable in landscape")
         capture("lens-controls-landscape")
-        panel.swipeDown()
-        let reset = app.buttons["lens.reset"]
-        revealRuler(reset, in: app)
+        // v0.8: the landscape side panel clips the in-panel reset row; the workspace
+        // toolbar's draft reset is the rotation-stable path that resets the lens tool scope.
+        let reset = app.buttons["editor.draft.reset"]
+        XCTAssertTrue(reset.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(reset.isEnabled, "Editing the lens profile must enable the draft reset")
         reset.tap()
-        XCTAssertEqual(app.switches["lens.distortion"].value as? String, "0")
+        let resetApplied = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '0'"),
+                                                     object: app.switches["lens.distortion"])
+        XCTAssertEqual(XCTWaiter.wait(for: [resetApplied], timeout: 10), .completed,
+                       app.switches["lens.distortion"].debugDescription)
         XCUIDevice.shared.orientation = .portrait
     }
 
@@ -302,10 +309,11 @@ extension EditorUITests {
         app.launchArguments += ["-RawLab.language", "zh-Hans"]
         app.launch()
         importPhoto(in: app)
-        let toolbar = app.scrollViews.containing(.button, identifier: "tool.masterRecipe").allElementsBoundByIndex.min { $0.frame.height < $1.frame.height }!
-        // 工具栏默认滚到选中的"曝光"，配方按钮在左侧屏外；屏外元素查询可点击性会直接报错，改看位置
-        for _ in 0..<3 where app.buttons["tool.masterRecipe"].frame.minX < toolbar.frame.minX { toolbar.swipeRight() }
-        app.buttons["tool.masterRecipe"].tap()
+        // v0.8: import lands on the exposure tool page, where the tool strip no longer
+        // exists (EditorLayout hides editor.tools while a workspace is open). Reach the
+        // master recipe tile through the two-level tapTool instead of force-unwrapping
+        // a containing-strip query that was empty on the tool page.
+        tapTool("masterRecipe", in: app)
         XCTAssertTrue(app.buttons["recipe.hamada_daylight_v2"].waitForExistence(timeout: 10))
         // 有插图的配方卡只显示插图，替代图标只给没有插图的"无配方"卡：两种卡的图片区等高，整卡高度相近
         let neutralTile = app.buttons["recipe.neutral"].frame, artworkTile = app.buttons["recipe.hamada_daylight_v2"].frame
@@ -330,22 +338,13 @@ extension EditorUITests {
         XCTAssertTrue(visible("recipe.hamada_daylight_v2"))
         let recipeFrame = app.buttons["recipe.hamada_daylight_v2"].frame
         app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: recipeFrame.midX, dy: recipeFrame.midY)).tap()
-        XCTAssertEqual(app.buttons["tool.masterRecipe"].value as? String, "滨田英明")
-        // 面板标题行已显示当前配方名，面板内只留说明，不再重复一遍名字（配方卡自身的名字不算）
-        let recipeName = NSPredicate(format: "label == %@", "滨田英明")
-        XCTAssertEqual(app.staticTexts.matching(recipeName).count - recipes.staticTexts.matching(recipeName).count, 1)
         capture("master-recipes-portrait")
-        for _ in 0..<8 {
-            let frame = app.buttons["tool.hsl"].frame
-            if frame.width > 0 && toolbar.frame.insetBy(dx: 8, dy: 0).contains(CGPoint(x: frame.midX, y: frame.midY)) { break }
-            let start = toolbar.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
-            let end = toolbar.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.5))
-            start.press(forDuration: 0.1, thenDragTo: end)
-        }
-        let hsl = app.buttons["tool.hsl"]
-        let hslFrame = hsl.frame
-        XCTAssertTrue(toolbar.frame.contains(CGPoint(x: hslFrame.midX, y: hslFrame.midY)))
-        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: hslFrame.midX, dy: hslFrame.midY)).tap()
+        // v0.8: the recipe lands in the workspace draft; committing through the draft apply
+        // returns to the overview, where the tile value carries the selected recipe name
+        // (the tool page has no tiles). HSL then opens with the committed adjustments.
+        applyEditorTool(in: app)
+        XCTAssertEqual(app.buttons["tool.masterRecipe"].value as? String, "滨田英明")
+        tapTool("hsl", in: app)
         XCTAssertTrue(app.buttons["hsl.channel.4"].waitForExistence(timeout: 10))
         app.buttons["hsl.channel.4"].tap()
         // 数值显示在可点按输入的数值按钮上，不再是独立文字

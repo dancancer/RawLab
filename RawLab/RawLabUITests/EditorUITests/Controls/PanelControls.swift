@@ -6,7 +6,8 @@ extension EditorUITests {
         app.launchArguments += ["-RawLab.language", "zh-Hans"]
         app.launch()
         importPhoto(in: app)
-        app.buttons["tool.exposure"].tap()
+        // v0.8: import already lands on the exposure tool page; the tool strip only
+        // exists on the overview, so the panel is reached without tapping a tile.
         let auto = app.buttons["exposure.auto"]
         XCTAssertTrue(auto.waitForExistence(timeout: 10))
         expectation(for: NSPredicate { _, _ in auto.isEnabled }, evaluatedWith: app)
@@ -14,11 +15,13 @@ extension EditorUITests {
         auto.tap()
         expectation(for: NSPredicate { _, _ in auto.isEnabled }, evaluatedWith: app)
         waitForExpectations(timeout: 120)
-        let first = app.buttons["tool.exposure"].value as? String
+        // v0.8: on the tool page the panel value carries the current EV; the overview tile
+        // is not on screen while a workspace is open.
+        let first = app.buttons["adjustment.value"].value as? String
         auto.tap()
         expectation(for: NSPredicate { _, _ in auto.isEnabled }, evaluatedWith: app)
         waitForExpectations(timeout: 120)
-        XCTAssertEqual(app.buttons["tool.exposure"].value as? String, first, "Auto assigns an absolute EV")
+        XCTAssertEqual(app.buttons["adjustment.value"].value as? String, first, "Auto assigns an absolute EV")
         capture("auto-exposure-portrait")
         tapTool("hsl", in: app)
         let saturation = app.descendants(matching: .any)["hsl.saturation.ruler"]
@@ -34,15 +37,15 @@ extension EditorUITests {
         XCTAssertLessThanOrEqual(panel.frame.maxX, app.frame.maxX)
         XCUIDevice.shared.orientation = .landscapeLeft
         XCTAssertTrue(panel.waitForExistence(timeout: 10))
-        let visibleTools = app.scrollViews.containing(.button, identifier: "tool.hsl").allElementsBoundByIndex
-        let rotatedStrip = visibleTools.min { $0.frame.height < $1.frame.height }!
-        let selectedTool = app.buttons["tool.hsl"].frame
-        XCTAssertTrue(rotatedStrip.frame.contains(CGPoint(x: selectedTool.midX, y: selectedTool.midY)),
-                      "Rotation keeps the selected tool visible")
-        capture("hsl-landscape")
+        // v0.8: the tool page has no tool strip, so rotation keeps the hsl panel rows
+        // hittable instead of keeping a strip tile visible; the export entry stays on
+        // the workbench overview and must return after the draft is applied.
         revealRuler(saturation, in: app)
         XCTAssertTrue(saturation.isHittable)
-        XCTAssertTrue(app.buttons["editor.export"].exists)
+        XCTAssertFalse(app.buttons["editor.export"].exists, "The tool workspace keeps export on the overview")
+        applyEditorTool(in: app)
+        XCTAssertTrue(app.buttons["editor.export"].waitForExistence(timeout: 5), app.debugDescription)
+        capture("hsl-landscape")
     }
 
     func testPhotoEffectsControls() {
@@ -106,18 +109,33 @@ extension EditorUITests {
         app.launchArguments += ["-RawLab.language", "zh-Hans"]
         app.launch()
         importPhoto(in: app)
-        let info = app.buttons["editor.photoInfo"]
-        XCTAssertTrue(info.waitForExistence(timeout: 5))
-        info.tap()
-        XCTAssertEqual(info.value as? String, "文件信息")
+        // v0.8: the photo-info toggle hangs in the tool page's "more" menu; the menu closes
+        // after a row tap, so each read or cycle reopens it (iOS 27 strips row identifiers,
+        // match id-OR-label inside the menu's collection view).
+        let more = app.buttons["editor.tool.more"]
+        XCTAssertTrue(more.waitForExistence(timeout: 10), app.debugDescription)
+        func infoRow() -> XCUIElement {
+            XCTAssertTrue(more.waitForExistence(timeout: 5), app.debugDescription)
+            more.tap()
+            let row = app.collectionViews.buttons.matching(
+                NSPredicate(format: "identifier == %@ OR label == %@", "editor.photoInfo", "照片信息")).firstMatch
+            XCTAssertTrue(row.waitForExistence(timeout: 5), app.debugDescription)
+            return row
+        }
+        infoRow().tap()
         XCTAssertTrue(app.descendants(matching: .any)["editor.photoInfo.overlay"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["editor.photoInfo.overlay"].label.contains("3072 × 3072"),
                       "The info overlay must show the original DNG size, not its embedded preview")
         capture("photo-info-file")
-        info.tap()
-        XCTAssertEqual(info.value as? String, "拍摄参数")
-        info.tap()
-        XCTAssertEqual(info.value as? String, "隐藏照片信息")
+        var row = infoRow()
+        XCTAssertEqual(row.value as? String, "文件信息")
+        row.tap()
+        row = infoRow()
+        XCTAssertEqual(row.value as? String, "拍摄参数")
+        XCTAssertTrue(app.descendants(matching: .any)["editor.photoInfo.overlay"].waitForExistence(timeout: 5))
+        row.tap()
+        row = infoRow()
+        XCTAssertEqual(row.value as? String, "隐藏照片信息")
         XCTAssertFalse(app.descendants(matching: .any)["editor.photoInfo.overlay"].exists)
     }
 
@@ -127,6 +145,8 @@ extension EditorUITests {
         app.launch()
         importPhoto(in: app)
 
+        // v0.8: the export entry lives on the workbench overview, not on the tool page.
+        cancelEditorTool(in: app)
         app.buttons["editor.export"].tap()
         app.buttons["保存当前照片"].tap()
         let picker = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '导出尺寸'")).firstMatch

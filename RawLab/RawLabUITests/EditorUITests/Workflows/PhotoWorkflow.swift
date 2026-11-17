@@ -6,22 +6,31 @@ extension EditorUITests {
         app.launchArguments += ["-RawLab.language", "zh-Hans"]
         app.launch()
         importPhoto(in: app)
+        // v0.8: import lands on the exposure tool page; the tile no longer covers the screen, so the
+        // EV assertions read the panel's own value control instead of the overview tile.
         let compare = app.buttons["editor.compare"]
 
         let ruler = app.descendants(matching: .any)["adjustment.ruler"]
         XCTAssertTrue(ruler.isEnabled)
         resetParameterDefault("adjustment", expectedValue: "0.00 EV", in: app)
-        XCTAssertEqual(app.buttons["tool.exposure"].value as? String, "+0.00 EV")
+        let zeroValue = app.buttons["adjustment.value"].value as? String
+        XCTAssertNotNil(zeroValue)
+        XCTAssertTrue(zeroValue!.hasSuffix("0.00 EV"), "reset must read zero: \(zeroValue ?? "nil")")
         dragRuler(ruler)
-        XCTAssertNotEqual(app.buttons["tool.exposure"].value as? String, "+0.00 EV")
+        XCTAssertNotEqual(app.buttons["adjustment.value"].value as? String, zeroValue)
         app.staticTexts["adjustment.title"].doubleTap()
-        XCTAssertEqual(app.buttons["tool.exposure"].value as? String, "+0.00 EV")
+        let resetBack = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", zeroValue!),
+                                                  object: app.buttons["adjustment.value"])
+        XCTAssertEqual(XCTWaiter.wait(for: [resetBack], timeout: 10), .completed,
+                       app.buttons["adjustment.value"].debugDescription)
         tapTool("film", in: app)
         revealFilm("ETERNA", in: app)
         app.buttons["ETERNA"].tap()
         XCTAssertTrue(hasRedArtwork(app.buttons["ETERNA"].screenshot().image),
                       "ETERNA must render its red and gold package, not a blank image")
-        XCTAssertEqual(app.buttons["tool.film"].value as? String, "ETERNA")
+        // v0.8: the tool page has no film tile; the panel row's selection state is the
+        // observable memory of the chosen LUT (the tile value appears back on the overview).
+        XCTAssertTrue(app.buttons["ETERNA"].isSelected, "the film panel must mark the chosen LUT as selected")
         app.buttons["editor.histogram"].tap()
         capture("photo-film-portrait")
         compare.tap()
@@ -30,19 +39,23 @@ extension EditorUITests {
         XCTAssertTrue(app.descendants(matching: .any)["editor.photo.before"].waitForExistence(timeout: 5))
         compare.tap()
         XCTAssertEqual(compare.label, "开启对比")
-        app.buttons["editor.adjustments"].tap()
-        XCTAssertFalse(app.buttons["tool.film"].exists)
-        app.buttons["editor.adjustments"].tap()
+        // v0.8: the v0.4 panel-collapse toggle is retired; the overview film tile after a
+        // draft apply carries the committed LUT name (撤牙齿记位: 折叠态瓦片消失断言随之退役).
+        applyEditorTool(in: app)
         XCTAssertEqual(app.buttons["tool.film"].value as? String, "ETERNA")
         XCUIDevice.shared.orientation = .landscapeLeft
-        XCTAssertLessThan(app.buttons["ETERNA"].frame.maxY, app.frame.maxY - 20,
+        tapTool("film", in: app)
+        let eterna = app.buttons["ETERNA"]
+        for _ in 0..<6 where !eterna.isHittable { app.scrollViews["editor.panel"].swipeUp() }
+        XCTAssertLessThan(eterna.frame.maxY, app.frame.maxY - 20,
                           "Landscape film choices stay above the home indicator")
         capture("photo-film-landscape")
         XCUIDevice.shared.orientation = .portrait
         expectation(for: NSPredicate { _, _ in app.frame.width < app.frame.height }, evaluatedWith: app)
         waitForExpectations(timeout: 5)
         tapTool("exposure", in: app)
-        XCTAssertTrue(app.buttons["tool.exposure"].isSelected)
+        // v0.8: on the tool page the panel title identifies the open tool (no tile isSelected).
+        XCTAssertEqual(app.staticTexts["adjustment.title"].label, "曝光", "the exposure tool page must be open")
         capture("photo-adjustment-portrait")
         XCUIDevice.shared.orientation = .landscapeLeft
         revealRuler(ruler, in: app)
@@ -53,6 +66,8 @@ extension EditorUITests {
         XCTAssertFalse(photo.frame.intersects(panel.frame), "Landscape parameters leave the photo area unobscured")
         capture("photo-adjustment-landscape")
         XCUIDevice.shared.orientation = .portrait
+        // v0.8: export opens from the overview toolbar; applying commits the exposure draft and returns.
+        applyEditorTool(in: app)
         app.buttons["editor.export"].tap()
         app.buttons["保存当前照片"].tap()
         XCTAssertTrue(app.buttons["editor.export.confirm"].waitForExistence(timeout: 5))
@@ -66,10 +81,14 @@ extension EditorUITests {
         app.launchArguments += ["-RawLab.language", "zh-Hans"]
         app.launch()
         importPhoto(in: app)
-        app.buttons["tool.film"].tap()
+        tapTool("film", in: app)
         for name in ["ACROS", "ASTIA", "CLASSIC CHROME", "CLASSIC Neg.", "ETERNA", "ETERNA BB",
                      "PRO Neg.Std", "PROVIA", "REALA ACE", "Velvia"] {
-            XCTAssertTrue(app.buttons[name].exists, "Missing built-in LUT: \(name)")
+            // v0.8: the film list realizes rows lazily; scroll until the row materializes
+            // instead of assuming the whole list is realized on screen.
+            let lut = app.buttons[name]
+            for _ in 0..<6 where !lut.exists { app.scrollViews["editor.panel"].swipeUp() }
+            XCTAssertTrue(lut.exists, "Missing built-in LUT: \(name)")
         }
         XCTAssertFalse(app.buttons["WDR"].exists)
         XCTAssertFalse(app.buttons["FLog2 709"].exists)

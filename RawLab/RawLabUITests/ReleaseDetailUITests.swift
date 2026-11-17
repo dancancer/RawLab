@@ -22,40 +22,55 @@ final class ReleaseDetailUITests: XCTestCase {
     func testHeaderResetMenuLooksDifferentFromTheParameterReset() throws {
         let app = launch()
         try importFirstVisiblePhoto(in: app)
-        let header = app.buttons["Reset Adjustments"]
-        let parameter = app.buttons["adjustment.reset"]
-        XCTAssertTrue(header.waitForExistence(timeout: 10) && parameter.exists, app.debugDescription)
-        XCTAssertEqual(header.isEnabled, parameter.isEnabled, "compare both in the same state")
+        // v0.8 两级工作台：总览标题行是重置菜单（editor.reset，双段字形带下拉角标），
+        // 工具页的重置改在工具工作区工具栏（editor.draft.reset，单字形按钮）。
+        // 两处重置入口仍需一眼可辨：截图差异必须大于 1。
+        let header = app.buttons["editor.reset"]
+        XCTAssertTrue(header.waitForExistence(timeout: 10), app.debugDescription)
+        let headerShot = header.screenshot()
+        try selectTool("geometry", in: app)
+        let parameter = app.buttons["editor.draft.reset"]
+        XCTAssertTrue(parameter.waitForExistence(timeout: 10), app.debugDescription)
         // 同一图标、同一状态时两张截图逐像素相同（差为 0）
-        let difference = meanDifference(header.screenshot().image, parameter.screenshot().image)
-        XCTAssertGreaterThan(difference, 1, "header reset and parameter reset render the same glyph")
+        let difference = meanDifference(headerShot.image, parameter.screenshot().image)
+        XCTAssertGreaterThan(difference, 1, "overview reset and workspace reset render the same glyph")
     }
 
-    // 几何面板标题与右侧重置按钮垂直居中对齐
+    // 工具页标题行（草稿操作行）与两侧的放弃/应用图标垂直居中对齐
     func testGeometryResetIsCenteredOnItsTitle() throws {
         let app = launch()
         try importFirstVisiblePhoto(in: app)
         try selectTool("geometry", in: app)
-        let title = app.staticTexts["Crop and Rotate"]
-        let reset = app.buttons["geometry.reset"]
-        XCTAssertTrue(title.waitForExistence(timeout: 10) && reset.exists, app.debugDescription)
-        XCTAssertEqual(title.frame.midY, reset.frame.midY, accuracy: 3)
+        // v0.8: 按工具重置移入工作区工具栏；标题行即草稿操作行，
+        // 工具名夹在放弃与应用图标之间，三者必须垂直居中对齐。
+        let cancel = app.buttons["editor.draft.cancel"]
+        let apply = app.buttons["editor.draft.apply"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 10) && apply.exists, app.debugDescription)
+        let titles = app.staticTexts.matching(NSPredicate(format: "label == %@", "Geometry")).allElementsBoundByIndex
+        let rowTitle = try XCTUnwrap(titles.first { abs($0.frame.midY - cancel.frame.midY) < 12 },
+                                     "标题行应显示工具名：\(app.debugDescription)")
+        XCTAssertEqual(rowTitle.frame.midY, cancel.frame.midY, accuracy: 3)
+        XCTAssertEqual(rowTitle.frame.midY, apply.frame.midY, accuracy: 3)
     }
 
     // 换工具后面板回到顶部：不能沿用上一个面板的滚动位置，把新面板的标题行藏起来
     func testSwitchingToolsShowsTheNewPanelFromTheTop() throws {
         let app = launch()
         try importFirstVisiblePhoto(in: app)
-        try selectTool("geometry", in: app)
+        try selectTool("exposure", in: app)
         let panel = app.scrollViews["editor.panel"]
+        // 曝光面板带网格图形，内容超过面板上限、必然可滚；先滚走顶部标题行再换工具
+        let topRow = app.staticTexts["adjustment.title"]
+        XCTAssertTrue(topRow.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(panel.frame.contains(topRow.frame), "the exposure panel must start at its top row")
         for _ in 0..<3 {
-            panel.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: 0.85))
-                .press(forDuration: 0.1, thenDragTo: panel.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: 0.15)))
+            panel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85))
+                .press(forDuration: 0.1, thenDragTo: panel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)))
         }
-        XCTAssertFalse(panel.frame.contains(app.buttons["geometry.reset"].frame), "the geometry panel must be scrolled first")
-        try selectTool("hsl", in: app)
-        let header = app.buttons["Reset Adjustments"]
-        XCTAssertTrue(header.waitForExistence(timeout: 10))
+        XCTAssertFalse(panel.frame.contains(topRow.frame), "the exposure panel must be scrolled first")
+        try selectTool("saturation", in: app)
+        let header = app.staticTexts["adjustment.title"]
+        XCTAssertTrue(header.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(panel.frame.contains(header.frame), "header \(header.frame) outside panel \(panel.frame)")
     }
 
@@ -64,6 +79,10 @@ final class ReleaseDetailUITests: XCTestCase {
         let app = launch()
         try importFirstVisiblePhoto(in: app)
         try selectTool("geometry", in: app)
+        // v0.8：左右旋转按钮在几何面板的"旋转"页签内，先进页签才看得到它们
+        let rotateTab = app.buttons["geometry.tab.1"]
+        XCTAssertTrue(rotateTab.waitForExistence(timeout: 10), app.debugDescription)
+        rotateTab.tap()
         let left = app.buttons["geometry.rotateLeft"], right = app.buttons["geometry.rotateRight"]
         XCTAssertTrue(left.waitForExistence(timeout: 10) && right.exists, app.debugDescription)
         XCTAssertEqual(left.frame.height, right.frame.height, accuracy: 1)
@@ -75,11 +94,16 @@ final class ReleaseDetailUITests: XCTestCase {
         let app = launch()
         try importFirstVisiblePhoto(in: app)
         try selectTool("geometry", in: app)
-        let reference = app.staticTexts.matching(identifier: "geometry.cropY.reference")
-        XCTAssertTrue(reference.firstMatch.waitForExistence(timeout: 10), app.debugDescription)
-        let lines = reference.allElementsBoundByIndex.map(\.label)
-        XCTAssertFalse(lines.contains("Minimum Reached") && lines.contains("Maximum Reached"), "\(lines)")
-        XCTAssertFalse(app.buttons["geometry.cropY.value"].isEnabled, "a 0–0 range has nothing to choose")
+        // v0.8：裁切偏移/尺寸行移入几何面板"位置与尺寸"表单（GeometryControls 的 sheet），
+        // 空范围直接停用控件；v0.4 参考行的下限/上限文案在 v0.8 面板上已不存在，改按停用断言。
+        XCTAssertTrue(app.buttons["geometry.aspectRatio"].waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["geometry.aspectRatio"].tap()
+        let dimensions = app.buttons["geometry.dimensions"]
+        XCTAssertTrue(dimensions.waitForExistence(timeout: 5), app.debugDescription)
+        dimensions.tap()
+        let value = app.buttons["geometry.cropY.value"]
+        XCTAssertTrue(value.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(value.isEnabled, "a 0–0 range has nothing to choose")
     }
 
     // 自定义尺寸输入框有读屏名称：填了数字后 VoiceOver 不能只读出"70000"
@@ -189,7 +213,10 @@ final class ReleaseDetailUITests: XCTestCase {
         }
         let group: String
         switch name {
-        case "hsl": group = "color"
+        case "exposure", "highlights", "shadows", "contrast", "toneCurve": group = "light"
+        case "temperature", "tint", "saturation", "hsl": group = "color"
+        case "clarity", "dehaze", "vignette", "grain": group = "effects"
+        case "noiseReduction", "sharpening": group = "detail"
         default: group = "geometry"
         }
         let groupButton = app.buttons["editor.group." + group]
