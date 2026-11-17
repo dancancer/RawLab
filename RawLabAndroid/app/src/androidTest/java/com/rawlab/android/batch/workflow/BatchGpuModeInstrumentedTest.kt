@@ -59,7 +59,7 @@ class BatchGpuModeInstrumentedTest {
             store.put("validation", model)
         }
         try {
-            withBatch(false, EditSettings(customWb = true), resumed = false, model = model, expectCompleted = false) { batch ->
+            withBatch(false, EditSettings(customWb = true), resumed = false, customModel = model, expectCompleted = false) { batch ->
                 assertEquals(BatchPhase.SELECTING, batch.state.value.phase)
                 assertEquals(1, batch.state.value.job.rows.size)
                 assertEquals("Target validation must inherit GPU off, with one real processor", listOf(NativeProcessor.CPU), modes.toList())
@@ -88,11 +88,13 @@ class BatchGpuModeInstrumentedTest {
     }
 
     @Test fun resumedBatchWithGpuDisabledUsesCpuForPreviewAndOriginalSizeCleanExport() {
-        val settings = EditSettings(customWb = true, exposure = .5f, contrast = .2f,
+        // 对比度属于 BasicV3 基础控制（00aa7e20da 起按契约走 CPU 管线）；改用饱和度保持 GLES 资格。
+        val settings = EditSettings(customWb = true, exposure = .5f, saturation = .2f,
             denoise = DenoiseSettings(true, 10f, 72f, 100f))
         withBatch(gpuEnabled = false, settings = settings, resumed = true, format = ExportFormat.JPEG) { batch ->
             if (InstrumentationRegistry.getArguments().getString("batchAbortProbe") == "true") {
-                compose.runOnUiThread { batch.retryFailed() }
+                // cfff3308 契约下 resumed 冻结态是 CANCELLED+PENDING 行（failedCount=0），retryFailed 会因 canStart(retry=true) 空转。
+                compose.runOnUiThread { batch.continueUnfinished() }
                 compose.waitUntil(60_000) {
                     Thread.getAllStackTraces().values.any { stack -> stack.any {
                         it.className == NativeProcessor::class.java.name && it.methodName == "nativeProcess"
@@ -107,7 +109,8 @@ class BatchGpuModeInstrumentedTest {
     }
 
     @Test fun enabledNewAndResumedBatchesUseGlesInsteadOfBeingPinnedToCpu() {
-        val settings = EditSettings(customWb = true, exposure = .5f, contrast = .2f)
+        // contrast 会触发基础控制 CPU 回退（GLES 契约）；saturation 仍要求后端 2 且保持 CPU/GLES 像素可区分。
+        val settings = EditSettings(customWb = true, exposure = .5f, saturation = .2f)
         for (resumed in listOf(true, false)) {
             withBatch(gpuEnabled = true, settings = settings, resumed = resumed, longEdge = 300) { batch ->
                 assertPreviewMatchesMode(batch, NativeProcessor.FORCE)
@@ -117,7 +120,8 @@ class BatchGpuModeInstrumentedTest {
     }
 
     @Test fun enabledNewAndResumedBatchesExportOriginalSizeCleanWithAuto() {
-        val settings = EditSettings(customWb = true, exposure = .5f, contrast = .2f,
+        // 同上：饱和度不触发基础控制 CPU 回退，AUTO 原始尺寸导出仍须报告 GLES 后端。
+        val settings = EditSettings(customWb = true, exposure = .5f, saturation = .2f,
             denoise = DenoiseSettings(true, 10f, 72f, 100f))
         for (resumed in listOf(true, false)) {
             withBatch(gpuEnabled = true, settings = settings, resumed = resumed, format = ExportFormat.JPEG) { batch ->
@@ -160,7 +164,7 @@ class BatchGpuModeInstrumentedTest {
 
     private fun withBatch(gpuEnabled: Boolean, settings: EditSettings, resumed: Boolean,
                           longEdge: Int? = null, rlook: Boolean = false, format: ExportFormat = ExportFormat.PNG,
-                          model: EditorViewModel = compose.activity.model, expectCompleted: Boolean = true,
+                          customModel: EditorViewModel? = null, expectCompleted: Boolean = true,
                           check: (BatchExportModel) -> Unit) {
         val id = UUID.randomUUID().toString()
         cleanup.begin(id)
@@ -172,6 +176,14 @@ class BatchGpuModeInstrumentedTest {
         val before = digest(source)
         val look = if (rlook) File(inputs, "batch-gpu-$id.rlook").apply { writeBytes(syntheticRlook()) } else null
         val journal = BatchJournal(journalRoot)
+        // 默认每次 withBatch 自建独立 EditorViewModel（仿本类 disabledNewBatch 先例）：共享 compose.activity.model 会把上一迭代
+        // 已删 fixture 的 photo 残留进下一迭代，setGpuEnabled 见 photo!=null 自动 edit（置 committingAdjustments 单槽门）后
+        // importPhoto 被静默吞掉、persist 对已删源图落 FAILED 而死等 canExport（PR #459 碳审 B3）。
+        val store = ViewModelStore()
+        lateinit var model: EditorViewModel
+        compose.runOnUiThread {
+            model = customModel ?: EditorViewModel(compose.activity.application).also { store.put("batchEditor", it) }
+        }
         try {
             val effectiveSettings = if (look != null && !resumed) {
                 cleanup.trackLookImport(look.name)
@@ -235,6 +247,7 @@ class BatchGpuModeInstrumentedTest {
             cleanup.finish(batch?.state?.value?.phase in setOf(BatchPhase.PREPARING, BatchPhase.RUNNING) ||
                 model.state.value.operation != Operation.NONE,
                 cancel = { batch?.cancel() }, close = { compose.runOnUiThread { model.closeBatch() } })
+            if (customModel == null) compose.runOnUiThread { store.clear() }
         }
     }
 
@@ -262,8 +275,12 @@ class BatchGpuModeInstrumentedTest {
         val started = SystemClock.elapsedRealtime()
         status("$label exportStarted format=$format longEdge=$longEdge")
         compose.runOnUiThread {
-            if (batch.state.value.phase == BatchPhase.SELECTING) batch.start(format, null, longEdge)
-            else batch.retryFailed()
+            // 续跑恢复的 CANCELLED 作业带 PENDING 行：UI 唯一可用动作是继续未完成（canStart(retry) 要求 failedCount>0）。
+            when (batch.state.value.phase) {
+                BatchPhase.SELECTING -> batch.start(format, null, longEdge)
+                BatchPhase.CANCELLED -> batch.continueUnfinished()
+                else -> batch.retryFailed()
+            }
         }
         compose.waitUntil(240_000) { batch.state.value.phase !in setOf(BatchPhase.RUNNING, BatchPhase.PREPARING) }
         status("$label exportMs=${SystemClock.elapsedRealtime() - started}")
@@ -273,7 +290,7 @@ class BatchGpuModeInstrumentedTest {
         val backendLog = android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(
             "logcat -d --pid=${android.os.Process.myPid()} -v raw -s RawLabBatch:I")).use { it.bufferedReader().readText() }
         val reports = backendLog.lineSequence().filter { it.startsWith("job=${completed.id} exportBackend=") }.toList()
-        val expectedBackend = if (referenceMode == NativeProcessor.CPU) 0 else 2
+        val expectedBackend = if (referenceMode == NativeProcessor.CPU || !completed.source.settings.geometry.isIdentity) 0 else 2
         assertEquals("The actual batch render must report its own backend exactly once",
             listOf("job=${completed.id} exportBackend=$expectedBackend"), reports)
         status("$label actualBatchExportBackend=$expectedBackend job=${completed.id}")
@@ -299,7 +316,7 @@ class BatchGpuModeInstrumentedTest {
         val file = File(target.parentFile, name)
         NativeProcessor(mode).use {
             val backend = it.export(target, job.source.lookFile, job.source.settings, file, job.outputFormat, job.outputLongEdge)
-            assertEquals("Reference export reports actual backend", if (mode == NativeProcessor.CPU) 0 else 2, backend)
+            assertEquals("Reference export reports actual backend", if (mode == NativeProcessor.CPU || !job.source.settings.geometry.isIdentity) 0 else 2, backend)
             status("reference mode=$mode actualExportBackend=$backend")
         }
         return requireNotNull(BitmapFactory.decodeFile(file.path))
