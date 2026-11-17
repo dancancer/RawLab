@@ -944,11 +944,15 @@ class EditorViewModel @JvmOverloads constructor(
     fun updatePreviewSize(edge: Int) {
         var current = mutable.value
         if (disposed || current.photo == null || edge !in 1..1600) return
+        // k826：同一边长的重试不是视口变化（渲染收尾回调按已记录边长重试），不得借此清除 HSL 取色状态。
+        if (edge == requestedPreviewLongEdge && (edge == previewLongEdge || previewResizeJob != null)) return
         if (current.draft != null) {
+            // k826：草稿期间不重渲染，但必须记录最新视口边长；草稿收尾的提交渲染据此收敛，
+            // 否则提交预览长边卡在旧值直到重开工程（用户可见的预览降质）。
+            requestedPreviewLongEdge = edge
             if (current.draft?.group == AdjustmentGroup.HSL) cancelHslTarget()
             return
         }
-        if (edge == requestedPreviewLongEdge && (edge == previewLongEdge || previewResizeJob != null)) return
         if (cameraHDRPreflightPending) {
             // 视口变化保留最新尺寸，不能用旧 SDR 预览替换尚未完成的 HDR 能力预检。
             requestedPreviewLongEdge = edge
@@ -1079,6 +1083,8 @@ class EditorViewModel @JvmOverloads constructor(
         val edits = current.draft!!.project(current.edits)
         previewResizeJob?.cancel()
         previewResizeJob = null
+        // k826：草稿期间记录的视口边长在提交渲染时立即生效，避免旧边长再次上屏。
+        previewLongEdge = requestedPreviewLongEdge
         pendingResetMigrationClear = null
         persist(photo, edits) { saved ->
             if (saved.state == EditSaveState.FAILED) {
@@ -1114,7 +1120,11 @@ class EditorViewModel @JvmOverloads constructor(
         mutable.value = committed
         val shown = current.draftRenderEdits()
         // 草稿的裁切框可能只改覆盖层；只有实际预览不同或尚未收敛时才恢复提交预览。
-        if (shown == current.edits && current.exact && !current.rendering && current.error == null) return
+        if (shown == current.edits && current.exact && !current.rendering && current.error == null) {
+            // k826：无实际改动的草稿关闭也要应用草稿期间记录的视口边长。
+            updatePreviewSize(requestedPreviewLongEdge)
+            return
+        }
         renderCommittedForNavigation()
     }
 
@@ -1123,6 +1133,8 @@ class EditorViewModel @JvmOverloads constructor(
         val current = mutable.value
         val photo = current.photo ?: return
         deferredMigrationPreview = false
+        // k826：提交态渲染收敛到最新记录的视口边长。
+        previewLongEdge = requestedPreviewLongEdge
         mutable.value = current.copy(rendering = true, exact = false, error = null)
         currentRevision = submitRender(Work.Preview(photo, current.edits, false, gpuMode(), edge = previewLongEdge))
         navigationPreview = EditorDurablePreview(photo.identity, photo.file.absolutePath, sourceRevision,
