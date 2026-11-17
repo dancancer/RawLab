@@ -117,6 +117,10 @@ internal static class UiDetailChecks
         settings.ApplyMasterRecipe(recipe);lut.SetValue(window,recipe.LutPath);Refresh(window);
         check(window.ActiveFilm.Text==Loc.Text(recipe.Name) && window.FilmLabelText.Text==Loc.Text("调整后"),
             $"Active look names the recipe while comparison identifies the adjusted image in {language}: {window.ActiveFilm.Text} / {window.FilmLabelText.Text}");
+        // Precondition declared for this file-less fixture: clearing a recipe whose tint delta differs from
+        // neutral needs as-shot calibration (the guard added with the v4 recipe controls); resolving it is
+        // exactly what opening a calibrated RAW does, so ClearMasterRecipe keeps its real contract here.
+        settings.ResolveWhiteBalance((5500,0));
         settings.ClearMasterRecipe();lut.SetValue(window,null);Refresh(window);
         check(window.ActiveFilm.Text==Loc.Text("中性"),$"Neutral look is named in {language}: {window.ActiveFilm.Text}");
     }
