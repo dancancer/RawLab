@@ -1,5 +1,6 @@
 package com.rawlab.android.photo
 
+import com.rawlab.android.io.replaceFileAtomically
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
@@ -273,8 +274,7 @@ class PhotoStorage(
             val input = resolver.openInputStream(uri) ?: throw HDRProcessingException(1, 21, 11)
             input.use { source -> staging.outputStream().use { copyHDRCameraProfileSource(source, it) } }
             val profile = HDRCameraProfile(NativeHDRBridge.probeCameraProfile(staging), name.substringBeforeLast('.'))
-            java.nio.file.Files.move(staging.toPath(), profile.asset(directory).toPath(),
-                java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+            replaceFileAtomically(staging, profile.asset(directory))
             return profile
         } finally { staging.delete() }
     }
