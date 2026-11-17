@@ -60,6 +60,8 @@ internal static class SoftwareUpdateUiChecks
             ()=>uiElapsed);
         var adapter=new Adapter();var controller=new DesktopUpdateController(adapter,new(),controllerStore,"0.8.2","14",false);
         var window=new MainWindow(new UsageAnalytics(),null,desktopUpdates:controller){Width=1200,Height=900};TestWindowState.Isolate(window,output);
+        // Isolate swaps the controller store for a plain one; re-attach the injected store so the failing-move hook and fake clock drive the update-state writes below.
+        typeof(DesktopUpdateController).GetField("store",Private)!.SetValue(controller,controllerStore);
         var store=new EditStore(Path.Combine(output,"edits"));typeof(MainWindow).GetField("editStore",Private)!.SetValue(window,store);
         try {
             window.GpuMode.SelectedIndex=1;window.Show();window.OpenFile(photo);Ready(window);
