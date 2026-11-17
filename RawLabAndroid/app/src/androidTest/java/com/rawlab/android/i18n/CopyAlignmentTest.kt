@@ -2,7 +2,6 @@ package com.rawlab.android.i18n
 
 import android.graphics.Bitmap
 import android.net.Uri
-import android.os.Build
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -14,6 +13,7 @@ import com.rawlab.android.MainActivity
 import com.rawlab.android.R
 import com.rawlab.android.testing.openEditorMenu
 import com.rawlab.android.testing.LanguageTestRule
+import com.rawlab.android.testing.waitForActivityLocale
 import java.io.File
 import org.junit.Assert.assertNull
 import org.junit.Rule
@@ -33,14 +33,7 @@ class CopyAlignmentTest {
         try {
             for (language in listOf("zh-Hans", "en")) {
                 compose.runOnUiThread { AppStrings.setPreference(compose.activity, language) }
-                if (Build.VERSION.SDK_INT < 33) compose.activityRule.scenario.recreate()
-                var localeFailure: String? = null
-                try {
-                    compose.waitUntil(30_000) { compose.activity.resources.configuration.locales[0].language == language.substringBefore('-') }
-                } catch (timeout: androidx.compose.ui.test.ComposeTimeoutException) {
-                    localeFailure = "Activity locale must follow choice \"$language\": actual=${compose.activity.resources.configuration.locales.toLanguageTags()} sdk=${Build.VERSION.SDK_INT}"
-                }
-                org.junit.Assert.assertNull(localeFailure)
+                compose.waitForActivityLocale(language, timeoutMs = 30_000)
                 val model = compose.activity.model
                 compose.runOnUiThread { model.importPhoto(Uri.fromFile(source)) }
                 compose.waitUntil(180_000) { model.state.value.canExport || model.state.value.error != null }

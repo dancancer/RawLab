@@ -2,7 +2,6 @@ package com.rawlab.android.looks
 
 import android.graphics.Bitmap
 import android.net.Uri
-import android.os.Build
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
@@ -21,6 +20,7 @@ import com.rawlab.android.editor.Operation
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.testing.LanguageTestRule
 import com.rawlab.android.testing.TestTimeouts
+import com.rawlab.android.testing.waitForActivityLocale
 
 class LookLibraryScreenTest {
     val compose = createAndroidComposeRule<MainActivity>()
@@ -180,10 +180,7 @@ class LookLibraryScreenTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         compose.runOnUiThread { AppStrings.setPreference(context, language) }
-        if (Build.VERSION.SDK_INT < 33) compose.activityRule.scenario.recreate()
-        compose.waitUntil(10_000) {
-            runCatching { compose.activity.resources.configuration.locales[0].language == java.util.Locale.forLanguageTag(language).language }.getOrDefault(false)
-        }
+        compose.waitForActivityLocale(language)
         fun text(id: Int) = AppStrings.text(id)
         val token = UUID.randomUUID().toString().take(8)
         val raw = File(context.cacheDir, "screen-$token.arw")

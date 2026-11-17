@@ -47,6 +47,7 @@ import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.testing.openWorkbenchTool
 import com.rawlab.android.testing.returnToWorkbench
 import com.rawlab.android.testing.LanguageTestRule
+import com.rawlab.android.testing.waitForActivityLocale
 
 class EditorScreenTest {
     val compose = createAndroidComposeRule<MainActivity>()
@@ -127,8 +128,7 @@ class EditorScreenTest {
         assertTrue(model.state.value.canExport)
         val savedEdits = model.state.value.edits
         compose.runOnUiThread { AppStrings.setPreference(compose.activity, "de") }
-        if (android.os.Build.VERSION.SDK_INT < 33) compose.activityRule.scenario.recreate()
-        compose.waitUntil(10_000) { compose.activity.resources.configuration.locales[0].language == "de" }
+        compose.waitForActivityLocale("de")
         compose.activityRule.scenario.onActivity { model = it.model }
         compose.waitUntil(180_000) { model.state.value.canExport || model.state.value.error != null }
         assertEquals(savedEdits, model.state.value.edits)
@@ -191,16 +191,10 @@ class EditorScreenTest {
                 val previousActivity = activity
                 val preferenceChanged = AppStrings.preference(previousActivity) != language
                 compose.runOnUiThread { AppStrings.setPreference(previousActivity, language) }
-                var localeRecreated = false
-                if (android.os.Build.VERSION.SDK_INT >= 33 && preferenceChanged) {
-                    try {
-                        compose.waitUntil(15_000) { compose.activity !== previousActivity }
-                        localeRecreated = true
-                    } catch (_: AssertionError) {
-                        // Some API 33 images do not recreate when the selected locale is unchanged.
-                    }
-                }
-                if (!localeRecreated) compose.activityRule.scenario.recreate()
+                // 每次切换都必须真正重建一次 Activity（快照存活是本测试的被验对象）：
+                // 语言变了等 locale 跟随（系统重建或 helper 兜底重建），语言没变则直接重建。
+                if (preferenceChanged) compose.waitForActivityLocale(language, timeoutMs = 15_000)
+                else compose.activityRule.scenario.recreate()
                 compose.activityRule.scenario.onActivity { activity = it; model = it.model }
                 assertNotSame(previousActivity, activity)
                 compose.waitUntil(180_000) { model.state.value.edits == expected && model.batch.value != null }

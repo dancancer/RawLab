@@ -1,6 +1,5 @@
 package com.rawlab.android.editor
 
-import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.foundation.layout.*
@@ -19,7 +18,6 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
-import java.util.Locale
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -40,6 +38,7 @@ import com.rawlab.android.settings.LensSettings
 import com.rawlab.android.settings.LookChoice
 import com.rawlab.android.testing.openWorkbenchTool
 import com.rawlab.android.testing.LanguageTestRule
+import com.rawlab.android.testing.localizedTestContext
 import com.rawlab.android.ui.ExportFormatControls
 
 class EditorV08ControlsTest {
@@ -107,8 +106,8 @@ class EditorV08ControlsTest {
         var language by mutableStateOf("en")
         var selected by mutableStateOf(ExportFormat.JPEG)
         compose.setContent {
-            val config = Configuration(context.resources.configuration).apply { setLocale(Locale.forLanguageTag(language)) }
-            CompositionLocalProvider(LocalContext provides context.createConfigurationContext(config)) {
+            val localizedContent = localizedTestContext(context, language)
+            CompositionLocalProvider(LocalContext provides localizedContent) {
                 RawLabTheme { Column(Modifier.width(280.dp).verticalScroll(rememberScrollState())) {
                     ExportFormatControls(selected, { selected = it })
                 } }
@@ -117,9 +116,7 @@ class EditorV08ControlsTest {
         listOf("en", "zh-Hans", "de", "fr", "ja", "es").forEach { locale ->
             compose.runOnIdle { language = locale }
             compose.onNodeWithTag("export-format-DNG").performScrollTo().performClick().assertIsSelected()
-            val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply {
-                setLocale(Locale.forLanguageTag(locale))
-            })
+            val localized = localizedTestContext(context, locale)
             val exports = mapOf("en" to "Export", "zh-Hans" to "导出", "de" to "Exportieren", "fr" to "Exporter", "ja" to "書き出し", "es" to "Exportar")
             assertEquals("The resource locale must really change: requested=$locale actual=${localized.resources.configuration.locales.toLanguageTags()} app=${AppStrings.preference(context)} base=${context.resources.configuration.locales.toLanguageTags()}",
                 exports.getValue(locale), localized.getString(R.string.export))

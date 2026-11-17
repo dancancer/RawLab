@@ -41,8 +41,13 @@ internal object AppStrings {
     fun localizedContext(context: Context): Context {
         val system = Resources.getSystem().configuration.locales
         val language = LanguageChoice.resolve(preference(context), (0 until system.size()).map { system[it].toLanguageTag() })
+        val requested = Locale.forLanguageTag(language)
         val configuration = Configuration(context.resources.configuration)
-        configuration.setLocales(LocaleList(Locale.forLanguageTag(language)))
+        configuration.setLocales(LocaleList(requested))
+        // SDK35 实机（TB320FC）实测 setLocales/setLocale 写入丢失、资源解析沿 legacy locale 字段：
+        // 同步旧字段，否则 createConfigurationContext 仍按源语言解析（与测试 helper 同根，见 LocalizedTestConfiguration）。
+        @Suppress("DEPRECATION")
+        configuration.locale = requested
         return context.createConfigurationContext(configuration)
     }
 
