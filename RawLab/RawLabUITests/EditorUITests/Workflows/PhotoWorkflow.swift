@@ -116,7 +116,16 @@ extension EditorUITests {
         for name in lutNames + Array(lutNames.reversed()) {
             revealFilm(name, in: app)
             let lut = app.buttons[name]
-            XCTAssertTrue(lut.exists && lut.isHittable && strip.frame.contains(lut.frame),
+            // AX frames are quantized independently at @3x. One point covers rounding,
+            // not a clipped chip; the shared helper only brings its center into view.
+            let visible = strip.frame.insetBy(dx: -1, dy: -1)
+            for _ in 0..<8 where !(visible.contains(lut.frame) && lut.isHittable) {
+                let left = lut.frame.midX < strip.frame.midX
+                strip.coordinate(withNormalizedOffset: CGVector(dx: left ? 0.25 : 0.75, dy: 0.5))
+                    .press(forDuration: 0.1, thenDragTo: strip.coordinate(withNormalizedOffset:
+                        CGVector(dx: left ? 0.65 : 0.35, dy: 0.5)))
+            }
+            XCTAssertTrue(lut.exists && lut.isHittable && visible.contains(lut.frame),
                           "Built-in LUT must be fully reachable in both directions: \(name)")
         }
         XCTAssertFalse(app.buttons["WDR"].exists)
