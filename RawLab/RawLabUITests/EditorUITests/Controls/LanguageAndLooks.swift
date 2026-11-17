@@ -168,7 +168,9 @@ extension EditorUITests {
     }
     func testLanguageSelectionPersists() {
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        // The app's persisted language default outlives other cases in this runner; pin the
+        // launch language through the app's own default key so the English baseline is deterministic.
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-RawLab.language", "en"]
         app.launch()
         // v0.8: the language picker is a submenu of the overview overflow menu; the entry
         // label is the observable signal that a language switch propagated through the app.

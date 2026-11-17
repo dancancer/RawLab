@@ -38,7 +38,19 @@ extension EditorUITests {
         waitForExpectations(timeout: 8)
         XCTAssertGreaterThanOrEqual(reset.frame.width, 44)
         XCTAssertGreaterThanOrEqual(reset.frame.height, 44)
-        XCTAssertTrue(panel.frame.contains(reset.frame), "The reset target must remain inside the panel at every text size")
+        // k845/k816 re-anchor (撤牙齿记位: v0.4「reset 在 panel ScrollView 内」契约退役——
+        // workspaceActions 是照片底部的 HStack 行 [undo, redo, reset, …, compare, more]，
+        // 竖屏在面板上方、横屏在侧栏旁，panel.contains 结构在横屏本就不成立)。
+        // 真实牙齿：完全在屏内、与同一 HStack 行的 more 按钮对齐、与面板矩形不相交(≤1pt 容差)。
+        XCTAssertTrue(app.frame.contains(reset.frame),
+                      "The reset target must stay fully on screen at every text size")
+        let rowAnchor = app.buttons["editor.tool.more"]
+        XCTAssertTrue(rowAnchor.waitForExistence(timeout: 5), "the actions row must be present")
+        XCTAssertEqual(reset.frame.midY, rowAnchor.frame.midY, accuracy: 8,
+                       "The reset target must stay in the workspace actions row")
+        let panelOverlap = reset.frame.intersection(panel.frame)
+        XCTAssertTrue(panelOverlap == .null || panelOverlap.width <= 1 || panelOverlap.height <= 1,
+                      "The reset target must not intrude into the parameter panel: \(panelOverlap)")
         let controls = [panel, workspace, ruler, reset]
         let beforeFrames = controls.map(\.frame)
         let originalValue = value.value as? String
