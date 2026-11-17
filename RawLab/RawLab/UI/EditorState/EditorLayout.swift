@@ -151,15 +151,15 @@ extension ContentView {
 
     var workspaceActions: some View {
         HStack(spacing: 0) {
-            Button { if toolWorkspaceOpen { undoEditorDraft() } else { requestAdjustmentAction(.undo) } } label: { Image(systemName: "arrow.uturn.backward").font(.system(size: 20)).frame(width: 44, height: 44) }
+            Button { if toolWorkspaceOpen { undoEditorDraft() } else { requestAdjustmentAction(.undo) } } label: { Image(systemName: "arrow.uturn.backward").font(.system(size: 20)).frame(width: 44, height: 44).contentShape(Rectangle()) }
                 .disabled((toolWorkspaceOpen ? workspaceDraft?.canUndo != true : !viewModel.canUndoAdjustment) || editorBusy)
                 .accessibilityLabel(L10n.text("撤销")).accessibilityIdentifier("editor.draft.undo")
-            Button { if toolWorkspaceOpen { redoEditorDraft() } else { requestAdjustmentAction(.redo) } } label: { Image(systemName: "arrow.uturn.forward").font(.system(size: 20)).frame(width: 44, height: 44) }
+            Button { if toolWorkspaceOpen { redoEditorDraft() } else { requestAdjustmentAction(.redo) } } label: { Image(systemName: "arrow.uturn.forward").font(.system(size: 20)).frame(width: 44, height: 44).contentShape(Rectangle()) }
                 .disabled((toolWorkspaceOpen ? workspaceDraft?.canRedo != true : !viewModel.canRedoAdjustment) || editorBusy)
                 .accessibilityLabel(L10n.text("重做")).accessibilityIdentifier("editor.draft.redo")
             workspaceResetControl
             Spacer(minLength: 0)
-            Button { photoViewing.toggleComparison() } label: { Image(systemName: "square.on.square").font(.system(size: 20)).frame(width: 44, height: 44) }
+            Button { photoViewing.toggleComparison() } label: { Image(systemName: "square.on.square").font(.system(size: 20)).frame(width: 44, height: 44).contentShape(Rectangle()) }
                 .disabled(geometrySelected).accessibilityLabel(L10n.text("对比"))
             if toolWorkspaceOpen {
             Menu {

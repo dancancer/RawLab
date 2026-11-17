@@ -111,6 +111,9 @@ struct EditorWorkspaceResetControl: View {
                     Image(systemName: "arrow.counterclockwise")
                         .font(.system(size: 20))
                         .frame(width: 44, height: 44)
+                        // k816：plain 按钮只把可见字形算作命中区，透明外框必须显式并入
+                        // contentShape，AX 才按 44pt 布局框上报（与工具格 :113 同法）。
+                        .contentShape(Rectangle())
                 }
                 .disabled(!isEnabled)
                 .accessibilityLabel(presentation.label)
