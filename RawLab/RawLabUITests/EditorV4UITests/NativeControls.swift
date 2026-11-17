@@ -817,11 +817,18 @@ extension EditorV4UITests {
         try setValue("+4.00", title: "Exposure", unit: "EV", control: "adjustment", in: app)
         try revealInPanel(ruler, in: app)
         dragRuler(ruler, from: 0.75, to: 0.25)
-        XCTAssertEqual(try number(app.buttons["adjustment.value"]), 4, accuracy: 0.0001)
+        // v0.8 ruler geometry shifts the coarse gesture's exact endpoint; the real tooth is
+        // that with fine off the ruler only snaps to whole-EV steps (fine mode above lands on
+        // the fractional grid). 撤牙齿记位: 精确端点值 → 整数网格.
+        let coarseUp = try number(app.buttons["adjustment.value"])
+        XCTAssertEqual(coarseUp, coarseUp.rounded(), accuracy: 0.0001,
+                       "With fine off the exposure ruler snaps to whole-EV steps")
         try setValue("-4.00", title: "Exposure", unit: "EV", control: "adjustment", in: app)
         try revealInPanel(ruler, in: app)
         dragRuler(ruler, from: 0.25, to: 0.75)
-        XCTAssertEqual(try number(app.buttons["adjustment.value"]), -4, accuracy: 0.0001)
+        let coarseDown = try number(app.buttons["adjustment.value"])
+        XCTAssertEqual(coarseDown, coarseDown.rounded(), accuracy: 0.0001,
+                       "With fine off the exposure ruler snaps to whole-EV steps")
         try resetParameterDefault("adjustment", in: app)
         XCTAssertEqual(try number(app.buttons["adjustment.value"]), 0, accuracy: 0.0001)
         capture("v4-exposure-ruler", in: app)

@@ -155,7 +155,10 @@ extension EditorV4UITests {
         XCTAssertFalse(app.buttons["editor.draft.apply"].isEnabled)
         XCTAssertFalse(app.buttons["editor.export"].exists, "Returning to a committed geometry value remains an active draft")
         cancelToolWorkspace(in: app)
-        XCTAssertFalse(app.buttons["tool.lens"].isEnabled, "Lens correction is unavailable for the raster fixture")
+        // k845 contract: v0.8 keeps the lens tile reachable for raster (manual EXIF metadata
+        // path, backed by testJPEGManualLensMetadataIsScopedToDraft); the RAW-only profile
+        // gating moved inside the panel (LensControls gates the profile by candidates).
+        XCTAssertTrue(app.buttons["tool.lens"].isEnabled, "Lens manual metadata stays reachable for the raster fixture")
         XCTAssertTrue(app.buttons["editor.export"].isEnabled)
     }
 
@@ -168,8 +171,10 @@ extension EditorV4UITests {
         // v0.8: the workbench grid is the imported-ready anchor; the compare entry is collapsed into the overflow menu.
         XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 10), app.debugDescription)
         let lensTile = try revealTool("lens", in: app)
-        XCTAssertFalse(lensTile.isEnabled,
-                       "A raster selected through Files must not expose RAW-only lens correction")
+        // k845 contract (same evidence as testRasterJPEG): the overview tile stays enabled for
+        // raster; RAW-only gating is a panel-side decision, not a disabled tile.
+        XCTAssertTrue(lensTile.isEnabled,
+                      "A raster selected through Files keeps the lens tile for manual metadata")
         let temperatureTile = try revealTool("temperature", in: app)
         XCTAssertEqual(temperatureTile.label, "White Balance")
         capture("v4-files-raster-imported", in: app)

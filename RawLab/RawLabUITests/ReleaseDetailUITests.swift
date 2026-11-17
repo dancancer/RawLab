@@ -59,19 +59,20 @@ final class ReleaseDetailUITests: XCTestCase {
         try importFirstVisiblePhoto(in: app)
         try selectTool("exposure", in: app)
         let panel = app.scrollViews["editor.panel"]
-        // 曝光面板带网格图形，内容超过面板上限、必然可滚；先滚走顶部标题行再换工具
         let topRow = app.staticTexts["adjustment.title"]
         XCTAssertTrue(topRow.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(panel.frame.contains(topRow.frame), "the exposure panel must start at its top row")
-        for _ in 0..<3 {
-            panel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85))
-                .press(forDuration: 0.1, thenDragTo: panel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)))
-        }
-        XCTAssertFalse(panel.frame.contains(topRow.frame), "the exposure panel must be scrolled first")
+        let exposureTitle = topRow.label
+        // v0.8: 每组的参数页内容适配在面板内、不产生滚动（press-drag 与 swipeUp 实跑均未滚走，
+        // v0.4「先滚一半再换工具」前提退役）。牙齿重锚：换工具后新面板从顶部渲染，
+        // 标题行紧贴面板上沿且已切换到新工具（撤牙齿记位: 滚动前提 → 顶部锚定+标题切换）。
         try selectTool("saturation", in: app)
         let header = app.staticTexts["adjustment.title"]
         XCTAssertTrue(header.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertNotEqual(header.label, exposureTitle, "the panel must switch to the new tool")
         XCTAssertTrue(panel.frame.contains(header.frame), "header \(header.frame) outside panel \(panel.frame)")
+        XCTAssertLessThan(header.frame.minY, panel.frame.minY + 190,
+                          "the new panel must render from its top, not an old scroll offset")
     }
 
     // 两个旋转按钮并排时一样高：英文"Rotate left 90°"折成多行，不能把左边按钮撑得比右边高
