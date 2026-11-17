@@ -168,17 +168,22 @@ class EditorToolsTest {
     // 面板重置保留可见入口；单参数重置通过语义动作提供，避免每行常驻按钮。
     @Test fun headerResetRemainsVisibleAndParameterResetIsASemanticAction() {
         val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+        val edits = EditSettings(exposure = .5f)
+        var draft by mutableStateOf<AdjustmentDraft?>(null)
         compose.setContent {
             RawLabTheme {
                 EditorScreen(
                     state = EditorState(
                         photo = ImportedPhoto(Uri.parse("content://rawlab.test/reset"), "fixture", File("fixture")),
-                        edits = EditSettings(exposure = .5f),
+                        edits = edits, draft = draft,
                         preview = PreviewPair(bitmap, bitmap, temperature = 6500f, tint = 0f),
                         exact = true,
                     ),
-                    onAlbum = {}, onFile = {}, onEdit = { _, _ -> }, onRetry = {},
+                    onAlbum = {}, onFile = {}, onEdit = { _, _ -> org.junit.Assert.fail("Workspace parameters must edit their draft") }, onRetry = {},
                     onExport = {}, onMessageDismiss = {}, onLicenses = {}, onGpuChange = {},
+                    onBeginDraft = { draft = AdjustmentDraft.begin(it, edits) },
+                    onDraftEdit = { next, dragging -> draft = requireNotNull(draft).update(next, dragging) },
+                    onDiscardDraft = { draft = null },
                 )
             }
         }

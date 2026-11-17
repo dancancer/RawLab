@@ -9,6 +9,9 @@ import org.junit.Test
 import java.io.File
 import com.rawlab.android.RawLabTheme
 import com.rawlab.android.editor.EditorState
+import com.rawlab.android.editor.AdjustmentDraft
+import com.rawlab.android.editor.AdjustmentGroup
+import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.editor.ui.EditorScreen
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.settings.LookChoice
@@ -25,15 +28,17 @@ class UsageFilmSelectionTest {
                     state = EditorState(
                         photo = ImportedPhoto(Uri.parse("content://fixture/photo"), "Fixture", File("unused")),
                         looks = listOf(LookChoice("missing", "Missing look", managed = true, available = false)),
+                        draft = AdjustmentDraft.begin(AdjustmentGroup.LOOK, EditSettings()),
                     ),
                     onAlbum = {}, onFile = {}, onEdit = { _, _ -> edits++ },
                     onRetry = {}, onExport = {}, onFilmSelected = { events++ },
+                    onSelectFilm = { edits++; true },
                     onMessageDismiss = {}, onLicenses = {}, onGpuChange = {},
                 )
             }
         }
-        compose.onNodeWithTag("editor-tool-0").performClick()
-        compose.onNodeWithTag("looks.search.open").performClick()
+        compose.onNodeWithText("Missing look").assertExists()
+        compose.onNodeWithTag("looks.search.open").assertIsEnabled().performClick()
         compose.onNodeWithTag("looks.search").performTextReplacement("Missing look")
         compose.onNode(hasText("Missing look") and !hasSetTextAction()).assertIsNotEnabled().performTouchInput { click() }
         compose.runOnIdle {
