@@ -1,4 +1,5 @@
 #include "core/jpeg_mpf.h"
+#include "core/tiff_ifd.h"
 
 #include <algorithm>
 #include <array>
@@ -94,58 +95,45 @@ struct MpfIndex {
 };
 
 bool parseIndex(const std::vector<uint8_t>& tiff, uint64_t tiffBase, uint64_t fileSize, MpfIndex& result) {
-    if (tiff.size() < 8) return false;
-    const bool little = tiff[0] == 'I' && tiff[1] == 'I';
-    if (!little && !(tiff[0] == 'M' && tiff[1] == 'M')) return false;
-    const auto value = [&](size_t offset, size_t width) {
-        uint32_t number = 0;
-        for (size_t index = 0; index < width; ++index) {
-            number = (number << 8) | tiff[offset + (little ? width - 1 - index : index)];
-        }
-        return number;
-    };
-    if (value(2, 2) != 42) return false;
-    const size_t directory = value(4, 4);
-    if (directory < 8 || directory > tiff.size() - 2) return false;
-    const size_t count = value(directory, 2);
-    const size_t directoryEnd = directory + 2 + count * 12 + 4;
-    if (directoryEnd > tiff.size() || value(directoryEnd - 4, 4) != 0) return false;
+    tiff::Reader reader(tiff.data(), tiff.size());
+    uint32_t first = 0;
+    tiff::Directory directory;
+    if (!reader.header(first) || first < 8 || !reader.directory(first, directory) || directory.next != 0)
+        return false;
+    const size_t directoryEnd = directory.entriesOffset + size_t(directory.count) * 12 + 4;
 
     bool version = false;
     uint32_t images = 0, entriesOffset = 0, entriesSize = 0;
-    for (size_t index = 0; index < count; ++index) {
-        const size_t entry = directory + 2 + index * 12;
-        const auto type = value(entry + 2, 2);
-        const auto values = value(entry + 4, 4);
-        const auto field = value(entry + 8, 4);
-        switch (value(entry, 2)) {
+    if (!reader.entries(directory, [&](const tiff::Entry& entry) {
+        switch (entry.tag) {
         case 0xb000:
-            if (version || type != 7 || values != 4 || std::memcmp(tiff.data() + entry + 8, "0100", 4) != 0)
-                return false;
+            if (version || entry.type != 7 || entry.count != 4 ||
+                std::memcmp(tiff.data() + entry.inlineOffset, "0100", 4) != 0) return false;
             version = true;
             break;
         case 0xb001:
-            if (images || type != 4 || values != 1 || field < 2 || field > result.ranges.size()) return false;
-            images = field;
+            if (images || entry.type != 4 || entry.count != 1 ||
+                entry.value < 2 || entry.value > result.ranges.size()) return false;
+            images = entry.value;
             break;
         case 0xb002:
-            if (entriesSize || type != 7 || values == 0) return false;
-            entriesSize = values;
-            entriesOffset = field;
+            if (entriesSize || entry.type != 7 || entry.count == 0) return false;
+            entriesSize = entry.count;
+            entriesOffset = entry.value;
             break;
         }
-    }
+        return true;
+    })) return false;
     if (!version || !images || entriesSize != images * 16 || entriesOffset < directoryEnd ||
         entriesOffset > tiff.size() || entriesSize > tiff.size() - entriesOffset) return false;
 
     for (size_t index = 0; index < images; ++index) {
         const size_t entry = entriesOffset + index * 16;
-        const auto attributes = value(entry, 4);
-        const auto type = attributes & 0xffffff;
-        const auto length = value(entry + 4, 4);
-        const auto offset = value(entry + 8, 4);
-        const auto dependency1 = value(entry + 12, 2);
-        const auto dependency2 = value(entry + 14, 2);
+        uint64_t attributes = 0, length = 0, offset = 0, dependency1 = 0, dependency2 = 0;
+        if (!reader.integer(entry, 4, attributes) || !reader.integer(entry + 4, 4, length) ||
+            !reader.integer(entry + 8, 4, offset) || !reader.integer(entry + 12, 2, dependency1) ||
+            !reader.integer(entry + 14, 2, dependency2)) return false;
+        const auto type = static_cast<uint32_t>(attributes & 0xffffff);
         const uint64_t start = index == 0 ? 0 : tiffBase + offset;
         if (length < 4 || start > fileSize || length > fileSize - start) return false;
         if (index == 0) {
