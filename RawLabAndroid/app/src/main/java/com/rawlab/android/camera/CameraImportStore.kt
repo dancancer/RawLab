@@ -1,5 +1,6 @@
 package com.rawlab.android.camera
 
+import com.rawlab.android.io.replaceFileAtomically
 import com.rawlab.android.camera.protocol.SonyMobileSession
 import com.rawlab.android.photo.MediaPhoto
 import com.rawlab.android.photo.MediaPhotoAccess
@@ -11,9 +12,6 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.util.UUID
 
@@ -460,8 +458,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
         val target = File(directory, "${job.id}.json")
         try {
             FileOutputStream(part).use { it.write(json.toString().toByteArray()); it.fd.sync() }
-            try { Files.move(part.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING) }
-            catch (_: AtomicMoveNotSupportedException) { Files.move(part.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING) }
+            replaceFileAtomically(part, target)
         } finally { part.delete() }
         journalRewrites++
         journals[job.id] = job

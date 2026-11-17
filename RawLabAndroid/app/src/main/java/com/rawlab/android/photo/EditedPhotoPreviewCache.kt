@@ -1,5 +1,6 @@
 package com.rawlab.android.photo
 
+import com.rawlab.android.io.replaceFileAtomically
 import com.rawlab.android.editor.EditorAdjustmentRules
 import com.rawlab.android.editor.EditorResetContext
 import com.rawlab.android.editor.EditorResetScope
@@ -9,9 +10,6 @@ import com.rawlab.android.settings.StructuredSettingsCodec
 import com.rawlab.android.settings.sourceDefaultSettings
 import java.io.File
 import java.nio.ByteBuffer
-import java.nio.file.Files
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 
 internal enum class PhotoEditFilter {
@@ -66,8 +64,7 @@ internal interface PreviewCacheFileSystem {
             val temporary = File.createTempFile("preview-", ".tmp", directory)
             try {
                 temporary.outputStream().use { it.write(data) }
-                try { Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING) }
-                catch (_: AtomicMoveNotSupportedException) { Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING) }
+                replaceFileAtomically(temporary, target)
             } finally { temporary.delete() }
         }
 

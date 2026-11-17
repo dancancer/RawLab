@@ -1,12 +1,10 @@
 package com.rawlab.android.looks
 
+import com.rawlab.android.io.replaceFileAtomically
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.io.RandomAccessFile
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.util.Properties
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -94,7 +92,7 @@ class LookLibrary(
                 namedFormat.takeUnless { it == LookFormat.UNKNOWN } ?: detectContainer(rawStage)
             }
             val staged = File(root, ".${id}.stage.${format.extension}")
-            move(rawStage, staged)
+            replaceFileAtomically(rawStage, staged)
             if (compatibility != null) {
                 require(format == LookFormat.CUBE || format == LookFormat.VLT)
                 val prepared = compatibilityCompiler(staged, compatibility)
@@ -110,7 +108,7 @@ class LookLibrary(
                 throw com.rawlab.android.engine.LUTColorContractException(1)
             if (validation.format != format) throw InvalidLookException("Look format does not match its extension")
             if (!validVersion(format, validation.version)) throw InvalidLookException("Invalid look version")
-            move(staged, destination)
+            replaceFileAtomically(staged, destination)
             val imported = ManagedLook(id, name, originalName, format, validation.version, relativePath,
                 appearanceUnverified = validation.colorState in listOf(4, 7, 8),
                 compatibilityMode = validation.colorState.takeIf { it == 7 || it == 8 } ?: 0)
@@ -302,18 +300,9 @@ class LookLibrary(
                 }
             }
             temporary.outputStream().use { properties.store(it, null) }
-            move(temporary, registry)
+            replaceFileAtomically(temporary, registry)
         } finally {
             temporary.delete()
-        }
-    }
-
-    private fun move(source: File, destination: File) {
-        try {
-            Files.move(source.toPath(), destination.toPath(), StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING)
-        } catch (_: AtomicMoveNotSupportedException) {
-            Files.move(source.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING)
         }
     }
 

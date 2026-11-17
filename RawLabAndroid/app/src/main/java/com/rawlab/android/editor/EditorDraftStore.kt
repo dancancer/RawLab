@@ -1,13 +1,12 @@
 package com.rawlab.android.editor
 
+import com.rawlab.android.io.replaceFileAtomically
 import com.rawlab.android.geometry.GeometryRatio
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.settings.StructuredSettingsCodec
 import java.io.File
 import java.io.FileOutputStream
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.util.Properties
 
 /** 未应用草稿独立于照片历史；原始 URI、内容指纹和已提交快照均匹配才可恢复。 */
@@ -41,7 +40,7 @@ internal class EditorDraftStore(private val directory: File) {
         val pending = File(directory, "active.pending")
         try {
             FileOutputStream(pending).use { output -> values.store(output, null); output.fd.sync() }
-            Files.move(pending.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            replaceFileAtomically(pending, file)
         } finally { pending.delete() }
     }
 

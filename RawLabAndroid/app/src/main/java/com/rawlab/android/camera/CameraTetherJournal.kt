@@ -1,5 +1,6 @@
 package com.rawlab.android.camera
 
+import com.rawlab.android.io.replaceFileAtomically
 import com.rawlab.android.camera.protocol.CameraMediaSession
 import com.rawlab.android.photo.SystemPhotoStore
 import org.json.JSONArray
@@ -7,9 +8,6 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.util.UUID
 
 internal enum class CameraTetherStatus { ACTIVE, PAUSED, ENDED }
@@ -164,8 +162,7 @@ internal class CameraTetherJournal(private val directory: File) {
         val target = File(directory, "${run.id}.json")
         try {
             FileOutputStream(part).use { it.write(bytes); it.fd.sync() }
-            try { Files.move(part.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING) }
-            catch (_: AtomicMoveNotSupportedException) { Files.move(part.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING) }
+            replaceFileAtomically(part, target)
         } finally { part.delete() }
     }
 
