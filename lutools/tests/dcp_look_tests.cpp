@@ -72,6 +72,16 @@ void save(const fs::path& path, const Bytes& bytes) {
     stream.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
 }
 
+void replaceKeepingMtime(const fs::path& path, const Bytes& bytes) {
+    const auto modified = fs::last_write_time(path);
+    auto staging = path;
+    staging += ".tmp";
+    save(staging, bytes);
+    fs::last_write_time(staging, modified);
+    // Match staged look imports without depending on ctime clock granularity.
+    fs::rename(staging, path);
+}
+
 double encode(double x) { return x <= .0031308 ? 12.92 * x : 1.055 * std::pow(x, 1 / 2.4) - .055; }
 bool near(float actual, double expected) { return std::abs(actual - expected) <= 2e-6; }
 
@@ -88,20 +98,16 @@ void cacheTests(const fs::path& root) {
               "alternating A/B retains B parsed object");
     }
     const auto beforeRewrite = DcpLook::loadCached(path.u8string());
-    const auto modified = fs::last_write_time(path);
-    save(path, fixture(120));
-    fs::last_write_time(path, modified);
+    replaceKeepingMtime(path, fixture(120));
     const auto rewritten = DcpLook::loadCached(path.u8string());
     check(rewritten && rewritten != beforeRewrite, "same-size rewrite with restored mtime invalidates cache");
     check(rewritten && near(rewritten->apply(RGB(.5f, 0, 0)).g, encode(.5)), "rewrite changes rendered color");
     check(first && near(first->apply(RGB(.5f, 0, 0)).r, encode(.5)), "retained pre-rewrite profile stays immutable");
     auto invalid = fixture();
     invalid[8] = 3;
-    save(path, invalid);
-    fs::last_write_time(path, modified);
+    replaceKeepingMtime(path, invalid);
     check(!DcpLook::loadCached(path.u8string()), "invalid rewritten version cannot return stale cached profile");
-    save(path, fixture());
-    fs::last_write_time(path, modified);
+    replaceKeepingMtime(path, fixture());
     const auto repaired = DcpLook::loadCached(path.u8string());
     check(repaired && near(repaired->apply(RGB(.5f, 0, 0)).r, encode(.5)), "valid profile recovers after rejected rewrite");
 }
@@ -129,9 +135,7 @@ void mathTests(const fs::path& root) {
     const auto clipped = look->apply(RGB(-1, 2, 0));
     check(clipped.r == 0 && clipped.g == 1 && clipped.b == 0, "SDR stage clamp");
     auto changed = fixture(120);
-    const auto modified = fs::last_write_time(path);
-    save(path, changed);
-    fs::last_write_time(path, modified);
+    replaceKeepingMtime(path, changed);
     auto rotated = DcpLook::loadCached(path.u8string());
     check(rotated && rotated != look, "same-size rewrite with restored mtime invalidates cache");
     if (rotated) {
