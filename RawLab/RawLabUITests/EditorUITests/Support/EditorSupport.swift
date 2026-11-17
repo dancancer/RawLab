@@ -29,53 +29,51 @@ extension EditorUITests {
         XCTAssertTrue(workspace.waitForExistence(timeout: 10),
                       "The save regression must exercise the selected native exposure tool page")
         XCTAssertTrue(ruler.isHittable, "The native ruler must be reachable at every text size")
-        let notice = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Adjustments Saved")).firstMatch
         resetParameterDefault("adjustment", expectedValue: "0.00 EV", in: app)
-        let transientNotice = app.descendants(matching: .any).matching(NSPredicate(
-            format: "label == %@ OR label == %@", "Adjustments Saved", "Previous Adjustments Restored"
-        )).firstMatch
-        expectation(for: NSPredicate { _, _ in !transientNotice.exists }, evaluatedWith: app)
-        waitForExpectations(timeout: 8)
-        XCTAssertGreaterThanOrEqual(reset.frame.width, 44)
-        XCTAssertGreaterThanOrEqual(reset.frame.height, 44)
-        // k845/k816 re-anchor (撤牙齿记位: v0.4「reset 在 panel ScrollView 内」契约退役——
-        // workspaceActions 是照片底部的 HStack 行 [undo, redo, reset, …, compare, more]，
-        // 竖屏在面板上方、横屏在侧栏旁，panel.contains 结构在横屏本就不成立)。
-        // 真实牙齿：完全在屏内、与同一 HStack 行的 more 按钮对齐、与面板矩形不相交(≤1pt 容差)。
-        XCTAssertTrue(app.frame.contains(reset.frame),
-                      "The reset target must stay fully on screen at every text size")
         let rowAnchor = app.buttons["editor.tool.more"]
-        XCTAssertTrue(rowAnchor.waitForExistence(timeout: 5), "the actions row must be present")
-        XCTAssertEqual(reset.frame.midY, rowAnchor.frame.midY, accuracy: 8,
-                       "The reset target must stay in the workspace actions row")
-        let panelOverlap = reset.frame.intersection(panel.frame)
-        XCTAssertTrue(panelOverlap == .null || panelOverlap.width <= 1 || panelOverlap.height <= 1,
-                      "The reset target must not intrude into the parameter panel: \(panelOverlap)")
+        func assertResetTarget() {
+            XCTAssertGreaterThanOrEqual(reset.frame.width, 44)
+            XCTAssertGreaterThanOrEqual(reset.frame.height, 44)
+            XCTAssertTrue(reset.isHittable, "Draft editing and Apply must preserve the reset hit target")
+            XCTAssertTrue(app.frame.contains(reset.frame), "The reset target must stay fully on screen")
+            XCTAssertTrue(rowAnchor.waitForExistence(timeout: 5))
+            XCTAssertEqual(reset.frame.midY, rowAnchor.frame.midY, accuracy: 8,
+                           "Reset must stay in the workspace actions row")
+            let overlap = reset.frame.intersection(panel.frame)
+            XCTAssertTrue(overlap == .null || overlap.width <= 1 || overlap.height <= 1,
+                          "Reset must not intrude into the parameter panel: \(overlap)")
+        }
+        // v0.8 keeps edits in a draft and shows Saved only in processing settings.
+        // The old toast lock is retired; exercise real drag -> Apply -> reopen instead.
+        assertResetTarget()
         let controls = [panel, workspace, ruler, reset]
         let beforeFrames = controls.map(\.frame)
         let originalValue = value.value as? String
-        ruler.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5))
-            .press(forDuration: 0.05, thenDragTo: ruler.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.5)))
-        XCTAssertNotEqual(value.value as? String, originalValue, "An actual native ruler drag must commit an adjustment")
-        XCTAssertTrue(notice.waitForExistence(timeout: 5))
-        let savedFrames = controls.map(\.frame)
-        XCTAssertTrue(reset.isEnabled)
-        XCTAssertTrue(reset.isHittable, "Save feedback must preserve the reset target")
-        print("SAVE_NOTICE_VALUE before=\(originalValue ?? "nil") saved=\(value.value as? String ?? "nil") framesBefore=\(beforeFrames) framesSaved=\(savedFrames)")
-        // 单行数字变宽会占用轨道宽度；反馈本身必须保留外框，且同值下消失也不能重排。
+        dragRuler(ruler)
+        let draftValue = value.value as? String
+        XCTAssertNotEqual(draftValue, originalValue, "An actual ruler drag must change the draft")
+        XCTAssertTrue(app.buttons["editor.draft.undo"].isEnabled, "The draft must record the drag")
+        let draftFrames = controls.map(\.frame)
+        assertResetTarget()
+        // The changing numeric readout may consume ruler width, not move its track or the other controls.
         assertSaveNoticeFrames([beforeFrames[0], beforeFrames[1], beforeFrames[3]],
-                              equalTo: [savedFrames[0], savedFrames[1], savedFrames[3]])
-        XCTAssertEqual(beforeFrames[2].minX, savedFrames[2].minX, accuracy: 0.5)
-        XCTAssertEqual(beforeFrames[2].minY, savedFrames[2].minY, accuracy: 0.5)
-        XCTAssertEqual(beforeFrames[2].height, savedFrames[2].height, accuracy: 0.5)
-        capture("save-notice-\(orientation.rawValue)-\(contentSizeCategory ?? "default")")
-        expectation(for: NSPredicate { _, _ in !notice.exists }, evaluatedWith: app)
-        waitForExpectations(timeout: 8)
-        let idleFrames = controls.map(\.frame)
-        assertSaveNoticeFrames(savedFrames, equalTo: idleFrames)
-        XCTAssertTrue(reset.isHittable)
-        print("SAVE_NOTICE_FRAMES orientation=\(orientation.rawValue) category=\(contentSizeCategory ?? "default") before=\(beforeFrames) saved=\(savedFrames) idle=\(idleFrames)")
-        capture("save-notice-dismissed-\(orientation.rawValue)-\(contentSizeCategory ?? "default")")
+                              equalTo: [draftFrames[0], draftFrames[1], draftFrames[3]])
+        XCTAssertEqual(beforeFrames[2].minX, draftFrames[2].minX, accuracy: 0.5)
+        XCTAssertEqual(beforeFrames[2].minY, draftFrames[2].minY, accuracy: 0.5)
+        XCTAssertEqual(beforeFrames[2].height, draftFrames[2].height, accuracy: 0.5)
+        capture("draft-layout-\(orientation.rawValue)-\(contentSizeCategory ?? "default")")
+        applyEditorTool(in: app)
+        XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.buttons["tool.exposure"].value as? String, draftValue,
+                       "Apply must commit the actual dragged value")
+        tapTool("exposure", in: app)
+        XCTAssertEqual(value.value as? String, draftValue, "Reopening must retain the committed value")
+        XCTAssertFalse(app.buttons["editor.draft.undo"].isEnabled, "Apply starts a clean local history")
+        assertResetTarget()
+        let committedFrames = controls.map(\.frame)
+        assertSaveNoticeFrames(draftFrames, equalTo: committedFrames)
+        print("DRAFT_APPLY_FRAMES orientation=\(orientation.rawValue) category=\(contentSizeCategory ?? "default") before=\(beforeFrames) draft=\(draftFrames) committed=\(committedFrames)")
+        capture("applied-layout-\(orientation.rawValue)-\(contentSizeCategory ?? "default")")
     }
 
     func assertSaveNoticeFrames(_ expected: [CGRect], equalTo actual: [CGRect]) {

@@ -39,24 +39,35 @@ extension EditorUITests {
         // v0.8: the compare chrome lives in the workspace actions row (product HStack), i.e.
         // still on the tool page; only its accessibility id was dropped, so it is matched by
         // id-OR-label (撤牙齿记位: editor.compare 固定 id 退役为 id-OR-label 匹配).
+        // The workspace button has a fixed label; the rendered before pane is the comparison state.
+        let before = app.descendants(matching: .any)["editor.photo.before"]
+        XCTAssertFalse(before.exists)
         compare.tap()
-        XCTAssertEqual(compare.label, "关闭对比")
-        XCTAssertEqual(compare.value as? String, "并排")
-        XCTAssertTrue(app.descendants(matching: .any)["editor.photo.before"].waitForExistence(timeout: 5))
+        XCTAssertTrue(before.waitForExistence(timeout: 5), "Comparison must display the actual before pane")
+        XCTAssertFalse(before.frame.isEmpty)
+        XCTAssertTrue(app.descendants(matching: .any)["editor.photo"].exists)
         compare.tap()
-        XCTAssertEqual(compare.label, "开启对比")
+        XCTAssertTrue(before.waitForNonExistence(timeout: 5), "Turning comparison off must remove the before pane")
         // v0.8: the v0.4 panel-collapse toggle is retired; the overview film tile after a
         // draft apply carries the committed LUT name (撤牙齿记位: 折叠态瓦片消失断言随之退役).
         applyEditorTool(in: app)
         XCTAssertEqual(app.buttons["tool.film"].value as? String, "ETERNA")
-        // v0.8 histogram chrome lives on the overview: open it from the committed film state.
-        XCTAssertTrue(app.buttons["editor.histogram"].waitForExistence(timeout: 10),
-                      "the overview keeps the histogram chrome")
-        app.buttons["editor.histogram"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["editor.histogram.popover"].waitForExistence(timeout: 5),
-                      app.debugDescription)
+        // v0.8 exposes histogram visibility through the overview menu. At ordinary
+        // portrait size the expanded histogram is inline, not a forced popover.
+        app.buttons["editor.privacy"].tap()
+        let histogramToggle = app.switches["直方图"].firstMatch
+        let histogramButton = app.buttons["直方图"].firstMatch
+        let histogramAction = histogramToggle.exists ? histogramToggle : histogramButton
+        XCTAssertTrue(histogramAction.waitForExistence(timeout: 5), app.debugDescription)
+        histogramAction.tap()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.9)).tap()
+        let histogram = app.buttons["editor.histogram"]
+        XCTAssertTrue(histogram.waitForExistence(timeout: 5), "The overview menu must expose the actual histogram")
+        XCTAssertTrue(app.descendants(matching: .any)["editor.histogram.plot"].waitForExistence(timeout: 5),
+                      "The expanded histogram must contain a rendered plot, not just its chrome")
         capture("photo-film-histogram-overview")
-        app.buttons["editor.histogram.close"].tap()
+        histogram.tap()
+        XCTAssertTrue(histogram.waitForNonExistence(timeout: 5), "Collapsing the histogram removes its overlay")
         XCUIDevice.shared.orientation = .landscapeLeft
         tapTool("film", in: app)
         let eterna = app.buttons["ETERNA"]
@@ -98,19 +109,15 @@ extension EditorUITests {
         tapTool("film", in: app)
         let lutNames = ["ACROS", "ASTIA", "CLASSIC CHROME", "CLASSIC Neg.", "ETERNA", "ETERNA BB",
                         "PRO Neg.Std", "PROVIA", "REALA ACE", "Velvia"]
-        for name in lutNames {
-            // v0.8: the film browser is a horizontal strip (LookPanels ScrollView(.horizontal)).
+        // FilmGroup order is not alphabetical. Revisit both ends so availability also
+        // proves a chip can be reached again after scrolling past it.
+        let strip = app.scrollViews["film.choices"]
+        XCTAssertTrue(strip.waitForExistence(timeout: 5))
+        for name in lutNames + Array(lutNames.reversed()) {
+            revealFilm(name, in: app)
             let lut = app.buttons[name]
-            var steps = 0
-            let strip = app.scrollViews["editor.panel"].scrollViews.firstMatch
-            XCTAssertTrue(strip.waitForExistence(timeout: 5), "the film browser strip must be present")
-            // Chips materialize before they are fully on-strip; require full containment so a
-            // clipped chip keeps scrolling instead of failing hittability at the strip edge.
-            while !(lut.exists && strip.frame.contains(lut.frame)) && steps < 8 {
-                strip.swipeLeft()
-                steps += 1
-            }
-            XCTAssertTrue(lut.exists && strip.frame.contains(lut.frame), "Missing built-in LUT: \(name)")
+            XCTAssertTrue(lut.exists && lut.isHittable && strip.frame.contains(lut.frame),
+                          "Built-in LUT must be fully reachable in both directions: \(name)")
         }
         XCTAssertFalse(app.buttons["WDR"].exists)
         XCTAssertFalse(app.buttons["FLog2 709"].exists)
