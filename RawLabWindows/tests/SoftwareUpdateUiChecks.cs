@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Windows;
@@ -21,7 +22,21 @@ internal static class SoftwareUpdateUiChecks
     }
     private static Button Button(Window window,string id)=>Children(window).OfType<Button>().Single(button=>AutomationProperties.GetAutomationId(button)==id);
     private static void Click(Button button)=>((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)).Invoke();
-    private static void Ready(MainWindow window)=>InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
+    // ExportPng only enables from a finished render; once the render has terminally failed it will never
+    // enable, so surface the failure state (status text) instead of waiting out a blind 120s timeout.
+    private static void Ready(MainWindow window)
+    {
+        var clock=Stopwatch.StartNew();
+        var renderFailed=typeof(MainWindow).GetField("renderFailed",Private)!;
+        while(!window.ExportPng.IsEnabled)
+        {
+            if((bool)renderFailed.GetValue(window)!)throw new InvalidOperationException($"Ready reached a terminal render failure: {window.Status.Text}");
+            if(clock.Elapsed>TimeSpan.FromMinutes(2))throw new TimeoutException($"Ready did not complete within 120s: ()=>window.ExportPng.IsEnabled (status: {window.Status.Text})");
+            var frame=new DispatcherFrame();
+            var timer=new DispatcherTimer(DispatcherPriority.Background){Interval=TimeSpan.FromMilliseconds(5)};
+            timer.Tick+=(_,_)=>{timer.Stop();frame.Continue=false;};timer.Start();Dispatcher.PushFrame(frame);
+        }
+    }
     private static void Screenshot(SoftwareUpdateWindow window,string path)
     {
         ((ScrollViewer)window.Content).Background=window.Background;
