@@ -95,6 +95,10 @@ extension EditorUITests {
                 capture("extra-batch-completed-spanish")
                 app.buttons[c[19]].tap()
             } else { app.buttons[c[13]].tap() }
+            // v0.8: assert the workbench overview is really frontmost before re-entering the
+            // tool page (batch sheet dismissal is async; without this the tile tap lands blind).
+            XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 15),
+                          "workbench overview must be frontmost before re-entering exposure")
             tapTool("exposure")
             XCTAssertEqual(app.buttons["adjustment.value"].value as? String, exposure)
         }
@@ -164,6 +168,9 @@ extension EditorUITests {
     }
     func testLanguageSelectionPersists() {
         let app = XCUIApplication()
+        // A previous case may leave RawLab.language persisted in NSApplicationDomain. Do not
+        // pin it through the argument domain: that would shadow the very UI-Picker write this
+        // test checks (and hide it again after relaunch). Reset via the UI when dirty instead.
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         // v0.8: the language picker is a submenu of the overview overflow menu; the entry
@@ -171,6 +178,15 @@ extension EditorUITests {
         app.buttons["editor.privacy"].tap()
         let language = app.buttons["settings.language"]
         XCTAssertTrue(language.waitForExistence(timeout: 10), app.debugDescription)
+        if language.label != "Language" {
+            // The submenu itself renders in the stale UI language; match its reset row there.
+            language.tap()
+            let follow = app.buttons.matching(NSPredicate(format: "label IN %@",
+                ["跟随系统", "Follow system", "Systemsprache verwenden", "Suivre le système", "システムに従う", "Seguir el sistema"])).firstMatch
+            XCTAssertTrue(follow.waitForExistence(timeout: 5), app.debugDescription)
+            follow.tap()
+            app.buttons["editor.privacy"].tap()
+        }
         XCTAssertEqual(language.label, "Language")
         language.tap()
         app.buttons["Deutsch"].tap()

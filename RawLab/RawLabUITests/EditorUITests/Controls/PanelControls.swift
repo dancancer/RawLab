@@ -126,16 +126,17 @@ extension EditorUITests {
         XCTAssertTrue(app.descendants(matching: .any)["editor.photoInfo.overlay"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["editor.photoInfo.overlay"].label.contains("3072 × 3072"),
                       "The info overlay must show the original DNG size, not its embedded preview")
+        let fileLabel = app.descendants(matching: .any)["editor.photoInfo.overlay"].label
         capture("photo-info-file")
+        // iOS 27 menu rows drop both identifier and value; anchor the mode cycle on the
+        // overlay's own content change instead (撤牙齿记位: 菜单行 value 字面量退役).
         var row = infoRow()
-        XCTAssertEqual(row.value as? String, "文件信息")
         row.tap()
-        row = infoRow()
-        XCTAssertEqual(row.value as? String, "拍摄参数")
         XCTAssertTrue(app.descendants(matching: .any)["editor.photoInfo.overlay"].waitForExistence(timeout: 5))
-        row.tap()
+        XCTAssertNotEqual(app.descendants(matching: .any)["editor.photoInfo.overlay"].label, fileLabel,
+                          "cycling to 拍摄参数 must change the overlay content")
         row = infoRow()
-        XCTAssertEqual(row.value as? String, "隐藏照片信息")
+        row.tap()
         XCTAssertFalse(app.descendants(matching: .any)["editor.photoInfo.overlay"].exists)
     }
 

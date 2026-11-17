@@ -53,25 +53,50 @@ final class ReleaseDetailUITests: XCTestCase {
         XCTAssertEqual(rowTitle.frame.midY, apply.frame.midY, accuracy: 3)
     }
 
-    // 换工具后面板回到顶部：不能沿用上一个面板的滚动位置，把新面板的标题行藏起来
+    // 两级导航烟测：离开已滚动的工具页后，新面板的首行应贴顶可见
     func testSwitchingToolsShowsTheNewPanelFromTheTop() throws {
         let app = launch()
         try importFirstVisiblePhoto(in: app)
-        try selectTool("exposure", in: app)
+        // 原 v0.4 同容器跨工具的 .id 回归锁因 v0.8 两级导航重建滚动容器而退役。
+        // 现保留导航贴顶烟测：展开暗角面板并真实滚动，再经总览进入曝光验证首行贴顶可见；
+        // 不要求暗角首行离框，也不声称移除产品 .id 会使该测失败。
+        try selectTool("vignette", in: app)
         let panel = app.scrollViews["editor.panel"]
-        // 曝光面板带网格图形，内容超过面板上限、必然可滚；先滚走顶部标题行再换工具
-        let topRow = app.staticTexts["adjustment.title"]
+        let advanced = app.buttons["effects.vignette.advanced"]
+        XCTAssertTrue(advanced.waitForExistence(timeout: 10), app.debugDescription)
+        advanced.tap()
+        // adjustment.title 是曝光类面板专有 id；vignette 页的标题是草稿行静态文本。
+        let vignetteHeader = app.staticTexts.matching(NSPredicate(format: "label == %@", "Vignette")).firstMatch
+        XCTAssertTrue(vignetteHeader.waitForExistence(timeout: 10), app.debugDescription)
+        let topRow = app.buttons["effects.vignette.vignetteAmount.value"]
         XCTAssertTrue(topRow.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(panel.frame.contains(topRow.frame), "the exposure panel must start at its top row")
+        XCTAssertTrue(panel.frame.contains(topRow.frame), "the amount row starts the expanded vignette content")
+        // 滚动驱动复刻 revealRuler 的已验证手势（左缘 press-drag，避开标尺热区），
+        // 为导航烟测建立真实滚动前置；滚动幅度按下方实测范围断言，不要求首行离开面板。
+        let deep = app.descendants(matching: .any)["effects.vignette.vignetteHighlights.ruler"]
+        XCTAssertTrue(deep.waitForExistence(timeout: 5), app.debugDescription)
+        let panel0 = app.scrollViews["editor.panel"]
+        let initialY = topRow.frame.minY
+        var lastY = initialY
         for _ in 0..<3 {
-            panel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85))
-                .press(forDuration: 0.1, thenDragTo: panel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)))
+            // 左缘 press-drag（避开标尺热区）逐次推进，直到内容到达自身最大偏移（行不再移动）。
+            panel0.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: 0.8))
+                .press(forDuration: 0.1, thenDragTo: panel0.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: 0.35)))
+            let y = topRow.frame.minY
+            if y == lastY { break }
+            lastY = y
         }
-        XCTAssertFalse(panel.frame.contains(topRow.frame), "the exposure panel must be scrolled first")
-        try selectTool("saturation", in: app)
+        // 面板 376pt 装 418pt 内容：可滚距离约 42pt，首行不会完全离开视口；
+        // 这里只验证导航烟测的真实滚动前置，不充当旧 .id 修复的回归锁。
+        XCTAssertLessThanOrEqual(lastY, initialY - 40,
+                                 "the expanded vignette panel must really scroll: \(initialY) -> \(lastY)")
+        try selectTool("exposure", in: app)
         let header = app.staticTexts["adjustment.title"]
         XCTAssertTrue(header.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(header.label, "Exposure", "the panel must switch to the new tool")
         XCTAssertTrue(panel.frame.contains(header.frame), "header \(header.frame) outside panel \(panel.frame)")
+        XCTAssertLessThanOrEqual(header.frame.minY, panel.frame.minY + 36,
+                                 "the new panel must render from its top, not an old scroll offset")
     }
 
     // 两个旋转按钮并排时一样高：英文"Rotate left 90°"折成多行，不能把左边按钮撑得比右边高

@@ -290,7 +290,11 @@ extension EditorUITests {
         }
         let exposure = ev(app.buttons["adjustment.value"].value)
         XCTAssertNotNil(exposure, app.buttons["adjustment.value"].debugDescription)
-        app.buttons["collection.return"].tap()
+        // v0.8: a single-photo micro edit opens the tool workspace whose exit is editor.tool.back
+        // (collection.return only labels the batch-page header); the dirty guard discards, so the
+        // micro edit stays frozen for the collection export below.
+        (app.buttons["collection.return"].exists ? app.buttons["collection.return"] : app.buttons["editor.tool.back"]).tap()
+        resolveDraftGuard(commit: false, in: app)
         XCTAssertTrue(app.staticTexts["已选 1 张"].waitForExistence(timeout: 10), app.debugDescription)
         let export = app.buttons["collection.export"]
         for _ in 0..<3 where !export.isHittable { app.swipeUp() }

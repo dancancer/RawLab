@@ -155,7 +155,10 @@ extension EditorV4UITests {
         XCTAssertFalse(app.buttons["editor.draft.apply"].isEnabled)
         XCTAssertFalse(app.buttons["editor.export"].exists, "Returning to a committed geometry value remains an active draft")
         cancelToolWorkspace(in: app)
-        XCTAssertFalse(app.buttons["tool.lens"].isEnabled, "Lens correction is unavailable for the raster fixture")
+        // k845 contract: v0.8 keeps the lens tile reachable for raster (manual EXIF metadata
+        // path, backed by testJPEGManualLensMetadataIsScopedToDraft); the RAW-only profile
+        // gating moved inside the panel (LensControls gates the profile by candidates).
+        XCTAssertTrue(app.buttons["tool.lens"].isEnabled, "Lens manual metadata stays reachable for the raster fixture")
         XCTAssertTrue(app.buttons["editor.export"].isEnabled)
     }
 
@@ -168,10 +171,30 @@ extension EditorV4UITests {
         // v0.8: the workbench grid is the imported-ready anchor; the compare entry is collapsed into the overflow menu.
         XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 10), app.debugDescription)
         let lensTile = try revealTool("lens", in: app)
-        XCTAssertFalse(lensTile.isEnabled,
-                       "A raster selected through Files must not expose RAW-only lens correction")
+        // k845 contract (same evidence as testRasterJPEG): the overview tile stays enabled for
+        // raster; RAW-only gating is a panel-side decision, not a disabled tile.
+        XCTAssertTrue(lensTile.isEnabled,
+                      "A raster selected through Files keeps the lens tile for manual metadata")
         let temperatureTile = try revealTool("temperature", in: app)
         XCTAssertEqual(temperatureTile.label, "White Balance")
+        // Carbon 阻断#4：契约的另一半——无标定光栅下白平衡瓦片禁用，且进入 lens 面板后
+        // 校正三开关禁用、手动 metadata 可用（瓦片 enabled 只是入口可达，非校正可用）。
+        XCTAssertFalse(temperatureTile.isEnabled,
+                       "An uncalibrated raster keeps white balance correction disabled")
+        // The temperature reveal scrolled the grid; re-reveal so the lens handle is fresh and
+        // on-screen before tapping (stale off-grid handles throw on frame queries).
+        let lensEntry = try revealTool("lens", in: app)
+        XCTAssertTrue(lensEntry.isEnabled)
+        tapVisible(lensEntry, in: app)
+        let metadata = app.descendants(matching: .any)["lens.metadata"]
+        XCTAssertTrue(metadata.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(metadata.isEnabled, "manual lens metadata entry stays reachable for raster")
+        XCTAssertFalse(app.switches["lens.distortion"].isEnabled,
+                       "distortion correction is disabled without calibration candidates")
+        XCTAssertFalse(app.switches["lens.tca"].isEnabled,
+                       "lateral chromatic aberration correction is disabled without calibration")
+        XCTAssertFalse(app.switches["lens.vignetting"].isEnabled,
+                       "vignetting correction is disabled without calibration")
         capture("v4-files-raster-imported", in: app)
     }
 
