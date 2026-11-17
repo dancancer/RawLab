@@ -10,9 +10,12 @@ import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
+import androidx.lifecycle.ViewModelStore
 import androidx.test.platform.app.InstrumentationRegistry
 import com.rawlab.android.MainActivity
 import com.rawlab.android.editor.render.PreviewPair
+import com.rawlab.android.settings.EditStore
+import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.testing.ForegroundTestRule
 import com.rawlab.android.testing.LanguageTestRule
 import org.junit.Assert.*
@@ -27,28 +30,50 @@ class EditorAdjustmentPreviewTest {
 
     // k826-1 撤牙齿：基线上 updatePreviewSize 在草稿分支直接丢弃视口边长，草稿关闭后
     // 提交预览长边卡在旧值（重开工程才恢复），此断言红；修复后按记录边长收敛为绿。
+    // 碳审返工 B：模型改挂独立 ViewModelStore，等待改纯模型态轮询（对齐 AdjustmentHistory.await 的
+    // 稳定形态）——MainActivity 真实 1600 画布合法重报不再与合成 640 赛跑，Compose 空闲时钟
+    // 也不再参与判定；updatePreviewSize 唯一来源即本测试，任意分辨率确定性收敛。
     @Test fun viewportEdgeRecordedDuringDraftAppliesWhenTheDraftCloses() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
         val source = File(compose.activity.cacheDir, "draft-resize-${System.nanoTime()}.RAW")
-        InstrumentationRegistry.getInstrumentation().context.assets.open("sample.RAW").use { input ->
+        instrumentation.context.assets.open("sample.RAW").use { input ->
             source.outputStream().use { input.copyTo(it) }
         }
-        val model = compose.activity.model
-        fun edge(): Int = model.state.value.preview?.let { maxOf(it.result.width, it.result.height) } ?: 0
-        try {
-            compose.runOnUiThread { model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(source)) }
-            compose.waitUntil(180_000) { model.state.value.let { it.error != null || it.canExport } }
-            assertNull(model.state.value.error)
-            compose.runOnUiThread { model.beginDraft(AdjustmentGroup.EXPOSURE) }
-            compose.waitUntil(30_000) { model.state.value.draft != null }
-            // 草稿期间的视口边长变化：必须被记录，并在草稿关闭时应用。
-            compose.runOnUiThread { model.updatePreviewSize(640) }
-            compose.runOnUiThread { model.discardDraft() }
-            compose.waitUntil(60_000) {
-                model.state.value.let { it.error != null || (it.canExport && !it.previewResizePending && edge() == 640) }
+        val owner = ViewModelStore()
+        val model = EditorViewModel(compose.activity.application)
+        owner.put("editor", model)
+        val edits = EditStore(File(compose.activity.filesDir, "edits"))
+        val identity = PhotoIdentity(Uri.fromFile(source).toString())
+        fun edge(state: EditorState) = state.preview?.let { maxOf(it.result.width, it.result.height) } ?: 0
+        fun awaitState(timeoutMs: Long, condition: (EditorState) -> Boolean): EditorState {
+            val deadline = SystemClock.uptimeMillis() + timeoutMs
+            var last = model.state.value
+            while (!condition(last) && SystemClock.uptimeMillis() < deadline) {
+                SystemClock.sleep(20)
+                last = model.state.value
             }
-            assertNull(model.state.value.error)
-            assertTrue("Viewport edge requested during a draft must apply when the draft closes", edge() == 640)
-        } finally { source.delete() }
+            return last
+        }
+        try {
+            instrumentation.runOnMainSync { model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(source)) }
+            assertNull(awaitState(180_000) { it.error != null || it.canExport }.error)
+            instrumentation.runOnMainSync { model.beginDraft(AdjustmentGroup.EXPOSURE) }
+            assertNotNull("HSL/EXPOSURE draft must open", awaitState(30_000) { it.draft != null }.draft)
+            // 草稿期间的视口边长变化：必须被记录，并在草稿关闭时应用。
+            instrumentation.runOnMainSync { model.updatePreviewSize(640) }
+            instrumentation.runOnMainSync { model.discardDraft() }
+            val settled = awaitState(60_000) {
+                it.error != null || (it.canExport && !it.previewResizePending && edge(it) == 640)
+            }
+            assertNull(settled.error)
+            assertTrue("Viewport edge requested during a draft must apply when the draft closes; " +
+                "edge=${edge(settled)} canExport=${settled.canExport} resizePending=${settled.previewResizePending}",
+                edge(settled) == 640)
+        } finally {
+            instrumentation.runOnMainSync { owner.clear() }
+            edits.reset(identity)
+            source.delete()
+        }
     }
 
     @Test fun completedViewportSizesAreReusedUntilThePhotoIsEdited() {

@@ -316,22 +316,23 @@ class AdjustmentHistoryInstrumentedTest {
         main {
             model.beginDraft(AdjustmentGroup.HSL)
             // 真实视口变化：草稿分支只记录 requestedPreviewLongEdge，previewLongEdge 保持旧值。
-            model.updatePreviewSize(640)
+            // 碳审返工 B：fixture 为 96×64，640 上限恒真；64 才迫使提交预览真实降档收敛（对齐上方 resize 锁）。
+            model.updatePreviewSize(64)
             model.setHslTargetEnabled(true)
             model.beginHslTarget(.5f, .5f)
             model.moveHslTarget(20f)
             model.endHslTarget()
         }
         await(model) { !model.hslTarget.value.waiting && it.draftReady && !it.visibleEdits.hsl.isIdentity }
-        // 撤牙形态下同一 accept() 尾部的误取消紧随样本写入；等待全部收尾重试落定再断言。
-        SystemClock.sleep(300)
-        assertTrue("A same-edge retry at render completion must keep the HSL sample usable",
-            model.hslTarget.value.sample?.usable == true)
+        // 碳审返工 B：以主线程消息序作 happens-before 屏障——main 队列执行时，await 观察到的那次
+        // accept() 尾部（:568 同边长重试，撤牙形态即误 cancelHslTarget 处）必已执行完，替代固定 300ms 睡眠。
+        main { assertTrue("A same-edge retry at render completion must keep the HSL sample usable",
+            model.hslTarget.value.sample?.usable == true) }
         val sampled = model.state.value.visibleEdits.hsl
         assertFalse("HSL drag must still change the draft after an in-draft viewport change", sampled.isIdentity)
         assertEquals(before, edits.readState(identity))
         assertTrue(result<Boolean> { model.applyDraft(it) })
-        await(model) { it.canExport && maxOf(it.preview!!.result.width, it.preview.result.height) <= 640 }
+        await(model) { it.canExport && maxOf(it.preview!!.result.width, it.preview.result.height) <= 64 }
         assertEquals(sampled, edits.readState(identity).settings!!.hsl)
     }
 
