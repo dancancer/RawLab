@@ -53,13 +53,13 @@ final class ReleaseDetailUITests: XCTestCase {
         XCTAssertEqual(rowTitle.frame.midY, apply.frame.midY, accuracy: 3)
     }
 
-    // 换工具后面板回到顶部：不能沿用上一个面板的滚动位置，把新面板的标题行藏起来
+    // 两级导航烟测：离开已滚动的工具页后，新面板的首行应贴顶可见
     func testSwitchingToolsShowsTheNewPanelFromTheTop() throws {
         let app = launch()
         try importFirstVisiblePhoto(in: app)
-        // Carbon 阻断#3 重锚：必须在【真实可滚】的长面板上制造旧 contentOffset。
-        // 展开后的暗角面板含 5 条标尺（testPhotoEffectsControls 同构可滚），滚动后首行必须
-        // 真的离开面板框，再换工具看新首行贴顶——回退产品 .id(...) 复位即红（190pt 容差退役）。
+        // 原 v0.4 同容器跨工具的 .id 回归锁因 v0.8 两级导航重建滚动容器而退役。
+        // 现保留导航贴顶烟测：展开暗角面板并真实滚动，再经总览进入曝光验证首行贴顶可见；
+        // 不要求暗角首行离框，也不声称移除产品 .id 会使该测失败。
         try selectTool("vignette", in: app)
         let panel = app.scrollViews["editor.panel"]
         let advanced = app.buttons["effects.vignette.advanced"]
@@ -72,7 +72,7 @@ final class ReleaseDetailUITests: XCTestCase {
         XCTAssertTrue(topRow.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(panel.frame.contains(topRow.frame), "the amount row starts the expanded vignette content")
         // 滚动驱动复刻 revealRuler 的已验证手势（左缘 press-drag，避开标尺热区），
-        // 直至展开区末行滚进可视区；内容真滚动后首行必已离开面板框（本类无 EditorUITests 助手）。
+        // 为导航烟测建立真实滚动前置；滚动幅度按下方实测范围断言，不要求首行离开面板。
         let deep = app.descendants(matching: .any)["effects.vignette.vignetteHighlights.ruler"]
         XCTAssertTrue(deep.waitForExistence(timeout: 5), app.debugDescription)
         let panel0 = app.scrollViews["editor.panel"]
@@ -86,8 +86,8 @@ final class ReleaseDetailUITests: XCTestCase {
             if y == lastY { break }
             lastY = y
         }
-        // 面板 376pt 装 418pt 内容：可滚距离约 42pt，首行不会完全离开视口，
-        // 真滚动牙齿=首行被真实推进到最大偏移（不是恒真的『离开框』）。
+        // 面板 376pt 装 418pt 内容：可滚距离约 42pt，首行不会完全离开视口；
+        // 这里只验证导航烟测的真实滚动前置，不充当旧 .id 修复的回归锁。
         XCTAssertLessThanOrEqual(lastY, initialY - 40,
                                  "the expanded vignette panel must really scroll: \(initialY) -> \(lastY)")
         try selectTool("exposure", in: app)
