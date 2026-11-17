@@ -213,8 +213,10 @@ final class ReleaseDetailUITests: XCTestCase {
         }
         let group: String
         switch name {
-        case "hsl": group = "color"
-        case "vignette": group = "effects"
+        case "exposure", "highlights", "shadows", "contrast", "toneCurve": group = "light"
+        case "temperature", "tint", "saturation", "hsl": group = "color"
+        case "clarity", "dehaze", "vignette", "grain": group = "effects"
+        case "noiseReduction", "sharpening": group = "detail"
         default: group = "geometry"
         }
         let groupButton = app.buttons["editor.group." + group]

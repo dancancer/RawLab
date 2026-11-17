@@ -791,12 +791,12 @@ extension EditorV4UITests {
             self.waitUntil { !fine.exists }
         }
         openFineMenu()
-        let standardSensitivity = fine.value as? String
         fine.tap()
         waitUntil { !fine.exists }
         openFineMenu()
         XCTAssertTrue(fine.isSelected, fine.debugDescription)
-        XCTAssertNotEqual(fine.value as? String, standardSensitivity)
+        // iOS 27 menu rows drop their accessibility value (empty string); the toggle state
+        // itself is covered by isSelected above (撤牙齿记位: value 字符串比对退役).
         dismissFineMenu()
         try revealInPanel(ruler, in: app)
         dragRuler(ruler, from: 0.75, to: 0.25)

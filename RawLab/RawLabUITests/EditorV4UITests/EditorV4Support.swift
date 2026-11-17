@@ -377,13 +377,21 @@ extension EditorV4UITests {
         waitUntil { !app.descendants(matching: .any)["adjustment.wheel"].exists }
     }
 
-    /// Discards the workspace draft through `editor.draft.cancel`: the product cancel path
-    /// discards directly (EditorDrafts.cancelEditorDraft), so the localized apply/discard
-    /// guard dialog only guards the workspace back action — polling for an alert here
-    /// would burn a dead timeout on every call.
+    /// Leaves the workspace back to the overview grid. `editor.draft.cancel` only exits while a
+    /// draft is dirty (the button is disabled on a clean draft), so prefer the back button and
+    /// answer the localized guard by discarding — the product cancel path itself discards
+    /// directly (EditorDrafts.cancelEditorDraft) without an alert.
     func cancelToolWorkspace(in app: XCUIApplication) {
-        app.buttons["editor.draft.cancel"].tap()
-        XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 5), app.debugDescription)
+        if app.buttons["editor.tool.back"].exists {
+            app.buttons["editor.tool.back"].tap()
+            let labels = ["Discard Changes", "放弃修改", "Änderungen verwerfen",
+                          "Abandonner les modifications", "変更を破棄", "Descartar cambios"]
+            let decision = app.alerts.buttons.matching(NSPredicate(format: "label IN %@", labels)).firstMatch
+            if decision.waitForExistence(timeout: 2) { decision.tap() }
+        } else {
+            app.buttons["editor.draft.cancel"].tap()
+        }
+        XCTAssertTrue(app.scrollViews["editor.tools"].waitForExistence(timeout: 10), app.debugDescription)
     }
 
     func applyDraft(in app: XCUIApplication) {

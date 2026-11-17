@@ -142,7 +142,10 @@ extension EditorV4UITests {
         XCTAssertTrue(confirm.isEnabled)
         XCTAssertTrue(size.isHittable)
         capture("v4-jpeg-export-confirmation-landscape", in: app)
-        app.navigationBars["Save Current Photo"].buttons["Cancel"].tap()
+        // v0.8: the export sheet carries no titled navigation bar; dismiss via its Cancel button.
+        let cancel = app.buttons["Cancel"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5), app.debugDescription)
+        cancel.tap()
         waitUntil { !confirm.exists }
         XCTAssertEqual(app.buttons["tool.exposure"].value as? String, "+0.40 EV",
                        "Canceling the export sheet preserves the committed exposure")

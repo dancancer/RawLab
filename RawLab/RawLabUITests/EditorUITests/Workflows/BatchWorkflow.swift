@@ -280,9 +280,16 @@ extension EditorUITests {
         XCTAssertTrue(edit.waitForExistence(timeout: 10), app.debugDescription)
         edit.tap()
         XCTAssertTrue(app.buttons["collection.return"].waitForExistence(timeout: 10), app.debugDescription)
-        app.buttons["tool.exposure"].tap()
+        // v0.8: collection editing opens on the exposure tool page; the overview tile is only
+        // reachable after leaving the workspace, so the drag and its EV read use the panel.
+        if app.buttons["tool.exposure"].waitForExistence(timeout: 3) { app.buttons["tool.exposure"].tap() }
         dragRuler(app.descendants(matching: .any)["adjustment.ruler"])
-        let exposure = app.buttons["tool.exposure"].value as? String
+        func ev(_ raw: Any?) -> Double? {
+            guard let text = raw as? String else { return nil }
+            return Double(text.replacingOccurrences(of: "+", with: "").replacingOccurrences(of: " EV", with: ""))
+        }
+        let exposure = ev(app.buttons["adjustment.value"].value)
+        XCTAssertNotNil(exposure, app.buttons["adjustment.value"].debugDescription)
         app.buttons["collection.return"].tap()
         XCTAssertTrue(app.staticTexts["已选 1 张"].waitForExistence(timeout: 10), app.debugDescription)
         let export = app.buttons["collection.export"]
@@ -303,7 +310,8 @@ extension EditorUITests {
         XCTAssertTrue(discard.waitForExistence(timeout: 5), app.debugDescription)
         discard.tap()
         XCTAssertTrue(app.buttons["tool.exposure"].waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertEqual(app.buttons["tool.exposure"].value as? String, exposure, "Finishing the export task preserves the photo edit")
+        XCTAssertEqual(ev(app.buttons["tool.exposure"].value) ?? -999, exposure ?? -999, accuracy: 0.001,
+                       "Finishing the export task preserves the photo edit")
     }
 
     func testEditMemoryAndBatchWorkflow() {

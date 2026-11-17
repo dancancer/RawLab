@@ -109,20 +109,33 @@ extension EditorUITests {
         app.launchArguments += ["-RawLab.language", "zh-Hans"]
         app.launch()
         importPhoto(in: app)
-        // v0.8: the photo-info chrome sits on the workbench overview; leave the tool page first.
-        cancelEditorTool(in: app)
-        let info = app.buttons["editor.photoInfo"]
-        XCTAssertTrue(info.waitForExistence(timeout: 5))
-        info.tap()
-        XCTAssertEqual(info.value as? String, "文件信息")
+        // v0.8: the photo-info toggle hangs in the tool page's "more" menu; the menu closes
+        // after a row tap, so each read or cycle reopens it (iOS 27 strips row identifiers,
+        // match id-OR-label inside the menu's collection view).
+        let more = app.buttons["editor.tool.more"]
+        XCTAssertTrue(more.waitForExistence(timeout: 10), app.debugDescription)
+        func infoRow() -> XCUIElement {
+            XCTAssertTrue(more.waitForExistence(timeout: 5), app.debugDescription)
+            more.tap()
+            let row = app.collectionViews.buttons.matching(
+                NSPredicate(format: "identifier == %@ OR label == %@", "editor.photoInfo", "照片信息")).firstMatch
+            XCTAssertTrue(row.waitForExistence(timeout: 5), app.debugDescription)
+            return row
+        }
+        infoRow().tap()
         XCTAssertTrue(app.descendants(matching: .any)["editor.photoInfo.overlay"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["editor.photoInfo.overlay"].label.contains("3072 × 3072"),
                       "The info overlay must show the original DNG size, not its embedded preview")
         capture("photo-info-file")
-        info.tap()
-        XCTAssertEqual(info.value as? String, "拍摄参数")
-        info.tap()
-        XCTAssertEqual(info.value as? String, "隐藏照片信息")
+        var row = infoRow()
+        XCTAssertEqual(row.value as? String, "文件信息")
+        row.tap()
+        row = infoRow()
+        XCTAssertEqual(row.value as? String, "拍摄参数")
+        XCTAssertTrue(app.descendants(matching: .any)["editor.photoInfo.overlay"].waitForExistence(timeout: 5))
+        row.tap()
+        row = infoRow()
+        XCTAssertEqual(row.value as? String, "隐藏照片信息")
         XCTAssertFalse(app.descendants(matching: .any)["editor.photoInfo.overlay"].exists)
     }
 
