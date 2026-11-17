@@ -944,15 +944,18 @@ class EditorViewModel @JvmOverloads constructor(
     fun updatePreviewSize(edge: Int) {
         var current = mutable.value
         if (disposed || current.photo == null || edge !in 1..1600) return
-        // k826：同一边长的重试不是视口变化（渲染收尾回调按已记录边长重试），不得借此清除 HSL 取色状态。
-        if (edge == requestedPreviewLongEdge && (edge == previewLongEdge || previewResizeJob != null)) return
         if (current.draft != null) {
             // k826：草稿期间不重渲染，但必须记录最新视口边长；草稿收尾的提交渲染据此收敛，
             // 否则提交预览长边卡在旧值直到重开工程（用户可见的预览降质）。
+            // 草稿期间 requestedPreviewLongEdge 是唯一记录值：渲染收尾的同边长重试不是视口变化，
+            // 只有真实边长变化才取消旧取色（保留 c0db20fc 契约）。
+            if (edge == requestedPreviewLongEdge) return
             requestedPreviewLongEdge = edge
             if (current.draft?.group == AdjustmentGroup.HSL) cancelHslTarget()
             return
         }
+        // k826：同一边长的重试不是视口变化（渲染收尾回调按已记录边长重试），不得借此清除 HSL 取色状态。
+        if (edge == requestedPreviewLongEdge && (edge == previewLongEdge || previewResizeJob != null)) return
         if (cameraHDRPreflightPending) {
             // 视口变化保留最新尺寸，不能用旧 SDR 预览替换尚未完成的 HDR 能力预检。
             requestedPreviewLongEdge = edge
@@ -1083,8 +1086,6 @@ class EditorViewModel @JvmOverloads constructor(
         val edits = current.draft!!.project(current.edits)
         previewResizeJob?.cancel()
         previewResizeJob = null
-        // k826：草稿期间记录的视口边长在提交渲染时立即生效，避免旧边长再次上屏。
-        previewLongEdge = requestedPreviewLongEdge
         pendingResetMigrationClear = null
         persist(photo, edits) { saved ->
             if (saved.state == EditSaveState.FAILED) {
@@ -1096,6 +1097,9 @@ class EditorViewModel @JvmOverloads constructor(
                 if (current.draft.group == AdjustmentGroup.HSL) clearHslTarget(disable = true)
                 runCatching { draftStore.clear(photo.identity) }
                 editRevision += 1; draftRevision += 1
+                // k826：草稿期间记录的视口边长仅在保存成功后、提交渲染前生效，避免旧边长再次上屏；
+                // 保存失败（FAILED）时草稿未关闭，previewLongEdge 必须保持当前上屏值。
+                previewLongEdge = requestedPreviewLongEdge
                 mutable.value = mutable.value.copy(edits = edits, draft = null, rendering = true, exact = false,
                     previewResizePending = false, error = null, saveState = saved.state, saveError = saved.message)
                 currentRevision = submitRender(Work.Preview(photo, edits, false, gpuMode(), edge = previewLongEdge))
