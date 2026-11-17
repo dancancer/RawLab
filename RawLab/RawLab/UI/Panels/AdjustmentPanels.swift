@@ -94,11 +94,11 @@ extension ContentView {
 
     var editorDraftActions: some View {
         HStack(spacing: 8) {
-            Button(action: cancelEditorDraft) { Image(systemName: "xmark").frame(width: 48, height: 48) }
+            Button(action: cancelEditorDraft) { Image(systemName: "xmark").frame(width: 48, height: 48).contentShape(Rectangle()) }
                 .accessibilityLabel(L10n.text("取消"))
                 .accessibilityIdentifier("editor.draft.cancel")
             Text(currentEditorTool.title).font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity)
-            Button(action: applyEditorDraft) { Image(systemName: "checkmark").frame(width: 48, height: 48) }
+            Button(action: applyEditorDraft) { Image(systemName: "checkmark").frame(width: 48, height: 48).contentShape(Rectangle()) }
                 .accessibilityLabel(L10n.text("应用"))
                 .disabled(viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || isAdjustingSlider || editorBusy)
                 .accessibilityIdentifier("editor.draft.apply")
