@@ -27,12 +27,14 @@ def local_storage_downloads():
             text=True).strip()
     except subprocess.CalledProcessError:
         return None
-    device_data = Path(device_home).parent.parent.parent  # .../Devices/<udid>/data
+    # get_app_container data returns .../Devices/<udid>/data/Containers/Data/Application/<UUID>,
+    # so four parents up is the device data dir that holds Containers/Shared/AppGroup.
+    device_data = Path(device_home).parent.parent.parent.parent  # .../Devices/<udid>/data
     groups = device_data / 'Containers/Shared/AppGroup'
     if not groups.is_dir():
         return None
     for group in sorted(groups.iterdir()):
-        metadata = group / '.com.apple.containermanagerd.metadata.plist'
+        metadata = group / '.com.apple.mobile_container_manager.metadata.plist'
         if metadata.is_file():
             try:
                 ident = plistlib.loads(metadata.read_bytes()).get('MCMMetadataIdentifier')
@@ -64,7 +66,7 @@ shutil.copyfile(raw, downloads / raw.name)
 # Minimal valid 2x2 PNG raster so the Files picker always finds the named fixture.
 def chunk(tag, body):
     return struct.pack('>I', len(body)) + tag + body + struct.pack('>I', zlib.crc32(tag + body) & 0xffffffff)
-rows = zlib.compress(b''.join(b'\x00' + bytes([80 + 40 * x, 120, 200 - 40 * x]) * 2 for _ in range(2)))
+rows = zlib.compress(b''.join(b'\x00' + bytes([80 + 40 * x, 120, 200 - 40 * x]) * 2 for x in range(2)))
 (downloads / 'RawLabFilesFixture.png').write_bytes(
     b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 2, 2, 8, 2, 0, 0, 0))
     + chunk(b'IDAT', rows) + chunk(b'IEND', b''))
