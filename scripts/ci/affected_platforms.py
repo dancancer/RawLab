@@ -8,10 +8,6 @@ import urllib.parse
 import urllib.request
 
 
-# macOS and iOS only exist as self-hosted runners, so a fork pull request can never run them;
-# selecting them would leave the aggregate result red for a reason unrelated to the change.
-SELF_HOSTED_ONLY = {"macos", "ios"}
-
 PLATFORMS = ("macos", "windows", "android", "ios")
 CHECK_GROUPS = ("contracts", "models", "build", "native", "full")
 # No build, package or test reads these files. Anything not classified below selects every platform.
@@ -78,7 +74,7 @@ def configuration(event_name, event):
 
 
 def macos_matrix(checks):
-    arm = {"runner": ["self-hosted", "macOS", "ARM64", "rawlab-apple"], "arch": "arm64", "jobs": "6", "suite": "all"}
+    arm = {"runner": "macos-26", "arch": "arm64", "jobs": "2", "suite": "all"}
     intel = {"runner": "macos-26-intel", "arch": "x86_64", "jobs": "4"}
     if checks in ("contracts", "models"):
         return [arm]
@@ -103,12 +99,7 @@ def select(event_name, event, sha, changed_files, last_success):
             return set(), False, True, "draft pull request: platform checks wait for ready for review"
         if is_cold_pull_request(pull):
             return every, True, False, "release or hotfix pull request: full cold build"
-        platforms, cold, draft, reason = _from_diff(lambda: changed_files("HEAD^1"), False, "pull request changes")
-        if is_external_pull_request(pull):
-            kept = platforms - SELF_HOSTED_ONLY
-            if kept != platforms:
-                return kept, cold, draft, f"{reason}; fork pull request: {', '.join(sorted(platforms & SELF_HOSTED_ONLY))} stay off self-hosted runners"
-        return platforms, cold, draft, reason
+        return _from_diff(lambda: changed_files("HEAD^1"), False, "pull request changes")
     if event_name == "push":
         def diff_since_last_success():
             base = last_success("push")
@@ -194,10 +185,8 @@ def verify(needs):
 
 
 def windows_runner(event_name, cold, checks="full"):
-    """Keep ordinary PRs out of the dedicated integration/release runner's queue."""
-    if checks == "models" or (event_name == "pull_request" and not cold):
-        return "windows-2022"
-    return ["self-hosted", "windows", "x64", "rawlab-windows"]
+    """Run every Windows group on an isolated GitHub-hosted runner."""
+    return "windows-2022"
 
 
 def write_selection(platforms, cold, draft, reason, event_name, config):

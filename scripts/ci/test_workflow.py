@@ -90,30 +90,8 @@ class WorkflowContractTests(unittest.TestCase):
                 if name in PLATFORM_JOBS:
                     self.assertEqual(job["needs"], "changes")
                     condition = " ".join(job["if"].split())
-                    # 完整锁定门禁表达式：漏括号导致 && 优先于 || 的反转、漏 event_name 守卫
-                    # 这类回改都改变语义，但子串断言全部察觉不到。
-                    if name in ("ios", "macos"):
-                        # 自托管 runner 不能在 fork 的 PR 上执行任意代码。
-                        self.assertEqual(
-                            condition,
-                            f"needs.changes.outputs.{name} == 'true' && "
-                            "(github.event_name != 'pull_request' || "
-                            "github.event.pull_request.head.repo.full_name == github.repository)",
-                        )
-                    elif name == "windows":
-                        # fork 的选择结果永远走托管路由，Windows 作业只在托管路由放行 fork；
-                        # 自托管路由（冷构建、手动 build/native/full）保持同仓库限定。
-                        self.assertEqual(
-                            condition,
-                            "needs.changes.outputs.windows == 'true' && "
-                            "(github.event_name != 'pull_request' || "
-                            "github.event.pull_request.head.repo.full_name == github.repository || "
-                            'needs.changes.outputs.windows_runner == \'"windows-2022"\')',
-                        )
-                    else:
-                        # Android 作业跑在托管 ubuntu，没有源门禁；回到可信 guest 前必须补门禁。
-                        self.assertEqual(condition, "needs.changes.outputs.android == 'true'")
-                        self.assertNotIn("self-hosted", str(job["runs-on"]))
+                    self.assertEqual(condition, f"needs.changes.outputs.{name} == 'true'")
+                    self.assertNotIn("self-hosted", str(job["runs-on"]))
                 else:
                     self.assertNotIn("self-hosted", job["runs-on"])
         self.assertEqual(jobs["contracts"]["if"], "needs.changes.outputs.contracts == 'true'")
@@ -135,7 +113,8 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(mac["env"]["RAWLAB_MAC_SUITE"], "${{ matrix.suite }}")
         self.assertEqual(mac["strategy"]["fail-fast"], "false")
         self.assertEqual(mac["strategy"]["matrix"]["include"], "${{ fromJSON(needs.changes.outputs.macos_matrix) }}")
-        self.assertEqual(jobs["ios"]["runs-on"], ["self-hosted", "macOS", "ARM64", "rawlab-apple"])
+        self.assertEqual(jobs["ios"]["runs-on"], "xcode-27")
+        self.assertEqual(jobs["ios"]["env"]["DEVELOPER_DIR"], "/Applications/Xcode_27.1.app/Contents/Developer")
 
     def test_intel_full_checks_do_not_require_licensed_gpu_models(self):
         mac = self.workflow["jobs"]["macos"]
@@ -180,28 +159,36 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("--max-workers=8", commands)
         self.assertIn("RAWLAB_TEST_ANDROID_CACHE=1", commands)
 
-    def test_actionlint_recognizes_only_the_declared_local_runner_label(self):
+    def test_actionlint_supplements_the_new_official_hosted_label(self):
         configuration = ROOT / ".github/actionlint.yaml"
         self.assertTrue(configuration.is_file(), "Declare custom labels for actionlint")
         policy = yaml.load(configuration.read_text(), Loader=yaml.BaseLoader)
         self.assertEqual(policy["self-hosted-runner"]["labels"],
-                         ["rawlab-android", "rawlab-windows", "rawlab-apple"])
+                         ["xcode-27", "rawlab-android", "rawlab-windows", "rawlab-apple"])
+        # The linter extension does not change execution or suppress runner-label checks.
+        self.assertEqual(self.workflow['jobs']['ios']['runs-on'], 'xcode-27')
 
-    def test_local_apple_jobs_use_prepared_tools_and_preserve_selected_xcode(self):
+    def test_hosted_apple_jobs_prepare_python_and_keep_the_sdk_guard(self):
         jobs = self.workflow['jobs']
         self.assertEqual(jobs['macos']['env']['JOBS'], '${{ matrix.jobs }}')
-        self.assertEqual(jobs['ios']['env']['JOBS'], '6')
+        self.assertEqual(jobs['ios']['env']['JOBS'], '2')
+        self.assertEqual(jobs['ios']['env']['CMAKE_BUILD_PARALLEL_LEVEL'], '2')
         for name in ('macos', 'ios'):
             steps = jobs[name]['steps']
             python_setup = [step for step in steps if step.get('uses', '').startswith('actions/setup-python@')]
-            if name == 'macos':
-                self.assertEqual(python_setup[0]['if'], "matrix.arch == 'x86_64'")
-            else:
-                self.assertEqual(python_setup, [])
+            self.assertEqual(len(python_setup), 1)
+            self.assertNotIn('if', python_setup[0])
+            self.assertEqual(python_setup[0]['with']['python-version'], '3.12')
             key_step = next(step for step in steps if step.get('id') == 'native-key')
+            self.assertLess(steps.index(python_setup[0]), steps.index(key_step))
+            self.assertIn('brew install pkg-config autoconf automake libtool', key_step['run'])
             self.assertIn('pip install -r scripts/ci/requirements.txt', key_step['run'])
             commands = '\n'.join(step.get('run', '') for step in steps)
             self.assertIn('DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"', commands)
+        ios_steps = jobs['ios']['steps']
+        guard = next(step for step in ios_steps if 'bash scripts/ci/check-ios-sdk.sh' in step.get('run', ''))
+        self.assertEqual(guard['if'], "needs.changes.outputs.build == 'true'")
+        self.assertLess(ios_steps.index(guard), next(i for i, step in enumerate(ios_steps) if step.get('id') == 'native-key'))
 
     def test_macos_uses_available_intel_cpus_and_bounded_test_parallelism(self):
         macos = self.workflow['jobs']['macos']
@@ -230,7 +217,7 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertRegex((root / 'build/ci/macos-timings.log').read_text(),
                              r'^passed\t\d+\t0\nfailed\t\d+\t7\n$')
 
-    def test_metal_workspace_runs_on_physical_apple_runner_only(self):
+    def test_arm64_retains_the_workspace_regression_without_claiming_hosted_gpu_support(self):
         run = next(step['run'] for step in self.workflow['jobs']['macos']['steps']
                    if 'bash RawLabMac/build.sh' in step.get('run', ''))
         ctest = run.split('ci_timed look-import-model bash RawLabMac/tests/look-import-model.sh\n', 1)[1]

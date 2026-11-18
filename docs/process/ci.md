@@ -12,7 +12,13 @@ deploy, sign, notarize or create releases. Verification is not release authoriza
 
 Full macOS and Windows checks compile with the pinned GPU AI models and inference
 runtimes. Model provisioning and shared-cache paths are specified in
-[desktop release packaging](desktop-release.md). No signing keys are used in CI.
+[desktop release packaging](desktop-release.md). `ai-inputs.py` validates an
+already-provisioned licensed model package; it does not download that package.
+A fresh hosted VM has no such local package: macOS arm64 `native` and desktop
+`full` remain hard-failing until an authorized cloud provisioning path supplies
+it. Do not drop those steps, upload private models, add secrets, or call a
+model-free `build` run a full pass. Windows `build/native`, macOS `build`, and
+iOS/Android groups do not require that model package. No signing keys are used in CI.
 Native checks include direct HLSL compilation without a hardware adapter and
 GLES source validation with glslang. CPU neural-inference validation is excluded;
 ordinary CPU photo processing and deterministic ISP tests remain applicable.
@@ -30,7 +36,7 @@ The supported camera/settings boundary remains the [X3F contract](../../lutools/
 | --- | --- |
 | Ordinary PR / `development` push | Static contracts plus fast models for affected platforms; affected Windows also runs the isolated `batch-selection` WPF suite with its native prerequisites |
 | Draft PR | Contracts only; platform checks and aggregate result stay skipped |
-| External fork PR | Contracts plus hosted Android and Windows checks when selected; the self-hosted macOS and iOS jobs stay skipped (see [External fork pull requests](#external-fork-pull-requests)) |
+| External fork PR | Contracts and affected-platform models on GitHub-hosted runners, including macOS/iOS; external branch names never request a full cold gate (see [External fork pull requests](#external-fork-pull-requests)) |
 | Release or hotfix PR | Every platform, complete non-UI coverage and cold native dependencies |
 | Manual run | Exactly the requested platform and check group; a separately named result |
 
@@ -96,8 +102,7 @@ normal backend is restored and the reuse test must pass again before the step en
 5. Before merge, check the current source/base, required automatic result and any
    requested specialized results. A failed, cancelled or unfinished check is not a
    pass. A manual partial result does not satisfy the automatic aggregate gate.
-   For an external fork PR, the skipped platforms and the build/native coverage
-   that fork runs never trigger also require the maintainer verification in
+   Fork model results also do not establish build/native coverage; see
    [External fork pull requests](#external-fork-pull-requests).
 6. After a change, rerun only checks whose source, configuration or integration
    assumptions changed. Documentation-only updates require content, link and diff
@@ -137,10 +142,10 @@ protocols, resource validity, and build/test failure propagation.
 | --- | --- | --- |
 | Select affected platforms | Ubuntu 24.04 | Selects platforms, groups, matrix and cold/warm mode |
 | Contracts and CI policy | Ubuntu 24.04 | Static source/contracts, localization, LUT and MCP protocol checks |
-| macOS | Dedicated arm64 Mac; hosted Intel for heavier groups | Models run once on arm64. `build` runs once per architecture. `native/full` use arm64 all plus Intel core/agent/render shards |
-| Windows | Hosted Server 2022 for models and automatic batch-selection; dedicated Windows 11 for explicit builds and cold gates | Managed model projects and runner checks; separate automatic WPF batch-selection job / self-contained package, CTest, DCP and RAW/raster CLI parity |
+| macOS | GitHub-hosted `macos-26` arm64 and `macos-26-intel` x86_64 | Models run once on arm64. `build` runs once per architecture. `native/full` use arm64 all plus Intel core/agent/render shards |
+| Windows | GitHub-hosted `windows-2022` for every group | Managed model projects and runner checks; separate automatic WPF batch-selection job / self-contained package, CTest, DCP and RAW/raster CLI parity |
 | Android | Hosted Ubuntu 24.04 / JDK 17 (dedicated guest paused) | JVM unit tests / lint, app and instrumentation APK builds, both native ABIs and alignment/cache checks |
-| iOS | Apple Silicon / Xcode | Standalone settings/viewing/persistence models / all framework slices, unsigned simulator app and UI-test compilation, simulator look-import integration |
+| iOS | GitHub-hosted arm64 `xcode-27`, selected Xcode 27.1 | Standalone settings/viewing/persistence models / all framework slices, unsigned simulator app and UI-test compilation, simulator look-import integration |
 | CI result | Ubuntu 24.04 | Automatic gate: every selected job succeeds and every unselected job is skipped |
 | Manual verification (platform, group) | Ubuntu 24.04 | Checks the requested scope without presenting it as the automatic PR gate |
 
@@ -182,101 +187,39 @@ PRs compare the test merge against its base. Pushes compare with the last
 successful `development` push run, so a cancelled run cannot conceal unverified
 changes. Missing history selects all platforms at the event's level: ordinary
 changes still run models; release/hotfix PRs run everything cold. Manual selection
-is explicit and does not infer its scope from the branch diff. An external fork PR
-additionally removes the self-hosted-only platforms from the selected set; see
-[External fork pull requests](#external-fork-pull-requests).
+is explicit and does not infer its scope from the branch diff. External forks use
+the same affected selection on ephemeral hosted runners; they retain the ordinary
+`models` group even when an external branch is named `release/*` or `hotfix/*`.
 
 ## External Fork Pull Requests
 
-External fork pull requests are accepted, and their normal automatic run
-schedules only GitHub-hosted checks. GitHub runs the workflow in the base
-repository but takes the workflow file from the pull request's merge commit; the
-`macos` and `ios` jobs in that file each require
-`github.event.pull_request.head.repo.full_name == github.repository`
-([workflow](../../.github/workflows/ci.yml)), so a fork PR that leaves the
-workflow unchanged skips both. The `windows` job carries the same
-head-repository clause with one escape: it also runs when the selected route is
-`windows-2022`, so a fork diff's model checks run on the hosted runner
-while the trusted machines stay reserved for same-repository code. The gate
-keeps normal fork changes off the trusted machines that persist SDKs, caches
-and runner installations. The selector
-also removes the platforms that exist only as self-hosted runners before the
-result gate sees the run: `SELF_HOSTED_ONLY = {"macos", "ios"}` in
-[`affected_platforms.py`](../../scripts/ci/affected_platforms.py). An external
-branch is never treated as a release/hotfix cold build, so its check group stays
-`models` even when it targets `main` or `release/**`. The automatic coverage of a
-ready-for-review fork PR is therefore:
+Ready-for-review fork PRs run contracts and all affected platform models on
+GitHub-hosted runners, including macOS/iOS. Drafts retain the normal deferral.
+There are no self-hosted routes in this workflow. The selector and aggregate
+still require every selected job to succeed; an Apple job skipped merely because
+it came from a fork no longer satisfies the gate.
 
-- **Contracts and CI policy** always run on `ubuntu-24.04`.
-- **Android** runs on hosted `ubuntu-24.04` when the diff selects it.
-- **macOS and iOS** are not selected, and their jobs are skipped by the source
-  gate. `verify` requires a selected platform to succeed and an unselected one to
-  be `skipped`, so these two skips are accepted; the selection reason records
-  them (for example, `fork pull request: ios, macos stay off self-hosted
-  runners`).
-- **Windows** stays selected because its ordinary route is hosted:
-  `windows_runner` returns `windows-2022`, and the job's source gate admits that
-  route, so the fork diff compiles and runs its model checks on `windows-2022`
-  exactly like an internal PR. Self-hosted Windows routing (cold builds and
-  manual `build`/`native`/`full`) stays same-repository only, so fork code never
-  executes on the dedicated KVM guest.
-
-A fork PR whose diff selects only the removed macOS/iOS platforms leaves no
-platform selected: contracts run, every platform job is skipped, and the green
-result means those platforms were not tested. A draft fork PR keeps the normal
-draft behavior: platform checks wait for **Ready for review**, and the coverage
-above applies to the ready-for-review run.
-
-Because the workflow file comes from the merge commit, a fork PR that edits
-`.github/workflows/` can run its edited version. GitHub's fork approval policy,
-read-only token and withheld secrets reduce that risk; they do not make a
-self-hosted runner safe. Review workflow edits in a fork PR as security-sensitive,
-and never approve or merge one that removes or weakens a `head.repo.full_name`
-condition or routes fork code to a self-hosted runner. Contributors must not try
-to bypass the gate by editing the workflow on their fork either; the supported
-path is review followed by the trusted-ref verification below.
+The workflow uses `pull_request`, not `pull_request_target`, read-only token
+permissions, no secrets, and checkout with `persist-credentials: false`.
+GitHub's fork approval policy remains applicable. Review workflow edits as
+security-sensitive; do not route untrusted code to a persistent machine or add
+signing/publication credentials to verification jobs.
 
 ### Verifying a Fork Pull Request Before Merge
 
-The automatic run leaves two kinds of gaps: fork PRs never select the
-self-hosted-only platforms (`macos`, `ios`), and they always lock `checks` to
-`models`, so build and native regressions stay unrun wherever the diff touches
-platform or native code — including `android`, whose hosted `models` run did
-pass. After reviewing the change, a maintainer with write access fills the gaps
-relevant to the diff on a trusted ref. Bring the
-reviewed head into a branch in this repository (a fork branch cannot be selected
-by **Run workflow**) or check it out locally and use the
-[local entry points](#local-and-targeted-entry-points) for the platform-specific
-scripts. For a **Run workflow** dispatch, open **Actions → Hosted CI → Run
-workflow** on that branch:
-
-- Set `platform` to `macos`, `windows`, `android` or `ios`; use `all` when the
-  whole matrix is needed. `contracts` ignores this selector.
-- Set `checks` to `models` at minimum for the platforms the fork selection
-  skipped (`macos`, `ios`), and to `build`, `native` or `full` on every platform
-  whose build or native code the diff touches, per the
-  [Verification Levels](#verification-levels) groups.
-  `native` omits the independent model suites, so use `full` when both are
-  required.
-- Confirm the logged checkout SHA is the reviewed source you intend to verify,
-  record the manual result and any local UI/device evidence in the PR, and treat
-  a missing, cancelled or stale-head run as unverified. The manual run's
-  aggregate check is named `Manual verification (<platform>, <checks>)` and does
-  not replace `CI result`.
-
-For a shared-core change, at minimum run `models` for each skipped platform and
-add `build`, `native` or `full` only for the coverage the change requires.
-
-`workflow_dispatch` runs the workflow file from the selected branch and is not
-subject to the pull-request source gate. Before dispatching, confirm the branch's
-workflow files contain only the changes you reviewed and do not weaken the gate;
-otherwise the dispatch would execute unreviewed workflow code on self-hosted
-machines. Do not bypass the gate for a fork: do not remove a
-`head.repo.full_name` condition or copy unreviewed fork code into a
-same-repository branch to obtain a privileged run; `pull_request_target` remains
-forbidden ([Safety and Results](#safety-and-results)).
+Fork PRs, like ordinary internal PRs, do not automatically build products or run
+the complete native gate. A maintainer should verify relevant build/native
+changes on a reviewed same-repository ref using the explicit platform/group
+selectors. `native` omits independent models; choose `full` when both are needed.
+Confirm the logged checkout SHA and keep the manual result separate from
+`CI result`. No dispatch, local build or green model result authorizes signing,
+release publication or deployment.
 
 ### JIT Dispatcher for Self-Hosted Jobs (Opt-In, Not Enabled)
+
+This section documents the optional persistent-runner tooling only. The current
+workflow has no self-hosted jobs and does not invoke this dispatcher. Re-enabling
+any persistent route requires separate authorization and a review of fork safety.
 
 [`scripts/ci/jit_dispatch.py`](../../scripts/ci/jit_dispatch.py) is the opt-in WP-01
 replacement for the resident `Runner.Listener` on the Apple pool Macs. While it stays
@@ -436,13 +379,13 @@ gate's honest skip pair otherwise.
 - The fast macOS CTest selects `dualdn_api` only in its no-package
   `dualdn_api_disabled` form, because `RAWLAB_DUALDN_TEST_PACKAGE` is unset
   there and the `RAWLAB_TEST_AI` Core ML assertions are compiled out. The
-  self-hosted Apple-silicon `native` gate closes that gap through
+  arm64 `native` gate retains that check through
   `RawLabMac/tests/dualdn-api-package.sh`, which configures a dedicated
   AI-enabled build against the pinned ONNX Runtime and the validated DualDn
-  package and runs the real `dualdn_api` test. `native/full` needs no extra
-  step: `ai-inputs.py` already injects the package into `build.sh`, so the
-  `build-macos` CTest runs the real-package tests there. A missing model or
-  runtime is a hard failure there (via `scripts/ci/ai-inputs.py`), not a skip.
+  package and runs the real `dualdn_api` test. In `full`, `ai-inputs.py` injects
+  the package into `build.sh`, so its `build-macos` CTest runs the real-package
+  tests. A missing model or runtime is a hard failure, not a skip; hosted routing
+  does not provide a license or silently manufacture a model package.
 - Windows does not invoke `build.ps1 -Test`: that entry point's default suite
   requires physical D3D11 and an external RAW path. The hosted suite uses the
   already-public tracked DJI DNG and explicitly selected CPU-safe cases.
@@ -452,7 +395,7 @@ gate's honest skip pair otherwise.
   is not provided by CI by default.
 - The iOS job compiles UI tests with `build-for-testing`; it does **not** execute
   XCTest, import Photos fixtures, sign a device app or validate installation.
-- UI tests are not a CI gate. The self-hosted macOS runner has no accessibility
+- UI tests are not a CI gate. Hosted macOS has no project accessibility
   grant, so `hdr-rendition-ui.sh` (`AXUIElement`) runs locally and pre-release
   instead of in the model suites; `RAWLAB_REQUIRE_AX=1` turns its skip into a
   failure. The same contract stays gated by the AX-free presentation-layer suite
@@ -563,24 +506,17 @@ build-only runner.
 
 ## Windows Runner Scheduling
 
-Model checks, including ordinary non-draft PRs targeting `development`, use the
-standard hosted `windows-2022` runner. They can run concurrently without occupying the dedicated
-integration runner. Release/hotfix PRs and manual build/native/full runs select `[self-hosted, windows, x64, rawlab-windows]` in the dedicated
-Windows 11 KVM guest with 32 vCPUs, 32 GiB memory, VS 2022 C++ Build Tools and the
-Windows SDK. Drafts still skip all platform jobs. A fork PR runs the Windows job
-only on the hosted `windows-2022` route; the self-hosted selection keeps the
-head-repository source gate, so fork code never queues on the dedicated guest
-([External fork pull requests](#external-fork-pull-requests)).
-This is event-based routing,
-not a busy-runner probe or an automatic fallback when the dedicated runner is
-offline. Hosted jobs remain subject to GitHub's account concurrency limits.
+All Windows groups, including release/hotfix cold builds and manual
+`build/native/full`, select GitHub-hosted `windows-2022`. There is no dependency
+on the Windows 11 KVM guest and no offline-host fallback to wait for. Forks use
+the same affected model route with read-only permissions. Drafts still defer
+platform jobs; hosted concurrency limits still apply.
 
-The selected group determines coverage on either runner. Model runs do not build
-the app or native core; build/native/full groups retain the complete product build
-and their requested non-UI suites. Manual runs have a separate result name. A PR's
-Windows Server model result does not replace a requested Windows 11 build/native
-run or the automatic check on the resulting `development` push SHA.
-Neither route establishes physical GPU or interactive-desktop acceptance.
+The selected group, not the host, determines coverage. Model runs do not build
+the app or native core; build/native/full retain the complete self-contained
+product build and their requested non-UI suites. Manual results stay separate
+from `CI result`; Windows Server execution does not establish physical GPU or
+interactive Windows 11 desktop acceptance.
 
 For ordinary automatic PR/push events selecting Windows, **Windows batch-selection**
 runs independently on `windows-2022`, alongside the unchanged models job. It builds
@@ -608,7 +544,11 @@ four-core, 16 GiB runner. Dedicated jobs keep `E:\RawLabCI` and the existing
 image and compiler identities, so these hosts cannot restore each other's build
 trees. Product outputs and test results are always rebuilt.
 
-### Dedicated Windows Runner
+### Dedicated Windows Runner (Inactive Reference)
+
+The provisioning and dedicated-limit support below is retained for an explicitly
+authorized future rollback only; the active workflow never selects this runner.
+It is not required for cloud verification.
 
 Use a separate 120 GiB NTFS data volume for `E:\RawLabCI`: runner installation, `_work`,
 toolcache, SDK downloads, NuGet/Python caches, temporary files and build output
@@ -649,14 +589,40 @@ are CI environment settings; `build.ps1` and local builds are unchanged.
 Keep the complete CPU-safe suite, tracked DNG fixture, artifact allowlist and
 exact dependency-cache policy. Do not replace it with `build.ps1 -Test`, which
 requires physical GPU/external-RAW evidence. Service-session results do not
-cover real Explorer/UIA interaction. To route every event back to the dedicated
-runner, change `windows_runner` in `affected_platforms.py` and its scheduling
-regressions, and keep the job gate coherent: either add `windows` to
-`SELF_HOSTED_ONLY` or adjust the hosted-route escape, otherwise fork PRs that
-select Windows would skip the job again and the aggregate turns red; do not skip
-required checks or remove the runner environment setup.
+cover real Explorer/UIA interaction. Any future return to a persistent route must
+update selector, workflow safety conditions and fork policy together; do not
+restore a self-hosted route by editing only one label or skip required checks.
 
-## Local Apple Runners
+## GitHub-Hosted Apple Runners
+
+The active macOS matrix uses `macos-26` arm64 (two build workers) and the existing
+`macos-26-intel` x86_64 shards (four). iOS uses the official `xcode-27` arm64
+preview image, explicitly selecting `/Applications/Xcode_27.1.app/Contents/Developer`.
+The stable `macos-26` image carries Xcode 26, which cannot satisfy the retained
+iOS SDK 27.1+ guard. Both Apple jobs select Python 3.12 through `setup-python` and
+prepare Homebrew build tools instead of assuming a provisioned local venv.
+The iOS SDK guard still runs before Rust/native work, all framework slices are
+built, and simulator app/test compilation remains unsigned.
+
+Official [labels](https://github.com/actions/runner-images/blob/main/README.md),
+[runner resources](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
+and [Xcode 27 image](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md)
+currently document three-core/7 GB arm64 VMs, four-core/14 GB Intel VMs and Xcode
+27.1 default plus 27.2 installed on `xcode-27`. The preview label is deliberate,
+not a claim of GA availability. Logs and the SDK guard determine the actual
+image/toolchain. No larger paid runner, signing identity or persistent Mac is
+required by this route. Hosted VMs do not establish physical Metal/Core ML or
+iPhone acceptance; retained hardware-dependent tests may fail without a device,
+and that is not permission to skip them or claim a hardware pass.
+
+The Intel shards and arm64 `all` coverage, cache cold/warm rules and bounded
+CTest parallelism stay unchanged. Moving hosts does not authorize model uploads;
+see the model prerequisites above.
+
+### Local Apple Runners (Inactive Reference)
+
+The remaining provisioning guidance is only for an explicitly authorized future
+persistent route. It does not describe the active workflow.
 
 The macOS, iOS and Android build jobs use `scripts/ci/prepare-rust.sh` to select
 Rust 1.99.1, its standard-library notices and the required target slices. If
@@ -665,14 +631,9 @@ checksum and installs it under `RUNNER_TEMP/rawlab-x3f-tools`, exporting the job
 Cargo/Rustup paths. It does not require an administrator or change the runner's
 login profile. Windows prepares the same pinned toolchain in its own job directory.
 
-macOS arm64 and iOS both select `[self-hosted, macOS, ARM64, rawlab-apple]`.
-Each Mac runs one runner, so Apple jobs can execute concurrently without
-sharing memory or build directories. When the developer laptop is offline, the
-always-on Mac can execute both jobs sequentially instead of waiting indefinitely
-for a role-specific runner. Either host must have both complete toolchains.
-Their initial build parallelism is six. Heavier Intel matrix
-entries remain on `macos-26-intel` with four workers each; neither cross-compilation
-nor Rosetta substitutes for its native x86_64 runtime checks.
+The inactive local-pool configuration used `[self-hosted, macOS, ARM64, rawlab-apple]`
+for macOS arm64 and iOS, with six build workers. Either pool machine needed both
+complete toolchains; none of that is a prerequisite of the hosted route above.
 
 The Intel `agent` shard isolates Agent recipe rendering from the remaining
 `render` checks. Every Intel shard still builds the complete app and executes
