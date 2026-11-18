@@ -9,6 +9,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="ui-automation/**/*.cs;update-fixture/**/*.cs" />
+    <Using Include="System.IO" />
+    <Using Include="System.Net.Http" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.0" />
     <PackageReference Include="Velopack" Version="1.2.161" />
     <PackageReference Include="xunit" Version="2.9.3" />
