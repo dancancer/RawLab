@@ -2,8 +2,10 @@
 
 This procedure prepares macOS and Windows packages and update metadata. Running
 these scripts does not authorize a release, an upload, a tag, or replacement of
-a user's installed app. Use the version and build number approved for the
-release branch. Ordinary development builds keep their existing defaults.
+a user's installed app. Set the approved version and build number in
+`Shared/version.json`, run `python3 scripts/version/generate.py` to sync
+platform manifests (`python3 scripts/version/generate.py --check` verifies
+parity), and keep ordinary development builds on their existing defaults.
 
 ## Shared model input
 
@@ -43,7 +45,7 @@ Private-key paths below are local inputs, not repository or CI settings.
 
 Set these inputs before invoking `RAWLAB_RELEASE=1 bash RawLabMac/build.sh`:
 
-- `RAWLAB_RELEASE_VERSION` and `RAWLAB_RELEASE_BUILD`.
+- Optionally `RAWLAB_RELEASE_VERSION` and `RAWLAB_RELEASE_BUILD` (default to `Shared/version.json`; rejected if they differ).
 - `RAWLAB_CODESIGN_IDENTITY`; optionally `RAWLAB_CODESIGN_KEYCHAIN` for an isolated keychain.
 - `RAWLAB_UPDATE_CERTIFICATE_SHA256` for the fixed self-signed leaf certificate.
 - `RAWLAB_SPARKLE_PUBLIC_KEY`, the base64 EdDSA public key.
@@ -104,12 +106,14 @@ selects the optional Authenticode strict mode; its signed executables must be
 prepared before packaging.
 
 ```powershell
-./RawLabWindows/build.ps1 -ReleasePackage -ReleaseVersion $Version -ReleaseBuild $Build `
+./RawLabWindows/build.ps1 -ReleasePackage `
   -UpdateTrustFile $PublicTrustJson -DualDnModel $CompleteModel `
   -DualDnManifestSha256 $ManifestSha256 -ReleaseOutput $NewOutputDirectory
 ```
 
-The script requires all inputs, publishes a fresh self-contained x64 app,
+The script defaults `-ReleaseVersion` and `-ReleaseBuild` from
+`Shared/version.json` (and rejects overrides that differ), requires all
+inputs, publishes a fresh self-contained x64 app,
 copies models/runtimes/licenses, validates the packaged model, and only then
 runs pinned vpk 1.2.161 for `RawLab.Desktop` / `stable`. Keep the generated
 current-user Setup, full nupkg and manual-install ZIP

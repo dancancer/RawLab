@@ -2,11 +2,36 @@
 """Validate public release inputs and write them into an already-built app plist."""
 import base64
 import hashlib
+import json
 import os
 from pathlib import Path
 import plistlib
 import re
 import sys
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def load_repo_version(root=ROOT):
+    data = json.loads((root / "Shared/version.json").read_text(encoding="utf-8"))
+    return str(data["version"]), str(data["build"])
+
+
+def resolve_release_env(env=os.environ, root=ROOT):
+    repo_version, repo_build = load_repo_version(root)
+    resolved = dict(env)
+    version = resolved.get("RAWLAB_RELEASE_VERSION", "").strip()
+    build = resolved.get("RAWLAB_RELEASE_BUILD", "").strip()
+    if not version:
+        resolved["RAWLAB_RELEASE_VERSION"] = repo_version
+    elif version != repo_version:
+        raise ValueError(f"RAWLAB_RELEASE_VERSION ({version}) does not match Shared/version.json ({repo_version})")
+    if not build:
+        resolved["RAWLAB_RELEASE_BUILD"] = repo_build
+    elif build != repo_build:
+        raise ValueError(f"RAWLAB_RELEASE_BUILD ({build}) does not match Shared/version.json ({repo_build})")
+    return resolved
 
 
 def configuration(env=os.environ, arch="arm64"):
@@ -51,12 +76,12 @@ def configuration(env=os.environ, arch="arm64"):
 def main():
     usage = "Usage: macos_config.py validate arm64|x86_64 | configure Info.plist arm64|x86_64"
     if len(sys.argv) == 3 and sys.argv[1] == "validate":
-        configuration(arch=sys.argv[2])
+        configuration(env=resolve_release_env(os.environ), arch=sys.argv[2])
         return
     if len(sys.argv) != 4 or sys.argv[1] != "configure":
         raise ValueError(usage)
     path = Path(sys.argv[2]); arch = sys.argv[3]
-    values = configuration(arch=arch)
+    values = configuration(env=resolve_release_env(os.environ), arch=arch)
     with path.open("rb") as stream:
         info = plistlib.load(stream)
     info.pop("RawLabUpdateCertificateSHA256", None); info.pop("RawLabUpdateTeamID", None)

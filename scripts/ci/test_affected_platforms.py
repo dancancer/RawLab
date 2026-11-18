@@ -51,6 +51,7 @@ class ClassificationTests(unittest.TestCase):
 
     def test_shared_code_tooling_and_ci_workflows_select_every_platform(self):
         for path in ("lutools/src/core/raw_processor.cpp", "Shared/LookLibrary.swift",
+                     "Shared/version.json", "scripts/version/generate.py",
                      "scripts/ci/native_cache.py", ".github/workflows/ci.yml",
                      ".github/workflows/pr-cache-cleanup.yml", ".github/actionlint.yaml",
                      "tests/test_localization.py"):
