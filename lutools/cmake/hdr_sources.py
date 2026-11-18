@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tarfile
@@ -139,9 +140,27 @@ def prepare(cache, portable=False):
     return sources
 
 
+def prepare_png(cache):
+    # Keep the host JNI gate on the same source pin as the production target.
+    cmake = Path(__file__).with_name("raw-png.cmake").read_text()
+    pin = {"url": re.search(r"set\(spng_url (https?://[^\s)]+)\)", cmake).group(1),
+           "sha256": re.search(r"set\(spng_sha256 ([0-9a-f]{64})\)", cmake).group(1),
+           "license_files": ["LICENSE"]}
+    directory = cache / "hdr-codecs"
+    directory.mkdir(parents=True, exist_ok=True)
+    with source_lock(directory / ".prepare.lock"):
+        return prepare_source(cache, pin, "libspng-0.7.4.tar.gz", "libspng-0.7.4")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cache-root", type=Path)
-    parser.add_argument("--portable", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--portable", action="store_true")
+    mode.add_argument("--png", action="store_true", help="Prepare only the production PNG codec")
     args = parser.parse_args()
-    print(";".join(str(path) for path in prepare(args.cache_root or shared_cache(), args.portable)))
+    cache = args.cache_root or shared_cache()
+    if args.png:
+        print(prepare_png(cache))
+    else:
+        print(";".join(str(path) for path in prepare(cache, args.portable)))

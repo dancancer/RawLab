@@ -1,11 +1,10 @@
 package com.rawlab.android.settings
 
+import com.rawlab.android.io.replaceFileAtomically
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
 import java.nio.charset.StandardCharsets
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.util.Base64
 import java.util.Properties
 import java.util.concurrent.ConcurrentHashMap
@@ -48,7 +47,7 @@ class AdjustmentNotReadyException : IllegalStateException("The current adjustmen
 data class EditStoreChange(val directory: String, val state: PhotoEditState)
 
 class EditStore(private val directory: File,
-    private val replaceFile: (File, File) -> Unit = ::replaceEditFileAtomically,
+    private val replaceFile: (File, File) -> Unit = { from, to -> replaceFileAtomically(from, to) },
 ) {
     private val file = File(directory, "edits.properties")
     private val directoryPath = directory.canonicalPath
@@ -425,13 +424,5 @@ class EditStore(private val directory: File,
         val changes = changed.asSharedFlow()
         // JVM 内先串行，再取文件锁；否则同进程的不同 FileChannel 会直接抛 overlapping lock。
         private val locks = ConcurrentHashMap<String, ReentrantLock>()
-    }
-}
-
-private fun replaceEditFileAtomically(from: File, to: File) {
-    try {
-        Files.move(from.toPath(), to.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-    } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
-        Files.move(from.toPath(), to.toPath(), StandardCopyOption.REPLACE_EXISTING)
     }
 }

@@ -114,6 +114,22 @@ int main(int argc, char** argv) {
             test.expect(makeMpf(0xa0030000, {0x010001}, littleEndian).bytes, 2, "VGA thumbnail in either byte order");
             test.expect(makeMpf(0xa0030000, {0x010002}, littleEndian).bytes, 2, "HD thumbnail in either byte order");
             test.expect(makeMpf(0xa0030000, {0x010002, 0x010001}, littleEndian).bytes, 3, "both thumbnail classes");
+            auto shifted = makeMpf(0xa0030000, {0x010002}, littleEndian);
+            // APP1 before MPF moves the TIFF base without changing its internal offsets.
+            constexpr size_t shift = 9;
+            shifted.bytes.insert(shifted.bytes.begin() + 2, {0xff, 0xe1, 0, 7, 'E', 'x', 'i', 'f', 0});
+            put(shifted.bytes, 64 + shift, static_cast<uint32_t>(shifted.primaryEnd + shift), 4, littleEndian);
+            test.expect(shifted.bytes, 2, "MPEntry offsets remain relative to a relocated TIFF header");
+            auto badOffset = shifted.bytes;
+            put(badOffset, 84 + shift,
+                static_cast<uint32_t>(shifted.thumbnailStarts.front() + shift), 4, littleEndian);
+            test.expect(badOffset, -1, "absolute auxiliary offset is not a TIFF-relative offset");
+            auto badCount = shifted.bytes;
+            put(badCount, 18 + shift, 8, 2, littleEndian);
+            test.expect(badCount, -1, "IFD entry count extends past APP2");
+            auto badTableSize = shifted.bytes;
+            put(badTableSize, 48 + shift, 31, 4, littleEndian);
+            test.expect(badTableSize, -1, "MPEntry byte count must match the number of images");
         }
         for (uint32_t type : {0u, 0x050000u, 0x020002u}) {
             test.expect(makeMpf(0xa0030000, {type}).bytes, -1, "unknown, gain map, or stereo auxiliary image");

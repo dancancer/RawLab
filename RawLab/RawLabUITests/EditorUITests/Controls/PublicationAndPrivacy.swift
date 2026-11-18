@@ -58,7 +58,8 @@ extension EditorUITests {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
-        app.buttons["settings.language"].tap()
+        // Language belongs to the overview overflow, not to the collapsed editor chrome.
+        tapEditorMenuAction("settings.language", in: app)
         app.buttons["English"].tap()
         if app.buttons["batch.resume"].exists {
             app.buttons["batch.resume"].tap()
@@ -68,8 +69,11 @@ extension EditorUITests {
         }
         importPhoto(in: app)
         let lensTool = app.buttons["tool.lens"]
-        let strip = app.scrollViews.containing(.button, identifier: "tool.lens").allElementsBoundByIndex
-            .min { $0.frame.height < $1.frame.height }!
+        guard let strip = app.scrollViews.containing(.button, identifier: "tool.lens").allElementsBoundByIndex
+            .min(by: { $0.frame.height < $1.frame.height }) else {
+            XCTFail("Lens/DNG integration has not migrated past the imported tool page to the overview lens entry. " + app.debugDescription)
+            return
+        }
         for _ in 0..<8 where !lensTool.isHittable { strip.swipeRight() }
         lensTool.tap()
         let manual = app.segmentedControls["lens.mode"].buttons["Manual"]
