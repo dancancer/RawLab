@@ -1,7 +1,7 @@
 # RawLab 架构评审（2026-11-13）
 
 从架构层面（模块边界、依赖方向、共享策略、契约形态、测试拓扑）对全项目的一次独立审视。
-与另两份文档的分工：[评审 2026-11-12](../archive/architecture/codebase-review-2026-11-12.md) 管"全仓问题地图"，
+与另两份文档的分工：[评审 2026-11-12](codebase-review-2026-11-12.md) 管"全仓问题地图"，
 [跟进核对 2026-11-13](codebase-review-followup-2026-11-13.md) 管"整改后的真实状态"，
 本文管**结构本身**。三处编号互相独立（本文用 AR 前缀），可互引。
 
@@ -11,7 +11,7 @@
 - **方法**：在两份评审与 51 条跟进发现之上做结构归纳，并对本文引用的每个度量重新取证：
   C ABI 导出面计数、四端绑定层规模、参数规格文件分布、HDR 子系统文件清点、
   CMake 目标与链接块对照、近 300 提交触达频率。计数命令可复现，标注 ✓ 的均已亲自核对。
-- **读者预设**：熟悉根 `AGENTS.md` 与 [color-contract.md](../../lutools/docs/color-contract.md)。
+- **读者预设**：熟悉根 `AGENTS.md` 与 [color-contract.md](../../../lutools/docs/color-contract.md)。
 
 ## 2. 架构形状与做对的地方
 
@@ -86,7 +86,7 @@ C ABI 是刻意设计的单缝，但缝两侧都是手抄契约：
 （现收敛 2/3，`hdr_resample.h` 仍独立）、HDR 专属传输/重置规则（14.8 表占三行）、每端自己的
 HDR 画布与状态机、专属的迁移字段（`hdr_processing_version`）。v0.9–v0.10 的功能扩张全部压在
 这条第二轨道上，而 **SDR 有引用式的 color-contract.md，HDR 只有叙述式设计文档**——
-[technical-design.md](../design/hdr-photos/technical-design.md)、[android-windows.md](../design/hdr-photos/android-windows.md)、
+[technical-design.md](../../design/hdr-photos/technical-design.md)、[android-windows.md](../../design/hdr-photos/android-windows.md)、
 camera-raw、proraw 四篇加 release notes 承载了输入模型、位深与 gain-map 语义、与 SDR 路径的交汇规则
 和每端能力矩阵，但没有一个"改行为必须回来改、测试可以指着断言"的单点契约。
 

@@ -94,7 +94,7 @@ final class StatusProbe {
 
         // V-UIIOS P1-05 碳审补充：同图 HDR→SDR 不经 importImage，updatePreview 出帧前
         // 缺外观早退（Rendering.swift :117-124）或解码/渲染报错同样必须退役警告缓存，
-        // 否则切回 HDR 时相同警告被 change() 的 `.keep` 吞掉（b-task-table.md:17 台账场景）。
+        // 否则切回 HDR 时相同警告被 change() 的 `.keep` 吞掉（docs/archive/architecture/remediation-plan-2026-11-13/b-task-table.md:17 台账场景）。
         let aborted = HDRResourceNotice.delivered(isHDREditing: true, missingMessage: profile)
         let afterAbort = aborted.afterUndeliveredFrame
         check(afterAbort.message == nil,

@@ -126,7 +126,7 @@ extension RawEditorViewModel {
             previewFailed = true
             isBusy = false
             // V-UIIOS P1-05：SDR 帧未出即早退，上一帧的缺资源警告必须经统一入口退役，
-            // 否则同图切回 HDR 时相同警告被 change() 的 `.keep` 吞掉（b-task-table.md:17）。
+            // 否则同图切回 HDR 时相同警告被 change() 的 `.keep` 吞掉（docs/archive/architecture/remediation-plan-2026-11-13/b-task-table.md:17）。
             hdrResourceNotice = hdrResourceNotice.afterUndeliveredFrame
             statusMessage = L10n.text("所选外观不可用，请重新选择外观。")
             return

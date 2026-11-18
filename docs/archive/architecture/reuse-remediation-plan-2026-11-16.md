@@ -1,6 +1,6 @@
 # RawLab 分层复用与“去重复造轮子”专项整改方案（2026-11-16）
 
-本文基于根 [AGENTS.md](../../AGENTS.md) 新增的**“分层复用（避免重复造轮子）”**全局原则，对全仓现存的重复实现与手搓通用轮子现象做系统盘点，并给出按投入产出比（ROI）分级的整改路线、许可证约束与验收锚点。整改全部收官后按文档规范移入 `docs/archive/`。
+本文基于根 [AGENTS.md](../../../AGENTS.md) 新增的**“分层复用（避免重复造轮子）”**全局原则，对全仓现存的重复实现与手搓通用轮子现象做系统盘点，并给出按投入产出比（ROI）分级的整改路线、许可证约束与验收锚点。整改全部收官后按文档规范移入 `docs/archive/`。
 
 - **状态快照**：2026-11-16 晚，详见各 PR
 - **代码基线**：`origin/development` @ `1e10a0152`（2026-11-16；本地工作区对照核实，近百余提交新增的 `ExifToolSession.cs`、`Shared/ExportMetadata.swift` PNG `eXIf` 注入及 `sha256.h` 平台硬件加速均已按最新远端基线纳入）。
@@ -20,7 +20,7 @@
 
 ### 1.2 许可证合规硬约束（选型必查）
 
-项目原创代码采用 `GPL-3.0-only`，并附带针对专有统计组件的 [阿里云 RUM SDK 链接例外](../../LICENSE-ALIYUN-RUM-EXCEPTION)（详见 [许可与归属说明](../reference/licensing.md)）。引入外部开源库替换自研轮子时必须遵守：
+项目原创代码采用 `GPL-3.0-only`，并附带针对专有统计组件的 [阿里云 RUM SDK 链接例外](../../../LICENSE-ALIYUN-RUM-EXCEPTION)（详见 [许可与归属说明](../../reference/licensing.md)）。引入外部开源库替换自研轮子时必须遵守：
 
 - **允许直接链接进客户端二进制**：MIT、BSD（2/3-Clause）、Apache-2.0（与 GPLv3 兼容）、ISC、Zlib、MPL-2.0、Public Domain，以及满足源码随附与动态/重链接条款的 LGPL-2.1 / LGPL-3.0。
 - **严禁直接静态/动态链接进携带 RUM SDK 的客户端进程**：第三方强传染 **GPLv2-only / GPLv2+ / 无匹配例外的第三方 GPLv3** 库（例如 `Exiv2` 为 GPLv2+，其版权人不提供本项目的 RUM 链接例外，不可直接链入正式客户端进程）。若确需使用此类工具，必须保持独立外部进程隔离并核实分发条款（如当前 Windows 对 `ExifTool` 的进程级调用）。
@@ -142,7 +142,7 @@
 
 ### WR-07（P2 · 演进触发）相机无线连接协议（PTP/IP）双端实现收敛
 
-- **背景核实**：据 [相机厂商 SDK 调研](../design/camera-transfer/vendor-sdk-survey.md)，行业内不存在可自由分发且同时覆盖 iOS/Android 无线读取卡内原图的统一官方开源 SDK；`libgphoto2`（LGPL-2.1）在移动端多网卡绑定（Wi-Fi 相机无外网路由时的 `NWConnection` / Android `SocketFactory` 绑定）与体积上适配成本较高，因此采用轻量 PTP/IP 子集本身合理。
+- **背景核实**：据 [相机厂商 SDK 调研](../../design/camera-transfer/vendor-sdk-survey.md)，行业内不存在可自由分发且同时覆盖 iOS/Android 无线读取卡内原图的统一官方开源 SDK；`libgphoto2`（LGPL-2.1）在移动端多网卡绑定（Wi-Fi 相机无外网路由时的 `NWConnection` / Android `SocketFactory` 绑定）与体积上适配成本较高，因此采用轻量 PTP/IP 子集本身合理。
 - **真正的重复问题**：iOS `RawLab/RawLab/Core/Camera/CameraPTPClient.swift:13-164` 与 Android `RawLabAndroid/.../camera/protocol/SonyMobileSession.java:12-367` 把完全同构的 PTP/IP 报文分帧、握手、事务序号、事件心跳与卡内分页校验逻辑用 Swift 和 Java 各写了一遍。
 - **整改动作（演进触发）**：
   - 当前 Sony 实验性连接逻辑若仅做小修则维持现状；

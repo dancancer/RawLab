@@ -1,0 +1,8 @@
+# High-risk public ABI, shared specs/fixtures, and GPU shader paths.
+# Per AGENTS.md and docs/process/integration-workflow.md (ADR D5), PRs modifying
+# any path below require mandatory carbon / independent review.
+
+/lutools/include/ @dancancer
+/Shared/specs/ @dancancer
+/Shared/fixtures/ @dancancer
+/lutools/src/gpu/*shader* @dancancer

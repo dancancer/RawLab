@@ -38,8 +38,16 @@ current camera or style-quality certification.
 
 ## Architecture
 
+Historical status ledgers and pre-ADR remediation reviews are archived here; active
+execution tracking and open remediation items have moved to
+[GitHub Issues](https://github.com/dancancer/RawLab/issues).
+
 - [Codebase review, 2026-11-12](architecture/codebase-review-2026-11-12.md): historical repo-wide defect inventory referenced by the 2026-11-13 remediation records.
+- [Codebase review followup, 2026-11-13](architecture/codebase-review-followup-2026-11-13.md): post-remediation static recheck and newly identified findings.
+- [Architecture review, 2026-11-13](architecture/architecture-review-2026-11-13.md) and [addendum](architecture/architecture-review-addendum-2026-11-13.md): structural diagnosis (`AR-1`–`AR-7`) and Q1/residual-risk analysis.
 - [Remediation roadmap, 2026-11-13](architecture/remediation-roadmap-2026-11-13.md): superseded by the [Owner transformation ADR](../architecture/adr-2026-11-19-owner-transformation.md).
+- [Remediation plan ledger, 2026-11-13](architecture/remediation-plan-2026-11-13.md) and [sub-tables](architecture/remediation-plan-2026-11-13/b-task-table.md): historical 179-row B-table, product decisions (`Q1`–`Q14`), work packages (`WP-01`–`11`), and running changelog; unresolved items (`58` open + `10` partial) were migrated to GitHub Issues.
+- [Reuse remediation plan, 2026-11-16](architecture/reuse-remediation-plan-2026-11-16.md): historical `WR-01`–`WR-09` status ledger, superseded by the [Owner transformation ADR](../architecture/adr-2026-11-19-owner-transformation.md).
 
 ## Platform Verification Records
 

@@ -5,9 +5,9 @@
 
 ## 1. 开轮先确定依赖与合入顺序
 
-- 在本轮验收索引中记录目标版本、功能 PR、原实现 owner、依赖图、合入顺序和验收终点。
+- 在对应的 GitHub Issue / Project 中记录目标里程碑、功能 PR、原实现 owner、依赖图、合入顺序和退出标准。
   依赖图至少标出共享接口、构建依赖、资源和功能组合；并行工作围绕明确的接口开展。
-  索引只汇总跨 PR 的状态并链接各 PR 的证据；相关工作结束后移入 `docs/archive/`。
+  执行状态、任务清单与逐 PR 变更流水统一留在 GitHub Issues / Projects 及各 PR 描述中，不在仓库内新增或维护活台账文件。
 - 从最新 `origin/development` 创建功能分支，一功能一个 worktree，继续由原实现 owner
   负责交付与修复。记录创建时的 base SHA，保留其他工作目录和未提交改动。
 - 共享色彩、decoder、C ABI、构建和资源接口优先拆成小 PR 合入 `development`，
@@ -18,7 +18,7 @@
 
 ## 2. 共享文件指定单一 owner
 
-开轮时按下表从原功能或平台角色中指定具体 owner，并记录到本轮任务清单。
+开轮时按下表从原功能或平台角色中指定具体 owner，并登记到对应的 GitHub Issue / Project。
 同一共享文件在同一阶段只有一个写入 owner；其他功能通过明确的接入请求交给该 owner。
 需要转交时记录交接的 source SHA 和未完成项，再开始修改。
 
@@ -38,8 +38,8 @@
    各依赖分支及时 merge 该基线，避免在旧分支上持续积累重叠改动。
 2. owner 解决文本冲突后，列出实际冲突文件、保留的接口和语义风险，执行最小定向回归。
    构建链接变动检查实际 link/runtime；decoder、缓存和导出变动检查对应组合路径。
-3. 在原 PR 描述中记录新 head/base、完成结果及平台限制，验收索引更新摘要和 PR 链接。
-   共享目标移动且影响本次代码时，原独立 reviewer 将结论绑定新 head/base，复核受影响增量。
+3. 在原 PR 描述（按 [PR 模板](../../.github/PULL_REQUEST_TEMPLATE.md) 写明新 head/base、验证锚点、完成结果及平台限制）和关联 GitHub Issue 中更新进度与 PR 链接。
+   仅当 PR 触及 [CODEOWNERS](../../.github/CODEOWNERS) 高风险目录（`/lutools/include/`、`/Shared/specs/`、`/Shared/fixtures/`、`/lutools/src/gpu/*shader*`）时，强制要求独立 / carbon reviewer 将结论绑定当前 head/base 复核受影响增量；未触及高风险目录的 PR 按常规自测与 CI 门禁合入。
 4. 阶段验证和复评完成后按已授权顺序合入。下一个依赖功能接新 target，
    不等所有功能结束才做一次大合并。
 
