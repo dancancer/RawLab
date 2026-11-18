@@ -63,7 +63,8 @@ public partial class MainWindow
     internal bool HslHistoryActive => hslHistoryActive;
     internal bool HslTargetEnabled => hslTargetEnabled;
     internal HslTargetAvailability? HslTargetNotice => hslTargetNotice;
-    internal object? EditGesture => editGesture;
+    internal object? EditGestureInstance => editGesture;
+    internal bool ChoosingWhiteBalance => choosingWhiteBalance;
     internal Parameter SelectedParameter => selectedParameter;
     internal ToneControlParameter? SelectedToneParameter => selectedToneParameter;
     internal EditorAdjustmentGroup? ExpandedGroup { get => expandedGroup; set => expandedGroup = value; }

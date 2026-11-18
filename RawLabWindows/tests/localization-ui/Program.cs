@@ -158,7 +158,7 @@ internal static class Program
                       AutomationProperties.GetName((TextBox)geometryPanel.FindName("CropWidth")!) == Loc.Text("裁切宽度") &&
                       AutomationProperties.GetName((Slider)geometryPanel.FindName("StraightenSlider")!) == Loc.Text("拉直"),
                     $"Geometry controls have localized automation names {language}");
-                Check(ReferenceEquals(settingsField.GetValue(window), adjustments), $"Editor settings identity preserved {language}");
+                Check(ReferenceEquals(window.Settings, adjustments), $"Editor settings identity preserved {language}");
                 Check(JsonSerializer.Serialize(adjustments.Capture()) == snapshot, $"Recipe, HSL and editor snapshot preserved {language}");
                 var hslPanel = (HslPanel)window.FindName("HslEditor");
                 Check(Descendants(hslPanel).OfType<Slider>().Any(slider => AutomationProperties.GetName(slider).EndsWith(Loc.Text("色相"),StringComparison.Ordinal)),

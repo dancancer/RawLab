@@ -64,18 +64,18 @@ internal static class ToolGroupChecks
         var whiteBalanceReset = PhotoFeatureChecks.Descendants<Button>(window.WhiteBalanceEditor).Single(button =>
             AutomationProperties.GetName(button) == Loc.Text("重置白平衡"));
         check(whiteBalanceReset.IsEnabled, "White balance group reset is exposed as an enabled accessible action");
-        var asShotWhiteBalance = ((Adjustments)PhotoFeatureChecks.Field(window, "settings")!).AsShot!.Value;
+        var asShotWhiteBalance = window.Settings.AsShot!.Value;
         var temperatureSlider = whiteBalanceSliders.Single(slider => AutomationProperties.GetName(slider) == Loc.Text("色温"));
         var tintSlider = whiteBalanceSliders.Single(slider => AutomationProperties.GetName(slider) == Loc.Text("色调"));
         temperatureSlider.Value = NumericRange.For(ParameterSpec.All[(int)Parameter.Temperature]).Position(6400);
         tintSlider.Value = NumericRange.For(ParameterSpec.All[(int)Parameter.Tint]).Position(12.3);
-        var editedWhiteBalance = (Adjustments)PhotoFeatureChecks.Field(window, "settings")!;
+        var editedWhiteBalance = window.Settings;
         check(editedWhiteBalance[Parameter.Temperature] == 6400 && editedWhiteBalance[Parameter.Tint] == 12.3,
             "White balance panel changes preserve both underlying adjustment parameters");
         check(Math.Abs(window.WhiteBalanceCategoryRing.Progress) > 0,
             "White balance toolbar ring reflects a combined temperature or tint edit");
         PhotoFeatureChecks.Click(whiteBalanceReset);
-        var resetWhiteBalance = (Adjustments)PhotoFeatureChecks.Field(window, "settings")!;
+        var resetWhiteBalance = window.Settings;
         check(resetWhiteBalance.CameraWhiteBalance && resetWhiteBalance[Parameter.Temperature] == asShotWhiteBalance.Temperature &&
               resetWhiteBalance[Parameter.Tint] == asShotWhiteBalance.Tint,
             "White balance group reset restores the current photo as-shot pair");
@@ -87,14 +87,14 @@ internal static class ToolGroupChecks
         var recipeButton = PhotoFeatureChecks.Descendants<Button>(window.MasterRecipePanel).Single(button =>
             AutomationProperties.GetName(button) == recipe.Name);
         PhotoFeatureChecks.Click(recipeButton);
-        var recipeSettings = (Adjustments)PhotoFeatureChecks.Field(window, "settings")!;
+        var recipeSettings = window.Settings;
         check(recipeSettings.MasterRecipeID == recipe.Id,
             "White balance recipe regression starts with an active master recipe");
         PhotoFeatureChecks.Click(whiteBalanceTool);
         PhotoFeatureChecks.Click(whiteBalanceReset);
-        recipeSettings = (Adjustments)PhotoFeatureChecks.Field(window, "settings")!;
+        recipeSettings = window.Settings;
         check(recipeSettings.MasterRecipeID == recipe.Id &&
-              (string?)PhotoFeatureChecks.Field(window, "lut") == recipe.LutPath,
+              window.CurrentLut == recipe.LutPath,
             "White balance group reset preserves the active master recipe");
         PhotoFeatureChecks.Click(window.MasterRecipeCategory); window.UpdateLayout();
         var neutralRecipe = PhotoFeatureChecks.Descendants<Button>(window.MasterRecipePanel).Single(button =>
@@ -102,16 +102,16 @@ internal static class ToolGroupChecks
         PhotoFeatureChecks.Click(neutralRecipe);
 
         PhotoFeatureChecks.Click(whiteBalanceTool);
-        check((bool)PhotoFeatureChecks.Field(window, "choosingWhiteBalance")!,
+        check(window.ChoosingWhiteBalance,
             "Selecting white balance marks its editor as active before a transform");
         PhotoFeatureChecks.Click(window.GeometryCategory);
-        var transform = (TransformDraft)PhotoFeatureChecks.Field(window, "transform")!;
-        check(transform.Active && !(bool)PhotoFeatureChecks.Field(window, "choosingWhiteBalance")!,
+        var transform = window.TransformDraft;
+        check(transform.Active && !window.ChoosingWhiteBalance,
             "Entering a transform clears stale white-balance selection state");
         var cancel = PhotoFeatureChecks.Descendants<Button>(window.DraftActions).Single(button =>
             string.Equals(button.Content?.ToString(), Loc.Text("取消"), StringComparison.Ordinal));
         PhotoFeatureChecks.Click(cancel);
-        check(!transform.Active && !(bool)PhotoFeatureChecks.Field(window, "choosingWhiteBalance")!,
+        check(!transform.Active && !window.ChoosingWhiteBalance,
             "Leaving a transform does not restore stale white-balance selection state");
 
         var grainTool = window.Tools.Children.OfType<Button>().Single(button =>

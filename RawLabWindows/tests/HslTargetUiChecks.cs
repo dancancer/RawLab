@@ -137,7 +137,7 @@ internal static class HslTargetUiChecks
             window.BeginHslTargetForTests(new Point(.5,.5),null);
             InteractionChecks.PumpUntil(()=>window.HslHistoryActive);
             window.MoveHslTargetForTests(7.0);failWrites=true;window.EndHslTargetForTests();
-            check(window.EditGesture==null && window.EditDirty && window.RetrySave.IsVisible,
+            check(window.EditGestureInstance==null && window.EditDirty && window.RetrySave.IsVisible,
                 "Failed HSL save releases the gesture while preserving unsaved changes and retry");
             var unsaved=window.Settings.Capture();failWrites=false;
             window.BeginEditGestureForTests();window.CancelEditGestureForTests();
