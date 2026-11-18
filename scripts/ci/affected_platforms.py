@@ -10,24 +10,73 @@ import urllib.request
 
 PLATFORMS = ("macos", "windows", "android", "ios")
 CHECK_GROUPS = ("contracts", "models", "build", "native", "full")
-# No build, package or test reads these files. Anything not classified below selects every platform.
-DOC_PREFIXES = ("docs/", "reviews/", ".impeccable/")
-DOC_FILES = {"README.md", "CHANGELOG.md", "DESIGN.md", "PRODUCT.md", ".gitignore"}
+# Pure docs, bookkeeping, experiments, and standalone tools covered by `contracts` only.
+# Unclassified root/misc paths also default to `set()` (`contracts` only) rather than all 4 platforms.
+DOC_PREFIXES = (
+    "docs/",
+    "reviews/",
+    ".impeccable/",
+    "experiments/",
+    "release-artifacts/",
+    "tools/camera-transfer/",
+    # `contracts` runs `tools/mcp/tests` on every PR (skipping `test_real_cli.py` when
+    # `RAWLAB_MCP_CLI` is unset); `macos` `native`/`full` and release/hotfix PRs (which
+    # run every platform via `is_cold_pull_request()`) cover `mcp-cli-parity`.
+    "tools/mcp/",
+    ".github/ISSUE_TEMPLATE/",
+)
+DOC_FILES = {
+    "README.md",
+    "CHANGELOG.md",
+    "DESIGN.md",
+    "PRODUCT.md",
+    ".gitignore",
+    ".dsh-kanban.json",
+    "raw_decode_check.swift",
+    ".github/PULL_REQUEST_TEMPLATE.md",
+    ".github/CODEOWNERS",
+}
 DOC_NAMES = {"AGENTS.md", "CLAUDE.md"}
-# Every client packages this notice even though it lives under docs/.
-PACKAGED_DOCS = {"docs/reference/licensing.md"}
+# Clients package these notices/schemas even though they live under doc-like paths.
+PACKAGED_DOCS = {"docs/reference/licensing.md", "lutools/third_party/nikon_he/README.md"}
+IOS_PACKAGED_DOCS = {"lutools/platform/ios/ThirdPartyNotices.md"}
 # Mac artwork, recipes and licenses are packaged by every client; iOS compiles one Mac test fixture
 # and sources the shared AX gate (RawLab/tests/ios-reset-entry-ui.sh) from a Mac path.
 SHARED_MAC_PREFIXES = ("RawLabMac/Resources/",)
 MAC_AND_IOS_FILES = {"RawLabMac/tests/DCPTestFixtures.swift", "RawLabMac/tests/ax-gate.sh"}
 CLIENT_DIRECTORIES = {"RawLab/": "ios", "RawLabMac/": "macos",
                       "RawLabWindows/": "windows", "RawLabAndroid/": "android"}
+SHARED_PREFIXES = ("lutools/", "Shared/", "scripts/", "tests/", ".github/workflows/")
+SHARED_FILES = {".gitattributes", "LICENSE", "LICENSE-ALIYUN-RUM-EXCEPTION", ".github/actionlint.yaml"}
+
+
+def _is_lutools_doc(path):
+    if path in {"lutools/README.md", "lutools/PROJECT_SUMMARY.md"}:
+        return True
+    # Preserve `lutools/docs/edit-json-v*.schema.json` (packaged by Windows & validated by tests).
+    if path.startswith("lutools/docs/") and path.endswith(".md"):
+        return True
+    if path.startswith("lutools/platform/") and path.endswith("/README.md") and path.count("/") == 3:
+        return True
+    if path.startswith(("lutools/tools/", "lutools/tests/")) and path.endswith("/README.md"):
+        return True
+    # Preserve `lutools/x3f-bridge/licenses/` (packaged by `lutools/x3f-bridge/collect_licenses.py`).
+    if (path.startswith("lutools/x3f-bridge/")
+            and not path.startswith("lutools/x3f-bridge/licenses/")
+            and path.endswith(".md")):
+        return True
+    return False
 
 
 def platforms_for(path):
     if path in PACKAGED_DOCS:
         return set(PLATFORMS)
-    if path.rsplit("/", 1)[-1] in DOC_NAMES or path in DOC_FILES or path.startswith(DOC_PREFIXES):
+    if path in IOS_PACKAGED_DOCS:
+        return {"ios"}
+    if (path.rsplit("/", 1)[-1] in DOC_NAMES
+            or path in DOC_FILES
+            or path.startswith(DOC_PREFIXES)
+            or _is_lutools_doc(path)):
         return set()
     if path.startswith(SHARED_MAC_PREFIXES):
         return set(PLATFORMS)
@@ -36,7 +85,9 @@ def platforms_for(path):
     for prefix, platform in CLIENT_DIRECTORIES.items():
         if path.startswith(prefix):
             return {platform}
-    return set(PLATFORMS)
+    if path in SHARED_FILES or path.startswith(SHARED_PREFIXES):
+        return set(PLATFORMS)
+    return set()
 
 
 def affected(paths):

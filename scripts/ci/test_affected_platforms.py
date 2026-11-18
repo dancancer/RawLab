@@ -39,23 +39,41 @@ class ClassificationTests(unittest.TestCase):
 
     def test_files_other_clients_consume_select_them_too(self):
         for path in ("RawLabMac/Resources/FilmIcons/acros.png", "RawLabMac/Resources/Licenses/stb-MIT-LICENSE.txt",
-                     "docs/reference/licensing.md", "LICENSE", "LICENSE-ALIYUN-RUM-EXCEPTION"):
+                     "docs/reference/licensing.md", "lutools/docs/edit-json-v1.schema.json",
+                     "lutools/docs/edit-json-v15.schema.json", "lutools/third_party/nikon_he/README.md",
+                     "lutools/x3f-bridge/licenses/zune-core-0.4.12-LICENSE.md",
+                     ".gitattributes", "LICENSE", "LICENSE-ALIYUN-RUM-EXCEPTION"):
             with self.subTest(path=path):
                 self.assertEqual(selection.platforms_for(path), EVERY)
+        self.assertEqual(selection.platforms_for("lutools/platform/ios/ThirdPartyNotices.md"), {"ios"})
         self.assertEqual(selection.platforms_for("RawLabMac/tests/DCPTestFixtures.swift"), {"macos", "ios"})
         self.assertEqual(selection.platforms_for("RawLabMac/tests/ax-gate.sh"), {"macos", "ios"})
 
-    def test_shared_code_tooling_and_unknown_files_select_every_platform(self):
-        for path in ("lutools/src/core/raw_processor.cpp", "lutools/README.md", "Shared/LookLibrary.swift",
-                     "scripts/ci/native_cache.py", ".github/workflows/ci.yml", "tests/test_localization.py",
-                     "experiments/hamada-neural/runs/a.cube", "release-artifacts/windows/x/manifest.json",
-                     "raw_decode_check.swift", "new-top-level/file"):
+    def test_shared_code_tooling_and_ci_workflows_select_every_platform(self):
+        for path in ("lutools/src/core/raw_processor.cpp", "Shared/LookLibrary.swift",
+                     "scripts/ci/native_cache.py", ".github/workflows/ci.yml",
+                     ".github/workflows/pr-cache-cleanup.yml", ".github/actionlint.yaml",
+                     "tests/test_localization.py"):
             with self.subTest(path=path):
                 self.assertEqual(selection.platforms_for(path), EVERY)
 
-    def test_documentation_selects_no_platform(self):
-        for path in ("docs/process/ci.md", "README.md", "CHANGELOG.md", "AGENTS.md", "RawLab/AGENTS.md",
-                     "lutools/AGENTS.md", "reviews/pr-82.md", ".impeccable/design.json", ".gitignore"):
+    def test_documentation_bookkeeping_and_unclassified_select_no_platform(self):
+        for path in ("docs/process/ci.md", "docs/luts/source-audit-2026-10-16.json",
+                     "README.md", "CHANGELOG.md", "DESIGN.md", "PRODUCT.md", ".gitignore",
+                     ".dsh-kanban.json", "AGENTS.md", "RawLab/AGENTS.md", "lutools/AGENTS.md", "CLAUDE.md",
+                     "reviews/pr-82.md", ".impeccable/design.json",
+                     "experiments/hamada-neural/runs/a.cube", "release-artifacts/windows/x/manifest.json",
+                     "tools/camera-transfer/cmd/rawlab-camera/main.go",
+                     "tools/mcp/README.md", "tools/mcp/src/rawlab_mcp/server.py",
+                     "raw_decode_check.swift", ".github/PULL_REQUEST_TEMPLATE.md",
+                     ".github/CODEOWNERS", ".github/ISSUE_TEMPLATE/bug.yml",
+                     "lutools/README.md", "lutools/PROJECT_SUMMARY.md", "lutools/docs/color-contract.md",
+                     "lutools/platform/android/README.md", "lutools/platform/ios/README.md",
+                     "lutools/tools/dualdn/README.md", "lutools/x3f-bridge/README.md",
+                     "lutools/x3f-bridge/vendor/x3f-sys/RAWLAB.md",
+                     "lutools/x3f-bridge/vendor/x3f-sys/README.md",
+                     "lutools/tests/fixtures/README.md", "lutools/tests/fixtures/hdr/README.md",
+                     "lutools/tests/hdr_codec/README.md", "new-top-level/file", "notes.txt"):
             with self.subTest(path=path):
                 self.assertEqual(selection.platforms_for(path), set())
 
@@ -98,6 +116,22 @@ class SelectionTests(unittest.TestCase):
         files = {"HEAD^1": ["RawLab/RawLab/App.swift", "docs/process/ci.md"]}
         platforms, cold, draft, _ = selection.select("pull_request", pull(), "s", files.__getitem__, unavailable)
         self.assertEqual((platforms, cold, draft), ({"ios"}, False, False))
+
+    def test_docs_and_bookkeeping_pull_request_runs_only_contracts(self):
+        files = {"HEAD^1": [
+            ".dsh-kanban.json",
+            "docs/process/ci.md",
+            "lutools/README.md",
+            "experiments/hamada-neural/runs/a.cube",
+            "tools/mcp/README.md",
+            "new-top-level/notes.txt",
+        ]}
+        platforms, cold, draft, _ = selection.select("pull_request", pull(), "s", files.__getitem__, unavailable)
+        config = selection.configuration("pull_request", pull())
+        self.assertEqual((platforms, cold, draft), (set(), False, False))
+        self.assertTrue(config["contracts"])
+        needs = VerifyTests().needs(platforms, dict.fromkeys(selection.PLATFORMS, "skipped"))
+        self.assertEqual(selection.verify(needs), [])
 
     def test_drafts_defer_platform_checks(self):
         platforms, _, draft, _ = selection.select("pull_request", pull(draft=True), "s", unavailable, unavailable)
