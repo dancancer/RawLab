@@ -611,17 +611,18 @@ internal sealed partial class RenderEngine : IDisposable
         var image = BitmapSource.Create((int)buffer.Width,(int)buffer.Height,96,96,opaque ? PixelFormats.Pbgra32 : PixelFormats.Bgra32,null,buffer.Data,checked((int)buffer.Size),(int)buffer.Stride);
         image.Freeze(); return image;
     }
-    public static BitmapSource? Thumbnail(string path)=>ReadEmbeddedPreview(path,180).Image;
-    public static EmbeddedPreview ReadEmbeddedPreview(string path,int edge=1600)
+    public static BitmapSource? Thumbnail(string path, AppPaths? appPaths = null)=>ReadEmbeddedPreview(path,180,appPaths).Image;
+    public static EmbeddedPreview ReadEmbeddedPreview(string path,int edge=1600,AppPaths? appPaths=null)
     {
         if (edge <= 0) return new(null, 0, 0);
+        var paths = appPaths ?? AppPaths.Default;
         Native.Buffer buffer = default;
         return ReadEmbeddedPreviewCore(() =>
         {
             if (PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path, out _) == HDRProbeState.Supported)
             {
                 using var decoded = HDRNative.Decode(path, HDRIntent.Preview, checked((uint)Math.Clamp(edge, 1, 65535)),
-                    temporaryRoot: appPaths.HdrCacheDirectory, cameraProfileDirectory: appPaths.HdrCameraProfilesDirectory);
+                    temporaryRoot: paths.HdrCacheDirectory, cameraProfileDirectory: paths.HdrCameraProfilesDirectory);
                 var pair = HDRDisplay.CopySDROnly(decoded.Pair);
                 return new(pair.SDRBitmap, pair.SDR.Width, pair.SDR.Height);
             }

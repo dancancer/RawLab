@@ -93,6 +93,7 @@ public partial class MainWindow : Window
         AIDiagnosticStore? aiDiagnostics = null)
     {
         this.appPaths = appPaths;
+        ReadEmbeddedPreviewHook = path => RenderEngine.ReadEmbeddedPreview(path, appPaths: this.appPaths);
         this.usageAnalytics = usageAnalytics ?? new UsageAnalytics(appPaths.UsageSettingsPath);
         this.library = library ?? new(appPaths.FoldersPath);
         this.editStore = editStore;

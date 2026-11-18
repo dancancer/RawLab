@@ -37,8 +37,7 @@ public static class Loc
         return Choices.Any(c => c.Code == parts[0] && c.Code != "system") ? parts[0] : "en";
     }
 
-    public static void Initialize(string? preferenceOverride = null)=>Initialize(preferenceOverride,null);
-    public static void Initialize(string? preferenceOverride,string? preferencePath)
+    public static void Initialize(string? preferenceOverride = null, string? preferencePath = null)
     {
         var path=preferencePath ?? preferenceFile;
         try { Preference = preferenceOverride ?? (File.Exists(path) ? File.ReadAllText(path).Trim() : "system"); }
@@ -48,8 +47,7 @@ public static class Loc
         Reload();
     }
 
-    public static void SetPreference(string preference)=>SetPreference(preference,null);
-    public static void SetPreference(string preference,string? preferencePath)
+    public static void SetPreference(string preference, string? preferencePath = null)
     {
         if (!Choices.Any(c => c.Code == preference)) throw new ArgumentException(nameof(preference));
         var path=preferencePath ?? preferenceFile;

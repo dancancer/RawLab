@@ -205,6 +205,7 @@ public partial class MainWindow
     {
         var (nextRecord, nextSettings) = TransferSession.RepairLegacyNormalX3fOnOpen(input, LoadEditsForOpen);
         var saved = nextRecord.Edit;
+        editStore ??= new EditStore(appPaths.EditsDirectory);
         currentEditRecord=nextRecord;processingMigrationReceipt=editStore.ReadProcessingMigration(input);editGesture=null;pendingMigrationReceiptClear=false;settings=nextSettings;
         lut = saved == null ? null : ResolveLook(saved);
         if (settings.MasterRecipeID == null && lut != null && !films.Any(f => StringComparer.OrdinalIgnoreCase.Equals(f.Path, lut)))
@@ -319,7 +320,7 @@ public partial class MainWindow
     {
         var window = new BatchExportWindow(job, batchJournal,backend=>CreateRenderEngine(aiBackend:backend,
             aiDeviceID:job.AIDeviceID),aiDiagnostics,
-            editStore is {} store ? new BatchHDRPreparation(store,ResolveLook) : null) { Owner = this, IsEnabled = !UpdateInstallationActive };
+            editStore is {} store ? new BatchHDRPreparation(store,ResolveLook) : null,appPaths) { Owner = this, IsEnabled = !UpdateInstallationActive };
         batchWindow = window;
         window.RunCompleted += (before, after, runFailedCount) =>
         {

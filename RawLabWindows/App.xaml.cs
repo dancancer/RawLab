@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -22,7 +23,7 @@ public partial class App : Application
 
     public App() : this(null, null) { }
 
-    internal App(AIDiagnosticStore? diagnosticStore, AppPaths? appPaths = null, bool automaticUpdateCheck = true, UsageAnalytics? usageAnalytics = null)
+    internal App(AIDiagnosticStore? diagnosticStore = null, AppPaths? appPaths = null, bool automaticUpdateCheck = true, UsageAnalytics? usageAnalytics = null)
     {
         currentApp = this;
         this.appPaths = appPaths ?? AppPaths.Default;

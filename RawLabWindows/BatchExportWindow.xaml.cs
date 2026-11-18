@@ -15,6 +15,7 @@ namespace RawLab.Windows;
 public partial class BatchExportWindow : Window
 {
     private BatchJob job;
+    private readonly AppPaths appPaths;
     private readonly AIDiagnosticStore aiDiagnostics;
     private readonly BatchJournal journal;
     private readonly Func<int,RenderEngine> createEngine;
@@ -42,11 +43,12 @@ public partial class BatchExportWindow : Window
 
     public BatchExportWindow(BatchJob job, BatchJournal journal) : this(job,journal,AppPaths.Default) { }
     internal BatchExportWindow(BatchJob job, BatchJournal journal, AppPaths appPaths)
-        : this(job,journal,backend=>new RenderEngine(aiBackend:backend,aiDeviceID:job.AIDeviceID,appPaths:appPaths),new(appPaths.AiDiagnosticsDirectory)) { }
+        : this(job,journal,backend=>new RenderEngine(aiBackend:backend,aiDeviceID:job.AIDeviceID,appPaths:appPaths),new(appPaths.AiDiagnosticsDirectory),appPaths:appPaths) { }
     internal BatchExportWindow(BatchJob job, BatchJournal journal, Func<int,RenderEngine> createEngine,
-        AIDiagnosticStore? aiDiagnostics=null, BatchHDRPreparation? hdrPreparation=null)
+        AIDiagnosticStore? aiDiagnostics=null, BatchHDRPreparation? hdrPreparation=null, AppPaths? appPaths=null)
     {
         this.job = job; this.journal = journal; this.createEngine=createEngine;
+        this.appPaths=appPaths ?? AppPaths.Default;
         this.aiDiagnostics=aiDiagnostics ?? AIDiagnosticStore.Default;
         this.hdrPreparation=hdrPreparation;
         InitializeComponent(); Targets.ItemsSource = rows;
@@ -59,7 +61,7 @@ public partial class BatchExportWindow : Window
         Dng.IsChecked = job.Format == ExportFormat.RenderedDng;
         SourceName.Text = Path.GetFileName(job.Source); SourceName.ToolTip = job.Source;
         Loaded += async (_, _) => {
-            try { var source=await Task.Run(() => RenderEngine.Thumbnail(job.Source));if(closed || closeRequested)return;SourceThumbnail.Source=source; } catch (Exception) { }
+            try { var source=await Task.Run(() => RenderEngine.Thumbnail(job.Source, this.appPaths));if(closed || closeRequested)return;SourceThumbnail.Source=source; } catch (Exception) { }
             if(closed || closeRequested)return;
             await LoadThumbnails();
         };
@@ -170,7 +172,7 @@ public partial class BatchExportWindow : Window
         try
         {
             var checkedItems=await Task.Run(()=>{
-                var accepted=new List<BatchItem>();using var validator=new RenderEngine(0,aiBackend:job.AIBackend,aiDeviceID:job.AIDeviceID,aiDiagnostics:aiDiagnostics);
+                var accepted=new List<BatchItem>();using var validator=new RenderEngine(0,aiBackend:job.AIBackend,aiDeviceID:job.AIDeviceID,aiDiagnostics:aiDiagnostics,appPaths:appPaths);
                 foreach(var input in inputs.Distinct(StringComparer.OrdinalIgnoreCase))
                 {
                     if(closeRequested)break;
@@ -225,7 +227,7 @@ public partial class BatchExportWindow : Window
         {
             attempted.Add(row.Item.Id);
             try {
-                var image=await Task.Run(() => RenderEngine.Thumbnail(row.Input));
+                var image=await Task.Run(() => RenderEngine.Thumbnail(row.Input, appPaths));
                 if(closed || closeRequested)return;
                 if(rows.Contains(row))row.SetThumbnail(image);
             } catch (Exception) { }
@@ -270,7 +272,7 @@ public partial class BatchExportWindow : Window
         snapshot.Format=format;
         try {
             var checkedItems=await Task.Run(() => {
-                using var validator=new RenderEngine(0,aiBackend:snapshot.AIBackend,aiDeviceID:snapshot.AIDeviceID,aiDiagnostics:aiDiagnostics);
+                using var validator=new RenderEngine(0,aiBackend:snapshot.AIBackend,aiDeviceID:snapshot.AIDeviceID,aiDiagnostics:aiDiagnostics,appPaths:appPaths);
                 var items=new List<BatchItem>();
                 foreach (var item in snapshot.Items) {
                     if (closeRequested) break;
@@ -464,7 +466,7 @@ public partial class BatchExportWindow : Window
                 var frozen=prepareHDR ? RequireHDRPreparation().Prepare(snapshot,row.Item) : snapshot.SnapshotFor(row.Item);
                 if(snapshot.Mode==BatchJob.PerTargetFrozen || prepareHDR)frozen.VerifyLook();
                 else if (frozen.Look != null && !File.Exists(frozen.Look)) throw new InvalidOperationException(Loc.Text("任务使用的外观文件不可用，请重新创建任务。"));
-                using var engine = new RenderEngine(aiBackend:snapshot.AIBackend,aiDeviceID:snapshot.AIDeviceID,aiDiagnostics:aiDiagnostics);
+                using var engine = new RenderEngine(aiBackend:snapshot.AIBackend,aiDeviceID:snapshot.AIDeviceID,aiDiagnostics:aiDiagnostics,appPaths:appPaths);
                 var settings=frozen.Settings.Restore();
                 return (engine.Render(row.Input, settings, frozen.Look, 1600, statistics: false, clipping: false),frozen.LookName);
             });

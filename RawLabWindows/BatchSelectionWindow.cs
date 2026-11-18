@@ -58,7 +58,7 @@ internal sealed class BatchSelectionWindow : Window
             UpdateThumbnail: (row, image) => row.Thumbnail.Source=image,
             DecodeThumbnailAsync: (path, token) => Task.Run(() => {
                 token.ThrowIfCancellationRequested();
-                return RenderEngine.Thumbnail(path);
+                return RenderEngine.Thumbnail(path, editor.Paths);
             }, token),
             ValidatePhoto: photo => {
                 try { photo.Validate(); return null; }
