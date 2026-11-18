@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
 DEVICE="${1:?Pass dedicated task simulator UUID}"
 OUT="${2:?Pass new output directory}"
 FRAMEWORK="${3:-$ROOT/lutools/build-ios/sony2fuji.xcframework/ios-arm64-simulator/sony2fuji.framework}"
@@ -27,7 +28,8 @@ TARGET=arm64-apple-ios18.0-simulator
 xcrun --sdk iphonesimulator clang++ -std=c++17 -target "$TARGET" -isysroot "$SDK" -I "$ROOT/lutools/include" -c "$OUT/source/RawLab/RawLab/Support/RawMetadataBridge.mm" -o "$OUT/bridge.o"
 SOURCES=()
 while IFS= read -r file; do SOURCES+=("$file"); done < <(rg --files "$OUT/source/RawLab/RawLab/Core" "$OUT/source/RawLab/RawLab/UI/Preview" "$OUT/source/Shared" -g '*.swift' -g '!**/tests/**' | sort)
-xcrun --sdk iphonesimulator swiftc -swift-version 5 -sdk "$SDK" -target "$TARGET" -module-cache-path "$OUT/module-cache" -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" "${SOURCES[@]}" "$OUT/source/RawLab/tests/ViewingRenderTests.swift" "$OUT/bridge.o" -F "$APP/Frameworks" -framework sony2fuji -lc++ -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$APP/viewing-render"
+rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
+xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -sdk "$SDK" -target "$TARGET" -module-cache-path "$OUT/module-cache" -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" "${SOURCES[@]}" "$OUT/source/RawLab/tests/ViewingRenderTests.swift" "$OUT/bridge.o" -F "$APP/Frameworks" -framework sony2fuji -lc++ -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$APP/viewing-render"
 codesign --force --deep --sign - "$APP" >/dev/null
 STATUS=0
 xcrun simctl spawn "$DEVICE" "$APP/viewing-render" "$OUT" "${RAWLAB_TEST_RAW:-}" "${RAWLAB_TEST_HDR:-}" || STATUS=$?

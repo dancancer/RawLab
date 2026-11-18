@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
 DEVICE="${1:?Pass an already booted dedicated simulator UDID}"
 OUT="${2:-$(mktemp -d /tmp/rawlab-ios-ruler-enabled.XXXXXX)}"
 HARNESS="$OUT/AdjustmentRulerEnabledTests.app"
@@ -28,9 +29,9 @@ PLIST
 SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
 TARGET="${RAWLAB_SIMULATOR_ARCH:-$(uname -m)}-apple-ios18.0-simulator"
 RULER="${RAWLAB_RULER_SOURCE:-$ROOT/RawLab/RawLab/UI/Adjustments/AdjustmentRuler.swift}"
-xcrun --sdk iphonesimulator swiftc -parse-as-library -swift-version 5 -module-name RulerEnabledTests \
+rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
+xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -parse-as-library -swift-version 5 -module-name RulerEnabledTests \
     -sdk "$SDK" -target "$TARGET" -module-cache-path "$OUT/module-cache" \
-    "$ROOT/Shared/Localization.swift" \
     "$ROOT/RawLab/RawLab/UI/Adjustments/AdjustmentScale.swift" \
     "$ROOT/RawLab/RawLab/UI/Adjustments/NativeValueWheel.swift" \
     "$ROOT/RawLab/RawLab/UI/Adjustments/AdjustmentControl.swift" \

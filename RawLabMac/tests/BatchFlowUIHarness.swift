@@ -1,3 +1,4 @@
+import RawLabKit
 import SwiftUI
 
 // 使用产品页面和真实模型，只延后后台检查结果，稳定覆盖取消和失去前台的窗口。

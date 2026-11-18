@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 struct UserLook: Codable, Equatable, Identifiable {

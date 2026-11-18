@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
 DEVICE="${1:-$(xcrun simctl list devices booted | sed -n 's/.*(\([0-9A-F-]\{36\}\)) (Booted).*/\1/p' | head -n 1)}"
 if [[ -z "$DEVICE" ]]; then
     echo "error: pass a booted iOS Simulator UDID or boot an iOS simulator" >&2
@@ -22,18 +23,9 @@ plistlib.dump({
 }, (app / "Info.plist").open("wb"))
 PY
 SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
-xcrun --sdk iphonesimulator swiftc -parse-as-library -swift-version 5 -O -sdk "$SDK" -target arm64-apple-ios18.0-simulator \
+rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
+xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -parse-as-library -swift-version 5 -O -sdk "$SDK" -target arm64-apple-ios18.0-simulator \
     -module-cache-path "${RAWLAB_TRANSFER_MODULE_CACHE:-$OUT/module-cache}" \
-    "$ROOT/Shared/Localization.swift" \
-    "$ROOT/Shared/HSLSettings.swift" \
-    "$ROOT/Shared/GeometrySettings.swift" \
-    "$ROOT/Shared/HDRSettings.swift" \
-    "$ROOT/Shared/ProcessingMigration.swift" \
-    "$ROOT/Shared/ToneControlsSettings.swift" \
-    "$ROOT/Shared/AtmosphereSettings.swift" \
-    "$ROOT/Shared/ColorGradingSettings.swift" \
-    "$ROOT/Shared/ToneCurveSettings.swift" \
-    "$ROOT/Shared/EditedPhotoPreviewCache.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/AdjustmentKind.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/EditorAdjustmentRules.swift" \

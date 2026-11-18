@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
 source "$ROOT/Shared/tests/mac-native-sources.sh"
 source "$ROOT/RawLabMac/tests/native-env.sh"
 FIXTURE="${1:?Pass a fixture}"
@@ -25,7 +26,8 @@ paths = {str(root/name) for name in names if name} | set(sys.argv[3:])
 files = {name: hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest() for name in sorted(paths) if pathlib.Path(name).is_file()}
 (out/'source-manifest.json').write_text(json.dumps(files, indent=2)+'\n')
 PY
-swiftc -swift-version 5 -O -whole-module-optimization -num-threads 4 \
+rawlabkit_flags link "$OUT/swiftpm" macos 0
+swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -O -whole-module-optimization -num-threads 4 \
     -sdk "${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}" -target "$(uname -m)-apple-macosx14.0" \
     -import-objc-header "$MAC_NATIVE_BRIDGING_HEADER" \
     "${SOURCES[@]}" "${MAC_SHARED_SWIFT_SOURCES[@]}" "$ROOT/RawLabMac/tests/SoftwareUpdateUITests.swift" \

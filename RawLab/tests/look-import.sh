@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
 APP=""
 DEVICE=""
 OWNED_DEVICE=0
@@ -73,14 +74,14 @@ fi
 SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
 TARGET="$(uname -m)-apple-ios18.0-simulator"
 SOURCES=(
-    "$ROOT/Shared/Localization.swift"
     "$ROOT/Shared/DCPCompiler.swift"
-    "$ROOT/Shared/LookLibrary.swift" "$ROOT/Shared/PresetJSONScanner.swift"
+    "$ROOT/Shared/LookLibrary.swift" 
     "$ROOT/RawLab/RawLab/Core/Looks/LookImportCoordinator.swift"
     "$ROOT/RawLabMac/tests/DCPTestFixtures.swift"
     "$ROOT/RawLab/tests/LookImportTests.swift"
 )
-xcrun --sdk iphonesimulator swiftc -swift-version 5 -O -sdk "$SDK" -target "$TARGET" \
+rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
+xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -O -sdk "$SDK" -target "$TARGET" \
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" \
     -Xcc -I"$ROOT/lutools/include" "${SOURCES[@]}" \

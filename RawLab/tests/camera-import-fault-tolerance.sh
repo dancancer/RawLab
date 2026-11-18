@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
 DEVICE="${1:?Pass an already booted dedicated simulator UDID (or 'auto')}"
 OUT="${2:-$(mktemp -d "${TMPDIR:-/tmp}/rawlab-camera-import-ft.XXXXXX")}"
 OWN_OUT=0
@@ -125,14 +126,14 @@ cat > "$BUNDLE/Info.plist" << 'PLIST'
 </dict></plist>
 PLIST
 
-xcrun --sdk iphonesimulator swiftc -swift-version 5 -DRAWLAB_XCTEST -module-name CameraImportFaultToleranceTests \
+rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
+xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -DRAWLAB_XCTEST -module-name CameraImportFaultToleranceTests \
     -sdk "$SDK" -target "$TARGET" -module-cache-path "$OUT/module-cache" \
     -parse-as-library -emit-library \
     -I "$PLAT/Developer/usr/lib" -I "$SDK/System/Library/Frameworks" \
     -F "$PLAT/Developer/Library/Frameworks" -F "$PLAT/Developer/Library/PrivateFrameworks" \
     -L "$PLAT/Developer/usr/lib" -framework XCTest \
     -lXCTestSwiftSupport -Xlinker -rpath -Xlinker @executable_path/Frameworks -Xlinker -rpath -Xlinker @loader_path/../../Frameworks \
-    "$ROOT/Shared/Localization.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
     "$ROOT/RawLab/RawLab/UI/Export/ExportSizePicker.swift" \
     "$ROOT/RawLab/RawLab/UI/Preview/PhotoZoomGeometry.swift" \

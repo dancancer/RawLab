@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 struct Adjustments: Equatable, Codable {

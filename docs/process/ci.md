@@ -554,6 +554,59 @@ These guards supplement, not replace, workflow syntax linting and actual hosted
 execution. Platform jobs stop on command/test failures; they are not allowed to
 silently skip a required suite or mark a failing native process successful.
 
+### Apple Shell Harness Ownership
+
+Pure-Swift shared model tests reside in `tests/RawLabKitTests/` (`Package.swift`)
+and run automatically via `swift test` (invoked by `scripts/ci/apple-models.sh`
+and `.github/workflows/ci.yml`). Remaining `.sh` scripts under `Shared/tests/`,
+`RawLab/tests/`, and `RawLabMac/tests/` that are not already invoked by
+`apple-models.sh`, `ci.yml`, or `RawLabMac/build.sh` are explicitly owned as
+local/pre-release integration harnesses:
+
+- **Shared SwiftPM & source-list helpers** (sourced by Apple test harnesses; guarded by `scripts/ci/test_mac_native_sources.py` and `scripts/ci/test_apple_shell_ownership.py`):
+  `Shared/tests/hdr-native-sources.sh`, `Shared/tests/mac-native-sources.sh`,
+  `RawLabMac/tests/native-env.sh`, `RawLabMac/tests/core-link.sh`,
+  `RawLabMac/tests/sparkle-bundle.sh`.
+- **iOS core/native/simulator/UI harnesses** (owned by iOS build/simulator gates in `RawLab/AGENTS.md` and release acceptance):
+  `RawLab/tests/adjustment-history-model.sh`, `RawLab/tests/adjustment-ruler-enabled.sh`,
+  `RawLab/tests/adjustment-ruler-enabled-ui.sh`, `RawLab/tests/batch-publication.sh`,
+  `RawLab/tests/bundled-look-artwork.sh`, `RawLab/tests/bundled-luts.sh`,
+  `RawLab/tests/camera-import-fault-tolerance.sh`, `RawLab/tests/camera-incremental-ui.sh`,
+  `RawLab/tests/camera-skip-and-limit.sh`, `RawLab/tests/crop-lock-harness.sh`,
+  `RawLab/tests/crop-lock-ui.sh`, `RawLab/tests/geometry-processing.sh`,
+  `RawLab/tests/geometry-source-ui.sh`, `RawLab/tests/hdr-device-ui.sh`,
+  `RawLab/tests/hdr-history.sh`, `RawLab/tests/hdr-missing-resources.sh`,
+  `RawLab/tests/hdr-processing.sh`, `RawLab/tests/hdr-rendition-slider.sh`,
+  `RawLab/tests/hdr-sdr-preview.sh`, `RawLab/tests/hdr-ui.sh`,
+  `RawLab/tests/import-state.sh`, `RawLab/tests/lens-dng-export.sh`,
+  `RawLab/tests/parameter-input-ui.sh`, `RawLab/tests/photo-entry.sh`,
+  `RawLab/tests/picker-cancel-harness.sh`, `RawLab/tests/picker-cancel-ui.sh`,
+  `RawLab/tests/preview-performance.sh`, `RawLab/tests/processor-export.sh`,
+  `RawLab/tests/raster-export.sh`, `RawLab/tests/raw-import-history.sh`,
+  `RawLab/tests/seed-sim-ui-fixtures.sh`, `RawLab/tests/viewing-canvas.sh`,
+  `RawLab/tests/viewing-editor-ui.sh`, `RawLab/tests/viewing-gesture-ui.sh`,
+  `RawLab/tests/viewing-render.sh`, `RawLab/tests/viewport-state.sh`.
+- **Mac native/AppKit/UI/Sparkle harnesses** (owned by Mac local native/UI/release acceptance in `RawLabMac/README.md` and `docs/process/desktop-release.md`):
+  `RawLabMac/tests/agent-sdr-fallback.sh`, `RawLabMac/tests/atmosphere-render.sh`,
+  `RawLabMac/tests/batch-flow-ui.sh`, `RawLabMac/tests/batch-import-presentation.sh`,
+  `RawLabMac/tests/chroma-render.sh`, `RawLabMac/tests/compact-controls-presentation.sh`,
+  `RawLabMac/tests/denoise-model.sh`, `RawLabMac/tests/edit-memory.sh`,
+  `RawLabMac/tests/file-browser.sh`, `RawLabMac/tests/folder-drop.sh`,
+  `RawLabMac/tests/fuji-compatibility.sh`, `RawLabMac/tests/geometry-render.sh`,
+  `RawLabMac/tests/geometry-viewport.sh`, `RawLabMac/tests/hdr-agent.sh`,
+  `RawLabMac/tests/hdr-history.sh`, `RawLabMac/tests/hdr-sdr-preview.sh`,
+  `RawLabMac/tests/hsl-target-render.sh`, `RawLabMac/tests/lens-render.sh`,
+  `RawLabMac/tests/lens-settings.sh`, `RawLabMac/tests/lut-preview.sh`,
+  `RawLabMac/tests/mac-crop-presentation.sh`, `RawLabMac/tests/mac-lens-draft-controls.sh`,
+  `RawLabMac/tests/mac-lens-draft-presentation.sh`, `RawLabMac/tests/mac-perspective-integration.sh`,
+  `RawLabMac/tests/mac-rotation-ruler.sh`, `RawLabMac/tests/mac-viewing-model.sh`,
+  `RawLabMac/tests/master-recipe-render.sh`, `RawLabMac/tests/processing-migration-input.sh`,
+  `RawLabMac/tests/proraw-stream.sh`, `RawLabMac/tests/quick-presets-ui.sh`,
+  `RawLabMac/tests/rendered-dng.sh`, `RawLabMac/tests/single-preview-interaction.sh`,
+  `RawLabMac/tests/sparkle-signature.sh`, `RawLabMac/tests/text-fit.sh`,
+  `RawLabMac/tests/tone-curve-input.sh`, `RawLabMac/tests/tone-curve-render.sh`,
+  `RawLabMac/tests/update-ui.sh`, `RawLabMac/tests/wavelet-render.sh`.
+
 The [archived 0.8 preparation ledger](../archive/releases/v0.8/preparation.md)
 retains its original candidate scope. Use [release notes](../releases/v0.8/v0.8.1.md)
 and package provenance for delivered artifacts; historical local/device reports

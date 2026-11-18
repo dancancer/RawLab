@@ -1,11 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 OUT="$(mktemp -d /tmp/rawlab-folder-drop.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
 SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
-swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" \
+rawlabkit_flags link "$OUT/swiftpm" macos 0
+swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -O -sdk "$SDK" \
     -target "$(uname -m)-apple-macosx26.0" \
     "$ROOT/RawLabMac/Sources/Library/FileLibrary.swift" \
     "$ROOT/RawLabMac/tests/FolderDropTests.swift" \

@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
 APP="${1:?Pass the built arm64-simulator RawLab.app path}"
 DEVICE="${2:?Pass the dedicated simulator UDID}"
 OUT="${3:?Pass a new output directory}"
@@ -65,8 +66,9 @@ while IFS= read -r file; do
         */ContentView.swift|*/ContentView+Helpers.swift) ;;
         *) SOURCES+=("$file") ;;
     esac
-done < <(rg --files "$ROOT/RawLab/RawLab/Core" "$ROOT/RawLab/RawLab/UI" "$ROOT/Shared" -g '*.swift' -g '!**/tests/**' | sort)
-xcrun --sdk iphonesimulator swiftc -swift-version 5 -module-name PickerCancelHarness -O -sdk "$SDK" -target "$TARGET" \
+done < <(rg --files "$ROOT/RawLab/RawLab/Core" "$ROOT/RawLab/RawLab/UI" "$ROOT/Shared" -g '*.swift' -g '!**/tests/**' -g '!**/RawLabKit/**' | sort)
+rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
+xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -module-name PickerCancelHarness -O -sdk "$SDK" -target "$TARGET" \
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" \
     "${SOURCES[@]}" "$OUT/source/ContentView.swift" "$OUT/source/ContentView+Helpers.swift" \

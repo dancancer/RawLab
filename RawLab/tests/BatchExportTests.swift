@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 // 独立模型不加载原生资源；相机配置资产由 hdr-batch 原生测试覆盖。

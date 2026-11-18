@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 enum AdjustmentKind: String, CaseIterable, Identifiable, Codable {

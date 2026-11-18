@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 
 private func check(_ value: @autoclosure () -> Bool, _ message: String) {

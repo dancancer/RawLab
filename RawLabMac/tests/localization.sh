@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 OUT="$(mktemp -d /tmp/rawlab-localization.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
@@ -19,8 +20,9 @@ for client in macos ios; do
         cp "$resource_root/$language.lproj/Localizable.strings" "$OUT/$client.bundle/Contents/Resources/$language.lproj/"
     done
 done
-test -f "$ROOT/Shared/Localization.swift" || { echo 'FAIL: shared localization helper is missing'; exit 1; }
-swiftc -swift-version 5 -sdk "${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}" \
+rawlabkit_flags link "$OUT/swiftpm" macos 0
+test -f "$RAWLABKIT_BIN/libRawLabKit.a" || { echo 'FAIL: shared localization module is missing'; exit 1; }
+swiftc -parse-as-library "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -sdk "${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}" \
     -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
-    "$ROOT/Shared/Localization.swift" "$ROOT/RawLabMac/tests/LocalizationTests.swift" -o "$OUT/test"
+     "$ROOT/RawLabMac/tests/LocalizationTests.swift" -o "$OUT/test"
 "$OUT/test" "$OUT/Fixture.bundle" "$OUT/macos.bundle" "$OUT/ios.bundle"

@@ -1,0 +1,551 @@
+import Foundation
+
+public enum AdjustmentTransferError: Error, Equatable {
+    case invalidPayload(String)
+    case unsupportedVersion
+    case emptyScope
+    case draftRequiresPreflight
+    case incompatible(String)
+    case missingLook(String)
+    case unrepresentable(String)
+}
+
+// Q3/Q4 粘贴提示：本平台不支持的键收到非 0 值时忽略并提示；处理版本与来源不同
+// 时沿用目标处理版本并提示。两种情况都不拒绝粘贴，也不改动目标的其它字段。
+public enum AdjustmentTransferNotice: Equatable, Hashable {
+    case ignoredRawDenoise
+    case ignoredPostRGBDenoise
+    case ignoredTargetDenoise
+    case retainedTargetProcessingVersion
+
+    // 共享场景 fixture（adjustment-transfer-scenarios-v1.json expect.notices）的稳定标识。
+    public var fixtureId: String {
+        switch self {
+        case .ignoredRawDenoise: return "ignored_raw_denoise"
+        case .ignoredPostRGBDenoise: return "ignored_post_rgb_denoise"
+        case .ignoredTargetDenoise: return "ignored_target_denoise"
+        case .retainedTargetProcessingVersion: return "retained_target_processing_version"
+        }
+    }
+
+    // 文案键登记在 Shared/strings；同一次粘贴把去重后的提示合并为一条一次性提示。
+    public var promptKey: String {
+        switch self {
+        case .ignoredRawDenoise: return "已忽略旧版 RAW 降噪（FBDD）"
+        case .ignoredPostRGBDenoise: return "已忽略渲染后 RGB 降噪"
+        case .ignoredTargetDenoise: return "已忽略目标不支持的普通降噪设置"
+        case .retainedTargetProcessingVersion: return "处理版本与来源不同，已沿用当前照片的处理版本"
+        }
+    }
+}
+
+public enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
+    case look = "looks.reference", strength = "looks.strength"
+    case exposure = "light.exposure", exposureMode = "light.exposure_mode"
+    case contrast = "light.contrast", highlights = "light.highlights", shadows = "light.shadows", sCurve = "light.s_curve"
+    case curve = "light.curve"
+    case blackPoint = "tone.black_point", whitePoint = "tone.white_point", vibrance = "color.vibrance"
+    case gradingShadows = "color.grading.shadows", gradingMidtones = "color.grading.midtones", gradingHighlights = "color.grading.highlights"
+    case whiteBalanceMode = "color.white_balance.mode", temperature = "color.white_balance.temperature_kelvin"
+    case tint = "color.white_balance.tint", saturation = "color.saturation"
+    case hdrTemperature = "hdr.relative_temperature", hdrTint = "hdr.relative_tint"
+    case hdrPeakLimit = "hdr.peak_limit_ev", hdrSDRExposure = "hdr.sdr_exposure_ev"
+    case hdrSDRContrast = "hdr.sdr_contrast", hdrSDRSaturation = "hdr.sdr_saturation"
+    case hdrLook = "hdr.look"
+    case hdrCameraDevelopment = "hdr.camera_development"
+    case hslHueRed = "color.hsl.hue.red", hslHueOrange = "color.hsl.hue.orange", hslHueYellow = "color.hsl.hue.yellow"
+    case hslHueGreen = "color.hsl.hue.green", hslHueAqua = "color.hsl.hue.aqua", hslHueBlue = "color.hsl.hue.blue"
+    case hslHuePurple = "color.hsl.hue.purple", hslHueMagenta = "color.hsl.hue.magenta"
+    case hslSaturationRed = "color.hsl.saturation.red", hslSaturationOrange = "color.hsl.saturation.orange"
+    case hslSaturationYellow = "color.hsl.saturation.yellow", hslSaturationGreen = "color.hsl.saturation.green"
+    case hslSaturationAqua = "color.hsl.saturation.aqua", hslSaturationBlue = "color.hsl.saturation.blue"
+    case hslSaturationPurple = "color.hsl.saturation.purple", hslSaturationMagenta = "color.hsl.saturation.magenta"
+    case hslLightnessRed = "color.hsl.lightness.red", hslLightnessOrange = "color.hsl.lightness.orange"
+    case hslLightnessYellow = "color.hsl.lightness.yellow", hslLightnessGreen = "color.hsl.lightness.green"
+    case hslLightnessAqua = "color.hsl.lightness.aqua", hslLightnessBlue = "color.hsl.lightness.blue"
+    case hslLightnessPurple = "color.hsl.lightness.purple", hslLightnessMagenta = "color.hsl.lightness.magenta"
+    case vignetteAmount = "effects.vignette.amount", vignetteMidpoint = "effects.vignette.midpoint"
+    case vignetteRoundness = "effects.vignette.roundness", vignetteFeather = "effects.vignette.feather"
+    case vignetteHighlights = "effects.vignette.highlights", grainAmount = "effects.grain.amount"
+    case clarity = "effects.clarity", dehaze = "effects.dehaze"
+    case grainSize = "effects.grain.size", grainRoughness = "effects.grain.roughness"
+    case sharpening = "detail.sharpening", rawDenoise = "detail.denoise.raw_level"
+    case postRGBDenoise = "detail.denoise.post_rgb"
+    case chromaDenoise = "detail.denoise.chroma_mode", waveletDenoise = "detail.denoise.wavelet"
+    case cropX = "geometry.crop.x", cropY = "geometry.crop.y"
+    case cropWidth = "geometry.crop.width", cropHeight = "geometry.crop.height", quarterTurns = "geometry.quarter_turns"
+    case flipHorizontal = "geometry.flip_horizontal", flipVertical = "geometry.flip_vertical"
+    case straighten = "geometry.straighten_degrees"
+    case perspectiveHorizontal = "geometry.perspective.horizontal", perspectiveVertical = "geometry.perspective.vertical"
+    case lensDistortion = "geometry.lens.distortion", lensTCA = "geometry.lens.tca"
+    case lensVignetting = "geometry.lens.vignetting"
+    case lensAutoCrop = "geometry.lens.auto_crop", lensProfile = "geometry.lens.profile_id"
+
+    public var isHDRRelative: Bool { self == .hdrTemperature || self == .hdrTint }
+    public var isHDROnly: Bool { self == .hdrLook || self == .hdrCameraDevelopment || isHDRRelative || Self.hdrRendition.contains(self) }
+    public var group: String {
+        if isHDRRelative { return "color" }
+        if self == .hdrLook { return "looks" }
+        if self == .hdrCameraDevelopment { return "detail" }
+        if Self.hdrRendition.contains(self) { return "light" }
+        return self == .blackPoint || self == .whitePoint ? "light" : String(rawValue.split(separator: ".")[0])
+    }
+    public var gradingZone: ColorGradingZone? {
+        switch self {
+        case .gradingShadows: return .shadows
+        case .gradingMidtones: return .midtones
+        case .gradingHighlights: return .highlights
+        default: return nil
+        }
+    }
+    public static var legacyFields: Set<Self> { Set(allCases.filter { !$0.isHDROnly }) }
+    public static var common: Set<Self> { Set(legacyFields.filter { $0.group != "geometry" }) }
+    public static let hdrCommon: Set<Self> = [.exposure, .contrast, .highlights, .shadows, .saturation, .hdrTemperature, .hdrTint]
+    public static let hdrGeometry: Set<Self> = [.cropX, .cropY, .cropWidth, .cropHeight, .quarterTurns,
+        .flipHorizontal, .flipVertical, .straighten, .perspectiveHorizontal, .perspectiveVertical]
+    public static let hdrTone: Set<Self> = [.blackPoint, .whitePoint, .sCurve, .curve]
+    public static let hdrColor = Set(allCases.filter { $0 == .vibrance || $0.gradingZone != nil || $0.hslLocation != nil })
+    public static let hdrRendition: Set<Self> = [.hdrPeakLimit, .hdrSDRExposure, .hdrSDRContrast, .hdrSDRSaturation]
+    public static let hdrEffects: Set<Self> = [.vignetteAmount, .vignetteMidpoint, .vignetteRoundness,
+        .vignetteFeather, .vignetteHighlights, .grainAmount, .grainSize, .grainRoughness]
+    public static let hdrDetail: Set<Self> = [.sharpening, .clarity, .dehaze, .postRGBDenoise]
+    public static let hdrV1Supported = hdrCommon.union(hdrGeometry)
+    public static let hdrV2Supported = hdrV1Supported.union(hdrTone)
+    public static let hdrV3Supported = hdrV2Supported.union(hdrColor)
+    public static let hdrV4Supported = hdrV3Supported.union(hdrRendition)
+    public static let hdrV5Supported = hdrV4Supported.union(hdrEffects)
+    public static let hdrV6Supported = hdrV5Supported.union(hdrDetail)
+    public static let hdrSupported = hdrV6Supported.union([.hdrLook])
+    public static func hdrTransferFields(cameraRAW: Bool) -> Set<Self> {
+        cameraRAW ? hdrSupported.union([.hdrCameraDevelopment]) : hdrSupported
+    }
+    public static func hdrSupported(version: Int) -> Set<Self> {
+        if version == 1 { return hdrV1Supported }
+        if version == 2 { return hdrV2Supported }
+        if version == 3 { return hdrV3Supported }
+        if version == 4 { return hdrV4Supported }
+        if version == 5 { return hdrV5Supported }
+        return version == 6 ? hdrV6Supported : hdrSupported
+    }
+    public static let whiteBalanceFields: Set<Self> = [.whiteBalanceMode, .temperature, .tint]
+    public static let lensFields: Set<Self> = [.lensDistortion, .lensTCA, .lensVignetting, .lensAutoCrop, .lensProfile]
+    public static let denoiseFields: Set<Self> = [.rawDenoise, .postRGBDenoise, .chromaDenoise, .waveletDenoise]
+    public static var recipeDependencies: Set<Self> {
+        Set([.look, .strength, .exposure, .contrast, .highlights, .shadows, .saturation]).union(whiteBalanceFields)
+            .union(allCases.filter { $0.hslLocation != nil })
+    }
+    public static let refinementScalars: Set<Self> = [.sCurve, .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze]
+    public static let refinementObjects: Set<Self> = [.curve, .gradingShadows, .gradingMidtones, .gradingHighlights]
+    public static func recipeDependencies(version: Int) -> Set<Self> {
+        version >= 4 ? recipeDependencies.union(refinementScalars).union(refinementObjects) : recipeDependencies
+    }
+    public var hslLocation: (axis: String, channel: Int)? {
+        let parts = rawValue.split(separator: ".").map(String.init)
+        guard parts.count == 4, parts[1] == "hsl",
+              let channel = ["red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta"].firstIndex(of: parts[3]) else { return nil }
+        return (parts[2], channel)
+    }
+    public var scalarRange: ClosedRange<Double>? {
+        if hslLocation != nil { return -100...100 }
+        switch self {
+        case .hdrTemperature: return 2000...50000
+        case .hdrTint: return -150...150
+        case .hdrPeakLimit: return 0...6
+        case .hdrSDRExposure: return -4...4
+        case .hdrSDRContrast, .hdrSDRSaturation: return -100...100
+        case .strength, .contrast, .saturation, .sharpening: return 0...2
+        case .exposure: return -20...20
+        case .highlights, .shadows, .sCurve, .perspectiveHorizontal, .perspectiveVertical: return -1...1
+        case .vignetteAmount, .vignetteRoundness, .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze: return -100...100
+        case .vignetteMidpoint, .vignetteFeather, .vignetteHighlights, .grainAmount, .grainSize, .grainRoughness: return 0...100
+        case .quarterTurns: return 0...3
+        case .cropX, .cropY, .cropWidth, .cropHeight: return 0...1
+        case .postRGBDenoise: return 0...1
+        case .straighten: return -45...45
+        default: return nil
+        }
+    }
+}
+
+public enum AdjustmentTransferScope {
+    case all, modified, custom(Set<AdjustmentTransferField>)
+    public static var standard: Self { .custom(AdjustmentTransferField.common) }
+    public static func standard(isHDR: Bool) -> Self { .custom(isHDR ? AdjustmentTransferField.hdrCommon : AdjustmentTransferField.common) }
+}
+
+// 这是逻辑 payload 的 JSON 值，不是 native snapshot 或渲染 recipe。
+public enum AdjustmentTransferValue: Codable, Equatable {
+    case number(Double), string(String), boolean(Bool), object([String: Self]), array([Self]), null
+
+    public var number: Double? { if case .number(let value) = self { return value }; return nil }
+    public var hdrLookSettings: HDRLookSettings? {
+        if self == .null { return HDRLookSettings() }
+        guard let object, Set(object.keys) == ["sha256", "name", "strength"],
+              let sha256 = object["sha256"]?.string, let name = object["name"]?.string,
+              let strength = object["strength"]?.number else { return nil }
+        let value = HDRLookSettings(sha256: sha256, name: name, strength: strength)
+        return value.isValid ? value : nil
+    }
+    public var hdrCameraDevelopment: HDRCameraDevelopmentSettings? {
+        guard let object, Set(object.keys) == ["version", "white_balance_mode", "temperature", "tint", "exposure_reference", "fbdd_level"],
+              object["version"] == .number(1),
+              let mode = object["white_balance_mode"]?.string.flatMap(HDRCameraDevelopmentSettings.WhiteBalance.init(rawValue:)),
+              let temperature = object["temperature"]?.number, let tint = object["tint"]?.number,
+              let exposure = object["exposure_reference"]?.string.flatMap(HDRCameraDevelopmentSettings.ExposureReference.init(rawValue:)),
+              let level = object["fbdd_level"]?.number, (0...2).contains(level), level == level.rounded() else { return nil }
+        var value = HDRCameraDevelopmentSettings()
+        value.whiteBalance = mode; value.temperature = temperature; value.tint = tint
+        value.exposureReference = exposure; value.fbddLevel = Int(level)
+        return value.isValid ? value : nil
+    }
+    public var string: String? { if case .string(let value) = self { return value }; return nil }
+    public var boolean: Bool? { if case .boolean(let value) = self { return value }; return nil }
+    public var object: [String: Self]? { if case .object(let value) = self { return value }; return nil }
+    public var array: [Self]? { if case .array(let value) = self { return value }; return nil }
+    public var curve: ToneCurveSettings? {
+        guard let object, Set(object.keys).isSuperset(of: ["mode", "points"]),
+              Set(object.keys).isSubset(of: ["mode", "points", "channels"]) else { return nil }
+        func shape(_ object: [String: Self]) -> ToneCurveShape? {
+            guard Set(object.keys) == ["mode", "points"],
+                  let mode = object["mode"]?.string.flatMap(ToneCurveMode.init(rawValue:)),
+                  let values = object["points"]?.array else { return nil }
+            var points = [ToneCurvePoint]()
+            for value in values {
+                guard let pair = value.array, pair.count == 2, let x = pair[0].number, let y = pair[1].number else { return nil }
+                points.append(.init(x: x, y: y))
+            }
+            let curve = ToneCurveShape(mode: mode, points: points)
+            return curve.isValid ? curve : nil
+        }
+        guard let master = shape(object.filter { $0.key != "channels" }) else { return nil }
+        var result = ToneCurveSettings(mode: master.mode, points: master.points)
+        if let value = object["channels"] {
+            guard let channels = value.object, Set(channels.keys).isSubset(of: ["red", "green", "blue"]) else { return nil }
+            for channel in ToneCurveChannel.allCases where channel != .rgb {
+                if let value = channels[channel.rawValue] {
+                    guard let fields = value.object, let curve = shape(fields) else { return nil }
+                    result = result.replacing(channel, with: curve)
+                }
+            }
+        }
+        return result
+    }
+
+    public init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer()
+        if value.decodeNil() { self = .null }
+        else if let bool = try? value.decode(Bool.self) { self = .boolean(bool) }
+        else if let number = try? value.decode(Double.self), number.isFinite { self = .number(number) }
+        else if let string = try? value.decode(String.self) { self = .string(string) }
+        else if let array = try? value.decode([Self].self) { self = .array(array) }
+        else { self = .object(try value.decode([String: Self].self)) }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var value = encoder.singleValueContainer()
+        switch self {
+        case .number(let number): try value.encode(number)
+        case .string(let string): try value.encode(string)
+        case .boolean(let bool): try value.encode(bool)
+        case .object(let object): try value.encode(object)
+        case .array(let array): try value.encode(array)
+        case .null: try value.encodeNil()
+        }
+    }
+}
+
+public extension ToneCurveShape {
+    var transferValue: AdjustmentTransferValue {
+        .object(["mode": .string(mode.rawValue), "points": .array(points.map { .array([.number($0.x), .number($0.y)]) })])
+    }
+}
+
+public extension ToneCurveSettings {
+    var transferValue: AdjustmentTransferValue {
+        var value = master.transferValue.object!
+        if hasChannelCurves {
+            value["channels"] = .object(["red": channels.red.transferValue, "green": channels.green.transferValue, "blue": channels.blue.transferValue])
+        }
+        return .object(value)
+    }
+}
+
+public extension ColorGradingWheel {
+    var transferValue: AdjustmentTransferValue { .object(["hue": .number(hue), "saturation": .number(saturation)]) }
+}
+
+// 曲线和色轮在完整复制时保留逻辑值；部分复制只转换一次实际效果。
+public enum AdjustmentTransferRefinement {
+    public typealias Value = AdjustmentTransferValue
+    public typealias Field = AdjustmentTransferField
+
+    public static func values(curve: ToneCurveSettings, grading: ColorGradingSettings) -> [Field: Value] {
+        var result: [Field: Value] = [.curve: curve.transferValue]
+        for field in Field.refinementObjects {
+            if let zone = field.gradingZone { result[field] = grading[zone].transferValue }
+        }
+        return result
+    }
+
+    public static func applying(_ payload: AdjustmentTransferPayload, original: [Field: Value],
+                                previousScale: Double, targetScale: Double, fullRecipe: Bool) throws -> [Field: Value] {
+        var result = original
+        for field in Field.refinementObjects {
+            let expected = try payload[field].map {
+                try scaled($0, field: field, by: payload.source.recipe?.refinementScale ?? 1)
+            } ?? scaled(original[field]!, field: field, by: previousScale)
+            // 完整复制优先保留原逻辑值；移动端强度经过 Float 投影时仅反解必要的差值。
+            let preferred = fullRecipe ? payload[field] ?? original[field]! : original[field]!
+            let value = try logical(expected, field: field, strength: targetScale, preserving: preferred)
+            guard equivalent(try scaled(value, field: field, by: targetScale), expected, field: field) else {
+                throw AdjustmentTransferError.unrepresentable(field.rawValue)
+            }
+            result[field] = value
+        }
+        return result
+    }
+
+    public static func scaled(_ value: Value, field: Field, by strength: Double) throws -> Value {
+        if field == .curve, let curve = value.curve { return curve.scaled(by: strength).transferValue }
+        guard field.gradingZone != nil, let wheel = value.object,
+              let hue = wheel["hue"]?.number, let saturation = wheel["saturation"]?.number else {
+            throw AdjustmentTransferError.invalidPayload(field.rawValue)
+        }
+        return ColorGradingWheel(hue: hue, saturation: min(100, max(0, saturation * strength))).transferValue
+    }
+
+    public static func logical(_ effective: Value, field: Field, strength: Double, preserving current: Value) throws -> Value {
+        if equivalent(try scaled(current, field: field, by: strength), effective, field: field) { return current }
+        let result: Value
+        if field == .curve, let curve = effective.curve {
+            if curve.isDefault || strength == 0 && curve.isIdentity { return effective }
+            guard strength != 0 else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
+            var inverse = curve
+            for channel in ToneCurveChannel.allCases {
+                let shape = curve.shape(channel)
+                if shape.mode == .custom {
+                    inverse = inverse.replacing(channel, with: .init(mode: .custom, points: shape.points.map {
+                        ToneCurvePoint(x: $0.x, y: $0.x + ($0.y - $0.x) / strength)
+                    }))
+                }
+            }
+            guard inverse.isValid else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
+            result = inverse.transferValue
+        } else if field.gradingZone != nil, let wheel = effective.object,
+                  let hue = wheel["hue"]?.number, let saturation = wheel["saturation"]?.number {
+            guard strength != 0 || saturation == 0 else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
+            let inverse = ColorGradingWheel(hue: hue, saturation: strength == 0 ? 0 : saturation / strength)
+            guard inverse.isValid else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
+            result = inverse.transferValue
+        } else { throw AdjustmentTransferError.invalidPayload(field.rawValue) }
+        guard equivalent(try scaled(result, field: field, by: strength), effective, field: field) else {
+            throw AdjustmentTransferError.unrepresentable(field.rawValue)
+        }
+        return result
+    }
+
+    public static func equivalent(_ a: Value, _ b: Value, field: Field) -> Bool {
+        if field == .curve, let first = a.curve, let second = b.curve {
+            return ToneCurveChannel.allCases.allSatisfy { channel in
+                let a = first.shape(channel), b = second.shape(channel)
+                guard a.mode == b.mode else { return false }
+                if a.isIdentity && b.isIdentity { return true }
+                return a.points.count == b.points.count && zip(a.points, b.points).allSatisfy {
+                    $0.x == $1.x && abs($0.y - $1.y) <= 1e-12
+                }
+            }
+        }
+        guard let first = a.object, let second = b.object,
+              let firstSat = first["saturation"]?.number, let secondSat = second["saturation"]?.number else { return false }
+        return first["hue"] == second["hue"] && Float(firstSat) == Float(secondSat)
+    }
+}
+
+public struct AdjustmentRecipeContext: Codable, Equatable {
+    public let id: String
+    public let strength: Double
+    public let settingsVersion: Int
+    public var refinementScale: Double { settingsVersion >= 4 ? strength : 1 }
+    enum CodingKeys: String, CodingKey { case id, strength; case settingsVersion = "settings_version" }
+    public init(id: String, strength: Double, settingsVersion: Int) {
+        self.id = id; self.strength = strength; self.settingsVersion = settingsVersion
+    }
+    public init(from decoder: Decoder) throws {
+        try TransferCodingKey.rejectUnknown(decoder, allowed: ["id", "strength", "settings_version"])
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        strength = try values.decode(Double.self, forKey: .strength)
+        settingsVersion = try values.decode(Int.self, forKey: .settingsVersion)
+    }
+}
+
+public struct AdjustmentTransferSource: Codable, Equatable {
+    public let identifier: String
+    public let isRaw: Bool
+    public let processingVersion: Int
+    public let recipe: AdjustmentRecipeContext?
+    public let hdrProcessingVersion: Int?
+    public var isHDR: Bool { hdrProcessingVersion != nil }
+    enum CodingKeys: String, CodingKey {
+        case identifier, recipe
+        case isRaw = "is_raw", processingVersion = "processing_version"
+        case hdrProcessingVersion = "hdr_processing_version"
+    }
+    public init(identifier: String, isRaw: Bool, processingVersion: Int, recipe: AdjustmentRecipeContext?, hdrProcessingVersion: Int? = nil) {
+        self.identifier = identifier; self.isRaw = isRaw
+        self.processingVersion = processingVersion; self.recipe = recipe
+        self.hdrProcessingVersion = hdrProcessingVersion
+    }
+    public init(from decoder: Decoder) throws {
+        try TransferCodingKey.rejectUnknown(decoder, allowed: ["identifier", "is_raw", "processing_version", "recipe", "hdr_processing_version"])
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        identifier = try values.decode(String.self, forKey: .identifier)
+        isRaw = try values.decode(Bool.self, forKey: .isRaw)
+        processingVersion = try values.decode(Int.self, forKey: .processingVersion)
+        recipe = try values.decodeIfPresent(AdjustmentRecipeContext.self, forKey: .recipe)
+        hdrProcessingVersion = values.contains(.hdrProcessingVersion) ? try values.decode(Int.self, forKey: .hdrProcessingVersion) : nil
+    }
+}
+
+public struct AdjustmentTransferPayload: Codable, Equatable {
+    public let payloadVersion: Int
+    public let scopeVersion: Int
+    public let source: AdjustmentTransferSource
+    public let values: [String: AdjustmentTransferValue]
+    public var fields: Set<AdjustmentTransferField> { Set(values.keys.compactMap(AdjustmentTransferField.init(rawValue:))) }
+    public subscript(_ field: AdjustmentTransferField) -> AdjustmentTransferValue? { values[field.rawValue] }
+    enum CodingKeys: String, CodingKey {
+        case payloadVersion = "payload_version", scopeVersion = "scope_version", source, values
+    }
+
+    public init(source: AdjustmentTransferSource, values: [String: AdjustmentTransferValue]) throws {
+        payloadVersion = source.isHDR ? 2 : 1; scopeVersion = payloadVersion; self.source = source; self.values = values
+        try validate()
+    }
+
+    public init(from decoder: Decoder) throws {
+        try TransferCodingKey.rejectUnknown(decoder, allowed: ["payload_version", "scope_version", "source", "values"])
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        payloadVersion = try container.decode(Int.self, forKey: .payloadVersion)
+        scopeVersion = try container.decode(Int.self, forKey: .scopeVersion)
+        source = try container.decode(AdjustmentTransferSource.self, forKey: .source)
+        values = try container.decode([String: AdjustmentTransferValue].self, forKey: .values)
+        try validate()
+    }
+
+    public func validate() throws {
+        guard (payloadVersion == 1 && scopeVersion == 1 && !source.isHDR) ||
+            (payloadVersion == 2 && scopeVersion == 2 && source.isHDR) else { throw AdjustmentTransferError.unsupportedVersion }
+        if source.isHDR {
+            guard let version = source.hdrProcessingVersion, (1...8).contains(version) else {
+                throw AdjustmentTransferError.unsupportedVersion
+            }
+            let supported = AdjustmentTransferField.hdrSupported(version: version).union([.hdrCameraDevelopment])
+            guard !source.isRaw, source.recipe == nil, fields.isSubset(of: supported) else {
+                throw AdjustmentTransferError.invalidPayload("hdr context")
+            }
+        } else if fields.contains(where: \.isHDROnly) {
+            throw AdjustmentTransferError.invalidPayload("hdr context")
+        }
+        guard !values.isEmpty else { throw AdjustmentTransferError.emptyScope }
+        guard !source.identifier.isEmpty, [1, 2, 3].contains(source.processingVersion) else {
+            throw AdjustmentTransferError.invalidPayload("source")
+        }
+        if let recipe = source.recipe {
+            guard !recipe.id.isEmpty, recipe.strength.isFinite, (0...2).contains(recipe.strength),
+                  [2, 3, 4].contains(recipe.settingsVersion) else { throw AdjustmentTransferError.invalidPayload("recipe") }
+            if let strength = self[.strength]?.number, strength != recipe.strength {
+                throw AdjustmentTransferError.invalidPayload("recipe.strength")
+            }
+        }
+        for (id, value) in values {
+            guard let field = AdjustmentTransferField(rawValue: id), Self.valid(value, for: field) else {
+                throw AdjustmentTransferError.invalidPayload(id)
+            }
+        }
+        if let look = self[.look]?.object, look["kind"]?.string == "recipe" {
+            guard look["id"]?.string == source.recipe?.id else { throw AdjustmentTransferError.invalidPayload("recipe.look") }
+        }
+        try validateWhiteBalance()
+        if !source.isRaw {
+            guard self[.exposureMode] == nil || self[.exposureMode] == .string("sensor"),
+                  self[.rawDenoise] == nil || self[.rawDenoise] == .number(0),
+                  source.isHDR || self[.postRGBDenoise] == nil || self[.postRGBDenoise] == .number(0) else {
+                throw AdjustmentTransferError.invalidPayload("raster request")
+            }
+        }
+    }
+
+    private func validateWhiteBalance() throws {
+        let mode = self[.whiteBalanceMode]?.string
+        if let mode, source.isRaw ? mode == "none" : mode != "none" {
+            throw AdjustmentTransferError.invalidPayload("white_balance.mode")
+        }
+        if !source.isRaw && (self[.temperature]?.number != nil || source.recipe == nil && self[.tint]?.number != nil) {
+            throw AdjustmentTransferError.invalidPayload("raster.white_balance")
+        }
+        if source.recipe != nil && self[.tint] == .null {
+            throw AdjustmentTransferError.invalidPayload("recipe.white_balance.tint")
+        }
+        if mode == "camera" && (self[.temperature]?.number != nil || source.recipe == nil && self[.tint]?.number != nil)
+            || mode == "temperature" && (self[.temperature] == .null || self[.tint] == .null) {
+            throw AdjustmentTransferError.invalidPayload("white_balance values conflict with mode")
+        }
+    }
+
+    private static func valid(_ value: AdjustmentTransferValue, for field: AdjustmentTransferField) -> Bool {
+        if field == .curve { return value.curve != nil }
+        if field.gradingZone != nil {
+            guard let wheel = value.object, Set(wheel.keys) == ["hue", "saturation"],
+                  let hue = wheel["hue"]?.number, let saturation = wheel["saturation"]?.number else { return false }
+            return ColorGradingWheel(hue: hue, saturation: saturation).isValid
+        }
+        if let range = field.scalarRange {
+            guard let number = value.number, number.isFinite, range.contains(number) else { return false }
+            if field == .quarterTurns { return number.rounded() == number }
+            return ![.cropWidth, .cropHeight].contains(field) || number > 0
+        }
+        switch field {
+        case .hdrLook: return value.hdrLookSettings != nil
+        case .hdrCameraDevelopment: return value.hdrCameraDevelopment != nil
+        case .flipHorizontal, .flipVertical, .lensDistortion, .lensTCA, .lensVignetting, .lensAutoCrop: return value.boolean != nil
+        case .exposureMode: return value.string.map { ["scene", "preview", "sensor"].contains($0) } ?? false
+        case .whiteBalanceMode: return value.string.map { ["camera", "temperature", "none"].contains($0) } ?? false
+        case .temperature: return value == .null || value.number.map { $0.isFinite && (2000...50000).contains($0) } == true
+        case .tint: return value == .null || value.number.map { $0.isFinite && (-150...150).contains($0) } == true
+        case .look:
+            guard let object = value.object, Set(object.keys) == ["kind", "id"], let kind = object["kind"]?.string else { return false }
+            if kind == "neutral" { return object["id"] == .null }
+            guard ["builtin", "managed", "recipe", "recipe_lut"].contains(kind), let id = object["id"]?.string,
+                  !id.isEmpty, !id.contains("/"), !id.contains("\\"), id != ".", id != ".." else { return false }
+            return true
+        case .lensProfile: return value == .null || value.string.map { !$0.isEmpty } == true
+        case .rawDenoise: return value.number.map { [0, 1, 2].contains($0) } == true
+        case .chromaDenoise: return value == .null || value.number.map { [0, 1, 2].contains($0) } == true
+        case .waveletDenoise: return validWavelet(value)
+        default: return false
+        }
+    }
+
+    private static func validWavelet(_ value: AdjustmentTransferValue) -> Bool {
+        if value == .null { return true }
+        guard let wavelet = value.object,
+              Set(wavelet.keys) == ["enabled", "luma", "chroma", "coarse", "preset"],
+              wavelet["enabled"]?.boolean != nil,
+              ["detail", "clean", "custom"].contains(wavelet["preset"]?.string ?? "") else { return false }
+        return ["luma", "chroma", "coarse"].allSatisfy { wavelet[$0]?.number.map { $0.isFinite && (0...100).contains($0) } == true }
+    }
+}
+
+private struct TransferCodingKey: CodingKey {
+    let stringValue: String
+    var intValue: Int? { nil }
+    init?(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { return nil }
+    static func rejectUnknown(_ decoder: Decoder, allowed: Set<String>) throws {
+        let values = try decoder.container(keyedBy: Self.self)
+        guard values.allKeys.allSatisfy({ allowed.contains($0.stringValue) }) else {
+            throw AdjustmentTransferError.invalidPayload("unknown field")
+        }
+    }
+}

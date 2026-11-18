@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 func checkBatchSelection(_ root: URL) throws {

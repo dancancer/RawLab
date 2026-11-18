@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
 APP="${1:?Fresh built RawLab.app}"
 DEVICE="${2:?Dedicated task simulator UUID}"
 ORIGINAL="${3:?Fresh xctestrun path}"
@@ -28,7 +29,7 @@ transforms={
 sources=[];diff=[]
 for folder in ['RawLab/RawLab/Core','RawLab/RawLab/UI','Shared']:
  for p in (root/folder).rglob('*.swift'):
-  if 'tests' in p.relative_to(root).parts:continue
+  if {'tests', 'RawLabKit'} & set(p.relative_to(root).parts):continue
   name=str(p.relative_to(root));text=p.read_text();changed=text
   if name in transforms:
    replacements=transforms[name] if isinstance(transforms[name],list) else [transforms[name]]
@@ -55,7 +56,8 @@ TARGET=arm64-apple-ios18.0-simulator
 xcrun --sdk iphonesimulator clang++ -std=c++17 -target "$TARGET" -isysroot "$SDK" -I "$ROOT/lutools/include" -c "$ROOT/RawLab/RawLab/Support/RawMetadataBridge.mm" -o "$OUT/bridge.o"
 SOURCES=()
 while IFS= read -r file; do SOURCES+=("$file"); done < <(rg --files "$OUT/source/RawLab/RawLab/Core" "$OUT/source/RawLab/RawLab/UI" "$OUT/source/Shared" -g '*.swift' -g '!**/tests/**' | sort)
-xcrun --sdk iphonesimulator swiftc -swift-version 5 -module-name ViewingEditorHarness -sdk "$SDK" -target "$TARGET" -module-cache-path "$OUT/module-cache" -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" "${SOURCES[@]}" "$OUT/source/ViewingEditorHarness.swift" "$OUT/bridge.o" -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$HARNESS/viewing-editor"
+rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
+xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -module-name ViewingEditorHarness -sdk "$SDK" -target "$TARGET" -module-cache-path "$OUT/module-cache" -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" "${SOURCES[@]}" "$OUT/source/ViewingEditorHarness.swift" "$OUT/bridge.o" -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$HARNESS/viewing-editor"
 RUNNER="$OUT/RawLabUITests-Runner.app"
 TEST="$RUNNER/PlugIns/RawLabUITests.xctest"
 xcrun --sdk iphonesimulator swiftc -emit-library -module-name RawLabUITests -sdk "$SDK" -target "$TARGET" -module-cache-path "$OUT/module-cache" -F "$PLATFORM/Developer/Library/Frameworks" -I "$PLATFORM/Developer/usr/lib" -L "$PLATFORM/Developer/usr/lib" -lXCTestSwiftSupport -framework XCTest "$OUT/source/ViewingEditorUITests.swift" "$OUT/source/PresetEditorUITests.swift" -o "$TEST/RawLabUITests"
