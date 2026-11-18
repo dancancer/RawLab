@@ -10,13 +10,7 @@
 namespace {
 
 using sony2fuji::EditRecipe;
-int checks = 0;
-
-void check(bool condition, const std::string& message) {
-    ++checks;
-    rawlab::test::check(condition, message);
-}
-
+using rawlab::test::check;
 std::string document(const std::string& exposure = R"({"mode":"scene"})",
                      const std::string& edits = "", const std::string& output = "",
                      const std::string& format = "jpeg") {
@@ -415,7 +409,6 @@ TEST_MAIN(
         bool rejected = false;
         try { sony2fuji::serializeEditRecipe(x3f); } catch (const std::invalid_argument&) { rejected = true; }
         RAWLAB_CHECK(rejected,"old schemas cannot silently discard normal X3F identity");
-        checks += 4;
     }
     defaultsAndExposure();
     whiteBalanceAndLook();
@@ -428,8 +421,8 @@ TEST_MAIN(
     malformedAndUnicode();
     atmosphereCompatibility();
     if (rawlab::test::failureCount() != 0) {
-        std::cerr << rawlab::test::failureCount() << " of " << checks << " checks failed\n";
+        std::cerr << rawlab::test::failureCount() << " of " << rawlab::test::checkCount() << " rawlab::test::checkCount() failed\n";
     } else {
-        std::cout << checks << " edit recipe parsing, normalization and legacy request mapping checks passed\n";
+        std::cout << rawlab::test::checkCount() << " edit recipe parsing, normalization and legacy request mapping rawlab::test::checkCount() passed\n";
     }
 )

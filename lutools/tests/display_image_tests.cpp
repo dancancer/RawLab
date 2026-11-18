@@ -29,11 +29,7 @@ extern "C" sony2fuji_status sony2fuji_load_display_image(
 
 namespace {
 
-void check(bool condition, const std::string& message) {
-    if (rawlab::test::check(condition, message)) {
-        std::cout << "PASS " << message << '\n';
-    }
-}
+using rawlab::test::checkPass;
 
 #if defined(__APPLE__)
 
@@ -270,10 +266,10 @@ std::vector<uint8_t> outputBytes(const sony2fuji_buffer& buffer) {
 void expectUnsupported(const std::filesystem::path& path, const std::string& label, bool validEncoding = false) {
     sony2fuji_buffer buffer{};
     const auto status = sony2fuji_load_display_image(path.u8string().c_str(), &buffer);
-    check(status == SONY2FUJI_STATUS_UNSUPPORTED ||
+    checkPass(status == SONY2FUJI_STATUS_UNSUPPORTED ||
           (!validEncoding && status == SONY2FUJI_STATUS_PROCESSING_ERROR),
           label + " is rejected");
-    check(!buffer.data && buffer.size_bytes == 0 && buffer.width == 0 && buffer.height == 0,
+    checkPass(!buffer.data && buffer.size_bytes == 0 && buffer.width == 0 && buffer.height == 0,
           label + " clears output on rejection");
     sony2fuji_release_buffer(&buffer);
 }
@@ -310,11 +306,11 @@ void checkMpfJpeg(const std::filesystem::path& jpeg) {
         file.put(0);
         return file.good();
     };
-    check(write(), "Generate MPF JPEG with a missing representative flag and camera trailer");
+    checkPass(write(), "Generate MPF JPEG with a missing representative flag and camera trailer");
     sony2fuji_buffer expected{}, result{};
     const auto originalStatus = sony2fuji_load_display_image(jpeg.u8string().c_str(), &expected);
     const auto mpfStatus = sony2fuji_load_display_image(path.u8string().c_str(), &result);
-    check(originalStatus == SONY2FUJI_STATUS_OK && mpfStatus == SONY2FUJI_STATUS_OK &&
+    checkPass(originalStatus == SONY2FUJI_STATUS_OK && mpfStatus == SONY2FUJI_STATUS_OK &&
           expected.width == result.width && expected.height == result.height &&
           outputBytes(expected) == outputBytes(result), "Apple MPF decode preserves the primary JPEG");
     sony2fuji_release_buffer(&expected);
@@ -325,10 +321,10 @@ void checkMpfJpeg(const std::filesystem::path& jpeg) {
     sony2fuji_hdr_diagnostic_v1 diagnostic{};
     diagnostic.version = 1; diagnostic.struct_size = sizeof(diagnostic);
     const auto probeStatus = sony2fuji_hdr_probe(path.u8string().c_str(), &info, &diagnostic);
-    check(probeStatus == SONY2FUJI_STATUS_UNSUPPORTED && diagnostic.reason == SONY2FUJI_HDR_REASON_NOT_HDR,
+    checkPass(probeStatus == SONY2FUJI_STATUS_UNSUPPORTED && diagnostic.reason == SONY2FUJI_HDR_REASON_NOT_HDR,
           "Apple HDR preflight lets a valid MPF thumbnail fall back to SDR");
     set(82, UINT32_MAX);
-    check(write(), "Generate MPF JPEG with an out-of-bounds thumbnail");
+    checkPass(write(), "Generate MPF JPEG with an out-of-bounds thumbnail");
     expectUnsupported(path, "Apple MPF index with an out-of-bounds thumbnail", true);
 }
 
@@ -346,7 +342,7 @@ void checkPngColorMetadata(const std::filesystem::path& root, CGColorSpaceRef sR
                 std::to_string(metadata.second.front()) + "-" + std::to_string(metadata.second[1]) +
                 "-" + std::to_string(metadata.second.size());
             const auto path = root / (label + ".png");
-            check(fixture.image && writeImage(path, CFSTR("public.png"), fixture.image) &&
+            checkPass(fixture.image && writeImage(path, CFSTR("public.png"), fixture.image) &&
                 stripPngColorProfile(path) && insertPngChunk(path, metadata.first.c_str(), metadata.second),
                 "Generate " + label);
             expectUnsupported(path, label, true);
@@ -358,7 +354,7 @@ void checkPngColorMetadata(const std::filesystem::path& root, CGColorSpaceRef sR
             const auto label = "PNG" + std::to_string(bits) + " SDR cICP " +
                 std::to_string(color.first[0]) + "-" + std::to_string(color.first[1]);
             const auto path = root / (label + ".png");
-            check(fixture.image && writeImage(path, CFSTR("public.png"), fixture.image) &&
+            checkPass(fixture.image && writeImage(path, CFSTR("public.png"), fixture.image) &&
                 stripPngColorProfile(path) && insertPngChunk(path, "cICP", color.first),
                 "Generate " + label + " without ICC/gAMA/cHRM/sRGB");
             auto* space = CGColorSpaceCreateWithName(color.second);
@@ -370,7 +366,7 @@ void checkPngColorMetadata(const std::filesystem::path& root, CGColorSpaceRef sR
                 reinterpret_cast<const UInt8*>(path.c_str()), path.string().size(), false);
             auto* source = CGImageSourceCreateWithURL(url, nullptr);
             auto* decoded = source ? CGImageSourceCreateImageAtIndex(source, 0, nullptr) : nullptr;
-            check(decoded && CFEqual(CGImageGetColorSpace(decoded), space),
+            checkPass(decoded && CFEqual(CGImageGetColorSpace(decoded), space),
                 label + " is decoded by ImageIO in the declared color space");
             if (decoded) CGImageRelease(decoded);
             if (source) CFRelease(source);
@@ -387,7 +383,7 @@ void checkPngColorMetadata(const std::filesystem::path& root, CGColorSpaceRef sR
                 const int target = bits == 16 ? expected[i] | (expected[i + 1] << 8) : expected[i];
                 close = std::abs(value - target) <= 2;
             }
-            check(close && (color.first == std::vector<uint8_t>{1, 13, 0, 1} || expected != unconverted),
+            checkPass(close && (color.first == std::vector<uint8_t>{1, 13, 0, 1} || expected != unconverted),
                 label + " converts pixels to sRGB using the declared primaries and transfer function");
             sony2fuji_release_buffer(&buffer);
         }
@@ -426,7 +422,7 @@ void checkHDRProfiles(const std::filesystem::path& root, CGColorSpaceRef sRGB) {
         auto* data = CFDataCreate(nullptr, profile.data(), profile.size());
         auto* space = CGColorSpaceCreateWithICCData(data);
         auto* name = space ? CGColorSpaceCopyName(space) : nullptr;
-        check(space && !name && CGColorSpaceUsesITUR_2100TF(space),
+        checkPass(space && !name && CGColorSpaceUsesITUR_2100TF(space),
             std::string("Generate unnamed ") + transfer.first + " ICC with an HDR transfer function");
         if (name) CFRelease(name);
         if (space) CGColorSpaceRelease(space);
@@ -449,7 +445,7 @@ void checkHDRProfiles(const std::filesystem::path& root, CGColorSpaceRef sRGB) {
                     TIFFRewriteDirectory(tiff);
                 if (tiff) TIFFClose(tiff);
             }
-            check(written, "Generate " + label);
+            checkPass(written, "Generate " + label);
             expectUnsupported(path, label, true);
         }
     }
@@ -460,9 +456,9 @@ void expectEmptyPathClearsBuffer() {
         std::malloc(4), 4, 1, 1, 4, SONY2FUJI_PIXEL_RGBA8
     };
     const auto status = sony2fuji_load_display_image("", &buffer);
-    check(status == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+    checkPass(status == SONY2FUJI_STATUS_INVALID_ARGUMENT,
           "Empty display-image path is an invalid argument");
-    check(!buffer.data && buffer.size_bytes == 0 && buffer.width == 0 && buffer.height == 0 &&
+    checkPass(!buffer.data && buffer.size_bytes == 0 && buffer.width == 0 && buffer.height == 0 &&
         buffer.stride_bytes == 0 && buffer.pixel_format == SONY2FUJI_PIXEL_RGB8,
         "Empty display-image path clears an existing output buffer");
     sony2fuji_release_buffer(&buffer);
@@ -544,7 +540,7 @@ void checkTiff16(const std::filesystem::path& root, CGColorSpaceRef sRGB) {
     for (uint32_t orientation = 1; orientation <= 8; ++orientation) {
         const auto path = root / ("rgb16-orientation-" + std::to_string(orientation) + ".tif");
         auto* properties = orientationProperties(orientation);
-        check(fixture.image && properties && writeImage(path, CFSTR("public.tiff"), fixture.image, properties),
+        checkPass(fixture.image && properties && writeImage(path, CFSTR("public.tiff"), fixture.image, properties),
               "Generate oriented 16-bit TIFF " + std::to_string(orientation));
         if (properties) CFRelease(properties);
         sony2fuji_buffer buffer{};
@@ -561,7 +557,7 @@ void checkTiff16(const std::filesystem::path& root, CGColorSpaceRef sRGB) {
             for (size_t c = 0; matches && c < 3; ++c)
                 matches = pixel[2 * c] == expected[2 * c + 1] && pixel[2 * c + 1] == expected[2 * c];
         }
-        check(matches, "16-bit TIFF retains all channel bits and applies orientation " + std::to_string(orientation));
+        checkPass(matches, "16-bit TIFF retains all channel bits and applies orientation " + std::to_string(orientation));
         sony2fuji_release_buffer(&buffer);
     }
 
@@ -576,13 +572,13 @@ void checkTiff16(const std::filesystem::path& root, CGColorSpaceRef sRGB) {
     const void* values[] = {tiff};
     auto* properties = CFDictionaryCreate(kCFAllocatorDefault, keys, values, 1,
         &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-    check(mainImage.image && preview.image && writeImage(path, CFSTR("public.tiff"), mainImage.image,
+    checkPass(mainImage.image && preview.image && writeImage(path, CFSTR("public.tiff"), mainImage.image,
           properties, 2, preview.image), "Generate Sigma TIFF with a separate preview IFD");
     CFRelease(properties);
     CFRelease(tiff);
     sony2fuji_buffer buffer{};
     const auto status = sony2fuji_load_display_image(path.u8string().c_str(), &buffer);
-    check(status == SONY2FUJI_STATUS_OK && buffer.width == 300 && buffer.height == 200 &&
+    checkPass(status == SONY2FUJI_STATUS_OK && buffer.width == 300 && buffer.height == 200 &&
           buffer.pixel_format == SONY2FUJI_PIXEL_RGBA16, "Sigma TIFF imports the main image");
     sony2fuji_release_buffer(&buffer);
 
@@ -593,23 +589,23 @@ void checkTiff16(const std::filesystem::path& root, CGColorSpaceRef sRGB) {
         if (writeTIFFWithMarkedSecondPage(path, markedPage, marker)) {
             expectUnsupported(markedPage, "Sigma TIFF with second-IFD page tag " + tag, true);
         } else {
-            check(false, "Generate a Sigma TIFF with page tag " + tag);
+            checkPass(false, "Generate a Sigma TIFF with page tag " + tag);
         }
     }
 
     const auto multipage = root / "rgb16-multipage.tif";
-    check(mainImage.image && preview.image && writeImage(multipage, CFSTR("public.tiff"), mainImage.image,
+    checkPass(mainImage.image && preview.image && writeImage(multipage, CFSTR("public.tiff"), mainImage.image,
           nullptr, 2, preview.image), "Generate two-page TIFF without Sigma writer metadata");
     expectUnsupported(multipage, "TIFF16 with another page");
 
     auto main8 = rgbImage(300, 200, sRGB, std::vector<uint8_t>(300 * 200 * 3, 127));
     const auto pair8 = root / "rgb8-with-second-ifd.tif";
     const auto thumbnail8 = root / "rgb8-with-reduced-ifd.tif";
-    check(main8.image && writeImage(pair8, CFSTR("public.tiff"), main8.image, nullptr, 2, preview.image) &&
+    checkPass(main8.image && writeImage(pair8, CFSTR("public.tiff"), main8.image, nullptr, 2, preview.image) &&
         writeTIFFWithMarkedSecondPage(pair8, thumbnail8, TIFFPageMarker::NewSubfileType, 1),
         "Generate TIFF8 with a reduced-resolution top-level IFD");
     sony2fuji_buffer thumbnailBuffer{};
-    check(sony2fuji_load_display_image(thumbnail8.u8string().c_str(), &thumbnailBuffer) == SONY2FUJI_STATUS_OK &&
+    checkPass(sony2fuji_load_display_image(thumbnail8.u8string().c_str(), &thumbnailBuffer) == SONY2FUJI_STATUS_OK &&
         thumbnailBuffer.width == 300 && thumbnailBuffer.height == 200 &&
         thumbnailBuffer.pixel_format == SONY2FUJI_PIXEL_RGBA8,
         "ImageIO ignores the reduced TIFF8 IFD and imports the primary image");
@@ -625,10 +621,10 @@ void checkPng16(const std::filesystem::path& root, CGColorSpaceRef sRGB) {
     for (uint32_t orientation = 1; orientation <= 8; ++orientation) {
         const auto path = root / ("png16-orientation-" + std::to_string(orientation) + ".png");
         auto* properties = orientationProperties(orientation);
-        check(fixture.image && properties && writeImage(path, CFSTR("public.png"), fixture.image, properties),
+        checkPass(fixture.image && properties && writeImage(path, CFSTR("public.png"), fixture.image, properties),
               "Generate oriented 16-bit PNG " + std::to_string(orientation));
         if (properties) CFRelease(properties);
-        if (orientation == 1) check(stripPngColorProfile(path), "Remove PNG16 profile to test untagged RGB");
+        if (orientation == 1) checkPass(stripPngColorProfile(path), "Remove PNG16 profile to test untagged RGB");
         sony2fuji_buffer buffer{};
         const auto status = sony2fuji_load_display_image(path.u8string().c_str(), &buffer);
         const uint32_t width = orientation >= 5 ? 3 : 2, height = orientation >= 5 ? 2 : 3;
@@ -642,14 +638,14 @@ void checkPng16(const std::filesystem::path& root, CGColorSpaceRef sRGB) {
             for (size_t c = 0; matches && c < 3; ++c)
                 matches = pixel[2 * c] == expected[2 * c + 1] && pixel[2 * c + 1] == expected[2 * c];
         }
-        check(matches, "PNG16 preserves low bits and applies orientation " + std::to_string(orientation));
+        checkPass(matches, "PNG16 preserves low bits and applies orientation " + std::to_string(orientation));
         sony2fuji_release_buffer(&buffer);
     }
 
     auto* p3 = CGColorSpaceCreateWithName(kCGColorSpaceDisplayP3);
     auto p3Fixture = rgb16Image(2, 3, p3);
     const auto p3Path = root / "p3-16.png";
-    check(p3Fixture.image && writeImage(p3Path, CFSTR("public.png"), p3Fixture.image) &&
+    checkPass(p3Fixture.image && writeImage(p3Path, CFSTR("public.png"), p3Fixture.image) &&
         stripPngColorProfile(p3Path, "cICP"), "Generate ICC-only P3 PNG16");
     sony2fuji_buffer converted{};
     const auto p3Status = sony2fuji_load_display_image(p3Path.u8string().c_str(), &converted);
@@ -662,10 +658,10 @@ void checkPng16(const std::filesystem::path& root, CGColorSpaceRef sRGB) {
         const int reference = expected[i] | (expected[i + 1] << 8);
         close = std::abs(value - reference) <= 2;
     }
-    check(close, "PNG16 ICC conversion retains 16-bit sRGB precision");
+    checkPass(close, "PNG16 ICC conversion retains 16-bit sRGB precision");
     sony2fuji_release_buffer(&converted);
-    check(insertPngChunk(p3Path, "cICP", {12, 13, 0, 1}), "Add non-sRGB cICP alongside P3 ICC in PNG16");
-    check(sony2fuji_load_display_image(p3Path.u8string().c_str(), &converted) == SONY2FUJI_STATUS_OK &&
+    checkPass(insertPngChunk(p3Path, "cICP", {12, 13, 0, 1}), "Add non-sRGB cICP alongside P3 ICC in PNG16");
+    checkPass(sony2fuji_load_display_image(p3Path.u8string().c_str(), &converted) == SONY2FUJI_STATUS_OK &&
         outputBytes(converted) == actual, "Matching P3 ICC and cICP preserve PNG16 sRGB conversion");
     sony2fuji_release_buffer(&converted);
     CGColorSpaceRelease(p3);
@@ -677,14 +673,14 @@ void checkPng16(const std::filesystem::path& root, CGColorSpaceRef sRGB) {
             CGBitmapInfo(kCGImageAlphaLast) | kCGBitmapByteOrder16Little,
             provider, nullptr, false, kCGRenderingIntentDefault);
         const auto path = root / ("alpha16-" + std::to_string(alpha) + ".png");
-        check(image && writeImage(path, CFSTR("public.png"), image), "Generate PNG16 alpha fixture");
+        checkPass(image && writeImage(path, CFSTR("public.png"), image), "Generate PNG16 alpha fixture");
         if (image) CGImageRelease(image);
         CGDataProviderRelease(provider);
         if (alpha != 65535) expectUnsupported(path, "Transparent PNG16", true);
         else {
             sony2fuji_buffer buffer{};
             const auto status = sony2fuji_load_display_image(path.u8string().c_str(), &buffer);
-            check(status == SONY2FUJI_STATUS_OK && buffer.pixel_format == SONY2FUJI_PIXEL_RGBA16 &&
+            checkPass(status == SONY2FUJI_STATUS_OK && buffer.pixel_format == SONY2FUJI_PIXEL_RGBA16 &&
                 buffer.size_bytes == sizeof(pixel) && std::memcmp(buffer.data, pixel, sizeof(pixel)) == 0,
                 "Opaque RGBA PNG16 preserves all channels");
             sony2fuji_release_buffer(&buffer);
@@ -697,7 +693,7 @@ void checkPng16(const std::filesystem::path& root, CGColorSpaceRef sRGB) {
     auto* gray = CGImageCreate(1, 1, 16, 16, 2, graySpace, kCGBitmapByteOrder16Little,
         provider, nullptr, false, kCGRenderingIntentDefault);
     const auto grayPath = root / "gray16.png";
-    check(gray && writeImage(grayPath, CFSTR("public.png"), gray), "Generate grayscale PNG16");
+    checkPass(gray && writeImage(grayPath, CFSTR("public.png"), gray), "Generate grayscale PNG16");
     expectUnsupported(grayPath, "Grayscale PNG16", true);
     if (gray) CGImageRelease(gray);
     CGDataProviderRelease(provider);
@@ -722,13 +718,13 @@ void checkPng16(const std::filesystem::path& root, CGColorSpaceRef sRGB) {
     request.output_path = outputPath.c_str();
     request.size_mode = SONY2FUJI_SIZE_NATIVE;
     sony2fuji_session* session = nullptr;
-    check(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK &&
+    checkPass(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK &&
           sony2fuji_process(session, &request, nullptr) == SONY2FUJI_STATUS_OK,
           "RawLab writes its own PNG16 fixture through the C API");
     sony2fuji_session_destroy(session);
     sony2fuji_buffer buffer{};
     const auto status = sony2fuji_load_display_image(path.u8string().c_str(), &buffer);
-    check(status == SONY2FUJI_STATUS_OK && buffer.pixel_format == SONY2FUJI_PIXEL_RGBA16 &&
+    checkPass(status == SONY2FUJI_STATUS_OK && buffer.pixel_format == SONY2FUJI_PIXEL_RGBA16 &&
           buffer.size_bytes == sizeof(pixels) && std::memcmp(buffer.data, pixels, sizeof(pixels)) == 0,
           "RawLab PNG16 export reimports without losing low bits");
     sony2fuji_release_buffer(&buffer);
@@ -755,9 +751,9 @@ void runAppleTests() {
     const auto properties = orientationProperties(6);
     const auto jpeg = root / "oriented.jpg";
     const auto png = root / "oriented.png";
-    check(jpegFixture.image && properties && writeImage(jpeg, CFSTR("public.jpeg"), jpegFixture.image, properties),
+    checkPass(jpegFixture.image && properties && writeImage(jpeg, CFSTR("public.jpeg"), jpegFixture.image, properties),
           "Generate oriented JPEG fixture");
-    check(fixture.image && properties && writeImage(png, CFSTR("public.png"), fixture.image, properties),
+    checkPass(fixture.image && properties && writeImage(png, CFSTR("public.png"), fixture.image, properties),
           "Generate oriented PNG fixture");
     if (properties) CFRelease(properties);
     checkMpfJpeg(jpeg);
@@ -765,11 +761,11 @@ void runAppleTests() {
     for (const auto& path : {jpeg, png}) {
         sony2fuji_buffer buffer{};
         const auto status = sony2fuji_load_display_image(path.u8string().c_str(), &buffer);
-        check(status == SONY2FUJI_STATUS_OK, path.extension().string() + " decodes as display image");
+        checkPass(status == SONY2FUJI_STATUS_OK, path.extension().string() + " decodes as display image");
         if (status == SONY2FUJI_STATUS_OK) {
-            check(buffer.pixel_format == SONY2FUJI_PIXEL_RGBA8 && buffer.stride_bytes == buffer.width * 4,
+            checkPass(buffer.pixel_format == SONY2FUJI_PIXEL_RGBA8 && buffer.stride_bytes == buffer.width * 4,
                   path.extension().string() + " is tightly packed RGBA8");
-            check(buffer.width == 3 && buffer.height == 2,
+            checkPass(buffer.width == 3 && buffer.height == 2,
                   path.extension().string() + " applies EXIF orientation exactly once");
             const auto bytes = outputBytes(buffer);
             const std::vector<uint8_t> expected = {
@@ -783,14 +779,14 @@ void runAppleTests() {
                         std::abs(static_cast<int>(bytes[index]) - static_cast<int>(expected[index])));
             }
             if (path.extension() == ".jpg") {
-                check(bytes.size() == expected.size(), ".jpg preserves oriented pixel count");
+                checkPass(bytes.size() == expected.size(), ".jpg preserves oriented pixel count");
             } else {
-                check(bytes.size() == expected.size() && maximumError == 0,
+                checkPass(bytes.size() == expected.size() && maximumError == 0,
                       path.extension().string() + " preserves oriented pixels");
             }
             bool opaque = bytes.size() == expected.size();
             for (size_t index = 3; opaque && index < bytes.size(); index += 4) opaque = bytes[index] == 255;
-            check(opaque,
+            checkPass(opaque,
                   path.extension().string() + " output is opaque");
         }
         sony2fuji_release_buffer(&buffer);
@@ -799,7 +795,7 @@ void runAppleTests() {
     for (uint32_t orientation = 1; orientation <= 8; ++orientation) {
         const auto path = root / ("orientation-" + std::to_string(orientation) + ".png");
         auto* properties = orientationProperties(orientation);
-        check(properties && writeImage(path, CFSTR("public.png"), fixture.image, properties),
+        checkPass(properties && writeImage(path, CFSTR("public.png"), fixture.image, properties),
               "Generate EXIF orientation " + std::to_string(orientation));
         if (properties) CFRelease(properties);
         sony2fuji_buffer buffer{};
@@ -823,16 +819,16 @@ void runAppleTests() {
                 matches = std::equal(actual, actual + 4, pattern.begin() + (sourceY * 2 + sourceX) * 4);
             }
         }
-        check(matches, "EXIF orientation " + std::to_string(orientation) + " transforms pixels exactly once");
+        checkPass(matches, "EXIF orientation " + std::to_string(orientation) + " transforms pixels exactly once");
         sony2fuji_release_buffer(&buffer);
     }
 
     const auto tiff = root / "photo.tiff";
-    check(fixture.image && writeImage(tiff, CFSTR("public.tiff"), fixture.image),
+    checkPass(fixture.image && writeImage(tiff, CFSTR("public.tiff"), fixture.image),
           "Generate TIFF fixture");
     sony2fuji_buffer tiffBuffer{};
     const auto tiffStatus = sony2fuji_load_display_image(tiff.u8string().c_str(), &tiffBuffer);
-    check(tiffStatus == SONY2FUJI_STATUS_OK, "TIFF decodes when the system encoder is available");
+    checkPass(tiffStatus == SONY2FUJI_STATUS_OK, "TIFF decodes when the system encoder is available");
     sony2fuji_release_buffer(&tiffBuffer);
     checkTiff16(root, sRGB);
 
@@ -843,7 +839,7 @@ void runAppleTests() {
     } else {
         sony2fuji_buffer heifBuffer{};
         const auto status = sony2fuji_load_display_image(heif.u8string().c_str(), &heifBuffer);
-        check(status == SONY2FUJI_STATUS_OK, "HEIF decodes when the system encoder is available");
+        checkPass(status == SONY2FUJI_STATUS_OK, "HEIF decodes when the system encoder is available");
         sony2fuji_release_buffer(&heifBuffer);
     }
 
@@ -851,24 +847,24 @@ void runAppleTests() {
     const std::vector<uint8_t> p3Bytes = {204, 51, 26, 255};
     auto p3Fixture = rgbaImage(1, 1, p3, p3Bytes);
     const auto p3Path = root / "display-p3.png";
-    check(p3Fixture.image && writeImage(p3Path, CFSTR("public.png"), p3Fixture.image) &&
+    checkPass(p3Fixture.image && writeImage(p3Path, CFSTR("public.png"), p3Fixture.image) &&
           stripPngColorProfile(p3Path, "cICP"), "Generate ICC-only Display P3 PNG fixture");
     if (p3Fixture.image) {
         sony2fuji_buffer p3Buffer{};
         const auto status = sony2fuji_load_display_image(p3Path.u8string().c_str(), &p3Buffer);
         const auto expected = drawSRGB(p3Fixture.image);
         const auto actual = outputBytes(p3Buffer);
-        check(status == SONY2FUJI_STATUS_OK && actual.size() == expected.size(),
+        checkPass(status == SONY2FUJI_STATUS_OK && actual.size() == expected.size(),
               "Display P3 PNG decodes through the sRGB path");
         if (status == SONY2FUJI_STATUS_OK && actual.size() == expected.size()) {
             bool close = true;
             for (size_t index = 0; index < actual.size(); ++index)
                 close = close && std::abs(static_cast<int>(actual[index]) - static_cast<int>(expected[index])) <= 2;
-            check(close, "Display P3 conversion matches an independent CGContext sRGB reference");
+            checkPass(close, "Display P3 conversion matches an independent CGContext sRGB reference");
         }
         sony2fuji_release_buffer(&p3Buffer);
-        check(insertPngChunk(p3Path, "cICP", {12, 13, 0, 1}), "Add non-sRGB cICP alongside P3 ICC in PNG8");
-        check(sony2fuji_load_display_image(p3Path.u8string().c_str(), &p3Buffer) == SONY2FUJI_STATUS_OK &&
+        checkPass(insertPngChunk(p3Path, "cICP", {12, 13, 0, 1}), "Add non-sRGB cICP alongside P3 ICC in PNG8");
+        checkPass(sony2fuji_load_display_image(p3Path.u8string().c_str(), &p3Buffer) == SONY2FUJI_STATUS_OK &&
             outputBytes(p3Buffer) == actual, "Matching P3 ICC and cICP preserve PNG8 sRGB conversion");
         sony2fuji_release_buffer(&p3Buffer);
     }
@@ -883,7 +879,7 @@ void runAppleTests() {
     const bool untaggedWritten = untaggedFixture.image &&
         writeImage(untagged, CFSTR("public.png"), untaggedFixture.image) &&
         stripPngColorProfile(untagged);
-    check(untaggedWritten, "Generate unprofiled RGB PNG fixture");
+    checkPass(untaggedWritten, "Generate unprofiled RGB PNG fixture");
     bool untaggedHasProfile = false;
     if (untaggedWritten) {
         const auto pathString = untagged.u8string();
@@ -898,7 +894,7 @@ void runAppleTests() {
         if (url) CFRelease(url);
     }
     if (untaggedWritten) {
-        check(!untaggedHasProfile, "Unprofiled RGB PNG has no ImageIO profile property");
+        checkPass(!untaggedHasProfile, "Unprofiled RGB PNG has no ImageIO profile property");
     }
     if (untaggedWritten && !untaggedHasProfile) {
         sony2fuji_buffer buffer{};
@@ -911,7 +907,7 @@ void runAppleTests() {
                 untaggedBytes.begin() + index + 3);
             expected.push_back(255);
         }
-        check(status == SONY2FUJI_STATUS_OK && actual == expected,
+        checkPass(status == SONY2FUJI_STATUS_OK && actual == expected,
               "Unprofiled RGB PNG is explicitly sRGB-tagged without changing code values");
         sony2fuji_release_buffer(&buffer);
     }
@@ -923,7 +919,7 @@ void runAppleTests() {
     const bool grayWritten = grayFixture.image &&
         writeImage(gray, CFSTR("public.png"), grayFixture.image) &&
         stripPngColorProfile(gray);
-    check(grayWritten, "Generate unprofiled grayscale PNG fixture");
+    checkPass(grayWritten, "Generate unprofiled grayscale PNG fixture");
     if (grayWritten) expectUnsupported(gray, "Unprofiled grayscale PNG");
     CGColorSpaceRelease(deviceGray);
 
@@ -932,7 +928,7 @@ void runAppleTests() {
     const auto taggedGray = root / "tagged-gray.png";
     const bool taggedGrayWritten = taggedGrayFixture.image &&
         writeImage(taggedGray, CFSTR("public.png"), taggedGrayFixture.image);
-    check(taggedGrayWritten, "Generate profiled grayscale PNG fixture");
+    checkPass(taggedGrayWritten, "Generate profiled grayscale PNG fixture");
     if (taggedGrayWritten) {
         const auto pathString = taggedGray.u8string();
         auto* url = CFURLCreateFromFileSystemRepresentation(
@@ -940,7 +936,7 @@ void runAppleTests() {
         auto* source = url ? CGImageSourceCreateWithURL(url, nullptr) : nullptr;
         auto* properties = source ? CGImageSourceCopyPropertiesAtIndex(source, 0, nullptr) : nullptr;
         auto* image = source ? CGImageSourceCreateImageAtIndex(source, 0, nullptr) : nullptr;
-        check(properties && CFDictionaryGetValue(properties, kCGImagePropertyProfileName) && image &&
+        checkPass(properties && CFDictionaryGetValue(properties, kCGImagePropertyProfileName) && image &&
                   CGColorSpaceGetModel(CGImageGetColorSpace(image)) == kCGColorSpaceModelMonochrome,
               "Profiled grayscale fixture retains its profile and non-RGB source model");
         if (image) CGImageRelease(image);
@@ -953,7 +949,7 @@ void runAppleTests() {
 
     const auto transparent = root / "transparent.png";
     auto transparentFixture = rgbaImage(1, 1, sRGB, {255, 0, 0, 127});
-    check(transparentFixture.image && writeImage(transparent, CFSTR("public.png"), transparentFixture.image),
+    checkPass(transparentFixture.image && writeImage(transparent, CFSTR("public.png"), transparentFixture.image),
           "Generate transparent PNG fixture");
     expectUnsupported(transparent, "Transparent PNG");
 
@@ -962,7 +958,7 @@ void runAppleTests() {
     checkHDRProfiles(root, sRGB);
 
     const auto multipage = root / "multipage.tiff";
-    check(fixture.image && writeImage(multipage, CFSTR("public.tiff"), fixture.image, nullptr, 2),
+    checkPass(fixture.image && writeImage(multipage, CFSTR("public.tiff"), fixture.image, nullptr, 2),
           "Generate multi-page TIFF fixture");
     expectUnsupported(multipage, "Multi-page TIFF");
 
@@ -972,7 +968,7 @@ void runAppleTests() {
         auto* extended = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearSRGB);
         auto hdr = hdrImage(extended);
         auto* withHeadroom = CGImageCreateCopyWithContentHeadroom(4.0f, hdr.image);
-        check(withHeadroom != nullptr, "Create extended-linear HDR image with explicit headroom");
+        checkPass(withHeadroom != nullptr, "Create extended-linear HDR image with explicit headroom");
         const void* keys[] = {kCGImageDestinationEncodeRequest};
         const void* values[] = {kCGImageDestinationEncodeToISOGainmap};
         auto* properties = CFDictionaryCreate(kCFAllocatorDefault, keys, values, 1,
@@ -987,7 +983,7 @@ void runAppleTests() {
             auto* source = CGImageSourceCreateWithURL(url, nullptr);
             auto* auxiliary = source ? CGImageSourceCopyAuxiliaryDataInfoAtIndex(source, 0,
                 kCGImageAuxiliaryDataTypeISOGainMap) : nullptr;
-            check(auxiliary != nullptr, "ISO gain-map fixture contains an actual auxiliary gain map");
+            checkPass(auxiliary != nullptr, "ISO gain-map fixture contains an actual auxiliary gain map");
             if (auxiliary) {
                 CFRelease(auxiliary);
                 expectUnsupported(path, "HDR ISO gain-map JPEG", true);
@@ -1006,14 +1002,14 @@ void runAppleTests() {
         expectUnsupported(gainMap, "External verified HDR gain-map JPEG", true);
 
     const auto dng = root / "not-a-dng.dng";
-    check(fixture.image && writeImage(dng, CFSTR("public.tiff"), fixture.image),
+    checkPass(fixture.image && writeImage(dng, CFSTR("public.tiff"), fixture.image),
           "Generate TIFF bytes with a DNG extension");
     expectUnsupported(dng, "DNG extension");
 
     auto* cmykSpace = CGColorSpaceCreateDeviceCMYK();
     auto cmykFixture = cmykImage(cmykSpace);
     const auto cmyk = root / "cmyk.tiff";
-    check(cmykFixture.image && writeImage(cmyk, CFSTR("public.tiff"), cmykFixture.image),
+    checkPass(cmykFixture.image && writeImage(cmyk, CFSTR("public.tiff"), cmykFixture.image),
           "Generate CMYK TIFF fixture");
     expectUnsupported(cmyk, "CMYK TIFF");
     CGColorSpaceRelease(cmykSpace);
@@ -1027,9 +1023,9 @@ void runAppleTests() {
     if (const char* large = std::getenv("RAWLAB_TEST_LARGE_RASTER"); large && *large) {
         sony2fuji_buffer buffer{};
         const auto status = sony2fuji_load_display_image(large, &buffer);
-        check(status == SONY2FUJI_STATUS_OK, "Medium-format raster imports through ImageIO");
+        checkPass(status == SONY2FUJI_STATUS_OK, "Medium-format raster imports through ImageIO");
         if (status == SONY2FUJI_STATUS_OK)
-            check(uint64_t(buffer.width) * buffer.height >= 100000000 &&
+            checkPass(uint64_t(buffer.width) * buffer.height >= 100000000 &&
                   buffer.size_bytes == uint64_t(buffer.width) * buffer.height * 4,
                   "Medium-format raster retains full resolution and RGBA bytes");
         sony2fuji_release_buffer(&buffer);
@@ -1038,14 +1034,14 @@ void runAppleTests() {
     if (const char* photo = std::getenv("RAWLAB_TEST_RASTER"); photo && *photo) {
         sony2fuji_buffer buffer{};
         const auto status = sony2fuji_load_display_image(photo, &buffer);
-        check(status == SONY2FUJI_STATUS_OK,
+        checkPass(status == SONY2FUJI_STATUS_OK,
               "Supplied ICC plus EXIF JPEG decodes through the Apple adapter");
         if (status == SONY2FUJI_STATUS_OK) {
-            check(buffer.width == 2000 && buffer.height == 1334 &&
+            checkPass(buffer.width == 2000 && buffer.height == 1334 &&
                   buffer.pixel_format == SONY2FUJI_PIXEL_RGBA8,
                   "Supplied JPEG preserves its 2000x1334 oriented RGB image");
             const auto bytes = outputBytes(buffer);
-            check(bytes.size() == 2000u * 1334u * 4u &&
+            checkPass(bytes.size() == 2000u * 1334u * 4u &&
                   *std::min_element(bytes.begin(), bytes.end()) < *std::max_element(bytes.begin(), bytes.end()),
                   "Supplied JPEG produces nonempty photo pixels");
         }
@@ -1065,7 +1061,7 @@ int main() {
 #else
     sony2fuji_buffer output{};
     const auto status = sony2fuji_load_display_image("missing.jpg", &output);
-    check(status == SONY2FUJI_STATUS_UNSUPPORTED && output.data == nullptr,
+    checkPass(status == SONY2FUJI_STATUS_UNSUPPORTED && output.data == nullptr,
           "Non-Apple display decoder is an explicit unsupported stub");
     sony2fuji_release_buffer(&output);
 #endif

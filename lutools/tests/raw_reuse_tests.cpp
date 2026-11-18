@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "sony2fuji/raw_processor.h"
 
 #include <algorithm>
@@ -15,13 +16,7 @@ using namespace sony2fuji;
 
 namespace {
 
-int failures = 0;
-
-void check(bool condition, const std::string& name) {
-    std::cout << (condition ? "PASS " : "FAIL ") << name << '\n';
-    if (!condition) ++failures;
-}
-
+using rawlab::test::checkPass;
 bool equalPixels(const ImageData& expected, const ImageData& actual, const std::string& name) {
     if (expected.width != actual.width || expected.height != actual.height) {
         std::cerr << name << ": dimensions " << actual.width << 'x' << actual.height
@@ -74,15 +69,15 @@ void checkWhiteBalanceReuse(const std::string& filepath) {
         RAWProcessOptions(),
     };
     RAWProcessor reused;
-    check(reused.loadFile(filepath) == ErrorCode::Success, "reuse fixture loads");
+    checkPass(reused.loadFile(filepath) == ErrorCode::Success, "reuse fixture loads");
     for (size_t i = 0; i < options.size(); ++i) {
         const auto expected = renderFresh(filepath, options[i]);
         ImageData actual;
         const auto status = reused.process(options[i], actual);
-        check(status == ErrorCode::Success && !expected.pixels.empty(),
+        checkPass(status == ErrorCode::Success && !expected.pixels.empty(),
               "fresh and reused WB render succeed " + std::to_string(i));
         if (status == ErrorCode::Success && !expected.pixels.empty())
-            check(equalPixels(expected, actual, "WB sequence " + std::to_string(i)),
+            checkPass(equalPixels(expected, actual, "WB sequence " + std::to_string(i)),
                   "reused WB render is pixel-identical " + std::to_string(i));
     }
 }
@@ -106,12 +101,12 @@ void checkTemperatureDoesNotReopen(const std::string& filepath) {
     // Still compare reused WB; the source-removal proof runs on POSIX.
     const bool secondOk = firstOk &&
         processor.process(options8500, second) == ErrorCode::Success;
-    check(secondOk && equalPixels(renderFresh(filepath, options8500), second, "Windows WB reuse"),
+    checkPass(secondOk && equalPixels(renderFresh(filepath, options8500), second, "Windows WB reuse"),
         "temperature WB reuses the Windows decoder and matches a fresh render");
 #else
     const bool secondOk = firstOk && !error &&
         processor.process(options8500, second) == ErrorCode::Success;
-    check(secondOk, "temperature WB reuses unpacked RAW after source rename");
+    checkPass(secondOk, "temperature WB reuses unpacked RAW after source rename");
 #endif
     processorOwner.reset();
     std::filesystem::remove(temporary.string() + ".moved");
@@ -124,7 +119,7 @@ void checkHalfSizeReuse(const std::string& filepath, bool requireReduction) {
     halfOptions.halfSize = true;
 
     RAWProcessor processor;
-    check(processor.loadFile(filepath) == ErrorCode::Success, "half-size fixture loads");
+    checkPass(processor.loadFile(filepath) == ErrorCode::Success, "half-size fixture loads");
     ImageData fullBefore, half, fullAfter;
     const auto fullBeforeStatus = processor.process(fullOptions, fullBefore);
     const auto halfStatus = processor.process(halfOptions, half);
@@ -132,19 +127,19 @@ void checkHalfSizeReuse(const std::string& filepath, bool requireReduction) {
     const auto expectedFull = renderFresh(filepath, fullOptions);
     const auto expectedHalf = renderFresh(filepath, halfOptions);
 
-    check(fullBeforeStatus == ErrorCode::Success && halfStatus == ErrorCode::Success &&
+    checkPass(fullBeforeStatus == ErrorCode::Success && halfStatus == ErrorCode::Success &&
               fullAfterStatus == ErrorCode::Success && !expectedFull.pixels.empty() &&
               !expectedHalf.pixels.empty(),
           "full-half-full sequence succeeds");
     if (fullBeforeStatus == ErrorCode::Success && halfStatus == ErrorCode::Success &&
         fullAfterStatus == ErrorCode::Success) {
-        check(equalPixels(expectedFull, fullBefore, "full before half"),
+        checkPass(equalPixels(expectedFull, fullBefore, "full before half"),
               "full render matches fresh before half-size preview");
-        check(equalPixels(expectedHalf, half, "half-size"),
+        checkPass(equalPixels(expectedHalf, half, "half-size"),
               "half-size render matches fresh processor");
-        check(equalPixels(expectedFull, fullAfter, "full after half"),
+        checkPass(equalPixels(expectedFull, fullAfter, "full after half"),
               "full render remains pixel-identical after half-size preview");
-        check(half.width <= fullBefore.width && half.height <= fullBefore.height &&
+        checkPass(half.width <= fullBefore.width && half.height <= fullBefore.height &&
                   (!requireReduction || half.width < fullBefore.width || half.height < fullBefore.height),
               "half-size dimensions are isolated from full-size output");
     }
@@ -165,7 +160,7 @@ void checkInvalidLoadClearsState(const std::string& filepath) {
     ImageData stale = good;
     const bool noStaleOutput = processor.process(options, stale) != ErrorCode::Success &&
         stale.width == 0 && stale.height == 0 && stale.pixels.empty();
-    check(rendered && rejected && noStaleOutput, "corrupt new file cannot expose stale output");
+    checkPass(rendered && rejected && noStaleOutput, "corrupt new file cannot expose stale output");
     std::filesystem::remove(temporary);
 }
 
@@ -205,5 +200,5 @@ int main(int argc, char** argv) {
         std::cerr << error.what() << '\n';
         return 1;
     }
-    return failures == 0 ? 0 : 1;
+    return rawlab::test::exitCode();
 }

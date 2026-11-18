@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "sony2fuji/ffi/sony2fuji_hdr.h"
 #include "sony2fuji/raw_processor.h"
 
@@ -23,12 +24,10 @@ template<class T> T init() {
     value.struct_size = sizeof(T);
     return value;
 }
-void check(bool condition, const char* message) {
-    if (!condition) throw std::runtime_error(message);
-}
+using rawlab::test::require;
 struct Session {
     sony2fuji_session* value = nullptr;
-    Session() { check(sony2fuji_session_create(&value) == SONY2FUJI_STATUS_OK, "session creation failed"); }
+    Session() { require(sony2fuji_session_create(&value) == SONY2FUJI_STATUS_OK, "session creation failed"); }
     ~Session() { sony2fuji_session_destroy(value); }
 };
 using Clock = std::chrono::steady_clock;
@@ -38,7 +37,7 @@ long long elapsed(Clock::time_point start) {
 struct TemporaryDirectory {
     std::filesystem::path path = std::filesystem::temp_directory_path() /
         ("rawlab-camera-hdr-" + std::to_string(Clock::now().time_since_epoch().count()));
-    TemporaryDirectory() { check(std::filesystem::create_directory(path), "cannot create test output directory"); }
+    TemporaryDirectory() { require(std::filesystem::create_directory(path), "cannot create test output directory"); }
     ~TemporaryDirectory() { std::error_code error; std::filesystem::remove_all(path, error); }
 };
 struct Pair {
@@ -55,13 +54,13 @@ void unavailableTemperatureWB(const std::string& fixture) {
         for (int i = 0; i < count; ++i) value |= uint32_t(bytes.at(offset + i)) << (i * 8);
         return value;
     };
-    check(bytes.at(0) == 'I' && bytes.at(1) == 'I', "WB fixture must use little-endian TIFF");
+    require(bytes.at(0) == 'I' && bytes.at(1) == 'I', "WB fixture must use little-endian TIFF");
     const size_t ifd = integer(4, 4);
     bool changed = false;
     for (uint32_t i = 0; i < integer(ifd, 2); ++i) {
         const size_t entry = ifd + 2 + i * 12;
         if (integer(entry, 2) != 50728) continue;
-        check(integer(entry + 2, 2) == 5 && integer(entry + 4, 4) == 3, "Unexpected AsShotNeutral layout");
+        require(integer(entry + 2, 2) == 5 && integer(entry + 4, 4) == 3, "Unexpected AsShotNeutral layout");
         const size_t offset = integer(entry + 8, 4);
         // 保留可显影的正增益，但让拍摄中性色落到相机色温模型之外。
         for (int c = 0; c < 3; ++c) for (int part = 0; part < 2; ++part) {
@@ -70,7 +69,7 @@ void unavailableTemperatureWB(const std::string& fixture) {
         }
         changed = true;
     }
-    check(changed, "WB fixture has no AsShotNeutral");
+    require(changed, "WB fixture has no AsShotNeutral");
     const auto path = (directory.path / "uncalibrated-wb.dng").u8string();
     std::ofstream output(path, std::ios::binary);
     output.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
@@ -79,21 +78,21 @@ void unavailableTemperatureWB(const std::string& fixture) {
     int width = 0, height = 0;
     uint64_t pixels = 0;
     float temperature = 0, tint = 0;
-    check(processor.inspectCameraHDR(path, width, height, pixels) == sony2fuji::ErrorCode::Success &&
+    require(processor.inspectCameraHDR(path, width, height, pixels) == sony2fuji::ErrorCode::Success &&
         !processor.getAsShotWhiteBalance(temperature, tint), "WB fixture did not reproduce unavailable calibration");
     auto info = init<sony2fuji_hdr_source_info_v1>();
     auto diagnostic = init<sony2fuji_hdr_diagnostic_v1>();
-    check(sony2fuji_hdr_probe_camera_raw(path.c_str(), &info, &diagnostic) == SONY2FUJI_STATUS_OK,
+    require(sony2fuji_hdr_probe_camera_raw(path.c_str(), &info, &diagnostic) == SONY2FUJI_STATUS_OK,
         "Unavailable custom WB must not reject a source that supports as-shot development");
     auto options = init<sony2fuji_hdr_decode_options_v1>();
     options.intent = SONY2FUJI_INTENT_PREVIEW; options.long_edge = 32;
     Pair asShot;
-    check(sony2fuji_hdr_decode_camera_raw(nullptr, path.c_str(), &options, &asShot.value, &diagnostic) == SONY2FUJI_STATUS_OK,
+    require(sony2fuji_hdr_decode_camera_raw(nullptr, path.c_str(), &options, &asShot.value, &diagnostic) == SONY2FUJI_STATUS_OK,
         "Unavailable custom WB disabled as-shot HDR development");
     auto development = init<sony2fuji_hdr_camera_development_v1>();
     development.white_balance = SONY2FUJI_HDR_CAMERA_WB_TEMPERATURE; development.temperature = 5000;
     Pair rejected;
-    check(sony2fuji_hdr_decode_camera_raw_with_development(nullptr, path.c_str(), &options, &development,
+    require(sony2fuji_hdr_decode_camera_raw_with_development(nullptr, path.c_str(), &options, &development,
         &rejected.value, &diagnostic) == SONY2FUJI_STATUS_UNSUPPORTED &&
         diagnostic.reason == SONY2FUJI_HDR_REASON_CAMERA_DEVELOPMENT &&
         diagnostic.field == SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT && !rejected.value.owner_token,
@@ -114,20 +113,20 @@ void unavailableTemperatureWB(const std::string& fixture) {
     std::ofstream resource(profilePath, std::ios::binary);
     resource.write(reinterpret_cast<const char*>(profile.data()), profile.size()); resource.close();
     auto profileInfo = init<sony2fuji_hdr_camera_profile_info_v1>();
-    check(sony2fuji_hdr_probe_camera_profile(profilePath.c_str(), &profileInfo, &diagnostic) == SONY2FUJI_STATUS_OK,
+    require(sony2fuji_hdr_probe_camera_profile(profilePath.c_str(), &profileInfo, &diagnostic) == SONY2FUJI_STATUS_OK,
         "Synthetic D65 profile is invalid");
     sony2fuji_hdr_camera_development_v2 profiled{};
     profiled.base = development; profiled.base.version = 2; profiled.base.struct_size = sizeof(profiled);
     profiled.profile_path = profilePath.c_str(); std::copy_n(profileInfo.sha256, 65, profiled.profile_sha256);
     Pair calibrated;
-    check(sony2fuji_hdr_decode_camera_raw_with_development(nullptr, path.c_str(), &options, &profiled.base,
+    require(sony2fuji_hdr_decode_camera_raw_with_development(nullptr, path.c_str(), &options, &profiled.base,
         &calibrated.value, &diagnostic) == SONY2FUJI_STATUS_OK && calibrated.value.owner_token && calibrated.value.hdr.data,
         "A supplied D65 profile was blocked by the source's unavailable camera white balance");
 }
 
 void verifyHEIFRenditions(const sony2fuji_hdr_image_pair_v1& expected,
                          const sony2fuji_hdr_image_pair_v1& actual) {
-    check(actual.orientation_applied == 1 && actual.hdr.width == expected.hdr.width &&
+    require(actual.orientation_applied == 1 && actual.hdr.width == expected.hdr.width &&
           actual.hdr.height == expected.hdr.height && actual.sdr.width == expected.sdr.width &&
           actual.sdr.height == expected.sdr.height, "HEIF readback changed the oriented canvas");
     auto pixel = [](const sony2fuji_hdr_buffer_v1& image, uint32_t x, uint32_t y) {
@@ -140,7 +139,7 @@ void verifyHEIFRenditions(const sony2fuji_hdr_image_pair_v1& expected,
         return 255 * (linear <= .0031308 ? 12.92*linear : 1.055*std::pow(linear,1/2.4)-.055);
     };
     auto percentile = [](std::vector<double>& values,double fraction) {
-        check(!values.empty(),"HEIF fixture has no comparison values");
+        require(!values.empty(),"HEIF fixture has no comparison values");
         const auto position = values.begin() + size_t(std::ceil(fraction * values.size()) - 1);
         std::nth_element(values.begin(),position,values.end());
         return *position;
@@ -160,8 +159,8 @@ void verifyHEIFRenditions(const sony2fuji_hdr_image_pair_v1& expected,
     std::cout << "HEIF HDR P95 EV " << p95 << ", SDR MAE " << mae << ", SDR P99 " << p99 << ", peak " << peak << '\n';
     // 这张去马赛克夹具处处是纹理，没有 A08 要求的平坦色块；整图 SDR P99 反映的是系统 HEVC 编码器在纹理上的损失
     // （arm64 约 7.8、x86_64 约 8.2），只记录不设门槛。A08 的 P99 由 numeric_acceptance.h 的色块样本检查 HEIF。
-    check(p95 <= .10 && mae <= 2,"HEIF readback exceeded HDR/SDR numeric tolerances");
-    if (expected.hdr.content_headroom > 1.05f) check(peak > 1.05,"HEIF readback lost its super-white luminance");
+    require(p95 <= .10 && mae <= 2,"HEIF readback exceeded HDR/SDR numeric tolerances");
+    if (expected.hdr.content_headroom > 1.05f) require(peak > 1.05,"HEIF readback lost its super-white luminance");
 }
 
 void cameraDevelopment(const char* path, const sony2fuji_hdr_image_pair_v1& baseline) {
@@ -173,7 +172,7 @@ void cameraDevelopment(const char* path, const sony2fuji_hdr_image_pair_v1& base
         return sony2fuji_hdr_decode_camera_raw_with_development(nullptr,path,&options,&config,&pair.value,&diagnostic);
     };
     Pair unchanged;
-    check(decode(unchanged) == SONY2FUJI_STATUS_OK &&
+    require(decode(unchanged) == SONY2FUJI_STATUS_OK &&
           unchanged.value.hdr.size_bytes == baseline.hdr.size_bytes &&
           std::memcmp(unchanged.value.hdr.data,baseline.hdr.data,baseline.hdr.size_bytes) == 0 &&
           std::memcmp(unchanged.value.sdr.data,baseline.sdr.data,baseline.sdr.size_bytes) == 0,
@@ -182,7 +181,7 @@ void cameraDevelopment(const char* path, const sony2fuji_hdr_image_pair_v1& base
     config.temperature = 9000;
     config.tint = 28;
     Pair customWhiteBalance;
-    check(decode(customWhiteBalance) == SONY2FUJI_STATUS_OK &&
+    require(decode(customWhiteBalance) == SONY2FUJI_STATUS_OK &&
           customWhiteBalance.value.hdr.size_bytes == baseline.hdr.size_bytes &&
           std::memcmp(customWhiteBalance.value.hdr.data,baseline.hdr.data,baseline.hdr.size_bytes) != 0 &&
           std::memcmp(customWhiteBalance.value.sdr.data,baseline.sdr.data,baseline.sdr.size_bytes) != 0,
@@ -190,24 +189,24 @@ void cameraDevelopment(const char* path, const sony2fuji_hdr_image_pair_v1& base
     config = init<sony2fuji_hdr_camera_development_v1>();
     config.fbdd_level = 2;
     Pair denoised;
-    check(decode(denoised) == SONY2FUJI_STATUS_OK && denoised.value.hdr.size_bytes == baseline.hdr.size_bytes &&
+    require(decode(denoised) == SONY2FUJI_STATUS_OK && denoised.value.hdr.size_bytes == baseline.hdr.size_bytes &&
           std::memcmp(denoised.value.hdr.data,baseline.hdr.data,baseline.hdr.size_bytes) != 0,
           "Full Bayer FBDD did not change the HDR decode");
     options.intent = SONY2FUJI_INTENT_PREVIEW;
     options.long_edge = 32;
     Pair preview;
-    check(decode(preview) == SONY2FUJI_STATUS_OK && preview.value.is_proxy &&
+    require(decode(preview) == SONY2FUJI_STATUS_OK && preview.value.is_proxy &&
           std::max(preview.value.hdr.width,preview.value.hdr.height) == 32 &&
           std::memcmp(preview.value.source_sha256,baseline.source_sha256,32) == 0,
           "Bayer FBDD preview lost its bounded size or source identity");
     config.fbdd_level = 3;
     Pair rejected;
-    check(decode(rejected) == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
+    require(decode(rejected) == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
           diagnostic.field == SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT && !rejected.value.owner_token,
           "Invalid camera development published pixels");
     config.fbdd_level = 0;
     config.lens_flags = SONY2FUJI_HDR_CAMERA_LENS_DISTORTION;
-    check(decode(rejected) == SONY2FUJI_STATUS_UNSUPPORTED &&
+    require(decode(rejected) == SONY2FUJI_STATUS_UNSUPPORTED &&
           diagnostic.field == SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT && !rejected.value.owner_token,
           "Missing lens calibration was silently ignored");
 }
@@ -215,7 +214,7 @@ void cameraDevelopment(const char* path, const sony2fuji_hdr_image_pair_v1& base
 void calibratedDevelopment(const char* path, const char* database, float baselineEV) {
     Session session;
     if (database) {
-        check(sony2fuji_session_set_lens_database(session.value,database) == SONY2FUJI_STATUS_OK,
+        require(sony2fuji_session_set_lens_database(session.value,database) == SONY2FUJI_STATUS_OK,
               "Could not load the reference Lensfun database");
     }
     auto options = init<sony2fuji_hdr_decode_options_v1>();
@@ -235,7 +234,7 @@ void calibratedDevelopment(const char* path, const char* database, float baselin
     const auto* original = static_cast<const float*>(metadata.value.hdr.data);
     const auto* unadjusted = static_cast<const float*>(sensor.value.hdr.data);
     const float scale = std::exp2(baselineEV);
-    check(metadata.value.hdr.size_bytes == sensor.value.hdr.size_bytes &&
+    require(metadata.value.hdr.size_bytes == sensor.value.hdr.size_bytes &&
           std::equal(original, original + metadata.value.hdr.size_bytes / sizeof(float), unadjusted,
                      [&](float a, float b) { return std::abs(a - b * scale) <= 4e-6f * std::max(1.0f,std::abs(a)); }),
           "Exposure reference did not apply exactly the DNG baseline EV");
@@ -243,7 +242,7 @@ void calibratedDevelopment(const char* path, const char* database, float baselin
     if (!database) return;
     config.lens_flags = SONY2FUJI_HDR_CAMERA_LENS_DISTORTION | SONY2FUJI_HDR_CAMERA_LENS_TCA | SONY2FUJI_HDR_CAMERA_LENS_AUTO_CROP;
     decode(corrected);
-    check(corrected.value.hdr.width == sensor.value.hdr.width && corrected.value.hdr.height == sensor.value.hdr.height &&
+    require(corrected.value.hdr.width == sensor.value.hdr.width && corrected.value.hdr.height == sensor.value.hdr.height &&
           std::memcmp(corrected.value.hdr.data,sensor.value.hdr.data,sensor.value.hdr.size_bytes) != 0 &&
           std::memcmp(corrected.value.sdr.data,sensor.value.sdr.data,sensor.value.sdr.size_bytes) != 0,
           "Matched RAW optics did not change both planes at the same dimensions");
@@ -260,9 +259,9 @@ static void calibratedAI(const char* input, const char* model, const std::string
     config.backend = producer == "CoreML" ? SONY2FUJI_AI_COREML : SONY2FUJI_AI_DIRECTML;
     config.model_directory = model;
     config.cache_directory = cachePath.c_str();
-    check(sony2fuji_hdr_camera_ai_available() == 1, "requested HDR AI GPU is unavailable");
+    require(sony2fuji_hdr_camera_ai_available() == 1, "requested HDR AI GPU is unavailable");
     for (auto session : {preparation.value, renderer.value})
-        check(sony2fuji_session_set_ai_denoise(session, &config) == SONY2FUJI_STATUS_OK, "HDR AI configuration failed");
+        require(sony2fuji_session_set_ai_denoise(session, &config) == SONY2FUJI_STATUS_OK, "HDR AI configuration failed");
 
     auto options = init<sony2fuji_hdr_decode_options_v1>();
     options.intent = SONY2FUJI_INTENT_PREVIEW;
@@ -272,26 +271,26 @@ static void calibratedAI(const char* input, const char* model, const std::string
     auto decodeAI = [&](const char* file, Pair& result, const sony2fuji_hdr_camera_development_v1* development = nullptr) {
         return sony2fuji_hdr_decode_camera_raw_with_ai(renderer.value, file, &options, development, &result.value, &diagnostic);
     };
-    check(decodeAI(input, absent) == SONY2FUJI_STATUS_AI_NOT_READY && !absent.value.owner_token,
+    require(decodeAI(input, absent) == SONY2FUJI_STATUS_AI_NOT_READY && !absent.value.owner_token,
           "HDR AI decode started inference or returned ordinary pixels before preparation");
     const auto fixture = std::string(TEST_FIXTURE_DIR) + "/bayer-demosaic.dng";
-    check(sony2fuji_hdr_prepare_camera_raw_ai(preparation.value, fixture.c_str(), nullptr, nullptr, &diagnostic)
+    require(sony2fuji_hdr_prepare_camera_raw_ai(preparation.value, fixture.c_str(), nullptr, nullptr, &diagnostic)
               == SONY2FUJI_STATUS_UNSUPPORTED && diagnostic.reason == SONY2FUJI_HDR_REASON_CAMERA_AI,
           "uncalibrated DNG used the HDR Bayer AI model");
     auto fbdd = init<sony2fuji_hdr_camera_development_v1>();
     fbdd.fbdd_level = 1;
-    check(decodeAI(input, absent, &fbdd) == SONY2FUJI_STATUS_INVALID_ARGUMENT && !absent.value.owner_token,
+    require(decodeAI(input, absent, &fbdd) == SONY2FUJI_STATUS_INVALID_ARGUMENT && !absent.value.owner_token,
           "HDR AI accepted simultaneous FBDD");
-    check(sony2fuji_hdr_prepare_camera_raw_ai(preparation.value, input,
+    require(sony2fuji_hdr_prepare_camera_raw_ai(preparation.value, input,
               [](void*, int32_t phase, uint64_t, uint64_t) -> int32_t { return phase != 2; }, nullptr, &diagnostic)
               == SONY2FUJI_STATUS_CANCELLED && std::filesystem::is_empty(cache.path), "cancelled HDR AI published a cache");
-    check(sony2fuji_hdr_prepare_camera_raw_ai(preparation.value, input,
+    require(sony2fuji_hdr_prepare_camera_raw_ai(preparation.value, input,
               [](void*, int32_t phase, uint64_t done, uint64_t) -> int32_t { return phase != 4 || done == 0; },
               nullptr, &diagnostic) == SONY2FUJI_STATUS_CANCELLED && std::filesystem::is_empty(cache.path) &&
               decodeAI(input, absent) == SONY2FUJI_STATUS_AI_NOT_READY,
           "HDR AI cancelled at the save boundary published a cache");
     struct ForeignHDRProgressException {};
-    check(sony2fuji_hdr_prepare_camera_raw_ai(preparation.value, input,
+    require(sony2fuji_hdr_prepare_camera_raw_ai(preparation.value, input,
               [](void*, int32_t, uint64_t, uint64_t) -> int32_t { throw ForeignHDRProgressException{}; },
               nullptr, &diagnostic) == SONY2FUJI_STATUS_PROCESSING_ERROR &&
               diagnostic.reason == SONY2FUJI_HDR_REASON_CAMERA_AI &&
@@ -299,24 +298,24 @@ static void calibratedAI(const char* input, const char* model, const std::string
           "non-std::exception in HDR AI progress callback bypassed CAMERA_AI diagnostics");
 
     Pair ordinaryPreview;
-    check(sony2fuji_hdr_decode_camera_raw(renderer.value, input, &options, &ordinaryPreview.value, &diagnostic)
+    require(sony2fuji_hdr_decode_camera_raw(renderer.value, input, &options, &ordinaryPreview.value, &diagnostic)
               == SONY2FUJI_STATUS_OK, "ordinary preview was unavailable with a configured AI session");
     const auto start = Clock::now();
     const auto status = sony2fuji_hdr_prepare_camera_raw_ai(preparation.value, input, nullptr, nullptr, &diagnostic);
     if (status != SONY2FUJI_STATUS_OK)
         throw std::runtime_error(std::string("HDR Bayer AI preparation failed: ") + sony2fuji_session_get_ai_error(preparation.value));
-    check(producer == sony2fuji_session_get_ai_backend(preparation.value), "HDR AI did not report the requested hardware producer");
+    require(producer == sony2fuji_session_get_ai_backend(preparation.value), "HDR AI did not report the requested hardware producer");
     std::cout << "HDR Bayer AI preparation " << producer << ", " << elapsed(start) << " ms\n";
-    check(sony2fuji_hdr_prepare_camera_raw_ai(preparation.value, input,
+    require(sony2fuji_hdr_prepare_camera_raw_ai(preparation.value, input,
               [](void*, int32_t phase, uint64_t, uint64_t total) -> int32_t { return phase != 2 || total == 1; },
               nullptr, &diagnostic) == SONY2FUJI_STATUS_OK, "HDR Bayer AI did not reuse its prepared cache");
 
     Pair plainAgain, aiPreview;
-    check(sony2fuji_hdr_decode_camera_raw(renderer.value, input, &options, &plainAgain.value, &diagnostic)
+    require(sony2fuji_hdr_decode_camera_raw(renderer.value, input, &options, &plainAgain.value, &diagnostic)
               == SONY2FUJI_STATUS_OK && plainAgain.value.hdr.size_bytes == ordinaryPreview.value.hdr.size_bytes &&
               std::memcmp(plainAgain.value.hdr.data, ordinaryPreview.value.hdr.data, ordinaryPreview.value.hdr.size_bytes) == 0,
           "prepared HDR AI altered the original decode entry point");
-    check(decodeAI(input, aiPreview) == SONY2FUJI_STATUS_OK && aiPreview.value.is_proxy &&
+    require(decodeAI(input, aiPreview) == SONY2FUJI_STATUS_OK && aiPreview.value.is_proxy &&
           aiPreview.value.hdr.width == ordinaryPreview.value.hdr.width &&
           aiPreview.value.native_width == ordinaryPreview.value.native_width &&
           std::memcmp(aiPreview.value.source_sha256, ordinaryPreview.value.source_sha256, 32) == 0 &&
@@ -325,9 +324,9 @@ static void calibratedAI(const char* input, const char* model, const std::string
     options.intent = SONY2FUJI_INTENT_FINAL;
     options.long_edge = 0;
     Pair ordinary, processed;
-    check(sony2fuji_hdr_decode_camera_raw(renderer.value, input, &options, &ordinary.value, &diagnostic) == SONY2FUJI_STATUS_OK &&
+    require(sony2fuji_hdr_decode_camera_raw(renderer.value, input, &options, &ordinary.value, &diagnostic) == SONY2FUJI_STATUS_OK &&
           decodeAI(input, processed) == SONY2FUJI_STATUS_OK, "full-size HDR development failed");
-    check(processed.value.hdr.width == ordinary.value.hdr.width && processed.value.hdr.height == ordinary.value.hdr.height &&
+    require(processed.value.hdr.width == ordinary.value.hdr.width && processed.value.hdr.height == ordinary.value.hdr.height &&
           processed.value.source_headroom > 1 && processed.value.source_headroom == ordinary.value.source_headroom,
           "HDR AI changed native geometry or clipped the measured highlight range");
     std::vector<double> highlightDelta;
@@ -340,17 +339,17 @@ static void calibratedAI(const char* input, const char* model, const std::string
             const double before = .2126 * a[offset] + .7152 * a[offset + 1] + .0722 * a[offset + 2];
             const double after = .2126 * b[offset] + .7152 * b[offset + 1] + .0722 * b[offset + 2];
             if (std::max({a[offset], a[offset + 1], a[offset + 2]}) >= 1)
-                check(std::memcmp(a + offset, b + offset, 3 * sizeof(float)) == 0, "HDR Bayer AI changed a super-white pixel");
+                require(std::memcmp(a + offset, b + offset, 3 * sizeof(float)) == 0, "HDR Bayer AI changed a super-white pixel");
             changed += std::abs(after - before) > 1e-5;
             if (before >= 1) highlightDelta.push_back(std::abs(std::log2(std::max(1e-6, after) / before)));
         }
     }
-    check(changed > 100 && highlightDelta.size() > 100, "sample did not exercise denoised pixels and HDR highlights");
+    require(changed > 100 && highlightDelta.size() > 100, "sample did not exercise denoised pixels and HDR highlights");
     auto p95 = highlightDelta.begin() + highlightDelta.size() * 95 / 100;
     std::nth_element(highlightDelta.begin(), p95, highlightDelta.end());
     std::cout << "HDR Bayer highlight P95 delta " << *p95 << " EV, peaks "
               << ordinary.value.source_headroom << " / " << processed.value.source_headroom << ", changed " << changed << '\n';
-    check(*p95 == 0, "HDR Bayer AI changed highlight luminance");
+    require(*p95 == 0, "HDR Bayer AI changed highlight luminance");
 
     auto output = cache.path / "HDR AI.jpg";
     auto exportConfig = init<sony2fuji_hdr_export_config_v1>();
@@ -359,31 +358,31 @@ static void calibratedAI(const char* input, const char* model, const std::string
     exportConfig.jpeg_quality = 90;
     const auto outputPath = output.u8string();
     sony2fuji_hdr_release_pair(&ordinary.value);
-    check(sony2fuji_hdr_export_jpeg(&processed.value, &exportConfig, outputPath.c_str(), &diagnostic) == SONY2FUJI_STATUS_OK,
+    require(sony2fuji_hdr_export_jpeg(&processed.value, &exportConfig, outputPath.c_str(), &diagnostic) == SONY2FUJI_STATUS_OK,
           "HDR Bayer AI final output could not export gain-map JPEG");
     sony2fuji_hdr_release_pair(&processed.value);
     auto info = init<sony2fuji_hdr_source_info_v1>();
-    check(sony2fuji_hdr_probe(outputPath.c_str(), &info, &diagnostic) == SONY2FUJI_STATUS_OK &&
+    require(sony2fuji_hdr_probe(outputPath.c_str(), &info, &diagnostic) == SONY2FUJI_STATUS_OK &&
           info.protocol == SONY2FUJI_HDR_PROTOCOL_ISO_XMP, "HDR Bayer AI export could not be read back as gain-map JPEG");
 
     const auto rawCache = std::filesystem::directory_iterator(cache.path);
     std::filesystem::path artifact;
     for (const auto& entry : rawCache)
         if (entry.path() != output) {
-            check(artifact.empty(), "HDR AI emitted extra artifacts");
+            require(artifact.empty(), "HDR AI emitted extra artifacts");
             artifact = entry.path();
         }
-    check(!artifact.empty(), "HDR Bayer AI cache artifact was missing");
+    require(!artifact.empty(), "HDR Bayer AI cache artifact was missing");
     const auto backup = cache.path / "backup";
     std::filesystem::rename(artifact, backup);
     { std::ofstream corrupted(artifact); corrupted << "corrupt"; }
     options.intent = SONY2FUJI_INTENT_PREVIEW;
     options.long_edge = 1536;
-    check(decodeAI(input, absent) == SONY2FUJI_STATUS_AI_NOT_READY && !absent.value.owner_token,
+    require(decodeAI(input, absent) == SONY2FUJI_STATUS_AI_NOT_READY && !absent.value.owner_token,
           "HDR AI accepted a corrupt cache");
     std::filesystem::remove(artifact);
     std::filesystem::rename(backup, artifact);
-    check(decodeAI(input, absent) == SONY2FUJI_STATUS_OK, "HDR AI failed to recover after restoring a valid result");
+    require(decodeAI(input, absent) == SONY2FUJI_STATUS_OK, "HDR AI failed to recover after restoring a valid result");
     std::cout << "PASS calibrated HDR Bayer GPU, cache recovery, native geometry, highlights and JPEG readback\n";
 }
 
@@ -397,24 +396,24 @@ static void unavailableDirectML(const char* model) {
     config.backend = SONY2FUJI_AI_DIRECTML;
     config.model_directory = model;
     config.cache_directory = cachePath.c_str();
-    check(sony2fuji_session_set_ai_denoise(session.value, &config) == SONY2FUJI_STATUS_OK,
+    require(sony2fuji_session_set_ai_denoise(session.value, &config) == SONY2FUJI_STATUS_OK,
           "could not configure the DirectML model");
-    check(sony2fuji_hdr_camera_ai_available() == 0, "this check requires an environment without a hardware GPU");
+    require(sony2fuji_hdr_camera_ai_available() == 0, "this check requires an environment without a hardware GPU");
     auto diagnostic = init<sony2fuji_hdr_diagnostic_v1>();
     auto unavailable = [&](sony2fuji_status status) {
         return status == SONY2FUJI_STATUS_UNSUPPORTED && diagnostic.reason == SONY2FUJI_HDR_REASON_CAMERA_AI &&
             diagnostic.field == SONY2FUJI_HDR_FIELD_SESSION;
     };
-    check(unavailable(sony2fuji_hdr_prepare_camera_raw_ai(session.value, fixture.c_str(), nullptr, nullptr, &diagnostic)),
+    require(unavailable(sony2fuji_hdr_prepare_camera_raw_ai(session.value, fixture.c_str(), nullptr, nullptr, &diagnostic)),
           "HDR AI preparation failed to reject the unavailable GPU");
     auto options = init<sony2fuji_hdr_decode_options_v1>();
     options.intent = SONY2FUJI_INTENT_PREVIEW;
     options.long_edge = 64;
     Pair preview;
-    check(unavailable(sony2fuji_hdr_decode_camera_raw_with_ai(session.value, fixture.c_str(), &options,
+    require(unavailable(sony2fuji_hdr_decode_camera_raw_with_ai(session.value, fixture.c_str(), &options,
           nullptr, &preview.value, &diagnostic)) && !preview.value.owner_token && std::filesystem::is_empty(cache.path),
           "unavailable HDR AI published pixels or a cache");
-    check(sony2fuji_hdr_decode_camera_raw(session.value, fixture.c_str(), &options, &preview.value, &diagnostic) ==
+    require(sony2fuji_hdr_decode_camera_raw(session.value, fixture.c_str(), &options, &preview.value, &diagnostic) ==
           SONY2FUJI_STATUS_OK && sony2fuji_session_get_last_backend(session.value) == SONY2FUJI_BACKEND_CPU,
           "ordinary HDR RAW failed after the DirectML rejection");
     std::cout << "PASS HDR DirectML unavailable, no HDR AI output/cache, ordinary CPU decode passed\n";
@@ -440,19 +439,19 @@ int main(int argc, char** argv) {
         const auto* input = external ? external : fixture.c_str();
         auto info = init<sony2fuji_hdr_source_info_v1>();
         auto diagnostic = init<sony2fuji_hdr_diagnostic_v1>();
-        check(sony2fuji_hdr_probe_camera_raw(input, &info, &diagnostic) == SONY2FUJI_STATUS_OK,
+        require(sony2fuji_hdr_probe_camera_raw(input, &info, &diagnostic) == SONY2FUJI_STATUS_OK,
               "validated Bayer RAW was rejected");
-        check(info.container == SONY2FUJI_HDR_CONTAINER_CAMERA_RAW && info.width > 32 && info.height > 32,
+        require(info.container == SONY2FUJI_HDR_CONTAINER_CAMERA_RAW && info.width > 32 && info.height > 32,
               "RAW probe did not describe the native source");
         auto options = init<sony2fuji_hdr_decode_options_v1>();
         options.intent = SONY2FUJI_INTENT_PREVIEW;
         options.long_edge = external ? 1536 : 32;
         Session session;
         Pair preview;
-        check(sony2fuji_hdr_prepare_camera_raw_ai(session.value, input, nullptr, nullptr, &diagnostic)
+        require(sony2fuji_hdr_prepare_camera_raw_ai(session.value, input, nullptr, nullptr, &diagnostic)
                   == SONY2FUJI_STATUS_UNSUPPORTED && diagnostic.reason == SONY2FUJI_HDR_REASON_CAMERA_AI,
               "unconfigured HDR AI preparation was accepted");
-        check(sony2fuji_hdr_decode_camera_raw_with_ai(session.value, input, &options, nullptr, &preview.value, &diagnostic)
+        require(sony2fuji_hdr_decode_camera_raw_with_ai(session.value, input, &options, nullptr, &preview.value, &diagnostic)
                   == SONY2FUJI_STATUS_UNSUPPORTED && diagnostic.reason == SONY2FUJI_HDR_REASON_CAMERA_AI &&
                   !preview.value.owner_token, "explicit HDR AI decoded without a configured GPU session");
         if (sony2fuji_hdr_camera_ai_available()) {
@@ -468,10 +467,10 @@ int main(int argc, char** argv) {
 #endif
             aiConfig.model_directory = TEST_FIXTURE_DIR;
             aiConfig.cache_directory = TEST_FIXTURE_DIR;
-            check(sony2fuji_session_set_ai_denoise(aiSession.value, &aiConfig) == SONY2FUJI_STATUS_OK,
+            require(sony2fuji_session_set_ai_denoise(aiSession.value, &aiConfig) == SONY2FUJI_STATUS_OK,
                   "could not configure AI session for HDR callback exception check");
             struct ForeignHDRCallbackException {};
-            check(sony2fuji_hdr_prepare_camera_raw_ai(aiSession.value, input,
+            require(sony2fuji_hdr_prepare_camera_raw_ai(aiSession.value, input,
                       [](void*, int32_t, uint64_t, uint64_t) -> int32_t { throw ForeignHDRCallbackException{}; },
                       nullptr, &diagnostic) == SONY2FUJI_STATUS_PROCESSING_ERROR &&
                       diagnostic.reason == SONY2FUJI_HDR_REASON_CAMERA_AI &&
@@ -479,24 +478,24 @@ int main(int argc, char** argv) {
                   "non-std::exception in HDR AI progress callback bypassed CAMERA_AI diagnostics");
         }
         sony2fuji_session_set_cancellation_callback(session.value, [](void*) -> int32_t { return 1; }, nullptr);
-        check(sony2fuji_hdr_decode_camera_raw(session.value, input, &options, &preview.value, &diagnostic)
+        require(sony2fuji_hdr_decode_camera_raw(session.value, input, &options, &preview.value, &diagnostic)
                   == SONY2FUJI_STATUS_CANCELLED && !preview.value.owner_token, "cancelled RAW decode published pixels");
         sony2fuji_session_set_cancellation_callback(session.value, nullptr, nullptr);
         auto gpu = init<sony2fuji_gpu_config>();
         gpu.mode = SONY2FUJI_GPU_FORCE;
-        check(sony2fuji_session_set_gpu_config(session.value, &gpu) == SONY2FUJI_STATUS_OK,
+        require(sony2fuji_session_set_gpu_config(session.value, &gpu) == SONY2FUJI_STATUS_OK,
               "could not configure GPU Force");
-        check(sony2fuji_hdr_decode_camera_raw(session.value, input, &options, &preview.value, &diagnostic)
+        require(sony2fuji_hdr_decode_camera_raw(session.value, input, &options, &preview.value, &diagnostic)
                   == SONY2FUJI_STATUS_UNSUPPORTED && diagnostic.reason == SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU,
               "camera RAW HDR silently fell back in GPU Force mode");
         gpu.mode = SONY2FUJI_GPU_AUTO;
-        check(sony2fuji_session_set_gpu_config(session.value, &gpu) == SONY2FUJI_STATUS_OK,
+        require(sony2fuji_session_set_gpu_config(session.value, &gpu) == SONY2FUJI_STATUS_OK,
               "could not configure GPU Auto");
         auto start = Clock::now();
-        check(sony2fuji_hdr_decode_camera_raw(session.value, input, &options, &preview.value, &diagnostic)
+        require(sony2fuji_hdr_decode_camera_raw(session.value, input, &options, &preview.value, &diagnostic)
                   == SONY2FUJI_STATUS_OK && sony2fuji_session_get_last_backend(session.value) == SONY2FUJI_BACKEND_CPU,
               "RAW preview failed to report its CPU fallback");
-        check(std::max(preview.value.hdr.width, preview.value.hdr.height) == options.long_edge && preview.value.is_proxy &&
+        require(std::max(preview.value.hdr.width, preview.value.hdr.height) == options.long_edge && preview.value.is_proxy &&
               preview.value.native_width == info.width && preview.value.native_height == info.height &&
               preview.value.source_headroom_kind == SONY2FUJI_HDR_HEADROOM_UNKNOWN,
               "RAW preview lost native dimensions or claimed full-source measurements");
@@ -512,7 +511,7 @@ int main(int argc, char** argv) {
         request.temperature = 6500;
         request.crop_width = request.crop_height = 1;
         Pair rendered;
-        check(sony2fuji_hdr_render(session.value, &preview.value, &request, &rendered.value, &diagnostic)
+        require(sony2fuji_hdr_render(session.value, &preview.value, &request, &rendered.value, &diagnostic)
                   == SONY2FUJI_STATUS_INVALID_ARGUMENT && diagnostic.reason == SONY2FUJI_HDR_REASON_PREVIEW_SOURCE,
               "RAW preview was accepted for FINAL rendering");
         std::array<uint8_t, 32> previewIdentity{};
@@ -523,33 +522,33 @@ int main(int argc, char** argv) {
         options.long_edge = 0;
         Pair source;
         start = Clock::now();
-        check(sony2fuji_hdr_decode_camera_raw(nullptr, input, &options, &source.value, &diagnostic)
+        require(sony2fuji_hdr_decode_camera_raw(nullptr, input, &options, &source.value, &diagnostic)
                   == SONY2FUJI_STATUS_OK, "full RAW HDR decode failed");
-        check(source.value.hdr.width == info.width && source.value.hdr.height == info.height,
+        require(source.value.hdr.width == info.width && source.value.hdr.height == info.height,
               "full RAW decode lost native dimensions");
-        check(external || source.value.source_headroom > 1.05f, "full RAW decode lost the synthetic highlight steps");
-        check(std::all_of(previewIdentity.begin(), previewIdentity.end(), [](uint8_t x) { return x == 0; }) &&
+        require(external || source.value.source_headroom > 1.05f, "full RAW decode lost the synthetic highlight steps");
+        require(std::all_of(previewIdentity.begin(), previewIdentity.end(), [](uint8_t x) { return x == 0; }) &&
               std::equal(previewIdentity.begin(), previewIdentity.end(), source.value.source_sha256),
               "Camera RAW preview and FINAL must leave the unused source digest zero");
         const auto finalMs = elapsed(start);
         if (!external) cameraDevelopment(input, source.value);
         const auto* sdr = static_cast<const float*>(source.value.sdr.data);
-        check(std::all_of(sdr, sdr + source.value.sdr.size_bytes / sizeof(float),
+        require(std::all_of(sdr, sdr + source.value.sdr.size_bytes / sizeof(float),
                           [](float x) { return x >= 0 && x <= 1; }), "SDR base exceeded its output gamut");
         const float headroom = source.value.source_headroom;
         request.exposure_ev = external ? 2 : -1;
         rendered.value = init<sony2fuji_hdr_image_pair_v1>();
         start = Clock::now();
-        check(sony2fuji_hdr_render(session.value, &source.value, &request, &rendered.value, &diagnostic)
+        require(sony2fuji_hdr_render(session.value, &source.value, &request, &rendered.value, &diagnostic)
                   == SONY2FUJI_STATUS_OK, "RAW HDR edit failed");
         if (external) {
             const auto* before = static_cast<const float*>(source.value.hdr.data);
             const auto* after = static_cast<const float*>(rendered.value.hdr.data);
-            check(std::equal(before, before + source.value.hdr.size_bytes / sizeof(float), after,
+            require(std::equal(before, before + source.value.hdr.size_bytes / sizeof(float), after,
                              [](float a, float b) { return b == 4 * a; }),
                   "RAW edit changed the color ratios or clipped before export");
         } else {
-            check(std::abs(rendered.value.hdr.content_headroom - std::max(1.0f, headroom / 2)) < 1e-5f,
+            require(std::abs(rendered.value.hdr.content_headroom - std::max(1.0f, headroom / 2)) < 1e-5f,
                   "user exposure did not move recovered high values by one stop");
         }
         const auto renderMs = elapsed(start);
@@ -562,7 +561,7 @@ int main(int argc, char** argv) {
         config.base_color = SONY2FUJI_HDR_COLOR_SRGB;
         config.metadata_policy = SONY2FUJI_HDR_METADATA_ISO_XMP;
         start = Clock::now();
-        check(sony2fuji_hdr_export_jpeg(&exportPair, &config, jpeg.c_str(), &diagnostic) == SONY2FUJI_STATUS_OK,
+        require(sony2fuji_hdr_export_jpeg(&exportPair, &config, jpeg.c_str(), &diagnostic) == SONY2FUJI_STATUS_OK,
               "RAW HDR gain-map export failed");
         const auto exportMs = elapsed(start);
         if (!external) {
@@ -574,13 +573,13 @@ int main(int argc, char** argv) {
                 if (status != SONY2FUJI_STATUS_OK)
                     throw std::runtime_error("HDR HEIF export failed: " + std::to_string(status) + "/" + std::to_string(diagnostic.reason));
                 auto heifInfo = init<sony2fuji_hdr_source_info_v1>();
-                check(sony2fuji_hdr_probe(heif.c_str(),&heifInfo,&diagnostic) == SONY2FUJI_STATUS_OK &&
+                require(sony2fuji_hdr_probe(heif.c_str(),&heifInfo,&diagnostic) == SONY2FUJI_STATUS_OK &&
                     heifInfo.container == SONY2FUJI_HDR_CONTAINER_HEIF && heifInfo.protocol == SONY2FUJI_HDR_PROTOCOL_ISO &&
                     heifInfo.orientation == 1 && heifInfo.width == exportPair.hdr.width && heifInfo.height == exportPair.hdr.height &&
                     heifInfo.content_headroom > 1 && heifInfo.color_description == SONY2FUJI_HDR_COLOR_SRGB,
                     "HDR HEIF lost its color, orientation, headroom or ISO gain map");
                 Pair decoded;
-                check(sony2fuji_hdr_decode(heif.c_str(),&options,&decoded.value,&diagnostic) == SONY2FUJI_STATUS_OK &&
+                require(sony2fuji_hdr_decode(heif.c_str(),&options,&decoded.value,&diagnostic) == SONY2FUJI_STATUS_OK &&
                     decoded.value.hdr.width == heifInfo.width && decoded.value.sdr.width == heifInfo.width,
                     "HDR HEIF did not decode into both renditions");
                 verifyHEIFRenditions(exportPair,decoded.value);
@@ -589,14 +588,14 @@ int main(int argc, char** argv) {
                     return std::vector<char>(std::istreambuf_iterator<char>(stream),{});
                 };
                 const auto previous = bytes();
-                check(sony2fuji_hdr_export_heif(&exportPair,&config,heif.c_str(),&diagnostic) == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
+                require(sony2fuji_hdr_export_heif(&exportPair,&config,heif.c_str(),&diagnostic) == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
                     !previous.empty() && bytes() == previous,
                     "Invalid HEIF metadata policy replaced an existing output");
                 if (const auto* accepted = std::getenv("RAWLAB_TEST_HDR_HEIF_OUTPUT"))
                     std::filesystem::copy_file(std::filesystem::u8path(heif),std::filesystem::u8path(accepted));
                 Pair dark;
                 request.exposure_ev = -4;
-                check(sony2fuji_hdr_render(session.value,&exportPair,&request,&dark.value,&diagnostic) == SONY2FUJI_STATUS_OK &&
+                require(sony2fuji_hdr_render(session.value,&exportPair,&request,&dark.value,&diagnostic) == SONY2FUJI_STATUS_OK &&
                     dark.value.hdr.content_headroom == 1, "Could not construct a below-white HDR edit");
                 const auto darkPath = (directory.path / "below-white.heic").u8string();
                 auto borrowedDark = dark.value;
@@ -605,27 +604,27 @@ int main(int argc, char** argv) {
                 if (darkStatus != SONY2FUJI_STATUS_OK)
                     throw std::runtime_error("Below-white HDR HEIF export failed: " + std::to_string(darkStatus) + "/" + std::to_string(diagnostic.reason));
                 Pair darkDecoded;
-                check(sony2fuji_hdr_decode(darkPath.c_str(),&options,&darkDecoded.value,&diagnostic) == SONY2FUJI_STATUS_OK,
+                require(sony2fuji_hdr_decode(darkPath.c_str(),&options,&darkDecoded.value,&diagnostic) == SONY2FUJI_STATUS_OK,
                       "Below-white HEIF did not decode into both renditions");
                 verifyHEIFRenditions(dark.value,darkDecoded.value);
             } else {
-                check(sony2fuji_hdr_export_heif(&exportPair,&heifConfig,heif.c_str(),&diagnostic) == SONY2FUJI_STATUS_UNSUPPORTED &&
+                require(sony2fuji_hdr_export_heif(&exportPair,&heifConfig,heif.c_str(),&diagnostic) == SONY2FUJI_STATUS_UNSUPPORTED &&
                     !std::filesystem::exists(heif), "An unavailable HEIF encoder wrote a file");
             }
             const auto sdrPath = (directory.path / "raw-sdr.jpg").u8string();
             auto sdrConfig = init<sony2fuji_hdr_sdr_export_config_v1>();
             sdrConfig.output_format = SONY2FUJI_OUTPUT_JPEG;
             sdrConfig.quality = 92;
-            check(sony2fuji_hdr_export_sdr(&exportPair, &sdrConfig, sdrPath.c_str(), &diagnostic) == SONY2FUJI_STATUS_OK,
+            require(sony2fuji_hdr_export_sdr(&exportPair, &sdrConfig, sdrPath.c_str(), &diagnostic) == SONY2FUJI_STATUS_OK,
                   "RAW HDR SDR-compatible export failed");
             auto sdrInfo = init<sony2fuji_hdr_source_info_v1>();
-            check(sony2fuji_hdr_probe_camera_raw(sdrPath.c_str(), &sdrInfo, &diagnostic) == SONY2FUJI_STATUS_UNSUPPORTED &&
+            require(sony2fuji_hdr_probe_camera_raw(sdrPath.c_str(), &sdrInfo, &diagnostic) == SONY2FUJI_STATUS_UNSUPPORTED &&
                   diagnostic.reason == SONY2FUJI_HDR_REASON_UNSUPPORTED_RAW,
                   "ordinary JPEG was accepted as a camera RAW source");
         }
         sony2fuji_hdr_release_pair(&exportPair);
         Pair reimport;
-        check(sony2fuji_hdr_decode(jpeg.c_str(), &options, &reimport.value, &diagnostic) == SONY2FUJI_STATUS_OK &&
+        require(sony2fuji_hdr_decode(jpeg.c_str(), &options, &reimport.value, &diagnostic) == SONY2FUJI_STATUS_OK &&
               reimport.value.hdr.width == info.width && reimport.value.hdr.height == info.height &&
               reimport.value.hdr.content_headroom > 1.0f,
               "gain-map JPEG round trip lost native dimensions or HDR highlights");

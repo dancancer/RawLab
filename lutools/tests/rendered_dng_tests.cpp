@@ -41,11 +41,7 @@ namespace {
 constexpr uint16_t kLinearRaw = 34892;
 constexpr const char* kStagingMarker = ".rawlab-rendered-dng-";
 
-void check(bool condition, const std::string& name) {
-    if (rawlab::test::check(condition, name)) {
-        std::cout << "PASS " << name << '\n';
-    }
-}
+using rawlab::test::checkPass;
 
 constexpr TIFFFieldInfo kCustomFields[] = {
     {TIFFTAG_COLORIMETRICREFERENCE, 1, 1, TIFF_SHORT, FIELD_CUSTOM, 1, 0,
@@ -203,20 +199,20 @@ void testJpegPreviews(const std::filesystem::path& directory) {
     }
     const auto output = directory / "jpeg-previews.dng";
     if (sony2fuji::saveRenderedDNG(image, output.string()) != sony2fuji::ErrorCode::Success) {
-        check(false, "DNG with JPEG previews writes successfully");
+        checkPass(false, "DNG with JPEG previews writes successfully");
         return;
     }
     TIFF* tif = TIFFOpen(output.string().c_str(), "r");
     if (!tif) {
-        check(false, "DNG with JPEG previews opens independently");
+        checkPass(false, "DNG with JPEG previews opens independently");
         return;
     }
-    check(jpegPreviewMatches(tif, 160, 80), "DNG thumbnail is a correctly oriented sRGB JPEG");
-    check(jpegPreviewHasReferenceBlackWhite(tif), "DNG thumbnail explicitly stores full-range YCbCr reference values");
+    checkPass(jpegPreviewMatches(tif, 160, 80), "DNG thumbnail is a correctly oriented sRGB JPEG");
+    checkPass(jpegPreviewHasReferenceBlackWhite(tif), "DNG thumbnail explicitly stores full-range YCbCr reference values");
     uint16_t count = 0;
     uint64_t* offsets = nullptr;
     const bool hasChildren = TIFFGetField(tif, TIFFTAG_SUBIFD, &count, &offsets) && count == 2 && offsets;
-    check(hasChildren, "DNG contains the 16-bit image and a full-size preview");
+    checkPass(hasChildren, "DNG contains the 16-bit image and a full-size preview");
     if (hasChildren) {
         const uint64_t rawOffset = offsets[0], previewOffset = offsets[1];
         uint16_t bits = 0, sampleFormat = 0, photometric = 0;
@@ -227,11 +223,11 @@ void testJpegPreviews(const std::filesystem::path& directory) {
             TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE, &bits) && bits == 16 &&
             TIFFGetField(tif, TIFFTAG_SAMPLEFORMAT, &sampleFormat) && sampleFormat == SAMPLEFORMAT_UINT &&
             TIFFGetField(tif, TIFFTAG_PHOTOMETRIC, &photometric) && photometric == kLinearRaw;
-        check(raw, "DNG keeps the full-resolution 16-bit LinearRaw image");
+        checkPass(raw, "DNG keeps the full-resolution 16-bit LinearRaw image");
         const bool selectedPreview = TIFFSetSubDirectory(tif, previewOffset);
-        check(selectedPreview && jpegPreviewMatches(tif, width, height),
+        checkPass(selectedPreview && jpegPreviewMatches(tif, width, height),
               "DNG full-size preview is a correctly oriented sRGB JPEG");
-        check(selectedPreview && jpegPreviewHasReferenceBlackWhite(tif),
+        checkPass(selectedPreview && jpegPreviewHasReferenceBlackWhite(tif),
               "DNG full-size preview explicitly stores full-range YCbCr reference values");
     }
     TIFFClose(tif);
@@ -271,7 +267,7 @@ void testFilteredThumbnail(const std::filesystem::path& directory) {
                         if (value < 120 || value > 135) previewValid = false;
                     }
         }
-        check(previewValid, "DNG thumbnail averages fine checkerboard texture " + std::to_string(width));
+        checkPass(previewValid, "DNG thumbnail averages fine checkerboard texture " + std::to_string(width));
         bool rawValid = tif && selectRawIfd(tif);
         if (rawValid) {
             std::vector<uint16_t> row(static_cast<size_t>(width) * 3);
@@ -279,7 +275,7 @@ void testFilteredThumbnail(const std::filesystem::path& directory) {
                 row[0] == 0 && row[1] == 0 && row[2] == 0 &&
                 row[3] == 65535 && row[4] == 65535 && row[5] == 65535;
         }
-        check(rawValid, "DNG thumbnail filtering preserves 16-bit main pixels " + std::to_string(width));
+        checkPass(rawValid, "DNG thumbnail filtering preserves 16-bit main pixels " + std::to_string(width));
         if (tif) TIFFClose(tif);
     }
 }
@@ -315,7 +311,7 @@ void testLargeJpegPreview(const std::filesystem::path& directory) {
                                           &channels, 3) : nullptr, stbi_image_free);
         valid = pixels && decodedWidth == width && decodedHeight == height;
     }
-    check(valid, "DNG full-size JPEG remains decodable when it spans multiple output chunks");
+    checkPass(valid, "DNG full-size JPEG remains decodable when it spans multiple output chunks");
     if (tif) TIFFClose(tif);
 }
 
@@ -341,7 +337,7 @@ void testOversizedJpegPreview(const std::filesystem::path& directory) {
             TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &previewWidth) && previewWidth == 65500 &&
             TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &previewHeight) && previewHeight == 1;
     }
-    check(valid, "DNG limits an oversized JPEG preview without reducing the LinearRaw image");
+    checkPass(valid, "DNG limits an oversized JPEG preview without reducing the LinearRaw image");
     if (tif) TIFFClose(tif);
 }
 
@@ -359,85 +355,85 @@ void testRenderedDng(const std::filesystem::path& directory) {
     };
     const ImageData original = image;
     const auto output = directory / "rendered.dng";
-    check(sony2fuji::saveRenderedDNG(image, output.string()) == ErrorCode::Success,
+    checkPass(sony2fuji::saveRenderedDNG(image, output.string()) == ErrorCode::Success,
           "rendered DNG writes synthetic final sRGB image");
-    check(samePixels(image, original), "rendered DNG does not mutate source pixels");
+    checkPass(samePixels(image, original), "rendered DNG does not mutate source pixels");
 
     previousTagExtender = TIFFSetTagExtender(registerCustomFieldsBeforeRead);
     TIFF* tif = TIFFOpen(output.string().c_str(), "r");
     TIFFSetTagExtender(previousTagExtender);
     previousTagExtender = nullptr;
-    check(tif != nullptr, "libtiff independently opens rendered DNG");
+    checkPass(tif != nullptr, "libtiff independently opens rendered DNG");
     if (!tif) return;
-    check(TIFFFindField(tif, TIFFTAG_COLORIMETRICREFERENCE, TIFF_ANY) != nullptr,
+    checkPass(TIFFFindField(tif, TIFFTAG_COLORIMETRICREFERENCE, TIFF_ANY) != nullptr,
           "libtiff registers DNG 1.2/1.4 fields independently");
 
     uint16_t orientation = 0;
-    check(TIFFGetField(tif, TIFFTAG_ORIENTATION, &orientation) && orientation == ORIENTATION_TOPLEFT,
+    checkPass(TIFFGetField(tif, TIFFTAG_ORIENTATION, &orientation) && orientation == ORIENTATION_TOPLEFT,
           "DNG orientation is top-left");
 
     uint16_t colorimetricReference = 0;
-    check(TIFFGetField(tif, TIFFTAG_COLORIMETRICREFERENCE, &colorimetricReference) &&
+    checkPass(TIFFGetField(tif, TIFFTAG_COLORIMETRICREFERENCE, &colorimetricReference) &&
           colorimetricReference == 1, "DNG ColorimetricReference is ICC PCS");
     char* profileName = nullptr;
-    check(TIFFGetField(tif, TIFFTAG_PROFILENAME, &profileName) && profileName &&
+    checkPass(TIFFGetField(tif, TIFFTAG_PROFILENAME, &profileName) && profileName &&
           std::string(profileName) == "RawLab Baked sRGB", "DNG profile name is neutral");
     uint16_t toneCount = 0;
     const float* toneCurve = nullptr;
-    check(TIFFGetField(tif, TIFFTAG_PROFILETONECURVE, &toneCount, &toneCurve) &&
+    checkPass(TIFFGetField(tif, TIFFTAG_PROFILETONECURVE, &toneCount, &toneCurve) &&
           toneCount == 4 && toneCurve && toneCurve[0] == 0 && toneCurve[1] == 0 &&
           toneCurve[2] == 1 && toneCurve[3] == 1, "DNG profile tone curve is identity");
     uint16_t forwardCount = 0;
     const float* forwardMatrix = nullptr;
-    check(TIFFGetField(tif, TIFFTAG_FORWARDMATRIX1, &forwardCount, &forwardMatrix) &&
+    checkPass(TIFFGetField(tif, TIFFTAG_FORWARDMATRIX1, &forwardCount, &forwardMatrix) &&
           forwardCount == 9 && forwardMatrix &&
           std::abs(forwardMatrix[0] - 0.43606575f) < 1e-5f &&
           std::abs(forwardMatrix[8] - 0.71409936f) < 1e-5f,
           "DNG forward matrix is the virtual linear-sRGB D50 matrix");
     float baselineOffset = 99;
     uint32_t defaultBlackRender = 0;
-    check(TIFFGetField(tif, TIFFTAG_BASELINEEXPOSUREOFFSET, &baselineOffset) &&
+    checkPass(TIFFGetField(tif, TIFFTAG_BASELINEEXPOSUREOFFSET, &baselineOffset) &&
           baselineOffset == 0, "DNG baseline exposure offset is zero");
-    check(TIFFGetField(tif, TIFFTAG_DEFAULTBLACKRENDER, &defaultBlackRender) &&
+    checkPass(TIFFGetField(tif, TIFFTAG_DEFAULTBLACKRENDER, &defaultBlackRender) &&
           defaultBlackRender == 1, "DNG DefaultBlackRender is None");
 
     uint32_t xmpCount = 0;
     const void* xmpData = nullptr;
-    check(TIFFGetField(tif, TIFFTAG_XMLPACKET, &xmpCount, &xmpData) && xmpData &&
+    checkPass(TIFFGetField(tif, TIFFTAG_XMLPACKET, &xmpCount, &xmpData) && xmpData &&
           std::string(static_cast<const char*>(xmpData), xmpCount).find(
               "crs:Sharpness=\"0\"") != std::string::npos,
           "DNG contains neutral Adobe XMP");
 
     if (!selectRawIfd(tif)) {
-        check(false, "DNG contains a LinearRaw image directory");
+        checkPass(false, "DNG contains a LinearRaw image directory");
         TIFFClose(tif);
         return;
     }
     uint32_t width = 0, height = 0;
     uint16_t bits = 0, samples = 0, photometric = 0, planar = 0, sampleFormat = 0;
-    check(TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &width) && width == 4,
+    checkPass(TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &width) && width == 4,
           "DNG width is exact");
-    check(TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &height) && height == 2,
+    checkPass(TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &height) && height == 2,
           "DNG height is exact");
-    check(TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE, &bits) && bits == 16,
+    checkPass(TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE, &bits) && bits == 16,
           "DNG stores 16-bit samples");
-    check(TIFFGetField(tif, TIFFTAG_SAMPLESPERPIXEL, &samples) && samples == 3,
+    checkPass(TIFFGetField(tif, TIFFTAG_SAMPLESPERPIXEL, &samples) && samples == 3,
           "DNG stores three channels");
-    check(TIFFGetField(tif, TIFFTAG_PHOTOMETRIC, &photometric) && photometric == kLinearRaw,
+    checkPass(TIFFGetField(tif, TIFFTAG_PHOTOMETRIC, &photometric) && photometric == kLinearRaw,
           "DNG uses LinearRaw photometric interpretation");
-    check(TIFFGetField(tif, TIFFTAG_PLANARCONFIG, &planar) && planar == PLANARCONFIG_CONTIG,
+    checkPass(TIFFGetField(tif, TIFFTAG_PLANARCONFIG, &planar) && planar == PLANARCONFIG_CONTIG,
           "DNG stores contiguous RGB samples");
-    check(TIFFGetField(tif, TIFFTAG_SAMPLEFORMAT, &sampleFormat) && sampleFormat == SAMPLEFORMAT_UINT,
+    checkPass(TIFFGetField(tif, TIFFTAG_SAMPLEFORMAT, &sampleFormat) && sampleFormat == SAMPLEFORMAT_UINT,
           "DNG sample format is unsigned integer");
     uint16_t whiteLevelCount = 0;
     const uint32_t* whiteLevel = nullptr;
-    check(TIFFGetField(tif, TIFFTAG_WHITELEVEL, &whiteLevelCount, &whiteLevel) &&
+    checkPass(TIFFGetField(tif, TIFFTAG_WHITELEVEL, &whiteLevelCount, &whiteLevel) &&
           whiteLevelCount == 3 && whiteLevel && whiteLevel[0] == 65535 &&
           whiteLevel[1] == 65535 && whiteLevel[2] == 65535,
           "DNG white level spans the 16-bit sample range");
     uint16_t extraCount = 0;
     uint16_t* extraTypes = nullptr;
-    check(!TIFFGetField(tif, TIFFTAG_EXTRASAMPLES, &extraCount, &extraTypes),
+    checkPass(!TIFFGetField(tif, TIFFTAG_EXTRASAMPLES, &extraCount, &extraTypes),
           "DNG has no ExtraSamples tag");
 
     bool pixelsMatch = bits == 16 && sampleFormat == SAMPLEFORMAT_UINT;
@@ -457,7 +453,7 @@ void testRenderedDng(const std::filesystem::path& directory) {
             if (!pixelsMatch) break;
         }
     }
-    check(pixelsMatch, "DNG pixels preserve clamped linear-sRGB within half a 16-bit step");
+    checkPass(pixelsMatch, "DNG pixels preserve clamped linear-sRGB within half a 16-bit step");
     TIFFClose(tif);
 }
 
@@ -470,7 +466,7 @@ void testQuantizationRamp(const std::filesystem::path& directory) {
     }
     const auto output = directory / "ramp.dng";
     if (sony2fuji::saveRenderedDNG(image, output.string()) != sony2fuji::ErrorCode::Success) {
-        check(false, "DNG writes a tonal ramp");
+        checkPass(false, "DNG writes a tonal ramp");
         return;
     }
     TIFF* tif = TIFFOpen(output.string().c_str(), "r");
@@ -485,7 +481,7 @@ void testQuantizationRamp(const std::filesystem::path& directory) {
         valid = std::abs(value / 65535.0 - inverseSrgb(image.at(x, 0).r)) <= maxQuantizationError &&
             (x == 0 || value >= row[static_cast<size_t>(x - 1) * 3]);
     }
-    check(valid, "DNG tonal ramp stays monotonic and within half a 16-bit linear step");
+    checkPass(valid, "DNG tonal ramp stays monotonic and within half a 16-bit linear step");
     if (tif) TIFFClose(tif);
 }
 
@@ -496,37 +492,37 @@ void testRejectsInvalidInput(const std::filesystem::path& directory) {
     const auto output = directory / "invalid.dng";
 
     ImageData empty;
-    check(sony2fuji::saveRenderedDNG(empty, output.string()) == ErrorCode::ProcessingError,
+    checkPass(sony2fuji::saveRenderedDNG(empty, output.string()) == ErrorCode::ProcessingError,
           "DNG rejects empty dimensions");
     ImageData mismatched(2, 2);
     mismatched.pixels.pop_back();
-    check(sony2fuji::saveRenderedDNG(mismatched, output.string()) == ErrorCode::ProcessingError,
+    checkPass(sony2fuji::saveRenderedDNG(mismatched, output.string()) == ErrorCode::ProcessingError,
           "DNG rejects mismatched pixel count");
     ImageData nonfinite(1, 1);
     nonfinite.pixels[0] = RGB(std::numeric_limits<float>::quiet_NaN(), 0, 0);
-    check(sony2fuji::saveRenderedDNG(nonfinite, output.string()) == ErrorCode::ProcessingError,
+    checkPass(sony2fuji::saveRenderedDNG(nonfinite, output.string()) == ErrorCode::ProcessingError,
           "DNG rejects NaN pixels");
     nonfinite.pixels[0] = RGB(0, std::numeric_limits<float>::infinity(), 0);
-    check(sony2fuji::saveRenderedDNG(nonfinite, output.string()) == ErrorCode::ProcessingError,
+    checkPass(sony2fuji::saveRenderedDNG(nonfinite, output.string()) == ErrorCode::ProcessingError,
           "DNG rejects infinite pixels");
     ImageData valid(1, 1);
-    check(sony2fuji::saveRenderedDNG(valid, (directory / "missing" / "out.dng").string()) ==
+    checkPass(sony2fuji::saveRenderedDNG(valid, (directory / "missing" / "out.dng").string()) ==
               ErrorCode::IOError,
           "DNG reports an unwritable output path");
-    check(!std::filesystem::exists(output), "invalid DNG inputs do not create output");
+    checkPass(!std::filesystem::exists(output), "invalid DNG inputs do not create output");
 }
 
 #ifdef TEST_LENS_SDK_DNG
 void testLensSdkDng(const std::filesystem::path& directory) {
     const auto fixtures = std::filesystem::path(TEST_SOURCE_DIR) / "tests/fixtures";
     sony2fuji_session* session = nullptr;
-    check(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK,
+    checkPass(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK,
           "Lens/SDK/DNG combination creates a C session");
     if (!session) return;
     sony2fuji_lens_correction_config lens{
         SONY2FUJI_LENS_CORRECTION_CONFIG_VERSION, sizeof(lens), 1, 1, 1, nullptr};
     sony2fuji_gpu_config gpu{SONY2FUJI_GPU_CONFIG_VERSION, sizeof(gpu), SONY2FUJI_GPU_OFF};
-    check(sony2fuji_session_set_lens_database(session, (fixtures / "lenses.xml").string().c_str()) == SONY2FUJI_STATUS_OK &&
+    checkPass(sony2fuji_session_set_lens_database(session, (fixtures / "lenses.xml").string().c_str()) == SONY2FUJI_STATUS_OK &&
           sony2fuji_session_set_lens_correction(session, &lens) == SONY2FUJI_STATUS_OK &&
           sony2fuji_session_set_gpu_config(session, &gpu) == SONY2FUJI_STATUS_OK,
           "Lens/SDK/DNG combination configures real profiles and CPU");
@@ -577,7 +573,7 @@ void testLensSdkDng(const std::filesystem::path& directory) {
             std::cout << "Lens/SDK/DNG " << name << " maximum RGB8 error=" << maximumError << '\n';
             TIFFClose(tif);
         }
-        check(valid, std::string(name) + ": FINAL DNG pixels and post-file Lens state match the buffer");
+        checkPass(valid, std::string(name) + ": FINAL DNG pixels and post-file Lens state match the buffer");
         sony2fuji_release_buffer(&buffer);
     }
     sony2fuji_session_destroy(session);
@@ -605,11 +601,11 @@ void testLensWaveletViewportDng(const std::filesystem::path& directory, const st
         SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION, sizeof(wavelet), 1, 40, 46, 50};
     auto makeSession = [&]() {
         sony2fuji_session* raw = nullptr;
-        check(sony2fuji_session_create(&raw) == SONY2FUJI_STATUS_OK, "Combined render creates a session");
+        checkPass(sony2fuji_session_create(&raw) == SONY2FUJI_STATUS_OK, "Combined render creates a session");
         Session session(raw, sony2fuji_session_destroy);
         if (raw) {
             sony2fuji_gpu_config gpu{SONY2FUJI_GPU_CONFIG_VERSION, sizeof(gpu), SONY2FUJI_GPU_OFF};
-            check(sony2fuji_session_set_lens_database(raw, database.string().c_str()) == SONY2FUJI_STATUS_OK &&
+            checkPass(sony2fuji_session_set_lens_database(raw, database.string().c_str()) == SONY2FUJI_STATUS_OK &&
                   sony2fuji_session_set_lens_correction(raw, &lens) == SONY2FUJI_STATUS_OK &&
                   sony2fuji_session_set_gpu_config(raw, &gpu) == SONY2FUJI_STATUS_OK &&
                   sony2fuji_session_set_raw_exposure_mode(raw, SONY2FUJI_EXPOSURE_PREVIEW) == SONY2FUJI_STATUS_OK &&
@@ -622,19 +618,19 @@ void testLensWaveletViewportDng(const std::filesystem::path& directory, const st
     if (!history) return;
     sony2fuji_lens_report inspected{};
     uint32_t count = 0;
-    check(sony2fuji_session_inspect_lens(history.get(), input.c_str(), &inspected, nullptr, 0, &count) == SONY2FUJI_STATUS_OK,
+    checkPass(sony2fuji_session_inspect_lens(history.get(), input.c_str(), &inspected, nullptr, 0, &count) == SONY2FUJI_STATUS_OK,
           "Combined fixture has a Lens catalog");
     std::vector<sony2fuji_lens_profile> profiles(count);
-    check(sony2fuji_session_inspect_lens(history.get(), input.c_str(), &inspected, profiles.data(), count, &count) == SONY2FUJI_STATUS_OK,
+    checkPass(sony2fuji_session_inspect_lens(history.get(), input.c_str(), &inspected, profiles.data(), count, &count) == SONY2FUJI_STATUS_OK,
           "Combined fixture loads its Lens profiles");
     const auto selected = std::find_if(profiles.begin(), profiles.end(), [](const auto& profile) {
         return profile.is_match && profile.has_distortion && profile.has_tca;
     });
-    check(selected != profiles.end(), "Combined RAW has matching distortion and TCA calibration");
+    checkPass(selected != profiles.end(), "Combined RAW has matching distortion and TCA calibration");
     if (selected == profiles.end()) return;
     const std::string profileID = selected->id;
     lens.profile_id = profileID.c_str();
-    check(sony2fuji_session_set_lens_correction(history.get(), &lens) == SONY2FUJI_STATUS_OK, "Combined render selects the matched profile");
+    checkPass(sony2fuji_session_set_lens_correction(history.get(), &lens) == SONY2FUJI_STATUS_OK, "Combined render selects the matched profile");
     sony2fuji_request request{};
     request.version = SONY2FUJI_REQUEST_VERSION; request.struct_size = sizeof(request);
     request.input_type = SONY2FUJI_INPUT_RAW; request.input_path = input.c_str();
@@ -646,7 +642,7 @@ void testLensWaveletViewportDng(const std::filesystem::path& directory, const st
     auto render = [&](sony2fuji_session* session) {
         sony2fuji_buffer buffer{};
         const auto status = sony2fuji_process(session, &request, &buffer);
-        check(status == SONY2FUJI_STATUS_OK && buffer.data, "Combined C ABI buffer renders");
+        checkPass(status == SONY2FUJI_STATUS_OK && buffer.data, "Combined C ABI buffer renders");
         std::vector<uint8_t> pixels;
         if (buffer.data) {
             width = buffer.width; height = buffer.height;
@@ -658,12 +654,12 @@ void testLensWaveletViewportDng(const std::filesystem::path& directory, const st
     };
     auto report = [&](sony2fuji_session* session) {
         sony2fuji_lens_report result{};
-        check(sony2fuji_session_get_lens_report(session, &result) == SONY2FUJI_STATUS_OK, "Combined render returns Lens report");
+        checkPass(sony2fuji_session_get_lens_report(session, &result) == SONY2FUJI_STATUS_OK, "Combined render returns Lens report");
         return result;
     };
     auto baseline = [&](sony2fuji_session* session) {
         float value = 0, metadata = 0;
-        check(sony2fuji_session_get_raw_exposure(session, &value, &metadata) == SONY2FUJI_STATUS_OK, "Combined render returns exposure anchor");
+        checkPass(sony2fuji_session_get_raw_exposure(session, &value, &metadata) == SONY2FUJI_STATUS_OK, "Combined render returns exposure anchor");
         return value;
     };
     wavelet.enabled = 0;
@@ -673,51 +669,51 @@ void testLensWaveletViewportDng(const std::filesystem::path& directory, const st
     wavelet.enabled = 1;
     sony2fuji_session_set_wavelet_denoise(history.get(), &wavelet);
     auto exact = render(history.get());
-    check(!exact.empty() && exact != off, "Combined real RAW actually applies wavelet denoising");
+    checkPass(!exact.empty() && exact != off, "Combined real RAW actually applies wavelet denoising");
     off.clear(); off.shrink_to_fit(); exact.clear(); exact.shrink_to_fit();
     const auto applied = report(history.get());
-    check(applied.state == SONY2FUJI_LENS_MATCHED && applied.applied_distortion && applied.applied_tca && applied.crop_scale > 1,
+    checkPass(applied.state == SONY2FUJI_LENS_MATCHED && applied.applied_distortion && applied.applied_tca && applied.crop_scale > 1,
           "Combined real RAW applies Lens distortion/TCA and automatic crop");
     sony2fuji_session_set_viewport_preview(history.get(), 1);
     request.intent = SONY2FUJI_INTENT_PREVIEW; request.preview_long_edge = 1600;
     const auto a = render(history.get());
-    check(std::max(width, height) == 1600, "Combined viewport A is bounded");
+    checkPass(std::max(width, height) == 1600, "Combined viewport A is bounded");
     request.preview_long_edge = 1024; render(history.get());
-    check(std::max(width, height) == 1024, "Combined viewport B is bounded");
+    checkPass(std::max(width, height) == 1024, "Combined viewport B is bounded");
     auto before = sony2fuji::waveletCacheDiagnostics(history.get());
     request.preview_long_edge = 1600;
-    check(render(history.get()) == a, "Combined A/B/A restores viewport pixels");
+    checkPass(render(history.get()) == a, "Combined A/B/A restores viewport pixels");
     auto after = sony2fuji::waveletCacheDiagnostics(history.get());
-    check(after.filterRuns == before.filterRuns && after.outputHits == before.outputHits + 1,
+    checkPass(after.filterRuns == before.filterRuns && after.outputHits == before.outputHits + 1,
           "Combined A/B/A reuses denoised output");
     request.exposure_ev = .25f; request.contrast = 1.1f;
     render(history.get());
-    check(sony2fuji::waveletCacheDiagnostics(history.get()).filterRuns == after.filterRuns,
+    checkPass(sony2fuji::waveletCacheDiagnostics(history.get()).filterRuns == after.filterRuns,
           "Combined downstream edits do not repeat NR");
     request.wb_mode = SONY2FUJI_WB_TEMPERATURE; request.temperature = 7800;
     render(history.get());
     for (int phase = 0; phase < 3; ++phase) {
         lens.auto_crop = phase != 0; lens.profile_id = phase == 1 ? nullptr : profileID.c_str();
         before = sony2fuji::waveletCacheDiagnostics(history.get());
-        check(sony2fuji_session_set_lens_correction(history.get(), &lens) == SONY2FUJI_STATUS_OK,
+        checkPass(sony2fuji_session_set_lens_correction(history.get(), &lens) == SONY2FUJI_STATUS_OK,
               "Combined render updates Lens profile/crop");
         const auto changed = render(history.get());
         after = sony2fuji::waveletCacheDiagnostics(history.get());
-        check(after.filterRuns == before.filterRuns + 1 && after.analysisHits == before.analysisHits,
+        checkPass(after.filterRuns == before.filterRuns + 1 && after.analysisHits == before.analysisHits,
               "Lens profile/crop changes invalidate NR output and source analysis");
         auto fresh = makeSession();
-        check(sony2fuji_session_set_viewport_preview(fresh.get(), 1) == SONY2FUJI_STATUS_OK,
+        checkPass(sony2fuji_session_set_viewport_preview(fresh.get(), 1) == SONY2FUJI_STATUS_OK,
               "Independent viewport uses the same reduced-input mode");
         const auto direct = render(fresh.get());
         const auto actualReport = report(history.get()), freshReport = report(fresh.get());
         const auto actualBaseline = baseline(history.get()), freshBaseline = baseline(fresh.get());
-        check(changed == direct, "Lens/NR viewport pixels are independent of profile/crop history");
-        check(actualBaseline == freshBaseline, "Lens/NR exposure anchor is independent of profile/crop history");
-        check(actualReport.state == freshReport.state && actualReport.applied_distortion == freshReport.applied_distortion &&
+        checkPass(changed == direct, "Lens/NR viewport pixels are independent of profile/crop history");
+        checkPass(actualBaseline == freshBaseline, "Lens/NR exposure anchor is independent of profile/crop history");
+        checkPass(actualReport.state == freshReport.state && actualReport.applied_distortion == freshReport.applied_distortion &&
               actualReport.applied_tca == freshReport.applied_tca && actualReport.crop_scale == freshReport.crop_scale,
               "Lens/NR report is independent of profile/crop history");
         if (phase != 1)
-            check(actualReport.state == SONY2FUJI_LENS_MATCHED && actualReport.applied_distortion && actualReport.applied_tca &&
+            checkPass(actualReport.state == SONY2FUJI_LENS_MATCHED && actualReport.applied_distortion && actualReport.applied_tca &&
                   (phase == 0 ? actualReport.crop_scale == 1 : actualReport.crop_scale > 1),
                   "Manual Lens profile retains calibration and requested crop");
     }
@@ -725,12 +721,12 @@ void testLensWaveletViewportDng(const std::filesystem::path& directory, const st
     sony2fuji_session_set_lens_database(history.get(), database.string().c_str());
     render(history.get());
     after = sony2fuji::waveletCacheDiagnostics(history.get());
-    check(after.filterRuns == before.filterRuns + 1 && after.analysisHits == before.analysisHits,
+    checkPass(after.filterRuns == before.filterRuns + 1 && after.analysisHits == before.analysisHits,
           "Lens database revision invalidates NR source identity");
     request.intent = SONY2FUJI_INTENT_FINAL; request.preview_long_edge = 0;
     sony2fuji_session_set_interactive_preview(history.get(), 1);
     exact = render(history.get());
-    check(width == nativeWidth && height == nativeHeight, "Combined FINAL ignores both preview flags");
+    checkPass(width == nativeWidth && height == nativeHeight, "Combined FINAL ignores both preview flags");
     const auto finalReport = report(history.get()); const auto finalBaseline = baseline(history.get());
     before = sony2fuji::waveletCacheDiagnostics(history.get());
     const std::array<sony2fuji_output_format, 3> formats{SONY2FUJI_OUTPUT_JPEG, SONY2FUJI_OUTPUT_PNG, SONY2FUJI_OUTPUT_DNG};
@@ -740,24 +736,24 @@ void testLensWaveletViewportDng(const std::filesystem::path& directory, const st
         for (size_t i = 0; i < formats.size(); ++i) {
             const auto file = (directory / (std::string(stem) + "." + suffixes[i])).string();
             request.output_format = formats[i]; request.output_path = file.c_str();
-            check(sony2fuji_process(session, &request, nullptr) == SONY2FUJI_STATUS_OK, "Combined native file exports " + std::string(suffixes[i]));
+            checkPass(sony2fuji_process(session, &request, nullptr) == SONY2FUJI_STATUS_OK, "Combined native file exports " + std::string(suffixes[i]));
         }
         request.output_target = SONY2FUJI_TARGET_BUFFER; request.output_format = SONY2FUJI_OUTPUT_RGB8; request.output_path = nullptr;
     };
     exportFiles(history.get(), "history");
     after = sony2fuji::waveletCacheDiagnostics(history.get());
-    check(after.filterRuns == before.filterRuns && after.outputHits == before.outputHits + 3,
+    checkPass(after.filterRuns == before.filterRuns && after.outputHits == before.outputHits + 3,
           "JPEG/PNG/DNG use native exact cache, never viewport pixels");
     history.reset();
     auto fresh = makeSession();
-    check(render(fresh.get()) == exact && baseline(fresh.get()) == finalBaseline,
+    checkPass(render(fresh.get()) == exact && baseline(fresh.get()) == finalBaseline,
           "Combined native FINAL pixels and exposure equal independent exact");
     const auto freshReport = report(fresh.get());
-    check(freshReport.state == SONY2FUJI_LENS_MATCHED && freshReport.applied_distortion && freshReport.applied_tca &&
+    checkPass(freshReport.state == SONY2FUJI_LENS_MATCHED && freshReport.applied_distortion && freshReport.applied_tca &&
           freshReport.crop_scale == finalReport.crop_scale, "Combined FINAL retains exact Lens crop/report");
     exportFiles(fresh.get(), "fresh");
     for (const auto* suffix : suffixes)
-        check(sameFiles(directory / (std::string("history.") + suffix), directory / (std::string("fresh.") + suffix)),
+        checkPass(sameFiles(directory / (std::string("history.") + suffix), directory / (std::string("fresh.") + suffix)),
               std::string(suffix) + ": combined native file equals independent FINAL bytes");
     const auto pngPath = (directory / "history.png").string();
     int decodedWidth = 0, decodedHeight = 0, channels = 0;
@@ -770,10 +766,10 @@ void testLensWaveletViewportDng(const std::filesystem::path& directory, const st
             pngError = std::max(pngError, std::abs(png[i] / 257.0 - exact[i]));
     }
     stbi_image_free(png);
-    check(validPng && pngError <= 1, "Combined native PNG has sixteen-bit samples matching independent exact pixels");
+    checkPass(validPng && pngError <= 1, "Combined native PNG has sixteen-bit samples matching independent exact pixels");
     const auto jpegPath = (directory / "history.jpg").string();
     auto* jpeg = stbi_load(jpegPath.c_str(), &decodedWidth, &decodedHeight, &channels, 3);
-    check(jpeg && decodedWidth == static_cast<int>(nativeWidth) && decodedHeight == static_cast<int>(nativeHeight),
+    checkPass(jpeg && decodedWidth == static_cast<int>(nativeWidth) && decodedHeight == static_cast<int>(nativeHeight),
           "Combined JPEG decodes at original geometry");
     stbi_image_free(jpeg);
     TIFF* tif = TIFFOpen((directory / "history.dng").string().c_str(), "r");
@@ -795,20 +791,20 @@ void testLensWaveletViewportDng(const std::filesystem::path& directory, const st
             }
         }
     }
-    check(validDng && dngError <= 1, "Combined native 16-bit DNG pixels match independent exact");
+    checkPass(validDng && dngError <= 1, "Combined native 16-bit DNG pixels match independent exact");
     if (tif) TIFFClose(tif);
     std::cout << "Combined PNG/DNG maximum RGB8 error=" << pngError << "/" << dngError << '\n';
     if (std::getenv("SONY2FUJI_TEST_GPU")) {
         before = sony2fuji::waveletCacheDiagnostics(fresh.get());
         sony2fuji_gpu_config gpu{SONY2FUJI_GPU_CONFIG_VERSION, sizeof(gpu), SONY2FUJI_GPU_FORCE};
-        check(sony2fuji_session_set_gpu_config(fresh.get(), &gpu) == SONY2FUJI_STATUS_OK, "Combined FINAL selects GPU Force");
+        checkPass(sony2fuji_session_set_gpu_config(fresh.get(), &gpu) == SONY2FUJI_STATUS_OK, "Combined FINAL selects GPU Force");
         const auto forced = render(fresh.get());
         int maximum = 0;
         if (forced.size() == exact.size())
             for (size_t i = 0; i < exact.size(); ++i)
                 maximum = std::max(maximum, std::abs(static_cast<int>(forced[i]) - exact[i]));
         after = sony2fuji::waveletCacheDiagnostics(fresh.get());
-        check(sony2fuji_session_get_last_backend(fresh.get()) != SONY2FUJI_BACKEND_CPU &&
+        checkPass(sony2fuji_session_get_last_backend(fresh.get()) != SONY2FUJI_BACKEND_CPU &&
               forced.size() == exact.size() && maximum <= 2 && after.filterRuns == before.filterRuns + 1,
               "Combined GPU FINAL applies its own NR and preserves CPU reference within two RGB8 values");
         std::cout << "Combined GPU FINAL maximum RGB8 error=" << maximum << '\n';
@@ -824,27 +820,27 @@ void testRowSource(const std::filesystem::path& directory) {
         image.at(x, y) = {value, float(y) / 160, float(x) / 320};
     }
     const auto reference = directory / "row-reference.dng", output = directory / "row-source.dng";
-    check(saveRenderedDNG(image, reference.string()) == ErrorCode::Success, "DNG row-source reference writes");
+    checkPass(saveRenderedDNG(image, reference.string()) == ErrorCode::Success, "DNG row-source reference writes");
     std::vector<RGB> row(image.width);
     RenderedDNGRows source{uint32_t(image.width), uint32_t(image.height), [&](uint32_t y) {
         std::copy_n(image.pixels.data() + size_t(y) * image.width, image.width, row.data());
         return row.data();
     }};
-    check(saveRenderedDNGRows(source, output.string()) == ErrorCode::Success, "DNG writes from reusable row storage");
-    check(readFile(output) == readFile(reference), "DNG row source preserves main pixels, tags and both JPEG previews");
+    checkPass(saveRenderedDNGRows(source, output.string()) == ErrorCode::Success, "DNG writes from reusable row storage");
+    checkPass(readFile(output) == readFile(reference), "DNG row source preserves main pixels, tags and both JPEG previews");
     const auto previous = readFile(output);
     source.read = [&](uint32_t y) -> const RGB* {
         if (y == 80) throw std::runtime_error("source row failed");
         return image.pixels.data() + size_t(y) * image.width;
     };
-    check(saveRenderedDNGRows(source, output.string()) == ErrorCode::ProcessingError,
+    checkPass(saveRenderedDNGRows(source, output.string()) == ErrorCode::ProcessingError,
         "DNG reports a failed source row");
-    check(readFile(output) == previous && !hasStagingFile(directory), "Failed DNG row preserves the previous target and clears staging");
+    checkPass(readFile(output) == previous && !hasStagingFile(directory), "Failed DNG row preserves the previous target and clears staging");
     source.read = [&](uint32_t y) { return image.pixels.data() + size_t(y) * image.width; };
     bool stopped = false;
     try { saveRenderedDNGRows(source, output.string(), [] { throw std::runtime_error("source changed before publication"); }); }
     catch (const std::runtime_error&) { stopped = true; }
-    check(stopped && readFile(output) == previous && !hasStagingFile(directory),
+    checkPass(stopped && readFile(output) == previous && !hasStagingFile(directory),
         "DNG source validation before publication preserves the previous target");
 }
 
@@ -854,39 +850,39 @@ void testAtomicStorage(const std::filesystem::path& directory) {
 #ifdef _WIN32
     const auto stagingProbe = directory / "rld-staging-probe.tmp";
     writeFile(stagingProbe, "staging probe");
-    check(hasStagingFile(directory), "Windows staging scan detects native rld temporary files");
+    checkPass(hasStagingFile(directory), "Windows staging scan detects native rld temporary files");
     std::filesystem::remove(stagingProbe);
 #endif
 
     const auto target = directory / "replace-existing.dng";
     writeFile(target, "old target");
-    check(sony2fuji::saveRenderedDNG(smallImage(), target.string()) == ErrorCode::Success,
+    checkPass(sony2fuji::saveRenderedDNG(smallImage(), target.string()) == ErrorCode::Success,
           "DNG publishes a valid replacement");
-    check(readFile(target) != "old target", "successful DNG export replaces existing target");
-    check(!hasStagingFile(directory), "successful DNG export leaves no staging file");
+    checkPass(readFile(target) != "old target", "successful DNG export replaces existing target");
+    checkPass(!hasStagingFile(directory), "successful DNG export leaves no staging file");
 
     const auto blockedDirectory = directory / "publication-blocked";
     std::filesystem::create_directory(blockedDirectory);
     const auto marker = blockedDirectory / "keep.txt";
     writeFile(marker, "keep directory contents");
-    check(sony2fuji::saveRenderedDNG(smallImage(), blockedDirectory.string()) ==
+    checkPass(sony2fuji::saveRenderedDNG(smallImage(), blockedDirectory.string()) ==
               ErrorCode::IOError,
           "DNG reports failed publication as an I/O error");
-    check(std::filesystem::is_directory(blockedDirectory) && readFile(marker) ==
+    checkPass(std::filesystem::is_directory(blockedDirectory) && readFile(marker) ==
               "keep directory contents",
           "failed DNG publication preserves an existing directory and its contents");
-    check(!hasStagingFile(directory), "failed DNG publication removes its staging file");
+    checkPass(!hasStagingFile(directory), "failed DNG publication removes its staging file");
 
     const auto invalidTarget = directory / "invalid-preserves-target.dng";
     writeFile(invalidTarget, "preserve this target");
     auto invalid = smallImage();
     invalid.pixels.front().r = std::numeric_limits<float>::quiet_NaN();
-    check(sony2fuji::saveRenderedDNG(invalid, invalidTarget.string()) ==
+    checkPass(sony2fuji::saveRenderedDNG(invalid, invalidTarget.string()) ==
               ErrorCode::ProcessingError,
           "DNG rejects invalid pixels before opening a staging file");
-    check(readFile(invalidTarget) == "preserve this target",
+    checkPass(readFile(invalidTarget) == "preserve this target",
           "invalid DNG pixels preserve an existing target");
-    check(!hasStagingFile(directory), "invalid DNG pixels leave no staging file");
+    checkPass(!hasStagingFile(directory), "invalid DNG pixels leave no staging file");
 }
 
 #ifndef _WIN32
@@ -903,7 +899,7 @@ void testMidwriteFailure(const std::filesystem::path& directory) {
 
     const pid_t child = fork();
     if (child < 0) {
-        check(false, "POSIX mid-write failure test can fork");
+        checkPass(false, "POSIX mid-write failure test can fork");
         return;
     }
     if (child == 0) {
@@ -916,11 +912,11 @@ void testMidwriteFailure(const std::filesystem::path& directory) {
 
     int status = 0;
     const bool waited = waitpid(child, &status, 0) == child;
-    check(waited && WIFEXITED(status) && WEXITSTATUS(status) == 0,
+    checkPass(waited && WIFEXITED(status) && WEXITSTATUS(status) == 0,
           "mid-write DNG failure returns an I/O error");
-    check(readFile(target) == "preserve after write failure",
+    checkPass(readFile(target) == "preserve after write failure",
           "mid-write DNG failure preserves an existing target");
-    check(!hasStagingFile(directory), "mid-write DNG failure removes its staging file");
+    checkPass(!hasStagingFile(directory), "mid-write DNG failure removes its staging file");
 }
 #endif
 

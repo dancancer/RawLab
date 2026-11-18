@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "native_gpu_test_support.h"
 
@@ -15,10 +16,8 @@
 
 namespace {
 
-void check(bool value, const std::string& message) {
-    if (!value) throw std::runtime_error(message);
-}
-void status(sony2fuji_status value) { check(value == SONY2FUJI_STATUS_OK, sony2fuji_status_message(value)); }
+using rawlab::test::require;
+void status(sony2fuji_status value) { require(value == SONY2FUJI_STATUS_OK, sony2fuji_status_message(value)); }
 
 struct Session {
     sony2fuji_session* value = nullptr;
@@ -50,7 +49,7 @@ Frame render(Session& session, const sony2fuji_request& request, bool viewport) 
     if (request.output_target == SONY2FUJI_TARGET_FILE) {
         std::ifstream file(request.output_path, std::ios::binary);
         frame.pixels.assign(std::istreambuf_iterator<char>(file), {});
-        check(!frame.pixels.empty(), "empty file output");
+        require(!frame.pixels.empty(), "empty file output");
     }
     return frame;
 }
@@ -94,7 +93,7 @@ struct Comparison {
     int backend = 0;
     Comparison(const char* path, bool write) : file(path, std::ios::binary |
         (write ? std::ios::out | std::ios::trunc : std::ios::in)), record(write) {
-        check(bool(file), "open baseline corpus");
+        require(bool(file), "open baseline corpus");
     }
     void visit(Frame frame, bool reduced) {
         auto& m = metrics[backend];
@@ -105,12 +104,12 @@ struct Comparison {
         } else {
             uint32_t expected[4]{};
             file.read(reinterpret_cast<char*>(expected), sizeof(expected));
-            check(!std::memcmp(expected, dimensions, sizeof(expected)), "base output/native dimensions changed");
+            require(!std::memcmp(expected, dimensions, sizeof(expected)), "base output/native dimensions changed");
             std::vector<unsigned char> bytes(frame.pixels.size());
             file.read(reinterpret_cast<char*>(bytes.data()), bytes.size());
-            check(bool(file), "truncated baseline corpus");
+            require(bool(file), "truncated baseline corpus");
             if (!reduced) {
-                check(bytes == frame.pixels, "base exact pixels changed at frame " + std::to_string(m.exact + m.approximate));
+                require(bytes == frame.pixels, "base exact pixels changed at frame " + std::to_string(m.exact + m.approximate));
                 ++m.exact;
             } else {
                 ++m.approximate;
@@ -123,8 +122,8 @@ struct Comparison {
         }
     }
     void finish() {
-        if (record) { check(bool(file), "write corpus"); std::cout << "RECORDED baseline corpus\n"; return; }
-        check(file.peek() == std::char_traits<char>::eof(), "unconsumed baseline frames");
+        if (record) { require(bool(file), "write corpus"); std::cout << "RECORDED baseline corpus\n"; return; }
+        require(file.peek() == std::char_traits<char>::eof(), "unconsumed baseline frames");
         for (int mode = 0; mode < 2; ++mode) {
             const auto& m = metrics[mode];
             if (!m.exact) continue;
@@ -133,8 +132,8 @@ struct Comparison {
             std::cout << "BASE " << (mode ? "GPU" : "CPU") << " exact=" << m.exact << " reduced=" << m.approximate
                       << " changed=" << m.changed << " max=" << m.maximum << " mean_abs=" << mean << " PSNR=" << psnr << " dB\n";
             /* 平滑测试图允许低分辨率裁剪边缘的一像素偏差，不接受大面积色调改变。 */
-            check(m.maximum <= 32 && mean <= 2 && psnr >= 38, "viewport error exceeds smooth-fixture bound");
-            check(m.changed > 0, "geometry viewport still bypassed");
+            require(m.maximum <= 32 && mean <= 2 && psnr >= 38, "viewport error exceeds smooth-fixture bound");
+            require(m.changed > 0, "geometry viewport still bypassed");
         }
     }
 };

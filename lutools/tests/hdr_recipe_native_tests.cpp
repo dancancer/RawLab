@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "sony2fuji/edit_recipe.h"
 #include "core/hdr_rendering.h"
 #include "nlohmann/json.hpp"
@@ -8,7 +9,7 @@
 #include <stdexcept>
 
 namespace {
-void check(bool value,const char* message) { if (!value) throw std::runtime_error(message); }
+using rawlab::test::require;
 template<class T> T init() { T value{}; value.version=1; value.struct_size=sizeof(value); return value; }
 }
 
@@ -35,7 +36,7 @@ int main() {
         borrowed.source_intent=borrowed.render_intent=SONY2FUJI_INTENT_FINAL;
         borrowed.source_headroom=16; borrowed.source_headroom_kind=SONY2FUJI_HDR_HEADROOM_DECLARED;
         sony2fuji_session* pointer=nullptr;
-        check(sony2fuji_session_create(&pointer)==SONY2FUJI_STATUS_OK,"session failed");
+        require(sony2fuji_session_create(&pointer)==SONY2FUJI_STATUS_OK,"session failed");
         const std::unique_ptr<sony2fuji_session,decltype(&sony2fuji_session_destroy)> session(pointer,sony2fuji_session_destroy);
         auto hsl=init<sony2fuji_hsl_config>(); hsl.saturation[0]=80;
         sony2fuji_session_set_hsl(session.get(),&hsl);
@@ -111,21 +112,21 @@ int main() {
             if (effects) document["edits"]["effects"]={{"vignette_amount",-50},{"grain_amount",70}};
             if (detail) document["edits"]["detail"]={{"sharpening",1.2},{"clarity",.7},{"dehaze",-.5},{"denoise",.6}};
             EditRecipe recipe; std::string error;
-            check(parseEditRecipe(document.dump(),recipe,error),error.c_str());
+            require(parseEditRecipe(document.dump(),recipe,error),error.c_str());
             auto request=recipe.toHDRRenderRequest();
             auto result=init<sony2fuji_hdr_image_pair_v1>(); auto diagnostic=init<sony2fuji_hdr_diagnostic_v1>();
             const auto release=[](sony2fuji_hdr_image_pair_v1* value) { sony2fuji_hdr_release_pair(value); };
             const std::unique_ptr<sony2fuji_hdr_image_pair_v1,decltype(release)> guard(&result,release);
-            check(sony2fuji_hdr_render(session.get(),&borrowed,&request.base.base.base.base.base.base.base,&result,&diagnostic)==SONY2FUJI_STATUS_OK,"recipe native render failed");
-            check(std::all_of(std::begin(result.source_sha256), std::end(result.source_sha256),
+            require(sony2fuji_hdr_render(session.get(),&borrowed,&request.base.base.base.base.base.base.base,&result,&diagnostic)==SONY2FUJI_STATUS_OK,"recipe native render failed");
+            require(std::all_of(std::begin(result.source_sha256), std::end(result.source_sha256),
                 [](uint8_t value) { return value == 0; }), "recipe render must preserve an absent source digest");
             const auto reference=renderHDRPair(source,expected);
             auto compare=[&](const sony2fuji_hdr_buffer_v1& actual,const ImageData& wanted) {
-                check(actual.width==uint32_t(wanted.width) && actual.height==uint32_t(wanted.height),"recipe geometry differs");
+                require(actual.width==uint32_t(wanted.width) && actual.height==uint32_t(wanted.height),"recipe geometry differs");
                 const auto* values=static_cast<const float*>(actual.data);
                 const auto* oracle=reinterpret_cast<const float*>(wanted.pixels.data());
                 for (size_t i=0;i<wanted.pixels.size()*3;++i)
-                    check(std::abs(values[i]-oracle[i])<=1e-5f*std::max(1.0f,std::abs(oracle[i])),"recipe/native HDR request differs");
+                    require(std::abs(values[i]-oracle[i])<=1e-5f*std::max(1.0f,std::abs(oracle[i])),"recipe/native HDR request differs");
             };
             compare(result.hdr,reference.hdr); compare(result.sdr,reference.sdr);
         }

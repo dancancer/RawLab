@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "core/proraw_source.h"
 #include "core/processing_cancellation.h"
 #include "core/hdr_jpeg.h"
@@ -27,18 +28,18 @@
 #endif
 
 using namespace sony2fuji;
-void check(bool condition, const char* message) { if (!condition) throw std::runtime_error(message); }
+using rawlab::test::require;
 template<class T> T initialized() { T value{}; value.version = 1; value.struct_size = sizeof(value); return value; }
 void verifySDRJPEG(const std::vector<uint8_t>& bytes, uint32_t width, uint32_t height) {
     jpeg_decompress_struct decoder{}; jpeg_error_mgr errors{};
     decoder.err = jpeg_std_error(&errors); jpeg_create_decompress(&decoder);
     jpeg_mem_src(&decoder, bytes.data(), bytes.size());
-    check(jpeg_read_header(&decoder, TRUE) == JPEG_HEADER_OK, "Invalid SDR JPEG header");
+    require(jpeg_read_header(&decoder, TRUE) == JPEG_HEADER_OK, "Invalid SDR JPEG header");
     decoder.out_color_space = JCS_RGB; jpeg_start_decompress(&decoder);
-    check(decoder.output_width == width && decoder.output_height == height, "Published SDR JPEG dimensions changed");
+    require(decoder.output_width == width && decoder.output_height == height, "Published SDR JPEG dimensions changed");
     std::vector<uint8_t> row(size_t(width) * 3);
     while (decoder.output_scanline < decoder.output_height) {
-        auto* pixels = row.data(); check(jpeg_read_scanlines(&decoder, &pixels, 1) == 1, "Truncated SDR JPEG");
+        auto* pixels = row.data(); require(jpeg_read_scanlines(&decoder, &pixels, 1) == 1, "Truncated SDR JPEG");
     }
     jpeg_finish_decompress(&decoder); jpeg_destroy_decompress(&decoder);
 }
@@ -53,7 +54,7 @@ HDRImagePair reference(const char* path, uint32_t edge) {
     negative->Parse(host, stream, info); negative->PostParse(host, stream, info);
     negative->ReadStage1Image(host, stream, info); negative->SynchronizeMetadata();
     dng_camera_profile profile;
-    check(negative->GetProfileByID(dng_camera_profile_id("Apple Embedded Color Profile"), profile), "Missing reference profile");
+    require(negative->GetProfileByID(dng_camera_profile_id("Apple Embedded Color Profile"), profile), "Missing reference profile");
     profile.SetName("Reference HDR");
     dng_camera_profile_dynamic_range range; range.fDynamicRange = 1; range.fHintMaxOutputValue = 4;
     profile.SetDynamicRangeInfo(range);
@@ -78,7 +79,7 @@ HDRImagePair reference(const char* path, uint32_t edge) {
     return pair;
 }
 void writeJXLCopy(const char* path, const std::filesystem::path& output) {
-    check(!std::filesystem::exists(output), "JXL fixture output already exists");
+    require(!std::filesystem::exists(output), "JXL fixture output already exists");
     try {
         const auto input = std::filesystem::u8path(path);
         dng_file_stream stream(input.c_str()); dng_host host;
@@ -103,7 +104,7 @@ int main(int argc, char** argv) {
         bool rejected = false;
         try { hdr::probeProRAW(TEST_FIXTURE_DIR "/bayer-demosaic.dng"); }
         catch (const hdr::Error&) { rejected = true; }
-        check(rejected, "Ordinary DNG was accepted as ProRAW");
+        require(rejected, "Ordinary DNG was accepted as ProRAW");
         const char* argInput = (argc == 2 && *argv[1]) ? argv[1] : nullptr;
         const char* envInput = std::getenv("RAWLAB_TEST_PRORAW");
         if (envInput && !*envInput) envInput = nullptr;
@@ -117,7 +118,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         const auto info = hdr::probeProRAW(input);
-        check(info.width >= 3000 && info.height >= 3000 && info.orientation == 1,
+        require(info.width >= 3000 && info.height >= 3000 && info.orientation == 1,
             "ProRAW probe did not return the full oriented canvas");
         std::cout << "ProRAW native canvas " << info.width << 'x' << info.height << '\n';
         const auto temporary = std::filesystem::temp_directory_path() /
@@ -128,10 +129,10 @@ int main(int argc, char** argv) {
             const uint64_t pixels = uint64_t(info.width) * info.height;
             const auto available = std::filesystem::space(temporary).available;
             const uint64_t stage = pixels * 88 + (128ull << 20);
-            check(available > stage && available < stage + pixels * 44 + (64ull << 20),
+            require(available > stage && available < stage + pixels * 44 + (64ull << 20),
                 "Space test requires enough disk for each phase but not their combined budget");
             sony2fuji_session* session = nullptr;
-            check(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK, "Cannot create disk admission session");
+            require(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK, "Cannot create disk admission session");
             struct Session { sony2fuji_session* value; ~Session() { sony2fuji_session_destroy(value); } } owner{session};
             struct Monitor { std::filesystem::path path; bool began = false; } monitor{temporary};
             sony2fuji_session_set_cancellation_callback(session, [](void* value) -> int32_t {
@@ -156,10 +157,10 @@ int main(int argc, char** argv) {
             auto diagnostic = initialized<sony2fuji_hdr_diagnostic_v1>();
             const auto status = sony2fuji_hdr_export_proraw(session, input, &request, &config, 1,
                 temporary.u8string().c_str(), output.u8string().c_str(), &result, &diagnostic);
-            check(status == SONY2FUJI_STATUS_OUTPUT_IO_ERROR && !monitor.began,
+            require(status == SONY2FUJI_STATUS_OUTPUT_IO_ERROR && !monitor.began,
                 "Combined ProRAW disk budget was not rejected before decoder scratch creation");
             std::ifstream file(output); std::string contents{std::istreambuf_iterator<char>(file), {}};
-            check(contents == "existing destination" && result.width == 0, "Disk rejection changed destination or result");
+            require(contents == "existing destination" && result.width == 0, "Disk rejection changed destination or result");
             std::cout << "PASS combined ProRAW disk admission before decode; destination preserved\n";
             return 0;
         }
@@ -169,41 +170,41 @@ int main(int argc, char** argv) {
         if (final) { options.intent = SONY2FUJI_INTENT_FINAL; options.long_edge = 0; }
         auto decoded = hdr::decodeProRAW(input, options, temporary);
         const auto& pair = decoded.pixels;
-        check(std::max(pair.hdr.width, pair.hdr.height) == int(final ? std::max(info.width,info.height) : 512) && pair.hdr.width == pair.sdr.width &&
+        require(std::max(pair.hdr.width, pair.hdr.height) == int(final ? std::max(info.width,info.height) : 512) && pair.hdr.width == pair.sdr.width &&
             pair.hdr.height == pair.sdr.height && pair.isProxy != final && pair.nativeWidth == info.width &&
             pair.nativeHeight == info.height && pair.decodeRevision == 2,
             "ProRAW preview lost dimensions or decoder identity");
         float maximum = 0;
         size_t above = 0;
         for (const auto& pixel : pair.hdr.pixels) {
-            check(std::isfinite(pixel.r) && std::isfinite(pixel.g) && std::isfinite(pixel.b), "Nonfinite HDR pixel");
+            require(std::isfinite(pixel.r) && std::isfinite(pixel.g) && std::isfinite(pixel.b), "Nonfinite HDR pixel");
             maximum = std::max({maximum, pixel.r, pixel.g, pixel.b});
             if (std::max({pixel.r, pixel.g, pixel.b}) > 1) ++above;
         }
         std::cout << "HDR peak=" << maximum << ", above=" << above << std::endl;
-        check(maximum > 0.1f, "ProRAW preview was empty");
+        require(maximum > 0.1f, "ProRAW preview was empty");
         for (const auto& pixel : pair.sdr.pixels)
-            check(std::isfinite(pixel.r) && pixel.r >= 0 && pixel.r <= 1 &&
+            require(std::isfinite(pixel.r) && pixel.r >= 0 && pixel.r <= 1 &&
                 std::isfinite(pixel.g) && pixel.g >= 0 && pixel.g <= 1 &&
                 std::isfinite(pixel.b) && pixel.b >= 0 && pixel.b <= 1, "ProRAW SDR base exceeded its gamut");
-        check(decoded.info.headroom_kind == (final ? SONY2FUJI_HDR_HEADROOM_MEASURED : SONY2FUJI_HDR_HEADROOM_UNKNOWN) &&
+        require(decoded.info.headroom_kind == (final ? SONY2FUJI_HDR_HEADROOM_MEASURED : SONY2FUJI_HDR_HEADROOM_UNKNOWN) &&
             std::any_of(std::begin(decoded.info.source_sha256), std::end(decoded.info.source_sha256), [](auto x) { return x != 0; }),
             "ProRAW preview lost source hash or claimed full-source headroom");
-        check(std::filesystem::is_empty(temporary), "ProRAW decode leaked scratch files");
+        require(std::filesystem::is_empty(temporary), "ProRAW decode leaked scratch files");
 #ifdef SONY2FUJI_TEST_DNGSDK
         if (!std::getenv("RAWLAB_TEST_PRORAW_SKIP_REFERENCE")) {
         const auto expected = reference(input, options.long_edge);
         for (bool hdr : {true, false}) {
             const auto& actual = hdr ? pair.hdr : pair.sdr;
             const auto& reference = hdr ? expected.hdr : expected.sdr;
-            check(actual.width == reference.width && actual.height == reference.height, "SDK reference canvas differs");
+            require(actual.width == reference.width && actual.height == reference.height, "SDK reference canvas differs");
             float difference = 0;
             for (size_t i = 0; i < actual.pixels.size(); ++i) {
                 const auto a = actual.pixels[i], b = reference.pixels[i];
                 difference = std::max({difference, std::abs(a.r-b.r), std::abs(a.g-b.g), std::abs(a.b-b.b)});
             }
             std::cout << (hdr ? "HDR" : "SDR") << " reference maximum error=" << difference << '\n';
-            check(difference <= 1e-6f, "Disk-backed ProRAW pixels differ from native SDK reference");
+            require(difference <= 1e-6f, "Disk-backed ProRAW pixels differ from native SDK reference");
         }
         }
 #endif
@@ -214,7 +215,7 @@ int main(int argc, char** argv) {
             ProcessingCancellationScope cancellation({[](void*) -> int32_t { return 1; }, nullptr});
             try { hdr::decodeProRAW(input, options, temporary); } catch (const ProcessingCancelled&) { cancelled = true; }
         }
-        check(cancelled && std::filesystem::is_empty(temporary), "Cancelled ProRAW decode leaked scratch or ignored cancellation");
+        require(cancelled && std::filesystem::is_empty(temporary), "Cancelled ProRAW decode leaked scratch or ignored cancellation");
         unsigned checks = 0;
         cancelled = false;
         {
@@ -223,7 +224,7 @@ int main(int argc, char** argv) {
             }, &checks});
             try { hdr::decodeProRAW(input, options, temporary); } catch (const ProcessingCancelled&) { cancelled = true; }
         }
-        check(cancelled && checks > 1000 && std::filesystem::is_empty(temporary), "Mid-decode cancellation leaked SDK scratch");
+        require(cancelled && checks > 1000 && std::filesystem::is_empty(temporary), "Mid-decode cancellation leaked SDK scratch");
 #ifdef SONY2FUJI_TEST_DNGSDK
         if (std::getenv("RAWLAB_TEST_PRORAW_JXL")) {
             const auto copy = temporary / "lossless-jxl.dng";
@@ -232,7 +233,7 @@ int main(int argc, char** argv) {
             {
                 dng_file_stream stream(copy.c_str()); dng_host host; dng_info encoded;
                 encoded.Parse(host, stream); encoded.PostParse(host);
-                check(encoded.IsValidDNG() && encoded.fMainIndex >= 0 &&
+                require(encoded.IsValidDNG() && encoded.fMainIndex >= 0 &&
                     encoded.fIFD[encoded.fMainIndex]->fCompression == ccJXL,
                     "Lossless fixture did not exercise JPEG XL decoding");
             }
@@ -240,34 +241,34 @@ int main(int argc, char** argv) {
             for (bool high : {true, false}) {
                 const auto& a = high ? pair.hdr : pair.sdr;
                 const auto& b = high ? jxl.pixels.hdr : jxl.pixels.sdr;
-                check(a.width == b.width && a.height == b.height, "JXL ProRAW canvas differs from original");
+                require(a.width == b.width && a.height == b.height, "JXL ProRAW canvas differs from original");
                 float error = 0;
                 for (size_t i = 0; i < a.pixels.size(); ++i) error = std::max({error,
                     std::abs(a.pixels[i].r-b.pixels[i].r), std::abs(a.pixels[i].g-b.pixels[i].g), std::abs(a.pixels[i].b-b.pixels[i].b)});
                 std::cout << "Lossless JXL " << (high ? "HDR" : "SDR") << " maximum error=" << error << '\n';
-                check(error <= 1e-6f, "JXL ProRAW changed source pixels");
+                require(error <= 1e-6f, "JXL ProRAW changed source pixels");
             }
             std::filesystem::remove(copy);
-            check(std::filesystem::is_empty(temporary), "JXL ProRAW decode leaked scratch");
+            require(std::filesystem::is_empty(temporary), "JXL ProRAW decode leaked scratch");
         }
 #endif
         auto diagnostic = initialized<sony2fuji_hdr_diagnostic_v1>();
         auto sourceInfo = initialized<sony2fuji_hdr_source_info_v1>();
-        check(sony2fuji_hdr_probe_proraw(input, &sourceInfo, &diagnostic) == SONY2FUJI_STATUS_OK &&
+        require(sony2fuji_hdr_probe_proraw(input, &sourceInfo, &diagnostic) == SONY2FUJI_STATUS_OK &&
             sourceInfo.container == SONY2FUJI_HDR_CONTAINER_PRORAW, "C ABI did not classify ProRAW explicitly");
         sony2fuji_session* session = nullptr;
-        check(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK, "Cannot create ProRAW test session");
+        require(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK, "Cannot create ProRAW test session");
         struct Session { sony2fuji_session* value; ~Session() { sony2fuji_session_destroy(value); } } sessionCleanup{session};
         auto result = initialized<sony2fuji_hdr_image_pair_v1>();
         const auto temporaryPath = temporary.u8string();
         auto gpu = initialized<sony2fuji_gpu_config>(); gpu.mode = SONY2FUJI_GPU_FORCE;
         sony2fuji_session_set_gpu_config(session, &gpu);
-        check(sony2fuji_hdr_decode_proraw(session, input, &options, temporaryPath.c_str(), &result, &diagnostic) ==
+        require(sony2fuji_hdr_decode_proraw(session, input, &options, temporaryPath.c_str(), &result, &diagnostic) ==
             SONY2FUJI_STATUS_UNSUPPORTED && diagnostic.reason == SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU,
             "ProRAW silently used CPU under GPU Force");
         gpu.mode = SONY2FUJI_GPU_AUTO; sony2fuji_session_set_gpu_config(session, &gpu);
         sony2fuji_session_set_cancellation_callback(session, [](void*) -> int32_t { return 1; }, nullptr);
-        check(sony2fuji_hdr_decode_proraw(session, input, &options, temporaryPath.c_str(), &result, &diagnostic) ==
+        require(sony2fuji_hdr_decode_proraw(session, input, &options, temporaryPath.c_str(), &result, &diagnostic) ==
             SONY2FUJI_STATUS_CANCELLED && !result.owner_token, "Cancelled C ABI decode published an owner");
         sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr);
         if (final && std::getenv("RAWLAB_TEST_PRORAW_STREAM")) {
@@ -278,8 +279,8 @@ int main(int argc, char** argv) {
                 auto rows = hdr::openProRAW(input, temporary, decoded.info.source_sha256);
                 const auto streamed = hdr::encodeStream(rows, edit, hdr, 93, SONY2FUJI_HDR_COLOR_DISPLAY_P3, temporary);
                 const auto expected = hdr ? hdr::encodeJPEG(reference, 93, SONY2FUJI_HDR_COLOR_DISPLAY_P3) : hdr::encodeSDRJPEG(reference.sdr, 93);
-                check(streamed.jpeg == expected, "Real ProRAW stream differs from full-frame JPEG");
-                check(std::filesystem::is_empty(temporary), "Real ProRAW stream leaked SDK or codec scratch");
+                require(streamed.jpeg == expected, "Real ProRAW stream differs from full-frame JPEG");
+                require(std::filesystem::is_empty(temporary), "Real ProRAW stream leaked SDK or codec scratch");
             }
             auto request = initialized<sony2fuji_hdr_request_v1>();
             request.hdr_processing_version = 1; request.intent = SONY2FUJI_INTENT_FINAL;
@@ -296,15 +297,15 @@ int main(int argc, char** argv) {
                 const auto exportStatus = sony2fuji_hdr_export_proraw(session, input, &request, &config, hdr, temporaryPath.c_str(),
                     output.c_str(), &exported, &diagnostic);
                 if (exportStatus != SONY2FUJI_STATUS_OK) std::cerr << "Export status=" << exportStatus << " reason=" << diagnostic.reason << " field=" << diagnostic.field << std::endl;
-                check(exportStatus == SONY2FUJI_STATUS_OK, "C ABI ProRAW export failed");
-                check(exported.width == uint32_t(reference.hdr.width) && exported.height == uint32_t(reference.hdr.height) &&
+                require(exportStatus == SONY2FUJI_STATUS_OK, "C ABI ProRAW export failed");
+                require(exported.width == uint32_t(reference.hdr.width) && exported.height == uint32_t(reference.hdr.height) &&
                     exported.native_width == info.width && exported.native_height == info.height && exported.decode_revision == 2,
                     "C ABI ProRAW export lost dimensions or source identity");
                 std::ifstream file(std::filesystem::u8path(output), std::ios::binary);
                 std::vector<uint8_t> bytes{std::istreambuf_iterator<char>(file), {}}; file.close();
                 if (hdr) {
                     const auto image = hdr::decodeJPEG(bytes.data(), bytes.size());
-                    check(image.width == int(exported.width) && image.height == int(exported.height), "Published ProRAW JPEG dimensions changed");
+                    require(image.width == int(exported.width) && image.height == int(exported.height), "Published ProRAW JPEG dimensions changed");
                 } else verifySDRJPEG(bytes, exported.width, exported.height);
                 if (const char* artifacts = std::getenv("RAWLAB_TEST_PRORAW_ARTIFACTS")) {
                     const auto target = std::filesystem::u8path(artifacts) /
@@ -312,16 +313,16 @@ int main(int argc, char** argv) {
                     std::filesystem::copy_file(std::filesystem::u8path(output), target, std::filesystem::copy_options::overwrite_existing);
                 }
                 config.source_sha256[0] ^= 1;
-                check(sony2fuji_hdr_export_proraw(session, input, &request, &config, hdr, temporaryPath.c_str(),
+                require(sony2fuji_hdr_export_proraw(session, input, &request, &config, hdr, temporaryPath.c_str(),
                     output.c_str(), &exported, &diagnostic) == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
                     diagnostic.reason == SONY2FUJI_HDR_REASON_SOURCE_CHANGED && exported.width == 0,
                     "ProRAW export accepted a stale source");
                 config.source_sha256[0] ^= 1;
                 std::ifstream preserved(std::filesystem::u8path(output), std::ios::binary);
-                check(std::vector<uint8_t>{std::istreambuf_iterator<char>(preserved), {}} == bytes, "Failed ProRAW export replaced destination");
+                require(std::vector<uint8_t>{std::istreambuf_iterator<char>(preserved), {}} == bytes, "Failed ProRAW export replaced destination");
                 preserved.close(); std::filesystem::remove(std::filesystem::u8path(output));
             }
-            check(std::filesystem::is_empty(temporary), "ProRAW C ABI export left transaction files");
+            require(std::filesystem::is_empty(temporary), "ProRAW C ABI export left transaction files");
             std::cout << "ProRAW real-source byte-identical HDR/SDR stream, C ABI publication and source protection passed\n";
         }
         if (std::getenv("RAWLAB_TEST_PRORAW_NATIVE_EXPORT")) {
@@ -341,13 +342,13 @@ int main(int argc, char** argv) {
                 const auto status = sony2fuji_hdr_export_proraw(session, input, &request, &config, hdr, temporaryPath.c_str(),
                     output.c_str(), &exported, &diagnostic);
                 if (status != SONY2FUJI_STATUS_OK) std::cerr << "Native export status=" << status << " reason=" << diagnostic.reason << std::endl;
-                check(status == SONY2FUJI_STATUS_OK && exported.width == info.width && exported.height == info.height,
+                require(status == SONY2FUJI_STATUS_OK && exported.width == info.width && exported.height == info.height,
                     "Native-size ProRAW JPEG export failed");
                 std::ifstream file(std::filesystem::u8path(output), std::ios::binary);
                 std::vector<uint8_t> bytes{std::istreambuf_iterator<char>(file), {}}; file.close();
                 if (hdr) {
                     const auto description = hdr::probeJPEG(bytes.data(),bytes.size());
-                    check(description.width == info.width && description.height == info.height && description.headroom > 1,
+                    require(description.width == info.width && description.height == info.height && description.headroom > 1,
                         "Native-size ProRAW JPEG lost HDR metadata");
                 } else verifySDRJPEG(bytes,info.width,info.height);
                 if (const char* artifacts = std::getenv("RAWLAB_TEST_PRORAW_ARTIFACTS"))
@@ -356,7 +357,7 @@ int main(int argc, char** argv) {
                         std::filesystem::copy_options::overwrite_existing);
                 std::filesystem::remove(std::filesystem::u8path(output));
             }
-            check(std::filesystem::is_empty(temporary), "Native-size export leaked scratch");
+            require(std::filesystem::is_empty(temporary), "Native-size export leaked scratch");
             std::cout << "Native-size ProRAW HDR/SDR C ABI exports passed\n";
         }
         return 0;

@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "sony2fuji/raw_processor.h"
 #include <libraw/libraw.h>
 #include <algorithm>
@@ -12,11 +13,7 @@
 using namespace sony2fuji;
 
 namespace {
-void check(bool value, const char* message) {
-    if (!value) throw std::runtime_error(message);
-    std::cout << "PASS " << message << '\n';
-}
-
+using rawlab::test::requirePass;
 ImageData reference(const std::string& path, int quality, bool halfSize = false,
                     int fbdd = 0, const std::array<float,4>* customWB = nullptr) {
     auto raw = std::make_unique<LibRaw>();
@@ -25,7 +22,7 @@ ImageData reference(const std::string& path, int quality, bool halfSize = false,
     params.use_camera_wb = customWB ? 0 : 1;
     params.use_auto_wb = 0;
     if (customWB) std::copy(customWB->begin(), customWB->end(), params.user_mul);
-    check(raw->open_file(path.c_str()) == LIBRAW_SUCCESS && raw->unpack() == LIBRAW_SUCCESS,
+    requirePass(raw->open_file(path.c_str()) == LIBRAW_SUCCESS && raw->unpack() == LIBRAW_SUCCESS,
           "reference unpacks generated RAW");
     raw->adjust_to_raw_inset_crop(3);
     params.user_qual = quality;
@@ -40,7 +37,7 @@ ImageData reference(const std::string& path, int quality, bool halfSize = false,
     params.gamm[0] = params.gamm[1] = 1;
     params.bright = 1;
     params.exp_correc = 0;
-    check(raw->dcraw_process() == LIBRAW_SUCCESS, "reference processes explicit demosaic choice");
+    requirePass(raw->dcraw_process() == LIBRAW_SUCCESS, "reference processes explicit demosaic choice");
     const auto& data = raw->imgdata;
     const int width = data.sizes.iwidth, height = data.sizes.iheight;
     ImageData image(data.sizes.flip & 4 ? height : width, data.sizes.flip & 4 ? width : height);
@@ -60,7 +57,7 @@ ImageData reference(const std::string& path, int quality, bool halfSize = false,
 }
 
 void samePixels(const ImageData& actual, const ImageData& expected, const char* message) {
-    check(actual.width == expected.width && actual.height == expected.height &&
+    requirePass(actual.width == expected.width && actual.height == expected.height &&
           actual.pixels.size() == expected.pixels.size(), "demosaic dimensions match");
     double maximum = 0;
     bool finite = true;
@@ -73,12 +70,12 @@ void samePixels(const ImageData& actual, const ImageData& expected, const char* 
         }
     }
     std::cout << "Maximum pixel error: " << maximum << '\n';
-    check(finite && maximum <= 2e-6, message);
+    requirePass(finite && maximum <= 2e-6, message);
 }
 
 ImageData process(RAWProcessor& processor, const RAWProcessOptions& options) {
     ImageData image;
-    check(processor.process(options, image) == ErrorCode::Success, "production processes RAW");
+    requirePass(processor.process(options, image) == ErrorCode::Success, "production processes RAW");
     return image;
 }
 }
@@ -87,7 +84,7 @@ int main(int argc, char** argv) {
     try {
         const std::string path = std::string(TEST_FIXTURE_DIR) + "/bayer-demosaic.dng";
         RAWProcessor processor;
-        check(processor.loadFile(path) == ErrorCode::Success, "load synthetic Bayer fixture");
+        requirePass(processor.loadFile(path) == ErrorCode::Success, "load synthetic Bayer fixture");
         RAWProcessOptions options;
         options.applyBaselineExposure = false;
         samePixels(process(processor, options), reference(path, -1), "default Bayer output preserves released LibRaw selection");
@@ -100,7 +97,7 @@ int main(int argc, char** argv) {
         auto invalid = options;
         invalid.bayerDemosaic = static_cast<BayerDemosaicMethod>(99);
         auto stale = expected;
-        check(processor.process(invalid, stale) == ErrorCode::InvalidFormat && stale.pixels.empty(),
+        requirePass(processor.process(invalid, stale) == ErrorCode::InvalidFormat && stale.pixels.empty(),
               "invalid demosaic choice fails without stale output");
 
         options.bayerDemosaic = BayerDemosaicMethod::VNG;
@@ -117,7 +114,7 @@ int main(int argc, char** argv) {
 
         options.halfSize = true;
         const auto half = process(processor, options);
-        check(half.width < expected.width && half.height < expected.height, "FBDD-off half-size remains a proxy");
+        requirePass(half.width < expected.width && half.height < expected.height, "FBDD-off half-size remains a proxy");
         samePixels(half, reference(path, 1, true), "VNG preserves half-size behavior");
         options.bayerDemosaic = BayerDemosaicMethod::DHT;
         samePixels(process(processor, options), half, "DHT does not introduce interpolation into half-size proxy");
@@ -129,7 +126,7 @@ int main(int argc, char** argv) {
         options.applyBaselineExposure = false;
         options.bayerDemosaic = BayerDemosaicMethod::DHT;
         const std::string linear = std::string(TEST_FIXTURE_DIR) + "/linear-uncompressed.dng";
-        check(processor.loadFile(linear) == ErrorCode::Success && !processor.supportsNoiseReduction(),
+        requirePass(processor.loadFile(linear) == ErrorCode::Success && !processor.supportsNoiseReduction(),
               "reused processor loads non-Bayer LinearRaw");
         const auto linearExpected = reference(linear, -1);
         samePixels(process(processor, options), linearExpected, "DHT selection leaves LinearRaw unchanged");
@@ -150,11 +147,11 @@ int main(int argc, char** argv) {
                 return 1;
             }
             auto metadata = std::make_unique<LibRaw>();
-            check(metadata->open_file(xtransPath) == LIBRAW_SUCCESS && metadata->imgdata.idata.filters == 9,
+            requirePass(metadata->open_file(xtransPath) == LIBRAW_SUCCESS && metadata->imgdata.idata.filters == 9,
                   "optional fixture is actually X-Trans");
-            check(processor.loadFile(path) == ErrorCode::Success, "reload Bayer before X-Trans reuse");
+            requirePass(processor.loadFile(path) == ErrorCode::Success, "reload Bayer before X-Trans reuse");
             process(processor, options);
-            check(processor.loadFile(xtransPath) == ErrorCode::Success && !processor.supportsNoiseReduction(),
+            requirePass(processor.loadFile(xtransPath) == ErrorCode::Success && !processor.supportsNoiseReduction(),
                   "reused processor switches from Bayer to X-Trans");
             const auto xtrans = reference(xtransPath, -1);
             samePixels(process(processor, options), xtrans, "VNG selection cannot bypass X-Trans interpolation");

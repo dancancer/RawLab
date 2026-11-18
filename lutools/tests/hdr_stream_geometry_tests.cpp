@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "core/hdr_rendering.h"
 #include <algorithm>
 #include <cmath>
@@ -9,10 +10,7 @@
 using namespace sony2fuji;
 
 namespace {
-void check(bool value, const char* message) {
-    if (!value) throw std::runtime_error(message);
-}
-
+using rawlab::test::require;
 HDRImagePair fixture(int width, int height) {
     HDRImagePair image;
     image.hdr = ImageData(width, height); image.sdr = ImageData(width, height);
@@ -29,7 +27,7 @@ void compare(const HDRImagePair& source, const HDRRenderOptions& options) {
     const auto expected = renderHDRPair(source, options);
     const auto geometrySize = geometryOutputSize(source.hdr.width, source.hdr.height, options.geometry);
     const auto size = hdrResizeSize(geometrySize.first, geometrySize.second, options.longEdge);
-    check(size.first == expected.hdr.width && size.second == expected.hdr.height, "Stream output dimensions differ");
+    require(size.first == expected.hdr.width && size.second == expected.hdr.height, "Stream output dimensions differ");
     const auto geometry = makeGeometrySampler(source.hdr.width, source.hdr.height, options.geometry);
     const PhotoEffectSampler effects(options.effects, size.first, size.second);
     for (const bool hdr : {true, false}) {
@@ -69,7 +67,7 @@ void compare(const HDRImagePair& source, const HDRRenderOptions& options) {
             for (int y = 0; y < actual.height; ++y) for (int x = 0; x < actual.width; ++x)
                 actual.at(x, y) = effects.applyExtendedLinear(actual.at(x, y), x, y, peak);
         const auto& reference = hdr ? expected.hdr : expected.sdr;
-        check(std::memcmp(actual.pixels.data(), reference.pixels.data(), actual.pixels.size() * sizeof(RGB)) == 0,
+        require(std::memcmp(actual.pixels.data(), reference.pixels.data(), actual.pixels.size() * sizeof(RGB)) == 0,
             "Stream geometry/resize changes float bits or introduces a tile seam");
     }
 }
