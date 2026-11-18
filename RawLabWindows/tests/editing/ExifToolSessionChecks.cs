@@ -107,7 +107,7 @@ internal static class ExifToolSessionChecks
                 catch (IOException ex)
                 {
                     failed = true;
-                    Check(ex.Message.StartsWith("写入 EXIF 失败", StringComparison.Ordinal) &&
+                    Check(ex.Message.StartsWith(Loc.Text("写入 EXIF 失败："), StringComparison.Ordinal) &&
                         ex.Message.Contains("stub warning"), "Failure message carries ExifTool stderr");
                 }
                 Check(failed, "Non-zero command status surfaces as a write failure");
@@ -123,7 +123,7 @@ internal static class ExifToolSessionChecks
                 try { ExifToolSession.Run(["-fake-sleep=10000"]); }
                 catch (IOException ex)
                 {
-                    timedOut = ex.Message.Contains("超时");
+                    timedOut = ex.Message == Loc.Text("写入 EXIF 超时，未保存导出结果。");
                 }
                 clock.Stop();
                 Check(timedOut && clock.ElapsedMilliseconds < 4000, "Stalled command fails inside the timeout budget instead of hanging");

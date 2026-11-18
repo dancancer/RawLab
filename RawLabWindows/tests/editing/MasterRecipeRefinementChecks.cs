@@ -7,7 +7,8 @@ internal static class MasterRecipeRefinementChecks
 {
     public static void Run()
     {
-        var recipe = JsonSerializer.Deserialize<MasterRecipe>(File.ReadAllText("Shared/fixtures/master-recipe-v4.json"),
+        var recipe = JsonSerializer.Deserialize<MasterRecipe>(
+            File.ReadAllText(Path.Combine(RawLab.Windows.Tests.TestInputs.Repo(), "Shared/fixtures/master-recipe-v4.json")),
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
         var state = new Adjustments { ToneControls = new(-20, 30, -25), Atmosphere = new(-40, 20) };
         state.Set(Parameter.ToneCurve, 35); state.Set(Parameter.Temperature, 8000); state.Set(Parameter.Sharpening, 75);
@@ -51,7 +52,7 @@ internal static class MasterRecipeRefinementChecks
         var detached = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.Group, EditorAdjustmentGroup.Looks),
             new(new("photo.ARW", 1, 2, 3), state.Capture(), null));
         Check(detached.Status == EditorResetStatus.Ready, "V4 look reset is representable");
-        Check(detached.MaterializedFields!.Contains("曲线") && detached.MaterializedFields!.Contains("颜色分级"),
+        Check(detached.MaterializedFields!.Contains(Loc.Text("曲线")) && detached.MaterializedFields!.Contains(Loc.Text("颜色分级")),
             "Recipe removal reports materialized curve and grading controls");
         var independent = detached.Candidate!.Settings.Restore();
         Check(independent.MasterRecipeID == null && independent.ToneControls == state.RenderToneControls &&

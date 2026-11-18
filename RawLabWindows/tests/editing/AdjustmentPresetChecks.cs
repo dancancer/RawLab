@@ -201,7 +201,8 @@ internal static class AdjustmentPresetChecks
     {
         Directory.CreateDirectory(directory);
         var store = new AdjustmentPresetStore(directory); var path = Path.Combine(directory, "presets.json");
-        using var fixtures = JsonDocument.Parse(File.ReadAllText("Shared/fixtures/adjustment-presets-v1.json"));
+        using var fixtures = JsonDocument.Parse(File.ReadAllText(
+            Path.Combine(RawLab.Windows.Tests.TestInputs.Repo(), "Shared/fixtures/adjustment-presets-v1.json")));
         Check(fixtures.RootElement.GetArrayLength() == 55, "complete shared fixture catalog");
         foreach (var fixture in fixtures.RootElement.EnumerateArray()) {
             var id = fixture.GetProperty("id").GetString()!;
