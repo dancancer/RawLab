@@ -51,7 +51,7 @@ internal static class AgentRecipeChecks
         {
             var rejected=false;
             try{_=Recipe(raw,new Adjustments(),null,Path.Combine(output,"invalid.png"),edge);}
-            catch(TargetInvocationException error) when(error.InnerException is ArgumentOutOfRangeException){rejected=true;}
+            catch(ArgumentOutOfRangeException){rejected=true;}
             check(rejected && !File.Exists(Path.Combine(output,"invalid.png")),"Agent rejects invalid FINAL size before creating output: "+edge);
         }
         var stored=mixed.Capture();var store=new EditStore(Path.Combine(output,"edits"));

@@ -150,7 +150,7 @@ internal static class FeatureRegressionChecks
             var recovered = reopened.Load();
             check(recovered != null && recovered.Items[0].Status == BatchStatus.Waiting && recovered.Interrupted,
                 "mid-write kill leaves the previous journal loadable with Running derived back to Waiting without false quarantine");
-            reopened.Save(recovered);
+            reopened.Save(recovered!);
             check(reopened.DiskReloads == 1, "a reopened journal runs one full validation on its first Save and recovers the job");
         }
         finally
