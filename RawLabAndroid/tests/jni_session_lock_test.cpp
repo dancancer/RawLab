@@ -62,6 +62,7 @@ struct FakeJObject {
     std::vector<jfloat> floats;
     std::vector<jdouble> doubles;
     std::vector<jobject> objects;
+    std::unordered_map<std::string, jvalue> fields;
     void* directAddress = nullptr;
     jlong directCapacity = 0;
     jint intArg = 0;
@@ -74,9 +75,19 @@ struct FakeMethodId {
     std::string sig;
 };
 
+struct FakeFieldId {
+    std::string className;
+    std::string name;
+    std::string sig;
+};
+
 std::mutex gJniMutex;
 std::vector<std::unique_ptr<FakeJObject>> gAllocatedObjects;
 std::vector<std::unique_ptr<FakeMethodId>> gAllocatedMethods;
+std::vector<std::unique_ptr<FakeFieldId>> gAllocatedFields;
+std::atomic<int> gFindClassCalls{0};
+std::atomic<int> gGetFieldIdCalls{0};
+std::atomic<int> gGetMethodIdCalls{0};
 
 struct ThreadJniException {
     bool active = false;
@@ -107,15 +118,63 @@ jfloatArray makeJFloatArray(const std::vector<jfloat>& values) {
     return reinterpret_cast<jfloatArray>(obj);
 }
 
+jdoubleArray makeJDoubleArray(const std::vector<jdouble>& values) {
+    auto* obj = reinterpret_cast<FakeJObject*>(allocObj(FakeObjKind::DoubleArray));
+    obj->doubles = values;
+    return reinterpret_cast<jdoubleArray>(obj);
+}
+
+jintArray makeJIntArray(const std::vector<jint>& values) {
+    auto* obj = reinterpret_cast<FakeJObject*>(allocObj(FakeObjKind::IntArray));
+    obj->ints = values;
+    return reinterpret_cast<jintArray>(obj);
+}
+
+jbyteArray makeJByteArray(const std::vector<jbyte>& values) {
+    auto* obj = reinterpret_cast<FakeJObject*>(allocObj(FakeObjKind::ByteArray));
+    obj->bytes = values;
+    return reinterpret_cast<jbyteArray>(obj);
+}
+
 FakeJObject* asFake(jobject obj) { return reinterpret_cast<FakeJObject*>(obj); }
 
+jobject makeStruct(const std::string& className) {
+    auto* obj = reinterpret_cast<FakeJObject*>(allocObj(FakeObjKind::Object));
+    obj->text = className;
+    return reinterpret_cast<jobject>(obj);
+}
+
+void setObjField(jobject obj, const std::string& name, jobject val) {
+    jvalue v{}; v.l = val; asFake(obj)->fields[name] = v;
+}
+void setBoolField(jobject obj, const std::string& name, jboolean val) {
+    jvalue v{}; v.z = val; asFake(obj)->fields[name] = v;
+}
+void setIntField(jobject obj, const std::string& name, jint val) {
+    jvalue v{}; v.i = val; asFake(obj)->fields[name] = v;
+}
+void setLongField(jobject obj, const std::string& name, jlong val) {
+    jvalue v{}; v.j = val; asFake(obj)->fields[name] = v;
+}
+void setFloatField(jobject obj, const std::string& name, jfloat val) {
+    jvalue v{}; v.f = val; asFake(obj)->fields[name] = v;
+}
+
 jclass JNICALL mockFindClass(JNIEnv*, const char* name) {
+    gFindClassCalls.fetch_add(1, std::memory_order_relaxed);
     auto* obj = reinterpret_cast<FakeJObject*>(allocObj(FakeObjKind::Class));
     obj->text = name ? name : "";
     return reinterpret_cast<jclass>(obj);
 }
 
+jobject JNICALL mockNewGlobalRef(JNIEnv*, jobject obj) {
+    return obj;
+}
+
+void JNICALL mockDeleteGlobalRef(JNIEnv*, jobject) {}
+
 jmethodID JNICALL mockGetMethodID(JNIEnv*, jclass clazz, const char* name, const char* sig) {
+    gGetMethodIdCalls.fetch_add(1, std::memory_order_relaxed);
     auto method = std::make_unique<FakeMethodId>();
     method->className = clazz ? asFake(clazz)->text : "";
     method->name = name ? name : "";
@@ -124,6 +183,60 @@ jmethodID JNICALL mockGetMethodID(JNIEnv*, jclass clazz, const char* name, const
     std::lock_guard<std::mutex> lock(gJniMutex);
     gAllocatedMethods.push_back(std::move(method));
     return raw;
+}
+
+jfieldID JNICALL mockGetFieldID(JNIEnv*, jclass clazz, const char* name, const char* sig) {
+    gGetFieldIdCalls.fetch_add(1, std::memory_order_relaxed);
+    auto field = std::make_unique<FakeFieldId>();
+    field->className = clazz ? asFake(clazz)->text : "";
+    field->name = name ? name : "";
+    field->sig = sig ? sig : "";
+    auto* raw = reinterpret_cast<jfieldID>(field.get());
+    std::lock_guard<std::mutex> lock(gJniMutex);
+    gAllocatedFields.push_back(std::move(field));
+    return raw;
+}
+
+jobject JNICALL mockGetObjectField(JNIEnv*, jobject obj, jfieldID fid) {
+    if (!obj || !fid) return nullptr;
+    const auto& name = reinterpret_cast<FakeFieldId*>(fid)->name;
+    auto it = asFake(obj)->fields.find(name);
+    return it == asFake(obj)->fields.end() ? nullptr : it->second.l;
+}
+
+jboolean JNICALL mockGetBooleanField(JNIEnv*, jobject obj, jfieldID fid) {
+    if (!obj || !fid) return JNI_FALSE;
+    const auto& name = reinterpret_cast<FakeFieldId*>(fid)->name;
+    auto it = asFake(obj)->fields.find(name);
+    return it == asFake(obj)->fields.end() ? JNI_FALSE : it->second.z;
+}
+
+jint JNICALL mockGetIntField(JNIEnv*, jobject obj, jfieldID fid) {
+    if (!obj || !fid) return 0;
+    const auto& name = reinterpret_cast<FakeFieldId*>(fid)->name;
+    auto it = asFake(obj)->fields.find(name);
+    return it == asFake(obj)->fields.end() ? 0 : it->second.i;
+}
+
+jlong JNICALL mockGetLongField(JNIEnv*, jobject obj, jfieldID fid) {
+    if (!obj || !fid) return 0;
+    const auto& name = reinterpret_cast<FakeFieldId*>(fid)->name;
+    auto it = asFake(obj)->fields.find(name);
+    return it == asFake(obj)->fields.end() ? 0 : it->second.j;
+}
+
+jfloat JNICALL mockGetFloatField(JNIEnv*, jobject obj, jfieldID fid) {
+    if (!obj || !fid) return 0.f;
+    const auto& name = reinterpret_cast<FakeFieldId*>(fid)->name;
+    auto it = asFake(obj)->fields.find(name);
+    return it == asFake(obj)->fields.end() ? 0.f : it->second.f;
+}
+
+jdouble JNICALL mockGetDoubleField(JNIEnv*, jobject obj, jfieldID fid) {
+    if (!obj || !fid) return 0.0;
+    const auto& name = reinterpret_cast<FakeFieldId*>(fid)->name;
+    auto it = asFake(obj)->fields.find(name);
+    return it == asFake(obj)->fields.end() ? 0.0 : it->second.d;
 }
 
 jobject JNICALL mockNewObjectV(JNIEnv*, jclass clazz, jmethodID method, va_list args) {
@@ -276,6 +389,8 @@ jlong JNICALL mockGetDirectBufferCapacity(JNIEnv*, jobject buf) {
 JNINativeInterface_ makeEnvTable() {
     JNINativeInterface_ t{};
     t.FindClass = mockFindClass;
+    t.NewGlobalRef = mockNewGlobalRef;
+    t.DeleteGlobalRef = mockDeleteGlobalRef;
     t.NewObjectV = mockNewObjectV;
     t.Throw = mockThrow;
     t.ThrowNew = mockThrowNew;
@@ -283,6 +398,13 @@ JNINativeInterface_ makeEnvTable() {
     t.ExceptionClear = mockExceptionClear;
     t.DeleteLocalRef = mockDeleteLocalRef;
     t.GetMethodID = mockGetMethodID;
+    t.GetFieldID = mockGetFieldID;
+    t.GetObjectField = mockGetObjectField;
+    t.GetBooleanField = mockGetBooleanField;
+    t.GetIntField = mockGetIntField;
+    t.GetLongField = mockGetLongField;
+    t.GetFloatField = mockGetFloatField;
+    t.GetDoubleField = mockGetDoubleField;
     t.NewStringUTF = mockNewStringUTF;
     t.GetStringUTFChars = mockGetStringUTFChars;
     t.ReleaseStringUTFChars = mockReleaseStringUTFChars;
@@ -380,6 +502,25 @@ uint64_t gHoldHdrExportToken = 0;
 bool gHdrExportEntered = false;
 bool gReleaseHdrExport = false;
 
+// Captured C ABI payloads for marshalling verification
+bool gCapturePayloads = false;
+sony2fuji_request gCapturedRequest{};
+std::string gCapturedInputPath;
+std::string gCapturedLutPath;
+std::string gCapturedOutputPath;
+sony2fuji_hsl_config gCapturedHsl{};
+sony2fuji_wavelet_denoise_config gCapturedDenoise{};
+sony2fuji_photo_effects_config gCapturedEffects{};
+int32_t gCapturedInteractive = 0;
+int32_t gCapturedViewport = 0;
+int32_t gCapturedChromaDenoise = 0;
+int gCapturedProcessingVersion = 0;
+int gCapturedX3fMode = 0;
+int gCapturedExposureMode = 0;
+sony2fuji_hdr_request_v8 gCapturedHdrRequest{};
+std::string gCapturedHdrLookPath;
+sony2fuji_hdr_request_v1 gCapturedHdrGeometryRequest{};
+
 void unblockAllWaitersForCleanup() {
     std::lock_guard<std::mutex> lock(gCoreMutex);
     gTargetConcurrentProcesses = 0;
@@ -440,6 +581,23 @@ void resetMocks() {
     gHoldHdrExportToken = 0;
     gHdrExportEntered = false;
     gReleaseHdrExport = false;
+    gCapturePayloads = false;
+    gCapturedRequest = {};
+    gCapturedInputPath.clear();
+    gCapturedLutPath.clear();
+    gCapturedOutputPath.clear();
+    gCapturedHsl = {};
+    gCapturedDenoise = {};
+    gCapturedEffects = {};
+    gCapturedInteractive = 0;
+    gCapturedViewport = 0;
+    gCapturedChromaDenoise = 0;
+    gCapturedProcessingVersion = 0;
+    gCapturedX3fMode = 0;
+    gCapturedExposureMode = 0;
+    gCapturedHdrRequest = {};
+    gCapturedHdrLookPath.clear();
+    gCapturedHdrGeometryRequest = {};
 }
 
 class SessionCallScope {
@@ -581,40 +739,76 @@ sony2fuji_status sony2fuji_session_get_lens_report_v2(sony2fuji_session* s, sony
     std::memset(r, 0, sizeof(*r));
     return SONY2FUJI_STATUS_OK;
 }
-sony2fuji_status sony2fuji_session_set_processing_version(sony2fuji_session* s, sony2fuji_processing_version) {
+sony2fuji_status sony2fuji_session_set_processing_version(sony2fuji_session* s, sony2fuji_processing_version v) {
     SessionCallScope scope(s);
+    if (gCapturePayloads) {
+        std::lock_guard<std::mutex> lock(gCoreMutex);
+        gCapturedProcessingVersion = static_cast<int>(v);
+    }
     return SONY2FUJI_STATUS_OK;
 }
-sony2fuji_status sony2fuji_session_set_x3f_mode(sony2fuji_session* s, sony2fuji_x3f_mode) {
+sony2fuji_status sony2fuji_session_set_x3f_mode(sony2fuji_session* s, sony2fuji_x3f_mode m) {
     SessionCallScope scope(s);
+    if (gCapturePayloads) {
+        std::lock_guard<std::mutex> lock(gCoreMutex);
+        gCapturedX3fMode = static_cast<int>(m);
+    }
     return SONY2FUJI_STATUS_OK;
 }
-sony2fuji_status sony2fuji_session_set_raw_exposure_mode(sony2fuji_session* s, sony2fuji_raw_exposure_mode) {
+sony2fuji_status sony2fuji_session_set_raw_exposure_mode(sony2fuji_session* s, sony2fuji_raw_exposure_mode m) {
     SessionCallScope scope(s);
+    if (gCapturePayloads) {
+        std::lock_guard<std::mutex> lock(gCoreMutex);
+        gCapturedExposureMode = static_cast<int>(m);
+    }
     return SONY2FUJI_STATUS_OK;
 }
-sony2fuji_status sony2fuji_session_set_hsl(sony2fuji_session* s, const sony2fuji_hsl_config*) {
+sony2fuji_status sony2fuji_session_set_hsl(sony2fuji_session* s, const sony2fuji_hsl_config* cfg) {
     SessionCallScope scope(s);
+    if (gCapturePayloads && cfg) {
+        std::lock_guard<std::mutex> lock(gCoreMutex);
+        gCapturedHsl = *cfg;
+    }
     return SONY2FUJI_STATUS_OK;
 }
-sony2fuji_status sony2fuji_session_set_interactive_preview(sony2fuji_session* s, int32_t) {
+sony2fuji_status sony2fuji_session_set_interactive_preview(sony2fuji_session* s, int32_t enabled) {
     SessionCallScope scope(s);
+    if (gCapturePayloads) {
+        std::lock_guard<std::mutex> lock(gCoreMutex);
+        gCapturedInteractive = enabled;
+    }
     return SONY2FUJI_STATUS_OK;
 }
-sony2fuji_status sony2fuji_session_set_viewport_preview(sony2fuji_session* s, int32_t) {
+sony2fuji_status sony2fuji_session_set_viewport_preview(sony2fuji_session* s, int32_t enabled) {
     SessionCallScope scope(s);
+    if (gCapturePayloads) {
+        std::lock_guard<std::mutex> lock(gCoreMutex);
+        gCapturedViewport = enabled;
+    }
     return SONY2FUJI_STATUS_OK;
 }
-sony2fuji_status sony2fuji_session_set_wavelet_denoise(sony2fuji_session* s, const sony2fuji_wavelet_denoise_config*) {
+sony2fuji_status sony2fuji_session_set_wavelet_denoise(sony2fuji_session* s, const sony2fuji_wavelet_denoise_config* cfg) {
     SessionCallScope scope(s);
+    if (gCapturePayloads && cfg) {
+        std::lock_guard<std::mutex> lock(gCoreMutex);
+        gCapturedDenoise = *cfg;
+    }
     return SONY2FUJI_STATUS_OK;
 }
-sony2fuji_status sony2fuji_session_set_photo_effects(sony2fuji_session* s, const sony2fuji_photo_effects_config*) {
+sony2fuji_status sony2fuji_session_set_photo_effects(sony2fuji_session* s, const sony2fuji_photo_effects_config* cfg) {
     SessionCallScope scope(s);
+    if (gCapturePayloads && cfg) {
+        std::lock_guard<std::mutex> lock(gCoreMutex);
+        gCapturedEffects = *cfg;
+    }
     return SONY2FUJI_STATUS_OK;
 }
-sony2fuji_status sony2fuji_session_set_chroma_denoise(sony2fuji_session* s, int32_t) {
+sony2fuji_status sony2fuji_session_set_chroma_denoise(sony2fuji_session* s, int32_t mode) {
     SessionCallScope scope(s);
+    if (gCapturePayloads) {
+        std::lock_guard<std::mutex> lock(gCoreMutex);
+        gCapturedChromaDenoise = mode;
+    }
     return SONY2FUJI_STATUS_OK;
 }
 sony2fuji_status sony2fuji_session_migrate_processing(const sony2fuji_session* s, const sony2fuji_request*,
@@ -647,6 +841,12 @@ sony2fuji_status sony2fuji_process(sony2fuji_session* s, const sony2fuji_request
     void* cancelCtx = nullptr;
     {
         std::unique_lock<std::mutex> lock(gCoreMutex);
+        if (gCapturePayloads && req) {
+            gCapturedRequest = *req;
+            gCapturedInputPath = req->input_path ? req->input_path : "";
+            gCapturedLutPath = req->lut_path ? req->lut_path : "";
+            gCapturedOutputPath = req->output_path ? req->output_path : "";
+        }
         gMockSessions.at(s)->totalProcessCalls++;
         gActiveProcesses++;
         if (gActiveProcesses > gMaxConcurrentProcesses) gMaxConcurrentProcesses = gActiveProcesses;
@@ -778,8 +978,12 @@ sony2fuji_status sony2fuji_hdr_probe_look(const char*, sony2fuji_hdr_look_info_v
 }
 sony2fuji_status sony2fuji_hdr_probe_camera_profile(const char*, sony2fuji_hdr_camera_profile_info_v1*,
     sony2fuji_hdr_diagnostic_v1*) { return SONY2FUJI_STATUS_OK; }
-sony2fuji_status sony2fuji_hdr_geometry_size(uint32_t w, uint32_t h, const sony2fuji_hdr_request_v1*,
+sony2fuji_status sony2fuji_hdr_geometry_size(uint32_t w, uint32_t h, const sony2fuji_hdr_request_v1* req,
     uint32_t* ow, uint32_t* oh, sony2fuji_hdr_diagnostic_v1*) {
+    if (gCapturePayloads && req) {
+        std::lock_guard<std::mutex> lock(gCoreMutex);
+        gCapturedHdrGeometryRequest = *req;
+    }
     *ow = w; *oh = h;
     return SONY2FUJI_STATUS_OK;
 }
@@ -835,11 +1039,22 @@ sony2fuji_status sony2fuji_hdr_export_proraw(sony2fuji_session* s, const char*, 
     return SONY2FUJI_STATUS_OK;
 }
 sony2fuji_status sony2fuji_hdr_render(sony2fuji_session* s, const sony2fuji_hdr_image_pair_v1* source,
-    const sony2fuji_hdr_request_v1*, sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_diagnostic_v1*) {
+    const sony2fuji_hdr_request_v1* req, sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_diagnostic_v1*) {
     SessionCallScope scope(s);
     bool validSource = false;
     {
         std::unique_lock<std::mutex> lock(gCoreMutex);
+        if (gCapturePayloads && req) {
+            std::memset(&gCapturedHdrRequest, 0, sizeof(gCapturedHdrRequest));
+            const size_t copyBytes = std::min<size_t>(req->struct_size, sizeof(gCapturedHdrRequest));
+            std::memcpy(&gCapturedHdrRequest, req, copyBytes);
+            if (req->hdr_processing_version >= SONY2FUJI_HDR_PROCESSING_LOOK_VERSION &&
+                gCapturedHdrRequest.base.look_path) {
+                gCapturedHdrLookPath = gCapturedHdrRequest.base.look_path;
+            } else {
+                gCapturedHdrLookPath.clear();
+            }
+        }
         auto it = gMockPairs.find(source ? source->owner_token : 0);
         validSource = (it != gMockPairs.end() && !it->second->released);
         if (validSource) {
@@ -925,19 +1140,116 @@ sony2fuji_session* singleLiveSessionPtr() {
     return ptr;
 }
 
+jobject makeNativeGeometry(jfloat cropX = 0.f, jfloat cropY = 0.f, jfloat cropW = 1.f, jfloat cropH = 1.f,
+    jint turns = 0, jboolean flipH = JNI_FALSE, jboolean flipV = JNI_FALSE,
+    jfloat straighten = 0.f, jfloat perspH = 0.f, jfloat perspV = 0.f) {
+    jobject obj = makeStruct("com/rawlab/android/engine/NativeGeometry");
+    setFloatField(obj, "cropX", cropX);
+    setFloatField(obj, "cropY", cropY);
+    setFloatField(obj, "cropWidth", cropW);
+    setFloatField(obj, "cropHeight", cropH);
+    setIntField(obj, "quarterTurns", turns);
+    setBoolField(obj, "flipHorizontal", flipH);
+    setBoolField(obj, "flipVertical", flipV);
+    setFloatField(obj, "straightenDegrees", straighten);
+    setFloatField(obj, "perspectiveHorizontal", perspH);
+    setFloatField(obj, "perspectiveVertical", perspV);
+    return obj;
+}
+
+jobject makeNativeToneCurve(jint mode, const std::vector<jdouble>& points) {
+    jobject obj = makeStruct("com/rawlab/android/engine/NativeToneCurve");
+    setIntField(obj, "mode", mode);
+    setObjField(obj, "points", makeJDoubleArray(points));
+    return obj;
+}
+
+jobject makeNativeHdrRenderRequest(jint longEdge = 0) {
+    jobject obj = makeStruct("com/rawlab/android/engine/NativeHDRRenderRequest");
+    setFloatField(obj, "exposureEv", 0.f);
+    setFloatField(obj, "temperature", 6500.f);
+    setFloatField(obj, "tint", 0.f);
+    setFloatField(obj, "contrast", 0.f);
+    setFloatField(obj, "highlights", 0.f);
+    setFloatField(obj, "shadows", 0.f);
+    setFloatField(obj, "saturation", 0.f);
+    setObjField(obj, "geometry", makeNativeGeometry());
+    setIntField(obj, "longEdge", longEdge);
+    return obj;
+}
+
+jobject makeNativeProcessRequest(const std::string& path, jint edge, jlong generation) {
+    jobject input = makeStruct("com/rawlab/android/engine/NativeProcessInput");
+    setObjField(input, "path", makeJString(path));
+    setObjField(input, "pixels", nullptr);
+    setIntField(input, "width", 0);
+    setIntField(input, "height", 0);
+    setIntField(input, "pixelFormat", 0);
+
+    jobject output = makeStruct("com/rawlab/android/engine/NativeProcessOutput");
+    setObjField(output, "path", nullptr);
+    setIntField(output, "format", 0);
+    setIntField(output, "edge", edge);
+    setIntField(output, "longEdge", 0);
+    setBoolField(output, "interactive", JNI_FALSE);
+    setBoolField(output, "viewportPreview", edge > 0 ? JNI_TRUE : JNI_FALSE);
+
+    jobject wb = makeStruct("com/rawlab/android/engine/NativeProcessWhiteBalance");
+    setBoolField(wb, "custom", JNI_FALSE);
+    setFloatField(wb, "temperature", 6500.f);
+    setFloatField(wb, "tint", 0.f);
+    setBoolField(wb, "recipeActive", JNI_FALSE);
+    setFloatField(wb, "recipeStrength", 1.f);
+
+    jobject tone = makeStruct("com/rawlab/android/engine/NativeProcessTone");
+    setFloatField(tone, "exposureEv", 0.f);
+    setFloatField(tone, "contrast", 1.f);
+    setFloatField(tone, "highlights", 0.f);
+    setFloatField(tone, "shadows", 0.f);
+    setFloatField(tone, "toneCurve", 0.f);
+    setFloatField(tone, "saturation", 1.f);
+    setFloatField(tone, "sharpening", 0.f);
+
+    jobject denoise = makeStruct("com/rawlab/android/engine/NativeDenoiseConfig");
+    setBoolField(denoise, "enabled", JNI_FALSE);
+    setFloatField(denoise, "luma", 0.f);
+    setFloatField(denoise, "chroma", 46.f);
+    setFloatField(denoise, "coarse", 50.f);
+    setIntField(denoise, "displayChroma", 0);
+
+    jobject effects = makeStruct("com/rawlab/android/engine/NativePhotoEffectsConfig");
+    setFloatField(effects, "vignetteAmount", 0.f);
+    setFloatField(effects, "vignetteMidpoint", 50.f);
+    setFloatField(effects, "vignetteRoundness", 0.f);
+    setFloatField(effects, "vignetteFeather", 50.f);
+    setFloatField(effects, "vignetteHighlights", 0.f);
+    setFloatField(effects, "grainAmount", 0.f);
+    setFloatField(effects, "grainSize", 25.f);
+    setFloatField(effects, "grainRoughness", 50.f);
+
+    jobject req = makeStruct("com/rawlab/android/engine/NativeProcessRequest");
+    setObjField(req, "input", input);
+    setObjField(req, "output", output);
+    setObjField(req, "lutPath", nullptr);
+    setFloatField(req, "lutStrength", 0.f);
+    setObjField(req, "whiteBalance", wb);
+    setObjField(req, "tone", tone);
+    setObjField(req, "denoise", denoise);
+    setObjField(req, "effects", effects);
+    setObjField(req, "hsl", makeJFloatArray(std::vector<jfloat>(24, 0.f)));
+    setIntField(req, "exposureMode", 0);
+    setIntField(req, "processingVersion", 3);
+    setIntField(req, "x3fMode", 0);
+    setLongField(req, "cancellationGeneration", generation);
+    setObjField(req, "backendOut", nullptr);
+    setObjField(req, "hslProbe", nullptr);
+    setObjField(req, "migrationOut", nullptr);
+    return req;
+}
+
 jobject callNativeProcess(JNIEnv* env, jlong id, const std::string& path, jint edge, jlong generation) {
-    auto hsl = makeJFloatArray(std::vector<jfloat>(24, 0.f));
     return Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(
-        env, nullptr, id,
-        makeJString(path), nullptr, 0, 0, 0,
-        nullptr, nullptr, 1.f, 0.f,
-        JNI_FALSE, 6500.f, 0.f, 0.f, 0.f,
-        0.f, 0.f, 0.f, 0.f,
-        edge, JNI_FALSE, 0, 0,
-        JNI_FALSE, 0.f, 0.f, 0.f, 0,
-        0.f, 50.f, 0.f, 50.f, 0.f, 0.f, 50.f, 50.f,
-        0, hsl, JNI_FALSE, 3, 0, nullptr,
-        0, 0, nullptr, generation, nullptr);
+        env, nullptr, id, makeNativeProcessRequest(path, edge, generation));
 }
 
 jobject callNativeAutoExposure(JNIEnv* env, jlong id, const std::string& path) {
@@ -1331,20 +1643,18 @@ void testHdrCrossSessionRenderConcurrency() {
 
     jlong out1 = 0, out2 = 0;
     ThreadJniException hdrEx1{}, hdrEx2{};
-    std::vector<jfloat> hdrValues(17, 0.f);
-    hdrValues[1] = 6500.f;
 
     std::thread h1([&] {
         LocalEnv env;
         out1 = Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(
-            env.ptr(), nullptr, s1, p1, makeJFloatArray(hdrValues), 0, nullptr, nullptr, nullptr, 0, -1, nullptr, nullptr);
+            env.ptr(), nullptr, s1, p1, makeNativeHdrRenderRequest(), -1);
         hdrEx1 = consumeException();
     });
     ThreadJoiner jh1{h1};
     std::thread h2([&] {
         LocalEnv env;
         out2 = Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(
-            env.ptr(), nullptr, s2, p2, makeJFloatArray(hdrValues), 0, nullptr, nullptr, nullptr, 0, -1, nullptr, nullptr);
+            env.ptr(), nullptr, s2, p2, makeNativeHdrRenderRequest(), -1);
         hdrEx2 = consumeException();
     });
     ThreadJoiner jh2{h2};
@@ -1375,11 +1685,9 @@ void testHdrPairReleaseDuringExportConcurrency() {
     const jlong p1 = Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(envMain.ptr(), nullptr, makeJString("hdr1.jpg"), 0);
     require(p1 > 0 && !consumeException().active, "Failed to decode mock HDR pair");
 
-    std::vector<jfloat> hdrValues(17, 0.f);
-    hdrValues[1] = 6500.f;
     uint64_t out1Token = 0;
     const jlong exportPair = Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(
-        envMain.ptr(), nullptr, s1, p1, makeJFloatArray(hdrValues), 0, nullptr, nullptr, nullptr, 0, -1, nullptr, nullptr);
+        envMain.ptr(), nullptr, s1, p1, makeNativeHdrRenderRequest(), -1);
     require(exportPair > 0 && !consumeException().active, "Failed to produce exportPair");
     {
         std::lock_guard<std::mutex> lock(gCoreMutex);
@@ -1558,6 +1866,304 @@ void testNativePng16LutColorConversion() {
     std::cout << "PASS: testNativePng16LutColorConversion" << std::endl;
 }
 
+void testCachedJniFieldAndClassLookups() {
+    resetMocks();
+    LocalEnv env;
+    const jlong s = Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(env.ptr(), nullptr, 0);
+    const jlong p = Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(env.ptr(), nullptr, makeJString("hdr.jpg"), 0);
+    require(s > 0 && p > 0 && !consumeException().active, "Setup failed");
+
+    // Warm the lazy JniCache with one call.
+    jobject frame1 = callNativeProcess(env.ptr(), s, "warm.dng", 64, -1);
+    require(frame1 != nullptr && !consumeException().active, "Warmup nativeProcess failed");
+
+    const int findBefore = gFindClassCalls.load(std::memory_order_relaxed);
+    const int fieldBefore = gGetFieldIdCalls.load(std::memory_order_relaxed);
+    const int methodBefore = gGetMethodIdCalls.load(std::memory_order_relaxed);
+    require(findBefore > 0 && fieldBefore > 0 && methodBefore > 0, "JniCache must initialize on first use");
+
+    // Subsequent calls across process, geometry, HDR render, HSL sample, ProRAW export must perform ZERO lookups.
+    jobject frame2 = callNativeProcess(env.ptr(), s, "second.dng", 64, -1);
+    require(frame2 != nullptr && !consumeException().active, "Second nativeProcess failed");
+
+    jintArray geomOut = Java_com_rawlab_android_engine_NativeHDRBridge_nativeGeometry(
+        env.ptr(), nullptr, 400, 300, makeNativeGeometry());
+    require(geomOut != nullptr && !consumeException().active, "nativeGeometry failed");
+
+    jlong rendered = Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(
+        env.ptr(), nullptr, s, p, makeNativeHdrRenderRequest(256), -1);
+    require(rendered > 0 && !consumeException().active, "nativeRender failed");
+
+    jfloatArray probeOut = makeJFloatArray(std::vector<jfloat>(13, 0.5f));
+    Java_com_rawlab_android_engine_NativeHDRBridge_nativeSampleHsl(
+        env.ptr(), nullptr, s, p, makeNativeHdrRenderRequest(256), 1, 2, probeOut, -1);
+    require(!consumeException().active, "nativeSampleHsl failed");
+
+    jbyteArray fp = makeJByteArray(std::vector<jbyte>(32, 7));
+    Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportProRAW(
+        env.ptr(), nullptr, s, makeJString("in.dng"), makeNativeHdrRenderRequest(0), JNI_TRUE, fp,
+        makeJString("/tmp"), makeJString("/tmp/out.jpg"), -1);
+    require(!consumeException().active, "nativeExportProRAW failed");
+
+    require(gFindClassCalls.load(std::memory_order_relaxed) == findBefore,
+        "Cached jclass refs must eliminate repeat FindClass calls");
+    require(gGetFieldIdCalls.load(std::memory_order_relaxed) == fieldBefore,
+        "Cached jfieldIDs must eliminate repeat GetFieldID calls");
+    require(gGetMethodIdCalls.load(std::memory_order_relaxed) == methodBefore,
+        "Cached jmethodIDs must eliminate repeat GetMethodID calls");
+
+    Java_com_rawlab_android_engine_NativeHDRBridge_nativeRelease(env.ptr(), nullptr, rendered);
+    Java_com_rawlab_android_engine_NativeHDRBridge_nativeRelease(env.ptr(), nullptr, p);
+    Java_com_rawlab_android_engine_NativeProcessor_nativeDestroy(env.ptr(), nullptr, s);
+    std::cout << "PASS: testCachedJniFieldAndClassLookups" << std::endl;
+}
+
+void testStructuredProcessMarshalling() {
+    resetMocks();
+    LocalEnv env;
+    const jlong s = Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(env.ptr(), nullptr, 0);
+    gCapturePayloads = true;
+
+    jobject req = makeNativeProcessRequest("photo.arw", 512, -1);
+    jobject output = mockGetObjectField(env.ptr(), req, nullptr);
+    (void)output;
+    // Build a fully populated structured request
+    jobject inObj = makeStruct("com/rawlab/android/engine/NativeProcessInput");
+    setObjField(inObj, "path", makeJString("sample/photo.arw"));
+    setObjField(inObj, "pixels", nullptr);
+    setIntField(inObj, "width", 0);
+    setIntField(inObj, "height", 0);
+    setIntField(inObj, "pixelFormat", 0);
+
+    jobject outObj = makeStruct("com/rawlab/android/engine/NativeProcessOutput");
+    setObjField(outObj, "path", makeJString("/tmp/exported.png"));
+    setIntField(outObj, "format", SONY2FUJI_OUTPUT_PNG);
+    setIntField(outObj, "edge", 0);
+    setIntField(outObj, "longEdge", 2048);
+    setBoolField(outObj, "interactive", JNI_FALSE);
+    setBoolField(outObj, "viewportPreview", JNI_FALSE);
+
+    jobject wbObj = makeStruct("com/rawlab/android/engine/NativeProcessWhiteBalance");
+    setBoolField(wbObj, "custom", JNI_TRUE);
+    setFloatField(wbObj, "temperature", 5400.f);
+    setFloatField(wbObj, "tint", -12.5f);
+    setBoolField(wbObj, "recipeActive", JNI_FALSE);
+    setFloatField(wbObj, "recipeStrength", 1.f);
+
+    jobject toneObj = makeStruct("com/rawlab/android/engine/NativeProcessTone");
+    setFloatField(toneObj, "exposureEv", 1.75f);
+    setFloatField(toneObj, "contrast", 1.35f);
+    setFloatField(toneObj, "highlights", -0.45f);
+    setFloatField(toneObj, "shadows", 0.30f);
+    setFloatField(toneObj, "toneCurve", -0.25f);
+    setFloatField(toneObj, "saturation", 1.20f);
+    setFloatField(toneObj, "sharpening", 0.85f);
+
+    jobject denoiseObj = makeStruct("com/rawlab/android/engine/NativeDenoiseConfig");
+    setBoolField(denoiseObj, "enabled", JNI_TRUE);
+    setFloatField(denoiseObj, "luma", 18.f);
+    setFloatField(denoiseObj, "chroma", 64.f);
+    setFloatField(denoiseObj, "coarse", 75.f);
+    setIntField(denoiseObj, "displayChroma", 2);
+
+    jobject effectsObj = makeStruct("com/rawlab/android/engine/NativePhotoEffectsConfig");
+    setFloatField(effectsObj, "vignetteAmount", -22.f);
+    setFloatField(effectsObj, "vignetteMidpoint", 40.f);
+    setFloatField(effectsObj, "vignetteRoundness", 15.f);
+    setFloatField(effectsObj, "vignetteFeather", 65.f);
+    setFloatField(effectsObj, "vignetteHighlights", 30.f);
+    setFloatField(effectsObj, "grainAmount", 25.f);
+    setFloatField(effectsObj, "grainSize", 45.f);
+    setFloatField(effectsObj, "grainRoughness", 60.f);
+
+    std::vector<jfloat> hslVec(24);
+    for (int i = 0; i < 24; ++i) hslVec[i] = static_cast<jfloat>(i - 10);
+    jintArray backendOut = makeJIntArray({-1});
+
+    setObjField(req, "input", inObj);
+    setObjField(req, "output", outObj);
+    setObjField(req, "lutPath", makeJString("looks/classic.cube"));
+    setFloatField(req, "lutStrength", 0.75f);
+    setObjField(req, "whiteBalance", wbObj);
+    setObjField(req, "tone", toneObj);
+    setObjField(req, "denoise", denoiseObj);
+    setObjField(req, "effects", effectsObj);
+    setObjField(req, "hsl", makeJFloatArray(hslVec));
+    setIntField(req, "exposureMode", SONY2FUJI_EXPOSURE_PREVIEW);
+    setIntField(req, "processingVersion", SONY2FUJI_PROCESSING_BASIC_V3);
+    setIntField(req, "x3fMode", SONY2FUJI_X3F_NORMAL);
+    setObjField(req, "backendOut", backendOut);
+
+    jobject res = Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(env.ptr(), nullptr, s, req);
+    auto ex = consumeException();
+    require(res == nullptr && !ex.active, "Export nativeProcess must succeed returning null: " + ex.message);
+    require(gCapturedInputPath == "sample/photo.arw", "inputPath mismatch");
+    require(gCapturedLutPath == "looks/classic.cube", "lutPath mismatch");
+    require(gCapturedOutputPath == "/tmp/exported.png", "outputPath mismatch");
+    require(gCapturedRequest.lut_strength == 0.75f, "lutStrength mismatch");
+    require(gCapturedRequest.wb_mode == SONY2FUJI_WB_TEMPERATURE &&
+            gCapturedRequest.temperature == 5400.f && gCapturedRequest.tint == -12.5f, "WB mismatch");
+    require(gCapturedRequest.exposure_ev == 1.75f && gCapturedRequest.contrast == 1.35f &&
+            gCapturedRequest.highlights == -0.45f && gCapturedRequest.shadows == 0.30f &&
+            gCapturedRequest.tone_curve == -0.25f && gCapturedRequest.saturation == 1.20f &&
+            gCapturedRequest.sharpening == 0.85f, "Tone mismatch (no JNI product math allowed)");
+    require(gCapturedRequest.output_target == SONY2FUJI_TARGET_FILE &&
+            gCapturedRequest.output_format == SONY2FUJI_OUTPUT_PNG &&
+            gCapturedRequest.long_edge == 2048 && gCapturedRequest.preview_long_edge == 0, "Output mismatch");
+    require(gCapturedDenoise.enabled == 1 && gCapturedDenoise.luma == 18.f &&
+            gCapturedDenoise.chroma == 64.f && gCapturedDenoise.coarse == 75.f &&
+            gCapturedChromaDenoise == 2, "Denoise mismatch");
+    require(gCapturedEffects.vignette_amount == -22.f && gCapturedEffects.grain_roughness == 60.f, "Effects mismatch");
+    require(gCapturedHsl.hue[0] == -10.f && gCapturedHsl.saturation[0] == -2.f && gCapturedHsl.lightness[7] == 13.f,
+        "HSL mismatch");
+    require(gCapturedProcessingVersion == SONY2FUJI_PROCESSING_BASIC_V3 &&
+            gCapturedX3fMode == SONY2FUJI_X3F_NORMAL &&
+            gCapturedExposureMode == SONY2FUJI_EXPOSURE_PREVIEW, "Session config mismatch");
+    require(asFake(backendOut)->ints[0] == SONY2FUJI_BACKEND_CPU, "backendOut must be populated");
+
+    // Null request must throw IllegalArgumentException
+    Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(env.ptr(), nullptr, s, nullptr);
+    ex = consumeException();
+    require(ex.active && ex.className == "java/lang/IllegalArgumentException", "Null request must throw IllegalArgumentException");
+
+    Java_com_rawlab_android_engine_NativeProcessor_nativeDestroy(env.ptr(), nullptr, s);
+    std::cout << "PASS: testStructuredProcessMarshalling" << std::endl;
+}
+
+void testStructuredHdrMarshalling() {
+    resetMocks();
+    LocalEnv env;
+    const jlong s = Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(env.ptr(), nullptr, 0);
+    const jlong p = Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(env.ptr(), nullptr, makeJString("hdr.jpg"), 0);
+    gCapturePayloads = true;
+
+    jobject geom = makeNativeGeometry(0.1f, 0.2f, 0.8f, 0.7f, 1, JNI_TRUE, JNI_FALSE, -3.5f, 0.25f, -0.15f);
+    jintArray geomRes = Java_com_rawlab_android_engine_NativeHDRBridge_nativeGeometry(env.ptr(), nullptr, 1000, 800, geom);
+    require(geomRes != nullptr && !consumeException().active, "nativeGeometry failed");
+    require(gCapturedHdrGeometryRequest.crop_x == 0.1f && gCapturedHdrGeometryRequest.crop_y == 0.2f &&
+            gCapturedHdrGeometryRequest.crop_width == 0.8f && gCapturedHdrGeometryRequest.crop_height == 0.7f &&
+            gCapturedHdrGeometryRequest.quarter_turns == 1 && gCapturedHdrGeometryRequest.flip_horizontal == 1 &&
+            gCapturedHdrGeometryRequest.flip_vertical == 0 && gCapturedHdrGeometryRequest.straighten_degrees == -3.5f &&
+            gCapturedHdrGeometryRequest.perspective_horizontal == 0.25f &&
+            gCapturedHdrGeometryRequest.perspective_vertical == -0.15f, "Geometry marshalling mismatch");
+
+    jobject req = makeNativeHdrRenderRequest(1024);
+    setFloatField(req, "exposureEv", 1.25f);
+    setFloatField(req, "temperature", 7200.f);
+    setFloatField(req, "tint", 18.f);
+    setFloatField(req, "contrast", -30.f);
+    setFloatField(req, "highlights", 40.f);
+    setFloatField(req, "shadows", -20.f);
+    setFloatField(req, "saturation", 15.f);
+    setObjField(req, "geometry", geom);
+
+    jobject toneObj = makeStruct("com/rawlab/android/engine/NativeHDRTone");
+    setFloatField(toneObj, "blackPoint", -15.f);
+    setFloatField(toneObj, "whitePoint", 25.f);
+    setFloatField(toneObj, "curveStrength", 45.f);
+    setObjField(toneObj, "curve", makeNativeToneCurve(1, {0.0, 0.0, 0.5, 0.65, 1.0, 1.0}));
+    setObjField(req, "tone", toneObj);
+
+    jobject gradingObj = makeStruct("com/rawlab/android/engine/NativeColorGrading");
+    setFloatField(gradingObj, "shadowsHue", 10.f);
+    setFloatField(gradingObj, "shadowsSaturation", 20.f);
+    setFloatField(gradingObj, "midtonesHue", 30.f);
+    setFloatField(gradingObj, "midtonesSaturation", 40.f);
+    setFloatField(gradingObj, "highlightsHue", 50.f);
+    setFloatField(gradingObj, "highlightsSaturation", 60.f);
+
+    std::vector<jfloat> hdrHsl(24);
+    for (int i = 0; i < 24; ++i) hdrHsl[i] = static_cast<jfloat>(i + 1);
+    jobject colorObj = makeStruct("com/rawlab/android/engine/NativeHDRColor");
+    setFloatField(colorObj, "vibrance", 22.f);
+    setObjField(colorObj, "hsl", makeJFloatArray(hdrHsl));
+    setObjField(colorObj, "grading", gradingObj);
+    setObjField(req, "color", colorObj);
+
+    jobject rendObj = makeStruct("com/rawlab/android/engine/NativeHDRRendition");
+    setFloatField(rendObj, "peakLimitEv", 2.5f);
+    setFloatField(rendObj, "sdrExposureEv", -0.5f);
+    setFloatField(rendObj, "sdrContrast", 12.f);
+    setFloatField(rendObj, "sdrSaturation", -8.f);
+    setObjField(req, "rendition", rendObj);
+
+    jobject fxObj = makeStruct("com/rawlab/android/engine/NativePhotoEffectsConfig");
+    setFloatField(fxObj, "vignetteAmount", -10.f);
+    setFloatField(fxObj, "vignetteMidpoint", 55.f);
+    setFloatField(fxObj, "vignetteRoundness", 5.f);
+    setFloatField(fxObj, "vignetteFeather", 45.f);
+    setFloatField(fxObj, "vignetteHighlights", 15.f);
+    setFloatField(fxObj, "grainAmount", 12.f);
+    setFloatField(fxObj, "grainSize", 30.f);
+    setFloatField(fxObj, "grainRoughness", 70.f);
+    setObjField(req, "effects", fxObj);
+
+    jobject detailObj = makeStruct("com/rawlab/android/engine/NativeHDRDetail");
+    setFloatField(detailObj, "sharpening", 1.1f);
+    setFloatField(detailObj, "clarity", 0.35f);
+    setFloatField(detailObj, "dehaze", -0.25f);
+    setFloatField(detailObj, "denoise", 0.5f);
+    setObjField(req, "detail", detailObj);
+
+    const std::string sha(64, 'a');
+    jobject lookObj = makeStruct("com/rawlab/android/engine/NativeHDRLook");
+    setObjField(lookObj, "path", makeJString("/tmp/look.cube"));
+    setObjField(lookObj, "sha256", makeJString(sha));
+    setFloatField(lookObj, "strength", 0.9f);
+    setObjField(req, "look", lookObj);
+
+    jobject chObj = makeStruct("com/rawlab/android/engine/NativeHDRChannelCurves");
+    setObjField(chObj, "red", makeNativeToneCurve(1, {0.0, 0.0, 0.5, 0.7, 1.0, 1.0}));
+    setObjField(chObj, "green", makeNativeToneCurve(0, {}));
+    setObjField(chObj, "blue", makeNativeToneCurve(1, {0.0, 0.0, 1.0, 1.0}));
+    setObjField(req, "channelCurves", chObj);
+
+    const jlong outPair = Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(env.ptr(), nullptr, s, p, req, -1);
+    auto ex = consumeException();
+    require(outPair > 0 && !ex.active, "Full v8 HDR render failed: " + ex.message);
+
+    const auto& v8 = gCapturedHdrRequest;
+    const auto& v7 = v8.base;
+    const auto& v6 = v7.base;
+    const auto& v5 = v6.base;
+    const auto& v4 = v5.base;
+    const auto& v3 = v4.base;
+    const auto& v2 = v3.base;
+    const auto& v1 = v2.base;
+    require(v1.struct_size == sizeof(sony2fuji_hdr_request_v8), "HDR struct_size mismatch");
+    require(v1.hdr_processing_version == SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION, "HDR version mismatch");
+    require(v1.exposure_ev == 1.25f && v1.temperature == 7200.f && v1.contrast == -30.f && v1.long_edge == 1024,
+        "HDR v1 fields mismatch");
+    require(v2.black_point == -15.f && v2.white_point == 25.f && v2.curve_strength == 45.f &&
+            v2.curve.mode == SONY2FUJI_CURVE_CUSTOM && v2.curve.count == 3 && v2.curve.points[1].y == 0.65,
+        "HDR v2 tone/curve mismatch");
+    require(v3.vibrance == 22.f && v3.hsl.hue[0] == 1.f && v3.hsl.lightness[7] == 24.f &&
+            v3.grading.highlights_saturation == 60.f, "HDR v3 color mismatch");
+    require(v4.peak_limit_ev == 2.5f && v4.sdr_exposure_ev == -0.5f &&
+            v4.sdr_contrast == 12.f && v4.sdr_saturation == -8.f, "HDR v4 rendition mismatch");
+    require(v5.effects.vignette_amount == -10.f && v5.effects.grain_roughness == 70.f, "HDR v5 effects mismatch");
+    require(v6.sharpening == 1.1f && v6.clarity == 0.35f && v6.dehaze == -0.25f && v6.denoise == 0.5f,
+        "HDR v6 detail mismatch");
+    require(gCapturedHdrLookPath == "/tmp/look.cube" && v7.look_strength == 0.9f &&
+            std::string(v7.look_sha256, 64) == sha, "HDR v7 look mismatch");
+    require(v8.channels[0].mode == SONY2FUJI_CURVE_CUSTOM && v8.channels[0].count == 3 &&
+            v8.channels[0].points[1].y == 0.7 && v8.channels[1].mode == SONY2FUJI_CURVE_LEGACY &&
+            v8.channels[2].count == 2, "HDR v8 channel curves mismatch");
+
+    // Out-of-order section (color != null while tone == null) must throw IllegalArgumentException
+    jobject badReq = makeNativeHdrRenderRequest(0);
+    setObjField(badReq, "color", colorObj);
+    Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(env.ptr(), nullptr, s, p, badReq, -1);
+    ex = consumeException();
+    require(ex.active && ex.className == "java/lang/IllegalArgumentException",
+        "Out-of-order HDR sections must throw IllegalArgumentException");
+
+    Java_com_rawlab_android_engine_NativeHDRBridge_nativeRelease(env.ptr(), nullptr, outPair);
+    Java_com_rawlab_android_engine_NativeHDRBridge_nativeRelease(env.ptr(), nullptr, p);
+    Java_com_rawlab_android_engine_NativeProcessor_nativeDestroy(env.ptr(), nullptr, s);
+    std::cout << "PASS: testStructuredHdrMarshalling" << std::endl;
+}
+
 } // namespace
 
 int main() {
@@ -1574,6 +2180,9 @@ int main() {
         {"testHdrPairReleaseDuringExportConcurrency", testHdrPairReleaseDuringExportConcurrency},
         {"testNativePng16DecodeRelease", testNativePng16DecodeRelease},
         {"testNativePng16LutColorConversion", testNativePng16LutColorConversion},
+        {"testCachedJniFieldAndClassLookups", testCachedJniFieldAndClassLookups},
+        {"testStructuredProcessMarshalling", testStructuredProcessMarshalling},
+        {"testStructuredHdrMarshalling", testStructuredHdrMarshalling},
     };
     int failures = 0;
     for (const auto& c : cases) {
